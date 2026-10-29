@@ -97,6 +97,7 @@ fn supported_frames<'a>(
                 entity_id: physical.entity_id,
                 class_tag: ty.class_tag.clone(),
                 start: physical.start,
+                member_end: physical.member_end,
                 end: physical.end,
                 design_type: ty,
             });

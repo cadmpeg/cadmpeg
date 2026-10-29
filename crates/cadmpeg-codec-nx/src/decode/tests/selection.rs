@@ -536,18 +536,23 @@ fn decode_transfers_bspline_surface_and_curve() {
 }
 
 #[test]
-fn decode_replaces_partition_bspline_surface_wrapper_from_deltas() {
+fn decode_preserves_primary_bspline_surface_with_unselected_deltas() {
     let partition = bspline_surface_replacement_partition_stream();
     let deltas = deltas_bspline_surface_wrapper_stream();
     let file = prt_with_streams(&[&partition, &deltas]);
     let mut cur = Cursor::new(file);
     let result = NxCodec.decode(&mut cur, &DecodeOptions::default()).unwrap();
 
-    assert!(result.ir().model.surfaces.iter().any(|surface| matches!(
-        &surface.geometry,
-        SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(nurbs))
-            if nurbs.poles().iter().any(|point| point.y == 30.0)
-    )));
+    let baseline = NxCodec
+        .decode(
+            &mut Cursor::new(prt_with_partition(&partition)),
+            &DecodeOptions::default(),
+        )
+        .unwrap();
+    assert_eq!(
+        serde_json::to_value(&result.ir().model).unwrap(),
+        serde_json::to_value(&baseline.ir().model).unwrap()
+    );
     assert!(
         cadmpeg_ir::validate::validate_neutral(result.ir(), Vec::new())
             .expect("validate the neutral model")
@@ -556,18 +561,23 @@ fn decode_replaces_partition_bspline_surface_wrapper_from_deltas() {
 }
 
 #[test]
-fn decode_replaces_partition_bspline_curve_wrapper_from_deltas() {
+fn decode_preserves_primary_bspline_curve_with_unselected_deltas() {
     let partition = bspline_curve_replacement_partition_stream();
     let deltas = deltas_bspline_curve_wrapper_stream();
     let file = prt_with_streams(&[&partition, &deltas]);
     let mut cur = Cursor::new(file);
     let result = NxCodec.decode(&mut cur, &DecodeOptions::default()).unwrap();
 
-    assert!(result.ir().model.curves.iter().any(|curve| matches!(
-        &curve.geometry,
-        CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(nurbs))
-            if nurbs.control_points().iter().any(|point| point.y == 10.0)
-    )));
+    let baseline = NxCodec
+        .decode(
+            &mut Cursor::new(prt_with_partition(&partition)),
+            &DecodeOptions::default(),
+        )
+        .unwrap();
+    assert_eq!(
+        serde_json::to_value(&result.ir().model).unwrap(),
+        serde_json::to_value(&baseline.ir().model).unwrap()
+    );
     assert!(
         cadmpeg_ir::validate::validate_neutral(result.ir(), Vec::new())
             .expect("validate the neutral model")

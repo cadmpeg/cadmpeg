@@ -136,11 +136,14 @@ fn source_free_native_property_admission_does_not_depend_on_the_neutral_attribut
         &DecodePolicy::service(),
         cadmpeg_core::decode::DecodeDepth::Full,
     );
-    let findings = InventorCodec.validate_native(&ctx, &ir).unwrap();
+    let findings = InventorCodec.validate_native(&ctx, &ir, None).unwrap();
     ir.model.attributes[0].values = vec![Some(AttributeValue::String(
         "Edited current attribute".into(),
     ))];
-    assert_eq!(InventorCodec.validate_native(&ctx, &ir).unwrap(), findings);
+    assert_eq!(
+        InventorCodec.validate_native(&ctx, &ir, None).unwrap(),
+        findings
+    );
     assert_eq!(ir.native, before);
     let attribute_id = ir.model.attributes[0].id.to_string();
     ir.model.attributes[0].native_ref = Some("inventor:property:missing#0".into());
@@ -178,7 +181,7 @@ fn malformed_kept_native_property_fields_still_fail_typed_native_admission() {
         &DecodePolicy::service(),
         cadmpeg_core::decode::DecodeDepth::Full,
     );
-    let findings = InventorCodec.validate_native(&ctx, &ir).unwrap();
+    let findings = InventorCodec.validate_native(&ctx, &ir, None).unwrap();
     assert!(findings.iter().any(|finding| finding
         .message
         .starts_with("Inventor native arenas are invalid:")));

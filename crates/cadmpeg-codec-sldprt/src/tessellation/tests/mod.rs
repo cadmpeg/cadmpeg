@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 use cadmpeg_test_support::EditableDecodeResult;
 
+use super::agree_surface_tokens;
 use super::analytic_surface_residual;
 use super::assign_persistent_owners;
 use super::circle_overlaps_polygon;
@@ -683,7 +684,10 @@ fn persistent_surface_identity_requires_agreeing_duplicates() {
         Some(7)
     );
     let expected = persistent_identity(7, 3, &[]);
-    assert_eq!(face.persistent_surface_identity(), Some(&expected));
+    assert_eq!(
+        agree_surface_tokens(&face.surface_references).identity(),
+        Some(expected)
+    );
 
     let mut conflicting = face;
     if let PersistentSurfaceReference::Complete(identity) = &mut conflicting.surface_references[1] {
@@ -693,7 +697,10 @@ fn persistent_surface_identity_requires_agreeing_duplicates() {
         conflicting.feature_source_id().map(FeatureSourceId::value),
         Some(7)
     );
-    assert_eq!(conflicting.persistent_surface_identity(), None);
+    assert_eq!(
+        agree_surface_tokens(&conflicting.surface_references).identity(),
+        None
+    );
 }
 
 #[test]

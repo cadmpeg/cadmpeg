@@ -15,13 +15,13 @@ use serde::Deserialize;
 use serde::Serialize;
 use std::num::NonZeroU32;
 
-/// Counted selection group owned by an Extrude parameter scope.
+/// Counted selection group owned by an Extrude or Emboss parameter scope.
 #[derive(Debug, PartialEq, Deserialize)]
 #[serde(try_from = "DesignExtrudeSelectionGroupWire")]
 pub(crate) struct DesignExtrudeSelectionGroup {
     /// Globally unique deterministic identifier for this native group.
     pub(crate) id: String,
-    /// Owning Extrude parameter-scope record.
+    /// Owning feature parameter-scope record.
     pub(crate) scope_record_index: u32,
     /// Zero-based position in the scope's ordered reference table.
     pub(crate) scope_reference_ordinal: u32,
@@ -121,12 +121,12 @@ impl Serialize for DesignExtrudeSelectionGroup {
     }
 }
 
-/// Counted selection group owned by an Extrude parameter scope.
+/// Counted selection group owned by an Extrude or Emboss parameter scope.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub(crate) struct DesignExtrudeSelectionGroupWire {
     /// Globally unique deterministic identifier for this native group.
     pub(crate) id: String,
-    /// Owning Extrude parameter-scope record.
+    /// Owning feature parameter-scope record.
     pub(crate) scope_record_index: u32,
     /// Zero-based position in the scope's ordered reference table.
     pub(crate) scope_reference_ordinal: u32,

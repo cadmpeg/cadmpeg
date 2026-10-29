@@ -711,7 +711,7 @@ struct HeaderAdmission {
 /// A present malformed name keeps its slot; only a shorter mapping can omit it.
 fn named_carrier_arities(name: &str) -> &'static [usize] {
     match name {
-        "CARTESIAN_TRANSFORMATION_OPERATOR_2D" => &[5, 7],
+        "CARTESIAN_TRANSFORMATION_OPERATOR" | "CARTESIAN_TRANSFORMATION_OPERATOR_2D" => &[5, 7],
         "CARTESIAN_TRANSFORMATION_OPERATOR_3D" => &[6, 8],
         "LOOP" | "REPRESENTATION_ITEM" | "VERTEX" => &[1],
         "SHELL"

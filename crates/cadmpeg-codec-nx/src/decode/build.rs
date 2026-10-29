@@ -135,9 +135,7 @@ pub(super) fn try_decode_geometry(
         .unwrap_or_default();
     for (si, stream) in scan.streams.iter().enumerate() {
         if stream.kind().is_parasolid() {
-            for (body, nodes) in
-                topology_body_node_ids(si, &parsed.stream(si).view_for_geometry().graph)?
-            {
+            for (body, nodes) in topology_body_node_ids(si, &parsed.stream(si).graph)? {
                 body_node_ids.insert(body, nodes);
             }
         }
@@ -197,7 +195,7 @@ pub(super) fn try_decode_geometry(
                     .is_none_or(|(_, selected, _)| selected.contains(si))
         })
         .map(|(si, _)| {
-            let view = parsed.stream(si).view_for_geometry();
+            let view = parsed.stream(si);
             (view.intersections.curves.len(), view.graph.node_count())
         })
         .fold(
@@ -289,7 +287,7 @@ pub(super) fn try_decode_geometry(
                 )
             }));
         }
-        let view = parsed.stream(si).view_for_geometry();
+        let view = parsed.stream(si);
         let stream_name = format!("nx:parasolid#{si}:{}", stream.kind().label());
         let source_stream = StreamHandle::new(
             cadmpeg_ir::StreamName::try_from(stream_name).map_err(CodecError::malformed)?,
@@ -1231,7 +1229,7 @@ pub(super) fn try_decode_geometry(
     for (si, source_stream) in &completion_streams {
         completion_sources.push(IntersectionCompletionSource {
             scope: IdScope::stream_from_index(*si)?,
-            graph: parsed.stream(*si).view_for_geometry().graph.as_ref(),
+            graph: parsed.stream(*si).graph.as_ref(),
             source_stream: source_stream.clone(),
             coedge_start: 0,
             procedural_start: 0,
@@ -1333,7 +1331,6 @@ pub(super) fn try_decode_geometry(
     let mut report = build_geometry_report(
         scan,
         &crate::decode::report::GeometryReportFacts {
-            unmatched_delta_tombstone_counts: parsed.unmatched_tombstone_counts(),
             counts: &counts,
             has_topology: !ir.model.faces.is_empty(),
             has_unresolved_sub_bodies: ir.model.bodies.len() > 1 && !active_body_selection,

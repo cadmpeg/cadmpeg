@@ -475,6 +475,98 @@ impl TryFrom<AssemblyPlacementRecordWire> for AssemblyPlacementRecord {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub(crate) struct DesignViewRepresentationRecord {
+    pub(crate) id: String,
+    pub(crate) segment_token: String,
+    pub(crate) record_ordinal: u32,
+    pub(crate) name: String,
+    pub(crate) member_references: Vec<u32>,
+    pub(crate) suffix_len: u64,
+    pub(crate) suffix_sha256: cadmpeg_ir::hash::digest::Sha256Digest,
+}
+
+impl DesignViewRepresentationRecord {
+    pub(crate) fn from_representation(
+        representation: &crate::assembly::DesignViewRepresentation<'_>,
+    ) -> Self {
+        Self {
+            id: format!(
+                "inventor:design-view:representation#{}-{}",
+                representation.segment_token, representation.record_ordinal
+            ),
+            segment_token: representation.segment_token.clone(),
+            record_ordinal: representation.record_ordinal,
+            name: representation.name.clone(),
+            member_references: representation.member_references.clone(),
+            suffix_len: cadmpeg_core::decode::u64_from_index(representation.suffix.window().len()),
+            suffix_sha256: cadmpeg_ir::hash::digest::Sha256Digest::digest(
+                representation.suffix.window(),
+            ),
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub(crate) struct DesignViewVisibilityOffRecord {
+    pub(crate) id: String,
+    pub(crate) segment_token: String,
+    pub(crate) record_ordinal: u32,
+    pub(crate) occurrence_path: Vec<u32>,
+    pub(crate) suffix_len: u64,
+    pub(crate) suffix_sha256: cadmpeg_ir::hash::digest::Sha256Digest,
+}
+
+impl DesignViewVisibilityOffRecord {
+    pub(crate) fn from_state(state: &crate::assembly::DesignViewVisibilityOff<'_>) -> Self {
+        Self {
+            id: format!(
+                "inventor:design-view:visibility#{}-{}",
+                state.segment_token, state.record_ordinal
+            ),
+            segment_token: state.segment_token.clone(),
+            record_ordinal: state.record_ordinal,
+            occurrence_path: state.occurrence_path.clone(),
+            suffix_len: cadmpeg_core::decode::u64_from_index(state.suffix.window().len()),
+            suffix_sha256: cadmpeg_ir::hash::digest::Sha256Digest::digest(state.suffix.window()),
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub(crate) struct AssemblyGroundingRecord {
+    pub(crate) id: String,
+    pub(crate) segment_token: String,
+    pub(crate) record_ordinal: u32,
+    pub(crate) header_value: u32,
+    pub(crate) header_id: u16,
+    pub(crate) next_reference: u32,
+    pub(crate) flags: u32,
+    pub(crate) suffix_len: u64,
+    pub(crate) suffix_sha256: cadmpeg_ir::hash::digest::Sha256Digest,
+}
+
+impl AssemblyGroundingRecord {
+    pub(crate) fn from_grounding(grounding: &crate::assembly::OccurrenceGrounding<'_>) -> Self {
+        Self {
+            id: format!(
+                "inventor:assembly:grounding#{}-{}",
+                grounding.segment_token, grounding.record_ordinal
+            ),
+            segment_token: grounding.segment_token.clone(),
+            record_ordinal: grounding.record_ordinal,
+            header_value: grounding.header_value,
+            header_id: grounding.header_id,
+            next_reference: grounding.next_reference,
+            flags: grounding.flags,
+            suffix_len: cadmpeg_core::decode::u64_from_index(grounding.suffix.window().len()),
+            suffix_sha256: cadmpeg_ir::hash::digest::Sha256Digest::digest(
+                grounding.suffix.window(),
+            ),
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub(crate) struct PmAppDefaultStyleRecord {
     pub(crate) id: String,
     pub(crate) segment_token: String,
@@ -1189,6 +1281,13 @@ impl RseRecordRecord {
     }
     pub(crate) fn type_index(&self) -> u8 {
         self.type_index
+    }
+    pub(crate) fn payload_len(&self) -> u64 {
+        self.payload_len
+    }
+    pub(crate) fn matches_payload(&self, bytes: &[u8]) -> bool {
+        self.payload_len == cadmpeg_core::decode::u64_from_index(bytes.len())
+            && self.payload_sha256 == cadmpeg_ir::hash::sha256_hex(bytes)
     }
 }
 

@@ -163,6 +163,7 @@ impl CodecBackend for F3dCodec {
     fn validate_native(
         ctx: &DecodeContext<'_>,
         ir: &CadIr,
+        _source: Option<&cadmpeg_ir::SourceFidelity>,
     ) -> Result<Vec<cadmpeg_ir::report::check::Finding>, CodecError> {
         validate::validate_native(ctx, ir)
     }

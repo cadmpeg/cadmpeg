@@ -20,8 +20,8 @@ pub(super) fn reconcile(
         .map(|body| &body.id)
         .collect::<BTreeSet<_>>();
     let mut roots = Vec::new();
-    for mut root in std::mem::take(&mut native.act_root_components) {
-        if ir.scope.model {
+    for mut root in std::mem::take(&mut native.act_component_links) {
+        if ir.scope.model && root.tracks_document_root() {
             let Some(product) = ir
                 .model
                 .product_definitions
@@ -53,7 +53,7 @@ pub(super) fn reconcile(
         }
         roots.push(root);
     }
-    native.act_root_components = roots;
+    native.act_component_links = roots;
     let mut tables = Vec::new();
     for table in std::mem::take(&mut native.act_tables) {
         let Some(scope) = crate::ids::native_stream(&table.id) else {
@@ -91,7 +91,7 @@ pub(super) fn reconcile(
             .act_entities
             .retain(|record| record.stream() != scope || registered(record.record_index()));
         native
-            .act_root_components
+            .act_component_links
             .retain(|record| record.stream() != scope || registered(record.record_index));
         let known = native
             .act_entities
@@ -100,7 +100,7 @@ pub(super) fn reconcile(
             .map(|record| record.record_index())
             .chain(
                 native
-                    .act_root_components
+                    .act_component_links
                     .iter()
                     .filter(|record| record.stream() == scope)
                     .map(|record| record.record_index),
@@ -152,7 +152,7 @@ pub(super) fn reconcile(
         .act_registry_channels
         .retain(|record| scopes.contains(record.stream()));
     native
-        .act_root_components
+        .act_component_links
         .retain(|record| scopes.contains(record.stream()));
     native
         .act_table_references

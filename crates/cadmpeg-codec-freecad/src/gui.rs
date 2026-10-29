@@ -371,19 +371,26 @@ fn transfer_schema_one(
         ));
     }
 
-    let mut payloads_by_owner = Vec::new();
+    let mut properties_by_id = HashMap::new();
+    for property in properties {
+        properties_by_id
+            .entry(property.id.as_str())
+            .or_insert(property);
+    }
+    let mut payloads_by_owner = HashMap::<&str, Vec<(&str, &str)>>::new();
     for payload in payloads {
-        if let Some(property) = properties
-            .iter()
-            .find(|property| property.id == payload.property)
-        {
-            payloads_by_owner.push((
-                property.owner.as_str(),
-                property.name.as_str(),
-                payload.id.as_str(),
-            ));
+        if let Some(property) = properties_by_id.get(payload.property.as_str()) {
+            payloads_by_owner
+                .entry(property.owner.as_str())
+                .or_default()
+                .push((property.name.as_str(), payload.id.as_str()));
         }
     }
+    let lookups = GuiLookups {
+        shapes: ShapeIndex::new(properties, payloads, sources.topology_occurrences),
+        topology: TopologyIndex::new(ir),
+    };
+    let mut provider_names = HashSet::new();
     let mut view_provider_data = xml
         .descendants()
         .filter(|node| node.has_tag_name("ViewProviderData"));
@@ -414,10 +421,7 @@ fn transfer_schema_one(
         let Some(name) = provider.attribute("name") else {
             return Err(CodecError::Malformed("ViewProvider has no name".into()));
         };
-        if native_providers
-            .iter()
-            .any(|record: &GuiViewProviderRecord| record.name == name)
-        {
+        if !provider_names.insert(name) {
             return Err(CodecError::Malformed(
                 "GuiDocument.xml has duplicate ViewProvider names".into(),
             ));
@@ -508,15 +512,16 @@ fn transfer_schema_one(
             .and_then(|value| value.parse::<u32>().ok())
             .map(|value| convert_packed_alpha(value, requires_alpha_conversion));
         let material = values.get("ShapeMaterial");
-        let body_ids = {
-            select_shape_bodies(
-                ir,
-                payloads_by_owner
-                    .iter()
-                    .filter(|(owner, property, _)| *owner == object_id && *property == "Shape")
-                    .map(|(_, _, payload)| *payload),
-            )
-        };
+        let shape_payloads = payloads_by_owner
+            .get(object_id)
+            .into_iter()
+            .flatten()
+            .filter(|(property, _)| *property == "Shape")
+            .map(|(_, payload)| *payload)
+            .collect::<Vec<_>>();
+        let body_ids = lookups
+            .topology
+            .bodies_under(ir, shape_payloads.iter().copied());
         if !body_ids.is_empty() {
             plan.body_visibility_owners.insert(object_id.to_owned());
         }
@@ -556,10 +561,10 @@ fn transfer_schema_one(
                     provenance: property_provenance("DiffuseColor", "App::PropertyColorList"),
                 },
                 sources,
+                &lookups,
                 &mut losses,
             )?;
         }
-        let payload_prefixes = shape_payload_prefixes(&payloads_by_owner, object_id);
         if let Some(color) = values
             .get("LineColor")
             .and_then(|value| value.attribute("value"))
@@ -572,6 +577,7 @@ fn transfer_schema_one(
             transfer_primitive_appearance(
                 ctx,
                 ir,
+                &lookups.topology,
                 &mut plan,
                 &mut losses,
                 PrimitiveAppearanceSource {
@@ -587,7 +593,7 @@ fn transfer_schema_one(
                         )?,
                         native_provider.order,
                     )?),
-                    payload_prefixes: &payload_prefixes,
+                    payload_ids: &shape_payloads,
                     provenance: property_provenance("LineWidth", "App::PropertyFloatConstraint"),
                 },
             )?;
@@ -617,6 +623,7 @@ fn transfer_schema_one(
                     provenance: property_provenance("LineColorArray", "App::PropertyColorList"),
                 },
                 sources,
+                &lookups,
                 &mut losses,
             )?;
         }
@@ -632,6 +639,7 @@ fn transfer_schema_one(
             transfer_primitive_appearance(
                 ctx,
                 ir,
+                &lookups.topology,
                 &mut plan,
                 &mut losses,
                 PrimitiveAppearanceSource {
@@ -647,7 +655,7 @@ fn transfer_schema_one(
                         )?,
                         native_provider.order,
                     )?),
-                    payload_prefixes: &payload_prefixes,
+                    payload_ids: &shape_payloads,
                     provenance: property_provenance("PointSize", "App::PropertyFloatConstraint"),
                 },
             )?;
@@ -677,6 +685,7 @@ fn transfer_schema_one(
                     provenance: property_provenance("PointColorArray", "App::PropertyColorList"),
                 },
                 sources,
+                &lookups,
                 &mut losses,
             )?;
         }
@@ -765,7 +774,7 @@ fn transfer_schema_one(
         &mut plan,
         &graph,
         &material_lists,
-        sources,
+        &lookups,
         &mut material_losses,
     )?;
     append_graph_losses(&mut graph, material_losses);
@@ -1336,27 +1345,14 @@ struct PrimitiveAppearanceSource<'a> {
     object_id: &'a str,
     packed_color: u32,
     style: PrimitiveStyle,
-    payload_prefixes: &'a [String],
+    payload_ids: &'a [&'a str],
     provenance: SourceProvenance,
-}
-
-fn shape_payload_prefixes(
-    payloads_by_owner: &[(&str, &str, &str)],
-    object_id: &str,
-) -> Vec<String> {
-    let mut prefixes = Vec::new();
-    for (_, _, payload) in payloads_by_owner
-        .iter()
-        .filter(|(owner, property, _)| *owner == object_id && *property == "Shape")
-    {
-        prefixes.push(format!("{}:", crate::native::id_key(payload)));
-    }
-    prefixes
 }
 
 fn transfer_primitive_appearance(
     ctx: &DecodeContext<'_>,
     ir: &CadIr,
+    topology: &TopologyIndex<'_>,
     plan: &mut AppearancePlan,
     losses: &mut Vec<LossNote>,
     source: PrimitiveAppearanceSource<'_>,
@@ -1367,27 +1363,21 @@ fn transfer_primitive_appearance(
         object_id,
         packed_color,
         style,
-        payload_prefixes,
+        payload_ids,
         provenance,
     } = source;
     let mut targets = Vec::new();
     match style {
         PrimitiveStyle::Line(_) => {
-            for edge in ir.model.edges.iter().filter(|edge| {
-                payload_prefixes
-                    .iter()
-                    .any(|prefix| crate::native::id_key(edge.id.as_str()).starts_with(prefix))
-            }) {
-                targets.push(AppearanceTarget::Edge(edge.id.clone()));
+            for index in topology.edges.under(payload_ids) {
+                targets.push(AppearanceTarget::Edge(ir.model.edges[index].id.clone()));
             }
         }
         PrimitiveStyle::Point(_) => {
-            for vertex in ir.model.vertices.iter().filter(|vertex| {
-                payload_prefixes
-                    .iter()
-                    .any(|prefix| crate::native::id_key(vertex.id.as_str()).starts_with(prefix))
-            }) {
-                targets.push(AppearanceTarget::Vertex(vertex.id.clone()));
+            for index in topology.vertices.under(payload_ids) {
+                targets.push(AppearanceTarget::Vertex(
+                    ir.model.vertices[index].id.clone(),
+                ));
             }
         }
     }
@@ -4081,12 +4071,17 @@ fn transfer_shape_appearances(
     plan: &mut AppearancePlan,
     graph: &Graph,
     material_lists: &HashMap<String, Vec<GuiMaterial>>,
-    sources: &GuiSources<'_, '_>,
+    lookups: &GuiLookups<'_, '_>,
     losses: &mut Vec<LossNote>,
 ) -> Result<(), CodecError> {
-    let properties = sources.properties;
-    let payloads = sources.payloads;
-    let topology_occurrences = sources.topology_occurrences;
+    let mut shape_appearances = HashMap::new();
+    for property in &graph.properties {
+        if property.name == "ShapeAppearance" && property.type_name == "App::PropertyMaterialList" {
+            shape_appearances
+                .entry(property.owner.as_str())
+                .or_insert(property);
+        }
+    }
     for provider in &graph.providers {
         let provider_key = provider_identity_key(&provider.name);
         let Some(object_id) = provider
@@ -4096,25 +4091,20 @@ fn transfer_shape_appearances(
         else {
             continue;
         };
-        let Some(property) = graph.properties.iter().find(|property| {
-            property.owner == provider.id
-                && property.name == "ShapeAppearance"
-                && property.type_name == "App::PropertyMaterialList"
-        }) else {
+        let Some(property) = shape_appearances.get(provider.id.as_str()).copied() else {
             continue;
         };
         let Some(materials) = material_lists.get(&property.id) else {
             continue;
         };
         let native_origin = origins.property(property, provider.order)?;
-        let body_ids = displayed_shape_bodies(ir, object_id, properties, payloads)?;
-        let group = displayed_shape_topology(
-            object_id,
-            properties,
-            payloads,
-            topology_occurrences,
-            "Face",
-        )?;
+        let body_ids = match displayed_shape_payload(object_id, &lookups.shapes)? {
+            Some(payload) => lookups
+                .topology
+                .bodies_under(ir, std::iter::once(payload.id.as_str())),
+            None => Vec::new(),
+        };
+        let group = displayed_shape_topology(object_id, &lookups.shapes, "Face")?;
         let mapped_count = group.len();
         if materials.len() == 1 {
             let legacy_id = object_appearance_id(&provider_key)?;
@@ -4180,6 +4170,7 @@ fn transfer_shape_appearances(
                     ctx,
                     native_origin,
                     ir,
+                    &lookups.topology,
                     plan,
                     &group[index],
                     &appearance_id,
@@ -4191,19 +4182,128 @@ fn transfer_shape_appearances(
     Ok(())
 }
 
-fn displayed_shape_bodies(
-    ir: &CadIr,
-    object_id: &str,
-    properties: &[PropertyRecord],
-    payloads: &[ShapePayloadRecord],
-) -> Result<Vec<cadmpeg_ir::ids::BodyId>, CodecError> {
-    let Some(payload) = displayed_shape_payload(object_id, properties, payloads)? else {
-        return Ok(Vec::new());
-    };
-    Ok(select_shape_bodies(
-        ir,
-        std::iter::once(payload.id.as_str()),
-    ))
+struct GuiLookups<'s, 'i> {
+    shapes: ShapeIndex<'s>,
+    topology: TopologyIndex<'i>,
+}
+
+struct ShapeIndex<'s> {
+    shape_properties: HashMap<&'s str, Vec<&'s PropertyRecord>>,
+    payloads: HashMap<&'s str, Vec<&'s ShapePayloadRecord>>,
+    occurrences: HashMap<(&'s str, &'s str), Vec<&'s TopologyOccurrence>>,
+}
+
+impl<'s> ShapeIndex<'s> {
+    fn new(
+        properties: &'s [PropertyRecord],
+        payloads: &'s [ShapePayloadRecord],
+        occurrences: &'s [TopologyOccurrence],
+    ) -> Self {
+        let mut index = Self {
+            shape_properties: HashMap::new(),
+            payloads: HashMap::new(),
+            occurrences: HashMap::new(),
+        };
+        for property in properties
+            .iter()
+            .filter(|property| property.name == "Shape")
+        {
+            index
+                .shape_properties
+                .entry(property.owner.as_str())
+                .or_default()
+                .push(property);
+        }
+        for payload in payloads {
+            index
+                .payloads
+                .entry(payload.property.as_str())
+                .or_default()
+                .push(payload);
+        }
+        for occurrence in occurrences {
+            index
+                .occurrences
+                .entry((occurrence.property.as_str(), occurrence.indexed_name))
+                .or_default()
+                .push(occurrence);
+        }
+        index
+    }
+}
+
+struct TopologyIndex<'i> {
+    bodies: IdIndex<'i>,
+    faces: IdIndex<'i>,
+    edges: IdIndex<'i>,
+    vertices: IdIndex<'i>,
+}
+
+impl<'i> TopologyIndex<'i> {
+    fn new(ir: &'i CadIr) -> Self {
+        Self {
+            bodies: IdIndex::new(ir.model.bodies.iter().map(|body| body.id.as_str())),
+            faces: IdIndex::new(ir.model.faces.iter().map(|face| face.id.as_str())),
+            edges: IdIndex::new(ir.model.edges.iter().map(|edge| edge.id.as_str())),
+            vertices: IdIndex::new(ir.model.vertices.iter().map(|vertex| vertex.id.as_str())),
+        }
+    }
+
+    fn bodies_under<'p>(
+        &self,
+        ir: &CadIr,
+        payload_ids: impl IntoIterator<Item = &'p str>,
+    ) -> Vec<cadmpeg_ir::ids::BodyId> {
+        let mut body_ids = Vec::new();
+        for payload_id in payload_ids {
+            for index in self.bodies.under(&[payload_id]) {
+                body_ids.push(ir.model.bodies[index].id.clone());
+            }
+        }
+        body_ids
+    }
+}
+
+/// Arena positions by id, and by native id key for payload-prefix queries.
+struct IdIndex<'i> {
+    first: HashMap<&'i str, usize>,
+    keys: Vec<(&'i str, usize)>,
+}
+
+impl<'i> IdIndex<'i> {
+    fn new(ids: impl Iterator<Item = &'i str>) -> Self {
+        let mut first = HashMap::new();
+        let mut keys = Vec::new();
+        for (index, id) in ids.enumerate() {
+            first.entry(id).or_insert(index);
+            keys.push((crate::native::id_key(id), index));
+        }
+        keys.sort_unstable();
+        Self { first, keys }
+    }
+
+    fn position(&self, id: &str) -> Option<usize> {
+        self.first.get(id).copied()
+    }
+
+    /// Positions, in arena order, of the entities whose key extends a payload key with `:`.
+    fn under(&self, payload_ids: &[&str]) -> Vec<usize> {
+        let mut positions = Vec::new();
+        for payload_id in payload_ids {
+            let payload_key = crate::native::id_key(payload_id);
+            let start = self.keys.partition_point(|(key, _)| *key < payload_key);
+            positions.extend(
+                self.keys[start..]
+                    .iter()
+                    .take_while(|(key, _)| key.starts_with(payload_key))
+                    .filter(|(key, _)| key[payload_key.len()..].starts_with(':'))
+                    .map(|(_, index)| *index),
+            );
+        }
+        positions.sort_unstable();
+        positions.dedup();
+        positions
+    }
 }
 
 pub(crate) fn select_shape_bodies<'a>(
@@ -4226,51 +4326,47 @@ pub(crate) fn select_shape_bodies<'a>(
     body_ids
 }
 
-fn displayed_shape_payload<'a>(
+fn displayed_shape_payload<'s>(
     object_id: &str,
-    properties: &[PropertyRecord],
-    payloads: &'a [ShapePayloadRecord],
-) -> Result<Option<&'a ShapePayloadRecord>, CodecError> {
-    let mut shape_properties = properties
-        .iter()
-        .filter(|property| property.owner == object_id && property.name == "Shape");
-    let Some(property) = shape_properties.next() else {
+    shapes: &ShapeIndex<'s>,
+) -> Result<Option<&'s ShapePayloadRecord>, CodecError> {
+    let Some(shape_properties) = shapes.shape_properties.get(object_id) else {
         return Ok(None);
     };
-    if shape_properties.next().is_some() {
+    let [property] = shape_properties.as_slice() else {
         return Err(CodecError::malformed(format_args!(
             "object {object_id} has multiple Shape properties"
         )));
-    }
-    let mut shape_payloads = payloads
-        .iter()
-        .filter(|payload| payload.property == property.id);
-    let Some(payload) = shape_payloads.next() else {
-        return Ok(None);
     };
-    if shape_payloads.next().is_some() {
-        return Err(CodecError::malformed(format_args!(
+    match shapes
+        .payloads
+        .get(property.id.as_str())
+        .map_or(&[][..], Vec::as_slice)
+    {
+        [] => Ok(None),
+        [payload] => Ok(Some(payload)),
+        _ => Err(CodecError::malformed(format_args!(
             "Shape property {} has multiple payloads",
             property.id
-        )));
+        ))),
     }
-    Ok(Some(payload))
 }
 
-fn displayed_shape_topology<'a>(
+fn displayed_shape_topology<'s>(
     object_id: &str,
-    properties: &[PropertyRecord],
-    payloads: &[ShapePayloadRecord],
-    occurrences: &'a [TopologyOccurrence],
+    shapes: &ShapeIndex<'s>,
     indexed_name: &str,
-) -> Result<Vec<Vec<&'a str>>, CodecError> {
-    let Some(payload) = displayed_shape_payload(object_id, properties, payloads)? else {
+) -> Result<Vec<Vec<&'s str>>, CodecError> {
+    let Some(payload) = displayed_shape_payload(object_id, shapes)? else {
         return Ok(Vec::new());
     };
     let mut indexed = BTreeMap::<usize, Vec<&str>>::new();
-    for occurrence in occurrences.iter().filter(|occurrence| {
-        occurrence.property == payload.property && occurrence.indexed_name == indexed_name
-    }) {
+    for occurrence in shapes
+        .occurrences
+        .get(&(payload.property.as_str(), indexed_name))
+        .into_iter()
+        .flatten()
+    {
         indexed
             .entry(occurrence.source_index)
             .or_default()
@@ -4339,6 +4435,7 @@ fn bind_material_faces(
     ctx: &DecodeContext<'_>,
     origin: GuiPropertyOrigin<'_>,
     ir: &CadIr,
+    topology: &TopologyIndex<'_>,
     plan: &mut AppearancePlan,
     topology_ids: &[&str],
     appearance_id: &AppearanceId,
@@ -4350,15 +4447,10 @@ fn bind_material_faces(
         if !bound.insert(topology_id) {
             continue;
         }
-        let Some(face) = ir
-            .model
-            .faces
-            .iter()
-            .find(|face| face.id.as_str() == topology_id)
-        else {
+        let Some(index) = topology.faces.position(topology_id) else {
             continue;
         };
-        let face = face.id.clone();
+        let face = ir.model.faces[index].id.clone();
         let binding_index = ir.model.appearance_bindings.len() + plan.bindings.len();
         plan.bindings.push(AppearanceBinding {
             native_ref: projection_native_ref(ctx, Some(origin))?,
@@ -4429,6 +4521,7 @@ fn transfer_topology_colors(
     plan: &mut AppearancePlan,
     request: TopologyColorRequest<'_>,
     sources: &GuiSources<'_, '_>,
+    lookups: &GuiLookups<'_, '_>,
     losses: &mut Vec<LossNote>,
 ) -> Result<(), CodecError> {
     let TopologyColorRequest {
@@ -4441,9 +4534,6 @@ fn transfer_topology_colors(
         provenance,
     } = request;
     let entries = sources.entries;
-    let properties = sources.properties;
-    let payloads = sources.payloads;
-    let topology_occurrences = sources.topology_occurrences;
     let requires_alpha_conversion = sources.requires_alpha_conversion;
     let view = *entries.get(entry_name).ok_or_else(|| {
         CodecError::malformed(format_args!(
@@ -4455,13 +4545,7 @@ fn transfer_topology_colors(
     if count == 0 {
         return Ok(());
     }
-    let group = displayed_shape_topology(
-        object_id,
-        properties,
-        payloads,
-        topology_occurrences,
-        kind.name(),
-    )?;
+    let group = displayed_shape_topology(object_id, &lookups.shapes, kind.name())?;
     let mapped_count = group.len();
     if mapped_count == 0 {
         return Ok(());
@@ -4517,25 +4601,26 @@ fn transfer_topology_colors(
             if !bound_topology.insert(topology_id) {
                 continue;
             }
-            if !match kind {
-                TopologyColorKind::Face => ir
-                    .model
+            let target = match kind {
+                TopologyColorKind::Face => lookups
+                    .topology
                     .faces
-                    .iter()
-                    .any(|face| face.id.as_str() == topology_id),
-                TopologyColorKind::Edge => ir
-                    .model
+                    .position(topology_id)
+                    .map(|index| AppearanceTarget::Face(ir.model.faces[index].id.clone())),
+                TopologyColorKind::Edge => lookups
+                    .topology
                     .edges
-                    .iter()
-                    .any(|edge| edge.id.as_str() == topology_id),
-                TopologyColorKind::Vertex => ir
-                    .model
+                    .position(topology_id)
+                    .map(|index| AppearanceTarget::Edge(ir.model.edges[index].id.clone())),
+                TopologyColorKind::Vertex => lookups
+                    .topology
                     .vertices
-                    .iter()
-                    .any(|vertex| vertex.id.as_str() == topology_id),
-            } {
+                    .position(topology_id)
+                    .map(|index| AppearanceTarget::Vertex(ir.model.vertices[index].id.clone())),
+            };
+            let Some(target) = target else {
                 continue;
-            }
+            };
             if !emitted_appearance {
                 plan.appearances.push(Appearance {
                     native_ref: projection_native_ref(ctx, Some(native_origin))?,
@@ -4570,29 +4655,6 @@ fn transfer_topology_colors(
                 });
                 emitted_appearance = true;
             }
-            let target = match kind {
-                TopologyColorKind::Face => ir
-                    .model
-                    .faces
-                    .iter()
-                    .find(|face| face.id.as_str() == topology_id)
-                    .map(|face| AppearanceTarget::Face(face.id.clone())),
-                TopologyColorKind::Edge => ir
-                    .model
-                    .edges
-                    .iter()
-                    .find(|edge| edge.id.as_str() == topology_id)
-                    .map(|edge| AppearanceTarget::Edge(edge.id.clone())),
-                TopologyColorKind::Vertex => ir
-                    .model
-                    .vertices
-                    .iter()
-                    .find(|vertex| vertex.id.as_str() == topology_id)
-                    .map(|vertex| AppearanceTarget::Vertex(vertex.id.clone())),
-            };
-            let Some(target) = target else {
-                continue;
-            };
             let topology_key = crate::native::id_key(topology_id);
             let kind_key = topology_binding_kind(kind);
             plan.bindings.push(AppearanceBinding {
@@ -4730,7 +4792,7 @@ mod color_tests {
 
 #[cfg(test)]
 mod shape_association_tests {
-    use super::{displayed_shape_topology, select_shape_bodies};
+    use super::{displayed_shape_topology, select_shape_bodies, IdIndex, ShapeIndex};
     use crate::brep::{ShapePayload, ShapePayloadRecord};
     use crate::native::{PropertyFamily, PropertyRecord};
 
@@ -4777,6 +4839,25 @@ mod shape_association_tests {
     }
 
     #[test]
+    fn id_index_selects_entities_under_a_payload_key_in_arena_order() {
+        let index = IdIndex::new(
+            [
+                "x#a:0", "x#ab:0", "x#a", "x#a:1", "x#b:0", "x#a:0", "a:2", "x#a#b:0",
+            ]
+            .into_iter(),
+        );
+        assert_eq!(index.position("x#a:0"), Some(0));
+        assert_eq!(index.position("x#c:0"), None);
+        assert_eq!(index.under(&["a"]), [0, 3, 5, 6]);
+        assert_eq!(index.under(&["p#a"]), [0, 3, 5, 6]);
+        assert_eq!(index.under(&["a", "a"]), [0, 3, 5, 6]);
+        assert_eq!(index.under(&["b", "a"]), [0, 3, 4, 5, 6]);
+        assert_eq!(index.under(&["p#a#b"]), [7]);
+        assert_eq!(index.under(&["c"]), Vec::<usize>::new());
+        assert_eq!(index.under(&[]), Vec::<usize>::new());
+    }
+
+    #[test]
     fn repeated_payload_body_selection_keeps_both_occurrences() {
         let ir = shape_ir();
         let body_ids = select_shape_bodies(&ir, ["payload", "payload"]);
@@ -4804,9 +4885,11 @@ mod shape_association_tests {
         assert_eq!(
             displayed_shape_topology(
                 "object",
-                std::slice::from_ref(&property),
-                std::slice::from_ref(&payload),
-                &occurrences,
+                &ShapeIndex::new(
+                    std::slice::from_ref(&property),
+                    std::slice::from_ref(&payload),
+                    &occurrences
+                ),
                 "Face"
             )
             .unwrap(),
@@ -4817,9 +4900,7 @@ mod shape_association_tests {
         );
         assert!(displayed_shape_topology(
             "object",
-            &[property],
-            &[payload],
-            &occurrences[..1],
+            &ShapeIndex::new(&[property], &[payload], &occurrences[..1]),
             "Face"
         )
         .unwrap()
@@ -4835,9 +4916,11 @@ mod shape_association_tests {
         assert!(matches!(
             displayed_shape_topology(
                 "object",
-                &[property.clone(), duplicate_property],
-                std::slice::from_ref(&payload),
-                &[],
+                &ShapeIndex::new(
+                    &[property.clone(), duplicate_property],
+                    std::slice::from_ref(&payload),
+                    &[]
+                ),
                 "Face"
             ),
             Err(cadmpeg_core::CodecError::Malformed(_))
@@ -4850,9 +4933,11 @@ mod shape_association_tests {
         assert!(matches!(
             displayed_shape_topology(
                 "object",
-                std::slice::from_ref(&property),
-                &[payload.clone(), duplicate_payload],
-                &[],
+                &ShapeIndex::new(
+                    std::slice::from_ref(&property),
+                    &[payload.clone(), duplicate_payload],
+                    &[]
+                ),
                 "Face"
             ),
             Err(cadmpeg_core::CodecError::Malformed(_))

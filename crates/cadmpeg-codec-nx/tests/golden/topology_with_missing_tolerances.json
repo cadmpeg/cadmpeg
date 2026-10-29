@@ -1,7 +1,8 @@
 {
   "decode": {
     "ir": {
-      "ir_version": "8",
+      "decode_depth": "full",
+      "ir_version": "9",
       "model": {
         "appearance_bindings": [],
         "appearances": [],
@@ -175,10 +176,6 @@
           ]
         }
       },
-      "scope": {
-        "design": true,
-        "model": true
-      },
       "source": {
         "attributes": {
           "deltas_streams": "0",
@@ -186,6 +183,7 @@
           "file_size": "350",
           "footer_entry_count": "0",
           "footer_fingerprint": "00000000",
+          "footer_offset": "336",
           "header_entry_count": "1",
           "jpeg_preview_count": "0",
           "partition_streams": "1",
@@ -274,10 +272,7 @@
       ],
       "transfer": {
         "geometry_transferred": true,
-        "scope": {
-          "design": true,
-          "model": true
-        }
+        "transfer": "full"
       }
     },
     "source_fidelity": {
@@ -378,9 +373,6 @@
           }
         }
       },
-      "metadata": {
-        "source.footer_offset": "336"
-      },
       "retained_records": {
         "nx:container:parasolid#0": {
           "bytes": {
@@ -388,20 +380,9 @@
             "retention": "inline"
           },
           "offset": 76,
-          "stream": "nx:container",
-          "untyped": []
-        },
-        "nx:source:image#whole": {
-          "bytes": {
-            "data": "U1BMTVNTVFIGAAAAAAAAAABQAQAAAAAAAEhFQURFUgEAAAAVAAAAL1Jvb3QvVUdfUEFSVC9VR19QQVJUTAAAAAAAAAAEAQAAAAAAAHgBdVC7bgIxEBwnOS4JJOTVBrlMRBElXdKcoogAEiDgrj/xuAKJl07XAC3USIiGhk+gpqDiT6hp+ATWxlhIwNremZ31rrXO2wA+frhT/M3Z2bTD/9OZBH9rl/ygFtRazXde8b1S4FV5ucMbrapXr3s+lUTtv5TrJGzH/XS/yYAILkg/3ne4lCKjPMMVGK0InXviELZcjIaTJjGRMeh2KE7BfkdhKGpSAcMjTIoN8iZuwXCNGyCOByIQpruJaxBJoeILIYnaHb6hxVPE2uzUPe6iAx/TjyjxbOuzLZ5oFFUsIaynAJ7pZ6Wo3CvCikmw+t1VcvbSs8YKp/PCehCbbwH/0TFORk9PVEVSAAAAAAAAAAA=",
-            "retention": "inline"
-          },
-          "offset": 0,
-          "stream": "nx:source",
-          "untyped": []
+          "stream": "nx:container"
         }
-      },
-      "unrepresented": []
+      }
     }
   },
   "inspect": {

@@ -1,10 +1,11 @@
 // SPDX-License-Identifier: Apache-2.0
 //! IR → STEP Part 21 builder.
 
-use std::collections::{BTreeMap, BTreeSet, HashMap};
+use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 use std::io::Write;
 
-use cadmpeg_ir::appearance::{Appearance, AppearanceTarget};
+use cadmpeg_ir::appearance::{Appearance, AppearanceBinding, AppearanceTarget};
+use cadmpeg_ir::codec::write::approximation;
 #[cfg(test)]
 use cadmpeg_ir::codec::write::{target::TargetRequest, EncodeInput, Encoder};
 use cadmpeg_ir::eval::helix_nurbs::{helix_nurbs, helix_surface_nurbs};
@@ -13,7 +14,10 @@ use cadmpeg_ir::geometry::{
     HelixSurfaceConstruction, ProceduralCurve, ProceduralCurveDefinition, ProceduralSurface,
     ProceduralSurfaceDefinition, SolvedCurveGeometry, SolvedSurfaceGeometry, Surface,
 };
-use cadmpeg_ir::ids::{AppearanceBindingId, OccurrenceId, ProductDefinitionId, ShellId};
+use cadmpeg_ir::ids::{
+    AppearanceBindingId, AppearanceId, EdgeId, LoopId, OccurrenceId, ProductDefinitionId, ShellId,
+    VertexId,
+};
 use cadmpeg_ir::pmi::{
     DatumTargetForm, DimensionKind, DimensionTolerance, GeometricToleranceKind, PmiDefinition,
     PmiQuantity, PmiTarget,
@@ -33,9 +37,10 @@ use crate::loss::StepLossCode;
 use crate::options::{StepSchema, StepWriteOptions};
 use crate::writer::{refs, string, Emitter, Ref};
 
-pub(crate) mod approximation;
+mod implicit_outer;
 mod non_manifold;
 mod ownership;
+mod representations;
 mod wire;
 
 const EPS_IDENTITY: f64 = 1.0e-12;
@@ -88,6 +93,7 @@ pub(crate) fn write_step_outcome(
     w: &mut (impl Write + ?Sized),
     schema: StepSchema,
     opts: &StepWriteOptions,
+    recovered_edges: HashSet<EdgeId>,
 ) -> Result<StepWriteOutcome, cadmpeg_core::CodecError> {
     let definitions = ir
         .model
@@ -103,9 +109,12 @@ pub(crate) fn write_step_outcome(
             "STEP cannot write {missing_definitions} occurrence record(s) whose local product definition is missing"
         )));
     }
-    let mut b = Builder::new(ir, schema)?;
+    let mut b = Builder::new(ir, schema, recovered_edges)?;
     b.model_name = &opts.product_name;
     b.build();
+    if let Some(limit) = b.approximations.resource_limit() {
+        return Err(limit.into());
+    }
     let outcome = b.finish_outcome();
     let lines = b.emitter.into_lines()?;
 
@@ -258,6 +267,7 @@ struct PcurveUse<'a> {
 pub(crate) struct Builder<'a> {
     ir: &'a CadIr,
     schema: StepSchema,
+    recovered_edges: HashSet<EdgeId>,
     model_name: &'a str,
     emitter: Emitter,
     losses: Vec<LossNote>,
@@ -299,6 +309,9 @@ pub(crate) struct Builder<'a> {
     /// Whole-period parameter-space shift per coedge that joins its pcurve to
     /// the previous pcurve of its loop, computed once over every face.
     pcurve_period_shifts: HashMap<&'a str, [f64; 2]>,
+    /// The outer bound of each face whose outer boundary is implicit,
+    /// computed once over every face.
+    implicit_outer_bounds: HashMap<&'a str, implicit_outer::OuterBound>,
     /// Helix constructions written as fitted B-splines because they carry no
     /// solved carrier.
     fitted_helix_curves: BTreeSet<String>,
@@ -328,6 +341,17 @@ pub(crate) struct Builder<'a> {
     /// out of a loop that has edges with extent.
     point_loop_curves: BTreeSet<String>,
 
+    /// Points of poles that a seam ring written as a `VERTEX_LOOP` at another
+    /// pole leaves without a vertex.
+    point_loop_points: BTreeSet<String>,
+
+    /// Rings that are only a seam and edges collapsed at its poles, by loop.
+    seam_rings: HashMap<&'a str, SeamRing<'a>>,
+
+    /// Coedges of edges with no 3D curve whose pcurves lift to the edge's
+    /// one vertex: collapsed edges a loop with extent leaves out.
+    collapsed_curveless_coedges: BTreeSet<&'a str>,
+
     /// Faces skipped because their surface geometry is unknown (opaque), so no
     /// STEP surface exists to build an `ADVANCED_FACE` on. Deduplicated (a face
     /// is reached once per shell) and aggregated into a single counted loss.
@@ -342,6 +366,7 @@ pub(crate) struct Builder<'a> {
     default_product_definition_shape: Option<Ref>,
     body_shape_refs: HashMap<String, Ref>,
     pub(crate) body_item_refs: HashMap<String, Vec<Ref>>,
+    advanced_brep_items: std::collections::HashSet<Ref>,
     body_step_item_refs: HashMap<String, Vec<Ref>>,
     product_step_refs: HashMap<String, Ref>,
     occurrence_step_refs: HashMap<String, Ref>,
@@ -402,7 +427,11 @@ fn distinct_names<'n>(entries: &[(&'n str, Option<&'n str>)]) -> Vec<&'n str> {
 }
 
 impl<'a> Builder<'a> {
-    pub(crate) fn new(ir: &'a CadIr, schema: StepSchema) -> Result<Self, cadmpeg_core::CodecError> {
+    pub(crate) fn new(
+        ir: &'a CadIr,
+        schema: StepSchema,
+        recovered_edges: HashSet<EdgeId>,
+    ) -> Result<Self, cadmpeg_core::CodecError> {
         let construction_supports = ownership::construction_supports(ir)?;
         let loop_faces = ir
             .model
@@ -446,8 +475,9 @@ impl<'a> Builder<'a> {
             approximations: approximation::Approximator::new(ir),
             ir,
             schema,
+            recovered_edges,
             model_name: "cadmpeg_model",
-            emitter: Emitter::new(),
+            emitter: Emitter::for_schema(schema),
             losses: Vec::new(),
             points: ir.model.points.iter().map(|p| (p.id.as_str(), p)).collect(),
             bodies: ir
@@ -536,6 +566,7 @@ impl<'a> Builder<'a> {
             written_procedural_surfaces: BTreeSet::new(),
             written_procedural_curves: BTreeSet::new(),
             pcurve_period_shifts: HashMap::new(),
+            implicit_outer_bounds: HashMap::new(),
             fitted_helix_curves: BTreeSet::new(),
             fitted_helix_surfaces: BTreeSet::new(),
             failed_helix_fits: BTreeMap::new(),
@@ -545,6 +576,9 @@ impl<'a> Builder<'a> {
             written_analytic_surfaces: Vec::new(),
             curveless_edges: BTreeSet::new(),
             point_loop_curves: BTreeSet::new(),
+            point_loop_points: BTreeSet::new(),
+            collapsed_curveless_coedges: BTreeSet::new(),
+            seam_rings: HashMap::new(),
             unknown_surface_faces: BTreeSet::new(),
             topology_relation_losses: BTreeSet::new(),
             face_step_refs: HashMap::new(),
@@ -552,6 +586,7 @@ impl<'a> Builder<'a> {
             default_product_definition_shape: None,
             body_shape_refs: HashMap::new(),
             body_item_refs: HashMap::new(),
+            advanced_brep_items: std::collections::HashSet::new(),
             body_step_item_refs: HashMap::new(),
             product_step_refs: HashMap::new(),
             occurrence_step_refs: HashMap::new(),
@@ -581,6 +616,9 @@ impl<'a> Builder<'a> {
             construction_supports,
         };
         builder.pcurve_period_shifts = builder.loop_pcurve_period_shifts()?;
+        builder.implicit_outer_bounds = builder.implicit_outer_bounds()?;
+        builder.seam_rings = builder.seam_rings()?;
+        builder.collapsed_curveless_coedges = builder.collapsed_curveless_coedges()?;
         Ok(builder)
     }
 
@@ -595,27 +633,6 @@ impl<'a> Builder<'a> {
     }
 
     pub(crate) fn build(&mut self) {
-        if !self.ir.model.product_definitions.is_empty() {
-            let owned = self
-                .ir
-                .model
-                .product_definitions
-                .iter()
-                .flat_map(|product| &product.bodies)
-                .collect::<BTreeSet<_>>();
-            let count = self
-                .ir
-                .model
-                .bodies
-                .iter()
-                .filter(|body| !owned.contains(&body.id))
-                .count();
-            if count != 0 {
-                self.loss(StepLossCode::BodyWithoutProductRepresentation, format!(
-                    "{count} body record(s) have no product representation; their shape items are not attached to a representation"
-                ));
-            }
-        }
         let surface_regions = self
             .ir
             .model
@@ -634,77 +651,55 @@ impl<'a> Builder<'a> {
         }
         if !wire_edges.is_empty() || !free_vertices.is_empty() {
             self.loss(StepLossCode::SurfaceShellWireTopologyOmitted, format!(
-                "{} wire edge record(s) and {} free vertex record(s) in solid or sheet shells are not written",
+                "{} wire edge record(s) and {} free vertex record(s) are not retained in their solid or sheet shells",
                 wire_edges.len(), free_vertices.len()
             ));
         }
         let context = self.emit_context();
 
-        let shape_items = self.emit_shape_items(context);
-        let mut standalone_items = self.emit_standalone_geometry();
-        let has_standalone_geometry = !standalone_items.is_empty();
-        let mut emitted_items = shape_items;
+        let mut emitted_items = self.emit_shape_items(context);
+        let standalone_items = self.emit_standalone_geometry();
         emitted_items.extend(standalone_items.iter().copied());
-        let has_shape_geometry = !emitted_items.is_empty();
-        let mut items = emitted_items;
-        let origin = geometry::placement(
-            &mut self.emitter,
-            cadmpeg_ir::math::Point3::new(0.0, 0.0, 0.0),
-            cadmpeg_ir::units::UnitVector3::Z_AXIS,
-            cadmpeg_ir::units::UnitVector3::X_AXIS,
-        );
-        items.push(origin);
-
+        let has_model_items = !emitted_items.is_empty();
         if self.ir.model.product_definitions.is_empty() {
+            let origin = geometry::placement(
+                &mut self.emitter,
+                cadmpeg_ir::math::Point3::new(0.0, 0.0, 0.0),
+                cadmpeg_ir::units::UnitVector3::Z_AXIS,
+                cadmpeg_ir::units::UnitVector3::X_AXIS,
+            );
             let product_def_shape = self.emit_product_structure();
             self.default_product_definition_shape = Some(product_def_shape);
-            let representation_kind = if !has_standalone_geometry
-                && !self.ir.model.bodies.is_empty()
-                && self.ir.model.bodies.iter().all(|body| {
-                    body.transform
-                        .is_none_or(|transform| is_identity(&transform.rows()))
-                })
-                && self
-                    .ir
-                    .model
-                    .bodies
-                    .iter()
-                    .all(|body| body.kind == BodyKind::Solid)
-            {
-                "ADVANCED_BREP_SHAPE_REPRESENTATION"
-            } else {
-                "SHAPE_REPRESENTATION"
-            };
-            let representation = self.emitter.emit(
-                representation_kind,
-                &format!("'',{},{context}", refs(&items)),
-            );
+            let representation =
+                self.emit_shape_representation("", emitted_items, vec![origin], context);
             self.emitter.emit(
                 "SHAPE_DEFINITION_REPRESENTATION",
                 &format!("{product_def_shape},{representation}"),
             );
         } else {
             self.emit_product_graph(context);
-            if has_standalone_geometry {
-                standalone_items.push(origin);
-                self.emitter.emit(
-                    "SHAPE_REPRESENTATION",
-                    &format!(
-                        "{},{},{context}",
-                        string("standalone geometry"),
-                        refs(&standalone_items)
-                    ),
+            if !standalone_items.is_empty() {
+                self.emit_shape_representation(
+                    "standalone geometry",
+                    standalone_items,
+                    Vec::new(),
+                    context,
                 );
             }
         }
 
         self.emit_visibility();
         self.emit_tessellations(context);
-        if !has_shape_geometry && self.tessellation_step_refs.is_empty() {
+        if !has_model_items && self.tessellation_step_refs.is_empty() {
+            if !self.ir.model.bodies.is_empty() {
+                self.loss(
+                    StepLossCode::NoExportableSolids,
+                    "no body geometry could be placed in a STEP representation".to_string(),
+                );
+            }
             self.loss(
-                StepLossCode::NoExportableSolids,
-                "no exportable solids or standalone geometry; the STEP representation is empty"
-                    .to_string(),
+                StepLossCode::NoGeometryWritten,
+                "no geometry was written to a STEP representation".to_string(),
             );
         }
         self.emit_presentation(context);
@@ -1477,6 +1472,20 @@ impl<'a> Builder<'a> {
             1 => root_products.pop_first(),
             _ => None,
         };
+        // A rigid root placement of a local product needs a parent product to carry it.
+        let placed_root = |occurrence: &cadmpeg_ir::products::Occurrence| {
+            matches!(occurrence.parent, OccurrenceParent::Root {})
+                && occurrence_products.contains_key(&occurrence.id)
+                && occurrence.effective_transform().is_ok_and(|transform| {
+                    transform.is_some_and(|transform| transform.is_proper_rigid())
+                })
+        };
+        let assembly_root = occurrences.iter().any(|occurrence| {
+            placed_root(occurrence)
+                && occurrence.effective_transform().is_ok_and(|transform| {
+                    transform.is_some_and(|transform| !is_identity(&transform.rows()))
+                })
+        });
         let product_names = distinct_names(
             &products
                 .iter()
@@ -1486,7 +1495,10 @@ impl<'a> Builder<'a> {
                         .as_deref()
                         .or(product.source_name.as_deref())
                         .or(product.part_number.as_deref())
-                        .or_else(|| (root_product == Some(&product.id)).then_some(self.model_name));
+                        .or_else(|| {
+                            (!assembly_root && root_product == Some(&product.id))
+                                .then_some(self.model_name)
+                        });
                     (product.id.as_str(), name)
                 })
                 .collect::<Vec<_>>(),
@@ -1521,16 +1533,21 @@ impl<'a> Builder<'a> {
             );
         }
         let mut representation_placements = HashMap::<ProductDefinitionId, Vec<Ref>>::new();
+        let mut assembly_root_placements = Vec::new();
         let mut occurrence_placements = HashMap::<OccurrenceId, (Ref, Ref)>::new();
         for occurrence in occurrences {
             if unknown_placements.contains(&occurrence.id) {
                 continue;
             }
-            let OccurrenceParent::Occurrence { occurrence: parent } = &occurrence.parent else {
-                continue;
-            };
-            let Some(parent_product) = occurrence_products.get(parent) else {
-                continue;
+            let parent_product = match &occurrence.parent {
+                OccurrenceParent::Occurrence { occurrence: parent } => {
+                    let Some(parent_product) = occurrence_products.get(parent) else {
+                        continue;
+                    };
+                    Some(parent_product)
+                }
+                OccurrenceParent::Root {} if assembly_root && placed_root(occurrence) => None,
+                OccurrenceParent::Root {} => continue,
             };
             let Some(child_product) = occurrence_products.get(&occurrence.id) else {
                 continue;
@@ -1559,10 +1576,13 @@ impl<'a> Builder<'a> {
                 *frame.axis(),
                 *frame.reference(),
             );
-            representation_placements
-                .entry(parent_product.clone())
-                .or_default()
-                .push(to);
+            match parent_product {
+                Some(parent_product) => representation_placements
+                    .entry(parent_product.clone())
+                    .or_default()
+                    .push(to),
+                None => assembly_root_placements.push(to),
+            }
             occurrence_placements.insert(occurrence.id.clone(), (from, to));
         }
         let mut definitions = HashMap::<ProductDefinitionId, Ref>::new();
@@ -1601,7 +1621,7 @@ impl<'a> Builder<'a> {
                 .emitter
                 .emit("PRODUCT_DEFINITION_SHAPE", &format!("'','',{definition}"));
             self.default_product_definition_shape.get_or_insert(shape);
-            let mut body_items = product
+            let body_items = product
                 .bodies
                 .iter()
                 .flat_map(|body| {
@@ -1612,16 +1632,16 @@ impl<'a> Builder<'a> {
                         .copied()
                 })
                 .collect::<Vec<_>>();
-            if let Some(origin) = product_origins.get(&product.id) {
-                body_items.push(*origin);
+            let mut placements = product_origins
+                .get(&product.id)
+                .copied()
+                .into_iter()
+                .collect::<Vec<_>>();
+            if let Some(child_placements) = representation_placements.get(&product.id) {
+                placements.extend(child_placements);
             }
-            if let Some(placements) = representation_placements.get(&product.id) {
-                body_items.extend(placements);
-            }
-            let representation = self.emitter.emit(
-                "SHAPE_REPRESENTATION",
-                &format!("{},{},{context}", string(name), refs(&body_items)),
-            );
+            let representation =
+                self.emit_shape_representation(name, body_items, placements, context);
             self.emitter.emit(
                 "SHAPE_DEFINITION_REPRESENTATION",
                 &format!("{shape},{representation}"),
@@ -1630,45 +1650,84 @@ impl<'a> Builder<'a> {
             representations.insert(product.id.clone(), representation);
         }
 
+        let assembly_root = assembly_root.then(|| {
+            self.emit_assembly_root(
+                context,
+                product_context,
+                definition_context,
+                assembly_root_placements,
+            )
+        });
+        let root_representation = assembly_root
+            .map(|(_, representation)| representation)
+            .or_else(|| {
+                root_product
+                    .or_else(|| {
+                        (occurrences.is_empty() && products.len() == 1).then(|| &products[0].id)
+                    })
+                    .and_then(|product| representations.get(product))
+                    .copied()
+            });
+        self.emit_unclaimed_body_representation(context, root_representation);
+
         for (occurrence, &occurrence_name) in occurrences.iter().zip(&occurrence_names) {
             if unknown_placements.contains(&occurrence.id) {
                 continue;
             }
-            let OccurrenceParent::Occurrence { occurrence: parent } = &occurrence.parent else {
-                let transform = match occurrence.effective_transform() {
-                    Ok(Some(transform)) => transform,
-                    Ok(None) => continue,
-                    Err(error) => {
+            let parent = match (&occurrence.parent, assembly_root) {
+                (OccurrenceParent::Occurrence { occurrence: parent }, _) => {
+                    let Some(parent_occurrence) = graph.occurrence(parent) else {
                         self.loss(
-                            StepLossCode::AssemblyGraphInvalid,
-                            format!("occurrence '{}': {error}", occurrence.id),
+                            StepLossCode::OccurrenceUnresolvedParent,
+                            format!("occurrence '{}' has an unresolved parent", occurrence.id),
                         );
-                        return;
-                    }
-                };
-                if !is_identity(&transform.rows()) {
-                    self.loss(
-                        StepLossCode::RootOccurrencePlacementNotRepresentable,
-                        format!(
-                            "root occurrence '{}' has a placement or scale that is not representable",
-                            occurrence.id
-                        ),
-                    );
+                        continue;
+                    };
+                    let Some(parent_product) = occurrence_products.get(&parent_occurrence.id)
+                    else {
+                        self.missing_parent_products
+                            .insert(occurrence.id.as_str().to_owned());
+                        continue;
+                    };
+                    let Some(parent) = definitions
+                        .get(parent_product)
+                        .copied()
+                        .zip(representations.get(parent_product).copied())
+                    else {
+                        continue;
+                    };
+                    parent
                 }
-                continue;
+                (OccurrenceParent::Root {}, Some(assembly_root)) if placed_root(occurrence) => {
+                    assembly_root
+                }
+                (OccurrenceParent::Root {}, _) => {
+                    let transform = match occurrence.effective_transform() {
+                        Ok(Some(transform)) => transform,
+                        Ok(None) => continue,
+                        Err(error) => {
+                            self.loss(
+                                StepLossCode::AssemblyGraphInvalid,
+                                format!("occurrence '{}': {error}", occurrence.id),
+                            );
+                            return;
+                        }
+                    };
+                    if occurrence_products.contains_key(&occurrence.id)
+                        && !is_identity(&transform.rows())
+                    {
+                        self.loss(
+                            StepLossCode::RootOccurrencePlacementNotRepresentable,
+                            format!(
+                                "root occurrence '{}' has a placement or scale that is not representable",
+                                occurrence.id
+                            ),
+                        );
+                    }
+                    continue;
+                }
             };
-            let Some(parent_occurrence) = graph.occurrence(parent) else {
-                self.loss(
-                    StepLossCode::OccurrenceUnresolvedParent,
-                    format!("occurrence '{}' has an unresolved parent", occurrence.id),
-                );
-                continue;
-            };
-            let Some(parent_product) = occurrence_products.get(&parent_occurrence.id) else {
-                self.missing_parent_products
-                    .insert(occurrence.id.as_str().to_owned());
-                continue;
-            };
+            let (parent_definition, parent_representation) = parent;
             let Some(child_product) = occurrence_products.get(&occurrence.id) else {
                 self.loss(
                     StepLossCode::OccurrenceNoLocalProduct,
@@ -1679,17 +1738,9 @@ impl<'a> Builder<'a> {
                 );
                 continue;
             };
-            let Some((
-                &parent_definition,
-                &child_definition,
-                &parent_representation,
-                &child_representation,
-            )) = definitions
-                .get(parent_product)
-                .zip(definitions.get(child_product))
-                .zip(representations.get(parent_product))
+            let Some((&child_definition, &child_representation)) = definitions
+                .get(child_product)
                 .zip(representations.get(child_product))
-                .map(|(((a, b), c), d)| (a, b, c, d))
             else {
                 continue;
             };
@@ -1741,6 +1792,99 @@ impl<'a> Builder<'a> {
                 &format!("{relationship},{usage_shape}"),
             );
         }
+    }
+
+    /// Emits the model product that places the root occurrences. Returns its
+    /// product definition and shape representation.
+    fn emit_assembly_root(
+        &mut self,
+        context: Ref,
+        product_context: Ref,
+        definition_context: Ref,
+        placements: Vec<Ref>,
+    ) -> (Ref, Ref) {
+        let name = string(self.model_name);
+        let product = self
+            .emitter
+            .emit("PRODUCT", &format!("{name},{name},'',({product_context})"));
+        let formation = self
+            .emitter
+            .emit("PRODUCT_DEFINITION_FORMATION", &format!("'','',{product}"));
+        let definition = self.emitter.emit(
+            "PRODUCT_DEFINITION",
+            &format!("{name},'',{formation},{definition_context}"),
+        );
+        let shape = self
+            .emitter
+            .emit("PRODUCT_DEFINITION_SHAPE", &format!("'','',{definition}"));
+        let mut items = vec![geometry::placement(
+            &mut self.emitter,
+            cadmpeg_ir::math::Point3::new(0.0, 0.0, 0.0),
+            cadmpeg_ir::units::UnitVector3::Z_AXIS,
+            cadmpeg_ir::units::UnitVector3::X_AXIS,
+        )];
+        items.extend(placements);
+        let representation = self.emitter.emit(
+            "SHAPE_REPRESENTATION",
+            &format!("{name},{},{context}", refs(&items)),
+        );
+        self.emitter.emit(
+            "SHAPE_DEFINITION_REPRESENTATION",
+            &format!("{shape},{representation}"),
+        );
+        (definition, representation)
+    }
+
+    fn emit_unclaimed_body_representation(&mut self, context: Ref, root: Option<Ref>) {
+        let owned = self
+            .ir
+            .model
+            .product_definitions
+            .iter()
+            .flat_map(|product| &product.bodies)
+            .collect::<BTreeSet<_>>();
+        let bodies = self
+            .ir
+            .model
+            .bodies
+            .iter()
+            .filter(|body| !owned.contains(&body.id))
+            .filter(|body| self.body_item_refs.contains_key(body.id.as_str()))
+            .collect::<Vec<_>>();
+        if bodies.is_empty() {
+            return;
+        }
+        let items = bodies
+            .iter()
+            .flat_map(|body| &self.body_item_refs[body.id.as_str()])
+            .copied()
+            .collect::<Vec<_>>();
+        let origin = geometry::placement(
+            &mut self.emitter,
+            cadmpeg_ir::math::Point3::new(0.0, 0.0, 0.0),
+            cadmpeg_ir::units::UnitVector3::Z_AXIS,
+            cadmpeg_ir::units::UnitVector3::X_AXIS,
+        );
+        let representation = self.emit_shape_representation("", items, vec![origin], context);
+        if let Some(root) = root {
+            self.emitter.emit(
+                "SHAPE_REPRESENTATION_RELATIONSHIP",
+                &format!("'','',{root},{representation}"),
+            );
+        } else {
+            let shape = self.emit_product_structure();
+            self.emitter.emit(
+                "SHAPE_DEFINITION_REPRESENTATION",
+                &format!("{shape},{representation}"),
+            );
+        }
+        self.loss(
+            StepLossCode::BodyWithoutProductRepresentation,
+            format!(
+                "{} body record(s) not assigned to a component were written in the root product in model coordinates",
+                bodies.len()
+            ),
+        );
     }
 
     fn emit_context(&mut self) -> Ref {
@@ -1829,7 +1973,7 @@ impl<'a> Builder<'a> {
             if body_kind == BodyKind::Wire
                 || (body_kind == BodyKind::General && !has_surface_topology)
             {
-                if let Some(item) = self.emit_wire_region(region) {
+                let wire_written = if let Some(item) = self.emit_wire_region(region) {
                     let shape_item = self.place_body_item(&region.body, item, context);
                     items.push(shape_item);
                     self.body_shape_refs
@@ -1846,10 +1990,13 @@ impl<'a> Builder<'a> {
                     self.body_step_refs
                         .entry(region.body.as_str().to_owned())
                         .or_insert(item);
+                    true
                 } else {
                     self.empty_wire_regions
                         .insert(region.id.as_str().to_owned());
-                }
+                    false
+                };
+                self.emit_region_fallback_geometry(region, context, wire_written, &mut items);
                 continue;
             }
             let closed = body_kind == BodyKind::Solid;
@@ -1860,26 +2007,21 @@ impl<'a> Builder<'a> {
             if closed {
                 self.split_non_manifold_edges(&region.shells);
             }
-            let Some((outer, mut shells_closed)) =
-                self.emit_shell(outer_id.as_str(), closed, false)
-            else {
+            let outer = self.emit_shell(outer_id.as_str(), closed, false);
+            if outer.is_none() {
                 self.topology_relation_loss(
                     format!("region:{}:outer-shell:{}", region.id, outer_id),
                     StepLossCode::RegionNoWritableOuterShell,
                     format!("region {} has no writable outer shell", region.id),
                 );
-                continue;
-            };
+            }
             let mut voids = Vec::new();
             // A solid void is the base shell of an `ORIENTED_CLOSED_SHELL`
             // with orientation false, so its base faces carry the reverse of
             // the CADIR face use.
             let void_reversed = closed;
             for sid in void_ids {
-                if let Some((void, void_closed)) =
-                    self.emit_shell(sid.as_str(), closed, void_reversed)
-                {
-                    shells_closed &= void_closed;
+                if let Some(void) = self.emit_shell(sid.as_str(), closed, void_reversed) {
                     voids.push(void);
                 } else {
                     self.topology_relation_loss(
@@ -1892,33 +2034,46 @@ impl<'a> Builder<'a> {
                     );
                 }
             }
-            let mut shell_refs = Vec::new();
-            shell_refs.push(outer);
-            shell_refs.extend_from_slice(&voids);
-            // (S-entity) Missing faces or bounds cannot form a closed solid.
-            // STEP can retain the admitted geometry as a surface model.
-            let closed = closed && shells_closed;
-            let item = if !closed {
+            let solid = closed
+                && outer.is_some_and(|(_, shell_closed)| shell_closed)
+                && voids.len() == void_ids.len()
+                && voids.iter().all(|(_, shell_closed)| *shell_closed);
+            let mut shell_refs = outer.iter().map(|(shell, _)| *shell).collect::<Vec<_>>();
+            shell_refs.extend(voids.iter().map(|(shell, _)| *shell));
+            let Some(first_shell) = shell_refs.first().copied() else {
+                self.emit_region_fallback_geometry(region, context, false, &mut items);
+                continue;
+            };
+            if closed && !solid {
+                self.loss(
+                    StepLossCode::RegionSolidReducedToSheet,
+                    format!("region {} was written as a surface model because its solid shells are incomplete or open", region.id),
+                );
+            }
+            let item = if !solid {
                 self.emitter.emit(
                     "SHELL_BASED_SURFACE_MODEL",
                     &format!("'',{}", refs(&shell_refs)),
                 )
             } else if voids.is_empty() {
                 self.emitter
-                    .emit("MANIFOLD_SOLID_BREP", &format!("'',{outer}"))
+                    .emit("MANIFOLD_SOLID_BREP", &format!("'',{first_shell}"))
             } else {
                 let void_refs: Vec<Ref> = voids
                     .iter()
-                    .map(|s| {
+                    .map(|(s, _)| {
                         self.emitter
                             .emit("ORIENTED_CLOSED_SHELL", &format!("'',*,{s},.F."))
                     })
                     .collect();
                 self.emitter.emit(
                     "BREP_WITH_VOIDS",
-                    &format!("'',{outer},{}", refs(&void_refs)),
+                    &format!("'',{first_shell},{}", refs(&void_refs)),
                 )
             };
+            if solid {
+                self.advanced_brep_items.insert(item);
+            }
             let shape_item = self.place_body_item(&region.body, item, context);
             items.push(shape_item);
             self.body_shape_refs
@@ -1934,7 +2089,8 @@ impl<'a> Builder<'a> {
                 .push(item);
             self.body_step_refs
                 .entry(region.body.as_str().to_owned())
-                .or_insert(if closed { item } else { outer });
+                .or_insert(if solid { item } else { first_shell });
+            let mut wire_written = false;
             if mixed_wire {
                 if let Some(item) = self.emit_wire_region(region) {
                     let shape_item = self.place_body_item(&region.body, item, context);
@@ -1953,13 +2109,175 @@ impl<'a> Builder<'a> {
                     self.body_step_refs
                         .entry(region.body.as_str().to_owned())
                         .or_insert(item);
+                    wire_written = true;
                 } else {
                     self.empty_wire_regions
                         .insert(region.id.as_str().to_owned());
                 }
             }
+            self.emit_region_fallback_geometry(region, context, wire_written, &mut items);
         }
         items
+    }
+
+    fn emit_region_fallback_geometry(
+        &mut self,
+        region: &cadmpeg_ir::topology::Region,
+        context: Ref,
+        wire_written: bool,
+        items: &mut Vec<Ref>,
+    ) {
+        let mut missing = BTreeSet::new();
+        let mut retained = BTreeSet::new();
+        let mut missing_edges = BTreeSet::new();
+        let mut retained_edges = BTreeSet::new();
+        for shell_id in &region.shells {
+            let Some(shell) = self.shells.get(shell_id.as_str()) else {
+                continue;
+            };
+            missing.extend(shell.free_vertices().iter().cloned());
+            for edge_id in shell.wire_edges() {
+                if let Some(edge) = self.edges.get(edge_id.as_str()) {
+                    let vertices = if wire_written && self.edge_refs.contains_key(edge_id.as_str())
+                    {
+                        retained_edges.insert(edge_id.clone());
+                        &mut retained
+                    } else {
+                        missing_edges.insert(edge_id.clone());
+                        &mut missing
+                    };
+                    vertices.extend([edge.start.clone(), edge.end.clone()]);
+                }
+            }
+            for face_id in shell.faces() {
+                let Some(face) = self.faces.get(face_id.as_str()) else {
+                    continue;
+                };
+                for loop_id in &face.loops {
+                    let Some(lp) = self.loops.get(loop_id.as_str()) else {
+                        continue;
+                    };
+                    let written = self.face_step_refs.contains_key(face_id.as_str())
+                        && !self
+                            .topology_relation_losses
+                            .contains(&format!("face:{face_id}:loop:{loop_id}"));
+                    let vertices = if written { &mut retained } else { &mut missing };
+                    if let cadmpeg_ir::topology::LoopBoundary::Vertex { vertex, .. } = &lp.boundary
+                    {
+                        vertices.insert(vertex.clone());
+                    }
+                    for coedge_id in lp.coedges() {
+                        if let Some(edge) = self
+                            .coedges
+                            .get(coedge_id.as_str())
+                            .and_then(|coedge| self.edges.get(coedge.edge.as_str()))
+                        {
+                            if written {
+                                retained_edges.insert(edge.id.clone());
+                            } else {
+                                missing_edges.insert(edge.id.clone());
+                            }
+                            vertices.extend([edge.start.clone(), edge.end.clone()]);
+                        }
+                    }
+                }
+            }
+        }
+        let mut edges = Vec::new();
+        for edge_id in missing_edges.difference(&retained_edges) {
+            let Some(edge) = self.edges.get(edge_id.as_str()).copied() else {
+                continue;
+            };
+            if edge.curve().is_none() {
+                continue;
+            }
+            if let Some(reference) = self.emit_edge(edge_id.as_str()) {
+                retained.extend([edge.start.clone(), edge.end.clone()]);
+                edges.push((reference, edge));
+            }
+        }
+        if !edges.is_empty() {
+            self.loss(
+                StepLossCode::RegionEdgesRecovered,
+                format!(
+                    "region {} retained {} edges as wire geometry outside their original topology",
+                    region.id,
+                    edges.len()
+                ),
+            );
+            let mut components = Vec::new();
+            for component in wire::connected_components(&edges) {
+                components.push(
+                    self.emitter
+                        .emit("CONNECTED_EDGE_SET", &format!("'',{}", refs(&component))),
+                );
+            }
+            let item = self.emitter.emit(
+                "EDGE_BASED_WIREFRAME_MODEL",
+                &format!("'',{}", refs(&components)),
+            );
+            self.push_region_recovery_item(region, context, item, items);
+        }
+        let mut points = Vec::new();
+        let mut point_set = std::collections::HashSet::new();
+        for vertex_id in missing.difference(&retained) {
+            let Some(point) = self
+                .vertices
+                .get(vertex_id.as_str())
+                .and_then(|vertex| self.points.get(vertex.point.as_str()))
+                .copied()
+            else {
+                continue;
+            };
+            let reference = if let Some(reference) = self.point_refs.get(point.id.as_str()) {
+                *reference
+            } else {
+                let reference = geometry::point(&mut self.emitter, point.position().get());
+                self.point_refs
+                    .insert(point.id.as_str().to_owned(), reference);
+                reference
+            };
+            if point_set.insert(reference) {
+                points.push(reference);
+            }
+        }
+        if points.is_empty() {
+            return;
+        }
+        self.loss(
+            StepLossCode::RegionVerticesRecovered,
+            format!(
+                "region {} retained {} vertices as points after their topology was omitted",
+                region.id,
+                points.len()
+            ),
+        );
+        let item = self
+            .emitter
+            .emit("GEOMETRIC_CURVE_SET", &format!("'',{}", refs(&points)));
+        self.push_region_recovery_item(region, context, item, items);
+    }
+
+    fn push_region_recovery_item(
+        &mut self,
+        region: &cadmpeg_ir::topology::Region,
+        context: Ref,
+        item: Ref,
+        items: &mut Vec<Ref>,
+    ) {
+        let shape_item = self.place_body_item(&region.body, item, context);
+        items.push(shape_item);
+        self.body_shape_refs
+            .entry(region.body.as_str().to_owned())
+            .or_insert(shape_item);
+        self.body_item_refs
+            .entry(region.body.as_str().to_owned())
+            .or_default()
+            .push(shape_item);
+        self.body_step_item_refs
+            .entry(region.body.as_str().to_owned())
+            .or_default()
+            .push(item);
     }
 
     fn place_body_item(
@@ -1988,10 +2306,8 @@ impl<'a> Builder<'a> {
             cadmpeg_ir::units::UnitVector3::Z_AXIS,
             cadmpeg_ir::units::UnitVector3::X_AXIS,
         );
-        let representation = self.emitter.emit(
-            "SHAPE_REPRESENTATION",
-            &format!("'body-local',({item}),{context}"),
-        );
+        let representation =
+            self.emit_shape_representation("body-local", vec![item], Vec::new(), context);
         let map = self
             .emitter
             .emit("REPRESENTATION_MAP", &format!("{origin},{representation}"));
@@ -2002,10 +2318,14 @@ impl<'a> Builder<'a> {
             *frame.axis(),
             *frame.reference(),
         );
-        self.emitter.emit(
+        let mapped = self.emitter.emit(
             "MAPPED_ITEM",
             &format!("'cadmpeg body placement',{map},{target}"),
-        )
+        );
+        if self.advanced_brep_items.contains(&item) {
+            self.advanced_brep_items.insert(mapped);
+        }
+        mapped
     }
 
     fn emit_visibility(&mut self) {
@@ -2218,6 +2538,7 @@ impl<'a> Builder<'a> {
         }
         for point in &self.ir.model.points {
             if !self.point_refs.contains_key(point.id.as_str())
+                && !self.point_loop_points.contains(point.id.as_str())
                 && (owned_points.contains(point.id.as_str())
                     || ownership::is_support(
                         point.id.as_str(),
@@ -2467,7 +2788,10 @@ impl<'a> Builder<'a> {
                 .join(",");
             let linked_body = mesh.body.as_ref().and_then(|body| {
                 let link = self.body_step_refs.get(body.as_str()).copied()?;
-                let kind = self.bodies.get(body.as_str())?.kind;
+                let mut kind = self.bodies.get(body.as_str())?.kind;
+                if kind == BodyKind::Solid && !self.advanced_brep_items.contains(&link) {
+                    kind = BodyKind::Sheet;
+                }
                 matches!(kind, BodyKind::Solid | BodyKind::Sheet).then_some((kind, link))
             });
             if let Some(body) = &mesh.body {
@@ -2624,7 +2948,7 @@ impl<'a> Builder<'a> {
             .map(|f| f.as_str().to_owned())
             .collect();
         let mut face_refs = Vec::new();
-        let prior_topology_losses = self.topology_relation_losses.len();
+        let prior_losses = self.topology_relation_losses.len();
         for fid in &face_ids {
             if let Some(r) = self.emit_face(fid, reversed) {
                 face_refs.push(r);
@@ -2649,7 +2973,8 @@ impl<'a> Builder<'a> {
         }
         let closed = closed
             && face_refs.len() == face_ids.len()
-            && prior_topology_losses == self.topology_relation_losses.len();
+            && self.topology_relation_losses.len() == prior_losses
+            && self.shell_is_closed(shell);
         Some((
             self.emitter.emit(
                 if closed { "CLOSED_SHELL" } else { "OPEN_SHELL" },
@@ -2659,6 +2984,46 @@ impl<'a> Builder<'a> {
         ))
     }
 
+    fn shell_is_closed(&self, shell: &Shell) -> bool {
+        let mut uses: BTreeMap<&str, [usize; 2]> = BTreeMap::new();
+        for face_id in shell.faces() {
+            let Some(face) = self.faces.get(face_id.as_str()) else {
+                return false;
+            };
+            for loop_id in &face.loops {
+                let Some(lp) = self.loops.get(loop_id.as_str()) else {
+                    return false;
+                };
+                for coedge_id in lp.coedges() {
+                    let Some(coedge) = self.coedges.get(coedge_id.as_str()) else {
+                        return false;
+                    };
+                    let Some(edge) = self.edges.get(coedge.edge.as_str()) else {
+                        return false;
+                    };
+                    let degenerate = edge.start == edge.end
+                        && (self
+                            .collapsed_curveless_coedges
+                            .contains(coedge_id.as_str())
+                            || edge
+                                .curve()
+                                .and_then(|id| self.curves.get(id.as_str()))
+                                .is_some_and(|curve| {
+                                    matches!(
+                                        curve.geometry.solved(),
+                                        Some(SolvedCurveGeometry::Degenerate(_))
+                                    )
+                                }));
+                    if !degenerate {
+                        let count = uses.entry(edge.id.as_str()).or_default();
+                        count[usize::from(coedge.sense == Sense::Reversed)] += 1;
+                    }
+                }
+            }
+        }
+        !uses.is_empty() && uses.values().all(|[forward, reversed]| forward == reversed)
+    }
+
     /// Writes the face use, or its reverse when `reversed` is set: the
     /// reverse flips the face `same_sense` and the orientation of every bound.
     fn emit_face(&mut self, face_id: &str, reversed: bool) -> Option<Ref> {
@@ -2666,6 +3031,14 @@ impl<'a> Builder<'a> {
         let surface_id = face.surface.as_str();
         let same_sense = matches!(face.sense, Sense::Forward) != reversed;
         let bound_flag = if reversed { ".F." } else { ".T." };
+        let rectangle = match self.implicit_outer_bounds.get(face_id).cloned() {
+            None => None,
+            Some(implicit_outer::OuterBound::Rectangle(rectangle)) => Some(*rectangle),
+            Some(implicit_outer::OuterBound::Unwritable(reason)) => {
+                self.implicit_outer_loss(face_id, reason);
+                return None;
+            }
+        };
 
         // Surface emission admits either a writable construction or a solved
         // carrier. An absent or opaque solved cache cannot veto a construction.
@@ -2675,19 +3048,44 @@ impl<'a> Builder<'a> {
         };
 
         let mut bound_refs = Vec::new();
-        for loop_id in &face.loops {
+        if let Some(rectangle) = rectangle {
+            let Some(bound) = self.emit_parameter_rectangle(rectangle, surf_ref, bound_flag) else {
+                self.implicit_outer_loss(
+                    face_id,
+                    "a side of the parameter rectangle is not writable",
+                );
+                return None;
+            };
+            bound_refs.push(bound);
+        }
+        // A seam ring becomes a vertex loop only beside a bound that is
+        // written, so the seam rings come after the other loops.
+        let loop_ids: Vec<&LoopId> = face.loops.iter().collect();
+        let seam_ring: Vec<bool> = loop_ids
+            .iter()
+            .map(|loop_id| self.seam_rings.contains_key(loop_id.as_str()))
+            .collect();
+        let mut face_bounds = vec![None; loop_ids.len()];
+        let mut incomplete = false;
+        for index in (0..loop_ids.len())
+            .filter(|index| !seam_ring[*index])
+            .chain((0..loop_ids.len()).filter(|index| seam_ring[*index]))
+        {
+            let loop_id = loop_ids[index];
             let lid = loop_id.as_str();
-            if let Some(loop_ref) = self.emit_loop(lid) {
+            let beside_a_bound = !bound_refs.is_empty() || face_bounds.iter().any(Option::is_some);
+            if let Some(loop_ref) = self.emit_loop(lid, beside_a_bound) {
                 let kind = if face.loop_role(loop_id) == LoopBoundaryRole::Outer {
                     "FACE_OUTER_BOUND"
                 } else {
                     "FACE_BOUND"
                 };
-                let b = self
-                    .emitter
-                    .emit(kind, &format!("'',{loop_ref},{bound_flag}"));
-                bound_refs.push(b);
+                face_bounds[index] = Some(
+                    self.emitter
+                        .emit(kind, &format!("'',{loop_ref},{bound_flag}")),
+                );
             } else {
+                incomplete = true;
                 let code = match face.loop_role(loop_id) {
                     LoopBoundaryRole::Outer => StepLossCode::FaceOmittedOuterLoop,
                     LoopBoundaryRole::Inner => StepLossCode::FaceOmittedInnerLoop,
@@ -2702,11 +3100,20 @@ impl<'a> Builder<'a> {
                 );
             }
         }
+        bound_refs.extend(face_bounds.into_iter().flatten());
         if bound_refs.is_empty() {
             self.topology_relation_loss(
                 format!("face:{face_id}:bound-list"),
                 StepLossCode::FaceNoWritableBounds,
                 format!("face {face_id} has no writable bounds"),
+            );
+            return None;
+        }
+        if incomplete {
+            self.topology_relation_loss(
+                format!("face:{face_id}:incomplete-bounds"),
+                StepLossCode::FaceIncompleteBounds,
+                format!("face {face_id} was omitted because a boundary could not be written"),
             );
             return None;
         }
@@ -2724,7 +3131,20 @@ impl<'a> Builder<'a> {
         Some(advanced_face)
     }
 
-    fn emit_loop(&mut self, loop_id: &str) -> Option<Ref> {
+    fn implicit_outer_loss(&mut self, face_id: &str, reason: &str) {
+        self.topology_relation_loss(
+            format!("face:{face_id}:implicit-outer"),
+            StepLossCode::FaceImplicitOuterBoundUnwritable,
+            format!(
+                "face {face_id} was omitted because STEP has no bound for its implicit outer boundary: {reason}"
+            ),
+        );
+    }
+
+    /// A seam ring is written as a `VERTEX_LOOP` only `beside_a_bound`. As a
+    /// face's only bound it keeps its seam edges, which bound the whole
+    /// closed surface.
+    fn emit_loop(&mut self, loop_id: &str, beside_a_bound: bool) -> Option<Ref> {
         let Some(lp) = self.loops.get(loop_id).copied() else {
             self.topology_relation_loss(
                 format!("loop:{loop_id}:record"),
@@ -2734,10 +3154,20 @@ impl<'a> Builder<'a> {
             return None;
         };
         let singular = match &lp.boundary {
-            cadmpeg_ir::topology::LoopBoundary::Vertex { vertex, .. } => Some((vertex, Vec::new())),
-            cadmpeg_ir::topology::LoopBoundary::Ring(_) => self.point_loop(lp),
+            cadmpeg_ir::topology::LoopBoundary::Vertex { vertex, .. } => {
+                Some((vertex, Vec::new(), Vec::new()))
+            }
+            cadmpeg_ir::topology::LoopBoundary::Ring(_) => self
+                .point_loop(lp)
+                .map(|(vertex, curves)| (vertex, curves, Vec::new()))
+                .or_else(|| {
+                    beside_a_bound
+                        .then(|| self.seam_rings.get(loop_id).cloned())
+                        .flatten()
+                        .map(|ring| (ring.pole, ring.curves, ring.other_points))
+                }),
         };
-        if let Some((vertex, point_curves)) = singular {
+        if let Some((vertex, point_curves, other_poles)) = singular {
             let vertex_id = vertex.as_str();
             let Some(vertex) = self.emit_vertex(vertex_id) else {
                 self.topology_relation_loss(
@@ -2749,6 +3179,8 @@ impl<'a> Builder<'a> {
             };
             self.point_loop_curves
                 .extend(point_curves.into_iter().map(str::to_owned));
+            self.point_loop_points
+                .extend(other_poles.into_iter().map(str::to_owned));
             return Some(self.emitter.emit("VERTEX_LOOP", &format!("'',{vertex}")));
         }
         let coedge_ids = self.ordered_loop_coedges(loop_id, lp)?;
@@ -2822,6 +3254,175 @@ impl<'a> Builder<'a> {
         Some((vertex?, curves))
     }
 
+    /// The rings that are only a seam and edges collapsed at its poles.
+    fn seam_rings(
+        &self,
+    ) -> Result<HashMap<&'a str, SeamRing<'a>>, cadmpeg_core::decode::ResourceLimit> {
+        let mut rings = HashMap::new();
+        for (loop_id, lp) in &self.loops {
+            if matches!(lp.boundary, cadmpeg_ir::topology::LoopBoundary::Ring(_))
+                && self.point_loop(lp).is_none()
+            {
+                if let Some(ring) = self.seam_loop(lp)? {
+                    rings.insert(*loop_id, ring);
+                }
+            }
+        }
+        Ok(rings)
+    }
+
+    /// The coedges of edges with no 3D curve that start and end at one vertex
+    /// and whose pcurves lift to it.
+    fn collapsed_curveless_coedges(
+        &self,
+    ) -> Result<BTreeSet<&'a str>, cadmpeg_core::decode::ResourceLimit> {
+        let mut collapsed = BTreeSet::new();
+        for (coedge_id, coedge) in &self.coedges {
+            let Some(edge) = self.edges.get(coedge.edge.as_str()).copied() else {
+                continue;
+            };
+            if edge.curve().is_none()
+                && edge.start == edge.end
+                && self.pcurves_collapse_to(coedge, edge)?
+            {
+                collapsed.insert(*coedge_id);
+            }
+        }
+        Ok(collapsed)
+    }
+
+    /// The pole, carriers, and other pole points of a ring made only of seam
+    /// edges, each used once in each direction, and edges collapsed at the
+    /// singular points of the surface, as on a sphere face that keeps its
+    /// poles. STEP writes it as a `VERTEX_LOOP` at the first pole: the seam
+    /// alone bounds no area.
+    fn seam_loop(
+        &self,
+        lp: &Loop,
+    ) -> Result<Option<SeamRing<'a>>, cadmpeg_core::decode::ResourceLimit> {
+        let mut poles: Vec<&'a VertexId> = Vec::new();
+        let mut uses: HashMap<&str, [usize; 2]> = HashMap::new();
+        let mut curves = Vec::new();
+        for coedge_id in lp.coedges() {
+            let Some(coedge) = self.coedges.get(coedge_id.as_str()).copied() else {
+                return Ok(None);
+            };
+            let Some(edge) = self.edges.get(coedge.edge.as_str()).copied() else {
+                return Ok(None);
+            };
+            let curve = edge
+                .curve()
+                .and_then(|curve_id| self.curves.get(curve_id.as_str()).copied());
+            let degenerate = curve.is_some_and(|curve| {
+                matches!(
+                    curve.geometry.solved(),
+                    Some(SolvedCurveGeometry::Degenerate(_))
+                )
+            });
+            let collapsed = edge.start == edge.end
+                && (degenerate
+                    || (edge.curve().is_none() && self.pcurves_collapse_to(coedge, edge)?));
+            if collapsed {
+                if !poles.contains(&&edge.start) {
+                    poles.push(&edge.start);
+                }
+            } else {
+                let count = uses.entry(edge.id.as_str()).or_default();
+                count[usize::from(matches!(coedge.sense, Sense::Reversed))] += 1;
+            }
+            curves.extend(curve.map(|curve| curve.id.as_str()));
+        }
+        if uses.is_empty() || uses.values().any(|count| *count != [1, 1]) {
+            return Ok(None);
+        }
+        let Some((pole, others)) = poles.split_first() else {
+            return Ok(None);
+        };
+        let other_points = others
+            .iter()
+            .filter_map(|vertex| self.vertices.get(vertex.as_str()))
+            .map(|vertex| vertex.point.as_str())
+            .collect();
+        Ok(Some(SeamRing {
+            pole,
+            curves,
+            other_points,
+        }))
+    }
+
+    /// Whether every pcurve of `coedge` on its face lifts, at the middle of
+    /// its use interval or else its own interval, to `edge`'s one vertex: the
+    /// edge has no length.
+    fn pcurves_collapse_to(
+        &self,
+        coedge: &Coedge,
+        edge: &Edge,
+    ) -> Result<bool, cadmpeg_core::decode::ResourceLimit> {
+        use cadmpeg_ir::eval::admission::EvaluationAdmission;
+        use cadmpeg_ir::eval::finite_or_refusal;
+        let Some(surface) = self
+            .coedge_faces
+            .get(coedge.id.as_str())
+            .and_then(|(surface, _)| self.surfaces.get(surface))
+        else {
+            return Ok(false);
+        };
+        let Some(vertex) = self
+            .vertices
+            .get(edge.start.as_str())
+            .and_then(|vertex| self.points.get(vertex.point.as_str()))
+            .map(|point| point.position().get())
+        else {
+            return Ok(false);
+        };
+        let tolerance = edge
+            .tolerance
+            .map_or(0.0, cadmpeg_ir::scalar::PositiveReal::get)
+            .max(self.ir.tolerances.linear.get());
+        if coedge.pcurves.is_empty() {
+            return Ok(false);
+        }
+        for use_ in &coedge.pcurves {
+            let Some(pcurve) = self.pcurves.get(use_.pcurve.as_str()) else {
+                return Ok(false);
+            };
+            let Some([first, second]) = use_
+                .parameter_range
+                .map(cadmpeg_ir::geometry::DirectedParameterRange::endpoints)
+                .or_else(|| {
+                    pcurve
+                        .parameter_range()
+                        .map(cadmpeg_ir::units::FiniteVector::get)
+                })
+            else {
+                return Ok(false);
+            };
+            let Some(uv) = finite_or_refusal(cadmpeg_ir::eval::decode::pcurve_uv(
+                EvaluationAdmission::Standard,
+                &pcurve.geometry,
+                0.5 * (first + second),
+            ))?
+            else {
+                return Ok(false);
+            };
+            let uv = uv.get();
+            let Some(point) = finite_or_refusal(cadmpeg_ir::eval::model_surface_point(
+                EvaluationAdmission::Standard,
+                self.ir,
+                &surface.geometry,
+                uv.u,
+                uv.v,
+            ))?
+            else {
+                return Ok(false);
+            };
+            if point.get().distance(vertex) > tolerance {
+                return Ok(false);
+            }
+        }
+        Ok(true)
+    }
+
     fn ordered_loop_coedges(&mut self, loop_id: &str, lp: &Loop) -> Option<Vec<String>> {
         let mut segments = Vec::new();
         let mut seen = BTreeSet::new();
@@ -2877,6 +3478,9 @@ impl<'a> Builder<'a> {
                 return None;
             };
             let Some(curve_id) = edge.curve() else {
+                if has_extent && self.collapsed_curveless_coedges.contains(coedge_key) {
+                    continue;
+                }
                 self.curveless_edges.insert(edge_key.to_string());
                 self.topology_relation_loss(
                     format!("edge:{edge_key}:curve"),
@@ -3166,7 +3770,25 @@ impl<'a> Builder<'a> {
             )
             .ok()
             .flatten();
-        let aligned = pcurves::align_spline_to_edge(&pcurve.geometry, range, edge);
+        let lowered = pcurves::lower_placed_conic(&pcurve.geometry, use_.use_.parameter_range);
+        let aligned = match lowered.as_ref() {
+            cadmpeg_ir::geometry::pcurve::PcurveGeometry::Line(line)
+                if self.recovered_edges.contains(&edge.id) =>
+            {
+                std::borrow::Cow::Owned(pcurves::align_line_to_edge(line, range, edge)?)
+            }
+            cadmpeg_ir::geometry::pcurve::PcurveGeometry::Nurbs { .. } => {
+                pcurves::align_spline_to_edge(&lowered, range, edge)
+            }
+            _ if !self.recovered_edges.contains(&edge.id) || pcurves::ranges_match(range, edge) => {
+                std::borrow::Cow::Borrowed(lowered.as_ref())
+            }
+            _ => std::borrow::Cow::Owned(pcurves::align_placed_line_to_edge(
+                lowered.as_ref(),
+                range,
+                edge,
+            )?),
+        };
         let shift = self
             .pcurve_period_shifts
             .get(use_.coedge)
@@ -3182,16 +3804,7 @@ impl<'a> Builder<'a> {
         } else {
             geometry::pcurve(&mut self.emitter, &aligned)?
         };
-        let context = if let Some(context) = self.pcurve_context {
-            context
-        } else {
-            let context = self.emitter.emit_raw(
-                "GEOMETRIC_REPRESENTATION_CONTEXT",
-                "( GEOMETRIC_REPRESENTATION_CONTEXT(2) PARAMETRIC_REPRESENTATION_CONTEXT() REPRESENTATION_CONTEXT('uv','2D') )",
-            );
-            self.pcurve_context = Some(context);
-            context
-        };
+        let context = self.pcurve_context();
         let representation = self.emitter.emit(
             "DEFINITIONAL_REPRESENTATION",
             &format!("'',({curve}),{context}"),
@@ -3200,6 +3813,19 @@ impl<'a> Builder<'a> {
             self.emitter
                 .emit("PCURVE", &format!("'',{surface},{representation}")),
         )
+    }
+
+    /// The parameter-space representation context shared by every pcurve.
+    fn pcurve_context(&mut self) -> Ref {
+        if let Some(context) = self.pcurve_context {
+            return context;
+        }
+        let context = self.emitter.emit_raw(
+            "GEOMETRIC_REPRESENTATION_CONTEXT",
+            "( GEOMETRIC_REPRESENTATION_CONTEXT(2) PARAMETRIC_REPRESENTATION_CONTEXT() REPRESENTATION_CONTEXT('uv','2D') )",
+        );
+        self.pcurve_context = Some(context);
+        context
     }
 
     /// The nonzero pcurve period shifts of every loop on a periodic surface.
@@ -3266,8 +3892,9 @@ impl<'a> Builder<'a> {
         let Some(range) = edge.param_range() else {
             return Ok(None);
         };
+        let lowered = pcurves::lower_placed_conic(&pcurve.geometry, use_.parameter_range);
         if !matches!(
-            pcurve.geometry,
+            lowered.as_ref(),
             cadmpeg_ir::geometry::pcurve::PcurveGeometry::Nurbs { .. }
         ) {
             return Ok(None);
@@ -3277,7 +3904,7 @@ impl<'a> Builder<'a> {
         };
         let directed =
             self.directed_use_range(&pcurve.geometry, use_.parameter_range, surface, edge)?;
-        let aligned = pcurves::align_spline_to_edge(&pcurve.geometry, directed, edge);
+        let aligned = pcurves::align_spline_to_edge(&lowered, directed, edge);
         let at = |parameter: f64| {
             Ok::<_, cadmpeg_core::decode::ResourceLimit>(
                 cadmpeg_ir::eval::finite_or_refusal(cadmpeg_ir::eval::decode::pcurve_uv(
@@ -4907,7 +5534,7 @@ impl<'a> Builder<'a> {
             self.loss(
                 StepLossCode::WireRegionNoConnectedEdgeSet,
                 format!(
-                    "{} wire region(s) had no writable connected edge set and were not written to STEP: {regions}",
+                    "{} wire region(s) had no writable connected edge set and were not written as wireframes: {regions}",
                     self.empty_wire_regions.len()
                 ),
             );
@@ -5060,44 +5687,59 @@ impl<'a> Builder<'a> {
         // EDGE_CURVE carries its bounded domain through the two vertex
         // endpoints. The IR parameter interval is a derived parameterization
         // detail, not a separate STEP attribute, so it is not a loss here.
+        // The file states one global uncertainty, so the largest dropped
+        // tolerance is how far a reader can be wrong to take the geometry as exact.
+        let census = |tolerances: Vec<f64>| {
+            let largest = tolerances.iter().copied().fold(0.0, f64::max);
+            (tolerances.len(), largest)
+        };
         let topology_metadata = [
             (
                 "face tolerance",
-                self.ir
-                    .model
-                    .faces
-                    .iter()
-                    .filter(|face| face.tolerance.is_some())
-                    .count(),
+                census(
+                    self.ir
+                        .model
+                        .faces
+                        .iter()
+                        .filter_map(|face| face.tolerance)
+                        .map(cadmpeg_ir::scalar::PositiveReal::get)
+                        .collect(),
+                ),
             ),
             (
                 "edge tolerance",
-                self.ir
-                    .model
-                    .edges
-                    .iter()
-                    .filter(|edge| edge.tolerance.is_some())
-                    .count(),
+                census(
+                    self.ir
+                        .model
+                        .edges
+                        .iter()
+                        .filter_map(|edge| edge.tolerance)
+                        .map(cadmpeg_ir::scalar::PositiveReal::get)
+                        .collect(),
+                ),
             ),
             (
                 "vertex tolerance",
-                self.ir
-                    .model
-                    .vertices
-                    .iter()
-                    .filter(|vertex| vertex.tolerance.is_some())
-                    .count(),
+                census(
+                    self.ir
+                        .model
+                        .vertices
+                        .iter()
+                        .filter_map(|vertex| vertex.tolerance)
+                        .map(cadmpeg_ir::scalar::PositiveReal::get)
+                        .collect(),
+                ),
             ),
         ];
         let topology_metadata_count = topology_metadata
             .iter()
-            .map(|(_, count)| count)
+            .map(|(_, (count, _))| count)
             .sum::<usize>();
         if topology_metadata_count > 0 {
             let details = topology_metadata
                 .iter()
-                .filter(|(_, count)| *count > 0)
-                .map(|(kind, count)| format!("{kind}={count}"))
+                .filter(|(_, (count, _))| *count > 0)
+                .map(|(kind, (count, largest))| format!("{kind}={count} (largest {largest} mm)"))
                 .collect::<Vec<_>>()
                 .join(", ");
             self.loss(
@@ -5426,19 +6068,22 @@ impl<'a> Builder<'a> {
                 ),
             );
         }
+        let mut bindings_by_appearance = HashMap::<&AppearanceId, Vec<&AppearanceBinding>>::new();
+        for binding in &self.ir.model.appearance_bindings {
+            bindings_by_appearance
+                .entry(&binding.appearance)
+                .or_default()
+                .push(binding);
+        }
         let lossy_appearances = self
             .ir
             .model
             .appearances
             .iter()
             .filter(|appearance| {
-                let bindings = self
-                    .ir
-                    .model
-                    .appearance_bindings
-                    .iter()
-                    .filter(|binding| binding.appearance == appearance.id)
-                    .collect::<Vec<_>>();
+                let bindings = bindings_by_appearance
+                    .get(&appearance.id)
+                    .map_or(&[][..], Vec::as_slice);
                 let alpha_unwritable = appearance.base_color.is_some_and(|color| {
                     color.a() != 1.0
                         && bindings.iter().any(|binding| match &binding.target {
@@ -5661,6 +6306,15 @@ mod accounting_tests;
 mod construction_tests;
 #[cfg(test)]
 mod non_manifold_tests;
+
+/// A seam ring written as a `VERTEX_LOOP`: its pole, the carriers it leaves
+/// out, and the points of its other poles.
+#[derive(Clone)]
+struct SeamRing<'a> {
+    pole: &'a VertexId,
+    curves: Vec<&'a str>,
+    other_points: Vec<&'a str>,
+}
 
 /// Why a helix B-spline fit failed, for the loss report.
 fn helix_fit_failure(error: &cadmpeg_ir::eval::helix_nurbs::HelixNurbsError) -> &'static str {

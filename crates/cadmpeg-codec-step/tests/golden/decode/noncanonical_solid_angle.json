@@ -1,6 +1,7 @@
 {
   "ir": {
-    "ir_version": "8",
+    "decode_depth": "full",
+    "ir_version": "9",
     "model": {
       "appearance_bindings": [],
       "appearances": [],
@@ -40,15 +41,17 @@
       "vertices": [],
       "view_presentations": []
     },
-    "native": {
-      "step": {}
-    },
-    "scope": {
-      "design": true,
-      "model": true
-    },
+    "native": {},
     "source": {
-      "attributes": {},
+      "attributes": {
+        "bytes_named_opaque": "0",
+        "bytes_structural": "217",
+        "bytes_typed": "59",
+        "bytes_unclassified": "0",
+        "data_sections": "1",
+        "entity_instances": "1",
+        "schema": "AUTOMOTIVE_DESIGN_CC2"
+      },
       "identity": {
         "classification": "classified",
         "dialects": {
@@ -151,57 +154,10 @@
     ],
     "transfer": {
       "geometry_transferred": false,
-      "scope": {
-        "design": true,
-        "model": true
-      }
+      "transfer": "full"
     }
   },
   "source_fidelity": {
-    "annotations": {},
-    "metadata": {
-      "bytes_named_opaque": "0",
-      "bytes_structural": "217",
-      "bytes_typed": "59",
-      "bytes_unclassified": "0",
-      "data_sections": "1",
-      "entity_instances": "1",
-      "schema": "AUTOMOTIVE_DESIGN_CC2"
-    },
-    "parts": {
-      "step:source:part#b53670ae79b0b8cfb886008041ae598e5ef22256e9ebeac76e3a9bc8fa509914": {
-        "byte_len": 59,
-        "framing_bytes": [
-          {
-            "end": 192,
-            "start": 190
-          },
-          {
-            "end": 193,
-            "start": 192
-          },
-          {
-            "end": 194,
-            "start": 193
-          },
-          {
-            "end": 248,
-            "start": 247
-          },
-          {
-            "end": 249,
-            "start": 248
-          }
-        ],
-        "level": "step.complex_entity_instance",
-        "offset": 190,
-        "parent": null,
-        "state": {
-          "state": "decoded"
-        },
-        "stream": "file"
-      }
-    },
-    "unrepresented": []
+    "annotations": {}
   }
 }

@@ -25,6 +25,7 @@ fn cube_product() -> CadIr {
         part_number: None,
         bom_properties: Default::default(),
         bodies: vec![ir.model.bodies[0].id.clone()],
+        sketches: Vec::new(),
         native_ref: None,
     });
     ir.model.occurrences.push(Occurrence {

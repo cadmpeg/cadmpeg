@@ -16,6 +16,7 @@ mod database;
 mod decode;
 mod design;
 mod dialect;
+mod drawing;
 mod external_reference;
 mod feature;
 #[doc(hidden)]
@@ -60,7 +61,11 @@ pub struct InventorCodec;
 impl CodecBackend for InventorCodec {
     const FORMAT: FormatId = FormatId::new(dialect::FORMAT);
 
-    fn validate_native(ctx: &DecodeContext<'_>, ir: &CadIr) -> Result<Vec<Finding>, CodecError> {
+    fn validate_native(
+        ctx: &DecodeContext<'_>,
+        ir: &CadIr,
+        _source: Option<&cadmpeg_ir::SourceFidelity>,
+    ) -> Result<Vec<Finding>, CodecError> {
         validate::validate_native(ctx, ir)
     }
 

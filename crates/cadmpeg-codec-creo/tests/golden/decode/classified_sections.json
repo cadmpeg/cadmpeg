@@ -1,21 +1,11 @@
 {
   "ir": {
-    "ir_version": "8",
+    "decode_depth": "full",
+    "ir_version": "9",
     "model": {
       "appearance_bindings": [],
       "appearances": [],
       "assembly_joints": [],
-      "assets": [
-        {
-          "content": {
-            "data": "/9j/4AAQ",
-            "kind": "embedded"
-          },
-          "id": "creo:document:asset#thumbnail-137",
-          "media_type": "image/jpeg",
-          "name": "THMB_IMG_MAIN"
-        }
-      ],
       "attributes": [],
       "bodies": [],
       "coedges": [],
@@ -63,10 +53,6 @@
         ]
       }
     },
-    "scope": {
-      "design": true,
-      "model": true
-    },
     "source": {
       "attributes": {
         "crv_array_count": "12",
@@ -90,6 +76,7 @@
         "section.2.role": "thumbnail",
         "section_count": "3",
         "srf_array_count": "5",
+        "unresolved_feature_state_selection_count": "0",
         "version_line": "#UGC:2 P test"
       },
       "identity": {
@@ -461,6 +448,7 @@
       "unresolved_feature_dimension_driven_variable_count": 0,
       "unresolved_feature_dimension_value_count": 0,
       "unresolved_feature_segment_geometry_count": 0,
+      "unresolved_feature_state_selection_count": 0,
       "untransferred_visible_cone_surface_row_count": 0,
       "untransferred_visible_curve_row_count": 0,
       "untransferred_visible_cylinder_surface_row_count": 0,
@@ -566,10 +554,7 @@
     ],
     "transfer": {
       "geometry_transferred": false,
-      "scope": {
-        "design": true,
-        "model": true
-      }
+      "transfer": "full"
     }
   },
   "source_fidelity": {
@@ -600,8 +585,7 @@
           "retention": "inline"
         },
         "offset": 152,
-        "stream": "creo:THMB_IMG_MAIN",
-        "untyped": []
+        "stream": "creo:THMB_IMG_MAIN"
       },
       "creo:VisibGeom:section#79": {
         "bytes": {
@@ -609,23 +593,8 @@
           "retention": "inline"
         },
         "offset": 79,
-        "stream": "creo:VisibGeom",
-        "untyped": []
-      },
-      "creo:source:image#whole": {
-        "bytes": {
-          "data": "I1VHQzoyIFAgdGVzdAojLUVORF9PRl9VR0NfSEVBREVSCiNVR0NfVE9DCnRvYyBlbnRyeSBsaW5lCiNFTkRfT0ZfVE9DX0hFQURFUgojCiNWaXNpYkdlb20Kc3JmX2FycmF5APgF4CJwAGNydl9hcnJheQDz+AwjCiNBbGxGZWF0dXIKAQIDIwojVEhNQl9JTUdfTUFJTgr/2P/gABA=",
-          "retention": "inline"
-        },
-        "offset": 0,
-        "stream": "creo:source",
-        "untyped": [
-          "model"
-        ]
+        "stream": "creo:VisibGeom"
       }
-    },
-    "unrepresented": [
-      "model"
-    ]
+    }
   }
 }

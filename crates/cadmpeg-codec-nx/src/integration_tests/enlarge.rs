@@ -54,16 +54,18 @@ fn enlarge_pipeline_resolves_the_owning_class_without_inventing_face_roles() {
         cadmpeg_ir::validate_neutral_with_source_fidelity(&ir, &fidelity, report.losses).unwrap();
     assert!(validation.is_ok(), "{validation:#?}");
     crate::test_support::with_decode_context(|ctx| {
-        assert!(<crate::NxCodec as CodecBackend>::validate_native(ctx, &ir)
-            .unwrap()
-            .is_empty());
+        assert!(
+            <crate::NxCodec as CodecBackend>::validate_native(ctx, &ir, None)
+                .unwrap()
+                .is_empty()
+        );
         let mut invalid = wire;
         invalid["scalars"][0] = serde_json::json!(2.0);
         ir.native
             .namespace_mut("nx")
             .set_arena(ctx, "feature_enlarge_construction_envelopes", &[invalid])
             .unwrap();
-        let findings = <crate::NxCodec as CodecBackend>::validate_native(ctx, &ir).unwrap();
+        let findings = <crate::NxCodec as CodecBackend>::validate_native(ctx, &ir, None).unwrap();
         assert_eq!(findings.len(), 1);
         assert!(findings[0].message.contains("values must match raw_values"));
     });

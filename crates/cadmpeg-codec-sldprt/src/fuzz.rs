@@ -44,6 +44,24 @@ pub fn topology(data: &[u8]) {
     drop(crate::brep::topology::scan(data));
 }
 
+/// Exercise framed counted-`CString` reading.
+///
+/// Invariant: malformed input never panics; a failed read leaves the view at
+/// the entry position, and an accepted read starts there.
+pub fn framed_string(data: &[u8]) -> Result<(), cadmpeg_core::CodecError> {
+    let arena = DecodeArena::new();
+    let (ctx, mut view) = DecodeContext::from_root_bytes(data, &arena, &DecodePolicy::service())?;
+    let start = view.position();
+    match crate::framed_string::read_framed_string(&ctx, &mut view)? {
+        Some(framed) => {
+            assert_eq!(framed.offset, start);
+            assert!(view.position() > start);
+        }
+        None => assert_eq!(view.position(), start),
+    }
+    Ok(())
+}
+
 /// Exercise entity record scanning.
 pub fn entity(data: &[u8]) {
     drop(crate::brep::entity::scan_metadata(data, false));
@@ -131,5 +149,13 @@ mod tests {
             .expect("a frame above the local cap is skipped");
         assert!(streams.streams.is_empty());
         assert!(!streams.probe_capped);
+    }
+
+    #[test]
+    fn framed_string_fuzz_wrapper_accepts_and_rejects() {
+        super::framed_string(&[0xff, 0xfe, 0xff, 1, b'k', 0]).expect("valid frame");
+        super::framed_string(&[0xff, 0xfe, 0xff, 1, b'k', 0, 0x41]).expect("trailing bytes");
+        super::framed_string(&[0xff, 0xfe]).expect("short marker");
+        assert!(super::framed_string(&[0xff, 0xfe, 0xff, 9]).is_err());
     }
 }

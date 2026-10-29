@@ -76,6 +76,12 @@ fn add_radius_parameter(
     .unwrap();
     native.design_parameters.push(parameter);
     native.design_parameter_owners.push(owner);
+    let scope = native
+        .design_parameter_scopes
+        .iter_mut()
+        .find(|scope| scope.record_index == 10)
+        .expect("the Fillet scope fixture");
+    crate::design::test_support::name_scope_references(scope, [owner_index]);
 }
 
 fn radius_native(valid: bool) -> crate::native::F3dNative {
@@ -159,4 +165,77 @@ fn fillet_variable_radius_midpoints_keep_order_validation() {
         assert!(invalid_findings.iter().any(|finding| finding.message
             == "Fusion Design Fillet radius group has an invalid parameter assignment"));
     })
+}
+
+#[test]
+fn fillet_multiple_variable_runs_assign_and_validate_each_group() {
+    use crate::records::topology::fillet::DesignFilletRadiusLaw;
+    let mut native = native();
+    let mut second = native.design_construction_operand_groups[0].clone();
+    second.record_index = 110;
+    second.id = "f3d:Design/BulkStream.dat:design-construction-operand-group#110".into();
+    second.scope_reference_ordinal += 1;
+    native.design_construction_operand_groups.push(second);
+    for (ordinal, kind) in [
+        "TangencyWeight",
+        "StartRadius",
+        "EndRadius",
+        "MidRadius",
+        "MidParams",
+    ]
+    .into_iter()
+    .cycle()
+    .take(10)
+    .enumerate()
+    {
+        let index = 301 + u32::try_from(ordinal).unwrap() * 3;
+        let unit = matches!(kind, "StartRadius" | "EndRadius" | "MidRadius").then_some("mm");
+        add_radius_parameter(&mut native, index, kind, 0.4, unit);
+        let owner = native.design_parameter_owners.pop().unwrap();
+        let mut wire = crate::records::parameters::DesignParameterOwnerContent::from(owner);
+        wire.local_ordinal = Some(u32::try_from(ordinal).unwrap());
+        native
+            .design_parameter_owners
+            .push(wire.try_into().unwrap());
+    }
+    native.design_fillet_radius_groups =
+        crate::design::decode::operands::decode_fillet_radius_groups(
+            &native.design_parameter_scopes,
+            &native.design_construction_operand_groups,
+            &native.design_parameter_owners,
+            &native.design_parameters,
+        );
+    assert_eq!(native.design_fillet_radius_groups.len(), 2);
+    for (ordinal, assignment) in native.design_fillet_radius_groups.iter().enumerate() {
+        let base = 301 + u32::try_from(ordinal).unwrap() * 15;
+        assert_eq!(
+            assignment.tangency_weight_parameter_record_index,
+            Some(base)
+        );
+        assert!(matches!(&assignment.law, DesignFilletRadiusLaw::Variable {
+            start_radius_parameter_record_index, end_radius_parameter_record_index, middle,
+        } if *start_radius_parameter_record_index == base + 3
+            && *end_radius_parameter_record_index == base + 6
+            && middle.len() == 1
+            && middle[0].radius_parameter_record_index == base + 9
+            && middle[0].parameter_record_index == base + 12));
+    }
+    crate::test_support::with_decode_context(|decode| {
+        let ir = cadmpeg_ir::examples::unit_cube().unwrap();
+        let ctx = super::super::Ctx::new(&ir, &native, decode);
+        let mut findings = Vec::new();
+        let assignments = super::super::validate_fillet_radius_groups(&ctx, &mut findings);
+        super::super::validate_fillet_operand_groups(&ctx, &mut findings, &assignments);
+        assert!(findings.is_empty(), "{findings:?}");
+    });
+    native.design_parameters.pop();
+    assert!(
+        crate::design::decode::operands::decode_fillet_radius_groups(
+            &native.design_parameter_scopes,
+            &native.design_construction_operand_groups,
+            &native.design_parameter_owners,
+            &native.design_parameters,
+        )
+        .is_empty()
+    );
 }

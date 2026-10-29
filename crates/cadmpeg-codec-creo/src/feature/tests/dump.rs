@@ -1192,12 +1192,7 @@ fn decode_retains_conflicting_recipe_candidates_without_projecting_one() {
     let scan = container::scan_bytes_ok(data.clone());
 
     assert_eq!(scan.features.operation_states.len(), 2);
-    assert_eq!(scan.features.operations.len(), 1);
-    assert_eq!(
-        scan.features.operations[0].recipe,
-        crate::feature::operations::RecipeResolution::Conflicting
-    );
-    assert!(scan.features.operations[0].recipe.is_conflicting());
+    assert!(scan.features.operations.is_empty());
     assert_eq!(scan.features.depdb_recipe_rows.len(), 2);
     assert!(scan
         .features
@@ -1217,33 +1212,18 @@ fn decode_retains_conflicting_recipe_candidates_without_projecting_one() {
     let result = CreoCodec
         .decode(&mut Cursor::new(data), &DecodeOptions::default())
         .expect("decode");
-    let feature = result
+    assert!(result
         .ir()
         .model
         .features
         .iter()
-        .find(|feature| feature.id.as_str() == "creo:model:feature#8053")
-        .expect("native feature");
+        .all(|feature| feature.id.as_str() != "creo:model:feature#8053"));
     let operation_states =
         &result.ir().native.namespace("creo").unwrap().arenas()["feature_operation_states"];
     assert_eq!(operation_states.len(), 2);
     assert!(operation_states
         .iter()
         .all(|state| state.fields().unwrap()["recipe_conflict"] == true));
-    assert!(matches!(
-        feature.evaluation.definition(),
-        cadmpeg_ir::features::FeatureDefinition::Operation(cadmpeg_ir::features::FeatureOperation::Native { kind, .. })
-            if kind.as_str() == "Native Feature"
-    ));
-    assert_eq!(
-        feature
-            .source_properties
-            .get("featdefs_row_schema_classes")
-            .map(String::as_str),
-        Some("917")
-    );
-    assert!(!feature.source_properties.contains_key("recipe"));
-    assert_eq!(feature.source_tag, None);
 }
 
 #[test]

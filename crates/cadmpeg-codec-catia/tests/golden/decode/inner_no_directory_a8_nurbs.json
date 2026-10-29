@@ -1,6 +1,7 @@
 {
   "ir": {
-    "ir_version": "8",
+    "decode_depth": "full",
+    "ir_version": "9",
     "model": {
       "appearance_bindings": [],
       "appearances": [],
@@ -153,7 +154,6 @@
         "consolidated_tori": [],
         "consolidated_vertex_identities": [],
         "design_objects": [],
-        "display_colors": [],
         "e5_curve_supports": [],
         "entity_records": [],
         "external_references": [],
@@ -187,15 +187,13 @@
         "zero_entity_vertex_incidences": []
       }
     },
-    "scope": {
-      "design": true,
-      "model": true
-    },
     "source": {
       "attributes": {
         "external_reference_count": "0",
         "file_size": "539",
         "finjpl_segment_count": "0",
+        "inner_offset": "16",
+        "outer_dir_offset": "539",
         "preview_count": "0",
         "stream_count": "2"
       },
@@ -584,10 +582,7 @@
     ],
     "transfer": {
       "geometry_transferred": true,
-      "scope": {
-        "design": true,
-        "model": true
-      }
+      "transfer": "full"
     }
   },
   "source_fidelity": {
@@ -614,10 +609,6 @@
         }
       }
     },
-    "metadata": {
-      "source.inner_offset": "16",
-      "source.outer_dir_offset": "539"
-    },
     "retained_records": {
       "catia:payload:unknown#freeform": {
         "bytes": {
@@ -625,19 +616,8 @@
           "retention": "inline"
         },
         "offset": 0,
-        "stream": "catia:CATPart",
-        "untyped": []
-      },
-      "catia:source:image#whole": {
-        "bytes": {
-          "data": "VjVfQ0ZWMgAAAAIbAAAAAFY1X0NGVjIAAAABJAAAAOeoAzQIAQAArfvK3gAJAAAJAQAAAAAAAAAAAAAAAAAA8D8NDQkAAAkBAAAAAAAAAAAAAAAAAADwPw0NAQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAPA/AAAAAAAAAAAAAAAAAADwPwAAAAAAAABAAAAAAAAAAAAAAAAAAAAAQAAAAAAAAAhAAAAAAAAA8D8AAAAAAAAAAAAAAAAAABBAAAAAAAAA8D8AAAAAAADwPwAAAAAAABRAAAAAAAAA8D8AAAAAAAAAQAAAAAAAABhAAAAAAAAAAEAAAAAAAAAAAAAAAAAAABxAAAAAAAAAAEAAAAAAAADwPwAAAAAAACBAAAAAAAAAAEAAAAAAAAAAQABDQVRJQV9WNSBDQjAwMDEAAAAAAAAAAAAAAAAAAAABE1gAYQBpAG4ARABhAHQAYQBTAHQAcgBlAGEAbQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAABAAAAEAAAARMAAAETAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAABUwB1AHIAZgBhAGMAaQBjAFIAZQBwAHMAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAEAAAEjAAAAAQAAAAEAAAAAAAAAAENCX19FTkQ=",
-          "retention": "inline"
-        },
-        "offset": 0,
-        "stream": "catia:source",
-        "untyped": []
+        "stream": "catia:CATPart"
       }
-    },
-    "unrepresented": []
+    }
   }
 }

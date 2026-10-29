@@ -420,8 +420,33 @@ pub(crate) fn synthetic_geometry_with_exact_curve_smbh() -> Vec<u8> {
     bytes
 }
 
-pub(crate) fn synthetic_geometry_with_decoy_curve_sense_smbh() -> Vec<u8> {
+pub(crate) fn synthetic_geometry_with_consistent_exact_curve_smbh() -> Vec<u8> {
     let mut bytes = synthetic_geometry_with_exact_curve_smbh();
+    let start = asm_header::record_stream_start(&bytes).unwrap();
+    let limit = asm_header::solved_record_limit(&bytes).unwrap();
+    let records = cadmpeg_asm::test_support::sab::frame(
+        &bytes,
+        start,
+        limit,
+        cadmpeg_asm::kernel_header::RefWidth::Eight,
+    )
+    .unwrap();
+    let point = &records[17];
+    let position = cadmpeg_asm::test_support::sab::payload_token_offsets(
+        &bytes,
+        point,
+        cadmpeg_asm::kernel_header::RefWidth::Eight,
+        0x13,
+    )
+    .unwrap()[0];
+    let mut endpoint = Vec::new();
+    t_pos(&mut endpoint, [2.0, 0.0, 0.0]);
+    bytes.splice(position..position + endpoint.len(), endpoint);
+    bytes
+}
+
+pub(crate) fn synthetic_geometry_with_decoy_curve_sense_smbh() -> Vec<u8> {
+    let mut bytes = synthetic_geometry_with_consistent_exact_curve_smbh();
     let marker = b"\x0f\x0d\x0dexact_int_cur";
     let subtype = bytes
         .windows(marker.len())

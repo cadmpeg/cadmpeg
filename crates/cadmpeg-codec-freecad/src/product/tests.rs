@@ -1720,7 +1720,7 @@ fn equal_stale_arrays_do_not_establish_missing_element_count() {
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service())
         .expect("validation context");
     assert!(FcstdCodec
-        .validate_native(&ctx, result.ir())
+        .validate_native(&ctx, result.ir(), None)
         .expect("validation fits service policy")
         .is_empty());
 }

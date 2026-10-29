@@ -14,7 +14,7 @@ rewrite_native_scalar!(DesignFaceRecipeKind);
 rewrite_native_record!(DesignJointOriginReference, []; {joint_origin_reference});
 rewrite_native_record!(DesignJointOriginTransform, []; {joint_origin_transform, reference});
 rewrite_native_scalar!(DesignNativeFeatureName);
-rewrite_native_record!(DesignParameterScope, []; {id, class_tag, record_index, generation, feature_ordinal, history_state_id, previous_history_state_id, reference_members, payload, unclosed_construction_operand_groups, paired_class_tag}; native scope_fields);
+rewrite_native_record!(DesignParameterScope, []; {id, class_tag, record_index, generation, feature_ordinal, history_state_id, previous_history_state_id, reference_members, occurrence_transfer, payload, unclosed_construction_operand_groups, paired_class_tag}; native scope_fields);
 rewrite_native_scalar!(super::generation::DesignScopeGeneration);
 rewrite_native_record!(DesignSketchEntityBinding, []; {entity_id});
 rewrite_native_record!(DesignSweepScope, []; {construction, sweep_profile});
@@ -26,6 +26,13 @@ fn scope_fields<F: FnMut(&str) -> Result<String, cadmpeg_core::CodecError>>(
     value: &mut serde_json::Value,
     map: &mut cadmpeg_ir::schema::rewrite::typed::IdentityMap<'_, F>,
 ) -> Result<(), cadmpeg_core::CodecError> {
+    cadmpeg_ir::schema::rewrite::typed::native_fields::rewrite_field(
+        ctx,
+        value,
+        "emboss_construction",
+        map,
+        DesignParameterScope::emboss_construction,
+    )?;
     cadmpeg_ir::schema::rewrite::typed::native_fields::rewrite_field(
         ctx,
         value,

@@ -213,3 +213,70 @@ fn product_validation_keeps_definition_graph_occurrence_joint_finding_order() {
         ]
     );
 }
+
+#[test]
+fn product_sketch_references_exist_and_have_one_definition() {
+    let mut ir = CadIr::empty();
+    let sketch = "test:model:sketch#one";
+    ir.model.sketches.push(
+        serde_json::from_value(serde_json::json!({
+            "id": sketch, "placement": {"kind": "unresolved"}
+        }))
+        .unwrap(),
+    );
+    ir.model.product_definitions.push(
+        serde_json::from_value(serde_json::json!({
+            "id": "test:model:product#one", "kind": "part", "sketches": [sketch]
+        }))
+        .unwrap(),
+    );
+    let ctx = cadmpeg_test_support::service_decode_context();
+    let mut findings = Vec::new();
+    super::super::check_products(&ctx, &ir, &mut findings).unwrap();
+    assert!(findings.is_empty());
+    ir.model.product_definitions.push(
+        serde_json::from_value(serde_json::json!({
+            "id": "test:model:product#two", "kind": "part", "sketches": [sketch]
+        }))
+        .unwrap(),
+    );
+    super::super::check_products(&ctx, &ir, &mut findings).unwrap();
+    assert!(findings
+        .iter()
+        .any(|finding| finding.message == "sketch has multiple product definitions"));
+    findings.clear();
+    ir.model.product_definitions.pop();
+    ir.model.sketches.clear();
+    super::super::check_products(&ctx, &ir, &mut findings).unwrap();
+    assert!(findings
+        .iter()
+        .any(|finding| finding.message == "invalid product sketch reference"));
+}
+
+#[test]
+fn product_sketch_reference_cannot_repeat_in_one_definition() {
+    let mut ir = CadIr::empty();
+    let sketch = "test:model:sketch#one";
+    ir.model.sketches.push(
+        serde_json::from_value(serde_json::json!({
+            "id": sketch, "placement": {"kind": "unresolved"}
+        }))
+        .unwrap(),
+    );
+    ir.model.product_definitions.push(
+        serde_json::from_value(serde_json::json!({
+            "id": "test:model:product#one", "kind": "part", "sketches": [sketch, sketch, sketch]
+        }))
+        .unwrap(),
+    );
+    let ctx = cadmpeg_test_support::service_decode_context();
+    let mut findings = Vec::new();
+    super::super::check_products(&ctx, &ir, &mut findings).unwrap();
+    assert_eq!(findings.len(), 1);
+    assert_eq!(findings[0].message, "duplicate product sketch reference");
+    assert_eq!(
+        findings[0].entity.as_deref(),
+        Some("test:model:product#one")
+    );
+    assert_eq!(findings[0].severity, crate::report::Severity::Error);
+}

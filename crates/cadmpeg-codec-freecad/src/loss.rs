@@ -54,6 +54,42 @@ pub(crate) enum FreecadLossCode {
     ExportProceduralReduced,
     /// Native-only property content has no synthesized encoding.
     ExportNativePropertyNotTransferred,
+    /// Template geometry or positioned text remains in its SVG asset.
+    TemplateNotTransferred,
+    /// The stored horizontal view axis has no nonzero neutral direction.
+    DrawingViewAxisNotTransferred,
+    /// Projected model-view edges have no persisted curve collection.
+    ViewGeometryNotStored,
+    /// The view family has no admitted projected geometry.
+    ViewGeometryNotTransferred,
+    /// An exact dimension value has no admitted page reference anchors.
+    DimensionAnchorsNotTransferred,
+    /// Drawing appearance has no complete physical style.
+    DrawingStyleNotTransferred,
+    /// Caption text has no normalized page position.
+    CaptionNotTransferred,
+    /// Persisted drawing content remains native.
+    DrawingSheetNotTransferred,
+    /// Persisted drawing content remains native.
+    DrawingTitleBlockNotTransferred,
+    /// Persisted drawing content remains native.
+    DrawingCosmeticEdgeNotTransferred,
+    /// Persisted drawing content remains native.
+    DrawingCosmeticVertexNotTransferred,
+    /// Persisted drawing content remains native.
+    DrawingCenterLineNotTransferred,
+    /// Persisted drawing content remains native.
+    DrawingGeometryFormatNotTransferred,
+    /// Persisted drawing content remains native.
+    DrawingDimensionKindNotTransferred,
+    /// Persisted drawing content remains native.
+    DrawingDimensionGeometryNotTransferred,
+    /// Persisted drawing content remains native.
+    DrawingDimensionToleranceNotTransferred,
+    /// A mesh use has no complete neutral placement path.
+    MeshPlacementNotTransferred,
+    /// Mesh occurrence expansion reached its input-scaled local work cap.
+    MeshPlacementBounded,
     /// A property payload cannot enter the admitted persistence graph.
     PersistencePayloadUnresolved,
     /// An optional file reference has no readable archive payload.
@@ -124,6 +160,24 @@ impl FreecadLossCode {
         Self::ExportPresentationNotTransferred,
         Self::ExportProceduralReduced,
         Self::ExportNativePropertyNotTransferred,
+        Self::TemplateNotTransferred,
+        Self::DrawingViewAxisNotTransferred,
+        Self::ViewGeometryNotStored,
+        Self::ViewGeometryNotTransferred,
+        Self::DimensionAnchorsNotTransferred,
+        Self::DrawingStyleNotTransferred,
+        Self::CaptionNotTransferred,
+        Self::DrawingSheetNotTransferred,
+        Self::DrawingTitleBlockNotTransferred,
+        Self::DrawingCosmeticEdgeNotTransferred,
+        Self::DrawingCosmeticVertexNotTransferred,
+        Self::DrawingCenterLineNotTransferred,
+        Self::DrawingGeometryFormatNotTransferred,
+        Self::DrawingDimensionKindNotTransferred,
+        Self::DrawingDimensionGeometryNotTransferred,
+        Self::DrawingDimensionToleranceNotTransferred,
+        Self::MeshPlacementNotTransferred,
+        Self::MeshPlacementBounded,
         Self::PersistencePayloadUnresolved,
         Self::PersistenceSideEntryUnresolved,
         Self::PersistenceCountNoncanonical,
@@ -169,6 +223,28 @@ impl FreecadLossCode {
             Self::ExportPresentationNotTransferred => "presentation.not-transferred",
             Self::ExportProceduralReduced => "geometry.procedural-reduced",
             Self::ExportNativePropertyNotTransferred => "metadata.native-property-not-transferred",
+            Self::DrawingViewAxisNotTransferred => "drawing.view-axis-not-transferred",
+            Self::TemplateNotTransferred => "drawing.template-not-transferred",
+            Self::ViewGeometryNotStored => "drawing.view-geometry-not-stored",
+            Self::ViewGeometryNotTransferred => "drawing.view-geometry-not-transferred",
+            Self::DimensionAnchorsNotTransferred => "annotation.dimension-anchors-not-transferred",
+            Self::DrawingStyleNotTransferred => "drawing.style-not-transferred",
+            Self::CaptionNotTransferred => "drawing.caption-not-transferred",
+            Self::DrawingSheetNotTransferred => "drawing.sheet-not-transferred",
+            Self::DrawingTitleBlockNotTransferred => "drawing.title-block-not-transferred",
+            Self::DrawingCosmeticEdgeNotTransferred => "drawing.cosmetic-edge-not-transferred",
+            Self::DrawingCosmeticVertexNotTransferred => "drawing.cosmetic-vertex-not-transferred",
+            Self::DrawingCenterLineNotTransferred => "drawing.center-line-not-transferred",
+            Self::DrawingGeometryFormatNotTransferred => "drawing.geometry-format-not-transferred",
+            Self::DrawingDimensionKindNotTransferred => "drawing.dimension-kind-not-transferred",
+            Self::DrawingDimensionGeometryNotTransferred => {
+                "drawing.dimension-geometry-not-transferred"
+            }
+            Self::DrawingDimensionToleranceNotTransferred => {
+                "drawing.dimension-tolerance-not-transferred"
+            }
+            Self::MeshPlacementNotTransferred => "geometry.mesh-placement-not-transferred",
+            Self::MeshPlacementBounded => "geometry.mesh-placement-bounded",
             Self::PersistencePayloadUnresolved => "metadata.persistence-payload-unresolved",
             Self::PersistenceSideEntryUnresolved => "metadata.persistence-side-entry-unresolved",
             Self::PersistenceCountNoncanonical => "metadata.persistence-count-noncanonical",
@@ -220,12 +296,30 @@ impl FreecadLossCode {
             | Self::ExportAppearanceNotTransferred
             | Self::ExportPresentationNotTransferred
             | Self::ExportProceduralReduced => Severity::Warning,
-            Self::FeatureNativeKindRetained
+            Self::MeshPlacementNotTransferred
+            | Self::MeshPlacementBounded
+            | Self::FeatureNativeKindRetained
             | Self::SketchNativeGeometry
             | Self::SketchNativeConstraint
             | Self::PcurveLocationAmbiguous
             | Self::TopologyLocationIdentityBounded => Severity::Blocking,
             Self::FeatureCyclicHistory
+            | Self::DrawingViewAxisNotTransferred
+            | Self::TemplateNotTransferred
+            | Self::ViewGeometryNotStored
+            | Self::ViewGeometryNotTransferred
+            | Self::DimensionAnchorsNotTransferred
+            | Self::DrawingStyleNotTransferred
+            | Self::CaptionNotTransferred
+            | Self::DrawingSheetNotTransferred
+            | Self::DrawingTitleBlockNotTransferred
+            | Self::DrawingCosmeticEdgeNotTransferred
+            | Self::DrawingCosmeticVertexNotTransferred
+            | Self::DrawingCenterLineNotTransferred
+            | Self::DrawingGeometryFormatNotTransferred
+            | Self::DrawingDimensionKindNotTransferred
+            | Self::DrawingDimensionGeometryNotTransferred
+            | Self::DrawingDimensionToleranceNotTransferred
             | Self::SketchExternalCacheUnresolved
             | Self::SketchExternalReferenceUnresolved
             | Self::SketchProfileMatchingBounded
@@ -266,9 +360,27 @@ impl FreecadLossCode {
             Self::ExportProceduralReduced => LossTaxonomy::ProceduralReduced,
             Self::ExportGeometryNotTransferred => LossTaxonomy::GeometryNotTransferred,
             Self::ExportNativePropertyNotTransferred => LossTaxonomy::MetadataNotTransferred,
-            Self::PersistencePayloadUnresolved | Self::PersistenceSideEntryUnresolved => {
-                LossTaxonomy::RecordNotTyped
+            Self::MeshPlacementNotTransferred | Self::MeshPlacementBounded => {
+                LossTaxonomy::GeometryNotTransferred
             }
+            Self::DrawingViewAxisNotTransferred
+            | Self::TemplateNotTransferred
+            | Self::ViewGeometryNotStored
+            | Self::ViewGeometryNotTransferred
+            | Self::DimensionAnchorsNotTransferred
+            | Self::DrawingStyleNotTransferred
+            | Self::CaptionNotTransferred
+            | Self::DrawingSheetNotTransferred
+            | Self::DrawingTitleBlockNotTransferred
+            | Self::DrawingCosmeticEdgeNotTransferred
+            | Self::DrawingCosmeticVertexNotTransferred
+            | Self::DrawingCenterLineNotTransferred
+            | Self::DrawingGeometryFormatNotTransferred
+            | Self::DrawingDimensionKindNotTransferred
+            | Self::DrawingDimensionGeometryNotTransferred
+            | Self::DrawingDimensionToleranceNotTransferred
+            | Self::PersistencePayloadUnresolved
+            | Self::PersistenceSideEntryUnresolved => LossTaxonomy::RecordNotTyped,
             Self::FeatureCyclicHistory | Self::FeatureNativeKindRetained => {
                 LossTaxonomy::FeatureHistoryRetained
             }
@@ -398,6 +510,78 @@ const SOURCE_RECORD_COVERAGE: &[(FreecadLossCode, SourceRecordCoverage)] = &[
     (
         FreecadLossCode::ExportNativePropertyNotTransferred,
         SourceRecordCoverage::Writer,
+    ),
+    (
+        FreecadLossCode::TemplateNotTransferred,
+        SourceRecordCoverage::Typed,
+    ),
+    (
+        FreecadLossCode::DrawingViewAxisNotTransferred,
+        SourceRecordCoverage::Typed,
+    ),
+    (
+        FreecadLossCode::ViewGeometryNotStored,
+        SourceRecordCoverage::Typed,
+    ),
+    (
+        FreecadLossCode::ViewGeometryNotTransferred,
+        SourceRecordCoverage::Typed,
+    ),
+    (
+        FreecadLossCode::DimensionAnchorsNotTransferred,
+        SourceRecordCoverage::Typed,
+    ),
+    (
+        FreecadLossCode::DrawingStyleNotTransferred,
+        SourceRecordCoverage::Typed,
+    ),
+    (
+        FreecadLossCode::CaptionNotTransferred,
+        SourceRecordCoverage::Typed,
+    ),
+    (
+        FreecadLossCode::DrawingSheetNotTransferred,
+        SourceRecordCoverage::Typed,
+    ),
+    (
+        FreecadLossCode::DrawingTitleBlockNotTransferred,
+        SourceRecordCoverage::Typed,
+    ),
+    (
+        FreecadLossCode::DrawingCosmeticEdgeNotTransferred,
+        SourceRecordCoverage::Typed,
+    ),
+    (
+        FreecadLossCode::DrawingCosmeticVertexNotTransferred,
+        SourceRecordCoverage::Typed,
+    ),
+    (
+        FreecadLossCode::DrawingCenterLineNotTransferred,
+        SourceRecordCoverage::Typed,
+    ),
+    (
+        FreecadLossCode::DrawingGeometryFormatNotTransferred,
+        SourceRecordCoverage::Typed,
+    ),
+    (
+        FreecadLossCode::DrawingDimensionKindNotTransferred,
+        SourceRecordCoverage::Typed,
+    ),
+    (
+        FreecadLossCode::DrawingDimensionGeometryNotTransferred,
+        SourceRecordCoverage::Typed,
+    ),
+    (
+        FreecadLossCode::DrawingDimensionToleranceNotTransferred,
+        SourceRecordCoverage::Typed,
+    ),
+    (
+        FreecadLossCode::MeshPlacementNotTransferred,
+        SourceRecordCoverage::Typed,
+    ),
+    (
+        FreecadLossCode::MeshPlacementBounded,
+        SourceRecordCoverage::Typed,
     ),
     (
         FreecadLossCode::PersistencePayloadUnresolved,
@@ -609,6 +793,24 @@ mod tests {
                 "presentation.not-transferred",
                 "geometry.procedural-reduced",
                 "metadata.native-property-not-transferred",
+                "drawing.template-not-transferred",
+                "drawing.view-axis-not-transferred",
+                "drawing.view-geometry-not-stored",
+                "drawing.view-geometry-not-transferred",
+                "annotation.dimension-anchors-not-transferred",
+                "drawing.style-not-transferred",
+                "drawing.caption-not-transferred",
+                "drawing.sheet-not-transferred",
+                "drawing.title-block-not-transferred",
+                "drawing.cosmetic-edge-not-transferred",
+                "drawing.cosmetic-vertex-not-transferred",
+                "drawing.center-line-not-transferred",
+                "drawing.geometry-format-not-transferred",
+                "drawing.dimension-kind-not-transferred",
+                "drawing.dimension-geometry-not-transferred",
+                "drawing.dimension-tolerance-not-transferred",
+                "geometry.mesh-placement-not-transferred",
+                "geometry.mesh-placement-bounded",
                 "metadata.persistence-payload-unresolved",
                 "metadata.persistence-side-entry-unresolved",
                 "metadata.persistence-count-noncanonical",

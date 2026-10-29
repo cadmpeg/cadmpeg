@@ -1,8 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use crate::records::act::{
-    ActChannelGroup, ActEntity, ActGuid, ActRegistryChannel, ActRegistryFlag, ActRootComponent,
-    ActRootLayout, ActTableReference,
+    ActChannelGroup, ActComponentLayout, ActComponentLink, ActEntity, ActGuid, ActRegistryChannel,
+    ActRegistryFlag, ActTableReference,
 };
 use crate::records::identity::Located;
 use crate::test_support::native_test::reject_changed_id;
@@ -174,15 +174,18 @@ fn act_registry_channel_native_retained_limit_refuses_before_name_clone() {
     );
 }
 
-fn root_component_fixture() -> ActRootComponent {
-    ActRootComponent::try_new(
-        "f3d:native:act-root-component#20".into(),
+fn root_component_fixture() -> ActComponentLink {
+    ActComponentLink::try_new(
+        "f3d:native:act-component-link#20".into(),
         1,
         "261".to_owned().try_into().unwrap(),
-        2,
-        4,
+        super::ActComponentReferences {
+            instance_root: 2,
+            tracked_entity: 3,
+            components_root: 4,
+        },
         ActRegistryFlag::Off,
-        ActRootLayout::new(20, "0_3".into(), "Root".into(), 1).unwrap(),
+        ActComponentLayout::new(20, "0_3".into(), "Root".into(), 1).unwrap(),
     )
     .unwrap()
 }
@@ -190,7 +193,7 @@ fn root_component_fixture() -> ActRootComponent {
 #[test]
 fn act_root_component_borrowed_wire_matches_owned_wire_bytes() {
     let root = root_component_fixture();
-    let owned = super::ActRootComponentWire::from(root.clone());
+    let owned = super::ActComponentLinkWire::from(root.clone());
     assert_eq!(
         serde_json::to_vec(&root).unwrap(),
         serde_json::to_vec(&owned).unwrap()
@@ -208,11 +211,11 @@ fn act_root_component_native_retained_limit_refuses_before_layout_clone() {
     policy.limits.max_retained_bytes = u64::try_from(needed).unwrap() - 1;
     let (limited, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     let mut namespace = cadmpeg_ir::NativeNamespace::default();
-    super::ACT_ROOT_COMPONENT_CLONE_COUNT.with(|count| count.set(0));
+    super::ACT_COMPONENT_LINK_CLONE_COUNT.with(|count| count.set(0));
     let error = namespace
-        .set_arena(&limited, "act_root_components", std::slice::from_ref(&root))
+        .set_arena(&limited, "act_component_links", std::slice::from_ref(&root))
         .unwrap_err();
-    super::ACT_ROOT_COMPONENT_CLONE_COUNT.with(|count| assert_eq!(count.get(), 0));
+    super::ACT_COMPONENT_LINK_CLONE_COUNT.with(|count| assert_eq!(count.get(), 0));
     assert!(matches!(
         cadmpeg_core::CodecError::from(error),
         cadmpeg_core::CodecError::ResourceLimit(limit)
@@ -223,10 +226,10 @@ fn act_root_component_native_retained_limit_refuses_before_layout_clone() {
     let (service, _) =
         DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service()).unwrap();
     namespace
-        .set_arena(&service, "act_root_components", std::slice::from_ref(&root))
+        .set_arena(&service, "act_component_links", std::slice::from_ref(&root))
         .unwrap();
     assert_eq!(
-        serde_json::to_value(&namespace.arenas()["act_root_components"][0]).unwrap(),
+        serde_json::to_value(&namespace.arenas()["act_component_links"][0]).unwrap(),
         serde_json::to_value(&root).unwrap()
     );
 }
@@ -372,18 +375,19 @@ fn act_table_row_derives_the_entity_offset_and_rejects_wire_drift() {
 }
 
 #[test]
-fn act_root_component_rejects_nonroot_tracking_on_the_wire() {
+fn act_component_link_preserves_tracking_references_on_the_wire() {
     let wire = serde_json::json!({
-        "id": "f3d:stream:act-root-component#0", "record_index": 1, "class_tag": "261",
+        "id": "f3d:stream:act-component-link#0", "record_index": 1, "class_tag": "261",
         "instance_root_record": 2, "tracked_entity_record": 3, "components_root_record": 4, "registry_flag": 0, "entity_id": "0_3", "display_name": "", });
-    let root: crate::records::act::ActRootComponent = serde_json::from_value(wire.clone()).unwrap();
+    let root: crate::records::act::ActComponentLink = serde_json::from_value(wire.clone()).unwrap();
     assert_eq!(serde_json::to_value(root).unwrap(), wire);
     for record in [0, 1, 2, 4, u32::MAX] {
         let mut invalid = wire.clone();
         invalid["tracked_entity_record"] = serde_json::json!(record);
-        let error =
-            serde_json::from_value::<crate::records::act::ActRootComponent>(invalid).unwrap_err();
-        assert!(error.to_string().contains("tracked_entity_record"));
+        let link = serde_json::from_value::<crate::records::act::ActComponentLink>(invalid.clone())
+            .unwrap();
+        assert_eq!(link.references.tracked_entity, record);
+        assert_eq!(serde_json::to_value(link).unwrap(), invalid);
     }
     for field in [
         "record_index_offset",
@@ -397,7 +401,7 @@ fn act_root_component_rejects_nonroot_tracking_on_the_wire() {
         let mut invalid = wire.clone();
         invalid[field] = serde_json::json!(0);
         assert!(
-            serde_json::from_value::<crate::records::act::ActRootComponent>(invalid).is_err(),
+            serde_json::from_value::<crate::records::act::ActComponentLink>(invalid).is_err(),
             "{field}"
         );
     }
@@ -405,8 +409,8 @@ fn act_root_component_rejects_nonroot_tracking_on_the_wire() {
 
 #[test]
 fn act_root_layout_derives_utf16_offsets_and_bounds_padding() {
-    use crate::records::act::ActRootLayout;
-    let layout = ActRootLayout::new(100, "0_3".into(), "😀".into(), 8).unwrap();
+    use crate::records::act::ActComponentLayout;
+    let layout = ActComponentLayout::new(100, "0_3".into(), "😀".into(), 8).unwrap();
     assert_eq!(layout.record_index_offset(), Some(107));
     assert_eq!(layout.instance_root_record_offset(), Some(122));
     assert_eq!(layout.entity_id_offset(), Some(136));
@@ -414,13 +418,13 @@ fn act_root_layout_derives_utf16_offsets_and_bounds_padding() {
     assert_eq!(layout.registry_flag_offset(), Some(153));
     assert_eq!(layout.display_name_offset(), Some(161));
     assert_eq!(layout.components_root_record_offset(), Some(174));
-    assert!(ActRootLayout::new(0, "0_3".into(), String::new(), 0).is_ok());
+    assert!(ActComponentLayout::new(0, "0_3".into(), String::new(), 0).is_ok());
     for padding in [9, u64::MAX] {
-        assert!(ActRootLayout::new(0, "0_3".into(), String::new(), padding).is_err());
+        assert!(ActComponentLayout::new(0, "0_3".into(), String::new(), padding).is_err());
     }
-    assert!(ActRootLayout::new(u64::MAX - 63, "0_3".into(), String::new(), 1).is_ok());
-    assert!(ActRootLayout::new(u64::MAX - 62, "0_3".into(), String::new(), 1).is_err());
-    assert!(ActRootLayout::new(0, String::new(), String::new(), 1).is_err());
+    assert!(ActComponentLayout::new(u64::MAX - 63, "0_3".into(), String::new(), 1).is_ok());
+    assert!(ActComponentLayout::new(u64::MAX - 62, "0_3".into(), String::new(), 1).is_err());
+    assert!(ActComponentLayout::new(0, String::new(), String::new(), 1).is_err());
 }
 
 #[test]
@@ -637,40 +641,53 @@ fn native_act_ids_bind_kind_and_key_at_each_admission_route() {
     );
     for id in [
         "id",
-        "f3d:stream:act-root-component#21",
+        "f3d:stream:act-component-link#21",
         "f3d:stream:act-guid#20",
     ] {
-        assert!(ActRootComponent::try_new(
+        assert!(ActComponentLink::try_new(
             id.into(),
             1,
             "261".to_owned().try_into().unwrap(),
-            2,
-            4,
+            super::ActComponentReferences {
+                instance_root: 2,
+                tracked_entity: 3,
+                components_root: 4
+            },
             ActRegistryFlag::Off,
-            ActRootLayout::new(20, "0_3".into(), String::new(), 1).unwrap()
+            ActComponentLayout::new(20, "0_3".into(), String::new(), 1).unwrap()
         )
         .is_err());
     }
-    let mut root = ActRootComponent::try_new(
-        "f3d:stream:act-root-component#20".into(),
+    let mut root = ActComponentLink::try_new(
+        "f3d:stream:act-component-link#20".into(),
         1,
         "261".to_owned().try_into().unwrap(),
-        2,
-        4,
+        super::ActComponentReferences {
+            instance_root: 2,
+            tracked_entity: 3,
+            components_root: 4,
+        },
         ActRegistryFlag::Off,
-        ActRootLayout::new(20, "0_3".into(), String::new(), 1).unwrap(),
+        ActComponentLayout::new(20, "0_3".into(), String::new(), 1).unwrap(),
     )
     .unwrap();
     root.try_set_strings("10_3".into(), "Renamed".into())
         .unwrap();
-    assert_eq!(root.id(), "f3d:stream:act-root-component#20");
+    assert_eq!(root.id(), "f3d:stream:act-component-link#20");
     assert_eq!(root.layout().byte_offset(), Some(20));
     let before = root.clone();
     assert!(root
         .try_set_strings("invalid".into(), "Name".into())
         .is_err());
     assert_eq!(root, before);
-    reject_changed_id(root, &["id", "f3d:stream:act-guid#20"]);
+    reject_changed_id(
+        root,
+        &[
+            "id",
+            "f3d:stream:act-component-link#21",
+            "f3d:stream:act-guid#20",
+        ],
+    );
 }
 #[test]
 fn actual_act_tail_admission_checks_padding_and_overflow() {

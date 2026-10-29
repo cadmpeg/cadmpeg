@@ -1,6 +1,7 @@
 {
   "ir": {
-    "ir_version": "8",
+    "decode_depth": "full",
+    "ir_version": "9",
     "model": {
       "appearance_bindings": [],
       "appearances": [],
@@ -71,9 +72,9 @@
           "bodies": [
             "sldprt:brep:body#900"
           ],
-          "id": "sldprt:model:configuration#364:0",
+          "id": "sldprt:model:configuration#353:0",
           "name": "Default",
-          "native_ref": "sldprt:history:configuration#364:0",
+          "native_ref": "sldprt:history:configuration#353:0",
           "ordinal": 0,
           "source_index": 0
         }
@@ -371,26 +372,25 @@
       "sldprt": {
         "configurations": [
           {
-            "id": "sldprt:history:configuration#364:0",
+            "id": "sldprt:history:configuration#353:0",
             "name": "Default",
             "ordinal": 0,
-            "parent": "sldprt:history:feature-history#364",
+            "parent": "sldprt:history:feature-history#353",
             "properties": {},
             "source_index": 0
           }
         ],
-        "document_metadata": [],
         "feature_histories": [
           {
             "configurations": [],
             "content": [
               {
                 "kind": "configuration",
-                "value": "sldprt:history:configuration#364:0"
+                "value": "sldprt:history:configuration#353:0"
               }
             ],
             "features": [],
-            "id": "sldprt:history:feature-history#364"
+            "id": "sldprt:history:feature-history#353"
           }
         ],
         "feature_input_body_selections": [],
@@ -412,22 +412,38 @@
             "id": "sldprt:file:block#12"
           },
           {
-            "id": "sldprt:file:block#364"
+            "id": "sldprt:file:block#353"
           },
           {
-            "id": "sldprt:file:block#484"
+            "id": "sldprt:file:block#473"
           }
         ]
       }
     },
-    "scope": {
-      "design": true,
-      "model": true
-    },
     "source": {
       "attributes": {
+        "active_parasolid_block": "Contents/Config-0-Partition",
+        "block_count": "3",
+        "bmp_thumbnail_count": "0",
+        "brep_local_sha256": "<elided: digest over tolerantly compared geometry>",
+        "compound_stream_count": "0",
+        "document_local_sha256": "<elided: digest over tolerantly compared geometry>",
+        "outer_version": "0x00000004",
         "parasolid_description": "partition body",
         "parasolid_schema": "SCH_SW_33103_11000",
+        "png_preview_count": "0",
+        "sldprt_configuration_feature_states_local_sha256": "<elided: digest over tolerantly compared geometry>",
+        "sldprt_configuration_parameter_values_local_sha256": "<elided: digest over tolerantly compared geometry>",
+        "sldprt_configuration_snapshot_synthesized": "sldprt:model:configuration#353:0",
+        "sldprt_native_configuration_sha256": "ddc58f4441d8192bf3fd579ba16c530f654fb71e1e29226bc12a8dce8efe6d93",
+        "sldprt_native_history_sha256": "ab5e987b015597c9d4e3cc6802a839cfcf358ad504c18f65e84ee014e5329da6",
+        "sldprt_native_parameter_sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+        "sldprt_native_sketch_sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+        "sldprt_neutral_configuration_local_sha256": "<elided: digest over tolerantly compared geometry>",
+        "sldprt_neutral_feature_local_sha256": "<elided: digest over tolerantly compared geometry>",
+        "sldprt_neutral_parameter_local_sha256": "<elided: digest over tolerantly compared geometry>",
+        "sldprt_neutral_sketch_constraint_local_sha256": "<elided: digest over tolerantly compared geometry>",
+        "sldprt_neutral_sketch_local_sha256": "<elided: digest over tolerantly compared geometry>",
         "sw_configuration_0_most_recent": "YES",
         "sw_configuration_name": "Default"
       },
@@ -490,16 +506,6 @@
         },
         "message": "the document carries no swSolidWorks swVersion declaration, so no declared identity was verified. The document is read on the `sldprt:unknown` residual path without substituting a declared dialect grammar: the feature-operation form-code padding filter is not applied, and an operation code binds only where the four- and eight-byte candidates agree. Agreement is consistency, not a declaration.",
         "severity": "warning"
-      },
-      {
-        "code": {
-          "code": "source.opaque-records-unrepresented",
-          "kind": "record_not_typed",
-          "namespace": "sldprt",
-          "scope": "namespaced"
-        },
-        "message": "source record sldprt:file:block#484 has no typed neutral or native payload representation",
-        "severity": "warning"
       }
     ],
     "notes": [
@@ -509,10 +515,7 @@
     ],
     "transfer": {
       "geometry_transferred": true,
-      "scope": {
-        "design": true,
-        "model": true
-      }
+      "transfer": "full"
     }
   },
   "source_fidelity": {
@@ -683,13 +686,13 @@
           "stream": "Contents/Config-0-Partition",
           "tag": "parasolid"
         },
-        "sldprt:file:block#364": {
-          "offset": 364,
+        "sldprt:file:block#353": {
+          "offset": 353,
           "stream": "Contents/Keywords",
           "tag": "unknown"
         },
-        "sldprt:file:block#484": {
-          "offset": 484,
+        "sldprt:file:block#473": {
+          "offset": 473,
           "stream": "Contents/Features",
           "tag": "unknown"
         },
@@ -698,71 +701,51 @@
           "stream": "source",
           "tag": "source_image"
         },
-        "sldprt:history:configuration#364:0": {
+        "sldprt:history:configuration#353:0": {
           "offset": 10,
           "stream": "Contents/Keywords",
           "tag": "Configuration"
         },
-        "sldprt:history:feature-history#364": {
+        "sldprt:history:feature-history#353": {
           "offset": 0,
           "stream": "Contents/Keywords",
           "tag": "Keywords"
         }
       }
     },
-    "metadata": {
-      "active_parasolid_block": "Contents/Config-0-Partition",
-      "brep_local_sha256": "373be9f680e0ef0dbb0b1596c8c5699567356a21cfa2695a8476a21de239680a",
-      "document_local_sha256": "3a4b67a9f3186e7ae652cd345894549af4971cae838515a59e986730f8afd69d",
-      "outer_version": "0x00000004",
-      "sldprt_swobjects_local_sha256": "586ffb909b0bba2aacc4d34937062d2b3c9cb6c81d2f794c686ad550b192d8dc",
-      "sldprt_swobjects_material_local_sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
-      "sldprt_swobjects_metadata_identity_local_sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945"
-    },
     "retained_records": {
       "sldprt:file:block#12": {
         "bytes": {
-          "data": "UFMAAAAOcGFydGl0aW9uIGJvZHkAABJTQ0hfU1dfMzMxMDNfMTEwMDAAMwBkAAAAAAAAAAAAAAAAAAArAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAD/wAAAAAAAAP/AAAAAAAAA/8AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAHwBGAAAAAAAAAAAAAAAAAAArAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAD/wAAAAAAAAP/AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAP/AAAAAAAAAAHwBHAAAAAAAAAAAAAAAAAAArAAAAAAAAAAAAAAAAAAAAAD/wAAAAAAAAAAAAAAAAAAAAAAAAAAAAAD/wAAAAAAAAP/AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAP/AAAAAAAAAADgAKAAAAAAAAwrySj5luAAAAAAAAABQAAABkKwAAAAAAAAAAAAAADwAUAAAAAAAAAB4ACgAVAA8AFQAAAAAAAAAfAAoAAAARAB4AAAAUAAAAHgAyAAAAKAAAAAArABEAHwAAABUAAAAfADMAAAApAAAAACsAEAAoAAAAAAAAwrySj5luAAAAHgAAAAAARgAAAAADhAAQACkAAAAAAADCvJKPmW4AAAAfAAAAAABHAAAAAAOEABIAMgAAAAAAAAAAAAAAAAA8wrySj5luAAADhAASADMAAAAAAAAAAAAAAAAAPcK8ko+ZbgAAA4QAHQA8AAAAAAAAAAAAAAAAv/AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAB0APQAAAAAAAAAAAAAAAL/wAAAAAAAAAAAAAAAAAAA/8AAAAAAAAAAM/wOEAAGKJAAFAAYAAQABAAEAAUCPQAAAAAAAPkV5juIwjDoAAQABAAEBAAIBAQOFAAEAAQABAAEAAQABA4YAAQABAAEADf8DhQADEMUAAQOEAAEAAQABAAEDhgABABP/A4YABJdmAAEDhAABAAEDhVMADv8ACgAGGooAAcK8ko+ZbgAAAAEAAQAAA4UAZCs=",
+          "data": "UFMAAAAOcGFydGl0aW9uIGJvZHkAABJTQ0hfU1dfMzMxMDNfMTEwMDAAMwBkAAAAAAAAAAAAAAAAAAArAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAD/wAAAAAAAAP/AAAAAAAAA/8AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAHwBGAAAAAAAAAAAAAAAAAAAtAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAD/wAAAAAAAAP/AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAP/AAAAAAAAAAHwBHAAAAAAAAAAAAAAAAAAAtAAAAAAAAAAAAAAAAAAAAAD/wAAAAAAAAAAAAAAAAAAAAAAAAAAAAAD/wAAAAAAAAP/AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAP/AAAAAAAAAADgAKAAAAAAAAwrySj5luAAAAAAAAABQAAABkKwAAAAAAAAAAAAAADwAUAAAAAAAAAB4ACgAVAA8AFQAAAAAAAAAfAAoAAAARAB4AAAAUAAAAHgAyAAAAKAAAAAArABEAHwAAABUAAAAfADMAAAApAAAAACsAEAAoAAAAAAAAwrySj5luAAAAHgAAAAAARgAAAAADhAAQACkAAAAAAADCvJKPmW4AAAAfAAAAAABHAAAAAAOEABIAMgAAAAAAAAAAAAAAAAA8wrySj5luAAADhAASADMAAAAAAAAAAAAAAAAAPcK8ko+ZbgAAA4QAHQA8AAAAAAAAAAAAAAAAv/AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAB0APQAAAAAAAAAAAAAAAL/wAAAAAAAAAAAAAAAAAAA/8AAAAAAAAAAM/wOEAAGKJAAFAAYAAQABAAEAAUCPQAAAAAAAPkV5juIwjDoAAQABAAEBAAIBAQOFAAEAAQABAAEAAQABA4YAAQABAAEADf8DhQADEMUAAQOEAAEAAQABAAEDhgABABP/A4YABJdmAAEDhAABAAEDhVMADv8ACgAGGooAAcK8ko+ZbgAAAAEAAQAAA4UAZCs=",
           "retention": "inline"
         },
         "offset": 0,
-        "stream": "Contents/Config-0-Partition",
-        "untyped": []
+        "stream": "Contents/Config-0-Partition"
       },
-      "sldprt:file:block#364": {
+      "sldprt:file:block#353": {
         "bytes": {
           "data": "PEtleXdvcmRzPjxDb25maWd1cmF0aW9uIE5hbWU9IkRlZmF1bHQiIFNvdXJjZUluZGV4PSIwIi8+PC9LZXl3b3Jkcz4=",
           "retention": "inline"
         },
         "offset": 0,
-        "stream": "Contents/Keywords",
-        "untyped": []
+        "stream": "Contents/Keywords"
       },
-      "sldprt:file:block#484": {
+      "sldprt:file:block#473": {
         "bytes": {
           "data": "PHN3U29saWRXb3JrcyB4bWxucz0iaHR0cDovL3d3dy5zb2xpZHdvcmtzLmNvbS9zdzIwMDMvc2NoZW1hIj48c3dNb2RlbCBpZD0ibW9kZWwtMCIgc3dDb25maWd1cmF0aW9uTmFtZT0iRGVmYXVsdCIvPjxzd0NvbmZpZ3VyYXRpb25MaXN0Pjxzd0NvbmZpZ3VyYXRpb24gc3dJRD0iMCIgc3dNb2RlbFJlZj0ibW9kZWwtMCIgc3dNb3N0UmVjZW50Q29uZmlndXJhdGlvbj0iWUVTIi8+PC9zd0NvbmZpZ3VyYXRpb25MaXN0Pjwvc3dTb2xpZFdvcmtzPg==",
           "retention": "inline"
         },
         "offset": 0,
-        "stream": "Contents/Features",
-        "untyped": [
-          "model",
-          "design"
-        ]
+        "stream": "Contents/Features"
       },
       "sldprt:file:source-image#0": {
         "bytes": {
-          "data": "AQAAAAAAAARa2ciHFAAGAAgAIAAAAMMQ7J8nAQAAIAMAABsAAAA09uZHVuZHN/I09uZmlnbSA9IFFidHlkeW9uatkc9Kw0AQxr91tQfR2FZ7EZp48GDpZePepNWCaD0KOXgMShB6aUV66b31UMSCF/FdBEHwRXwC3yCd7CZp0n/pobMkuzO/mfmW2VsHgPF0/9xtdVud9tFDx+sBRefyxnXuXCltIV3bFkJAwkPKqljRLv7n7zNm4XpNEos4STQzJLJaZEoY2NaHn6/30Wc7jB7Q5yXF9lQoMJMKSuSX4jsGDQoU12UmTul/om9bIAyVatGTABUdzmueEDWVqwbK+8QrU9xSbjPkRaUxsVqUp5hMsXqClVFLou9FT1tGfVlePLwdn5qy4TG2kAPTqzFqKHZ+1Xv7E69nOsqwwRgfREnB4i/hadcnwPO/FOqn4L5P2+bHYwT4wIHh07xzh0OweDZBAaiFVx0DWtnIhxQABgAIAEIAAAAohzfjSQAAAEQAAAARAAAANPbmR1bmRzfytFaXd/YnRjcBRAC7/zxLZXl3b3Jkcz48Q29uZmlndXJhdGlvbiBOYW1lPSJEZWZhdWx0IiBTb3VyY2VJbmRleD0iMCIvPjwvS2V5d29yZHM+WtnIhxQABgAIAEMAAAB9tibjmQAAAP0AAAARAAAANPbmR1bmRzfyZFYWR1cnVjdtj7sOgkAQRX+FTC9LtDMsjViYiAUUxnIDi2zch2GGjJ+vS+VGu8mc3HtyS+QuWDNcw/zA7OWsRwkT0XMvBDPnGCFHmPfBCeRtUewE9pN2CqoSuQmDtpkZJLh4bQrIkA/Bj+a+zIpM8BfltIRaj2qxBCKGEn42SD/PT8mplrC2rYpWj4miCUit7rWnJCfhduyiRPy1iO+51RtFK34oAAAUAAYACAAgAAAAwxDsnycBAAAgAwAAGwAAAAAAAAABAAAAAAAAAAAANPbmR1bmRzfyNPbmZpZ20gPSBRYnR5ZHlvbmRSt+KAAAFAAGAAgAQgAAACiHN+NJAAAARAAAABEAAAAAAAAAAQAAAAAAYAEAADT25kdW5kc38rRWl3f2J0Y3RSt+KAAAFAAGAAgAQwAAAH22JuOZAAAA/QAAABEAAAAAAAAAAQAAAAAA2AEAADT25kdW5kc38mRWFkdXJ1Y3n4JeAgAAAAADAAMAxwAAAKACAAAAAA==",
+          "data": "AQAAAAAAAARa2ciHFAAGAAgAIAAAAGIZ+7AcAQAAIAMAABsAAAA09uZHVuZHN/I09uZmlnbSA9IFFidHlkeW9uYLCGZgYOArSCwqySzJzM9TSMpPqWRgEAp29ogPDo83NjY0MI43NDQwMGAwZkhhQAHaDEQC+w/YaQwgz+CGKqBLrhW45IFWuBOwgpARBK3gY+CCMA7tmdQ/Mw8qKgLEKchBxg8WAgE5oAZRIF8U7kaQAYJAcYg2OQYjIKkBCXNBoDQDWKk8MEoYGDQhwgIQeSRL5cBccIAytwDlNdHk5cFcd6i8ENgOBLCBqQPLGaPI2SLJyTLYIEvtxxW1sgy2+NTBA4/nP9BQxi4VBlYGNgZGCHTodwDL2blW9j0y6LGCiDIyMDEyMrfCFIEgcxuUxfsfKMEscBQo1IIiKfwfSLFMT4NJMLcGM/D9B4Y3m1QXAyM8bEAaGIBGpGgDAFrZyIcUAAYACABCAAAAKIc340kAAABEAAAAEQAAADT25kdW5kc38rRWl3f2J0Y3AUQAu/88S2V5d29yZHM+PENvbmZpZ3VyYXRpb24gTmFtZT0iRGVmYXVsdCIgU291cmNlSW5kZXg9IjAiLz48L0tleXdvcmRzPlrZyIcUAAYACABDAAAAfbYm45kAAAD9AAAAEQAAADT25kdW5kc38mRWFkdXJ1Y3bY+7DoJAEEV/hUwvS7QzLI1YmIgFFMZyA4ts3Idhhoyfr0vlRrvJnNx7ckvkLlgzXMP8wOzlrEcJE9FzLwQz5xghR5j3wQnkbVHsBPaTdgqqErkJg7aZGSS4eG0KyJAPwY/mvsyKTPAX5bSEWo9qsQQihhJ+Nkg/z0/JqZawtq2KVo+JoglIre61pyQn4XbsokT8tYjvudUbRSt+KAAAFAAGAAgAIAAAAGIZ+7AcAQAAIAMAABsAAAAAAAAAAQAAAAAAAAAAADT25kdW5kc38jT25maWdtID0gUWJ0eWR5b25kUrfigAABQABgAIAEIAAAAohzfjSQAAAEQAAAARAAAAAAAAAAEAAAAAAFUBAAA09uZHVuZHN/K0Vpd39idGN0UrfigAABQABgAIAEMAAAB9tibjmQAAAP0AAAARAAAAAAAAAAEAAAAAAM0BAAA09uZHVuZHN/JkVhZHVydWN5+CXgIAAAAAAwADAMcAAACVAgAAAAA=",
           "retention": "inline"
         },
         "offset": 0,
-        "stream": "source",
-        "untyped": []
+        "stream": "source"
       }
-    },
-    "unrepresented": [
-      "model",
-      "design"
-    ]
+    }
   }
 }

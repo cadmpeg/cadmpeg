@@ -83,6 +83,7 @@ pub(super) fn exact_rectangular_pattern_construction(
                 instances: None,
                 instance_search_cap: None,
                 directions: Vec::new(),
+                secondary_direction: None,
             },
         )
         .ok()?;
@@ -97,20 +98,38 @@ pub(super) fn exact_rectangular_pattern_construction(
     let Some(mut construction) = parsed else {
         return Ok(None);
     };
-    match exact_rectangular_pattern_instances(bytes, records, scope, &construction) {
-        InstanceSearch::Resolved(instances) => construction
-            .try_set_instances(Some(*instances))
-            .map_err(CodecError::malformed)?,
-        InstanceSearch::Unresolved => {}
-        InstanceSearch::Capped(cap) => construction
-            .mark_instance_search_capped(cap)
-            .map_err(CodecError::malformed)?,
-    }
     let directions = exact_rectangular_pattern_directions(bytes, records, scope);
-    if directions.len() == construction.active_direction_count() {
+    let secondary = exact_rectangular_pattern_secondary_direction(
+        bytes,
+        records,
+        scope,
+        &construction,
+        &directions,
+    );
+    construction
+        .try_set_secondary_direction(secondary)
+        .map_err(CodecError::malformed)?;
+    if directions.len() + usize::from(construction.secondary_direction().is_some())
+        == construction.active_direction_count()
+    {
         construction
             .try_set_directions(directions)
             .map_err(CodecError::malformed)?;
+    }
+    if construction
+        .directions()
+        .first()
+        .is_none_or(|record| record.distance_type != 7)
+    {
+        match exact_rectangular_pattern_instances(bytes, records, scope, &construction) {
+            InstanceSearch::Resolved(instances) => construction
+                .try_set_instances(Some(*instances))
+                .map_err(CodecError::malformed)?,
+            InstanceSearch::Unresolved => {}
+            InstanceSearch::Capped(cap) => construction
+                .mark_instance_search_capped(cap)
+                .map_err(CodecError::malformed)?,
+        }
     }
     Ok(Some(construction))
 }
@@ -151,49 +170,59 @@ fn exact_rectangular_pattern_direction(
     selection_record_index: u32,
     scope_record_index: u32,
 ) -> Option<patterns::DesignRectangularPatternDirection> {
-    use crate::layout::rectangular_pattern_direction_record as layout;
+    use crate::layout::rectangular_pattern_direction_record as frame;
 
-    let header = start + layout::INDEXED_HEADER;
+    use crate::layout::rectangular_pattern_spacing_direction_record as spacing;
+
+    let distance_type = View::u32_le_at(bytes, start + frame::FIXED_EIGHT)?;
+    let shift = match (paired_at.checked_sub(start)?, distance_type) {
+        (frame::LEN, 8) => 0,
+        (spacing::LEN, 7) if bytes.get(start + spacing::SPACING_FLAG) == Some(&0) => 1,
+        _ => return None,
+    };
+    let header = start + frame::INDEXED_HEADER;
     let (class_tag, after_tag) =
         lp_ascii_filtered_view(bytes, header, 0..=2000, u8::is_ascii_graphic)?;
-    let selection_kind = View::u32_le_at(bytes, start + layout::SELECTION_KIND)?;
+    let selection_kind = View::u32_le_at(bytes, start + frame::SELECTION_KIND)?;
     if class_tag.len() != 3
         || !class_tag.bytes().all(|byte| byte.is_ascii_digit())
         || after_tag != header + 7
         || View::u32_le_at(bytes, after_tag) != Some(record_index)
-        || paired_at.checked_sub(start) != Some(layout::LEN)
-        || bytes.get(start + layout::ZERO_RUN_10..start + layout::SELECTION_KIND) != Some(&[0; 10])
+        || bytes.get(start + frame::ZERO_RUN_10..start + frame::SELECTION_KIND) != Some(&[0; 10])
         || !matches!(selection_kind, 8 | 16)
-        || bytes.get(start + layout::ZERO_RUN_16..start + layout::FIXED_EIGHT) != Some(&[0; 16])
-        || View::u32_le_at(bytes, start + layout::FIXED_EIGHT) != Some(8)
+        || bytes.get(start + frame::ZERO_RUN_16..start + frame::FIXED_EIGHT) != Some(&[0; 16])
         || (0..3).any(|lane| {
-            View::f64_le_at(bytes, start + layout::NEGATIVE_ONES + lane * 8) != Some(-1.0)
+            View::f64_le_at(bytes, start + shift + frame::NEGATIVE_ONES + lane * 8) != Some(-1.0)
         })
-        || View::u32_le_at(bytes, start + layout::SELECTION_COUNT) != Some(1)
-        || marked_record_reference(bytes, start + layout::SELECTION_REFERENCE)
+        || View::u32_le_at(bytes, start + shift + frame::SELECTION_COUNT) != Some(1)
+        || marked_record_reference(bytes, start + shift + frame::SELECTION_REFERENCE)
             != Some(selection_record_index)
-        || bytes.get(start + layout::ZERO_RUN_2..start + layout::AUXILIARY_COUNT) != Some(&[0; 2])
-        || View::u32_le_at(bytes, start + layout::AUXILIARY_COUNT) != Some(1)
-        || marked_record_reference(bytes, start + layout::AUXILIARY_REFERENCE).is_none()
-        || View::u64_le_at(bytes, start + layout::ROLE) != Some(0x0000_0004_0000_0000)
-        || bytes.get(start + layout::ZERO_RUN_AFTER_ROLE..start + layout::OPAQUE_INDEX)
+        || bytes.get(start + shift + frame::ZERO_RUN_2..start + shift + frame::AUXILIARY_COUNT)
+            != Some(&[0; 2])
+        || View::u32_le_at(bytes, start + shift + frame::AUXILIARY_COUNT) != Some(1)
+        || marked_record_reference(bytes, start + shift + frame::AUXILIARY_REFERENCE).is_none()
+        || View::u64_le_at(bytes, start + shift + frame::ROLE) != Some(0x0000_0004_0000_0000)
+        || bytes
+            .get(start + shift + frame::ZERO_RUN_AFTER_ROLE..start + shift + frame::OPAQUE_INDEX)
             != Some(&[0; 10])
     {
         return None;
     }
-    let opaque_index = View::u32_le_at(bytes, start + layout::OPAQUE_INDEX)?;
+    let opaque_index = View::u32_le_at(bytes, start + shift + frame::OPAQUE_INDEX)?;
     if opaque_index == 0
-        || !View::f64_le_at(bytes, start + layout::OPAQUE_SCALAR)?.is_finite()
-        || View::u32_le_at(bytes, start + layout::OPAQUE_INDEX_REPEAT) != Some(opaque_index)
-        || marked_record_reference(bytes, start + layout::INDEX_PLUS_TWO_REFERENCE)
+        || !View::f64_le_at(bytes, start + shift + frame::OPAQUE_SCALAR)?.is_finite()
+        || View::u32_le_at(bytes, start + shift + frame::OPAQUE_INDEX_REPEAT) != Some(opaque_index)
+        || marked_record_reference(bytes, start + shift + frame::INDEX_PLUS_TWO_REFERENCE)
             != record_index.checked_add(2)
-        || bytes.get(start + layout::SEPARATOR_FLAG) != Some(&1)
-        || bytes.get(start + layout::SEPARATOR_ZERO_RUN..start + layout::INDEX_PLUS_ONE_REFERENCE)
-            != Some(&[0; 2])
-        || marked_record_reference(bytes, start + layout::INDEX_PLUS_ONE_REFERENCE)
+        || bytes.get(start + shift + frame::SEPARATOR_FLAG) != Some(&1)
+        || bytes.get(
+            start + shift + frame::SEPARATOR_ZERO_RUN
+                ..start + shift + frame::INDEX_PLUS_ONE_REFERENCE,
+        ) != Some(&[0; 2])
+        || marked_record_reference(bytes, start + shift + frame::INDEX_PLUS_ONE_REFERENCE)
             != record_index.checked_add(1)
-        || bytes.get(start + layout::SCOPE_SEPARATOR) != Some(&0)
-        || marked_record_reference(bytes, start + layout::SCOPE_REFERENCE)
+        || bytes.get(start + shift + frame::SCOPE_SEPARATOR) != Some(&0)
+        || marked_record_reference(bytes, start + shift + frame::SCOPE_REFERENCE)
             != Some(scope_record_index)
     {
         return None;
@@ -211,12 +240,90 @@ fn exact_rectangular_pattern_direction(
         record_index,
         selection_record_index,
         selection_kind,
-        origin: finite_reals_at(bytes, start + layout::ORIGIN)?,
-        origin_offset: Some(u64::try_from(start.checked_add(layout::ORIGIN)?).ok()?),
-        displacement: finite_reals_at(bytes, start + layout::DISPLACEMENT)?,
-        displacement_offset: Some(u64::try_from(start.checked_add(layout::DISPLACEMENT)?).ok()?),
+        distance_type,
+        origin: finite_reals_at(bytes, start + frame::ORIGIN)?,
+        origin_offset: Some(u64::try_from(start.checked_add(frame::ORIGIN)?).ok()?),
+        displacement: finite_reals_at(bytes, start + frame::DISPLACEMENT)?,
+        displacement_offset: Some(u64::try_from(start.checked_add(frame::DISPLACEMENT)?).ok()?),
     };
     direction.direction().is_some().then_some(direction)
+}
+
+fn exact_rectangular_pattern_secondary_direction(
+    bytes: &[u8],
+    records: &IndexedRecordOffsets,
+    scope: &DesignParameterScope,
+    construction: &DesignRectangularPatternConstruction,
+    directions: &[patterns::DesignRectangularPatternDirection],
+) -> Option<crate::records::identity::Located<[FiniteReal; 3]>> {
+    use crate::layout::rectangular_pattern_payload_prefix as prefix;
+    use crate::layout::rectangular_pattern_payload_suffix as suffix;
+
+    let [direction] = directions else {
+        return None;
+    };
+    if construction.active_direction_count() != 2 || direction.distance_type != 7 {
+        return None;
+    }
+    let mut found = None;
+    for (_, offsets) in records.records() {
+        for &start in offsets {
+            let owners = construction.owner_record_indices;
+            if bytes.get(start + prefix::ZERO_HEAD..start + prefix::FLAG) != Some(&[0; 8])
+                || bytes.get(start + prefix::FLAG) != Some(&1)
+                || View::u32_le_at(bytes, start + prefix::COUNT) != Some(2)
+                || bytes.get(start + prefix::ZERO_MIDDLE..start + prefix::V_COUNT) != Some(&[0; 4])
+                || bytes.get(start + prefix::ZERO_TAIL..start + prefix::SENTINEL) != Some(&[0; 9])
+                || View::u32_le_at(bytes, start + prefix::SENTINEL) != Some(u32::MAX)
+                || bytes.get(start + prefix::ZERO_DISTANCE..start + prefix::V_COUNT_REPEAT)
+                    != Some(&[0; 2])
+                || [
+                    (prefix::U_COUNT, owners[0]),
+                    (prefix::V_COUNT, owners[1]),
+                    (prefix::U_DISTANCE, owners[2]),
+                    (prefix::V_DISTANCE, owners[3]),
+                    (prefix::V_COUNT_REPEAT, owners[1]),
+                    (prefix::U_DIRECTION, direction.record_index),
+                ]
+                .into_iter()
+                .any(|(offset, index)| {
+                    marked_record_reference(bytes, start + offset) != Some(index)
+                })
+            {
+                continue;
+            }
+            let end = next_indexed_record_offset(bytes, start + prefix::LEN)?;
+            if end.checked_sub(start)? < prefix::LEN + suffix::LEN {
+                continue;
+            }
+            let tail = end - suffix::LEN;
+            let seed_group = marked_record_reference(bytes, tail + suffix::SEED_GROUP)?;
+            if marked_record_reference(bytes, tail + suffix::U_COUNT) != Some(owners[0])
+                || marked_record_reference(bytes, tail + suffix::SCOPE) != Some(scope.record_index)
+                || !scope
+                    .reference_members()
+                    .values()
+                    .any(|index| *index == seed_group)
+                || bytes.get(tail + suffix::ZERO_TAIL..end) != Some(&[0; 4])
+            {
+                continue;
+            }
+            let Some(value) = finite_reals_at::<3>(bytes, start + prefix::V_DIRECTION) else {
+                continue;
+            };
+            cadmpeg_ir::units::UnitVector3::normalized(cadmpeg_ir::math::Vector3::from(
+                value.map(FiniteReal::get),
+            ))?;
+            let candidate = crate::records::identity::Located {
+                value,
+                offset: u64::try_from(start + prefix::V_DIRECTION).ok()?,
+            };
+            if found.replace(candidate).is_some() {
+                return None;
+            }
+        }
+    }
+    found
 }
 
 /// Outcome of the rectangular-pattern instance search.

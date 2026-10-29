@@ -30,6 +30,7 @@ pub(crate) fn sketches(
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     scan: &ContainerScan,
     annotations: &mut Annotations,
+    losses: &mut Vec<cadmpeg_ir::report::loss::LossNote>,
 ) -> Result<ProjectedSketches, cadmpeg_core::CodecError> {
     let mut sketches = Vec::new();
     let mut entities = Vec::new();
@@ -56,6 +57,21 @@ pub(crate) fn sketches(
                 || brep.stats.unclaimed_faces != 0
             {
                 untyped_lanes.insert(native_ref.clone());
+            }
+            if stream.header.description.starts_with(": TRANSMIT FILE")
+                && !brep.stats.synthetic_body_grouping
+                && brep
+                    .bodies
+                    .iter()
+                    .any(|body| body.kind == cadmpeg_ir::topology::BodyKind::Solid)
+            {
+                losses.push(crate::loss::SldprtLossCode::FeatureInputSolidBodyRetained.note(
+                    format!(
+                        "Nested solid-body transmit {stream_ordinal} at offset {} is retained in {native_ref}; its faces are not sketch profiles.",
+                        stream.offset
+                    ),
+                ));
+                continue;
             }
             let configuration = configuration(section);
             project_brep(

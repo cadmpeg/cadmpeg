@@ -101,7 +101,7 @@ fn generated_f3d_synthesizes_an_act_record_index_edit_without_metastream_edit() 
         .expect("generated ACT decode");
     let (mut edited, _, fidelity) = decoded.into_parts();
     update_f3d_native(&mut edited, |native| {
-        native.act_root_components[0].record_index += 1;
+        native.act_component_links[0].record_index += 1;
     });
 
     let (output, report) =

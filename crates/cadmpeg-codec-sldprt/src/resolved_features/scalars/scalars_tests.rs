@@ -44,6 +44,7 @@ fn named_scalar_identity_decodes_record_fields() {
             value: cadmpeg_ir::scalar::FiniteReal::new(0.025).unwrap(),
             role: crate::records::FeatureInputScalarRole::Native,
             operands: Vec::new(),
+            archive_class: None,
         }]
     );
 }

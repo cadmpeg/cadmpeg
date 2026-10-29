@@ -1,7 +1,8 @@
 {
   "decode": {
     "ir": {
-      "ir_version": "8",
+      "decode_depth": "full",
+      "ir_version": "9",
       "model": {
         "appearance_bindings": [],
         "appearances": [],
@@ -46,7 +47,6 @@
             "id": "nx:feature-history:feature#0000000000-0000000000",
             "name": "UNITE",
             "native_ref": "nx:feature-history:operation-label#0000000000-0000000000",
-            "needs_recompute": false,
             "ordinal": 0,
             "source_properties": {
               "body_reference.0": "6466",
@@ -96,19 +96,19 @@
               "id": "nx:om-entry-0:class#51",
               "name": "UGS::FEATURE_RECORD",
               "ordinal": 0,
-              "registry_suffix": {
-                "byte_len": 11,
-                "record_id": "nx:source:evidence#2b01879b3869475c74ed2f24f33fe79088ca0feecdae3e92212224f4c3e1adb8",
-                "sha256": "3577471a7217e8fde1557f2db265bab6b34e7b8e563b69fbed40af86e574abb7"
-              },
+              "registry_suffix": "81210123456789abcdef06",
+              "section_offset": 108,
               "source_entry": "/Root/UG_PART/UG_PART",
+              "source_offset": 127,
               "trailing_code": 160
             },
             {
               "id": "nx:om-entry-0:class#83",
               "name": "UGS::ModlUtils::BooleanComponent",
               "ordinal": 1,
+              "section_offset": 108,
               "source_entry": "/Root/UG_PART/UG_PART",
+              "source_offset": 159,
               "trailing_code": 101
             }
           ],
@@ -118,11 +118,8 @@
               "id": "nx:feature-history:body-reference-occurrence#0000000000-0000000000-0000000000",
               "operation_label": "nx:feature-history:operation-label#0000000000-0000000000",
               "ordinal": 0,
-              "raw_body_object_index": {
-                "byte_len": 3,
-                "record_id": "nx:source:evidence#a82674f28b53b0f3b37ed7dd15a8516d246be4c24feb81f974b0532975852205",
-                "sha256": "9c2b615ee9a0ff63b405b260e61ee6334809ede83a85504dc42090cd6ec058af"
-              }
+              "raw_body_object_index": "901942",
+              "source_offset": 374
             }
           ],
           "feature_body_references": [
@@ -130,11 +127,8 @@
               "body_object_index": 6466,
               "id": "nx:feature-history:body-reference#0000000000-0000000000",
               "operation_label": "nx:feature-history:operation-label#0000000000-0000000000",
-              "raw_body_object_index": {
-                "byte_len": 3,
-                "record_id": "nx:source:evidence#9451930d8236eeea9db46f809e6944f3bc976fd3397ebae62f626fa3911b65b6",
-                "sha256": "9c2b615ee9a0ff63b405b260e61ee6334809ede83a85504dc42090cd6ec058af"
-              }
+              "raw_body_object_index": "901942",
+              "source_offset": 374
             }
           ],
           "feature_boolean_operations": [
@@ -142,27 +136,21 @@
               "id": "nx:feature-history:boolean#0000000000-0000000000",
               "kind": "unite",
               "operation_label": "nx:feature-history:operation-label#0000000000-0000000000",
-              "raw_target_object_index": {
-                "byte_len": 3,
-                "record_id": "nx:source:evidence#a94fe5ac36712f2cadaac7652ec8257acc9da1b71cd234b3f1c26165915438fd",
-                "sha256": "9c2b615ee9a0ff63b405b260e61ee6334809ede83a85504dc42090cd6ec058af"
-              },
+              "raw_target_object_index": "901942",
               "raw_tool_object_indices": [
-                {
-                  "byte_len": 3,
-                  "record_id": "nx:source:evidence#51398c5f48c0c1804691e8d6b01a329e019df7debd76aa2918f2efd9de77135d",
-                  "sha256": "8cac51b558ec9cce52bc73dbdd464fdd2373b0bba3d52117966bfbefaa38922d"
-                },
-                {
-                  "byte_len": 1,
-                  "record_id": "nx:source:evidence#62830cd496212c9b88becd1f4dd8ac867d412e26c0a07131e6f2cbc9ac987b70",
-                  "sha256": "620bfdaa346b088fb49998d92f19a7eaf6bfc2fb0aee015753966da1028cb731"
-                }
+                "90194c",
+                "7f"
               ],
+              "source_offset": 326,
               "target_object_index": 6466,
+              "target_source_offset": 360,
               "tool_object_indices": [
                 6476,
                 127
+              ],
+              "tool_source_offsets": [
+                366,
+                369
               ]
             }
           ],
@@ -177,28 +165,13 @@
               ],
               "ordinal": 0,
               "raw_object_indices": [
-                {
-                  "byte_len": 1,
-                  "record_id": "nx:source:evidence#9b87cd084be27db5fdd839b8bc9b27668a6ec0a8a2967aae7972b8f5dbe90faf",
-                  "sha256": "4bf5122f344554c53bde2ebb8cd2b7e3d1600ad631c385a5d7cce23c7785459a"
-                },
-                {
-                  "byte_len": 2,
-                  "record_id": "nx:source:evidence#8dbc4128376cf01bbc41910b91929aa6b8029ff3ccc39848a4b0cb08f132e331",
-                  "sha256": "9118ff83a76f6260a8cf7ec3af83f314e6a42bc35984948f07bf2a3036eae634"
-                },
-                {
-                  "byte_len": 3,
-                  "record_id": "nx:source:evidence#406fcb07dfe6b564fe327d6e7e5706fd100841f6518976d15e9d2c23e8541da1",
-                  "sha256": "fc045e21535af635893b3c55dd1d511d0fee961d783546acf7e3f59b7b150cba"
-                },
-                {
-                  "byte_len": 1,
-                  "record_id": "nx:source:evidence#1122e078e057bc0cb435b466de3445b6fe8d6bf8ee88797f21bd0c68d54d1c7c",
-                  "sha256": "a8100ae6aa1940d0b663bb31cd466142ebbdbd5187131b92d93818987832eb89"
-                }
+                "01",
+                "8240",
+                "9017d3",
+                "ff"
               ],
               "section_link": "nx:segment-om-links:link#0",
+              "source_offset": 326,
               "value": "UNITE"
             }
           ],
@@ -210,7 +183,9 @@
               "ordinal": 0,
               "payload_byte_len": 44,
               "payload_sha256": "8dcac36cfa89e13867f6a565d4a239e5060db8e233dbcb7e4e9a729b3c074e48",
-              "sha256": "26a7a1d0e2f7a5acc210e257a6154daa72a5107465f06075c7b610c43755b0ba"
+              "payload_source_offset": 334,
+              "sha256": "26a7a1d0e2f7a5acc210e257a6154daa72a5107465f06075c7b610c43755b0ba",
+              "source_offset": 304
             }
           ],
           "field_definitions": [
@@ -220,19 +195,19 @@
               "ordinal": 0,
               "registry_owner_class": 2,
               "registry_storage_code": 2,
-              "registry_suffix": {
-                "byte_len": 2,
-                "record_id": "nx:source:evidence#b10617f752231a5efc4abb3e67c55a0172591ef51ecb6b0fad96d87db58959d8",
-                "sha256": "a12871fee210fb8619291eaea194581cbd2531e4b23759d225f6806923f63222"
-              },
+              "registry_suffix": "0102",
+              "section_offset": 108,
               "source_entry": "/Root/UG_PART/UG_PART",
+              "source_offset": 193,
               "trailing_code": 128
             },
             {
               "id": "nx:om-entry-0:field#129",
               "name": "m_tools",
               "ordinal": 1,
+              "section_offset": 108,
               "source_entry": "/Root/UG_PART/UG_PART",
+              "source_offset": 205,
               "trailing_code": 129
             }
           ],
@@ -248,7 +223,8 @@
               "product_version": "NX 2027.3102",
               "schema_role": "feature_history",
               "section_link": "nx:segment-om-links:link#0",
-              "sha256": "7bfbc5c60a757e824b28669d1f388f469c85361e858bdd741e182c3a35cca7b7"
+              "sha256": "7bfbc5c60a757e824b28669d1f388f469c85361e858bdd741e182c3a35cca7b7",
+              "source_offset": 261
             }
           ],
           "segment_index_rows": [
@@ -256,6 +232,7 @@
               "id": "nx:segment-index:row#0",
               "ordinal": 0,
               "source_entry": "/Root/UG_PART/UG_PART",
+              "source_offset": 76,
               "subtype_code": 9,
               "type_code": 32,
               "value": 11
@@ -264,6 +241,7 @@
               "id": "nx:segment-index:row#1",
               "ordinal": 1,
               "source_entry": "/Root/UG_PART/UG_PART",
+              "source_offset": 88,
               "subtype_code": 1,
               "type_code": 1,
               "value": 24
@@ -275,14 +253,11 @@
               "row": "nx:segment-index:row#0",
               "schema_role": "feature_history",
               "separator_byte_len": 0,
-              "slot": "type_code"
+              "slot": "type_code",
+              "source_offset": 108
             }
           ]
         }
-      },
-      "scope": {
-        "design": true,
-        "model": false
       },
       "source": {
         "attributes": {
@@ -291,6 +266,7 @@
           "file_size": "392",
           "footer_entry_count": "0",
           "footer_fingerprint": "00000000",
+          "footer_offset": "378",
           "header_entry_count": "1",
           "jpeg_preview_count": "0",
           "partition_streams": "0",
@@ -343,17 +319,6 @@
           },
           "message": "No B-rep geometry was transferred: no gate-passing analytic carrier was found in the embedded Parasolid streams (they may hold only B-spline/procedural geometry this codec does not yet type). The streams are preserved verbatim as unknown passthrough records.",
           "severity": "blocking"
-        },
-        {
-          "code": {
-            "code": "depth.not-delivered",
-            "kind": "geometry_not_transferred",
-            "namespace": "decode",
-            "scope": "namespaced",
-            "strict_floor": "warning"
-          },
-          "message": "requested full depth but the nx decoder did not deliver classes: model",
-          "severity": "error"
         }
       ],
       "notes": [
@@ -363,10 +328,7 @@
       ],
       "transfer": {
         "geometry_transferred": false,
-        "scope": {
-          "design": true,
-          "model": false
-        }
+        "transfer": "full"
       }
     },
     "source_fidelity": {
@@ -429,152 +391,7 @@
             "tag": "UG_PART_SEGMENT_OM_LINK"
           }
         }
-      },
-      "metadata": {
-        "native.nx.class_definitions.nx:om-entry-0:class#51.section_offset": "108",
-        "native.nx.class_definitions.nx:om-entry-0:class#51.source_offset": "127",
-        "native.nx.class_definitions.nx:om-entry-0:class#83.section_offset": "108",
-        "native.nx.class_definitions.nx:om-entry-0:class#83.source_offset": "159",
-        "native.nx.feature_body_reference_occurrences.nx:feature-history:body-reference-occurrence#0000000000-0000000000-0000000000.source_offset": "374",
-        "native.nx.feature_body_references.nx:feature-history:body-reference#0000000000-0000000000.source_offset": "374",
-        "native.nx.feature_boolean_operations.nx:feature-history:boolean#0000000000-0000000000.source_offset": "326",
-        "native.nx.feature_boolean_operations.nx:feature-history:boolean#0000000000-0000000000.target_source_offset": "360",
-        "native.nx.feature_boolean_operations.nx:feature-history:boolean#0000000000-0000000000.tool_source_offsets": "[366,369]",
-        "native.nx.feature_operation_labels.nx:feature-history:operation-label#0000000000-0000000000.source_offset": "326",
-        "native.nx.feature_operation_records.nx:feature-history:operation-record#0000000000-0000000000.payload_source_offset": "334",
-        "native.nx.feature_operation_records.nx:feature-history:operation-record#0000000000-0000000000.source_offset": "304",
-        "native.nx.field_definitions.nx:om-entry-0:field#117.section_offset": "108",
-        "native.nx.field_definitions.nx:om-entry-0:field#117.source_offset": "193",
-        "native.nx.field_definitions.nx:om-entry-0:field#129.section_offset": "108",
-        "native.nx.field_definitions.nx:om-entry-0:field#129.source_offset": "205",
-        "native.nx.om_record_areas.nx:om-record-areas:area#0-185.source_offset": "261",
-        "native.nx.segment_index_rows.nx:segment-index:row#0.source_offset": "76",
-        "native.nx.segment_index_rows.nx:segment-index:row#1.source_offset": "88",
-        "native.nx.segment_om_links.nx:segment-om-links:link#0.source_offset": "108",
-        "source.footer_offset": "378"
-      },
-      "retained_records": {
-        "nx:source:evidence#1122e078e057bc0cb435b466de3445b6fe8d6bf8ee88797f21bd0c68d54d1c7c": {
-          "bytes": {
-            "byte_len": 1,
-            "retention": "digest",
-            "sha256": "a8100ae6aa1940d0b663bb31cd466142ebbdbd5187131b92d93818987832eb89"
-          },
-          "offset": 0,
-          "stream": "native.nx.feature_operation_labels.nx:feature-history:operation-label#0000000000-0000000000.raw_object_indices[3]",
-          "untyped": []
-        },
-        "nx:source:evidence#2b01879b3869475c74ed2f24f33fe79088ca0feecdae3e92212224f4c3e1adb8": {
-          "bytes": {
-            "byte_len": 11,
-            "retention": "digest",
-            "sha256": "3577471a7217e8fde1557f2db265bab6b34e7b8e563b69fbed40af86e574abb7"
-          },
-          "offset": 0,
-          "stream": "native.nx.class_definitions.nx:om-entry-0:class#51.registry_suffix",
-          "untyped": []
-        },
-        "nx:source:evidence#406fcb07dfe6b564fe327d6e7e5706fd100841f6518976d15e9d2c23e8541da1": {
-          "bytes": {
-            "byte_len": 3,
-            "retention": "digest",
-            "sha256": "fc045e21535af635893b3c55dd1d511d0fee961d783546acf7e3f59b7b150cba"
-          },
-          "offset": 0,
-          "stream": "native.nx.feature_operation_labels.nx:feature-history:operation-label#0000000000-0000000000.raw_object_indices[2]",
-          "untyped": []
-        },
-        "nx:source:evidence#51398c5f48c0c1804691e8d6b01a329e019df7debd76aa2918f2efd9de77135d": {
-          "bytes": {
-            "byte_len": 3,
-            "retention": "digest",
-            "sha256": "8cac51b558ec9cce52bc73dbdd464fdd2373b0bba3d52117966bfbefaa38922d"
-          },
-          "offset": 0,
-          "stream": "native.nx.feature_boolean_operations.nx:feature-history:boolean#0000000000-0000000000.raw_tool_object_indices[0]",
-          "untyped": []
-        },
-        "nx:source:evidence#62830cd496212c9b88becd1f4dd8ac867d412e26c0a07131e6f2cbc9ac987b70": {
-          "bytes": {
-            "byte_len": 1,
-            "retention": "digest",
-            "sha256": "620bfdaa346b088fb49998d92f19a7eaf6bfc2fb0aee015753966da1028cb731"
-          },
-          "offset": 0,
-          "stream": "native.nx.feature_boolean_operations.nx:feature-history:boolean#0000000000-0000000000.raw_tool_object_indices[1]",
-          "untyped": []
-        },
-        "nx:source:evidence#8dbc4128376cf01bbc41910b91929aa6b8029ff3ccc39848a4b0cb08f132e331": {
-          "bytes": {
-            "byte_len": 2,
-            "retention": "digest",
-            "sha256": "9118ff83a76f6260a8cf7ec3af83f314e6a42bc35984948f07bf2a3036eae634"
-          },
-          "offset": 0,
-          "stream": "native.nx.feature_operation_labels.nx:feature-history:operation-label#0000000000-0000000000.raw_object_indices[1]",
-          "untyped": []
-        },
-        "nx:source:evidence#9451930d8236eeea9db46f809e6944f3bc976fd3397ebae62f626fa3911b65b6": {
-          "bytes": {
-            "byte_len": 3,
-            "retention": "digest",
-            "sha256": "9c2b615ee9a0ff63b405b260e61ee6334809ede83a85504dc42090cd6ec058af"
-          },
-          "offset": 0,
-          "stream": "native.nx.feature_body_references.nx:feature-history:body-reference#0000000000-0000000000.raw_body_object_index",
-          "untyped": []
-        },
-        "nx:source:evidence#9b87cd084be27db5fdd839b8bc9b27668a6ec0a8a2967aae7972b8f5dbe90faf": {
-          "bytes": {
-            "byte_len": 1,
-            "retention": "digest",
-            "sha256": "4bf5122f344554c53bde2ebb8cd2b7e3d1600ad631c385a5d7cce23c7785459a"
-          },
-          "offset": 0,
-          "stream": "native.nx.feature_operation_labels.nx:feature-history:operation-label#0000000000-0000000000.raw_object_indices[0]",
-          "untyped": []
-        },
-        "nx:source:evidence#a82674f28b53b0f3b37ed7dd15a8516d246be4c24feb81f974b0532975852205": {
-          "bytes": {
-            "byte_len": 3,
-            "retention": "digest",
-            "sha256": "9c2b615ee9a0ff63b405b260e61ee6334809ede83a85504dc42090cd6ec058af"
-          },
-          "offset": 0,
-          "stream": "native.nx.feature_body_reference_occurrences.nx:feature-history:body-reference-occurrence#0000000000-0000000000-0000000000.raw_body_object_index",
-          "untyped": []
-        },
-        "nx:source:evidence#a94fe5ac36712f2cadaac7652ec8257acc9da1b71cd234b3f1c26165915438fd": {
-          "bytes": {
-            "byte_len": 3,
-            "retention": "digest",
-            "sha256": "9c2b615ee9a0ff63b405b260e61ee6334809ede83a85504dc42090cd6ec058af"
-          },
-          "offset": 0,
-          "stream": "native.nx.feature_boolean_operations.nx:feature-history:boolean#0000000000-0000000000.raw_target_object_index",
-          "untyped": []
-        },
-        "nx:source:evidence#b10617f752231a5efc4abb3e67c55a0172591ef51ecb6b0fad96d87db58959d8": {
-          "bytes": {
-            "byte_len": 2,
-            "retention": "digest",
-            "sha256": "a12871fee210fb8619291eaea194581cbd2531e4b23759d225f6806923f63222"
-          },
-          "offset": 0,
-          "stream": "native.nx.field_definitions.nx:om-entry-0:field#117.registry_suffix",
-          "untyped": []
-        },
-        "nx:source:image#whole": {
-          "bytes": {
-            "data": "U1BMTVNTVFIGAAAAAAAAAAB6AQAAAAAAAEhFQURFUgEAAAAVAAAAL1Jvb3QvVUdfUEFSVC9VR19QQVJUTAAAAAAAAAAuAQAAAAAAACAAAAAJAAAACwAAAAEAAAABAAAAGAAAAAAAAAAAAAAA/////wAAAAAAAAD+T03//wABAhRVR1M6OkZFQVRVUkVfUkVDT1JEoIEhASNFZ4mrze8GIVVHUzo6TW9kbFV0aWxzOjpCb29sZWFuQ29tcG9uZW50ZQltX3RhcmdldIABAghtX3Rvb2xzgQMEdW5mcmFtZWQgVUdTOjpQYXlsb2FkVGV4dJkAAAAAAAAAAAAAAAAAAAAAAAAADQAAAA4AAAAsAAAABQEOTlggMjAyNy4zMTAyAGZlYXR1cmUtcmVjb3Jkc4DNAQQBL6R64UeuFHv//wGCQJAX0/8DB1VOSVRFADEAAAEAFC+keuFHrhR7AwAA4H////8BAQECkBlCAAEDkBlMfwABAhCQGUL/Rk9PVEVSAAAAAAAAAAA=",
-            "retention": "inline"
-          },
-          "offset": 0,
-          "stream": "nx:source",
-          "untyped": []
-        }
-      },
-      "unrepresented": []
+      }
     }
   },
   "inspect": {

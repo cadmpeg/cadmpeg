@@ -104,6 +104,7 @@ fn parameter_scalar_binding_fixture() -> (
             value: cadmpeg_ir::scalar::FiniteReal::new(2.0).unwrap(),
             role: FeatureInputScalarRole::Native,
             operands: Vec::new(),
+            archive_class: None,
         }],
         relation_bindings: Vec::new(),
         relation_instances: Vec::new(),
@@ -126,6 +127,44 @@ fn parameter_scalar_binding_preserves_native_reference_and_value() {
         matches!(parameters[0].value, Some(cadmpeg_ir::features::ParameterValue::Real(value))
         if value.get() == 2.0)
     );
+}
+
+#[test]
+fn archive_length_class_types_a_raw_scalar_value_as_a_length() {
+    use cadmpeg_ir::features::ParameterValue;
+    // With no display number the decoder writes the raw SI value (`0.00635`);
+    // the archive walk read that value in a `moLengthParameter_c`, so it is
+    // 6.35 mm. Without the class it stays a plain real.
+    for (class, millimetres) in [
+        (
+            Some(crate::records::ArchiveParameterClass::Length),
+            Some(6.35),
+        ),
+        (None, None),
+    ] {
+        let (mut parameters, features, histories, mut lanes) = parameter_scalar_binding_fixture();
+        parameters[0].expression = "0.00635".into();
+        parameters[0].value = Some(ParameterValue::Real(
+            cadmpeg_ir::scalar::FiniteReal::new(0.00635).unwrap(),
+        ));
+        lanes[0].scalars[0].value = cadmpeg_ir::scalar::FiniteReal::new(0.00635).unwrap();
+        lanes[0].scalars[0].archive_class = class;
+        bind_parameter_scalars(&mut parameters, &features, &histories, &lanes)
+            .expect("scalar binding");
+        match millimetres {
+            Some(mm) => assert!(
+                matches!(parameters[0].value, Some(ParameterValue::Length(value))
+                    if (value.get() - mm).abs() < 1e-9),
+                "{:?}",
+                parameters[0].value
+            ),
+            None => assert!(
+                matches!(parameters[0].value, Some(ParameterValue::Real(_))),
+                "{:?}",
+                parameters[0].value
+            ),
+        }
+    }
 }
 
 #[test]

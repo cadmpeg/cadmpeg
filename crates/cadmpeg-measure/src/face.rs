@@ -937,8 +937,8 @@ impl<'ir> FaceInput<'_, 'ir> {
         )
     }
 
-    /// The loop entries of a face, in face order, and their ring-order
-    /// caveats.
+    /// The loop entries of a face, in face order, and their ring-order and
+    /// pcurve-order caveats.
     fn loops(
         &self,
         face: &Face,
@@ -978,6 +978,16 @@ impl<'ir> FaceInput<'_, 'ir> {
                 ));
             }
             let resolved = resolution.outcome.as_ref().ok();
+            for coedge in resolved
+                .into_iter()
+                .flat_map(|resolved| &resolved.pcurve_order)
+            {
+                caveats.push(Caveat::new(
+                    CaveatCode::BoundaryPcurveOrder,
+                    Some(coedge.id.as_str()),
+                    "the coedge's pcurve uses are listed from its end to its start",
+                ));
+            }
             let shape = boundary.shapes.get(index).and_then(Option::as_ref);
             let role = match resolved.map(|resolved| resolved.kind) {
                 Some(LoopKind::Vertex(_)) => Some(LoopRole::Vertex),

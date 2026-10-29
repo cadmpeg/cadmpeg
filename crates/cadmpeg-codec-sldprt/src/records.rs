@@ -1079,6 +1079,12 @@ impl From<ObjectId> for u32 {
     }
 }
 
+cadmpeg_core::named_optional_field!(
+    deserialize_archive_class,
+    ArchiveParameterClass,
+    "archive_class"
+);
+
 /// One named scalar serialized in native SI units.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub(crate) struct FeatureInputScalar {
@@ -1110,6 +1116,41 @@ pub(crate) struct FeatureInputScalar {
     /// Typed native operand cells attached to this scalar.
     #[serde(flatten, with = "scalar_operands_wire")]
     pub(crate) operands: Vec<FeatureInputOperand>,
+    /// Class of the parameter object whose value this scalar is, as the exact
+    /// archive walk read it; `None` where the walk did not reach the value.
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_archive_class"
+    )]
+    pub(crate) archive_class: Option<ArchiveParameterClass>,
+}
+
+/// The class of a named parameter object in the native archive.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub(crate) enum ArchiveParameterClass {
+    /// `moLengthParameter_c`: metres.
+    Length,
+    /// `moAngleParameter_c`: radians.
+    Angle,
+    /// `moScalerParameter_c`: a plain real.
+    Scaler,
+    /// `moIntegerParameter_c`: a count.
+    Integer,
+}
+
+impl ArchiveParameterClass {
+    /// The class a parameter object's class name names.
+    pub(crate) fn from_class_name(name: &str) -> Option<Self> {
+        Some(match name {
+            "moLengthParameter_c" => Self::Length,
+            "moAngleParameter_c" => Self::Angle,
+            "moScalerParameter_c" => Self::Scaler,
+            "moIntegerParameter_c" => Self::Integer,
+            _ => return None,
+        })
+    }
 }
 
 #[cfg(test)]

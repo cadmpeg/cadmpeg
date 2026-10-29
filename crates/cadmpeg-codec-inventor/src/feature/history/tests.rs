@@ -153,6 +153,7 @@ fn sketch(ordinal: u32) -> crate::sketch::PmDcSketch {
 /// document model; model root 20 is the flat-pattern model.
 fn inventory() -> (FeatureInventory, Vec<crate::sketch::PmDcSketch>) {
     let inventory = FeatureInventory {
+        edge_inputs: crate::feature::edge_selection::EdgeInventory::default(),
         record_types: std::collections::HashMap::new(),
         features: vec![
             feature(2, 0x6200),
@@ -162,7 +163,9 @@ fn inventory() -> (FeatureInventory, Vec<crate::sketch::PmDcSketch>) {
             feature(21, 0x6200),
         ],
         pattern_features: Vec::new(),
+        pattern_operands: crate::feature::pattern::Operands::default(),
         terminators: vec![terminator(5), terminator(22)],
+        dimensions: Vec::new(),
         properties: Vec::new(),
         labels: vec![
             label(
@@ -196,6 +199,7 @@ fn inventory() -> (FeatureInventory, Vec<crate::sketch::PmDcSketch>) {
         kernel_entity_links: Vec::new(),
         work_planes: Vec::new(),
         issues: Vec::new(),
+        ..Default::default()
     };
     (inventory, vec![sketch(7), sketch(10)])
 }
@@ -244,6 +248,25 @@ fn history_visits_a_repeated_member_once() {
 }
 
 #[test]
+fn history_keeps_distinct_flat_pattern_model_roots() {
+    let (mut inventory, sketches) = inventory();
+    let mut design = design();
+    design.model_roots.push(model_root(30, "MbBRepSegment"));
+    inventory.features.push(feature(31, 0));
+    inventory.labels.push(label(130, 30, "", EXTRUSION, &[31]));
+    let arena = DecodeArena::new();
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service())
+        .expect("history context");
+    let history = build(&ctx, "generated", &inventory, &design, &sketches).expect("history");
+    let first = history.placement(21).expect("first flat-pattern feature");
+    let second = history.placement(31).expect("second flat-pattern feature");
+    assert!(!first.model_history);
+    assert!(!second.model_history);
+    assert_eq!(first.model_root, 20);
+    assert_eq!(second.model_root, 30);
+}
+
+#[test]
 fn projection_orders_history_and_marks_suppression() {
     let (inventory, sketches) = inventory();
     let design = design();
@@ -268,6 +291,7 @@ fn projection_orders_history_and_marks_suppression() {
             sketches: &[],
             entities: &[],
             profile_bodies: &[],
+            result_model: None,
         },
     )
     .expect("feature projection");
@@ -333,4 +357,264 @@ fn projection_orders_history_and_marks_suppression() {
     );
     assert_eq!(projection.unresolved_features, 5);
     assert_eq!(projection.unresolved_states, 0);
+}
+
+/// Root order: work plane 42, origin folder 41 holding work planes 40 and 44,
+/// then the base tree. Work plane 43 has no browser position.
+fn work_plane_inventory() -> (FeatureInventory, Vec<crate::sketch::PmDcSketch>) {
+    use crate::feature::work_plane::tests::work_plane;
+    let (mut inventory, sketches) = inventory();
+    let folder = ClassId::try_from("0".repeat(32)).expect("class");
+    inventory.labels[0] = label(100, 0, "", folder, &[42, 41, 1, 2, 3, 4, 5, 6]);
+    inventory
+        .labels
+        .push(label(140, 41, "Origin", folder, &[40, 44]));
+    inventory
+        .labels
+        .push(label(141, 40, "XY Plane", folder, &[]));
+    inventory
+        .labels
+        .push(label(142, 42, "Work Plane1", folder, &[]));
+    inventory.labels.push(label(143, 44, "Skewed", folder, &[]));
+    inventory.work_planes = vec![
+        work_plane(40, [0.0; 3], [1.0, 0.0, 0.0], [0.0, 1.0, 0.0]),
+        work_plane(42, [0.0, 0.0, 1.5], [1.0, 0.0, 0.0], [0.0, 1.0, 0.0]),
+        work_plane(43, [0.0; 3], [0.0, 1.0, 0.0], [0.0, 0.0, 1.0]),
+        work_plane(44, [0.0; 3], [1.0, 0.0, 0.0], [0.6, 0.8, 0.0]),
+    ];
+    (inventory, sketches)
+}
+
+#[test]
+fn history_places_browser_work_planes() {
+    let (inventory, sketches) = work_plane_inventory();
+    let arena = DecodeArena::new();
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service())
+        .expect("history context");
+    let history = build(&ctx, "generated", &inventory, &design(), &sketches).expect("history");
+    assert_eq!(history.order, vec![42, 40, 44, 7, 2, 10, 11, 4, 6, 21]);
+    for ordinal in [40, 42, 44] {
+        assert_eq!(
+            history.placement(ordinal).expect("placed work plane").kind,
+            HistoryNodeKind::WorkPlane
+        );
+    }
+    assert!(history.placement(43).is_none());
+}
+
+fn project_work_planes(
+    inventory: &FeatureInventory,
+    sketches: Vec<crate::sketch::PmDcSketch>,
+) -> crate::feature::FeatureProjection {
+    let sketch_inventory = crate::sketch::SketchInventory {
+        sketches,
+        entities: Vec::new(),
+        transforms: Vec::new(),
+        directions: Vec::new(),
+        constraints: Vec::new(),
+        issues: Vec::new(),
+    };
+    let arena = DecodeArena::new();
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service())
+        .expect("projection context");
+    crate::feature::project(
+        &ctx,
+        inventory,
+        &design(),
+        &sketch_inventory,
+        &[],
+        &crate::feature::ProjectedSketches {
+            sketches: &[],
+            entities: &[],
+            profile_bodies: &[],
+            result_model: None,
+        },
+    )
+    .expect("feature projection")
+}
+
+#[test]
+fn work_planes_do_not_count_as_typed_feature_records() {
+    let (mut inventory, sketches) = work_plane_inventory();
+    inventory.features.truncate(1);
+    let projection = project_work_planes(&inventory, sketches);
+    assert_eq!(projection.unresolved_features, 1);
+    assert_eq!(
+        projection
+            .features
+            .iter()
+            .filter(|feature| feature.source_tag.as_deref() == Some("work_plane"))
+            .count(),
+        2
+    );
+}
+
+#[test]
+fn projection_writes_browser_work_planes_in_history_order() {
+    let (inventory, sketches) = work_plane_inventory();
+    let design = design();
+    let sketch_inventory = crate::sketch::SketchInventory {
+        sketches,
+        entities: Vec::new(),
+        transforms: Vec::new(),
+        directions: Vec::new(),
+        constraints: Vec::new(),
+        issues: Vec::new(),
+    };
+    let arena = DecodeArena::new();
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service())
+        .expect("projection context");
+    let projection = crate::feature::project(
+        &ctx,
+        &inventory,
+        &design,
+        &sketch_inventory,
+        &[],
+        &crate::feature::ProjectedSketches {
+            sketches: &[],
+            entities: &[],
+            profile_bodies: &[],
+            result_model: None,
+        },
+    )
+    .expect("feature projection");
+    let rows = projection
+        .features
+        .iter()
+        .take(4)
+        .map(|feature| {
+            (
+                feature.ordinal,
+                feature.name.clone(),
+                feature.source_tag.clone(),
+            )
+        })
+        .collect::<Vec<_>>();
+    assert_eq!(
+        rows,
+        vec![
+            (1, Some("Work Plane1".into()), Some("work_plane".into())),
+            (2, Some("XY Plane".into()), Some("work_plane".into())),
+            (3, Some("Skewed".into()), Some("native".into())),
+            (4, None, Some("sketch".into())),
+        ]
+    );
+    let FeatureDefinition::Operation(FeatureOperation::DatumPlane { frame }) =
+        projection.features[0].evaluation.definition()
+    else {
+        panic!("work plane projects as a datum plane");
+    };
+    assert_eq!(
+        frame.origin().get(),
+        cadmpeg_ir::math::Point3::new(0.0, 0.0, 15.0)
+    );
+    assert!(projection
+        .features
+        .iter()
+        .all(|feature| feature.native_ref != Some(inventory.work_planes[2].id())));
+    assert_eq!(projection.features.len(), 10);
+    assert_eq!(projection.unresolved_features, 5);
+}
+
+#[test]
+fn a_work_plane_built_from_a_nested_work_plane_follows_it() {
+    use crate::feature::work_plane::tests::work_plane;
+    let (mut inventory, sketches) = work_plane_inventory();
+    let folder = ClassId::try_from("0".repeat(32)).expect("class");
+    let position = inventory
+        .labels
+        .iter()
+        .position(|label| label.name() == Some("Work Plane1"))
+        .expect("work-plane label");
+    inventory.labels[position] = label(142, 42, "Work Plane1", folder, &[45, 40]);
+    inventory
+        .labels
+        .push(label(145, 45, "Work Plane0", folder, &[]));
+    inventory.work_planes.push(work_plane(
+        45,
+        [0.0, 0.0, 1.0],
+        [1.0, 0.0, 0.0],
+        [0.0, 1.0, 0.0],
+    ));
+    let arena = DecodeArena::new();
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service())
+        .expect("history context");
+    let history = build(&ctx, "generated", &inventory, &design(), &sketches).expect("history");
+    assert_eq!(history.order[..4], [45, 40, 42, 44]);
+    assert_eq!(
+        history.placement(45).expect("nested work plane").kind,
+        HistoryNodeKind::WorkPlane
+    );
+    let projection = project_work_planes(&inventory, sketches);
+    assert_eq!(projection.features[0].name.as_deref(), Some("Work Plane0"));
+}
+
+#[test]
+fn solid_split_binds_its_plane_to_the_placed_work_plane_feature() {
+    use crate::feature::split::tests::solid::{plane_split_at, properties_at};
+    for (plane, root, binds) in [
+        (42, [42, 41, 30, 1], true),
+        (44, [42, 41, 30, 1], false),
+        (43, [42, 41, 30, 1], false),
+        (42, [41, 30, 42, 1], false),
+    ] {
+        let (mut inventory, sketches) = work_plane_inventory();
+        let folder = ClassId::try_from("0".repeat(32)).expect("class");
+        let mut members = root.to_vec();
+        members.extend([2, 3, 4, 5, 6]);
+        inventory.labels[0] = label(100, 0, "", folder, &members);
+        inventory.labels.push(label(
+            150,
+            30,
+            "Split1",
+            crate::feature::split::CLASS_ID,
+            &[],
+        ));
+        inventory.features.push(plane_split_at(30, 60, plane));
+        inventory.properties.extend(properties_at(60, 2));
+        let projection = project_work_planes(&inventory, sketches);
+        let split = projection
+            .features
+            .iter()
+            .find(|feature| feature.name.as_deref() == Some("Split1"))
+            .expect("split feature");
+        assert_eq!(split.ordinal, if root[0] == 42 { 4 } else { 3 });
+        let work_plane = projection
+            .features
+            .iter()
+            .find(|feature| feature.native_ref == Some(inventory.work_planes[1].id()))
+            .expect("work-plane feature");
+        match split.evaluation.definition() {
+            FeatureDefinition::Operation(FeatureOperation::SplitBody {
+                tool: cadmpeg_ir::features::SplitBodyTool::Plane { plane },
+                ..
+            }) => {
+                assert!(binds, "{plane}");
+                assert_eq!(plane, &work_plane.id);
+                assert_eq!(split.dependencies.as_slice(), std::slice::from_ref(plane));
+                let mut ir = cadmpeg_ir::document::CadIr::empty();
+                ir.model.features = projection.features.clone();
+                let report = cadmpeg_ir::validate::validate_neutral(&ir, Vec::new())
+                    .expect("validate projection");
+                assert!(
+                    !report
+                        .findings
+                        .iter()
+                        .any(|finding| finding.message.contains("split-body tool plane")),
+                    "{:?}",
+                    report.findings
+                );
+                let result = projection
+                    .result_topologies
+                    .iter()
+                    .find(|result| result.output_of == split.id)
+                    .expect("split result");
+                assert_eq!(result.bodies().len(), 2);
+            }
+            FeatureDefinition::Operation(FeatureOperation::Native { .. }) => {
+                assert!(!binds, "{plane}");
+            }
+            other => panic!("unexpected split definition {other:?}"),
+        }
+    }
 }

@@ -385,14 +385,9 @@ fn parasolid_tag_and_unicode_attribute_values_require_complete_counted_lanes() {
 }
 
 #[test]
-fn counted_value_identities_require_nonempty_payloads() {
-    crate::test_support::with_decode_context(|_ctx| {
-        for tag in [0x52, 0x53, 0x54, 0x55, 0x56, 0x57, 0x58, 0x59, 0x62] {
-            let bytes = [0, tag, 0, 0, 0, 0, 0, 17, 0];
-            assert!(
-                crate::parasolid::value_records::entity_value_record_identity_at(&bytes, 0)
-                    .is_none()
-            );
-        }
-    });
+fn counted_value_frames_require_nonempty_payloads() {
+    for tag in [0x52, 0x53, 0x54, 0x55, 0x56, 0x57, 0x58, 0x59, 0x62] {
+        let bytes = [0, tag, 0, 0, 0, 0, 0, 17, 0];
+        assert!(super::value_record_frame_at(&bytes, 0).is_none());
+    }
 }

@@ -1,30 +1,13 @@
 {
   "decode": {
     "ir": {
-      "ir_version": "8",
+      "decode_depth": "full",
+      "ir_version": "9",
       "model": {
         "appearance_bindings": [],
         "appearances": [],
         "assembly_joints": [],
-        "attributes": [
-          {
-            "id": "nx:document:attribute#jt-string-0",
-            "name": "JT string property",
-            "native_ref": "nx:display-jt:segment#0-row-0-0-string-property-atom-0",
-            "target": {
-              "id": {
-                "source_id": "nx:display-jt:segment#0-row-0-0-string-property-atom-0"
-              },
-              "kind": "source"
-            },
-            "values": [
-              {
-                "kind": "string",
-                "value": "JT"
-              }
-            ]
-          }
-        ],
+        "attributes": [],
         "bodies": [
           {
             "id": "nx:derived:point-body#0",
@@ -172,11 +155,8 @@
               "id": "nx:display-jt:segment#0-row-0-0-inflated-sequence",
               "segment": "nx:display-jt:segment#0-row-0-0",
               "segment_type": 31,
-              "tail": {
-                "byte_len": 0,
-                "record_id": "nx:source:evidence#ba73b4c49cf9cf9f0565365a23509fa318cde684c8f0ffd835de3e1d1fb36856",
-                "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
-              },
+              "source_offset": 530,
+              "tail": "",
               "tail_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
             }
           ],
@@ -185,12 +165,14 @@
               "body_byte_len": 16,
               "body_sha256": "7060bf40af80b3b13b6a12423790286151a1091d22530c26102049f2f65dbfa3",
               "id": "nx:display-jt:segment#0-row-0-0-inflated-element-0",
+              "inflated_offset": 0,
               "object_base_type": 5,
               "object_id": 1,
               "object_type_id": "6e10dd10c82ad1119b6b0080c7bb5997",
               "ordinal": 0,
               "segment": "nx:display-jt:segment#0-row-0-0",
-              "segment_type": 31
+              "segment_type": 31,
+              "source_offset": 530
             }
           ],
           "display_jt_documents": [
@@ -202,15 +184,19 @@
               "index_row": "nx:display-jt:index#0-row-0",
               "lsg_segment_id": "01010101010101010101010101010101",
               "physical_byte_len": 234,
+              "source_offset": 369,
               "toc_entries": [
                 {
                   "attributes": "0000001f",
                   "id": "nx:display-jt:toc-entry#0-row-0-0",
                   "ordinal": 0,
                   "segment_byte_len": 97,
-                  "segment_id": "02020202020202020202020202020202"
+                  "segment_id": "02020202020202020202020202020202",
+                  "segment_offset": 137,
+                  "source_offset": 478
                 }
               ],
+              "toc_offset": 105,
               "version_field": "Version 9.4 JT                                                                  "
             }
           ],
@@ -220,11 +206,14 @@
               "id": "nx:display-jt:index#0",
               "rows": [
                 {
+                  "header_offset": 28,
                   "id": "nx:display-jt:index#0-row-0",
                   "ordinal": 0,
+                  "source_offset": 349,
                   "value": 100
                 }
               ],
+              "source_offset": 341,
               "version": 9
             }
           ],
@@ -243,6 +232,7 @@
               "segment_byte_len": 97,
               "segment_id": "02020202020202020202020202020202",
               "segment_type": 31,
+              "source_offset": 506,
               "toc_entry": "nx:display-jt:toc-entry#0-row-0-0"
             }
           ],
@@ -255,6 +245,7 @@
               "element": "nx:display-jt:segment#0-row-0-0-inflated-element-0",
               "id": "nx:display-jt:segment#0-row-0-0-string-property-atom-0",
               "object_id": 1,
+              "source_offset": 530,
               "value": "JT"
             }
           ],
@@ -270,10 +261,6 @@
           ]
         }
       },
-      "scope": {
-        "design": true,
-        "model": true
-      },
       "source": {
         "attributes": {
           "deltas_streams": "0",
@@ -281,6 +268,7 @@
           "file_size": "617",
           "footer_entry_count": "0",
           "footer_fingerprint": "00000000",
+          "footer_offset": "603",
           "header_entry_count": "2",
           "jpeg_preview_count": "0",
           "partition_streams": "1",
@@ -359,7 +347,7 @@
             "scope": "namespaced",
             "strict_floor": "warning"
           },
-          "message": "The B-rep topology graph (body→shell→face→loop→fin→edge→vertex) was not reconstructed because the surviving typed records did not form a complete connected ownership graph. Exact-key supported partition↔deltas replacements and deletions were applied before graph construction. Required unresolved records prevent their dependent incidence from being emitted; decoded geometry then remains unattached.",
+          "message": "The B-rep topology graph (body→shell→face→loop→fin→edge→vertex) was not reconstructed because the surviving typed records did not form a complete connected ownership graph. Graph construction used the primary input bytes. Required unresolved records prevent their dependent incidence from being emitted; decoded geometry then remains unattached.",
           "severity": "blocking"
         },
         {
@@ -380,10 +368,7 @@
       ],
       "transfer": {
         "geometry_transferred": true,
-        "scope": {
-          "design": true,
-          "model": true
-        }
+        "transfer": "full"
       }
     },
     "source_fidelity": {
@@ -485,21 +470,6 @@
           }
         }
       },
-      "metadata": {
-        "native.nx.display_jt_compressed_element_sequences.nx:display-jt:segment#0-row-0-0-inflated-sequence.source_offset": "530",
-        "native.nx.display_jt_compressed_elements.nx:display-jt:segment#0-row-0-0-inflated-element-0.inflated_offset": "0",
-        "native.nx.display_jt_compressed_elements.nx:display-jt:segment#0-row-0-0-inflated-element-0.source_offset": "530",
-        "native.nx.display_jt_documents.nx:display-jt:document#0-row-0.source_offset": "369",
-        "native.nx.display_jt_documents.nx:display-jt:document#0-row-0.toc_entries[0].segment_offset": "137",
-        "native.nx.display_jt_documents.nx:display-jt:document#0-row-0.toc_entries[0].source_offset": "478",
-        "native.nx.display_jt_documents.nx:display-jt:document#0-row-0.toc_offset": "105",
-        "native.nx.display_jt_indices.nx:display-jt:index#0.rows[0].header_offset": "28",
-        "native.nx.display_jt_indices.nx:display-jt:index#0.rows[0].source_offset": "349",
-        "native.nx.display_jt_indices.nx:display-jt:index#0.source_offset": "341",
-        "native.nx.display_jt_segments.nx:display-jt:segment#0-row-0-0.source_offset": "506",
-        "native.nx.display_jt_string_property_atoms.nx:display-jt:segment#0-row-0-0-string-property-atom-0.source_offset": "530",
-        "source.footer_offset": "603"
-      },
       "retained_records": {
         "nx:container:parasolid#0": {
           "bytes": {
@@ -507,30 +477,9 @@
             "retention": "inline"
           },
           "offset": 119,
-          "stream": "nx:container",
-          "untyped": []
-        },
-        "nx:source:evidence#ba73b4c49cf9cf9f0565365a23509fa318cde684c8f0ffd835de3e1d1fb36856": {
-          "bytes": {
-            "byte_len": 0,
-            "retention": "digest",
-            "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
-          },
-          "offset": 0,
-          "stream": "native.nx.display_jt_compressed_element_sequences.nx:display-jt:segment#0-row-0-0-inflated-sequence.tail",
-          "untyped": []
-        },
-        "nx:source:image#whole": {
-          "bytes": {
-            "data": "U1BMTVNTVFIGAAAAAAAAAABbAgAAAAAAAEhFQURFUgIAAAAVAAAAL1Jvb3QvVUdfUEFSVC9VR19QQVJUdwAAAAAAAADeAAAAAAAAABcAAAAvUm9vdC9VR19QQVJUL0Rpc3BsYXlKVFUBAAAAAAAABgEAAAAAAAB4AY1MvQsBYRh/8rFYLFZ6F0W3+IpY3iRfhXC3Xz7eQfnqHIWJSJklk9EoZVH+AH+CwcRqMViVtzt3nXTl6fn4ffT88iwA4AjiitEcm01zKJHOxJGrXRLEmlhrNd2oIpCSSKqo3EeNVpXU60RAPSJ0qIn8AY/HGwrSCCsbS/FcnOV4Lx+mBWAHA9XVxjsVSgDPDV1nwrIBHxglQV0M3o/Ol+fspSo6AD9kQ7ky02w/mDSMQobOX61E4vbyuDrdxgr/eXaA+Vtj8GRwTW5tQ7z43PWhcJ86DnoRb+z1Oe8JAAAAAQAAAAAAAABkAAAAAAAAABwAAAAAAAAAVmVyc2lvbiA5LjQgSlQgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAAAAAAAGkAAAABAQEBAQEBAQEBAQEBAQEBAQAAAAICAgICAgICAgICAgICAgKJAAAAYQAAAAAAAB8CAgICAgICAgICAgICAgICHwAAAGEAAAACAAAAQQAAAAJ4AV3DsQ1AQBQA0HcS/TeExhRqtcYMEjPYQmEUA9AawCwu195LXo8tvniGtztX+30tR5tQGpMGk1ngr2QKjBhFRk9PVEVSAAAAAAAAAAA=",
-            "retention": "inline"
-          },
-          "offset": 0,
-          "stream": "nx:source",
-          "untyped": []
+          "stream": "nx:container"
         }
-      },
-      "unrepresented": []
+      }
     }
   },
   "inspect": {

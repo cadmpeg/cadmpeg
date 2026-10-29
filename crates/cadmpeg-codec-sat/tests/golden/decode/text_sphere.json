@@ -1,6 +1,7 @@
 {
   "ir": {
-    "ir_version": "8",
+    "decode_depth": "full",
+    "ir_version": "9",
     "model": {
       "appearance_bindings": [],
       "appearances": [],
@@ -27,7 +28,6 @@
             "classification": "unspecified",
             "loops": []
           },
-          "native_ref": "sat:asm:face-native-key#4",
           "sense": "forward",
           "shell": "sat:brep:entity#3",
           "surface": "sat:brep:entity#5"
@@ -117,6 +117,7 @@
         "edge_ownerships": [],
         "face_native_keys": [
           {
+            "face": "sat:brep:entity#4",
             "id": "sat:asm:face-native-key#4",
             "record_index": 4
           }
@@ -139,13 +140,10 @@
         "wire_topologies": []
       }
     },
-    "scope": {
-      "design": true,
-      "model": true
-    },
     "source": {
       "attributes": {
         "acis_save_format_version": "23200",
+        "kernel_entity_count": "2",
         "kernel_family": "asm",
         "kernel_flags": "2",
         "product_family": "Autodesk Neutron",
@@ -217,10 +215,7 @@
     "notes": [],
     "transfer": {
       "geometry_transferred": true,
-      "scope": {
-        "design": true,
-        "model": true
-      }
+      "transfer": "full"
     }
   },
   "source_fidelity": {
@@ -261,7 +256,6 @@
           "tag": "sphere-surface"
         }
       }
-    },
-    "unrepresented": []
+    }
   }
 }

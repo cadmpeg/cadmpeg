@@ -222,7 +222,11 @@ pub(super) fn assert_projected_or_reported(
         && native.design_component_naming_spaces.is_empty()
         && ir.model.occurrences.is_empty()
     {
-        if let [root] = native.act_root_components.as_slice() {
+        let mut roots = native
+            .act_component_links
+            .iter()
+            .filter(|link| link.tracks_document_root());
+        if let (Some(root), None) = (roots.next(), roots.next()) {
             assert!(
                 ir.model.product_definitions.iter().any(|product| {
                     product.native_ref.as_deref() == Some(root.id().as_str())

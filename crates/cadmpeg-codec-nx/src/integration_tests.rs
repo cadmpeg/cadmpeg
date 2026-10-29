@@ -61,10 +61,10 @@ mod blend_history;
 mod body_write;
 
 mod attachment_containment;
+mod deltas_source;
 mod dialect;
 mod enlarge;
 mod extract_face;
-mod source_pmark_packets;
 mod source_prefix;
 mod swp104;
 mod symbolic_thread;
@@ -328,7 +328,7 @@ fn freeform_pipeline_binds_nurbs_pcurves_offsets_blends_and_intersections() {
 }
 
 #[test]
-fn deltas_pipeline_replaces_geometry_without_discarding_partition_topology() {
+fn unselected_deltas_preserve_primary_geometry_and_topology() {
     let partition = topology_partition_stream();
     let delta_fixtures = [
         deltas_point_partition_stream(),
@@ -340,8 +340,13 @@ fn deltas_pipeline_replaces_geometry_without_discarding_partition_topology() {
         deltas_line_partition_stream(),
         deltas_plane_partition_stream(),
     ];
+    let baseline = decode(prt_with_partition(&partition));
     for deltas in delta_fixtures {
         let result = decode(prt_with_streams(&[&partition, &deltas]));
+        assert_eq!(
+            serde_json::to_value(&result.ir().model).unwrap(),
+            serde_json::to_value(&baseline.ir().model).unwrap()
+        );
         assert!(result.report().geometry_transferred());
         assert_eq!(result.ir().model.bodies.len(), 1);
         assert_eq!(result.ir().model.faces.len(), 1);

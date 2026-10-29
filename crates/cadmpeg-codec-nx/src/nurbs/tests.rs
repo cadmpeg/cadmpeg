@@ -1002,21 +1002,26 @@ fn nurbs_low_nonnull_identities_resolve_owned_carriers() {
 }
 
 #[test]
-fn nurbs_short_headers_admit_every_nonnull_identity() {
+fn nurbs_curve_payloads_admit_every_low_nonnull_identity() {
+    let payload_for = |identity: u16| {
+        let mut bytes = vec![0, 135];
+        bytes.extend_from_slice(&identity.to_be_bytes());
+        bytes.extend_from_slice(&[0; 5]);
+        bytes.extend_from_slice(&1_u32.to_be_bytes());
+        bytes.extend_from_slice(&1_u16.to_be_bytes());
+        bytes.extend_from_slice(&0.0_f64.to_be_bytes());
+        bytes
+    };
     for identity in 2..=10_u16 {
-        let [high, low] = identity.to_be_bytes();
-        let bytes = [0, 135, high, low, 1, 0, 1, 1];
-        assert_eq!(
-            super::curve_data_header_at(&bytes, 0),
-            Some((u32::from(identity), 8))
-        );
+        let bytes = payload_for(identity);
+        let (xmt, payload, end) =
+            super::curve_payload_at(&bytes, 0).expect("a low non-null identity is admitted");
+        assert_eq!(xmt, u32::from(identity));
+        assert_eq!(payload.value_count(), 1);
+        assert_eq!(end, bytes.len());
     }
     for identity in [0_u16, 1] {
-        let [high, low] = identity.to_be_bytes();
-        assert_eq!(
-            super::curve_data_header_at(&[0, 135, high, low, 1, 0, 1, 1], 0),
-            None
-        );
+        assert!(super::curve_payload_at(&payload_for(identity), 0).is_none());
     }
 }
 
@@ -1032,22 +1037,23 @@ fn nurbs_singleton_arrays_admit_low_nonnull_identities() {
         }
         let array = super::array_record_at(&bytes, 0).unwrap();
         assert_eq!(array.reference, u32::from(identity));
-        assert_eq!(array.end, bytes.len());
+        let raw = match array.values {
+            super::ArrayValues::U16(raw) | super::ArrayValues::F64(raw) => raw,
+        };
+        assert_eq!(raw.as_ptr_range().end, bytes.as_ptr_range().end);
     }
 }
 
 #[test]
-fn nurbs_surface_headers_admit_low_nonnull_identity() {
+fn nurbs_surface_payloads_admit_low_nonnull_identity() {
     for identity in [0_u16, 1, 2, 10] {
         let mut bytes = vec![0, 125];
         bytes.extend_from_slice(&identity.to_be_bytes());
-        bytes.extend_from_slice(&[0; 64]);
-        bytes.push(1);
-        bytes.extend_from_slice(b"BBBB????????");
-        for _ in 0..4 {
-            bytes.extend_from_slice(&[0, 1, 1]);
-        }
-        let result = super::surface_data_header_at(&bytes, 0);
+        bytes.extend_from_slice(&[0; 87]);
+        bytes.extend_from_slice(&1_u32.to_be_bytes());
+        bytes.extend_from_slice(&1_u16.to_be_bytes());
+        bytes.extend_from_slice(&0.0_f64.to_be_bytes());
+        let result = super::surface_payload_at(&bytes, 0).map(|(xmt, _, end)| (xmt, end));
         assert_eq!(
             result,
             (identity > 1).then_some((u32::from(identity), bytes.len()))
@@ -1077,25 +1083,19 @@ fn nurbs_arrays_admit_u32_counts_and_preserve_requested_prefixes() {
                 crate::test_support::with_decode_context(|_ctx| {
                     let array = super::array_record_at(&bytes, 0).unwrap();
                     assert_eq!(array.reference, 42);
+                    let raw = match array.values {
+                        super::ArrayValues::U16(raw) | super::ArrayValues::F64(raw) => raw,
+                    };
                     assert_eq!(
-                        array.end,
-                        values_at + usize::try_from(count).unwrap() * width
+                        raw.as_ptr_range(),
+                        bytes[values_at..values_at + usize::try_from(count).unwrap() * width]
+                            .as_ptr_range()
                     );
                     if width == 2 {
                         assert_eq!(array.values.u16_prefix(2).unwrap(), vec![3, 3]);
                     } else {
                         assert_eq!(array.values.f64_prefix(2).unwrap(), vec![2.5, 2.5]);
                     }
-                    let auxiliary = super::auxiliary_record_at(&bytes, 0).unwrap();
-                    assert_eq!((auxiliary.xmt, auxiliary.end), (42, array.end));
-                    assert_eq!(
-                        auxiliary.family,
-                        if tag == 127 {
-                            super::RecordFamily::Multiplicities
-                        } else {
-                            super::RecordFamily::Knots
-                        }
-                    );
                     let indexed = super::arrays(&bytes);
                     let values = if width == 2 {
                         indexed.u16s.get(&42)

@@ -1754,11 +1754,6 @@ pub(crate) fn project(
         text.push(dimension.user_text.clone());
     }
     let annotation = SemanticAnnotation {
-        id: annotation_id,
-        object: object.to_owned(),
-        kind: SemanticAnnotationKind::Dimension,
-        runtime_type: runtime_type.to_owned(),
-        order,
         text,
         references,
         value: Some(value),
@@ -1766,7 +1761,14 @@ pub(crate) fn project(
         position,
         parameters,
         assets: Vec::new(),
-        native_ref: object.to_owned(),
+        ..SemanticAnnotation::new(
+            annotation_id,
+            object.to_owned(),
+            SemanticAnnotationKind::Dimension,
+            runtime_type.to_owned(),
+            order,
+            object.to_owned(),
+        )
     };
     Ok((annotation, unresolved))
 }

@@ -403,47 +403,6 @@ fn append_declared_composite_curves(stream: &[u8], constructions: &mut Vec<Compo
     constructions.extend(declared);
 }
 
-/// Decode a merged partition/deltas stream with explicit auxiliary replacement boundaries.
-#[cfg(test)]
-fn scan_with_auxiliary_replacements(
-    stream: &[u8],
-    base_stream: &[u8],
-    replacement_streams: &[&[u8]],
-) -> Result<CurveScan, CodecError> {
-    let graph = topology::Graph::parse(stream);
-    scan_with_auxiliary_replacements_and_graph(stream, base_stream, replacement_streams, &graph)
-}
-
-pub(crate) fn scan_with_auxiliary_replacements_and_graph(
-    stream: &[u8],
-    base_stream: &[u8],
-    replacement_streams: &[&[u8]],
-    graph: &topology::Graph,
-) -> Result<CurveScan, CodecError> {
-    let mut charts = chart_records(base_stream, ChartPointLayout::Xyz3);
-    let mut terms = term_records(base_stream, ChartPointLayout::Xyz3);
-    let mut uv = uv_records(base_stream);
-    let mut bridges = blend_bound_records(base_stream);
-    for replacement_stream in replacement_streams {
-        charts.extend(chart_records(replacement_stream, ChartPointLayout::Ext11));
-        terms.extend(term_records(replacement_stream, ChartPointLayout::Ext11));
-        uv.extend(uv_records(replacement_stream));
-        bridges.extend(blend_bound_records(replacement_stream));
-    }
-    let mut constructions = graph.composite_curves();
-    append_declared_composite_curves(stream, &mut constructions);
-    scan_with_auxiliaries(
-        AuxiliaryMaps {
-            charts: &charts,
-            terms: &terms,
-            uv: &uv,
-            bridges: &bridges,
-        },
-        graph,
-        constructions,
-    )
-}
-
 #[derive(Clone, Copy)]
 struct AuxiliaryMaps<'a> {
     charts: &'a BTreeMap<u32, Chart>,

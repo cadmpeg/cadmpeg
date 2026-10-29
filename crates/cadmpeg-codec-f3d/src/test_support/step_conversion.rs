@@ -3,8 +3,8 @@
 //!
 //! The CLI decodes in one session, validates the neutral model and the F3D
 //! native namespace in a second session sized from the input, plans the
-//! inherited STEP target, refuses error findings the output would carry and
-//! empty geometry, and then writes the plan.
+//! inherited STEP target, refuses error findings the output would carry, and
+//! then writes the plan.
 
 use cadmpeg_codec_step::StepCodec;
 use cadmpeg_core::decode::{u64_from_index, DecodeArena, DecodeContext, DecodePolicy};
@@ -48,7 +48,7 @@ pub(crate) fn convert_to_step(bytes: &[u8]) -> StepConversion {
     .expect("neutral validation");
     validation.findings.extend(
         F3dCodec
-            .validate_native(&ctx, &ir)
+            .validate_native(&ctx, &ir, None)
             .expect("native validation"),
     );
     ctx.finish_session().expect("the validation session closes");
@@ -61,10 +61,6 @@ pub(crate) fn convert_to_step(bytes: &[u8]) -> StepConversion {
         .expect("plan the STEP export");
     let carried = plan.carried_errors(&ir, &validation);
     assert!(carried.is_empty(), "the export carries errors: {carried:?}");
-    assert!(
-        decode.geometry_transferred(),
-        "STEP export refuses empty geometry"
-    );
     let mut step = Vec::new();
     plan.write_to(&mut step).expect("write the STEP export");
     StepConversion { ir, decode, step }

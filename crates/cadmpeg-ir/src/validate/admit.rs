@@ -365,6 +365,7 @@ mod tests {
         ] {
             for check in [
                 Check::RingOrder,
+                Check::PcurveOrder,
                 Check::Orientation,
                 Check::MeasurementIncomplete,
             ] {

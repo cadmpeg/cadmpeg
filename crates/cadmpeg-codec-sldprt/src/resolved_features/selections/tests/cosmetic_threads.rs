@@ -309,6 +309,7 @@ fn cosmetic_thread_cylinder_reference_follows_its_owned_diameter_child() {
         value: cadmpeg_ir::scalar::FiniteReal::new(0.008).expect("finite test scalar"),
         role: FeatureInputScalarRole::Native,
         operands: Vec::new(),
+        archive_class: None,
     };
     let mut lane = FeatureInputLane {
         id: "lane".into(),
@@ -395,6 +396,7 @@ fn cosmetic_thread_cylinder_reference_follows_its_owned_diameter_child() {
         value: cadmpeg_ir::scalar::FiniteReal::new(1.0).expect("finite test scalar"),
         role: FeatureInputScalarRole::Native,
         operands: Vec::new(),
+        archive_class: None,
     });
     assert!(cosmetic_thread_cylinder_references(
         &references_ctx,

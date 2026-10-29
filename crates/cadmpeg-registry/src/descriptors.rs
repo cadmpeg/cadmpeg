@@ -52,52 +52,32 @@ pub(crate) enum FormatKind {
     Native(NativeDescriptor),
 }
 
-/// Delivery and semantic-admission physics of a writable format.
+/// Delivery form of a writable format.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum OutputPhysics {
-    /// Dialect-free textual CADIR; empty geometry is a valid document state.
-    NeutralText,
-    /// A textual native geometry format.
-    #[cfg(any(feature = "step", feature = "iges"))]
-    GeometryText,
-    /// A binary native geometry container.
+    /// Text output.
+    Text,
+    /// A binary container.
     #[cfg(any(
         feature = "fcstd",
         feature = "f3d",
         feature = "sldprt",
         feature = "rhino"
     ))]
-    GeometryBinary,
+    Binary,
 }
 
 impl OutputPhysics {
-    pub(crate) const fn transfers_geometry(self) -> bool {
-        match self {
-            Self::NeutralText => false,
-            #[cfg(any(feature = "step", feature = "iges"))]
-            Self::GeometryText => true,
-            #[cfg(any(
-                feature = "fcstd",
-                feature = "f3d",
-                feature = "sldprt",
-                feature = "rhino"
-            ))]
-            Self::GeometryBinary => true,
-        }
-    }
-
     pub(crate) const fn is_binary(self) -> bool {
         match self {
-            Self::NeutralText => false,
-            #[cfg(any(feature = "step", feature = "iges"))]
-            Self::GeometryText => false,
+            Self::Text => false,
             #[cfg(any(
                 feature = "fcstd",
                 feature = "f3d",
                 feature = "sldprt",
                 feature = "rhino"
             ))]
-            Self::GeometryBinary => true,
+            Self::Binary => true,
         }
     }
 }
@@ -238,7 +218,7 @@ writable!(
     &["fcstd"],
     || Box::new(cadmpeg_codec_freecad::FcstdCodec),
     &["fcstd"],
-    OutputPhysics::GeometryBinary,
+    OutputPhysics::Binary,
     || Box::new(cadmpeg_codec_freecad::FcstdCodec)
 );
 #[cfg(feature = "f3d")]
@@ -249,7 +229,7 @@ writable!(
     &["f3d", "f3z"],
     || Box::new(cadmpeg_codec_f3d::F3dCodec),
     &["f3d"],
-    OutputPhysics::GeometryBinary,
+    OutputPhysics::Binary,
     || Box::new(cadmpeg_codec_f3d::F3dCodec)
 );
 #[cfg(feature = "inventor")]
@@ -264,7 +244,7 @@ writable!(
     &["sldprt"],
     || Box::new(cadmpeg_codec_sldprt::SldprtCodec),
     &["sldprt"],
-    OutputPhysics::GeometryBinary,
+    OutputPhysics::Binary,
     || Box::new(cadmpeg_codec_sldprt::SldprtCodec)
 );
 #[cfg(feature = "catia")]
@@ -287,7 +267,7 @@ writable!(
     &["3dm"],
     || Box::new(cadmpeg_codec_rhino::RhinoCodec),
     &["3dm"],
-    OutputPhysics::GeometryBinary,
+    OutputPhysics::Binary,
     || Box::new(cadmpeg_codec_rhino::RhinoCodec)
 );
 #[cfg(feature = "step")]
@@ -298,7 +278,7 @@ writable!(
     &["step", "stp"],
     || Box::new(cadmpeg_codec_step::StepCodec::default()),
     &["step", "stp"],
-    OutputPhysics::GeometryText,
+    OutputPhysics::Text,
     || Box::new(cadmpeg_codec_step::StepCodec::default())
 );
 #[cfg(feature = "iges")]
@@ -309,7 +289,7 @@ writable!(
     &["iges", "igs"],
     || Box::new(cadmpeg_codec_iges::IgesCodec),
     &["iges", "igs"],
-    OutputPhysics::GeometryText,
+    OutputPhysics::Text,
     || Box::new(cadmpeg_codec_iges::IgesCodec)
 );
 #[cfg(feature = "sat")]
@@ -325,7 +305,7 @@ reader!(PVZ, FormatId::new("pvz"), &["pvz"], || Box::new(
 ));
 static CADIR_OUTPUT: OutputDescriptor = OutputDescriptor {
     extensions: &["cadir", "json"],
-    physics: OutputPhysics::NeutralText,
+    physics: OutputPhysics::Text,
     encoder: || Box::new(CadirEncoder),
 };
 static CADIR: FormatDescriptor = FormatDescriptor {

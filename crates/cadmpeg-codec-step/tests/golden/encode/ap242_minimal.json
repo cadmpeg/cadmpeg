@@ -25,52 +25,6 @@
           "UNCERTAINTY_MEASURE_WITH_UNIT": 1
         }
       },
-      "coverage": {
-        "arenas": {
-          "appearance_bindings": "written",
-          "appearances": "written",
-          "assembly_joints": "dropped",
-          "assets": "dropped",
-          "attributes": "dropped",
-          "bodies": "written",
-          "coedges": "written",
-          "configurations": "dropped",
-          "curves": "written",
-          "drawings": "dropped",
-          "edges": "written",
-          "faces": "written",
-          "feature_input_topologies": "dropped",
-          "feature_result_topologies": "dropped",
-          "features": "dropped",
-          "loops": "written",
-          "occurrences": "written",
-          "parameters": "dropped",
-          "pcurves": "written",
-          "pmi": "written",
-          "points": "written",
-          "presentation_documents": "dropped",
-          "presentation_layers": "written",
-          "procedural_curves": "written",
-          "procedural_surfaces": "written",
-          "product_definitions": "written",
-          "regions": "written",
-          "semantic_annotations": "dropped",
-          "shells": "written",
-          "sketch_constraints": "dropped",
-          "sketch_entities": "dropped",
-          "sketches": "dropped",
-          "spatial_sketch_constraints": "dropped",
-          "spatial_sketch_entities": "dropped",
-          "spatial_sketches": "dropped",
-          "spreadsheets": "dropped",
-          "subds": "dropped",
-          "surfaces": "written",
-          "tessellations": "written",
-          "vertices": "written",
-          "view_presentations": "dropped"
-        },
-        "coverage": "declared"
-      },
       "identity": {
         "payload": "native",
         "target": "step:ap242-e3"
@@ -78,14 +32,24 @@
       "losses": [
         {
           "code": {
-            "code": "export.no-exportable-solids",
-            "kind": "no_exportable_solids",
+            "code": "export.no-geometry-written",
+            "kind": "geometry_not_transferred",
             "namespace": "step",
             "scope": "namespaced",
             "strict_floor": "warning"
           },
-          "message": "no exportable solids or standalone geometry; the STEP representation is empty",
-          "severity": "warning"
+          "message": "no geometry was written to a STEP representation",
+          "severity": "error"
+        },
+        {
+          "code": {
+            "code": "native.passthrough-record-omitted",
+            "kind": "passthrough_record_omitted",
+            "namespace": "step",
+            "scope": "namespaced"
+          },
+          "message": "2 uninterpreted passthrough record(s) were not represented in STEP",
+          "severity": "info"
         },
         {
           "code": {
@@ -99,20 +63,6 @@
           "severity": "warning"
         }
       ],
-      "native_dispositions": {
-        "namespaces": {
-          "step": {
-            "arenas": {
-              "drawing_targets": {
-                "disposition": "dropped"
-              },
-              "unknowns": {
-                "disposition": "dropped"
-              }
-            }
-          }
-        }
-      },
       "notes": [],
       "write_path": {
         "fidelity": {
@@ -148,52 +98,6 @@
           "UNCERTAINTY_MEASURE_WITH_UNIT": 1
         }
       },
-      "coverage": {
-        "arenas": {
-          "appearance_bindings": "written",
-          "appearances": "written",
-          "assembly_joints": "dropped",
-          "assets": "dropped",
-          "attributes": "dropped",
-          "bodies": "written",
-          "coedges": "written",
-          "configurations": "dropped",
-          "curves": "written",
-          "drawings": "dropped",
-          "edges": "written",
-          "faces": "written",
-          "feature_input_topologies": "dropped",
-          "feature_result_topologies": "dropped",
-          "features": "dropped",
-          "loops": "written",
-          "occurrences": "written",
-          "parameters": "dropped",
-          "pcurves": "written",
-          "pmi": "reported",
-          "points": "written",
-          "presentation_documents": "dropped",
-          "presentation_layers": "written",
-          "procedural_curves": "written",
-          "procedural_surfaces": "written",
-          "product_definitions": "written",
-          "regions": "written",
-          "semantic_annotations": "dropped",
-          "shells": "written",
-          "sketch_constraints": "dropped",
-          "sketch_entities": "dropped",
-          "sketches": "dropped",
-          "spatial_sketch_constraints": "dropped",
-          "spatial_sketch_entities": "dropped",
-          "spatial_sketches": "dropped",
-          "spreadsheets": "dropped",
-          "subds": "dropped",
-          "surfaces": "written",
-          "tessellations": "reported",
-          "vertices": "written",
-          "view_presentations": "dropped"
-        },
-        "coverage": "declared"
-      },
       "identity": {
         "payload": "native",
         "target": "step:ap214"
@@ -201,14 +105,24 @@
       "losses": [
         {
           "code": {
-            "code": "export.no-exportable-solids",
-            "kind": "no_exportable_solids",
+            "code": "export.no-geometry-written",
+            "kind": "geometry_not_transferred",
             "namespace": "step",
             "scope": "namespaced",
             "strict_floor": "warning"
           },
-          "message": "no exportable solids or standalone geometry; the STEP representation is empty",
-          "severity": "warning"
+          "message": "no geometry was written to a STEP representation",
+          "severity": "error"
+        },
+        {
+          "code": {
+            "code": "native.passthrough-record-omitted",
+            "kind": "passthrough_record_omitted",
+            "namespace": "step",
+            "scope": "namespaced"
+          },
+          "message": "2 uninterpreted passthrough record(s) were not represented in STEP",
+          "severity": "info"
         },
         {
           "code": {
@@ -222,20 +136,6 @@
           "severity": "warning"
         }
       ],
-      "native_dispositions": {
-        "namespaces": {
-          "step": {
-            "arenas": {
-              "drawing_targets": {
-                "disposition": "dropped"
-              },
-              "unknowns": {
-                "disposition": "dropped"
-              }
-            }
-          }
-        }
-      },
       "notes": [],
       "write_path": {
         "fidelity": {
@@ -271,52 +171,6 @@
           "UNCERTAINTY_MEASURE_WITH_UNIT": 1
         }
       },
-      "coverage": {
-        "arenas": {
-          "appearance_bindings": "written",
-          "appearances": "written",
-          "assembly_joints": "dropped",
-          "assets": "dropped",
-          "attributes": "dropped",
-          "bodies": "written",
-          "coedges": "written",
-          "configurations": "dropped",
-          "curves": "written",
-          "drawings": "dropped",
-          "edges": "written",
-          "faces": "written",
-          "feature_input_topologies": "dropped",
-          "feature_result_topologies": "dropped",
-          "features": "dropped",
-          "loops": "written",
-          "occurrences": "written",
-          "parameters": "dropped",
-          "pcurves": "written",
-          "pmi": "written",
-          "points": "written",
-          "presentation_documents": "dropped",
-          "presentation_layers": "written",
-          "procedural_curves": "written",
-          "procedural_surfaces": "written",
-          "product_definitions": "written",
-          "regions": "written",
-          "semantic_annotations": "dropped",
-          "shells": "written",
-          "sketch_constraints": "dropped",
-          "sketch_entities": "dropped",
-          "sketches": "dropped",
-          "spatial_sketch_constraints": "dropped",
-          "spatial_sketch_entities": "dropped",
-          "spatial_sketches": "dropped",
-          "spreadsheets": "dropped",
-          "subds": "dropped",
-          "surfaces": "written",
-          "tessellations": "written",
-          "vertices": "written",
-          "view_presentations": "dropped"
-        },
-        "coverage": "declared"
-      },
       "identity": {
         "payload": "native",
         "target": "step:ap242-e2"
@@ -324,30 +178,26 @@
       "losses": [
         {
           "code": {
-            "code": "export.no-exportable-solids",
-            "kind": "no_exportable_solids",
+            "code": "export.no-geometry-written",
+            "kind": "geometry_not_transferred",
             "namespace": "step",
             "scope": "namespaced",
             "strict_floor": "warning"
           },
-          "message": "no exportable solids or standalone geometry; the STEP representation is empty",
-          "severity": "warning"
+          "message": "no geometry was written to a STEP representation",
+          "severity": "error"
+        },
+        {
+          "code": {
+            "code": "native.passthrough-record-omitted",
+            "kind": "passthrough_record_omitted",
+            "namespace": "step",
+            "scope": "namespaced"
+          },
+          "message": "2 uninterpreted passthrough record(s) were not represented in STEP",
+          "severity": "info"
         }
       ],
-      "native_dispositions": {
-        "namespaces": {
-          "step": {
-            "arenas": {
-              "drawing_targets": {
-                "disposition": "dropped"
-              },
-              "unknowns": {
-                "disposition": "dropped"
-              }
-            }
-          }
-        }
-      },
       "notes": [],
       "write_path": {
         "fidelity": {

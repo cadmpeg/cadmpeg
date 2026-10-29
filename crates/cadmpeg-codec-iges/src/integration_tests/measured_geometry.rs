@@ -19,7 +19,8 @@ use crate::test_support::plan_at;
 use crate::test_support::test_closed_cylinder::solid_cylinder;
 use crate::test_support::test_drawing_and_trimming::test_boundary_direction::trimmed_nurbs_patch_file;
 use crate::test_support::test_drawing_and_trimming::test_mixed_sense::{
-    mixed_sense_outer_loop_model, reversed_closed_outer_edge_model,
+    bounded_square_file, edge_direction_parameter_curve_square_file, mixed_sense_outer_loop_model,
+    reversed_closed_outer_edge_model,
 };
 use crate::test_support::test_drawing_and_trimming::{
     reversed_face_use_multi_pcurve_loop_file, trimmed_plane_with_inner_loop_file,
@@ -177,6 +178,35 @@ fn mixed_sense_outer_loop_write_round_trip_keeps_measured_geometry() {
         "mixed-sense outer loop",
         &mixed_sense_outer_loop_model(),
     );
+}
+
+/// A sense-2 Type 141 item whose parameter curve runs in the model-curve
+/// direction decodes to the face of the same boundary stated in the traversal,
+/// and its write round trip keeps that face.
+#[test]
+fn edge_direction_parameter_curve_measures_the_traversal_face() {
+    let ir = decoded(edge_direction_parameter_curve_square_file(1));
+    let (_, edge_direction, traversal) = measures_agree(
+        "edge-direction parameter curve",
+        &ir,
+        &decoded(bounded_square_file()),
+    )
+    .expect("both statements measure one face");
+    assert_one_orientation_reading(&edge_direction);
+    assert_one_orientation_reading(&traversal);
+    assert_round_trip_keeps_measured_geometry("edge-direction parameter curve", &ir);
+    let selection = Selection {
+        all_faces: true,
+        ..Selection::default()
+    };
+    let report = measured_rows(&ir, &selection);
+    let [face] = report.faces().as_slice() else {
+        panic!("one face row");
+    };
+    assert!(face.caveats().is_empty());
+    assert!(face.unavailable_codes().is_empty());
+    let area = face.measures().area().measured().expect("measured area");
+    assert_close(area.value().value.get(), 1.0, area.numeric_error().get());
 }
 
 /// The clockwise source boundary decodes reversed, with its pcurve use on the

@@ -2,48 +2,113 @@
   "entries": [
     {
       "name": "Document.xml",
-      "payload_len": 52038,
-      "payload_sha256": "2dffec9a83b6cfe5c387b897fe7392bd5065cf7f3dec32e54023250343f49b50"
+      "payload_len": 100460,
+      "payload_sha256": "498f08caf9ccf8bac6a0f9e7d748b0b7e047f28baef7270a24317ea570c3ba7b"
     },
     {
-      "name": "Cadmpeg.StringHasher.0.txt",
-      "payload_len": 22,
-      "payload_sha256": "fb6584f9f9e27a1800242afb8012578f820f423a4ae7fda4be20731580cbe0a1"
+      "name": "GeometricRelations.InternalShape.brp",
+      "payload_len": 0,
+      "payload_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
     },
     {
-      "name": "DimensionalRelations.brp",
-      "payload_len": 2241,
-      "payload_sha256": "2640bf2bc88447c9f15135c34e0ea7dcb37ffb01e3e6323588d148e3b9ced75c"
+      "name": "GeometricRelations.Shape.brp",
+      "payload_len": 6716,
+      "payload_sha256": "d0c09a4797234c2a793364431d681f7a4792bde518fd9ba126de83d25afd802d"
     },
     {
-      "name": "GeometricRelations.brp",
-      "payload_len": 3577,
-      "payload_sha256": "b6b072c90cfe5e86ae959af7418dc445093f0e8379c4eaba894f80cdec8ab1c2"
+      "name": "GeometricRelations.Shape.Map.txt",
+      "payload_len": 559,
+      "payload_sha256": "8ad1a23a76fd3b84dcb3cf64e47f08f80ec618a004d1a503134421136d1f6a6f"
     },
     {
-      "name": "InactiveRelation.brp",
-      "payload_len": 351,
-      "payload_sha256": "c0e12b815f3a84db840bec5f7abc37b950232f14be216699e6c0d2c88488f0c8"
+      "name": "DimensionalRelations.InternalShape.brp",
+      "payload_len": 0,
+      "payload_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
     },
     {
-      "name": "InternalAlignmentRelations.brp",
-      "payload_len": 351,
-      "payload_sha256": "e99c662b180c8733968ee46a5625c7ab735998f2694d2c0718cc53f0ce091a6e"
+      "name": "DimensionalRelations.Shape.brp",
+      "payload_len": 4227,
+      "payload_sha256": "08cf0cccfb4d8bec99c32ef344124c1f34904d408e091e4fcb33f0b1fe420dd1"
     },
     {
-      "name": "OpticalRelation.brp",
-      "payload_len": 1181,
-      "payload_sha256": "f49d6425436c95ac639a3d48fa635135eec33dfe78b70bb790b02c45faa0cb27"
+      "name": "DimensionalRelations.Shape.Map.txt",
+      "payload_len": 387,
+      "payload_sha256": "2bb40983f25d4ff6edea769653d1980f4126b312c0022725c6a7ab9109157c24"
     },
     {
-      "name": "SplineWeightRelation.brp",
-      "payload_len": 391,
-      "payload_sha256": "14750d6374357d2b3fb5d8946805205f3d4594edd557dac09401c3ee76c19fbe"
+      "name": "SymmetryRelation.InternalShape.brp",
+      "payload_len": 0,
+      "payload_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
     },
     {
-      "name": "SymmetryRelation.brp",
-      "payload_len": 823,
-      "payload_sha256": "c43c2d15a49f6d0421b899a2aed39991b2fd3d7533d2d5e402cfb32036c1d716"
+      "name": "SymmetryRelation.Shape.brp",
+      "payload_len": 1671,
+      "payload_sha256": "c8126ee95d6e42df75571acd40d4ed9270a89943503ef6423059b124f8d77e43"
+    },
+    {
+      "name": "SymmetryRelation.Shape.Map.txt",
+      "payload_len": 247,
+      "payload_sha256": "d1cfdbc8a03224cb039f3e47ce4abd79b60799cc1b03b55154e3e6741973ef19"
+    },
+    {
+      "name": "InactiveRelation.InternalShape.brp",
+      "payload_len": 0,
+      "payload_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "name": "InactiveRelation.Shape.brp",
+      "payload_len": 797,
+      "payload_sha256": "6c3b903b42e8bac21dc84446c3738ec35a76b0e5ec793b77627d7498772ad2c1"
+    },
+    {
+      "name": "InactiveRelation.Shape.Map.txt",
+      "payload_len": 191,
+      "payload_sha256": "eb80ba3937bdc8b295c511c60db0282feb570e3009b470663e62d907f2f5857a"
+    },
+    {
+      "name": "InternalAlignmentRelations.InternalShape.brp",
+      "payload_len": 0,
+      "payload_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "name": "InternalAlignmentRelations.Shape.brp",
+      "payload_len": 868,
+      "payload_sha256": "7f4d649c99643003f403c8b33eaf81896004965d2e5aef996694fbfe1a68dd83"
+    },
+    {
+      "name": "InternalAlignmentRelations.Shape.Map.txt",
+      "payload_len": 181,
+      "payload_sha256": "921921731a48ecab8631a730a022ee139b47774d267c39d663703350b6a79f3d"
+    },
+    {
+      "name": "OpticalRelation.InternalShape.brp",
+      "payload_len": 0,
+      "payload_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "name": "OpticalRelation.Shape.brp",
+      "payload_len": 1680,
+      "payload_sha256": "e2cc0117c8142f021dee68e4bff0a5c908f3da9d0dc0b49f0d967a103937937c"
+    },
+    {
+      "name": "OpticalRelation.Shape.Map.txt",
+      "payload_len": 247,
+      "payload_sha256": "f7acf5c271190a86ecbd760e5cea0920db8c1513526ee7edd7df09055aa17e03"
+    },
+    {
+      "name": "SplineWeightRelation.InternalShape.brp",
+      "payload_len": 0,
+      "payload_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "name": "SplineWeightRelation.Shape.brp",
+      "payload_len": 1057,
+      "payload_sha256": "8c8bb5f3527b06fb96716a1e45700025529db8056ac4f41c1ec5d9faef2665d6"
+    },
+    {
+      "name": "SplineWeightRelation.Shape.Map.txt",
+      "payload_len": 191,
+      "payload_sha256": "2087a4ef3661489026b140820977f38a45e94a36240d21e76d864d4f5c89719e"
     }
   ],
   "report": {
@@ -54,7 +119,7 @@
         "appearances": 0,
         "assembly_joints": 0,
         "assets": 0,
-        "attributes": 81,
+        "attributes": 0,
         "bodies": 7,
         "coedges": 0,
         "configurations": 0,
@@ -68,17 +133,19 @@
         "loops": 0,
         "native.fcstd.applications": 8,
         "native.fcstd.attachments": 7,
+        "native.fcstd.byte_coverage": 1,
         "native.fcstd.carrier_census": 7,
         "native.fcstd.design_census": 7,
         "native.fcstd.document": 1,
         "native.fcstd.element_maps": 7,
         "native.fcstd.entries": 22,
         "native.fcstd.extensions": 7,
+        "native.fcstd.logical_ledger": 435,
         "native.fcstd.objects": 8,
+        "native.fcstd.physical_ledger": 155,
         "native.fcstd.properties": 210,
         "native.fcstd.shape_payloads": 14,
         "native.fcstd.string_tables": 1,
-        "native.fcstd.topology_uses": 125,
         "occurrences": 0,
         "parameters": 9,
         "pcurves": 0,
@@ -107,558 +174,20 @@
         "view_presentations": 0
       }
     },
-    "coverage": {
-      "arenas": {
-        "appearance_bindings": "written",
-        "appearances": "written",
-        "assembly_joints": "written",
-        "assets": "dropped",
-        "attributes": "reported",
-        "bodies": "written",
-        "coedges": "written",
-        "configurations": "dropped",
-        "curves": "written",
-        "drawings": "dropped",
-        "edges": "written",
-        "faces": "written",
-        "feature_input_topologies": "dropped",
-        "feature_result_topologies": "dropped",
-        "features": "written",
-        "loops": "written",
-        "occurrences": "written",
-        "parameters": "written",
-        "pcurves": "written",
-        "pmi": "dropped",
-        "points": "written",
-        "presentation_documents": "written",
-        "presentation_layers": "dropped",
-        "procedural_curves": "written",
-        "procedural_surfaces": "written",
-        "product_definitions": "written",
-        "regions": "written",
-        "semantic_annotations": "dropped",
-        "shells": "written",
-        "sketch_constraints": "written",
-        "sketch_entities": "written",
-        "sketches": "written",
-        "spatial_sketch_constraints": "dropped",
-        "spatial_sketch_entities": "dropped",
-        "spatial_sketches": "dropped",
-        "spreadsheets": "written",
-        "subds": "dropped",
-        "surfaces": "written",
-        "tessellations": "dropped",
-        "vertices": "written",
-        "view_presentations": "written"
-      },
-      "coverage": "declared"
-    },
     "identity": {
       "payload": "native",
       "target": "fcstd:schema-4"
     },
-    "losses": [
-      {
-        "code": {
-          "code": "attribute.not-transferred",
-          "kind": "metadata_not_transferred",
-          "namespace": "fcstd",
-          "scope": "namespaced"
-        },
-        "message": "attribute fcstd:model:attribute#CorpusMetadata:Label:property conflicts with operation property Label",
-        "severity": "warning"
-      },
-      {
-        "code": {
-          "code": "native.records-omitted",
-          "kind": "record_not_typed",
-          "namespace": "export",
-          "scope": "namespaced"
-        },
-        "message": "the fcstd write omits 21 native record(s) from `fcstd.entries`: fcstd:native:entry#DimensionalRelations.InternalShape.brp, fcstd:native:entry#DimensionalRelations.Shape.Map.txt, fcstd:native:entry#DimensionalRelations.Shape.brp, fcstd:native:entry#GeometricRelations.InternalShape.brp, fcstd:native:entry#GeometricRelations.Shape.Map.txt, fcstd:native:entry#GeometricRelations.Shape.brp, fcstd:native:entry#InactiveRelation.InternalShape.brp, fcstd:native:entry#InactiveRelation.Shape.Map.txt, fcstd:native:entry#InactiveRelation.Shape.brp, fcstd:native:entry#InternalAlignmentRelations.InternalShape.brp, fcstd:native:entry#InternalAlignmentRelations.Shape.Map.txt, fcstd:native:entry#InternalAlignmentRelations.Shape.brp, fcstd:native:entry#OpticalRelation.InternalShape.brp, fcstd:native:entry#OpticalRelation.Shape.Map.txt, fcstd:native:entry#OpticalRelation.Shape.brp, fcstd:native:entry#SplineWeightRelation.InternalShape.brp, fcstd:native:entry#SplineWeightRelation.Shape.Map.txt, fcstd:native:entry#SplineWeightRelation.Shape.brp, fcstd:native:entry#SymmetryRelation.InternalShape.brp, fcstd:native:entry#SymmetryRelation.Shape.Map.txt, fcstd:native:entry#SymmetryRelation.Shape.brp",
-        "severity": "info"
-      },
-      {
-        "code": {
-          "code": "native.records-omitted",
-          "kind": "record_not_typed",
-          "namespace": "export",
-          "scope": "namespaced"
-        },
-        "message": "the fcstd write omits 26 native record(s) from `fcstd.properties`: fcstd:native:property#CorpusMetadata:ExpressionEngine, fcstd:native:property#DimensionalRelations:ExternalGeo, fcstd:native:property#DimensionalRelations:ExternalGeometry, fcstd:native:property#DimensionalRelations:InternalShape, fcstd:native:property#GeometricRelations:ExpressionEngine, fcstd:native:property#GeometricRelations:ExternalGeo, fcstd:native:property#GeometricRelations:ExternalGeometry, fcstd:native:property#GeometricRelations:InternalShape, fcstd:native:property#InactiveRelation:ExpressionEngine, fcstd:native:property#InactiveRelation:ExternalGeo, fcstd:native:property#InactiveRelation:ExternalGeometry, fcstd:native:property#InactiveRelation:InternalShape, fcstd:native:property#InternalAlignmentRelations:ExpressionEngine, fcstd:native:property#InternalAlignmentRelations:ExternalGeo, fcstd:native:property#InternalAlignmentRelations:ExternalGeometry, fcstd:native:property#InternalAlignmentRelations:InternalShape, fcstd:native:property#OpticalRelation:ExternalGeo, fcstd:native:property#OpticalRelation:ExternalGeometry, fcstd:native:property#OpticalRelation:InternalShape, fcstd:native:property#SplineWeightRelation:ExternalGeo, fcstd:native:property#SplineWeightRelation:ExternalGeometry, fcstd:native:property#SplineWeightRelation:InternalShape, fcstd:native:property#SymmetryRelation:ExpressionEngine, fcstd:native:property#SymmetryRelation:ExternalGeo, fcstd:native:property#SymmetryRelation:ExternalGeometry, fcstd:native:property#SymmetryRelation:InternalShape",
-        "severity": "info"
-      },
-      {
-        "code": {
-          "code": "native.records-omitted",
-          "kind": "record_not_typed",
-          "namespace": "export",
-          "scope": "namespaced"
-        },
-        "message": "the fcstd write omits 7 native record(s) from `fcstd.shape_payloads`: fcstd:native:shape-payload#DimensionalRelations:InternalShape:DimensionalRelations.InternalShape.brp, fcstd:native:shape-payload#GeometricRelations:InternalShape:GeometricRelations.InternalShape.brp, fcstd:native:shape-payload#InactiveRelation:InternalShape:InactiveRelation.InternalShape.brp, fcstd:native:shape-payload#InternalAlignmentRelations:InternalShape:InternalAlignmentRelations.InternalShape.brp, fcstd:native:shape-payload#OpticalRelation:InternalShape:OpticalRelation.InternalShape.brp, fcstd:native:shape-payload#SplineWeightRelation:InternalShape:SplineWeightRelation.InternalShape.brp, fcstd:native:shape-payload#SymmetryRelation:InternalShape:SymmetryRelation.InternalShape.brp",
-        "severity": "info"
-      },
-      {
-        "code": {
-          "code": "native.records-omitted",
-          "kind": "record_not_typed",
-          "namespace": "export",
-          "scope": "namespaced"
-        },
-        "message": "the fcstd write omits 27 native record(s) from `fcstd.topology_uses`: fcstd:native:shape-payload#DimensionalRelations:Shape:DimensionalRelations.Shape.brp:topology-use:14, fcstd:native:shape-payload#DimensionalRelations:Shape:DimensionalRelations.Shape.brp:topology-use:18, fcstd:native:shape-payload#DimensionalRelations:Shape:DimensionalRelations.Shape.brp:topology-use:2, fcstd:native:shape-payload#DimensionalRelations:Shape:DimensionalRelations.Shape.brp:topology-use:22, fcstd:native:shape-payload#DimensionalRelations:Shape:DimensionalRelations.Shape.brp:topology-use:26, fcstd:native:shape-payload#DimensionalRelations:Shape:DimensionalRelations.Shape.brp:topology-use:30, fcstd:native:shape-payload#DimensionalRelations:Shape:DimensionalRelations.Shape.brp:topology-use:5, fcstd:native:shape-payload#DimensionalRelations:Shape:DimensionalRelations.Shape.brp:topology-use:8, fcstd:native:shape-payload#GeometricRelations:Shape:GeometricRelations.Shape.brp:topology-use:12, fcstd:native:shape-payload#GeometricRelations:Shape:GeometricRelations.Shape.brp:topology-use:18, fcstd:native:shape-payload#GeometricRelations:Shape:GeometricRelations.Shape.brp:topology-use:2, fcstd:native:shape-payload#GeometricRelations:Shape:GeometricRelations.Shape.brp:topology-use:24, fcstd:native:shape-payload#GeometricRelations:Shape:GeometricRelations.Shape.brp:topology-use:28, fcstd:native:shape-payload#GeometricRelations:Shape:GeometricRelations.Shape.brp:topology-use:32, fcstd:native:shape-payload#GeometricRelations:Shape:GeometricRelations.Shape.brp:topology-use:36, fcstd:native:shape-payload#GeometricRelations:Shape:GeometricRelations.Shape.brp:topology-use:40, fcstd:native:shape-payload#GeometricRelations:Shape:GeometricRelations.Shape.brp:topology-use:44, fcstd:native:shape-payload#GeometricRelations:Shape:GeometricRelations.Shape.brp:topology-use:48, fcstd:native:shape-payload#GeometricRelations:Shape:GeometricRelations.Shape.brp:topology-use:5, fcstd:native:shape-payload#GeometricRelations:Shape:GeometricRelations.Shape.brp:topology-use:52, fcstd:native:shape-payload#GeometricRelations:Shape:GeometricRelations.Shape.brp:topology-use:8, fcstd:native:shape-payload#OpticalRelation:Shape:OpticalRelation.Shape.brp:topology-use:10, fcstd:native:shape-payload#OpticalRelation:Shape:OpticalRelation.Shape.brp:topology-use:2, fcstd:native:shape-payload#OpticalRelation:Shape:OpticalRelation.Shape.brp:topology-use:6, fcstd:native:shape-payload#SymmetryRelation:Shape:SymmetryRelation.Shape.brp:topology-use:10, fcstd:native:shape-payload#SymmetryRelation:Shape:SymmetryRelation.Shape.brp:topology-use:2, fcstd:native:shape-payload#SymmetryRelation:Shape:SymmetryRelation.Shape.brp:topology-use:6",
-        "severity": "info"
-      }
+    "losses": [],
+    "notes": [
+      "semantic FCStd archive written for fcstd:schema-4 (SchemaVersion=4 FileVersion=1)",
+      "unsupported retained entries and unedited XML records were preserved"
     ],
-    "native_dispositions": {
-      "namespaces": {
-        "fcstd": {
-          "arenas": {
-            "annotations": {
-              "disposition": "dropped"
-            },
-            "applications": {
-              "disposition": "dropped",
-              "records": {
-                "fcstd:native:application#CorpusMetadata": "regenerated",
-                "fcstd:native:application#DimensionalRelations": "regenerated",
-                "fcstd:native:application#GeometricRelations": "regenerated",
-                "fcstd:native:application#InactiveRelation": "regenerated",
-                "fcstd:native:application#InternalAlignmentRelations": "regenerated",
-                "fcstd:native:application#OpticalRelation": "regenerated",
-                "fcstd:native:application#SplineWeightRelation": "regenerated",
-                "fcstd:native:application#SymmetryRelation": "regenerated"
-              }
-            },
-            "attachments": {
-              "disposition": "dropped",
-              "records": {
-                "fcstd:native:attachment#DimensionalRelations": "written",
-                "fcstd:native:attachment#GeometricRelations": "written",
-                "fcstd:native:attachment#InactiveRelation": "written",
-                "fcstd:native:attachment#InternalAlignmentRelations": "written",
-                "fcstd:native:attachment#OpticalRelation": "written",
-                "fcstd:native:attachment#SplineWeightRelation": "written",
-                "fcstd:native:attachment#SymmetryRelation": "written"
-              }
-            },
-            "carrier_census": {
-              "disposition": "dropped",
-              "records": {
-                "fcstd:native:carrier-census#DimensionalRelations:Shape:DimensionalRelations.Shape.brp:families": "regenerated",
-                "fcstd:native:carrier-census#GeometricRelations:Shape:GeometricRelations.Shape.brp:families": "regenerated",
-                "fcstd:native:carrier-census#InactiveRelation:Shape:InactiveRelation.Shape.brp:families": "regenerated",
-                "fcstd:native:carrier-census#InternalAlignmentRelations:Shape:InternalAlignmentRelations.Shape.brp:families": "regenerated",
-                "fcstd:native:carrier-census#OpticalRelation:Shape:OpticalRelation.Shape.brp:families": "regenerated",
-                "fcstd:native:carrier-census#SplineWeightRelation:Shape:SplineWeightRelation.Shape.brp:families": "regenerated",
-                "fcstd:native:carrier-census#SymmetryRelation:Shape:SymmetryRelation.Shape.brp:families": "regenerated"
-              }
-            },
-            "design_census": {
-              "disposition": "dropped",
-              "records": {
-                "fcstd:native:design-census#DimensionalRelations:projection": "regenerated",
-                "fcstd:native:design-census#GeometricRelations:projection": "regenerated",
-                "fcstd:native:design-census#InactiveRelation:projection": "regenerated",
-                "fcstd:native:design-census#InternalAlignmentRelations:projection": "regenerated",
-                "fcstd:native:design-census#OpticalRelation:projection": "regenerated",
-                "fcstd:native:design-census#SplineWeightRelation:projection": "regenerated",
-                "fcstd:native:design-census#SymmetryRelation:projection": "regenerated"
-              }
-            },
-            "document": {
-              "disposition": "dropped",
-              "records": {
-                "fcstd:native:document#0": "regenerated"
-              }
-            },
-            "drawings": {
-              "disposition": "dropped"
-            },
-            "element_maps": {
-              "disposition": "dropped",
-              "records": {
-                "fcstd:native:element-map#DimensionalRelations:Shape:map": "written",
-                "fcstd:native:element-map#GeometricRelations:Shape:map": "written",
-                "fcstd:native:element-map#InactiveRelation:Shape:map": "written",
-                "fcstd:native:element-map#InternalAlignmentRelations:Shape:map": "written",
-                "fcstd:native:element-map#OpticalRelation:Shape:map": "written",
-                "fcstd:native:element-map#SplineWeightRelation:Shape:map": "written",
-                "fcstd:native:element-map#SymmetryRelation:Shape:map": "written"
-              }
-            },
-            "entries": {
-              "disposition": "dropped",
-              "records": {
-                "fcstd:native:entry#Document.xml": "regenerated"
-              }
-            },
-            "extensions": {
-              "disposition": "dropped",
-              "records": {
-                "fcstd:native:extension#DimensionalRelations:0%3AAttachExtension": "written",
-                "fcstd:native:extension#GeometricRelations:0%3AAttachExtension": "written",
-                "fcstd:native:extension#InactiveRelation:0%3AAttachExtension": "written",
-                "fcstd:native:extension#InternalAlignmentRelations:0%3AAttachExtension": "written",
-                "fcstd:native:extension#OpticalRelation:0%3AAttachExtension": "written",
-                "fcstd:native:extension#SplineWeightRelation:0%3AAttachExtension": "written",
-                "fcstd:native:extension#SymmetryRelation:0%3AAttachExtension": "written"
-              }
-            },
-            "gui_documents": {
-              "disposition": "dropped"
-            },
-            "gui_properties": {
-              "disposition": "dropped"
-            },
-            "gui_view_providers": {
-              "disposition": "dropped"
-            },
-            "joints": {
-              "disposition": "dropped"
-            },
-            "objects": {
-              "disposition": "dropped",
-              "records": {
-                "fcstd:native:object#CorpusMetadata": "written",
-                "fcstd:native:object#DimensionalRelations": "regenerated",
-                "fcstd:native:object#GeometricRelations": "regenerated",
-                "fcstd:native:object#InactiveRelation": "regenerated",
-                "fcstd:native:object#InternalAlignmentRelations": "regenerated",
-                "fcstd:native:object#OpticalRelation": "regenerated",
-                "fcstd:native:object#SplineWeightRelation": "regenerated",
-                "fcstd:native:object#SymmetryRelation": "regenerated"
-              }
-            },
-            "product_nodes": {
-              "disposition": "dropped"
-            },
-            "properties": {
-              "disposition": "dropped",
-              "records": {
-                "fcstd:native:property#0:Comment": "regenerated",
-                "fcstd:native:property#0:Company": "regenerated",
-                "fcstd:native:property#0:CreatedBy": "regenerated",
-                "fcstd:native:property#0:CreationDate": "regenerated",
-                "fcstd:native:property#0:FileName": "written",
-                "fcstd:native:property#0:Id": "regenerated",
-                "fcstd:native:property#0:Label": "regenerated",
-                "fcstd:native:property#0:LastModifiedBy": "regenerated",
-                "fcstd:native:property#0:LastModifiedDate": "regenerated",
-                "fcstd:native:property#0:License": "regenerated",
-                "fcstd:native:property#0:LicenseURL": "regenerated",
-                "fcstd:native:property#0:Material": "written",
-                "fcstd:native:property#0:Meta": "written",
-                "fcstd:native:property#0:ShowHidden": "regenerated",
-                "fcstd:native:property#0:Tip": "written",
-                "fcstd:native:property#0:TipName": "regenerated",
-                "fcstd:native:property#0:TransientDir": "written",
-                "fcstd:native:property#0:Uid": "written",
-                "fcstd:native:property#0:UnitSystem": "written",
-                "fcstd:native:property#0:UseHasher": "regenerated",
-                "fcstd:native:property#CorpusMetadata:InertValue": "written",
-                "fcstd:native:property#CorpusMetadata:Label": "regenerated",
-                "fcstd:native:property#CorpusMetadata:Label2": "regenerated",
-                "fcstd:native:property#CorpusMetadata:License": "regenerated",
-                "fcstd:native:property#CorpusMetadata:Proxy": "written",
-                "fcstd:native:property#CorpusMetadata:Purpose": "regenerated",
-                "fcstd:native:property#CorpusMetadata:Visibility": "regenerated",
-                "fcstd:native:property#DimensionalRelations:ArcFitTolerance": "regenerated",
-                "fcstd:native:property#DimensionalRelations:AttacherEngine": "written",
-                "fcstd:native:property#DimensionalRelations:AttacherType": "regenerated",
-                "fcstd:native:property#DimensionalRelations:AttachmentOffset": "regenerated",
-                "fcstd:native:property#DimensionalRelations:AttachmentSupport": "written",
-                "fcstd:native:property#DimensionalRelations:Constraints": "regenerated",
-                "fcstd:native:property#DimensionalRelations:Exports": "written",
-                "fcstd:native:property#DimensionalRelations:ExpressionEngine": "regenerated",
-                "fcstd:native:property#DimensionalRelations:ExternalTypes": "written",
-                "fcstd:native:property#DimensionalRelations:FullyConstrained": "regenerated",
-                "fcstd:native:property#DimensionalRelations:Geometry": "regenerated",
-                "fcstd:native:property#DimensionalRelations:Label": "regenerated",
-                "fcstd:native:property#DimensionalRelations:Label2": "regenerated",
-                "fcstd:native:property#DimensionalRelations:MakeInternals": "regenerated",
-                "fcstd:native:property#DimensionalRelations:MapMode": "regenerated",
-                "fcstd:native:property#DimensionalRelations:MapPathParameter": "regenerated",
-                "fcstd:native:property#DimensionalRelations:MapReversed": "regenerated",
-                "fcstd:native:property#DimensionalRelations:Placement": "regenerated",
-                "fcstd:native:property#DimensionalRelations:Shape": "regenerated",
-                "fcstd:native:property#DimensionalRelations:ShapeMaterial": "written",
-                "fcstd:native:property#DimensionalRelations:Visibility": "regenerated",
-                "fcstd:native:property#DimensionalRelations:_ElementMapVersion": "written",
-                "fcstd:native:property#DimensionalRelations:_ExternalGeoVersion": "regenerated",
-                "fcstd:native:property#GeometricRelations:ArcFitTolerance": "regenerated",
-                "fcstd:native:property#GeometricRelations:AttacherEngine": "written",
-                "fcstd:native:property#GeometricRelations:AttacherType": "regenerated",
-                "fcstd:native:property#GeometricRelations:AttachmentOffset": "regenerated",
-                "fcstd:native:property#GeometricRelations:AttachmentSupport": "written",
-                "fcstd:native:property#GeometricRelations:Constraints": "regenerated",
-                "fcstd:native:property#GeometricRelations:Exports": "written",
-                "fcstd:native:property#GeometricRelations:ExternalTypes": "written",
-                "fcstd:native:property#GeometricRelations:FullyConstrained": "regenerated",
-                "fcstd:native:property#GeometricRelations:Geometry": "regenerated",
-                "fcstd:native:property#GeometricRelations:Label": "regenerated",
-                "fcstd:native:property#GeometricRelations:Label2": "regenerated",
-                "fcstd:native:property#GeometricRelations:MakeInternals": "regenerated",
-                "fcstd:native:property#GeometricRelations:MapMode": "regenerated",
-                "fcstd:native:property#GeometricRelations:MapPathParameter": "regenerated",
-                "fcstd:native:property#GeometricRelations:MapReversed": "regenerated",
-                "fcstd:native:property#GeometricRelations:Placement": "regenerated",
-                "fcstd:native:property#GeometricRelations:Shape": "regenerated",
-                "fcstd:native:property#GeometricRelations:ShapeMaterial": "written",
-                "fcstd:native:property#GeometricRelations:Visibility": "regenerated",
-                "fcstd:native:property#GeometricRelations:_ElementMapVersion": "written",
-                "fcstd:native:property#GeometricRelations:_ExternalGeoVersion": "regenerated",
-                "fcstd:native:property#InactiveRelation:ArcFitTolerance": "regenerated",
-                "fcstd:native:property#InactiveRelation:AttacherEngine": "written",
-                "fcstd:native:property#InactiveRelation:AttacherType": "regenerated",
-                "fcstd:native:property#InactiveRelation:AttachmentOffset": "regenerated",
-                "fcstd:native:property#InactiveRelation:AttachmentSupport": "written",
-                "fcstd:native:property#InactiveRelation:Constraints": "regenerated",
-                "fcstd:native:property#InactiveRelation:Exports": "written",
-                "fcstd:native:property#InactiveRelation:ExternalTypes": "written",
-                "fcstd:native:property#InactiveRelation:FullyConstrained": "regenerated",
-                "fcstd:native:property#InactiveRelation:Geometry": "regenerated",
-                "fcstd:native:property#InactiveRelation:Label": "regenerated",
-                "fcstd:native:property#InactiveRelation:Label2": "regenerated",
-                "fcstd:native:property#InactiveRelation:MakeInternals": "regenerated",
-                "fcstd:native:property#InactiveRelation:MapMode": "regenerated",
-                "fcstd:native:property#InactiveRelation:MapPathParameter": "regenerated",
-                "fcstd:native:property#InactiveRelation:MapReversed": "regenerated",
-                "fcstd:native:property#InactiveRelation:Placement": "regenerated",
-                "fcstd:native:property#InactiveRelation:Shape": "regenerated",
-                "fcstd:native:property#InactiveRelation:ShapeMaterial": "written",
-                "fcstd:native:property#InactiveRelation:Visibility": "regenerated",
-                "fcstd:native:property#InactiveRelation:_ElementMapVersion": "written",
-                "fcstd:native:property#InactiveRelation:_ExternalGeoVersion": "regenerated",
-                "fcstd:native:property#InternalAlignmentRelations:ArcFitTolerance": "regenerated",
-                "fcstd:native:property#InternalAlignmentRelations:AttacherEngine": "written",
-                "fcstd:native:property#InternalAlignmentRelations:AttacherType": "regenerated",
-                "fcstd:native:property#InternalAlignmentRelations:AttachmentOffset": "regenerated",
-                "fcstd:native:property#InternalAlignmentRelations:AttachmentSupport": "written",
-                "fcstd:native:property#InternalAlignmentRelations:Constraints": "regenerated",
-                "fcstd:native:property#InternalAlignmentRelations:Exports": "written",
-                "fcstd:native:property#InternalAlignmentRelations:ExternalTypes": "written",
-                "fcstd:native:property#InternalAlignmentRelations:FullyConstrained": "regenerated",
-                "fcstd:native:property#InternalAlignmentRelations:Geometry": "regenerated",
-                "fcstd:native:property#InternalAlignmentRelations:Label": "regenerated",
-                "fcstd:native:property#InternalAlignmentRelations:Label2": "regenerated",
-                "fcstd:native:property#InternalAlignmentRelations:MakeInternals": "regenerated",
-                "fcstd:native:property#InternalAlignmentRelations:MapMode": "regenerated",
-                "fcstd:native:property#InternalAlignmentRelations:MapPathParameter": "regenerated",
-                "fcstd:native:property#InternalAlignmentRelations:MapReversed": "regenerated",
-                "fcstd:native:property#InternalAlignmentRelations:Placement": "regenerated",
-                "fcstd:native:property#InternalAlignmentRelations:Shape": "regenerated",
-                "fcstd:native:property#InternalAlignmentRelations:ShapeMaterial": "written",
-                "fcstd:native:property#InternalAlignmentRelations:Visibility": "regenerated",
-                "fcstd:native:property#InternalAlignmentRelations:_ElementMapVersion": "written",
-                "fcstd:native:property#InternalAlignmentRelations:_ExternalGeoVersion": "regenerated",
-                "fcstd:native:property#OpticalRelation:ArcFitTolerance": "regenerated",
-                "fcstd:native:property#OpticalRelation:AttacherEngine": "written",
-                "fcstd:native:property#OpticalRelation:AttacherType": "regenerated",
-                "fcstd:native:property#OpticalRelation:AttachmentOffset": "regenerated",
-                "fcstd:native:property#OpticalRelation:AttachmentSupport": "written",
-                "fcstd:native:property#OpticalRelation:Constraints": "regenerated",
-                "fcstd:native:property#OpticalRelation:Exports": "written",
-                "fcstd:native:property#OpticalRelation:ExpressionEngine": "regenerated",
-                "fcstd:native:property#OpticalRelation:ExternalTypes": "written",
-                "fcstd:native:property#OpticalRelation:FullyConstrained": "regenerated",
-                "fcstd:native:property#OpticalRelation:Geometry": "regenerated",
-                "fcstd:native:property#OpticalRelation:Label": "regenerated",
-                "fcstd:native:property#OpticalRelation:Label2": "regenerated",
-                "fcstd:native:property#OpticalRelation:MakeInternals": "regenerated",
-                "fcstd:native:property#OpticalRelation:MapMode": "regenerated",
-                "fcstd:native:property#OpticalRelation:MapPathParameter": "regenerated",
-                "fcstd:native:property#OpticalRelation:MapReversed": "regenerated",
-                "fcstd:native:property#OpticalRelation:Placement": "regenerated",
-                "fcstd:native:property#OpticalRelation:Shape": "regenerated",
-                "fcstd:native:property#OpticalRelation:ShapeMaterial": "written",
-                "fcstd:native:property#OpticalRelation:Visibility": "regenerated",
-                "fcstd:native:property#OpticalRelation:_ElementMapVersion": "written",
-                "fcstd:native:property#OpticalRelation:_ExternalGeoVersion": "regenerated",
-                "fcstd:native:property#SplineWeightRelation:ArcFitTolerance": "regenerated",
-                "fcstd:native:property#SplineWeightRelation:AttacherEngine": "written",
-                "fcstd:native:property#SplineWeightRelation:AttacherType": "regenerated",
-                "fcstd:native:property#SplineWeightRelation:AttachmentOffset": "regenerated",
-                "fcstd:native:property#SplineWeightRelation:AttachmentSupport": "written",
-                "fcstd:native:property#SplineWeightRelation:Constraints": "regenerated",
-                "fcstd:native:property#SplineWeightRelation:Exports": "written",
-                "fcstd:native:property#SplineWeightRelation:ExpressionEngine": "regenerated",
-                "fcstd:native:property#SplineWeightRelation:ExternalTypes": "written",
-                "fcstd:native:property#SplineWeightRelation:FullyConstrained": "regenerated",
-                "fcstd:native:property#SplineWeightRelation:Geometry": "regenerated",
-                "fcstd:native:property#SplineWeightRelation:Label": "regenerated",
-                "fcstd:native:property#SplineWeightRelation:Label2": "regenerated",
-                "fcstd:native:property#SplineWeightRelation:MakeInternals": "regenerated",
-                "fcstd:native:property#SplineWeightRelation:MapMode": "regenerated",
-                "fcstd:native:property#SplineWeightRelation:MapPathParameter": "regenerated",
-                "fcstd:native:property#SplineWeightRelation:MapReversed": "regenerated",
-                "fcstd:native:property#SplineWeightRelation:Placement": "regenerated",
-                "fcstd:native:property#SplineWeightRelation:Shape": "regenerated",
-                "fcstd:native:property#SplineWeightRelation:ShapeMaterial": "written",
-                "fcstd:native:property#SplineWeightRelation:Visibility": "regenerated",
-                "fcstd:native:property#SplineWeightRelation:_ElementMapVersion": "written",
-                "fcstd:native:property#SplineWeightRelation:_ExternalGeoVersion": "regenerated",
-                "fcstd:native:property#SymmetryRelation:ArcFitTolerance": "regenerated",
-                "fcstd:native:property#SymmetryRelation:AttacherEngine": "written",
-                "fcstd:native:property#SymmetryRelation:AttacherType": "regenerated",
-                "fcstd:native:property#SymmetryRelation:AttachmentOffset": "regenerated",
-                "fcstd:native:property#SymmetryRelation:AttachmentSupport": "written",
-                "fcstd:native:property#SymmetryRelation:Constraints": "regenerated",
-                "fcstd:native:property#SymmetryRelation:Exports": "written",
-                "fcstd:native:property#SymmetryRelation:ExternalTypes": "written",
-                "fcstd:native:property#SymmetryRelation:FullyConstrained": "regenerated",
-                "fcstd:native:property#SymmetryRelation:Geometry": "regenerated",
-                "fcstd:native:property#SymmetryRelation:Label": "regenerated",
-                "fcstd:native:property#SymmetryRelation:Label2": "regenerated",
-                "fcstd:native:property#SymmetryRelation:MakeInternals": "regenerated",
-                "fcstd:native:property#SymmetryRelation:MapMode": "regenerated",
-                "fcstd:native:property#SymmetryRelation:MapPathParameter": "regenerated",
-                "fcstd:native:property#SymmetryRelation:MapReversed": "regenerated",
-                "fcstd:native:property#SymmetryRelation:Placement": "regenerated",
-                "fcstd:native:property#SymmetryRelation:Shape": "regenerated",
-                "fcstd:native:property#SymmetryRelation:ShapeMaterial": "written",
-                "fcstd:native:property#SymmetryRelation:Visibility": "regenerated",
-                "fcstd:native:property#SymmetryRelation:_ElementMapVersion": "written",
-                "fcstd:native:property#SymmetryRelation:_ExternalGeoVersion": "regenerated"
-              }
-            },
-            "shape_payloads": {
-              "disposition": "dropped",
-              "records": {
-                "fcstd:native:shape-payload#DimensionalRelations:Shape:DimensionalRelations.Shape.brp": "regenerated",
-                "fcstd:native:shape-payload#GeometricRelations:Shape:GeometricRelations.Shape.brp": "regenerated",
-                "fcstd:native:shape-payload#InactiveRelation:Shape:InactiveRelation.Shape.brp": "regenerated",
-                "fcstd:native:shape-payload#InternalAlignmentRelations:Shape:InternalAlignmentRelations.Shape.brp": "regenerated",
-                "fcstd:native:shape-payload#OpticalRelation:Shape:OpticalRelation.Shape.brp": "regenerated",
-                "fcstd:native:shape-payload#SplineWeightRelation:Shape:SplineWeightRelation.Shape.brp": "regenerated",
-                "fcstd:native:shape-payload#SymmetryRelation:Shape:SymmetryRelation.Shape.brp": "regenerated"
-              }
-            },
-            "string_tables": {
-              "disposition": "dropped",
-              "records": {
-                "fcstd:native:string-table#0": "written"
-              }
-            },
-            "topology_uses": {
-              "disposition": "dropped",
-              "records": {
-                "fcstd:native:shape-payload#DimensionalRelations:Shape:DimensionalRelations.Shape.brp:topology-use:1": "regenerated",
-                "fcstd:native:shape-payload#DimensionalRelations:Shape:DimensionalRelations.Shape.brp:topology-use:10": "regenerated",
-                "fcstd:native:shape-payload#DimensionalRelations:Shape:DimensionalRelations.Shape.brp:topology-use:11": "regenerated",
-                "fcstd:native:shape-payload#DimensionalRelations:Shape:DimensionalRelations.Shape.brp:topology-use:12": "regenerated",
-                "fcstd:native:shape-payload#DimensionalRelations:Shape:DimensionalRelations.Shape.brp:topology-use:13": "regenerated",
-                "fcstd:native:shape-payload#DimensionalRelations:Shape:DimensionalRelations.Shape.brp:topology-use:15": "regenerated",
-                "fcstd:native:shape-payload#DimensionalRelations:Shape:DimensionalRelations.Shape.brp:topology-use:16": "regenerated",
-                "fcstd:native:shape-payload#DimensionalRelations:Shape:DimensionalRelations.Shape.brp:topology-use:17": "regenerated",
-                "fcstd:native:shape-payload#DimensionalRelations:Shape:DimensionalRelations.Shape.brp:topology-use:19": "regenerated",
-                "fcstd:native:shape-payload#DimensionalRelations:Shape:DimensionalRelations.Shape.brp:topology-use:20": "regenerated",
-                "fcstd:native:shape-payload#DimensionalRelations:Shape:DimensionalRelations.Shape.brp:topology-use:21": "regenerated",
-                "fcstd:native:shape-payload#DimensionalRelations:Shape:DimensionalRelations.Shape.brp:topology-use:23": "regenerated",
-                "fcstd:native:shape-payload#DimensionalRelations:Shape:DimensionalRelations.Shape.brp:topology-use:24": "regenerated",
-                "fcstd:native:shape-payload#DimensionalRelations:Shape:DimensionalRelations.Shape.brp:topology-use:25": "regenerated",
-                "fcstd:native:shape-payload#DimensionalRelations:Shape:DimensionalRelations.Shape.brp:topology-use:27": "regenerated",
-                "fcstd:native:shape-payload#DimensionalRelations:Shape:DimensionalRelations.Shape.brp:topology-use:28": "regenerated",
-                "fcstd:native:shape-payload#DimensionalRelations:Shape:DimensionalRelations.Shape.brp:topology-use:29": "regenerated",
-                "fcstd:native:shape-payload#DimensionalRelations:Shape:DimensionalRelations.Shape.brp:topology-use:3": "regenerated",
-                "fcstd:native:shape-payload#DimensionalRelations:Shape:DimensionalRelations.Shape.brp:topology-use:31": "regenerated",
-                "fcstd:native:shape-payload#DimensionalRelations:Shape:DimensionalRelations.Shape.brp:topology-use:32": "regenerated",
-                "fcstd:native:shape-payload#DimensionalRelations:Shape:DimensionalRelations.Shape.brp:topology-use:33": "regenerated",
-                "fcstd:native:shape-payload#DimensionalRelations:Shape:DimensionalRelations.Shape.brp:topology-use:4": "regenerated",
-                "fcstd:native:shape-payload#DimensionalRelations:Shape:DimensionalRelations.Shape.brp:topology-use:6": "regenerated",
-                "fcstd:native:shape-payload#DimensionalRelations:Shape:DimensionalRelations.Shape.brp:topology-use:7": "regenerated",
-                "fcstd:native:shape-payload#DimensionalRelations:Shape:DimensionalRelations.Shape.brp:topology-use:9": "regenerated",
-                "fcstd:native:shape-payload#GeometricRelations:Shape:GeometricRelations.Shape.brp:topology-use:1": "regenerated",
-                "fcstd:native:shape-payload#GeometricRelations:Shape:GeometricRelations.Shape.brp:topology-use:10": "regenerated",
-                "fcstd:native:shape-payload#GeometricRelations:Shape:GeometricRelations.Shape.brp:topology-use:11": "regenerated",
-                "fcstd:native:shape-payload#GeometricRelations:Shape:GeometricRelations.Shape.brp:topology-use:13": "regenerated",
-                "fcstd:native:shape-payload#GeometricRelations:Shape:GeometricRelations.Shape.brp:topology-use:14": "regenerated",
-                "fcstd:native:shape-payload#GeometricRelations:Shape:GeometricRelations.Shape.brp:topology-use:15": "regenerated",
-                "fcstd:native:shape-payload#GeometricRelations:Shape:GeometricRelations.Shape.brp:topology-use:16": "regenerated",
-                "fcstd:native:shape-payload#GeometricRelations:Shape:GeometricRelations.Shape.brp:topology-use:17": "regenerated",
-                "fcstd:native:shape-payload#GeometricRelations:Shape:GeometricRelations.Shape.brp:topology-use:19": "regenerated",
-                "fcstd:native:shape-payload#GeometricRelations:Shape:GeometricRelations.Shape.brp:topology-use:20": "regenerated",
-                "fcstd:native:shape-payload#GeometricRelations:Shape:GeometricRelations.Shape.brp:topology-use:21": "regenerated",
-                "fcstd:native:shape-payload#GeometricRelations:Shape:GeometricRelations.Shape.brp:topology-use:22": "regenerated",
-                "fcstd:native:shape-payload#GeometricRelations:Shape:GeometricRelations.Shape.brp:topology-use:23": "regenerated",
-                "fcstd:native:shape-payload#GeometricRelations:Shape:GeometricRelations.Shape.brp:topology-use:25": "regenerated",
-                "fcstd:native:shape-payload#GeometricRelations:Shape:GeometricRelations.Shape.brp:topology-use:26": "regenerated",
-                "fcstd:native:shape-payload#GeometricRelations:Shape:GeometricRelations.Shape.brp:topology-use:27": "regenerated",
-                "fcstd:native:shape-payload#GeometricRelations:Shape:GeometricRelations.Shape.brp:topology-use:29": "regenerated",
-                "fcstd:native:shape-payload#GeometricRelations:Shape:GeometricRelations.Shape.brp:topology-use:3": "regenerated",
-                "fcstd:native:shape-payload#GeometricRelations:Shape:GeometricRelations.Shape.brp:topology-use:30": "regenerated",
-                "fcstd:native:shape-payload#GeometricRelations:Shape:GeometricRelations.Shape.brp:topology-use:31": "regenerated",
-                "fcstd:native:shape-payload#GeometricRelations:Shape:GeometricRelations.Shape.brp:topology-use:33": "regenerated",
-                "fcstd:native:shape-payload#GeometricRelations:Shape:GeometricRelations.Shape.brp:topology-use:34": "regenerated",
-                "fcstd:native:shape-payload#GeometricRelations:Shape:GeometricRelations.Shape.brp:topology-use:35": "regenerated",
-                "fcstd:native:shape-payload#GeometricRelations:Shape:GeometricRelations.Shape.brp:topology-use:37": "regenerated",
-                "fcstd:native:shape-payload#GeometricRelations:Shape:GeometricRelations.Shape.brp:topology-use:38": "regenerated",
-                "fcstd:native:shape-payload#GeometricRelations:Shape:GeometricRelations.Shape.brp:topology-use:39": "regenerated",
-                "fcstd:native:shape-payload#GeometricRelations:Shape:GeometricRelations.Shape.brp:topology-use:4": "regenerated",
-                "fcstd:native:shape-payload#GeometricRelations:Shape:GeometricRelations.Shape.brp:topology-use:41": "regenerated",
-                "fcstd:native:shape-payload#GeometricRelations:Shape:GeometricRelations.Shape.brp:topology-use:42": "regenerated",
-                "fcstd:native:shape-payload#GeometricRelations:Shape:GeometricRelations.Shape.brp:topology-use:43": "regenerated",
-                "fcstd:native:shape-payload#GeometricRelations:Shape:GeometricRelations.Shape.brp:topology-use:45": "regenerated",
-                "fcstd:native:shape-payload#GeometricRelations:Shape:GeometricRelations.Shape.brp:topology-use:46": "regenerated",
-                "fcstd:native:shape-payload#GeometricRelations:Shape:GeometricRelations.Shape.brp:topology-use:47": "regenerated",
-                "fcstd:native:shape-payload#GeometricRelations:Shape:GeometricRelations.Shape.brp:topology-use:49": "regenerated",
-                "fcstd:native:shape-payload#GeometricRelations:Shape:GeometricRelations.Shape.brp:topology-use:50": "regenerated",
-                "fcstd:native:shape-payload#GeometricRelations:Shape:GeometricRelations.Shape.brp:topology-use:51": "regenerated",
-                "fcstd:native:shape-payload#GeometricRelations:Shape:GeometricRelations.Shape.brp:topology-use:53": "regenerated",
-                "fcstd:native:shape-payload#GeometricRelations:Shape:GeometricRelations.Shape.brp:topology-use:54": "regenerated",
-                "fcstd:native:shape-payload#GeometricRelations:Shape:GeometricRelations.Shape.brp:topology-use:55": "regenerated",
-                "fcstd:native:shape-payload#GeometricRelations:Shape:GeometricRelations.Shape.brp:topology-use:6": "regenerated",
-                "fcstd:native:shape-payload#GeometricRelations:Shape:GeometricRelations.Shape.brp:topology-use:7": "regenerated",
-                "fcstd:native:shape-payload#GeometricRelations:Shape:GeometricRelations.Shape.brp:topology-use:9": "regenerated",
-                "fcstd:native:shape-payload#InactiveRelation:Shape:InactiveRelation.Shape.brp:topology-use:1": "regenerated",
-                "fcstd:native:shape-payload#InactiveRelation:Shape:InactiveRelation.Shape.brp:topology-use:2": "regenerated",
-                "fcstd:native:shape-payload#InactiveRelation:Shape:InactiveRelation.Shape.brp:topology-use:3": "regenerated",
-                "fcstd:native:shape-payload#InactiveRelation:Shape:InactiveRelation.Shape.brp:topology-use:4": "regenerated",
-                "fcstd:native:shape-payload#InternalAlignmentRelations:Shape:InternalAlignmentRelations.Shape.brp:topology-use:1": "regenerated",
-                "fcstd:native:shape-payload#InternalAlignmentRelations:Shape:InternalAlignmentRelations.Shape.brp:topology-use:2": "regenerated",
-                "fcstd:native:shape-payload#InternalAlignmentRelations:Shape:InternalAlignmentRelations.Shape.brp:topology-use:3": "regenerated",
-                "fcstd:native:shape-payload#OpticalRelation:Shape:OpticalRelation.Shape.brp:topology-use:1": "regenerated",
-                "fcstd:native:shape-payload#OpticalRelation:Shape:OpticalRelation.Shape.brp:topology-use:11": "regenerated",
-                "fcstd:native:shape-payload#OpticalRelation:Shape:OpticalRelation.Shape.brp:topology-use:12": "regenerated",
-                "fcstd:native:shape-payload#OpticalRelation:Shape:OpticalRelation.Shape.brp:topology-use:13": "regenerated",
-                "fcstd:native:shape-payload#OpticalRelation:Shape:OpticalRelation.Shape.brp:topology-use:3": "regenerated",
-                "fcstd:native:shape-payload#OpticalRelation:Shape:OpticalRelation.Shape.brp:topology-use:4": "regenerated",
-                "fcstd:native:shape-payload#OpticalRelation:Shape:OpticalRelation.Shape.brp:topology-use:5": "regenerated",
-                "fcstd:native:shape-payload#OpticalRelation:Shape:OpticalRelation.Shape.brp:topology-use:7": "regenerated",
-                "fcstd:native:shape-payload#OpticalRelation:Shape:OpticalRelation.Shape.brp:topology-use:8": "regenerated",
-                "fcstd:native:shape-payload#OpticalRelation:Shape:OpticalRelation.Shape.brp:topology-use:9": "regenerated",
-                "fcstd:native:shape-payload#SplineWeightRelation:Shape:SplineWeightRelation.Shape.brp:topology-use:1": "regenerated",
-                "fcstd:native:shape-payload#SplineWeightRelation:Shape:SplineWeightRelation.Shape.brp:topology-use:2": "regenerated",
-                "fcstd:native:shape-payload#SplineWeightRelation:Shape:SplineWeightRelation.Shape.brp:topology-use:3": "regenerated",
-                "fcstd:native:shape-payload#SplineWeightRelation:Shape:SplineWeightRelation.Shape.brp:topology-use:4": "regenerated",
-                "fcstd:native:shape-payload#SymmetryRelation:Shape:SymmetryRelation.Shape.brp:topology-use:1": "regenerated",
-                "fcstd:native:shape-payload#SymmetryRelation:Shape:SymmetryRelation.Shape.brp:topology-use:11": "regenerated",
-                "fcstd:native:shape-payload#SymmetryRelation:Shape:SymmetryRelation.Shape.brp:topology-use:12": "regenerated",
-                "fcstd:native:shape-payload#SymmetryRelation:Shape:SymmetryRelation.Shape.brp:topology-use:13": "regenerated",
-                "fcstd:native:shape-payload#SymmetryRelation:Shape:SymmetryRelation.Shape.brp:topology-use:3": "regenerated",
-                "fcstd:native:shape-payload#SymmetryRelation:Shape:SymmetryRelation.Shape.brp:topology-use:4": "regenerated",
-                "fcstd:native:shape-payload#SymmetryRelation:Shape:SymmetryRelation.Shape.brp:topology-use:5": "regenerated",
-                "fcstd:native:shape-payload#SymmetryRelation:Shape:SymmetryRelation.Shape.brp:topology-use:7": "regenerated",
-                "fcstd:native:shape-payload#SymmetryRelation:Shape:SymmetryRelation.Shape.brp:topology-use:8": "regenerated",
-                "fcstd:native:shape-payload#SymmetryRelation:Shape:SymmetryRelation.Shape.brp:topology-use:9": "regenerated"
-              }
-            },
-            "unknowns": {
-              "disposition": "dropped"
-            }
-          }
-        }
-      }
-    },
-    "notes": [],
-    "synthesis_cause": {
-      "cause": "patch_declined",
-      "reason": "unsupported writer content: the typed property has no independent projection"
-    },
     "write_path": {
       "fidelity": {
         "status": "not_consumed"
       },
-      "path": "synthesized"
+      "path": "patched"
     }
   }
 }

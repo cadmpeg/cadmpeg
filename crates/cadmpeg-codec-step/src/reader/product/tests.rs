@@ -73,6 +73,7 @@ fn product_descriptions_transfer_from_product_and_definition() {
     ir.model
         .product_definitions
         .push(cadmpeg_ir::products::ProductDefinition {
+            sketches: Vec::default(),
             id: "test:model:product#described"
                 .try_into()
                 .expect("valid identity"),

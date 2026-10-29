@@ -1636,7 +1636,7 @@ fn unknown_stream_record(
     stream: &Stream,
     data: Option<Vec<u8>>,
 ) -> Result<UnknownRecord, CodecError> {
-    let id = format!("nx:container:parasolid#{si}");
+    let id = format!("{}{si}", crate::RETAINED_PARASOLID_STREAM_ID_PREFIX);
     let id = UnknownId::mint(id).map_err(|error| CodecError::Malformed(error.to_string()))?;
     let offset = cadmpeg_core::decode::u64_from_index(stream.file_offset);
     match data {
@@ -1800,82 +1800,46 @@ pub(super) fn source_meta(
         .enumerate()
     {
         let uncached;
-        let census = if let Some(census) = parsed.and_then(|parsed| parsed.delta_census(ordinal)) {
-            census
+        let owner = if let Some(owner) = parsed.and_then(|parsed| parsed.deltas(ordinal)) {
+            owner
         } else {
-            uncached = crate::deltas::census::walk(&stream.inflated)?;
+            uncached = crate::records::DeltasRecords::read(&stream.inflated)?;
             &uncached
         };
-        if census.transmit_header.is_some() {
-            insert_source_attribute(
-                &mut attributes,
-                format_args!("deltas.{index}.transmit_headers"),
-                "1",
-            );
+        let census = owner.census();
+        for (key, value) in [
+            ("instances", census.instance_count()),
+            ("schemas", census.schema_count()),
+            ("bytes_decoded", census.bytes_decoded()),
+        ] {
+            insert_source_attribute(&mut attributes, format_args!("deltas.{index}.{key}"), value);
         }
+        insert_source_attribute(
+            &mut attributes,
+            format_args!("deltas.{index}.selection"),
+            "unresolved",
+        );
         insert_source_attribute(
             &mut attributes,
             format_args!("deltas.{index}.grammar"),
-            "typed_status_framed_records",
+            "sequential_owned_records",
         );
-        insert_source_attribute(
-            &mut attributes,
-            format_args!("deltas.{index}.bytes_decoded"),
-            census.bytes_decoded(),
-        );
-        if !census.body_revisions.is_empty() {
+        if let crate::records::deltas::DeltasEnd::Stopped { offset, reason } = owner.end() {
             insert_source_attribute(
                 &mut attributes,
-                format_args!("deltas.{index}.body_revisions"),
-                census.body_revisions.len(),
+                format_args!("deltas.{index}.stop_offset"),
+                offset,
             );
-        }
-        if !census.tagged_reference_lanes.is_empty() {
             insert_source_attribute(
                 &mut attributes,
-                format_args!("deltas.{index}.tagged_reference_lanes"),
-                census.tagged_reference_lanes.len(),
-            );
-        }
-        if !census.reference_type_maps.is_empty() {
-            insert_source_attribute(
-                &mut attributes,
-                format_args!("deltas.{index}.reference_type_maps"),
-                census.reference_type_maps.len(),
-            );
-        }
-        if !census.pmark_packets.is_empty() {
-            insert_source_attribute(
-                &mut attributes,
-                format_args!("deltas.{index}.pmark_packets"),
-                census.pmark_packets.len(),
-            );
-        }
-        if !census.reference_marker_packets.is_empty() {
-            insert_source_attribute(
-                &mut attributes,
-                format_args!("deltas.{index}.reference_marker_packets"),
-                census.reference_marker_packets.len(),
-            );
-        }
-        if !census.schema_nodes.is_empty() {
-            insert_source_attribute(
-                &mut attributes,
-                format_args!("deltas.{index}.schema_nodes"),
-                census.schema_nodes.len(),
+                format_args!("deltas.{index}.stop_reason"),
+                format_args!("{reason:?}"),
             );
         }
         for (name, count) in census.full_counts() {
             insert_source_attribute(
                 &mut attributes,
                 format_args!("deltas.{index}.full.{name}"),
-                count,
-            );
-        }
-        for (name, count) in census.tombstone_counts() {
-            insert_source_attribute(
-                &mut attributes,
-                format_args!("deltas.{index}.tombstone.{name}"),
                 count,
             );
         }

@@ -1,6 +1,7 @@
 {
   "ir": {
-    "ir_version": "8",
+    "decode_depth": "full",
+    "ir_version": "9",
     "model": {
       "appearance_bindings": [],
       "appearances": [],
@@ -1165,7 +1166,6 @@
         "consolidated_tori": [],
         "consolidated_vertex_identities": [],
         "design_objects": [],
-        "display_colors": [],
         "e5_curve_supports": [],
         "entity_records": [],
         "external_references": [],
@@ -1205,10 +1205,6 @@
         "zero_entity_vertex_incidences": []
       }
     },
-    "scope": {
-      "design": true,
-      "model": true
-    },
     "source": {
       "attributes": {
         "brep_stream_len": "1383",
@@ -1218,6 +1214,8 @@
         "fbb_runs": "0",
         "file_size": "1646",
         "finjpl_segment_count": "0",
+        "inner_offset": "16",
+        "outer_dir_offset": "1646",
         "preview_count": "0",
         "stream_count": "2",
         "vertex_records": "0"
@@ -1644,10 +1642,7 @@
     ],
     "transfer": {
       "geometry_transferred": true,
-      "scope": {
-        "design": true,
-        "model": true
-      }
+      "transfer": "full"
     }
   },
   "source_fidelity": {
@@ -2259,10 +2254,6 @@
         }
       }
     },
-    "metadata": {
-      "source.inner_offset": "16",
-      "source.outer_dir_offset": "1646"
-    },
     "retained_records": {
       "catia:payload:unknown#freeform": {
         "bytes": {
@@ -2270,19 +2261,8 @@
           "retention": "inline"
         },
         "offset": 0,
-        "stream": "catia:MainDataStream+SurfacicReps",
-        "untyped": []
-      },
-      "catia:source:image#whole": {
-        "bytes": {
-          "data": "VjVfQ0ZWMgAAAAZuAAAAAFY1X0NGVjIAAAAFdwAAAOe1Ayd5ZAAAAIAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAADwPwAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAPA/AAAAAAAAAAAAAAAAAADwPwAAAAAAAPA/AAAAANASY8EAAAAA0BJjQQAAAADQEmPBAAAAANASY0G1AyFgyAAAAIEYZAABBQEBCQEAAAAAAAAAAAAAAAAAAPA/CQkAAAAAAAAAAAAAAAAAAAAAAAAAAAAAGEAAAAAAAAAAAAUFAAAAAAAAAAAAAAAAAADwPwAAAAAAAPA/AAAAAAAAAAAAB7UDIWDJAAAAgRhkAAEFAQEJAQAAAAAAAAAAAAAAAAAA8D8JCQAAAAAAABhAAAAAAAAAAAAAAAAAAAAAAAAAAAAAABhABQUAAAAAAAAAAAAAAAAAAPA/AAAAAAAA8D8AAAAAAAAAAAAHtQMhYMoAAACBGGQAAQUBAQkBAAAAAAAAAAAAAAAAAADwPwkJAAAAAAAAAAAAAAAAAAAYQAAAAAAAAAAAAAAAAAAAAAAFBQAAAAAAAAAAAAAAAAAA8D8AAAAAAADwPwAAAAAAAAAAAAe1A14RLAEAAIUYyAAYWAIYWQIYvAIYvQIqtQNeES0BAACFGMkAGFkCGFoCGL0CGL4CKrUDXhEuAQAAhRjKABhaAhhYAhi+Ahi8Aiq1A10FWAIAAIEYIAMEtQMFBCADAACBGLwCtQMGGrwCAACCGMgAGMoAggAAAAAAAAAAgQAAAAAAAPA/gbUDXQVZAgAAgRghAwS1AwUEIQMAAIEYvQK1AwYavQIAAIIYyQAYyACCAAAAAAAAAACBAAAAAAAA8D+BtQNdBVoCAACBGCIDBLUDBQQiAwAAgRi+ArUDBhq+AgAAghjKABjJAIIAAAAAAAAAAIEAAAAAAADwP4G1A2ItkAEAAIcYyAAYLAEYyQAYLQEYygAYLgEYZACDBQUDAQABAAEAAQABAAEAAQABAAEAAbUDIWDLAAAAgRhkAAEFAQEJAQAAAAAAAAAAAAAAAAAA8D8JCQAAAAAAAPA/AAAAAAAA8D8AAAAAAADwPwAAAAAAAABABQUAAAAAAAAAAAAAAAAAAPA/AAAAAAAA8D8AAAAAAAAAAAAHtQMhYMwAAACBGGQAAQUBAQkBAAAAAAAAAAAAAAAAAADwPwkJAAAAAAAA8D8AAAAAAAAAQAAAAAAAAABAAAAAAAAA8D8FBQAAAAAAAAAAAAAAAAAA8D8AAAAAAADwPwAAAAAAAAAAAAe1AyFgzQAAAIEYZAABBQEBCQEAAAAAAAAAAAAAAAAAAPA/CQkAAAAAAAAAQAAAAAAAAPA/AAAAAAAA8D8AAAAAAADwPwUFAAAAAAAAAAAAAAAAAADwPwAAAAAAAPA/AAAAAAAAAAAAB7UDXhEvAQAAhRjLABhbAhhcAhi/AhjAAiq1A14RMAEAAIUYzAAYXAIYXQIYwAIYwQIqtQNeETEBAACFGM0AGF0CGFsCGMECGL8CKrUDXQVbAgAAgRgjAwS1AwUEIwMAAIEYvwK1AwYavwIAAIIYywAYzQCCAAAAAAAAAACBAAAAAAAA8D+BtQNdBVwCAACBGCQDBLUDBQQkAwAAgRjAArUDBhrAAgAAghjMABjLAIIAAAAAAAAAAIEAAAAAAADwP4G1A10FXQIAAIEYJQMEtQMFBCUDAACBGMECtQMGGsECAACCGM0AGMwAggAAAAAAAAAAgQAAAAAAAPA/gbUDYi2RAQAAhxjLABgvARjMABgwARjNABgxARhkAIMFAwMBAAEAAQABAAEAAQABAAEAAQABtQNfC/QBAACDGGQAGJEBGJABBQBDQVRJQV9WNSBDQjAwMDEAAAAAAAAAAAAAAAAAAAAFZk0AYQBpAG4ARABhAHQAYQBTAHQAcgBlAGEAbQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAABAAAAEAAABWYAAAVmAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAABUwB1AHIAZgBhAGMAaQBjAFIAZQBwAHMAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAEAAAV2AAAAAQAAAAEAAAAAAAAAAENCX19FTkQ=",
-          "retention": "inline"
-        },
-        "offset": 0,
-        "stream": "catia:source",
-        "untyped": []
+        "stream": "catia:MainDataStream+SurfacicReps"
       }
-    },
-    "unrepresented": []
+    }
   }
 }

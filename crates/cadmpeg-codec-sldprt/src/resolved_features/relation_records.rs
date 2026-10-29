@@ -1773,6 +1773,7 @@ mod relation_records_tests {
             value: cadmpeg_ir::scalar::FiniteReal::new(1.0).expect("finite test scalar"),
             role,
             operands,
+            archive_class: None,
         }
     }
 
@@ -2000,6 +2001,7 @@ mod relation_records_tests {
                 entity_index: 0,
                 entity_ref: entity_ref.map(str::to_owned),
             }],
+            archive_class: None,
         }
     }
 

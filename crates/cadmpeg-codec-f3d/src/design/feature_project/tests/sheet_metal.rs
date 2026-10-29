@@ -183,6 +183,25 @@ fn edge_flange_scope_projects_a_typed_two_sided_neutral_flange() {
     .unwrap()
     .expect("typed EdgeFlange definition");
 
+    let mut mismatched = group.clone();
+    mismatched
+        .try_set_members(vec![crate::records::identity::Located {
+            value: 389,
+            offset: 0,
+        }])
+        .unwrap();
+    let mismatched_inputs = crate::design::feature_project::ProjectInputs {
+        native: &parameters,
+        owners: &owners,
+        construction_groups: std::slice::from_ref(&mismatched),
+        ..Default::default()
+    };
+    assert!(crate::test_support::with_decode_context(|decode_ctx| {
+        crate::design::feature_project::project_edge_flange(&scope, &mismatched_inputs, decode_ctx)
+    })
+    .unwrap()
+    .is_none());
+
     let FeatureDefinition::Operation(FeatureOperation::SheetMetalEdgeFlange {
         height,
         angle,

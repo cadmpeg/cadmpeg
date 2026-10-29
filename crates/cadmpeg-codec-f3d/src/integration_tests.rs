@@ -1,17 +1,21 @@
 // SPDX-License-Identifier: Apache-2.0
 //! End-to-end contracts over synthesized F3D and F3Z archives.
 
+mod act_links;
 mod assembly_local;
 mod attribute_colors;
 mod body_reference_tails;
 mod design_containment;
+mod emboss_operands;
 mod history_deltas;
 mod history_scale;
 mod inconsistent_records;
 mod measured_geometry;
 mod optional_payloads;
 mod placement_history;
+mod procedural_support;
 mod root_product;
+mod work_planes;
 
 use cadmpeg_test_support::{wire, EditableDecodeResult};
 

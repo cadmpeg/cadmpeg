@@ -1,6 +1,7 @@
 {
   "ir": {
-    "ir_version": "8",
+    "decode_depth": "full",
+    "ir_version": "9",
     "model": {
       "appearance_bindings": [],
       "appearances": [],
@@ -294,8 +295,7 @@
                 }
               ]
             ]
-          },
-          "native_ref": "sldprt:displaylist:record#348"
+          }
         }
       ],
       "vertices": [
@@ -326,7 +326,6 @@
             "source_index": 0
           }
         ],
-        "document_metadata": [],
         "feature_histories": [
           {
             "configurations": [],
@@ -356,7 +355,10 @@
         "sketch_input_entities": [],
         "unknowns": [
           {
-            "id": "sldprt:displaylist:record#348"
+            "id": "sldprt:displaylist:record#348",
+            "links": [
+              "sldprt:displaylist:record#348:0"
+            ]
           },
           {
             "id": "sldprt:file:block#12"
@@ -373,16 +375,32 @@
         ]
       }
     },
-    "scope": {
-      "design": true,
-      "model": true
-    },
     "source": {
       "attributes": {
+        "active_parasolid_block": "Contents/Config-0-Partition",
+        "block_count": "4",
+        "bmp_thumbnail_count": "0",
+        "brep_local_sha256": "<elided: digest over tolerantly compared geometry>",
+        "compound_stream_count": "0",
         "displaylist_triangles": "1",
         "displaylist_vertices": "3",
+        "document_local_sha256": "<elided: digest over tolerantly compared geometry>",
+        "outer_version": "0x00000004",
         "parasolid_description": "partition body",
         "parasolid_schema": "SCH_SW_33103_11000",
+        "png_preview_count": "0",
+        "sldprt_configuration_feature_states_local_sha256": "<elided: digest over tolerantly compared geometry>",
+        "sldprt_configuration_parameter_values_local_sha256": "<elided: digest over tolerantly compared geometry>",
+        "sldprt_configuration_snapshot_synthesized": "sldprt:model:configuration#487:0",
+        "sldprt_native_configuration_sha256": "1ffe954d250bac98163f4ce63dc9da2766fb51d5b679dcd4cdfe5fa03738228d",
+        "sldprt_native_history_sha256": "21ddc4b8067344c2181749659bc46e91cb0f90aba6dd90b44f21e53468a2627a",
+        "sldprt_native_parameter_sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+        "sldprt_native_sketch_sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+        "sldprt_neutral_configuration_local_sha256": "<elided: digest over tolerantly compared geometry>",
+        "sldprt_neutral_feature_local_sha256": "<elided: digest over tolerantly compared geometry>",
+        "sldprt_neutral_parameter_local_sha256": "<elided: digest over tolerantly compared geometry>",
+        "sldprt_neutral_sketch_constraint_local_sha256": "<elided: digest over tolerantly compared geometry>",
+        "sldprt_neutral_sketch_local_sha256": "<elided: digest over tolerantly compared geometry>",
         "sw_configuration_0_most_recent": "YES",
         "sw_configuration_name": "Default"
       },
@@ -445,16 +463,6 @@
         },
         "message": "the document carries no swSolidWorks swVersion declaration, so no declared identity was verified. The document is read on the `sldprt:unknown` residual path without substituting a declared dialect grammar: the feature-operation form-code padding filter is not applied, and an operation code binds only where the four- and eight-byte candidates agree. Agreement is consistency, not a declaration.",
         "severity": "warning"
-      },
-      {
-        "code": {
-          "code": "source.opaque-records-unrepresented",
-          "kind": "record_not_typed",
-          "namespace": "sldprt",
-          "scope": "namespaced"
-        },
-        "message": "source record sldprt:file:block#607 has no typed neutral or native payload representation",
-        "severity": "warning"
       }
     ],
     "notes": [
@@ -464,10 +472,7 @@
     ],
     "transfer": {
       "geometry_transferred": true,
-      "scope": {
-        "design": true,
-        "model": true
-      }
+      "transfer": "full"
     }
   },
   "source_fidelity": {
@@ -629,15 +634,6 @@
         }
       }
     },
-    "metadata": {
-      "active_parasolid_block": "Contents/Config-0-Partition",
-      "brep_local_sha256": "9eb57dfd034507ec6f252a2e84d8a3d188fb192da6773984d90bd30798ea4b48",
-      "document_local_sha256": "e5862b46aa0657b59a96db0260d0d34ae3d5907f4f7e218fb6d85aaa74d1f1fd",
-      "outer_version": "0x00000004",
-      "sldprt_swobjects_local_sha256": "586ffb909b0bba2aacc4d34937062d2b3c9cb6c81d2f794c686ad550b192d8dc",
-      "sldprt_swobjects_material_local_sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
-      "sldprt_swobjects_metadata_identity_local_sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945"
-    },
     "retained_records": {
       "sldprt:displaylist:record#348": {
         "bytes": {
@@ -645,8 +641,7 @@
           "retention": "inline"
         },
         "offset": 0,
-        "stream": "Contents/DisplayLists",
-        "untyped": []
+        "stream": "Contents/DisplayLists"
       },
       "sldprt:file:block#12": {
         "bytes": {
@@ -654,8 +649,7 @@
           "retention": "inline"
         },
         "offset": 0,
-        "stream": "Contents/Config-0-Partition",
-        "untyped": []
+        "stream": "Contents/Config-0-Partition"
       },
       "sldprt:file:block#348": {
         "bytes": {
@@ -663,8 +657,7 @@
           "retention": "inline"
         },
         "offset": 0,
-        "stream": "Contents/DisplayLists",
-        "untyped": []
+        "stream": "Contents/DisplayLists"
       },
       "sldprt:file:block#487": {
         "bytes": {
@@ -672,8 +665,7 @@
           "retention": "inline"
         },
         "offset": 0,
-        "stream": "Contents/Keywords",
-        "untyped": []
+        "stream": "Contents/Keywords"
       },
       "sldprt:file:block#607": {
         "bytes": {
@@ -681,11 +673,7 @@
           "retention": "inline"
         },
         "offset": 0,
-        "stream": "Contents/Features",
-        "untyped": [
-          "model",
-          "design"
-        ]
+        "stream": "Contents/Features"
       },
       "sldprt:file:source-image#0": {
         "bytes": {
@@ -693,13 +681,8 @@
           "retention": "inline"
         },
         "offset": 0,
-        "stream": "source",
-        "untyped": []
+        "stream": "source"
       }
-    },
-    "unrepresented": [
-      "model",
-      "design"
-    ]
+    }
   }
 }

@@ -2581,16 +2581,14 @@ fn attach_completed_intersection_pcurves_for_sources_with_budget(
         if ir.model.pcurves.iter().any(|pcurve| pcurve.id == pcurve_id) {
             continue;
         }
-        let source_offset = source
-            .graph
-            .get(NodeKind::Fin, fin_xmt)
-            .map_or(0, |node| cadmpeg_core::decode::u64_from_index(node.pos()));
-        annotations.note(
-            &pcurve_id,
-            &source.source_stream,
-            source_offset,
-            Some("INTERSECTION_PCURVE"),
-        );
+        if let Some(fin) = source.graph.get(NodeKind::Fin, fin_xmt) {
+            annotations.note(
+                &pcurve_id,
+                &source.source_stream,
+                cadmpeg_core::decode::u64_from_index(fin.pos()),
+                Some("INTERSECTION_PCURVE"),
+            );
+        }
         annotations
             .derived(&pcurve_id, "geometry")
             .map_err(cadmpeg_core::CodecError::from)?;

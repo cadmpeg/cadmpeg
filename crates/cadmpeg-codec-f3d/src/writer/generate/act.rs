@@ -122,19 +122,19 @@ pub(super) fn encode(native: &F3dNative) -> Result<Vec<Segment>, CodecError> {
             native_lp_utf16(&mut bulk, channel.guid.as_str())?;
         }
         for root in native
-            .act_root_components
+            .act_component_links
             .iter()
             .filter(|record| record.stream() == scope)
         {
             header(&mut bulk, root.record_index)?;
             bulk.extend_from_slice(&[0; 10]);
-            reference(&mut bulk, root.instance_root_record, 6);
+            reference(&mut bulk, root.references.instance_root, 6);
             native_lp_utf16(&mut bulk, root.layout().entity_id())?;
-            reference(&mut bulk, 3, 5);
+            reference(&mut bulk, root.references.tracked_entity, 5);
             reference(&mut bulk, root.registry_flag.code(), 0);
             native_lp_utf16(&mut bulk, root.layout().display_name())?;
             bulk.push(0);
-            reference(&mut bulk, root.components_root_record, 6);
+            reference(&mut bulk, root.references.components_root, 6);
         }
         for entity in entities {
             header(&mut bulk, entity.record_index())?;

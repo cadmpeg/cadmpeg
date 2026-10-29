@@ -1,6 +1,7 @@
 {
   "ir": {
-    "ir_version": "8",
+    "decode_depth": "full",
+    "ir_version": "9",
     "model": {
       "appearance_bindings": [],
       "appearances": [],
@@ -43,26 +44,21 @@
             "z": 3.0
           },
           "source_object": {
+            "color": {
+              "a": 1.0,
+              "b": 0.0,
+              "g": 0.0,
+              "r": 0.0
+            },
             "format": "rhino",
-            "object_id": "d000213c-3fed-dfd4-5d93-120ab2084742"
+            "layer": "284434a6-8100-1c94-6093-9b8d5a958003",
+            "object_id": "d000213c-3fed-dfd4-5d93-120ab2084742",
+            "visible": true
           }
         }
       ],
       "presentation_documents": [],
-      "presentation_layers": [
-        {
-          "id": "rhino:model:layer#000000",
-          "items": [
-            {
-              "body": "rhino:object:body#d000213c-3fed-dfd4-5d93-120ab2084742",
-              "kind": "body"
-            }
-          ],
-          "name": "Default",
-          "native_ref": "rhino:presentation:layer#284434a6-8100-1c94-6093-9b8d5a958003",
-          "visible": true
-        }
-      ],
+      "presentation_layers": [],
       "procedural_curves": [],
       "procedural_surfaces": [],
       "product_definitions": [],
@@ -125,7 +121,8 @@
             "current_material_source": null,
             "current_wire_density": null,
             "id": "rhino:document:settings#current",
-            "model_url": null
+            "model_url": null,
+            "writer_version": 200712190
           }
         ],
         "embedded_images": [],
@@ -147,14 +144,15 @@
             "material_index": -1,
             "name": "Default",
             "parent_uuid": null,
-            "plot_color": {
-              "a": 1.0,
-              "b": 0.0,
-              "g": 0.0,
-              "r": 0.0
-            },
+            "plot_color": [
+              0,
+              0,
+              0,
+              0
+            ],
             "plot_weight_mm": 0.0,
             "rendering_materials": [],
+            "source_offset": 267,
             "source_uuid": "284434a6-8100-1c94-6093-9b8d5a958003",
             "visible": true
           }
@@ -197,6 +195,7 @@
             "section_fill_rule": 0,
             "section_hatch_rotation": 0.0,
             "section_hatch_scale": 1.0,
+            "source_offset": 622,
             "source_uuid": "d000213c-3fed-dfd4-5d93-120ab2084742",
             "url": "",
             "viewport_uuid": null,
@@ -225,14 +224,21 @@
         "windows_bitmaps": []
       }
     },
-    "scope": {
-      "design": true,
-      "model": true
-    },
     "source": {
       "attributes": {
+        "absolute_tolerance_millimeters": "0.000001",
+        "absolute_tolerance_native": "0.000001",
+        "angular_tolerance": "0.0000000001",
         "archive_version": "80",
-        "container_kind": "3dm-chunks"
+        "container_kind": "3dm-chunks",
+        "layer.0.locked": "false",
+        "layer.0.name": "Default",
+        "layer.0.uuid": "284434a6-8100-1c94-6093-9b8d5a958003",
+        "layer.0.visible": "true",
+        "millimeters_per_unit": "1",
+        "relative_tolerance": "0.01",
+        "unit_system": "standard:2",
+        "unit_value": "2"
       },
       "identity": {
         "classification": "classified",
@@ -289,10 +295,7 @@
     ],
     "transfer": {
       "geometry_transferred": true,
-      "scope": {
-        "design": true,
-        "model": true
-      }
+      "transfer": "full"
     }
   },
   "source_fidelity": {
@@ -316,30 +319,6 @@
         }
       }
     },
-    "metadata": {
-      "rhino.history_layout": "[]",
-      "rhino.layout.rhino:presentation:layer#284434a6-8100-1c94-6093-9b8d5a958003.offset": "267",
-      "rhino.layout.rhino:presentation:object#d000213c-3fed-dfd4-5d93-120ab2084742.offset": "622",
-      "rhino.object_layout": "[{\"start\":622,\"end\":797}]",
-      "rhino.table_layout": "[[268435476,[[2684354598,63,75]]],[268435477,[[536903729,99,147]]],[268435478,[]],[268435493,[]],[268435472,[]],[268435491,[]],[268435473,[[536903760,267,454]]],[268435480,[]],[268435481,[]],[268435488,[]],[268435474,[]],[268435490,[]],[268435489,[]],[268435475,[[536903792,622,797]]],[268435494,[]]]"
-    },
-    "record_layout": {
-      "rhino:object:point#d000213c-3fed-dfd4-5d93-120ab2084742": {
-        "byte_len": 25,
-        "offset": 702,
-        "payloads": {},
-        "pointers": {},
-        "reads": {
-          "file": [
-            {
-              "end": 727,
-              "start": 702
-            }
-          ]
-        },
-        "stream": "file"
-      }
-    },
     "retained_records": {
       "rhino:object:record#000000": {
         "bytes": {
@@ -347,10 +326,8 @@
           "retention": "inline"
         },
         "offset": 622,
-        "stream": "",
-        "untyped": []
+        "stream": ""
       }
-    },
-    "unrepresented": []
+    }
   }
 }

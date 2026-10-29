@@ -1,135 +1,96 @@
 // SPDX-License-Identifier: Apache-2.0
+use super::{FieldValue, RealBits};
+use crate::records::DataType;
+use cadmpeg_core::decode::View;
 
-use super::SchemaNode;
-use crate::test_support::with_decode_context;
-
-fn region() -> Vec<u8> {
-    // V13 REGION: node_id, attributes_features, body, next, previous, shell, type.
-    let mut bytes = vec![0, 19, 255, 0, 3];
-    bytes.extend_from_slice(&u32::MAX.to_be_bytes());
-    for (target, status) in [(1u16, 1), (7, 0), (1, 1), (9, 1), (10, 0)] {
-        bytes.extend_from_slice(&target.to_be_bytes());
-        bytes.push(status);
+#[test]
+fn every_real_payload_round_trips_without_finite_filtering() {
+    for bits in [
+        0u64,
+        1,
+        0x8000_0000_0000_0000,
+        0x7ff0_0000_0000_0000,
+        0xfff0_0000_0000_0000,
+        0x7ff8_1234_5678_9abc,
+    ] {
+        let bytes = bits.to_be_bytes();
+        let value = FieldValue::read(DataType::Real, &mut View::over_retained(&bytes)).unwrap();
+        assert_eq!(value, FieldValue::RealBits(RealBits(bits)));
+        let wire = serde_json::to_value(&value).unwrap();
+        assert_eq!(wire["value"], format!("{bits:016x}"));
+        assert_eq!(serde_json::from_value::<FieldValue>(wire).unwrap(), value);
     }
-    bytes.push(b'S');
-    bytes
 }
 
 #[test]
-fn region_reads_every_declared_field_and_preserves_statuses_and_scalar_bits() {
-    let bytes = region();
-    with_decode_context(|_ctx| {
-        let (node, end) = SchemaNode::read(&bytes, 0).unwrap().unwrap();
-        assert_eq!(end, 25);
-        assert_eq!(node.kind(), 19);
-        let wire = serde_json::to_value(&node).unwrap();
-        assert_eq!(wire["schema_byte_len"], 3);
-        assert_eq!(wire["xmt"], 3);
-        assert!(wire["variable_length"].is_null());
-        assert_eq!(
-            wire["values"][0],
-            serde_json::json!([{"type":"integer","value":u32::MAX}])
-        );
-        assert_eq!(
-            wire["values"][2],
-            serde_json::json!([{"type":"pointer","value":{"target":7,"status":false}}])
-        );
-        assert_eq!(
-            wire["values"][6],
-            serde_json::json!([{"type":"char","value":83}])
-        );
-        let mut followed = bytes.clone();
-        followed.extend_from_slice(&[0, 19, 0, 3]);
-        assert_eq!(
-            SchemaNode::read(&followed, 0).unwrap(),
-            Some((node.clone(), end))
-        );
-        for length in 0..bytes.len() {
-            assert!(SchemaNode::read(&bytes[..length], 0).unwrap().is_none());
+fn pointer_status_is_independent_of_nullness_and_requires_canonical_positive_storage() {
+    for target in [1u16, 12, 125, 32767] {
+        for status in [0u8, 1] {
+            let mut bytes = target.to_be_bytes().to_vec();
+            bytes.push(status);
+            assert_eq!(
+                FieldValue::read(DataType::Pointer, &mut View::over_retained(&bytes)),
+                Some(FieldValue::Pointer {
+                    target: std::num::NonZeroU32::new(u32::from(target)).unwrap(),
+                    status: status != 0
+                })
+            );
         }
-        assert_eq!(
-            serde_json::from_value::<SchemaNode>(wire.clone()).unwrap(),
-            node
-        );
-        for (field, value) in [
-            ("xmt", serde_json::json!(1)),
-            ("variable_length", serde_json::json!(0)),
-            ("schema_byte_len", serde_json::json!(2)),
-        ] {
-            let mut invalid = wire.clone();
-            invalid[field] = value;
-            assert!(serde_json::from_value::<SchemaNode>(invalid).is_err());
+    }
+    for bytes in [&[0, 0, 1][..], &[0xff, 0xff, 0, 0, 1], &[0, 1, 2]] {
+        assert!(FieldValue::read(DataType::Pointer, &mut View::over_retained(bytes)).is_none());
+    }
+}
+
+#[test]
+fn variable_hvec_spans_stop_at_the_last_declared_value_and_keep_nonfinite_bits() {
+    let declaration = b"\0\x29\x03CI\x08term_use\0\0\0\x01\x01cCZ";
+    crate::test_support::with_decode_context(|_ctx| {
+        let (plan, schema_end) = crate::records::tests::read(declaration, 0)
+            .unwrap()
+            .unwrap();
+        assert_eq!(schema_end, declaration.len());
+        let mut bytes = 2u32.to_be_bytes().to_vec();
+        bytes.extend([0, 86, b'T', b'?']);
+        for value in 0..22 {
+            bytes.extend(f64::from(value).to_bits().to_be_bytes());
         }
-        for values in [
-            serde_json::json!([]),
-            serde_json::json!([{"type":"byte","value":1}]),
-            serde_json::json!([{"type":"integer","value":1},{"type":"integer","value":2}]),
-        ] {
-            let mut invalid = wire.clone();
-            invalid["values"][0] = values;
-            assert!(serde_json::from_value::<SchemaNode>(invalid).is_err());
+        let end = bytes.len();
+        bytes[end - 8..].copy_from_slice(&0x7ff8_0000_0000_0001u64.to_be_bytes());
+        bytes.extend([0, 40, 0, 1]);
+        let mut view = View::over_retained(&bytes);
+        let instance = super::read_status_instance(&mut view, &plan).unwrap();
+        assert_eq!(instance.variable_length, Some(2));
+        assert_eq!(view.position(), end);
+        assert_eq!(
+            instance
+                .fields
+                .iter()
+                .map(std::iter::ExactSizeIterator::len)
+                .collect::<Vec<_>>(),
+            [1, 1, 176]
+        );
+        for length in 0..end {
+            assert!(
+                super::read_status_instance(&mut View::over_retained(&bytes[..length]), &plan)
+                    .is_none()
+            );
         }
     });
 }
 
 #[test]
-fn variable_limit_retains_two_complete_ext11_blocks_without_swallowing_the_successor() {
-    let mut bytes = vec![0, 41, 3, b'C', b'I', 8];
-    bytes.extend_from_slice(b"term_use");
-    bytes.extend_from_slice(&[0, 0, 0, 1, 1, b'c', b'C', b'Z']);
-    let schema_end = bytes.len();
-    bytes.extend_from_slice(&2u32.to_be_bytes());
-    bytes.extend_from_slice(&[0, 86, b'T', b'?']);
-    for value in 0..22 {
-        bytes.extend_from_slice(&f64::from(value).to_be_bytes());
-    }
-    let end = bytes.len();
-    bytes.extend_from_slice(&[0, 40, 0, 1]);
-    with_decode_context(|_ctx| {
-        let (node, actual_end) = SchemaNode::read(&bytes, 0).unwrap().unwrap();
-        assert_eq!(actual_end, end);
-        assert_eq!(node.schema_byte_len, schema_end);
-        let wire = serde_json::to_value(&node).unwrap();
-        assert_eq!(wire["variable_length"], 2);
-        assert_eq!(wire["values"][0][0]["value"], 84);
-        assert_eq!(wire["values"][1][0]["value"], 63);
-        assert_eq!(
-            wire["values"][2][0]["value"],
-            serde_json::json!([0., 1., 2., 3., 4., 5., 6., 7., 8., 9., 10.])
-        );
-        assert_eq!(
-            wire["values"][2][1]["value"],
-            serde_json::json!([11., 12., 13., 14., 15., 16., 17., 18., 19., 20., 21.])
-        );
-        for length in schema_end..end {
-            assert!(SchemaNode::read(&bytes[..length], 0).unwrap().is_none());
-        }
-        let mut invalid = bytes.clone();
-        invalid[schema_end..schema_end + 4].copy_from_slice(&u32::MAX.to_be_bytes());
-        assert!(SchemaNode::read(&invalid, 0).unwrap().is_none());
-        let mut nonfinite = bytes.clone();
-        nonfinite[end - 8..end].copy_from_slice(&f64::NAN.to_be_bytes());
-        assert!(SchemaNode::read(&nonfinite, 0).unwrap().is_none());
-        let mut missing = wire.clone();
-        missing["values"][2].as_array_mut().unwrap().pop();
-        assert!(serde_json::from_value::<SchemaNode>(missing).is_err());
-    });
-}
-
-#[test]
-fn omitted_variable_storage_has_a_length_but_no_values() {
-    let mut bytes = vec![0, 41, 2, b'C', b'D', b'A', 4];
-    bytes.extend_from_slice(b"skip");
-    bytes.extend_from_slice(&[0, 0, 0, 2, 1, b'd', 0, b'Z']);
-    bytes.extend_from_slice(&4u32.to_be_bytes());
-    bytes.extend_from_slice(&[0, 9, b'T']);
-    with_decode_context(|_ctx| {
-        let (node, end) = SchemaNode::read(&bytes, 0).unwrap().unwrap();
-        assert_eq!(end, bytes.len());
-        assert_eq!(node.variable_length, Some(4));
-        assert!(node.values[1].is_empty());
-        let mut invalid = serde_json::to_value(node).unwrap();
-        invalid["values"][1] = serde_json::json!([{"type":"integer","value":7}]);
-        assert!(serde_json::from_value::<SchemaNode>(invalid).is_err());
+fn nontransmitted_variable_fields_keep_the_count_and_zero_width_span() {
+    let declaration = b"\0\x29\x02CDA\x04skip\0\0\0\x02\x01d\0Z";
+    crate::test_support::with_decode_context(|_ctx| {
+        let (plan, _) = crate::records::tests::read(declaration, 0)
+            .unwrap()
+            .unwrap();
+        let bytes = [0, 0, 0, 4, 0, 9, b'T'];
+        let mut view = View::over_retained(&bytes);
+        let instance = super::read_status_instance(&mut view, &plan).unwrap();
+        assert_eq!(instance.variable_length, Some(4));
+        assert_eq!(instance.fields, [6..7, 7..7]);
+        assert_eq!(view.position(), bytes.len());
     });
 }

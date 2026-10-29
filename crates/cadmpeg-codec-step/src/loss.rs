@@ -183,9 +183,9 @@ pub(crate) enum StepLossCode {
     HiddenPmiVisibilityUnsupported,
     /// A wire shell has free vertices without an edge-based STEP carrier.
     WireShellFreeVertices,
-    /// Bodies have no owning product representation.
+    /// Bodies without component ownership are assigned to the root product.
     BodyWithoutProductRepresentation,
-    /// Solid and sheet shells omit wire edges and free vertices.
+    /// Solid and sheet shells do not retain wire members within the shell.
     SurfaceShellWireTopologyOmitted,
     /// Tessellations require an AP242 target.
     TessellationRequiresAp242,
@@ -301,6 +301,18 @@ pub(crate) enum StepLossCode {
     RegionNoWritableOuterShell,
     /// A region omitted a void shell with no writable faces.
     RegionOmittedVoidShell,
+    /// A solid region was written as a surface model because its shells are open.
+    RegionSolidReducedToSheet,
+    /// Vertices of unwritable topology were retained as standalone points.
+    RegionVerticesRecovered,
+    /// Edges of unwritable faces were retained as wire geometry.
+    RegionEdgesRecovered,
+    /// No geometry was placed in the output representations.
+    NoGeometryWritten,
+    /// Different coedge pcurves were compared at discrete parameters.
+    EdgePcurveAgreementSampled,
+    /// A recovered edge was fitted at sampled parameters.
+    EdgePcurveSampledToBspline,
     /// A shell omitted an outer face with no writable topology.
     ShellOmittedOuterFace,
     /// A shell omitted a face whose boundary roles are unspecified.
@@ -313,6 +325,10 @@ pub(crate) enum StepLossCode {
     FaceOmittedUnclassifiedLoop,
     /// A face has no writable bounds.
     FaceNoWritableBounds,
+    /// A face was omitted because one of its bounds could not be written.
+    FaceIncompleteBounds,
+    /// A face's implicit outer boundary has no STEP bound.
+    FaceImplicitOuterBoundUnwritable,
     /// A loop was omitted because its record is missing.
     LoopRecordMissing,
     /// A loop was omitted because its vertex is missing.
@@ -504,12 +520,20 @@ impl StepLossCode {
         Self::ProceduralDefinitionNotWritten,
         Self::RegionNoWritableOuterShell,
         Self::RegionOmittedVoidShell,
+        Self::RegionSolidReducedToSheet,
+        Self::RegionVerticesRecovered,
+        Self::RegionEdgesRecovered,
+        Self::NoGeometryWritten,
+        Self::EdgePcurveAgreementSampled,
+        Self::EdgePcurveSampledToBspline,
         Self::ShellOmittedOuterFace,
         Self::ShellOmittedUnclassifiedFace,
         Self::FaceOmittedOuterLoop,
         Self::FaceOmittedInnerLoop,
         Self::FaceOmittedUnclassifiedLoop,
         Self::FaceNoWritableBounds,
+        Self::FaceIncompleteBounds,
+        Self::FaceImplicitOuterBoundUnwritable,
         Self::LoopRecordMissing,
         Self::LoopVertexMissing,
         Self::LoopCoedgeRecordMissing,
@@ -690,12 +714,22 @@ impl StepLossCode {
             Self::ProceduralDefinitionNotWritten => "geometry.procedural-definition-not-written",
             Self::RegionNoWritableOuterShell => "topology.region-no-writable-outer-shell",
             Self::RegionOmittedVoidShell => "topology.region-omitted-void-shell",
+            Self::RegionSolidReducedToSheet => "topology.region-solid-reduced-to-sheet",
+            Self::RegionVerticesRecovered => "topology.region-vertices-recovered",
+            Self::RegionEdgesRecovered => "topology.region-edges-recovered",
+            Self::NoGeometryWritten => "export.no-geometry-written",
+            Self::EdgePcurveAgreementSampled => "geometry.edge-pcurve-agreement-sampled",
+            Self::EdgePcurveSampledToBspline => "geometry.edge-pcurve-sampled-to-bspline",
             Self::ShellOmittedOuterFace => "topology.shell-omitted-outer-face",
             Self::ShellOmittedUnclassifiedFace => "topology.shell-omitted-unclassified-face",
             Self::FaceOmittedOuterLoop => "topology.face-omitted-outer-loop",
             Self::FaceOmittedInnerLoop => "topology.face-omitted-inner-loop",
             Self::FaceOmittedUnclassifiedLoop => "topology.face-omitted-unclassified-loop",
             Self::FaceNoWritableBounds => "topology.face-no-writable-bounds",
+            Self::FaceIncompleteBounds => "topology.face-incomplete-bounds",
+            Self::FaceImplicitOuterBoundUnwritable => {
+                "topology.face-implicit-outer-bound-unwritable"
+            }
             Self::LoopRecordMissing => "topology.loop-record-missing",
             Self::LoopVertexMissing => "topology.loop-vertex-missing",
             Self::LoopCoedgeRecordMissing => "topology.loop-coedge-record-missing",
@@ -740,12 +774,18 @@ impl StepLossCode {
             | Self::RegionNoShellList
             | Self::RegionNoWritableOuterShell
             | Self::RegionOmittedVoidShell
+            | Self::RegionSolidReducedToSheet
+            | Self::RegionVerticesRecovered
+            | Self::RegionEdgesRecovered
+            | Self::NoGeometryWritten
             | Self::ShellOmittedOuterFace
             | Self::ShellOmittedUnclassifiedFace
             | Self::FaceOmittedOuterLoop
             | Self::FaceOmittedUnclassifiedLoop
             | Self::FaceOmittedInnerLoop
             | Self::FaceNoWritableBounds
+            | Self::FaceIncompleteBounds
+            | Self::FaceImplicitOuterBoundUnwritable
             | Self::LoopCoedgeRecordMissing
             | Self::LoopEdgeNotWritable
             | Self::LoopDuplicateCoedge
@@ -869,12 +909,17 @@ impl StepLossCode {
             | Self::WireRegionMissingShell
             | Self::RegionNoWritableOuterShell
             | Self::RegionOmittedVoidShell
+            | Self::RegionSolidReducedToSheet
+            | Self::RegionVerticesRecovered
+            | Self::RegionEdgesRecovered
             | Self::ShellOmittedOuterFace
             | Self::ShellOmittedUnclassifiedFace
             | Self::FaceOmittedOuterLoop
             | Self::FaceOmittedUnclassifiedLoop
             | Self::FaceOmittedInnerLoop
             | Self::FaceNoWritableBounds
+            | Self::FaceIncompleteBounds
+            | Self::FaceImplicitOuterBoundUnwritable
             | Self::LoopRecordMissing
             | Self::LoopVertexMissing
             | Self::LoopCoedgeRecordMissing
@@ -918,6 +963,10 @@ impl StepLossCode {
             | Self::AssemblyOccurrenceOmittedNoParentProduct
             | Self::AssemblyJointOmitted => LossTaxonomy::AssemblyPlacementsNotTransferred,
             Self::NoExportableSolids => LossTaxonomy::NoExportableSolids,
+            Self::NoGeometryWritten => LossTaxonomy::GeometryNotTransferred,
+            Self::EdgePcurveAgreementSampled | Self::EdgePcurveSampledToBspline => {
+                LossTaxonomy::GeometryAgreementSampled
+            }
             Self::RootOccurrencePlacementNotRepresentable
             | Self::OccurrencePlacementNotRigid
             | Self::BodyNonRigidTransform => LossTaxonomy::BodyTransformNotApplied,
@@ -1328,12 +1377,20 @@ mod tests {
                 "geometry.procedural-definition-not-written",
                 "topology.region-no-writable-outer-shell",
                 "topology.region-omitted-void-shell",
+                "topology.region-solid-reduced-to-sheet",
+                "topology.region-vertices-recovered",
+                "topology.region-edges-recovered",
+                "export.no-geometry-written",
+                "geometry.edge-pcurve-agreement-sampled",
+                "geometry.edge-pcurve-sampled-to-bspline",
                 "topology.shell-omitted-outer-face",
                 "topology.shell-omitted-unclassified-face",
                 "topology.face-omitted-outer-loop",
                 "topology.face-omitted-inner-loop",
                 "topology.face-omitted-unclassified-loop",
                 "topology.face-no-writable-bounds",
+                "topology.face-incomplete-bounds",
+                "topology.face-implicit-outer-bound-unwritable",
                 "topology.loop-record-missing",
                 "topology.loop-vertex-missing",
                 "topology.loop-coedge-record-missing",

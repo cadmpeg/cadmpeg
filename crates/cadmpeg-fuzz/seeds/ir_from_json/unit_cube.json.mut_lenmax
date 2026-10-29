@@ -1,9 +1,6 @@
 {
-  "ir_version": "8",
-  "scope": {
-    "model": true,
-    "design": true
-  },
+  "ir_version": "9",
+  "decode_depth": "full",
   "units": {
     "length": "millimeter"
   },
@@ -232,8 +229,8 @@
         "sense": "forward"
       },
       {
-        "id": "synthetiÿÿÿÿbe:coedge#back:1",
-        "owner_loop": "synthetic:cube:loop#back",
+        "id": "synthetic:cube:coedge#back:1",
+ÿÿÿÿ    "owner_loop": "synthetic:cube:loop#back",
         "edge": "synthetic:cube:edge#11",
         "radial_next": "synthetic:cube:coedge#left:3",
         "sense": "forward"

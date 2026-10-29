@@ -63,6 +63,7 @@ fn product(ir: &mut cadmpeg_ir::CadIr) {
     ir.model
         .product_definitions
         .push(cadmpeg_ir::products::ProductDefinition {
+            sketches: Vec::default(),
             id: "test:model:product-definition#empty".try_into().unwrap(),
             kind: cadmpeg_ir::products::ProductDefinitionKind::Part,
             source_name: None,
@@ -76,7 +77,7 @@ fn product(ir: &mut cadmpeg_ir::CadIr) {
 }
 
 #[test]
-fn bodies_outside_products_have_a_counted_export_loss() {
+fn bodies_outside_products_have_a_counted_root_assignment_note() {
     let mut ir = cadmpeg_ir::examples::unit_cube().unwrap();
     product(&mut ir);
     let report = write_step(
@@ -91,7 +92,10 @@ fn bodies_outside_products_have_a_counted_export_loss() {
         .iter()
         .find(|loss| loss.code == StepLossCode::BodyWithoutProductRepresentation.kind())
         .unwrap();
-    assert!(loss.message.starts_with("1 body record(s)"));
+    assert_eq!(
+        loss.message,
+        "1 body record(s) not assigned to a component were written in the root product in model coordinates"
+    );
     ir.model.product_definitions[0]
         .bodies
         .push(ir.model.bodies[0].id.clone());

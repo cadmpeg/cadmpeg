@@ -1229,6 +1229,7 @@ fn repeated_circle_display_shape_requires_distinct_display_entities() {
             entity_index,
             entity_ref: None,
         }],
+        archive_class: None,
     };
     let record = |scalars: &[FeatureInputScalar]| FeatureInputRelationInstance {
         id: "relation".into(),

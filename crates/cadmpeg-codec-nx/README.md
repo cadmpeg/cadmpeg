@@ -66,10 +66,12 @@ for provenance and passthrough.
 
 Typed transfer covers analytic carriers, NURBS, selected trimmed curves, and
 connected topology when fixed-record references resolve. Geometry that cannot
-be attached remains available through derived free topology. Partition and
-adjacent equal-schema deltas streams are scanned together. Exactly keyed full
-records and tombstones use the last event for each key. Unmatched tombstones
-remain unresolved. `RMFastLoad` intersects membership IDs with topology node
+be attached remains available through derived free topology. Partitions retain
+their own input. Every paired or unpaired Deltas stream contributes no semantic
+bytes while aggregate selection remains unresolved. A sequential source owner
+retains supported physical events, shared schema metadata, generic field values,
+and the exact suffix at its first unsupported boundary. `RMFastLoad` intersects
+membership IDs with topology node
 IDs and retains every image whose complete nonempty set is covered; otherwise
 selection declines and complete primary-writer lineage falls back to terminal
 partition images. Assembly files can contain only external child-part

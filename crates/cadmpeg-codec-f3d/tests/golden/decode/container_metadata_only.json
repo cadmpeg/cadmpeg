@@ -1,10 +1,7 @@
 {
   "ir": {
-    "ir_version": "8",
-    "scope": {
-      "model": false,
-      "design": true
-    },
+    "ir_version": "9",
+    "decode_depth": "full",
     "source": {
       "identity": {
         "classification": "classified",
@@ -31,7 +28,10 @@
         }
       },
       "attributes": {
+        "active_brep": "FusionAssetName[Active]/Breps.BlobParts/Body1.smbh",
+        "active_brep_sha256": "cc6675a89373316537e83d8498984baee7ba4cb79343a0c3b168afb07a05cf91",
         "asset_folder": "FusionAssetName[Active]",
+        "document_local_sha256": "<elided: digest over tolerantly compared geometry>",
         "product_family": "Autodesk Neutron",
         "product_version": "ASM 231.6.3.65535 OSX",
         "save_date": "Tue Mar 31 16:16:19 2026",
@@ -87,13 +87,11 @@
     },
     "native": {
       "f3d": {
+        "act_component_links": [],
         "act_entities": [],
         "act_guids": [],
         "act_registry_channels": [],
-        "act_root_components": [],
         "act_table_references": [],
-        "act_tables": [],
-        "act_types": [],
         "asm_bulletin_boards": [],
         "asm_delta_states": [],
         "asm_entity_changes": [],
@@ -133,16 +131,14 @@
         "design_face_source_groups": [],
         "design_feature_timelines": [],
         "design_fillet_radius_groups": [],
+        "design_intent_failures": [],
         "design_joint_motions": [],
         "design_loft_legacy_body_carriers": [],
         "design_material_assignments": [],
         "design_mesh_features": [],
         "design_parameter_companions": [],
-        "design_parameter_document_headers": [],
         "design_parameter_owners": [],
         "design_parameter_scopes": [],
-        "design_parameter_state_companions": [],
-        "design_parameter_states": [],
         "design_parameters": [],
         "design_placement_constructions": [],
         "design_profile_curve_selections": [],
@@ -208,10 +204,7 @@
       }
     },
     "transfer": {
-      "scope": {
-        "model": false,
-        "design": true
-      },
+      "transfer": "full",
       "geometry_transferred": false
     },
     "losses": [
@@ -224,7 +217,7 @@
           "strict_floor": "warning"
         },
         "severity": "blocking",
-        "message": "ASM BREP geometry was not transferred: the selected stream `FusionAssetName[Active]/Breps.BlobParts/Body1.smbh` is not a decodable BinaryFile4/BinaryFile8 SAB (or its framing failed). 1 BREP stream(s) were located, but no surfaces, curves, or points were produced."
+        "message": "The selected model BREP stream `FusionAssetName[Active]/Breps.BlobParts/Body1.smbh` decoded successfully; the selected model has no surfaces, faces, or points."
       },
       {
         "code": {
@@ -235,7 +228,7 @@
           "strict_floor": "warning"
         },
         "severity": "blocking",
-        "message": "B-rep topology graph (body/region/shell/face/loop/coedge/edge/vertex) was not built for the selected stream `FusionAssetName[Active]/Breps.BlobParts/Body1.smbh`."
+        "message": "The selected model BREP stream `FusionAssetName[Active]/Breps.BlobParts/Body1.smbh` decoded successfully; no B-rep topology was transferred."
       },
       {
         "code": {
@@ -246,17 +239,6 @@
         },
         "severity": "warning",
         "message": "Materials/appearances (.protein assets, ACT/design assignments) were not transferred."
-      },
-      {
-        "code": {
-          "scope": "namespaced",
-          "namespace": "decode",
-          "code": "depth.not-delivered",
-          "kind": "geometry_not_transferred",
-          "strict_floor": "warning"
-        },
-        "severity": "error",
-        "message": "requested full depth but the f3d decoder did not deliver classes: model"
       }
     ],
     "notes": [
@@ -266,9 +248,6 @@
     ]
   },
   "source_fidelity": {
-    "unrepresented": [
-      "model"
-    ],
     "annotations": {
       "provenance": {
         "f3d:FusionAssetName[Active]/Breps.BlobParts/Body1.smbh:unknown#0": {
@@ -278,11 +257,6 @@
         }
       }
     },
-    "metadata": {
-      "active_brep": "FusionAssetName[Active]/Breps.BlobParts/Body1.smbh",
-      "active_brep_sha256": "cc6675a89373316537e83d8498984baee7ba4cb79343a0c3b168afb07a05cf91",
-      "document_local_sha256": "cd23f969d2c4f16e72ecdb9d6da66a03e47ebb7ea657d66891f20fbf0ce2e103"
-    },
     "retained_records": {
       "f3d:FusionAssetName[Active]/Breps.BlobParts/Body1.smbh:unknown#0": {
         "stream": "f3d:FusionAssetName[Active]/Breps.BlobParts/Body1.smbh",
@@ -291,8 +265,7 @@
           "retention": "digest",
           "byte_len": 177,
           "sha256": "cc6675a89373316537e83d8498984baee7ba4cb79343a0c3b168afb07a05cf91"
-        },
-        "untyped": []
+        }
       },
       "f3d:file:source-image#0": {
         "stream": "f3d",
@@ -300,10 +273,7 @@
         "bytes": {
           "retention": "inline",
           "data": "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"
-        },
-        "untyped": [
-          "model"
-        ]
+        }
       }
     }
   }

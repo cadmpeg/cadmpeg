@@ -504,6 +504,7 @@ fn saved_top_level_edge_projects_as_a_wire_body() {
     .expect("valid BREP tolerances");
 
     assert_eq!(brep.bodies.len(), 1);
+    assert!(super::emit::is_saved_free_edge_body(&brep.bodies[0].id));
     assert_eq!(brep.bodies[0].kind, cadmpeg_ir::topology::BodyKind::Wire);
     assert_eq!(brep.regions.len(), 1);
     assert_eq!(brep.shells.len(), 1);

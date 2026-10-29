@@ -3287,6 +3287,7 @@ mod relation_geometry_tests {
                 value: cadmpeg_ir::scalar::FiniteReal::new(value).expect("finite test scalar"),
                 role: FeatureInputScalarRole::Driving,
                 operands,
+                archive_class: None,
             };
         let relation = FeatureInputRelationInstance {
             id: "relation".into(),
@@ -3554,6 +3555,7 @@ mod relation_geometry_tests {
                 value: cadmpeg_ir::scalar::FiniteReal::new(0.005).expect("finite test scalar"),
                 role: FeatureInputScalarRole::Driving,
                 operands: relation.operands.clone(),
+                archive_class: None,
             }],
             relation_bindings: Vec::new(),
             relation_instances: vec![relation],
@@ -3854,6 +3856,7 @@ mod relation_geometry_tests {
             value: cadmpeg_ir::scalar::FiniteReal::new(0.0065).expect("finite test scalar"),
             role: FeatureInputScalarRole::Driving,
             operands: Vec::new(),
+            archive_class: None,
         };
         let operand = |entity_index| FeatureInputOperand {
             offset: 700 + u64::from(entity_index),

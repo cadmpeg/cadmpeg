@@ -48,9 +48,6 @@ impl DisplayColorFrame {
             color_index,
         })
     }
-    pub(in crate::native) fn encoding(&self) -> &RmDisplayColorAssignmentEncoding {
-        &self.encoding
-    }
     pub(in crate::native) fn offset(&self) -> u64 {
         self.encoding.offset() - u64::from(self.color_index.display_byte_len())
     }

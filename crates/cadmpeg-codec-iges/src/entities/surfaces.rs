@@ -1247,11 +1247,17 @@ fn indicator_normal(
     surface: &SurfaceId,
     ctx: &DecodeContext<'_>,
 ) -> Result<Option<Vector3>, CodecError> {
-    let procedural = ir
+    let constructions: Vec<_> = ir
         .model
-        .procedural_surfaces
+        .surfaces
         .iter()
-        .find(|procedural| ir.model.procedural_surface_owner(&procedural.id) == Some(surface));
+        .filter(|candidate| candidate.id == *surface)
+        .filter_map(|candidate| candidate.geometry.procedural_construction())
+        .collect();
+    let procedural = ir.model.procedural_surfaces.iter().find(|procedural| {
+        constructions.contains(&&procedural.id)
+            && ir.model.procedural_surface_owner(&procedural.id) == Some(surface)
+    });
     let parameters =
         procedural.map(|procedural| offset_indicator_parameters(procedural.record_bounds()));
     let parameters = parameters.unwrap_or([0.0, 0.0]);

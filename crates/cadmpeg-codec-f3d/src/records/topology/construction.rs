@@ -618,7 +618,7 @@ impl DesignConstructionOperandGroupFrame {
         self.opaque_index_offset?.checked_sub(18)
     }
     /// First opaque-index location.
-    fn opaque_index_offset(&self) -> Option<u64> {
+    pub(crate) fn opaque_index_offset(&self) -> Option<u64> {
         self.opaque_index_offset
     }
     /// Scalar location following the opaque index.

@@ -238,6 +238,8 @@ fn ambiguous_scope_histories_use_exact_result_body_sources() {
     );
     let binding = DesignBodyBinding::try_from(crate::records::bodies::DesignBodyBindingWire {
         map_ordinal: 0,
+        component_owner: None,
+        component_owner_unresolved: false,
         id: format!("{stream}:design-body-binding#0"),
         stream: "Design/BulkStream.dat".into(),
         pair_count: 1,

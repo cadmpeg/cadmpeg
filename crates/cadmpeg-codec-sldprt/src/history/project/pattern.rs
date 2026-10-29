@@ -126,6 +126,7 @@ pub(super) fn project_pattern(
                     }
                     _ => None,
                 },
+                omitted_instances: Vec::new(),
             })
             .ok()?,
             NativePatternClass::Circular => PatternKind::new(PatternTransform::Circular {

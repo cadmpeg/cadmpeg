@@ -6,9 +6,11 @@ use cadmpeg_core::CodecError;
 use serde::{Deserialize, Serialize};
 
 mod base;
+pub(crate) mod deltas;
 pub(crate) mod group;
 mod primary;
 
+pub(crate) use deltas::DeltasRecords;
 pub(crate) use primary::PrimaryRecords;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -22,9 +24,6 @@ pub(crate) fn is_partition_description(description: &[u8]) -> bool {
         || description.starts_with(b": TRANSMIT FILE (partition) ")
 }
 
-fn status_schema_kind(kind: u16) -> bool {
-    matches!(kind, 12 | 19 | 38 | 41 | 70 | 74 | 100 | 101)
-}
 pub(crate) mod instance;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -82,11 +81,11 @@ impl DataType {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(try_from = "FieldWire")]
 pub(crate) struct SchemaField {
-    name: PrintableString<String>,
-    data_type: DataType,
-    pointer_class: u16,
-    n_elements: u32,
-    transmit: bool,
+    pub(crate) name: PrintableString<String>,
+    pub(crate) data_type: DataType,
+    pub(crate) pointer_class: u16,
+    pub(crate) n_elements: u32,
+    pub(crate) transmit: bool,
 }
 
 #[derive(Deserialize)]
@@ -118,28 +117,24 @@ impl TryFrom<FieldWire> for SchemaField {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(try_from = "SchemaWire")]
-pub(crate) struct EmbeddedSchema {
-    #[serde(flatten)]
-    plan: SchemaPlan,
+pub(crate) struct SchemaPlan {
+    pub(crate) kind: u16,
+    pub(crate) fields: Vec<SchemaField>,
+    #[serde(skip)]
+    pub(crate) custom_name: Option<String>,
+    #[serde(skip)]
+    pub(crate) custom_description: Option<String>,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
-struct SchemaPlan {
-    kind: u16,
-    fields: Vec<SchemaField>,
-}
-
-impl EmbeddedSchema {
+impl SchemaPlan {
     pub(crate) fn matches_base_with_pointer_tail(&self, kind: u16, tail: &[(&str, u16)]) -> bool {
-        if self.plan.kind != kind {
+        if self.kind != kind {
             return false;
         }
-        let Some(original) = base::fields(BaseVersion::V13006, self.plan.kind) else {
+        let Some(original) = base::fields(BaseVersion::V13006, self.kind) else {
             return false;
         };
-        self.plan
-            .fields
+        self.fields
             .iter()
             .map(|field| {
                 (
@@ -172,9 +167,8 @@ impl EmbeddedSchema {
         kind: u16,
         expected: impl Iterator<Item = (&'a str, DataType, u16)>,
     ) -> bool {
-        self.plan.kind == kind
+        self.kind == kind
             && self
-                .plan
                 .fields
                 .iter()
                 .map(|field| {
@@ -187,27 +181,6 @@ impl EmbeddedSchema {
                     )
                 })
                 .eq(expected.map(|(name, kind, class)| (name, kind, class, 0, true)))
-    }
-}
-
-#[derive(Deserialize)]
-struct SchemaWire {
-    kind: u16,
-    fields: Vec<SchemaField>,
-}
-
-impl TryFrom<SchemaWire> for EmbeddedSchema {
-    type Error = &'static str;
-    fn try_from(wire: SchemaWire) -> Result<Self, Self::Error> {
-        if !status_schema_kind(wire.kind) || wire.fields.is_empty() || wire.fields.len() >= 255 {
-            return Err("definition: unsupported kind or invalid effective field count");
-        }
-        Ok(Self {
-            plan: SchemaPlan {
-                kind: wire.kind,
-                fields: wire.fields,
-            },
-        })
     }
 }
 
@@ -290,38 +263,6 @@ fn descriptor<'a>(view: &mut View<'a>) -> Option<BorrowedField<'a>> {
     })
 }
 
-/// Replay C/D/I/A/Z against the declared V13 base.
-pub(crate) fn read(
-    stream: &[u8],
-    offset: usize,
-) -> Result<Option<(EmbeddedSchema, usize)>, CodecError> {
-    let mut view = View::over_retained(stream);
-    let Some((kind, count)) = (|| {
-        view.seek(offset)?;
-        let kind = view.u16_be()?;
-        if !status_schema_kind(kind) {
-            return None;
-        }
-        Some((kind, view.u8()?))
-    })() else {
-        return Ok(None);
-    };
-    if count == 0 {
-        return Ok(None);
-    }
-    let Some(plan) = read_definition(&mut view, BaseVersion::V13006, kind, count)? else {
-        return Ok(None);
-    };
-    if plan
-        .fields
-        .iter()
-        .any(|field| matches!(field.data_type, DataType::Unestablished(_)))
-    {
-        return Ok(None);
-    }
-    Ok(Some((EmbeddedSchema { plan }, view.position())))
-}
-
 fn read_definition(
     view: &mut View<'_>,
     version: BaseVersion,
@@ -331,6 +272,7 @@ fn read_definition(
     let original = base::fields(version, kind);
 
     let mut fields = Vec::new();
+    let mut custom = None;
     if count == 255 {
         let Some(original) = original else {
             return Ok(None);
@@ -380,9 +322,13 @@ fn read_definition(
             return Ok(None);
         }
     } else {
-        if short_string(view).is_none() || short_string(view).is_none() {
+        let Some(name) = short_string(view) else {
             return Ok(None);
-        }
+        };
+        let Some(description) = short_string(view) else {
+            return Ok(None);
+        };
+        custom = Some((name, description));
         for _ in 0..count {
             let Some(field) = descriptor(view) else {
                 return Ok(None);
@@ -390,7 +336,12 @@ fn read_definition(
             fields.push(field);
         }
     }
-    own_definition(kind, &fields).map(Some)
+    let mut plan = own_definition(kind, &fields)?;
+    if let Some((name, description)) = custom {
+        plan.custom_name = Some(name.to_owned());
+        plan.custom_description = Some(description.to_owned());
+    }
+    Ok(Some(plan))
 }
 
 fn own_definition(kind: u16, fields: &[BorrowedField<'_>]) -> Result<SchemaPlan, CodecError> {
@@ -410,6 +361,8 @@ fn own_definition(kind: u16, fields: &[BorrowedField<'_>]) -> Result<SchemaPlan,
     Ok(SchemaPlan {
         kind,
         fields: owned,
+        custom_name: None,
+        custom_description: None,
     })
 }
 

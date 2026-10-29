@@ -171,7 +171,7 @@ fn parameter_boundary_signed_area(
                 item_points.push([point.u, point.v]);
             }
         }
-        if item.segment.sense == Sense::Reversed {
+        if item.pcurves_run_backward() {
             item_points.reverse();
         }
         points.extend(item_points);

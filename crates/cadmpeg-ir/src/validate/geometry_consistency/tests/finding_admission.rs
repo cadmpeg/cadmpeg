@@ -248,3 +248,32 @@ fn charted_intersection_witness_finding_is_reported() {
         "charted tolerant intersection misses its endpoint witnesses",
     );
 }
+
+#[test]
+fn cache_support_failures_return_side_indexes_with_the_validator_allowance() {
+    let ctx = cadmpeg_test_support::service_decode_context();
+    for (mapping, fit, expected) in [
+        ([2.0, 3.0], None, Vec::new()),
+        ([3.0, 2.0], None, vec![0]),
+        ([3.0, 2.0], Some(2.0), Vec::new()),
+    ] {
+        let ir = super::mapped_surface_curve(mapping);
+        let index = crate::index::ModelIndex::new_model_only(&ir);
+        let crate::geometry::ProceduralCurveDefinition::SurfaceCurve { family } =
+            ir.model.procedural_curves[0].definition()
+        else {
+            panic!("surface curve");
+        };
+        assert_eq!(
+            super::super::cache_support_endpoint_failures(
+                &ctx,
+                &index,
+                &ir.model.curves[0].geometry,
+                family.context(),
+                fit,
+            )
+            .unwrap(),
+            expected
+        );
+    }
+}

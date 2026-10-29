@@ -29,7 +29,7 @@ fn stream(
 }
 
 #[test]
-fn native_value_records_use_only_ledger_owned_offsets() {
+fn raw_value_scanners_cannot_admit_unowned_deltas_payload() {
     let mut outer = vec![0x00, 0x52];
     outer.extend_from_slice(&4u32.to_be_bytes());
     outer.extend_from_slice(&10u16.to_be_bytes());
@@ -43,11 +43,9 @@ fn native_value_records_use_only_ledger_owned_offsets() {
         "SCH_TEST",
         outer,
     )];
-    let events = super::parasolid_deltas_events(&streams);
-    let records = super::parasolid_entity_value_records(&streams, &events.records).unwrap();
+    let records = super::parasolid_entity_value_records(&streams).unwrap();
 
-    assert_eq!(records.integers.len(), 1);
-    assert_eq!(records.integers[0].values.as_slice().len(), 4);
+    assert!(records.integers.is_empty());
     assert!(records.doubles.is_empty());
 }
 
@@ -1011,4 +1009,5 @@ mod source_prefix;
 
 mod group_members;
 
+mod region_wire;
 mod unicode_record_wire;

@@ -6,7 +6,7 @@ use cadmpeg_core::decode::{index_from_u32, u64_from_index};
 use std::collections::{BTreeMap, BTreeSet};
 
 use crate::records::{
-    act::{ActEntity, ActRootComponent},
+    act::{ActComponentLink, ActEntity},
     references::{DesignMaterialAssignment, LostEdgeReference},
     sketch_geometry::SketchCurveGeometry,
 };
@@ -145,20 +145,25 @@ fn source_position(value: Option<u64>, field: &str) -> Result<u64, CodecError> {
     })
 }
 
-pub(super) fn patch_act_roots(
+pub(super) fn patch_act_links(
     bytes: &mut [u8],
-    edits: &[ActRootComponent],
+    edits: &[ActComponentLink],
 ) -> Result<(), CodecError> {
     for root in edits {
         for (offset, value, field) in [
             (
                 root.layout().instance_root_record_offset(),
-                root.instance_root_record,
+                root.references.instance_root,
                 "ACT instance-root reference",
             ),
             (
+                root.layout().tracked_entity_record_offset(),
+                root.references.tracked_entity,
+                "ACT tracked-entity reference",
+            ),
+            (
                 root.layout().components_root_record_offset(),
-                root.components_root_record,
+                root.references.components_root,
                 "ACT components-root reference",
             ),
             (
@@ -176,7 +181,7 @@ pub(super) fn patch_act_roots(
                 "ACT root entity-id offset",
             )?,
             root.layout().entity_id(),
-            "ACT root entity id",
+            "ACT component-link entity id",
         )?;
         patch_utf16_if_changed(
             bytes,
@@ -185,7 +190,7 @@ pub(super) fn patch_act_roots(
                 "ACT root display-name offset",
             )?,
             root.layout().display_name(),
-            "ACT root display name",
+            "ACT component-link display name",
         )?;
     }
     Ok(())

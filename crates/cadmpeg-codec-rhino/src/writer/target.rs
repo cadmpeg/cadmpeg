@@ -29,6 +29,7 @@ pub(crate) fn plan(
         Some(version) => *version,
         None => RhinoArchiveVersion::ALL[0],
     };
+    let recovered = cadmpeg_ir::codec::write::edge_recovery::recover_edge_curves(input.ir)?;
     let arena = DecodeArena::new();
     let policy = DecodePolicy {
         mode: DecodeMode::Salvage,
@@ -36,7 +37,7 @@ pub(crate) fn plan(
     };
     let ctx = DecodeContext::new(&arena, &policy, DecodeDepth::Full);
     let session = cadmpeg_core::encode::EncodeSession::from_context(&ctx)?;
-    let (bytes, outcome) = super::write(&ctx, input.ir, version, &session)?;
+    let (bytes, outcome) = super::write(&ctx, &recovered.document, version, &session)?;
     let mut losses = outcome.losses;
     super::tables::document::uncarried_attribute_losses(input.ir, &mut losses);
     let vertex_quantization = !version.stores_mesh_vertices_as_f64()
@@ -210,6 +211,18 @@ pub(crate) fn plan(
         losses.push(
             RhinoLossCode::NoExportableSolids.note("the document holds no exportable geometry"),
         );
+    }
+    if !recovered.sampled_agreements.is_empty() {
+        losses.push(RhinoLossCode::EdgePcurveAgreementSampled.note(format!(
+            "{} recovered edge(s) have coedge curves compared at five parameters; agreement between samples is not established",
+            recovered.sampled_agreements.len()
+        )));
+    }
+    if !recovered.sampled_fits.is_empty() {
+        losses.push(RhinoLossCode::EdgePcurveSampledToBspline.note(format!(
+            "{} recovered edge(s) were fitted as B-splines with sampled residual at most {} model length units",
+            recovered.sampled_fits.len(), recovered.residual_limit
+        )));
     }
     let owned_points = input
         .ir

@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 
-use super::super::{Builder, Located};
+use super::super::{ArenaPositions, Builder, Located};
 use crate::brep::{
     ShapePayloadRecord, Tables, TextOrientation, TextShapeUse, TextTShape, TextTShapeGeometry,
     TextTShapes,
@@ -47,11 +47,13 @@ fn owner() -> cadmpeg_core::text::NonBlankString {
 }
 
 fn namespace(ctx: &DecodeContext<'_>, payload: &ShapePayloadRecord) -> NativeNamespace {
+    let mut positions = ArenaPositions::default();
     let builder = Builder::new(
         ctx,
         payload,
         Tables::from_payload(payload).unwrap(),
         owner(),
+        &mut positions,
     )
     .unwrap();
     let mut namespace = NativeNamespace::default();
@@ -84,11 +86,13 @@ fn projected_points_keep_the_exact_vertex_source_use_and_source_facts() {
     let policy = DecodePolicy::service();
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     let native_before = namespace(&ctx, &payload);
+    let mut positions = ArenaPositions::default();
     let mut builder = Builder::new(
         &ctx,
         &payload,
         Tables::from_payload(&payload).unwrap(),
         owner(),
+        &mut positions,
     )
     .unwrap();
     let expected = builder
@@ -133,11 +137,13 @@ fn placed_point_roots_keep_distinct_actual_source_use_owners() {
     let arena = DecodeArena::new();
     let policy = DecodePolicy::service();
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let mut positions = ArenaPositions::default();
     let mut builder = Builder::new(
         &ctx,
         &payload,
         Tables::from_payload(&payload).unwrap(),
         owner(),
+        &mut positions,
     )
     .unwrap();
     let mut ir = CadIr::empty();
@@ -200,12 +206,14 @@ fn current_point_projection_keeps_opaque_native_ids_after_arena_reordering() {
     policy.limits.max_entities = 0;
     let ctx = DecodeContext::for_encode(&arena, &policy);
     let rows = existing(&ctx, &namespace, &payload);
+    let mut positions = ArenaPositions::default();
     let mut builder = Builder::new_with_identities(
         &ctx,
         &payload,
         Tables::from_payload(&payload).unwrap(),
         owner(),
         Some(&rows),
+        &mut positions,
     )
     .unwrap();
     let mut ir = CadIr::empty();
@@ -245,12 +253,14 @@ fn missing_actual_point_selector_stays_absent_without_borrowing_a_sibling() {
     let arena = DecodeArena::new();
     let policy = DecodePolicy::service();
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let mut positions = ArenaPositions::default();
     let mut builder = Builder::new_with_identities(
         &ctx,
         &payload,
         Tables::from_payload(&payload).unwrap(),
         owner(),
         Some(&rows),
+        &mut positions,
     )
     .unwrap();
     let mut ir = CadIr::empty();
@@ -277,11 +287,13 @@ fn fresh_point_and_vertex_references_admit_two_owned_copies_before_append() {
         let arena = DecodeArena::new();
         let policy = DecodePolicy::service();
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+        let mut positions = ArenaPositions::default();
         let mut builder = Builder::new(
             &ctx,
             &payload,
             Tables::from_payload(&payload).unwrap(),
             owner(),
+            &mut positions,
         )
         .unwrap();
         let reference = builder
@@ -321,12 +333,14 @@ fn prior_actual_context_refusal_propagates_even_when_point_selector_is_missing()
     let policy = DecodePolicy::service();
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     let rows = [];
+    let mut positions = ArenaPositions::default();
     let builder = Builder::new_with_identities(
         &ctx,
         &payload,
         Tables::from_payload(&payload).unwrap(),
         owner(),
         Some(&rows),
+        &mut positions,
     )
     .unwrap();
     assert_eq!(builder.source_ref(1, Located::identity()).unwrap(), None);

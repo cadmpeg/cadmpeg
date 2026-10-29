@@ -18,8 +18,8 @@ use super::{
     SelectionReference, SewBodySelection, SheetMetalFlangeEdgeWidths, SheetMetalFlangeHeight,
     SheetMetalFlangeHeightTarget, SheetMetalFlangeTwoSidedWidth, SheetMetalFlangeWidth,
     SheetMetalHemForm, SketchFeatureBinding, SketchPointSelection, SketchProfileBoundaryUse,
-    SketchProfileLoops, SketchProfileRegion, SketchProfileRegions, SplitFacePlanes, SplitFaceTool,
-    SurfaceBoundary, SweepGuideRail, SweepOrientation, SweepSection, SweepShape,
+    SketchProfileLoops, SketchProfileRegion, SketchProfileRegions, SplitBodyTool, SplitFacePlanes,
+    SplitFaceTool, SurfaceBoundary, SweepGuideRail, SweepOrientation, SweepSection, SweepShape,
     ThreePointSelection, TreeChildren, TrimBodyOperands, TrimCellSelection, TrimRegion,
     VertexSelection,
 };
@@ -234,6 +234,9 @@ rewrite_enum!(FeatureOperation, []; {
     Binder { sources, construction },
     Rib { construction, op },
     SheetMetalBaseFlange { profile, thickness, side },
+    SheetMetalAttachedPlate { profile, thickness, side, attachment },
+    SheetMetalBend { plate, attachment, inside_radius, relief, transition },
+    SheetMetalCorner { bend, effect },
     SheetMetalEdgeFlange { edges, height, angle, height_datum, bend_position, width, bend_radius },
     SheetMetalHem { edges, bend_position, form, direction, bend_radius },
     Fillet { groups },
@@ -261,7 +264,7 @@ rewrite_enum!(FeatureOperation, []; {
     BoundaryFill { tools, cells },
     CutWithSurface { targets, tools, reverse },
     TrimBodies { operands, keep },
-    SplitBody { targets, tools },
+    SplitBody { targets, tool },
     SplitFace { targets, tool },
     DeleteBody { bodies, mode },
     DeleteFace { faces, heal },
@@ -496,6 +499,11 @@ rewrite_enum!(SketchProfileRegion, []; {
 rewrite_record!(SketchProfileRegions, []; (field0));
 
 rewrite_record!(SplitFacePlanes, []; (field0));
+
+rewrite_enum!(SplitBodyTool, []; {
+    Faces(field0),
+    Plane { plane },
+});
 
 rewrite_enum!(SplitFaceTool, []; {
     Path(field0),

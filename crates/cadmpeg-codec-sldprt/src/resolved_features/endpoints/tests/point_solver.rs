@@ -51,6 +51,7 @@ fn lane(constraints: &[([u16; 2], f64)]) -> FeatureInputLane {
                     entity_ref: None,
                 })
                 .collect(),
+            archive_class: None,
         })
         .collect();
     FeatureInputLane {

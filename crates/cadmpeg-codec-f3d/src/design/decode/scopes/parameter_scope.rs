@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Decode parameter scopes and parse one scope payload.
 
+mod family;
+
 use crate::bytes::lp_utf16_bounded;
 use cadmpeg_core::decode::u64_from_index;
 
@@ -22,6 +24,7 @@ use super::direct_face::exact_direct_face_operation;
 use super::direct_face::exact_move_operation;
 use super::direct_face::exact_scale_operation;
 use super::draft::exact_draft_operation_with_owners;
+use super::emboss::exact_emboss_construction;
 use super::extrude::{exact_extrude_prologue, exact_typed_extrude_prologue};
 use super::fixed_parameters::exact_fixed_chamfer_parameters;
 use super::fixed_parameters::exact_fixed_extrude_parameters;
@@ -80,13 +83,19 @@ pub(crate) struct ParameterScopeSources<'a> {
     pub(crate) recipes: &'a [crate::records::recipes::ConstructionRecipe],
 }
 
+#[derive(Debug, Default)]
+pub(crate) struct DecodedParameterScopes {
+    pub(crate) scopes: Vec<DesignParameterScope>,
+    pub(crate) losses: Vec<cadmpeg_ir::report::loss::LossNote>,
+}
+
 /// Decode every canonical sketch or construction-operation scope, including
 /// scopes that own no parameters and therefore have no owner-frame backlink.
 pub(crate) fn decode_parameter_scopes(
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     scan: &ContainerScan<'_>,
     sources: &ParameterScopeSources<'_>,
-) -> Result<Vec<DesignParameterScope>, CodecError> {
+) -> Result<DecodedParameterScopes, CodecError> {
     let &ParameterScopeSources {
         entities,
         types,
@@ -96,6 +105,7 @@ pub(crate) fn decode_parameter_scopes(
         recipes,
     } = sources;
     let mut out = Vec::new();
+    let mut losses = Vec::new();
     for entry in scan
         .entries
         .iter()
@@ -108,19 +118,38 @@ pub(crate) fn decode_parameter_scopes(
         let stream = crate::ids::native_scope(&entry.name);
         let records = IndexedRecordOffsets::build(bytes);
         let stream_types = crate::design::decode::meta::stream_types_by_entity(types, &entry.name);
+        let class_types =
+            crate::design::decode::meta::stream_types_by_class_tag(types, &entry.name);
         let stream_scope_start = out.len();
         for header in parameter_scope_candidate_headers(bytes, &records)? {
             let Some(header_offset) = header.byte_offset else {
                 continue;
             };
-            let Some(mut scope) = parse_parameter_scope(
+            let Some(mut scope) = parse_parameter_scope_with_type_guid(
                 bytes,
                 &records,
                 header.record_index,
                 &header.class_tag,
                 header_offset,
+                header
+                    .class_tag
+                    .as_str()
+                    .parse::<u32>()
+                    .ok()
+                    .and_then(|tag| class_types.get(&tag))
+                    .map(|row| row.type_guid.as_str()),
             )?
             else {
+                if let Some(tail_length) = unparsed_rigid_group_tail_length(
+                    bytes,
+                    &records,
+                    header.record_index,
+                    header_offset,
+                ) {
+                    losses.push(crate::loss::F3dLossCode::AssemblyRigidGroupFrameUnparsed.note(
+                        format!("Design rigid-group frame {} in {} at {} has no admitted layout ({tail_length}-byte tail).", header.record_index, entry.name, header_offset),
+                    ));
+                }
                 continue;
             };
             scope.id = design_record_id(
@@ -137,6 +166,13 @@ pub(crate) fn decode_parameter_scopes(
             );
             if let scope::DesignScopePayloadMut::SurfacePatch(patch) = scope.payload_mut() {
                 patch.normal = normal;
+            }
+            let emboss = exact_emboss_construction(bytes, &scope);
+            if let scope::DesignScopePayloadMut::Emboss(slot) = scope.payload_mut() {
+                *slot = emboss;
+            }
+            if let Some(loss) = extrude_extent_native_loss(&scope) {
+                losses.push(loss);
             }
             bind_coil_extent_from_parameters(&mut scope, parameters, parameter_owners);
             bind_hem_operation_from_parameters(bytes, &mut scope, parameters, parameter_owners);
@@ -255,8 +291,20 @@ pub(crate) fn decode_parameter_scopes(
                     &stream_types,
                     &scope::DesignFeatureKind::Hole,
                 )?;
+                let extent = super::hole::hole_extent(
+                    bytes,
+                    &scope,
+                    scope
+                        .class_tag
+                        .as_str()
+                        .parse::<u32>()
+                        .ok()
+                        .and_then(|tag| class_types.get(&tag))
+                        .map(|row| row.version),
+                );
                 if let scope::DesignScopePayloadMut::Hole(slot) = scope.payload_mut() {
-                    *slot = construction;
+                    slot.point = construction;
+                    slot.extent = extent;
                 }
             }
             if let Some(placement) = exact_coil_placement(ctx, bytes, &records, &scope, recipes)? {
@@ -387,10 +435,6 @@ pub(crate) fn decode_parameter_scopes(
                     (
                         scope::DesignScopePayloadMut::Loft(slot),
                         crate::records::feature::path_features::DesignPathFeatureConstruction::Loft(value),
-                    ) => *slot = Some(value),
-                    (
-                        scope::DesignScopePayloadMut::Pipe(slot),
-                        crate::records::feature::path_features::DesignPathFeatureConstruction::Pipe(value),
                     ) => *slot = Some(value),
                     (
                         scope::DesignScopePayloadMut::Sweep(slot),
@@ -526,6 +570,12 @@ pub(crate) fn decode_parameter_scopes(
                     *slot = construction;
                 }
             }
+            scope.occurrence_transfer = super::occurrence_transfer::exact_occurrence_transfer(
+                bytes,
+                &records,
+                &scope,
+                &stream_types,
+            );
             bind_component_pattern_occurrences(&mut scope, component_occurrences)?;
             {
                 let construction = exact_copy_paste_bodies_operation(bytes, &records, &scope);
@@ -547,7 +597,10 @@ pub(crate) fn decode_parameter_scopes(
     }
     out.sort_by(|a, b| a.id.cmp(&b.id));
     out.dedup_by(|a, b| a.id == b.id);
-    Ok(out)
+    Ok(DecodedParameterScopes {
+        scopes: out,
+        losses,
+    })
 }
 
 fn first_marked_reference_offsets(frame: &[u8]) -> HashMap<u32, usize> {
@@ -671,7 +724,9 @@ pub(crate) fn admit_history_bound_scope_variants(
                     }
                 })
             }
-            (None, false, Some(keep)) => {
+            // Several envelopes resolve to ASM transitions: the one the primary
+            // record index names is live; the others are retained revisions.
+            (Some(_), true, Some(keep)) | (None, false, Some(keep)) => {
                 // The other envelopes are not equivalent serializations, so
                 // dropping them loses their payload.
                 superseded = superseded.checked_add(following.len()).ok_or_else(|| {
@@ -774,6 +829,7 @@ fn strip_scope_variant_provenance(
                         key.as_str(),
                         "id" | "class_tag"
                             | "generation"
+                            | "source_kind"
                             | "history_state_id"
                             | "previous_history_state_id"
                             | "paired_class_tag"
@@ -803,6 +859,21 @@ pub(in crate::design::decode) fn payload_prologue(
     at: usize,
     end: usize,
 ) -> Option<usize> {
+    read_payload_prologue(bytes, at, end).map(|prologue| prologue.end)
+}
+
+pub(super) struct PayloadPrologue {
+    pub(super) end: usize,
+    pub(super) property_count: u32,
+    pub(super) saved_hole_depth:
+        Option<crate::records::identity::Sourced<cadmpeg_ir::scalar::FiniteReal>>,
+}
+
+pub(super) fn read_payload_prologue(
+    bytes: &[u8],
+    at: usize,
+    end: usize,
+) -> Option<PayloadPrologue> {
     fn graphic_ascii_at(bytes: &[u8], at: usize) -> Option<(&[u8], usize)> {
         let length = usize::try_from(View::u32_le_at(bytes, at)?).ok()?;
         if !(1..=64).contains(&length) {
@@ -813,30 +884,53 @@ pub(in crate::design::decode) fn payload_prologue(
         let raw = bytes.get(start..end)?;
         raw.iter().all(u8::is_ascii_graphic).then_some((raw, end))
     }
-
+    let bytes = bytes.get(..end)?;
     let mut cursor = at.checked_add(1)?;
     let present = *bytes.get(cursor)?;
-    cursor += 1;
-    match present {
-        0 => Some(cursor),
+    cursor = cursor.checked_add(1)?;
+    let count = match present {
+        0 => 0,
         1 => {
             let count = View::u32_le_at(bytes, cursor)?;
-            if count > 16 {
-                return None;
+            cursor = cursor.checked_add(4)?;
+            count
+        }
+        _ => return None,
+    };
+    if count > 16 {
+        return None;
+    }
+    let mut saved_hole_depth = None;
+    for _ in 0..count {
+        let (key, after_key) = graphic_ascii_at(bytes, cursor)?;
+        let (type_name, after_type) = graphic_ascii_at(bytes, after_key)?;
+        match type_name {
+            b"IntrinsicMetaTypeuint64" => {
+                View::u64_le_at(bytes, after_type)?;
             }
-            cursor += 4;
-            for _ in 0..count {
-                let (_key, after_key) = graphic_ascii_at(bytes, cursor)?;
-                let (type_name, after_type) = graphic_ascii_at(bytes, after_key)?;
-                if type_name != b"IntrinsicMetaTypeuint64" {
+            b"IntrinsicMetaTypedouble" if key == b"SavedHoleDepthInNonDistanceExtentsCase" => {
+                let value =
+                    cadmpeg_ir::scalar::FiniteReal::try_from(View::f64_le_at(bytes, after_type)?)
+                        .ok()?;
+                if saved_hole_depth
+                    .replace(crate::records::identity::Sourced::at(
+                        value,
+                        u64::try_from(after_type).ok()?,
+                    ))
+                    .is_some()
+                {
                     return None;
                 }
-                cursor = after_type.checked_add(8)?;
             }
-            (cursor <= end).then_some(cursor)
+            _ => return None,
         }
-        _ => None,
+        cursor = after_type.checked_add(8)?;
     }
+    (cursor <= end).then_some(PayloadPrologue {
+        end: cursor,
+        property_count: count,
+        saved_hole_depth,
+    })
 }
 
 /// Every indexed-record header that can open a parameter scope: a scope is
@@ -889,11 +983,13 @@ pub(crate) fn parameter_scope_tail_length_is_valid(
 pub(crate) fn parameter_scope_previous_history_offset(
     kind: impl AsRef<str>,
     tail_length: usize,
+    rigid_group: bool,
 ) -> Option<usize> {
     parameter_scope_previous_history_offset_for_form(
         kind.as_ref(),
         tail_length,
         ScopeTailForm::Fixed,
+        rigid_group,
     )
 }
 
@@ -903,6 +999,132 @@ enum ScopeTailForm {
     Named,
     /// The 76-byte fixed tail with its three references in the typed spelling.
     TypedFixed,
+}
+
+fn unparsed_rigid_group_tail_length(
+    bytes: &[u8],
+    records: &IndexedRecordOffsets,
+    record_index: u32,
+    byte_offset: u64,
+) -> Option<usize> {
+    use crate::layout::assembly_alternate_rigid_group_prefix as alternate;
+    use crate::layout::assembly_rigid_as_built_scope as ordinary;
+    let start = usize::try_from(byte_offset).ok()?;
+    let paired =
+        records.first_at_or_after(start.checked_add(ordinary::ZERO_RUN_8)?, record_index)?;
+    let stride = ordinary::SECOND_LOCATOR_REFERENCE - ordinary::FIRST_LOCATOR_REFERENCE;
+    let known_tail = [
+        crate::layout::ordinary_rigid_group_tail_76::LEN,
+        crate::layout::ordinary_rigid_group_tail_77::LEN,
+        crate::layout::ordinary_rigid_group_tail_87::LEN,
+        crate::layout::ordinary_rigid_group_tail_88::LEN,
+        crate::layout::assembly_typed_rigid_group_scope::LEN
+            - crate::layout::assembly_typed_rigid_group_scope::SCOPE_TAIL,
+    ]
+    .into_iter()
+    .find_map(|tail_length| {
+        let kind_end = paired.checked_sub(tail_length)?;
+        let kind_at = kind_end.checked_sub(ordinary::SCOPE_TAIL - ordinary::KIND)?;
+        let table = kind_at.checked_sub(ordinary::KIND - ordinary::REFERENCE_COUNT)?;
+        if table < start.checked_add(ordinary::ZERO_RUN_8)? || View::u32_le_at(bytes, table)? != 0 {
+            return None;
+        }
+        let (kind, end) = lp_utf16_bounded(bytes.get(..paired)?, kind_at, 8..=8)?;
+        if kind != "As-built" || end != kind_end {
+            return None;
+        }
+        let guid_at = kind_at.checked_sub(ordinary::KIND - ordinary::JOINT_REFERENCE - stride)?;
+        let guid_end = crate::design::decode::text::fixed_guid_end(bytes, guid_at)?;
+        let padding = ordinary::REFERENCE_COUNT - ordinary::ZERO_RUN_150;
+        (guid_end.checked_add(padding)? == table
+            && bytes.get(guid_end..table)?.iter().all(|byte| *byte == 0))
+        .then_some(tail_length)
+    });
+    if known_tail.is_some() {
+        return known_tail;
+    }
+    let prologue_shift = if crate::bytes::local_reference_target(
+        bytes,
+        start.checked_add(ordinary::PATHLESS_LOCATOR_REFERENCE)?,
+        false,
+    )
+    .is_some()
+    {
+        0
+    } else if crate::bytes::local_reference_target(
+        bytes,
+        start.checked_add(alternate::PATHLESS_LOCATOR_REFERENCE)?,
+        false,
+    )
+    .is_some()
+    {
+        alternate::PATHLESS_LOCATOR_REFERENCE - ordinary::PATHLESS_LOCATOR_REFERENCE
+    } else {
+        return None;
+    };
+    let first = start
+        .checked_add(ordinary::FIRST_LOCATOR_REFERENCE)?
+        .checked_add(prologue_shift)?;
+    let members = cadmpeg_core::decode::bounded_len(
+        u64::from(View::u32_le_at(
+            bytes,
+            start
+                .checked_add(ordinary::LOCATOR_COUNT)?
+                .checked_add(prologue_shift)?,
+        )?),
+        stride,
+        paired.checked_sub(first)?,
+    )?;
+    let shift = members
+        .checked_sub(2)?
+        .checked_mul(stride)?
+        .checked_add(prologue_shift)?;
+    let kind_at = start.checked_add(ordinary::KIND)?.checked_add(shift)?;
+    let (kind, kind_end) = lp_utf16_bounded(bytes.get(..paired)?, kind_at, 8..=8)?;
+    if kind != "As-built" || View::u32_le_at(bytes, kind_end)? == 0 {
+        return None;
+    }
+    let target =
+        |at| crate::bytes::local_reference_target(bytes, at, false).is_some_and(|value| value != 0);
+    let table = start
+        .checked_add(ordinary::REFERENCE_COUNT)?
+        .checked_add(shift)?;
+    let joint = start
+        .checked_add(ordinary::JOINT_REFERENCE)?
+        .checked_add(shift)?;
+    if !target(
+        start
+            .checked_add(ordinary::PATHLESS_LOCATOR_REFERENCE)?
+            .checked_add(prologue_shift)?,
+    ) || bytes
+        .get(
+            start
+                .checked_add(ordinary::ZERO_RUN_33)?
+                .checked_add(prologue_shift)?
+                ..start
+                    .checked_add(ordinary::LOCATOR_COUNT)?
+                    .checked_add(prologue_shift)?,
+        )?
+        .iter()
+        .any(|byte| *byte != 0)
+        || (0..members).any(|member| !target(first + member * stride))
+        || !target(joint)
+        || crate::design::decode::text::fixed_guid_end(bytes, joint.checked_add(stride)?)?
+            .checked_add(ordinary::REFERENCE_COUNT - ordinary::ZERO_RUN_150)?
+            != table
+        || bytes
+            .get(
+                start
+                    .checked_add(ordinary::ZERO_RUN_150)?
+                    .checked_add(shift)?..table,
+            )?
+            .iter()
+            .any(|byte| *byte != 0)
+        || View::u32_le_at(bytes, table)? != 0
+    {
+        return None;
+    }
+    paired.checked_sub(kind_end)
 }
 
 /// Whether `bytes[kind_end..paired_at]` is the typed-reference 196-byte tail:
@@ -929,13 +1151,21 @@ fn parameter_scope_previous_history_offset_for_form(
     kind: &str,
     tail_length: usize,
     tail_form: ScopeTailForm,
+    rigid_group: bool,
 ) -> Option<usize> {
     match tail_form {
         ScopeTailForm::Named => return None,
         ScopeTailForm::TypedFixed => return Some(typed_tail::PREVIOUS_HISTORY_STATE_ID),
         ScopeTailForm::Fixed => {}
     }
+    if rigid_group && kind == "As-built" {
+        return crate::design::assembly::OrdinaryRigidGroupTail::for_length(tail_length)
+            .map(|tail| tail.previous_history);
+    }
     match (kind, tail_length) {
+        ("As-built", crate::layout::ordinary_rigid_group_tail_88::LEN) => {
+            Some(crate::layout::ordinary_rigid_group_tail_88::PREVIOUS_HISTORY_STATE_ID)
+        }
         ("CopyPasteBodies", 110) | ("Hole", 109) => Some(53),
         ("CoilPrimitive", 88) => None,
         (_, 72 | 76) => Some(30),
@@ -945,6 +1175,7 @@ fn parameter_scope_previous_history_offset_for_form(
     }
 }
 
+#[cfg(test)]
 pub(in crate::design::decode) fn parse_parameter_scope(
     bytes: &[u8],
     records: &IndexedRecordOffsets,
@@ -952,7 +1183,19 @@ pub(in crate::design::decode) fn parse_parameter_scope(
     class_tag: &crate::records::references::DesignClassTag,
     byte_offset: u64,
 ) -> Result<Option<DesignParameterScope>, CodecError> {
+    parse_parameter_scope_with_type_guid(bytes, records, record_index, class_tag, byte_offset, None)
+}
+
+pub(in crate::design::decode) fn parse_parameter_scope_with_type_guid(
+    bytes: &[u8],
+    records: &IndexedRecordOffsets,
+    record_index: u32,
+    class_tag: &crate::records::references::DesignClassTag,
+    byte_offset: u64,
+    type_guid: Option<&str>,
+) -> Result<Option<DesignParameterScope>, CodecError> {
     (|| {
+        let type_family = type_guid.and_then(family::from_type_guid);
         let start = usize::try_from(byte_offset).ok()?;
         let paired_at = records.first_at_or_after(start.checked_add(11)?, record_index)?;
         let (paired_class_tag, _) =
@@ -974,6 +1217,10 @@ pub(in crate::design::decode) fn parse_parameter_scope(
             if !kind.chars().all(|character| !character.is_control()) {
                 continue;
             }
+            let selected = scope_feature_kind(&kind, type_family.as_ref());
+            let kind = selected
+                .as_ref()
+                .map_or(kind.as_str(), scope::DesignFeatureKind::as_str);
             let Some(tail_length) = paired_at.checked_sub(kind_end) else {
                 continue;
             };
@@ -985,7 +1232,7 @@ pub(in crate::design::decode) fn parse_parameter_scope(
                 || (kind == "Hole"
                     && exact_thread_bound_hole_tail(bytes.get(kind_end..paired_at)?, record_index));
             if fixed_tail
-                && parameter_scope_tail_length_is_valid(&kind, tail_length)
+                && parameter_scope_tail_length_is_valid(kind, tail_length)
                 && fixed_candidate
                     .replace((at, kind_end, tail_length, ScopeTailForm::Fixed))
                     .is_some()
@@ -1003,7 +1250,7 @@ pub(in crate::design::decode) fn parse_parameter_scope(
             }
             let named_tail_possible = (78..=590).contains(&tail_length)
                 && tail_length.is_multiple_of(2)
-                && (parameter_scope_tail_length_is_valid(&kind, tail_length) || tail_length == 78);
+                && (parameter_scope_tail_length_is_valid(kind, tail_length) || tail_length == 78);
             let named_tail = if named_tail_possible {
                 named_parameter_scope_tail_is_valid(bytes, kind_end, paired_at, tail_length)
                     .unwrap_or_default()
@@ -1032,7 +1279,8 @@ pub(in crate::design::decode) fn parse_parameter_scope(
         if confirmed_kind_end != kind_end {
             return None;
         }
-        let kind = scope::DesignFeatureKind::try_from(kind_text).ok()?;
+        let kind = scope_feature_kind(&kind_text, type_family.as_ref())?;
+        let source_kind = (kind_text != kind.as_str()).then_some(kind_text);
         let reference_table_end = kind_at.checked_sub(4)?;
         let feature_ordinal = std::num::NonZeroU32::new(View::u32_le_at(bytes, kind_end)?)?;
         let history_state_id_offset = reference_table_end;
@@ -1040,21 +1288,6 @@ pub(in crate::design::decode) fn parse_parameter_scope(
             u32::MAX => None,
             state_id => Some(i64::from(state_id)),
         };
-        let previous_history_state_id_offset =
-            match parameter_scope_previous_history_offset_for_form(
-                kind.as_str(),
-                tail_length,
-                tail_form,
-            ) {
-                Some(offset) => Some(kind_end.checked_add(offset)?),
-                None => None,
-            };
-        let previous_history_state_id = previous_history_state_id_offset.and_then(|offset| {
-            match View::u32_le_at(bytes, offset)? {
-                u32::MAX => None,
-                state_id => Some(i64::from(state_id)),
-            }
-        });
         // Every reference in one scope frame uses one spelling; the typed
         // tail selects the 51-byte typed reference-table entries.
         let typed_canvas =
@@ -1118,36 +1351,76 @@ pub(in crate::design::decode) fn parse_parameter_scope(
                 return None;
             }
         }
-        // The rigid `As-built` scope stores count 0 at its fixed offset,
-        // immediately before its history state, with no reference marker in
-        // the slot before it. Every other scope keeps a counted table.
-        let frame_length = paired_at
-            .checked_sub(start)
-            .and_then(|length| u64::try_from(length).ok());
-        if let Some(frame_length) = frame_length.filter(|frame_length| {
-            reference_table.is_none()
-                && crate::design::assembly::rigid_as_built_scope(
-                    *frame_length,
-                    kind == scope::DesignFeatureKind::AsBuilt,
+        if reference_table.is_none() && kind == scope::DesignFeatureKind::AsBuilt {
+            use crate::layout::assembly_rigid_as_built_scope as ordinary;
+            let guid_padding = ordinary::REFERENCE_COUNT - ordinary::ZERO_RUN_150;
+            let frame_length = u64::try_from(paired_at.checked_sub(start)?).ok()?;
+            let layout = crate::design::assembly::RigidGroupLayout::new(
+                frame_length,
+                u64::try_from(tail_length).ok()?,
+            )?;
+            let typed = layout.stride == crate::bytes::TYPED_LOCAL_REFERENCE_LEN;
+            if !typed
+                && crate::design::assembly::OrdinaryRigidGroupTail::read(
+                    bytes.get(kind_end..paired_at)?,
                 )
-        }) {
-            // Each member past the second adds one locator reference.
-            let members = crate::design::assembly::rigid_group_member_count(frame_length)?;
-            let count_at = start
-                .checked_add(crate::layout::assembly_rigid_as_built_scope::REFERENCE_COUNT)?
-                .checked_add(members.checked_sub(2)?.checked_mul(11)?)?;
-            let locator_count_at =
-                start.checked_add(crate::layout::assembly_rigid_as_built_scope::LOCATOR_COUNT)?;
-            if usize::try_from(View::u32_le_at(bytes, locator_count_at)?).ok() == Some(members)
-                && count_at.checked_add(4) == Some(reference_table_end)
-                && View::u32_le_at(bytes, count_at)? == 0
-                && bytes.get(count_at.checked_sub(11)?) != Some(&1)
+                .is_none()
             {
-                reference_table = Some((count_at, Vec::new(), Vec::new()));
+                return None;
             }
+            let target = |at| {
+                crate::bytes::local_reference_target(bytes, at, typed).filter(|target| *target != 0)
+            };
+            let pathless_at = start.checked_add(layout.pathless_reference)?;
+            let count_at = start.checked_add(layout.empty_table)?;
+            let first = start.checked_add(layout.first_reference)?;
+            let members_end = first.checked_add(layout.members.checked_mul(layout.stride)?)?;
+            if !layout.prologue_matches(View::over_retained(bytes.get(start..paired_at)?))
+                || target(pathless_at).is_none()
+                || bytes.get(
+                    pathless_at.checked_add(layout.stride)?..start.checked_add(layout.count_at)?,
+                )? != [0; 4]
+                || usize::try_from(View::u32_le_at(bytes, start.checked_add(layout.count_at)?)?)
+                    .ok()?
+                    != layout.members
+                || (0..layout.members)
+                    .any(|member| target(first + member * layout.stride).is_none())
+                || target(members_end).is_none()
+                || crate::design::decode::text::fixed_guid_end(
+                    bytes,
+                    members_end.checked_add(layout.stride)?,
+                )?
+                .checked_add(guid_padding)?
+                    != count_at
+                || bytes
+                    .get(count_at.checked_sub(guid_padding)?..count_at)?
+                    .iter()
+                    .any(|byte| *byte != 0)
+                || count_at.checked_add(4)? != reference_table_end
+                || View::u32_le_at(bytes, count_at)? != 0
+            {
+                return None;
+            }
+            reference_table = Some((count_at, Vec::new(), Vec::new()));
         }
         let reference_table = reference_table?;
         let (reference_count_at, reference_members, reference_member_offsets) = &reference_table;
+        let previous_history_state_id_offset =
+            match parameter_scope_previous_history_offset_for_form(
+                kind.as_str(),
+                tail_length,
+                tail_form,
+                kind == scope::DesignFeatureKind::AsBuilt && reference_members.is_empty(),
+            ) {
+                Some(offset) => Some(kind_end.checked_add(offset)?),
+                None => None,
+            };
+        let previous_history_state_id = previous_history_state_id_offset.and_then(|offset| {
+            match View::u32_le_at(bytes, offset)? {
+                u32::MAX => None,
+                state_id => Some(i64::from(state_id)),
+            }
+        });
         let surface_stitch_operation = if kind == scope::DesignFeatureKind::SurfaceStitch {
             exact_surface_stitch_operation(bytes, records, record_index, reference_members)
         } else {
@@ -1328,6 +1601,7 @@ pub(in crate::design::decode) fn parse_parameter_scope(
             paired_byte_offset: u64_from_index(paired_at),
         })
         .ok()?;
+        scope.source_kind = source_kind;
         if let Some(prologue) = extrude_prologue {
             {
                 let construction = Some(scope::DesignExtrudeScope {
@@ -1523,11 +1797,37 @@ fn named_parameter_scope_tail_is_valid(
     })()
 }
 
+/// Select the family of a stored family name. A name that names no family
+/// takes the family of the scope class type identity when one is listed.
+fn scope_feature_kind(
+    stored: &str,
+    type_family: Option<&scope::DesignFeatureKind>,
+) -> Option<scope::DesignFeatureKind> {
+    let literal = scope::DesignFeatureKind::try_from(stored.to_owned()).ok()?;
+    Some(match (literal, type_family) {
+        (scope::DesignFeatureKind::Native(_), Some(family)) => family.clone(),
+        (literal, _) => literal,
+    })
+}
+
 pub(crate) fn parameter_scope_payload_length(scope: &DesignParameterScope) -> Option<u64> {
-    let kind_bytes = u64::try_from(scope.kind_name().encode_utf16().count())
+    let kind_bytes = u64::try_from(scope.source_kind_name().encode_utf16().count())
         .ok()?
         .checked_mul(2)?;
     scope.frame_length()?.checked_sub(kind_bytes)
+}
+
+fn extrude_extent_native_loss(
+    scope: &DesignParameterScope,
+) -> Option<cadmpeg_ir::report::loss::LossNote> {
+    (design_feature_family(&scope.kind()) == Some(DesignFeatureFamily::Extrude)
+        && scope.extrude_prologue().is_none())
+    .then(|| {
+        crate::loss::F3dLossCode::FeatureExtrudeExtentNative.note(format!(
+            "Extrude scope {} retains its unassigned extent payload and ordered references.",
+            scope.id
+        ))
+    })
 }
 
 #[cfg(test)]

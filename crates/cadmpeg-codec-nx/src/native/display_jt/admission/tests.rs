@@ -8,7 +8,7 @@ use super::{DisplayJtGraph, DisplayJtGraphWire};
 
 fn validate_native(ir: &cadmpeg_ir::CadIr) -> Vec<cadmpeg_ir::report::check::Finding> {
     crate::test_support::with_decode_context(|ctx| {
-        crate::NxCodec::validate_native(ctx, ir)
+        crate::NxCodec::validate_native(ctx, ir, None)
             .expect("native validation stays within session limits")
     })
 }

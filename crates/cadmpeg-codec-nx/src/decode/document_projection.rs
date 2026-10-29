@@ -55,6 +55,7 @@ pub(super) fn project(
                         part_number: None,
                         bom_properties: BTreeMap::new(),
                         bodies: Vec::new(),
+                        sketches: Vec::new(),
                         native_ref: Some(record.id().to_owned()),
                     });
                 }

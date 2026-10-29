@@ -85,6 +85,15 @@ pub(super) fn native(valid: bool, duplicate: bool) -> crate::native::F3dNative {
 }
 
 fn tail_findings(byte_offset: u64, flag: bool) -> Vec<cadmpeg_ir::report::check::Finding> {
+    reference_findings(byte_offset, flag, 10, 1_030)
+}
+
+fn reference_findings(
+    byte_offset: u64,
+    flag: bool,
+    reference_span: u64,
+    reference_offset: u64,
+) -> Vec<cadmpeg_ir::report::check::Finding> {
     use crate::records::{
         decal::DesignRecordHeader,
         identity::Located,
@@ -106,15 +115,15 @@ fn tail_findings(byte_offset: u64, flag: bool) -> Vec<cadmpeg_ir::report::check:
                 auxiliary_paths: Vec::new(),
                 trailing_records: vec![Located {
                     value: 102,
-                    offset: 1_030,
+                    offset: reference_offset,
                 }],
                 trailing_transforms: Vec::new(),
                 trailing_dual_transforms: Vec::new(),
                 trailing_flags: Vec::new(),
                 opaque_index: 1,
-                opaque_index_offset: 1_058,
+                opaque_index_offset: 1_048 + reference_span,
                 opaque_scalar: 0.0,
-                opaque_scalar_offset: 1_062,
+                opaque_scalar_offset: 1_052 + reference_span,
                 variant: false,
             },
         )
@@ -143,6 +152,8 @@ fn tail_findings(byte_offset: u64, flag: bool) -> Vec<cadmpeg_ir::report::check:
                 .unwrap();
         }
         native.design_construction_operand_groups[0].frame = frame;
+        native.design_construction_operand_groups[0].paired_byte_offset =
+            Some(1_070 + reference_span);
         native.design_record_headers.push(DesignRecordHeader {
             id: "f3d:Design/BulkStream.dat:design-record-header#102".into(),
             record_index: 102,
@@ -154,6 +165,27 @@ fn tail_findings(byte_offset: u64, flag: bool) -> Vec<cadmpeg_ir::report::check:
         super::super::validate_construction_operand_groups(&ctx, &mut findings);
         findings
     })
+}
+
+#[test]
+fn construction_group_accepts_short_and_typed_reference_spans() {
+    for span in [10, 50] {
+        assert!(reference_findings(2_000, true, span, 1_030).is_empty());
+    }
+}
+
+#[test]
+fn construction_group_rejects_mutated_reference_offsets() {
+    for span in [10, 50] {
+        for offset in [1_029, 1_031, u64::MAX] {
+            let findings = reference_findings(2_000, true, span, offset);
+            assert_eq!(findings.len(), 1);
+            assert_eq!(
+                findings[0].message,
+                "Fusion Design construction operand group has an invalid frame"
+            );
+        }
+    }
 }
 
 #[test]
@@ -192,6 +224,47 @@ fn hole_construction_group_accepts_its_retained_auxiliary_role() {
         assert!(findings.is_empty());
         native.design_construction_operand_groups[0].operand_role =
             DesignConstructionOperandRole::Other(DesignOperandRole::PROFILE);
+        let ctx = super::super::Ctx::new(&ir, &native, decode);
+        super::super::validate_construction_operand_groups(&ctx, &mut findings);
+        assert_eq!(findings.len(), 1);
+    });
+}
+
+#[test]
+fn thread_face_group_does_not_require_a_specialized_thread_payload() {
+    use crate::records::{
+        feature::scope::{DesignFeatureKind, DesignParameterScope},
+        identity::ReferenceRun,
+        topology::{
+            construction::DesignConstructionOperandRole, extrude_selection::DesignOperandRole,
+        },
+    };
+    crate::test_support::with_decode_context(|decode| {
+        let ir = cadmpeg_ir::CadIr::empty();
+        let mut native = native(true, false);
+        let mut scope = DesignParameterScope::empty(
+            "f3d:Design/BulkStream.dat:design-parameter-scope#10",
+            DesignFeatureKind::Thread,
+            10,
+        );
+        scope
+            .try_edit(|draft| {
+                draft.reference_members = ReferenceRun::unlocated(vec![100, 101]);
+                draft.layout_fixture_references();
+                draft.paired_byte_offset = draft.paired_byte_offset.max(draft.kind_offset + 96);
+                draft.frame_length = draft.paired_byte_offset - draft.byte_offset;
+                draft.layout_fixture_tail();
+            })
+            .unwrap();
+        native.design_parameter_scopes = vec![scope];
+        native.design_construction_operand_groups[0].operand_role =
+            DesignConstructionOperandRole::Other(DesignOperandRole::ROLE_0X10);
+        let ctx = super::super::Ctx::new(&ir, &native, decode);
+        let mut findings = Vec::new();
+        super::super::validate_construction_operand_groups(&ctx, &mut findings);
+        assert!(findings.is_empty(), "{findings:?}");
+        native.design_construction_operand_groups[0].operand_role =
+            DesignConstructionOperandRole::Other(DesignOperandRole::ROLE_0X5);
         let ctx = super::super::Ctx::new(&ir, &native, decode);
         super::super::validate_construction_operand_groups(&ctx, &mut findings);
         assert_eq!(findings.len(), 1);

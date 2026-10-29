@@ -1179,3 +1179,123 @@ fn compact_planar_line_reads_sub_resolution_z_noise_as_zero() {
             .is_none()
     );
 }
+
+fn member_run_test_entity() -> DesignEntityHeader {
+    DesignEntityHeader {
+        id: "f3d:Design/BulkStream.dat:design-entity-header#0".into(),
+        byte_offset: Some(0),
+        entity_id: crate::records::identity::DesignEntityId::try_from("0_173".to_owned())
+            .expect("valid entity ID"),
+        class_tag: crate::records::references::DesignClassTag::try_from("281".to_owned()).unwrap(),
+        optional_slot_present: Some(false),
+        registration: crate::records::entity_header::DesignEntityRegistration::new(
+            Some(DESIGN_MODULE_SKETCH.to_owned()),
+            None,
+            crate::records::identity::ReferenceRun::unlocated(Vec::new()),
+        )
+        .expect("valid module registration"),
+    }
+}
+
+fn member_run_test_scope(
+    record_index: u32,
+    byte_offset: u64,
+    bound_entity: Option<&str>,
+) -> crate::records::feature::scope::DesignParameterScope {
+    use crate::records::feature::scope::{
+        DesignFeatureKind, DesignParameterScope, DesignParameterScopeDraft, DesignScopePayloadMut,
+        DesignSketchEntityBinding,
+    };
+    use crate::records::identity::ReferenceRun;
+    use crate::records::references::DesignClassTag;
+
+    let mut scope = DesignParameterScope::try_new(
+        DesignParameterScopeDraft {
+            id: format!("f3d:Design/BulkStream.dat:design-parameter-scope#{byte_offset}"),
+            byte_offset,
+            class_tag: DesignClassTag::try_from("395".to_owned()).unwrap(),
+            record_index,
+            frame_length: 200,
+            kind_offset: byte_offset + 110,
+            feature_ordinal: std::num::NonZeroU32::MIN,
+            feature_ordinal_offset: 0,
+            history_state_id: None,
+            previous_history_state_id: None,
+            previous_history_state_id_offset: None,
+            reference_count_offset: byte_offset + 80,
+            reference_members: ReferenceRun::from_columns(
+                vec![record_index + 1],
+                vec![byte_offset + 85],
+                "reference_members",
+            )
+            .unwrap(),
+            payload: DesignFeatureKind::Skizze.try_into().unwrap(),
+            unclosed_construction_operand_groups: Vec::new(),
+            paired_class_tag: DesignClassTag::try_from("261".to_owned()).unwrap(),
+            paired_byte_offset: byte_offset + 200,
+        }
+        .with_fixture_layout(),
+    )
+    .unwrap();
+    if let (Some(entity_id), DesignScopePayloadMut::Skizze(slot)) =
+        (bound_entity, scope.payload_mut())
+    {
+        *slot = Some(DesignSketchEntityBinding {
+            entity_id: crate::records::identity::DesignEntityId::try_from(entity_id.to_owned())
+                .expect("valid entity ID"),
+            entity_reference_offset: Some(byte_offset + 90),
+        });
+    }
+    scope
+}
+
+#[test]
+fn member_run_sketch_scope_prefers_the_scope_bound_to_the_entity() {
+    let entity = member_run_test_entity();
+    let stream = "f3d:Design/BulkStream.dat";
+    let owner_before = |scopes: &[crate::records::feature::scope::DesignParameterScope],
+                        next_entity_offset| {
+        crate::design::decode::sketch::member_run_sketch_scope(
+            scopes,
+            stream,
+            &entity,
+            next_entity_offset,
+        )
+        .map(|scope| scope.record_index)
+    };
+    let owner = |scopes: &[crate::records::feature::scope::DesignParameterScope]| {
+        owner_before(scopes, None)
+    };
+    assert_eq!(
+        owner(&[
+            member_run_test_scope(178, 1000, Some("0_173")),
+            member_run_test_scope(956, 5000, None),
+        ]),
+        Some(178)
+    );
+    assert_eq!(
+        owner(&[
+            member_run_test_scope(178, 1000, None),
+            member_run_test_scope(956, 5000, None),
+        ]),
+        None
+    );
+    assert_eq!(
+        owner_before(
+            &[member_run_test_scope(178, 1000, Some("0_999"))],
+            Some(2000)
+        ),
+        None
+    );
+    assert_eq!(
+        owner_before(
+            &[
+                member_run_test_scope(178, 1000, Some("0_999")),
+                member_run_test_scope(956, 1500, None),
+            ],
+            Some(2000)
+        ),
+        Some(956)
+    );
+    assert_eq!(owner(&[member_run_test_scope(178, 1000, None)]), Some(178));
+}

@@ -8,9 +8,14 @@ fn placement_table() -> crate::xref::XrefTable {
     crate::xref::XrefTable {
         designs: Vec::new(),
         references: vec![crate::records::xref::XrefReference {
+            current_pose: None,
+            operation_pose: None,
+            contained_poses: Vec::new(),
+            owned_poses: Vec::new(),
             id: "f3d:xref:reference#4-occurrence-0".into(),
             ordinal: 4,
             occurrence_ordinal: 0,
+            placement_source: None,
             from: "root.f3d".to_owned().try_into().unwrap(),
             relative_path: "part.f3d".to_owned().try_into().unwrap(),
             neutron_role: "role-guid".to_owned().try_into().unwrap(),
@@ -23,6 +28,7 @@ fn placement_table() -> crate::xref::XrefTable {
             ordinal: 4,
             count: 2,
         }],
+        ..Default::default()
     }
 }
 

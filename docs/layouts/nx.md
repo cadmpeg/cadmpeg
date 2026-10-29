@@ -791,17 +791,6 @@ Unstated regions:
 
 - `0..4` (4 B): Type tag and the encoded XMT identity.
 
-## `nurbs_control_array_count_prefix`
-
-Spec §4.2 · layout: byte offsets · size: 6 B
-
-Relative to the type tag without the optional ff envelope. The variable-width XMT identity follows this prefix at offset 6.
-
-| Offset | Size | Field | Type | Endian | Src | Meaning |
-| -----: | ---: | ----- | ---- | ------ | --- | ------- |
-| 0 | 2 | `type_tag` | `u16` | big | spec | `002d [ff], count:u32 BE, xmt, value[count]:f64 BE` · value `45` |
-| 2 | 4 | `count` | `u32` | big | spec | Without the optional envelope, the count starts at offset 2 and the XMT |
-
 ## `nurbs_knot_array_count_prefix`
 
 Spec §9.3 · layout: byte offsets · size: 6 B
@@ -944,11 +933,33 @@ Parsed by:
 | -----: | ---: | ----- | ---- | ------ | --- | ------- |
 | 0 | 2 | `reference_frame` | `bytes[2]` | big | spec | three-coordinate tuples followed by the fixed two-byte prefix `01 03` · value `[1, 3]` |
 
+## `deltas_section_terminator`
+
+Spec §4.2 · layout: byte offsets · size: 4 B
+
+Closes the enclosing leading, map, or PMARK section. In the exact final position after a map section, the same bytes form FinalTerminator.
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 4 | `terminator` | `bytes[4]` | big | spec | After the prefix, sections have this grammar. `T` is `00 01 00 01`. · value `[0, 1, 0, 1]` |
+
+## `deltas_map_tail`
+
+Spec §4.2 · layout: byte offsets · size: 6 B
+
+Relative to the endpoint of the variable-width nonnull XMT/kind pairs. The terminal word is below 0x8000 and does not frame nodes or select a state.
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 2 | `null_xmt` | `u16` | big | spec | XMT at `+0`, zero at `+2`, and terminal word at `+4`, relative to the end of the · value `1` |
+| 2 | 2 | `zero` | `u16` | big | spec | XMT at `+0`, zero at `+2`, and terminal word at `+4`, relative to the end of the · value `0` |
+| 4 | 2 | `terminal_word` | `u16` | big | spec | XMT at `+0`, zero at `+2`, and terminal word at `+4`, relative to the end of the |
+
 ## Not tabulated
 
 | Area | Spec | Reason |
 | ---- | ---- | ------ |
 | OM record grammars (§7.1) | §3.3 | About sixty fixed-literal token grammars with sequential field positions but no stated absolute offsets. They are slot layouts over a variable-width compact-index lane, so no byte arithmetic closes. |
-| `b5`-style deltas record grammars (§4.2, §9.2-§9.4) | §4.2 | Every reference slot is a variable-width encoded XMT index followed by a status byte, so field positions shift per record. Effective schema programs determine field order and variable extents, so these productions have no fixed byte offsets. |
+| Deltas physical record grammars (§4.2) | §4.2 | Effective schema plans determine ordinary-node field order and variable extents. Status-free PARTITION/PMARK prefixes and enclosing sections have distinct grammars; one fixed layout does not describe these productions. |
 | Int32 Compressed Data Packet Mk. 2 (§2.3) | §2.3 | A most-significant-bit-first bit stream with `u6` and `u3` sub-fields; there are no byte offsets to state. |
 | B_SURFACE and B_CURVE counted payload and reference tails (§6.2) | §6.2 | Types 125-128 and 135-136 carry counted arrays and variable-width reference tails whose element counts and XMT widths drive every later position. The fixed descriptor prefixes are tabulated above. |

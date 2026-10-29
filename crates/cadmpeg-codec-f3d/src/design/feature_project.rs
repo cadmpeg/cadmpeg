@@ -567,6 +567,7 @@ pub(crate) struct ProjectedParameterDesign {
     /// `BaseFlange` scopes projected with their stored thickness copy because
     /// their sheet-metal rule states no thickness.
     pub(crate) unruled_flange_thicknesses: usize,
+    pub(crate) hole_extent_losses: Vec<cadmpeg_ir::report::loss::LossNote>,
 }
 
 impl ProjectedParameterDesign {
@@ -617,6 +618,7 @@ pub(crate) fn project_parameter_design_with_edge_identities(
         sheet_metal_settings,
         ..
     } = inputs;
+    let mut hole_extent_losses = Vec::new();
     let unruled_flange_thicknesses = std::cell::Cell::new(0_usize);
 
     let source_ordinals = authored_scope_ordinals(scopes, timelines)?;
@@ -865,8 +867,10 @@ pub(crate) fn project_parameter_design_with_edge_identities(
                         })
                     })
                 }
-                Some(DesignFeatureFamily::Hole) => project_hole(scope, &parameters, face_operands)?
-                    .map_or_else(|| native_scope_definition(scope, &parameters), Ok)?,
+                Some(DesignFeatureFamily::Hole) => {
+                    project_hole(scope, &parameters, face_operands, &mut hole_extent_losses)?
+                        .map_or_else(|| native_scope_definition(scope, &parameters), Ok)?
+                }
                 Some(DesignFeatureFamily::Split) => {
                     project_split(scope, construction_groups, face_operands)?.unwrap_or_else(|| {
                         FeatureDefinition::Operation(FeatureOperation::Native {
@@ -1284,7 +1288,11 @@ pub(crate) fn project_parameter_design_with_edge_identities(
                 needs_recompute: false,
                 id: scope_ids[&(native_scope, scope.record_index)].clone(),
                 ordinal: source_ordinals[&(native_scope, scope.record_index)],
-                name: Some(format!("{} {}", scope.kind_name(), scope.feature_ordinal)),
+                name: Some(format!(
+                    "{} {}",
+                    scope.source_kind_name(),
+                    scope.feature_ordinal
+                )),
                 suppressed: Some(
                     matches!(
                         family,
@@ -1305,7 +1313,7 @@ pub(crate) fn project_parameter_design_with_edge_identities(
                 } else {
                     BTreeMap::new()
                 },
-                source_tag: Some(scope.kind_name().to_owned()),
+                source_tag: Some(scope.source_kind_name().to_owned()),
                 source_text: None,
                 source_content: cadmpeg_ir::features::FeatureContent::default(),
 
@@ -1640,7 +1648,7 @@ pub(crate) fn project_parameter_design_with_edge_identities(
             .map_err(CodecError::malformed)?;
     }
     let unordered_parameter_scopes =
-        normalize_parameter_ordinals(&mut parameters, &parameter_owners);
+        normalize_parameter_ordinals(&mut parameters, &parameter_owners)?;
     validate_projected_feature_identities(&features)?;
     parameters.sort_by(|a, b| a.id.cmp(&b.id));
     Ok(ProjectedParameterDesign {
@@ -1648,6 +1656,7 @@ pub(crate) fn project_parameter_design_with_edge_identities(
         parameters,
         unordered_parameter_scopes,
         unruled_flange_thicknesses: unruled_flange_thicknesses.get(),
+        hole_extent_losses,
     })
 }
 
@@ -2005,6 +2014,25 @@ fn project_work_point_construction(
     })
 }
 
+/// Millimetres per Design length unit (centimetre).
+const DESIGN_LENGTH_TO_MM: f64 = 10.0;
+
+/// The millimetre datum frame of a solved `WorkPlane` matrix: column 0 is the
+/// u-axis, column 2 the normal, and column 3 the origin in centimetres.
+pub(crate) fn work_plane_datum_frame(
+    transform: [[f64; 4]; 4],
+) -> Option<cadmpeg_ir::features::FeatureDatumPlaneFrame> {
+    cadmpeg_ir::features::FeatureDatumPlaneFrame::new(
+        Point3::new(
+            transform[0][3] * DESIGN_LENGTH_TO_MM,
+            transform[1][3] * DESIGN_LENGTH_TO_MM,
+            transform[2][3] * DESIGN_LENGTH_TO_MM,
+        ),
+        Vector3::new(transform[0][2], transform[1][2], transform[2][2]),
+        Vector3::new(transform[0][0], transform[1][0], transform[2][0]),
+    )
+}
+
 fn project_work_plane(
     scope: &DesignParameterScope,
     transform: [[f64; 4]; 4],
@@ -2013,15 +2041,7 @@ fn project_work_plane(
         FeatureDefinition, FeatureOperation, UnresolvedFamily, VertexSelection,
     };
 
-    let origin = Point3::new(
-        transform[0][3] * 10.0,
-        transform[1][3] * 10.0,
-        transform[2][3] * 10.0,
-    );
-    let normal = Vector3::new(transform[0][2], transform[1][2], transform[2][2]);
-    let u_axis = Vector3::new(transform[0][0], transform[1][0], transform[2][0]);
-    let Some(frame) = cadmpeg_ir::features::FeatureDatumPlaneFrame::new(origin, normal, u_axis)
-    else {
+    let Some(frame) = work_plane_datum_frame(transform) else {
         return FeatureDefinition::Operation(FeatureOperation::Unresolved {
             family: UnresolvedFamily::DatumPlane,
         });
@@ -2111,7 +2131,15 @@ fn scope_properties(
             format!("{record_index}"),
         );
     }
-    if let Some(profile) = scope.extrude_profile().or(scope.base_flange_profile()) {
+    if let Some(profile) = scope
+        .extrude_profile()
+        .or(scope.base_flange_profile())
+        .or_else(|| {
+            scope
+                .emboss_construction()
+                .and_then(|construction| construction.sketch_profile.as_ref())
+        })
+    {
         if let Some(placement) = placements.iter().find(|placement| {
             native_stream(&placement.id) == Some(native_scope)
                 && placement.entity_id == profile.entity_id
@@ -2320,7 +2348,15 @@ fn resolved_fillet_assignments<'a>(
             assigned.push(record);
         }
     }
+    let one_shared_set = assignments.windows(2).all(|pair| {
+        pair[0].law == pair[1].law
+            && pair[0].tangency_weight_parameter_record_index
+                == pair[1].tangency_weight_parameter_record_index
+    });
     assigned.sort_unstable_by(Ord::cmp);
+    if one_shared_set {
+        assigned.dedup();
+    }
     if !assigned.iter().copied().eq(by_record.keys().copied()) {
         return None;
     }
@@ -3717,8 +3753,7 @@ fn project_base_flange(
 
 /// Project a sheet-metal `EdgeFlange` scope onto its neutral operation.
 ///
-/// The typed operation supplies the bend position, height datum, and inside
-/// radius. Owner parameters supply the height, angle, and width. A to-object
+/// Owner parameters supply the height, angle, and width. A to-object
 /// height resolves its target entity to a known neutral construction feature;
 /// otherwise the source selection remains explicit in the neutral height law.
 fn project_edge_flange(
@@ -3954,6 +3989,64 @@ fn project_edge_flange(
     if operation.selection.shape().edges().next().is_none() {
         return Ok(None);
     }
+    let bend_radius = if matches!(scope.class_tag.as_str(), "361" | "362")
+        && operation.selection.shape().edges().count() > 1
+    {
+        let mut aggregates = groups.iter().filter(|group| {
+            native_stream(&group.id) == Some(stream)
+                && group.scope_record_index == scope.record_index
+                && group.record_index == operation.selection.aggregate_group_record_index()
+        });
+        let aggregate = or_none!(aggregates.next());
+        if aggregates.next().is_some()
+            || aggregate.role() != DesignOperandRole::ROLE_0X43
+            || !aggregate
+                .members()
+                .iter()
+                .map(|member| member.value)
+                .eq(operation
+                    .selection
+                    .shape()
+                    .edges()
+                    .map(|edge| edge.aggregate_operand_record_index))
+        {
+            return Ok(None);
+        }
+        let mut matching = inputs.sheet_metal_settings.iter().filter(|settings| {
+            native_stream(settings.id()) == Some(stream)
+                && settings.record_index == u64::from(operation.settings_record_index)
+                && settings.owner_record_index == u64::from(scope.record_index)
+        });
+        let settings = or_none!(matching.next());
+        if matching.next().is_some() || settings.mask != 0 {
+            return Ok(None);
+        }
+        let thickness = or_none!(settings.rule_thickness).get() * 10.0;
+        let mut selected = operation.selection.shape().edges();
+        let first = or_none!(selected.next());
+        let second = or_none!(selected.next());
+        if selected.next().is_some() {
+            return Ok(None);
+        }
+        let slot = |edge: &crate::records::feature::sheet_metal::DesignEdgeFlangeEdge| {
+            unique_feature_match(edge_operands.iter().filter(|operand| {
+                native_stream(&operand.id) == Some(stream)
+                    && operand.scope_record_index == scope.record_index
+                    && operand.record_index() == edge.operand_record_index()
+            }))?
+            .resolved_edge_slot
+        };
+        or_none!(crate::history::edge_flange::inside_radius_for_scope(
+            scope,
+            [or_none!(slot(first)), or_none!(slot(second))],
+            thickness,
+            inputs.histories,
+        ))
+    } else {
+        or_none!(cadmpeg_ir::scalar::PositiveLength::new(
+            operation.bend_radius.get() * 10.0
+        ))
+    };
     let mut selections = Vec::new();
     for edge in operation.selection.shape().edges() {
         let mut matching = groups.iter().filter(|group| {
@@ -3966,7 +4059,11 @@ fn project_edge_flange(
         };
         if matching.next().is_some()
             || edge_group.role() != DesignOperandRole::BODIES_B
-            || edge_group.members().len() != 1
+            || !edge_group
+                .members()
+                .iter()
+                .map(|member| member.value)
+                .eq([edge.operand_record_index()])
         {
             return Ok(None);
         }
@@ -3995,10 +4092,7 @@ fn project_edge_flange(
             height_datum,
             bend_position,
             width,
-            bend_radius: (or_none!(cadmpeg_ir::scalar::PositiveLength::new(
-                operation.bend_radius.get() * 10.0,
-            )))
-            .into(),
+            bend_radius: bend_radius.into(),
         },
     )))
 }
@@ -4576,7 +4670,7 @@ pub(crate) const PARAMETER_ORDER_WORK: usize = 1 << 22;
 fn normalize_parameter_ordinals(
     parameters: &mut [cadmpeg_ir::features::DesignParameter],
     owners: &HashMap<cadmpeg_ir::features::ParameterId, Option<cadmpeg_ir::features::FeatureId>>,
-) -> usize {
+) -> Result<usize, CodecError> {
     let mut groups = HashMap::<Option<cadmpeg_ir::features::FeatureId>, Vec<usize>>::new();
     for (index, parameter) in parameters.iter().enumerate() {
         if let Some(indices) = groups.get_mut(&parameter.owner) {
@@ -4596,18 +4690,18 @@ fn normalize_parameter_ordinals(
             owner.as_ref(),
             &indices,
             &cadmpeg_core::decode::WorkBudget::new(PARAMETER_ORDER_WORK),
-        ) {
+        )? {
             unordered_scopes += 1;
         }
     }
-    unordered_scopes
+    Ok(unordered_scopes)
 }
 
 /// Order parameters by same-scope dependencies where possible. Cycles retain
 /// every edge and use their first authored member for deterministic ordering.
 ///
 /// Returns `false` when the ordering exhausts `budget`. The scope then keeps
-/// its source ordinals and all expression references. Decode reports the
+/// its unique ordinal slots and all expression references. Decode reports the
 /// skipped ordering as `parameter.order-budget-exceeded`.
 fn order_parameter_scope(
     parameters: &mut [cadmpeg_ir::features::DesignParameter],
@@ -4615,12 +4709,27 @@ fn order_parameter_scope(
     owner: Option<&cadmpeg_ir::features::FeatureId>,
     indices: &[usize],
     budget: &cadmpeg_core::decode::WorkBudget,
-) -> bool {
+) -> Result<bool, CodecError> {
+    let mut source_order = indices.to_vec();
+    source_order.sort_unstable_by(|a, b| {
+        let a = &parameters[*a];
+        let b = &parameters[*b];
+        (a.ordinal, &a.id).cmp(&(b.ordinal, &b.id))
+    });
     let mut ordinals = Vec::new();
-    for index in indices {
-        ordinals.push(parameters[*index].ordinal);
+    let mut previous: Option<u32> = None;
+    for index in source_order {
+        let parameter = &mut parameters[index];
+        if let Some(previous) = previous {
+            if parameter.ordinal <= previous {
+                parameter.ordinal = previous
+                    .checked_add(1)
+                    .ok_or_else(|| CodecError::malformed("Design parameter ordinal exceeds u32"))?;
+            }
+        }
+        ordinals.push(parameter.ordinal);
+        previous = Some(parameter.ordinal);
     }
-    ordinals.sort_unstable_by(Ord::cmp);
     let mut unresolved = HashSet::new();
     for index in indices {
         // discarded-value: each parameter index occurs once in its owner group.
@@ -4648,7 +4757,7 @@ fn order_parameter_scope(
             }
         }
         if budget.exhausted() {
-            return false;
+            return Ok(false);
         }
         ready.sort_by(|a, b| {
             let pa = &parameters[*a];
@@ -4714,7 +4823,7 @@ fn order_parameter_scope(
     for (index, ordinal) in order.into_iter().zip(ordinals) {
         parameters[index].ordinal = ordinal;
     }
-    true
+    Ok(true)
 }
 
 /// Strongly connected components of the unresolved parameter graph that contain a cycle.
@@ -6175,31 +6284,49 @@ fn project_rectangular_pattern_scalars(
     use cadmpeg_ir::scalar::Length;
 
     let construction = scope.rectangular_pattern_construction()?;
-    // A scope stores one direction record per active direction or none, so
-    // the records pair with the active directions in U-then-V order.
     let mut direction_records = construction.directions().iter();
     let mut active = Vec::new();
-    for (count, extent, axis) in [
-        (construction.u_count(), construction.u_extent(), 0),
-        (construction.v_count(), construction.v_extent(), 1),
-    ] {
+    let adjacent = construction
+        .directions()
+        .first()
+        .is_some_and(|record| record.distance_type == 7);
+    for (axis, (count, extent)) in [
+        (construction.u_count(), construction.u_extent()),
+        (construction.v_count(), construction.v_extent()),
+    ]
+    .into_iter()
+    .enumerate()
+    {
         if count < 2 {
             continue;
         }
-        let direction = direction_records.next().and_then(|record| {
-            let direction = record.direction()?;
-            Some(if extent < 0.0 {
+        let stored_direction = if axis == 1 && construction.secondary_direction().is_some() {
+            construction.secondary_direction().and_then(|record| {
+                cadmpeg_ir::units::UnitVector3::normalized(Vector3::from(
+                    record.value.map(cadmpeg_ir::scalar::FiniteReal::get),
+                ))
+            })
+        } else {
+            direction_records.next().and_then(
+                crate::records::feature::patterns::DesignRectangularPatternDirection::direction,
+            )
+        };
+        let direction = stored_direction.map(|direction| {
+            if extent < 0.0 {
                 direction.negated()
             } else {
                 direction
-            })
+            }
         });
-        let distance = cadmpeg_ir::features::PatternDistance::Span {
-            distance: dimension_bindings::owner(
-                parameters,
-                construction.owner_record_indices[axis + 2],
-                Length::new(extent.abs() * 10.0)?,
-            ),
+        let distance = dimension_bindings::owner(
+            parameters,
+            construction.owner_record_indices[axis + 2],
+            Length::new(extent.abs() * 10.0)?,
+        );
+        let distance = if adjacent {
+            cadmpeg_ir::features::PatternDistance::Spacing { distance }
+        } else {
+            cadmpeg_ir::features::PatternDistance::Span { distance }
         };
         let count =
             dimension_bindings::owner(parameters, construction.owner_record_indices[axis], count);
@@ -6297,6 +6424,7 @@ fn project_rectangular_pattern_scalars(
         distance,
         count,
         second,
+        omitted_instances: Vec::new(),
     })
     .ok()?;
     Some(FeatureDefinition::Operation(FeatureOperation::Pattern {
@@ -6940,19 +7068,111 @@ fn project_boundary_fill(
     ))
 }
 
+fn hole_extent_loss(scope: &DesignParameterScope) -> cadmpeg_ir::report::loss::LossNote {
+    crate::loss::F3dLossCode::HoleExtentUnproven.note(format!(
+        "Hole {} retains its native extent because its controls, depth or face operands do not define an admitted extent.", scope.id
+    ))
+}
+
+fn hole_termination(
+    scope: &DesignParameterScope,
+    parameters: &[(u32, &DesignParameter)],
+    face_operands: &[DesignFaceOperand],
+) -> Option<cadmpeg_ir::features::LinearTermination> {
+    use cadmpeg_ir::features::LinearTermination;
+    let extent = scope.hole_extent()?;
+    let mut depths = parameters
+        .iter()
+        .filter(|(_, p)| p.source_kind() == "HoleDepth");
+    let depth = depths.next();
+    if depths.next().is_some() {
+        return None;
+    }
+    match extent.extent_control {
+        Some(0) | None => {
+            let depth = depth?.1;
+            design_positive_length(depth)?;
+            Some(LinearTermination::Blind {
+                length: dimension_bindings::parameter(depth),
+            })
+        }
+        Some(1)
+            if extent.saved_non_distance_depth.is_some()
+                && depth.is_none()
+                && hole_start_faces_only(scope, face_operands)? =>
+        {
+            Some(LinearTermination::ThroughAll {})
+        }
+        _ => None,
+    }
+}
+
+/// Whether the face operands of a Hole scope name at most its start face: no
+/// operand (a sketch-point Hole), or a direct `face` or `bounded_face` recipe
+/// followed by a `bounded_face` recipe, each bound to its scope reference entry.
+/// A further face operand or a direct persistent face selection can name an
+/// extent face, so it refuses the form.
+fn hole_start_faces_only(
+    scope: &DesignParameterScope,
+    face_operands: &[DesignFaceOperand],
+) -> Option<bool> {
+    use crate::records::recipes::ConstructionRecipeKind;
+    let stream = native_stream(&scope.id)?;
+    if scope
+        .hole_construction()
+        .is_some_and(|construction| construction.face_selection.is_some())
+    {
+        return Some(false);
+    }
+    let mut faces: Vec<_> = face_operands
+        .iter()
+        .filter(|operand| {
+            native_stream(&operand.id) == Some(stream)
+                && operand.scope_record_index == scope.record_index
+        })
+        .collect();
+    faces.sort_by_key(|operand| operand.scope_reference_ordinal);
+    let [first, second] = faces.as_slice() else {
+        return Some(faces.is_empty());
+    };
+    let bound = |operand: &DesignFaceOperand| {
+        operand.group_record_index().is_none()
+            && usize::try_from(operand.scope_reference_ordinal)
+                .ok()
+                .and_then(|ordinal| scope.reference_members().values().nth(ordinal))
+                == Some(&operand.record_index())
+    };
+    Some(
+        first.scope_reference_ordinal < second.scope_reference_ordinal
+            && matches!(
+                first.recipe_kind,
+                ConstructionRecipeKind::Face | ConstructionRecipeKind::BoundedFace
+            )
+            && second.recipe_kind == ConstructionRecipeKind::BoundedFace
+            && bound(first)
+            && bound(second),
+    )
+}
+
 fn project_hole(
     scope: &DesignParameterScope,
     parameters: &[(u32, &DesignParameter)],
     face_operands: &[DesignFaceOperand],
+    losses: &mut Vec<cadmpeg_ir::report::loss::LossNote>,
 ) -> Result<Option<cadmpeg_ir::features::FeatureDefinition>, CodecError> {
     use cadmpeg_ir::features::{
         holes::{HoleBottom, HoleKind},
         FaceSelection, FeatureDefinition, FeatureOperation, LinearTermination,
     };
 
-    if scope.kind() != crate::records::feature::scope::DesignFeatureKind::Hole
-        || !matches!(parameters.len(), 3 | 5)
-    {
+    if scope.kind() != crate::records::feature::scope::DesignFeatureKind::Hole {
+        return Ok(None);
+    }
+    let Some(extent) = hole_termination(scope, parameters, face_operands) else {
+        losses.push(hole_extent_loss(scope));
+        return Ok(None);
+    };
+    if !matches!(parameters.len(), 2..=5) {
         return Ok(None);
     }
     let parameter = |source_kind: &str| {
@@ -6963,20 +7183,27 @@ fn project_hole(
         let parameter = matches.next()?;
         matches.next().is_none().then_some(parameter)
     };
-    let depth = or_none!(design_positive_length(or_none!(parameter("HoleDepth"))));
+    let depth = match &extent {
+        LinearTermination::Blind { .. } => {
+            Some(or_none!(design_positive_length(or_none!(parameter("HoleDepth")))).get())
+        }
+        _ => None,
+    };
+    let base_count = if depth.is_some() { 3 } else { 2 };
     let diameter = or_none!(design_positive_length(or_none!(parameter("HoleDiameter"))));
     let tip_angle = or_none!(design_angle(or_none!(parameter("TipAngle"))));
     if tip_angle.get() <= 0.0 || tip_angle.get() > std::f64::consts::PI {
         return Ok(None);
     }
-    let counterbore = match parameters.len() {
-        3 => None,
-        5 => {
+    let counterbore = match parameters.len().checked_sub(base_count) {
+        Some(0) => None,
+        Some(2) => {
             let counterbore_depth =
                 or_none!(design_positive_length(or_none!(parameter("CBDepth"))));
             let counterbore_diameter =
                 or_none!(design_positive_length(or_none!(parameter("CBDiameter"))));
-            if counterbore_depth.get() > depth.get() || counterbore_diameter.get() <= diameter.get()
+            if depth.is_some_and(|depth| counterbore_depth.get() > depth)
+                || counterbore_diameter.get() <= diameter.get()
             {
                 return Ok(None);
             }
@@ -6993,7 +7220,10 @@ fn project_hole(
             HoleKind::SimpleDrilled {
                 drill_point_angle: (dimension_bindings::parameter(or_none!(parameter("TipAngle")))),
             },
-            None,
+            Some(HoleBottom::Angled {
+                included_angle: dimension_bindings::parameter(or_none!(parameter("TipAngle"))),
+                depth_to_tip: false,
+            }),
         ),
         (Some((_diameter, _depth)), None) => (
             HoleKind::Counterbore {
@@ -7008,7 +7238,10 @@ fn project_hole(
                 depth: dimension_bindings::parameter(or_none!(parameter("CBDepth"))),
                 drill_point_angle: (dimension_bindings::parameter(or_none!(parameter("TipAngle")))),
             },
-            None,
+            Some(HoleBottom::Angled {
+                included_angle: dimension_bindings::parameter(or_none!(parameter("TipAngle"))),
+                depth_to_tip: false,
+            }),
         ),
     };
     let face = match resolved_direct_face_selection(scope, face_operands)? {
@@ -7049,9 +7282,7 @@ fn project_hole(
         )
         .ok()),
 
-        extent: Some(LinearTermination::Blind {
-            length: dimension_bindings::parameter(or_none!(parameter("HoleDepth"))),
-        }),
+        extent: Some(extent),
         bottom,
         taper_angle: None,
         allow_multi_profile_faces: None,
@@ -7347,7 +7578,7 @@ pub(super) fn project_split(
     Ok(Some(FeatureDefinition::Operation(
         FeatureOperation::SplitBody {
             targets: BodySelection::Native(targets.id.clone()),
-            tools,
+            tool: cadmpeg_ir::features::SplitBodyTool::Faces(tools),
         },
     )))
 }
@@ -7827,10 +8058,17 @@ fn project_extrude(
     let face_side_one_offset =
         side_one_offset.or_else(|| omitted_zero_side_one_offset.then_some(Length::ZERO));
     let effective_side_one_offset = side_one_offset.filter(|offset| offset.get() != 0.0);
-    let side_two_offset = match or_none!(unique("Side2Offset")) {
+    let parameter_side_two_offset = match or_none!(unique("Side2Offset")) {
         Some(parameter) => Some(or_none!(design_length(parameter))),
         None => None,
     };
+    let side_two_offset = or_none!(offset(
+        parameter_side_two_offset,
+        or_none!(fixed_length(
+            fixed_lanes.and_then(|fixed| fixed.side_two_offset.as_ref())
+        )),
+    )
+    .ok());
     let effective_side_two_offset = side_two_offset.filter(|offset| offset.get() != 0.0);
     if effective_side_two_offset.is_some()
         && !matches!(

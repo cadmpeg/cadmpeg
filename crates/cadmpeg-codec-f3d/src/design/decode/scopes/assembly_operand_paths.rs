@@ -6,6 +6,7 @@ use super::shared_frames::exact_indexed_header_at;
 use super::shared_frames::exact_same_segment_record_reference;
 use super::shared_frames::rigid_transform_at;
 use crate::bytes::lp_ascii_filtered_view;
+use crate::design::assembly::RigidGroupLocatorLayout;
 use crate::design::decode::sketch::next_indexed_record_offset;
 use crate::design::decode::sketch::IndexedRecordOffsets;
 use crate::design::decode::text::fixed_relaxed_guid_text;
@@ -13,7 +14,9 @@ use crate::layout::assembly_operand_path_locator as path_locator;
 use crate::layout::assembly_operand_path_locator_reference_run as path_locator_run;
 use crate::layout::assembly_operand_path_wrapper as path_wrapper;
 use crate::layout::assembly_variable_reference_operand_path_locator as variable_path_locator;
+use crate::layout::assembly_wide_operand_path_identity_locator as wide_identity;
 use crate::layout::assembly_wide_operand_path_locator as wide_locator;
+use crate::layout::assembly_wide_operand_path_matrix_locator as wide_matrix;
 use crate::records::feature::assembly::DesignAssemblyOperandPath;
 use crate::records::feature::assembly::DesignAssemblyOperandPathLink;
 use crate::records::feature::assembly::TYPED_OCCURRENCE_PATH_TYPE_GUID;
@@ -40,32 +43,27 @@ pub(super) fn exact_assembly_operand_paths<'a>(
         let search_start = usize::try_from(scope.paired_byte_offset()?)
             .ok()?
             .checked_add(11)?;
-        let locator_offsets = crate::design::assembly::AssemblyScopeGeneration::new(
-            scope.frame_length()?,
-            scope.class_tag.as_str(),
-            scope.paired_class_tag.as_str(),
-        )
-        .operand_path_locator_offsets()?;
-        let count_at = scope_at.checked_add(
+        let rigid = crate::design::assembly::RigidGroupLayout::for_scope(scope);
+        let locator_offsets = crate::design::assembly::AssemblyScopeGeneration::for_scope(scope)
+            .operand_path_locator_offsets()?;
+        let count_at = scope_at.checked_add(rigid.map_or(
             locator_offsets[0].checked_sub(path_locator_run::FIRST_LOCATOR_REFERENCE)?,
-        )?;
-        // A rigid group counts one locator per member; every other form has two.
-        let expected = if crate::design::assembly::rigid_as_built_scope(
-            scope.frame_length()?,
-            scope.kind() == crate::records::feature::scope::DesignFeatureKind::AsBuilt,
-        ) {
-            crate::design::assembly::rigid_group_member_count(scope.frame_length()?)?
-        } else {
-            2
-        };
+            |layout| layout.count_at,
+        ))?;
+        let expected = rigid.map_or(2, |layout| layout.members);
+        let typed_references =
+            rigid.is_some_and(|layout| layout.stride == crate::bytes::TYPED_LOCAL_REFERENCE_LEN);
         if usize::try_from(View::u32_le_at(bytes, count_at)?).ok()? != expected {
             return None;
         }
         let mut paths = [None, None];
         for (ordinal, relative_offset) in locator_offsets.into_iter().enumerate() {
             let locator_reference_at = scope_at.checked_add(relative_offset)?;
-            let (locator_record_index, _) =
-                exact_same_segment_record_reference(bytes, locator_reference_at)?;
+            let locator_record_index = crate::bytes::local_reference_target(
+                bytes,
+                locator_reference_at,
+                typed_references,
+            )?;
             let candidates = records
                 .offsets(locator_record_index)
                 .iter()
@@ -121,21 +119,24 @@ pub(super) fn exact_rigid_group_member_paths<'a>(
     stream_types: &StreamTypes<'_>,
     leading: &[ParsedOperandPath<'a>; 2],
 ) -> Result<Option<Vec<ParsedOperandPath<'a>>>, CodecError> {
-    use crate::layout::assembly_rigid_as_built_scope as rigid;
     let bytes = source.window();
     (|| {
-        let members = crate::design::assembly::rigid_group_member_count(scope.frame_length()?)?;
+        let layout = crate::design::assembly::RigidGroupLayout::for_scope(scope)?;
+        let typed_references = layout.stride == crate::bytes::TYPED_LOCAL_REFERENCE_LEN;
         let scope_at = usize::try_from(scope.byte_offset()?).ok()?;
         let search_start = usize::try_from(scope.paired_byte_offset()?)
             .ok()?
             .checked_add(11)?;
         let mut paths = Vec::new();
-        for member in 2..members {
+        for member in 2..layout.members {
             let locator_reference_at = scope_at
-                .checked_add(rigid::FIRST_LOCATOR_REFERENCE)?
-                .checked_add(member.checked_mul(11)?)?;
-            let (locator_record_index, _) =
-                exact_same_segment_record_reference(bytes, locator_reference_at)?;
+                .checked_add(layout.first_reference)?
+                .checked_add(member.checked_mul(layout.stride)?)?;
+            let locator_record_index = crate::bytes::local_reference_target(
+                bytes,
+                locator_reference_at,
+                typed_references,
+            )?;
             let mut candidate = None;
             for locator_at in records
                 .offsets(locator_record_index)
@@ -189,25 +190,39 @@ fn exact_assembly_operand_path_envelope<'a>(
     let bytes = source.window();
     (|| {
         let locator_class_tag = exact_indexed_header_at(bytes, locator_at, locator_record_index)?;
-        let variable_reference = crate::design::assembly::variable_reference_assembly_generation(
-            scope.class_tag.as_str(),
-            scope.paired_class_tag.as_str(),
-        );
-        // The wide scope's locator: its own record type and prologue.
-        let wide = (crate::design::assembly::AssemblyScopeGeneration::new(
-            scope.frame_length()?,
-            scope.class_tag.as_str(),
-            scope.paired_class_tag.as_str(),
-        )
-        .operand_frame_variant()
-        .is_some_and(crate::design::assembly::AssemblyOperandFrameVariant::is_wide_family)
-            || crate::design::assembly::wide_as_built_scope(
-                scope.frame_length()?,
-                scope.kind() == crate::records::feature::scope::DesignFeatureKind::AsBuilt,
-            ))
-            && stream_types
-                .get(&u64::from(locator_record_index))
-                .is_some_and(|(guid, _)| guid.eq_ignore_ascii_case(WIDE_PATH_LOCATOR_TYPE_GUID));
+        let variable_reference = !crate::design::assembly::rigid_as_built_scope(scope)
+            && crate::design::assembly::variable_reference_assembly_generation(
+                scope.class_tag.as_str(),
+                scope.paired_class_tag.as_str(),
+            );
+        let wide_family = crate::design::assembly::AssemblyScopeGeneration::for_scope(scope)
+            .operand_frame_variant()
+            .is_some_and(crate::design::assembly::AssemblyOperandFrameVariant::is_wide_family)
+            || crate::design::assembly::wide_as_built_scope(scope);
+        let registered_locator = stream_types
+            .get(&u64::from(locator_record_index))
+            .filter(|(guid, _)| guid.eq_ignore_ascii_case(WIDE_PATH_LOCATOR_TYPE_GUID));
+        let locator_end = next_indexed_record_offset(bytes, locator_at.checked_add(1)?)?;
+        let group_layout = if crate::design::assembly::rigid_as_built_scope(scope) {
+            Some(RigidGroupLocatorLayout::admit(
+                registered_locator.copied(),
+                locator_end.checked_sub(locator_at)?,
+            )?)
+        } else {
+            None
+        };
+        let wide = group_layout.map_or(wide_family && registered_locator.is_some(), |layout| {
+            layout.wide
+        });
+        let typed = group_layout.is_some_and(|layout| layout.typed);
+        let reference_stride = group_layout.map_or(11, RigidGroupLocatorLayout::reference_stride);
+        if let Some(layout) = group_layout {
+            if bytes.get(locator_at.checked_add(layout.identity_flag)?)?
+                != &u8::from(layout.transform.is_none())
+            {
+                return None;
+            }
+        }
         let (locator_length, scope_backlink, wrapper_reference, constant_two, zero_tail) = if wide {
             if bytes
                 .get(
@@ -233,33 +248,64 @@ fn exact_assembly_operand_path_envelope<'a>(
             {
                 return None;
             }
-            // The transform is present only when the identity flag is 0.
-            let after_transform = match bytes
+            let (offsets, separator) = match bytes
                 .get(locator_at.checked_add(wide_locator::IDENTITY_FLAG)?)?
             {
-                1 => wide_locator::TRANSFORM,
+                1 => (
+                    (
+                        wide_identity::LEN,
+                        wide_identity::SCOPE_BACKLINK,
+                        wide_identity::WRAPPER_REFERENCE,
+                        wide_identity::DISCRIMINATOR,
+                        wide_identity::ZERO_TAIL,
+                    ),
+                    wide_identity::ZERO_SEPARATOR,
+                ),
                 0 => {
                     rigid_transform_at(bytes, locator_at.checked_add(wide_locator::TRANSFORM)?)?;
-                    wide_locator::TRANSFORM + 16 * 8
+                    (
+                        (
+                            wide_matrix::LEN,
+                            wide_matrix::SCOPE_BACKLINK,
+                            wide_matrix::WRAPPER_REFERENCE,
+                            wide_matrix::DISCRIMINATOR,
+                            wide_matrix::ZERO_TAIL,
+                        ),
+                        wide_matrix::ZERO_SEPARATOR,
+                    )
                 }
                 _ => return None,
             };
-            if bytes.get(locator_at.checked_add(after_transform)?) != Some(&0) {
+            if bytes.get(locator_at.checked_add(separator)?) != Some(&0)
+                || group_layout.is_some_and(|layout| layout.offsets() != offsets)
+            {
                 return None;
             }
-            let backlink = after_transform + 1;
-            (
-                backlink + 28,
-                backlink,
-                backlink + 11,
-                backlink + 22,
-                backlink + 26,
-            )
+            offsets
+        } else if let Some(layout) = group_layout {
+            let construction_at = locator_at.checked_add(layout.construction_reference)?;
+            if bytes.get(locator_at.checked_add(path_locator::ZERO_RUN_10)?..construction_at)?
+                != [0; 10]
+                || if layout.null_construction {
+                    bytes.get(construction_at)? != &0
+                } else {
+                    crate::bytes::local_reference_target(bytes, construction_at, typed)? == 0
+                }
+                || (!typed
+                    && bytes.get(locator_at.checked_add(layout.scope_backlink.checked_sub(1)?)?)
+                        != Some(&0))
+            {
+                return None;
+            }
+            if let Some(transform) = layout.transform {
+                rigid_transform_at(bytes, locator_at.checked_add(transform)?)?;
+            }
+            layout.offsets()
         } else if variable_reference {
             if locator_class_tag != "390"
                 || bytes
                     .get(
-                        locator_at.checked_add(variable_path_locator::TRANSFORM + 16 * 8)?
+                        locator_at.checked_add(variable_path_locator::ZERO_SEPARATOR)?
                             ..locator_at.checked_add(variable_path_locator::SCOPE_BACKLINK)?,
                     )?
                     .iter()
@@ -304,14 +350,20 @@ fn exact_assembly_operand_path_envelope<'a>(
                 path_locator::ZERO_TAIL_2,
             )
         };
-        let (scope_record_index, _) =
-            exact_same_segment_record_reference(bytes, locator_at.checked_add(scope_backlink)?)?;
-        let (wrapper_record_index, _) =
-            exact_same_segment_record_reference(bytes, locator_at.checked_add(wrapper_reference)?)?;
+        let scope_record_index = crate::bytes::local_reference_target(
+            bytes,
+            locator_at.checked_add(scope_backlink)?,
+            typed,
+        )?;
+        let wrapper_record_index = crate::bytes::local_reference_target(
+            bytes,
+            locator_at.checked_add(wrapper_reference)?,
+            typed,
+        )?;
         let path_record_index = locator_record_index.checked_add(1)?;
         // A variable-reference or wide locator's path can continue over
         // further path records before its wrapper.
-        let counted_wrapper = variable_reference || wide;
+        let counted_wrapper = variable_reference || wide || group_layout.is_some();
         if scope_record_index != scope.record_index
             || if counted_wrapper {
                 !(locator_record_index.checked_add(2)?..=locator_record_index.checked_add(65)?)
@@ -327,7 +379,7 @@ fn exact_assembly_operand_path_envelope<'a>(
             return None;
         }
         let path_at = locator_at.checked_add(locator_length)?;
-        if next_indexed_record_offset(bytes, locator_at.checked_add(1)?)? != path_at {
+        if locator_end != path_at {
             return None;
         }
         if wrapper_record_index < path_record_index {
@@ -349,7 +401,8 @@ fn exact_assembly_operand_path_envelope<'a>(
         let wrapper_class_tag = exact_indexed_header_at(bytes, wrapper_at, wrapper_record_index)?;
         let wrapper_end = next_indexed_record_offset(bytes, wrapper_at.checked_add(1)?)?;
         let expected_wrapper_length = if counted_wrapper {
-            path_wrapper::LEN.checked_add(path_spans.len().checked_sub(1)?.checked_mul(11)?)?
+            path_wrapper::PATH_REFERENCE
+                .checked_add(path_spans.len().checked_mul(reference_stride)?)?
         } else {
             path_wrapper::LEN
         };
@@ -371,25 +424,21 @@ fn exact_assembly_operand_path_envelope<'a>(
         {
             return None;
         }
-        let (referenced_path_record_index, _) = exact_same_segment_record_reference(
+        let referenced_path_record_index = crate::bytes::local_reference_target(
             bytes,
             wrapper_at.checked_add(path_wrapper::PATH_REFERENCE)?,
+            typed,
         )?;
-        if referenced_path_record_index != path_record_index {
-            return None;
-        }
-        if counted_wrapper
-            && path_spans
+        if referenced_path_record_index != path_record_index
+            || path_spans
                 .iter()
-                .skip(1)
                 .enumerate()
-                .any(|(ordinal, (record_index, _, _))| {
-                    exact_same_segment_record_reference(
+                .any(|(ordinal, (index, _, _))| {
+                    crate::bytes::local_reference_target(
                         bytes,
-                        wrapper_at + path_wrapper::LEN + ordinal * 11,
-                    )
-                    .map(|reference| reference.0)
-                        != Some(*record_index)
+                        wrapper_at + path_wrapper::PATH_REFERENCE + ordinal * reference_stride,
+                        typed,
+                    ) != Some(*index)
                 })
         {
             return None;
@@ -425,7 +474,9 @@ fn exact_assembly_operand_path_envelope<'a>(
             let continues = if variable_reference {
                 continuation.content.class_tag().as_str() == "330"
             } else {
-                wide && path.content.admitted_by_type() && continuation.content.admitted_by_type()
+                (wide || group_layout.is_some())
+                    && path.content.admitted_by_type()
+                    && continuation.content.admitted_by_type()
             };
             if !continues {
                 return None;
@@ -461,7 +512,7 @@ fn exact_assembly_operand_path<'a>(
         let mut identity_guids = Vec::new();
         let mut paired_occurrence_keys = Vec::new();
         match class_tag {
-            "294" | "299" | "307" => {
+            "294" | "299" | "307" if type_guid.is_none() => {
                 let end = next_indexed_record_offset(bytes, start + 1)?;
                 if end != limit
                     || bytes.get(after_tag + 8..after_tag + 14)? != [0; 6]
@@ -517,93 +568,128 @@ fn exact_assembly_operand_path<'a>(
                     return None;
                 }
                 let count = usize::try_from(View::u32_le_at(bytes, after_tag + 14)?).ok()?;
-                if !(1..=64).contains(&count) {
-                    return None;
-                }
-
-                let mut position = after_tag + 18;
-                for _ in 0..count {
-                    let (guid, after_guid) = match crate::design::decode::text::occurrence_key_text(
-                        bytes.get(..limit)?,
-                        position,
-                    ) {
+                if count == 0 && type_guid.is_some() {
+                    use crate::layout::assembly_root_operand_path as root;
+                    if start.checked_add(root::LEN)? != limit
+                        || View::u32_le_at(bytes, start.checked_add(root::EMPTY_REFERENCE)?)? != 0
+                        || View::u64_le_at(bytes, start.checked_add(root::CONSTANT_ONE)?)? != 1
+                        || View::u32_le_at(bytes, start.checked_add(root::CONSTANT_TWO)?)? != 2
+                        || bytes.get(start.checked_add(root::ZERO_TAIL)?..limit)? != [0; 8]
+                    {
+                        return None;
+                    }
+                    let key_at = start.checked_add(root::ROOT_KEY)?;
+                    let (key, after_key) = match fixed_relaxed_guid_text(bytes, key_at) {
                         Ok(Some(value)) => value,
                         Ok(None) => return None,
                         Err(error) => return Some(Err(error)),
                     };
-                    draft.occurrence(position, after_guid)?;
-                    occurrence_guids.push(guid);
-                    position = after_guid;
-                }
-                if position == limit {
-                    if !matches!(class_tag, "329" | "330") {
+                    if key.as_str() != "00000000-0000-0000-0000-000000000000" {
                         return None;
+                    }
+                    draft.occurrence(key_at, after_key)?;
+                    occurrence_guids.push(key.into());
+                    for relative in [root::FIRST_IDENTITY, root::SECOND_IDENTITY] {
+                        let at = start.checked_add(relative)?;
+                        let (guid, after_guid) = match fixed_relaxed_guid_text(bytes, at) {
+                            Ok(Some(value)) => value,
+                            Ok(None) => return None,
+                            Err(error) => return Some(Err(error)),
+                        };
+                        draft.identity(at, after_guid)?;
+                        identity_guids.push(guid);
                     }
                 } else {
-                    for _ in 0..2 {
+                    if !(1..=64).contains(&count) {
+                        return None;
+                    }
+
+                    let mut position = after_tag + 18;
+                    for _ in 0..count {
                         let (guid, after_guid) =
-                            match fixed_relaxed_guid_text(bytes.get(..limit)?, position) {
+                            match crate::design::decode::text::occurrence_key_text(
+                                bytes.get(..limit)?,
+                                position,
+                            ) {
                                 Ok(Some(value)) => value,
                                 Ok(None) => return None,
                                 Err(error) => return Some(Err(error)),
                             };
-                        draft.identity(position, after_guid)?;
-                        identity_guids.push(guid);
+                        draft.occurrence(position, after_guid)?;
+                        occurrence_guids.push(guid);
                         position = after_guid;
                     }
-                    if View::u64_le_at(bytes, position)? != 2 {
-                        return None;
-                    }
-                    position += 8;
-                    for _ in 0..2 {
-                        let (guid, after_guid) =
-                            match fixed_relaxed_guid_text(bytes.get(..limit)?, position) {
-                                Ok(Some(value)) => value,
-                                Ok(None) => return None,
-                                Err(error) => return Some(Err(error)),
-                            };
-                        draft.identity(position, after_guid)?;
-                        identity_guids.push(guid);
-                        position = after_guid;
-                    }
-                    if View::u32_le_at(bytes, position)? != 2 {
-                        return None;
-                    }
-                    position += 4;
-                    // A typed path can end in a zero word, a pair count, and
-                    // per pair the u32 2 and two occurrence identities; a zero
-                    // tail has no pairs, and only a typed path has pairs.
-                    if !bytes.get(position..limit)?.iter().all(|byte| *byte == 0) {
-                        if type_guid.is_none() || View::u32_le_at(bytes, position)? != 0 {
+                    if position == limit {
+                        if !matches!(class_tag, "329" | "330") {
                             return None;
                         }
-                        let pairs = usize::try_from(View::u32_le_at(bytes, position + 4)?).ok()?;
-                        if !(1..=64).contains(&pairs) {
+                    } else {
+                        for _ in 0..2 {
+                            let (guid, after_guid) =
+                                match fixed_relaxed_guid_text(bytes.get(..limit)?, position) {
+                                    Ok(Some(value)) => value,
+                                    Ok(None) => return None,
+                                    Err(error) => return Some(Err(error)),
+                                };
+                            draft.identity(position, after_guid)?;
+                            identity_guids.push(guid);
+                            position = after_guid;
+                        }
+                        if View::u64_le_at(bytes, position)? != 2 {
                             return None;
                         }
                         position += 8;
-                        for _ in 0..pairs {
-                            if View::u32_le_at(bytes, position)? != 2 {
+                        for _ in 0..2 {
+                            let (guid, after_guid) =
+                                match fixed_relaxed_guid_text(bytes.get(..limit)?, position) {
+                                    Ok(Some(value)) => value,
+                                    Ok(None) => return None,
+                                    Err(error) => return Some(Err(error)),
+                                };
+                            draft.identity(position, after_guid)?;
+                            identity_guids.push(guid);
+                            position = after_guid;
+                        }
+                        if View::u32_le_at(bytes, position)? != 2 {
+                            return None;
+                        }
+                        position += 4;
+                        // A typed path can end in a zero word, a pair count, and
+                        // per pair the u32 2 and two occurrence identities; a zero
+                        // tail has no pairs, and only a typed path has pairs.
+                        if !bytes.get(position..limit)?.iter().all(|byte| *byte == 0) {
+                            if type_guid.is_none() || View::u32_le_at(bytes, position)? != 0 {
                                 return None;
                             }
-                            position += 4;
-                            for _ in 0..2 {
-                                let (key, after_key) =
-                                    match crate::design::decode::text::occurrence_key_text(
-                                        bytes.get(..limit)?,
-                                        position,
-                                    ) {
-                                        Ok(Some(value)) => value,
-                                        Ok(None) => return None,
-                                        Err(error) => return Some(Err(error)),
-                                    };
-                                draft.pair(position, after_key)?;
-                                paired_occurrence_keys.push(key);
-                                position = after_key;
+                            let pairs =
+                                usize::try_from(View::u32_le_at(bytes, position + 4)?).ok()?;
+                            if !(1..=64).contains(&pairs) {
+                                return None;
                             }
-                        }
-                        if !bytes.get(position..limit)?.iter().all(|byte| *byte == 0) {
-                            return None;
+                            position += 8;
+                            for _ in 0..pairs {
+                                if View::u32_le_at(bytes, position)? != 2 {
+                                    return None;
+                                }
+                                position += 4;
+                                for _ in 0..2 {
+                                    let (key, after_key) =
+                                        match crate::design::decode::text::occurrence_key_text(
+                                            bytes.get(..limit)?,
+                                            position,
+                                        ) {
+                                            Ok(Some(value)) => value,
+                                            Ok(None) => return None,
+                                            Err(error) => return Some(Err(error)),
+                                        };
+                                    draft.pair(position, after_key)?;
+                                    paired_occurrence_keys.push(key);
+                                    position = after_key;
+                                }
+                            }
+                            if !bytes.get(position..limit)?.iter().all(|byte| *byte == 0) {
+                                return None;
+                            }
                         }
                     }
                 }

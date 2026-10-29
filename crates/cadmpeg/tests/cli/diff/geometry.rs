@@ -61,6 +61,55 @@ fn geometry_diff_round_trip_agrees() {
     assert!(report["source_fidelity"].is_object());
 }
 
+/// Write `source` as STEP and return the export loss codes of the report.
+#[cfg(all(feature = "step", feature = "iges"))]
+fn step_export_loss_codes(source: &Path, written: &Path, report: &Path) -> Vec<String> {
+    cadmpeg()
+        .args(["convert", source.to_str().unwrap(), "-o"])
+        .arg(written)
+        .arg("--report")
+        .arg(report)
+        .assert()
+        .success();
+    let report: Value = serde_json::from_slice(&std::fs::read(report).unwrap()).unwrap();
+    report["export"]["losses"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|loss| loss["code"]["code"].as_str().unwrap().to_owned())
+        .collect()
+}
+
+/// A face whose outer boundary is the natural boundary of an IGES Type 144
+/// support keeps its domain in STEP, or STEP reports that it cannot. The
+/// unbounded plane has no finite domain: the STEP writer omits the face and
+/// reports `topology.face-implicit-outer-bound-unwritable`. The bilinear
+/// patch states its parameter rectangle: the written face measures the patch
+/// less its hole, as the source does.
+#[cfg(all(feature = "step", feature = "iges"))]
+#[test]
+fn iges_implicit_outer_face_keeps_its_domain_in_step() {
+    const UNWRITABLE: &str = "topology.face-implicit-outer-bound-unwritable";
+    let dir = tempdir().unwrap();
+
+    let plane = measure_fixture("measure_implicit_outer_plane.igs");
+    let written = dir.path().join("plane.step");
+    let codes = step_export_loss_codes(&plane, &written, &dir.path().join("plane.json"));
+    assert!(codes.iter().any(|code| code == UNWRITABLE));
+    let text = std::fs::read_to_string(&written).unwrap();
+    assert!(!text.contains("ADVANCED_FACE"));
+
+    let patch = measure_fixture("measure_implicit_outer_bspline.igs");
+    let written = dir.path().join("patch.step");
+    let codes = step_export_loss_codes(&patch, &written, &dir.path().join("patch.json"));
+    assert!(!codes.iter().any(|code| code == UNWRITABLE));
+    let (code, report) = geometry_json(patch.to_str().unwrap(), written.to_str().unwrap());
+    assert_eq!(code, Some(0));
+    let comparison = &report["geometry"]["comparison"];
+    assert_eq!(comparison["verdict"], "agree");
+    assert_eq!(comparison["pairs"].as_array().unwrap().len(), 1);
+}
+
 /// The cylinder fixture moved by +1 mm in `x`: the four points of its axis
 /// placements and vertices shift.
 #[cfg(feature = "step")]

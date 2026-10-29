@@ -59,11 +59,6 @@ impl Display for JoinedLabels<'_> {
     }
 }
 
-struct JoinedCounts<'a> {
-    counts: &'a BTreeMap<&'static str, usize>,
-    separator: &'static str,
-}
-
 struct JoinedCountLabels<'a> {
     counts: &'a BTreeMap<&'a str, usize>,
 }
@@ -91,20 +86,6 @@ impl Display for ClosureDetail<'_> {
                 formatter,
                 " Active-feature closure rejected with `{reason}`."
             )?;
-        }
-        Ok(())
-    }
-}
-
-impl Display for JoinedCounts<'_> {
-    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
-        let mut first = true;
-        for (family, count) in self.counts {
-            if !first {
-                formatter.write_str(self.separator)?;
-            }
-            write!(formatter, "{family} {count}")?;
-            first = false;
         }
         Ok(())
     }
@@ -148,7 +129,6 @@ pub(super) struct GeometryWorkLimits {
 // Keep the independent report facts explicit at the decode/report boundary.
 
 pub(super) struct GeometryReportFacts<'inputs> {
-    pub(super) unmatched_delta_tombstone_counts: &'inputs BTreeMap<&'static str, usize>,
     pub(super) counts: &'inputs Counts,
     pub(super) has_topology: bool,
     pub(super) has_unresolved_sub_bodies: bool,
@@ -282,7 +262,6 @@ pub(super) fn build_geometry_report(
     model: &crate::native::model::NativeModel,
 ) -> DecodeBody {
     let &GeometryReportFacts {
-        unmatched_delta_tombstone_counts,
         counts,
         has_topology,
         has_unresolved_sub_bodies,
@@ -329,8 +308,7 @@ pub(super) fn build_geometry_report(
             format_args!(
             "The B-rep topology graph (body→shell→face→loop→fin→edge→vertex) was not \
                       reconstructed because the surviving typed records did not form a complete \
-                      connected ownership graph. Exact-key supported partition↔deltas replacements \
-                      and deletions were applied before graph construction. Required unresolved \
+                      connected ownership graph. Graph construction used the primary input bytes. Required unresolved \
                       records prevent their dependent incidence from being emitted; decoded geometry \
                       then remains unattached.",
         )
@@ -367,50 +345,10 @@ pub(super) fn build_geometry_report(
     );
 
     if scan.count(StreamKind::Deltas) > 0 {
-        let unmatched_tombstones = unmatched_delta_tombstone_counts.values().sum::<usize>();
-        let unmatched_tombstone_detail = JoinedCounts {
-            counts: unmatched_delta_tombstone_counts,
-            separator: ", ",
-        };
-        if unmatched_tombstones == 0 {
-            push_report_loss(&mut losses, NxLossCode::DeltasApplied, format_args!(
-                "{} Parasolid deltas stream(s) were processed in validated UG_PART segment order. \
-                 Equal-schema deltas were paired with the preceding partition. Exact-key \
-                 BODY, SHELL, FACE, LOOP, FIN, EDGE, VERTEX, REGION, POINT, LINE, CIRCLE, ELLIPSE, PLANE, CYLINDER, CONE, SPHERE, TORUS, BLEND_SURF, OFFSET_SURF, B_SURFACE, TRIMMED_CURVE, B_CURVE, and SP_CURVE full records and compact \
-                 non-topology replacements and tombstones were applied using the last event for \
-                 each key within each current body-sequence interval. Type-38 records and deletion \
-                 candidates remained in the native ledger without replay; the paired partition's \
-                 current relation remained authoritative. Validated partition topology remained authoritative, including any \
-                 point, curve, or surface carrier still referenced by surviving topology. Complete \
-                 ENTITY_51, ENTITY_52, ENTITY_53, and ENTITY_54 records were retained for native \
-                 attribute extraction. Every completely bounded full record, compact tombstone, \
-                 and BODY revision envelope was retained as an individually identified native event \
-                 with its source bounds and decoded identities; BODY state tails retain exact \
-                 bounded bytes and digests. Complete transmit headers retain their description, \
-                 schema, consecutive identities, and exact bytes. Terminal two- and \
-                 four-null-reference trailers retain their exact stream boundary and bytes. \
-                 Count-selected numeric tails after \
-                 term-use endpoints were retained with their ordered finite binary64 values. Maximal \
-                 event gaps containing only typed stream-local references, framed reference/type \
-                 maps, and complete four-reference state packets, reference-marker packets, and inline schema \
-                 declarations were retained in order. \
-                 Spans outside those events were retained with exact inflated-stream bounds and \
-                 digests. Semantic intersection and NURBS records were retained in the semantic \
-                 lane. Every \
-                 terminal tombstone considered for replay resolved to an exact current or earlier-added key.",
-                scan.count(StreamKind::Deltas)
-            ));
-        } else {
-            push_report_loss(&mut losses, NxLossCode::DeltasUnmatchedTombstones, format_args!(
-                "{} Parasolid deltas stream(s) were processed in validated UG_PART segment order. \
-                    Equal-schema deltas were paired with the preceding partition. Type-38 records and deletion \
-                 candidates remained in the native ledger without replay; the paired partition's \
-                 current relation remained authoritative. Other exact-key revisions in current body-sequence intervals were applied using the last \
-                 event for each key, but {unmatched_tombstones} terminal tombstone(s) considered for replay have no exact \
-                 current or earlier-added key and remain unresolved: {unmatched_tombstone_detail}.",
-                scan.count(StreamKind::Deltas)
-            ));
-        }
+        push_report_loss(&mut losses, NxLossCode::DeltasSelectionUnresolved, format_args!(
+            "{} Parasolid Deltas stream(s) retain sequentially owned physical records and the exact suffix at the first unsupported or malformed packet. Aggregate selection is unresolved. Paired partitions retain their own semantic input; Deltas streams contribute no semantic bytes.",
+            scan.count(StreamKind::Deltas)
+        ));
     }
 
     if has_unresolved_sub_bodies {

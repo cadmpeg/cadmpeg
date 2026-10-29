@@ -166,14 +166,6 @@ fn writer_reports_unhandled_neutral_arenas_and_product_metadata() {
     ir.model
         .semantic_annotations
         .push(cadmpeg_ir::semantic_annotations::SemanticAnnotation {
-            id: cadmpeg_ir::semantic_annotations::SemanticAnnotationId::mint(
-                "test:model:semantic#note",
-            )
-            .expect("identity grammar"),
-            object: "note".into(),
-            kind: cadmpeg_ir::semantic_annotations::SemanticAnnotationKind::Text,
-            runtime_type: "TextNote".into(),
-            order: 0,
             text: vec!["inspection note".into()],
             references: std::collections::BTreeMap::new(),
             value: None,
@@ -181,13 +173,24 @@ fn writer_reports_unhandled_neutral_arenas_and_product_metadata() {
             position: None,
             parameters: std::collections::BTreeMap::new(),
             assets: Vec::new(),
-            native_ref: "native-note".into(),
+            ..cadmpeg_ir::semantic_annotations::SemanticAnnotation::new(
+                cadmpeg_ir::semantic_annotations::SemanticAnnotationId::mint(
+                    "test:model:semantic#note",
+                )
+                .expect("identity grammar"),
+                "note".into(),
+                cadmpeg_ir::semantic_annotations::SemanticAnnotationKind::Text,
+                "TextNote".into(),
+                0,
+                "native-note".into(),
+            )
         });
     let mut bom_properties = std::collections::BTreeMap::new();
     bom_properties.insert(cadmpeg_core::nonblank_literal!("stock_code"), "A-1".into());
     ir.model
         .product_definitions
         .push(cadmpeg_ir::products::ProductDefinition {
+            sketches: Vec::default(),
             id: "test:model:product#group"
                 .try_into()
                 .expect("valid identity"),
@@ -275,9 +278,11 @@ fn writer_reports_unrepresented_topology_metadata() {
     assert!(report.losses.iter().any(|loss| {
         loss.code == StepLossCode::TopologyMetadataNotRepresented.kind()
             && loss.message.contains("topology metadata")
-            && loss.message.contains("face tolerance=1")
-            && loss.message.contains("edge tolerance=1")
-            && loss.message.contains("vertex tolerance=1")
+            && loss.message.contains("face tolerance=1 (largest 0.01 mm)")
+            && loss.message.contains("edge tolerance=1 (largest 0.02 mm)")
+            && loss
+                .message
+                .contains("vertex tolerance=1 (largest 0.03 mm)")
     }));
 }
 
@@ -289,6 +294,7 @@ fn writer_reports_root_occurrence_scale() {
     ir.model
         .product_definitions
         .push(cadmpeg_ir::products::ProductDefinition {
+            sketches: Vec::default(),
             id: product.clone(),
             kind: cadmpeg_ir::products::ProductDefinitionKind::Part,
             source_name: Some("Scaled part".into()),
@@ -456,6 +462,7 @@ fn writer_reports_occurrence_with_parent_without_local_product() {
     ir.model
         .product_definitions
         .push(cadmpeg_ir::products::ProductDefinition {
+            sketches: Vec::default(),
             id: product.clone(),
             kind: cadmpeg_ir::products::ProductDefinitionKind::Part,
             source_name: Some("Child part".into()),
@@ -941,12 +948,12 @@ fn non_similarity_pcurve_replica_is_reported_and_strict_export_rejects() {
         .expect("decode sheet pcurve")
         .into_parts()
         .0;
-    // A circle under an unequal scale is neither a circle nor a similarity
-    // replica of one.
+    // A parabola under an unequal scale is not a similarity replica of one,
+    // and unlike a conic it has no exact spline export.
     ir.model.pcurves[0].geometry = cadmpeg_ir::geometry::pcurve::PcurveGeometry::Transformed(
         cadmpeg_ir::geometry::pcurve::PlacedPcurve::try_new(
-            Box::new(cadmpeg_ir::geometry::pcurve::PcurveGeometry::Circle(
-                cadmpeg_ir::geometry::pcurve::CirclePcurve::try_new(
+            Box::new(cadmpeg_ir::geometry::pcurve::PcurveGeometry::Parabola(
+                cadmpeg_ir::geometry::pcurve::ParabolaPcurve::try_new(
                     cadmpeg_ir::math::Point2::new(0.0, 0.0),
                     cadmpeg_ir::math::Point2::new(1.0, 0.0),
                     cadmpeg_ir::math::Point2::new(0.0, 1.0),

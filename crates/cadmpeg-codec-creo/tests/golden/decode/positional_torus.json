@@ -1,6 +1,7 @@
 {
   "ir": {
-    "ir_version": "8",
+    "decode_depth": "full",
+    "ir_version": "9",
     "model": {
       "appearance_bindings": [],
       "appearances": [],
@@ -19,7 +20,6 @@
             "definition": "stored_geometry"
           },
           "id": "creo:model:feature#4",
-          "needs_recompute": false,
           "ordinal": 0,
           "suppressed": false
         }
@@ -431,10 +431,6 @@
         ]
       }
     },
-    "scope": {
-      "design": true,
-      "model": true
-    },
     "source": {
       "attributes": {
         "crv_array_count": "0",
@@ -448,6 +444,7 @@
         "section.0.role": "psb-geometry",
         "section_count": "1",
         "srf_array_count": "1",
+        "unresolved_feature_state_selection_count": "0",
         "version_line": "#UGC:2 P c"
       },
       "identity": {
@@ -819,6 +816,7 @@
       "unresolved_feature_dimension_driven_variable_count": 0,
       "unresolved_feature_dimension_value_count": 0,
       "unresolved_feature_segment_geometry_count": 0,
+      "unresolved_feature_state_selection_count": 0,
       "untransferred_visible_cone_surface_row_count": 0,
       "untransferred_visible_curve_row_count": 0,
       "untransferred_visible_cylinder_surface_row_count": 0,
@@ -943,10 +941,7 @@
     ],
     "transfer": {
       "geometry_transferred": true,
-      "scope": {
-        "design": true,
-        "model": true
-      }
+      "transfer": "full"
     }
   },
   "source_fidelity": {
@@ -996,23 +991,8 @@
           "retention": "inline"
         },
         "offset": 76,
-        "stream": "creo:VisibGeom",
-        "untyped": []
-      },
-      "creo:source:image#whole": {
-        "bytes": {
-          "data": "I1VHQzoyIFAgYwojLUVORF9PRl9VR0NfSEVBREVSCiNVR0NfVE9DCnRvYyBlbnRyeSBsaW5lCiNFTkRfT0ZfVE9DX0hFQURFUgojCiNWaXNpYkdlb20Kc3JmX2FycmF5APgB4CJwAGNydl9hcnJheQDz+AAHJgQBAAAojQcb0mVvbBiUPwJwFr78ABIgRxPMRjE9cKPXCj5HE8wuE8xGML1wo9cKPiGxSArjwv8tWccP8UGNBtwgik3bGOUQKI0G3CCKTdvC/y1Zxw/xGORGML1wo9cKPhguEcwO4w==",
-          "retention": "inline"
-        },
-        "offset": 0,
-        "stream": "creo:source",
-        "untyped": [
-          "model"
-        ]
+        "stream": "creo:VisibGeom"
       }
-    },
-    "unrepresented": [
-      "model"
-    ]
+    }
   }
 }

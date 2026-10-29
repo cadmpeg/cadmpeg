@@ -556,10 +556,10 @@ fn ufrx_representation_is_admitted() {
     let arena = DecodeArena::new();
     let representation = UfrxRepresentationState {
         prefix: 0,
-        active_representation: None,
+        design_views: None,
         secondary_active_lod_state: [0; 2],
-        active_model_state: "Primary".into(),
-        active_model_state_state: [0; 2],
+        active_design_view: "Primary".into(),
+        active_design_view_state: [0; 2],
     };
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service())
         .expect("build the decode context");
@@ -602,7 +602,9 @@ fn native_validation_accepts_decoded_external_references() {
     let arena = DecodeArena::new();
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service())
         .expect("build the decode context");
-    assert!(InventorCodec.validate_native(&ctx, decoded.ir()).is_ok());
+    assert!(InventorCodec
+        .validate_native(&ctx, decoded.ir(), None)
+        .is_ok());
 }
 
 #[test]
@@ -651,10 +653,10 @@ fn rejected_representation_does_not_fail_decode() {
             .representation
             .as_mut()
             .expect("representation fixture")
-            .active_model_state
+            .active_design_view
             .clear();
     });
-    assert_ufrx_issue(&decoded.ir, "ufrx-representation", "active_model_state");
+    assert_ufrx_issue(&decoded.ir, "ufrx-representation", "active_design_view");
     let namespace = decoded
         .ir
         .native
@@ -831,10 +833,10 @@ fn decode_ufrx(edit: impl FnOnce(&mut UfrxDocument<'_>)) -> Decoded {
         caption: "part".into(),
         representation: Some(UfrxRepresentationState {
             prefix: 0,
-            active_representation: None,
+            design_views: Some(Vec::new()),
             secondary_active_lod_state: [0; 2],
-            active_model_state: "Primary".into(),
-            active_model_state_state: [0; 2],
+            active_design_view: "Primary".into(),
+            active_design_view_state: [0; 2],
         }),
         model_states: vec![UfrxModelState {
             prefix: 0,
@@ -999,7 +1001,7 @@ fn malformed_optional_ufrx_is_a_warning_without_weakening_required_links() {
         .expect("bounded optional table");
     let ctx = crate::native::test_ctx();
     let findings = InventorCodec
-        .validate_native(&ctx, decoded.ir())
+        .validate_native(&ctx, decoded.ir(), None)
         .expect("validation");
     let finding = findings
         .iter()
@@ -1013,7 +1015,7 @@ fn malformed_optional_ufrx_is_a_warning_without_weakening_required_links() {
         .arenas_mut()
         .remove("segment_pairs");
     let findings = InventorCodec
-        .validate_native(&ctx, &broken)
+        .validate_native(&ctx, &broken, None)
         .expect("required arena validation");
     assert!(findings.iter().any(
         |finding| finding.severity == cadmpeg_ir::report::Severity::Error

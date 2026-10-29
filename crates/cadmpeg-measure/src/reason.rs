@@ -343,6 +343,8 @@ impl Serialize for UnavailableReason {
 pub enum CaveatCode {
     /// A ring's listed coedge order is not its traversal order.
     BoundaryRingOrder,
+    /// A coedge's pcurve uses are listed from its end to its start.
+    BoundaryPcurveOrder,
     /// The face's region and normal rest on its declared orientation and no
     /// witness confirms it.
     OrientationUnconfirmed,
@@ -354,8 +356,9 @@ pub enum CaveatCode {
 
 impl CaveatCode {
     /// Every caveat, in declaration order.
-    pub const ALL: [Self; 4] = [
+    pub const ALL: [Self; 5] = [
         Self::BoundaryRingOrder,
+        Self::BoundaryPcurveOrder,
         Self::OrientationUnconfirmed,
         Self::MeasureProvenanceNotRecorded,
         Self::MeasureGeometryNotTransferred,
@@ -366,6 +369,7 @@ impl CaveatCode {
     pub const fn code(self) -> &'static str {
         match self {
             Self::BoundaryRingOrder => "boundary.ring-order",
+            Self::BoundaryPcurveOrder => "boundary.pcurve-order",
             Self::OrientationUnconfirmed => "orientation.unconfirmed",
             Self::MeasureProvenanceNotRecorded => "measure.provenance-not-recorded",
             Self::MeasureGeometryNotTransferred => "measure.geometry-not-transferred",
@@ -376,7 +380,9 @@ impl CaveatCode {
     #[must_use]
     pub const fn category(self) -> Category {
         match self {
-            Self::BoundaryRingOrder | Self::MeasureGeometryNotTransferred => Category::Input,
+            Self::BoundaryRingOrder
+            | Self::BoundaryPcurveOrder
+            | Self::MeasureGeometryNotTransferred => Category::Input,
             Self::OrientationUnconfirmed => Category::Unsupported,
             Self::MeasureProvenanceNotRecorded => Category::Undefined,
         }
@@ -545,6 +551,7 @@ mod tests {
     fn caveat_codes_are_pinned() {
         let expected = [
             ("boundary.ring-order", "input"),
+            ("boundary.pcurve-order", "input"),
             ("orientation.unconfirmed", "unsupported"),
             ("measure.provenance-not-recorded", "undefined"),
             ("measure.geometry-not-transferred", "input"),

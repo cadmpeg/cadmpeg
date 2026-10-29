@@ -40,6 +40,11 @@ cadmpeg_core::named_optional_field!(
     DesignFixedExtrudeScalar,
     "side_one_offset"
 );
+cadmpeg_core::named_optional_field!(
+    deserialize_side_two_offset,
+    DesignFixedExtrudeScalar,
+    "side_two_offset"
+);
 /// One exact scalar carrier used by an Extrude scope.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub(crate) struct DesignFixedExtrudeScalar<T = FiniteReal> {
@@ -150,7 +155,7 @@ mod tests {
 }
 
 /// Exact fixed scalar lanes carried by an Extrude scope.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
 pub(crate) struct DesignFixedExtrudeParameters {
     /// First-side distance carrier in source centimetres.
     #[serde(
@@ -197,6 +202,13 @@ pub(crate) struct DesignFixedExtrudeParameters {
         deserialize_with = "deserialize_side_one_offset"
     )]
     pub(crate) side_one_offset: Option<DesignFixedExtrudeScalar>,
+    /// Second-side termination offset in source centimetres.
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_side_two_offset"
+    )]
+    pub(crate) side_two_offset: Option<DesignFixedExtrudeScalar>,
 }
 
 /// Exact fixed scalar lanes carried by a Fillet scope.

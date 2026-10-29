@@ -1,7 +1,8 @@
 {
   "decode": {
     "ir": {
-      "ir_version": "8",
+      "decode_depth": "full",
+      "ir_version": "9",
       "model": {
         "appearance_bindings": [],
         "appearances": [],
@@ -187,13 +188,15 @@
               "id": "nx:arrangements-1:configuration#0",
               "is_default": true,
               "name": "Model",
-              "source_entry": "/Root/part/arrangements"
+              "source_entry": "/Root/part/arrangements",
+              "source_offset": 436
             },
             {
               "id": "nx:arrangements-1:configuration#1",
               "is_default": false,
               "name": "Exploded",
-              "source_entry": "/Root/part/arrangements"
+              "source_entry": "/Root/part/arrangements",
+              "source_offset": 477
             }
           ],
           "unknowns": [
@@ -207,10 +210,6 @@
           ]
         }
       },
-      "scope": {
-        "design": true,
-        "model": true
-      },
       "source": {
         "attributes": {
           "deltas_streams": "0",
@@ -218,6 +217,7 @@
           "file_size": "592",
           "footer_entry_count": "0",
           "footer_fingerprint": "00000000",
+          "footer_offset": "578",
           "header_entry_count": "3",
           "jpeg_preview_count": "0",
           "partition_streams": "1",
@@ -316,10 +316,7 @@
       ],
       "transfer": {
         "geometry_transferred": true,
-        "scope": {
-          "design": true,
-          "model": true
-        }
+        "transfer": "full"
       }
     },
     "source_fidelity": {
@@ -438,11 +435,6 @@
           }
         }
       },
-      "metadata": {
-        "native.nx.configurations.nx:arrangements-1:configuration#0.source_offset": "436",
-        "native.nx.configurations.nx:arrangements-1:configuration#1.source_offset": "477",
-        "source.footer_offset": "578"
-      },
       "retained_records": {
         "nx:container:parasolid#0": {
           "bytes": {
@@ -450,20 +442,9 @@
             "retention": "inline"
           },
           "offset": 155,
-          "stream": "nx:container",
-          "untyped": []
-        },
-        "nx:source:image#whole": {
-          "bytes": {
-            "data": "U1BMTVNTVFIGAAAAAAAAAABCAgAAAAAAAEhFQURFUgMAAAAVAAAAL1Jvb3QvVUdfUEFSVC9VR19QQVJUmwAAAAAAAAALAQAAAAAAABcAAAAvUm9vdC9wYXJ0L2FycmFuZ2VtZW50c6YBAAAAAAAAcgAAAAAAAAAQAAAAL1Jvb3QvcGFydC9hdHRycxgCAAAAAAAAKgAAAAAAAAB4AXVQPU8CQRB9q8KpoPhVGSVbKsSomJhoszEElUSNemd9OeUKEhRzuQZo4R9Q09NQ83egpeEn8I47yCbA7O7Me29mv+bdBHB5L63PhzfztWjJx+JLQZ79O55f9svVv3P547mO75bkd03+VktupeJ63JIy88+2VTAt+9q+owFJrFFfnDtYn4qCeYENCI4k1y4xAlOZ2+HoJH9BTSDG6ng2kKOVohRCgxsE9mGQxugNbENgE1tAFnsECEzddDNXXzmHBaAxSQ/kEJ/GudPvmIvLgBqH6iyGTPPp4AUa52t0puGVRxzwK1odEuo46glwyM7quVMkdKqa9cFT76ih2lHs9D9GrXR/Ao6PLpk8QXJyYW5nZW1lbnRzPjxBcnJhbmdlbWVudCBEZWZhdWx0PSJZRVMiIE5hbWU9Ik1vZGVsIi8+PEFycmFuZ2VtZW50IERlZmF1bHQ9Ik5PIiBOYW1lPSJFeHBsb2RlZCIvPjwvQXJyYW5nZW1lbnRzPgA8VWdBdHRyaWJ1dGVzIHZlcnNpb249IjQiPjwvVWdBdHRyaWJ1dGVzPgBGT09URVIAAAAAAAAAAA==",
-            "retention": "inline"
-          },
-          "offset": 0,
-          "stream": "nx:source",
-          "untyped": []
+          "stream": "nx:container"
         }
-      },
-      "unrepresented": []
+      }
     }
   },
   "inspect": {

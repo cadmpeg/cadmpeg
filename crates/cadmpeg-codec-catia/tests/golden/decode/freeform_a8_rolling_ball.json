@@ -1,6 +1,7 @@
 {
   "ir": {
-    "ir_version": "8",
+    "decode_depth": "full",
+    "ir_version": "9",
     "model": {
       "appearance_bindings": [],
       "appearances": [],
@@ -205,7 +206,6 @@
         "consolidated_tori": [],
         "consolidated_vertex_identities": [],
         "design_objects": [],
-        "display_colors": [],
         "e5_curve_supports": [],
         "entity_records": [],
         "external_references": [],
@@ -239,10 +239,6 @@
         "zero_entity_vertex_incidences": []
       }
     },
-    "scope": {
-      "design": true,
-      "model": true
-    },
     "source": {
       "attributes": {
         "brep_stream_len": "576",
@@ -252,6 +248,8 @@
         "fbb_runs": "0",
         "file_size": "839",
         "finjpl_segment_count": "0",
+        "inner_offset": "16",
+        "outer_dir_offset": "839",
         "preview_count": "0",
         "stream_count": "2",
         "vertex_records": "0"
@@ -642,10 +640,7 @@
     ],
     "transfer": {
       "geometry_transferred": true,
-      "scope": {
-        "design": true,
-        "model": true
-      }
+      "transfer": "full"
     }
   },
   "source_fidelity": {
@@ -681,10 +676,6 @@
         }
       }
     },
-    "metadata": {
-      "source.inner_offset": "16",
-      "source.outer_dir_offset": "839"
-    },
     "retained_records": {
       "catia:payload:unknown#freeform": {
         "bytes": {
@@ -692,19 +683,8 @@
           "retention": "inline"
         },
         "offset": 0,
-        "stream": "catia:MainDataStream+SurfacicReps",
-        "untyped": []
-      },
-      "catia:source:image#whole": {
-        "bytes": {
-          "data": "VjVfQ0ZWMgAAAANHAAAAAFY1X0NGVjIAAAACUAAAAOeoAzI0AgAAeFY0EgAJFQAACQwAAAAAAAAAAAAAAAAAAPA/GRkAAAAAAADwPwAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAPA/AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAYLURU+yH5PwAAAAAAAABAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAEAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAABgtRFT7Ifk/AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAABDQVRJQV9WNSBDQjAwMDEAAAAAAAAAAAAAAAAAAAACP00AYQBpAG4ARABhAHQAYQBTAHQAcgBlAGEAbQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAABAAAAEAAAAj8AAAI/AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAABUwB1AHIAZgBhAGMAaQBjAFIAZQBwAHMAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAEAAAJPAAAAAQAAAAEAAAAAAAAAAENCX19FTkQ=",
-          "retention": "inline"
-        },
-        "offset": 0,
-        "stream": "catia:source",
-        "untyped": []
+        "stream": "catia:MainDataStream+SurfacicReps"
       }
-    },
-    "unrepresented": []
+    }
   }
 }

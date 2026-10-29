@@ -538,10 +538,23 @@ pub(super) fn exact_coil_discriminators(
         | (&scope::DesignFeatureKind::CoilPrimitive, 1) => DesignExtrudeOperation::NewBody,
         _ => return None,
     };
-    let clockwise_offset = start.checked_add(coil_compact::CLOCKWISE)?;
-    let clockwise = match bytes.get(clockwise_offset)? {
-        0 => false,
-        1 => true,
+    // SpirePrimitive stores the clockwise Boolean; the compact dialect stores
+    // the left-hand Boolean, so a right-hand coil travels clockwise viewed
+    // along its positive axis.
+    let (clockwise_offset, left_hand) = match kind {
+        scope::DesignFeatureKind::SpirePrimitive => {
+            (start.checked_add(coil_compact::CLOCKWISE)?, false)
+        }
+        scope::DesignFeatureKind::CoilPrimitive => {
+            (start.checked_add(coil_compact::LEFT_HAND)?, true)
+        }
+        _ => return None,
+    };
+    let mut direction = View::over_retained(bytes);
+    direction.seek(clockwise_offset)?;
+    let clockwise = match (direction.u8()?, left_hand) {
+        (0, false) | (1, true) => false,
+        (1, false) | (0, true) => true,
         _ => return None,
     };
     let structural_constant = match kind {

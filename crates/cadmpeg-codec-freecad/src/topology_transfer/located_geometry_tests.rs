@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 
-use super::{Builder, Tables};
+use super::{ArenaPositions, Builder, Tables};
 use crate::brep::{ShapePayload, ShapePayloadRecord, TextTShapes};
 use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
 use cadmpeg_ir::document::CadIr;
@@ -35,11 +35,13 @@ fn located_surfaces_copy_only_their_own_construction_and_reuse_placements() {
     let arena = DecodeArena::new();
     let policy = DecodePolicy::service();
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let mut positions = ArenaPositions::default();
     let mut builder = Builder::new(
         &ctx,
         &payload,
         tables,
         cadmpeg_core::text::NonBlankString::new("synthetic").unwrap(),
+        &mut positions,
     )
     .unwrap();
     let mut ir = CadIr::empty();

@@ -228,6 +228,7 @@ fn capped_rectangular_pattern_instance_search_reports_a_loss() {
                         crate::records::feature::patterns::RectangularPatternSearchCap::RunWork,
                     ),
                     directions: Vec::new(),
+                    secondary_direction: None,
                 },
             )
             .unwrap(),
@@ -1310,22 +1311,24 @@ fn split_body_requires_resolved_target_and_tool_selections() {
     assert!(!feature_definition_is_incomplete(
         &FeatureDefinition::Operation(FeatureOperation::SplitBody {
             targets: resolved_target.clone(),
-            tools: resolved_tool,
+            tool: cadmpeg_ir::features::SplitBodyTool::Faces(resolved_tool),
         })
     ));
     assert!(feature_definition_is_incomplete(
         &FeatureDefinition::Operation(FeatureOperation::SplitBody {
             targets: resolved_target.clone(),
-            tools: FaceSelection::Native("native:tool".into()),
+            tool: cadmpeg_ir::features::SplitBodyTool::Faces(FaceSelection::Native(
+                "native:tool".into()
+            )),
         })
     ));
     assert!(feature_definition_is_incomplete(
         &FeatureDefinition::Operation(FeatureOperation::SplitBody {
             targets: BodySelection::Native("native:target".into()),
-            tools: FaceSelection::Resolved {
+            tool: cadmpeg_ir::features::SplitBodyTool::Faces(FaceSelection::Resolved {
                 faces: vec![FaceId::mint("test:model:face#tool").expect("identity grammar")],
                 native: "native:tool".into(),
-            },
+            }),
         })
     ));
 }
@@ -1376,4 +1379,60 @@ fn mesh_texture_bytes_refuse_one_byte_below_their_retained_ceiling() {
             }
         }
     });
+}
+
+#[test]
+fn refused_edge_flange_payload_reports_its_retained_scope_loss() {
+    let mut ir = cadmpeg_ir::document::CadIr::empty();
+    ir.model.features.push(cadmpeg_ir::features::Feature {
+        id: cadmpeg_ir::features::FeatureId::mint("synthetic:test:feature#flange").unwrap(),
+        ordinal: 0,
+        name: None,
+        suppressed: None,
+        dependencies: Default::default(),
+        source_properties: Default::default(),
+        source_tag: Some("EdgeFlange".into()),
+        source_text: None,
+        source_content: Default::default(),
+        evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
+            cadmpeg_ir::features::FeatureDefinition::Operation(
+                cadmpeg_ir::features::FeatureOperation::Native {
+                    kind: "EdgeFlange".into(),
+                    parameters: Default::default(),
+                },
+            ),
+        ),
+        native_ref: None,
+        needs_recompute: false,
+    });
+    let mut native = F3dNative::default();
+    native
+        .design_parameter_scopes
+        .push(DesignParameterScope::empty(
+            "f3d:Design/BulkStream.dat:parameter-scope#70",
+            crate::records::feature::scope::DesignFeatureKind::EdgeFlange,
+            70,
+        ));
+    let mut report = cadmpeg_ir::codec::DecodeBody {
+        transfer: cadmpeg_ir::report::decode::DecodeTransfer {
+            scope: cadmpeg_ir::document::ContentScope::full(),
+            geometry_transferred: true,
+        },
+        coverage: cadmpeg_ir::report::decode::Coverage::default(),
+        losses: Vec::new(),
+        notes: Vec::new(),
+    };
+    report_design_projection_gaps(
+        &mut report,
+        &cadmpeg_test_support::service_decode_context(),
+        &ir,
+        &native,
+    )
+    .unwrap();
+    assert!(report.losses.iter().any(|loss| loss.code
+        == F3dLossCode::FeatureDefinitionIncomplete.kind()
+        && loss.message.contains("EdgeFlange=1")));
+    assert!(report.losses.iter().any(|loss| loss.code
+        == F3dLossCode::FeatureScopePayloadUninterpreted.kind()
+        && loss.message.starts_with("1 native feature scope(s)")));
 }

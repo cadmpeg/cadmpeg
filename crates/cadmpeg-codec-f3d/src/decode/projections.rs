@@ -13,7 +13,11 @@ pub(super) fn standalone_product(ir: &mut CadIr, native: &F3dNative) {
     if !ir.scope.model || !ir.model.product_definitions.is_empty() {
         return;
     }
-    let [root] = native.act_root_components.as_slice() else {
+    let mut roots = native
+        .act_component_links
+        .iter()
+        .filter(|link| link.tracks_document_root());
+    let (Some(root), None) = (roots.next(), roots.next()) else {
         return;
     };
     let label = root.layout().display_name();
@@ -29,6 +33,7 @@ pub(super) fn standalone_product(ir: &mut CadIr, native: &F3dNative) {
         part_number: None,
         bom_properties: std::collections::BTreeMap::default(),
         bodies: ir.model.bodies.iter().map(|body| body.id.clone()).collect(),
+        sketches: Vec::new(),
         native_ref: Some(root.id().as_str().to_owned()),
     });
 }

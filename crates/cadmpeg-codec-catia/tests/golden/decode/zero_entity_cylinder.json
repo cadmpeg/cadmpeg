@@ -1,6 +1,7 @@
 {
   "ir": {
-    "ir_version": "8",
+    "decode_depth": "full",
+    "ir_version": "9",
     "model": {
       "appearance_bindings": [],
       "appearances": [],
@@ -89,7 +90,6 @@
         "consolidated_tori": [],
         "consolidated_vertex_identities": [],
         "design_objects": [],
-        "display_colors": [],
         "e5_curve_supports": [],
         "entity_records": [],
         "external_references": [],
@@ -120,6 +120,7 @@
         "zero_entity_ownership_roots": [],
         "zero_entity_records": [
           {
+            "byte_offset": 16,
             "id": "catia:zero-entity:record#1",
             "logical_end": 166,
             "record_ordinal": 1,
@@ -130,15 +131,12 @@
         "zero_entity_vertex_incidences": []
       }
     },
-    "scope": {
-      "design": true,
-      "model": true
-    },
     "source": {
       "attributes": {
         "external_reference_count": "0",
         "file_size": "181",
         "finjpl_segment_count": "0",
+        "outer_dir_offset": "0",
         "preview_count": "0"
       },
       "identity": {
@@ -517,16 +515,6 @@
         },
         "message": "Zero-entity loop members bind their face-local support occurrences, but the complete allocation graph or its required geometry is unavailable and body/shell ownership remains unresolved; no neutral topology was transferred.",
         "severity": "blocking"
-      },
-      {
-        "code": {
-          "code": "projection.record-unprojected",
-          "kind": "metadata_not_transferred",
-          "namespace": "catia",
-          "scope": "namespaced"
-        },
-        "message": "Zero-entity record catia:zero-entity:record#1 has no independently constructible neutral record.",
-        "severity": "warning"
       }
     ],
     "notes": [
@@ -537,10 +525,7 @@
     ],
     "transfer": {
       "geometry_transferred": true,
-      "scope": {
-        "design": true,
-        "model": true
-      }
+      "transfer": "full"
     }
   },
   "source_fidelity": {
@@ -567,10 +552,6 @@
         }
       }
     },
-    "metadata": {
-      "native.catia.zero_entity_records.catia:zero-entity:record#1.byte_offset": "16",
-      "source.outer_dir_offset": "0"
-    },
     "retained_records": {
       "catia:payload:unknown#zero-entity": {
         "bytes": {
@@ -578,19 +559,8 @@
           "retention": "inline"
         },
         "offset": 0,
-        "stream": "catia:CATPart",
-        "untyped": []
-      },
-      "catia:source:image#whole": {
-        "bytes": {
-          "data": "VjVfQ0ZWMgAAAAAAAAAAAKkDKIoAAAAAAAAAAAAAAAAAAPA/AAAAAAAAAEAAAAAAAAAIQAAAAAAAAADwPwAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAPA/AAAAAAAAAAAAAAAAAAAQQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAUIAQAAgD8AAABAAABAQA==",
-          "retention": "inline"
-        },
-        "offset": 0,
-        "stream": "catia:source",
-        "untyped": []
+        "stream": "catia:CATPart"
       }
-    },
-    "unrepresented": []
+    }
   }
 }

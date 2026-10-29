@@ -22,6 +22,7 @@ use cadmpeg_ir::document::{CadIr, SourceMeta};
 use cadmpeg_ir::hash::sha256_hex;
 use cadmpeg_ir::ids::{ProductDefinitionId, UnknownId};
 use cadmpeg_ir::products::{ProductDefinition, ProductDefinitionKind};
+use cadmpeg_ir::report::loss::LossNote;
 use cadmpeg_ir::source_fidelity::parts::PartSpec;
 use cadmpeg_ir::{AnnotationBuilder, UnknownRecord};
 
@@ -42,8 +43,9 @@ use crate::native::ufrx::{
     UfrxRecord, UfrxRepresentationRecord, UfrxRepresentationRecordWire,
 };
 use crate::native::{
-    ActiveCarrierRecord, AssemblyOccurrenceRecord, AssemblyPlacementRecord, DatabaseIssueRecord,
-    DatabaseRecord, PropertyRecord, PropertySectionRecord, PropertySetIssueRecord,
+    ActiveCarrierRecord, AssemblyGroundingRecord, AssemblyOccurrenceRecord,
+    AssemblyPlacementRecord, DatabaseIssueRecord, DatabaseRecord, DesignViewRepresentationRecord,
+    DesignViewVisibilityOffRecord, PropertyRecord, PropertySectionRecord, PropertySetIssueRecord,
     PropertySetRecord, PropertyValueKind, RevisionPayloadForm, RevisionRecord,
     SegmentRegistryRecord, StorageBandRecord, StructuralIssueRecord, VersionTupleRecord,
 };
@@ -104,18 +106,6 @@ fn decode_container<'a>(
         ctx.depth()
     };
     ir.scope = delivered.required_scope();
-    let unresolved = if delivered == DecodeDepth::Full {
-        project_design(
-            ctx,
-            &mut ir,
-            &container.rse,
-            &design_inventory,
-            &sketch_inventory,
-            &feature_inventory,
-        )?
-    } else {
-        UnresolvedDesign::default()
-    };
     let mut admitted_entities = cadmpeg_core::decode::u64_from_index(ir.model.entity_count());
     let mut attributes = BTreeMap::new();
     attributes.insert(
@@ -468,6 +458,7 @@ fn decode_container<'a>(
     let meta_sections = projection.meta_sections;
     let segment_meta_issues = projection.segment_meta_issues;
     let rse_records = projection.rse_records;
+    let drawing_inventory = crate::drawing::inventory(ctx, &container, &rse_records)?;
     let segment_bulk = projection.segment_bulk;
     let segment_bulk_issues = projection.segment_bulk_issues;
     let unpaired_segments = projection.unpaired_segments;
@@ -497,17 +488,62 @@ fn decode_container<'a>(
         })
         .transpose()?
         .unwrap_or_default();
+    let design_view_representations = assembly_inventory
+        .parts
+        .native()
+        .namespace("inventor")
+        .map(|namespace| {
+            namespace.arena_as_for_decode::<DesignViewRepresentationRecord>(
+                ctx,
+                "design_view_representations",
+            )
+        })
+        .transpose()?
+        .unwrap_or_default();
+    let design_view_visibility = assembly_inventory
+        .parts
+        .native()
+        .namespace("inventor")
+        .map(|namespace| {
+            namespace
+                .arena_as_for_decode::<DesignViewVisibilityOffRecord>(ctx, "design_view_visibility")
+        })
+        .transpose()?
+        .unwrap_or_default();
+    let assembly_groundings = assembly_inventory
+        .parts
+        .native()
+        .namespace("inventor")
+        .map(|namespace| {
+            namespace.arena_as_for_decode::<AssemblyGroundingRecord>(ctx, "assembly_groundings")
+        })
+        .transpose()?
+        .unwrap_or_default();
     ctx.admit_entities(
         cadmpeg_core::decode::u64_from_index(ir.model.entity_count()),
         &mut admitted_entities,
         "admit Inventor pre-assembly entities",
     )?;
-    let unresolved_assembly_placements = crate::assembly::project_occurrences_into(
+    let active_design_view = ufrx
+        .representation()
+        .map(|representation| representation.active_design_view.as_str());
+    let unprojected_occurrences = crate::assembly::project_occurrences_into(
         ufrx_occurrences,
         external_references,
         &assembly_occurrences,
         &assembly_placements,
-        |occurrence| assembly_inventory.parts.insert_model(ctx, occurrence),
+        crate::assembly::OccurrenceStates {
+            active_design_view,
+            representations: &design_view_representations,
+            visibility_off: &design_view_visibility,
+            groundings: &assembly_groundings,
+        },
+        |occurrence, joint| {
+            assembly_inventory.parts.insert_model(ctx, occurrence)?;
+            joint.map_or(Ok(()), |joint| {
+                assembly_inventory.parts.insert_model(ctx, joint)
+            })
+        },
     )?;
     let namespace = ir.native.namespace_mut("inventor");
     namespace.set_arena(ctx, "storage_bands", &storage_bands)?;
@@ -533,6 +569,21 @@ fn decode_container<'a>(
         ctx,
         "assembly_placements",
         &[] as &[AssemblyPlacementRecord],
+    )?;
+    namespace.set_arena(
+        ctx,
+        "design_view_representations",
+        &[] as &[DesignViewRepresentationRecord],
+    )?;
+    namespace.set_arena(
+        ctx,
+        "design_view_visibility",
+        &[] as &[DesignViewVisibilityOffRecord],
+    )?;
+    namespace.set_arena(
+        ctx,
+        "assembly_groundings",
+        &[] as &[AssemblyGroundingRecord],
     )?;
     namespace.set_arena(
         ctx,
@@ -579,6 +630,10 @@ fn decode_container<'a>(
         &sketch_inventory.constraints,
     )?;
     namespace.set_arena(ctx, "sketch_record_issues", &sketch_inventory.issues)?;
+    let pattern_operands = feature_inventory.pattern_operands.native_records()?;
+    if !pattern_operands.is_empty() {
+        namespace.set_arena(ctx, "pm_dc_pattern_operands", &pattern_operands)?;
+    }
     namespace.set_arena(ctx, "pm_dc_features", &feature_inventory.features)?;
     namespace.set_arena(
         ctx,
@@ -595,7 +650,26 @@ fn decode_container<'a>(
         "pm_dc_feature_properties",
         &feature_inventory.properties,
     )?;
+    namespace.set_arena(
+        ctx,
+        "pm_dc_feature_dimensions",
+        &feature_inventory.dimensions,
+    )?;
     namespace.set_arena(ctx, "pm_dc_feature_labels", &feature_inventory.labels)?;
+    if !feature_inventory.sheet_metal_styles.is_empty() {
+        namespace.set_arena(
+            ctx,
+            "pm_dc_sheet_metal_styles",
+            &feature_inventory.sheet_metal_styles,
+        )?;
+    }
+    if !feature_inventory.sheet_metal_flanges.is_empty() {
+        namespace.set_arena(
+            ctx,
+            "pm_dc_sheet_metal_flanges",
+            &feature_inventory.sheet_metal_flanges,
+        )?;
+    }
     namespace.set_arena(
         ctx,
         "pm_dc_entity_style_links",
@@ -619,11 +693,10 @@ fn decode_container<'a>(
     namespace.set_arena(ctx, "unpaired_segments", &unpaired_segments)?;
     namespace.set_arena(ctx, "active_carrier", std::slice::from_ref(&active_carrier))?;
 
+    drawing_inventory.write(ctx, namespace)?;
     let mut losses = crate::container::deviation_losses(&container.snapshot);
+    losses.extend(drawing_inventory.losses());
     let mut untyped = cadmpeg_ir::ArenaClasses::default();
-    if !ctx.container_only() {
-        document_native_projection::project(ctx, &mut ir, &ufrx, &properties, &mut losses)?;
-    }
     let mut geometry_failure = None;
     let mut empty_kernel_stream = false;
     let kernel_brep = match &container.rse.active_carrier {
@@ -655,6 +728,16 @@ fn decode_container<'a>(
         _ => None,
     };
     let kernel_brep = kernel_brep.unwrap_or_else(AsmBrep::default);
+    let body_keys = if delivered == DecodeDepth::Full
+        && feature_inventory.labels.iter().any(|label| {
+            crate::feature::FeatureFamily::Base
+                .class_ids()
+                .contains(&label.class_id())
+        }) {
+        kernel_brep.body_native_keys.clone()
+    } else {
+        Vec::new()
+    };
     let face_keys = cadmpeg_asm::brep::key_maps::face_keys(
         &kernel_brep.faces,
         &kernel_brep.face_native_keys,
@@ -668,6 +751,38 @@ fn decode_container<'a>(
             annotation_records: kernel_annotations,
         },
     ) = transfer_into_ir(ctx, &mut ir, "inventor", kernel_brep)?;
+    let mut unresolved = if delivered == DecodeDepth::Full {
+        project_design(
+            ctx,
+            &mut ir,
+            &container.rse,
+            &design_inventory,
+            &sketch_inventory,
+            &feature_inventory,
+        )?
+    } else {
+        UnresolvedDesign::default()
+    };
+    if !body_keys.is_empty() {
+        let transferred = crate::feature::base::project(
+            ctx,
+            &container.rse,
+            &feature_inventory,
+            &design_inventory,
+            &sketch_inventory.transforms,
+            &body_keys,
+            &mut ir.model,
+        )?;
+        unresolved.features = unresolved
+            .features
+            .checked_sub(transferred)
+            .ok_or_else(|| {
+                CodecError::malformed("Inventor Base projection exceeds unresolved feature count")
+            })?;
+    }
+    if !ctx.container_only() {
+        document_native_projection::project(ctx, &mut ir, &ufrx, &properties, &mut losses)?;
+    }
     ir.set_native_unknowns(ctx, "inventor", &[])?;
     let geometry_transferred =
         !(ir.model.surfaces.is_empty() && ir.model.points.is_empty() && ir.model.faces.is_empty());
@@ -872,6 +987,37 @@ fn decode_container<'a>(
             )
             }));
         }
+        losses.extend(crate::feature::derived::native_source_loss(
+            &feature_inventory.labels,
+        ));
+        losses.extend(crate::feature::derived::native_tagging_loss(
+            &feature_inventory.labels,
+        ));
+        losses.extend(crate::feature::sheet_metal::native_kind_losses(
+            &feature_inventory,
+            &ir.model.features,
+        ));
+        losses.extend(crate::feature::sheet_metal::retained_control_losses(
+            ir.model.features.iter(),
+        ));
+        losses.extend(unresolved.extrusion_losses);
+        losses.extend(unresolved.revolve_losses);
+        losses.extend(unresolved.loft_losses);
+        losses.extend(unresolved.mirror_losses);
+        losses.extend(crate::feature::work_plane::native_losses(
+            &feature_inventory.work_planes,
+            &ir.model.features,
+        ));
+        losses.extend(crate::feature::pattern::native_losses(
+            feature_inventory.pattern_features.iter(),
+            &ir.model.features,
+        ));
+        losses.extend(crate::feature::loft_sweep::retained_control_losses(
+            ir.model
+                .features
+                .iter()
+                .map(|feature| feature.evaluation.definition()),
+        ));
         let partial_threads = ir
             .model
             .features
@@ -890,7 +1036,8 @@ fn decode_container<'a>(
                 "Transferred {partial_threads} Inventor thread annotation(s) with native face selections; sizing, handedness, and termination operands remain native."
             )));
         }
-        let native_thicken_operands = ir
+        losses.extend(crate::feature::thicken_operand_losses(&ir.model.features));
+        let partial_shells = ir
             .model
             .features
             .iter()
@@ -898,14 +1045,14 @@ fn decode_container<'a>(
                 matches!(
                     feature.evaluation.definition(),
                     cadmpeg_ir::features::FeatureDefinition::Operation(
-                        cadmpeg_ir::features::FeatureOperation::Thicken { .. }
+                        cadmpeg_ir::features::FeatureOperation::Shell { .. }
                     )
                 )
             })
             .count();
-        if native_thicken_operands != 0 {
-            losses.push(InventorLossCode::FeatureThickenOperandsNative.note(format!(
-                "{native_thicken_operands} Inventor thicken operation(s) retain native surface selections and unresolved thickness side."
+        if partial_shells != 0 {
+            losses.push(InventorLossCode::FeatureShellDefinitionPartial.note(format!(
+                "Transferred {partial_shells} Inventor shell operation(s) with wall thickness and removed-face selections; construction controls remain native."
             )));
         }
         if unresolved.profile_bodies != 0 {
@@ -950,6 +1097,9 @@ fn decode_container<'a>(
                 unresolved.sketch_construction
             )));
         }
+        losses.extend(crate::sketch::point_tail::paired_association_loss(
+            &sketch_inventory,
+        ));
         if !container.rse.unpaired_metadata.is_empty() || !container.rse.unpaired_bulk.is_empty() {
             losses.push(InventorLossCode::RseStreamUnpaired.note({
                 untyped.insert(cadmpeg_ir::ArenaClass::Model);
@@ -1062,7 +1212,10 @@ fn decode_container<'a>(
                         )
                     }));
                 }
-                for (cause, count) in &unresolved_assembly_placements {
+                losses.extend(nested_visibility_loss(
+                    unprojected_occurrences.nested_hidden,
+                ));
+                for (cause, count) in &unprojected_occurrences.unresolved_placements {
                     losses.push(InventorLossCode::AssemblyPlacementNotTransferred.note({
                         untyped.insert(cadmpeg_ir::ArenaClass::Model);
                         format!(
@@ -1086,6 +1239,7 @@ fn decode_container<'a>(
         assembly_inventory.parts.into_parts();
     if !ctx.container_only() {
         ir.model.occurrences = part_model.occurrences;
+        ir.model.assembly_joints = part_model.assembly_joints;
         ir.model.appearance_bindings = part_model.appearance_bindings;
         if ir.model.appearances.is_empty() {
             ir.model.appearances = part_model.appearances;
@@ -1422,7 +1576,24 @@ fn decode_container<'a>(
             kernel_stats.unknown_surface_faces(),
         ),
     ];
-    let coverage: cadmpeg_ir::report::decode::Coverage = coverage_entries.into_iter().collect();
+    let sheet_metal_coverage = [
+        (
+            crate::coverage::PM_DC_SHEET_METAL_STYLES,
+            feature_inventory.sheet_metal_styles.len(),
+        ),
+        (
+            crate::coverage::PM_DC_SHEET_METAL_FLANGES,
+            feature_inventory.sheet_metal_flanges.len(),
+        ),
+    ];
+    let coverage: cadmpeg_ir::report::decode::Coverage = coverage_entries
+        .into_iter()
+        .chain(
+            sheet_metal_coverage
+                .into_iter()
+                .filter(|(_, count)| *count != 0),
+        )
+        .collect();
     if !ctx.container_only()
         && !geometry_transferred
         && carrier_read_no_geometry
@@ -1508,6 +1679,10 @@ struct UnresolvedDesign {
     feature_states: usize,
     profile_bodies: usize,
     sketch_construction: usize,
+    extrusion_losses: Vec<cadmpeg_ir::report::loss::LossNote>,
+    revolve_losses: Vec<cadmpeg_ir::report::loss::LossNote>,
+    loft_losses: Vec<cadmpeg_ir::report::loss::LossNote>,
+    mirror_losses: Vec<cadmpeg_ir::report::loss::LossNote>,
 }
 
 /// Projects the design inventories into the document's design arenas.
@@ -1539,6 +1714,7 @@ fn project_design(
             sketches: &ir.model.sketches,
             entities: &ir.model.sketch_entities,
             profile_bodies: &profile_bodies.bodies,
+            result_model: Some(&ir.model),
         },
     )?;
     let mut added_profiles = features.added_profiles;
@@ -1552,6 +1728,7 @@ fn project_design(
     }
     ir.model.features = features.features;
     ir.model.feature_result_topologies = features.result_topologies;
+    ir.model.feature_input_topologies = features.input_topologies;
     // Flat-pattern models follow every projected document feature.
     let first_model_ordinal = ir
         .model
@@ -1579,6 +1756,10 @@ fn project_design(
         feature_states: features.unresolved_states,
         profile_bodies: profile_bodies.undecoded,
         sketch_construction: sketches.unresolved_construction,
+        extrusion_losses: features.extrusion_losses,
+        revolve_losses: features.revolve_losses,
+        loft_losses: features.loft_losses,
+        mirror_losses: features.mirror_losses,
     })
 }
 
@@ -1599,6 +1780,7 @@ fn project_root_product(
     let description = metadata.description.as_deref().map(str::to_owned);
     let part_number = metadata.part_number.as_deref().map(str::to_owned);
     Ok(ProductDefinition {
+        sketches: Vec::default(),
         id: ProductDefinitionId::compose(
             &cadmpeg_ir::identity_namespace!("inventor", "document", "product"),
             cadmpeg_ir::identity_key!("root"),
@@ -1797,6 +1979,16 @@ fn project_protein_records(
         assets,
         rejections,
         issues,
+    })
+}
+
+/// The loss for occurrences hidden below a root occurrence, which only the
+/// native records keep.
+pub(crate) fn nested_visibility_loss(nested_hidden: usize) -> Option<LossNote> {
+    (nested_hidden != 0).then(|| {
+        InventorLossCode::AssemblyVisibilityNestedNative.note(format!(
+            "Retained {nested_hidden} hidden occurrence(s) below a root occurrence in native records."
+        ))
     })
 }
 
@@ -2050,18 +2242,21 @@ fn project_ufrx_representation(
     state: &crate::external_reference::UfrxRepresentationState,
     issues: &mut Vec<StructuralIssueRecord>,
 ) -> Result<Option<UfrxRepresentationRecord>, CodecError> {
-    let (active_representation, active_representation_kind) =
-        match state.active_representation.as_ref() {
-            Some((name, kind)) => (Some(name.to_owned()), Some(kind.to_owned())),
-            None => (None, None),
-        };
+    let design_views = state.design_views.as_ref().map(|views| {
+        views
+            .iter()
+            .map(|(name, kind)| crate::native::ufrx::UfrxDesignView {
+                name: name.to_owned(),
+                kind: kind.to_owned(),
+            })
+            .collect()
+    });
     let wire = UfrxRepresentationRecordWire {
         prefix: state.prefix,
-        active_representation,
-        active_representation_kind,
+        design_views,
         secondary_active_lod_state: state.secondary_active_lod_state,
-        active_model_state: state.active_model_state.clone(),
-        active_model_state_state: state.active_model_state_state,
+        active_design_view: state.active_design_view.clone(),
+        active_design_view_state: state.active_design_view_state,
     };
     admit_ufrx_record(
         ctx,

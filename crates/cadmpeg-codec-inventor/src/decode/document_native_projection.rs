@@ -50,13 +50,9 @@ pub(super) fn project(
             .map_err(CodecError::Malformed)?,
         );
     }
-    let active = match ufrx {
-        UfrxRecord::ParsedPrefix(prefix) => prefix
-            .representation
-            .as_ref()
-            .map(|representation| representation.active_model_state.as_str()),
-        _ => None,
-    };
+    let active = ufrx
+        .representation()
+        .map(|representation| representation.active_design_view.as_str());
     for state in ufrx.model_states().iter().filter(|_| ir.scope.design) {
         let is_active = active == Some(state.name.as_str());
         let mut overrides = std::collections::BTreeMap::new();

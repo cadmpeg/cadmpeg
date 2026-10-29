@@ -7,6 +7,10 @@ on:
     branches: [main]
     types: [opened, synchronize, reopened, ready_for_review]
   merge_group:
+  # Nightly full gate on every platform. It also covers what PR and push
+  # scoping did not select.
+  schedule:
+    - cron: "13 2 * * *"
   workflow_dispatch:
 
 permissions:
@@ -64,6 +68,7 @@ jobs:
           EVENT: ${{ github.event_name }}
           PR_BASE: ${{ github.event.pull_request.base.sha }}
           QUEUE_BASE: ${{ github.event.merge_group.base_sha }}
+          QUEUE_REF: ${{ github.event.merge_group.head_ref }}
           PUSH_BASE: ${{ github.event.before }}
           GH_TOKEN: ${{ github.token }}
           REPOSITORY: ${{ github.repository }}
@@ -73,7 +78,35 @@ jobs:
           mode=()
           case "$EVENT" in
             pull_request) base="$PR_BASE" ;;
-            merge_group) base="$QUEUE_BASE" ;;
+            merge_group)
+              # Skip the gate when this PR's own run passed it on the same base
+              # and tree. The `tested` job names that record.
+              base="$QUEUE_BASE"
+              number="$(sed -nE 's#^refs/heads/gh-readonly-queue/[^/]+/pr-([0-9]+)-[0-9a-f]+$#\1#p' <<<"$QUEUE_REF")"
+              head=""
+              if [ -n "$number" ]; then
+                head="$(gh api "repos/$REPOSITORY/pulls/$number" --jq .head.sha || true)"
+              fi
+              if [[ "$head" =~ ^[0-9a-f]{40}$ ]]; then
+                key="ci-tested-$base-$(git rev-parse 'HEAD^{tree}')"
+                found="$(gh api "repos/$REPOSITORY/actions/artifacts?name=$key&per_page=100" \
+                  --jq "[.artifacts[] | select(.expired == false and .workflow_run.head_sha == \"$head\")] | length" \
+                  || true)"
+                if [[ "$found" =~ ^[1-9][0-9]*$ ]]; then
+                  python3 scripts/ci_scope.py --tested --github-output "$GITHUB_OUTPUT"
+                  exit 0
+                fi
+              fi
+              ;;
+            schedule)
+              passed="$(gh api "repos/$REPOSITORY/actions/runs?head_sha=$SHA&event=schedule&status=success" \
+                --jq '[.workflow_runs[] | select(.path == ".github/workflows/ci.yml")] | length')"
+              if [ "$passed" -gt 0 ]; then
+                python3 scripts/ci_scope.py --tested --github-output "$GITHUB_OUTPUT"
+                exit 0
+              fi
+              base=""
+              ;;
             *)
               base="$PUSH_BASE"
               mode=(--cache-writer)
@@ -187,10 +220,15 @@ jobs:
       - name: Match cargo's job count to the runner
         uses: ./.github/actions/cargo-job-count
 
+      - name: Hash the Cargo profiles
+        id: profiles
+        uses: ./.github/actions/cargo-profile-key
+
       - name: Cache cargo registry and target
         uses: Swatinem/rust-cache@v2
         with:
           shared-key: clippy
+          prefix-key: v0-rust-${{ steps.profiles.outputs.hash }}
           save-if: ${{ github.ref == 'refs/heads/main' }}
 
       - name: Format check
@@ -229,6 +267,10 @@ jobs:
       - name: Match cargo's job count to the runner
         uses: ./.github/actions/cargo-job-count
 
+      - name: Hash the Cargo profiles
+        id: profiles
+        uses: ./.github/actions/cargo-profile-key
+
       - name: Cache cargo registry and target
         # The only stable job that writes the shared cache. It builds the
         # widest set of dependencies, and concurrent writers of one key make
@@ -236,6 +278,7 @@ jobs:
         uses: Swatinem/rust-cache@v2
         with:
           shared-key: stable
+          prefix-key: v0-rust-${{ steps.profiles.outputs.hash }}
           save-if: ${{ github.ref == 'refs/heads/main' }}
 
       - name: Install cargo-nextest
@@ -301,10 +344,15 @@ jobs:
       - name: Match cargo's job count to the runner
         uses: ./.github/actions/cargo-job-count
 
+      - name: Hash the Cargo profiles
+        id: profiles
+        uses: ./.github/actions/cargo-profile-key
+
       - name: Cache cargo registry and target
         uses: Swatinem/rust-cache@v2
         with:
           shared-key: features
+          prefix-key: v0-rust-${{ steps.profiles.outputs.hash }}
           save-if: ${{ github.ref == 'refs/heads/main' }}
 
       - name: Schema feature
@@ -402,19 +450,27 @@ jobs:
       - name: Match cargo's job count to the runner
         uses: ./.github/actions/cargo-job-count
 
+      - name: Hash the Cargo profiles
+        id: profiles
+        uses: ./.github/actions/cargo-profile-key
+
       - name: Cache cargo registry and target
         uses: Swatinem/rust-cache@v2
         with:
+          prefix-key: v0-rust-${{ steps.profiles.outputs.hash }}
           save-if: ${{ github.ref == 'refs/heads/main' }}
 
       - name: Check
         run: python3 scripts/ci_cargo.py check
 
   # Byte-level codecs are the code most likely to break across platforms.
-  # These jobs run in the merge queue and on main, not on PR pushes.
+  # These jobs run only for a full gate outside PRs: the nightly run, a manual
+  # dispatch, and a main or queue commit that changes a manifest, the lock
+  # file, the toolchain, or a gate workflow. The release bump changes
+  # Cargo.toml, so every release passes them.
   cross-platform:
     needs: changes
-    if: ${{ github.event_name != 'pull_request' && always() && needs.changes.result != 'cancelled' && (needs.changes.result != 'success' || needs.changes.outputs.rust == 'true') }}
+    if: ${{ github.event_name != 'pull_request' && always() && needs.changes.result != 'cancelled' && (needs.changes.result != 'success' || needs.changes.outputs.full == 'true') }}
     name: build / test (${{ matrix.os }})
     env:
       CI_PACKAGES: ${{ needs.changes.outputs.packages }}
@@ -438,9 +494,14 @@ jobs:
       - name: Match cargo's job count to the runner
         uses: ./.github/actions/cargo-job-count
 
+      - name: Hash the Cargo profiles
+        id: profiles
+        uses: ./.github/actions/cargo-profile-key
+
       - name: Cache cargo registry and target
         uses: Swatinem/rust-cache@v2
         with:
+          prefix-key: v0-rust-${{ steps.profiles.outputs.hash }}
           save-if: ${{ github.ref == 'refs/heads/main' }}
 
       - name: Install cargo-nextest
@@ -474,3 +535,53 @@ jobs:
 
       - name: Audit dependencies
         run: cargo audit
+
+  # Records that this PR run passed every gate it selected on its base and
+  # merge tree. The merge queue skips a commit with the same base and tree.
+  # A full gate also runs macOS and Windows, which PR runs never do.
+  tested:
+    needs: [changes, static, lint, test, features, fuzz, msrv, audit]
+    if: ${{ github.event_name == 'pull_request' && github.event.pull_request.draft != true && !failure() && !cancelled() && needs.changes.outputs.full == 'false' }}
+    name: record tested tree
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7.0.1
+
+      - name: Name the tested base and tree
+        id: key
+        env:
+          PR_BASE: ${{ github.event.pull_request.base.sha }}
+        run: |
+          set -euo pipefail
+          echo "name=ci-tested-$PR_BASE-$(git rev-parse 'HEAD^{tree}')" >> "$GITHUB_OUTPUT"
+          git rev-parse HEAD > tested-commit
+
+      - name: Record
+        uses: actions/upload-artifact@v7
+        with:
+          name: ${{ steps.key.outputs.name }}
+          path: tested-commit
+          retention-days: 7
+
+  schedule-alert:
+    needs: [changes, static, lint, test, features, fuzz, msrv, cross-platform, audit]
+    if: ${{ always() && github.event_name == 'schedule' }}
+    name: report scheduled result
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+      issues: write
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7.0.1
+        with:
+          sparse-checkout: .github/actions
+
+      - name: Open, update, or close the failure issue
+        uses: ./.github/actions/schedule-alert
+        with:
+          result: ${{ contains(needs.*.result, 'failure') && 'failure' || contains(needs.*.result, 'cancelled') && 'cancelled' || 'success' }}
+          assignee: ${{ vars.SCHEDULE_ALERT_ASSIGNEE }}

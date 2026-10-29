@@ -62,6 +62,8 @@ fn design_projection_gaps_count_unresolved_body_map_pairs() {
     native.design_body_bindings.push(
         DesignBodyBinding::try_from(crate::records::bodies::DesignBodyBindingWire {
             map_ordinal: 0,
+            component_owner: None,
+            component_owner_unresolved: false,
             id: "f3d:Design/BulkStream.dat:design-body-binding#0".into(),
             stream: "Design/BulkStream.dat".into(),
             pair_count: 1,

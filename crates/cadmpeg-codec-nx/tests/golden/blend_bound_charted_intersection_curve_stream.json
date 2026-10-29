@@ -1,7 +1,8 @@
 {
   "decode": {
     "ir": {
-      "ir_version": "8",
+      "decode_depth": "full",
+      "ir_version": "9",
       "model": {
         "appearance_bindings": [],
         "appearances": [],
@@ -317,6 +318,7 @@
                 1
               ],
               "id": "nx:s0:blend-bound-record#14",
+              "inflated_offset": 844,
               "sense": true,
               "stream_ordinal": 0,
               "xmt": 14
@@ -336,6 +338,7 @@
               ],
               "framing": "direct",
               "id": "nx:s0:chart-record#20-504",
+              "inflated_offset": 504,
               "native_parameters": null,
               "parameter_errors": [
                 -31415800000000.0,
@@ -376,6 +379,7 @@
                 0
               ],
               "id": "nx:s0:intersection-record#12",
+              "inflated_offset": 473,
               "sense": true,
               "stream_ordinal": 0,
               "xmt": 12
@@ -386,6 +390,7 @@
               "count": 8,
               "framing": "direct",
               "id": "nx:s0:support-uv-record#23",
+              "inflated_offset": 680,
               "marker": 4,
               "stream_ordinal": 0,
               "values": [
@@ -417,6 +422,7 @@
               "form": "L?",
               "framing": "direct",
               "id": "nx:s0:term-use-record#21-612",
+              "inflated_offset": 612,
               "stream_ordinal": 0,
               "xmt": 21
             },
@@ -435,6 +441,7 @@
               "form": "L?",
               "framing": "direct",
               "id": "nx:s0:term-use-record#22-646",
+              "inflated_offset": 646,
               "stream_ordinal": 0,
               "xmt": 22
             }
@@ -452,10 +459,6 @@
           ]
         }
       },
-      "scope": {
-        "design": true,
-        "model": true
-      },
       "source": {
         "attributes": {
           "deltas_streams": "0",
@@ -463,6 +466,7 @@
           "file_size": "485",
           "footer_entry_count": "0",
           "footer_fingerprint": "00000000",
+          "footer_offset": "471",
           "header_entry_count": "1",
           "jpeg_preview_count": "0",
           "partition_streams": "1",
@@ -551,10 +555,7 @@
       ],
       "transfer": {
         "geometry_transferred": true,
-        "scope": {
-          "design": true,
-          "model": true
-        }
+        "transfer": "full"
       }
     },
     "source_fidelity": {
@@ -706,15 +707,6 @@
           }
         }
       },
-      "metadata": {
-        "native.nx.parasolid_blend_bound_records.nx:s0:blend-bound-record#14.inflated_offset": "844",
-        "native.nx.parasolid_chart_records.nx:s0:chart-record#20-504.inflated_offset": "504",
-        "native.nx.parasolid_intersection_records.nx:s0:intersection-record#12.inflated_offset": "473",
-        "native.nx.parasolid_support_uv_records.nx:s0:support-uv-record#23.inflated_offset": "680",
-        "native.nx.parasolid_term_use_records.nx:s0:term-use-record#21-612.inflated_offset": "612",
-        "native.nx.parasolid_term_use_records.nx:s0:term-use-record#22-646.inflated_offset": "646",
-        "source.footer_offset": "471"
-      },
       "retained_records": {
         "nx:container:parasolid#0": {
           "bytes": {
@@ -722,20 +714,9 @@
             "retention": "inline"
           },
           "offset": 76,
-          "stream": "nx:container",
-          "untyped": []
-        },
-        "nx:source:image#whole": {
-          "bytes": {
-            "data": "U1BMTVNTVFIGAAAAAAAAAADXAQAAAAAAAEhFQURFUgEAAAAVAAAAL1Jvb3QvVUdfUEFSVC9VR19QQVJUTAAAAAAAAACLAQAAAAAAAHgBfVI5TwJREP4ecimXB0dilGxlOGJUTEzUxBdDUEnAoGBNQEgkQTCERm01sTMxNjb2NHYmFFbWVv4Dj45GOgsL57G7sALr7Myb+b43M+/Yl0oDWFiTMvubu+lkPCNtxRMxKXCSq9VL9VK1EpQOa8VcvViQ8qfScbVQLJeLNSpxpaM72UwsnckuZVdJADsMxA+qAyMdktE8gxGMPjuZk2II4aGV99ZMdJ44BhNlm8OCVsxFlBxaqIBhAhaCJhotGAODlRZGGOMUQAhfboQWDyI5SgCJnUxoBGbheqZdo8cOifiXTKpeRprRj1ENolC3tW6LSToKFXbVxqeVOwGmxAG7M8AsbBoEfnH2tv3gPue3ir9v7rUu/U3MKXVMzQ7DDCfc8MALHwJEGwiRE6rZmmHj8/vx6uOozVP55Gu78fP8dHN9VwFUL/KHGVe2MjAXJIbBk+Dkh6uc4U1w3R4vVGiFz0juX+1v0I8RgeNvA93fpaZx5QXoYZXHOt0v6DUwepcdE60d+AVD3Fa+Rk9PVEVSAAAAAAAAAAA=",
-            "retention": "inline"
-          },
-          "offset": 0,
-          "stream": "nx:source",
-          "untyped": []
+          "stream": "nx:container"
         }
-      },
-      "unrepresented": []
+      }
     }
   },
   "inspect": {

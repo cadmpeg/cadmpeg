@@ -148,6 +148,7 @@ Caveat codes follow the reason discipline.
 | Code | Category | Level | When |
 | --- | --- | --- | --- |
 | `boundary.ring-order` | input | face | A ring's listed coedge order is not its traversal order; `entity` is the loop. |
+| `boundary.pcurve-order` | input | face | A coedge's pcurve uses form their chain from its end to its start; `entity` is the coedge. |
 | `orientation.unconfirmed` | unsupported | face | The face's region and normal rest on its declared orientation and no witness confirms it. |
 | `measure.provenance-not-recorded` | undefined | document | Neutral CADIR without a decode sidecar; every exactness is `not_recorded`. |
 | `measure.geometry-not-transferred` | input | document | The decode report states that no geometry was transferred. |
@@ -191,9 +192,17 @@ A single pcurve use takes the first candidate interval whose mapped ends lie
 within the allowance of the coedge's ends: the use's stored range, the
 pcurve's stored range, its trim range, the edge interval and its negation,
 the pcurve's domain, and then an interval recovered by Newton steps. A
-closed coedge takes its direction from the tangent of its 3D curve, else
-from the use's stored range. Several uses form a chain from the coedge's
-start to its end.
+closed coedge takes its direction from the tangent of its 3D curve at the
+traversal start: the interval read forward leaves the vertex along the image
+tangent at its start, read backward it leaves against the image tangent at
+its end, and the reading whose departure has the larger component along the
+3D tangent applies. With no 3D tangent, or with equal components, the use's
+stored range gives the direction. Several uses form a chain from the coedge's
+start to its end, each on its stored range. A chain that joins only when its
+uses and their ranges are read in reverse is measured in that reading and
+adds the face caveat `boundary.pcurve-order` on the coedge: CADIR lists the
+uses in traversal order. The listing changes no value once the chain is
+known.
 
 When the coedge also has a 3D curve, the pcurve image at the Gauss–Kronrod
 nodes of every breakpoint interval must lie on that curve within the larger
@@ -742,6 +751,7 @@ checks ([admissibility-routes.md](admissibility-routes.md)).
 | Check | Entity | Related | Defect |
 | --- | --- | --- | --- |
 | `ring_order` | the loop | the face | The ring's coedges, listed, do not run end to start by oriented vertex identity: they form one closed traversal in another order (`reversed` or `other`), several closed traversals, or none. |
+| `pcurve_order` | the coedge | the face | The coedge's pcurve uses form their chain from its end to its start: the face caveat `boundary.pcurve-order`. |
 | `orientation` | the face | none | The face's sense disagrees with its loop winding, or its loops disagree with each other: a face of `inconsistent_faces` or `mixed_faces`. |
 | `orientation` | the body | the faces or the shell the conflict names | Every shell of the body is closed, and the volume is unavailable with `volume.orientation-conflict` or `volume.closure-flux`. |
 | `measurement_incomplete` | none | none | Severity `info`. The findings allowance ran out before the pass checked every face, edge and closed body. The message states the number of faces and bodies not checked. |

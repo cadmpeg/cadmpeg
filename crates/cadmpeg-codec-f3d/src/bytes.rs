@@ -179,7 +179,10 @@ pub(crate) enum Reference<G, L> {
         target: u64,
         inline_type_guid: Option<G>,
         segment: u32,
+        asset_guid: L,
+        target_type_guid: G,
         link_name: L,
+        version: Option<(L, L)>,
     },
 }
 
@@ -256,12 +259,18 @@ pub(crate) fn take_owned_reference(
             target,
             inline_type_guid,
             segment,
+            asset_guid,
+            target_type_guid,
             link_name,
+            version,
         } => Reference::CrossDocument {
             target,
             inline_type_guid: copy_guid(inline_type_guid),
             segment,
+            asset_guid: asset_guid.to_string(),
+            target_type_guid: target_type_guid.to_owned(),
             link_name: link_name.to_string(),
+            version: version.map(|(key, urn)| (key.to_string(), urn.to_string())),
         },
     })
 }
@@ -337,7 +346,7 @@ pub(crate) fn take_reference<'a>(
             cursor += 1;
             let segment = View::u32_le_at(bytes, cursor)?;
             cursor += 4;
-            let (_, end) = utf16(cursor, 0..=64)?;
+            let (asset_guid, end) = utf16(cursor, 0..=64)?;
             cursor = end;
             match *bytes.get(cursor)? {
                 1 => {
@@ -350,26 +359,46 @@ pub(crate) fn take_reference<'a>(
                 }
                 0 => {
                     cursor += 1;
-                    let (guid, end) = ascii(cursor, 36..=36)?;
-                    if !is_guid_hyphenated(guid) {
-                        return None;
-                    }
-                    let (link_name, end) = utf16(end, 0..=256)?;
-                    cursor = end;
-                    match *bytes.get(cursor)? {
-                        0 => cursor += 1,
-                        1 => {
-                            let (_, end) = utf16(cursor + 1, 36..=36)?;
-                            let (_, end) = utf16(end, 0..=256)?;
+                    let external_type =
+                        ascii(cursor, 36..=36).filter(|(guid, _)| is_guid_hyphenated(guid));
+                    let target_type_guid = match (inline_type_guid, external_type) {
+                        (Some(inline), Some((external, end))) => {
+                            if !inline.eq_ignore_ascii_case(external) {
+                                return None;
+                            }
                             cursor = end;
+                            inline
+                        }
+                        (Some(inline), None) => inline,
+                        (None, Some((external, end))) => {
+                            cursor = end;
+                            external
+                        }
+                        (None, None) => return None,
+                    };
+                    let (link_name, end) = utf16(cursor, 0..=256)?;
+                    cursor = end;
+                    let version = match *bytes.get(cursor)? {
+                        0 => {
+                            cursor += 1;
+                            None
+                        }
+                        1 => {
+                            let (key, end) = utf16(cursor + 1, 36..=36)?;
+                            let (urn, end) = utf16(end, 0..=256)?;
+                            cursor = end;
+                            Some((key, urn))
                         }
                         _ => return None,
-                    }
+                    };
                     Reference::CrossDocument {
                         target,
                         inline_type_guid,
                         segment,
+                        asset_guid,
+                        target_type_guid,
                         link_name,
+                        version,
                     }
                 }
                 _ => return None,
@@ -523,6 +552,61 @@ mod tests {
             }
         ));
         assert_eq!(at, cross_segment.len());
+    }
+
+    #[test]
+    fn external_reference_types_and_version_are_retained() {
+        use super::Reference;
+        const TYPE: &str = "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee";
+        const ASSET: &str = "11111111-2222-3333-4444-555555555555";
+        let role = "99999999-8888-7777-6666-555555555555";
+        for (inline, external) in [(false, true), (true, false), (true, true)] {
+            let mut bytes = vec![1];
+            bytes.extend_from_slice(&71_u64.to_le_bytes());
+            if inline {
+                bytes.extend_from_slice(&36_u32.to_le_bytes());
+                bytes.extend_from_slice(TYPE.as_bytes());
+            }
+            bytes.push(1);
+            bytes.extend_from_slice(&5_u32.to_le_bytes());
+            crate::test_support::lp_utf16(&mut bytes, ASSET);
+            bytes.push(0);
+            let external_offset = bytes.len();
+            if external {
+                bytes.extend_from_slice(&36_u32.to_le_bytes());
+                bytes.extend_from_slice(TYPE.as_bytes());
+            }
+            crate::test_support::lp_utf16(&mut bytes, role);
+            bytes.push(1);
+            crate::test_support::lp_utf16(&mut bytes, ASSET);
+            crate::test_support::lp_utf16(&mut bytes, "urn:example:version=2");
+            let mut at = 0;
+            let reference = super::take_owned_reference(&bytes, &mut at).unwrap();
+            assert_eq!(at, bytes.len());
+            assert_eq!(
+                reference,
+                Reference::CrossDocument {
+                    target: 71,
+                    inline_type_guid: inline.then(|| TYPE.to_owned()),
+                    segment: 5,
+                    asset_guid: ASSET.into(),
+                    target_type_guid: TYPE.into(),
+                    link_name: role.into(),
+                    version: Some((ASSET.into(), "urn:example:version=2".into())),
+                }
+            );
+            for end in 0..bytes.len() {
+                let mut at = 0;
+                assert!(super::take_reference(&bytes[..end], &mut at).is_none());
+                assert_eq!(at, 0);
+            }
+            if inline && external {
+                bytes[external_offset + 4] = b'b';
+                let mut at = 0;
+                assert!(super::take_reference(&bytes, &mut at).is_none());
+                assert_eq!(at, 0);
+            }
+        }
     }
 
     #[test]

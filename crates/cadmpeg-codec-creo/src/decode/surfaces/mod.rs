@@ -310,6 +310,7 @@ pub(super) fn transfer_part_product(
     let label = model_name.to_owned();
     let part_number = model_name.to_owned();
     ir.model.product_definitions.push(ProductDefinition {
+        sketches: Vec::default(),
         id: product_ref,
         kind: ProductDefinitionKind::Part,
         source_name: Some(source_name),

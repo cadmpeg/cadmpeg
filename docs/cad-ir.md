@@ -2,7 +2,7 @@
 
 # cadmpeg IR (`.cadir.json`) specification
 
-`CadIr` is the versioned JSON product representation shared by codecs, validation, diffing, and encoders. This specification defines the current required IR version `"8"`. The `cadmpeg-ir` Rust types define field-level JSON types, and `cadir_json_schema()` derives the matching JSON Schema.
+`CadIr` is the versioned JSON product representation shared by codecs, validation, diffing, and encoders. This specification defines the current required IR version `"9"`. The `cadmpeg-ir` Rust types define field-level JSON types, and `cadir_json_schema()` derives the matching JSON Schema.
 
 ## Document layering
 
@@ -24,7 +24,7 @@ CadIr
 
 `source` is absent when the document has no source-container metadata. A present source block contains `format`, `attributes`, and `dialects`. `dialects` is always serialized. It is `null` for an unclassified source and otherwise contains the complete source `DialectLayers`, including the primary and every nested or carried layer. The primary dialect namespace equals `source.format`.
 
-The neutral model arenas, in serialization order, are `bodies`, `regions`, `shells`, `faces`, `loops`, `coedges`, `edges`, `vertices`, `points`, `surfaces`, `curves`, `subds`, `pcurves`, `procedural_surfaces`, `procedural_curves`, `assets`, `features`, `feature_input_topologies`, `configurations`, `parameters`, `sketches`, `sketch_entities`, `sketch_constraints`, `spatial_sketches`, `spatial_sketch_entities`, `spatial_sketch_constraints`, `spreadsheets`, `product_definitions`, `occurrences`, `assembly_joints`, `drawings`, `semantic_annotations`, `presentation_documents`, `view_presentations`, `tessellations`, `appearances`, `appearance_bindings`, `attributes`, `pmi`, and `presentation_layers`. References are string IDs. `subds` contains subdivision-surface control cages and is a free carrier arena.
+The neutral model arenas, in serialization order, are `bodies`, `regions`, `shells`, `faces`, `loops`, `coedges`, `edges`, `vertices`, `points`, `surfaces`, `curves`, `subds`, `pcurves`, `procedural_surfaces`, `procedural_curves`, `assets`, `features`, `feature_input_topologies`, `configurations`, `parameters`, `sketches`, `sketch_entities`, `sketch_constraints`, `spatial_sketches`, `spatial_sketch_entities`, `spatial_sketch_constraints`, `spreadsheets`, `product_definitions`, `occurrences`, `assembly_joints`, `drawings`, `semantic_annotations`, `presentation_documents`, `view_presentations`, `tessellations`, `appearances`, `appearance_bindings`, `attributes`, `pmi`, and `presentation_layers`. References are string IDs. `ProductDefinition.sketches` lists owned planar sketch IDs. Each ID names a member of `model.sketches`, and a sketch belongs to at most one product definition. An absent or empty list owns no sketches. A sketch with no product definition belongs to the design root. `subds` contains subdivision-surface control cages and is a free carrier arena.
 
 Pcurve geometry is a parameter-space line, angular circle, angular ellipse, parabola, hyperbola, first-order harmonic, first-order hyperbolic, polar harmonic, polar NURBS, NURBS, trimmed, or signed-offset curve. Circle and ellipse carriers store independent `x_axis` and `y_axis` parameter directions; a clockwise parameterization has a negated `y_axis`. General harmonic carriers evaluate `center + cosine*cos(t) + sine*sin(t)`; general hyperbolic carriers evaluate `center + cosine*cosh(t) + sine*sinh(t)`. A polar harmonic maps first-order radial-plane and axial harmonic coefficients to `(atan2(y, x), v)` without changing the spatial curve parameter. A polar NURBS evaluates radial-plane and axial control channels with one degree, knot vector, weight vector, and parameter, then maps the radial result through `atan2`. A signed offset adds its distance along the regular basis curve's left unit normal. Point evaluation requires a finite nonzero exact basis tangent; a nested signed offset has no point evaluation.
 
@@ -144,6 +144,13 @@ Decoders convert kernel conventions at decode:
 
 NURBS surfaces store degrees, full knot vectors, pole counts, u-major control points, optional per-pole weights, periodicity flags, and whether the carrier's oriented normal is opposite `Pu × Pv`. NURBS curves store degree, full knot vector, ordered control points, optional weights, and periodicity. Knot values are finite and nondecreasing. Control-point coordinates are finite. Each knot vector has its pole count plus its degree plus one values. A present weight vector has one weight per pole. NURBS weights are finite and nonzero; negative weights are permitted. This holds for model-space, pcurve and polar NURBS carriers alike.
 
+A periodic NURBS pcurve and a periodic polar NURBS pcurve evaluate points and derivatives modulo
+the positive width of their effective knot domain. Placement and offset carriers retain that
+period. A coedge pcurve use preserves its unwrapped endpoint values, including a seam crossing,
+and spans at most one period in either direction with a relative span allowance of `1e-12`.
+An explicit nondegenerate trim restricts the use to its stated interval. A zero-width knot domain
+supplies no period and does not admit a periodic use.
+
 An intersection-curve support side has an optional pcurve binding. A binding contains its pcurve geometry and an optional explicit mapping range. The range endpoints are finite and distinct. Endpoint order defines mapping direction and may decrease. Supporting-surface presence is independent of pcurve presence.
 
 ## Procedural carriers
@@ -191,6 +198,8 @@ Neutral definitions include directly stored geometry, solid and surface construc
 
 Datum planes retain their operation family when placement is unresolved and carry a model-space frame when resolved. A solid primitive is defined in its feature frame: a cylinder or cone has its base centre at the frame origin and its axis along the frame z axis. Its optional `placement` is the rigid local-to-model transform of that frame; an absent placement leaves the frame unresolved. Extents are one-sided, two-sided, or symmetric around the profile plane. Each side carries a one-sided termination law: unresolved, blind, through-all, through-next, to-first, to-last, to-face, to-vertex, to-plane, offset-from-face, to-shape, or angular. A symmetric side is mirrored across the profile plane; its blind length or angular travel states the total travel split evenly around the plane. An extrusion side additionally carries an optional draft angle, measured from the profile plane outward along that side's travel, and an optional signed offset from its terminating geometry; an absent draft leaves that side's walls parallel. Revolution sides carry termination laws only. Holes travel on one side only and state a bare termination law. Boolean operations are join, cut, intersect, or new-body. Profiles reference unresolved, native, sketch, or solved-face identity. Paths reference unresolved, native, sketch, edge, or curve identity. Projected curves retain unresolved directionality independently of an absent explicit direction vector. Draft faces, neutral plane, pull direction, angle, and side state resolve independently. Filled-surface boundaries, supports, continuity, and merge state also resolve independently. Continuity is a nonempty ordered list of boundary conditions. Each condition is `contact`, `tangent`, or `curvature`; tangent and curvature carry an optional positive dimensionless weight. Contact carries no weight. An absent weight means the source weight is unresolved. Conditions serialize as objects with `kind` and, when resolved, `weight`. Uniformity of the complete condition includes its weight. Boundary surfaces retain their operation family when their directional curve networks are unresolved. Surface-knit operands, entity merging, solid conversion, and tolerance resolve independently. Edge fillets use constant or sampled variable radii. Full-round fillets keep a center-face selection and two side-face selections; each side is explicit, automatic, or unresolved. Chamfers use distance, two distances, or distance-angle and retain reference-side reversal only when resolved. Hole entry and optional exit shapes are simple, chamfered, counterbored, or countersunk. Patterns are linear, circular, or mirrored.
 
+Linear pattern counts define grid positions, including the seed at `(0, 0)`. An absent second direction has one position. `omitted_instances` is an optional array of zero-based `[first, second]` grid coordinates. Each coordinate is in bounds and distinct, and `(0, 0)` is excluded. An absent or empty array omits no position. The retained instance count is the product of the direction counts minus the number of omitted coordinates. Length conversion preserves these coordinates.
+
 An extrusion starts on its profile plane, on a plane at a signed offset from the profile plane, on a selected face, or on a plane that has no face identity. A to-plane termination and a from-plane start each carry the model-space frame of that plane: an origin in millimeters, a normal, and a `u_axis` in the plane. The normal and `u_axis` are orthogonal and need not have unit length. Each also names the native record that stores the plane. This extrusion starts on the plane z = 40 mm and ends on the plane z = 100 mm:
 
 ```json
@@ -231,6 +240,10 @@ A configuration feature evaluation is `suppressed` or `active`. A suppressed eva
 
 A sheet-metal base flange places its thickness along the profile plane's positive normal (`forward`), along its negative normal (`reverse`), or split equally across both sides of the plane (`symmetric`).
 
+`SheetMetalAttachedPlate` builds a flat plate from its profile, thickness, and side. Its attachment selects the existing sheet edge. It has no Boolean operation or bend dimensions. `SheetMetalBend` names that plate and selects the attachment edge in its own input topology. It builds the joining bend region with its inside radius, relief, and transition. Replay the plate first, then its bend. The pair transfers together; an unresolved member keeps both members native. Each historical attachment selection identifies its own feature's input topology row.
+
+A `sheet_metal_corner` operation names one preceding `sheet_metal_bend` feature through `bend`. The bend occurs in the corner's dependencies. Its explicit `effect: "unchanged"` states that the corner preserves the input body geometry and topology. It creates no faces, edges, or vertices. Source controls and dimensions remain in source properties and native records when they have no neutral construction meaning. An unchanged corner requires no generated result topology.
+
 Loft guidance is a guide-path list or one centerline path. An empty guide-path list means unguided. Guide paths and a centerline cannot coexist.
 
 A sketch native operand has a nonempty native kind and an optional field. A present field has a nonempty name and an optional role. A role exists only within its field.
@@ -269,6 +282,32 @@ Native records retain typed references into the neutral model. Format-neutral co
 ## Presentation, attributes, and source fidelity
 
 Tessellations are display meshes independent of exact B-rep geometry. Appearances describe visual or physical assets. Appearance bindings assign appearances to topology entities or native source carriers. A binding's optional `visible` field is `None` when the source provides no binding-level visibility value and is `false` when that binding is explicitly hidden; binding visibility does not change visibility on a shared geometry carrier. Drawings preserve page, view, and annotation entities. A drawing's optional `visible` field is `None` when the source provides no drawing-level visibility value and is `false` when that drawing entity is explicitly hidden; drawing visibility does not change visibility on its relationships or contents. PMI annotations preserve semantic and graphical annotation entities. A PMI annotation's optional `visible` field is `None` when the source provides no annotation-level visibility value and is `false` when that annotation occurrence is explicitly hidden; annotation visibility does not change visibility on a shared geometry or tessellation carrier. Presentation layers group model or presentation items. A layer's optional `visible` field is `None` when the source provides no layer-level visibility value and is `false` when the layer is explicitly hidden; layer visibility does not change visibility on its assigned items. Attributes attach source-native values to supported targets.
+
+A drawing's `sheet` holds positive width and height in millimetres and ordered,
+uniquely named title-block fields. A page can obtain its sheet through its
+`template` identity. `curves` is an ordered collection in the owning view frame:
+X right, Y up, millimetres before view scale and rotation. Each curve has required
+`visible` or `hidden` visibility and `projected_model_edge`, `cosmetic`, or
+`center_line` source. Its optional `displayed` flag is independent presentation
+visibility. Geometry is a finite line, a positive-radius circle, or an arc with
+three distinct points on its circle within relative radial error 1e-9.
+
+`template_geometry` belongs only to templates and holds ordered curves and
+baseline-positioned texts in physical page millimetres, X right and Y up. It
+reuses `DrawingCurveGeometry` in this page frame. Each text has a resolved string,
+finite baseline position, and positive em height in millimetres. `x_direction`
+belongs only to view, projection, section, or detail drawings and gives their
+finite nonzero horizontal model direction.
+
+A semantic dimension has one `dimension_kind`, optional `value`, format,
+`text_override`, signed nonzero `upper_tolerance` and `lower_tolerance`, and text
+position. Linear values and tolerances are millimetres; angular values and
+tolerances are degrees. Its `reference_anchors` is empty or contains two ordered
+finite page-space reference points in millimetres. A nonempty pair requires a
+typed dimension owner. Anchors do not define dimension lines, arrows, or text
+orientation. Annotation `text_style` holds an optional positive physical em
+height and optional stored font family without substitution. No second dimension
+kind, unit selector, or sheet-size field exists.
 
 `Tessellation.triangles` preserves source winding. Each triangle index addresses
 `vertices`. `feature_edges` is the
@@ -358,7 +397,7 @@ Structural failures are errors. Same-sense two-member radial rings, unknown anno
 
 Readers provide no migration.
 
-Readers accept exactly `ir_version: "8"`. The `model.subds` arena is required, including when empty. Source annotations and retained records are excluded from the neutral product model. Recursive affine-transformed curve and surface carriers preserve exact source parameterization under occurrence placement. Removing or renaming a product field, or changing its type, units, parameterization, or invariant, requires a new IR version. New product fields carry identity, units, ordering, reference, and validation contracts.
+Readers accept exactly `ir_version: "8"`. The `model.subds` arena is required, including when empty. Source annotations and retained records are excluded from the neutral product model. Recursive affine-transformed curve and surface carriers preserve exact source parameterization under occurrence placement. Maintainers select the IR version for each release. After a release, removing or renaming a product field, or changing its type, units, parameterization, or invariant, requires a new IR version. New product fields carry identity, units, ordering, reference, and validation contracts.
 
 `Sweep.section` is a required sum type and `Sweep.sections` is a same-typed list. A sweep section is unresolved, references a `ProfileRef`, or owns generated section geometry. A generated circular region stores its outer radius and optional inward wall thickness.
 

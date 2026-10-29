@@ -270,3 +270,46 @@ fn solid_cylinder_round_trip_keeps_measured_geometry() {
             .expect("the round trip keeps its measured geometry");
     }
 }
+
+/// The unit-square NURBS patch less the `0.5 x 0.5` hole, whose outer
+/// boundary is the patch's implicit parameter rectangle, keeps its area
+/// `1 - 0.25` through a STEP write round trip in either face sense: the
+/// written outer bound winds with the face about its oriented normal.
+#[test]
+fn implicit_outer_patch_round_trip_keeps_the_face_domain() {
+    use crate::test_support::curve_bounded::{implicit_outer_sheet, unit_square_patch, HOLE_SIDE};
+    for sense in [
+        cadmpeg_ir::topology::Sense::Forward,
+        cadmpeg_ir::topology::Sense::Reversed,
+    ] {
+        let ir = implicit_outer_sheet(unit_square_patch(), sense);
+        let mut output = Vec::new();
+        write_step(
+            &ir,
+            &mut output,
+            StepSchema::Ap214,
+            &StepWriteOptions::default(),
+        )
+        .expect("write the patch");
+        let decoded = StepCodec::default()
+            .decode(&mut Cursor::new(output), &DecodeOptions::default())
+            .expect("decode the written patch");
+        let (_, before, after) = measures_agree("implicit outer patch", &ir, decoded.ir())
+            .expect("the round trip keeps its measured geometry");
+        for report in [&before, &after] {
+            let [body] = report.bodies().as_slice() else {
+                panic!("one body row");
+            };
+            let area = body
+                .area()
+                .as_ref()
+                .and_then(Quantity::measured)
+                .expect("measured area");
+            assert_close(
+                area.value().value.get(),
+                1.0 - HOLE_SIDE * HOLE_SIDE,
+                area.numeric_error().get(),
+            );
+        }
+    }
+}

@@ -3,13 +3,21 @@
 //! what ends a table sequence, and what a recognised table refuses.
 
 use super::class;
+use super::framed_surface_reference;
+use super::persistent_identity;
 use super::table;
 use crate::container::{Block, BlockName, PayloadFamily, Section};
+use crate::tessellation::admit_reused_face_tag;
+use crate::tessellation::class_intervals;
 use crate::tessellation::descriptor_table_offset;
 use crate::tessellation::parse_table;
 use crate::tessellation::parse_table_sequence;
+use crate::tessellation::persistent_join_verdict;
 use crate::tessellation::scene_classes;
 use crate::tessellation::section_display_faces;
+use crate::tessellation::PersistentJoinVerdict;
+use crate::tessellation::PersistentJoinWithhold;
+use crate::tessellation::ReusedTagVerdict;
 use crate::tessellation::CLASS_MARKER;
 use crate::test_support::container::make_block;
 use crate::test_support::container::sldprt_with_body;
@@ -333,4 +341,146 @@ fn a_short_normal_lane_refuses_the_display_table() {
         .expect_err("a short normal lane is refused")
         .to_string();
     assert!(error.contains("vertex normal(s)"), "{error}");
+}
+
+/// One reused-tag probe: the u16 tag and the two u32 counts it frames.
+fn reused_tag_block(tag: u16, triangles: u32, strips: u32) -> Vec<u8> {
+    let mut block = Vec::new();
+    block.extend(tag.to_le_bytes());
+    block.extend(triangles.to_le_bytes());
+    block.extend(strips.to_le_bytes());
+    block
+}
+
+/// Two face tables with `gap` bytes between the first table and the second
+/// declaration and `second_metadata` bytes after the second table.
+fn two_face_payload(gap: &[u8], second_metadata: &[u8]) -> Vec<u8> {
+    let mut payload = Vec::new();
+    class(&mut payload, "uoTempFaceTessData_c", &[]);
+    payload.extend(1_u32.to_le_bytes());
+    payload.extend(1_u32.to_le_bytes());
+    payload.extend(table());
+    payload.extend_from_slice(gap);
+    class(&mut payload, "uoTempFaceTessData_c", &[]);
+    payload.extend(1_u32.to_le_bytes());
+    payload.extend(1_u32.to_le_bytes());
+    payload.extend(table());
+    payload.extend_from_slice(second_metadata);
+    payload
+}
+
+fn display_faces_of(payload: &[u8]) -> Vec<crate::tessellation::DisplayFace> {
+    let block = Block {
+        offset: 0,
+        type_id: 0x41,
+        comp_sz: 0,
+        section: BlockName::Named(cadmpeg_ir::stream_name!("Contents/DisplayLists")),
+        family: PayloadFamily::Tessellation,
+        payload: payload.to_vec(),
+        ps_streams: Vec::new(),
+        ps_probe_capped: false,
+    };
+    let arena = DecodeArena::new();
+    let (ctx, _) = DecodeContext::from_root_bytes(&block.payload, &arena, &DecodePolicy::service())
+        .expect("root");
+    section_display_faces(&ctx, Section::Block(&block)).expect("faces admit")
+}
+
+#[test]
+fn no_tag_bytes_leave_no_reused_tag() {
+    let payload = two_face_payload(&[0; 24], &[]);
+    let faces = display_faces_of(&payload);
+    assert_eq!(faces.len(), 2);
+    let classes = class_intervals(&payload);
+    assert_eq!(
+        admit_reused_face_tag(&payload, &faces[1], faces[0].table.end(), &classes),
+        ReusedTagVerdict::Absent
+    );
+    assert_eq!(
+        persistent_join_verdict(&payload, &faces, 1, &classes),
+        PersistentJoinVerdict::Withhold(PersistentJoinWithhold::InvalidTokens)
+    );
+}
+
+#[test]
+fn single_reused_tag_before_a_known_table_admits() {
+    let payload = two_face_payload(
+        &reused_tag_block(0x8001, 1, 1),
+        &framed_surface_reference("moPlaneSurfIdRep_c,7,3,"),
+    );
+    let faces = display_faces_of(&payload);
+    assert_eq!(faces.len(), 2);
+    let classes = class_intervals(&payload);
+    assert_eq!(
+        admit_reused_face_tag(&payload, &faces[1], faces[0].table.end(), &classes),
+        ReusedTagVerdict::Admit(0x8001)
+    );
+    assert_eq!(
+        persistent_join_verdict(&payload, &faces, 1, &classes),
+        PersistentJoinVerdict::Admit(persistent_identity(7, 3, &[]))
+    );
+}
+
+#[test]
+fn conflicting_reused_tags_withhold_the_join() {
+    let mut gap = reused_tag_block(0x8001, 1, 1);
+    gap.extend(reused_tag_block(0x8002, 1, 1));
+    let payload = two_face_payload(&gap, &framed_surface_reference("moPlaneSurfIdRep_c,7,3,"));
+    let faces = display_faces_of(&payload);
+    assert_eq!(faces.len(), 2);
+    let classes = class_intervals(&payload);
+    assert_eq!(
+        admit_reused_face_tag(&payload, &faces[1], faces[0].table.end(), &classes),
+        ReusedTagVerdict::Withhold
+    );
+    assert_eq!(
+        persistent_join_verdict(&payload, &faces, 1, &classes),
+        PersistentJoinVerdict::Withhold(PersistentJoinWithhold::AmbiguousReusedTag)
+    );
+}
+
+#[test]
+fn absent_tag_values_never_survive() {
+    let mut gap = reused_tag_block(0xffff, 1, 1);
+    gap.extend(reused_tag_block(0x8000, 1, 1));
+    let payload = two_face_payload(&gap, &[]);
+    let faces = display_faces_of(&payload);
+    assert_eq!(faces.len(), 2);
+    let classes = class_intervals(&payload);
+    assert_eq!(
+        admit_reused_face_tag(&payload, &faces[1], faces[0].table.end(), &classes),
+        ReusedTagVerdict::Absent
+    );
+}
+
+#[test]
+fn tag_with_disagreeing_counts_never_survives() {
+    let payload = two_face_payload(&reused_tag_block(0x8001, 2, 1), &[]);
+    let faces = display_faces_of(&payload);
+    assert_eq!(faces.len(), 2);
+    let classes = class_intervals(&payload);
+    assert_eq!(
+        admit_reused_face_tag(&payload, &faces[1], faces[0].table.end(), &classes),
+        ReusedTagVerdict::Absent
+    );
+}
+
+#[test]
+fn tag_outside_face_intervals_never_survives() {
+    let payload = two_face_payload(&reused_tag_block(0x8001, 1, 1), &[]);
+    let faces = display_faces_of(&payload);
+    assert_eq!(faces.len(), 2);
+    assert_eq!(
+        admit_reused_face_tag(&payload, &faces[1], faces[0].table.end(), &[]),
+        ReusedTagVerdict::Absent
+    );
+}
+
+#[test]
+fn join_verdict_without_a_face_withholds() {
+    let payload = two_face_payload(&[], &[]);
+    assert_eq!(
+        persistent_join_verdict(&payload, &[], 0, &[]),
+        PersistentJoinVerdict::Withhold(PersistentJoinWithhold::InvalidTokens)
+    );
 }

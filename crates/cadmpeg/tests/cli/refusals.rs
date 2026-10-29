@@ -167,6 +167,32 @@ fn reject_empty_refuses_while_default_writes_empty_native_geometry() {
         .stdout(predicate::str::starts_with("ISO-10303-21"));
 }
 
+#[test]
+fn convert_writes_when_native_decode_has_no_geometry() {
+    let dir = tempdir().unwrap();
+    let input = geometryless_creo(dir.path(), "empty.prt");
+    let report = dir.path().join("empty-report.json");
+    Command::cargo_bin("cadmpeg")
+        .unwrap()
+        .args([
+            "convert",
+            input.to_str().unwrap(),
+            "-f",
+            "step",
+            "--report",
+            report.to_str().unwrap(),
+        ])
+        .assert()
+        .success()
+        .stdout(predicate::str::starts_with("ISO-10303-21"));
+    let report: serde_json::Value = serde_json::from_slice(&fs::read(report).unwrap()).unwrap();
+    assert!(report["export"]["losses"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .any(|loss| { loss["code"]["code"] == "export.no-geometry-written" }));
+}
+
 /// Container-only output remains an explicit caller policy, independent of writer scope.
 #[test]
 fn convert_refuses_container_only_native_output_under_each_empty_policy() {
@@ -524,16 +550,16 @@ fn reject_lossy_scopes_select_which_losses_refuse() {
     assert_eq!(report["refusal"]["code"], "export_loss_rejected");
     assert!(report["export"].is_object());
     assert_eq!(report["export"]["identity"]["payload"], "native");
-    assert_eq!(report["export"]["losses"].as_array().unwrap().len(), 3);
-    assert!(report["export"]["losses"]
-        .as_array()
-        .unwrap()
+    let losses = report["export"]["losses"].as_array().unwrap();
+    assert_eq!(losses.len(), 3);
+    assert!(losses.iter().any(|loss| {
+        loss["code"]["namespace"] == "export"
+            && loss["code"]["code"] == "output.empty"
+            && loss["severity"] == "warning"
+    }));
+    assert!(losses
         .iter()
-        .any(|loss| {
-            loss["code"]["namespace"] == "export"
-                && loss["code"]["code"] == "output.empty"
-                && loss["severity"] == "warning"
-        }));
+        .any(|loss| loss["code"]["code"] == "export.no-geometry-written"));
 
     let lossless = fixture(
         dir.path(),

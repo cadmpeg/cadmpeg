@@ -712,3 +712,294 @@ fn drawing_wire_rejects_non_page_views() {
         .to_string()
         .contains("non-page drawing record cannot carry views or a template"));
 }
+
+#[test]
+fn techdraw_sheet_units_title_block_and_dimension_fields() {
+    let document = r#"<Document SchemaVersion="4" FileVersion="1"><Objects Count="2"><Object type="TechDraw::DrawSVGTemplate" name="Template"/><Object type="TechDraw::DrawViewDimension" name="Dimension"/></Objects><ObjectData Count="2"><Object name="Template"><Properties Count="2"><Property name="PageResult" type="App::PropertyFileIncluded"><FileIncluded file="sheet.svg"/></Property><Property name="EditableTexts" type="App::PropertyMap"><Map count="2"><Item key="Author" value="Test"/><Item key="Title" value="Part"/></Map></Property></Properties></Object><Object name="Dimension"><Properties Count="6"><Property name="Type" type="App::PropertyEnumeration"><Integer value="0"/></Property><Property name="Arbitrary" type="App::PropertyBool"><Bool value="true"/></Property><Property name="FormatSpec" type="App::PropertyString"><String value="CHECK"/></Property><Property name="OverTolerance" type="App::PropertyQuantityConstraint"><Float value="0.2"/></Property><Property name="UnderTolerance" type="App::PropertyQuantityConstraint"><Float value="-0.1"/></Property><Property name="ArbitraryTolerances" type="App::PropertyBool"><Bool value="false"/></Property></Properties></Object></ObjectData></Document>"#;
+    for (width, height, expected) in [
+        ("21cm", "297mm", Some((210.0, 297.0))),
+        ("2in", "72pt", Some((50.8, 25.4))),
+        ("6pc", "96px", Some((25.4, 25.4))),
+        ("210", "297mm", None),
+        ("12qu", "297mm", None),
+        ("0mm", "297mm", None),
+    ] {
+        let svg = format!(
+            r#"<svg xmlns="http://www.w3.org/2000/svg" width="{width}" height="{height}"/>"#
+        );
+        let result = FcstdCodec
+            .decode(
+                &mut Cursor::new(archive_entries(&[
+                    ("Document.xml", document.as_bytes()),
+                    ("sheet.svg", svg.as_bytes()),
+                ])),
+                &DecodeOptions::default(),
+            )
+            .unwrap();
+        let sheet = result
+            .ir()
+            .model
+            .drawings
+            .iter()
+            .find(|drawing| drawing.kind == cadmpeg_ir::drawings::DrawingKind::Template)
+            .expect("template")
+            .sheet
+            .as_ref();
+        assert_eq!(
+            sheet.map(|s| (s.width_mm.get(), s.height_mm.get())),
+            expected
+        );
+        if let Some(sheet) = sheet {
+            assert_eq!(
+                sheet
+                    .fields
+                    .iter()
+                    .map(|f| (f.name.as_str(), f.value.as_str()))
+                    .collect::<Vec<_>>(),
+                [("Author", "Test"), ("Title", "Part")]
+            );
+        } else {
+            assert!(result
+                .report()
+                .losses
+                .iter()
+                .any(|loss| loss.code.local_code() == "drawing.sheet-not-transferred"));
+        }
+        let annotation = &result.ir().model.semantic_annotations[0];
+        assert_eq!(
+            annotation.dimension_kind,
+            Some(cadmpeg_ir::semantic_annotations::DimensionKind::Distance {})
+        );
+        assert_eq!(annotation.text_override.as_deref(), Some("CHECK"));
+        assert_eq!(
+            annotation
+                .upper_tolerance
+                .map(cadmpeg_ir::scalar::FiniteReal::get),
+            Some(0.2)
+        );
+        assert_eq!(
+            annotation
+                .lower_tolerance
+                .map(cadmpeg_ir::scalar::FiniteReal::get),
+            Some(-0.1)
+        );
+    }
+}
+
+#[test]
+fn techdraw_persisted_curves_and_native_losses() {
+    let edge = r##"<CosmeticEdge type="TechDraw::CosmeticEdge"><Style value="1"/><Weight value="0.25"/><Color value="#000000"/><Visible value="0"/><GeometryType value="7"/><GeomType value="7"/><ExtractType value="0"/><EdgeClass value="5"/><HLRVisible value="0"/><Reversed value="0"/><Ref3D value="-1"/><Cosmetic value="1"/><Source value="1"/><SourceIndex value="-1"/><CosmeticTag value="test"/><Points PointsCount="2"><Point X="1" Y="2" Z="0"/><Point X="3" Y="4" Z="0"/></Points></CosmeticEdge>"##;
+    let document = format!(
+        r#"<Document SchemaVersion="4" FileVersion="1"><Objects Count="1"><Object type="TechDraw::DrawViewPart" name="View"/></Objects><ObjectData Count="1"><Object name="View"><Properties Count="1"><Property name="CosmeticEdges" type="TechDraw::PropertyCosmeticEdgeList"><CosmeticEdgeList count="1">{edge}</CosmeticEdgeList></Property></Properties></Object></ObjectData></Document>"#
+    );
+    let result = FcstdCodec
+        .decode(
+            &mut Cursor::new(archive(&document)),
+            &DecodeOptions::default(),
+        )
+        .unwrap();
+    let curves = &result.ir().model.drawings[0].curves;
+    assert_eq!(curves.len(), 1);
+    assert_eq!(
+        curves[0].source,
+        cadmpeg_ir::drawings::CurveSource::Cosmetic
+    );
+    assert_eq!(
+        curves[0].visibility,
+        cadmpeg_ir::drawings::CurveVisibility::Hidden
+    );
+    assert_eq!(curves[0].displayed, Some(false));
+    assert_eq!(
+        curves[0].geometry,
+        cadmpeg_ir::drawings::DrawingCurveGeometry::Line {
+            start: cadmpeg_ir::units::FiniteVector::new([1.0, 2.0]).unwrap(),
+            end: cadmpeg_ir::units::FiniteVector::new([3.0, 4.0]).unwrap(),
+        }
+    );
+    let unsupported = document.replace("Z=\"0\"", "Z=\"1\"");
+    let result = FcstdCodec
+        .decode(
+            &mut Cursor::new(archive(&unsupported)),
+            &DecodeOptions::default(),
+        )
+        .unwrap();
+    assert!(result.ir().model.drawings[0].curves.is_empty());
+    assert!(result
+        .report()
+        .losses
+        .iter()
+        .any(|loss| loss.code.local_code() == "drawing.cosmetic-edge-not-transferred"));
+}
+
+#[test]
+fn techdraw_unknown_dimension_and_saved_shape_stay_native() {
+    let document = r#"<Document SchemaVersion="4" FileVersion="1"><Objects Count="1"><Object type="TechDraw::DrawViewDimension" name="Dimension"/></Objects><ObjectData Count="1"><Object name="Dimension"><Properties Count="2"><Property name="Type" type="App::PropertyEnumeration"><Integer value="99"/></Property><Property name="SavedGeometry" type="Part::PropertyTopoShapeList"><ShapeList count="1"><TopoShape file="saved.brp"/></ShapeList></Property></Properties></Object></ObjectData></Document>"#;
+    let empty = b"CASCADE Topology V1, (c) Matra-Datavision\nLocations 0\nCurve2ds 0\nCurves 0\nPolygon3D 0\nPolygonOnTriangulations 0\nSurfaces 0\nTriangulations 0\nTShapes 0\n*";
+    let result = FcstdCodec
+        .decode(
+            &mut Cursor::new(archive_entries(&[
+                ("Document.xml", document.as_bytes()),
+                ("saved.brp", empty),
+            ])),
+            &DecodeOptions::default(),
+        )
+        .unwrap();
+    assert_eq!(
+        result.ir().model.semantic_annotations[0].dimension_kind,
+        Some(cadmpeg_ir::semantic_annotations::DimensionKind::Other {
+            native_type: "99".into()
+        })
+    );
+    assert!(result.ir().model.semantic_annotations[0].value.is_none());
+    assert!(result
+        .report()
+        .losses
+        .iter()
+        .any(|loss| loss.code.local_code() == "drawing.dimension-kind-not-transferred"));
+    assert!(!result
+        .report()
+        .losses
+        .iter()
+        .any(|loss| loss.code.local_code() == "drawing.dimension-geometry-not-transferred"));
+}
+
+#[test]
+fn techdraw_dimension_custom_categories() {
+    use cadmpeg_ir::semantic_annotations::DimensionKind;
+    for (label, expected) in [
+        ("DistanceX", DimensionKind::HorizontalDistance {}),
+        ("DistanceY", DimensionKind::VerticalDistance {}),
+        ("Radius", DimensionKind::Radius {}),
+        ("Diameter", DimensionKind::Diameter {}),
+        ("Angle", DimensionKind::Angle {}),
+        ("Angle3Pt", DimensionKind::ThreePointAngle {}),
+    ] {
+        let document = format!(
+            r#"<Document SchemaVersion="4" FileVersion="1"><Objects Count="1"><Object type="TechDraw::DrawViewDimension" name="Dimension"/></Objects><ObjectData Count="1"><Object name="Dimension"><Properties Count="1"><Property name="Type" type="App::PropertyEnumeration"><Integer value="0"/><CustomEnumList count="1"><Enum value="{label}"/></CustomEnumList></Property></Properties></Object></ObjectData></Document>"#
+        );
+        let result = FcstdCodec
+            .decode(
+                &mut Cursor::new(archive(&document)),
+                &DecodeOptions::default(),
+            )
+            .unwrap();
+        assert_eq!(
+            result.ir().model.semantic_annotations[0].dimension_kind,
+            Some(expected)
+        );
+    }
+}
+
+#[test]
+fn techdraw_circle_center_line_and_format_loss() {
+    let circle = r##"<CosmeticEdge type="TechDraw::CosmeticEdge"><Style value="1"/><Weight value="0.25"/><Color value="#000000"/><Visible value="1"/><GeometryType value="1"/><GeomType value="1"/><ExtractType value="0"/><EdgeClass value="5"/><HLRVisible value="1"/><Reversed value="0"/><Ref3D value="-1"/><Cosmetic value="1"/><Source value="1"/><SourceIndex value="-1"/><CosmeticTag value="test"/><Center X="2" Y="3" Z="0"/><Radius value="4"/></CosmeticEdge>"##;
+    let line = r##"<CenterLine type="TechDraw::CenterLine"><Start X="0" Y="1" Z="0"/><End X="0" Y="6" Z="0"/><Mode value="0"/><HShift value="0"/><VShift value="0"/><Rotate value="0"/><Extend value="0"/><Type value="1"/><Flip value="0"/><Faces FaceCount="0"/><Edges EdgeCount="0"/><CLPoints CLPointCount="0"/><Style value="1"/><Weight value="0.25"/><Color value="#000000"/><Visible value="1"/><GeometryType value="7"/><GeomType value="7"/><ExtractType value="0"/><EdgeClass value="5"/><HLRVisible value="1"/><Reversed value="0"/><Ref3D value="-1"/><Cosmetic value="1"/><Source value="2"/><SourceIndex value="-1"/><CosmeticTag value="test"/><Points PointsCount="2"><Point X="0" Y="1" Z="0"/><Point X="0" Y="6" Z="0"/></Points></CenterLine>"##;
+    let document = format!(
+        r##"<Document SchemaVersion="4" FileVersion="1"><Objects Count="1"><Object type="TechDraw::DrawViewPart" name="View"/></Objects><ObjectData Count="1"><Object name="View"><Properties Count="3"><Property name="CosmeticEdges" type="TechDraw::PropertyCosmeticEdgeList"><CosmeticEdgeList count="1">{circle}</CosmeticEdgeList></Property><Property name="CenterLines" type="TechDraw::PropertyCenterLineList"><CenterLineList count="1">{line}</CenterLineList></Property><Property name="GeomFormats" type="TechDraw::PropertyGeomFormatList"><GeomFormatList count="1"><GeomFormat type="TechDraw::GeomFormat"><GeomIndex value="1"/><Style value="1"/><Weight value="0.25"/><Color value="#000000"/><Visible value="1"/></GeomFormat></GeomFormatList></Property></Properties></Object></ObjectData></Document>"##
+    );
+    let result = FcstdCodec
+        .decode(
+            &mut Cursor::new(archive(&document)),
+            &DecodeOptions::default(),
+        )
+        .unwrap();
+    let curves = &result.ir().model.drawings[0].curves;
+    assert_eq!(curves.len(), 2);
+    assert!(
+        matches!(curves[0].geometry, cadmpeg_ir::drawings::DrawingCurveGeometry::Circle { radius, .. } if radius.get() == 4.0)
+    );
+    assert_eq!(
+        curves[1].source,
+        cadmpeg_ir::drawings::CurveSource::CenterLine
+    );
+    assert!(result
+        .report()
+        .losses
+        .iter()
+        .any(|loss| loss.code.local_code() == "drawing.geometry-format-not-transferred"));
+    let adjusted = document.replace("HShift value=\"0\"", "HShift value=\"1\"");
+    let result = FcstdCodec
+        .decode(
+            &mut Cursor::new(archive(&adjusted)),
+            &DecodeOptions::default(),
+        )
+        .unwrap();
+    assert_eq!(result.ir().model.drawings[0].curves.len(), 1);
+    assert!(result
+        .report()
+        .losses
+        .iter()
+        .any(|loss| loss.code.local_code() == "drawing.center-line-not-transferred"));
+}
+
+#[test]
+fn techdraw_nonempty_saved_geometry_has_loss_without_inferred_value() {
+    let document = r#"<Document SchemaVersion="4" FileVersion="1"><Objects Count="1"><Object type="TechDraw::DrawViewDimension" name="Dimension"/></Objects><ObjectData Count="1"><Object name="Dimension"><Properties Count="1"><Property name="SavedGeometry" type="Part::PropertyTopoShapeList"><ShapeList count="1"><TopoShape file="saved.brp"/></ShapeList></Property></Properties></Object></ObjectData></Document>"#;
+    let vertex = b"CASCADE Topology V1, (c) Matra-Datavision\nLocations 0\nCurve2ds 0\nCurves 0\nPolygon3D 0\nPolygonOnTriangulations 0\nSurfaces 0\nTriangulations 0\nTShapes 1\nVe 0.001 2 3 4 0 0 1001000 *\n+1 0 *";
+    let result = FcstdCodec
+        .decode(
+            &mut Cursor::new(archive_entries(&[
+                ("Document.xml", document.as_bytes()),
+                ("saved.brp", vertex),
+            ])),
+            &DecodeOptions::default(),
+        )
+        .unwrap();
+    assert!(result.ir().model.semantic_annotations[0].value.is_none());
+    assert!(result
+        .report()
+        .losses
+        .iter()
+        .any(|loss| loss.code.local_code() == "drawing.dimension-geometry-not-transferred"));
+}
+
+#[test]
+fn techdraw_arbitrary_tolerance_has_loss_and_position_has_one_owner() {
+    let document = r#"<Document SchemaVersion="4" FileVersion="1"><Objects Count="1"><Object type="TechDraw::DrawViewDimension" name="Dimension"/></Objects><ObjectData Count="1"><Object name="Dimension"><Properties Count="5"><Property name="ArbitraryTolerances" type="App::PropertyBool"><Bool value="true"/></Property><Property name="OverTolerance" type="App::PropertyQuantityConstraint"><Float value="0.2"/></Property><Property name="FormatSpecOverTolerance" type="App::PropertyString"><String value="LIMIT"/></Property><Property name="X" type="App::PropertyDistance"><Float value="7"/></Property><Property name="Y" type="App::PropertyDistance"><Float value="8"/></Property></Properties></Object></ObjectData></Document>"#;
+    let result = FcstdCodec
+        .decode(
+            &mut Cursor::new(archive(document)),
+            &DecodeOptions::default(),
+        )
+        .unwrap();
+    assert!(result.ir().model.drawings[0].position.is_none());
+    let annotation = &result.ir().model.semantic_annotations[0];
+    assert_eq!(annotation.position.unwrap().get(), [7.0, 8.0, 0.0]);
+    assert!(annotation.upper_tolerance.is_none());
+    assert_eq!(
+        result
+            .report()
+            .losses
+            .iter()
+            .filter(|loss| loss.code.local_code() == "drawing.dimension-tolerance-not-transferred")
+            .count(),
+        2
+    );
+}
+
+#[test]
+fn techdraw_cosmetic_vertex_and_blank_title_field_have_losses() {
+    let vertex = r##"<CosmeticVertex type="TechDraw::CosmeticVertex"><Point X="2" Y="3" Z="0"/><Extract value="0"/><HLRVisible value="1"/><Ref3D value="-1"/><IsCenter value="0"/><Cosmetic value="1"/><CosmeticLink value="-1"/><CosmeticTag value="12345678-1234-1234-1234-123456789abc"/><PermaPoint X="2" Y="3" Z="0"/><LinkGeom value="0"/><Color value="#000000"/><Size value="1"/><Style value="1"/><Visible value="1"/><Tag value="12345678-1234-1234-1234-123456789abc"/></CosmeticVertex>"##;
+    let document = format!(
+        r#"<Document SchemaVersion="4" FileVersion="1"><Objects Count="2"><Object type="TechDraw::DrawViewPart" name="View"/><Object type="TechDraw::DrawSVGTemplate" name="Template"/></Objects><ObjectData Count="2"><Object name="View"><Properties Count="1"><Property name="CosmeticVertexes" type="TechDraw::PropertyCosmeticVertexList"><CosmeticVertexList count="1">{vertex}</CosmeticVertexList></Property></Properties></Object><Object name="Template"><Properties Count="2"><Property name="PageResult" type="App::PropertyFileIncluded"><FileIncluded file="sheet.svg"/></Property><Property name="EditableTexts" type="App::PropertyMap"><Map count="1"><Item key=" " value="TEST"/></Map></Property></Properties></Object></ObjectData></Document>"#
+    );
+    let result = FcstdCodec
+        .decode(
+            &mut Cursor::new(archive_entries(&[
+                ("Document.xml", document.as_bytes()),
+                ("sheet.svg", br#"<svg width="20mm" height="30mm"/>"#),
+            ])),
+            &DecodeOptions::default(),
+        )
+        .unwrap();
+    for code in [
+        "drawing.cosmetic-vertex-not-transferred",
+        "drawing.title-block-not-transferred",
+    ] {
+        assert!(result
+            .report()
+            .losses
+            .iter()
+            .any(|loss| loss.code.local_code() == code));
+    }
+}

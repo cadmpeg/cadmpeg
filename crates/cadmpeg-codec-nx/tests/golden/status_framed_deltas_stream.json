@@ -1,7 +1,8 @@
 {
   "decode": {
     "ir": {
-      "ir_version": "8",
+      "decode_depth": "full",
+      "ir_version": "9",
       "model": {
         "appearance_bindings": [],
         "appearances": [],
@@ -43,47 +44,13 @@
       },
       "native": {
         "nx": {
-          "parasolid_deltas_records": [
-            {
-              "byte_len": 50,
-              "family": "FACE",
-              "id": "nx:s0:deltas-record#70-100",
-              "kind": 14,
-              "node_id": 7,
-              "position": null,
-              "references": [
-                1,
-                1,
-                1,
-                1,
-                1,
-                1,
-                1,
-                1,
-                1,
-                1,
-                1
-              ],
-              "stream_ordinal": 0,
-              "xmt": 100
-            }
-          ],
           "parasolid_deltas_residual_spans": [
             {
-              "byte_len": 70,
+              "byte_len": 126,
               "id": "nx:s0:deltas-residual#0",
-              "sha256": "894857f2f9b776a00dadb52f361df957a104fa45d2d42d162ce8ead227d37b87",
+              "inflated_offset": 0,
+              "sha256": "8702b8415ecb78eee7c4b1020f0e4e342b5bbca27bc9766e14f2f65c4749c572",
               "stream_ordinal": 0
-            }
-          ],
-          "parasolid_deltas_tombstones": [
-            {
-              "byte_len": 6,
-              "family": "EDGE",
-              "id": "nx:s0:deltas-tombstone#120-48303",
-              "kind": 16,
-              "stream_ordinal": 0,
-              "xmt": 48303
             }
           ],
           "unknowns": [
@@ -93,21 +60,21 @@
           ]
         }
       },
-      "scope": {
-        "design": false,
-        "model": false
-      },
       "source": {
         "attributes": {
-          "deltas.0.bytes_decoded": "56",
-          "deltas.0.full.FACE": "1",
-          "deltas.0.grammar": "typed_status_framed_records",
-          "deltas.0.tombstone.EDGE": "1",
+          "deltas.0.bytes_decoded": "0",
+          "deltas.0.grammar": "sequential_owned_records",
+          "deltas.0.instances": "0",
+          "deltas.0.schemas": "0",
+          "deltas.0.selection": "unresolved",
+          "deltas.0.stop_offset": "0",
+          "deltas.0.stop_reason": "UnsupportedBase",
           "deltas_streams": "1",
           "directory_entries": "1",
           "file_size": "211",
           "footer_entry_count": "0",
           "footer_fingerprint": "00000000",
+          "footer_offset": "197",
           "header_entry_count": "1",
           "jpeg_preview_count": "0",
           "partition_streams": "0",
@@ -189,17 +156,6 @@
           },
           "message": "The Parasolid stream at stream@76 declares schema \"SCH_TEST_1_9999\", which has no declared grammar. It was admitted as the `parasolid:unknown` residual layer without substituting another schema grammar; bounded structural recovery retains the source stream.",
           "severity": "warning"
-        },
-        {
-          "code": {
-            "code": "depth.not-delivered",
-            "kind": "geometry_not_transferred",
-            "namespace": "decode",
-            "scope": "namespaced",
-            "strict_floor": "warning"
-          },
-          "message": "requested full depth but the nx decoder did not deliver classes: model, design",
-          "severity": "error"
         }
       ],
       "notes": [
@@ -208,10 +164,7 @@
       ],
       "transfer": {
         "geometry_transferred": false,
-        "scope": {
-          "design": false,
-          "model": false
-        }
+        "transfer": "full"
       }
     },
     "source_fidelity": {
@@ -228,28 +181,12 @@
             "stream": "nx:container",
             "tag": "deltas"
           },
-          "nx:s0:deltas-record#70-100": {
-            "offset": 70,
-            "stream": "nx:s0",
-            "tag": "DELTAS_RECORD"
-          },
           "nx:s0:deltas-residual#0": {
             "offset": 0,
             "stream": "nx:s0",
             "tag": "DELTAS_RESIDUAL"
-          },
-          "nx:s0:deltas-tombstone#120-48303": {
-            "offset": 120,
-            "stream": "nx:s0",
-            "tag": "DELTAS_TOMBSTONE"
           }
         }
-      },
-      "metadata": {
-        "native.nx.parasolid_deltas_records.nx:s0:deltas-record#70-100.inflated_offset": "70",
-        "native.nx.parasolid_deltas_residual_spans.nx:s0:deltas-residual#0.inflated_offset": "0",
-        "native.nx.parasolid_deltas_tombstones.nx:s0:deltas-tombstone#120-48303.inflated_offset": "120",
-        "source.footer_offset": "197"
       },
       "retained_records": {
         "nx:container:parasolid#0": {
@@ -258,20 +195,9 @@
             "retention": "inline"
           },
           "offset": 76,
-          "stream": "nx:container",
-          "untyped": []
-        },
-        "nx:source:image#whole": {
-          "bytes": {
-            "data": "U1BMTVNTVFIGAAAAAAAAAADFAAAAAAAAAEhFQURFUgEAAAAVAAAAL1Jvb3QvVUdfUEFSVC9VR19QQVJUTAAAAAAAAAB5AAAAAAAAAHgBPYo9CoNAEIVnqnRJjjBlQtJYaieiKKiIu/2i7nb+gNp4CsHOu1jpxZxCfLzifR8vEwDwd0jmbiqSSFIQxT59tKnHYvhS1ZtiNJrKiZqOZW16/r+EFyrpC6ksZXMAnqDZPwBx35Z5bRkQme7+7nWN95EBnq/kGRRGT09URVIAAAAAAAAAAA==",
-            "retention": "inline"
-          },
-          "offset": 0,
-          "stream": "nx:source",
-          "untyped": []
+          "stream": "nx:container"
         }
-      },
-      "unrepresented": []
+      }
     }
   },
   "inspect": {
@@ -294,16 +220,10 @@
         "attributes": {
           "file_offset": "76",
           "kind": "deltas",
-          "records.body": "0",
-          "records.delta.full.face": "1",
-          "records.delta.tombstone.edge": "1",
-          "records.edge": "0",
-          "records.face": "0",
-          "records.fin": "0",
-          "records.loop": "0",
-          "records.region": "0",
-          "records.shell": "0",
-          "records.vertex": "0",
+          "records.delta.bytes_decoded": "0",
+          "records.delta.instances": "0",
+          "records.delta.schemas": "0",
+          "records.delta.selection": "unresolved",
           "schema": "SCH_TEST_1_9999"
         },
         "compression": "zlib",

@@ -14,6 +14,8 @@ use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
 use cadmpeg_ir::codec::write::{target::TargetRequest, EncodeInput, Encoder};
 use cadmpeg_ir::codec::{Codec, DecodeOptions};
 
+use cadmpeg_ir::appearance::AppearanceTarget;
+use cadmpeg_ir::features::FeatureDefinition;
 use cadmpeg_ir::hash::sha256_hex;
 use cadmpeg_ir::{report::Severity, CadIr};
 use serde::Serialize;
@@ -56,7 +58,24 @@ struct FixtureProfile {
     #[serde(flatten)]
     write: FixtureWriteFlags,
     side_entries_preserved: bool,
+    #[serde(flatten)]
+    semantic_checks: FixtureSemanticChecks,
+    #[serde(flatten)]
+    native_checks: FixtureNativeChecks,
     entity_counts: BTreeMap<String, usize>,
+}
+
+#[derive(Serialize)]
+struct FixtureSemanticChecks {
+    appearance_ownership_and_precedence: bool,
+    design_census_matches_projection: bool,
+    design_property_edit_round_trip: bool,
+}
+
+#[derive(Serialize)]
+struct FixtureNativeChecks {
+    native_semantic_equivalence_verified: bool,
+    native_recomputed_design_verified: bool,
 }
 
 #[derive(Serialize)]
@@ -73,6 +92,7 @@ struct SourceLessWriteProfile {
     object_type: String,
     typed_parameters: BTreeMap<String, String>,
     unsupported_target_rejected: bool,
+    independent_native_acceptance: bool,
 }
 
 #[derive(Serialize)]
@@ -102,6 +122,7 @@ struct Observed {
     application_types: BTreeSet<String>,
     native_arenas: BTreeSet<String>,
     neutral_arenas: BTreeSet<String>,
+    appearance_targets: BTreeSet<String>,
 }
 
 struct Gate {
@@ -177,6 +198,11 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         return Err("fixture directory contains no FCStd files".into());
     }
 
+    let native_report = env::var_os("CADMPEG_FCSTD_NATIVE_REPORT")
+        .map(fs::read)
+        .transpose()?
+        .map(|bytes| serde_json::from_slice::<Value>(&bytes))
+        .transpose()?;
     let mut fixtures = Vec::new();
     let mut observed = Observed::default();
     let mut total_counts = BTreeMap::<String, usize>::new();
@@ -189,7 +215,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         let neutral = cadmpeg_ir::validate_neutral(first.ir(), Vec::new())?;
         let arena = DecodeArena::new();
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service())?;
-        let native = FcstdCodec.validate_native(&ctx, first.ir())?;
+        let native = FcstdCodec.validate_native(&ctx, first.ir(), None)?;
         let namespace = first
             .ir()
             .native
@@ -242,6 +268,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             .document_variants
             .insert(if has_gui { "gui" } else { "headless" }.to_owned());
         collect_native_observations(first.ir(), &mut observed)?;
+        let appearance_ownership_and_precedence = appearance_checks(first.ir(), &mut observed)?;
+        let design_census_matches_projection = design_census_matches_projection(first.ir())?;
+        let design_property_edit_round_trip = design_property_edit_round_trip(first.ir())?;
         for (name, count) in &neutral.entity_counts {
             *total_counts.entry(name.to_string()).or_default() += count;
             if *count > 0 && !name.as_str().starts_with("native.") {
@@ -274,6 +303,30 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 typed_edit_round_trip,
             },
             side_entries_preserved,
+            semantic_checks: FixtureSemanticChecks {
+                appearance_ownership_and_precedence,
+                design_census_matches_projection,
+                design_property_edit_round_trip,
+            },
+            native_checks: FixtureNativeChecks {
+                native_recomputed_design_verified: native_report.as_ref().is_some_and(|report| {
+                    native_design_census_matches(
+                        report,
+                        first.ir(),
+                        &sha256_hex(&bytes),
+                        &sha256_hex(&first_write),
+                    )
+                }),
+                native_semantic_equivalence_verified: native_report.as_ref().is_some_and(
+                    |report| {
+                        native_acceptance_matches(
+                            report,
+                            &sha256_hex(&bytes),
+                            &sha256_hex(&first_write),
+                        )
+                    },
+                ),
+            },
             entity_counts: neutral
                 .entity_counts
                 .iter()
@@ -284,7 +337,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let manifest = fs::read(&manifest_path)?;
     verify_manifest(&manifest, &fixtures)?;
-    let source_less_write = source_less_profile()?;
+    let source_less_write = source_less_profile(native_report.as_ref())?;
     let gates = gates(&fixtures, &observed, &total_counts, &source_less_write);
     let highest_passing_gate = gates
         .iter()
@@ -292,7 +345,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         .last()
         .map(|gate| gate.level.clone());
     let profile = Profile {
-        version: 4,
+        version: 5,
         format: "fcstd",
         manifest_sha256: sha256_hex(&manifest),
         manifest_verified: true,
@@ -691,6 +744,334 @@ fn insert_map_keys(
     }
 }
 
+fn native_acceptance_matches(report: &Value, original_digest: &str, written_digest: &str) -> bool {
+    report
+        .get("failures")
+        .and_then(Value::as_array)
+        .is_some_and(Vec::is_empty)
+        && report
+            .get("files")
+            .and_then(Value::as_array)
+            .is_some_and(|files| {
+                files.iter().any(|file| {
+                    file.get("reference_sha256").and_then(Value::as_str) == Some(original_digest)
+                        && file.get("input_sha256").and_then(Value::as_str) == Some(written_digest)
+                        && file
+                            .get("semantic_equivalence_accepted")
+                            .and_then(Value::as_bool)
+                            == Some(true)
+                        && file.get("native_resave_accepted").and_then(Value::as_bool) == Some(true)
+                })
+            })
+}
+
+fn native_source_less_matches(report: &Value, written_digest: &str) -> bool {
+    const VOLUME_ABSOLUTE_TOLERANCE: f64 = 1e-7;
+    let Some(source_less) = report.get("source_less") else {
+        return false;
+    };
+    source_less.get("source_sha256").and_then(Value::as_str) == Some(written_digest)
+        && source_less
+            .get("native_recompute_accepted")
+            .and_then(Value::as_bool)
+            == Some(true)
+        && source_less
+            .get("dimensions_mm")
+            .and_then(Value::as_array)
+            .is_some_and(|dimensions| {
+                dimensions.len() == 3
+                    && dimensions
+                        .iter()
+                        .zip([12.5, 7.0, 3.0])
+                        .all(|(value, expected)| value.as_f64() == Some(expected))
+            })
+        && source_less.get("solids").and_then(Value::as_u64) == Some(1)
+        && source_less.get("faces").and_then(Value::as_u64) == Some(6)
+        && source_less
+            .get("volume_mm3")
+            .and_then(Value::as_f64)
+            .is_some_and(|volume| (volume - 262.5).abs() <= VOLUME_ABSOLUTE_TOLERANCE)
+}
+
+fn native_design_census_matches(
+    report: &Value,
+    ir: &CadIr,
+    original_digest: &str,
+    written_digest: &str,
+) -> bool {
+    if !native_acceptance_matches(report, original_digest, written_digest) {
+        return false;
+    }
+    let Some(namespace) = ir.native.namespace("fcstd") else {
+        return false;
+    };
+    let Some(files) = report.get("files").and_then(Value::as_array) else {
+        return false;
+    };
+    let Some(file) = files.iter().find(|file| {
+        file.get("reference_sha256").and_then(Value::as_str) == Some(original_digest)
+            && file.get("input_sha256").and_then(Value::as_str) == Some(written_digest)
+    }) else {
+        return false;
+    };
+    let Some(objects) = file
+        .get("native_snapshot")
+        .and_then(|snapshot| snapshot.get("objects"))
+        .and_then(Value::as_object)
+    else {
+        return false;
+    };
+    ir.model.features.iter().all(|feature| {
+        let Some(owner) = feature.native_ref.as_deref() else {
+            return false;
+        };
+        let Some(record) = namespace
+            .arenas()
+            .get("objects")
+            .into_iter()
+            .flatten()
+            .find(|record| record.id() == owner)
+        else {
+            return false;
+        };
+        let Some(Value::String(name)) = record.field("name") else {
+            return false;
+        };
+        objects
+            .get(&name)
+            .and_then(|object| object.get("type"))
+            .cloned()
+            == record.field("type_name")
+    })
+}
+
+fn typed_operation(
+    feature: &cadmpeg_ir::features::Feature,
+) -> Result<Option<Value>, serde_json::Error> {
+    let operation = match feature.evaluation.definition() {
+        FeatureDefinition::PostProcess { operation, .. }
+        | FeatureDefinition::Operation(operation) => operation,
+    };
+    if matches!(
+        operation,
+        cadmpeg_ir::features::FeatureOperation::Native { .. }
+            | cadmpeg_ir::features::FeatureOperation::Unresolved { .. }
+    ) {
+        return Ok(None);
+    }
+    serde_json::to_value(operation).map(Some)
+}
+
+fn appearance_checks(
+    ir: &CadIr,
+    observed: &mut Observed,
+) -> Result<bool, Box<dyn std::error::Error>> {
+    let namespace = ir
+        .native
+        .namespace("fcstd")
+        .ok_or("missing fcstd namespace")?;
+    let properties = namespace
+        .arenas()
+        .get("properties")
+        .into_iter()
+        .flatten()
+        .map(|record| record.fields().map(|fields| (record.id(), fields)))
+        .collect::<Result<Vec<_>, _>>()?;
+    let payloads = namespace
+        .arenas()
+        .get("shape_payloads")
+        .into_iter()
+        .flatten()
+        .map(|record| record.fields().map(|fields| (record.id(), fields)))
+        .collect::<Result<Vec<_>, _>>()?;
+    let mut assignments = BTreeSet::new();
+    for binding in &ir.model.appearance_bindings {
+        let Some(asset) = ir
+            .model
+            .appearances
+            .iter()
+            .find(|asset| asset.id == binding.appearance)
+        else {
+            return Ok(false);
+        };
+        let (kind, target, precedence) = match &binding.target {
+            AppearanceTarget::Body(id) => ("body", id.as_str(), None),
+            AppearanceTarget::Face(id) => ("face", id.as_str(), Some("face_over_object")),
+            AppearanceTarget::Edge(id) => (
+                "edge",
+                id.as_str(),
+                Some(if asset.schema.as_deref() == Some("FCStd LineColorArray") {
+                    "edge_array_over_line"
+                } else {
+                    "edge_over_object"
+                }),
+            ),
+            AppearanceTarget::Vertex(id) => (
+                "vertex",
+                id.as_str(),
+                Some(
+                    if asset.schema.as_deref() == Some("FCStd PointColorArray") {
+                        "vertex_array_over_point"
+                    } else {
+                        "vertex_over_object"
+                    },
+                ),
+            ),
+            _ => return Ok(false),
+        };
+        observed.appearance_targets.insert(kind.to_owned());
+        let Some(owner) = binding.source_entity_id.as_deref() else {
+            return Ok(false);
+        };
+        let owned = payloads.iter().any(|(payload_id, payload)| {
+            properties.iter().any(|(property_id, property)| {
+                property.get("owner").and_then(Value::as_str) == Some(owner)
+                    && property.get("name").and_then(Value::as_str) == Some("Shape")
+                    && Some(*property_id) == payload.get("property").and_then(Value::as_str)
+            }) && {
+                let key = payload_id
+                    .split_once('#')
+                    .map_or(*payload_id, |(_, key)| key);
+                let target_key = target.split_once('#').map_or(target, |(_, key)| key);
+                target_key
+                    .strip_prefix(key)
+                    .is_some_and(|suffix| suffix.starts_with(':'))
+            }
+        });
+        if !owned
+            || binding.channels.get("precedence").map(String::as_str) != precedence
+            || !assignments.insert((owner, kind, target))
+        {
+            return Ok(false);
+        }
+    }
+    Ok(true)
+}
+
+fn design_census_matches_projection(ir: &CadIr) -> Result<bool, Box<dyn std::error::Error>> {
+    let namespace = ir
+        .native
+        .namespace("fcstd")
+        .ok_or("missing fcstd namespace")?;
+    let records = namespace
+        .arenas()
+        .get("design_census")
+        .into_iter()
+        .flatten()
+        .map(cadmpeg_ir::NativeRecord::fields)
+        .collect::<Result<Vec<_>, _>>()?;
+    let projected = ir
+        .model
+        .features
+        .iter()
+        .filter(|feature| feature.native_ref.is_some())
+        .collect::<Vec<_>>();
+    if records.len() != projected.len() {
+        return Ok(false);
+    }
+    for feature in projected {
+        let matching = records
+            .iter()
+            .filter(|record| {
+                record.get("object").and_then(Value::as_str) == feature.native_ref.as_deref()
+            })
+            .collect::<Vec<_>>();
+        if matching.len() != 1 {
+            return Ok(false);
+        }
+        let (operation, post_processed) = match feature.evaluation.definition() {
+            FeatureDefinition::PostProcess { operation, .. } => {
+                (serde_json::to_value(operation)?, true)
+            }
+            FeatureDefinition::Operation(operation) => (serde_json::to_value(operation)?, false),
+        };
+        let semantic_kind = operation.get("definition").and_then(Value::as_str);
+        if matching[0].get("semantic_kind").and_then(Value::as_str) != semantic_kind
+            || matching[0].get("post_processed").and_then(Value::as_bool) != Some(post_processed)
+            || matching[0].get("neutral").and_then(Value::as_bool)
+                != Some(semantic_kind != Some("native"))
+        {
+            return Ok(false);
+        }
+    }
+    Ok(true)
+}
+
+fn design_property_edit_round_trip(ir: &CadIr) -> Result<bool, Box<dyn std::error::Error>> {
+    let namespace = ir
+        .native
+        .namespace("fcstd")
+        .ok_or("missing fcstd namespace")?;
+    for property in namespace.arenas().get("properties").into_iter().flatten() {
+        let fields = property.fields()?;
+        let Some(owner) = fields.get("owner").and_then(Value::as_str) else {
+            continue;
+        };
+        let Some(feature) = ir
+            .model
+            .features
+            .iter()
+            .find(|feature| feature.native_ref.as_deref() == Some(owner))
+        else {
+            continue;
+        };
+        let Some(original_operation) = typed_operation(feature)? else {
+            continue;
+        };
+        let Some(name) = fields.get("name").and_then(Value::as_str) else {
+            continue;
+        };
+        if !["Length", "Width", "Height", "Radius", "Angle"].contains(&name) {
+            continue;
+        }
+        let Some(old) = property_value_attribute(ir, owner, name, 0, "value")
+            .and_then(|value| value.parse::<f64>().ok())
+        else {
+            continue;
+        };
+        let new = (old + 1.0).to_string();
+        let object_name = namespace
+            .arenas()
+            .get("objects")
+            .into_iter()
+            .flatten()
+            .find(|record| record.id() == owner)
+            .and_then(|record| record.field("name"))
+            .and_then(|value| value.as_str().map(str::to_owned))
+            .ok_or("design property owner has no object name")?;
+        let mut edited = ir.clone();
+        FcstdCodec.set_property_value_attribute(
+            &mut edited,
+            FcstdPropertyOwner::Object(&object_name),
+            name,
+            0,
+            "value",
+            &new,
+        )?;
+        let mut bytes = Vec::new();
+        FcstdCodec
+            .plan(EncodeInput::new(&edited, None), TargetRequest::Inherit)?
+            .write_to(&mut bytes)?;
+        let decoded = FcstdCodec.decode(&mut Cursor::new(bytes), &DecodeOptions::default())?;
+        if property_value_attribute(decoded.ir(), owner, name, 0, "value") == Some(new)
+            && decoded
+                .ir()
+                .model
+                .features
+                .iter()
+                .find(|candidate| candidate.id == feature.id)
+                .map(typed_operation)
+                .transpose()?
+                .flatten()
+                .is_some_and(|operation| operation != original_operation)
+            && design_census_matches_projection(decoded.ir())?
+        {
+            return Ok(true);
+        }
+    }
+    Ok(false)
+}
+
 fn semantic_fingerprint(ir: CadIr) -> Result<String, Box<dyn std::error::Error>> {
     Ok(ir.to_canonical_json()?)
 }
@@ -744,7 +1125,9 @@ fn property_value_attribute(
         .map(str::to_owned)
 }
 
-fn source_less_profile() -> Result<SourceLessWriteProfile, Box<dyn std::error::Error>> {
+fn source_less_profile(
+    native_report: Option<&Value>,
+) -> Result<SourceLessWriteProfile, Box<dyn std::error::Error>> {
     let mut builder = FcstdDocumentBuilder::new("FCStd L9 source-less evidence");
     builder
         .add_object("Box", "Part::Box")?
@@ -811,11 +1194,15 @@ fn source_less_profile() -> Result<SourceLessWriteProfile, Box<dyn std::error::E
         generation: SourceLessGenerationFlags {
             generated: true,
             deterministic: first == second,
-            decodes_cleanly: FcstdCodec.validate_native(&ctx, decoded.ir())?.is_empty(),
+            decodes_cleanly: FcstdCodec
+                .validate_native(&ctx, decoded.ir(), None)?
+                .is_empty(),
         },
         object_type,
         typed_parameters,
         unsupported_target_rejected,
+        independent_native_acceptance: native_report
+            .is_some_and(|report| native_source_less_matches(report, &sha256_hex(&first))),
     })
 }
 
@@ -1061,11 +1448,27 @@ fn gates(
         ),
         gate(
             "L5",
-            vec![assertion("appearance_coverage", count("appearance_bindings") > 0, &count("appearance_bindings"), &"object and subshape appearance bindings",)],
+            vec![assertion(
+                "appearance_ownership_and_precedence",
+                ["body", "face", "edge", "vertex"].into_iter().all(|kind| observed.appearance_targets.contains(kind))
+                    && fixtures.iter().all(|fixture| fixture.semantic_checks.appearance_ownership_and_precedence),
+                &format!("targets={:?}, all bindings checked={}", observed.appearance_targets,
+                    fixtures.iter().all(|fixture| fixture.semantic_checks.appearance_ownership_and_precedence)),
+                &"body, face, edge, and vertex targets with valid source ownership, assets, and override precedence",
+            )],
         ),
         gate(
             "L6",
             vec![
+                assertion("persisted_projection_census", fixtures.iter().all(|fixture| fixture.semantic_checks.design_census_matches_projection),
+                    &format!("{} of {} fixture censuses agree with every projected design feature", fixtures.iter().filter(|fixture| fixture.semantic_checks.design_census_matches_projection).count(), fixtures.len()),
+                    &"native object, feature identity, semantic family, and post-process state match every projected feature"),
+                assertion("independent_recomputed_design", fixtures.iter().filter(|fixture| fixture.entity_counts.get("features").copied().unwrap_or_default() > 0).all(|fixture| fixture.native_checks.native_recomputed_design_verified),
+                    &format!("{} fixtures have SHA-bound native recompute comparisons and projected owner/type matches", fixtures.iter().filter(|fixture| fixture.native_checks.native_recomputed_design_verified).count()),
+                    &"every design fixture matches the independent original after native recomputation and save/reopen; every projected owner and runtime type matches the native census"),
+                assertion("design_parameter_edit", fixtures.iter().any(|fixture| fixture.semantic_checks.design_property_edit_round_trip),
+                    &fixtures.iter().filter(|fixture| fixture.semantic_checks.design_property_edit_round_trip).count(),
+                    &"a typed design parameter edit changes projected operation semantics after a write and decode"),
                 assertion("complete_constraint_matrix", required_constraints.is_subset(&constraint_definitions)
                         && !constraint_definitions.contains("native"), &format!("{constraint_definitions:?}"), &format!("{required_constraints:?}; no native fallback"),),
                 assertion("core_operation_families", required_design_definitions.is_subset(&design_definitions), &format!("{design_definitions:?}"), &format!("{required_design_definitions:?}"),),
@@ -1115,7 +1518,10 @@ fn gates(
         gate(
             "L9",
             vec![
-                assertion("semantic_native_round_trip", fixtures.iter().all(|fixture| {
+                assertion("independent_native_geometry", fixtures.iter().all(|fixture| fixture.native_checks.native_semantic_equivalence_verified),
+                    &format!("{} of {} native comparisons verified by original and output digests", fixtures.iter().filter(|fixture| fixture.native_checks.native_semantic_equivalence_verified).count(), fixtures.len()),
+                    &"every written fixture matches its independently opened native original before and after recompute/save/reopen"),
+                assertion("cadir_semantic_round_trip", fixtures.iter().all(|fixture| {
                         fixture.write.write_deterministic
                             && fixture.write.semantic_round_trip
                             && fixture.write.typed_edit_round_trip
@@ -1139,6 +1545,9 @@ fn gates(
                             .count(),
                         fixtures.len()
                     ), &"every named logical entry retains identity and digest",),
+                assertion("independent_source_less_acceptance", source_less_write.independent_native_acceptance,
+                    &source_less_write.independent_native_acceptance,
+                    &"SHA-bound native recompute of the generated Part::Box retains dimensions 12.5 by 7 by 3 mm, one solid, six faces, and volume 262.5 cubic mm"),
                 assertion("source_less_and_target_selection", source_less_write.generation.generated
                         && source_less_write.generation.deterministic
                         && source_less_write.generation.decodes_cleanly
@@ -1181,12 +1590,164 @@ fn gate(level: &str, assertions: Vec<Assertion>) -> Gate {
 
 #[cfg(test)]
 mod tests {
-    use super::{assertion, gate, semantic_fingerprint, serialize_gates};
+    use super::{
+        appearance_checks, assertion, design_census_matches_projection,
+        design_property_edit_round_trip, gate, native_acceptance_matches,
+        native_design_census_matches, native_source_less_matches, semantic_fingerprint,
+        serialize_gates, Observed,
+    };
     use cadmpeg_codec_freecad::{FcstdCodec, FcstdPropertyOwner};
     use cadmpeg_ir::codec::write::{target::TargetRequest, EncodeInput, Encoder};
     use cadmpeg_ir::codec::{Codec, DecodeOptions};
     use cadmpeg_ir::report::export::WritePath;
     use std::io::Cursor;
+
+    #[test]
+    fn appearance_gate_checks_owner_and_override_precedence() {
+        let bytes =
+            include_bytes!("../../../../corpus/freecad_fcstd/fixtures/gui_appearance.FCStd");
+        let decoded = FcstdCodec
+            .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+            .expect("decode appearance fixture");
+        let mut observed = Observed::default();
+        assert!(appearance_checks(decoded.ir(), &mut observed).expect("appearance checks"));
+        let uniform = FcstdCodec
+            .decode(
+                &mut Cursor::new(include_bytes!(
+                    "../../../../corpus/freecad_fcstd/fixtures/uniform_appearance.FCStd"
+                )),
+                &DecodeOptions::default(),
+            )
+            .expect("decode uniform appearance fixture");
+        assert!(appearance_checks(uniform.ir(), &mut observed).expect("uniform appearance checks"));
+        for kind in ["body", "face", "edge", "vertex"] {
+            assert!(observed.appearance_targets.contains(kind), "missing {kind}");
+        }
+        let mut ir = decoded.ir().clone();
+        ir.model.appearance_bindings[0].source_entity_id = Some("fcstd:native:object#other".into());
+        assert!(!appearance_checks(&ir, &mut Observed::default()).expect("wrong owner"));
+        let mut ir = decoded.ir().clone();
+        let binding = ir
+            .model
+            .appearance_bindings
+            .iter_mut()
+            .find(|binding| !binding.channels.is_empty())
+            .expect("override binding");
+        binding.channels.clear();
+        assert!(!appearance_checks(&ir, &mut Observed::default()).expect("missing precedence"));
+    }
+
+    #[test]
+    fn design_gate_checks_census_and_a_real_operation_parameter_edit() {
+        let bytes =
+            include_bytes!("../../../../corpus/freecad_fcstd/fixtures/core_operations.FCStd");
+        let decoded = FcstdCodec
+            .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+            .expect("decode design fixture");
+        assert!(design_census_matches_projection(decoded.ir()).expect("design census"));
+        assert!(design_property_edit_round_trip(decoded.ir()).expect("design parameter edit"));
+        let mut native_only = decoded.ir().clone();
+        for feature in &mut native_only.model.features {
+            feature.evaluation.set_definition(
+                serde_json::from_value(serde_json::json!({
+                    "definition":"native", "kind":"retained_operation", "parameters":{}
+                }))
+                .expect("native definition"),
+            );
+        }
+        assert!(!design_property_edit_round_trip(&native_only)
+            .expect("native parameters are not typed semantics"));
+        let mut ir = decoded.ir().clone();
+        ir.model.features[0].native_ref = Some("fcstd:native:object#other".into());
+        assert!(!design_census_matches_projection(&ir).expect("changed design owner"));
+    }
+
+    #[test]
+    fn recomputed_design_gate_requires_native_owner_and_runtime_type_matches() {
+        let decoded = FcstdCodec
+            .decode(
+                &mut Cursor::new(include_bytes!(
+                    "../../../../corpus/freecad_fcstd/fixtures/core_operations.FCStd"
+                )),
+                &DecodeOptions::default(),
+            )
+            .expect("decode design fixture");
+        let mut objects = serde_json::Map::new();
+        for record in decoded
+            .ir()
+            .native
+            .namespace("fcstd")
+            .expect("native namespace")
+            .arenas()
+            .get("objects")
+            .expect("object census")
+        {
+            let name = record
+                .field("name")
+                .and_then(|value| value.as_str().map(str::to_owned))
+                .expect("object name");
+            objects.insert(name, serde_json::json!({"type":record.field("type_name")}));
+        }
+        let mut report = serde_json::json!({"files":[{
+            "reference_sha256":"original", "input_sha256":"written",
+            "semantic_equivalence_accepted":true,"native_resave_accepted":true,
+            "native_snapshot":{"objects":objects}
+        }], "failures":[]});
+        assert!(native_design_census_matches(
+            &report,
+            decoded.ir(),
+            "original",
+            "written"
+        ));
+        report["files"][0]["native_snapshot"]["objects"] = serde_json::json!({});
+        assert!(!native_design_census_matches(
+            &report,
+            decoded.ir(),
+            "original",
+            "written"
+        ));
+        assert!(!native_design_census_matches(
+            &serde_json::json!({}),
+            decoded.ir(),
+            "original",
+            "written"
+        ));
+    }
+
+    #[test]
+    fn source_less_native_gate_requires_the_generated_bytes_and_primitive_oracle() {
+        let mut report = serde_json::json!({"source_less":{
+            "source_sha256":"generated", "native_recompute_accepted":true,
+            "dimensions_mm":[12.5,7,3],"solids":1,"faces":6,"volume_mm3":262.5
+        }});
+        assert!(native_source_less_matches(&report, "generated"));
+        assert!(!native_source_less_matches(&report, "other"));
+        report["source_less"]["volume_mm3"] = serde_json::json!(260.0);
+        assert!(!native_source_less_matches(&report, "generated"));
+        assert!(!native_source_less_matches(
+            &serde_json::json!({}),
+            "generated"
+        ));
+    }
+
+    #[test]
+    fn native_gate_requires_original_and_written_digests_and_semantic_checks() {
+        let report = serde_json::json!({"files":[{
+            "reference_sha256":"original", "input_sha256":"written",
+            "semantic_equivalence_accepted":true,"native_resave_accepted":true
+        }], "failures":[]});
+        assert!(native_acceptance_matches(&report, "original", "written"));
+        assert!(!native_acceptance_matches(&report, "different", "written"));
+        assert!(!native_acceptance_matches(&report, "original", "different"));
+        let mut open_only = report.clone();
+        open_only["files"][0]["semantic_equivalence_accepted"] = serde_json::json!(false);
+        assert!(!native_acceptance_matches(
+            &open_only, "original", "written"
+        ));
+        let mut failed = report;
+        failed["failures"] = serde_json::json!([{"filename":"other.FCStd","error":"null shape"}]);
+        assert!(!native_acceptance_matches(&failed, "original", "written"));
+    }
 
     #[test]
     fn semantic_fingerprint_ignores_repacking_but_retains_property_edits() {

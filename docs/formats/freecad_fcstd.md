@@ -74,6 +74,30 @@ name receives a unique suffixed name, and the returned name is the XML reference
 requesting the same source payload therefore receive separate archive members; a producer-created
 typed side entry has one requesting property or payload owner.
 
+Side-entry restoration is a forward-only request stream, not a lookup by entry name. Parsing
+`Document.xml` registers requests in restore order: the document string hasher, document
+properties, then object values and their property-owned payloads. Schema 2 uses `FeatureData`;
+schemas 3 and 4 use `ObjectData`. A shape registers its B-rep before its saved string hasher and
+element map. Each encountered ZIP member is matched only against the unconsumed suffix of the
+request stream. A match consumes that request and every earlier unconsumed request. An
+unregistered member is skipped. A member that registers a local XML reader consumes that reader's
+side-entry stream recursively before the parent resumes. Physical local-member order determines
+this stream; central-directory order does not.
+
+`GuiDocument.xml` is registered after the application document's requests. Its view-provider
+payloads belong to its local reader and follow it. Independent named records can be skipped
+without advancing the request stream. A retained archive keeps these physical order relations,
+including records whose internal request grammar is opaque. An identity-sorted native record
+arena does not define member order; local-header positions do.
+
+A source-less document uses its emitted property order as its request order. Named payloads for
+these requests precede `GuiDocument.xml`; its payloads follow it in GUI request order. Unreferenced
+named payloads retain their supplied order after the registered streams. A source-less request
+must name an available payload. Distinct restoration requests require distinct member names,
+even when their payload bytes are equal: one member cannot satisfy two positions in the request
+stream. External document links do not register side-entry requests. A dependency reference to a
+shared string hasher uses its hasher index; it does not repeat a request for its member.
+
 `GuiDocument.xml` has at most one `ViewProviderData` container. `ViewProvider` names are unique.
 Each provider has one direct `Properties` container, and direct property names are unique within
 that container. Registered GUI property types define the cardinality of their value elements;
@@ -95,6 +119,14 @@ In schemas 3 and 4, `Objects.Count` equals the number of `Object` declarations. 
 has a unique `name` and a `type`. `ObjectData.Count` equals the number of `Object` value records.
 Each value record has a unique `name`. Declaration and value-record name sets are equal.
 Declaration order is object order. Redundant declaration, value-record, dependency, extension, property, and transient counts do not delimit XML elements. Element boundaries and unique names own their populations.
+
+In schemas 3 and 4, an object declaration's nonzero integer `Touched` attribute retains pending
+recomputation across document restoration. A changed input property with a retained cached shape
+requires this declaration state so ordinary recomputation updates the shape and its dependents.
+A property-value edit with no value change leaves the state unchanged. Document properties and
+object labels do not request object recomputation. Output status bits 7 and 27 and the static
+no-recompute status bit 23 exempt the property from requesting recomputation. Runtime status bit
+11 alone does not exempt it. Schema-2 feature declarations have no restored `Touched` state.
 
 The presence of the `Objects` section's `Dependencies` attribute enables dependency records. An
 enabled section contains exactly `Objects.Count` `ObjectDeps` elements before the object
@@ -237,8 +269,25 @@ one map owned by that property. Multiple exact-shape properties emit independent
 element-map carriers and independent side-entry requests; no carrier is shared across properties.
 An OCCT parabola edge parameter `u` maps to the STEP parabola parameter `t = u / (2f)`, where `f`
 is the focal distance. A two-dimensional parabola pcurve retains the OCCT parameter `u`.
+A STEP replica of a two-dimensional pcurve uses the seven-parameter
+`CARTESIAN_TRANSFORMATION_OPERATOR_2D` sequence defined in the [STEP specification](step.md).
+AP203 edition 1 uses `CARTESIAN_TRANSFORMATION_OPERATOR` with the same sequence.
+Its inherited representation-item name, transformation name, and transformation
+description precede the two axes, local origin, and scale. A 3D replica adds the
+third axis after scale. A chart reflection retains the curve parameter and reverses
+the chart handedness; it does not reverse the curve parameter.
 For a bounded circle or ellipse edge, the neutral start parameter is wrapped into `[0, 2π)` and
 the serialized sweep is preserved. A full-period edge retains its serialized phase.
+A non-periodic B-spline's evaluable domain is bounded by its degree-th and pole-count-th expanded
+knots. A 3D edge endpoint outside that domain by at most `1e-12 * max(1, abs(boundary_knot))`
+normalizes to the boundary knot. Each normalization neighborhood is limited to one quarter of
+the domain width. Interior endpoints and larger excursions retain their values. Native edge
+ranges and knot values remain independently retained.
+
+A periodic B-spline pcurve's period is the positive width of its evaluable knot domain. Its
+coedge range retains the unwrapped phase and may cross the knot-domain seam. Point and derivative
+evaluation reduce the parameter by whole periods into that domain. A use spans at most one
+period in either direction; an explicit trimmed carrier keeps its own bounded interval.
 Transient table indices do not constitute persistent element identity. Persistent element names
 exist only when an element-map record supplies them.
 
@@ -551,14 +600,24 @@ becomes its own occurrence with a stable array index, scale, local transform, an
 resolved through its containing components exactly once. An assembly's members include its
 `Assembly::JointGroup` and its joint objects; those constrain the components and are neither
 components nor occurrences. A component gets its own occurrence when it is a product container, a
-container member, or an object a joint names directly; an object reached only as a link prototype
-is a definition placed by its links. Local prototypes resolve to component ids;
-cross-document links keep the document token and target object without attempting to open the
-document. Missing local targets, invalid array counts, non-finite transforms, and container cycles
-are validation errors; external targets remain intentionally unresolved. The native graph retains
-every direct container membership, while neutral admission requires each member to have at most one
-distinct parent container. Overlapping parent containers are refused instead of selecting by source
-order. Product record identities are unique by object identity; duplicate records are invalid.
+container member, or an object a joint names directly. A link prototype that has definition bodies
+and a placement, and that is not itself a link, also gets an occurrence at its own placement, unless
+it is in the `Group` of a `PartDesign::Body` or in the `ElementList` of the object that a link's
+`LinkCopyOnChangeGroup` names; such a prototype is a definition placed only by its links. An
+`App::LinkGroup` applies its placement to each object of its `ElementList`. The bodies of a
+definition come only from the `Shape` property of its object. Other shape payloads, such as
+`AddSubShape` and `InternalShape`, are not definition bodies. When `Shape` holds a non-null shape
+whose root location is a rigid transform, that transform is the restored `Placement` of the object
+and replaces the persisted `Placement` value. Otherwise the persisted `Placement` value applies. The
+bodies of a definition that an occurrence uses are in the frame of their object, and the occurrence
+carries its placement. The bodies of a definition that no occurrence uses keep their root location.
+Local prototypes resolve to component ids; cross-document links keep the document token and target
+object without attempting to open the document. Missing local targets, invalid array counts,
+non-finite transforms, and container cycles are validation errors; external targets remain
+intentionally unresolved. The native graph retains every direct container membership, while neutral
+admission requires each member to have at most one distinct parent container. Overlapping parent
+containers are refused instead of selecting by source order. Product record identities are unique by
+object identity; duplicate records are invalid.
 
 Product metadata uses exact `App::PropertyString` properties. Each selected property has exactly one
 direct `String` value with a required `value` attribute and no nested element. `Label` may carry the
@@ -624,7 +683,8 @@ rotation norms, and zero quaternions are malformed.
 For nested links, `prototype_transform` records the linked placement chain selected by
 `LinkTransform`; the evaluated occurrence is container × local × prototype, each exactly once.
 The chain resolves each local product target through its unique product record. A local target with
-no product record contributes its persisted `LinkPlacement` or `Placement` matrix directly.
+no product record contributes its persisted `LinkPlacement` matrix or its restored `Placement`
+matrix directly.
 Prototype cycles are invalid in both the native and neutral product graphs.
 Component identity keeps the stable source object name separately from its user-visible label,
 description, part number, and additional named BOM fields. Generated BOM spreadsheets remain
@@ -688,8 +748,11 @@ direct `Sub` values; a zero-sub target has neither `sub` nor `count`, one sub us
 multiple subs use `count` with exactly that many direct leaf `Sub` elements. An empty `name` is an
 explicit null target occupying the connector slot. Nested or extra value roots, a link-list carrier,
 or multiple targets are malformed. `Angle`, `AngleMin`, and `AngleMax` are
-`App::PropertyAngle` properties with one `Float` value. `Distance`, `Distance2`, `LengthMin`, and
-`LengthMax` are `App::PropertyLength` properties with one `Float` value. `EnableAngleMin`,
+`App::PropertyAngle` or `App::PropertyFloat` properties with one `Float` value in degrees.
+`Distance`, `Distance2`, `LengthMin`, and `LengthMax` are `App::PropertyLength` or
+`App::PropertyFloat` properties with one `Float` value. Their values are in millimetres,
+except that an `Angle` joint's `Distance` value is in degrees. Its absolute value supplies
+the joint angle when no `Angle` property is present. `EnableAngleMin`,
 `EnableAngleMax`, `EnableLengthMin`, `EnableLengthMax`, `Detach1`, `Detach2`, and `Suppressed`
 are `App::PropertyBool` properties with one `Bool` value. Wrong runtime types, root value tags,
 missing values, and duplicate values are malformed.
@@ -732,9 +795,14 @@ the body natively instead of selecting a source-order value. A valid tip identif
 member as the active result. Suppressed, active,
 frozen, invalid, touched, mapping, support, and visibility properties remain individually named
 state rather than being collapsed into one enabled flag. Validation rejects duplicate members,
-inconsistent parentage, missing members, and an active tip outside the body's ordered membership. A body displays its result through its own `Shape`; the bodies transferred from its members'
-shapes, and from any shape property other than `Shape` (such as a feature's `AddSubShape` tool
-shape), are intermediate and carry `visible: false` unless a GUI view provider states otherwise.
+inconsistent parentage, missing members, and an active tip outside the body's ordered membership.
+A body displays its active `Tip` result through its own `Shape`, with visibility set by the body's
+own GUI view provider. Shapes of members in `Group` or legacy `Model`, including the `Tip`, and
+all shape properties other than `Shape` (such as `AddSubShape`) are intermediate topology. They
+remain available for history selections and carry `visible: false`. Structural membership and
+auxiliary shape roles take precedence over GUI visibility; a member's visible view provider does
+not make its stored shape an independent output body. A free feature outside a body retains the
+GUI visibility of its own `Shape`.
 
 Revolution and groove operations retain their linked profile, explicit base point and axis,
 one-angle or two-angle extent, and additive or subtractive effect. Fillet operations retain a
@@ -1141,7 +1209,8 @@ scalars describe the application object's exact-shape property named `Shape`. Th
 object appearance and explicit bindings only for bodies transferred from that property. Other
 exact-shape properties on the same object do not inherit this view-provider state. Packed colors
 decode as red, green, blue, and reserved low byte; the independent transparency percentage
-determines opacity. The effective body display fields mirror this object-level assignment.
+determines opacity. The effective body display fields mirror this object-level assignment, except
+that intermediate shapes remain hidden under the structural rule above.
 `ShapeAppearance` is the current shape material carrier. One material replaces the legacy shape
 color assignment, binds to every body transferred from `Shape`, and supplies diffuse color,
 transparency, four packed material colors, shininess, and UUID. Multiple materials correspond in
@@ -1236,6 +1305,18 @@ by three stored neighbour indices. Six float32 bounding-box limits close the rec
 bounded, point indices must resolve, coordinates and bounds must be finite, and trailing or
 truncated bytes are invalid. Neighbour indices and the complete entry bytes remain native even
 when only the indexed triangle mesh is projected neutrally.
+
+Binary mesh coordinates are local to the owning object. Its `Placement` maps those coordinates
+to the immediate geometric container. Parent `App::Part` and link-group placements compose from
+outermost to innermost, followed by the mesh placement. An ordinary document group does not add
+a geometric parent transform. The mesh payload carries no second placement matrix.
+
+A mesh link uses its link placement, scale, array-element placement, and array-element scale in
+that order. `LinkTransform=true` then includes the prototype placement; false omits that root
+placement. Descendant placements of a linked geometric container remain relative to that
+container. Expanded arrays take element placement from their element objects; collapsed arrays
+take it from the saved placement list. Each use applies this composition once to the local
+vertices. The native mesh payload remains unchanged.
 
 `Points::PropertyPointKernel` contains exactly one direct `Points` value root. A duplicate or
 missing root is malformed. Its zero or one non-empty lowercase `file` attribute identifies the
@@ -1439,8 +1520,11 @@ resource-exceeding records remain named native carriers.
 
 Constraint transfer distinguishes whole entities from endpoint and center loci. Two-locus distance
 constraints remain locus-to-locus measurements rather than being reduced to a duplicate entity
-list, three-operand symmetry retains both loci plus its axis entity, and point-on-object retains the
-point locus separately from its supporting entity. Refraction retains its two curve loci,
+list, and point-on-object retains the point locus separately from its supporting entity.
+The third operand of a symmetry relation is either a whole line, which is the mirror axis, or a
+vertex, which is the center of point symmetry. A vertex is a start or end position of an open
+curve, the mid position of a conic, a point entity, or the root point. A line segment has no
+neutral mid locus, so a relation about a line's mid position remains native. Refraction retains its two curve loci,
 interface entity, and dimensionless index ratio. Spline weights remain dimensionless parameters,
 and internal-alignment helpers retain their conic or spline family plus control-point or knot index.
 Group relations retain their ordered handle and member loci. Text relations additionally decode
@@ -1822,3 +1906,206 @@ in fidelity and mark their served classes unrepresented. Each populated
 dropped arena has an export loss. Geometry omissions use Error severity; unsupported
 nonstructural metadata uses Warning. Omitted native namespaces use the shared
 informational `export/native.records-omitted` loss.
+
+## 12. Semantic validation
+
+A restored object graph, a saved geometry cache, and a recomputed design are separate semantic
+states. A successful document open does not imply that each property-owned payload restored.
+Geometry equivalence preserves each owning object's shape nullness, shape validity, solid, shell,
+face, wire, edge, and vertex counts, volume, area, length, bounds, and placement. Mesh equivalence
+preserves ordered vertices and facets together with the owning placement. Point equivalence
+preserves ordered coordinates and the persisted transform. Object identities, runtime types,
+dependencies, and declarative parameter values remain independent of these cached results.
+
+A native recompute returns the number of recomputed objects; zero does not denote an error.
+Recompute success also requires the participating objects to have no invalid or error state.
+A parameter edit changes the declarative value independently of the saved geometry cache. Full
+recomputation evaluates the edited design before a comparison of its resulting geometry. An
+unchanged cached-result comparison precedes recomputation so reconstruction does not hide a lost
+payload.
+
+Appearance ownership associates each view-provider binding with the exact-shape property of its
+source object. Whole-body appearance, per-face overrides, per-edge line styles, and per-vertex
+point styles have distinct targets. Each target resolves in its own topology arena; a declared
+override also retains its precedence over the whole-object appearance. An appearance asset's
+presence alone does not establish that target or precedence association.
+
+### Neutral drawing sheets, curves, and dimensions
+
+A template's `PageResult` property identifies its embedded SVG through a
+`FileIncluded` file attribute. If `PageResult` is absent, the `Template` property
+can identify the embedded SVG. External file paths do not select archive members.
+The SVG root `width` and `height` attributes give sheet size. Each attribute has
+a positive finite decimal number and an explicit, case-sensitive unit suffix.
+Leading and trailing whitespace and whitespace before the suffix are permitted.
+The admitted suffixes and millimetre factors are `mm` = 1, `cm` = 10,
+`in` = 25.4, `pt` = 25.4/72, `pc` = 25.4/6, and `px` = 25.4/96.
+A unitless number, percentage, unknown suffix, nonpositive number, or nonfinite
+number has no neutral sheet size. `viewBox` does not supply physical dimensions.
+A `drawing.sheet-not-transferred` loss identifies an SVG carrier without an
+admitted size. `EditableTexts`, an `App::PropertyMap`, contains a counted `Map`
+of `Item` elements. Each `key` names a title-block field and each `value` gives
+its text. Neutral sheet fields retain this order and empty values; names must be
+nonblank and unique. A blank field name has a `drawing.title-block-not-transferred`
+loss. A page obtains its sheet through its template identity.
+
+Neutral view curves use a two-dimensional Cartesian frame with origin at the
+view origin, positive X to the right, and positive Y up. Coordinates are
+millimetres before view scale and rotation. Curve order follows property and
+record order. Each curve has a mandatory hidden-line class (`visible` or
+`hidden`) and source class (`projected_model_edge`, `cosmetic`, or `center_line`).
+The optional `displayed` flag retains presentation visibility separately.
+Neutral geometry admits lines, circles, and circular arcs. An arc has a center,
+positive radius, and distinct start, middle, and end points. The middle point
+selects the sweep from start to end. Each point must lie on the circle within
+relative radial error 1e-9. All curve coordinates must be finite.
+
+`CosmeticEdgeList` records supply cosmetic curves. Neutral transfer admits
+`ExtractType` 0, matching `GeometryType` and `GeomType`, `Source` 1, and
+`Reversed` false. `HLRVisible` selects the hidden-line class and `Visible`
+selects `displayed`. Geometry type 7 supplies a line only when `Points` has
+exactly two points. Geometry type 1 supplies a circle from `Center` and a
+positive `Radius`. All selected points must have Z equal to zero. Arc records and other forms
+retain their native records and emit `drawing.cosmetic-edge-not-transferred`.
+
+`CenterLineList` uses source class `center_line` and `Source` 2. Neutral transfer
+admits a type-7 line with `HShift`, `VShift`, `Rotate`, and `Extend` equal to zero,
+`Flip` false, `Mode` and `Type` each in 0 through 2, and `Start` and `End` equal
+to the two stored branch points. Other curve gates are the cosmetic-edge gates.
+Other forms emit `drawing.center-line-not-transferred`. Cosmetic vertices remain
+native and emit `drawing.cosmetic-vertex-not-transferred` per record. Geometry
+format overrides remain native and emit `drawing.geometry-format-not-transferred`
+per record. Empty lists emit no loss. A model view stores its model references
+and view parameters, without projected hidden-line edges. Source B-rep edges and selected dimension caches are not complete projected
+visible/hidden edge collections.
+
+The semantic-annotation arena owns dimension category, measurement, format,
+replacement text, tolerances, and text position. A dimension drawing retains its
+relationships but has no duplicate typed text position. The dimension `Type` property contains an
+`Integer` selector. A `CustomEnumList`, when present, supplies ordered `Enum`
+labels indexed from zero by that selector. Labels `Distance`, `DistanceX`,
+`DistanceY`, `Radius`, `Diameter`, `Angle`, and `Angle3Pt` select distance,
+horizontal distance, vertical distance, radius, diameter, angle, and three-point
+angle. Without a custom list, selectors 0, 1, 2, 4, 5, and 6 select distance,
+horizontal distance, vertical distance, radius, diameter, and angle. Other selectors or
+labels select neutral `other` with the native selector or label and emit
+`drawing.dimension-kind-not-transferred`.
+
+`FormatSpec` supplies the dimension format. `Arbitrary` true also selects it as
+replacement text. `OverTolerance` and `UnderTolerance` are
+`App::PropertyQuantityConstraint` properties with direct `Float` values. Finite
+nonzero values supply signed upper and lower tolerances when
+`ArbitraryTolerances` is false or absent. Zero means unset. Numeric tolerance
+values under `ArbitraryTolerances` true remain native and emit
+`drawing.dimension-tolerance-not-transferred`. Under that flag, the present
+`FormatSpecOverTolerance` and `FormatSpecUnderTolerance` strings also remain native
+with this loss. Linear dimension values and
+tolerances use millimetres; angular values and tolerances use degrees. The
+existing `X` and `Y` pair supplies the text position. View and subelement
+references retain their existing relationship roles.
+
+`SavedGeometry` is a `Part::PropertyTopoShapeList` with ordered `TopoShape` file
+references. An empty saved shape with `TShapes 0` and null root `*` supplies no
+measurement. A saved shape is a reference cache, not an authoritative measurement. Its
+reference geometry must agree with the current source topology before it gives
+an exact value. Format text and arbitrary property names do not give measurements.
+
+### Template geometry and positioned text
+
+`Drawing.template_geometry` contains physical template geometry. Its coordinates
+are page millimetres, X right and Y up. `Drawing.curves` remains in the view frame.
+Template curves reuse the line, circle, and three-point arc geometry types. They
+have no hidden-line or view-source classification. Each template retains its
+sheet through `Drawing.sheet`; pages link to that template.
+
+The normalized SVG viewport has explicit `width` and `height` in `mm` and a
+matching `viewBox="0 0 width height"`. Coordinates are `(svg_x, height-svg_y)`.
+Ordered line segments represent `rect` without corner radii, `line`, `polyline`,
+and `polygon`. A closed chain includes its last-to-first segment. `circle`
+represents a complete circle. A path contains M/m, L/l, H/h, V/v, Z/z, and
+circular A/a segments. Path numbers have whitespace or comma separators;
+command letters can touch numbers. Exponent notation is outside this grammar.
+Circular arcs have equal positive radii, binary large-arc and sweep flags,
+distinct endpoints, and a chord no longer than the diameter. Their middle
+point selects the stored sweep after reflection into the page frame.
+
+Groups have no inherited presentation or transform. Root presentation overrides,
+transforms, CSS, elliptical arcs, other path commands, and positioned text spans
+are outside the normalized grammar. Stylesheets and scripts can change peer
+geometry and prevent static normalization of the whole template.
+
+Text has explicit X/Y baseline coordinates and a positive `font-size` in viewport
+units, hence millimetres. Plain text and unpositioned `tspan` children form one
+string. Each `EditableTexts` key replaces the content of a `text` element whose
+`freecad:editable` attribute equals that key. The attribute namespace is
+`http://www.freecadweb.org/wiki/index.php?title=Svg_Namespace`. Replacement text
+keeps its baseline and em height. An editable element requires a matching key.
+Stroke, fill, and remaining font appearance are separate from these primitives.
+
+### Orthographic view placement
+
+For `TechDraw::DrawViewPart`, `Direction` points from the model toward the viewer.
+Let `n` be its unit vector. Remove the component of `XDirection` parallel to `n`
+and normalize the result to obtain the rightward basis `u`. The upward basis is
+`v = n cross u`. For model point `p`, the uncentred projection is
+`r = (dot(p,u), dot(p,v))`. Let `c` be the centre of the axis-aligned bounds of the
+unrotated projected geometry. With `theta = rotation_degrees`, page position is
+`position + scale * R(theta) * (r-c)`, where `R` is a counterclockwise 2D rotation.
+Centring precedes rotation. The final rotated bounds need not be centred at
+`position`. X/Y are page millimetres and scale is dimensionless. `XDirection`
+supplies `Drawing.x_direction`, a finite nonzero model-space vector.
+
+`DrawProjGroup` X/Y is a page origin. A `DrawProjGroupItem` X/Y pair is an offset
+from that origin in page millimetres. Add the group position once to obtain the
+child page origin. Its stored Scale is the resolved child scale; it has no second
+factor from the group Scale. The group's ordered `Views` relationship identifies
+its children. Section and Detail X/Y pairs are page positions independent of
+BaseView. Perspective and section/detail construction have additional controls.
+
+### Exact saved reference measurements
+
+An exact reference measurement has `MeasureType=1` (projected) without a custom
+enumeration list, and `Bool value="false"` for `Arbitrary`, `Inverted`, and
+`AngleOverride`, and local `References2D` entries
+that all target one `DrawViewPart` with stored false `Perspective`. Horizontal
+and vertical distance require zero Rotation. Distance, radius, diameter, and
+the admitted right angle are rotation invariant. Each saved shape has one root
+edge with identity location, no degeneration, and one located-at-zero 3D curve
+representation with its trim interval. The reference subelement count equals
+the saved curve count.
+
+The current source projection consists of trimmed lines and full circles
+parallel to the view plane. Its edges have the same source-object ownership as
+the view's local Source targets. Body placements are absent. Curve translations
+apply before projection; other curve placements are outside this form. Edge
+carriers and the finite projected envelope are complete. Referenced faces are
+planar or axial cylinders whose axes are parallel to Direction. Other surfaces
+need silhouette bounds. The unrotated projected bounds give the view centre,
+with Y negated for the cache frame. Source line endpoints are stored edge vertex
+positions. Each saved line's endpoints, or circle's centre and radius, equals a
+current projected source primitive exactly. A cache that disagrees with that
+source does not establish a current measurement.
+
+One planar line gives distance, absolute X distance, or absolute Y distance
+from its trimmed endpoints. One planar circle gives radius or twice radius.
+Two perpendicular planar line directions with a positive first-cross-second
+component in the saved XY frame give a 90-degree angle. The annotation uses
+`dimension_kind` and the existing canonical units: millimetres for linear
+measurements and degrees for angular measurements.
+
+Saved reference coordinates are centred and unscaled, with Y down. At zero
+rotation, page anchors are `(view.X + view.Scale*reference.x,
+view.Y - view.Scale*reference.y)`. Position and positive scale are required for
+anchors. A value is independent of anchor placement. Line anchors are trimmed
+endpoints. Radius anchors are the centre and its positive reference-axis point.
+Diameter anchors are opposite points on that axis. Circular anchors require the
+full-circle interval `[0,2*pi]`. Angles have no point anchors. The annotation's
+`reference_anchors` is empty or contains two ordered page-space points. These
+are reference points, not dimension-line endpoints or a complete presentation.
+
+### Physical annotation text
+
+A TechDraw annotation's `TextSize` has physical millimetre units with the
+`App::PropertyLength` carrier. A positive value gives `text_style.height`.
+Its `App::PropertyFont` `Font` string gives `text_style.font_family` with that
+height. GUI point and pixel sizes are distinct from physical em height.

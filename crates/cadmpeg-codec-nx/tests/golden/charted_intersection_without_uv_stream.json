@@ -1,7 +1,8 @@
 {
   "decode": {
     "ir": {
-      "ir_version": "8",
+      "decode_depth": "full",
+      "ir_version": "9",
       "model": {
         "appearance_bindings": [],
         "appearances": [],
@@ -269,6 +270,7 @@
               ],
               "framing": "direct",
               "id": "nx:s0:chart-record#20-504",
+              "inflated_offset": 504,
               "native_parameters": null,
               "parameter_errors": [
                 -31415800000000.0,
@@ -309,6 +311,7 @@
                 0
               ],
               "id": "nx:s0:intersection-record#12",
+              "inflated_offset": 473,
               "sense": true,
               "stream_ordinal": 0,
               "xmt": 12
@@ -319,6 +322,7 @@
               "count": 4,
               "framing": "direct",
               "id": "nx:s0:support-uv-record#23",
+              "inflated_offset": 680,
               "marker": 2,
               "stream_ordinal": 0,
               "values": [
@@ -346,6 +350,7 @@
               "form": "L?",
               "framing": "direct",
               "id": "nx:s0:term-use-record#21-612",
+              "inflated_offset": 612,
               "stream_ordinal": 0,
               "xmt": 21
             },
@@ -364,6 +369,7 @@
               "form": "L?",
               "framing": "direct",
               "id": "nx:s0:term-use-record#22-646",
+              "inflated_offset": 646,
               "stream_ordinal": 0,
               "xmt": 22
             }
@@ -380,10 +386,6 @@
           ]
         }
       },
-      "scope": {
-        "design": true,
-        "model": true
-      },
       "source": {
         "attributes": {
           "deltas_streams": "0",
@@ -391,6 +393,7 @@
           "file_size": "453",
           "footer_entry_count": "0",
           "footer_fingerprint": "00000000",
+          "footer_offset": "439",
           "header_entry_count": "1",
           "jpeg_preview_count": "0",
           "partition_streams": "1",
@@ -479,10 +482,7 @@
       ],
       "transfer": {
         "geometry_transferred": true,
-        "scope": {
-          "design": true,
-          "model": true
-        }
+        "transfer": "full"
       }
     },
     "source_fidelity": {
@@ -623,14 +623,6 @@
           }
         }
       },
-      "metadata": {
-        "native.nx.parasolid_chart_records.nx:s0:chart-record#20-504.inflated_offset": "504",
-        "native.nx.parasolid_intersection_records.nx:s0:intersection-record#12.inflated_offset": "473",
-        "native.nx.parasolid_support_uv_records.nx:s0:support-uv-record#23.inflated_offset": "680",
-        "native.nx.parasolid_term_use_records.nx:s0:term-use-record#21-612.inflated_offset": "612",
-        "native.nx.parasolid_term_use_records.nx:s0:term-use-record#22-646.inflated_offset": "646",
-        "source.footer_offset": "439"
-      },
       "retained_records": {
         "nx:container:parasolid#0": {
           "bytes": {
@@ -638,20 +630,9 @@
             "retention": "inline"
           },
           "offset": 76,
-          "stream": "nx:container",
-          "untyped": []
-        },
-        "nx:source:image#whole": {
-          "bytes": {
-            "data": "U1BMTVNTVFIGAAAAAAAAAAC3AQAAAAAAAEhFQURFUgEAAAAVAAAAL1Jvb3QvVUdfUEFSVC9VR19QQVJUTAAAAAAAAABrAQAAAAAAAHgBdVA9TwJBEH2HAioofgAmRslVho8YFRMTLdwYgkoCBuWsCcglkiAYQqO2mtiZGBsbexo7Eworayv/gR8djXQWFr7jDjgF5mbmzbydt7e7yRSAxXVZ2d/cTSViirwVi0dl/0mmXMlX8qViQD4sq5mKmpOzp/JxKacWCmqZElcqspNWoiklvZxeowFOWMh3+ygGmqTEdQmDkPg5GWOsoZkIrr7XZyML5CRYOW0LabQRLlJ6aadAwgTsbK3MdoxAwhB/jBDGWUAzsVINLh2EMxwAzcnQPAybBp0w/6PD9qjEl062UO9M2YdhU8ey79Z9t5jkVShsu0PMGG8CTGkXbK8Ac3CYOoiLs7ftB/e5uDXwvrZXv/TVMG/opNZ0CDa+lxseeIl+0ha4mZtuOppl4/P78erjqCGS2cRro/rz/HRzfVcEWtgU9EjCOErXUoCMBE9cEHu7PuGNi757vFA4iGkL4Y//F/wCB0NPnEZPT1RFUgAAAAAAAAAA",
-            "retention": "inline"
-          },
-          "offset": 0,
-          "stream": "nx:source",
-          "untyped": []
+          "stream": "nx:container"
         }
-      },
-      "unrepresented": []
+      }
     }
   },
   "inspect": {

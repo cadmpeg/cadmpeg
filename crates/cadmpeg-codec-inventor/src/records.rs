@@ -9,6 +9,8 @@ use cadmpeg_core::CodecError;
 use crate::layout::meta_body_prefix as meta_prefix;
 use crate::layout::meta_type_descriptor as type_desc;
 
+pub(crate) mod references;
+
 const SECTION_COUNT: usize = 11;
 const TERMINAL_ID_LEN: usize = 16;
 const SECTION_11_PAYLOAD_LEN: usize = 0x48;
@@ -558,7 +560,7 @@ fn reverse_section<'a>(
         )));
     }
     let payload = child(body, header + 8, *end, "metadata section payload")?;
-    validate_reverse_section(number, discriminator, payload.window().len())?;
+    validate_reverse_section(number, discriminator, payload)?;
     *end = header;
     *payload_len = previous_span - 4;
     Ok(MetaSection {
@@ -606,8 +608,9 @@ fn counted_section<'a>(
 fn validate_reverse_section(
     number: ReverseSectionNumber,
     discriminator: u32,
-    payload_len: usize,
+    payload: View<'_>,
 ) -> Result<(), CodecError> {
+    let payload_len = payload.window().len();
     if number != ReverseSectionNumber::Five && discriminator > 1_000_000 {
         return Err(CodecError::malformed(format_args!(
             "RSe metadata section {number} count exceeds 1000000"
@@ -629,7 +632,9 @@ fn validate_reverse_section(
             }
         }
         ReverseSectionNumber::Eight => 20,
-        ReverseSectionNumber::Nine => 19,
+        ReverseSectionNumber::Nine => {
+            return references::validate(payload, discriminator);
+        }
         ReverseSectionNumber::Ten => 8,
         ReverseSectionNumber::Eleven => 4,
         ReverseSectionNumber::Five | ReverseSectionNumber::Six => return Ok(()),

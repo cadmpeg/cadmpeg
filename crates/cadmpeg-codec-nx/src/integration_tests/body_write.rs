@@ -27,7 +27,7 @@ fn body_write_native_check_rejects_zero_class_indices() {
                 .namespace_mut("nx")
                 .set_arena(ctx, arena, &[&wire])
                 .unwrap();
-            assert!(crate::NxCodec::validate_native(ctx, &ir)
+            assert!(crate::NxCodec::validate_native(ctx, &ir, None)
                 .unwrap()
                 .is_empty());
             wire["endpoint_class_index"] = serde_json::json!(0);
@@ -35,7 +35,7 @@ fn body_write_native_check_rejects_zero_class_indices() {
                 .namespace_mut("nx")
                 .set_arena(ctx, arena, &[&wire])
                 .unwrap();
-            let findings = crate::NxCodec::validate_native(ctx, &ir).unwrap();
+            let findings = crate::NxCodec::validate_native(ctx, &ir, None).unwrap();
             assert_eq!(findings.len(), 1);
             assert_eq!(
                 findings[0].check,
@@ -91,8 +91,10 @@ fn multiple_body_writes_form_one_checked_feature_result() {
             .expect("complete model/fidelity check");
     assert!(validation.is_ok(), "{validation:#?}");
     crate::test_support::with_decode_context(|ctx| {
-        assert!(<crate::NxCodec as CodecBackend>::validate_native(ctx, &ir)
-            .unwrap()
-            .is_empty());
+        assert!(
+            <crate::NxCodec as CodecBackend>::validate_native(ctx, &ir, Some(&fidelity))
+                .unwrap()
+                .is_empty()
+        );
     });
 }

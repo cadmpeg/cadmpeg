@@ -548,6 +548,80 @@ fn decode_binds_adjacent_entity53_color_to_disc14_face() {
 }
 
 #[test]
+fn visual_property_keeps_lossless_packed_hex_alongside_color() {
+    let payload = material_payload("Steel", [32, 64, 128]);
+    let mut source = outer_header();
+    source.extend(make_block(0x43, "", &payload));
+    let scan = crate::test_support::container::scan(&source);
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+        &source,
+        &arena,
+        &cadmpeg_core::decode::DecodePolicy::service(),
+    )
+    .unwrap();
+    let definitions = super::definitions(&ctx, &scan).unwrap();
+    assert_eq!(definitions.len(), 1);
+    assert_eq!(definitions[0].packed_hex, "00804020");
+    let color = definitions[0].color;
+    assert!((color.r() - 32.0 / 255.0).abs() < EPS_COLOR_COMPONENT);
+    assert!((color.g() - 64.0 / 255.0).abs() < EPS_COLOR_COMPONENT);
+    assert!((color.b() - 128.0 / 255.0).abs() < EPS_COLOR_COMPONENT);
+}
+
+#[test]
+fn conflicting_feature_appearances_are_retained_as_unresolved_evidence() {
+    use std::collections::BTreeSet;
+    let faces = vec![vec![("moFromSktEntSurfIdRep_c", 36, 1)]];
+    let mut display = Vec::new();
+    display_class(&mut display, "uoTempFaceTessData_c");
+    display.extend(1_u32.to_le_bytes());
+    display.extend(1_u32.to_le_bytes());
+    display.extend(display_table(0.0));
+    display.extend(framed_surface_reference("moFromSktEntSurfIdRep_c", 36, 1));
+    display_class(&mut display, "uoBodyPropInfo_c");
+    display.extend(inline_display_appearance("Body default", [128; 3]));
+    let mut visual_states = Vec::new();
+    display_class(&mut visual_states, "moCompFeature_c");
+    visual_states.extend(feature_visual_record(36, 10, [255, 0, 0]));
+    visual_states.extend(feature_visual_record(36, 10, [0, 255, 0]));
+    let mut source = outer_header();
+    source.extend(make_block(0x41, "Contents/DisplayLists", &display));
+    source.extend(make_block(
+        0x42,
+        "ThirdPtyStore/VisualStates",
+        &visual_states,
+    ));
+    let scan = crate::test_support::container::scan(&source);
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+        &source,
+        &arena,
+        &cadmpeg_core::decode::DecodePolicy::service(),
+    )
+    .unwrap();
+    let section = scan
+        .sections()
+        .find(|section| section.name() == Some("Contents/DisplayLists"))
+        .unwrap();
+    let display_faces = crate::tessellation::section_display_faces(&ctx, section).unwrap();
+    let mut eligible = BTreeSet::new();
+    eligible.insert(crate::brep::feature_source::FeatureSourceId::try_from(36).unwrap());
+    let resolved =
+        super::resolve_display_appearances(&ctx, &scan, section, &display_faces, &eligible)
+            .unwrap();
+    assert_eq!(resolved.unresolved.len(), 1);
+    let unresolved = &resolved.unresolved[0];
+    assert_eq!(unresolved.owner_class, "moCompFeature_c");
+    assert_eq!(unresolved.identity, "36");
+    assert_eq!(unresolved.appearance_index, 0);
+    assert!(!unresolved.reason.is_empty());
+    assert!(unresolved.source_offset > 0);
+    assert!(unresolved.packed_hex.is_some());
+    let _ = faces;
+}
+
+#[test]
 fn appearance_utf16_name_decodes() {
     let mut payload = material_payload("x", [32, 64, 128]);
     let length = payload.len();

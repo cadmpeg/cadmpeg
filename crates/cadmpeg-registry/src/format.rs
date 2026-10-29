@@ -105,12 +105,6 @@ impl Format {
     pub fn is_binary(self) -> bool {
         self.descriptor().1.physics.is_binary()
     }
-
-    /// Whether an export to this format requires transferred geometry.
-    #[must_use]
-    pub fn transfers_geometry(self) -> bool {
-        self.descriptor().1.physics.transfers_geometry()
-    }
 }
 
 #[cfg(test)]
@@ -179,16 +173,13 @@ mod tests {
     #[test]
     fn output_physics_come_from_each_writable_descriptor() {
         assert!(!Format::Cadir.is_binary());
-        assert!(!Format::Cadir.transfers_geometry());
         #[cfg(feature = "step")]
         {
             assert!(!Format::Step.is_binary());
-            assert!(Format::Step.transfers_geometry());
         }
         #[cfg(feature = "rhino")]
         {
             assert!(Format::Rhino.is_binary());
-            assert!(Format::Rhino.transfers_geometry());
         }
     }
 }

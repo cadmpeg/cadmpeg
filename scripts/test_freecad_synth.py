@@ -36,7 +36,7 @@ class MaterializationTests(unittest.TestCase):
         self.root = Path(self.temporary.name)
         self.fixtures = self.root / "fixtures"
         self.fixtures.mkdir()
-        for index in range(12):
+        for index in range(18):
             (self.fixtures / f"fixture_{index:02}.FCStd").write_bytes(b"source archive")
         self.output = self.root / "output"
         self.log = self.root / "calls.jsonl"
@@ -85,13 +85,13 @@ else:
         with patch.dict(os.environ, {"CADMPEG_SYNTH_TEST_MODE": mode}):
             return PREPARE.prepare(self.cli, fixtures or self.fixtures, self.output)
 
-    def test_materializes_all_twelve_public_fixtures_without_fidelity(self) -> None:
+    def test_materializes_all_eighteen_public_fixtures_without_fidelity(self) -> None:
         public = Path(__file__).resolve().parents[1] / "corpus/freecad_fcstd/fixtures"
-        self.assertEqual(self.prepare(fixtures=public), 12)
+        self.assertEqual(self.prepare(fixtures=public), 18)
         calls = [json.loads(line) for line in self.log.read_text().splitlines()]
-        self.assertEqual(len(calls), 24)
-        self.assertEqual(len(list(self.output.glob("*.FCStd"))), 12)
-        self.assertEqual(len(list(self.output.glob("*.report.json"))), 12)
+        self.assertEqual(len(calls), 36)
+        self.assertEqual(len(list(self.output.glob("*.FCStd"))), 18)
+        self.assertEqual(len(list(self.output.glob("*.report.json"))), 18)
         for arguments in calls[1::2]:
             self.assertEqual(arguments[0], "convert")
             self.assertEqual(arguments[arguments.index("--to") + 1], "fcstd:schema-4")
@@ -102,7 +102,7 @@ else:
 
     def test_wrong_fixture_count_refuses_before_invoking_cli(self) -> None:
         (self.fixtures / "fixture_00.FCStd").unlink()
-        with self.assertRaisesRegex(RuntimeError, "expected 12.*found 11"):
+        with self.assertRaisesRegex(RuntimeError, "expected 18.*found 17"):
             self.prepare()
         self.assertFalse(self.log.exists())
 
@@ -127,7 +127,7 @@ class NativeAcceptanceTests(unittest.TestCase):
         self.temporary = tempfile.TemporaryDirectory()
         self.root = Path(self.temporary.name)
         self.report = self.root / "native-acceptance.json"
-        for index in range(12):
+        for index in range(18):
             path = self.root / f"fixture_{index:02}.FCStd"
             path.write_bytes(b"authored archive")
             path.with_suffix(".report.json").write_text(json.dumps(SUCCESS))
@@ -161,10 +161,10 @@ class NativeAcceptanceTests(unittest.TestCase):
     def results(self):
         return json.loads(self.report.read_text())["files"]
 
-    def test_all_twelve_inputs_open_validate_and_close(self) -> None:
-        self.assertEqual(VERIFY.verify(self.application(), self.root, self.report), 12)
-        self.assertEqual(len(self.opened), 12)
-        self.assertEqual(len(self.closed), 12)
+    def test_all_eighteen_inputs_open_validate_and_close(self) -> None:
+        self.assertEqual(VERIFY.verify(self.application(), self.root, self.report), 18)
+        self.assertEqual(len(self.opened), 18)
+        self.assertEqual(len(self.closed), 18)
         self.assertTrue(all(result["accepted"] and result["objects"] == 2 for result in self.results()))
 
     def test_native_failures_are_reported_while_other_inputs_continue(self) -> None:
@@ -176,14 +176,14 @@ class NativeAcceptanceTests(unittest.TestCase):
                 with self.assertRaisesRegex(RuntimeError, "acceptance failed"):
                     VERIFY.verify(self.application(mode), self.root, self.report)
                 results = self.results()
-                self.assertEqual(len(results), 12)
-                self.assertEqual(len(self.opened), 12)
+                self.assertEqual(len(results), 18)
+                self.assertEqual(len(self.opened), 18)
                 self.assertEqual(sum(not result["accepted"] for result in results), 1)
                 self.assertIn(reason, results[0]["error"])
-                self.assertEqual(len(self.closed), 11 if mode in ["open_failure", "no_document"] else 12)
+                self.assertEqual(len(self.closed), 17 if mode in ["open_failure", "no_document"] else 18)
 
     def test_null_shape_and_nonshape_objects_are_valid_empty_content(self) -> None:
-        self.assertEqual(VERIFY.verify(self.application("null_shape"), self.root, self.report), 12)
+        self.assertEqual(VERIFY.verify(self.application("null_shape"), self.root, self.report), 18)
 
     def test_native_restore_error_is_rejected_even_when_document_is_returned(self) -> None:
         application = self.application()
@@ -199,7 +199,7 @@ class NativeAcceptanceTests(unittest.TestCase):
         self.assertFalse(result["accepted"])
         self.assertIn("Invalid Document.xml", result["restore_diagnostics"])
         self.assertIn("native restore diagnostics", result["error"])
-        self.assertEqual(len(self.closed), 12)
+        self.assertEqual(len(self.closed), 18)
 
     def test_null_shapes_reject_an_export_that_reported_geometry(self) -> None:
         provenance = json.loads(json.dumps(SUCCESS))
@@ -213,7 +213,7 @@ class NativeAcceptanceTests(unittest.TestCase):
         self.assertEqual(result["nonnull_shapes"], 0)
         self.assertEqual(result["null_shapes"], 1)
         self.assertIn("no non-null Shape", result["error"])
-        self.assertEqual(len(self.closed), 12)
+        self.assertEqual(len(self.closed), 18)
 
     def test_replay_input_is_not_accepted_as_a_synthesis_proof(self) -> None:
         provenance = self.root / "fixture_00.report.json"
@@ -222,7 +222,7 @@ class NativeAcceptanceTests(unittest.TestCase):
         provenance.write_text(json.dumps(replay))
         with self.assertRaisesRegex(RuntimeError, "acceptance failed"):
             VERIFY.verify(self.application(), self.root, self.report)
-        self.assertEqual(len(self.opened), 11)
+        self.assertEqual(len(self.opened), 17)
         self.assertIn("synthesized export report", self.results()[0]["error"])
 
     def test_missing_provenance_is_reported_without_opening_that_input(self) -> None:
@@ -230,19 +230,19 @@ class NativeAcceptanceTests(unittest.TestCase):
         with self.assertRaisesRegex(RuntimeError, "acceptance failed"):
             VERIFY.verify(self.application(), self.root, self.report)
         self.assertFalse(self.results()[0]["accepted"])
-        self.assertEqual(len(self.opened), 11)
+        self.assertEqual(len(self.opened), 17)
 
     def test_incomplete_suite_is_rejected_with_its_partial_report(self) -> None:
         (self.root / "fixture_00.FCStd").unlink()
         with self.assertRaisesRegex(RuntimeError, "acceptance failed"):
             VERIFY.verify(self.application(), self.root, self.report)
-        self.assertEqual(len(self.results()), 11)
+        self.assertEqual(len(self.results()), 17)
 
     def test_native_entry_point_uses_configured_directory_and_report(self) -> None:
         with patch.dict(sys.modules, {"FreeCAD": self.application()}), patch.dict(os.environ, {
                 "CADMPEG_FCSTD_INPUT_DIR": str(self.root), "CADMPEG_FCSTD_REPORT": str(self.report)}):
             runpy.run_path(str(Path(__file__).with_name("verify-freecad-synth.py")), run_name="__main__")
-        self.assertEqual(len(self.results()), 12)
+        self.assertEqual(len(self.results()), 18)
 
 
 if __name__ == "__main__":

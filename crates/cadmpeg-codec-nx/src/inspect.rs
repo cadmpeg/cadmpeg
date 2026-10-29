@@ -8,15 +8,12 @@ use cadmpeg_core::{CodecError, ContainerEntry};
 use cadmpeg_ir::ContainerSummary;
 
 use crate::framing::node_kind::NodeKind;
-use crate::{container, decode, deltas, native, parasolid, topology};
+use crate::{container, decode, parasolid, topology};
 
 /// Build the container summary: one entry per catalogued directory stream, plus
 /// one per embedded Parasolid stream, and the shared container notes.
 pub(super) fn summarize(scan: &decode::Scan) -> Result<ContainerSummary, CodecError> {
     let mut entries = Vec::new();
-    let semantic_streams = (scan.count(parasolid::StreamKind::Partition) != 0)
-        .then(|| native::substrate::topology_streams(scan))
-        .transpose()?;
 
     for entry in &scan.container.entries {
         let mut attributes = BTreeMap::new();
@@ -83,7 +80,7 @@ pub(super) fn summarize(scan: &decode::Scan) -> Result<ContainerSummary, CodecEr
                 SummaryValue::Text(schema.value()),
             );
         }
-        if stream.kind().is_parasolid() {
+        if stream.kind().is_parasolid() && stream.kind() != parasolid::StreamKind::Deltas {
             let graph = topology::Graph::parse(&stream.inflated);
             for (kind, name) in [
                 (NodeKind::Body, "body"),
@@ -95,138 +92,55 @@ pub(super) fn summarize(scan: &decode::Scan) -> Result<ContainerSummary, CodecEr
                 (NodeKind::Vertex, "vertex"),
                 (NodeKind::Region, "region"),
             ] {
+                let count = cadmpeg_core::decode::u64_from_index(graph.kind_count(kind));
                 insert_summary_attribute(
                     &mut attributes,
                     "records.",
                     name,
                     false,
-                    SummaryValue::Number(cadmpeg_core::decode::u64_from_index(
-                        graph.kind_count(kind),
-                    )),
+                    SummaryValue::Number(count),
                 );
-            }
-            if stream.kind() == parasolid::StreamKind::Partition {
-                let Some(semantic_streams) = semantic_streams.as_ref() else {
-                    return Err(CodecError::malformed(
-                        "NX partition has no topology byte views",
-                    ));
-                };
-                let graph = topology::Graph::parse(&semantic_streams[si]);
-                for (kind, name) in [
-                    (NodeKind::Body, "body"),
-                    (NodeKind::Shell, "shell"),
-                    (NodeKind::Face, "face"),
-                    (NodeKind::Loop, "loop"),
-                    (NodeKind::Edge, "edge"),
-                    (NodeKind::Fin, "fin"),
-                    (NodeKind::Vertex, "vertex"),
-                    (NodeKind::Region, "region"),
-                ] {
+                if stream.kind() == parasolid::StreamKind::Partition {
                     insert_summary_attribute(
                         &mut attributes,
                         "records.live.",
                         name,
                         false,
-                        SummaryValue::Number(cadmpeg_core::decode::u64_from_index(
-                            graph.kind_count(kind),
-                        )),
+                        SummaryValue::Number(count),
                     );
                 }
-            } else if stream.kind() == parasolid::StreamKind::Deltas {
-                let census = deltas::census::walk(&stream.inflated)?;
-                if census.transmit_header.is_some() {
-                    insert_summary_attribute(
-                        &mut attributes,
-                        "records.delta.transmit_headers",
-                        "",
-                        false,
-                        SummaryValue::Text("1"),
-                    );
-                }
-                if !census.body_revisions.is_empty() {
-                    insert_summary_attribute(
-                        &mut attributes,
-                        "records.delta.body_revisions",
-                        "",
-                        false,
-                        SummaryValue::Number(cadmpeg_core::decode::u64_from_index(
-                            census.body_revisions.len(),
-                        )),
-                    );
-                }
-                if !census.tagged_reference_lanes.is_empty() {
-                    insert_summary_attribute(
-                        &mut attributes,
-                        "records.delta.tagged_reference_lanes",
-                        "",
-                        false,
-                        SummaryValue::Number(cadmpeg_core::decode::u64_from_index(
-                            census.tagged_reference_lanes.len(),
-                        )),
-                    );
-                }
-                if !census.reference_type_maps.is_empty() {
-                    insert_summary_attribute(
-                        &mut attributes,
-                        "records.delta.reference_type_maps",
-                        "",
-                        false,
-                        SummaryValue::Number(cadmpeg_core::decode::u64_from_index(
-                            census.reference_type_maps.len(),
-                        )),
-                    );
-                }
-                if !census.pmark_packets.is_empty() {
-                    insert_summary_attribute(
-                        &mut attributes,
-                        "records.delta.pmark_packets",
-                        "",
-                        false,
-                        SummaryValue::Number(cadmpeg_core::decode::u64_from_index(
-                            census.pmark_packets.len(),
-                        )),
-                    );
-                }
-                if !census.reference_marker_packets.is_empty() {
-                    insert_summary_attribute(
-                        &mut attributes,
-                        "records.delta.reference_marker_packets",
-                        "",
-                        false,
-                        SummaryValue::Number(cadmpeg_core::decode::u64_from_index(
-                            census.reference_marker_packets.len(),
-                        )),
-                    );
-                }
-                if !census.schema_nodes.is_empty() {
-                    insert_summary_attribute(
-                        &mut attributes,
-                        "records.delta.schema_nodes",
-                        "",
-                        false,
-                        SummaryValue::Number(cadmpeg_core::decode::u64_from_index(
-                            census.schema_nodes.len(),
-                        )),
-                    );
-                }
-                for (family, count) in census.full_counts() {
-                    insert_summary_attribute(
-                        &mut attributes,
-                        "records.delta.full.",
-                        family,
-                        true,
-                        SummaryValue::Number(cadmpeg_core::decode::u64_from_index(count)),
-                    );
-                }
-                for (family, count) in census.tombstone_counts() {
-                    insert_summary_attribute(
-                        &mut attributes,
-                        "records.delta.tombstone.",
-                        family,
-                        true,
-                        SummaryValue::Number(cadmpeg_core::decode::u64_from_index(count)),
-                    );
-                }
+            }
+        } else if stream.kind() == parasolid::StreamKind::Deltas {
+            let owner = crate::records::DeltasRecords::read(&stream.inflated)?;
+            let census = owner.census();
+            for (key, count) in [
+                ("records.delta.instances", census.instance_count()),
+                ("records.delta.schemas", census.schema_count()),
+                ("records.delta.bytes_decoded", census.bytes_decoded()),
+            ] {
+                insert_summary_attribute(
+                    &mut attributes,
+                    key,
+                    "",
+                    false,
+                    SummaryValue::Number(cadmpeg_core::decode::u64_from_index(count)),
+                );
+            }
+            insert_summary_attribute(
+                &mut attributes,
+                "records.delta.selection",
+                "",
+                false,
+                SummaryValue::Text("unresolved"),
+            );
+            for (family, count) in census.full_counts() {
+                insert_summary_attribute(
+                    &mut attributes,
+                    "records.delta.full.",
+                    family,
+                    true,
+                    SummaryValue::Number(cadmpeg_core::decode::u64_from_index(count)),
+                );
             }
         }
         let inflated_len = cadmpeg_core::decode::u64_from_index(stream.inflated.len());
@@ -300,4 +214,38 @@ fn insert_summary_attribute(
         SummaryValue::Number(number) => number.to_string(),
     };
     attributes.insert(key, rendered);
+}
+
+#[cfg(test)]
+mod tests {
+    #[test]
+    fn deltas_inspection_counts_only_owned_instances() {
+        let file = crate::test_support::test_prt::single_part_prt();
+        crate::test_support::with_decode_context(|_ctx| {
+            let scan = crate::decode::Scan::new(
+                crate::container::scan_bytes(file).unwrap(),
+                vec![crate::test_support::owned_deltas::stream(
+                    crate::test_support::test_pmarks::complete(
+                        crate::test_support::owned_deltas::body_stream(36),
+                    ),
+                )],
+            );
+            let summary = super::summarize(&scan).unwrap();
+            let attributes = &summary.entries.last().unwrap().attributes;
+            assert_eq!(
+                attributes
+                    .get("records.delta.instances")
+                    .map(String::as_str),
+                Some("1")
+            );
+            assert_eq!(
+                attributes
+                    .get("records.delta.full.body")
+                    .map(String::as_str),
+                Some("1")
+            );
+            assert!(!attributes.contains_key("records.body"));
+            assert!(!attributes.contains_key("records.live.body"));
+        });
+    }
 }

@@ -1,7 +1,8 @@
 {
   "decode": {
     "ir": {
-      "ir_version": "8",
+      "decode_depth": "full",
+      "ir_version": "9",
       "model": {
         "appearance_bindings": [],
         "appearances": [],
@@ -149,6 +150,7 @@
             {
               "byte_len": 19,
               "id": "nx:s0:parasolid-group#368-10",
+              "inflated_offset": 368,
               "node_id": 7,
               "partition_stream_ordinal": 0,
               "references": [
@@ -176,10 +178,6 @@
           ]
         }
       },
-      "scope": {
-        "design": true,
-        "model": true
-      },
       "source": {
         "attributes": {
           "deltas_streams": "0",
@@ -187,6 +185,7 @@
           "file_size": "320",
           "footer_entry_count": "0",
           "footer_fingerprint": "00000000",
+          "footer_offset": "306",
           "header_entry_count": "1",
           "jpeg_preview_count": "0",
           "partition_streams": "1",
@@ -265,7 +264,7 @@
             "scope": "namespaced",
             "strict_floor": "warning"
           },
-          "message": "The B-rep topology graph (body→shell→face→loop→fin→edge→vertex) was not reconstructed because the surviving typed records did not form a complete connected ownership graph. Exact-key supported partition↔deltas replacements and deletions were applied before graph construction. Required unresolved records prevent their dependent incidence from being emitted; decoded geometry then remains unattached.",
+          "message": "The B-rep topology graph (body→shell→face→loop→fin→edge→vertex) was not reconstructed because the surviving typed records did not form a complete connected ownership graph. Graph construction used the primary input bytes. Required unresolved records prevent their dependent incidence from being emitted; decoded geometry then remains unattached.",
           "severity": "blocking"
         },
         {
@@ -286,10 +285,7 @@
       ],
       "transfer": {
         "geometry_transferred": true,
-        "scope": {
-          "design": true,
-          "model": true
-        }
+        "transfer": "full"
       }
     },
     "source_fidelity": {
@@ -391,10 +387,6 @@
           }
         }
       },
-      "metadata": {
-        "native.nx.parasolid_group_records.nx:s0:parasolid-group#368-10.inflated_offset": "368",
-        "source.footer_offset": "306"
-      },
       "retained_records": {
         "nx:container:parasolid#0": {
           "bytes": {
@@ -402,20 +394,9 @@
             "retention": "inline"
           },
           "offset": 76,
-          "stream": "nx:container",
-          "untyped": []
-        },
-        "nx:source:image#whole": {
-          "bytes": {
-            "data": "U1BMTVNTVFIGAAAAAAAAAAAyAQAAAAAAAEhFQURFUgEAAAAVAAAAL1Jvb3QvVUdfUEFSVC9VR19QQVJUTAAAAAAAAADmAAAAAAAAAHgBjVC964FRGH1+fq+PDCYr3UWRxUcZLDfJVyG872SRj3ewIK4BE5EySyajUcqi/AH+BIOJ1WKwKtfDixLp1jmdc89znnoSIgDYvURK+eJiLCKRYCQaINZKtsqKrFgu2Ui+KmeZXCC5BmFyjfG4QfSHM1JAlDJOt8Ph4Q6ACVTIf4CPzlE9gA5UdUtQPwUX/KOJqWvWThftzfbUP6P9Bejx9qnwTb2gGwRUz2qUP4BSSSuj1Xi97yj6bdQMavSeK2i3uQvNjC06vPNkmTz0zMuPFWnQ8wotP4PAyzQC6K5XuADjxjO/Rk9PVEVSAAAAAAAAAAA=",
-            "retention": "inline"
-          },
-          "offset": 0,
-          "stream": "nx:source",
-          "untyped": []
+          "stream": "nx:container"
         }
-      },
-      "unrepresented": []
+      }
     }
   },
   "inspect": {

@@ -19,11 +19,12 @@ use cadmpeg_ir::codec::{Codec, DecodeOptions};
 
 use crate::test_support::smbh_curves_test::{
     synthetic_geometry_with_compound_curve_smbh,
-    synthetic_geometry_with_early_close_projection_smbh, synthetic_geometry_with_exact_curve_smbh,
-    synthetic_geometry_with_helix_curve_smbh, synthetic_geometry_with_law_curve_smbh,
-    synthetic_geometry_with_projection_smbh, synthetic_geometry_with_silhouette_smbh,
-    synthetic_geometry_with_spring_smbh, synthetic_geometry_with_subset_curve_smbh,
-    synthetic_geometry_with_surface_curve_smbh, synthetic_geometry_with_surface_offset_smbh,
+    synthetic_geometry_with_consistent_exact_curve_smbh,
+    synthetic_geometry_with_early_close_projection_smbh, synthetic_geometry_with_helix_curve_smbh,
+    synthetic_geometry_with_law_curve_smbh, synthetic_geometry_with_projection_smbh,
+    synthetic_geometry_with_silhouette_smbh, synthetic_geometry_with_spring_smbh,
+    synthetic_geometry_with_subset_curve_smbh, synthetic_geometry_with_surface_curve_smbh,
+    synthetic_geometry_with_surface_offset_smbh,
     synthetic_geometry_with_three_surface_intersection_smbh,
     synthetic_geometry_with_two_sided_offset_curve_smbh,
     synthetic_geometry_with_vector_offset_curve_smbh,
@@ -39,7 +40,10 @@ use cadmpeg_ir::geometry::SolvedCurveGeometry;
 #[test]
 fn generated_procedural_curve_optional_tolerance_absence_round_trips() {
     let cases = [
-        (synthetic_geometry_with_exact_curve_smbh(), "exact"),
+        (
+            synthetic_geometry_with_consistent_exact_curve_smbh(),
+            "exact",
+        ),
         (synthetic_geometry_with_law_curve_smbh(), "law"),
         (synthetic_geometry_with_projection_smbh(), "projection"),
         (

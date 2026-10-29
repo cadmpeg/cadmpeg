@@ -295,7 +295,16 @@ pub trait CodecBackend {
     /// namespace or has no validator for it. The sealed wrapper exposes it as
     /// [`Codec::validate_native`], which the application runs after
     /// `validate_neutral`.
-    fn validate_native(_ctx: &DecodeContext<'_>, _ir: &CadIr) -> Result<Vec<Finding>, CodecError> {
+    ///
+    /// `source` borrows the document's decode fidelity when available. `None`
+    /// is supported for CADIR loaded without a sidecar. A present record can
+    /// retain only a digest; validators must inspect its `data()` before
+    /// comparing native metadata with source bytes and report skipped scopes.
+    fn validate_native(
+        _ctx: &DecodeContext<'_>,
+        _ir: &CadIr,
+        _source: Option<&SourceFidelity>,
+    ) -> Result<Vec<Finding>, CodecError> {
         Ok(Vec::new())
     }
 
@@ -356,7 +365,7 @@ mod sealed {
 /// impl Codec for Rogue {
 ///     fn id(&self) -> FormatId { FormatId::new("rogue") }
 ///     fn detect(&self, _: &DecodeContext<'_>, _: View<'_>) -> Result<Confidence, CodecError> { Ok(Confidence::No) }
-///     fn validate_native(&self, _: &DecodeContext<'_>, _: &cadmpeg_ir::CadIr)
+///     fn validate_native(&self, _: &DecodeContext<'_>, _: &cadmpeg_ir::CadIr, _: Option<&cadmpeg_ir::SourceFidelity>)
 ///         -> Result<Vec<cadmpeg_ir::report::check::Finding>, CodecError> {
 ///         Ok(Vec::new())
 ///     }
@@ -381,6 +390,7 @@ pub trait Codec: sealed::Sealed {
         &self,
         ctx: &DecodeContext<'_>,
         ir: &CadIr,
+        source: Option<&SourceFidelity>,
     ) -> Result<Vec<Finding>, CodecError>;
 
     /// Inspects the source under its input and resource limits.
@@ -430,8 +440,9 @@ impl<C: CodecBackend + ?Sized> Codec for C {
         &self,
         ctx: &DecodeContext<'_>,
         ir: &CadIr,
+        source: Option<&SourceFidelity>,
     ) -> Result<Vec<Finding>, CodecError> {
-        C::validate_native(ctx, ir)
+        C::validate_native(ctx, ir, source)
     }
 
     fn inspect(

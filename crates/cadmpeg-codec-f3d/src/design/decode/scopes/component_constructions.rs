@@ -14,6 +14,7 @@ use crate::design::decode::text::relaxed_guid_end;
 use crate::design::decode::text::{fixed_guid_end, fixed_utf16_ascii_eq};
 use crate::ids::native_stream;
 use crate::layout::component_insert_carrier_334_prefix as component_carrier_334;
+use crate::layout::component_insert_identity_scope_272_prefix as identity_insert;
 use crate::layout::component_insert_identity_scope_compact as component_identity_scope;
 use crate::layout::component_insert_identity_scope_shifted_prefix as component_identity_shifted;
 use crate::layout::component_insert_matrix_scope_414_264_prefix as component_matrix_414;
@@ -223,6 +224,18 @@ pub(super) fn exact_component_insert_construction(
                         View::u64_le_at(bytes, start + 29)?,
                     )
                 }
+                (Some(272), "262") if scope.class_tag.as_str() == "357" => (
+                    crate::records::sketch_placement::SketchPlacementMatrix::IDENTITY,
+                    None,
+                    exact_identity_insert_scope(bytes, start, relation_record_index, false)?,
+                ),
+                (Some(276), "262") if matches!(scope.class_tag.as_str(), "357" | "360" | "362") => {
+                    (
+                        crate::records::sketch_placement::SketchPlacementMatrix::IDENTITY,
+                        None,
+                        exact_identity_insert_scope(bytes, start, relation_record_index, true)?,
+                    )
+                }
                 (Some(261), "263") if scope.class_tag.as_str() == "296" => (
                     crate::records::sketch_placement::SketchPlacementMatrix::IDENTITY,
                     None,
@@ -269,178 +282,197 @@ pub(super) fn exact_component_insert_construction(
                 _ => return None,
             };
         let relation_at = records.first_at_or_after(0, relation_record_index)?;
-        let (carrier_record_index, placements) = if scope.frame_length() == Some(404) {
-            if relation_at >= start
-                || next_indexed_record_offset(bytes, relation_at + 1)? != relation_at + 58
-                || bytes.get(relation_at + 11..relation_at + 21)? != [0; 10]
-                || bytes.get(relation_at + 21) != Some(&1)
-                || bytes.get(relation_at + 26..relation_at + 32)? != [0; 6]
-                || bytes.get(relation_at + 32..relation_at + 35)? != [1, 0, 0]
-                || bytes.get(relation_at + 35) != Some(&1)
-                || bytes.get(relation_at + 40..relation_at + 47)? != [0; 7]
-                || bytes.get(relation_at + 47) != Some(&1)
-                || View::u32_le_at(bytes, relation_at + 48)? != scope.record_index
-                || bytes.get(relation_at + 52..relation_at + 58)? != [0; 6]
-            {
-                return None;
-            }
-            let carrier_record_index = View::u32_le_at(bytes, relation_at + 22)?;
-            let mut placements = Vec::new();
-            for &carrier_at in records
-                .offsets(carrier_record_index)
-                .iter()
-                .filter(|at| **at < relation_at)
-            {
-                for at in carrier_at + 11..relation_at {
-                    let Some(after_role) = fixed_guid_end(bytes, at) else {
-                        continue;
-                    };
-                    if bytes.get(after_role..after_role + 12)
-                        != Some(&[0, 1, 6, 0, 0, 0, 0, 0, 0, 0, 0, 0])
-                    {
-                        continue;
-                    }
-                    for transform_at in carrier_at + 11..at {
-                        if rigid_transform_at(bytes, transform_at) == Some(transform) {
-                            let role = lp_utf16_bounded(bytes, at, 36..=36)?.0;
-                            placements.push((role, at + 4, Some(transform_at)));
+        let (carrier_record_index, placements) =
+            if matches!(scope.frame_length(), Some(272 | 276 | 404)) {
+                if relation_at >= start
+                    || next_indexed_record_offset(bytes, relation_at + 1)? != relation_at + 58
+                    || bytes.get(relation_at + 11..relation_at + 21)? != [0; 10]
+                    || bytes.get(relation_at + 21) != Some(&1)
+                    || bytes.get(relation_at + 26..relation_at + 32)? != [0; 6]
+                    || bytes.get(relation_at + 32..relation_at + 35)? != [1, 0, 0]
+                    || bytes.get(relation_at + 35) != Some(&1)
+                    || bytes.get(relation_at + 40..relation_at + 47)? != [0; 7]
+                    || bytes.get(relation_at + 47) != Some(&1)
+                    || View::u32_le_at(bytes, relation_at + 48)? != scope.record_index
+                    || bytes.get(relation_at + 52..relation_at + 58)? != [0; 6]
+                {
+                    return None;
+                }
+                let carrier_record_index = View::u32_le_at(bytes, relation_at + 22)?;
+                let mut placements = Vec::new();
+                if scope.frame_length() != Some(404) {
+                    let carrier_at =
+                        unique_indexed_record_before(records, carrier_record_index, relation_at)?;
+                    let (role, offset) = crate::xref::identity_component_insert_carrier(
+                        bytes,
+                        carrier_at,
+                        relation_at,
+                        carrier_record_index,
+                    )?;
+                    placements.push((role, offset, None));
+                }
+                for &carrier_at in records
+                    .offsets(carrier_record_index)
+                    .iter()
+                    .filter(|at| scope.frame_length() == Some(404) && **at < relation_at)
+                {
+                    for at in carrier_at + 11..relation_at {
+                        let Some(after_role) = fixed_guid_end(bytes, at) else {
+                            continue;
+                        };
+                        if bytes.get(after_role..after_role + 12)
+                            != Some(&[0, 1, 6, 0, 0, 0, 0, 0, 0, 0, 0, 0])
+                        {
+                            continue;
+                        }
+                        for transform_at in carrier_at + 11..at {
+                            if rigid_transform_at(bytes, transform_at) == Some(transform) {
+                                let role = lp_utf16_bounded(bytes, at, 36..=36)?.0;
+                                placements.push((role, at + 4, Some(transform_at)));
+                            }
                         }
                     }
                 }
-            }
-            (carrier_record_index, placements)
-        } else if scope.class_tag.as_str() == "426" && scope.paired_class_tag.as_str() == "258" {
-            let (carrier_record_index, role, role_offset) =
-                exact_component_insert_class_426_relation(
-                    bytes,
-                    records,
-                    relation_at,
-                    start,
-                    relation_record_index,
-                    scope.record_index,
-                )?;
-            let role = role.to_string();
-            (
-                carrier_record_index,
-                [(role, role_offset, None)].into_iter().collect::<Vec<_>>(),
-            )
-        } else {
-            if relation_at >= start
-                || next_indexed_record_offset(bytes, relation_at + 1)? != relation_at + 57
-                || bytes.get(relation_at + 11..relation_at + 21)? != [0; 10]
-                || bytes.get(relation_at + 21) != Some(&1)
-                || bytes.get(relation_at + 26..relation_at + 34)? != [0; 8]
-                || bytes.get(relation_at + 34) != Some(&1)
-                || bytes.get(relation_at + 39..relation_at + 46)? != [0; 7]
-                || bytes.get(relation_at + 46) != Some(&1)
-                || View::u32_le_at(bytes, relation_at + 47)? != scope.record_index
-                || bytes.get(relation_at + 51..relation_at + 57)? != [0; 6]
+                (carrier_record_index, placements)
+            } else if scope.class_tag.as_str() == "426" && scope.paired_class_tag.as_str() == "258"
             {
-                return None;
-            }
-            let carrier_record_index = View::u32_le_at(bytes, relation_at + 22)?;
-            let carrier_at =
-                unique_indexed_record_before(records, carrier_record_index, relation_at)?;
-            if scope.class_tag.as_str() == "283" && scope.paired_class_tag.as_str() == "262" {
-                let (role, role_offset) = exact_component_insert_carrier_334(
-                    bytes,
-                    carrier_at,
-                    relation_at,
-                    carrier_record_index,
-                )?;
-                (
-                    carrier_record_index,
-                    [(role, role_offset, None)].into_iter().collect::<Vec<_>>(),
-                )
-            } else if scope.class_tag.as_str() == "296" && scope.paired_class_tag.as_str() == "263"
-            {
-                let (role, role_offset) = crate::xref::grouped_component_insert_identity(
-                    bytes,
-                    carrier_at,
-                    relation_at,
-                    carrier_record_index,
-                )?;
-                let role = role.to_string();
-                (
-                    carrier_record_index,
-                    [(role, role_offset, None)].into_iter().collect::<Vec<_>>(),
-                )
-            } else if scope.class_tag.as_str() == "410" && scope.paired_class_tag.as_str() == "261"
-            {
-                let (role, role_offset) = crate::xref::grouped_component_insert_identity_class380(
-                    bytes,
-                    carrier_at,
-                    relation_at,
-                    carrier_record_index,
-                )?;
-                let role = role.to_string();
-                (
-                    carrier_record_index,
-                    [(role, role_offset, None)].into_iter().collect::<Vec<_>>(),
-                )
-            } else if scope.class_tag.as_str() == "434" && scope.paired_class_tag.as_str() == "266"
-            {
-                let (role, role_offset) = crate::xref::grouped_component_insert_identity_class341(
-                    bytes,
-                    carrier_at,
-                    relation_at,
-                    carrier_record_index,
-                )?;
-                let role = role.to_string();
-                (
-                    carrier_record_index,
-                    [(role, role_offset, None)].into_iter().collect::<Vec<_>>(),
-                )
-            } else if scope.class_tag.as_str() == "414" && scope.paired_class_tag.as_str() == "264"
-            {
-                let (role, role_offset, carrier_transform_offset) =
-                    match crate::xref::repeated_target_component_insert(
+                let (carrier_record_index, role, role_offset) =
+                    exact_component_insert_class_426_relation(
                         bytes,
-                        carrier_at,
+                        records,
                         relation_at,
-                        carrier_record_index,
-                        transform.into(),
-                    ) {
-                        Ok(Some(value)) => value,
-                        Ok(None) => return None,
-                        Err(error) => return Some(Err(error)),
-                    };
+                        start,
+                        relation_record_index,
+                        scope.record_index,
+                    )?;
+                let role = role.to_string();
                 (
                     carrier_record_index,
-                    [(role, role_offset, carrier_transform_offset)]
-                        .into_iter()
-                        .collect::<Vec<_>>(),
+                    [(role, role_offset, None)].into_iter().collect::<Vec<_>>(),
                 )
             } else {
-                let mut placements = Vec::new();
-                for at in carrier_at + 11..relation_at {
-                    let Some(after_role) = relaxed_guid_end(bytes, at) else {
-                        continue;
-                    };
-                    if bytes.get(after_role..after_role + 2) != Some(&[0, 0]) {
-                        continue;
-                    }
-                    let transform_at = after_role.checked_add(2)?;
-                    if rigid_transform_at(bytes, transform_at) == Some(transform) {
-                        let role = lp_utf16_bounded(bytes, at, 36..=38)?.0;
-
-                        placements.push((role, at + 4, Some(transform_at)));
-                    }
+                if relation_at >= start
+                    || next_indexed_record_offset(bytes, relation_at + 1)? != relation_at + 57
+                    || bytes.get(relation_at + 11..relation_at + 21)? != [0; 10]
+                    || bytes.get(relation_at + 21) != Some(&1)
+                    || bytes.get(relation_at + 26..relation_at + 34)? != [0; 8]
+                    || bytes.get(relation_at + 34) != Some(&1)
+                    || bytes.get(relation_at + 39..relation_at + 46)? != [0; 7]
+                    || bytes.get(relation_at + 46) != Some(&1)
+                    || View::u32_le_at(bytes, relation_at + 47)? != scope.record_index
+                    || bytes.get(relation_at + 51..relation_at + 57)? != [0; 6]
+                {
+                    return None;
                 }
-                if scope.frame_length() == Some(381) {
-                    let legacy = legacy_component_insert_placements(
+                let carrier_record_index = View::u32_le_at(bytes, relation_at + 22)?;
+                let carrier_at =
+                    unique_indexed_record_before(records, carrier_record_index, relation_at)?;
+                if scope.class_tag.as_str() == "283" && scope.paired_class_tag.as_str() == "262" {
+                    let (role, role_offset) = exact_component_insert_carrier_334(
                         bytes,
                         carrier_at,
                         relation_at,
                         carrier_record_index,
-                        transform,
-                    );
+                    )?;
+                    (
+                        carrier_record_index,
+                        [(role, role_offset, None)].into_iter().collect::<Vec<_>>(),
+                    )
+                } else if scope.class_tag.as_str() == "296"
+                    && scope.paired_class_tag.as_str() == "263"
+                {
+                    let (role, role_offset) = crate::xref::grouped_component_insert_identity(
+                        bytes,
+                        carrier_at,
+                        relation_at,
+                        carrier_record_index,
+                    )?;
+                    let role = role.to_string();
+                    (
+                        carrier_record_index,
+                        [(role, role_offset, None)].into_iter().collect::<Vec<_>>(),
+                    )
+                } else if scope.class_tag.as_str() == "410"
+                    && scope.paired_class_tag.as_str() == "261"
+                {
+                    let (role, role_offset) =
+                        crate::xref::grouped_component_insert_identity_class380(
+                            bytes,
+                            carrier_at,
+                            relation_at,
+                            carrier_record_index,
+                        )?;
+                    let role = role.to_string();
+                    (
+                        carrier_record_index,
+                        [(role, role_offset, None)].into_iter().collect::<Vec<_>>(),
+                    )
+                } else if scope.class_tag.as_str() == "434"
+                    && scope.paired_class_tag.as_str() == "266"
+                {
+                    let (role, role_offset) =
+                        crate::xref::grouped_component_insert_identity_class341(
+                            bytes,
+                            carrier_at,
+                            relation_at,
+                            carrier_record_index,
+                        )?;
+                    let role = role.to_string();
+                    (
+                        carrier_record_index,
+                        [(role, role_offset, None)].into_iter().collect::<Vec<_>>(),
+                    )
+                } else if scope.class_tag.as_str() == "414"
+                    && scope.paired_class_tag.as_str() == "264"
+                {
+                    let (role, role_offset, carrier_transform_offset) =
+                        match crate::xref::repeated_target_component_insert(
+                            bytes,
+                            carrier_at,
+                            relation_at,
+                            carrier_record_index,
+                            transform.into(),
+                        ) {
+                            Ok(Some(value)) => value,
+                            Ok(None) => return None,
+                            Err(error) => return Some(Err(error)),
+                        };
+                    (
+                        carrier_record_index,
+                        [(role, role_offset, carrier_transform_offset)]
+                            .into_iter()
+                            .collect::<Vec<_>>(),
+                    )
+                } else {
+                    let mut placements = Vec::new();
+                    for at in carrier_at + 11..relation_at {
+                        let Some(after_role) = relaxed_guid_end(bytes, at) else {
+                            continue;
+                        };
+                        if bytes.get(after_role..after_role + 2) != Some(&[0, 0]) {
+                            continue;
+                        }
+                        let transform_at = after_role.checked_add(2)?;
+                        if rigid_transform_at(bytes, transform_at) == Some(transform) {
+                            let role = lp_utf16_bounded(bytes, at, 36..=38)?.0;
 
-                    placements.extend(legacy);
+                            placements.push((role, at + 4, Some(transform_at)));
+                        }
+                    }
+                    if scope.frame_length() == Some(381) {
+                        let legacy = legacy_component_insert_placements(
+                            bytes,
+                            carrier_at,
+                            relation_at,
+                            carrier_record_index,
+                            transform,
+                        );
+
+                        placements.extend(legacy);
+                    }
+                    (carrier_record_index, placements)
                 }
-                (carrier_record_index, placements)
-            }
-        };
+            };
         if placements.len() != 1 {
             return None;
         }
@@ -767,6 +799,47 @@ fn exact_component_insert_scope_283_262_385(
 }
 
 const NULL_COMPONENT_INSERT_GUID: &str = "00000000-0000-0000-0000-000000000000";
+
+fn exact_identity_insert_scope(
+    bytes: &[u8],
+    start: usize,
+    relation_record_index: u32,
+    shifted: bool,
+) -> Option<u64> {
+    let delta = if shifted { 4 } else { 0 };
+    let prefix = if shifted {
+        &[0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0][..]
+    } else {
+        &[0; 14][..]
+    };
+    if bytes.get(
+        start + identity_insert::ZERO_PREFIX..start + identity_insert::OCCURRENCE_IDENTITY + delta,
+    )? != prefix
+    {
+        return None;
+    }
+    let at = start + delta;
+    if bytes
+        .get(at + identity_insert::ZERO_AFTER_IDENTITY..at + identity_insert::RELATION_REFERENCE)?
+        != [0; 4]
+        || bytes.get(at + identity_insert::RELATION_REFERENCE) != Some(&1)
+        || View::u32_le_at(bytes, at + identity_insert::RELATION_REFERENCE + 1)?
+            != relation_record_index
+        || bytes.get(
+            at + identity_insert::ZERO_AFTER_RELATION..at + identity_insert::IDENTITY_MARKERS,
+        )? != [0; 6]
+        || bytes.get(at + identity_insert::IDENTITY_MARKERS..at + identity_insert::NULL_GUID)?
+            != [1, 1]
+        || fixed_utf16_ascii_eq(
+            bytes,
+            at + identity_insert::NULL_GUID,
+            "00000000-0000-0000-0000-000000000000",
+        )? != at + identity_insert::LEN
+    {
+        return None;
+    }
+    View::u64_le_at(bytes, at + identity_insert::OCCURRENCE_IDENTITY)
+}
 
 fn exact_component_insert_identity_scope(
     bytes: &[u8],

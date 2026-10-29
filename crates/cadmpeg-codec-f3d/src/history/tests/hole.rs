@@ -158,7 +158,7 @@ fn hole_scope() -> crate::records::feature::scope::DesignParameterScope {
         })
         .unwrap();
     if let crate::records::feature::scope::DesignScopePayloadMut::Hole(slot) = scope.payload_mut() {
-        *slot = Some(construction);
+        slot.point = Some(construction);
     }
     scope
 }

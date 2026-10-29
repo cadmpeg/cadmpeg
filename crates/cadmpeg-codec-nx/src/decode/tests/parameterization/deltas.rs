@@ -1,648 +1,154 @@
 // SPDX-License-Identifier: Apache-2.0
-
-use crate::framing::node_kind::NodeKind;
-use crate::test_support::test_deltas::circle_topology_partition_stream;
-use crate::test_support::test_deltas::cone_topology_partition_stream;
-use crate::test_support::test_deltas::cylinder_topology_partition_stream;
-use crate::test_support::test_deltas::deltas_blend_surface_partition_stream;
-use crate::test_support::test_deltas::deltas_circle_partition_stream;
-use crate::test_support::test_deltas::deltas_cone_partition_stream;
-use crate::test_support::test_deltas::deltas_cylinder_partition_stream;
-use crate::test_support::test_deltas::deltas_edge_partition_stream;
-use crate::test_support::test_deltas::deltas_ellipse_partition_stream;
-use crate::test_support::test_deltas::deltas_face_vertex_partition_stream;
-use crate::test_support::test_deltas::deltas_fin_partition_stream;
-use crate::test_support::test_deltas::deltas_line_partition_stream;
-use crate::test_support::test_deltas::deltas_loop_partition_stream;
-use crate::test_support::test_deltas::deltas_offset_surface_partition_stream;
-use crate::test_support::test_deltas::deltas_plane_partition_stream;
-use crate::test_support::test_deltas::deltas_point_partition_stream;
-use crate::test_support::test_deltas::deltas_shell_partition_stream;
-use crate::test_support::test_deltas::deltas_sphere_partition_stream;
-use crate::test_support::test_deltas::deltas_surface_curve_partition_stream;
-use crate::test_support::test_deltas::deltas_torus_partition_stream;
-use crate::test_support::test_deltas::deltas_trimmed_curve_partition_stream;
-use crate::test_support::test_deltas::ellipse_topology_partition_stream;
-use crate::test_support::test_deltas::sphere_topology_partition_stream;
-use crate::test_support::test_deltas::status_framed_deltas_stream;
-use crate::test_support::test_deltas::torus_topology_partition_stream;
-use crate::test_support::test_deltas::trimmed_topology_partition_stream;
-use crate::test_support::test_deltas::variable_status_framed_deltas_stream;
-use crate::test_support::test_deltas::DELTAS_PREAMBLE;
-use crate::test_support::test_prt::prt_with_partition;
-use crate::test_support::test_prt::prt_with_streams;
-use crate::test_support::test_streams::blend_surface_topology_partition_stream;
-use crate::test_support::test_streams::charted_intersection_curve_topology_partition_stream;
-use crate::test_support::test_streams::ext11_charted_intersection_curve_stream;
-use crate::test_support::test_streams::offset_surface_topology_partition_stream;
-use crate::test_support::test_streams::prt_with_ext11_intersection;
-use crate::test_support::test_streams::surface_curve_topology_partition_stream;
-use crate::test_support::test_streams::topology_partition_stream;
+use crate::test_support::{test_deltas as d, test_prt, test_streams as s};
 use crate::NxCodec;
-use cadmpeg_ir::codec::Codec;
-use cadmpeg_ir::codec::DecodeOptions;
-use cadmpeg_ir::geometry::BlendRadiusLaw;
-use cadmpeg_ir::geometry::CurveGeometry;
-use cadmpeg_ir::geometry::ProceduralSurfaceDefinition;
-use cadmpeg_ir::geometry::SolvedCurveGeometry;
-use cadmpeg_ir::geometry::SolvedSurfaceGeometry;
-use cadmpeg_ir::geometry::SurfaceGeometry;
-use cadmpeg_ir::math::Vector3;
+use cadmpeg_ir::codec::{Codec, DecodeOptions};
 use std::io::Cursor;
 
-const EPS_CONE_ANGLE: f64 = 1.0e-12;
-
 #[test]
-fn decode_reports_status_framed_deltas_records_and_tombstones() {
-    let stream = status_framed_deltas_stream();
-    assert_eq!(
-        crate::deltas::census::walk(&stream)
-            .unwrap()
-            .bytes_decoded(),
-        stream.len() - DELTAS_PREAMBLE.len()
-    );
-    let mut cur = Cursor::new(prt_with_partition(&stream));
-    let result = NxCodec.decode(&mut cur, &DecodeOptions::default()).unwrap();
-    let attributes = &result
-        .ir()
-        .source
-        .as_ref()
-        .expect("source metadata")
-        .attributes;
-
-    assert_eq!(
-        attributes.get("deltas.0.full.FACE").map(String::as_str),
-        Some("1")
-    );
-    assert_eq!(
-        attributes
-            .get("deltas.0.tombstone.EDGE")
-            .map(String::as_str),
-        Some("1")
-    );
-    assert_eq!(
-        attributes.get("deltas.0.grammar").map(String::as_str),
-        Some("typed_status_framed_records")
-    );
-}
-
-#[test]
-fn decode_accepts_exact_loop_and_rejects_incomplete_fin_deltas() {
-    let ambiguous = variable_status_framed_deltas_stream();
-    let ambiguous_census =
-        crate::test_support::with_decode_context(|_ctx| crate::deltas::census::walk(&ambiguous))
+fn every_unselected_deltas_family_preserves_its_paired_primary_model() {
+    let cases: Vec<(Vec<u8>, Vec<u8>)> = vec![
+        (
+            s::topology_partition_stream(),
+            d::deltas_point_partition_stream(),
+        ),
+        (
+            s::topology_partition_stream(),
+            d::deltas_edge_partition_stream(),
+        ),
+        (
+            s::topology_partition_stream(),
+            d::deltas_face_vertex_partition_stream(),
+        ),
+        (
+            s::topology_partition_stream(),
+            d::deltas_fin_partition_stream(),
+        ),
+        (
+            s::topology_partition_stream(),
+            d::deltas_loop_partition_stream(),
+        ),
+        (
+            s::topology_partition_stream(),
+            d::deltas_shell_partition_stream(),
+        ),
+        (
+            s::topology_partition_stream(),
+            d::deltas_line_partition_stream(),
+        ),
+        (
+            s::topology_partition_stream(),
+            d::deltas_plane_partition_stream(),
+        ),
+        (
+            s::offset_surface_topology_partition_stream(),
+            d::deltas_offset_surface_partition_stream(),
+        ),
+        (
+            s::blend_surface_topology_partition_stream(),
+            d::deltas_blend_surface_partition_stream(),
+        ),
+        (
+            d::trimmed_topology_partition_stream(),
+            d::deltas_trimmed_curve_partition_stream(),
+        ),
+        (
+            s::surface_curve_topology_partition_stream(),
+            d::deltas_surface_curve_partition_stream(),
+        ),
+        (
+            d::circle_topology_partition_stream(),
+            d::deltas_circle_partition_stream(),
+        ),
+        (
+            d::ellipse_topology_partition_stream(),
+            d::deltas_ellipse_partition_stream(),
+        ),
+        (
+            d::cylinder_topology_partition_stream(),
+            d::deltas_cylinder_partition_stream(),
+        ),
+        (
+            d::cone_topology_partition_stream(),
+            d::deltas_cone_partition_stream(),
+        ),
+        (
+            d::sphere_topology_partition_stream(),
+            d::deltas_sphere_partition_stream(),
+        ),
+        (
+            d::torus_topology_partition_stream(),
+            d::deltas_torus_partition_stream(),
+        ),
+        (
+            s::charted_intersection_curve_topology_partition_stream(),
+            s::ext11_intersection_deltas(&s::ext11_charted_intersection_curve_stream()),
+        ),
+    ];
+    for (primary, delta) in cases {
+        let baseline = NxCodec
+            .decode(
+                &mut Cursor::new(test_prt::prt_with_partition(&primary)),
+                &DecodeOptions::default(),
+            )
             .unwrap();
-    assert!(ambiguous_census
-        .records
-        .iter()
-        .all(|record| record.kind() != 15));
-    let mut stream = deltas_loop_partition_stream();
-    stream.extend_from_slice(&ambiguous[DELTAS_PREAMBLE.len()..]);
-    let mut cur = Cursor::new(prt_with_partition(&stream));
-    let result = NxCodec.decode(&mut cur, &DecodeOptions::default()).unwrap();
-    let attributes = &result
-        .ir()
-        .source
-        .as_ref()
-        .expect("source metadata")
-        .attributes;
-
-    assert!(!attributes.contains_key("deltas.0.full.FIN"));
-    assert_eq!(
-        attributes.get("deltas.0.full.LOOP").map(String::as_str),
-        Some("1")
-    );
+        let paired = NxCodec
+            .decode(
+                &mut Cursor::new(test_prt::prt_with_streams(&[&primary, &delta])),
+                &DecodeOptions::default(),
+            )
+            .unwrap();
+        assert_eq!(
+            serde_json::to_value(&paired.ir().model).unwrap(),
+            serde_json::to_value(&baseline.ir().model).unwrap()
+        );
+        assert!(
+            cadmpeg_ir::validate::validate_neutral(paired.ir(), Vec::new())
+                .unwrap()
+                .is_ok()
+        );
+    }
 }
 
 #[test]
-fn decode_emits_point_added_by_deltas_stream() {
-    let mut cur = Cursor::new(prt_with_partition(&deltas_point_partition_stream()));
-    let result = NxCodec.decode(&mut cur, &DecodeOptions::default()).unwrap();
-    assert_eq!(result.ir().model.points.len(), 1);
-    assert_eq!(result.ir().model.points[0].position().get().x, 12.5);
-    assert_eq!(result.ir().model.points[0].position().get().y, -2.0);
-    assert_eq!(result.ir().model.points[0].position().get().z, 4.0);
-}
-
-#[test]
-fn decode_replaces_partition_point_with_same_xmt_deltas_point() {
-    let partition = topology_partition_stream();
-    let mut deltas = deltas_point_partition_stream();
-    let record = deltas
-        .windows(2)
-        .rposition(|window| window == 29u16.to_be_bytes())
-        .expect("deltas POINT");
-    deltas[record + 2..record + 4].copy_from_slice(&11u16.to_be_bytes());
-    let mut cur = Cursor::new(prt_with_streams(&[&partition, &deltas]));
-    let result = NxCodec.decode(&mut cur, &DecodeOptions::default()).unwrap();
-    assert_eq!(result.ir().model.points.len(), 1);
-    assert_eq!(result.ir().model.points[0].position().get().x, 12.5);
-    assert_eq!(result.ir().model.points[0].position().get().y, -2.0);
-    assert_eq!(result.ir().model.points[0].position().get().z, 4.0);
-}
-
-#[test]
-fn decode_preserves_partition_edge_topology_over_deltas_history() {
-    let partition = topology_partition_stream();
-    let deltas = deltas_edge_partition_stream();
-    let mut cur = Cursor::new(prt_with_streams(&[&partition, &deltas]));
-    let result = NxCodec.decode(&mut cur, &DecodeOptions::default()).unwrap();
-    assert_eq!(result.ir().model.edges.len(), 1);
-    assert_eq!(
-        result.ir().model.edges[0]
-            .tolerance
-            .map(cadmpeg_ir::scalar::PositiveReal::get),
-        Some(0.3)
-    );
-    assert_eq!(
-        result.ir().model.edges[0].curve(),
-        Some(&result.ir().model.curves[0].id)
-    );
-    assert!(
-        cadmpeg_ir::validate::validate_neutral(result.ir(), Vec::new())
-            .expect("validate the neutral model")
-            .is_ok()
-    );
-}
-
-#[test]
-fn decode_preserves_partition_face_and_vertex_topology_over_deltas_history() {
-    let partition = topology_partition_stream();
-    let deltas = deltas_face_vertex_partition_stream();
-    let mut cur = Cursor::new(prt_with_streams(&[&partition, &deltas]));
-    let result = NxCodec.decode(&mut cur, &DecodeOptions::default()).unwrap();
-    assert_eq!(result.ir().model.faces.len(), 1);
-    assert_eq!(
-        result.ir().model.faces[0]
-            .tolerance
-            .map(cadmpeg_ir::scalar::PositiveReal::get),
-        Some(0.2)
-    );
-    assert_eq!(result.ir().model.vertices.len(), 1);
-    assert_eq!(
-        result.ir().model.vertices[0]
-            .tolerance
-            .map(cadmpeg_ir::scalar::PositiveReal::get),
-        Some(0.1)
-    );
-    assert!(
-        cadmpeg_ir::validate::validate_neutral(result.ir(), Vec::new())
-            .expect("validate the neutral model")
-            .is_ok()
-    );
-}
-
-#[test]
-fn decode_preserves_partition_loop_topology_over_deltas_history() {
-    let partition = topology_partition_stream();
-    let deltas = deltas_loop_partition_stream();
-    let merged = crate::deltas::merge_full_records(&partition, &deltas).unwrap();
-    assert_eq!(
-        crate::topology::Graph::parse(&merged)
-            .get(NodeKind::Loop, 5)
-            .and_then(|node| node.u32_at(4)),
-        Some(0)
-    );
-    let mut cur = Cursor::new(prt_with_streams(&[&partition, &deltas]));
-    let result = NxCodec.decode(&mut cur, &DecodeOptions::default()).unwrap();
-    assert_eq!(result.ir().model.loops.len(), 1);
-    assert_eq!(result.ir().model.coedges.len(), 1);
-    assert!(
-        cadmpeg_ir::validate::validate_neutral(result.ir(), Vec::new())
-            .expect("validate the neutral model")
-            .is_ok()
-    );
-}
-
-#[test]
-fn decode_preserves_partition_shell_topology_over_deltas_history() {
-    let partition = topology_partition_stream();
-    let deltas = deltas_shell_partition_stream();
-    let merged = crate::deltas::merge_full_records(&partition, &deltas).unwrap();
-    assert_eq!(
-        crate::topology::Graph::parse(&merged)
-            .get(NodeKind::Shell, 3)
-            .and_then(|node| node.u32_at(4)),
-        Some(0)
-    );
-    let mut cur = Cursor::new(prt_with_streams(&[&partition, &deltas]));
-    let result = NxCodec.decode(&mut cur, &DecodeOptions::default()).unwrap();
-    assert_eq!(result.ir().model.shells.len(), 1);
-    assert_eq!(result.ir().model.faces.len(), 1);
-    assert!(
-        cadmpeg_ir::validate::validate_neutral(result.ir(), Vec::new())
-            .expect("validate the neutral model")
-            .is_ok()
-    );
-}
-
-#[test]
-fn decode_preserves_partition_fin_topology_over_deltas_history() {
-    let partition = topology_partition_stream();
-    let deltas = deltas_fin_partition_stream();
-    let file = prt_with_streams(&[&partition, &deltas]);
-    let mut cur = Cursor::new(file);
-    let result = NxCodec.decode(&mut cur, &DecodeOptions::default()).unwrap();
-
-    assert_eq!(result.ir().model.coedges.len(), 1);
-    assert_eq!(
-        result.ir().model.coedges[0].sense,
-        cadmpeg_ir::topology::Sense::Forward
-    );
-    assert!(
-        cadmpeg_ir::validate::validate_neutral(result.ir(), Vec::new())
-            .expect("validate the neutral model")
-            .is_ok()
-    );
-}
-
-#[test]
-fn decode_replaces_partition_line_from_status_framed_deltas() {
-    let partition = topology_partition_stream();
-    let deltas = deltas_line_partition_stream();
-    let file = prt_with_streams(&[&partition, &deltas]);
-    let mut cur = Cursor::new(file);
-    let result = NxCodec.decode(&mut cur, &DecodeOptions::default()).unwrap();
-
-    let Some(SolvedCurveGeometry::Line(line_curve)) = result.ir().model.curves[0].geometry.solved()
-    else {
-        panic!("line");
+fn unpaired_deltas_and_schema_only_streams_contribute_no_geometry() {
+    // Container classification requires the TRANSMIT FILE spelling of the
+    // Deltas description; the owner fixtures use a shorter description.
+    let transmit_file = |bytes: Vec<u8>| {
+        let short = b"Transmit (deltas)";
+        let long = b": TRANSMIT FILE (deltas)";
+        assert_eq!(&bytes[6..6 + short.len()], short);
+        let mut relabeled = b"PS".to_vec();
+        relabeled.extend_from_slice(&u32::try_from(long.len()).unwrap().to_be_bytes());
+        relabeled.extend_from_slice(long);
+        relabeled.extend_from_slice(&bytes[6 + short.len()..]);
+        relabeled
     };
-    let origin = line_curve.origin().get();
-    let direction = *line_curve.direction().as_raw();
-    assert_eq!(origin, cadmpeg_ir::math::Point3::new(4.0, 5.0, 6.0));
-    assert_eq!(direction, Vector3::new(0.0, 1.0, 0.0));
-    assert!(
-        cadmpeg_ir::validate::validate_neutral(result.ir(), Vec::new())
-            .expect("validate the neutral model")
-            .is_ok()
-    );
-}
+    let mut schema_only = crate::test_support::test_pmarks::prefix(1);
+    schema_only.extend(crate::test_support::owned_deltas::body(36).0);
+    for bytes in [
+        d::deltas_point_partition_stream(),
+        d::status_framed_deltas_stream(),
+        d::variable_status_framed_deltas_stream(),
+        transmit_file(schema_only),
+        transmit_file(crate::test_support::test_pmarks::complete(
+            crate::test_support::owned_deltas::body_stream(36),
+        )),
+    ] {
+        let decoded = NxCodec
+            .decode(
+                &mut Cursor::new(test_prt::prt_with_partition(&bytes)),
+                &DecodeOptions::default(),
+            )
+            .unwrap();
+        assert!(decoded.ir().model.points.is_empty());
+        assert!(decoded.ir().model.bodies.is_empty());
+        assert!(decoded.ir().model.curves.is_empty());
+        assert!(decoded.ir().model.surfaces.is_empty());
+        let attributes = &decoded.ir().source.as_ref().unwrap().attributes;
 
-#[test]
-fn decode_replaces_partition_plane_from_status_framed_deltas() {
-    let partition = topology_partition_stream();
-    let deltas = deltas_plane_partition_stream();
-    let file = prt_with_streams(&[&partition, &deltas]);
-    let mut cur = Cursor::new(file);
-    let result = NxCodec.decode(&mut cur, &DecodeOptions::default()).unwrap();
-
-    assert!(
-        matches!(result.ir().model.surfaces[0].geometry, SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(plane_surface))
-                if {
-                    let origin = plane_surface.origin();
-        let normal = plane_surface.frame().axis().as_raw();
-        let u_axis = plane_surface.frame().reference().as_raw();
-                    *origin == cadmpeg_ir::math::Point3::new(1.0, 2.0, 3.0)
-                        && *normal == Vector3::new(0.0, 1.0, 0.0)
-                        && *u_axis == Vector3::new(1.0, 0.0, 0.0)
-                })
-    );
-    assert_eq!(
-        result.ir().model.faces[0].surface,
-        result.ir().model.surfaces[0].id
-    );
-    assert!(
-        cadmpeg_ir::validate::validate_neutral(result.ir(), Vec::new())
-            .expect("validate the neutral model")
-            .is_ok()
-    );
-}
-
-#[test]
-fn decode_replaces_partition_offset_surface_from_status_framed_deltas() {
-    let partition = offset_surface_topology_partition_stream();
-    let deltas = deltas_offset_surface_partition_stream();
-    let census = crate::deltas::census::walk(&deltas).unwrap();
-    assert_eq!(census.full_counts().get("OFFSET_SURF"), Some(&1));
-    let merged = crate::deltas::merge_full_records(&partition, &deltas).unwrap();
-    assert_eq!(
-        crate::topology::offset_surfaces(&merged)
-            .iter()
-            .map(|surface| surface.state.distance().get())
-            .collect::<Vec<_>>(),
-        [4.5]
-    );
-    let file = prt_with_streams(&[&partition, &deltas]);
-    let mut cur = Cursor::new(file);
-    let result = NxCodec.decode(&mut cur, &DecodeOptions::default()).unwrap();
-
-    let [procedural] = result.ir().model.procedural_surfaces.as_slice() else {
-        panic!("one offset surface");
-    };
-    let ProceduralSurfaceDefinition::Offset(definition_payload) = procedural.definition() else {
-        panic!("offset surface");
-    };
-    let distance = definition_payload.distance();
-    assert_eq!(distance.get(), 4.5);
-    assert_eq!(
-        result.ir().model.faces[0].surface,
-        *result
-            .ir()
-            .model
-            .procedural_surface_owner(&procedural.id)
-            .expect("offset owner")
-    );
-    assert!(
-        cadmpeg_ir::validate::validate_neutral(result.ir(), Vec::new())
-            .expect("validate the neutral model")
-            .is_ok()
-    );
-}
-
-#[test]
-fn decode_replaces_partition_blend_surface_from_status_framed_deltas() {
-    let partition = blend_surface_topology_partition_stream();
-    let deltas = deltas_blend_surface_partition_stream();
-    let result = NxCodec
-        .decode(
-            &mut Cursor::new(prt_with_streams(&[&partition, &deltas])),
-            &DecodeOptions::default(),
-        )
-        .unwrap();
-
-    let ProceduralSurfaceDefinition::Blend(definition_payload) =
-        &result.ir().model.procedural_surfaces[0].definition()
-    else {
-        panic!("blend surface");
-    };
-    let radius = definition_payload.radius();
-
-    assert_eq!(*radius, BlendRadiusLaw::constant(-4.0).unwrap());
-    assert_eq!(
-        result.ir().model.faces[0].surface,
-        *result
-            .ir()
-            .model
-            .procedural_surface_owner(&result.ir().model.procedural_surfaces[0].id)
-            .expect("blend owner")
-    );
-    assert!(
-        cadmpeg_ir::validate::validate_neutral(result.ir(), Vec::new())
-            .expect("validate the neutral model")
-            .is_ok()
-    );
-}
-
-#[test]
-fn decode_replaces_partition_trimmed_curve_from_status_framed_deltas() {
-    let partition = trimmed_topology_partition_stream();
-    let deltas = deltas_trimmed_curve_partition_stream();
-    let merged = crate::deltas::merge_full_records(&partition, &deltas).unwrap();
-    assert_eq!(
-        crate::topology::trimmed_curves(&merged)[0]
-            .state
-            .parameters(),
-        [0.000_3, 0.000_7]
-    );
-    let result = NxCodec
-        .decode(
-            &mut Cursor::new(prt_with_streams(&[&partition, &deltas])),
-            &DecodeOptions::default(),
-        )
-        .unwrap();
-
-    assert_eq!(
-        result.ir().model.edges[0]
-            .param_range()
-            .map(cadmpeg_ir::units::FiniteVector::get),
-        Some([0.3, 0.7])
-    );
-    assert!(
-        cadmpeg_ir::validate::validate_neutral(result.ir(), Vec::new())
-            .expect("validate the neutral model")
-            .is_ok()
-    );
-}
-
-#[test]
-fn decode_replaces_partition_surface_curve_from_status_framed_deltas() {
-    let partition = surface_curve_topology_partition_stream();
-    let deltas = deltas_surface_curve_partition_stream();
-    let merged = crate::deltas::merge_full_records(&partition, &deltas).unwrap();
-    assert_eq!(
-        crate::topology::surface_curves(&merged)[0]
-            .state
-            .tolerance()
-            .get(),
-        0.000_02
-    );
-    let result = NxCodec
-        .decode(
-            &mut Cursor::new(prt_with_streams(&[&partition, &deltas])),
-            &DecodeOptions::default(),
-        )
-        .unwrap();
-
-    assert_eq!(
-        result.ir().model.edges[0].curve(),
-        Some(&result.ir().model.curves[0].id)
-    );
-    assert!(
-        cadmpeg_ir::validate::validate_neutral(result.ir(), Vec::new())
-            .expect("validate the neutral model")
-            .is_ok()
-    );
-}
-
-#[test]
-fn decode_replaces_partition_circle_from_status_framed_deltas() {
-    let partition = circle_topology_partition_stream();
-    let deltas = deltas_circle_partition_stream();
-    let file = prt_with_streams(&[&partition, &deltas]);
-    let mut cur = Cursor::new(file);
-    let result = NxCodec.decode(&mut cur, &DecodeOptions::default()).unwrap();
-
-    assert!(result.ir().model.curves.iter().any(
-        |curve| matches!(curve.geometry, CurveGeometry::Solved(SolvedCurveGeometry::Circle(circle_curve))
-                if {
-                    let center = circle_curve.center().get();
-        let axis = circle_curve.frame().axis().as_raw();
-        let ref_direction = circle_curve.frame().reference().as_raw();
-        let radius = circle_curve.radius().get();
-                    center == cadmpeg_ir::math::Point3::new(1.0, 2.0, 3.0)
-                        && *axis == Vector3::new(0.0, 1.0, 0.0)
-                        && *ref_direction == Vector3::new(1.0, 0.0, 0.0)
-                        && radius == 25.0
-                })
-    ));
-    assert!(
-        cadmpeg_ir::validate::validate_neutral(result.ir(), Vec::new())
-            .expect("validate the neutral model")
-            .is_ok()
-    );
-}
-
-#[test]
-fn decode_replaces_partition_ellipse_from_status_framed_deltas() {
-    let partition = ellipse_topology_partition_stream();
-    let deltas = deltas_ellipse_partition_stream();
-    let file = prt_with_streams(&[&partition, &deltas]);
-    let mut cur = Cursor::new(file);
-    let result = NxCodec.decode(&mut cur, &DecodeOptions::default()).unwrap();
-
-    assert!(result.ir().model.curves.iter().any(
-        |curve| matches!(curve.geometry, CurveGeometry::Solved(SolvedCurveGeometry::Ellipse(ellipse_curve))
-                if {
-                    let center = ellipse_curve.center().get();
-        let axis = ellipse_curve.frame().axis().as_raw();
-        let major_direction = ellipse_curve.frame().reference().as_raw();
-        let major_radius = ellipse_curve.major_radius().get();
-        let minor_radius = ellipse_curve.minor_radius().get();
-                    center == cadmpeg_ir::math::Point3::new(1.0, 2.0, 3.0)
-                        && *axis == Vector3::new(0.0, 1.0, 0.0)
-                        && *major_direction == Vector3::new(1.0, 0.0, 0.0)
-                        && major_radius == 30.0
-                        && minor_radius == 12.0
-                })
-    ));
-    assert!(
-        cadmpeg_ir::validate::validate_neutral(result.ir(), Vec::new())
-            .expect("validate the neutral model")
-            .is_ok()
-    );
-}
-
-#[test]
-fn decode_replaces_partition_cylinder_from_status_framed_deltas() {
-    let partition = cylinder_topology_partition_stream();
-    let deltas = deltas_cylinder_partition_stream();
-    let file = prt_with_streams(&[&partition, &deltas]);
-    let mut cur = Cursor::new(file);
-    let result = NxCodec.decode(&mut cur, &DecodeOptions::default()).unwrap();
-
-    assert!(result.ir().model.surfaces.iter().any(
-        |surface| matches!(surface.geometry, SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(cylinder_surface))
-                if {
-                    let origin = cylinder_surface.origin();
-        let axis = cylinder_surface.frame().axis().as_raw();
-        let ref_direction = cylinder_surface.frame().reference().as_raw();
-        let radius = cylinder_surface.radius().get();
-                    *origin == cadmpeg_ir::math::Point3::new(1.0, 2.0, 3.0)
-                        && *axis == Vector3::new(0.0, 1.0, 0.0)
-                        && *ref_direction == Vector3::new(1.0, 0.0, 0.0)
-                        && radius == 25.0
-                })
-    ));
-    assert!(
-        cadmpeg_ir::validate::validate_neutral(result.ir(), Vec::new())
-            .expect("validate the neutral model")
-            .is_ok()
-    );
-}
-
-#[test]
-fn decode_replaces_partition_cone_from_status_framed_deltas() {
-    let partition = cone_topology_partition_stream();
-    let deltas = deltas_cone_partition_stream();
-    let file = prt_with_streams(&[&partition, &deltas]);
-    let mut cur = Cursor::new(file);
-    let result = NxCodec.decode(&mut cur, &DecodeOptions::default()).unwrap();
-
-    assert!(result.ir().model.surfaces.iter().any(
-        |surface| matches!(surface.geometry, SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cone(cone_surface))
-                if {
-                    let origin = cone_surface.origin();
-        let axis = cone_surface.frame().axis().as_raw();
-        let ref_direction = cone_surface.frame().reference().as_raw();
-        let radius = cone_surface.radius().get();
-        let ratio = cone_surface.ratio().get();
-        let half_angle = cone_surface.half_angle().get();
-                    *origin == cadmpeg_ir::math::Point3::new(1.0, 2.0, 3.0)
-                        && *axis == Vector3::new(0.0, 1.0, 0.0)
-                        && *ref_direction == Vector3::new(1.0, 0.0, 0.0)
-                        && radius == 25.0
-                        && ratio == 1.0
-                        && (half_angle - std::f64::consts::FRAC_PI_6).abs() < EPS_CONE_ANGLE
-                })
-    ));
-    assert!(
-        cadmpeg_ir::validate::validate_neutral(result.ir(), Vec::new())
-            .expect("validate the neutral model")
-            .is_ok()
-    );
-}
-
-#[test]
-fn decode_replaces_partition_sphere_from_status_framed_deltas() {
-    let partition = sphere_topology_partition_stream();
-    let deltas = deltas_sphere_partition_stream();
-    let file = prt_with_streams(&[&partition, &deltas]);
-    let mut cur = Cursor::new(file);
-    let result = NxCodec.decode(&mut cur, &DecodeOptions::default()).unwrap();
-
-    assert!(result.ir().model.surfaces.iter().any(
-        |surface| matches!(surface.geometry, SurfaceGeometry::Solved(SolvedSurfaceGeometry::Sphere(sphere_surface))
-                if {
-                    let center = sphere_surface.center();
-        let axis = sphere_surface.frame().axis().as_raw();
-        let ref_direction = sphere_surface.frame().reference().as_raw();
-        let radius = sphere_surface.radius().get();
-                    *center == cadmpeg_ir::math::Point3::new(1.0, 2.0, 3.0)
-                        && *axis == Vector3::new(0.0, 1.0, 0.0)
-                        && *ref_direction == Vector3::new(1.0, 0.0, 0.0)
-                        && radius == 25.0
-                })
-    ));
-    assert!(
-        cadmpeg_ir::validate::validate_neutral(result.ir(), Vec::new())
-            .expect("validate the neutral model")
-            .is_ok()
-    );
-}
-
-#[test]
-fn decode_replaces_partition_torus_from_status_framed_deltas() {
-    let partition = torus_topology_partition_stream();
-    let deltas = deltas_torus_partition_stream();
-    let file = prt_with_streams(&[&partition, &deltas]);
-    let mut cur = Cursor::new(file);
-    let result = NxCodec.decode(&mut cur, &DecodeOptions::default()).unwrap();
-
-    assert!(result.ir().model.surfaces.iter().any(
-        |surface| matches!(surface.geometry, SurfaceGeometry::Solved(SolvedSurfaceGeometry::Torus(torus_surface))
-                if {
-                    let center = torus_surface.center();
-        let axis = torus_surface.frame().axis().as_raw();
-        let ref_direction = torus_surface.frame().reference().as_raw();
-        let major_radius = torus_surface.major_radius().get();
-        let minor_radius = torus_surface.minor_radius().get();
-                    *center == cadmpeg_ir::math::Point3::new(1.0, 2.0, 3.0)
-                        && *axis == Vector3::new(0.0, 1.0, 0.0)
-                        && *ref_direction == Vector3::new(1.0, 0.0, 0.0)
-                        && major_radius == 40.0
-                        && minor_radius == 15.0
-                })
-    ));
-    assert!(
-        cadmpeg_ir::validate::validate_neutral(result.ir(), Vec::new())
-            .expect("validate the neutral model")
-            .is_ok()
-    );
-}
-
-#[test]
-fn decode_emits_ext11_deltas_intersection_chart() {
-    let stream = ext11_charted_intersection_curve_stream();
-    let partition = charted_intersection_curve_topology_partition_stream();
-    let mut cur = Cursor::new(prt_with_ext11_intersection(&partition, &stream));
-    let result = NxCodec.decode(&mut cur, &DecodeOptions::default()).unwrap();
-
-    let curve_id = result
-        .ir()
-        .model
-        .procedural_curve_owner(&result.ir().model.procedural_curves[0].id)
-        .expect("intersection owner");
-    let curve = result
-        .ir()
-        .model
-        .curves
-        .iter()
-        .find(|curve| &curve.id == curve_id)
-        .expect("intersection cache");
-    let Some(SolvedCurveGeometry::Nurbs(nurbs)) = curve.geometry.solved_cache() else {
-        panic!("NURBS chart cache");
-    };
-    assert_eq!(nurbs.control_points()[1].x, 10.0);
-    assert_eq!(nurbs.knots().as_slice(), [2.0, 2.0, 5.0, 5.0]);
+        assert_eq!(
+            attributes.get("deltas.0.selection").map(String::as_str),
+            Some("unresolved")
+        );
+    }
 }

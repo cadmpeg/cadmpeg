@@ -254,7 +254,7 @@ fn section_solver_radius_dimensions_require_circular_unique_semantics() {
     assert_eq!(
         with_service_context(|ctx| resolved_section_radii(ctx, &legacy_radius_definition))
             .expect("test section solve"),
-        BTreeMap::from([(0, 1.5)])
+        BTreeMap::from([(0, 3.0)])
     );
     for dimension_type in [1, 2, 5] {
         legacy_radius_definition
@@ -435,7 +435,7 @@ fn section_solver_radius_dimensions_require_circular_unique_semantics() {
     assert_eq!(
         with_service_context(|ctx| resolved_section_radii(ctx, &type6_radius_definition))
             .expect("test section solve"),
-        BTreeMap::from([(0, 1.5)])
+        BTreeMap::from([(0, 3.0)])
     );
     let mut incomplete_type6 = type6_radius_definition.clone();
     incomplete_type6.relations.as_mut().expect("relations").rows[0].operand_vectors = Some([

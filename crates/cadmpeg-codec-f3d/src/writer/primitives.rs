@@ -61,16 +61,22 @@ pub(crate) fn validate_assembly_projection(
                 )
             });
     };
-    let inserts = crate::design::components::ComponentInserts::decide(
+    let mut inserts = crate::design::components::ComponentInserts::decide(
         &native.design_parameter_scopes,
         &native.design_feature_timelines,
         &native.xref_references,
     );
-    let projected = crate::design::assembly::project_assembly_joints(
+    inserts.bind_external_paths(&native.xref_references, &target.model.occurrences);
+    let projected = crate::design::assembly::project_assembly_joints_with_paths(
         &native.design_parameter_scopes,
         &native.design_component_occurrences,
         &inserts,
         &native.design_joint_motions,
+        &crate::design::components::paths::LocalOccurrencePaths::new(
+            &native.design_component_occurrences,
+            &native.xref_references,
+            &target.model.occurrences,
+        ),
     );
     if target.model.assembly_joints != projected.joints {
         return Err(CodecError::UnsupportedContent(

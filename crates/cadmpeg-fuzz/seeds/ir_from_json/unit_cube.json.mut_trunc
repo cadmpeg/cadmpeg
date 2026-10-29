@@ -1,9 +1,6 @@
 {
-  "ir_version": "8",
-  "scope": {
-    "model": true,
-    "design": true
-  },
+  "ir_version": "9",
+  "decode_depth": "full",
   "units": {
     "length": "millimeter"
   },
@@ -416,4 +413,5 @@
           ]
         },
         "start": "synthetic:cube:vertex#1",
-        "end": "synthetic:cube:vert
+        "end": "synthetic:cube:vertex#2"
+      },

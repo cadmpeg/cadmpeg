@@ -1,5 +1,9 @@
 // SPDX-License-Identifier: Apache-2.0
 
+mod base;
+mod mirror;
+mod motion;
+
 use cadmpeg_container::compound::CompoundSnapshot;
 use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
 use cadmpeg_ir::codec::{Codec, DecodeOptions};
@@ -11,6 +15,9 @@ use crate::test_support::test_fixtures::{
     acis_sphere_kernel_stream, primary_envelope_with_compression,
 };
 use crate::InventorCodec;
+
+mod combine;
+mod surface_extrusion;
 
 #[test]
 fn rse_compression_methods_reach_records_and_valid_sphere_geometry() {
@@ -52,7 +59,7 @@ fn rse_compression_methods_reach_records_and_valid_sphere_geometry() {
         .expect("neutral and source-fidelity validation");
         check.findings.extend(
             InventorCodec
-                .validate_native(&ctx, &ir)
+                .validate_native(&ctx, &ir, None)
                 .expect("native validation"),
         );
         let errors: Vec<_> = check

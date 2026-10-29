@@ -310,3 +310,34 @@ fn another_wire_body_with_a_complete_curve_path_abstains() {
         }
     }
 }
+
+#[test]
+fn each_nonfinite_vertex_coordinate_abstains() {
+    let baseline = stream(&points());
+    assert_eq!(
+        decode(&baseline).expect("finite vertices"),
+        points().map(|p| Point3::new(p[0], p[1], p[2]))
+    );
+    let values_at = record(&baseline, 45) + 3 + 6;
+    for slot in 0..points().len() * 3 {
+        for value in [f64::NAN, f64::INFINITY, f64::NEG_INFINITY] {
+            let mut bytes = baseline.clone();
+            bytes[values_at + slot * 8..values_at + slot * 8 + 8]
+                .copy_from_slice(&value.to_be_bytes());
+            assert!(decode(&bytes).is_none(), "slot {slot} value {value}");
+        }
+    }
+}
+
+#[test]
+fn truncated_vertex_values_abstain() {
+    let bytes = stream(&points());
+    let values_at = record(&bytes, 45) + 3 + 6;
+    let values_end = values_at + points().len() * 24;
+    for end in [values_at + 8, values_end - 8, values_end - 1] {
+        assert!(
+            decode(&bytes[..end]).is_none(),
+            "vertex truncation at {end}"
+        );
+    }
+}

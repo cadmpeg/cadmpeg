@@ -315,6 +315,7 @@ pub(super) fn project(
             part_number: None,
             bom_properties: BTreeMap::new(),
             bodies,
+            sketches: Vec::new(),
             native_ref: Some(native_ref.clone()),
         });
     }

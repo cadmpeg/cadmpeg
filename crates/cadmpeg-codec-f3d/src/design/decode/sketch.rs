@@ -267,7 +267,8 @@ pub(crate) fn decode_sketch_placements(
     }
     // A sketch entity header pairs with a same-index member-run record whose
     // leading marked reference names a head record carrying the row-major
-    // 4×4 placement. A localized Sketch scope belongs to the preceding sketch
+    // 4×4 placement. A Sketch scope whose entity binding names the entity owns
+    // it. Otherwise a localized Sketch scope belongs to the preceding sketch
     // entity interval: it follows that entity and precedes the next sketch
     // entity in the same stream. Some member-run sketches have no scope.
     let initial_placements = out.len();
@@ -305,13 +306,8 @@ pub(crate) fn decode_sketch_placements(
             })
             .filter_map(|candidate| candidate.byte_offset)
             .min();
-        let mut matching_scopes = scopes.iter().filter(|scope| {
-            design_feature_family(&scope.kind()) == Some(DesignFeatureFamily::Sketch)
-                && native_stream(&scope.id) == Some(stream)
-                && scope.byte_offset() > Some(entity_offset)
-                && next_entity_offset.is_none_or(|end| scope.byte_offset() < Some(end))
-        });
-        if let (Some(scope), None) = (matching_scopes.next(), matching_scopes.next()) {
+        let owner = member_run_sketch_scope(scopes, stream, entity, next_entity_offset);
+        if let Some(scope) = owner {
             placement.scope_record_index = Some(scope.record_index);
         }
         let Some(placement_offset) = placement.byte_offset() else {
@@ -437,7 +433,109 @@ fn decode_sketch_visibilities_in_stream(
 
         out.push((entity_suffix, visibility));
     }
+    if out.is_empty() {
+        return Ok(out);
+    }
+    let visibilities = out
+        .iter()
+        .copied()
+        .collect::<std::collections::HashMap<_, _>>();
+    let mut listed = std::collections::HashSet::new();
+    let mut collections = std::collections::HashSet::new();
+    for frame in super::meta::typed_primary_frames(
+        bytes,
+        metadata,
+        "5275CBA4-3D7D-40DC-A651-1DFF3FC8AFBF",
+        "sketch ordinal collection",
+    )? {
+        let members = ([3, 4].contains(&frame.design_type.version)
+            && frame.design_type.module == "Geometry"
+            && frame
+                .design_type
+                .base_type_guid
+                .value()
+                .is_some_and(|base| {
+                    base.as_str()
+                        .eq_ignore_ascii_case(SKETCH_CONTAINER_MEMBER_BASE_TYPE_GUID)
+                }))
+        .then(|| {
+            ordinal_collection_members(&bytes[frame.start..frame.end], frame.design_type.version)
+        })
+        .flatten();
+        let Some(members) = members else {
+            return Err(crate::design::text::malformed_design(format_args!(
+                "F3D sketch ordinal collection {} has an invalid member run",
+                frame.entity_id
+            )));
+        };
+        collections.insert(frame.entity_id);
+        for target in members {
+            if !listed.insert(target)
+                || !visibilities.get(&target).is_some_and(|visibility| {
+                    visibility.ordinal_collection.map(std::num::NonZeroU64::get)
+                        == Some(frame.entity_id)
+                })
+            {
+                return Err(crate::design::text::malformed_design(format_args!(
+                    "F3D sketch ordinal collection {} has an invalid sketch member {target}",
+                    frame.entity_id
+                )));
+            }
+        }
+    }
+    for (entity, visibility) in &out {
+        if !visibility
+            .ordinal_collection
+            .is_some_and(|collection| collections.contains(&collection.get()))
+            || !listed.contains(entity)
+        {
+            return Err(crate::design::text::malformed_design(format_args!(
+                "F3D sketch container {entity} has an invalid ordinal collection"
+            )));
+        }
+    }
     Ok(out)
+}
+
+fn ordinal_collection_members(
+    bytes: &[u8],
+    version: u32,
+) -> Option<impl Iterator<Item = u64> + '_> {
+    use crate::layout::sketch_geometry_ordinal_collection_reference as reference;
+    use crate::layout::sketch_ordinal_collection_prefix as collection;
+    if bytes.get(collection::ZERO_RUN..collection::LEN)? != [0; 9] {
+        return None;
+    }
+    let mut cursor = collection::LEN;
+    read_property_block(bytes, &mut cursor)?.find("crv_tag_id_idx")?;
+    match version {
+        3 => {
+            cursor = cursor
+                .checked_add(crate::layout::sketch_owner_collection_legacy_list_prefix::LEN)?;
+        }
+        4 => {}
+        _ => return None,
+    }
+    let count = View::u32_le_at(bytes, cursor)?;
+    cursor += 4;
+    let count = cadmpeg_core::decode::bounded_len(
+        u64::from(count),
+        reference::LEN,
+        bytes.len().checked_sub(cursor)?,
+    )?;
+    let end = cursor.checked_add(count.checked_mul(reference::LEN)?)?;
+    let run = bytes.get(cursor..end)?;
+    for member in run.chunks_exact(reference::LEN) {
+        let mut at = 0;
+        if !matches!(take_reference(member, &mut at)?.local(), Some((target, None)) if target != 0)
+        {
+            return None;
+        }
+    }
+    Some(
+        run.chunks_exact(reference::LEN)
+            .filter_map(|member| View::u64_le_at(member, reference::TARGET)),
+    )
 }
 
 fn decode_sketch_visibility_member(
@@ -474,12 +572,19 @@ fn decode_sketch_visibility_member(
     if bytes.get(member_at + visibility_member::TAIL_MARKER) != Some(&1) {
         return None;
     }
-    DesignSketchVisibility::new(
+    let mut visibility = DesignSketchVisibility::new(
         stream_ordinal,
         u64_from_index(stream_ordinal_offset),
         visible,
     )
-    .ok()
+    .ok()?;
+    let mut collection_at = member_at + visibility_member::TAIL_MARKER;
+    let reference = take_reference(bytes, &mut collection_at)?;
+    let (target, None) = reference.local()? else {
+        return None;
+    };
+    visibility.ordinal_collection = Some(std::num::NonZeroU64::new(target)?);
+    Some(visibility)
 }
 
 /// Byte length of a member-run head carrying an explicit 4×4 transform.
@@ -488,6 +593,40 @@ const MEMBER_RUN_HEAD_FRAME: usize = 162;
 /// The explicit head frame whose closing reference at offset 151 carries an
 /// inline type GUID: forty bytes longer than the plain frame.
 const TYPED_MEMBER_RUN_HEAD_FRAME: usize = MEMBER_RUN_HEAD_FRAME + 40;
+
+/// The Sketch scope that owns a member-run sketch entity.
+fn member_run_sketch_scope<'a>(
+    scopes: &'a [DesignParameterScope],
+    stream: &str,
+    entity: &DesignEntityHeader,
+    next_entity_offset: Option<u64>,
+) -> Option<&'a DesignParameterScope> {
+    let entity_offset = entity.byte_offset?;
+    let sketch_scopes = || {
+        scopes.iter().filter(|scope| {
+            design_feature_family(&scope.kind()) == Some(DesignFeatureFamily::Sketch)
+                && native_stream(&scope.id) == Some(stream)
+        })
+    };
+    let mut bound_scopes = sketch_scopes().filter(|scope| {
+        scope
+            .sketch_entity()
+            .is_some_and(|binding| binding.entity_id == entity.entity_id)
+    });
+    let mut interval_scopes = sketch_scopes().filter(|scope| {
+        scope.sketch_entity().is_none()
+            && scope.byte_offset() > Some(entity_offset)
+            && next_entity_offset.is_none_or(|end| scope.byte_offset() < Some(end))
+    });
+    match (bound_scopes.next(), bound_scopes.next()) {
+        (Some(scope), None) => Some(scope),
+        (Some(_), Some(_)) => None,
+        (None, _) => match (interval_scopes.next(), interval_scopes.next()) {
+            (Some(scope), None) => Some(scope),
+            _ => None,
+        },
+    }
+}
 
 /// Parse a member-run head placement: the paired same-index record after the
 /// sketch's entity header opens with a marked

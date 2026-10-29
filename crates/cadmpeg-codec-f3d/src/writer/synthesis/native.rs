@@ -16,7 +16,7 @@ const WRITTEN: &[&str] = &[
     "act_entities",
     "act_guids",
     "act_registry_channels",
-    "act_root_components",
+    "act_component_links",
     "act_table_references",
     "asm_histories",
     "asm_delta_states",
@@ -80,7 +80,7 @@ pub(super) fn reconcile(target: &mut CadIr, losses: &mut Vec<LossNote>) -> Resul
         act_entities: original.act_entities.clone(),
         act_guids: original.act_guids.clone(),
         act_registry_channels: original.act_registry_channels.clone(),
-        act_root_components: original.act_root_components.clone(),
+        act_component_links: original.act_component_links.clone(),
         act_table_references: original.act_table_references.clone(),
         asm_histories: histories,
         construction_recipes: original.construction_recipes.clone(),
@@ -408,7 +408,7 @@ pub(super) fn coverage(
                     | "act_entities"
                     | "act_guids"
                     | "act_registry_channels"
-                    | "act_root_components"
+                    | "act_component_links"
                     | "act_table_references"
             ) && after.is_some_and(|records| !records.is_empty())
             {

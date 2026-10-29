@@ -159,6 +159,8 @@ pub(crate) enum CreoLossCode {
     FeatureRecognizedIncomplete,
     /// History feature definitions retain only source-native semantics.
     FeatureNativeSemantics,
+    /// Same-ID operation candidates disagree and have no current-state selector.
+    FeatureStateSelectionUnresolved,
     /// Typed history features retain an explicitly unresolved construction.
     FeatureConstructionUnresolved,
     /// Declared section segment rows did not decode.
@@ -183,6 +185,8 @@ pub(crate) enum CreoLossCode {
     SectionSolverVariableMissing,
     /// Section dimensions retain source-native value tokens.
     SectionDimensionValueUnresolved,
+    /// A native radius cannot form a finite neutral diameter value.
+    SectionDiameterValueUnresolved,
     /// Referenced configuration driver tables retain unresolved traversal.
     ConfigurationDriverUnresolved,
     /// Active curve-equation records with prohibited constructs were not evaluated.
@@ -267,6 +271,7 @@ impl CreoLossCode {
             Self::FeatureConstructionIncomplete => "feature.construction-incomplete",
             Self::FeatureRecognizedIncomplete => "feature.recognized-incomplete",
             Self::FeatureNativeSemantics => "feature.native-semantics",
+            Self::FeatureStateSelectionUnresolved => "feature.state-selection-unresolved",
             Self::FeatureConstructionUnresolved => "feature.construction-unresolved",
             Self::SectionSegmentMissing => "section.segment-missing",
             Self::SectionRelationMissing => "section.relation-missing",
@@ -279,6 +284,7 @@ impl CreoLossCode {
             Self::SectionDimensionGuessUnresolved => "section.dimension-guess-unresolved",
             Self::SectionSolverVariableMissing => "section.solver-variable-missing",
             Self::SectionDimensionValueUnresolved => "section.dimension-value-unresolved",
+            Self::SectionDiameterValueUnresolved => "section.diameter-value-unresolved",
             Self::ConfigurationDriverUnresolved => "configuration.driver-unresolved",
             Self::CurveExpressionProhibited => "curve-expression.prohibited",
             Self::CurveExpressionSolveUnresolved => "curve-expression.solve-unresolved",
@@ -354,6 +360,7 @@ impl CreoLossCode {
             | Self::FeatureConstructionIncomplete
             | Self::FeatureRecognizedIncomplete
             | Self::FeatureNativeSemantics
+            | Self::FeatureStateSelectionUnresolved
             | Self::FeatureConstructionUnresolved
             | Self::SectionSegmentMissing
             | Self::SectionRelationMissing
@@ -366,6 +373,7 @@ impl CreoLossCode {
             | Self::SectionDimensionGuessUnresolved
             | Self::SectionSolverVariableMissing
             | Self::SectionDimensionValueUnresolved
+            | Self::SectionDiameterValueUnresolved
             | Self::ConfigurationDriverUnresolved
             | Self::CurveExpressionProhibited
             | Self::CurveExpressionSolveUnresolved
@@ -440,6 +448,7 @@ impl CreoLossCode {
             | Self::FeatureConstructionIncomplete
             | Self::FeatureRecognizedIncomplete
             | Self::FeatureNativeSemantics
+            | Self::FeatureStateSelectionUnresolved
             | Self::FeatureConstructionUnresolved
             | Self::SectionSegmentMissing
             | Self::SectionRelationMissing
@@ -452,6 +461,7 @@ impl CreoLossCode {
             | Self::SectionDimensionGuessUnresolved
             | Self::SectionSolverVariableMissing
             | Self::SectionDimensionValueUnresolved
+            | Self::SectionDiameterValueUnresolved
             | Self::ConfigurationDriverUnresolved
             | Self::CurveExpressionProhibited
             | Self::CurveExpressionSolveUnresolved
@@ -726,6 +736,7 @@ mod tests {
                 "feature.construction-incomplete",
                 "feature.recognized-incomplete",
                 "feature.native-semantics",
+                "feature.state-selection-unresolved",
                 "feature.construction-unresolved",
                 "section.segment-missing",
                 "section.relation-missing",
@@ -738,6 +749,7 @@ mod tests {
                 "section.dimension-guess-unresolved",
                 "section.solver-variable-missing",
                 "section.dimension-value-unresolved",
+                "section.diameter-value-unresolved",
                 "configuration.driver-unresolved",
                 "curve-expression.prohibited",
                 "curve-expression.solve-unresolved",

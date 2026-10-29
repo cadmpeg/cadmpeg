@@ -388,7 +388,7 @@ impl EntitySchema for crate::spreadsheets::Spreadsheet {
         self.id.as_str()
     }
 }
-impl_entity_schema!(crate::products::ProductDefinition, ProductDefinition, id; id, kind, source_name, label, description, part_number, bom_properties, bodies, native_ref);
+impl_entity_schema!(crate::products::ProductDefinition, ProductDefinition, id; id, kind, source_name, label, description, part_number, bom_properties, bodies, sketches, native_ref);
 impl_entity_schema!(crate::products::Occurrence, Occurrence, id; id, prototype, parent, ordinal, transform, linked_prototype, name, visible, link, native_ref);
 impl EntitySchema for crate::products::AssemblyJoint {
     fn native_reference(&self) -> Option<&str> {
@@ -401,13 +401,13 @@ impl EntitySchema for crate::products::AssemblyJoint {
         self.id.as_str()
     }
 }
-impl_entity_schema!(crate::drawings::Drawing, Drawing, id; id, object, kind, runtime_type, order, visible, relationships, template, position, scale, direction, rotation_degrees, parameters, assets, native_ref);
+impl_entity_schema!(crate::drawings::Drawing, Drawing, id; id, object, kind, runtime_type, order, visible, relationships, template, position, scale, direction, rotation_degrees, sheet, curves, template_geometry, x_direction, parameters, assets, native_ref);
 impl_entity_schema!(
     crate::semantic_annotations::SemanticAnnotation,
     SemanticAnnotation,
     id;
     id, object, kind, runtime_type, order, text, references, value, format, position,
-    parameters, assets, native_ref
+    reference_anchors, text_style, dimension_kind, text_override, upper_tolerance, lower_tolerance, parameters, assets, native_ref
 );
 
 impl_entity_schema!(

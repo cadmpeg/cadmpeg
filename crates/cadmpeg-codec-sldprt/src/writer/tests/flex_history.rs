@@ -1248,6 +1248,7 @@ fn encoder_writes_authored_with_retained_native_envelope_native_features() {
                 ),
                 count: cadmpeg_ir::Dimension::Literal(4),
             }),
+            omitted_instances: Vec::new(),
         })
         .unwrap(),
         PatternKind::new(PatternTransform::Circular {

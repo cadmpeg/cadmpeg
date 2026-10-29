@@ -1,6 +1,7 @@
 {
   "ir": {
-    "ir_version": "8",
+    "decode_depth": "full",
+    "ir_version": "9",
     "model": {
       "appearance_bindings": [],
       "appearances": [],
@@ -117,7 +118,8 @@
           "id": "rhino:object:curve#record-000000-offset-177.cap-1.profile-0",
           "source_object": {
             "format": "rhino",
-            "object_id": "00000000-0000-0000-0000-000000000000"
+            "object_id": "00000000-0000-0000-0000-000000000000",
+            "visible": true
           }
         },
         {
@@ -168,7 +170,8 @@
           "id": "rhino:object:curve#record-000000-offset-177.cap-1.profile-1",
           "source_object": {
             "format": "rhino",
-            "object_id": "00000000-0000-0000-0000-000000000000"
+            "object_id": "00000000-0000-0000-0000-000000000000",
+            "visible": true
           }
         },
         {
@@ -219,58 +222,8 @@
           "id": "rhino:object:curve#record-000000-offset-177.profile-0.start",
           "source_object": {
             "format": "rhino",
-            "object_id": "00000000-0000-0000-0000-000000000000"
-          }
-        },
-        {
-          "geometry": {
-            "degree": 1,
-            "kind": "nurbs",
-            "knots": [
-              0.0,
-              0.0,
-              1.0,
-              2.0,
-              3.0,
-              4.0,
-              4.0
-            ],
-            "periodic": false,
-            "poles": {
-              "form": "polynomial",
-              "points": [
-                {
-                  "x": 10.0,
-                  "y": 20.0,
-                  "z": 28.5
-                },
-                {
-                  "x": 12.0,
-                  "y": 20.0,
-                  "z": 28.5
-                },
-                {
-                  "x": 12.0,
-                  "y": 21.0,
-                  "z": 28.5
-                },
-                {
-                  "x": 10.0,
-                  "y": 21.0,
-                  "z": 28.5
-                },
-                {
-                  "x": 10.0,
-                  "y": 20.0,
-                  "z": 28.5
-                }
-              ]
-            }
-          },
-          "id": "rhino:object:curve#record-000000-offset-177.profile-0.start.sweep-origin",
-          "source_object": {
-            "format": "rhino",
-            "object_id": "00000000-0000-0000-0000-000000000000"
+            "object_id": "00000000-0000-0000-0000-000000000000",
+            "visible": true
           }
         },
         {
@@ -321,58 +274,8 @@
           "id": "rhino:object:curve#record-000000-offset-177.profile-1.start",
           "source_object": {
             "format": "rhino",
-            "object_id": "00000000-0000-0000-0000-000000000000"
-          }
-        },
-        {
-          "geometry": {
-            "degree": 1,
-            "kind": "nurbs",
-            "knots": [
-              0.0,
-              0.0,
-              1.0,
-              2.0,
-              3.0,
-              4.0,
-              4.0
-            ],
-            "periodic": false,
-            "poles": {
-              "form": "polynomial",
-              "points": [
-                {
-                  "x": 10.0,
-                  "y": 20.0,
-                  "z": 28.5
-                },
-                {
-                  "x": 10.0,
-                  "y": 21.0,
-                  "z": 28.5
-                },
-                {
-                  "x": 12.0,
-                  "y": 21.0,
-                  "z": 28.5
-                },
-                {
-                  "x": 12.0,
-                  "y": 20.0,
-                  "z": 28.5
-                },
-                {
-                  "x": 10.0,
-                  "y": 20.0,
-                  "z": 28.5
-                }
-              ]
-            }
-          },
-          "id": "rhino:object:curve#record-000000-offset-177.profile-1.start.sweep-origin",
-          "source_object": {
-            "format": "rhino",
-            "object_id": "00000000-0000-0000-0000-000000000000"
+            "object_id": "00000000-0000-0000-0000-000000000000",
+            "visible": true
           }
         }
       ],
@@ -717,7 +620,8 @@
           },
           "source_object": {
             "format": "rhino",
-            "object_id": "00000000-0000-0000-0000-000000000000"
+            "object_id": "00000000-0000-0000-0000-000000000000",
+            "visible": true
           }
         },
         {
@@ -729,7 +633,8 @@
           },
           "source_object": {
             "format": "rhino",
-            "object_id": "00000000-0000-0000-0000-000000000000"
+            "object_id": "00000000-0000-0000-0000-000000000000",
+            "visible": true
           }
         },
         {
@@ -741,7 +646,8 @@
           },
           "source_object": {
             "format": "rhino",
-            "object_id": "00000000-0000-0000-0000-000000000000"
+            "object_id": "00000000-0000-0000-0000-000000000000",
+            "visible": true
           }
         },
         {
@@ -753,7 +659,8 @@
           },
           "source_object": {
             "format": "rhino",
-            "object_id": "00000000-0000-0000-0000-000000000000"
+            "object_id": "00000000-0000-0000-0000-000000000000",
+            "visible": true
           }
         }
       ],
@@ -766,18 +673,12 @@
             "direction": {
               "x": 0.0,
               "y": 0.0,
-              "z": 1.0
+              "z": 5.0
             },
-            "directrix": "rhino:object:curve#record-000000-offset-177.profile-0.start.sweep-origin",
+            "directrix": "rhino:object:curve#record-000000-offset-177.profile-0.start",
             "kind": "extrusion"
           },
           "id": "rhino:object:procedural-surface#record-000000-offset-177.lateral-0",
-          "record_bounds": [
-            0.0,
-            4.0,
-            4.0,
-            9.0
-          ],
           "surface": "rhino:object:surface#record-000000-offset-177.lateral-0"
         },
         {
@@ -785,18 +686,12 @@
             "direction": {
               "x": 0.0,
               "y": 0.0,
-              "z": 1.0
+              "z": 5.0
             },
-            "directrix": "rhino:object:curve#record-000000-offset-177.profile-1.start.sweep-origin",
+            "directrix": "rhino:object:curve#record-000000-offset-177.profile-1.start",
             "kind": "extrusion"
           },
           "id": "rhino:object:procedural-surface#record-000000-offset-177.lateral-1",
-          "record_bounds": [
-            0.0,
-            4.0,
-            4.0,
-            9.0
-          ],
           "surface": "rhino:object:surface#record-000000-offset-177.lateral-1"
         }
       ],
@@ -870,7 +765,8 @@
           "id": "rhino:object:surface#record-000000-offset-177.cap-0",
           "source_object": {
             "format": "rhino",
-            "object_id": "00000000-0000-0000-0000-000000000000"
+            "object_id": "00000000-0000-0000-0000-000000000000",
+            "visible": true
           }
         },
         {
@@ -895,7 +791,8 @@
           "id": "rhino:object:surface#record-000000-offset-177.cap-1",
           "source_object": {
             "format": "rhino",
-            "object_id": "00000000-0000-0000-0000-000000000000"
+            "object_id": "00000000-0000-0000-0000-000000000000",
+            "visible": true
           }
         },
         {
@@ -989,7 +886,8 @@
           "id": "rhino:object:surface#record-000000-offset-177.lateral-0",
           "source_object": {
             "format": "rhino",
-            "object_id": "00000000-0000-0000-0000-000000000000"
+            "object_id": "00000000-0000-0000-0000-000000000000",
+            "visible": true
           }
         },
         {
@@ -1083,7 +981,8 @@
           "id": "rhino:object:surface#record-000000-offset-177.lateral-1",
           "source_object": {
             "format": "rhino",
-            "object_id": "00000000-0000-0000-0000-000000000000"
+            "object_id": "00000000-0000-0000-0000-000000000000",
+            "visible": true
           }
         }
       ],
@@ -1128,7 +1027,8 @@
             "current_material_source": null,
             "current_wire_density": null,
             "id": "rhino:document:settings#current",
-            "model_url": null
+            "model_url": null,
+            "writer_version": null
           }
         ],
         "embedded_images": [],
@@ -1165,14 +1065,17 @@
         "windows_bitmaps": []
       }
     },
-    "scope": {
-      "design": false,
-      "model": true
-    },
     "source": {
       "attributes": {
+        "absolute_tolerance_millimeters": "0.01",
+        "absolute_tolerance_native": "0.01",
+        "angular_tolerance": "0.1",
         "archive_version": "50",
-        "container_kind": "3dm-chunks"
+        "container_kind": "3dm-chunks",
+        "millimeters_per_unit": "1",
+        "relative_tolerance": "0.001",
+        "unit_system": "standard:2",
+        "unit_value": "2"
       },
       "identity": {
         "classification": "classified",
@@ -1252,27 +1155,6 @@
         },
         "message": "36f53175-72b8-4d47-bf1f-b4e6fc24f4b9: extrusion payload CRC mismatch at offset 257",
         "severity": "error"
-      },
-      {
-        "code": {
-          "code": "record.neutral-unprojected",
-          "kind": "metadata_not_transferred",
-          "namespace": "rhino",
-          "scope": "namespaced"
-        },
-        "message": "rhino:object:record#record-000000-offset-177: layer index -1 is absent or ambiguous",
-        "severity": "warning"
-      },
-      {
-        "code": {
-          "code": "depth.not-delivered",
-          "kind": "parametric_record_omitted",
-          "namespace": "decode",
-          "scope": "namespaced",
-          "strict_floor": "warning"
-        },
-        "message": "requested full depth but the rhino decoder did not deliver classes: design",
-        "severity": "error"
       }
     ],
     "notes": [
@@ -1280,10 +1162,7 @@
     ],
     "transfer": {
       "geometry_transferred": true,
-      "scope": {
-        "design": false,
-        "model": true
-      }
+      "transfer": "full"
     }
   },
   "source_fidelity": {
@@ -1455,11 +1334,6 @@
         }
       }
     },
-    "metadata": {
-      "rhino.history_layout": "[]",
-      "rhino.object_layout": "[{\"start\":177,\"end\":1125}]",
-      "rhino.table_layout": "[[268435476,[]],[268435477,[[536903729,105,153]]],[268435475,[[536903792,177,1125]]]]"
-    },
     "retained_records": {
       "rhino:object:record#000000": {
         "bytes": {
@@ -1467,10 +1341,8 @@
           "retention": "inline"
         },
         "offset": 177,
-        "stream": "",
-        "untyped": []
+        "stream": ""
       }
-    },
-    "unrepresented": []
+    }
   }
 }

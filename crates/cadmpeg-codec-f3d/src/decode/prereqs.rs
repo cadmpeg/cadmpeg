@@ -44,9 +44,13 @@ pub(super) struct ProductPrereqs {
     pub(super) design_owner_record_headers: Vec<DesignRecordHeader>,
     pub(super) design_parameter_owners: Vec<DesignParameterOwner>,
     pub(super) design_component_occurrences: Vec<DesignComponentOccurrence>,
+    pub(super) design_superseded_component_occurrences: usize,
+    /// Local occurrences that two or more component-path carriers name.
+    pub(super) design_ambiguous_current_poses: usize,
     /// Scopes after history-bound variant admission, before design-intent
     /// binding.
     pub(super) design_parameter_scopes: Vec<DesignParameterScope>,
+    pub(super) design_parameter_scope_losses: Vec<cadmpeg_ir::report::loss::LossNote>,
     /// Freedoms and limits of the joints whose motion records carry them.
     pub(super) design_joint_motions: Vec<crate::records::feature::joint_motion::DesignJointMotion>,
     /// Authored feature order, which tells top-level `Component Insert`
@@ -54,6 +58,9 @@ pub(super) struct ProductPrereqs {
     /// the document stays here; design intent then does not run.
     pub(super) design_feature_timelines: Result<Vec<DesignFeatureTimeline>, CodecError>,
     pub(super) design_component_naming_spaces: Vec<DesignComponentNamingSpace>,
+    /// Registered component entities with no context-UUID binding in this
+    /// document; the session reports them as a loss.
+    pub(super) design_unbound_component_naming_spaces: usize,
     pub(super) design_body_bindings: Vec<DesignBodyBinding>,
     pub(super) design_body_members: Vec<DesignBodyMember>,
     /// Retained-byte allowance for ASM history binding, taken before phase 1.
@@ -99,10 +106,14 @@ impl ProductPrereqs {
             design_owner_record_headers,
             design_parameter_owners,
             design_component_occurrences,
+            design_superseded_component_occurrences: _,
+            design_ambiguous_current_poses: _,
             design_parameter_scopes,
+            design_parameter_scope_losses: _,
             design_joint_motions,
             design_feature_timelines,
             design_component_naming_spaces,
+            design_unbound_component_naming_spaces: _,
             design_body_bindings,
             design_body_members,
             history_retained_allowance: _,
@@ -183,21 +194,26 @@ pub(super) fn decode(
         &design_parameters,
         &merged_record_headers(&design_record_headers, &design_owner_record_headers),
     )?;
-    let design_component_occurrences =
-        crate::design::decode::components::decode_component_occurrences(scan)?;
-    let mut design_parameter_scopes =
-        crate::design::decode::scopes::parameter_scope::decode_parameter_scopes(
-            ctx,
-            scan,
-            &crate::design::decode::scopes::parameter_scope::ParameterScopeSources {
-                entities: &design_entity_headers,
-                types: &design_types,
-                parameters: &design_parameters,
-                parameter_owners: &design_parameter_owners,
-                component_occurrences: &design_component_occurrences,
-                recipes: &construction_recipes,
-            },
-        )?;
+    let crate::design::decode::components::DecodedComponentOccurrences {
+        occurrences: design_component_occurrences,
+        superseded: design_superseded_component_occurrences,
+        ambiguous_current_poses: design_ambiguous_current_poses,
+    } = crate::design::decode::components::decode_component_occurrences(scan)?;
+    let crate::design::decode::scopes::parameter_scope::DecodedParameterScopes {
+        scopes: mut design_parameter_scopes,
+        losses: design_parameter_scope_losses,
+    } = crate::design::decode::scopes::parameter_scope::decode_parameter_scopes(
+        ctx,
+        scan,
+        &crate::design::decode::scopes::parameter_scope::ParameterScopeSources {
+            entities: &design_entity_headers,
+            types: &design_types,
+            parameters: &design_parameters,
+            parameter_owners: &design_parameter_owners,
+            component_occurrences: &design_component_occurrences,
+            recipes: &construction_recipes,
+        },
+    )?;
     let primary_frames =
         crate::design::decode::scopes::parameter_scope::design_primary_frame_offsets(scan)?;
     let design_superseded_scope_envelopes =
@@ -214,8 +230,10 @@ pub(super) fn decode(
         Err(error @ CodecError::ResourceLimit(_)) => return Err(error),
         other => other,
     };
-    let design_component_naming_spaces =
-        crate::design::decode::meta::decode_component_naming_spaces(scan)?;
+    let crate::design::decode::meta::DecodedComponentNamingSpaces {
+        spaces: design_component_naming_spaces,
+        unbound: design_unbound_component_naming_spaces,
+    } = crate::design::decode::meta::decode_component_naming_spaces(scan)?;
     let design_body_members = crate::design::decode::body::decode_body_members(scan)?;
     let xref = match crate::xref::decode_with_scopes(ctx, scan, &design_parameter_scopes) {
         Err(error @ (CodecError::ResourceLimit(_) | CodecError::NotImplemented(_))) => {
@@ -237,10 +255,14 @@ pub(super) fn decode(
         design_owner_record_headers,
         design_parameter_owners,
         design_component_occurrences,
+        design_superseded_component_occurrences,
+        design_ambiguous_current_poses,
         design_parameter_scopes,
+        design_parameter_scope_losses,
         design_joint_motions,
         design_feature_timelines,
         design_component_naming_spaces,
+        design_unbound_component_naming_spaces,
         design_body_bindings,
         design_body_members,
         history_retained_allowance,

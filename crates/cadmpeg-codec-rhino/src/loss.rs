@@ -241,6 +241,10 @@ pub(crate) enum RhinoLossCode {
     WriterBodyTransformNotApplied,
     /// No geometry can be written to the target.
     NoExportableSolids,
+    /// Different coedge pcurves were compared at discrete parameters.
+    EdgePcurveAgreementSampled,
+    /// A recovered edge was fitted at sampled parameters.
+    EdgePcurveSampledToBspline,
     /// A field was read under the legacy reading because the archive carries no
     /// openNURBS writer-version stamp to verify that record against.
     ///
@@ -327,6 +331,8 @@ impl RhinoLossCode {
         Self::WriterBodyOmitted,
         Self::WriterBodyTransformNotApplied,
         Self::NoExportableSolids,
+        Self::EdgePcurveAgreementSampled,
+        Self::EdgePcurveSampledToBspline,
         Self::SourceWriterStampUnverified,
         Self::SourceDialectUnverified,
         Self::SourceDialectDisplaced,
@@ -389,6 +395,8 @@ impl RhinoLossCode {
             Self::WriterBodyOmitted => "writer.body-omitted",
             Self::WriterBodyTransformNotApplied => "body.non-rigid-transform",
             Self::NoExportableSolids => "export.no-exportable-solids",
+            Self::EdgePcurveAgreementSampled => "geometry.edge-pcurve-agreement-sampled",
+            Self::EdgePcurveSampledToBspline => "geometry.edge-pcurve-sampled-to-bspline",
             Self::MeshNormalPrecisionReduced => "mesh.normal-precision-reduced",
             Self::SourceWriterStampUnverified => "source.writer-stamp-unverified",
             Self::SourceDialectUnverified => "source.dialect-unverified",
@@ -476,6 +484,9 @@ impl RhinoLossCode {
             Self::WriterAttributesOmitted => LossTaxonomy::AttributesNotTransferred,
             Self::WriterColorPrecisionReduced => LossTaxonomy::AppearanceReduced,
             Self::NoExportableSolids => LossTaxonomy::NoExportableSolids,
+            Self::EdgePcurveAgreementSampled | Self::EdgePcurveSampledToBspline => {
+                LossTaxonomy::GeometryAgreementSampled
+            }
             Self::SourceDialectDisplaced => LossTaxonomy::SourceDialectDisplaced,
             Self::TopologyBodyKindGaugeSubstituted => LossTaxonomy::TopologyGaugeSubstituted,
         }
@@ -585,6 +596,8 @@ mod tests {
                 "writer.body-omitted",
                 "body.non-rigid-transform",
                 "export.no-exportable-solids",
+                "geometry.edge-pcurve-agreement-sampled",
+                "geometry.edge-pcurve-sampled-to-bspline",
                 "source.writer-stamp-unverified",
                 "source.dialect-unverified",
                 "target.source-dialect-displaced",

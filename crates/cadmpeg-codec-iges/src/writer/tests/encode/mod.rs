@@ -692,9 +692,20 @@ fn encode_reduces_exact_procedural_carriers_to_solved_geometry() {
         report.losses.iter().all(
             |loss| accepts_procedural_reduction_loss(loss.code.taxonomy())
                 || loss.code == IgesLossCode::WriterSupportEdgeNotRepresented.kind()
+                || loss.code == IgesLossCode::WriterSupportGeometryNotRepresented.kind()
         ),
         "{:#?}",
         report.losses
+    );
+    // The Type 128 output has no rails, so the two composite rails and their
+    // four constituents have no written parent.
+    assert_eq!(
+        report
+            .losses
+            .iter()
+            .filter(|loss| loss.code == IgesLossCode::WriterSupportGeometryNotRepresented.kind())
+            .count(),
+        6
     );
 
     let support_edge_losses = report
@@ -711,12 +722,7 @@ fn encode_reduces_exact_procedural_carriers_to_solved_geometry() {
         .decode(&mut Cursor::new(written), &DecodeOptions::default())
         .unwrap();
     assert_eq!(round_trip.ir().model.surfaces.len(), 1);
-    assert!(round_trip
-        .ir()
-        .model
-        .curves
-        .iter()
-        .any(|curve| matches!(curve.geometry.solved(), Some(SolvedCurveGeometry::Nurbs(_)))));
+    assert!(round_trip.ir().model.curves.is_empty());
     assert!(
         round_trip.report().losses.is_empty(),
         "{:#?}",

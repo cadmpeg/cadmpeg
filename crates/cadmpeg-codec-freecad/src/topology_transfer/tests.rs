@@ -1879,6 +1879,9 @@ Co 1001000 +2 1 +2 3 *
     );
 }
 
+/// The kind of the one body in a shell of the two-edge face pair of
+/// `a_shell_whose_edges_are_each_used_twice_is_closed_without_the_closed_flag`,
+/// with the face uses `shell_faces`.
 fn body_kind_of_shell(shell_faces: &str) -> cadmpeg_ir::topology::BodyKind {
     let document = r#"<Document SchemaVersion="4" FileVersion="1">
 <Objects Count="1"><Object type="Part::Feature" name="Shape" id="1"/></Objects>

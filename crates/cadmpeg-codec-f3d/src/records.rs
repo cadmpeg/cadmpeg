@@ -9,6 +9,7 @@ mod identity_rewrite;
 pub(crate) mod act;
 pub(crate) mod act_table;
 pub(crate) mod bodies;
+pub(crate) mod body_ownership;
 pub(crate) mod body_reference_tail;
 pub(crate) mod canvas;
 pub(crate) mod configuration;

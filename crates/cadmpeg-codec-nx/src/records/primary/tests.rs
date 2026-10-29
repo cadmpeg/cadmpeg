@@ -403,6 +403,10 @@ fn primary_zero_field_edit_owns_empty_instances() {
         assert_eq!(parsed.records[1].range, start + 6..end);
         assert!(parsed.records.iter().all(|record| record.fields.is_empty()));
         assert!(matches!(parsed.end, PrimaryEnd::Terminated { .. }));
-        assert!(crate::records::read(&bytes[start..], 0).unwrap().is_none());
+        let (definition, declaration_end) = super::super::tests::read(&bytes[start..], 0)
+            .unwrap()
+            .unwrap();
+        assert!(definition.fields.is_empty());
+        assert_eq!(declaration_end, 4);
     });
 }
