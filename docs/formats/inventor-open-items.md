@@ -239,11 +239,11 @@ Records of type `553a6b21d31123656000f587346bfbb0` in the `AmDc` segment start w
 
 ### DE-09. Additional edge naming forms
 
-**Question.** Which selector forms and naming families resolve edge items outside the direct schema-44 matched-attribute form?
+**Question.** Which selector forms and naming families resolve edge items outside the direct schema-44 matched-attribute form, and what does an empty edge-item index-reference list select?
 
-**Known.** An edge-item index reference names a selector by its PmDc source index. A direct selector and an ASM matching attribute share a source index and an edge key. A generated attribute on the same edge supplies its generating feature and associative name. The archive can contain this edge after a later operation removes it from the active body.
+**Known.** An edge-item index reference names a selector by its PmDc source index. A direct selector and an ASM matching attribute share a source index and an edge key. A generated attribute on the same edge supplies its generating feature and associative name. The archive can contain this edge after a later operation removes it from the active body. An edge item can have an empty index-reference list.
 
-**Need.** Additional selector forms, secondary naming arrays, matched-attribute qualifiers, generated roles, and naming families require exact operands and joins before neutral edge resolution.
+**Need.** Additional selector forms, secondary naming arrays, matched-attribute qualifiers, generated roles, and naming families require exact operands and joins before neutral edge resolution. An empty index-reference list requires its selection rule and exact target join.
 
 ### DE-10. Sheet-metal generated names
 
