@@ -145,7 +145,7 @@ impl DecodeBudget {
         match dimension {
             ResourceDimension::InputBytes => self.account.charge_input(amount, operation)?,
             ResourceDimension::DecompressedBytes => {
-                self.account.charge_decompressed(amount, operation)?
+                self.account.charge_decompressed(amount, operation)?;
             }
             _ => {}
         }

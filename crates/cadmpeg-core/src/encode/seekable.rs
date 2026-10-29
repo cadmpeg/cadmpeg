@@ -40,32 +40,26 @@ struct OutputSink<'a> {
 impl OutputSink<'_> {
     fn admit_write(&mut self, length: usize) -> Result<(usize, usize), ResourceLimit> {
         self.buffer.session.finish()?;
-        let start = match usize::try_from(self.position) {
-            Ok(start) => start,
-            Err(_) => {
-                let growth = self.position - u64_from_index(self.buffer.bytes.capacity());
-                return Err(self
-                    .buffer
-                    .session
-                    .account
-                    .allocation_failed(growth, self.operation));
-            }
+        let Ok(start) = usize::try_from(self.position) else {
+            let growth = self.position - u64_from_index(self.buffer.bytes.capacity());
+            return Err(self
+                .buffer
+                .session
+                .account
+                .allocation_failed(growth, self.operation));
         };
-        let end = match start.checked_add(length) {
-            Some(end) => end,
-            None => {
-                if start > self.buffer.len() {
-                    self.buffer
-                        .reserve_append(start - self.buffer.len(), self.operation)?;
-                }
-                let available = self.buffer.bytes.capacity() - start;
-                let growth = u64_from_index(length - available);
-                return Err(self
-                    .buffer
-                    .session
-                    .account
-                    .allocation_failed(growth, self.operation));
+        let Some(end) = start.checked_add(length) else {
+            if start > self.buffer.len() {
+                self.buffer
+                    .reserve_append(start - self.buffer.len(), self.operation)?;
             }
+            let available = self.buffer.bytes.capacity() - start;
+            let growth = u64_from_index(length - available);
+            return Err(self
+                .buffer
+                .session
+                .account
+                .allocation_failed(growth, self.operation));
         };
         if end > self.buffer.len() {
             self.buffer
@@ -77,13 +71,13 @@ impl OutputSink<'_> {
 
 impl Write for OutputSink<'_> {
     fn write(&mut self, input: &[u8]) -> io::Result<usize> {
+        const ZEROES: [u8; 4096] = [0; 4096];
         if input.is_empty() {
             return Ok(0);
         }
         let Ok((start, end)) = self.admit_write(input.len()) else {
             return Ok(0);
         };
-        const ZEROES: [u8; 4096] = [0; 4096];
         while self.buffer.len() < start {
             let length = (start - self.buffer.len()).min(ZEROES.len());
             self.buffer.bytes.extend_from_slice(&ZEROES[..length]);
