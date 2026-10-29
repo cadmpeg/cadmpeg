@@ -533,17 +533,7 @@ pub(crate) fn source_meta(
         format_args!("file_size"),
         format_args!("{}", scan.data.len()),
     )?;
-    resource::source_attribute(
-        &mut attributes,
-        format_args!("outer_dir_offset"),
-        format_args!("{}", scan.outer_dir_offset),
-    )?;
     if let Some(dir) = &scan.inner {
-        resource::source_attribute(
-            &mut attributes,
-            format_args!("inner_offset"),
-            format_args!("{}", dir.inner),
-        )?;
         resource::source_attribute(
             &mut attributes,
             format_args!("stream_count"),

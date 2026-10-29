@@ -31,7 +31,6 @@ use crate::native::{CatiaNative, CatiaObjectGraph};
 use crate::pmi;
 use crate::sketch;
 mod native_projection;
-mod source_layout;
 
 fn schema_configuration_row_chain_coverage(native: &CatiaNative) -> (usize, usize) {
     (
@@ -3845,7 +3844,6 @@ fn decode_result(
         )
         .with_untyped(source_untyped),
     )?;
-    source_layout::move_layout(&mut ir, &mut source_fidelity)?;
     Ok(Decoded {
         ir,
         body,
