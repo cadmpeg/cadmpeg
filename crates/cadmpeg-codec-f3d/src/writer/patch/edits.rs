@@ -3998,7 +3998,6 @@ mod tests {
         let mut wire = serde_json::to_value(&record).unwrap();
         wire["version"] = serde_json::json!(2);
         let edited: SegmentType = serde_json::from_value(wire.clone()).unwrap();
-        assert!(edited.version_offset.is_none());
         let mut baseline = F3dNative::default();
         baseline.design_types.push(record);
         let mut target = F3dNative::default();
@@ -4012,9 +4011,9 @@ mod tests {
             edits["Design/MetaStream.dat"][0].integers,
             [(64, 2_u32.to_le_bytes().to_vec())]
         );
-        baseline.design_types[0] =
-            serde_json::from_value(serde_json::to_value(&baseline.design_types[0]).unwrap())
-                .unwrap();
+        let mut unlocated = serde_json::to_value(&baseline.design_types[0]).unwrap();
+        unlocated.as_object_mut().unwrap().remove("version_offset");
+        baseline.design_types[0] = serde_json::from_value(unlocated).unwrap();
         assert!(matches!(
             super::validate_design_type_edits(PatchNatives {
                 baseline: Some(&baseline),

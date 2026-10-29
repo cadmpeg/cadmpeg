@@ -101,10 +101,6 @@ fn segment_base_guid_preserves_absent_empty_and_named_content() {
             value.filter(|value| !value.is_empty())
         );
         assert_eq!(serde_json::to_value(record).unwrap(), wire);
-        wire["base_type_guid_offset"] = serde_json::json!(44);
-        assert!(
-            serde_json::from_value::<crate::records::entity_header::SegmentType>(wire).is_err()
-        );
     }
 }
 
@@ -525,10 +521,6 @@ fn construction_recipe_record_index_does_not_require_a_location() {
             .record_index
             .is_none_or(|record| record.offset.is_none()));
         assert_eq!(serde_json::to_value(recipe).unwrap(), wire);
-        wire["record_index_offset"] = serde_json::json!(64);
-        assert!(
-            serde_json::from_value::<crate::records::recipes::ConstructionRecipe>(wire).is_err()
-        );
     }
 }
 
@@ -1424,7 +1416,7 @@ fn empty_reference_runs_have_one_representation() {
         )
         .unwrap(),
     };
-    let wire = r#"{"id":"header","entity_id":"Sketch_7","class_tag":"256","module":"MSketch","reference_indices":[]}"#;
+    let wire = r#"{"id":"header","entity_id":"Sketch_7","class_tag":"256","module":"MSketch","record_reference_offset":20,"reference_indices":[]}"#;
     assert_eq!(serde_json::to_string(&header).unwrap(), wire);
     assert!(header.content_eq(
         &serde_json::from_str::<crate::records::entity_header::DesignEntityHeader>(wire).unwrap()

@@ -910,13 +910,9 @@ pub(crate) struct SketchPoint {
     pub(crate) owner_reference: Option<u32>,
     /// Source per-file dynamic three-digit ASCII class tag naming this point's record type.
     pub(crate) class_tag: DesignClassTag,
-    /// Byte offset of this record within its Design `BulkStream`. It is the
-    /// `byte_offset` pointer of the record's `record_layout` entry and is not
-    /// on the document wire.
+    /// Byte offset of this record within its Design `BulkStream`.
     pub(crate) byte_offset: Option<u64>,
-    /// Byte offset of the first coordinate relative to the record start. It
-    /// is the `coordinate_offset` pointer of the record's `record_layout`
-    /// entry and is not on the document wire.
+    /// Byte offset of the first coordinate relative to the record start.
     pub(crate) coordinate_offset: Option<u32>,
     /// Serialized point-record member sequence, identity, flags, and closure.
     record_form: SketchPointRecordForm<FiniteReal>,
@@ -965,6 +961,10 @@ impl Serialize for SketchPoint {
             owner_reference: Option<u32>,
             class_tag: &'a str,
             #[serde(skip_serializing_if = "Option::is_none")]
+            byte_offset: Option<u64>,
+            #[serde(skip_serializing_if = "Option::is_none")]
+            coordinate_offset: Option<u32>,
+            #[serde(skip_serializing_if = "Option::is_none")]
             entity_genesis: Option<u64>,
             record_form: SketchPointRecordFormSerde,
             #[serde(skip_serializing_if = "Option::is_none")]
@@ -1007,6 +1007,8 @@ impl Serialize for SketchPoint {
             record_index: self.record_index,
             owner_reference: self.owner_reference,
             class_tag: self.class_tag.as_str(),
+            byte_offset: self.byte_offset,
+            coordinate_offset: self.coordinate_offset,
             entity_genesis: self.entity_genesis(),
             record_form,
             persistent_id: self.persistent_id(),
@@ -1227,6 +1229,10 @@ pub(super) struct SketchPointSerde {
     )]
     owner_reference: Option<u32>,
     class_tag: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    byte_offset: Option<u64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    coordinate_offset: Option<u32>,
     #[serde(
         default,
         skip_serializing_if = "Option::is_none",
@@ -1388,8 +1394,8 @@ impl TryFrom<SketchPointSerde> for SketchPoint {
             record_index: wire.record_index,
             owner_reference: wire.owner_reference,
             class_tag: wire.class_tag.try_into()?,
-            byte_offset: None,
-            coordinate_offset: None,
+            byte_offset: wire.byte_offset,
+            coordinate_offset: wire.coordinate_offset,
             record_form,
             companion,
             paired_reference: wire.paired_reference,
@@ -1438,6 +1444,8 @@ impl From<SketchPoint> for SketchPointSerde {
             record_index: point.record_index,
             owner_reference: point.owner_reference,
             class_tag: point.class_tag.into(),
+            byte_offset: point.byte_offset,
+            coordinate_offset: point.coordinate_offset,
             entity_genesis,
             record_form,
             persistent_id,
@@ -1469,10 +1477,10 @@ pub(crate) struct SketchCurveIdentity {
     /// Source per-file dynamic three-digit ASCII class tag naming this record's type.
     pub(crate) class_tag: DesignClassTag,
     /// Byte offset of this record within its Design `BulkStream`.
-    #[serde(skip)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub(crate) byte_offset: Option<u64>,
     /// Byte offset of the fixed analytic geometry payload relative to the record start.
-    #[serde(skip)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub(crate) geometry_offset: Option<u32>,
     /// Optional `EntityGenesis` origin bitfield carried ahead of the curve identities.
     #[serde(
@@ -2445,39 +2453,6 @@ impl SketchNurbsPoles {
 mod tests {
     use super::{SketchCurveGeometry, SketchPoint, SketchSurface, SketchText};
     use serde_json::json;
-
-    #[test]
-    fn sketch_curve_identity_wire_retains_semantics_without_layout() {
-        let wire = json!({"id":"f3d:Design:sketch-curve#1", "record_index":1,
-            "class_tag":"300", "primary_id":7, "secondary_id":9, "geometry": native_arc_wire()});
-        let mut source: super::SketchCurveIdentity = serde_json::from_value(wire.clone()).unwrap();
-        source.byte_offset = Some(987);
-        source.geometry_offset = Some(133);
-        assert_eq!(serde_json::to_value(&source).unwrap(), wire);
-        let restored: super::SketchCurveIdentity = serde_json::from_value(wire.clone()).unwrap();
-        assert!(restored.byte_offset.is_none());
-        assert!(restored.geometry_offset.is_none());
-        assert_eq!(restored.primary_id, source.primary_id);
-        assert_eq!(restored.secondary_id, source.secondary_id);
-        for field in ["byte_offset", "geometry_offset"] {
-            let mut invalid = wire.clone();
-            invalid[field] = 0.into();
-            assert!(serde_json::from_value::<super::SketchCurveIdentity>(invalid).is_err());
-        }
-        let native = crate::native::F3dNative {
-            sketch_curve_identities: vec![source],
-            ..Default::default()
-        };
-        let fidelity = native.retained_fidelity().unwrap();
-        assert_eq!(
-            fidelity.metadata["f3d:Design:sketch-curve#1.byte_offset"],
-            "987"
-        );
-        assert_eq!(
-            fidelity.metadata["f3d:Design:sketch-curve#1.geometry_offset"],
-            "133"
-        );
-    }
 
     #[test]
     fn sketch_geometry_constructors_preserve_standard_values() {

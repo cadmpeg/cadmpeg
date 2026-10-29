@@ -263,7 +263,6 @@ impl<T, O> ReferenceRun<T, O> {
         }
     }
 
-    #[cfg(test)]
     pub(crate) fn from_columns(
         values: Vec<T>,
         offsets: Vec<O>,
@@ -297,8 +296,6 @@ impl<T, O> ReferenceRun<T, O> {
         }
     }
 }
-
-impl<T> ReferenceRun<T, u64> {}
 
 /// A vector that always holds at least one element.
 #[derive(Debug, Clone, PartialEq, Eq)]
