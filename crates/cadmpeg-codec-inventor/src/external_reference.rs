@@ -279,10 +279,9 @@ fn parse_stream_grammar<'a>(
     }
     cursor.u16("active LOD state")?;
     let design_view_count = usize::from(cursor.u16("design-view count")?);
-    let assembly_representation = if schema == 15 {
+    if schema == 15 {
         match document_kind {
-            DocumentKind::Assembly => true,
-            DocumentKind::Part => false,
+            DocumentKind::Assembly | DocumentKind::Part => {}
             DocumentKind::Drawing
             | DocumentKind::Presentation
             | DocumentKind::Mixed
@@ -293,26 +292,19 @@ fn parse_stream_grammar<'a>(
                 )));
             }
         }
-    } else {
-        false
-    };
+    }
     let representation = if schema == 15 {
         let prefix = cursor.u16("representation prefix")?;
-        let design_views = if assembly_representation {
-            let mut views = Vec::new();
-            for _ in 0..design_view_count {
-                views.push((
-                    cursor.utf16(ctx, "design view", 65_536)?,
-                    cursor.utf16(ctx, "design view kind", 65_536)?,
-                ));
-            }
-            Some(views)
-        } else {
-            None
-        };
+        let mut design_views = Vec::new();
+        for _ in 0..design_view_count {
+            design_views.push((
+                cursor.utf16(ctx, "design view", 65_536)?,
+                cursor.utf16(ctx, "design view kind", 65_536)?,
+            ));
+        }
         Some(UfrxRepresentationState {
             prefix,
-            design_views,
+            design_views: Some(design_views),
             secondary_active_lod_state: [
                 cursor.u16("secondary active LOD state")?,
                 cursor.u16("secondary active LOD state")?,
@@ -1264,7 +1256,7 @@ mod tests {
     }
 
     #[test]
-    fn schema_15_part_omits_assembly_representation_strings() {
+    fn schema_15_part_stores_the_counted_design_view_list() {
         let (bytes, _) = fixture_for_kind(15, false);
         let arena = DecodeArena::new();
         let (ctx, root) = DecodeContext::from_root_bytes(&bytes, &arena, &DecodePolicy::default())
@@ -1274,7 +1266,13 @@ mod tests {
             .expect("schema-15 part UFRxDoc parses");
 
         let representation = document.representation.expect("model-state header parses");
-        assert_eq!(representation.design_views, None);
+        assert_eq!(
+            representation.design_views,
+            Some(vec![
+                ("Default".to_owned(), "DesignView".to_owned()),
+                ("Shipping".to_owned(), "Export".to_owned()),
+            ])
+        );
         assert_eq!(representation.active_design_view, "Master");
         assert_eq!(document.model_states.len(), 1);
         assert_eq!(document.references.len(), 1);
@@ -1536,12 +1534,19 @@ mod tests {
         push_u32(&mut bytes, 0);
         push_u32(&mut bytes, 0);
         push_u16(&mut bytes, 0);
-        push_u16(&mut bytes, u16::from(schema == 15 && assembly));
+        let design_view_count = match (schema, assembly) {
+            (15, true) => 1,
+            (15, false) => 2,
+            _ => 0,
+        };
+        push_u16(&mut bytes, design_view_count);
         if schema == 15 {
             push_u16(&mut bytes, 0);
-            if assembly {
-                push_utf16(&mut bytes, "Default");
-                push_utf16(&mut bytes, "DesignView");
+            push_utf16(&mut bytes, "Default");
+            push_utf16(&mut bytes, "DesignView");
+            if !assembly {
+                push_utf16(&mut bytes, "Shipping");
+                push_utf16(&mut bytes, "Export");
             }
             bytes.extend_from_slice(&[0; 4]);
             push_utf16(&mut bytes, "Master");
