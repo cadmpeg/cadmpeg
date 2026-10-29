@@ -17,7 +17,6 @@ The delivered scope tables describe each codec's normal successful full projecti
 The criteria below are the target for every scored level. A format profile names each criterion that does not yet hold:
 
 - Real files exercise the scored level. An evaluation recorded in `docs/evaluations.toml` satisfies this criterion. The files need not be in the repository.
-- Every source byte is typed, classified as structural, or preserved as a named opaque record.
 - Every unsupported semantic construct produces a machine-readable loss.
 - Decode, validation, write, and conversion results are deterministic.
 - Generated files re-decode to the expected semantic IR.
