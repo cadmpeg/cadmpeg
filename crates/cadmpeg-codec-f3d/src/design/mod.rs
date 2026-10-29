@@ -71,15 +71,25 @@ pub(crate) fn design_feature_family(
 ) -> Option<DesignFeatureFamily> {
     use crate::records::feature::scope::DesignFeatureKind as Kind;
     match kind {
-        Kind::Sketch | Kind::Esquisse | Kind::Skizze | Kind::Esboco => {
-            Some(DesignFeatureFamily::Sketch)
-        }
+        Kind::Sketch
+        | Kind::Esquisse
+        | Kind::Skizze
+        | Kind::Esboco
+        | Kind::Boceto
+        | Kind::SketchJa => Some(DesignFeatureFamily::Sketch),
         Kind::Assemble | Kind::AsBuilt => Some(DesignFeatureFamily::Assemble),
-        Kind::Extrude | Kind::Extrusion | Kind::Extrusao => Some(DesignFeatureFamily::Extrude),
-        Kind::Fillet | Kind::Conge | Kind::Abrundung | Kind::Arredondamento => {
-            Some(DesignFeatureFamily::Fillet)
+        Kind::Extrude | Kind::Extrusion | Kind::Extrusao | Kind::Extruir | Kind::ExtrudeJa => {
+            Some(DesignFeatureFamily::Extrude)
         }
-        Kind::Chamfer | Kind::Chanfrein => Some(DesignFeatureFamily::Chamfer),
+        Kind::Fillet
+        | Kind::Conge
+        | Kind::Abrundung
+        | Kind::Arredondamento
+        | Kind::Empalme
+        | Kind::FilletJa => Some(DesignFeatureFamily::Fillet),
+        Kind::Chamfer | Kind::Chanfrein | Kind::Chaflan | Kind::ChamferJa => {
+            Some(DesignFeatureFamily::Chamfer)
+        }
         Kind::Combine => Some(DesignFeatureFamily::Combine),
         Kind::Draft => Some(DesignFeatureFamily::Draft),
         Kind::ReplaceFace => Some(DesignFeatureFamily::ReplaceFace),
@@ -91,10 +101,10 @@ pub(crate) fn design_feature_family(
         Kind::Move => Some(DesignFeatureFamily::Move),
         Kind::OffsetFaces | Kind::DecalerLesFaces => Some(DesignFeatureFamily::OffsetFaces),
         Kind::Revolve => Some(DesignFeatureFamily::Revolve),
-        Kind::Shell | Kind::Schale => Some(DesignFeatureFamily::Shell),
+        Kind::Shell | Kind::Schale | Kind::Vaciado => Some(DesignFeatureFamily::Shell),
         Kind::Thicken => Some(DesignFeatureFamily::Thicken),
         Kind::SpirePrimitive | Kind::CoilPrimitive => Some(DesignFeatureFamily::Coil),
-        Kind::Loft => Some(DesignFeatureFamily::Loft),
+        Kind::Loft | Kind::Solevacion => Some(DesignFeatureFamily::Loft),
         Kind::Sweep => Some(DesignFeatureFamily::Sweep),
         Kind::Pipe => Some(DesignFeatureFamily::Pipe),
         Kind::SurfacePatch => Some(DesignFeatureFamily::SurfacePatch),
@@ -105,20 +115,23 @@ pub(crate) fn design_feature_family(
         Kind::BoundaryFill => Some(DesignFeatureFamily::BoundaryFill),
         Kind::Hole => Some(DesignFeatureFamily::Hole),
         Kind::Split => Some(DesignFeatureFamily::Split),
-        Kind::Scale | Kind::Massstab => Some(DesignFeatureFamily::Scale),
+        Kind::Scale | Kind::Massstab | Kind::Escala => Some(DesignFeatureFamily::Scale),
         Kind::Thread => Some(DesignFeatureFamily::Thread),
         Kind::EdgeFlange => Some(DesignFeatureFamily::SheetMetalEdgeFlange),
         Kind::Hem => Some(DesignFeatureFamily::SheetMetalHem),
         Kind::SpherePrimitive
+        | Kind::EsferaPrimitiva
         | Kind::TorusPrimitive
         | Kind::BoxPrimitive
         | Kind::CylinderPrimitive
         | Kind::Emboss
         | Kind::Native(_)
         | Kind::Canvas
+        | Kind::Lienzo
         | Kind::Decal
         | Kind::BaseMeshFeature
         | Kind::WorkPlane
+        | Kind::PlanoDeObra
         | Kind::WorkAxis
         | Kind::WorkPoint
         | Kind::DerivedInstance

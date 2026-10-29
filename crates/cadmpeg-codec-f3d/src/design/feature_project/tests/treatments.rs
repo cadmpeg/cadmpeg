@@ -696,7 +696,9 @@ fn localized_fillet_radius_parameters_pair_with_counted_edge_groups_in_order() {
     if let DesignScopePayloadMut::Fillet(slot)
     | DesignScopePayloadMut::Conge(slot)
     | DesignScopePayloadMut::Abrundung(slot)
-    | DesignScopePayloadMut::Arredondamento(slot) = indexed_scope.payload_mut()
+    | DesignScopePayloadMut::Arredondamento(slot)
+    | DesignScopePayloadMut::Empalme(slot)
+    | DesignScopePayloadMut::FilletJa(slot) = indexed_scope.payload_mut()
     {
         *slot = Some(DesignFixedFilletParameters {
             groups: vec![DesignFixedFilletGroup::try_new(
