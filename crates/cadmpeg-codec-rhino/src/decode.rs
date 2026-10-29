@@ -5509,11 +5509,7 @@ fn transform_decoded_curve(
             }
             Ok(())
         }
-        crate::curves::DecodedCurve::Leaf {
-            geometry,
-            warnings: _,
-            ..
-        } => {
+        crate::curves::DecodedCurve::Leaf { geometry, .. } => {
             let source = std::mem::replace(
                 geometry,
                 CurveGeometry::Solved(SolvedCurveGeometry::Unknown { record: None }),

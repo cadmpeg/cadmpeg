@@ -27,7 +27,7 @@ fn assert_nurbs(curve: &Curve) {
             .weights()
             .expect("rational lane")
             .into_iter()
-            .map(|value| value.get())
+            .map(cadmpeg_ir::scalar::NonZeroReal::get)
             .collect::<Vec<_>>(),
         [2.0, 4.0]
     );

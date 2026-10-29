@@ -149,7 +149,7 @@ fn write(input: EncodeInput<'_>, replay_eligible: bool) -> Result<(Written, Vec<
 fn check_honesty(resolved: &ResolvedWrite<'_>, written: &Written) -> bool {
     match written {
         Written::Semantic { dialect, .. } => dialect == resolved.target_id(),
-        _ => true,
+        Written::Replayed => true,
     }
 }
 

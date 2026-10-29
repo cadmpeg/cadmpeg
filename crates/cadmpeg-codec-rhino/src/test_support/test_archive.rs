@@ -771,7 +771,7 @@ pub(crate) fn polycurve_source(
     reader.i32().expect("parameter count");
     let parameter_values_start = reader.position();
     reader
-        .skip(parameters.len() * std::mem::size_of::<f64>())
+        .skip(std::mem::size_of_val(parameters))
         .expect("parameter values");
     let parameter_end = reader.position();
     PolycurveSource {

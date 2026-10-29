@@ -27,9 +27,9 @@ pub(super) fn move_body_translation_record(
     object_end: usize,
     data_class_offset: impl Into<Option<u64>>,
 ) -> Option<MoveBodyTranslationRecord> {
-    let read = |offset: usize, len: usize| payload.get(offset..offset.checked_add(len)?);
     const TRAILER_OFFSET: usize = 200;
     const NON_COPY_TRAILER: [u8; 8] = [1, 0, 0, 0, 0, 0, 1, 0];
+    let read = |offset: usize, len: usize| payload.get(offset..offset.checked_add(len)?);
     let (Some(data_class_offset), Some(end)) = (
         data_class_offset
             .into()

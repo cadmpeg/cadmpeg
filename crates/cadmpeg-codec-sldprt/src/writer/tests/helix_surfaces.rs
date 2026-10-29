@@ -568,6 +568,7 @@ fn semantic_writer_rejects_embedded_helix_geometry_edits() {
 
 #[test]
 fn semantic_writer_synthesizes_embedded_helix_geometry_edits() {
+    use cadmpeg_ir::codec::write::Encoder;
     use cadmpeg_ir::{
         features::{FeatureOperation, ParameterValue},
         scalar::Length,
@@ -626,7 +627,6 @@ fn semantic_writer_synthesizes_embedded_helix_geometry_edits() {
     edited
         .set_parameter_expression(&parameter, value.literal_expression(), Some(value))
         .unwrap();
-    use cadmpeg_ir::codec::write::Encoder;
     let plan = SldprtCodec
         .plan(
             cadmpeg_ir::codec::write::EncodeInput::new(&edited, Some(decoded.source_fidelity())),

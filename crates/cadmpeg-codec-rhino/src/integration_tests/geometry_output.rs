@@ -23,7 +23,7 @@ fn cube_product() -> CadIr {
         label: None,
         description: None,
         part_number: None,
-        bom_properties: Default::default(),
+        bom_properties: std::collections::BTreeMap::default(),
         bodies: vec![ir.model.bodies[0].id.clone()],
         sketches: Vec::new(),
         native_ref: None,

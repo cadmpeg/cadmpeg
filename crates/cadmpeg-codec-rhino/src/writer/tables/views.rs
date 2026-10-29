@@ -245,8 +245,7 @@ fn native_only_supported(fields: &Map<String, Value>) -> bool {
                         || value
                             .as_str()
                             .and_then(crate::presentation::parse_uuid_text)
-                            .filter(|uuid| !uuid.is_nil())
-                            .is_some()
+                            .is_some_and(|uuid| !uuid.is_nil())
                 })
                 && (viewport.get("view_scale").is_none_or(Value::is_null)
                     || viewport
@@ -345,7 +344,7 @@ pub(in crate::writer) fn settings(ir: &CadIr) -> Result<ViewExport, CodecError> 
                 .and_then(|viewport| viewport.get("source_uuid"))
                 .and_then(Value::as_str)
                 .and_then(crate::presentation::parse_uuid_text)
-                .is_some_and(|uuid| uuid.is_nil())
+                .is_some_and(crate::wire::Uuid::is_nil)
             {
                 "present nil viewport source_uuid has no complete saved-view encoding that retains its presence"
             } else {

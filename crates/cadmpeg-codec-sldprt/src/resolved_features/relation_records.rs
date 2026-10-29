@@ -2011,7 +2011,7 @@ mod relation_records_tests {
         scalars: Vec<FeatureInputScalar>,
     ) -> FeatureInputLane {
         let classes = classes.into_iter().map(|(class, _)| class).collect();
-        let lane = FeatureInputLane {
+        FeatureInputLane {
             id: "lane".into(),
             configuration: None,
             native_payload: Vec::new().into(),
@@ -2026,8 +2026,7 @@ mod relation_records_tests {
             generated_surface_identities: Vec::new(),
             references: Vec::new(),
             sketch_entities: Vec::new(),
-        };
-        lane
+        }
     }
 
     fn sketch_history() -> Vec<FeatureHistory> {

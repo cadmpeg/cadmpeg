@@ -573,7 +573,7 @@ fn semantic_writer_round_trips_typed_rib() {
         (Some(cadmpeg_ir::features::PlanarProfileRef::Feature(profile)),)
             if (
                 (profile == &profile_ref && (decoded.ir().dimension_value(value).unwrap().get() - 5f64.to_radians()).abs() < 1.0e-12)
-                && decoded.ir().dimension_value(&actual_thickness).unwrap().get() == 2.0
+                && decoded.ir().dimension_value(actual_thickness).unwrap().get() == 2.0
             )
             && matches!(geometry_1.get(), Vector3 { x: 0.0, y: 1.0, z: 0.0 })
     )));

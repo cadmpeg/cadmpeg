@@ -127,7 +127,7 @@ pub(crate) fn regenerate(
         let marker_ids = lane
             .sketch_entities
             .iter()
-            .map(|marker| marker.id())
+            .map(crate::records::SketchInputEntity::id)
             .collect::<BTreeSet<_>>();
         let mut events = Vec::new();
         let mut omitted = Vec::new();

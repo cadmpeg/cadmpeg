@@ -452,7 +452,10 @@ fn material_record(uuid: u8, name: &str, index: i32, fresnel: bool, textures: &[
         archive,
         0x4000_8000,
         &fields,
-        &[texture_start + 8..texture_end + 8],
+        &[std::ops::Range {
+            start: texture_start + 8,
+            end: texture_end + 8,
+        }],
     );
     let mut payload = vec![0x20];
     payload.extend(inner);
@@ -466,7 +469,15 @@ fn material_record(uuid: u8, name: &str, index: i32, fresnel: bool, textures: &[
         0x0002_7ffa,
         &[
             bytes::crc_chunk(archive, 0x0002_fffb, &material_uuid),
-            bytes::crc_chunk_excluding(archive, 0x0002_fffc, &payload, &[1..payload.len()]),
+            bytes::crc_chunk_excluding(
+                archive,
+                0x0002_fffc,
+                &payload,
+                &[std::ops::Range {
+                    start: 1,
+                    end: payload.len(),
+                }],
+            ),
             bytes::short_chunk(archive, 0x8002_7fff, 0),
         ]
         .concat(),
@@ -638,7 +649,15 @@ fn typed_view_handoff_orders_native_owners_without_reordering_camera_values() {
     let list = |typecode, view: Vec<u8>| {
         let mut payload = 1_i32.to_le_bytes().to_vec();
         payload.extend(view);
-        bytes::crc_chunk_excluding(archive, typecode, &payload, &[4..payload.len()])
+        bytes::crc_chunk_excluding(
+            archive,
+            typecode,
+            &payload,
+            &[std::ops::Range {
+                start: 4,
+                end: payload.len(),
+            }],
+        )
     };
     let source = bytes::minimal_document(
         "80",

@@ -504,13 +504,13 @@ fn identical_dimension_fields_can_have_different_patch_positions() {
     let record = &original[0];
     let basic = patch_slots::field_offset(
         &payload,
-        pointer(&payload, &record, "offset").expect("source offset"),
+        pointer(&payload, record, "offset").expect("source offset"),
         "isBasic",
     )
     .unwrap();
     let inspection = patch_slots::field_offset(
         &payload,
-        pointer(&payload, &record, "offset").expect("source offset"),
+        pointer(&payload, record, "offset").expect("source offset"),
         "isInspection",
     )
     .unwrap();
@@ -537,7 +537,7 @@ fn identical_dimension_fields_can_have_different_patch_positions() {
         basic,
         patch_slots::field_offset(
             &reordered,
-            pointer(&reordered, &record, "offset").expect("source offset"),
+            pointer(&reordered, record, "offset").expect("source offset"),
             "isBasic"
         )
         .unwrap()
@@ -546,7 +546,7 @@ fn identical_dimension_fields_can_have_different_patch_positions() {
         inspection,
         patch_slots::field_offset(
             &reordered,
-            pointer(&reordered, &record, "offset").expect("source offset"),
+            pointer(&reordered, record, "offset").expect("source offset"),
             "isInspection"
         )
         .unwrap()
@@ -591,7 +591,7 @@ fn key_like_string_inside_value_does_not_steal_field_spans() {
     assert_eq!(record.display_text(), Some("cadText"));
     assert_eq!(record.cad_text, "D1@Sketch1");
     let text_off = usize::try_from(
-        pointer(&payload, &record, "display_text_offset").expect("display text offset"),
+        pointer(&payload, record, "display_text_offset").expect("display text offset"),
     )
     .unwrap();
     assert_eq!(&payload[text_off..text_off + 7], b"cadText");
@@ -691,26 +691,26 @@ fn patch_payload_offsets_round_trip_through_reparse() {
         panic!("one record");
     };
     let mut patched = payload.clone();
-    let start = usize::try_from(pointer(&payload, &record, "value_offset").expect("source offset"))
-        .unwrap();
+    let start =
+        usize::try_from(pointer(&payload, record, "value_offset").expect("source offset")).unwrap();
     let edited = 0.05_f64;
     patched[start..start + 8].copy_from_slice(&edited.to_be_bytes());
     patched[usize::try_from(
-        pointer(&payload, &record, "precision_offset").expect("source offset"),
+        pointer(&payload, record, "precision_offset").expect("source offset"),
     )
     .unwrap()] = 4;
-    patched[usize::try_from(pointer(&payload, &record, "basic_offset").expect("source offset"))
+    patched[usize::try_from(pointer(&payload, record, "basic_offset").expect("source offset"))
         .unwrap()] = 0xc2;
     patched[usize::try_from(
-        pointer(&payload, &record, "inspection_offset").expect("source offset"),
+        pointer(&payload, record, "inspection_offset").expect("source offset"),
     )
     .unwrap()] = 0xc3;
     patched[usize::try_from(
-        pointer(&payload, &record, "reference_only_offset").expect("source offset"),
+        pointer(&payload, record, "reference_only_offset").expect("source offset"),
     )
     .unwrap()] = 0xc2;
     let text_off =
-        usize::try_from(pointer(&payload, &record, "display_text_offset").expect("display text"))
+        usize::try_from(pointer(&payload, record, "display_text_offset").expect("display text"))
             .unwrap();
     patched[text_off..text_off + 9].copy_from_slice(b"50.000 mm");
     let mut again_losses = Vec::new();
@@ -726,12 +726,12 @@ fn patch_payload_offsets_round_trip_through_reparse() {
     assert!(!edited_record.reference_only);
     assert_eq!(edited_record.display_text(), Some("50.000 mm"));
     assert_eq!(
-        pointer(&patched, &edited_record, "value_offset"),
-        pointer(&payload, &record, "value_offset")
+        pointer(&patched, edited_record, "value_offset"),
+        pointer(&payload, record, "value_offset")
     );
     assert_eq!(
-        pointer(&patched, &edited_record, "precision_offset"),
-        pointer(&payload, &record, "precision_offset")
+        pointer(&patched, edited_record, "precision_offset"),
+        pointer(&payload, record, "precision_offset")
     );
 }
 
@@ -1607,6 +1607,7 @@ fn assert_untyped_candidate_maps(
 
 #[test]
 fn duplicate_member_identity_replays_but_refuses_semantic_edit() {
+    use cadmpeg_ir::codec::write::{target::TargetRequest, EncodeInput, Encoder};
     let mut source = sldprt_with_body(&triangle_body());
     source.extend(make_block(
         0x0021_0042,
@@ -1657,7 +1658,6 @@ fn duplicate_member_identity_replays_but_refuses_semantic_edit() {
         ));
     }
     // A declined patch selects synthesis (#237 item 1).
-    use cadmpeg_ir::codec::write::{target::TargetRequest, EncodeInput, Encoder};
     let plan = SldprtCodec
         .plan(
             EncodeInput::new(decoded.ir(), Some(decoded.source_fidelity())),
