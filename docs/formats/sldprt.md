@@ -2826,6 +2826,8 @@ For a blend record, `spine` names the center/spine curve that selects the blend 
 
 The side a direct support's offset and `side` value select is stated against that carrier's ORIENTED normal (§7.1), not the neutral surface's natural normal: a `0x2d` compact support carrier reverses the stated side once more, exactly as it reverses a face's sense. A `0x2b` carrier under a `0x2d` bridge keeps the stated side, so the carrier's marker decides. For a support-pair reference, the stated side is the PAIR's, and no field read here maps it onto the chosen member: a pair member chosen from the spine takes its side from the spine as well, on whichever side of the member the spine lies.
 
+The record stores no surface. The blend surface is the envelope of the ball along the spine: at each spine station, the circular arc of the ball radius about the centre between the two contact points, the closest points of the two supports to the centre. Its natural normal points away from the ball centre, and a face's sense is stated against that normal. A spine that is a chart (§7.3) of the centre locus lies near the locus, not on it. The exact centre at a chart point is the point of the chart's normal plane at the ball radius from both supports. Where the two contacts meet, the section is one point.
+
 A variable-radius blend result uses a `00 7c` B-spline surface-use wrapper and the solved NURBS carrier defined in §7.2. The B-rep stores the result surface, not a second procedural blend record or its radius law. The feature-history record carries the variable-radius design intent.
 
 ### 7.5 Offset surfaces

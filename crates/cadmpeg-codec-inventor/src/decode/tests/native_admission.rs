@@ -844,7 +844,7 @@ fn decode_ufrx(edit: impl FnOnce(&mut UfrxDocument<'_>)) -> Decoded {
         caption: "part".into(),
         representation: Some(UfrxRepresentationState {
             prefix: 0,
-            design_views: None,
+            design_views: Some(Vec::new()),
             secondary_active_lod_state: [0; 2],
             active_design_view: "Primary".into(),
             active_design_view_state: [0; 2],

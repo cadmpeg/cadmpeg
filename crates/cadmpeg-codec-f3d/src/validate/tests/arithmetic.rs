@@ -267,6 +267,13 @@ fn companion_accepts_representable_prefix() {
 }
 
 fn annotation_findings(payload_length: u64) -> Vec<cadmpeg_ir::report::check::Finding> {
+    annotation_interval_findings(payload_length, false)
+}
+
+fn annotation_interval_findings(
+    payload_length: u64,
+    prefix: bool,
+) -> Vec<cadmpeg_ir::report::check::Finding> {
     crate::test_support::with_decode_context(|decode| {
         use crate::records::entity_header::{
             DesignEntityHeader, DesignEntityRegistration, DESIGN_MODULE_SKETCH,
@@ -276,21 +283,22 @@ fn annotation_findings(payload_length: u64) -> Vec<cadmpeg_ir::report::check::Fi
             DesignParameter, DesignParameterCompanion, DesignParameterDraft, DesignParameterOwner,
             DesignParameterOwnerWire, DesignParameterSource,
         };
+        let parameter_at = if prefix { 600 } else { 20 };
         let parameter = DesignParameter::try_from(DesignParameterDraft {
             id: "f3d:Design/BulkStream.dat:parameter#7".into(),
-            byte_offset: 20,
+            byte_offset: parameter_at,
             class_tag: "305".to_owned().try_into().unwrap(),
             record_index: 7,
             source_ordinal: 0,
             source: DesignParameterSource::new("Dimension".into(), Some(6), None).unwrap(),
             expression: "1".into(),
-            expression_offset: 32,
-            source_kind_offset: 52,
+            expression_offset: parameter_at + 12,
+            source_kind_offset: parameter_at + 32,
             unit: None,
             name: "Dimension".into(),
-            name_offset: 82,
+            name_offset: parameter_at + 62,
             evaluated_value: 1.0,
-            evaluated_value_offset: 92,
+            evaluated_value_offset: parameter_at + 72,
         })
         .unwrap();
         let owner = DesignParameterOwner::try_from(DesignParameterOwnerWire {
@@ -341,7 +349,7 @@ fn annotation_findings(payload_length: u64) -> Vec<cadmpeg_ir::report::check::Fi
         let frame = crate::records::dimensions::DesignDimensionAnnotationFrame::try_new(
             crate::records::dimensions::DesignDimensionAnnotationFrameDraft {
                 id: "f3d:Design/BulkStream.dat:annotation#9".into(),
-                companion_record_index: Some(8),
+                companion_record_index: if prefix { None } else { Some(8) },
                 governing_companion_record_index: 8,
                 byte_offset: 100,
                 class_tag: "256".to_owned().try_into().unwrap(),
@@ -381,6 +389,15 @@ fn annotation_findings(payload_length: u64) -> Vec<cadmpeg_ir::report::check::Fi
         )
         .unwrap();
         native.design_dimension_annotation_frames.push(frame);
+        if prefix {
+            native.design_parameter_scopes.push(
+                crate::records::feature::scope::DesignParameterScope::empty(
+                    "f3d:Design/BulkStream.dat:scope#4",
+                    crate::records::feature::scope::DesignFeatureKind::Sketch,
+                    4,
+                ),
+            );
+        }
         let mut ctx = super::super::Ctx::new(&ir, &native, decode);
         let stream = super::super::design_stream(&native.design_dimension_annotation_frames[0].id);
         ctx.parameters_by_index.insert((stream, 7), &parameter);
@@ -408,4 +425,9 @@ fn annotation_rejects_overflowed_companion_extent() {
 #[test]
 fn annotation_accepts_representable_companion_extent() {
     assert!(annotation_findings(500).is_empty());
+}
+
+#[test]
+fn annotation_prefix_can_follow_an_earlier_parameter_companion() {
+    assert!(annotation_interval_findings(500, true).is_empty());
 }

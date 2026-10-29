@@ -36,6 +36,7 @@ use cadmpeg_ir::Exactness;
 
 use super::attrib;
 use super::blend::BlendSupportRef;
+use super::blend_surface;
 use super::entity;
 use super::evaluation::{
     nurbs_surface_parameter_segment_chord_bound, nurbs_surface_parameter_within_tolerance,
@@ -1142,6 +1143,38 @@ fn edge_parameter_range(
     }
 }
 
+/// The boundary of a face: its vertices (the ends of its edges), and the
+/// vertices with samples along the edges' curves.
+fn blend_boundary(
+    ctx: &DecodeContext<'_>,
+    t: &topology::Tables,
+    loops: &[(u16, Vec<u16>)],
+    carriers: &CarrierIndex,
+    edge_curve_spans: &HashMap<u16, (u16, Option<[f64; 2]>)>,
+    edge_endpoint_positions: &HashMap<u16, [Point3; 2]>,
+) -> Result<(Vec<Point3>, Vec<Point3>), cadmpeg_core::CodecError> {
+    let mut vertices = Vec::new();
+    let mut points = Vec::new();
+    for coedge in loops.iter().flat_map(|(_, ring)| ring) {
+        let Some(edge) = t.coedges().get(coedge).map(|coedge| coedge.refs[6]) else {
+            continue;
+        };
+        if let Some(ends) = edge_endpoint_positions.get(&edge) {
+            vertices.extend(ends);
+            points.extend(ends);
+        }
+        let span = edge_curve_spans.get(&edge).and_then(|(curve_attr, range)| {
+            carriers
+                .curve(*curve_attr)
+                .map(|indexed| (&indexed.carrier().geometry, *range))
+        });
+        if let Some((curve, range)) = span {
+            points.extend(blend_surface::edge_samples(ctx, curve, range)?);
+        }
+    }
+    Ok((vertices, points))
+}
+
 /// An angular range moved by whole turns so it starts within `[0, τ)`, the
 /// canonical phase of a circle or ellipse. A trim may store an arc on any
 /// equivalent branch, such as one ending at the seam from below as
@@ -2022,6 +2055,7 @@ fn decode_graph(
     let mut emitted_curves: HashSet<u16> = HashSet::new();
     let mut edge_set: HashSet<u16> = HashSet::new();
     let mut edge_endpoint_positions = HashMap::<u16, [cadmpeg_ir::math::Point3; 2]>::new();
+    let mut edge_curve_spans = HashMap::<u16, (u16, Option<[f64; 2]>)>::new();
     let mut reversed_edge_orientation = HashSet::<u16>::new();
     let edge_attrs = sorted_graph_attrs(edge_ends.keys().copied());
     for e in edge_attrs {
@@ -2109,6 +2143,7 @@ fn decode_graph(
             })
             .transpose()?
             .flatten();
+        edge_curve_spans.insert(e, (curve_attr, parameter_range.map(|(range, _)| range)));
         // An edge without a resolved range on a compact analytic curve takes its
         // direction from the curve's orientation marker.
         let against_curve = match parameter_range {
@@ -2591,7 +2626,7 @@ fn decode_graph(
                             &source_stream,
                             &mut HashSet::new(),
                         )?
-                        .map(|second| (blend, first, second))
+                        .map(|second| (blend, first, second, [first_attr, second_attr]))
                     } else {
                         None
                     }
@@ -2612,7 +2647,7 @@ fn decode_graph(
                         support,
                         offset,
                     )?;
-                } else if let Some((blend, first, second)) = resolved_blend {
+                } else if let Some((blend, first, second, support_attrs)) = resolved_blend {
                     let spine = if let Some(indexed) = carriers.curve(blend.spine) {
                         let carrier = indexed.carrier();
                         if emitted_curves.insert(blend.spine) {
@@ -2632,6 +2667,43 @@ fn decode_graph(
                         &cadmpeg_ir::identity_namespace!("sldprt", "brep", "blend-construction"),
                         f.bridge_attr,
                     );
+                    let (vertices, boundary) = blend_boundary(
+                        ctx,
+                        t,
+                        &f.loops,
+                        carriers,
+                        &edge_curve_spans,
+                        &edge_endpoint_positions,
+                    )?;
+                    // A support face later in the walk has not emitted its
+                    // surface yet; its carrier states the same geometry.
+                    let support_geometry = |attr: u16| {
+                        carriers
+                            .surface(attr)
+                            .and_then(|carrier| carrier.geometry.solved())
+                    };
+                    let cache = match (
+                        carriers.curve(blend.spine),
+                        support_geometry(support_attrs[0]),
+                        support_geometry(support_attrs[1]),
+                    ) {
+                        (Some(spine_carrier), Some(first_geometry), Some(second_geometry)) => {
+                            blend_surface::solve(
+                                ctx,
+                                &blend_surface::BlendInputs {
+                                    spine: &spine_carrier.carrier().geometry,
+                                    supports: [first_geometry, second_geometry],
+                                    radius: blend.signed_radius.abs(),
+                                    boundary: &boundary,
+                                    vertices: &vertices,
+                                    tolerance: cadmpeg_ir::units::Tolerances::default()
+                                        .linear
+                                        .get(),
+                                },
+                            )?
+                        }
+                        _ => None,
+                    };
                     let admitted_payload = BlendRadiusLaw::constant(blend.signed_radius)
                         .and_then(|radius| {
                             cadmpeg_ir::geometry::surface_payloads::BlendSurfacePayload::try_new(
@@ -2652,15 +2724,25 @@ fn decode_graph(
                             )
                         })
                         .map_err(cadmpeg_core::CodecError::malformed)?;
+                    let mut definition = ProceduralSurfaceDefinition::Blend(admitted_payload);
+                    if let Some(cache) = &cache {
+                        let fit_tolerance =
+                            cadmpeg_ir::geometry::FitTolerance::try_new(cache.fit_tolerance)
+                                .map_err(cadmpeg_core::CodecError::malformed)?;
+                        definition
+                            .set_cache_fit_tolerance(Some(fit_tolerance))
+                            .map_err(cadmpeg_core::CodecError::malformed)?;
+                    }
                     admit_brep_entity(ctx)?;
                     out.procedural_surfaces.push(ProceduralSurface::new(
                         procedural_id.clone(),
-                        ProceduralSurfaceDefinition::Blend(admitted_payload),
+                        definition,
                         None,
                     ));
+                    let derived_cache = cache.is_some();
                     let geometry = SurfaceGeometry::Procedural {
                         construction: procedural_id,
-                        cache: None,
+                        cache: cache.map(|cache| SolvedSurfaceGeometry::Nurbs(cache.surface)),
                     };
                     annotations.note(
                         id_surf(f.bridge_attr).as_str(),
@@ -2668,6 +2750,13 @@ fn decode_graph(
                         u64_from_index(blend.offset),
                         Some("00_38"),
                     );
+                    if derived_cache {
+                        annotations.field_exactness(
+                            id_surf(f.bridge_attr).as_str(),
+                            "geometry.cache",
+                            Exactness::Derived,
+                        )?;
+                    }
                     admit_brep_entity(ctx)?;
                     out.surfaces.push(Surface {
                         id: id_surf(f.bridge_attr),

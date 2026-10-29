@@ -83,6 +83,8 @@ pub(crate) enum InventorLossCode {
     FeatureSheetMetalBendControlsNative,
     /// Corner topology transitions and construction operands remain native.
     FeatureSheetMetalCornerEffectNative,
+    /// Sheet-metal corner rounds retain unresolved fillet operands.
+    FeatureSheetMetalCornerRoundOperandsNative,
     /// Projected unchanged corners retain construction controls natively.
     FeatureSheetMetalCornerControlsRetained,
     /// Projected attached plates retain construction controls in native records.
@@ -113,6 +115,8 @@ pub(crate) enum InventorLossCode {
     FeatureLoftOperandsNative,
     /// Generated result operands do not close the solid-loft construction.
     FeatureLoftResultOperandsNative,
+    /// Surface-loft section selections have no complete neutral construction.
+    FeatureSurfaceLoftSectionsNative,
     /// Inventor operations retain unresolved suppression and dependency state.
     FeatureStateUnresolved,
     /// Derived components retain external source construction only natively.
@@ -208,6 +212,7 @@ impl InventorLossCode {
         Self::FeatureSheetMetalAttachmentControlsNative,
         Self::FeatureSheetMetalBendControlsNative,
         Self::FeatureSheetMetalCornerEffectNative,
+        Self::FeatureSheetMetalCornerRoundOperandsNative,
         Self::FeatureSheetMetalCornerControlsRetained,
         Self::FeatureSheetMetalAttachmentControlsRetained,
         Self::FeatureSheetMetalBendControlsRetained,
@@ -223,6 +228,7 @@ impl InventorLossCode {
         Self::FeatureLoftSectionScalarsNative,
         Self::FeatureLoftOperandsNative,
         Self::FeatureLoftResultOperandsNative,
+        Self::FeatureSurfaceLoftSectionsNative,
         Self::FeatureStateUnresolved,
         Self::FeatureDerivedSourceNative,
         Self::FeatureDerivedTaggingNative,
@@ -292,6 +298,9 @@ impl InventorLossCode {
             }
             Self::FeatureSheetMetalBendControlsNative => "feature.sheet-metal-bend-controls-native",
             Self::FeatureSheetMetalCornerEffectNative => "feature.sheet-metal-corner-effect-native",
+            Self::FeatureSheetMetalCornerRoundOperandsNative => {
+                "feature.sheet-metal-corner-round-operands-native"
+            }
             Self::FeatureSheetMetalCornerControlsRetained => {
                 "feature.sheet-metal-corner-controls-retained"
             }
@@ -313,6 +322,7 @@ impl InventorLossCode {
             Self::FeatureLoftSectionScalarsNative => "feature.loft-section-scalars-native",
             Self::FeatureLoftOperandsNative => "feature.loft-operands-native",
             Self::FeatureLoftResultOperandsNative => "feature.loft-result-operands-native",
+            Self::FeatureSurfaceLoftSectionsNative => "feature.surface-loft-sections-native",
             Self::FeatureStateUnresolved => "feature.state-unresolved",
             Self::FeatureDerivedSourceNative => "feature.derived-source-native",
             Self::FeatureDerivedTaggingNative => "feature.derived-tagging-native",
@@ -392,6 +402,7 @@ impl InventorLossCode {
             | Self::FeatureSheetMetalAttachmentControlsNative
             | Self::FeatureSheetMetalBendControlsNative
             | Self::FeatureSheetMetalCornerEffectNative
+            | Self::FeatureSheetMetalCornerRoundOperandsNative
             | Self::FeatureSheetMetalCornerControlsRetained
             | Self::FeatureSheetMetalAttachmentControlsRetained
             | Self::FeatureSheetMetalBendControlsRetained
@@ -407,6 +418,7 @@ impl InventorLossCode {
             | Self::FeatureLoftSectionScalarsNative
             | Self::FeatureLoftOperandsNative
             | Self::FeatureLoftResultOperandsNative
+            | Self::FeatureSurfaceLoftSectionsNative
             | Self::FeatureProfileBodyUndecoded
             | Self::SketchConstructionUnresolved
             | Self::SketchPairedAssociationUnprojected
@@ -499,6 +511,7 @@ mod tests {
                 "feature.sheet-metal-attachment-controls-native",
                 "feature.sheet-metal-bend-controls-native",
                 "feature.sheet-metal-corner-effect-native",
+                "feature.sheet-metal-corner-round-operands-native",
                 "feature.sheet-metal-corner-controls-retained",
                 "feature.sheet-metal-attachment-controls-retained",
                 "feature.sheet-metal-bend-controls-retained",
@@ -514,6 +527,7 @@ mod tests {
                 "feature.loft-section-scalars-native",
                 "feature.loft-operands-native",
                 "feature.loft-result-operands-native",
+                "feature.surface-loft-sections-native",
                 "feature.state-unresolved",
                 "feature.derived-source-native",
                 "feature.derived-tagging-native",

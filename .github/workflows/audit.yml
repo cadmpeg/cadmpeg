@@ -24,3 +24,24 @@ jobs:
 
       - name: Audit dependencies
         run: cargo audit
+
+  schedule-alert:
+    needs: [audit]
+    if: ${{ always() && github.event_name == 'schedule' }}
+    name: report scheduled result
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+      issues: write
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7.0.1
+        with:
+          sparse-checkout: .github/actions
+
+      - name: Open, update, or close the failure issue
+        uses: ./.github/actions/schedule-alert
+        with:
+          result: ${{ contains(needs.*.result, 'failure') && 'failure' || contains(needs.*.result, 'cancelled') && 'cancelled' || 'success' }}
+          assignee: ${{ vars.SCHEDULE_ALERT_ASSIGNEE }}

@@ -198,6 +198,8 @@ pub(crate) enum F3dLossCode {
     FeatureFaceSelectionActiveSubstituted,
     /// Feature body selections retain native identities; no unique body.
     FeatureBodySelectionNative,
+    /// Extrude scope retains an unassigned extent payload.
+    FeatureExtrudeExtentNative,
     /// Feature face operands stay unresolved inside historical selections.
     FeatureFaceOperandUnresolved,
     /// Edge-treatment selections retain native recipes; no historical edge.
@@ -438,6 +440,7 @@ impl F3dLossCode {
         Self::FeatureFaceSelectionNative,
         Self::FeatureFaceSelectionActiveSubstituted,
         Self::FeatureBodySelectionNative,
+        Self::FeatureExtrudeExtentNative,
         Self::FeatureFaceOperandUnresolved,
         Self::FeatureEdgeSelectionNative,
         Self::FeatureEdgeOperandUnresolved,
@@ -603,6 +606,7 @@ impl F3dLossCode {
                 "feature.face-selection-active-substituted"
             }
             Self::FeatureBodySelectionNative => "feature.body-selection-native",
+            Self::FeatureExtrudeExtentNative => "feature.extrude-extent-native",
             Self::FeatureFaceOperandUnresolved => "feature.face-operand-unresolved",
             Self::FeatureEdgeSelectionNative => "feature.edge-selection-native",
             Self::FeatureEdgeOperandUnresolved => "feature.edge-operand-unresolved",
@@ -792,6 +796,7 @@ impl F3dLossCode {
             | Self::FeatureFaceSelectionNative
             | Self::FeatureFaceSelectionActiveSubstituted
             | Self::FeatureBodySelectionNative
+            | Self::FeatureExtrudeExtentNative
             | Self::FeatureFaceOperandUnresolved
             | Self::FeatureEdgeSelectionNative
             | Self::FeatureEdgeOperandUnresolved
@@ -922,6 +927,7 @@ impl F3dLossCode {
             | Self::FeatureFaceSelectionNative
             | Self::FeatureFaceSelectionActiveSubstituted
             | Self::FeatureBodySelectionNative
+            | Self::FeatureExtrudeExtentNative
             | Self::FeatureFaceOperandUnresolved
             | Self::FeatureEdgeSelectionNative
             | Self::FeatureEdgeOperandUnresolved
@@ -1127,6 +1133,7 @@ mod tests {
                 "feature.face-selection-native",
                 "feature.face-selection-active-substituted",
                 "feature.body-selection-native",
+                "feature.extrude-extent-native",
                 "feature.face-operand-unresolved",
                 "feature.edge-selection-native",
                 "feature.edge-operand-unresolved",

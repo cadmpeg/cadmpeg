@@ -4,8 +4,11 @@ on:
   pull_request:
     branches: [main]
     types: [opened, synchronize, reopened, ready_for_review]
+  # Pull requests skip Rust, whose analysis takes over an hour. The schedule
+  # and a manual dispatch analyze every language.
   schedule:
-    - cron: "37 4 * * 1"
+    - cron: "37 4 * * *"
+  workflow_dispatch:
 
 permissions:
   contents: read
@@ -26,7 +29,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        language: [actions, c-cpp, python, rust]
+        language: ${{ fromJSON(github.event_name == 'pull_request' && '["actions","c-cpp","python"]' || '["actions","c-cpp","python","rust"]') }}
     steps:
       - name: Checkout
         uses: actions/checkout@v7.0.1
@@ -42,3 +45,24 @@ jobs:
         uses: github/codeql-action/analyze@v4.39.1
         with:
           category: /language:${{ matrix.language }}
+
+  schedule-alert:
+    needs: [analyze]
+    if: ${{ always() && github.event_name == 'schedule' }}
+    name: report scheduled result
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+      issues: write
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7.0.1
+        with:
+          sparse-checkout: .github/actions
+
+      - name: Open, update, or close the failure issue
+        uses: ./.github/actions/schedule-alert
+        with:
+          result: ${{ contains(needs.*.result, 'failure') && 'failure' || contains(needs.*.result, 'cancelled') && 'cancelled' || 'success' }}
+          assignee: ${{ vars.SCHEDULE_ALERT_ASSIGNEE }}
