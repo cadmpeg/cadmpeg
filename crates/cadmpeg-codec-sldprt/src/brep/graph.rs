@@ -2178,6 +2178,12 @@ fn decode_graph(
             u64_from_index(off),
             Some("00_10"),
         );
+        let tolerance = match carriers.curve(curve_attr) {
+            Some(IndexedCurve::Derived(intersection)) => {
+                cadmpeg_ir::scalar::PositiveReal::new(intersection.support_data.fit_tolerance_mm)
+            }
+            _ => None,
+        };
         admit_brep_entity(ctx)?;
         out.edges.push(Edge {
             id: id_edge(e),
@@ -2188,7 +2194,7 @@ fn decode_graph(
             .map_err(cadmpeg_core::CodecError::malformed)?,
             start: start_id,
             end: end_id,
-            tolerance: None,
+            tolerance,
         });
         edge_set.insert(e);
     }

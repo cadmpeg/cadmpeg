@@ -264,9 +264,11 @@ fn writer_reports_unrepresented_topology_metadata() {
     assert!(report.losses.iter().any(|loss| {
         loss.code == StepLossCode::TopologyMetadataNotRepresented.kind()
             && loss.message.contains("topology metadata")
-            && loss.message.contains("face tolerance=1")
-            && loss.message.contains("edge tolerance=1")
-            && loss.message.contains("vertex tolerance=1")
+            && loss.message.contains("face tolerance=1 (largest 0.01 mm)")
+            && loss.message.contains("edge tolerance=1 (largest 0.02 mm)")
+            && loss
+                .message
+                .contains("vertex tolerance=1 (largest 0.03 mm)")
     }));
 }
 
