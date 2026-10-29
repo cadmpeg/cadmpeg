@@ -1,6 +1,6 @@
-# CADIR wire version 8
+# CADIR wire version 10
 
-CADIR documents, decode sidecars, and command reports now use wire version 8. Readers accept exactly 8 and refuse every earlier artifact. Releases 0.6.0–0.6.1 and 0.6.2 emitted different version-6 shapes. The version-6 and released version-7 documents lack content scope. There is no reader migration.
+CADIR documents, decode sidecars, and command reports now use wire version 10. Readers accept exactly 10 and refuse every earlier artifact. Releases 0.6.0–0.6.1 and 0.6.2 emitted different version-6 shapes. The version-6 documents and the released version-7, version-8 and version-9 documents lack content scope; from release 0.6.2 they record `decode_depth`. There is no reader migration.
 
 The document field `scope` replaces recorded decode depth. Its independent `model` and `design` booleans declare which neutral classes are held, and participate in the content digest. A populated class cannot be excluded. Decode transfer reports carry the delivered scope and a geometry-transfer boolean. `DecodeDepth` remains the caller's request vocabulary.
 
