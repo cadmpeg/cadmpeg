@@ -3134,8 +3134,11 @@ fn valid_work_plane_construction(
         return crate::design::decode::placement_construction::work_planes::solved_frame(
             scope, placements,
         )
-        .as_ref()
-            == Some(frame);
+        .is_some_and(|solved| {
+            solved.work_plane_transform == frame.work_plane_transform
+                && solved.reference == frame.reference
+                && solved.work_plane_construction == frame.work_plane_construction
+        });
     }
     let Some(construction) = &frame.work_plane_construction else {
         return true;
