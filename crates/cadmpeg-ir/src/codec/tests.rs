@@ -466,24 +466,31 @@ fn depth_losses(result: &DecodeResult) -> Vec<&LossNote> {
 
 #[test]
 fn the_report_derives_scope_from_the_document() {
-    for scope in [
-        crate::ContentScope::container(),
-        crate::ContentScope::geometry(),
-        crate::ContentScope::full(),
-        crate::ContentScope {
-            model: false,
-            design: true,
-        },
+    for (scope, geometry_transferred) in [
+        (crate::ContentScope::container(), false),
+        (crate::ContentScope::geometry(), false),
+        (crate::ContentScope::geometry(), true),
+        (crate::ContentScope::full(), false),
+        (crate::ContentScope::full(), true),
+        (
+            crate::ContentScope {
+                model: false,
+                design: true,
+            },
+            false,
+        ),
     ] {
         let mut ir = CadIr::empty();
         ir.set_scope(scope).unwrap();
         let mut decoded = decoded(ir);
         // Contradictory backend body cannot override document state.
         decoded.body.transfer.scope = crate::ContentScope::full();
+        decoded.body.transfer.geometry_transferred = geometry_transferred;
         let result =
             DecodeResult::new(decoded, FormatId::new("test"), DecodeDepth::Container).unwrap();
         assert_eq!(result.ir().scope, scope);
         assert_eq!(result.report().scope(), scope);
+        assert_eq!(result.report().geometry_transferred(), geometry_transferred);
         assert!(depth_losses(&result).is_empty());
     }
 }
