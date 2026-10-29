@@ -944,7 +944,7 @@ fn retains_native_dependency_cycles_without_neutral_cycle_edges() {
     assert_eq!(features[1].ordinal, 1);
     assert!(features.iter().all(|feature| matches!(
         feature.evaluation.definition(),
-        FeatureDefinition::Operation(FeatureOperation::Native { .. })
+        FeatureDefinition::Operation(FeatureOperation::StoredGeometry {})
     )));
     assert!(features
         .iter()
@@ -962,7 +962,8 @@ fn retains_native_dependency_cycles_without_neutral_cycle_edges() {
             .report()
             .losses
             .iter()
-            .filter(|loss| loss.code.local_code() == "feature.cyclic-history")
+            .filter(|loss| loss.code.local_code() == "feature.cyclic-history"
+                && loss.severity == cadmpeg_ir::report::Severity::Warning)
             .count(),
         2
     );
