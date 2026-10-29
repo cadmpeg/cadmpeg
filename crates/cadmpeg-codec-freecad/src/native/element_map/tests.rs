@@ -258,9 +258,8 @@ fn topology_binding_preserves_empty_indexed_name_slots() {
     }])
     .expect("valid name group");
     let native_before = serde_json::to_value(&nodes).unwrap();
-    // CADIR v8 #213 removes bind_root_topology's native backlink mutation.
-    // Retain its exact placement labels as typed key segments in real current neutral
-    // identities, while preserving the original native name and empty slots.
+    // The placement labels become typed key segments of the neutral identities;
+    // the native name and its empty slots stay unchanged.
     let document = br#"<Document SchemaVersion="4" FileVersion="1"><Objects Count="1"><Object type="Part::Feature" name="Shape" id="1"/></Objects><ObjectData Count="1"><Object name="Shape"><Properties Count="1"><Property name="Shape" type="Part::PropertyPartShape"><Part file="Shape.brp"/></Property></Properties></Object></ObjectData></Document>"#;
     let brep = b"CASCADE Topology V1, (c) Matra-Datavision
 Locations 0
@@ -355,7 +354,7 @@ Ed 0.001 1 1 0 1 1 0 0 1 0 1001000 +4 0 -3 0 *
 
 #[test]
 fn native_mapped_names_reject_the_removed_neutral_backlink_field() {
-    // CADIR v8 #213: a native mapped name cannot retain a second link home.
+    // A native mapped name has no second link home.
     let native = ElementMappedName {
         encoded: ";stable.0".to_owned(),
         resolved: Some("stable".to_owned()),

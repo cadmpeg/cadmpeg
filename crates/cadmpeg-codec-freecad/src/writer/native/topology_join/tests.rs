@@ -186,9 +186,7 @@ fn absent_inverse_bindings_fail_while_structurally_unlinked_native_names_stay_na
     let (emitted, _) = emit(&ctx, &ir, &ir.model.bodies.iter().collect::<Vec<_>>());
     let join = TopologyJoin::new(&ctx, &ir, &emitted).unwrap();
     assert!(!join.map_resolves(&map, "Shape"));
-    // CADIR v8 #213 deletes historical topology_ids. This name has no actual
-    // source selector, independently of its text. Existing native property,
-    // object and shape gates remain outside this inverse check.
+    // This name has no source selector, whatever its text.
     let mut native = serde_json::to_value(&map).unwrap();
     native["maps"][0]["groups"][0]["names"][1] = serde_json::json!([]);
     native["maps"][0]["groups"][1]["names"][1] = serde_json::json!([]);
