@@ -164,16 +164,13 @@ def render(root: Path) -> str:
         '**W3** reports `Written`, `Regenerated`, or `Dropped` for each native arena, with',
         'record overrides where an arena contains different cases. The export report is the',
         'authority for the particular document and output. Foreign or undeclared populated',
-        'arenas are dropped with `export:native.records-omitted` and per-arena counts.', '',
-        '**B** excludes source bytes, raw XML, byte spans, physical offsets, source digests,',
-        'and baseline stamps from every listed arena. Evidence stubs may identify retained',
-        'records by length and SHA-256; their payloads and layout facts belong to source',
-        'fidelity. Diagnostic arenas never decide whether a neutral class is held.', '',
+        'arenas are dropped with `export:native.records-omitted` and per-arena counts.',
+        'Diagnostic arenas never decide whether a neutral class is held.', '',
         'This table states the content and output contract. Inventory agreement alone is',
-        'not proof of field-level B conformance, output preservation, or native application',
-        'acceptance; the wire and writer gates provide that evidence.', '',
-        '| Namespace | Production arenas | Native output | Source bytes and layout |',
-        '| --- | --- | --- | --- |',
+        'not proof of output preservation or native application acceptance; the wire and',
+        'writer gates provide that evidence.', '',
+        '| Namespace | Production arenas | Native output |',
+        '| --- | --- | --- |',
     ]
     counts = []
     for registry in REGISTRIES:
@@ -181,7 +178,7 @@ def render(root: Path) -> str:
         counts.append((registry.namespace, len(names)))
         arenas = ', '.join(f'`{name}`' for name in names)
         output = 'W1 for records without neutral counterparts; W2 for records with neutral counterparts; W3 reports the result.' if registry.writer else 'Decode only; no native encoder is registered.'
-        lines.append(f'| `{registry.namespace}` | {arenas} | {output} | None; retained payloads and layout belong to source fidelity (B). |')
+        lines.append(f'| `{registry.namespace}` | {arenas} | {output} |')
     lines += ['', '## Registry sources', '',
               '| Namespace | Arena count | Authoritative production declaration |',
               '| --- | ---: | --- |']
