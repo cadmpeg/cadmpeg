@@ -753,6 +753,26 @@ impl SldprtNative {
         namespace: &mut cadmpeg_ir::NativeNamespace,
     ) -> Result<(), cadmpeg_ir::NativeConvertError> {
         self.validate_records()?;
+        let history_lanes = self
+            .feature_input_lanes
+            .iter()
+            .filter(|lane| !crate::resolved_features::assembly::is_supplemental_config_lane(lane))
+            .collect::<Vec<_>>();
+        let expected_classes = crate::resolved_features::classes::history_classes(
+            &self.feature_histories,
+            &history_lanes,
+        );
+        if self
+            .feature_histories
+            .iter()
+            .flat_map(|history| history.features.iter())
+            .zip(expected_classes)
+            .any(|(feature, expected)| feature.input_class.as_deref() != expected)
+        {
+            return Err(cadmpeg_ir::NativeConvertError::InvalidOwner(
+                "history feature classes do not match the feature-input index".into(),
+            ));
+        }
         SLDPRT_CATALOGUE.emit_all(ctx, self, namespace)?;
         Ok(())
     }

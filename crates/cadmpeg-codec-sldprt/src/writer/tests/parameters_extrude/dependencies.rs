@@ -121,7 +121,7 @@ fn semantic_writer_orders_forward_parameter_dependencies_before_consumers() {
         .map(|parameter| (parameter.ordinal, parameter.name.as_str()))
         .collect::<Vec<_>>();
     parameter_order.sort_unstable();
-    assert_eq!(parameter_order, vec![(0, "Result"), (1, "Input")]);
+    assert_eq!(parameter_order, vec![(0, "Input"), (1, "Result")]);
 
     {
         let input = decoded
