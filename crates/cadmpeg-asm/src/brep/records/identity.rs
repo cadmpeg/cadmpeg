@@ -85,6 +85,21 @@ impl NativeRecordNamespace {
         Ok(text)
     }
 
+    /// Compare the rendering of an actual typed native identity without allocation.
+    pub(super) fn matches(&self, kind: &str, record_index: u32, value: &str) -> bool {
+        use std::fmt::Write;
+        struct Match<'a>(&'a str);
+        impl std::fmt::Write for Match<'_> {
+            fn write_str(&mut self, text: &str) -> std::fmt::Result {
+                self.0 = self.0.strip_prefix(text).ok_or(std::fmt::Error)?;
+                Ok(())
+            }
+        }
+        let mut remaining = Match(value);
+        write!(&mut remaining, "{}", self.serialized_id(kind, record_index)).is_ok()
+            && remaining.0.is_empty()
+    }
+
     pub(super) fn id(&self, kind: &str, record_index: u32) -> String {
         self.serialized_id(kind, record_index).to_string()
     }
@@ -281,7 +296,7 @@ mod tests {
             "face-sidedness",
             serde_json::json!({
                 "id": "f3d:asm:face-sidedness#1", "record_index": 1,
-                "face": "f3d:brep:entity#1", "native_sense": "forward", "normalized_sense": "forward"
+                "native_sense": "forward", "normalized_sense": "forward"
             }),
         );
     }

@@ -1234,11 +1234,19 @@ pub(super) fn classify_body_kinds(out: &mut AsmBrep, collapsed: &HashSet<EdgeId>
     // A single-sided face without loops covers a whole closed surface (a
     // full sphere or torus), so it bounds a volume by itself. A body bounded
     // only by such faces is a solid; any other face needs its edges closed.
+    let faces = &out.faces;
+    let face_keys = &out.face_native_keys;
     let double_sided = out
         .face_sidedness
         .iter()
         .filter(|sidedness| sidedness.containment.is_some())
-        .map(|sidedness| &sidedness.face)
+        .flat_map(|sidedness| {
+            faces.iter().filter_map(move |face| {
+                sidedness
+                    .owns_native_ref(face.native_ref.as_deref(), face_keys)
+                    .then_some(&face.id)
+            })
+        })
         .collect::<HashSet<_>>();
     let mut body_has_bounded_faces = HashSet::new();
     let mut loop_bodies = HashMap::new();

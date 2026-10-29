@@ -231,9 +231,11 @@ pub(super) fn reconcile(target: &mut CadIr, losses: &mut Vec<LossNote>) -> Resul
     native
         .edge_continuities
         .retain(|record| target.model.edges.iter().any(|edge| edge.id == record.edge));
-    native
-        .face_sidedness
-        .retain(|record| target.model.faces.iter().any(|face| face.id == record.face));
+    native.face_sidedness.retain(|record| {
+        target.model.faces.iter().any(|face| {
+            record.owns_native_ref(face.native_ref.as_deref(), &native.face_native_keys)
+        })
+    });
     native.creation_timestamps = target
         .model
         .attributes
@@ -335,9 +337,11 @@ pub(super) fn prune(target: &mut CadIr) -> Result<(), CodecError> {
     native
         .edge_continuities
         .retain(|record| target.model.edges.iter().any(|edge| edge.id == record.edge));
-    native
-        .face_sidedness
-        .retain(|record| target.model.faces.iter().any(|face| face.id == record.face));
+    native.face_sidedness.retain(|record| {
+        target.model.faces.iter().any(|face| {
+            record.owns_native_ref(face.native_ref.as_deref(), &native.face_native_keys)
+        })
+    });
     native.creation_timestamps = target
         .model
         .attributes

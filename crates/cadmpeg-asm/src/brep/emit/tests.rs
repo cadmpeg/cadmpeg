@@ -1565,7 +1565,19 @@ fn face_native_reference_obeys_its_exact_retained_byte_floor_before_projection()
         ..Reachable::default()
     };
     let needed = cadmpeg_core::decode::u64_from_index("f3d:asm:face-native-key#4".len());
-    for limit in [needed - 1, needed] {
+    let native = super::super::records::FaceNativeKey {
+        source_namespace: super::super::records::identity::NativeRecordNamespace::new(
+            crate::asm_format!("f3d"),
+        ),
+        record_index: 4,
+        asm_face_key: Some(7),
+    };
+    let face_reference = native.id();
+    let sidedness_key_reference = native.id();
+    // #213: the native-native key link has its own retained string home.
+    let required = cadmpeg_core::decode::u64_from_index(face_reference.len())
+        + cadmpeg_core::decode::u64_from_index(sidedness_key_reference.len());
+    for limit in [needed - 1, needed, required - 1, required] {
         let mut policy = DecodePolicy::service();
         policy.limits.max_retained_bytes = limit;
         let arena = DecodeArena::new();
@@ -1581,7 +1593,7 @@ fn face_native_reference_obeys_its_exact_retained_byte_floor_before_projection()
             crate::asm_format!("f3d"),
             super::super::DecodePurpose::Model,
         );
-        if limit == needed {
+        if limit == required {
             result.unwrap();
             assert_eq!(
                 out.faces[0].native_ref.as_deref(),
@@ -1639,9 +1651,11 @@ fn history_face_native_references_keep_values_in_actual_working_storage() {
         };
         let expected = native.id();
         let needed = cadmpeg_core::decode::u64_from_index(expected.len());
+        let sidedness_key_reference = native.id();
+        let required = needed + cadmpeg_core::decode::u64_from_index(sidedness_key_reference.len());
         let mut outputs = Vec::new();
         for purpose in [DecodePurpose::Model, DecodePurpose::History] {
-            for limit in [0, needed] {
+            for limit in [0, needed, required - 1, required] {
                 let arena = DecodeArena::new();
                 let mut policy = DecodePolicy::service();
                 policy.limits.max_retained_bytes = limit;
@@ -1657,7 +1671,7 @@ fn history_face_native_references_keep_values_in_actual_working_storage() {
                     crate::asm_format!("f3d"),
                     purpose,
                 );
-                if purpose == DecodePurpose::Model && limit == 0 {
+                if purpose == DecodePurpose::Model && limit < required {
                     assert!(matches!(result, Err(CodecError::ResourceLimit(_))));
                     assert!(out.faces.is_empty());
                     assert!(out.face_native_keys.is_empty());
@@ -1698,7 +1712,9 @@ fn history_face_native_references_keep_values_in_actual_working_storage() {
             assert!(out.face_native_keys.is_empty());
             assert_eq!(ctx.resource_refusal(), Some(refusal));
         }
-        assert_eq!(outputs.len(), 3);
+        assert_eq!(outputs.len(), 5);
         assert!(outputs.windows(2).all(|pair| pair[0] == pair[1]));
     }
 }
+
+mod face_sidedness;

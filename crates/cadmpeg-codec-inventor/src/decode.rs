@@ -636,8 +636,11 @@ fn decode_container<'a>(
         _ => None,
     };
     let kernel_brep = kernel_brep.unwrap_or_else(AsmBrep::default);
-    let face_keys =
-        cadmpeg_asm::brep::key_maps::face_keys(&kernel_brep.faces, &kernel_brep.face_native_keys);
+    let face_keys = cadmpeg_asm::brep::key_maps::face_keys(
+        &kernel_brep.faces,
+        &kernel_brep.face_native_keys,
+        &kernel_brep.face_sidedness,
+    );
     let (
         _,
         AsmTransferRemainder {

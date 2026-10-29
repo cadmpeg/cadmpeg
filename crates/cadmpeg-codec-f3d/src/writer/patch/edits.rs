@@ -3024,7 +3024,13 @@ pub(super) fn validate_face_sense_edits(
             native
                 .face_sidedness
                 .iter()
-                .map(|metadata| (metadata.face.clone(), metadata.carrier_flipped))
+                .flat_map(|metadata| {
+                    baseline_ir.model.faces.iter().filter_map(move |face| {
+                        metadata
+                            .owns_native_ref(face.native_ref.as_deref(), &native.face_native_keys)
+                            .then_some((face.id.clone(), metadata.carrier_flipped))
+                    })
+                })
                 .collect::<BTreeMap<_, _>>()
         })
         .unwrap_or_default();

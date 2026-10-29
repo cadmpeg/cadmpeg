@@ -1037,7 +1037,33 @@ pub(super) fn validate_source_less_design_links(
         vertices,
         "vertex-ownership"
     );
-    validate_unique_targets!(&native.face_sidedness, face, faces, "face-sidedness");
+    for face in &target.model.faces {
+        if native
+            .face_sidedness
+            .iter()
+            .filter(|record| {
+                record.owns_native_ref(face.native_ref.as_deref(), &native.face_native_keys)
+            })
+            .take(2)
+            .count()
+            > 1
+        {
+            return Err(CodecError::InvalidInput(format!(
+                "multiple F3D face-sidedness records target {}",
+                face.id
+            )));
+        }
+    }
+    for record in &native.face_sidedness {
+        if !target.model.faces.iter().any(|face| {
+            record.owns_native_ref(face.native_ref.as_deref(), &native.face_native_keys)
+        }) {
+            return Err(CodecError::InvalidInput(format!(
+                "F3D face-sidedness metadata {} has no linked face",
+                record.id()
+            )));
+        }
+    }
     validate_unique_targets!(
         &native.tolerant_edge_tails,
         edge,
@@ -1382,5 +1408,50 @@ mod tests {
         assert!(error
             .to_string()
             .contains("requires finite fields and a tolerant vertex"));
+    }
+    #[test]
+    fn sidedness_precondition_preserves_missing_and_ambiguous_owner_refusals() {
+        use cadmpeg_asm::brep::records::{FaceNativeKey, FaceSidedness};
+        use cadmpeg_ir::topology::Sense;
+        let mut target = cadmpeg_ir::examples::unit_cube().unwrap();
+        let key = FaceNativeKey {
+            source_namespace: NativeRecordNamespace::new(crate::ids::ID_FORMAT),
+            record_index: 17,
+            asm_face_key: Some(7),
+        };
+        let side = FaceSidedness {
+            source_namespace: NativeRecordNamespace::new(crate::ids::ID_FORMAT),
+            record_index: 17,
+            face_key: Some(key.id()),
+            native_sense: Sense::Forward,
+            carrier_flipped: false,
+            containment: None,
+        };
+        let mut native = F3dNative {
+            face_native_keys: vec![key.clone()],
+            face_sidedness: vec![side.clone()],
+            ..F3dNative::default()
+        };
+        let attributes = AttributeIndex::new(&target, &native);
+        assert!(
+            validate_source_less_design_links(&target, &native, &attributes)
+                .unwrap_err()
+                .to_string()
+                .contains("has no linked face")
+        );
+        target.model.faces[0].native_ref = Some(key.id());
+        target.model.faces[1].native_ref = Some(key.id());
+        let attributes = AttributeIndex::new(&target, &native);
+        validate_source_less_design_links(&target, &native, &attributes).unwrap();
+        let mut second = side;
+        second.record_index = 18;
+        native.face_sidedness.push(second);
+        let attributes = AttributeIndex::new(&target, &native);
+        assert!(
+            validate_source_less_design_links(&target, &native, &attributes)
+                .unwrap_err()
+                .to_string()
+                .contains("multiple F3D face-sidedness records target")
+        );
     }
 }

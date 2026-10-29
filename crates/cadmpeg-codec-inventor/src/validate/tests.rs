@@ -373,6 +373,7 @@ fn empty_data() -> super::NativeData {
         pm_graphics_style_collections: Vec::new(),
         pm_graphics_primary_color_styles: Vec::new(),
         face_native_keys: Vec::new(),
+        face_sidedness: Vec::new(),
         pm_dc_parameters: Vec::new(),
         pm_dc_expressions: Vec::new(),
         pm_dc_units: Vec::new(),
@@ -640,6 +641,42 @@ fn asm_face_key_validation_resolves_the_typed_neutral_native_reference() {
     super::validate_presentation(&ir, &data, &mut findings);
     assert!(findings.is_empty(), "{findings:?}");
     ir.model.faces[0].native_ref = Some("inventor:asm:face-native-key#18".to_owned());
+    super::validate_presentation(&ir, &data, &mut findings);
+    assert_eq!(findings.len(), 1);
+    assert_eq!(
+        findings[0].check,
+        cadmpeg_ir::report::check::Check::NativeLinks
+    );
+}
+
+#[test]
+fn asm_face_key_validation_follows_the_actual_native_sidedness_reference() {
+    use cadmpeg_asm::brep::records::{
+        identity::NativeRecordNamespace, FaceNativeKey, FaceSidedness,
+    };
+    use cadmpeg_ir::topology::Sense;
+    let mut ir = cadmpeg_ir::examples::unit_cube().unwrap();
+    let key = FaceNativeKey {
+        source_namespace: NativeRecordNamespace::new(cadmpeg_asm::asm_format!("inventor")),
+        record_index: 17,
+        asm_face_key: Some(7),
+    };
+    let side = FaceSidedness {
+        source_namespace: key.source_namespace.clone(),
+        record_index: 17,
+        face_key: Some(key.id()),
+        native_sense: Sense::Forward,
+        carrier_flipped: false,
+        containment: None,
+    };
+    ir.model.faces[0].native_ref = Some(side.id());
+    let mut data = empty_data();
+    data.face_native_keys.push(key);
+    data.face_sidedness.push(side);
+    let mut findings = Vec::new();
+    super::validate_presentation(&ir, &data, &mut findings);
+    assert!(findings.is_empty(), "{findings:?}");
+    data.face_sidedness[0].face_key = Some("inventor:asm:face-native-key#18".into());
     super::validate_presentation(&ir, &data, &mut findings);
     assert_eq!(findings.len(), 1);
     assert_eq!(
