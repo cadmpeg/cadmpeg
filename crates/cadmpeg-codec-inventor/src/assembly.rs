@@ -1022,7 +1022,7 @@ mod tests {
     }
 
     fn inventory_with_record(
-        kind: SegmentKind,
+        kind: &SegmentKind,
         type_id: [u8; 16],
         payload: &[u8],
         policy: DecodePolicy,
@@ -1103,9 +1103,8 @@ mod tests {
                 "admit Inventor occurrence grounding record",
             ),
         ] {
-            let admitted =
-                inventory_with_record(kind.clone(), type_id, &payload, DecodePolicy::service())
-                    .expect("assembly record is admitted");
+            let admitted = inventory_with_record(&kind, type_id, &payload, DecodePolicy::service())
+                .expect("assembly record is admitted");
             assert_eq!(
                 admitted.occurrences
                     + admitted.placements
@@ -1123,7 +1122,7 @@ mod tests {
         let payload = occurrence_fixture(7, &[8]);
         assert_eq!(
             inventory_with_record(
-                SegmentKind::AmDc,
+                &SegmentKind::AmDc,
                 OCCURRENCE_TYPE,
                 &payload,
                 DecodePolicy::service()
@@ -1138,7 +1137,7 @@ mod tests {
     fn assembly_parse_issue_is_recorded() {
         assert_eq!(
             inventory_with_record(
-                SegmentKind::AmDc,
+                &SegmentKind::AmDc,
                 OCCURRENCE_TYPE,
                 &[],
                 DecodePolicy::service()
@@ -1155,14 +1154,14 @@ mod tests {
         let mut policy = DecodePolicy::service();
         policy.limits.max_entities = 0;
         assert!(matches!(
-            inventory_with_record(SegmentKind::AmDc, OCCURRENCE_TYPE, &[], policy),
+            inventory_with_record(&SegmentKind::AmDc, OCCURRENCE_TYPE, &[], policy),
             Err(CodecError::ResourceLimit(limit))
                 if limit.dimension == ResourceDimension::Entities
                     && limit.operation == "admit Inventor assembly issue"
         ));
         assert_eq!(
             inventory_with_record(
-                SegmentKind::AmDc,
+                &SegmentKind::AmDc,
                 OCCURRENCE_TYPE,
                 &[],
                 DecodePolicy::service()

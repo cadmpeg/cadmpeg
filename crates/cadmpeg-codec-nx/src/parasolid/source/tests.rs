@@ -119,8 +119,9 @@ fn a_real_per_member_limit_rolls_back_before_a_smaller_independent_sibling() {
 #[test]
 fn actual_clear_and_expanded_streams_borrow_the_registered_source_bytes() {
     for compressed in [false, true] {
-        let mut payload = primary_point_stream();
-        payload.resize(8192, b'.');
+        let stream = primary_point_stream();
+        let mut payload = vec![b'.'; 8192];
+        payload[..stream.len()].copy_from_slice(&stream);
         let bytes = if compressed {
             prt_with_named_payloads(&[("/Root/UG_PART/UG_PART", zlib_compress(&payload))])
         } else {

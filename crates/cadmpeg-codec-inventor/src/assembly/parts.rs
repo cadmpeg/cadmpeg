@@ -22,7 +22,7 @@ pub(super) fn occurrence<'a>(
 ) -> Result<Option<AssemblyOccurrence>, CodecError> {
     crate::records::source_admission::decode_body(ctx, output, expanded, token, frame, |stage| {
         let mut occurrence = super::parse_occurrence(ctx, frame.payload, version)?;
-        occurrence.segment_token = token.to_owned();
+        token.clone_into(&mut occurrence.segment_token);
         occurrence.record_ordinal = frame.ordinal;
         stage.insert_native(
             ctx,
@@ -42,7 +42,7 @@ pub(super) fn placement<'a>(
 ) -> Result<Option<AssemblyPlacement<'a>>, CodecError> {
     crate::records::source_admission::decode_body(ctx, output, expanded, token, frame, |stage| {
         let mut placement = super::parse_placement(ctx, frame.payload)?;
-        placement.segment_token = token.to_owned();
+        token.clone_into(&mut placement.segment_token);
         placement.record_ordinal = frame.ordinal;
         let native = AssemblyPlacementRecord::try_from(
             AssemblyPlacementRecordWire::from_placement(&placement),
@@ -62,7 +62,7 @@ pub(super) fn grounding<'a>(
 ) -> Result<(), CodecError> {
     crate::records::source_admission::decode_body(ctx, output, expanded, token, frame, |stage| {
         let mut grounding = super::parse_grounding(frame.payload)?;
-        grounding.segment_token = token.to_owned();
+        token.clone_into(&mut grounding.segment_token);
         grounding.record_ordinal = frame.ordinal;
         stage.insert_native(
             ctx,
@@ -82,7 +82,7 @@ pub(super) fn design_view_representation<'a>(
 ) -> Result<(), CodecError> {
     crate::records::source_admission::decode_body(ctx, output, expanded, token, frame, |stage| {
         let mut representation = super::parse_design_view_representation(ctx, frame.payload)?;
-        representation.segment_token = token.to_owned();
+        token.clone_into(&mut representation.segment_token);
         representation.record_ordinal = frame.ordinal;
         stage.insert_native(
             ctx,
@@ -102,7 +102,7 @@ pub(super) fn visibility_off<'a>(
 ) -> Result<(), CodecError> {
     crate::records::source_admission::decode_body(ctx, output, expanded, token, frame, |stage| {
         let mut state = super::parse_visibility_off(frame.payload)?;
-        state.segment_token = token.to_owned();
+        token.clone_into(&mut state.segment_token);
         state.record_ordinal = frame.ordinal;
         stage.insert_native(
             ctx,

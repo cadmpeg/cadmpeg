@@ -13,17 +13,18 @@ use super::super::super::{self as presentation, Cursor};
 
 fn rendering(bytes: &[u8], version: u8) -> Value {
     let arena = DecodeArena::new();
-    let (ctx, root) =
-        DecodeContext::from_root_bytes(bytes, &arena, &DecodePolicy::service()).unwrap();
-    let parsed = presentation::parse_rendering_style(&ctx, root, version).unwrap();
+    let (ctx, root) = DecodeContext::from_root_bytes(bytes, &arena, &DecodePolicy::service())
+        .expect("the record fits the service policy");
+    let parsed = presentation::parse_rendering_style(&ctx, root, version)
+        .expect("the rendering style parses");
     let record = presentation::native::rendering_style(&Located::new(
         parsed,
         RecordTypeId::from_bytes(presentation::RENDERING_STYLE_TYPE),
         cadmpeg_ir::identity_key!("source"),
         0,
     ))
-    .unwrap();
-    serde_json::to_value(record).unwrap()
+    .expect("the rendering style forms a native record");
+    serde_json::to_value(record).expect("the rendering style record serializes")
 }
 
 fn primary(bytes: &[u8]) -> Value {
@@ -31,14 +32,14 @@ fn primary(bytes: &[u8]) -> Value {
         cadmpeg_core::decode::View::over_retained(bytes),
         14,
     )
-    .unwrap();
+    .expect("the primary color style parses");
     serde_json::to_value(presentation::native::primary_color(&Located::new(
         parsed,
         RecordTypeId::from_bytes(presentation::GRAPHICS_PRIMARY_COLOR_STYLE_TYPE),
         cadmpeg_ir::identity_key!("source"),
         0,
     )))
-    .unwrap()
+    .expect("the primary color record serializes")
 }
 
 #[test]
@@ -124,10 +125,13 @@ fn primary_color_digest_and_legacy_padding_do_not_claim_semantic_fields() {
         other["color_header_sha256"],
         original["color_header_sha256"]
     );
-    other.as_object_mut().unwrap().remove("color_header_sha256");
+    other
+        .as_object_mut()
+        .expect("the primary color record is an object")
+        .remove("color_header_sha256");
     original
         .as_object_mut()
-        .unwrap()
+        .expect("the primary color record is an object")
         .remove("color_header_sha256");
     assert_eq!(other, original);
 }
@@ -136,18 +140,27 @@ fn primary_color_digest_and_legacy_padding_do_not_claim_semantic_fields() {
 fn navigation_preserves_truncation_positions_and_zero_validation_without_read_credit() {
     let bytes = [0_u8, 0, 1];
     let arena = DecodeArena::new();
-    let (_ctx, root) =
-        DecodeContext::from_root_bytes(&bytes, &arena, &DecodePolicy::service()).unwrap();
+    let (_ctx, root) = DecodeContext::from_root_bytes(&bytes, &arena, &DecodePolicy::service())
+        .expect("the source fits the service policy");
     {
         let mut cursor = Cursor::new(root);
-        cursor.zeroes(2, "alignment").unwrap();
-        let error = cursor.zeroes(1, "suffix").unwrap_err();
+        cursor
+            .zeroes(2, "alignment")
+            .expect("the alignment bytes are zero");
+        let error = cursor
+            .zeroes(1, "suffix")
+            .expect_err("a nonzero suffix is refused");
         assert!(matches!(error, CodecError::Malformed(message)
             if message == "Inventor presentation suffix is not zero-filled"));
-        let error = cursor.skip(1, "legacy padding").unwrap_err();
+        let error = cursor
+            .skip(1, "legacy padding")
+            .expect_err("padding past the end is refused");
         let mut expected = root;
-        expected.req_take_child(3).unwrap();
-        let expected = crate::reader::take(&mut expected, 1, "legacy padding").unwrap_err();
+        expected
+            .req_take_child(3)
+            .expect("the source holds three bytes");
+        let expected = crate::reader::take(&mut expected, 1, "legacy padding")
+            .expect_err("a take past the end is refused");
         assert_eq!(error.to_string(), expected.to_string());
         assert_eq!(cursor.source.position(), 3);
     }
@@ -158,24 +171,26 @@ fn late_rendering_parse_failure_and_native_budget_refusal_discard_actual_source_
     let mut bytes = super::rendering_style();
     bytes.pop();
     let arena = DecodeArena::new();
-    let (ctx, root) =
-        DecodeContext::from_root_bytes(&bytes, &arena, &DecodePolicy::service()).unwrap();
+    let (ctx, root) = DecodeContext::from_root_bytes(&bytes, &arena, &DecodePolicy::service())
+        .expect("the truncated record fits the service policy");
     assert!(presentation::parse_rendering_style(&ctx, root, 18).is_err());
 
     let bytes = super::rendering_style();
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
     policy.limits.max_entities = 0;
-    let (ctx, root) = DecodeContext::from_root_bytes(&bytes, &arena, &policy).unwrap();
+    let (ctx, root) = DecodeContext::from_root_bytes(&bytes, &arena, &policy)
+        .expect("the record fits the zero entity policy");
     let mut output = PartOutput::new(CodecFormat::Inventor);
-    let parsed = presentation::parse_rendering_style(&ctx, root, 18).unwrap();
+    let parsed =
+        presentation::parse_rendering_style(&ctx, root, 18).expect("the rendering style parses");
     let record = presentation::native::rendering_style(&Located::new(
         parsed,
         RecordTypeId::from_bytes(presentation::RENDERING_STYLE_TYPE),
         cadmpeg_ir::identity_key!("source"),
         0,
     ))
-    .unwrap();
+    .expect("the rendering style forms a native record");
     let result = output.insert_native(&ctx, "pm_app_rendering_styles", record);
     let Err(CodecError::ResourceLimit(expected)) = result else {
         panic!("native construction must retain the real entity refusal")
@@ -194,22 +209,23 @@ fn late_source_body_failure_keeps_exact_bytes_and_an_independent_rendering_peer(
     let mut damaged = peer.clone();
     damaged.pop();
     let bytes = crate::test_support::test_fixtures::presentation_envelope_fixture(
-        SegmentKind::PmApp,
+        &SegmentKind::PmApp,
         &[
             (presentation::RENDERING_STYLE_TYPE, damaged.clone()),
             (presentation::RENDERING_STYLE_TYPE, peer.clone()),
         ],
     );
     let arena = DecodeArena::new();
-    let (ctx, root) =
-        DecodeContext::from_root_bytes(&bytes, &arena, &DecodePolicy::service()).unwrap();
-    let container = InventorContainer::open(&ctx, root).unwrap();
+    let (ctx, root) = DecodeContext::from_root_bytes(&bytes, &arena, &DecodePolicy::service())
+        .expect("the fixture fits the service policy");
+    let container =
+        InventorContainer::open(&ctx, root).expect("the fixture opens as an inventor container");
     let segment = container
         .rse
         .segments
         .iter()
         .find(|segment| segment.kind == SegmentKind::PmApp)
-        .unwrap();
+        .expect("the container holds a pm app segment");
     let SegmentBulkState::Framed(bulk) = &segment.bulk else {
         panic!("actual expanded source")
     };
@@ -226,19 +242,23 @@ fn late_source_body_failure_keeps_exact_bytes_and_an_independent_rendering_peer(
         "inventor:presentation:rendering-style#{}-1",
         segment.pair.token.as_str()
     );
-    let failed = crate::records::source_admission::body(bulk.expanded, &table.records[0]).unwrap();
+    let failed = crate::records::source_admission::body(bulk.expanded, &table.records[0])
+        .expect("the first record frame holds a body");
     let mut output = PartOutput::new(CodecFormat::Inventor);
-    let inventory = presentation::inventory(&ctx, &container.rse, &mut output).unwrap();
+    let inventory = presentation::inventory(&ctx, &container.rse, &mut output)
+        .expect("the presentation inventory decodes");
     assert_eq!(inventory.rendering_styles.len(), 1);
     assert_eq!(inventory.rendering_styles[0].identity.record_ordinal, 1);
     let (_, native, fidelity, losses) = output.into_parts();
-    let ns = native.namespace("inventor").unwrap();
+    let ns = native
+        .namespace("inventor")
+        .expect("the inventor namespace exists");
     let styles = ns
         .arena_as::<PmAppRenderingStyleRecord>("pm_app_rendering_styles")
-        .unwrap();
+        .expect("the rendering styles arena holds rendering style records");
     assert_eq!(styles.len(), 1);
     assert_eq!(styles[0].id, good_id);
-    let wire = serde_json::to_value(&styles[0]).unwrap();
+    let wire = serde_json::to_value(&styles[0]).expect("a rendering style record serializes");
     assert_eq!(wire["name"], "actual style");
     assert_eq!(wire["long_name"], "long name");
     assert!(!ns.arenas().contains_key("unknowns"));

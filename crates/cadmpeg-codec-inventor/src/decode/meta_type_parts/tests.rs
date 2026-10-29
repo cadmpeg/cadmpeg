@@ -15,33 +15,35 @@ fn fixture(id: [u8; 16]) -> Vec<u8> {
 
 fn descriptors(bytes: &[u8]) -> Vec<MetaTypeRecord> {
     let arena = DecodeArena::new();
-    let (ctx, root) =
-        DecodeContext::from_root_bytes(bytes, &arena, &DecodePolicy::service()).unwrap();
-    let container = InventorContainer::open(&ctx, root).unwrap();
+    let (ctx, root) = DecodeContext::from_root_bytes(bytes, &arena, &DecodePolicy::service())
+        .expect("the fixture fits the service policy");
+    let container =
+        InventorContainer::open(&ctx, root).expect("the fixture opens as an inventor container");
     assert_eq!(container.rse.source_meta_type_count, 3);
     let output = container.rse.source_parts;
     let (_, native, _, losses) = output.into_parts();
     assert!(losses.is_empty());
     native
         .namespace("inventor")
-        .unwrap()
+        .expect("the inventor namespace exists")
         .arena_as::<MetaTypeRecord>("meta_types")
-        .unwrap()
+        .expect("the meta types arena holds meta type records")
 }
 
 #[test]
 fn descriptors_keep_exact_source_values_reads_and_section_framing() {
     let bytes = fixture([0x11; 16]);
     let arena = DecodeArena::new();
-    let (ctx, root) =
-        DecodeContext::from_root_bytes(&bytes, &arena, &DecodePolicy::service()).unwrap();
-    let container = InventorContainer::open(&ctx, root).unwrap();
+    let (ctx, root) = DecodeContext::from_root_bytes(&bytes, &arena, &DecodePolicy::service())
+        .expect("the fixture fits the service policy");
+    let container =
+        InventorContainer::open(&ctx, root).expect("the fixture opens as an inventor container");
     let segment = container
         .rse
         .segments
         .iter()
         .find(|segment| segment.pair.token.as_str() == "dc")
-        .unwrap();
+        .expect("the container holds a dc segment");
     assert!(
         matches!(segment.meta, SegmentMetaState::Parsed(_)),
         "the actual metadata fixture must parse"
@@ -52,13 +54,13 @@ fn descriptors_keep_exact_source_values_reads_and_section_framing() {
     assert!(losses.is_empty());
     let records = native
         .namespace("inventor")
-        .unwrap()
+        .expect("the inventor namespace exists")
         .arena_as::<MetaTypeRecord>("meta_types")
-        .unwrap();
+        .expect("the meta types arena holds meta type records");
     let actual = records
         .iter()
         .find(|record| record.token == "dc" && record.index == 0)
-        .unwrap();
+        .expect("the dc descriptor 0 is recorded");
     assert_eq!(
         actual,
         &MetaTypeRecord {
@@ -95,9 +97,10 @@ fn changing_the_actual_type_identifier_changes_only_its_native_descriptor() {
 fn source_construction_does_not_credit_independently_changed_cached_values() {
     let bytes = fixture([0x11; 16]);
     let arena = DecodeArena::new();
-    let (ctx, root) =
-        DecodeContext::from_root_bytes(&bytes, &arena, &DecodePolicy::service()).unwrap();
-    let mut container = InventorContainer::open(&ctx, root).unwrap();
+    let (ctx, root) = DecodeContext::from_root_bytes(&bytes, &arena, &DecodePolicy::service())
+        .expect("the fixture fits the service policy");
+    let mut container =
+        InventorContainer::open(&ctx, root).expect("the fixture opens as an inventor container");
     for segment in &mut container.rse.segments {
         if let SegmentMetaState::Parsed(meta) = &mut segment.meta {
             for descriptor in &mut meta.tables.types {
@@ -111,9 +114,9 @@ fn source_construction_does_not_credit_independently_changed_cached_values() {
     assert!(losses.is_empty());
     let records = native
         .namespace("inventor")
-        .unwrap()
+        .expect("the inventor namespace exists")
         .arena_as::<MetaTypeRecord>("meta_types")
-        .unwrap();
+        .expect("the meta types arena holds meta type records");
     assert_eq!(records, descriptors(&bytes));
 }
 
@@ -123,7 +126,8 @@ fn descriptor_native_insertion_keeps_the_actual_session_entity_limit() {
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
     policy.limits.max_entities = 0;
-    let (ctx, root) = DecodeContext::from_root_bytes(&bytes, &arena, &policy).unwrap();
+    let (ctx, root) = DecodeContext::from_root_bytes(&bytes, &arena, &policy)
+        .expect("the fixture fits the zero entity policy");
     let Err(CodecError::ResourceLimit(expected)) = InventorContainer::open(&ctx, root) else {
         panic!("native insertion must preserve the actual entity limit")
     };
@@ -135,15 +139,16 @@ fn over_limit_type_section_is_given_up_before_guid_dispatch_and_keeps_the_exact_
     let design = vec![([0x11; 16], Vec::new()); 300];
     let bytes = primary_envelope_fixture_with_design(&[], &design);
     let arena = DecodeArena::new();
-    let (ctx, root) =
-        DecodeContext::from_root_bytes(&bytes, &arena, &DecodePolicy::service()).unwrap();
-    let container = InventorContainer::open(&ctx, root).unwrap();
+    let (ctx, root) = DecodeContext::from_root_bytes(&bytes, &arena, &DecodePolicy::service())
+        .expect("the fixture fits the service policy");
+    let container =
+        InventorContainer::open(&ctx, root).expect("the fixture opens as an inventor container");
     let rejected = container
         .rse
         .segments
         .iter()
         .find(|segment| segment.pair.token.as_str() == "dc")
-        .unwrap();
+        .expect("the container holds a dc segment");
     assert!(matches!(rejected.meta, SegmentMetaState::Malformed { .. }));
     let crate::rse::SegmentBulkState::Framed(bulk) = &rejected.bulk else {
         panic!("independent bulk member still frames")
@@ -152,7 +157,8 @@ fn over_limit_type_section_is_given_up_before_guid_dispatch_and_keeps_the_exact_
         bulk.records,
         crate::rse::RecordFrameState::Partial { .. }
     ));
-    let projection = super::super::rse_native_projection::project(&ctx, &container).unwrap();
+    let projection = super::super::rse_native_projection::project(&ctx, &container)
+        .expect("the rse native projection succeeds");
     assert!(projection.identity_issues.is_empty());
     assert!(projection.segment_meta_issues.is_empty());
     assert!(projection.segment_bulk_issues.is_empty());
@@ -177,7 +183,7 @@ fn over_limit_type_section_is_given_up_before_guid_dispatch_and_keeps_the_exact_
     let blocks = peers
         .iter()
         .find(|section| section.number == crate::records::MetaSectionNumber::One)
-        .unwrap();
+        .expect("the dc peers include section one");
     assert_eq!(blocks.discriminator, 300);
     assert_eq!(blocks.payload_len, 1200);
     assert!(!projection
@@ -209,8 +215,12 @@ fn over_limit_type_section_is_given_up_before_guid_dispatch_and_keeps_the_exact_
     assert_eq!(container.rse.source_meta_type_count, 1);
     let output = container.rse.source_parts;
     let (_, native, fidelity, losses) = output.into_parts();
-    let namespace = native.namespace("inventor").unwrap();
-    let records = namespace.arena_as::<MetaTypeRecord>("meta_types").unwrap();
+    let namespace = native
+        .namespace("inventor")
+        .expect("the inventor namespace exists");
+    let records = namespace
+        .arena_as::<MetaTypeRecord>("meta_types")
+        .expect("the meta types arena holds meta type records");
     assert_eq!(records.len(), 1);
     assert_eq!(records[0].id, "inventor:rse:meta-type#seg-0");
     assert_eq!(records[0].token, "seg");
@@ -242,15 +252,16 @@ fn the_exact_maximum_type_table_remains_admitted() {
     let design = vec![([0x11; 16], Vec::new()); 256];
     let bytes = primary_envelope_fixture_with_design(&[], &design);
     let arena = DecodeArena::new();
-    let (ctx, root) =
-        DecodeContext::from_root_bytes(&bytes, &arena, &DecodePolicy::service()).unwrap();
-    let container = InventorContainer::open(&ctx, root).unwrap();
+    let (ctx, root) = DecodeContext::from_root_bytes(&bytes, &arena, &DecodePolicy::service())
+        .expect("the fixture fits the service policy");
+    let container =
+        InventorContainer::open(&ctx, root).expect("the fixture opens as an inventor container");
     let segment = container
         .rse
         .segments
         .iter()
         .find(|segment| segment.pair.token.as_str() == "dc")
-        .unwrap();
+        .expect("the container holds a dc segment");
     assert!(matches!(segment.meta, SegmentMetaState::Parsed(_)));
     let crate::rse::SegmentBulkState::Framed(bulk) = &segment.bulk else {
         panic!("actual bulk member frames")
@@ -266,9 +277,9 @@ fn the_exact_maximum_type_table_remains_admitted() {
     assert!(given_up_records(&fidelity).is_empty());
     let types = native
         .namespace("inventor")
-        .unwrap()
+        .expect("the inventor namespace exists")
         .arena_as::<MetaTypeRecord>("meta_types")
-        .unwrap();
+        .expect("the meta types arena holds meta type records");
     assert_eq!(types.len(), 257);
     assert!(types
         .iter()

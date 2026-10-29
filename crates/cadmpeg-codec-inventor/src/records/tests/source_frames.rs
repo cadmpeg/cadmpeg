@@ -17,12 +17,17 @@ fn invalid_trailing_length_keeps_its_body_extent_and_the_next_exact_peer() {
     let mut source = metadata;
     source.extend(bulk);
     let arena = DecodeArena::new();
-    let (_ctx, root) =
-        DecodeContext::from_root_bytes(&source, &arena, &DecodePolicy::service()).unwrap();
-    let meta_source = root.child(0, split).unwrap();
-    let bulk_source = root.child(split, source.len()).unwrap();
-    let tables = super::super::parse_meta_tables(meta_source).unwrap();
-    let error = super::super::frame_bulk_records(bulk_source, &tables, 18).unwrap_err();
+    let (_ctx, root) = DecodeContext::from_root_bytes(&source, &arena, &DecodePolicy::service())
+        .expect("the source fits the service policy");
+    let meta_source = root
+        .child(0, split)
+        .expect("the metadata lies in the source");
+    let bulk_source = root
+        .child(split, source.len())
+        .expect("the bulk lies in the source");
+    let tables = super::super::parse_meta_tables(meta_source).expect("the metadata tables parse");
+    let error = super::super::frame_bulk_records(bulk_source, &tables, 18)
+        .expect_err("an invalid trailing length is refused");
     assert!(error.to_string().contains("trails with 99"));
     let mut bodies = Vec::new();
     let framing =
@@ -33,7 +38,7 @@ fn invalid_trailing_length_keeps_its_body_extent_and_the_next_exact_peer() {
             bodies.push((start, end, native));
             Ok(())
         })
-        .unwrap();
+        .expect("the bulk sources frame");
     assert_eq!(framing.record_count, 2);
     assert_eq!(framing.stream_trailer.start(), split + 24);
     assert_eq!(framing.stream_trailer.window(), &u32::MAX.to_le_bytes());
@@ -42,13 +47,17 @@ fn invalid_trailing_length_keeps_its_body_extent_and_the_next_exact_peer() {
     assert!(bodies[0]
         .2
         .as_ref()
-        .unwrap_err()
+        .expect_err("the first body keeps its trailing length error")
         .to_string()
         .contains("trails with 99"));
     assert_eq!((bodies[1].0, bodies[1].1), (split + 11, split + 24));
-    let peer = bodies[1].2.as_ref().unwrap();
+    let peer = bodies[1].2.as_ref().expect("the peer body is typed");
     assert_eq!(peer.ordinal, 1);
     assert_eq!(peer.type_id, [0x55; 16]);
     assert_eq!(peer.payload.window(), &[0x42; 5]);
-    assert_eq!(peer.trailing_payload_len().unwrap(), 5);
+    assert_eq!(
+        peer.trailing_payload_len()
+            .expect("the peer trailing length is valid"),
+        5
+    );
 }

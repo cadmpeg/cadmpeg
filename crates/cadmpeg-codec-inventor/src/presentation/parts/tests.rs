@@ -24,7 +24,11 @@ fn default_style() -> Vec<u8> {
 
 fn text(bytes: &mut Vec<u8>, value: &str) {
     let units = value.encode_utf16().collect::<Vec<_>>();
-    bytes.extend(u32::try_from(units.len()).unwrap().to_le_bytes());
+    bytes.extend(
+        u32::try_from(units.len())
+            .expect("the text length fits u32")
+            .to_le_bytes(),
+    );
     for unit in units {
         bytes.extend(unit.to_le_bytes());
     }
@@ -60,15 +64,17 @@ fn all_presentation_grammars_form_native_records_and_actual_source_captures() {
         ),
     ];
     let bytes = crate::test_support::test_fixtures::presentation_envelope_fixture(
-        SegmentKind::PmGraphics,
+        &SegmentKind::PmGraphics,
         &records,
     );
     let arena = DecodeArena::new();
-    let (ctx, root) =
-        DecodeContext::from_root_bytes(&bytes, &arena, &DecodePolicy::service()).unwrap();
-    let container = InventorContainer::open(&ctx, root).unwrap();
+    let (ctx, root) = DecodeContext::from_root_bytes(&bytes, &arena, &DecodePolicy::service())
+        .expect("the fixture fits the service policy");
+    let container =
+        InventorContainer::open(&ctx, root).expect("the fixture opens as an inventor container");
     let mut output = PartOutput::new(CodecFormat::Inventor);
-    let inventory = super::super::inventory(&ctx, &container.rse, &mut output).unwrap();
+    let inventory = super::super::inventory(&ctx, &container.rse, &mut output)
+        .expect("the presentation inventory decodes");
     assert_eq!(
         [
             inventory.default_styles.len(),
@@ -81,41 +87,45 @@ fn all_presentation_grammars_form_native_records_and_actual_source_captures() {
     );
     let (_, native, fidelity, losses) = output.into_parts();
     assert!(losses.is_empty());
-    let ns = native.namespace("inventor").unwrap();
+    let ns = native
+        .namespace("inventor")
+        .expect("the inventor namespace exists");
     let styles = ns
         .arena_as::<PmAppDefaultStyleRecord>("pm_app_default_styles")
-        .unwrap();
+        .expect("the default styles arena holds default style records");
     assert_eq!(styles[0].header_value, 77);
     assert_eq!(styles[0].header_id, 3);
     let rendering = ns
         .arena_as::<PmAppRenderingStyleRecord>("pm_app_rendering_styles")
-        .unwrap();
-    let wire = serde_json::to_value(&rendering[0]).unwrap();
+        .expect("the rendering styles arena holds rendering style records");
+    let wire = serde_json::to_value(&rendering[0]).expect("a rendering style record serializes");
     assert_eq!(wire["name"], "actual style");
     assert_eq!(wire["long_name"], "long name");
     assert_eq!(wire["comment"], "");
     assert_eq!(
         ns.arena_as::<PmGraphicsFaceRecord>("pm_graphics_faces")
-            .unwrap()[0]
+            .expect("the graphics faces arena holds graphics face records")[0]
             .bounds
-            .map(|value| value.get()),
+            .map(cadmpeg_ir::scalar::FiniteReal::get),
         [1.0; 6]
     );
     assert_eq!(
         ns.arena_as::<PmGraphicsStyleCollectionRecord>("pm_graphics_style_collections")
-            .unwrap()
+            .expect("the style collections arena holds style collection records")
             .len(),
         1
     );
     assert_eq!(
         ns.arena_as::<PmGraphicsPrimaryColorStyleRecord>("pm_graphics_primary_color_styles")
-            .unwrap()[0]
+            .expect("the primary color styles arena holds primary color style records")[0]
             .colors[1]
-            .map(|value| value.get()),
+            .map(cadmpeg_ir::scalar::FiniteBinary32::get),
         [0.25; 4]
     );
     assert_eq!(
-        ns.arena_as::<RseRecordRecord>("rse_records").unwrap().len(),
+        ns.arena_as::<RseRecordRecord>("rse_records")
+            .expect("the rse records arena holds rse records")
+            .len(),
         5
     );
     assert!(!ns.arenas().contains_key("presentation_record_issues"));
@@ -129,44 +139,51 @@ fn malformed_presentation_body_keeps_its_framing_and_exact_readable_peer() {
         (super::super::DEFAULT_STYLE_TYPE, default_style()),
     ];
     let bytes = crate::test_support::test_fixtures::presentation_envelope_fixture(
-        SegmentKind::PmApp,
+        &SegmentKind::PmApp,
         &records,
     );
     let arena = DecodeArena::new();
-    let (ctx, root) =
-        DecodeContext::from_root_bytes(&bytes, &arena, &DecodePolicy::service()).unwrap();
-    let container = InventorContainer::open(&ctx, root).unwrap();
+    let (ctx, root) = DecodeContext::from_root_bytes(&bytes, &arena, &DecodePolicy::service())
+        .expect("the fixture fits the service policy");
+    let container =
+        InventorContainer::open(&ctx, root).expect("the fixture opens as an inventor container");
     let segment = container
         .rse
         .segments
         .iter()
         .find(|segment| segment.kind == SegmentKind::PmApp)
-        .unwrap();
+        .expect("the container holds a pm app segment");
     let SegmentBulkState::Framed(bulk) = &segment.bulk else {
         panic!("framed source")
     };
     let RecordFrameState::Framed(table) = &bulk.records else {
         panic!("record frames")
     };
-    let failed = crate::records::source_admission::body(bulk.expanded, &table.records[0]).unwrap();
+    let failed = crate::records::source_admission::body(bulk.expanded, &table.records[0])
+        .expect("the first record frame holds a body");
     let token = segment.pair.token.as_str();
     let bad_id = format!("inventor:presentation:default-style#{token}-0");
     let good_id = format!("inventor:presentation:default-style#{token}-1");
     let mut output = PartOutput::new(CodecFormat::Inventor);
-    let inventory = super::super::inventory(&ctx, &container.rse, &mut output).unwrap();
+    let inventory = super::super::inventory(&ctx, &container.rse, &mut output)
+        .expect("the presentation inventory decodes");
     assert_eq!(inventory.default_styles.len(), 1);
     assert_eq!(inventory.default_styles[0].header_value, 77);
     let (_, native, fidelity, losses) = output.into_parts();
-    let ns = native.namespace("inventor").unwrap();
+    let ns = native
+        .namespace("inventor")
+        .expect("the inventor namespace exists");
     let styles = ns
         .arena_as::<PmAppDefaultStyleRecord>("pm_app_default_styles")
-        .unwrap();
+        .expect("the default styles arena holds default style records");
     assert_eq!(styles.len(), 1);
     assert_eq!(styles[0].id, good_id);
     assert_eq!(styles[0].header_value, 77);
     assert_eq!(styles[0].header_id, 3);
     assert_eq!(
-        ns.arena_as::<RseRecordRecord>("rse_records").unwrap().len(),
+        ns.arena_as::<RseRecordRecord>("rse_records")
+            .expect("the rse records arena holds rse records")
+            .len(),
         2
     );
     assert!(!ns.arenas().contains_key("presentation_record_issues"));
@@ -191,15 +208,17 @@ fn malformed_presentation_body_keeps_its_framing_and_exact_readable_peer() {
 #[test]
 fn held_binding_projection_moves_actual_entities_through_the_final_stage() {
     let inventory = super::super::tests::face_override_inventory(42, true);
-    let face = cadmpeg_ir::ids::FaceId::mint("inventor:test:face#1").unwrap();
+    let face = cadmpeg_ir::ids::FaceId::mint("inventor:test:face#1").expect("the face id is valid");
     let keys = std::collections::HashMap::from([(face, 42)]);
     let arena = DecodeArena::new();
-    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service()).unwrap();
-    let expected = super::super::project_bindings(&ctx, &inventory, &[], &[], &keys, None).unwrap();
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service())
+        .expect("the empty source fits the service policy");
+    let expected = super::super::project_bindings(&ctx, &inventory, &[], &[], &keys, None)
+        .expect("the unstaged binding projection succeeds");
     let mut output = PartOutput::new(CodecFormat::Inventor);
     let staged =
         super::super::project_bindings(&ctx, &inventory, &[], &[], &keys, Some(&mut output))
-            .unwrap();
+            .expect("the staged binding projection succeeds");
     assert!(staged.appearances.is_empty() && staged.bindings.is_empty());
     let (model, _, _, losses) = output.into_parts();
     assert_eq!(model.appearances, expected.appearances);

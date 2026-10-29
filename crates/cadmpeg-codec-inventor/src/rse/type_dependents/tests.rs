@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Actual source callback results govern dispatch after a child allowance fails.
 
+use std::fmt::Write as _;
+
 use crate::decode::part_spec;
 use crate::native::MetaTypeRecord;
 use crate::rse::SegmentMetaState;
@@ -29,51 +31,69 @@ fn successful_source_descriptor_facts_keep_their_indices_and_exact_dependent_pee
         ],
     );
     let arena = DecodeArena::new();
-    let (ctx, root) =
-        DecodeContext::from_root_bytes(&bytes, &arena, &DecodePolicy::service()).unwrap();
-    let snapshot = CompoundSnapshot::new(&ctx, root).unwrap();
+    let (ctx, root) = DecodeContext::from_root_bytes(&bytes, &arena, &DecodePolicy::service())
+        .expect("the fixture fits the service policy");
+    let snapshot = CompoundSnapshot::new(&ctx, root).expect("the fixture is a compound file");
     let metadata_source = snapshot
-        .open(&ctx, snapshot.stream("RSeStorage/Mdc").unwrap())
-        .unwrap();
+        .open(
+            &ctx,
+            snapshot
+                .stream("RSeStorage/Mdc")
+                .expect("the fixture holds the metadata stream"),
+        )
+        .expect("the metadata stream opens");
     let bulk_source = snapshot
-        .open(&ctx, snapshot.stream("RSeStorage/Bdc").unwrap())
-        .unwrap();
+        .open(
+            &ctx,
+            snapshot
+                .stream("RSeStorage/Bdc")
+                .expect("the fixture holds the bulk stream"),
+        )
+        .expect("the bulk stream opens");
     let SegmentMetaState::Parsed(mut meta) =
-        super::super::parse_meta_stream(&ctx, metadata_source).unwrap()
+        super::super::parse_meta_stream(&ctx, metadata_source).expect("the metadata stream parses")
     else {
         panic!("actual metadata frame")
     };
-    let bulk = super::super::parse_bulk_stream(&ctx, bulk_source).unwrap();
+    let bulk = super::super::parse_bulk_stream(&ctx, bulk_source).expect("the bulk stream parses");
     let registry_source = snapshot
-        .open(&ctx, snapshot.stream("RSeStorage/RSeSegInfo").unwrap())
-        .unwrap();
-    let registry = crate::database::parse_registry(&ctx, registry_source.window()).unwrap();
+        .open(
+            &ctx,
+            snapshot
+                .stream("RSeStorage/RSeSegInfo")
+                .expect("the fixture holds the segment registry stream"),
+        )
+        .expect("the segment registry stream opens");
+    let registry = crate::database::parse_registry(&ctx, registry_source.window())
+        .expect("the segment registry parses");
     let version = registry
         .entries
         .iter()
         .find(|entry| entry.segment_id == meta.segment_id)
-        .unwrap()
+        .expect("the registry lists the metadata segment")
         .version
         .major;
     assert_eq!(version, 18);
-    let frame = crate::records::frame_type_table(meta.body).unwrap();
+    let frame = crate::records::frame_type_table(meta.body)
+        .expect("the metadata body holds a type table frame");
     let mut output = PartOutput::new(CodecFormat::Inventor);
     let slots = ctx
         .decode_part(
             &mut output,
             meta.source,
-            part_spec("cfb.stream", meta.source, stream).unwrap(),
+            part_spec("cfb.stream", meta.source, stream).expect("the stream part spec is valid"),
             |member| {
                 ctx.decode_part(
                     member,
                     meta.compressed,
-                    part_spec("inventor.meta_body", meta.compressed, stream).unwrap(),
+                    part_spec("inventor.meta_body", meta.compressed, stream)
+                        .expect("the meta body part spec is valid"),
                     |body| {
                         ctx.decode_part(
                             body,
                             frame.extent,
                             part_spec("inventor.meta_forward_section", frame.extent, expanded)
-                                .unwrap(),
+                                .expect("the forward section part spec is valid"),
                             |table| {
                                 let mut values = ctx.alloc_filled(
                                     frame.count,
@@ -92,11 +112,12 @@ fn successful_source_descriptor_facts_keep_their_indices_and_exact_dependent_pee
                                         table,
                                         extent,
                                         part_spec("inventor.type_descriptor", extent, expanded)
-                                            .unwrap(),
+                                            .expect("the type descriptor part spec is valid"),
                                         |record| {
                                             let value = crate::records::parse_type_descriptor(
                                                 extent,
-                                                u32::try_from(index).unwrap(),
+                                                u32::try_from(index)
+                                                    .expect("the descriptor index fits u32"),
                                             )?;
                                             if value.index == 1 {
                                                 return Err(ctx.refuse_part_limit(
@@ -114,11 +135,15 @@ fn successful_source_descriptor_facts_keep_their_indices_and_exact_dependent_pee
                                                     id: id.clone(),
                                                     token: "dc".into(),
                                                     index: value.index,
-                                                    type_id: value
-                                                        .id
-                                                        .iter()
-                                                        .map(|byte| format!("{byte:02x}"))
-                                                        .collect(),
+                                                    type_id: value.id.iter().fold(
+                                                        String::new(),
+                                                        |mut out, byte| {
+                                                            write!(out, "{byte:02x}").expect(
+                                                                "writing to a String succeeds",
+                                                            );
+                                                            out
+                                                        },
+                                                    ),
                                                     fields: value.fields,
                                                 },
                                             )?;
@@ -133,21 +158,21 @@ fn successful_source_descriptor_facts_keep_their_indices_and_exact_dependent_pee
                 )
             },
         )
-        .unwrap()
+        .expect("the source part decodes")
         .flatten()
         .flatten()
-        .unwrap();
+        .expect("the type table part is formed");
     assert_eq!(slots.len(), 3);
-    assert_eq!(slots[0].unwrap().id, [0x11; 16]);
+    assert_eq!(slots[0].expect("descriptor 0 is formed").id, [0x11; 16]);
     assert!(slots[1].is_none());
-    assert_eq!(slots[2].unwrap().id, [0x33; 16]);
+    assert_eq!(slots[2].expect("descriptor 2 is formed").id, [0x33; 16]);
     meta.source_types = Some(slots);
     for descriptor in &mut meta.tables.types {
         descriptor.id = [0xff; 16];
     }
     let (table, source_count) = super::stage(&ctx, &mut output, &bulk, &meta, "dc", Some(version))
-        .unwrap()
-        .unwrap();
+        .expect("the dependent stage succeeds")
+        .expect("the stage forms a type table");
     assert_eq!(source_count, 3);
     assert_eq!(table.records.len(), 2);
     assert_eq!(table.records[0].ordinal, 0);
@@ -160,9 +185,9 @@ fn successful_source_descriptor_facts_keep_their_indices_and_exact_dependent_pee
     let (_, native, fidelity, losses) = output.into_parts();
     let records = native
         .namespace("inventor")
-        .unwrap()
+        .expect("the inventor namespace exists")
         .arena_as::<MetaTypeRecord>("meta_types")
-        .unwrap();
+        .expect("the meta types arena holds meta type records");
     assert_eq!(records.len(), 2);
     assert_eq!(records[0].index, 0);
     assert_eq!(records[0].type_id, "11111111111111111111111111111111");

@@ -321,7 +321,7 @@ fn section_extent(
     previous_end: usize,
 ) -> Result<View<'_>, CodecError> {
     let bytes = source.window();
-    if offset < previous_end || offset % 4 != 0 {
+    if offset < previous_end || !offset.is_multiple_of(4) {
         return Err(CodecError::Malformed(
             "OLE property-set section ranges overlap or are not aligned".into(),
         ));

@@ -44,9 +44,9 @@ fn actual_cfb_header_native_values_and_reads_share_one_part_stage() {
     assert!(losses.is_empty());
     let records = native
         .namespace("inventor")
-        .unwrap()
+        .expect("the inventor namespace exists")
         .arena_as::<PropertySetRecord>("property_sets")
-        .unwrap();
+        .expect("the property sets arena holds property set records");
     assert_eq!(records.len(), 1);
     assert_eq!(records[0].version, 1);
     assert_eq!(records[0].system_identifier, 0x0002_0006);
@@ -104,9 +104,9 @@ fn held_header_forms_native_content_without_fabricated_source_layout() {
     assert_eq!(
         native
             .namespace("inventor")
-            .unwrap()
+            .expect("the inventor namespace exists")
             .arena_as::<PropertySetRecord>("property_sets")
-            .unwrap()
+            .expect("the property sets arena holds property set records")
             .len(),
         1
     );

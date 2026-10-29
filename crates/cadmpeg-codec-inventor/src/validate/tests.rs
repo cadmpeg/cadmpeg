@@ -586,7 +586,7 @@ fn thread_validation_requires_decoded_numeric_parameters_and_the_thread_class() 
 
 #[test]
 fn asm_face_key_validation_resolves_the_typed_neutral_native_reference() {
-    let mut ir = cadmpeg_ir::examples::unit_cube().unwrap();
+    let mut ir = cadmpeg_ir::examples::unit_cube().expect("the unit cube example builds");
     let key = cadmpeg_asm::brep::records::FaceNativeKey {
         source_namespace: cadmpeg_asm::brep::records::identity::NativeRecordNamespace::new(
             cadmpeg_asm::asm_format!("inventor"),
@@ -623,7 +623,7 @@ fn asm_face_key_validation_follows_the_actual_native_sidedness_reference() {
         identity::NativeRecordNamespace, FaceNativeKey, FaceSidedness,
     };
     use cadmpeg_ir::topology::Sense;
-    let mut ir = cadmpeg_ir::examples::unit_cube().unwrap();
+    let mut ir = cadmpeg_ir::examples::unit_cube().expect("the unit cube example builds");
     let key = FaceNativeKey {
         source_namespace: NativeRecordNamespace::new(cadmpeg_asm::asm_format!("inventor")),
         record_index: 17,
