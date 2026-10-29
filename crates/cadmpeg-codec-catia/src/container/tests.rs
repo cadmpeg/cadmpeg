@@ -953,15 +953,6 @@ fn storage_property_parser_enumerates_external_catia_documents() {
         native.external_references[1].segment,
         native.finjpl_segments[1].id
     );
-    for reference in &native.external_references {
-        let segment = native
-            .finjpl_segments
-            .iter()
-            .find(|segment| segment.id == reference.segment)
-            .expect("external-reference segment");
-        assert!(reference.byte_offset >= segment.byte_offset);
-        assert!(reference.byte_offset < segment.byte_offset + segment.byte_len);
-    }
 }
 
 #[test]

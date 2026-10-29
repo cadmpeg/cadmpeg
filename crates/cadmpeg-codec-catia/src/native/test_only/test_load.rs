@@ -497,9 +497,11 @@ impl CatiaNative {
         finjpl_segments.sort_by_key(|segment| segment.byte_offset);
         let mut external_references: Vec<CatiaExternalReference> =
             namespace.arena_as("external_references")?;
-        external_references.sort_by_key(|reference| reference.byte_offset);
         let expected_external_references = external_reference_views(&finjpl_segments);
-        if external_references != expected_external_references {
+        let mut expected_by_id = expected_external_references.clone();
+        expected_by_id.sort_by(|left, right| left.id.cmp(&right.id));
+        external_references.sort_by(|left, right| left.id.cmp(&right.id));
+        if external_references != expected_by_id {
             return Err(cadmpeg_ir::NativeConvertError::InvalidOwner(
                 "stored CATIA external references disagree with their project-flags segments"
                     .to_string(),
