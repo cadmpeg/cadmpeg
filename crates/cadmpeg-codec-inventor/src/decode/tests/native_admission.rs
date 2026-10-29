@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
-use cadmpeg_core::decode::ResourceDimension;
 use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, View};
+use cadmpeg_core::decode::{LimitScope, ResourceDimension};
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::codec::{Codec, DecodeOptions, Decoded};
 
@@ -162,7 +162,7 @@ fn assembly_occurrence_native_record_refuses_entity_limit_before_creation() {
         cadmpeg_ir::source_fidelity::parts::PartOutput::new(cadmpeg_ir::CodecFormat::Inventor).insert_native(&ctx, "assembly_occurrences", AssemblyOccurrenceRecord::from_parsed_occurrence(&inventory.occurrences[0])),
         Err(CodecError::ResourceLimit(limit))
             if limit.dimension == ResourceDimension::Entities
-                && limit.operation == "admit Inventor native assembly occurrence"
+                && limit.scope == LimitScope::Session
     ));
 }
 
@@ -211,7 +211,7 @@ fn assembly_placement_native_record_refuses_entity_limit_before_creation() {
         stage_placement(&limited, wire),
         Err(CodecError::ResourceLimit(limit))
             if limit.dimension == ResourceDimension::Entities
-                && limit.operation == "admit Inventor native assembly placement"
+                && limit.scope == LimitScope::Session
     ));
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service())
         .expect("build the decode context");
