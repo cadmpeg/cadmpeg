@@ -7,7 +7,7 @@
 //! other code walks it recursively. A scan of the text gives the depth and
 //! bounds the tree's storage. A tree that could need more than the
 //! per-expansion allowance raises a part-scoped resource refusal. The owning
-//! part transaction acknowledges that refusal before processing siblings.
+//! part runner acknowledges that refusal before processing siblings.
 
 use std::collections::HashSet;
 
@@ -749,23 +749,12 @@ mod tests {
         run(&ctx)
     }
 
-    fn with_expand_ceiling<T>(
-        bytes: u64,
-        run: impl FnOnce(&DecodeContext<'_>, crate::decode::View<'_>) -> T,
-    ) -> T {
+    fn with_expand_ceiling<T>(bytes: u64, run: impl FnOnce(&DecodeContext<'_>) -> T) -> T {
+        let arena = DecodeArena::new();
         let mut policy = DecodePolicy::default();
         policy.limits.max_decompressed_bytes_per_expand = bytes;
-        with_part_root(policy, run)
-    }
-
-    fn with_part_root<T>(
-        policy: DecodePolicy,
-        run: impl FnOnce(&DecodeContext<'_>, crate::decode::View<'_>) -> T,
-    ) -> T {
-        let arena = DecodeArena::new();
-        let (ctx, root) =
-            DecodeContext::from_root_bytes(b"", &arena, &policy).expect("valid fixture");
-        run(&ctx, root)
+        let (ctx, _) = DecodeContext::from_root_bytes(b"", &arena, &policy).expect("valid fixture");
+        run(&ctx)
     }
 
     fn is_depth_refusal<T: std::fmt::Debug>(result: &Result<T, CodecError>) -> bool {
@@ -774,15 +763,12 @@ mod tests {
 
     fn is_part_limit(
         ctx: &DecodeContext<'_>,
-        root: crate::decode::View<'_>,
         run: impl FnOnce() -> Result<(), CodecError>,
         dimension: ResourceDimension,
         allowance: u64,
     ) -> bool {
-        let part = ctx
-            .part_transaction(root, run)
-            .expect("part limit is recoverable");
-        matches!(part.result(), Err(CodecError::ResourceLimit(limit)) if limit.scope == crate::decode::LimitScope::Part && limit.dimension == dimension && limit.limit == allowance && limit.reason == crate::decode::ResourceFailure::BudgetExceeded)
+        let part = ctx.run_part(run).expect("part limit is recoverable");
+        matches!(part, Err(CodecError::ResourceLimit(limit)) if limit.scope == crate::decode::LimitScope::Part && limit.dimension == dimension && limit.limit == allowance && limit.reason == crate::decode::ResourceFailure::BudgetExceeded)
     }
 
     #[test]
@@ -982,11 +968,10 @@ mod tests {
     #[test]
     fn xml_tree_past_the_per_expand_allowance_is_unsupported() {
         let document = |elements: usize| format!("<r>{}</r>", "<a/>".repeat(elements));
-        with_expand_ceiling(1 << 20, |ctx, root| {
+        with_expand_ceiling(1 << 20, |ctx| {
             assert!(ctx.parse_xml(&document(1 << 10), "XML").is_ok());
             assert!(is_part_limit(
                 ctx,
-                root,
                 || ctx.parse_xml(&document(1 << 14), "XML").map(drop),
                 ResourceDimension::RetainedBytes,
                 1 << 20
@@ -1003,11 +988,10 @@ mod tests {
                 tag + if index + 1 == attributes { "/>" } else { "" }
             })
         };
-        with_part_root(DecodePolicy::default(), |ctx, root| {
+        with_depth(256, |ctx| {
             assert!(ctx.parse_xml(&tag(MAX_XML_TAG_ATTRIBUTES), "XML").is_ok());
             assert!(is_part_limit(
                 ctx,
-                root,
                 || ctx
                     .parse_xml(&tag(MAX_XML_TAG_ATTRIBUTES + 1), "XML")
                     .map(drop),
@@ -1027,13 +1011,12 @@ mod tests {
             }
             text + "</r>"
         };
-        with_part_root(DecodePolicy::default(), |ctx, root| {
+        with_depth(256, |ctx| {
             assert!(ctx
                 .parse_xml(&document(MAX_XML_NAMESPACE_PREFIXES), "XML")
                 .is_ok());
             assert!(is_part_limit(
                 ctx,
-                root,
                 || ctx
                     .parse_xml(&document(MAX_XML_NAMESPACE_PREFIXES + 1), "XML")
                     .map(drop),
@@ -1059,18 +1042,16 @@ mod tests {
     #[test]
     fn json_tree_past_the_per_expand_allowance_is_unsupported() {
         let document = |maps: usize| format!("[{}]", vec![r#"{"a":0}"#; maps].join(","));
-        with_expand_ceiling(1 << 20, |ctx, root| {
+        with_expand_ceiling(1 << 20, |ctx| {
             assert!(ctx.parse_json_value(&document(1 << 8), "JSON").is_ok());
             assert!(is_part_limit(
                 ctx,
-                root,
                 || ctx.parse_json_value(&document(1 << 11), "JSON").map(drop),
                 ResourceDimension::RetainedBytes,
                 1 << 20
             ));
             assert!(is_part_limit(
                 ctx,
-                root,
                 || ctx
                     .parse_json::<serde_json::Value>(&document(1 << 11), "JSON")
                     .map(drop),

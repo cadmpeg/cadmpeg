@@ -1,8 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 use super::{XmlElementScan, XmlEncoding, XmlFramingIssue, XmlTermination};
-use crate::decode::{
-    ByteRange, DecodeArena, DecodeContext, DecodePolicy, LimitScope, ResourceDimension,
-};
+use crate::decode::{DecodeArena, DecodeContext, DecodePolicy, LimitScope, ResourceDimension};
 use crate::CodecError;
 
 fn names(scan: &XmlElementScan<'_>) -> Vec<Vec<u8>> {
@@ -103,20 +101,17 @@ fn damaged_and_unsupported_elements_do_not_hide_valid_later_siblings() {
     );
     let bad = scan.elements()[1].extent();
     let damaged = ctx
-        .part_transaction(bad, || {
+        .run_part(|| {
             let text = std::str::from_utf8(bad.window()).map_err(CodecError::malformed)?;
             ctx.parse_xml(text, "bad XML element").map(drop)
         })
         .expect("part failure is recoverable");
-    assert!(matches!(damaged.result(), Err(CodecError::Malformed(_))));
-    let unknown = scan.elements()[2].extent();
+    assert!(matches!(damaged.as_ref(), Err(CodecError::Malformed(_))));
     let unsupported = ctx
-        .part_transaction(unknown, || {
-            Err::<(), _>(CodecError::NotImplemented("unknown element family".into()))
-        })
+        .run_part(|| Err::<(), _>(CodecError::NotImplemented("unknown element family".into())))
         .expect("unsupported child");
     assert!(matches!(
-        unsupported.result(),
+        unsupported.as_ref(),
         Err(CodecError::NotImplemented(_))
     ));
     let good = scan.elements()[3].extent();
@@ -243,46 +238,6 @@ fn utf16_code_units_keep_exact_bytes_and_byte_offsets() {
 }
 
 #[test]
-fn framing_preserves_alias_provenance_without_claiming_semantic_reads() {
-    let bytes = b"HEAD<root><value>7</value></root>TAIL";
-    let arena = DecodeArena::new();
-    let (ctx, root) =
-        DecodeContext::from_root_bytes(bytes, &arena, &DecodePolicy::service()).expect("root");
-    let root = ctx.name_stream(root, "file").expect("root name");
-    let alias = ctx
-        .register_named_slice(
-            root,
-            ByteRange {
-                start: 4,
-                end: crate::decode::u64_from_index(bytes.len() - 4),
-            },
-            "document",
-        )
-        .expect("stored XML stream");
-    let scan = ctx
-        .record("xml:source:record#framing", alias, || {
-            ctx.scan_xml_elements(alias, XmlEncoding::Utf8, "XML scan")
-        })
-        .expect("scan record");
-    assert_eq!(scan.elements()[0].extent().location(), alias.location());
-    assert_eq!(scan.elements()[1].name().window(), b"value");
-    let capture = ctx
-        .take_record_captures()
-        .expect("capture")
-        .pop()
-        .expect("record");
-    assert!(capture.reads().is_empty());
-    assert_eq!(
-        (capture.stream(), capture.offset(), capture.byte_len()),
-        (
-            "document",
-            0,
-            crate::decode::u64_from_index(bytes.len() - 8)
-        )
-    );
-}
-
-#[test]
 fn semantic_depth_limit_is_local_to_one_framed_element() {
     let bytes = b"<root><deep><a><b><c/></b></a></deep><good/></root>";
     let mut policy = DecodePolicy::service();
@@ -294,7 +249,7 @@ fn semantic_depth_limit_is_local_to_one_framed_element() {
         .expect("framing is not recursive parsing");
     let deep = scan.elements()[1].extent();
     let outcome = ctx
-        .part_transaction(deep, || {
+        .run_part(|| {
             ctx.parse_xml(
                 std::str::from_utf8(deep.window()).expect("ASCII"),
                 "deep XML",
@@ -303,7 +258,7 @@ fn semantic_depth_limit_is_local_to_one_framed_element() {
         })
         .expect("part refusal");
     assert!(
-        matches!(outcome.result(), Err(CodecError::ResourceLimit(limit)) if limit.scope == LimitScope::Part && limit.dimension == ResourceDimension::RecursionDepth)
+        matches!(outcome.as_ref(), Err(CodecError::ResourceLimit(limit)) if limit.scope == LimitScope::Part && limit.dimension == ResourceDimension::RecursionDepth)
     );
     assert_eq!(ctx.resource_refusal(), None);
     let good = scan
@@ -321,7 +276,7 @@ fn semantic_depth_limit_is_local_to_one_framed_element() {
 }
 
 #[test]
-fn scanner_obeys_shared_session_limits_and_checks_view_ownership() {
+fn scanner_obeys_shared_session_limits() {
     for retained in [false, true] {
         let mut policy = DecodePolicy::service();
         if retained {
@@ -349,20 +304,6 @@ fn scanner_obeys_shared_session_limits_and_checks_view_ownership() {
                 .expect("no entity charged by the scan");
         }
     }
-    let arena = DecodeArena::new();
-    let (ctx, root) =
-        DecodeContext::from_root_bytes(b"<a/>", &arena, &DecodePolicy::service()).expect("root");
-    let other_arena = DecodeArena::new();
-    let (other, _) =
-        DecodeContext::from_root_bytes(b"<b/>", &other_arena, &DecodePolicy::service())
-            .expect("other");
-    assert!(matches!(
-        other.scan_xml_elements(root, XmlEncoding::Utf8, "foreign scan"),
-        Err(CodecError::Malformed(_))
-    ));
-    assert!(ctx
-        .scan_xml_elements(root, XmlEncoding::Utf8, "correct owner")
-        .is_ok());
 }
 
 #[test]
@@ -383,12 +324,10 @@ fn temporary_name_index_limit_is_part_scoped_and_does_not_clear_session_totals()
         .expect("next complete element");
     let retained_before = ctx.retained_bytes_available();
     let outcome = ctx
-        .part_transaction(first, || {
-            ctx.scan_xml_elements(first, XmlEncoding::Utf8, "limited name index")
-        })
+        .run_part(|| ctx.scan_xml_elements(first, XmlEncoding::Utf8, "limited name index"))
         .expect("part recovery");
     assert!(
-        matches!(outcome.result(), Err(CodecError::ResourceLimit(limit)) if limit.scope == LimitScope::Part && limit.dimension == ResourceDimension::RetainedBytes)
+        matches!(outcome.as_ref(), Err(CodecError::ResourceLimit(limit)) if limit.scope == LimitScope::Part && limit.dimension == ResourceDimension::RetainedBytes)
     );
     assert_eq!(ctx.resource_refusal(), None);
     let scan = ctx

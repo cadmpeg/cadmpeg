@@ -53,39 +53,6 @@ impl DecodeBudget {
         }
     }
 
-    pub(super) fn activate_tracking(
-        &self,
-        slot_bytes: u64,
-        first_bytes: u64,
-    ) -> Result<(), ResourceLimit> {
-        let before = self.retained.get();
-        #[cfg(feature = "test-support")]
-        let local_limit = |bytes| {
-            let limit = self.retained_allowance();
-            super::test_support::charge_limit(
-                &self.policy.limits,
-                ResourceDimension::RetainedBytes,
-                "record tracking session",
-                before,
-                bytes,
-            )
-            .map_or(limit, |probe| limit.min(probe))
-        };
-        #[cfg(not(feature = "test-support"))]
-        let local_limit = |_| self.retained_allowance();
-        let bytes = self
-            .account
-            .charge_tracking(slot_bytes, first_bytes, local_limit, before)?;
-        self.retained.set(before + bytes);
-        #[cfg(feature = "test-support")]
-        super::test_support::record_charge(
-            ResourceDimension::RetainedBytes,
-            "record tracking session",
-            bytes,
-        );
-        Ok(())
-    }
-
     pub(super) fn fused(&self) -> Option<ResourceLimit> {
         self.account.fused()
     }
@@ -329,79 +296,33 @@ impl DecodeBudget {
         Ok(())
     }
 
-    pub(super) fn charge_nested(&self, operation: &'static str) -> Result<(), ResourceLimit> {
+    pub(super) fn enter_nested(
+        &self,
+        operation: &'static str,
+    ) -> Result<DepthGuard<'_>, ResourceLimit> {
         self.charge(
             ResourceDimension::RecursionDepth,
             &self.recursion_depth,
             self.policy.limits.max_recursion_depth,
             1,
             operation,
-        )
-    }
-
-    pub(super) fn enter_levels(
-        &self,
-        levels: u64,
-        operation: &'static str,
-    ) -> Result<LocalDepthGuard<'_>, ResourceLimit> {
-        self.charge(
-            ResourceDimension::RecursionDepth,
-            &self.recursion_depth,
-            self.policy.limits.max_recursion_depth,
-            levels,
-            operation,
         )?;
-        Ok(LocalDepthGuard {
-            budget: self,
-            levels,
-        })
-    }
-
-    pub(super) fn active_depth(&self) -> u64 {
-        self.recursion_depth.get()
-    }
-
-    fn leave_nested(&self) {
-        if let Some(depth) = self.recursion_depth.get().checked_sub(1) {
-            self.recursion_depth.set(depth);
-        }
-    }
-}
-
-/// Synchronous source-lineage nesting while the session state is borrowed.
-pub(super) struct LocalDepthGuard<'a> {
-    budget: &'a DecodeBudget,
-    levels: u64,
-}
-
-impl Drop for LocalDepthGuard<'_> {
-    fn drop(&mut self) {
-        if let Some(depth) = self.budget.recursion_depth.get().checked_sub(self.levels) {
-            self.budget.recursion_depth.set(depth);
-        }
+        Ok(DepthGuard { budget: self })
     }
 }
 
 /// A guard holding one unit of recursive nesting depth.
 #[derive(Debug)]
 pub struct DepthGuard<'a> {
-    budget: super::tracking::SessionHandle<'a>,
+    budget: &'a DecodeBudget,
 }
 
 impl Drop for DepthGuard<'_> {
     fn drop(&mut self) {
-        self.budget.with_budget(DecodeBudget::leave_nested);
-        self.budget.release_guard();
-    }
-}
-
-impl<'a> super::tracking::SessionHandle<'a> {
-    pub(super) fn enter_nested(
-        self,
-        operation: &'static str,
-    ) -> Result<DepthGuard<'a>, ResourceLimit> {
-        self.with_budget(|budget| budget.charge_nested(operation))?;
-        Ok(DepthGuard { budget: self })
+        let Some(depth) = self.budget.recursion_depth.get().checked_sub(1) else {
+            return;
+        };
+        self.budget.recursion_depth.set(depth);
     }
 }
 

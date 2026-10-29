@@ -1,167 +1,36 @@
 // SPDX-License-Identifier: Apache-2.0
-//! Scoped part transactions without document, loss, or retained-byte policy.
+//! Part-scoped resource recovery for independently framed decode parts.
 
-use super::{DecodeContext, LimitScope, ResourceDimension, ResourceFailure, ResourceLimit, View};
+use super::{DecodeContext, LimitScope, ResourceDimension, ResourceFailure, ResourceLimit};
 use crate::CodecError;
 
-mod sequential;
-
-/// Actual source extent and innermost record containing one attempted part.
-///
-/// This is framing metadata, not semantic read coverage. The IR part helper
-/// owns Appendix C levels, the part tree, retained bytes and unreadable losses.
-#[derive(Debug, PartialEq, Eq)]
-pub struct PartCapture {
-    stream: String,
-    offset: u64,
-    byte_len: u64,
-    record_id: Option<String>,
-    attempted_record_ids: Vec<String>,
-}
-
-impl PartCapture {
-    pub(super) fn new(
-        stream: String,
-        offset: u64,
-        byte_len: u64,
-        record_id: Option<String>,
-    ) -> Self {
-        Self {
-            stream,
-            offset,
-            byte_len,
-            record_id,
-            attempted_record_ids: Vec::new(),
-        }
-    }
-
-    /// Stable name of the actual stream containing the part.
-    pub fn stream(&self) -> &str {
-        &self.stream
-    }
-    /// Start of the part in its stream.
-    pub fn offset(&self) -> u64 {
-        self.offset
-    }
-    /// Exact bounded length of the part.
-    pub fn byte_len(&self) -> u64 {
-        self.byte_len
-    }
-    /// Innermost enclosing source record, proven by its extent or provenance.
-    pub fn record_id(&self) -> Option<&str> {
-        self.record_id.as_deref()
-    }
-    /// Actual nested record scopes discarded by a failed part, sorted and unique.
-    /// Successful parts and extent-only captures expose no discarded identities.
-    pub fn attempted_record_ids(&self) -> &[String] {
-        &self.attempted_record_ids
-    }
-    /// Consume the stream, offset, length and containing-record identity.
-    pub fn into_parts(self) -> (String, u64, u64, Option<String>) {
-        (self.stream, self.offset, self.byte_len, self.record_id)
-    }
-}
-
-/// The attempted part's framing and decoded value or recoverable error.
-///
-/// This type is ephemeral. It does not retain source bytes, create a native
-/// failure record, or assert that the source bytes were semantically read.
-#[derive(Debug)]
-pub struct PartOutcome<T> {
-    capture: PartCapture,
-    result: Result<T, CodecError>,
-}
-
-impl<T> PartOutcome<T> {
-    /// Actual framing metadata, independent of successful semantic reads.
-    pub fn capture(&self) -> &PartCapture {
-        &self.capture
-    }
-    /// Borrow the decoded value or the error that gave up the part.
-    pub fn result(&self) -> Result<&T, &CodecError> {
-        self.result.as_ref()
-    }
-    /// Consume framing metadata and the part's result for the IR helper.
-    pub fn into_parts(self) -> (PartCapture, Result<T, CodecError>) {
-        (self.capture, self.result)
-    }
-}
-
 impl DecodeContext<'_> {
-    /// Capture a genuine source view's canonical extent without reading content.
-    pub fn capture_part_extent(&self, extent: View<'_>) -> Result<PartCapture, CodecError> {
-        self.require_source(extent)?;
-        self.budget.part_capture(extent)
-    }
-
-    /// Run one explicitly bounded part with transactional read recovery.
+    /// Run one independently framed part.
     ///
-    /// A failed part loses its reads and descendant captures. Only a Part
-    /// refusal raised during this runner is acknowledged; charged cumulative
-    /// resources are never refunded. I/O and Session resource errors escape.
-    /// A refusal already pending before entry is never acknowledged here.
-    pub fn part_transaction<T>(
+    /// The outer error is fatal to the session: a refusal pending before
+    /// entry, a Session-scoped refusal, or an I/O error. The inner result is
+    /// the part's own outcome. A Part-scoped refusal raised inside `decode` is
+    /// acknowledged and returned as the part's error, even when `decode`
+    /// swallowed it. Cumulative charges are never refunded.
+    pub fn run_part<T>(
         &self,
-        extent: View<'_>,
         decode: impl FnOnce() -> Result<T, CodecError>,
-    ) -> Result<PartOutcome<T>, CodecError> {
-        let mut capture = self.capture_part_extent(extent)?;
-        let mut transaction = match super::tracking::ReadTransaction::begin_part(self.budget) {
-            Ok(transaction) => transaction,
-            Err(error) => return self.finish_given_up(capture, error),
-        };
-        let result = decode();
-        if let Some(limit) = self
-            .resource_refusal()
-            .filter(|limit| limit.scope == LimitScope::Session)
-        {
+    ) -> Result<Result<T, CodecError>, CodecError> {
+        if let Some(limit) = self.resource_refusal() {
             return Err(limit.into());
         }
-        if matches!(&result, Err(error) if fatal(error)) {
-            drop(transaction);
-            return result.map(|value| PartOutcome {
-                capture,
-                result: Ok(value),
-            });
-        }
-        let result = match self.resource_refusal() {
-            Some(limit) => Err(limit.into()),
-            None => result,
-        };
-        match result {
-            Ok(value) => {
-                transaction.commit()?;
-                Ok(PartOutcome {
-                    capture,
-                    result: Ok(value),
-                })
-            }
-            Err(error) => {
-                capture.attempted_record_ids = transaction.take_part_attempts()?;
-                drop(transaction);
-                self.finish_given_up(capture, error)
-            }
-        }
-    }
-
-    fn finish_given_up<T>(
-        &self,
-        capture: PartCapture,
-        error: CodecError,
-    ) -> Result<PartOutcome<T>, CodecError> {
-        if fatal(&error) {
-            return Err(error);
-        }
+        let result = decode();
         if let Some(limit) = self.resource_refusal() {
             if limit.scope == LimitScope::Session {
                 return Err(limit.into());
             }
             self.budget.recover_part(limit)?;
+            return Ok(Err(limit.into()));
         }
-        Ok(PartOutcome {
-            capture,
-            result: Err(error),
-        })
+        match result {
+            Err(error) if fatal(&error) => Err(error),
+            result => Ok(result),
+        }
     }
 
     /// Raise a fixed or per-part allowance without turning it into a session

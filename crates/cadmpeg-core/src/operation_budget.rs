@@ -18,7 +18,6 @@ pub(crate) struct OperationBudgetState {
     pub(crate) entities: u64,
     input: u64,
     decompressed: u64,
-    tracking_body_charged: bool,
     retained: u64,
     failure: Option<ResourceLimit>,
 }
@@ -31,7 +30,6 @@ impl OperationBudget {
                 entities: 0,
                 input,
                 decompressed: 0,
-                tracking_body_charged: false,
                 retained: 0,
                 failure: None,
             }),
@@ -150,41 +148,6 @@ impl OperationBudget {
             operation,
         };
         Self::refuse_locked(&mut state, resource)
-    }
-
-    pub(crate) fn charge_tracking(
-        &self,
-        slot_bytes: u64,
-        first_bytes: u64,
-        local_limit: impl FnOnce(u64) -> u64,
-        local_used: u64,
-    ) -> Result<u64, ResourceLimit> {
-        let mut state = self.state();
-        let bytes = if state.tracking_body_charged {
-            slot_bytes
-        } else {
-            first_bytes
-        };
-        Self::admit_locked(
-            &mut state,
-            ResourceDimension::RetainedBytes,
-            local_limit(bytes),
-            local_used,
-            bytes,
-            "record tracking session",
-        )?;
-        let used = state.retained;
-        Self::admit_locked(
-            &mut state,
-            ResourceDimension::RetainedBytes,
-            self.limits.max_retained_bytes,
-            used,
-            bytes,
-            "record tracking session",
-        )?;
-        state.retained += bytes;
-        state.tracking_body_charged = true;
-        Ok(bytes)
     }
 
     pub(crate) fn charge_entities(

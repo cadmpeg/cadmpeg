@@ -81,11 +81,6 @@ fn encode_working_text_preserves_the_live_output_account_and_entity_slot() {
     assert_eq!(text, "held");
     assert!(text.capacity() >= 68);
     assert_eq!(ctx.retained_bytes_available(), 3);
-    assert!(ctx.take_record_captures().unwrap().is_empty());
-    assert!(matches!(
-        ctx.take_record_captures(),
-        Err(crate::CodecError::Malformed(_))
-    ));
     assert_eq!(ctx.resource_refusal(), None);
     assert_eq!(ctx.retained_bytes_available(), 3);
     ctx.charge_entities(1, "the actual output record").unwrap();

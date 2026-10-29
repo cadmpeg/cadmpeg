@@ -8,7 +8,6 @@ use std::ptr::NonNull;
 #[derive(Debug, Default)]
 pub struct DecodeArena {
     buffers: RefCell<Vec<OwnedBuffer>>,
-    pub(super) tracking: super::tracking::TrackingStore,
 }
 
 impl DecodeArena {

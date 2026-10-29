@@ -166,7 +166,6 @@ pub struct View<'a> {
     space: SpaceId,
     start: usize,
     end: usize,
-    tracking: Option<super::tracking::SessionHandle<'a>>,
 }
 
 impl<'a> View<'a> {
@@ -178,29 +177,7 @@ impl<'a> View<'a> {
             space,
             start: 0,
             end: bytes.len(),
-            tracking: None,
         }
-    }
-
-    pub(super) fn with_session(mut self, session: super::tracking::SessionHandle<'a>) -> Self {
-        self.tracking = Some(session);
-        self
-    }
-
-    pub(super) fn for_framing(mut self) -> Self {
-        self.tracking = None;
-        self
-    }
-
-    pub(super) fn session(self) -> Option<super::tracking::SessionHandle<'a>> {
-        self.tracking
-    }
-
-    /// Whether this view carries a live source-session handle.
-    ///
-    /// A record scope still verifies that the handle belongs to its context.
-    pub const fn has_source_tracking(self) -> bool {
-        self.tracking.is_some()
     }
 
     /// Bounded window over retained bytes that left the live space chain.
@@ -253,8 +230,7 @@ impl<'a> View<'a> {
         position.checked_sub(self.start)
     }
 
-    /// Returns structural unread bytes without semantic read attribution.
-    /// Use read_remaining when these bytes supply a decoded value.
+    /// Returns the unread bytes of the window.
     ///
     /// The cursor is the split of the window, so this is a field read.
     pub fn unread(self) -> &'a [u8] {
@@ -287,8 +263,7 @@ impl<'a> View<'a> {
         }
     }
 
-    /// Returns structural bytes without attributing a semantic read.
-    /// Use read_slice or take when these bytes supply a decoded value.
+    /// Returns the readable window `start..end` as a slice.
     pub fn window(self) -> &'a [u8] {
         self.window
     }
@@ -300,38 +275,8 @@ impl<'a> View<'a> {
     /// it, and the cursor moves only when the split holds.
     pub fn take(&mut self, count: usize) -> Option<&'a [u8]> {
         let (bytes, unread) = self.unread.split_at_checked(count)?;
-        self.track(self.position(), self.end.abs_diff(unread.len()))?;
         self.unread = unread;
         Some(bytes)
-    }
-
-    fn track(self, start: usize, end: usize) -> Option<()> {
-        if let Some(session) = self.tracking {
-            // Option probes cannot carry resource errors. The shared session
-            // fuse is returned by Context::record and finish_session instead.
-            match session.read(self.space, u64_from_index(start)..u64_from_index(end)) {
-                Ok(()) => {}
-                Err(_) => return None,
-            }
-        }
-        Some(())
-    }
-
-    /// Read an absolute source range without changing this view's cursor.
-    pub fn read_slice(self, range: std::ops::Range<usize>) -> Option<&'a [u8]> {
-        let child = self.child(range.start, range.end)?;
-        child.track(range.start, range.end)?;
-        Some(child.window)
-    }
-
-    /// Read source bytes at an absolute offset without changing the cursor.
-    pub fn read_at(self, offset: usize, count: usize) -> Option<&'a [u8]> {
-        self.read_slice(offset..offset.checked_add(count)?)
-    }
-
-    /// Read all remaining bytes and advance to the end.
-    pub fn read_remaining(&mut self) -> Option<&'a [u8]> {
-        self.take(self.remaining())
     }
 
     /// Takes a fixed-size byte array, advancing only on success.
@@ -341,9 +286,7 @@ impl<'a> View<'a> {
 
     /// Skips exactly `count` bytes.
     pub fn skip(&mut self, count: usize) -> Option<()> {
-        let (_, unread) = self.unread.split_at_checked(count)?;
-        self.unread = unread;
-        Some(())
+        self.take(count).map(|_| ())
     }
 
     /// Moves to an absolute offset, honoring the stored lower bound.
@@ -390,7 +333,6 @@ impl<'a> View<'a> {
             space: self.space,
             start,
             end,
-            tracking: self.tracking,
         })
     }
 
@@ -407,15 +349,13 @@ impl<'a> View<'a> {
     /// no sum is formed, so the operation is total wherever the take is.
     fn take_child(&mut self, count: usize) -> Option<View<'a>> {
         let start = self.position();
-        let (window, unread) = self.unread.split_at_checked(count)?;
-        self.unread = unread;
+        let window = self.take(count)?;
         Some(View {
             window,
             unread: window,
             space: self.space,
             start,
             end: self.position(),
-            tracking: self.tracking,
         })
     }
 

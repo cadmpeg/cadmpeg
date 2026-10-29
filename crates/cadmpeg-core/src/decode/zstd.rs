@@ -222,9 +222,8 @@ impl ZstdDecoder<'_, '_> {
         let inspected = inspect_frame(self.input)?;
         let source = self
             .input
-            .req_take_child(inspected.size)
-            .map_err(|_| CodecError::Malformed("truncated Zstandard stream".into()))?
-            .window();
+            .take(inspected.size)
+            .ok_or_else(|| CodecError::Malformed("truncated Zstandard stream".into()))?;
         let Some(facts) = inspected.data else {
             return Ok(());
         };
@@ -368,8 +367,7 @@ fn zstd_error(error: &FrameDecoderError, window: u64) -> CodecError {
 
 /// Reads one frame header, returning the view past it and the frame's facts. A skippable
 /// frame has no facts, and its view is left before its four-byte length.
-fn frame_header(frame: View<'_>) -> Result<(View<'_>, Option<FrameFacts>), CodecError> {
-    let mut frame = frame.for_framing();
+fn frame_header(mut frame: View<'_>) -> Result<(View<'_>, Option<FrameFacts>), CodecError> {
     let magic = frame.req_u32_le()?;
     if (0x184d_2a50..=0x184d_2a5f).contains(&magic) {
         return Ok((frame, None));
@@ -475,8 +473,6 @@ mod tests {
 
     const MAGIC: [u8; 4] = [0x28, 0xb5, 0x2f, 0xfd];
 
-    mod tracking;
-
     // Frames are laid out by hand rather than with `zstd::bulk::compress`, which is the
     // libzstd binding this crate no longer links; the frames written by the reference
     // encoder live in `cadmpeg-test-support::zip_fixture` and are decoded through this module
@@ -569,9 +565,9 @@ mod tests {
         assert!(allowance < window);
         assert!(window < policy.limits.max_decompressed_bytes_per_expand);
         let part = ctx
-            .part_transaction(root, || ctx.open_zstd(root).map(drop))
+            .run_part(|| ctx.open_zstd(root).map(drop))
             .expect("only this part is given up");
-        let Err(CodecError::ResourceLimit(limit)) = part.result() else {
+        let Err(CodecError::ResourceLimit(limit)) = part.as_ref() else {
             panic!("a window above the allowance is a part refusal");
         };
         assert_eq!(limit.scope, LimitScope::Part);
@@ -641,10 +637,10 @@ mod tests {
         let (ctx, root) = DecodeContext::from_root_bytes(&bytes, &arena, &policy).expect("root");
         assert!(ctx.per_expand_allowance() >= window);
         let part = ctx
-            .part_transaction(root, || ctx.open_zstd(root).map(drop))
+            .run_part(|| ctx.open_zstd(root).map(drop))
             .expect("only this part is given up");
         assert!(
-            matches!(part.result(), Err(CodecError::ResourceLimit(limit)) if *limit == window_limit(window))
+            matches!(part.as_ref(), Err(CodecError::ResourceLimit(limit)) if *limit == window_limit(window))
         );
         assert_eq!(ctx.resource_refusal(), None);
         assert!(ctx.finish_session().is_ok());
@@ -658,10 +654,10 @@ mod tests {
         let (ctx, root) =
             DecodeContext::from_root_bytes(&bytes, &arena, &DecodePolicy::service()).expect("root");
         let part = ctx
-            .part_transaction(root, || ctx.open_zstd(root).map(drop))
+            .run_part(|| ctx.open_zstd(root).map(drop))
             .expect("later oversized frame gives up this part");
         assert!(
-            matches!(part.result(), Err(CodecError::ResourceLimit(limit)) if limit.scope == LimitScope::Part && limit.dimension == ResourceDimension::DecompressedBytes && limit.additional == 1_u64 << 30 && limit.limit == ctx.per_expand_allowance())
+            matches!(part.as_ref(), Err(CodecError::ResourceLimit(limit)) if limit.scope == LimitScope::Part && limit.dimension == ResourceDimension::DecompressedBytes && limit.additional == 1_u64 << 30 && limit.limit == ctx.per_expand_allowance())
         );
         assert_eq!(ctx.resource_refusal(), None);
     }

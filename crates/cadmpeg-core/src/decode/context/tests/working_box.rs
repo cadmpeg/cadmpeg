@@ -87,11 +87,6 @@ fn working_boxes_preserve_live_output_entity_and_source_capture_state() {
         .unwrap();
     assert_eq!(*boxed, [1, 2, 3]);
     assert_eq!(ctx.retained_bytes_available(), 3);
-    assert!(ctx.take_record_captures().unwrap().is_empty());
-    assert!(matches!(
-        ctx.take_record_captures(),
-        Err(crate::CodecError::Malformed(_))
-    ));
     assert_eq!(ctx.resource_refusal(), None);
     ctx.charge_entities(1, "the actual output record").unwrap();
     drop(boxed);

@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-//! Recovering XML element framing without semantic parsing or read attribution.
+//! Recovering XML element framing without semantic parsing.
 
 use std::collections::HashMap;
 
@@ -95,7 +95,7 @@ impl<'a> XmlElement<'a> {
     pub fn extent(self) -> View<'a> {
         self.extent
     }
-    /// Encoded source name, with no transcoding or semantic read attribution.
+    /// Encoded source name, with no transcoding.
     pub fn name(self) -> View<'a> {
         self.name
     }
@@ -145,7 +145,6 @@ impl DecodeContext<'_> {
     ///
     /// Comments, CDATA, processing instructions, quotes and declaration subsets
     /// shield apparent tags. Missing delimiters are reported, not guessed.
-    /// Returned Views keep source identity; this scan adds no semantic reads.
     /// Node and result storage use the caller session budget. A framing node is
     /// not an entity: the decoder charges `max_entities` for the records it
     /// builds from an element, so the scan charges none. The strict parser remains
@@ -156,7 +155,6 @@ impl DecodeContext<'_> {
         encoding: XmlEncoding,
         operation: &'static str,
     ) -> Result<XmlElementScan<'a>, CodecError> {
-        self.require_source(source)?;
         let mut scan = XmlElementScan {
             elements: Vec::new(),
             faults: Vec::new(),
