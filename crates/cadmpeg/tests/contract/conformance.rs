@@ -60,6 +60,21 @@ fn fixtures(format: &str) -> Vec<PathBuf> {
     found
 }
 
+/// The fixture's decode golden pins a decode error, which the golden test checks.
+fn pins_decode_error(fixture: &Path) -> bool {
+    let (Some(directory), Some(stem)) = (fixture.parent(), fixture.file_stem()) else {
+        return false;
+    };
+    let golden = directory
+        .with_file_name("decode")
+        .join(stem)
+        .with_extension("json");
+    std::fs::read(golden)
+        .ok()
+        .and_then(|bytes| serde_json::from_slice::<Value>(&bytes).ok())
+        .is_some_and(|golden| golden.get("decode_error").is_some())
+}
+
 fn fixture_findings(format: &str) -> Vec<String> {
     let catalog = cadmpeg_registry::InputCatalog::with_builtins();
     let codec = catalog
@@ -82,6 +97,7 @@ fn fixture_findings(format: &str) -> Vec<String> {
             };
             let decoded = match codec.decode(&mut Cursor::new(&bytes), &options) {
                 Ok(decoded) => decoded,
+                Err(_) if pins_decode_error(&path) => continue,
                 Err(error) => {
                     findings.push(format!(
                         "{} at {}: decode failed: {error}",
