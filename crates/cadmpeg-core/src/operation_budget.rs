@@ -236,9 +236,9 @@ impl OperationBudget {
         if let Some(error) = state.failure {
             return Err(error);
         }
-        if !limit
+        if limit
             .checked_sub(used)
-            .is_some_and(|remaining| additional <= remaining)
+            .is_none_or(|remaining| additional > remaining)
         {
             return Err(Self::refuse_locked(
                 state,
