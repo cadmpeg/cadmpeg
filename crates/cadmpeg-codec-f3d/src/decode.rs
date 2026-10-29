@@ -2205,9 +2205,7 @@ fn model_brep_candidates<'s>(
         let mut matches = container::design_breps(scan)
             .filter(|brep| brep.name.rsplit('/').next() == Some(blob_name.as_str()));
         let Some(brep) = matches.next() else {
-            return Err(CodecError::malformed(format_args!(
-                "Design body map references missing BREP entry {blob_name}"
-            )));
+            continue;
         };
         if matches.next().is_some() {
             return Err(CodecError::malformed(format_args!(
