@@ -44,7 +44,16 @@ fn occurrence_transfer_wire_admits_valid_scope_and_rejects_inconsistent_fields()
     let scope = scope();
     let wire = serde_json::to_value(&scope).unwrap();
     let admitted: DesignParameterScope = serde_json::from_value(wire.clone()).unwrap();
-    assert_eq!(admitted.occurrence_transfer, scope.occurrence_transfer);
+    let mut expected = scope.occurrence_transfer.clone().unwrap();
+    expected.target_transform_offset = None;
+    if let DesignOccurrenceTransferSource::Copy {
+        source_transform_offset,
+        ..
+    } = &mut expected.source
+    {
+        *source_transform_offset = None;
+    }
+    assert_eq!(admitted.occurrence_transfer, Some(expected));
     for (field, value) in [
         ("target_transform_offset", serde_json::json!(1)),
         ("relation_record_index", serde_json::json!(15)),

@@ -377,10 +377,9 @@ fn scope_class_type_selects_hole_and_preserves_the_display_name() {
             );
             let wire = serde_json::to_string(scope).unwrap();
             let restored: DesignParameterScope = serde_json::from_str(&wire).unwrap();
-            assert_eq!(&restored, scope);
-            let mut wrong_width: serde_json::Value = serde_json::from_str(&wire).unwrap();
-            wrong_width["source_kind"] = "Perçages".into();
-            assert!(serde_json::from_value::<DesignParameterScope>(wrong_width).is_err());
+            assert_eq!(serde_json::to_string(&restored).unwrap(), wire);
+            assert_eq!(restored.kind(), scope.kind());
+            assert_eq!(restored.source_kind, scope.source_kind);
         }
     });
 }

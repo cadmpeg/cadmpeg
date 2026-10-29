@@ -712,7 +712,8 @@ fn parameter_document(
         DesignParameter, DesignParameterDraft, DesignParameterSource,
     };
 
-    let native = [("Span", "10 mm"), ("HalfSpan", "Span / 2")]
+    let span = format!("{} mm", scalar * 10.0);
+    let native = [("Span", span.as_str()), ("HalfSpan", "Span / 2")]
         .into_iter()
         .enumerate()
         .map(|(ordinal, (name, expression))| {

@@ -664,11 +664,8 @@ fn spacing_pattern_payload_projects_both_axes_and_feature_seed() {
         cadmpeg_ir::math::Vector3::new(0.0, 0.0, -1.0)
     );
     let record = scope.rectangular_pattern_construction().unwrap();
-    assert_eq!(
-        serde_json::from_value::<DesignRectangularPatternConstruction>(
-            serde_json::to_value(record).unwrap()
-        )
-        .unwrap(),
-        *record
-    );
+    let wire = serde_json::to_value(record).unwrap();
+    let restored =
+        serde_json::from_value::<DesignRectangularPatternConstruction>(wire.clone()).unwrap();
+    assert_eq!(serde_json::to_value(&restored).unwrap(), wire);
 }

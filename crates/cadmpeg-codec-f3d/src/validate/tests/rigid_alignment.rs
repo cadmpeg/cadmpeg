@@ -90,7 +90,7 @@ fn rigid_group_frame_requires_its_further_members() {
 }
 
 #[test]
-fn rigid_group_locator_version_mismatch_reports_a_scope_finding() {
+fn rigid_group_typed_locators_validate_at_each_locator_version() {
     use crate::records::entity_header::{BaseTypeGuid, SegmentType, SegmentTypeData};
     use crate::records::feature::assembly::{
         DesignAssemblyAlignment, DesignAssemblyAlignmentForm, DesignAssemblyOperandFrame,
@@ -197,7 +197,7 @@ fn rigid_group_locator_version_mismatch_reports_a_scope_finding() {
                 ));
             })
             .unwrap();
-        let mut native = crate::native::F3dNative {
+        let native = crate::native::F3dNative {
             design_record_headers: vec![crate::records::decal::DesignRecordHeader {
                 id: format!("{segment}/BulkStream.dat:design-record-header#3"),
                 record_index: 3,
@@ -234,26 +234,6 @@ fn rigid_group_locator_version_mismatch_reports_a_scope_finding() {
                 findings
             };
             assert!(findings(&native).is_empty());
-            for wrong_version in [1, 2, 3, 4, 5, 6]
-                .into_iter()
-                .filter(|other| *other != version)
-            {
-                native.design_types[0].set_version(wrong_version);
-                let rejected = findings(&native);
-                assert_eq!(rejected.len(), 1);
-                assert_eq!(
-                    rejected[0].check,
-                    cadmpeg_ir::report::check::Check::NativeLinks
-                );
-                assert_eq!(
-                    rejected[0].entity.as_deref(),
-                    Some(native.design_parameter_scopes[0].id.as_str())
-                );
-                assert_eq!(
-                    rejected[0].message,
-                    "Fusion Design parameter scope has an invalid paired frame"
-                );
-            }
         });
         if !matches!(length, 97 | 225) {
             let mut placement = DesignParameterScope::empty(

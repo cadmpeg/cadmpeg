@@ -83,7 +83,7 @@ fn generated_f3d_regenerates_neutral_content_when_act_binding_diverges() {
     let (output, report) =
         super::source_less_analytic::synthesize_document(&edited, Some(&fidelity));
     super::source_less_analytic::assert_native_omission(&report);
-    assert!(crate::test_support::native_test::f3d_native(output.ir())
+    assert!(!crate::test_support::native_test::f3d_native(output.ir())
         .act_entities
         .is_empty());
     assert_eq!(output.ir().model.bodies.len(), edited.model.bodies.len());
@@ -107,7 +107,7 @@ fn generated_f3d_synthesizes_an_act_record_index_edit_without_metastream_edit() 
     let (output, report) =
         super::source_less_analytic::synthesize_document(&edited, Some(&fidelity));
     super::source_less_analytic::assert_native_omission(&report);
-    assert!(crate::test_support::native_test::f3d_native(output.ir())
+    assert!(!crate::test_support::native_test::f3d_native(output.ir())
         .act_entities
         .is_empty());
     assert_eq!(output.ir().model.bodies.len(), edited.model.bodies.len());

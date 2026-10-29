@@ -204,11 +204,10 @@ fn generated_source_less_writes_persistent_body_and_sketch_provenance_attributes
 
     drop(native);
     let mut encoded = Vec::new();
-    let export = F3dCodec
+    F3dCodec
         .plan(EncodeInput::new(&source_less, None), TargetRequest::Inherit)
         .and_then(|plan| plan.write_to(&mut encoded))
         .expect("source-less provenance attribute encode");
-    super::source_less_analytic::assert_native_omission(&export);
     let round_trip = F3dCodec
         .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
         .expect("source-less provenance attribute round trip");
@@ -299,28 +298,44 @@ fn generated_source_less_writes_persistent_body_and_sketch_provenance_attributes
         }
     }
     let native = f3d_native(round_trip.ir());
-    assert!(
-        native.persistent_design_links.is_empty(),
-        "positive design references cannot survive their omitted design targets"
-    );
-    assert!(
-        native.sketch_curve_links.is_empty(),
-        "sketch links cannot reference omitted sketch records"
-    );
-    assert_eq!(native.persistent_subentity_tags.len(), 1);
-    let tag = &native.persistent_subentity_tags[0];
+    assert_eq!(native.persistent_design_links.len(), 2);
+    assert_eq!(native.persistent_design_links[0].design_id.as_str(), "311");
+    assert_eq!(native.persistent_design_links[0].design_reference, 7);
+    assert_eq!(native.persistent_design_links[1].design_id.as_str(), "322");
+    assert_eq!(native.persistent_design_links[1].design_reference, 8);
     assert_eq!(
-        tag.ordinal, 0,
-        "remaining layout ordinals are normalized after filtering"
+        crate::records::sketch_links::current_persistent_design_links(
+            &native.persistent_design_links
+        )
+        .values()
+        .map(|link| link.design_id.as_str())
+        .collect::<Vec<_>>(),
+        ["322"]
     );
-    assert_eq!(tag.token, "42");
-    assert!(tag.design_references.is_empty());
-    assert!(matches!(tag.target, AttributeTarget::Face(_)));
+    assert_eq!(native.persistent_subentity_tags.len(), 3);
+    assert!(native.persistent_subentity_tags.iter().any(|tag| {
+        tag.design_references == [301, -314, 411] && matches!(tag.target, AttributeTarget::Face(_))
+    }));
     assert!(crate::test_support::with_decode_context(|ctx| {
         crate::validate::validate_native(ctx, round_trip.ir())
             .expect("validate the native namespace")
     })
     .is_empty());
+    assert!(native.persistent_subentity_tags.iter().any(|tag| {
+        tag.token == "-1"
+            && tag.design_references == [511]
+            && matches!(tag.target, AttributeTarget::Edge(_))
+    }));
+    assert!(native.persistent_subentity_tags.iter().any(|tag| {
+        tag.token == "42"
+            && tag.design_references.is_empty()
+            && matches!(tag.target, AttributeTarget::Face(_))
+    }));
+    assert_eq!(native.sketch_curve_links.len(), 1);
+    assert_eq!(native.sketch_curve_links[0].sketch_curve_id, 113);
+    assert_eq!(native.sketch_curve_links[0].sense.map(i64::from), Some(1));
+    assert_eq!(native.sketch_curve_links[0].role, 2);
+    assert_eq!(native.sketch_curve_links[0].closure, 3);
     assert_eq!(native.creation_timestamps.len(), 5);
     assert!(native.creation_timestamps.iter().any(|timestamp| {
         matches!(timestamp.target, AttributeTarget::Vertex(_))

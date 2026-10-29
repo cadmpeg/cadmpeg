@@ -1013,20 +1013,17 @@ fn attributed_legacy_external_placements_keep_the_transform_owner_and_source() {
             .iter()
             .find(|occurrence| occurrence.native_ref.as_deref() == Some(reference.id.as_str()))
             .unwrap();
-        let expected = if transform.is_some() {
-            [
-                [0.0, -1.0, 0.0, 20.0],
-                [1.0, 0.0, 0.0, 30.0],
-                [0.0, 0.0, 1.0, 40.0],
-            ]
-        } else {
-            [
-                [1.0, 0.0, 0.0, 0.0],
-                [0.0, 1.0, 0.0, 0.0],
-                [0.0, 0.0, 1.0, 0.0],
-            ]
-        };
-        assert_eq!(occurrence.transform.unwrap().affine_rows(), expected);
+        let expected = transform.is_some().then_some([
+            [0.0, -1.0, 0.0, 20.0],
+            [1.0, 0.0, 0.0, 30.0],
+            [0.0, 0.0, 1.0, 40.0],
+        ]);
+        assert_eq!(
+            occurrence
+                .transform
+                .map(cadmpeg_ir::transform::Transform::affine_rows),
+            expected
+        );
         let losses = &decoded.report().losses;
         assert!(!losses
             .iter()
