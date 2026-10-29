@@ -1,0 +1,172 @@
+{
+  "container_kind": "zip",
+  "entries": [
+    {
+      "attributes": {
+        "central_header_offset": "7803",
+        "crc32": "b82bda3a",
+        "data_offset": "42",
+        "header_offset": "0"
+      },
+      "compression": "deflate",
+      "expanded": 77900,
+      "name": "Document.xml",
+      "role": "document",
+      "stored": 4962
+    },
+    {
+      "attributes": {
+        "central_header_offset": "7861",
+        "crc32": "ff78a55f",
+        "data_offset": "5047",
+        "header_offset": "5004"
+      },
+      "compression": "deflate",
+      "expanded": 8938,
+      "name": "Box.Shape.brp",
+      "role": "brep",
+      "stored": 731
+    },
+    {
+      "attributes": {
+        "central_header_offset": "7920",
+        "crc32": "9471794b",
+        "data_offset": "5829",
+        "header_offset": "5778"
+      },
+      "compression": "deflate",
+      "expanded": 531,
+      "name": "techdraw-template.svg",
+      "role": "auxiliary",
+      "stored": 319
+    },
+    {
+      "attributes": {
+        "central_header_offset": "7987",
+        "crc32": "86470692",
+        "data_offset": "6188",
+        "header_offset": "6148"
+      },
+      "compression": "deflate",
+      "expanded": 52,
+      "name": "BoxCorners",
+      "role": "auxiliary",
+      "stored": 20
+    },
+    {
+      "attributes": {
+        "central_header_offset": "8043",
+        "crc32": "00aacf32",
+        "data_offset": "6264",
+        "header_offset": "6208"
+      },
+      "compression": "deflate",
+      "expanded": 566,
+      "name": "Length.SavedGeometry.0.brp",
+      "role": "brep",
+      "stored": 199
+    },
+    {
+      "attributes": {
+        "central_header_offset": "8115",
+        "crc32": "9ecedf81",
+        "data_offset": "6515",
+        "header_offset": "6463"
+      },
+      "compression": "deflate",
+      "expanded": 462,
+      "name": "techdraw-template1.svg",
+      "role": "auxiliary",
+      "stored": 284
+    },
+    {
+      "attributes": {
+        "central_header_offset": "8183",
+        "crc32": "86470692",
+        "data_offset": "6840",
+        "header_offset": "6799"
+      },
+      "compression": "deflate",
+      "expanded": 52,
+      "name": "BoxCorners1",
+      "role": "auxiliary",
+      "stored": 20
+    },
+    {
+      "attributes": {
+        "central_header_offset": "8240",
+        "crc32": "00aacf32",
+        "data_offset": "6919",
+        "header_offset": "6860"
+      },
+      "compression": "deflate",
+      "expanded": 566,
+      "name": "Euclidean.SavedGeometry.0.brp",
+      "role": "brep",
+      "stored": 199
+    },
+    {
+      "attributes": {
+        "central_header_offset": "8315",
+        "crc32": "86470692",
+        "data_offset": "7159",
+        "header_offset": "7118"
+      },
+      "compression": "deflate",
+      "expanded": 52,
+      "name": "BoxCorners2",
+      "role": "auxiliary",
+      "stored": 20
+    },
+    {
+      "attributes": {
+        "central_header_offset": "8372",
+        "crc32": "01e902d6",
+        "data_offset": "7237",
+        "header_offset": "7179"
+      },
+      "compression": "deflate",
+      "expanded": 563,
+      "name": "Vertical.SavedGeometry.0.brp",
+      "role": "brep",
+      "stored": 198
+    },
+    {
+      "attributes": {
+        "central_header_offset": "8446",
+        "crc32": "83100ee6",
+        "data_offset": "7483",
+        "header_offset": "7435"
+      },
+      "compression": "deflate",
+      "expanded": 1346,
+      "name": "Triangle.Shape.brp",
+      "role": "brep",
+      "stored": 320
+    }
+  ],
+  "identity": {
+    "classification": "classified",
+    "dialects": {
+      "extra": [],
+      "primary": {
+        "admission": "admitted",
+        "declared": {
+          "file_version": "1",
+          "program_version": "1.1R45039 (Git)",
+          "schema_version": "4"
+        },
+        "dialect": "fcstd:schema-4"
+      }
+    }
+  },
+  "notes": [
+    "SchemaVersion=4",
+    "FileVersion=1",
+    "document root=Document",
+    "document kind=drawing",
+    "object count=15",
+    "physical ledger spans=78 coverage=exact",
+    "ProgramVersion=1.1R45039 (Git)"
+  ]
+}

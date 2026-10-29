@@ -1,0 +1,68 @@
+{
+  "container_kind": "zip",
+  "entries": [
+    {
+      "attributes": {
+        "central_header_offset": "2620",
+        "crc32": "df44971d",
+        "data_offset": "42",
+        "header_offset": "0"
+      },
+      "compression": "deflate",
+      "expanded": 18484,
+      "name": "Document.xml",
+      "role": "document",
+      "stored": 1907
+    },
+    {
+      "attributes": {
+        "central_header_offset": "2678",
+        "crc32": "9ecedf81",
+        "data_offset": "2000",
+        "header_offset": "1949"
+      },
+      "compression": "deflate",
+      "expanded": 462,
+      "name": "techdraw-template.svg",
+      "role": "auxiliary",
+      "stored": 284
+    },
+    {
+      "attributes": {
+        "central_header_offset": "2745",
+        "crc32": "9ecedf81",
+        "data_offset": "2336",
+        "header_offset": "2284"
+      },
+      "compression": "deflate",
+      "expanded": 462,
+      "name": "techdraw-template1.svg",
+      "role": "auxiliary",
+      "stored": 284
+    }
+  ],
+  "identity": {
+    "classification": "classified",
+    "dialects": {
+      "extra": [],
+      "primary": {
+        "admission": "admitted",
+        "declared": {
+          "file_version": "1",
+          "program_version": "1.1R45039 (Git)",
+          "schema_version": "4"
+        },
+        "dialect": "fcstd:schema-4"
+      }
+    }
+  },
+  "notes": [
+    "SchemaVersion=4",
+    "FileVersion=1",
+    "document root=Document",
+    "document kind=drawing",
+    "object count=6",
+    "physical ledger spans=22 coverage=exact",
+    "ProgramVersion=1.1R45039 (Git)"
+  ]
+}

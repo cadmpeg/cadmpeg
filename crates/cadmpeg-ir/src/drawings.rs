@@ -106,6 +106,20 @@ pub struct Drawing {
     /// Coordinates are millimetres before view scale and rotation.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub curves: Vec<DrawingCurve>,
+    /// Page-space template primitives and positioned text; template owners only.
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_template_geometry"
+    )]
+    pub template_geometry: Option<TemplateGeometry>,
+    /// Explicit horizontal model axis; view owners only.
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_x_direction"
+    )]
+    pub x_direction: Option<crate::units::NonzeroVector<3>>,
     /// Remaining typed or exactly framed parameters by source name.
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     #[serde(deserialize_with = "cadmpeg_core::distinct_keys::btree_map")]
@@ -142,6 +156,8 @@ impl Drawing {
             scale: None,
             direction: None,
             rotation_degrees: None,
+            template_geometry: None,
+            x_direction: None,
             sheet: None,
             curves: Vec::new(),
             parameters: BTreeMap::new(),
@@ -363,7 +379,7 @@ pub struct DrawingCurve {
     pub source: CurveSource,
 }
 
-/// Analytic geometry in the owning view frame.
+/// Analytic two-dimensional geometry in the frame specified by its owner.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
@@ -419,11 +435,19 @@ impl DrawingCurve {
     /// Check numeric and arc-form invariants.
     #[must_use]
     pub fn is_valid(&self) -> bool {
+        self.geometry.is_valid()
+    }
+}
+
+impl DrawingCurveGeometry {
+    /// Check finite geometry and circular arc form in the caller's frame.
+    #[must_use]
+    pub fn is_valid(&self) -> bool {
         let finite =
             |point: crate::units::FiniteVector<2>| point.get().iter().all(|v| v.is_finite());
         let positive =
             |radius: crate::scalar::PositiveReal| radius.get().is_finite() && radius.get() > 0.0;
-        match self.geometry {
+        match *self {
             DrawingCurveGeometry::Line { start, end } => finite(start) && finite(end),
             DrawingCurveGeometry::Circle { center, radius } => finite(center) && positive(radius),
             DrawingCurveGeometry::Arc {
@@ -455,3 +479,65 @@ impl DrawingCurve {
 cadmpeg_core::named_optional_field!(deserialize_sheet, DrawingSheet, "sheet");
 
 cadmpeg_core::named_optional_field!(deserialize_displayed, bool, "displayed");
+
+/// Ordered template geometry and baseline-positioned text in page millimetres.
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(deny_unknown_fields)]
+pub struct TemplateGeometry {
+    /// Curves in source order.
+    pub curves: Vec<DrawingCurveGeometry>,
+    /// Text in source order.
+    pub texts: Vec<TemplateText>,
+}
+
+impl TemplateGeometry {
+    /// Shared admission gate for curve populations.
+    pub fn is_valid(&self) -> bool {
+        self.curves.iter().all(DrawingCurveGeometry::is_valid)
+    }
+}
+
+/// Plain template text with resolved editable content.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(deny_unknown_fields)]
+pub struct TemplateText {
+    /// Resolved Unicode string.
+    pub text: String,
+    /// Left baseline position in page millimetres.
+    pub position: crate::units::FiniteVector<2>,
+    /// Font em size in millimetres.
+    pub height: crate::scalar::PositiveLength,
+}
+
+cadmpeg_core::named_optional_field!(
+    deserialize_template_geometry,
+    TemplateGeometry,
+    "template_geometry"
+);
+cadmpeg_core::named_optional_field!(
+    deserialize_x_direction,
+    crate::units::NonzeroVector<3>,
+    "x_direction"
+);
+
+impl Drawing {
+    /// Check ownership and geometry of physical template and view fields.
+    #[must_use]
+    pub fn physical_content_is_valid(&self) -> bool {
+        (self.template_geometry.is_none() || self.kind == DrawingKind::Template)
+            && self
+                .template_geometry
+                .as_ref()
+                .is_none_or(TemplateGeometry::is_valid)
+            && (self.x_direction.is_none()
+                || matches!(
+                    self.kind,
+                    DrawingKind::View
+                        | DrawingKind::Projection
+                        | DrawingKind::Section
+                        | DrawingKind::Detail
+                ))
+    }
+}
