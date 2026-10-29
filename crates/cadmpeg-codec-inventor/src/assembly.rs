@@ -1150,30 +1150,6 @@ mod tests {
     }
 
     #[test]
-    fn assembly_parse_issue_refuses_entity_limit_before_push() {
-        let mut policy = DecodePolicy::service();
-        policy.limits.max_entities = 0;
-        assert!(matches!(
-            inventory_with_record(&SegmentKind::AmDc, OCCURRENCE_TYPE, &[], policy),
-            Err(CodecError::ResourceLimit(limit))
-                if limit.dimension == ResourceDimension::Entities
-                    && limit.operation == "admit Inventor assembly issue"
-        ));
-        assert_eq!(
-            inventory_with_record(
-                &SegmentKind::AmDc,
-                OCCURRENCE_TYPE,
-                &[],
-                DecodePolicy::service()
-            )
-            .expect("build the record inventory")
-            .losses
-            .len(),
-            1
-        );
-    }
-
-    #[test]
     fn frames_occurrence_identity_and_variable_related_references() {
         for related in [Vec::new(), vec![0x8000_0008]] {
             let bytes = occurrence_fixture(42, &related);

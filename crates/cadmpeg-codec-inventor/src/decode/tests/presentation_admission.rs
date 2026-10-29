@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 
-use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension, View};
+use cadmpeg_core::decode::{
+    DecodeArena, DecodeContext, DecodePolicy, LimitScope, ResourceDimension, View,
+};
 use cadmpeg_core::CodecError;
 
 use crate::pmdc::{PmDcPairedReferenceList, PmDcReference};
@@ -47,7 +49,7 @@ fn presentation_default_native_record_refuses_entity_limit_before_creation() {
         project(&ctx, &inventory),
         Err(CodecError::ResourceLimit(limit))
             if limit.dimension == ResourceDimension::Entities
-                && limit.operation == "admit Inventor native default style"
+                && limit.scope == LimitScope::Session
     ));
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service())
         .expect("build the decode context");
@@ -143,7 +145,6 @@ fn presentation_other_native_records_refuse_entity_limits_before_creation() {
         .expect("build the decode context");
     project(&ctx, &inventory).expect("admitted presentation records");
     let mut entity_cap = 0;
-    let mut entity_operations = Vec::new();
     for _ in 0..4 {
         let mut policy = DecodePolicy::service();
         policy.limits.max_entities = entity_cap;
@@ -155,66 +156,26 @@ fn presentation_other_native_records_refuse_entity_limits_before_creation() {
             panic!("expected entity refusal: {error:?}");
         };
         assert_eq!(limit.dimension, ResourceDimension::Entities);
-        entity_operations.push(limit.operation);
+        assert_eq!(limit.scope, LimitScope::Session);
         entity_cap = limit.used + limit.additional;
     }
-    for operation in [
-        "admit Inventor native rendering style",
-        "admit Inventor native graphics face",
-        "admit Inventor native graphics style collection",
-        "admit Inventor native primary color style",
-    ] {
-        assert!(
-            entity_operations.contains(&operation),
-            "no refusal for {operation}"
-        );
-    }
-}
-
-#[test]
-fn rendering_conversion_issue_refuses_entity_limit_before_creation() {
-    let bytes = [];
-    let token = cadmpeg_ir::ids::IdentityKey::encode_segment("segment");
-    let inventory = PresentationInventory {
-        default_styles: Vec::new(),
-        rendering_styles: vec![Located::new(
-            PmAppRenderingStyle {
-                segment_version_major: 17,
-                header_value: 0,
-                header_id: 0,
-                state: 0,
-                flags: 0,
-                values: [0; 2],
-                default_state: 0,
-                value: 0,
-                name_reference: 0,
-                name: String::new(),
-                comment: String::new(),
-                long_name: String::new(),
-                extension: None,
-                suffix: View::over_retained(&bytes),
-            },
-            crate::record_identity::RecordTypeId::from_bytes([0; 16]),
-            token.clone(),
-            1,
-        )],
-        graphics_faces: Vec::new(),
-        graphics_style_collections: Vec::new(),
-        graphics_primary_color_styles: Vec::new(),
-    };
-    let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
-    policy.limits.max_entities = 0;
-    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("limited context");
-    assert!(matches!(
-        project(&ctx, &inventory),
-        Err(CodecError::ResourceLimit(limit))
-            if limit.dimension == ResourceDimension::Entities
-                && limit.operation == "admit Inventor rendering conversion issue"
-    ));
-    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service())
-        .expect("build the decode context");
-    project(&ctx, &inventory).expect("admitted rendering issue");
+    policy.limits.max_entities = entity_cap;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("context");
+    let output = project(&ctx, &inventory).expect("one entity per presentation record");
+    let (_, native, _, _) = output.into_parts();
+    let arenas = native
+        .namespace("inventor")
+        .expect("presentation records")
+        .arenas();
+    for name in [
+        "pm_app_rendering_styles",
+        "pm_graphics_faces",
+        "pm_graphics_style_collections",
+        "pm_graphics_primary_color_styles",
+    ] {
+        assert_eq!(arenas[name].len(), 1, "{name}");
+    }
 }
 
 #[test]

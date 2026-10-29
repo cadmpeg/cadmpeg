@@ -1351,30 +1351,6 @@ mod tests {
     }
 
     #[test]
-    fn presentation_parse_issue_refuses_entity_limit_before_push() {
-        let mut policy = DecodePolicy::service();
-        policy.limits.max_entities = 0;
-        assert!(matches!(
-            inventory_with_record(&SegmentKind::PmApp, DEFAULT_STYLE_TYPE, &[], policy),
-            Err(CodecError::ResourceLimit(limit))
-                if limit.dimension == ResourceDimension::Entities
-                    && limit.operation == "admit Inventor presentation issue"
-        ));
-        assert_eq!(
-            inventory_with_record(
-                &SegmentKind::PmApp,
-                DEFAULT_STYLE_TYPE,
-                &[],
-                DecodePolicy::service()
-            )
-            .expect("build the record inventory")
-            .1
-            .len(),
-            1
-        );
-    }
-
-    #[test]
     fn parses_current_default_style_and_one_based_rendering_reference() {
         let bytes = default_style_fixture();
         let arena = DecodeArena::new();

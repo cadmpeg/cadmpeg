@@ -339,17 +339,28 @@ fn database_issues_preserve_the_unframed_database_instead_of_a_database_record()
         .arena_as::<DatabaseRecord>("databases")
         .expect("database native arena")
         .is_empty());
-    let issues = native
+    assert!(native
         .arena_as::<DatabaseIssueRecord>("database_issues")
-        .expect("database native arena");
-    let [issue] = issues.as_slice() else {
-        panic!("one database issue")
+        .expect("database native arena")
+        .is_empty());
+    let unreadable = decoded
+        .report()
+        .losses
+        .iter()
+        .filter(|loss| loss.code.to_string() == "decode/record.unreadable")
+        .collect::<Vec<_>>();
+    let [loss] = unreadable.as_slice() else {
+        panic!("one given-up database part: {unreadable:?}")
     };
-    assert_eq!(issue.id, "inventor:rse:database-issue#v1");
-    assert_eq!(issue.band, 1);
-    assert!(issue.detail.contains("RSe database schema 31"));
-    assert!(issue.detail.contains("did not frame it"));
-    assert!(issue.detail.contains("creation version"));
+    let given_up = crate::test_support::given_up_records(decoded.source_fidelity());
+    let [part] = given_up.as_slice() else {
+        panic!("one retained database part")
+    };
+    assert!(loss.message.contains(&format!(
+        "offset={} length={}",
+        part.offset(),
+        part.byte_len()
+    )));
 }
 
 #[test]
