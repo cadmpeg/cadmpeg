@@ -4,9 +4,8 @@
 use std::collections::HashSet;
 
 use cadmpeg_ir::codec::{Codec, DecodeOptions};
-use cadmpeg_ir::ids::{Identity, UnknownId};
 use cadmpeg_ir::report::check::Finding;
-use cadmpeg_ir::{CadIr, NativeUnknownRecord};
+use cadmpeg_ir::CadIr;
 
 use crate::test_support::test_fixtures::{
     primary_envelope_fixture, primary_envelope_fixture_with_design,
@@ -76,34 +75,15 @@ fn remove_metadata_state(ir: &mut CadIr) {
     });
 }
 
-fn add_stub(ir: &mut CadIr, links: Vec<Identity>) {
-    let ctx = crate::native::test_ctx();
-    let namespace = ir.native.namespace_mut("inventor");
-    let mut stubs = namespace
-        .arena_as::<NativeUnknownRecord>("unknowns")
-        .expect("stubs");
-    stubs.push(NativeUnknownRecord {
-        id: UnknownId::mint("inventor:part:test#given-up").expect("stub identity"),
-        links,
-    });
-    namespace
-        .set_arena(&ctx, "unknowns", &stubs)
-        .expect("stub arena");
-}
-
 #[test]
 fn the_decoded_states_equal_the_pairs() {
     assert!(segment_state_findings(&decoded()).is_empty());
 }
 
 #[test]
-fn a_missing_state_whose_segment_record_a_given_up_stub_links_is_accepted() {
+fn a_pair_without_a_state_is_accepted() {
     let mut ir = decoded();
     remove_metadata_state(&mut ir);
-    add_stub(
-        &mut ir,
-        vec![Identity::new(crate::rse::segment_record_id(PAIR_TOKEN)).expect("pair id")],
-    );
     assert!(segment_state_findings(&ir).is_empty());
 }
 
