@@ -19,7 +19,7 @@ pub(crate) fn le_f64(v: f64) -> [u8; 8] {
     v.to_le_bytes()
 }
 
-pub(crate) fn compact_uint_bytes(value: u32) -> Vec<u8> {
+pub(super) fn compact_uint_bytes(value: u32) -> Vec<u8> {
     if value <= 63 {
         return vec![u8::try_from(value * 4 + 1).expect("single-byte compact integer")];
     }
