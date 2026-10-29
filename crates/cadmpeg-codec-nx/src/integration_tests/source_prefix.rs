@@ -36,17 +36,6 @@ fn public_decode_installs_only_actual_partition_prefix_reads_with_the_retained_n
         let fields = record.fields().unwrap();
         assert_eq!(fields["partition"]["highest_id"], u32::MAX);
         assert_eq!(fields["current_pmark"]["identifier"], 0x1234_5678_u32);
-        let layouts = decoded.source_fidelity().record_layout();
-        assert_eq!(layouts.len(), 1);
-        let layout = &layouts[record.id()];
-        let offset = u64::try_from(transmit_header().len()).unwrap();
-        assert_eq!(layout.offset(), offset);
-        assert_eq!(layout.byte_len(), 51);
-        assert_eq!(
-            layout.reads()[layout.stream()],
-            [offset + 3..offset + 15, offset + 18..offset + 51]
-        );
-        assert!(layout.reads().contains_key("file"));
         assert_eq!(decoded.ir().model.bodies.is_empty(), !with_geometry);
     }
 }
@@ -55,12 +44,12 @@ fn public_decode_installs_only_actual_partition_prefix_reads_with_the_retained_n
 fn native_attachment_recovery_removes_prefix_reads_in_both_decode_routes() {
     for with_geometry in [false, true] {
         let complete = decode(source(with_geometry));
-        let prefix = &complete.ir().native.namespace("nx").unwrap().arenas()
-            ["parasolid_deltas_partition_prefixes"][0];
-        assert!(complete
-            .source_fidelity()
-            .record_layout()
-            .contains_key(prefix.id()));
+        assert_eq!(
+            complete.ir().native.namespace("nx").unwrap().arenas()
+                ["parasolid_deltas_partition_prefixes"]
+                .len(),
+            1
+        );
         for point in [Point::Entry, Point::Exit] {
             let _injected = inject(point, || {
                 cadmpeg_core::CodecError::malformed("source rollback control")
@@ -71,10 +60,6 @@ fn native_attachment_recovery_removes_prefix_reads_in_both_decode_routes() {
                 .losses
                 .iter()
                 .any(|loss| { loss.code.local_code() == "native.attachment-failed" }));
-            assert!(!recovered
-                .source_fidelity()
-                .record_layout()
-                .contains_key(prefix.id()));
             assert!(recovered
                 .ir()
                 .native

@@ -962,7 +962,7 @@ pub(in crate::native) struct ParasolidDeltasEvents {
 /// Retain every completely bounded event in every Parasolid deltas stream.
 #[cfg(test)]
 fn parasolid_deltas_events(streams: &[Stream]) -> ParasolidDeltasEvents {
-    crate::test_support::with_decode_context(|ctx| {
+    crate::test_support::with_decode_context(|_| {
         let delta_censuses = streams
             .iter()
             .map(|stream| {
@@ -973,7 +973,7 @@ fn parasolid_deltas_events(streams: &[Stream]) -> ParasolidDeltasEvents {
                 }
             })
             .collect::<Result<Vec<_>, CodecError>>()?;
-        parasolid_deltas_events_with_censuses(ctx, streams, delta_censuses)
+        parasolid_deltas_events_with_censuses(streams, delta_censuses)
     })
     .expect("bounded test deltas")
 }
@@ -997,7 +997,6 @@ fn deltas_event_id(
 /// finished, so the large record walk is performed once and its owned records
 /// are moved directly into native output.
 pub(super) fn parasolid_deltas_events_with_censuses(
-    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     streams: &[Stream],
     mut delta_censuses: Vec<Option<Census>>,
 ) -> Result<ParasolidDeltasEvents, CodecError> {
@@ -1163,93 +1162,31 @@ pub(super) fn parasolid_deltas_events_with_censuses(
                     inflated_offset: cadmpeg_core::decode::u64_from_index(map.offset),
                 });
         }
-        let partition_state = if let Some(prefix) = census.partition_prefix.take() {
+        if let Some(prefix) = census.partition_prefix.take() {
             let bytes = &stream.inflated[prefix.offset..prefix.end];
-            let id = deltas_event_id(
-                stream_ordinal,
-                "deltas-partition-prefix",
-                prefix.offset,
-                None,
-            );
-            let state = match stream.source {
-                Some(source) => {
-                    let start = source.start().checked_add(prefix.offset).ok_or_else(|| {
-                        CodecError::malformed("NX partition prefix source offset overflows")
-                    })?;
-                    let end = source.start().checked_add(prefix.end).ok_or_else(|| {
-                        CodecError::malformed("NX partition prefix source end overflows")
-                    })?;
-                    let extent = source.child(start, end).ok_or_else(|| {
-                        CodecError::malformed("NX partition prefix lies outside its source")
-                    })?;
-                    ctx.record(&id, extent, || {
-                        let (state, actual_end) = PartitionPrefixState::read_view(extent)
-                            .ok_or_else(|| {
-                                CodecError::malformed("NX partition prefix is unreadable")
-                            })?;
-                        if actual_end != end {
-                            return Err(CodecError::malformed(
-                                "NX partition prefix source extent disagrees",
-                            ));
-                        }
-                        Ok(state)
-                    })?
-                }
-                None => prefix.state,
-            };
             events
                 .partition_prefixes
                 .push(ParasolidDeltasPartitionPrefix {
-                    id,
+                    id: deltas_event_id(
+                        stream_ordinal,
+                        "deltas-partition-prefix",
+                        prefix.offset,
+                        None,
+                    ),
                     stream_ordinal: stream_ordinal_u32,
-                    state,
+                    state: prefix.state,
                     byte_len: cadmpeg_core::decode::u64_from_index(bytes.len()),
                     sha256: cadmpeg_ir::hash::digest::Sha256Digest::digest(bytes),
                     inflated_offset: cadmpeg_core::decode::u64_from_index(prefix.offset),
                 });
-            Some(state)
-        } else {
-            None
-        };
+        }
         for packet in census.pmark_packets {
             let bytes = &stream.inflated[packet.offset..packet.end];
-            let id = deltas_event_id(stream_ordinal, "deltas-pmark", packet.offset, None);
-            let (nodes, terminal) = match stream.source {
-                Some(source) => {
-                    let prefix = partition_state.ok_or_else(|| {
-                        CodecError::malformed("NX PMARK packet has no partition owner")
-                    })?;
-                    let start = source.start().checked_add(packet.offset).ok_or_else(|| {
-                        CodecError::malformed("NX PMARK packet source offset overflows")
-                    })?;
-                    let end = source.start().checked_add(packet.end).ok_or_else(|| {
-                        CodecError::malformed("NX PMARK packet source end overflows")
-                    })?;
-                    let extent = source.child(start, end).ok_or_else(|| {
-                        CodecError::malformed("NX PMARK packet lies outside its source")
-                    })?;
-                    let parsed = ctx.record(&id, extent, || {
-                        let parsed = crate::deltas::pmark_packets::read_source(
-                            ctx,
-                            extent,
-                            prefix.highest_id(),
-                        )?;
-                        if parsed.end != end {
-                            return Err(CodecError::malformed(
-                                "NX PMARK packet source extent disagrees",
-                            ));
-                        }
-                        Ok(parsed)
-                    })?;
-                    (parsed.nodes, parsed.terminal)
-                }
-                None => (packet.nodes, packet.terminal),
-            };
             events.pmark_packets.push(ParasolidDeltasPmarkPacket {
-                id,
+                id: deltas_event_id(stream_ordinal, "deltas-pmark", packet.offset, None),
                 stream_ordinal: stream_ordinal_u32,
-                nodes,
-                terminal,
+                nodes: packet.nodes,
+                terminal: packet.terminal,
                 byte_len: cadmpeg_core::decode::u64_from_index(bytes.len()),
                 sha256: cadmpeg_ir::hash::digest::Sha256Digest::digest(bytes),
                 inflated_offset: cadmpeg_core::decode::u64_from_index(packet.offset),

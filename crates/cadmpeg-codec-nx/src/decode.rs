@@ -36,7 +36,6 @@ mod nurbs_fit;
 mod offset;
 pub(crate) mod pcurves;
 pub(crate) mod report;
-mod source_layout;
 mod support_uv;
 
 use build::try_decode_geometry;
@@ -226,8 +225,6 @@ fn decoded(
         )
         .with_untyped(scan.source_untyped.borrow().clone()),
     )?;
-    source_layout::move_layout(&mut ir, &mut source_fidelity)?;
-    source_fidelity.install_record_captures(ctx, |_, _| Ok(()))?;
     Ok(Decoded {
         ir,
         body,
@@ -381,7 +378,6 @@ fn build_metadata_ir(
         )?;
     } else {
         let mut parsed = crate::native::substrate::ParsedStreams::parse(scan)?;
-        let native_reads = ctx.read_transaction()?;
         let model = crate::native::model::NativeModel::extract(
             ctx,
             &scan.container,
@@ -389,7 +385,7 @@ fn build_metadata_ir(
             &mut parsed,
             None,
         )?;
-        if crate::native::attach_annotations(
+        crate::native::attach_annotations(
             ctx,
             &mut ir,
             &model,
@@ -397,11 +393,7 @@ fn build_metadata_ir(
             &mut annotations,
             &mut unknowns,
             &mut losses,
-        )? {
-            native_reads.commit()?;
-        } else {
-            drop(native_reads);
-        }
+        )?;
     }
     Ok((ir, annotations.build(), unknowns, losses))
 }
