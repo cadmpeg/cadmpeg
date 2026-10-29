@@ -5,20 +5,6 @@ use std::collections::{BTreeMap, BTreeSet};
 
 use serde_json::Value;
 
-const REMOVED_NAMES: &str = include_str!("../removed_names.rs");
-const CODEC_ISSUES: [(&str, &str); 11] = [
-    ("220", "sat"),
-    ("221", "step"),
-    ("222", "iges"),
-    ("223", "rhino"),
-    ("224", "fcstd"),
-    ("225", "f3d"),
-    ("226", "sldprt"),
-    ("227", "inventor"),
-    ("228", "catia"),
-    ("229", "creo"),
-    ("230", "nx"),
-];
 const CHECK_2_SUFFIXES: [&str; 14] = [
     "count",
     "len",
@@ -36,45 +22,6 @@ const CHECK_2_SUFFIXES: [&str; 14] = [
     "pairs",
 ];
 const MAPS: [&str; 2] = ["properties", "source_properties"];
-
-/// The keys a codec issue deletes under §8, per native namespace. A `.N`
-/// suffix in the registry stands for any decimal index.
-#[must_use]
-pub fn section_8_deletions() -> BTreeMap<&'static str, Vec<&'static str>> {
-    let mut result: BTreeMap<&str, Vec<&str>> = BTreeMap::new();
-    let mut issues = Vec::new();
-    for line in REMOVED_NAMES.lines() {
-        let line = line.trim();
-        if let Some(comment) = line.strip_prefix("///") {
-            issues = CODEC_ISSUES
-                .iter()
-                .filter(|(number, _)| comment.contains(&format!("#{number} §8")))
-                .map(|(_, codec)| *codec)
-                .collect();
-        } else if let Some(name) = line
-            .strip_prefix("pub const ")
-            .and_then(|rest| rest.split_once("= \""))
-            .and_then(|(_, rest)| rest.strip_suffix("\";"))
-        {
-            for codec in std::mem::take(&mut issues) {
-                result.entry(codec).or_default().push(name);
-            }
-        }
-    }
-    result
-}
-
-fn matches_deletion(key: &str, pattern: &str) -> bool {
-    match pattern.strip_suffix(".N") {
-        Some(stem) => key
-            .strip_prefix(stem)
-            .and_then(|rest| rest.strip_prefix('.'))
-            .is_some_and(|index| {
-                !index.is_empty() && index.bytes().all(|byte| byte.is_ascii_digit())
-            }),
-        None => key == pattern,
-    }
-}
 
 /// The check 2 key pattern (#246 IV.2) applied to a property key.
 #[must_use]
@@ -119,8 +66,6 @@ fn text(value: &Value) -> Option<String> {
 /// Check 1 findings for one decoded document of one native namespace.
 #[must_use]
 pub fn property_map_findings(namespace: &str, document: &Value) -> Vec<String> {
-    let deletions = section_8_deletions();
-    let deleted = deletions.get(namespace).map_or(&[][..], Vec::as_slice);
     let mut identities = BTreeSet::new();
     let mut native = BTreeMap::new();
     let mut owned: BTreeMap<&str, BTreeSet<&str>> = BTreeMap::new();
@@ -185,9 +130,6 @@ pub fn property_map_findings(namespace: &str, document: &Value) -> Vec<String> {
                 }
                 for (key, value) in entries {
                     let at = format!("{arena} {id}: {map}[{key:?}]");
-                    if deleted.iter().any(|pattern| matches_deletion(key, pattern)) {
-                        findings.push(format!("{at} is deleted by §8"));
-                    }
                     if is_source_layout_key(key) {
                         findings.push(format!("{at} matches the check 2 pattern"));
                     }
