@@ -1021,50 +1021,59 @@ fn payload_bearing_dimension_companion_uses_the_governing_dimension_frame() {
 
 #[test]
 fn material_bindings_do_not_restate_display_colors() {
-    use cadmpeg_ir::appearance::{Appearance, AppearanceBinding, AppearanceTarget};
-    use cadmpeg_ir::ids::AppearanceId;
+    use cadmpeg_ir::appearance::{Appearance, AppearanceTarget};
+    use cadmpeg_ir::attributes::{AttributeTarget, AttributeValue, SourceAttribute};
     use cadmpeg_ir::topology::Color;
 
+    const FACE_GUID: &str = "aaaaaaaa-1111-2222-3333-bbbbbbbbbbbb";
+    const VISUAL: &str = "11111111-2222-3333-4444-555555555555_Post2015";
+
     let mut ir = cadmpeg_ir::examples::unit_cube().expect("unit cube fixture is admitted");
-    let body = ir.model.bodies[0].id.clone();
-    let first_face = ir.model.faces[0].id.clone();
-    let second_face = ir.model.faces[1].id.clone();
     let direct = Color::new(0.9, 0.8, 0.7, 1.0).expect("valid color");
     let material = Color::new(0.1, 0.2, 0.3, 1.0).expect("valid color");
     ir.model.bodies[0].color = Some(direct);
+    ir.model.attributes.push(SourceAttribute {
+        id: "test:model:attribute#material"
+            .try_into()
+            .expect("valid identity"),
+        target: AttributeTarget::Face(ir.model.faces[0].id.clone()),
+        name: "ATTRIB_CUSTOM-attrib".into(),
+        values: vec![
+            Some(AttributeValue::String("NEUTRON_Material_attrib_def".into())),
+            Some(AttributeValue::String(FACE_GUID.into())),
+        ],
+        native_ref: None,
+    });
     ir.model.appearances.push(Appearance {
         native_ref: None,
-        id: AppearanceId::mint("f3d:test:appearance#material").expect("identity grammar"),
+        id: "test:model:appearance#material"
+            .try_into()
+            .expect("valid identity"),
         name: None,
         asset_guid: None,
         library_id: None,
         textures: Vec::new(),
-        visual_guid: None,
+        visual_guid: Some(VISUAL.into()),
         physical_token: None,
         schema: None,
         category: None,
         base_color: Some(material),
         properties: Default::default(),
     });
-    let binding = |id: &str, target| AppearanceBinding {
-        native_ref: None,
-        id: format!("test:model:appearance-binding#{id}")
-            .try_into()
-            .expect("valid identity"),
-        target,
-        appearance: AppearanceId::mint("f3d:test:appearance#material").expect("identity grammar"),
-        source_entity_id: None,
-        object_type: None,
-        visible: None,
-        channels: Default::default(),
+    let assignment = crate::materials::FaceAppearanceAssignment {
+        face_guid: FACE_GUID.into(),
+        visual_guid: VISUAL.to_owned().try_into().expect("visual token"),
+        color: Some(material),
     };
-    ir.model.appearance_bindings = vec![
-        binding("body", AppearanceTarget::Body(body)),
-        binding("face", AppearanceTarget::Face(first_face)),
-        binding("ambiguous-a", AppearanceTarget::Face(second_face.clone())),
-        binding("ambiguous-b", AppearanceTarget::Face(second_face)),
-    ];
 
+    let losses = super::super::resolve_face_appearance_bindings(&mut ir, &[assignment])
+        .expect("one complete face assignment");
+    assert!(losses.is_empty());
+    assert_eq!(ir.model.appearance_bindings.len(), 1);
+    assert_eq!(
+        ir.model.appearance_bindings[0].target,
+        AppearanceTarget::Face(ir.model.faces[0].id.clone())
+    );
     assert_eq!(ir.model.bodies[0].color, Some(direct));
     assert_eq!(ir.model.faces[0].color, None);
     assert_eq!(ir.model.appearances[0].base_color, Some(material));

@@ -25,7 +25,6 @@ use std::io::{Cursor, Write};
 
 use cadmpeg_asm::asm_header;
 use cadmpeg_core::decode::InspectOptions;
-use cadmpeg_ir::codec::write::{target::TargetRequest, EncodeInput, Encoder};
 use cadmpeg_ir::codec::{Codec, Confidence, DecodeOptions};
 use zip::CompressionMethod;
 
@@ -441,21 +440,16 @@ fn decode_retains_generated_asm_history_graph() {
 }
 
 #[test]
-fn generated_f3d_refuses_incoherent_delta_state_header() {
+fn generated_f3d_rewrites_fixed_delta_state_header() {
     let source = f3d_with_smbh(&synthetic_geometry_with_history_smbh());
     let decoded = F3dCodec
         .decode(&mut Cursor::new(&source), &DecodeOptions::default())
         .expect("generated history decode");
     let (mut edited, _, fidelity) = decoded.into_parts();
-    let source_offset = |id: &str| {
-        fidelity.metadata[&format!("{id}.byte_offset")]
-            .parse::<u64>()
-            .expect("retained source position")
-    };
     update_f3d_native(&mut edited, |native| {
         let history = &mut native.asm_histories[0];
-        assert!(source_offset(&history.id) > 0);
-        assert!(source_offset(&history.states()[0].id) > 0);
+        assert!(history.byte_offset > Some(0));
+        assert!(history.states()[0].byte_offset > Some(0));
         history.preamble = Some(crate::history_records::AsmPreamble {
             stream_size: 8,
             history_entry_count: 120,
@@ -469,24 +463,48 @@ fn generated_f3d_refuses_incoherent_delta_state_header() {
         history.states_mut()[0].partner_ref = Some(18);
         history.states_mut()[0].owner_ref = 20;
         let board = &mut history.states_mut()[0].bulletin_boards[0];
-        assert!(source_offset(&board.id) > 0);
+        assert!(board.byte_offset > Some(0));
         board.owner_ref = 22;
         board.number = 24;
-        assert!(source_offset(&board.changes[0].id) > 0);
+        assert!(board.changes[0].byte_offset > Some(0));
         board.changes[0].kind = crate::history_records::AsmEntityChangeKind::Delete { old: 26 };
         board.changes[1].kind = crate::history_records::AsmEntityChangeKind::Insert { new: 28 };
     });
 
-    let error = F3dCodec
-        .plan(
-            EncodeInput::new(&edited, Some(&fidelity)),
-            TargetRequest::Inherit,
-        )
-        .expect_err("dangling previous/next history links are malformed");
-    assert!(
-        matches!(error, cadmpeg_core::CodecError::InvalidInput(message)
-        if message.contains("coherent doubly linked state chain"))
+    let mut regenerated = Vec::new();
+    crate::test_support::plan_inherited_write(&edited, &fidelity, &mut regenerated)
+        .expect("delta-state owner regeneration");
+    let round_trip = F3dCodec
+        .decode(&mut Cursor::new(regenerated), &DecodeOptions::default())
+        .expect("regenerated history decode");
+    let native = f3d_native(round_trip.ir());
+    let state = &native.asm_histories[0].states()[0];
+    assert_eq!(
+        f3d_native(round_trip.ir()).asm_histories[0].stream_size(),
+        Some(8)
     );
+    assert_eq!(
+        f3d_native(round_trip.ir()).asm_histories[0].history_entry_count(),
+        Some(120)
+    );
+    assert_eq!(state.state_id, 8);
+    assert_eq!(state.version_flag, 4);
+    assert_eq!(state.state_flag, 6);
+    assert_eq!(state.previous_ref, Some(12));
+    assert_eq!(state.next_ref, Some(14));
+    assert_eq!(state.node_index, 16);
+    assert_eq!(state.partner_ref, Some(18));
+    assert_eq!(state.owner_ref, 20);
+    let board = &state.bulletin_boards[0];
+    assert_eq!(board.owner_ref, 22);
+    assert_eq!(board.number, 24);
+    assert_eq!(
+        board.changes[0].kind,
+        crate::history_records::AsmEntityChangeKind::Delete { old: 26 }
+    );
+    assert_eq!(board.changes[0].old_ref(), Some(26));
+    assert_eq!(board.changes[0].new_ref(), None);
+    assert_eq!(board.changes[1].new_ref(), Some(28));
 }
 
 #[test]

@@ -21,7 +21,7 @@ use crate::test_support::zip_test::f3d_with_smbh_and_protein;
 use crate::F3dCodec;
 
 #[test]
-fn generated_f3d_preserves_typed_metadata_and_reports_unsupported_graph_edits() {
+fn generated_f3d_rewrites_design_recipe_and_persistent_reference() {
     let source = f3d_with_smbh_and_protein(&synthetic_geometry_smbh());
     let decoded = F3dCodec
         .decode(&mut Cursor::new(&source), &DecodeOptions::default())
@@ -37,12 +37,11 @@ fn generated_f3d_preserves_typed_metadata_and_reports_unsupported_graph_edits() 
     assert!(reference.value_offset > Some(0));
     reference.value = 9_001;
     let recipe = &mut native.construction_recipes[0];
-    assert!(recipe.byte_offset > Some(0));
     assert!(recipe.record_index.is_some());
     assert!(recipe
         .design
         .as_ref()
-        .is_some_and(|design| design.id.offset.is_none()));
+        .is_some_and(|design| design.id.offset > Some(0)));
     recipe.record_index =
         recipe
             .record_index
@@ -56,7 +55,7 @@ fn generated_f3d_preserves_typed_metadata_and_reports_unsupported_graph_edits() 
         .iter_mut()
         .find(|member| member.entity_suffix == 985)
         .expect("generated body member");
-    assert!(member.byte_offset().is_none());
+    assert!(member.byte_offset() > Some(0));
     member.entity_suffix = 12_345;
     member.flags = 7;
     let header = native
@@ -64,7 +63,6 @@ fn generated_f3d_preserves_typed_metadata_and_reports_unsupported_graph_edits() 
         .iter_mut()
         .find(|header| header.in_sketch_module())
         .expect("generated sketch entity header");
-    assert!(header.byte_offset.is_none());
     let list = header
         .sketch_references_mut()
         .expect("parsed reference list");
@@ -177,52 +175,151 @@ fn generated_f3d_preserves_typed_metadata_and_reports_unsupported_graph_edits() 
         )
         .unwrap();
 
-    let (output, report) =
-        super::source_less_analytic::synthesize_document(&edited, Some(&fidelity));
-    super::source_less_analytic::assert_native_omission(&report);
-    assert!(
-        output.ir().scope.design,
-        "synthesis must keep its authored design: {:?}",
-        output.report().losses
+    let mut regenerated = Vec::new();
+    crate::test_support::plan_inherited_write(&edited, &fidelity, &mut regenerated)
+        .expect("persistent-reference regeneration");
+    let round_trip = F3dCodec
+        .decode(&mut Cursor::new(regenerated), &DecodeOptions::default())
+        .expect("regenerated Design decode");
+    assert_eq!(
+        f3d_native(round_trip.ir()).design_material_assignments[0].asm_body_key,
+        84
     );
-    let native = f3d_native(output.ir());
-    assert!(native.construction_recipes.iter().any(|recipe| {
-        recipe.record_index.map(|index| index.value) == Some(777)
-            && recipe
-                .design
-                .as_ref()
-                .is_some_and(|design| design.id.value.as_str() == "333")
-    }));
-    assert!(
-        native
-            .persistent_references
-            .iter()
-            .any(|reference| reference.value == 9_001),
-        "references after synthesis: {:?}",
-        native.persistent_references
+    assert!(f3d_native(round_trip.ir())
+        .persistent_references
+        .iter()
+        .any(|reference| reference.value == 9_001));
+    assert_eq!(
+        f3d_native(round_trip.ir()).construction_recipes[0]
+            .record_index
+            .map(|index| index.value),
+        Some(777)
     );
-    assert!(native
+    assert_eq!(
+        f3d_native(round_trip.ir()).construction_recipes[0]
+            .design
+            .as_ref()
+            .map(|design| design.id.value.as_str()),
+        Some("333")
+    );
+    assert!(f3d_native(round_trip.ir())
         .design_body_members
         .iter()
         .any(|member| member.entity_suffix == 12_345 && member.flags == 7));
-    assert!(native
-        .design_types
+    let header = f3d_native(round_trip.ir())
+        .design_entity_headers
         .iter()
-        .any(
-            |record| record.type_guid.as_str() == "91111111-2222-3333-4444-555555555555"
-                && record.version == 9
-        ));
-    assert!(native.design_material_assignments.is_empty());
-    assert!(native.act_entities.is_empty());
-    assert!(native.sketch_points.is_empty());
-    assert!(native.sketch_curve_identities.is_empty());
-    assert_eq!(output.ir().model.bodies.len(), edited.model.bodies.len());
+        .find(|header| header.in_sketch_module())
+        .cloned()
+        .expect("round-trip sketch entity header");
+    assert_eq!(header.entity_id.suffix(), 277);
+    assert_eq!(header.entity_id.as_str(), "0_277");
     assert_eq!(
-        output.ir().model.appearances[0].base_color,
-        edited.model.appearances[0].base_color
+        header
+            .sketch_references()
+            .and_then(|list| list.record_reference),
+        Some(585)
     );
     assert_eq!(
-        output.ir().model.appearances[0].properties,
-        edited.model.appearances[0].properties
+        header.reference_values().copied().collect::<Vec<_>>(),
+        [44, 33]
+    );
+    let object = f3d_native(round_trip.ir())
+        .design_types
+        .iter()
+        .find(|design_type| design_type.entities.values().copied().eq([33, 44]))
+        .cloned()
+        .expect("round-trip relation design type");
+    assert_eq!(
+        object.entities.values().copied().collect::<Vec<_>>(),
+        [33, 44]
+    );
+    assert_eq!(
+        object.type_guid.as_str(),
+        "91111111-2222-3333-4444-555555555555"
+    );
+    assert_eq!(
+        object
+            .base_type_guid
+            .value()
+            .map(crate::records::mesh::DesignRelaxedGuidText::as_str),
+        Some("aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeef")
+    );
+    assert_eq!(object.version, 9);
+    assert!(f3d_native(round_trip.ir())
+        .act_guids
+        .iter()
+        .any(|guid| guid.guid.as_str() == "ffffffff-1111-2222-3333-444444444444"));
+    let act_root = &f3d_native(round_trip.ir()).act_component_links[0];
+    assert_eq!(act_root.record_index, 9);
+    assert_eq!(act_root.references.instance_root, 71);
+    assert_eq!(act_root.references.components_root, 72);
+    assert_eq!(
+        act_root.registry_flag,
+        crate::records::act::ActRegistryFlag::Off
+    );
+    assert_eq!(act_root.layout().entity_id(), "1_3");
+    assert_eq!(act_root.layout().display_name(), "(Renamed)");
+    assert_eq!(
+        f3d_native(round_trip.ir()).act_registry_channels[0]
+            .guid
+            .as_str(),
+        "dddddddd-1111-2222-3333-eeeeeeeeeeee"
+    );
+    let act_entity = &f3d_native(round_trip.ir()).act_entities[0];
+    assert_eq!(act_entity.entity_id(), "0_985");
+    assert_eq!(
+        act_entity
+            .channel_group()
+            .channels()
+            .get("Appearance")
+            .map(|guid| guid.value.as_str()),
+        Some("dddddddd-1111-2222-3333-eeeeeeeeeeee")
+    );
+    let binding = &round_trip.ir().model.appearance_bindings[0];
+    assert_eq!(binding.source_entity_id.as_deref(), Some("0_985"));
+    assert_eq!(
+        binding.channels.get("Appearance").map(String::as_str),
+        Some("dddddddd-1111-2222-3333-eeeeeeeeeeee")
+    );
+    let lost_edge = &f3d_native(round_trip.ir()).lost_edge_references[0];
+    assert_eq!(lost_edge.class_tag.as_str(), "420");
+    assert_eq!(lost_edge.record_index, 4_700);
+    assert_eq!(
+        f3d_native(round_trip.ir()).design_material_assignments[0]
+            .entity_id
+            .as_str(),
+        "0_985"
+    );
+    assert_eq!(
+        f3d_native(round_trip.ir()).design_material_assignments[0]
+            .visual_preset
+            .as_ref()
+            .map(|field| field.value.as_str()),
+        Some("Prism-002")
+    );
+    assert_eq!(
+        round_trip.ir().model.appearances[0]
+            .physical_token
+            .as_deref(),
+        Some("PrismMaterial-019")
+    );
+    assert_eq!(
+        round_trip.ir().model.appearances[0].base_color,
+        Some(cadmpeg_ir::topology::Color::new(0.8, 0.6, 0.4, 1.0).expect("valid color"))
+    );
+    assert_eq!(
+        round_trip.ir().model.appearances[0]
+            .properties
+            .get("reflectivity_at_0deg")
+            .map(|value| value.get()),
+        Some(0.7)
+    );
+    assert_eq!(
+        round_trip.ir().model.appearances[0]
+            .properties
+            .get("refraction_index")
+            .map(|value| value.get()),
+        Some(1.8)
     );
 }

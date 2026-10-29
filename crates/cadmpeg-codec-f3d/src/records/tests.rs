@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 mod graphics;
+mod located_wire;
 mod parameter;
 mod parameter_owner;
 mod placement_matrix;
@@ -233,18 +234,6 @@ fn segment_entity_runs_keep_order_and_class_identity_without_source_offsets() {
         assert!(entry.byte_offset.is_none());
         assert_eq!(serde_json::to_value(entry).unwrap(), wire);
     }
-    for field in [
-        "byte_offset",
-        "type_guid_offset",
-        "version_offset",
-        "entity_id_offsets",
-    ] {
-        let mut invalid = base.clone();
-        invalid[field] = serde_json::json!([80]);
-        assert!(
-            serde_json::from_value::<crate::records::entity_header::SegmentType>(invalid).is_err()
-        );
-    }
 }
 
 #[test]
@@ -436,7 +425,7 @@ fn native_sketch_nurbs_refuses_wrong_cardinality_and_negative_fit_tolerance() {
 }
 
 #[test]
-fn parameter_source_preserves_semantic_family_and_checks_ownership() {
+fn parameter_source_preserves_wire_and_rejects_inconsistent_ownership() {
     for (source_kind, kind, owner) in [
         (
             "User Parameter",
@@ -475,7 +464,9 @@ fn parameter_source_preserves_semantic_family_and_checks_ownership() {
             }
             assert!(
                 serde_json::from_value::<crate::records::parameters::DesignParameter>(wrong_owner)
-                    .is_err()
+                    .unwrap_err()
+                    .to_string()
+                    .contains("owner_record_index")
             );
             let mut bad_discriminator = wire.clone();
             bad_discriminator["family_discriminator"] = serde_json::json!(7);
@@ -483,7 +474,9 @@ fn parameter_source_preserves_semantic_family_and_checks_ownership() {
                 serde_json::from_value::<crate::records::parameters::DesignParameter>(
                     bad_discriminator
                 )
-                .is_err()
+                .unwrap_err()
+                .to_string()
+                .contains("family_discriminator")
             );
             let mut no_discriminator = wire;
             no_discriminator
@@ -503,7 +496,8 @@ fn parameter_source_preserves_semantic_family_and_checks_ownership() {
     }
     assert!(
         crate::records::parameters::DesignParameterSource::new(String::new(), Some(2), None)
-            .is_err()
+            .unwrap_err()
+            .contains("source_kind")
     );
 }
 
@@ -810,7 +804,10 @@ fn sketch_visibility_retains_semantic_ordinal_and_validates_real_source_extents(
     }
     let mut invalid = wire;
     invalid["stream_ordinal"] = 0.into();
-    assert!(serde_json::from_value::<DesignSketchVisibility>(invalid).is_err());
+    assert!(serde_json::from_value::<DesignSketchVisibility>(invalid)
+        .unwrap_err()
+        .to_string()
+        .contains("stream_ordinal"));
     let last = DesignSketchVisibility::new(std::num::NonZeroU32::MIN, u64::MAX - 5, true).unwrap();
     assert_eq!(last.visible_offset(), Some(u64::MAX));
     assert!(DesignSketchVisibility::new(std::num::NonZeroU32::MIN, u64::MAX - 4, true).is_err());
@@ -965,7 +962,10 @@ fn sketch_placement_source_forms_conserve_transform_in_payload_free_document() {
         assert_eq!(serde_json::to_value(document).unwrap(), wire);
         let mut invalid = wire;
         invalid["transform"][0][0] = 2.0.into();
-        assert!(serde_json::from_value::<DesignSketchPlacement>(invalid).is_err());
+        assert!(serde_json::from_value::<DesignSketchPlacement>(invalid)
+            .unwrap_err()
+            .to_string()
+            .contains("transform"));
     }
 }
 
@@ -1052,6 +1052,44 @@ fn timeline_frame_rejects_invalid_actual_source_spans() {
     }
     let empty = DesignTimelineFrame::new(200, 44, 220, 240, Vec::new()).unwrap();
     assert!(empty.items().is_empty());
+}
+
+#[test]
+fn timeline_frame_rejects_invalid_source_spans() {
+    let wire = serde_json::json!({
+        "id": "f3d:Design/BulkStream.dat:design-feature-timeline#200", "class_tag": "256",
+        "record_index": 35, "source_ordinal": 0, "context_record_index": 17,
+        "item_record_indices": [101, 102]
+    });
+    serde_json::from_value::<crate::records::entity_header::DesignFeatureTimeline>(wire.clone())
+        .expect("valid timeline frame");
+    for (field, bad, diagnostic) in [
+        ("class_tag", serde_json::json!("25x"), "class_tag"),
+        ("record_index", serde_json::json!(0), "record_index"),
+        (
+            "context_record_index",
+            serde_json::json!(0),
+            "context_record_index",
+        ),
+        (
+            "item_record_indices",
+            serde_json::json!([101, 0]),
+            "item_record_indices",
+        ),
+        (
+            "item_record_indices",
+            serde_json::json!([101, 101]),
+            "item_record_indices",
+        ),
+    ] {
+        let mut invalid = wire.clone();
+        invalid[field] = bad;
+        let error =
+            serde_json::from_value::<crate::records::entity_header::DesignFeatureTimeline>(invalid)
+                .unwrap_err()
+                .to_string();
+        assert!(error.contains(diagnostic), "{field}: {error}");
+    }
 }
 
 #[test]

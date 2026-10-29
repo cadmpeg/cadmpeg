@@ -101,7 +101,7 @@ fn generated_source_less_reduces_translucent_direct_color_with_a_loss() {
 }
 
 #[test]
-fn generated_source_less_rejects_an_invalid_empty_display_name() {
+fn generated_source_less_rejects_empty_display_name_as_not_implemented() {
     let mut source_less = cadmpeg_ir::examples::unit_cube().expect("unit cube fixture is admitted");
     source_less.model.bodies[0].name = Some(String::new());
 
@@ -110,7 +110,7 @@ fn generated_source_less_rejects_an_invalid_empty_display_name() {
         .and_then(|plan| plan.write_to(&mut Vec::new()))
         .unwrap_err();
     assert!(
-        matches!(error, cadmpeg_core::CodecError::Malformed(message) if message.contains("display name"))
+        matches!(error, cadmpeg_core::CodecError::NotImplemented(message) if message.contains("display name"))
     );
 }
 
@@ -511,7 +511,7 @@ fn generated_source_less_writes_two_independent_cube_bodies() {
 }
 
 #[test]
-fn generated_source_less_drops_opaque_asm_history_payloads_with_a_loss() {
+fn generated_source_less_writes_typed_asm_history_graph() {
     let source = f3d_with_smbh(&synthetic_geometry_with_history_smbh());
     let decoded = F3dCodec
         .decode(&mut Cursor::new(source), &DecodeOptions::default())
@@ -521,31 +521,39 @@ fn generated_source_less_drops_opaque_asm_history_payloads_with_a_loss() {
     source_less
         .set_native_unknowns(&cadmpeg_test_support::service_decode_context(), "f3d", &[])
         .unwrap();
-    assert!(
-        !f3d_native(&source_less).asm_histories[0].states()[0]
-            .records
-            .is_empty(),
-        "the fixture includes an opaque history payload"
-    );
+    let expected = f3d_native(&source_less).asm_histories[0].clone();
 
-    let (output, report) = super::source_less_analytic::synthesize_document(&source_less, None);
-    assert!(f3d_native(output.ir()).asm_histories.is_empty());
-    super::source_less_analytic::assert_native_omission(&report);
-    assert_eq!(
-        output.ir().model.bodies.len(),
-        source_less.model.bodies.len()
-    );
+    let mut encoded = Vec::new();
+    F3dCodec
+        .plan(EncodeInput::new(&source_less, None), TargetRequest::Inherit)
+        .and_then(|plan| plan.write_to(&mut encoded))
+        .expect("source-less history encode");
     let mut preambleless = source_less.clone();
     {
         let mut native = f3d_native_mut(&mut preambleless);
         native.asm_histories[0].preamble = None;
     }
-    let (output, report) = super::source_less_analytic::synthesize_document(&preambleless, None);
-    assert!(f3d_native(output.ir()).asm_histories.is_empty());
-    super::source_less_analytic::assert_native_omission(&report);
+    let mut preambleless_bytes = Vec::new();
+    F3dCodec
+        .plan(
+            EncodeInput::new(&preambleless, None),
+            TargetRequest::Inherit,
+        )
+        .and_then(|plan| plan.write_to(&mut preambleless_bytes))
+        .expect("source-less preambleless history encode");
+    let preambleless_round_trip = F3dCodec
+        .decode(
+            &mut Cursor::new(preambleless_bytes),
+            &DecodeOptions::default(),
+        )
+        .expect("source-less preambleless history round trip");
     assert_eq!(
-        output.ir().model.bodies.len(),
-        preambleless.model.bodies.len()
+        f3d_native(preambleless_round_trip.ir()).asm_histories[0].stream_size(),
+        None
+    );
+    assert_eq!(
+        f3d_native(preambleless_round_trip.ir()).asm_histories[0].history_entry_count(),
+        None
     );
     {
         let mut native = f3d_native_mut(&mut source_less);
@@ -560,6 +568,18 @@ fn generated_source_less_drops_opaque_asm_history_payloads_with_a_loss() {
     assert!(error
         .to_string()
         .contains("head state_id == stream_size and nonnegative history_entry_count"));
+    let round_trip = F3dCodec
+        .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
+        .expect("source-less history round trip");
+    let actual = &f3d_native(round_trip.ir()).asm_histories[0];
+    assert_eq!(actual.stream_size(), expected.stream_size());
+    assert_eq!(actual.history_entry_count(), expected.history_entry_count());
+    assert_eq!(actual.states().len(), expected.states().len());
+    assert_eq!(actual.states()[0].state_id, expected.states()[0].state_id);
+    assert_eq!(actual.states()[0].bulletin_boards.len(), 1);
+    assert_eq!(actual.states()[0].bulletin_boards[0].changes.len(), 2);
+    assert_eq!(actual.states()[0].records.len(), 1);
+    assert_eq!(actual.states()[0].records[0].name(), "history_payload");
 }
 
 #[test]
