@@ -150,11 +150,14 @@ impl Allowances {
                 }
             }
         }
-        Ok(Self { removed })
+        Ok(Self {
+            removed,
+            removed_fields: BTreeSet::new(),
+        })
     }
 }
 
-fn required_references(
+pub(super) fn required_references(
     value: &Value,
     identities: &BTreeMap<String, usize>,
     required: &mut BTreeSet<String>,

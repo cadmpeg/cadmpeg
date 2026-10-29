@@ -8,9 +8,11 @@ use std::collections::{BTreeMap, BTreeSet};
 
 use serde_json::Value;
 
+mod export;
 mod given_up;
 mod graph;
 
+pub use export::{allowed_removals_by_arena, stub_extents, unnamed_removals};
 pub use given_up::DecodeSnapshot;
 
 use graph::Document;
@@ -22,6 +24,7 @@ use graph::Document;
 #[derive(Debug, Default)]
 pub struct Allowances {
     removed: BTreeSet<String>,
+    removed_fields: BTreeSet<(String, String)>,
 }
 
 /// Which document content the comparison covers.
@@ -43,20 +46,84 @@ pub enum Mode {
 /// Panics with the first missing record or value disagreement. The inputs must
 /// be document objects with an object-valued `model` and identified arena rows.
 pub fn assert_decodes_agree(before: &Value, after: &Value, allowances: &Allowances, mode: Mode) {
-    if let Err(error) = agree(before, after, allowances, mode) {
+    if let Err(error) = decodes_agree(before, after, allowances, mode) {
         panic!("decoded documents disagree: {error}");
     }
 }
 
-fn agree(before: &Value, after: &Value, allowances: &Allowances, mode: Mode) -> Result<(), String> {
-    let Mode::Same = mode;
-    cadmpeg_ir::compare::values_agree(&header(before)?, &header(after)?)?;
-    let mut before = Document::read(before, &allowances.removed)?;
-    let mut after = Document::read(after, &BTreeSet::new())?;
-    let (before_colours, after_colours) = graph::colours(&before, &after);
+/// Compare as [`assert_decodes_agree`] does, and return the allowed records of
+/// `before` that `after` does not hold.
+///
+/// # Errors
+///
+/// Returns the first missing record or value disagreement.
+pub fn decodes_agree(
+    before: &Value,
+    after: &Value,
+    allowances: &Allowances,
+    mode: Mode,
+) -> Result<BTreeSet<String>, String> {
+    // An allowance prunes `before`; it applies only to content that `after`
+    // does not hold. Field removals apply only when keeping them fails. Record
+    // removals prune only the allowed records that `after` does not pair.
+    let mut result = Err(String::new());
+    for fields in [&BTreeSet::new(), &allowances.removed_fields] {
+        result = agree_pruned(before, after, &allowances.removed, fields, mode);
+        if result.is_ok() || allowances.removed_fields.is_empty() {
+            break;
+        }
+    }
+    result
+}
+
+fn agree_pruned(
+    before: &Value,
+    after: &Value,
+    permitted: &BTreeSet<String>,
+    fields: &BTreeSet<(String, String)>,
+    mode: Mode,
+) -> Result<BTreeSet<String>, String> {
+    let unpruned = agree_once(before, after, fields, &BTreeSet::new(), None, mode);
+    if let Ok(missing) = &unpruned {
+        if missing.is_subset(permitted) {
+            return unpruned;
+        }
+    }
+    let unpaired = pairing_gaps(before, after, fields)?;
+    let removed = unpaired
+        .intersection(permitted)
+        .cloned()
+        .collect::<BTreeSet<_>>();
+    agree_once(before, after, fields, &removed, Some(&removed), mode)
+}
+
+/// The records of `before` that `after` does not pair, with no pruning.
+fn pairing_gaps(
+    before: &Value,
+    after: &Value,
+    fields: &BTreeSet<(String, String)>,
+) -> Result<BTreeSet<String>, String> {
+    unpaired_only(&without_fields(before, fields), after)
+}
+
+fn unpaired_only(before: &Value, after: &Value) -> Result<BTreeSet<String>, String> {
+    let before = Document::read(before, &BTreeSet::new())?;
+    let after = Document::read(after, &BTreeSet::new())?;
+    let pairs = pair(&before, &after);
+    Ok(before
+        .records
+        .iter()
+        .enumerate()
+        .filter(|(index, _)| !pairs.contains_key(index))
+        .map(|(_, record)| record.id.clone())
+        .collect())
+}
+
+/// Colour pairing, then greedy `values_agree` pairing, in arena order.
+fn pair(before: &Document, after: &Document) -> BTreeMap<usize, usize> {
+    let (before_colours, after_colours) = graph::colours(before, after);
     let mut pairs = BTreeMap::new();
     let mut used = BTreeSet::new();
-
     // Colour pairing is deterministic in arena order and never deduplicates.
     for (index, record) in before.records.iter().enumerate() {
         if let Some((other, _)) = after.records.iter().enumerate().find(|(other, row)| {
@@ -87,13 +154,38 @@ fn agree(before: &Value, after: &Value, allowances: &Allowances, mode: Mode) -> 
             used.insert(other);
         }
     }
+    pairs
+}
+
+/// One comparison: `pruned` records lose their list entries in `before`, and
+/// every unpaired record of `before` must lie in `permitted`; `None` permits
+/// no unpaired record.
+fn agree_once(
+    before: &Value,
+    after: &Value,
+    fields: &BTreeSet<(String, String)>,
+    pruned: &BTreeSet<String>,
+    permitted: Option<&BTreeSet<String>>,
+    mode: Mode,
+) -> Result<BTreeSet<String>, String> {
+    let Mode::Same = mode;
+    cadmpeg_ir::compare::values_agree(&header(before)?, &header(after)?)?;
+    let before = without_fields(before, fields);
+    let mut before = Document::read(&before, pruned)?;
+    let mut after = Document::read(after, &BTreeSet::new())?;
+    let pairs = pair(&before, &after);
+    let mut missing = BTreeSet::new();
     for (index, record) in before.records.iter().enumerate() {
-        if !pairs.contains_key(&index) && !allowances.removed.contains(&record.id) {
+        if pairs.contains_key(&index) {
+            continue;
+        }
+        if !permitted.is_some_and(|permitted| permitted.contains(&record.id)) {
             return Err(format!(
                 "{}: required record {} is missing",
                 record.arena, record.id
             ));
         }
+        missing.insert(record.id.clone());
     }
     // Additions and witnessed removals do not shift the relative positions of
     // the records that the two documents actually pair.
@@ -116,7 +208,34 @@ fn agree(before: &Value, after: &Value, allowances: &Allowances, mode: Mode) -> 
         cadmpeg_ir::compare::values_agree(&record.value, &mapped)
             .map_err(|error| format!("{} {}: {error}", record.arena, record.id))?;
     }
-    Ok(())
+    Ok(missing)
+}
+
+/// `document` without the allowed (record id, field) removals.
+fn without_fields(document: &Value, fields: &BTreeSet<(String, String)>) -> Value {
+    let mut document = document.clone();
+    if fields.is_empty() {
+        return document;
+    }
+    let mut prune = |rows: &mut Value| {
+        for row in rows.as_array_mut().into_iter().flatten() {
+            let Some(id) = row.get("id").and_then(Value::as_str).map(str::to_owned) else {
+                continue;
+            };
+            if let Some(record) = row.as_object_mut() {
+                record.retain(|key, _| !fields.contains(&(id.clone(), key.clone())));
+            }
+        }
+    };
+    if let Some(model) = document.get_mut("model").and_then(Value::as_object_mut) {
+        model.values_mut().for_each(&mut prune);
+    }
+    if let Some(native) = document.get_mut("native").and_then(Value::as_object_mut) {
+        for arenas in native.values_mut().filter_map(Value::as_object_mut) {
+            arenas.values_mut().for_each(&mut prune);
+        }
+    }
+    document
 }
 
 fn unranked_shape(value: &Value, identities: &BTreeMap<String, usize>) -> Value {

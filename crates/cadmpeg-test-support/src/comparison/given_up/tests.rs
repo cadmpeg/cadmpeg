@@ -206,7 +206,7 @@ fn actual_given_up_home_allows_only_its_whole_record_required_cascade_and_list_e
         ]
         .into()
     );
-    super::super::agree(
+    super::super::decodes_agree(
         &serde_json::to_value(&before).unwrap(),
         &serde_json::to_value(&after).unwrap(),
         &allowed,
@@ -215,7 +215,7 @@ fn actual_given_up_home_allows_only_its_whole_record_required_cascade_and_list_e
     .unwrap();
     let mut unreported = after.clone();
     unreported.model.points.clear();
-    assert!(super::super::agree(
+    assert!(super::super::decodes_agree(
         &serde_json::to_value(&before).unwrap(),
         &serde_json::to_value(&unreported).unwrap(),
         &allowed,
@@ -251,7 +251,7 @@ fn wrong_home_wrong_scope_missing_loss_and_loss_without_part_never_license_remov
     )
     .unwrap();
     assert!(unsupported.removed.is_empty());
-    assert!(super::super::agree(
+    assert!(super::super::decodes_agree(
         &serde_json::to_value(&before).unwrap(),
         &serde_json::to_value(&after).unwrap(),
         &unsupported,
