@@ -5682,15 +5682,15 @@ pub(crate) mod typed_reference_profile_chain_record {
 /// Spec §3.1. Record length 76 B.
 ///
 /// ```text
-/// Offsets are relative to the identity record indexed header; the two counted loop lists begin at offset 72.
+/// Offsets are relative to the identity record indexed header; the two counted region lists begin at offset 72.
 /// ```
 pub(crate) mod typed_reference_profile_identity_record {
     /// Offset of `zero_run_10` (`bytes[10]`). Spec §3.1.
     pub(crate) const ZERO_RUN_10: usize = 11;
     /// Offset of `selection_reference` (`bytes[51]`). Spec §3.1.
     pub(crate) const SELECTION_REFERENCE: usize = 21;
-    /// Offset of `first_loop_count` (`u32`, little-endian). Spec §3.1.
-    pub(crate) const FIRST_LOOP_COUNT: usize = 72;
+    /// Offset of `first_region_count` (`u32`, little-endian). Spec §3.1.
+    pub(crate) const FIRST_REGION_COUNT: usize = 72;
 }
 
 /// Byte offsets for the `typed_reference_companion_prefix` record.
@@ -7077,4 +7077,27 @@ pub(crate) mod emboss_counted_suffix {
     pub(crate) const ZERO_SEPARATOR_VALUE: [u8; 3] = [0x00, 0x00, 0x00];
     /// Offset of `reference_count` (`u32`, little-endian). Spec §3.1.
     pub(crate) const REFERENCE_COUNT: usize = 154;
+}
+
+/// Byte offsets for the `sketch_typed_compact_member_head` record.
+///
+/// Spec §3.1. Record length 74 B.
+///
+/// ```text
+/// Offsets are relative to the indexed head-placement header.
+/// ```
+pub(crate) mod sketch_typed_compact_member_head {
+    /// Record length in bytes. Spec §3.1.
+    pub(crate) const LEN: usize = 74;
+    /// Offset of `zero_run` (`bytes[10]`). Spec §3.1.
+    pub(crate) const ZERO_RUN: usize = 11;
+    /// Stated value of `zero_run` (`bytes[10]`). Spec §3.1.
+    pub(crate) const ZERO_RUN_VALUE: [u8; 10] =
+        [0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00];
+    /// Offset of `flags` (`bytes[2]`). Spec §3.1.
+    pub(crate) const FLAGS: usize = 21;
+    /// Stated value of `flags` (`bytes[2]`). Spec §3.1.
+    pub(crate) const FLAGS_VALUE: [u8; 2] = [0x01, 0x00];
+    /// Offset of `reference` (`bytes[51]`). Spec §3.1.
+    pub(crate) const REFERENCE: usize = 23;
 }

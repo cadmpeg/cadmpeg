@@ -1583,3 +1583,59 @@ fn move_transform_refusal_reports_exact_loss_for_transform_or_selection() {
         }));
     }
 }
+
+#[test]
+fn typed_profile_ambiguous_selection_retains_profile_loss() {
+    let mut ir = cadmpeg_ir::document::CadIr::empty();
+    let definition = serde_json::from_value(serde_json::json!({
+        "definition": "extrude",
+        "profile": {"kind": "native", "value": "synthetic:profile"},
+        "direction": {"kind": "profile_normal"},
+        "start": {"kind": "profile_plane"},
+        "extent": {"kind": "one_sided", "side": {"termination": {"kind": "blind", "length": 7.0}}},
+        "op": "new_body", "solid": true
+    }))
+    .unwrap();
+    ir.model.features.push(cadmpeg_ir::features::Feature {
+        id: cadmpeg_ir::features::FeatureId::mint("synthetic:test:id#feature").unwrap(),
+        ordinal: 0,
+        name: None,
+        suppressed: None,
+        dependencies: Default::default(),
+        source_properties: Default::default(),
+        source_tag: Some("Extrude".into()),
+        source_text: None,
+        source_content: Default::default(),
+        evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(definition),
+        native_ref: None,
+    });
+    let mut report = cadmpeg_ir::codec::DecodeBody {
+        transfer: cadmpeg_ir::report::decode::DecodeTransfer::full(true),
+        coverage: Default::default(),
+        losses: Vec::new(),
+        notes: Vec::new(),
+        transfer_ledger: Default::default(),
+    };
+    report_design_projection_gaps(
+        &mut report,
+        &cadmpeg_test_support::service_decode_context(),
+        &ir,
+        &F3dNative::default(),
+    )
+    .unwrap();
+    assert!(report
+        .losses
+        .iter()
+        .any(|loss| loss.code == F3dLossCode::FeatureProfileSelectionNative.kind()));
+    assert!(matches!(
+        ir.model.features[0].evaluation.definition(),
+        cadmpeg_ir::features::FeatureDefinition::Operation(
+            cadmpeg_ir::features::FeatureOperation::Extrude {
+                profile: cadmpeg_ir::features::ProfileRef::Planar(
+                    cadmpeg_ir::features::PlanarProfileRef::Native(_)
+                ),
+                ..
+            }
+        )
+    ));
+}

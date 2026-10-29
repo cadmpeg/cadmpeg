@@ -19418,7 +19418,7 @@ kind = "byte"
 section = "3.1"
 anchor = "The identity record at the record index plus three stores ten zero bytes"
 size = 76
-note = "Offsets are relative to the identity record indexed header; the two counted loop lists begin at offset 72."
+note = "Offsets are relative to the identity record indexed header; the two counted region lists begin at offset 72."
 
 [[record.gap]]
 offset = 0
@@ -19440,7 +19440,7 @@ source = "spec"
 anchor = "The identity record at the record index plus three stores ten zero bytes"
 
 [[record.field]]
-name = "first_loop_count"
+name = "first_region_count"
 offset = 72
 type = "u32"
 source = "spec"
@@ -24462,3 +24462,40 @@ offset = 154
 type = "u32"
 source = "spec"
 anchor = "The `emboss_counted_suffix` layout starts immediately after the native pair run."
+
+[[record]]
+name = "sketch_typed_compact_member_head"
+parsed_by = "crates/cadmpeg-codec-f3d/src/design/decode/sketch.rs"
+kind = "byte"
+section = "3.1"
+anchor = "The typed compact head record is 74 bytes"
+size = 74
+note = "Offsets are relative to the indexed head-placement header."
+
+[[record.gap]]
+offset = 0
+size = 11
+note = "The indexed header precedes the placement fields."
+
+[[record.field]]
+name = "zero_run"
+offset = 11
+type = "bytes[10]"
+source = "spec"
+anchor = "It stores ten zero bytes after the indexed header"
+value = [0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
+
+[[record.field]]
+name = "flags"
+offset = 21
+type = "bytes[2]"
+source = "spec"
+anchor = "`01 00` at offsets 21 and 22"
+value = [1, 0]
+
+[[record.field]]
+name = "reference"
+offset = 23
+type = "bytes[51]"
+source = "spec"
+anchor = "a 51-byte typed reference at offset 23"
