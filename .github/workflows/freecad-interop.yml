@@ -33,11 +33,12 @@ jobs:
       - uses: actions/checkout@v7.0.1
       - uses: ./.github/actions/pinned-rust
       - uses: ./.github/actions/cargo-job-count
+      - id: profiles
+        uses: ./.github/actions/cargo-profile-key
       - uses: Swatinem/rust-cache@v2
         with:
           shared-key: freecad-native
-          # The automatic key ignores [profile] sections, which change every artifact.
-          key: ${{ hashFiles('Cargo.toml') }}
+          prefix-key: v0-rust-${{ steps.profiles.outputs.hash }}
       - name: Install native runtime
         run: |
           set -euo pipefail

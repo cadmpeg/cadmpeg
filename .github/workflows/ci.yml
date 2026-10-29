@@ -219,12 +219,15 @@ jobs:
       - name: Match cargo's job count to the runner
         uses: ./.github/actions/cargo-job-count
 
+      - name: Hash the Cargo profiles
+        id: profiles
+        uses: ./.github/actions/cargo-profile-key
+
       - name: Cache cargo registry and target
         uses: Swatinem/rust-cache@v2
         with:
           shared-key: clippy
-          # The automatic key ignores [profile] sections, which change every artifact.
-          key: ${{ hashFiles('Cargo.toml') }}
+          prefix-key: v0-rust-${{ steps.profiles.outputs.hash }}
           save-if: ${{ github.ref == 'refs/heads/main' }}
 
       - name: Format check
@@ -263,6 +266,10 @@ jobs:
       - name: Match cargo's job count to the runner
         uses: ./.github/actions/cargo-job-count
 
+      - name: Hash the Cargo profiles
+        id: profiles
+        uses: ./.github/actions/cargo-profile-key
+
       - name: Cache cargo registry and target
         # The only stable job that writes the shared cache. It builds the
         # widest set of dependencies, and concurrent writers of one key make
@@ -270,8 +277,7 @@ jobs:
         uses: Swatinem/rust-cache@v2
         with:
           shared-key: stable
-          # The automatic key ignores [profile] sections, which change every artifact.
-          key: ${{ hashFiles('Cargo.toml') }}
+          prefix-key: v0-rust-${{ steps.profiles.outputs.hash }}
           save-if: ${{ github.ref == 'refs/heads/main' }}
 
       - name: Install cargo-nextest
@@ -337,12 +343,15 @@ jobs:
       - name: Match cargo's job count to the runner
         uses: ./.github/actions/cargo-job-count
 
+      - name: Hash the Cargo profiles
+        id: profiles
+        uses: ./.github/actions/cargo-profile-key
+
       - name: Cache cargo registry and target
         uses: Swatinem/rust-cache@v2
         with:
           shared-key: features
-          # The automatic key ignores [profile] sections, which change every artifact.
-          key: ${{ hashFiles('Cargo.toml') }}
+          prefix-key: v0-rust-${{ steps.profiles.outputs.hash }}
           save-if: ${{ github.ref == 'refs/heads/main' }}
 
       - name: Schema feature
@@ -440,11 +449,14 @@ jobs:
       - name: Match cargo's job count to the runner
         uses: ./.github/actions/cargo-job-count
 
+      - name: Hash the Cargo profiles
+        id: profiles
+        uses: ./.github/actions/cargo-profile-key
+
       - name: Cache cargo registry and target
         uses: Swatinem/rust-cache@v2
         with:
-          # The automatic key ignores [profile] sections, which change every artifact.
-          key: ${{ hashFiles('Cargo.toml') }}
+          prefix-key: v0-rust-${{ steps.profiles.outputs.hash }}
           save-if: ${{ github.ref == 'refs/heads/main' }}
 
       - name: Check
@@ -481,11 +493,14 @@ jobs:
       - name: Match cargo's job count to the runner
         uses: ./.github/actions/cargo-job-count
 
+      - name: Hash the Cargo profiles
+        id: profiles
+        uses: ./.github/actions/cargo-profile-key
+
       - name: Cache cargo registry and target
         uses: Swatinem/rust-cache@v2
         with:
-          # The automatic key ignores [profile] sections, which change every artifact.
-          key: ${{ hashFiles('Cargo.toml') }}
+          prefix-key: v0-rust-${{ steps.profiles.outputs.hash }}
           save-if: ${{ github.ref == 'refs/heads/main' }}
 
       - name: Install cargo-nextest
