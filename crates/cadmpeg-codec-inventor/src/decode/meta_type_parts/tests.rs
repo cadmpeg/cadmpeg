@@ -4,10 +4,10 @@
 use crate::container::InventorContainer;
 use crate::native::MetaTypeRecord;
 use crate::rse::SegmentMetaState;
+use crate::test_support::given_up_records;
 use crate::test_support::test_fixtures::primary_envelope_fixture_with_design;
 use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
 use cadmpeg_core::CodecError;
-use cadmpeg_ir::source_fidelity::parts::PartState;
 
 fn fixture(id: [u8; 16]) -> Vec<u8> {
     primary_envelope_fixture_with_design(&[], &[(id, Vec::new()), ([0x22; 16], Vec::new())])
@@ -20,7 +20,7 @@ fn descriptors(bytes: &[u8]) -> Vec<MetaTypeRecord> {
     let container = InventorContainer::open(&ctx, root).unwrap();
     assert_eq!(container.rse.source_meta_type_count, 3);
     let output = container.rse.source_parts;
-    let (_, native, _, losses) = output.into_parts(&ctx).unwrap().into_parts();
+    let (_, native, _, losses) = output.into_parts();
     assert!(losses.is_empty());
     native
         .namespace("inventor")
@@ -42,21 +42,13 @@ fn descriptors_keep_exact_source_values_reads_and_section_framing() {
         .iter()
         .find(|segment| segment.pair.token.as_str() == "dc")
         .unwrap();
-    let SegmentMetaState::Parsed(meta) = &segment.meta else {
-        panic!("the actual metadata fixture must parse")
-    };
-    let frame = crate::records::frame_type_table(meta.body).unwrap();
-    let entry = frame
-        .payload
-        .child(frame.payload.start(), frame.payload.start() + 28)
-        .unwrap();
-    let expected = ctx.capture_part_extent(entry).unwrap();
-    let count = super::interval(&ctx, frame.count_source).unwrap();
-    let span = super::interval(&ctx, frame.span_source).unwrap();
-    let compressed = ctx.capture_part_extent(meta.compressed).unwrap();
+    assert!(
+        matches!(segment.meta, SegmentMetaState::Parsed(_)),
+        "the actual metadata fixture must parse"
+    );
     assert_eq!(container.rse.source_meta_type_count, 3);
     let output = container.rse.source_parts;
-    let (_, native, fidelity, losses) = output.into_parts(&ctx).unwrap().into_parts();
+    let (_, native, fidelity, losses) = output.into_parts();
     assert!(losses.is_empty());
     let records = native
         .namespace("inventor")
@@ -77,50 +69,7 @@ fn descriptors_keep_exact_source_values_reads_and_section_framing() {
             fields: [(1, 2), (3, 4)],
         }
     );
-    let (_, child) = fidelity
-        .parts()
-        .iter()
-        .find(|(_, part)| {
-            part.level().as_str() == "inventor.type_descriptor"
-                && part.stream() == expected.stream()
-                && part.offset() == expected.offset()
-        })
-        .unwrap();
-    assert_eq!(child.byte_len(), 28);
-    assert!(child.framing_bytes().is_empty());
-    let section = &fidelity.parts()[child.parent().unwrap()];
-    assert_eq!(section.level().as_str(), "inventor.meta_forward_section");
-    assert_eq!(section.framing_bytes(), &[count, span]);
-    let body = &fidelity.parts()[section.parent().unwrap()];
-    assert_eq!(body.level().as_str(), "inventor.meta_body");
-    assert_eq!(body.stream(), compressed.stream());
-    assert_eq!(body.offset(), compressed.offset());
-    assert_eq!(body.byte_len(), compressed.byte_len());
-    let member = &fidelity.parts()[body.parent().unwrap()];
-    assert_eq!(member.level().as_str(), "cfb.stream");
-    let captures = ctx.take_record_captures().unwrap();
-    assert_eq!(captures.len(), 5);
-    let mut pairs = captures
-        .iter()
-        .map(|capture| capture.id())
-        .filter(|id| id.starts_with("inventor:rse:segment#"))
-        .collect::<Vec<_>>();
-    pairs.sort_unstable();
-    assert_eq!(
-        pairs,
-        ["inventor:rse:segment#dc", "inventor:rse:segment#seg"]
-    );
-    let capture = captures
-        .iter()
-        .find(|capture| capture.id() == actual.id)
-        .unwrap();
-    assert_eq!(capture.stream(), expected.stream());
-    assert_eq!(capture.offset(), expected.offset());
-    assert_eq!(capture.byte_len(), 28);
-    assert_eq!(
-        capture.reads()[expected.stream()],
-        [expected.offset()..expected.offset() + 28]
-    );
+    assert!(given_up_records(&fidelity).is_empty());
 }
 
 #[test]
@@ -158,7 +107,7 @@ fn source_construction_does_not_credit_independently_changed_cached_values() {
         }
     }
     let output = container.rse.source_parts;
-    let (_, native, _, losses) = output.into_parts(&ctx).unwrap().into_parts();
+    let (_, native, _, losses) = output.into_parts();
     assert!(losses.is_empty());
     let records = native
         .namespace("inventor")
@@ -179,9 +128,6 @@ fn descriptor_native_insertion_keeps_the_actual_session_entity_limit() {
         panic!("native insertion must preserve the actual entity limit")
     };
     assert_eq!(expected.dimension, ResourceDimension::Entities);
-    assert!(
-        matches!(ctx.take_record_captures(), Err(CodecError::ResourceLimit(actual)) if actual == expected)
-    );
 }
 
 #[test]
@@ -206,9 +152,7 @@ fn over_limit_type_section_is_given_up_before_guid_dispatch_and_keeps_the_exact_
         bulk.records,
         crate::rse::RecordFrameState::Partial { .. }
     ));
-    let projection =
-        super::super::rse_native_projection::project(&ctx, &container, &container.rse.source_parts)
-            .unwrap();
+    let projection = super::super::rse_native_projection::project(&ctx, &container).unwrap();
     assert!(projection.identity_issues.is_empty());
     assert!(projection.segment_meta_issues.is_empty());
     assert!(projection.segment_bulk_issues.is_empty());
@@ -264,7 +208,7 @@ fn over_limit_type_section_is_given_up_before_guid_dispatch_and_keeps_the_exact_
         .is_some());
     assert_eq!(container.rse.source_meta_type_count, 1);
     let output = container.rse.source_parts;
-    let (_, native, fidelity, losses) = output.into_parts(&ctx).unwrap().into_parts();
+    let (_, native, fidelity, losses) = output.into_parts();
     let namespace = native.namespace("inventor").unwrap();
     let records = namespace.arena_as::<MetaTypeRecord>("meta_types").unwrap();
     assert_eq!(records.len(), 1);
@@ -273,54 +217,11 @@ fn over_limit_type_section_is_given_up_before_guid_dispatch_and_keeps_the_exact_
     assert_eq!(records[0].index, 0);
     assert_eq!(records[0].type_id, "5c5945f6d5113313100060a6bba647b5");
     assert_eq!(records[0].fields, [(1, 2), (3, 4)]);
-    let given_up = fidelity
-        .parts()
-        .values()
-        .filter(|part| matches!(part.state(), PartState::GivenUp {}))
-        .collect::<Vec<_>>();
-    // #215 §4.5 rules 2-3: the type table is the one given-up part; the
-    // records that need its descriptors are dropped with it and are not
-    // parts of their own.
+    // The type table is the one given-up part; the records that need its
+    // descriptors are not formed and are not given up on their own.
+    let given_up = given_up_records(&fidelity);
     assert_eq!(given_up.len(), 1);
-    let section = given_up[0];
-    assert!(!fidelity
-        .parts()
-        .values()
-        .any(|part| part.level().as_str() == "inventor.rse_record_body"));
-    let trailer = fidelity
-        .parts()
-        .values()
-        .find(|part| part.level().as_str() == "inventor.bulk_stream_trailer")
-        .unwrap();
-    assert_eq!(trailer.offset(), 2400);
-    assert_eq!(trailer.byte_len(), 4);
-    assert_eq!(trailer.framing_bytes(), &[2400..2404]);
-    assert!(matches!(trailer.state(), PartState::Decoded {}));
-    assert_eq!(section.level().as_str(), "inventor.meta_forward_section");
-    assert_eq!(section.byte_len(), 8 + 300 * 28);
-    assert_eq!(
-        section.framing_bytes(),
-        &[
-            section.offset()..section.offset() + 4,
-            section.offset() + 4 + 300 * 28..section.offset() + 8 + 300 * 28
-        ]
-    );
-    assert_eq!(
-        fidelity.parts()[section.parent().unwrap()].level().as_str(),
-        "inventor.meta_body"
-    );
-    let unknowns = namespace
-        .arena_as::<cadmpeg_ir::NativeUnknownRecord>("unknowns")
-        .unwrap();
-    assert_eq!(unknowns.len(), 1);
-    assert_eq!(
-        unknowns[0]
-            .links
-            .iter()
-            .map(cadmpeg_ir::ids::Identity::as_str)
-            .collect::<Vec<_>>(),
-        ["inventor:rse:segment#dc"]
-    );
+    assert!(!namespace.arenas().contains_key("unknowns"));
     let mut expected = 300_u32.to_le_bytes().to_vec();
     for _ in 0..300 {
         expected.extend([0x11; 16]);
@@ -330,50 +231,10 @@ fn over_limit_type_section_is_given_up_before_guid_dispatch_and_keeps_the_exact_
         expected.extend(4_u32.to_le_bytes());
     }
     expected.extend((4_u32 + 300 * 28).to_le_bytes());
-    assert_eq!(
-        fidelity
-            .retained_record(
-                unknowns
-                    .iter()
-                    .find(|unknown| fidelity
-                        .retained_record(unknown.id.as_str())
-                        .unwrap()
-                        .data()
-                        .unwrap()
-                        .len()
-                        == expected.len())
-                    .unwrap()
-                    .id
-                    .as_str()
-            )
-            .unwrap()
-            .data(),
-        Some(expected.as_slice())
-    );
+    assert_eq!(given_up[0].data(), Some(expected.as_slice()));
     assert_eq!(losses.len(), 1);
     assert_eq!(losses[0].code.to_string(), "decode/record.unreadable");
     assert!(losses[0].message.contains("more than 256"));
-    // Section 1 holds 300 stored block descriptors, so the bulk stream holds
-    // the records of ordinals 0..300; each needs a descriptor of the table.
-    let (_, dropped) = losses[0].message.rsplit_once(" dropped=").unwrap();
-    let dropped: Vec<String> = serde_json::from_str(dropped).unwrap();
-    for ordinal in 0..300 {
-        assert!(dropped.contains(&format!("inventor:rse:record#dc-{ordinal}")));
-    }
-    let captures = ctx.take_record_captures().unwrap();
-    let mut ids = captures
-        .iter()
-        .map(|capture| capture.id())
-        .collect::<Vec<_>>();
-    ids.sort_unstable();
-    assert_eq!(
-        ids,
-        [
-            "inventor:rse:meta-type#seg-0",
-            "inventor:rse:segment#dc",
-            "inventor:rse:segment#seg"
-        ]
-    );
 }
 
 #[test]
@@ -400,17 +261,9 @@ fn the_exact_maximum_type_table_remains_admitted() {
     assert_eq!(records.records.len(), 256);
     assert_eq!(records.records[255].type_id, [0x11; 16]);
     assert_eq!(container.rse.source_meta_type_count, 257);
-    let (_, native, fidelity, losses) = container
-        .rse
-        .source_parts
-        .into_parts(&ctx)
-        .unwrap()
-        .into_parts();
+    let (_, native, fidelity, losses) = container.rse.source_parts.into_parts();
     assert!(losses.is_empty());
-    assert!(fidelity
-        .parts()
-        .values()
-        .all(|part| matches!(part.state(), PartState::Decoded {})));
+    assert!(given_up_records(&fidelity).is_empty());
     let types = native
         .namespace("inventor")
         .unwrap()

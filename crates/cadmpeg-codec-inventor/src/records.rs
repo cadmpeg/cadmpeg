@@ -21,18 +21,11 @@ pub(crate) struct BlockDescriptor<'a> {
     payload_len: u32,
 }
 
-impl BlockDescriptor<'_> {
-    /// Position of this block in section 1, which is its record's ordinal.
-    pub(crate) const fn ordinal(&self) -> u32 {
-        self.ordinal
-    }
-}
-
-/// Appendix C `inventor.type_descriptor`: section 4 holds at most 256
-/// entries, which the low byte of a record type selector indexes.
+/// Section 4 holds at most 256 type descriptors, which the low byte of a
+/// record type selector indexes.
 pub(crate) const TYPE_DESCRIPTOR_LIMIT: usize = 256;
 
-/// Whether a section 4 count is within the Appendix C limit.
+/// Whether a section 4 count is within the descriptor limit.
 pub(crate) const fn type_count_admitted(count: usize) -> bool {
     count <= TYPE_DESCRIPTOR_LIMIT
 }
@@ -517,8 +510,6 @@ pub(crate) fn parse_type_descriptor(
 
 pub(crate) struct TypeTableFrame<'a> {
     pub(crate) extent: View<'a>,
-    pub(crate) count_source: View<'a>,
-    pub(crate) span_source: View<'a>,
     pub(crate) payload: View<'a>,
     pub(crate) count: usize,
 }
@@ -534,16 +525,8 @@ pub(crate) fn frame_type_table(body: View<'_>) -> Result<TypeTableFrame<'_>, Cod
     let extent = body
         .child(start, view.position())
         .ok_or_else(|| CodecError::malformed("metadata type table extent leaves its source"))?;
-    let count_source = extent
-        .child(extent.start(), payload.start())
-        .ok_or_else(|| CodecError::malformed("metadata type count leaves its frame"))?;
-    let span_source = extent
-        .child(payload.end(), extent.end())
-        .ok_or_else(|| CodecError::malformed("metadata type span leaves its frame"))?;
     Ok(TypeTableFrame {
         extent,
-        count_source,
-        span_source,
         payload,
         count,
     })

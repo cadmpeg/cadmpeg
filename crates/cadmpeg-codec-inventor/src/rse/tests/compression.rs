@@ -182,20 +182,10 @@ fn expanded_record_bytes_keep_the_exact_rse_compressed_source() {
         let (ctx, root) = DecodeContext::from_root_bytes(&bytes, &arena, &DecodePolicy::service())
             .expect("bulk source");
         let envelope = parse_bulk_stream(&ctx, root).expect("expanded bulk");
-        let extent = ctx
-            .capture_part_extent(envelope.expanded)
-            .expect("source-backed expansion");
-        assert_eq!(extent.byte_len(), 19);
-        ctx.record("inventor:test:record#0", envelope.expanded, || {
-            assert_eq!(envelope.expanded.read_at(0, 6), Some(b"framed".as_slice()));
-            Ok(())
-        })
-        .expect("actual record read");
-        let captures = ctx.take_record_captures().expect("captures");
-        assert_eq!(captures.len(), 1);
+        assert_eq!(envelope.expanded.window().len(), 19);
         assert_eq!(
-            captures[0].reads().get("file"),
-            Some(&vec![18..cadmpeg_core::decode::u64_from_index(bytes.len())])
+            envelope.expanded.window().get(..6),
+            Some(b"framed".as_slice())
         );
     }
 }
