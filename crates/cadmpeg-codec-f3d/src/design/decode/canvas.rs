@@ -23,36 +23,22 @@ use cadmpeg_ir::features::{Feature, FeatureDefinition, FeatureOperation};
 use cadmpeg_ir::math::Point2;
 
 /// Decode every structurally complete Canvas geometry and image-asset record.
-/// Each image is parsed inside its record scope, whose extent is the
-/// geometry record's primary-index frame, and its source offsets are
-/// `record_layout` pointers in `pointers`.
 pub(crate) fn decode_canvas_images(
-    ctx: &DecodeContext<'_>,
     scan: &ContainerScan,
     scopes: &[DesignParameterScope],
-    pointers: &mut crate::design::decode::sketch::SourcePointers,
 ) -> Result<Vec<DesignCanvasImage>, CodecError> {
     super::image::decode_scoped_image_records(
-        ctx,
         scan,
         scopes,
         &crate::records::feature::scope::DesignFeatureKind::Canvas,
-        pointers,
         |bytes, stream, scope| {
             let start = canvas_geometry_at(bytes, scope)?;
-            // With no primary index, the geometry, paired and asset records
-            // run from the geometry record to the scope.
-            let end = usize::try_from(scope.byte_offset()?)
+            usize::try_from(scope.byte_offset()?)
                 .ok()
                 .filter(|end| *end > start)?;
-            Some(super::image::ImageRecord {
-                id: ids::native_design_canvas_image_id(stream, start),
-                start,
-                end,
-            })
+            Some(ids::native_design_canvas_image_id(stream, start))
         },
         parse_canvas_image,
-        |image| image.source_offsets(),
     )
 }
 
@@ -139,8 +125,7 @@ fn canvas_geometry_reference<'a>(
 
 /// The geometry record of a Canvas scope: the indexed header that carries
 /// the record index the scope prefix references. The indexed-header-shaped
-/// runs locate it (Appendix C `scan_recovery` of `f3d.bulk_class_members`
-/// for `design_canvas_images`).
+/// runs locate it.
 fn canvas_geometry_at(bytes: &[u8], scope: &DesignParameterScope) -> Option<usize> {
     let scope_at = usize::try_from(scope.byte_offset()?).ok()?;
     let (_, index) = canvas_geometry_reference(scope_at, &|range| bytes.get(range))?;
@@ -522,12 +507,31 @@ mod tests {
             bytes[label..label + 6].copy_from_slice(&modern[213..219]);
             bytes[asset + 21..scope_at].copy_from_slice(&modern[270..284]);
             reference(&mut bytes, scope_at + 21, 10);
-            let mut pointers = crate::records::source_offsets::collect(&mut scope.clone());
-            for offset in pointers.values_mut() {
-                *offset = *offset + u64::try_from(scope_at).unwrap() - 284;
-            }
+            let shift = |offset: u64| offset + u64::try_from(scope_at).unwrap() - 284;
             let mut scope = scope.clone();
-            crate::records::source_offsets::restore(&mut scope, &pointers);
+            scope
+                .try_edit(|draft| {
+                    draft.byte_offset = shift(draft.byte_offset);
+                    draft.kind_offset = shift(draft.kind_offset);
+                    draft.feature_ordinal_offset = shift(draft.feature_ordinal_offset);
+                    draft.previous_history_state_id_offset =
+                        draft.previous_history_state_id_offset.map(shift);
+                    draft.reference_count_offset = shift(draft.reference_count_offset);
+                    draft.paired_byte_offset = shift(draft.paired_byte_offset);
+                    draft.reference_members = crate::records::identity::ReferenceRun::located(
+                        draft
+                            .reference_members
+                            .located_rows()
+                            .expect("located references")
+                            .iter()
+                            .map(|row| crate::records::identity::Located {
+                                value: row.value,
+                                offset: shift(row.offset),
+                            })
+                            .collect(),
+                    );
+                })
+                .expect("relocated scope");
             let parse = |bytes: &[u8]| {
                 parse_canvas_image(bytes, "Design/BulkStream.dat", &scope, &|range| {
                     bytes.get(range)
@@ -537,20 +541,6 @@ mod tests {
             let image = parse(&bytes).unwrap();
             assert_eq!(image.asset_name(), "a.png");
             assert!(image.geometry().prologue.visible());
-            let offsets: std::collections::BTreeMap<_, _> =
-                image.source_offsets().into_iter().collect();
-            assert_eq!(
-                offsets["paired_geometry_byte_offset"],
-                Some(u64::try_from(paired).unwrap())
-            );
-            assert_eq!(
-                offsets["asset_byte_offset"],
-                Some(u64::try_from(asset).unwrap())
-            );
-            assert_eq!(
-                offsets["plane_reference_offset"],
-                Some(u64::try_from(plane + 1).unwrap())
-            );
             let wire = serde_json::to_value(&image).unwrap();
             let roundtrip: crate::records::canvas::DesignCanvasImage =
                 serde_json::from_value(wire.clone()).unwrap();
@@ -584,51 +574,6 @@ mod tests {
         .unwrap()
         .unwrap();
         assert_eq!(image.asset_name(), "a.png");
-    }
-
-    /// #225 comment 6358238990 item 4 and #214: the Canvas grammar reads the
-    /// scope prefix through its geometry reference and the geometry, paired
-    /// and asset records from the geometry record (0) to the scope (284)
-    /// through the scope's read, so a record scope around the parse captures
-    /// exactly those bytes.
-    #[test]
-    fn canvas_image_reads_its_scope_prefix_and_its_records() {
-        let (bytes, scope) = fixture();
-        let arena = cadmpeg_core::decode::DecodeArena::new();
-        let (ctx, root) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
-            &bytes,
-            &arena,
-            &cadmpeg_core::decode::DecodePolicy::service(),
-        )
-        .unwrap();
-        let read = |range: std::ops::Range<usize>| {
-            let view = root.child(range.start, range.end)?;
-            view.read_slice(range)
-        };
-        let extent = root.child(0, 284).unwrap();
-        let image = ctx
-            .record("f3d:test:canvas", extent, || {
-                parse_canvas_image(&bytes, "Design/BulkStream.dat", &scope, &read)
-            })
-            .unwrap()
-            .unwrap();
-        assert_eq!(image.asset_name(), "a.png");
-        // The scope prefix holds ten zero bytes at 11..21 and the marked
-        // geometry reference at 21..26.
-        let captures = ctx.take_record_captures().unwrap();
-        assert_eq!(captures.len(), 1);
-        assert_eq!(
-            captures[0].reads(),
-            &std::collections::BTreeMap::from([(
-                "file".to_owned(),
-                vec![0..284, 284 + 11..284 + 26]
-            )])
-        );
-        let offsets: std::collections::BTreeMap<_, _> =
-            image.source_offsets().into_iter().collect();
-        assert_eq!(offsets["geometry_byte_offset"], Some(0));
-        assert_eq!(offsets["geometry_reference_offset"], Some(284 + 22));
-        assert_eq!(offsets["boundary_coordinate_offsets.7"], Some(205));
     }
 
     #[test]

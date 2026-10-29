@@ -31,16 +31,14 @@ fn external_combine_identity_admits_only_complete_offset_chains() {
         let wire = external_wire(version);
         let draft: DesignCombineExternalBodyIdentityDraft =
             serde_json::from_value(wire.clone()).unwrap();
-        let mut admitted = DesignCombineExternalBodyIdentity::try_from(draft).unwrap();
+        let admitted = DesignCombineExternalBodyIdentity::try_from(draft).unwrap();
         let mut document = wire.clone();
         for field in OFFSET_FIELDS.iter().chain(&["tail_value_offsets"]) {
             document.as_object_mut().unwrap().remove(*field);
         }
         assert_eq!(serde_json::to_value(&admitted).unwrap(), document);
-        let pointers = crate::records::source_offsets::collect(&mut admitted);
         for field in OFFSET_FIELDS {
             if let Some(offset) = wire.get(field).and_then(serde_json::Value::as_u64) {
-                assert_eq!(pointers.get(field), Some(&offset), "{field}");
                 for invalid_offset in [offset + 1, u64::MAX] {
                     let mut invalid = wire.clone();
                     invalid[field] = serde_json::json!(invalid_offset);
@@ -50,27 +48,9 @@ fn external_combine_identity_admits_only_complete_offset_chains() {
                         DesignCombineExternalBodyIdentity::try_from(raw).is_err(),
                         "{field}"
                     );
-                    let mut corrupted = pointers.clone();
-                    corrupted.insert((*field).to_owned(), invalid_offset);
-                    let mut restored: DesignCombineExternalBodyIdentity =
-                        serde_json::from_value(document.clone()).unwrap();
-                    crate::records::source_offsets::restore(&mut restored, &corrupted);
-                    assert!(restored.offset_chain_valid().is_err(), "{field}");
                 }
             }
         }
-        for lane in 0..2 {
-            let mut corrupted = pointers.clone();
-            corrupted.insert(format!("tail_value_offsets.{lane}"), 0);
-            let mut restored: DesignCombineExternalBodyIdentity =
-                serde_json::from_value(document.clone()).unwrap();
-            crate::records::source_offsets::restore(&mut restored, &corrupted);
-            assert!(restored.offset_chain_valid().is_err());
-        }
-        let mut restored: DesignCombineExternalBodyIdentity =
-            serde_json::from_value(document.clone()).unwrap();
-        crate::records::source_offsets::restore(&mut restored, &pointers);
-        assert_eq!(restored.offset_chain_valid(), Ok(()));
     }
 }
 

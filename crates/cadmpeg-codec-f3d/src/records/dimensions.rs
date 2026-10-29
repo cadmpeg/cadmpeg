@@ -101,17 +101,6 @@ pub(crate) struct DesignRecipeReference {
     pub(crate) alternate_selector_edges: Vec<EdgeId>,
 }
 
-impl crate::records::source_offsets::SourceOffsets for DesignRecipeReference {
-    fn visit_source_offsets(
-        &mut self,
-        offsets: &mut crate::records::source_offsets::OffsetVisitor<'_>,
-    ) {
-        offsets.offset("selector_offset", &mut self.selector_offset);
-        offsets.offset("token_offset", &mut self.token_offset);
-        offsets.offset("design_reference_offset", &mut self.design_reference_offset);
-    }
-}
-
 /// Paired-locus frame nested under a dimensional parameter companion.
 ///
 /// One frame shape covers both source forms: the two-locus form, which carries

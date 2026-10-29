@@ -290,12 +290,12 @@ fn base_feature_scope_decodes_class_452_262_legacy_body_reference_forms() {
     );
     let serialized = serde_json::to_value(&compact_construction).expect("serialize compact form");
     assert_eq!(
-        crate::records::feature::test_support::relocated(
-            serde_json::from_value::<DesignBaseFeatureConstruction>(serialized)
-                .expect("deserialize compact form"),
-            &compact_construction
-        ),
-        compact_construction
+        serde_json::to_value(
+            serde_json::from_value::<DesignBaseFeatureConstruction>(serialized.clone())
+                .expect("deserialize compact form")
+        )
+        .expect("reserialize"),
+        serialized
     );
 
     compact_bytes[compact::MODE] = 1;
@@ -431,12 +431,12 @@ fn base_feature_scope_decodes_class_452_262_legacy_body_reference_forms() {
     assert_eq!(*scope_reference, 300);
     let serialized = serde_json::to_value(&expanded_construction).expect("serialize expanded form");
     assert_eq!(
-        crate::records::feature::test_support::relocated(
-            serde_json::from_value::<DesignBaseFeatureConstruction>(serialized)
-                .expect("deserialize expanded form"),
-            &expanded_construction
-        ),
-        expanded_construction
+        serde_json::to_value(
+            serde_json::from_value::<DesignBaseFeatureConstruction>(serialized.clone())
+                .expect("deserialize expanded form")
+        )
+        .expect("reserialize"),
+        serialized
     );
 
     let mut invalid_mode = compact_bytes;

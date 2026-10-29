@@ -2,7 +2,6 @@
 //! Extrude operations, extents, starts and the extrude prologue.
 
 use crate::records::identity::Sourced;
-use crate::records::source_offsets::{OffsetVisitor, SourceOffsets};
 use serde::{Deserialize, Serialize};
 
 cadmpeg_core::named_optional_field!(
@@ -543,117 +542,6 @@ impl From<DesignExtrudePrologue> for DesignExtrudePrologueWire {
                 solid_operation,
                 start,
             },
-        }
-    }
-}
-
-impl SourceOffsets for DesignExtrudePrologueReference {
-    fn visit_source_offsets(&mut self, offsets: &mut OffsetVisitor<'_>) {
-        offsets.offset("record_index_offset", &mut self.record_index_offset);
-        if let Some(marker) = &mut self.operation_prefix_marker {
-            offsets.sourced("operation_prefix_marker_offset", marker);
-        }
-    }
-}
-
-impl SourceOffsets for DesignExtrudePrologue {
-    fn visit_source_offsets(&mut self, offsets: &mut OffsetVisitor<'_>) {
-        match self {
-            Self::LegacyDistance {
-                prefix_zero,
-                operation_offset,
-                extent_kind_offset,
-                direction_reversed_offset,
-                solid_operation_offset,
-                ..
-            } => {
-                if let Some(prefix) = prefix_zero {
-                    offsets.sourced("prefix_value_offset", prefix);
-                }
-                offsets.offset("operation_offset", operation_offset);
-                offsets.offset("extent_kind_offset", extent_kind_offset);
-                offsets.offset("direction_reversed_offset", direction_reversed_offset);
-                offsets.offset("geometry_kind_offset", solid_operation_offset);
-            }
-            Self::ReferenceAware {
-                reference,
-                operation_offset,
-                side_extent_discriminator_offsets,
-                first_side_target_ordinal,
-                direction_face_extend_offsets,
-                direction_reversed_offset,
-                solid_operation_offset,
-                start_offset,
-                ..
-            } => {
-                offsets.optional("reference", reference);
-                offsets.offset("operation_offset", operation_offset);
-                offsets.offsets(
-                    "side_extent_discriminator_offsets",
-                    side_extent_discriminator_offsets,
-                );
-                if let Some(ordinal) = first_side_target_ordinal {
-                    offsets.offset(
-                        "first_side_target_ordinal.scope_reference_ordinal_offset",
-                        &mut ordinal.scope_reference_ordinal_offset,
-                    );
-                }
-                offsets.offsets(
-                    "direction_face_extend_offsets",
-                    direction_face_extend_offsets,
-                );
-                offsets.offset("direction_reversed_offset", direction_reversed_offset);
-                offsets.offset("solid_operation_offset", solid_operation_offset);
-                offsets.offset("start_offset", start_offset);
-            }
-            Self::ShiftedReferenceAware {
-                operation_offset,
-                side_extent_discriminator_offsets,
-                direction_face_extend_offsets,
-                direction_reversed_offset,
-                solid_operation_offset,
-                start_offset,
-                ..
-            } => {
-                offsets.offset("operation_offset", operation_offset);
-                offsets.offsets(
-                    "side_extent_discriminator_offsets",
-                    side_extent_discriminator_offsets,
-                );
-                offsets.offsets(
-                    "direction_face_extend_offsets",
-                    direction_face_extend_offsets,
-                );
-                offsets.offset("direction_reversed_offset", direction_reversed_offset);
-                offsets.offset("solid_operation_offset", solid_operation_offset);
-                offsets.offset("start_offset", start_offset);
-            }
-            Self::LegacyShifted {
-                operation_prefix_marker,
-                operation_offset,
-                side_extent_discriminator_offsets,
-                direction_face_extend_offsets,
-                direction_reversed_offset,
-                solid_operation_offset,
-                start_offset,
-                ..
-            } => {
-                if let Some(marker) = operation_prefix_marker {
-                    offsets.sourced("operation_prefix_marker_offset", marker);
-                }
-                offsets.offset("operation_offset", operation_offset);
-                offsets.offsets(
-                    "side_extent_discriminator_offsets",
-                    side_extent_discriminator_offsets,
-                );
-                offsets.offsets(
-                    "direction_face_extend_offsets",
-                    direction_face_extend_offsets,
-                );
-                offsets.offset("direction_reversed_offset", direction_reversed_offset);
-                offsets.offset("solid_operation_offset", solid_operation_offset);
-                offsets.offset("start_offset", start_offset);
-            }
         }
     }
 }

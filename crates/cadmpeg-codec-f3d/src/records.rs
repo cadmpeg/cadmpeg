@@ -33,7 +33,6 @@ pub(crate) mod sketch_links;
 pub(crate) mod sketch_placement;
 pub(crate) mod sketch_relations;
 pub(crate) mod source_frame;
-pub(crate) mod source_offsets;
 #[cfg(test)]
 mod tests;
 pub(crate) mod topology;

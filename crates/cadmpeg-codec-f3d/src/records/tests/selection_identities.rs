@@ -31,7 +31,6 @@ fn selection_secondary_identities_preserve_wire_and_reject_partial_locations() {
                 if identities.contains("curve_secondary_identity") {
                     pointers.push(("curve_secondary_identity_offset", 225));
                 }
-                crate::records::feature::test_support::assert_located_at(value, &pointers);
                 encoded
             } else {
                 let value: crate::records::topology::entity_selection::DesignEntitySelectionOperand = serde_json::from_str(&wire).expect("entity selection");

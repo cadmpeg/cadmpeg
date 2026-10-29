@@ -45,18 +45,6 @@ pub(crate) fn with_scan<T>(bytes: &[u8], f: impl FnOnce(&container::ContainerSca
     f(&scan)
 }
 
-/// Run `f` over the scan of `bytes` and the decode context that owns it.
-pub(crate) fn with_context_scan<T>(
-    bytes: &[u8],
-    f: impl FnOnce(&DecodeContext<'_>, &container::ContainerScan<'_>) -> T,
-) -> T {
-    let arena = DecodeArena::new();
-    let policy = DecodePolicy::default();
-    let (ctx, root) = DecodeContext::from_root_bytes(bytes, &arena, &policy).unwrap();
-    let scan = container::scan(&ctx, root).unwrap();
-    f(&ctx, &scan)
-}
-
 pub(crate) fn assert_revision_surface_round_trip(smbh: Vec<u8>, expected_kind: &str) {
     let result = F3dCodec
         .decode(

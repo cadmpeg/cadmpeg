@@ -30,31 +30,19 @@ const DECAL_TARGET_ROLE: crate::records::topology::extrude_selection::DesignOper
     crate::records::topology::extrude_selection::DesignOperandRole::BODIES_A;
 
 /// Decode every structurally complete Decal image record.
-/// Each image is parsed inside its record scope, whose extent is the Decal
-/// scope's primary-index frame, and its source offsets are `record_layout`
-/// pointers in `pointers`.
 pub(crate) fn decode_decal_images(
-    ctx: &DecodeContext<'_>,
     scan: &ContainerScan,
     scopes: &[DesignParameterScope],
-    pointers: &mut crate::design::decode::sketch::SourcePointers,
 ) -> Result<Vec<DesignDecalImage>, CodecError> {
     super::image::decode_scoped_image_records(
-        ctx,
         scan,
         scopes,
         &crate::records::feature::scope::DesignFeatureKind::Decal,
-        pointers,
         |_, stream, scope| {
             let start = usize::try_from(scope.byte_offset()?).ok()?;
-            Some(super::image::ImageRecord {
-                id: ids::native_design_decal_image_id(stream, start),
-                start,
-                end: start.checked_add(decal_scope::LEN)?,
-            })
+            Some(ids::native_design_decal_image_id(stream, start))
         },
         parse_decal_image,
-        |image| image.source_offsets().to_vec(),
     )
 }
 
@@ -152,8 +140,7 @@ fn parse_decal_image(
 
 /// Parse one Decal image from the scope at `scope_at`. `bytes` is the
 /// stream, and its indexed-header-shaped runs locate the asset and name
-/// records (Appendix C `scan_recovery` of `f3d.bulk_class_members` for
-/// `design_decal_images`). `read` returns the stream bytes of a range; the
+/// records. `read` returns the stream bytes of a range; the
 /// grammar reads the fixed prefix, each candidate asset record and its name
 /// record through it.
 fn parse_decal_image_frame<'a>(
@@ -345,50 +332,6 @@ mod tests {
             30
         );
         assert_eq!(image.asset.name_frame_length(), 41);
-    }
-
-    /// #225 comment 6358238990 item 4 and #214: the Decal grammar reads the
-    /// fixed scope prefix, the asset record and the image-name record through
-    /// the scope's read, so a record scope around the parse captures exactly
-    /// those bytes.
-    #[test]
-    fn decal_frame_reads_its_prefix_asset_and_name_records() {
-        let (bytes, scope_at) = fixture();
-        let arena = cadmpeg_core::decode::DecodeArena::new();
-        let (ctx, root) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
-            &bytes,
-            &arena,
-            &cadmpeg_core::decode::DecodePolicy::service(),
-        )
-        .unwrap();
-        let read = |range: std::ops::Range<usize>| {
-            let view = root.child(range.start, range.end)?;
-            view.read_slice(range)
-        };
-        let extent = root.child(scope_at, 200).unwrap();
-        let image = ctx
-            .record("f3d:test:decal", extent, || {
-                parse_decal_image_frame(&bytes, "Design/BulkStream.dat", 23, scope_at, &read)
-            })
-            .unwrap()
-            .expect("complete synthetic Decal frame");
-        // The asset record is 30 bytes at 0, the name record 25 + 2 * 8 bytes
-        // at 30, and the Decal prefix 44 bytes at the scope (71). The three
-        // ranges are contiguous, so the capture holds one coalesced read.
-        assert_eq!(image.asset.name(), "mark.png");
-        assert_eq!(scope_at, 71);
-        let captures = ctx.take_record_captures().unwrap();
-        assert_eq!(captures.len(), 1);
-        assert_eq!(
-            captures[0].reads(),
-            &std::collections::BTreeMap::from([("file".to_owned(), vec![0..71 + 44])])
-        );
-        let offsets: std::collections::BTreeMap<_, _> =
-            image.source_offsets().into_iter().collect();
-        assert_eq!(offsets["scope_byte_offset"], Some(71));
-        assert_eq!(offsets["asset_byte_offset"], Some(0));
-        assert_eq!(offsets["name_byte_offset"], Some(30));
-        assert_eq!(offsets["asset_name_offset"], Some(55));
     }
 
     #[test]

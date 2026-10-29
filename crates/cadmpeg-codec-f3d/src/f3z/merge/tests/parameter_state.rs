@@ -73,22 +73,8 @@ fn occurrence_merge_keeps_parameter_state_links_local_without_rewriting_paramete
         .set_arena(&ctx, "design_parameters", std::slice::from_ref(&parameter))
         .expect("parameter");
     let mut merged = Native::default();
-    extend_native(
-        &ctx,
-        &mut merged,
-        component.clone(),
-        "one",
-        &PartIdentityMap::default(),
-    )
-    .expect("first occurrence");
-    extend_native(
-        &ctx,
-        &mut merged,
-        component,
-        "two",
-        &PartIdentityMap::default(),
-    )
-    .expect("second occurrence");
+    extend_native(&ctx, &mut merged, component.clone(), "one").expect("first occurrence");
+    extend_native(&ctx, &mut merged, component, "two").expect("second occurrence");
     let native = merged.namespace("f3d").expect("native");
     let states = native
         .arena_as::<DesignParameterState>("design_parameter_states")

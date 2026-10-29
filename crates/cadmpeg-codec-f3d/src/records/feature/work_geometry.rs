@@ -425,18 +425,16 @@ impl DesignVertexRecipe {
         self.record_index
     }
     /// Byte offset of the owning indexed-record header of a located scope.
+    #[cfg(test)]
     pub(crate) fn byte_offset(&self) -> Option<u64> {
         self.byte_offset
     }
     pub(crate) fn recipe_record_index(&self) -> u32 {
         self.record_index + VERTEX_RECIPE_RECORD_DELTA
     }
-    /// Byte offset of the vertex-recipe record header of a located scope.
-    pub(crate) fn recipe_record_byte_offset(&self) -> Option<u64> {
-        self.recipe_record_byte_offset
-    }
     /// Byte offset of the recipe-specific prefix of a located scope.
-    pub(crate) fn recipe_prefix_offset(&self) -> Option<u64> {
+    #[cfg(test)]
+    fn recipe_prefix_offset(&self) -> Option<u64> {
         self.recipe_record_byte_offset?
             .checked_add(VERTEX_RECIPE_PREFIX_DELTA)
     }
@@ -445,46 +443,9 @@ impl DesignVertexRecipe {
     }
     /// Byte offset of the indexed record closing the envelope of a located
     /// scope.
+    #[cfg(test)]
     pub(crate) fn next_byte_offset(&self) -> Option<u64> {
         self.next_byte_offset
-    }
-    /// Whether the located offsets increase from the owner header through the
-    /// paired header and the recipe record to the closing record.
-    pub(crate) fn source_layout_valid(&self) -> bool {
-        match (
-            self.byte_offset,
-            self.paired_byte_offset,
-            self.recipe_record_byte_offset,
-            self.recipe_program_offset,
-            self.next_byte_offset,
-        ) {
-            (Some(start), Some(paired), Some(recipe), Some(program), Some(next)) => {
-                start < paired
-                    && paired < recipe
-                    && recipe < next
-                    && recipe
-                        .checked_add(VERTEX_RECIPE_PREFIX_DELTA)
-                        .is_some_and(|prefix| prefix <= program && program < next)
-            }
-            _ => false,
-        }
-    }
-}
-
-impl crate::records::source_offsets::SourceOffsets for DesignVertexRecipe {
-    fn visit_source_offsets(
-        &mut self,
-        offsets: &mut crate::records::source_offsets::OffsetVisitor<'_>,
-    ) {
-        offsets.offset("byte_offset", &mut self.byte_offset);
-        offsets.offset("paired_byte_offset", &mut self.paired_byte_offset);
-        offsets.offset(
-            "recipe_record_byte_offset",
-            &mut self.recipe_record_byte_offset,
-        );
-        offsets.offset("recipe_program_offset", &mut self.recipe_program_offset);
-        offsets.offset("next_byte_offset", &mut self.next_byte_offset);
-        offsets.each("recipe_references", &mut self.recipe_references);
     }
 }
 
@@ -641,15 +602,6 @@ pub(crate) struct DesignEdgeTreatmentVertexOperand {
     pub(crate) group_member_ordinal: u32,
     /// Exact persistent vertex-recipe envelope and resolved historical corner.
     pub(crate) recipe: DesignVertexRecipe,
-}
-
-impl crate::records::source_offsets::SourceOffsets for DesignEdgeTreatmentVertexOperand {
-    fn visit_source_offsets(
-        &mut self,
-        offsets: &mut crate::records::source_offsets::OffsetVisitor<'_>,
-    ) {
-        offsets.record("recipe", &mut self.recipe);
-    }
 }
 
 /// Plane through three persistent B-rep vertices.
@@ -880,33 +832,6 @@ impl DesignWorkPointPlaneSelection {
         self.identity_record_offset?
             .checked_add(PLANE_SELECTION_IDENTITY_LEN)
     }
-    /// Whether the located offsets increase from the asset identifier
-    /// through the context identifier to the identity record.
-    pub(crate) fn source_layout_valid(&self) -> bool {
-        match (
-            self.asset_id_offset,
-            self.context_id_offset,
-            self.identity_record_offset,
-        ) {
-            (Some(asset), Some(context), Some(identity)) => {
-                asset < context
-                    && context < identity
-                    && identity.checked_add(PLANE_SELECTION_IDENTITY_LEN).is_some()
-            }
-            _ => false,
-        }
-    }
-}
-
-impl crate::records::source_offsets::SourceOffsets for DesignWorkPointPlaneSelection {
-    fn visit_source_offsets(
-        &mut self,
-        offsets: &mut crate::records::source_offsets::OffsetVisitor<'_>,
-    ) {
-        offsets.offset("asset_id_offset", &mut self.asset_id_offset);
-        offsets.offset("context_id_offset", &mut self.context_id_offset);
-        offsets.offset("identity_record_offset", &mut self.identity_record_offset);
-    }
 }
 
 /// Document fields of a `DesignWorkPointPlaneSelection`.
@@ -1075,31 +1000,6 @@ impl DesignWorkPointSketchPointSelection {
         self.identity_record_offset?.checked_add(u64_from_index(
             crate::layout::work_point_sketch_point_identity::LEN,
         ))
-    }
-    /// Whether the located offsets increase from the asset identifier
-    /// through the context identifier to the identity record.
-    pub(crate) fn source_layout_valid(&self) -> bool {
-        match (
-            self.asset_id_offset,
-            self.context_id_offset,
-            self.identity_record_offset,
-        ) {
-            (Some(asset), Some(context), Some(identity)) => {
-                asset < context && context < identity && self.next_byte_offset().is_some()
-            }
-            _ => false,
-        }
-    }
-}
-
-impl crate::records::source_offsets::SourceOffsets for DesignWorkPointSketchPointSelection {
-    fn visit_source_offsets(
-        &mut self,
-        offsets: &mut crate::records::source_offsets::OffsetVisitor<'_>,
-    ) {
-        offsets.offset("asset_id_offset", &mut self.asset_id_offset);
-        offsets.offset("context_id_offset", &mut self.context_id_offset);
-        offsets.offset("identity_record_offset", &mut self.identity_record_offset);
     }
 }
 
@@ -1390,70 +1290,6 @@ pub(crate) struct DesignWorkPointConstruction {
     /// Byte offset of the serialized `refType` value of a located scope.
     #[serde(skip)]
     pub(crate) reference_type_offset: Option<u64>,
-}
-
-impl crate::records::source_offsets::SourceOffsets for DesignWorkPointConstruction {
-    fn visit_source_offsets(
-        &mut self,
-        offsets: &mut crate::records::source_offsets::OffsetVisitor<'_>,
-    ) {
-        offsets.offset(
-            "point_record_byte_offset",
-            &mut self.point_record_byte_offset,
-        );
-        offsets.offset("position_offset", &mut self.position_offset);
-        offsets.offset("reference_type_offset", &mut self.reference_type_offset);
-        for (index, input) in self.rule.form.inputs_mut().iter_mut().enumerate() {
-            offsets.nested(&format!("rule.inputs.{index}"), |offsets| {
-                input.visit_source_offsets(offsets);
-            });
-        }
-    }
-}
-
-impl crate::records::source_offsets::SourceOffsets for DesignWorkPointInput {
-    fn visit_source_offsets(
-        &mut self,
-        offsets: &mut crate::records::source_offsets::OffsetVisitor<'_>,
-    ) {
-        offsets.offset("reference_offset", &mut self.reference_offset);
-        if let Some(carrier) = self.carrier.as_deref_mut() {
-            match carrier {
-                DesignWorkPointInputCarrier::EdgeRecipe { .. } => {}
-                DesignWorkPointInputCarrier::VertexRecipe { recipe } => {
-                    offsets.record("carrier.recipe", recipe);
-                }
-                DesignWorkPointInputCarrier::WorkPlane { selection } => {
-                    offsets.record("carrier.selection", selection);
-                }
-                DesignWorkPointInputCarrier::SketchPoint { selection } => {
-                    offsets.record("carrier.selection", selection);
-                }
-            }
-        }
-    }
-}
-
-impl crate::records::source_offsets::SourceOffsets for DesignWorkAxisConstruction {
-    fn visit_source_offsets(
-        &mut self,
-        offsets: &mut crate::records::source_offsets::OffsetVisitor<'_>,
-    ) {
-        offsets.offset("origin_offset", &mut self.origin_offset);
-        offsets.offset("displacement_offset", &mut self.displacement_offset);
-        if let Some(DesignWorkAxisSource::TwoPoint { point_offsets, .. }) = &mut self.source {
-            offsets.offsets("source.TwoPoint.point_offsets", point_offsets);
-        }
-    }
-}
-
-impl crate::records::source_offsets::SourceOffsets for DesignWorkPlaneConstruction {
-    fn visit_source_offsets(
-        &mut self,
-        offsets: &mut crate::records::source_offsets::OffsetVisitor<'_>,
-    ) {
-        offsets.each("inputs", &mut self.inputs[..]);
-    }
 }
 
 impl DesignWorkPointInput {

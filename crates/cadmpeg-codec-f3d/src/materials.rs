@@ -679,7 +679,7 @@ pub(crate) fn decode_with_body_bindings<'a>(
         )));
     }
     out.dedup_by(|a, b| a.id == b.id);
-    let assignments = design_assignment_values(scan)?;
+    let assignments = decode_design_assignments(scan)?;
     let act_channels = decode_act_channels(scan)?;
     let object_types = decode_design_object_types(scan)?;
     for assignment in &assignments {
@@ -926,31 +926,9 @@ fn decoded_color(values: [f64; 4]) -> Option<Color> {
         .flatten()
 }
 
+/// Decode the material assignments of every Design `BulkStream`.
 pub(crate) fn decode_design_assignments(
-    ctx: &DecodeContext<'_>,
     scan: &ContainerScan,
-    pointers: &mut crate::design::decode::sketch::SourcePointers,
-) -> Result<Vec<DesignMaterialAssignment>, CodecError> {
-    design_assignments(scan, Some((ctx, pointers)))
-}
-
-/// The material assignments of `scan`, for a consumer of their values. The
-/// native records and their captures come from [`decode_design_assignments`].
-fn design_assignment_values(
-    scan: &ContainerScan,
-) -> Result<Vec<DesignMaterialAssignment>, CodecError> {
-    design_assignments(scan, None)
-}
-
-/// Decode the material assignments of every Design `BulkStream`. With a
-/// record session, each assignment is parsed inside its record scope and its
-/// source offsets are `record_layout` pointers in the session's pointers.
-fn design_assignments(
-    scan: &ContainerScan,
-    mut session: Option<(
-        &DecodeContext<'_>,
-        &mut crate::design::decode::sketch::SourcePointers,
-    )>,
 ) -> Result<Vec<DesignMaterialAssignment>, CodecError> {
     let mut out = Vec::new();
     for entry in scan
@@ -958,143 +936,71 @@ fn design_assignments(
         .iter()
         .filter(|entry| scan.is_design_stream(entry, ContainerRole::Bulkstream))
     {
-        let source = scan
-            .entry_view(&entry.name)
-            .ok_or_else(|| CodecError::malformed(format_args!("entry {} not found", entry.name)))?;
-        let bytes = source.window();
+        let bytes = scan.entry_bytes(&entry.name)?;
         let Some(metadata) =
             crate::design::decode::meta::metadata_for_bulk_stream(scan, &entry.name)?
         else {
             continue;
         };
         let body_map = crate::design::decode::body::body_bindings(bytes, &metadata)?;
-        let child = |range: std::ops::Range<usize>| {
-            source
-                .start()
-                .checked_add(range.start)
-                .zip(source.start().checked_add(range.end))
-                .and_then(|(start, end)| source.child(start, end))
-                .ok_or_else(|| CodecError::malformed("F3D material assignment exceeds its stream"))
-        };
         crate::design::decode::presentation::each_body_presentation(
             bytes,
             &metadata,
             |frame, parse| {
-                let extent = child(frame.clone())?;
-                let id = crate::ids::native_scoped_id(
-                    &entry.name,
-                    "material-assignment",
-                    u64_from_index(frame.start),
-                );
-                if session
-                    .as_ref()
-                    .is_some_and(|(_, pointers)| pointers.contains_key(&id))
-                {
-                    return Err(CodecError::malformed(
-                        "F3D material-assignment source owner is duplicated",
-                    ));
-                }
-                let tracked = session.is_some();
-                fn read_source(view: View<'_>, tracked: bool) -> Result<&[u8], CodecError> {
-                    if tracked {
-                        view.read_slice(view.start()..view.end())
-                    } else {
-                        Some(view.window())
-                    }
-                    .ok_or_else(|| {
-                        CodecError::malformed("F3D material-assignment source is unreadable")
-                    })
-                }
-                // The scope reads the presentation frame whole, and the
-                // body-map pair the assignment joins. A frame with no named
-                // material assignment rolls its scope back and leaves no
-                // capture.
-                let mut skipped = false;
-                let mut decode = || {
-                    let record = read_source(extent, tracked)?;
-                    let Some(presentation) = parse(record)? else {
-                        skipped = true;
-                        return Err(CodecError::malformed("no material assignment"));
-                    };
-                    let (
-                        Some(material),
-                        crate::design::decode::presentation::BodyPresentationOwner::Named {
-                            entity_id,
-                            entity_id_offset,
-                        },
-                    ) = (presentation.material, presentation.owner)
-                    else {
-                        skipped = true;
-                        return Err(CodecError::malformed("no material assignment"));
-                    };
-                    let Some(body_binding) = unique_body_map_pair(
-                        &body_map,
-                        presentation.entity_suffix,
-                        "material assignment",
-                    )?
-                    else {
-                        skipped = true;
-                        return Err(CodecError::malformed("no material assignment"));
-                    };
-                    let pair = child(
-                        body_binding.asm_key_offset..body_binding.entity_suffix_offset() + 8,
-                    )?;
-                    let pair = read_source(pair, tracked)?;
-                    if View::u64_le_at(pair, 0) != Some(body_binding.asm_key)
-                        || View::u64_le_at(pair, 8) != Some(body_binding.entity_suffix)
-                    {
-                        return Err(CodecError::malformed(
-                            "F3D body-map pair disagrees with its source",
-                        ));
-                    }
-                    let assignment = DesignMaterialAssignment {
-                        id: id.clone(),
-                        body_binding_id: crate::ids::native_design_body_binding_id(
-                            &entry.name,
-                            body_binding.asm_key_offset,
-                        )
-                        .try_into()
-                        .map_err(CodecError::Malformed)?,
-                        asm_body_key: body_binding.asm_key,
-                        asm_body_key_offset: Some(u64_from_index(body_binding.asm_key_offset)),
-
-                        entity_suffix_offset: Some(u64_from_index(
-                            body_binding.entity_suffix_offset(),
-                        )),
+                let record = bytes.get(frame.clone()).ok_or_else(|| {
+                    CodecError::malformed("F3D material assignment exceeds its stream")
+                })?;
+                let Some(presentation) = parse(record)? else {
+                    return Ok(());
+                };
+                let (
+                    Some(material),
+                    crate::design::decode::presentation::BodyPresentationOwner::Named {
                         entity_id,
-                        entity_id_offset: Some(entity_id_offset),
-                        visual_guid: material.visual_guid,
-                        visual_guid_offset: Some(material.visual_guid_offset),
-                        physical_token: Some(crate::records::identity::RecordedValue {
-                            value: material.physical_token,
-                            offset: Some(material.physical_token_offset),
-                        }),
-                        visual_preset: material.visual_preset.map(|field| {
-                            crate::records::identity::RecordedValue {
-                                value: field.value,
-                                offset: Some(field.offset),
-                            }
-                        }),
-                    };
-                    Ok(assignment)
+                        entity_id_offset,
+                    },
+                ) = (presentation.material, presentation.owner)
+                else {
+                    return Ok(());
                 };
-                let parsed = match &session {
-                    Some((ctx, _)) => ctx.record(&id, extent, decode),
-                    None => decode(),
+                let Some(body_binding) = unique_body_map_pair(
+                    &body_map,
+                    presentation.entity_suffix,
+                    "material assignment",
+                )?
+                else {
+                    return Ok(());
                 };
-                let assignment = match parsed {
-                    Ok(assignment) => assignment,
-                    Err(_) if skipped => return Ok(()),
-                    Err(error) => return Err(error),
-                };
-                if let Some((ctx, pointers)) = &mut session {
-                    let fields = crate::design::decode::parameters::source_layout::pointer_fields(
-                        ctx,
-                        assignment.source_offsets(),
-                    )?;
-                    pointers.insert(id, fields);
-                }
-                out.push(assignment);
+                out.push(DesignMaterialAssignment {
+                    id: crate::ids::native_scoped_id(
+                        &entry.name,
+                        "material-assignment",
+                        u64_from_index(frame.start),
+                    ),
+                    body_binding_id: crate::ids::native_design_body_binding_id(
+                        &entry.name,
+                        body_binding.asm_key_offset,
+                    )
+                    .try_into()
+                    .map_err(CodecError::Malformed)?,
+                    asm_body_key: body_binding.asm_key,
+                    asm_body_key_offset: Some(u64_from_index(body_binding.asm_key_offset)),
+                    entity_suffix_offset: Some(u64_from_index(body_binding.entity_suffix_offset())),
+                    entity_id,
+                    entity_id_offset: Some(entity_id_offset),
+                    visual_guid: material.visual_guid,
+                    visual_guid_offset: Some(material.visual_guid_offset),
+                    physical_token: Some(crate::records::identity::RecordedValue {
+                        value: material.physical_token,
+                        offset: Some(material.physical_token_offset),
+                    }),
+                    visual_preset: material.visual_preset.map(|field| {
+                        crate::records::identity::RecordedValue {
+                            value: field.value,
+                            offset: Some(field.offset),
+                        }
+                    }),
+                });
                 Ok(())
             },
         )?;

@@ -596,22 +596,6 @@ fn companion_timestamp_preserves_wire_and_rejects_zero() {
     assert_eq!(serde_json::to_string(&source).unwrap(), wire);
     let companion: DesignParameterCompanion = serde_json::from_str(wire).unwrap();
     assert_eq!(serde_json::to_string(&companion).unwrap(), wire);
-    // The source positions are `record_layout` pointers of the companion
-    // capture, not metadata.
-    assert_eq!(
-        source.source_offsets(),
-        [
-            ("byte_offset", Some(0)),
-            ("timestamp_micros_offset", Some(42))
-        ]
-    );
-    assert_eq!(
-        source.payload_source_extent(),
-        [
-            ("payload_byte_offset", Some(58)),
-            ("payload_byte_length", Some(0))
-        ]
-    );
     let native = crate::native::F3dNative {
         design_parameter_companions: vec![source.clone()],
         ..Default::default()
@@ -745,15 +729,6 @@ fn sketch_entity_identity_derives_suffix_without_changing_its_spelling() {
         paired_byte_offset: 40,
     })
     .expect("valid source profile ID");
-    let pointers = crate::records::source_offsets::collect(&mut source.clone());
-    for (field, offset) in [
-        ("byte_offset", 10),
-        ("asset_id_offset", 20),
-        ("entity_reference_offset", 30),
-        ("paired_byte_offset", 40),
-    ] {
-        assert_eq!(pointers[field], offset);
-    }
     let wire = serde_json::json!({
         "scope_reference_ordinal": 0, "record_index": 1,
         "class_tag": "300", "asset_id": "0a1b2c3d-4e5f-4a6b-8c7d-9e0f1a2b3c4d",

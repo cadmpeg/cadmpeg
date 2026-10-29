@@ -4,7 +4,6 @@
 use crate::records::identity::{DesignSecondaryIdentity, Sourced};
 use crate::records::mesh::DesignRelaxedGuidText;
 use crate::records::references::DesignClassTag;
-use crate::records::source_offsets::{OffsetVisitor, SourceOffsets};
 use crate::records::topology::entity_selection::DesignEntitySelectionFaceCandidate;
 use cadmpeg_ir::scalar::FiniteReal;
 use serde::{ser::SerializeSeq, Deserialize, Serialize};
@@ -202,24 +201,6 @@ impl Serialize for DesignHoleConstruction {
     }
 }
 
-impl SourceOffsets for DesignHoleConstruction {
-    fn visit_source_offsets(&mut self, offsets: &mut OffsetVisitor<'_>) {
-        offsets.offset(
-            "point_record_byte_offset",
-            &mut self.point_record_byte_offset,
-        );
-        offsets.offset("position_offset", &mut self.position_offset);
-        offsets.offset("direction_offset", &mut self.direction_offset);
-        offsets.offsets("point_parameter_offsets", &mut self.point_parameter_offsets);
-        offsets.offset("reference_type_offset", &mut self.reference_type_offset);
-        if let Some(tangent) = &mut self.tangent_point_data {
-            offsets.sourced("tangent_point_data_offset", &mut tangent.data);
-        }
-        offsets.sourced_each("input_record_offsets", &mut self.input_records);
-        offsets.optional("face_selection", &mut self.face_selection);
-    }
-}
-
 /// Direct persistent face selection carried by a `Hole` scope.
 ///
 /// Hole selections are scope references rather than construction-group
@@ -362,23 +343,6 @@ impl Serialize for DesignHoleFaceSelection {
             next_record_index: self.next_record_index,
         }
         .serialize(serializer)
-    }
-}
-
-impl SourceOffsets for DesignHoleFaceSelection {
-    fn visit_source_offsets(&mut self, offsets: &mut OffsetVisitor<'_>) {
-        offsets.offset("byte_offset", &mut self.byte_offset);
-        offsets.offset("asset_id_offset", &mut self.asset_id_offset);
-        offsets.offset("context_id_offset", &mut self.context_id_offset);
-        offsets.offset("identity_record_offset", &mut self.identity_record_offset);
-        offsets.offset("primary_identity_offset", &mut self.primary_identity_offset);
-        if let Some(secondary) = &mut self.secondary {
-            offsets.sourced("secondary_identity_offset", &mut secondary.identity);
-            if let Some(curve) = &mut secondary.curve_identity {
-                offsets.sourced("curve_secondary_identity_offset", curve);
-            }
-        }
-        offsets.offset("next_byte_offset", &mut self.next_byte_offset);
     }
 }
 

@@ -232,46 +232,6 @@ impl Serialize for DesignSketchProfileOperand {
     }
 }
 
-impl crate::records::source_offsets::SourceOffsets for DesignSketchProfileOperand {
-    fn visit_source_offsets(
-        &mut self,
-        offsets: &mut crate::records::source_offsets::OffsetVisitor<'_>,
-    ) {
-        offsets.offset("byte_offset", &mut self.byte_offset);
-        offsets.offset("asset_id_offset", &mut self.asset_id_offset);
-        offsets.offset("entity_reference_offset", &mut self.entity_reference_offset);
-        offsets.offset("paired_byte_offset", &mut self.paired_byte_offset);
-        if let Some(selection) = &mut self.region_selection {
-            offsets.nested("region_selection", |offsets| {
-                offsets.offset("byte_offset", &mut selection.byte_offset);
-                offsets.offset("region_count_offset", &mut selection.region_count_offset);
-                offsets.offset(
-                    "companion_byte_offset",
-                    &mut selection.companion_byte_offset,
-                );
-                for (region_index, region) in selection.regions.iter_mut().enumerate() {
-                    offsets.nested(&format!("regions.{region_index}"), |offsets| {
-                        offsets.offset("member_count_offset", &mut region.member_count_offset);
-                        for (index, member) in region.members.iter_mut().enumerate() {
-                            offsets.nested(&format!("members.{index}"), |offsets| {
-                                offsets.offset("kind_offset", &mut member.kind_offset);
-                                offsets.offset(
-                                    "curve_primary_id_offset",
-                                    &mut member.curve_primary_id_offset,
-                                );
-                                offsets.offset(
-                                    "incidence_words_offset",
-                                    &mut member.incidence_words_offset,
-                                );
-                            });
-                        }
-                    });
-                }
-            });
-        }
-    }
-}
-
 /// Unadmitted `DesignSketchProfileOperand` fields.
 #[derive(Debug, Clone, PartialEq)]
 pub(crate) struct DesignSketchProfileOperandDraft {

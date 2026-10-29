@@ -368,24 +368,6 @@ impl DesignParameter {
             evaluated_value_offset: None,
         })
     }
-    pub(crate) fn source_offsets(&self) -> [(&'static str, Option<u64>); 7] {
-        [
-            ("byte_offset", self.byte_offset),
-            ("expression_offset", self.expression_offset),
-            ("source_kind_offset", self.source_kind_offset),
-            ("name_offset", self.name_offset),
-            ("evaluated_value_offset", self.evaluated_value_offset),
-            (
-                "unit_offset",
-                self.unit.as_ref().and_then(|unit| unit.offset),
-            ),
-            (
-                "family_discriminator_offset",
-                self.family_discriminator().and_then(|value| value.offset),
-            ),
-        ]
-    }
-
     #[cfg(test)]
     pub(crate) fn source(&self) -> &DesignParameterSource {
         &self.source
@@ -1039,16 +1021,7 @@ impl TryFrom<DesignParameterOwnerContent> for DesignParameterOwner {
         })
     }
 }
-impl DesignParameterOwner {
-    /// Source field offsets of this record, by `record_layout` pointer name.
-    /// The frame length is the record extent.
-    pub(crate) fn source_offsets(&self) -> [(&'static str, Option<u64>); 2] {
-        [
-            ("byte_offset", self.byte_offset),
-            ("evaluated_value_offset", self.evaluated_value_offset),
-        ]
-    }
-}
+impl DesignParameterOwner {}
 /// Owned payload bound to a Design parameter companion.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct DesignCompanionPayload {
@@ -1288,30 +1261,7 @@ impl From<DesignParameterCompanion> for DesignParameterCompanionWire {
         }
     }
 }
-impl DesignParameterCompanion {
-    /// Source field offsets of the fixed prefix, by `record_layout` pointer
-    /// name.
-    pub(crate) fn source_offsets(&self) -> [(&'static str, Option<u64>); 2] {
-        [
-            ("byte_offset", self.byte_offset),
-            ("timestamp_micros_offset", self.timestamp_micros_offset),
-        ]
-    }
-
-    /// Source extent of the bound payload, by `record_layout` pointer name.
-    pub(crate) fn payload_source_extent(&self) -> [(&'static str, Option<u64>); 2] {
-        [
-            (
-                "payload_byte_offset",
-                self.payload.as_ref().and_then(|p| p.byte_offset),
-            ),
-            (
-                "payload_byte_length",
-                self.payload.as_ref().and_then(|p| p.byte_length),
-            ),
-        ]
-    }
-}
+impl DesignParameterCompanion {}
 cadmpeg_core::named_optional_field!(
     deserialize_owned_recipe_ids,
     Vec<String>,

@@ -28,16 +28,13 @@ use crate::records::{
     recipes::ConstructionRecipe,
 };
 use cadmpeg_core::decode::u64_from_index;
-use cadmpeg_core::decode::{DecodeContext, View};
+use cadmpeg_core::decode::View;
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::scalar::FiniteReal;
 use std::borrow::Cow;
 use std::collections::{BTreeMap, HashMap, HashSet};
 
 /// One parameter frame read through its source `View`.
-///
-/// Every byte that a parameter grammar consults is a read of this view, so a
-/// parse inside a record scope adds each range it reads to that record.
 #[derive(Clone, Copy)]
 pub(in crate::design) struct ParameterFrame<'a> {
     view: View<'a>,
@@ -49,13 +46,12 @@ impl<'a> ParameterFrame<'a> {
         Self { view }
     }
 
-    /// Frame over bytes that left the source session; its reads attribute nothing.
     #[cfg(test)]
     pub(in crate::design) fn over_retained(bytes: &'a [u8]) -> Self {
         Self::retained(bytes)
     }
 
-    /// Frame over a retained slice that left the source session.
+    /// Frame over a retained slice.
     pub(in crate::design) fn retained(bytes: &'a [u8]) -> Self {
         Self::new(View::over_retained(bytes))
     }
@@ -69,7 +65,7 @@ impl<'a> ParameterFrame<'a> {
     fn get(self, range: std::ops::Range<usize>) -> Option<&'a [u8]> {
         let start = self.view.start().checked_add(range.start)?;
         let end = self.view.start().checked_add(range.end)?;
-        self.view.read_slice(start..end)
+        self.view.child(start, end).map(View::window)
     }
 
     fn byte(self, at: usize) -> Option<u8> {
@@ -155,25 +151,69 @@ pub(crate) struct DecodedParameters {
     pub(crate) parameters: Vec<DesignParameter>,
     /// Per-stream counts of typed parameter frames that match no grammar.
     pub(crate) unparsed: Vec<UnparsedParameterRecords>,
-    /// Source field offsets of each parameter record, by parameter id.
-    pub(crate) pointers: BTreeMap<String, BTreeMap<String, u64>>,
     /// Local entity index named by each typed parameter tail, by parameter id.
     pub(crate) state_targets: BTreeMap<String, u64>,
 }
 
+/// Result of one parameter frame parse.
+pub(crate) enum ParsedFrame {
+    /// The frame is a parameter record.
+    Parameter {
+        parameter: DesignParameter,
+        /// Local entity index named by the typed parameter tail reference.
+        state_target: Option<u64>,
+    },
+    /// The frame repeats the record index of an earlier parameter frame.
+    Repeated,
+    /// The frame matches no parameter grammar.
+    Unmatched,
+}
+
+/// What the stream already states about one candidate frame.
+#[derive(Clone, Copy)]
+pub(crate) struct Expected<'a> {
+    /// Entity ID of the primary-index record that starts at the frame, when
+    /// the stream has a primary index.
+    pub(crate) entity_id: Option<u64>,
+    /// Record indices of the parameters already decoded from this stream.
+    pub(crate) emitted: &'a HashSet<u32>,
+}
+
+/// Parse one candidate frame as the parameter it would be.
+pub(crate) fn parse_frame(
+    view: View<'_>,
+    stream: &str,
+    offset: usize,
+    expected: Expected<'_>,
+) -> Result<ParsedFrame, CodecError> {
+    let Some(parsed) = parse_design_parameter(ParameterFrame::new(view))? else {
+        return Ok(ParsedFrame::Unmatched);
+    };
+    if expected
+        .entity_id
+        .is_some_and(|entity_id| entity_id != u64::from(parsed.record_index))
+    {
+        return Ok(ParsedFrame::Unmatched);
+    }
+    if expected.emitted.contains(&parsed.record_index) {
+        return Ok(ParsedFrame::Repeated);
+    }
+    let state_target = parsed.state_target();
+    let parameter = locate_design_parameter(parsed, stream, offset)?;
+    Ok(ParsedFrame::Parameter {
+        parameter,
+        state_target,
+    })
+}
+
 /// Decode every indexed parameter record in each Design `BulkStream`.
 ///
-/// Each parameter is parsed once, inside its own record scope, so the record
-/// holds every range its grammar reads. A frame shaped as a typed compact
-/// parameter that matches no parameter grammar is counted per stream so the
-/// caller reports it instead of dropping it silently.
-pub(crate) fn decode_parameters(
-    ctx: &DecodeContext<'_>,
-    scan: &ContainerScan,
-) -> Result<DecodedParameters, CodecError> {
+/// A frame shaped as a typed compact parameter that matches no parameter
+/// grammar is counted per stream so the caller reports it instead of
+/// dropping it silently.
+pub(crate) fn decode_parameters(scan: &ContainerScan) -> Result<DecodedParameters, CodecError> {
     let mut out = Vec::new();
     let mut unparsed = Vec::new();
-    let mut pointers = BTreeMap::new();
     let mut state_targets = BTreeMap::new();
     for entry in scan
         .entries
@@ -223,18 +263,16 @@ pub(crate) fn decode_parameters(
                 .ok_or_else(|| {
                     CodecError::malformed("Fusion Design parameter frame exceeds its stream")
                 })?;
-            match source_layout::capture_record(
-                ctx,
+            match parse_frame(
                 view,
                 &entry.name,
                 at,
-                source_layout::Expected {
+                Expected {
                     entity_id,
                     emitted: &emitted_record_indices,
                 },
-                &mut pointers,
             )? {
-                source_layout::Captured::Parameter {
+                ParsedFrame::Parameter {
                     parameter,
                     state_target,
                 } => {
@@ -249,8 +287,8 @@ pub(crate) fn decode_parameters(
                     out.push(parameter);
                     position = end;
                 }
-                source_layout::Captured::Repeated => position = end,
-                source_layout::Captured::Unmatched => {
+                ParsedFrame::Repeated => position = end,
+                ParsedFrame::Unmatched => {
                     if is_typed_parameter_frame(ParameterFrame::new(view)) {
                         unparsed_count = unparsed_count.checked_add(1).ok_or_else(|| {
                             CodecError::malformed(
@@ -273,7 +311,6 @@ pub(crate) fn decode_parameters(
     Ok(DecodedParameters {
         parameters: out,
         unparsed,
-        pointers,
         state_targets,
     })
 }
@@ -934,11 +971,9 @@ pub(crate) fn parameters_for_projection<'a>(
 /// Decode the exact same-index-delimited owner frame for every owned Design
 /// parameter. Retain an unsupported binding without an interpreted owner.
 pub(crate) fn decode_parameter_owners(
-    ctx: &DecodeContext<'_>,
     scan: &ContainerScan,
     parameters: &[DesignParameter],
     headers: &[DesignRecordHeader],
-    pointers: &mut BTreeMap<String, BTreeMap<String, u64>>,
 ) -> Result<DecodedParameterOwners, CodecError> {
     if parameters
         .iter()
@@ -1056,12 +1091,8 @@ pub(crate) fn decode_parameter_owners(
                 .evaluated_value_offset()
                 .ok_or_else(|| malformed("has no source evaluated-value location"))?,
         };
-        let id = ids::native_design_parameter_owner_id(&entry.name, header_offset);
-        if pointers.contains_key(&id) {
-            return Err(malformed("has a duplicated source owner"));
-        }
         let owner_typed = owner_typed.contains(&at);
-        let captured = ctx.record(&id, view, || {
+        let captured = (|| {
             let frame = ParameterFrame::new(view);
             let parsed = parse_parameter_owner_frame(frame)
                 .or_else(|| {
@@ -1091,26 +1122,12 @@ pub(crate) fn decode_parameter_owners(
             {
                 return Err(malformed("does not link back to its referencing parameter"));
             }
-            // A legacy owner stores no scalar: its evaluated-value offset is
-            // a field of the parameter record, which holds that pointer.
-            let extent = header_offset
-                ..header_offset
-                    .checked_add(u64_from_index(view.window().len()))
-                    .ok_or_else(|| malformed("frame end overflows"))?;
-            let fields = source_layout::pointer_fields(
-                ctx,
-                owner
-                    .source_offsets()
-                    .into_iter()
-                    .filter(|(_, offset)| offset.is_some_and(|offset| extent.contains(&offset))),
-            )?;
-            Ok(Some((owner, fields)))
-        })?;
-        let Some((owner, fields)) = captured else {
+            Ok(Some(owner))
+        })()?;
+        let Some(owner) = captured else {
             unparsed.push(parameter.id.clone());
             continue;
         };
-        pointers.insert(id, fields);
         out.push(owner);
     }
     out.sort_by(|a, b| a.id().cmp(b.id()));
@@ -1481,11 +1498,9 @@ fn parse_admitted_legacy_parameter_owner_88(
 /// Decode the fixed prefix of every indexed record paired with a parameter
 /// owner. Record-specific payload after the prefix is decoded independently.
 pub(crate) fn decode_parameter_companions(
-    ctx: &DecodeContext<'_>,
     scan: &ContainerScan,
     owners: &[DesignParameterOwner],
     headers: &[DesignRecordHeader],
-    pointers: &mut BTreeMap<String, BTreeMap<String, u64>>,
 ) -> Result<Vec<DesignParameterCompanion>, CodecError> {
     let mut headers_by_record = HashMap::new();
     for header in headers {
@@ -1496,6 +1511,7 @@ pub(crate) fn decode_parameter_companions(
         headers_by_record.insert(key, header);
     }
     let mut out = Vec::new();
+    let mut decoded = HashSet::new();
     for owner in owners {
         let Some(scope) = native_stream(owner.id()) else {
             continue;
@@ -1514,11 +1530,10 @@ pub(crate) fn decode_parameter_companions(
             continue;
         };
         let id = design_record_id(&entry.name, ":design-parameter-companion#", header_offset);
-        if pointers.contains_key(&id) {
+        if decoded.contains(&id) {
             continue;
         }
-        // The prefix length selects its reference spelling. A prefix that is
-        // not this owner's companion discards its scope.
+        // The prefix length selects its reference spelling.
         let mut captured = None;
         for len in [companion_prefix::LEN, typed_companion::LEN] {
             let Some(view) = usize::try_from(header_offset)
@@ -1529,33 +1544,20 @@ pub(crate) fn decode_parameter_companions(
             else {
                 continue;
             };
-            let attempt = ctx.record(&id, view, || {
-                parse_parameter_companion_frame(ParameterFrame::new(view))
-                    .filter(|parsed| {
-                        parsed.record_index == owner.companion_record_index()
-                            && parsed.owner_record_index == owner.record_index()
-                    })
-                    .and_then(|parsed| parsed.into_record(&entry.name, header_offset))
-                    .ok_or_else(|| CodecError::malformed("prefix is not the owner's companion"))
-                    .and_then(|companion| {
-                        let fields =
-                            source_layout::pointer_fields(ctx, companion.source_offsets())?;
-                        Ok((companion, fields))
-                    })
-            });
-            match attempt {
-                Ok(attempt) => {
-                    captured = Some(attempt);
-                    break;
-                }
-                Err(error @ CodecError::ResourceLimit(_)) => return Err(error),
-                Err(_) => {}
+            captured = parse_parameter_companion_frame(ParameterFrame::new(view))
+                .filter(|parsed| {
+                    parsed.record_index == owner.companion_record_index()
+                        && parsed.owner_record_index == owner.record_index()
+                })
+                .and_then(|parsed| parsed.into_record(&entry.name, header_offset));
+            if captured.is_some() {
+                break;
             }
         }
-        let Some((companion, fields)) = captured else {
+        let Some(companion) = captured else {
             continue;
         };
-        pointers.insert(id, fields);
+        decoded.insert(id);
         out.push(companion);
     }
     out.sort_by(|a, b| a.id().cmp(b.id()));
@@ -1814,8 +1816,6 @@ fn companion_payload<S: std::hash::BuildHasher>(
         ),
     ))
 }
-
-pub(crate) mod source_layout;
 
 #[cfg(test)]
 mod tests;

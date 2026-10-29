@@ -3798,6 +3798,7 @@ pub(crate) mod class_296_261_legacy_extrude_prefix_scalar_at_70 {
 /// ```
 pub(crate) mod class_296_261_legacy_one_sided_to_face_tail {
     /// Offset of `second_side_extent` (`u32`, little-endian). Spec §3.1.
+    #[cfg(test)]
     pub(crate) const SECOND_SIDE_EXTENT: usize = 277;
     /// Offset of `reference_count` (`u32`, little-endian). Spec §3.1.
     pub(crate) const REFERENCE_COUNT: usize = 281;
@@ -3812,6 +3813,7 @@ pub(crate) mod class_296_261_legacy_one_sided_to_face_tail {
 /// ```
 pub(crate) mod class_296_261_legacy_one_sided_distance_tail {
     /// Offset of `second_side_extent` (`u32`, little-endian). Spec §3.1.
+    #[cfg(test)]
     pub(crate) const SECOND_SIDE_EXTENT: usize = 267;
     /// Offset of `reference_count` (`u32`, little-endian). Spec §3.1.
     pub(crate) const REFERENCE_COUNT: usize = 271;
@@ -3838,22 +3840,28 @@ pub(crate) mod legacy_class_415_symmetric_extrude_prefix {
     #[cfg(test)]
     pub(crate) const OPERATION_PREFIX_MARKER_VALUE: u8 = 1;
     /// Offset of `operation` (`u32`, little-endian). Spec §3.1.
+    #[cfg(test)]
     pub(crate) const OPERATION: usize = 28;
     /// Offset of `direction` (`u32`, little-endian). Spec §3.1.
+    #[cfg(test)]
     pub(crate) const DIRECTION: usize = 32;
     /// Stated value of `direction` (`u32`). Spec §3.1.
     #[cfg(test)]
     pub(crate) const DIRECTION_VALUE: u32 = 0x0000_0003;
     /// Offset of `face_extend` (`u32`, little-endian). Spec §3.1.
+    #[cfg(test)]
     pub(crate) const FACE_EXTEND: usize = 36;
     /// Stated value of `face_extend` (`u32`). Spec §3.1.
     #[cfg(test)]
     pub(crate) const FACE_EXTEND_VALUE: u32 = 0x0000_0002;
     /// Offset of `direction_reversed` (`u8`). Spec §3.1.
+    #[cfg(test)]
     pub(crate) const DIRECTION_REVERSED: usize = 40;
     /// Offset of `geometry_kind` (`u8`). Spec §3.1.
+    #[cfg(test)]
     pub(crate) const GEOMETRY_KIND: usize = 41;
     /// Offset of `start_support` (`u8`). Spec §3.1.
+    #[cfg(test)]
     pub(crate) const START_SUPPORT: usize = 42;
     /// Offset of `profile_normal` (`f64[3]`, little-endian). Spec §3.1.
     #[cfg(test)]

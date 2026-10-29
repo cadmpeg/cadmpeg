@@ -30,7 +30,6 @@ fn exact_assembly_operand_path_envelope(
     scope: &DesignParameterScope,
     types: &super::StreamTypes<'_>,
     locator_record_index: u32,
-    locator_reference_offset: u64,
     locator_at: usize,
 ) -> Result<
     Option<crate::records::feature::assembly::DesignAssemblyOperandPath>,
@@ -47,7 +46,6 @@ fn exact_assembly_operand_path_envelope(
         scope,
         types,
         locator_record_index,
-        locator_reference_offset,
         locator_at,
     )
     .map(|parsed| parsed.map(|path| path.content))
@@ -134,7 +132,6 @@ fn assembly_path_span_keeps_its_record_index() {
         &scope,
         &std::collections::HashMap::new(),
         64,
-        0,
         0,
     )
     .unwrap()
@@ -261,13 +258,13 @@ fn wide_scope_locator_is_admitted_by_its_record_type() {
         let bytes = wide_envelope_bytes(scope.record_index, transform);
         let locator_length = if transform { 225 } else { 97 };
         assert_eq!(bytes.len(), locator_length + path_bytes().len() + 37 + 11);
-        let path = exact_assembly_operand_path_envelope(&bytes, &scope, &typed, 64, 0, 0)
+        let path = exact_assembly_operand_path_envelope(&bytes, &scope, &typed, 64, 0)
             .unwrap()
             .expect("wide locator");
         assert_eq!(path.record_index, 65);
         let untyped = std::collections::HashMap::new();
         assert!(
-            exact_assembly_operand_path_envelope(&bytes, &scope, &untyped, 64, 0, 0)
+            exact_assembly_operand_path_envelope(&bytes, &scope, &untyped, 64, 0)
                 .unwrap()
                 .is_none()
         );
@@ -400,7 +397,7 @@ fn wide_locator_path_continues_over_typed_records() {
         (66, (TYPED, 4)),
     ]);
     let bytes = envelope(true);
-    let path = exact_assembly_operand_path_envelope(&bytes, &scope, &types, 64, 0, 0)
+    let path = exact_assembly_operand_path_envelope(&bytes, &scope, &types, 64, 0)
         .unwrap()
         .expect("continued wide path");
     let occurrences = path
@@ -426,7 +423,7 @@ fn wide_locator_path_continues_over_typed_records() {
         (65, (TYPED, 4)),
     ]);
     assert!(
-        exact_assembly_operand_path_envelope(&bytes, &scope, &untyped, 64, 0, 0)
+        exact_assembly_operand_path_envelope(&bytes, &scope, &untyped, 64, 0)
             .unwrap()
             .is_none()
     );

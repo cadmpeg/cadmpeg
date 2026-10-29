@@ -55,7 +55,6 @@ use crate::records::topology::sketch_profile::DesignSketchProfileOperand;
 use serde::{Deserialize, Serialize};
 
 pub(crate) mod generation;
-mod source_offsets;
 
 use generation::{DesignAssemblyFrame, DesignScopeGeneration, ScopeFrameFacts};
 
@@ -656,9 +655,8 @@ pub(crate) struct DesignParameterScope {
     source: DesignScopeSource,
 }
 
-/// Source frame offsets and length of a parameter scope. They are the
-/// `record_layout` pointers and the extent of the scope's capture, not
-/// document content; a scope read from the wire has none.
+/// Source frame offsets and length of a decoded parameter scope. They are
+/// not on the document wire; a scope read from the wire has none.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub(crate) struct DesignScopeSource {
     /// Byte offset of the primary indexed record header.
@@ -677,34 +675,6 @@ pub(crate) struct DesignScopeSource {
     reference_count_offset: Option<u64>,
     /// Byte offset of the paired indexed record header.
     paired_byte_offset: Option<u64>,
-}
-
-/// The source frame of a located parameter scope.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) struct LocatedScopeFrame {
-    byte_offset: u64,
-    frame_length: u64,
-    reference_count_offset: u64,
-    paired_byte_offset: u64,
-}
-
-impl LocatedScopeFrame {
-    /// Byte offset of the primary indexed record header.
-    pub(crate) fn byte_offset(&self) -> u64 {
-        self.byte_offset
-    }
-    /// Byte length from the primary header to the paired header.
-    pub(crate) fn frame_length(&self) -> u64 {
-        self.frame_length
-    }
-    /// Byte offset of the ordered reference-table count.
-    pub(crate) fn reference_count_offset(&self) -> u64 {
-        self.reference_count_offset
-    }
-    /// Byte offset of the paired indexed record header.
-    pub(crate) fn paired_byte_offset(&self) -> u64 {
-        self.paired_byte_offset
-    }
 }
 
 /// Unadmitted parameter-scope fields.
@@ -2384,9 +2354,9 @@ impl DesignParameterScope {
         })
     }
 
-    /// The located draft of a scope whose source frame is complete: a decoded
-    /// scope, or a scope whose offsets are restored from its capture.
-    pub(crate) fn located_draft(&self) -> Option<DesignParameterScopeDraft> {
+    /// The located draft of a decoded scope, whose source frame is complete.
+    #[cfg(test)]
+    fn located_draft(&self) -> Option<DesignParameterScopeDraft> {
         let source = self.source;
         Some(DesignParameterScopeDraft {
             id: self.id.clone(),
@@ -2407,36 +2377,6 @@ impl DesignParameterScope {
             paired_class_tag: self.paired_class_tag.clone(),
             paired_byte_offset: source.paired_byte_offset?,
         })
-    }
-
-    /// The source frame of a located scope: a decoded scope, or a scope whose
-    /// offsets are restored from its capture.
-    pub(crate) fn located_frame(&self) -> Option<LocatedScopeFrame> {
-        let source = self.source;
-        Some(LocatedScopeFrame {
-            byte_offset: source.byte_offset?,
-            frame_length: source.frame_length?,
-            reference_count_offset: source.reference_count_offset?,
-            paired_byte_offset: source.paired_byte_offset?,
-        })
-    }
-
-    /// Whether the located history-state offset is the one the kind offset
-    /// places.
-    pub(crate) fn located_history_state_offset_holds(&self) -> bool {
-        self.source.history_state_id_offset.is_some()
-            && self.source.history_state_id_offset
-                == self
-                    .source
-                    .kind_offset
-                    .and_then(|offset| offset.checked_sub(HISTORY_STATE_ID_BACK_OFFSET))
-    }
-
-    /// The generation the located frame of this scope selects.
-    pub(crate) fn located_generation(&self) -> Option<DesignScopeGeneration> {
-        let draft = self.located_draft()?;
-        let kind = draft.payload.kind();
-        Some(DesignScopeGeneration::derive(&draft.frame_facts(&kind)?))
     }
 
     #[cfg(test)]
@@ -2509,11 +2449,6 @@ impl DesignParameterScope {
     /// The assembly frame of an assembly-family scope with a fixed frame.
     pub(crate) fn assembly_frame(&self) -> Option<DesignAssemblyFrame> {
         self.generation.assembly()
-    }
-    /// Set the frame length of a scope whose offsets are restored from its
-    /// capture: the capture extent is the scope frame.
-    pub(crate) fn restore_frame_length(&mut self, frame_length: u64) {
-        self.source.frame_length = Some(frame_length);
     }
 }
 
@@ -3034,6 +2969,7 @@ impl DesignParameterScope {
             .map(|frame| frame.joint_origin_transform)
     }
 
+    #[cfg(test)]
     pub(crate) fn joint_origin_transform_offset(&self) -> Option<u64> {
         self.joint_origin_frame()
             .and_then(|frame| frame.joint_origin_transform_offset)
