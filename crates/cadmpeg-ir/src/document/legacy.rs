@@ -31,6 +31,25 @@ mod tests {
         }
     }
 
+    #[test]
+    fn unsupported_version_after_changed_model_shape_keeps_version_diagnostic() {
+        for version in ["6", "7"] {
+            let json = format!(
+                r#"{{"model":{{"features":{{"legacy":true}}}},"ir_version":"{version}","decode_depth":"full"}}"#
+            );
+            let error = CadIr::from_json(&json).unwrap_err().to_string();
+            for expected in [
+                "unsupported ir_version",
+                "expected 8",
+                "decode_depth",
+                "scope",
+                "report",
+            ] {
+                assert!(error.contains(expected), "{error}");
+            }
+        }
+    }
+
     fn rejected_legacy_shape(version: &str, depth: Option<&str>) {
         let mut value = serde_json::to_value(CadIr::empty()).unwrap();
         let object = value.as_object_mut().unwrap();
