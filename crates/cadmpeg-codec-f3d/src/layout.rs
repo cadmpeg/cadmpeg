@@ -5475,12 +5475,44 @@ pub(crate) mod referenced_angle_revolve_prologue {
     pub(crate) const EXTENT_KIND: usize = 29;
     /// Offset of `direction_kind` (`u8`). Spec §3.1.
     pub(crate) const DIRECTION_KIND: usize = 33;
-    /// Offset of `flag` (`u8`). Spec §3.1.
-    pub(crate) const FLAG: usize = 34;
+    /// Offset of `project_axis` (`u8`). Spec §3.1.
+    pub(crate) const PROJECT_AXIS: usize = 34;
     /// Offset of `structural_constant` (`u32`, little-endian). Spec §3.1.
     pub(crate) const STRUCTURAL_CONSTANT: usize = 35;
     /// Offset of `angle_reference_marker` (`u8`). Spec §3.1.
     pub(crate) const ANGLE_REFERENCE_MARKER: usize = 39;
+}
+
+/// Byte offsets for the `two_sided_revolve_prologue` record.
+///
+/// Spec §3.1. Record length 60 B.
+///
+/// ```text
+/// Offsets are relative to the Revolve primary indexed header. The marked opposite-angle reference occupies offsets 38 through 48 and the marked angle-owner reference occupies offsets 49 through 59.
+/// ```
+pub(crate) mod two_sided_revolve_prologue {
+    /// Offset of `marker` (`u8`). Spec §3.1.
+    pub(crate) const MARKER: usize = 20;
+    /// Offset of `zero_value` (`u32`, little-endian). Spec §3.1.
+    pub(crate) const ZERO_VALUE: usize = 21;
+    /// Offset of `operation` (`u32`, little-endian). Spec §3.1.
+    pub(crate) const OPERATION: usize = 25;
+    /// Offset of `extent_kind` (`u32`, little-endian). Spec §3.1.
+    pub(crate) const EXTENT_KIND: usize = 29;
+    /// Offset of `direction_kind` (`u8`). Spec §3.1.
+    pub(crate) const DIRECTION_KIND: usize = 33;
+    /// Offset of `project_axis` (`u8`). Spec §3.1.
+    pub(crate) const PROJECT_AXIS: usize = 34;
+    /// Offset of `solid` (`u8`). Spec §3.1.
+    pub(crate) const SOLID: usize = 35;
+    /// Offset of `symmetric` (`u8`). Spec §3.1.
+    pub(crate) const SYMMETRIC: usize = 36;
+    /// Offset of `two_sides` (`u8`). Spec §3.1.
+    pub(crate) const TWO_SIDES: usize = 37;
+    /// Offset of `opposite_angle_reference_marker` (`u8`). Spec §3.1.
+    pub(crate) const OPPOSITE_ANGLE_REFERENCE_MARKER: usize = 38;
+    /// Offset of `angle_reference_marker` (`u8`). Spec §3.1.
+    pub(crate) const ANGLE_REFERENCE_MARKER: usize = 49;
 }
 
 /// Byte offsets for the `typed_reference_parameter_scope_tail` record.

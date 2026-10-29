@@ -18,11 +18,16 @@ cadmpeg_core::named_optional_field!(
     u32,
     "opposite_angle_record_index"
 );
+cadmpeg_core::named_optional_field!(
+    deserialize_second_side,
+    DesignRevolveSecondSideWire,
+    "second_side"
+);
 /// Exact construction carried by a Revolve, Loft, Sweep, or Pipe scope.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub(crate) enum DesignPathFeatureConstruction {
-    /// One-sided fixed-angle revolution result operation.
+    /// Fixed-angle revolution result operation.
     Revolve(DesignRevolveConstruction),
     /// Loft result operation.
     Loft(DesignLoftConstruction),
@@ -52,6 +57,32 @@ pub(crate) struct DesignRevolveConstruction {
     /// Zero-valued opposite-side angle scalar record, when serialized.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub(crate) opposite_angle: Option<Located<u32>>,
+    /// Travel opposite the revolution direction, when the scope revolves to
+    /// both sides of the profile plane.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub(crate) second_side: Option<DesignRevolveSecondSide>,
+}
+
+/// Opposite-side travel of a Symmetric or Two Sides `Revolve` scope.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub(crate) struct DesignRevolveSecondSide {
+    /// Whether the scope mirrors the first side (Symmetric) rather than
+    /// storing an independent second angle (Two Sides).
+    pub(crate) symmetric: bool,
+    /// Positive angular travel opposite the revolution direction, in radians.
+    pub(crate) angle: PositiveAngle,
+    /// Referenced opposite-side angle owner record.
+    pub(crate) angle_record_index: u32,
+    /// Byte offset of the opposite-side angular travel.
+    pub(crate) angle_offset: u64,
+}
+
+#[derive(Serialize, Deserialize)]
+struct DesignRevolveSecondSideWire {
+    symmetric: bool,
+    angle: f64,
+    angle_record_index: u32,
+    angle_offset: u64,
 }
 
 #[derive(Serialize, Deserialize)]
@@ -80,6 +111,13 @@ struct DesignRevolveConstructionWire {
         deserialize_with = "deserialize_opposite_angle_offset"
     )]
     opposite_angle_offset: Option<u64>,
+    /// Opposite-side travel of a Symmetric or Two Sides scope.
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_second_side"
+    )]
+    second_side: Option<DesignRevolveSecondSideWire>,
 }
 
 impl From<DesignRevolveConstruction> for DesignRevolveConstructionWire {
@@ -92,6 +130,12 @@ impl From<DesignRevolveConstruction> for DesignRevolveConstructionWire {
             angle_offset: value.angle_offset,
             opposite_angle_record_index: value.opposite_angle.map(|located| located.value),
             opposite_angle_offset: value.opposite_angle.map(|located| located.offset),
+            second_side: value.second_side.map(|side| DesignRevolveSecondSideWire {
+                symmetric: side.symmetric,
+                angle: side.angle.get(),
+                angle_record_index: side.angle_record_index,
+                angle_offset: side.angle_offset,
+            }),
         }
     }
 }
@@ -118,6 +162,18 @@ impl TryFrom<DesignRevolveConstructionWire> for DesignRevolveConstruction {
                     )
                 }
             },
+            second_side: value
+                .second_side
+                .map(|side| {
+                    Ok::<_, String>(DesignRevolveSecondSide {
+                        symmetric: side.symmetric,
+                        angle: PositiveAngle::new(side.angle)
+                            .ok_or("second-side angle must be positive and finite")?,
+                        angle_record_index: side.angle_record_index,
+                        angle_offset: side.angle_offset,
+                    })
+                })
+                .transpose()?,
         })
     }
 }

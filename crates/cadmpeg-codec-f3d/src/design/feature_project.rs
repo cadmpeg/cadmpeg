@@ -611,7 +611,7 @@ pub(crate) fn project_parameter_design_with_edge_identities(
 ) -> Result<ProjectedParameterDesign, CodecError> {
     use cadmpeg_ir::features::{
         patterns::PatternKind, DesignParameter as NeutralParameter, DimensionDisplay, Feature,
-        FeatureDefinition, FeatureOperation, ParameterId, ParameterValue,
+        FeatureDefinition, FeatureOperation, ParameterId, ParameterValue, UnresolvedFamily,
     };
     use cadmpeg_ir::scalar::{Angle, Length};
     use std::collections::BTreeMap;
@@ -766,12 +766,9 @@ pub(crate) fn project_parameter_design_with_edge_identities(
                     face_operands,
                     (placements, curve_identities),
                 )
-                .unwrap_or_else(|| {
-                    FeatureDefinition::Operation(FeatureOperation::Native {
-                        kind: scope.kind_name().into(),
-                        parameters: BTreeMap::new(),
-                    })
-                }),
+                .unwrap_or(FeatureDefinition::Operation(FeatureOperation::Unresolved {
+                    family: UnresolvedFamily::Revolve,
+                })),
                 Some(DesignFeatureFamily::Loft) => project_fixed_loft(scope, inputs, ctx)?
                     .unwrap_or_else(|| {
                         FeatureDefinition::Operation(FeatureOperation::Native {
@@ -1003,7 +1000,13 @@ pub(crate) fn project_parameter_design_with_edge_identities(
                             .map(|size| (construction, size))
                     })
                     .map_or_else(
-                        || native_scope_definition(scope, &parameters),
+                        || {
+                            Ok::<_, CodecError>(FeatureDefinition::Operation(
+                                FeatureOperation::Unresolved {
+                                    family: UnresolvedFamily::Thread,
+                                },
+                            ))
+                        },
                         |(construction, nominal_size)| {
                             let face = project_thread_face_selection(
                                 scope,
@@ -5367,7 +5370,10 @@ pub(super) fn project_fixed_revolve_with_entities(
 
     let crate::records::feature::scope::DesignScopePayload::Revolve(Some(
         crate::records::feature::path_features::DesignRevolveConstruction {
-            operation, angle, ..
+            operation,
+            angle,
+            second_side,
+            ..
         },
     )) = &scope.payload()
     else {
@@ -5462,8 +5468,21 @@ pub(super) fn project_fixed_revolve_with_entities(
     };
     let revolve_profile: cadmpeg_ir::features::PlanarProfileRef =
         PlanarProfileRef::Native(profile.id.clone());
-    let extent = RevolveExtent::OneSided {
-        termination: AngularTermination::Angle { angle: *angle },
+    let extent = match second_side {
+        None => RevolveExtent::OneSided {
+            termination: AngularTermination::Angle { angle: *angle },
+        },
+        // Fusion's symmetric angle applies to each side; the neutral extent
+        // states the total travel.
+        Some(side) if side.symmetric => RevolveExtent::Symmetric {
+            termination: AngularTermination::Angle {
+                angle: cadmpeg_ir::scalar::PositiveAngle::new(2.0 * angle.get())?,
+            },
+        },
+        Some(side) => RevolveExtent::TwoSided {
+            first: AngularTermination::Angle { angle: *angle },
+            second: AngularTermination::Angle { angle: side.angle },
+        },
     };
     Some(FeatureDefinition::Operation(FeatureOperation::Revolve {
         construction: match axis {
@@ -5526,6 +5545,137 @@ fn revolve_face_axis_operand<'a>(
         .next()
         .is_some())
     .then_some(operand)
+}
+
+/// Orient every resolved Revolve axis so that the revolve turns right-handed
+/// about the axis direction.
+///
+/// Fusion revolves a positive angle from the profile toward the normal side of
+/// the profile's sketch plane. The stored direction of an origin axis or of a
+/// sketch line plays no part. The direction that turns the profile that way is
+/// the cross product of the in-plane direction from the axis to the profile and
+/// the sketch normal. A Revolve whose profile side is not established keeps its
+/// profile and extent but loses its axis, because a guessed direction can turn
+/// the profile the other way.
+pub(crate) fn orient_revolve_axes(
+    features: &mut [cadmpeg_ir::features::Feature],
+    sketches: &[cadmpeg_ir::sketches::Sketch],
+    sketch_entities: &[cadmpeg_ir::sketches::SketchEntity],
+    (linear_tolerance, angular_tolerance): (f64, f64),
+) {
+    use cadmpeg_ir::features::{FeatureDefinition, FeatureOperation, PlanarProfileRef};
+
+    for feature in features {
+        feature.evaluation.edit(|definition, _| {
+            let FeatureDefinition::Operation(FeatureOperation::Revolve { construction, .. }) =
+                definition
+            else {
+                return;
+            };
+            let Some(axis) = construction.axis().cloned() else {
+                return;
+            };
+            let oriented = match construction.profile() {
+                Some(PlanarProfileRef::Sketch(sketch)) => sketches
+                    .iter()
+                    .find(|candidate| &candidate.id == sketch)
+                    .and_then(|sketch| {
+                        oriented_revolve_axis(
+                            &axis,
+                            sketch,
+                            sketch_entities,
+                            (linear_tolerance, angular_tolerance),
+                        )
+                    }),
+                _ => None,
+            };
+            construction.set_axis(oriented);
+        });
+    }
+}
+
+/// The axis directed so that a right-handed turn carries the profile of
+/// `sketch` toward the sketch normal, or `None` when the axis is not parallel
+/// to the sketch plane or the profile does not lie on one side of the axis.
+fn oriented_revolve_axis(
+    axis: &cadmpeg_ir::features::RevolutionAxis,
+    sketch: &cadmpeg_ir::sketches::Sketch,
+    sketch_entities: &[cadmpeg_ir::sketches::SketchEntity],
+    (linear_tolerance, angular_tolerance): (f64, f64),
+) -> Option<cadmpeg_ir::features::RevolutionAxis> {
+    let (origin, normal, u_axis) = sketch.resolved_placement()?;
+    let normal = normal.get().unit()?;
+    let u_axis = u_axis.get().unit()?;
+    let v_axis = normal.cross(u_axis);
+    let direction = axis.direction.get().unit()?;
+    if direction.dot(normal).abs() > angular_tolerance {
+        return None;
+    }
+    // In-plane and perpendicular to the axis: its sign names the profile side.
+    let across = normal.cross(direction);
+    let mut positive_side = None;
+    for entity_use in sketch.profiles.iter().flatten() {
+        let entity = sketch_entities
+            .iter()
+            .find(|entity| entity.id() == &entity_use.entity)?;
+        for point in revolve_profile_sample_points(&entity.geometry) {
+            let offset = origin
+                .get()
+                .translated(u_axis, point.u)
+                .translated(v_axis, point.v)
+                .vector_from(axis.origin.get())
+                .dot(across);
+            // A profile can touch its axis; only points off the axis name a side.
+            if offset.abs() <= linear_tolerance {
+                continue;
+            }
+            if *positive_side.get_or_insert(offset > 0.0) != (offset > 0.0) {
+                return None;
+            }
+        }
+    }
+    Some(cadmpeg_ir::features::RevolutionAxis {
+        direction: if positive_side? {
+            axis.direction
+        } else {
+            // Reversing a zero component gives -0.0; keep it a plain zero.
+            cadmpeg_ir::features::FeatureDirection3::from_unit_without_small_components(
+                cadmpeg_ir::units::UnitVector3::normalized(axis.direction.reversed().get())?,
+            )
+        },
+        ..axis.clone()
+    })
+}
+
+/// Sketch points that lie on a profile curve or, for a closed conic, inside
+/// it. A revolve profile does not cross its axis, so each of them names the
+/// profile side. Other curve kinds contribute no point.
+fn revolve_profile_sample_points(
+    geometry: &cadmpeg_ir::sketches::SketchGeometry,
+) -> Vec<cadmpeg_ir::math::Point2> {
+    use cadmpeg_ir::math::Point2;
+    use cadmpeg_ir::sketches::SketchGeometryDefinition as Definition;
+
+    match geometry.definition().to_raw() {
+        Definition::Line { start, end } => vec![start, end],
+        Definition::Arc {
+            center,
+            radius,
+            start_angle,
+            end_angle,
+        } => [start_angle, end_angle]
+            .into_iter()
+            .map(|angle| {
+                Point2::new(
+                    center.u + radius.get() * angle.get().cos(),
+                    center.v + radius.get() * angle.get().sin(),
+                )
+            })
+            .collect(),
+        Definition::Circle { center, .. } => vec![center],
+        Definition::Ellipse { center, bounds, .. } if bounds.is_none() => vec![center],
+        _ => Vec::new(),
+    }
 }
 
 /// Resolve Revolve axes selected through history-qualified analytic faces.
@@ -5697,6 +5847,8 @@ fn design_geometry_axis_selection(
         return None;
     }
     let direction = match selection.primary_identity {
+        39 => cadmpeg_ir::units::UnitVector3::X_AXIS,
+        40 => cadmpeg_ir::units::UnitVector3::Y_AXIS,
         41 => cadmpeg_ir::units::UnitVector3::Z_AXIS,
         _ => return None,
     };

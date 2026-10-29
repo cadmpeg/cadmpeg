@@ -5212,6 +5212,7 @@ fn validate_path_feature_operand_roles(ctx: &Ctx, findings: &mut Vec<Finding>) {
                     operation,
                     angle_record_index,
                     opposite_angle,
+                    second_side,
                     ..
                 },
             )) => {
@@ -5229,6 +5230,13 @@ fn validate_path_feature_operand_roles(ctx: &Ctx, findings: &mut Vec<Finding>) {
                             .reference_members()
                             .values()
                             .any(|value| value == &located.value)
+                    })
+                    && second_side.is_none_or(|side| {
+                        side.angle_record_index != *angle_record_index
+                            && scope
+                                .reference_members()
+                                .values()
+                                .any(|value| value == &side.angle_record_index)
                     })
                     && groups.len() == 2 + expected_body_count
                     && role_count(DesignOperandRole::ROLE_0X21) == 1
