@@ -1,12 +1,10 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Compressed ASCII admission over genuine independently bounded Data records.
 
-use std::ops::Range;
-
 use cadmpeg_core::decode::{u64_from_index, DecodeContext, ResourceDimension, ResourceLimit, View};
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::report::loss::LossNote;
-use cadmpeg_ir::source_fidelity::parts::{DecodeParts, ParserPartOutput, PartLevel, PartSpec};
+use cadmpeg_ir::source_fidelity::parts::{DecodeParts, PartOutput};
 
 use super::{malformed, CARD_WIDTH, PARAMETER_DATA_WIDTH};
 use crate::directory::DirectoryEntry;
@@ -23,7 +21,7 @@ pub(crate) struct Admission {
 
 pub(crate) struct Normalized {
     pub(crate) bytes: Vec<u8>,
-    pub(crate) parts: ParserPartOutput,
+    pub(crate) parts: PartOutput,
     pub(crate) admission: Admission,
 }
 
@@ -31,7 +29,6 @@ pub(crate) fn normalize(
     source: View<'_>,
     ctx: &DecodeContext<'_>,
 ) -> Result<Normalized, CodecError> {
-    ctx.capture_part_extent(source)?;
     let lines = source::lines(source, ctx)?;
     let mut payloads = Vec::new();
     for line in &lines {
@@ -73,7 +70,7 @@ pub(crate) fn normalize(
         .skip(data_begin)
         .find_map(|(at, line)| (line.len() == CARD_WIDTH && line[72] == b'T').then_some(at))
         .ok_or_else(|| malformed("Terminate section is missing"))?;
-    let mut parts = ParserPartOutput::new(cadmpeg_ir::CodecFormat::Iges);
+    let mut parts = PartOutput::new(cadmpeg_ir::CodecFormat::Iges);
     let mut global_cards = Vec::new();
     for line in &lines[global_begin..data_begin] {
         if line.payload.window().len() != CARD_WIDTH {
@@ -100,11 +97,10 @@ pub(crate) fn normalize(
                 lines[terminate].extent.start(),
             )
             .ok_or_else(|| malformed("Data section exceeds original source"))?;
-        let section_framing = line_endings(ctx, &lines[data_begin..terminate])?;
-        if let Some(records) = ctx.decode_parser_scope(
+        if let Some(records) = ctx.decode_part(
             &mut parts,
             extent,
-            spec("iges.compressed_data_section", section_framing)?,
+            crate::reader::part("iges.compressed_data_section"),
             |children| {
                 let mut records = Vec::new();
                 let mut previous = None;
@@ -125,16 +121,8 @@ pub(crate) fn normalize(
                     expected = expected
                         .checked_add(2)
                         .ok_or_else(|| malformed("Directory sequence overflows"))?;
-                    let mut specifier_framing = Vec::new();
-                    let fields = source::Fields::apply(
-                        previous,
-                        &lines,
-                        at,
-                        &parsed,
-                        record_delimiter,
-                        ctx,
-                        &mut specifier_framing,
-                    )?;
+                    let fields =
+                        source::Fields::apply(previous, &lines, at, &parsed, record_delimiter)?;
                     let count = fields.count()?;
                     let end = parsed
                         .next
@@ -146,88 +134,74 @@ pub(crate) fn normalize(
                     let extent = source
                         .child(lines[at].extent.start(), lines[end - 1].extent.end())
                         .ok_or_else(|| malformed("Data record exceeds original source"))?;
-                    let mut framing =
-                        record_framing(ctx, &lines, at, end, &parsed, record_delimiter)?;
-                    for range in specifier_framing {
-                        append(ctx, &mut framing, range)?;
-                    }
-                    framing.sort_unstable_by_key(|range| (range.start, range.end));
                     previous = Some(fields);
-                    if let Some(record) = ctx.decode_parser_scope(
+                    if let Some(record) = ctx.decode_part(
                         children,
                         extent,
-                        spec("iges.compressed_data_record", framing)?,
+                        crate::reader::part("iges.compressed_data_record"),
                         |specifiers| {
                             admit_optional_specifiers(ctx, &fields, specifiers)?;
-                            ctx.record(
-                                &format!("iges:entity:directory#{}", parsed.sequence),
-                                extent,
-                                || {
-                                    let syntax_bytes = extent
-                                        .window()
-                                        .len()
-                                        .checked_mul(3)
-                                        .and_then(|size| {
-                                            size.checked_add(16 * size_of::<std::rc::Rc<Vec<u8>>>())
-                                        })
-                                        .and_then(|size| {
-                                            count
-                                                .checked_mul(size_of::<Vec<u8>>())
-                                                .and_then(|lines| size.checked_add(lines))
-                                        })
-                                        .ok_or_else(|| {
-                                            malformed("Data callback storage overflows")
-                                        })?;
-                                    ctx.retain_bytes(
-                                        u64_from_index(syntax_bytes),
-                                        "IGES Compressed callback syntax",
-                                    )?;
-                                    let (entity, next) = super::parse_data_entity_with_fields(
-                                        &payloads[..terminate],
-                                        parsed.sequence,
-                                        parsed.next,
-                                        fields.values(ctx)?,
-                                        parameter_delimiter,
-                                        record_delimiter,
-                                    )?;
-                                    if next != end {
-                                        return Err(malformed(
-                                            "Data callback boundary differs from source framing",
-                                        ));
-                                    }
-                                    let (first, second) = super::directory_fields(
-                                        &entity,
-                                        if count == 0 { 0 } else { parameter_start },
-                                    )?;
-                                    let entry = crate::directory::admit_fields(
-                                        entity.sequence,
-                                        u64_from_index(extent.start() - source.start()),
-                                        first,
-                                        second,
-                                        global.global_table(),
-                                    )
-                                    .map_err(|error| malformed(error.to_string()))?;
-                                    let parameter = crate::parameter::compressed::parse(
-                                        &entry,
-                                        &entity.parameter_lines,
-                                        &global,
-                                        ctx,
-                                    )?
-                                    .map(|(record, failed)| {
-                                        admit_parameter_fields(
-                                            ctx,
-                                            extent,
-                                            &lines[parsed.next..end],
-                                            entry.entity_type,
-                                            record,
-                                            failed,
-                                            specifiers,
-                                        )
-                                    })
-                                    .transpose()?;
-                                    Ok((entity, entry, parameter))
-                                },
+                            let syntax_bytes = extent
+                                .window()
+                                .len()
+                                .checked_mul(3)
+                                .and_then(|size| {
+                                    size.checked_add(16 * size_of::<std::rc::Rc<Vec<u8>>>())
+                                })
+                                .and_then(|size| {
+                                    count
+                                        .checked_mul(size_of::<Vec<u8>>())
+                                        .and_then(|lines| size.checked_add(lines))
+                                })
+                                .ok_or_else(|| malformed("Data callback storage overflows"))?;
+                            ctx.retain_bytes(
+                                u64_from_index(syntax_bytes),
+                                "IGES Compressed callback syntax",
+                            )?;
+                            let (entity, next) = super::parse_data_entity_with_fields(
+                                &payloads[..terminate],
+                                parsed.sequence,
+                                parsed.next,
+                                fields.values(ctx)?,
+                                parameter_delimiter,
+                                record_delimiter,
+                            )?;
+                            if next != end {
+                                return Err(malformed(
+                                    "Data callback boundary differs from source framing",
+                                ));
+                            }
+                            let (first, second) = super::directory_fields(
+                                &entity,
+                                if count == 0 { 0 } else { parameter_start },
+                            )?;
+                            let entry = crate::directory::admit_fields(
+                                entity.sequence,
+                                u64_from_index(extent.start() - source.start()),
+                                first,
+                                second,
+                                global.global_table(),
                             )
+                            .map_err(|error| malformed(error.to_string()))?;
+                            let parameter = crate::parameter::compressed::parse(
+                                &entry,
+                                &entity.parameter_lines,
+                                &global,
+                                ctx,
+                            )?
+                            .map(|(record, failed)| {
+                                admit_parameter_fields(
+                                    ctx,
+                                    extent,
+                                    &lines[parsed.next..end],
+                                    entry.entity_type,
+                                    record,
+                                    failed,
+                                    specifiers,
+                                )
+                            })
+                            .transpose()?;
+                            Ok((entity, entry, parameter))
                         },
                     )? {
                         parameter_start = parameter_start
@@ -329,74 +303,24 @@ pub(crate) fn normalize(
     })
 }
 
-fn line_endings(
-    ctx: &DecodeContext<'_>,
-    lines: &[source::Line<'_>],
-) -> Result<Vec<Range<u64>>, CodecError> {
-    let mut out = Vec::new();
-    for line in lines {
-        if line.payload.end() < line.extent.end() {
-            append(
-                ctx,
-                &mut out,
-                u64_from_index(line.payload.end())..u64_from_index(line.extent.end()),
-            )?;
-        }
-    }
-    Ok(out)
-}
-
-fn record_framing(
-    ctx: &DecodeContext<'_>,
-    lines: &[source::Line<'_>],
-    start: usize,
-    end: usize,
-    parsed: &super::ParsedDirectoryRecord,
-    delimiter: u8,
-) -> Result<Vec<Range<u64>>, CodecError> {
-    let mut out = line_endings(ctx, &lines[start..end])?;
-    let first = lines[start].payload;
-    let (_, sequence_end) = super::parse_sequence(first.window(), 1, "Data record")?;
-    append(
-        ctx,
-        &mut out,
-        u64_from_index(first.start())..u64_from_index(first.start() + sequence_end),
-    )?;
-    for (index, line) in lines.iter().enumerate().take(parsed.next).skip(start) {
-        let begin = if index == start { sequence_end } else { 0 };
-        if let Some(at) = line.payload.window()[begin..]
-            .iter()
-            .position(|byte| *byte == delimiter)
-        {
-            let at = line.payload.start() + begin + at;
-            append(ctx, &mut out, u64_from_index(at)..u64_from_index(at + 1))?;
-        }
-    }
-    out.sort_unstable_by_key(|range| (range.start, range.end));
-    Ok(out)
-}
-
 /// Each optional Directory field that a record states is one
 /// `iges.compressed_directory_specifier` part. A value that is not an integer
 /// is given up alone; the Directory admission then states no value for it.
 fn admit_optional_specifiers(
     ctx: &DecodeContext<'_>,
     fields: &source::Fields<'_>,
-    output: &mut ParserPartOutput,
+    output: &mut PartOutput,
 ) -> Result<(), CodecError> {
     for (name, specifier, value_begin) in fields.optional_specifiers() {
         let value = specifier
             .child(value_begin, specifier.end())
             .ok_or_else(|| malformed("specifier value exceeds its specifier"))?;
-        let framing = vec![u64_from_index(specifier.start())..u64_from_index(value_begin)];
-        ctx.decode_parser_part(
+        ctx.decode_part(
             output,
             specifier,
-            spec("iges.compressed_directory_specifier", framing)?,
-            || {
-                let text = value
-                    .read_slice(value.start()..value.end())
-                    .ok_or_else(|| malformed("specifier value is unreadable"))?;
+            crate::reader::part("iges.compressed_directory_specifier"),
+            |_| {
+                let text = value.window();
                 let field = crate::directory::render_field(text)?;
                 crate::directory::integer(field, name).map_err(CodecError::from)?;
                 Ok(())
@@ -416,7 +340,7 @@ fn admit_parameter_fields(
     entity_type: i64,
     parameter: crate::parameter::ParameterRecord,
     failed: Vec<crate::parameter::FailedField>,
-    output: &mut ParserPartOutput,
+    output: &mut PartOutput,
 ) -> Result<crate::parameter::ParameterRecord, CodecError> {
     if entity_type == 306 {
         return Ok(parameter);
@@ -424,23 +348,9 @@ fn admit_parameter_fields(
     let mut failed = failed.into_iter().peekable();
     for (index, token) in parameter.tokens().iter().enumerate().skip(1) {
         let failure = failed.next_if(|field| field.index == index);
-        let (span, header) = match (token, &failure) {
-            (Some(token), _) => (
-                token.span.clone(),
-                match &token.value {
-                    crate::parameter::TokenValue::String(value) => Some(
-                        token
-                            .span
-                            .end
-                            .checked_sub(value.as_ref().len())
-                            .ok_or_else(|| {
-                                malformed("Parameter Hollerith header exceeds its field")
-                            })?,
-                    ),
-                    _ => None,
-                },
-            ),
-            (None, Some(field)) => (field.span.clone(), None),
+        let span = match (token, &failure) {
+            (Some(token), _) => token.span.clone(),
+            (None, Some(field)) => field.span.clone(),
             (None, None) => continue,
         };
         let start = parameter_source_offset(lines, span.start)?;
@@ -451,33 +361,11 @@ fn admit_parameter_fields(
         let extent = record
             .child(start, end)
             .ok_or_else(|| malformed("Parameter field exceeds its Data record"))?;
-        let mut framing = Vec::new();
-        if let Some(header_end) = header {
-            append(
-                ctx,
-                &mut framing,
-                u64_from_index(start)..u64_from_index(parameter_source_offset(lines, header_end)?),
-            )?;
-        }
-        for pair in lines.windows(2) {
-            if start < pair[0].payload.end() && pair[1].payload.start() < end {
-                append(
-                    ctx,
-                    &mut framing,
-                    u64_from_index(pair[0].payload.end())..u64_from_index(pair[1].payload.start()),
-                )?;
-            }
-        }
-        append(
-            ctx,
-            &mut framing,
-            u64_from_index(delimiter)..u64_from_index(end),
-        )?;
-        ctx.decode_parser_part(
+        ctx.decode_part(
             output,
             extent,
-            spec("iges.compressed_parameter_field", framing)?,
-            || match &failure {
+            crate::reader::part("iges.compressed_parameter_field"),
+            |_| match &failure {
                 Some(field) => Err(malformed(format!(
                     "Parameter field {index}: {}",
                     field.defect.describe()
@@ -507,12 +395,6 @@ fn parameter_source_offset(
         .start()
         .checked_add(column)
         .ok_or_else(|| malformed("Parameter field offset overflows"))
-}
-
-fn spec(name: &str, framing: Vec<Range<u64>>) -> Result<PartSpec, CodecError> {
-    let level = PartLevel::parse(name)
-        .ok_or_else(|| malformed("Compressed part level is absent from Appendix C"))?;
-    Ok(PartSpec::new(level, framing))
 }
 
 fn append<T>(ctx: &DecodeContext<'_>, values: &mut Vec<T>, value: T) -> Result<(), CodecError> {

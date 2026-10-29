@@ -1,6 +1,4 @@
 // SPDX-License-Identifier: Apache-2.0
-use cadmpeg_ir::NativeUnknownRecord;
-
 use crate::test_support::test_owned::{owned_test_file, OwnedTestEntity};
 
 fn points() -> Vec<u8> {
@@ -49,18 +47,12 @@ fn public_fixed_ascii_decode_composes_shared_failure_and_keeps_real_point_conten
         .arenas()
         .get("quarantined_directory_records")
         .is_none_or(Vec::is_empty));
-    let unknowns = native.arena_as::<NativeUnknownRecord>("unknowns").unwrap();
     // #222: the damaged required transformation field is the one given-up
     // `iges.directory_field`; the record is not formed (#215 rule 1).
-    assert_eq!(unknowns.len(), 1);
-    assert_eq!(
-        decoded
-            .source_fidelity()
-            .retained_record(unknowns[0].id.as_str())
-            .unwrap()
-            .data(),
-        Some(&damaged[start + 48..start + 56])
-    );
+    let parts = crate::test_support::given_up_parts(decoded.source_fidelity());
+    assert_eq!(parts.len(), 1);
+    assert!(!parts[0].untyped().is_empty());
+    assert_eq!(parts[0].data(), Some(&damaged[start + 48..start + 56]));
     assert_eq!(
         decoded
             .report()

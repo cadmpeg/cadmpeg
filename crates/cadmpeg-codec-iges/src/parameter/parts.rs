@@ -1,12 +1,11 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Source-bounded Parameter record parsing with shared failure ownership.
 
-use std::collections::{BTreeMap, BTreeSet};
-use std::ops::Range;
-
 use cadmpeg_core::decode::{u64_from_index, DecodeContext, ResourceDimension, ResourceLimit, View};
 use cadmpeg_core::CodecError;
-use cadmpeg_ir::source_fidelity::parts::{DecodeParts, PartLevel, PartOutput, PartSpec};
+use cadmpeg_ir::source_fidelity::parts::{DecodeParts, PartOutput};
+use cadmpeg_ir::StreamName;
+use std::collections::{BTreeMap, BTreeSet};
 
 use super::{
     FailedField, OwnedParameterBytes, OwnedParseFailure, Ownership, ParameterAssembly,
@@ -27,7 +26,6 @@ pub(crate) fn assemble(
     let source = scan
         .source_view()
         .ok_or_else(|| CodecError::malformed("IGES Parameter source view is absent"))?;
-    ctx.capture_part_extent(source)?;
     let mut cards = Vec::new();
     for (_, card) in scan.section(Section::Parameter) {
         append_parameter_item(ctx, &mut cards, card)?;
@@ -43,12 +41,11 @@ pub(crate) fn assemble(
             crate::entities::geometry::point::SourcePointProjector::new(ctx, directory, global)
         })
         .transpose()?;
-    let framing = envelopes(ctx, source, &cards, 72)?;
     let mut section_given_up = BTreeSet::new();
     let result = ctx.decode_part(
         output,
         extent,
-        spec("iges.parameter_section", framing)?,
+        crate::reader::part("iges.parameter_section"),
         |children| {
             let mut source_parts = ConflictParts::default();
             super::assemble_with(
@@ -144,47 +141,17 @@ fn parse_owned(
             .ok_or_else(|| CodecError::malformed("IGES Parameter stream length overflows"))?;
         append_parameter_item(ctx, &mut card_boundaries, end)?;
     }
-    let stream = ctx.concat_named_views(
-        &inputs,
-        &format!(
-            "iges/parameter/{}/{}/{}",
-            ctx.capture_part_extent(source)?.stream(),
-            extent.start(),
-            extent.end()
-        ),
-    )?;
-    let mut framing = envelopes(ctx, source, &cards, 64)?;
-    if owned.entry.entity_type != 306 {
-        match super::tokenize_fields(
-            stream.window(),
-            &card_boundaries,
-            global.parameter_delimiter,
-            global.record_delimiter,
-            global.global_table(),
-            global.numeric_limits(),
-        ) {
-            Ok(fields) => {
-                let logical = fields.end - 1;
-                let card = cards.get(logical / 64).ok_or_else(|| {
-                    CodecError::malformed("IGES Parameter terminal exceeds its cards")
-                })?;
-                let terminal = absolute(source, card.offset)? + logical % 64;
-                append_parameter_item(
-                    ctx,
-                    &mut framing,
-                    u64_from_index(terminal)..u64_from_index(terminal + 1),
-                )?;
-            }
-            Err(super::TokenizeFailure::Defect(_, _)) => {}
-            Err(super::TokenizeFailure::Error(error)) => return Err(error),
-        }
-    }
-    framing.sort_unstable_by_key(|range| (range.start, range.end));
-    let id = format!("iges:entity:directory#{}", owned.entry.sequence);
+    let stream = ctx.concat_views(&inputs)?;
+    let name = StreamName::try_from(format!(
+        "iges/parameter/{}/{}",
+        extent.start(),
+        extent.end()
+    ))
+    .map_err(CodecError::malformed)?;
     let parsed = ctx.decode_part(
         output,
         extent,
-        spec("iges.parameter_record", framing)?,
+        crate::reader::part("iges.parameter_record"),
         |staged| {
             if let Some(defect) = owned.quarantine {
                 return Err(failure(
@@ -192,7 +159,7 @@ fn parse_owned(
                     OwnedParseFailure::Defect(defect, None),
                 ));
             }
-            ctx.record(&id, extent, || {
+            {
                 ctx.retain_bytes(
                     u64_from_index(stream.window().len()),
                     "IGES Parameter syntax bytes",
@@ -215,15 +182,22 @@ fn parse_owned(
                                 (None, Some(field)) => Field::Failed(field),
                                 (None, None) => continue,
                             };
-                        *slot =
-                            read_field(ctx, stream, field, global, owned.entry.sequence, staged)?;
+                        *slot = read_field(
+                            ctx,
+                            stream,
+                            &name,
+                            field,
+                            global,
+                            owned.entry.sequence,
+                            staged,
+                        )?;
                     }
                 }
                 if let Some(projector) = source_points {
                     projector.emit(ctx, owned.entry, &record, staged)?;
                 }
                 Ok(record)
-            })
+            }
         },
     )?;
     Ok(parsed.map_or(ParsedOwned::GivenUp, ParsedOwned::Record))
@@ -311,6 +285,7 @@ enum Field {
 fn read_field(
     ctx: &DecodeContext<'_>,
     stream: View<'_>,
+    name: &StreamName,
     field: Field,
     global: &ResolvedGlobal,
     sequence: u32,
@@ -327,30 +302,10 @@ fn read_field(
     let extent = stream
         .child(span.start, end)
         .ok_or_else(|| CodecError::malformed("IGES Parameter field exceeds its source"))?;
-    let mut framing = Vec::new();
-    if let Field::Token(Token {
-        value: TokenValue::String(value),
-        ..
-    }) = &field
-    {
-        let header_end = span.end.checked_sub(value.as_ref().len()).ok_or_else(|| {
-            CodecError::malformed("IGES Parameter Hollerith header exceeds its field")
-        })?;
-        append_parameter_item(
-            ctx,
-            &mut framing,
-            u64_from_index(span.start)..u64_from_index(header_end),
-        )?;
-    }
-    append_parameter_item(
-        ctx,
-        &mut framing,
-        u64_from_index(span.end)..u64_from_index(end),
-    )?;
     ctx.decode_part(
         output,
         extent,
-        spec("iges.parameter_field", framing)?,
+        crate::reader::part("iges.parameter_field").in_stream(name.clone()),
         |_| match field {
             Field::Token(mut token) => {
                 read_token(ctx, stream, &mut token, global, sequence)?;
@@ -374,7 +329,8 @@ fn read_token(
     match &token.value {
         TokenValue::Integer(_) | TokenValue::Real(_) => {
             let bytes = stream
-                .read_slice(token.span.clone())
+                .child(token.span.start, token.span.end)
+                .map(View::window)
                 .ok_or_else(|| CodecError::malformed("IGES numeric source token is unreadable"))?;
             let parsed = super::numeric_with_limits(bytes, 0..bytes.len(), global.numeric_limits())
                 .map_err(|error| failure(sequence, error.into()))?;
@@ -387,7 +343,8 @@ fn read_token(
                 .checked_sub(value.as_ref().len())
                 .ok_or_else(|| CodecError::malformed("IGES string payload range overflows"))?;
             let bytes = stream
-                .read_slice(start..token.span.end)
+                .child(start, token.span.end)
+                .map(View::window)
                 .ok_or_else(|| CodecError::malformed("IGES string source payload is unreadable"))?;
             ctx.retain_bytes(u64_from_index(bytes.len()), "IGES typed Parameter string")?;
             let mut value = ctx.alloc_filled(bytes.len(), 0u8, "IGES typed Parameter string")?;
@@ -443,31 +400,6 @@ fn physical_end(source: View<'_>, card: &PhysicalLine) -> Result<usize, CodecErr
         .checked_add(card.payload.len())
         .and_then(|end| end.checked_add(card.line_ending().len()))
         .ok_or_else(|| CodecError::malformed("IGES Parameter card extent overflows"))
-}
-
-fn envelopes(
-    ctx: &DecodeContext<'_>,
-    source: View<'_>,
-    cards: &[&PhysicalLine],
-    payload_columns: usize,
-) -> Result<Vec<Range<u64>>, CodecError> {
-    let mut framing = Vec::new();
-    for card in cards {
-        let start = absolute(source, card.offset)? + payload_columns;
-        append_parameter_item(
-            ctx,
-            &mut framing,
-            u64_from_index(start)..u64_from_index(physical_end(source, card)?),
-        )?;
-    }
-    Ok(framing)
-}
-
-fn spec(name: &str, framing: Vec<Range<u64>>) -> Result<PartSpec, CodecError> {
-    let level = PartLevel::parse(name).ok_or_else(|| {
-        CodecError::malformed("IGES Parameter part level is absent from Appendix C")
-    })?;
-    Ok(PartSpec::new(level, framing))
 }
 
 /// Push parser working storage. It is not retained bytes

@@ -60,14 +60,14 @@ fn compressed_optional_global_suffix_recovers_the_same_points_as_fixed_ascii() {
     assert_eq!(decoded.ir().model.points.len(), 2);
     // #222 C.5: the Global field whose end is unknown is one given-up
     // `iges.global_field` part, as in Fixed ASCII.
-    let given_up: Vec<_> = decoded
-        .source_fidelity()
-        .parts()
-        .values()
-        .filter(|part| part.state() == &cadmpeg_ir::source_fidelity::parts::PartState::GivenUp {})
-        .collect();
-    assert_eq!(given_up.len(), 1);
-    assert_eq!(given_up[0].level().as_str(), "iges.global_field");
+    assert_eq!(
+        crate::test_support::given_up_parts(decoded.source_fidelity()).len(),
+        1
+    );
+    assert_eq!(
+        crate::test_support::given_up_count(decoded.report(), "iges.global_field"),
+        1
+    );
     assert_eq!(
         decoded
             .report()

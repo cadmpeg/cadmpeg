@@ -2,7 +2,6 @@
 //! A Group whose member Directory Entry is given up (#222 Group count ruling).
 
 use cadmpeg_ir::codec::DecodeResult;
-use cadmpeg_ir::source_fidelity::parts::PartState;
 
 use crate::test_support::test_owned::{owned_test_file, OwnedTestEntity};
 
@@ -163,14 +162,12 @@ fn a_group_keeps_its_count_and_every_slot_when_a_member_directory_entry_is_given
         .filter(|loss| loss.code.local_code() == "record.unreadable")
         .collect();
     assert_eq!(unreadable.len(), 1);
-    let given_up: Vec<_> = decoded
-        .source_fidelity()
-        .parts()
-        .values()
-        .filter(|part| part.state() == &PartState::GivenUp {})
-        .collect();
+    let given_up = crate::test_support::given_up_parts(decoded.source_fidelity());
     assert_eq!(given_up.len(), 1);
-    assert_eq!(given_up[0].level().as_str(), "iges.directory_field");
+    assert_eq!(
+        crate::test_support::given_up_count(decoded.report(), "iges.directory_field"),
+        1
+    );
     assert_eq!(given_up[0].offset(), u64::try_from(start + 48).unwrap());
     assert_eq!(
         unreadable[0].provenance.as_ref().unwrap().offset,
@@ -246,14 +243,12 @@ fn a_binary_group_keeps_its_count_and_every_slot_when_a_member_directory_record_
             .collect::<Vec<_>>(),
         [point(1), point(7)]
     );
-    let given_up: Vec<_> = decoded
-        .source_fidelity()
-        .parts()
-        .values()
-        .filter(|part| part.state() == &PartState::GivenUp {})
-        .collect();
+    let given_up = crate::test_support::given_up_parts(decoded.source_fidelity());
     assert_eq!(given_up.len(), 1);
-    assert_eq!(given_up[0].level().as_str(), "iges.binary_directory_record");
+    assert_eq!(
+        crate::test_support::given_up_count(decoded.report(), "iges.binary_directory_record"),
+        1
+    );
     assert_eq!(
         decoded
             .report()

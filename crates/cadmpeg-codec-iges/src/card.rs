@@ -5,7 +5,7 @@ use cadmpeg_core::container::{ContainerRole, EntryStorage, VerbatimLabel};
 
 use crate::error::malformed;
 use crate::loss::IgesLossCode;
-use cadmpeg_core::decode::{u64_from_index, DecodeContext, View};
+use cadmpeg_core::decode::{u64_from_index, View};
 use cadmpeg_core::{CodecError, ContainerEntry};
 use cadmpeg_ir::codec::Confidence;
 use cadmpeg_ir::report::loss::LossNote;
@@ -621,11 +621,7 @@ pub(crate) fn scan(source: &[u8]) -> Result<CardScan<'_>, CodecError> {
     })
 }
 
-pub(crate) fn scan_source<'a>(
-    source: View<'a>,
-    ctx: &DecodeContext<'_>,
-) -> Result<CardScan<'a>, CodecError> {
-    ctx.capture_part_extent(source)?;
+pub(crate) fn scan_source(source: View<'_>) -> Result<CardScan<'_>, CodecError> {
     let mut scan = scan(source.window())?;
     scan.source_view = Some(source);
     Ok(scan)

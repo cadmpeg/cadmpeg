@@ -3,7 +3,7 @@
 
 use cadmpeg_core::decode::{DecodeContext, View};
 use cadmpeg_core::CodecError;
-use cadmpeg_ir::source_fidelity::parts::{DecodeParts, ParserPartOutput};
+use cadmpeg_ir::source_fidelity::parts::{DecodeParts, PartOutput};
 
 use super::super::{directory_integer, status, GlobalTable, SourceStatus};
 
@@ -49,32 +49,21 @@ pub(super) const fn field(number: u8) -> (&'static str, FieldKind) {
     }
 }
 
-/// Admit one Directory field as one `iges.directory_field` part. Fields 2
-/// and 14 locate the entity's Parameter Data and are wholly framing.
+/// Admit one Directory field as one `iges.directory_field` part.
 pub(super) fn admit_field(
     ctx: &DecodeContext<'_>,
     source: View<'_>,
     number: u8,
     global: GlobalTable,
-    output: &mut ParserPartOutput,
+    output: &mut PartOutput,
 ) -> Result<Option<FieldValue>, CodecError> {
     let (name, kind) = field(number);
-    let framing = if matches!(number, 2 | 14) {
-        vec![
-            cadmpeg_core::decode::u64_from_index(source.start())
-                ..cadmpeg_core::decode::u64_from_index(source.end()),
-        ]
-    } else {
-        Vec::new()
-    };
-    ctx.decode_parser_part(
+    ctx.decode_part(
         output,
         source,
-        super::part_spec("iges.directory_field", framing)?,
-        || {
-            let bytes = source
-                .read_slice(source.start()..source.end())
-                .ok_or_else(|| CodecError::malformed("Directory field is unreadable"))?;
+        crate::reader::part("iges.directory_field"),
+        |_| {
+            let bytes = source.window();
             let bytes = <[u8; 8]>::try_from(bytes).map_err(|_| {
                 CodecError::malformed("Directory field width differs from eight columns")
             })?;
