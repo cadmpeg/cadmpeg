@@ -263,3 +263,92 @@ fn reference_parameter_with_literal_cache_is_not_an_editable_driver() {
     );
     assert_eq!(ir, before);
 }
+
+#[test]
+fn sketch_constraint_parameters_invalidate_sketch_consumers_and_dependents() {
+    use crate::features::{
+        FeatureDefinition, FeatureEvaluation, FeatureId, FeatureOperation, ParameterId,
+        SketchFeatureBinding,
+    };
+    use crate::sketches::{
+        SketchConstraint, SketchConstraintDefinitionInput, SketchConstraintId, SketchEntityId,
+        SketchId, SpatialSketchConstraint, SpatialSketchConstraintDefinitionInput,
+        SpatialSketchEntityId, SpatialSketchId,
+    };
+    for spatial in [false, true] {
+        let mut ir = CadIr::empty();
+        let parameter_id = ParameterId::mint("test:model:parameter#diameter").unwrap();
+        let feature_id = FeatureId::mint("test:model:feature#sketch").unwrap();
+        let mut driver = parameter(parameter_id.as_str(), feature_id.clone(), 10.0);
+        driver.owner = None;
+        ir.model.parameters.push(driver);
+        let mut sketch_feature =
+            primitive(feature_id.as_str(), 0, Length::new(1.0).unwrap().into());
+        let operation = if spatial {
+            let sketch = SpatialSketchId::mint("test:model:spatial-sketch#one").unwrap();
+            ir.model
+                .spatial_sketch_constraints
+                .push(SpatialSketchConstraint {
+                    id: SketchConstraintId::mint("test:model:constraint#spatial").unwrap(),
+                    sketch: sketch.clone(),
+                    definition: SpatialSketchConstraintDefinitionInput::LineLength {
+                        entity: SpatialSketchEntityId::mint("test:model:spatial-entity#line")
+                            .unwrap(),
+                        parameter: Dimension::Parameter(parameter_id.clone()),
+                    }
+                    .try_into()
+                    .unwrap(),
+                    native_ref: None,
+                });
+            FeatureOperation::SpatialSketch {
+                sketch: Some(sketch),
+            }
+        } else {
+            let sketch = SketchId::mint("test:model:sketch#one").unwrap();
+            ir.model.sketch_constraints.push(SketchConstraint {
+                id: SketchConstraintId::mint("test:model:constraint#diameter").unwrap(),
+                sketch: sketch.clone(),
+                definition: SketchConstraintDefinitionInput::Diameter {
+                    entity: SketchEntityId::mint("test:model:sketch-entity#circle").unwrap(),
+                    parameter: Dimension::Parameter(parameter_id.clone()),
+                }
+                .try_into()
+                .unwrap(),
+                name: None,
+                driving: Some(true),
+                active: Some(true),
+                virtual_space: None,
+                visible: None,
+                orientation: None,
+                label_distance: None,
+                label_position: None,
+                metadata: None,
+                native_ref: None,
+            });
+            FeatureOperation::Sketch {
+                sketch: SketchFeatureBinding::Planar(Some(sketch)),
+            }
+        };
+        sketch_feature.evaluation =
+            FeatureEvaluation::from_definition(FeatureDefinition::Operation(operation));
+        ir.model.features.push(sketch_feature);
+        let mut consumer = primitive(
+            "test:model:feature#consumer",
+            1,
+            Length::new(1.0).unwrap().into(),
+        );
+        consumer.dependencies = vec![feature_id].try_into().unwrap();
+        ir.model.features.push(consumer);
+        ir.model.features.push(primitive(
+            "test:model:feature#unrelated",
+            2,
+            Length::new(1.0).unwrap().into(),
+        ));
+        let value = ParameterValue::Length(Length::new(20.0).unwrap());
+        ir.set_parameter_expression(&parameter_id, Expression::literal(&value), Some(value))
+            .unwrap();
+        assert!(ir.model.features[0].needs_recompute);
+        assert!(ir.model.features[1].needs_recompute);
+        assert!(!ir.model.features[2].needs_recompute);
+    }
+}
