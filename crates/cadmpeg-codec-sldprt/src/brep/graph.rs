@@ -8670,3 +8670,6 @@ mod numerical_range_tests;
 
 #[cfg(test)]
 mod nurbs_subset_evaluation_tests;
+
+#[cfg(test)]
+mod partition_framing_tests;
