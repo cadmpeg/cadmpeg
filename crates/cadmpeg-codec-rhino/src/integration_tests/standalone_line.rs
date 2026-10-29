@@ -87,11 +87,14 @@ fn round_trip(origin: Point3, direction: UnitVector3, domain: [f64; 2], endpoint
         let decoded = RhinoCodec
             .decode(&mut Cursor::new(output), &DecodeOptions::default())
             .expect("native bounded line archive reads");
-        assert!(
-            decoded.report().losses.is_empty(),
-            "{:?}",
-            decoded.report().losses
+        let [census] = decoded.report().losses.as_slice() else {
+            panic!("{:?}", decoded.report().losses);
+        };
+        assert_eq!(
+            census.code,
+            crate::loss::RhinoLossCode::ObjectRecordCensus.kind()
         );
+        assert_eq!(census.message, "decoded 1/1 Rhino object records");
         assert!(decoded.ir().model.bodies.is_empty());
         assert_eq!(decoded.ir().model.curves.len(), 1);
         let curve = &decoded.ir().model.curves[0];
