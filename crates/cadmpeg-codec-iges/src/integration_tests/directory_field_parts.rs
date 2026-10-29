@@ -1,6 +1,4 @@
 // SPDX-License-Identifier: Apache-2.0
-use cadmpeg_ir::source_fidelity::parts::PartState;
-use cadmpeg_ir::NativeUnknownRecord;
 
 use crate::test_support::test_owned::{owned_test_file, OwnedTestEntity};
 
@@ -89,54 +87,18 @@ fn each_optional_directory_field_has_one_exact_failure_home_and_keeps_both_real_
             .expect("peer value")
         };
         assert_eq!(peer(native), peer(baseline_native));
-        let unknowns = native
-            .arena_as::<NativeUnknownRecord>("unknowns")
-            .expect("shared unknowns");
-        assert_eq!(unknowns.len(), 1);
-        assert_eq!(
-            unknowns[0]
-                .links
-                .iter()
-                .map(|link| link.as_str())
-                .collect::<Vec<_>>(),
-            [entity.id()]
-        );
         let fidelity = decoded.source_fidelity();
-        let unknown = unknowns[0].id.as_str();
-        let part = &fidelity.parts()[unknown];
-        assert_eq!(part.level().as_str(), "iges.directory_field");
-        assert_eq!(part.state(), &PartState::GivenUp {});
-        assert_eq!(part.stream(), "file");
+        let parts = crate::test_support::given_up_parts(fidelity);
+        assert_eq!(parts.len(), 1);
+        let part = parts[0];
+        assert!(!part.untyped().is_empty());
+        assert_eq!(part.stream(), "");
         assert_eq!(part.offset(), u64::try_from(start).expect("source offset"));
         assert_eq!(part.byte_len(), 8);
-        assert!(part.framing_bytes().is_empty());
-        let parent = &fidelity.parts()[part.parent().expect("actual Directory parent")];
-        assert_eq!(parent.level().as_str(), "iges.directory_entry");
-        assert_eq!(parent.state(), &PartState::Decoded {});
-        assert_eq!(parent.offset(), u64::try_from(first).expect("entry offset"));
+        assert_eq!(part.data(), Some(&bad[start..start + 8]));
         assert_eq!(
-            fidelity
-                .retained_record(unknown)
-                .expect("one retained field")
-                .data(),
-            Some(&bad[start..start + 8])
-        );
-        assert_eq!(
-            fidelity
-                .retained_records()
-                .keys()
-                .filter(|key| key.as_str() == unknown)
-                .count(),
-            1
-        );
-        let layout = &fidelity.record_layout()[unknown];
-        assert_eq!(layout.stream(), part.stream());
-        assert_eq!(layout.offset(), part.offset());
-        assert_eq!(layout.byte_len(), 8);
-        assert!(layout.reads().is_empty());
-        assert_eq!(
-            fidelity.record_layout()["iges:entity:directory#3"],
-            baseline.source_fidelity().record_layout()["iges:entity:directory#3"]
+            crate::test_support::given_up_count(decoded.report(), "iges.directory_entry"),
+            0
         );
         let losses: Vec<_> = decoded
             .report()
@@ -184,17 +146,7 @@ fn actual_optional_directory_scalar_source_flip_changes_only_its_current_native_
             .losses
             .iter()
             .any(|loss| loss.code.local_code() == "record.unreadable"));
-        let fields: Vec<_> = decoded
-            .source_fidelity()
-            .parts()
-            .values()
-            .filter(|part| part.level().as_str() == "iges.directory_field")
-            .collect();
-        // Appendix C: 18 `iges.directory_field` parts per entry.
-        assert_eq!(fields.len(), 2 * 18);
-        assert!(fields
-            .iter()
-            .all(|part| part.state() == &PartState::Decoded {}));
+        assert!(crate::test_support::given_up_parts(decoded.source_fidelity()).is_empty());
         outputs.push(owner);
         assert_eq!(source.len(), original.len());
     }
@@ -243,14 +195,12 @@ fn an_unreadable_binary_optional_directory_value_gives_up_only_its_value_part() 
         serde_json::to_value(&decoded.ir().model.points).expect("points"),
         serde_json::to_value(&baseline.ir().model.points).expect("baseline points")
     );
-    let given_up: Vec<_> = decoded
-        .source_fidelity()
-        .parts()
-        .values()
-        .filter(|part| part.state() == &PartState::GivenUp {})
-        .collect();
+    let given_up = crate::test_support::given_up_parts(decoded.source_fidelity());
     assert_eq!(given_up.len(), 1);
-    assert_eq!(given_up[0].level().as_str(), "iges.binary_directory_value");
+    assert_eq!(
+        crate::test_support::given_up_count(decoded.report(), "iges.binary_directory_value"),
+        1
+    );
     let unreadable: Vec<_> = decoded
         .report()
         .losses
@@ -298,16 +248,14 @@ fn an_unreadable_compressed_optional_specifier_gives_up_only_its_specifier_part(
         serde_json::to_value(&decoded.ir().model.points).expect("points"),
         serde_json::to_value(&baseline.ir().model.points).expect("baseline points")
     );
-    let given_up: Vec<_> = decoded
-        .source_fidelity()
-        .parts()
-        .values()
-        .filter(|part| part.state() == &PartState::GivenUp {})
-        .collect();
+    let given_up = crate::test_support::given_up_parts(decoded.source_fidelity());
     assert_eq!(given_up.len(), 1);
     assert_eq!(
-        given_up[0].level().as_str(),
-        "iges.compressed_directory_specifier"
+        crate::test_support::given_up_count(
+            decoded.report(),
+            "iges.compressed_directory_specifier"
+        ),
+        1
     );
     assert_eq!(given_up[0].offset(), u64::try_from(at).expect("offset"));
     assert_eq!(given_up[0].byte_len(), 5);

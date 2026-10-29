@@ -2,8 +2,6 @@
 //! A Parameter Data literal that fails alone gives up only its field (#222).
 
 use cadmpeg_ir::codec::DecodeResult;
-use cadmpeg_ir::source_fidelity::parts::PartState;
-use cadmpeg_ir::NativeUnknownRecord;
 
 use crate::test_support::test_owned::{owned_test_file_with_raw_parameters, OwnedTestEntity};
 
@@ -67,34 +65,13 @@ fn assert_only_field_given_up(
     assert!(peer_point(baseline).is_some());
     assert_eq!(peer_point(decoded), peer_point(baseline));
 
-    let native = decoded.ir().native.namespace("iges").unwrap();
-    let unknowns = native.arena_as::<NativeUnknownRecord>("unknowns").unwrap();
-    assert_eq!(unknowns.len(), 1);
-    assert_eq!(
-        unknowns[0]
-            .links
-            .iter()
-            .map(|id| id.as_str())
-            .collect::<Vec<_>>(),
-        ["iges:entity:directory#1"]
-    );
     let fidelity = decoded.source_fidelity();
-    let part = &fidelity.parts()[&unknowns[0].id];
-    assert_eq!(part.level().as_str(), "iges.parameter_field");
-    assert_eq!(part.state(), &PartState::GivenUp {});
+    let parts = crate::test_support::given_up_parts(fidelity);
+    assert_eq!(parts.len(), 1);
+    let part = parts[0];
+    assert!(!part.untyped().is_empty());
     assert_eq!(part.offset(), offset);
     assert_eq!(part.byte_len(), byte_len);
-    let record = &fidelity.parts()[part.parent().unwrap()];
-    assert_eq!(record.level().as_str(), "iges.parameter_record");
-    assert_eq!(record.state(), &PartState::Decoded {});
-    assert_eq!(
-        fidelity
-            .parts()
-            .values()
-            .filter(|part| part.state() == &PartState::GivenUp {})
-            .count(),
-        1
-    );
     let unreadable: Vec<_> = decoded
         .report()
         .losses
@@ -103,9 +80,6 @@ fn assert_only_field_given_up(
         .collect();
     assert_eq!(unreadable.len(), 1);
     assert!(unreadable[0].message.contains("iges.parameter_field"));
-    assert!(unreadable[0]
-        .message
-        .contains("record=iges:entity:directory#1"));
     // The Line needs the absent coordinate, so its curve is not projected
     // and charges `geometry.not-projected` (iges.md, Parameter Data numeric
     // rules). No other loss is new.
@@ -172,37 +146,18 @@ fn a_nonnumeric_compressed_coordinate_gives_up_only_its_parameter_field() {
     assert_eq!(first["parameters"], expected["parameters"]);
     assert_eq!(entity(&decoded, 1), entity(&baseline, 1));
 
-    let native = decoded.ir().native.namespace("iges").unwrap();
-    let unknowns = native.arena_as::<NativeUnknownRecord>("unknowns").unwrap();
-    assert_eq!(unknowns.len(), 1);
     let fidelity = decoded.source_fidelity();
-    let part = &fidelity.parts()[&unknowns[0].id];
-    assert_eq!(part.level().as_str(), "iges.compressed_parameter_field");
-    assert_eq!(part.state(), &PartState::GivenUp {});
-    assert_eq!(part.offset(), u64::try_from(field).unwrap());
-    assert_eq!(part.byte_len(), 4);
+    let parts = crate::test_support::given_up_parts(fidelity);
+    assert_eq!(parts.len(), 1);
+    let part = parts[0];
+    assert!(!part.untyped().is_empty());
     assert_eq!(
-        part.framing_bytes(),
-        &[u64::try_from(field + 3).unwrap()..u64::try_from(field + 4).unwrap()]
-    );
-    assert_eq!(
-        fidelity
-            .retained_record(unknowns[0].id.as_str())
-            .unwrap()
-            .data(),
-        Some(b"2.X,".as_slice())
-    );
-    let parent = &fidelity.parts()[part.parent().unwrap()];
-    assert_eq!(parent.level().as_str(), "iges.compressed_data_record");
-    assert_eq!(parent.state(), &PartState::Decoded {});
-    assert_eq!(
-        fidelity
-            .parts()
-            .values()
-            .filter(|part| part.state() == &PartState::GivenUp {})
-            .count(),
+        crate::test_support::given_up_count(decoded.report(), "iges.compressed_parameter_field"),
         1
     );
+    assert_eq!(part.offset(), u64::try_from(field).unwrap());
+    assert_eq!(part.byte_len(), 4);
+    assert_eq!(part.data(), Some(b"2.X,".as_slice()));
     // The point needs the absent coordinate, so it is not projected; the
     // peer point stays. Only the given-up field and the projection of its
     // own record charge a loss.

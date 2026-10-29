@@ -1,6 +1,4 @@
 // SPDX-License-Identifier: Apache-2.0
-use cadmpeg_ir::source_fidelity::parts::PartState;
-use cadmpeg_ir::NativeUnknownRecord;
 
 use crate::test_support::binary_parts::{malformed_directory, point_after_void, point_pair};
 
@@ -45,73 +43,16 @@ fn binary_bounded_directory_failure_keeps_real_later_point_and_one_exact_source_
     assert_eq!(actual_display, expected_display);
     assert!(native.arenas()["quarantined_directory_records"].is_empty());
     assert!(native.arenas()["quarantined_parameter_records"].is_empty());
-    let unknowns = native.arena_as::<NativeUnknownRecord>("unknowns").unwrap();
-    assert_eq!(unknowns.len(), 1);
     let fidelity = decoded.source_fidelity();
-    let rejected = &fidelity.parts()[&unknowns[0].id];
-    assert_eq!(rejected.level().as_str(), "iges.binary_directory_record");
-    assert_eq!(rejected.state(), &PartState::GivenUp {});
+    let parts = crate::test_support::given_up_parts(fidelity);
+    assert_eq!(parts.len(), 1);
+    let rejected = parts[0];
+    assert!(!rejected.untyped().is_empty());
     assert_eq!(rejected.byte_len(), u64::try_from(failed.len()).unwrap());
     let start = usize::try_from(rejected.offset()).unwrap();
     assert_eq!(&bytes[start..start + failed.len()], failed.as_slice());
-    assert_eq!(
-        fidelity
-            .retained_record(unknowns[0].id.as_str())
-            .unwrap()
-            .data(),
-        Some(failed.as_slice())
-    );
-    assert_eq!(
-        rejected.framing_bytes(),
-        &[rejected.offset()..rejected.offset() + 4]
-    );
-    let parent = rejected
-        .parent()
-        .expect("failed Directory record has its actual section parent");
-    let section = &fidelity.parts()[parent];
-    assert_eq!(section.level().as_str(), "iges.binary_section");
-    assert_eq!(section.state(), &PartState::Decoded {});
-    assert_eq!(section.stream(), rejected.stream());
-    assert!(section.offset() < rejected.offset());
-    assert!(rejected.offset() + rejected.byte_len() <= section.offset() + section.byte_len());
-    let records: Vec<_> = fidelity
-        .parts()
-        .values()
-        .filter(|part| part.level().as_str() == "iges.binary_directory_record")
-        .collect();
-    assert_eq!(records.len(), 2);
-    let peer = records
-        .into_iter()
-        .find(|part| part.state() == &PartState::Decoded {})
-        .unwrap();
-    assert_eq!(peer.parent(), Some(parent));
-    assert_eq!(peer.offset(), rejected.offset() + rejected.byte_len());
-    assert!(peer.offset() + peer.byte_len() <= section.offset() + section.byte_len());
-    let mut expected_keys = vec![unknowns[0].id.as_str(), "iges:entity:directory#3"];
-    expected_keys.sort_unstable();
-    assert_eq!(
-        fidelity
-            .record_layout()
-            .keys()
-            .map(String::as_str)
-            .collect::<Vec<_>>(),
-        expected_keys
-    );
-    let (peer_stream, peer_offset, peer_len) = layout_oracle::peer_parameter(&bytes, 3);
-    let peer_layout = &fidelity.record_layout()["iges:entity:directory#3"];
-    assert_eq!(peer_layout.stream(), peer_stream);
-    assert_eq!(peer_layout.offset(), peer_offset);
-    assert_eq!(peer_layout.byte_len(), peer_len);
-    assert_eq!(
-        peer_layout,
-        &baseline.source_fidelity().record_layout()["iges:entity:directory#3"]
-    );
-    let layout = &fidelity.record_layout()[unknowns[0].id.as_str()];
-    assert_eq!(layout.stream(), "file");
-    assert_eq!(layout.stream(), rejected.stream());
-    assert_eq!(layout.offset(), u64::try_from(start).unwrap());
-    assert_eq!(layout.byte_len(), u64::try_from(failed.len()).unwrap());
-    assert!(layout.reads().is_empty());
+    assert_eq!(rejected.data(), Some(failed.as_slice()));
+    assert_eq!(rejected.stream(), "");
     let losses: Vec<_> = decoded
         .report()
         .losses
@@ -173,43 +114,21 @@ fn binary_failed_directory_and_its_bounded_parameter_keep_the_independent_curren
         .unwrap();
     assert_eq!(native.arenas()["entities"].len(), 1);
     assert_eq!(&native.arenas()["entities"][0], expected);
-    let unknowns = native.arena_as::<NativeUnknownRecord>("unknowns").unwrap();
-    assert_eq!(unknowns.len(), 2);
     let fidelity = decoded.source_fidelity();
-    let mut levels = std::collections::BTreeSet::new();
-    for unknown in unknowns {
-        let part = &fidelity.parts()[&unknown.id];
-        assert_eq!(part.state(), &PartState::GivenUp {});
-        levels.insert(part.level().as_str());
+    let parts = crate::test_support::given_up_parts(fidelity);
+    assert_eq!(parts.len(), 2);
+    for part in parts {
+        assert!(!part.untyped().is_empty());
         let start = usize::try_from(part.offset()).unwrap();
         let end = start + usize::try_from(part.byte_len()).unwrap();
-        assert_eq!(
-            fidelity
-                .retained_record(unknown.id.as_str())
-                .unwrap()
-                .data(),
-            Some(&bytes[start..end])
-        );
+        assert_eq!(part.data(), Some(&bytes[start..end]));
     }
-    assert_eq!(
-        levels,
-        std::collections::BTreeSet::from([
-            "iges.binary_directory_record",
-            "iges.binary_parameter_record"
-        ])
-    );
     for level in [
         "iges.binary_directory_record",
         "iges.binary_parameter_record",
     ] {
         assert_eq!(
-            fidelity
-                .parts()
-                .values()
-                .filter(
-                    |part| part.level().as_str() == level && part.state() == &PartState::Decoded {}
-                )
-                .count(),
+            crate::test_support::given_up_count(decoded.report(), level),
             1
         );
     }
@@ -230,5 +149,3 @@ fn binary_failed_directory_and_its_bounded_parameter_keep_the_independent_curren
 }
 
 mod reference_recovery;
-
-mod layout_oracle;

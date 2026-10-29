@@ -131,8 +131,10 @@ fn a_non_null_entity_declaring_zero_cards_gets_a_zero_card_quarantine_record() {
         code_count(result.report(), IgesLossCode::ParameterDataQuarantined),
         1
     );
-    assert!(cadmpeg_ir::index::ModelIndex::build(result.ir())
-        .contains("iges:quarantine:parameter#3", cadmpeg_ir::index::StandardIndex));
+    assert!(cadmpeg_ir::index::ModelIndex::build(result.ir()).contains(
+        "iges:quarantine:parameter#3",
+        cadmpeg_ir::index::StandardIndex
+    ));
     assert!(serde_json::to_value(result.report())
         .unwrap()
         .get("transfer_ledger")
@@ -280,27 +282,19 @@ fn two_declared_ranges_claiming_one_card_share_one_given_up_source_part() {
     assert_eq!(native.arenas()["entities"].len(), 2);
     assert!(result.ir().model.points.is_empty());
     assert!(native.arenas()["quarantined_parameter_records"].is_empty());
-    let unknowns = native
-        .arena_as::<cadmpeg_ir::NativeUnknownRecord>("unknowns")
-        .unwrap();
-    assert_eq!(unknowns.len(), 1);
     let fidelity = result.source_fidelity();
-    let part = &fidelity.parts()[&unknowns[0].id];
-    assert_eq!(part.level().as_str(), "iges.parameter_record");
+    let parts = crate::test_support::given_up_parts(fidelity);
+    assert_eq!(parts.len(), 1);
+    let part = parts[0];
+    assert!(!part.untyped().is_empty());
     assert_eq!(
-        part.state(),
-        &cadmpeg_ir::source_fidelity::parts::PartState::GivenUp {}
+        crate::test_support::given_up_count(result.report(), "iges.parameter_record"),
+        1
     );
     let start = parameter_card_offset(&bytes);
     assert_eq!(part.offset(), u64::try_from(start).unwrap());
     assert_eq!(part.byte_len(), 81);
-    assert_eq!(
-        fidelity
-            .retained_record(unknowns[0].id.as_str())
-            .unwrap()
-            .data(),
-        Some(&bytes[start..start + 81])
-    );
+    assert_eq!(part.data(), Some(&bytes[start..start + 81]));
     let unreadable: Vec<_> = result
         .report()
         .losses

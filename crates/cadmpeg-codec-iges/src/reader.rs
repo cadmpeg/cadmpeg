@@ -11,14 +11,19 @@ use cadmpeg_ir::codec::DecodeOptions;
 use cadmpeg_ir::codec::{DecodeBody, Decoded};
 use cadmpeg_ir::hash::{document_local_sha256, DOCUMENT_FINGERPRINT_METADATA_KEY};
 use cadmpeg_ir::report::{loss::LossNote, Severity};
-use cadmpeg_ir::source_fidelity::parts::{ParserPartOutput, PartOutput};
+use cadmpeg_ir::source_fidelity::parts::{PartOutput, PartSpec};
 use cadmpeg_ir::ContainerSummary;
 use cadmpeg_ir::{CadIr, RetainedSourceRecord, SourceFidelity, SourceMeta};
 use std::collections::{BTreeMap, BTreeSet};
 use std::fmt;
 
+/// The boundary of one IGES part. IGES content is model content only.
+pub(crate) fn part(label: &'static str) -> PartSpec {
+    PartSpec::new(label).holding([cadmpeg_ir::ArenaClass::Model])
+}
+
 struct ParsingState<'a> {
-    parts: ParserPartOutput,
+    parts: PartOutput,
     binary_identities: Option<&'a crate::binary::BinaryIdentities>,
     binary_admission: Option<crate::binary::BinaryAdmission>,
     compressed: Option<crate::compressed::parts::Admission>,
@@ -27,7 +32,7 @@ struct ParsingState<'a> {
 impl ParsingState<'_> {
     fn new() -> Self {
         Self {
-            parts: ParserPartOutput::new(cadmpeg_ir::CodecFormat::Iges),
+            parts: PartOutput::new(cadmpeg_ir::CodecFormat::Iges),
             binary_identities: None,
             binary_admission: None,
             compressed: None,
@@ -262,7 +267,6 @@ struct PhysicalParse<'a> {
     given_up_parameters: BTreeSet<u32>,
     framing_recoveries: card::FramingRecoveries,
     references: BTreeMap<u32, Vec<graph::ReferenceEdge>>,
-    parser_parts: ParserPartOutput,
     parts: PartOutput,
 }
 
@@ -274,13 +278,13 @@ impl<'a> PhysicalParse<'a> {
         parsing: ParsingState<'_>,
     ) -> Result<Self, CodecError> {
         let ParsingState {
-            parts: mut parser_parts,
+            mut parts,
             binary_identities,
             binary_admission,
             compressed,
         } = parsing;
         let scan = match source {
-            Some(source) => card::scan_source(source, ctx)?,
+            Some(source) => card::scan_source(source)?,
             None => card::scan(bytes)?,
         };
         let (prepared_global, prepared_directory, prepared_parameters) = match compressed {
@@ -301,31 +305,30 @@ impl<'a> PhysicalParse<'a> {
         let (global, mut global_losses) = if let Some(global) = prepared_global.or(binary_global) {
             global
         } else if scan.source_view().is_some() {
-            global::parts::parse(&scan, ctx, &mut parser_parts)?
+            global::parts::parse(&scan, ctx, &mut parts)?
         } else {
             global::parse(&scan)?
         };
         // A given-up Directory Entry owns its Parameter Data cards, as a
         // quarantined one does: they are not unclaimed (#215 rules 2-3).
-        let (directory, quarantined_directory, given_up_directory) =
-            if let Some(directory) = prepared_directory {
-                (directory, Vec::new(), Vec::new())
-            } else if scan.source_view().is_some() {
-                let parsed =
-                    directory::parts::parse(&scan, global.global_table(), ctx, &mut parser_parts)?;
-                (parsed.entries, Vec::new(), parsed.given_up)
-            } else if let Some(identities) = binary_identities {
-                let (directory, quarantined) =
-                    directory::parse_with_keys(&scan, global.global_table(), ctx, |grammar| {
-                        identities.semantic_sequence(grammar)
-                    })?;
-                (directory, quarantined, Vec::new())
-            } else {
-                let (directory, quarantined) = directory::parse(&scan, global.global_table(), ctx)?;
-                (directory, quarantined, Vec::new())
-            };
+        let (directory, quarantined_directory, given_up_directory) = if let Some(directory) =
+            prepared_directory
+        {
+            (directory, Vec::new(), Vec::new())
+        } else if scan.source_view().is_some() {
+            let parsed = directory::parts::parse(&scan, global.global_table(), ctx, &mut parts)?;
+            (parsed.entries, Vec::new(), parsed.given_up)
+        } else if let Some(identities) = binary_identities {
+            let (directory, quarantined) =
+                directory::parse_with_keys(&scan, global.global_table(), ctx, |grammar| {
+                    identities.semantic_sequence(grammar)
+                })?;
+            (directory, quarantined, Vec::new())
+        } else {
+            let (directory, quarantined) = directory::parse(&scan, global.global_table(), ctx)?;
+            (directory, quarantined, Vec::new())
+        };
         global_losses.extend(directory::metadata_losses(&directory));
-        let mut parts = PartOutput::new(cadmpeg_ir::CodecFormat::Iges);
         let parameter::ParameterAssembly {
             records: parameters,
             trailing_pointer_analysis,
@@ -369,7 +372,6 @@ impl<'a> PhysicalParse<'a> {
             given_up_parameters,
             framing_recoveries,
             references,
-            parser_parts,
             parts,
         })
     }
@@ -426,7 +428,7 @@ pub(crate) fn inspect_binary(
     ctx: &DecodeContext<'_>,
     normalized: crate::binary::NormalizedBinary,
     source: View<'_>,
-    parts: ParserPartOutput,
+    parts: PartOutput,
 ) -> Result<ContainerSummary, CodecError> {
     inspect_with_parsing(
         ctx,
@@ -472,19 +474,13 @@ fn inspect_with_parsing(
 ) -> Result<ContainerSummary, CodecError> {
     let view = (representation == Representation::FixedAscii).then_some(source);
     let mut parse = PhysicalParse::run_with_source(parse_bytes, view, ctx, parsing)?;
-    let parser_parts = std::mem::replace(
-        &mut parse.parser_parts,
-        ParserPartOutput::new(cadmpeg_ir::CodecFormat::Iges),
-    );
-    let (_, _, _, mut parser_losses) = parser_parts.into_parts(ctx)?.into_parts();
     let parts = std::mem::replace(
         &mut parse.parts,
         PartOutput::new(cadmpeg_ir::CodecFormat::Iges),
     );
-    let (_, _, _, mut part_losses) = parts.into_parts(ctx)?.into_parts();
+    let (_, _, _, mut part_losses) = parts.into_parts();
     let primary = crate::dialect::classify(representation, &parse.global);
     let mut losses = parse.admission_losses();
-    losses.append(&mut parser_losses);
     losses.append(&mut part_losses);
     let record_losses = parse.record_losses()?;
 
@@ -524,7 +520,7 @@ pub(crate) fn decode_binary(
     normalized: crate::binary::NormalizedBinary,
     source: View<'_>,
     ctx: &DecodeContext<'_>,
-    parts: ParserPartOutput,
+    parts: PartOutput,
 ) -> Result<Decoded, CodecError> {
     decode_with_parsing(
         &normalized.bytes,
@@ -595,18 +591,11 @@ fn decode_with_occurrence_limits(
     let mut source_fidelity = source_fidelity(source.window(), ctx)?;
     let view = (representation == Representation::FixedAscii).then_some(source);
     let mut parse = PhysicalParse::run_with_source(parse_bytes, view, ctx, parsing)?;
-    let parser_parts = std::mem::replace(
-        &mut parse.parser_parts,
-        ParserPartOutput::new(cadmpeg_ir::CodecFormat::Iges),
-    );
-    let (_, parser_native, parser_fidelity, mut parser_losses) =
-        parser_parts.into_parts(ctx)?.into_parts();
     let parts = std::mem::replace(
         &mut parse.parts,
         PartOutput::new(cadmpeg_ir::CodecFormat::Iges),
     );
-    let (part_model, part_native, part_fidelity, mut part_losses) =
-        parts.into_parts(ctx)?.into_parts();
+    let (part_model, _, part_fidelity, mut part_losses) = parts.into_parts();
     let length_context = parse.global.length_context();
     let mut unavailable_parameter_sequences =
         quarantined_parameter_sequences(&parse.quarantined_parameters);
@@ -614,59 +603,6 @@ fn decode_with_occurrence_limits(
     let projected_directory =
         projection_directory(&parse.directory, &unavailable_parameter_sequences);
     let projected_directory = projected_directory.as_deref().unwrap_or(&parse.directory);
-    let card_layout = parse
-        .scan
-        .lines
-        .iter()
-        .enumerate()
-        .map(|(index, card)| {
-            let line = card.physical();
-            (
-                index + 1,
-                line.offset,
-                line.payload.len(),
-                line.line_ending().len(),
-            )
-        })
-        .collect::<Vec<_>>();
-    source_fidelity.metadata.insert(
-        "iges.card_layout".to_owned(),
-        serde_json::to_string(&card_layout).map_err(CodecError::malformed)?,
-    );
-    let entity_layout = parse
-        .directory
-        .iter()
-        .map(|entry| {
-            (
-                entry.sequence,
-                entry.parameter_start,
-                entry.parameter_line_count,
-            )
-        })
-        .collect::<Vec<_>>();
-    source_fidelity.metadata.insert(
-        "iges.entity_layout".to_owned(),
-        serde_json::to_string(&entity_layout).map_err(CodecError::malformed)?,
-    );
-    let token_layout = parse
-        .parameters
-        .iter()
-        .map(|record| {
-            (
-                record.directory_sequence,
-                record.line_range.clone(),
-                record
-                    .tokens()
-                    .iter()
-                    .map(|token| token.as_ref().map(|token| token.span.clone()))
-                    .collect::<Vec<_>>(),
-            )
-        })
-        .collect::<Vec<_>>();
-    source_fidelity.metadata.insert(
-        "iges.parameter_layout".to_owned(),
-        serde_json::to_string(&token_layout).map_err(CodecError::malformed)?,
-    );
 
     let primary = crate::dialect::classify(representation, &parse.global);
     let mut ir = CadIr::decoded(source_meta(&parse.global, representation, primary));
@@ -729,43 +665,10 @@ fn decode_with_occurrence_limits(
         ),
         ctx,
     )?;
-    for mut native in [parser_native, part_native] {
-        let source_arenas = native.namespace_mut("iges").arenas_mut();
-        for (name, mut records) in std::mem::take(source_arenas) {
-            let destination = ir
-                .native
-                .namespace_mut("iges")
-                .arenas_mut()
-                .entry(name)
-                .or_default();
-            // The part helper charged these records when its root output
-            // received them. This move is not a new retained copy.
-            let bytes = cadmpeg_core::decode::u64_from_index(
-                records
-                    .len()
-                    .checked_mul(size_of::<cadmpeg_ir::native::NativeRecord>())
-                    .ok_or_else(|| {
-                        CodecError::malformed("IGES parser record composition overflows")
-                    })?,
-            );
-            destination.try_reserve(records.len()).map_err(|_| {
-                cadmpeg_core::decode::ResourceLimit::allocation_failed(
-                    cadmpeg_core::decode::ResourceDimension::RetainedBytes,
-                    ctx.policy().limits.max_retained_bytes,
-                    bytes,
-                    "IGES parser record composition",
-                )
-            })?;
-            destination.append(&mut records);
-        }
-    }
-    source_fidelity.append(parser_fidelity)?;
     source_fidelity.append(part_fidelity)?;
-    source_fidelity.install_record_captures(ctx, |_, _| Ok(()))?;
     ir.finalize();
     let geometry_transferred = !projection.decoded.is_empty();
     let mut losses = parse.admission_losses();
-    losses.append(&mut parser_losses);
     losses.append(&mut part_losses);
     losses.extend(projection_losses);
     if invalid_resolution

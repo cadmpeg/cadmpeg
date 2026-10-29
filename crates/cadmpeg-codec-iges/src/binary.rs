@@ -12,7 +12,7 @@ use crate::directory::DirectoryFieldSlot;
 use cadmpeg_core::decode::{u64_from_index, DecodeContext, ResourceDimension, ResourceLimit, View};
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::scalar::FiniteReal;
-use cadmpeg_ir::source_fidelity::parts::ParserPartOutput;
+use cadmpeg_ir::source_fidelity::parts::PartOutput;
 use std::collections::{BTreeMap, BTreeSet};
 
 pub(crate) mod parts;
@@ -253,34 +253,8 @@ struct NormalizedParameter {
 }
 
 #[derive(Debug)]
-enum BitInput<'a> {
-    Detached(&'a [u8]),
-    Original(View<'a>),
-}
-
-impl BitInput<'_> {
-    fn bytes(&self) -> &[u8] {
-        match self {
-            Self::Detached(bytes) => bytes,
-            Self::Original(source) => source.window(),
-        }
-    }
-
-    fn byte(&self, offset: usize, semantic: bool) -> Option<u8> {
-        match self {
-            Self::Original(source) if semantic => source
-                .read_at(source.start().checked_add(offset)?, 1)?
-                .first()
-                .copied(),
-            Self::Original(_) | Self::Detached(_) => self.bytes().get(offset).copied(),
-        }
-    }
-}
-
-#[derive(Debug)]
 struct BitReader<'a> {
-    input: BitInput<'a>,
-    semantic: bool,
+    input: &'a [u8],
     byte: usize,
     bit: u8,
 }
@@ -288,30 +262,25 @@ struct BitReader<'a> {
 impl<'a> BitReader<'a> {
     fn new(bytes: &'a [u8]) -> Self {
         Self {
-            input: BitInput::Detached(bytes),
-            semantic: false,
+            input: bytes,
             byte: 0,
             bit: 0,
         }
     }
 
     fn is_empty(&self) -> bool {
-        self.byte == self.input.bytes().len() && self.bit == 0
+        self.byte == self.input.len() && self.bit == 0
     }
 
     fn read_bits(&mut self, count: u8) -> Result<u64, CodecError> {
-        self.read_bits_as(count, self.semantic)
-    }
-
-    fn read_bits_as(&mut self, count: u8, semantic: bool) -> Result<u64, CodecError> {
         if count > 64 {
             return Err(malformed("a Binary primitive requests more than 64 bits"));
         }
         let mut value = 0_u64;
         for _ in 0..count {
-            let byte = self
+            let byte = *self
                 .input
-                .byte(self.byte, semantic)
+                .get(self.byte)
                 .ok_or_else(|| malformed("a Binary primitive is truncated"))?;
             let shift = 7_u8
                 .checked_sub(self.bit)
@@ -333,7 +302,7 @@ impl<'a> BitReader<'a> {
         if self.bit == 0 {
             return Ok(());
         }
-        let padding = self.read_bits_as(8 - self.bit, false)?;
+        let padding = self.read_bits(8 - self.bit)?;
         if padding != 0 {
             return Err(malformed("Binary primitive padding contains a one bit"));
         }
@@ -414,10 +383,7 @@ impl<'a> BitReader<'a> {
     fn read_string(&mut self, lengths: PrimitiveLengths) -> Result<Vec<u8>, CodecError> {
         let mut output = Vec::new();
         loop {
-            let semantic = self.semantic;
-            self.semantic = false;
             let count = self.read_integer(lengths.single_integer)?;
-            self.semantic = semantic;
             if count == 0 {
                 return Err(malformed("a Binary string has a zero character count"));
             }
@@ -426,7 +392,6 @@ impl<'a> BitReader<'a> {
                 .map_err(|_| malformed("a Binary string count is out of range"))?;
             let remaining = self
                 .input
-                .bytes()
                 .len()
                 .checked_sub(self.byte)
                 .ok_or_else(|| malformed("a Binary string offset is out of range"))?;
@@ -465,8 +430,6 @@ struct ValueStream<'a> {
     lengths: PrimitiveLengths,
     repeat: Option<Repeat>,
     value_extent: std::ops::Range<usize>,
-    field: usize,
-    semantic_end: usize,
 }
 
 impl<'a> ValueStream<'a> {
@@ -476,41 +439,10 @@ impl<'a> ValueStream<'a> {
             lengths,
             repeat: None,
             value_extent: 0..0,
-            field: 0,
-            semantic_end: 0,
         }
     }
 
-    fn source_line(source: View<'a>, lengths: PrimitiveLengths) -> Self {
-        Self {
-            bits: BitReader {
-                input: BitInput::Original(source),
-                semantic: false,
-                byte: 0,
-                bit: 0,
-            },
-            lengths,
-            repeat: None,
-            value_extent: 0..0,
-            field: 0,
-            semantic_end: 8,
-        }
-    }
-
-    fn source_point(source: View<'a>, lengths: PrimitiveLengths) -> Self {
-        let mut stream = Self::source_line(source, lengths);
-        stream.semantic_end = 5;
-        stream
-    }
-
-    fn semantic(&self, count: usize) -> bool {
-        matches!(self.bits.input, BitInput::Original(_))
-            && self.field < self.semantic_end
-            && self.field.checked_add(count).is_some_and(|end| end > 2)
-    }
-
-    fn one(&mut self, format: u8, semantic: bool) -> Result<BinaryValue, CodecError> {
-        self.bits.semantic = semantic;
+    fn one(&mut self, format: u8) -> Result<BinaryValue, CodecError> {
         match format {
             0 => Ok(BinaryValue::Default),
             1 => self
@@ -540,7 +472,7 @@ impl<'a> ValueStream<'a> {
             let value = match &repeat.value {
                 RepeatValue::Physical(format) => {
                     let start = self.bits.byte;
-                    let value = self.one(*format, self.semantic(1))?;
+                    let value = self.one(*format)?;
                     self.value_extent = start..self.bits.byte;
                     value
                 }
@@ -553,10 +485,6 @@ impl<'a> ValueStream<'a> {
             if repeat.remaining > 0 {
                 self.repeat = Some(repeat);
             }
-            self.field = self
-                .field
-                .checked_add(1)
-                .ok_or_else(|| malformed("Binary value ordinal overflows"))?;
             return Ok(Some(value));
         }
         if self.bits.is_empty() {
@@ -565,16 +493,13 @@ impl<'a> ValueStream<'a> {
         if self.bits.bit != 0 {
             return Err(malformed("a Binary control byte is not byte aligned"));
         }
-        let control = u8::try_from(self.bits.read_bits_as(8, false)?)
+        let control = u8::try_from(self.bits.read_bits(8)?)
             .map_err(|_| malformed("a Binary control byte overflows"))?;
         let physically_present = control >> 7 == 1;
         let repeat = usize::from((control >> 3) & 0x0f) + 1;
         let format = control & 0x07;
         let start = self.bits.byte;
-        let first = self.one(
-            format,
-            self.semantic(if physically_present { 1 } else { repeat }),
-        )?;
+        let first = self.one(format)?;
         self.value_extent = start..self.bits.byte;
         if repeat > 1 {
             self.repeat = Some(Repeat {
@@ -586,10 +511,6 @@ impl<'a> ValueStream<'a> {
                 remaining: repeat - 1,
             });
         }
-        self.field = self
-            .field
-            .checked_add(1)
-            .ok_or_else(|| malformed("Binary value ordinal overflows"))?;
         Ok(Some(first))
     }
 
@@ -1243,7 +1164,6 @@ struct ParameterPrefix<'a> {
     stream: ValueStream<'a>,
     entity_type: i64,
     directory_pointer: i64,
-    pointer_extent: std::ops::Range<usize>,
 }
 
 fn parameter_prefix(
@@ -1251,20 +1171,6 @@ fn parameter_prefix(
     lengths: PrimitiveLengths,
 ) -> Result<ParameterPrefix<'_>, CodecError> {
     prefix_from_stream(ValueStream::new(body.window(), lengths))
-}
-
-fn source_line_prefix(
-    body: View<'_>,
-    lengths: PrimitiveLengths,
-) -> Result<ParameterPrefix<'_>, CodecError> {
-    prefix_from_stream(ValueStream::source_line(body, lengths))
-}
-
-fn source_point_prefix(
-    body: View<'_>,
-    lengths: PrimitiveLengths,
-) -> Result<ParameterPrefix<'_>, CodecError> {
-    prefix_from_stream(ValueStream::source_point(body, lengths))
 }
 
 fn prefix_from_stream(mut stream: ValueStream<'_>) -> Result<ParameterPrefix<'_>, CodecError> {
@@ -1276,12 +1182,10 @@ fn prefix_from_stream(mut stream: ValueStream<'_>) -> Result<ParameterPrefix<'_>
         &one_value(&mut stream, "Parameter Directory pointer")?,
         "Parameter Directory pointer",
     )?;
-    let pointer_extent = stream.value_extent.clone();
     Ok(ParameterPrefix {
         stream,
         entity_type,
         directory_pointer,
-        pointer_extent,
     })
 }
 
@@ -1294,7 +1198,6 @@ fn finish_parameter_record(
         mut stream,
         entity_type,
         directory_pointer,
-        ..
     } = prefix;
     let mut values = Vec::new();
     // Values that repeat the Directory pointer's group belong to that group,
@@ -1323,7 +1226,7 @@ fn finish_parameter_record(
 }
 
 /// Read the value groups that remain in `stream`, each one
-/// `iges.binary_parameter_value` (Appendix C). A group whose values do not
+/// `iges.binary_parameter_value`. A group whose values do not
 /// parse is the last group: its slots are `Default` placeholders, one for
 /// each value its control byte states, and no later value is read.
 fn parameter_groups(
@@ -1354,7 +1257,6 @@ fn parameter_groups(
                 let control = stream
                     .bits
                     .input
-                    .bytes()
                     .get(start)
                     .copied()
                     .ok_or_else(|| malformed("a Binary control byte is absent"))?;
@@ -1364,7 +1266,7 @@ fn parameter_groups(
                     usize::from((control >> 3) & 0x0f) + 1,
                 ));
                 groups.push(ParameterGroup {
-                    bytes: start..stream.bits.input.bytes().len(),
+                    bytes: start..stream.bits.input.len(),
                     values: first..values.len(),
                     failure: Some(error),
                 });
@@ -1794,11 +1696,11 @@ fn resolve_value(
 fn normalize_with_records<T>(
     source: View<'_>,
     ctx: &DecodeContext<'_>,
-    output: &mut ParserPartOutput,
+    output: &mut PartOutput,
     parse: impl FnOnce(
         &BinarySections<'_>,
         &crate::global::ResolvedGlobal,
-        &mut ParserPartOutput,
+        &mut PartOutput,
     ) -> Result<(Vec<BinaryDirectory>, Vec<BinaryParameter>), CodecError>,
     finish: impl FnOnce(Vec<u8>, Vec<BinaryDirectory>, BinaryAdmission) -> Result<T, CodecError>,
 ) -> Result<T, CodecError> {
@@ -2555,12 +2457,10 @@ mod tests {
         bytes.extend_from_slice(&original);
         bytes.extend_from_slice(b"post");
         let arena = DecodeArena::new();
-        let (ctx, root) =
+        let (_ctx, root) =
             DecodeContext::from_root_bytes(&bytes, &arena, &DecodePolicy::service()).unwrap();
         let source = root.child(3, bytes.len() - 4).unwrap();
         let sections = super::parse_sections(source).unwrap();
-        // The decode-path normalizer opens its own record scopes, so it runs
-        // in a separate session over the same bytes.
         let normalized_arena = DecodeArena::new();
         let (normalized_ctx, normalized_root) =
             DecodeContext::from_root_bytes(&bytes, &normalized_arena, &DecodePolicy::service())
@@ -2573,17 +2473,11 @@ mod tests {
             .unwrap(),
             normalize_for_test(&original).unwrap()
         );
-        let foreign_arena = DecodeArena::new();
-        let (foreign, _) =
-            DecodeContext::from_root_bytes(&bytes, &foreign_arena, &DecodePolicy::service())
-                .unwrap();
         for (name, payload) in [
             ("Directory", sections.directory),
             ("Parameter", sections.parameter),
         ] {
-            let (offset, extent, body) = ctx
-                .record(name, payload, || super::counted_record(payload, 0, name))
-                .unwrap();
+            let (offset, extent, body) = super::counted_record(payload, 0, name).unwrap();
             assert_eq!(offset, 1);
             assert_eq!(extent.start(), payload.start());
             assert_eq!(extent.end(), payload.end());
@@ -2593,21 +2487,10 @@ mod tests {
             assert_eq!(usize::try_from(count).unwrap(), body.window().len());
             assert_eq!(extent.window(), &bytes[extent.start()..extent.end()]);
             assert_eq!(body.window(), &bytes[body.start()..body.end()]);
-            let capture = ctx.capture_part_extent(extent).unwrap();
-            assert_eq!(capture.stream(), "file");
-            assert_eq!(capture.offset(), u64::try_from(extent.start()).unwrap());
-            assert_eq!(
-                capture.byte_len(),
-                u64::try_from(extent.window().len()).unwrap()
-            );
-            assert!(foreign.capture_part_extent(extent).is_err());
             let cut = payload.child(payload.start(), payload.end() - 1).unwrap();
             let error = super::counted_record(cut, 0, name).unwrap_err();
             assert!(error.to_string().contains("entity exceeds its section"));
         }
-        let captures = ctx.take_record_captures().unwrap();
-        assert_eq!(captures.len(), 2);
-        assert!(captures.iter().all(|capture| capture.reads().is_empty()));
     }
 
     #[test]

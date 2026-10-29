@@ -5,7 +5,7 @@ use std::collections::BTreeMap;
 
 use cadmpeg_core::decode::{u64_from_index, DecodeContext, ResourceDimension, ResourceLimit, View};
 use cadmpeg_core::CodecError;
-use cadmpeg_ir::source_fidelity::parts::{DecodeParts, ParserPartOutput, PartLevel, PartSpec};
+use cadmpeg_ir::source_fidelity::parts::{DecodeParts, PartOutput};
 
 use super::{
     counted_record, finish_parameter_record, malformed, normalize_with_records, parameter_prefix,
@@ -26,9 +26,8 @@ use dependencies::Dependencies;
 pub(crate) fn normalize(
     source: View<'_>,
     ctx: &DecodeContext<'_>,
-) -> Result<(NormalizedBinary, ParserPartOutput), CodecError> {
-    ctx.require_source(source)?;
-    let mut output = ParserPartOutput::new(cadmpeg_ir::CodecFormat::Iges);
+) -> Result<(NormalizedBinary, PartOutput), CodecError> {
+    let mut output = PartOutput::new(cadmpeg_ir::CodecFormat::Iges);
     let bytes = normalize_with_records(
         source,
         ctx,
@@ -86,7 +85,7 @@ pub(super) fn read_global(
     source: View<'_>,
     sections: &BinarySections<'_>,
     ctx: &DecodeContext<'_>,
-    output: &mut ParserPartOutput,
+    output: &mut PartOutput,
 ) -> Result<Vec<BinaryValue>, CodecError> {
     let payload = sections.global;
     let start = payload
@@ -101,19 +100,6 @@ pub(super) fn read_global(
     let extent = source
         .child(start, end)
         .ok_or_else(|| malformed("Binary Global section exceeds its source"))?;
-    let mut framing = Vec::new();
-    append(
-        ctx,
-        &mut framing,
-        u64_from_index(start)..u64_from_index(payload.start()),
-    )?;
-    if payload.end() < end {
-        append(
-            ctx,
-            &mut framing,
-            u64_from_index(payload.end())..u64_from_index(end),
-        )?;
-    }
     let absent = || {
         ctx.alloc_filled(
             GLOBAL_FIELD_COUNT,
@@ -121,10 +107,10 @@ pub(super) fn read_global(
             "IGES Binary Global values",
         )
     };
-    let values = ctx.decode_parser_scope(
+    let values = ctx.decode_part(
         output,
         extent,
-        spec("iges.binary_section", framing)?,
+        crate::reader::part("iges.binary_section"),
         |children| {
             let mut values = absent()?;
             let mut field = 0;
@@ -138,11 +124,11 @@ pub(super) fn read_global(
             };
             let failed = value_groups(payload.window(), sections.lengths, |range| {
                 let group = child(range.clone())?;
-                let parsed = ctx.decode_parser_part(
+                let parsed = ctx.decode_part(
                     children,
                     group,
-                    spec("iges.binary_global_value", Vec::new())?,
-                    || {
+                    crate::reader::part("iges.binary_global_value"),
+                    |_| {
                         let group = read_group(&payload.window()[range.clone()], sections.lengths)?;
                         if group.len() > GLOBAL_FIELD_COUNT.checked_sub(field).unwrap_or_default() {
                             return Err(malformed(
@@ -167,11 +153,11 @@ pub(super) fn read_global(
             })?;
             if let Some((offset, error)) = failed {
                 let rest = child(offset..payload.window().len())?;
-                ctx.decode_parser_part(
+                ctx.decode_part(
                     children,
                     rest,
-                    spec("iges.binary_global_value", Vec::new())?,
-                    || -> Result<(), CodecError> { Err(error) },
+                    crate::reader::part("iges.binary_global_value"),
+                    |_| -> Result<(), CodecError> { Err(error) },
                 )?;
             }
             Ok(values)
@@ -187,7 +173,7 @@ fn read_directory(
     source: View<'_>,
     sections: &BinarySections<'_>,
     ctx: &DecodeContext<'_>,
-    output: &mut ParserPartOutput,
+    output: &mut PartOutput,
     dependencies: &Dependencies,
 ) -> Result<Vec<BinaryDirectory>, CodecError> {
     let payload = sections.directory;
@@ -203,23 +189,10 @@ fn read_directory(
     let extent = source
         .child(start, end)
         .ok_or_else(|| malformed("Binary Directory section exceeds its source"))?;
-    let mut framing = Vec::new();
-    append(
-        ctx,
-        &mut framing,
-        u64_from_index(start)..u64_from_index(payload.start()),
-    )?;
-    if payload.end() < end {
-        append(
-            ctx,
-            &mut framing,
-            u64_from_index(payload.end())..u64_from_index(end),
-        )?;
-    }
-    let result = ctx.decode_parser_scope(
+    let result = ctx.decode_part(
         output,
         extent,
-        spec("iges.binary_section", framing)?,
+        crate::reader::part("iges.binary_section"),
         |children| read_records(payload, sections.lengths, ctx, children, dependencies),
     )?;
     Ok(result.unwrap_or_default())
@@ -229,7 +202,7 @@ fn read_records(
     payload: View<'_>,
     lengths: PrimitiveLengths,
     ctx: &DecodeContext<'_>,
-    output: &mut ParserPartOutput,
+    output: &mut PartOutput,
     dependencies: &Dependencies,
 ) -> Result<Vec<BinaryDirectory>, CodecError> {
     let mut records = Vec::new();
@@ -237,20 +210,14 @@ fn read_records(
     let mut ordinal = 0;
     while cursor < payload.window().len() {
         let (offset, extent, body) = counted_record(payload, cursor, "Directory")?;
-        let mut framing = Vec::new();
-        append(
-            ctx,
-            &mut framing,
-            u64_from_index(extent.start())..u64_from_index(body.start()),
-        )?;
         let sequence = source_sequence(ordinal)?;
         ordinal = ordinal
             .checked_add(1)
             .ok_or_else(|| malformed("Binary Directory ordinal overflows"))?;
-        if let Some(record) = ctx.decode_parser_scope(
+        if let Some(record) = ctx.decode_part(
             output,
             extent,
-            spec("iges.binary_directory_record", framing)?,
+            crate::reader::part("iges.binary_directory_record"),
             |values| {
                 let mut record = parse_directory_record(offset, sequence, body, lengths)?;
                 record.admit_directory_fields()?;
@@ -275,7 +242,7 @@ fn admit_optional_fields(
     ctx: &DecodeContext<'_>,
     body: View<'_>,
     record: &mut BinaryDirectory,
-    output: &mut ParserPartOutput,
+    output: &mut PartOutput,
 ) -> Result<(), CodecError> {
     let mut previous = None;
     for (slot, name) in super::OPTIONAL_DIRECTORY_FIELDS {
@@ -293,11 +260,11 @@ fn admit_optional_fields(
             .and_then(|(start, end)| body.child(start, end))
             .ok_or_else(|| malformed("Binary Directory value exceeds its record"))?;
         if ctx
-            .decode_parser_part(
+            .decode_part(
                 output,
                 value,
-                spec("iges.binary_directory_value", Vec::new())?,
-                || record.admit_optional_field(slot, name),
+                crate::reader::part("iges.binary_directory_value"),
+                |_| record.admit_optional_field(slot, name),
             )?
             .is_none()
         {
@@ -313,7 +280,7 @@ fn read_parameters(
     directory: &[BinaryDirectory],
     directory_by_offset: &BTreeMap<u32, usize>,
     ctx: &DecodeContext<'_>,
-    output: &mut ParserPartOutput,
+    output: &mut PartOutput,
     dependencies: &Dependencies,
     global: &crate::global::ResolvedGlobal,
 ) -> Result<Vec<BinaryParameter>, CodecError> {
@@ -330,97 +297,21 @@ fn read_parameters(
     let extent = source
         .child(start, end)
         .ok_or_else(|| malformed("Binary Parameter section exceeds its source"))?;
-    let mut framing = Vec::new();
-    append(
-        ctx,
-        &mut framing,
-        u64_from_index(start)..u64_from_index(payload.start()),
-    )?;
-    if payload.end() < end {
-        append(
-            ctx,
-            &mut framing,
-            u64_from_index(payload.end())..u64_from_index(end),
-        )?;
-    }
-    let result = ctx.decode_parser_scope(
+    let result = ctx.decode_part(
         output,
         extent,
-        spec("iges.binary_section", framing)?,
+        crate::reader::part("iges.binary_section"),
         |children| {
             let mut records = Vec::new();
             let mut cursor = 0;
             while cursor < payload.window().len() {
                 let (offset, extent, body) = counted_record(payload, cursor, "Parameter")?;
-                let mut framing = Vec::new();
-                append(
-                    ctx,
-                    &mut framing,
-                    u64_from_index(extent.start())..u64_from_index(body.start()),
-                )?;
                 let prefix = parameter_prefix(body, sections.lengths);
-                if let Ok(prefix) = &prefix {
-                    if !prefix.pointer_extent.is_empty() {
-                        let start = body
-                            .start()
-                            .checked_add(prefix.pointer_extent.start)
-                            .ok_or_else(|| malformed("Binary pointer framing start overflows"))?;
-                        let end = body
-                            .start()
-                            .checked_add(prefix.pointer_extent.end)
-                            .ok_or_else(|| malformed("Binary pointer framing end overflows"))?;
-                        append(
-                            ctx,
-                            &mut framing,
-                            u64_from_index(start)..u64_from_index(end),
-                        )?;
-                    }
-                }
-                let record = ctx.decode_parser_scope(
+                let record = ctx.decode_part(
                     children,
                     extent,
-                    spec("iges.binary_parameter_record", framing)?,
+                    crate::reader::part("iges.binary_parameter_record"),
                     |values| {
-                        if dependencies.source_line(offset) || dependencies.source_point(offset) {
-                            let navigation = prefix?;
-                            let pointer = positive_pointer(
-                                navigation.directory_pointer,
-                                "Parameter Directory",
-                            )?;
-                            let owner = directory_by_offset
-                                .get(&pointer)
-                                .and_then(|index| directory.get(*index))
-                                .ok_or_else(|| malformed("Binary Parameter owner is absent"))?;
-                            return ctx.record(
-                                &format!("iges:entity:directory#{}", owner.source_sequence),
-                                extent,
-                                || {
-                                    let record = finish_parameter_record(
-                                        offset,
-                                        if dependencies.source_point(offset) {
-                                            super::source_point_prefix(body, sections.lengths)?
-                                        } else {
-                                            super::source_line_prefix(body, sections.lengths)?
-                                        },
-                                        directory_by_offset,
-                                    )?;
-                                    check_owner(&record, owner, offset, dependencies)?;
-                                    handoff(
-                                        record,
-                                        owner,
-                                        &Lexing {
-                                            directory,
-                                            directory_by_offset,
-                                            dependencies,
-                                            global,
-                                            body,
-                                        },
-                                        ctx,
-                                        values,
-                                    )
-                                },
-                            );
-                        }
                         let record = finish_parameter_record(offset, prefix?, directory_by_offset)?;
                         let pointer =
                             positive_pointer(record.directory_pointer, "Parameter Directory")?;
@@ -443,11 +334,7 @@ fn read_parameters(
                             // again from its normalized cards.
                             return lex_values(record, owner, &lexing, ctx, values);
                         }
-                        ctx.record(
-                            &format!("iges:entity:directory#{}", owner.source_sequence),
-                            extent,
-                            || handoff(record, owner, &lexing, ctx, values),
-                        )
+                        handoff(record, owner, &lexing, ctx, values)
                     },
                 )?;
                 if let Some(record) = record {
@@ -517,7 +404,7 @@ fn handoff(
     owner: &BinaryDirectory,
     lexing: &Lexing<'_, '_>,
     ctx: &DecodeContext<'_>,
-    output: &mut ParserPartOutput,
+    output: &mut PartOutput,
 ) -> Result<BinaryParameter, CodecError> {
     group::keep_failed_members(
         &mut record,
@@ -530,7 +417,7 @@ fn handoff(
 }
 
 /// Render and lex one Parameter record, and read each value group after its
-/// Directory pointer as one `iges.binary_parameter_value` part (Appendix C).
+/// Directory pointer as one `iges.binary_parameter_value` part.
 ///
 /// A group whose values do not parse, or whose rendered literal is not
 /// admitted, gives up only its part. Each slot of a given-up group is `null`;
@@ -540,7 +427,7 @@ fn lex_values(
     owner: &BinaryDirectory,
     lexing: &Lexing<'_, '_>,
     ctx: &DecodeContext<'_>,
-    output: &mut ParserPartOutput,
+    output: &mut PartOutput,
 ) -> Result<BinaryParameter, CodecError> {
     let lines = super::parameter_lines(&mut record, lexing.directory, lexing.directory_by_offset)?;
     let (mut content, failed) = crate::parameter::admitted::lex_lines(
@@ -584,11 +471,11 @@ fn lex_values(
             .and_then(|(start, end)| lexing.body.child(start, end))
             .ok_or_else(|| malformed("Binary Parameter value exceeds its record"))?;
         let failure = group.failure.take();
-        let kept = ctx.decode_parser_part(
+        let kept = ctx.decode_part(
             output,
             extent,
-            spec("iges.binary_parameter_value", Vec::new())?,
-            || match failure {
+            crate::reader::part("iges.binary_parameter_value"),
+            |_| match failure {
                 Some(error) => Err(error),
                 None => Ok(()),
             },
@@ -609,12 +496,6 @@ fn lex_values(
     }
     record.admitted = Some(super::AdmittedBinaryParameter { lines, content });
     Ok(record)
-}
-
-fn spec(name: &str, framing: Vec<std::ops::Range<u64>>) -> Result<PartSpec, CodecError> {
-    let level = PartLevel::parse(name)
-        .ok_or_else(|| malformed("Binary part level is absent from Appendix C"))?;
-    Ok(PartSpec::new(level, framing))
 }
 
 fn append<T>(ctx: &DecodeContext<'_>, items: &mut Vec<T>, value: T) -> Result<(), CodecError> {

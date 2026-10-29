@@ -1,8 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
 use cadmpeg_ir::codec::Codec as _;
-use cadmpeg_ir::source_fidelity::parts::PartState;
-use cadmpeg_ir::NativeUnknownRecord;
 
 #[test]
 fn an_unresolved_line_coordinate_reference_gives_up_only_its_parameter_record() {
@@ -42,13 +40,9 @@ fn an_unresolved_line_coordinate_reference_gives_up_only_its_parameter_record() 
             let (_, line, _) = crate::binary::counted_record(sections.parameter, 0, "Line")
                 .expect("original Line Parameter record");
             let fidelity = decoded.source_fidelity();
-            let given_up: Vec<_> = fidelity
-                .parts()
-                .values()
-                .filter(|part| part.state() == &PartState::GivenUp {})
-                .collect();
+            let given_up = crate::test_support::given_up_parts(fidelity);
             assert_eq!(given_up.len(), 1);
-            assert_eq!(given_up[0].level().as_str(), "iges.binary_parameter_record");
+            assert!(!given_up[0].untyped().is_empty());
             assert_eq!(
                 given_up[0].offset(),
                 u64::try_from(line.start()).expect("source offset")
@@ -171,29 +165,18 @@ fn a_required_point_symbol_failure_gives_up_only_its_parameter_record_and_keeps_
     assert_eq!(native.arenas()["entities"][1], old.arenas()["entities"][1]);
     assert!(native.arenas()["quarantined_parameter_records"].is_empty());
     assert!(native.arenas()["quarantined_directory_records"].is_empty());
-    let unknowns = native
-        .arena_as::<NativeUnknownRecord>("unknowns")
-        .expect("unknowns");
-    assert_eq!(unknowns.len(), 1);
     let fidelity = decoded.source_fidelity();
     let arena = DecodeArena::new();
     let (_ctx, source) = DecodeContext::from_root_bytes(&bytes, &arena, &DecodePolicy::service())
         .expect("independent physical source envelope");
     let sections = crate::binary::parse_sections(source).expect("original section boundaries");
-    assert!(!fidelity.parts().values().any(|part| {
-        part.level().as_str() == "iges.binary_directory_record"
-            && part.state() == &PartState::GivenUp {}
-    }));
-    for (level, section) in [("iges.binary_parameter_record", sections.parameter)] {
+    for section in [sections.parameter] {
         let (_, extent, _) = crate::binary::counted_record(section, 0, "source")
             .expect("original actual counted source record");
-        let failed: Vec<_> = fidelity
-            .parts()
-            .values()
-            .filter(|part| part.level().as_str() == level && part.state() == &PartState::GivenUp {})
-            .collect();
+        let failed = crate::test_support::given_up_parts(fidelity);
         assert_eq!(failed.len(), 1);
         let failed = failed[0];
+        assert!(!failed.untyped().is_empty());
         assert_eq!(
             failed.offset(),
             u64::try_from(extent.start()).expect("source offset")
@@ -202,17 +185,7 @@ fn a_required_point_symbol_failure_gives_up_only_its_parameter_record_and_keeps_
             failed.byte_len(),
             u64::try_from(extent.window().len()).expect("source length")
         );
-        let home = unknowns
-            .iter()
-            .find(|unknown| fidelity.parts()[&unknown.id].offset() == failed.offset())
-            .expect("the single failure home at this actual boundary");
-        assert_eq!(
-            fidelity
-                .retained_record(home.id.as_str())
-                .expect("source retention")
-                .data(),
-            Some(extent.window())
-        );
+        assert_eq!(failed.data(), Some(extent.window()));
     }
     let errors: Vec<_> = decoded
         .report()
@@ -224,24 +197,8 @@ fn a_required_point_symbol_failure_gives_up_only_its_parameter_record_and_keeps_
     assert!(errors
         .iter()
         .all(|loss| loss.severity == cadmpeg_ir::report::Severity::Error));
-    let stream = fidelity
-        .parts()
-        .values()
-        .find(|part| part.state() == &PartState::GivenUp {})
-        .expect("a genuine failed source")
-        .stream();
-    cadmpeg_test_support::contract::parts::check_one_home(
-        cadmpeg_ir::CodecFormat::Iges,
-        &decoded.ir().native,
-        fidelity,
-        &decoded.report().losses,
-        stream,
-        |requested, range| {
-            if requested != stream {
-                return None;
-            }
-            bytes.get(usize::try_from(range.start).ok()?..usize::try_from(range.end).ok()?)
-        },
-    )
-    .expect("required dependency failures have exact one-home source conservation");
+    assert!(errors[0].message.contains("iges.binary_parameter_record"));
+    assert!(!errors
+        .iter()
+        .any(|loss| loss.message.contains("iges.binary_directory_record")));
 }

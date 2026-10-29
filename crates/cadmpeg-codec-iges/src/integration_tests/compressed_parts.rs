@@ -1,6 +1,4 @@
 // SPDX-License-Identifier: Apache-2.0
-use cadmpeg_ir::source_fidelity::parts::PartState;
-use cadmpeg_ir::NativeUnknownRecord;
 
 #[test]
 fn compressed_bad_mandatory_field_preserves_the_original_later_peer() {
@@ -61,26 +59,17 @@ fn recovered(inherited: bool, ordinal: u32, failures: usize) {
     assert_eq!(&native.arenas()["entities"][0], expected);
     assert!(native.arenas()["quarantined_directory_records"].is_empty());
     assert!(native.arenas()["quarantined_parameter_records"].is_empty());
-    let unknowns = native.arena_as::<NativeUnknownRecord>("unknowns").unwrap();
-    assert_eq!(unknowns.len(), failures);
-    for record in unknowns {
-        let part = &decoded.source_fidelity().parts()[&record.id];
-        assert_eq!(part.state(), &PartState::GivenUp {});
-        assert_eq!(part.level().as_str(), "iges.compressed_data_record");
+    let parts = crate::test_support::given_up_parts(decoded.source_fidelity());
+    assert_eq!(parts.len(), failures);
+    assert_eq!(
+        crate::test_support::given_up_count(decoded.report(), "iges.compressed_data_record"),
+        failures
+    );
+    for part in parts {
+        assert!(!part.untyped().is_empty());
         let begin = usize::try_from(part.offset()).unwrap();
         let end = begin + usize::try_from(part.byte_len()).unwrap();
-        assert_eq!(
-            decoded
-                .source_fidelity()
-                .retained_record(record.id.as_str())
-                .unwrap()
-                .data(),
-            Some(&bytes[begin..end])
-        );
-        let layout = &decoded.source_fidelity().record_layout()[record.id.as_str()];
-        assert_eq!(layout.offset(), part.offset());
-        assert_eq!(layout.byte_len(), part.byte_len());
-        assert!(layout.reads().is_empty());
+        assert_eq!(part.data(), Some(&bytes[begin..end]));
     }
     assert_eq!(
         decoded
@@ -158,28 +147,17 @@ fn missing_structure(inherited: bool, ordinal: u32, failures: usize) {
     assert_eq!(&native.arenas()["entities"][0], expected);
     assert!(native.arenas()["quarantined_directory_records"].is_empty());
     assert!(native.arenas()["quarantined_parameter_records"].is_empty());
-    let unknowns = native
-        .arena_as::<NativeUnknownRecord>("unknowns")
-        .expect("typed unknowns");
-    assert_eq!(unknowns.len(), failures);
-    for record in unknowns {
-        let part = &decoded.source_fidelity().parts()[&record.id];
-        assert_eq!(part.state(), &PartState::GivenUp {});
-        assert_eq!(part.level().as_str(), "iges.compressed_data_record");
+    let parts = crate::test_support::given_up_parts(decoded.source_fidelity());
+    assert_eq!(parts.len(), failures);
+    assert_eq!(
+        crate::test_support::given_up_count(decoded.report(), "iges.compressed_data_record"),
+        failures
+    );
+    for part in parts {
+        assert!(!part.untyped().is_empty());
         let begin = usize::try_from(part.offset()).expect("small offset");
         let end = begin + usize::try_from(part.byte_len()).expect("small length");
-        assert_eq!(
-            decoded
-                .source_fidelity()
-                .retained_record(record.id.as_str())
-                .expect("actual source bytes")
-                .data(),
-            Some(&bytes[begin..end])
-        );
-        let layout = &decoded.source_fidelity().record_layout()[record.id.as_str()];
-        assert_eq!(layout.offset(), part.offset());
-        assert_eq!(layout.byte_len(), part.byte_len());
-        assert!(layout.reads().is_empty());
+        assert_eq!(part.data(), Some(&bytes[begin..end]));
     }
     assert_eq!(
         decoded
@@ -241,14 +219,14 @@ fn unknown_count(original: Vec<u8>, bytes: Vec<u8>) {
     assert_eq!(decoded.ir().tolerances, baseline.ir().tolerances);
     let native = decoded.ir().native.namespace("iges").expect("native IGES");
     assert!(native.arenas().get("entities").is_none_or(Vec::is_empty));
-    let unknowns = native
-        .arena_as::<NativeUnknownRecord>("unknowns")
-        .expect("typed unknowns");
-    assert_eq!(unknowns.len(), 1);
-    let record = &unknowns[0];
-    let part = &decoded.source_fidelity().parts()[&record.id];
-    assert_eq!(part.state(), &PartState::GivenUp {});
-    assert_eq!(part.level().as_str(), "iges.compressed_data_section");
+    let parts = crate::test_support::given_up_parts(decoded.source_fidelity());
+    assert_eq!(parts.len(), 1);
+    let part = parts[0];
+    assert!(!part.untyped().is_empty());
+    assert_eq!(
+        crate::test_support::given_up_count(decoded.report(), "iges.compressed_data_section"),
+        1
+    );
     assert_eq!(
         part.offset(),
         u64::try_from(extent.start).expect("small source start")
@@ -257,18 +235,7 @@ fn unknown_count(original: Vec<u8>, bytes: Vec<u8>) {
         part.byte_len(),
         u64::try_from(extent.len()).expect("small source length")
     );
-    assert_eq!(
-        decoded
-            .source_fidelity()
-            .retained_record(record.id.as_str())
-            .expect("actual source section")
-            .data(),
-        Some(&bytes[extent])
-    );
-    let layout = &decoded.source_fidelity().record_layout()[record.id.as_str()];
-    assert_eq!(layout.offset(), part.offset());
-    assert_eq!(layout.byte_len(), part.byte_len());
-    assert!(layout.reads().is_empty());
+    assert_eq!(part.data(), Some(&bytes[extent]));
     assert_eq!(
         decoded
             .report()

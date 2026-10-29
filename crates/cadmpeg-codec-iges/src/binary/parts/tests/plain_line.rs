@@ -1,8 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
 use cadmpeg_ir::geometry::SolvedCurveGeometry;
-use cadmpeg_ir::source_fidelity::parts::PartState;
-use cadmpeg_ir::NativeUnknownRecord;
 
 #[test]
 fn plain_line_values_are_returned_by_the_actual_binary_callback_and_source_flip() {
@@ -29,7 +27,7 @@ fn plain_line_values_are_returned_by_the_actual_binary_callback_and_source_flip(
             .child(6, 6 + bytes.len())
             .expect("actual nonzero window");
         let sections = crate::binary::parse_sections(source).expect("original physical sections");
-        let (_, extent, body) = crate::binary::counted_record(sections.parameter, 0, "Line")
+        crate::binary::counted_record(sections.parameter, 0, "Line")
             .expect("original counted Line Parameter");
         let (normalized, _) =
             super::super::normalize(source, &ctx).expect("actual source callbacks");
@@ -52,38 +50,6 @@ fn plain_line_values_are_returned_by_the_actual_binary_callback_and_source_flip(
             crate::parameter::assemble(&scan, &directory, [], &normalized.admission.global)
                 .expect("unchanged grammar oracle");
         assert_eq!(records, &legacy.records);
-        let captures = ctx
-            .take_record_captures()
-            .expect("one completed source capture drain");
-        assert_eq!(captures.len(), 2);
-        let line = captures
-            .iter()
-            .find(|capture| capture.id() == "iges:entity:directory#1")
-            .expect("same actual native Line owner");
-        assert_eq!(
-            line.offset(),
-            u64::try_from(extent.start()).expect("source offset")
-        );
-        assert_eq!(
-            line.byte_len(),
-            u64::try_from(extent.window().len()).expect("source length")
-        );
-        let integer_bytes = usize::from(sections.lengths.single_integer).div_ceil(8);
-        let value_bytes = integer_bytes + 1;
-        let expected_reads: Vec<_> = (0..6)
-            .map(|index| {
-                let start = body.start() + (2 + index) * value_bytes + 1;
-                u64::try_from(start).expect("actual coordinate offset")
-                    ..u64::try_from(start + integer_bytes).expect("actual coordinate end")
-            })
-            .collect();
-        assert_eq!(
-            line.reads(),
-            &std::collections::BTreeMap::from([("file".to_owned(), expected_reads)])
-        );
-        assert!(
-            line.offset() + line.byte_len() <= u64::try_from(source.end()).expect("source end")
-        );
         let decoded = crate::test_support::decode(bytes);
         assert_eq!(decoded.ir().model.curves.len(), 1);
         assert_eq!(decoded.ir().model.edges.len(), 1);
@@ -179,15 +145,7 @@ fn an_invalid_line_coordinate_control_gives_up_the_rest_of_its_parameter_values_
     assert_eq!(native.arenas()["entities"][1], old.arenas()["entities"][1]);
     assert!(native.arenas()["quarantined_directory_records"].is_empty());
     assert!(native.arenas()["quarantined_parameter_records"].is_empty());
-    let unknowns = native
-        .arena_as::<NativeUnknownRecord>("unknowns")
-        .expect("unknowns");
-    assert_eq!(unknowns.len(), 1);
     let fidelity = decoded.source_fidelity();
-    assert!(!fidelity.parts().values().any(|part| {
-        part.level().as_str() == "iges.binary_directory_record"
-            && part.state() == &PartState::GivenUp {}
-    }));
     let arena = DecodeArena::new();
     let (_ctx, source) = DecodeContext::from_root_bytes(&bytes, &arena, &DecodePolicy::service())
         .expect("original source boundaries");
@@ -195,12 +153,10 @@ fn an_invalid_line_coordinate_control_gives_up_the_rest_of_its_parameter_values_
     let (_, record, _) = crate::binary::counted_record(sections.parameter, 0, "source")
         .expect("actual counted record");
     assert_eq!(record.end(), given_up.end);
-    let part = fidelity
-        .parts()
-        .values()
-        .find(|part| part.state() == &PartState::GivenUp {})
-        .expect("the failed source value");
-    assert_eq!(part.level().as_str(), "iges.binary_parameter_value");
+    let parts = crate::test_support::given_up_parts(fidelity);
+    assert_eq!(parts.len(), 1);
+    let part = parts[0];
+    assert!(!part.untyped().is_empty());
     assert_eq!(
         part.offset(),
         u64::try_from(given_up.start).expect("source offset")
@@ -209,21 +165,7 @@ fn an_invalid_line_coordinate_control_gives_up_the_rest_of_its_parameter_values_
         part.byte_len(),
         u64::try_from(given_up.len()).expect("source length")
     );
-    assert_eq!(
-        fidelity.parts()[part.parent().expect("record part")].state(),
-        &PartState::Decoded {}
-    );
-    let home = unknowns
-        .iter()
-        .find(|unknown| fidelity.parts()[&unknown.id].offset() == part.offset())
-        .expect("one exact home");
-    assert_eq!(
-        fidelity
-            .retained_record(home.id.as_str())
-            .expect("retained source")
-            .data(),
-        Some(&bytes[given_up.clone()])
-    );
+    assert_eq!(part.data(), Some(&bytes[given_up.clone()]));
     let errors: Vec<_> = decoded
         .report()
         .losses
@@ -235,24 +177,7 @@ fn an_invalid_line_coordinate_control_gives_up_the_rest_of_its_parameter_values_
         .iter()
         .all(|loss| loss.severity == cadmpeg_ir::report::Severity::Error));
     assert!(errors[0].message.contains("iges.binary_parameter_value"));
-    let stream = fidelity
-        .parts()
-        .values()
-        .find(|part| part.state() == &PartState::GivenUp {})
-        .expect("source")
-        .stream();
-    cadmpeg_test_support::contract::parts::check_one_home(
-        cadmpeg_ir::CodecFormat::Iges,
-        &decoded.ir().native,
-        fidelity,
-        &decoded.report().losses,
-        stream,
-        |requested, range| {
-            if requested != stream {
-                return None;
-            }
-            bytes.get(usize::try_from(range.start).ok()?..usize::try_from(range.end).ok()?)
-        },
-    )
-    .expect("one home per actual failed counted source");
+    assert!(!errors
+        .iter()
+        .any(|loss| loss.message.contains("iges.binary_directory_record")));
 }

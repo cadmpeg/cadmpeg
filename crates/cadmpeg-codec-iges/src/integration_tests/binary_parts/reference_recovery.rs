@@ -1,6 +1,4 @@
 // SPDX-License-Identifier: Apache-2.0
-use cadmpeg_ir::source_fidelity::parts::PartState;
-use cadmpeg_ir::NativeUnknownRecord;
 
 use crate::test_support::binary_parts::{
     broken_parameter_reference, broken_transform_chain, broken_transform_parameter,
@@ -124,32 +122,18 @@ fn binary_late_transform_value_fault_gives_up_only_its_value_part_and_drops_the_
     );
     assert!(native.arenas()["quarantined_parameter_records"].is_empty());
 
-    let unknowns = native.arena_as::<NativeUnknownRecord>("unknowns").unwrap();
-    assert_eq!(unknowns.len(), 1);
     let fidelity = decoded.source_fidelity();
-    let part = &fidelity.parts()[&unknowns[0].id];
-    assert_eq!(part.state(), &PartState::GivenUp {});
-    assert_eq!(part.level().as_str(), "iges.binary_parameter_value");
-    assert_eq!(part.offset(), u64::try_from(given_up.start).unwrap());
-    assert_eq!(part.byte_len(), u64::try_from(given_up.len()).unwrap());
-    let record = &fidelity.parts()[part.parent().unwrap()];
-    assert_eq!(record.level().as_str(), "iges.binary_parameter_record");
-    assert_eq!(record.state(), &PartState::Decoded {});
+    let parts = crate::test_support::given_up_parts(fidelity);
+    assert_eq!(parts.len(), 1);
+    let part = parts[0];
+    assert!(!part.untyped().is_empty());
     assert_eq!(
-        fidelity
-            .retained_record(unknowns[0].id.as_str())
-            .unwrap()
-            .data(),
-        Some(&bytes[given_up])
-    );
-    assert_eq!(
-        fidelity
-            .parts()
-            .values()
-            .filter(|part| part.state() == &PartState::GivenUp {})
-            .count(),
+        crate::test_support::given_up_count(decoded.report(), "iges.binary_parameter_value"),
         1
     );
+    assert_eq!(part.offset(), u64::try_from(given_up.start).unwrap());
+    assert_eq!(part.byte_len(), u64::try_from(given_up.len()).unwrap());
+    assert_eq!(part.data(), Some(&bytes[given_up]));
     let codes = |result: &cadmpeg_ir::codec::DecodeResult| {
         let mut codes: Vec<_> = result
             .report()
@@ -258,7 +242,6 @@ fn recovered_peer(original: Vec<u8>, bytes: Vec<u8>, recovery: &Recovery<'_>) {
     );
     let native = decoded.ir().native.namespace("iges").unwrap();
     let old = baseline.ir().native.namespace("iges").unwrap();
-    let target = format!("iges:entity:directory#{ordinal}");
     let entity = |ordinal: u32| format!("iges:entity:directory#{ordinal}");
     let mut kept: Vec<_> = detached
         .iter()
@@ -317,56 +300,19 @@ fn recovered_peer(original: Vec<u8>, bytes: Vec<u8>, recovery: &Recovery<'_>) {
     );
     assert!(native.arenas()["quarantined_directory_records"].is_empty());
     assert!(native.arenas()["quarantined_parameter_records"].is_empty());
-    let unknowns = native.arena_as::<NativeUnknownRecord>("unknowns").unwrap();
-    assert_eq!(unknowns.len(), failures);
     let fidelity = decoded.source_fidelity();
-    for record in &unknowns {
-        let part = &fidelity.parts()[&record.id];
-        assert_eq!(part.state(), &PartState::GivenUp {});
-        assert!(matches!(
-            part.level().as_str(),
-            "iges.binary_directory_record" | "iges.binary_parameter_record"
-        ));
+    let parts = crate::test_support::given_up_parts(fidelity);
+    assert_eq!(parts.len(), failures);
+    for part in parts {
+        assert!(!part.untyped().is_empty());
         let begin = usize::try_from(part.offset()).unwrap();
         let end = begin + usize::try_from(part.byte_len()).unwrap();
-        assert_eq!(
-            fidelity.retained_record(record.id.as_str()).unwrap().data(),
-            Some(&bytes[begin..end])
-        );
-        let layout = &fidelity.record_layout()[record.id.as_str()];
-        assert_eq!(layout.offset(), part.offset());
-        assert_eq!(layout.byte_len(), part.byte_len());
-        assert!(layout.reads().is_empty());
+        assert_eq!(part.data(), Some(&bytes[begin..end]));
     }
-    // A Binary entity's layout is its Parameter Data record. A detached
-    // entity has none (#215 one-home test).
-    let laid_out: Vec<_> = dependents
-        .iter()
-        .copied()
-        .chain([ordinal])
-        .map(entity)
-        .collect();
-    let mut expected_keys: Vec<_> = unknowns.iter().map(|record| record.id.as_str()).collect();
-    expected_keys.extend(laid_out.iter().map(String::as_str));
-    expected_keys.sort_unstable();
     assert_eq!(
-        fidelity
-            .record_layout()
-            .keys()
-            .map(String::as_str)
-            .collect::<Vec<_>>(),
-        expected_keys
-    );
-    assert_eq!(fidelity.record_layout().len(), failures + laid_out.len());
-    let (peer_stream, peer_offset, peer_len) =
-        super::layout_oracle::peer_parameter(&bytes, ordinal);
-    let peer_layout = &fidelity.record_layout()[&target];
-    assert_eq!(peer_layout.stream(), peer_stream);
-    assert_eq!(peer_layout.offset(), peer_offset);
-    assert_eq!(peer_layout.byte_len(), peer_len);
-    assert_eq!(
-        peer_layout,
-        &baseline.source_fidelity().record_layout()[&target]
+        crate::test_support::given_up_count(decoded.report(), "iges.binary_directory_record")
+            + crate::test_support::given_up_count(decoded.report(), "iges.binary_parameter_record"),
+        failures
     );
     assert_eq!(
         decoded

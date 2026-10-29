@@ -78,25 +78,20 @@ fn report_code_count(
 /// The one given-up Global part of a decode: its level and its one Error
 /// `record.unreadable` loss.
 fn given_up_global_part(result: &cadmpeg_ir::codec::DecodeResult) -> String {
-    use cadmpeg_ir::source_fidelity::parts::PartState;
-
-    let given_up: Vec<_> = result
-        .source_fidelity()
-        .parts()
-        .values()
-        .filter(|part| part.state() == &PartState::GivenUp {})
-        .filter(|part| part.level().as_str().starts_with("iges.global_"))
-        .collect();
-    assert_eq!(given_up.len(), 1);
-    let level = given_up[0].level().as_str().to_owned();
     let unreadable: Vec<_> = result
         .report()
         .losses
         .iter()
         .filter(|loss| loss.code.local_code() == "record.unreadable")
-        .filter(|loss| loss.message.starts_with(&format!("{level} ")))
+        .filter(|loss| loss.message.starts_with("part iges.global_"))
         .collect();
     assert_eq!(unreadable.len(), 1);
+    let level = unreadable[0]
+        .message
+        .strip_prefix("part ")
+        .and_then(|message| message.split(' ').next())
+        .expect("part label")
+        .to_owned();
     assert_eq!(unreadable[0].severity, cadmpeg_ir::report::Severity::Error);
     level
 }

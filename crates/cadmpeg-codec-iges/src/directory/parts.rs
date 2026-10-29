@@ -1,11 +1,9 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Source-bounded Directory parsing through the shared parser part runner.
 
-use std::ops::Range;
-
 use cadmpeg_core::decode::{u64_from_index, DecodeContext, ResourceDimension, ResourceLimit, View};
 use cadmpeg_core::CodecError;
-use cadmpeg_ir::source_fidelity::parts::{DecodeParts, ParserPartOutput, PartLevel, PartSpec};
+use cadmpeg_ir::source_fidelity::parts::{DecodeParts, PartOutput};
 
 use super::{fields, DirectoryDefect, DirectoryEntry, GlobalTable};
 use crate::card::{CardScan, PhysicalLine, ScannedLine, Section};
@@ -16,12 +14,11 @@ pub(crate) fn parse(
     scan: &CardScan<'_>,
     global: GlobalTable,
     ctx: &DecodeContext<'_>,
-    output: &mut ParserPartOutput,
+    output: &mut PartOutput,
 ) -> Result<DirectoryParts, CodecError> {
     let source = scan
         .source_view()
         .ok_or_else(|| CodecError::malformed("Directory source view is absent"))?;
-    ctx.capture_part_extent(source)?;
     let mut entries = Vec::new();
     let mut given_up = Vec::new();
     let mut at = 0;
@@ -50,37 +47,15 @@ pub(crate) fn parse(
         }
         let lines = &scan.lines[start..at];
         let extent = source_extent(source, lines)?;
-        let mut framing = Vec::new();
-        for line in lines {
-            envelope(ctx, source, line.physical(), &mut framing)?;
-        }
-        let spec = part_spec("iges.directory_section", framing)?;
-        let parsed = ctx.decode_parser_scope(output, extent, spec, |children| {
+        let spec = crate::reader::part("iges.directory_section");
+        let parsed = ctx.decode_part(output, extent, spec, |children| {
             let mut entries = Vec::new();
             let mut given_up = Vec::new();
             for pair in lines.chunks(2) {
                 ctx.charge_entities(1, "iges_directory_entries")?;
                 let extent = source_extent(source, pair)?;
-                let mut framing = Vec::new();
-                envelope(ctx, source, pair[0].physical(), &mut framing)?;
-                let first_start = absolute(source, pair[0].physical().offset)?;
-                append_parser_item(
-                    ctx,
-                    &mut framing,
-                    u64_from_index(first_start + 8)..u64_from_index(first_start + 16),
-                )?;
-                if let Some(second) = pair.get(1) {
-                    envelope(ctx, source, second.physical(), &mut framing)?;
-                    let second_start = absolute(source, second.physical().offset)?;
-                    append_parser_item(
-                        ctx,
-                        &mut framing,
-                        u64_from_index(second_start + 24)..u64_from_index(second_start + 32),
-                    )?;
-                }
-                framing.sort_unstable_by_key(|range| (range.start, range.end));
-                let spec = part_spec("iges.directory_entry", framing)?;
-                match ctx.decode_parser_scope(children, extent, spec, |fields_output| {
+                let spec = crate::reader::part("iges.directory_entry");
+                match ctx.decode_part(children, extent, spec, |fields_output| {
                     let ScannedLine::Card {
                         sequence,
                         line: first,
@@ -89,7 +64,6 @@ pub(crate) fn parse(
                     else {
                         return Err(CodecError::malformed("Directory card is absent"));
                     };
-                    let id = format!("iges:entity:directory#{sequence}");
                     // The required fields decide whether the record forms. A
                     // given-up required field leaves no record to link to.
                     let required = admit_fields(
@@ -112,23 +86,16 @@ pub(crate) fn parse(
                     }) {
                         return Ok(None);
                     }
-                    // Parameter parsing owns the primary capture; retain only
-                    // this Directory parser's attempted native identity.
-                    let primary_capture = ctx.read_transaction()?;
-                    let parsed = ctx.record(&id, extent, || {
-                        let optional = admit_fields(
-                            ctx,
-                            source,
-                            first,
-                            pair.get(1).map(ScannedLine::physical),
-                            global,
-                            fields_output,
-                            Fields::Optional,
-                        )?;
-                        form_entry(*sequence, first, &required, &optional, global)
-                    });
-                    drop(primary_capture);
-                    parsed
+                    let optional = admit_fields(
+                        ctx,
+                        source,
+                        first,
+                        pair.get(1).map(ScannedLine::physical),
+                        global,
+                        fields_output,
+                        Fields::Optional,
+                    )?;
+                    form_entry(*sequence, first, &required, &optional, global)
                 })? {
                     Some(Some(entry)) => append_parser_item(ctx, &mut entries, entry)?,
                     // A given-up entry, or an entry whose required field part
@@ -187,7 +154,7 @@ fn admit_fields(
     first: &PhysicalLine,
     second: Option<&PhysicalLine>,
     global: GlobalTable,
-    output: &mut ParserPartOutput,
+    output: &mut PartOutput,
     pass: Fields,
 ) -> Result<[Option<metadata::FieldValue>; 18], CodecError> {
     let mut values = [None; 18];
@@ -348,28 +315,6 @@ fn source_extent<'a>(source: View<'a>, lines: &[ScannedLine]) -> Result<View<'a>
             end(source, last.physical())?,
         )
         .ok_or_else(|| CodecError::malformed("Directory cards exceed their actual source"))
-}
-
-fn envelope(
-    ctx: &DecodeContext<'_>,
-    source: View<'_>,
-    line: &PhysicalLine,
-    out: &mut Vec<Range<u64>>,
-) -> Result<(), CodecError> {
-    let start = absolute(source, line.offset)?
-        .checked_add(72)
-        .ok_or_else(|| CodecError::malformed("Directory envelope offset overflows"))?;
-    append_parser_item(
-        ctx,
-        out,
-        u64_from_index(start)..u64_from_index(end(source, line)?),
-    )
-}
-
-fn part_spec(name: &str, framing: Vec<Range<u64>>) -> Result<PartSpec, CodecError> {
-    let level = PartLevel::parse(name)
-        .ok_or_else(|| CodecError::malformed("Directory part level is absent from Appendix C"))?;
-    Ok(PartSpec::new(level, framing))
 }
 
 /// Push parser working storage. It is not retained bytes

@@ -6,7 +6,7 @@ use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
 use super::{Address, Dependencies};
 use crate::binary::tests::{parse_parameter_record, read_directory};
 use crate::binary::{counted_record, parse_sections, BinaryValue};
-use crate::test_support::binary_parts::{broken_parameter_reference, broken_transform_chain};
+use crate::test_support::binary_parts::broken_parameter_reference;
 
 #[test]
 fn format_five_point_reference_uses_an_actual_nonrecord_source_offset() {
@@ -39,31 +39,6 @@ fn format_five_point_reference_uses_an_actual_nonrecord_source_offset() {
     assert!(plan
         .require(Address::Directory(directory[1].offset))
         .is_ok());
-}
-
-#[test]
-fn speculative_dependency_reads_add_no_record_credit_and_keep_committed_neighbor_reads() {
-    let bytes = broken_transform_chain(true);
-    let arena = DecodeArena::new();
-    let (ctx, root) =
-        DecodeContext::from_root_bytes(&bytes, &arena, &DecodePolicy::service()).unwrap();
-    ctx.record("iges:entity:probe#1", root, || {
-        let mut reader = root;
-        assert_eq!(reader.u8(), Some(b'B'));
-        let sections = parse_sections(root)?;
-        let global = source_global(&sections);
-        let _plan = Dependencies::inspect(&sections, &global, &ctx)?;
-        assert_eq!(reader.u8(), Some(0));
-        Ok(())
-    })
-    .unwrap();
-    let captures = ctx.take_record_captures().unwrap();
-    assert_eq!(captures.len(), 1);
-    assert_eq!(captures[0].id(), "iges:entity:probe#1");
-    assert_eq!(
-        captures[0].reads(),
-        &BTreeMap::from([("file".to_owned(), vec![0..2])])
-    );
 }
 
 fn source_global(sections: &crate::binary::BinarySections<'_>) -> crate::global::ResolvedGlobal {
