@@ -20,7 +20,7 @@ fn kept_schema_value_comes_from_exact_entity_or_alias_bytes_in_nonzero_source_wi
             .child("prefix".len(), "prefix".len() + xml.len())
             .unwrap();
         let source = parse(&ctx, view).unwrap();
-        let entries = Default::default();
+        let entries = std::collections::BTreeMap::default();
         let sources = GuiSources {
             entries: &entries,
             objects: &[],
@@ -69,7 +69,7 @@ fn rejected_provider_transfer_keeps_source_only_behavior_without_speculative_sch
     let (ctx, root) =
         DecodeContext::from_root_bytes(bytes, &arena, &DecodePolicy::service()).unwrap();
     let source = parse(&ctx, root).unwrap();
-    let entries = Default::default();
+    let entries = std::collections::BTreeMap::default();
     let sources = GuiSources {
         entries: &entries,
         objects: &[],

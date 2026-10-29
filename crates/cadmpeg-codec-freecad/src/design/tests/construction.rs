@@ -1683,7 +1683,7 @@ fn transfers_draft_with_resolved_neutral_plane_and_pull_direction() {
             && (pull_direction.x - 0.0).abs() < 1.0e-12
             && (pull_direction.y + 1.0).abs() < 1.0e-12
             && pull_direction.z.abs() < 1.0e-12
-            && (result.ir().dimension_value(&angle).expect("resolved dimension").get() + 5f64.to_radians()).abs() < 1.0e-12
+            && (result.ir().dimension_value(angle).expect("resolved dimension").get() + 5f64.to_radians()).abs() < 1.0e-12
     ));
     assert_eq!(draft.dependencies.len(), 3);
     let face_draft = result

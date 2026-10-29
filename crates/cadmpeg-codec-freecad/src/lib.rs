@@ -753,7 +753,7 @@ impl CodecBackend for FcstdCodec {
 
     fn decode_impl(&self, ctx: &DecodeContext<'_>, root: View<'_>) -> Result<Decoded, CodecError> {
         let (mut scan, parts) = match container::attempt(ctx, root)? {
-            container::ScanOutcome::Readable { scan, parts } => (scan, parts),
+            container::ScanOutcome::Readable { scan, parts } => (*scan, parts),
             container::ScanOutcome::GivenUp {
                 summary,
                 parts,
@@ -763,7 +763,7 @@ impl CodecBackend for FcstdCodec {
                 return archive_recovery::decoded(
                     ctx,
                     root,
-                    summary,
+                    *summary,
                     parts,
                     document_found,
                     archive_given_up,
@@ -889,7 +889,7 @@ impl CodecBackend for FcstdCodec {
                     .get("Document.xml")
                     .ok_or_else(|| CodecError::malformed("properties have no document source"))?,
                 &graph.property_sources,
-            )?;
+            );
             for property in &graph.properties {
                 if let Some(class) = fidelity::property(
                     &property_reader,
@@ -920,8 +920,10 @@ impl CodecBackend for FcstdCodec {
                 document_xml,
                 scan.document.file_version.value(),
                 &graph.properties,
-                &entry_records,
-                &entry_sources,
+                entry_sources::ArchiveEntries {
+                    records: &entry_records,
+                    sources: &entry_sources,
+                },
                 &mut scan.losses,
                 Some(&mut source_fidelity),
             )?;
@@ -1024,8 +1026,10 @@ impl CodecBackend for FcstdCodec {
                     },
                     &graph.properties,
                     &shape_payloads,
-                    &entry_records,
-                    &entry_sources,
+                    entry_sources::ArchiveEntries {
+                        records: &entry_records,
+                        sources: &entry_sources,
+                    },
                     scan.document.program_version.as_deref(),
                 )?;
                 cycle_affected_design_objects = cycle_affected;

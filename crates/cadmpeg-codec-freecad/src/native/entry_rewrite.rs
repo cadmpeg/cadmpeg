@@ -73,7 +73,7 @@ mod tests {
             vec![owner.into(), "test:native:property#kept".into()],
         )
         .unwrap();
-        let mut map = IdentityMap::new(|id: &str| Ok(id.replace("#", "#changed-")));
+        let mut map = IdentityMap::new(|id: &str| Ok(id.replace('#', "#changed-")));
         let rewritten = entry.rewrite_identities(&ctx, &mut map).unwrap();
         assert_eq!(rewritten.id(), "test:native:entry#changed-before");
         assert_eq!(

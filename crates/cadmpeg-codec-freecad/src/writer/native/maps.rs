@@ -18,6 +18,13 @@ fn hex(value: i64) -> String {
     }
 }
 
+/// Archive members, losses, and native dispositions that map serialization produces.
+pub(crate) struct MapOutput<'a> {
+    pub(crate) archive_entries: &'a mut BTreeMap<String, Vec<u8>>,
+    pub(crate) losses: &'a mut Vec<LossNote>,
+    pub(crate) outcomes: &'a mut cadmpeg_ir::codec::write::NativeDispositions,
+}
+
 pub(crate) fn write(
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     ir: &CadIr,
@@ -25,10 +32,13 @@ pub(crate) fn write(
     objects: &mut [Object],
     names: &HashMap<String, String>,
     properties: &[PropertyRecord],
-    archive_entries: &mut BTreeMap<String, Vec<u8>>,
-    losses: &mut Vec<LossNote>,
-    outcomes: &mut cadmpeg_ir::codec::write::NativeDispositions,
+    output: MapOutput<'_>,
 ) -> Result<String, CodecError> {
+    let MapOutput {
+        archive_entries,
+        losses,
+        outcomes,
+    } = output;
     let Some(namespace) = ir.native.namespace("fcstd") else {
         return Ok(String::new());
     };

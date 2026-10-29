@@ -82,7 +82,7 @@ mod tests {
         let original = graph.properties.into_iter().next().unwrap();
         let ctx = cadmpeg_test_support::service_decode_context();
         let property = DocumentString::new(original.clone()).unwrap();
-        let mut map = IdentityMap::new(|id: &str| Ok(id.replace("#", "#changed-")));
+        let mut map = IdentityMap::new(|id: &str| Ok(id.replace('#', "#changed-")));
         let rewritten = property.rewrite_identities(&ctx, &mut map).unwrap();
         assert_ne!(rewritten.0.id, original.id);
         assert_ne!(rewritten.0.owner, original.owner);

@@ -23,7 +23,7 @@ fn the_real_codec_composes_shared_unknowns_and_retains_successful_member_records
     assert_eq!(
         entries
             .iter()
-            .map(|entry| entry.name())
+            .map(crate::native::EntryRecord::name)
             .collect::<BTreeSet<_>>(),
         BTreeSet::from(["Document.xml", "peer.bin"])
     );

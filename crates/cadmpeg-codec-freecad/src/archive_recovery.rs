@@ -59,7 +59,7 @@ pub(crate) fn decoded(
                 scope: ir.scope,
                 geometry_transferred: false,
             },
-            coverage: Default::default(),
+            coverage: cadmpeg_ir::report::decode::Coverage::default(),
             losses,
             notes: summary.notes,
         },

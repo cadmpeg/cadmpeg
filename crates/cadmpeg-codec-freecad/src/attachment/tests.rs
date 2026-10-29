@@ -10,7 +10,7 @@ fn diagnostic_property(
     type_name: &str,
     values: Vec<crate::native::ValueRecord>,
 ) -> crate::native::PropertyRecord {
-    let property = crate::native::PropertyRecord {
+    crate::native::PropertyRecord {
         dynamic: None,
         id: "fcstd:native:property#Attachment:MapMode".into(),
         owner: "fcstd:native:object#Attachment".into(),
@@ -24,8 +24,7 @@ fn diagnostic_property(
             side_entries: Vec::new(),
         }),
         order: 0,
-    };
-    property
+    }
 }
 
 fn enum_value(tag: &str, value: Option<&str>) -> crate::native::ValueRecord {

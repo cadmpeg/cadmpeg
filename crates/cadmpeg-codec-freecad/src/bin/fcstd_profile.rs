@@ -231,8 +231,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             .and_then(|plan| plan.write_to(&mut second_write))?;
         let written =
             FcstdCodec.decode(&mut Cursor::new(&first_write), &DecodeOptions::default())?;
-        let semantic_round_trip = semantic_fingerprint(first.ir().clone())?
-            == semantic_fingerprint(written.ir().clone())?;
+        let semantic_round_trip =
+            semantic_fingerprint(first.ir())? == semantic_fingerprint(written.ir())?;
         let side_entries_preserved =
             logical_side_entries(first.ir())? == logical_side_entries(written.ir())?;
         let mut edited_ir = first.ir().clone();
@@ -1072,7 +1072,7 @@ fn design_property_edit_round_trip(ir: &CadIr) -> Result<bool, Box<dyn std::erro
     Ok(false)
 }
 
-fn semantic_fingerprint(ir: CadIr) -> Result<String, Box<dyn std::error::Error>> {
+fn semantic_fingerprint(ir: &CadIr) -> Result<String, Box<dyn std::error::Error>> {
     Ok(ir.to_canonical_json()?)
 }
 
@@ -1756,7 +1756,7 @@ mod tests {
         let decoded = FcstdCodec
             .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
             .expect("decode fixture");
-        let original = semantic_fingerprint(decoded.ir().clone()).expect("fingerprint fixture");
+        let original = semantic_fingerprint(decoded.ir()).expect("fingerprint fixture");
         let mut written = Vec::new();
         let plan = FcstdCodec
             .plan(
@@ -1772,7 +1772,7 @@ mod tests {
         match report.write_path() {
             WritePath::VerbatimReplay { .. } | WritePath::Patched { .. } => assert_eq!(
                 original,
-                semantic_fingerprint(restored.ir().clone()).expect("fingerprint written fixture")
+                semantic_fingerprint(restored.ir()).expect("fingerprint written fixture")
             ),
             WritePath::Synthesized { .. } => {
                 assert!(report.synthesis_cause().is_some());
@@ -1797,7 +1797,7 @@ mod tests {
             .expect("edit document label");
         assert_ne!(
             original,
-            semantic_fingerprint(edited).expect("fingerprint edited fixture")
+            semantic_fingerprint(&edited).expect("fingerprint edited fixture")
         );
     }
 

@@ -143,6 +143,7 @@ fn fixture(owners: &[(&str, &[&str])]) -> (CadIr, Vec<ShapePayloadRecord>, Vec<P
 }
 
 fn rewrite_rows(ir: &mut CadIr, bodies: &BTreeMap<String, String>) {
+    use cadmpeg_ir::schema::rewrite::typed::{IdentityMap, RewriteIdentities};
     let ctx = cadmpeg_test_support::service_decode_context();
     let mut rows = ir
         .native
@@ -161,7 +162,6 @@ fn rewrite_rows(ir: &mut CadIr, bodies: &BTreeMap<String, String>) {
             *parent = ids[parent.as_str()].clone();
         }
     }
-    use cadmpeg_ir::schema::rewrite::typed::{IdentityMap, RewriteIdentities};
     let mut map = IdentityMap::new(|id: &str| {
         Ok(ids
             .get(id)

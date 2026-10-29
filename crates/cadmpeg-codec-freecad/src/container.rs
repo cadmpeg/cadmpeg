@@ -87,11 +87,11 @@ pub(crate) struct Scan<'a> {
 
 pub(crate) enum ScanOutcome<'a> {
     Readable {
-        scan: Scan<'a>,
+        scan: Box<Scan<'a>>,
         parts: cadmpeg_ir::source_fidelity::parts::PartOutput,
     },
     GivenUp {
-        summary: ContainerSummary,
+        summary: Box<ContainerSummary>,
         parts: cadmpeg_ir::source_fidelity::parts::PartOutput,
         /// The `Document.xml` member opened, so the document class was located.
         document_found: bool,
@@ -114,7 +114,7 @@ pub(crate) fn inspect(
             mut summary, parts, ..
         } => {
             summary.losses.extend(parts.into_parts().3);
-            Ok(summary)
+            Ok(*summary)
         }
     }
 }
@@ -132,7 +132,7 @@ pub(crate) fn scan_for_decode<'a>(
     root: View<'a>,
 ) -> Result<(Scan<'a>, cadmpeg_ir::source_fidelity::parts::PartOutput), CodecError> {
     match attempt(ctx, root)? {
-        ScanOutcome::Readable { scan, parts } => Ok((scan, parts)),
+        ScanOutcome::Readable { scan, parts } => Ok((*scan, parts)),
         ScanOutcome::GivenUp { .. } => Err(CodecError::malformed("FCStd archive was given up")),
     }
 }
@@ -179,9 +179,12 @@ pub(crate) fn attempt<'a>(
         scan_impl(&archive, document, opened).map(Some)
     })?;
     match outcome {
-        Some(Some(scan)) => Ok(ScanOutcome::Readable { scan, parts }),
+        Some(Some(scan)) => Ok(ScanOutcome::Readable {
+            scan: Box::new(scan),
+            parts,
+        }),
         outcome => Ok(ScanOutcome::GivenUp {
-            summary,
+            summary: Box::new(summary),
             parts,
             document_found,
             archive_given_up: outcome.is_none(),
@@ -267,7 +270,7 @@ pub(crate) fn entry_records(
                 "entry {} disappeared after scan",
                 entry.name
             )));
-        };
+        }
         let owners = references
             .get(entry.name.as_str())
             .map_or(&[][..], Vec::as_slice);

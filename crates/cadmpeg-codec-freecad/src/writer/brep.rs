@@ -1185,7 +1185,7 @@ fn trimmed_supports<'a>(
             .procedural_surfaces
             .iter()
             .find(|record| record.id == *construction)
-            .map(|record| record.definition())
+            .map(cadmpeg_ir::geometry::ProceduralSurface::definition)
         else {
             continue;
         };

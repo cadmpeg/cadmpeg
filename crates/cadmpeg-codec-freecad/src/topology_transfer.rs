@@ -298,7 +298,7 @@ impl SourceOccurrenceKey {
         let mut value = String::new();
         ctx.reserve_text_working(
             &mut value,
-            2 * usize::BITS as usize + 1,
+            2 * cadmpeg_core::decode::index_from_u32(usize::BITS) + 1,
             "FreeCAD source occurrence lookup",
         )?;
         write!(value, "{shape}@{identity}")

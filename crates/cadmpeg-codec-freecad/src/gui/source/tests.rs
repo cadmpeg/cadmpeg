@@ -23,7 +23,7 @@ fn original_dom_survives_until_transfer_without_another_parse_or_read_credit() {
     let (ctx, root) =
         DecodeContext::from_root_bytes(bytes, &arena, &DecodePolicy::service()).unwrap();
     let source = parse(&ctx, root).unwrap();
-    let entries = Default::default();
+    let entries = std::collections::BTreeMap::default();
     let sources = GuiSources {
         entries: &entries,
         objects: &[],
@@ -55,7 +55,7 @@ fn same_dom_transfer_preserves_native_graph_model_and_existing_source_only_error
         let legacy_arena = DecodeArena::new();
         let (legacy_ctx, _) =
             DecodeContext::from_root_bytes(bytes, &legacy_arena, &DecodePolicy::service()).unwrap();
-        let entries = Default::default();
+        let entries = std::collections::BTreeMap::default();
         let sources = GuiSources {
             entries: &entries,
             objects: &[],

@@ -58,7 +58,7 @@ pub(super) fn open_optional<'source>(
             continue;
         };
         match ctx.decode_part(stage, payload.view(), part("zip.entry"), |_stage| {
-            archive.open_member(ctx, payload)
+            archive.open_member(ctx, &payload)
         })? {
             Some(view) => {
                 members.data.insert(name.to_owned(), view);
@@ -103,7 +103,7 @@ pub(super) fn document<'source>(
         return Ok(None);
     };
     let result = ctx.decode_part(stage, payload.view(), part("zip.entry"), |member| {
-        let view = archive.open_member(ctx, payload)?;
+        let view = archive.open_member(ctx, &payload)?;
         *found = true;
         let document = ctx
             .decode_part(
@@ -197,7 +197,7 @@ fn keep_entry(
     stage.insert_native(ctx, "entries", record)
 }
 
-/// A FreeCAD part; its bytes can hold content of either class.
+/// A `FreeCAD` part; its bytes can hold content of either class.
 pub(crate) fn part(label: &'static str) -> PartSpec {
     PartSpec::new(label).holding([
         cadmpeg_ir::ArenaClass::Model,

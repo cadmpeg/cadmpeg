@@ -95,7 +95,7 @@ mod tests {
             serde_json::to_value(kept).unwrap(),
             serde_json::to_value(&original).unwrap()
         );
-        let mut changed = IdentityMap::new(|id: &str| Ok(id.replace("#", "#changed-")));
+        let mut changed = IdentityMap::new(|id: &str| Ok(id.replace('#', "#changed-")));
         assert!(ObjectDeclaration::new(original.clone())
             .unwrap()
             .rewrite_identities(&ctx, &mut changed)

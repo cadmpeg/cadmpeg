@@ -441,9 +441,11 @@ pub(super) fn write(
         &mut objects,
         &names,
         &native_properties,
-        &mut entries,
-        &mut losses,
-        &mut native_dispositions,
+        super::native::MapOutput {
+            archive_entries: &mut entries,
+            losses: &mut losses,
+            outcomes: &mut native_dispositions,
+        },
     )?;
     super::synthesis_graph::close(&mut objects, &mut losses)?;
     if objects.iter().all(Object::geometry_empty)

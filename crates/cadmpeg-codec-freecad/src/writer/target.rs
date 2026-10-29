@@ -71,7 +71,7 @@ pub(crate) fn plan(
 ) -> Result<ExportBody, CodecError> {
     let allocation_arena = cadmpeg_core::decode::DecodeArena::new();
     let allocation_policy = cadmpeg_core::decode::DecodePolicy {
-        limits: input.limits.clone(),
+        limits: input.limits,
         ..cadmpeg_core::decode::DecodePolicy::default()
     };
     let allocation_context = DecodeContext::for_encode(&allocation_arena, &allocation_policy);

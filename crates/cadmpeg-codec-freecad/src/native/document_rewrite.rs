@@ -65,7 +65,7 @@ mod tests {
             .unwrap();
         assert!(references.is_empty());
         let mut wire = serde_json::to_value(&facts).unwrap();
-        let mut map = IdentityMap::new(|id: &str| Ok(id.replace("#", "#changed-")));
+        let mut map = IdentityMap::new(|id: &str| Ok(id.replace('#', "#changed-")));
         let changed = facts.rewrite_identities(&ctx, &mut map).unwrap();
         DocumentFacts::rewrite_native_value(&ctx, &mut wire, &mut map).unwrap();
         assert_eq!(serde_json::to_value(&changed).unwrap(), wire);

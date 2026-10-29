@@ -52,8 +52,10 @@ fn uniform_pattern_intervals_yield_one_location_per_occurrence() {
                 4,
                 0,
                 ("Length", "Offset"),
-                &[],
-                sources,
+                crate::entry_sources::ArchiveEntries {
+                    records: &[],
+                    sources,
+                },
             )
             .expect("compute the pattern locations")
             .expect("uniform locations")

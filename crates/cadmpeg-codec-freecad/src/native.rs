@@ -1926,7 +1926,7 @@ impl PropertyRecord {
     pub(crate) fn values(&self) -> &[ValueRecord] {
         match &self.body {
             Some(PropertyBody::Persisted { values, .. }) => values,
-            Some(PropertyBody::Transient) | Some(PropertyBody::Unreadable(_)) | None => &[],
+            Some(PropertyBody::Transient | PropertyBody::Unreadable(_)) | None => &[],
         }
     }
 
@@ -1934,7 +1934,7 @@ impl PropertyRecord {
     pub(crate) fn links(&self) -> &[Option<LinkTarget>] {
         match &self.body {
             Some(PropertyBody::Persisted { links, .. }) => links,
-            Some(PropertyBody::Transient) | Some(PropertyBody::Unreadable(_)) | None => &[],
+            Some(PropertyBody::Transient | PropertyBody::Unreadable(_)) | None => &[],
         }
     }
 
@@ -1942,14 +1942,14 @@ impl PropertyRecord {
     pub(crate) fn side_entries(&self) -> &[String] {
         match &self.body {
             Some(PropertyBody::Persisted { side_entries, .. }) => side_entries,
-            Some(PropertyBody::Transient) | Some(PropertyBody::Unreadable(_)) | None => &[],
+            Some(PropertyBody::Transient | PropertyBody::Unreadable(_)) | None => &[],
         }
     }
 
     pub(crate) fn values_mut(&mut self) -> Option<&mut Vec<ValueRecord>> {
         match &mut self.body {
             Some(PropertyBody::Persisted { values, .. }) => Some(values),
-            Some(PropertyBody::Transient) | Some(PropertyBody::Unreadable(_)) | None => None,
+            Some(PropertyBody::Transient | PropertyBody::Unreadable(_)) | None => None,
         }
     }
 }

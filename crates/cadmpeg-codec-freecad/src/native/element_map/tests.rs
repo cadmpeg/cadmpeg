@@ -241,6 +241,7 @@ fn element_map_declared_count_is_independent_xml_metadata() {
 
 #[test]
 fn topology_binding_preserves_empty_indexed_name_slots() {
+    use cadmpeg_ir::schema::rewrite::typed::{IdentityMap, RewriteIdentities};
     let mapped_name = || ElementMappedName {
         encoded: ";stable.0".into(),
         resolved: Some("stable".into()),
@@ -288,7 +289,6 @@ Ed 0.001 1 1 0 1 1 0 0 1 0 1001000 +4 0 -3 0 *
         .unwrap();
     let mut ir = decoded.ir().clone();
     let ctx = cadmpeg_test_support::service_decode_context();
-    use cadmpeg_ir::schema::rewrite::typed::{IdentityMap, RewriteIdentities};
     let labels = [
         "edge-first-placement",
         "edge-second-placement",

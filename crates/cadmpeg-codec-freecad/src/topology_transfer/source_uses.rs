@@ -582,8 +582,8 @@ impl SourceCatalog {
 }
 
 /// Current neutral inverse rows for the roles historically named by each
-/// kernel kind. Wrapper Body/Region/Shell rows keep native_ref too, but are
-/// not mistaken for an Edge/Face/etc selection of the same source TShape.
+/// kernel kind. Wrapper Body/Region/Shell rows keep `native_ref` too, but are
+/// not mistaken for an Edge/Face/etc selection of the same source `TShape`.
 pub(crate) struct CurrentTopologyBindings {
     topology: CurrentNativeTopology,
     catalog: SourceCatalog,
@@ -628,10 +628,20 @@ pub(crate) fn current_bindings(
     ctx: &DecodeContext<'_>,
     ir: &cadmpeg_ir::CadIr,
 ) -> Result<CurrentTopologyBindings, CodecError> {
+    use crate::brep::TextShapeKind;
+    #[derive(Clone, Copy)]
+    enum NamedRole {
+        Body,
+        Region,
+        Shell,
+        Face,
+        Loop,
+        Edge,
+        Vertex,
+    }
     if let Some(refusal) = ctx.resource_refusal() {
         return Err(refusal.into());
     }
-    use crate::brep::TextShapeKind;
     let Some(namespace) = ir.native.namespace("fcstd") else {
         return Ok(CurrentTopologyBindings {
             topology: CurrentNativeTopology {
@@ -651,16 +661,6 @@ pub(crate) fn current_bindings(
         namespace.arena_as_for_decode::<crate::brep::ShapePayloadRecord>(ctx, "shape_payloads")?;
     let catalog = SourceCatalog::build(ctx, &payloads)?;
     let topology = current_native_topology(ctx, namespace, &payloads, &catalog)?;
-    #[derive(Clone, Copy)]
-    enum NamedRole {
-        Body,
-        Region,
-        Shell,
-        Face,
-        Loop,
-        Edge,
-        Vertex,
-    }
     let mut selections =
         HashMap::<String, HashMap<&'static str, HashMap<usize, Vec<String>>>>::new();
     for (native, source) in &topology.uses {

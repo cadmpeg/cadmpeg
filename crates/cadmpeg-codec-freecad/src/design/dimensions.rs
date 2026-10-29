@@ -127,7 +127,7 @@ fn operand(
 }
 
 pub(super) fn bind(
-    definition: FeatureDefinition,
+    definition: &FeatureDefinition,
     owner: &FeatureId,
     parameters: &[DesignParameter],
 ) -> Result<FeatureDefinition, CodecError> {
@@ -136,7 +136,7 @@ pub(super) fn bind(
         .filter(|parameter| parameter.owner.as_ref() == Some(owner))
         .map(|parameter| (parameter.name.as_str(), &parameter.id))
         .collect();
-    let mut value = serde_json::to_value(&definition).map_err(CodecError::malformed)?;
+    let mut value = serde_json::to_value(definition).map_err(CodecError::malformed)?;
     let operation = if value["definition"] == "post_process" {
         if value["fuzzy_tolerance"]["kind"] == "explicit" {
             if let Some(id) = ids.get("FuzzyTolerance") {

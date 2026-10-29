@@ -7,6 +7,7 @@ use crate::FcstdCodec;
 use cadmpeg_ir::codec::write::{target::TargetRequest, EncodeInput, Encoder};
 use cadmpeg_ir::products::{AssemblyGraph, OccurrenceParent, PrototypeReference};
 use cadmpeg_ir::{Codec, DecodeOptions};
+use std::fmt::Write as _;
 use std::io::{Cursor, Read};
 
 #[test]
@@ -37,16 +38,21 @@ fn known_pose_roots_and_siblings_use_authored_native_declaration_order() {
     ];
     let declarations = records
         .iter()
-        .map(|(name, kind, _, _)| format!(r#"<Object name="{name}" type="{kind}"/>"#))
-        .collect::<String>();
+        .fold(String::new(), |mut out, (name, kind, _, _)| {
+            write!(out, r#"<Object name="{name}" type="{kind}"/>"#)
+                .expect("writing to a String succeeds");
+            out
+        });
     let data = records
         .iter()
-        .map(|(name, _, count, props)| {
-            format!(
+        .fold(String::new(), |mut out, (name, _, count, props)| {
+            write!(
+                out,
                 r#"<Object name="{name}"><Properties Count="{count}">{props}</Properties></Object>"#
             )
-        })
-        .collect::<String>();
+            .expect("writing to a String succeeds");
+            out
+        });
     let source = format!(
         r#"<Document SchemaVersion="4" FileVersion="1"><Objects Count="5">{declarations}</Objects><ObjectData Count="5">{data}</ObjectData></Document>"#
     );

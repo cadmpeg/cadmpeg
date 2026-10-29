@@ -407,7 +407,7 @@ fn transfer_impl(
             || consumed(ir, property, objects)
             || matches!(
                 property.body,
-                Some(PropertyBody::Transient) | Some(PropertyBody::Unreadable(_)) | None
+                Some(PropertyBody::Transient | PropertyBody::Unreadable(_)) | None
             )
         {
             continue;

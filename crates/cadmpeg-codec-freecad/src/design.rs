@@ -85,14 +85,17 @@ pub(crate) fn transfer(
     graph: DesignObjects<'_>,
     properties: &[PropertyRecord],
     payloads: &[ShapePayloadRecord],
-    entries: &[EntryRecord],
-    entry_sources: &crate::entry_sources::EntrySources<'_>,
+    archive: crate::entry_sources::ArchiveEntries<'_>,
     program_version: Option<&str>,
 ) -> Result<(BTreeSet<String>, Vec<cadmpeg_ir::report::loss::LossNote>), CodecError> {
     let DesignObjects {
         objects,
         extensions,
     } = graph;
+    let crate::entry_sources::ArchiveEntries {
+        records: entries,
+        sources: entry_sources,
+    } = archive;
     let attachment_owners = extensions
         .iter()
         .filter(|extension| {
@@ -391,7 +394,7 @@ pub(crate) fn transfer(
             &owned,
             Some(&feature_id(object)?),
         )?;
-        let definition = dimensions::bind(definition, &feature_id(object)?, &ir.model.parameters)?;
+        let definition = dimensions::bind(&definition, &feature_id(object)?, &ir.model.parameters)?;
         let mut outputs = Vec::new();
         for payload in payloads
             .iter()
@@ -2951,7 +2954,7 @@ fn expression_binding(properties: &[&PropertyRecord], path: &str) -> Option<(Str
 }
 
 fn bind_parameter_dependencies(
-    parameters: &mut Vec<DesignParameter>,
+    parameters: &mut [DesignParameter],
     objects: &[ObjectRecord],
     features: &[Feature],
     constraints: &[SketchConstraint],
@@ -7779,8 +7782,10 @@ fn pattern_kind<C: cadmpeg_ir::features::patterns::CompositeStages>(
             count,
             mode,
             ("Angle", "Offset"),
-            entries,
-            entry_sources,
+            crate::entry_sources::ArchiveEntries {
+                records: entries,
+                sources: entry_sources,
+            },
         )?
         else {
             return Ok(None);
@@ -7876,8 +7881,10 @@ fn linear_pattern_axis(
         count,
         mode,
         ("Length", "Offset"),
-        entries,
-        entry_sources,
+        crate::entry_sources::ArchiveEntries {
+            records: entries,
+            sources: entry_sources,
+        },
     )?
     else {
         return Ok(None);
@@ -7945,10 +7952,13 @@ fn pattern_locations(
     count: u32,
     mode: u64,
     value_fields: (&str, &str),
-    entries: &[EntryRecord],
-    entry_sources: &crate::entry_sources::EntrySources<'_>,
+    archive: crate::entry_sources::ArchiveEntries<'_>,
 ) -> Result<Option<Vec<FiniteReal>>, CodecError> {
     let (extent_base, offset_base) = value_fields;
+    let crate::entry_sources::ArchiveEntries {
+        records: entries,
+        sources: entry_sources,
+    } = archive;
     if count == 0 {
         return Ok(None);
     }

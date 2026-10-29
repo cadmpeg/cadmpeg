@@ -78,14 +78,16 @@ fn map(ir: &CadIr) -> ElementMapRecord {
         .remove(0)
 }
 
+type EmittedShapes = (
+    Vec<(String, Vec<EmittedTopologyUse>)>,
+    BTreeMap<String, Vec<u8>>,
+);
+
 fn emit(
     ctx: &DecodeContext<'_>,
     ir: &CadIr,
     bodies: &[&cadmpeg_ir::topology::Body],
-) -> (
-    Vec<(String, Vec<EmittedTopologyUse>)>,
-    BTreeMap<String, Vec<u8>>,
-) {
+) -> EmittedShapes {
     let current = crate::topology_transfer::current_bindings(ctx, ir).unwrap();
     let roots = crate::writer::brep::RootKinds::new(ctx, ir, &current).unwrap();
     let shape = crate::writer::brep::serialize_with_uses(ctx, ir, bodies, &roots)
