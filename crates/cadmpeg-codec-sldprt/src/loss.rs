@@ -125,6 +125,16 @@ pub(crate) enum SldprtLossCode {
     TopologyFaceUnclaimed,
     /// Referenced FIN records have conflicting complete frames.
     TopologyFinRecordAmbiguous,
+    /// A canonical edge whose FIN record is an unwalked boundary dummy lacks
+    /// reciprocal partner corroboration of both ring-order endpoints, or a
+    /// mutual twin FIN contradicts the ring-order endpoint.
+    TopologyFinPartnerUnresolved,
+    /// A FIN backward link names no reciprocal same-loop forward link, so
+    /// its ring is withheld instead of walked on doubt.
+    TopologyFinLinkUnresolved,
+    /// Vertexless ring FINs fail strict reciprocal-circle single-loop
+    /// admission, so no vertex is invented for them.
+    TopologyRingEdgeWithheld,
     /// Referenced LOOP records have conflicting complete frames.
     TopologyLoopRecordAmbiguous,
     /// Referenced VERTEX records lack a complete owner-verified frame or IR-supported tolerance.
@@ -233,6 +243,9 @@ impl SldprtLossCode {
         Self::TopologyFaceSenseConflict,
         Self::TopologyFaceUnclaimed,
         Self::TopologyFinRecordAmbiguous,
+        Self::TopologyFinPartnerUnresolved,
+        Self::TopologyFinLinkUnresolved,
+        Self::TopologyRingEdgeWithheld,
         Self::TopologyLoopRecordAmbiguous,
         Self::TopologyVertexRecordUnresolved,
         Self::TopologyPcurveCarrierOffSurface,
@@ -309,6 +322,9 @@ impl SldprtLossCode {
             Self::TopologyFaceSenseConflict => "topology.face-sense-conflict",
             Self::TopologyFaceUnclaimed => "topology.face-unclaimed",
             Self::TopologyFinRecordAmbiguous => "topology.fin-record-ambiguous",
+            Self::TopologyFinPartnerUnresolved => "topology.fin-partner-unresolved",
+            Self::TopologyFinLinkUnresolved => "topology.fin-link-unresolved",
+            Self::TopologyRingEdgeWithheld => "topology.ring-edge-withheld",
             Self::TopologyLoopRecordAmbiguous => "topology.loop-record-ambiguous",
             Self::TopologyVertexRecordUnresolved => "topology.vertex-record-unresolved",
             Self::TopologyPcurveCarrierOffSurface => "topology.pcurve-carrier-off-surface",
@@ -400,6 +416,9 @@ impl SldprtLossCode {
             | Self::TopologyFaceSenseConflict
             | Self::TopologyFaceUnclaimed
             | Self::TopologyFinRecordAmbiguous
+            | Self::TopologyFinPartnerUnresolved
+            | Self::TopologyFinLinkUnresolved
+            | Self::TopologyRingEdgeWithheld
             | Self::TopologyLoopRecordAmbiguous
             | Self::TopologyVertexRecordUnresolved
             | Self::TopologyPcurveCarrierOffSurface
@@ -436,6 +455,9 @@ impl SldprtLossCode {
             }
             Self::TopologyFaceUnclaimed
             | Self::TopologyFinRecordAmbiguous
+            | Self::TopologyFinPartnerUnresolved
+            | Self::TopologyFinLinkUnresolved
+            | Self::TopologyRingEdgeWithheld
             | Self::TopologyLoopRecordAmbiguous
             | Self::TopologyVertexRecordUnresolved => LossTaxonomy::TopologyNotTransferred,
             Self::TopologyPcurveCarrierOffSurface => LossTaxonomy::PcurveOmitted,
@@ -678,6 +700,9 @@ mod tests {
                 "topology.face-sense-conflict",
                 "topology.face-unclaimed",
                 "topology.fin-record-ambiguous",
+                "topology.fin-partner-unresolved",
+                "topology.fin-link-unresolved",
+                "topology.ring-edge-withheld",
                 "topology.loop-record-ambiguous",
                 "topology.vertex-record-unresolved",
                 "topology.pcurve-carrier-off-surface",
