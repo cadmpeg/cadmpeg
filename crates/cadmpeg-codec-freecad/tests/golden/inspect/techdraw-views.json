@@ -166,7 +166,6 @@
     "document root=Document",
     "document kind=drawing",
     "object count=15",
-    "physical ledger spans=78 coverage=exact",
     "ProgramVersion=1.1R45039 (Git)"
   ]
 }

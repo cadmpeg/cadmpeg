@@ -1,8 +1,7 @@
 {
   "decode": {
     "ir": {
-      "decode_depth": "full",
-      "ir_version": "9",
+      "ir_version": "10",
       "model": {
         "appearance_bindings": [],
         "appearances": [],
@@ -215,6 +214,10 @@
           ]
         }
       },
+      "scope": {
+        "design": true,
+        "model": true
+      },
       "source": {
         "attributes": {
           "deltas.0.bytes_decoded": "0",
@@ -229,7 +232,6 @@
           "file_size": "531",
           "footer_entry_count": "0",
           "footer_fingerprint": "00000000",
-          "footer_offset": "517",
           "header_entry_count": "1",
           "jpeg_preview_count": "0",
           "partition_streams": "1",
@@ -359,7 +361,10 @@
       ],
       "transfer": {
         "geometry_transferred": true,
-        "transfer": "full"
+        "scope": {
+          "design": true,
+          "model": true
+        }
       }
     },
     "source_fidelity": {
@@ -505,7 +510,8 @@
             "retention": "inline"
           },
           "offset": 76,
-          "stream": "nx:container"
+          "stream": "nx:container",
+          "untyped": []
         },
         "nx:container:parasolid#1": {
           "bytes": {
@@ -513,9 +519,20 @@
             "retention": "inline"
           },
           "offset": 364,
-          "stream": "nx:container"
+          "stream": "nx:container",
+          "untyped": []
+        },
+        "nx:source:image#whole": {
+          "bytes": {
+            "data": "U1BMTVNTVFIGAAAAAAAAAAAFAgAAAAAAAEhFQURFUgEAAAAVAAAAL1Jvb3QvVUdfUEFSVC9VR19QQVJUTAAAAAAAAAC5AQAAAAAAAHgBdVA9T8NADH0HtAHaUr4mBNWN0AoBRUKC5YSqApUAAQlzFGiGSoWiKAuwwj9gZmdh7t+BtQs/gZev00ltHJ/9/GyfL76yAewcSefm+NK+6DjypHPelptPXhD2wt7gcUveB74X+l159ywfBl2/3/cDtlTt1pnrtG3H3XMPKUAZU+THtYLpmBTMC8xA8CvzLBAjElU/+B2tt7bJCRRYXWxEdHqqpBJosUFgCRbDAq2FeQjMogI0sEiASNT+V333tumxABQmaYEmirHXxpyhyUlA/SVs5pPIsDXMGRFh7tW5VyzzV9iotaTW0p0AK9ysThBsoESrVb29/Jx+r76qj9R/Dq9H77UhZLQYGJL7LKMmhtkzMx+ThtGj0tH/3EE4q3gBXUs7CsJAFJxgLd5AXqloY6nNIhIxYCS626+JWRCJCHEbGzvBxsre3huk8BRew0ZbsXDBV0iGgfkwE0kA7R6pWX8iw0DRMBj71EhNZuNtkxa5ia1JKdnReuPKzORuX5ODkVa+VLqjuw4AoQpUTvC8f7ZElIT31/Uj5qzLs72t9m8wxJMNSzlzDXEppo9DvRDH3/8LWt8tIEZPT1RFUgAAAAAAAAAA",
+            "retention": "inline"
+          },
+          "offset": 0,
+          "stream": "nx:source",
+          "untyped": []
         }
-      }
+      },
+      "unrepresented": []
     }
   },
   "inspect": {

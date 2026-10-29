@@ -1,8 +1,7 @@
 {
   "decode": {
     "ir": {
-      "decode_depth": "full",
-      "ir_version": "9",
+      "ir_version": "10",
       "model": {
         "appearance_bindings": [],
         "appearances": [],
@@ -24,6 +23,7 @@
             "id": "nx:feature-history:feature#0000000000-0000000000",
             "name": "SKIN",
             "native_ref": "nx:feature-history:operation-label#0000000000-0000000000",
+            "needs_recompute": false,
             "ordinal": 0,
             "source_properties": {
               "object_index.0": "null",
@@ -875,6 +875,10 @@
           ]
         }
       },
+      "scope": {
+        "design": true,
+        "model": false
+      },
       "source": {
         "attributes": {
           "classified_offset_store_control_count": "0",
@@ -883,7 +887,6 @@
           "file_size": "636",
           "footer_entry_count": "0",
           "footer_fingerprint": "00000000",
-          "footer_offset": "622",
           "header_entry_count": "1",
           "jpeg_preview_count": "0",
           "offset_store_control_count": "1",
@@ -948,6 +951,17 @@
           },
           "message": "1 of 1 bounded offset-store control block(s) have no admitted complete grammar.",
           "severity": "warning"
+        },
+        {
+          "code": {
+            "code": "depth.not-delivered",
+            "kind": "geometry_not_transferred",
+            "namespace": "decode",
+            "scope": "namespaced",
+            "strict_floor": "warning"
+          },
+          "message": "requested full depth but the nx decoder did not deliver classes: model",
+          "severity": "error"
         }
       ],
       "notes": [
@@ -959,7 +973,10 @@
       ],
       "transfer": {
         "geometry_transferred": false,
-        "transfer": "full"
+        "scope": {
+          "design": true,
+          "model": false
+        }
       }
     },
     "source_fidelity": {
@@ -1125,7 +1142,8 @@
             "retention": "inline"
           },
           "offset": 586,
-          "stream": "nx:container"
+          "stream": "nx:container",
+          "untyped": []
         },
         "nx:om-section-0:block#1": {
           "bytes": {
@@ -1133,7 +1151,8 @@
             "retention": "inline"
           },
           "offset": 602,
-          "stream": "nx:container"
+          "stream": "nx:container",
+          "untyped": []
         },
         "nx:om-section-0:block#10": {
           "bytes": {
@@ -1141,7 +1160,8 @@
             "retention": "inline"
           },
           "offset": 611,
-          "stream": "nx:container"
+          "stream": "nx:container",
+          "untyped": []
         },
         "nx:om-section-0:block#11": {
           "bytes": {
@@ -1149,7 +1169,8 @@
             "retention": "inline"
           },
           "offset": 612,
-          "stream": "nx:container"
+          "stream": "nx:container",
+          "untyped": []
         },
         "nx:om-section-0:block#12": {
           "bytes": {
@@ -1157,7 +1178,8 @@
             "retention": "inline"
           },
           "offset": 613,
-          "stream": "nx:container"
+          "stream": "nx:container",
+          "untyped": []
         },
         "nx:om-section-0:block#13": {
           "bytes": {
@@ -1165,7 +1187,8 @@
             "retention": "inline"
           },
           "offset": 614,
-          "stream": "nx:container"
+          "stream": "nx:container",
+          "untyped": []
         },
         "nx:om-section-0:block#14": {
           "bytes": {
@@ -1173,7 +1196,8 @@
             "retention": "inline"
           },
           "offset": 615,
-          "stream": "nx:container"
+          "stream": "nx:container",
+          "untyped": []
         },
         "nx:om-section-0:block#15": {
           "bytes": {
@@ -1181,7 +1205,8 @@
             "retention": "inline"
           },
           "offset": 616,
-          "stream": "nx:container"
+          "stream": "nx:container",
+          "untyped": []
         },
         "nx:om-section-0:block#16": {
           "bytes": {
@@ -1189,7 +1214,8 @@
             "retention": "inline"
           },
           "offset": 617,
-          "stream": "nx:container"
+          "stream": "nx:container",
+          "untyped": []
         },
         "nx:om-section-0:block#17": {
           "bytes": {
@@ -1197,7 +1223,8 @@
             "retention": "inline"
           },
           "offset": 618,
-          "stream": "nx:container"
+          "stream": "nx:container",
+          "untyped": []
         },
         "nx:om-section-0:block#18": {
           "bytes": {
@@ -1205,7 +1232,8 @@
             "retention": "inline"
           },
           "offset": 619,
-          "stream": "nx:container"
+          "stream": "nx:container",
+          "untyped": []
         },
         "nx:om-section-0:block#19": {
           "bytes": {
@@ -1213,7 +1241,8 @@
             "retention": "inline"
           },
           "offset": 620,
-          "stream": "nx:container"
+          "stream": "nx:container",
+          "untyped": []
         },
         "nx:om-section-0:block#2": {
           "bytes": {
@@ -1221,7 +1250,8 @@
             "retention": "inline"
           },
           "offset": 603,
-          "stream": "nx:container"
+          "stream": "nx:container",
+          "untyped": []
         },
         "nx:om-section-0:block#20": {
           "bytes": {
@@ -1229,7 +1259,8 @@
             "retention": "inline"
           },
           "offset": 621,
-          "stream": "nx:container"
+          "stream": "nx:container",
+          "untyped": []
         },
         "nx:om-section-0:block#3": {
           "bytes": {
@@ -1237,7 +1268,8 @@
             "retention": "inline"
           },
           "offset": 604,
-          "stream": "nx:container"
+          "stream": "nx:container",
+          "untyped": []
         },
         "nx:om-section-0:block#4": {
           "bytes": {
@@ -1245,7 +1277,8 @@
             "retention": "inline"
           },
           "offset": 605,
-          "stream": "nx:container"
+          "stream": "nx:container",
+          "untyped": []
         },
         "nx:om-section-0:block#5": {
           "bytes": {
@@ -1253,7 +1286,8 @@
             "retention": "inline"
           },
           "offset": 606,
-          "stream": "nx:container"
+          "stream": "nx:container",
+          "untyped": []
         },
         "nx:om-section-0:block#6": {
           "bytes": {
@@ -1261,7 +1295,8 @@
             "retention": "inline"
           },
           "offset": 607,
-          "stream": "nx:container"
+          "stream": "nx:container",
+          "untyped": []
         },
         "nx:om-section-0:block#7": {
           "bytes": {
@@ -1269,7 +1304,8 @@
             "retention": "inline"
           },
           "offset": 608,
-          "stream": "nx:container"
+          "stream": "nx:container",
+          "untyped": []
         },
         "nx:om-section-0:block#8": {
           "bytes": {
@@ -1277,7 +1313,8 @@
             "retention": "inline"
           },
           "offset": 609,
-          "stream": "nx:container"
+          "stream": "nx:container",
+          "untyped": []
         },
         "nx:om-section-0:block#9": {
           "bytes": {
@@ -1285,9 +1322,26 @@
             "retention": "inline"
           },
           "offset": 610,
-          "stream": "nx:container"
+          "stream": "nx:container",
+          "untyped": []
+        },
+        "nx:source:image#whole": {
+          "bytes": {
+            "data": "U1BMTVNTVFIGAAAAAAAAAABuAgAAAAAAAEhFQURFUgEAAAAVAAAAL1Jvb3QvVUdfUEFSVC9VR19QQVJUTAAAAAAAAAAiAgAAAAAAACAAAAAJAAAACwAAAAEAAAABAAAAGAAAAAAAAAAAAAAA/////wAAAAAAAAFYT03//wABAhRVR1M6OkZFQVRVUkVfUkVDT1JEoIEhASNFZ4mrze8GIVVHUzo6TW9kbFV0aWxzOjpCb29sZWFuQ29tcG9uZW50ZQltX3RhcmdldIABAghtX3Rvb2xzgQMEdW5mcmFtZWQgVUdTOjpQYXlsb2FkVGV4dJkAAAAAAAAAAAAAAAAAAAAAAAAADQAAAA4AAAAsAAAABQEOTlggMjAyNy4zMTAyAIDNAQQBL6R64UeuFHv///////8DBlNLSU4APwAAAQDwAfAC8AMBCQICAgUCAQEBAQnwBPAF8AbwB/AI8AnwCvALAgGgWlAVAQMWAQLwDAECAAAAAAD/AQLwDQCgEFQWAQLwDgECAAAAAAD/AQLwDwBdAQIWAQLwEAECAAAAAAD/AQLwEQCJHAAAAAEDAAAA//8BAwMvpHrhR64Ue/AS8BPwFAEB////////////AAAAAAECqqqqqqqqqqoRVUdTOjpNb2RsRmVhdHVyZYH+AQAADgIAAA8CAAAQAgAAEQIAABICAAATAgAAFAIAABUCAAAWAgAAFwIAABgCAAAZAgAAGgIAABsCAAAcAgAAHQIAAB4CAAAfAgAAIAIAACECAAAiAgAAFAAAAAQBDk5YIDIwMjcuMzEwMgBBQUFBQUFBQUFBQUFBQUFBQUFBQUZPT1RFUgAAAAAAAAAA",
+            "retention": "inline"
+          },
+          "offset": 0,
+          "stream": "nx:source",
+          "untyped": [
+            "model",
+            "design"
+          ]
         }
-      }
+      },
+      "unrepresented": [
+        "model",
+        "design"
+      ]
     }
   },
   "inspect": {

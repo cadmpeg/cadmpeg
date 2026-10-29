@@ -1,7 +1,6 @@
 {
   "ir": {
-    "decode_depth": "full",
-    "ir_version": "9",
+    "ir_version": "10",
     "model": {
       "appearance_bindings": [],
       "appearances": [],
@@ -46,7 +45,6 @@
         "active_carrier": [
           {
             "carrier_len": null,
-            "carrier_offset": null,
             "carrier_sha256": null,
             "delta_state": null,
             "detail": null,
@@ -68,7 +66,6 @@
         "assembly_groundings": [],
         "assembly_occurrences": [],
         "assembly_placements": [],
-        "assembly_record_issues": [],
         "body_native_keys": [],
         "database_issues": [],
         "databases": [],
@@ -109,7 +106,6 @@
         "pm_graphics_faces": [],
         "pm_graphics_primary_color_styles": [],
         "pm_graphics_style_collections": [],
-        "presentation_record_issues": [],
         "properties": [],
         "property_sections": [],
         "property_set_issues": [],
@@ -175,6 +171,10 @@
         "wire_topologies": []
       }
     },
+    "scope": {
+      "design": true,
+      "model": true
+    },
     "source": {
       "attributes": {
         "cfb_major_version": "3",
@@ -215,7 +215,6 @@
       "assembly_occurrences": 0,
       "assembly_occurrences_transferred": 0,
       "assembly_placements": 0,
-      "assembly_record_issues": 0,
       "design_parameters_transferred": 0,
       "design_record_issues": 0,
       "embedded_references": 0,
@@ -247,7 +246,6 @@
       "pm_graphics_faces": 0,
       "pm_graphics_primary_color_styles": 0,
       "pm_graphics_style_collections": 0,
-      "presentation_record_issues": 0,
       "preview_assets": 0,
       "properties": 0,
       "property_sets": 0,
@@ -317,10 +315,30 @@
     "notes": [],
     "transfer": {
       "geometry_transferred": false,
-      "transfer": "full"
+      "scope": {
+        "design": true,
+        "model": true
+      }
     }
   },
   "source_fidelity": {
-    "annotations": {}
+    "annotations": {},
+    "retained_records": {
+      "inventor:source:image#whole": {
+        "bytes": {
+          "byte_len": 1536,
+          "retention": "digest",
+          "sha256": "41556a60229e345e81f4ea0992ff6594edba01e4010a3c3463218d5b7fbe371d"
+        },
+        "offset": 0,
+        "stream": "inventor:source",
+        "untyped": [
+          "model"
+        ]
+      }
+    },
+    "unrepresented": [
+      "model"
+    ]
   }
 }

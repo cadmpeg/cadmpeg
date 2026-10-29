@@ -179,7 +179,6 @@
     "document root=Document",
     "document kind=part-design",
     "object count=17",
-    "physical ledger spans=85 coverage=exact",
     "ProgramVersion=1.1R20260414 (Git shallow)"
   ]
 }

@@ -111,16 +111,6 @@
       },
       {
         "code": {
-          "code": "writer.passthrough-omitted",
-          "kind": "passthrough_record_omitted",
-          "namespace": "iges",
-          "scope": "namespaced"
-        },
-        "message": "IGES native arena unknowns is not regenerated; 1 record(s) omitted",
-        "severity": "warning"
-      },
-      {
-        "code": {
           "code": "writer.attribute-omitted",
           "kind": "metadata_not_transferred",
           "namespace": "iges",

@@ -1,6 +1,6 @@
 {
   "ir": {
-    "ir_version": "8",
+    "ir_version": "10",
     "model": {
       "appearance_bindings": [],
       "appearances": [],
@@ -226,7 +226,7 @@
         ],
         "face_sidedness": [
           {
-            "face": "sat:brep:entity#4",
+            "face_key": "sat:asm:face-native-key#4",
             "id": "sat:asm:face-sidedness#4",
             "native_sense": "forward",
             "normalized_sense": "forward",

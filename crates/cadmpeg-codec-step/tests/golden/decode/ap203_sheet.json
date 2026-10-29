@@ -1,7 +1,6 @@
 {
   "ir": {
-    "decode_depth": "full",
-    "ir_version": "9",
+    "ir_version": "10",
     "model": {
       "appearance_bindings": [],
       "appearances": [],
@@ -370,16 +369,12 @@
       "view_presentations": []
     },
     "native": {},
+    "scope": {
+      "design": true,
+      "model": true
+    },
     "source": {
-      "attributes": {
-        "bytes_named_opaque": "0",
-        "bytes_structural": "284",
-        "bytes_typed": "1459",
-        "bytes_unclassified": "0",
-        "data_sections": "1",
-        "entity_instances": "37",
-        "schema": "CONFIG_CONTROL_DESIGN"
-      },
+      "attributes": {},
       "identity": {
         "classification": "classified",
         "dialects": {
@@ -436,10 +431,23 @@
     ],
     "transfer": {
       "geometry_transferred": true,
-      "transfer": "full"
+      "scope": {
+        "design": true,
+        "model": true
+      }
     }
   },
   "source_fidelity": {
-    "annotations": {}
+    "annotations": {},
+    "metadata": {
+      "bytes_named_opaque": "0",
+      "bytes_structural": "284",
+      "bytes_typed": "1459",
+      "bytes_unclassified": "0",
+      "data_sections": "1",
+      "entity_instances": "37",
+      "schema": "CONFIG_CONTROL_DESIGN"
+    },
+    "unrepresented": []
   }
 }

@@ -1,8 +1,7 @@
 {
   "decode": {
     "ir": {
-      "decode_depth": "full",
-      "ir_version": "9",
+      "ir_version": "10",
       "model": {
         "appearance_bindings": [],
         "appearances": [],
@@ -48,6 +47,7 @@
             },
             "id": "nx:om-entry-0:feature#equations-90",
             "name": "NX expressions",
+            "needs_recompute": false,
             "ordinal": 0,
             "source_content": [
               {
@@ -63,7 +63,15 @@
         "occurrences": [],
         "parameters": [
           {
-            "expression": "120",
+            "driving": true,
+            "expression": {
+              "tokens": [
+                {
+                  "kind": "text",
+                  "value": "2.0943951023931953 rad"
+                }
+              ]
+            },
             "id": "nx:om-entry-0:parameter#173",
             "name": "p8_CircularPattern_pattern_Circular_Dir_offset_angle",
             "native_ref": "nx:om-entry-0:expression#173",
@@ -353,6 +361,10 @@
           ]
         }
       },
+      "scope": {
+        "design": true,
+        "model": true
+      },
       "source": {
         "attributes": {
           "deltas_streams": "0",
@@ -360,7 +372,6 @@
           "file_size": "593",
           "footer_entry_count": "0",
           "footer_fingerprint": "00000000",
-          "footer_offset": "579",
           "header_entry_count": "1",
           "jpeg_preview_count": "0",
           "partition_streams": "1",
@@ -461,7 +472,10 @@
       ],
       "transfer": {
         "geometry_transferred": true,
-        "transfer": "full"
+        "scope": {
+          "design": true,
+          "model": true
+        }
       }
     },
     "source_fidelity": {
@@ -592,7 +606,8 @@
             "retention": "inline"
           },
           "offset": 357,
-          "stream": "nx:container"
+          "stream": "nx:container",
+          "untyped": []
         },
         "nx:om-section-0:record#0": {
           "bytes": {
@@ -600,7 +615,8 @@
             "retention": "inline"
           },
           "offset": 150,
-          "stream": "nx:container"
+          "stream": "nx:container",
+          "untyped": []
         },
         "nx:om-section-0:record#1": {
           "bytes": {
@@ -608,9 +624,20 @@
             "retention": "inline"
           },
           "offset": 185,
-          "stream": "nx:container"
+          "stream": "nx:container",
+          "untyped": []
+        },
+        "nx:source:image#whole": {
+          "bytes": {
+            "data": "U1BMTVNTVFIGAAAAAAAAAABDAgAAAAAAAEhFQURFUgEAAAAVAAAAL1Jvb3QvVUdfUEFSVC9VR19QQVJUTAAAAAAAAAD3AQAAAAAAAKqqqqqqqqqqFFVHUzo6RVhQX2V4cHJlc3Npb26BqqqqCW1fdGFyZ2V0gAAAAABCAAAAZQAAABEBAAADAAAAAAEAAAEBAAACAQAABAEOTlggMjAyNy4zMTAyAGhvc3RnbG9iYWx2YXJpYWJsZXMENnA4X0NpcmN1bGFyUGF0dGVybl9wYXR0ZXJuX0NpcmN1bGFyX0Rpcl9vZmZzZXRfYW5nbGUABAUxMjAAmQRQKE51bWJlciBbZGVncmVlc10pIHA4X0NpcmN1bGFyUGF0dGVybl9wYXR0ZXJuX0NpcmN1bGFyX0Rpcl9vZmZzZXRfYW5nbGU6IDEyMDsgAGYyAwxTS0VUQ0hfMDAxAOASNFZ4yrze8AECkAAAeAGNTL0LAWEYf/KxWCxWehdFt/iKWN4kX4Vwt18+3kH56hyFiUiZJZPRKGVR/gB/gsHEajFYlbc7d5105en5+H30/PIsAOAI4orRHJtNcyiRzsSRq10SxJpYazXdqCKQkkiqqNxHjVaV1OtEQD0idKiJ/AGPxxsK0ggrG0vxXJzleC8fpgVgBwPV1cY7FUoAzw1dZ8KyAR8YJUFdDN6Pzpfn7KUqOgA/ZEO5MtNsP5g0jEKGzl+tROL28rg63cYK/3l2gPlbY/BkcE1ubUO8+Nz1oXCfOg56EW/s9TnvRk9PVEVSAAAAAAAAAAA=",
+            "retention": "inline"
+          },
+          "offset": 0,
+          "stream": "nx:source",
+          "untyped": []
         }
-      }
+      },
+      "unrepresented": []
     }
   },
   "inspect": {

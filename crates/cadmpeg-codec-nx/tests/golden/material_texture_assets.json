@@ -1,8 +1,7 @@
 {
   "decode": {
     "ir": {
-      "decode_depth": "full",
-      "ir_version": "9",
+      "ir_version": "10",
       "model": {
         "appearance_bindings": [],
         "appearances": [],
@@ -183,6 +182,10 @@
           ]
         }
       },
+      "scope": {
+        "design": true,
+        "model": true
+      },
       "source": {
         "attributes": {
           "deltas_streams": "0",
@@ -190,7 +193,6 @@
           "file_size": "434",
           "footer_entry_count": "0",
           "footer_fingerprint": "00000000",
-          "footer_offset": "420",
           "header_entry_count": "3",
           "jpeg_preview_count": "0",
           "partition_streams": "1",
@@ -282,6 +284,16 @@
           },
           "message": "The Parasolid stream at stream@178 declares schema \"SCH_TEST_1_9999\", which has no declared grammar. It was admitted as the `parasolid:unknown` residual layer without substituting another schema grammar; bounded structural recovery retains the source stream.",
           "severity": "warning"
+        },
+        {
+          "code": {
+            "code": "projection.record-unprojected",
+            "kind": "metadata_not_transferred",
+            "namespace": "nx",
+            "scope": "namespaced"
+          },
+          "message": "Material texture record nx:container:material-texture#0 (material_texture_assets) retains decoded resource/catalog fields, but no decoded shader slot, material assignment or texture mapping supplies the required neutral appearance fields; no default mapping was invented.",
+          "severity": "warning"
         }
       ],
       "notes": [
@@ -290,7 +302,10 @@
       ],
       "transfer": {
         "geometry_transferred": true,
-        "transfer": "full"
+        "scope": {
+          "design": true,
+          "model": true
+        }
       }
     },
     "source_fidelity": {
@@ -399,9 +414,20 @@
             "retention": "inline"
           },
           "offset": 178,
-          "stream": "nx:container"
+          "stream": "nx:container",
+          "untyped": []
+        },
+        "nx:source:image#whole": {
+          "bytes": {
+            "data": "U1BMTVNTVFIGAAAAAAAAAACkAQAAAAAAAEhFQURFUgMAAAAVAAAAL1Jvb3QvVUdfUEFSVC9VR19QQVJUsgAAAAAAAADeAAAAAAAAACIAAAAvUm9vdC9tYXRlcmlhbHNUaWYvQUlTSSBTdGVlbCA0MzQwkAEAAAAAAAAKAAAAAAAAABwAAAAvUm9vdC9tYXRlcmlhbHNUaWYvVHJ1bmNhdGVkmgEAAAAAAAAKAAAAAAAAAHgBjUy9CwFhGH/ysVgsVnoXRbf4iljeJF+FcLdfPt5B+eochYlImSWT0ShlUf4Af4LBxGoxWJW3O3eddOXp+fh99PzyLADgCOKK0RybTXMokc7EkatdEsSaWGs13agikJJIqqjcR41WldTrREA9InSoifwBj8cbCtIIKxtL8Vyc5XgvH6YFYAcD1dXGOxVKAM8NXWfCsgEfGCVBXQzej86X5+ylKjoAP2RDuTLTbD+YNIxChs5frUTi9vK4Ot3GCv95doD5W2PwZHBNbm1DvPjc9aFwnzoOehFv7PU570lJKgAIAAAAAABJSSoAKAAAAAAARk9PVEVSAAAAAAAAAAA=",
+            "retention": "inline"
+          },
+          "offset": 0,
+          "stream": "nx:source",
+          "untyped": []
         }
-      }
+      },
+      "unrepresented": []
     }
   },
   "inspect": {

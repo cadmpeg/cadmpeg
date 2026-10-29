@@ -1,8 +1,7 @@
 {
   "decode": {
     "ir": {
-      "decode_depth": "full",
-      "ir_version": "9",
+      "ir_version": "10",
       "model": {
         "appearance_bindings": [],
         "appearances": [],
@@ -195,6 +194,10 @@
           ]
         }
       },
+      "scope": {
+        "design": true,
+        "model": true
+      },
       "source": {
         "attributes": {
           "deltas_streams": "0",
@@ -202,7 +205,6 @@
           "file_size": "888",
           "footer_entry_count": "0",
           "footer_fingerprint": "00000000",
-          "footer_offset": "874",
           "header_entry_count": "3",
           "jpeg_preview_count": "0",
           "partition_streams": "1",
@@ -294,6 +296,26 @@
           },
           "message": "The Parasolid stream at stream@159 declares schema \"SCH_TEST_1_9999\", which has no declared grammar. It was admitted as the `parasolid:unknown` residual layer without substituting another schema grammar; bounded structural recovery retains the source stream.",
           "severity": "warning"
+        },
+        {
+          "code": {
+            "code": "projection.record-unprojected",
+            "kind": "metadata_not_transferred",
+            "namespace": "nx",
+            "scope": "namespaced"
+          },
+          "message": "Material texture record nx:container:material-texture#0 (material_texture_assets) retains decoded resource/catalog fields, but no decoded shader slot, material assignment or texture mapping supplies the required neutral appearance fields; no default mapping was invented.",
+          "severity": "warning"
+        },
+        {
+          "code": {
+            "code": "projection.record-unprojected",
+            "kind": "metadata_not_transferred",
+            "namespace": "nx",
+            "scope": "namespaced"
+          },
+          "message": "Material texture record nx:qafmetadata-2:material-texture#0 (material_texture_catalog_entries) retains decoded resource/catalog fields, but no decoded shader slot, material assignment or texture mapping supplies the required neutral appearance fields; no default mapping was invented.",
+          "severity": "warning"
         }
       ],
       "notes": [
@@ -302,7 +324,10 @@
       ],
       "transfer": {
         "geometry_transferred": true,
-        "transfer": "full"
+        "scope": {
+          "design": true,
+          "model": true
+        }
       }
     },
     "source_fidelity": {
@@ -411,9 +436,20 @@
             "retention": "inline"
           },
           "offset": 159,
-          "stream": "nx:container"
+          "stream": "nx:container",
+          "untyped": []
+        },
+        "nx:source:image#whole": {
+          "bytes": {
+            "data": "U1BMTVNTVFIGAAAAAAAAAABqAwAAAAAAAEhFQURFUgMAAAAVAAAAL1Jvb3QvVUdfUEFSVC9VR19QQVJUnwAAAAAAAADeAAAAAAAAABoAAAAvUm9vdC9tYXRlcmlhbHNUaWYvdW5tYXAkMX0BAAAAAAAACgAAAAAAAAARAAAAL1Jvb3QvcWFmbWV0YWRhdGGHAQAAAAAAAOMBAAAAAAAAeAGNTL0LAWEYf/KxWCxWehdFt/iKWN4kX4Vwt18+3kH56hyFiUiZJZPRKGVR/gB/gsHEajFYlbc7d5105en5+H30/PIsAOAI4orRHJtNcyiRzsSRq10SxJpYazXdqCKQkkiqqNxHjVaV1OtEQD0idKiJ/AGPxxsK0ggrG0vxXJzleC8fpgVgBwPV1cY7FUoAzw1dZ8KyAR8YJUFdDN6Pzpfn7KUqOgA/ZEO5MtNsP5g0jEKGzl+tROL28rg63cYK/3l2gPlbY/BkcE1ubUO8+Nz1oXCfOg56EW/s9TnvTU0AKgAAAAgAADw/eG1sIHZlcnNpb249IjEuMCIgZW5jb2Rpbmc9IlVURi04Ij8+Cjxmb2xkZXJDb250ZW50cz4KPGZvbGRlclByb3BlcnRpZXMgbG9jYXRpb249ImltYWdlcy9wcmV2aWV3IiB1bm1hcHBlZExvY2F0aW9uPSJpbWFnZXMvcHJldmlldyI+PGNyZWF0ZVRpbWU+MjAyNi0wNy0xNVQwODowMDowMDwvY3JlYXRlVGltZT48bW9kaWZ5VGltZT4yMDI2LTA3LTE1VDA4OjAwOjAxPC9tb2RpZnlUaW1lPjwvZm9sZGVyUHJvcGVydGllcz4KPGZvbGRlclByb3BlcnRpZXMgbG9jYXRpb249Im1hdGVyaWFsc1RpZi91bm1hcCQxIiB1bm1hcHBlZExvY2F0aW9uPSJtYXRlcmlhbHNUaWYvQ2FyYm9uIEZpYmVyIEhhcm5lc3MgU2F0aW4gQ29hdGVkIj48Y3JlYXRlVGltZT4yMDI2LTA3LTE1VDA4OjAxOjAwPC9jcmVhdGVUaW1lPjxtb2RpZnlUaW1lPjIwMjYtMDctMTVUMDg6MDI6MDA8L21vZGlmeVRpbWU+PC9mb2xkZXJQcm9wZXJ0aWVzPgo8L2ZvbGRlckNvbnRlbnRzPkZPT1RFUgAAAAAAAAAA",
+            "retention": "inline"
+          },
+          "offset": 0,
+          "stream": "nx:source",
+          "untyped": []
         }
-      }
+      },
+      "unrepresented": []
     }
   },
   "inspect": {

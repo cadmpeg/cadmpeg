@@ -1,6 +1,6 @@
 {
   "ir": {
-    "ir_version": "8",
+    "ir_version": "10",
     "model": {
       "appearance_bindings": [],
       "appearances": [],
@@ -77,6 +77,7 @@
             "state": "selected"
           }
         ],
+        "assembly_groundings": [],
         "assembly_occurrences": [],
         "assembly_placements": [],
         "body_native_keys": [],
@@ -105,6 +106,8 @@
           }
         ],
         "design_record_issues": [],
+        "design_view_representations": [],
+        "design_view_visibility": [],
         "edge_continuities": [],
         "edge_ownerships": [],
         "embedded_references": [],
@@ -246,6 +249,7 @@
         "pm_dc_directions": [],
         "pm_dc_entity_style_links": [],
         "pm_dc_expressions": [],
+        "pm_dc_feature_dimensions": [],
         "pm_dc_feature_labels": [],
         "pm_dc_feature_properties": [],
         "pm_dc_feature_terminators": [],
@@ -403,13 +407,21 @@
             "original_file_name": "synthetic.ipt",
             "reference_count": 1,
             "representation": {
-              "active_model_state": "Master",
-              "active_model_state_state": [
+              "active_design_view": "Master",
+              "active_design_view_state": [
                 0,
                 0
               ],
-              "active_representation": null,
-              "active_representation_kind": null,
+              "design_views": [
+                {
+                  "kind": "DesignView",
+                  "name": "Default"
+                },
+                {
+                  "kind": "Export",
+                  "name": "Shipping"
+                }
+              ],
               "prefix": 0,
               "secondary_active_lod_state": [
                 0,
@@ -447,8 +459,8 @@
               0
             ],
             "state": "parsed_prefix",
-            "tail_len": 3386,
-            "tail_sha256": "2d64da55eaa330ab966bdcc44681ee02540a6ca676b1b88ae69f41fcb3c8c647"
+            "tail_len": 3308,
+            "tail_sha256": "f859272319d4dd5fed04606630facbdcd6259b2ca3b425f723b153b5bf2248a0"
           }
         ],
         "ufrx_model_states": [
@@ -681,170 +693,6 @@
   },
   "source_fidelity": {
     "annotations": {},
-    "metadata": {
-      "inventor:kernel:carrier.carrier_offset": "18",
-      "inventor:rse:record#seg-0.payload_offset": "4"
-    },
-    "parts": {
-      "inventor:source:part#299cb4127cc858cc49c3a53583d7d2b935b559f3037f1f885e5669cd27161fe8": {
-        "byte_len": 90,
-        "framing_bytes": [],
-        "level": "inventor.meta_body",
-        "offset": 2817,
-        "parent": "inventor:source:part#dd6f82acb672fe1b8e821b597a23a43d7c6dc46137e0c6039d2237ba493fb0b6",
-        "state": {
-          "state": "decoded"
-        },
-        "stream": "file"
-      },
-      "inventor:source:part#8fc1c71edc90677eb692f8453b182dbcd383541f01750a29f049f582dd8c8855": {
-        "byte_len": 108,
-        "framing_bytes": [
-          {
-            "end": 2360,
-            "start": 2356
-          }
-        ],
-        "level": "inventor.rse_database",
-        "offset": 2304,
-        "parent": "inventor:source:part#9391a3f0cce3acae74001aa6c1b7f2dd0c34b3c2c0ab61e7903b398c542398e2",
-        "state": {
-          "state": "decoded"
-        },
-        "stream": "file"
-      },
-      "inventor:source:part#9391a3f0cce3acae74001aa6c1b7f2dd0c34b3c2c0ab61e7903b398c542398e2": {
-        "byte_len": 108,
-        "framing_bytes": [],
-        "level": "cfb.stream",
-        "offset": 2304,
-        "parent": null,
-        "state": {
-          "state": "decoded"
-        },
-        "stream": "file"
-      },
-      "inventor:source:part#adb3c073f810de25c612c73ab68c9b78c84fde8d6d9bb90e06e49e37bfc07094": {
-        "byte_len": 8,
-        "framing_bytes": [],
-        "level": "cfb.stream",
-        "offset": 2432,
-        "parent": null,
-        "state": {
-          "state": "decoded"
-        },
-        "stream": "file"
-      },
-      "inventor:source:part#d9b18f2d8d5675a677e951f94e24281c98189ee562bf3fade6e749bbf0e51bd1": {
-        "byte_len": 28,
-        "framing_bytes": [],
-        "level": "inventor.type_descriptor",
-        "offset": 46,
-        "parent": "inventor:source:part#e9bfbf3651b79ef017e9e884f8439dc0a4babc4b6d0c42d274f340e838f2be56",
-        "state": {
-          "state": "decoded"
-        },
-        "stream": "zlib:4:file:2817:90"
-      },
-      "inventor:source:part#dd6f82acb672fe1b8e821b597a23a43d7c6dc46137e0c6039d2237ba493fb0b6": {
-        "byte_len": 219,
-        "framing_bytes": [],
-        "level": "cfb.stream",
-        "offset": 2688,
-        "parent": null,
-        "state": {
-          "state": "decoded"
-        },
-        "stream": "file"
-      },
-      "inventor:source:part#e9bfbf3651b79ef017e9e884f8439dc0a4babc4b6d0c42d274f340e838f2be56": {
-        "byte_len": 36,
-        "framing_bytes": [
-          {
-            "end": 46,
-            "start": 42
-          },
-          {
-            "end": 78,
-            "start": 74
-          }
-        ],
-        "level": "inventor.meta_forward_section",
-        "offset": 42,
-        "parent": "inventor:source:part#299cb4127cc858cc49c3a53583d7d2b935b559f3037f1f885e5669cd27161fe8",
-        "state": {
-          "state": "decoded"
-        },
-        "stream": "zlib:4:file:2817:90"
-      }
-    },
-    "record_layout": {
-      "inventor:rse:database#v1": {
-        "byte_len": 108,
-        "offset": 2304,
-        "payloads": {},
-        "pointers": {},
-        "reads": {
-          "file": [
-            {
-              "end": 2412,
-              "start": 2304
-            }
-          ]
-        },
-        "stream": "file"
-      },
-      "inventor:rse:meta-type#seg-0": {
-        "byte_len": 28,
-        "offset": 46,
-        "payloads": {},
-        "pointers": {},
-        "reads": {
-          "file": [
-            {
-              "end": 2907,
-              "start": 2817
-            }
-          ],
-          "zlib:4:file:2817:90": [
-            {
-              "end": 74,
-              "start": 46
-            }
-          ]
-        },
-        "stream": "zlib:4:file:2817:90"
-      },
-      "inventor:rse:segment#seg": {
-        "byte_len": 219,
-        "offset": 2688,
-        "payloads": {},
-        "pointers": {},
-        "reads": {
-          "file": [
-            {
-              "end": 2907,
-              "start": 2817
-            }
-          ],
-          "zlib:4:file:2817:90": [
-            {
-              "end": 18,
-              "start": 14
-            },
-            {
-              "end": 46,
-              "start": 22
-            },
-            {
-              "end": 78,
-              "start": 74
-            }
-          ]
-        },
-        "stream": "file"
-      }
-    },
     "retained_records": {
       "inventor:kernel:carrier#seg-0": {
         "bytes": {
@@ -859,7 +707,7 @@
         "bytes": {
           "byte_len": 8192,
           "retention": "digest",
-          "sha256": "73f4c12c8cb4c225e8b9d3bf32f1a8a1eb0bab7b5fcf84c2fe9815f402db3f39"
+          "sha256": "23c44276252ec9fb67f87d6542db592a60c5cc1e48fd7923934448944da13665"
         },
         "offset": 0,
         "stream": "inventor:source",

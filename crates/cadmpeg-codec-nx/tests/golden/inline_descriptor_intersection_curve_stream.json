@@ -1,8 +1,7 @@
 {
   "decode": {
     "ir": {
-      "decode_depth": "full",
-      "ir_version": "9",
+      "ir_version": "10",
       "model": {
         "appearance_bindings": [],
         "appearances": [],
@@ -386,6 +385,10 @@
           ]
         }
       },
+      "scope": {
+        "design": true,
+        "model": true
+      },
       "source": {
         "attributes": {
           "deltas_streams": "0",
@@ -393,7 +396,6 @@
           "file_size": "474",
           "footer_entry_count": "0",
           "footer_fingerprint": "00000000",
-          "footer_offset": "460",
           "header_entry_count": "1",
           "jpeg_preview_count": "0",
           "partition_streams": "1",
@@ -482,7 +484,10 @@
       ],
       "transfer": {
         "geometry_transferred": true,
-        "transfer": "full"
+        "scope": {
+          "design": true,
+          "model": true
+        }
       }
     },
     "source_fidelity": {
@@ -630,9 +635,20 @@
             "retention": "inline"
           },
           "offset": 76,
-          "stream": "nx:container"
+          "stream": "nx:container",
+          "untyped": []
+        },
+        "nx:source:image#whole": {
+          "bytes": {
+            "data": "U1BMTVNTVFIGAAAAAAAAAADMAQAAAAAAAEhFQURFUgEAAAAVAAAAL1Jvb3QvVUdfUEFSVC9VR19QQVJUTAAAAAAAAACAAQAAAAAAAHgBdVA5TwJBFP5mFVBB8eBIjJKtDEKMiomJFk4MQSUBg4KNDeFYIwmHWRYTtdXEzsTY2NjT2JlQWPkT/AceHY10Fha+hQVWXN6883vHzJtYHMDiupjY39yNR8MJcSscCYnek5Ss5JRcqTgvZmQppUhZMX0mFkpZKZ+XZGqxx4M7yUQonkguJ9eIABsEwv/zKAaaIKM8wyAYHRvJGPlQiftW3+szwQXCGExUbfarsCZ2glquhRoYJmCh0ETaghEwDNHF8GOcHKjEV6q+pYNAigpAZCNROQCzarqiv6OLGnj8qwW2bSvSaQ+GdRG5fUf3HTFJq1Bjh618WvsTYEpdsJMBZmHVReCX52/bj44LfqfZh9pe/cpTw5zWx9rVfpjpvxxwwgU3vAQLcJBusu5pwsbn99P1x3GDx9LR10b15+X59ua+CLRts8FAce0pvSlFkgvJSlkinLFM8FC1cEY4WUM2rHdFeL/5p6l8RSrTKIEdqdsOwi1Q9Id7e38BYwJaWkZPT1RFUgAAAAAAAAAA",
+            "retention": "inline"
+          },
+          "offset": 0,
+          "stream": "nx:source",
+          "untyped": []
         }
-      }
+      },
+      "unrepresented": []
     }
   },
   "inspect": {

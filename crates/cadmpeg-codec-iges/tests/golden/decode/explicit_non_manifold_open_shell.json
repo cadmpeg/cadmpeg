@@ -1,12 +1,207 @@
 {
   "ir": {
-    "decode_depth": "full",
-    "ir_version": "9",
+    "ir_version": "10",
     "model": {
       "appearance_bindings": [],
       "appearances": [],
       "assembly_joints": [],
-      "attributes": [],
+      "attributes": [
+        {
+          "id": "iges:application:attribute#D11:0:0",
+          "name": "name",
+          "native_ref": "iges:entity:directory#11",
+          "target": {
+            "id": "iges:model:curve#D11",
+            "kind": "curve"
+          },
+          "values": [
+            {
+              "kind": "string",
+              "value": "EDGE3"
+            }
+          ]
+        },
+        {
+          "id": "iges:application:attribute#D13:0:0",
+          "name": "name",
+          "native_ref": "iges:entity:directory#13",
+          "target": {
+            "id": "iges:model:curve#D13",
+            "kind": "curve"
+          },
+          "values": [
+            {
+              "kind": "string",
+              "value": "EDGE4"
+            }
+          ]
+        },
+        {
+          "id": "iges:application:attribute#D15:0:0",
+          "name": "name",
+          "native_ref": "iges:entity:directory#15",
+          "target": {
+            "id": "iges:model:curve#D15",
+            "kind": "curve"
+          },
+          "values": [
+            {
+              "kind": "string",
+              "value": "EDGE5"
+            }
+          ]
+        },
+        {
+          "id": "iges:application:attribute#D17:0:0",
+          "name": "name",
+          "native_ref": "iges:entity:directory#17",
+          "target": {
+            "id": "iges:model:curve#D17",
+            "kind": "curve"
+          },
+          "values": [
+            {
+              "kind": "string",
+              "value": "EDGE6"
+            }
+          ]
+        },
+        {
+          "id": "iges:application:attribute#D19:0:0",
+          "name": "name",
+          "native_ref": "iges:entity:directory#19",
+          "target": {
+            "id": "iges:model:curve#D19",
+            "kind": "curve"
+          },
+          "values": [
+            {
+              "kind": "string",
+              "value": "EDGE7"
+            }
+          ]
+        },
+        {
+          "id": "iges:application:attribute#D21:0:0",
+          "name": "name",
+          "native_ref": "iges:entity:directory#21",
+          "target": {
+            "id": "iges:model:point#D37:D21:1",
+            "kind": "point"
+          },
+          "values": [
+            {
+              "kind": "string",
+              "value": "VERTICES"
+            }
+          ]
+        },
+        {
+          "id": "iges:application:attribute#D21:0:1",
+          "name": "name",
+          "native_ref": "iges:entity:directory#21",
+          "target": {
+            "id": "iges:model:point#D37:D21:2",
+            "kind": "point"
+          },
+          "values": [
+            {
+              "kind": "string",
+              "value": "VERTICES"
+            }
+          ]
+        },
+        {
+          "id": "iges:application:attribute#D21:0:2",
+          "name": "name",
+          "native_ref": "iges:entity:directory#21",
+          "target": {
+            "id": "iges:model:point#D37:D21:3",
+            "kind": "point"
+          },
+          "values": [
+            {
+              "kind": "string",
+              "value": "VERTICES"
+            }
+          ]
+        },
+        {
+          "id": "iges:application:attribute#D21:0:3",
+          "name": "name",
+          "native_ref": "iges:entity:directory#21",
+          "target": {
+            "id": "iges:model:point#D37:D21:4",
+            "kind": "point"
+          },
+          "values": [
+            {
+              "kind": "string",
+              "value": "VERTICES"
+            }
+          ]
+        },
+        {
+          "id": "iges:application:attribute#D21:0:4",
+          "name": "name",
+          "native_ref": "iges:entity:directory#21",
+          "target": {
+            "id": "iges:model:point#D37:D21:5",
+            "kind": "point"
+          },
+          "values": [
+            {
+              "kind": "string",
+              "value": "VERTICES"
+            }
+          ]
+        },
+        {
+          "id": "iges:application:attribute#D5:0:0",
+          "name": "name",
+          "native_ref": "iges:entity:directory#5",
+          "target": {
+            "id": "iges:model:surface#D5",
+            "kind": "surface"
+          },
+          "values": [
+            {
+              "kind": "string",
+              "value": "SURFACE"
+            }
+          ]
+        },
+        {
+          "id": "iges:application:attribute#D7:0:0",
+          "name": "name",
+          "native_ref": "iges:entity:directory#7",
+          "target": {
+            "id": "iges:model:curve#D7",
+            "kind": "curve"
+          },
+          "values": [
+            {
+              "kind": "string",
+              "value": "EDGE1"
+            }
+          ]
+        },
+        {
+          "id": "iges:application:attribute#D9:0:0",
+          "name": "name",
+          "native_ref": "iges:entity:directory#9",
+          "target": {
+            "id": "iges:model:curve#D9",
+            "kind": "curve"
+          },
+          "values": [
+            {
+              "kind": "string",
+              "value": "EDGE2"
+            }
+          ]
+        }
+      ],
       "bodies": [
         {
           "id": "iges:model:body#D37",
@@ -106,10 +301,7 @@
           "source_object": {
             "format": "iges",
             "geometry_role": "support",
-            "layer": "0",
-            "name": "EDGE3",
-            "object_id": "D11",
-            "visible": true
+            "object_id": "D11"
           }
         },
         {
@@ -134,10 +326,7 @@
           "source_object": {
             "format": "iges",
             "geometry_role": "support",
-            "layer": "0",
-            "name": "EDGE4",
-            "object_id": "D13",
-            "visible": true
+            "object_id": "D13"
           }
         },
         {
@@ -162,10 +351,7 @@
           "source_object": {
             "format": "iges",
             "geometry_role": "support",
-            "layer": "0",
-            "name": "EDGE5",
-            "object_id": "D15",
-            "visible": true
+            "object_id": "D15"
           }
         },
         {
@@ -190,10 +376,7 @@
           "source_object": {
             "format": "iges",
             "geometry_role": "support",
-            "layer": "0",
-            "name": "EDGE6",
-            "object_id": "D17",
-            "visible": true
+            "object_id": "D17"
           }
         },
         {
@@ -218,10 +401,7 @@
           "source_object": {
             "format": "iges",
             "geometry_role": "support",
-            "layer": "0",
-            "name": "EDGE7",
-            "object_id": "D19",
-            "visible": true
+            "object_id": "D19"
           }
         },
         {
@@ -246,10 +426,7 @@
           "source_object": {
             "format": "iges",
             "geometry_role": "support",
-            "layer": "0",
-            "name": "EDGE1",
-            "object_id": "D7",
-            "visible": true
+            "object_id": "D7"
           }
         },
         {
@@ -274,10 +451,7 @@
           "source_object": {
             "format": "iges",
             "geometry_role": "support",
-            "layer": "0",
-            "name": "EDGE2",
-            "object_id": "D9",
-            "visible": true
+            "object_id": "D9"
           }
         }
       ],
@@ -489,7 +663,82 @@
         }
       ],
       "presentation_documents": [],
-      "presentation_layers": [],
+      "presentation_layers": [
+        {
+          "id": "iges:presentation:level#0",
+          "items": [
+            {
+              "kind": "surface",
+              "surface": "iges:model:surface#D5"
+            },
+            {
+              "curve": "iges:model:curve#D7",
+              "kind": "curve"
+            },
+            {
+              "curve": "iges:model:curve#D9",
+              "kind": "curve"
+            },
+            {
+              "curve": "iges:model:curve#D11",
+              "kind": "curve"
+            },
+            {
+              "curve": "iges:model:curve#D13",
+              "kind": "curve"
+            },
+            {
+              "curve": "iges:model:curve#D15",
+              "kind": "curve"
+            },
+            {
+              "curve": "iges:model:curve#D17",
+              "kind": "curve"
+            },
+            {
+              "curve": "iges:model:curve#D19",
+              "kind": "curve"
+            },
+            {
+              "kind": "point",
+              "point": "iges:model:point#D37:D21:1"
+            },
+            {
+              "kind": "point",
+              "point": "iges:model:point#D37:D21:2"
+            },
+            {
+              "kind": "point",
+              "point": "iges:model:point#D37:D21:3"
+            },
+            {
+              "kind": "point",
+              "point": "iges:model:point#D37:D21:4"
+            },
+            {
+              "kind": "point",
+              "point": "iges:model:point#D37:D21:5"
+            },
+            {
+              "face": "iges:model:face#D37:D31",
+              "kind": "face"
+            },
+            {
+              "face": "iges:model:face#D37:D33",
+              "kind": "face"
+            },
+            {
+              "face": "iges:model:face#D37:D35",
+              "kind": "face"
+            },
+            {
+              "body": "iges:model:body#D37",
+              "kind": "body"
+            }
+          ],
+          "name": "0"
+        }
+      ],
       "procedural_curves": [],
       "procedural_surfaces": [],
       "product_definitions": [],
@@ -554,10 +803,7 @@
           "source_object": {
             "format": "iges",
             "geometry_role": "support",
-            "layer": "0",
-            "name": "SURFACE",
-            "object_id": "D5",
-            "visible": true
+            "object_id": "D5"
           }
         }
       ],
@@ -596,499 +842,251 @@
         "cards": [
           {
             "id": "iges:physical:card#1",
-            "line_ending": "0a",
-            "offset": 0,
-            "payload": "6f726967696e616c206669787475726520202020202020202020202020202020202020202020202020202020202020202020202020202020202020202020202020202020202020205320202020202031",
-            "section": "start",
-            "sequence": 1
+            "section": "start"
           },
           {
             "id": "iges:physical:card#10",
-            "line_ending": "0a",
-            "offset": 729,
-            "payload": "2020202020313130202020202020203420202020202020302020202020202030202020202020203020202020202020302020202020202030202020202020203030303031303030304420202020202037",
-            "section": "directory",
-            "sequence": 7
+            "section": "directory"
           },
           {
             "id": "iges:physical:card#11",
-            "line_ending": "0a",
-            "offset": 810,
-            "payload": "2020202020313130202020202020203020202020202020302020202020202031202020202020203020202020202020202020202020202020202020454447453120202020202020304420202020202038",
-            "section": "directory",
-            "sequence": 8
+            "section": "directory"
           },
           {
             "id": "iges:physical:card#12",
-            "line_ending": "0a",
-            "offset": 891,
-            "payload": "2020202020313130202020202020203520202020202020302020202020202030202020202020203020202020202020302020202020202030202020202020203030303031303030304420202020202039",
-            "section": "directory",
-            "sequence": 9
+            "section": "directory"
           },
           {
             "id": "iges:physical:card#13",
-            "line_ending": "0a",
-            "offset": 972,
-            "payload": "2020202020313130202020202020203020202020202020302020202020202031202020202020203020202020202020202020202020202020202020454447453220202020202020304420202020203130",
-            "section": "directory",
-            "sequence": 10
+            "section": "directory"
           },
           {
             "id": "iges:physical:card#14",
-            "line_ending": "0a",
-            "offset": 1053,
-            "payload": "2020202020313130202020202020203620202020202020302020202020202030202020202020203020202020202020302020202020202030202020202020203030303031303030304420202020203131",
-            "section": "directory",
-            "sequence": 11
+            "section": "directory"
           },
           {
             "id": "iges:physical:card#15",
-            "line_ending": "0a",
-            "offset": 1134,
-            "payload": "2020202020313130202020202020203020202020202020302020202020202031202020202020203020202020202020202020202020202020202020454447453320202020202020304420202020203132",
-            "section": "directory",
-            "sequence": 12
+            "section": "directory"
           },
           {
             "id": "iges:physical:card#16",
-            "line_ending": "0a",
-            "offset": 1215,
-            "payload": "2020202020313130202020202020203720202020202020302020202020202030202020202020203020202020202020302020202020202030202020202020203030303031303030304420202020203133",
-            "section": "directory",
-            "sequence": 13
+            "section": "directory"
           },
           {
             "id": "iges:physical:card#17",
-            "line_ending": "0a",
-            "offset": 1296,
-            "payload": "2020202020313130202020202020203020202020202020302020202020202031202020202020203020202020202020202020202020202020202020454447453420202020202020304420202020203134",
-            "section": "directory",
-            "sequence": 14
+            "section": "directory"
           },
           {
             "id": "iges:physical:card#18",
-            "line_ending": "0a",
-            "offset": 1377,
-            "payload": "2020202020313130202020202020203820202020202020302020202020202030202020202020203020202020202020302020202020202030202020202020203030303031303030304420202020203135",
-            "section": "directory",
-            "sequence": 15
+            "section": "directory"
           },
           {
             "id": "iges:physical:card#19",
-            "line_ending": "0a",
-            "offset": 1458,
-            "payload": "2020202020313130202020202020203020202020202020302020202020202031202020202020203020202020202020202020202020202020202020454447453520202020202020304420202020203136",
-            "section": "directory",
-            "sequence": 16
+            "section": "directory"
           },
           {
             "id": "iges:physical:card#2",
-            "line_ending": "0a",
-            "offset": 81,
-            "payload": "31482c2c31483b2c374870726f647563742c3848706172742e6967732c37486361646d7065672c3348302e312c33322c33382c362c3330382c31352c30482c312e302c322c32484d4720202020202031",
-            "section": "global",
-            "sequence": 1
+            "section": "global"
           },
           {
             "id": "iges:physical:card#20",
-            "line_ending": "0a",
-            "offset": 1539,
-            "payload": "2020202020313130202020202020203920202020202020302020202020202030202020202020203020202020202020302020202020202030202020202020203030303031303030304420202020203137",
-            "section": "directory",
-            "sequence": 17
+            "section": "directory"
           },
           {
             "id": "iges:physical:card#21",
-            "line_ending": "0a",
-            "offset": 1620,
-            "payload": "2020202020313130202020202020203020202020202020302020202020202031202020202020203020202020202020202020202020202020202020454447453620202020202020304420202020203138",
-            "section": "directory",
-            "sequence": 18
+            "section": "directory"
           },
           {
             "id": "iges:physical:card#22",
-            "line_ending": "0a",
-            "offset": 1701,
-            "payload": "2020202020313130202020202020313020202020202020302020202020202030202020202020203020202020202020302020202020202030202020202020203030303031303030304420202020203139",
-            "section": "directory",
-            "sequence": 19
+            "section": "directory"
           },
           {
             "id": "iges:physical:card#23",
-            "line_ending": "0a",
-            "offset": 1782,
-            "payload": "2020202020313130202020202020203020202020202020302020202020202031202020202020203020202020202020202020202020202020202020454447453720202020202020304420202020203230",
-            "section": "directory",
-            "sequence": 20
+            "section": "directory"
           },
           {
             "id": "iges:physical:card#24",
-            "line_ending": "0a",
-            "offset": 1863,
-            "payload": "2020202020353032202020202020313120202020202020302020202020202030202020202020203020202020202020302020202020202030202020202020203030303031303030304420202020203231",
-            "section": "directory",
-            "sequence": 21
+            "section": "directory"
           },
           {
             "id": "iges:physical:card#25",
-            "line_ending": "0a",
-            "offset": 1944,
-            "payload": "2020202020353032202020202020203020202020202020302020202020202031202020202020203120202020202020202020202020202020564552544943455320202020202020304420202020203232",
-            "section": "directory",
-            "sequence": 22
+            "section": "directory"
           },
           {
             "id": "iges:physical:card#26",
-            "line_ending": "0a",
-            "offset": 2025,
-            "payload": "2020202020353034202020202020313220202020202020302020202020202030202020202020203020202020202020302020202020202030202020202020203030303031303030314420202020203233",
-            "section": "directory",
-            "sequence": 23
+            "section": "directory"
           },
           {
             "id": "iges:physical:card#27",
-            "line_ending": "0a",
-            "offset": 2106,
-            "payload": "2020202020353034202020202020203020202020202020302020202020202032202020202020203120202020202020202020202020202020202020454447455320202020202020304420202020203234",
-            "section": "directory",
-            "sequence": 24
+            "section": "directory"
           },
           {
             "id": "iges:physical:card#28",
-            "line_ending": "0a",
-            "offset": 2187,
-            "payload": "2020202020353038202020202020313420202020202020302020202020202030202020202020203020202020202020302020202020202030202020202020203030303031303030304420202020203235",
-            "section": "directory",
-            "sequence": 25
+            "section": "directory"
           },
           {
             "id": "iges:physical:card#29",
-            "line_ending": "0a",
-            "offset": 2268,
-            "payload": "20202020203530382020202020202030202020202020203020202020202020312020202020202031202020202020202020202020202020202020204c4f4f503120202020202020304420202020203236",
-            "section": "directory",
-            "sequence": 26
+            "section": "directory"
           },
           {
             "id": "iges:physical:card#3",
-            "line_ending": "0a",
-            "offset": 162,
-            "payload": "4d2c312c312e302c31354832303236303731342e3030303030302c302e3030312c313030302e302c3648617574686f722c33486f72672c31312c302c30482c30483b2020202020204720202020202032",
-            "section": "global",
-            "sequence": 2
+            "section": "global"
           },
           {
             "id": "iges:physical:card#30",
-            "line_ending": "0a",
-            "offset": 2349,
-            "payload": "2020202020353038202020202020313520202020202020302020202020202030202020202020203020202020202020302020202020202030202020202020203030303031303030304420202020203237",
-            "section": "directory",
-            "sequence": 27
+            "section": "directory"
           },
           {
             "id": "iges:physical:card#31",
-            "line_ending": "0a",
-            "offset": 2430,
-            "payload": "20202020203530382020202020202030202020202020203020202020202020312020202020202031202020202020202020202020202020202020204c4f4f503220202020202020304420202020203238",
-            "section": "directory",
-            "sequence": 28
+            "section": "directory"
           },
           {
             "id": "iges:physical:card#32",
-            "line_ending": "0a",
-            "offset": 2511,
-            "payload": "2020202020353038202020202020313620202020202020302020202020202030202020202020203020202020202020302020202020202030202020202020203030303031303030304420202020203239",
-            "section": "directory",
-            "sequence": 29
+            "section": "directory"
           },
           {
             "id": "iges:physical:card#33",
-            "line_ending": "0a",
-            "offset": 2592,
-            "payload": "20202020203530382020202020202030202020202020203020202020202020312020202020202031202020202020202020202020202020202020204c4f4f503320202020202020304420202020203330",
-            "section": "directory",
-            "sequence": 30
+            "section": "directory"
           },
           {
             "id": "iges:physical:card#34",
-            "line_ending": "0a",
-            "offset": 2673,
-            "payload": "2020202020353130202020202020313720202020202020302020202020202030202020202020203020202020202020302020202020202030202020202020203030303031303030304420202020203331",
-            "section": "directory",
-            "sequence": 31
+            "section": "directory"
           },
           {
             "id": "iges:physical:card#35",
-            "line_ending": "0a",
-            "offset": 2754,
-            "payload": "2020202020353130202020202020203020202020202020302020202020202031202020202020203120202020202020202020202020202020202020464143453120202020202020304420202020203332",
-            "section": "directory",
-            "sequence": 32
+            "section": "directory"
           },
           {
             "id": "iges:physical:card#36",
-            "line_ending": "0a",
-            "offset": 2835,
-            "payload": "2020202020353130202020202020313820202020202020302020202020202030202020202020203020202020202020302020202020202030202020202020203030303031303030304420202020203333",
-            "section": "directory",
-            "sequence": 33
+            "section": "directory"
           },
           {
             "id": "iges:physical:card#37",
-            "line_ending": "0a",
-            "offset": 2916,
-            "payload": "2020202020353130202020202020203020202020202020302020202020202031202020202020203120202020202020202020202020202020202020464143453220202020202020304420202020203334",
-            "section": "directory",
-            "sequence": 34
+            "section": "directory"
           },
           {
             "id": "iges:physical:card#38",
-            "line_ending": "0a",
-            "offset": 2997,
-            "payload": "2020202020353130202020202020313920202020202020302020202020202030202020202020203020202020202020302020202020202030202020202020203030303031303030304420202020203335",
-            "section": "directory",
-            "sequence": 35
+            "section": "directory"
           },
           {
             "id": "iges:physical:card#39",
-            "line_ending": "0a",
-            "offset": 3078,
-            "payload": "2020202020353130202020202020203020202020202020302020202020202031202020202020203120202020202020202020202020202020202020464143453320202020202020304420202020203336",
-            "section": "directory",
-            "sequence": 36
+            "section": "directory"
           },
           {
             "id": "iges:physical:card#4",
-            "line_ending": "0a",
-            "offset": 243,
-            "payload": "2020202020313136202020202020203120202020202020302020202020202030202020202020203020202020202020302020202020202030202020202020203030303031303030304420202020202031",
-            "section": "directory",
-            "sequence": 1
+            "section": "directory"
           },
           {
             "id": "iges:physical:card#40",
-            "line_ending": "0a",
-            "offset": 3159,
-            "payload": "2020202020353134202020202020323020202020202020302020202020202030202020202020203020202020202020302020202020202030202020202020203030303030303030304420202020203337",
-            "section": "directory",
-            "sequence": 37
+            "section": "directory"
           },
           {
             "id": "iges:physical:card#41",
-            "line_ending": "0a",
-            "offset": 3240,
-            "payload": "20202020203531342020202020202030202020202020203020202020202020312020202020202032202020202020202020202020202020202020205348454c4c20202020202020304420202020203338",
-            "section": "directory",
-            "sequence": 38
+            "section": "directory"
           },
           {
             "id": "iges:physical:card#42",
-            "line_ending": "0a",
-            "offset": 3321,
-            "payload": "3131362c302c302c302c303b2020202020202020202020202020202020202020202020202020202020202020202020202020202020202020202020202020202020202020202020315020202020202031",
-            "section": "parameter",
-            "sequence": 1
+            "section": "parameter"
           },
           {
             "id": "iges:physical:card#43",
-            "line_ending": "0a",
-            "offset": 3402,
-            "payload": "3132332c302c302c313b20202020202020202020202020202020202020202020202020202020202020202020202020202020202020202020202020202020202020202020202020335020202020202032",
-            "section": "parameter",
-            "sequence": 2
+            "section": "parameter"
           },
           {
             "id": "iges:physical:card#44",
-            "line_ending": "0a",
-            "offset": 3483,
-            "payload": "3139302c312c333b202020202020202020202020202020202020202020202020202020202020202020202020202020202020202020202020202020202020202020202020202020355020202020202033",
-            "section": "parameter",
-            "sequence": 3
+            "section": "parameter"
           },
           {
             "id": "iges:physical:card#45",
-            "line_ending": "0a",
-            "offset": 3564,
-            "payload": "3131302c302c302c302c312c302c303b20202020202020202020202020202020202020202020202020202020202020202020202020202020202020202020202020202020202020375020202020202034",
-            "section": "parameter",
-            "sequence": 4
+            "section": "parameter"
           },
           {
             "id": "iges:physical:card#46",
-            "line_ending": "0a",
-            "offset": 3645,
-            "payload": "3131302c312c302c302c302c312c303b20202020202020202020202020202020202020202020202020202020202020202020202020202020202020202020202020202020202020395020202020202035",
-            "section": "parameter",
-            "sequence": 5
+            "section": "parameter"
           },
           {
             "id": "iges:physical:card#47",
-            "line_ending": "0a",
-            "offset": 3726,
-            "payload": "3131302c302c312c302c302c302c303b20202020202020202020202020202020202020202020202020202020202020202020202020202020202020202020202020202020202031315020202020202036",
-            "section": "parameter",
-            "sequence": 6
+            "section": "parameter"
           },
           {
             "id": "iges:physical:card#48",
-            "line_ending": "0a",
-            "offset": 3807,
-            "payload": "3131302c302c302c302c302c2d312c303b202020202020202020202020202020202020202020202020202020202020202020202020202020202020202020202020202020202031335020202020202037",
-            "section": "parameter",
-            "sequence": 7
+            "section": "parameter"
           },
           {
             "id": "iges:physical:card#49",
-            "line_ending": "0a",
-            "offset": 3888,
-            "payload": "3131302c302c2d312c302c312c302c303b202020202020202020202020202020202020202020202020202020202020202020202020202020202020202020202020202020202031355020202020202038",
-            "section": "parameter",
-            "sequence": 8
+            "section": "parameter"
           },
           {
             "id": "iges:physical:card#5",
-            "line_ending": "0a",
-            "offset": 324,
-            "payload": "20202020203131362020202020202030202020202020203020202020202020312020202020202030202020202020202020202020202020204c4f434154494f4e20202020202020304420202020202032",
-            "section": "directory",
-            "sequence": 2
+            "section": "directory"
           },
           {
             "id": "iges:physical:card#50",
-            "line_ending": "0a",
-            "offset": 3969,
-            "payload": "3131302c312c302c302c302e352c312c303b2020202020202020202020202020202020202020202020202020202020202020202020202020202020202020202020202020202031375020202020202039",
-            "section": "parameter",
-            "sequence": 9
+            "section": "parameter"
           },
           {
             "id": "iges:physical:card#51",
-            "line_ending": "0a",
-            "offset": 4050,
-            "payload": "3131302c302e352c312c302c302c302c303b2020202020202020202020202020202020202020202020202020202020202020202020202020202020202020202020202020202031395020202020203130",
-            "section": "parameter",
-            "sequence": 10
+            "section": "parameter"
           },
           {
             "id": "iges:physical:card#52",
-            "line_ending": "0a",
-            "offset": 4131,
-            "payload": "3530322c352c302c302c302c312c302c302c302c312c302c302c2d312c302c302e352c312c303b2020202020202020202020202020202020202020202020202020202020202032315020202020203131",
-            "section": "parameter",
-            "sequence": 11
+            "section": "parameter"
           },
           {
             "id": "iges:physical:card#53",
-            "line_ending": "0a",
-            "offset": 4212,
-            "payload": "3530342c372c372c32312c312c32312c322c392c32312c322c32312c332c31312c32312c332c32312c312c31332c32312c312c32312c342c31352c32312c342c20202020202032335020202020203132",
-            "section": "parameter",
-            "sequence": 12
+            "section": "parameter"
           },
           {
             "id": "iges:physical:card#54",
-            "line_ending": "0a",
-            "offset": 4293,
-            "payload": "32312c322c31372c32312c322c32312c352c31392c32312c352c32312c313b20202020202020202020202020202020202020202020202020202020202020202020202020202032335020202020203133",
-            "section": "parameter",
-            "sequence": 13
+            "section": "parameter"
           },
           {
             "id": "iges:physical:card#55",
-            "line_ending": "0a",
-            "offset": 4374,
-            "payload": "3530382c332c302c32332c312c312c302c302c32332c322c312c302c302c32332c332c312c303b2020202020202020202020202020202020202020202020202020202020202032355020202020203134",
-            "section": "parameter",
-            "sequence": 14
+            "section": "parameter"
           },
           {
             "id": "iges:physical:card#56",
-            "line_ending": "0a",
-            "offset": 4455,
-            "payload": "3530382c332c302c32332c312c302c302c302c32332c342c312c302c302c32332c352c312c303b2020202020202020202020202020202020202020202020202020202020202032375020202020203135",
-            "section": "parameter",
-            "sequence": 15
+            "section": "parameter"
           },
           {
             "id": "iges:physical:card#57",
-            "line_ending": "0a",
-            "offset": 4536,
-            "payload": "3530382c332c302c32332c312c312c302c302c32332c362c312c302c302c32332c372c312c303b2020202020202020202020202020202020202020202020202020202020202032395020202020203136",
-            "section": "parameter",
-            "sequence": 16
+            "section": "parameter"
           },
           {
             "id": "iges:physical:card#58",
-            "line_ending": "0a",
-            "offset": 4617,
-            "payload": "3531302c352c312c312c32353b20202020202020202020202020202020202020202020202020202020202020202020202020202020202020202020202020202020202020202033315020202020203137",
-            "section": "parameter",
-            "sequence": 17
+            "section": "parameter"
           },
           {
             "id": "iges:physical:card#59",
-            "line_ending": "0a",
-            "offset": 4698,
-            "payload": "3531302c352c312c312c32373b20202020202020202020202020202020202020202020202020202020202020202020202020202020202020202020202020202020202020202033335020202020203138",
-            "section": "parameter",
-            "sequence": 18
+            "section": "parameter"
           },
           {
             "id": "iges:physical:card#6",
-            "line_ending": "0a",
-            "offset": 405,
-            "payload": "2020202020313233202020202020203220202020202020302020202020202030202020202020203020202020202020302020202020202030202020202020203030303031303030304420202020202033",
-            "section": "directory",
-            "sequence": 3
+            "section": "directory"
           },
           {
             "id": "iges:physical:card#60",
-            "line_ending": "0a",
-            "offset": 4779,
-            "payload": "3531302c352c312c312c32393b20202020202020202020202020202020202020202020202020202020202020202020202020202020202020202020202020202020202020202033355020202020203139",
-            "section": "parameter",
-            "sequence": 19
+            "section": "parameter"
           },
           {
             "id": "iges:physical:card#61",
-            "line_ending": "0a",
-            "offset": 4860,
-            "payload": "3531342c332c33312c312c33332c312c33352c313b2020202020202020202020202020202020202020202020202020202020202020202020202020202020202020202020202033375020202020203230",
-            "section": "parameter",
-            "sequence": 20
+            "section": "parameter"
           },
           {
             "id": "iges:physical:card#62",
-            "line_ending": "0a",
-            "offset": 4941,
-            "payload": "5330303030303031473030303030303244303030303033385030303030303230202020202020202020202020202020202020202020202020202020202020202020202020202020205420202020202031",
-            "section": "terminate",
-            "sequence": 1
+            "section": "terminate"
           },
           {
             "id": "iges:physical:card#7",
-            "line_ending": "0a",
-            "offset": 486,
-            "payload": "202020202031323320202020202020302020202020202030202020202020203120202020202020302020202020202020202020202020202020204e4f524d414c20202020202020304420202020202034",
-            "section": "directory",
-            "sequence": 4
+            "section": "directory"
           },
           {
             "id": "iges:physical:card#8",
-            "line_ending": "0a",
-            "offset": 567,
-            "payload": "2020202020313930202020202020203320202020202020302020202020202030202020202020203020202020202020302020202020202030202020202020203030303031303030304420202020202035",
-            "section": "directory",
-            "sequence": 5
+            "section": "directory"
           },
           {
             "id": "iges:physical:card#9",
-            "line_ending": "0a",
-            "offset": 648,
-            "payload": "2020202020313930202020202020203020202020202020302020202020202031202020202020203020202020202020202020202020202020205355524641434520202020202020304420202020202036",
-            "section": "directory",
-            "sequence": 6
+            "section": "directory"
           }
         ],
         "circular_arrays": [],
@@ -1395,47 +1393,33 @@
             "line_font": 0,
             "line_weight": 0,
             "links": [],
-            "parameter_bytes": "3131362c302c302c302c303b20202020202020202020202020202020202020202020202020202020202020202020202020202020202020202020202020202020",
             "parameter_line_count": 1,
-            "parameter_line_end": 2,
-            "parameter_line_start": 1,
-            "parameter_start": 1,
             "parameters": [
               {
-                "end": 3,
-                "start": 0,
                 "value": {
                   "kind": "integer",
                   "value": 116
                 }
               },
               {
-                "end": 5,
-                "start": 4,
                 "value": {
                   "kind": "integer",
                   "value": 0
                 }
               },
               {
-                "end": 7,
-                "start": 6,
                 "value": {
                   "kind": "integer",
                   "value": 0
                 }
               },
               {
-                "end": 9,
-                "start": 8,
                 "value": {
                   "kind": "integer",
                   "value": 0
                 }
               },
               {
-                "end": 11,
-                "start": 10,
                 "value": {
                   "kind": "integer",
                   "value": 0
@@ -1471,63 +1455,45 @@
             "line_font": 0,
             "line_weight": 0,
             "links": [],
-            "parameter_bytes": "3131302c302c312c302c302c302c303b202020202020202020202020202020202020202020202020202020202020202020202020202020202020202020202020",
             "parameter_line_count": 1,
-            "parameter_line_end": 7,
-            "parameter_line_start": 6,
-            "parameter_start": 6,
             "parameters": [
               {
-                "end": 3,
-                "start": 0,
                 "value": {
                   "kind": "integer",
                   "value": 110
                 }
               },
               {
-                "end": 5,
-                "start": 4,
                 "value": {
                   "kind": "integer",
                   "value": 0
                 }
               },
               {
-                "end": 7,
-                "start": 6,
                 "value": {
                   "kind": "integer",
                   "value": 1
                 }
               },
               {
-                "end": 9,
-                "start": 8,
                 "value": {
                   "kind": "integer",
                   "value": 0
                 }
               },
               {
-                "end": 11,
-                "start": 10,
                 "value": {
                   "kind": "integer",
                   "value": 0
                 }
               },
               {
-                "end": 13,
-                "start": 12,
                 "value": {
                   "kind": "integer",
                   "value": 0
                 }
               },
               {
-                "end": 15,
-                "start": 14,
                 "value": {
                   "kind": "integer",
                   "value": 0
@@ -1563,63 +1529,45 @@
             "line_font": 0,
             "line_weight": 0,
             "links": [],
-            "parameter_bytes": "3131302c302c302c302c302c2d312c303b2020202020202020202020202020202020202020202020202020202020202020202020202020202020202020202020",
             "parameter_line_count": 1,
-            "parameter_line_end": 8,
-            "parameter_line_start": 7,
-            "parameter_start": 7,
             "parameters": [
               {
-                "end": 3,
-                "start": 0,
                 "value": {
                   "kind": "integer",
                   "value": 110
                 }
               },
               {
-                "end": 5,
-                "start": 4,
                 "value": {
                   "kind": "integer",
                   "value": 0
                 }
               },
               {
-                "end": 7,
-                "start": 6,
                 "value": {
                   "kind": "integer",
                   "value": 0
                 }
               },
               {
-                "end": 9,
-                "start": 8,
                 "value": {
                   "kind": "integer",
                   "value": 0
                 }
               },
               {
-                "end": 11,
-                "start": 10,
                 "value": {
                   "kind": "integer",
                   "value": 0
                 }
               },
               {
-                "end": 14,
-                "start": 12,
                 "value": {
                   "kind": "integer",
                   "value": -1
                 }
               },
               {
-                "end": 16,
-                "start": 15,
                 "value": {
                   "kind": "integer",
                   "value": 0
@@ -1655,63 +1603,45 @@
             "line_font": 0,
             "line_weight": 0,
             "links": [],
-            "parameter_bytes": "3131302c302c2d312c302c312c302c303b2020202020202020202020202020202020202020202020202020202020202020202020202020202020202020202020",
             "parameter_line_count": 1,
-            "parameter_line_end": 9,
-            "parameter_line_start": 8,
-            "parameter_start": 8,
             "parameters": [
               {
-                "end": 3,
-                "start": 0,
                 "value": {
                   "kind": "integer",
                   "value": 110
                 }
               },
               {
-                "end": 5,
-                "start": 4,
                 "value": {
                   "kind": "integer",
                   "value": 0
                 }
               },
               {
-                "end": 8,
-                "start": 6,
                 "value": {
                   "kind": "integer",
                   "value": -1
                 }
               },
               {
-                "end": 10,
-                "start": 9,
                 "value": {
                   "kind": "integer",
                   "value": 0
                 }
               },
               {
-                "end": 12,
-                "start": 11,
                 "value": {
                   "kind": "integer",
                   "value": 1
                 }
               },
               {
-                "end": 14,
-                "start": 13,
                 "value": {
                   "kind": "integer",
                   "value": 0
                 }
               },
               {
-                "end": 16,
-                "start": 15,
                 "value": {
                   "kind": "integer",
                   "value": 0
@@ -1747,63 +1677,45 @@
             "line_font": 0,
             "line_weight": 0,
             "links": [],
-            "parameter_bytes": "3131302c312c302c302c302e352c312c303b20202020202020202020202020202020202020202020202020202020202020202020202020202020202020202020",
             "parameter_line_count": 1,
-            "parameter_line_end": 10,
-            "parameter_line_start": 9,
-            "parameter_start": 9,
             "parameters": [
               {
-                "end": 3,
-                "start": 0,
                 "value": {
                   "kind": "integer",
                   "value": 110
                 }
               },
               {
-                "end": 5,
-                "start": 4,
                 "value": {
                   "kind": "integer",
                   "value": 1
                 }
               },
               {
-                "end": 7,
-                "start": 6,
                 "value": {
                   "kind": "integer",
                   "value": 0
                 }
               },
               {
-                "end": 9,
-                "start": 8,
                 "value": {
                   "kind": "integer",
                   "value": 0
                 }
               },
               {
-                "end": 13,
-                "start": 10,
                 "value": {
                   "kind": "real",
                   "value": 0.5
                 }
               },
               {
-                "end": 15,
-                "start": 14,
                 "value": {
                   "kind": "integer",
                   "value": 1
                 }
               },
               {
-                "end": 17,
-                "start": 16,
                 "value": {
                   "kind": "integer",
                   "value": 0
@@ -1839,63 +1751,45 @@
             "line_font": 0,
             "line_weight": 0,
             "links": [],
-            "parameter_bytes": "3131302c302e352c312c302c302c302c303b20202020202020202020202020202020202020202020202020202020202020202020202020202020202020202020",
             "parameter_line_count": 1,
-            "parameter_line_end": 11,
-            "parameter_line_start": 10,
-            "parameter_start": 10,
             "parameters": [
               {
-                "end": 3,
-                "start": 0,
                 "value": {
                   "kind": "integer",
                   "value": 110
                 }
               },
               {
-                "end": 7,
-                "start": 4,
                 "value": {
                   "kind": "real",
                   "value": 0.5
                 }
               },
               {
-                "end": 9,
-                "start": 8,
                 "value": {
                   "kind": "integer",
                   "value": 1
                 }
               },
               {
-                "end": 11,
-                "start": 10,
                 "value": {
                   "kind": "integer",
                   "value": 0
                 }
               },
               {
-                "end": 13,
-                "start": 12,
                 "value": {
                   "kind": "integer",
                   "value": 0
                 }
               },
               {
-                "end": 15,
-                "start": 14,
                 "value": {
                   "kind": "integer",
                   "value": 0
                 }
               },
               {
-                "end": 17,
-                "start": 16,
                 "value": {
                   "kind": "integer",
                   "value": 0
@@ -1931,143 +1825,105 @@
             "line_font": 0,
             "line_weight": 0,
             "links": [],
-            "parameter_bytes": "3530322c352c302c302c302c312c302c302c302c312c302c302c2d312c302c302e352c312c303b20202020202020202020202020202020202020202020202020",
             "parameter_line_count": 1,
-            "parameter_line_end": 12,
-            "parameter_line_start": 11,
-            "parameter_start": 11,
             "parameters": [
               {
-                "end": 3,
-                "start": 0,
                 "value": {
                   "kind": "integer",
                   "value": 502
                 }
               },
               {
-                "end": 5,
-                "start": 4,
                 "value": {
                   "kind": "integer",
                   "value": 5
                 }
               },
               {
-                "end": 7,
-                "start": 6,
                 "value": {
                   "kind": "integer",
                   "value": 0
                 }
               },
               {
-                "end": 9,
-                "start": 8,
                 "value": {
                   "kind": "integer",
                   "value": 0
                 }
               },
               {
-                "end": 11,
-                "start": 10,
                 "value": {
                   "kind": "integer",
                   "value": 0
                 }
               },
               {
-                "end": 13,
-                "start": 12,
                 "value": {
                   "kind": "integer",
                   "value": 1
                 }
               },
               {
-                "end": 15,
-                "start": 14,
                 "value": {
                   "kind": "integer",
                   "value": 0
                 }
               },
               {
-                "end": 17,
-                "start": 16,
                 "value": {
                   "kind": "integer",
                   "value": 0
                 }
               },
               {
-                "end": 19,
-                "start": 18,
                 "value": {
                   "kind": "integer",
                   "value": 0
                 }
               },
               {
-                "end": 21,
-                "start": 20,
                 "value": {
                   "kind": "integer",
                   "value": 1
                 }
               },
               {
-                "end": 23,
-                "start": 22,
                 "value": {
                   "kind": "integer",
                   "value": 0
                 }
               },
               {
-                "end": 25,
-                "start": 24,
                 "value": {
                   "kind": "integer",
                   "value": 0
                 }
               },
               {
-                "end": 28,
-                "start": 26,
                 "value": {
                   "kind": "integer",
                   "value": -1
                 }
               },
               {
-                "end": 30,
-                "start": 29,
                 "value": {
                   "kind": "integer",
                   "value": 0
                 }
               },
               {
-                "end": 34,
-                "start": 31,
                 "value": {
                   "kind": "real",
                   "value": 0.5
                 }
               },
               {
-                "end": 36,
-                "start": 35,
                 "value": {
                   "kind": "integer",
                   "value": 1
                 }
               },
               {
-                "end": 38,
-                "start": 37,
                 "value": {
                   "kind": "integer",
                   "value": 0
@@ -2103,303 +1959,225 @@
             "line_font": 0,
             "line_weight": 0,
             "links": [],
-            "parameter_bytes": "3530342c372c372c32312c312c32312c322c392c32312c322c32312c332c31312c32312c332c32312c312c31332c32312c312c32312c342c31352c32312c342c32312c322c31372c32312c322c32312c352c31392c32312c352c32312c313b202020202020202020202020202020202020202020202020202020202020202020",
             "parameter_line_count": 2,
-            "parameter_line_end": 14,
-            "parameter_line_start": 12,
-            "parameter_start": 12,
             "parameters": [
               {
-                "end": 3,
-                "start": 0,
                 "value": {
                   "kind": "integer",
                   "value": 504
                 }
               },
               {
-                "end": 5,
-                "start": 4,
                 "value": {
                   "kind": "integer",
                   "value": 7
                 }
               },
               {
-                "end": 7,
-                "start": 6,
                 "value": {
                   "kind": "integer",
                   "value": 7
                 }
               },
               {
-                "end": 10,
-                "start": 8,
                 "value": {
                   "kind": "integer",
                   "value": 21
                 }
               },
               {
-                "end": 12,
-                "start": 11,
                 "value": {
                   "kind": "integer",
                   "value": 1
                 }
               },
               {
-                "end": 15,
-                "start": 13,
                 "value": {
                   "kind": "integer",
                   "value": 21
                 }
               },
               {
-                "end": 17,
-                "start": 16,
                 "value": {
                   "kind": "integer",
                   "value": 2
                 }
               },
               {
-                "end": 19,
-                "start": 18,
                 "value": {
                   "kind": "integer",
                   "value": 9
                 }
               },
               {
-                "end": 22,
-                "start": 20,
                 "value": {
                   "kind": "integer",
                   "value": 21
                 }
               },
               {
-                "end": 24,
-                "start": 23,
                 "value": {
                   "kind": "integer",
                   "value": 2
                 }
               },
               {
-                "end": 27,
-                "start": 25,
                 "value": {
                   "kind": "integer",
                   "value": 21
                 }
               },
               {
-                "end": 29,
-                "start": 28,
                 "value": {
                   "kind": "integer",
                   "value": 3
                 }
               },
               {
-                "end": 32,
-                "start": 30,
                 "value": {
                   "kind": "integer",
                   "value": 11
                 }
               },
               {
-                "end": 35,
-                "start": 33,
                 "value": {
                   "kind": "integer",
                   "value": 21
                 }
               },
               {
-                "end": 37,
-                "start": 36,
                 "value": {
                   "kind": "integer",
                   "value": 3
                 }
               },
               {
-                "end": 40,
-                "start": 38,
                 "value": {
                   "kind": "integer",
                   "value": 21
                 }
               },
               {
-                "end": 42,
-                "start": 41,
                 "value": {
                   "kind": "integer",
                   "value": 1
                 }
               },
               {
-                "end": 45,
-                "start": 43,
                 "value": {
                   "kind": "integer",
                   "value": 13
                 }
               },
               {
-                "end": 48,
-                "start": 46,
                 "value": {
                   "kind": "integer",
                   "value": 21
                 }
               },
               {
-                "end": 50,
-                "start": 49,
                 "value": {
                   "kind": "integer",
                   "value": 1
                 }
               },
               {
-                "end": 53,
-                "start": 51,
                 "value": {
                   "kind": "integer",
                   "value": 21
                 }
               },
               {
-                "end": 55,
-                "start": 54,
                 "value": {
                   "kind": "integer",
                   "value": 4
                 }
               },
               {
-                "end": 58,
-                "start": 56,
                 "value": {
                   "kind": "integer",
                   "value": 15
                 }
               },
               {
-                "end": 61,
-                "start": 59,
                 "value": {
                   "kind": "integer",
                   "value": 21
                 }
               },
               {
-                "end": 63,
-                "start": 62,
                 "value": {
                   "kind": "integer",
                   "value": 4
                 }
               },
               {
-                "end": 66,
-                "start": 64,
                 "value": {
                   "kind": "integer",
                   "value": 21
                 }
               },
               {
-                "end": 68,
-                "start": 67,
                 "value": {
                   "kind": "integer",
                   "value": 2
                 }
               },
               {
-                "end": 71,
-                "start": 69,
                 "value": {
                   "kind": "integer",
                   "value": 17
                 }
               },
               {
-                "end": 74,
-                "start": 72,
                 "value": {
                   "kind": "integer",
                   "value": 21
                 }
               },
               {
-                "end": 76,
-                "start": 75,
                 "value": {
                   "kind": "integer",
                   "value": 2
                 }
               },
               {
-                "end": 79,
-                "start": 77,
                 "value": {
                   "kind": "integer",
                   "value": 21
                 }
               },
               {
-                "end": 81,
-                "start": 80,
                 "value": {
                   "kind": "integer",
                   "value": 5
                 }
               },
               {
-                "end": 84,
-                "start": 82,
                 "value": {
                   "kind": "integer",
                   "value": 19
                 }
               },
               {
-                "end": 87,
-                "start": 85,
                 "value": {
                   "kind": "integer",
                   "value": 21
                 }
               },
               {
-                "end": 89,
-                "start": 88,
                 "value": {
                   "kind": "integer",
                   "value": 5
                 }
               },
               {
-                "end": 92,
-                "start": 90,
                 "value": {
                   "kind": "integer",
                   "value": 21
                 }
               },
               {
-                "end": 94,
-                "start": 93,
                 "value": {
                   "kind": "integer",
                   "value": 1
@@ -2435,143 +2213,105 @@
             "line_font": 0,
             "line_weight": 0,
             "links": [],
-            "parameter_bytes": "3530382c332c302c32332c312c312c302c302c32332c322c312c302c302c32332c332c312c303b20202020202020202020202020202020202020202020202020",
             "parameter_line_count": 1,
-            "parameter_line_end": 15,
-            "parameter_line_start": 14,
-            "parameter_start": 14,
             "parameters": [
               {
-                "end": 3,
-                "start": 0,
                 "value": {
                   "kind": "integer",
                   "value": 508
                 }
               },
               {
-                "end": 5,
-                "start": 4,
                 "value": {
                   "kind": "integer",
                   "value": 3
                 }
               },
               {
-                "end": 7,
-                "start": 6,
                 "value": {
                   "kind": "integer",
                   "value": 0
                 }
               },
               {
-                "end": 10,
-                "start": 8,
                 "value": {
                   "kind": "integer",
                   "value": 23
                 }
               },
               {
-                "end": 12,
-                "start": 11,
                 "value": {
                   "kind": "integer",
                   "value": 1
                 }
               },
               {
-                "end": 14,
-                "start": 13,
                 "value": {
                   "kind": "integer",
                   "value": 1
                 }
               },
               {
-                "end": 16,
-                "start": 15,
                 "value": {
                   "kind": "integer",
                   "value": 0
                 }
               },
               {
-                "end": 18,
-                "start": 17,
                 "value": {
                   "kind": "integer",
                   "value": 0
                 }
               },
               {
-                "end": 21,
-                "start": 19,
                 "value": {
                   "kind": "integer",
                   "value": 23
                 }
               },
               {
-                "end": 23,
-                "start": 22,
                 "value": {
                   "kind": "integer",
                   "value": 2
                 }
               },
               {
-                "end": 25,
-                "start": 24,
                 "value": {
                   "kind": "integer",
                   "value": 1
                 }
               },
               {
-                "end": 27,
-                "start": 26,
                 "value": {
                   "kind": "integer",
                   "value": 0
                 }
               },
               {
-                "end": 29,
-                "start": 28,
                 "value": {
                   "kind": "integer",
                   "value": 0
                 }
               },
               {
-                "end": 32,
-                "start": 30,
                 "value": {
                   "kind": "integer",
                   "value": 23
                 }
               },
               {
-                "end": 34,
-                "start": 33,
                 "value": {
                   "kind": "integer",
                   "value": 3
                 }
               },
               {
-                "end": 36,
-                "start": 35,
                 "value": {
                   "kind": "integer",
                   "value": 1
                 }
               },
               {
-                "end": 38,
-                "start": 37,
                 "value": {
                   "kind": "integer",
                   "value": 0
@@ -2607,143 +2347,105 @@
             "line_font": 0,
             "line_weight": 0,
             "links": [],
-            "parameter_bytes": "3530382c332c302c32332c312c302c302c302c32332c342c312c302c302c32332c352c312c303b20202020202020202020202020202020202020202020202020",
             "parameter_line_count": 1,
-            "parameter_line_end": 16,
-            "parameter_line_start": 15,
-            "parameter_start": 15,
             "parameters": [
               {
-                "end": 3,
-                "start": 0,
                 "value": {
                   "kind": "integer",
                   "value": 508
                 }
               },
               {
-                "end": 5,
-                "start": 4,
                 "value": {
                   "kind": "integer",
                   "value": 3
                 }
               },
               {
-                "end": 7,
-                "start": 6,
                 "value": {
                   "kind": "integer",
                   "value": 0
                 }
               },
               {
-                "end": 10,
-                "start": 8,
                 "value": {
                   "kind": "integer",
                   "value": 23
                 }
               },
               {
-                "end": 12,
-                "start": 11,
                 "value": {
                   "kind": "integer",
                   "value": 1
                 }
               },
               {
-                "end": 14,
-                "start": 13,
                 "value": {
                   "kind": "integer",
                   "value": 0
                 }
               },
               {
-                "end": 16,
-                "start": 15,
                 "value": {
                   "kind": "integer",
                   "value": 0
                 }
               },
               {
-                "end": 18,
-                "start": 17,
                 "value": {
                   "kind": "integer",
                   "value": 0
                 }
               },
               {
-                "end": 21,
-                "start": 19,
                 "value": {
                   "kind": "integer",
                   "value": 23
                 }
               },
               {
-                "end": 23,
-                "start": 22,
                 "value": {
                   "kind": "integer",
                   "value": 4
                 }
               },
               {
-                "end": 25,
-                "start": 24,
                 "value": {
                   "kind": "integer",
                   "value": 1
                 }
               },
               {
-                "end": 27,
-                "start": 26,
                 "value": {
                   "kind": "integer",
                   "value": 0
                 }
               },
               {
-                "end": 29,
-                "start": 28,
                 "value": {
                   "kind": "integer",
                   "value": 0
                 }
               },
               {
-                "end": 32,
-                "start": 30,
                 "value": {
                   "kind": "integer",
                   "value": 23
                 }
               },
               {
-                "end": 34,
-                "start": 33,
                 "value": {
                   "kind": "integer",
                   "value": 5
                 }
               },
               {
-                "end": 36,
-                "start": 35,
                 "value": {
                   "kind": "integer",
                   "value": 1
                 }
               },
               {
-                "end": 38,
-                "start": 37,
                 "value": {
                   "kind": "integer",
                   "value": 0
@@ -2779,143 +2481,105 @@
             "line_font": 0,
             "line_weight": 0,
             "links": [],
-            "parameter_bytes": "3530382c332c302c32332c312c312c302c302c32332c362c312c302c302c32332c372c312c303b20202020202020202020202020202020202020202020202020",
             "parameter_line_count": 1,
-            "parameter_line_end": 17,
-            "parameter_line_start": 16,
-            "parameter_start": 16,
             "parameters": [
               {
-                "end": 3,
-                "start": 0,
                 "value": {
                   "kind": "integer",
                   "value": 508
                 }
               },
               {
-                "end": 5,
-                "start": 4,
                 "value": {
                   "kind": "integer",
                   "value": 3
                 }
               },
               {
-                "end": 7,
-                "start": 6,
                 "value": {
                   "kind": "integer",
                   "value": 0
                 }
               },
               {
-                "end": 10,
-                "start": 8,
                 "value": {
                   "kind": "integer",
                   "value": 23
                 }
               },
               {
-                "end": 12,
-                "start": 11,
                 "value": {
                   "kind": "integer",
                   "value": 1
                 }
               },
               {
-                "end": 14,
-                "start": 13,
                 "value": {
                   "kind": "integer",
                   "value": 1
                 }
               },
               {
-                "end": 16,
-                "start": 15,
                 "value": {
                   "kind": "integer",
                   "value": 0
                 }
               },
               {
-                "end": 18,
-                "start": 17,
                 "value": {
                   "kind": "integer",
                   "value": 0
                 }
               },
               {
-                "end": 21,
-                "start": 19,
                 "value": {
                   "kind": "integer",
                   "value": 23
                 }
               },
               {
-                "end": 23,
-                "start": 22,
                 "value": {
                   "kind": "integer",
                   "value": 6
                 }
               },
               {
-                "end": 25,
-                "start": 24,
                 "value": {
                   "kind": "integer",
                   "value": 1
                 }
               },
               {
-                "end": 27,
-                "start": 26,
                 "value": {
                   "kind": "integer",
                   "value": 0
                 }
               },
               {
-                "end": 29,
-                "start": 28,
                 "value": {
                   "kind": "integer",
                   "value": 0
                 }
               },
               {
-                "end": 32,
-                "start": 30,
                 "value": {
                   "kind": "integer",
                   "value": 23
                 }
               },
               {
-                "end": 34,
-                "start": 33,
                 "value": {
                   "kind": "integer",
                   "value": 7
                 }
               },
               {
-                "end": 36,
-                "start": 35,
                 "value": {
                   "kind": "integer",
                   "value": 1
                 }
               },
               {
-                "end": 38,
-                "start": 37,
                 "value": {
                   "kind": "integer",
                   "value": 0
@@ -2951,39 +2615,27 @@
             "line_font": 0,
             "line_weight": 0,
             "links": [],
-            "parameter_bytes": "3132332c302c302c313b202020202020202020202020202020202020202020202020202020202020202020202020202020202020202020202020202020202020",
             "parameter_line_count": 1,
-            "parameter_line_end": 3,
-            "parameter_line_start": 2,
-            "parameter_start": 2,
             "parameters": [
               {
-                "end": 3,
-                "start": 0,
                 "value": {
                   "kind": "integer",
                   "value": 123
                 }
               },
               {
-                "end": 5,
-                "start": 4,
                 "value": {
                   "kind": "integer",
                   "value": 0
                 }
               },
               {
-                "end": 7,
-                "start": 6,
                 "value": {
                   "kind": "integer",
                   "value": 0
                 }
               },
               {
-                "end": 9,
-                "start": 8,
                 "value": {
                   "kind": "integer",
                   "value": 1
@@ -3019,47 +2671,33 @@
             "line_font": 0,
             "line_weight": 0,
             "links": [],
-            "parameter_bytes": "3531302c352c312c312c32353b202020202020202020202020202020202020202020202020202020202020202020202020202020202020202020202020202020",
             "parameter_line_count": 1,
-            "parameter_line_end": 18,
-            "parameter_line_start": 17,
-            "parameter_start": 17,
             "parameters": [
               {
-                "end": 3,
-                "start": 0,
                 "value": {
                   "kind": "integer",
                   "value": 510
                 }
               },
               {
-                "end": 5,
-                "start": 4,
                 "value": {
                   "kind": "integer",
                   "value": 5
                 }
               },
               {
-                "end": 7,
-                "start": 6,
                 "value": {
                   "kind": "integer",
                   "value": 1
                 }
               },
               {
-                "end": 9,
-                "start": 8,
                 "value": {
                   "kind": "integer",
                   "value": 1
                 }
               },
               {
-                "end": 12,
-                "start": 10,
                 "value": {
                   "kind": "integer",
                   "value": 25
@@ -3095,47 +2733,33 @@
             "line_font": 0,
             "line_weight": 0,
             "links": [],
-            "parameter_bytes": "3531302c352c312c312c32373b202020202020202020202020202020202020202020202020202020202020202020202020202020202020202020202020202020",
             "parameter_line_count": 1,
-            "parameter_line_end": 19,
-            "parameter_line_start": 18,
-            "parameter_start": 18,
             "parameters": [
               {
-                "end": 3,
-                "start": 0,
                 "value": {
                   "kind": "integer",
                   "value": 510
                 }
               },
               {
-                "end": 5,
-                "start": 4,
                 "value": {
                   "kind": "integer",
                   "value": 5
                 }
               },
               {
-                "end": 7,
-                "start": 6,
                 "value": {
                   "kind": "integer",
                   "value": 1
                 }
               },
               {
-                "end": 9,
-                "start": 8,
                 "value": {
                   "kind": "integer",
                   "value": 1
                 }
               },
               {
-                "end": 12,
-                "start": 10,
                 "value": {
                   "kind": "integer",
                   "value": 27
@@ -3171,47 +2795,33 @@
             "line_font": 0,
             "line_weight": 0,
             "links": [],
-            "parameter_bytes": "3531302c352c312c312c32393b202020202020202020202020202020202020202020202020202020202020202020202020202020202020202020202020202020",
             "parameter_line_count": 1,
-            "parameter_line_end": 20,
-            "parameter_line_start": 19,
-            "parameter_start": 19,
             "parameters": [
               {
-                "end": 3,
-                "start": 0,
                 "value": {
                   "kind": "integer",
                   "value": 510
                 }
               },
               {
-                "end": 5,
-                "start": 4,
                 "value": {
                   "kind": "integer",
                   "value": 5
                 }
               },
               {
-                "end": 7,
-                "start": 6,
                 "value": {
                   "kind": "integer",
                   "value": 1
                 }
               },
               {
-                "end": 9,
-                "start": 8,
                 "value": {
                   "kind": "integer",
                   "value": 1
                 }
               },
               {
-                "end": 12,
-                "start": 10,
                 "value": {
                   "kind": "integer",
                   "value": 29
@@ -3247,71 +2857,51 @@
             "line_font": 0,
             "line_weight": 0,
             "links": [],
-            "parameter_bytes": "3531342c332c33312c312c33332c312c33352c313b20202020202020202020202020202020202020202020202020202020202020202020202020202020202020",
             "parameter_line_count": 1,
-            "parameter_line_end": 21,
-            "parameter_line_start": 20,
-            "parameter_start": 20,
             "parameters": [
               {
-                "end": 3,
-                "start": 0,
                 "value": {
                   "kind": "integer",
                   "value": 514
                 }
               },
               {
-                "end": 5,
-                "start": 4,
                 "value": {
                   "kind": "integer",
                   "value": 3
                 }
               },
               {
-                "end": 8,
-                "start": 6,
                 "value": {
                   "kind": "integer",
                   "value": 31
                 }
               },
               {
-                "end": 10,
-                "start": 9,
                 "value": {
                   "kind": "integer",
                   "value": 1
                 }
               },
               {
-                "end": 13,
-                "start": 11,
                 "value": {
                   "kind": "integer",
                   "value": 33
                 }
               },
               {
-                "end": 15,
-                "start": 14,
                 "value": {
                   "kind": "integer",
                   "value": 1
                 }
               },
               {
-                "end": 18,
-                "start": 16,
                 "value": {
                   "kind": "integer",
                   "value": 35
                 }
               },
               {
-                "end": 20,
-                "start": 19,
                 "value": {
                   "kind": "integer",
                   "value": 1
@@ -3347,31 +2937,21 @@
             "line_font": 0,
             "line_weight": 0,
             "links": [],
-            "parameter_bytes": "3139302c312c333b2020202020202020202020202020202020202020202020202020202020202020202020202020202020202020202020202020202020202020",
             "parameter_line_count": 1,
-            "parameter_line_end": 4,
-            "parameter_line_start": 3,
-            "parameter_start": 3,
             "parameters": [
               {
-                "end": 3,
-                "start": 0,
                 "value": {
                   "kind": "integer",
                   "value": 190
                 }
               },
               {
-                "end": 5,
-                "start": 4,
                 "value": {
                   "kind": "integer",
                   "value": 1
                 }
               },
               {
-                "end": 7,
-                "start": 6,
                 "value": {
                   "kind": "integer",
                   "value": 3
@@ -3407,63 +2987,45 @@
             "line_font": 0,
             "line_weight": 0,
             "links": [],
-            "parameter_bytes": "3131302c302c302c302c312c302c303b202020202020202020202020202020202020202020202020202020202020202020202020202020202020202020202020",
             "parameter_line_count": 1,
-            "parameter_line_end": 5,
-            "parameter_line_start": 4,
-            "parameter_start": 4,
             "parameters": [
               {
-                "end": 3,
-                "start": 0,
                 "value": {
                   "kind": "integer",
                   "value": 110
                 }
               },
               {
-                "end": 5,
-                "start": 4,
                 "value": {
                   "kind": "integer",
                   "value": 0
                 }
               },
               {
-                "end": 7,
-                "start": 6,
                 "value": {
                   "kind": "integer",
                   "value": 0
                 }
               },
               {
-                "end": 9,
-                "start": 8,
                 "value": {
                   "kind": "integer",
                   "value": 0
                 }
               },
               {
-                "end": 11,
-                "start": 10,
                 "value": {
                   "kind": "integer",
                   "value": 1
                 }
               },
               {
-                "end": 13,
-                "start": 12,
                 "value": {
                   "kind": "integer",
                   "value": 0
                 }
               },
               {
-                "end": 15,
-                "start": 14,
                 "value": {
                   "kind": "integer",
                   "value": 0
@@ -3499,63 +3061,45 @@
             "line_font": 0,
             "line_weight": 0,
             "links": [],
-            "parameter_bytes": "3131302c312c302c302c302c312c303b202020202020202020202020202020202020202020202020202020202020202020202020202020202020202020202020",
             "parameter_line_count": 1,
-            "parameter_line_end": 6,
-            "parameter_line_start": 5,
-            "parameter_start": 5,
             "parameters": [
               {
-                "end": 3,
-                "start": 0,
                 "value": {
                   "kind": "integer",
                   "value": 110
                 }
               },
               {
-                "end": 5,
-                "start": 4,
                 "value": {
                   "kind": "integer",
                   "value": 1
                 }
               },
               {
-                "end": 7,
-                "start": 6,
                 "value": {
                   "kind": "integer",
                   "value": 0
                 }
               },
               {
-                "end": 9,
-                "start": 8,
                 "value": {
                   "kind": "integer",
                   "value": 0
                 }
               },
               {
-                "end": 11,
-                "start": 10,
                 "value": {
                   "kind": "integer",
                   "value": 0
                 }
               },
               {
-                "end": 13,
-                "start": 12,
                 "value": {
                   "kind": "integer",
                   "value": 1
                 }
               },
               {
-                "end": 15,
-                "start": 14,
                 "value": {
                   "kind": "integer",
                   "value": 0
@@ -3616,9 +3160,12 @@
         "views": []
       }
     },
+    "scope": {
+      "design": true,
+      "model": true
+    },
     "source": {
       "attributes": {
-        "document_local_sha256": "<elided: digest over tolerantly compared geometry>",
         "native_file_name": "part.igs",
         "native_units": "MM",
         "parameter_delimiter": ",",
@@ -3684,167 +3231,17 @@
     ],
     "transfer": {
       "geometry_transferred": true,
-      "transfer": "full"
-    },
-    "transfer_ledger": {
-      "entries": [
-        {
-          "outcome": {
-            "disposition": "retained",
-            "note": "native record retained; semantic projection emitted",
-            "target": "iges:entity:directory#1"
-          },
-          "source": "D1"
-        },
-        {
-          "outcome": {
-            "disposition": "retained",
-            "note": "native record retained; record was consumed as construction support",
-            "target": "iges:entity:directory#3"
-          },
-          "source": "D3"
-        },
-        {
-          "outcome": {
-            "disposition": "retained",
-            "note": "native record retained; semantic projection emitted",
-            "target": "iges:entity:directory#5"
-          },
-          "source": "D5"
-        },
-        {
-          "outcome": {
-            "disposition": "retained",
-            "note": "native record retained; semantic projection emitted",
-            "target": "iges:entity:directory#7"
-          },
-          "source": "D7"
-        },
-        {
-          "outcome": {
-            "disposition": "retained",
-            "note": "native record retained; semantic projection emitted",
-            "target": "iges:entity:directory#9"
-          },
-          "source": "D9"
-        },
-        {
-          "outcome": {
-            "disposition": "retained",
-            "note": "native record retained; semantic projection emitted",
-            "target": "iges:entity:directory#11"
-          },
-          "source": "D11"
-        },
-        {
-          "outcome": {
-            "disposition": "retained",
-            "note": "native record retained; semantic projection emitted",
-            "target": "iges:entity:directory#13"
-          },
-          "source": "D13"
-        },
-        {
-          "outcome": {
-            "disposition": "retained",
-            "note": "native record retained; semantic projection emitted",
-            "target": "iges:entity:directory#15"
-          },
-          "source": "D15"
-        },
-        {
-          "outcome": {
-            "disposition": "retained",
-            "note": "native record retained; semantic projection emitted",
-            "target": "iges:entity:directory#17"
-          },
-          "source": "D17"
-        },
-        {
-          "outcome": {
-            "disposition": "retained",
-            "note": "native record retained; semantic projection emitted",
-            "target": "iges:entity:directory#19"
-          },
-          "source": "D19"
-        },
-        {
-          "outcome": {
-            "disposition": "retained",
-            "note": "native record retained; semantic projection emitted",
-            "target": "iges:entity:directory#21"
-          },
-          "source": "D21"
-        },
-        {
-          "outcome": {
-            "disposition": "retained",
-            "note": "native record retained; semantic projection emitted",
-            "target": "iges:entity:directory#23"
-          },
-          "source": "D23"
-        },
-        {
-          "outcome": {
-            "disposition": "retained",
-            "note": "native record retained; semantic projection emitted",
-            "target": "iges:entity:directory#25"
-          },
-          "source": "D25"
-        },
-        {
-          "outcome": {
-            "disposition": "retained",
-            "note": "native record retained; semantic projection emitted",
-            "target": "iges:entity:directory#27"
-          },
-          "source": "D27"
-        },
-        {
-          "outcome": {
-            "disposition": "retained",
-            "note": "native record retained; semantic projection emitted",
-            "target": "iges:entity:directory#29"
-          },
-          "source": "D29"
-        },
-        {
-          "outcome": {
-            "disposition": "retained",
-            "note": "native record retained; semantic projection emitted",
-            "target": "iges:entity:directory#31"
-          },
-          "source": "D31"
-        },
-        {
-          "outcome": {
-            "disposition": "retained",
-            "note": "native record retained; semantic projection emitted",
-            "target": "iges:entity:directory#33"
-          },
-          "source": "D33"
-        },
-        {
-          "outcome": {
-            "disposition": "retained",
-            "note": "native record retained; semantic projection emitted",
-            "target": "iges:entity:directory#35"
-          },
-          "source": "D35"
-        },
-        {
-          "outcome": {
-            "disposition": "retained",
-            "note": "native record retained; semantic projection emitted",
-            "target": "iges:entity:directory#37"
-          },
-          "source": "D37"
-        }
-      ]
+      "scope": {
+        "design": true,
+        "model": true
+      }
     }
   },
   "source_fidelity": {
     "annotations": {},
+    "metadata": {
+      "document_local_sha256": "b99dba478674520a531fdf748e188734b76ca23ba844d88c8a86a4a5e3335684"
+    },
     "retained_records": {
       "iges:file:source-image#0": {
         "bytes": {
@@ -3852,8 +3249,10 @@
           "retention": "inline"
         },
         "offset": 0,
-        "stream": "iges"
+        "stream": "iges",
+        "untyped": []
       }
-    }
+    },
+    "unrepresented": []
   }
 }

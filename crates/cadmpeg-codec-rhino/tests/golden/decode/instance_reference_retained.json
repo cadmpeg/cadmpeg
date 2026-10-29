@@ -1,7 +1,6 @@
 {
   "ir": {
-    "decode_depth": "full",
-    "ir_version": "9",
+    "ir_version": "10",
     "model": {
       "appearance_bindings": [],
       "appearances": [],
@@ -25,7 +24,15 @@
       "presentation_layers": [],
       "procedural_curves": [],
       "procedural_surfaces": [],
-      "product_definitions": [],
+      "product_definitions": [
+        {
+          "description": "description",
+          "id": "rhino:model:product#61616161-6161-6161-6161-616161616161",
+          "kind": "part",
+          "native_ref": "rhino:product:definition#61616161-6161-6161-6161-616161616161",
+          "source_name": "modern definition"
+        }
+      ],
       "regions": [],
       "semantic_annotations": [],
       "shells": [],
@@ -61,8 +68,7 @@
             "current_material_source": null,
             "current_wire_density": null,
             "id": "rhino:document:settings#current",
-            "model_url": null,
-            "writer_version": null
+            "model_url": null
           }
         ],
         "embedded_images": [],
@@ -90,7 +96,6 @@
             "member_object_ids": [],
             "meters_per_unit": 0.0254,
             "name": "modern definition",
-            "source_offset": 111,
             "source_uuid": "61616161-6161-6161-6161-616161616161",
             "unit_system": 8,
             "url": "https://example.test",
@@ -107,7 +112,6 @@
             ],
             "name": "",
             "parent_definition_uuids": [],
-            "source_offset": 534,
             "source_uuid": "00000000-0000-0000-0000-000000000000",
             "transform": [
               [
@@ -153,6 +157,10 @@
         "views": [],
         "windows_bitmaps": []
       }
+    },
+    "scope": {
+      "design": false,
+      "model": true
     },
     "source": {
       "attributes": {
@@ -203,7 +211,7 @@
           "namespace": "rhino",
           "scope": "namespaced"
         },
-        "message": "decoded 0/1 Rhino object records",
+        "message": "decoded 1/1 Rhino object records",
         "severity": "info"
       },
       {
@@ -221,21 +229,6 @@
           "tag": "INSTANCE_DEFINITION_TABLE"
         },
         "severity": "error"
-      },
-      {
-        "code": {
-          "code": "object.family-not-transferred",
-          "kind": "unsupported_object_family",
-          "namespace": "rhino",
-          "scope": "namespaced"
-        },
-        "message": "retained 1 object record(s) for class f9cfb638-b9d4-4340-87e3-c56e7865d96a; geometry is not decoded",
-        "provenance": {
-          "format": "rhino",
-          "offset": 534,
-          "tag": "OBJECT_RECORD/class=f9cfb638-b9d4-4340-87e3-c56e7865d96a/type=0x00001000"
-        },
-        "severity": "warning"
       },
       {
         "code": {
@@ -271,21 +264,39 @@
       },
       {
         "code": {
-          "code": "object.decode-diagnostic",
-          "kind": "decode_diagnostic",
+          "code": "product.record-unprojected",
+          "kind": "metadata_not_transferred",
           "namespace": "rhino",
           "scope": "namespaced"
         },
-        "message": "f9cfb638-b9d4-4340-87e3-c56e7865d96a: instance retained: document has no physical millimetre binding (unavailable)",
+        "message": "object record 0: occurrence placement has no physical millimeter binding (unavailable)",
+        "provenance": {
+          "format": "rhino",
+          "offset": 534
+        },
         "severity": "warning"
+      },
+      {
+        "code": {
+          "code": "depth.not-delivered",
+          "kind": "parametric_record_omitted",
+          "namespace": "decode",
+          "scope": "namespaced",
+          "strict_floor": "warning"
+        },
+        "message": "requested full depth but the rhino decoder did not deliver classes: design",
+        "severity": "error"
       }
     ],
     "notes": [
-      "decoded 0/1 Rhino object records; retained metadata/digests for 1 records and complete bytes for 1; document cap 268435456 bytes, per-record cap 16777216 bytes"
+      "decoded 1/1 Rhino object records; retained metadata/digests for 1 records and complete bytes for 1; document cap 268435456 bytes, per-record cap 16777216 bytes"
     ],
     "transfer": {
       "geometry_transferred": false,
-      "transfer": "full"
+      "scope": {
+        "design": false,
+        "model": true
+      }
     }
   },
   "source_fidelity": {
@@ -297,8 +308,10 @@
           "retention": "inline"
         },
         "offset": 534,
-        "stream": ""
+        "stream": "",
+        "untyped": []
       }
-    }
+    },
+    "unrepresented": []
   }
 }

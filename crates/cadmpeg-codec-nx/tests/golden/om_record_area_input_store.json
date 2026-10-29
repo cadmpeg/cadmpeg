@@ -1,8 +1,7 @@
 {
   "decode": {
     "ir": {
-      "decode_depth": "full",
-      "ir_version": "9",
+      "ir_version": "10",
       "model": {
         "appearance_bindings": [],
         "appearances": [],
@@ -47,6 +46,7 @@
             "id": "nx:feature-history:feature#0000000000-0000000000",
             "name": "UNITE",
             "native_ref": "nx:feature-history:operation-label#0000000000-0000000000",
+            "needs_recompute": false,
             "ordinal": 1,
             "source_properties": {
               "body_reference.0": "6466",
@@ -70,6 +70,7 @@
             },
             "id": "nx:om-entry-0:feature#equations-372",
             "name": "NX expressions",
+            "needs_recompute": false,
             "ordinal": 0,
             "source_content": [
               {
@@ -85,7 +86,15 @@
         "occurrences": [],
         "parameters": [
           {
-            "expression": "25",
+            "driving": true,
+            "expression": {
+              "tokens": [
+                {
+                  "kind": "text",
+                  "value": "25 mm"
+                }
+              ]
+            },
             "id": "nx:om-entry-0:parameter#399",
             "name": "length",
             "native_ref": "nx:om-entry-0:expression#399",
@@ -435,6 +444,10 @@
           ]
         }
       },
+      "scope": {
+        "design": true,
+        "model": false
+      },
       "source": {
         "attributes": {
           "classified_offset_store_control_count": "1",
@@ -443,7 +456,6 @@
           "file_size": "516",
           "footer_entry_count": "0",
           "footer_fingerprint": "00000000",
-          "footer_offset": "502",
           "header_entry_count": "1",
           "jpeg_preview_count": "0",
           "offset_store_control_count": "1",
@@ -498,6 +510,17 @@
           },
           "message": "No B-rep geometry was transferred: no gate-passing analytic carrier was found in the embedded Parasolid streams (they may hold only B-spline/procedural geometry this codec does not yet type). The streams are preserved verbatim as unknown passthrough records.",
           "severity": "blocking"
+        },
+        {
+          "code": {
+            "code": "depth.not-delivered",
+            "kind": "geometry_not_transferred",
+            "namespace": "decode",
+            "scope": "namespaced",
+            "strict_floor": "warning"
+          },
+          "message": "requested full depth but the nx decoder did not deliver classes: model",
+          "severity": "error"
         }
       ],
       "notes": [
@@ -509,7 +532,10 @@
       ],
       "transfer": {
         "geometry_transferred": false,
-        "transfer": "full"
+        "scope": {
+          "design": true,
+          "model": false
+        }
       }
     },
     "source_fidelity": {
@@ -657,7 +683,8 @@
             "retention": "inline"
           },
           "offset": 424,
-          "stream": "nx:container"
+          "stream": "nx:container",
+          "untyped": []
         },
         "nx:om-section-0:block#1": {
           "bytes": {
@@ -665,7 +692,8 @@
             "retention": "inline"
           },
           "offset": 432,
-          "stream": "nx:container"
+          "stream": "nx:container",
+          "untyped": []
         },
         "nx:om-section-0:block#2": {
           "bytes": {
@@ -673,9 +701,20 @@
             "retention": "inline"
           },
           "offset": 467,
-          "stream": "nx:container"
+          "stream": "nx:container",
+          "untyped": []
+        },
+        "nx:source:image#whole": {
+          "bytes": {
+            "data": "U1BMTVNTVFIGAAAAAAAAAAD2AQAAAAAAAEhFQURFUgEAAAAVAAAAL1Jvb3QvVUdfUEFSVC9VR19QQVJUTAAAAAAAAACqAQAAAAAAACAAAAAJAAAACwAAAAEAAAABAAAAGAAAAAAAAAAAAAAA/////wAAAAAAAAD+T03//wABAhRVR1M6OkZFQVRVUkVfUkVDT1JEoIEhASNFZ4mrze8GIVVHUzo6TW9kbFV0aWxzOjpCb29sZWFuQ29tcG9uZW50ZQltX3RhcmdldIABAghtX3Rvb2xzgQMEdW5mcmFtZWQgVUdTOjpQYXlsb2FkVGV4dJkAAAAAAAAAAAAAAAAAAAAAAAAADQAAAA4AAAAsAAAABQEOTlggMjAyNy4zMTAyAGZlYXR1cmUtcmVjb3Jkc4DNAQQBL6R64UeuFHv//wGCQJAX0/8DB1VOSVRFADEAAAEAFC+keuFHrhR7AwAA4H////8BAQECkBlCAAEDkBlMfwABAhCQGUL/qqqqqqqqqqoRVUdTOjpNb2RsRmVhdHVyZYFcAQAAZAEAAIcBAACqAQAAAgAAAAAAAAAAAQAABAEOTlggMjAyNy4zMTAyAGhvc3RnbG9iYWx2YXJpYWJsZXMEACoCC5kEHChOdW1iZXIgW21tXSkgbGVuZ3RoOiAyNTsgAEZPT1RFUgAAAAAAAAAA",
+            "retention": "inline"
+          },
+          "offset": 0,
+          "stream": "nx:source",
+          "untyped": []
         }
-      }
+      },
+      "unrepresented": []
     }
   },
   "inspect": {

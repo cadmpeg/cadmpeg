@@ -1,7 +1,6 @@
 {
   "ir": {
-    "decode_depth": "full",
-    "ir_version": "9",
+    "ir_version": "10",
     "model": {
       "appearance_bindings": [],
       "appearances": [],
@@ -61,8 +60,7 @@
             "current_material_source": null,
             "current_wire_density": null,
             "id": "rhino:document:settings#current",
-            "model_url": null,
-            "writer_version": null
+            "model_url": null
           }
         ],
         "embedded_images": [],
@@ -93,6 +91,10 @@
         "views": [],
         "windows_bitmaps": []
       }
+    },
+    "scope": {
+      "design": false,
+      "model": true
     },
     "source": {
       "attributes": {
@@ -191,6 +193,17 @@
         },
         "message": "c3101a1d-f157-11d3-bfe7-0010830122f0: simple geometry retained because the document has no physical millimetre binding (unavailable)",
         "severity": "warning"
+      },
+      {
+        "code": {
+          "code": "depth.not-delivered",
+          "kind": "parametric_record_omitted",
+          "namespace": "decode",
+          "scope": "namespaced",
+          "strict_floor": "warning"
+        },
+        "message": "requested full depth but the rhino decoder did not deliver classes: design",
+        "severity": "error"
       }
     ],
     "notes": [
@@ -198,7 +211,10 @@
     ],
     "transfer": {
       "geometry_transferred": false,
-      "transfer": "full"
+      "scope": {
+        "design": false,
+        "model": true
+      }
     }
   },
   "source_fidelity": {
@@ -210,8 +226,14 @@
           "retention": "inline"
         },
         "offset": 87,
-        "stream": ""
+        "stream": "",
+        "untyped": [
+          "model"
+        ]
       }
-    }
+    },
+    "unrepresented": [
+      "model"
+    ]
   }
 }
