@@ -339,10 +339,13 @@ fn append_source_card(output: &mut Vec<u8>, line: &[u8], section: u8) -> Result<
     Ok(())
 }
 
+/// The two rendered Directory lines, nine 8-byte fields each.
+type DirectoryLines = ([[u8; 8]; 9], [[u8; 8]; 9]);
+
 fn directory_fields(
     entity: &DataEntity,
     parameter_start: u32,
-) -> Result<([[u8; 8]; 9], [[u8; 8]; 9]), CodecError> {
+) -> Result<DirectoryLines, CodecError> {
     let entity_type = entity
         .fields
         .get(CompressedField::Shared(DirectoryFieldSlot::EntityType));

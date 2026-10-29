@@ -33,8 +33,8 @@ fn contradictory_binary_global_numeric_fields_decode_as_neutral_ones() {
         serde_json::to_value(&neutral.ir().model).expect("model JSON")
     );
     assert_eq!(
-        serde_json::to_value(&contradictory.ir().tolerances).expect("tolerance JSON"),
-        serde_json::to_value(&neutral.ir().tolerances).expect("tolerance JSON")
+        serde_json::to_value(contradictory.ir().tolerances).expect("tolerance JSON"),
+        serde_json::to_value(neutral.ir().tolerances).expect("tolerance JSON")
     );
     assert_eq!(
         serde_json::to_value(&contradictory.report().losses).expect("loss JSON"),

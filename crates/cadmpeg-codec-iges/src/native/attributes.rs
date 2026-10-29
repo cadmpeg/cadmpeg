@@ -237,16 +237,26 @@ fn targets(ir: &CadIr, sequences: &SourceSequences) -> BTreeMap<String, Vec<Attr
 
 type Fields = Vec<(String, Vec<AttributeValue>)>;
 
+/// The native attribute record that projected fields come from.
+struct FieldSource<'a> {
+    source_id: &'a str,
+    native_ref: &'a str,
+    owners: &'a [String],
+}
+
 fn project_fields(
     ir: &mut CadIr,
-    source_id: &str,
-    native_ref: &str,
-    owners: &[String],
+    source: &FieldSource<'_>,
     name: &str,
     fields: Fields,
     targets: &BTreeMap<String, Vec<AttributeTarget>>,
     ctx: &DecodeContext<'_>,
 ) -> Result<(), CodecError> {
+    let FieldSource {
+        source_id,
+        native_ref,
+        owners,
+    } = *source;
     let sequence = source_id
         .rsplit_once('#')
         .and_then(|(_, sequence)| sequence.parse::<u32>().ok())
@@ -306,14 +316,14 @@ pub(super) fn project(
     ir: &mut CadIr,
     sequences: &SourceSequences,
     entities: &[super::NativeEntity<'_>],
-    records: PropertyRecords<'_>,
+    records: &PropertyRecords<'_>,
     ctx: &DecodeContext<'_>,
 ) -> Result<Vec<LossNote>, CodecError> {
     let PropertyRecords {
         properties,
         definitions,
         instances,
-    } = records;
+    } = *records;
     let targets = targets(ir, sequences);
     let mut losses = Vec::new();
     for property in properties.iter().filter(|property| property.form != 15) {
@@ -323,9 +333,11 @@ pub(super) fn project(
             Ok((name, fields)) => {
                 project_fields(
                     ir,
-                    &property.source_entity,
-                    &property.id,
-                    &property.owners,
+                    &FieldSource {
+                        source_id: &property.source_entity,
+                        native_ref: &property.id,
+                        owners: &property.owners,
+                    },
                     &name,
                     fields,
                     &targets,
@@ -362,9 +374,11 @@ pub(super) fn project(
         } else {
             project_fields(
                 ir,
-                &definition.source_entity,
-                &definition.id,
-                &[],
+                &FieldSource {
+                    source_id: &definition.source_entity,
+                    native_ref: &definition.id,
+                    owners: &[],
+                },
                 "iges.attribute_table.default",
                 fields,
                 &targets,
@@ -410,9 +424,11 @@ pub(super) fn project(
         } else {
             project_fields(
                 ir,
-                &instance.source_entity,
-                &instance.id,
-                &[],
+                &FieldSource {
+                    source_id: &instance.source_entity,
+                    native_ref: &instance.id,
+                    owners: &[],
+                },
                 "iges.attribute_table.value",
                 fields,
                 &targets,

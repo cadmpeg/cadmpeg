@@ -2,7 +2,7 @@
 
 use super::{
     clamp_to_knot_domain, emit_carrier_curve, emit_coedges, emit_edges, emit_faces, emit_vertices,
-    into_support_sides, CoedgeDecodeInputs, CurveSenseRefs,
+    into_support_sides, CoedgeDecodeInputs, CurveSenseRefs, FaceInputs,
 };
 use crate::brep::records::{FaceSidedness, TolerantCoedgeExtension};
 use crate::brep::{AsmBrep, Carriers, Reachable};
@@ -132,12 +132,14 @@ fn face_sidedness_retains_the_decode_time_carrier_flip() {
         emit_faces(
             &ctx,
             &mut out,
-            &records,
-            &by_index,
-            &reach,
-            &inward,
-            crate::asm_format!("f3d"),
-            super::super::DecodePurpose::Model,
+            FaceInputs {
+                records: &records,
+                by_index: &by_index,
+                reach: &reach,
+                inward_normal_surfaces: &inward,
+                format: crate::asm_format!("f3d"),
+                purpose: super::super::DecodePurpose::Model,
+            },
         )
         .unwrap();
         assert_eq!(out.faces.len(), 1);
@@ -1149,12 +1151,14 @@ fn faces_sharing_one_name_record_charge_each_name_copy() {
         let result = emit_faces(
             &ctx,
             &mut out,
-            &records,
-            &by_index,
-            &reach,
-            &HashSet::new(),
-            crate::asm_format!("f3d"),
-            super::super::DecodePurpose::Model,
+            FaceInputs {
+                records: &records,
+                by_index: &by_index,
+                reach: &reach,
+                inward_normal_surfaces: &HashSet::new(),
+                format: crate::asm_format!("f3d"),
+                purpose: super::super::DecodePurpose::Model,
+            },
         );
         result.map(|()| out)
     };
@@ -1509,12 +1513,14 @@ fn face_join_key_projection_links_inward_and_retains_the_native_slot() {
             emit_faces(
                 &ctx,
                 &mut out,
-                &records,
-                &by_index,
-                &reach,
-                &HashSet::new(),
-                format,
-                super::super::DecodePurpose::Model,
+                FaceInputs {
+                    records: &records,
+                    by_index: &by_index,
+                    reach: &reach,
+                    inward_normal_surfaces: &HashSet::new(),
+                    format,
+                    purpose: super::super::DecodePurpose::Model,
+                },
             )
             .unwrap();
             assert_eq!(out.faces.len(), 1);
@@ -1586,12 +1592,14 @@ fn face_native_reference_obeys_its_exact_retained_byte_floor_before_projection()
         let result = emit_faces(
             &ctx,
             &mut out,
-            &records,
-            &by_index,
-            &reach,
-            &HashSet::new(),
-            crate::asm_format!("f3d"),
-            super::super::DecodePurpose::Model,
+            FaceInputs {
+                records: &records,
+                by_index: &by_index,
+                reach: &reach,
+                inward_normal_surfaces: &HashSet::new(),
+                format: crate::asm_format!("f3d"),
+                purpose: super::super::DecodePurpose::Model,
+            },
         );
         if limit == required {
             result.unwrap();
@@ -1664,12 +1672,14 @@ fn history_face_native_references_keep_values_in_actual_working_storage() {
                 let result = emit_faces(
                     &ctx,
                     &mut out,
-                    &records,
-                    &by_index,
-                    &reach,
-                    &HashSet::new(),
-                    crate::asm_format!("f3d"),
-                    purpose,
+                    FaceInputs {
+                        records: &records,
+                        by_index: &by_index,
+                        reach: &reach,
+                        inward_normal_surfaces: &HashSet::new(),
+                        format: crate::asm_format!("f3d"),
+                        purpose,
+                    },
                 );
                 if purpose == DecodePurpose::Model && limit < required {
                     assert!(matches!(result, Err(CodecError::ResourceLimit(_))));
@@ -1679,7 +1689,7 @@ fn history_face_native_references_keep_values_in_actual_working_storage() {
                 }
                 result.unwrap();
                 assert_eq!(out.faces.len(), 1);
-                assert_eq!(out.face_native_keys, [native.clone()]);
+                assert_eq!(out.face_native_keys, std::slice::from_ref(&native));
                 assert_eq!(out.faces[0].native_ref.as_deref(), Some(expected.as_str()));
                 assert_eq!(
                     ctx.retained_bytes_available(),
@@ -1706,7 +1716,7 @@ fn history_face_native_references_keep_values_in_actual_working_storage() {
             };
             let mut out = AsmBrep::default();
             assert!(
-                matches!(emit_faces(&ctx, &mut out, &records, &by_index, &reach, &HashSet::new(), crate::asm_format!("f3d"), purpose), Err(CodecError::ResourceLimit(actual)) if actual == refusal)
+                matches!(emit_faces(&ctx, &mut out, FaceInputs { records: &records, by_index: &by_index, reach: &reach, inward_normal_surfaces: &HashSet::new(), format: crate::asm_format!("f3d"), purpose }), Err(CodecError::ResourceLimit(actual)) if actual == refusal)
             );
             assert!(out.faces.is_empty());
             assert!(out.face_native_keys.is_empty());

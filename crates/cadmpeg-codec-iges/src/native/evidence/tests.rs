@@ -20,7 +20,8 @@ struct MacroDefinition {
 #[test]
 fn exact_native_text_bytes_stay_typed_and_macro_definitions_keep_their_disposition() {
     let arena = DecodeArena::new();
-    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service()).unwrap();
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service())
+        .expect("an empty root fits the service policy");
     let mut ir = CadIr::empty();
     assert!(super::untyped_records(&ir).is_empty());
     ir.native
@@ -33,7 +34,7 @@ fn exact_native_text_bytes_stay_typed_and_macro_definitions_keep_their_dispositi
                 text: NativeBytes::from([0xff, 0xfe]),
             }],
         )
-        .unwrap();
+        .expect("the annotation records serialize into the iges namespace");
     assert!(super::untyped_records(&ir).is_empty());
     ir.native
         .namespace_mut("iges")
@@ -51,7 +52,7 @@ fn exact_native_text_bytes_stay_typed_and_macro_definitions_keep_their_dispositi
                 },
             ],
         )
-        .unwrap();
+        .expect("the macro definition records serialize into the iges namespace");
     let before = ir.native.clone();
     assert_eq!(
         super::untyped_records(&ir),
@@ -61,6 +62,10 @@ fn exact_native_text_bytes_stay_typed_and_macro_definitions_keep_their_dispositi
         ]
     );
     assert_eq!(ir.native, before);
-    let text = &ir.native.namespace("iges").unwrap().arenas()["annotations"][0];
+    let text = &ir
+        .native
+        .namespace("iges")
+        .expect("the iges namespace exists after the arena writes")
+        .arenas()["annotations"][0];
     assert_eq!(text.field("text"), Some(serde_json::json!("fffe")));
 }

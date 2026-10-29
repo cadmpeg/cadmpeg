@@ -30,16 +30,20 @@ fn points(first: &str, second: &str) -> Vec<u8> {
 fn actual_parameter_callbacks_preserve_original_values_and_independent_source_extents() {
     let bytes = points("116,1,2,3,0;", "116,4,5,6,0;");
     let arena = DecodeArena::new();
-    let (ctx, root) =
-        DecodeContext::from_root_bytes(&bytes, &arena, &DecodePolicy::service()).unwrap();
-    let scan = card::scan_source(root).unwrap();
-    let global = crate::global::parse(&scan).unwrap().0;
-    let directory = crate::directory::parse(&scan, global.global_table(), &ctx)
-        .unwrap()
+    let (ctx, root) = DecodeContext::from_root_bytes(&bytes, &arena, &DecodePolicy::service())
+        .expect("the fixture fits the service policy");
+    let scan = card::scan_source(root).expect("the fixture scans into cards");
+    let global = crate::global::parse(&scan)
+        .expect("the global section parses")
         .0;
-    let expected = crate::parameter::assemble(&scan, &directory, [], &global).unwrap();
+    let directory = crate::directory::parse(&scan, global.global_table(), &ctx)
+        .expect("the directory section parses")
+        .0;
+    let expected = crate::parameter::assemble(&scan, &directory, [], &global)
+        .expect("the partless parameter assembly succeeds");
     let mut output = PartOutput::new(cadmpeg_ir::CodecFormat::Iges);
-    let actual = assemble(&scan, &directory, [], &global, &ctx, &mut output).unwrap();
+    let actual = assemble(&scan, &directory, [], &global, &ctx, &mut output)
+        .expect("the part callbacks assemble the parameter section");
     assert_eq!(actual.records, expected.records);
     assert!(actual.given_up.is_empty());
     assert_eq!(
@@ -48,8 +52,9 @@ fn actual_parameter_callbacks_preserve_original_values_and_independent_source_ex
     );
     assert_eq!(actual.quarantined, expected.quarantined);
     assert_eq!(
-        serde_json::to_value(actual.recoveries.notes()).unwrap(),
-        serde_json::to_value(expected.recoveries.notes()).unwrap()
+        serde_json::to_value(actual.recoveries.notes()).expect("the part recovery notes serialize"),
+        serde_json::to_value(expected.recoveries.notes())
+            .expect("the partless recovery notes serialize")
     );
     let (model, _, fidelity, losses) = output.into_parts();
     assert_eq!(model.points.len(), 2);
@@ -65,24 +70,32 @@ fn actual_parameter_callbacks_preserve_original_values_and_independent_source_ex
 fn failed_parameter_record_has_one_exact_shared_home_and_preserves_successful_peer() {
     let bytes = points("110,1,2,3,0;", "116,4,5,6,0;");
     let arena = DecodeArena::new();
-    let (ctx, root) =
-        DecodeContext::from_root_bytes(&bytes, &arena, &DecodePolicy::service()).unwrap();
-    let scan = card::scan_source(root).unwrap();
-    let global = crate::global::parse(&scan).unwrap().0;
-    let directory = crate::directory::parse(&scan, global.global_table(), &ctx)
-        .unwrap()
+    let (ctx, root) = DecodeContext::from_root_bytes(&bytes, &arena, &DecodePolicy::service())
+        .expect("the fixture fits the service policy");
+    let scan = card::scan_source(root).expect("the fixture scans into cards");
+    let global = crate::global::parse(&scan)
+        .expect("the global section parses")
         .0;
-    let expected = crate::parameter::assemble(&scan, &directory, [], &global).unwrap();
+    let directory = crate::directory::parse(&scan, global.global_table(), &ctx)
+        .expect("the directory section parses")
+        .0;
+    let expected = crate::parameter::assemble(&scan, &directory, [], &global)
+        .expect("the partless parameter assembly keeps the peer");
     let mut output = PartOutput::new(cadmpeg_ir::CodecFormat::Iges);
-    let actual = assemble(&scan, &directory, [], &global, &ctx, &mut output).unwrap();
+    let actual = assemble(&scan, &directory, [], &global, &ctx, &mut output)
+        .expect("a mismatched entity type does not refuse the parameter section");
     assert_eq!(actual.records, expected.records);
     assert_eq!(actual.records.len(), 1);
     assert_eq!(actual.records[0].directory_sequence, 3);
     assert!(actual.quarantined.is_empty());
     let (_, native, fidelity, losses) = output.into_parts();
     assert!(native.namespace("iges").is_none());
-    let first = scan.section(Section::Parameter).next().unwrap().1;
-    let start = usize::try_from(first.offset).unwrap();
+    let first = scan
+        .section(Section::Parameter)
+        .next()
+        .expect("the fixture has a parameter card")
+        .1;
+    let start = usize::try_from(first.offset).expect("the parameter card offset fits usize");
     let parts = crate::test_support::given_up_parts(&fidelity);
     assert_eq!(parts.len(), 1);
     assert!(!parts[0].untyped().is_empty());
@@ -110,17 +123,23 @@ fn cross_card_hollerith_token_reads_actual_composite_payload_without_headers_or_
     wrapped.extend_from_slice(&bytes);
     wrapped.extend_from_slice(b"post");
     let arena = DecodeArena::new();
-    let (ctx, root) =
-        DecodeContext::from_root_bytes(&wrapped, &arena, &DecodePolicy::service()).unwrap();
-    let source = root.child(3, wrapped.len() - 4).unwrap();
-    let scan = card::scan_source(source).unwrap();
-    let global = crate::global::parse(&scan).unwrap().0;
-    let directory = crate::directory::parse(&scan, global.global_table(), &ctx)
-        .unwrap()
+    let (ctx, root) = DecodeContext::from_root_bytes(&wrapped, &arena, &DecodePolicy::service())
+        .expect("the prefixed fixture fits the service policy");
+    let source = root
+        .child(3, wrapped.len() - 4)
+        .expect("the source window lies inside the root");
+    let scan = card::scan_source(source).expect("the source window scans into cards");
+    let global = crate::global::parse(&scan)
+        .expect("the global section parses")
         .0;
-    let expected = crate::parameter::assemble(&scan, &directory, [], &global).unwrap();
+    let directory = crate::directory::parse(&scan, global.global_table(), &ctx)
+        .expect("the directory section parses")
+        .0;
+    let expected = crate::parameter::assemble(&scan, &directory, [], &global)
+        .expect("the partless parameter assembly succeeds");
     let mut output = PartOutput::new(cadmpeg_ir::CodecFormat::Iges);
-    let actual = assemble(&scan, &directory, [], &global, &ctx, &mut output).unwrap();
+    let actual = assemble(&scan, &directory, [], &global, &ctx, &mut output)
+        .expect("the part callbacks assemble the parameter section");
     assert_eq!(actual.records, expected.records);
     assert_eq!(actual.records[0].string(2), Some(payload.as_bytes()));
 }
@@ -135,16 +154,20 @@ fn bounded_macro_record_uses_real_callback_without_invented_child_or_content_rea
         parameters: "306,MACRO,621,X,Y;LET $S=3Ha;b;ENDM;".into(),
     }]);
     let arena = DecodeArena::new();
-    let (ctx, root) =
-        DecodeContext::from_root_bytes(&bytes, &arena, &DecodePolicy::service()).unwrap();
-    let scan = card::scan_source(root).unwrap();
-    let global = crate::global::parse(&scan).unwrap().0;
-    let directory = crate::directory::parse(&scan, global.global_table(), &ctx)
-        .unwrap()
+    let (ctx, root) = DecodeContext::from_root_bytes(&bytes, &arena, &DecodePolicy::service())
+        .expect("the fixture fits the service policy");
+    let scan = card::scan_source(root).expect("the fixture scans into cards");
+    let global = crate::global::parse(&scan)
+        .expect("the global section parses")
         .0;
-    let expected = crate::parameter::assemble(&scan, &directory, [], &global).unwrap();
+    let directory = crate::directory::parse(&scan, global.global_table(), &ctx)
+        .expect("the directory section parses")
+        .0;
+    let expected = crate::parameter::assemble(&scan, &directory, [], &global)
+        .expect("the partless parameter assembly succeeds");
     let mut output = PartOutput::new(cadmpeg_ir::CodecFormat::Iges);
-    let actual = assemble(&scan, &directory, [], &global, &ctx, &mut output).unwrap();
+    let actual = assemble(&scan, &directory, [], &global, &ctx, &mut output)
+        .expect("the part callbacks assemble the macro record");
     assert_eq!(actual.records, expected.records);
     assert_eq!(actual.records.len(), 1);
     let (_, _, fidelity, losses) = output.into_parts();
@@ -156,16 +179,20 @@ fn bounded_macro_record_uses_real_callback_without_invented_child_or_content_rea
 fn missing_parameter_bytes_never_acquire_a_fabricated_source_part() {
     let bytes = points("116,1,2,3,0;", "");
     let arena = DecodeArena::new();
-    let (ctx, root) =
-        DecodeContext::from_root_bytes(&bytes, &arena, &DecodePolicy::service()).unwrap();
-    let scan = card::scan_source(root).unwrap();
-    let global = crate::global::parse(&scan).unwrap().0;
-    let directory = crate::directory::parse(&scan, global.global_table(), &ctx)
-        .unwrap()
+    let (ctx, root) = DecodeContext::from_root_bytes(&bytes, &arena, &DecodePolicy::service())
+        .expect("the fixture fits the service policy");
+    let scan = card::scan_source(root).expect("the fixture scans into cards");
+    let global = crate::global::parse(&scan)
+        .expect("the global section parses")
         .0;
-    let expected = crate::parameter::assemble(&scan, &directory, [], &global).unwrap();
+    let directory = crate::directory::parse(&scan, global.global_table(), &ctx)
+        .expect("the directory section parses")
+        .0;
+    let expected = crate::parameter::assemble(&scan, &directory, [], &global)
+        .expect("the partless parameter assembly keeps the peer");
     let mut output = PartOutput::new(cadmpeg_ir::CodecFormat::Iges);
-    let actual = assemble(&scan, &directory, [], &global, &ctx, &mut output).unwrap();
+    let actual = assemble(&scan, &directory, [], &global, &ctx, &mut output)
+        .expect("missing parameter bytes do not refuse the parameter section");
     assert_eq!(actual.records, expected.records);
     assert_eq!(actual.records.len(), 1);
     assert_eq!(actual.records[0].directory_sequence, 1);
@@ -179,18 +206,20 @@ fn missing_parameter_bytes_never_acquire_a_fabricated_source_part() {
 fn detached_scan_and_session_budget_refusal_create_no_parameter_failure_home() {
     let bytes = points("116,1,2,3,0;", "116,4,5,6,0;");
     let arena = DecodeArena::new();
-    let (ctx, root) =
-        DecodeContext::from_root_bytes(&bytes, &arena, &DecodePolicy::service()).unwrap();
-    let detached = card::scan(&bytes).unwrap();
-    let global = crate::global::parse(&detached).unwrap().0;
+    let (ctx, root) = DecodeContext::from_root_bytes(&bytes, &arena, &DecodePolicy::service())
+        .expect("the fixture fits the service policy");
+    let detached = card::scan(&bytes).expect("the detached fixture scans into cards");
+    let global = crate::global::parse(&detached)
+        .expect("the global section parses")
+        .0;
     let directory = crate::directory::parse(&detached, global.global_table(), &ctx)
-        .unwrap()
+        .expect("the directory section parses")
         .0;
     let mut output = PartOutput::new(cadmpeg_ir::CodecFormat::Iges);
     assert!(assemble(&detached, &directory, [], &global, &ctx, &mut output).is_err());
-    let scan = card::scan_source(root).unwrap();
+    let scan = card::scan_source(root).expect("the fixture scans into cards");
     ctx.retain_bytes(ctx.retained_bytes_available(), "consume caller allowance")
-        .unwrap();
+        .expect("the caller allowance can be consumed in full");
     assert!(matches!(
         assemble(&scan, &directory, [], &global, &ctx, &mut output),
         Err(CodecError::ResourceLimit(_))
@@ -228,7 +257,7 @@ fn distinct_conflicted_source_parts_keep_one_home_each_and_a_successful_peer() {
     let first = bytes
         .chunks_exact(81)
         .position(|card| card[72] == b'P')
-        .unwrap()
+        .expect("the fixture has a parameter card")
         * 81;
     bytes[first + 64..first + 72].copy_from_slice(b"       3");
     bytes[first + 81 + 64..first + 81 + 72].copy_from_slice(b"       1");
@@ -236,16 +265,21 @@ fn distinct_conflicted_source_parts_keep_one_home_each_and_a_successful_peer() {
     wrapped.extend_from_slice(&bytes);
     wrapped.extend_from_slice(b"post");
     let arena = DecodeArena::new();
-    let (ctx, root) =
-        DecodeContext::from_root_bytes(&wrapped, &arena, &DecodePolicy::service()).unwrap();
-    let source = root.child(3, wrapped.len() - 4).unwrap();
-    let scan = card::scan_source(source).unwrap();
-    let global = crate::global::parse(&scan).unwrap().0;
+    let (ctx, root) = DecodeContext::from_root_bytes(&wrapped, &arena, &DecodePolicy::service())
+        .expect("the prefixed fixture fits the service policy");
+    let source = root
+        .child(3, wrapped.len() - 4)
+        .expect("the source window lies inside the root");
+    let scan = card::scan_source(source).expect("the source window scans into cards");
+    let global = crate::global::parse(&scan)
+        .expect("the global section parses")
+        .0;
     let directory = crate::directory::parse(&scan, global.global_table(), &ctx)
-        .unwrap()
+        .expect("the directory section parses")
         .0;
     let mut output = PartOutput::new(cadmpeg_ir::CodecFormat::Iges);
-    let actual = assemble(&scan, &directory, [], &global, &ctx, &mut output).unwrap();
+    let actual = assemble(&scan, &directory, [], &global, &ctx, &mut output)
+        .expect("conflicted records do not refuse the parameter section");
     assert_eq!(actual.given_up, std::collections::BTreeSet::from([1, 3]));
     assert_eq!(actual.records.len(), 1);
     assert_eq!(actual.records[0].directory_sequence, 5);
@@ -259,7 +293,10 @@ fn distinct_conflicted_source_parts_keep_one_home_each_and_a_successful_peer() {
     for (ordinal, part) in parts.into_iter().enumerate() {
         let start = first + ordinal * 81 + 3;
         assert!(!part.untyped().is_empty());
-        assert_eq!(part.offset(), u64::try_from(start).unwrap());
+        assert_eq!(
+            part.offset(),
+            u64::try_from(start).expect("the part offset fits u64")
+        );
         assert_eq!(part.byte_len(), 81);
         assert_eq!(part.data(), Some(&wrapped[start..start + 81]));
     }
@@ -274,15 +311,18 @@ fn distinct_conflicted_source_parts_keep_one_home_each_and_a_successful_peer() {
 fn unreadable_point_coordinates_give_up_the_actual_part_and_keep_the_semantic_peer() {
     let bytes = points("116,1,2,broken,0;", "116,4,5,6,0;");
     let arena = DecodeArena::new();
-    let (ctx, root) =
-        DecodeContext::from_root_bytes(&bytes, &arena, &DecodePolicy::service()).unwrap();
-    let scan = card::scan_source(root).unwrap();
-    let global = crate::global::parse(&scan).unwrap().0;
+    let (ctx, root) = DecodeContext::from_root_bytes(&bytes, &arena, &DecodePolicy::service())
+        .expect("the fixture fits the service policy");
+    let scan = card::scan_source(root).expect("the fixture scans into cards");
+    let global = crate::global::parse(&scan)
+        .expect("the global section parses")
+        .0;
     let directory = crate::directory::parse(&scan, global.global_table(), &ctx)
-        .unwrap()
+        .expect("the directory section parses")
         .0;
     let mut output = PartOutput::new(cadmpeg_ir::CodecFormat::Iges);
-    let records = assemble(&scan, &directory, [], &global, &ctx, &mut output).unwrap();
+    let records = assemble(&scan, &directory, [], &global, &ctx, &mut output)
+        .expect("an unreadable coordinate does not refuse the parameter section");
     assert!(records.given_up.is_empty());
     assert_eq!(records.records.len(), 2);
     assert_eq!(records.records[0].directory_sequence, 1);
@@ -307,7 +347,7 @@ fn unreadable_point_coordinates_give_up_the_actual_part_and_keep_the_semantic_pe
     let start = bytes
         .chunks_exact(81)
         .position(|line| line[72] == b'P')
-        .unwrap()
+        .expect("the fixture has a parameter card")
         * 81;
     assert_eq!(part.offset(), 8);
     assert_eq!(part.byte_len(), 7);
@@ -325,16 +365,21 @@ fn failed_coordinate_field_discards_only_its_actual_composite_and_parent_reads()
     wrapped.extend_from_slice(&original);
     wrapped.extend_from_slice(b"post");
     let arena = DecodeArena::new();
-    let (ctx, root) =
-        DecodeContext::from_root_bytes(&wrapped, &arena, &DecodePolicy::service()).unwrap();
-    let source = root.child(3, wrapped.len() - 4).unwrap();
-    let scan = card::scan_source(source).unwrap();
-    let global = crate::global::parse(&scan).unwrap().0;
+    let (ctx, root) = DecodeContext::from_root_bytes(&wrapped, &arena, &DecodePolicy::service())
+        .expect("the prefixed fixture fits the service policy");
+    let source = root
+        .child(3, wrapped.len() - 4)
+        .expect("the source window lies inside the root");
+    let scan = card::scan_source(source).expect("the source window scans into cards");
+    let global = crate::global::parse(&scan)
+        .expect("the global section parses")
+        .0;
     let directory = crate::directory::parse(&scan, global.global_table(), &ctx)
-        .unwrap()
+        .expect("the directory section parses")
         .0;
     let mut output = PartOutput::new(cadmpeg_ir::CodecFormat::Iges);
-    let records = assemble(&scan, &directory, [], &global, &ctx, &mut output).unwrap();
+    let records = assemble(&scan, &directory, [], &global, &ctx, &mut output)
+        .expect("an unreadable coordinate does not refuse the parameter section");
     assert!(records.given_up.is_empty());
     assert_eq!(records.records.len(), 2);
     assert!(records.records[0].tokens()[3].is_none());
@@ -373,16 +418,21 @@ fn cross_card_numeric_failure_rolls_back_reads_in_each_actual_source_segment() {
     wrapped.extend_from_slice(&bytes);
     wrapped.extend_from_slice(b"post");
     let arena = DecodeArena::new();
-    let (ctx, root) =
-        DecodeContext::from_root_bytes(&wrapped, &arena, &DecodePolicy::service()).unwrap();
-    let source = root.child(3, wrapped.len() - 4).unwrap();
-    let scan = card::scan_source(source).unwrap();
-    let global = crate::global::parse(&scan).unwrap().0;
+    let (ctx, root) = DecodeContext::from_root_bytes(&wrapped, &arena, &DecodePolicy::service())
+        .expect("the prefixed fixture fits the service policy");
+    let source = root
+        .child(3, wrapped.len() - 4)
+        .expect("the source window lies inside the root");
+    let scan = card::scan_source(source).expect("the source window scans into cards");
+    let global = crate::global::parse(&scan)
+        .expect("the global section parses")
+        .0;
     let directory = crate::directory::parse(&scan, global.global_table(), &ctx)
-        .unwrap()
+        .expect("the directory section parses")
         .0;
     let mut output = PartOutput::new(cadmpeg_ir::CodecFormat::Iges);
-    let actual = assemble(&scan, &directory, [], &global, &ctx, &mut output).unwrap();
+    let actual = assemble(&scan, &directory, [], &global, &ctx, &mut output)
+        .expect("a cross-card numeric failure does not refuse the parameter section");
     assert_eq!(actual.records.len(), 2);
     assert!(actual.given_up.is_empty());
     assert!(actual.quarantined.is_empty());

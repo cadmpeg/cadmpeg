@@ -73,13 +73,15 @@ pub(crate) fn assemble(
                     }
                     let parsed = parse_owned(
                         ctx,
-                        source,
+                        SectionSource {
+                            view: source,
+                            points: source_points.as_ref(),
+                        },
                         children,
                         owned,
                         lines,
                         global,
                         &mut source_parts,
-                        source_points.as_ref(),
                     )?;
                     Ok(parsed)
                 },
@@ -95,16 +97,26 @@ pub(crate) fn assemble(
     }))
 }
 
+/// The Parameter section bytes and the projector that reads source points from them.
+#[derive(Clone, Copy)]
+struct SectionSource<'a> {
+    view: View<'a>,
+    points: Option<&'a crate::entities::geometry::point::SourcePointProjector<'a>>,
+}
+
 fn parse_owned(
     ctx: &DecodeContext<'_>,
-    source: View<'_>,
+    section: SectionSource<'_>,
     output: &mut PartOutput,
     owned: &Ownership<'_>,
     lines: &BTreeMap<u32, &PhysicalLine>,
     global: &ResolvedGlobal,
     source_parts: &mut ConflictParts,
-    source_points: Option<&crate::entities::geometry::point::SourcePointProjector<'_>>,
 ) -> Result<ParsedOwned, CodecError> {
+    let SectionSource {
+        view: source,
+        points: source_points,
+    } = section;
     if owned.cards.is_empty() {
         return super::parse_legacy_owned(owned, lines, global);
     }

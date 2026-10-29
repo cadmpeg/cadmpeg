@@ -164,14 +164,14 @@ pub fn source_attribute(
         })?;
         values.push(value);
     }
-    Ok(SourceAttribute::new(
+    SourceAttribute::new(
         ctx,
         brep_id!(format, AttributeId, "attribute", record.index),
         None,
         target,
         record.name.clone(),
         values,
-    )?)
+    )
 }
 
 /// The attribute value one token carries, or `None` for a number that is not

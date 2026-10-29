@@ -1644,7 +1644,7 @@ pub(crate) struct BinaryIdentities(Vec<u32>);
 
 impl BinaryIdentities {
     pub(crate) fn semantic_sequence(&self, grammar_sequence: u32) -> Result<u32, CodecError> {
-        if grammar_sequence == 0 || grammar_sequence % 2 == 0 {
+        if grammar_sequence == 0 || grammar_sequence.is_multiple_of(2) {
             return Err(malformed(
                 "normalized Directory key is not an odd record position",
             ));
@@ -2465,38 +2465,54 @@ mod tests {
         bytes.extend_from_slice(&original);
         bytes.extend_from_slice(b"post");
         let arena = DecodeArena::new();
-        let (_ctx, root) =
-            DecodeContext::from_root_bytes(&bytes, &arena, &DecodePolicy::service()).unwrap();
-        let source = root.child(3, bytes.len() - 4).unwrap();
-        let sections = super::parse_sections(source).unwrap();
+        let (_ctx, root) = DecodeContext::from_root_bytes(&bytes, &arena, &DecodePolicy::service())
+            .expect("the prefixed fixture fits the service policy");
+        let source = root
+            .child(3, bytes.len() - 4)
+            .expect("the source window lies inside the root");
+        let sections =
+            super::parse_sections(source).expect("the source window splits into binary sections");
         let normalized_arena = DecodeArena::new();
         let (normalized_ctx, normalized_root) =
             DecodeContext::from_root_bytes(&bytes, &normalized_arena, &DecodePolicy::service())
-                .unwrap();
+                .expect("the prefixed fixture fits the service policy");
         assert_eq!(
             normalize(
-                normalized_root.child(3, bytes.len() - 4).unwrap(),
+                normalized_root
+                    .child(3, bytes.len() - 4)
+                    .expect("the source window lies inside the root"),
                 &normalized_ctx
             )
-            .unwrap(),
-            normalize_for_test(&original).unwrap()
+            .expect("the source window normalizes"),
+            normalize_for_test(&original).expect("the original fixture normalizes")
         );
         for (name, payload) in [
             ("Directory", sections.directory),
             ("Parameter", sections.parameter),
         ] {
-            let (offset, extent, body) = super::counted_record(payload, 0, name).unwrap();
+            let (offset, extent, body) =
+                super::counted_record(payload, 0, name).expect("the first counted record reads");
             assert_eq!(offset, 1);
             assert_eq!(extent.start(), payload.start());
             assert_eq!(extent.end(), payload.end());
             assert_eq!(body.start(), extent.start() + 4);
             assert_eq!(body.end(), extent.end());
-            let count = u32::from_be_bytes(extent.window()[..4].try_into().unwrap());
-            assert_eq!(usize::try_from(count).unwrap(), body.window().len());
+            let count = u32::from_be_bytes(
+                extent.window()[..4]
+                    .try_into()
+                    .expect("the count prefix has four bytes"),
+            );
+            assert_eq!(
+                usize::try_from(count).expect("the count fits usize"),
+                body.window().len()
+            );
             assert_eq!(extent.window(), &bytes[extent.start()..extent.end()]);
             assert_eq!(body.window(), &bytes[body.start()..body.end()]);
-            let cut = payload.child(payload.start(), payload.end() - 1).unwrap();
-            let error = super::counted_record(cut, 0, name).unwrap_err();
+            let cut = payload
+                .child(payload.start(), payload.end() - 1)
+                .expect("the truncated payload lies inside the section");
+            let error = super::counted_record(cut, 0, name)
+                .expect_err("a truncated counted record is refused");
             assert!(error.to_string().contains("entity exceeds its section"));
         }
     }
@@ -2508,8 +2524,10 @@ mod tests {
         let original = binary_point_file();
         let arena = DecodeArena::new();
         let (_ctx, root) =
-            DecodeContext::from_root_bytes(&original, &arena, &DecodePolicy::service()).unwrap();
-        let sections = super::parse_sections(root).unwrap();
+            DecodeContext::from_root_bytes(&original, &arena, &DecodePolicy::service())
+                .expect("the fixture fits the service policy");
+        let sections =
+            super::parse_sections(root).expect("the fixture splits into binary sections");
         for (name, payload) in [
             ("Directory", sections.directory),
             ("Parameter", sections.parameter),
@@ -2519,24 +2537,32 @@ mod tests {
             let paired_arena = DecodeArena::new();
             let (_ctx, paired) =
                 DecodeContext::from_root_bytes(&bytes, &paired_arena, &DecodePolicy::service())
-                    .unwrap();
-            let (first_offset, first, first_body) = super::counted_record(paired, 0, name).unwrap();
+                    .expect("the paired payload fits the service policy");
+            let (first_offset, first, first_body) =
+                super::counted_record(paired, 0, name).expect("the first counted record reads");
             let cursor = first.end() - paired.start();
-            let (second_offset, second, second_body) =
-                super::counted_record(paired, cursor, name).unwrap();
+            let (second_offset, second, second_body) = super::counted_record(paired, cursor, name)
+                .expect("the second counted record reads");
             assert_eq!(first_offset, 1);
-            assert_eq!(second_offset, u32::try_from(cursor + 1).unwrap());
+            assert_eq!(
+                second_offset,
+                u32::try_from(cursor + 1).expect("the cursor offset fits u32")
+            );
             assert_eq!(first.end(), second.start());
             assert_eq!(second.end(), paired.end());
             assert_eq!(first.window(), payload.window());
             assert_eq!(second.window(), payload.window());
             assert_eq!(first_body.window(), second_body.window());
-            let cut = paired.child(paired.start(), second.end() - 1).unwrap();
+            let cut = paired
+                .child(paired.start(), second.end() - 1)
+                .expect("the truncated pair lies inside the payload");
             assert!(super::counted_record(cut, 0, name).is_ok());
             assert!(super::counted_record(cut, cursor, name).is_err());
-            let short_count = paired.child(paired.start(), paired.start() + 3).unwrap();
+            let short_count = paired
+                .child(paired.start(), paired.start() + 3)
+                .expect("the short count window lies inside the payload");
             assert!(super::counted_record(short_count, 0, name)
-                .unwrap_err()
+                .expect_err("a three byte count prefix is refused")
                 .to_string()
                 .contains("u32 field is truncated"));
         }

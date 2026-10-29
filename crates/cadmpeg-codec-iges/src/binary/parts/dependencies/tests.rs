@@ -12,24 +12,28 @@ use crate::test_support::binary_parts::broken_parameter_reference;
 fn format_five_point_reference_uses_an_actual_nonrecord_source_offset() {
     let bytes = broken_parameter_reference(true);
     let arena = DecodeArena::new();
-    let (ctx, root) =
-        DecodeContext::from_root_bytes(&bytes, &arena, &DecodePolicy::service()).unwrap();
-    let sections = parse_sections(root).unwrap();
-    let directory = read_directory(sections.directory, sections.lengths).unwrap();
+    let (ctx, root) = DecodeContext::from_root_bytes(&bytes, &arena, &DecodePolicy::service())
+        .expect("the fixture fits the service policy");
+    let sections = parse_sections(root).expect("the fixture splits into binary sections");
+    let directory =
+        read_directory(sections.directory, sections.lengths).expect("the directory section reads");
     let index: BTreeMap<_, _> = directory
         .iter()
         .enumerate()
         .map(|(index, record)| (record.offset, index))
         .collect();
-    let (offset, _, body) = counted_record(sections.parameter, 0, "Parameter").unwrap();
-    let record = parse_parameter_record(offset, body, sections.lengths, &index).unwrap();
+    let (offset, _, body) = counted_record(sections.parameter, 0, "Parameter")
+        .expect("the first parameter record is counted");
+    let record = parse_parameter_record(offset, body, sections.lengths, &index)
+        .expect("the first parameter record parses");
     assert_eq!(record.entity_type, 116);
     assert_eq!(
         record.values[3],
         BinaryValue::Pointer(i64::from(directory[1].offset + 1))
     );
     let global = source_global(&sections);
-    let plan = Dependencies::inspect(&sections, &global, &ctx).unwrap();
+    let plan = Dependencies::inspect(&sections, &global, &ctx)
+        .expect("the dependency plan inspects the sections");
     // #215 rule 1: the Parameter record needs its owner Directory record;
     // the Directory record does not need its Parameter record.
     assert!(plan

@@ -3,7 +3,7 @@
 
 use super::{
     project_fields, AttributeTarget, AttributeValue, BTreeMap, CadIr, CodecError, DecodeContext,
-    IgesLossCode, LossNote, NativeProperty, NativePropertyValue,
+    FieldSource, IgesLossCode, LossNote, NativeProperty, NativePropertyValue,
 };
 
 fn carrier(target: &AttributeTarget) -> bool {
@@ -47,9 +47,11 @@ pub(super) fn project(
         };
         project_fields(
             ir,
-            &property.source_entity,
-            &property.id,
-            &owners,
+            &FieldSource {
+                source_id: &property.source_entity,
+                native_ref: &property.id,
+                owners: &owners,
+            },
             "name",
             vec![(
                 String::new(),
@@ -105,9 +107,11 @@ pub(super) fn project(
         let label_targets = BTreeMap::from([(entity.id.clone(), assigned)]);
         project_fields(
             ir,
-            &entity.id,
-            &entity.id,
-            std::slice::from_ref(&entity.id),
+            &FieldSource {
+                source_id: &entity.id,
+                native_ref: &entity.id,
+                owners: std::slice::from_ref(&entity.id),
+            },
             name,
             vec![(
                 String::new(),

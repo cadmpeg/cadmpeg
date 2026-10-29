@@ -131,25 +131,24 @@ fn malformed_binary_macro_gives_up_only_its_parameter_record_and_keeps_an_exact_
         crate::test_support::given_up_count(decoded.report(), "iges.binary_directory_record"),
         0
     );
-    for (level, extent) in [("iges.binary_parameter_record", parameter)] {
-        assert_eq!(
-            crate::test_support::given_up_count(decoded.report(), level),
-            1
-        );
-        let parts = crate::test_support::given_up_parts(fidelity);
-        assert_eq!(parts.len(), 1);
-        let part = parts[0];
-        assert!(!part.untyped().is_empty());
-        assert_eq!(
-            part.offset(),
-            u64::try_from(extent.start()).expect("source offset")
-        );
-        assert_eq!(
-            part.byte_len(),
-            u64::try_from(extent.window().len()).expect("source length")
-        );
-        assert_eq!(part.data(), Some(extent.window()));
-    }
+    let (level, extent) = ("iges.binary_parameter_record", parameter);
+    assert_eq!(
+        crate::test_support::given_up_count(decoded.report(), level),
+        1
+    );
+    let parts = crate::test_support::given_up_parts(fidelity);
+    assert_eq!(parts.len(), 1);
+    let part = parts[0];
+    assert!(!part.untyped().is_empty());
+    assert_eq!(
+        part.offset(),
+        u64::try_from(extent.start()).expect("source offset")
+    );
+    assert_eq!(
+        part.byte_len(),
+        u64::try_from(extent.window().len()).expect("source length")
+    );
+    assert_eq!(part.data(), Some(extent.window()));
     let unreadable: Vec<_> = decoded
         .report()
         .losses

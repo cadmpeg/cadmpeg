@@ -76,13 +76,13 @@ const OPTIONAL_FIELDS: [(usize, &str); 7] = [
 
 impl<'a> Fields<'a> {
     pub(super) fn apply(
-        previous: Option<Self>,
+        previous: Option<&Self>,
         lines: &[Line<'a>],
         start: usize,
         parsed: &ParsedDirectoryRecord,
         delimiter: u8,
     ) -> Result<Self, CodecError> {
-        let mut fields = previous.unwrap_or(Self([None; 16], [None; 16]));
+        let mut fields = previous.copied().unwrap_or(Self([None; 16], [None; 16]));
         fields.1 = [None; 16];
         for (index, line) in lines.iter().enumerate().take(parsed.next).skip(start) {
             let bytes = line.payload.window();
