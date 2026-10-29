@@ -44,17 +44,6 @@ fn public_decode_keeps_real_compound_packet_values_and_exact_source_capture_in_b
             assert_eq!(fields["nodes"][1]["identifier"], identifier);
             assert_eq!(fields["nodes"][1]["preceding"], 40_000);
             assert_eq!(fields["terminal"], true);
-            let layout = &decoded.source_fidelity().record_layout()[record.id()];
-            let prefix_body_len = test_pmarks::prefix(40_001).len() - test_pmarks::header().len();
-            assert_eq!(prefix_body_len, 53);
-            let start = u64::try_from(transmit_header().len() + prefix_body_len).unwrap();
-            assert_eq!(layout.offset(), start);
-            assert_eq!(layout.byte_len(), 90);
-            assert_eq!(
-                layout.reads()[layout.stream()],
-                [start + 6..start + 41, start + 43..start + 80]
-            );
-            assert!(layout.reads().contains_key("file"));
             assert_eq!(decoded.ir().model.bodies.is_empty(), !with_geometry);
         }
     }
@@ -65,11 +54,7 @@ fn native_attachment_recovery_drops_packet_capture_with_its_native_owner() {
     for with_geometry in [false, true] {
         let complete = decode(source(with_geometry, 2));
         let native = complete.ir().native.namespace("nx").unwrap();
-        let owner = native.arenas()["parasolid_deltas_pmark_packets"][0].id();
-        assert!(complete
-            .source_fidelity()
-            .record_layout()
-            .contains_key(owner));
+        assert_eq!(native.arenas()["parasolid_deltas_pmark_packets"].len(), 1);
         let _injected = inject(Point::Exit, || {
             cadmpeg_core::CodecError::malformed("packet owner rollback control")
         });
@@ -79,10 +64,16 @@ fn native_attachment_recovery_drops_packet_capture_with_its_native_owner() {
             .losses
             .iter()
             .any(|loss| loss.code.local_code() == "native.attachment-failed"));
-        assert!(!recovered
-            .source_fidelity()
-            .record_layout()
-            .contains_key(owner));
+        assert!(recovered
+            .ir()
+            .native
+            .namespace("nx")
+            .is_none_or(|namespace| {
+                namespace
+                    .arenas()
+                    .get("parasolid_deltas_pmark_packets")
+                    .is_none_or(Vec::is_empty)
+            }));
         assert_eq!(recovered.ir().model.bodies, complete.ir().model.bodies);
         assert_eq!(recovered.ir().model.points, complete.ir().model.points);
         assert_eq!(recovered.ir().model.surfaces, complete.ir().model.surfaces);

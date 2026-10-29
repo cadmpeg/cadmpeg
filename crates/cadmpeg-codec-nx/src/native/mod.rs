@@ -46,7 +46,7 @@ pub(crate) fn attach_annotations(
     annotations: &mut AnnotationBuilder,
     unknowns: &mut Vec<UnknownRecord>,
     losses: &mut Vec<LossNote>,
-) -> Result<bool, CodecError> {
+) -> Result<(), CodecError> {
     attach::attach(ctx, ir, model, scan, annotations, unknowns, losses)
 }
 
