@@ -170,7 +170,7 @@ fn current_native_brep_without_a_neutral_model_writes_nonempty_fcstd_geometry() 
     assert!(expected > 0);
     assert!(!decoded.ir().native.namespace("fcstd").unwrap().arenas()["shape_payloads"].is_empty());
     let mut ir = decoded.ir().clone();
-    ir.model = Default::default();
+    ir.model = cadmpeg_ir::document::Model::default();
     ir.set_scope(ContentScope::container()).unwrap();
     assert_no_geometry(&ir);
     let dir = tempdir().unwrap();
@@ -241,7 +241,7 @@ fn an_emitted_group_without_geometry_is_empty_but_its_late_brep_attachment_is_no
             suppressed: Some(false),
             needs_recompute: false,
             dependencies: DistinctMembers::default(),
-            source_properties: Default::default(),
+            source_properties: std::collections::BTreeMap::default(),
             source_tag: None,
             source_text: None,
             source_content: FeatureContent::default(),

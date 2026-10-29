@@ -37,7 +37,10 @@ fn step_malformed_terminated_statement_has_one_home_and_keeps_the_real_peer() {
     let offset = bytes
         .windows(broken.len())
         .position(|window| window == broken)
-        .unwrap();
-    assert_eq!(retained[0].offset(), u64::try_from(offset).unwrap());
+        .expect("the broken record occurs in the source");
+    assert_eq!(
+        retained[0].offset(),
+        u64::try_from(offset).expect("the source offset fits u64")
+    );
     assert!(retained[0].untyped().contains(&ArenaClass::Model));
 }

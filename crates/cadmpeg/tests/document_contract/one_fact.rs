@@ -461,7 +461,7 @@ fn fusion_one_fact_updates_the_bound_sketch_constraint_and_its_owner_state() {
             .join("crates/cadmpeg-codec-f3d/tests/golden/fixtures/design_sketch_constraints.f3d"),
     )
     .unwrap();
-    let codec = F3dCodec::default();
+    let codec = F3dCodec;
     let decoded = decode(&codec, &bytes);
     let mut ir = decoded.ir().clone();
     // This fixture contains Sketch 1 and two dimensional parameters, not a Pad.

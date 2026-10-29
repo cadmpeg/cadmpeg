@@ -13,7 +13,7 @@ use tempfile::tempdir;
 
 use crate::support::fixture;
 
-fn native_document(arena: &str, id: &str, fields: Value) -> CadIr {
+fn native_document(arena: &str, id: &str, fields: &Value) -> CadIr {
     let mut ir = CadIr::empty();
     ir.native.namespace_mut("iges").arenas_mut().insert(
         arena.into(),
@@ -42,7 +42,7 @@ fn current_native_font_is_written_but_does_not_make_geometry_nonempty() {
     let ir = native_document(
         "line_fonts",
         "iges:presentation:line-font#D1",
-        json!({
+        &json!({
             "source_entity":"iges:entity:directory#1", "kind":"visible_blank_pattern",
             "fallback_line_font_number":1, "segment_count":2, "lengths":[2.0,1.0],
             "hexadecimal_pattern":"41"
@@ -132,7 +132,7 @@ fn current_native_flash_writes_real_geometry_without_a_neutral_projection() {
     let ir = native_document(
         "flashes",
         "iges:native:flash#D1",
-        json!({
+        &json!({
             "source_entity":"iges:entity:directory#1", "form":2,
             "reference_point":[5.0,6.0], "dimension_1":10.0, "dimension_2":20.0,
             "rotation":0.5, "reference_entity":null
