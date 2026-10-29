@@ -49,7 +49,6 @@ struct ViewChild {
     kind: &'static str,
     #[serde(skip_serializing)]
     source_offset: u64,
-    #[serde(skip_serializing)]
     byte_len: u64,
     #[serde(skip_serializing)]
     sha256: String,
@@ -200,7 +199,6 @@ struct NamedConstructionPlane {
 
 #[derive(Debug, Serialize)]
 struct Viewport {
-    #[serde(skip_serializing)]
     version: NativeBytes<[u8; 2]>,
     #[serde(flatten)]
     validity: ViewportValidity,
@@ -245,7 +243,6 @@ struct FrustumSymmetry {
 
 #[derive(Debug, Serialize)]
 struct WindowPosition {
-    #[serde(skip_serializing)]
     version: NativeBytes<[u8; 2]>,
     maximized: bool,
     left: Fraction,
@@ -309,7 +306,6 @@ struct ViewAttributes {
     width: FiniteReal,
     height: FiniteReal,
     display: Option<String>,
-    #[serde(skip_serializing)]
     version: NativeBytes<[u8; 2]>,
     page_settings: Option<PageSettings>,
     projection_locked: bool,
