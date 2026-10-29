@@ -666,7 +666,7 @@ struct Parser<'input, 'ctx, 'arena> {
     defer_lexical_errors: bool,
     budget: &'ctx DecodeContext<'arena>,
     source: Option<View<'input>>,
-    parts: Option<&'ctx mut cadmpeg_ir::source_fidelity::parts::ParserPartOutput>,
+    parts: Option<&'ctx mut cadmpeg_ir::source_fidelity::parts::PartOutput>,
     shared_omitted: BTreeSet<usize>,
 }
 

@@ -6,9 +6,7 @@ use super::{
     TokenKind, View,
 };
 use cadmpeg_core::CodecError;
-use cadmpeg_ir::source_fidelity::parts::{DecodeParts, ParserPartOutput, PartLevel, PartSpec};
-
-mod framing;
+use cadmpeg_ir::source_fidelity::parts::{DecodeParts, PartOutput, PartSpec};
 
 pub(super) enum RecordAttempt {
     Parsed(u64, RawRecord),
@@ -22,8 +20,8 @@ pub(super) enum RecordAttempt {
 pub(crate) fn parse(
     input: View<'_>,
     ctx: &DecodeContext<'_>,
-) -> Result<(Exchange, Vec<ParseDiagnostic>, ParserPartOutput), CodecError> {
-    let mut parts = ParserPartOutput::new(cadmpeg_ir::CodecFormat::Step);
+) -> Result<(Exchange, Vec<ParseDiagnostic>, PartOutput), CodecError> {
+    let mut parts = PartOutput::new(cadmpeg_ir::CodecFormat::Step);
     let mut parser = Parser {
         current: None,
         lexer: Lexer::new(input.window(), ctx),
@@ -60,7 +58,7 @@ impl<'input, 'ctx, 'arena> Parser<'input, 'ctx, 'arena> {
         };
         // This callback is the existing record parser itself. Its successful
         // RawRecord is returned to the unchanged exchange/semantic readers.
-        let result = ctx.decode_parser_part(output, extent, spec, || {
+        let result = ctx.decode_part(output, extent, spec, |_| {
             self.record().map_err(ParseError::into_codec_error)
         });
         self.lexer.restore_input(input);
@@ -90,12 +88,11 @@ impl<'input, 'ctx, 'arena> Parser<'input, 'ctx, 'arena> {
         }
         let input = self.lexer.input();
         let start = token.span.start;
-        let Some(boundary) = framing::boundary(input, start, draft)? else {
+        let Some(end) = entity_end(input, start, draft)? else {
             return Ok(None);
         };
         Ok((|| {
             let source = self.source?;
-            let end = boundary.end();
             let equals = trivia(input, token.span.end, end, draft)?;
             if input.get(equals) != Some(&b'=') {
                 return None;
@@ -106,35 +103,39 @@ impl<'input, 'ctx, 'arena> Parser<'input, 'ctx, 'arena> {
             if body >= end {
                 return None;
             }
-            let complex = input.get(body) == Some(&b'(');
             let absolute = |offset: usize| source.start().checked_add(offset);
             let extent = source.child(absolute(start)?, absolute(end)?)?;
-            let range = |from, to| {
-                Some(
-                    cadmpeg_core::decode::u64_from_index(absolute(from)?)
-                        ..cadmpeg_core::decode::u64_from_index(absolute(to)?),
-                )
-            };
-            let mut framing = vec![
-                range(start, token.span.end)?,
-                range(equals, equals.checked_add(1)?)?,
-            ];
-            if complex {
-                framing.push(range(body, body.checked_add(1)?)?);
-                if let Some(close) = framing::outer_close(input, body, end, draft) {
-                    framing.push(range(close, close.checked_add(1)?)?);
-                }
-            }
-            if boundary.terminated() {
-                framing.push(range(end.checked_sub(1)?, end)?);
-            }
-            let level = PartLevel::parse(if complex {
+            let label = if input.get(body) == Some(&b'(') {
                 "step.complex_entity_instance"
             } else {
                 "step.simple_entity_instance"
-            })?;
-            Some((extent, PartSpec::new(level, framing), end))
+            };
+            Some((extent, PartSpec::new(label), end))
         })())
+    }
+}
+
+/// The end of the entity at `start`: its terminator, the parent `ENDSEC`, or
+/// the end of the input.
+fn entity_end(input: &[u8], start: usize, draft: bool) -> Result<Option<usize>, ParseError> {
+    match super::recovery::statement_end(input, start, draft) {
+        Ok(end) if end.checked_sub(1).and_then(|last| input.get(last)) == Some(&b';') => {
+            Ok(Some(end))
+        }
+        Ok(end) if end == input.len() => Ok(Some(end)),
+        Ok(end) => Ok(
+            crate::lex::match_ignoring_controls(input, end, b"ENDSEC").and_then(|after| {
+                input
+                    .get(after)
+                    .filter(|byte| byte.is_ascii_control() || matches!(**byte, b' ' | b';'))
+                    .map(|_| end)
+            }),
+        ),
+        // The scanner's syntax failures are unfinished shielded constructs.
+        // Their bytes run to the genuine input boundary; apparent delimiters
+        // and assignments inside them are never siblings.
+        Err(ParseError::Syntax { .. }) => Ok(Some(input.len())),
+        Err(error) => Err(error),
     }
 }
 
