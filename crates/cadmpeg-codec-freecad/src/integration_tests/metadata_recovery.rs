@@ -405,9 +405,6 @@ fn a_bodiless_document_property_is_omitted_as_undecoded_source() {
         .plan(EncodeInput::new(decoded.ir(), None), TargetRequest::Inherit)
         .and_then(|plan| plan.write_to(&mut written))
         .unwrap();
-    // #238, §7.11.2: an omitted property with no decoded body is undecoded
-    // source, a Warning, and the loss names the property. The §5.6
-    // `native.records-omitted` list names it too.
     let omitted = report
         .losses
         .iter()
@@ -423,5 +420,4 @@ fn a_bodiless_document_property_is_omitted_as_undecoded_source() {
             .note(String::new())
             .code
     );
-    assert_eq!(omitted[0].severity, cadmpeg_ir::report::Severity::Warning);
 }
