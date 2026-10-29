@@ -553,7 +553,25 @@ fn semantic_writer_synthesizes_embedded_helix_geometry_edits() {
     edited
         .set_parameter_expression(&parameter, value.literal_expression(), Some(value))
         .unwrap();
-    crate::test_support::assert_synthesis_fallback(&edited, decoded.source_fidelity());
+    use cadmpeg_ir::codec::write::Encoder;
+    let plan = SldprtCodec
+        .plan(
+            cadmpeg_ir::codec::write::EncodeInput::new(&edited, Some(decoded.source_fidelity())),
+            cadmpeg_ir::codec::write::target::TargetRequest::Inherit,
+        )
+        .unwrap();
+    assert!(matches!(
+        plan.report().write_path(),
+        cadmpeg_ir::report::export::WritePath::Patched { .. }
+    ));
+    assert!(!plan.report().losses.is_empty());
+    let mut bytes = Vec::new();
+    plan.write_to(&mut bytes).unwrap();
+    let written = SldprtCodec
+        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+        .unwrap();
+    assert_eq!(written.ir().model.bodies.len(), edited.model.bodies.len());
+    assert_eq!(written.ir().model.faces.len(), edited.model.faces.len());
 }
 
 #[test]

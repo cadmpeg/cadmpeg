@@ -580,20 +580,13 @@ fn semantic_writer_updates_linked_resolved_feature_scalar() {
         let parameter = ir_edit
             .model
             .parameters
-            .iter()
+            .iter_mut()
             .find(|parameter| parameter.name == "D1")
-            .expect("projected D1 parameter")
-            .id
-            .clone();
-        ir_edit
-            .set_parameter_expression(
-                &parameter,
-                "50mm".into(),
-                Some(cadmpeg_ir::features::ParameterValue::Length(
-                    cadmpeg_ir::scalar::Length::new(50.0).unwrap(),
-                )),
-            )
-            .unwrap();
+            .expect("projected D1 parameter");
+        parameter.expression = "50mm".into();
+        parameter.value = Some(cadmpeg_ir::features::ParameterValue::Length(
+            cadmpeg_ir::scalar::Length::new(50.0).unwrap(),
+        ));
     }
 
     let mut encoded = Vec::new();
@@ -614,17 +607,15 @@ fn semantic_writer_updates_linked_resolved_feature_scalar() {
         .find(|parameter| parameter.name == "D1")
         .expect("regenerated D1 parameter");
     assert_eq!(parameter.expression, "50mm".into());
-    assert_eq!(
-        parameter.value,
-        Some(cadmpeg_ir::features::ParameterValue::Length(
-            cadmpeg_ir::scalar::Length::new(50.0).unwrap()
-        ))
-    );
-    assert!(parameter.native_ref.is_none());
-    assert!(sldprt_native(regenerated.ir())
+    let native_ref = parameter.native_ref.as_deref().expect("linked scalar");
+    let native = sldprt_native(regenerated.ir());
+    let scalar = native
         .feature_input_lanes
         .iter()
-        .all(|lane| lane.scalars.is_empty()));
+        .flat_map(|lane| &lane.scalars)
+        .find(|scalar| scalar.id == native_ref)
+        .expect("regenerated scalar");
+    assert_eq!(scalar.value.get(), 0.05);
 }
 
 #[test]
@@ -717,13 +708,6 @@ fn semantic_writer_types_resolved_relation_scalar() {
         parameter.value = Some(cadmpeg_ir::features::ParameterValue::Real(
             cadmpeg_ir::scalar::FiniteReal::new(0.5).unwrap(),
         ));
-        let id = parameter.id.clone();
-        let value = parameter.value.clone().unwrap();
-        for configuration in &mut ir_edit.model.configurations {
-            if let Some(current) = configuration.parameter_values.get_mut(&id) {
-                *current = value.clone();
-            }
-        }
     }
 
     let mut encoded = Vec::new();
@@ -743,12 +727,20 @@ fn semantic_writer_types_resolved_relation_scalar() {
         .iter()
         .find(|parameter| parameter.name == "D1")
         .expect("regenerated D1 parameter");
-    assert_eq!(parameter.expression, "0.5".into());
+    assert_eq!(parameter.expression, "500mm".into());
     assert_eq!(
         parameter.value,
-        Some(cadmpeg_ir::features::ParameterValue::Real(
-            cadmpeg_ir::scalar::FiniteReal::new(0.5).unwrap()
+        Some(cadmpeg_ir::features::ParameterValue::Length(
+            cadmpeg_ir::scalar::Length::new(500.0).unwrap()
         ))
     );
-    assert!(parameter.native_ref.is_none());
+    let native_ref = parameter.native_ref.as_deref().expect("linked scalar");
+    let native = sldprt_native(regenerated.ir());
+    let scalar = native
+        .feature_input_lanes
+        .iter()
+        .flat_map(|lane| &lane.scalars)
+        .find(|scalar| scalar.id == native_ref)
+        .expect("regenerated scalar");
+    assert_eq!(scalar.value.get(), 0.5);
 }
