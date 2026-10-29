@@ -384,6 +384,14 @@ the native feature when a fixed lane carries a symmetric distance.
 
 **Note.** The fixed native occurrence record retains the discriminator value without a component-path binding.
 
+### DR-125. Construction-operand group closing flag
+
+**Question.** What does closing flag `1` in the tail flag block of a construction-operand group select?
+
+**Known.** `f3d.md` §3.1 "Every `Extrude`, `Extrusion`, `Fillet`" defines the group tail. The flag block ends with the closing flag after `variant`. The closing flag is `0` or `1`, and both values occur in the three-byte block `[1, 1, closing_flag]` of existing-body groups in Extrude scopes. The role, members, and references of the group are the same for both values.
+
+**Need.** A writer that generates a group must choose the closing flag, and a reader must know whether value `1` changes the group's operation semantics.
+
 ### DR-104. ACT component-link root selection
 
 **Question.** Can an ACT segment contain only non-root component links, or does another reference identify its document-root link?

@@ -777,6 +777,7 @@ fn validation_accepts_hole_and_surface_trim_construction_group_roles() {
                         opaque_scalar: 0.0,
                         opaque_scalar_offset: role_offset + 22,
                         variant: false,
+                        closing_flag: false,
                     },
                 )
                 .unwrap(),
@@ -965,6 +966,7 @@ fn validation_checks_generic_sweep_group_carriers() {
                     opaque_scalar: 0.0,
                     opaque_scalar_offset: 1_062,
                     variant: false,
+                    closing_flag: false,
                 },
             )
             .unwrap(),
@@ -1577,6 +1579,7 @@ fn validation_accepts_grouped_and_direct_extrude_profiles() {
                     opaque_scalar: 0.5,
                     opaque_scalar_offset: 472,
                     variant: false,
+                    closing_flag: false,
                 },
             )
             .unwrap(),
@@ -1695,6 +1698,7 @@ fn validation_accepts_unindexed_construction_identity_terminal() {
                     opaque_scalar: 0.0,
                     opaque_scalar_offset: 1_063,
                     variant: false,
+                    closing_flag: false,
                 },
             )
             .unwrap(),
@@ -1850,6 +1854,7 @@ fn validation_accepts_class_338_sketch_curve_entity_selection_frame() {
                     opaque_scalar: 0.0,
                     opaque_scalar_offset: 975,
                     variant: false,
+                    closing_flag: false,
                 },
             )
             .unwrap(),

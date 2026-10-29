@@ -2584,12 +2584,17 @@ pub(super) fn parse_construction_operand_group(
             let Some(flags) = bytes.get(tail..tail + flag_bytes) else {
                 continue;
             };
-            if flags.last() != Some(&0) {
+            let closing_flags: &[u8] = if flag_bytes == 3 { &[0, 1] } else { &[0] };
+            if !flags
+                .last()
+                .is_some_and(|last| closing_flags.contains(last))
+            {
                 continue;
             }
             // The wider block prefixes the narrower one, so the variant flag is
             // always the byte before the terminating zero.
             let variant = flags[flag_bytes - 2] != 0;
+            let closing_flag = flags[flag_bytes - 1] != 0;
             let mut after = tail + flag_bytes;
             if take_record_reference(bytes, &mut after).map(|(index, _)| index)
                 != header.record_index.checked_add(1)
@@ -2614,21 +2619,24 @@ pub(super) fn parse_construction_operand_group(
                 continue;
             }
             if closed
-                .replace((variant, after, paired_class_tag.to_owned()))
+                .replace((variant, closing_flag, after, paired_class_tag.to_owned()))
                 .is_some()
             {
                 return Unclosed;
             }
         }
     }
-    if let Some(legacy_tail) =
+    if let Some((variant, paired_at, paired_class_tag)) =
         legacy_body_group_tail(bytes, scope, header, cursor, opaque_index.get())
     {
-        if closed.replace(legacy_tail).is_some() {
+        if closed
+            .replace((variant, false, paired_at, paired_class_tag))
+            .is_some()
+        {
             return Unclosed;
         }
     }
-    let Some((variant, paired_at, paired_class_tag)) = closed else {
+    let Some((variant, closing_flag, paired_at, paired_class_tag)) = closed else {
         return Unclosed;
     };
 
@@ -2693,6 +2701,7 @@ pub(super) fn parse_construction_operand_group(
             opaque_scalar,
             opaque_scalar_offset: opaque_index_offset + 4,
             variant,
+            closing_flag,
         },
     ) else {
         return Unclosed;
