@@ -156,7 +156,7 @@ pub(crate) fn decode_parameter_scopes(
             if let scope::DesignScopePayloadMut::SurfacePatch(patch) = scope.payload_mut() {
                 patch.normal = normal;
             }
-            let emboss = exact_emboss_construction(bytes, &scope);
+            let emboss = exact_emboss_construction(ctx, bytes, &scope)?;
             if let scope::DesignScopePayloadMut::Emboss(slot) = scope.payload_mut() {
                 *slot = emboss;
             }
