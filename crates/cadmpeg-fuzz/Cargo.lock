@@ -70,6 +70,7 @@ dependencies = [
  "cadmpeg-ir",
  "serde",
  "serde-value",
+ "serde_json",
 ]
 
 [[package]]
@@ -262,6 +263,7 @@ dependencies = [
  "serde",
  "serde_json",
  "thiserror",
+ "trybox",
 ]
 
 [[package]]
@@ -868,6 +870,12 @@ name = "toml_writer"
 version = "1.1.2+spec-1.1.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "7d56353a2a665ad0f41a421187180aab746c8c325620617ad883a99a1cbe66d2"
+
+[[package]]
+name = "trybox"
+version = "0.1.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "ff79c0d8cb778aeae16f06b64e7f7844c6fe653e61a912563e56276729ba1af0"
 
 [[package]]
 name = "twox-hash"
