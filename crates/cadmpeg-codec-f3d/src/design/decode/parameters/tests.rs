@@ -275,7 +275,7 @@ fn parameter_variants_have_exact_string_and_scalar_boundaries() {
     assert_eq!(scale_factor.unit(), None);
     assert_eq!(scale_factor.evaluated_value().get(), 1.0);
 
-    for discriminator in [1u64, 2, 3, 4] {
+    for discriminator in [1u64, 2, 3, 4, 5] {
         let mut earlier_distance = parameter_record(
             Some(44),
             "Width / 2",
@@ -295,7 +295,7 @@ fn parameter_variants_have_exact_string_and_scalar_boundaries() {
     }
 
     let mut invalid_tangency = earlier_tangency;
-    invalid_tangency[22..30].copy_from_slice(&5u64.to_le_bytes());
+    invalid_tangency[22..30].copy_from_slice(&7u64.to_le_bytes());
     assert!(parse_design_parameter_record(&invalid_tangency).is_none());
 
     let mut revised_distance = parameter_record(
@@ -315,6 +315,16 @@ fn parameter_variants_have_exact_string_and_scalar_boundaries() {
             .family_discriminator()
             .map(|value| value.value.code()),
         Some(6)
+    );
+
+    let mut current_distance = revised_distance.clone();
+    current_distance[22..30].copy_from_slice(&5u64.to_le_bytes());
+    assert_eq!(
+        parse_design_parameter_record(&current_distance)
+            .expect("discriminator-five feature parameter")
+            .family_discriminator()
+            .map(|value| value.value.code()),
+        Some(5)
     );
 
     let mut invalid_distance = revised_distance.clone();

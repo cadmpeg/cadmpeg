@@ -747,13 +747,10 @@ fn valid_design_parameter_family(
         Code0, Code1, Code2, Code3, Code4, Code5, Code6,
     };
     match tail {
-        16 => {
-            (discriminator == Some(Code5) && source_kind == "ScaleFactor")
-                || discriminator == Some(Code6)
-        }
+        16 => matches!(discriminator, Some(Code5 | Code6)),
         17 => discriminator == Some(Code6),
         18 | 19 => discriminator.is_none_or(|value| {
-            matches!(value, Code0 | Code1 | Code2 | Code3 | Code4)
+            matches!(value, Code0 | Code1 | Code2 | Code3 | Code4 | Code5)
                 || (value == Code6 && source_kind == "TangencyWeight")
         }),
         _ => false,
