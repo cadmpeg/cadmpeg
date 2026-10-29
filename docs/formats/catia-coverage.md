@@ -767,7 +767,7 @@ current levels require those matrices and representative fixtures.
 2. Manifest redistribution-cleared fixtures for every admitted matrix row,
    including malformed, unsupported, ambiguity, degeneracy, and negative
    cases.
-3. Record per-fixture expected physical-byte coverage and geometry, topology,
+3. Record per-fixture expected geometry, topology,
    appearance, and design-domain losses. A gate passes only when every required
    domain through that level has no blocking loss.
 4. Validate semantic fingerprints for units, placements, curve and surface

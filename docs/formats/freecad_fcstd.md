@@ -192,20 +192,7 @@ are millimetres. Angles retain whether the native value is radians or degrees. P
 placements, orientation, tolerance values, and display-unit settings are distinct fields; display
 units do not rescale model geometry.
 
-## 6. Byte accounting
-
-The physical archive and every decompressed logical entry each have an independent byte ledger.
-Ledger spans are ordered, non-overlapping, and cover the complete stream.
-
-Physical ZIP spans classify local headers, names, extra fields, compressed payloads, data
-descriptors, central-directory records, end records, archive comments, and legal padding.
-Compressed bytes and the corresponding logical entry bytes belong to different ledgers.
-
-Logical XML spans classify declarations, delimiters, comments, whitespace, and escaping as
-structural bytes. Typed values own their exact lexical spans. A retained record owns one named
-opaque span with its declared length and digest. No byte may be both typed and opaque.
-
-## 7. Exact shapes
+## 6. Exact shapes
 
 The exact-shape runtime type is `Part::PropertyPartShape`. Other runtime types do not select
 exact-shape or persistent element-map parsing. Part shape properties reference text or binary
@@ -415,7 +402,7 @@ CADIR decision: a face wire whose oriented edge uses form no closed chain, or mo
 whose traversal search examines more than `MAX_WIRE_TRAVERSAL_STEPS` candidate edge uses, keeps its
 serialized order, reversed when the face use and wire use orientations compose to `Reversed`.
 
-## 8. Design-history transfer
+## 7. Design-history transfer
 
 Construction objects retain source order and native identity independently of their cached shape.
 Planar sketch geometry is transferred in persisted entity order. The one-based position of each
@@ -552,7 +539,7 @@ not a carrier. Each root's `Count` equals its direct records. Duplicate matching
 value roots are malformed. A vendor-qualified runtime type or another property name does not
 select a spreadsheet carrier.
 
-## 9. Product structure
+## 8. Product structure
 
 The native `product_nodes` arena retains groups, parts, link groups, and placed link objects exactly
 as application records. Product dispatch uses the exact runtime registry: `Assembly::AssemblyObject`,
@@ -719,7 +706,7 @@ independent fields.
 Persisted degree values convert to radians for neutral angles and angular limits. Validation checks
 operand/frame cardinality, component references, finite values, and ordered intervals.
 
-## 10. Drawing graph
+## 9. Drawing graph
 
 The native namespace holds a `drawings` arena for every TechDraw page, template, view,
 dimension, and annotation subtype. Pages retain ordered view membership and template identity.
@@ -907,7 +894,7 @@ sketch geometry family that remains only in the native lane produces its own blo
 the object or property identity and `Document.xml` provenance. Successfully neutralized geometry
 does not inherit a format-wide placeholder loss.
 
-## 11. Presentation and application records
+## 10. Presentation and application records
 
 Format-neutral document and view presentation arenas represent GUI state. A GUI archive produces
 one document presentation record; a headless archive produces none. The GUI root accepts the
@@ -958,7 +945,7 @@ registered tags and attributes are mandatory. The GUI property registry is the s
 type registry used for application properties; GUI persistence does not introduce a second value
 grammar. A registered property family remains typed even when no neutral presentation field uses
 it. An unregistered GUI runtime type retains its exact ordered XML values without semantic
-dispatch, and its XML span is `named_opaque` in the logical ledger.
+dispatch.
 
 The application registry also uses these GUI property forms. `App::PropertyFont` contains
 `String`; `App::PropertyStringList` contains `StringList` with a count and ordered `String`
@@ -1234,8 +1221,7 @@ and consist of source or resource bytes. These producer grammars are documented 
 but are not typed CADIR transfer grammars. CADIR therefore retains each member as the complete
 named native application payload linked to its owning property. It does not create a neutral mesh,
 result, point, material, inspection, or toolpath value from these bytes. The exact runtime
-property, XML value, and complete member remain authoritative, and the logical member span remains
-`named_opaque`.
+property, XML value, and complete member remain authoritative.
 
 `Mesh::PropertyMeshKernel` contains exactly one direct `Mesh` value root. A duplicate or missing
 root is malformed. That root has zero or one non-empty lowercase `file` attribute; a non-empty
@@ -1391,24 +1377,6 @@ every document-level element outside `ViewProviderData` in source order. These n
 cover the camera, unrecognized active-view data, clipping or section state, and future GUI state
 without treating it as an application-object property. Each retains its exact XML span, ordered
 descendant values, and display-asset references.
-
-Logical byte accounting consumes the records emitted by each bounded parser. Exact-shape,
-side-entry string-table, and side-entry element-map payloads are wholly typed after successful
-framing. `Document.xml` properties and `GuiDocument.xml` state/property spans are typed while the
-intervening XML syntax is structural. Each side-entry span is owned by its archive entry record.
-The entry's ordered `referenced_by` relation independently retains every application property, GUI
-property, or GUI state that references the bytes. Uninterpreted embedded assets remain named
-opaque. These claims are sorted and rejected on overlap before the ledger is emitted; validation
-then requires every logical entry to close without gaps.
-
-The native namespace holds a deterministic `byte_coverage` report. It records physical
-archive length and span count, logical entry length and span count, byte totals by the closed
-`structural`, `typed`, and `named_opaque` classes, and the sorted entries containing opaque bytes.
-Its `exact` flag is true only when the physical archive and every nonempty logical entry partition
-from zero through the declared length with positive, contiguous, nonoverlapping spans. Validation
-re-derives the report, rejects missing or unknown logical entries, validates every typed or opaque
-span owner, requires structural spans to be ownerless, and rechecks retained entry lengths and
-SHA-256 digests. Zero-length entries are represented by an empty partition and still counted.
 
 A zero-byte exact-shape side entry has the typed `empty` payload
 form. This is FreeCAD's persisted representation of a null or suppressed `PropertyPartShape`, not
@@ -1716,7 +1684,7 @@ family, native-versus-neutral status, and post-processing composition. Native va
 the census again from the object and feature graphs; missing projections and stale classifications
 are errors rather than coverage-report omissions.
 
-Native document, object, property, payload, ledger, product, drawing, and application identities
+Native document, object, property, payload, product, drawing, and application identities
 use canonical CADIR ids. Persisted names form percent-escaped id keys while the exact unescaped
 name remains in its typed record. Child records derive their key from the owning record instead of
 embedding a second id delimiter. Neutral topology and carrier ids use the shape-payload key under
@@ -1781,7 +1749,7 @@ linear dimensions must be finite and positive, and their angle must lie strictly
 operation rather than an unresolved neutral dress-up feature.
 
 
-## 12. Writing from CADIR
+## 11. Writing from CADIR
 
 Native property selectors may differ from canonical parameter names, for example
 when a name contains spaces or a diameter drives a radius control. Small typed
