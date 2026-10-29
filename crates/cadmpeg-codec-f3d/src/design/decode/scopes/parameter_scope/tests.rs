@@ -420,3 +420,21 @@ fn stored_family_name_takes_precedence_over_the_class_type_family() {
         Some(DesignFeatureKind::Hole)
     );
 }
+
+#[test]
+fn unassigned_extrude_extent_retains_scope_with_a_loss() {
+    use crate::records::feature::scope::{DesignFeatureKind, DesignParameterScope};
+    let scope = DesignParameterScope::empty(
+        "f3d:Design/BulkStream.dat:design-parameter-scope#60",
+        DesignFeatureKind::Extrude,
+        60,
+    );
+    let loss = super::extrude_extent_native_loss(&scope).unwrap();
+    assert_eq!(loss.code.local_code(), "feature.extrude-extent-native");
+    let sketch = DesignParameterScope::empty(
+        "f3d:Design/BulkStream.dat:design-parameter-scope#70",
+        DesignFeatureKind::Sketch,
+        70,
+    );
+    assert!(super::extrude_extent_native_loss(&sketch).is_none());
+}

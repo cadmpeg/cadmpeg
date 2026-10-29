@@ -48,6 +48,7 @@ fn body_pattern_adds_one_copy_per_non_original_occurrence() {
                 spacing: cadmpeg_ir::scalar::PositiveLength::new(2.0).unwrap(),
                 count: 3,
                 second: None,
+                omitted_instances: Vec::new(),
             })
             .unwrap(),
         }),

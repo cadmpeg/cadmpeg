@@ -410,7 +410,8 @@ fn append_design_losses(
     use cadmpeg_ir::features::{
         AngularTermination, BodyRetentionMode, BodySelection, BooleanOp, EdgeSelection,
         ExtrudeExtent, FaceSelection, FeatureDefinition, FeatureOperation, FeatureSourceContent,
-        LinearTermination, PathRef, PlanarProfileRef, ProfileRef, RevolveExtent, SplitFaceTool,
+        LinearTermination, PathRef, PlanarProfileRef, ProfileRef, RevolveExtent, SplitBodyTool,
+        SplitFaceTool,
     };
     use cadmpeg_ir::features::{
         ExtrusionDirectionSource, LoftPointSection, LoftSection, SurfaceBoundary,
@@ -1674,8 +1675,12 @@ fn append_design_losses(
                         || incomplete_body_selection(tools)
                         || *keep == cadmpeg_ir::features::BodyTrimSide::Unresolved
                 }
-                FeatureOperation::SplitBody { targets, tools } => {
-                    incomplete_body_selection(targets) || incomplete_face_selection(tools)
+                FeatureOperation::SplitBody { targets, tool } => {
+                    incomplete_body_selection(targets)
+                        || match tool {
+                            SplitBodyTool::Faces(faces) => incomplete_face_selection(faces),
+                            SplitBodyTool::Plane { .. } => false,
+                        }
                 }
                 FeatureOperation::SplitFace { targets, tool } => {
                     incomplete_face_selection(targets)
@@ -2422,6 +2427,9 @@ fn merge_brep(target: &mut Brep, mut source: Brep) -> Result<(), CodecError> {
     target.stats.unresolved_topology_loops += source.stats.unresolved_topology_loops;
     target.stats.unresolved_topology_fins += source.stats.unresolved_topology_fins;
     target.stats.unresolved_topology_vertices += source.stats.unresolved_topology_vertices;
+    target.stats.withheld_fin_partners += source.stats.withheld_fin_partners;
+    target.stats.withheld_fin_links += source.stats.withheld_fin_links;
+    target.stats.withheld_ring_edges += source.stats.withheld_ring_edges;
     target.stats.unclaimed_faces += source.stats.unclaimed_faces;
     target.stats.synthetic_body_grouping |= source.stats.synthetic_body_grouping;
     Ok(())
@@ -3922,6 +3930,24 @@ fn append_topology_record_losses(
             )));
         }
     }
+    if stats.withheld_fin_partners > 0 {
+        losses.push(SldprtLossCode::TopologyFinPartnerUnresolved.note(format!(
+            "{} edge(s) were withheld because an unwalked boundary-dummy canonical FIN lacks reciprocal partner corroboration of both ring-order endpoints or a mutual twin FIN contradicts the ring-order endpoint; no dummy enters a public face loop.",
+            stats.withheld_fin_partners,
+        )));
+    }
+    if stats.withheld_fin_links > 0 {
+        losses.push(SldprtLossCode::TopologyFinLinkUnresolved.note(format!(
+            "{} ring(s) were withheld because a FIN backward link names no reciprocal same-loop forward link; the ring is not walked on doubt.",
+            stats.withheld_fin_links,
+        )));
+    }
+    if stats.withheld_ring_edges > 0 {
+        losses.push(SldprtLossCode::TopologyRingEdgeWithheld.note(format!(
+            "{} vertexless ring edge(s) fail strict reciprocal-circle single-loop admission; no vertex is invented and the edge is withheld.",
+            stats.withheld_ring_edges,
+        )));
+    }
 }
 
 fn build_geometry_report(
@@ -5039,9 +5065,12 @@ fn assign_configuration_bodies(
             continue;
         };
         if source_counts.get(&source_index) == Some(&1) {
-            configuration.bodies = Some(cadmpeg_ir::features::DistinctMembers::try_from(
-                partition_map.remove(&source_index).unwrap_or_default(),
-            )?);
+            // A native record without a decoded partition keeps its body
+            // membership unresolved instead of resolving to an empty set.
+            if let Some(bodies) = partition_map.remove(&source_index) {
+                configuration.bodies =
+                    Some(cadmpeg_ir::features::DistinctMembers::try_from(bodies)?);
+            }
         }
     }
     if let Some((active_index, position)) = bind_active_configuration_partition(ir) {
@@ -5107,10 +5136,7 @@ fn bind_active_configuration_partition(ir: &mut CadIr) -> Option<(u32, usize)> {
         .configurations
         .iter()
         .enumerate()
-        .filter(|(_, configuration)| {
-            configuration.source_index.is_none()
-                && configuration.name.as_deref() == Some(active_name.as_str())
-        })
+        .filter(|(_, configuration)| configuration.name.as_deref() == Some(active_name.as_str()))
         .map(|(position, _)| position);
     let position = matches.next()?;
     let source_identity_available = !ir
@@ -5118,7 +5144,10 @@ fn bind_active_configuration_partition(ir: &mut CadIr) -> Option<(u32, usize)> {
         .configurations
         .iter()
         .any(|configuration| configuration.source_index == Some(active_index));
-    if matches.next().is_some() || !source_identity_available {
+    if matches.next().is_some()
+        || ir.model.configurations[position].source_index.is_some()
+        || !source_identity_available
+    {
         return None;
     }
 

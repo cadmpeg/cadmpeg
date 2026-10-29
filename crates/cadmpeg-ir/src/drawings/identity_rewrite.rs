@@ -3,7 +3,7 @@
 
 use super::{Drawing, DrawingKind};
 
-rewrite_record!(Drawing, []; {id, object, kind, runtime_type, order, visible, relationships, template, position, scale, direction, rotation_degrees, sheet, curves, parameters, assets, native_ref});
+rewrite_record!(Drawing, []; {id, object, kind, runtime_type, order, visible, relationships, template, position, scale, direction, rotation_degrees, sheet, curves, template_geometry, x_direction, parameters, assets, native_ref});
 rewrite_enum!(DrawingKind, []; {
     Page,
     Template,
@@ -30,3 +30,6 @@ rewrite_enum!(super::DrawingCurveGeometry, []; {
 });
 rewrite_enum!(super::CurveVisibility, []; {Visible, Hidden});
 rewrite_enum!(super::CurveSource, []; {ProjectedModelEdge, Cosmetic, CenterLine});
+
+rewrite_record!(super::TemplateGeometry, []; {curves, texts});
+rewrite_record!(super::TemplateText, []; {text, position, height});

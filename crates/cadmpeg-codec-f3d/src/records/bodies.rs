@@ -10,6 +10,11 @@ use cadmpeg_ir::math::Point3;
 use serde::{Deserialize, Serialize};
 
 cadmpeg_core::named_optional_field!(deserialize_body, BodyId, "body");
+cadmpeg_core::named_optional_field!(
+    deserialize_component_owner,
+    super::body_ownership::BodyOwnership,
+    "component_owner"
+);
 /// A nonblank containing Design `BulkStream` archive path.
 #[derive(Debug, Clone, PartialEq)]
 struct DesignBulkStreamPath(NonBlankString);
@@ -370,6 +375,14 @@ pub(crate) struct DesignBodyBinding {
     /// Solved body in the BREP blob named by this pair.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub(crate) body: Option<BodyId>,
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_component_owner"
+    )]
+    pub(crate) component_owner: Option<super::body_ownership::BodyOwnership>,
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub(crate) component_owner_unresolved: bool,
 }
 
 #[cfg(test)]
@@ -392,6 +405,8 @@ impl Clone for DesignBodyBinding {
             blob_name: self.blob_name.clone(),
             blob_name_offset: self.blob_name_offset,
             body: self.body.clone(),
+            component_owner: self.component_owner.clone(),
+            component_owner_unresolved: self.component_owner_unresolved,
         }
     }
 }
@@ -410,6 +425,10 @@ struct DesignBodyBindingWireRef<'a> {
     blob_name_offset: u64,
     #[serde(skip_serializing_if = "Option::is_none")]
     body: Option<&'a BodyId>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    component_owner: Option<&'a super::body_ownership::BodyOwnership>,
+    #[serde(skip_serializing_if = "std::ops::Not::not")]
+    component_owner_unresolved: bool,
 }
 
 impl Serialize for DesignBodyBinding {
@@ -426,6 +445,8 @@ impl Serialize for DesignBodyBinding {
             blob_name: &self.blob_name,
             blob_name_offset: self.blob_name_offset,
             body: self.body.as_ref(),
+            component_owner: self.component_owner.as_ref(),
+            component_owner_unresolved: self.component_owner_unresolved,
         }
         .serialize(serializer)
     }
@@ -461,6 +482,14 @@ pub(crate) struct DesignBodyBindingWire {
         deserialize_with = "deserialize_body"
     )]
     pub(crate) body: Option<BodyId>,
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_component_owner"
+    )]
+    pub(crate) component_owner: Option<super::body_ownership::BodyOwnership>,
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub(crate) component_owner_unresolved: bool,
 }
 
 impl TryFrom<DesignBodyBindingWire> for DesignBodyBinding {
@@ -503,6 +532,8 @@ impl TryFrom<DesignBodyBindingWire> for DesignBodyBinding {
             blob_name: wire.blob_name,
             blob_name_offset: wire.blob_name_offset,
             body: wire.body,
+            component_owner: wire.component_owner,
+            component_owner_unresolved: wire.component_owner_unresolved,
         })
     }
 }
@@ -549,6 +580,8 @@ impl From<DesignBodyBinding> for DesignBodyBindingWire {
             blob_name: value.blob_name,
             blob_name_offset: value.blob_name_offset,
             body: value.body,
+            component_owner: value.component_owner,
+            component_owner_unresolved: value.component_owner_unresolved,
         }
     }
 }

@@ -172,6 +172,7 @@ fn linear_pattern_primary_and_secondary_counts_are_count_parameters() {
                     spacing: cadmpeg_ir::scalar::PositiveLength::new(10.0).unwrap(),
                     count: 2,
                     second: None,
+                    omitted_instances: Vec::new(),
                 })
                 .unwrap(),
             }),

@@ -8,6 +8,8 @@
 //! form of `Properties.dat`. [`is_assembly`] classifies a BREP-less document
 //! whose model is the placement of its XREF targets.
 
+pub(crate) mod operation_pose;
+
 use cadmpeg_core::container::ContainerRole;
 
 use std::collections::HashSet;
@@ -191,6 +193,7 @@ impl ReferenceJson {
         let id = format!("f3d:xref:reference#{ordinal}");
         Ok(XrefReference {
             current_pose: None,
+            operation_pose: None,
             contained_poses: Vec::new(),
             owned_poses: Vec::new(),
             id,

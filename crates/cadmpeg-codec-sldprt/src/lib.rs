@@ -111,6 +111,7 @@ mod decode;
 mod dialect;
 pub mod exact_ledger;
 mod feature_schema;
+mod framed_string;
 #[doc(hidden)]
 pub mod fuzz;
 mod history;

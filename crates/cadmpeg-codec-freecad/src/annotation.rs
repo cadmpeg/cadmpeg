@@ -703,7 +703,6 @@ pub(crate) fn enrich_dimensions(
     ctx: &DecodeContext<'_>,
     model: &mut Model,
     properties: &[PropertyRecord],
-    data: &BTreeMap<String, cadmpeg_core::decode::View<'_>>,
     losses: &mut Vec<cadmpeg_ir::report::loss::LossNote>,
 ) -> Result<(), CodecError> {
     use crate::loss::FreecadLossCode;
@@ -746,6 +745,14 @@ pub(crate) fn enrich_dimensions(
                 Some("Angle") => Some(DimensionKind::Angle {}),
                 Some("Angle3Pt") => Some(DimensionKind::ThreePointAngle {}),
                 None if custom.is_none() && selected == "0" => Some(DimensionKind::Distance {}),
+                None if custom.is_none() => match selected {
+                    "1" => Some(DimensionKind::HorizontalDistance {}),
+                    "2" => Some(DimensionKind::VerticalDistance {}),
+                    "4" => Some(DimensionKind::Radius {}),
+                    "5" => Some(DimensionKind::Diameter {}),
+                    "6" => Some(DimensionKind::Angle {}),
+                    _ => None,
+                },
                 _ => None,
             };
             annotation.dimension_kind = Some(kind.unwrap_or_else(|| {
@@ -801,21 +808,6 @@ pub(crate) fn enrich_dimensions(
                     losses.push(
                         FreecadLossCode::DrawingDimensionToleranceNotTransferred
                             .note(format!("{}: {name}", annotation.id)),
-                    );
-                }
-            }
-        }
-        if let Some(property) = sole_named_property("dimension", &owned, "SavedGeometry")? {
-            for name in property.side_entries() {
-                let empty = data
-                    .get(name.as_str())
-                    .and_then(|view| std::str::from_utf8(view.window()).ok())
-                    .and_then(|text| text.split_once("TShapes"))
-                    .is_some_and(|(_, tail)| tail.split_whitespace().eq(["0", "*"]));
-                if !empty {
-                    losses.push(
-                        FreecadLossCode::DrawingDimensionGeometryNotTransferred
-                            .note(format!("{}: {name}", property.id)),
                     );
                 }
             }

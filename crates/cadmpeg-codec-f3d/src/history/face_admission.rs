@@ -362,7 +362,10 @@ impl FaceAdmission<'_, '_> {
             FeatureOperation::FilledSurface { support_faces, .. }
             | FeatureOperation::RuledSurface { support_faces, .. } => admit(support_faces, false)?,
             FeatureOperation::SplitFace { targets, .. } => admit(targets, false)?,
-            FeatureOperation::SplitBody { tools, .. }
+            FeatureOperation::SplitBody {
+                tool: cadmpeg_ir::features::SplitBodyTool::Faces(tools),
+                ..
+            }
             | FeatureOperation::CutWithSurface { tools, .. } => admit(tools, false)?,
             FeatureOperation::Shell { removed_faces, .. } => admit(removed_faces, false)?,
             FeatureOperation::MirrorShape {

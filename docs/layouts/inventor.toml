@@ -6,6 +6,69 @@ endianness = "little"
 note = "Fixed prefixes and descriptors in the supported RSe schema-31, Meta Stream v8, Protein stream envelope, UFRxDoc, and kernel-carrier envelope. The Protein page format is tabulated in `docs/layouts/protein.toml`."
 
 [[record]]
+name = "pm_dc_derived_source_field"
+kind = "byte"
+section = "13.4"
+anchor = "source property in segment major version 19"
+size = 4
+note = "Offset starts after the segment-major-19 content header."
+parsed_by = "crates/cadmpeg-codec-inventor/src/feature/derived.rs"
+
+[[record.field]]
+name = "component"
+offset = 0
+type = "u32"
+source = "spec"
+anchor = "one qualified component reference"
+
+[[record]]
+name = "pm_dc_derived_component_fields"
+kind = "byte"
+section = "13.4"
+anchor = "In segment major version 19, a derived component"
+size = 32
+note = "Offsets start after the segment-major-19 state content header."
+parsed_by = "crates/cadmpeg-codec-inventor/src/feature/derived.rs"
+
+[[record.field]]
+name = "state"
+offset = 0
+type = "i32"
+source = "spec"
+anchor = "state i32 = -1"
+value = -1
+
+[[record.field]]
+name = "references"
+offset = 4
+type = "u32[4]"
+source = "spec"
+anchor = "references u32[4]"
+
+[[record.field]]
+name = "marker"
+offset = 20
+type = "u32"
+source = "spec"
+anchor = "marker u32 = 0x30000004"
+value = 805306372
+
+[[record.field]]
+name = "count"
+offset = 24
+type = "u32"
+source = "spec"
+anchor = "count u32 = 0"
+value = 0
+
+[[record.field]]
+name = "terminal"
+offset = 28
+type = "u32"
+source = "spec"
+anchor = "terminal u32"
+
+[[record]]
 name = "pm_dc_content_header"
 kind = "byte"
 section = "12"
@@ -2756,6 +2819,26 @@ contains = '''(13, &[super::super::OBJECT_COLLECTION_TYPE]),'''
 note = "Slot 13 selects the record types in the specification."
 
 [[record]]
+name = "pm_dc_positional_loft_property_vector"
+kind = "slot"
+section = "13.2"
+anchor = "The positional two-section solid-loft form has 14 property slots"
+size = 14
+parsed_by = "crates/cadmpeg-codec-inventor/src/feature/loft_sweep/controls.rs"
+note = "The positional solid-loft operand pattern. Slot numbers are reference-list indices."
+
+[[record.field]]
+name = "properties"
+type = "u32[14]"
+source = "spec"
+anchor = "The positional two-section solid-loft form has 14 property slots"
+
+[[record.code]]
+path = "crates/cadmpeg-codec-inventor/src/feature/loft_sweep/controls.rs"
+contains = "slots.len() != 14"
+note = "The positional property vector has 14 slots."
+
+[[record]]
 name = "pm_dc_sweep_property_slots"
 kind = "slot"
 section = "13.2"
@@ -4012,3 +4095,152 @@ offset = 4
 type = "u32"
 source = "spec"
 anchor = "pairs of u32 coordinates"
+
+[[record]]
+name = "pm_dc_sheet_metal_face_plate_body_v29"
+kind = "byte"
+section = "13"
+anchor = "The segment-major-29 one-plate face suffix occupies"
+size = 28
+note = "Offsets are relative to the end of the state content header."
+
+[[record.field]]
+name = "state"
+offset = 0
+type = "i32"
+source = "spec"
+anchor = "The segment-major-29 one-plate face suffix occupies"
+value = -1
+
+[[record.field]]
+name = "marker"
+offset = 4
+type = "u16"
+source = "spec"
+anchor = "The segment-major-29 one-plate face suffix occupies"
+value = 2
+
+[[record.field]]
+name = "signature"
+offset = 6
+type = "u16"
+source = "spec"
+anchor = "The segment-major-29 one-plate face suffix occupies"
+value = 12288
+
+[[record.field]]
+name = "count"
+offset = 8
+type = "u32"
+source = "spec"
+anchor = "The segment-major-29 one-plate face suffix occupies"
+value = 1
+
+[[record.field]]
+name = "metadata0"
+offset = 12
+type = "u32"
+source = "spec"
+anchor = "The segment-major-29 one-plate face suffix occupies"
+value = 1
+
+[[record.field]]
+name = "metadata1"
+offset = 16
+type = "u32"
+source = "spec"
+anchor = "The segment-major-29 one-plate face suffix occupies"
+value = 16
+
+[[record.field]]
+name = "plate_reference"
+offset = 20
+type = "u32"
+source = "spec"
+anchor = "The segment-major-29 one-plate face suffix occupies"
+
+[[record.field]]
+name = "value"
+offset = 24
+type = "u32"
+source = "spec"
+anchor = "The segment-major-29 one-plate face suffix occupies"
+value = 0
+
+[[record]]
+name = "pm_dc_sheet_metal_face_plate_bend_body_v19"
+kind = "byte"
+section = "13"
+anchor = "The segment-major-19 plate-and-bend face suffix occupies"
+size = 32
+note = "Offsets are relative to the end of the state content header."
+
+[[record.field]]
+name = "state"
+offset = 0
+type = "i32"
+source = "spec"
+anchor = "The segment-major-19 plate-and-bend face suffix occupies"
+value = -1
+
+[[record.field]]
+name = "marker"
+offset = 4
+type = "u16"
+source = "spec"
+anchor = "The segment-major-19 plate-and-bend face suffix occupies"
+value = 2
+
+[[record.field]]
+name = "signature"
+offset = 6
+type = "u16"
+source = "spec"
+anchor = "The segment-major-19 plate-and-bend face suffix occupies"
+value = 12288
+
+[[record.field]]
+name = "count"
+offset = 8
+type = "u32"
+source = "spec"
+anchor = "The segment-major-19 plate-and-bend face suffix occupies"
+value = 2
+
+[[record.field]]
+name = "metadata0"
+offset = 12
+type = "u32"
+source = "spec"
+anchor = "The segment-major-19 plate-and-bend face suffix occupies"
+value = 2
+
+[[record.field]]
+name = "metadata1"
+offset = 16
+type = "u32"
+source = "spec"
+anchor = "The segment-major-19 plate-and-bend face suffix occupies"
+value = 0
+
+[[record.field]]
+name = "plate_reference"
+offset = 20
+type = "u32"
+source = "spec"
+anchor = "The segment-major-19 plate-and-bend face suffix occupies"
+
+[[record.field]]
+name = "bend_reference"
+offset = 24
+type = "u32"
+source = "spec"
+anchor = "The segment-major-19 plate-and-bend face suffix occupies"
+
+[[record.field]]
+name = "value"
+offset = 28
+type = "u32"
+source = "spec"
+anchor = "The segment-major-19 plate-and-bend face suffix occupies"
+value = 0

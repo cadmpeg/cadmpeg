@@ -84,6 +84,7 @@ fn geometry_depth_does_not_require_omitted_extrude_face_groups() {
             side_two_taper_angle: None,
             profile_offset: None,
             side_one_offset: None,
+            ..Default::default()
         },
     );
     assert!(conflicts(&native));
@@ -109,6 +110,7 @@ fn two_sided_distance_extrude_accepts_fixed_distance_lanes() {
         side_two_taper_angle: None,
         profile_offset: None,
         side_one_offset: None,
+        ..Default::default()
     };
     assert!(!conflicts(&fixed_extrude(
         DesignExtrudeExtent::TwoSidedDistance,
@@ -146,6 +148,7 @@ fn offset_start_lane_that_is_also_the_parameter_owner_counts_once() {
                 side_two_taper_angle: None,
                 profile_offset: Some(lane(17)),
                 side_one_offset: None,
+                ..Default::default()
             },
         );
         if let crate::records::feature::scope::DesignScopePayloadMut::Extrude(Some(extrude)) =

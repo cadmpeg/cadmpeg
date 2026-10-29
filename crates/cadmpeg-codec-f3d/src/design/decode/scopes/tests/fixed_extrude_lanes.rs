@@ -133,6 +133,7 @@ fn two_sided_distance_extrude_decodes_four_fixed_lanes() {
             side_two_taper_angle: Some(lane(20, 0.0, offsets[3])),
             profile_offset: None,
             side_one_offset: None,
+            ..Default::default()
         })
     );
 
@@ -164,6 +165,7 @@ fn symmetric_distance_extrude_decodes_two_fixed_lanes() {
             side_two_taper_angle: None,
             profile_offset: None,
             side_one_offset: None,
+            ..Default::default()
         })
     );
 }
@@ -263,6 +265,7 @@ fn face_start_extrude_assigns_lanes_by_prologue_slot() {
             side_two_taper_angle: None,
             profile_offset: Some(lane(11, 0.0, offsets[0])),
             side_one_offset: None,
+            ..Default::default()
         })
     );
 
@@ -305,6 +308,9 @@ fn to_face_extrude_assigns_offset_and_taper_lanes() {
             side_two_taper_angle: None,
             profile_offset: None,
             side_one_offset: Some(lane(11, 0.25, offsets[0])),
+            ..Default::default()
         })
     );
 }
+
+mod current_targets;

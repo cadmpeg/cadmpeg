@@ -2753,6 +2753,11 @@ impl DesignParameterScope {
         }
     }
 
+    pub(crate) fn emboss_operand_construction(&self) -> Option<&DesignEmbossConstruction> {
+        self.emboss_construction()
+            .filter(|construction| construction.has_fixed_operands(self))
+    }
+
     pub(crate) fn thread_construction(&self) -> Option<&DesignThreadConstruction> {
         match &self.payload {
             DesignScopePayload::Thread(value) => value.as_ref(),

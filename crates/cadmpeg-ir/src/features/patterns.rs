@@ -271,11 +271,26 @@ impl<C> PatternKind<C> {
             |condition: bool, message: &'static str| condition.then_some(()).ok_or(message);
         match &transform {
             PatternTransform::Unresolved { .. } => {}
-            PatternTransform::Linear { count, second, .. } => {
+            PatternTransform::Linear {
+                count,
+                second,
+                omitted_instances,
+                ..
+            } => {
                 require(*count > 0, "pattern count must be positive")?;
                 if let Some(second) = second {
                     require(second.count > 0, "pattern second.count must be positive")?;
                 }
+                let mut distinct = std::collections::HashSet::new();
+                require(
+                    omitted_instances.iter().all(|position| {
+                        *position != [0, 0]
+                            && position[0] < *count
+                            && position[1] < second.as_ref().map_or(1, |axis| axis.count)
+                            && distinct.insert(*position)
+                    }),
+                    "pattern omitted_instances must contain distinct nonseed grid positions",
+                )?;
             }
             PatternTransform::LinearOffsets { offsets, .. } => {
                 require(
@@ -318,6 +333,49 @@ impl<C> PatternKind<C> {
         &self.0
     }
 
+    /// Number of retained instances, including the seed.
+    pub fn occurrence_count(&self) -> Option<usize>
+    where
+        C: CompositeStages,
+    {
+        match &self.0 {
+            PatternTransform::Linear {
+                count,
+                second,
+                omitted_instances,
+                ..
+            } => usize::try_from(*count)
+                .ok()?
+                .checked_mul(usize::try_from(second.as_ref().map_or(1, |axis| axis.count)).ok()?)?
+                .checked_sub(omitted_instances.len()),
+            PatternTransform::LinearOffsets { offsets, .. } => Some(offsets.len()),
+            PatternTransform::Circular { count, .. }
+            | PatternTransform::CurveDriven { count, .. }
+            | PatternTransform::Scale { count, .. } => usize::try_from(*count).ok(),
+            PatternTransform::CircularAngles { angles, .. } => Some(angles.len()),
+            PatternTransform::Mirror { .. } | PatternTransform::MirrorReference { .. } => Some(2),
+            PatternTransform::Unresolved { .. } => None,
+            PatternTransform::Composite { stages } => {
+                let mut count: Option<usize> = None;
+                for (index, stage) in stages.stages().iter().enumerate() {
+                    let next = stage.pattern.occurrence_count()?;
+                    count = Some(match stage_combination(index, stage) {
+                        PatternStageCombination::Initialize => next,
+                        PatternStageCombination::CartesianProduct => count?.checked_mul(next)?,
+                        PatternStageCombination::AlignedSlices => {
+                            let previous = count?;
+                            if previous % next != 0 {
+                                return None;
+                            }
+                            previous
+                        }
+                    });
+                }
+                count
+            }
+        }
+    }
+
     /// Returns the curve path slot without exposing repetition geometry.
     pub fn curve_path_mut(&mut self) -> Option<&mut Option<PathRef>> {
         match &mut self.0 {
@@ -343,11 +401,13 @@ impl PatternTransform<NoNestedComposite> {
                 spacing,
                 count,
                 second,
+                omitted_instances,
             } => PatternTransform::Linear {
                 direction,
                 spacing,
                 count,
                 second,
+                omitted_instances,
             },
             Self::LinearOffsets { direction, offsets } => {
                 PatternTransform::LinearOffsets { direction, offsets }
@@ -458,7 +518,7 @@ pub enum PatternTransform<C = CompositePattern> {
         direction: Option<FeatureDirection3>,
         /// Distance between consecutive instances.
         spacing: PositiveLength,
-        /// Total number of instances, including the original.
+        /// Nominal first-direction grid size, including the original.
         count: u32,
         /// Optional complete second translation direction.
         #[serde(
@@ -467,6 +527,9 @@ pub enum PatternTransform<C = CompositePattern> {
             deserialize_with = "deserialize_second"
         )]
         second: Option<LinearPatternDirection>,
+        /// Zero-based positions omitted from the two-direction grid.
+        #[serde(default, skip_serializing_if = "Vec::is_empty")]
+        omitted_instances: Vec<[u32; 2]>,
     },
     /// Repeats seeds at explicitly located distances along a straight direction.
     LinearOffsets {
@@ -637,7 +700,7 @@ impl<C: JsonSchema> JsonSchema for PatternKind<C> {
 fn composite_composition_is_valid(stages: &[crate::features::patterns::PatternStage]) -> bool {
     let mut occurrences = None;
     stages.iter().enumerate().all(|(index, stage)| {
-        let Some(stage_count) = pattern_occurrence_count(stage.pattern.definition()) else {
+        let Some(stage_count) = primary_occurrence_count(stage.pattern.definition()) else {
             return true;
         };
         if index == 0 {
@@ -661,7 +724,7 @@ fn composite_composition_is_valid(stages: &[crate::features::patterns::PatternSt
     })
 }
 
-fn pattern_occurrence_count<C>(pattern: &PatternTransform<C>) -> Option<usize> {
+fn primary_occurrence_count<C>(pattern: &PatternTransform<C>) -> Option<usize> {
     match pattern {
         PatternTransform::Linear { count, .. }
         | PatternTransform::Circular { count, .. }
@@ -733,7 +796,7 @@ pub struct LinearPatternDirection {
     pub direction: FeatureDirection3,
     /// Distance between consecutive instances.
     pub spacing: PositiveLength,
-    /// Total number of instances, including the original.
+    /// Nominal grid size along this direction, including the original.
     pub count: u32,
 }
 

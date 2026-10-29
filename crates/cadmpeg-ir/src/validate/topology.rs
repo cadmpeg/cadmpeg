@@ -11,7 +11,7 @@ use crate::document::CadIr;
 use crate::features::{
     patterns::{PatternKind, PatternSeed, PatternTransform},
     BodySelection, DatumPlaneReference, ExtrudeStart, FaceSelection, Feature, FeatureSourceContent,
-    SplitFaceTool, UnresolvedFamily,
+    SplitBodyTool, SplitFaceTool, UnresolvedFamily,
 };
 use crate::geometry::{
     CurveGeometry, ProceduralCurveDefinition, ProceduralSurfaceDefinition, SolvedCurveGeometry,
@@ -3347,9 +3347,18 @@ fn check_feature_references(
                 body_selections.push(tools);
                 body_selections.extend(cells);
             }
-            FeatureOperation::SplitBody { targets, tools } => {
+            FeatureOperation::SplitBody { targets, tool } => {
                 body_selections.push(targets);
-                face_selections.push(tools);
+                match tool {
+                    SplitBodyTool::Faces(faces) => face_selections.push(faces),
+                    SplitBodyTool::Plane { plane } => check_plane_feature_reference(
+                        findings,
+                        feature,
+                        plane,
+                        &feature_records,
+                        "split-body tool plane",
+                    ),
+                }
             }
             FeatureOperation::SplitFace { targets, tool } => {
                 face_selections.push(targets);

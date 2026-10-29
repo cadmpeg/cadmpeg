@@ -1084,6 +1084,7 @@ fn is_brep_blob_basename(value: &str) -> bool {
 /// Decode every ordered Design BREP body-map pair and resolve each pair in its
 /// named blob's body-selector namespace.
 pub(crate) fn decode_design_body_bindings(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     scan: &ContainerScan,
     active_brep_entry: Option<&str>,
     body_keys: &[BodyNativeKey],
@@ -1101,6 +1102,7 @@ pub(crate) fn decode_design_body_bindings(
         else {
             continue;
         };
+        let owners = super::component_bodies::owners(ctx, bytes, &metadata)?;
         for record in selected_body_map_records(bytes, &metadata)? {
             let pair_count = u32::try_from(record.bindings.len())
                 .map_err(|_| CodecError::malformed("F3D Design body map exceeds u32::MAX pairs"))?;
@@ -1138,6 +1140,13 @@ pub(crate) fn decode_design_body_bindings(
                         blob_name: record.blob_name.clone(),
                         blob_name_offset: u64_from_index(record.blob_name_offset),
                         body: body.cloned(),
+                        component_owner: owners
+                            .get(&binding.entity_suffix)
+                            .and_then(super::component_bodies::OwnerResolution::admitted)
+                            .cloned(),
+                        component_owner_unresolved: owners
+                            .get(&binding.entity_suffix)
+                            .is_some_and(|owner| owner.admitted().is_none()),
                     })
                     .map_err(CodecError::Malformed)?;
 
@@ -1871,7 +1880,13 @@ mod tests {
             );
             let names = super::design_model_selection(scan).unwrap().blob_names;
             assert_eq!(names, ["BREP.synthetic.smbh"]);
-            let bindings = super::decode_design_body_bindings(scan, None, &[]).unwrap();
+            let bindings = super::decode_design_body_bindings(
+                &cadmpeg_test_support::service_decode_context(),
+                scan,
+                None,
+                &[],
+            )
+            .unwrap();
             assert_eq!(bindings.len(), 1);
         });
     }
@@ -2086,6 +2101,8 @@ mod tests {
         };
         const STREAM: &str = "Design/BulkStream.dat";
         let binding = DesignBodyBinding::try_from(DesignBodyBindingWire {
+            component_owner: None,
+            component_owner_unresolved: false,
             id: "f3d:Design/BulkStream.dat:design-body-binding#20".into(),
             stream: STREAM.into(),
             pair_count: 1,

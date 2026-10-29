@@ -65,6 +65,7 @@ fn mirror_construction_requires_mirror_pattern_transform() {
                 spacing: PositiveLength::new(1.0).expect("spacing"),
                 count: 2,
                 second: None,
+                omitted_instances: Vec::new(),
             })
             .expect("linear pattern"),
         },

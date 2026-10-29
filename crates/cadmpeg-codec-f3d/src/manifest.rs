@@ -499,9 +499,12 @@ fn parse_asset_tail_at<'a>(cursor: &mut Cursor<'a>) -> Result<Vec<Utf16View<'a>>
             }
         }
         1 if !cursor.exhausted() => {
-            // The export marker, or the lineage URN of a referenced document.
+            // The export or offline-save marker, or the lineage URN of a
+            // referenced document.
             let terminal = cursor.utf16("top-level manifest export marker")?;
-            if !terminal.chars().eq("NA_EXPORT".chars()) {
+            if !terminal.chars().eq("NA_EXPORT".chars())
+                && !terminal.chars().eq("NA_OFFLINESAVE".chars())
+            {
                 expect_lineage_urn(terminal)?;
             }
         }

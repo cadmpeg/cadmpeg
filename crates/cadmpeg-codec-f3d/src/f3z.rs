@@ -61,16 +61,13 @@ pub(crate) fn decode<'a>(
     let (model_root, omitted_drawing_root) = archive::model_root(ctx, scan)?;
     let mut outer = archive::classify_members(ctx, scan)?;
     let root_scan = outer.member_scan(&model_root)?;
-    let AuthoredDecoded {
-        mut ir,
-        source,
-        body: mut report,
-        source_fidelity: mut fidelity,
-    } = crate::decode::decode_archive_member(ctx, root_scan, &outer.layers)?;
-    fidelity.remove_retained_record(crate::ids::FILE_SOURCE_IMAGE_ID);
-    fidelity.retain_unknown_records("f3d", [crate::decode::preserve_source_image(scan)])?;
+    let mut root = crate::decode::decode_archive_member(ctx, root_scan, &outer.layers)?;
+    root.source_fidelity
+        .remove_retained_record(crate::ids::FILE_SOURCE_IMAGE_ID);
+    root.source_fidelity
+        .retain_unknown_records("f3d", [crate::decode::preserve_source_image(scan)])?;
     if let Some(drawing_root) = omitted_drawing_root {
-        push_loss(&mut report.losses, F3dLossCode::DrawingDocumentOmitted, format_args!(
+        push_loss(&mut root.body.losses, F3dLossCode::DrawingDocumentOmitted, format_args!(
             "drawing root {drawing_root} is omitted; decoded its unambiguous derived model {model_root}"
         ));
     }
@@ -79,23 +76,21 @@ pub(crate) fn decode<'a>(
         .iter()
         .filter(|entry| crate::container::is_f3d_name(&entry.name))
         .count();
-    report.notes.push(format!(
+    root.body.notes.push(format!(
         "f3z archive: {member_count} document member(s); root {model_root}"
     ));
     if ctx.container_only() {
-        report.losses.append(&mut outer.losses);
-        return finalize_result(ctx, ir, source, report, fidelity);
+        root.body.losses.append(&mut outer.losses);
+        return finalize_result(ctx, root.ir, root.source, root.body, root.source_fidelity);
     }
-
-    let merged = merge::merge_archive(
-        ctx,
-        scan,
-        &outer,
-        model_root,
-        &mut ir,
-        &mut report,
-        &mut fidelity,
-    )?;
+    let merged = merge::merge_archive(ctx, scan, &outer, model_root, &mut root)?;
+    let AuthoredDecoded {
+        mut ir,
+        source,
+        body: mut report,
+        source_fidelity: mut fidelity,
+        ..
+    } = root;
     if merged > 0 {
         fidelity.remove_retained_record(crate::ids::FILE_SOURCE_IMAGE_ID);
         report.notes.push(format!(

@@ -32,6 +32,14 @@ pub(super) fn validate_xref_placement_sources(
                 Some(reference.id.clone()),
             );
         }
+        if !crate::xref::operation_pose::reference_matches(reference) {
+            push_constant_finding(
+                findings,
+                Check::NativeLinks,
+                "Fusion XREF definition pose does not match its operation table",
+                Some(reference.id.clone()),
+            );
+        }
         if !crate::xref::current_pose_matches(reference) {
             push_constant_finding(
                 findings,
@@ -42,6 +50,14 @@ pub(super) fn validate_xref_placement_sources(
         }
     }
     for occurrence in &ctx.native.design_component_occurrences {
+        if !crate::xref::operation_pose::local_matches(occurrence) {
+            push_constant_finding(
+                findings,
+                Check::NativeLinks,
+                "Fusion Design occurrence definition pose does not match its operation table",
+                Some(occurrence.id.clone()),
+            );
+        }
         if !crate::xref::local_current_pose_matches(occurrence) {
             push_constant_finding(
                 findings,

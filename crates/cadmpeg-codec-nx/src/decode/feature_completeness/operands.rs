@@ -261,8 +261,14 @@ pub(super) fn pattern_is_incomplete<C: cadmpeg_ir::features::patterns::Composite
     match pattern.definition() {
         PatternTransform::Unresolved { .. } => true,
         PatternTransform::Linear {
-            direction, count, ..
-        } => direction.is_none() || *count < 2,
+            direction,
+            count,
+            second,
+            ..
+        } => {
+            direction.is_none()
+                || u64::from(*count) * u64::from(second.as_ref().map_or(1, |axis| axis.count)) < 2
+        }
         PatternTransform::LinearOffsets { direction, offsets } => {
             direction.is_none() || offsets.len() < 2
         }
@@ -311,52 +317,6 @@ pub(crate) fn pattern_feature_is_incomplete(
             .enumerate()
             .any(|(index, seed)| seeds[..index].contains(seed))
         || pattern_is_incomplete(pattern)
-}
-
-pub(crate) fn pattern_occurrence_count<C: cadmpeg_ir::features::patterns::CompositeStages>(
-    pattern: &PatternKind<C>,
-) -> Option<usize> {
-    match pattern.definition() {
-        PatternTransform::Linear { count, .. }
-        | PatternTransform::Circular { count, .. }
-        | PatternTransform::CurveDriven { count, .. }
-        | PatternTransform::Scale { count, .. } => usize::try_from(*count).ok(),
-        PatternTransform::LinearOffsets { offsets, .. } => Some(offsets.len()),
-        PatternTransform::CircularAngles { angles, .. } => Some(angles.len()),
-        PatternTransform::Mirror { .. } | PatternTransform::MirrorReference { .. } => Some(2),
-        PatternTransform::Composite { stages } => stages
-            .stages()
-            .iter()
-            .enumerate()
-            .map(|(index, stage)| {
-                (
-                    stage,
-                    if index == 0 {
-                        cadmpeg_ir::features::patterns::PatternStageCombination::Initialize
-                    } else if matches!(stage.pattern.definition(), PatternTransform::Scale { .. }) {
-                        cadmpeg_ir::features::patterns::PatternStageCombination::AlignedSlices
-                    } else {
-                        cadmpeg_ir::features::patterns::PatternStageCombination::CartesianProduct
-                    },
-                )
-            })
-            .try_fold(None::<usize>, |occurrences, (stage, combination)| {
-                let stage_count = pattern_occurrence_count(&stage.pattern)?;
-                match combination {
-                    cadmpeg_ir::features::patterns::PatternStageCombination::Initialize => {
-                        occurrences.is_none().then_some(Some(stage_count))
-                    }
-                    cadmpeg_ir::features::patterns::PatternStageCombination::CartesianProduct => {
-                        Some(Some(occurrences?.checked_mul(stage_count)?))
-                    }
-                    cadmpeg_ir::features::patterns::PatternStageCombination::AlignedSlices => {
-                        let occurrences = occurrences?;
-                        (occurrences % stage_count == 0).then_some(Some(occurrences))
-                    }
-                }
-            })?,
-        PatternTransform::Unresolved { .. } => None,
-    }
 }
 
 pub(crate) fn body_selection_is_incomplete(selection: &BodySelection) -> bool {

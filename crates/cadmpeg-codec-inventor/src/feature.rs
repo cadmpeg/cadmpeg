@@ -35,6 +35,7 @@ use crate::{design::DesignInventory, sketch::SketchInventory};
 
 pub(crate) mod base;
 pub(crate) mod combine;
+pub(crate) mod derived;
 mod edge_selection;
 pub(crate) mod extrusion;
 pub(crate) mod history;
@@ -46,7 +47,7 @@ pub(crate) mod pattern;
 pub(crate) mod profile;
 pub(crate) mod revolve;
 pub(crate) mod sheet_metal;
-mod split;
+pub(crate) mod split;
 pub(crate) mod work_plane;
 
 const EPS_FEATURE_PROJECT_HOLE_E10: f64 = 1.0e-10;
@@ -184,6 +185,7 @@ pub(crate) struct FeatureProjection {
     pub(crate) unresolved_states: usize,
     pub(crate) extrusion_losses: Vec<cadmpeg_ir::report::loss::LossNote>,
     pub(crate) revolve_losses: Vec<cadmpeg_ir::report::loss::LossNote>,
+    pub(crate) loft_losses: Vec<cadmpeg_ir::report::loss::LossNote>,
     pub(crate) mirror_losses: Vec<cadmpeg_ir::report::loss::LossNote>,
     /// Closed loops that resolved extrusion profiles append to sketch
     /// profile tables, by sketch id, in table order.
@@ -200,6 +202,9 @@ pub(crate) struct PmDcFeaturePropertyPayload {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(tag = "form", rename_all = "snake_case")]
 pub(crate) enum PmDcFeaturePropertyKind {
+    Derived {
+        definition: derived::Property,
+    },
     Mirror {
         definition: mirror::Property,
     },
@@ -790,22 +795,24 @@ pub(crate) fn inventory(
                         )
                     })
                 }),
-                type_id => feature_property_parser(type_id).map_or_else(
-                    || Ok(()),
-                    |parser| {
-                        parser(ctx, record.payload, version).and_then(|property| {
-                            push_record(
-                                ctx,
-                                &mut inventory.properties,
-                                property,
-                                record.type_id,
-                                segment.pair.token.key(),
-                                record.ordinal,
-                                "admit Inventor PmDc feature property record",
-                            )
-                        })
-                    },
-                ),
+                type_id => feature_property_parser(type_id)
+                    .or_else(|| derived::parser(type_id, record.payload, version))
+                    .map_or_else(
+                        || Ok(()),
+                        |parser| {
+                            parser(ctx, record.payload, version).and_then(|property| {
+                                push_record(
+                                    ctx,
+                                    &mut inventory.properties,
+                                    property,
+                                    record.type_id,
+                                    segment.pair.token.key(),
+                                    record.ordinal,
+                                    "admit Inventor PmDc feature property record",
+                                )
+                            })
+                        },
+                    ),
             };
             if let Err(error) = parsed {
                 if matches!(error, CodecError::ResourceLimit(_)) {
@@ -1802,13 +1809,14 @@ pub(crate) enum FeatureFamily {
     Revolve,
     Motion,
     Combine,
+    Split,
 }
 
 impl FeatureFamily {
     /// The feature-label classes whose records use this family's layout.
     pub(crate) fn class_ids(self) -> &'static [ClassId] {
         match self {
-            Self::Base => &[BASE_CLASS_ID],
+            Self::Base => &[BASE_CLASS_ID, derived::CLASS_ID],
             Self::Extrusion => &[EXTRUSION_CLASS_ID],
             Self::Fillet => &[FILLET_CLASS_ID, CORNER_ROUND_CLASS_ID],
             Self::Chamfer => &[CHAMFER_CLASS_ID],
@@ -1826,6 +1834,7 @@ impl FeatureFamily {
                 motion::ROTATE_CLASS_ID,
             ],
             Self::Combine => &[combine::CLASS_ID],
+            Self::Split => &[split::CLASS_ID],
         }
     }
 
@@ -1852,6 +1861,7 @@ impl FeatureFamily {
             Self::Motion if source.properties.references().len() == 13 => 8,
             Self::Motion => 0,
             Self::Combine => 0,
+            Self::Split => 9,
         }
     }
 
@@ -1871,6 +1881,7 @@ impl FeatureFamily {
             Self::Revolve,
             Self::Motion,
             Self::Combine,
+            Self::Split,
         ]
         .into_iter()
         .find(|family| family.class_ids().contains(&class_id))
@@ -1927,6 +1938,9 @@ impl FeatureFamily {
             ) | (
                 Self::Combine,
                 FeatureDefinition::Operation(FeatureOperation::Combine { .. })
+            ) | (
+                Self::Split,
+                FeatureDefinition::Operation(FeatureOperation::SplitBody { .. })
             )
         )
     }
@@ -1956,6 +1970,7 @@ impl FeatureFamily {
                 FeatureOperation::MoveBody { .. } | FeatureOperation::MoveFace { .. },
             ) => Some(Self::Motion),
             FeatureDefinition::Operation(FeatureOperation::Combine { .. }) => Some(Self::Combine),
+            FeatureDefinition::Operation(FeatureOperation::SplitBody { .. }) => Some(Self::Split),
             _ => None,
         }
     }
@@ -2030,6 +2045,7 @@ pub(crate) fn project(
             unresolved_states: 0,
             extrusion_losses: Vec::new(),
             revolve_losses: Vec::new(),
+            loft_losses: Vec::new(),
             mirror_losses: mirror::native_losses(&inventory.pattern_features, &[]),
             added_profiles: HashMap::new(),
         });
@@ -2214,6 +2230,7 @@ pub(crate) fn project(
     let mut projected = Vec::new();
     let mut extrusion_losses = Vec::new();
     let mut revolve_losses = Vec::new();
+    let mut loft_losses = Vec::new();
     let mut neutral = 0_usize;
     for feature in &inventory.features {
         let label = label_of(feature.identity.record_ordinal);
@@ -2234,14 +2251,20 @@ pub(crate) fn project(
                 FeatureFamily::Bend => None,
                 FeatureFamily::Thicken => project_thicken(ctx, feature, label, &index, inventory),
                 FeatureFamily::Shell => project_shell(ctx, feature, label, &index),
-                FeatureFamily::Sweep | FeatureFamily::Loft => {
-                    loft_sweep::projection::project(ctx, feature, label, &index, family)
-                }
+                FeatureFamily::Sweep | FeatureFamily::Loft => loft_sweep::projection::project(
+                    ctx,
+                    feature,
+                    label,
+                    &index,
+                    family,
+                    &mut loft_losses,
+                ),
                 FeatureFamily::Revolve => {
                     project_revolve(ctx, feature, label, &index, &mut revolve_losses)
                 }
                 FeatureFamily::Motion => motion::project(ctx, feature, label, &index),
                 FeatureFamily::Combine => combine::project(ctx, feature, label, &index),
+                FeatureFamily::Split => split::project(ctx, feature, label, &index, &history),
             }
             .map(|result| result.map(|(feature, result)| (feature, Some(result))))
             .transpose()?,
@@ -2467,6 +2490,7 @@ pub(crate) fn project(
         unresolved_states: unresolved_states.min(neutral),
         extrusion_losses,
         revolve_losses,
+        loft_losses,
         mirror_losses: mirror::native_losses(&inventory.pattern_features, &features),
         features,
         result_topologies,
@@ -2668,6 +2692,9 @@ fn native_kind(class_id: Option<ClassId>) -> cadmpeg_ir::features::NativeFeature
     let Some(class_id) = class_id else {
         return NativeFeatureKind::Other("InventorFeature".into());
     };
+    if class_id == derived::CLASS_ID {
+        return NativeFeatureKind::Other(format!("InventorClass:{class_id}"));
+    }
     if let Some(family) = FeatureFamily::from_class_id(class_id) {
         return match family {
             FeatureFamily::Base => NativeFeatureKind::Other("Base".into()),
@@ -2690,6 +2717,7 @@ fn native_kind(class_id: Option<ClassId>) -> cadmpeg_ir::features::NativeFeature
                     .into(),
             ),
             FeatureFamily::Combine => NativeFeatureKind::Other("Combine".into()),
+            FeatureFamily::Split => NativeFeatureKind::Other("Split".into()),
         };
     }
     if let Some(family) = loft_sweep::slots::Family::from_class_id(class_id) {
@@ -3911,6 +3939,27 @@ pub(crate) fn thicken_operation<'a>(
     })
 }
 
+pub(crate) fn thicken_operand_losses<'a>(
+    features: impl IntoIterator<Item = &'a Feature>,
+) -> Vec<cadmpeg_ir::report::loss::LossNote> {
+    let count = features
+        .into_iter()
+        .filter(|feature| match feature.evaluation.definition() {
+            FeatureDefinition::Operation(FeatureOperation::Thicken { .. }) => true,
+            FeatureDefinition::Operation(FeatureOperation::Native { kind, .. }) => {
+                kind.as_str() == "Thicken"
+            }
+            _ => false,
+        })
+        .count();
+    if count == 0 {
+        return Vec::new();
+    }
+    vec![crate::loss::InventorLossCode::FeatureThickenOperandsNative.note(format!(
+        "{count} Inventor thicken operation(s) retain native selections or unresolved construction controls and thickness side."
+    ))]
+}
+
 fn project_thicken(
     ctx: &DecodeContext<'_>,
     source: &PmDcFeature,
@@ -4275,6 +4324,7 @@ impl RecordPayload for PmDcFeatureTerminatorPayload {
 pub(crate) mod tests {
     mod holes;
     mod sheet_metal;
+    mod surface_extrusion;
     mod thicken;
 
     use super::{

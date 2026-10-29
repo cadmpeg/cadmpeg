@@ -640,3 +640,64 @@ fn an_unknown_selection_tail_stays_native_with_the_pinned_mirror_loss() {
         "feature.mirror-operands-native"
     );
 }
+
+#[test]
+fn multi_operation_sheet_metal_parent_seeds_keep_the_pinned_native_loss() {
+    use crate::feature::history::{History, HistoryNodeKind, HistoryPlacement};
+    let fixture = Fixture::new(false);
+    let source = pattern(19, false, &[3], &[]);
+    let arena = DecodeArena::new();
+    let (ctx, _) =
+        DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service()).expect("context");
+    let (feature, result) = fixture
+        .index()
+        .project(&ctx, &source, &fixture.label, seed)
+        .expect("mirror")
+        .expect("projection");
+    let mut history = History::default();
+    let before = HistoryPlacement {
+        ordinal: 1,
+        kind: HistoryNodeKind::Feature,
+        below_end_of_part: false,
+        model_history: true,
+        model_root: 30,
+    };
+    history.placements.insert(2, before);
+    history.placements.insert(
+        20,
+        HistoryPlacement {
+            ordinal: 2,
+            kind: HistoryNodeKind::Pattern,
+            ..before
+        },
+    );
+    for type_id in [
+        "904bc1c4d311ff2860004da99dccefb0",
+        "08dcddc3d311d0976000a7a99dccefb0",
+    ] {
+        let parent = crate::record_identity::RecordIdentity {
+            segment_token: segment(),
+            record_ordinal: 2,
+            type_id: RecordTypeId::try_from(type_id.to_owned()).expect("type identity"),
+        };
+        assert!(fixture
+            .index()
+            .project(&ctx, &source, &fixture.label, |_| seed_feature_id(
+                &history, 20, &parent
+            ))
+            .is_none());
+        assert!(!fixture.index().matches_projection(
+            &source,
+            &fixture.label,
+            &feature,
+            &result,
+            |_| seed_feature_id(&history, 20, &parent)
+        ));
+        let losses = native_losses(std::slice::from_ref(&source), &[]);
+        assert_eq!(losses.len(), 1);
+        assert_eq!(
+            losses[0].code.local_code(),
+            "feature.mirror-operands-native"
+        );
+    }
+}

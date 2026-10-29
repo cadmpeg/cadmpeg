@@ -267,9 +267,10 @@ pub(crate) struct DesignComponentOccurrence {
     frame: DesignComponentOccurrenceFrame,
     pub(crate) path_discriminator: Option<NonZeroU32>,
     pub(crate) owner_type_guid: Option<DesignRelaxedGuidText>,
-    /// The current pose that a component-path carrier stores for this
-    /// occurrence, when exactly one carrier names it.
+    /// The current world pose from a component-path carrier.
     pub(crate) current_pose: Option<crate::records::xref::XrefCurrentPose>,
+    /// The definition-local pose retained from a direct operation table.
+    pub(crate) operation_pose: Option<crate::records::xref::XrefOperationPose>,
 }
 
 pub(crate) const OCCURRENCE_OWNER_TYPE_GUID: &str = "904F885E-D859-4755-A7EF-6EBED8732FAD";
@@ -350,6 +351,7 @@ impl Clone for DesignComponentOccurrence {
             path_discriminator: self.path_discriminator,
             owner_type_guid: self.owner_type_guid.clone(),
             current_pose: self.current_pose.clone(),
+            operation_pose: self.operation_pose.clone(),
         }
     }
 }
@@ -421,6 +423,7 @@ impl DesignComponentOccurrence {
             path_discriminator: None,
             owner_type_guid: None,
             current_pose: None,
+            operation_pose: None,
         })
     }
 
@@ -669,6 +672,12 @@ struct DesignComponentOccurrenceWire {
         deserialize_with = "deserialize_occurrence_current_pose"
     )]
     current_pose: Option<crate::records::xref::XrefCurrentPose>,
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_occurrence_operation_pose"
+    )]
+    operation_pose: Option<crate::records::xref::XrefOperationPose>,
 }
 
 /// Members of an attributed occurrence frame on the wire.
@@ -706,6 +715,12 @@ cadmpeg_core::named_optional_field!(
     "current_pose"
 );
 
+cadmpeg_core::named_optional_field!(
+    deserialize_occurrence_operation_pose,
+    crate::records::xref::XrefOperationPose,
+    "operation_pose"
+);
+
 impl Serialize for DesignComponentOccurrence {
     fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
         #[derive(Serialize)]
@@ -734,6 +749,8 @@ impl Serialize for DesignComponentOccurrence {
             owner_type_guid: Option<&'a DesignRelaxedGuidText>,
             #[serde(skip_serializing_if = "Option::is_none")]
             current_pose: Option<&'a crate::records::xref::XrefCurrentPose>,
+            #[serde(skip_serializing_if = "Option::is_none")]
+            operation_pose: Option<&'a crate::records::xref::XrefOperationPose>,
         }
         let transform = self.transform();
         WireRef {
@@ -755,6 +772,7 @@ impl Serialize for DesignComponentOccurrence {
             path_discriminator: self.path_discriminator,
             owner_type_guid: self.owner_type_guid.as_ref(),
             current_pose: self.current_pose.as_ref(),
+            operation_pose: self.operation_pose.as_ref(),
         }
         .serialize(serializer)
     }
@@ -788,6 +806,7 @@ impl From<DesignComponentOccurrence> for DesignComponentOccurrenceWire {
             path_discriminator: value.path_discriminator,
             owner_type_guid: value.owner_type_guid,
             current_pose: value.current_pose,
+            operation_pose: value.operation_pose,
         }
     }
 }
@@ -848,6 +867,7 @@ impl TryFrom<DesignComponentOccurrenceWire> for DesignComponentOccurrence {
             )?;
             record.owner_type_guid = value.owner_type_guid;
             record.current_pose = value.current_pose;
+            record.operation_pose = value.operation_pose;
             return Ok(record);
         }
         let mut record = if value.component_guid_offset.checked_sub(value.byte_offset)
@@ -880,6 +900,7 @@ impl TryFrom<DesignComponentOccurrenceWire> for DesignComponentOccurrence {
             record.owner_type_guid = value.owner_type_guid;
         }
         record.current_pose = value.current_pose;
+        record.operation_pose = value.operation_pose;
         Ok(record)
     }
 }
