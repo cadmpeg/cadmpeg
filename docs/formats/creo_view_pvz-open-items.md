@@ -262,7 +262,7 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 **Need.** We must know the space to find the edge of a singular use in a stream with composite edges.
 
-**Conflict.** `brep/records.rs:369-374` reads every singular-use edge index in the coedge index space unconditionally. The Known states that no available stream has both a composite edge record and a singular-use record, so no stream tests this choice. The assumption is untestable on current evidence.
+**Conflict.** `brep/records.rs:369-374` reads every singular-use edge index in the coedge index space unconditionally. The Known cites no stream with both a composite edge record and a singular-use record, so this choice has no test on current evidence.
 
 ### PVZ-41. Face records without a loop
 
@@ -286,9 +286,9 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 **Question.** What does each surface `flags` bit other than `0x80`, `0x08`, and `0x10`, each `marker` bit other than bit 0, and each edge-curve and pcurve `flags` bit other than `0x08` mean, and must a decoder that sees one transfer, reject, or report the record?
 
-**Known.** `brep/records.rs:514-517` masks only `SURFACE_U_RANGE` (`0x80`) and `SURFACE_V_RANGE` (bit 0), with the B-spline periodic bits `0x08` and `0x10` read separately. `read_curve` masks only `CURVE_RANGE` (`0x08`). Every remaining bit is silently ignored with no loss note. `creo_view_pvz.md` §8.3, §8.15, and §8.16 leave those bits open.
+**Known.** `brep/records.rs:514-517` masks only `SURFACE_U_RANGE` (`0x80`) and `SURFACE_V_RANGE` (bit 0), with the B-spline periodic bits `0x08` and `0x10` read separately. `read_curve` masks only `CURVE_RANGE` (`0x08`). Every remaining bit passes silently; the decoder records nothing.
 
-**Need.** An unknown bit can change the parameterisation or the sense (PVZ-18, PVZ-19). Silent acceptance risks wrong geometry without a diagnostic. We must decide the transfer, reject, or report rule before reading a record that sets such a bit.
+**Need.** An unknown bit can change the parameterisation or the sense (PVZ-18, PVZ-19). Silent acceptance risks undetected wrong geometry. We must decide the transfer, reject, or report rule before reading a record that sets such a bit.
 
 **Note.** This item touches PVZ-18 and PVZ-19. Keep those items until the bits are settled.
 
@@ -296,7 +296,7 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 **Question.** What does each negative loop marker other than −2 mean, and must a decoder that sees one transfer the loop or refuse the stream?
 
-**Known.** `brep/records.rs:241-252` rejects any marker that does not name the first loop of its face as malformed, which includes marker −1. `decode.rs:257-264` maps that refusal to the loss `GeometryExactUndecoded`, so the member keeps its tessellation and transfers no exact B-rep. `creo_view_pvz.md` §8.11 leaves other negative values open.
+**Known.** `brep/records.rs:241-252` rejects any marker that does not name the first loop of its face as malformed, which includes marker −1. `decode.rs:257-264` maps that refusal to the loss `GeometryExactUndecoded`, so the member keeps its tessellation only.
 
 **Need.** We must know whether marker −1 marks, for example, a planar two-edge loop with zero area that bounds no face region, before deciding between a targeted transfer and the current whole-stream refusal.
 
@@ -308,7 +308,7 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 **Known.** `creo_view_pvz.md` §3.10 states the invariant as fact: the three basis vectors have one common length and form a right-handed set. `model.rs:311-316` keeps a violating basis as a general affine transform and reports the loss `StructurePlacementNotSimilarity`.
 
-**Need.** We must know whether such bases occur in real files and what semantics they carry before accepting affine transfer. A general affine placement can shear geometry that the specification does not admit.
+**Need.** We must know whether such bases occur in real files and what semantics they carry before accepting affine transfer. A general affine placement can shear geometry.
 
 **Conflict.** The decoder transfers geometry under a general affine placement while the specification admits only similarity placements.
 
@@ -318,6 +318,6 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 **Known.** `model.rs:494-499` drops appearance values outside their range with the loss `AttributeAppearanceColorRejected`. PVZ-07 leaves the semantics of the structure-level palette entries and their definition use open.
 
-**Need.** We must join palette entries to definitions before deciding between rejection and clamping, and we must not confuse per-member appearance rejection with structure-level palette overrides.
+**Need.** We must join palette entries to definitions before deciding between rejection and clamping, keeping per-member appearance rejection distinct from structure-level palette overrides.
 
 **Note.** This item touches PVZ-07. Keep that item until the palette semantics are settled.

@@ -46,7 +46,7 @@ independently.
 
 **Question.** What endpoint-matching rule chains sketch entities into profiles when candidate pairs reach the decoder work cap?
 
-**Known.** `freecad_fcstd.md` §8 "Sketch persistence has separate ordered" states that the format has no profile chain, profile seed entity, endpoint-junction tolerance, or junction tie-break rule. The decoder builds profiles with a work budget of 16,777,216 endpoint candidates per sketch. When matching exhausts the budget, the decoder emits `SketchProfileMatchingBounded` and transfers no profiles while retaining the sketch entities and constraints.
+**Known.** `freecad_fcstd.md` §8 "Sketch persistence has separate ordered" states that the format covers sketch storage without a profile chain, profile seed entity, endpoint-junction tolerance, or junction tie-break rule. The decoder builds profiles with a work budget of 16,777,216 endpoint candidates per sketch. When matching exhausts the budget, the decoder emits `SketchProfileMatchingBounded` and retains the sketch entities and constraints with profiles unbuilt.
 
 **Need.** A source rule or a specimen with dense endpoint candidates near the cap must settle the chaining order, the junction tolerance, and the tie-break rule. Until then the neutral profile set is an implementation-capped selection.
 
@@ -66,7 +66,7 @@ independently.
 
 **Question.** What native location-identity rule applies when a shape payload exceeds 65,536 location terms or the 16,777,216-unit composition work bound?
 
-**Known.** `freecad_fcstd.md` §7 "Location zero is the empty datum chain" gives the reduced-chain identity of composed elementary locations. The decoder caps a location identity at 65,536 terms and composition work at 16,777,216 units. When expansion reaches either cap, the decoder emits `TopologyLocationIdentityBounded` and retains the payload natively without topology transfer.
+**Known.** `freecad_fcstd.md` §7 "Location zero is the empty datum chain" gives the reduced-chain identity of composed elementary locations. The decoder caps a location identity at 65,536 terms and composition work at 16,777,216 units. When expansion reaches either cap, the decoder emits `TopologyLocationIdentityBounded` and keeps the payload native, skipping topology transfer.
 
 **Need.** A source rule or a specimen with deep location chains near either cap must settle the reduction order and the truncation point. Until then the neutral occurrence set is an implementation-capped selection.
 

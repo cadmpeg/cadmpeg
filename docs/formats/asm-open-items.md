@@ -287,17 +287,17 @@ the record grammar does not identify one construction.
 
 **Question.** Which stated convention gives the native record extent when the prose size, the stated offsets, and the layout table disagree: the declared byte total, the stated chunk offsets, or the derived tiling?
 
-**Known.** `asm.md` §5.2 "**CoEdge (100 B):**" declares 100 bytes while the stated offsets end `chunk[10]` at +99; shifting every offset by one or declaring 99 bytes both close the record. `asm.md` §5.2 "**Edge (98 B):**" declares 98 bytes while the stated offsets end the continuity text at +99 with a one-byte gap at +88 that no other chunk has. `asm.md` §5.2 "**Lump (61 B):**" states a reserved slot at +27 and the first shell at +43 with seven bytes between them, which is not a multiple of the 9-byte chunk stride. `asm.md` §5.2 "**Transform (142 B):** 13×f64 (@+18..117)" reaches the declared total under neither the chunk reading nor the byte-range reading plus the three trailing enum bytes. `asm.md` §6.2 "**`cone` (161 B, covers cylinders)**" gives token order without offsets, and `asm.md` §6.2 "**`sphere` (134 B)**" states no token tag for `dir1` and `dir2`, so neither total tiles from the listed slots.
+**Known.** `asm.md` §5.2 "**CoEdge (100 B):**" declares 100 bytes while the stated offsets end `chunk[10]` at +99; shifting every offset by one or declaring 99 bytes both close the record. `asm.md` §5.2 "**Edge (98 B):**" declares 98 bytes while the stated offsets end the continuity text at +99 with a one-byte gap at +88, unique among chunks. `asm.md` §5.2 "**Lump (61 B):**" states a reserved slot at +27 and the first shell at +43 with seven bytes between them versus a 9-byte chunk stride. `asm.md` §5.2 "**Transform (142 B):** 13×f64 (@+18..117)" reaches the declared total under neither the chunk reading nor the byte-range reading plus the three trailing enum bytes. `asm.md` §6.2 "**`cone` (161 B, covers cylinders)**" gives token order without offsets, and `asm.md` §6.2 "**`sphere` (134 B)**" omits the token tags for `dir1` and `dir2`, so neither total tiles from the listed slots.
 
 **Need.** A specimen or an authoritative rule that selects the native extent for each record. The prose sizes stay unchanged; this item owns the decision.
 
-**Note.** `docs/layouts/asm.toml` records each mismatch as a discrepancy or gap rather than selecting a side. Do not change the prose sizing to match either convention until this item settles.
+**Note.** `docs/layouts/asm.toml` records each mismatch as a discrepancy or gap and leaves the side open. The prose sizing stays as stated until this item settles.
 
 ### GC-48. Closed vocabulary of the B-rep stats census keys
 
 **Question.** What is the closed set of native-kind strings that the B-rep loss census reports for each stats map?
 
-**Known.** `asm.md` §5.5 "Topology membership is defined by references" gives the ownership graph the census summarizes. The decoder retains per-kind census maps keyed by free-form native strings: omitted faces by null or dangling surface-reference condition, undecoded face surfaces by owned construction kind or record head, edge curves and coedge pcurves by full native record name, and residual records by native kind. No pinned vocabulary bounds these keys, so a new native kind and a renamed key are indistinguishable in the loss report.
+**Known.** `asm.md` §5.5 "Topology membership is defined by references" gives the ownership graph the census summarizes. The decoder retains per-kind census maps keyed by free-form native strings: omitted faces by null or dangling surface-reference condition, undecoded face surfaces by owned construction kind or record head, edge curves and coedge pcurves by full native record name, and residual records by native kind. These keys run on free-form native strings outside any pinned vocabulary, so a new native kind and a renamed key collide in the loss report.
 
 **Need.** A pinned key vocabulary, or specimens exercising each census branch, that separates a new native kind from a key change. Until then the census keys remain unpinned strings.
 
@@ -427,11 +427,11 @@ projection.
 
 **Question.** What native record layout does each recovered SAT source extent carry, and which stream owns each rebased reference?
 
-**Known.** `asm.md` §2.3 "Other pure ACIS and SpaceClaim SAB envelopes use" states that the byte layouts in §§5–6 do not cover other ACIS bands, and no SAT text-grammar section exists. The SAT decoder recovers independently headed concatenated streams with rebased entity tables, retains record extensions and legacy spline contexts without neutral projection, and withholds a later stream with an unreadable or different native layout. These behaviours carry the loss codes `SourceConcatenatedStreamsRecovered`, `SourceRecordExtensionsUnprojected`, and `SourceStreamLayoutUnprojected`. The SAT goldens are code-built streams with no source stream file, so they test that the decoder follows these rules; they are not evidence for the native layouts.
+**Known.** `asm.md` §2.3 "Other pure ACIS and SpaceClaim SAB envelopes use" states that the byte layouts in §§5–6 cover the named ACIS bands. A SAT text-grammar section is still missing. The SAT decoder recovers independently headed concatenated streams with rebased entity tables, retains record extensions and legacy spline contexts natively, and withholds a later stream with an unreadable or different native layout. These behaviours carry the loss codes `SourceConcatenatedStreamsRecovered`, `SourceRecordExtensionsUnprojected`, and `SourceStreamLayoutUnprojected`. The SAT goldens are code-built streams with no source stream file, so they test that the decoder follows these rules on synthetic streams.
 
-**Need.** Native SAT specimens with concatenated streams, record extensions, legacy contexts, and divergent later-stream layouts must settle each recovered extent's grammar and reference ownership. Until then the recovered extents have no tracked neutral projection.
+**Need.** Native SAT specimens with concatenated streams, record extensions, legacy contexts, and divergent later-stream layouts must settle each recovered extent's grammar and reference ownership. Until then the recovered extents stay unprojected.
 
-**Note.** QA sweep locations: `crates/cadmpeg-codec-sat/src/loss.rs:30-69` and `crates/cadmpeg-codec-sat/src/decode.rs:317-361`. There is no `sat-open-items.md`; this item owns the gap.
+**Note.** QA sweep locations: `crates/cadmpeg-codec-sat/src/loss.rs:30-69` and `crates/cadmpeg-codec-sat/src/decode.rs:317-361`. This item owns the SAT gap.
 
 ### XL-02. Native owners of unprojected SAT topology
 
@@ -439,9 +439,9 @@ projection.
 
 **Known.** The SAT decoder omits a shell with no admissible member or owner, a standalone face with no shell owner, and a body-owned wire, and retains each source record. These behaviours carry the loss codes `TopologyShellUnprojected`, `TopologyFaceOwnerUnprojected`, and `TopologyWireOwnerUnprojected`.
 
-**Need.** Native specimens or an authoritative ownership rule must give each record its neutral owner or confirm that it has none. Until then these records have no tracked neutral projection.
+**Need.** Native specimens or an authoritative ownership rule must give each record its neutral owner or confirm the ownerless case. Until then these records stay unprojected.
 
-**Note.** QA sweep location: `crates/cadmpeg-codec-sat/src/decode.rs:460-490`. There is no `sat-open-items.md`; this item owns the gap.
+**Note.** QA sweep location: `crates/cadmpeg-codec-sat/src/decode.rs:460-490`. This item owns the SAT gap.
 
 ### XL-03. Projection of the Parasolid layer
 
@@ -449,7 +449,7 @@ projection.
 
 **Known.** `siemens_nx.md` §3 "The partition zlib stream is preceded by" gives the embedded stream framing. The two-file `cadmpeg-parasolid` helper crate owns the `parasolid:` dialect rows and the schema-token grammar; it is not a codec facade entry and has no decoder. Three schema rows are named, with a residual row for every other schema, and the SLDPRT and NX hosts classify their embedded streams through these rows.
 
-**Need.** A tracking decision: either a Parasolid projection specification with specimens for each named row, or an explicit statement that the layer stays identity-only. Until then embedded Parasolid streams have no tracked neutral projection.
+**Need.** A tracking decision: either a Parasolid projection specification with specimens for each named row, or an explicit statement keeping the layer identity-only. Until then embedded Parasolid streams stay unprojected.
 
 **Note.** The schema-row map and the residual rule live in `crates/cadmpeg-parasolid/src/lib.rs:179-192`. This item tracks the layer without adding a facade or codec.
 

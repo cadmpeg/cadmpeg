@@ -72,7 +72,7 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 **Need.** We must establish the lead-`54` result incidence independently of its current class predicate before transferring a separator-form result.
 
-**Note.** The 79-file byte census has nine lead-`12` frames whose `h` selects entity 272, class `paramout`, and three lead-`54` frames whose `d` selects entities 60, 52, and 100, class `Volume`. No other incidence in those frames selects `paramout`. The existing positive lead-`54` fixture is synthetic; the real frames establish its trailing incidence and rejection of `Volume`, but not a positive result assignment. The decoder is ahead of the specification here: `native.rs:2689` `output_entity` applies the same `paramout` predicate to the lead-`54` trailing slot as to lead-`12` `ref(h)`, and `formula.rs:374` and `decode.rs:1148,1154,1161` consume that slot as a bound formula output and counted result. The code assumes the answer while the specification withholds it; the item stays open until a real positive witness settles the semantics.
+**Note.** The 79-file byte census has nine lead-`12` frames whose `h` selects entity 272, class `paramout`, and three lead-`54` frames whose `d` selects entities 60, 52, and 100, class `Volume`. All other incidences in those frames select other roles. The existing positive lead-`54` fixture is synthetic; the real frames establish its trailing incidence and rejection of `Volume`. A positive result assignment awaits a real witness. The code decides what the specification leaves open: `native.rs:2689` `output_entity` applies the same `paramout` predicate to the lead-`54` trailing slot as to lead-`12` `ref(h)`, and `formula.rs:374` and `decode.rs:1148,1154,1161` consume that slot as a bound formula output and counted result.
 
 ### DI-08. Legacy relation `body` selector
 
@@ -156,7 +156,7 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 **Question.** Which field gives the physical quantity of a `Range`/`CstAttr_Dimension` nominal and its deviations, and what do the `B8`, `C1`, `DC`, and `DF` suffix framings select?
 
-**Known.** `catia.md` §7.3 defines the interval, nominal, constraint, suffix-framing, and owner-incidence productions. `B8` and `C1` retain a constraint evaluation without a Range nominal; `DC`/`81 DB` and `DF`/`81 92` also supply the Range nominal production. The same scalar and deviation program can use either latter framing. None assigns length, angle, or ratio semantics. A source-closed sketch incidence can retain an opaque constraint; the scalar and deviations remain untyped native values. No neutral PMI dimension or sketch parameter is emitted from this production. `attributes.dimension-quantity-unresolved` reports each finite scalar withheld for this reason. Range-only `DiameterThread` and `FeatureRSUR` productions are separate source-closed size dimensions whose definitions establish length semantics. `DI-18` retains the separate feature-local `GSMProject` millimetre-diameter incidence and the remaining Range ownership questions.
+**Known.** `catia.md` §7.3 defines the interval, nominal, constraint, suffix-framing, and owner-incidence productions. `B8` and `C1` retain a constraint evaluation without a Range nominal; `DC`/`81 DB` and `DF`/`81 92` also supply the Range nominal production. The same scalar and deviation program can use either latter framing. Length, angle, and ratio semantics stay unassigned. A source-closed sketch incidence can retain an opaque constraint; the scalar and deviations remain untyped native values. Emission from this production stays native. `attributes.dimension-quantity-unresolved` reports each finite scalar withheld for this reason. Range-only `DiameterThread` and `FeatureRSUR` productions are separate source-closed size dimensions whose definitions establish length semantics. `DI-18` retains the separate feature-local `GSMProject` millimetre-diameter incidence and the remaining Range ownership questions.
 
 **Need.** We must identify the serialized quantity source and its join to the constraint-range entity before transferring the scalar and deviations as length, angle, or ratio values.
 
@@ -410,17 +410,17 @@ terminal meaning remain unresolved. Exact framing does not supply those roles.
 
 **Question.** Which detection and variant productions admit `.CATProduct`, `.CATShape`, and `.cgr` documents, and which production transfers their assembly or tessellated structure?
 
-**Known.** `container.rs:1090` `looks_like_catia` admits any `V5_CFV2` prefix without checking the document kind, and `lib.rs:112` scores that admission `High`. `variant.rs` names only `CATPart` storage families; any other layout scores `Unknown`. `container.rs:370` retains `.catpart`, `.catproduct`, `.catshape`, and `.cgr` targets only as external-document reference strings with their containing segment identity. `docs/format-support.md` records CATIA product structure as `None`.
+**Known.** `container.rs:1090` `looks_like_catia` admits any `V5_CFV2` prefix regardless of the document kind, and `lib.rs:112` scores that admission `High`. `variant.rs` names only `CATPart` storage families; any other layout scores `Unknown`. `container.rs:370` retains `.catpart`, `.catproduct`, `.catshape`, and `.cgr` targets only as external-document reference strings with their containing segment identity. `docs/format-support.md` records CATIA product structure as `None`.
 
-**Need.** A CATProduct, CATShape, or CGR specimen and an explicit admission decision must establish whether those kinds decode, which variant each selects, and whether occurrences, placements, or tessellation transfer. A shared container magic does not establish a decoded product structure.
+**Need.** A CATProduct, CATShape, or CGR specimen and an explicit admission decision must establish whether those kinds decode, which variant each selects, and whether occurrences, placements, or tessellation transfer. A shared container magic leaves product structure undecoded.
 
 ### CN-02. FBB-only and E5 coexistence route golden
 
 **Question.** Which frozen fixture pins route selection when a partial FBB-only spine coexists with a coherent E5 walk?
 
-**Known.** `catia.md` §1 and `container.rs:1696` (`identify_variant`) state the precedence: a coherent E5 walk supersedes a partial FBB-only spine but not a complete standard spine. Every dialect-registry witness fixture selects one variant without coexistence: `fbb_only_fallthrough.catpart` witnesses `catia:fbb-only` and `e5_circle.catpart` witnesses `catia:e5-stream`. No frozen fixture contains both a partial spine and a coherent walk.
+**Known.** `catia.md` §1 and `container.rs:1696` (`identify_variant`) state the precedence: a coherent E5 walk supersedes a partial FBB-only spine but not a complete standard spine. Every dialect-registry witness fixture selects one variant at a time: `fbb_only_fallthrough.catpart` witnesses `catia:fbb-only` and `e5_circle.catpart` witnesses `catia:e5-stream`. A fixture with both a partial spine and a coherent walk is still missing.
 
-**Need.** A frozen coexistence fixture must pin the E5 route selection and its golden snapshots before the precedence rule counts as covered. The documented precedence and the single-variant witnesses do not exercise the coexistence branch.
+**Need.** A frozen coexistence fixture must pin the E5 route selection and its golden snapshots before the precedence rule counts as covered. The documented precedence and the single-variant witnesses leave the coexistence branch uncovered.
 
 ## 8. Appearance
 

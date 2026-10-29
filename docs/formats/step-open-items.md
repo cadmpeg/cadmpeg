@@ -31,14 +31,13 @@ Edition 3 (`{ 1 0 10303 442 4 1 4 }`).
 through 3 object identifiers to rows. An Edition 4 declaration
 (`{ 1 0 10303 442 7 1 4 }`) therefore classifies as `Unknown` and is read
 with the nearest-strategy grammar. `step.md` §1 names the Edition 4 object
-identifier only as a Part 28 derivation input, not as an admitted Part 21
-schema. No evaluation in `docs/evaluations.toml` declares an Edition 4
-dialect.
+identifier as a Part 28 derivation input. `docs/evaluations.toml` declares no
+Edition 4 dialect.
 
 **Need.** An Edition 4 source is decoded with a grammar no row declares for
 it. The answer either adds the Edition 4 row, schema variant, and evaluation,
-or records that Edition 4 is out of scope so a future source cannot pass
-through the nearest-strategy fallback unmarked.
+or records Edition 4 as out of scope, marking future sources at the
+nearest-strategy fallback.
 
 ### ER-02. `step:ap242-e3` as the weakest supported row
 
@@ -55,9 +54,8 @@ no golden freezes a decode of an Edition 3 source.
 
 **Need.** Every other verified read row has a declaring fixture and an
 evaluation. The answer adds an Edition 3 fixture, its golden, and its
-evaluation, or lowers the row until that evidence exists. A consumer cannot
-separate an untested row from a covered one while the matrix shows it beside
-verified rows.
+evaluation, or lowers the row until that evidence exists so the matrix marks
+it apart from verified rows.
 
 ### ER-03. Encode goldens cover 4 of 19 fixtures
 
@@ -69,14 +67,13 @@ fixtures. `tests/golden/encode/` freezes 4 of them (`ap203_sheet`,
 `ap214_sheet`, `ap242_geometry`, `ap242_minimal`); the remaining 15, including
 the assembly, mapped-assembly, occurrence, presentation, PMI, tessellation,
 geometric-set, and vertex-loop populations, have no frozen export artifact.
-`docs/golden-coverage-floors.toml` records only floors, not which export
-branches the frozen goldens exercise.
+`docs/golden-coverage-floors.toml` records floors without mapping frozen
+goldens to exercised export branches.
 
 **Need.** An export drop or carrier change on an uncovered fixture alters
 emitted files without breaking a golden. The answer records which export
 branches lack a frozen witness and adds the missing goldens, or records the
-coverage boundary so a passing suite is not mistaken for a complete export
-proof.
+coverage boundary so a passing suite reads as a bounded proof.
 
 ## 2. Geometry and curves
 
@@ -123,24 +120,23 @@ to a document warning.
 
 ### GC-18. Edge vertex off its carrier without a specification rule
 
-**Question.** What does a vertex position state when it does not lie on its
-edge's carrier?
+**Question.** What does a vertex position state for a vertex off its edge's
+carrier?
 
 **Known.** `crates/cadmpeg-codec-step/src/reader/geometry.rs:195-232` measures
 each edge vertex against its circular carrier. When the miss exceeds the
 document accuracy, the decoder derives the arc parameter range from the
 carrier's closed form, transfers the vertex as authored, loosens the edge
 tolerance to cover the miss, and reports
-`geometry.edge-vertex-off-carrier`. `step.md` gives no rule for a vertex that
-misses its carrier: no section names this loss, states which value is
-authoritative, or defines the loosened tolerance as an edge-tolerance source.
+`geometry.edge-vertex-off-carrier`. Which value is authoritative, and whether
+the loosened tolerance counts as an edge-tolerance source, stays open.
 
 **Need.** The transferred vertex and the transferred range disagree past the
-document accuracy, and only a loss note records that fact. A consumer that
+document accuracy, with the loss note as the record of that fact. A consumer that
 holds the edge to the loosened tolerance cannot separate a source-stated
 tolerance from a decoder-widened one. The answer either admits the
 decoder-widened tolerance as an edge-tolerance source with a queryable mark,
-or refuses the disagreeing edge instead of transferring both values.
+or refuses the disagreeing edge.
 
 ## 3. Containers and other encodings
 
@@ -161,23 +157,22 @@ relations to the committed body,
 one document warning that names the first 8
 (`PCURVE_UNPROVED_NOTE_EXEMPLARS`,
 `crates/cadmpeg-codec-step/src/reader/topology/admissions.rs:13`), and
-`crates/cadmpeg-codec-step/src/reader/topology.rs:710` reports it. The document holds no other record of an admitted
-relation. The exactness map (`crates/cadmpeg-ir/src/annotations.rs:20-35`) is
+`crates/cadmpeg-codec-step/src/reader/topology.rs:710` reports it. That warning
+is the only record of admitted relations. The exactness map (`crates/cadmpeg-ir/src/annotations.rs:20-35`) is
 the per-entity trust channel, and it uses a globally unique entity identity as
 its key. A pcurve relation is a `PcurveUse` field of a `Coedge`
-(`crates/cadmpeg-ir/src/topology.rs:644-661`), not an entity with an identity,
-so the map holds no key for one relation. `Exactness`
+(`crates/cadmpeg-ir/src/topology.rs:644-661`); the map keys entities, so one
+relation stays keyless. `Exactness`
 (`crates/cadmpeg-ir/src/provenance.rs:614-623`) holds `ByteExact`, `Derived`,
-`Inferred`, and `Unknown`. An admitted relation transfers the source value
-without transformation and its global invariant is unproved, which no value
-gives. `ModelDraft::exactness` (`crates/cadmpeg-ir/src/draft.rs:403-411`)
-writes an entity value only. The STEP reader writes no exactness entry:
+`Inferred`, and `Unknown`. An admitted relation transfers the source value as-is with its global
+invariant unproved; `Exactness` offers no transferred-unproved value. `ModelDraft::exactness` (`crates/cadmpeg-ir/src/draft.rs:403-411`)
+writes an entity value only. The STEP reader leaves exactness at default:
 `crates/cadmpeg-codec-step/src/reader/mod.rs:341` builds
 `SourceFidelity::default()`.
 
 **Need.** A consumer that repairs or reviews one coedge must know whether its
 pcurve relation holds an unproved invariant. The document warning gives a count
-and 8 examples, so a relation outside those 8 has no query. The answer adds a
+and 8 examples, so relations past those 8 stay unqueryable. The answer adds a
 key for one pcurve use and a status value that means transferred and unproved.
 Both changes are in `cadmpeg-ir` and reach each codec that writes exactness.
 
@@ -193,12 +188,12 @@ STEP text. The writer instead splits the edge:
 edge used more than twice to forward and reversed use pairs
 (`crates/cadmpeg-codec-step/src/export/non_manifold.rs:14-43`, in
 `radial_next` ring order when the ring walk visits exactly them, else in the
-given order) and writes each pair as its own `EDGE_CURVE`. No specification
-text defines this split, the pairing order, or the identity of the emitted
-copies, and no loss marks an edge that the split rewrote.
+given order) and writes each pair as its own `EDGE_CURVE`. This split, its
+pairing order, and the identity of the emitted copies are unspecified;
+rewritten edges carry no loss mark.
 
 **Need.** A consumer that compares the emitted file against the source graph
-sees new edge identities with no record of the rewrite. The answer either
+sees new edge identities with the rewrite unrecorded. The answer either
 specifies the pairing and the copy identity as the exchange form for
 non-manifold edges, or records the split on each emitted copy so the exchange
 form stays traceable to its source edge.
@@ -211,11 +206,11 @@ carry it?
 **Known.** `crates/cadmpeg-codec-step/src/export.rs:2367-2377` reports
 `topology.wire-shell-free-vertices` for each free vertex of an emitted wire
 shell and writes only the shell's wire edges. `step.md` §8 gives the decode
-ownership of wire shells but no export rule for a vertex that no emitted edge
-references.
+ownership of wire shells. The export rule for vertices outside every emitted
+edge is unspecified.
 
 **Need.** The emitted shell loses vertices that the neutral shell retains,
-and only a loss note records the omission. The answer either defines a STEP
+with the omission recorded in the loss note. The answer either defines a STEP
 carrier for free vertices or states that the wire export is edge-only, so a
 consumer knows the emitted shell is not the complete neutral shell.
 
@@ -297,16 +292,16 @@ that is finite and outside `0..=1`?
 **Known.** `step.md` §8 "CADIR decision: if a malformed rendering record contains
 multiple finite" makes more than one finite value a conflict that omits
 transparency and records `presentation.surface-transparency-conflict`.
-`crates/cadmpeg-codec-step/src/reader/presentation.rs:1526-1549` admits only
-values that `Fraction` accepts, so each value outside `0..=1` never becomes a
-candidate.
+`crates/cadmpeg-codec-step/src/reader/presentation.rs:1526-1549` admits
+values that `Fraction` accepts, so a value outside `0..=1` stays out of the
+candidates.
 `crates/cadmpeg-codec-step/src/reader/presentation.rs:1551-1559` counts what
 remains. A record with two finite values, of which one is outside the range,
 therefore keeps one candidate and applies it, and no conflict loss is reported. A
 record with one finite value outside the range keeps no candidate, so the
 rendering becomes opaque, and no loss is reported. The specification records
-the ISO 10303-46 §6.4.65 range (`0.0..1.0`) for this value but gives no decoder
-rule for an out-of-range value.
+the ISO 10303-46 §6.4.65 range (`0.0..1.0`) for this value; the out-of-range
+decoder rule is unspecified.
 
 **Need.** A dropped transparency gives an appearance that a consumer cannot
 separate from a file that declares no transparency. The two rules also disagree:
@@ -347,11 +342,11 @@ compartments the decoder cannot order?
 `DATUM_SYSTEM` record. When its datum references do not convert to the
 expected compartment structure, the decoder omits the whole system and reports
 `pmi.datum-system-invalid`. `step.md` §8 defines datum, datum-feature, and
-datum-target transfer but gives no rule for an inconsistent datum-system
-compartment structure and no partial-transfer form for its valid references.
+datum-target transfer. The inconsistent-compartment rule and a
+partial-transfer form for valid references are unspecified.
 
 **Need.** The omission discards valid datum references together with the
-invalid structure, and only a loss note records which system was dropped. The
+invalid structure, with the dropped system recorded in the loss note. The
 answer either defines which compartments are authoritative so the valid
 references transfer, or specifies whole-system omission as the exchange form
 for this malformed case.
@@ -367,11 +362,11 @@ item to writable STEP references. Items with no carrier increment an
 `layer.item-without-carrier` with the layer name and the dropped count, and
 emits the assignment with only the carried items. `step.md` §8 defines the
 decode carrier (`PRESENTATION_LAYER_ASSIGNMENT`) and the hidden-layer export
-rules but no rule for a layer item that has no writable STEP form.
+rules. A layer item without a writable STEP form awaits a rule.
 
-**Need.** The emitted assignment is a subset of the neutral layer, and only a
-loss note records the gap. A consumer that reads the emitted file cannot tell
-a source-small layer from a layer the writer reduced. The answer either
+**Need.** The emitted assignment is a subset of the neutral layer, with the
+gap recorded in the loss note. A consumer that reads the emitted file reads
+a reduced layer as source-small. The answer either
 defines a carrier for each neutral member or specifies subset export with a
 per-item record as the exchange form.
 

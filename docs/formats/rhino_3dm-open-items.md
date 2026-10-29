@@ -272,8 +272,7 @@ each complete child while each `TCODE_VIEW_CPLANE` child has its own CRC.
 `direct_view_child_checksum_warning` (`views.rs:1001-1006`) for
 `VIEW_VIEWPORT`, `VIEW_CPLANE`, `VIEW_TARGET`, `VIEW_POSITION`, `VIEW_NAME`,
 and `VIEW_WALLPAPER`. The named-construction-plane parser at
-`views.rs:1523-1558` frames and parses each `TCODE_VIEW_CPLANE` child but
-never calls that checksum helper. `container.rs:333-345` validates only the
+`views.rs:1523-1558` frames and parses each `TCODE_VIEW_CPLANE` child; that path skips the checksum helper. `container.rs:333-345` validates only the
 parent named-plane, named-view, and view lists over their direct ranges
 (`Table::new` at `container.rs:204-225`; child enumeration for the direct
 ranges at `container.rs:337-344`). OpenNURBS reads each child through
@@ -629,8 +628,7 @@ unusable, falling back through `region_shell_groups_without_records` at
 `crates/cadmpeg-codec-rhino/src/decode.rs:5772-5798`, which groups faces by
 edge-incidence component and assigns generated numeric region labels.
 The decoder commits those inferred shells and reports that incidence-derived
-shells were used. The source region records remain in native data but no longer
-determine the neutral ownership graph.
+shells were used. The source region records remain in native data; the neutral ownership graph follows the inferred shells.
 
 **Need.** Edge incidence can identify connected face components, but it does
 not define the source's bounded-region membership. The answer withholds the
@@ -648,8 +646,7 @@ curve-on-surface, and point-on-surface loops. `rhino_3dm.md` §15 states that an
 unspecified neutral role makes the first loop of a face outer and all remaining
 loops inner. `crates/cadmpeg-codec-rhino/src/writer.rs:1081-1086` implements
 that rule in `brep_loop_type`, called with `face.loops.first() == Some(&index)`
-at `crates/cadmpeg-codec-rhino/src/writer.rs:1003`. It does not use a
-declared neutral role or geometric containment to establish the distinction.
+at `crates/cadmpeg-codec-rhino/src/writer.rs:1003`. List position alone establishes the distinction.
 
 **Need.** Neutral loop order is traversal order, not an outer-boundary
 declaration. The writer therefore creates Rhino topology semantics from list
@@ -669,9 +666,9 @@ keeps each duplicate integer index as serialized and reports
 `duplicate layer index {index} occurs {count} times; raw indexes preserved
 and object bindings withheld`. `LayerRecord` at
 `crates/cadmpeg-codec-rhino/src/settings.rs:715-720` documents that the
-serialized archive layer index is never synthesized during duplicate handling
+serialized archive layer index passes through duplicate handling unsynthesized
 and source identity uses the record range instead. An object whose layer index
-is ambiguous keeps no layer binding at
+is ambiguous remains layer-unbound at
 `crates/cadmpeg-codec-rhino/src/objects.rs:1602-1611`. A
 duplicate-resolution loss reports the collision.
 
@@ -696,7 +693,7 @@ excludes complete nested chunks from a container CRC. The class-owning
 table-record branch in `container.rs:310-327` supplies an empty direct range,
 and it includes `TCODE_INSTANCE_DEFINITION_RECORD` at `container.rs:322`, so
 the record CRC covers only the empty direct range and excludes the nested
-class chunk. The earlier fallback-hash description no longer applies.
+class chunk.
 
 **Need.** A witness whose nested class chunk is nonempty and whose record CRC
 is the CRC of its empty direct range.
@@ -725,7 +722,7 @@ integrity failure at error severity?
 losses into the validation report, and `crates/cadmpeg/src/commands.rs:452`
 bases the check verdict on `ValidationReport::is_ok`.
 `crates/cadmpeg-ir/src/report/check.rs:185-203` counts only validation
-findings (`error_count`) and `is_ok` does not inspect the report's losses.
+findings (`error_count`) while the report's losses stay outside `is_ok`.
 `loss.rs:361` assigns `container.integrity-failure` error severity, but a
 document with that loss and no error finding receives a successful check
 verdict.
@@ -735,7 +732,7 @@ findings. If an integrity loss is recoverable enough for a successful check,
 its severity and strict consequence must say so instead of placing an ignored
 error in a successful report.
 
-### QA-16. Ignored OpenNURBS comparison gate never runs in the fast suite
+### QA-16. Ignored OpenNURBS comparison gate skips the fast suite
 
 **Question.** What parity evidence does the ignored OpenNURBS object-walk gate
 provide for the transfer floor?
@@ -746,8 +743,7 @@ OPENNURBS_ROOT and an openNURBS example_read executable"]`. The gate needs
 `OPENNURBS_ROOT` with a built `example_read` binary, 153 example files, and
 `OPENNURBS_SYNTH_DIR` witnesses; it asserts per-archive object-walk totals
 against `example_read` output and transfer minimums against `BASELINE`.
-Ignored tests do not run under the normal fast suite, so routine verification
-never executes this parity comparison.
+Ignored tests stay out of the normal fast suite, so routine verification misses this parity comparison.
 
 **Need.** A regularly executed parity witness: either run the ignored gate in
 an environment with its prerequisites and record the outcome, or check in a
@@ -761,22 +757,18 @@ runnable witness set with the same totals so the fast suite covers the floor.
 
 **Known.** `loss.rs:355-362` assigns `IntegrityFailure` (and
 `ObjectFramingUndecodable`) error severity, while `loss.rs:429-435` pins
-their strict floor to warning and pins `SourceWriterStampUnverified` to no
-floor; `SourceDialectUnverified` inherits its shared taxonomy floor. Under
+their strict floor to warning and leaves `SourceWriterStampUnverified` floorless; `SourceDialectUnverified` inherits its shared taxonomy floor. Under
 `strict_consequence` at `cadmpeg-ir/src/report/loss.rs:590-596`, strict mode
 rejects a loss whose severity reaches its floor and tolerates any loss with no
-floor. The missing-stamp loss is charged per record and never at the archive
-level (`dialect.rs:59-69`), so it is always strict-tolerated, while the
+floor. The missing-stamp loss stays at record level (`dialect.rs:59-69`), so strict mode always tolerates it, while the
 residual-dialect loss is charged once per archive at admission
 (`dialect.rs:140-158`) and follows the taxonomy floor. QA-15 settles only the
-non-strict `check` verdict, which ignores losses entirely; it does not settle
-these strict-mode consequences.
+non-strict `check` verdict, which ignores losses entirely; these strict-mode consequences are separate questions.
 
 **Need.** State the intended strict consequence for each of the three codes and
 tie each pin to its QA-15-independent verdict rule. If the missing-stamp loss
 must stay strict-tolerated while the residual-dialect loss can reject, the
-specification must state that asymmetry and its ground instead of leaving it
-in the floor table alone.
+specification must state that asymmetry and its ground as a prose rule.
 
 ### TP-01. Decoder output fails geometric-consistency validation
 
@@ -892,8 +884,7 @@ and do not present the annotation as fully styled neutral PMI.
 **Question.** How can Rhino quadrilateral and n-gon face identity survive in
 neutral tessellation?
 
-**Known.** `mesh.rs:541-561` triangulates faces into a triangle list with no
-face-grouping carrier (`triangulate_faces` at `mesh.rs:705-745`), and
+**Known.** `mesh.rs:541-561` triangulates faces into a flat triangle list (`triangulate_faces` at `mesh.rs:705-745`), and
 `decode.rs:3529-3585` (`commit_mesh`) reports every quad through
 `mesh.quad-topology-triangulated` and every n-gon through
 `mesh.ngon-grouping-dropped`. A mesh with many quads produces one loss per

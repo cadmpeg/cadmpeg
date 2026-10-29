@@ -26,7 +26,7 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 **Need.** We must select one database without using path order or a save-version string.
 
-**Note.** No function named `coherent_schema` exists. `RseInventory::build` parses every V-band `RSeDb` with the schema-31 grammar, leaving each parsed, unframed, or unreadable, and `DialectRecovery::classify` admits the document only when every declared schema is 31 and every body framed. Which parsed database supplies identity and save state when several differ remains unselected.
+**Note.** The name `coherent_schema` resolves to nothing in the crate. `RseInventory::build` parses every V-band `RSeDb` with the schema-31 grammar, leaving each parsed, unframed, or unreadable, and `DialectRecovery::classify` admits the document only when every declared schema is 31 and every body framed. Which parsed database supplies identity and save state when several differ remains unselected.
 
 ### RS-02. Metadata sections 5 and 6
 
@@ -76,11 +76,11 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 **Question.** Which ACIS save-format bands outside 217/218 and which segment-version carrier footers use a compatible SAB grammar and active-carrier semantic contract?
 
-**Known.** ACIS 217 and 218 are the verified bands of the 32-bit header and SAB decoder. Other ACIS save-format bands take the same framing and record decode, carry an `Admission::Unverified` kernel layer with a `source.dialect-unverified` charge, and retain the carrier bytes when they read no geometry. The carrier footer is 17 bytes through segment major version 22 and 18 bytes from version 23. Segment versions below 15 read with the 17-byte footer as nearest-footer recovery. A carrier whose bytes carry no ASM or ACIS signature, or whose footer does not frame, is malformed.
+**Known.** ACIS 217 and 218 are the verified bands of the 32-bit header and SAB decoder. Other ACIS save-format bands take the same framing and record decode, carry an `Admission::Unverified` kernel layer with a `source.dialect-unverified` charge, and retain the carrier bytes when they read no geometry. The carrier footer is 17 bytes through segment major version 22 and 18 bytes from version 23. Segment versions below 15 read with the 17-byte footer as nearest-footer recovery. A carrier without ASM or ACIS signature bytes, or with an unframed footer, is malformed.
 
 **Need.** Each additional ACIS or footer band requires direct-carrier framing, geometry, validation, and wrapper-parity evidence before activation.
 
-**Note.** The 217/218 ACIS band branch was added with a shared implementation and synthetic 217/218 fixtures. It does not establish the grammar for other ACIS bands or the remaining carrier-footer variants. The item stays open with the narrower scope above.
+**Note.** The 217/218 ACIS band branch was added with a shared implementation and synthetic 217/218 fixtures. It leaves the grammar for other ACIS bands and the remaining carrier-footer variants open. The item stays open with the narrower scope above.
 
 ### KE-03. Pre-15 carrier footer recovery
 
@@ -132,7 +132,7 @@ The meaning of the eight export-entry state bytes, of the export padding byte, a
 
 **Known.** Section 9 of [inventor.md](inventor.md) states the hidden state of a root occurrence and of an occurrence one level below a root occurrence, in the active design-view representation, and the grounded state of an occurrence: an occurrence is grounded when a related state record carries flag bit `0x02000000` (commit `b9e57711aa`, #496). The decoder keeps a key path of more than one key natively and hides no root occurrence.
 
-When a part inside a subassembly is hidden from the top assembly, the editor can either store the hide in the top assembly or write it into the design view of the subassembly. In the first case the top assembly stores a visibility-off record that holds the key path of the subassembly occurrence and the counted name `Default` of the design view that the occurrence follows. A representation record also grows by 12 bytes. The meaning of those 12 bytes is unknown. The second case is not decoded.
+When a part inside a subassembly is hidden from the top assembly, the editor can either store the hide in the top assembly or write it into the design view of the subassembly. In the first case the top assembly stores a visibility-off record that holds the key path of the subassembly occurrence and the counted name `Default` of the design view that the occurrence follows. A representation record also grows by 12 bytes. Those 12 bytes are unassigned. The second case stays native.
 
 Tag `0x0f` and tag `0x10` of the first `UFRxDoc` occurrence property section change on one occurrence while all other occurrence, `AmDc`, and `AmGraphics` fields stay the same. Neither tag stores the hidden or the grounded state: the `UFRxDoc` occurrence record is the same when either state changes. Tag `0x0f` stores values other than 0 and 1, for example `0x2a`, `0x37`, `0xd3`, and `0xff`. `AmDc` occurrence flag bits `0x00400000` and `0x00800000` change with no proven role. Bit `0x10` occurs only together with one of them.
 
@@ -233,7 +233,7 @@ Records of type `553a6b21d31123656000f587346bfbb0` in the `AmDc` segment start w
 
 **Question.** Which content-header, stamp, list, and record forms do PmDc segments of major versions 24, 26, and 27 use, what do content-header stamps encode, and what roles do the scalar pair and the operand references of a state-2 point have?
 
-**Known.** Segment major versions 23, 25, and 28 through 31 use the header and record forms of the specification. A stamp is −1 or a nonnegative value; nonnegative stamps include values whose hundreds equal the segment major version. PmDc record decode admits segment major versions 15 through 23, 25, and 28 through 31; the records of other versions stay native. The content-header stamp rule reads one stamp in versions 23 and 24 and two stamps from version 25, so no admitted band exercises the version 24, 26, or 27 form and no real-carrier evidence confirms it. A state-2 point has two finite scalars and two entity references. The point position gives its solved coordinates.
+**Known.** Segment major versions 23, 25, and 28 through 31 use the header and record forms of the specification. A stamp is −1 or a nonnegative value; nonnegative stamps include values whose hundreds equal the segment major version. PmDc record decode admits segment major versions 15 through 23, 25, and 28 through 31; the records of other versions stay native. The content-header stamp rule reads one stamp in versions 23 and 24 and two stamps from version 25. The 24, 26, and 27 forms have neither admitted-band exercise nor real-carrier evidence. A state-2 point has two finite scalars and two entity references. The point position gives its solved coordinates.
 
 **Need.** Each other version requires its header and record forms before its PmDc records decode. A stamp requires an exact referent before it can affect transfer. The scalar and operand roles require exact semantics before this association can define a neutral relation.
 
@@ -349,8 +349,8 @@ Records of type `553a6b21d31123656000f587346bfbb0` in the `AmDc` segment start w
 
 ### EV-01. Real-carrier golden fixtures
 
-**Question.** Which committed golden input exercises real-carrier byte layouts instead of field-built declarations?
+**Question.** Which committed golden input exercises real-carrier byte layouts?
 
-**Known.** The Inventor goldens check two synthetic inputs, `structural` and `primary`, over the inspect and decode branches. The repository holds no `.ipt` or `.iam` fixture. The recorded Inventor evaluation covers 142 real files, whose bytes stay with the evaluator and are never committed.
+**Known.** The Inventor goldens check two synthetic inputs, `structural` and `primary`, over the inspect and decode branches. The repository holds no `.ipt` or `.iam` fixture. The recorded Inventor evaluation covers 142 real files, whose bytes stay with the evaluator.
 
-**Need.** Golden coverage stays limited to constructed declarations until a committed fixture carries observed real-carrier layouts; until then the goldens do not prove real-carrier behavior.
+**Need.** Golden coverage stays limited to constructed declarations until a committed fixture carries observed real-carrier layouts. Real-carrier behavior needs such a fixture to prove it.

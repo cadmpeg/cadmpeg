@@ -63,7 +63,7 @@ from a conformant file.
 
 **Question.** What disposition applies when a Directory interpretation field is unreadable?
 
-**Known.** The decoder charges `iges/directory.metadata-unreadable` when line font, level, view, label display, line weight, color, or subscript is unreadable (`directory.rs:271`). Interpretation fields and exact source cards remain available. `iges.md` states no rule for unreadable interpretation fields.
+**Known.** The decoder charges `iges/directory.metadata-unreadable` when line font, level, view, label display, line weight, color, or subscript is unreadable (`directory.rs:271`). Interpretation fields and exact source cards remain available for a specimen.
 
 **Need.** Producer documentation or controlled files must establish whether an unreadable field means a default, a null, or a refusal.
 
@@ -75,7 +75,7 @@ from a conformant file.
 
 **Question.** What disposition applies when a boundary parameter curve leaves the finite parameter domain of its support surface?
 
-**Known.** The decoder charges `iges/topology.boundary-pcurve-outside-support-domain` on both paths (`trimming.rs:2644,2657`). An authoritative pcurve outside the declared support bounds fails the boundary. An alternate pcurve outside the bounds retains the model-space curve. `iges.md` states no rule for out-of-domain boundary pcurves.
+**Known.** The decoder charges `iges/topology.boundary-pcurve-outside-support-domain` on both paths (`trimming.rs:2644,2657`). An authoritative pcurve outside the declared support bounds fails the boundary. An alternate pcurve outside the bounds retains the model-space curve.
 
 **Need.** Producer files with out-of-domain pcurves must establish the correct disposition for each path.
 
@@ -83,7 +83,7 @@ from a conformant file.
 
 **Question.** What disposition applies when a NURBS coordinate or parameter transformation produces a non-finite value?
 
-**Known.** The decoder charges `iges/geometry.nurbs-transform-non-finite` and skips the rail when reversed second-rail knots are non-finite (`surfaces.rs:1619`). `iges.md` states no rule for non-finite transform results.
+**Known.** The decoder charges `iges/geometry.nurbs-transform-non-finite` and skips the rail when reversed second-rail knots are non-finite (`surfaces.rs:1619`).
 
 **Need.** A source file that produces a non-finite knot under transformation must establish whether the rail is skipped or the record is refused.
 
@@ -93,7 +93,7 @@ from a conformant file.
 
 **Question.** What output and nesting limits bound product occurrence expansion?
 
-**Known.** The decoder stops expansion at a configured output limit and charges `iges/occurrence.expansion-output-truncated` (`reader.rs:507`). It stops at a configured nesting-depth limit and charges `iges/occurrence.expansion-depth-truncated` (`reader.rs:516`). `iges.md` states no expansion limits.
+**Known.** The decoder stops expansion at a configured output limit and charges `iges/occurrence.expansion-output-truncated` (`reader.rs:507`). It stops at a configured nesting-depth limit and charges `iges/occurrence.expansion-depth-truncated` (`reader.rs:516`).
 
 **Need.** The largest honest product structure in producer files must establish limits that admit it, or a source rule must bound nesting.
 
@@ -101,7 +101,7 @@ from a conformant file.
 
 **Question.** What disposition applies when a Type 422 attribute table instance states a count that no row grid supports?
 
-**Known.** The decoder charges `iges/parameter.attribute-table-count-unstatable` and reads no attribute row (`reader.rs:577`). `iges.md` states the Type 322 and Type 422 layout but no rule for an unstatable count.
+**Known.** The decoder charges `iges/parameter.attribute-table-count-unstatable` and skips the attribute rows (`reader.rs:577`). `iges.md` states the Type 322 and Type 422 layout.
 
 **Need.** Files with degenerate attribute counts must establish the correct disposition.
 
@@ -109,7 +109,7 @@ from a conformant file.
 
 **Question.** Which display data has no neutral projection, and what disposition applies to it?
 
-**Known.** The decoder charges `iges/presentation.display-data-not-projected` for an invalid Type 116 display symbol pointer, for incomplete or non-finite Type 125 flash shape parameters, and for a Type 125 Form 0 record with no defining entity pointer (`geometry.rs:1812,1918,1926`). `iges.md` states no rule for these display defects.
+**Known.** The decoder charges `iges/presentation.display-data-not-projected` for an invalid Type 116 display symbol pointer, for incomplete or non-finite Type 125 flash shape parameters, and for a Type 125 Form 0 record with no defining entity pointer (`geometry.rs:1812,1918,1926`).
 
 **Need.** Producer display data variants must establish the projection for each valid form and the disposition for each defect.
 
@@ -117,7 +117,7 @@ from a conformant file.
 
 **Question.** Which name applies when one body owner has conflicting valid Type 406 Form 15 names?
 
-**Known.** The decoder charges `iges/presentation.body-name-ambiguous` and assigns no name (`presentation.rs:665`). `iges.md` states that Form 15 attaches one name but no rule for conflicts.
+**Known.** The decoder charges `iges/presentation.body-name-ambiguous` and leaves the body unnamed (`presentation.rs:665`). `iges.md` states that Form 15 attaches one name.
 
 **Need.** A file with conflicting valid names must establish the correct selection rule.
 
@@ -127,7 +127,7 @@ from a conformant file.
 
 **Question.** Which procedural definitions reduce to solved carriers, and which refuse the write?
 
-**Known.** The semantic writer reduces procedural surface and curve definitions to writable solved carriers and charges `iges/geometry.procedural-reduced` (`writer.rs:1118`). `iges.md` states no rule for which procedural definitions reduce and which refuse.
+**Known.** The semantic writer reduces procedural surface and curve definitions to writable solved carriers and charges `iges/geometry.procedural-reduced` (`writer.rs:1118`).
 
 **Need.** Neutral documents with procedural definitions must establish the reduction boundary.
 
@@ -135,7 +135,7 @@ from a conformant file.
 
 **Question.** What sample count and residual bound establish recovered edge agreement and B-spline fits?
 
-**Known.** The writer compares recovered coedge curves at five parameters and charges `iges/geometry.edge-pcurve-agreement-sampled` without establishing agreement between samples (`writer/target.rs:90`). It fits recovered edges as B-splines and charges `iges/geometry.edge-pcurve-sampled-to-bspline` with a sampled residual bound (`writer/target.rs:96`). `iges.md` states no sampling rule.
+**Known.** The writer compares recovered coedge curves at five parameters and charges `iges/geometry.edge-pcurve-agreement-sampled` for the sampled comparison (`writer/target.rs:90`). It fits recovered edges as B-splines and charges `iges/geometry.edge-pcurve-sampled-to-bspline` with a sampled residual bound (`writer/target.rs:96`).
 
 **Need.** A tolerance basis must establish the sample count and the residual limit.
 
@@ -143,7 +143,7 @@ from a conformant file.
 
 **Question.** When does a write target that differs from the source dialect charge a loss, and when is it silent?
 
-**Known.** The writer charges `iges/target.source-dialect-displaced` when the selected write target differs from the same-format source dialect (`writer/target.rs:135`). `iges.md` states the target profiles but no rule for the charge.
+**Known.** The writer charges `iges/target.source-dialect-displaced` when the selected write target differs from the same-format source dialect (`writer/target.rs:135`). `iges.md` states the target profiles.
 
 **Need.** Cross-target writes must establish the charge condition.
 
@@ -151,7 +151,7 @@ from a conformant file.
 
 **Question.** What disposition applies when the preserved source image for byte-exact replay is unavailable?
 
-**Known.** The writer declines replay, regenerates semantically, and charges `iges/source.preserved-image-unavailable` (`writer/target.rs:141`). `iges.md` states the replay rule for an intact source baseline but no rule for a missing image.
+**Known.** The writer declines replay, regenerates semantically, and charges `iges/source.preserved-image-unavailable` (`writer/target.rs:141`). `iges.md` states the replay rule for an intact source baseline.
 
 **Need.** Source-less edit workflows must establish when regeneration is accepted and when it is refused.
 
@@ -159,7 +159,7 @@ from a conformant file.
 
 **Question.** Which native arenas does the semantic writer regenerate, and which does it omit?
 
-**Known.** The writer charges `iges/writer.passthrough-omitted` for native arenas it does not regenerate, including quarantined records that have no fields to write (`writer.rs:5373`). `iges.md` states no per-arena regeneration table.
+**Known.** The writer charges `iges/writer.passthrough-omitted` for native arenas the writer skips, including quarantined records without writable fields (`writer.rs:5373`).
 
 **Need.** A complete arena inventory must establish the regenerated set and the omitted set.
 
@@ -167,7 +167,7 @@ from a conformant file.
 
 **Question.** Which support and free geometry does the semantic writer withhold on the topology path?
 
-**Known.** The writer withholds a standalone edge whose curve is support geometry and charges `iges/writer.support-edge-not-represented` (`writer.rs:581`). It withholds unowned free vertices and charges `iges/writer.free-geometry-omitted` (`writer.rs:496`). It withholds free edges and curves that duplicate a written carrier and charges `iges/writer.duplicate-carrier-omitted` (`writer.rs:2407,2413`). `iges.md` states the withheld-parent rule but no rule for these three dispositions.
+**Known.** The writer withholds a standalone edge whose curve is support geometry and charges `iges/writer.support-edge-not-represented` (`writer.rs:581`). It withholds unowned free vertices and charges `iges/writer.free-geometry-omitted` (`writer.rs:496`). It withholds free edges and curves that duplicate a written carrier and charges `iges/writer.duplicate-carrier-omitted` (`writer.rs:2407,2413`). `iges.md` states the withheld-parent rule.
 
 **Need.** Topology-path writes must establish which support and free geometry is withheld and which is written.
 
@@ -175,7 +175,7 @@ from a conformant file.
 
 **Question.** Which body presentation has no Directory representation?
 
-**Known.** The writer charges `iges/writer.body-name-not-represented` when a body name cannot encode as a Type 406 Form 15 name (`writer.rs:289`). It charges `iges/writer.body-color-not-represented` when a free-geometry body has no owning Directory Entry for color (`writer.rs:452`). It charges `iges/writer.body-opacity-not-represented` when Directory color cannot carry opacity (`writer.rs:323`). It charges `iges/writer.body-visibility-not-represented` when a free-geometry body has no single Directory Entry for visibility (`writer.rs:459`). `iges.md` states no rule for these four dispositions.
+**Known.** The writer charges `iges/writer.body-name-not-represented` when a body name cannot encode as a Type 406 Form 15 name (`writer.rs:289`). It charges `iges/writer.body-color-not-represented` when a free-geometry body has no owning Directory Entry for color (`writer.rs:452`). It charges `iges/writer.body-opacity-not-represented` when Directory color cannot carry opacity (`writer.rs:323`). It charges `iges/writer.body-visibility-not-represented` when a free-geometry body has no single Directory Entry for visibility (`writer.rs:459`).
 
 **Need.** Body presentation variants must establish the encoding for each case or the refusal condition.
 

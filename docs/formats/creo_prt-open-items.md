@@ -837,12 +837,12 @@ neutral loop ownership or face admission.
 identifier width, and what vertex must each such orbit state?
 
 **Known.** `loss.rs` defines `TopologyVertexIdentifierUnstatable`, and
-`decode/build/report_losses.rs` states no vertex for such orbits: their
+`decode/build/report_losses.rs` leaves such orbits vertexless: their
 half-edges carry no incidence. The first dropped orbit is identified by its
 seed half-edge curve and side.
 
 **Need.** We must know the identifier width rule and the intended vertex to
-restore incidence without inventing topology.
+restore incidence with stored vertices.
 
 ## 5. Packed persistence data
 

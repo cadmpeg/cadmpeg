@@ -66,8 +66,7 @@ projection), #418 (type-4 dimension radius), and #425 (circular sweep-table
 source circle). `loss.rs` now defines 79 loss codes. The mandated rebuild
 with the current reader and the confirmation of three retained order rows in
 Creo 11 through 13, with repeated geometry, feature, and loss comparisons,
-are still pending. Do not use the counts below as current coverage evidence
-until that rebuild confirms them.
+are still pending. The counts below read as historical until that rebuild confirms them.
 The visible namespace contains 19 surface rows and 48 curve-topology rows.
 Five surface carriers and 20 curve carriers remain untransferred. Face
 admission retains nine faces and rejects ten: five lack a surface carrier and
