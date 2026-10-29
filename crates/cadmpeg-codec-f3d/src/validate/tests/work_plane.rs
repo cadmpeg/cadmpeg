@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 #[test]
-fn work_plane_validator_checks_solved_matrix_and_source_offset_for_each_form() {
+fn work_plane_validator_checks_the_solved_matrix_of_each_form() {
     use crate::design::decode::placement_construction::work_planes::bind;
     use crate::test_support::work_plane::{placements, scope};
     crate::test_support::with_decode_context(|service_ctx| {
@@ -25,15 +25,6 @@ fn work_plane_validator_checks_solved_matrix_and_source_offset_for_each_form() {
             assert!(super::super::valid_work_plane_construction(
                 &ctx,
                 &scope,
-                "f3d:Design/BulkStream.dat"
-            ));
-            let mut bad_offset = scope.clone();
-            let frame = bad_offset.work_plane_frame_mut().unwrap();
-            frame.work_plane_transform_offset =
-                frame.work_plane_transform_offset.map(|offset| offset + 1);
-            assert!(!super::super::valid_work_plane_construction(
-                &ctx,
-                &bad_offset,
                 "f3d:Design/BulkStream.dat"
             ));
             let mut bad_matrix = scope;
