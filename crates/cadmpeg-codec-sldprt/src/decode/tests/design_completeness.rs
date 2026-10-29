@@ -1564,7 +1564,7 @@ fn thin_operation_ambiguity_has_a_stable_loss() {
             let mut payload = vec![0; 64];
             payload.extend_from_slice(&lane.native_payload);
             for name in &mut lane.names {
-                name.offset = name.offset + 64;
+                name.offset += 64;
                 let name_offset = usize::try_from(name.offset).unwrap();
                 let class_offset = name_offset - 6 - class.len();
                 payload[class_offset..class_offset + 4].copy_from_slice(&[0xff, 0xff, 1, 0]);

@@ -255,16 +255,14 @@ pub(in crate::writer) fn native_complete(record: &cadmpeg_ir::NativeRecord) -> b
                 || value
                     .as_str()
                     .and_then(crate::presentation::parse_uuid_text)
-                    .filter(|uuid| !uuid.is_nil())
-                    .is_some()
+                    .is_some_and(|uuid| !uuid.is_nil())
         })
         && fields.get("rdk_instance_uuid").is_some_and(|value| {
             value.is_null()
                 || value
                     .as_str()
                     .and_then(crate::presentation::parse_uuid_text)
-                    .filter(|uuid| !uuid.is_nil())
-                    .is_some()
+                    .is_some_and(|uuid| !uuid.is_nil())
         })
         && fields.get("texture_count").and_then(Value::as_u64) == Some(0)
         && fields

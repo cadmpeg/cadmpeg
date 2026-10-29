@@ -26,7 +26,9 @@ fn assert_surface(record: &Surface, weights: Option<[f64; 4]>) {
     {
         assert_eq!(surface.pole(u, v).expect("source pole").get(), expected);
         assert_eq!(
-            surface.weight(u, v).map(|value| value.get()),
+            surface
+                .weight(u, v)
+                .map(cadmpeg_ir::scalar::NonZeroReal::get),
             weights.map(|values| values[index])
         );
     }

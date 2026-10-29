@@ -16,7 +16,7 @@ const ANONYMOUS: u32 = 0x4000_8000;
 const SUBD_OBJECT: i64 = 0x0004_0000;
 const OPERATION: &str = "retain Rhino SubD bytes";
 
-/// The registered neutral arena that holds SubD records.
+/// The registered neutral arena that holds `SubD` records.
 const SUBDS: ArenaName = {
     let name = b"subds";
     let mut index = 0;

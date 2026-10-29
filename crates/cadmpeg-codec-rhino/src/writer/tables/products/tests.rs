@@ -17,7 +17,7 @@ fn absent_occurrence_placement_omits_only_that_reference_with_a_named_loss() {
         label: None,
         description: None,
         part_number: None,
-        bom_properties: Default::default(),
+        bom_properties: std::collections::BTreeMap::default(),
         bodies: vec![],
         sketches: Vec::new(),
         native_ref: None,
@@ -75,7 +75,7 @@ fn unknown_ancestor_cascades_without_changing_known_local_reference_frames() {
         label: None,
         description: None,
         part_number: None,
-        bom_properties: Default::default(),
+        bom_properties: std::collections::BTreeMap::default(),
         bodies: vec![],
         sketches: Vec::new(),
         native_ref: None,
@@ -132,8 +132,12 @@ fn unknown_ancestor_cascades_without_changing_known_local_reference_frames() {
     .unwrap();
     assert_eq!(references.len(), 2);
     assert_eq!(losses.len(), 3);
-    let definitions =
-        super::definitions(&ir, &Default::default(), crate::RhinoArchiveVersion::V5).unwrap();
+    let definitions = super::definitions(
+        &ir,
+        &std::collections::BTreeSet::default(),
+        crate::RhinoArchiveVersion::V5,
+    )
+    .unwrap();
     for key in ["unknown", "child", "grandchild"] {
         let id = format!("test:model:occurrence#{key}");
         assert_eq!(

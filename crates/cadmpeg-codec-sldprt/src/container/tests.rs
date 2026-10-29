@@ -553,7 +553,7 @@ fn compound_parasolid_wrapper_expands_once() {
         panic!("one CFB stream");
     };
     assert_eq!(stream.payload, wrapper);
-    assert_eq!(stream.decoded_payload.as_deref(), Some(payload.as_slice()));
+    assert_eq!(stream.decoded_payload, Some(payload.as_slice()));
     let [parasolid] = stream.ps_streams.as_slice() else {
         panic!("one Parasolid stream");
     };

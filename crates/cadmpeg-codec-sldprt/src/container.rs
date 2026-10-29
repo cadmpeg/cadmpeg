@@ -551,7 +551,7 @@ fn compound_streams<'a>(
         )?;
         let payload = view.window().to_vec();
         let decoded_view = decode_wrapped_payload(ctx, view)?;
-        let decoded = decoded_view.map(|view| view.window());
+        let decoded = decoded_view.map(cadmpeg_core::decode::View::window);
         let semantic_view = decoded_view.unwrap_or(view);
         let path = entry.path().to_owned();
         let stream = compound_stream(
@@ -777,9 +777,8 @@ fn expand_block<'a>(
     let mut checksum = crc32fast::Hasher::new();
     let mut chunk = [0_u8; 8192];
     loop {
-        let read = match decoder.read(&mut chunk) {
-            Ok(read) => read,
-            Err(_) => return Ok(None),
+        let Ok(read) = decoder.read(&mut chunk) else {
+            return Ok(None);
         };
         if read == 0 {
             break;

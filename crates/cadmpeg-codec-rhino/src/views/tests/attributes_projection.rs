@@ -134,18 +134,36 @@ fn typed_view_handoff_keeps_source_flags_modes_camera_vectors_and_absence() {
     );
     assert!(handoff.has_attributes);
     assert_eq!(handoff.name, "Source camera");
-    assert!(!handoff.show_construction_grid);
-    assert!(handoff.show_construction_axes);
-    assert!(!handoff.show_world_axes);
+    assert!(!handoff.guides.construction_grid);
+    assert!(handoff.guides.construction_axes);
+    assert!(!handoff.guides.world_axes);
     assert_eq!(handoff.legacy_display_mode, Some(7));
     assert_eq!(handoff.modern_display_mode.as_deref(), Some("display-uuid"));
     let camera = handoff.camera.unwrap();
-    assert_eq!(camera.location.map(|value| value.get()), [10.0, 20.0, 30.0]);
-    assert_eq!(camera.direction.map(|value| value.get()), [0.0, 0.0, -1.0]);
-    assert_eq!(camera.up.map(|value| value.get()), [0.0, 1.0, 0.0]);
-    assert_eq!(camera.x_axis.map(|value| value.get()), [1.0, 0.0, 0.0]);
-    assert_eq!(camera.y_axis.map(|value| value.get()), [0.0, 1.0, 0.0]);
-    assert_eq!(camera.z_axis.map(|value| value.get()), [0.0, 0.0, 1.0]);
+    assert_eq!(
+        camera.location.map(cadmpeg_ir::scalar::FiniteReal::get),
+        [10.0, 20.0, 30.0]
+    );
+    assert_eq!(
+        camera.direction.map(cadmpeg_ir::scalar::FiniteReal::get),
+        [0.0, 0.0, -1.0]
+    );
+    assert_eq!(
+        camera.up.map(cadmpeg_ir::scalar::FiniteReal::get),
+        [0.0, 1.0, 0.0]
+    );
+    assert_eq!(
+        camera.x_axis.map(cadmpeg_ir::scalar::FiniteReal::get),
+        [1.0, 0.0, 0.0]
+    );
+    assert_eq!(
+        camera.y_axis.map(cadmpeg_ir::scalar::FiniteReal::get),
+        [0.0, 1.0, 0.0]
+    );
+    assert_eq!(
+        camera.z_axis.map(cadmpeg_ir::scalar::FiniteReal::get),
+        [0.0, 0.0, 1.0]
+    );
 }
 
 #[test]

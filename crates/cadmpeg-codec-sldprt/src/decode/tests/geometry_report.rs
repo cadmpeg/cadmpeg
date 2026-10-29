@@ -417,7 +417,7 @@ fn direct_feature_input_operations_require_unique_history_bindings() {
     native.feature_histories[0].features.push(duplicate);
     assert_eq!(unbound_feature_input_operation_objects(&native), 1);
 
-    lane.names[0].offset = lane.names[0].offset + 1;
+    lane.names[0].offset += 1;
     native.feature_input_lanes = vec![lane];
     assert_eq!(unbound_feature_input_operation_objects(&native), 0);
 }

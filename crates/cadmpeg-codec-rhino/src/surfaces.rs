@@ -1083,14 +1083,13 @@ fn read_nurbs_surface_in(
 }
 
 fn checked_surface_poles(
-    points: Vec<FinitePoint3>,
-    weights: Option<Vec<NonZeroReal>>,
+    points: &[FinitePoint3],
+    weights: Option<&[NonZeroReal]>,
     row_len: usize,
     offset: usize,
 ) -> Result<NurbsPoleGrid<FinitePoint3>, GeometryError> {
-    let point_rows = copy_rows(&points, row_len)?;
+    let point_rows = copy_rows(points, row_len)?;
     let weight_rows = weights
-        .as_deref()
         .map(|values| copy_rows(values, row_len))
         .transpose()?;
     NurbsPoleGrid::from_checked_lanes(point_rows, weight_rows)
@@ -1099,8 +1098,8 @@ fn checked_surface_poles(
 
 fn allocated_surface_poles(
     ctx: &DecodeContext<'_>,
-    points: Vec<FinitePoint3>,
-    weights: Option<Vec<NonZeroReal>>,
+    points: &[FinitePoint3],
+    weights: Option<&[NonZeroReal]>,
     row_len: usize,
 ) -> Result<NurbsPoleGrid<FinitePoint3>, GeometryError> {
     debug_assert!(row_len > 0 && points.len().is_multiple_of(row_len));
@@ -1163,8 +1162,8 @@ fn read_nurbs_surface_prefix_inner(
         -> Result<(Vec<FinitePoint3>, Option<Vec<NonZeroReal>>), GeometryError>,
     mut reconstruct: impl FnMut(&[FiniteReal], usize, usize) -> Result<KnotVector, GeometryError>,
     make_grid: impl FnOnce(
-        Vec<FinitePoint3>,
-        Option<Vec<NonZeroReal>>,
+        &[FinitePoint3],
+        Option<&[NonZeroReal]>,
         usize,
         usize,
     ) -> Result<NurbsPoleGrid<FinitePoint3>, GeometryError>,
@@ -1231,7 +1230,12 @@ fn read_nurbs_surface_prefix_inner(
         poles_reader(reader, stored_cv_count, rational != 0, dimension, scale)?;
     let u_knots = reconstruct(&u_knots, u_order, u_count)?;
     let v_knots = reconstruct(&v_knots, v_order, v_count)?;
-    let poles = make_grid(control_points, weights, v_count, reader.position())?;
+    let poles = make_grid(
+        &control_points,
+        weights.as_deref(),
+        v_count,
+        reader.position(),
+    )?;
     NurbsSurface::new(
         NurbsSurfaceAxis::new(
             u32::try_from(u_order - 1)

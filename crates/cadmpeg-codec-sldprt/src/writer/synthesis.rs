@@ -67,7 +67,7 @@ pub(super) fn plan(
     projected.source = None;
     let slot_arena = DecodeArena::new();
     let slot_policy = DecodePolicy {
-        limits: input.limits.clone(),
+        limits: input.limits,
         ..DecodePolicy::default()
     };
     let slot_context = DecodeContext::for_encode(&slot_arena, &slot_policy);

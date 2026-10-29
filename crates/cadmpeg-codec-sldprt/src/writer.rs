@@ -1954,7 +1954,6 @@ pub(super) enum ClassLayouts {
 /// changes that `synchronize_feature_input_names` derived from the neutral
 /// feature names; the splice loop at the end of this function writes each one
 /// into the emitted payload.
-
 fn resolved_feature_payload(
     lane: &crate::records::FeatureInputLane,
     histories: &[crate::records::FeatureHistory],

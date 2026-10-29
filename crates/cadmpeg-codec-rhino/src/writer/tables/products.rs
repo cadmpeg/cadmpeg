@@ -175,7 +175,8 @@ fn modern_definition(
             .unwrap_or(""),
     )?);
     let mut payload = crc_chunk_with_direct(0x4000_8002, &attributes, &attributes)?;
-    let mut children = vec![0..payload.len()];
+    let attributes_span = 0..payload.len();
+    let mut children = vec![attributes_span];
     payload.extend(1_u32.to_le_bytes());
     let mut units = 2_u32.to_le_bytes().to_vec();
     units.extend(0.001_f64.to_le_bytes());

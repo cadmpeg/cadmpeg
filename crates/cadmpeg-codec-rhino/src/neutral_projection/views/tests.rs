@@ -40,9 +40,11 @@ fn project(ctx: &DecodeContext<'_>, ir: &mut CadIr) -> Result<Vec<LossNote>, Cod
                 native_id: record.id().to_owned(),
                 name: record.field("name").and_then(|value| value.as_str().map(str::to_owned))
                     .expect("original unit input contains the declared view name"),
-                show_construction_grid: bool_field("show_construction_grid"),
-                show_construction_axes: bool_field("show_construction_axes"),
-                show_world_axes: bool_field("show_world_axes"),
+                guides: crate::views::ViewGuides {
+                    construction_grid: bool_field("show_construction_grid"),
+                    construction_axes: bool_field("show_construction_axes"),
+                    world_axes: bool_field("show_world_axes"),
+                },
                 legacy_display_mode: record.field("legacy_display_mode").and_then(|value| value.as_i64()),
                 modern_display_mode: record.field("attributes").and_then(|value| value.as_object()
                     .and_then(|fields| fields.get("display"))

@@ -202,7 +202,7 @@ impl MaterialPlan {
     pub(in crate::writer) fn appearance_index(&self, id: &str) -> Option<i32> {
         self.appearances.get(id).copied()
     }
-    pub(in crate::writer) fn target_names(&self, ir: &CadIr, id: &str) -> Vec<String> {
+    pub(in crate::writer) fn target_names(ir: &CadIr, id: &str) -> Vec<String> {
         let mut names = ir
             .model
             .appearances

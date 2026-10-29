@@ -388,14 +388,14 @@ fn attribute(
         std::str::from_utf8(token).unwrap_or(name.as_str()),
         Exactness::ByteExact,
     )?;
-    Ok(SourceAttribute::new(
+    SourceAttribute::new(
         ctx,
         id,
         None,
         AttributeTarget::Document,
         name.as_str().into(),
         values,
-    )?)
+    )
 }
 
 #[cfg(test)]

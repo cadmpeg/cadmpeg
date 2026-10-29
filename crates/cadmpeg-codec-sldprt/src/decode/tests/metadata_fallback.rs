@@ -91,14 +91,26 @@ fn decode_surfaces_preview_and_solidworks_xml_metadata() {
         .model
         .assets
         .iter()
-        .filter(|asset| asset.name.as_ref().map(|name| name.as_str()) == Some("preview.png"))
+        .filter(|asset| {
+            asset
+                .name
+                .as_ref()
+                .map(cadmpeg_core::text::NonBlankString::as_str)
+                == Some("preview.png")
+        })
         .collect::<Vec<_>>();
     let bmp_assets = decoded
         .ir()
         .model
         .assets
         .iter()
-        .filter(|asset| asset.name.as_ref().map(|name| name.as_str()) == Some("thumbnail.dib"))
+        .filter(|asset| {
+            asset
+                .name
+                .as_ref()
+                .map(cadmpeg_core::text::NonBlankString::as_str)
+                == Some("thumbnail.dib")
+        })
         .collect::<Vec<_>>();
     assert_eq!(png_assets.len().to_string(), "1");
     let cadmpeg_ir::assets::AssetContent::Embedded { data: png_data } = &png_assets[0].content

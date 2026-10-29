@@ -29,7 +29,7 @@ fn assert_profile_owners(source: Vec<u8>, count: usize) {
         .arenas()
         .values()
         .flatten()
-        .map(|record| record.id())
+        .map(cadmpeg_ir::NativeRecord::id)
         .collect::<std::collections::BTreeSet<_>>();
     let points = [
         Point2::new(0.0, 0.0),

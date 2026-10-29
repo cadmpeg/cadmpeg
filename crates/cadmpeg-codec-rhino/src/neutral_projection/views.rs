@@ -26,9 +26,9 @@ fn close(a: [f64; 3], b: [f64; 3]) -> bool {
 }
 
 fn orientation(viewport: &CameraProjection) -> Option<NonzeroVector<4>> {
-    let camera_x = viewport.x_axis.map(|value| value.get());
-    let camera_y = viewport.y_axis.map(|value| value.get());
-    let camera_z = viewport.z_axis.map(|value| value.get());
+    let camera_x = viewport.x_axis.map(cadmpeg_ir::scalar::FiniteReal::get);
+    let camera_y = viewport.y_axis.map(cadmpeg_ir::scalar::FiniteReal::get);
+    let camera_z = viewport.z_axis.map(cadmpeg_ir::scalar::FiniteReal::get);
     // This is admission of the stored orthonormal camera frame, not a repair
     // of an inconsistent source frame or a geometric tolerance substitution.
     if [camera_x, camera_y, camera_z]
@@ -50,10 +50,13 @@ fn orientation(viewport: &CameraProjection) -> Option<NonzeroVector<4>> {
             camera_z,
         )
         || !close(
-            viewport.direction.map(|value| value.get()),
+            viewport.direction.map(cadmpeg_ir::scalar::FiniteReal::get),
             camera_z.map(|value| -value),
         )
-        || !close(viewport.up.map(|value| value.get()), camera_y)
+        || !close(
+            viewport.up.map(cadmpeg_ir::scalar::FiniteReal::get),
+            camera_y,
+        )
     {
         return None;
     }
@@ -149,9 +152,9 @@ pub(super) fn project(
             property(&mut properties, "name", source.name)?;
         }
         for (name, value) in [
-            ("show_construction_grid", source.show_construction_grid),
-            ("show_construction_axes", source.show_construction_axes),
-            ("show_world_axes", source.show_world_axes),
+            ("show_construction_grid", source.guides.construction_grid),
+            ("show_construction_axes", source.guides.construction_axes),
+            ("show_world_axes", source.guides.world_axes),
         ] {
             property(&mut properties, name, value.to_string())?;
         }
@@ -183,8 +186,9 @@ pub(super) fn project(
             native_ref: Some(native_id.clone()),
         });
         if let Some(viewport) = source.camera {
-            let camera = FiniteVector::new(viewport.location.map(|value| value.get()))
-                .zip(orientation(&viewport));
+            let camera =
+                FiniteVector::new(viewport.location.map(cadmpeg_ir::scalar::FiniteReal::get))
+                    .zip(orientation(&viewport));
             if let Some((position, orientation)) = camera {
                 let camera_id = id("camera", ordinal)?;
                 let mut document = PresentationDocument::new(camera_id.clone());

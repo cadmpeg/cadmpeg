@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-//! Source-less direct SubD archives retain the actual admitted control cage.
+//! Source-less direct `SubD` archives retain the actual admitted control cage.
 
 use super::*;
 use cadmpeg_core::decode::{DecodeArena, DecodePolicy, ResourceDimension};
@@ -127,13 +127,15 @@ fn shared_edges_directed_rings_tags_coefficients_and_endpoint_sharpness_round_tr
     assert_eq!(output.cage.vertices()[3].tag, SubdVertexTag::Dart);
     assert_eq!(output.cage.edges()[2].tag, SubdEdgeTag::SmoothX);
     assert_eq!(
-        output.cage.edges()[0].sharpness().map(|value| value.get()),
+        output.cage.edges()[0]
+            .sharpness()
+            .map(cadmpeg_ir::scalar::NonNegativeReal::get),
         [0.25, 0.75]
     );
     assert_eq!(
         output.cage.edges()[0]
             .sector_coefficients()
-            .map(|value| value.get()),
+            .map(cadmpeg_ir::scalar::FiniteReal::get),
         [0.125, 0.875]
     );
     assert!(output.cage.faces()[1].edges()[0].reversed);

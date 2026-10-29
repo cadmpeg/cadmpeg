@@ -343,7 +343,7 @@ pub(in crate::writer) fn settings(
                         output.push(crc_chunk(0x2000_8039,&body)?);
                     }
                     [] => {},
-                    _ => losses.push(RhinoLossCode::WriterAttributesOmitted.note(format!("document setting {} /current_material_index {} -> absent; native material {} has multiple authored appearances {:?}, so no unique target exists",setting.id(),index,record.id(),materials.target_names(ir,record.id())))),
+                    _ => losses.push(RhinoLossCode::WriterAttributesOmitted.note(format!("document setting {} /current_material_index {} -> absent; native material {} has multiple authored appearances {:?}, so no unique target exists",setting.id(),index,record.id(),super::materials::MaterialPlan::target_names(ir,record.id())))),
                 }
             }
         }

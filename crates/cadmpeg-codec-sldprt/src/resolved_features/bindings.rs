@@ -473,7 +473,7 @@ pub(crate) fn bind_pattern_inputs(
                 if let Some(start) = object_start {
                     let mut excluded_handles = Vec::new();
                     for class in &declarations {
-                        if let Some(offset) = usize::try_from(class.offset).ok() {
+                        if let Ok(offset) = usize::try_from(class.offset) {
                             excluded_handles.extend([offset + 136, offset + 144]);
                         }
                     }

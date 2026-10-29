@@ -113,7 +113,7 @@ fn round_trip(origin: Point3, direction: UnitVector3, domain: [f64; 2], endpoint
                 .collect::<Vec<_>>(),
             endpoints
         );
-        for parameter in [domain[0], (domain[0] + domain[1]) / 2.0, domain[1]] {
+        for parameter in [domain[0], f64::midpoint(domain[0], domain[1]), domain[1]] {
             let expected = cadmpeg_ir::eval::decode::curve_point(
                 EvaluationAdmission::Standard,
                 &ir.model.curves[0].geometry,
