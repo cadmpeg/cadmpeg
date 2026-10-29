@@ -6,8 +6,7 @@ use cadmpeg_core::CodecError;
 use serde::{Deserialize, Serialize};
 use std::fmt::Write;
 
-/// Scalar source positions and real native parent references. No persistent
-/// integer path collection is introduced (CADIR v8 #246 IV.2 check 3).
+/// Scalar source positions and native parent references.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
 pub(crate) enum SourceUse {

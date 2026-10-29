@@ -1492,8 +1492,7 @@ Ed 0.001 1 1 0 1 1 0 0 1 0 1001000 +3 0 -2 0 *
         .arena_as::<crate::native::element_map::ElementMapRecord>("element_maps")
         .expect("element maps");
     let groups = &maps[0].maps[0].groups;
-    // CADIR v8 #213 removes native topology_ids. Query the same source
-    // selectors through CURRENT neutral.native_ref, preserving both roots.
+    // Query the source selectors through neutral.native_ref for both roots.
     let ctx = cadmpeg_test_support::service_decode_context();
     let inverse = super::current_bindings(&ctx, result.ir()).unwrap();
     let count = |group: usize, index| {

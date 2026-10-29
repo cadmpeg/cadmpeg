@@ -597,8 +597,7 @@ Co 1001000 +2 0 *
         .expect("displayed Shape element map");
     assert_eq!(shape_map.hasher_index, Some(0));
     let groups = &shape_map.maps[0].groups;
-    // CADIR v8 #213 removes native topology_ids, preserving all mapped-name
-    // facts and querying the same source indices through neutral.native_ref.
+    // Query the source indices through neutral.native_ref.
     let ctx = cadmpeg_test_support::service_decode_context();
     let inverse = crate::topology_transfer::current_bindings(&ctx, result.ir()).unwrap();
     assert_eq!(
