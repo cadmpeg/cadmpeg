@@ -195,19 +195,6 @@ fn segment_type_rejects_unbound_native_identity() {
         assert!(serde_json::from_value::<SegmentType>(wire).is_err());
     }
 }
-
-#[test]
-fn semantic_registry_keeps_dynamic_discriminator_without_source_positions() {
-    let value = segment("");
-    assert_eq!(value.class_tag.as_str(), "256");
-    assert!(value.byte_offset.is_none());
-    assert!(value.type_guid_offset.is_none());
-    assert!(value.version_offset.is_none());
-    assert!(value.entities.located_rows().is_none());
-    let mut wire = serde_json::to_value(value).unwrap();
-    wire["byte_offset"] = serde_json::json!(0);
-    assert!(serde_json::from_value::<SegmentType>(wire).is_err());
-}
 #[test]
 fn semantic_timeline_keeps_order_and_rejects_duplicate_items() {
     let value = timeline();

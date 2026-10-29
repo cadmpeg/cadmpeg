@@ -130,7 +130,10 @@ fn array_restore_uses_expansion_mode_and_element_objects() {
                 } else {
                     0.0
                 };
-                assert_eq!(occurrence.transform.expect("placed occurrence").rows()[0][3], 100.0 + 2.0 * x);
+                assert_eq!(
+                    occurrence.transform.expect("placed occurrence").rows()[0][3],
+                    100.0 + 2.0 * x
+                );
                 let element_scale = if expanded && index == 1 {
                     [4.0, 5.0, 6.0]
                 } else if !expanded && array && index == 0 {

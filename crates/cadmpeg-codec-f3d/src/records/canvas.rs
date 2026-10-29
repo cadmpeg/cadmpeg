@@ -273,55 +273,6 @@ impl DesignCanvasGeometry {
     fn paired_byte_offset(&self) -> Option<u64> {
         self.byte_offset?.checked_add(self.frame_length())
     }
-    fn scope_reference_offset(&self) -> Option<u64> {
-        self.byte_offset?
-            .checked_add(u64_from_index(self.prologue.layout.offsets().scope + 1))
-    }
-    fn visibility_offset(&self) -> Option<u64> {
-        self.byte_offset?.checked_add(u64_from_index(
-            self.prologue.layout.offsets().first_boundary - 1,
-        ))
-    }
-    fn paired_component_reference_offset(&self) -> Option<u64> {
-        self.paired_byte_offset()?.checked_add(20)
-    }
-    fn boundary_coordinate_offsets(&self) -> Option<[u64; 8]> {
-        let start = self.byte_offset?;
-        let offsets = self.prologue.layout.offsets();
-        Some(
-            [
-                offsets.first_boundary,
-                offsets.first_boundary + 8,
-                offsets.first_boundary + 16,
-                offsets.first_boundary + 24,
-                offsets.second_boundary,
-                offsets.second_boundary + 8,
-                offsets.second_boundary + 16,
-                offsets.second_boundary + 24,
-            ]
-            .map(|relative| start + u64_from_index(relative)),
-        )
-    }
-    fn second_boundary_present_offset(&self) -> Option<u64> {
-        self.byte_offset?
-            .checked_add(u64_from_index(self.prologue.layout.offsets().state))
-    }
-    fn plane_reference_offset(&self) -> Option<u64> {
-        self.byte_offset?
-            .checked_add(u64_from_index(self.prologue.layout.offsets().plane + 1))
-    }
-    fn component_reference_offset(&self) -> Option<u64> {
-        self.byte_offset?
-            .checked_add(u64_from_index(self.prologue.layout.offsets().component + 1))
-    }
-    fn asset_reference_offset(&self) -> Option<u64> {
-        self.byte_offset?
-            .checked_add(u64_from_index(self.prologue.layout.offsets().asset + 1))
-    }
-    fn label_offset(&self) -> Option<u64> {
-        self.byte_offset?
-            .checked_add(u64_from_index(self.prologue.layout.offsets().prefix))
-    }
 }
 
 /// Canvas image-asset record with a nonempty UTF-16 name.
@@ -358,14 +309,7 @@ enum DesignCanvasScopeForm {
     Compact,
     Expanded,
 }
-impl DesignCanvasScopeForm {
-    fn reference_offset(self) -> u64 {
-        match self {
-            Self::Compact => 22,
-            Self::Expanded => 26,
-        }
-    }
-}
+impl DesignCanvasScopeForm {}
 
 /// Exact image-plane binding owned by one Design `Canvas` scope.
 #[derive(Debug, PartialEq, Deserialize)]
@@ -446,27 +390,6 @@ impl DesignCanvasImage {
     }
     pub(crate) fn asset_name(&self) -> &str {
         &self.asset.name
-    }
-    pub(crate) fn scope_byte_offset(&self) -> Option<u64> {
-        self.scope_byte_offset_after_asset(self.asset_byte_offset()?)
-    }
-    /// The scope frame offset that follows an asset frame at
-    /// `asset_byte_offset`.
-    pub(crate) fn scope_byte_offset_after_asset(&self, asset_byte_offset: u64) -> Option<u64> {
-        asset_byte_offset.checked_add(self.asset.frame_length())
-    }
-    fn asset_byte_offset(&self) -> Option<u64> {
-        self.geometry
-            .paired_byte_offset()?
-            .checked_add(self.geometry.prologue.layout.paired_len())
-    }
-    fn asset_name_offset(&self) -> Option<u64> {
-        self.asset_byte_offset()?
-            .checked_add(CANVAS_IMAGE_ASSET_PREFIX_BYTES)
-    }
-    fn geometry_reference_offset(&self) -> Option<u64> {
-        self.scope_byte_offset()?
-            .checked_add(self.scope_form?.reference_offset())
     }
 }
 
@@ -624,65 +547,7 @@ impl From<DesignCanvasImage> for DesignCanvasImageWire {
         }
     }
 }
-impl DesignCanvasImage {
-    /// The source offsets of a decoded image, as the `record_layout`
-    /// pointers of its capture.
-    pub(crate) fn source_offsets(&self) -> Vec<(&'static str, Option<u64>)> {
-        const BOUNDARY: [&str; 8] = [
-            "boundary_coordinate_offsets.0",
-            "boundary_coordinate_offsets.1",
-            "boundary_coordinate_offsets.2",
-            "boundary_coordinate_offsets.3",
-            "boundary_coordinate_offsets.4",
-            "boundary_coordinate_offsets.5",
-            "boundary_coordinate_offsets.6",
-            "boundary_coordinate_offsets.7",
-        ];
-        let mut offsets = vec![
-            (
-                "scope_reference_offset",
-                self.geometry.scope_reference_offset(),
-            ),
-            (
-                "geometry_reference_offset",
-                self.geometry_reference_offset(),
-            ),
-            ("geometry_byte_offset", self.geometry.byte_offset),
-            ("visibility_offset", self.geometry.visibility_offset()),
-            (
-                "paired_geometry_byte_offset",
-                self.geometry.paired_byte_offset(),
-            ),
-            (
-                "paired_component_reference_offset",
-                self.geometry.paired_component_reference_offset(),
-            ),
-            (
-                "second_boundary_present_offset",
-                self.geometry.second_boundary_present_offset(),
-            ),
-            (
-                "plane_reference_offset",
-                self.geometry.plane_reference_offset(),
-            ),
-            (
-                "component_reference_offset",
-                self.geometry.component_reference_offset(),
-            ),
-            (
-                "asset_reference_offset",
-                self.geometry.asset_reference_offset(),
-            ),
-            ("asset_byte_offset", self.asset_byte_offset()),
-            ("asset_name_offset", self.asset_name_offset()),
-            ("label_offset", self.geometry.label_offset()),
-        ];
-        if let Some(boundary) = self.geometry.boundary_coordinate_offsets() {
-            offsets.extend(BOUNDARY.into_iter().zip(boundary.into_iter().map(Some)));
-        }
-        offsets
-    }
-}
+impl DesignCanvasImage {}
 
 #[cfg(test)]
 mod tests;

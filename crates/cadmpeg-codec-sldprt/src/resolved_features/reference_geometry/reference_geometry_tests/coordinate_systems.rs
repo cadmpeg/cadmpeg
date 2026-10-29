@@ -125,7 +125,7 @@ fn coordinate_system_record(
                 id: format!("{lane_id}-name"),
                 parent: lane_id.into(),
                 ordinal: 0,
-                offset: Some(0),
+                offset: 0,
                 object_id: ObjectId::from_value(500),
                 value: name.into(),
             }],

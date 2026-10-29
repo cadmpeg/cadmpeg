@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Transient genuine archive-entry sources for decoder interpretation.
 
-use cadmpeg_core::decode::{DecodeContext, View};
+use cadmpeg_core::decode::View;
 use cadmpeg_core::CodecError;
 use std::collections::BTreeMap;
 
@@ -12,14 +12,8 @@ pub(crate) struct EntrySources<'source> {
 }
 
 impl<'source> EntrySources<'source> {
-    pub(crate) fn new(
-        context: &DecodeContext<'_>,
-        entries: &'source BTreeMap<String, View<'source>>,
-    ) -> Result<Self, CodecError> {
-        for source in entries.values() {
-            context.capture_part_extent(*source)?;
-        }
-        Ok(Self { entries })
+    pub(crate) fn new(entries: &'source BTreeMap<String, View<'source>>) -> Self {
+        Self { entries }
     }
 
     pub(crate) fn view(&self, entry: &EntryRecord) -> Result<View<'source>, CodecError> {
@@ -29,11 +23,6 @@ impl<'source> EntrySources<'source> {
                 entry.name()
             ))
         })
-    }
-
-    pub(crate) fn byte_len(&self, entry: &EntryRecord) -> Result<u64, CodecError> {
-        self.view(entry)
-            .map(|source| cadmpeg_core::decode::u64_from_index(source.window().len()))
     }
 }
 

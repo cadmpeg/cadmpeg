@@ -6,7 +6,6 @@ use crate::records::{
     Feature, FeatureInputClass, FeatureInputLane, FeatureInputName, FeatureInputScalar,
     FeatureInputScalarRole, FeatureSource, ObjectId,
 };
-use crate::resolved_features::class_sources::ClassSources;
 use crate::resolved_features::selections::{
     cosmetic_thread_component_references, cosmetic_thread_cylinder_marker_reference,
     cosmetic_thread_cylinder_reference_at, cosmetic_thread_cylinder_references,
@@ -304,7 +303,7 @@ fn cosmetic_thread_cylinder_reference_follows_its_owned_diameter_child() {
         feature_ref: Some("other-feature".into()),
         ordinal: 0,
         sequence: 0,
-        offset: Some(150),
+        offset: 150,
         object_id: 52,
         name: "diameter-name".into(),
         value: cadmpeg_ir::scalar::FiniteReal::new(0.008).expect("finite test scalar"),
@@ -323,7 +322,7 @@ fn cosmetic_thread_cylinder_reference_follows_its_owned_diameter_child() {
                 id: "diameter-name".into(),
                 parent: "lane".into(),
                 ordinal: 0,
-                offset: Some(120),
+                offset: 120,
                 object_id: Some(ObjectId::Absent),
                 value: "D2".into(),
             },
@@ -333,7 +332,7 @@ fn cosmetic_thread_cylinder_reference_follows_its_owned_diameter_child() {
                 id: "next-feature".into(),
                 parent: "lane".into(),
                 ordinal: 1,
-                offset: Some(400),
+                offset: 400,
                 object_id: ObjectId::from_value(54),
                 value: "Next".into(),
             },
@@ -356,11 +355,11 @@ fn cosmetic_thread_cylinder_reference_follows_its_owned_diameter_child() {
     for i in 0..1024 {
         let mut scalar = lane.scalars[0].clone();
         scalar.object_id = 1000 + i;
-        scalar.offset = Some(0);
+        scalar.offset = 0;
         unrelated.scalars.push(scalar);
         let mut name = lane.names[0].clone();
         name.id = format!("unrelated#{i}");
-        name.offset = Some(0);
+        name.offset = 0;
         unrelated.names.push(name);
     }
     assert_eq!(
@@ -390,7 +389,7 @@ fn cosmetic_thread_cylinder_reference_follows_its_owned_diameter_child() {
         feature_ref: None,
         ordinal: 1,
         sequence: 1,
-        offset: Some(200),
+        offset: 200,
         object_id: 54,
         name: "next-feature".into(),
         value: cadmpeg_ir::scalar::FiniteReal::new(1.0).expect("finite test scalar"),
@@ -451,6 +450,7 @@ fn cosmetic_thread_reads_a_direct_component_edge_reference() {
         native_payload: payload.into(),
         classes: vec![FeatureInputClass {
             sequence: u32::try_from(cadmpeg_core::decode::u64_from_index(class_offset)).unwrap(),
+            offset: cadmpeg_core::decode::u64_from_index(class_offset),
             feature_ref: None,
             id: "component-edge".into(),
             parent: "lane".into(),
@@ -469,18 +469,9 @@ fn cosmetic_thread_reads_a_direct_component_edge_reference() {
         sketch_entities: Vec::new(),
     };
 
-    let class_sources = ClassSources::from_positions([(
-        &lane.classes[0],
-        cadmpeg_core::decode::u64_from_index(class_offset),
-    )]);
-    let references = cosmetic_thread_component_references(
-        &class_sources,
-        &references_ctx,
-        &lane,
-        0,
-        lane.native_payload.len(),
-    )
-    .unwrap();
+    let references =
+        cosmetic_thread_component_references(&references_ctx, &lane, 0, lane.native_payload.len())
+            .unwrap();
     assert_eq!(references.len(), 1);
     assert_eq!(references[0].0, marker);
     assert_eq!(
@@ -558,6 +549,7 @@ fn cosmetic_thread_reads_component_edge_reference_through_edge_ref_child() {
                 id: "component-edge".into(),
                 parent: "lane".into(),
                 ordinal: 0,
+                offset: cadmpeg_core::decode::u64_from_index(component_edge_offset),
                 name: component_edge_name.into(),
             },
             FeatureInputClass {
@@ -567,6 +559,7 @@ fn cosmetic_thread_reads_component_edge_reference_through_edge_ref_child() {
                 id: "edge-ref".into(),
                 parent: "lane".into(),
                 ordinal: 1,
+                offset: cadmpeg_core::decode::u64_from_index(edge_ref_offset),
                 name: edge_ref_name.into(),
             },
         ],
@@ -582,24 +575,9 @@ fn cosmetic_thread_reads_component_edge_reference_through_edge_ref_child() {
         sketch_entities: Vec::new(),
     };
 
-    let class_sources = ClassSources::from_positions([
-        (
-            &lane.classes[0],
-            cadmpeg_core::decode::u64_from_index(component_edge_offset),
-        ),
-        (
-            &lane.classes[1],
-            cadmpeg_core::decode::u64_from_index(edge_ref_offset),
-        ),
-    ]);
-    let references = cosmetic_thread_component_references(
-        &class_sources,
-        &references_ctx,
-        &lane,
-        0,
-        lane.native_payload.len(),
-    )
-    .unwrap();
+    let references =
+        cosmetic_thread_component_references(&references_ctx, &lane, 0, lane.native_payload.len())
+            .unwrap();
     assert_eq!(references.len(), 1);
     assert_eq!(references[0].0, marker);
     assert_eq!(
@@ -667,14 +645,9 @@ fn cosmetic_thread_reads_repeated_component_edge_reference_through_edge_ref_chil
         sketch_entities: Vec::new(),
     };
 
-    let references = cosmetic_thread_component_references(
-        &crate::test_support::native::class_sources(std::slice::from_ref(&lane)),
-        &references_ctx,
-        &lane,
-        0,
-        lane.native_payload.len(),
-    )
-    .unwrap();
+    let references =
+        cosmetic_thread_component_references(&references_ctx, &lane, 0, lane.native_payload.len())
+            .unwrap();
     assert_eq!(references.len(), 1);
     assert_eq!(references[0].0, marker);
     assert_eq!(

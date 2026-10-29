@@ -4,7 +4,6 @@
 use crate::records::identity::Sourced;
 use crate::records::references::DesignClassTag;
 use crate::records::serde_column::SliceColumn;
-use crate::records::source_offsets::{OffsetVisitor, SourceOffsets};
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::scalar::{FiniteReal, PositiveReal};
 use serde::{Deserialize, Serialize};
@@ -77,15 +76,6 @@ impl TryFrom<DesignScaleOperationWire> for DesignScaleOperation {
                 .ok_or("uniform_factor must be positive and finite")?,
             uniform_factor_offset: None,
         })
-    }
-}
-
-impl SourceOffsets for DesignScaleOperation {
-    fn visit_source_offsets(&mut self, offsets: &mut OffsetVisitor<'_>) {
-        if let Some(center) = &mut self.center_position {
-            offsets.sourced("center_position_offset", center);
-        }
-        offsets.offset("uniform_factor_offset", &mut self.uniform_factor_offset);
     }
 }
 
@@ -289,27 +279,6 @@ impl DesignCopyPasteBodiesOperation {
     /// scope.
     pub(crate) fn relation_byte_offset(&self) -> Option<u64> {
         self.relation_byte_offset
-    }
-}
-
-impl SourceOffsets for DesignCopyPasteBodiesOperation {
-    fn visit_source_offsets(&mut self, offsets: &mut OffsetVisitor<'_>) {
-        offsets.offset("body_group_byte_offset", &mut self.body_group_byte_offset);
-        offsets.offset("relation_byte_offset", &mut self.relation_byte_offset);
-        for (index, body) in self.bodies.iter_mut().enumerate() {
-            offsets.sourced(
-                &format!("body_operand_record_offsets.{index}"),
-                &mut body.operand,
-            );
-            offsets.sourced(
-                &format!("source_body_entity_suffix_offsets.{index}"),
-                &mut body.source,
-            );
-            offsets.sourced(
-                &format!("copied_body_entity_suffix_offsets.{index}"),
-                &mut body.copied,
-            );
-        }
     }
 }
 

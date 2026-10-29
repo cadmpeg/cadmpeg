@@ -73,25 +73,6 @@ fn sketch_scope_reference_offsets_refuse_second_unique_marker() {
 }
 
 #[test]
-fn discarded_envelope_source_draft_creates_no_capture() {
-    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
-    let arena = DecodeArena::new();
-    let (ctx, source) =
-        DecodeContext::from_root_bytes(b"physical-envelope", &arena, &DecodePolicy::service())
-            .unwrap();
-    let drafts = std::collections::HashMap::from([(
-        "discarded-owner".to_owned(),
-        super::ScopeSource {
-            extent: source,
-            paths: Vec::new(),
-        },
-    )]);
-    let pointers = super::capture_scope_layouts(&ctx, &[], drafts).unwrap();
-    assert!(pointers.is_empty());
-    assert!(ctx.take_record_captures().unwrap().is_empty());
-}
-
-#[test]
 fn canvas_scope_admits_its_complete_98_byte_tail_and_rejects_broken_links() {
     use super::parse_parameter_scope;
     use crate::design::test_support::indexed_record_offsets_for_test;

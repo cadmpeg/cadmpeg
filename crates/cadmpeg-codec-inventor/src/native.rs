@@ -4,9 +4,6 @@
 pub(crate) mod protein;
 pub(crate) mod ufrx;
 
-mod assembly_ownership;
-mod presentation_ownership;
-
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::native::{NativeConvertError, NativeNamespace};
 use serde::{

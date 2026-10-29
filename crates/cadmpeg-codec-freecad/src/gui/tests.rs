@@ -1188,13 +1188,6 @@ fn validates_sketcher_visual_layer_list_with_the_producer_type_token() {
             .collect::<Vec<_>>(),
         ["VisualLayerList", "VisualLayer", "VisualLayer"]
     );
-    let logical: Vec<cadmpeg_ir::source_fidelity::freecad::LogicalSpan> =
-        crate::test_support::source_fidelity::layout(result.source_fidelity(), "logical-ledger");
-    let span = logical
-        .iter()
-        .find(|span| span.classification.owner() == Some(property.id.as_str()))
-        .expect("visual layer span");
-    assert_eq!(span.classification.as_str(), "typed");
     assert!(crate::test_support::validate_native(result.ir()).is_empty());
 
     for value in [
@@ -1685,15 +1678,6 @@ fn validates_the_complete_loaded_dynamic_gui_registry() {
         crate::gui::has_registered_property_grammar(&property.name, &property.type_name)
     }));
     assert!(crate::test_support::validate_native(result.ir()).is_empty());
-
-    let logical: Vec<cadmpeg_ir::source_fidelity::freecad::LogicalSpan> =
-        crate::test_support::source_fidelity::layout(result.source_fidelity(), "logical-ledger");
-    assert!(properties.iter().all(|property| {
-        logical.iter().any(|span| {
-            span.classification.owner() == Some(property.id.as_str())
-                && span.classification.as_str() == "typed"
-        })
-    }));
 }
 
 #[test]
@@ -1786,15 +1770,6 @@ fn retains_unregistered_gui_side_entries_as_opaque_archive_members() {
         crate::test_support::source_fidelity::entry_bytes(result.source_fidelity(), entry.id()),
         payload
     );
-
-    let logical: Vec<cadmpeg_ir::source_fidelity::freecad::LogicalSpan> =
-        crate::test_support::source_fidelity::layout(result.source_fidelity(), "logical-ledger");
-    let span = logical
-        .iter()
-        .find(|span| span.entry == entry.name())
-        .expect("state span");
-    assert_eq!(span.classification.as_str(), "named_opaque");
-    assert_eq!(span.classification.owner(), Some(entry.id()));
     assert!(crate::test_support::validate_native(result.ir()).is_empty());
 }
 

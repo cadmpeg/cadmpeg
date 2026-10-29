@@ -88,13 +88,8 @@ fn decal_document_retains_content_without_source_layout() {
         let mut value = base.clone();
         value["mapping_mode"] = serde_json::json!(mode);
         let image: super::DesignDecalImage = serde_json::from_value(value.clone()).unwrap();
-        assert!(image.scope_byte_offset().is_none());
         assert!(image.asset.byte_offset.is_none());
         assert_eq!(serde_json::to_value(&image).unwrap(), value);
-        assert!(image
-            .source_offsets()
-            .iter()
-            .all(|(_, offset)| offset.is_none()));
     }
     let mut unicode = base.clone();
     unicode["asset_name"] = serde_json::json!("图😀.png");
@@ -182,14 +177,9 @@ fn decal_scanner_validates_real_extents_and_retains_actual_layout_separately() {
         asset(),
     )
     .unwrap();
-    assert_eq!(scanned.scope_byte_offset(), Some(200));
-    let offsets: std::collections::BTreeMap<_, _> = scanned.source_offsets().into_iter().collect();
-    assert_eq!(offsets["scope_byte_offset"], Some(200));
-    assert_eq!(offsets["asset_byte_offset"], Some(100));
     let wire = serde_json::to_value(&scanned).unwrap();
     assert_eq!(wire, decal_wire_fixture());
     let reloaded: DesignDecalImage = serde_json::from_value(wire).unwrap();
-    assert!(reloaded.scope_byte_offset().is_none());
     assert!(reloaded.asset.byte_offset.is_none());
 }
 

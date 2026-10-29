@@ -10,7 +10,6 @@
 //! generic IR validation report.
 
 mod sheet_metal_settings;
-pub(crate) mod source_layout;
 
 use cadmpeg_core::convert::f64_from_index;
 

@@ -17,7 +17,6 @@ use super::{
 use crate::records::FeatureSource;
 use crate::records::ObjectId;
 use crate::records::{Feature, FeatureHistory, FeatureInputLane, FeatureInputName};
-use crate::resolved_features::class_sources::ClassSources;
 use std::collections::BTreeMap;
 
 #[test]
@@ -497,7 +496,7 @@ fn extrusion_termination_stops_before_the_following_profile_object() {
                 id: "extrusion-name".into(),
                 parent: "lane#7".into(),
                 ordinal: 0,
-                offset: Some(10),
+                offset: 10,
                 value: "extrusion".into(),
                 object_id: ObjectId::from_value(10),
             },
@@ -507,7 +506,7 @@ fn extrusion_termination_stops_before_the_following_profile_object() {
                 id: "profile-name".into(),
                 parent: "lane#7".into(),
                 ordinal: 1,
-                offset: Some(300),
+                offset: 300,
                 value: "profile".into(),
                 object_id: ObjectId::from_value(11),
             },
@@ -541,15 +540,9 @@ fn extrusion_termination_stops_before_the_following_profile_object() {
         histories[0].features[0].properties.get("Face"),
         Some(&"sldprt:feature-input:single-face-ref:7:220".to_string())
     );
-    let selections = compact_surface_selections(
-        &crate::test_support::native::class_sources(std::slice::from_ref(&lane)),
-        &identity_ctx,
-        &histories,
-        &lane,
-    )
-    .unwrap();
+    let selections = compact_surface_selections(&identity_ctx, &histories, &lane).unwrap();
     assert_eq!(selections.len(), 1);
-    assert_eq!(selections[0].offset, Some(220));
+    assert_eq!(selections[0].offset, 220);
 }
 
 #[test]
@@ -603,7 +596,7 @@ fn extrusion_termination_includes_cosmetic_children_before_the_end_spec() {
                 id: "extrusion-name".into(),
                 parent: "lane#7".into(),
                 ordinal: 0,
-                offset: Some(10),
+                offset: 10,
                 value: "extrusion".into(),
                 object_id: ObjectId::from_value(10),
             },
@@ -613,7 +606,7 @@ fn extrusion_termination_includes_cosmetic_children_before_the_end_spec() {
                 id: "cosmetic-name".into(),
                 parent: "lane#7".into(),
                 ordinal: 1,
-                offset: Some(200),
+                offset: 200,
                 value: "cosmetic".into(),
                 object_id: ObjectId::from_value(11),
             },
@@ -623,7 +616,7 @@ fn extrusion_termination_includes_cosmetic_children_before_the_end_spec() {
                 id: "next-name".into(),
                 parent: "lane#7".into(),
                 ordinal: 2,
-                offset: Some(500),
+                offset: 500,
                 value: "next".into(),
                 object_id: ObjectId::from_value(12),
             },
@@ -712,7 +705,7 @@ fn extrusion_termination_admits_retained_dimension_with_an_existing_depth() {
                 id: "extrusion-name".into(),
                 parent: "lane#7".into(),
                 ordinal: 0,
-                offset: Some(10),
+                offset: 10,
                 value: "extrusion".into(),
                 object_id: ObjectId::from_value(10),
             }],
@@ -1602,7 +1595,7 @@ fn enrich_combine_uses_outermost_body_paths() {
             id: "combine-name".into(),
             parent: "lane#35".into(),
             ordinal: 0,
-            offset: Some(0),
+            offset: 0,
             object_id: ObjectId::from_value(119),
             value: "Combine".into(),
         }],
@@ -1696,6 +1689,7 @@ fn sweep_path_enrichment_binds_the_general_curve_path() {
         native_payload: payload.into(),
         classes: vec![crate::records::FeatureInputClass {
             sequence: 40,
+            offset: 40,
             feature_ref: None,
             id: "general-curve".into(),
             parent: "lane#35".into(),
@@ -1708,7 +1702,7 @@ fn sweep_path_enrichment_binds_the_general_curve_path() {
             id: "sweep-name".into(),
             parent: "lane#35".into(),
             ordinal: 0,
-            offset: Some(0),
+            offset: 0,
             object_id: ObjectId::from_value(119),
             value: "Sweep".into(),
         }],
@@ -1723,8 +1717,7 @@ fn sweep_path_enrichment_binds_the_general_curve_path() {
         sketch_entities: Vec::new(),
     }];
     let mut admitted = histories.clone();
-    let class_sources = ClassSources::from_positions([(&lanes[0].classes[0], 40)]);
-    super::enrich_history_sweep_paths(&class_sources, &mut admitted, &lanes);
+    super::enrich_history_sweep_paths(&mut admitted, &lanes);
     assert_eq!(
         admitted[0].features[0]
             .properties
@@ -1781,7 +1774,7 @@ fn combine_selection_enrichment_binds_target_and_tool_paths() {
             id: "combine-name".into(),
             parent: "lane#35".into(),
             ordinal: 0,
-            offset: Some(0),
+            offset: 0,
             object_id: ObjectId::from_value(119),
             value: "Combine".into(),
         }],

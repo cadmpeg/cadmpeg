@@ -64,7 +64,7 @@ pub(super) fn exact_assembly_operand_paths<'a>(
         let mut paths = [None, None];
         for (ordinal, relative_offset) in locator_offsets.into_iter().enumerate() {
             let locator_reference_at = scope_at.checked_add(relative_offset)?;
-            let (locator_record_index, locator_reference_offset) =
+            let (locator_record_index, _) =
                 exact_same_segment_record_reference(bytes, locator_reference_at)?;
             let candidates = records
                 .offsets(locator_record_index)
@@ -78,7 +78,6 @@ pub(super) fn exact_assembly_operand_paths<'a>(
                     scope,
                     stream_types,
                     locator_record_index,
-                    locator_reference_offset,
                     locator_at,
                 ) {
                     Ok(parsed) => parsed,
@@ -135,7 +134,7 @@ pub(super) fn exact_rigid_group_member_paths<'a>(
             let locator_reference_at = scope_at
                 .checked_add(rigid::FIRST_LOCATOR_REFERENCE)?
                 .checked_add(member.checked_mul(11)?)?;
-            let (locator_record_index, locator_reference_offset) =
+            let (locator_record_index, _) =
                 exact_same_segment_record_reference(bytes, locator_reference_at)?;
             let mut candidate = None;
             for locator_at in records
@@ -149,7 +148,6 @@ pub(super) fn exact_rigid_group_member_paths<'a>(
                     scope,
                     stream_types,
                     locator_record_index,
-                    locator_reference_offset,
                     locator_at,
                 ) {
                     Ok(parsed) => parsed,
@@ -186,7 +184,6 @@ fn exact_assembly_operand_path_envelope<'a>(
     scope: &DesignParameterScope,
     stream_types: &StreamTypes<'_>,
     locator_record_index: u32,
-    locator_reference_offset: u64,
     locator_at: usize,
 ) -> Result<Option<ParsedOperandPath<'a>>, CodecError> {
     let bytes = source.window();
@@ -307,9 +304,9 @@ fn exact_assembly_operand_path_envelope<'a>(
                 path_locator::ZERO_TAIL_2,
             )
         };
-        let (scope_record_index, locator_scope_reference_offset) =
+        let (scope_record_index, _) =
             exact_same_segment_record_reference(bytes, locator_at.checked_add(scope_backlink)?)?;
-        let (wrapper_record_index, wrapper_reference_offset) =
+        let (wrapper_record_index, _) =
             exact_same_segment_record_reference(bytes, locator_at.checked_add(wrapper_reference)?)?;
         let path_record_index = locator_record_index.checked_add(1)?;
         // A variable-reference or wide locator's path can continue over
@@ -374,11 +371,10 @@ fn exact_assembly_operand_path_envelope<'a>(
         {
             return None;
         }
-        let (referenced_path_record_index, path_reference_offset) =
-            exact_same_segment_record_reference(
-                bytes,
-                wrapper_at.checked_add(path_wrapper::PATH_REFERENCE)?,
-            )?;
+        let (referenced_path_record_index, _) = exact_same_segment_record_reference(
+            bytes,
+            wrapper_at.checked_add(path_wrapper::PATH_REFERENCE)?,
+        )?;
         if referenced_path_record_index != path_record_index {
             return None;
         }
@@ -398,15 +394,7 @@ fn exact_assembly_operand_path_envelope<'a>(
         {
             return None;
         }
-        let link_sources = PathLinkSources::new(
-            source,
-            locator_reference_offset,
-            locator_at,
-            locator_scope_reference_offset,
-            wrapper_reference_offset,
-            wrapper_at,
-            path_reference_offset,
-        )?;
+        let link_sources = PathLinkSources::new(source, locator_at, wrapper_at)?;
         let link = DesignAssemblyOperandPathLink {
             locator_record_index,
             locator_class_tag: locator_class_tag.try_into().ok()?,

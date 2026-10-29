@@ -175,55 +175,6 @@ fn string_table_admission_requires_distinct_backward_references() {
         });
         let result = serde_json::from_value::<super::StringTableRecord>(wire.clone());
         assert_eq!(result.is_ok(), valid);
-        if let Ok(record) = result {
-            // Compare source-only fields through the owning table layout.
-            let mut fidelity = cadmpeg_ir::SourceFidelity::default();
-            let entries = wire["entries"].as_array().unwrap();
-            let bytes = entries
-                .iter()
-                .flat_map(|entry| entry["raw"].as_str().unwrap().as_bytes().iter().copied())
-                .collect::<Vec<_>>();
-            let arena = cadmpeg_core::decode::DecodeArena::new();
-            let (ctx, root) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
-                &bytes,
-                &arena,
-                &cadmpeg_core::decode::DecodePolicy::service(),
-            )
-            .unwrap();
-            ctx.record(&record.id(), root, || Ok(())).unwrap();
-            fidelity
-                .install_record_captures(&ctx, |_, layout| {
-                    let mut start = 0;
-                    for (ordinal, entry) in entries.iter().enumerate() {
-                        let end = start + entry["raw"].as_str().unwrap().len();
-                        layout.insert_payload(
-                            format!("entries.{ordinal}.raw"),
-                            cadmpeg_ir::native::bytes::NativeBytes::from(
-                                root.child(start, end).unwrap().window().to_vec(),
-                            ),
-                        )?;
-                        start = end;
-                    }
-                    Ok(())
-                })
-                .unwrap();
-            let mut restored = serde_json::to_value(&record).unwrap();
-            for (ordinal, entry) in restored["entries"]
-                .as_array_mut()
-                .unwrap()
-                .iter_mut()
-                .enumerate()
-            {
-                assert!(entry.get("raw").is_none());
-                entry["raw"] = serde_json::json!(std::str::from_utf8(
-                    fidelity.record_layout()[&record.id()].payloads()
-                        [&format!("entries.{ordinal}.raw")]
-                        .as_ref()
-                )
-                .unwrap());
-            }
-            assert_eq!(restored, wire);
-        }
     }
 }
 
@@ -354,24 +305,6 @@ fn string_tables_reject_duplicate_and_missing_numeric_positions() {
         assert!(namespace
             .arena_as_collection::<super::StringTableRecord, super::StringTables>("string_tables")
             .is_err());
-    }
-}
-
-#[test]
-fn ledger_spans_reject_empty_and_reversed_wire_intervals() {
-    for (start, end, valid) in [(0, 1, true), (1, 1, false), (2, 1, false)] {
-        let physical = serde_json::json!({"id":"span", "start":start, "end":end, "role":"end-record", "entry":null});
-        let logical = serde_json::json!({"id":"span", "entry":"Document.xml", "start":start, "end":end, "classification":"structural", "owner":null});
-        assert_eq!(
-            serde_json::from_value::<cadmpeg_ir::source_fidelity::freecad::ArchiveSpan>(physical)
-                .is_ok(),
-            valid
-        );
-        assert_eq!(
-            serde_json::from_value::<cadmpeg_ir::source_fidelity::freecad::LogicalSpan>(logical)
-                .is_ok(),
-            valid
-        );
     }
 }
 
@@ -698,42 +631,6 @@ fn an_attachment_writes_its_supports_frames_and_effective_frame() {
 }
 
 #[test]
-fn archive_and_logical_spans_write_their_role_and_owner() {
-    for (role, entry) in [
-        ("compressed-payload", serde_json::json!("Document.xml")),
-        ("end-record", serde_json::Value::Null),
-    ] {
-        let wire = serde_json::json!({
-            "id": "span", "start": 0, "end": 4, "role": role, "entry": entry
-        });
-        let record = serde_json::from_value::<cadmpeg_ir::source_fidelity::freecad::ArchiveSpan>(
-            wire.clone(),
-        )
-        .unwrap();
-        assert_eq!(serde_json::to_value(record).unwrap(), wire);
-    }
-
-    for (classification, owner) in [
-        ("structural", serde_json::Value::Null),
-        ("typed", serde_json::json!("fcstd:native:object#A")),
-        (
-            "named_opaque",
-            serde_json::json!("fcstd:native:property#A:Shape"),
-        ),
-    ] {
-        let wire = serde_json::json!({
-            "id": "span", "entry": "Document.xml", "start": 0, "end": 4,
-            "classification": classification, "owner": owner
-        });
-        let record = serde_json::from_value::<cadmpeg_ir::source_fidelity::freecad::LogicalSpan>(
-            wire.clone(),
-        )
-        .unwrap();
-        assert_eq!(serde_json::to_value(record).unwrap(), wire);
-    }
-}
-
-#[test]
 fn a_drawing_record_writes_page_views_and_a_non_page_without_them() {
     let base = serde_json::json!({
         "id": "drawing", "object": "object",
@@ -858,7 +755,6 @@ fn entry_evidence_rejects_invalid_digests_without_needing_the_payload() {
     );
     let fidelity = crate::test_support::source_fidelity::entry_layout_fixture(&record);
     let source = fidelity.retained_record(record.id()).unwrap();
-    let id = record.id().to_owned();
     let wire = serde_json::to_value(record.record).unwrap();
     assert!(wire.get("data").is_none());
     for digest in ["a", "ag", "AB", &"A".repeat(64)] {
@@ -877,7 +773,7 @@ fn entry_evidence_rejects_invalid_digests_without_needing_the_payload() {
             .contains("sha256"));
     }
     let record: super::EntryRecord = serde_json::from_value(wire).unwrap();
-    assert_eq!(fidelity.record_layout()[&id].byte_len(), 1);
+    assert_eq!(source.byte_len(), 1);
     assert_eq!(source.sha256(), cadmpeg_ir::hash::sha256_hex(&[0xab]));
     assert!(serde_json::to_value(record).unwrap().get("data").is_none());
 }
@@ -908,10 +804,6 @@ fn entry_wire_keeps_evidence_and_references_without_payload_bytes() {
         .unwrap()
         .get("data")
         .is_none());
-    assert_eq!(
-        fidelity.record_layout()[records[0].id()].byte_len(),
-        u64::try_from(bytes.len()).unwrap()
-    );
     assert_eq!(source.sha256(), cadmpeg_ir::hash::sha256_hex(&bytes));
     let wire = namespace.arena_as::<serde_json::Value>("entries").unwrap();
     assert!(wire[0].get("data").is_none());
@@ -972,8 +864,6 @@ fn a_product_node_writes_occurrence_fields_and_a_container_without_them() {
     let record = serde_json::from_value::<super::ProductNodeRecord>(container.clone()).unwrap();
     assert_eq!(serde_json::to_value(record).unwrap(), container);
 }
-
-mod provenance;
 
 #[test]
 fn native_design_census_rejects_the_removed_neutral_feature_backlink() {

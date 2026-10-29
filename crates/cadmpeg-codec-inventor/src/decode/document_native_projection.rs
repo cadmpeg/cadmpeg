@@ -157,7 +157,7 @@ pub(super) fn project(
     Ok(())
 }
 
-/// Project only source properties that survived the shared dependency closure.
+/// Project source properties from the staged native property records.
 pub(super) fn project_source_properties(
     ctx: &DecodeContext<'_>,
     ir: &mut CadIr,

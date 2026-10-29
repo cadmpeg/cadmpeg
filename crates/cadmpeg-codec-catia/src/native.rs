@@ -1474,8 +1474,6 @@ pub(crate) struct CatiaDisplayColorRecord {
 pub(crate) struct CatiaExternalReference {
     /// Globally unique reference identity.
     pub(crate) id: String,
-    /// File offset of the length-prefixed target string.
-    pub(crate) byte_offset: u64,
     /// Referenced CATIA document name or path.
     pub(crate) target: String,
     /// Containing project-flags FINJPL segment.

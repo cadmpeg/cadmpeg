@@ -111,9 +111,6 @@ pub(super) enum DesignPath {
 /// Native Design records that phase 2 produces.
 #[derive(Debug, Default)]
 pub(super) struct DesignNative {
-    /// Source field offsets of the design-intent records, by record id.
-    pub(super) source_layout_pointers:
-        std::collections::BTreeMap<String, std::collections::BTreeMap<String, u64>>,
     asm_histories: Vec<AsmHistory>,
     asm_face_boundaries: Vec<AsmFaceBoundary>,
     persistent_references: Vec<PersistentReference>,
@@ -170,7 +167,6 @@ impl DesignNative {
     /// Record headers join the phase-1 headers.
     pub(super) fn store(self, native: &mut F3dNative) {
         let Self {
-            source_layout_pointers: _,
             asm_histories,
             asm_face_boundaries,
             persistent_references,
@@ -422,16 +418,9 @@ pub(super) fn decode(inputs: &DesignInputs<'_>) -> Result<DesignOutputs, CodecEr
             ),
         );
     }
-    design.persistent_references = crate::design::decode::sketch::decode_persistent_references(
-        ctx,
-        scan,
-        &mut design.source_layout_pointers,
-    )?;
-    design.lost_edge_references = crate::design::decode::sketch::decode_lost_edge_references(
-        ctx,
-        scan,
-        &mut design.source_layout_pointers,
-    )?;
+    design.persistent_references =
+        crate::design::decode::sketch::decode_persistent_references(scan)?;
+    design.lost_edge_references = crate::design::decode::sketch::decode_lost_edge_references(scan)?;
     design.sketch_relations = crate::design::decode::sketch::decode_sketch_relations(
         scan,
         &prereqs.design_record_headers,
@@ -445,11 +434,7 @@ pub(super) fn decode(inputs: &DesignInputs<'_>) -> Result<DesignOutputs, CodecEr
     for history in &mut design.asm_histories {
         history.release_topologies();
     }
-    design.sketch_points = crate::design::decode::sketch::decode_sketch_points(
-        ctx,
-        scan,
-        &mut design.source_layout_pointers,
-    )?;
+    design.sketch_points = crate::design::decode::sketch::decode_sketch_points(scan)?;
     design.sketch_texts = crate::design::decode::sketch::decode_sketch_texts(scan)?;
     design.sketch_curve_identities =
         crate::design::decode::sketch::decode_sketch_curve_identities(scan)?;
@@ -1075,11 +1060,9 @@ fn extend_related_design_records(
     append_related_record_headers(scan, &mut design.design_record_headers, &indices)?;
     design.design_parameter_companions =
         crate::design::decode::parameters::decode_parameter_companions(
-            ctx,
             scan,
             &prereqs.design_parameter_owners,
             &design.design_record_headers,
-            &mut design.source_layout_pointers,
         )?;
     design.design_face_source_groups = crate::design::decode::operands::decode_face_source_groups(
         ctx,
@@ -1087,18 +1070,10 @@ fn extend_related_design_records(
         &prereqs.design_types,
         &design.design_parameter_scopes,
     )?;
-    design.design_canvas_images = crate::design::decode::canvas::decode_canvas_images(
-        ctx,
-        scan,
-        &design.design_parameter_scopes,
-        &mut design.source_layout_pointers,
-    )?;
-    design.design_decal_images = crate::design::decode::decal::decode_decal_images(
-        ctx,
-        scan,
-        &design.design_parameter_scopes,
-        &mut design.source_layout_pointers,
-    )?;
+    design.design_canvas_images =
+        crate::design::decode::canvas::decode_canvas_images(scan, &design.design_parameter_scopes)?;
+    design.design_decal_images =
+        crate::design::decode::decal::decode_decal_images(scan, &design.design_parameter_scopes)?;
     crate::design::decode::operands::disambiguate_fixed_fillet_parameters(
         &mut design.design_parameter_scopes,
         &prereqs.design_parameter_owners,
@@ -1463,12 +1438,6 @@ fn extend_related_design_records(
             &design.design_record_headers,
             &prereqs.construction_recipes,
         )?;
-    crate::design::decode::operands::capture_edge_treatment_vertex_operands(
-        ctx,
-        scan,
-        &mut design.design_edge_treatment_vertex_operands,
-        &mut design.source_layout_pointers,
-    )?;
     crate::design::decode::operands::bind_edge_treatment_vertex_candidates(
         &mut design.design_edge_treatment_vertex_operands,
         geometry.persistent_subentity_tags,
@@ -1558,15 +1527,6 @@ fn extend_related_design_records(
                 stream_lengths: &stream_lengths,
             },
         )?;
-    for companion in &design.design_parameter_companions {
-        let fields = crate::design::decode::parameters::source_layout::pointer_fields(
-            ctx,
-            companion.payload_source_extent(),
-        )?;
-        if let Some(pointers) = design.source_layout_pointers.get_mut(companion.id()) {
-            pointers.extend(fields);
-        }
-    }
     design.design_dimension_recipe_records =
         crate::design::decode::dimension_frames::decode_dimension_recipe_records(
             scan,

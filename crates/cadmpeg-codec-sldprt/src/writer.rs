@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Semantic SLDPRT writer for analytic B-reps.
 
-use std::collections::{HashMap, HashSet, VecDeque};
+use std::collections::{BTreeSet, HashMap, HashSet, VecDeque};
 use std::io::Write;
 use std::num::NonZeroU16;
 
@@ -86,7 +86,11 @@ pub(crate) fn write_semantic_with_records(
         ir,
         annotations,
         retained_records,
-        source_fidelity.map_or(ClassLayouts::Unavailable, ClassLayouts::Source),
+        if source_fidelity.is_some() {
+            ClassLayouts::Source
+        } else {
+            ClassLayouts::Unavailable
+        },
         None,
         None,
         writer,
@@ -98,7 +102,7 @@ pub(super) fn write_semantic_at(
     ir: &CadIr,
     annotations: &Annotations,
     retained_records: &[SourceRecord<'_>],
-    class_layouts: ClassLayouts<'_>,
+    class_layouts: ClassLayouts,
     sw_version: Option<&str>,
     prepared_native: Option<SldprtNative>,
     writer: &mut dyn Write,
@@ -233,10 +237,10 @@ pub(super) fn write_semantic_at(
             parasolid_stream(&body, schema)?,
         )]
     };
-    let written_class_sources = if !retain_native_brep && ir.scope.design {
+    let written_classes = if !retain_native_brep && ir.scope.design {
         remap_written_geometry_references(ir, &partition_sections, &mut native)?
     } else {
-        crate::resolved_features::class_sources::ClassSources::default()
+        BTreeSet::new()
     };
     let mut generated_partition_sections = partition_sections
         .iter()
@@ -372,7 +376,7 @@ pub(super) fn write_semantic_at(
             histories,
             &feature_input_renames,
             class_layouts,
-            &written_class_sources,
+            &written_classes,
         )?;
         push_generated_metadata_member(
             &mut sections,
@@ -997,7 +1001,7 @@ fn remap_written_geometry_references(
     ir: &CadIr,
     partitions: &[(String, Vec<u8>)],
     native: &mut Option<crate::native::SldprtNative>,
-) -> Result<crate::resolved_features::class_sources::ClassSources, CodecError> {
+) -> Result<BTreeSet<String>, CodecError> {
     let active = ir
         .model
         .configurations
@@ -1085,7 +1089,7 @@ fn remap_written_geometry_references(
             .evaluation
             .set_definition(serde_json::from_value(value).map_err(CodecError::malformed)?);
     }
-    let (_, class_sources) = crate::history::write::features::synthesize_neutral_features(
+    let (_, written_classes) = crate::history::write::features::synthesize_neutral_features(
         &model,
         &model.parameters,
         &model.bodies,
@@ -1095,7 +1099,7 @@ fn remap_written_geometry_references(
     projected.model = model;
     crate::history::write::parameters::synchronize_parameter_records(&projected, native)?;
 
-    Ok(class_sources)
+    Ok(written_classes)
 }
 
 fn canonicalize_resolved_selection_spelling(value: &mut serde_json::Value) {
@@ -1934,25 +1938,12 @@ fn patch_active_configuration_xml(
     Ok(Some(output.into_bytes()))
 }
 
+/// Whether the lane classes the writer did not author come from a source.
 #[derive(Clone, Copy)]
-pub(super) enum ClassLayouts<'a> {
-    Source(&'a cadmpeg_ir::SourceFidelity),
+pub(super) enum ClassLayouts {
+    Source,
     Authored,
     Unavailable,
-}
-
-impl ClassLayouts<'_> {
-    fn has_class(self, class: &crate::records::FeatureInputClass) -> bool {
-        match self {
-            Self::Authored => true,
-            Self::Unavailable => false,
-            Self::Source(fidelity) => fidelity
-                .record_layout()
-                .get(&class.id)
-                .and_then(|layout| layout.pointers().get("offset"))
-                .is_some(),
-        }
-    }
 }
 
 /// The bytes written for one feature-input lane.
@@ -1967,30 +1958,24 @@ fn resolved_feature_payload(
     lane: &crate::records::FeatureInputLane,
     histories: &[crate::records::FeatureHistory],
     renames: &[crate::history::write::features::FeatureInputRename],
-    class_layouts: ClassLayouts<'_>,
-    written_classes: &crate::resolved_features::class_sources::ClassSources,
+    class_layouts: ClassLayouts,
+    written_classes: &BTreeSet<String>,
 ) -> Result<(Vec<u8>, bool), CodecError> {
     const MARKER: &[u8] = &[0xff, 0xff, 0x1f, 0x00, 0x03];
     let mut consumed_source_layout = false;
     let mut missing_class_layout = false;
     for class in &lane.classes {
-        if written_classes.position(class).is_some() {
+        if written_classes.contains(&class.id) {
             continue;
         }
-        if class_layouts.has_class(class) {
-            consumed_source_layout |= matches!(class_layouts, ClassLayouts::Source(_));
-        } else {
-            missing_class_layout = true;
+        match class_layouts {
+            ClassLayouts::Source => consumed_source_layout = true,
+            ClassLayouts::Authored => {}
+            ClassLayouts::Unavailable => missing_class_layout = true,
         }
     }
-    if lane.names.iter().any(|name| name.offset.is_none())
-        || missing_class_layout
-        || lane
-            .sketch_entities
-            .iter()
-            .any(|marker| marker.offset().is_none())
-    {
-        // (P): physical layout positions do not survive CADIR. Synthesis
+    if missing_class_layout {
+        // (P): without source fidelity the lane bytes are absent. Synthesis
         // authors a new layout from the typed content and its semantic order.
         return Err(CodecError::UnsupportedContent(format!(
             "feature-input lane {} has no source layout positions",
@@ -2002,8 +1987,7 @@ fn resolved_feature_payload(
         &lane.id,
         lane.configuration.clone(),
         lane.native_payload.to_vec(),
-    )?
-    .0;
+    )?;
     let expected_classes = &expected_lane.classes;
     if &lane.classes != expected_classes {
         return Err(CodecError::UnsupportedContent(format!(
@@ -2120,10 +2104,7 @@ fn resolved_feature_payload(
                     entity.id()
                 ))
             })?;
-        let offset = usize::try_from(entity.offset().ok_or_else(|| {
-            CodecError::UnsupportedContent("native marker has no source layout position".into())
-        })?)
-        .map_err(|_| {
+        let offset = usize::try_from(entity.offset()).map_err(|_| {
             CodecError::UnsupportedContent("feature-input offset exceeds address space".into())
         })?;
         let marker_end = offset.checked_add(MARKER.len()).ok_or_else(|| {
@@ -2256,12 +2237,7 @@ fn resolved_feature_payload(
             // (O-capacity): the target field cannot encode a value outside its width.
             CodecError::NotImplemented("feature-input object name exceeds 255 UTF-16 units".into())
         })?;
-        let start = usize::try_from(name.offset.ok_or_else(|| {
-            CodecError::UnsupportedContent(
-                "native object name has no source layout position".into(),
-            )
-        })?)
-        .map_err(|_| {
+        let start = usize::try_from(name.offset).map_err(|_| {
             CodecError::UnsupportedContent("feature-input name offset exceeds address space".into())
         })?;
         let end = start

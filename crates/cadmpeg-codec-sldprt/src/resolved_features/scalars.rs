@@ -16,22 +16,15 @@ use std::collections::HashMap;
 use crate::layout::feature_input_operand_cell12 as operand_cell;
 use crate::records::ObjectId;
 
-/// Native scalar values and transient frames of their physically parsed cells.
-pub(crate) struct ParsedScalars {
-    pub(crate) records: Vec<FeatureInputScalar>,
-    pub(super) cell_frames: std::collections::BTreeMap<String, std::ops::Range<usize>>,
-}
-
 pub(crate) fn named_scalars(
     payload: &[u8],
     parent: &str,
     names: &[FeatureInputName],
-) -> Result<ParsedScalars, CodecError> {
+) -> Result<Vec<FeatureInputScalar>, CodecError> {
     let lane_key = parent.rsplit_once('#').map_or(parent, |(_, key)| key);
     let mut scalars = Vec::new();
-    let mut cell_frames = std::collections::BTreeMap::new();
     for name in names {
-        let Some(name_offset) = name.offset.and_then(|offset| usize::try_from(offset).ok()) else {
+        let Some(name_offset) = usize::try_from(name.offset).ok() else {
             continue;
         };
         let Some(value_offset) = scalar_value_offset(payload, name_offset) else {
@@ -51,26 +44,21 @@ pub(crate) fn named_scalars(
         };
         let ordinal = u32::try_from(scalars.len())
             .map_err(|_| CodecError::malformed("SLDPRT named scalar ordinal overflows u32"))?;
-        let operands = scalar_operands(payload, trailer_offset, parent);
-        cell_frames.extend(operands.frames);
         scalars.push(FeatureInputScalar {
             id: format!("sldprt:feature-input:scalar#{lane_key}:{value_offset}"),
             parent: parent.to_owned(),
             feature_ref: None,
             ordinal,
             sequence: ordinal,
-            offset: Some(u64_from_index(value_offset)),
+            offset: u64_from_index(value_offset),
             object_id,
             name: name.id.clone(),
             value,
             role: scalar_role(payload, trailer_offset),
-            operands: operands.records,
+            operands: scalar_operands(payload, trailer_offset, parent),
         });
     }
-    Ok(ParsedScalars {
-        records: scalars,
-        cell_frames,
-    })
+    Ok(scalars)
 }
 
 /// The scalar payload offset that follows the serialized object name at
@@ -138,37 +126,29 @@ fn ulp_distance(left: f64, right: f64) -> u64 {
     ordered(left).abs_diff(ordered(right))
 }
 
-struct ParsedOperands {
-    records: Vec<FeatureInputOperand>,
-    frames: std::collections::BTreeMap<String, std::ops::Range<usize>>,
-}
-
 struct OperandCell {
-    frame: std::ops::Range<usize>,
+    offset: usize,
     kind: FeatureInputOperandKind,
     entity_index: u16,
 }
 
-fn scalar_operands(payload: &[u8], trailer_offset: usize, parent: &str) -> ParsedOperands {
+fn scalar_operands(
+    payload: &[u8],
+    trailer_offset: usize,
+    parent: &str,
+) -> Vec<FeatureInputOperand> {
     let lane_key = parent.rsplit_once('#').map_or(parent, |(_, key)| key);
-    let mut operands = Vec::new();
-    let mut frames = std::collections::BTreeMap::new();
-    for cell in operand_cells(payload, trailer_offset).into_iter().flatten() {
-        let offset = cell.frame.start;
-        let reference_ref = format!("sldprt:feature-input:reference#{lane_key}:{offset}");
-        frames.insert(reference_ref.clone(), cell.frame);
-        operands.push(FeatureInputOperand {
-            offset: Some(u64_from_index(offset)),
-            reference_ref,
+    operand_cells(payload, trailer_offset)
+        .into_iter()
+        .flatten()
+        .map(|cell| FeatureInputOperand {
+            offset: u64_from_index(cell.offset),
+            reference_ref: format!("sldprt:feature-input:reference#{lane_key}:{}", cell.offset),
             kind: cell.kind,
             entity_index: cell.entity_index,
             entity_ref: None,
-        });
-    }
-    ParsedOperands {
-        records: operands,
-        frames,
-    }
+        })
+        .collect()
 }
 
 fn operand_cells(payload: &[u8], trailer_offset: usize) -> [Option<OperandCell>; 2] {
@@ -198,7 +178,7 @@ fn operand_cells(payload: &[u8], trailer_offset: usize) -> [Option<OperandCell>;
             return None;
         }
         Some(OperandCell {
-            frame: offset..end,
+            offset,
             kind: operand_kind(
                 cell[operand_cell::CLASS_TOKEN..operand_cell::MARKER_ADDRESS]
                     .try_into()
@@ -275,7 +255,7 @@ impl FeatureObjectStarts {
             .iter()
             .flat_map(|history| &history.features)
             .filter_map(|feature| names.of(feature))
-            .filter_map(|name| name.offset)
+            .map(|name| name.offset)
             .collect::<Vec<_>>();
         starts.sort_unstable();
         Self(starts)

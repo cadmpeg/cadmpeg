@@ -1,5 +1,4 @@
 // SPDX-License-Identifier: Apache-2.0
-use cadmpeg_ir::source_fidelity::parts::PartState;
 use cadmpeg_ir::NativeUnknownRecord;
 
 use crate::test_support::test_owned::{owned_test_file, OwnedTestEntity};
@@ -84,53 +83,24 @@ fn unlocatable_parameter_data_keeps_its_readable_directory_entry_and_the_peer() 
         .get("quarantined_directory_records")
         .is_none_or(Vec::is_empty));
     let fidelity = decoded.source_fidelity();
-    assert_eq!(
-        fidelity.record_layout()["iges:entity:directory#1"],
-        baseline.source_fidelity().record_layout()["iges:entity:directory#1"]
-    );
-    let peer = fidelity
-        .parts()
-        .values()
-        .find(|part| {
-            part.level().as_str() == "iges.parameter_record"
-                && part.offset() == u64::try_from(parameter).expect("Parameter offset")
-        })
-        .expect("valid peer retains its actual Parameter part");
-    assert_eq!(peer.byte_len(), 81);
-    assert_eq!(peer.state(), &PartState::Decoded {});
     // The unlocated Parameter Data is a Parameter-section failure: every
     // given-up part lies inside the Parameter section.
     let parameter_section =
         u64::try_from(parameter).expect("offset")..u64::try_from(terminate).expect("offset");
-    for part in fidelity.parts().values() {
-        if matches!(part.state(), PartState::GivenUp {}) {
-            assert_ne!(part.level().as_str(), "iges.directory_entry");
-            assert!(parameter_section.start <= part.offset());
-            assert!(part.offset() + part.byte_len() <= parameter_section.end);
-        }
+    assert_eq!(
+        crate::test_support::given_up_count(decoded.report(), "iges.directory_entry"),
+        0
+    );
+    for part in crate::test_support::given_up_parts(fidelity) {
+        assert!(!part.untyped().is_empty());
+        assert!(parameter_section.start <= part.offset());
+        assert!(part.offset() + part.byte_len() <= parameter_section.end);
     }
     assert!(!decoded
         .report()
         .losses
         .iter()
         .any(|loss| loss.message.contains("cannot locate Parameter Data")));
-    let stream = peer.stream();
-    cadmpeg_test_support::contract::parts::check_one_home(
-        cadmpeg_ir::CodecFormat::Iges,
-        &decoded.ir().native,
-        fidelity,
-        &decoded.report().losses,
-        stream,
-        |requested, range| {
-            if requested != stream {
-                return None;
-            }
-            let start = usize::try_from(range.start).ok()?;
-            let end = usize::try_from(range.end).ok()?;
-            bytes.get(start..end)
-        },
-    )
-    .expect("every given-up part has one source home");
     assert!(cadmpeg_ir::validate_neutral(decoded.ir(), Vec::new())
         .expect("neutral validation")
         .is_ok());
@@ -159,13 +129,4 @@ fn a_real_back_pointer_run_admits_a_directory_with_an_unusable_declaration() {
         .losses
         .iter()
         .any(|loss| loss.code.local_code() == "record.unreadable"));
-    for sequence in [1, 3] {
-        let id = format!("iges:entity:directory#{sequence}");
-        let layout = &decoded.source_fidelity().record_layout()[&id];
-        assert_eq!(layout.byte_len(), 81);
-        assert!(!layout.reads().is_empty());
-        assert!(
-            layout.offset() >= u64::try_from(section(&points(), b'P')).expect("Parameter start")
-        );
-    }
 }

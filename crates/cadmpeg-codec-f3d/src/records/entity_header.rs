@@ -64,14 +64,15 @@ impl BaseTypeGuid {
         }
     }
 
-    fn from_content(value: Option<String>) -> Result<Self, String> {
+    fn from_content(value: Option<String>, offset: Option<u64>) -> Result<Self, String> {
         match value {
+            None if offset.is_some() => Err("base_type_guid_offset requires base_type_guid".into()),
             None => Ok(Self::Absent),
-            Some(value) if value.is_empty() => Ok(Self::EmptyRoot { offset: None }),
+            Some(value) if value.is_empty() => Ok(Self::EmptyRoot { offset }),
             Some(value) => Ok(Self::Guid {
                 value: DesignRelaxedGuidText::try_from(value)
                     .map_err(|error| format!("base_type_guid: {error}"))?,
-                offset: None,
+                offset,
             }),
         }
     }
@@ -193,12 +194,22 @@ impl Serialize for SegmentValues<'_> {
 struct SegmentTypeWireRef<'a> {
     id: &'a str,
     class_tag: &'a DesignClassTag,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    byte_offset: Option<u64>,
     type_guid: &'a DesignRelaxedGuidText,
     #[serde(skip_serializing_if = "Option::is_none")]
+    type_guid_offset: Option<u64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     base_type_guid: Option<&'a str>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    base_type_guid_offset: Option<u64>,
     version: u32,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    version_offset: Option<u64>,
     module: &'a str,
     entity_ids: SegmentValues<'a>,
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    entity_id_offsets: Vec<u64>,
 }
 impl Serialize for SegmentType {
     fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
@@ -210,11 +221,16 @@ impl Serialize for SegmentType {
         SegmentTypeWireRef {
             id: self.id.text(),
             class_tag: &self.class_tag,
+            byte_offset: self.byte_offset,
             type_guid: &self.type_guid,
+            type_guid_offset: self.type_guid_offset,
             base_type_guid,
+            base_type_guid_offset: self.base_type_guid.offset(),
             version: self.version,
+            version_offset: self.version_offset,
             module: &self.module,
             entity_ids: SegmentValues(&self.entities),
+            entity_id_offsets: self.entities.offsets().copied().collect(),
         }
         .serialize(serializer)
     }
@@ -229,16 +245,26 @@ impl Serialize for SegmentType {
 struct SegmentTypeWire {
     id: String,
     class_tag: DesignClassTag,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    byte_offset: Option<u64>,
     type_guid: DesignRelaxedGuidText,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    type_guid_offset: Option<u64>,
     #[serde(
         default,
         skip_serializing_if = "Option::is_none",
         deserialize_with = "deserialize_base_type_guid"
     )]
     base_type_guid: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    base_type_guid_offset: Option<u64>,
     version: u32,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    version_offset: Option<u64>,
     module: String,
     entity_ids: Vec<u64>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    entity_id_offsets: Vec<u64>,
 }
 
 impl TryFrom<SegmentTypeWire> for SegmentType {
@@ -252,14 +278,21 @@ impl TryFrom<SegmentTypeWire> for SegmentType {
             id,
             data: SegmentTypeData {
                 class_tag: wire.class_tag,
-                byte_offset: None,
+                byte_offset: wire.byte_offset,
                 type_guid: wire.type_guid,
-                type_guid_offset: None,
-                base_type_guid: BaseTypeGuid::from_content(wire.base_type_guid)?,
+                type_guid_offset: wire.type_guid_offset,
+                base_type_guid: BaseTypeGuid::from_content(
+                    wire.base_type_guid,
+                    wire.base_type_guid_offset,
+                )?,
                 version: wire.version,
-                version_offset: None,
+                version_offset: wire.version_offset,
                 module: wire.module,
-                entities: ReferenceRun::unlocated(wire.entity_ids),
+                entities: ReferenceRun::from_columns(
+                    wire.entity_ids,
+                    wire.entity_id_offsets,
+                    "entity_id",
+                )?,
             },
         })
     }
@@ -270,10 +303,15 @@ impl From<SegmentType> for SegmentTypeWire {
         Self {
             id: value.id.into_string(),
             class_tag: value.data.class_tag,
+            byte_offset: value.data.byte_offset,
             type_guid: value.data.type_guid,
+            type_guid_offset: value.data.type_guid_offset,
+            base_type_guid_offset: value.data.base_type_guid.offset(),
             base_type_guid: value.data.base_type_guid.into_content(),
             version: value.data.version,
+            version_offset: value.data.version_offset,
             module: value.data.module,
+            entity_id_offsets: value.data.entities.offsets().copied().collect(),
             entity_ids: value.data.entities.values().copied().collect(),
         }
     }
@@ -788,7 +826,11 @@ struct DesignEntityHeaderWireRef<'a> {
     #[serde(skip_serializing_if = "Option::is_none")]
     record_reference: Option<u32>,
     #[serde(skip_serializing_if = "Option::is_none")]
+    record_reference_offset: Option<u64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     reference_indices: Option<HeaderReferenceValues<'a>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    reference_offsets: Option<Vec<u64>>,
     #[serde(skip_serializing_if = "HeaderMemberValues::is_empty")]
     member_indices: HeaderMemberValues<'a>,
 }
@@ -805,7 +847,11 @@ impl Serialize for DesignEntityHeader {
             class_tag: self.class_tag.as_str(),
             module: self.module(),
             record_reference: references.and_then(|list| list.record_reference),
+            record_reference_offset: references.and_then(|list| list.record_reference_offset),
             reference_indices: references.map(HeaderReferenceValues),
+            reference_offsets: references
+                .filter(|list| !list.references.is_empty())
+                .and_then(|list| list.references.iter().map(|row| row.offset).collect()),
             member_indices: HeaderMemberValues(members),
         }
         .serialize(serializer)
@@ -830,12 +876,16 @@ struct DesignEntityHeaderWire {
         deserialize_with = "deserialize_record_reference"
     )]
     record_reference: Option<u32>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    record_reference_offset: Option<u64>,
     #[serde(
         default,
         skip_serializing_if = "Option::is_none",
         deserialize_with = "deserialize_reference_indices"
     )]
     reference_indices: Option<Vec<u32>>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    reference_offsets: Option<Vec<u64>>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     member_indices: Vec<u32>,
 }
@@ -845,17 +895,32 @@ impl TryFrom<DesignEntityHeaderWire> for DesignEntityHeader {
         if wire.record_reference.is_some() && wire.reference_indices.is_none() {
             return Err("record_reference requires a reference_indices list".into());
         }
-        let references = wire.reference_indices.map(|values| SketchHeaderReferences {
-            record_reference: wire.record_reference,
-            record_reference_offset: None,
-            references: values
-                .into_iter()
-                .map(|value| Located {
-                    value,
-                    offset: None,
+        if (wire.record_reference_offset.is_some() || wire.reference_offsets.is_some())
+            && wire.reference_indices.is_none()
+        {
+            return Err("reference offsets require a reference_indices list".into());
+        }
+        let references = match wire.reference_indices {
+            None => None,
+            Some(values) => {
+                let offsets = match wire.reference_offsets {
+                    None => vec![None; values.len()],
+                    Some(offsets) if offsets.len() == values.len() => {
+                        offsets.into_iter().map(Some).collect()
+                    }
+                    Some(_) => return Err("reference_offsets must match reference_indices".into()),
+                };
+                Some(SketchHeaderReferences {
+                    record_reference: wire.record_reference,
+                    record_reference_offset: wire.record_reference_offset,
+                    references: values
+                        .into_iter()
+                        .zip(offsets)
+                        .map(|(value, offset)| Located { value, offset })
+                        .collect(),
                 })
-                .collect(),
-        });
+            }
+        };
         Ok(Self {
             registration: DesignEntityRegistration::new(
                 wire.module,
@@ -888,6 +953,13 @@ impl From<DesignEntityHeader> for DesignEntityHeaderWire {
             class_tag: header.class_tag.into(),
             module,
             record_reference: references.as_ref().and_then(|list| list.record_reference),
+            record_reference_offset: references
+                .as_ref()
+                .and_then(|list| list.record_reference_offset),
+            reference_offsets: references
+                .as_ref()
+                .filter(|list| !list.references.is_empty())
+                .and_then(|list| list.references.iter().map(|row| row.offset).collect()),
             reference_indices: references
                 .map(|list| list.references.into_iter().map(|row| row.value).collect()),
             member_indices: members.values().copied().collect(),

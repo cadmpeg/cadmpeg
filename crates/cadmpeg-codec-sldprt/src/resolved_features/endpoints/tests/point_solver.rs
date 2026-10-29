@@ -36,7 +36,7 @@ fn lane(constraints: &[([u16; 2], f64)]) -> FeatureInputLane {
             feature_ref: Some("feature".into()),
             ordinal: u32::try_from(ordinal).unwrap(),
             sequence: u32::try_from(ordinal).unwrap(),
-            offset: Some(u64::try_from(ordinal).unwrap()),
+            offset: u64::try_from(ordinal).unwrap(),
             object_id: 0,
             name: "distance".into(),
             value: FiniteReal::new(*distance).unwrap(),
@@ -44,7 +44,7 @@ fn lane(constraints: &[([u16; 2], f64)]) -> FeatureInputLane {
             operands: indices
                 .iter()
                 .map(|index| FeatureInputOperand {
-                    offset: Some(0),
+                    offset: 0,
                     reference_ref: format!("reference-{index}"),
                     kind: FeatureInputOperandKind::Native(NativeOperandTag::TAG_8100),
                     entity_index: *index,

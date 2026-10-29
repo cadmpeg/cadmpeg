@@ -14,7 +14,7 @@ use std::collections::{BTreeMap, HashMap};
 
 use cadmpeg_asm::brep::transfer::{transfer_into_ir, AsmTransferRemainder};
 use cadmpeg_asm::brep::AsmBrep;
-use cadmpeg_core::decode::{DecodeContext, DecodeDepth, View};
+use cadmpeg_core::decode::{DecodeContext, DecodeDepth, SpaceId, View};
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::assets::{Asset, AssetContent, AssetId};
 use cadmpeg_ir::codec::{DecodeBody, Decoded};
@@ -22,6 +22,7 @@ use cadmpeg_ir::document::{CadIr, SourceMeta};
 use cadmpeg_ir::hash::sha256_hex;
 use cadmpeg_ir::ids::{ProductDefinitionId, UnknownId};
 use cadmpeg_ir::products::{ProductDefinition, ProductDefinitionKind};
+use cadmpeg_ir::source_fidelity::parts::PartSpec;
 use cadmpeg_ir::{AnnotationBuilder, UnknownRecord};
 
 use crate::container::InventorContainer;
@@ -52,6 +53,25 @@ use crate::rse::{DatabaseState, DocumentKind, ParsedState};
 
 pub(crate) fn decode(ctx: &DecodeContext<'_>, root: View<'_>) -> Result<Decoded, CodecError> {
     decode_container(ctx, InventorContainer::open(ctx, root)?)
+}
+
+/// A part over `extent`, naming `stream` when the extent is outside the root input.
+pub(crate) fn part_spec(
+    label: &'static str,
+    extent: View<'_>,
+    stream: impl FnOnce() -> String,
+) -> Result<PartSpec, CodecError> {
+    let spec = PartSpec::new(label);
+    if extent.location().space == SpaceId::ROOT {
+        return Ok(spec);
+    }
+    let name = cadmpeg_ir::StreamName::try_from(stream()).map_err(CodecError::malformed)?;
+    Ok(spec.in_stream(name))
+}
+
+/// The stream name of a segment's expanded bulk body.
+pub(crate) fn expanded_bulk_stream(token: &str) -> String {
+    format!("RSeStorage/B{token}:expanded")
 }
 
 fn decode_container<'a>(
@@ -441,13 +461,12 @@ fn decode_container<'a>(
         }
     }
     let source_meta_type_count = container.rse.source_meta_type_count;
-    let projection = rse_native_projection::project(ctx, &container, &assembly_inventory.parts)?;
+    let projection = rse_native_projection::project(ctx, &container)?;
     structural_issues.extend(projection.identity_issues);
     let segment_pairs = projection.segment_pairs;
     let segment_meta = projection.segment_meta;
     let meta_sections = projection.meta_sections;
     let segment_meta_issues = projection.segment_meta_issues;
-    let source_layout = projection.layout;
     let rse_records = projection.rse_records;
     let segment_bulk = projection.segment_bulk;
     let segment_bulk_issues = projection.segment_bulk_issues;
@@ -1063,11 +1082,8 @@ fn decode_container<'a>(
     if ctx.container_only() {
         ir.model = cadmpeg_ir::document::Model::default();
     }
-    // Every source-owned native and its projected occurrence enters this same
-    // stage before the one required dependency closure. Parser stubs are never
-    // finalized separately from their semantic dependents.
     let (part_model, mut part_native, part_fidelity, mut part_losses) =
-        assembly_inventory.parts.into_parts(ctx)?.into_parts();
+        assembly_inventory.parts.into_parts();
     if !ctx.container_only() {
         ir.model.occurrences = part_model.occurrences;
         ir.model.appearance_bindings = part_model.appearance_bindings;
@@ -1153,13 +1169,6 @@ fn decode_container<'a>(
     losses.append(&mut part_losses);
     let preview_asset_count = ir.model.assets.len();
     let mut source_fidelity = part_fidelity;
-    source_fidelity.metadata = source_layout;
-    if let ActiveCarrierState::Selected(carrier) = &container.rse.active_carrier {
-        source_fidelity.metadata.insert(
-            "inventor:kernel:carrier.carrier_offset".into(),
-            carrier.carrier_offset.to_string(),
-        );
-    }
     let mut annotations = AnnotationBuilder::new();
     for record in kernel_annotations {
         admit_kernel_annotation(&mut annotations, &record)?;
@@ -1176,7 +1185,7 @@ fn decode_container<'a>(
             )?;
             let data = carrier.bytes.window().to_vec();
             source_fidelity.retain_unknown_records(
-                format!("RSeStorage/B{}:expanded", carrier.segment_token),
+                expanded_bulk_stream(carrier.segment_token.as_str()),
                 [UnknownRecord::retained(
                     UnknownId::compose(
                         &cadmpeg_ir::identity_namespace!("inventor", "kernel", "carrier"),
@@ -1465,7 +1474,6 @@ fn decode_container<'a>(
         )?
         .with_untyped(untyped),
     )?;
-    source_fidelity.install_mapped_record_captures(ctx, Ok)?;
     let body = DecodeBody {
         transfer: cadmpeg_ir::report::decode::DecodeTransfer {
             scope: ir.scope,

@@ -327,38 +327,4 @@ impl From<DesignMirrorScopeTolerance> for DesignMirrorScopeToleranceWire {
     }
 }
 
-impl crate::records::source_offsets::SourceOffsets for DesignMirrorConstruction {
-    fn visit_source_offsets(
-        &mut self,
-        offsets: &mut crate::records::source_offsets::OffsetVisitor<'_>,
-    ) {
-        offsets.offset("count_offset", &mut self.count_offset);
-        offsets.offset("stitch_tolerance_offset", &mut self.stitch_tolerance_offset);
-        if let DesignMirrorToleranceSource::Scope(scope) = &mut self.tolerance_source {
-            offsets.nested("stitch_tolerance_scope", |offsets| {
-                offsets.offset("marker_offset", &mut scope.marker_offset);
-                match &mut scope.marker {
-                    DesignMirrorToleranceMarker::Single61 => {}
-                    DesignMirrorToleranceMarker::Repeated89(offset)
-                    | DesignMirrorToleranceMarker::Repeated94(offset)
-                    | DesignMirrorToleranceMarker::Repeated100(offset) => {
-                        offsets.offset("repeated_marker_offset", offset);
-                    }
-                }
-                offsets.offset("first_reference_offset", &mut scope.first_reference_offset);
-                offsets.offset(
-                    "second_reference_offset",
-                    &mut scope.second_reference_offset,
-                );
-            });
-        }
-        if let Some(reference) = &mut self.seed_feature_scope_record_index {
-            offsets.sourced("seed_feature_reference_offset", reference);
-        }
-        if let Some(reference) = &mut self.plane_scope_record_index {
-            offsets.sourced("plane_reference_offset", reference);
-        }
-    }
-}
-
 mod identity_rewrite;

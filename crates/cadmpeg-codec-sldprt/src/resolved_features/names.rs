@@ -54,7 +54,7 @@ pub(crate) fn object_names(
             parent: parent.to_owned(),
             ordinal,
             sequence: ordinal,
-            offset: Some(u64_from_index(offset)),
+            offset: u64_from_index(offset),
             object_id,
             value: decoded,
         });
@@ -159,6 +159,7 @@ pub(crate) fn class_declarations(
             parent: parent.to_owned(),
             ordinal,
             sequence: ordinal,
+            offset: u64_from_index(offset),
             name: name.to_owned(),
         });
     }

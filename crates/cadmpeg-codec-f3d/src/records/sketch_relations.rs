@@ -504,7 +504,19 @@ impl Serialize for SketchRelation {
             id: &'a str,
             record_index: u32,
             class_tag: &'a str,
+            #[serde(skip_serializing_if = "Option::is_none")]
+            byte_offset: Option<u64>,
+            #[serde(skip_serializing_if = "Option::is_none")]
+            state_offset: Option<u32>,
             owner_reference: u32,
+            #[serde(skip_serializing_if = "Option::is_none")]
+            owner_reference_offset: Option<u32>,
+            #[serde(skip_serializing_if = "Vec::is_empty")]
+            auxiliary_reference_offsets: Vec<u32>,
+            #[serde(skip_serializing_if = "Vec::is_empty")]
+            member_offsets: Vec<u32>,
+            #[serde(skip_serializing_if = "Vec::is_empty")]
+            return_member_offsets: Vec<u32>,
             owner_entity_id: &'a str,
             auxiliary_references: AuxiliaryValues<'a>,
             #[serde(skip_serializing_if = "Option::is_none")]
@@ -525,7 +537,15 @@ impl Serialize for SketchRelation {
             id: &self.id,
             record_index: self.record_index,
             class_tag: self.class_tag.as_str(),
+            byte_offset: self.byte_offset,
+            state_offset: self.state_offset,
             owner_reference: self.owner_reference,
+            owner_reference_offset: self.owner_reference_offset,
+            auxiliary_reference_offsets: self.auxiliary_references.offsets().copied().collect(),
+            member_offsets: located_offsets(self.members.0.iter().map(|row| row.offset)),
+            return_member_offsets: located_offsets(
+                self.return_members.0.iter().map(|row| row.offset),
+            ),
             owner_entity_id: self
                 .owner_entity_id
                 .as_ref()
@@ -943,14 +963,31 @@ fn pad_resolved(
     }
 }
 
-/// Semantic form of a sketch relation; offsets and payload bytes live in fidelity.
+/// The offsets of a run whose rows are all located; empty otherwise.
+fn located_offsets(offsets: impl Iterator<Item = Option<u32>>) -> Vec<u32> {
+    offsets.collect::<Option<Vec<_>>>().unwrap_or_default()
+}
+
+/// Wire form of a sketch relation.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub(crate) struct SketchRelationSerde {
     id: String,
     record_index: u32,
     class_tag: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    byte_offset: Option<u64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    state_offset: Option<u32>,
     owner_reference: u32,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    owner_reference_offset: Option<u32>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    auxiliary_reference_offsets: Vec<u32>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    member_offsets: Vec<u32>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    return_member_offsets: Vec<u32>,
     #[serde(default)]
     owner_entity_id: String,
     #[serde(default)]
@@ -991,7 +1028,7 @@ impl TryFrom<SketchRelationSerde> for SketchRelation {
                 .map_err(SketchRelationPayloadError)?,
             owner_reference: wire.owner_reference,
             owner_entity_id: cadmpeg_core::text::NonBlankString::new(wire.owner_entity_id),
-            auxiliary_references: ReferenceRun::unlocated(wire.auxiliary_references),
+            auxiliary_references: ReferenceRun::unlocated(Vec::new()),
             rectangular_counted_reference_count: wire.rectangular_counted_reference_count,
             members: zip_relation_members(
                 wire.members,
@@ -1002,6 +1039,49 @@ impl TryFrom<SketchRelationSerde> for SketchRelation {
             entity_genesis: wire.entity_genesis,
             return_members: zip_return_members(wire.return_members, wire.resolved_return_members)?,
         });
+        relation.byte_offset = wire.byte_offset;
+        relation.state_offset = wire.state_offset;
+        relation.owner_reference_offset = wire.owner_reference_offset;
+        relation.auxiliary_references = ReferenceRun::from_columns(
+            wire.auxiliary_references,
+            wire.auxiliary_reference_offsets,
+            "auxiliary_reference",
+        )
+        .map_err(SketchRelationPayloadError)?;
+        for (field, offsets, rows) in [
+            (
+                "member_offsets",
+                wire.member_offsets,
+                relation
+                    .members
+                    .0
+                    .iter_mut()
+                    .map(|row| &mut row.offset)
+                    .collect::<Vec<_>>(),
+            ),
+            (
+                "return_member_offsets",
+                wire.return_member_offsets,
+                relation
+                    .return_members
+                    .0
+                    .iter_mut()
+                    .map(|row| &mut row.offset)
+                    .collect::<Vec<_>>(),
+            ),
+        ] {
+            if offsets.is_empty() {
+                continue;
+            }
+            if offsets.len() != rows.len() {
+                return Err(SketchRelationPayloadError(format!(
+                    "sketch relation {field} must match its members"
+                )));
+            }
+            for (slot, offset) in rows.into_iter().zip(offsets) {
+                *slot = Some(offset);
+            }
+        }
         relation.raw_bytes = wire.frame;
         Ok(relation)
     }
@@ -1013,7 +1093,15 @@ impl From<SketchRelation> for SketchRelationSerde {
             id: relation.id,
             record_index: relation.record_index,
             class_tag: relation.class_tag.into(),
+            byte_offset: relation.byte_offset,
+            state_offset: relation.state_offset,
             owner_reference: relation.owner_reference,
+            owner_reference_offset: relation.owner_reference_offset,
+            auxiliary_reference_offsets: relation.auxiliary_references.offsets().copied().collect(),
+            member_offsets: located_offsets(relation.members.iter().map(|row| row.offset)),
+            return_member_offsets: located_offsets(
+                relation.return_members.iter().map(|row| row.offset),
+            ),
             owner_entity_id: relation
                 .owner_entity_id
                 .map(|owner| owner.as_str().to_owned())

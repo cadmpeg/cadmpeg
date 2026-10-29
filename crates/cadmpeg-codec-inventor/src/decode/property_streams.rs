@@ -1,9 +1,9 @@
 // SPDX-License-Identifier: Apache-2.0
-//! CFB-stream ownership for actual OLE property-set source admission.
+//! OLE property-set stream parts.
 
 use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_core::CodecError;
-use cadmpeg_ir::source_fidelity::parts::{DecodeParts, PartLevel, PartOutput, PartSpec};
+use cadmpeg_ir::source_fidelity::parts::{DecodeParts, PartOutput};
 
 use crate::property_set::{PropertySection, PropertySetDescriptor};
 
@@ -23,13 +23,10 @@ pub(super) fn stage<'a>(
     let source = descriptor
         .source
         .ok_or_else(|| CodecError::malformed("held property syntax has no source stream"))?;
-    ctx.capture_part_extent(source)?;
-    let level = PartLevel::parse("cfb.stream")
-        .ok_or_else(|| CodecError::malformed("CFB stream is absent from Appendix C"))?;
     ctx.decode_part(
         output,
         source,
-        PartSpec::new(level, Vec::new()),
+        super::part_spec("cfb.stream", source, || descriptor.path.clone())?,
         |stream_stage| {
             let (header_formed, count) =
                 crate::property_set::source_admission::stage_source_header(

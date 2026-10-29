@@ -20,7 +20,6 @@ use crate::records::ObjectId;
 use crate::records::{
     Feature, FeatureHistory, FeatureInputClass, FeatureInputLane, FeatureInputName,
 };
-use crate::resolved_features::class_sources::ClassSources;
 use cadmpeg_ir::features::{FeatureDefinition, FeatureOperation};
 use cadmpeg_ir::math::{Point3, Vector3};
 use std::collections::BTreeMap;
@@ -56,7 +55,7 @@ fn reference_point_lane(layout: usize, form: u16, point: [f64; 3]) -> FeatureInp
             id: "name".into(),
             parent: "lane".into(),
             ordinal: 0,
-            offset: Some(0),
+            offset: 0,
             object_id: ObjectId::from_value(2080),
             value: name.into(),
         }],
@@ -444,6 +443,7 @@ fn two_points_axis_data_frame_is_anchored_after_class_name() {
         native_payload: payload.into(),
         classes: vec![FeatureInputClass {
             sequence: u32::try_from(cadmpeg_core::decode::u64_from_index(class_offset)).unwrap(),
+            offset: cadmpeg_core::decode::u64_from_index(class_offset),
             feature_ref: None,
             id: "class".into(),
             parent: "lane".into(),
@@ -456,7 +456,7 @@ fn two_points_axis_data_frame_is_anchored_after_class_name() {
             id: "name".into(),
             parent: "lane".into(),
             ordinal: 0,
-            offset: Some(0),
+            offset: 0,
             object_id: ObjectId::from_value(2080),
             value: "Axis1".into(),
         }],
@@ -471,12 +471,7 @@ fn two_points_axis_data_frame_is_anchored_after_class_name() {
         sketch_entities: Vec::new(),
     };
 
-    let class_sources = ClassSources::from_positions([(
-        &lane.classes[0],
-        cadmpeg_core::decode::u64_from_index(class_offset),
-    )]);
     super::enrich_history_reference_axes(
-        &class_sources,
         &cadmpeg_test_support::service_decode_context(),
         &mut histories,
         &[lane],
@@ -1060,7 +1055,7 @@ fn classless_reference_plane_enrichment_marks_a_constructed_midplane_axis() {
             id: "name".into(),
             parent: "lane".into(),
             ordinal: 0,
-            offset: Some(0),
+            offset: 0,
             object_id: ObjectId::from_value(2080),
             value: "MidPlane".into(),
         }],
@@ -1076,7 +1071,6 @@ fn classless_reference_plane_enrichment_marks_a_constructed_midplane_axis() {
     };
 
     super::enrich_history_reference_planes(
-        &crate::test_support::native::class_sources(&[&lane]),
         &cadmpeg_test_support::service_decode_context(),
         &mut histories,
         &[lane],

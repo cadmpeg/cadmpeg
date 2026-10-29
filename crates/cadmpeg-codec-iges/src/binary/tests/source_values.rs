@@ -1,6 +1,4 @@
 // SPDX-License-Identifier: Apache-2.0
-use std::collections::BTreeMap;
-
 use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::codec::Codec as _;
@@ -50,23 +48,14 @@ fn physical_repeat_navigation_is_lazy_and_only_original_coordinate_bytes_are_rea
     prefixed.extend_from_slice(&bytes);
     prefixed.extend_from_slice(b"tail");
     let arena = DecodeArena::new();
-    let (ctx, root) = DecodeContext::from_root_bytes(&prefixed, &arena, &DecodePolicy::service())
+    let (_ctx, root) = DecodeContext::from_root_bytes(&prefixed, &arena, &DecodePolicy::service())
         .expect("source");
     let source = root
         .child(4, 4 + bytes.len())
         .expect("original value stream");
-    let actual = ctx
-        .record("iges:entity:directory#1", source, || {
-            consume(&mut ValueStream::source_line(source, lengths(8)))
-        })
-        .expect("actual source values");
+    let actual =
+        consume(&mut ValueStream::new(source.window(), lengths(8))).expect("actual source values");
     assert_eq!(actual, [110, 1, 1, 2, 3, 4, 5, 6].map(BinaryValue::Integer));
-    let captures = ctx.take_record_captures().expect("one drain");
-    assert_eq!(captures.len(), 1);
-    assert_eq!(
-        captures[0].reads(),
-        &BTreeMap::from([("file".to_owned(), vec![7..13])])
-    );
 }
 
 #[test]
@@ -77,25 +66,12 @@ fn a_shared_primitive_is_read_once_for_its_kept_uses_and_prefix_only_use_gets_no
         writer.integer(110, 8);
         let bytes = writer.bytes();
         let arena = DecodeArena::new();
-        let (ctx, source) =
+        let (_ctx, source) =
             DecodeContext::from_root_bytes(&bytes, &arena, &DecodePolicy::service())
                 .expect("source");
-        let values = ctx
-            .record("iges:entity:directory#1", source, || {
-                consume(&mut ValueStream::source_line(source, lengths(8)))
-            })
+        let values = consume(&mut ValueStream::new(source.window(), lengths(8)))
             .expect("same physical primitive produces its actual repeated values");
         assert_eq!(values, vec![BinaryValue::Integer(110); usize::from(repeat)]);
-        let captures = ctx.take_record_captures().expect("one drain");
-        assert_eq!(captures.len(), 1);
-        if repeat == 2 {
-            assert!(captures[0].reads().is_empty());
-        } else {
-            assert_eq!(
-                captures[0].reads(),
-                &BTreeMap::from([("file".to_owned(), vec![1..2])])
-            );
-        }
     }
 }
 
@@ -114,57 +90,23 @@ fn nonbyte_integer_padding_is_checked_and_failure_rolls_back_before_the_peer() {
     let mut bytes = bad.clone();
     bytes.extend_from_slice(&good);
     let arena = DecodeArena::new();
-    let (ctx, root) =
+    let (_ctx, root) =
         DecodeContext::from_root_bytes(&bytes, &arena, &DecodePolicy::service()).expect("source");
     let failed = root.child(0, bad.len()).expect("actual failed body");
-    let error = ctx
-        .record("iges:entity:directory#1", failed, || {
-            consume(&mut ValueStream::source_line(failed, lengths(12)))
-        })
+    let error = consume(&mut ValueStream::new(failed.window(), lengths(12)))
         .expect_err("nonzero actual alignment padding");
     assert!(error.to_string().contains("padding contains a one bit"));
     let peer = root
         .child(bad.len(), bytes.len())
         .expect("actual peer body");
-    let values = ctx
-        .record("iges:entity:directory#3", peer, || {
-            consume(&mut ValueStream::source_line(peer, lengths(12)))
-        })
-        .expect("independent peer");
+    let values =
+        consume(&mut ValueStream::new(peer.window(), lengths(12))).expect("independent peer");
     assert_eq!(values, [110, 1, 1, 2, 3, 4, 5, 6].map(BinaryValue::Integer));
-    let captures = ctx
-        .take_record_captures()
-        .expect("one drain after failure and peer");
-    assert_eq!(captures.len(), 1);
-    assert_eq!(captures[0].id(), "iges:entity:directory#3");
-    let expected: Vec<_> = (2..8)
-        .map(|field| {
-            let start = u64::try_from(bad.len() + field * 3 + 1).expect("actual field offset");
-            start..start + 2
-        })
-        .collect();
-    assert_eq!(
-        captures[0].reads(),
-        &BTreeMap::from([("file".to_owned(), expected)])
-    );
 }
 
 #[test]
 fn source_line_normalization_refuses_a_foreign_session_and_keeps_the_public_input_limit() {
     let bytes = crate::test_support::binary_parts::plain_line_then_point(1, false);
-    let arena = DecodeArena::new();
-    let (ctx, _) = DecodeContext::from_root_bytes(&bytes, &arena, &DecodePolicy::service())
-        .expect("caller session");
-    let (_other, foreign) =
-        DecodeContext::from_root_bytes(&bytes, &arena, &DecodePolicy::service())
-            .expect("different session");
-    let error = crate::binary::parts::normalize(foreign, &ctx)
-        .err()
-        .expect("foreign provenance is refused");
-    assert!(error
-        .to_string()
-        .contains("another or detached decode session"));
-    assert!(ctx.take_record_captures().expect("one drain").is_empty());
     let mut options = cadmpeg_ir::codec::DecodeOptions::default();
     let limit = u64::try_from(bytes.len() - 1).expect("actual bounded input limit");
     options.policy.limits.max_input_bytes = limit;
@@ -188,12 +130,9 @@ fn default_coordinate_repetitions_do_not_credit_their_control_byte() {
     writer.control_repeat(false, 6, 0);
     let bytes = writer.bytes();
     let arena = DecodeArena::new();
-    let (ctx, source) =
+    let (_ctx, source) =
         DecodeContext::from_root_bytes(&bytes, &arena, &DecodePolicy::service()).expect("source");
-    let values = ctx
-        .record("iges:entity:directory#1", source, || {
-            consume(&mut ValueStream::source_line(source, lengths(8)))
-        })
+    let values = consume(&mut ValueStream::new(source.window(), lengths(8)))
         .expect("actual omitted-coordinate values");
     assert_eq!(
         &values[..2],
@@ -210,9 +149,6 @@ fn default_coordinate_repetitions_do_not_credit_their_control_byte() {
             BinaryValue::Default
         ]
     );
-    let captures = ctx.take_record_captures().expect("one drain");
-    assert_eq!(captures.len(), 1);
-    assert!(captures[0].reads().is_empty());
 }
 
 #[test]
@@ -232,36 +168,20 @@ fn a_truncated_physical_repeat_cannot_consume_the_neighboring_source_window() {
     let mut bytes = bad.clone();
     bytes.extend_from_slice(&good);
     let arena = DecodeArena::new();
-    let (ctx, root) =
+    let (_ctx, root) =
         DecodeContext::from_root_bytes(&bytes, &arena, &DecodePolicy::service()).expect("source");
     let failed = root
         .child(0, bad.len())
         .expect("the original failed body boundary");
-    let error = ctx
-        .record("iges:entity:directory#1", failed, || {
-            consume(&mut ValueStream::source_line(failed, lengths(8)))
-        })
+    let error = consume(&mut ValueStream::new(failed.window(), lengths(8)))
         .expect_err("a repeat has no payload outside its actual window");
     assert!(error.to_string().contains("primitive is truncated"));
     let peer = root
         .child(bad.len(), bytes.len())
         .expect("the original peer body boundary");
-    let values = ctx
-        .record("iges:entity:directory#3", peer, || {
-            consume(&mut ValueStream::source_line(peer, lengths(8)))
-        })
-        .expect("independent source peer");
+    let values =
+        consume(&mut ValueStream::new(peer.window(), lengths(8))).expect("independent source peer");
     assert_eq!(values, [110, 1, 1, 2, 3, 4, 5, 6].map(BinaryValue::Integer));
-    let captures = ctx
-        .take_record_captures()
-        .expect("one drain after both attempts");
-    assert_eq!(captures.len(), 1);
-    assert_eq!(captures[0].id(), "iges:entity:directory#3");
-    let start = u64::try_from(bad.len() + 3).expect("actual peer coordinate start");
-    assert_eq!(
-        captures[0].reads(),
-        &BTreeMap::from([("file".to_owned(), vec![start..start + 6])])
-    );
 }
 
 #[test]
@@ -298,9 +218,6 @@ fn unproved_global_integer_capacity_keeps_the_existing_uncredited_handoff() {
     for (index, expected) in [110, 1, 2, 3, 4, 5, 6].into_iter().enumerate() {
         assert_eq!(records[0].integer(index), Some(expected));
     }
-    let captures = ctx.take_record_captures().expect("one drain");
-    assert_eq!(captures.len(), 2);
-    assert!(captures.iter().all(|capture| capture.reads().is_empty()));
     let decoded = crate::test_support::decode(bytes.clone());
     assert_eq!(decoded.ir().model.curves.len(), 1);
     assert_eq!(decoded.ir().model.points.len(), 3);

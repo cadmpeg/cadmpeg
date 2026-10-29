@@ -25,7 +25,6 @@ fn metadata_scan() -> crate::container::Scan<'static> {
 
 fn revision() -> crate::settings::RevisionHistory {
     crate::settings::RevisionHistory {
-        source: crate::settings::SourceRange { range: 0..0 },
         created_by: "creator".to_string(),
         created: crate::settings::UtcTime { fields: [0; 8] },
         last_edited_by: "editor".to_string(),
@@ -36,7 +35,6 @@ fn revision() -> crate::settings::RevisionHistory {
 
 fn notes() -> crate::settings::Notes {
     crate::settings::Notes {
-        source: crate::settings::SourceRange { range: 0..0 },
         html: false,
         text: "note".to_string(),
         visible: true,
@@ -47,7 +45,6 @@ fn notes() -> crate::settings::Notes {
 
 fn application() -> crate::settings::Application {
     crate::settings::Application {
-        source: crate::settings::SourceRange { range: 0..0 },
         name: "app".to_string(),
         url: "url".to_string(),
         details: "details".to_string(),
@@ -218,7 +215,6 @@ fn legacy_render_settings_gate_each_v5_suffix() {
         &cadmpeg_test_support::service_decode_context(),
         &legacy_body(100),
         0..legacy_body(100).len(),
-        7,
         ArchiveVersion::V5,
         crate::settings::MillimeterScale::IDENTITY,
     )
@@ -233,7 +229,6 @@ fn legacy_render_settings_gate_each_v5_suffix() {
         &cadmpeg_test_support::service_decode_context(),
         &value_101,
         0..value_101.len(),
-        7,
         ArchiveVersion::V5,
         crate::settings::MillimeterScale::IDENTITY,
     )
@@ -247,7 +242,6 @@ fn legacy_render_settings_gate_each_v5_suffix() {
         &cadmpeg_test_support::service_decode_context(),
         &value_102,
         0..value_102.len(),
-        7,
         ArchiveVersion::V5,
         crate::settings::MillimeterScale::IDENTITY,
     )
@@ -265,7 +259,6 @@ fn legacy_render_settings_gate_each_v5_suffix() {
         &cadmpeg_test_support::service_decode_context(),
         &value_103,
         0..value_103.len(),
-        7,
         ArchiveVersion::V5,
         crate::settings::MillimeterScale::IDENTITY,
     )
@@ -282,12 +275,10 @@ fn annotation_settings_gate_packed_minor_fields_and_skip_suffix() {
             &cadmpeg_test_support::service_decode_context(),
             &bytes,
             0..bytes.len(),
-            19,
             crate::test_support::millimeter_scale(2.0),
         )
         .expect("annotation settings packed version");
 
-        assert_eq!(value.source_offset, 19);
         assert_eq!(value.dimension_scale, crate::test_support::finite(1.0));
         assert_eq!(value.text_height_mm, crate::test_support::finite(5.0));
         assert_eq!(
@@ -335,7 +326,6 @@ fn annotation_settings_gate_packed_minor_fields_and_skip_suffix() {
         &cadmpeg_test_support::service_decode_context(),
         &bytes,
         0..bytes.len(),
-        19,
         crate::settings::MillimeterScale::IDENTITY,
     )
     .expect("annotation settings dimension-layer UUID");
@@ -358,7 +348,6 @@ fn annotation_settings_refuse_nonfinite_scales() {
             &cadmpeg_test_support::service_decode_context(),
             &bytes,
             0..bytes.len(),
-            19,
             crate::settings::MillimeterScale::IDENTITY,
         )
         .is_err());
@@ -371,12 +360,10 @@ fn grid_defaults_accept_future_minor_and_scale_lengths() {
     let value = grid_defaults(
         &bytes,
         0..bytes.len(),
-        23,
         crate::test_support::millimeter_scale(2.0),
     )
     .expect("grid defaults");
 
-    assert_eq!(value.source_offset, 23);
     assert_eq!(value.grid_spacing_mm, crate::test_support::finite(5.0));
     assert_eq!(value.snap_spacing_mm, crate::test_support::finite(1.5));
     assert_eq!(value.grid_line_count, 42);
@@ -392,13 +379,11 @@ fn modern_render_settings_consumes_known_prefix_and_future_suffix() {
         &cadmpeg_test_support::service_decode_context(),
         &bytes,
         0..bytes.len(),
-        11,
         ArchiveVersion::V8,
         crate::settings::MillimeterScale::IDENTITY,
     )
     .expect("modern future-minor settings");
 
-    assert_eq!(value.source_offset, 11);
     assert_eq!(value.image_width_pixels, 1234);
     assert_eq!(value.image_height_pixels, 567);
     assert_eq!(value.image_dpi, Some(144.5));
@@ -425,7 +410,6 @@ fn modern_render_settings_rejects_negative_minor() {
         &cadmpeg_test_support::service_decode_context(),
         &bytes,
         0..bytes.len(),
-        0,
         ArchiveVersion::V8,
         crate::settings::MillimeterScale::IDENTITY,
     )

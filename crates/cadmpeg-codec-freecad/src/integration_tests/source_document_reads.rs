@@ -1,7 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Selected root metadata flows into native facts through exact source reads.
 
-use cadmpeg_core::decode::u64_from_index;
 use cadmpeg_ir::{Codec, DecodeOptions};
 use std::io::Cursor;
 
@@ -19,30 +18,6 @@ fn selected_root_metadata_is_read_but_shadowed_aliases_and_extra_values_stay_b1(
     assert_eq!(facts[0].file_version.value(), Some(7));
     assert_eq!(facts[0].file_version.as_str(), "7");
     assert_eq!(facts[0].program_version.as_deref(), Some("Ω & version"));
-    let fidelity = decoded.source_fidelity();
-    let layout = &fidelity.record_layout()[&facts[0].id];
-    let expected: Vec<_> = ["7", "Ω &amp; version"]
-        .iter()
-        .map(|text| {
-            let start = document.find(text).unwrap();
-            u64_from_index(start)..u64_from_index(start + text.len())
-        })
-        .collect();
-    assert_eq!(layout.reads()[layout.stream()], expected);
-    for unread in ["8", "discarded", "unknown"] {
-        let start = u64_from_index(document.find(unread).unwrap());
-        let end = start + u64_from_index(unread.len());
-        assert!(
-            fidelity.b1_spans()[layout.stream()]
-                .spans()
-                .iter()
-                .any(|span| {
-                    let range = span.range();
-                    range.start <= start && end <= range.end
-                }),
-            "{unread}"
-        );
-    }
 }
 
 #[test]
@@ -62,24 +37,6 @@ fn an_invalid_file_version_is_kept_with_no_numeric_read_credit_and_no_alias_subs
     assert_eq!(facts[0].file_version.as_str(), "bad");
     assert_eq!(facts[0].file_version.value(), None);
     assert_eq!(facts[0].program_version.as_deref(), Some("authored"));
-    let fidelity = decoded.source_fidelity();
-    let layout = &fidelity.record_layout()[&facts[0].id];
-    let start = document.find("authored").unwrap();
-    assert_eq!(
-        layout.reads()[layout.stream()],
-        [u64_from_index(start)..u64_from_index(start + "authored".len())]
-    );
-    for unread in ["bad", "9"] {
-        let start = u64_from_index(document.find(unread).unwrap());
-        let end = start + u64_from_index(unread.len());
-        assert!(fidelity.b1_spans()[layout.stream()]
-            .spans()
-            .iter()
-            .any(|span| {
-                let range = span.range();
-                range.start <= start && end <= range.end
-            }));
-    }
 }
 
 #[test]
@@ -99,6 +56,4 @@ fn absent_root_metadata_keeps_existing_native_defaults_without_source_reads() {
         .unwrap();
     assert_eq!(facts[0].file_version.as_str(), "0");
     assert_eq!(facts[0].program_version, None);
-    let layout = &decoded.source_fidelity().record_layout()[&facts[0].id];
-    assert!(layout.reads().is_empty());
 }

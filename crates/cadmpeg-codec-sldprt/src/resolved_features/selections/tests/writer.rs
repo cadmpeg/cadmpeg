@@ -151,7 +151,7 @@ fn semantic_writer_synthesizes_compact_surface_selection_edits() {
                     parent: lane.id.clone(),
                     ordinal: 0,
                     sequence: 0,
-                    offset: Some(cadmpeg_core::decode::u64_from_index(marker)),
+                    offset: cadmpeg_core::decode::u64_from_index(marker),
                     selector: 0,
                     kind: crate::records::FeatureInputSurfaceSelectionKind::Component,
                     object_name_ref: lane

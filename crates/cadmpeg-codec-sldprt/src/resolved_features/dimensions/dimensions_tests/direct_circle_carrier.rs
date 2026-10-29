@@ -28,7 +28,7 @@ fn lane(feature: &str, marker: &str, relation: &str) -> FeatureInputLane {
             id: relation.into(),
             parent: "lane".into(),
             ordinal: 0,
-            offset: Some(0),
+            offset: 0,
             family: FeatureInputRelationFamily::CircleDiameter,
             class_ref: "circle-class".into(),
             feature_ref: feature.into(),
@@ -39,7 +39,7 @@ fn lane(feature: &str, marker: &str, relation: &str) -> FeatureInputLane {
             )
             .unwrap(),
             operands: vec![FeatureInputOperand {
-                offset: Some(0),
+                offset: 0,
                 reference_ref: "reference".into(),
                 kind: FeatureInputOperandKind::Native(NativeOperandTag::try_from(0x829a).unwrap()),
                 entity_index: 0,

@@ -1,10 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 //! A Binary Parameter value that fails alone gives up only its value part
-//! (#222; Appendix C `iges.binary_parameter_value`; #215 rule 1).
+//! (#222; `iges.binary_parameter_value`; #215 rule 1).
 
 use cadmpeg_ir::codec::DecodeResult;
-use cadmpeg_ir::source_fidelity::parts::PartState;
-use cadmpeg_ir::NativeUnknownRecord;
 
 use crate::test_support::binary_parts::{
     arc_with_real_start_then_point, double, point_with_real_y_then_point,
@@ -63,23 +61,19 @@ fn assert_only_value_given_up(
 
     let native = decoded.ir().native.namespace("iges").unwrap();
     assert!(native.arenas()["quarantined_parameter_records"].is_empty());
-    let unknowns = native.arena_as::<NativeUnknownRecord>("unknowns").unwrap();
-    assert_eq!(unknowns.len(), 1);
     let fidelity = decoded.source_fidelity();
-    let given_up: Vec<_> = fidelity
-        .parts()
-        .values()
-        .filter(|part| part.state() == &PartState::GivenUp {})
-        .collect();
+    let given_up = crate::test_support::given_up_parts(fidelity);
     assert_eq!(given_up.len(), 1);
-    let part = &fidelity.parts()[&unknowns[0].id];
-    assert_eq!(part.level().as_str(), "iges.binary_parameter_value");
-    assert_eq!(part.state(), &PartState::GivenUp {});
+    let parts = crate::test_support::given_up_parts(fidelity);
+    assert_eq!(parts.len(), 1);
+    let part = parts[0];
+    assert!(!part.untyped().is_empty());
+    assert_eq!(
+        crate::test_support::given_up_count(decoded.report(), "iges.binary_parameter_value"),
+        1
+    );
     assert_eq!(part.offset(), u64::try_from(offset).unwrap());
     assert_eq!(part.byte_len(), 9);
-    let record = &fidelity.parts()[part.parent().unwrap()];
-    assert_eq!(record.level().as_str(), "iges.binary_parameter_record");
-    assert_eq!(record.state(), &PartState::Decoded {});
 
     let unreadable: Vec<_> = decoded
         .report()

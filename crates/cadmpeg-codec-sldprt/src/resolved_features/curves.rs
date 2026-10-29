@@ -148,9 +148,8 @@ pub(super) fn resolve_two_center_semicircle_profile(
 
     let mut records = Vec::new();
     for marker in markers {
-        if marker
-            .offset()
-            .and_then(|offset| usize::try_from(offset).ok())
+        if usize::try_from(marker.offset())
+            .ok()
             .is_some_and(|offset| current_linked_semicircle_record(payload, offset))
         {
             records.push(*marker);
@@ -553,9 +552,7 @@ pub(super) fn resolve_slot_marker_arcs(
     tolerance: f64,
 ) {
     let Some((curve_indices, center_indices)) = markers.iter().find_map(|marker| {
-        let offset = marker
-            .offset()
-            .and_then(|offset| usize::try_from(offset).ok())?;
+        let offset = usize::try_from(marker.offset()).ok()?;
         slot_curve_and_center_indices(payload, offset)
     }) else {
         return;
@@ -1526,9 +1523,7 @@ pub(super) fn indexed_rectangle_from_line_cycle(
     let mut records = Vec::new();
     for marker in markers {
         let record = (|| {
-            let offset = marker
-                .offset()
-                .and_then(|offset| usize::try_from(offset).ok())?;
+            let offset = usize::try_from(marker.offset()).ok()?;
             if let Some(endpoints) = legacy_extended_rectangle_line_endpoints(payload, offset) {
                 return (marker.kind() == SketchInputKind::LineOrCircle).then_some(
                     RectangleLineRecord::Indexed {
@@ -1964,9 +1959,7 @@ pub(super) fn legacy_extended_rectangle_diagonal_endpoint(
     payload: &[u8],
     marker: &SketchInputEntity,
 ) -> Option<cadmpeg_ir::units::FiniteVector<2>> {
-    let offset = marker
-        .offset()
-        .and_then(|offset| usize::try_from(offset).ok())?;
+    let offset = usize::try_from(marker.offset()).ok()?;
     if marker.kind() != SketchInputKind::LineOrCircle
         || payload.get(offset..offset + LEGACY_EXTENDED_SKETCH_MARKER.len())
             != Some(LEGACY_EXTENDED_SKETCH_MARKER)

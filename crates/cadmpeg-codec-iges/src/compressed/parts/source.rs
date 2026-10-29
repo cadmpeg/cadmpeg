@@ -81,8 +81,6 @@ impl<'a> Fields<'a> {
         start: usize,
         parsed: &ParsedDirectoryRecord,
         delimiter: u8,
-        ctx: &DecodeContext<'_>,
-        framing: &mut Vec<std::ops::Range<u64>>,
     ) -> Result<Self, CodecError> {
         let mut fields = previous.unwrap_or(Self([None; 16], [None; 16]));
         fields.1 = [None; 16];
@@ -119,13 +117,6 @@ impl<'a> Fields<'a> {
                     .position(|byte| *byte == b'@')
                     .map_or(end, |n| value_begin + n);
                 let base = line.payload.start();
-                let frame_end = if number == 14 { value_end } else { value_begin };
-                append(
-                    ctx,
-                    framing,
-                    cadmpeg_core::decode::u64_from_index(base + at)
-                        ..cadmpeg_core::decode::u64_from_index(base + frame_end),
-                )?;
                 fields.0[slot] = Some(
                     line.payload
                         .child(base + value_begin, base + value_end)

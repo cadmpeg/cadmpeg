@@ -73,7 +73,7 @@ fn exercise(legacy: bool) {
         .plan(EncodeInput::new(decoded.ir(), None), TargetRequest::Inherit)
         .unwrap();
     let omission =
-        cadmpeg_ir::codec::write::ExportLossCode::SourceUndecodedOmitted.note(String::new());
+        crate::loss::FreecadLossCode::ExportNativePropertyNotTransferred.note(String::new());
     assert!(plan
         .report()
         .losses
@@ -174,7 +174,7 @@ fn source_free_partial_box_keeps_its_native_dependency_and_only_omits_the_unheld
         cadmpeg_ir::report::export::WritePath::Synthesized { .. }
     ));
     let omitted =
-        cadmpeg_ir::codec::write::ExportLossCode::SourceUndecodedOmitted.note(String::new());
+        crate::loss::FreecadLossCode::ExportNativePropertyNotTransferred.note(String::new());
     assert!(plan
         .report()
         .losses

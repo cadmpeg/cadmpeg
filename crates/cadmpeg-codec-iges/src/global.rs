@@ -617,7 +617,6 @@ enum ValueKind {
 struct ValueFrame {
     kind: ValueKind,
     payload: std::ops::Range<usize>,
-    header: Option<std::ops::Range<usize>>,
     next: usize,
     ended: bool,
 }
@@ -667,13 +666,12 @@ fn frame_value(
         return Ok(ValueFrame {
             kind: ValueKind::Omitted,
             payload: value_start..value_start,
-            header: None,
             next: value_start + 1,
             ended: bytes.get(value_start) != Some(&parameter_delimiter)
                 && record_delimiter == bytes.get(value_start).copied(),
         });
     }
-    let (kind, payload, header, end, allow_padding_after) =
+    let (kind, payload, end, allow_padding_after) =
         if let Some((payload, end)) = hollerith(bytes, value_start)? {
             let payload_start = end - payload.len();
             let kind = if !retain {
@@ -683,13 +681,7 @@ fn frame_value(
             } else {
                 ValueKind::String
             };
-            (
-                kind,
-                payload_start..end,
-                Some(value_start..payload_start),
-                end,
-                true,
-            )
+            (kind, payload_start..end, end, true)
         } else {
             let end = bytes[value_start..]
                 .iter()
@@ -704,7 +696,7 @@ fn frame_value(
             } else {
                 ValueKind::Atom
             };
-            (kind, value_start..end, None, end, false)
+            (kind, value_start..end, end, false)
         };
     let separator_start = if allow_padding_after {
         let remaining = bytes
@@ -726,7 +718,6 @@ fn frame_value(
     Ok(ValueFrame {
         kind,
         payload,
-        header,
         next: separator_start + 1,
         ended,
     })

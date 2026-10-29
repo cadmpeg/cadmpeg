@@ -440,20 +440,19 @@ fn exact_legacy_class_383_operand_path<'a>(
         }
         let scope_at = usize::try_from(scope.byte_offset()?).ok()?;
         let locator_reference_at = scope_at.checked_add(spec.scope_operand_reference_offset)?;
-        let (locator_record_index, locator_reference_offset) =
+        let (locator_record_index, _) =
             exact_same_segment_record_reference(bytes, locator_reference_at)?;
         if locator_record_index != carrier_record_index {
             return None;
         }
-        let (scope_record_index, locator_scope_reference_offset) =
-            exact_same_segment_record_reference(
-                bytes,
-                carrier_at.checked_add(class_383_carrier::SCOPE_REFERENCE)?,
-            )?;
+        let (scope_record_index, _) = exact_same_segment_record_reference(
+            bytes,
+            carrier_at.checked_add(class_383_carrier::SCOPE_REFERENCE)?,
+        )?;
         if scope_record_index != scope.record_index {
             return None;
         }
-        let (_, wrapper_reference_offset) = exact_same_segment_record_reference(
+        exact_same_segment_record_reference(
             bytes,
             leading_at.checked_add(class_383_leading::IDENTITY_REFERENCE)?,
         )?;
@@ -465,16 +464,7 @@ fn exact_legacy_class_383_operand_path<'a>(
             PathSourceDraft::legacy(source, leading_identity_at, PathSourceForm::Legacy383)?;
         draft.occurrence(occurrence_at, identity_at)?;
         draft.identity(identity_at, identity_at.checked_add(76)?)?;
-        let link_sources = PathLinkSources::new(
-            source,
-            locator_reference_offset,
-            carrier_at,
-            locator_scope_reference_offset,
-            wrapper_reference_offset,
-            leading_identity_at,
-            occurrence_guid_offset,
-        )?
-        .occurrence_reference(source, occurrence_at, identity_at)?;
+        let link_sources = PathLinkSources::new(source, carrier_at, leading_identity_at)?;
         draft.set_link(link_sources);
         draft.validate_positions()?;
         DesignAssemblyOperandPath::try_new(
@@ -597,7 +587,7 @@ pub(super) fn exact_legacy_class_388_operand_paths<'a>(
         let mut paths = [None, None];
         for (slot, relative_offset) in paths.iter_mut().zip(locator_offsets) {
             let locator_reference_at = scope_at.checked_add(relative_offset)?;
-            let (locator_record_index, locator_reference_offset) =
+            let (locator_record_index, _) =
                 exact_same_segment_record_reference(bytes, locator_reference_at)?;
             let mut candidate = None;
             for locator_at in records
@@ -611,7 +601,6 @@ pub(super) fn exact_legacy_class_388_operand_paths<'a>(
                     records,
                     scope,
                     locator_record_index,
-                    locator_reference_offset,
                     locator_at,
                 ) {
                     Ok(path) => path,
@@ -654,7 +643,6 @@ fn exact_legacy_class_388_operand_path_envelope<'a>(
     records: &IndexedRecordOffsets,
     scope: &DesignParameterScope,
     locator_record_index: u32,
-    locator_reference_offset: u64,
     locator_at: usize,
 ) -> Result<Option<ParsedOperandPath<'a>>, CodecError> {
     let bytes = source.window();
@@ -678,15 +666,14 @@ fn exact_legacy_class_388_operand_path_envelope<'a>(
         {
             return None;
         }
-        let (scope_record_index, locator_scope_reference_offset) =
-            exact_same_segment_record_reference(
-                bytes,
-                locator_at.checked_add(path_locator::SCOPE_BACKLINK)?,
-            )?;
+        let (scope_record_index, _) = exact_same_segment_record_reference(
+            bytes,
+            locator_at.checked_add(path_locator::SCOPE_BACKLINK)?,
+        )?;
         if scope_record_index != scope.record_index {
             return None;
         }
-        let (wrapper_record_index, wrapper_reference_offset) = exact_same_segment_record_reference(
+        let (wrapper_record_index, _) = exact_same_segment_record_reference(
             bytes,
             locator_at.checked_add(path_locator::WRAPPER_REFERENCE)?,
         )?;
@@ -748,7 +735,6 @@ fn exact_legacy_class_388_operand_path_envelope<'a>(
         }
         let mut path_at = next_indexed_record_offset(bytes, locator_end)?;
         let mut path_records = [None, None];
-        let mut final_path_reference_offset = None;
         for ordinal in 0..path_count {
             let path_record_index = locator_record_index.checked_add(ordinal)?.checked_add(1)?;
             if exact_indexed_header_at(bytes, path_at, path_record_index).as_deref() != Some("412")
@@ -763,13 +749,12 @@ fn exact_legacy_class_388_operand_path_envelope<'a>(
                     Err(error) => return Some(Err(error)),
                 };
             path_records[usize::try_from(ordinal).ok()?] = Some(path);
-            let (referenced_path_record_index, reference_offset) =
-                exact_same_segment_record_reference(
-                    bytes,
-                    wrapper_at
-                        .checked_add(path_reference_offset)?
-                        .checked_add(usize::try_from(ordinal).ok()?.checked_mul(11)?)?,
-                )?;
+            let (referenced_path_record_index, _) = exact_same_segment_record_reference(
+                bytes,
+                wrapper_at
+                    .checked_add(path_reference_offset)?
+                    .checked_add(usize::try_from(ordinal).ok()?.checked_mul(11)?)?,
+            )?;
             if referenced_path_record_index != path_record_index {
                 return None;
             }
@@ -777,7 +762,6 @@ fn exact_legacy_class_388_operand_path_envelope<'a>(
                 if path_end != wrapper_at {
                     return None;
                 }
-                final_path_reference_offset = Some(reference_offset);
             } else {
                 path_at = path_end;
             }
@@ -795,15 +779,7 @@ fn exact_legacy_class_388_operand_path_envelope<'a>(
         for source in earlier_sources.into_iter().rev() {
             draft.prepend_occurrences(source)?;
         }
-        draft.set_link(PathLinkSources::new(
-            source,
-            locator_reference_offset,
-            locator_at,
-            locator_scope_reference_offset,
-            wrapper_reference_offset,
-            wrapper_at,
-            final_path_reference_offset?,
-        )?);
+        draft.set_link(PathLinkSources::new(source, locator_at, wrapper_at)?);
         draft.validate_positions()?;
         DesignAssemblyOperandPath::try_new(
             DesignAssemblyOperandPathLink {

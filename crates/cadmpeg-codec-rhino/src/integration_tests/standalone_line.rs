@@ -32,7 +32,7 @@ fn native_line_geometry(bytes: &[u8]) -> CurveGeometry {
         &ctx,
         bytes,
         object.class_uuid,
-        object.class_data_range(),
+        object.class_data_range.clone(),
         crate::settings::MillimeterScale::IDENTITY,
         scan.archive,
     )

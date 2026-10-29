@@ -4,14 +4,15 @@
 use super::{document_properties, ObjectRecord, Vocabulary};
 use cadmpeg_core::decode::{u64_from_index, DecodeContext, ResourceDimension, ResourceLimit, View};
 use cadmpeg_core::CodecError;
-use cadmpeg_ir::source_fidelity::parts::{DecodeParts, PartLevel, PartOutput, PartSpec};
-use std::collections::BTreeMap;
+use cadmpeg_ir::source_fidelity::parts::{DecodeParts, PartOutput};
+use std::collections::{BTreeMap, BTreeSet};
 
 #[derive(Default)]
 pub(crate) struct ObjectDeclarations {
     pub(crate) objects: Vec<ObjectRecord>,
     pub(crate) properties: BTreeMap<String, document_properties::RootProperties>,
-    pub(crate) data_sources: BTreeMap<String, std::ops::Range<usize>>,
+    /// Objects whose `ObjectData` element decoded.
+    pub(crate) data_sources: BTreeSet<String>,
 }
 
 fn supported(xml: &roxmltree::Document<'_>, schema: Vocabulary) -> bool {
@@ -97,28 +98,30 @@ pub(crate) fn decode<'source>(
         .filter(|node| node.has_tag_name(record_tag))
         .map(|node| Ok((super::required_attr(node, "name")?, node)))
         .collect::<Result<BTreeMap<_, _>, CodecError>>()?;
-    let source = super::source::Source::new(ctx, view, xml)?;
-    let (extent, fields) = crate::xml_framing::element_fields(ctx, view, declarations)?;
+    let source = super::source::Source::new(view, xml)?;
+    let extent = crate::fidelity::relative_xml_extent(view, declarations.range())?;
     let objects = ctx
-        .decode_part(output, extent, spec("freecad.objects", fields)?, |stage| {
-            let mut objects = Vec::new();
-            for (order, node) in declarations
-                .children()
-                .filter(|node| node.has_tag_name(record_tag))
-                .enumerate()
-            {
-                let name = super::required_attr(node, "name")?;
-                let owner = data_by_name.get(name).copied().ok_or_else(|| {
-                    CodecError::malformed("object declaration has no matched data")
-                })?;
-                let (extent, fields) = crate::xml_framing::element_fields(ctx, view, node)?;
-                if let Some(object) = ctx.decode_part(
-                    stage,
-                    extent,
-                    spec("freecad.object_declaration", fields)?,
-                    |stage| {
-                        let id = crate::native::native_id("object", name);
-                        source.record(&id, node, || {
+        .decode_part(
+            output,
+            extent,
+            super::document_part("freecad.objects"),
+            |stage| {
+                let mut objects = Vec::new();
+                for (order, node) in declarations
+                    .children()
+                    .filter(|node| node.has_tag_name(record_tag))
+                    .enumerate()
+                {
+                    let name = super::required_attr(node, "name")?;
+                    let owner = data_by_name.get(name).copied().ok_or_else(|| {
+                        CodecError::malformed("object declaration has no matched data")
+                    })?;
+                    let extent = crate::fidelity::relative_xml_extent(view, node.range())?;
+                    if let Some(object) = ctx.decode_part(
+                        stage,
+                        extent,
+                        super::document_part("freecad.object_declaration"),
+                        |stage| {
                             let object = super::parse_object(
                                 node,
                                 Some(owner),
@@ -135,22 +138,22 @@ pub(crate) fn decode<'source>(
                                 )?,
                             )?;
                             Ok(object)
-                        })
-                    },
-                )? {
-                    objects.try_reserve(1).map_err(|_| {
-                        ResourceLimit::allocation_failed(
-                            ResourceDimension::RetainedBytes,
-                            ctx.policy().limits.max_retained_bytes,
-                            u64_from_index(size_of::<ObjectRecord>()),
-                            "FreeCAD object header handoff",
-                        )
-                    })?;
-                    objects.push(object);
+                        },
+                    )? {
+                        objects.try_reserve(1).map_err(|_| {
+                            ResourceLimit::allocation_failed(
+                                ResourceDimension::RetainedBytes,
+                                ctx.policy().limits.max_retained_bytes,
+                                u64_from_index(size_of::<ObjectRecord>()),
+                                "FreeCAD object header handoff",
+                            )
+                        })?;
+                        objects.push(object);
+                    }
                 }
-            }
-            Ok(objects)
-        })?
+                Ok(objects)
+            },
+        )?
         .unwrap_or_default();
     let mut result = ObjectDeclarations {
         objects,
@@ -161,20 +164,20 @@ pub(crate) fn decode<'source>(
         .iter()
         .map(|object| (object.name().as_str(), object.id().as_str()))
         .collect::<BTreeMap<_, _>>();
-    let (extent, fields) = crate::xml_framing::element_fields(ctx, view, data)?;
+    let extent = crate::fidelity::relative_xml_extent(view, data.range())?;
     result.data_sources = ctx
         .decode_part(
             output,
             extent,
-            spec("freecad.object_data_section", fields)?,
+            super::document_part("freecad.object_data_section"),
             |stage| {
-                let mut sources = BTreeMap::new();
+                let mut sources = BTreeSet::new();
                 for node in data.children().filter(|node| node.has_tag_name(record_tag)) {
-                    let (extent, fields) = crate::xml_framing::element_fields(ctx, view, node)?;
-                    if let Some((id, range)) = ctx.decode_part(
+                    let extent = crate::fidelity::relative_xml_extent(view, node.range())?;
+                    if let Some(id) = ctx.decode_part(
                         stage,
                         extent,
-                        spec("freecad.object_data", fields)?,
+                        super::document_part("freecad.object_data"),
                         |_stage| {
                             let name = super::required_attr(node, "name")?;
                             let id = by_name.get(name).ok_or_else(|| {
@@ -182,10 +185,10 @@ pub(crate) fn decode<'source>(
                                     "ObjectData has no readable object declaration",
                                 )
                             })?;
-                            Ok(((*id).to_owned(), node.range()))
+                            Ok((*id).to_owned())
                         },
                     )? {
-                        sources.insert(id, range);
+                        sources.insert(id);
                     }
                 }
                 Ok(sources)
@@ -206,12 +209,4 @@ pub(crate) fn decode<'source>(
         result.properties.insert(object.id().clone(), properties);
     }
     Ok(Some(result))
-}
-
-fn spec(level: &str, fields: Vec<std::ops::Range<u64>>) -> Result<PartSpec, CodecError> {
-    Ok(PartSpec::new(
-        PartLevel::parse(level)
-            .ok_or_else(|| CodecError::malformed("object part level is absent from Appendix C"))?,
-        fields,
-    ))
 }

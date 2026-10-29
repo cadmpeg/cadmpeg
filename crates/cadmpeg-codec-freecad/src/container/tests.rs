@@ -1,16 +1,13 @@
 // SPDX-License-Identifier: Apache-2.0
-//! Archive scan and physical-ledger unit tests.
+//! Archive scan unit tests.
 
 use cadmpeg_test_support::EditableDecodeResult;
 
-use crate::test_support::test_archive::{
-    archive, archive_entries, streaming_archive, streaming_archive_with_options,
-};
+use crate::test_support::test_archive::{archive, archive_entries};
 use crate::FcstdCodec;
 use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
 use cadmpeg_ir::{Codec, Confidence, DecodeOptions};
 use std::io::Cursor;
-use zip::write::SimpleFileOptions;
 
 #[test]
 fn a_given_up_entry_has_one_exact_shared_source_home() {
@@ -23,22 +20,14 @@ fn a_given_up_entry_has_one_exact_shared_source_home() {
     let decoded = FcstdCodec
         .decode(&mut Cursor::new(&bytes), &DecodeOptions::default())
         .unwrap();
-    let unknowns = decoded.ir().native_unknowns("fcstd").unwrap();
-    let [unknown] = unknowns.as_slice() else {
-        panic!("one shared source home: {unknowns:?}")
+    let parts = crate::test_support::source_fidelity::given_up(decoded.source_fidelity());
+    let [(_, record)] = parts.as_slice() else {
+        panic!("one shared source home: {parts:?}")
     };
-    let record = decoded
-        .source_fidelity()
-        .retained_record(unknown.id.as_str())
-        .unwrap();
     assert_eq!(record.data(), Some(data.as_slice()));
     assert_eq!(record.byte_len(), u64::try_from(data.len()).unwrap());
     assert_eq!(record.sha256(), cadmpeg_ir::hash::sha256_hex(&data));
     assert!(!crate::native::ARENAS.contains(&"unreadable_entries"));
-    let wire = serde_json::to_value(unknown).unwrap();
-    assert!(wire.get("stored_data").is_none());
-    assert!(wire.get("data_start").is_none());
-    assert!(wire.get("data_end").is_none());
     let legacy = serde_json::json!({"id":"fcstd:native:unreadable_entry#Payload.bin", "name":"Payload.bin", "byte_len":data.len(), "sha256":cadmpeg_ir::hash::sha256_hex(&data), "error":"unsupported compression"});
     let mut invalid = decoded.ir().clone();
     invalid
@@ -212,7 +201,7 @@ fn zstd_member_past_the_window_allowance_is_an_unreadable_entry_without_a_refusa
     assert_eq!(loss.code.local_code(), "record.unreadable");
     let unreadable = loss.code.clone();
     assert!(
-        loss.message.starts_with("zip.entry stream=")
+        loss.message.starts_with("part zip.entry stream=")
             && loss.message.contains("per-expansion allowance"),
         "{}",
         loss.message
@@ -246,47 +235,6 @@ fn xml_envelope_scan_skips_comments_cdata_and_quoted_brackets() {
 }
 
 #[test]
-fn frames_zip64_streaming_descriptor_and_local_extra() {
-    let bytes = streaming_archive_with_options(
-        "<Document SchemaVersion=\"4\" FileVersion=\"1\"/>",
-        SimpleFileOptions::default().large_file(true),
-    );
-    let arena = DecodeArena::new();
-    let (ctx, root) = DecodeContext::from_root_bytes(&bytes, &arena, &DecodePolicy::default())
-        .expect("ZIP64 archive fits root policy");
-    let scan = crate::container::scan(&ctx, root).expect("ZIP64 streaming ZIP");
-    assert!(scan
-        .ledger
-        .iter()
-        .any(|span| span.role.as_str() == "local-extra" && span.span.end() > span.span.start()));
-    let descriptor = scan
-        .ledger
-        .iter()
-        .find(|span| span.role.as_str() == "data-descriptor")
-        .expect("ZIP64 descriptor");
-    assert_eq!(descriptor.span.end() - descriptor.span.start(), 24);
-}
-
-#[test]
-fn frames_streaming_data_descriptor_separately_from_padding() {
-    let bytes = streaming_archive("<Document SchemaVersion=\"4\" FileVersion=\"1\"/>");
-    let arena = DecodeArena::new();
-    let (ctx, root) = DecodeContext::from_root_bytes(&bytes, &arena, &DecodePolicy::default())
-        .expect("archive fits root policy");
-    let scan = crate::container::scan(&ctx, root).expect("streaming ZIP");
-    let descriptors = scan
-        .ledger
-        .iter()
-        .filter(|span| span.role.as_str() == "data-descriptor")
-        .collect::<Vec<_>>();
-    assert_eq!(descriptors.len(), 1);
-    assert!(matches!(
-        descriptors[0].span.end() - descriptors[0].span.start(),
-        16 | 24
-    ));
-}
-
-#[test]
 pub(crate) fn rejects_unsafe_names() {
     let xml = b"<Document SchemaVersion=\"4\" FileVersion=\"1\"/>";
     let unsafe_name = archive_entries(&[("../Document.xml", xml), ("Document.xml", xml)]);
@@ -302,7 +250,6 @@ pub(crate) fn rejects_unsafe_names() {
 #[test]
 fn inspects_and_closes_physical_ledger() {
     let bytes = archive("<Document SchemaVersion=\"4\" FileVersion=\"1\" ProgramVersion=\"1.0\"><Object/></Document>");
-    let archive_len = cadmpeg_core::decode::u64_from_index(bytes.len());
     let summary = FcstdCodec
         .inspect(
             &mut Cursor::new(&bytes),
@@ -321,29 +268,7 @@ fn inspects_and_closes_physical_ledger() {
         )
         .expect("decode");
     assert!(result.report().losses.is_empty());
-    let ledger: Vec<cadmpeg_ir::source_fidelity::freecad::ArchiveSpan> =
-        crate::test_support::source_fidelity::layout(result.source_fidelity(), "physical-ledger");
-    assert_eq!(ledger.first().map(|span| span.span.start()), Some(0));
-    assert_eq!(ledger.last().map(|span| span.span.end()), Some(archive_len));
-    assert!(ledger
-        .windows(2)
-        .all(|pair| pair[0].span.end() == pair[1].span.start()));
     assert!(crate::test_support::validate_native(result.ir()).is_empty());
-    for role in [
-        "local-signature",
-        "local-fields",
-        "local-name",
-        "compressed-payload",
-        "central-signature",
-        "central-fields",
-        "central-name",
-        "end-record",
-    ] {
-        assert!(
-            ledger.iter().any(|span| span.role.as_str() == role),
-            "missing {role}"
-        );
-    }
 }
 
 #[test]
@@ -465,17 +390,9 @@ fn retains_every_reference_to_a_shared_side_entry() {
         .iter()
         .find(|entry| entry.name() == "Shared.bin")
         .expect("shared entry");
-    let spans: Vec<cadmpeg_ir::source_fidelity::freecad::LogicalSpan> =
-        crate::test_support::source_fidelity::layout(result.source_fidelity(), "logical-ledger");
-    let span = spans
-        .iter()
-        .find(|span| span.entry == "Shared.bin")
-        .expect("shared entry span");
 
     assert_eq!(shared.referenced_by().len(), 2);
     assert_ne!(shared.referenced_by()[0], shared.referenced_by()[1]);
-    assert_eq!(span.classification.as_str(), "named_opaque");
-    assert_eq!(span.classification.owner(), Some(shared.id()));
     assert!(crate::test_support::validate_native(result.ir()).is_empty());
 
     let mut corrupted = result.ir().clone();
@@ -668,111 +585,5 @@ fn equivalent_numeric_schema_declarations_select_the_same_persistence_grammar() 
         assert_eq!(recovered.ir().model, expected.ir().model);
         assert_valid_document(recovered.ir());
         assert!(crate::test_support::validate_native(recovered.ir()).is_empty());
-    }
-}
-
-#[test]
-fn byte_coverage_is_inexact_when_a_span_leaves_a_gap_overlaps_or_names_no_entry() {
-    use crate::native::EntryRecord;
-    use cadmpeg_ir::source_fidelity::freecad::{
-        ArchiveSpan, ArchiveSpanRole, ByteSpan, LogicalClassification, LogicalSpan,
-    };
-    let entry = |name: &str| {
-        EntryRecord::new(
-            format!("fcstd:native:entry#{name}"),
-            name.into(),
-            cadmpeg_core::container::ContainerRole::Auxiliary,
-            Vec::new(),
-        )
-        .unwrap()
-    };
-    let logical = |spans: &[(&str, u64, u64)]| {
-        spans
-            .iter()
-            .enumerate()
-            .map(|(index, (entry, start, end))| LogicalSpan {
-                id: format!("fcstd:native:logical-span#{index}"),
-                entry: (*entry).into(),
-                span: ByteSpan::try_new(*start, *end).unwrap(),
-                classification: LogicalClassification::Structural,
-            })
-            .collect::<Vec<_>>()
-    };
-    let physical = |spans: &[(u64, u64)]| {
-        spans
-            .iter()
-            .enumerate()
-            .map(|(index, (start, end))| ArchiveSpan {
-                id: format!("fcstd:native:archive-span#{index}"),
-                span: ByteSpan::try_new(*start, *end).unwrap(),
-                role: ArchiveSpanRole::LocalName("a".into()),
-            })
-            .collect::<Vec<_>>()
-    };
-    let entries = [entry("a"), entry("b"), entry("empty")];
-    let source_bytes = [0_u8; 10];
-    let arena = cadmpeg_core::decode::DecodeArena::new();
-    let policy = cadmpeg_core::decode::DecodePolicy::service();
-    let (context, root) =
-        cadmpeg_core::decode::DecodeContext::from_root_bytes(&source_bytes, &arena, &policy)
-            .unwrap();
-    let views = [("a", 0, 4), ("b", 4, 6), ("empty", 6, 6)]
-        .into_iter()
-        .map(|(name, start, end)| {
-            let view = context
-                .register_named_slice(root, cadmpeg_core::decode::ByteRange { start, end }, name)
-                .unwrap();
-            (name.to_owned(), view)
-        })
-        .collect::<std::collections::BTreeMap<_, _>>();
-    let sources = crate::entry_sources::EntrySources::new(&context, &views).unwrap();
-    let whole = physical(&[(0, 6), (6, 10)]);
-    let exact = |physical: &[ArchiveSpan], spans: &[(&str, u64, u64)]| {
-        super::byte_coverage(physical, &entries, &sources, &logical(spans), 10)
-            .unwrap()
-            .exact
-    };
-
-    assert!(exact(&whole, &[("a", 0, 2), ("a", 2, 4), ("b", 0, 2)]));
-    assert!(
-        exact(&whole, &[("b", 0, 2), ("a", 2, 4), ("a", 0, 2)]),
-        "spans are ordered by start before they are checked"
-    );
-    assert!(
-        exact(
-            &physical(&[(6, 10), (0, 6)]),
-            &[("a", 0, 2), ("a", 2, 4), ("b", 0, 2)]
-        ),
-        "archive spans are ordered by start before they are checked"
-    );
-    for (case, spans) in [
-        ("gap", &[("a", 0, 1), ("a", 2, 4), ("b", 0, 2)][..]),
-        ("overlap", &[("a", 0, 3), ("a", 2, 4), ("b", 0, 2)][..]),
-        ("late start", &[("a", 1, 4), ("b", 0, 2)][..]),
-        ("short end", &[("a", 0, 3), ("b", 0, 2)][..]),
-        ("long end", &[("a", 0, 5), ("b", 0, 2)][..]),
-        ("entry without spans", &[("a", 0, 4)][..]),
-        (
-            "missing entry",
-            &[("a", 0, 4), ("b", 0, 2), ("c", 0, 1)][..],
-        ),
-        (
-            "span in an empty entry",
-            &[("a", 0, 4), ("b", 0, 2), ("empty", 0, 1)][..],
-        ),
-    ] {
-        assert!(!exact(&whole, spans), "{case}");
-    }
-
-    let spans = [("a", 0, 4), ("b", 0, 2)];
-    for (case, archive) in [
-        ("archive gap", physical(&[(0, 5), (6, 10)])),
-        ("archive overlap", physical(&[(0, 7), (6, 10)])),
-        ("archive late start", physical(&[(1, 10)])),
-        ("archive short of its length", physical(&[(0, 9)])),
-        ("archive past its length", physical(&[(0, 11)])),
-        ("no archive spans", Vec::new()),
-    ] {
-        assert!(!exact(&archive, &spans), "{case}");
     }
 }

@@ -181,13 +181,7 @@ pub(crate) fn synthesize_neutral_features(
     parameters: &[DesignParameter],
     bodies: &[Body],
     native: &mut Option<crate::native::SldprtNative>,
-) -> Result<
-    (
-        Vec<FeatureInputRename>,
-        crate::resolved_features::class_sources::ClassSources,
-    ),
-    CodecError,
-> {
+) -> Result<(Vec<FeatureInputRename>, std::collections::BTreeSet<String>), CodecError> {
     synchronize_features(model, parameters, bodies, native, false)
 }
 
@@ -197,13 +191,7 @@ fn synchronize_features(
     bodies: &[Body],
     native: &mut Option<crate::native::SldprtNative>,
     patch_input_names: bool,
-) -> Result<
-    (
-        Vec<FeatureInputRename>,
-        crate::resolved_features::class_sources::ClassSources,
-    ),
-    CodecError,
-> {
+) -> Result<(Vec<FeatureInputRename>, std::collections::BTreeSet<String>), CodecError> {
     let features = &model.features;
     if features.is_empty() {
         if let Some(native) = native {
@@ -211,10 +199,7 @@ fn synchronize_features(
                 history.features.retain(is_custom_property);
             }
         }
-        return Ok((
-            Vec::new(),
-            crate::resolved_features::class_sources::ClassSources::default(),
-        ));
+        return Ok((Vec::new(), std::collections::BTreeSet::new()));
     }
     let native = native.get_or_insert_with(|| crate::native::SldprtNative {
         feature_histories: vec![FeatureHistory {
@@ -669,14 +654,14 @@ fn synchronize_features(
             )));
         }
     }
-    let class_sources = if !patch_input_names {
-        crate::resolved_features::write_prepare::synthesize_feature_classes(native)?
+    let written_classes = if patch_input_names {
+        std::collections::BTreeSet::new()
     } else {
-        crate::resolved_features::class_sources::ClassSources::default()
+        crate::resolved_features::write_prepare::synthesize_feature_classes(native)?
     };
     synchronize_feature_content_order(native);
     synchronize_history_content_order(native);
-    Ok((renames, class_sources))
+    Ok((renames, written_classes))
 }
 
 fn synchronize_neutral_feature_content(

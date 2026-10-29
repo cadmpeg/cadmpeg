@@ -412,7 +412,7 @@ fn inspect_snapshot(bytes: &[u8]) -> String {
     text
 }
 
-/// Asks to preserve an unedited document; source-only content forces synthesis.
+/// Encodes an unedited decode result via the verbatim-replay branch.
 fn replay_outcome(bytes: &[u8]) -> Option<Result<Vec<u8>, String>> {
     let result = EditableDecodeResult::from(decode_result(bytes).ok()?);
     let mut out = Vec::new();
@@ -425,11 +425,8 @@ fn replay_outcome(bytes: &[u8]) -> Option<Result<Vec<u8>, String>> {
             match plan.write_to(&mut out) {
                 Ok(_) => {
                     assert!(
-                        matches!(
-                            path,
-                            WritePath::VerbatimReplay { .. } | WritePath::Synthesized { .. }
-                        ),
-                        "preservation either replays represented content or authors the document"
+                        matches!(path, WritePath::VerbatimReplay { .. }),
+                        "the replay lane must take the verbatim-replay write path"
                     );
                     Ok(out)
                 }
@@ -477,11 +474,8 @@ fn patch_outcome(bytes: &[u8]) -> Option<Result<Vec<u8>, String>> {
         {
             Ok(path) => {
                 assert!(
-                    matches!(
-                        path,
-                        WritePath::Patched { .. } | WritePath::Synthesized { .. }
-                    ),
-                    "an edited document patches or falls back to synthesis"
+                    matches!(path, WritePath::Patched { .. }),
+                    "the patch lane edits the IR, so the writer must run"
                 );
                 Ok(out)
             }

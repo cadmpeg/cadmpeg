@@ -115,9 +115,15 @@ fn synthesized_after_declined_patch(decoded: &EditableDecodeResult) -> Vec<u8> {
 
 #[test]
 fn metadata_edit_in_a_shared_feature_member_is_written_once() {
-    let (mut decoded, _) = shared_member();
+    let (mut decoded, original) = shared_member();
     edit_radius(&mut decoded.ir_mut());
-    let written = synthesized_after_declined_patch(&decoded);
+    let mut written = Vec::new();
+    crate::test_support::plan_inherited_write(
+        decoded.ir(),
+        decoded.source_fidelity(),
+        &mut written,
+    )
+    .unwrap();
     let scan = crate::test_support::container::scan(&written);
     let members: Vec<_> = scan
         .blocks
@@ -125,12 +131,24 @@ fn metadata_edit_in_a_shared_feature_member_is_written_once() {
         .filter(|block| block.section.name() == Some(MEMBER))
         .collect();
     assert_eq!(members.len(), 1);
+    let mut expected = original;
+    let start = expected.len() - 8;
+    expected[start..].copy_from_slice(&0.041f64.to_le_bytes());
+    assert_eq!(members[0].payload, expected);
     let readback = SldprtCodec
         .decode(&mut Cursor::new(written), &DecodeOptions::default())
         .unwrap();
     assert_eq!(readback.ir().model.vertices.len(), 3);
     let native = sldprt_native(readback.ir());
     assert_eq!(native.feature_input_lanes.len(), 1);
+    assert_eq!(
+        native.feature_input_lanes[0]
+            .names
+            .iter()
+            .map(|name| name.value.as_str())
+            .collect::<Vec<_>>(),
+        vec!["Sketch1", "Boss-Extrude1", "D1"]
+    );
     let bbox = readback
         .ir()
         .model
@@ -158,8 +176,8 @@ fn a_real_feature_rename_survives_unchanged_metadata_in_the_same_member() {
         lane,
         &native.feature_histories,
         &renames,
-        crate::writer::ClassLayouts::Source(decoded.source_fidelity()),
-        &crate::resolved_features::class_sources::ClassSources::default(),
+        crate::writer::ClassLayouts::Source,
+        &std::collections::BTreeSet::new(),
     )
     .unwrap_err();
     assert!(
@@ -464,24 +482,30 @@ fn legacy_marker_metadata_edits_preserve_the_complete_marker_bytes() {
             .position(|bytes| bytes == [0xff, 0xff, 0x1f, 0x00, 0x03])
             .unwrap();
         payload[offset..offset + 5].copy_from_slice(&prefix);
-        let (mut decoded, _) = shared_member_with_payload(payload);
+        let (mut decoded, original) = shared_member_with_payload(payload);
         let native = sldprt_native(decoded.ir());
         let lane = &native.feature_input_lanes[0];
         assert_eq!(lane.sketch_entities.len(), 1);
-        let error = crate::writer::resolved_feature_payload(
-            lane,
-            &native.feature_histories,
-            &[],
-            crate::writer::ClassLayouts::Source(decoded.source_fidelity()),
-            &crate::resolved_features::class_sources::ClassSources::default(),
-        )
-        .unwrap_err();
-        assert!(
-            matches!(error, CodecError::UnsupportedContent(ref detail) if detail.contains(&lane.id)),
-            "{error}"
+        assert_eq!(
+            crate::writer::resolved_feature_payload(
+                lane,
+                &native.feature_histories,
+                &[],
+                crate::writer::ClassLayouts::Source,
+                &std::collections::BTreeSet::new(),
+            )
+            .unwrap()
+            .0,
+            original
         );
         edit_radius(&mut decoded.ir_mut());
-        let written = synthesized_after_declined_patch(&decoded);
+        let mut written = Vec::new();
+        crate::test_support::plan_inherited_write(
+            decoded.ir(),
+            decoded.source_fidelity(),
+            &mut written,
+        )
+        .unwrap();
         let scan = crate::test_support::container::scan(&written);
         let members: Vec<_> = scan
             .blocks
@@ -489,10 +513,20 @@ fn legacy_marker_metadata_edits_preserve_the_complete_marker_bytes() {
             .filter(|block| block.section.name() == Some(MEMBER))
             .collect();
         assert_eq!(members.len(), 1);
+        let mut expected = original;
+        let start = expected.len() - 8;
+        expected[start..].copy_from_slice(&0.041f64.to_le_bytes());
+        assert_eq!(members[0].payload, expected);
         let readback = SldprtCodec
             .decode(&mut Cursor::new(written), &DecodeOptions::default())
             .unwrap();
         assert_eq!(readback.ir().model.vertices.len(), 3);
+        assert_eq!(
+            sldprt_native(readback.ir()).feature_input_lanes[0]
+                .sketch_entities
+                .len(),
+            1
+        );
     }
 }
 
@@ -526,8 +560,8 @@ fn marker_replay_requires_reparsed_membership_identity_and_values() {
                 &changed,
                 &native.feature_histories,
                 &[],
-                crate::writer::ClassLayouts::Source(decoded.source_fidelity()),
-                &crate::resolved_features::class_sources::ClassSources::default(),
+                crate::writer::ClassLayouts::Source,
+                &std::collections::BTreeSet::new(),
             )
             .map(|(payload, _)| payload)
             .is_err(),
@@ -548,7 +582,35 @@ fn metadata_edits_preserve_unemitted_named_members_and_physical_duplicates() {
     ];
     let (mut decoded, _) = shared_member_with_sections(resolved_features_payload(&[0]), &extra);
     edit_radius(&mut decoded.ir_mut());
-    let written = synthesized_after_declined_patch(&decoded);
+    let mut written = Vec::new();
+    crate::test_support::plan_inherited_write(
+        decoded.ir(),
+        decoded.source_fidelity(),
+        &mut written,
+    )
+    .unwrap();
+    let scan = crate::test_support::container::scan(&written);
+    let units_blocks: Vec<_> = scan
+        .blocks
+        .iter()
+        .filter(|block| block.section.name() == Some("Contents/User Units Table"))
+        .collect();
+    assert_eq!(units_blocks.len(), 1);
+    assert_eq!(units_blocks[0].payload, units);
+    let opaque_blocks: Vec<_> = scan
+        .blocks
+        .iter()
+        .filter(|block| block.section.name() == Some(lookalike))
+        .collect();
+    assert_eq!(opaque_blocks.len(), 2);
+    assert!(opaque_blocks.iter().all(|block| block.payload == opaque));
+    assert_eq!(
+        opaque_blocks
+            .iter()
+            .map(|block| block.type_id)
+            .collect::<Vec<_>>(),
+        vec![0x91, 0x92]
+    );
     let readback = SldprtCodec
         .decode(&mut Cursor::new(written), &DecodeOptions::default())
         .unwrap();
@@ -569,7 +631,21 @@ fn unchanged_history_replays_full_source_xml_and_an_edited_history_regenerates()
     assert_eq!(native.feature_histories.len(), 1);
     assert_eq!(native.feature_histories[0].features.len(), 1);
     edit_radius(&mut decoded.ir_mut());
-    synthesized_after_declined_patch(&decoded);
+    let mut written = Vec::new();
+    crate::test_support::plan_inherited_write(
+        decoded.ir(),
+        decoded.source_fidelity(),
+        &mut written,
+    )
+    .unwrap();
+    let scan = crate::test_support::container::scan(&written);
+    let blocks: Vec<_> = scan
+        .blocks
+        .iter()
+        .filter(|block| block.section.name() == Some("Contents/Keywords"))
+        .collect();
+    assert_eq!(blocks.len(), 1);
+    assert_eq!(blocks[0].payload, history);
     let mut changed = native.feature_histories[0].clone();
     changed.features[0].name = "EditedTree".into();
     let regenerated = crate::writer::retained_history_payload(

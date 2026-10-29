@@ -152,8 +152,6 @@ struct GroupRecord {
 #[derive(Debug, Serialize)]
 struct MaterialRecord {
     id: String,
-    #[serde(skip_serializing)]
-    source_offset: u64,
     #[serde(skip_serializing_if = "Option::is_none")]
     archive_index: Option<i32>,
     source_uuid: Option<String>,
@@ -355,8 +353,6 @@ struct TextureFileReference {
 
 #[derive(Debug, Serialize)]
 struct TextureRecord {
-    #[serde(skip_serializing)]
-    source_offset: u64,
     source_uuid: Option<String>,
     mapping_channel_id: u32,
     legacy_file_path: String,
@@ -422,8 +418,6 @@ struct LinetypeSegment {
 #[derive(Debug, Serialize)]
 struct LinetypeRecord {
     id: String,
-    #[serde(skip_serializing)]
-    source_offset: u64,
     #[serde(skip_serializing_if = "Option::is_none")]
     archive_index: Option<i32>,
     source_uuid: Option<String>,
@@ -455,8 +449,6 @@ struct HatchLineRecord {
 #[derive(Debug, Serialize)]
 struct HatchPatternRecord {
     id: String,
-    #[serde(skip_serializing)]
-    source_offset: u64,
     #[serde(skip_serializing_if = "Option::is_none")]
     archive_index: Option<i32>,
     source_uuid: Option<String>,
@@ -523,8 +515,6 @@ fn pattern_document_scale(binding: UnitBinding) -> Result<MillimeterScale, Patte
 #[derive(Debug, Serialize)]
 struct DimensionStyleRecord {
     id: String,
-    #[serde(skip_serializing)]
-    source_offset: u64,
     #[serde(skip_serializing_if = "Option::is_none")]
     archive_index: Option<i32>,
     source_uuid: Option<String>,
@@ -665,18 +655,7 @@ impl Serialize for DimensionStyleControls<'_> {
             {
                 continue;
             }
-            // The child evidence is document content; its source position is
-            // retained separately in NativeInstall::source_layout.
-            if let Some(fields) = value
-                .as_object()
-                .filter(|fields| fields.contains_key("offset") && fields.contains_key("sha256"))
-            {
-                let mut evidence = fields.clone();
-                evidence.remove("offset");
-                map.serialize_entry(key, &evidence)?;
-            } else {
-                map.serialize_entry(key, value)?;
-            }
+            map.serialize_entry(key, value)?;
         }
         if let Some(extra) = self.extra {
             map.serialize_entry("v5_extra_dimension_scale", &extra.dimension_scale)?;
@@ -780,8 +759,6 @@ impl Serialize for FontWeight {
 #[derive(Debug, Serialize)]
 struct TextStyleRecord {
     id: String,
-    #[serde(skip_serializing)]
-    source_offset: u64,
     #[serde(skip_serializing_if = "Option::is_none")]
     archive_index: Option<i32>,
     source_uuid: Option<String>,
@@ -851,8 +828,6 @@ struct WindowsBitmapRecord {
 #[derive(Debug, Serialize)]
 struct TextureMappingRecord {
     id: String,
-    #[serde(skip_serializing)]
-    source_offset: u64,
     source_uuid: Option<String>,
     name: String,
     mapping_type: u32,
@@ -1188,8 +1163,6 @@ impl Serialize for LayerPlotSlot {
 #[derive(Debug, Serialize)]
 struct LayerPresentationRecord {
     id: String,
-    #[serde(skip_serializing)]
-    source_offset: u64,
     archive_index: i32,
     source_uuid: Option<String>,
     #[serde(flatten)]
@@ -1274,8 +1247,6 @@ struct ObjectAttributesPresentation {
 #[derive(Debug, Serialize)]
 struct ObjectPresentationRecord {
     id: String,
-    #[serde(skip_serializing)]
-    source_offset: u64,
     #[serde(flatten)]
     attributes: ObjectAttributesPresentation,
     links: Vec<String>,
@@ -1283,8 +1254,6 @@ struct ObjectPresentationRecord {
 
 #[derive(Debug, Serialize)]
 struct LightAttributesRecord {
-    #[serde(skip_serializing)]
-    source_offset: u64,
     #[serde(flatten)]
     attributes: ObjectAttributesPresentation,
     #[serde(skip)]
@@ -2091,11 +2060,6 @@ fn parse_light_record_attributes(
         );
     }
     Ok(Some(LightAttributesRecord {
-        source_offset: cadmpeg_core::decode::u64_from_index(
-            attributes_chunk
-                .as_ref()
-                .map_or(record.range.start, |chunk| chunk.header_start),
-        ),
         attributes: presentation,
         userdata_requires_opaque,
     }))
@@ -2235,7 +2199,6 @@ fn parse_texture(
     let treat_as_linear = (version.1 >= 2).then(|| reader.bool()).transpose()?;
     reader.skip_remaining()?;
     Ok(TextureRecord {
-        source_offset: cadmpeg_core::decode::u64_from_index(source_offset),
         source_uuid: (!id.is_nil()).then(|| format!("{id}")),
         mapping_channel_id,
         legacy_file_path,
@@ -2346,7 +2309,6 @@ impl LegacyTextureKind {
 fn parse_v2_v3_texture(
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     reader: &mut BoundedReader<'_>,
-    source_offset: usize,
     kind: LegacyTextureKind,
 ) -> Result<Option<TextureRecord>, FramingError> {
     let legacy_file_path =
@@ -2362,7 +2324,6 @@ fn parse_v2_v3_texture(
         return Ok(None);
     }
     Ok(Some(TextureRecord {
-        source_offset: cadmpeg_core::decode::u64_from_index(source_offset),
         source_uuid: None,
         mapping_channel_id: 1,
         legacy_file_path,
@@ -2449,22 +2410,13 @@ fn parse_v2_v3_material(
     reader.skip(20)?;
 
     let mut textures = Vec::new();
-    if let Some(texture) =
-        parse_v2_v3_texture(ctx, &mut reader, source_offset, LegacyTextureKind::Bitmap)?
-    {
+    if let Some(texture) = parse_v2_v3_texture(ctx, &mut reader, LegacyTextureKind::Bitmap)? {
         textures.push(texture);
     }
-    if let Some(texture) =
-        parse_v2_v3_texture(ctx, &mut reader, source_offset, LegacyTextureKind::Bump)?
-    {
+    if let Some(texture) = parse_v2_v3_texture(ctx, &mut reader, LegacyTextureKind::Bump)? {
         textures.push(texture);
     }
-    if let Some(texture) = parse_v2_v3_texture(
-        ctx,
-        &mut reader,
-        source_offset,
-        LegacyTextureKind::Environment,
-    )? {
+    if let Some(texture) = parse_v2_v3_texture(ctx, &mut reader, LegacyTextureKind::Environment)? {
         textures.push(texture);
     }
 
@@ -2494,7 +2446,6 @@ fn parse_v2_v3_material(
         } else {
             format!("rhino:presentation:material#{id}")
         },
-        source_offset: cadmpeg_core::decode::u64_from_index(source_offset),
         archive_index: Some(archive_index),
         source_uuid: (!id.is_nil()).then(|| format!("{id}")),
         name,
@@ -2661,7 +2612,6 @@ fn parse_material(
         } else {
             format!("rhino:presentation:material#{}", component.id)
         },
-        source_offset: cadmpeg_core::decode::u64_from_index(source_offset),
         archive_index: component.index,
         source_uuid: (!component.id.is_nil()).then(|| format!("{}", component.id)),
         name: component.name,
@@ -3005,7 +2955,6 @@ fn parse_linetype(
         } else {
             format!("rhino:presentation:linetype#{id}")
         },
-        source_offset: cadmpeg_core::decode::u64_from_index(source_offset),
         archive_index: component.index,
         source_uuid: (!id.is_nil()).then(|| format!("{id}")),
         name: component.name,
@@ -3229,7 +3178,6 @@ fn parse_hatch_pattern(
         } else {
             format!("rhino:presentation:hatch_pattern#{}", component.id)
         },
-        source_offset: cadmpeg_core::decode::u64_from_index(source_offset),
         archive_index: component.index,
         source_uuid: (!component.id.is_nil()).then(|| format!("{}", component.id)),
         name: component.name,
@@ -3266,7 +3214,6 @@ fn named_child(
     }
     reader.skip(chunk.next_offset() - offset)?;
     Ok(serde_json::json!({
-        "offset": offset,
         "byte_len": chunk.next_offset() - offset,
         "sha256": hex(&cadmpeg_ir::hash::sha256(&data[offset..chunk.next_offset()])),
     }))
@@ -3684,7 +3631,6 @@ fn parse_v5_dimension_style(
         } else {
             format!("rhino:presentation:dimension_style#{id}")
         },
-        source_offset: cadmpeg_core::decode::u64_from_index(source_offset),
         archive_index: Some(archive_index),
         source_uuid: (!id.is_nil()).then(|| format!("{id}")),
         name,
@@ -3770,7 +3716,6 @@ fn parse_dimension_style(
         } else {
             format!("rhino:presentation:dimension_style#{}", component.id)
         },
-        source_offset: cadmpeg_core::decode::u64_from_index(source_offset),
         archive_index: component.index,
         source_uuid: (!component.id.is_nil()).then(|| format!("{}", component.id)),
         name: component.name,
@@ -4138,7 +4083,6 @@ fn parse_texture_mapping(
             } else {
                 format!("rhino:presentation:texture_mapping#{id}")
             },
-            source_offset: cadmpeg_core::decode::u64_from_index(source_offset),
             source_uuid: (!id.is_nil()).then(|| format!("{id}")),
             name,
             mapping_type,
@@ -4547,7 +4491,6 @@ fn parse_text_style(
         reader.skip_remaining()?;
         return Ok(TextStyleRecord {
             id: format!("rhino:presentation:text_style#index-{index}-offset-{source_offset}"),
-            source_offset: cadmpeg_core::decode::u64_from_index(source_offset),
             archive_index: Some(index),
             source_uuid: (!id.is_nil()).then(|| format!("{id}")),
             name: description.clone(),
@@ -4595,7 +4538,6 @@ fn parse_text_style(
         } else {
             format!("rhino:presentation:text_style#{id}")
         },
-        source_offset: cadmpeg_core::decode::u64_from_index(source_offset),
         archive_index: index,
         source_uuid: (!id.is_nil()).then(|| format!("{id}")),
         name,
@@ -5113,7 +5055,7 @@ pub(crate) fn install(
                 match parse_light(
                     ctx,
                     scan.data,
-                    object.class_data_range(),
+                    object.class_data_range.clone(),
                     scale,
                     object.range.start,
                     Some(source_order),
@@ -5167,7 +5109,6 @@ pub(crate) fn install(
                 } else {
                     format!("rhino:presentation:object#{}", identity.object_id)
                 },
-                source_offset: cadmpeg_core::decode::u64_from_index(object.range.start),
                 attributes: attributes_presentation,
                 links,
             });
@@ -5220,7 +5161,6 @@ pub(crate) fn install(
                     layer.index, layer.source.range.start
                 )
             },
-            source_offset: cadmpeg_core::decode::u64_from_index(layer.source.range.start),
             archive_index: layer.index,
             source_uuid: layer.id.map(|id| format!("{id}")),
             hierarchy: LayerHierarchySlot(layer.hierarchy),
@@ -5301,103 +5241,6 @@ pub(crate) fn install(
             push_opaque_record(&mut opaque_records, table.typecode, record);
         }
     }
-    let mut source_layout = std::collections::BTreeMap::new();
-    for record in &materials {
-        source_layout.insert(
-            format!("rhino.layout.{}.offset", record.id),
-            record.source_offset.to_string(),
-        );
-    }
-    for record in &lights {
-        source_layout.insert(
-            format!("rhino.layout.{}.offset", record.id),
-            record.source_offset.to_string(),
-        );
-    }
-    for record in &linetypes {
-        source_layout.insert(
-            format!("rhino.layout.{}.offset", record.id),
-            record.source_offset.to_string(),
-        );
-    }
-    for record in &hatch_patterns {
-        source_layout.insert(
-            format!("rhino.layout.{}.offset", record.id),
-            record.source_offset.to_string(),
-        );
-    }
-    for record in &dimension_styles {
-        source_layout.insert(
-            format!("rhino.layout.{}.offset", record.id),
-            record.source_offset.to_string(),
-        );
-        for (name, child) in &record.details.controls().0 {
-            if let Some(offset) = child.get("offset").and_then(serde_json::Value::as_u64) {
-                source_layout.insert(
-                    format!("rhino.layout.{}.controls.{name}.offset", record.id),
-                    offset.to_string(),
-                );
-            }
-        }
-    }
-    for record in &images {
-        source_layout.insert(
-            format!("rhino.layout.{}.offset", record.id),
-            record.source_offset.to_string(),
-        );
-    }
-    for record in &windows_bitmaps {
-        source_layout.insert(
-            format!("rhino.layout.{}.offset", record.id),
-            record.source_offset.to_string(),
-        );
-    }
-    for record in &texture_mappings {
-        source_layout.insert(
-            format!("rhino.layout.{}.offset", record.id),
-            record.source_offset.to_string(),
-        );
-    }
-    for record in &text_styles {
-        source_layout.insert(
-            format!("rhino.layout.{}.offset", record.id),
-            record.source_offset.to_string(),
-        );
-    }
-    for record in &layers {
-        source_layout.insert(
-            format!("rhino.layout.{}.offset", record.id),
-            record.source_offset.to_string(),
-        );
-    }
-    for record in &object_presentation {
-        source_layout.insert(
-            format!("rhino.layout.{}.offset", record.id),
-            record.source_offset.to_string(),
-        );
-    }
-    for material in &materials {
-        for (ordinal, texture) in material.textures.iter().enumerate() {
-            source_layout.insert(
-                format!("rhino.layout.{}.texture.{ordinal}.offset", material.id),
-                texture.source_offset.to_string(),
-            );
-        }
-    }
-    for light in &lights {
-        if let Some(attributes) = &light.attributes {
-            source_layout.insert(
-                format!("rhino.layout.{}.attributes.offset", light.id),
-                attributes.source_offset.to_string(),
-            );
-        }
-    }
-    for image in &images {
-        source_layout.insert(
-            format!("rhino.layout.{}.crc32", image.id),
-            image.image_crc32.to_string(),
-        );
-    }
     let namespace = ir.native.namespace_mut("rhino");
     namespace.set_arena(ctx, "groups", &groups)?;
     namespace.set_arena(ctx, "materials", &materials)?;
@@ -5418,7 +5261,6 @@ pub(crate) fn install(
     materials.sort_by(|left, right| left.native_id.cmp(&right.native_id));
     Ok((
         NativeInstall {
-            source_layout,
             losses,
             opaque_records,
         },

@@ -215,7 +215,7 @@ pub(super) fn write(
                         property.body.as_ref(),
                         None | Some(crate::native::PropertyBody::Unreadable(_))
                     ) {
-                        losses.push(cadmpeg_ir::codec::write::ExportLossCode::SourceUndecodedOmitted.note(format!(
+                        losses.push(FreecadLossCode::ExportNativePropertyNotTransferred.note(format!(
                             "property {} ({}) on object {} is omitted because its value is not held",
                             property.id, property.name, property.owner,
                         )));
@@ -232,7 +232,7 @@ pub(super) fn write(
         } else if property.owner == crate::native::native_id("document", "0") {
             if property.body.is_none() {
                 losses.push(
-                    cadmpeg_ir::codec::write::ExportLossCode::SourceUndecodedOmitted.note(format!(
+                    FreecadLossCode::ExportNativePropertyNotTransferred.note(format!(
                         "document property {} has no decoded body and is omitted",
                         property.id
                     )),

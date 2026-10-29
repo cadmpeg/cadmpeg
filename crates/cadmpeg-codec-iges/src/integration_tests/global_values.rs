@@ -2,7 +2,6 @@
 //! A Global value that fails is absent; the file is not refused (#222 C.5).
 
 use cadmpeg_ir::codec::DecodeResult;
-use cadmpeg_ir::source_fidelity::parts::PartState;
 
 use crate::test_support::test_curves_and_surfaces::point_file_with_global;
 
@@ -37,12 +36,7 @@ const GLOBAL_FIELDS: [&str; 26] = [
 
 /// The only given-up part of a decode, with its one `record.unreadable`.
 fn only_given_up(result: &DecodeResult) -> (String, u64, u64) {
-    let given_up: Vec<_> = result
-        .source_fidelity()
-        .parts()
-        .values()
-        .filter(|part| part.state() == &PartState::GivenUp {})
-        .collect();
+    let given_up = crate::test_support::given_up_parts(result.source_fidelity());
     assert_eq!(given_up.len(), 1);
     let unreadable: Vec<_> = result
         .report()
@@ -51,11 +45,13 @@ fn only_given_up(result: &DecodeResult) -> (String, u64, u64) {
         .filter(|loss| loss.code.local_code() == "record.unreadable")
         .collect();
     assert_eq!(unreadable.len(), 1);
-    assert!(unreadable[0]
+    let level = unreadable[0]
         .message
-        .starts_with(&format!("{} ", given_up[0].level().as_str())));
+        .strip_prefix("part ")
+        .and_then(|message| message.split(' ').next())
+        .expect("part label");
     (
-        given_up[0].level().as_str().to_owned(),
+        level.to_owned(),
         given_up[0].offset(),
         given_up[0].byte_len(),
     )

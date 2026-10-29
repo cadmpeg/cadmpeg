@@ -1,7 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Property identity fields are read without promoting their opaque contents.
 
-use cadmpeg_core::decode::u64_from_index;
 use cadmpeg_ir::{Codec, DecodeOptions};
 use std::io::Cursor;
 
@@ -32,28 +31,4 @@ fn an_entity_spelled_property_keeps_its_identity_and_status_while_opaque_bytes_r
             "A&B"
         )
     );
-    let fidelity = decoded.source_fidelity();
-    let layout = &fidelity.record_layout()[&property.id];
-    let range = |name: &str, raw: &str| {
-        let start = document.find(&format!("{name}='{raw}'")).unwrap() + name.len() + "='".len();
-        u64_from_index(start)..u64_from_index(start + raw.len())
-    };
-    let expected = [
-        range("name", "A&amp;B"),
-        range("type", "Vendor::Futu&#x72;e"),
-        range("status", "007"),
-    ];
-    assert_eq!(layout.reads()[layout.stream()], expected);
-    let spans = fidelity.b1_spans()[layout.stream()].spans();
-    for read in &expected {
-        assert!(spans.iter().all(|span| {
-            let unread = span.range();
-            unread.end <= read.start || unread.start >= read.end
-        }));
-    }
-    let opaque = range("value", "opaque-state");
-    assert!(spans.iter().any(|span| {
-        let unread = span.range();
-        unread.start <= opaque.start && opaque.end <= unread.end
-    }));
 }

@@ -85,15 +85,6 @@ fn work_point_plane_carrier_is_bound_to_its_input_frame() {
     });
     let admitted: DesignWorkPointInput = serde_json::from_value(wire.clone()).unwrap();
     assert_eq!(serde_json::to_value(&admitted).unwrap(), wire);
-    crate::records::feature::test_support::assert_located_at(
-        admitted,
-        &[
-            ("reference_offset", 0),
-            ("carrier.selection.asset_id_offset", 32),
-            ("carrier.selection.context_id_offset", 108),
-            ("carrier.selection.identity_record_offset", 150),
-        ],
-    );
     for field in ["identity_record_index", "next_record_index"] {
         let mut invalid = wire.clone();
         invalid["carrier"]["selection"][field] = 12.into();
@@ -119,15 +110,6 @@ fn work_point_sketch_point_carrier_is_bound_to_its_input_frame() {
     });
     let admitted: DesignWorkPointInput = serde_json::from_value(wire.clone()).unwrap();
     assert_eq!(serde_json::to_value(&admitted).unwrap(), wire);
-    crate::records::feature::test_support::assert_located_at(
-        admitted,
-        &[
-            ("reference_offset", 0),
-            ("carrier.selection.asset_id_offset", 32),
-            ("carrier.selection.context_id_offset", 108),
-            ("carrier.selection.identity_record_offset", 150),
-        ],
-    );
     for field in ["identity_record_index", "next_record_index"] {
         let mut invalid = wire.clone();
         invalid["carrier"]["selection"][field] = 12.into();

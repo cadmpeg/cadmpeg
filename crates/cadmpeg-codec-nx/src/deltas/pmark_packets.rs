@@ -5,8 +5,7 @@ use super::partition_prefix::PartitionPrefixState;
 use super::pmark_nodes::PmarkNodes;
 use super::pmark_state::PmarkState;
 use super::PartitionPrefix;
-use cadmpeg_core::decode::{u64_from_index, DecodeContext, View};
-use cadmpeg_core::CodecError;
+use cadmpeg_core::decode::View;
 use std::collections::BTreeMap;
 
 /// An enclosing packet and its separately keyed PMARK nodes.
@@ -39,41 +38,6 @@ pub(super) fn at(stream: &[u8], offset: usize, prefix: &PartitionPrefix) -> Opti
         terminal,
         offset,
         end,
-    })
-}
-
-pub(crate) fn read_source(
-    ctx: &DecodeContext<'_>,
-    view: View<'_>,
-    highest_id: u32,
-) -> Result<PmarkPacket, CodecError> {
-    let capacity = view.remaining() / (2 + 5 * 2 + 21);
-    let mut nodes: Option<Vec<PmarkState>> = None;
-    let mut count = 0_usize;
-    let parsed = read_fields(view, highest_id, |node| {
-        if nodes.is_none() {
-            let bytes = capacity
-                .checked_mul(size_of::<PmarkState>())
-                .ok_or_else(|| CodecError::malformed("NX PMARK node storage overflows"))?;
-            ctx.retain_bytes(u64_from_index(bytes), "NX PMARK packet nodes")?;
-            nodes = Some(ctx.alloc_filled(capacity, node, "NX PMARK packet nodes")?);
-        }
-        let slot = nodes
-            .as_mut()
-            .and_then(|nodes| nodes.get_mut(count))
-            .ok_or_else(|| CodecError::malformed("NX PMARK node count exceeds its source bound"))?;
-        *slot = node;
-        count += 1;
-        Ok::<(), CodecError>(())
-    })?
-    .ok_or_else(|| CodecError::malformed("NX PMARK packet is unreadable"))?;
-    let mut nodes = nodes.ok_or_else(|| CodecError::malformed("NX PMARK packet has no nodes"))?;
-    nodes.truncate(count);
-    Ok(PmarkPacket {
-        nodes: PmarkNodes::try_from(nodes).map_err(CodecError::malformed)?,
-        terminal: parsed.0,
-        offset: view.position(),
-        end: parsed.1,
     })
 }
 
@@ -258,6 +222,3 @@ mod tests {
         assert!(packets(&test_pmarks::prefix(40_001)).is_empty());
     }
 }
-
-#[cfg(test)]
-mod source_tests;

@@ -4,7 +4,6 @@ use super::axes::{compact_line_reference_directions, declared_line_reference_dir
 use super::scalars::FeatureObjectNames;
 use crate::classification::{classify, FeatureClass};
 use crate::records::FeatureInputLane;
-use crate::resolved_features::class_sources::ClassSources;
 use cadmpeg_core::decode::u64_from_index;
 use cadmpeg_core::decode::View;
 use cadmpeg_ir::features::{FeatureDirection3, FiniteVector3};
@@ -28,37 +27,7 @@ pub(super) fn move_body_translation_record(
     object_end: usize,
     data_class_offset: impl Into<Option<u64>>,
 ) -> Option<MoveBodyTranslationRecord> {
-    move_body_translation_record_with_read(
-        payload,
-        object_start,
-        object_end,
-        data_class_offset,
-        |offset, len| payload.get(offset..offset.checked_add(len)?),
-    )
-}
-
-pub(super) fn move_body_translation_source_record(
-    source: View<'_>,
-    object_start: usize,
-    object_end: usize,
-    data_class_offset: impl Into<Option<u64>>,
-) -> Option<MoveBodyTranslationRecord> {
-    move_body_translation_record_with_read(
-        source.window(),
-        object_start,
-        object_end,
-        data_class_offset,
-        |offset, len| source.read_at(source.start().checked_add(offset)?, len),
-    )
-}
-
-fn move_body_translation_record_with_read<'a>(
-    payload: &'a [u8],
-    object_start: usize,
-    object_end: usize,
-    data_class_offset: impl Into<Option<u64>>,
-    read: impl Fn(usize, usize) -> Option<&'a [u8]>,
-) -> Option<MoveBodyTranslationRecord> {
+    let read = |offset: usize, len: usize| payload.get(offset..offset.checked_add(len)?);
     const TRAILER_OFFSET: usize = 200;
     const NON_COPY_TRAILER: [u8; 8] = [1, 0, 0, 0, 0, 0, 1, 0];
     let (Some(data_class_offset), Some(end)) = (
@@ -169,7 +138,6 @@ fn move_body_translation_record_with_read<'a>(
 
 /// Add translation laws carried by Move Face direction-spec children.
 pub(crate) fn enrich_history_move_face_translations(
-    class_sources: &ClassSources,
     histories: &mut [crate::records::FeatureHistory],
     lanes: &[FeatureInputLane],
 ) {
@@ -179,7 +147,7 @@ pub(crate) fn enrich_history_move_face_translations(
         let mut starts = Vec::new();
         for (history_index, history) in histories.iter().enumerate() {
             for (feature_index, feature) in history.features.iter().enumerate() {
-                if let Some(position) = names.of(feature).and_then(|name| name.offset) {
+                if let Some(position) = names.of(feature).map(|name| name.offset) {
                     starts.push((position, history_index, feature_index));
                 }
             }
@@ -217,17 +185,15 @@ pub(crate) fn enrich_history_move_face_translations(
                 .classes
                 .iter()
                 .filter(|class| {
-                    class.name == "moDirectionSpec_c"
-                        && class_sources.position(class).is_some_and(|position| {
-                            (u64_from_index(start)..u64_from_index(end)).contains(&position)
-                        })
+                    class.name == "moDirectionSpec_c" && {
+                        (u64_from_index(start)..u64_from_index(end)).contains(&class.offset)
+                    }
                 })
                 .count();
             let mut line_refs = lane.classes.iter().filter(|class| {
-                class.name == "moLineRef_w"
-                    && class_sources.position(class).is_some_and(|position| {
-                        (u64_from_index(start)..u64_from_index(end)).contains(&position)
-                    })
+                class.name == "moLineRef_w" && {
+                    (u64_from_index(start)..u64_from_index(end)).contains(&class.offset)
+                }
             });
             let line_ref = line_refs.next();
             if direction_specs != 1 || line_ref.is_none() || line_refs.next().is_some() {
@@ -240,17 +206,10 @@ pub(crate) fn enrich_history_move_face_translations(
             let Some(line_ref) = line_ref else {
                 continue;
             };
-            let mut directions = declared_line_reference_directions(
-                &lane.native_payload,
-                class_sources.position(line_ref),
-                end,
-            );
+            let mut directions =
+                declared_line_reference_directions(&lane.native_payload, line_ref.offset, end);
             let excluded_handles = std::iter::once(line_ref)
-                .filter_map(|class| {
-                    class_sources
-                        .position(class)
-                        .and_then(|offset| usize::try_from(offset).ok())
-                })
+                .filter_map(|class| usize::try_from(class.offset).ok())
                 .flat_map(|offset| [offset + 136, offset + 144])
                 .collect::<Vec<_>>();
             let compact = compact_line_reference_directions(
@@ -309,7 +268,6 @@ pub(crate) fn enrich_history_move_face_translations(
 
 /// Add non-copy translations carried by Move/Copy Body data children.
 pub(crate) fn enrich_history_move_body_translations(
-    class_sources: &ClassSources,
     histories: &mut [crate::records::FeatureHistory],
     lanes: &[FeatureInputLane],
 ) {
@@ -319,7 +277,7 @@ pub(crate) fn enrich_history_move_body_translations(
         let mut starts = Vec::new();
         for (history_index, history) in histories.iter().enumerate() {
             for (feature_index, feature) in history.features.iter().enumerate() {
-                if let Some(position) = names.of(feature).and_then(|name| name.offset) {
+                if let Some(position) = names.of(feature).map(|name| name.offset) {
                     starts.push((position, history_index, feature_index));
                 }
             }
@@ -346,19 +304,15 @@ pub(crate) fn enrich_history_move_body_translations(
                 continue;
             };
             let mut data_classes = lane.classes.iter().filter(|class| {
-                class.name == "moMoveCopyBodyData_c"
-                    && class_sources.position(class).is_some_and(|position| {
-                        (u64_from_index(start)..u64_from_index(end)).contains(&position)
-                    })
+                class.name == "moMoveCopyBodyData_c" && {
+                    (u64_from_index(start)..u64_from_index(end)).contains(&class.offset)
+                }
             });
             let candidate = match (data_classes.next(), data_classes.next()) {
-                (Some(class), None) => move_body_translation_record(
-                    &lane.native_payload,
-                    start,
-                    end,
-                    class_sources.position(class),
-                )
-                .map(|record| record.translation_m),
+                (Some(class), None) => {
+                    move_body_translation_record(&lane.native_payload, start, end, class.offset)
+                        .map(|record| record.translation_m)
+                }
                 _ => None,
             };
             candidates
@@ -412,22 +366,21 @@ mod tests {
         histories: &mut [FeatureHistory],
         lanes: &[(FeatureInputLane, Vec<u64>)],
     ) {
-        let plain = lanes
-            .iter()
-            .map(|(lane, _)| lane.clone())
-            .collect::<Vec<_>>();
-        enrich_history_move_face_translations(&placed_sources(lanes), histories, &plain);
+        enrich_history_move_face_translations(histories, &placed(lanes));
     }
 
-    /// The class positions that each fixture lane states, in class order.
-    fn placed_sources(
-        lanes: &[(FeatureInputLane, Vec<u64>)],
-    ) -> crate::resolved_features::class_sources::ClassSources {
-        crate::resolved_features::class_sources::ClassSources::from_positions(
-            lanes
-                .iter()
-                .flat_map(|(lane, positions)| lane.classes.iter().zip(positions.iter().copied())),
-        )
+    /// Each fixture lane with the class positions it states, in class order.
+    fn placed(lanes: &[(FeatureInputLane, Vec<u64>)]) -> Vec<FeatureInputLane> {
+        lanes
+            .iter()
+            .map(|(lane, positions)| {
+                let mut lane = lane.clone();
+                for (class, position) in lane.classes.iter_mut().zip(positions) {
+                    class.offset = *position;
+                }
+                lane
+            })
+            .collect()
     }
 
     fn move_face_history() -> FeatureHistory {
@@ -500,14 +453,14 @@ mod tests {
             parent: "lane".into(),
             ordinal: 1,
             sequence: 1,
+            offset: u64_from_index(selection_offset),
             name: "moMoveCopyBodyData_c".into(),
         });
         positions.push(u64_from_index(selection_offset));
 
         enrich_history_move_body_translations(
-            &placed_sources(&[(lane.clone(), positions)]),
             &mut histories,
-            std::slice::from_ref(&lane),
+            &placed(&[(lane.clone(), positions)]),
         );
         assert!(histories[0].features[0]
             .properties
@@ -540,6 +493,7 @@ mod tests {
                 parent: "lane".into(),
                 ordinal: u32::try_from(index).expect("test index fits u32"),
                 sequence: u32::try_from(index).expect("test index fits u32"),
+                offset: 32 + u64_from_index(index),
                 name: "moDirectionSpec_c".into(),
             })
             .collect::<Vec<_>>();
@@ -552,6 +506,7 @@ mod tests {
             parent: "lane".into(),
             ordinal: u32::try_from(direction_specs).expect("test direction spec count fits u32"),
             sequence: u32::try_from(direction_specs).expect("test direction spec count fits u32"),
+            offset: 80,
             name: "moLineRef_w".into(),
         });
         positions.push(80);
@@ -567,7 +522,7 @@ mod tests {
                     id: "name".into(),
                     parent: "lane".into(),
                     ordinal: 0,
-                    offset: Some(8),
+                    offset: 8,
                     value: "Move Face".into(),
                     object_id: ObjectId::from_value(7),
                 },
@@ -577,7 +532,7 @@ mod tests {
                     id: "d1-name".into(),
                     parent: "lane".into(),
                     ordinal: 1,
-                    offset: Some(100),
+                    offset: 100,
                     value: "D1".into(),
                     object_id: None,
                 },
@@ -588,7 +543,7 @@ mod tests {
                 parent: "lane".into(),
                 feature_ref: Some("move-face".into()),
                 ordinal: 0,
-                offset: Some(128),
+                offset: 128,
                 object_id: 8,
                 name: "d1-name".into(),
                 value: cadmpeg_ir::scalar::FiniteReal::new(0.005).expect("finite test scalar"),
@@ -610,12 +565,14 @@ mod tests {
     #[test]
     fn move_face_translation_requires_one_direction_spec_and_one_direction() {
         let mut histories = vec![move_face_history()];
-        let placed = line_reference_lane(&[Vector3::new(0.0, -1.0, 0.0)], 1);
-        enrich_history_move_face_translations_test(&mut histories, std::slice::from_ref(&placed));
-        crate::resolved_features::parameters::enrich_history_parameters(
-            &placed_sources(std::slice::from_ref(&placed)),
+        let placed_lane = line_reference_lane(&[Vector3::new(0.0, -1.0, 0.0)], 1);
+        enrich_history_move_face_translations_test(
             &mut histories,
-            [&placed.0],
+            std::slice::from_ref(&placed_lane),
+        );
+        crate::resolved_features::parameters::enrich_history_parameters(
+            &mut histories,
+            &placed(std::slice::from_ref(&placed_lane)),
             true,
         );
         assert_eq!(histories[0].features[0].parameters["D1"], "5mm");

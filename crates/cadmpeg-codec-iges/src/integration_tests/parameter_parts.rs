@@ -1,6 +1,4 @@
 // SPDX-License-Identifier: Apache-2.0
-use cadmpeg_ir::NativeUnknownRecord;
-
 use crate::test_support::test_owned::{owned_test_file, OwnedTestEntity};
 
 fn points(first: &str) -> Vec<u8> {
@@ -45,27 +43,15 @@ fn public_parameter_failure_keeps_one_shared_source_home_and_checked_peer_conten
         .arenas()
         .get("quarantined_parameter_records")
         .is_none_or(Vec::is_empty));
-    let unknowns = native.arena_as::<NativeUnknownRecord>("unknowns").unwrap();
-    assert_eq!(unknowns.len(), 1);
     let first = bytes
         .chunks_exact(81)
         .position(|card| card[72] == b'P')
         .unwrap()
         * 81;
-    let fidelity = decoded.source_fidelity();
-    assert_eq!(
-        fidelity
-            .retained_record(unknowns[0].id.as_str())
-            .unwrap()
-            .data(),
-        Some(&bytes[first..first + 81])
-    );
-    assert!(!fidelity.record_layout()["iges:entity:directory#3"]
-        .reads()
-        .is_empty());
-    assert!(!fidelity
-        .record_layout()
-        .contains_key("iges:entity:directory#1"));
+    let parts = crate::test_support::given_up_parts(decoded.source_fidelity());
+    assert_eq!(parts.len(), 1);
+    assert!(!parts[0].untyped().is_empty());
+    assert_eq!(parts[0].data(), Some(&bytes[first..first + 81]));
     assert_eq!(
         decoded
             .report()
@@ -131,40 +117,20 @@ fn conflicted_parameter_parts_keep_an_unrelated_current_point_and_exact_source_h
     );
     let native = decoded.ir().native.namespace("iges").unwrap();
     assert!(native.arenas()["quarantined_parameter_records"].is_empty());
-    let unknowns = native.arena_as::<NativeUnknownRecord>("unknowns").unwrap();
-    assert_eq!(unknowns.len(), 2);
-    let mut homes: Vec<_> = unknowns
-        .iter()
-        .map(|unknown| (unknown, &decoded.source_fidelity().parts()[&unknown.id]))
-        .collect();
-    homes.sort_unstable_by_key(|(_, part)| part.offset());
-    for (ordinal, (unknown, part)) in homes.into_iter().enumerate() {
+    let mut homes = crate::test_support::given_up_parts(decoded.source_fidelity());
+    assert_eq!(homes.len(), 2);
+    homes.sort_unstable_by_key(|part| part.offset());
+    for (ordinal, part) in homes.into_iter().enumerate() {
         let start = first + ordinal * 81;
-        assert_eq!(part.level().as_str(), "iges.parameter_record");
-        assert_eq!(
-            part.state(),
-            &cadmpeg_ir::source_fidelity::parts::PartState::GivenUp {}
-        );
+        assert!(!part.untyped().is_empty());
         assert_eq!(part.offset(), u64::try_from(start).unwrap());
         assert_eq!(part.byte_len(), 81);
-        assert_eq!(
-            decoded
-                .source_fidelity()
-                .retained_record(unknown.id.as_str())
-                .unwrap()
-                .data(),
-            Some(&bytes[start..start + 81])
-        );
+        assert_eq!(part.data(), Some(&bytes[start..start + 81]));
     }
-    assert!(
-        decoded.source_fidelity().record_layout()["iges:entity:directory#5"]
-            .reads()
-            .values()
-            .any(|ranges| !ranges.is_empty())
+    assert_eq!(
+        crate::test_support::given_up_count(decoded.report(), "iges.parameter_record"),
+        2
     );
-    for id in ["iges:entity:directory#1", "iges:entity:directory#3"] {
-        assert!(!decoded.source_fidelity().record_layout().contains_key(id));
-    }
     let unreadable: Vec<_> = decoded
         .report()
         .losses
@@ -208,55 +174,28 @@ fn original_duplicate_claims_match_one_independent_physical_frame_and_one_helper
         .expect("Directory card");
     bytes[start_field..start_field + 8].copy_from_slice(b"       1");
 
-    let arena = cadmpeg_core::decode::DecodeArena::new();
-    let (ctx, root) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
-        &bytes,
-        &arena,
-        &cadmpeg_core::decode::DecodePolicy::service(),
-    )
-    .unwrap();
-    let mut frames = Vec::new();
-    let claims =
-        cadmpeg_test_support::contract::iges::frame_parameter_owners(&ctx, root, &mut frames)
-            .unwrap();
-    assert_eq!(claims.len(), 2);
-    assert_eq!(claims[0].record(), claims[1].record());
-    assert_eq!(claims[1].directory().start(), claims[0].directory().end());
-    assert_eq!(&claims[0].directory().window()[8..16], b"       1");
-    assert_eq!(&claims[1].directory().window()[8..16], b"       1");
-    assert_eq!(
-        frames
-            .iter()
-            .filter(|frame| frame.level().as_str() == "iges.parameter_record")
-            .count(),
-        1
-    );
-    let frame = &frames[claims[0].record()];
+    let start = bytes
+        .chunks_exact(81)
+        .position(|line| line[72] == b'P')
+        .unwrap()
+        * 81;
     let decoded = crate::test_support::decode(bytes.clone());
     let native = decoded.ir().native.namespace("iges").unwrap();
     assert_eq!(native.arenas()["entities"].len(), 2);
     assert!(decoded.ir().model.points.is_empty());
     assert!(native.arenas()["quarantined_parameter_records"].is_empty());
-    let unknowns = native.arena_as::<NativeUnknownRecord>("unknowns").unwrap();
-    assert_eq!(unknowns.len(), 1);
-    let fidelity = decoded.source_fidelity();
-    let part = &fidelity.parts()[&unknowns[0].id];
-    assert_eq!(part.level(), frame.level());
-    assert_eq!(part.stream(), frame.capture().stream());
-    assert_eq!(part.offset(), frame.capture().offset());
-    assert_eq!(part.byte_len(), frame.capture().byte_len());
-    assert_eq!(part.framing_bytes(), frame.framing());
+    let parts = crate::test_support::given_up_parts(decoded.source_fidelity());
+    assert_eq!(parts.len(), 1);
+    let part = parts[0];
+    assert!(!part.untyped().is_empty());
     assert_eq!(
-        part.state(),
-        &cadmpeg_ir::source_fidelity::parts::PartState::GivenUp {}
+        crate::test_support::given_up_count(decoded.report(), "iges.parameter_record"),
+        1
     );
-    assert_eq!(
-        fidelity
-            .retained_record(unknowns[0].id.as_str())
-            .unwrap()
-            .data(),
-        Some(frame.view().window())
-    );
+    assert_eq!(part.stream(), "");
+    assert_eq!(part.offset(), u64::try_from(start).unwrap());
+    assert_eq!(part.byte_len(), 81);
+    assert_eq!(part.data(), Some(&bytes[start..start + 81]));
     let unreadable: Vec<_> = decoded
         .report()
         .losses
@@ -266,7 +205,6 @@ fn original_duplicate_claims_match_one_independent_physical_frame_and_one_helper
     assert_eq!(unreadable.len(), 1);
     assert_eq!(unreadable[0].severity, cadmpeg_ir::report::Severity::Error);
     assert!(unreadable[0].message.contains("ownership-conflict"));
-    assert!(ctx.take_record_captures().unwrap().is_empty());
 }
 
 #[test]
@@ -295,26 +233,15 @@ fn point_semantic_part_keeps_exact_peer_placement_and_native_pipeline() {
     assert_eq!(decoded.ir().model.vertices[0].point, peer.id);
     let native = decoded.ir().native.namespace("iges").unwrap();
     assert_eq!(native.arenas()["entities"].len(), 2);
-    let unknowns = native.arena_as::<NativeUnknownRecord>("unknowns").unwrap();
-    assert_eq!(unknowns.len(), 1);
-    let fidelity = decoded.source_fidelity();
-    let part = &fidelity.parts()[&unknowns[0].id];
-    assert_eq!(
-        part.state(),
-        &cadmpeg_ir::source_fidelity::parts::PartState::GivenUp {}
-    );
+    let parts = crate::test_support::given_up_parts(decoded.source_fidelity());
+    assert_eq!(parts.len(), 1);
+    assert!(!parts[0].untyped().is_empty());
     let start = bytes
         .chunks_exact(81)
         .position(|line| line[72] == b'P')
         .unwrap()
         * 81;
-    assert_eq!(
-        fidelity
-            .retained_record(unknowns[0].id.as_str())
-            .unwrap()
-            .data(),
-        Some(&bytes[start + 8..start + 15])
-    );
+    assert_eq!(parts[0].data(), Some(&bytes[start + 8..start + 15]));
     assert_eq!(
         decoded
             .report()
@@ -427,8 +354,6 @@ fn unreadable_display_literal_keeps_exact_geometry_and_other_native_fields() {
 #[test]
 fn cross_card_point_numeric_fields_keep_typed_neighbors_and_an_exact_peer() {
     use crate::test_support::test_owned::owned_test_file_with_raw_parameters;
-    use cadmpeg_ir::source_fidelity::parts::PartState;
-
     for zeroes in [59, 60] {
         let mut x = "0".repeat(zeroes);
         x.push('1');
@@ -504,38 +429,18 @@ fn cross_card_point_numeric_fields_keep_typed_neighbors_and_an_exact_peer() {
             serde_json::to_value(vertex).unwrap(),
             serde_json::to_value(original_vertex).unwrap()
         );
-        let unknowns = native.arena_as::<NativeUnknownRecord>("unknowns").unwrap();
-        assert_eq!(unknowns.len(), 1);
         let fidelity = decoded.source_fidelity();
-        let part = &fidelity.parts()[&unknowns[0].id];
-        assert_eq!(part.level().as_str(), "iges.parameter_field");
-        assert_eq!(part.state(), &PartState::GivenUp {});
-        assert_eq!(part.offset(), 4);
-        assert_eq!(part.byte_len(), u64::try_from(x.len() + 1).unwrap());
+        let parts = crate::test_support::given_up_parts(fidelity);
+        assert_eq!(parts.len(), 1);
+        let part = parts[0];
+        assert!(!part.untyped().is_empty());
         assert_eq!(
-            part.framing_bytes(),
-            &[u64::try_from(x.len() + 4).unwrap()..u64::try_from(x.len() + 5).unwrap()]
-        );
-        assert_eq!(
-            fidelity
-                .retained_record(unknowns[0].id.as_str())
-                .unwrap()
-                .data(),
-            Some(format!("{x},").as_bytes())
-        );
-        let parent = &fidelity.parts()[part.parent().unwrap()];
-        assert_eq!(parent.level().as_str(), "iges.parameter_record");
-        assert_eq!(parent.state(), &PartState::Decoded {});
-        assert_eq!(parent.offset(), u64::try_from(first).unwrap());
-        assert_eq!(parent.byte_len(), 162);
-        assert_eq!(
-            fidelity
-                .parts()
-                .values()
-                .filter(|part| part.state() == &PartState::GivenUp {})
-                .count(),
+            crate::test_support::given_up_count(decoded.report(), "iges.parameter_field"),
             1
         );
+        assert_eq!(part.offset(), 4);
+        assert_eq!(part.byte_len(), u64::try_from(x.len() + 1).unwrap());
+        assert_eq!(part.data(), Some(format!("{x},").as_bytes()));
         assert_eq!(decoded.report().losses.len(), 1);
         assert_eq!(
             decoded.report().losses[0].code.local_code(),
@@ -556,8 +461,6 @@ fn cross_card_point_numeric_fields_keep_typed_neighbors_and_an_exact_peer() {
 
 #[test]
 fn unequal_overlapping_parameter_claims_give_up_only_the_proved_section_ancestor() {
-    use cadmpeg_ir::source_fidelity::parts::PartState;
-
     for (first_entry, first_count, second_start, second_count) in
         [(0, 1, 1, 2), (0, 2, 2, 1), (1, 1, 2, 2)]
     {
@@ -609,31 +512,6 @@ fn unequal_overlapping_parameter_claims_give_up_only_the_proved_section_ancestor
         assert_eq!(&bytes[..directory], &original[..directory]);
         assert_eq!(&bytes[end..], &original[end..]);
 
-        let arena = cadmpeg_core::decode::DecodeArena::new();
-        let (ctx, root) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
-            &bytes,
-            &arena,
-            &cadmpeg_core::decode::DecodePolicy::service(),
-        )
-        .unwrap();
-        let mut frames = Vec::new();
-        let error =
-            cadmpeg_test_support::contract::iges::frame_parameter_owners(&ctx, root, &mut frames)
-                .unwrap_err();
-        assert!(error.contains("unequal Parameter claims overlap"));
-        assert!(!frames
-            .iter()
-            .any(|frame| frame.level().as_str() == "iges.parameter_record"));
-        let ancestor = frames
-            .iter()
-            .find(|frame| frame.level().as_str() == "iges.parameter_section")
-            .unwrap();
-        assert_eq!(
-            (ancestor.view().start(), ancestor.view().end()),
-            (start, end)
-        );
-        assert_eq!(ancestor.view().window(), &bytes[start..end]);
-
         let decoded = crate::test_support::decode(bytes.clone());
         assert_eq!(
             serde_json::to_value(&decoded.ir().source).unwrap(),
@@ -676,30 +554,14 @@ fn unequal_overlapping_parameter_claims_give_up_only_the_proved_section_ancestor
             native.arenas()["display_attributes"],
             baseline.ir().native.namespace("iges").unwrap().arenas()["display_attributes"]
         );
-        let unknowns = native.arena_as::<NativeUnknownRecord>("unknowns").unwrap();
-        assert_eq!(unknowns.len(), 1);
         let fidelity = decoded.source_fidelity();
-        let part = &fidelity.parts()[&unknowns[0].id];
-        assert_eq!(part.level().as_str(), "iges.parameter_section");
+        let parts = crate::test_support::given_up_parts(fidelity);
+        assert_eq!(parts.len(), 1);
+        let part = parts[0];
+        assert!(!part.untyped().is_empty());
         assert_eq!(part.offset(), u64::try_from(start).unwrap());
         assert_eq!(part.byte_len(), u64::try_from(end - start).unwrap());
-        assert_eq!(part.state(), &PartState::GivenUp {});
-        assert_eq!(part.framing_bytes(), ancestor.framing());
-        assert_eq!(
-            fidelity
-                .retained_record(unknowns[0].id.as_str())
-                .unwrap()
-                .data(),
-            Some(&bytes[start..end])
-        );
-        assert_eq!(
-            fidelity
-                .retained_records()
-                .keys()
-                .map(|id| id.as_str())
-                .collect::<std::collections::BTreeSet<_>>(),
-            std::collections::BTreeSet::from([crate::SOURCE_IMAGE_ID, unknowns[0].id.as_str()]),
-        );
+        assert_eq!(part.data(), Some(&bytes[start..end]));
         assert_eq!(
             fidelity
                 .retained_records()
@@ -723,28 +585,6 @@ fn unequal_overlapping_parameter_claims_give_up_only_the_proved_section_ancestor
                 .data(),
             Some(original.as_slice()),
         );
-        assert_eq!(
-            fidelity
-                .parts()
-                .values()
-                .filter(|part| part.state() == &PartState::GivenUp {})
-                .count(),
-            1
-        );
-        assert!(!fidelity.parts().values().any(|part| matches!(
-            part.level().as_str(),
-            "iges.parameter_record" | "iges.parameter_field"
-        )));
-        for layout in fidelity.record_layout().values() {
-            for (stream, ranges) in layout.reads() {
-                assert!(!stream.starts_with("iges/parameter/"));
-                if stream == part.stream() {
-                    assert!(ranges.iter().all(|range| range.end <= part.offset()));
-                } else {
-                    assert!(stream.starts_with("iges/global/"));
-                }
-            }
-        }
         let unreadable: Vec<_> = decoded
             .report()
             .losses
@@ -768,8 +608,6 @@ fn unequal_overlapping_parameter_claims_give_up_only_the_proved_section_ancestor
 
 #[test]
 fn a_missing_declared_parameter_owner_has_one_actual_unclaimed_section_home() {
-    use cadmpeg_ir::source_fidelity::parts::PartState;
-
     let original = owned_test_file(&[OwnedTestEntity {
         entity_type: 116,
         form: 0,
@@ -795,30 +633,6 @@ fn a_missing_declared_parameter_owner_has_one_actual_unclaimed_section_home() {
     assert_eq!(&bytes[..directory], &original[..directory]);
     assert_eq!(&bytes[start..start + 64], &original[start..start + 64]);
     assert_eq!(&bytes[start + 72..], &original[start + 72..]);
-    let arena = cadmpeg_core::decode::DecodeArena::new();
-    let (ctx, root) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
-        &bytes,
-        &arena,
-        &cadmpeg_core::decode::DecodePolicy::service(),
-    )
-    .unwrap();
-    let mut frames = Vec::new();
-    let error =
-        cadmpeg_test_support::contract::iges::frame_parameter_owners(&ctx, root, &mut frames)
-            .unwrap_err();
-    assert!(error.contains("locate no Parameter cards"));
-    assert!(!frames
-        .iter()
-        .any(|frame| frame.level().as_str() == "iges.parameter_record"));
-    let ancestor = frames
-        .iter()
-        .find(|frame| frame.level().as_str() == "iges.parameter_section")
-        .unwrap();
-    assert_eq!(
-        (ancestor.view().start(), ancestor.view().end()),
-        (start, start + 81)
-    );
-    assert_eq!(ancestor.view().window(), &bytes[start..start + 81]);
 
     let decoded = crate::test_support::decode(bytes.clone());
     assert_eq!(
@@ -851,30 +665,14 @@ fn a_missing_declared_parameter_owner_has_one_actual_unclaimed_section_home() {
         native.arenas()["display_attributes"],
         baseline.ir().native.namespace("iges").unwrap().arenas()["display_attributes"]
     );
-    let unknowns = native.arena_as::<NativeUnknownRecord>("unknowns").unwrap();
-    assert_eq!(unknowns.len(), 1);
     let fidelity = decoded.source_fidelity();
-    let part = &fidelity.parts()[&unknowns[0].id];
-    assert_eq!(part.level().as_str(), "iges.parameter_section");
+    let parts = crate::test_support::given_up_parts(fidelity);
+    assert_eq!(parts.len(), 1);
+    let part = parts[0];
+    assert!(!part.untyped().is_empty());
     assert_eq!(part.offset(), u64::try_from(start).unwrap());
     assert_eq!(part.byte_len(), 81);
-    assert_eq!(part.state(), &PartState::GivenUp {});
-    assert_eq!(part.framing_bytes(), ancestor.framing());
-    assert_eq!(
-        fidelity
-            .retained_record(unknowns[0].id.as_str())
-            .unwrap()
-            .data(),
-        Some(&bytes[start..start + 81])
-    );
-    assert_eq!(
-        fidelity
-            .retained_records()
-            .keys()
-            .map(|id| id.as_str())
-            .collect::<std::collections::BTreeSet<_>>(),
-        std::collections::BTreeSet::from([crate::SOURCE_IMAGE_ID, unknowns[0].id.as_str()]),
-    );
+    assert_eq!(part.data(), Some(&bytes[start..start + 81]));
     assert_eq!(
         fidelity
             .retained_records()
@@ -898,28 +696,6 @@ fn a_missing_declared_parameter_owner_has_one_actual_unclaimed_section_home() {
             .data(),
         Some(original.as_slice()),
     );
-    assert_eq!(
-        fidelity
-            .parts()
-            .values()
-            .filter(|part| part.state() == &PartState::GivenUp {})
-            .count(),
-        1
-    );
-    assert!(!fidelity.parts().values().any(|part| matches!(
-        part.level().as_str(),
-        "iges.parameter_record" | "iges.parameter_field"
-    )));
-    for layout in fidelity.record_layout().values() {
-        for (stream, ranges) in layout.reads() {
-            assert!(!stream.starts_with("iges/parameter/"));
-            if stream == part.stream() {
-                assert!(ranges.iter().all(|range| range.end <= part.offset()));
-            } else {
-                assert!(stream.starts_with("iges/global/"));
-            }
-        }
-    }
     let losses: Vec<_> = decoded
         .report()
         .losses
@@ -940,8 +716,6 @@ fn a_missing_declared_parameter_owner_has_one_actual_unclaimed_section_home() {
 
 #[test]
 fn an_unlocated_parameter_owner_does_not_discard_a_current_bounded_peer() {
-    use cadmpeg_ir::source_fidelity::parts::PartState;
-
     let mut bytes = points("116,1,2,3,0;");
     let baseline = crate::test_support::decode(bytes.clone());
     let directory = bytes
@@ -966,22 +740,7 @@ fn an_unlocated_parameter_owner_does_not_discard_a_current_bounded_peer() {
         decoded.ir().native.namespace("iges").unwrap().arenas()["entities"].len(),
         2
     );
-    let section = decoded
-        .source_fidelity()
-        .parts()
-        .values()
-        .find(|part| part.level().as_str() == "iges.parameter_section")
-        .unwrap();
-    assert_eq!(section.state(), &PartState::Decoded {});
-    let record = decoded
-        .source_fidelity()
-        .parts()
-        .values()
-        .find(|part| part.level().as_str() == "iges.parameter_record")
-        .unwrap();
-    assert_eq!(record.offset(), u64::try_from(start).unwrap());
-    assert_eq!(record.byte_len(), 81);
-    assert_eq!(record.state(), &PartState::Decoded {});
+    assert!(crate::test_support::given_up_parts(decoded.source_fidelity()).is_empty());
     assert!(cadmpeg_ir::validate_neutral(decoded.ir(), Vec::new())
         .unwrap()
         .is_ok());

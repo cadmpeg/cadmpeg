@@ -68,6 +68,8 @@ impl AsmHistory {
 #[serde(deny_unknown_fields)]
 struct AsmHistorySerde {
     id: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    byte_offset: Option<u64>,
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     binding_budget_exceeded: bool,
     states: Vec<AsmDeltaState>,
@@ -81,7 +83,7 @@ impl TryFrom<AsmHistorySerde> for AsmHistory {
     fn try_from(wire: AsmHistorySerde) -> Result<Self, Self::Error> {
         Ok(Self {
             id: wire.id,
-            byte_offset: None,
+            byte_offset: wire.byte_offset,
             preamble: None,
             binding_budget_exceeded: wire.binding_budget_exceeded,
             states: wire.states,
@@ -95,6 +97,7 @@ impl From<AsmHistory> for AsmHistorySerde {
     fn from(history: AsmHistory) -> Self {
         Self {
             id: history.id,
+            byte_offset: history.byte_offset,
             binding_budget_exceeded: history.binding_budget_exceeded,
             states: history.states,
             topology_scope: history.topology_scope,
@@ -138,6 +141,8 @@ pub(crate) fn is_default<T: Default + PartialEq>(value: &T) -> bool {
 struct AsmDeltaStateWire {
     id: String,
     parent: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    byte_offset: Option<u64>,
     state_id: i64,
     version_flag: i64,
     state_flag: i64,
@@ -181,7 +186,7 @@ impl TryFrom<AsmDeltaStateWire> for AsmDeltaState {
         Ok(Self {
             id: wire.id,
             parent: wire.parent,
-            byte_offset: None,
+            byte_offset: wire.byte_offset,
             state_id: wire.state_id,
             version_flag: wire.version_flag,
             state_flag: wire.state_flag,
@@ -202,6 +207,7 @@ impl From<AsmDeltaState> for AsmDeltaStateWire {
         Self {
             id: state.id,
             parent: state.parent,
+            byte_offset: state.byte_offset,
             state_id: state.state_id,
             version_flag: state.version_flag,
             state_flag: state.state_flag,
@@ -492,6 +498,8 @@ struct AsmHistoryRecordWireRef<'a> {
     id: &'a str,
     parent: &'a str,
     #[serde(skip_serializing_if = "Option::is_none")]
+    byte_offset: Option<u64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     revision_id: Option<i64>,
     index: u64,
     name: &'a str,
@@ -517,6 +525,7 @@ impl Serialize for AsmHistoryRecord {
         AsmHistoryRecordWireRef {
             id: &self.id,
             parent: &self.parent,
+            byte_offset: self.byte_offset,
             revision_id: self.revision_id,
             index,
             name,
@@ -562,6 +571,8 @@ impl AsmHistoryRecord {
 struct AsmHistoryRecordWire {
     id: String,
     parent: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    byte_offset: Option<u64>,
     /// Construction-history revision identity paired from the ordered
     /// old-reference run; absent only for the stream terminator or an opaque
     /// snapshot whose pairing cannot be established.
@@ -611,7 +622,7 @@ impl TryFrom<AsmHistoryRecordWire> for AsmHistoryRecord {
             id: wire.id,
             parent: wire.parent,
             revision_id: wire.revision_id,
-            byte_offset: None,
+            byte_offset: wire.byte_offset,
             framing,
             raw_bytes: wire.frame,
         })
@@ -634,6 +645,7 @@ impl From<AsmHistoryRecord> for AsmHistoryRecordWire {
         Self {
             id: record.id,
             parent: record.parent,
+            byte_offset: record.byte_offset,
             revision_id: record.revision_id,
             index,
             name,
@@ -648,7 +660,7 @@ impl From<AsmHistoryRecord> for AsmHistoryRecordWire {
 pub(crate) struct AsmBulletinBoard {
     pub(crate) id: String,
     pub(crate) parent: String,
-    #[serde(skip)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub(crate) byte_offset: Option<u64>,
     pub(crate) owner_ref: i64,
     pub(crate) number: i64,
@@ -687,6 +699,8 @@ impl Clone for AsmEntityChange {
 struct AsmEntityChangeWireRef<'a> {
     id: &'a str,
     parent: &'a str,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    byte_offset: Option<u64>,
     kind: AsmEntityChangeKindWire,
     #[serde(skip_serializing_if = "Option::is_none")]
     old_ref: Option<i64>,
@@ -710,6 +724,7 @@ impl Serialize for AsmEntityChange {
         AsmEntityChangeWireRef {
             id: &self.id,
             parent: &self.parent,
+            byte_offset: self.byte_offset,
             kind,
             old_ref,
             new_ref,
@@ -751,6 +766,8 @@ impl AsmEntityChange {
 struct AsmEntityChangeSerde {
     id: String,
     parent: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    byte_offset: Option<u64>,
     kind: AsmEntityChangeKindWire,
     #[serde(
         default,
@@ -795,7 +812,7 @@ impl TryFrom<AsmEntityChangeSerde> for AsmEntityChange {
         Ok(Self {
             id: wire.id,
             parent: wire.parent,
-            byte_offset: None,
+            byte_offset: wire.byte_offset,
             kind,
         })
     }
@@ -818,6 +835,7 @@ impl From<AsmEntityChange> for AsmEntityChangeSerde {
         Self {
             id: change.id,
             parent: change.parent,
+            byte_offset: change.byte_offset,
             kind,
             old_ref,
             new_ref,

@@ -1,18 +1,13 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Source-only archive and XML images. No native record serializes these bytes.
 
-use std::collections::BTreeMap;
 use std::ops::Range;
 
-use cadmpeg_core::decode::{DecodeContext, View};
+use cadmpeg_core::decode::View;
 use cadmpeg_core::CodecError;
-use cadmpeg_ir::native::bytes::NativeBytes;
 use cadmpeg_ir::{
     ids::UnknownId, ArenaClasses, RetainedBytes, RetainedSourceRecord, SourceFidelity,
 };
-
-pub(crate) mod b1;
-pub(crate) mod owners;
 
 pub(crate) const SOURCE_IMAGE: &str = "fcstd:source:image#archive";
 
@@ -71,7 +66,6 @@ pub(crate) fn property(
     fidelity: &mut SourceFidelity,
     property: &crate::native::PropertyRecord,
     objects: &[crate::native::ObjectRecord],
-    legacy_evidence: bool,
 ) -> Result<Option<cadmpeg_ir::ArenaClass>, CodecError> {
     if property.body.is_none() {
         return Ok(None);
@@ -98,7 +92,7 @@ pub(crate) fn property(
     {
         classes.insert(class);
     }
-    if legacy_evidence {
+    if !classes.is_empty() {
         let range = ctx.source_range(property)?.ok_or_else(|| {
             CodecError::malformed("source classification requires an original property range")
         })?;
@@ -112,6 +106,23 @@ pub(crate) fn property(
         )?;
     }
     Ok(opaque.then_some(class))
+}
+
+/// Mark `class` untyped on the record `id` retained, or on the archive image
+/// that holds its bytes when it retained no record of its own.
+pub(crate) fn mark_untyped(
+    fidelity: &mut SourceFidelity,
+    id: &str,
+    class: cadmpeg_ir::ArenaClass,
+) -> Result<(), CodecError> {
+    let owner = if fidelity.retained_record(id).is_some() {
+        id
+    } else {
+        SOURCE_IMAGE
+    };
+    fidelity
+        .mark_untyped(owner, [class])
+        .map_err(CodecError::malformed)
 }
 
 /// Charge missing content at the admission that retained only its evidence.
@@ -144,9 +155,7 @@ pub(crate) fn mark_unreadable(
             property.body,
             Some(crate::native::PropertyBody::Unreadable(_))
         ) {
-            fidelity
-                .mark_untyped(&property.id, [class(property)])
-                .map_err(CodecError::malformed)?;
+            mark_untyped(fidelity, &property.id, class(property))?;
         }
     }
     let entries = native.arena_as::<crate::native::EntryRecord>("entries")?;
@@ -182,9 +191,7 @@ pub(crate) fn mark_unreadable(
                         .is_some_and(|count| count != "0"))
         }) && !maps.iter().any(|map| map.property == property.id);
         if missing || map_missing {
-            fidelity
-                .mark_untyped(&property.id, [class(property)])
-                .map_err(CodecError::malformed)?;
+            mark_untyped(fidelity, &property.id, class(property))?;
         }
     }
 
@@ -201,271 +208,22 @@ pub(crate) fn mark_unreadable(
     Ok(())
 }
 
+/// The original XML extent of one property element.
 #[derive(Clone)]
 pub(crate) struct ValueSourceRanges {
-    id: String,
     record: Range<usize>,
-    values: Vec<Range<usize>>,
 }
 
 impl ValueSourceRanges {
-    pub(crate) fn id(&self) -> &str {
-        &self.id
-    }
     pub(crate) fn record_range(&self) -> Range<usize> {
         self.record.clone()
     }
-    pub(crate) fn has_values(&self) -> bool {
-        !self.values.is_empty()
-    }
 }
 
-pub(crate) fn state_source(
-    node: roxmltree::Node<'_, '_>,
-    state: &crate::native::GuiStateRecord,
-) -> Result<ValueSourceRanges, CodecError> {
-    value_source_from_node(&state.id, node, &state.values)
-}
-
-pub(crate) fn property_source(
-    node: roxmltree::Node<'_, '_>,
-    property: &crate::native::PropertyRecord,
-) -> Result<ValueSourceRanges, CodecError> {
-    if !matches!(
-        property.body,
-        Some(crate::native::PropertyBody::Persisted { .. })
-    ) {
-        return Ok(ValueSourceRanges {
-            id: property.id.clone(),
-            record: node.range(),
-            values: Vec::new(),
-        });
-    }
-    value_source_from_node(&property.id, node, property.values())
-}
-
-pub(crate) fn gui_property_source(
-    node: roxmltree::Node<'_, '_>,
-    property: &crate::native::GuiPropertyRecord,
-) -> Result<ValueSourceRanges, CodecError> {
-    value_source_from_node(&property.id, node, &property.values)
-}
-
-fn value_source_from_node(
-    id: &str,
-    node: roxmltree::Node<'_, '_>,
-    values: &[crate::native::ValueRecord],
-) -> Result<ValueSourceRanges, CodecError> {
-    let mut ranges = Vec::new();
-    for (order, value) in node
-        .descendants()
-        .filter(|value| value.is_element() && *value != node)
-        .enumerate()
-    {
-        if !values
-            .get(order)
-            .is_some_and(|record| record.order == order && record.tag == value.tag_name().name())
-        {
-            return Err(CodecError::malformed(
-                "XML value ranges differ from admitted typed values",
-            ));
-        }
-        ranges.push(value.range());
-    }
-    if ranges.len() != values.len() {
-        return Err(CodecError::malformed(
-            "XML value range count differs from admitted typed values",
-        ));
-    }
-    Ok(ValueSourceRanges {
-        id: id.to_owned(),
+pub(crate) fn property_source(node: roxmltree::Node<'_, '_>) -> ValueSourceRanges {
+    ValueSourceRanges {
         record: node.range(),
-        values: ranges,
-    })
-}
-
-#[cfg(test)]
-pub(crate) fn value_layout_payloads(
-    ctx: &DecodeContext<'_>,
-    source: View<'_>,
-    ranges: &ValueSourceRanges,
-    payloads: &mut BTreeMap<String, BTreeMap<String, NativeBytes>>,
-) -> Result<(), CodecError> {
-    let extent = relative_xml_extent(source, ranges.record.clone())?;
-    let fields = ctx.record(&ranges.id, extent, || {
-        copy_value_fields(ctx, source, ranges)
-    })?;
-    if payloads.insert(ranges.id.clone(), fields).is_some() {
-        return Err(CodecError::malformed("duplicate XML value layout identity"));
     }
-    Ok(())
-}
-
-fn copy_value_fields(
-    ctx: &DecodeContext<'_>,
-    source: View<'_>,
-    ranges: &ValueSourceRanges,
-) -> Result<BTreeMap<String, NativeBytes>, CodecError> {
-    let mut fields = BTreeMap::new();
-    for (order, range) in ranges.values.iter().enumerate() {
-        if range.start < ranges.record.start || range.end > ranges.record.end {
-            return Err(CodecError::malformed("XML value escapes its owning record"));
-        }
-        let value = relative_xml_extent(source, range.clone())?;
-        ctx.retain_bytes(
-            cadmpeg_core::decode::u64_from_index(value.window().len()),
-            "retain FCStd value layout payload",
-        )?;
-        let mut bytes = ctx.alloc_filled(
-            value.window().len(),
-            0_u8,
-            "retain FCStd value layout payload",
-        )?;
-        bytes.copy_from_slice(value.window());
-        fields.insert(format!("values.{order}.raw_xml"), NativeBytes::from(bytes));
-    }
-    Ok(fields)
-}
-
-pub(crate) fn state_layout_payloads(
-    ctx: &DecodeContext<'_>,
-    source: View<'_>,
-    ranges: &ValueSourceRanges,
-    payloads: &mut BTreeMap<String, BTreeMap<String, NativeBytes>>,
-    pointers: &mut BTreeMap<String, BTreeMap<String, u64>>,
-) -> Result<(), CodecError> {
-    xml_value_layout_payloads(ctx, source, ranges, payloads, pointers)
-}
-
-#[cfg(test)]
-pub(crate) fn object_layout_payloads(
-    ctx: &DecodeContext<'_>,
-    source: View<'_>,
-    id: &str,
-    range: Range<usize>,
-    payloads: &mut BTreeMap<String, BTreeMap<String, NativeBytes>>,
-    pointers: &mut BTreeMap<String, BTreeMap<String, u64>>,
-) -> Result<(), CodecError> {
-    // Object fields have no ValueRecord children: properties own those separately.
-    let ranges = ValueSourceRanges {
-        id: id.to_owned(),
-        record: range,
-        values: Vec::new(),
-    };
-    xml_value_layout_payloads(ctx, source, &ranges, payloads, pointers)
-}
-
-pub(crate) fn captured_object_layout_payloads(
-    ctx: &DecodeContext<'_>,
-    source: View<'_>,
-    id: &str,
-    range: Range<usize>,
-    payloads: &mut BTreeMap<String, BTreeMap<String, NativeBytes>>,
-    pointers: &mut BTreeMap<String, BTreeMap<String, u64>>,
-) -> Result<(), CodecError> {
-    let ranges = ValueSourceRanges {
-        id: id.to_owned(),
-        record: range,
-        values: Vec::new(),
-    };
-    let fields = copy_xml_value_layout(ctx, source, &ranges)?;
-    install_xml_value_fields(&ranges, fields, payloads, pointers)
-}
-
-#[cfg(test)]
-pub(crate) fn property_layout_payloads(
-    ctx: &DecodeContext<'_>,
-    source: View<'_>,
-    ranges: &ValueSourceRanges,
-    payloads: &mut BTreeMap<String, BTreeMap<String, NativeBytes>>,
-    pointers: &mut BTreeMap<String, BTreeMap<String, u64>>,
-) -> Result<(), CodecError> {
-    xml_value_layout_payloads(ctx, source, ranges, payloads, pointers)
-}
-
-pub(crate) fn captured_property_layout_payloads(
-    ctx: &DecodeContext<'_>,
-    source: View<'_>,
-    ranges: &ValueSourceRanges,
-    property: &crate::native::PropertyRecord,
-    payloads: &mut BTreeMap<String, BTreeMap<String, NativeBytes>>,
-    pointers: &mut BTreeMap<String, BTreeMap<String, u64>>,
-) -> Result<(), CodecError> {
-    let fields = if property.body.is_none() {
-        BTreeMap::new()
-    } else {
-        copy_xml_value_layout(ctx, source, ranges)?
-    };
-    install_xml_value_fields(ranges, fields, payloads, pointers)
-}
-
-pub(crate) fn gui_property_layout_payloads(
-    ctx: &DecodeContext<'_>,
-    source: View<'_>,
-    ranges: &ValueSourceRanges,
-    payloads: &mut BTreeMap<String, BTreeMap<String, NativeBytes>>,
-    pointers: &mut BTreeMap<String, BTreeMap<String, u64>>,
-) -> Result<(), CodecError> {
-    xml_value_layout_payloads(ctx, source, ranges, payloads, pointers)
-}
-
-fn xml_value_layout_payloads(
-    ctx: &DecodeContext<'_>,
-    source: View<'_>,
-    ranges: &ValueSourceRanges,
-    payloads: &mut BTreeMap<String, BTreeMap<String, NativeBytes>>,
-    pointers: &mut BTreeMap<String, BTreeMap<String, u64>>,
-) -> Result<(), CodecError> {
-    let extent = relative_xml_extent(source, ranges.record.clone())?;
-    let fields = ctx.record(&ranges.id, extent, || {
-        copy_xml_value_layout(ctx, source, ranges)
-    })?;
-    install_xml_value_fields(ranges, fields, payloads, pointers)
-}
-
-fn copy_xml_value_layout(
-    ctx: &DecodeContext<'_>,
-    source: View<'_>,
-    ranges: &ValueSourceRanges,
-) -> Result<BTreeMap<String, NativeBytes>, CodecError> {
-    let extent = relative_xml_extent(source, ranges.record.clone())?;
-    let mut fields = copy_value_fields(ctx, source, ranges)?;
-    ctx.retain_bytes(
-        cadmpeg_core::decode::u64_from_index(extent.window().len()),
-        "retain FCStd XML layout",
-    )?;
-    let mut bytes = ctx.alloc_filled(extent.window().len(), 0_u8, "retain FCStd XML layout")?;
-    bytes.copy_from_slice(extent.window());
-    fields.insert("raw_xml".into(), NativeBytes::from(bytes));
-    Ok(fields)
-}
-
-fn install_xml_value_fields(
-    ranges: &ValueSourceRanges,
-    fields: BTreeMap<String, NativeBytes>,
-    payloads: &mut BTreeMap<String, BTreeMap<String, NativeBytes>>,
-    pointers: &mut BTreeMap<String, BTreeMap<String, u64>>,
-) -> Result<(), CodecError> {
-    if payloads.contains_key(&ranges.id) || pointers.contains_key(&ranges.id) {
-        return Err(CodecError::malformed(
-            "duplicate XML source layout identity",
-        ));
-    }
-    payloads.insert(ranges.id.clone(), fields);
-    pointers.insert(
-        ranges.id.clone(),
-        BTreeMap::from([
-            (
-                "byte_start".into(),
-                cadmpeg_core::decode::u64_from_index(ranges.record.start),
-            ),
-            (
-                "byte_end".into(),
-                cadmpeg_core::decode::u64_from_index(ranges.record.end),
-            ),
-        ]),
-    );
-    Ok(())
 }
 
 pub(crate) fn relative_xml_extent(
@@ -488,65 +246,6 @@ pub(crate) fn relative_xml_extent(
     source
         .child(start, end)
         .ok_or_else(|| CodecError::malformed("XML record range escapes its source entry"))
-}
-
-pub(crate) fn xml_layout_payload(
-    ctx: &DecodeContext<'_>,
-    source: View<'_>,
-    id: &str,
-    range: Range<usize>,
-    payloads: &mut BTreeMap<String, BTreeMap<String, NativeBytes>>,
-) -> Result<(), CodecError> {
-    let extent = relative_xml_extent(source, range)?;
-    let bytes = ctx.record(id, extent, || {
-        ctx.retain_bytes(
-            cadmpeg_core::decode::u64_from_index(extent.window().len()),
-            "retain FCStd XML layout payload",
-        )?;
-        let mut bytes = ctx.alloc_filled(
-            extent.window().len(),
-            0_u8,
-            "retain FCStd XML layout payload",
-        )?;
-        bytes.copy_from_slice(extent.window());
-        Ok(NativeBytes::from(bytes))
-    })?;
-    if payloads
-        .insert(id.to_owned(), BTreeMap::from([("raw_xml".into(), bytes)]))
-        .is_some()
-    {
-        return Err(CodecError::malformed(
-            "duplicate XML layout payload identity",
-        ));
-    }
-    Ok(())
-}
-
-pub(crate) fn install_layouts(
-    ctx: &DecodeContext<'_>,
-    fidelity: &mut SourceFidelity,
-    mut payloads: BTreeMap<String, BTreeMap<String, NativeBytes>>,
-    mut pointers: BTreeMap<String, BTreeMap<String, u64>>,
-) -> Result<(), CodecError> {
-    fidelity.install_record_captures(ctx, |id, layout| {
-        if let Some(fields) = payloads.remove(id) {
-            for (field, bytes) in fields {
-                layout.insert_payload(field, bytes)?;
-            }
-        }
-        if let Some(fields) = pointers.remove(id) {
-            for (field, pointer) in fields {
-                layout.insert_pointer(field, pointer)?;
-            }
-        }
-        Ok(())
-    })?;
-    if !payloads.is_empty() || !pointers.is_empty() {
-        return Err(CodecError::malformed(
-            "XML payload has no completed record capture",
-        ));
-    }
-    Ok(())
 }
 
 #[cfg(test)]

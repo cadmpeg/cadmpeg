@@ -279,7 +279,7 @@ fn nested_compound_crc_excludes_child_chunks_and_preserves_all_curve_geometry() 
                 if object.class_uuid == crate::curves::POLYCURVE {
                     compounds += assert_compound_class_checksum(
                         scan.data,
-                        object.class_data_range(),
+                        object.class_data_range.clone(),
                         scan.archive,
                     );
                 }

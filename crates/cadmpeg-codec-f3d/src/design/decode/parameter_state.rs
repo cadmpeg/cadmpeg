@@ -20,11 +20,11 @@ use cadmpeg_core::{
     CodecError,
 };
 use cadmpeg_ir::{
-    source_fidelity::parts::{DecodeParts, PartLevel, PartOutput, PartSpec},
+    source_fidelity::parts::{DecodeParts, PartOutput, PartSpec},
     CodecFormat,
 };
 
-use std::{collections::BTreeMap, mem::size_of};
+use std::collections::BTreeMap;
 
 const STATE_GUID: &str = "B0556F58-EE09-46A7-B18F-E296F48E5B13";
 const COMPANION_GUID: &str = "E276745D-D84E-40D5-88BC-8C94DD4ACCDF";
@@ -36,7 +36,6 @@ pub(crate) struct DecodedStateParts {
     pub(crate) states: Vec<DesignParameterState>,
     pub(crate) companions: Vec<DesignParameterStateCompanion>,
     pub(crate) headers: Vec<DesignParameterDocumentHeader>,
-    pub(crate) unknowns: Vec<cadmpeg_ir::native::NativeRecord>,
     pub(crate) fidelity: cadmpeg_ir::SourceFidelity,
     pub(crate) losses: Vec<cadmpeg_ir::report::loss::LossNote>,
 }
@@ -66,20 +65,15 @@ pub(crate) fn decode(
         let frames = supported_frames(ctx, source, &meta)?;
         decode_stream(ctx, source, &entry.name, &frames, &mut output)?;
     }
-    let (_, mut native, fidelity, losses) = output.into_parts(ctx)?.into_parts();
+    let (_, mut native, fidelity, losses) = output.into_parts();
     let namespace = native.namespace_mut("f3d");
     let states = namespace.arena_as_for_decode(ctx, "design_parameter_states")?;
     let companions = namespace.arena_as_for_decode(ctx, "design_parameter_state_companions")?;
     let headers = namespace.arena_as_for_decode(ctx, "design_parameter_document_headers")?;
-    let unknowns = namespace
-        .arenas_mut()
-        .remove("unknowns")
-        .unwrap_or_default();
     Ok(DecodedStateParts {
         states,
         companions,
         headers,
-        unknowns,
         fidelity,
         losses,
     })
@@ -290,12 +284,10 @@ fn target<'a, 'b>(
 }
 
 fn validate_pair(
-    ctx: &DecodeContext<'_>,
     source: View<'_>,
     frames: &[Option<DesignPrimaryFrame<'_>>],
     frame: &DesignPrimaryFrame<'_>,
 ) -> Result<(), CodecError> {
-    let _reads = ctx.read_transaction()?;
     let (state_frame, companion_frame, root_frame) = if matching(frame, STATE_GUID, 4) {
         let (_, _, other, root) = state(extent(source, frame)?, frame)?;
         (
@@ -331,8 +323,6 @@ fn decode_stream(
     frames: &[Option<DesignPrimaryFrame<'_>>],
     output: &mut PartOutput,
 ) -> Result<(), CodecError> {
-    let level = PartLevel::parse("f3d.bulk_record")
-        .ok_or_else(|| CodecError::malformed("F3D bulk record level is not declared"))?;
     for frame in frames.iter().flatten().filter(|frame| {
         matching(frame, STATE_GUID, 4)
             || matching(frame, COMPANION_GUID, 1)
@@ -345,54 +335,52 @@ fn decode_stream(
         } else {
             full
         };
-        ctx.decode_part(output, full, PartSpec::new(level, Vec::new()), |stage| {
+        ctx.decode_part(output, full, PartSpec::new("f3d.bulk_record"), |stage| {
             if !root {
-                validate_pair(ctx, source, frames, frame)?;
+                validate_pair(source, frames, frame)?;
             }
             let id = identity(stream, frame);
-            ctx.record(&id, view, || {
-                if root {
-                    let (class_tag, record_index) = header(view, frame)?;
-                    stage.insert_native(
-                        ctx,
-                        "design_parameter_document_headers",
-                        DesignParameterDocumentHeader {
-                            id: id.clone(),
-                            class_tag,
-                            record_index,
-                        },
-                    )?;
-                } else if matching(frame, STATE_GUID, 4) {
-                    let (class_tag, record_index, other, root) = state(view, frame)?;
-                    stage.insert_native(
-                        ctx,
-                        "design_parameter_states",
-                        DesignParameterState {
-                            id: id.clone(),
-                            class_tag,
-                            record_index,
-                            companion: identity(stream, target(frames, other, COMPANION_GUID, 1)?),
-                            document_root: identity(stream, target(frames, root, ROOT_GUID, 23)?),
-                        },
-                    )?;
-                } else {
-                    let (class_tag, record_index, control, control_word, state_record_index) =
-                        companion(view, frame)?;
-                    stage.insert_native(
-                        ctx,
-                        "design_parameter_state_companions",
-                        DesignParameterStateCompanion {
-                            id: id.clone(),
-                            class_tag,
-                            record_index,
-                            control,
-                            control_word,
-                            state_record_index,
-                        },
-                    )?;
-                }
-                Ok(())
-            })
+            if root {
+                let (class_tag, record_index) = header(view, frame)?;
+                stage.insert_native(
+                    ctx,
+                    "design_parameter_document_headers",
+                    DesignParameterDocumentHeader {
+                        id: id.clone(),
+                        class_tag,
+                        record_index,
+                    },
+                )?;
+            } else if matching(frame, STATE_GUID, 4) {
+                let (class_tag, record_index, other, root) = state(view, frame)?;
+                stage.insert_native(
+                    ctx,
+                    "design_parameter_states",
+                    DesignParameterState {
+                        id: id.clone(),
+                        class_tag,
+                        record_index,
+                        companion: identity(stream, target(frames, other, COMPANION_GUID, 1)?),
+                        document_root: identity(stream, target(frames, root, ROOT_GUID, 23)?),
+                    },
+                )?;
+            } else {
+                let (class_tag, record_index, control, control_word, state_record_index) =
+                    companion(view, frame)?;
+                stage.insert_native(
+                    ctx,
+                    "design_parameter_state_companions",
+                    DesignParameterStateCompanion {
+                        id: id.clone(),
+                        class_tag,
+                        record_index,
+                        control,
+                        control_word,
+                        state_record_index,
+                    },
+                )?;
+            }
+            Ok(())
         })?;
     }
     Ok(())
@@ -400,8 +388,8 @@ fn decode_stream(
 
 /// Link each typed parameter to the state its tail reference names.
 ///
-/// The parameter record scope read the tail reference. A link forms only when
-/// the named entity is a typed state that has a current home.
+/// A link forms only when the named entity is a typed state that has a
+/// current home.
 pub(crate) fn link_parameters(
     ctx: &DecodeContext<'_>,
     scan: &ContainerScan<'_>,
@@ -468,55 +456,6 @@ fn linked_state(
         .iter()
         .any(|candidate| candidate.id == state)
         .then_some(state)
-}
-
-pub(crate) fn install_unknowns(
-    ctx: &DecodeContext<'_>,
-    ir: &mut cadmpeg_ir::CadIr,
-    records: Vec<cadmpeg_ir::native::NativeRecord>,
-) -> Result<(), CodecError> {
-    if records.is_empty() {
-        return Ok(());
-    }
-    match ir
-        .native
-        .namespace_mut("f3d")
-        .arenas_mut()
-        .entry("unknowns".to_owned())
-    {
-        std::collections::btree_map::Entry::Vacant(entry) => {
-            entry.insert(records);
-        }
-        std::collections::btree_map::Entry::Occupied(mut entry) => {
-            let destination = entry.get_mut();
-            let required = destination
-                .len()
-                .checked_add(records.len())
-                .ok_or_else(|| {
-                    CodecError::malformed("parameter state unknown composition count overflows")
-                })?;
-            if required > destination.capacity() {
-                let bytes = required
-                    .abs_diff(destination.capacity())
-                    .checked_mul(size_of::<cadmpeg_ir::native::NativeRecord>())
-                    .ok_or_else(|| {
-                        CodecError::malformed(
-                            "parameter state unknown composition storage overflows",
-                        )
-                    })?;
-                destination.try_reserve_exact(records.len()).map_err(|_| {
-                    cadmpeg_core::decode::ResourceLimit::allocation_failed(
-                        cadmpeg_core::decode::ResourceDimension::RetainedBytes,
-                        ctx.policy().limits.max_retained_bytes,
-                        u64_from_index(bytes),
-                        "parameter state unknown composition",
-                    )
-                })?;
-            }
-            destination.extend(records);
-        }
-    }
-    Ok(())
 }
 
 #[cfg(test)]

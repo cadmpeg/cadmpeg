@@ -23,8 +23,6 @@ pub(super) struct Dependencies {
     live: BTreeSet<Address>,
     failed: BTreeSet<Address>,
     directory_sources: Vec<u32>,
-    source_lines: Vec<u32>,
-    source_points: Vec<u32>,
 }
 
 impl Dependencies {
@@ -33,24 +31,11 @@ impl Dependencies {
         global: &crate::global::ResolvedGlobal,
         ctx: &DecodeContext<'_>,
     ) -> Result<Self, CodecError> {
-        let transaction = ctx.read_transaction()?;
         let mut graph = BTreeMap::new();
         let mut bad = BTreeSet::new();
         let mut directory_types = BTreeMap::new();
         let mut directory_sources = Vec::new();
         let mut discriminator_targets = Vec::new();
-        let mut source_lines = Vec::new();
-        let mut source_points = Vec::new();
-        let source_integers = global.numeric_limits().integer_bits.is_none_or(|bits| {
-            bits >= 8
-                && bits
-                    >= u32::from(
-                        sections
-                            .lengths
-                            .single_integer
-                            .max(sections.lengths.double_integer),
-                    )
-        });
         let mut cursor = 0;
         let mut ordinal = 0;
         while cursor < sections.directory.window().len() {
@@ -158,7 +143,6 @@ impl Dependencies {
             )?;
             match parameter_prefix(body, sections.lengths) {
                 Ok(mut prefix) => {
-                    let mut source_point = false;
                     // A value group that does not parse is one given-up
                     // `iges.binary_parameter_value`; its record stays and no
                     // later value is read (#215 rule 1).
@@ -174,20 +158,10 @@ impl Dependencies {
                             insert(ctx, &mut bad, address)?;
                         }
                         if declaration.is_some_and(|(_, _, point, _)| *point) {
-                            source_point = prefix.entity_type == 116 && source_integers;
-                            let mut coordinates = 0;
                             let mut symbol = None;
                             for field in 0..4 {
                                 match prefix.stream.next() {
                                     Ok(Some(value)) => {
-                                        if field < 3 {
-                                            coordinates += 1;
-                                            source_point &= matches!(
-                                                value,
-                                                super::super::BinaryValue::Integer(_)
-                                                    | super::super::BinaryValue::Default
-                                            );
-                                        }
                                         if field == 3 {
                                             symbol = Some(value);
                                         }
@@ -200,10 +174,7 @@ impl Dependencies {
                                     }
                                 }
                             }
-                            source_point &= coordinates == 3 && symbol.is_some();
                             if let Some(value) = symbol {
-                                source_point &=
-                                    matches!(pointer_value(&value, "Point display symbol"), Ok(0));
                                 match pointer_value(&value, "Point display symbol") {
                                     Ok(pointer) if pointer != 0 => {
                                         match directory_address(pointer) {
@@ -228,7 +199,6 @@ impl Dependencies {
                     if !bad.contains(&address) {
                         let syntax = (|| {
                             let mut macro_values = Vec::new();
-                            let mut source_line = prefix.entity_type == 110 && source_integers;
                             while !value_failed {
                                 let value = match prefix.stream.next() {
                                     Ok(Some(value)) => value,
@@ -239,12 +209,6 @@ impl Dependencies {
                                         break;
                                     }
                                 };
-                                source_point = false;
-                                source_line &= matches!(
-                                    value,
-                                    super::super::BinaryValue::Default
-                                        | super::super::BinaryValue::Integer(_)
-                                );
                                 if prefix.entity_type == 306 {
                                     macro_values.try_reserve(1).map_err(|_| {
                                         cadmpeg_core::decode::ResourceLimit::allocation_failed(
@@ -264,32 +228,8 @@ impl Dependencies {
                                 if prefix.entity_type == 306 {
                                     return Err(malformed("a Binary Macro value does not parse"));
                                 }
-                                source_line = false;
-                                source_point = false;
                             } else {
                                 prefix.stream.finish()?;
-                            }
-                            if source_line {
-                                source_lines.try_reserve(1).map_err(|_| {
-                                    cadmpeg_core::decode::ResourceLimit::allocation_failed(
-                                        cadmpeg_core::decode::ResourceDimension::RetainedBytes,
-                                        ctx.policy().limits.max_retained_bytes,
-                                        u64_from_index(size_of::<u32>()),
-                                        "IGES Binary Line source dispatch",
-                                    )
-                                })?;
-                                source_lines.push(offset);
-                            }
-                            if source_point {
-                                source_points.try_reserve(1).map_err(|_| {
-                                    cadmpeg_core::decode::ResourceLimit::allocation_failed(
-                                        cadmpeg_core::decode::ResourceDimension::RetainedBytes,
-                                        ctx.policy().limits.max_retained_bytes,
-                                        u64_from_index(size_of::<u32>()),
-                                        "IGES Binary Point source dispatch",
-                                    )
-                                })?;
-                                source_points.push(offset);
                             }
                             if prefix.entity_type == 306 {
                                 let text = super::super::parameter_text(306, &macro_values)?;
@@ -378,22 +318,11 @@ impl Dependencies {
         for address in graph.into_keys().filter(|address| !bad.contains(address)) {
             insert(ctx, &mut live, address)?;
         }
-        drop(transaction);
         Ok(Self {
             live,
             failed: bad,
             directory_sources,
-            source_lines,
-            source_points,
         })
-    }
-
-    pub(super) fn source_line(&self, offset: u32) -> bool {
-        self.source_lines.binary_search(&offset).is_ok()
-    }
-
-    pub(super) fn source_point(&self, offset: u32) -> bool {
-        self.source_points.binary_search(&offset).is_ok()
     }
 
     /// A Directory record needs only its transformation. Its Parameter Data
