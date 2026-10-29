@@ -147,7 +147,7 @@ impl<E: EncoderBackend> Encoder for E {
         input.ir.check_scope().map_err(CodecError::malformed)?;
         let target = E::TARGET.resolve(input.ir, request, E::FORMAT)?;
         let identity = target.export_target().cloned();
-        let synthesis_identity = target.synthesis_target().map(|target| target.cloned());
+        let synthesis_identity = target.synthesis_target().map(Option::<&_>::cloned);
         let unrepresented = input.source_unrepresented();
         // Retained bytes and their eligibility travel together. A backend sees
         // no source bytes when the document does not represent their content.

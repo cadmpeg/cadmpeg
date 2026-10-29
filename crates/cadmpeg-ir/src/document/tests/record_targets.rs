@@ -95,7 +95,7 @@ fn actual_record_geometry_target_keeps_display_and_visibility_semantics() {
         source_entity_id: None,
         object_type: None,
         visible: Some(false),
-        channels: Default::default(),
+        channels: std::collections::BTreeMap::default(),
     });
     assert_eq!(ir.effective_display_color(&target), expected);
     assert_eq!(

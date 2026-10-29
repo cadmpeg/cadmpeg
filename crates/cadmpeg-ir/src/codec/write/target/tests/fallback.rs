@@ -51,7 +51,9 @@ fn off_catalog_preservation_keeps_its_source_until_synthesis_is_selected() {
     assert!(!actual.preserves_source());
     assert!(!actual.source_preservation_eligible());
     assert_eq!(
-        actual.displaced_source().map(|id| id.as_str()),
+        actual
+            .displaced_source()
+            .map(cadmpeg_core::dialect::DialectId::as_str),
         Some("test:future")
     );
     assert_eq!(actual.displacement_message().as_deref(), Some("source dialect test:future was displaced by target dialect test:new; the source dialect identity is not preserved"));

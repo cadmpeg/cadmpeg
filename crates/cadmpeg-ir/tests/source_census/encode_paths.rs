@@ -298,7 +298,7 @@ impl Graph {
             }
             let mut path = function.scope.clone();
             if let Some(owner) = &function.owner {
-                path = owner.clone();
+                path.clone_from(owner);
             }
             path.push(function.name.clone());
             let wanted: Vec<_> = helper.split("::").collect();

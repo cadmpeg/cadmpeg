@@ -193,7 +193,7 @@ impl NativeDispositions {
                         self.record_disposition(namespace, arena, record.id())
                             == NativeDisposition::Dropped
                     })
-                    .map(|record| record.id())
+                    .map(crate::native::NativeRecord::id)
                     .collect();
                 if !ids.is_empty() {
                     ids.sort_unstable();

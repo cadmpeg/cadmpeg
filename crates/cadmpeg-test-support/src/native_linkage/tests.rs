@@ -8,7 +8,8 @@ fn detects_nested_value_and_map_key_backlinks_with_exact_pointers() {
         "model":{"appearances":[{"id":"neutral:appearance#1","native_ref":"native:material#7"}]},
         "native":{"codec":{"materials":[{"id":"native:material#7","nested":[{"a/b~c":"neutral:appearance#1"}],"lookup":{"neutral:appearance#1":true}}]}}
     });
-    let result = audit_native_linkage(&document).unwrap();
+    let result =
+        audit_native_linkage(&document).expect("the document has registered arenas and string ids");
     assert_eq!(result.neutral_records, 1);
     assert_eq!(result.native_records, 1);
     assert_eq!(result.checked_native_refs, 1);
@@ -24,10 +25,14 @@ fn native_identity_precedence_requires_an_actual_row_not_an_id_prefix() {
         "model":{"assets":[{"id":"codec:native:asset#shared"}],"attributes":[{"id":"codec:native:attribute#only-neutral"}]},
         "native":{"codec":{"assets":[{"id":"codec:native:asset#shared","other":"codec:native:attribute#only-neutral","text":"prefix codec:native:asset#shared suffix"}]}}
     });
-    let result = audit_native_linkage(&document).unwrap();
+    let result =
+        audit_native_linkage(&document).expect("the document has registered arenas and string ids");
     assert_eq!(result.findings, ["/native/codec/assets/0/other: native string equals neutral id `codec:native:attribute#only-neutral`"]);
     document["native"]["codec"]["assets"][0]["other"] = json!("codec:native:asset#shared");
-    assert!(audit_native_linkage(&document).unwrap().findings.is_empty());
+    assert!(audit_native_linkage(&document)
+        .expect("the edited document still audits")
+        .findings
+        .is_empty());
 }
 
 #[test]
@@ -36,7 +41,8 @@ fn detects_dangling_inward_link_but_allows_authored_absence() {
         "model":{"tessellations":[{"id":"neutral:mesh#1","native_ref":"native:mesh#missing"}],"pmi":[{"id":"neutral:pmi#authored"}]},
         "native":{}
     });
-    let result = audit_native_linkage(&document).unwrap();
+    let result =
+        audit_native_linkage(&document).expect("the document has registered arenas and string ids");
     assert_eq!(result.neutral_records, 2);
     assert_eq!(result.checked_native_refs, 1);
     assert_eq!(result.findings, ["/model/tessellations/0/native_ref: native_ref `native:mesh#missing` has no native record"]);
@@ -48,7 +54,8 @@ fn links_can_resolve_to_a_record_in_any_actual_native_arena() {
         "model":{"presentation_layers":[{"id":"neutral:layer#1","native_ref":"native:layer#2"}]},
         "native":{"codec":{"unrelated":[{"id":"native:unrelated#1"}],"layers":[{"id":"native:layer#2","name":"layer"}]}}
     });
-    let result = audit_native_linkage(&document).unwrap();
+    let result =
+        audit_native_linkage(&document).expect("the document has registered arenas and string ids");
     assert_eq!(result.native_records, 2);
     assert_eq!(result.checked_native_refs, 1);
     assert!(result.findings.is_empty());
@@ -58,22 +65,22 @@ fn links_can_resolve_to_a_record_in_any_actual_native_arena() {
 fn unavailable_or_unregistered_arenas_cannot_pass_as_empty_coverage() {
     assert!(
         audit_native_linkage(&json!({"model":{},"native":{"__elided":"native omitted"}}))
-            .unwrap_err()
+            .expect_err("an elided native section is refused")
             .contains("/native/__elided")
     );
     assert!(
         audit_native_linkage(&json!({"model":{"invented_arena":[]},"native":{}}))
-            .unwrap_err()
+            .expect_err("an unregistered neutral arena is refused")
             .contains("not a registered neutral arena")
     );
     assert!(
         audit_native_linkage(&json!({"model":{"appearances":[{}]},"native":{}}))
-            .unwrap_err()
+            .expect_err("a neutral row without an id is refused")
             .contains("/model/appearances/0/id")
     );
     assert!(
         audit_native_linkage(&json!({"model":{},"native":{"codec":{"objects":[{}]}}}))
-            .unwrap_err()
+            .expect_err("a native row without an id is refused")
             .contains("/native/codec/objects/0/id")
     );
 }

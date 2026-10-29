@@ -222,10 +222,7 @@ impl<'a> ModelRecordIndex<'a> {
                 let mut bytes = Vec::new();
                 ctx.reserve_working(&mut bytes, id.len(), "neutral native-reference identity")?;
                 bytes.extend_from_slice(id.as_bytes());
-                records.push(Identity {
-                    arena: *arena,
-                    bytes,
-                });
+                records.push(Identity { arena, bytes });
             }
             if groups.len() == groups.capacity() {
                 let additional = groups.len().max(1);

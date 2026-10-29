@@ -205,7 +205,10 @@ mod tests {
 
     #[test]
     fn typed_unclassified_source_and_summary_preserve_the_known_format_without_a_dialect() {
-        let source = crate::SourceMeta::unclassified(crate::CodecFormat::Fcstd, Default::default());
+        let source = crate::SourceMeta::unclassified(
+            crate::CodecFormat::Fcstd,
+            std::collections::BTreeMap::default(),
+        );
         let summary = ContainerSummary::unclassified(
             crate::CodecFormat::Fcstd,
             ContainerKind::Zip,

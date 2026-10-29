@@ -1,11 +1,13 @@
 // SPDX-License-Identifier: Apache-2.0
 //! The §5.3 acceptance table, including tolerance-boundary and alias controls.
 
+use std::collections::BTreeMap;
+
 use serde_json::{json, Value};
 
 use super::{agree, assert_decodes_agree, Allowances, Mode};
 
-fn document(rows: Value) -> Value {
+fn document(rows: &Value) -> Value {
     json!({"model": {"points": rows}, "native": {}})
 }
 
@@ -15,29 +17,30 @@ fn accepts(before: &Value, after: &Value) -> bool {
 
 #[test]
 fn duplicate_record_removed_fails() {
-    let before = document(json!([{"id":"a","x":1.0},{"id":"b","x":1.0}]));
-    let after = document(json!([{"id":"x","x":1.0}]));
+    let before = document(&json!([{"id":"a","x":1.0},{"id":"b","x":1.0}]));
+    let after = document(&json!([{"id":"x","x":1.0}]));
     assert!(!accepts(&before, &after));
 }
 
 #[test]
 fn records_reordered_and_renumbered_pass() {
-    let before = document(json!([{"id":"a","ordinal":10,"x":1.0},{"id":"b","ordinal":20,"x":2.0}]));
-    let after = document(json!([{"id":"y","ordinal":99,"x":2.0},{"id":"x","ordinal":40,"x":1.0}]));
+    let before =
+        document(&json!([{"id":"a","ordinal":10,"x":1.0},{"id":"b","ordinal":20,"x":2.0}]));
+    let after = document(&json!([{"id":"y","ordinal":99,"x":2.0},{"id":"x","ordinal":40,"x":1.0}]));
     assert_decodes_agree(&before, &after, &Allowances::default(), Mode::Same);
 }
 
 #[test]
 fn relative_float_difference_at_one_e_minus_thirteen_passes() {
-    let before = document(json!([{"id":"a","x":100.0}]));
-    let after = document(json!([{"id":"x","x":100.0 * (1.0 + 1.0e-13)}]));
+    let before = document(&json!([{"id":"a","x":100.0}]));
+    let after = document(&json!([{"id":"x","x":100.0 * (1.0 + 1.0e-13)}]));
     assert!(accepts(&before, &after));
 }
 
 #[test]
 fn relative_float_difference_at_one_e_minus_nine_fails() {
-    let before = document(json!([{"id":"a","x":100.0}]));
-    let after = document(json!([{"id":"x","x":100.0 * (1.0 + 1.0e-9)}]));
+    let before = document(&json!([{"id":"a","x":100.0}]));
+    let after = document(&json!([{"id":"x","x":100.0 * (1.0 + 1.0e-9)}]));
     assert!(!accepts(&before, &after));
 }
 
@@ -50,44 +53,48 @@ fn missing_native_record_in_same_mode_fails() {
 
 #[test]
 fn default_allowances_reject_record_removal() {
-    let before = document(json!([{"id":"a","x":1.0}]));
-    let after = document(json!([]));
+    let before = document(&json!([{"id":"a","x":1.0}]));
+    let after = document(&json!([]));
     assert!(!accepts(&before, &after));
 }
 
 #[test]
 fn extra_record_passes() {
-    let before = document(json!([{"id":"a","x":1.0}]));
-    let after = document(json!([{"id":"x","x":1.0},{"id":"y","x":2.0}]));
+    let before = document(&json!([{"id":"a","x":1.0}]));
+    let after = document(&json!([{"id":"x","x":1.0},{"id":"y","x":2.0}]));
     assert!(accepts(&before, &after));
 }
 
 #[test]
 fn replacing_a_typed_variant_with_native_fails() {
-    let before = document(json!([{"id":"a","definition":{"kind":"line","length":2.0}}]));
-    let after = document(json!([{"id":"x","definition":{"kind":"native","length":2.0}}]));
+    let before = document(&json!([{"id":"a","definition":{"kind":"line","length":2.0}}]));
+    let after = document(&json!([{"id":"x","definition":{"kind":"native","length":2.0}}]));
     assert!(!accepts(&before, &after));
 }
 
 #[test]
 fn tiny_libm_residual_compares_with_zero() {
-    let before = document(json!([{"id":"a","x":6.123233995736766e-17}]));
-    let after = document(json!([{"id":"x","x":0.0}]));
+    let before = document(&json!([{"id":"a","x":6.123_233_995_736_766e-17}]));
+    let after = document(&json!([{"id":"x","x":0.0}]));
     assert!(accepts(&before, &after));
 }
 
 #[test]
 fn tolerated_difference_across_a_rounding_boundary_passes() {
-    let boundary = 1.234567895;
-    let before = document(json!([{"id":"a","x":boundary * (1.0 - 5.0e-14)}]));
-    let after = document(json!([{"id":"x","x":boundary * (1.0 + 5.0e-14)}]));
+    let boundary = 1.234_567_895;
+    let before = document(&json!([{"id":"a","x":boundary * (1.0 - 5.0e-14)}]));
+    let after = document(&json!([{"id":"x","x":boundary * (1.0 + 5.0e-14)}]));
     assert_ne!(
         super::graph::shape(
             &before["model"]["points"][0]["x"],
-            &Default::default(),
+            &BTreeMap::default(),
             true
         ),
-        super::graph::shape(&after["model"]["points"][0]["x"], &Default::default(), true)
+        super::graph::shape(
+            &after["model"]["points"][0]["x"],
+            &BTreeMap::default(),
+            true
+        )
     );
     assert!(accepts(&before, &after));
 }
@@ -133,8 +140,8 @@ fn parameter_ordinals_rank_within_each_owner() {
 
 #[test]
 fn top_level_source_and_unknowns_are_not_record_content() {
-    let mut before = document(json!([{"id":"a","x":1.0,"native_ref":"old","source":"old"}]));
-    let mut after = document(json!([{"id":"x","x":1.0,"native_ref":"new","source":"new"}]));
+    let mut before = document(&json!([{"id":"a","x":1.0,"native_ref":"old","source":"old"}]));
+    let mut after = document(&json!([{"id":"x","x":1.0,"native_ref":"new","source":"new"}]));
     before["source"] = json!({"path":"before"});
     before["unknowns"] = json!([1]);
     after["source"] = json!({"path":"after"});
@@ -165,29 +172,30 @@ fn reference_keys_follow_the_same_global_identity_map() {
 
 #[test]
 fn an_identity_shaped_string_without_a_record_is_still_content() {
-    let before = document(json!([{"id":"a","label":"test:missing#one"}]));
-    let after = document(json!([{"id":"x","label":"test:missing#two"}]));
+    let before = document(&json!([{"id":"a","label":"test:missing#one"}]));
+    let after = document(&json!([{"id":"x","label":"test:missing#two"}]));
     assert!(!accepts(&before, &after));
 }
 
 #[test]
 fn nested_list_order_is_preserved() {
-    let before = document(json!([{"id":"a","values":[1,2]}]));
-    let after = document(json!([{"id":"x","values":[2,1]}]));
+    let before = document(&json!([{"id":"a","values":[1,2]}]));
+    let after = document(&json!([{"id":"x","values":[2,1]}]));
     assert!(!accepts(&before, &after));
 }
 
 #[test]
 fn an_added_record_does_not_shift_the_paired_ordinal_ranks() {
-    let before = document(json!([{"id":"a","ordinal":10,"x":1.0}]));
-    let after = document(json!([{"id":"new","ordinal":0,"x":0.0},{"id":"x","ordinal":1,"x":1.0}]));
+    let before = document(&json!([{"id":"a","ordinal":10,"x":1.0}]));
+    let after = document(&json!([{"id":"new","ordinal":0,"x":0.0},{"id":"x","ordinal":1,"x":1.0}]));
     assert!(accepts(&before, &after));
 }
 
 #[test]
 fn paired_ordinal_order_cannot_be_reversed() {
-    let before = document(json!([{"id":"a","ordinal":10,"x":1.0},{"id":"b","ordinal":20,"x":2.0}]));
-    let after = document(json!([{"id":"x","ordinal":1,"x":2.0},{"id":"y","ordinal":2,"x":1.0}]));
+    let before =
+        document(&json!([{"id":"a","ordinal":10,"x":1.0},{"id":"b","ordinal":20,"x":2.0}]));
+    let after = document(&json!([{"id":"x","ordinal":1,"x":2.0},{"id":"y","ordinal":2,"x":1.0}]));
     assert!(!accepts(&before, &after));
 }
 

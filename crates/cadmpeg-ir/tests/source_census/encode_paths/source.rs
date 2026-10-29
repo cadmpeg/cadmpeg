@@ -430,21 +430,21 @@ impl Loader<'_> {
         for item in items {
             match item {
                 syn::Item::Struct(item) if !test_only(&item.attrs) => {
-                    add(&[&item.ident], Item::Type)
+                    add(&[&item.ident], Item::Type);
                 }
                 syn::Item::Union(item) if !test_only(&item.attrs) => {
-                    add(&[&item.ident], Item::Type)
+                    add(&[&item.ident], Item::Type);
                 }
                 syn::Item::Type(item) if !test_only(&item.attrs) => add(&[&item.ident], Item::Type),
                 syn::Item::Trait(item) if !test_only(&item.attrs) => {
                     self.outer_generics = type_parameters(&item.generics);
-                    add(&[&item.ident], Item::Trait)
+                    add(&[&item.ident], Item::Trait);
                 }
                 syn::Item::Const(item) if !test_only(&item.attrs) => {
-                    add(&[&item.ident], Item::Value)
+                    add(&[&item.ident], Item::Value);
                 }
                 syn::Item::Static(item) if !test_only(&item.attrs) => {
-                    add(&[&item.ident], Item::Value)
+                    add(&[&item.ident], Item::Value);
                 }
                 syn::Item::Enum(item) if !test_only(&item.attrs) => {
                     add(&[&item.ident], Item::Type);

@@ -25,7 +25,7 @@ impl Document {
             .ok_or("the document has no object-valued model")?;
         let mut records = Vec::new();
         for (arena, rows) in model {
-            append(&mut records, format!("model/{arena}"), rows, removed)?;
+            append(&mut records, &format!("model/{arena}"), rows, removed)?;
         }
         if let Some(native) = document.get("native") {
             for (namespace, arenas) in native.as_object().ok_or("native is not an object")? {
@@ -35,7 +35,7 @@ impl Document {
                 {
                     append(
                         &mut records,
-                        format!("native/{namespace}/{arena}"),
+                        &format!("native/{namespace}/{arena}"),
                         rows,
                         removed,
                     )?;
@@ -84,7 +84,7 @@ impl Document {
 
 fn append(
     records: &mut Vec<Record>,
-    arena: String,
+    arena: &str,
     rows: &Value,
     removed: &BTreeSet<String>,
 ) -> Result<(), String> {
@@ -122,7 +122,7 @@ fn append(
                 .push((ordinal, records.len()));
         }
         records.push(Record {
-            arena: arena.clone(),
+            arena: arena.to_owned(),
             id,
             value: Value::Object(value),
         });
