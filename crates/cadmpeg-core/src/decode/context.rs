@@ -30,7 +30,6 @@ const RESERVE_CLAMP: usize = 8 * 1024 * 1024;
 pub struct DecodeContext<'a> {
     arena: &'a DecodeArena,
     depth: DecodeDepth,
-    policy: DecodePolicy,
     encoding: bool,
     pub(super) budget: DecodeBudget,
     derived_spaces: Cell<usize>,
@@ -48,7 +47,6 @@ impl<'a> DecodeContext<'a> {
         Self {
             arena,
             depth,
-            policy: *policy,
             encoding: false,
             budget: DecodeBudget::new(*policy, 0),
             derived_spaces: Cell::new(0),
@@ -82,7 +80,6 @@ impl<'a> DecodeContext<'a> {
         Ok(Self {
             arena,
             depth: DecodeDepth::Full,
-            policy,
             encoding: true,
             budget,
             derived_spaces: Cell::new(0),
@@ -175,7 +172,6 @@ impl<'a> DecodeContext<'a> {
         let ctx = DecodeContext {
             arena,
             depth,
-            policy: *policy,
             encoding: false,
             budget: DecodeBudget::new(*policy, length),
             derived_spaces: Cell::new(0),
@@ -185,7 +181,7 @@ impl<'a> DecodeContext<'a> {
 
     /// Returns the decode policy in force.
     pub fn policy(&self) -> &DecodePolicy {
-        &self.policy
+        self.budget.policy()
     }
 
     /// Returns the depth the caller requested.
@@ -212,7 +208,10 @@ impl<'a> DecodeContext<'a> {
     #[must_use]
     pub fn per_expand_allowance(&self) -> u64 {
         self.budget.proportional_allowance(
-            self.policy.limits.max_decompressed_bytes_per_expand,
+            self.budget
+                .policy()
+                .limits
+                .max_decompressed_bytes_per_expand,
             DECOMPRESSED_PER_EXPAND_BASE,
             DECOMPRESSED_PER_EXPAND_PER_INPUT_BYTE,
         )
@@ -510,7 +509,7 @@ impl<'a> DecodeContext<'a> {
                 self.budget.refuse(
                     ResourceDimension::RetainedBytes,
                     ResourceFailure::BudgetExceeded,
-                    self.policy.limits.max_retained_bytes,
+                    self.budget.policy().limits.max_retained_bytes,
                     u64_from_index(total),
                     u64_from_index(view.window().len()),
                     "concat_views",
