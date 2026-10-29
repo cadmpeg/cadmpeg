@@ -1,7 +1,8 @@
 {
   "decode": {
     "ir": {
-      "ir_version": "8",
+      "decode_depth": "full",
+      "ir_version": "9",
       "model": {
         "appearance_bindings": [],
         "appearances": [],
@@ -47,6 +48,7 @@
             {
               "byte_len": 106,
               "id": "nx:s0:deltas-residual#0",
+              "inflated_offset": 0,
               "sha256": "eff1807b71c7aa6a812c4f0a2e9ffb6cdb32a4a1fc9b30fff05b7b16f710e77c",
               "stream_ordinal": 0
             }
@@ -58,19 +60,21 @@
           ]
         }
       },
-      "scope": {
-        "design": false,
-        "model": false
-      },
       "source": {
         "attributes": {
           "deltas.0.bytes_decoded": "0",
-          "deltas.0.grammar": "typed_status_framed_records",
+          "deltas.0.grammar": "sequential_owned_records",
+          "deltas.0.instances": "0",
+          "deltas.0.schemas": "0",
+          "deltas.0.selection": "unresolved",
+          "deltas.0.stop_offset": "0",
+          "deltas.0.stop_reason": "UnsupportedBase",
           "deltas_streams": "1",
           "directory_entries": "1",
           "file_size": "201",
           "footer_entry_count": "0",
           "footer_fingerprint": "00000000",
+          "footer_offset": "187",
           "header_entry_count": "1",
           "jpeg_preview_count": "0",
           "partition_streams": "0",
@@ -152,17 +156,6 @@
           },
           "message": "The Parasolid stream at stream@76 declares schema \"SCH_TEST_1_9999\", which has no declared grammar. It was admitted as the `parasolid:unknown` residual layer without substituting another schema grammar; bounded structural recovery retains the source stream.",
           "severity": "warning"
-        },
-        {
-          "code": {
-            "code": "depth.not-delivered",
-            "kind": "geometry_not_transferred",
-            "namespace": "decode",
-            "scope": "namespaced",
-            "strict_floor": "warning"
-          },
-          "message": "requested full depth but the nx decoder did not deliver classes: model, design",
-          "severity": "error"
         }
       ],
       "notes": [
@@ -171,10 +164,7 @@
       ],
       "transfer": {
         "geometry_transferred": false,
-        "scope": {
-          "design": false,
-          "model": false
-        }
+        "transfer": "full"
       }
     },
     "source_fidelity": {
@@ -198,10 +188,6 @@
           }
         }
       },
-      "metadata": {
-        "native.nx.parasolid_deltas_residual_spans.nx:s0:deltas-residual#0.inflated_offset": "0",
-        "source.footer_offset": "187"
-      },
       "retained_records": {
         "nx:container:parasolid#0": {
           "bytes": {
@@ -209,20 +195,9 @@
             "retention": "inline"
           },
           "offset": 76,
-          "stream": "nx:container",
-          "untyped": []
-        },
-        "nx:source:image#whole": {
-          "bytes": {
-            "data": "U1BMTVNTVFIGAAAAAAAAAAC7AAAAAAAAAEhFQURFUgEAAAAVAAAAL1Jvb3QvVUdfUEFSVC9VR19QQVJUTAAAAAAAAABvAAAAAAAAAHgBHcqxCoJQFIDh/1RDTdIbnLGgpbG2CCOhIrp3v5ieTRHUxXfxXfXiP378Xwecrup/t497Z14f2SvVQ2lVn3dHLVrLeyv1P2jdRKysjX/i7s/gU+fDOVxikExjdNgiwkpYCxthjwE7FpsBqMQV1EZPT1RFUgAAAAAAAAAA",
-            "retention": "inline"
-          },
-          "offset": 0,
-          "stream": "nx:source",
-          "untyped": []
+          "stream": "nx:container"
         }
-      },
-      "unrepresented": []
+      }
     }
   },
   "inspect": {
@@ -245,14 +220,10 @@
         "attributes": {
           "file_offset": "76",
           "kind": "deltas",
-          "records.body": "0",
-          "records.edge": "0",
-          "records.face": "0",
-          "records.fin": "0",
-          "records.loop": "0",
-          "records.region": "0",
-          "records.shell": "0",
-          "records.vertex": "0",
+          "records.delta.bytes_decoded": "0",
+          "records.delta.instances": "0",
+          "records.delta.schemas": "0",
+          "records.delta.selection": "unresolved",
           "schema": "SCH_TEST_1_9999"
         },
         "compression": "zlib",

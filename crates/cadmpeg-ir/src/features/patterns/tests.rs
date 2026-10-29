@@ -31,6 +31,7 @@ fn linear<C>(count: u32) -> PatternTransform<C> {
         distance: PositiveLength::new(1.0).unwrap().into(),
         count: Dimension::Literal(count),
         second: None,
+        omitted_instances: Vec::new(),
     }
 }
 
@@ -57,6 +58,7 @@ fn pattern_admission_rejects_invalid_numeric_operands() {
                 distance: PositiveLength::new(1.0).unwrap().into(),
                 count: Dimension::Literal(0),
             }),
+            omitted_instances: Vec::new(),
         },
         PatternTransform::Circular {
             axis_origin: origin,
@@ -286,6 +288,7 @@ fn composite_pattern_counts_use_primary_instance_counts() {
             distance: PositiveLength::new(1.0).unwrap().into(),
             count: Dimension::Literal(3),
         }),
+        omitted_instances: Vec::new(),
     };
     let scale = PatternTransform::Scale {
         center: PatternScaleCenter::FirstSeedCentroid,
@@ -380,6 +383,7 @@ fn bound_pattern_dimensions_retain_identity_during_length_mapping() {
         distance: Dimension::<Length>::Parameter(spacing.clone()).into(),
         count: Dimension::Parameter(count.clone()),
         second: None,
+        omitted_instances: Vec::new(),
     })
     .unwrap();
     let mut visits = 0;
@@ -414,6 +418,7 @@ fn an_unknown_stage_count_does_not_claim_a_known_composite_count() {
         distance: PositiveLength::new(1.0).unwrap().into(),
         count: Dimension::Parameter(id),
         second: None,
+        omitted_instances: Vec::new(),
     };
     let scale = PatternTransform::Scale {
         center: PatternScaleCenter::FirstSeedCentroid,
@@ -437,6 +442,7 @@ fn authored_spans_keep_their_sign_and_resolve_adjacent_spacing() {
         distance: span,
         count,
         second: None,
+        omitted_instances: Vec::new(),
     })
     .unwrap();
     let wire = serde_json::to_value(pattern).unwrap();
@@ -482,3 +488,5 @@ fn authored_spans_keep_their_sign_and_resolve_adjacent_spacing() {
         -std::f64::consts::FRAC_PI_2
     );
 }
+
+mod omissions;

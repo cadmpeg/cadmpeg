@@ -1,7 +1,10 @@
 // SPDX-License-Identifier: Apache-2.0
 use super::{
-    decoded_references, framed_surface_reference, persistent_identity, ByteRange, DisplayFace,
-    FeatureSourceId, Mesh, PersistentSurfaceReference,
+    agree_surface_tokens, decoded_references, framed_surface_reference, persistent_identity,
+    ByteRange, DisplayFace, FeatureSourceId, Mesh, PersistentSurfaceReference,
+};
+use crate::tessellation::{
+    classify_surface_token, SurfaceTokenAgreement, SurfaceTokenStatus, SurfaceTokenWithhold,
 };
 
 #[test]
@@ -66,7 +69,10 @@ fn opaque_surface_suffix_remains_source_only() {
         face.feature_source_id().map(FeatureSourceId::value),
         Some(7)
     );
-    assert_eq!(face.persistent_surface_identity(), None);
+    assert_eq!(
+        agree_surface_tokens(&face.surface_references).identity(),
+        None
+    );
 }
 
 #[test]
@@ -79,4 +85,108 @@ fn persistent_surface_source_sentinels_are_absent() {
         );
         assert!(references.is_empty());
     }
+}
+
+#[test]
+fn agreeing_complete_duplicates_state_one_identity() {
+    let references = vec![
+        PersistentSurfaceReference::Complete(persistent_identity(7, 3, &[])),
+        PersistentSurfaceReference::Complete(persistent_identity(7, 3, &[])),
+    ];
+    assert_eq!(
+        agree_surface_tokens(&references),
+        SurfaceTokenAgreement::Agree(persistent_identity(7, 3, &[]))
+    );
+}
+
+#[test]
+fn differing_suffixes_withhold_agreement_as_conflicting() {
+    let references = vec![
+        PersistentSurfaceReference::Complete(persistent_identity(7, 3, &[1])),
+        PersistentSurfaceReference::Complete(persistent_identity(7, 3, &[2])),
+    ];
+    assert_eq!(
+        agree_surface_tokens(&references),
+        SurfaceTokenAgreement::Withhold(SurfaceTokenWithhold::Conflicting)
+    );
+}
+
+#[test]
+fn differing_local_ids_withhold_agreement_as_conflicting() {
+    let references = vec![
+        PersistentSurfaceReference::Complete(persistent_identity(7, 3, &[])),
+        PersistentSurfaceReference::Complete(persistent_identity(7, 4, &[])),
+    ];
+    assert_eq!(
+        agree_surface_tokens(&references),
+        SurfaceTokenAgreement::Withhold(SurfaceTokenWithhold::Conflicting)
+    );
+}
+
+#[test]
+fn opaque_tail_withholds_agreement() {
+    let opaque = PersistentSurfaceReference::SourceOnly {
+        feature_source_id: 7_u32.try_into().unwrap(),
+        local_surface_id: 3,
+    };
+    assert_eq!(
+        agree_surface_tokens(std::slice::from_ref(&opaque)),
+        SurfaceTokenAgreement::Withhold(SurfaceTokenWithhold::OpaqueTail)
+    );
+    let mixed = vec![
+        PersistentSurfaceReference::Complete(persistent_identity(7, 3, &[])),
+        opaque,
+    ];
+    assert_eq!(
+        agree_surface_tokens(&mixed),
+        SurfaceTokenAgreement::Withhold(SurfaceTokenWithhold::OpaqueTail)
+    );
+}
+
+#[test]
+fn empty_slot_withholds_agreement_as_invalid() {
+    assert_eq!(
+        agree_surface_tokens(&[]),
+        SurfaceTokenAgreement::Withhold(SurfaceTokenWithhold::Invalid)
+    );
+}
+
+#[test]
+fn unparsable_strings_carry_no_identity() {
+    let sentinel = format!("moPlaneSurfIdRep_c,{},3,", u32::MAX);
+    for text in [
+        "moPlaneSurf_c,7,3,".to_owned(),
+        "moPlaneSurfIdRep_c,seven,3,".to_owned(),
+        "moPlaneSurfIdRep_c,7,three,".to_owned(),
+        "moPlaneSurfIdRep_c,0,3,".to_owned(),
+        sentinel,
+    ] {
+        assert_eq!(
+            classify_surface_token(&text),
+            Err(SurfaceTokenStatus::Invalid),
+            "{text}"
+        );
+        let payload = framed_surface_reference(&text);
+        assert!(
+            decoded_references(
+                &payload,
+                ByteRange::new(0, payload.len()).expect("ordered range")
+            )
+            .is_empty(),
+            "{text}"
+        );
+    }
+}
+
+#[test]
+fn opaque_strings_keep_only_their_source_identity() {
+    let payload = framed_surface_reference("moFromSktEntSurfIdRep_c,7,3,opaque");
+    let references = decoded_references(
+        &payload,
+        ByteRange::new(0, payload.len()).expect("ordered range"),
+    );
+    assert_eq!(
+        agree_surface_tokens(&references),
+        SurfaceTokenAgreement::Withhold(SurfaceTokenWithhold::OpaqueTail)
+    );
 }

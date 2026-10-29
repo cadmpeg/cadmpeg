@@ -576,3 +576,70 @@ fn pcurve_tangent_returns_the_session_depth_refusal() {
         );
     });
 }
+
+#[test]
+fn deeply_nested_pcurves_evaluate_on_a_small_stack_and_keep_the_depth_limit() {
+    std::thread::Builder::new()
+        .stack_size(2 * 1024 * 1024)
+        .spawn(|| {
+            use crate::eval::admission::EvaluationAdmission::Standard;
+            use crate::geometry::pcurve::{LinePcurve, OffsetPcurve, PlacedPcurve, TrimmedPcurve};
+            use crate::geometry::MAX_GEOMETRY_NESTING;
+
+            let mut pcurve = PcurveGeometry::Line(LinePcurve::U_AXIS);
+            let translate = Transform2::affine([[1.0, 0.0, 0.5], [0.0, 1.0, 0.0]]).unwrap();
+            for _ in 0..MAX_GEOMETRY_NESTING - 1 {
+                pcurve = PcurveGeometry::Transformed(
+                    PlacedPcurve::try_new(Box::new(pcurve), translate).unwrap(),
+                );
+            }
+            assert_eq!(
+                crate::eval::decode::pcurve_uv(Standard, &pcurve, 0.5)
+                    .unwrap()
+                    .get(),
+                Point2::new(128.0, 0.0)
+            );
+            assert_eq!(
+                pcurve_tangent(Standard, &pcurve, 0.5).unwrap().get(),
+                Point2::new(1.0, 0.0)
+            );
+            pcurve = PcurveGeometry::Transformed(
+                PlacedPcurve::try_new(Box::new(pcurve), translate).unwrap(),
+            );
+            assert!(matches!(
+                crate::eval::decode::pcurve_uv(Standard, &pcurve, 0.5),
+                Err(EvaluationFailure::ResourceLimit(limit))
+                    if limit.dimension == cadmpeg_core::decode::ResourceDimension::RecursionDepth
+                        && limit.limit == 256
+            ));
+
+            let mut mixed = PcurveGeometry::Line(LinePcurve::U_AXIS);
+            for index in 0..MAX_GEOMETRY_NESTING - 1 {
+                mixed = match index % 3 {
+                    0 => PcurveGeometry::Trimmed(
+                        TrimmedPcurve::try_new([0.0, 1.0], true, Box::new(mixed)).unwrap(),
+                    ),
+                    1 => PcurveGeometry::Transformed(
+                        PlacedPcurve::try_new(Box::new(mixed), Transform2::identity()).unwrap(),
+                    ),
+                    _ => {
+                        PcurveGeometry::Offset(OffsetPcurve::try_new(1.0, Box::new(mixed)).unwrap())
+                    }
+                };
+            }
+            assert!(matches!(
+                crate::eval::decode::pcurve_uv(Standard, &mixed, 0.5),
+                Err(EvaluationFailure::NoValue)
+            ));
+            mixed = PcurveGeometry::Offset(OffsetPcurve::try_new(1.0, Box::new(mixed)).unwrap());
+            assert!(matches!(
+                crate::eval::decode::pcurve_uv(Standard, &mixed, 0.5),
+                Err(EvaluationFailure::ResourceLimit(limit))
+                    if limit.dimension == cadmpeg_core::decode::ResourceDimension::RecursionDepth
+                        && limit.limit == 256
+            ));
+        })
+        .unwrap()
+        .join()
+        .unwrap();
+}

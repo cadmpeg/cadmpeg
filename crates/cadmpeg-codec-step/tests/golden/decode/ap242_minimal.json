@@ -1,6 +1,7 @@
 {
   "ir": {
-    "ir_version": "8",
+    "decode_depth": "full",
+    "ir_version": "9",
     "model": {
       "appearance_bindings": [],
       "appearances": [],
@@ -55,12 +56,16 @@
         ]
       }
     },
-    "scope": {
-      "design": true,
-      "model": true
-    },
     "source": {
-      "attributes": {},
+      "attributes": {
+        "bytes_named_opaque": "96",
+        "bytes_structural": "295",
+        "bytes_typed": "0",
+        "bytes_unclassified": "0",
+        "data_sections": "1",
+        "entity_instances": "2",
+        "schema": "AP242_MANAGED_MODEL_BASED_3D_ENGINEERING_MIM_LF { 1 0 10303 442 3 1 4 }"
+      },
       "identity": {
         "classification": "classified",
         "dialects": {
@@ -150,73 +155,11 @@
     ],
     "transfer": {
       "geometry_transferred": false,
-      "scope": {
-        "design": true,
-        "model": true
-      }
+      "transfer": "full"
     }
   },
   "source_fidelity": {
     "annotations": {},
-    "metadata": {
-      "bytes_named_opaque": "96",
-      "bytes_structural": "295",
-      "bytes_typed": "0",
-      "bytes_unclassified": "0",
-      "data_sections": "1",
-      "entity_instances": "2",
-      "schema": "AP242_MANAGED_MODEL_BASED_3D_ENGINEERING_MIM_LF { 1 0 10303 442 3 1 4 }"
-    },
-    "parts": {
-      "step:source:part#812cca071d9fb1e70131875015b8fe3629a1f15aa2aa52085f1dc6544f1a0d49": {
-        "byte_len": 27,
-        "framing_bytes": [
-          {
-            "end": 339,
-            "start": 337
-          },
-          {
-            "end": 340,
-            "start": 339
-          },
-          {
-            "end": 364,
-            "start": 363
-          }
-        ],
-        "level": "step.simple_entity_instance",
-        "offset": 337,
-        "parent": null,
-        "state": {
-          "state": "decoded"
-        },
-        "stream": "file"
-      },
-      "step:source:part#fffff325097a24efe5e86cc2df7bfddcab7561a736559e56c7549c14827bad9c": {
-        "byte_len": 69,
-        "framing_bytes": [
-          {
-            "end": 269,
-            "start": 267
-          },
-          {
-            "end": 270,
-            "start": 269
-          },
-          {
-            "end": 336,
-            "start": 335
-          }
-        ],
-        "level": "step.simple_entity_instance",
-        "offset": 267,
-        "parent": null,
-        "state": {
-          "state": "decoded"
-        },
-        "stream": "file"
-      }
-    },
     "retained_records": {
       "step:data:example_record#1": {
         "bytes": {
@@ -224,10 +167,7 @@
           "retention": "inline"
         },
         "offset": 267,
-        "stream": "",
-        "untyped": [
-          "model"
-        ]
+        "stream": ""
       },
       "step:data:opaque_target#2": {
         "bytes": {
@@ -235,14 +175,8 @@
           "retention": "inline"
         },
         "offset": 337,
-        "stream": "",
-        "untyped": [
-          "model"
-        ]
+        "stream": ""
       }
-    },
-    "unrepresented": [
-      "model"
-    ]
+    }
   }
 }

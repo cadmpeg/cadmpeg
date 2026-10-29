@@ -7,7 +7,8 @@ use cadmpeg_ir::source_fidelity::parts::PartOutput;
 
 use super::{AssemblyOccurrence, AssemblyPlacement};
 use crate::native::{
-    AssemblyOccurrenceRecord, AssemblyPlacementRecord, AssemblyPlacementRecordWire,
+    AssemblyGroundingRecord, AssemblyOccurrenceRecord, AssemblyPlacementRecord,
+    AssemblyPlacementRecordWire, DesignViewRepresentationRecord, DesignViewVisibilityOffRecord,
 };
 use crate::records::RseRecordFrame;
 
@@ -50,6 +51,66 @@ pub(super) fn placement<'a>(
         stage.insert_native(ctx, "assembly_placements", native)?;
         Ok(placement)
     })
+}
+
+pub(super) fn grounding<'a>(
+    ctx: &DecodeContext<'a>,
+    output: &mut PartOutput,
+    expanded: View<'a>,
+    token: &str,
+    frame: &RseRecordFrame<'a>,
+) -> Result<(), CodecError> {
+    crate::records::source_admission::decode_body(ctx, output, expanded, token, frame, |stage| {
+        let mut grounding = super::parse_grounding(frame.payload)?;
+        grounding.segment_token = token.to_owned();
+        grounding.record_ordinal = frame.ordinal;
+        stage.insert_native(
+            ctx,
+            "assembly_groundings",
+            AssemblyGroundingRecord::from_grounding(&grounding),
+        )
+    })?;
+    Ok(())
+}
+
+pub(super) fn design_view_representation<'a>(
+    ctx: &DecodeContext<'a>,
+    output: &mut PartOutput,
+    expanded: View<'a>,
+    token: &str,
+    frame: &RseRecordFrame<'a>,
+) -> Result<(), CodecError> {
+    crate::records::source_admission::decode_body(ctx, output, expanded, token, frame, |stage| {
+        let mut representation = super::parse_design_view_representation(ctx, frame.payload)?;
+        representation.segment_token = token.to_owned();
+        representation.record_ordinal = frame.ordinal;
+        stage.insert_native(
+            ctx,
+            "design_view_representations",
+            DesignViewRepresentationRecord::from_representation(&representation),
+        )
+    })?;
+    Ok(())
+}
+
+pub(super) fn visibility_off<'a>(
+    ctx: &DecodeContext<'a>,
+    output: &mut PartOutput,
+    expanded: View<'a>,
+    token: &str,
+    frame: &RseRecordFrame<'a>,
+) -> Result<(), CodecError> {
+    crate::records::source_admission::decode_body(ctx, output, expanded, token, frame, |stage| {
+        let mut state = super::parse_visibility_off(frame.payload)?;
+        state.segment_token = token.to_owned();
+        state.record_ordinal = frame.ordinal;
+        stage.insert_native(
+            ctx,
+            "design_view_visibility",
+            DesignViewVisibilityOffRecord::from_state(&state),
+        )
+    })?;
+    Ok(())
 }
 
 #[cfg(test)]

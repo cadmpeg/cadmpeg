@@ -1,7 +1,8 @@
 {
   "decode": {
     "ir": {
-      "ir_version": "8",
+      "decode_depth": "full",
+      "ir_version": "9",
       "model": {
         "appearance_bindings": [],
         "appearances": [],
@@ -154,11 +155,8 @@
               "id": "nx:display-jt:segment#0-row-0-0-inflated-sequence",
               "segment": "nx:display-jt:segment#0-row-0-0",
               "segment_type": 1,
-              "tail": {
-                "byte_len": 2,
-                "record_id": "nx:source:evidence#ba73b4c49cf9cf9f0565365a23509fa318cde684c8f0ffd835de3e1d1fb36856",
-                "sha256": "678feb3f747a2d2f550e94426e93e05c4701e4ee09543ff89eb06986772c261c"
-              },
+              "source_offset": 530,
+              "tail": "0605",
               "tail_sha256": "678feb3f747a2d2f550e94426e93e05c4701e4ee09543ff89eb06986772c261c"
             }
           ],
@@ -167,12 +165,14 @@
               "body_byte_len": 3,
               "body_sha256": "06df4f7e1394f1c57cc6583fba4d8060a5a66f4f4771c14aeff6b9af8a28c9b3",
               "id": "nx:display-jt:segment#0-row-0-0-inflated-element-0",
+              "inflated_offset": 0,
               "object_base_type": 1,
               "object_id": 5,
               "object_type_id": "03030303030303030303030303030303",
               "ordinal": 0,
               "segment": "nx:display-jt:segment#0-row-0-0",
-              "segment_type": 1
+              "segment_type": 1,
+              "source_offset": 530
             }
           ],
           "display_jt_documents": [
@@ -184,15 +184,19 @@
               "index_row": "nx:display-jt:index#0-row-0",
               "lsg_segment_id": "01010101010101010101010101010101",
               "physical_byte_len": 207,
+              "source_offset": 369,
               "toc_entries": [
                 {
                   "attributes": "00000001",
                   "id": "nx:display-jt:toc-entry#0-row-0-0",
                   "ordinal": 0,
                   "segment_byte_len": 70,
-                  "segment_id": "02020202020202020202020202020202"
+                  "segment_id": "02020202020202020202020202020202",
+                  "segment_offset": 137,
+                  "source_offset": 478
                 }
               ],
+              "toc_offset": 105,
               "version_field": "Version 9.4 JT                                                                  "
             }
           ],
@@ -202,11 +206,14 @@
               "id": "nx:display-jt:index#0",
               "rows": [
                 {
+                  "header_offset": 28,
                   "id": "nx:display-jt:index#0-row-0",
                   "ordinal": 0,
+                  "source_offset": 349,
                   "value": 100
                 }
               ],
+              "source_offset": 341,
               "version": 9
             }
           ],
@@ -225,6 +232,7 @@
               "segment_byte_len": 70,
               "segment_id": "02020202020202020202020202020202",
               "segment_type": 1,
+              "source_offset": 506,
               "toc_entry": "nx:display-jt:toc-entry#0-row-0-0"
             }
           ],
@@ -240,10 +248,6 @@
           ]
         }
       },
-      "scope": {
-        "design": true,
-        "model": true
-      },
       "source": {
         "attributes": {
           "deltas_streams": "0",
@@ -251,6 +255,7 @@
           "file_size": "590",
           "footer_entry_count": "0",
           "footer_fingerprint": "00000000",
+          "footer_offset": "576",
           "header_entry_count": "2",
           "jpeg_preview_count": "0",
           "partition_streams": "1",
@@ -329,7 +334,7 @@
             "scope": "namespaced",
             "strict_floor": "warning"
           },
-          "message": "The B-rep topology graph (body→shell→face→loop→fin→edge→vertex) was not reconstructed because the surviving typed records did not form a complete connected ownership graph. Exact-key supported partition↔deltas replacements and deletions were applied before graph construction. Required unresolved records prevent their dependent incidence from being emitted; decoded geometry then remains unattached.",
+          "message": "The B-rep topology graph (body→shell→face→loop→fin→edge→vertex) was not reconstructed because the surviving typed records did not form a complete connected ownership graph. Graph construction used the primary input bytes. Required unresolved records prevent their dependent incidence from being emitted; decoded geometry then remains unattached.",
           "severity": "blocking"
         },
         {
@@ -350,10 +355,7 @@
       ],
       "transfer": {
         "geometry_transferred": true,
-        "scope": {
-          "design": true,
-          "model": true
-        }
+        "transfer": "full"
       }
     },
     "source_fidelity": {
@@ -455,20 +457,6 @@
           }
         }
       },
-      "metadata": {
-        "native.nx.display_jt_compressed_element_sequences.nx:display-jt:segment#0-row-0-0-inflated-sequence.source_offset": "530",
-        "native.nx.display_jt_compressed_elements.nx:display-jt:segment#0-row-0-0-inflated-element-0.inflated_offset": "0",
-        "native.nx.display_jt_compressed_elements.nx:display-jt:segment#0-row-0-0-inflated-element-0.source_offset": "530",
-        "native.nx.display_jt_documents.nx:display-jt:document#0-row-0.source_offset": "369",
-        "native.nx.display_jt_documents.nx:display-jt:document#0-row-0.toc_entries[0].segment_offset": "137",
-        "native.nx.display_jt_documents.nx:display-jt:document#0-row-0.toc_entries[0].source_offset": "478",
-        "native.nx.display_jt_documents.nx:display-jt:document#0-row-0.toc_offset": "105",
-        "native.nx.display_jt_indices.nx:display-jt:index#0.rows[0].header_offset": "28",
-        "native.nx.display_jt_indices.nx:display-jt:index#0.rows[0].source_offset": "349",
-        "native.nx.display_jt_indices.nx:display-jt:index#0.source_offset": "341",
-        "native.nx.display_jt_segments.nx:display-jt:segment#0-row-0-0.source_offset": "506",
-        "source.footer_offset": "576"
-      },
       "retained_records": {
         "nx:container:parasolid#0": {
           "bytes": {
@@ -476,30 +464,9 @@
             "retention": "inline"
           },
           "offset": 119,
-          "stream": "nx:container",
-          "untyped": []
-        },
-        "nx:source:evidence#ba73b4c49cf9cf9f0565365a23509fa318cde684c8f0ffd835de3e1d1fb36856": {
-          "bytes": {
-            "byte_len": 2,
-            "retention": "digest",
-            "sha256": "678feb3f747a2d2f550e94426e93e05c4701e4ee09543ff89eb06986772c261c"
-          },
-          "offset": 0,
-          "stream": "native.nx.display_jt_compressed_element_sequences.nx:display-jt:segment#0-row-0-0-inflated-sequence.tail",
-          "untyped": []
-        },
-        "nx:source:image#whole": {
-          "bytes": {
-            "data": "U1BMTVNTVFIGAAAAAAAAAABAAgAAAAAAAEhFQURFUgIAAAAVAAAAL1Jvb3QvVUdfUEFSVC9VR19QQVJUdwAAAAAAAADeAAAAAAAAABcAAAAvUm9vdC9VR19QQVJUL0Rpc3BsYXlKVFUBAAAAAAAA6wAAAAAAAAB4AY1MvQsBYRh/8rFYLFZ6F0W3+IpY3iRfhXC3Xz7eQfnqHIWJSJklk9EoZVH+AH+CwcRqMViVtzt3nXTl6fn4ffT88iwA4AjiitEcm01zKJHOxJGrXRLEmlhrNd2oIpCSSKqo3EeNVpXU60RAPSJ0qIn8AY/HGwrSCCsbS/FcnOV4Lx+mBWAHA9XVxjsVSgDPDV1nwrIBHxglQV0M3o/Ol+fspSo6AD9kQ7ky02w/mDSMQobOX61E4vbyuDrdxgr/eXaA+Vtj8GRwTW5tQ7z43PWhcJ86DnoRb+z1Oe8JAAAAAQAAAAAAAABkAAAAAAAAABwAAAAAAAAAVmVyc2lvbiA5LjQgSlQgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAAAAAAAGkAAAABAQEBAQEBAQEBAQEBAQEBAQAAAAICAgICAgICAgICAgICAgKJAAAARgAAAAAAAAECAgICAgICAgICAgICAgICAQAAAEYAAAACAAAAJgAAAAJ4AV3IuQ0AAAjDwCDE11Gy/6JAnWsseQAoEftZGf1Z4na31BByRk9PVEVSAAAAAAAAAAA=",
-            "retention": "inline"
-          },
-          "offset": 0,
-          "stream": "nx:source",
-          "untyped": []
+          "stream": "nx:container"
         }
-      },
-      "unrepresented": []
+      }
     }
   },
   "inspect": {

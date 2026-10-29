@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Source-less schema-4 document construction.
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, HashSet};
 use std::io::{Cursor, Write};
 
 use cadmpeg_core::CodecError;
@@ -129,6 +129,31 @@ impl FcstdDocumentBuilder {
         Ok(self)
     }
 
+    /// Add a named payload; typed references determine its restoration order.
+    pub fn add_side_entry(
+        &mut self,
+        name: impl Into<String>,
+        bytes: Vec<u8>,
+    ) -> Result<&mut Self, CodecError> {
+        let name = name.into();
+        if !crate::native::is_safe_entry_name(&name) || name == "Document.xml" {
+            return Err(CodecError::malformed(format_args!(
+                "invalid source-less FCStd side entry {name:?}"
+            )));
+        }
+        if self
+            .side_entries
+            .iter()
+            .any(|(candidate, _)| candidate == &name)
+        {
+            return Err(CodecError::malformed(format_args!(
+                "duplicate source-less FCStd side entry {name}"
+            )));
+        }
+        self.side_entries.push((name, bytes));
+        Ok(self)
+    }
+
     /// Materialize the source-less graph as fully decoded CADIR.
     pub fn build(self) -> Result<CadIr, CodecError> {
         let bytes = self.archive_bytes()?;
@@ -145,6 +170,7 @@ impl FcstdDocumentBuilder {
 
     fn archive_bytes(self) -> Result<Vec<u8>, CodecError> {
         let document = self.document_xml();
+        let side_entries = self.restoration_entries(&document)?;
         let mut cursor = Cursor::new(Vec::new());
         {
             let mut archive = zip::ZipWriter::new(&mut cursor);
@@ -155,17 +181,107 @@ impl FcstdDocumentBuilder {
                 .start_file("Document.xml", options)
                 .map_err(|error| CodecError::Malformed(error.to_string()))?;
             archive.write_all(document.as_bytes())?;
-            for (name, bytes) in self.side_entries {
+            for (name, bytes) in side_entries {
                 archive
                     .start_file(name, options)
                     .map_err(|error| CodecError::Malformed(error.to_string()))?;
-                archive.write_all(&bytes)?;
+                archive.write_all(bytes)?;
             }
             archive
                 .finish()
                 .map_err(|error| CodecError::Malformed(error.to_string()))?;
         }
         Ok(cursor.into_inner())
+    }
+
+    fn restoration_entries(&self, document: &str) -> Result<Vec<&(String, Vec<u8>)>, CodecError> {
+        let arena = cadmpeg_core::decode::DecodeArena::new();
+        let policy = cadmpeg_core::decode::DecodePolicy::default();
+        let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+            document.as_bytes(),
+            &arena,
+            &policy,
+        )?;
+        let xml = ctx.parse_xml(document, "source-less FreeCAD request schedule")?;
+        let graph =
+            crate::persistence::parse_document(&xml, crate::persistence::Vocabulary::Objects)?;
+        let mut properties = graph
+            .properties
+            .iter()
+            .map(|property| {
+                graph
+                    .property_sources
+                    .get(&property.id)
+                    .map(|source| (source.record_range().start, property))
+                    .ok_or_else(|| {
+                        CodecError::malformed(format_args!(
+                            "property {} has no original source range",
+                            property.id
+                        ))
+                    })
+            })
+            .collect::<Result<Vec<_>, _>>()?;
+        properties.sort_by_key(|(start, _)| *start);
+        let mut requests = Vec::new();
+        for (_, property) in properties {
+            requests.extend(property.side_entries().iter().map(String::as_str));
+        }
+        let gui = self
+            .side_entries
+            .iter()
+            .find(|(name, _)| name == "GuiDocument.xml");
+        let gui_xml = gui
+            .map(|(_, bytes)| {
+                let text = std::str::from_utf8(bytes)
+                    .map_err(|_| CodecError::Malformed("GuiDocument.xml is not UTF-8".into()))?;
+                ctx.parse_xml(text, "source-less FreeCAD GUI request schedule")
+            })
+            .transpose()?;
+        if let Some(gui_xml) = &gui_xml {
+            requests.push("GuiDocument.xml");
+            for node in gui_xml.descendants().filter(roxmltree::Node::is_element) {
+                if node
+                    .ancestors()
+                    .find(|ancestor| ancestor.has_tag_name("Property"))
+                    .and_then(|property| property.attribute("type"))
+                    .is_some_and(crate::persistence::is_xlink_type)
+                {
+                    continue;
+                }
+                for attribute in node.attributes() {
+                    if matches!(attribute.name(), "file" | "File") && !attribute.value().is_empty()
+                    {
+                        requests.push(attribute.value());
+                    }
+                }
+            }
+        }
+        let by_name = self
+            .side_entries
+            .iter()
+            .map(|entry| (entry.0.as_str(), entry))
+            .collect::<BTreeMap<_, _>>();
+        let mut requested = HashSet::new();
+        let mut ordered = Vec::new();
+        for name in requests {
+            if !requested.insert(name) {
+                return Err(CodecError::NotImplemented(format!(
+                    "source-less FCStd side entry {name} has multiple restoration requests; supply distinct named payloads"
+                )));
+            }
+            let entry = by_name.get(name).ok_or_else(|| {
+                CodecError::malformed(format_args!(
+                    "source-less FCStd restoration requests missing side entry {name}"
+                ))
+            })?;
+            ordered.push(*entry);
+        }
+        ordered.extend(
+            self.side_entries
+                .iter()
+                .filter(|(name, _)| !requested.contains(name.as_str())),
+        );
+        Ok(ordered)
     }
 
     fn document_xml(&self) -> String {
@@ -185,6 +301,9 @@ impl FcstdDocumentBuilder {
                 );
                 output.properties.clear();
                 output.dependencies.clone_from(&object.dependencies);
+                output
+                    .declaration_attributes
+                    .insert("Touched".to_owned(), "1".to_owned());
                 for property in &object.properties {
                     let mut content = String::new();
                     for value in &property.values {

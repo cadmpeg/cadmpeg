@@ -125,7 +125,17 @@ pub(super) fn emit_model_features(
     for operation in &scan.features.operations {
         operation_feature_ids.insert(operation.feature_id);
     }
+    let rejected_state_ids = scan
+        .features
+        .operation_states
+        .iter()
+        .map(|state| state.feature_id)
+        .filter(|id| !operation_feature_ids.contains(id))
+        .collect::<BTreeSet<_>>();
     for datum in &scan.planes.datums {
+        if rejected_state_ids.contains(&datum.feature_id) {
+            continue;
+        }
         if operation_feature_ids.contains(&datum.feature_id) {
             continue;
         }
@@ -463,6 +473,9 @@ pub(super) fn emit_model_features(
         refresh_feature_outputs(ctx, scan, ir)?;
     }
     for feature_id in row_feature_ids {
+        if rejected_state_ids.contains(&feature_id) {
+            continue;
+        }
         let id = compose_feature_id(feature_id)?;
         if ir.model.features.iter().any(|feature| feature.id == id) {
             continue;

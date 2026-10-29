@@ -1,7 +1,8 @@
 {
   "decode": {
     "ir": {
-      "ir_version": "8",
+      "decode_depth": "full",
+      "ir_version": "9",
       "model": {
         "appearance_bindings": [],
         "appearances": [],
@@ -178,10 +179,6 @@
           ]
         }
       },
-      "scope": {
-        "design": true,
-        "model": true
-      },
       "source": {
         "attributes": {
           "deltas_streams": "0",
@@ -189,6 +186,7 @@
           "file_size": "359",
           "footer_entry_count": "0",
           "footer_fingerprint": "00000000",
+          "footer_offset": "345",
           "header_entry_count": "1",
           "jpeg_preview_count": "0",
           "partition_streams": "1",
@@ -277,10 +275,7 @@
       ],
       "transfer": {
         "geometry_transferred": true,
-        "scope": {
-          "design": true,
-          "model": true
-        }
+        "transfer": "full"
       }
     },
     "source_fidelity": {
@@ -399,9 +394,6 @@
           }
         }
       },
-      "metadata": {
-        "source.footer_offset": "345"
-      },
       "retained_records": {
         "nx:container:parasolid#0": {
           "bytes": {
@@ -409,20 +401,9 @@
             "retention": "inline"
           },
           "offset": 76,
-          "stream": "nx:container",
-          "untyped": []
-        },
-        "nx:source:image#whole": {
-          "bytes": {
-            "data": "U1BMTVNTVFIGAAAAAAAAAABZAQAAAAAAAEhFQURFUgEAAAAVAAAAL1Jvb3QvVUdfUEFSVC9VR19QQVJUTAAAAAAAAAANAQAAAAAAAHgBdVC7TgJBFD2jwqqg+KqMkikVYlRMTLSZGIJKokbdtd6ssgUJitlso7b6B9b0NNT8DrQ0/AGcYZdkAtk7c1/nvmbuow3g+FI6z1cP9n3VkdfVu4o8+PSCsB7Wmx+H8i3wvdCvydcv+d6s+Y2GH7AkZ5dvXadiO+6pe0ECslggPn/XsDgBBeMCSxA8WfI6bWhShfP+YK98REwgxex0UcMx5whFpsUCgU1YdFOUFlYhsIwVoIgNGtCkztqFk5eSxwSQGKQESkhrPRoBs2xO0zmJrIZRaKojz5B5/Zb5AXpg4pDEZlv8ntEbGbUb7wnY5rbN2D4ypqt+v3s3nZ0f9R/rVvdp8JfvjgEBtUKFRk9PVEVSAAAAAAAAAAA=",
-            "retention": "inline"
-          },
-          "offset": 0,
-          "stream": "nx:source",
-          "untyped": []
+          "stream": "nx:container"
         }
-      },
-      "unrepresented": []
+      }
     }
   },
   "inspect": {

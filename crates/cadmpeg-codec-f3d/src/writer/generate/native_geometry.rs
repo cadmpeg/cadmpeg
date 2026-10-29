@@ -12,7 +12,7 @@ use cadmpeg_ir::geometry::{
     SolvedSurfaceGeometry, Surface, SurfaceGeometry,
 };
 use cadmpeg_ir::ids::{PcurveId, SurfaceId};
-use cadmpeg_ir::math::{Point3, Vector3};
+use cadmpeg_ir::math::{Point2, Point3, Vector3};
 use cadmpeg_ir::topology::IncreasingParameterInterval;
 use std::borrow::Cow;
 
@@ -6066,23 +6066,22 @@ fn native_support_pcurve_for_range(
             "intcurve support has an invalid cone axial parameter scale".into(),
         )
     })?;
-    // The native torus chart uses the magnitude of the minor radius, and
-    // `native_embedded_surface` writes the signed radius, so a negative minor
-    // radius moves the neutral latitude back by pi.
-    let latitude_shift = match geometry {
-        SurfaceGeometry::Solved(SolvedSurfaceGeometry::Torus(torus_surface))
-            if torus_surface.minor_radius().get() < 0.0 =>
-        {
-            std::f64::consts::PI
-        }
-        _ => 0.0,
-    };
     let mut poles = native.pole_rows().to_raw();
     poles.edit_points(|point| {
-        *point = chart.native_point(cadmpeg_ir::math::Point2::new(
-            point.u,
-            point.v - latitude_shift,
-        ));
+        let frame = match geometry {
+            SurfaceGeometry::Solved(SolvedSurfaceGeometry::Sphere(sphere_surface))
+                if sphere_surface.radius().get() < 0.0 =>
+            {
+                Point2::new(point.u - std::f64::consts::PI, -point.v)
+            }
+            SurfaceGeometry::Solved(SolvedSurfaceGeometry::Torus(torus_surface))
+                if torus_surface.minor_radius().get() < 0.0 =>
+            {
+                Point2::new(point.u, point.v - std::f64::consts::PI)
+            }
+            _ => *point,
+        };
+        *point = chart.native_point(frame);
         Ok(())
     })?;
     PcurveNurbs::new(
@@ -6201,6 +6200,12 @@ mod pcurve_chart_tests {
                     SphereSurface::try_new(origin, axis, reference, 12.0).unwrap(),
                 )),
                 neutral.map(|p| Point2::new(p.v, p.u)),
+            ),
+            (
+                solved(SolvedSurfaceGeometry::Sphere(
+                    SphereSurface::try_new(origin, axis, reference, -12.0).unwrap(),
+                )),
+                neutral.map(|p| Point2::new(-p.v, p.u - std::f64::consts::PI)),
             ),
             (
                 solved(SolvedSurfaceGeometry::Torus(

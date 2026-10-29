@@ -1,7 +1,8 @@
 {
   "decode": {
     "ir": {
-      "ir_version": "8",
+      "decode_depth": "full",
+      "ir_version": "9",
       "model": {
         "appearance_bindings": [],
         "appearances": [],
@@ -154,15 +155,19 @@
               "index_row": "nx:display-jt:index#0-row-0",
               "lsg_segment_id": "01010101010101010101010101010101",
               "physical_byte_len": 236,
+              "source_offset": 369,
               "toc_entries": [
                 {
                   "attributes": "00000007",
                   "id": "nx:display-jt:toc-entry#0-row-0-0",
                   "ordinal": 0,
                   "segment_byte_len": 99,
-                  "segment_id": "02020202020202020202020202020202"
+                  "segment_id": "02020202020202020202020202020202",
+                  "segment_offset": 137,
+                  "source_offset": 478
                 }
               ],
+              "toc_offset": 105,
               "version_field": "Version 9.4 JT                                                                  "
             }
           ],
@@ -172,11 +177,14 @@
               "id": "nx:display-jt:index#0",
               "rows": [
                 {
+                  "header_offset": 28,
                   "id": "nx:display-jt:index#0-row-0",
                   "ordinal": 0,
+                  "source_offset": 349,
                   "value": 100
                 }
               ],
+              "source_offset": 341,
               "version": 9
             }
           ],
@@ -189,6 +197,7 @@
               "segment_byte_len": 99,
               "segment_id": "02020202020202020202020202020202",
               "segment_type": 7,
+              "source_offset": 506,
               "toc_entry": "nx:display-jt:toc-entry#0-row-0-0"
             }
           ],
@@ -201,7 +210,8 @@
               "object_id": 42,
               "object_type_id": "ab10dd10c82ad1119b6b0080c7bb5997",
               "ordinal": 0,
-              "segment": "nx:display-jt:segment#0-row-0-0"
+              "segment": "nx:display-jt:segment#0-row-0-0",
+              "source_offset": 530
             }
           ],
           "display_jt_tri_strip_lod_headers": [
@@ -212,6 +222,7 @@
               "compressed_representation_sha256": "8d70d691c822d55638b6e7fd54cd94170c87d19eb1f628b757506ede5688d297",
               "element": "nx:display-jt:segment#0-row-0-0-element-0",
               "id": "nx:display-jt:segment#0-row-0-0-element-0-tri-strip-header",
+              "source_offset": 555,
               "topological_mesh_version": 1,
               "vertex_bindings": 0,
               "vertex_records_object_id": 0,
@@ -230,10 +241,6 @@
           ]
         }
       },
-      "scope": {
-        "design": true,
-        "model": true
-      },
       "source": {
         "attributes": {
           "deltas_streams": "0",
@@ -241,6 +248,7 @@
           "file_size": "619",
           "footer_entry_count": "0",
           "footer_fingerprint": "00000000",
+          "footer_offset": "605",
           "header_entry_count": "2",
           "jpeg_preview_count": "0",
           "partition_streams": "1",
@@ -319,7 +327,7 @@
             "scope": "namespaced",
             "strict_floor": "warning"
           },
-          "message": "The B-rep topology graph (body→shell→face→loop→fin→edge→vertex) was not reconstructed because the surviving typed records did not form a complete connected ownership graph. Exact-key supported partition↔deltas replacements and deletions were applied before graph construction. Required unresolved records prevent their dependent incidence from being emitted; decoded geometry then remains unattached.",
+          "message": "The B-rep topology graph (body→shell→face→loop→fin→edge→vertex) was not reconstructed because the surviving typed records did not form a complete connected ownership graph. Graph construction used the primary input bytes. Required unresolved records prevent their dependent incidence from being emitted; decoded geometry then remains unattached.",
           "severity": "blocking"
         },
         {
@@ -340,10 +348,7 @@
       ],
       "transfer": {
         "geometry_transferred": true,
-        "scope": {
-          "design": true,
-          "model": true
-        }
+        "transfer": "full"
       }
     },
     "source_fidelity": {
@@ -445,19 +450,6 @@
           }
         }
       },
-      "metadata": {
-        "native.nx.display_jt_documents.nx:display-jt:document#0-row-0.source_offset": "369",
-        "native.nx.display_jt_documents.nx:display-jt:document#0-row-0.toc_entries[0].segment_offset": "137",
-        "native.nx.display_jt_documents.nx:display-jt:document#0-row-0.toc_entries[0].source_offset": "478",
-        "native.nx.display_jt_documents.nx:display-jt:document#0-row-0.toc_offset": "105",
-        "native.nx.display_jt_indices.nx:display-jt:index#0.rows[0].header_offset": "28",
-        "native.nx.display_jt_indices.nx:display-jt:index#0.rows[0].source_offset": "349",
-        "native.nx.display_jt_indices.nx:display-jt:index#0.source_offset": "341",
-        "native.nx.display_jt_segments.nx:display-jt:segment#0-row-0-0.source_offset": "506",
-        "native.nx.display_jt_shape_lod_elements.nx:display-jt:segment#0-row-0-0-element-0.source_offset": "530",
-        "native.nx.display_jt_tri_strip_lod_headers.nx:display-jt:segment#0-row-0-0-element-0-tri-strip-header.source_offset": "555",
-        "source.footer_offset": "605"
-      },
       "retained_records": {
         "nx:container:parasolid#0": {
           "bytes": {
@@ -465,20 +457,9 @@
             "retention": "inline"
           },
           "offset": 119,
-          "stream": "nx:container",
-          "untyped": []
-        },
-        "nx:source:image#whole": {
-          "bytes": {
-            "data": "U1BMTVNTVFIGAAAAAAAAAABdAgAAAAAAAEhFQURFUgIAAAAVAAAAL1Jvb3QvVUdfUEFSVC9VR19QQVJUdwAAAAAAAADeAAAAAAAAABcAAAAvUm9vdC9VR19QQVJUL0Rpc3BsYXlKVFUBAAAAAAAACAEAAAAAAAB4AY1MvQsBYRh/8rFYLFZ6F0W3+IpY3iRfhXC3Xz7eQfnqHIWJSJklk9EoZVH+AH+CwcRqMViVtzt3nXTl6fn4ffT88iwA4AjiitEcm01zKJHOxJGrXRLEmlhrNd2oIpCSSKqo3EeNVpXU60RAPSJ0qIn8AY/HGwrSCCsbS/FcnOV4Lx+mBWAHA9XVxjsVSgDPDV1nwrIBHxglQV0M3o/Ol+fspSo6AD9kQ7ky02w/mDSMQobOX61E4vbyuDrdxgr/eXaA+Vtj8GRwTW5tQ7z43PWhcJ86DnoRb+z1Oe8JAAAAAQAAAAAAAABkAAAAAAAAABwAAAAAAAAAVmVyc2lvbiA5LjQgSlQgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAAAAAAAGkAAAABAQEBAQEBAQEBAQEBAQEBAQAAAAICAgICAgICAgICAgICAgKJAAAAYwAAAAAAAAcCAgICAgICAgICAgICAgICBwAAAGMAAAAtAAAAqxDdEMgq0RGbawCAx7tZlwQqAAAAAQABAAAAAAAAAAAAAQAAAAAAAQCqu8zdEAAAAP////////////////////8BAAAAAABGT09URVIAAAAAAAAAAA==",
-            "retention": "inline"
-          },
-          "offset": 0,
-          "stream": "nx:source",
-          "untyped": []
+          "stream": "nx:container"
         }
-      },
-      "unrepresented": []
+      }
     }
   },
   "inspect": {

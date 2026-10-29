@@ -66,3 +66,41 @@ fn placement_document_preserves_transform_without_implied_source_layout() {
         }
     }
 }
+
+#[test]
+fn sketch_visibility_collection_wire_requires_omission_or_a_positive_identity() {
+    let mut visibility =
+        super::DesignSketchVisibility::new(std::num::NonZeroU32::new(2).unwrap(), 30, false)
+            .unwrap();
+    visibility.ordinal_collection = std::num::NonZeroU64::new(300);
+    let wire = serde_json::to_value(visibility).unwrap();
+    let decoded = serde_json::from_value::<super::DesignSketchVisibility>(wire.clone()).unwrap();
+    assert_eq!(
+        (
+            decoded.stream_ordinal,
+            decoded.visible,
+            decoded.ordinal_collection
+        ),
+        (
+            visibility.stream_ordinal,
+            visibility.visible,
+            visibility.ordinal_collection
+        )
+    );
+    let mut omitted = wire.clone();
+    omitted
+        .as_object_mut()
+        .unwrap()
+        .remove("ordinal_collection");
+    assert!(
+        serde_json::from_value::<super::DesignSketchVisibility>(omitted)
+            .unwrap()
+            .ordinal_collection
+            .is_none()
+    );
+    for invalid in [serde_json::Value::Null, serde_json::json!(0)] {
+        let mut invalid_wire = wire.clone();
+        invalid_wire["ordinal_collection"] = invalid;
+        assert!(serde_json::from_value::<super::DesignSketchVisibility>(invalid_wire).is_err());
+    }
+}

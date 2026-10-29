@@ -79,10 +79,8 @@ loss_codes! {
     IntersectionPcurveCompletionBounded => ("intersection.pcurve-completion-bounded", Warning, ObjectRecordsUntransferred),
     /// Adaptive geometry certification reached its model-wide work bound.
     GeometryAdaptiveWorkBounded => ("geometry.adaptive-work-bounded", Warning, ObjectRecordsUntransferred),
-    /// Parasolid deltas applied; every terminal tombstone resolved to a key.
-    DeltasApplied => ("deltas.applied", Info, DecodeDiagnostic),
-    /// Parasolid deltas applied; one or more terminal tombstones remain unmatched.
-    DeltasUnmatchedTombstones => ("deltas.unmatched-tombstones", Warning, DecodeDiagnostic),
+    /// Physical Deltas records do not establish the selected aggregate state.
+    DeltasSelectionUnresolved => ("deltas.selection-unresolved", Warning, DecodeDiagnostic),
     /// Sub-body partitions remain; Boolean history does not resolve every image.
     SubBodyCompositionUnresolved => ("history.sub-body-composition-unresolved", Warning, FeatureHistoryRetained),
     /// A referenced Parasolid attribute value relation did not resolve.
@@ -303,7 +301,7 @@ mod tests {
     fn retained_records_and_diagnostics_do_not_exclude_source_classes() {
         let losses = [
             super::NxLossCode::FeatureSuppressionUnresolved.note("typed record retained"),
-            super::NxLossCode::DeltasApplied.note("decode diagnostic"),
+            super::NxLossCode::DeltasSelectionUnresolved.note("decode diagnostic"),
         ];
         assert!(super::unrepresented(&losses, None).is_empty());
     }
@@ -339,8 +337,7 @@ mod tests {
                 "intersection.records-opaque",
                 "intersection.pcurve-completion-bounded",
                 "geometry.adaptive-work-bounded",
-                "deltas.applied",
-                "deltas.unmatched-tombstones",
+                "deltas.selection-unresolved",
                 "history.sub-body-composition-unresolved",
                 "attribute.value-unresolved",
                 "feature.suppression-unresolved",

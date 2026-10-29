@@ -7,6 +7,7 @@ use std::num::NonZeroU16;
 
 mod accounting;
 mod custom_properties;
+mod edge_direction;
 mod envelope;
 mod ownership;
 mod previews;
@@ -3423,6 +3424,7 @@ pub(crate) fn brep_body(
         .map(|body| Ok((body.id.clone(), take_attr(&mut next)?)))
         .collect::<Result<HashMap<_, _>, CodecError>>()?;
     let vertex_owners = ownership::vertex_body_owners(ir, &body_attrs)?;
+    let reversed_edges = edge_direction::reversed_compact_edges(ir)?;
     let mut out = Vec::new();
     for surface in &ir.model.surfaces {
         if let SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(nurbs)) = &surface.geometry {
@@ -3440,7 +3442,13 @@ pub(crate) fn brep_body(
             cadmpeg_core::CodecError::UnsupportedContent("carrier has no solved geometry".into())
         })?);
         let (kind, values) = surface_values(&surface.geometry, reference, length_scale)?;
-        compact(&mut out, kind, surfaces[&surface.id], &values);
+        compact(
+            &mut out,
+            kind,
+            surfaces[&surface.id],
+            SURFACE_MARKER,
+            &values,
+        );
     }
     for curve in &ir.model.curves {
         if derived_sphere_seam_curves.contains(&curve.id) {
@@ -3458,7 +3466,17 @@ pub(crate) fn brep_body(
             continue;
         }
         let (kind, values) = curve_values(&curve.geometry, length_scale)?;
-        compact(&mut out, kind, curves[&curve.id], &values);
+        compact(
+            &mut out,
+            kind,
+            curves[&curve.id],
+            if reversed_edges.curves.contains(&curve.id) {
+                CURVE_AGAINST_EDGES_MARKER
+            } else {
+                CURVE_ALONG_EDGES_MARKER
+            },
+            &values,
+        );
     }
     let face_owners = ir
         .model
@@ -3545,11 +3563,13 @@ pub(crate) fn brep_body(
     // XT selects an edge's canonical fin from its forward uses. A boundary
     // edge may survive with only a reversed document use after face reduction.
     // Reverse its native edge orientation and all native fin senses together;
-    // loop start vertices keep their document positions.
+    // loop start vertices keep their document positions. `reversed_edges`
+    // already reverses the edges on compact curves.
     let reversed_native_edges = ir
         .model
         .edges
         .iter()
+        .filter(|edge| !reversed_edges.edges.contains(&edge.id))
         .filter(|edge| {
             let uses = ir
                 .model
@@ -3595,8 +3615,9 @@ pub(crate) fn brep_body(
         ] {
             be16(&mut out, value);
         }
-        let native_forward =
-            (coedge.sense == Sense::Forward) != reversed_native_edges.contains(&coedge.edge);
+        let native_forward = (reversed_edges.stored_sense(&coedge.edge, coedge.sense)
+            == Sense::Forward)
+            != reversed_native_edges.contains(&coedge.edge);
         out.push(if native_forward { 0x2b } else { 0x2d });
     }
     for lp in &ir.model.loops {
@@ -4806,12 +4827,23 @@ pub(super) fn surface_reference(geometry: &SolvedSurfaceGeometry) -> cadmpeg_ir:
     }
 }
 
-fn compact(out: &mut Vec<u8>, kind: u8, attr: u16, values: &[f64]) {
+/// Orientation marker of a written compact surface.
+const SURFACE_MARKER: u8 = 0x2b;
+
+/// Orientation marker of a written compact curve whose stored edges run along
+/// its parameter.
+const CURVE_ALONG_EDGES_MARKER: u8 = 0x2d;
+
+/// Orientation marker of a written compact curve whose stored edges run against
+/// its parameter.
+const CURVE_AGAINST_EDGES_MARKER: u8 = 0x2b;
+
+fn compact(out: &mut Vec<u8>, kind: u8, attr: u16, marker: u8, values: &[f64]) {
     tag(out, kind);
     be16(out, attr);
     be32(out, 0);
     out.extend_from_slice(&[0; 10]);
-    out.push(0x2b);
+    out.push(marker);
     for value in values {
         bef64(out, *value);
     }

@@ -65,7 +65,8 @@ fn semantic_writer_round_trips_all_pattern_forms() {
                 distance: actual_spacing,
                 count: actual_count,
                 second: None,
-            } if decoded.ir().dimension_value(actual_count) == Some(3) && *actual_direction == Vector3::new(1.0, 0.0, 0.0)
+                omitted_instances,
+            } if omitted_instances.is_empty() && decoded.ir().dimension_value(actual_count) == Some(3) && *actual_direction == Vector3::new(1.0, 0.0, 0.0)
                 && (seeds == &[cadmpeg_ir::features::patterns::PatternSeed::Feature(seed.clone())]) && decoded.ir().dimension_value(actual_spacing.dimension()).unwrap().get() == 10.0)
     ));
     assert!(matches!(
@@ -323,7 +324,8 @@ fn semantic_writer_round_trips_sparse_localized_linear_pattern() {
                 distance: actual_spacing,
                 count: actual_count,
                 second: None,
-            } if decoded.ir().dimension_value(actual_count) == Some(15) && (seeds.is_empty()) && decoded.ir().dimension_value(actual_spacing.dimension()).unwrap().get() == 2.54)
+                omitted_instances,
+            } if omitted_instances.is_empty() && decoded.ir().dimension_value(actual_count) == Some(15) && (seeds.is_empty()) && decoded.ir().dimension_value(actual_spacing.dimension()).unwrap().get() == 2.54)
     ));
     assert_eq!(
         decoded.ir().model.parameters[0].value,
@@ -378,7 +380,8 @@ fn semantic_writer_round_trips_sparse_localized_linear_pattern() {
                     distance: actual_spacing,
                     count: actual_count,
                     second: None,
-                } if regenerated.ir().dimension_value(actual_count) == Some(12) && regenerated.ir().dimension_value(actual_spacing.dimension()).unwrap().get() == 3.5)
+                    omitted_instances,
+                } if omitted_instances.is_empty() && regenerated.ir().dimension_value(actual_count) == Some(12) && regenerated.ir().dimension_value(actual_spacing.dimension()).unwrap().get() == 3.5)
         )
     );
 }
@@ -637,3 +640,5 @@ mod feature_input;
 mod sweep_loft;
 
 mod renames;
+
+mod omissions;

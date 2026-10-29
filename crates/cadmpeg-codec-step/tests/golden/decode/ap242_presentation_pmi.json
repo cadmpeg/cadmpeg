@@ -1,6 +1,7 @@
 {
   "ir": {
-    "ir_version": "8",
+    "decode_depth": "full",
+    "ir_version": "9",
     "model": {
       "appearance_bindings": [],
       "appearances": [],
@@ -14,6 +15,7 @@
         {
           "id": "step:drawing:draughting_model#10",
           "kind": "other",
+          "native_ref": "step:drawing:draughting_model#10",
           "object": "step:drawing:draughting_model#10",
           "order": 0,
           "parameters": {
@@ -124,12 +126,16 @@
         ]
       }
     },
-    "scope": {
-      "design": true,
-      "model": true
-    },
     "source": {
-      "attributes": {},
+      "attributes": {
+        "bytes_named_opaque": "0",
+        "bytes_structural": "288",
+        "bytes_typed": "526",
+        "bytes_unclassified": "0",
+        "data_sections": "1",
+        "entity_instances": "10",
+        "schema": "AP242_MANAGED_MODEL_BASED_3D_ENGINEERING_MIM_LF"
+      },
       "identity": {
         "classification": "classified",
         "dialects": {
@@ -186,281 +192,10 @@
     ],
     "transfer": {
       "geometry_transferred": false,
-      "scope": {
-        "design": true,
-        "model": true
-      }
+      "transfer": "full"
     }
   },
   "source_fidelity": {
-    "annotations": {},
-    "metadata": {
-      "bytes_named_opaque": "0",
-      "bytes_structural": "288",
-      "bytes_typed": "526",
-      "bytes_unclassified": "0",
-      "data_sections": "1",
-      "entity_instances": "10",
-      "schema": "AP242_MANAGED_MODEL_BASED_3D_ENGINEERING_MIM_LF"
-    },
-    "parts": {
-      "step:source:part#01572c6adc7b63bcbc4946c15107163716272212a68c328c28af3c6813421e0a": {
-        "byte_len": 37,
-        "framing_bytes": [
-          {
-            "end": 427,
-            "start": 425
-          },
-          {
-            "end": 428,
-            "start": 427
-          },
-          {
-            "end": 462,
-            "start": 461
-          }
-        ],
-        "level": "step.simple_entity_instance",
-        "offset": 425,
-        "parent": null,
-        "state": {
-          "state": "decoded"
-        },
-        "stream": "file"
-      },
-      "step:source:part#0c583fa5bacae4929737c4ea16794c99453afdace99d3fd6db68682bd9acc7a7": {
-        "byte_len": 54,
-        "framing_bytes": [
-          {
-            "end": 682,
-            "start": 680
-          },
-          {
-            "end": 683,
-            "start": 682
-          },
-          {
-            "end": 734,
-            "start": 733
-          }
-        ],
-        "level": "step.simple_entity_instance",
-        "offset": 680,
-        "parent": null,
-        "state": {
-          "state": "decoded"
-        },
-        "stream": "file"
-      },
-      "step:source:part#155a9d83f26a9c9fa0299d5d1119993b136a30762cab213fdd2af082f4bac9a6": {
-        "byte_len": 55,
-        "framing_bytes": [
-          {
-            "end": 573,
-            "start": 571
-          },
-          {
-            "end": 574,
-            "start": 573
-          },
-          {
-            "end": 626,
-            "start": 625
-          }
-        ],
-        "level": "step.simple_entity_instance",
-        "offset": 571,
-        "parent": null,
-        "state": {
-          "state": "decoded"
-        },
-        "stream": "file"
-      },
-      "step:source:part#4dcc052a6f90d4166a1c4bb89b0bb858c8e77bb69f04ffc966d21df20a8a841f": {
-        "byte_len": 49,
-        "framing_bytes": [
-          {
-            "end": 523,
-            "start": 521
-          },
-          {
-            "end": 524,
-            "start": 523
-          },
-          {
-            "end": 570,
-            "start": 569
-          }
-        ],
-        "level": "step.simple_entity_instance",
-        "offset": 521,
-        "parent": null,
-        "state": {
-          "state": "decoded"
-        },
-        "stream": "file"
-      },
-      "step:source:part#58ed8f0f03ff283cf1a89d85e61e6a3a42ffc92fcc34684abcb881cce84a9f48": {
-        "byte_len": 52,
-        "framing_bytes": [
-          {
-            "end": 629,
-            "start": 627
-          },
-          {
-            "end": 630,
-            "start": 629
-          },
-          {
-            "end": 679,
-            "start": 678
-          }
-        ],
-        "level": "step.simple_entity_instance",
-        "offset": 627,
-        "parent": null,
-        "state": {
-          "state": "decoded"
-        },
-        "stream": "file"
-      },
-      "step:source:part#5be7ba8f9889a93dc6f88010c6fe3a58bd4b2d0dc7d6ecd0d307206a9650b697": {
-        "byte_len": 28,
-        "framing_bytes": [
-          {
-            "end": 465,
-            "start": 463
-          },
-          {
-            "end": 466,
-            "start": 465
-          },
-          {
-            "end": 491,
-            "start": 490
-          }
-        ],
-        "level": "step.simple_entity_instance",
-        "offset": 463,
-        "parent": null,
-        "state": {
-          "state": "decoded"
-        },
-        "stream": "file"
-      },
-      "step:source:part#8f7fe5b469d16a574881b4c8d01c5f50543033d60b3ed0c59041538e4ad5bec6": {
-        "byte_len": 58,
-        "framing_bytes": [
-          {
-            "end": 254,
-            "start": 252
-          },
-          {
-            "end": 255,
-            "start": 254
-          },
-          {
-            "end": 256,
-            "start": 255
-          },
-          {
-            "end": 309,
-            "start": 308
-          },
-          {
-            "end": 310,
-            "start": 309
-          }
-        ],
-        "level": "step.complex_entity_instance",
-        "offset": 252,
-        "parent": null,
-        "state": {
-          "state": "decoded"
-        },
-        "stream": "file"
-      },
-      "step:source:part#c372da6571c7890fed19b0de96077cc9ee54acf2968f46dea5f4524038b5efb4": {
-        "byte_len": 28,
-        "framing_bytes": [
-          {
-            "end": 494,
-            "start": 492
-          },
-          {
-            "end": 495,
-            "start": 494
-          },
-          {
-            "end": 520,
-            "start": 519
-          }
-        ],
-        "level": "step.simple_entity_instance",
-        "offset": 492,
-        "parent": null,
-        "state": {
-          "state": "decoded"
-        },
-        "stream": "file"
-      },
-      "step:source:part#cec3bbd72766185f68844782fd7352ea72c7ee2cdd62f0636ad2abe84a87ecf4": {
-        "byte_len": 52,
-        "framing_bytes": [
-          {
-            "end": 738,
-            "start": 735
-          },
-          {
-            "end": 739,
-            "start": 738
-          },
-          {
-            "end": 787,
-            "start": 786
-          }
-        ],
-        "level": "step.simple_entity_instance",
-        "offset": 735,
-        "parent": null,
-        "state": {
-          "state": "decoded"
-        },
-        "stream": "file"
-      },
-      "step:source:part#e570e13dc3e4d153a8efface6938d62020b0761f8a40c2ff6766010224225927": {
-        "byte_len": 113,
-        "framing_bytes": [
-          {
-            "end": 313,
-            "start": 311
-          },
-          {
-            "end": 314,
-            "start": 313
-          },
-          {
-            "end": 315,
-            "start": 314
-          },
-          {
-            "end": 423,
-            "start": 422
-          },
-          {
-            "end": 424,
-            "start": 423
-          }
-        ],
-        "level": "step.complex_entity_instance",
-        "offset": 311,
-        "parent": null,
-        "state": {
-          "state": "decoded"
-        },
-        "stream": "file"
-      }
-    },
-    "unrepresented": []
+    "annotations": {}
   }
 }

@@ -84,23 +84,6 @@ pub(crate) fn status_framed_deltas_point_stream() -> Vec<u8> {
     stream
 }
 
-pub(crate) fn status_framed_deltas_intersection_stream() -> Vec<u8> {
-    let mut stream = Vec::new();
-    stream.extend_from_slice(&38u16.to_be_bytes());
-    stream.extend_from_slice(&12u16.to_be_bytes());
-    stream.extend_from_slice(&901u32.to_be_bytes());
-    for reference in [1u16, 2, 3, 4, 1] {
-        stream.extend_from_slice(&reference.to_be_bytes());
-        stream.push(1);
-    }
-    stream.push(b'+');
-    for reference in [6u16, 7, 20, 21, 22, 23] {
-        stream.extend_from_slice(&reference.to_be_bytes());
-        stream.push(1);
-    }
-    stream
-}
-
 pub(crate) fn deltas_point_partition_stream() -> Vec<u8> {
     let mut stream = DELTAS_PREAMBLE.to_vec();
     stream.extend(status_framed_deltas_point_stream());

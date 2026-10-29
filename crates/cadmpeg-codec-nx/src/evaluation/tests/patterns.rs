@@ -50,6 +50,7 @@ fn body_pattern_adds_one_copy_per_non_original_occurrence() {
                 },
                 count: 3_u32.into(),
                 second: None,
+                omitted_instances: Vec::new(),
             })
             .unwrap(),
         }),

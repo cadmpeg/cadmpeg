@@ -208,6 +208,7 @@ pub(crate) fn make_source_image_unavailable(fidelity: &mut SourceFidelity) {
 
 pub(crate) mod allocation;
 pub(crate) mod appearance;
+pub(crate) mod carchive;
 pub(crate) mod container;
 pub(crate) mod history;
 pub(crate) mod ir;

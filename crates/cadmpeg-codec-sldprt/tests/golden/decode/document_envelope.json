@@ -1,11 +1,123 @@
 {
   "ir": {
-    "ir_version": "8",
+    "decode_depth": "full",
+    "ir_version": "9",
     "model": {
       "appearance_bindings": [],
       "appearances": [],
       "assembly_joints": [],
-      "attributes": [],
+      "attributes": [
+        {
+          "id": "sldprt:metadata:bounding_envelope#247:0",
+          "name": "bounding_envelope",
+          "target": {
+            "kind": "document"
+          },
+          "values": [
+            {
+              "kind": "vector",
+              "value": [
+                10.0,
+                20.0,
+                -30.0,
+                40.0
+              ]
+            }
+          ]
+        },
+        {
+          "id": "sldprt:metadata:configuration_manager#247:269",
+          "name": "configuration_manager",
+          "target": {
+            "kind": "document"
+          },
+          "values": [
+            {
+              "kind": "integer",
+              "value": 17
+            },
+            {
+              "kind": "integer",
+              "value": 3
+            },
+            {
+              "kind": "integer",
+              "value": 132537600000000000
+            }
+          ]
+        },
+        {
+          "id": "sldprt:metadata:default_reference_plane#247:54",
+          "name": "default_reference_plane",
+          "target": {
+            "kind": "document"
+          },
+          "values": [
+            {
+              "kind": "vector",
+              "value": [
+                1.0,
+                2.0,
+                3.0
+              ]
+            },
+            {
+              "kind": "vector",
+              "value": [
+                0.0,
+                0.0,
+                1.0,
+                0.0,
+                0.0,
+                0.0
+              ]
+            }
+          ]
+        },
+        {
+          "id": "sldprt:metadata:part_record#247:248",
+          "name": "part_record",
+          "target": {
+            "kind": "document"
+          },
+          "values": [
+            {
+              "kind": "integer",
+              "value": 42
+            },
+            {
+              "kind": "integer",
+              "value": 2026
+            }
+          ]
+        },
+        {
+          "id": "sldprt:metadata:source_linear_unit_code#492:10",
+          "name": "source_linear_unit_code",
+          "target": {
+            "kind": "document"
+          },
+          "values": [
+            {
+              "kind": "integer",
+              "value": 0
+            }
+          ]
+        },
+        {
+          "id": "sldprt:metadata:source_linear_unit_name#247:414",
+          "name": "source_linear_unit_name",
+          "target": {
+            "kind": "document"
+          },
+          "values": [
+            {
+              "kind": "string",
+              "value": "IN"
+            }
+          ]
+        }
+      ],
       "bodies": [],
       "coedges": [],
       "configurations": [],
@@ -43,125 +155,6 @@
     "native": {
       "sldprt": {
         "configurations": [],
-        "document_metadata": [
-          {
-            "attributes": [
-              {
-                "id": "sldprt:metadata:bounding_envelope#247:0",
-                "name": "bounding_envelope",
-                "target": {
-                  "kind": "document"
-                },
-                "values": [
-                  {
-                    "kind": "vector",
-                    "value": [
-                      10.0,
-                      20.0,
-                      -30.0,
-                      40.0
-                    ]
-                  }
-                ]
-              },
-              {
-                "id": "sldprt:metadata:default_reference_plane#247:54",
-                "name": "default_reference_plane",
-                "target": {
-                  "kind": "document"
-                },
-                "values": [
-                  {
-                    "kind": "vector",
-                    "value": [
-                      1.0,
-                      2.0,
-                      3.0
-                    ]
-                  },
-                  {
-                    "kind": "vector",
-                    "value": [
-                      0.0,
-                      0.0,
-                      1.0,
-                      0.0,
-                      0.0,
-                      0.0
-                    ]
-                  }
-                ]
-              },
-              {
-                "id": "sldprt:metadata:part_record#247:248",
-                "name": "part_record",
-                "target": {
-                  "kind": "document"
-                },
-                "values": [
-                  {
-                    "kind": "integer",
-                    "value": 42
-                  },
-                  {
-                    "kind": "integer",
-                    "value": 2026
-                  }
-                ]
-              },
-              {
-                "id": "sldprt:metadata:configuration_manager#247:269",
-                "name": "configuration_manager",
-                "target": {
-                  "kind": "document"
-                },
-                "values": [
-                  {
-                    "kind": "integer",
-                    "value": 17
-                  },
-                  {
-                    "kind": "integer",
-                    "value": 3
-                  },
-                  {
-                    "kind": "integer",
-                    "value": 132537600000000000
-                  }
-                ]
-              },
-              {
-                "id": "sldprt:metadata:source_linear_unit_name#247:414",
-                "name": "source_linear_unit_name",
-                "target": {
-                  "kind": "document"
-                },
-                "values": [
-                  {
-                    "kind": "string",
-                    "value": "IN"
-                  }
-                ]
-              },
-              {
-                "id": "sldprt:metadata:source_linear_unit_code#492:10",
-                "name": "source_linear_unit_code",
-                "target": {
-                  "kind": "document"
-                },
-                "values": [
-                  {
-                    "kind": "integer",
-                    "value": 0
-                  }
-                ]
-              }
-            ],
-            "id": "sldprt:metadata:document#0",
-            "pmi": [],
-            "semantic_annotations": []
-          }
-        ],
         "feature_histories": [],
         "feature_input_body_selections": [],
         "feature_input_classes": [],
@@ -184,13 +177,28 @@
         ]
       }
     },
-    "scope": {
-      "design": false,
-      "model": false
-    },
     "source": {
       "attributes": {
-        "parasolid_schema": "SCH_SW_33103_11000"
+        "active_parasolid_block": "Contents/Config-0-Partition",
+        "block_count": "3",
+        "brep_local_sha256": "<elided: digest over tolerantly compared geometry>",
+        "document_local_sha256": "<elided: digest over tolerantly compared geometry>",
+        "outer_version": "0x00000004",
+        "parasolid_schema": "SCH_SW_33103_11000",
+        "sldprt_configuration_feature_states_local_sha256": "<elided: digest over tolerantly compared geometry>",
+        "sldprt_configuration_parameter_values_local_sha256": "<elided: digest over tolerantly compared geometry>",
+        "sldprt_native_configuration_sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+        "sldprt_native_history_sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+        "sldprt_native_parameter_sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+        "sldprt_native_sketch_sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+        "sldprt_neutral_configuration_local_sha256": "<elided: digest over tolerantly compared geometry>",
+        "sldprt_neutral_feature_local_sha256": "<elided: digest over tolerantly compared geometry>",
+        "sldprt_neutral_parameter_local_sha256": "<elided: digest over tolerantly compared geometry>",
+        "sldprt_neutral_sketch_constraint_local_sha256": "<elided: digest over tolerantly compared geometry>",
+        "sldprt_neutral_sketch_local_sha256": "<elided: digest over tolerantly compared geometry>",
+        "sldprt_swobjects_local_sha256": "<elided: digest over tolerantly compared geometry>",
+        "sldprt_swobjects_material_local_sha256": "<elided: digest over tolerantly compared geometry>",
+        "sldprt_swobjects_metadata_identity_local_sha256": "<elided: digest over tolerantly compared geometry>"
       },
       "identity": {
         "classification": "classified",
@@ -294,17 +302,6 @@
         },
         "message": "3 referenced VERTEX record(s) lack a uniquely framed record with a verified owner class and IR-supported tolerance.",
         "severity": "warning"
-      },
-      {
-        "code": {
-          "code": "depth.not-delivered",
-          "kind": "geometry_not_transferred",
-          "namespace": "decode",
-          "scope": "namespaced",
-          "strict_floor": "warning"
-        },
-        "message": "requested full depth but the sldprt decoder did not deliver classes: model, design",
-        "severity": "error"
       }
     ],
     "notes": [
@@ -314,10 +311,7 @@
     ],
     "transfer": {
       "geometry_transferred": false,
-      "scope": {
-        "design": false,
-        "model": false
-      }
+      "transfer": "full"
     }
   },
   "source_fidelity": {
@@ -371,15 +365,6 @@
         }
       }
     },
-    "metadata": {
-      "active_parasolid_block": "Contents/Config-0-Partition",
-      "brep_local_sha256": "90c8f71fa076a81c0c053ae3a519abe4e4e722a097fa23c783ef7abb5dab1f29",
-      "document_local_sha256": "a24122ebdda98c63840d76816e087d13d1dd853fd1f90b58ec2df3e28c2555f4",
-      "outer_version": "0x00000004",
-      "sldprt_swobjects_local_sha256": "586ffb909b0bba2aacc4d34937062d2b3c9cb6c81d2f794c686ad550b192d8dc",
-      "sldprt_swobjects_material_local_sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
-      "sldprt_swobjects_metadata_identity_local_sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945"
-    },
     "retained_records": {
       "sldprt:file:block#8": {
         "bytes": {
@@ -387,10 +372,7 @@
           "retention": "inline"
         },
         "offset": 8,
-        "stream": "Contents/Config-0-Partition",
-        "untyped": [
-          "model"
-        ]
+        "stream": "Contents/Config-0-Partition"
       },
       "sldprt:file:source-image#0": {
         "bytes": {
@@ -398,12 +380,8 @@
           "retention": "inline"
         },
         "offset": 0,
-        "stream": "source",
-        "untyped": []
+        "stream": "source"
       }
-    },
-    "unrepresented": [
-      "model"
-    ]
+    }
   }
 }

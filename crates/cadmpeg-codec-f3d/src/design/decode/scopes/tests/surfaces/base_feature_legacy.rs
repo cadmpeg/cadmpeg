@@ -122,6 +122,7 @@ fn base_feature_scope_decodes_class_452_262_legacy_body_reference_forms() {
                         + crate::design::decode::scopes::parameter_scope::parameter_scope_previous_history_offset(
                             "Base Feature",
                             bytes.len() - feature_ordinal,
+                            false,
                         )
                         .unwrap()),
                 );

@@ -345,3 +345,164 @@ fn hole_face_selection_reads_the_direct_persistent_identity_envelope() {
     assert_eq!(selection.next_byte_offset, Some(u64_from_index(next_at)));
     assert!(selection.historical_face_candidates.is_empty());
 }
+
+const LEGACY: super::ExtentLayout = super::ExtentLayout {
+    leading_word: false,
+    control: false,
+};
+const BARE: super::ExtentLayout = super::ExtentLayout {
+    leading_word: false,
+    control: true,
+};
+const WORDED: super::ExtentLayout = super::ExtentLayout {
+    leading_word: true,
+    control: true,
+};
+
+fn extent_payload(controls: &[u8], saved: bool) -> Vec<u8> {
+    let mut bytes = vec![0, 1];
+    bytes.extend_from_slice(&u32::from(saved).to_le_bytes());
+    if saved {
+        for text in [
+            "SavedHoleDepthInNonDistanceExtentsCase",
+            "IntrinsicMetaTypedouble",
+        ] {
+            bytes.extend_from_slice(&u32::try_from(text.len()).unwrap().to_le_bytes());
+            bytes.extend_from_slice(text.as_bytes());
+        }
+        bytes.extend_from_slice(&1.0_f64.to_le_bytes());
+    }
+    bytes.extend_from_slice(controls);
+    bytes
+}
+
+#[test]
+fn hole_extent_reads_distance_and_saved_through_all() {
+    for control in [0, 1] {
+        let bytes = extent_payload(&[0, 0, 0, 0, 1, 1, control, 0], control == 1);
+        let extent = super::hole_extent_payload(&bytes, 0, WORDED).unwrap();
+        assert_eq!(extent.extent_control, Some(control));
+        let word = extent.leading_word.unwrap();
+        assert_eq!(word.value, 0);
+        assert_eq!(
+            cadmpeg_core::decode::View::u32_le_at(
+                &bytes,
+                usize::try_from(word.offset.unwrap()).unwrap()
+            ),
+            Some(0)
+        );
+        let saved = extent.saved_non_distance_depth;
+        assert_eq!(saved.is_some(), control == 1);
+        if let Some(saved) = saved {
+            assert!((saved.value.get() - 1.0).abs() < EPS_HOLE_TEST_VALUE);
+            assert_eq!(
+                cadmpeg_core::decode::View::f64_le_at(
+                    &bytes,
+                    usize::try_from(saved.offset.unwrap()).unwrap()
+                ),
+                Some(1.0)
+            );
+        }
+    }
+}
+
+#[test]
+fn hole_extent_leading_word_follows_the_type_version() {
+    let word = extent_payload(&[2, 0, 0, 0, 1, 1, 0, 0], false);
+    let extent = super::hole_extent_payload(&word, 0, WORDED).unwrap();
+    assert_eq!(extent.leading_word.map(|word| word.value), Some(2));
+    assert!(super::hole_extent_payload(&word, 0, BARE).is_none());
+
+    let bare = extent_payload(&[1, 1, 0, 0], false);
+    let extent = super::hole_extent_payload(&bare, 0, BARE).unwrap();
+    assert_eq!(extent.extent_control, Some(0));
+    assert_eq!(extent.leading_word, None);
+    assert!(super::hole_extent_payload(&bare, 0, WORDED).is_none());
+
+    let legacy = extent_payload(&[1, 1, 0, 1], false);
+    let extent = super::hole_extent_payload(&legacy, 0, LEGACY).unwrap();
+    assert_eq!(extent.extent_control, None);
+    assert_eq!(extent.leading_word, None);
+    assert!(super::hole_extent_payload(&extent_payload(&[1, 1, 0, 1], true), 0, LEGACY).is_none());
+    assert!(super::hole_extent_payload(&extent_payload(&[1, 0, 0, 1], false), 0, LEGACY).is_none());
+
+    assert_eq!(super::extent_layout(3), Some(LEGACY));
+    assert_eq!(super::extent_layout(4), Some(BARE));
+    assert_eq!(super::extent_layout(5), Some(WORDED));
+    assert_eq!(super::extent_layout(7), Some(WORDED));
+    for unproven in [1, 2, 6, 8] {
+        assert_eq!(super::extent_layout(unproven), None);
+    }
+}
+
+#[test]
+fn hole_extent_refuses_other_control_spellings_and_truncation() {
+    for controls in [
+        [0, 0, 0, 0, 1, 0, 0, 0],
+        [0, 0, 0, 0, 0, 1, 0, 0],
+        [0, 0, 0, 0, 1, 1, 2, 0],
+        [0, 0, 0, 0, 1, 1, 1, 1],
+    ] {
+        assert!(super::hole_extent_payload(&extent_payload(&controls, true), 0, WORDED).is_none());
+    }
+    let bytes = extent_payload(&[0, 0, 0, 0, 1, 1, 1, 0], true);
+    for end in 0..bytes.len() {
+        assert!(super::hole_extent_payload(&bytes[..end], 0, WORDED).is_none());
+    }
+}
+
+#[test]
+fn hole_extent_reads_the_shared_absent_property_prologue() {
+    let bytes = [0, 0, 5, 0, 0, 0, 1, 1, 0, 0];
+    let extent = super::hole_extent_payload(&bytes, 0, WORDED).unwrap();
+    assert_eq!(extent.extent_control, Some(0));
+    assert_eq!(extent.leading_word.map(|word| word.value), Some(5));
+    assert!(extent.saved_non_distance_depth.is_none());
+}
+
+/// Extent controls, saved-depth property, Hole type version, expected control.
+type ExtentForm = (&'static [u8], bool, Option<u32>, Option<Option<u8>>);
+
+#[test]
+fn hole_extent_uses_the_admitted_scope_frame_without_a_point_carrier() {
+    let forms: [ExtentForm; 6] = [
+        (&[0, 0, 0, 0, 1, 1, 0, 0], false, Some(7), Some(Some(0))),
+        (&[0, 0, 0, 0, 1, 1, 1, 0], true, Some(5), Some(Some(1))),
+        (&[1, 1, 0, 0], false, Some(4), Some(Some(0))),
+        (&[1, 1, 0, 1], false, Some(3), Some(None)),
+        (&[1, 1, 0, 0], false, Some(7), None),
+        (&[0, 0, 0, 0, 1, 1, 0, 0], false, None, None),
+    ];
+    for (controls, saved, version, expected) in forms {
+        let mut bytes = Vec::new();
+        indexed_header(&mut bytes, *b"256", 1);
+        bytes.extend_from_slice(&[0; 8]);
+        bytes.extend_from_slice(&extent_payload(controls, saved));
+        bytes.extend_from_slice(&1u32.to_le_bytes());
+        bytes.push(1);
+        bytes.extend_from_slice(&3u32.to_le_bytes());
+        bytes.extend_from_slice(&[0; 6]);
+        bytes.extend_from_slice(&u32::MAX.to_le_bytes());
+        lp_utf16(&mut bytes, "Hole");
+        let mut tail = [0; 78];
+        tail[..4].copy_from_slice(&1u32.to_le_bytes());
+        tail[31..35].copy_from_slice(&u32::MAX.to_le_bytes());
+        bytes.extend_from_slice(&tail);
+        indexed_header(&mut bytes, *b"257", 1);
+        let records = crate::design::test_support::indexed_record_offsets_for_test(&bytes);
+        let scope = crate::design::decode::scopes::parameter_scope::parse_parameter_scope(
+            &bytes,
+            &records,
+            1,
+            &"256".to_owned().try_into().unwrap(),
+            0,
+        )
+        .unwrap()
+        .unwrap();
+        assert!(scope.hole_construction().is_none());
+        assert_eq!(
+            super::hole_extent(&bytes, &scope, version).map(|extent| extent.extent_control),
+            expected
+        );
+    }
+}

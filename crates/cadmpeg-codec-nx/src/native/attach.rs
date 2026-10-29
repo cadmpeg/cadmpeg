@@ -107,9 +107,7 @@ use crate::native::history::{
     active_feature_closure, BodyWriterHistory, FeatureDependencies,
     NATIVE_PRIMARY_BODY_CLOSURE_WITNESS, NATIVE_PRIMARY_BODY_OBJECT_INDEX,
 };
-use crate::native::om::display_color::{
-    RmDisplayColorAssignment, RmDisplayColorAssignmentEncoding,
-};
+use crate::native::om::display_color::RmDisplayColorAssignment;
 use crate::native::segments::BooleanOffsetStoreResolution;
 
 use super::catalogue::NATIVE_CATALOGUE;
@@ -420,8 +418,7 @@ fn attach_records(
     if model.is_empty() && !has_object_sections {
         return Ok(());
     }
-    attach_rm_face_colors(ir, model, scan, annotations)?;
-    attach_rm_appearances(ir, model, scan, annotations)?;
+    attach_rm_appearances(ir, model, annotations)?;
     let display_jt_tessellations = display_jt_tessellations(
         &mut scan.source_untyped(),
         ctx,
@@ -731,47 +728,6 @@ fn attach_configurations<'a>(
     Ok(())
 }
 
-fn attach_rm_face_colors(
-    ir: &mut CadIr,
-    model: &crate::native::model::NativeModel,
-    scan: &Scan,
-    annotations: &mut AnnotationBuilder,
-) -> Result<(), CodecError> {
-    let face_ids = collect_rm_face_ids(ir.model.faces.iter().map(|face| face.id.as_str()));
-    let bindings = resolve_rm_face_colors(
-        &face_ids,
-        &model.om.rm_display_color_assignments,
-        &model.om.part_color_definitions,
-        &model.parasolid.deltas_records,
-        &super::substrate::paired_delta_streams(scan),
-    )?;
-    let last_face_positions = ir
-        .model
-        .faces
-        .iter()
-        .enumerate()
-        .map(|(index, face)| (face.id.as_str(), index))
-        .collect::<BTreeMap<_, _>>();
-    let targets = bindings
-        .into_iter()
-        .filter_map(|(face_id, color)| Some((*last_face_positions.get(face_id.as_str())?, color)))
-        .collect::<Vec<_>>();
-    for (index, color) in targets {
-        let face = &mut ir.model.faces[index];
-        if face.color.is_none() || face.color == Some(color) {
-            face.color = Some(color);
-            annotations
-                .derived(&face.id, "color")
-                .map_err(cadmpeg_core::CodecError::from)?;
-        }
-    }
-    Ok(())
-}
-
-fn collect_rm_face_ids<'b>(faces: impl IntoIterator<Item = &'b str>) -> BTreeSet<String> {
-    faces.into_iter().map(str::to_owned).collect()
-}
-
 #[derive(Debug, Clone, PartialEq, Eq)]
 struct RmSourceColorBinding {
     source_id: String,
@@ -779,29 +735,13 @@ struct RmSourceColorBinding {
     source_offset: u64,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
-struct RmFaceColorBinding {
-    face_id: String,
-    color_definition: String,
-    source_offset: u64,
-}
-
 fn attach_rm_appearances(
     ir: &mut CadIr,
     model: &crate::native::model::NativeModel,
-    scan: &Scan,
     annotations: &mut AnnotationBuilder,
 ) -> Result<(), CodecError> {
     let source_bindings = resolve_rm_source_color_bindings(&model.om.rm_display_color_assignments);
-    let face_ids = collect_rm_face_ids(ir.model.faces.iter().map(|face| face.id.as_str()));
-    let face_bindings = resolve_rm_face_color_bindings(
-        &face_ids,
-        &model.om.rm_display_color_assignments,
-        &model.om.part_color_definitions,
-        &model.parasolid.deltas_records,
-        &super::substrate::paired_delta_streams(scan),
-    );
-    if source_bindings.is_empty() && face_bindings.is_empty() {
+    if source_bindings.is_empty() {
         return Ok(());
     }
     let annotation_stream = StreamHandle::new(cadmpeg_ir::stream_name!("nx:container"));
@@ -848,70 +788,6 @@ fn attach_rm_appearances(
             appearance: appearance_id,
             source_entity_id: Some(binding.source_id),
             object_type: Some("RMFastLoad object ID".into()),
-            visible: None,
-            channels: BTreeMap::new(),
-        });
-    }
-    let mut first_faces = BTreeMap::new();
-    for face in &ir.model.faces {
-        first_faces.entry(face.id.as_str()).or_insert(face);
-    }
-    let face_targets = face_bindings
-        .into_iter()
-        .filter_map(|binding| {
-            let face = first_faces.get(binding.face_id.as_str())?;
-            Some((binding, face.id.clone(), face.color))
-        })
-        .collect::<Vec<_>>();
-    for (binding, face_id, existing_color) in face_targets {
-        let Some(&definition) = definitions.get(binding.color_definition.as_str()) else {
-            continue;
-        };
-        let color = Color::new(
-            definition.components[0].0.value(),
-            definition.components[1].0.value(),
-            definition.components[2].0.value(),
-            1.0,
-        )
-        .ok_or_else(|| CodecError::Malformed("RM color components must be in [0, 1]".into()))?;
-        if existing_color.is_some_and(|existing| existing != color) {
-            continue;
-        }
-        let appearance_id = ensure_rm_color_appearance(
-            ir,
-            annotations,
-            &mut appearances,
-            definition,
-            &annotation_stream,
-        )?;
-        let binding_id: AppearanceBindingId =
-            IdScope::native(cadmpeg_ir::identity_component!("appearance-binding")).id(
-                &cadmpeg_ir::identity_component!("rmfastload-face-color"),
-                native_entity_key(&binding.face_id).ok_or_else(|| {
-                    CodecError::malformed(format_args!(
-                        "NX RMFASTLOAD_FACE_COLOR_ASSIGNMENT face id is not identity key text"
-                    ))
-                })?,
-            );
-        annotations.note(
-            binding_id.as_str(),
-            &annotation_stream,
-            binding.source_offset,
-            Some("RMFASTLOAD_FACE_COLOR_ASSIGNMENT"),
-        );
-        annotations
-            .derived(binding_id.as_str(), "target")
-            .map_err(cadmpeg_core::CodecError::from)?;
-        annotations
-            .derived(binding_id.as_str(), "appearance")
-            .map_err(cadmpeg_core::CodecError::from)?;
-        ir.model.appearance_bindings.push(AppearanceBinding {
-            native_ref: None,
-            id: binding_id,
-            target: AppearanceTarget::Face(face_id),
-            appearance: appearance_id,
-            source_entity_id: Some(binding.face_id),
-            object_type: Some("Parasolid FACE".into()),
             visible: None,
             channels: BTreeMap::new(),
         });
@@ -1051,139 +927,6 @@ fn last_color_definitions(
         .iter()
         .map(|definition| (definition.id.as_str(), definition))
         .collect()
-}
-
-fn resolve_rm_face_colors(
-    face_ids: &BTreeSet<String>,
-    assignments: &[RmDisplayColorAssignment],
-    definitions: &[super::om::PartColorDefinition],
-    records: &[super::parasolid::ParasolidDeltasRecord],
-    delta_pairs: &BTreeMap<usize, Vec<usize>>,
-) -> Result<Vec<(String, Color)>, CodecError> {
-    let bindings =
-        resolve_rm_face_color_bindings(face_ids, assignments, definitions, records, delta_pairs);
-    let definitions = last_color_definitions(definitions);
-    let mut colors = Vec::new();
-    for binding in bindings {
-        let Some(definition) = definitions.get(binding.color_definition.as_str()) else {
-            continue;
-        };
-        let color = Color::new(
-            definition.components[0].0.value(),
-            definition.components[1].0.value(),
-            definition.components[2].0.value(),
-            1.0,
-        )
-        .ok_or_else(|| CodecError::Malformed("RM color components must be in [0, 1]".into()))?;
-
-        colors.push((binding.face_id, color));
-    }
-    Ok(colors)
-}
-
-fn resolve_rm_face_color_bindings(
-    face_ids: &BTreeSet<String>,
-    assignments: &[RmDisplayColorAssignment],
-    definitions: &[super::om::PartColorDefinition],
-    records: &[super::parasolid::ParasolidDeltasRecord],
-    delta_pairs: &BTreeMap<usize, Vec<usize>>,
-) -> Vec<RmFaceColorBinding> {
-    // Linked assignments grouped by object index in first-occurrence order.
-    let mut objects = Vec::<(u32, RmColorChoice<'_>)>::new();
-    let mut object_positions = BTreeMap::new();
-    for assignment in assignments {
-        let RmDisplayColorAssignmentEncoding::Linked(row) = assignment.frame.encoding() else {
-            continue;
-        };
-        let object_index = row.first_index().atom.value();
-        match object_positions.entry(object_index) {
-            Entry::Vacant(entry) => {
-                entry.insert(objects.len());
-                objects.push((object_index, RmColorChoice::new(assignment)));
-            }
-            Entry::Occupied(entry) => objects[*entry.get()].1.observe(assignment),
-        }
-    }
-    let definition_ids = definitions
-        .iter()
-        .map(|definition| definition.id.as_str())
-        .collect::<BTreeSet<_>>();
-    // The partition of each paired delta stream, or `None` when several pair it.
-    let mut delta_partitions = BTreeMap::<u32, Option<u32>>::new();
-    for (raw_partition, deltas) in delta_pairs {
-        let Ok(partition) = u32::try_from(*raw_partition) else {
-            continue;
-        };
-        for delta in deltas {
-            let Ok(delta) = u32::try_from(*delta) else {
-                continue;
-            };
-            delta_partitions
-                .entry(delta)
-                .and_modify(|existing| {
-                    if *existing != Some(partition) {
-                        *existing = None;
-                    }
-                })
-                .or_insert(Some(partition));
-        }
-    }
-    let face_records = group_pairs(records.iter().filter_map(|record| {
-        let crate::deltas::record_family::RecordFamily::Face { node_id, .. } = &record.family
-        else {
-            return None;
-        };
-        Some((*node_id, record))
-    }));
-
-    let mut bindings = Vec::new();
-    for (object_index, choice) in objects {
-        let RmColorChoice::Unique {
-            definition,
-            source_offset,
-        } = choice
-        else {
-            continue;
-        };
-
-        if !definition_ids.contains(definition) {
-            continue;
-        }
-
-        let mut candidate = None::<String>;
-        let mut ambiguous = false;
-
-        for record in face_records.get(&object_index).into_iter().flatten() {
-            let Some(&Some(partition)) = delta_partitions.get(&record.stream_ordinal) else {
-                continue;
-            };
-            let face_id = format!("nx:s{partition}:face#{}", record.xmt);
-            if !face_ids.contains(&face_id) {
-                continue;
-            }
-            match candidate.as_ref() {
-                None => candidate = Some(face_id),
-                Some(existing) if existing == &face_id => {}
-                Some(_) => {
-                    ambiguous = true;
-                    break;
-                }
-            }
-        }
-        if ambiguous {
-            continue;
-        }
-        let Some(face_id) = candidate else {
-            continue;
-        };
-        bindings.push(RmFaceColorBinding {
-            face_id,
-            color_definition: definition.to_owned(),
-            source_offset,
-        });
-    }
-    bindings.sort_by(|left, right| left.face_id.cmp(&right.face_id));
-    bindings
 }
 
 /// Transfer each independently validated JPEG preview with its exact bounded
@@ -6034,11 +5777,6 @@ fn text_semantic_annotation(
     let mut parameters = BTreeMap::new();
     parameters.insert(key, (*font_family).to_owned());
     Ok(Some(SemanticAnnotation {
-        id,
-        object: native_ref.to_owned(),
-        kind: SemanticAnnotationKind::Text,
-        runtime_type: "TEXT".to_owned(),
-        order,
         text: vec![(*text).to_owned()],
         references: BTreeMap::new(),
         value: None,
@@ -6046,7 +5784,14 @@ fn text_semantic_annotation(
         position: None,
         parameters,
         assets: Vec::new(),
-        native_ref: native_ref.to_owned(),
+        ..SemanticAnnotation::new(
+            id,
+            native_ref.to_owned(),
+            SemanticAnnotationKind::Text,
+            "TEXT".to_owned(),
+            order,
+            native_ref.to_owned(),
+        )
     }))
 }
 

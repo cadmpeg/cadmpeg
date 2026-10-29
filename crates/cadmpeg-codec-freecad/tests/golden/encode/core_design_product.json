@@ -2,38 +2,63 @@
   "entries": [
     {
       "name": "Document.xml",
-      "payload_len": 47984,
-      "payload_sha256": "e3af4217e6354c0ecc708db571be68e897f6122d855c685cdb4b3a03b7f4086d"
+      "payload_len": 56656,
+      "payload_sha256": "5e34b55267b2e6df8bbaca6c58fb8a4105a6120803a79d490b0d99017a821f85"
     },
     {
-      "name": "Box.brp",
-      "payload_len": 2561,
-      "payload_sha256": "16de1522c25fb2a6e3968e6844b3116fe26303f9270bc1dc8d9b6c8227529e5a"
+      "name": "Box.Shape.brp",
+      "payload_len": 8938,
+      "payload_sha256": "9a3523babdb58076dfd2c35f8d64fb7849e18a6b7515d7c8b18ebd791799cadd"
     },
     {
-      "name": "Cadmpeg.StringHasher.0.txt",
-      "payload_len": 22,
-      "payload_sha256": "fb6584f9f9e27a1800242afb8012578f820f423a4ae7fda4be20731580cbe0a1"
+      "name": "Cylinder.Shape.brp",
+      "payload_len": 2646,
+      "payload_sha256": "948e25b6487e76dee3777ffda6e9d03ec9f63e29cf6cbfa5236494ed7cfb2920"
     },
     {
-      "name": "Cut.brp",
-      "payload_len": 3415,
-      "payload_sha256": "87e6c0522619306690ddb546aaeabfd3cb97dd62113d739211a312b3747b2894"
+      "name": "Cut.Shape.brp",
+      "payload_len": 12897,
+      "payload_sha256": "59f9d453d7448ba49e75c4e4d568a9679c676c3af50190121daa846ac895d581"
     },
     {
-      "name": "Cylinder.brp",
-      "payload_len": 1073,
-      "payload_sha256": "342baf200e88094055fe0c7534117b17f5e643d226736134ca4058176e481f90"
+      "name": "Cut.Shape.Map.txt",
+      "payload_len": 645,
+      "payload_sha256": "b91fb726bfa15a3a7cacc7971d88b2ed517aa3ba8b18a6b7e3da7d2bf86f11bd"
     },
     {
-      "name": "DesignedFeature.brp",
-      "payload_len": 2511,
-      "payload_sha256": "3da28d61fb861bbb43ac3f0e300d74d920db9609ff6989f20de5250bb1b5b79d"
+      "name": "Profile.InternalShape.brp",
+      "payload_len": 0,
+      "payload_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
     },
     {
-      "name": "Profile.brp",
-      "payload_len": 658,
-      "payload_sha256": "4cf31c5c657e5475ade5419faafea36ab2fa01bfa0c601c3b7fba7babf947b34"
+      "name": "Profile.Shape.brp",
+      "payload_len": 1649,
+      "payload_sha256": "544b5031f22f06afc08ba6ae897abef34e3d18297855458248383a1509ed6b10"
+    },
+    {
+      "name": "Profile.Shape.Map.txt",
+      "payload_len": 267,
+      "payload_sha256": "8f31c0f71c086586367547a6bbfde21c50b20c31bf1bc624b319a5409e7cb75a"
+    },
+    {
+      "name": "DesignedFeature.Shape.brp",
+      "payload_len": 8888,
+      "payload_sha256": "780b0dab5fb6e15ae4e5c79233ee3b4a627260ab3a82dab1339d737bce76ccdf"
+    },
+    {
+      "name": "DesignedFeature.SuppressedShape.brp",
+      "payload_len": 0,
+      "payload_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "name": "PlacementList",
+      "payload_len": 4,
+      "payload_sha256": "df3f619804a92fdb4057192dc43dd748ea778adc52bc498ce80524c014b81119"
+    },
+    {
+      "name": "ScaleList",
+      "payload_len": 4,
+      "payload_sha256": "df3f619804a92fdb4057192dc43dd748ea778adc52bc498ce80524c014b81119"
     }
   ],
   "report": {
@@ -44,7 +69,7 @@
         "appearances": 0,
         "assembly_joints": 0,
         "assets": 0,
-        "attributes": 96,
+        "attributes": 0,
         "bodies": 5,
         "coedges": 84,
         "configurations": 0,
@@ -58,20 +83,22 @@
         "loops": 24,
         "native.fcstd.applications": 17,
         "native.fcstd.attachments": 15,
+        "native.fcstd.byte_coverage": 1,
         "native.fcstd.carrier_census": 5,
         "native.fcstd.design_census": 6,
         "native.fcstd.document": 1,
         "native.fcstd.element_maps": 2,
         "native.fcstd.entries": 12,
         "native.fcstd.extensions": 9,
+        "native.fcstd.logical_ledger": 460,
         "native.fcstd.objects": 17,
+        "native.fcstd.physical_ledger": 85,
         "native.fcstd.product_nodes": 2,
         "native.fcstd.properties": 225,
         "native.fcstd.shape_payloads": 7,
         "native.fcstd.string_tables": 1,
-        "native.fcstd.topology_uses": 134,
         "occurrences": 7,
-        "parameters": 13,
+        "parameters": 10,
         "pcurves": 82,
         "pmi": 0,
         "points": 32,
@@ -98,890 +125,20 @@
         "view_presentations": 0
       }
     },
-    "coverage": {
-      "arenas": {
-        "appearance_bindings": "written",
-        "appearances": "written",
-        "assembly_joints": "reported",
-        "assets": "dropped",
-        "attributes": "reported",
-        "bodies": "written",
-        "coedges": "written",
-        "configurations": "dropped",
-        "curves": "written",
-        "drawings": "dropped",
-        "edges": "written",
-        "faces": "written",
-        "feature_input_topologies": "dropped",
-        "feature_result_topologies": "dropped",
-        "features": "reported",
-        "loops": "written",
-        "occurrences": "reported",
-        "parameters": "reported",
-        "pcurves": "written",
-        "pmi": "dropped",
-        "points": "written",
-        "presentation_documents": "written",
-        "presentation_layers": "dropped",
-        "procedural_curves": "written",
-        "procedural_surfaces": "written",
-        "product_definitions": "reported",
-        "regions": "written",
-        "semantic_annotations": "dropped",
-        "shells": "written",
-        "sketch_constraints": "reported",
-        "sketch_entities": "reported",
-        "sketches": "reported",
-        "spatial_sketch_constraints": "dropped",
-        "spatial_sketch_entities": "dropped",
-        "spatial_sketches": "dropped",
-        "spreadsheets": "reported",
-        "subds": "dropped",
-        "surfaces": "written",
-        "tessellations": "dropped",
-        "vertices": "written",
-        "view_presentations": "written"
-      },
-      "coverage": "declared"
-    },
     "identity": {
       "payload": "native",
       "target": "fcstd:schema-4"
     },
-    "losses": [
-      {
-        "code": {
-          "code": "attribute.not-transferred",
-          "kind": "metadata_not_transferred",
-          "namespace": "fcstd",
-          "scope": "namespaced"
-        },
-        "message": "attribute fcstd:model:attribute#CorpusMetadata:Label:property conflicts with operation property Label",
-        "severity": "warning"
-      },
-      {
-        "code": {
-          "code": "attribute.not-transferred",
-          "kind": "metadata_not_transferred",
-          "namespace": "fcstd",
-          "scope": "namespaced"
-        },
-        "message": "attribute fcstd:model:attribute#Occurrence:ElementCount:property target has no emitted object",
-        "severity": "warning"
-      },
-      {
-        "code": {
-          "code": "attribute.not-transferred",
-          "kind": "metadata_not_transferred",
-          "namespace": "fcstd",
-          "scope": "namespaced"
-        },
-        "message": "attribute fcstd:model:attribute#Occurrence:Label2:property target has no emitted object",
-        "severity": "warning"
-      },
-      {
-        "code": {
-          "code": "attribute.not-transferred",
-          "kind": "metadata_not_transferred",
-          "namespace": "fcstd",
-          "scope": "namespaced"
-        },
-        "message": "attribute fcstd:model:attribute#Occurrence:LinkClaimChild:property target has no emitted object",
-        "severity": "warning"
-      },
-      {
-        "code": {
-          "code": "attribute.not-transferred",
-          "kind": "metadata_not_transferred",
-          "namespace": "fcstd",
-          "scope": "namespaced"
-        },
-        "message": "attribute fcstd:model:attribute#Occurrence:LinkCopyOnChange:property target has no emitted object",
-        "severity": "warning"
-      },
-      {
-        "code": {
-          "code": "attribute.not-transferred",
-          "kind": "metadata_not_transferred",
-          "namespace": "fcstd",
-          "scope": "namespaced"
-        },
-        "message": "attribute fcstd:model:attribute#Occurrence:LinkCopyOnChangeTouched:property target has no emitted object",
-        "severity": "warning"
-      },
-      {
-        "code": {
-          "code": "attribute.not-transferred",
-          "kind": "metadata_not_transferred",
-          "namespace": "fcstd",
-          "scope": "namespaced"
-        },
-        "message": "attribute fcstd:model:attribute#Occurrence:LinkExecute:property target has no emitted object",
-        "severity": "warning"
-      },
-      {
-        "code": {
-          "code": "attribute.not-transferred",
-          "kind": "metadata_not_transferred",
-          "namespace": "fcstd",
-          "scope": "namespaced"
-        },
-        "message": "attribute fcstd:model:attribute#Occurrence:LinkTransform:property target has no emitted object",
-        "severity": "warning"
-      },
-      {
-        "code": {
-          "code": "attribute.not-transferred",
-          "kind": "metadata_not_transferred",
-          "namespace": "fcstd",
-          "scope": "namespaced"
-        },
-        "message": "attribute fcstd:model:attribute#Occurrence:LinkedObject:property (LinkedObject) has no FreeCAD property encoding",
-        "severity": "warning"
-      },
-      {
-        "code": {
-          "code": "attribute.not-transferred",
-          "kind": "metadata_not_transferred",
-          "namespace": "fcstd",
-          "scope": "namespaced"
-        },
-        "message": "attribute fcstd:model:attribute#Occurrence:Scale:property target has no emitted object",
-        "severity": "warning"
-      },
-      {
-        "code": {
-          "code": "attribute.not-transferred",
-          "kind": "metadata_not_transferred",
-          "namespace": "fcstd",
-          "scope": "namespaced"
-        },
-        "message": "attribute fcstd:model:attribute#Occurrence:ScaleVector:property target has no emitted object",
-        "severity": "warning"
-      },
-      {
-        "code": {
-          "code": "attribute.not-transferred",
-          "kind": "metadata_not_transferred",
-          "namespace": "fcstd",
-          "scope": "namespaced"
-        },
-        "message": "attribute fcstd:model:attribute#Occurrence:ShowElement:property target has no emitted object",
-        "severity": "warning"
-      },
-      {
-        "code": {
-          "code": "attribute.not-transferred",
-          "kind": "metadata_not_transferred",
-          "namespace": "fcstd",
-          "scope": "namespaced"
-        },
-        "message": "attribute fcstd:model:attribute#Occurrence:Visibility:property target has no emitted object",
-        "severity": "warning"
-      },
-      {
-        "code": {
-          "code": "attribute.not-transferred",
-          "kind": "metadata_not_transferred",
-          "namespace": "fcstd",
-          "scope": "namespaced"
-        },
-        "message": "attribute fcstd:model:attribute#Occurrence:_LinkOwner:property target has no emitted object",
-        "severity": "warning"
-      },
-      {
-        "code": {
-          "code": "attribute.not-transferred",
-          "kind": "metadata_not_transferred",
-          "namespace": "fcstd",
-          "scope": "namespaced"
-        },
-        "message": "attribute fcstd:model:attribute#Origin001:Label:property conflicts with operation property Label",
-        "severity": "warning"
-      },
-      {
-        "code": {
-          "code": "attribute.not-transferred",
-          "kind": "metadata_not_transferred",
-          "namespace": "fcstd",
-          "scope": "namespaced"
-        },
-        "message": "attribute fcstd:model:attribute#Origin:Label:property conflicts with operation property Label",
-        "severity": "warning"
-      },
-      {
-        "code": {
-          "code": "attribute.not-transferred",
-          "kind": "metadata_not_transferred",
-          "namespace": "fcstd",
-          "scope": "namespaced"
-        },
-        "message": "attribute fcstd:model:attribute#Product:Id:property target has no emitted object",
-        "severity": "warning"
-      },
-      {
-        "code": {
-          "code": "attribute.not-transferred",
-          "kind": "metadata_not_transferred",
-          "namespace": "fcstd",
-          "scope": "namespaced"
-        },
-        "message": "attribute fcstd:model:attribute#Product:Label2:property target has no emitted object",
-        "severity": "warning"
-      },
-      {
-        "code": {
-          "code": "attribute.not-transferred",
-          "kind": "metadata_not_transferred",
-          "namespace": "fcstd",
-          "scope": "namespaced"
-        },
-        "message": "attribute fcstd:model:attribute#Product:License:property target has no emitted object",
-        "severity": "warning"
-      },
-      {
-        "code": {
-          "code": "attribute.not-transferred",
-          "kind": "metadata_not_transferred",
-          "namespace": "fcstd",
-          "scope": "namespaced"
-        },
-        "message": "attribute fcstd:model:attribute#Product:LicenseURL:property target has no emitted object",
-        "severity": "warning"
-      },
-      {
-        "code": {
-          "code": "attribute.not-transferred",
-          "kind": "metadata_not_transferred",
-          "namespace": "fcstd",
-          "scope": "namespaced"
-        },
-        "message": "attribute fcstd:model:attribute#Product:Origin:property target has no emitted object",
-        "severity": "warning"
-      },
-      {
-        "code": {
-          "code": "attribute.not-transferred",
-          "kind": "metadata_not_transferred",
-          "namespace": "fcstd",
-          "scope": "namespaced"
-        },
-        "message": "attribute fcstd:model:attribute#Product:Visibility:property target has no emitted object",
-        "severity": "warning"
-      },
-      {
-        "code": {
-          "code": "attribute.not-transferred",
-          "kind": "metadata_not_transferred",
-          "namespace": "fcstd",
-          "scope": "namespaced"
-        },
-        "message": "attribute fcstd:model:attribute#XY_Plane:Label:property conflicts with operation property Label",
-        "severity": "warning"
-      },
-      {
-        "code": {
-          "code": "attribute.not-transferred",
-          "kind": "metadata_not_transferred",
-          "namespace": "fcstd",
-          "scope": "namespaced"
-        },
-        "message": "attribute fcstd:model:attribute#XZ_Plane:Label:property conflicts with operation property Label",
-        "severity": "warning"
-      },
-      {
-        "code": {
-          "code": "attribute.not-transferred",
-          "kind": "metadata_not_transferred",
-          "namespace": "fcstd",
-          "scope": "namespaced"
-        },
-        "message": "attribute fcstd:model:attribute#X_Axis:Label:property conflicts with operation property Label",
-        "severity": "warning"
-      },
-      {
-        "code": {
-          "code": "attribute.not-transferred",
-          "kind": "metadata_not_transferred",
-          "namespace": "fcstd",
-          "scope": "namespaced"
-        },
-        "message": "attribute fcstd:model:attribute#YZ_Plane:Label:property conflicts with operation property Label",
-        "severity": "warning"
-      },
-      {
-        "code": {
-          "code": "attribute.not-transferred",
-          "kind": "metadata_not_transferred",
-          "namespace": "fcstd",
-          "scope": "namespaced"
-        },
-        "message": "attribute fcstd:model:attribute#Y_Axis:Label:property conflicts with operation property Label",
-        "severity": "warning"
-      },
-      {
-        "code": {
-          "code": "attribute.not-transferred",
-          "kind": "metadata_not_transferred",
-          "namespace": "fcstd",
-          "scope": "namespaced"
-        },
-        "message": "attribute fcstd:model:attribute#Z_Axis:Label:property conflicts with operation property Label",
-        "severity": "warning"
-      },
-      {
-        "code": {
-          "code": "feature.not-transferred",
-          "kind": "parametric_record_omitted",
-          "namespace": "fcstd",
-          "scope": "namespaced"
-        },
-        "message": "object Origin property OriginFeatures refers to an omitted record and is removed",
-        "severity": "error"
-      },
-      {
-        "code": {
-          "code": "native.records-omitted",
-          "kind": "record_not_typed",
-          "namespace": "export",
-          "scope": "namespaced"
-        },
-        "message": "the fcstd write omits 11 native record(s) from `fcstd.entries`: fcstd:native:entry#Box.Shape.brp, fcstd:native:entry#Cut.Shape.Map.txt, fcstd:native:entry#Cut.Shape.brp, fcstd:native:entry#Cylinder.Shape.brp, fcstd:native:entry#DesignedFeature.Shape.brp, fcstd:native:entry#DesignedFeature.SuppressedShape.brp, fcstd:native:entry#PlacementList, fcstd:native:entry#Profile.InternalShape.brp, fcstd:native:entry#Profile.Shape.Map.txt, fcstd:native:entry#Profile.Shape.brp, fcstd:native:entry#ScaleList",
-        "severity": "info"
-      },
-      {
-        "code": {
-          "code": "native.records-omitted",
-          "kind": "record_not_typed",
-          "namespace": "export",
-          "scope": "namespaced"
-        },
-        "message": "the fcstd write omits 37 native record(s) from `fcstd.properties`: fcstd:native:property#CorpusMetadata:ExpressionEngine, fcstd:native:property#Cut:ExpressionEngine, fcstd:native:property#DesignedFeature:BaseFeature, fcstd:native:property#DesignedFeature:PreviewShape, fcstd:native:property#DesignedFeature:Profile, fcstd:native:property#DesignedFeature:SuppressedShape, fcstd:native:property#Occurrence:ColoredElements, fcstd:native:property#Occurrence:ElementCount, fcstd:native:property#Occurrence:ElementList, fcstd:native:property#Occurrence:ExpressionEngine, fcstd:native:property#Occurrence:Label2, fcstd:native:property#Occurrence:LinkCopyOnChangeGroup, fcstd:native:property#Occurrence:LinkCopyOnChangeSource, fcstd:native:property#Occurrence:LinkExecute, fcstd:native:property#Occurrence:LinkPlacement, fcstd:native:property#Occurrence:PlacementList, fcstd:native:property#Occurrence:Scale, fcstd:native:property#Occurrence:ScaleList, fcstd:native:property#Occurrence:ScaleVector, fcstd:native:property#Occurrence:ShowElement, fcstd:native:property#Occurrence:Visibility, fcstd:native:property#Occurrence:VisibilityList, fcstd:native:property#Occurrence:_LinkOwner, fcstd:native:property#Origin001:ExpressionEngine, fcstd:native:property#Origin:ExpressionEngine, fcstd:native:property#Origin:OriginFeatures, fcstd:native:property#Parameters:ExpressionEngine, fcstd:native:property#Product:Visibility, fcstd:native:property#Profile:ExternalGeo, fcstd:native:property#Profile:ExternalGeometry, fcstd:native:property#Profile:InternalShape, fcstd:native:property#XY_Plane:ExpressionEngine, fcstd:native:property#XZ_Plane:ExpressionEngine, fcstd:native:property#X_Axis:ExpressionEngine, fcstd:native:property#YZ_Plane:ExpressionEngine, fcstd:native:property#Y_Axis:ExpressionEngine, fcstd:native:property#Z_Axis:ExpressionEngine",
-        "severity": "info"
-      },
-      {
-        "code": {
-          "code": "native.records-omitted",
-          "kind": "record_not_typed",
-          "namespace": "export",
-          "scope": "namespaced"
-        },
-        "message": "the fcstd write omits 2 native record(s) from `fcstd.shape_payloads`: fcstd:native:shape-payload#DesignedFeature:SuppressedShape:DesignedFeature.SuppressedShape.brp, fcstd:native:shape-payload#Profile:InternalShape:Profile.InternalShape.brp",
-        "severity": "info"
-      }
+    "losses": [],
+    "notes": [
+      "semantic FCStd archive written for fcstd:schema-4 (SchemaVersion=4 FileVersion=1)",
+      "unsupported retained entries and unedited XML records were preserved"
     ],
-    "native_dispositions": {
-      "namespaces": {
-        "fcstd": {
-          "arenas": {
-            "annotations": {
-              "disposition": "dropped"
-            },
-            "applications": {
-              "disposition": "dropped",
-              "records": {
-                "fcstd:native:application#Box": "regenerated",
-                "fcstd:native:application#CorpusMetadata": "regenerated",
-                "fcstd:native:application#Cut": "regenerated",
-                "fcstd:native:application#Cylinder": "regenerated",
-                "fcstd:native:application#DesignedFeature": "regenerated",
-                "fcstd:native:application#Occurrence": "regenerated",
-                "fcstd:native:application#Origin": "regenerated",
-                "fcstd:native:application#Origin001": "regenerated",
-                "fcstd:native:application#Parameters": "regenerated",
-                "fcstd:native:application#Product": "regenerated",
-                "fcstd:native:application#Profile": "regenerated",
-                "fcstd:native:application#XY_Plane": "regenerated",
-                "fcstd:native:application#XZ_Plane": "regenerated",
-                "fcstd:native:application#X_Axis": "regenerated",
-                "fcstd:native:application#YZ_Plane": "regenerated",
-                "fcstd:native:application#Y_Axis": "regenerated",
-                "fcstd:native:application#Z_Axis": "regenerated"
-              }
-            },
-            "attachments": {
-              "disposition": "dropped",
-              "records": {
-                "fcstd:native:attachment#Box": "written",
-                "fcstd:native:attachment#Cut": "written",
-                "fcstd:native:attachment#Cylinder": "written",
-                "fcstd:native:attachment#DesignedFeature": "written",
-                "fcstd:native:attachment#Occurrence": "written",
-                "fcstd:native:attachment#Origin": "written",
-                "fcstd:native:attachment#Origin001": "written",
-                "fcstd:native:attachment#Product": "written",
-                "fcstd:native:attachment#Profile": "written",
-                "fcstd:native:attachment#XY_Plane": "written",
-                "fcstd:native:attachment#XZ_Plane": "written",
-                "fcstd:native:attachment#X_Axis": "written",
-                "fcstd:native:attachment#YZ_Plane": "written",
-                "fcstd:native:attachment#Y_Axis": "written",
-                "fcstd:native:attachment#Z_Axis": "written"
-              }
-            },
-            "carrier_census": {
-              "disposition": "dropped",
-              "records": {
-                "fcstd:native:carrier-census#Box:Shape:Box.Shape.brp:families": "regenerated",
-                "fcstd:native:carrier-census#Cut:Shape:Cut.Shape.brp:families": "regenerated",
-                "fcstd:native:carrier-census#Cylinder:Shape:Cylinder.Shape.brp:families": "regenerated",
-                "fcstd:native:carrier-census#DesignedFeature:Shape:DesignedFeature.Shape.brp:families": "regenerated",
-                "fcstd:native:carrier-census#Profile:Shape:Profile.Shape.brp:families": "regenerated"
-              }
-            },
-            "design_census": {
-              "disposition": "dropped",
-              "records": {
-                "fcstd:native:design-census#Box:projection": "regenerated",
-                "fcstd:native:design-census#Cut:projection": "regenerated",
-                "fcstd:native:design-census#Cylinder:projection": "regenerated",
-                "fcstd:native:design-census#DesignedFeature:projection": "regenerated",
-                "fcstd:native:design-census#Parameters:projection": "regenerated",
-                "fcstd:native:design-census#Profile:projection": "regenerated"
-              }
-            },
-            "document": {
-              "disposition": "dropped",
-              "records": {
-                "fcstd:native:document#0": "regenerated"
-              }
-            },
-            "drawings": {
-              "disposition": "dropped"
-            },
-            "element_maps": {
-              "disposition": "dropped",
-              "records": {
-                "fcstd:native:element-map#Cut:Shape:map": "written",
-                "fcstd:native:element-map#Profile:Shape:map": "written"
-              }
-            },
-            "entries": {
-              "disposition": "dropped",
-              "records": {
-                "fcstd:native:entry#Document.xml": "regenerated"
-              }
-            },
-            "extensions": {
-              "disposition": "dropped",
-              "records": {
-                "fcstd:native:extension#Box:0%3AAttachExtension": "written",
-                "fcstd:native:extension#Cylinder:0%3AAttachExtension": "written",
-                "fcstd:native:extension#Cylinder:1%3APrismExtension": "written",
-                "fcstd:native:extension#DesignedFeature:0%3ASuppressibleExtension": "written",
-                "fcstd:native:extension#DesignedFeature:1%3APreviewExtension": "written",
-                "fcstd:native:extension#Occurrence:0%3ALinkExtension": "written",
-                "fcstd:native:extension#Origin:0%3AGeoFeatureGroupExtension": "written",
-                "fcstd:native:extension#Product:0%3AOriginGroupExtension": "written",
-                "fcstd:native:extension#Profile:0%3AAttachExtension": "written"
-              }
-            },
-            "gui_documents": {
-              "disposition": "dropped"
-            },
-            "gui_properties": {
-              "disposition": "dropped"
-            },
-            "gui_view_providers": {
-              "disposition": "dropped"
-            },
-            "joints": {
-              "disposition": "dropped"
-            },
-            "objects": {
-              "disposition": "dropped",
-              "records": {
-                "fcstd:native:object#Box": "regenerated",
-                "fcstd:native:object#CorpusMetadata": "written",
-                "fcstd:native:object#Cut": "regenerated",
-                "fcstd:native:object#Cylinder": "regenerated",
-                "fcstd:native:object#DesignedFeature": "regenerated",
-                "fcstd:native:object#Occurrence": "regenerated",
-                "fcstd:native:object#Origin": "written",
-                "fcstd:native:object#Origin001": "written",
-                "fcstd:native:object#Parameters": "regenerated",
-                "fcstd:native:object#Product": "regenerated",
-                "fcstd:native:object#Profile": "regenerated",
-                "fcstd:native:object#XY_Plane": "written",
-                "fcstd:native:object#XZ_Plane": "written",
-                "fcstd:native:object#X_Axis": "written",
-                "fcstd:native:object#YZ_Plane": "written",
-                "fcstd:native:object#Y_Axis": "written",
-                "fcstd:native:object#Z_Axis": "written"
-              }
-            },
-            "product_nodes": {
-              "disposition": "dropped",
-              "records": {
-                "fcstd:native:product#Occurrence": "regenerated",
-                "fcstd:native:product#Product": "regenerated"
-              }
-            },
-            "properties": {
-              "disposition": "dropped",
-              "records": {
-                "fcstd:native:property#0:Comment": "regenerated",
-                "fcstd:native:property#0:Company": "regenerated",
-                "fcstd:native:property#0:CreatedBy": "regenerated",
-                "fcstd:native:property#0:CreationDate": "regenerated",
-                "fcstd:native:property#0:FileName": "written",
-                "fcstd:native:property#0:Id": "regenerated",
-                "fcstd:native:property#0:Label": "regenerated",
-                "fcstd:native:property#0:LastModifiedBy": "regenerated",
-                "fcstd:native:property#0:LastModifiedDate": "regenerated",
-                "fcstd:native:property#0:License": "regenerated",
-                "fcstd:native:property#0:LicenseURL": "regenerated",
-                "fcstd:native:property#0:Material": "written",
-                "fcstd:native:property#0:Meta": "written",
-                "fcstd:native:property#0:ShowHidden": "regenerated",
-                "fcstd:native:property#0:Tip": "written",
-                "fcstd:native:property#0:TipName": "regenerated",
-                "fcstd:native:property#0:TransientDir": "written",
-                "fcstd:native:property#0:Uid": "written",
-                "fcstd:native:property#0:UnitSystem": "written",
-                "fcstd:native:property#0:UseHasher": "regenerated",
-                "fcstd:native:property#Box:AttacherEngine": "written",
-                "fcstd:native:property#Box:AttacherType": "regenerated",
-                "fcstd:native:property#Box:AttachmentOffset": "regenerated",
-                "fcstd:native:property#Box:AttachmentSupport": "written",
-                "fcstd:native:property#Box:ExpressionEngine": "regenerated",
-                "fcstd:native:property#Box:Height": "regenerated",
-                "fcstd:native:property#Box:Label": "regenerated",
-                "fcstd:native:property#Box:Label2": "regenerated",
-                "fcstd:native:property#Box:Length": "regenerated",
-                "fcstd:native:property#Box:MapMode": "regenerated",
-                "fcstd:native:property#Box:MapPathParameter": "regenerated",
-                "fcstd:native:property#Box:MapReversed": "regenerated",
-                "fcstd:native:property#Box:Placement": "regenerated",
-                "fcstd:native:property#Box:Shape": "regenerated",
-                "fcstd:native:property#Box:ShapeMaterial": "written",
-                "fcstd:native:property#Box:Visibility": "regenerated",
-                "fcstd:native:property#Box:Width": "regenerated",
-                "fcstd:native:property#Box:_ElementMapVersion": "written",
-                "fcstd:native:property#CorpusMetadata:InertValue": "written",
-                "fcstd:native:property#CorpusMetadata:Label": "regenerated",
-                "fcstd:native:property#CorpusMetadata:Label2": "regenerated",
-                "fcstd:native:property#CorpusMetadata:License": "regenerated",
-                "fcstd:native:property#CorpusMetadata:Proxy": "written",
-                "fcstd:native:property#CorpusMetadata:Purpose": "regenerated",
-                "fcstd:native:property#CorpusMetadata:Visibility": "regenerated",
-                "fcstd:native:property#Cut:Base": "regenerated",
-                "fcstd:native:property#Cut:History": "written",
-                "fcstd:native:property#Cut:Label": "regenerated",
-                "fcstd:native:property#Cut:Label2": "regenerated",
-                "fcstd:native:property#Cut:Placement": "regenerated",
-                "fcstd:native:property#Cut:Refine": "regenerated",
-                "fcstd:native:property#Cut:Shape": "regenerated",
-                "fcstd:native:property#Cut:ShapeMaterial": "written",
-                "fcstd:native:property#Cut:Tool": "regenerated",
-                "fcstd:native:property#Cut:Visibility": "regenerated",
-                "fcstd:native:property#Cut:_ElementMapVersion": "written",
-                "fcstd:native:property#Cylinder:Angle": "regenerated",
-                "fcstd:native:property#Cylinder:AttacherEngine": "written",
-                "fcstd:native:property#Cylinder:AttacherType": "regenerated",
-                "fcstd:native:property#Cylinder:AttachmentOffset": "regenerated",
-                "fcstd:native:property#Cylinder:AttachmentSupport": "written",
-                "fcstd:native:property#Cylinder:ExpressionEngine": "regenerated",
-                "fcstd:native:property#Cylinder:FirstAngle": "regenerated",
-                "fcstd:native:property#Cylinder:Height": "regenerated",
-                "fcstd:native:property#Cylinder:Label": "regenerated",
-                "fcstd:native:property#Cylinder:Label2": "regenerated",
-                "fcstd:native:property#Cylinder:MapMode": "regenerated",
-                "fcstd:native:property#Cylinder:MapPathParameter": "regenerated",
-                "fcstd:native:property#Cylinder:MapReversed": "regenerated",
-                "fcstd:native:property#Cylinder:Placement": "regenerated",
-                "fcstd:native:property#Cylinder:Radius": "regenerated",
-                "fcstd:native:property#Cylinder:SecondAngle": "regenerated",
-                "fcstd:native:property#Cylinder:Shape": "regenerated",
-                "fcstd:native:property#Cylinder:ShapeMaterial": "written",
-                "fcstd:native:property#Cylinder:Visibility": "regenerated",
-                "fcstd:native:property#Cylinder:_ElementMapVersion": "written",
-                "fcstd:native:property#DesignedFeature:ExpressionEngine": "regenerated",
-                "fcstd:native:property#DesignedFeature:Label": "regenerated",
-                "fcstd:native:property#DesignedFeature:Label2": "regenerated",
-                "fcstd:native:property#DesignedFeature:Length": "regenerated",
-                "fcstd:native:property#DesignedFeature:Placement": "regenerated",
-                "fcstd:native:property#DesignedFeature:Shape": "regenerated",
-                "fcstd:native:property#DesignedFeature:ShapeMaterial": "written",
-                "fcstd:native:property#DesignedFeature:Suppressed": "regenerated",
-                "fcstd:native:property#DesignedFeature:Visibility": "regenerated",
-                "fcstd:native:property#DesignedFeature:_Body": "written",
-                "fcstd:native:property#DesignedFeature:_ElementMapVersion": "written",
-                "fcstd:native:property#Occurrence:Label": "regenerated",
-                "fcstd:native:property#Occurrence:LinkClaimChild": "regenerated",
-                "fcstd:native:property#Occurrence:LinkCopyOnChange": "regenerated",
-                "fcstd:native:property#Occurrence:LinkCopyOnChangeTouched": "regenerated",
-                "fcstd:native:property#Occurrence:LinkTransform": "regenerated",
-                "fcstd:native:property#Occurrence:LinkedObject": "regenerated",
-                "fcstd:native:property#Occurrence:Placement": "regenerated",
-                "fcstd:native:property#Origin001:Label": "regenerated",
-                "fcstd:native:property#Origin001:Label2": "regenerated",
-                "fcstd:native:property#Origin001:Placement": "regenerated",
-                "fcstd:native:property#Origin001:Role": "regenerated",
-                "fcstd:native:property#Origin001:Visibility": "regenerated",
-                "fcstd:native:property#Origin001:_ElementMapVersion": "written",
-                "fcstd:native:property#Origin:Group": "written",
-                "fcstd:native:property#Origin:Label": "regenerated",
-                "fcstd:native:property#Origin:Label2": "regenerated",
-                "fcstd:native:property#Origin:Placement": "regenerated",
-                "fcstd:native:property#Origin:Visibility": "regenerated",
-                "fcstd:native:property#Origin:_ElementMapVersion": "written",
-                "fcstd:native:property#Origin:_GroupTouched": "written",
-                "fcstd:native:property#Parameters:Label": "regenerated",
-                "fcstd:native:property#Parameters:Label2": "regenerated",
-                "fcstd:native:property#Parameters:Visibility": "regenerated",
-                "fcstd:native:property#Parameters:cells": "regenerated",
-                "fcstd:native:property#Parameters:columnWidths": "written",
-                "fcstd:native:property#Parameters:rowHeights": "written",
-                "fcstd:native:property#Product:Color": "written",
-                "fcstd:native:property#Product:ExpressionEngine": "regenerated",
-                "fcstd:native:property#Product:Group": "regenerated",
-                "fcstd:native:property#Product:Id": "regenerated",
-                "fcstd:native:property#Product:Label": "regenerated",
-                "fcstd:native:property#Product:Label2": "regenerated",
-                "fcstd:native:property#Product:License": "regenerated",
-                "fcstd:native:property#Product:LicenseURL": "regenerated",
-                "fcstd:native:property#Product:Material": "written",
-                "fcstd:native:property#Product:Meta": "written",
-                "fcstd:native:property#Product:Origin": "regenerated",
-                "fcstd:native:property#Product:Placement": "regenerated",
-                "fcstd:native:property#Product:Type": "regenerated",
-                "fcstd:native:property#Product:Uid": "written",
-                "fcstd:native:property#Product:_ElementMapVersion": "written",
-                "fcstd:native:property#Product:_GroupTouched": "written",
-                "fcstd:native:property#Profile:ArcFitTolerance": "regenerated",
-                "fcstd:native:property#Profile:AttacherEngine": "written",
-                "fcstd:native:property#Profile:AttacherType": "regenerated",
-                "fcstd:native:property#Profile:AttachmentOffset": "regenerated",
-                "fcstd:native:property#Profile:AttachmentSupport": "written",
-                "fcstd:native:property#Profile:Constraints": "regenerated",
-                "fcstd:native:property#Profile:Exports": "written",
-                "fcstd:native:property#Profile:ExpressionEngine": "regenerated",
-                "fcstd:native:property#Profile:ExternalTypes": "written",
-                "fcstd:native:property#Profile:FullyConstrained": "regenerated",
-                "fcstd:native:property#Profile:Geometry": "regenerated",
-                "fcstd:native:property#Profile:Label": "regenerated",
-                "fcstd:native:property#Profile:Label2": "regenerated",
-                "fcstd:native:property#Profile:MakeInternals": "regenerated",
-                "fcstd:native:property#Profile:MapMode": "regenerated",
-                "fcstd:native:property#Profile:MapPathParameter": "regenerated",
-                "fcstd:native:property#Profile:MapReversed": "regenerated",
-                "fcstd:native:property#Profile:Placement": "regenerated",
-                "fcstd:native:property#Profile:Shape": "regenerated",
-                "fcstd:native:property#Profile:ShapeMaterial": "written",
-                "fcstd:native:property#Profile:Visibility": "regenerated",
-                "fcstd:native:property#Profile:_ElementMapVersion": "written",
-                "fcstd:native:property#Profile:_ExternalGeoVersion": "regenerated",
-                "fcstd:native:property#XY_Plane:Label": "regenerated",
-                "fcstd:native:property#XY_Plane:Label2": "regenerated",
-                "fcstd:native:property#XY_Plane:Placement": "regenerated",
-                "fcstd:native:property#XY_Plane:Role": "regenerated",
-                "fcstd:native:property#XY_Plane:Visibility": "regenerated",
-                "fcstd:native:property#XY_Plane:_ElementMapVersion": "written",
-                "fcstd:native:property#XZ_Plane:Label": "regenerated",
-                "fcstd:native:property#XZ_Plane:Label2": "regenerated",
-                "fcstd:native:property#XZ_Plane:Placement": "regenerated",
-                "fcstd:native:property#XZ_Plane:Role": "regenerated",
-                "fcstd:native:property#XZ_Plane:Visibility": "regenerated",
-                "fcstd:native:property#XZ_Plane:_ElementMapVersion": "written",
-                "fcstd:native:property#X_Axis:Label": "regenerated",
-                "fcstd:native:property#X_Axis:Label2": "regenerated",
-                "fcstd:native:property#X_Axis:Placement": "regenerated",
-                "fcstd:native:property#X_Axis:Role": "regenerated",
-                "fcstd:native:property#X_Axis:Visibility": "regenerated",
-                "fcstd:native:property#X_Axis:_ElementMapVersion": "written",
-                "fcstd:native:property#YZ_Plane:Label": "regenerated",
-                "fcstd:native:property#YZ_Plane:Label2": "regenerated",
-                "fcstd:native:property#YZ_Plane:Placement": "regenerated",
-                "fcstd:native:property#YZ_Plane:Role": "regenerated",
-                "fcstd:native:property#YZ_Plane:Visibility": "regenerated",
-                "fcstd:native:property#YZ_Plane:_ElementMapVersion": "written",
-                "fcstd:native:property#Y_Axis:Label": "regenerated",
-                "fcstd:native:property#Y_Axis:Label2": "regenerated",
-                "fcstd:native:property#Y_Axis:Placement": "regenerated",
-                "fcstd:native:property#Y_Axis:Role": "regenerated",
-                "fcstd:native:property#Y_Axis:Visibility": "regenerated",
-                "fcstd:native:property#Y_Axis:_ElementMapVersion": "written",
-                "fcstd:native:property#Z_Axis:Label": "regenerated",
-                "fcstd:native:property#Z_Axis:Label2": "regenerated",
-                "fcstd:native:property#Z_Axis:Placement": "regenerated",
-                "fcstd:native:property#Z_Axis:Role": "regenerated",
-                "fcstd:native:property#Z_Axis:Visibility": "regenerated",
-                "fcstd:native:property#Z_Axis:_ElementMapVersion": "written"
-              }
-            },
-            "shape_payloads": {
-              "disposition": "dropped",
-              "records": {
-                "fcstd:native:shape-payload#Box:Shape:Box.Shape.brp": "regenerated",
-                "fcstd:native:shape-payload#Cut:Shape:Cut.Shape.brp": "regenerated",
-                "fcstd:native:shape-payload#Cylinder:Shape:Cylinder.Shape.brp": "regenerated",
-                "fcstd:native:shape-payload#DesignedFeature:Shape:DesignedFeature.Shape.brp": "regenerated",
-                "fcstd:native:shape-payload#Profile:Shape:Profile.Shape.brp": "regenerated"
-              }
-            },
-            "string_tables": {
-              "disposition": "dropped",
-              "records": {
-                "fcstd:native:string-table#0": "written"
-              }
-            },
-            "topology_uses": {
-              "disposition": "dropped",
-              "records": {
-                "fcstd:native:shape-payload#Box:Shape:Box.Shape.brp:topology-use:1": "regenerated",
-                "fcstd:native:shape-payload#Box:Shape:Box.Shape.brp:topology-use:10": "regenerated",
-                "fcstd:native:shape-payload#Box:Shape:Box.Shape.brp:topology-use:11": "regenerated",
-                "fcstd:native:shape-payload#Box:Shape:Box.Shape.brp:topology-use:12": "regenerated",
-                "fcstd:native:shape-payload#Box:Shape:Box.Shape.brp:topology-use:13": "regenerated",
-                "fcstd:native:shape-payload#Box:Shape:Box.Shape.brp:topology-use:14": "regenerated",
-                "fcstd:native:shape-payload#Box:Shape:Box.Shape.brp:topology-use:15": "regenerated",
-                "fcstd:native:shape-payload#Box:Shape:Box.Shape.brp:topology-use:16": "regenerated",
-                "fcstd:native:shape-payload#Box:Shape:Box.Shape.brp:topology-use:17": "regenerated",
-                "fcstd:native:shape-payload#Box:Shape:Box.Shape.brp:topology-use:18": "regenerated",
-                "fcstd:native:shape-payload#Box:Shape:Box.Shape.brp:topology-use:19": "regenerated",
-                "fcstd:native:shape-payload#Box:Shape:Box.Shape.brp:topology-use:2": "regenerated",
-                "fcstd:native:shape-payload#Box:Shape:Box.Shape.brp:topology-use:20": "regenerated",
-                "fcstd:native:shape-payload#Box:Shape:Box.Shape.brp:topology-use:21": "regenerated",
-                "fcstd:native:shape-payload#Box:Shape:Box.Shape.brp:topology-use:22": "regenerated",
-                "fcstd:native:shape-payload#Box:Shape:Box.Shape.brp:topology-use:23": "regenerated",
-                "fcstd:native:shape-payload#Box:Shape:Box.Shape.brp:topology-use:24": "regenerated",
-                "fcstd:native:shape-payload#Box:Shape:Box.Shape.brp:topology-use:25": "regenerated",
-                "fcstd:native:shape-payload#Box:Shape:Box.Shape.brp:topology-use:26": "regenerated",
-                "fcstd:native:shape-payload#Box:Shape:Box.Shape.brp:topology-use:27": "regenerated",
-                "fcstd:native:shape-payload#Box:Shape:Box.Shape.brp:topology-use:28": "regenerated",
-                "fcstd:native:shape-payload#Box:Shape:Box.Shape.brp:topology-use:29": "regenerated",
-                "fcstd:native:shape-payload#Box:Shape:Box.Shape.brp:topology-use:3": "regenerated",
-                "fcstd:native:shape-payload#Box:Shape:Box.Shape.brp:topology-use:30": "regenerated",
-                "fcstd:native:shape-payload#Box:Shape:Box.Shape.brp:topology-use:31": "regenerated",
-                "fcstd:native:shape-payload#Box:Shape:Box.Shape.brp:topology-use:32": "regenerated",
-                "fcstd:native:shape-payload#Box:Shape:Box.Shape.brp:topology-use:33": "regenerated",
-                "fcstd:native:shape-payload#Box:Shape:Box.Shape.brp:topology-use:34": "regenerated",
-                "fcstd:native:shape-payload#Box:Shape:Box.Shape.brp:topology-use:4": "regenerated",
-                "fcstd:native:shape-payload#Box:Shape:Box.Shape.brp:topology-use:5": "regenerated",
-                "fcstd:native:shape-payload#Box:Shape:Box.Shape.brp:topology-use:6": "regenerated",
-                "fcstd:native:shape-payload#Box:Shape:Box.Shape.brp:topology-use:7": "regenerated",
-                "fcstd:native:shape-payload#Box:Shape:Box.Shape.brp:topology-use:8": "regenerated",
-                "fcstd:native:shape-payload#Box:Shape:Box.Shape.brp:topology-use:9": "regenerated",
-                "fcstd:native:shape-payload#Cut:Shape:Cut.Shape.brp:topology-use:1": "regenerated",
-                "fcstd:native:shape-payload#Cut:Shape:Cut.Shape.brp:topology-use:10": "regenerated",
-                "fcstd:native:shape-payload#Cut:Shape:Cut.Shape.brp:topology-use:11": "regenerated",
-                "fcstd:native:shape-payload#Cut:Shape:Cut.Shape.brp:topology-use:12": "regenerated",
-                "fcstd:native:shape-payload#Cut:Shape:Cut.Shape.brp:topology-use:13": "regenerated",
-                "fcstd:native:shape-payload#Cut:Shape:Cut.Shape.brp:topology-use:14": "regenerated",
-                "fcstd:native:shape-payload#Cut:Shape:Cut.Shape.brp:topology-use:15": "regenerated",
-                "fcstd:native:shape-payload#Cut:Shape:Cut.Shape.brp:topology-use:16": "regenerated",
-                "fcstd:native:shape-payload#Cut:Shape:Cut.Shape.brp:topology-use:17": "regenerated",
-                "fcstd:native:shape-payload#Cut:Shape:Cut.Shape.brp:topology-use:18": "regenerated",
-                "fcstd:native:shape-payload#Cut:Shape:Cut.Shape.brp:topology-use:19": "regenerated",
-                "fcstd:native:shape-payload#Cut:Shape:Cut.Shape.brp:topology-use:2": "regenerated",
-                "fcstd:native:shape-payload#Cut:Shape:Cut.Shape.brp:topology-use:20": "regenerated",
-                "fcstd:native:shape-payload#Cut:Shape:Cut.Shape.brp:topology-use:21": "regenerated",
-                "fcstd:native:shape-payload#Cut:Shape:Cut.Shape.brp:topology-use:22": "regenerated",
-                "fcstd:native:shape-payload#Cut:Shape:Cut.Shape.brp:topology-use:23": "regenerated",
-                "fcstd:native:shape-payload#Cut:Shape:Cut.Shape.brp:topology-use:24": "regenerated",
-                "fcstd:native:shape-payload#Cut:Shape:Cut.Shape.brp:topology-use:25": "regenerated",
-                "fcstd:native:shape-payload#Cut:Shape:Cut.Shape.brp:topology-use:26": "regenerated",
-                "fcstd:native:shape-payload#Cut:Shape:Cut.Shape.brp:topology-use:27": "regenerated",
-                "fcstd:native:shape-payload#Cut:Shape:Cut.Shape.brp:topology-use:28": "regenerated",
-                "fcstd:native:shape-payload#Cut:Shape:Cut.Shape.brp:topology-use:29": "regenerated",
-                "fcstd:native:shape-payload#Cut:Shape:Cut.Shape.brp:topology-use:3": "regenerated",
-                "fcstd:native:shape-payload#Cut:Shape:Cut.Shape.brp:topology-use:30": "regenerated",
-                "fcstd:native:shape-payload#Cut:Shape:Cut.Shape.brp:topology-use:31": "regenerated",
-                "fcstd:native:shape-payload#Cut:Shape:Cut.Shape.brp:topology-use:32": "regenerated",
-                "fcstd:native:shape-payload#Cut:Shape:Cut.Shape.brp:topology-use:33": "regenerated",
-                "fcstd:native:shape-payload#Cut:Shape:Cut.Shape.brp:topology-use:34": "regenerated",
-                "fcstd:native:shape-payload#Cut:Shape:Cut.Shape.brp:topology-use:35": "regenerated",
-                "fcstd:native:shape-payload#Cut:Shape:Cut.Shape.brp:topology-use:36": "regenerated",
-                "fcstd:native:shape-payload#Cut:Shape:Cut.Shape.brp:topology-use:37": "regenerated",
-                "fcstd:native:shape-payload#Cut:Shape:Cut.Shape.brp:topology-use:38": "regenerated",
-                "fcstd:native:shape-payload#Cut:Shape:Cut.Shape.brp:topology-use:39": "regenerated",
-                "fcstd:native:shape-payload#Cut:Shape:Cut.Shape.brp:topology-use:4": "regenerated",
-                "fcstd:native:shape-payload#Cut:Shape:Cut.Shape.brp:topology-use:40": "regenerated",
-                "fcstd:native:shape-payload#Cut:Shape:Cut.Shape.brp:topology-use:41": "regenerated",
-                "fcstd:native:shape-payload#Cut:Shape:Cut.Shape.brp:topology-use:42": "regenerated",
-                "fcstd:native:shape-payload#Cut:Shape:Cut.Shape.brp:topology-use:43": "regenerated",
-                "fcstd:native:shape-payload#Cut:Shape:Cut.Shape.brp:topology-use:44": "regenerated",
-                "fcstd:native:shape-payload#Cut:Shape:Cut.Shape.brp:topology-use:5": "regenerated",
-                "fcstd:native:shape-payload#Cut:Shape:Cut.Shape.brp:topology-use:6": "regenerated",
-                "fcstd:native:shape-payload#Cut:Shape:Cut.Shape.brp:topology-use:7": "regenerated",
-                "fcstd:native:shape-payload#Cut:Shape:Cut.Shape.brp:topology-use:8": "regenerated",
-                "fcstd:native:shape-payload#Cut:Shape:Cut.Shape.brp:topology-use:9": "regenerated",
-                "fcstd:native:shape-payload#Cylinder:Shape:Cylinder.Shape.brp:topology-use:1": "regenerated",
-                "fcstd:native:shape-payload#Cylinder:Shape:Cylinder.Shape.brp:topology-use:10": "regenerated",
-                "fcstd:native:shape-payload#Cylinder:Shape:Cylinder.Shape.brp:topology-use:11": "regenerated",
-                "fcstd:native:shape-payload#Cylinder:Shape:Cylinder.Shape.brp:topology-use:12": "regenerated",
-                "fcstd:native:shape-payload#Cylinder:Shape:Cylinder.Shape.brp:topology-use:13": "regenerated",
-                "fcstd:native:shape-payload#Cylinder:Shape:Cylinder.Shape.brp:topology-use:2": "regenerated",
-                "fcstd:native:shape-payload#Cylinder:Shape:Cylinder.Shape.brp:topology-use:3": "regenerated",
-                "fcstd:native:shape-payload#Cylinder:Shape:Cylinder.Shape.brp:topology-use:4": "regenerated",
-                "fcstd:native:shape-payload#Cylinder:Shape:Cylinder.Shape.brp:topology-use:5": "regenerated",
-                "fcstd:native:shape-payload#Cylinder:Shape:Cylinder.Shape.brp:topology-use:6": "regenerated",
-                "fcstd:native:shape-payload#Cylinder:Shape:Cylinder.Shape.brp:topology-use:7": "regenerated",
-                "fcstd:native:shape-payload#Cylinder:Shape:Cylinder.Shape.brp:topology-use:8": "regenerated",
-                "fcstd:native:shape-payload#Cylinder:Shape:Cylinder.Shape.brp:topology-use:9": "regenerated",
-                "fcstd:native:shape-payload#DesignedFeature:Shape:DesignedFeature.Shape.brp:topology-use:1": "regenerated",
-                "fcstd:native:shape-payload#DesignedFeature:Shape:DesignedFeature.Shape.brp:topology-use:10": "regenerated",
-                "fcstd:native:shape-payload#DesignedFeature:Shape:DesignedFeature.Shape.brp:topology-use:11": "regenerated",
-                "fcstd:native:shape-payload#DesignedFeature:Shape:DesignedFeature.Shape.brp:topology-use:12": "regenerated",
-                "fcstd:native:shape-payload#DesignedFeature:Shape:DesignedFeature.Shape.brp:topology-use:13": "regenerated",
-                "fcstd:native:shape-payload#DesignedFeature:Shape:DesignedFeature.Shape.brp:topology-use:14": "regenerated",
-                "fcstd:native:shape-payload#DesignedFeature:Shape:DesignedFeature.Shape.brp:topology-use:15": "regenerated",
-                "fcstd:native:shape-payload#DesignedFeature:Shape:DesignedFeature.Shape.brp:topology-use:16": "regenerated",
-                "fcstd:native:shape-payload#DesignedFeature:Shape:DesignedFeature.Shape.brp:topology-use:17": "regenerated",
-                "fcstd:native:shape-payload#DesignedFeature:Shape:DesignedFeature.Shape.brp:topology-use:18": "regenerated",
-                "fcstd:native:shape-payload#DesignedFeature:Shape:DesignedFeature.Shape.brp:topology-use:19": "regenerated",
-                "fcstd:native:shape-payload#DesignedFeature:Shape:DesignedFeature.Shape.brp:topology-use:2": "regenerated",
-                "fcstd:native:shape-payload#DesignedFeature:Shape:DesignedFeature.Shape.brp:topology-use:20": "regenerated",
-                "fcstd:native:shape-payload#DesignedFeature:Shape:DesignedFeature.Shape.brp:topology-use:21": "regenerated",
-                "fcstd:native:shape-payload#DesignedFeature:Shape:DesignedFeature.Shape.brp:topology-use:22": "regenerated",
-                "fcstd:native:shape-payload#DesignedFeature:Shape:DesignedFeature.Shape.brp:topology-use:23": "regenerated",
-                "fcstd:native:shape-payload#DesignedFeature:Shape:DesignedFeature.Shape.brp:topology-use:24": "regenerated",
-                "fcstd:native:shape-payload#DesignedFeature:Shape:DesignedFeature.Shape.brp:topology-use:25": "regenerated",
-                "fcstd:native:shape-payload#DesignedFeature:Shape:DesignedFeature.Shape.brp:topology-use:26": "regenerated",
-                "fcstd:native:shape-payload#DesignedFeature:Shape:DesignedFeature.Shape.brp:topology-use:27": "regenerated",
-                "fcstd:native:shape-payload#DesignedFeature:Shape:DesignedFeature.Shape.brp:topology-use:28": "regenerated",
-                "fcstd:native:shape-payload#DesignedFeature:Shape:DesignedFeature.Shape.brp:topology-use:29": "regenerated",
-                "fcstd:native:shape-payload#DesignedFeature:Shape:DesignedFeature.Shape.brp:topology-use:3": "regenerated",
-                "fcstd:native:shape-payload#DesignedFeature:Shape:DesignedFeature.Shape.brp:topology-use:30": "regenerated",
-                "fcstd:native:shape-payload#DesignedFeature:Shape:DesignedFeature.Shape.brp:topology-use:31": "regenerated",
-                "fcstd:native:shape-payload#DesignedFeature:Shape:DesignedFeature.Shape.brp:topology-use:32": "regenerated",
-                "fcstd:native:shape-payload#DesignedFeature:Shape:DesignedFeature.Shape.brp:topology-use:33": "regenerated",
-                "fcstd:native:shape-payload#DesignedFeature:Shape:DesignedFeature.Shape.brp:topology-use:34": "regenerated",
-                "fcstd:native:shape-payload#DesignedFeature:Shape:DesignedFeature.Shape.brp:topology-use:4": "regenerated",
-                "fcstd:native:shape-payload#DesignedFeature:Shape:DesignedFeature.Shape.brp:topology-use:5": "regenerated",
-                "fcstd:native:shape-payload#DesignedFeature:Shape:DesignedFeature.Shape.brp:topology-use:6": "regenerated",
-                "fcstd:native:shape-payload#DesignedFeature:Shape:DesignedFeature.Shape.brp:topology-use:7": "regenerated",
-                "fcstd:native:shape-payload#DesignedFeature:Shape:DesignedFeature.Shape.brp:topology-use:8": "regenerated",
-                "fcstd:native:shape-payload#DesignedFeature:Shape:DesignedFeature.Shape.brp:topology-use:9": "regenerated",
-                "fcstd:native:shape-payload#Profile:Shape:Profile.Shape.brp:topology-use:1": "regenerated",
-                "fcstd:native:shape-payload#Profile:Shape:Profile.Shape.brp:topology-use:2": "regenerated",
-                "fcstd:native:shape-payload#Profile:Shape:Profile.Shape.brp:topology-use:3": "regenerated",
-                "fcstd:native:shape-payload#Profile:Shape:Profile.Shape.brp:topology-use:4": "regenerated",
-                "fcstd:native:shape-payload#Profile:Shape:Profile.Shape.brp:topology-use:5": "regenerated",
-                "fcstd:native:shape-payload#Profile:Shape:Profile.Shape.brp:topology-use:6": "regenerated",
-                "fcstd:native:shape-payload#Profile:Shape:Profile.Shape.brp:topology-use:7": "regenerated",
-                "fcstd:native:shape-payload#Profile:Shape:Profile.Shape.brp:topology-use:8": "regenerated",
-                "fcstd:native:shape-payload#Profile:Shape:Profile.Shape.brp:topology-use:9": "regenerated"
-              }
-            },
-            "unknowns": {
-              "disposition": "dropped"
-            }
-          }
-        }
-      }
-    },
-    "notes": [],
-    "synthesis_cause": {
-      "cause": "patch_declined",
-      "reason": "unsupported writer content: the typed property has no independent projection"
-    },
     "write_path": {
       "fidelity": {
         "status": "not_consumed"
       },
-      "path": "synthesized"
+      "path": "patched"
     }
   }
 }

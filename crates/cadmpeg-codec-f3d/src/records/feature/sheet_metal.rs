@@ -409,7 +409,7 @@ pub(crate) struct DesignEdgeFlangeOperation {
     pub(crate) auxiliary_reference_record_indices: Vec<u32>,
     /// Indexed operation-settings record.
     pub(crate) settings_record_index: u32,
-    /// Positive rule-derived inside bend radius in centimetres.
+    /// Retain the scope control for native replay.
     pub(crate) bend_radius: PositiveReal,
     /// Byte offset of `bend_radius` of a located scope.
     pub(crate) bend_radius_offset: Option<u64>,

@@ -1,7 +1,8 @@
 {
   "decode": {
     "ir": {
-      "ir_version": "8",
+      "decode_depth": "full",
+      "ir_version": "9",
       "model": {
         "appearance_bindings": [],
         "appearances": [],
@@ -159,14 +160,16 @@
               "id": "nx:external-reference-indexed-record:/Root/ExternalReferences#6",
               "record_id": 6,
               "sha256": "19c498cde8ddcfdc9f593e4f532ff5653aa0b5c77187203390a33de4ec092292",
-              "source_entry": "/Root/ExternalReferences"
+              "source_entry": "/Root/ExternalReferences",
+              "source_offset": 393
             },
             {
               "byte_len": 6,
               "id": "nx:external-reference-indexed-record:/Root/ExternalReferences#7",
               "record_id": 7,
               "sha256": "11635df4532364e5fa01ac9540563d9a833f881994f4d2f3ae2a2e9c87680163",
-              "source_entry": "/Root/ExternalReferences"
+              "source_entry": "/Root/ExternalReferences",
+              "source_offset": 387
             }
           ],
           "external_reference_record_children": [
@@ -183,6 +186,7 @@
               "external_reference": "nx:external-reference:/Root/ExternalReferences#0",
               "id": "nx:external-reference:record-string-use#6-0",
               "slot": 0,
+              "source_offset": 400,
               "string_index": 0
             },
             {
@@ -190,6 +194,7 @@
               "external_reference": "nx:external-reference:/Root/ExternalReferences#1",
               "id": "nx:external-reference:record-string-use#6-1",
               "slot": 1,
+              "source_offset": 404,
               "string_index": 1
             },
             {
@@ -197,6 +202,7 @@
               "external_reference": "nx:external-reference:/Root/ExternalReferences#2",
               "id": "nx:external-reference:record-string-use#6-2",
               "slot": 2,
+              "source_offset": 408,
               "string_index": 2
             },
             {
@@ -204,6 +210,7 @@
               "external_reference": "nx:external-reference:/Root/ExternalReferences#3",
               "id": "nx:external-reference:record-string-use#6-3",
               "slot": 3,
+              "source_offset": 412,
               "string_index": 3
             }
           ],
@@ -225,6 +232,7 @@
               "prefix_byte_len": 36,
               "record_id": 6,
               "source_entry": "/Root/ExternalReferences",
+              "source_offset": 393,
               "tail_byte_len": 9
             }
           ],
@@ -234,6 +242,7 @@
               "id": "nx:external-reference:tail-reference-pair#6-0",
               "ordinal": 0,
               "persistent_handle": 5,
+              "source_offset": 429,
               "tagged_reference": 1
             }
           ],
@@ -242,25 +251,29 @@
               "id": "nx:external-reference:/Root/ExternalReferences#0",
               "ordinal": 0,
               "path": "child.prt",
-              "source_entry": "/Root/ExternalReferences"
+              "source_entry": "/Root/ExternalReferences",
+              "source_offset": 445
             },
             {
               "id": "nx:external-reference:/Root/ExternalReferences#1",
               "ordinal": 1,
               "path": "dirA",
-              "source_entry": "/Root/ExternalReferences"
+              "source_entry": "/Root/ExternalReferences",
+              "source_offset": 456
             },
             {
               "id": "nx:external-reference:/Root/ExternalReferences#2",
               "ordinal": 2,
               "path": "dirB",
-              "source_entry": "/Root/ExternalReferences"
+              "source_entry": "/Root/ExternalReferences",
+              "source_offset": 462
             },
             {
               "id": "nx:external-reference:/Root/ExternalReferences#3",
               "ordinal": 3,
               "path": "extra",
-              "source_entry": "/Root/ExternalReferences"
+              "source_entry": "/Root/ExternalReferences",
+              "source_offset": 468
             }
           ],
           "persistent_handles": [
@@ -307,10 +320,6 @@
           ]
         }
       },
-      "scope": {
-        "design": true,
-        "model": true
-      },
       "source": {
         "attributes": {
           "deltas_streams": "0",
@@ -322,6 +331,7 @@
           "file_size": "487",
           "footer_entry_count": "0",
           "footer_fingerprint": "00000000",
+          "footer_offset": "473",
           "header_entry_count": "2",
           "jpeg_preview_count": "0",
           "partition_streams": "1",
@@ -400,7 +410,7 @@
             "scope": "namespaced",
             "strict_floor": "warning"
           },
-          "message": "The B-rep topology graph (body→shell→face→loop→fin→edge→vertex) was not reconstructed because the surviving typed records did not form a complete connected ownership graph. Exact-key supported partition↔deltas replacements and deletions were applied before graph construction. Required unresolved records prevent their dependent incidence from being emitted; decoded geometry then remains unattached.",
+          "message": "The B-rep topology graph (body→shell→face→loop→fin→edge→vertex) was not reconstructed because the surviving typed records did not form a complete connected ownership graph. Graph construction used the primary input bytes. Required unresolved records prevent their dependent incidence from being emitted; decoded geometry then remains unattached.",
           "severity": "blocking"
         },
         {
@@ -413,146 +423,6 @@
           },
           "message": "The Parasolid stream at stream@120 declares schema \"SCH_TEST_1_9999\", which has no declared grammar. It was admitted as the `parasolid:unknown` residual layer without substituting another schema grammar; bounded structural recovery retains the source stream.",
           "severity": "warning"
-        },
-        {
-          "code": {
-            "code": "projection.record-unprojected",
-            "kind": "metadata_not_transferred",
-            "namespace": "nx",
-            "scope": "namespaced"
-          },
-          "message": "External-reference record nx:external-reference-empty-record:/Root/ExternalReferences#7 (external_reference_empty_records) has no decoded occurrence placement; its typed reference fields remain held.",
-          "severity": "warning"
-        },
-        {
-          "code": {
-            "code": "projection.record-unprojected",
-            "kind": "metadata_not_transferred",
-            "namespace": "nx",
-            "scope": "namespaced"
-          },
-          "message": "External-reference record nx:external-reference-indexed-record:/Root/ExternalReferences#6 (external_reference_indexed_records) has no decoded occurrence placement; its typed reference fields remain held.",
-          "severity": "warning"
-        },
-        {
-          "code": {
-            "code": "projection.record-unprojected",
-            "kind": "metadata_not_transferred",
-            "namespace": "nx",
-            "scope": "namespaced"
-          },
-          "message": "External-reference record nx:external-reference-indexed-record:/Root/ExternalReferences#7 (external_reference_indexed_records) has no decoded occurrence placement; its typed reference fields remain held.",
-          "severity": "warning"
-        },
-        {
-          "code": {
-            "code": "projection.record-unprojected",
-            "kind": "metadata_not_transferred",
-            "namespace": "nx",
-            "scope": "namespaced"
-          },
-          "message": "External-reference record nx:external-reference-record:/Root/ExternalReferences#6:child (external_reference_record_children) has no decoded occurrence placement; its typed reference fields remain held.",
-          "severity": "warning"
-        },
-        {
-          "code": {
-            "code": "projection.record-unprojected",
-            "kind": "metadata_not_transferred",
-            "namespace": "nx",
-            "scope": "namespaced"
-          },
-          "message": "External-reference record nx:external-reference:record-string-use#6-0 (external_reference_record_string_uses) has no decoded occurrence placement; its typed reference fields remain held.",
-          "severity": "warning"
-        },
-        {
-          "code": {
-            "code": "projection.record-unprojected",
-            "kind": "metadata_not_transferred",
-            "namespace": "nx",
-            "scope": "namespaced"
-          },
-          "message": "External-reference record nx:external-reference:record-string-use#6-1 (external_reference_record_string_uses) has no decoded occurrence placement; its typed reference fields remain held.",
-          "severity": "warning"
-        },
-        {
-          "code": {
-            "code": "projection.record-unprojected",
-            "kind": "metadata_not_transferred",
-            "namespace": "nx",
-            "scope": "namespaced"
-          },
-          "message": "External-reference record nx:external-reference:record-string-use#6-2 (external_reference_record_string_uses) has no decoded occurrence placement; its typed reference fields remain held.",
-          "severity": "warning"
-        },
-        {
-          "code": {
-            "code": "projection.record-unprojected",
-            "kind": "metadata_not_transferred",
-            "namespace": "nx",
-            "scope": "namespaced"
-          },
-          "message": "External-reference record nx:external-reference:record-string-use#6-3 (external_reference_record_string_uses) has no decoded occurrence placement; its typed reference fields remain held.",
-          "severity": "warning"
-        },
-        {
-          "code": {
-            "code": "projection.record-unprojected",
-            "kind": "metadata_not_transferred",
-            "namespace": "nx",
-            "scope": "namespaced"
-          },
-          "message": "External-reference record nx:external-reference-record:/Root/ExternalReferences#6 (external_reference_records) has no decoded occurrence placement; its typed reference fields remain held.",
-          "severity": "warning"
-        },
-        {
-          "code": {
-            "code": "projection.record-unprojected",
-            "kind": "metadata_not_transferred",
-            "namespace": "nx",
-            "scope": "namespaced"
-          },
-          "message": "External-reference record nx:external-reference:tail-reference-pair#6-0 (external_reference_tail_reference_pairs) has no decoded occurrence placement; its typed reference fields remain held.",
-          "severity": "warning"
-        },
-        {
-          "code": {
-            "code": "projection.record-unprojected",
-            "kind": "metadata_not_transferred",
-            "namespace": "nx",
-            "scope": "namespaced"
-          },
-          "message": "External-reference record nx:external-reference:/Root/ExternalReferences#0 (external_references) has no decoded occurrence placement; its typed reference fields remain held.",
-          "severity": "warning"
-        },
-        {
-          "code": {
-            "code": "projection.record-unprojected",
-            "kind": "metadata_not_transferred",
-            "namespace": "nx",
-            "scope": "namespaced"
-          },
-          "message": "External-reference record nx:external-reference:/Root/ExternalReferences#1 (external_references) has no decoded occurrence placement; its typed reference fields remain held.",
-          "severity": "warning"
-        },
-        {
-          "code": {
-            "code": "projection.record-unprojected",
-            "kind": "metadata_not_transferred",
-            "namespace": "nx",
-            "scope": "namespaced"
-          },
-          "message": "External-reference record nx:external-reference:/Root/ExternalReferences#2 (external_references) has no decoded occurrence placement; its typed reference fields remain held.",
-          "severity": "warning"
-        },
-        {
-          "code": {
-            "code": "projection.record-unprojected",
-            "kind": "metadata_not_transferred",
-            "namespace": "nx",
-            "scope": "namespaced"
-          },
-          "message": "External-reference record nx:external-reference:/Root/ExternalReferences#3 (external_references) has no decoded occurrence placement; its typed reference fields remain held.",
-          "severity": "warning"
         }
       ],
       "notes": [
@@ -561,10 +431,7 @@
       ],
       "transfer": {
         "geometry_transferred": true,
-        "scope": {
-          "design": true,
-          "model": true
-        }
+        "transfer": "full"
       }
     },
     "source_fidelity": {
@@ -666,21 +533,6 @@
           }
         }
       },
-      "metadata": {
-        "native.nx.external_reference_indexed_records.nx:external-reference-indexed-record:/Root/ExternalReferences#6.source_offset": "393",
-        "native.nx.external_reference_indexed_records.nx:external-reference-indexed-record:/Root/ExternalReferences#7.source_offset": "387",
-        "native.nx.external_reference_record_string_uses.nx:external-reference:record-string-use#6-0.source_offset": "400",
-        "native.nx.external_reference_record_string_uses.nx:external-reference:record-string-use#6-1.source_offset": "404",
-        "native.nx.external_reference_record_string_uses.nx:external-reference:record-string-use#6-2.source_offset": "408",
-        "native.nx.external_reference_record_string_uses.nx:external-reference:record-string-use#6-3.source_offset": "412",
-        "native.nx.external_reference_records.nx:external-reference-record:/Root/ExternalReferences#6.source_offset": "393",
-        "native.nx.external_reference_tail_reference_pairs.nx:external-reference:tail-reference-pair#6-0.source_offset": "429",
-        "native.nx.external_references.nx:external-reference:/Root/ExternalReferences#0.source_offset": "445",
-        "native.nx.external_references.nx:external-reference:/Root/ExternalReferences#1.source_offset": "456",
-        "native.nx.external_references.nx:external-reference:/Root/ExternalReferences#2.source_offset": "462",
-        "native.nx.external_references.nx:external-reference:/Root/ExternalReferences#3.source_offset": "468",
-        "source.footer_offset": "473"
-      },
       "retained_records": {
         "nx:container:parasolid#0": {
           "bytes": {
@@ -688,20 +540,9 @@
             "retention": "inline"
           },
           "offset": 120,
-          "stream": "nx:container",
-          "untyped": []
-        },
-        "nx:source:image#whole": {
-          "bytes": {
-            "data": "U1BMTVNTVFIGAAAAAAAAAADZAQAAAAAAAEhFQURFUgIAAAAVAAAAL1Jvb3QvVUdfUEFSVC9VR19QQVJUeAAAAAAAAADeAAAAAAAAABgAAAAvUm9vdC9FeHRlcm5hbFJlZmVyZW5jZXNWAQAAAAAAAIMAAAAAAAAAeAGNTL0LAWEYf/KxWCxWehdFt/iKWN4kX4Vwt18+3kH56hyFiUiZJZPRKGVR/gB/gsHEajFYlbc7d5105en5+H30/PIsAOAI4orRHJtNcyiRzsSRq10SxJpYazXdqCKQkkiqqNxHjVaV1OtEQD0idKiJ/AGPxxsK0ggrG0vxXJzleC8fpgVgBwPV1cY7FUoAzw1dZ8KyAR8YJUFdDN6Pzpfn7KUqOgA/ZEO5MtNsP5g0jEKGzl+tROL28rg63cYK/3l2gPlbY/BkcE1ubUO8+Nz1oXCfOg56EW/s9TnvRVhUUkVGU1RSRUFNAAAAAAAAAAAAAAAAAAcAAAAtAAAABgAAADMAAAAAAAAAAQAAAAABAQAAAAACAQAAAAABAAAAAgAAAAMAAAABA+AAAAAQ4AAAACAD4AAAAAXAAAABAQQAAAAJAGNoaWxkLnBydAQAZGlyQQQAZGlyQgUAZXh0cmFGT09URVIAAAAAAAAAAA==",
-            "retention": "inline"
-          },
-          "offset": 0,
-          "stream": "nx:source",
-          "untyped": []
+          "stream": "nx:container"
         }
-      },
-      "unrepresented": []
+      }
     }
   },
   "inspect": {

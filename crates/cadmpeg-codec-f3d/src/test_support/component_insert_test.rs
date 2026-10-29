@@ -104,3 +104,36 @@ pub(crate) fn component_insert_design(envelopes: &[ComponentInsertEnvelope]) -> 
     let meta = design_metastream_with_records(&[], &[]);
     (bulk, meta)
 }
+
+pub(crate) fn identity_insert_carrier(role: &str, record: u32) -> Vec<u8> {
+    let mut bytes = Vec::new();
+    header(&mut bytes, b"281", record);
+    bytes.extend_from_slice(&[0; 8]);
+    bytes.push(1);
+    bytes.extend_from_slice(&1_u32.to_le_bytes());
+    target_reference(&mut bytes);
+    bytes.extend_from_slice(&3_u32.to_le_bytes());
+    bytes.extend_from_slice(&1_u32.to_le_bytes());
+    bytes.extend_from_slice(&[0, 1, 0]);
+    bytes.extend_from_slice(&1_u32.to_le_bytes());
+    lp_utf16(&mut bytes, "11111111-2222-3333-4444-555555555555");
+    lp_utf16(&mut bytes, "66666666-7777-8888-9999-aaaaaaaaaaaa");
+    bytes.extend_from_slice(&[1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 0, 0, 0, 0]);
+    target_reference(&mut bytes);
+    bytes.push(1);
+    bytes.extend_from_slice(&0_u32.to_le_bytes());
+    lp_utf16(&mut bytes, role);
+    bytes.extend_from_slice(&[0, 1, 6, 0, 0, 0, 0, 0, 0, 0, 0, 0]);
+    bytes
+}
+
+fn target_reference(bytes: &mut Vec<u8>) {
+    bytes.push(1);
+    bytes.extend_from_slice(&3_u64.to_le_bytes());
+    bytes.push(1);
+    bytes.extend_from_slice(&17_u64.to_le_bytes());
+    bytes.push(0);
+    bytes.extend_from_slice(&36_u32.to_le_bytes());
+    bytes.extend_from_slice(b"E03784ED-5E19-4E14-B9F2-3B07017018CD");
+    bytes.push(0);
+}

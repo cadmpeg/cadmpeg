@@ -61,26 +61,24 @@ pub(crate) fn decode<'a>(
     let (model_root, omitted_drawing_root) = archive::model_root(ctx, scan)?;
     let mut outer = archive::classify_members(ctx, scan)?;
     let root_scan = outer.member_scan(&model_root)?;
-    let AuthoredDecoded {
-        mut ir,
-        source,
-        body: mut report,
-        source_fidelity: mut fidelity,
-        native_layout: _,
-        ..
-    } = crate::decode::decode_archive_member(ctx, root_scan, &outer.layers)?;
-    if let Some(root_image) = fidelity.remove_retained_record(crate::ids::FILE_SOURCE_IMAGE_ID) {
+    let mut root = crate::decode::decode_archive_member(ctx, root_scan, &outer.layers)?;
+    if let Some(root_image) = root
+        .source_fidelity
+        .remove_retained_record(crate::ids::FILE_SOURCE_IMAGE_ID)
+    {
         let id = cadmpeg_ir::ids::UnknownId::mint("f3d:file:source-image#root")
             .map_err(CodecError::malformed)?;
-        fidelity.insert_retained_record(id, root_image)?;
+        root.source_fidelity
+            .insert_retained_record(id, root_image)?;
     }
-    fidelity.retain_unknown_records("f3d", [crate::decode::preserve_source_image(scan)])?;
+    root.source_fidelity
+        .retain_unknown_records("f3d", [crate::decode::preserve_source_image(scan)])?;
     if outer
         .members
         .values()
         .any(|member| matches!(member, archive::ClassifiedMember::Unreadable(_)))
     {
-        fidelity.mark_untyped(
+        root.source_fidelity.mark_untyped(
             crate::ids::FILE_SOURCE_IMAGE_ID,
             [
                 cadmpeg_ir::document::ArenaClass::Model,
@@ -89,11 +87,11 @@ pub(crate) fn decode<'a>(
         )?;
     }
     if let Some(drawing_root) = omitted_drawing_root {
-        fidelity.mark_untyped(
+        root.source_fidelity.mark_untyped(
             crate::ids::FILE_SOURCE_IMAGE_ID,
             [cadmpeg_ir::document::ArenaClass::Model],
         )?;
-        push_loss(&mut report.losses, F3dLossCode::DrawingDocumentOmitted, format_args!(
+        push_loss(&mut root.body.losses, F3dLossCode::DrawingDocumentOmitted, format_args!(
             "drawing root {drawing_root} is omitted; decoded its unambiguous derived model {model_root}"
         ));
     }
@@ -102,7 +100,7 @@ pub(crate) fn decode<'a>(
         .iter()
         .filter(|entry| crate::container::is_f3d_name(&entry.name))
         .count();
-    report.notes.push(format!(
+    root.body.notes.push(format!(
         "f3z archive: {member_count} document member(s); root {model_root}"
     ));
     if ctx.container_only() {
@@ -131,23 +129,21 @@ pub(crate) fn decode<'a>(
             }
         }
         crate::decode::declare_source_untyped(
-            &mut fidelity,
+            &mut root.source_fidelity,
             crate::ids::FILE_SOURCE_IMAGE_ID,
             untyped,
         )?;
-        report.losses.append(&mut outer.losses);
-        return finalize_result(ctx, ir, source, report, fidelity);
+        root.body.losses.append(&mut outer.losses);
+        return finalize_result(ctx, root.ir, root.source, root.body, root.source_fidelity);
     }
-
-    let merged = merge::merge_archive(
-        ctx,
-        scan,
-        &outer,
-        model_root,
-        &mut ir,
-        &mut report,
-        &mut fidelity,
-    )?;
+    let merged = merge::merge_archive(ctx, scan, &outer, model_root, &mut root)?;
+    let AuthoredDecoded {
+        mut ir,
+        source,
+        body: mut report,
+        source_fidelity: mut fidelity,
+        ..
+    } = root;
     if merged > 0 {
         if let Some(image) = fidelity.remove_retained_record(crate::ids::FILE_SOURCE_IMAGE_ID) {
             let id = cadmpeg_ir::ids::UnknownId::mint("f3d:file:source-image#archive")
@@ -155,7 +151,7 @@ pub(crate) fn decode<'a>(
             fidelity.insert_retained_record(id, image)?;
         }
         report.notes.push(format!(
-            "{merged} merged component(s) retain occurrence-scoped model entities, native records, and source bytes"
+            "{merged} resolved external occurrence(s) retain shared member definitions, native records, and source bytes"
         ));
     }
     report.notes.push(format!(

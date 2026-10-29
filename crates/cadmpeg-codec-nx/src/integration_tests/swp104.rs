@@ -24,7 +24,7 @@ fn swp104_native_validator_rejects_a_nonconsecutive_successor() {
             .namespace_mut("nx")
             .set_arena(ctx, "feature_swp104_leading_branches", &[&wire])
             .unwrap();
-        assert!(crate::NxCodec::validate_native(ctx, &ir)
+        assert!(crate::NxCodec::validate_native(ctx, &ir, None)
             .unwrap()
             .is_empty());
         wire["successor"]["object_index"] = serde_json::json!(257);
@@ -33,7 +33,7 @@ fn swp104_native_validator_rejects_a_nonconsecutive_successor() {
             .namespace_mut("nx")
             .set_arena(ctx, "feature_swp104_leading_branches", &[&wire])
             .unwrap();
-        let findings = crate::NxCodec::validate_native(ctx, &ir).unwrap();
+        let findings = crate::NxCodec::validate_native(ctx, &ir, None).unwrap();
         assert_eq!(findings.len(), 1);
         assert_eq!(
             findings[0].check,

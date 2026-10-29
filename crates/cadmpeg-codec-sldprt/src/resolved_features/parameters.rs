@@ -142,6 +142,15 @@ pub(crate) fn enrich_history_parameters<'a>(
             .scalars
             .iter()
             .filter_map(|scalar| {
+                match scalar.archive_class {
+                    Some(crate::records::ArchiveParameterClass::Length) => {
+                        return Some((scalar.id.as_str(), ScalarUnit::Length));
+                    }
+                    Some(crate::records::ArchiveParameterClass::Angle) => {
+                        return Some((scalar.id.as_str(), ScalarUnit::Angle));
+                    }
+                    Some(_) | None => {}
+                }
                 let name = names_by_id.get(scalar.name.as_str())?;
                 let parameter_class = declared.class_of(name)?;
                 let unit = match parameter_class.name.as_str() {

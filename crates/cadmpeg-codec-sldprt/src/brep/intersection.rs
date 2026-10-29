@@ -562,6 +562,7 @@ pub(super) fn scan_intersection_carriers(
         );
         out.entry(attr).or_insert(IntersectionCarrier {
             carrier: CurveCarrier {
+                runs_against_edges: false,
                 attr,
                 offset,
                 end: body + isect::LEN,

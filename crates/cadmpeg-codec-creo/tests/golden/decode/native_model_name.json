@@ -1,6 +1,7 @@
 {
   "ir": {
-    "ir_version": "8",
+    "decode_depth": "full",
+    "ir_version": "9",
     "model": {
       "appearance_bindings": [],
       "appearances": [],
@@ -27,6 +28,11 @@
             "definition": "creo:model:product_definition#root",
             "scope": "local"
           },
+          "scale": [
+            1.0,
+            1.0,
+            1.0
+          ],
           "transform": [
             [
               1.0,
@@ -82,10 +88,6 @@
       "view_presentations": []
     },
     "native": {},
-    "scope": {
-      "design": true,
-      "model": true
-    },
     "source": {
       "attributes": {
         "expanded_section_byte_count": "0",
@@ -93,6 +95,7 @@
         "file_size": "100",
         "model_name": "widget.prt ",
         "section_count": "0",
+        "unresolved_feature_state_selection_count": "0",
         "version_line": "#UGC:2 PART test \\"
       },
       "identity": {
@@ -464,6 +467,7 @@
       "unresolved_feature_dimension_driven_variable_count": 0,
       "unresolved_feature_dimension_value_count": 0,
       "unresolved_feature_segment_geometry_count": 0,
+      "unresolved_feature_state_selection_count": 0,
       "untransferred_visible_cone_surface_row_count": 0,
       "untransferred_visible_curve_row_count": 0,
       "untransferred_visible_cylinder_surface_row_count": 0,
@@ -569,10 +573,7 @@
     ],
     "transfer": {
       "geometry_transferred": false,
-      "scope": {
-        "design": true,
-        "model": true
-      }
+      "transfer": "full"
     }
   },
   "source_fidelity": {
@@ -599,22 +600,6 @@
           "tag": "part_product"
         }
       }
-    },
-    "retained_records": {
-      "creo:source:image#whole": {
-        "bytes": {
-          "data": "I1VHQzoyIFBBUlQgdGVzdCBcCiMtIENNTk0gMDBid2lkZ2V0LnBydCAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgXAojLUVORF9PRl9VR0NfSEVBREVSCg==",
-          "retention": "inline"
-        },
-        "offset": 0,
-        "stream": "creo:source",
-        "untyped": [
-          "model"
-        ]
-      }
-    },
-    "unrepresented": [
-      "model"
-    ]
+    }
   }
 }

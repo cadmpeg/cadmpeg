@@ -113,9 +113,9 @@ fn generated_f3d_preserves_typed_metadata_and_reports_unsupported_graph_edits() 
         .to_string()
         .try_into()
         .unwrap();
-    let act_root = &mut native.act_root_components[0];
-    act_root.instance_root_record = 71;
-    act_root.components_root_record = 72;
+    let act_root = &mut native.act_component_links[0];
+    act_root.references.instance_root = 71;
+    act_root.references.components_root = 72;
     act_root.registry_flag = crate::records::act::ActRegistryFlag::Off;
     act_root
         .try_set_strings("1_3".into(), "(Renamed)".into())

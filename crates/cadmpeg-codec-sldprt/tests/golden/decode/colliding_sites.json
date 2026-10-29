@@ -1,6 +1,7 @@
 {
   "ir": {
-    "ir_version": "8",
+    "decode_depth": "full",
+    "ir_version": "9",
     "model": {
       "appearance_bindings": [],
       "appearances": [],
@@ -43,7 +44,6 @@
     "native": {
       "sldprt": {
         "configurations": [],
-        "document_metadata": [],
         "feature_histories": [],
         "feature_input_body_selections": [],
         "feature_input_classes": [],
@@ -61,12 +61,24 @@
         "sketch_input_entities": []
       }
     },
-    "scope": {
-      "design": false,
-      "model": false
-    },
     "source": {
-      "attributes": {},
+      "attributes": {
+        "block_count": "2",
+        "brep_local_sha256": "<elided: digest over tolerantly compared geometry>",
+        "document_local_sha256": "<elided: digest over tolerantly compared geometry>",
+        "outer_version": "0x00000004",
+        "sldprt_configuration_feature_states_local_sha256": "<elided: digest over tolerantly compared geometry>",
+        "sldprt_configuration_parameter_values_local_sha256": "<elided: digest over tolerantly compared geometry>",
+        "sldprt_native_configuration_sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+        "sldprt_native_history_sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+        "sldprt_native_parameter_sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+        "sldprt_native_sketch_sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+        "sldprt_neutral_configuration_local_sha256": "<elided: digest over tolerantly compared geometry>",
+        "sldprt_neutral_feature_local_sha256": "<elided: digest over tolerantly compared geometry>",
+        "sldprt_neutral_parameter_local_sha256": "<elided: digest over tolerantly compared geometry>",
+        "sldprt_neutral_sketch_constraint_local_sha256": "<elided: digest over tolerantly compared geometry>",
+        "sldprt_neutral_sketch_local_sha256": "<elided: digest over tolerantly compared geometry>"
+      },
       "identity": {
         "classification": "classified",
         "dialects": {
@@ -200,17 +212,6 @@
         },
         "message": "3 referenced VERTEX record(s) lack a uniquely framed record with a verified owner class and IR-supported tolerance.",
         "severity": "warning"
-      },
-      {
-        "code": {
-          "code": "depth.not-delivered",
-          "kind": "geometry_not_transferred",
-          "namespace": "decode",
-          "scope": "namespaced",
-          "strict_floor": "warning"
-        },
-        "message": "requested full depth but the sldprt decoder did not deliver classes: model, design",
-        "severity": "error"
       }
     ],
     "notes": [
@@ -220,10 +221,7 @@
     ],
     "transfer": {
       "geometry_transferred": false,
-      "scope": {
-        "design": false,
-        "model": false
-      }
+      "transfer": "full"
     }
   },
   "source_fidelity": {
@@ -236,14 +234,6 @@
         }
       }
     },
-    "metadata": {
-      "brep_local_sha256": "90c8f71fa076a81c0c053ae3a519abe4e4e722a097fa23c783ef7abb5dab1f29",
-      "document_local_sha256": "49d786a1aa4904b35a837125e32fc1bb3daee124198b917979e3ddb15edcf53b",
-      "outer_version": "0x00000004",
-      "sldprt_swobjects_local_sha256": "586ffb909b0bba2aacc4d34937062d2b3c9cb6c81d2f794c686ad550b192d8dc",
-      "sldprt_swobjects_material_local_sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
-      "sldprt_swobjects_metadata_identity_local_sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945"
-    },
     "retained_records": {
       "sldprt:file:source-image#0": {
         "bytes": {
@@ -251,14 +241,8 @@
           "retention": "inline"
         },
         "offset": 0,
-        "stream": "source",
-        "untyped": [
-          "model"
-        ]
+        "stream": "source"
       }
-    },
-    "unrepresented": [
-      "model"
-    ]
+    }
   }
 }

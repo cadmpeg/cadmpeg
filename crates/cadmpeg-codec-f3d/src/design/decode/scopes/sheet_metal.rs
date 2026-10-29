@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Exact sheet-metal base-flange, edge-flange and hem operation frames.
 
+pub(crate) mod corner_flange;
+
 use super::shared_frames::marked_record_reference;
 use crate::ids::native_stream;
 use crate::layout::edge_flange_class286_two_sided_per_edge_fixed_operation as edge_flange_286_per_edge;
@@ -151,6 +153,12 @@ pub(super) fn exact_edge_flange_operation(
                 references,
                 LEGACY_CLASS286_SINGLE_EDGE_FLANGE_LAYOUT,
             ),
+            None,
+            None,
+        ],
+        ("361" | "362", "258") => [
+            corner_flange::operation(bytes, start, paired_at, references),
+            None,
             None,
             None,
         ],

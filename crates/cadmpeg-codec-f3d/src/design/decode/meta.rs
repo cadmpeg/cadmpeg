@@ -310,11 +310,22 @@ pub(crate) fn unindexed_record_run(
     })
 }
 
+/// Component naming spaces decoded from one document, with the count of
+/// registered component entities that bind no context UUID in this document.
+/// A component registered locally whose binding lives in another document
+/// stays unbound; its occurrences stay unplaced downstream.
+#[derive(Debug)]
+pub(crate) struct DecodedComponentNamingSpaces {
+    pub(crate) spaces: Vec<DesignComponentNamingSpace>,
+    pub(crate) unbound: usize,
+}
+
 /// Decode each component entity's UUID-bound local naming space.
 pub(crate) fn decode_component_naming_spaces(
     scan: &ContainerScan,
-) -> Result<Vec<DesignComponentNamingSpace>, CodecError> {
+) -> Result<DecodedComponentNamingSpaces, CodecError> {
     let mut out = Vec::new();
+    let mut unbound = 0;
     for meta_entry in scan
         .entries
         .iter()
@@ -483,20 +494,17 @@ pub(crate) fn decode_component_naming_spaces(
                 component_name_after_context_uuid(bytes, uuid_offset),
             )?;
         }
-        if let Some(missing) = component_entities
+        unbound += component_entities
             .iter()
             .filter(|entity| !by_component.contains_key(entity))
-            .min()
-        {
-            return Err(crate::design::text::malformed_design(format_args!(
-                "Design component {missing} has no context UUID binding"
-            )));
-        }
-
+            .count();
         out.extend(by_component.into_values().flatten().map(|(space, _)| space));
     }
     out.sort_by(|a, b| a.id.cmp(&b.id));
-    Ok(out)
+    Ok(DecodedComponentNamingSpaces {
+        spaces: out,
+        unbound,
+    })
 }
 
 /// Parse the `MetaStream` paired with one Design `BulkStream`.
@@ -524,6 +532,9 @@ pub(in crate::design::decode) struct DesignPrimaryFrame<'a> {
     pub(super) entity_id: u64,
     pub(super) class_tag: crate::records::references::DesignClassTag,
     pub(super) start: usize,
+    /// End of the primary class-member sequence: the secondary nested header,
+    /// or `end` when the record has none.
+    pub(super) member_end: usize,
     pub(super) end: usize,
     pub(super) design_type: &'a SegmentTypeData,
 }
@@ -612,6 +623,7 @@ pub(super) fn design_primary_frames<'a>(
             entity_id,
             class_tag,
             start: frame.start,
+            member_end: frame.member_end,
             end: frame.end,
             design_type,
         });
@@ -688,7 +700,7 @@ pub(super) fn typed_primary_frames<'a>(
 
 /// Type GUID and record version keyed by the Design entity ids that carry the
 /// type in the sibling `BulkStream`.
-pub(super) fn stream_types_by_entity<'a>(
+pub(crate) fn stream_types_by_entity<'a>(
     types: &'a [SegmentType],
     bulk_entry_name: &str,
 ) -> HashMap<u64, (&'a str, u32)> {

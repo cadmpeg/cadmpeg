@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-//! Extrusion profile selections resolved through their profile wire bodies.
+//! Extrusion profile selections resolved through stored boundary loops.
 
 use std::cell::RefCell;
 use std::collections::HashMap;
@@ -10,23 +10,34 @@ use cadmpeg_core::decode::{DecodeContext, View};
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::attributes::{AttributeTarget, AttributeValue};
 use cadmpeg_ir::features::{PlanarProfileRef, SketchProfileBoundaryUse, SketchProfileRegion};
-use cadmpeg_ir::geometry::DirectedParameterRange;
+use cadmpeg_ir::geometry::nurbs::NurbsCurve;
+use cadmpeg_ir::geometry::{DirectedParameterRange, SolvedCurveGeometry};
 use cadmpeg_ir::ids::IdentityKey;
 use cadmpeg_ir::math::{Point2, Point3, Vector3};
 use cadmpeg_ir::sketches::{Sketch, SketchEntity, SketchEntityUse, SketchGeometryDefinition};
 use cadmpeg_ir::topology::EdgeCarrier;
 
 use super::{PmDcEntityStyleLink, PmDcKernelEntityLink};
+
+mod membership;
+mod selection;
 use crate::rse::{RecordFrameState, RseInventory, SegmentBulkState, SegmentKind};
-use crate::sketch::PmDcSketchEntity;
+use crate::sketch::{PmDcSketchEntity, PmDcSketchEntityKind};
 
 /// ASM attribute chain that names a profile wire edge after its sketch curve.
 const NAMING_ATTRIBUTE: &str =
     "NMx_Generated_Brep_tag-NMx_Brep_Name_tag-NMx_Brep_tag-NamingMatching-attrib";
 /// Topology value of a naming attribute on an edge.
 const NAMED_EDGE: i64 = 2;
+const CUSTOM_NAMING_ATTRIBUTE: &str = "ATTRIB_CUSTOM-attrib";
+const CUSTOM_NAMING_FAMILY: &str = "INV_NMX_GEN_TAG";
 /// Entity type of an entity-style link that names a sketch curve.
 const CURVE_LINK_ENTITY_TYPE: u32 = 2;
+/// Entity type of an entity-style link that names a sketch block instance.
+const BLOCK_INSTANCE_LINK_ENTITY_TYPE: u32 = 0x0800_0000;
+/// Offset from a block instance's associative id to the first id of the
+/// geometry it places.
+const BLOCK_CURVE_FIRST_ID_OFFSET: i64 = 2;
 /// Largest distance, in millimetres, between a profile wire vertex and the
 /// sketch-curve end or plane it lies on: one kernel linear tolerance.
 const EPS_PROFILE_WIRE_POINT_MM: f64 = 1.0e-5;
@@ -46,16 +57,17 @@ pub(super) struct ProfileEdge {
     end: Point3,
     /// The carrier point at the middle of the edge's parameter interval.
     middle: Option<Point3>,
+    spline: Option<Box<(NurbsCurve, [f64; 2])>>,
 }
 
-/// One wire body of a profile-body record, keyed by its ASM body key.
+/// One profile boundary loop, keyed by its ASM body key.
 #[derive(Debug, Clone, PartialEq)]
 pub(super) struct ProfileWire {
     key: u64,
     edges: Vec<ProfileEdge>,
 }
 
-/// The wire bodies of one `PmDc` kernel-body record.
+/// The boundary loops of one `PmDc` kernel-body record.
 #[derive(Debug, Clone, PartialEq)]
 pub(crate) struct ProfileBody {
     segment_token: IdentityKey,
@@ -166,13 +178,18 @@ fn profile_wires(ctx: &DecodeContext<'_>, brep: &AsmBrep) -> Result<Vec<ProfileW
         .collect::<HashMap<_, _>>();
     let mut names = HashMap::<&str, Vec<Option<EdgeName>>>::new();
     for attribute in &brep.attributes {
-        if let (AttributeTarget::Edge(edge), NAMING_ATTRIBUTE) =
-            (&attribute.target, attribute.name.as_str())
-        {
+        if let AttributeTarget::Edge(edge) = &attribute.target {
+            let naming = attribute.name == NAMING_ATTRIBUTE
+                || (attribute.name == CUSTOM_NAMING_ATTRIBUTE
+                    && matches!(attribute.values.get(5), Some(Some(AttributeValue::String(family)))
+                        if family == CUSTOM_NAMING_FAMILY));
+            if !naming {
+                continue;
+            }
             names
                 .entry(edge.as_str())
                 .or_default()
-                .push(edge_name(&attribute.values));
+                .push(edge_name(&attribute.name, &attribute.values));
         }
     }
     let region_bodies = brep
@@ -200,7 +217,7 @@ fn profile_wires(ctx: &DecodeContext<'_>, brep: &AsmBrep) -> Result<Vec<ProfileW
         .iter()
         .map(|edge| (edge.id.as_str(), edge))
         .collect::<HashMap<_, _>>();
-    let mut wires = Vec::new();
+    let mut rings = Vec::new();
     for wire in &brep.wire_topologies {
         let Some(key) = shell_bodies
             .get(wire.shell.as_str())
@@ -208,8 +225,38 @@ fn profile_wires(ctx: &DecodeContext<'_>, brep: &AsmBrep) -> Result<Vec<ProfileW
         else {
             continue;
         };
+        rings.push((*key, wire.members.edges().iter().collect::<Vec<_>>()));
+    }
+    let faces = brep
+        .faces
+        .iter()
+        .map(|face| (face.id.as_str(), face))
+        .collect::<HashMap<_, _>>();
+    let coedges = brep
+        .coedges
+        .iter()
+        .map(|coedge| (coedge.id.as_str(), coedge))
+        .collect::<HashMap<_, _>>();
+    for loop_ in &brep.loops {
+        let Some(key) = faces
+            .get(loop_.face.as_str())
+            .and_then(|face| shell_bodies.get(face.shell.as_str()))
+            .and_then(|body| keys.get(body))
+        else {
+            continue;
+        };
+        let members = loop_
+            .coedges()
+            .iter()
+            .map(|id| coedges.get(id.as_str()).map(|coedge| &coedge.edge))
+            .collect::<Option<Vec<_>>>()
+            .unwrap_or_default();
+        rings.push((*key, members));
+    }
+    let mut wires = Vec::new();
+    for (key, members) in rings {
         let mut wire_edges = Vec::new();
-        for id in wire.members.edges() {
+        for id in members {
             let Some((start, end)) = edges.get(id.as_str()).and_then(|edge| {
                 Some((
                     *vertices.get(edge.start.as_str())?,
@@ -238,15 +285,26 @@ fn profile_wires(ctx: &DecodeContext<'_>, brep: &AsmBrep) -> Result<Vec<ProfileW
                 },
                 _ => None,
             };
+            let spline = edges.get(id.as_str()).and_then(|edge| {
+                let EdgeCarrier::Bounded(curve, interval) = &edge.carrier else {
+                    return None;
+                };
+                let SolvedCurveGeometry::Nurbs(nurbs) = curves.get(curve.as_str())?.solved()?
+                else {
+                    return None;
+                };
+                Some(Box::new((nurbs.clone(), interval.endpoints())))
+            });
             wire_edges.push(ProfileEdge {
                 name,
                 start,
                 end,
                 middle,
+                spline,
             });
         }
         wires.push(ProfileWire {
-            key: *key,
+            key,
             edges: wire_edges,
         });
     }
@@ -254,9 +312,17 @@ fn profile_wires(ctx: &DecodeContext<'_>, brep: &AsmBrep) -> Result<Vec<ProfileW
 }
 
 /// The naming-type and associative-id integers of an edge naming attribute.
-fn edge_name(values: &[Option<AttributeValue>]) -> Option<EdgeName> {
+fn edge_name(attribute: &str, values: &[Option<AttributeValue>]) -> Option<EdgeName> {
     let [_, _, _, _, _, rest @ ..] = values else {
         return None;
+    };
+    let rest = match (attribute, rest) {
+        (NAMING_ATTRIBUTE, rest) => rest,
+        (
+            CUSTOM_NAMING_ATTRIBUTE,
+            [Some(AttributeValue::String(family)), Some(AttributeValue::Integer(1)), rest @ ..],
+        ) if family == CUSTOM_NAMING_FAMILY => rest,
+        _ => return None,
     };
     let integers = rest
         .iter()
@@ -275,14 +341,15 @@ fn edge_name(values: &[Option<AttributeValue>]) -> Option<EdgeName> {
 }
 
 /// Joins that resolve profile selections in one document.
+#[derive(Default)]
 pub(super) struct ProfileIndex<'a> {
     bodies: HashMap<(&'a str, u32), Option<&'a ProfileBody>>,
     kernel_links: HashMap<(&'a str, u32), &'a PmDcKernelEntityLink>,
-    /// Curve entity by segment, sketch ordinal, and associative id; `None`
-    /// when the id names more than one curve.
+    /// Neutral curve entity id by segment, sketch ordinal, and associative
+    /// id; `None` when the id names more than one curve.
     curves: HashMap<(&'a str, u32, i64), Option<String>>,
-    entities: HashMap<&'a str, &'a SketchEntity>,
     by_id: HashMap<&'a str, &'a SketchEntity>,
+    incomplete_sketches: std::collections::HashSet<(&'a str, u32)>,
     /// Loops that resolved selections append to sketch profile tables.
     added: RefCell<HashMap<String, Vec<Vec<SketchEntityUse>>>>,
 }
@@ -315,10 +382,15 @@ impl<'a> ProfileIndex<'a> {
             })
             .collect::<HashMap<_, _>>();
         let mut curves = HashMap::new();
-        for link in entity_style_links {
-            if link.entity_type != CURVE_LINK_ENTITY_TYPE {
-                continue;
+        let mut name = |key, id: Option<String>| {
+            if let Some(id) = id {
+                curves
+                    .entry(key)
+                    .and_modify(|slot| *slot = None)
+                    .or_insert(Some(id));
             }
+        };
+        for link in entity_style_links {
             let token = link.identity.segment_token.as_str();
             let Some(entity) = link
                 .header
@@ -332,13 +404,62 @@ impl<'a> ProfileIndex<'a> {
             let Some(sketch) = entity.sketch.index().checked_sub(1) else {
                 continue;
             };
-            curves
-                .entry((token, sketch, i64::from(link.associative_id)))
-                .and_modify(|slot| *slot = None)
-                .or_insert_with(|| Some(entity.id()));
+            let associative_id = i64::from(link.associative_id);
+            match (link.entity_type, &entity.kind) {
+                (CURVE_LINK_ENTITY_TYPE, _) => name(
+                    (token, sketch, associative_id),
+                    crate::sketch::entity_id(entity).map(|id| id.as_str().to_owned()),
+                ),
+                (BLOCK_INSTANCE_LINK_ENTITY_TYPE, PmDcSketchEntityKind::BlockInstance { .. }) => {
+                    // A block instance names the curves it places with ids
+                    // of its own, which no entity-style link stores.
+                    let definition = crate::sketch::block_definition_curves(entity, raw_entities);
+                    let Some(offsets) = crate::sketch::block_curve_offsets(&definition) else {
+                        continue;
+                    };
+                    for (curve, offset) in definition.into_iter().zip(offsets) {
+                        name(
+                            (
+                                token,
+                                sketch,
+                                associative_id + BLOCK_CURVE_FIRST_ID_OFFSET + i64::from(offset),
+                            ),
+                            crate::sketch::block_curve_id(entity, curve)
+                                .map(|id| id.as_str().to_owned()),
+                        );
+                    }
+                }
+                _ => {}
+            }
         }
+        let neutral_ids = entities
+            .iter()
+            .map(SketchEntity::id)
+            .collect::<std::collections::HashSet<_>>();
+        let incomplete_sketches = raw_entities
+            .iter()
+            .filter(|entity| {
+                matches!(
+                    entity.kind,
+                    PmDcSketchEntityKind::Line { .. }
+                        | PmDcSketchEntityKind::Circle { .. }
+                        | PmDcSketchEntityKind::Ellipse { .. }
+                        | PmDcSketchEntityKind::Spline { .. }
+                )
+            })
+            .filter(|entity| {
+                crate::sketch::entity_id(entity).is_none_or(|id| !neutral_ids.contains(&id))
+            })
+            .filter_map(|entity| {
+                Some((
+                    entity.identity.segment_token.as_str(),
+                    entity.sketch.record_ordinal()?,
+                ))
+            })
+            .collect();
         Self {
             bodies: body_index,
+            incomplete_sketches,
             kernel_links: kernel_links
                 .iter()
                 .map(|link| {
@@ -352,10 +473,6 @@ impl<'a> ProfileIndex<'a> {
                 })
                 .collect(),
             curves,
-            entities: entities
-                .iter()
-                .filter_map(|entity| Some((entity.native_ref.as_deref()?, entity)))
-                .collect(),
             by_id: entities
                 .iter()
                 .map(|entity| (entity.id().as_str(), entity))
@@ -380,6 +497,11 @@ impl<'a> ProfileIndex<'a> {
         links: &[u32],
     ) -> Option<PlanarProfileRef> {
         let frame = SketchFrame::new(sketch)?;
+        if let Some(profile) =
+            self.closed_spline_region(token, sketch_ordinal, sketch, &frame, links)
+        {
+            return Some(profile);
+        }
         let mut rings = Vec::new();
         for ordinal in links {
             let link = self.kernel_links.get(&(token, *ordinal))?;
@@ -388,14 +510,19 @@ impl<'a> ProfileIndex<'a> {
                 .get(&(token, link.body.index().checked_sub(1)?))
                 .copied()
                 .flatten()?;
-            let mut wires = body
+            // A selection can run through several wire loops of one body,
+            // such as the outer boundary and the holes of a plate face.
+            let known = rings.len();
+            for wire in body
                 .wires
                 .iter()
-                .filter(|wire| wire.key == u64::from(link.entity_id));
-            let (Some(wire), None) = (wires.next(), wires.next()) else {
+                .filter(|wire| wire.key == u64::from(link.entity_id))
+            {
+                rings.push(self.ring(token, sketch_ordinal, sketch, &frame, link, wire)?);
+            }
+            if rings.len() == known {
                 return None;
-            };
-            rings.push(self.ring(token, sketch_ordinal, sketch, &frame, link, wire)?);
+            }
         }
         if rings
             .iter()
@@ -405,6 +532,66 @@ impl<'a> ProfileIndex<'a> {
         } else {
             trimmed_regions(sketch, &rings)
         }
+    }
+
+    fn closed_spline_region(
+        &self,
+        token: &str,
+        sketch_ordinal: u32,
+        sketch: &Sketch,
+        frame: &SketchFrame,
+        links: &[u32],
+    ) -> Option<PlanarProfileRef> {
+        let [ordinal] = links else {
+            return None;
+        };
+        let link = self.kernel_links.get(&(token, *ordinal))?;
+        let body = self
+            .bodies
+            .get(&(token, link.body.record_ordinal()?))?
+            .as_ref()?;
+        let mut wires = body
+            .wires
+            .iter()
+            .filter(|wire| wire.key == u64::from(link.entity_id));
+        let wire = wires.next()?;
+        if wires.next().is_some() {
+            return None;
+        }
+        let [edge] = wire.edges.as_slice() else {
+            return None;
+        };
+        let name = edge.name?;
+        if name.naming_type != i64::from(link.entity_type) {
+            return None;
+        }
+        let id = self
+            .curves
+            .get(&(token, sketch_ordinal, name.associative_id))?
+            .as_deref()?;
+        let entity = self.by_id.get(id)?;
+        if entity.sketch != sketch.id || entity.construction {
+            return None;
+        }
+        let SketchGeometryDefinition::Nurbs { curve } = entity.geometry.definition() else {
+            return None;
+        };
+        let (carrier, interval) = edge.spline.as_deref()?;
+        if !closed_spline_matches(frame, curve, carrier, *interval) {
+            return None;
+        }
+        let seam = curve.control_points().first()?.get();
+        if !near(frame.uv(edge.start)?, seam) || !near(frame.uv(edge.end)?, seam) {
+            return None;
+        }
+        let profile = sketch.profiles.iter().position(
+            |profile| matches!(profile.as_slice(), [use_] if use_.entity == *entity.id()),
+        )?;
+        PlanarProfileRef::sketch_regions(
+            sketch.id.clone(),
+            vec![SketchProfileRegion::loops(u32::try_from(profile).ok()?, Vec::new()).ok()?],
+        )
+        .ok()
     }
 
     /// Whole-curve rings as regions over loops of the sketch profile table.
@@ -485,11 +672,11 @@ impl<'a> ProfileIndex<'a> {
             if name.naming_type != i64::from(link.entity_type) {
                 return None;
             }
-            let native = self
+            let id = self
                 .curves
                 .get(&(token, sketch_ordinal, name.associative_id))?
                 .as_deref()?;
-            let entity = *self.entities.get(native)?;
+            let entity = *self.by_id.get(id)?;
             if entity.sketch != sketch.id || entity.construction {
                 return None;
             }
@@ -532,6 +719,46 @@ impl<'a> ProfileIndex<'a> {
             })
             .collect()
     }
+}
+
+fn closed_spline_matches(
+    frame: &SketchFrame,
+    curve: &cadmpeg_ir::geometry::pcurve::PcurveNurbs,
+    carrier: &NurbsCurve,
+    interval: [f64; 2],
+) -> bool {
+    let points = curve.control_points();
+    let poles = carrier.control_points();
+    let knots = curve.knots().as_slice();
+    let Ok(degree) = usize::try_from(curve.degree()) else {
+        return false;
+    };
+    let Some(last) = degree
+        .checked_add(1)
+        .and_then(|order| knots.len().checked_sub(order))
+    else {
+        return false;
+    };
+    let domain = knots
+        .get(degree)
+        .zip(knots.get(last))
+        .map(|(first, last)| [*first, *last]);
+    curve.periodic()
+        && carrier.periodic()
+        && curve.degree() == carrier.degree()
+        && knots == carrier.knots().as_slice()
+        && curve.weights().is_none()
+        && carrier.weights().is_none()
+        && domain == Some(interval)
+        && points.len() == poles.len()
+        && points
+            .first()
+            .is_some_and(|first| Some(first) == points.last())
+        && points.iter().zip(poles).all(|(point, pole)| {
+            frame
+                .uv(*pole.as_raw())
+                .is_some_and(|uv| near(point.get(), uv))
+        })
 }
 
 /// Rings that use parts of curves as regions with trimmed boundary rings.

@@ -211,7 +211,7 @@ fn hole_face_selection_history_binds_the_unique_persistent_face() {
         42,
     );
     if let crate::records::feature::scope::DesignScopePayloadMut::Hole(slot) = scope.payload_mut() {
-        *slot = Some(construction);
+        slot.point = Some(construction);
     }
 
     { bind_hole_selection_history(std::slice::from_mut(&mut scope), &[history]) }.unwrap();

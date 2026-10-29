@@ -126,6 +126,16 @@ pub(crate) fn admit_construction_records(
     features::surface_allocation::admit_surface_allocations(ctx, namespace)
 }
 
+pub(crate) fn admit_deltas_records(
+    ctx: &DecodeContext<'_>,
+    namespace: &cadmpeg_ir::native::NativeNamespace,
+    source: Option<&cadmpeg_ir::SourceFidelity>,
+) -> Result<Vec<cadmpeg_ir::report::check::Finding>, cadmpeg_ir::native::NativeConvertError> {
+    parasolid::deltas_instance::admit(ctx, namespace)?;
+    parasolid::deltas_metadata::admit(ctx, namespace)?;
+    parasolid::deltas_source::verify(ctx, namespace, source)
+}
+
 /// Failure injection into [`attach_annotations`] for decode tests.
 #[cfg(test)]
 pub(crate) mod attach_failure {

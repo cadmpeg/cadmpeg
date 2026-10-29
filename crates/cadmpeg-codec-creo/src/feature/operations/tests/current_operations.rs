@@ -17,3 +17,17 @@ fn competing_recipe_bindings_keep_both_states() {
         2
     );
 }
+
+#[test]
+fn agreeing_candidates_project_without_a_current_candidate() {
+    let states = super::super::operations(b"\xe3Extrude id 7\0\xe3Extrude id 7\0");
+    assert_eq!(states.len(), 1);
+    assert!(states[0].display_state_conflict);
+    assert!(!states[0].display_name_stored());
+}
+
+#[test]
+fn disagreeing_candidates_withhold_operation() {
+    assert!(super::super::operations(b"\xe3Extrude id 7\0\xe3Hole id 7\0").is_empty());
+    assert!(super::super::operations(CONFLICTING_BINDINGS).is_empty());
+}

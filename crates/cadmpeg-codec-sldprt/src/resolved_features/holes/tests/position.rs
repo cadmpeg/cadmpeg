@@ -1630,6 +1630,7 @@ fn source_intervals_supply_legacy_hole_profiles() {
         value: cadmpeg_ir::scalar::FiniteReal::new(0.0068).expect("finite test scalar"),
         role: FeatureInputScalarRole::Native,
         operands: Vec::new(),
+        archive_class: None,
     });
     let mut histories = [history];
     enrich_history_parameters(&mut histories, [&lane], true);
@@ -1873,6 +1874,7 @@ fn parameter_class_supplies_an_operandless_scalar_unit() {
             .expect("finite test scalar"),
         role: FeatureInputScalarRole::Native,
         operands: Vec::new(),
+        archive_class: None,
     });
 
     enrich_history_parameters(std::slice::from_mut(&mut history), [&lane], true);

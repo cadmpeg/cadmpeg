@@ -1,6 +1,7 @@
 {
   "ir": {
-    "ir_version": "8",
+    "decode_depth": "full",
+    "ir_version": "9",
     "model": {
       "appearance_bindings": [],
       "appearances": [],
@@ -49,12 +50,16 @@
         ]
       }
     },
-    "scope": {
-      "design": true,
-      "model": true
-    },
     "source": {
-      "attributes": {},
+      "attributes": {
+        "bytes_named_opaque": "95",
+        "bytes_structural": "220",
+        "bytes_typed": "0",
+        "bytes_unclassified": "0",
+        "data_sections": "1",
+        "entity_instances": "1",
+        "schema": "AP214"
+      },
       "identity": {
         "classification": "classified",
         "dialects": {
@@ -151,49 +156,11 @@
     ],
     "transfer": {
       "geometry_transferred": false,
-      "scope": {
-        "design": true,
-        "model": true
-      }
+      "transfer": "full"
     }
   },
   "source_fidelity": {
     "annotations": {},
-    "metadata": {
-      "bytes_named_opaque": "95",
-      "bytes_structural": "220",
-      "bytes_typed": "0",
-      "bytes_unclassified": "0",
-      "data_sections": "1",
-      "entity_instances": "1",
-      "schema": "AP214"
-    },
-    "parts": {
-      "step:source:part#b7d4bd98bdb7b2a67a43d52364dc7fb15ba580f62c4bad702d6660ffa5d246b9": {
-        "byte_len": 95,
-        "framing_bytes": [
-          {
-            "end": 195,
-            "start": 193
-          },
-          {
-            "end": 196,
-            "start": 195
-          },
-          {
-            "end": 288,
-            "start": 287
-          }
-        ],
-        "level": "step.simple_entity_instance",
-        "offset": 193,
-        "parent": null,
-        "state": {
-          "state": "decoded"
-        },
-        "stream": "file"
-      }
-    },
     "retained_records": {
       "step:data:example_strings#1": {
         "bytes": {
@@ -201,14 +168,8 @@
           "retention": "inline"
         },
         "offset": 193,
-        "stream": "",
-        "untyped": [
-          "model"
-        ]
+        "stream": ""
       }
-    },
-    "unrepresented": [
-      "model"
-    ]
+    }
   }
 }

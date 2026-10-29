@@ -1,16 +1,40 @@
 // SPDX-License-Identifier: Apache-2.0
 
-use super::{DataType, EmbeddedSchema};
-use crate::framing::read_and_advance;
+use super::{positive, DataType, SchemaPlan};
 use crate::framing::xmt_reference::NonNullXmt;
 use cadmpeg_core::decode::View;
-use cadmpeg_core::CodecError;
-use cadmpeg_ir::scalar::FiniteReal;
-use cadmpeg_ir::units::FiniteVector;
 use serde::{Deserialize, Serialize};
 use std::num::NonZeroU32;
+use std::ops::Range;
 
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) struct RealBits(u64);
+
+impl Serialize for RealBits {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        serializer.collect_str(&format_args!("{:016x}", self.0))
+    }
+}
+
+impl<'de> Deserialize<'de> for RealBits {
+    fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        let value = String::deserialize(deserializer)?;
+        if value.len() != 16
+            || !value
+                .bytes()
+                .all(|byte| byte.is_ascii_digit() || (b'a'..=b'f').contains(&byte))
+        {
+            return Err(serde::de::Error::custom(
+                "real bits require 16 lowercase hexadecimal digits",
+            ));
+        }
+        u64::from_str_radix(&value, 16)
+            .map(Self)
+            .map_err(serde::de::Error::custom)
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(tag = "type", content = "value", rename_all = "snake_case")]
 pub(crate) enum FieldValue {
     Byte(u8),
@@ -20,15 +44,15 @@ pub(crate) enum FieldValue {
     Word(u16),
     Integer(u32),
     Pointer { target: NonZeroU32, status: bool },
-    Real(FiniteReal),
-    Interval(FiniteVector<2>),
-    Vector(FiniteVector<3>),
-    Box(FiniteVector<6>),
-    Hvec(FiniteVector<11>),
+    RealBits(RealBits),
+    IntervalBits([RealBits; 2]),
+    VectorBits([RealBits; 3]),
+    BoxBits([RealBits; 6]),
+    HvecBits([RealBits; 11]),
 }
 
 impl FieldValue {
-    fn data_type(&self) -> DataType {
+    pub(crate) fn data_type(&self) -> DataType {
         match self {
             Self::Byte(_) => DataType::Byte,
             Self::Char(_) => DataType::Char,
@@ -37,15 +61,35 @@ impl FieldValue {
             Self::Word(_) => DataType::Word,
             Self::Integer(_) => DataType::Integer,
             Self::Pointer { .. } => DataType::Pointer,
-            Self::Real(_) => DataType::Real,
-            Self::Interval(_) => DataType::Interval,
-            Self::Vector(_) => DataType::Vector,
-            Self::Box(_) => DataType::Box,
-            Self::Hvec(_) => DataType::Hvec,
+            Self::RealBits(_) => DataType::Real,
+            Self::IntervalBits(_) => DataType::Interval,
+            Self::VectorBits(_) => DataType::Vector,
+            Self::BoxBits(_) => DataType::Box,
+            Self::HvecBits(_) => DataType::Hvec,
         }
     }
 
-    fn read(kind: DataType, stream: &[u8], view: &mut View<'_>) -> Option<Self> {
+    pub(crate) fn encoded_len(&self) -> u64 {
+        match self {
+            Self::Byte(_) | Self::Char(_) | Self::Logical(_) => 1,
+            Self::Short(_) | Self::Word(_) => 2,
+            Self::Integer(_) => 4,
+            Self::Pointer { target, .. } => {
+                if target.get() <= 32_767 {
+                    3
+                } else {
+                    5
+                }
+            }
+            Self::RealBits(_) => 8,
+            Self::IntervalBits(_) => 16,
+            Self::VectorBits(_) => 24,
+            Self::BoxBits(_) => 48,
+            Self::HvecBits(_) => 88,
+        }
+    }
+
+    pub(crate) fn read(kind: DataType, view: &mut View<'_>) -> Option<Self> {
         Some(match kind {
             DataType::Byte => Self::Byte(view.u8()?),
             DataType::Char => Self::Char(view.u8()?),
@@ -58,9 +102,7 @@ impl FieldValue {
             DataType::Word => Self::Word(view.u16_be()?),
             DataType::Integer => Self::Integer(view.u32_be()?),
             DataType::Pointer => {
-                let mut at = view.position();
-                let target = NonZeroU32::new(read_and_advance(stream, &mut at)?)?;
-                view.seek(at)?;
+                let target = NonZeroU32::new(positive(view)?.checked_add(1)?)?;
                 let status = match view.u8()? {
                     0 => false,
                     1 => true,
@@ -68,153 +110,67 @@ impl FieldValue {
                 };
                 Self::Pointer { target, status }
             }
-            DataType::Real => Self::Real(FiniteReal::new(view.f64_be()?)?),
-            DataType::Interval => Self::Interval(vector(view)?),
-            DataType::Vector => Self::Vector(vector(view)?),
-            DataType::Box => Self::Box(vector(view)?),
-            DataType::Hvec => Self::Hvec(vector(view)?),
+            DataType::Real => Self::RealBits(RealBits(view.u64_be()?)),
+            DataType::Interval => Self::IntervalBits(real_bits(view)?),
+            DataType::Vector => Self::VectorBits(real_bits(view)?),
+            DataType::Box => Self::BoxBits(real_bits(view)?),
+            DataType::Hvec => Self::HvecBits(real_bits(view)?),
             DataType::Unestablished(_) => return None,
         })
     }
 }
 
-fn vector<const N: usize>(view: &mut View<'_>) -> Option<FiniteVector<N>> {
-    let mut values = [0.0; N];
+fn real_bits<const N: usize>(view: &mut View<'_>) -> Option<[RealBits; N]> {
+    let mut values = [RealBits(0); N];
     for value in &mut values {
-        *value = view.f64_be()?;
+        *value = RealBits(view.u64_be()?);
     }
-    FiniteVector::new(values)
+    Some(values)
 }
 
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[serde(try_from = "NodeWire")]
-pub(crate) struct SchemaNode {
-    definition: EmbeddedSchema,
-    schema_byte_len: usize,
-    xmt: NonNullXmt,
-    variable_length: Option<u32>,
-    values: Vec<Vec<FieldValue>>,
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(super) struct StatusInstance {
+    pub(super) identity_at: usize,
+    pub(super) xmt: NonNullXmt,
+    pub(super) variable_length: Option<u32>,
+    pub(super) fields: Vec<Range<usize>>,
 }
 
-#[derive(Deserialize)]
-struct NodeWire {
-    definition: EmbeddedSchema,
-    schema_byte_len: usize,
-    xmt: NonNullXmt,
-    variable_length: Option<u32>,
-    values: Vec<Vec<FieldValue>>,
-}
-
-impl TryFrom<NodeWire> for SchemaNode {
-    type Error = &'static str;
-    fn try_from(wire: NodeWire) -> Result<Self, Self::Error> {
-        if wire.schema_byte_len < 3 || wire.definition.plan.fields.is_empty() {
-            return Err("definition: requires bounded nonempty schema metadata");
-        }
-        let variable = wire
-            .definition
-            .plan
-            .fields
-            .iter()
-            .any(|field| field.n_elements == 1);
-        if variable != wire.variable_length.is_some()
-            || wire.values.len() != wire.definition.plan.fields.len()
-        {
-            return Err("values: effective field cardinality differs from definition");
-        }
-        for (field, values) in wire.definition.plan.fields.iter().zip(&wire.values) {
-            let count = if !field.transmit {
-                0
-            } else if field.n_elements == 1 {
-                wire.variable_length.ok_or("variable_length: missing")?
-            } else {
-                field.n_elements.max(1)
-            };
-            if usize::try_from(count).ok() != Some(values.len())
-                || values.iter().any(|v| v.data_type() != field.data_type)
-            {
-                return Err("values: field type or element count differs from definition");
-            }
-        }
-        Ok(Self {
-            definition: wire.definition,
-            schema_byte_len: wire.schema_byte_len,
-            xmt: wire.xmt,
-            variable_length: wire.variable_length,
-            values: wire.values,
-        })
-    }
-}
-
-impl SchemaNode {
-    pub(crate) fn kind(&self) -> u16 {
-        self.definition.plan.kind
-    }
-
-    pub(crate) fn definition(&self) -> &EmbeddedSchema {
-        &self.definition
-    }
-
-    pub(crate) fn read(stream: &[u8], offset: usize) -> Result<Option<(Self, usize)>, CodecError> {
-        let Some((definition, schema_end)) = super::read(stream, offset)? else {
-            return Ok(None);
+pub(super) fn read_status_instance(
+    view: &mut View<'_>,
+    plan: &SchemaPlan,
+) -> Option<StatusInstance> {
+    let variable_length = if plan.fields.iter().any(|field| field.n_elements == 1) {
+        Some(view.u32_be()?)
+    } else {
+        None
+    };
+    let identity_at = view.position();
+    let xmt = NonNullXmt::try_from(positive(view)?.checked_add(1)?).ok()?;
+    let mut fields = Vec::new();
+    for field in &plan.fields {
+        let start = view.position();
+        let count = if !field.transmit {
+            0
+        } else if field.n_elements == 1 {
+            variable_length.unwrap_or(0)
+        } else {
+            field.n_elements.max(1)
         };
-        let mut view = View::over_retained(stream);
-        let Some((variable_length, xmt)) = (|| {
-            view.seek(schema_end)?;
-            let variable_length = if definition
-                .plan
-                .fields
-                .iter()
-                .any(|field| field.n_elements == 1)
-            {
-                Some(view.u32_be()?)
-            } else {
-                None
-            };
-            let mut at = view.position();
-            let xmt = NonNullXmt::try_from(read_and_advance(stream, &mut at)?).ok()?;
-            view.seek(at)?;
-            Some((variable_length, xmt))
-        })() else {
-            return Ok(None);
-        };
-        let mut values = Vec::new();
-        for field in &definition.plan.fields {
-            let count = if !field.transmit {
-                0
-            } else if field.n_elements == 1 {
-                variable_length.unwrap_or(0)
-            } else {
-                field.n_elements.max(1)
-            };
-            // Each element consumes at least one byte, even before its type is read.
-            if usize::try_from(count)
-                .ok()
-                .is_none_or(|n| n > stream.len() - view.position())
-            {
-                return Ok(None);
-            }
-            let mut elements = Vec::new();
-            for _ in 0..count {
-                let Some(value) = FieldValue::read(field.data_type, stream, &mut view) else {
-                    return Ok(None);
-                };
-                elements.push(value);
-            }
-            values.push(elements);
+        let count = usize::try_from(count)
+            .ok()
+            .filter(|count| *count <= view.remaining())?;
+        for _ in 0..count {
+            FieldValue::read(field.data_type, view)?;
         }
-        Ok(Some((
-            Self {
-                definition,
-                schema_byte_len: schema_end - offset,
-                xmt,
-                variable_length,
-                values,
-            },
-            view.position(),
-        )))
+        fields.push(start..view.position());
     }
+    Some(StatusInstance {
+        identity_at,
+        xmt,
+        variable_length,
+        fields,
+    })
 }
 
 #[cfg(test)]

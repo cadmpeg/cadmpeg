@@ -389,6 +389,114 @@ fn owned_parameter_projects_under_its_real_scope_feature() {
 }
 
 #[test]
+fn unresolved_owned_parameters_receive_unique_dependency_ordered_slots() {
+    let records = [
+        (Some(40), 2, "InputA", "1"),
+        (Some(50), 2, "InputB", "1"),
+        (None, 0, "Result", "Middle + 1"),
+        (None, 1, "Middle", "InputA + 1"),
+        (None, 3, "Independent", "1"),
+    ];
+    let native = records
+        .iter()
+        .enumerate()
+        .map(|(index, &(owner, ordinal, name, expression))| {
+            let mut parameter = parse_design_parameter_record(&parameter_record(
+                owner,
+                expression,
+                if owner.is_some() {
+                    "FeatureInput"
+                } else {
+                    "User Parameter"
+                },
+                None,
+                name,
+                1.0,
+            ))
+            .unwrap();
+            parameter.record_index = u32::try_from(index).unwrap();
+            parameter.id = format!("f3d:Design/BulkStream.dat:parameter#{index}");
+            parameter.source_ordinal = ordinal;
+            parameter
+        })
+        .collect::<Vec<_>>();
+    let source = serde_json::to_value(&native).unwrap();
+    let project = |native: &[_]| {
+        crate::test_support::with_decode_context(|ctx| {
+            crate::design::feature_project::project_parameter_design_with_edge_identities(
+                ctx,
+                &crate::design::feature_project::ProjectInputs {
+                    native,
+                    ..Default::default()
+                },
+            )
+        })
+    };
+    let projected = project(&native).unwrap();
+    assert!(projected.features.is_empty());
+    assert_eq!(projected.unordered_parameter_scopes, 0);
+    let mut ordered = projected.parameters.iter().collect::<Vec<_>>();
+    ordered.sort_by_key(|parameter| parameter.ordinal);
+    assert_eq!(
+        ordered
+            .iter()
+            .map(|parameter| parameter.ordinal)
+            .collect::<Vec<_>>(),
+        [0, 1, 2, 3, 4]
+    );
+    let by_name = |name| {
+        projected
+            .parameters
+            .iter()
+            .find(|p| p.name == name)
+            .unwrap()
+    };
+    for (consumer, dependency) in [("Middle", "InputA"), ("Result", "Middle")] {
+        let consumer = by_name(consumer);
+        let dependency = by_name(dependency);
+        assert_eq!(
+            consumer.expression.dependencies().collect::<Vec<_>>(),
+            [&dependency.id]
+        );
+        assert!(dependency.ordinal < consumer.ordinal);
+    }
+    for (index, &(owner, ordinal, name, _)) in records.iter().enumerate() {
+        let parameter = by_name(name);
+        assert!(parameter.owner.is_none());
+        assert_eq!(
+            parameter.native_ref.as_deref(),
+            Some(native[index].id.as_str())
+        );
+        assert_eq!(native[index].source_ordinal, ordinal);
+        assert_eq!(native[index].owner_record_index(), owner);
+        assert_eq!(
+            parameter.properties.get("owner_record_index"),
+            owner.map(|index| index.to_string()).as_ref()
+        );
+    }
+    assert_eq!(serde_json::to_value(&native).unwrap(), source);
+
+    let mut native = native;
+    native[0].source_ordinal = u32::MAX - 1;
+    native[1].source_ordinal = u32::MAX - 1;
+    let projected = project(&native).unwrap();
+    let mut ordinals = projected
+        .parameters
+        .iter()
+        .map(|p| p.ordinal)
+        .collect::<Vec<_>>();
+    ordinals.sort_unstable();
+    assert_eq!(ordinals, [0, 1, 3, u32::MAX - 1, u32::MAX]);
+    native[0].source_ordinal = u32::MAX;
+    native[1].source_ordinal = u32::MAX;
+    assert!(matches!(
+        project(&native),
+        Err(cadmpeg_core::CodecError::Malformed(message))
+            if message == "Design parameter ordinal exceeds u32"
+    ));
+}
+
+#[test]
 fn owned_parameter_without_a_projected_scope_is_retained_unowned() {
     let mut parameter = parse_design_parameter_record(&parameter_record(
         Some(44),

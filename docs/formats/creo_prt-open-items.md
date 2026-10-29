@@ -621,6 +621,24 @@ a byte scan.
 when the following identifier joins a generated segment and an `e2` byte occurs
 in the next 24 bytes. The specification does not give this window.
 
+### SP-44. Cap tables with mixed profile entries
+
+**Question.** Which complete owner-qualified grammar selects the current profile
+and linear extent when a class-29 generated table contains source-bearing
+class-200 entries and a source-less class-200 cylinder entry outside the defined
+four-entry circular forms?
+
+**Known.** `creo_prt.md` §6 defines the general cap-pair rule with unique
+source-less class-204 and class-203 entries and populated source identifiers on
+every remaining class-200 entry. The separate circular forms define exactly four
+entries. Placed cap planes and a materialized cylinder do not select the current
+source profile in a table outside those forms.
+
+**Need.** Define current profile selection and the source-profile and cap-use
+roles of all entries before deriving an operation span from the cap pair.
+Reconcile the selected profile, section placement, and generated carriers without
+discarding other owned entries or selecting a regeneration state by table order.
+
 ## 4. Topology and appearance
 
 ### TP-01. Current feature-to-body binding
@@ -674,7 +692,15 @@ B-rep orbit. The defined suffix grammar does not establish a direct stored
 vertex-coordinate fallback in another record family.
 
 **Need.** We must know any additional owner-qualified coordinate selector to
-place an orbit whose existing evidence does not select one point.
+place an orbit whose existing evidence does not select one point. For compact
+plane frames, we must distinguish the stored carrier point from the native
+parameter origin when mapped pcurve endpoints do not agree with adjacent
+carriers.
+
+**Conflict.** `placed_plane_surfaces` uses the complete local-system origin
+as the plane chart origin. Agreement of its normal coordinate establishes the
+carrier plane but does not establish the tangential parameter origin. The
+compact frame productions do not define a separate parameter-origin selector.
 
 ### TP-05. General rowless face-use binding
 
@@ -788,13 +814,7 @@ place an orbit whose existing evidence does not select one point.
 
 **Need.** We must know the prefix meanings and current-state selector to preserve the native state semantics and project one current candidate.
 
-**Conflict.** `operations` in `src/feature/operations.rs` projects the first
-same-ID candidate when none has a stored display name. When multiple candidates
-have stored display names, it uses the last candidate as the projection base,
-takes offsets from the first, and retains only selected fields on which the
-candidates agree. Stored order and display-name presence are not a decoded
-current-state selector, so neither projection establishes the current native
-state.
+**Conflict.** None.
 
 ### TP-19. `lo_array` roster semantics
 

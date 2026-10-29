@@ -798,7 +798,7 @@ fn boundary_edge_selection_uses_the_unique_pcurve_endpoint_match() {
         ))
         .unwrap()
     );
-    let (selected, start, end, pcurves_agree) = super::select_boundary_edge(
+    let (selected, start, end, pcurve_direction) = super::select_boundary_edge(
         &[&candidates[0], &candidates[1]],
         &index,
         super::BoundaryMatch {
@@ -814,7 +814,7 @@ fn boundary_edge_selection_uses_the_unique_pcurve_endpoint_match() {
     assert_eq!(selected.id.as_str(), "test:model:edge#matching-occurrence");
     assert_eq!(start, Point3::new(0.0, 0.0, 0.0));
     assert_eq!(end, Point3::new(2.0, 0.0, 0.0));
-    assert!(pcurves_agree);
+    assert_eq!(pcurve_direction, super::PcurveDirection::Traversal);
 
     let mut ambiguous_candidates = candidates.clone();
     ambiguous_candidates.push(Edge {
@@ -1312,11 +1312,9 @@ fn decode_uses_model_curve_when_type_142_prefers_it() {
         .iter()
         .find(|coedge| coedge.id == *id)
         .is_some_and(|coedge| coedge.pcurves.is_empty())));
-    assert!(
-        result.report().losses.is_empty(),
-        "{:#?}",
-        result.report().losses
-    );
+    let losses = &result.report().losses;
+    assert_eq!(losses.len(), 1);
+    assert_eq!(losses[0].code, IgesLossCode::BoundaryPcurveDisagrees.kind());
     let validation =
         cadmpeg_ir::validate_neutral(result.ir(), Vec::new()).expect("validate the neutral model");
     assert!(validation.is_ok(), "{:#?}", validation.findings);
@@ -1590,6 +1588,8 @@ fn decode_brackets_explicit_loop_pcurve_agreement_at_the_global_resolution() {
 mod bounded_sheets;
 
 mod boundary_direction;
+
+mod boundary_sense;
 
 #[test]
 fn boundary_clustering_chain_uses_no_call_stack_depth() {

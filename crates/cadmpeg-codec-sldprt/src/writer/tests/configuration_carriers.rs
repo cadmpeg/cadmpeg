@@ -337,10 +337,7 @@ fn encoder_writes_authored_with_retained_native_envelope_neutral_configurations(
                 .as_slice()
         )
     );
-    assert!(decoded.ir().model.configurations[1]
-        .bodies
-        .as_deref()
-        .is_some_and(<[_]>::is_empty));
+    assert!(decoded.ir().model.configurations[1].bodies.is_none());
 
     let (mut inactive, _, fidelity) = decoded.into_parts();
     inactive

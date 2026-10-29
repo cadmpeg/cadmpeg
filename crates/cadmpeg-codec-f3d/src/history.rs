@@ -18,6 +18,7 @@ mod body_candidates;
 mod body_index;
 mod cache;
 pub(crate) mod compact_lineage;
+pub(crate) mod edge_flange;
 pub(crate) mod face_admission;
 mod loop_index;
 mod recipe_index;

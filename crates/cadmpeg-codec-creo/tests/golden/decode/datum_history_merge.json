@@ -1,6 +1,7 @@
 {
   "ir": {
-    "ir_version": "8",
+    "decode_depth": "full",
+    "ir_version": "9",
     "model": {
       "appearance_bindings": [],
       "appearances": [],
@@ -30,7 +31,6 @@
           },
           "id": "creo:model:feature#3",
           "name": "Round id 3",
-          "needs_recompute": false,
           "ordinal": 0,
           "suppressed": false
         },
@@ -41,7 +41,6 @@
           },
           "id": "creo:model:feature#4",
           "name": "Datum Plane id 4",
-          "needs_recompute": false,
           "ordinal": 1,
           "suppressed": false
         }
@@ -117,10 +116,6 @@
         ]
       }
     },
-    "scope": {
-      "design": true,
-      "model": true
-    },
     "source": {
       "attributes": {
         "expanded_section_byte_count": "0",
@@ -137,6 +132,7 @@
         "section.1.raw_name": "MdlStatus",
         "section.1.role": "metadata",
         "section_count": "2",
+        "unresolved_feature_state_selection_count": "0",
         "version_line": "#UGC:2 P c"
       },
       "identity": {
@@ -508,6 +504,7 @@
       "unresolved_feature_dimension_driven_variable_count": 0,
       "unresolved_feature_dimension_value_count": 0,
       "unresolved_feature_segment_geometry_count": 0,
+      "unresolved_feature_state_selection_count": 0,
       "untransferred_visible_cone_surface_row_count": 0,
       "untransferred_visible_curve_row_count": 0,
       "untransferred_visible_cylinder_surface_row_count": 0,
@@ -632,10 +629,7 @@
     ],
     "transfer": {
       "geometry_transferred": false,
-      "scope": {
-        "design": true,
-        "model": true
-      }
+      "transfer": "full"
     }
   },
   "source_fidelity": {
@@ -681,23 +675,8 @@
           "retention": "inline"
         },
         "offset": 76,
-        "stream": "creo:ActDatums",
-        "untyped": []
-      },
-      "creo:source:image#whole": {
-        "bytes": {
-          "data": "I1VHQzoyIFAgYwojLUVORF9PRl9VR0NfSEVBREVSCiNVR0NfVE9DCnRvYyBlbnRyeSBsaW5lCiNFTkRfT0ZfVE9DX0hFQURFUgojCiNBY3REYXR1bXMKBCIEAQAADw8PD0YAAAAAAAAAD0YIAAAAAAAALQAAAAAAAAAPLQgAAAAAAAAjCiNNZGxTdGF0dXMKUm91bmQgaWQgMwBEYXR1bSBQbGFuZSBpZCA0AA==",
-          "retention": "inline"
-        },
-        "offset": 0,
-        "stream": "creo:source",
-        "untyped": [
-          "model"
-        ]
+        "stream": "creo:ActDatums"
       }
-    },
-    "unrepresented": [
-      "model"
-    ]
+    }
   }
 }

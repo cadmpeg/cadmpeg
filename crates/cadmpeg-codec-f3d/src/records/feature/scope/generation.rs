@@ -47,14 +47,19 @@ pub(crate) enum DesignScopeGeneration {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub(crate) enum DesignAssemblyFrame {
-    /// The rigid `As-built` frame of an `members`-member rigid group: 269
-    /// bytes for two members and eleven more for each further member.
+    /// The rigid `As-built` frame of an `members`-member rigid group, with
+    /// one locator reference for each member after its prologue and before
+    /// its tail.
     Rigid {
         members: u32,
+        alternate_prologue: bool,
+        tail: DesignRigidGroupTail,
     },
     Frame378,
     Frame399,
     Frame421,
+    Frame422,
+    Frame444,
     Frame604,
     Frame627,
     Frame633,
@@ -74,16 +79,71 @@ pub(crate) enum DesignAssemblyFrame {
     Frame1011,
 }
 
-/// Byte length of the two-member rigid `As-built` frame.
-const RIGID_TWO_MEMBER_LENGTH: u64 = 269;
-/// Byte length of one further rigid-group locator reference.
-const RIGID_MEMBER_STRIDE: u64 = 11;
+/// The tail of a rigid-group `As-built` frame.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub(crate) enum DesignRigidGroupTail {
+    /// The ordinary tail, with or without its additional reference and with
+    /// a narrow or wide field.
+    Ordinary {
+        additional_reference: bool,
+        wide_field: bool,
+    },
+    /// The typed-reference tail.
+    Typed,
+}
+
+impl DesignRigidGroupTail {
+    /// The tail of this byte length.
+    fn from_length(tail_length: u64) -> Option<Self> {
+        use crate::design::assembly::OrdinaryRigidGroupTail;
+        let length = usize::try_from(tail_length).ok()?;
+        let mut ordinary = [false, true].into_iter().flat_map(|additional_reference| {
+            [false, true]
+                .into_iter()
+                .filter(move |wide_field| {
+                    OrdinaryRigidGroupTail::new(additional_reference, *wide_field).len() == length
+                })
+                .map(move |wide_field| Self::Ordinary {
+                    additional_reference,
+                    wide_field,
+                })
+        });
+        match (ordinary.next(), ordinary.next()) {
+            (Some(tail), None) => Some(tail),
+            (Some(_), Some(_)) => None,
+            (None, _) => (length == TYPED_RIGID_GROUP_TAIL_LEN).then_some(Self::Typed),
+        }
+    }
+
+    /// Byte length of the tail.
+    fn length(self) -> u64 {
+        let length = match self {
+            Self::Ordinary {
+                additional_reference,
+                wide_field,
+            } => crate::design::assembly::OrdinaryRigidGroupTail::new(
+                additional_reference,
+                wide_field,
+            )
+            .len(),
+            Self::Typed => TYPED_RIGID_GROUP_TAIL_LEN,
+        };
+        cadmpeg_core::decode::u64_from_index(length)
+    }
+}
+
+/// Byte length of the typed-reference rigid-group tail.
+const TYPED_RIGID_GROUP_TAIL_LEN: usize = crate::layout::assembly_typed_rigid_group_scope::LEN
+    - crate::layout::assembly_typed_rigid_group_scope::SCOPE_TAIL;
 
 impl DesignAssemblyFrame {
-    const FIXED: [(Self, u64); 20] = [
+    const FIXED: [(Self, u64); 22] = [
         (Self::Frame378, 378),
         (Self::Frame399, 399),
         (Self::Frame421, 421),
+        (Self::Frame422, 422),
+        (Self::Frame444, 444),
         (Self::Frame604, 604),
         (Self::Frame627, 627),
         (Self::Frame633, 633),
@@ -103,30 +163,34 @@ impl DesignAssemblyFrame {
         (Self::Frame1011, 1011),
     ];
 
-    /// The assembly frame of this length, when f3d.md names one.
+    /// The fixed assembly frame of this length, when f3d.md names one.
     pub(crate) fn from_frame_length(frame_length: u64) -> Option<Self> {
-        if let Some((frame, _)) = Self::FIXED
-            .iter()
-            .find(|(_, length)| *length == frame_length)
-        {
-            return Some(*frame);
-        }
-        let extra = frame_length.checked_sub(RIGID_TWO_MEMBER_LENGTH)?;
-        if extra % RIGID_MEMBER_STRIDE != 0 {
-            return None;
-        }
-        let members = u32::try_from(extra / RIGID_MEMBER_STRIDE)
-            .ok()?
-            .checked_add(2)?;
-        Some(Self::Rigid { members })
+        fixed(&Self::FIXED, frame_length)
+    }
+
+    /// The rigid-group frame of this frame and tail length, when its member
+    /// count, prologue and tail are unique.
+    pub(crate) fn rigid(frame_length: u64, tail_length: u64) -> Option<Self> {
+        let layout = crate::design::assembly::RigidGroupLayout::new(frame_length, tail_length)?;
+        Some(Self::Rigid {
+            members: u32::try_from(layout.members).ok()?,
+            alternate_prologue: layout.alternate(),
+            tail: DesignRigidGroupTail::from_length(tail_length)?,
+        })
     }
 
     /// Byte length of the frame.
     pub(crate) fn frame_length(self) -> Option<u64> {
         match self {
-            Self::Rigid { members } => u64::from(members.checked_sub(2)?)
-                .checked_mul(RIGID_MEMBER_STRIDE)?
-                .checked_add(RIGID_TWO_MEMBER_LENGTH),
+            Self::Rigid {
+                members,
+                alternate_prologue,
+                tail,
+            } => crate::design::assembly::RigidGroupLayout::frame_length(
+                usize::try_from(members).ok()?,
+                alternate_prologue,
+                tail.length(),
+            ),
             fixed => Self::FIXED
                 .iter()
                 .find(|(frame, _)| *frame == fixed)
@@ -137,7 +201,15 @@ impl DesignAssemblyFrame {
     /// The member count of a rigid-group frame.
     pub(crate) fn rigid_members(self) -> Option<usize> {
         match self {
-            Self::Rigid { members } => usize::try_from(members).ok(),
+            Self::Rigid { members, .. } => usize::try_from(members).ok(),
+            _ => None,
+        }
+    }
+
+    /// Byte length of the tail of a rigid-group frame.
+    pub(crate) fn rigid_tail_length(self) -> Option<u64> {
+        match self {
+            Self::Rigid { tail, .. } => Some(tail.length()),
             _ => None,
         }
     }
@@ -150,6 +222,8 @@ pub(crate) enum DesignComponentInsertFrame {
     Frame257,
     Frame261,
     Frame267,
+    Frame272,
+    Frame276,
     Frame381,
     Frame385,
     Frame389,
@@ -159,10 +233,12 @@ pub(crate) enum DesignComponentInsertFrame {
 }
 
 impl DesignComponentInsertFrame {
-    const FIXED: [(Self, u64); 9] = [
+    const FIXED: [(Self, u64); 11] = [
         (Self::Frame257, 257),
         (Self::Frame261, 261),
         (Self::Frame267, 267),
+        (Self::Frame272, 272),
+        (Self::Frame276, 276),
         (Self::Frame381, 381),
         (Self::Frame385, 385),
         (Self::Frame389, 389),
@@ -356,6 +432,8 @@ pub(crate) struct ScopeFrameFacts<'a> {
     /// Offset of the kind code units from the primary header.
     pub(crate) kind_delta: u64,
     pub(crate) reference_count: usize,
+    /// Byte length from `feature_ordinal` to the paired header.
+    pub(crate) tail_length: u64,
 }
 
 fn fixed<T: Copy>(table: &[(T, u64)], frame_length: u64) -> Option<T> {
@@ -373,9 +451,12 @@ impl DesignScopeGeneration {
             .ok()
             .and_then(|count| count.checked_mul(PLAIN_REFERENCE_LEN));
         let derived = match facts.kind {
-            Kind::Assemble | Kind::AsBuilt => {
-                DesignAssemblyFrame::from_frame_length(facts.frame_length).map(Self::Assembly)
-            }
+            Kind::Assemble | Kind::AsBuilt => (*facts.kind == Kind::AsBuilt
+                && facts.reference_count == 0)
+                .then(|| DesignAssemblyFrame::rigid(facts.frame_length, facts.tail_length))
+                .flatten()
+                .or_else(|| DesignAssemblyFrame::from_frame_length(facts.frame_length))
+                .map(Self::Assembly),
             Kind::ComponentInsert => fixed(&DesignComponentInsertFrame::FIXED, facts.frame_length)
                 .map(Self::ComponentInsert),
             Kind::CopyPaste => {

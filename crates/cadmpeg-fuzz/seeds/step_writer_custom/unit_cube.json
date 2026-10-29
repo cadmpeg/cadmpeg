@@ -1,9 +1,6 @@
 {
-  "ir_version": "8",
-  "scope": {
-    "model": true,
-    "design": true
-  },
+  "ir_version": "9",
+  "decode_depth": "full",
   "units": {
     "length": "millimeter"
   },

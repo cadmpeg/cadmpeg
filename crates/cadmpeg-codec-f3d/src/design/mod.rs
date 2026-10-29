@@ -113,6 +113,7 @@ pub(crate) fn design_feature_family(
         | Kind::TorusPrimitive
         | Kind::BoxPrimitive
         | Kind::CylinderPrimitive
+        | Kind::Emboss
         | Kind::Native(_)
         | Kind::Canvas
         | Kind::Decal

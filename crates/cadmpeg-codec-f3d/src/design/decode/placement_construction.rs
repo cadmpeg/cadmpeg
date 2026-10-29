@@ -13,6 +13,7 @@ use cadmpeg_core::decode::{u64_from_index, DecodeContext, View};
 use cadmpeg_core::CodecError;
 
 mod fields;
+pub(crate) mod work_planes;
 
 const TYPE_GUID: &str = "7B6C3C2D-4096-4E6D-B225-699E8C2D9355";
 const BASE_GUID: &str = "2CA5A1CD-C99B-4C9B-91AF-57989148E841";

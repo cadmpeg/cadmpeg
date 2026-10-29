@@ -779,6 +779,7 @@ fn complete_authored_golden_inputs_have_typed_geometry_and_active_configuration(
     );
 }
 
+mod archive_parameter_classes;
 mod authored_coverage;
 
 /// Match physical section ordinals only through unique admitted source names.

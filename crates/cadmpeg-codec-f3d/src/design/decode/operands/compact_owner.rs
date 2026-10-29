@@ -141,6 +141,7 @@ mod tests {
                 entity_id: 41,
                 class_tag: "531".to_owned().try_into().unwrap(),
                 start: 33,
+                member_end: 62,
                 end: 62,
                 design_type: kind,
             }
@@ -161,6 +162,7 @@ mod tests {
             entity_id: 40,
             class_tag: "264".to_owned().try_into().unwrap(),
             start: 0,
+            member_end: 33,
             end: 33,
             design_type: &owner_type,
         };

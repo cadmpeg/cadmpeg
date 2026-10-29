@@ -170,6 +170,7 @@ fn exact_ordered_fixed_extrude_lanes(
         side_two_taper_angle,
         profile_offset: None,
         side_one_offset: None,
+        side_two_offset: None,
     })
 }
 
@@ -184,6 +185,9 @@ struct ReferenceAwareLaneOwners {
     /// First reference of a first-side extent `2` target payload: the
     /// termination offset.
     side_one_offset: Option<u32>,
+    side_two_offset: Option<u32>,
+    against_distance: Option<u32>,
+    side_two_taper_angle: Option<u32>,
 }
 
 /// Read the seven nullable reference slots after the profile normal of a
@@ -208,7 +212,10 @@ fn reference_aware_lane_owners(
     };
     if !matches!(
         extent,
-        DesignExtrudeExtent::OneSidedDistance | DesignExtrudeExtent::OneSidedToFace
+        DesignExtrudeExtent::OneSidedDistance
+            | DesignExtrudeExtent::OneSidedToFace
+            | DesignExtrudeExtent::TwoSidedDistance
+            | DesignExtrudeExtent::TwoSidedToFaces
     ) {
         return None;
     }
@@ -233,11 +240,38 @@ fn reference_aware_lane_owners(
         2 => Some(marked_record_reference(bytes, at.checked_add(4)?)?),
         _ => None,
     };
+    let (side_two_offset, side_two_taper_angle) = if extent == DesignExtrudeExtent::TwoSidedToFaces
+    {
+        let second =
+            at.checked_add(crate::layout::current_extrude_face_target_payload::SECOND_SIDE_EXTENT)?;
+        if View::u32_le_at(bytes, second)? != 2 {
+            return None;
+        }
+        (Some(marked_record_reference(bytes, at.checked_add(crate::layout::current_extrude_face_target_payload::SECOND_SIDE_OFFSET_REFERENCE)?)?),
+            Some(marked_record_reference(bytes, at.checked_add(crate::layout::current_extrude_face_target_payload::SECOND_SIDE_TAPER_REFERENCE)?)?))
+    } else if extent == DesignExtrudeExtent::TwoSidedDistance {
+        (
+            None,
+            marked_record_reference(
+                bytes,
+                usize::try_from(side_extent_discriminator_offsets?[1])
+                    .ok()?
+                    .checked_add(4)?,
+            ),
+        )
+    } else {
+        (None, None)
+    };
     Some(ReferenceAwareLaneOwners {
         profile_offset: slots[0],
         along_distance: slots[2],
         taper_angle: slots[5],
         side_one_offset,
+        side_two_offset,
+        against_distance: (extent == DesignExtrudeExtent::TwoSidedDistance)
+            .then_some(slots[1])
+            .flatten(),
+        side_two_taper_angle: side_two_taper_angle.or(slots[4]),
     })
 }
 
@@ -276,6 +310,7 @@ fn exact_named_fixed_extrude_lanes(
         side_two_taper_angle: None,
         profile_offset: None,
         side_one_offset: None,
+        side_two_offset: None,
     };
     let mut lane_count = 0;
     for record_index in scope.reference_members().values() {
@@ -298,11 +333,28 @@ fn exact_named_fixed_extrude_lanes(
             "ProfileOffset"
         } else if owners.side_one_offset == Some(*record_index) {
             "Side1Offset"
+        } else if owners.side_two_offset == Some(*record_index) {
+            "Side2Offset"
+        } else if owners.against_distance == Some(*record_index) {
+            "AgainstDistance"
+        } else if owners.side_two_taper_angle == Some(*record_index) {
+            "Side2TaperAngle"
         } else {
             return None;
         };
         if linked_source_kind(*record_index).is_some_and(|kind| kind.as_str() != expected_kind) {
             return None;
+        }
+        if owners.against_distance == Some(*record_index) {
+            let scalar = DesignFixedExtrudeScalar {
+                value: NonZeroReal::new(scalar.value.get())?,
+                record_index: scalar.record_index,
+                value_offset: scalar.value_offset,
+            };
+            if parameters.against_distance.replace(scalar).is_some() {
+                return None;
+            }
+            continue;
         }
         let slot = if owners.along_distance == Some(*record_index) {
             &mut parameters.along_distance
@@ -313,6 +365,10 @@ fn exact_named_fixed_extrude_lanes(
                 &mut parameters.profile_offset
             } else if owners.side_one_offset == Some(*record_index) {
                 &mut parameters.side_one_offset
+            } else if owners.side_two_offset == Some(*record_index) {
+                &mut parameters.side_two_offset
+            } else if owners.side_two_taper_angle == Some(*record_index) {
+                &mut parameters.side_two_taper_angle
             } else {
                 return None;
             };
@@ -368,6 +424,8 @@ fn exact_embedded_extrude_distance(
         }
         let value = PositiveReal::new(View::f64_le_at(bytes, start + 51)?)?;
         Some(FixedScalarFrame {
+            start: u64::try_from(start).ok()?,
+            end: u64::try_from(end).ok()?,
             owner_record_index: Some(scope_record_index),
             ordinal: 0,
             value,

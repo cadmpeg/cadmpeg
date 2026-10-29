@@ -35,6 +35,9 @@ pub(super) fn source_meta(
     classification: &crate::dialect::DialectClassification,
     losses: &mut Vec<cadmpeg_ir::report::loss::LossNote>,
 ) -> Result<(SourceMeta, cadmpeg_ir::report::decode::Coverage), cadmpeg_core::CodecError> {
+    if let Some(loss) = super::super::feature_history::dimensions::diameter_projection_loss(scan) {
+        losses.push(loss);
+    }
     let mut attributes = BTreeMap::new();
     let mut coverage = cadmpeg_ir::report::decode::Coverage::default();
     insert_source_attribute(&mut attributes, "version_line", &scan.framing.version_line);
@@ -642,6 +645,34 @@ pub(super) fn source_meta(
             })
             .sum::<usize>(),
     );
+    let projected_ids = scan
+        .features
+        .operations
+        .iter()
+        .map(|operation| operation.feature_id)
+        .collect::<std::collections::BTreeSet<_>>();
+    let rejected_states = scan
+        .features
+        .operation_states
+        .iter()
+        .map(|state| state.feature_id)
+        .filter(|id| !projected_ids.contains(id))
+        .collect::<std::collections::BTreeSet<_>>()
+        .len();
+    coverage.record(
+        crate::coverage::UNRESOLVED_FEATURE_STATE_SELECTION_COUNT,
+        rejected_states,
+    );
+    insert_source_attribute(
+        &mut attributes,
+        "unresolved_feature_state_selection_count",
+        rejected_states,
+    );
+    if rejected_states != 0 {
+        losses.push(crate::loss::CreoLossCode::FeatureStateSelectionUnresolved.note(format!(
+            "{rejected_states} operation(s) retain disagreeing state candidates without a current-state selector."
+        )));
+    }
     coverage.record(
         crate::coverage::DECODED_FEATURE_OPERATION_STATE_COUNT,
         scan.features.operation_states.len(),

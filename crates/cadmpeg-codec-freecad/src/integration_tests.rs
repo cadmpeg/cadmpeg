@@ -7,11 +7,14 @@ mod content_scope;
 mod design_ordinals;
 mod mandatory_document_parts;
 mod measured_geometry;
+mod mesh_placement;
 mod metadata_recovery;
 mod object_declaration_parts;
 mod product_native_order;
 mod ring_traversal;
+mod shape_placement;
 mod source_parts;
+mod visibility;
 
 use super::FcstdCodec;
 use crate::test_support::test_archive::{
@@ -775,3 +778,4 @@ mod nullable_attributes;
 mod annotation_carriers;
 
 mod persistent_id_reads;
+mod techdraw;

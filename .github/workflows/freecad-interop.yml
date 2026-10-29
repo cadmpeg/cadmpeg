@@ -1,0 +1,73 @@
+name: FreeCAD native regression
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - '.github/workflows/freecad-interop.yml'
+      - 'crates/cadmpeg-codec-freecad/**'
+      - 'crates/cadmpeg-codec-step/**'
+      - 'corpus/freecad_fcstd/author_interop_cases.py'
+      - 'scripts/run-fcstd-interop.py'
+      - 'tools/validate_fcstd_*.py'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  CARGO_INCREMENTAL: 0
+  CARGO_PROFILE_DEV_DEBUG: 0
+  CARGO_PROFILE_TEST_DEBUG: 0
+
+jobs:
+  native:
+    name: Native FCStd writes and STEP geometry
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v7.0.1
+      - uses: ./.github/actions/pinned-rust
+      - uses: ./.github/actions/cargo-job-count
+      - id: profiles
+        uses: ./.github/actions/cargo-profile-key
+      - uses: Swatinem/rust-cache@v2
+        with:
+          shared-key: freecad-native
+          prefix-key: v0-rust-${{ steps.profiles.outputs.hash }}
+      - name: Install native runtime
+        run: |
+          set -euo pipefail
+          sudo apt-get update -qq
+          sudo apt-get install -y --no-install-recommends libgl1 libegl1 libopengl0 libxkbcommon-x11-0
+          mkdir -p "$RUNNER_TEMP/freecad"
+          cd "$RUNNER_TEMP/freecad"
+          curl -fL --retry 3 \
+            https://github.com/FreeCAD/FreeCAD/releases/download/1.0.0/FreeCAD_1.0.0-conda-Linux-x86_64-py311.AppImage \
+            -o FreeCAD.AppImage
+          echo '4b1c53e7f444a7897875064e059be84c0ebb8848dd58bc034dcdd1ccc407dbc7  FreeCAD.AppImage' | sha256sum --check
+          chmod +x FreeCAD.AppImage
+          ./FreeCAD.AppImage --appimage-extract > /dev/null
+      - name: Build codec and native regression writers
+        run: |
+          cargo build -q -p cadmpeg --no-default-features --features fcstd,step
+          cargo build -q -p cadmpeg-codec-freecad --examples
+      - name: Verify native semantic equivalence and geometry
+        run: |
+          python3 scripts/run-fcstd-interop.py \
+            --cadmpeg target/debug/cadmpeg \
+            --writer-example target/debug/examples/interop_outputs \
+            --source-less-example target/debug/examples/source_less \
+            --freecad-command "$RUNNER_TEMP/freecad/squashfs-root/AppRun freecadcmd" \
+            --work-dir "$RUNNER_TEMP/freecad-results"
+      - name: Upload native reports and regression documents
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: freecad-native-${{ github.run_id }}
+          path: ${{ runner.temp }}/freecad-results
+          if-no-files-found: warn

@@ -11,7 +11,7 @@ use crate::document::CadIr;
 use crate::features::{
     patterns::{PatternKind, PatternSeed, PatternTransform},
     BodySelection, DatumPlaneReference, ExtrudeStart, FaceSelection, Feature, FeatureSourceContent,
-    SplitFaceTool, UnresolvedFamily,
+    SplitBodyTool, SplitFaceTool, UnresolvedFamily,
 };
 use crate::geometry::{
     CurveGeometry, ProceduralCurveDefinition, ProceduralSurfaceDefinition, SolvedCurveGeometry,
@@ -23,6 +23,7 @@ use crate::report::{
 };
 mod composite;
 pub(super) mod graphs;
+mod sheet_metal;
 
 fn collect_pattern_paths<'a>(
     pattern: &'a PatternKind,
@@ -3084,6 +3085,60 @@ fn check_feature_references(
                     );
                 }
             }
+            FeatureOperation::SheetMetalAttachedPlate { attachment, .. }
+            | FeatureOperation::SheetMetalBend { attachment, .. } => {
+                edge_selections.push(attachment);
+                if let FeatureOperation::SheetMetalAttachedPlate { profile, .. } = definition {
+                    sheet_metal::check_profile(&feature.id, profile, ids, findings);
+                    sheet_metal::check_pair(feature, &ir.model.features, findings);
+                }
+                if let FeatureOperation::SheetMetalBend { plate, .. } = definition {
+                    let candidate = feature_records.get(plate.as_str());
+                    let valid_plate = candidate.is_some_and(|candidate| {
+                        matches!(
+                            candidate.evaluation.definition().operation(),
+                            FeatureOperation::SheetMetalAttachedPlate { .. }
+                        )
+                    });
+                    if !valid_plate {
+                        ref_error(
+                            findings,
+                            feature.id.as_str(),
+                            "attached plate",
+                            plate.as_str(),
+                        );
+                    }
+                    if candidate.is_some_and(|candidate| candidate.ordinal >= feature.ordinal)
+                        || !feature
+                            .dependencies
+                            .iter()
+                            .any(|dependency| dependency == plate)
+                    {
+                        geometry_error(findings, feature.id.as_str(),
+                            "bend attached plate must precede the bend and occur in its dependencies");
+                    }
+                }
+            }
+            FeatureOperation::SheetMetalCorner { bend, .. } => {
+                let candidate = feature_records.get(bend.as_str());
+                if !candidate.is_some_and(|candidate| {
+                    matches!(
+                        candidate.evaluation.definition().operation(),
+                        FeatureOperation::SheetMetalBend { .. }
+                    )
+                }) {
+                    ref_error(findings, feature.id.as_str(), "corner bend", bend.as_str());
+                }
+                if candidate.is_some_and(|candidate| candidate.ordinal >= feature.ordinal)
+                    || !feature.dependencies.contains(bend)
+                {
+                    geometry_error(
+                        findings,
+                        feature.id.as_str(),
+                        "corner bend must precede the corner and occur in its dependencies",
+                    );
+                }
+            }
             FeatureOperation::SheetMetalHem { edges, .. } => edge_selections.push(edges),
             FeatureOperation::Revolve { construction, .. } => {
                 paths.extend(construction.axis().and_then(|axis| axis.reference.as_ref()));
@@ -3238,9 +3293,18 @@ fn check_feature_references(
                 body_selections.push(tools);
                 body_selections.extend(cells);
             }
-            FeatureOperation::SplitBody { targets, tools } => {
+            FeatureOperation::SplitBody { targets, tool } => {
                 body_selections.push(targets);
-                face_selections.push(tools);
+                match tool {
+                    SplitBodyTool::Faces(faces) => face_selections.push(faces),
+                    SplitBodyTool::Plane { plane } => check_plane_feature_reference(
+                        findings,
+                        feature,
+                        plane,
+                        &feature_records,
+                        "split-body tool plane",
+                    ),
+                }
             }
             FeatureOperation::SplitFace { targets, tool } => {
                 face_selections.push(targets);
@@ -4184,7 +4248,13 @@ pub(super) fn regeneration_references(
                 references.insert_unique(reference.as_str(), reference);
             }
         }
-        crate::features::FeatureOperation::DerivedGeometry { source: reference }
+        crate::features::FeatureOperation::SheetMetalBend {
+            plate: reference, ..
+        }
+        | crate::features::FeatureOperation::SheetMetalCorner {
+            bend: reference, ..
+        }
+        | crate::features::FeatureOperation::DerivedGeometry { source: reference }
         | crate::features::FeatureOperation::SketchBlockInstance {
             block: Some(reference),
             ..
@@ -4236,7 +4306,8 @@ fn definition_profiles(
         crate::features::FeatureOperation::Extrude { profile, .. } => {
             profiles.extend(profile.planar());
         }
-        crate::features::FeatureOperation::SheetMetalBaseFlange { profile, .. }
+        crate::features::FeatureOperation::SheetMetalAttachedPlate { profile, .. }
+        | crate::features::FeatureOperation::SheetMetalBaseFlange { profile, .. }
         | crate::features::FeatureOperation::Wrap { profile, .. } => profiles.push(profile),
         crate::features::FeatureOperation::Revolve { construction, .. } => {
             profiles.extend(construction.profile());
@@ -4642,7 +4713,8 @@ fn check_feature_sketch_references(
             FeatureOperation::Extrude { profile, .. } => {
                 profiles.push(ProfileReference::from(profile));
             }
-            FeatureOperation::SheetMetalBaseFlange { profile, .. } => {
+            FeatureOperation::SheetMetalAttachedPlate { profile, .. }
+            | FeatureOperation::SheetMetalBaseFlange { profile, .. } => {
                 profiles.push(ProfileReference::Planar(profile));
             }
             FeatureOperation::Rib { construction, .. } => {

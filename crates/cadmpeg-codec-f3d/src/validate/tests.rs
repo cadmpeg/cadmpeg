@@ -25,6 +25,8 @@ use crate::test_support::zip_test::f3d_with_smbh_and_protein;
 use crate::F3dCodec;
 
 mod arithmetic;
+mod body_ownership;
+mod component_insert;
 mod component_occurrences;
 mod construction_group;
 mod construction_identity;
@@ -36,13 +38,17 @@ mod extrude_group;
 mod extrude_member;
 mod face_boundary;
 mod face_group;
+mod face_group_members;
 mod face_operand;
 mod fillet_group;
 mod history_transitions;
 mod operand_group_carrier;
+mod parameter_owner;
 mod parameter_scope;
 mod parameter_state;
+mod sweep_body_roles;
 mod timeline;
+mod xref;
 
 fn recipe_reference() -> crate::records::dimensions::DesignRecipeReference {
     crate::records::dimensions::DesignRecipeReference {
@@ -762,54 +768,7 @@ fn validation_accepts_hole_and_surface_trim_construction_group_roles() {
 }
 
 #[test]
-fn pipe_result_operations_keep_path_and_body_groups_separate() {
-    use crate::records::feature::extrude::DesignExtrudeOperation as Operation;
-    use crate::records::topology::extrude_selection::DesignOperandRole as Role;
-    let path = (Role::ROLE_0X5, 1);
-    let body = (Role::BODIES_A, 1);
-    let alternate_body = (Role::BODIES_B, 1);
-    assert!(super::pipe_operand_roles_are_valid(
-        Operation::Join,
-        &[alternate_body, path]
-    ));
-    assert!(super::pipe_operand_roles_are_valid(
-        Operation::Cut,
-        &[alternate_body, path]
-    ));
-    assert!(!super::pipe_operand_roles_are_valid(
-        Operation::Join,
-        &[body, alternate_body, path]
-    ));
-    assert!(super::pipe_operand_roles_are_valid(
-        Operation::NewBody,
-        &[path]
-    ));
-    assert!(super::pipe_operand_roles_are_valid(
-        Operation::Join,
-        &[body, path]
-    ));
-    for operation in [Operation::Join, Operation::Cut, Operation::Intersect] {
-        assert!(super::pipe_operand_roles_are_valid(
-            operation,
-            &[body, path]
-        ));
-        for groups in [
-            &[path][..],
-            &[body][..],
-            &[body, path, path][..],
-            &[body, (Role::ROLE_0X5, 0)][..],
-        ] {
-            assert!(!super::pipe_operand_roles_are_valid(operation, groups));
-        }
-    }
-    assert!(!super::pipe_operand_roles_are_valid(
-        Operation::NewBody,
-        &[body, path]
-    ));
-}
-
-#[test]
-fn validation_checks_pipe_path_group_roles() {
+fn validation_checks_generic_sweep_group_carriers() {
     use crate::records::{
         decal::DesignRecordHeader,
         feature::{
@@ -827,21 +786,17 @@ fn validation_checks_pipe_path_group_roles() {
     let mut ir = cadmpeg_ir::examples::unit_cube().expect("unit cube fixture is admitted");
     let mut scope = DesignParameterScope::empty(
         &scope_id,
-        crate::records::feature::scope::DesignFeatureKind::Pipe,
+        crate::records::feature::scope::DesignFeatureKind::Sweep,
         10,
     );
     {
-        let value = Some(DesignPathFeatureConstruction::Pipe(
-            crate::records::feature::path_features::DesignPipeConstruction {
+        let value = Some(DesignPathFeatureConstruction::Sweep(
+            crate::records::feature::path_features::DesignSweepConstruction {
                 operation: DesignExtrudeOperation::NewBody,
                 operation_offset: Some(0),
-                is_hollow: false,
-                is_hollow_offset: Some(0),
-                opaque_post_operation: [1, 1].into(),
-                opaque_post_operation_offset: Some(0),
-                values: crate::test_support::reals([1.0, 1.0, 0.6, 0.15]),
-                record_indexes: [11, 12, 13, 14],
-                value_offsets: Some([0; 4]),
+                values: crate::test_support::reals([0.0; 6]),
+                record_indexes: [11, 12, 13, 14, 15, 16],
+                value_offsets: Some([0; 6]),
             },
         ));
         scope
@@ -924,19 +879,6 @@ fn validation_checks_pipe_path_group_roles() {
         ]);
     }
 
-    let has_role_finding = |ir: &cadmpeg_ir::CadIr| {
-        crate::test_support::with_decode_context(|ctx| {
-            crate::validate::validate_native(ctx, ir).expect("validate the native namespace")
-        })
-        .iter()
-        .any(|finding| {
-            finding.entity.as_deref() == Some(scope_id.as_str())
-                && finding.message
-                    == "Fusion Design path-feature operand roles conflict with its construction"
-        })
-    };
-    assert!(has_role_finding(&ir));
-
     let group_native_finding_count = |ir: &cadmpeg_ir::CadIr| {
         crate::test_support::with_decode_context(|ctx| {
             crate::validate::validate_native(ctx, ir).expect("validate the native namespace")
@@ -974,14 +916,21 @@ fn validation_checks_pipe_path_group_roles() {
             )
             .unwrap();
     }
-    assert!(!has_role_finding(&ir));
     // The synthetic carrier is only a record header. No typed edge operand
     // exists yet, so the independent carrier finding remains.
     assert_eq!(group_native_finding_count(&ir), 1);
 
+    // Both body roles are admitted Sweep roles; a role outside the Sweep set
+    // adds the frame finding.
     f3d_native_mut(&mut ir).design_construction_operand_groups[0].operand_role =
         crate::records::topology::construction::DesignConstructionOperandRole::Other(
             DesignOperandRole::BODIES_B,
+        );
+    assert_eq!(group_native_finding_count(&ir), 1);
+
+    f3d_native_mut(&mut ir).design_construction_operand_groups[0].operand_role =
+        crate::records::topology::construction::DesignConstructionOperandRole::Other(
+            DesignOperandRole::ROLE_0X10,
         );
     assert_eq!(group_native_finding_count(&ir), 2);
 }
@@ -1868,3 +1817,25 @@ mod face_recipe_lengths;
 mod rigid_alignment;
 
 mod symmetric_extent_frame;
+mod work_plane;
+
+#[test]
+fn loft_accepts_either_body_group_role() {
+    use crate::records::feature::extrude::DesignExtrudeOperation;
+    use crate::records::topology::extrude_selection::DesignOperandRole;
+    for body in [DesignOperandRole::BODIES_A, DesignOperandRole::BODIES_B] {
+        let groups = [
+            (body, 1),
+            (DesignOperandRole::PROFILE, 1),
+            (DesignOperandRole::PROFILE, 1),
+        ];
+        assert!(super::loft_operand_roles_are_valid(
+            DesignExtrudeOperation::Join,
+            &groups
+        ));
+        assert!(!super::loft_operand_roles_are_valid(
+            DesignExtrudeOperation::NewBody,
+            &groups
+        ));
+    }
+}

@@ -187,6 +187,39 @@ fn a8_surface_parser_accepts_a_valid_tail_after_inline_poles() {
 }
 
 #[test]
+fn a8_logical_source_reconstruction_retains_physical_offsets() {
+    use crate::wire::records::SourceExtent;
+
+    let logical = a8_inline_tail_surface_stream();
+    let split = 100;
+    let mut bytes = logical[split..].to_vec();
+    bytes.extend_from_slice(&logical[..split]);
+    let header_start = logical.len() - split;
+    let sources = [vec![
+        SourceExtent::within(&bytes, header_start, bytes.len()).unwrap(),
+        SourceExtent::within(&bytes, 0, header_start).unwrap(),
+    ]];
+    let decoded =
+        super::a8_surfaces_in_sources(&bytes, &sources, &mut crate::nurbs::LaneRefusals::new())
+            .expect("decode the reordered logical source");
+    let [surface] = decoded.as_slice() else {
+        panic!("one reconstructed surface")
+    };
+    assert_eq!(surface.pos, header_start);
+    let expected = super::a8_surfaces(&logical, &mut crate::nurbs::LaneRefusals::new())
+        .expect("decode the contiguous surface");
+    assert_eq!(surface.geometry, expected[0].geometry);
+    let independent_sources = [vec![sources[0][0].clone()], vec![sources[0][1].clone()]];
+    assert!(super::a8_surfaces_in_sources(
+        &bytes,
+        &independent_sources,
+        &mut crate::nurbs::LaneRefusals::new(),
+    )
+    .expect("decode the split sources independently")
+    .is_empty());
+}
+
+#[test]
 fn a8_surface_parser_accepts_a_valid_tail_after_inline_weights() {
     let mut bytes = a8_rational_surface_stream();
     bytes.extend_from_slice(&a8_surface_tail());

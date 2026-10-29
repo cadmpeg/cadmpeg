@@ -50,3 +50,14 @@ pub(crate) fn packet() -> Vec<u8> {
     bytes.extend(node(40_000, 1, 49_948, 0x1234_5677));
     bytes
 }
+
+pub(crate) const TERMINATOR: [u8; 4] = [0, 1, 0, 1];
+pub(crate) const EMPTY_MAP: [u8; 6] = [0, 1, 0, 0, 0, 0];
+
+pub(crate) fn complete(mut bytes: Vec<u8>) -> Vec<u8> {
+    bytes.extend(TERMINATOR);
+    bytes.extend(EMPTY_MAP);
+    bytes.extend(TERMINATOR);
+    bytes.extend(TERMINATOR);
+    bytes
+}

@@ -2521,8 +2521,7 @@ pub(crate) fn b2_revolutions_from_records<'a>(
     })
 }
 
-/// Bind revolution profiles by direct allocation identity, then by an exact,
-/// unique stored parameter interval when no identity target is present.
+/// Bind revolution profiles only by an exact, unique stored parameter interval.
 #[must_use]
 #[cfg(test)]
 fn b2_resolved_revolutions(data: &[u8]) -> Vec<B2ResolvedRevolution> {

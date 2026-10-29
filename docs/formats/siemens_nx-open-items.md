@@ -44,7 +44,7 @@ and pmark scope before applying any unmatched key.
 
 **Need.** We must know the branch to preserve both endpoints and the curve orientation. The count-1 `H?` and `T?` forms and the count-2 `T?` form also need ownership and branch-admission rules; a complete finite Hvec lane alone does not establish either relation.
 
-**Note.** A terminal singularity and its nearby branch selector have distinct serialized native parameters. Accumulated chart chords can fall on either side of the selector parameter and do not establish the singularity parameter. Complete physical LIMIT field roles are defined in `siemens_nx.md` §6.3 "**LIMIT (`0x29`, inserted field `term_use`)** records contain a leading count,".
+**Conflict.** A terminal singularity and its nearby branch selector have distinct serialized native parameters. Accumulated chart chords can fall on either side of the selector parameter and do not establish the singularity parameter. Complete physical LIMIT field roles are defined in `siemens_nx.md` §6.3 "**LIMIT (`0x29`, inserted field `term_use`)** records contain a leading count,".
 
 ### PS-04. Degenerate procedural-support correction
 
@@ -66,35 +66,25 @@ and pmark scope before applying any unmatched key.
 
 **Question.** What complete record grammar and semantics does each deltas node family that the specification does not define use?
 
-**Known.** `siemens_nx.md` §4.2 "A deltas stream is a schema-framed incremental edit log paired with a partition." and `siemens_nx.md` §4.2 "After complete typed node frames, complete enclosing packets, and complete" define the admitted deltas record families and their byte boundaries. A remaining byte region has no typed node grammar.
+**Known.** `siemens_nx.md` §4.2 defines sequential schema ownership and exact retained suffixes. The section grammar encloses ordinary nodes, map prefixes, and primary PMARKs. Unsupported productions retain the suffix from their enclosing section's start.
 
 **Need.** We must know each grammar to delimit and transfer the remaining deltas records as typed data.
 
-### PS-08. BODY-associated change-state packets
-
-**Question.** Which complete enclosing grammar separates a deltas BODY
-instance from adjacent rollback or change-state packets?
-
-**Known.** `siemens_nx.md` §4.2 "A BODY instance follows its effective field list." bounds the node through its declared fields. `siemens_nx.md` §7.2 "The WORLD `body` pointer identifies the head of the current BODY chain." defines the BODY chain head and current pmark identity. A recognized successor does not bound an otherwise unestablished state tail.
-
-**Need.** Identify each packet's start, complete field cardinalities, and
-relation to the owning pmark edge before assigning body change-state roles.
-
 ### PS-13. Deltas type 90 `GROUP`
 
-**Question.** Which Deltas sequence establishes ownership of a status-framed type-90 GROUP, and what change-state role does its final reference status carry?
+**Question.** What change-state role does the final reference status of a status-framed type-90 GROUP carry?
 
 **Known.** `siemens_nx.md` §4.2 defines the GROUP's five pointer roles, member-family enum 1 through 10, and separate primary and supported Deltas field framing. A primary GROUP ends after `first_member` without a status byte. Its source boundary follows the effective schema cursor.
 
-**Need.** Establish each Deltas instance's enclosing sequence and reference-status semantics before treating every field-shaped candidate as a group event. Determine whether a GROUP membership update addresses an XMT alone or a typed identity, and whether BODY revision boundaries limit its lifetime. Establish the Deltas MEMBER_OF_GROUP label and status roles independently of the primary grammar.
+**Need.** Establish the reference-status semantics for section-owned GROUP instances. Determine whether a GROUP membership update addresses an XMT alone or a typed identity, and whether BODY revision boundaries limit its lifetime. Establish the Deltas MEMBER_OF_GROUP label and status roles independently of the primary grammar.
 
-**Conflict.** Primary GROUP and MEMBER_OF_GROUP records have schema-owned boundaries and distinct member and entity chains. Those primary relations do not establish a Deltas update's identity key or revision lifetime. Topology snapshot replay uses typed keys and BODY revision scopes; that rule does not by itself assign the same semantics to GROUP updates.
+**Conflict.** Primary GROUP and MEMBER_OF_GROUP records have schema-owned boundaries and distinct member and entity chains. Those primary relations do not establish a Deltas update's identity key or revision lifetime. All Deltas selection is unresolved. GROUP membership remains the primary relation; no numerical BODY scope or typed-key replay applies Deltas updates.
 
 ### PS-18. Deltas tagged-reference lanes
 
 **Question.** Which record owns each deltas tagged-reference lane, and what does each field mean?
 
-**Known.** `siemens_nx.md` §4.2 "After complete typed node frames, complete enclosing packets, and complete" defines the tagged-reference lane grammar, record-kind values, and exact byte identity.
+**Known.** Local tagged-pair shapes have been observed, but §4.2 admits no complement-based lane ownership. These bytes remain in the exact suffix until their enclosing transition is established.
 
 **Need.** We must know ownership and field roles to attach each lane to the correct typed record.
 
@@ -102,17 +92,9 @@ relation to the owning pmark edge before assigning body change-state roles.
 
 **Question.** Which transmit context or history edge owns each deltas reference/type map, what action does each entry encode, and what does its terminal word mean?
 
-**Known.** `siemens_nx.md` §4.2 "A reference/type map begins with either" defines the non-null XMT and type-code entry lanes, their byte boundary, and the separate optional raw terminal word. The terminal word is not constrained to the schema type-code table.
+**Known.** `siemens_nx.md` §4.2 defines map-section ownership, canonical nonnull XMT/kind pairs, the null XMT and zero slot, the terminal word, and transactional section closure. The terminal word is below `0x8000`. Its value is not a section-node count. Section order does not assign a map's history edge or action.
 
-**Need.** Establish complete enclosing Deltas sequence ownership, the preceding and succeeding state relation, the exact typed create/modify/delete key sets, and the terminal word's namespace before applying a map to entities.
-
-### PS-22. Deltas reference-marker packets
-
-**Question.** Which record owns each deltas reference-marker packet, and what do its references and marker mean?
-
-**Known.** `siemens_nx.md` §4.2 "One reference-marker packet is" defines the packet grammar, marker values, and boundary.
-
-**Need.** We must know ownership and marker semantics to attach the packet to typed state.
+**Need.** Establish the preceding and succeeding state relation, the exact typed create/modify/delete key sets, the terminal word's namespace, and the encoding width for terminal words with the high bit set before applying a map to entities.
 
 ### PS-25. Inline type-12 `BODY` instance state
 
@@ -127,7 +109,7 @@ relation to the owning pmark edge before assigning body change-state roles.
 **Question.** Which enclosing grammar establishes a deletion event, its exact
 byte extent, and its target identity?
 
-**Known.** `siemens_nx.md` §4.2 "**Deletion framing:** complete enclosing fields own their bytes." excludes deletion admission from a six-byte shape alone. `siemens_nx.md` §4.2 "A reference/type map begins with either" defines the complete map envelope. Opposite-aligned extended reference/type entries can form a descending apparent deletion run. A type-91 six-reference shape with a four-byte control of 2 also spans an apparent six-byte candidate; the role and admission of that control remain unestablished.
+**Known.** `siemens_nx.md` §4.2 "**Deletion framing:** complete enclosing fields own their bytes." excludes deletion admission from a six-byte shape alone. The map-section grammar establishes a map's physical extent but does not assign deletion actions to its entries. Opposite-aligned extended reference/type entries can form a descending apparent deletion run. A type-91 six-reference shape with a four-byte control of 2 also spans an apparent six-byte candidate; the role and admission of that control remain unestablished.
 
 **Need.** Establish complete enclosing state and a discriminator for short and
 extended deletion forms. Keep bounded rival interpretations separate from a
@@ -139,10 +121,10 @@ from the apparent tag and XMT alone.
 **Question.** How does an aggregate deltas transmit bind each change's source
 and target pmarks to the owning partition's current state?
 
-**Known.** `siemens_nx.md` §7.2 "A delta contains a unidirectional change between two adjacent pmarks." defines a delta edge separately from the aggregate. `siemens_nx.md` §7.2 "The WORLD `body` pointer identifies the head of the current BODY chain." defines the current BODY and pmark roots. `highest_node_id` bounds kernel node identifiers; physical BODY order, XMT 3, and numerical resets do not identify a revision interval.
+**Known.** `siemens_nx.md` §7.2 "A delta contains a unidirectional change between two adjacent pmarks." defines a delta edge separately from the aggregate. `siemens_nx.md` §7.2 "The WORLD `body` pointer identifies the head of the current BODY chain." defines the current BODY and pmark roots. `highest_node_id` bounds kernel node identifiers; physical BODY order, XMT 3, and numerical resets do not identify a revision interval. The general PMARK predecessor, following, sibling, initial, and current relations are defined in §4.2. They do not bind aggregate node sections to constituent deltas.
 
-**Need.** Identify each constituent delta's complete enclosing frame, source
-pmark, target pmark, and partition ownership. Apply only edges that lead to
+**Need.** Identify each constituent delta's complete enclosing frame, delta-key
+association, direction, source pmark, target pmark, and partition ownership. Apply only edges that lead to
 the selected current state, including branches, undone changes, and multiple
 bodies. Keep an unestablished edge selection unresolved. This includes repeated type-38 intersection states: first-use and subsequent record spelling must not select their chart or carrier relations.
 
@@ -155,16 +137,6 @@ bodies. Keep an unestablished edge selection unresolved. This includes repeated 
 **Need.** Serialized MESH FILE chart or terminal nodes with independently established physical boundaries and field declarations are required to determine their Hvec representation.
 
 **Conflict.** None.
-
-**Note.** Preserve the payload without assigning a Hvec layout from a broad plain-stream classification.
-
-### PS-35. Sequential Deltas record ownership
-
-**Question.** Which complete Deltas grammar advances the node cursor through revision controls, changed fields, and shared status bytes while preserving first-use schema state?
-
-**Known.** Section 3.2 defines the stream-local embedded-schema ledger and the node-sequence owner. An unchanged type consumes its schema-match byte only at first use. A later `ff` can begin a direct extended index. Partition and plain streams use the complete declared field sequence; nested type-shaped bytes have no independent ownership. Local field completeness, graph completion, reference joins, and a following boundary do not select either reading of `ff`.
-
-**Need.** Define the complete enclosing Deltas sequence, including transitions between control records and status-framed instance fields. The sequence must establish first-use state before admitting either local interpretation and must retain independent state for each transmit stream.
 
 ### PS-37. Basis ranges within counted NURBS storage
 
@@ -475,10 +447,6 @@ Scalar pairs and strings are payload-owned and do not add those roles. The
 operation-owned data blocks may still contain selections of existing curve
 objects, so allocation ownership does not establish neutral curve identity.
 
-**Note.** Change one authored section or setting at a time and query the NX
-builder before save. Compare complete allocations and all controls. An output
-body relation or an empty interchange sibling does not identify input curves.
-
 ### OM-27. `Studio Surface` construction roles
 
 **Question.** Which ordered `Studio Surface` references and branch groups select control geometry, continuity, and terminal controls?
@@ -491,8 +459,6 @@ body relation or an empty interchange sibling does not identify input curves.
 counted branch grammar with `SKIN`; the operation label selects the family but
 does not label individual references or branch members. No serialized field
 assigns control geometry, continuity, or terminal semantics.
-
-**Note.** Create controlled native variants that change one continuity setting, add one section, add one guide, or reverse one string independently. Query the authored section and guide collectors before save. Compare the complete operation and allocation. Body-write relations select outputs; incomplete output topology and an empty interchange sibling supply no input-ownership witness.
 
 ### OM-38. `SWP104` logical construction roles
 
@@ -741,7 +707,7 @@ assigns control geometry, continuity, or terminal semantics.
 **Known.** `siemens_nx.md` §2.3 "`/Root/FastLoad/Structure` begins with the twelve-byte envelope" and `siemens_nx.md` §7.1 "UG_PART begins with a 12-byte row table" define the big-endian bounded OM envelope and typed class and member declarations. The typed component roster defines two exact candidate anchors, ordered named prototypes and a one-based prototype index for each distinct occurrence. A second counted table stores UUID identities, and a parallel one-based index associates every occurrence with one UUID. Other payload fields remain uninterpreted.
 
 **Need.** We must know the remaining payload grammar, including hierarchy,
-placement, UUID, and state fields.
+placement, and state fields.
 
 ### AM-02. Fast-load JT stream
 
@@ -825,17 +791,13 @@ The closure test only exercises already-populated `ParasolidAttributeFieldUse` v
 
 **Question.** Which serialized relation binds a physical material to a Parasolid face identity?
 
-**Known.** `siemens_nx.md` §2.3 "Each `/Root/materialsTif/<name>` file entry contains one TIFF stream." and `siemens_nx.md` §9.4 "The type-81 definition reference selects an attribute class when it equals" define preview and texture assets, the material-texture catalog, and topology-owned Parasolid attributes. `siemens_nx.md` §7.1 "An explicit display-color assignment addresses a face when" defines the complete face appearance relation; a palette color is not a physical-material assignment.
+**Known.** `siemens_nx.md` §2.3 "Each `/Root/materialsTif/<name>` file entry contains one TIFF stream." and `siemens_nx.md` §9.4 "The type-81 definition reference selects an attribute class when it equals" define preview and texture assets, the material-texture catalog, and topology-owned Parasolid attributes. `siemens_nx.md` §7.1 "An explicit display-color assignment remains native source metadata." defines the display-color relation; a palette color is not a physical-material assignment.
 
 **Need.** We must know the relation to assign physical-material state to neutral faces without treating a display color, texture asset, or topology attribute as a material identity.
 ### AM-11. JT 9 high-degree lane count
 
-**Question.** What field gives the number of high-degree face-attribute-mask lanes in a JT 9 topologically compressed representation?
+**Question.** Does a JT 9 topologically compressed representation declare a count or maximum for its high-degree face-attribute-mask lanes, and which field defines it if present?
 
 **Known.** `siemens_nx.md` §2.3 "The JT 9 topologically compressed representation begins with Int32 Compressed Data Packet Mk. 2" defines the fixed prefix packets, the split packets, the vertex-record header agreement test, and the rule that exactly one lane count must satisfy it. It states that one or more high-degree lanes occur. It gives no count field and no maximum.
 
-**Need.** We must know the field to frame the packet sequence directly. The decoder tries lane counts from one to sixty-four and keeps the unique count that satisfies the agreement test. Sixty-four is not a format bound. A representation that carries more lanes matches no count, and the decoder then drops the topology, vertex-record, and coordinate-array data and every mesh derived from them.
-
-**Note.** The closure removed the `1..=64` ceiling and scans until a unique vertex-header agreement in `crates/cadmpeg-codec-nx/src/native/display_jt.rs:817-911`, but a corpus JT representation has not yet verified that the packet stream has no count field or maximum. The regression fixture was constructed with sixty-five lanes to exercise the new scan. The lane-count rule remains unsupported, so this item is reopened.
-
-## 4. Test evidence
+**Need.** We must know the serialized count rule to frame the packet sequence directly. A unique vertex-header agreement does not establish whether the format has a count field or maximum.

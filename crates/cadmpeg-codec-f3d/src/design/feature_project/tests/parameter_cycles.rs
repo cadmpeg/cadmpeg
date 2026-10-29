@@ -227,6 +227,6 @@ fn parameter_ordering_past_its_cap_keeps_source_ordinals_and_all_references() {
         .unwrap();
     assert_eq!(
         skip.message,
-        "1 Design parameter owner scope(s) keep their source ordinals and all expression references because ordering exceeded the local work cap PARAMETER_ORDER_WORK (4194304)."
+        "1 Design parameter owner scope(s) keep their unique ordinal slots and all expression references because ordering exceeded the local work cap PARAMETER_ORDER_WORK (4194304)."
     );
 }

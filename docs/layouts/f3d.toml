@@ -2101,6 +2101,36 @@ size = 42
 note = "The fixed frame tail before the paired indexed header is not assigned."
 
 [[record]]
+name = "design_hole_extent_controls"
+parsed_by = "crates/cadmpeg-codec-f3d/src/design/decode/scopes/hole.rs"
+kind = "byte"
+section = "3.1"
+anchor = "Type version `4` stores the extent controls `01 01 X 00` directly"
+size = 4
+note = "Offsets are relative to the end of the Hole property block, or to the end of the u32 word that type versions 5 and 7 store after it. Type version 3 stores only the two-byte prefix."
+
+[[record.field]]
+name = "prefix"
+offset = 0
+type = "bytes[2]"
+source = "spec"
+anchor = "Type version `4` stores the extent controls `01 01 X 00` directly"
+
+[[record.field]]
+name = "extent_control"
+offset = 2
+type = "u8"
+source = "spec"
+anchor = "The extent control `X` is `0` for Distance and `1` for a non-distance extent"
+
+[[record.field]]
+name = "suffix"
+offset = 3
+type = "u8"
+source = "spec"
+anchor = "Type version `4` stores the extent controls `01 01 X 00` directly"
+
+[[record]]
 name = "design_hole_point_data_v1_prefix"
 parsed_by = "crates/cadmpeg-codec-f3d/src/design/decode/scopes.rs"
 kind = "byte"
@@ -4515,10 +4545,12 @@ type = "bytes[76]"
 source = "spec"
 anchor = "One 36-code-unit identity GUID starts at +44"
 
-[[record.gap]]
+[[record.field]]
+name = "identity_separator"
 offset = 120
-size = 3
-note = "Fixed separator before the reference table."
+type = "bytes[3]"
+source = "spec"
+anchor = "A three-byte separator starts at +120"
 
 [[record.field]]
 name = "reference_count"
@@ -4686,10 +4718,12 @@ type = "f64[16]"
 source = "spec"
 anchor = "Its rigid transform starts at offset 23"
 
-[[record.gap]]
+[[record.field]]
+name = "zero_separator"
 offset = 151
-size = 1
-note = "Fixed zero separator."
+type = "u8"
+source = "spec"
+anchor = "one zero separator is at offset 151"
 
 [[record.field]]
 name = "scope_backlink"
@@ -4743,9 +4777,9 @@ parsed_by = [
 ]
 kind = "byte"
 section = "Assembly operands"
-anchor = "Every other form stores a u32 count of two followed by two marked same-segment operand-path-locator references."
+anchor = "Each other two-operand form stores a u32 count of two followed by two marked same-segment operand-path-locator references."
 size = 26
-note = "Offsets are relative to the count. The run starts at scope offset 47 in the 399-byte As-built form, offset 362 in the 627-, 637-, 692-, and 748-byte forms and the variable-span class-283/264 and class-347/260 forms, offset 358 in the 633-, 732-, and 744-byte forms, offset 537 in the 945-byte form, offset 530 in the 806- and 861-byte forms, and offset 552 in the 850-byte form."
+note = "Offsets are relative to the count. The run starts at scope offset 47 in the 378- and 399-byte As-built forms, offset 69 in the 422-byte As-built form, offset 80 in the 444-byte As-built form, offset 362 in the 627-, 637-, 692-, and 748-byte forms and the variable-span class-283/264 and class-347/260 forms, offset 358 in the 633-, 732-, and 744-byte forms, offset 537 in the 945-byte form, offset 530 in the 806- and 861-byte forms, and offset 552 in the 850-byte form."
 
 [[record.field]]
 name = "locator_count"
@@ -5064,7 +5098,7 @@ name = "assembly_operand_path_locator"
 parsed_by = "crates/cadmpeg-codec-f3d/src/design/decode/scopes.rs"
 kind = "byte"
 section = "Assembly operands"
-anchor = "An operand-path locator is a fixed 190-byte indexed record with record index `N`."
+anchor = "In the standard two-operand form, an operand-path locator is a fixed 190-byte indexed record with record index `N`."
 size = 190
 note = "Offsets are relative to the locator's indexed header. The variable-length occurrence-path record starts immediately after this record."
 
@@ -9187,12 +9221,15 @@ name = "clockwise"
 offset = 24
 type = "u8"
 source = "spec"
-anchor = "offset 24 is the clockwise Boolean"
+anchor = "Offset 24 is the clockwise Boolean"
+note = "`SpirePrimitive` stores the clockwise Boolean at offset 24."
 
-[[record.gap]]
+[[record.field]]
+name = "left_hand"
 offset = 25
-size = 1
-note = "The structural constant starts at offset 26."
+type = "u8"
+source = "spec"
+anchor = "offset 25 is the left-hand Boolean"
 
 [[record.field]]
 name = "structural_constant"
@@ -16869,7 +16906,7 @@ name = "local_component_occurrence_prefix"
 parsed_by = "crates/cadmpeg-codec-f3d/src/design/decode/components.rs"
 kind = "byte"
 section = "3.1"
-anchor = "A local component occurrence is an occurrence-placement record"
+anchor = "A local component occurrence uses the one-element path grammar"
 size = 209
 note = "Offsets are relative to the carrier's indexed header. The identity tail or the matrix tail follows at offset 209."
 
@@ -16910,8 +16947,23 @@ anchor = "Marked component-record references at offsets 24 and 197"
 
 [[record.gap]]
 offset = 33
-size = 7
-note = "Zero trailing field of the component-record reference."
+size = 2
+note = "Two zero trailing bytes of the local component reference."
+
+[[record.field]]
+name = "path_discriminator"
+offset = 35
+type = "u32"
+source = "spec"
+anchor = "The u32 instance discriminator is at offset 35"
+
+[[record.field]]
+name = "path_terminator"
+offset = 39
+type = "u8"
+source = "spec"
+anchor = "the path terminator is at offset 39"
+value = 0
 
 [[record.field]]
 name = "occurrence_ordinal"
@@ -19517,85 +19569,456 @@ name = "assembly_rigid_as_built_scope"
 parsed_by = "crates/cadmpeg-codec-f3d/src/design/assembly.rs"
 kind = "byte"
 section = "Assembly operands"
-anchor = "The 269-byte `As-built` form is a"
-note = "This size-less byte record describes the fixed prefix of the 269-byte rigid As-built scope through its empty reference table. Offsets are relative to the scope's primary indexed header."
+anchor = "The ordinary two-member rigid-group"
+size = 257
+note = "Offsets are relative to the primary indexed header."
 
 [[record.field]]
 name = "indexed_header"
 offset = 0
 type = "bytes[11]"
 source = "spec"
-anchor = "After its indexed header it"
+anchor = "The ordinary two-member rigid-group"
 
 [[record.field]]
-name = "zero_run_11"
+name = "zero_run_8"
 offset = 11
-type = "bytes[11]"
+type = "bytes[8]"
 source = "spec"
-anchor = "stores eleven zero bytes"
+anchor = "The ordinary two-member rigid-group"
+
+[[record.field]]
+name = "leading_block_presence"
+offset = 19
+type = "u8"
+source = "spec"
+anchor = "The ordinary two-member rigid-group"
+value = 0
+
+[[record.field]]
+name = "property_block_presence"
+offset = 20
+type = "u8"
+source = "spec"
+anchor = "The ordinary two-member rigid-group"
+value = 0
+
+[[record.field]]
+name = "zero_separator"
+offset = 21
+type = "u8"
+source = "spec"
+anchor = "The ordinary two-member rigid-group"
+value = 0
 
 [[record.field]]
 name = "pathless_locator_reference"
 offset = 22
 type = "bytes[11]"
 source = "spec"
-anchor = "a marked reference at offset 22 to a wide"
+anchor = "The ordinary two-member rigid-group"
 
 [[record.field]]
 name = "zero_run_33"
 offset = 33
 type = "bytes[4]"
 source = "spec"
-anchor = "four zero bytes, u32 value\n2 at offset 37"
+anchor = "The ordinary two-member rigid-group"
 
 [[record.field]]
 name = "locator_count"
 offset = 37
 type = "u32"
 source = "spec"
-anchor = "u32 value\n2 at offset 37"
+anchor = "The ordinary two-member rigid-group"
 
 [[record.field]]
 name = "first_locator_reference"
 offset = 41
 type = "bytes[11]"
 source = "spec"
-anchor = "the marked references to its two wide operand-path locators at\noffsets 41 and 52"
+anchor = "The ordinary two-member rigid-group"
 
 [[record.field]]
 name = "second_locator_reference"
 offset = 52
 type = "bytes[11]"
 source = "spec"
-anchor = "the marked references to its two wide operand-path locators at\noffsets 41 and 52"
+anchor = "The ordinary two-member rigid-group"
 
 [[record.field]]
 name = "joint_reference"
 offset = 63
 type = "bytes[11]"
 source = "spec"
-anchor = "a marked reference to its joint record at offset 63"
+anchor = "The ordinary two-member rigid-group"
 
 [[record.field]]
 name = "guid"
 offset = 74
 type = "bytes[76]"
 source = "spec"
-anchor = "LP-UTF16 GUID at offset 74"
+anchor = "The ordinary two-member rigid-group"
 
 [[record.field]]
 name = "zero_run_150"
 offset = 150
 type = "bytes[3]"
 source = "spec"
-anchor = "three zero bytes, and an empty reference table"
+anchor = "The ordinary two-member rigid-group"
 
 [[record.field]]
 name = "reference_count"
 offset = 153
 type = "u32"
 source = "spec"
-anchor = "u32 count 0 immediately before the history state"
+anchor = "The ordinary two-member rigid-group"
+
+[[record.field]]
+name = "history_state"
+offset = 157
+type = "u32"
+source = "spec"
+anchor = "The ordinary two-member rigid-group"
+
+[[record.field]]
+name = "kind"
+offset = 161
+type = "bytes[20]"
+source = "spec"
+anchor = "The ordinary two-member rigid-group"
+
+[[record.field]]
+name = "scope_tail"
+offset = 181
+type = "bytes[76]"
+source = "spec"
+anchor = "The ordinary two-member rigid-group"
+
+[[record]]
+name = "assembly_typed_rigid_group_scope"
+parsed_by = "crates/cadmpeg-codec-f3d/src/design/assembly.rs"
+kind = "byte"
+section = "Assembly operands"
+anchor = "The typed two-member rigid-group scope is 537 bytes."
+size = 537
+note = "Offsets are relative to the primary indexed header."
+
+[[record.field]]
+name = "indexed_header"
+offset = 0
+type = "bytes[11]"
+source = "spec"
+anchor = "The typed two-member rigid-group scope is 537 bytes."
+
+[[record.field]]
+name = "zero_run_11"
+offset = 11
+type = "bytes[11]"
+source = "spec"
+anchor = "The typed two-member rigid-group scope is 537 bytes."
+
+[[record.field]]
+name = "pathless_locator_reference"
+offset = 22
+type = "bytes[51]"
+source = "spec"
+anchor = "The typed two-member rigid-group scope is 537 bytes."
+
+[[record.field]]
+name = "zero_run_73"
+offset = 73
+type = "bytes[4]"
+source = "spec"
+anchor = "The typed two-member rigid-group scope is 537 bytes."
+
+[[record.field]]
+name = "locator_count"
+offset = 77
+type = "u32"
+source = "spec"
+anchor = "The typed two-member rigid-group scope is 537 bytes."
+
+[[record.field]]
+name = "first_locator_reference"
+offset = 81
+type = "bytes[51]"
+source = "spec"
+anchor = "The typed two-member rigid-group scope is 537 bytes."
+
+[[record.field]]
+name = "second_locator_reference"
+offset = 132
+type = "bytes[51]"
+source = "spec"
+anchor = "The typed two-member rigid-group scope is 537 bytes."
+
+[[record.field]]
+name = "joint_reference"
+offset = 183
+type = "bytes[51]"
+source = "spec"
+anchor = "The typed two-member rigid-group scope is 537 bytes."
+
+[[record.field]]
+name = "guid"
+offset = 234
+type = "bytes[76]"
+source = "spec"
+anchor = "The typed two-member rigid-group scope is 537 bytes."
+
+[[record.field]]
+name = "zero_run_310"
+offset = 310
+type = "bytes[3]"
+source = "spec"
+anchor = "The typed two-member rigid-group scope is 537 bytes."
+
+[[record.field]]
+name = "reference_count"
+offset = 313
+type = "u32"
+source = "spec"
+anchor = "The typed two-member rigid-group scope is 537 bytes."
+
+[[record.field]]
+name = "history_state"
+offset = 317
+type = "u32"
+source = "spec"
+anchor = "The typed two-member rigid-group scope is 537 bytes."
+
+[[record.field]]
+name = "kind"
+offset = 321
+type = "bytes[20]"
+source = "spec"
+anchor = "The typed two-member rigid-group scope is 537 bytes."
+
+[[record.field]]
+name = "scope_tail"
+offset = 341
+type = "bytes[196]"
+source = "spec"
+anchor = "The typed two-member rigid-group scope is 537 bytes."
+
+[[record]]
+name = "assembly_compact_rigid_group_locator"
+parsed_by = "crates/cadmpeg-codec-f3d/src/design/decode/scopes/assembly_operand_paths.rs"
+kind = "byte"
+section = "Assembly operands"
+anchor = "A version-3 compact rigid-group locator is 180 bytes with a matrix"
+size = 180
+note = "Offsets are relative to the primary indexed header."
+
+[[record.field]]
+name = "indexed_header"
+offset = 0
+type = "bytes[11]"
+source = "spec"
+anchor = "A version-3 compact rigid-group locator is 180 bytes with a matrix"
+
+[[record.field]]
+name = "zero_run_10"
+offset = 11
+type = "bytes[10]"
+source = "spec"
+anchor = "A version-3 compact rigid-group locator is 180 bytes with a matrix"
+
+[[record.field]]
+name = "construction_reference"
+offset = 21
+type = "u8"
+source = "spec"
+anchor = "Its construction reference is null at offset 21"
+value = 0
+
+[[record.field]]
+name = "identity_flag"
+offset = 22
+type = "u8"
+source = "spec"
+anchor = "the identity flag is at offset 22"
+value = 0
+
+[[record.field]]
+name = "transform"
+offset = 23
+type = "f64[16]"
+source = "spec"
+anchor = "A version-3 compact rigid-group locator is 180 bytes with a matrix"
+
+[[record.field]]
+name = "zero_151"
+offset = 151
+type = "u8"
+source = "spec"
+anchor = "The matrix form has separator at offset 151"
+
+[[record.field]]
+name = "scope_backlink"
+offset = 152
+type = "bytes[11]"
+source = "spec"
+anchor = "scope backlink at offset 152"
+
+[[record.field]]
+name = "wrapper_reference"
+offset = 163
+type = "bytes[11]"
+source = "spec"
+anchor = "wrapper reference at offset 163"
+
+[[record.field]]
+name = "discriminator"
+offset = 174
+type = "u32"
+source = "spec"
+anchor = "discriminator at offset 174"
+
+[[record.field]]
+name = "zero_tail"
+offset = 178
+type = "bytes[2]"
+source = "spec"
+anchor = "zero tail at offset 178"
+
+[[record]]
+name = "assembly_typed_rigid_group_identity_locator"
+parsed_by = "crates/cadmpeg-codec-f3d/src/design/decode/scopes/assembly_operand_paths.rs"
+kind = "byte"
+section = "Assembly operands"
+anchor = "The identity form is 181 bytes"
+size = 181
+note = "Offsets are relative to the primary indexed header."
+
+[[record.field]]
+name = "indexed_header"
+offset = 0
+type = "bytes[11]"
+source = "spec"
+anchor = "The identity form is 181 bytes"
+
+[[record.field]]
+name = "zero_run_10"
+offset = 11
+type = "bytes[10]"
+source = "spec"
+anchor = "The identity form is 181 bytes"
+
+[[record.field]]
+name = "construction_reference"
+offset = 21
+type = "bytes[51]"
+source = "spec"
+anchor = "The identity form is 181 bytes"
+
+[[record.field]]
+name = "identity_flag"
+offset = 72
+type = "u8"
+source = "spec"
+anchor = "The identity form is 181 bytes"
+
+[[record.field]]
+name = "scope_backlink"
+offset = 73
+type = "bytes[51]"
+source = "spec"
+anchor = "The identity form is 181 bytes"
+
+[[record.field]]
+name = "wrapper_reference"
+offset = 124
+type = "bytes[51]"
+source = "spec"
+anchor = "The identity form is 181 bytes"
+
+[[record.field]]
+name = "discriminator"
+offset = 175
+type = "u32"
+source = "spec"
+anchor = "The identity form is 181 bytes"
+
+[[record.field]]
+name = "zero_tail"
+offset = 179
+type = "bytes[2]"
+source = "spec"
+anchor = "The identity form is 181 bytes"
+
+[[record]]
+name = "assembly_typed_rigid_group_matrix_locator"
+parsed_by = "crates/cadmpeg-codec-f3d/src/design/decode/scopes/assembly_operand_paths.rs"
+kind = "byte"
+section = "Assembly operands"
+anchor = "The matrix form is 309 bytes"
+size = 309
+note = "Offsets are relative to the primary indexed header."
+
+[[record.field]]
+name = "indexed_header"
+offset = 0
+type = "bytes[11]"
+source = "spec"
+anchor = "The matrix form is 309 bytes"
+
+[[record.field]]
+name = "zero_run_10"
+offset = 11
+type = "bytes[10]"
+source = "spec"
+anchor = "The matrix form is 309 bytes"
+
+[[record.field]]
+name = "construction_reference"
+offset = 21
+type = "bytes[51]"
+source = "spec"
+anchor = "The matrix form is 309 bytes"
+
+[[record.field]]
+name = "identity_flag"
+offset = 72
+type = "u8"
+source = "spec"
+anchor = "The matrix form is 309 bytes"
+
+[[record.field]]
+name = "transform"
+offset = 73
+type = "f64[16]"
+source = "spec"
+anchor = "The matrix form is 309 bytes"
+
+[[record.field]]
+name = "scope_backlink"
+offset = 201
+type = "bytes[51]"
+source = "spec"
+anchor = "The matrix form is 309 bytes"
+
+[[record.field]]
+name = "wrapper_reference"
+offset = 252
+type = "bytes[51]"
+source = "spec"
+anchor = "The matrix form is 309 bytes"
+
+[[record.field]]
+name = "discriminator"
+offset = 303
+type = "u32"
+source = "spec"
+anchor = "The matrix form is 309 bytes"
+
+[[record.field]]
+name = "zero_tail"
+offset = 307
+type = "bytes[2]"
+source = "spec"
+anchor = "The matrix form is 309 bytes"
 
 [[record]]
 name = "rectangular_pattern_direction_record"
@@ -19813,3 +20236,3931 @@ type = "u8"
 source = "spec"
 anchor = "byte `00`, u32 `2`, u64 `1`, and byte `00`"
 value = 0
+
+[[record]]
+name = "cut_paste_prefix"
+parsed_by = "crates/cadmpeg-codec-f3d/src/design/decode/scopes/occurrence_transfer.rs"
+kind = "byte"
+section = "3.1"
+anchor = "The compact CutPaste prefix"
+size = 72
+
+[[record.field]]
+name = "indexed_header"
+offset = 0
+type = "bytes[11]"
+source = "spec"
+anchor = "The compact CutPaste prefix"
+
+[[record.field]]
+name = "zero_run"
+offset = 11
+type = "bytes[10]"
+source = "spec"
+anchor = "The compact CutPaste prefix"
+
+[[record.field]]
+name = "removal_reference"
+offset = 21
+type = "bytes[11]"
+source = "spec"
+anchor = "The compact CutPaste prefix"
+
+[[record.field]]
+name = "companion_reference"
+offset = 32
+type = "bytes[11]"
+source = "spec"
+anchor = "The compact CutPaste prefix"
+
+[[record.field]]
+name = "companion_flag"
+offset = 43
+type = "u8"
+source = "spec"
+anchor = "The compact CutPaste prefix"
+
+[[record.field]]
+name = "second_companion_reference"
+offset = 44
+type = "bytes[11]"
+source = "spec"
+anchor = "The compact CutPaste prefix"
+
+[[record.field]]
+name = "zero_run_4"
+offset = 55
+type = "bytes[4]"
+source = "spec"
+anchor = "The compact CutPaste prefix"
+
+[[record.field]]
+name = "relation_reference"
+offset = 59
+type = "bytes[11]"
+source = "spec"
+anchor = "The compact CutPaste prefix"
+
+[[record.field]]
+name = "placement_flag"
+offset = 70
+type = "u8"
+source = "spec"
+anchor = "The compact CutPaste prefix"
+
+[[record.field]]
+name = "identity_flag"
+offset = 71
+type = "u8"
+source = "spec"
+anchor = "The compact CutPaste prefix"
+
+[[record]]
+name = "copy_paste_prefix"
+parsed_by = "crates/cadmpeg-codec-f3d/src/design/decode/scopes/occurrence_transfer.rs"
+kind = "byte"
+section = "3.1"
+anchor = "The compact CopyPaste prefix"
+size = 190
+
+[[record.field]]
+name = "indexed_header"
+offset = 0
+type = "bytes[11]"
+source = "spec"
+anchor = "The compact CopyPaste prefix"
+
+[[record.field]]
+name = "zero_run"
+offset = 11
+type = "bytes[11]"
+source = "spec"
+anchor = "The compact CopyPaste prefix"
+
+[[record.field]]
+name = "companion_reference"
+offset = 22
+type = "bytes[11]"
+source = "spec"
+anchor = "The compact CopyPaste prefix"
+
+[[record.field]]
+name = "zero_separator"
+offset = 33
+type = "u8"
+source = "spec"
+anchor = "The compact CopyPaste prefix"
+
+[[record.field]]
+name = "source_transform"
+offset = 34
+type = "f64[16]"
+source = "spec"
+anchor = "The compact CopyPaste prefix"
+
+[[record.field]]
+name = "second_companion_reference"
+offset = 162
+type = "bytes[11]"
+source = "spec"
+anchor = "The compact CopyPaste prefix"
+
+[[record.field]]
+name = "zero_run_4"
+offset = 173
+type = "bytes[4]"
+source = "spec"
+anchor = "The compact CopyPaste prefix"
+
+[[record.field]]
+name = "relation_reference"
+offset = 177
+type = "bytes[11]"
+source = "spec"
+anchor = "The compact CopyPaste prefix"
+
+[[record.field]]
+name = "placement_flag"
+offset = 188
+type = "u8"
+source = "spec"
+anchor = "The compact CopyPaste prefix"
+
+[[record.field]]
+name = "identity_flag"
+offset = 189
+type = "u8"
+source = "spec"
+anchor = "The compact CopyPaste prefix"
+
+[[record]]
+name = "paste_occurrence_relation"
+parsed_by = "crates/cadmpeg-codec-f3d/src/design/decode/scopes/occurrence_transfer.rs"
+kind = "byte"
+section = "3.1"
+anchor = "The relation has a 57-byte primary record"
+size = 87
+
+[[record.field]]
+name = "indexed_header"
+offset = 0
+type = "bytes[11]"
+source = "spec"
+anchor = "The relation has a 57-byte primary record"
+
+[[record.field]]
+name = "zero_run"
+offset = 11
+type = "bytes[10]"
+source = "spec"
+anchor = "The relation has a 57-byte primary record"
+
+[[record.field]]
+name = "occurrence_reference"
+offset = 21
+type = "bytes[11]"
+source = "spec"
+anchor = "The relation has a 57-byte primary record"
+
+[[record.field]]
+name = "zero_run_2"
+offset = 32
+type = "bytes[2]"
+source = "spec"
+anchor = "The relation has a 57-byte primary record"
+
+[[record.field]]
+name = "companion_reference"
+offset = 34
+type = "bytes[11]"
+source = "spec"
+anchor = "The relation has a 57-byte primary record"
+
+[[record.field]]
+name = "zero_separator"
+offset = 45
+type = "u8"
+source = "spec"
+anchor = "The relation has a 57-byte primary record"
+
+[[record.field]]
+name = "scope_reference"
+offset = 46
+type = "bytes[11]"
+source = "spec"
+anchor = "The relation has a 57-byte primary record"
+
+[[record.field]]
+name = "paired_header"
+offset = 57
+type = "bytes[11]"
+source = "spec"
+anchor = "The relation has a 57-byte primary record"
+
+[[record.field]]
+name = "zero_run_8"
+offset = 68
+type = "bytes[8]"
+source = "spec"
+anchor = "The relation has a 57-byte primary record"
+
+[[record.field]]
+name = "owner_marker"
+offset = 76
+type = "u8"
+source = "spec"
+anchor = "The relation has a 57-byte primary record"
+
+[[record.field]]
+name = "owner_collection"
+offset = 77
+type = "u64"
+source = "spec"
+anchor = "The relation has a 57-byte primary record"
+
+[[record.field]]
+name = "owner_zero_run"
+offset = 85
+type = "bytes[2]"
+source = "spec"
+anchor = "The relation has a 57-byte primary record"
+
+[[record]]
+name = "remove_instance_prefix"
+parsed_by = "crates/cadmpeg-codec-f3d/src/design/decode/scopes/occurrence_transfer.rs"
+kind = "byte"
+section = "3.1"
+anchor = "The RemoveInstance prefix"
+size = 135
+
+[[record.field]]
+name = "indexed_header"
+offset = 0
+type = "bytes[11]"
+source = "spec"
+anchor = "The RemoveInstance prefix"
+
+[[record.field]]
+name = "zero_run"
+offset = 11
+type = "bytes[22]"
+source = "spec"
+anchor = "The RemoveInstance prefix"
+
+[[record.field]]
+name = "source_relation_reference"
+offset = 33
+type = "bytes[11]"
+source = "spec"
+anchor = "The RemoveInstance prefix"
+
+[[record.field]]
+name = "occurrence_key"
+offset = 44
+type = "bytes[76]"
+source = "spec"
+anchor = "The RemoveInstance prefix"
+
+[[record.field]]
+name = "zero_run_7"
+offset = 120
+type = "bytes[7]"
+source = "spec"
+anchor = "The RemoveInstance prefix"
+
+[[record.field]]
+name = "history_state"
+offset = 127
+type = "u32"
+source = "spec"
+anchor = "The RemoveInstance prefix"
+
+[[record.field]]
+name = "kind_length"
+offset = 131
+type = "u32"
+source = "spec"
+anchor = "The RemoveInstance prefix"
+
+[[record]]
+name = "paste_context_owner_tail"
+parsed_by = "crates/cadmpeg-codec-f3d/src/design/decode/scopes/occurrence_transfer.rs"
+kind = "byte"
+section = "3.1"
+anchor = "The context owner tail is 52 bytes"
+size = 52
+
+[[record.field]]
+name = "collection_reference"
+offset = 0
+type = "bytes[11]"
+source = "spec"
+anchor = "The context owner tail is 52 bytes"
+
+[[record.field]]
+name = "companion_reference"
+offset = 11
+type = "bytes[11]"
+source = "spec"
+anchor = "The context owner tail is 52 bytes"
+
+[[record.field]]
+name = "paired_header"
+offset = 22
+type = "bytes[11]"
+source = "spec"
+anchor = "The context owner tail is 52 bytes"
+
+[[record.field]]
+name = "zero_run_8"
+offset = 33
+type = "bytes[8]"
+source = "spec"
+anchor = "The context owner tail is 52 bytes"
+
+[[record.field]]
+name = "component_reference"
+offset = 41
+type = "bytes[11]"
+source = "spec"
+anchor = "The context owner tail is 52 bytes"
+
+[[record]]
+name = "component_insert_identity_scope_272_prefix"
+parsed_by = "crates/cadmpeg-codec-f3d/src/design/decode/scopes/component_constructions.rs"
+kind = "byte"
+section = "3.1"
+anchor = "The class-`357` / class-`262` 272-byte Component Insert scope"
+size = 126
+
+[[record.field]]
+name = "indexed_header"
+offset = 0
+type = "bytes[11]"
+source = "spec"
+anchor = "fourteen zero bytes at offsets 11 through 24"
+
+[[record.field]]
+name = "zero_prefix"
+offset = 11
+type = "bytes[14]"
+source = "spec"
+anchor = "fourteen zero bytes at offsets 11 through 24"
+
+[[record.field]]
+name = "occurrence_identity"
+offset = 25
+type = "u64"
+source = "spec"
+anchor = "its occurrence identity u64 at offset 25"
+
+[[record.field]]
+name = "zero_after_identity"
+offset = 33
+type = "bytes[4]"
+source = "spec"
+anchor = "four zero bytes at offset 33"
+
+[[record.field]]
+name = "relation_reference"
+offset = 37
+type = "bytes[5]"
+source = "spec"
+anchor = "its marked relation reference at offset 37"
+
+[[record.field]]
+name = "zero_after_relation"
+offset = 42
+type = "bytes[6]"
+source = "spec"
+anchor = "six zero bytes at offset 42"
+
+[[record.field]]
+name = "identity_markers"
+offset = 48
+type = "bytes[2]"
+source = "spec"
+anchor = "identity bytes `01 01` at offset 48"
+
+[[record.field]]
+name = "null_guid"
+offset = 50
+type = "bytes[76]"
+source = "spec"
+anchor = "The LP-UTF16 null GUID starts at offset 50"
+
+[[record]]
+name = "component_insert_identity_scope_276_prefix"
+parsed_by = "crates/cadmpeg-codec-f3d/src/design/decode/scopes/component_constructions.rs"
+kind = "byte"
+section = "3.1"
+anchor = "All subsequent fields move four bytes later"
+size = 130
+
+[[record.field]]
+name = "indexed_header"
+offset = 0
+type = "bytes[11]"
+source = "spec"
+anchor = "All subsequent fields move four bytes later"
+
+[[record.field]]
+name = "prologue"
+offset = 11
+type = "bytes[18]"
+source = "spec"
+anchor = "All subsequent fields move four bytes later"
+
+[[record.field]]
+name = "occurrence_identity"
+offset = 29
+type = "u64"
+source = "spec"
+anchor = "All subsequent fields move four bytes later"
+
+[[record.field]]
+name = "zero_after_identity"
+offset = 37
+type = "bytes[4]"
+source = "spec"
+anchor = "All subsequent fields move four bytes later"
+
+[[record.field]]
+name = "relation_reference"
+offset = 41
+type = "bytes[5]"
+source = "spec"
+anchor = "All subsequent fields move four bytes later"
+
+[[record.field]]
+name = "zero_after_relation"
+offset = 46
+type = "bytes[6]"
+source = "spec"
+anchor = "All subsequent fields move four bytes later"
+
+[[record.field]]
+name = "identity_markers"
+offset = 52
+type = "bytes[2]"
+source = "spec"
+anchor = "All subsequent fields move four bytes later"
+
+[[record.field]]
+name = "null_guid"
+offset = 54
+type = "bytes[76]"
+source = "spec"
+anchor = "All subsequent fields move four bytes later"
+
+[[record]]
+name = "component_insert_identity_carrier"
+parsed_by = "crates/cadmpeg-codec-f3d/src/xref.rs"
+kind = "byte"
+section = "3.1"
+anchor = "The 420-byte identity insertion carrier"
+size = 420
+note = "The sequential legacy target-reference grammar and the fixed identity insertion members determine these offsets."
+
+[[record.field]]
+name = "indexed_entity_and_empty_name"
+offset = 0
+type = "bytes[19]"
+source = "spec"
+anchor = "The 420-byte identity insertion carrier"
+
+[[record.field]]
+name = "path_marker"
+offset = 19
+type = "u8"
+source = "spec"
+anchor = "The 420-byte identity insertion carrier"
+
+[[record.field]]
+name = "path_count"
+offset = 20
+type = "u32"
+source = "spec"
+anchor = "The 420-byte identity insertion carrier"
+
+[[record.field]]
+name = "target_reference"
+offset = 24
+type = "bytes[60]"
+source = "spec"
+anchor = "The 420-byte identity insertion carrier"
+
+[[record.field]]
+name = "instance_discriminator"
+offset = 84
+type = "u32"
+source = "spec"
+anchor = "The 420-byte identity insertion carrier"
+
+[[record.field]]
+name = "member_count"
+offset = 88
+type = "u32"
+source = "spec"
+anchor = "The 420-byte identity insertion carrier"
+
+[[record.field]]
+name = "zero_after_count"
+offset = 92
+type = "u8"
+source = "spec"
+anchor = "The 420-byte identity insertion carrier"
+
+[[record.field]]
+name = "metadata_boolean"
+offset = 93
+type = "u8"
+source = "spec"
+anchor = "The 420-byte identity insertion carrier"
+
+[[record.field]]
+name = "zero_after_boolean"
+offset = 94
+type = "u8"
+source = "spec"
+anchor = "The 420-byte identity insertion carrier"
+
+[[record.field]]
+name = "metadata_count"
+offset = 95
+type = "u32"
+source = "spec"
+anchor = "The 420-byte identity insertion carrier"
+
+[[record.field]]
+name = "placement_metadata_guid"
+offset = 99
+type = "bytes[76]"
+source = "spec"
+anchor = "The 420-byte identity insertion carrier"
+
+[[record.field]]
+name = "tracking_link_guid"
+offset = 175
+type = "bytes[76]"
+source = "spec"
+anchor = "The 420-byte identity insertion carrier"
+
+[[record.field]]
+name = "metadata_marker"
+offset = 251
+type = "u8"
+source = "spec"
+anchor = "The 420-byte identity insertion carrier"
+
+[[record.field]]
+name = "opaque_metadata_token"
+offset = 252
+type = "u64"
+source = "spec"
+anchor = "The 420-byte identity insertion carrier"
+
+[[record.field]]
+name = "metadata_tail"
+offset = 260
+type = "bytes[7]"
+source = "spec"
+anchor = "The 420-byte identity insertion carrier"
+
+[[record.field]]
+name = "repeated_target_reference"
+offset = 267
+type = "bytes[60]"
+source = "spec"
+anchor = "The 420-byte identity insertion carrier"
+
+[[record.field]]
+name = "identity_flag"
+offset = 327
+type = "u8"
+source = "spec"
+anchor = "The 420-byte identity insertion carrier"
+
+[[record.field]]
+name = "zero_after_identity"
+offset = 328
+type = "u32"
+source = "spec"
+anchor = "The 420-byte identity insertion carrier"
+
+[[record.field]]
+name = "occurrence_role"
+offset = 332
+type = "bytes[76]"
+source = "spec"
+anchor = "The 420-byte identity insertion carrier"
+
+[[record.field]]
+name = "closure"
+offset = 408
+type = "bytes[12]"
+source = "spec"
+anchor = "The 420-byte identity insertion carrier"
+
+[[record]]
+name = "emboss_scope_prefix"
+kind = "byte"
+section = "3.1"
+anchor = "The `Emboss` fixed-prefix form has nine ordered references."
+size = 156
+parsed_by = ["crates/cadmpeg-codec-f3d/src/design/decode/scopes/emboss.rs", "crates/cadmpeg-codec-f3d/src/records/feature/emboss.rs"]
+note = "Offsets are relative to the primary indexed header. The null GUID and common reference table follow this prefix."
+
+[[record.field]]
+name = "indexed_header"
+offset = 0
+type = "bytes[11]"
+source = "spec"
+anchor = "The `Emboss` fixed-prefix form has nine ordered references."
+
+[[record.field]]
+name = "zero_run"
+offset = 11
+type = "bytes[9]"
+source = "spec"
+anchor = "The `Emboss` fixed-prefix form has nine ordered references."
+value = [0, 0, 0, 0, 0, 0, 0, 0, 0]
+
+[[record.field]]
+name = "control_words"
+offset = 20
+type = "u32[2]"
+source = "spec"
+anchor = "The `Emboss` fixed-prefix form has nine ordered references."
+
+[[record.field]]
+name = "depth_owner_reference"
+offset = 28
+type = "bytes[11]"
+source = "spec"
+anchor = "The `Emboss` fixed-prefix form has nine ordered references."
+
+[[record.field]]
+name = "auxiliary_group_reference"
+offset = 39
+type = "bytes[11]"
+source = "spec"
+anchor = "The `Emboss` fixed-prefix form has nine ordered references."
+
+[[record.field]]
+name = "horizontal_owner_reference"
+offset = 50
+type = "bytes[11]"
+source = "spec"
+anchor = "The `Emboss` fixed-prefix form has nine ordered references."
+
+[[record.field]]
+name = "native_pair_count"
+offset = 61
+type = "u32"
+source = "spec"
+anchor = "The `Emboss` fixed-prefix form has nine ordered references."
+value = 1
+
+[[record.field]]
+name = "native_pair"
+offset = 65
+type = "u64[2]"
+source = "spec"
+anchor = "The `Emboss` fixed-prefix form has nine ordered references."
+
+[[record.field]]
+name = "rotation_owner_reference"
+offset = 81
+type = "bytes[11]"
+source = "spec"
+anchor = "The `Emboss` fixed-prefix form has nine ordered references."
+
+[[record.field]]
+name = "face_group_reference"
+offset = 92
+type = "bytes[11]"
+source = "spec"
+anchor = "The `Emboss` fixed-prefix form has nine ordered references."
+
+[[record.field]]
+name = "vertical_owner_reference"
+offset = 103
+type = "bytes[11]"
+source = "spec"
+anchor = "The `Emboss` fixed-prefix form has nine ordered references."
+
+[[record.field]]
+name = "profile_group_count"
+offset = 114
+type = "u32"
+source = "spec"
+anchor = "The `Emboss` fixed-prefix form has nine ordered references."
+value = 1
+
+[[record.field]]
+name = "profile_group_reference"
+offset = 118
+type = "bytes[11]"
+source = "spec"
+anchor = "The `Emboss` fixed-prefix form has nine ordered references."
+
+[[record.field]]
+name = "zero_tail"
+offset = 129
+type = "bytes[12]"
+source = "spec"
+anchor = "The `Emboss` fixed-prefix form has nine ordered references."
+value = [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
+
+[[record.field]]
+name = "face_group_count"
+offset = 141
+type = "u32"
+source = "spec"
+anchor = "The `Emboss` fixed-prefix form has nine ordered references."
+value = 1
+
+[[record.field]]
+name = "repeated_face_group_reference"
+offset = 145
+type = "bytes[11]"
+source = "spec"
+anchor = "The `Emboss` fixed-prefix form has nine ordered references."
+
+[[record.code]]
+path = "crates/cadmpeg-codec-f3d/src/records/feature/emboss.rs"
+contains = "(self.depth_owner, 4, 29)"
+note = "The value offset is one byte after the reference marker; the middle value is its ordered-table ordinal."
+
+[[record.code]]
+path = "crates/cadmpeg-codec-f3d/src/records/feature/emboss.rs"
+contains = "(self.auxiliary_group, 8, 40)"
+note = "The value offset is one byte after the reference marker; the middle value is its ordered-table ordinal."
+
+[[record.code]]
+path = "crates/cadmpeg-codec-f3d/src/records/feature/emboss.rs"
+contains = "(self.horizontal_owner, 5, 51)"
+note = "The value offset is one byte after the reference marker; the middle value is its ordered-table ordinal."
+
+[[record.code]]
+path = "crates/cadmpeg-codec-f3d/src/records/feature/emboss.rs"
+contains = "(self.rotation_owner, 7, 82)"
+note = "The value offset is one byte after the reference marker; the middle value is its ordered-table ordinal."
+
+[[record.code]]
+path = "crates/cadmpeg-codec-f3d/src/records/feature/emboss.rs"
+contains = "(self.face_group, 2, 93)"
+note = "The value offset is one byte after the reference marker; the middle value is its ordered-table ordinal."
+
+[[record.code]]
+path = "crates/cadmpeg-codec-f3d/src/records/feature/emboss.rs"
+contains = "(self.vertical_owner, 6, 104)"
+note = "The value offset is one byte after the reference marker; the middle value is its ordered-table ordinal."
+
+[[record.code]]
+path = "crates/cadmpeg-codec-f3d/src/records/feature/emboss.rs"
+contains = "(self.profile_group, 0, 119)"
+note = "The value offset is one byte after the reference marker; the middle value is its ordered-table ordinal."
+
+[[record]]
+name = "emboss_scope_reference_table_prefix"
+kind = "byte"
+section = "3.1"
+anchor = "The `Emboss` fixed-prefix form has nine ordered references."
+size = 239
+parsed_by = ["crates/cadmpeg-codec-f3d/src/design/decode/scopes/emboss.rs", "crates/cadmpeg-codec-f3d/src/records/feature/emboss.rs"]
+note = "The operation prefix, null GUID, and separator precede the common reference count."
+
+[[record.field]]
+name = "operation_prefix"
+offset = 0
+type = "bytes[156]"
+source = "spec"
+anchor = "Its operation prefix is the `emboss_scope_prefix` record"
+
+[[record.field]]
+name = "null_guid_count"
+offset = 156
+type = "u32"
+value = 36
+source = "spec"
+anchor = "A 36-code-unit LP-UTF16 null GUID and three zero bytes separate the prefix"
+
+[[record.field]]
+name = "null_guid"
+offset = 160
+type = "u16[36]"
+source = "spec"
+anchor = "A 36-code-unit LP-UTF16 null GUID and three zero bytes separate the prefix"
+
+[[record.field]]
+name = "zero_separator"
+offset = 232
+type = "bytes[3]"
+value = [0, 0, 0]
+source = "spec"
+anchor = "A 36-code-unit LP-UTF16 null GUID and three zero bytes separate the prefix"
+
+[[record.field]]
+name = "reference_count"
+offset = 235
+type = "u32"
+value = 9
+source = "spec"
+anchor = "The `Emboss` fixed-prefix form has nine ordered references."
+
+[[record.code]]
+path = "crates/cadmpeg-codec-f3d/src/records/feature/emboss.rs"
+contains = "scope.byte_offset().checked_add(235) != Some(scope.reference_count_offset())"
+note = "The common reference count follows the complete null-GUID separator."
+
+[[record]]
+name = "rectangular_pattern_spacing_direction_record"
+parsed_by = "crates/cadmpeg-codec-f3d/src/design/decode/scopes/pattern.rs"
+kind = "byte"
+section = "Assembly operands"
+anchor = "The 221-byte spacing direction form"
+size = 221
+note = "Offsets are relative to the direction record's primary indexed header. The paired header starts at offset 221."
+
+[[record.field]]
+name = "indexed_header"
+offset = 0
+type = "bytes[11]"
+source = "spec"
+anchor = "The 221-byte spacing direction form"
+
+[[record.field]]
+name = "zero_run_10"
+offset = 11
+type = "bytes[10]"
+source = "spec"
+anchor = "The 221-byte spacing direction form"
+
+[[record.field]]
+name = "selection_kind"
+offset = 21
+type = "u32"
+source = "spec"
+anchor = "The 221-byte spacing direction form"
+
+[[record.field]]
+name = "origin"
+offset = 25
+type = "f64[3]"
+source = "spec"
+anchor = "The 221-byte spacing direction form"
+
+[[record.field]]
+name = "displacement"
+offset = 49
+type = "f64[3]"
+source = "spec"
+anchor = "The 221-byte spacing direction form"
+
+[[record.field]]
+name = "zero_run_16"
+offset = 73
+type = "bytes[16]"
+source = "spec"
+anchor = "The 221-byte spacing direction form"
+
+[[record.field]]
+name = "distance_type"
+offset = 89
+type = "u32"
+value = 7
+source = "spec"
+anchor = "The 221-byte spacing direction form"
+
+[[record.field]]
+name = "spacing_flag"
+offset = 93
+type = "u8"
+source = "spec"
+anchor = "The 221-byte spacing direction form"
+value = 0
+
+[[record.field]]
+name = "negative_ones"
+offset = 94
+type = "f64[3]"
+source = "spec"
+anchor = "The 221-byte spacing direction form"
+
+[[record.field]]
+name = "selection_count"
+offset = 118
+type = "u32"
+source = "spec"
+anchor = "The 221-byte spacing direction form"
+
+[[record.field]]
+name = "selection_reference"
+offset = 122
+type = "bytes[11]"
+source = "spec"
+anchor = "The 221-byte spacing direction form"
+
+[[record.field]]
+name = "zero_run_2"
+offset = 133
+type = "bytes[2]"
+source = "spec"
+anchor = "The 221-byte spacing direction form"
+
+[[record.field]]
+name = "auxiliary_count"
+offset = 135
+type = "u32"
+source = "spec"
+anchor = "The 221-byte spacing direction form"
+
+[[record.field]]
+name = "auxiliary_reference"
+offset = 139
+type = "bytes[11]"
+source = "spec"
+anchor = "The 221-byte spacing direction form"
+
+[[record.field]]
+name = "role"
+offset = 150
+type = "u64"
+source = "spec"
+anchor = "The 221-byte spacing direction form"
+
+[[record.field]]
+name = "zero_run_after_role"
+offset = 158
+type = "bytes[10]"
+source = "spec"
+anchor = "The 221-byte spacing direction form"
+
+[[record.field]]
+name = "opaque_index"
+offset = 168
+type = "u32"
+source = "spec"
+anchor = "The 221-byte spacing direction form"
+
+[[record.field]]
+name = "opaque_scalar"
+offset = 172
+type = "f64"
+source = "spec"
+anchor = "The 221-byte spacing direction form"
+
+[[record.field]]
+name = "opaque_index_repeat"
+offset = 180
+type = "u32"
+source = "spec"
+anchor = "The 221-byte spacing direction form"
+
+[[record.field]]
+name = "index_plus_two_reference"
+offset = 184
+type = "bytes[11]"
+source = "spec"
+anchor = "The 221-byte spacing direction form"
+
+[[record.field]]
+name = "separator_flag"
+offset = 195
+type = "u8"
+source = "spec"
+anchor = "The 221-byte spacing direction form"
+
+[[record.field]]
+name = "separator_zero_run"
+offset = 196
+type = "bytes[2]"
+source = "spec"
+anchor = "The 221-byte spacing direction form"
+
+[[record.field]]
+name = "index_plus_one_reference"
+offset = 198
+type = "bytes[11]"
+source = "spec"
+anchor = "The 221-byte spacing direction form"
+
+[[record.field]]
+name = "scope_separator"
+offset = 209
+type = "u8"
+source = "spec"
+anchor = "The 221-byte spacing direction form"
+
+[[record.field]]
+name = "scope_reference"
+offset = 210
+type = "bytes[11]"
+source = "spec"
+anchor = "The 221-byte spacing direction form"
+
+[[record]]
+name = "rectangular_pattern_payload_prefix"
+parsed_by = "crates/cadmpeg-codec-f3d/src/design/decode/scopes/pattern.rs"
+kind = "byte"
+section = "Assembly operands"
+anchor = "The payload has a 133-byte prefix and a 37-byte suffix."
+size = 133
+
+[[record.field]]
+name = "indexed_header"
+offset = 0
+type = "bytes[11]"
+source = "spec"
+anchor = "The payload has a 133-byte prefix and a 37-byte suffix."
+
+[[record.field]]
+name = "zero_head"
+offset = 11
+type = "bytes[8]"
+source = "spec"
+anchor = "The payload has a 133-byte prefix and a 37-byte suffix."
+
+[[record.field]]
+name = "flag"
+offset = 19
+type = "u8"
+source = "spec"
+anchor = "The payload has a 133-byte prefix and a 37-byte suffix."
+
+[[record.field]]
+name = "count"
+offset = 20
+type = "u32"
+source = "spec"
+anchor = "The payload has a 133-byte prefix and a 37-byte suffix."
+
+[[record.field]]
+name = "u_count"
+offset = 24
+type = "bytes[11]"
+source = "spec"
+anchor = "The payload has a 133-byte prefix and a 37-byte suffix."
+
+[[record.field]]
+name = "zero_middle"
+offset = 35
+type = "bytes[4]"
+source = "spec"
+anchor = "The payload has a 133-byte prefix and a 37-byte suffix."
+
+[[record.field]]
+name = "v_count"
+offset = 39
+type = "bytes[11]"
+source = "spec"
+anchor = "The payload has a 133-byte prefix and a 37-byte suffix."
+
+[[record.field]]
+name = "zero_tail"
+offset = 50
+type = "bytes[9]"
+source = "spec"
+anchor = "The payload has a 133-byte prefix and a 37-byte suffix."
+
+[[record.field]]
+name = "sentinel"
+offset = 59
+type = "u32"
+source = "spec"
+anchor = "The payload has a 133-byte prefix and a 37-byte suffix."
+
+[[record.field]]
+name = "v_direction"
+offset = 63
+type = "f64[3]"
+source = "spec"
+anchor = "The payload has a 133-byte prefix and a 37-byte suffix."
+
+[[record.field]]
+name = "u_distance"
+offset = 87
+type = "bytes[11]"
+source = "spec"
+anchor = "The payload has a 133-byte prefix and a 37-byte suffix."
+
+[[record.field]]
+name = "v_distance"
+offset = 98
+type = "bytes[11]"
+source = "spec"
+anchor = "The payload has a 133-byte prefix and a 37-byte suffix."
+
+[[record.field]]
+name = "zero_distance"
+offset = 109
+type = "bytes[2]"
+source = "spec"
+anchor = "The payload has a 133-byte prefix and a 37-byte suffix."
+
+[[record.field]]
+name = "v_count_repeat"
+offset = 111
+type = "bytes[11]"
+source = "spec"
+anchor = "The payload has a 133-byte prefix and a 37-byte suffix."
+
+[[record.field]]
+name = "u_direction"
+offset = 122
+type = "bytes[11]"
+source = "spec"
+anchor = "The payload has a 133-byte prefix and a 37-byte suffix."
+
+[[record]]
+name = "rectangular_pattern_payload_suffix"
+parsed_by = "crates/cadmpeg-codec-f3d/src/design/decode/scopes/pattern.rs"
+kind = "byte"
+section = "Assembly operands"
+anchor = "The payload has a 133-byte prefix and a 37-byte suffix."
+size = 37
+
+[[record.field]]
+name = "u_count"
+offset = 0
+type = "bytes[11]"
+source = "spec"
+anchor = "The payload has a 133-byte prefix and a 37-byte suffix."
+
+[[record.field]]
+name = "scope"
+offset = 11
+type = "bytes[11]"
+source = "spec"
+anchor = "The payload has a 133-byte prefix and a 37-byte suffix."
+
+[[record.field]]
+name = "seed_group"
+offset = 22
+type = "bytes[11]"
+source = "spec"
+anchor = "The payload has a 133-byte prefix and a 37-byte suffix."
+
+[[record.field]]
+name = "zero_tail"
+offset = 33
+type = "bytes[4]"
+source = "spec"
+anchor = "The payload has a 133-byte prefix and a 37-byte suffix."
+
+[[record]]
+name = "sketch_geometry_ordinal_collection_reference"
+kind = "byte"
+section = "3.1"
+anchor = "Byte 36 opens a same-segment marked reference; its u64 target at member offset 37 names the ordinal collection."
+size = 11
+note = "The reference starts at offset 36 relative to the Geometry-member indexed header."
+
+[[record.field]]
+name = "marker"
+offset = 0
+type = "u8"
+source = "spec"
+anchor = "byte 36 is `01`"
+value = 1
+
+[[record.field]]
+name = "target"
+offset = 1
+type = "u64"
+source = "spec"
+anchor = "its u64 target at member offset 37 names the ordinal collection"
+
+[[record.field]]
+name = "flags"
+offset = 9
+type = "bytes[2]"
+source = "spec"
+anchor = "Byte 36 opens a same-segment marked reference; its u64 target at member offset 37 names the ordinal collection."
+
+[[record]]
+name = "sketch_ordinal_collection_prefix"
+kind = "byte"
+parsed_by = ["crates/cadmpeg-codec-f3d/src/design/decode/sketch.rs", "crates/cadmpeg-codec-f3d/src/design/decode/sketch_owners.rs"]
+section = "3.1"
+anchor = "Its indexed header is followed by nine zero bytes, a property block carrying `crv_tag_id_idx`"
+size = 20
+
+[[record.field]]
+name = "indexed_header"
+offset = 0
+type = "bytes[11]"
+source = "spec"
+anchor = "Its indexed header is followed by nine zero bytes, a property block carrying `crv_tag_id_idx`"
+
+[[record.field]]
+name = "zero_run"
+offset = 11
+type = "bytes[9]"
+source = "spec"
+anchor = "Its indexed header is followed by nine zero bytes, a property block carrying `crv_tag_id_idx`"
+
+[[record]]
+name = "assembly_as_built_scope_378"
+kind = "byte"
+section = "Assembly operands"
+anchor = "The 378-, 422-, and 444-byte `As-built` forms are one form"
+size = 378
+parsed_by = ["crates/cadmpeg-codec-f3d/src/design/assembly.rs", "crates/cadmpeg-codec-f3d/src/design/decode/scopes/assembly_alignment.rs"]
+note = "Offsets are relative to the primary indexed header. K = 0."
+
+[[record.gap]]
+offset = 0
+size = 43
+note = "Prefix before the owner count."
+
+[[record.field]]
+name = "additional_owner_count"
+offset = 43
+type = "u32"
+source = "spec"
+anchor = "offset 43"
+value = 0
+
+[[record.field]]
+name = "locator_count"
+offset = 47
+type = "u32"
+source = "spec"
+anchor = "stores a u32 count of two"
+
+[[record.field]]
+name = "first_locator_reference"
+offset = 51
+type = "bytes[11]"
+source = "spec"
+anchor = "two marked same-segment operand-path-locator references"
+
+[[record.field]]
+name = "second_locator_reference"
+offset = 62
+type = "bytes[11]"
+source = "spec"
+anchor = "two marked same-segment operand-path-locator references"
+
+[[record.gap]]
+offset = 73
+size = 90
+note = "Scope fields before the reference table."
+
+[[record.field]]
+name = "reference_count"
+offset = 163
+type = "u32"
+source = "spec"
+anchor = "The reference-table counts are at offsets 163, 185, and 196"
+value = 9
+
+[[record.field]]
+name = "reference_members"
+offset = 167
+type = "bytes[99]"
+source = "derived"
+anchor = "its reference table has `9 + K` entries"
+note = "Each marked reference has eleven bytes; K = 0."
+
+[[record.gap]]
+offset = 266
+size = 112
+note = "Scope suffix after the reference table."
+
+[[record]]
+name = "assembly_as_built_scope_422"
+kind = "byte"
+section = "Assembly operands"
+anchor = "The 378-, 422-, and 444-byte `As-built` forms are one form"
+size = 422
+parsed_by = ["crates/cadmpeg-codec-f3d/src/design/assembly.rs", "crates/cadmpeg-codec-f3d/src/design/decode/scopes/assembly_alignment.rs"]
+note = "Offsets are relative to the primary indexed header. K = 2."
+
+[[record.gap]]
+offset = 0
+size = 43
+note = "Prefix before the owner count."
+
+[[record.field]]
+name = "additional_owner_count"
+offset = 43
+type = "u32"
+source = "spec"
+anchor = "offset 43"
+value = 2
+
+[[record.field]]
+name = "additional_owner_references"
+offset = 47
+type = "bytes[22]"
+source = "spec"
+anchor = "`47 + 11k`"
+
+[[record.field]]
+name = "locator_count"
+offset = 69
+type = "u32"
+source = "spec"
+anchor = "stores a u32 count of two"
+
+[[record.field]]
+name = "first_locator_reference"
+offset = 73
+type = "bytes[11]"
+source = "spec"
+anchor = "two marked same-segment operand-path-locator references"
+
+[[record.field]]
+name = "second_locator_reference"
+offset = 84
+type = "bytes[11]"
+source = "spec"
+anchor = "two marked same-segment operand-path-locator references"
+
+[[record.gap]]
+offset = 95
+size = 90
+note = "Scope fields before the reference table."
+
+[[record.field]]
+name = "reference_count"
+offset = 185
+type = "u32"
+source = "spec"
+anchor = "The reference-table counts are at offsets 163, 185, and 196"
+value = 11
+
+[[record.field]]
+name = "reference_members"
+offset = 189
+type = "bytes[121]"
+source = "derived"
+anchor = "its reference table has `9 + K` entries"
+note = "Each marked reference has eleven bytes; K = 2."
+
+[[record.gap]]
+offset = 310
+size = 112
+note = "Scope suffix after the reference table."
+
+[[record]]
+name = "assembly_as_built_scope_444"
+kind = "byte"
+section = "Assembly operands"
+anchor = "The 378-, 422-, and 444-byte `As-built` forms are one form"
+size = 444
+parsed_by = ["crates/cadmpeg-codec-f3d/src/design/assembly.rs", "crates/cadmpeg-codec-f3d/src/design/decode/scopes/assembly_alignment.rs"]
+note = "Offsets are relative to the primary indexed header. K = 3."
+
+[[record.gap]]
+offset = 0
+size = 43
+note = "Prefix before the owner count."
+
+[[record.field]]
+name = "additional_owner_count"
+offset = 43
+type = "u32"
+source = "spec"
+anchor = "offset 43"
+value = 3
+
+[[record.field]]
+name = "additional_owner_references"
+offset = 47
+type = "bytes[33]"
+source = "spec"
+anchor = "`47 + 11k`"
+
+[[record.field]]
+name = "locator_count"
+offset = 80
+type = "u32"
+source = "spec"
+anchor = "stores a u32 count of two"
+
+[[record.field]]
+name = "first_locator_reference"
+offset = 84
+type = "bytes[11]"
+source = "spec"
+anchor = "two marked same-segment operand-path-locator references"
+
+[[record.field]]
+name = "second_locator_reference"
+offset = 95
+type = "bytes[11]"
+source = "spec"
+anchor = "two marked same-segment operand-path-locator references"
+
+[[record.gap]]
+offset = 106
+size = 90
+note = "Scope fields before the reference table."
+
+[[record.field]]
+name = "reference_count"
+offset = 196
+type = "u32"
+source = "spec"
+anchor = "The reference-table counts are at offsets 163, 185, and 196"
+value = 12
+
+[[record.field]]
+name = "reference_members"
+offset = 200
+type = "bytes[132]"
+source = "derived"
+anchor = "its reference table has `9 + K` entries"
+note = "Each marked reference has eleven bytes; K = 3."
+
+[[record.gap]]
+offset = 332
+size = 112
+note = "Scope suffix after the reference table."
+
+[[record]]
+name = "assembly_as_built_scope_owner_run"
+kind = "byte"
+section = "Assembly operands"
+anchor = "with a counted run of additional owners"
+parsed_by = ["crates/cadmpeg-codec-f3d/src/design/decode/scopes/assembly_alignment.rs", "crates/cadmpeg-codec-f3d/src/validate.rs"]
+note = "This size-less byte record gives the common count and owner-run start in the 378-, 422-, and 444-byte As-built scopes. Offsets are relative to the primary indexed header. The count K controls the number of eleven-byte marked references; K = 0 stores no owner reference."
+
+[[record.gap]]
+offset = 0
+size = 43
+note = "Prefix before the common owner count."
+
+[[record.field]]
+name = "additional_owner_count"
+offset = 43
+type = "u32"
+source = "spec"
+anchor = "offset 43"
+
+[[record.field]]
+name = "additional_owner_references"
+offset = 47
+type = "bytes[11]"
+source = "spec"
+anchor = "`47 + 11k`"
+
+[[record]]
+name = "sketch_owner_collection_legacy_list_prefix"
+kind = "byte"
+section = "3.1"
+anchor = "Version `3` has six bytes after this property block and before the member list."
+size = 6
+parsed_by = ["crates/cadmpeg-codec-f3d/src/design/decode/sketch.rs", "crates/cadmpeg-codec-f3d/src/design/decode/sketch_owners.rs"]
+
+[[record.field]]
+name = "prefix"
+offset = 0
+type = "bytes[6]"
+source = "spec"
+anchor = "Version `3` has six bytes after this property block and before the member list."
+
+[[record]]
+name = "sketch_owner_reference"
+kind = "byte"
+section = "3.1"
+anchor = "This local reference is either eleven bytes"
+size = 11
+parsed_by = "crates/cadmpeg-codec-f3d/src/design/decode/sketch_owners.rs"
+
+[[record.field]]
+name = "marker"
+offset = 0
+type = "u8"
+source = "spec"
+anchor = "a one-byte marker"
+
+[[record.field]]
+name = "target"
+offset = 1
+type = "u64"
+source = "spec"
+anchor = "a u64 target"
+
+[[record.field]]
+name = "flags"
+offset = 9
+type = "bytes[2]"
+source = "spec"
+anchor = "two zero flag bytes"
+
+[[record]]
+name = "sketch_owner_typed_reference"
+kind = "byte"
+section = "3.1"
+anchor = "or 51 bytes, with an additional u32 length `36`"
+size = 51
+parsed_by = "crates/cadmpeg-codec-f3d/src/design/decode/sketch_owners.rs"
+
+[[record.field]]
+name = "marker"
+offset = 0
+type = "u8"
+source = "spec"
+anchor = "a one-byte marker"
+
+[[record.field]]
+name = "target"
+offset = 1
+type = "u64"
+source = "spec"
+anchor = "a u64 target"
+
+[[record.field]]
+name = "type_guid_length"
+offset = 9
+type = "u32"
+source = "spec"
+anchor = "an additional u32 length `36`"
+
+[[record.field]]
+name = "type_guid"
+offset = 13
+type = "bytes[36]"
+source = "spec"
+anchor = "36 ASCII type-GUID bytes between the target and the flags"
+
+[[record.field]]
+name = "flags"
+offset = 49
+type = "bytes[2]"
+source = "spec"
+anchor = "two zero flag bytes"
+
+[[record]]
+name = "local_component_occurrence_typed_prefix"
+parsed_by = "crates/cadmpeg-codec-f3d/src/design/decode/components.rs"
+kind = "byte"
+section = "3.1"
+anchor = "Typed local component occurrences use local references with inline type GUIDs."
+size = 289
+note = "The 349-byte identity frame has one zero separator before the repeated reference."
+
+[[record.field]]
+name = "indexed_header"
+offset = 0
+type = "bytes[11]"
+source = "spec"
+anchor = "Typed local component occurrences use local references with inline type GUIDs."
+
+[[record.field]]
+name = "empty_instance_name"
+offset = 11
+type = "bytes[8]"
+source = "spec"
+anchor = "Typed local component occurrences use local references with inline type GUIDs."
+
+[[record.field]]
+name = "path_marker"
+offset = 19
+type = "u8"
+source = "spec"
+anchor = "Typed local component occurrences use local references with inline type GUIDs."
+value = 1
+
+[[record.field]]
+name = "path_count"
+offset = 20
+type = "u32"
+source = "spec"
+anchor = "Typed local component occurrences use local references with inline type GUIDs."
+value = 1
+
+[[record.field]]
+name = "component_reference"
+offset = 24
+type = "bytes[51]"
+source = "spec"
+anchor = "Typed local component occurrences use local references with inline type GUIDs."
+
+[[record.field]]
+name = "path_discriminator"
+offset = 75
+type = "u32"
+source = "spec"
+anchor = "Typed local component occurrences use local references with inline type GUIDs."
+
+[[record.field]]
+name = "path_terminator"
+offset = 79
+type = "u8"
+source = "spec"
+anchor = "Typed local component occurrences use local references with inline type GUIDs."
+value = 0
+
+[[record.field]]
+name = "occurrence_ordinal"
+offset = 80
+type = "u32"
+source = "spec"
+anchor = "Typed local component occurrences use local references with inline type GUIDs."
+
+[[record.field]]
+name = "carrier_guid"
+offset = 84
+type = "bytes[76]"
+source = "spec"
+anchor = "Typed local component occurrences use local references with inline type GUIDs."
+
+[[record.field]]
+name = "occurrence_guid"
+offset = 160
+type = "bytes[76]"
+source = "spec"
+anchor = "Typed local component occurrences use local references with inline type GUIDs."
+
+[[record.field]]
+name = "separator"
+offset = 236
+type = "u8"
+source = "spec"
+anchor = "Typed local component occurrences use local references with inline type GUIDs."
+value = 0
+
+[[record.field]]
+name = "component_reference_repeat"
+offset = 237
+type = "bytes[51]"
+source = "spec"
+anchor = "Typed local component occurrences use local references with inline type GUIDs."
+
+[[record.field]]
+name = "identity_flag"
+offset = 288
+type = "u8"
+source = "spec"
+anchor = "Typed local component occurrences use local references with inline type GUIDs."
+value = 1
+
+[[record]]
+name = "local_component_occurrence_typed_compact_prefix"
+parsed_by = "crates/cadmpeg-codec-f3d/src/design/decode/components.rs"
+kind = "byte"
+section = "3.1"
+anchor = "Typed local component occurrences use local references with inline type GUIDs."
+size = 288
+note = "The 348-byte identity and 476-byte matrix frames have no separator before the repeated reference."
+
+[[record.field]]
+name = "indexed_header"
+offset = 0
+type = "bytes[11]"
+source = "spec"
+anchor = "Typed local component occurrences use local references with inline type GUIDs."
+
+[[record.field]]
+name = "empty_instance_name"
+offset = 11
+type = "bytes[8]"
+source = "spec"
+anchor = "Typed local component occurrences use local references with inline type GUIDs."
+
+[[record.field]]
+name = "path_marker"
+offset = 19
+type = "u8"
+source = "spec"
+anchor = "Typed local component occurrences use local references with inline type GUIDs."
+value = 1
+
+[[record.field]]
+name = "path_count"
+offset = 20
+type = "u32"
+source = "spec"
+anchor = "Typed local component occurrences use local references with inline type GUIDs."
+value = 1
+
+[[record.field]]
+name = "component_reference"
+offset = 24
+type = "bytes[51]"
+source = "spec"
+anchor = "Typed local component occurrences use local references with inline type GUIDs."
+
+[[record.field]]
+name = "path_discriminator"
+offset = 75
+type = "u32"
+source = "spec"
+anchor = "Typed local component occurrences use local references with inline type GUIDs."
+
+[[record.field]]
+name = "path_terminator"
+offset = 79
+type = "u8"
+source = "spec"
+anchor = "Typed local component occurrences use local references with inline type GUIDs."
+value = 0
+
+[[record.field]]
+name = "occurrence_ordinal"
+offset = 80
+type = "u32"
+source = "spec"
+anchor = "Typed local component occurrences use local references with inline type GUIDs."
+
+[[record.field]]
+name = "carrier_guid"
+offset = 84
+type = "bytes[76]"
+source = "spec"
+anchor = "Typed local component occurrences use local references with inline type GUIDs."
+
+[[record.field]]
+name = "occurrence_guid"
+offset = 160
+type = "bytes[76]"
+source = "spec"
+anchor = "Typed local component occurrences use local references with inline type GUIDs."
+
+[[record.field]]
+name = "component_reference_repeat"
+offset = 236
+type = "bytes[51]"
+source = "spec"
+anchor = "Typed local component occurrences use local references with inline type GUIDs."
+
+[[record.field]]
+name = "identity_flag"
+offset = 287
+type = "u8"
+source = "spec"
+anchor = "Typed local component occurrences use local references with inline type GUIDs."
+
+[[record]]
+name = "local_component_occurrence_typed_identity_tail"
+parsed_by = "crates/cadmpeg-codec-f3d/src/design/decode/components.rs"
+kind = "byte"
+section = "3.1"
+anchor = "Typed local component occurrences use local references with inline type GUIDs."
+size = 60
+note = "Relative to the end of the typed identity prefix."
+
+[[record.field]]
+name = "zero_run"
+offset = 0
+type = "bytes[9]"
+source = "spec"
+anchor = "Typed local component occurrences use local references with inline type GUIDs."
+
+[[record.field]]
+name = "owner_reference"
+offset = 9
+type = "bytes[51]"
+source = "spec"
+anchor = "Typed local component occurrences use local references with inline type GUIDs."
+
+[[record]]
+name = "local_component_occurrence_typed_matrix_tail"
+parsed_by = "crates/cadmpeg-codec-f3d/src/design/decode/components.rs"
+kind = "byte"
+section = "3.1"
+anchor = "Typed local component occurrences use local references with inline type GUIDs."
+size = 188
+note = "Relative to the end of the typed compact prefix."
+
+[[record.field]]
+name = "transform"
+offset = 0
+type = "f64[16]"
+source = "spec"
+anchor = "Typed local component occurrences use local references with inline type GUIDs."
+
+[[record.field]]
+name = "zero_run"
+offset = 128
+type = "bytes[9]"
+source = "spec"
+anchor = "Typed local component occurrences use local references with inline type GUIDs."
+
+[[record.field]]
+name = "owner_reference"
+offset = 137
+type = "bytes[51]"
+source = "spec"
+anchor = "Typed local component occurrences use local references with inline type GUIDs."
+
+[[record]]
+name = "local_component_occurrence_typed_attributed_prefix"
+parsed_by = "crates/cadmpeg-codec-f3d/src/design/decode/components.rs"
+kind = "byte"
+section = "3.1"
+anchor = "An attributed local component occurrence also permits a typed component reference."
+size = 84
+note = "The counted attribute run follows the typed component reference and the path discriminator."
+
+[[record.field]]
+name = "indexed_header"
+offset = 0
+type = "bytes[11]"
+source = "spec"
+anchor = "An attributed local component occurrence also permits a typed component reference."
+
+[[record.field]]
+name = "empty_instance_name"
+offset = 11
+type = "bytes[8]"
+source = "spec"
+anchor = "An attributed local component occurrence also permits a typed component reference."
+
+[[record.field]]
+name = "path_marker"
+offset = 19
+type = "u8"
+source = "spec"
+anchor = "An attributed local component occurrence also permits a typed component reference."
+value = 1
+
+[[record.field]]
+name = "path_count"
+offset = 20
+type = "u32"
+source = "spec"
+anchor = "An attributed local component occurrence also permits a typed component reference."
+value = 1
+
+[[record.field]]
+name = "component_reference"
+offset = 24
+type = "bytes[51]"
+source = "spec"
+anchor = "An attributed local component occurrence also permits a typed component reference."
+
+[[record.field]]
+name = "path_discriminator"
+offset = 75
+type = "u32"
+source = "spec"
+anchor = "An attributed local component occurrence also permits a typed component reference."
+
+[[record.field]]
+name = "attributes_marker"
+offset = 79
+type = "u8"
+source = "spec"
+anchor = "An attributed local component occurrence also permits a typed component reference."
+value = 1
+
+[[record.field]]
+name = "attribute_count"
+offset = 80
+type = "u32"
+source = "spec"
+anchor = "An attributed local component occurrence also permits a typed component reference."
+
+[[record]]
+name = "root_instance_empty_path_prefix"
+parsed_by = "crates/cadmpeg-codec-f3d/src/design/decode/components.rs"
+kind = "byte"
+section = "3.1"
+anchor = "A named root-instance record can store an empty path."
+size = 36
+note = "The path has no component-definition reference."
+
+[[record.field]]
+name = "indexed_header"
+offset = 0
+type = "bytes[11]"
+source = "spec"
+anchor = "A named root-instance record can store an empty path."
+
+[[record.field]]
+name = "leading_zero"
+offset = 11
+type = "u32"
+source = "spec"
+anchor = "A named root-instance record can store an empty path."
+value = 0
+
+[[record.field]]
+name = "instance_name_length"
+offset = 15
+type = "u32"
+source = "spec"
+anchor = "A named root-instance record can store an empty path."
+value = 12
+
+[[record.field]]
+name = "instance_name"
+offset = 19
+type = "bytes[12]"
+source = "spec"
+anchor = "A named root-instance record can store an empty path."
+
+[[record.field]]
+name = "path_marker"
+offset = 31
+type = "u8"
+source = "spec"
+anchor = "A named root-instance record can store an empty path."
+value = 1
+
+[[record.field]]
+name = "path_count"
+offset = 32
+type = "u32"
+source = "spec"
+anchor = "A named root-instance record can store an empty path."
+value = 0
+
+[[record]]
+name = "root_instance_empty_path_frame"
+parsed_by = "crates/cadmpeg-codec-f3d/src/design/decode/components.rs"
+kind = "byte"
+section = "3.1"
+anchor = "The empty-path typed identity root-instance frame is 255 bytes."
+size = 255
+note = "The typed reference after the two GUIDs names the root component definition."
+
+[[record.field]]
+name = "indexed_header"
+offset = 0
+type = "bytes[11]"
+source = "spec"
+anchor = "The empty-path typed identity root-instance frame is 255 bytes."
+
+[[record.field]]
+name = "leading_zero"
+offset = 11
+type = "u32"
+source = "spec"
+anchor = "The empty-path typed identity root-instance frame is 255 bytes."
+value = 0
+
+[[record.field]]
+name = "instance_name_length"
+offset = 15
+type = "u32"
+source = "spec"
+anchor = "The empty-path typed identity root-instance frame is 255 bytes."
+value = 12
+
+[[record.field]]
+name = "instance_name"
+offset = 19
+type = "bytes[12]"
+source = "spec"
+anchor = "The empty-path typed identity root-instance frame is 255 bytes."
+
+[[record.field]]
+name = "path_marker"
+offset = 31
+type = "u8"
+source = "spec"
+anchor = "The empty-path typed identity root-instance frame is 255 bytes."
+value = 1
+
+[[record.field]]
+name = "path_count"
+offset = 32
+type = "u32"
+source = "spec"
+anchor = "The empty-path typed identity root-instance frame is 255 bytes."
+value = 0
+
+[[record.field]]
+name = "separator"
+offset = 36
+type = "u8"
+source = "spec"
+anchor = "The empty-path typed identity root-instance frame is 255 bytes."
+value = 0
+
+[[record.field]]
+name = "word"
+offset = 37
+type = "u32"
+source = "spec"
+anchor = "The empty-path typed identity root-instance frame is 255 bytes."
+value = 2
+
+[[record.field]]
+name = "carrier_guid"
+offset = 41
+type = "bytes[76]"
+source = "spec"
+anchor = "The empty-path typed identity root-instance frame is 255 bytes."
+
+[[record.field]]
+name = "occurrence_guid"
+offset = 117
+type = "bytes[76]"
+source = "spec"
+anchor = "The empty-path typed identity root-instance frame is 255 bytes."
+
+[[record.field]]
+name = "component_reference"
+offset = 193
+type = "bytes[51]"
+source = "spec"
+anchor = "The empty-path typed identity root-instance frame is 255 bytes."
+
+[[record.field]]
+name = "identity_flag"
+offset = 244
+type = "u8"
+source = "spec"
+anchor = "The empty-path typed identity root-instance frame is 255 bytes."
+value = 1
+
+[[record.field]]
+name = "zero_tail"
+offset = 245
+type = "bytes[10]"
+source = "spec"
+anchor = "The empty-path typed identity root-instance frame is 255 bytes."
+
+[[record]]
+name = "root_instance_empty_path_separated_frame"
+parsed_by = "crates/cadmpeg-codec-f3d/src/design/decode/components.rs"
+kind = "byte"
+section = "3.1"
+anchor = "The separated empty-path typed identity root-instance frame is 256 bytes."
+size = 256
+note = "The typed reference after the two GUIDs names the root component definition."
+
+[[record.field]]
+name = "indexed_header"
+offset = 0
+type = "bytes[11]"
+source = "spec"
+anchor = "The separated empty-path typed identity root-instance frame is 256 bytes."
+
+[[record.field]]
+name = "leading_zero"
+offset = 11
+type = "u32"
+source = "spec"
+anchor = "The separated empty-path typed identity root-instance frame is 256 bytes."
+value = 0
+
+[[record.field]]
+name = "instance_name_length"
+offset = 15
+type = "u32"
+source = "spec"
+anchor = "The separated empty-path typed identity root-instance frame is 256 bytes."
+value = 12
+
+[[record.field]]
+name = "instance_name"
+offset = 19
+type = "bytes[12]"
+source = "spec"
+anchor = "The separated empty-path typed identity root-instance frame is 256 bytes."
+
+[[record.field]]
+name = "path_marker"
+offset = 31
+type = "u8"
+source = "spec"
+anchor = "The separated empty-path typed identity root-instance frame is 256 bytes."
+value = 1
+
+[[record.field]]
+name = "path_count"
+offset = 32
+type = "u32"
+source = "spec"
+anchor = "The separated empty-path typed identity root-instance frame is 256 bytes."
+value = 0
+
+[[record.field]]
+name = "separator"
+offset = 36
+type = "u8"
+source = "spec"
+anchor = "The separated empty-path typed identity root-instance frame is 256 bytes."
+value = 0
+
+[[record.field]]
+name = "word"
+offset = 37
+type = "u32"
+source = "spec"
+anchor = "The separated empty-path typed identity root-instance frame is 256 bytes."
+value = 2
+
+[[record.field]]
+name = "carrier_guid"
+offset = 41
+type = "bytes[76]"
+source = "spec"
+anchor = "The separated empty-path typed identity root-instance frame is 256 bytes."
+
+[[record.field]]
+name = "occurrence_guid"
+offset = 117
+type = "bytes[76]"
+source = "spec"
+anchor = "The separated empty-path typed identity root-instance frame is 256 bytes."
+
+[[record.field]]
+name = "reference_separator"
+offset = 193
+type = "u8"
+source = "spec"
+anchor = "The separated empty-path typed identity root-instance frame is 256 bytes."
+value = 0
+
+[[record.field]]
+name = "component_reference"
+offset = 194
+type = "bytes[51]"
+source = "spec"
+anchor = "The separated empty-path typed identity root-instance frame is 256 bytes."
+
+[[record.field]]
+name = "identity_flag"
+offset = 245
+type = "u8"
+source = "spec"
+anchor = "The separated empty-path typed identity root-instance frame is 256 bytes."
+value = 1
+
+[[record.field]]
+name = "zero_tail"
+offset = 246
+type = "bytes[10]"
+source = "spec"
+anchor = "The separated empty-path typed identity root-instance frame is 256 bytes."
+
+[[record]]
+name = "assembly_root_operand_path"
+parsed_by = "crates/cadmpeg-codec-f3d/src/design/decode/scopes/assembly_operand_paths.rs"
+kind = "byte"
+section = "Assembly operands"
+anchor = "A typed root operand path is a 277-byte frame."
+size = 277
+
+[[record.field]]
+name = "indexed_header"
+offset = 0
+type = "bytes[15]"
+source = "spec"
+anchor = "A typed root operand path is a 277-byte frame."
+
+[[record.field]]
+name = "zero_prefix"
+offset = 15
+type = "bytes[6]"
+source = "spec"
+anchor = "A typed root operand path is a 277-byte frame."
+
+[[record.field]]
+name = "count"
+offset = 21
+type = "u32"
+source = "spec"
+anchor = "A typed root operand path is a 277-byte frame."
+
+[[record.field]]
+name = "root_key"
+offset = 25
+type = "bytes[76]"
+source = "spec"
+anchor = "A typed root operand path is a 277-byte frame."
+
+[[record.field]]
+name = "empty_reference"
+offset = 101
+type = "u32"
+source = "spec"
+anchor = "A typed root operand path is a 277-byte frame."
+
+[[record.field]]
+name = "constant_one"
+offset = 105
+type = "u64"
+source = "spec"
+anchor = "A typed root operand path is a 277-byte frame."
+
+[[record.field]]
+name = "first_identity"
+offset = 113
+type = "bytes[76]"
+source = "spec"
+anchor = "A typed root operand path is a 277-byte frame."
+
+[[record.field]]
+name = "second_identity"
+offset = 189
+type = "bytes[76]"
+source = "spec"
+anchor = "A typed root operand path is a 277-byte frame."
+
+[[record.field]]
+name = "constant_two"
+offset = 265
+type = "u32"
+source = "spec"
+anchor = "A typed root operand path is a 277-byte frame."
+
+[[record.field]]
+name = "zero_tail"
+offset = 269
+type = "bytes[8]"
+source = "spec"
+anchor = "A typed root operand path is a 277-byte frame."
+
+[[record]]
+name = "assembly_wide_operand_path_identity_locator"
+parsed_by = "crates/cadmpeg-codec-f3d/src/design/assembly.rs"
+kind = "byte"
+section = "Assembly operands"
+anchor = "The wide locator identity frame is 97 bytes."
+size = 97
+note = "Offsets are relative to the locator indexed header."
+
+[[record.gap]]
+offset = 0
+size = 68
+note = "The wide locator prefix precedes the optional matrix."
+
+[[record.field]]
+name = "zero_separator"
+offset = 68
+type = "u8"
+source = "spec"
+anchor = "The wide locator identity frame is 97 bytes."
+
+[[record.field]]
+name = "scope_backlink"
+offset = 69
+type = "bytes[11]"
+source = "spec"
+anchor = "The wide locator identity frame is 97 bytes."
+
+[[record.field]]
+name = "wrapper_reference"
+offset = 80
+type = "bytes[11]"
+source = "spec"
+anchor = "The wide locator identity frame is 97 bytes."
+
+[[record.field]]
+name = "discriminator"
+offset = 91
+type = "u32"
+source = "spec"
+anchor = "The wide locator identity frame is 97 bytes."
+
+[[record.field]]
+name = "zero_tail"
+offset = 95
+type = "bytes[2]"
+source = "spec"
+anchor = "The wide locator identity frame is 97 bytes."
+
+[[record]]
+name = "assembly_wide_operand_path_matrix_locator"
+parsed_by = "crates/cadmpeg-codec-f3d/src/design/assembly.rs"
+kind = "byte"
+section = "Assembly operands"
+anchor = "The wide locator matrix frame is 225 bytes."
+size = 225
+note = "Offsets are relative to the locator indexed header."
+
+[[record.gap]]
+offset = 0
+size = 68
+note = "The wide locator prefix precedes the optional matrix."
+
+[[record.field]]
+name = "transform"
+offset = 68
+type = "f64[16]"
+source = "spec"
+anchor = "The wide locator matrix frame is 225 bytes."
+
+[[record.field]]
+name = "zero_separator"
+offset = 196
+type = "u8"
+source = "spec"
+anchor = "The wide locator matrix frame is 225 bytes."
+
+[[record.field]]
+name = "scope_backlink"
+offset = 197
+type = "bytes[11]"
+source = "spec"
+anchor = "The wide locator matrix frame is 225 bytes."
+
+[[record.field]]
+name = "wrapper_reference"
+offset = 208
+type = "bytes[11]"
+source = "spec"
+anchor = "The wide locator matrix frame is 225 bytes."
+
+[[record.field]]
+name = "discriminator"
+offset = 219
+type = "u32"
+source = "spec"
+anchor = "The wide locator matrix frame is 225 bytes."
+
+[[record.field]]
+name = "zero_tail"
+offset = 223
+type = "bytes[2]"
+source = "spec"
+anchor = "The wide locator matrix frame is 225 bytes."
+
+[[record]]
+name = "ordinary_rigid_group_tail_76"
+parsed_by = "crates/cadmpeg-codec-f3d/src/design/assembly.rs"
+kind = "byte"
+section = "Assembly operands"
+anchor = "The 76-byte tail"
+size = 76
+note = "Offsets are relative to the end of the LP-UTF16 kind."
+
+[[record.field]]
+name = "ordinal"
+offset = 0
+type = "u32"
+source = "spec"
+anchor = "The 76-byte tail"
+
+[[record.field]]
+name = "zero_run"
+offset = 4
+type = "bytes[15]"
+source = "spec"
+anchor = "The 76-byte tail"
+
+[[record.field]]
+name = "first_reference"
+offset = 19
+type = "bytes[11]"
+source = "spec"
+anchor = "The 76-byte tail"
+
+[[record.field]]
+name = "previous_history_state_id"
+offset = 30
+type = "u32"
+source = "spec"
+anchor = "The 76-byte tail"
+
+[[record.field]]
+name = "first_lane"
+offset = 34
+type = "u32"
+source = "spec"
+anchor = "The 76-byte tail"
+
+[[record.field]]
+name = "scalar"
+offset = 38
+type = "f64"
+source = "spec"
+anchor = "The 76-byte tail"
+
+[[record.field]]
+name = "second_lane"
+offset = 46
+type = "u32"
+source = "spec"
+anchor = "The 76-byte tail"
+
+[[record.field]]
+name = "second_reference"
+offset = 50
+type = "bytes[11]"
+source = "spec"
+anchor = "The 76-byte tail"
+
+[[record.field]]
+name = "reference_prefix"
+offset = 61
+type = "u8"
+source = "spec"
+anchor = "The 76-byte tail"
+value = 0
+
+[[record.field]]
+name = "reference_prefix_payload"
+offset = 62
+type = "bytes[1]"
+source = "spec"
+anchor = "The 76-byte tail"
+
+[[record.field]]
+name = "third_reference"
+offset = 63
+type = "bytes[11]"
+source = "spec"
+anchor = "The 76-byte tail"
+
+[[record.field]]
+name = "zero_tail"
+offset = 74
+type = "bytes[2]"
+source = "spec"
+anchor = "The 76-byte tail"
+
+[[record]]
+name = "ordinary_rigid_group_tail_88"
+parsed_by = "crates/cadmpeg-codec-f3d/src/design/assembly.rs"
+kind = "byte"
+section = "Assembly operands"
+anchor = "The 88-byte tail"
+size = 88
+note = "Offsets are relative to the end of the LP-UTF16 kind."
+
+[[record.field]]
+name = "ordinal"
+offset = 0
+type = "u32"
+source = "spec"
+anchor = "The 88-byte tail"
+
+[[record.field]]
+name = "zero_run"
+offset = 4
+type = "bytes[15]"
+source = "spec"
+anchor = "The 88-byte tail"
+
+[[record.field]]
+name = "first_reference"
+offset = 19
+type = "bytes[11]"
+source = "spec"
+anchor = "The 88-byte tail"
+
+[[record.field]]
+name = "additional_reference"
+offset = 30
+type = "bytes[11]"
+source = "spec"
+anchor = "The 88-byte tail"
+
+[[record.field]]
+name = "previous_history_state_id"
+offset = 41
+type = "u32"
+source = "spec"
+anchor = "The 88-byte tail"
+
+[[record.field]]
+name = "first_lane"
+offset = 45
+type = "u32"
+source = "spec"
+anchor = "The 88-byte tail"
+
+[[record.field]]
+name = "scalar"
+offset = 49
+type = "f64"
+source = "spec"
+anchor = "The 88-byte tail"
+
+[[record.field]]
+name = "second_lane"
+offset = 57
+type = "u32"
+source = "spec"
+anchor = "The 88-byte tail"
+
+[[record.field]]
+name = "second_reference"
+offset = 61
+type = "bytes[11]"
+source = "spec"
+anchor = "The 88-byte tail"
+
+[[record.field]]
+name = "reference_prefix"
+offset = 72
+type = "u8"
+source = "spec"
+anchor = "The 88-byte tail"
+value = 1
+
+[[record.field]]
+name = "reference_prefix_payload"
+offset = 73
+type = "bytes[2]"
+source = "spec"
+anchor = "The 88-byte tail"
+
+[[record.field]]
+name = "third_reference"
+offset = 75
+type = "bytes[11]"
+source = "spec"
+anchor = "The 88-byte tail"
+
+[[record.field]]
+name = "zero_tail"
+offset = 86
+type = "bytes[2]"
+source = "spec"
+anchor = "The 88-byte tail"
+
+[[record]]
+name = "ordinary_rigid_group_tail_77"
+parsed_by = "crates/cadmpeg-codec-f3d/src/design/assembly.rs"
+kind = "byte"
+section = "Assembly operands"
+anchor = "77-byte tail"
+size = 77
+note = "Offsets are relative to the kind end; the optional reference and field tag select the 77-byte closure independently."
+
+[[record.field]]
+name = "ordinal"
+offset = 0
+type = "u32"
+source = "derived"
+note = "Apply the independent reference and field-width choices to the tail grammar."
+anchor = "77-byte tail"
+
+[[record.field]]
+name = "zero_run"
+offset = 4
+type = "bytes[15]"
+source = "derived"
+note = "Apply the independent reference and field-width choices to the tail grammar."
+anchor = "77-byte tail"
+
+[[record.field]]
+name = "first_reference"
+offset = 19
+type = "bytes[11]"
+source = "derived"
+note = "Apply the independent reference and field-width choices to the tail grammar."
+anchor = "77-byte tail"
+
+[[record.field]]
+name = "previous_history_state_id"
+offset = 30
+type = "u32"
+source = "derived"
+note = "Apply the independent reference and field-width choices to the tail grammar."
+anchor = "77-byte tail"
+
+[[record.field]]
+name = "first_lane"
+offset = 34
+type = "u32"
+source = "derived"
+note = "Apply the independent reference and field-width choices to the tail grammar."
+anchor = "77-byte tail"
+
+[[record.field]]
+name = "scalar"
+offset = 38
+type = "f64"
+source = "derived"
+note = "Apply the independent reference and field-width choices to the tail grammar."
+anchor = "77-byte tail"
+
+[[record.field]]
+name = "second_lane"
+offset = 46
+type = "u32"
+source = "derived"
+note = "Apply the independent reference and field-width choices to the tail grammar."
+anchor = "77-byte tail"
+
+[[record.field]]
+name = "second_reference"
+offset = 50
+type = "bytes[11]"
+source = "derived"
+note = "Apply the independent reference and field-width choices to the tail grammar."
+anchor = "77-byte tail"
+
+[[record.field]]
+name = "reference_prefix"
+offset = 61
+type = "u8"
+source = "derived"
+note = "Apply the independent reference and field-width choices to the tail grammar."
+anchor = "77-byte tail"
+value = 1
+
+[[record.field]]
+name = "reference_prefix_payload"
+offset = 62
+type = "bytes[2]"
+source = "derived"
+note = "Apply the independent reference and field-width choices to the tail grammar."
+anchor = "77-byte tail"
+
+[[record.field]]
+name = "third_reference"
+offset = 64
+type = "bytes[11]"
+source = "derived"
+note = "Apply the independent reference and field-width choices to the tail grammar."
+anchor = "77-byte tail"
+
+[[record.field]]
+name = "zero_tail"
+offset = 75
+type = "bytes[2]"
+source = "derived"
+note = "Apply the independent reference and field-width choices to the tail grammar."
+anchor = "77-byte tail"
+
+[[record]]
+name = "ordinary_rigid_group_tail_87"
+parsed_by = "crates/cadmpeg-codec-f3d/src/design/assembly.rs"
+kind = "byte"
+section = "Assembly operands"
+anchor = "87-byte tail"
+size = 87
+note = "Offsets are relative to the kind end; the optional reference and field tag select the 87-byte closure independently."
+
+[[record.field]]
+name = "ordinal"
+offset = 0
+type = "u32"
+source = "derived"
+note = "Apply the independent reference and field-width choices to the tail grammar."
+anchor = "87-byte tail"
+
+[[record.field]]
+name = "zero_run"
+offset = 4
+type = "bytes[15]"
+source = "derived"
+note = "Apply the independent reference and field-width choices to the tail grammar."
+anchor = "87-byte tail"
+
+[[record.field]]
+name = "first_reference"
+offset = 19
+type = "bytes[11]"
+source = "derived"
+note = "Apply the independent reference and field-width choices to the tail grammar."
+anchor = "87-byte tail"
+
+[[record.field]]
+name = "additional_reference"
+offset = 30
+type = "bytes[11]"
+source = "derived"
+note = "Apply the independent reference and field-width choices to the tail grammar."
+anchor = "87-byte tail"
+
+[[record.field]]
+name = "previous_history_state_id"
+offset = 41
+type = "u32"
+source = "derived"
+note = "Apply the independent reference and field-width choices to the tail grammar."
+anchor = "87-byte tail"
+
+[[record.field]]
+name = "first_lane"
+offset = 45
+type = "u32"
+source = "derived"
+note = "Apply the independent reference and field-width choices to the tail grammar."
+anchor = "87-byte tail"
+
+[[record.field]]
+name = "scalar"
+offset = 49
+type = "f64"
+source = "derived"
+note = "Apply the independent reference and field-width choices to the tail grammar."
+anchor = "87-byte tail"
+
+[[record.field]]
+name = "second_lane"
+offset = 57
+type = "u32"
+source = "derived"
+note = "Apply the independent reference and field-width choices to the tail grammar."
+anchor = "87-byte tail"
+
+[[record.field]]
+name = "second_reference"
+offset = 61
+type = "bytes[11]"
+source = "derived"
+note = "Apply the independent reference and field-width choices to the tail grammar."
+anchor = "87-byte tail"
+
+[[record.field]]
+name = "reference_prefix"
+offset = 72
+type = "u8"
+source = "derived"
+note = "Apply the independent reference and field-width choices to the tail grammar."
+anchor = "87-byte tail"
+value = 0
+
+[[record.field]]
+name = "reference_prefix_payload"
+offset = 73
+type = "bytes[1]"
+source = "derived"
+note = "Apply the independent reference and field-width choices to the tail grammar."
+anchor = "87-byte tail"
+
+[[record.field]]
+name = "third_reference"
+offset = 74
+type = "bytes[11]"
+source = "derived"
+note = "Apply the independent reference and field-width choices to the tail grammar."
+anchor = "87-byte tail"
+
+[[record.field]]
+name = "zero_tail"
+offset = 85
+type = "bytes[2]"
+source = "derived"
+note = "Apply the independent reference and field-width choices to the tail grammar."
+anchor = "87-byte tail"
+
+[[record]]
+name = "assembly_alternate_rigid_group_prefix"
+parsed_by = "crates/cadmpeg-codec-f3d/src/design/assembly.rs"
+kind = "byte"
+section = "Assembly operands"
+anchor = "An alternate ordinary prologue stores nine zero bytes after its indexed"
+size = 67
+note = "The alternate ordinary prologue through its first two member references. Offsets are relative to the primary indexed header."
+
+[[record.field]]
+name = "indexed_header"
+offset = 0
+type = "bytes[11]"
+source = "spec"
+anchor = "An alternate ordinary prologue stores nine zero bytes after its indexed"
+
+[[record.field]]
+name = "zero_run_8"
+offset = 11
+type = "bytes[8]"
+source = "spec"
+anchor = "An alternate ordinary prologue stores nine zero bytes after its indexed"
+
+[[record.field]]
+name = "leading_block_presence"
+offset = 19
+type = "u8"
+source = "spec"
+anchor = "An alternate ordinary prologue stores nine zero bytes after its indexed"
+value = 0
+
+[[record.field]]
+name = "property_block_presence"
+offset = 20
+type = "u8"
+source = "spec"
+anchor = "An alternate ordinary prologue stores nine zero bytes after its indexed"
+value = 1
+
+[[record.field]]
+name = "property_count"
+offset = 21
+type = "u32"
+source = "spec"
+anchor = "An alternate ordinary prologue stores nine zero bytes after its indexed"
+value = 0
+
+[[record.field]]
+name = "zero_separator"
+offset = 25
+type = "u8"
+source = "spec"
+anchor = "An alternate ordinary prologue stores nine zero bytes after its indexed"
+value = 0
+
+[[record.field]]
+name = "pathless_locator_reference"
+offset = 26
+type = "bytes[11]"
+source = "spec"
+anchor = "An alternate ordinary prologue stores nine zero bytes after its indexed"
+
+[[record.field]]
+name = "zero_run_4"
+offset = 37
+type = "bytes[4]"
+source = "spec"
+anchor = "An alternate ordinary prologue stores nine zero bytes after its indexed"
+
+[[record.field]]
+name = "locator_count"
+offset = 41
+type = "u32"
+source = "spec"
+anchor = "An alternate ordinary prologue stores nine zero bytes after its indexed"
+
+[[record.field]]
+name = "first_locator_reference"
+offset = 45
+type = "bytes[11]"
+source = "spec"
+anchor = "An alternate ordinary prologue stores nine zero bytes after its indexed"
+
+[[record.field]]
+name = "second_locator_reference"
+offset = 56
+type = "bytes[11]"
+source = "spec"
+anchor = "An alternate ordinary prologue stores nine zero bytes after its indexed"
+
+[[record]]
+name = "assembly_compact_rigid_group_identity_locator"
+parsed_by = "crates/cadmpeg-codec-f3d/src/design/decode/scopes/assembly_operand_paths.rs"
+kind = "byte"
+section = "Assembly operands"
+anchor = "The compact identity"
+size = 52
+note = "Offsets are relative to the locator's indexed header."
+
+[[record.field]]
+name = "indexed_header"
+offset = 0
+type = "bytes[11]"
+source = "spec"
+anchor = "The compact identity"
+
+[[record.field]]
+name = "zero_run_10"
+offset = 11
+type = "bytes[10]"
+source = "spec"
+anchor = "The compact identity"
+
+[[record.field]]
+name = "construction_reference"
+offset = 21
+type = "bytes[1]"
+source = "spec"
+anchor = "The compact identity"
+
+[[record.field]]
+name = "identity_flag"
+offset = 22
+type = "u8"
+source = "spec"
+anchor = "The compact identity"
+
+[[record.field]]
+name = "separator"
+offset = 23
+type = "u8"
+source = "spec"
+anchor = "The compact identity"
+
+[[record.field]]
+name = "scope_backlink"
+offset = 24
+type = "bytes[11]"
+source = "spec"
+anchor = "The compact identity"
+
+[[record.field]]
+name = "wrapper_reference"
+offset = 35
+type = "bytes[11]"
+source = "spec"
+anchor = "The compact identity"
+
+[[record.field]]
+name = "discriminator"
+offset = 46
+type = "u32"
+source = "spec"
+anchor = "The compact identity"
+
+[[record.field]]
+name = "zero_tail"
+offset = 50
+type = "bytes[2]"
+source = "spec"
+anchor = "The compact identity"
+
+[[record]]
+name = "assembly_ordinary_rigid_group_identity_locator"
+parsed_by = "crates/cadmpeg-codec-f3d/src/design/decode/scopes/assembly_operand_paths.rs"
+kind = "byte"
+section = "Assembly operands"
+anchor = "The ordinary identity"
+size = 62
+note = "Offsets are relative to the locator's indexed header."
+
+[[record.field]]
+name = "indexed_header"
+offset = 0
+type = "bytes[11]"
+source = "spec"
+anchor = "The ordinary identity"
+
+[[record.field]]
+name = "zero_run_10"
+offset = 11
+type = "bytes[10]"
+source = "spec"
+anchor = "The ordinary identity"
+
+[[record.field]]
+name = "construction_reference"
+offset = 21
+type = "bytes[11]"
+source = "spec"
+anchor = "The ordinary identity"
+
+[[record.field]]
+name = "identity_flag"
+offset = 32
+type = "u8"
+source = "spec"
+anchor = "The ordinary identity"
+
+[[record.field]]
+name = "separator"
+offset = 33
+type = "u8"
+source = "spec"
+anchor = "The ordinary identity"
+
+[[record.field]]
+name = "scope_backlink"
+offset = 34
+type = "bytes[11]"
+source = "spec"
+anchor = "The ordinary identity"
+
+[[record.field]]
+name = "wrapper_reference"
+offset = 45
+type = "bytes[11]"
+source = "spec"
+anchor = "The ordinary identity"
+
+[[record.field]]
+name = "discriminator"
+offset = 56
+type = "u32"
+source = "spec"
+anchor = "The ordinary identity"
+
+[[record.field]]
+name = "zero_tail"
+offset = 60
+type = "bytes[2]"
+source = "spec"
+anchor = "The ordinary identity"
+
+[[record]]
+name = "assembly_null_typed_rigid_group_matrix_locator"
+parsed_by = "crates/cadmpeg-codec-f3d/src/design/decode/scopes/assembly_operand_paths.rs"
+kind = "byte"
+section = "Assembly operands"
+anchor = "The null-construction matrix form"
+size = 259
+note = "Offsets are relative to the locator's indexed header."
+
+[[record.field]]
+name = "indexed_header"
+offset = 0
+type = "bytes[11]"
+source = "spec"
+anchor = "The null-construction matrix form"
+
+[[record.field]]
+name = "zero_run_10"
+offset = 11
+type = "bytes[10]"
+source = "spec"
+anchor = "The null-construction matrix form"
+
+[[record.field]]
+name = "construction_reference"
+offset = 21
+type = "bytes[1]"
+source = "spec"
+anchor = "The null-construction matrix form"
+
+[[record.field]]
+name = "identity_flag"
+offset = 22
+type = "u8"
+source = "spec"
+anchor = "The null-construction matrix form"
+
+[[record.field]]
+name = "transform"
+offset = 23
+type = "f64[16]"
+source = "spec"
+anchor = "The null-construction matrix form"
+
+[[record.field]]
+name = "scope_backlink"
+offset = 151
+type = "bytes[51]"
+source = "spec"
+anchor = "The null-construction matrix form"
+
+[[record.field]]
+name = "wrapper_reference"
+offset = 202
+type = "bytes[51]"
+source = "spec"
+anchor = "The null-construction matrix form"
+
+[[record.field]]
+name = "discriminator"
+offset = 253
+type = "u32"
+source = "spec"
+anchor = "The null-construction matrix form"
+
+[[record.field]]
+name = "zero_tail"
+offset = 257
+type = "bytes[2]"
+source = "spec"
+anchor = "The null-construction matrix form"
+
+[[record]]
+name = "assembly_null_typed_rigid_group_identity_locator"
+parsed_by = "crates/cadmpeg-codec-f3d/src/design/decode/scopes/assembly_operand_paths.rs"
+kind = "byte"
+section = "Assembly operands"
+anchor = "The null-construction identity form"
+size = 131
+note = "Offsets are relative to the locator's indexed header."
+
+[[record.field]]
+name = "indexed_header"
+offset = 0
+type = "bytes[11]"
+source = "spec"
+anchor = "The null-construction identity form"
+
+[[record.field]]
+name = "zero_run_10"
+offset = 11
+type = "bytes[10]"
+source = "spec"
+anchor = "The null-construction identity form"
+
+[[record.field]]
+name = "construction_reference"
+offset = 21
+type = "bytes[1]"
+source = "spec"
+anchor = "The null-construction identity form"
+
+[[record.field]]
+name = "identity_flag"
+offset = 22
+type = "u8"
+source = "spec"
+anchor = "The null-construction identity form"
+
+[[record.field]]
+name = "scope_backlink"
+offset = 23
+type = "bytes[51]"
+source = "spec"
+anchor = "The null-construction identity form"
+
+[[record.field]]
+name = "wrapper_reference"
+offset = 74
+type = "bytes[51]"
+source = "spec"
+anchor = "The null-construction identity form"
+
+[[record.field]]
+name = "discriminator"
+offset = 125
+type = "u32"
+source = "spec"
+anchor = "The null-construction identity form"
+
+[[record.field]]
+name = "zero_tail"
+offset = 129
+type = "bytes[2]"
+source = "spec"
+anchor = "The null-construction identity form"
+
+
+[[record]]
+name = "legacy_attributed_external_placement_prefix"
+kind = "byte"
+section = "1.4"
+anchor = "An attributed legacy occurrence placement with a zero control word"
+size = 88
+parsed_by = "crates/cadmpeg-codec-f3d/src/xref.rs"
+note = "Offsets are relative to the primary indexed header."
+
+[[record.field]]
+name = "class_tag_length"
+offset = 0
+type = "u32"
+source = "spec"
+anchor = "An attributed legacy occurrence placement with a zero control word"
+value = 3
+
+[[record.field]]
+name = "class_tag"
+offset = 4
+type = "bytes[3]"
+source = "spec"
+anchor = "An attributed legacy occurrence placement with a zero control word"
+
+[[record.field]]
+name = "entity"
+offset = 7
+type = "u64"
+source = "spec"
+anchor = "An attributed legacy occurrence placement with a zero control word"
+
+[[record.field]]
+name = "instance_name_length"
+offset = 15
+type = "u32"
+source = "spec"
+anchor = "An attributed legacy occurrence placement with a zero control word"
+value = 0
+
+[[record.field]]
+name = "path_marker"
+offset = 19
+type = "u8"
+source = "spec"
+anchor = "An attributed legacy occurrence placement with a zero control word"
+value = 1
+
+[[record.field]]
+name = "path_count"
+offset = 20
+type = "u32"
+source = "spec"
+anchor = "An attributed legacy occurrence placement with a zero control word"
+value = 1
+
+[[record.field]]
+name = "target_reference"
+offset = 24
+type = "bytes[60]"
+source = "spec"
+anchor = "An attributed legacy occurrence placement with a zero control word"
+
+[[record.field]]
+name = "path_discriminator"
+offset = 84
+type = "u32"
+source = "spec"
+anchor = "An attributed legacy occurrence placement with a zero control word"
+
+[[record]]
+name = "legacy_attributed_external_placement_empty_attributes"
+kind = "byte"
+section = "1.4"
+anchor = "An attributed legacy occurrence placement with a zero control word"
+size = 5
+parsed_by = "crates/cadmpeg-codec-f3d/src/xref.rs"
+note = "Offsets are relative to the byte after the path discriminator."
+
+[[record.field]]
+name = "marker"
+offset = 0
+type = "u8"
+source = "spec"
+anchor = "An attributed legacy occurrence placement with a zero control word"
+value = 1
+
+[[record.field]]
+name = "count"
+offset = 1
+type = "u32"
+source = "spec"
+anchor = "An attributed legacy occurrence placement with a zero control word"
+value = 0
+
+[[record]]
+name = "legacy_attributed_external_placement_attributes"
+kind = "byte"
+section = "1.4"
+anchor = "An attributed legacy occurrence placement with a zero control word"
+size = 137
+parsed_by = "crates/cadmpeg-codec-f3d/src/xref.rs"
+note = "Offsets are relative to the byte after the path discriminator. The resolution value is the zero UTF-16 code-unit count."
+
+[[record.field]]
+name = "marker"
+offset = 0
+type = "u8"
+source = "spec"
+anchor = "An attributed legacy occurrence placement with a zero control word"
+value = 1
+
+[[record.field]]
+name = "count"
+offset = 1
+type = "u32"
+source = "spec"
+anchor = "An attributed legacy occurrence placement with a zero control word"
+value = 3
+
+[[record.field]]
+name = "parent_name_length"
+offset = 5
+type = "u32"
+source = "spec"
+anchor = "An attributed legacy occurrence placement with a zero control word"
+value = 13
+
+[[record.field]]
+name = "parent_name"
+offset = 9
+type = "bytes[13]"
+source = "spec"
+anchor = "An attributed legacy occurrence placement with a zero control word"
+value = "GatedByParent"
+
+[[record.field]]
+name = "parent_type_length"
+offset = 22
+type = "u32"
+source = "spec"
+anchor = "An attributed legacy occurrence placement with a zero control word"
+value = 21
+
+[[record.field]]
+name = "parent_type"
+offset = 26
+type = "bytes[21]"
+source = "spec"
+anchor = "An attributed legacy occurrence placement with a zero control word"
+value = "IntrinsicMetaTypebool"
+
+[[record.field]]
+name = "parent_value"
+offset = 47
+type = "u8"
+source = "spec"
+anchor = "An attributed legacy occurrence placement with a zero control word"
+value = 0
+
+[[record.field]]
+name = "resolution_name_length"
+offset = 48
+type = "u32"
+source = "spec"
+anchor = "An attributed legacy occurrence placement with a zero control word"
+value = 14
+
+[[record.field]]
+name = "resolution_name"
+offset = 52
+type = "bytes[14]"
+source = "spec"
+anchor = "An attributed legacy occurrence placement with a zero control word"
+value = "ResolutionTime"
+
+[[record.field]]
+name = "resolution_type_length"
+offset = 66
+type = "u32"
+source = "spec"
+anchor = "An attributed legacy occurrence placement with a zero control word"
+value = 24
+
+[[record.field]]
+name = "resolution_type"
+offset = 70
+type = "bytes[24]"
+source = "spec"
+anchor = "An attributed legacy occurrence placement with a zero control word"
+value = "IntrinsicMetaTypeHString"
+
+[[record.field]]
+name = "resolution_value"
+offset = 94
+type = "u32"
+source = "spec"
+anchor = "An attributed legacy occurrence placement with a zero control word"
+value = 0
+
+[[record.field]]
+name = "self_name_length"
+offset = 98
+type = "u32"
+source = "spec"
+anchor = "An attributed legacy occurrence placement with a zero control word"
+value = 9
+
+[[record.field]]
+name = "self_name"
+offset = 102
+type = "bytes[9]"
+source = "spec"
+anchor = "An attributed legacy occurrence placement with a zero control word"
+value = "SelfGated"
+
+[[record.field]]
+name = "self_type_length"
+offset = 111
+type = "u32"
+source = "spec"
+anchor = "An attributed legacy occurrence placement with a zero control word"
+value = 21
+
+[[record.field]]
+name = "self_type"
+offset = 115
+type = "bytes[21]"
+source = "spec"
+anchor = "An attributed legacy occurrence placement with a zero control word"
+value = "IntrinsicMetaTypebool"
+
+[[record.field]]
+name = "self_value"
+offset = 136
+type = "u8"
+source = "spec"
+anchor = "An attributed legacy occurrence placement with a zero control word"
+value = 0
+
+[[record]]
+name = "legacy_attributed_external_placement_members"
+kind = "byte"
+section = "1.4"
+anchor = "An attributed legacy occurrence placement with a zero control word"
+size = 235
+parsed_by = "crates/cadmpeg-codec-f3d/src/xref.rs"
+note = "Offsets are relative to the byte after the complete attribute block."
+
+[[record.field]]
+name = "control"
+offset = 0
+type = "u16"
+source = "spec"
+anchor = "An attributed legacy occurrence placement with a zero control word"
+value = 0
+
+[[record.field]]
+name = "ordinal"
+offset = 2
+type = "u32"
+source = "spec"
+anchor = "An attributed legacy occurrence placement with a zero control word"
+
+[[record.field]]
+name = "metadata_guid_length"
+offset = 6
+type = "u32"
+source = "spec"
+anchor = "An attributed legacy occurrence placement with a zero control word"
+value = 36
+
+[[record.field]]
+name = "metadata_guid"
+offset = 10
+type = "bytes[72]"
+source = "spec"
+anchor = "An attributed legacy occurrence placement with a zero control word"
+
+[[record.field]]
+name = "tracking_guid_length"
+offset = 82
+type = "u32"
+source = "spec"
+anchor = "An attributed legacy occurrence placement with a zero control word"
+value = 36
+
+[[record.field]]
+name = "tracking_guid"
+offset = 86
+type = "bytes[72]"
+source = "spec"
+anchor = "An attributed legacy occurrence placement with a zero control word"
+
+[[record.field]]
+name = "metadata_reference"
+offset = 158
+type = "bytes[15]"
+source = "spec"
+anchor = "An attributed legacy occurrence placement with a zero control word"
+
+[[record.field]]
+name = "reference_separator"
+offset = 173
+type = "u8"
+source = "spec"
+anchor = "An attributed legacy occurrence placement with a zero control word"
+value = 0
+
+[[record.field]]
+name = "repeated_target_reference"
+offset = 174
+type = "bytes[60]"
+source = "spec"
+anchor = "An attributed legacy occurrence placement with a zero control word"
+
+[[record.field]]
+name = "identity_flag"
+offset = 234
+type = "u8"
+source = "spec"
+anchor = "An attributed legacy occurrence placement with a zero control word"
+
+[[record]]
+name = "legacy_attributed_external_placement_identity_tail"
+kind = "byte"
+section = "1.4"
+anchor = "An attributed legacy occurrence placement with a zero control word"
+size = 92
+parsed_by = "crates/cadmpeg-codec-f3d/src/xref.rs"
+note = "Offsets are relative to the byte after the identity flag."
+
+[[record.field]]
+name = "zero"
+offset = 0
+type = "u32"
+source = "spec"
+anchor = "An attributed legacy occurrence placement with a zero control word"
+value = 0
+
+[[record.field]]
+name = "role_length"
+offset = 4
+type = "u32"
+source = "spec"
+anchor = "An attributed legacy occurrence placement with a zero control word"
+value = 36
+
+[[record.field]]
+name = "role"
+offset = 8
+type = "bytes[72]"
+source = "spec"
+anchor = "An attributed legacy occurrence placement with a zero control word"
+
+[[record.field]]
+name = "separator"
+offset = 80
+type = "u8"
+source = "spec"
+anchor = "An attributed legacy occurrence placement with a zero control word"
+value = 0
+
+[[record.field]]
+name = "owner_marker"
+offset = 81
+type = "u8"
+source = "spec"
+anchor = "An attributed legacy occurrence placement with a zero control word"
+value = 1
+
+[[record.field]]
+name = "owner"
+offset = 82
+type = "u64"
+source = "spec"
+anchor = "An attributed legacy occurrence placement with a zero control word"
+
+[[record.field]]
+name = "owner_tail"
+offset = 90
+type = "u16"
+source = "spec"
+anchor = "An attributed legacy occurrence placement with a zero control word"
+value = 0
+
+[[record]]
+name = "legacy_attributed_external_placement_matrix_tail"
+kind = "byte"
+section = "1.4"
+anchor = "An attributed legacy occurrence placement with a zero control word"
+size = 220
+parsed_by = "crates/cadmpeg-codec-f3d/src/xref.rs"
+note = "Offsets are relative to the byte after the identity flag."
+
+[[record.field]]
+name = "matrix"
+offset = 0
+type = "f64[16]"
+source = "spec"
+anchor = "An attributed legacy occurrence placement with a zero control word"
+
+[[record.field]]
+name = "zero"
+offset = 128
+type = "u32"
+source = "spec"
+anchor = "An attributed legacy occurrence placement with a zero control word"
+value = 0
+
+[[record.field]]
+name = "role_length"
+offset = 132
+type = "u32"
+source = "spec"
+anchor = "An attributed legacy occurrence placement with a zero control word"
+value = 36
+
+[[record.field]]
+name = "role"
+offset = 136
+type = "bytes[72]"
+source = "spec"
+anchor = "An attributed legacy occurrence placement with a zero control word"
+
+[[record.field]]
+name = "separator"
+offset = 208
+type = "u8"
+source = "spec"
+anchor = "An attributed legacy occurrence placement with a zero control word"
+value = 0
+
+[[record.field]]
+name = "owner_marker"
+offset = 209
+type = "u8"
+source = "spec"
+anchor = "An attributed legacy occurrence placement with a zero control word"
+value = 1
+
+[[record.field]]
+name = "owner"
+offset = 210
+type = "u64"
+source = "spec"
+anchor = "An attributed legacy occurrence placement with a zero control word"
+
+[[record.field]]
+name = "owner_tail"
+offset = 218
+type = "u16"
+source = "spec"
+anchor = "An attributed legacy occurrence placement with a zero control word"
+value = 0
+
+[[record]]
+name = "edge_flange_corner_operation"
+kind = "byte"
+section = "3.1"
+anchor = "A class-`361`/`258` or class-`362`/`258` two-edge distance-form"
+size = 620
+note = "Offsets are relative to the primary scope header."
+
+[[record.gap]]
+offset = 0
+size = 101
+note = "Scope envelope or uninterpreted bytes."
+
+[[record.field]]
+name = "bend_position"
+value = 2
+offset = 101
+type = "u32"
+source = "spec"
+anchor = "The fixed fields are defined by `edge_flange_corner_operation`"
+
+[[record.field]]
+name = "edge_count"
+value = 2
+offset = 105
+type = "u32"
+source = "spec"
+anchor = "The fixed fields are defined by `edge_flange_corner_operation`"
+
+[[record.field]]
+name = "edge_wrapper_one_reference"
+offset = 109
+type = "bytes[11]"
+source = "spec"
+anchor = "The fixed fields are defined by `edge_flange_corner_operation`"
+
+[[record.field]]
+name = "edge_wrapper_two_reference"
+offset = 120
+type = "bytes[11]"
+source = "spec"
+anchor = "The fixed fields are defined by `edge_flange_corner_operation`"
+
+[[record.field]]
+name = "settings_reference"
+offset = 131
+type = "bytes[11]"
+source = "spec"
+anchor = "The fixed fields are defined by `edge_flange_corner_operation`"
+
+[[record.field]]
+name = "height_datum"
+value = 2
+offset = 142
+type = "u32"
+source = "spec"
+anchor = "The fixed fields are defined by `edge_flange_corner_operation`"
+
+[[record.field]]
+name = "angle_owner_reference"
+offset = 146
+type = "bytes[11]"
+source = "spec"
+anchor = "The fixed fields are defined by `edge_flange_corner_operation`"
+
+[[record.field]]
+name = "height_owner_reference"
+offset = 157
+type = "bytes[11]"
+source = "spec"
+anchor = "The fixed fields are defined by `edge_flange_corner_operation`"
+
+[[record.field]]
+name = "reference_side"
+value = 4
+offset = 168
+type = "u32"
+source = "spec"
+anchor = "The fixed fields are defined by `edge_flange_corner_operation`"
+
+[[record.field]]
+name = "side_padding"
+offset = 172
+type = "bytes[11]"
+source = "spec"
+anchor = "The side padding, radius padding, and group padding are zero bytes"
+value = [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
+
+[[record.field]]
+name = "inside_bend_radius"
+offset = 183
+type = "f64"
+source = "spec"
+anchor = "The fixed fields are defined by `edge_flange_corner_operation`"
+
+[[record.field]]
+name = "radius_padding"
+offset = 191
+type = "bytes[6]"
+source = "spec"
+anchor = "The side padding, radius padding, and group padding are zero bytes"
+value = [0, 0, 0, 0, 0, 0]
+
+[[record.field]]
+name = "result_count"
+value = 3
+offset = 197
+type = "u32"
+source = "spec"
+anchor = "The fixed fields are defined by `edge_flange_corner_operation`"
+
+[[record.field]]
+name = "result_one_reference"
+offset = 201
+type = "bytes[11]"
+source = "spec"
+anchor = "The fixed fields are defined by `edge_flange_corner_operation`"
+
+[[record.field]]
+name = "result_one_trailer"
+value = 1
+offset = 212
+type = "u32"
+source = "spec"
+anchor = "The fixed fields are defined by `edge_flange_corner_operation`"
+
+[[record.field]]
+name = "result_two_reference"
+offset = 216
+type = "bytes[11]"
+source = "spec"
+anchor = "The fixed fields are defined by `edge_flange_corner_operation`"
+
+[[record.field]]
+name = "result_two_trailer"
+value = 1
+offset = 227
+type = "u32"
+source = "spec"
+anchor = "The fixed fields are defined by `edge_flange_corner_operation`"
+
+[[record.field]]
+name = "result_three_reference"
+offset = 231
+type = "bytes[11]"
+source = "spec"
+anchor = "The fixed fields are defined by `edge_flange_corner_operation`"
+
+[[record.field]]
+name = "result_three_trailer"
+value = 0
+offset = 242
+type = "u32"
+source = "spec"
+anchor = "The fixed fields are defined by `edge_flange_corner_operation`"
+
+[[record.field]]
+name = "result_separator"
+value = 1
+offset = 246
+type = "u32"
+source = "spec"
+anchor = "The fixed fields are defined by `edge_flange_corner_operation`"
+
+[[record.field]]
+name = "aggregate_group_reference"
+offset = 250
+type = "bytes[11]"
+source = "spec"
+anchor = "The fixed fields are defined by `edge_flange_corner_operation`"
+
+[[record.field]]
+name = "group_padding"
+offset = 261
+type = "bytes[12]"
+source = "spec"
+anchor = "The side padding, radius padding, and group padding are zero bytes"
+value = [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
+
+[[record.field]]
+name = "edge_group_count"
+value = 2
+offset = 273
+type = "u32"
+source = "spec"
+anchor = "The fixed fields are defined by `edge_flange_corner_operation`"
+
+[[record.field]]
+name = "edge_group_one_reference"
+offset = 277
+type = "bytes[11]"
+source = "spec"
+anchor = "The fixed fields are defined by `edge_flange_corner_operation`"
+
+[[record.field]]
+name = "edge_group_two_reference"
+offset = 288
+type = "bytes[11]"
+source = "spec"
+anchor = "The fixed fields are defined by `edge_flange_corner_operation`"
+
+[[record.gap]]
+offset = 299
+size = 321
+note = "Scope envelope follows the edge groups."
+
+
+[[type]]
+name = "component_body_membership_count"
+bytes = 4
+endianness = "little"
+section = "3.1"
+anchor = "The terminal Body-container membership"
+note = "The u32 count precedes the terminal Body-reference list."
+
+[[type]]
+name = "component_body_membership_reference"
+bytes = 51
+endianness = "little"
+section = "3.1"
+anchor = "The terminal Body-container membership"
+note = "A present same-segment reference with a nonzero u64 target, a 36-byte ASCII type GUID, and two trailing zero bytes."
+
+[[type]]
+name = "component_body_membership_local_reference"
+bytes = 11
+endianness = "little"
+section = "3.1"
+anchor = "The paired untyped Body-container membership"
+note = "A present untyped same-segment reference with a nonzero u64 target and two zero bytes."
+
+[[type]]
+name = "component_body_membership_local_entry"
+bytes = 15
+endianness = "little"
+section = "3.1"
+anchor = "The paired untyped Body-container membership"
+note = "An 11-byte untyped Body reference followed by u32 1 in the repeated body list. List order is independent; both lists contain the same unique body identities."
+
+
+[[type]]
+name = "component_body_membership_single_overhead"
+bytes = 15
+endianness = "little"
+section = "3.1"
+anchor = "The single untyped Body-container membership"
+note = "A u32 body count and an eleven-byte untyped owner reference enclose the single body list."
+
+[[record]]
+name = "operation_table_header"
+kind = "byte"
+section = "1.4"
+anchor = "a three-digit LP-ASCII class tag, a u64 indexed record identity"
+size = 15
+parsed_by = "crates/cadmpeg-codec-f3d/src/xref/operation_pose.rs"
+
+[[record.field]]
+name = "class_tag_length"
+offset = 0
+type = "u32"
+value = 3
+source = "spec"
+anchor = "a three-digit LP-ASCII class tag"
+
+[[record.field]]
+name = "class_tag"
+offset = 4
+type = "bytes[3]"
+source = "spec"
+anchor = "a three-digit LP-ASCII class tag"
+
+[[record.field]]
+name = "record_index"
+offset = 7
+type = "u64"
+source = "spec"
+anchor = "a u64 indexed record identity"
+
+[[record]]
+name = "current_extrude_face_target_payload"
+parsed_by = "crates/cadmpeg-codec-f3d/src/design/decode/scopes/fixed_parameters.rs"
+kind = "byte"
+section = "3.1"
+anchor = "The current face-target payload starts at the first-side extent"
+size = 54
+
+[[record.field]]
+name = "first_side_extent"
+offset = 0
+type = "u32"
+source = "spec"
+anchor = "The current face-target payload starts at the first-side extent"
+
+[[record.field]]
+name = "first_side_offset_reference"
+offset = 4
+type = "bytes[11]"
+source = "spec"
+anchor = "first-side offset reference at payload offset 4"
+
+[[record.gap]]
+offset = 15
+size = 4
+note = "Target padding."
+
+[[record.field]]
+name = "target_option"
+offset = 19
+type = "u32"
+source = "spec"
+anchor = "target option at offset 19 is one"
+value = 1
+
+[[record.field]]
+name = "second_side_extent"
+offset = 23
+type = "u32"
+source = "spec"
+anchor = "offset 23 stores the second-side extent"
+
+[[record.gap]]
+offset = 27
+size = 1
+note = "Target separator."
+
+[[record.field]]
+name = "second_side_offset_reference"
+offset = 28
+type = "bytes[11]"
+source = "spec"
+anchor = "offset 28 stores the second-side offset reference"
+
+[[record.gap]]
+offset = 39
+size = 4
+note = "Target padding."
+
+[[record.field]]
+name = "second_side_taper_reference"
+offset = 43
+type = "bytes[11]"
+source = "spec"
+anchor = "offset 43 stores the second-side taper reference"

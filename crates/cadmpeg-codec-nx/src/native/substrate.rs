@@ -1,113 +1,44 @@
 // SPDX-License-Identifier: Apache-2.0
-//! Two-view single-parse substrate for the expensive per-stream Parasolid scans.
-//!
-//! Decode geometry and native extractors read different byte views of each
-//! Parasolid stream (delta-extended semantic bytes vs raw `stream.inflated`).
-//! [`ParsedStreams`] holds both and shares one parse only when the views are
-//! identical.
+//! Shared primary parses and sequential Deltas source ownership.
+//! Deltas streams have an empty semantic view; their physical events are retained separately.
 
-use cadmpeg_core::CodecError;
-use std::borrow::Cow;
 use std::collections::{BTreeMap, BTreeSet};
 use std::rc::Rc;
 
+use cadmpeg_core::CodecError;
+
 use crate::decode::Scan;
-use crate::deltas::census::Census;
 use crate::intersection::{self, CurveScan};
 use crate::parasolid::{Stream, StreamKind};
 use crate::topology::{BlendSurface, Graph, OffsetSurface, SurfaceCurve, TrimmedCurve};
 
 struct TopologyStream<'a> {
-    bytes: Cow<'a, [u8]>,
-    delta_census: Option<Census>,
+    source: &'a [u8],
+    deltas: Option<crate::records::DeltasRecords<'a>>,
 }
 
-/// The topology-merged bytes per stream: each stream's inflated bytes with delta
-/// full-record merges applied. Unpaired delta streams that carry records or tombstones
-/// are merged against an empty partition; paired delta streams are merged into their
-/// partition and then cleared.
-pub(crate) fn topology_streams<'a>(scan: &'a Scan<'_>) -> Result<Vec<Cow<'a, [u8]>>, CodecError> {
-    let semantic = prepare_topology_streams(scan, None)?;
-    let mut bytes = Vec::new();
-    for stream in semantic {
-        bytes.push(stream.bytes);
-    }
-    Ok(bytes)
+#[cfg(test)]
+pub(crate) fn topology_streams<'a>(scan: &'a Scan<'_>) -> Result<Vec<&'a [u8]>, CodecError> {
+    Ok(prepare_topology_streams(scan)?
+        .into_iter()
+        .map(|stream| stream.source)
+        .collect())
 }
 
-fn prepare_topology_streams<'a>(
-    scan: &'a Scan<'_>,
-    mut unmatched_tombstone_counts: Option<&mut BTreeMap<&'static str, usize>>,
-) -> Result<Vec<TopologyStream<'a>>, CodecError> {
-    let mut semantic = Vec::new();
+fn prepare_topology_streams<'a>(scan: &'a Scan<'_>) -> Result<Vec<TopologyStream<'a>>, CodecError> {
+    let mut semantic = Vec::with_capacity(scan.streams.len());
     for stream in &scan.streams {
-        semantic.push(TopologyStream {
-            bytes: Cow::Borrowed(stream.inflated.as_ref()),
-            delta_census: None,
-        });
-    }
-    let pairs = paired_delta_streams(scan);
-    let paired_deltas = pairs.values().flatten().copied().collect::<BTreeSet<_>>();
-    let mut merge =
-        |partition: &[u8], deltas: &[u8], census: &Census| -> Result<Vec<u8>, CodecError> {
-            if let Some(totals) = unmatched_tombstone_counts.as_deref_mut() {
-                let result = crate::deltas::merge_full_records_with_tombstone_census(
-                    partition, deltas, census,
-                )?;
-                for (family, count) in result.unmatched_tombstones {
-                    *totals.entry(family).or_default() += count;
-                }
-                Ok(result.merged)
-            } else {
-                crate::deltas::merge_full_records_with_census(partition, deltas, census)
-            }
+        let (source, deltas): (&[u8], _) = if stream.kind() == StreamKind::Deltas {
+            (
+                &[],
+                Some(crate::records::DeltasRecords::read(&stream.inflated)?),
+            )
+        } else {
+            (&stream.inflated, None)
         };
-    for (delta, stream) in scan.streams.iter().enumerate() {
-        if stream.kind() == StreamKind::Deltas && !paired_deltas.contains(&delta) {
-            let census = crate::deltas::census::walk(&stream.inflated)?;
-            if !census.records.is_empty() || !census.tombstones.is_empty() {
-                let merged = merge(&[], &stream.inflated, &census)?;
-                semantic[delta].bytes = Cow::Owned(merged);
-            }
-            semantic[delta].delta_census = Some(census);
-        }
-    }
-    for (partition, deltas) in pairs {
-        for delta in deltas {
-            let census = crate::deltas::census::walk(&semantic[delta].bytes)?;
-            let merged = merge(&semantic[partition].bytes, &semantic[delta].bytes, &census)?;
-            semantic[partition].bytes = Cow::Owned(merged);
-            semantic[delta].bytes = Cow::Borrowed(&[]);
-            semantic[delta].delta_census = Some(census);
-        }
+        semantic.push(TopologyStream { source, deltas });
     }
     Ok(semantic)
-}
-
-pub(super) fn paired_delta_streams(scan: &Scan) -> BTreeMap<usize, Vec<usize>> {
-    let wrapper_count = scan.container.segment_stream_wrappers().count();
-    let mut linked_deltas = BTreeSet::new();
-    for wrapper in scan.container.segment_stream_wrappers() {
-        let mut matched = None;
-        for (ordinal, stream) in scan.streams.iter().enumerate() {
-            if stream.file_offset == wrapper.zlib_offset
-                && stream.consumed
-                    == cadmpeg_core::decode::u64_from_index(wrapper.compressed_byte_len)
-            {
-                matched = Some((ordinal, stream));
-                break;
-            }
-        }
-        if let Some((ordinal, stream)) = matched {
-            if stream.kind() == crate::parasolid::StreamKind::Deltas {
-                linked_deltas.insert(ordinal);
-            }
-        }
-    }
-    pair_stream_indices(
-        &scan.streams,
-        (wrapper_count != 0).then_some(&linked_deltas),
-    )
 }
 
 /// Pair each eligible delta stream with the nearest preceding partition stream of the
@@ -137,14 +68,10 @@ pub(super) fn pair_stream_indices(
     pairs
 }
 
-/// The cached parses of one Parasolid byte view of one stream.
-///
-/// `graph` is [`topology::Graph::parse`] of this view's graph bytes; the four scanner
-/// vectors and `intersections` are the topology/intersection scans of this view's
-/// bytes. For the raw view every field derives from `stream.inflated`. For the
-/// semantic view `graph` derives from the topology-merged bytes and the scanners from
-/// the delta-extended semantic bytes, matching the decode geometry path exactly.
-pub(crate) struct StreamView {
+/// Cached primary topology and geometry. Deltas streams retain an empty view.
+pub(crate) struct StreamView<'a> {
+    /// Original stream bytes; empty for Deltas streams.
+    pub(crate) source: &'a [u8],
     /// Topology record graph.
     pub(crate) graph: Rc<Graph>,
     /// Type-60 offset surfaces.
@@ -159,10 +86,10 @@ pub(crate) struct StreamView {
     pub(crate) intersections: CurveScan,
 }
 
-impl StreamView {
-    /// An all-empty view, used for non-Parasolid streams which neither consumer reads.
-    fn empty() -> Self {
+impl<'a> StreamView<'a> {
+    fn without_geometry(source: &'a [u8]) -> Self {
         StreamView {
+            source,
             graph: Rc::new(Graph::default()),
             offset_surfaces: Vec::new(),
             blend_surfaces: Vec::new(),
@@ -172,15 +99,14 @@ impl StreamView {
         }
     }
 
-    /// Parse every cached family from a single byte buffer with the plain
-    /// intersection scan. This is the raw view (`stream.inflated`); it is also the
-    /// semantic view whenever the semantic bytes equal the raw bytes.
+    /// Parse cached primary families from their original stream bytes.
     fn parse_uniform(
-        bytes: &[u8],
+        bytes: &'a [u8],
         point_layout: Option<crate::intersection::ChartPointLayout>,
     ) -> Result<Self, CodecError> {
         let graph = Rc::new(Graph::parse(bytes));
         Ok(StreamView {
+            source: bytes,
             offset_surfaces: graph.offset_surfaces(),
             blend_surfaces: graph.blend_surfaces(),
             trimmed_curves: graph.trimmed_curves(),
@@ -192,239 +118,76 @@ impl StreamView {
             graph,
         })
     }
-
-    /// Parse the semantic view: `graph` from the topology-merged bytes, the scanners
-    /// from the delta-extended semantic bytes, and `intersections` via the
-    /// auxiliary-replacement scan when this stream has paired delta streams.
-    fn parse_semantic(
-        graph: Rc<Graph>,
-        topology_bytes: &[u8],
-        semantic_bytes: &[u8],
-        scan: &Scan,
-        paired_deltas: Option<&Vec<usize>>,
-        point_layout: Option<crate::intersection::ChartPointLayout>,
-    ) -> Result<(Self, Rc<Graph>), CodecError> {
-        let semantic_graph = if semantic_bytes == topology_bytes {
-            None
-        } else {
-            Some(Rc::new(Graph::parse(semantic_bytes)))
-        };
-        let scan_graph = semantic_graph.as_deref().unwrap_or(&graph);
-        let nurbs_graph = semantic_graph
-            .as_ref()
-            .map_or_else(|| Rc::clone(&graph), Rc::clone);
-        let intersections = if let Some(delta_indices) = paired_deltas {
-            let replacement_streams = delta_indices
-                .iter()
-                .map(|delta| scan.streams[*delta].inflated.as_ref())
-                .collect::<Vec<_>>();
-            intersection::scan_with_auxiliary_replacements_and_graph(
-                semantic_bytes,
-                topology_bytes,
-                &replacement_streams,
-                scan_graph,
-            )?
-        } else if let Some(layout) = point_layout {
-            intersection::scan_with_graph(semantic_bytes, scan_graph, layout)?
-        } else {
-            CurveScan::default()
-        };
-        Ok((
-            StreamView {
-                offset_surfaces: scan_graph.offset_surfaces(),
-                blend_surfaces: scan_graph.blend_surfaces(),
-                trimmed_curves: scan_graph.trimmed_curves(),
-                surface_curves: scan_graph.surface_curves(),
-                intersections,
-                graph,
-            },
-            nurbs_graph,
-        ))
-    }
 }
 
-/// The raw and semantic parses of one stream. The two views share an [`Rc`] when the
-/// byte views are proven identical, so shared streams parse exactly once.
-pub(crate) struct StreamParses {
-    raw: Rc<StreamView>,
-    semantic: Rc<StreamView>,
-}
-
-impl StreamParses {
-    /// The view the native record extractors read: parses of `stream.inflated`.
-    pub(super) fn view_for_records(&self) -> &StreamView {
-        &self.raw
-    }
-
-    /// The view the decode geometry (IR) path reads: parses of the delta-extended
-    /// semantic bytes.
-    pub(crate) fn view_for_geometry(&self) -> &StreamView {
-        &self.semantic
-    }
-}
-
-/// One stream's shared parses, prepared bytes, and deferred geometry inputs.
+/// One stream's shared parses, raw source, and deferred geometry inputs.
 struct StreamParse<'a> {
-    views: StreamParses,
-    semantic_bytes: Cow<'a, [u8]>,
-    delta_census: Option<Census>,
-    nurbs_graph: Rc<Graph>,
+    view: StreamView<'a>,
+    deltas: Option<crate::records::DeltasRecords<'a>>,
 }
 
-/// Every expensive per-stream Parasolid parse, once per distinct byte view,
-/// indexed by stream ordinal. NURBS parsing remains deferred until requested.
+/// Every expensive per-stream Parasolid parse, once per stream, indexed by
+/// stream ordinal. NURBS parsing remains deferred until requested.
 pub(crate) struct ParsedStreams<'a> {
     streams: Vec<StreamParse<'a>>,
-    unmatched_tombstone_counts: BTreeMap<&'static str, usize>,
 }
 
 impl<'a> ParsedStreams<'a> {
-    /// Prepare the semantic and topology byte views, then parse each family needed by
-    /// its consumer once per byte view. Non-Parasolid streams get empty views. A
-    /// stream's raw and semantic views share one parse when the topology-merged and
-    /// delta-extended byte views both equal `stream.inflated` and the stream has no
-    /// auxiliary-replacement deltas. NURBS parsing is deferred until a geometry
-    /// consumer requests the selected stream's geometry.
+    /// Parse primary geometry once and retain the Deltas owner for native consumers.
     pub(crate) fn parse(scan: &'a Scan) -> Result<Self, CodecError> {
-        let mut unmatched_tombstone_counts = BTreeMap::new();
-        let mut topology_streams =
-            prepare_topology_streams(scan, Some(&mut unmatched_tombstone_counts))?;
-        let delta_pairs = paired_delta_streams(scan);
-        let paired_deltas = delta_pairs
-            .values()
-            .flatten()
-            .copied()
-            .collect::<BTreeSet<_>>();
-
-        let mut streams = Vec::new();
-        for (si, stream) in scan.streams.iter().enumerate() {
-            let mut semantic_bytes = std::mem::take(&mut topology_streams[si].bytes);
-            let crate::parasolid::StreamBody::Parasolid { subtype, .. } = &stream.body else {
-                let empty = Rc::new(StreamView::empty());
-                let empty_graph = Rc::clone(&empty.graph);
-                streams.push(StreamParse {
-                    views: StreamParses {
-                        raw: empty.clone(),
-                        semantic: empty,
-                    },
-                    semantic_bytes,
-                    delta_census: topology_streams[si].delta_census.take(),
-                    nurbs_graph: empty_graph,
-                });
-                continue;
-            };
-            let point_layout = subtype.chart_point_layout();
-            let paired = delta_pairs.get(&si);
-            let topology_matches_raw = semantic_bytes.as_ref() == stream.inflated.as_ref();
-            let mut residual = Vec::new();
-            if stream.kind() == StreamKind::Deltas && !paired_deltas.contains(&si) {
-                if let Some(census) = topology_streams[si].delta_census.as_ref() {
-                    let part =
-                        crate::deltas::semantic_residual_with_census(&stream.inflated, census);
-                    residual.extend_from_slice(&part);
+        let mut topology = prepare_topology_streams(scan)?;
+        let mut streams = Vec::with_capacity(scan.streams.len());
+        for (ordinal, stream) in scan.streams.iter().enumerate() {
+            let source = topology[ordinal].source;
+            let view = match &stream.body {
+                crate::parasolid::StreamBody::Parasolid { subtype, .. }
+                    if stream.kind() != StreamKind::Deltas =>
+                {
+                    StreamView::parse_uniform(
+                        stream
+                            .source
+                            .map_or(stream.inflated.as_ref(), |source| source.window()),
+                        subtype.chart_point_layout(),
+                    )?
                 }
-            }
-            if let Some(deltas) = paired {
-                for delta in deltas {
-                    if let Some(census) = topology_streams[*delta].delta_census.as_ref() {
-                        let part = crate::deltas::semantic_residual_with_census(
-                            &scan.streams[*delta].inflated,
-                            census,
-                        );
-                        residual.extend_from_slice(&part);
-                    }
-                }
-            }
-            let identical = paired.is_none() && topology_matches_raw && residual.is_empty();
-
-            let raw_bytes = stream
-                .source
-                .map_or(stream.inflated.as_ref(), |source| source.window());
-            let raw = Rc::new(StreamView::parse_uniform(raw_bytes, point_layout)?);
-            let (semantic, nurbs_graph) = if identical {
-                (Rc::clone(&raw), Rc::clone(&raw.graph))
-            } else {
-                let graph = Rc::new(Graph::parse(&semantic_bytes));
-                let topology_for_auxiliary = if paired.is_some() {
-                    Some(match &semantic_bytes {
-                        Cow::Borrowed(bytes) => Cow::Borrowed(*bytes),
-                        Cow::Owned(bytes) => Cow::Owned(bytes.clone()),
-                    })
-                } else {
-                    None
-                };
-                match &mut semantic_bytes {
-                    Cow::Borrowed(bytes) => {
-                        let mut owned = bytes.to_vec();
-                        owned.extend_from_slice(&residual);
-                        semantic_bytes = Cow::Owned(owned);
-                    }
-                    Cow::Owned(bytes) => {
-                        bytes.extend_from_slice(&residual);
-                    }
-                }
-                let (semantic, nurbs_graph) = StreamView::parse_semantic(
-                    graph,
-                    topology_for_auxiliary
-                        .as_deref()
-                        .unwrap_or(semantic_bytes.as_ref()),
-                    &semantic_bytes,
-                    scan,
-                    paired,
-                    point_layout,
-                )?;
-
-                (Rc::new(semantic), nurbs_graph)
+                _ => StreamView::without_geometry(source),
             };
             streams.push(StreamParse {
-                views: StreamParses { raw, semantic },
-                semantic_bytes,
-                delta_census: topology_streams[si].delta_census.take(),
-                nurbs_graph,
+                view,
+                deltas: topology[ordinal].deltas.take(),
             });
         }
-
-        Ok(ParsedStreams {
-            streams,
-            unmatched_tombstone_counts,
-        })
+        Ok(Self { streams })
     }
 
-    pub(crate) fn unmatched_tombstone_counts(&self) -> &BTreeMap<&'static str, usize> {
-        &self.unmatched_tombstone_counts
+    pub(crate) fn deltas(&self, ordinal: usize) -> Option<&crate::records::DeltasRecords<'a>> {
+        self.streams.get(ordinal)?.deltas.as_ref()
     }
 
-    /// Read the raw delta census before native extraction consumes it.
-    pub(crate) fn delta_census(&self, ordinal: usize) -> Option<&Census> {
-        self.streams.get(ordinal)?.delta_census.as_ref()
-    }
-
-    /// Move the delta censuses into the native extractor after semantic
-    /// residuals and source metadata have been built.
-    pub(super) fn take_delta_censuses(&mut self) -> Vec<Option<Census>> {
+    pub(super) fn take_deltas(&mut self) -> Vec<Option<crate::records::DeltasRecords<'a>>> {
         self.streams
             .iter_mut()
-            .map(|stream| stream.delta_census.take())
+            .map(|stream| stream.deltas.take())
             .collect()
     }
 
     /// The cached parses of the stream at `ordinal`.
-    pub(crate) fn stream(&self, ordinal: usize) -> &StreamParses {
-        &self.streams[ordinal].views
+    pub(crate) fn stream(&self, ordinal: usize) -> &StreamView<'a> {
+        &self.streams[ordinal].view
     }
 
     /// Iterate `(ordinal, parses)` over every stream.
-    pub(super) fn iter(&self) -> impl Iterator<Item = (usize, &StreamParses)> {
+    pub(super) fn iter(&self) -> impl Iterator<Item = (usize, &StreamView<'a>)> {
         self.streams
             .iter()
             .enumerate()
-            .map(|(ordinal, stream)| (ordinal, &stream.views))
+            .map(|(ordinal, stream)| (ordinal, &stream.view))
     }
 
-    /// Parse NURBS geometry for the selected semantic stream when requested.
+    /// Parse NURBS geometry for the selected primary stream when requested.
     pub(crate) fn parse_nurbs(&self, ordinal: usize) -> crate::nurbs::Parsed {
         let stream = &self.streams[ordinal];
-        crate::nurbs::parse_with_graph(&stream.semantic_bytes, &stream.nurbs_graph)
+        crate::nurbs::parse_with_graph(stream.view.source, &stream.view.graph)
     }
 }
 
@@ -433,7 +196,6 @@ mod tests {
     use crate::test_support::test_deltas::bspline_partition_stream;
 
     use super::{topology_streams, ParsedStreams};
-    use std::borrow::Cow;
 
     fn one_delta_pair() -> Vec<crate::parasolid::Stream<'static>> {
         let stream = |subtype, file_offset| crate::parasolid::Stream {
@@ -456,40 +218,6 @@ mod tests {
     }
 
     #[test]
-    fn wrapper_start_with_a_different_extent_cannot_pair_a_delta() {
-        let file = crate::test_support::test_prt::prt_with_named_payloads(&[(
-            "/Root/UG_PART/UG_PART",
-            crate::test_support::test_om::segment_stream_payload(),
-        )]);
-        crate::test_support::with_decode_context_over(
-            &file,
-            |_| {},
-            |ctx| {
-                let mut scan =
-                    crate::decode::scan(ctx, cadmpeg_core::decode::View::over_retained(&file))
-                        .unwrap();
-                let delta = scan
-                    .streams
-                    .iter()
-                    .position(|stream| stream.kind() == crate::parasolid::StreamKind::Deltas)
-                    .expect("indexed Deltas fixture");
-                let mut primary = scan.streams[delta].clone();
-                if let crate::parasolid::StreamBody::Parasolid { subtype, .. } = &mut primary.body {
-                    *subtype = crate::parasolid::ParasolidSubtype::Partition;
-                }
-                primary.file_offset = 0;
-                scan.streams.insert(0, primary);
-                assert_eq!(
-                    super::paired_delta_streams(&scan).get(&0),
-                    Some(&vec![delta + 1])
-                );
-                scan.streams[delta + 1].consumed += 1;
-                assert!(super::paired_delta_streams(&scan).is_empty());
-            },
-        );
-    }
-
-    #[test]
     fn delta_pairing_matches_the_nearest_preceding_partition() {
         let mut streams = vec![crate::parasolid::Stream {
             source: None,
@@ -503,158 +231,6 @@ mod tests {
         assert_eq!(
             super::pair_stream_indices(&streams, None),
             std::collections::BTreeMap::from([(1, vec![2])])
-        );
-    }
-
-    #[test]
-    fn linked_delta_pairing_ignores_an_unlinked_trailing_stream() {
-        let file = crate::test_support::test_prt::prt_with_named_payloads(&[(
-            "/Root/UG_PART/UG_PART",
-            crate::test_support::test_om::segment_stream_payload(),
-        )]);
-
-        crate::test_support::with_decode_context_over(
-            &file,
-            |_| {},
-            |scan_ctx| {
-                let root = cadmpeg_core::decode::View::over_retained(&file);
-
-                let mut scan =
-                    crate::decode::scan(scan_ctx, root).expect("valid linked delta stream");
-                scan.streams.push(crate::parasolid::Stream {
-                    source: None,
-                    file_offset: 0,
-                    consumed: 0,
-                    inflated: Vec::new().into(),
-                    body: crate::parasolid::StreamBody::Preview,
-                });
-
-                let pairs = super::paired_delta_streams(&scan);
-                assert!(pairs.is_empty());
-            },
-        );
-    }
-
-    #[test]
-    fn unchanged_stream_views_borrow_the_inflated_bytes() {
-        let scan = crate::decode::Scan::new(
-            crate::container::Container {
-                data: Vec::new().into(),
-                physical_size: 0,
-                layout: crate::container::test_modern_layout(0x06),
-                entries: Vec::new(),
-                fastload_table: None,
-                indexed_section_layouts: std::sync::OnceLock::new(),
-                om_section_cache: std::sync::OnceLock::new(),
-            },
-            vec![crate::parasolid::Stream {
-                source: None,
-                file_offset: 0,
-                consumed: 3,
-                inflated: vec![1, 2, 3].into(),
-                body: crate::parasolid::StreamBody::Parasolid {
-                    subtype: crate::parasolid::ParasolidSubtype::Partition,
-                    schema: Some(
-                        cadmpeg_parasolid::OwnedSchemaToken::try_from("SCH_TEST_1_9999")
-                            .expect("the fixture text is a schema token"),
-                    ),
-                },
-            }],
-        );
-
-        let topology = topology_streams(&scan).expect("test topology streams");
-        let parsed = ParsedStreams::parse(&scan).expect("test parsed streams");
-
-        assert!(matches!(topology[0], Cow::Borrowed(_)));
-        assert!(matches!(parsed.streams[0].semantic_bytes, Cow::Borrowed(_)));
-        assert!(std::ptr::eq(
-            topology[0].as_ptr(),
-            scan.streams[0].inflated.as_ptr()
-        ));
-        assert!(std::ptr::eq(
-            parsed.streams[0].semantic_bytes.as_ptr(),
-            scan.streams[0].inflated.as_ptr()
-        ));
-    }
-
-    #[test]
-    fn nurbs_geometry_is_parsed_for_the_selected_semantic_stream() {
-        let stream = |file_offset| {
-            let inflated = bspline_partition_stream();
-            crate::parasolid::Stream {
-                source: None,
-                file_offset,
-                consumed: u64::try_from(inflated.len()).expect("test stream length fits u64"),
-                inflated: inflated.into(),
-                body: crate::parasolid::StreamBody::Parasolid {
-                    subtype: crate::parasolid::ParasolidSubtype::Partition,
-                    schema: Some(
-                        cadmpeg_parasolid::OwnedSchemaToken::try_from("SCH_TEST_1_9999")
-                            .expect("the fixture text is a schema token"),
-                    ),
-                },
-            }
-        };
-        let scan = crate::decode::Scan::new(
-            crate::container::Container {
-                data: Vec::new().into(),
-                physical_size: 0,
-                layout: crate::container::test_modern_layout(0x06),
-                entries: Vec::new(),
-                fastload_table: None,
-                indexed_section_layouts: std::sync::OnceLock::new(),
-                om_section_cache: std::sync::OnceLock::new(),
-            },
-            vec![stream(0), stream(1)],
-        );
-
-        let parsed = ParsedStreams::parse(&scan).expect("test parsed streams");
-
-        let expected = crate::nurbs::parse_with_graph(
-            &parsed.streams[1].semantic_bytes,
-            &parsed.streams[1].nurbs_graph,
-        );
-        let actual = parsed.parse_nurbs(1);
-        assert_eq!(actual.surfaces.len(), expected.surfaces.len());
-        assert_eq!(actual.curves.len(), expected.curves.len());
-        assert_eq!(actual.pcurves.len(), expected.pcurves.len());
-        assert!(!actual.surfaces.is_empty());
-        assert!(!actual.curves.is_empty());
-        assert_eq!(
-            actual
-                .surfaces
-                .iter()
-                .map(|surface| surface.pos)
-                .collect::<Vec<_>>(),
-            expected
-                .surfaces
-                .iter()
-                .map(|surface| surface.pos)
-                .collect::<Vec<_>>(),
-        );
-        assert_eq!(
-            actual
-                .curves
-                .iter()
-                .map(|curve| curve.pos)
-                .collect::<Vec<_>>(),
-            expected
-                .curves
-                .iter()
-                .map(|curve| curve.pos)
-                .collect::<Vec<_>>(),
-        );
-        assert_eq!(
-            actual
-                .pcurves
-                .iter()
-                .map(|pcurve| pcurve.pos)
-                .collect::<Vec<_>>(),
-            expected
-                .pcurves
-                .iter()
-                .map(|pcurve| pcurve.pos)
-                .collect::<Vec<_>>(),
         );
     }
 
@@ -714,6 +290,127 @@ mod tests {
         assert_eq!(
             super::pair_stream_indices(&streams, Some(&eligible)),
             std::collections::BTreeMap::from([(0, vec![2]), (3, vec![5])])
+        );
+    }
+
+    #[test]
+    fn unchanged_stream_views_borrow_the_inflated_bytes() {
+        let scan = crate::decode::Scan::new(
+            crate::container::Container {
+                data: Vec::new().into(),
+                physical_size: 0,
+                layout: crate::container::test_modern_layout(0x06),
+                entries: Vec::new(),
+                fastload_table: None,
+                indexed_section_layouts: std::sync::OnceLock::new(),
+                om_section_cache: std::sync::OnceLock::new(),
+            },
+            vec![crate::parasolid::Stream {
+                source: None,
+                file_offset: 0,
+                consumed: 3,
+                inflated: vec![1, 2, 3].into(),
+                body: crate::parasolid::StreamBody::Parasolid {
+                    subtype: crate::parasolid::ParasolidSubtype::Partition,
+                    schema: Some(
+                        cadmpeg_parasolid::OwnedSchemaToken::try_from("SCH_TEST_1_9999")
+                            .expect("the fixture text is a schema token"),
+                    ),
+                },
+            }],
+        );
+
+        let topology = topology_streams(&scan).expect("test topology streams");
+        let parsed = ParsedStreams::parse(&scan).expect("test parsed streams");
+
+        assert!(std::ptr::eq(
+            topology[0],
+            scan.streams[0].inflated.as_ref()
+        ));
+        assert!(std::ptr::eq(
+            parsed.streams[0].view.source,
+            scan.streams[0].inflated.as_ref()
+        ));
+    }
+
+    #[test]
+    fn nurbs_geometry_is_parsed_for_the_selected_semantic_stream() {
+        let stream = |file_offset| {
+            let inflated = bspline_partition_stream();
+            crate::parasolid::Stream {
+                source: None,
+                file_offset,
+                consumed: u64::try_from(inflated.len()).expect("test stream length fits u64"),
+                inflated: inflated.into(),
+                body: crate::parasolid::StreamBody::Parasolid {
+                    subtype: crate::parasolid::ParasolidSubtype::Partition,
+                    schema: Some(
+                        cadmpeg_parasolid::OwnedSchemaToken::try_from("SCH_TEST_1_9999")
+                            .expect("the fixture text is a schema token"),
+                    ),
+                },
+            }
+        };
+        let scan = crate::decode::Scan::new(
+            crate::container::Container {
+                data: Vec::new().into(),
+                physical_size: 0,
+                layout: crate::container::test_modern_layout(0x06),
+                entries: Vec::new(),
+                fastload_table: None,
+                indexed_section_layouts: std::sync::OnceLock::new(),
+                om_section_cache: std::sync::OnceLock::new(),
+            },
+            vec![stream(0), stream(1)],
+        );
+
+        let parsed = ParsedStreams::parse(&scan).expect("test parsed streams");
+
+        let expected = crate::nurbs::parse_with_graph(
+            parsed.streams[1].view.source,
+            &parsed.streams[1].view.graph,
+        );
+        let actual = parsed.parse_nurbs(1);
+        assert_eq!(actual.surfaces.len(), expected.surfaces.len());
+        assert_eq!(actual.curves.len(), expected.curves.len());
+        assert_eq!(actual.pcurves.len(), expected.pcurves.len());
+        assert!(!actual.surfaces.is_empty());
+        assert!(!actual.curves.is_empty());
+        assert_eq!(
+            actual
+                .surfaces
+                .iter()
+                .map(|surface| surface.pos)
+                .collect::<Vec<_>>(),
+            expected
+                .surfaces
+                .iter()
+                .map(|surface| surface.pos)
+                .collect::<Vec<_>>(),
+        );
+        assert_eq!(
+            actual
+                .curves
+                .iter()
+                .map(|curve| curve.pos)
+                .collect::<Vec<_>>(),
+            expected
+                .curves
+                .iter()
+                .map(|curve| curve.pos)
+                .collect::<Vec<_>>(),
+        );
+        assert_eq!(
+            actual
+                .pcurves
+                .iter()
+                .map(|pcurve| pcurve.pos)
+                .collect::<Vec<_>>(),
+            expected
+                .pcurves
+                .iter()
+                .map(|pcurve| pcurve.pos)
+                .collect::<Vec<_>>(),
         );
     }
 }

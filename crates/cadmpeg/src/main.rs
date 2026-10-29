@@ -10,6 +10,8 @@ mod application;
 mod commands;
 mod input_format;
 mod inspect;
+#[cfg(test)]
+mod integration_tests;
 mod loader;
 mod measure;
 mod query;

@@ -87,6 +87,11 @@ fn write_seekable(
         );
     }
     validate_entry_names(&entries)?;
+    let source_offsets = source_archive
+        .entries()
+        .iter()
+        .map(|entry| (entry.name.as_str(), entry.header_start))
+        .collect::<HashMap<_, _>>();
     let source_document = entries
         .iter()
         .find(|entry| entry.name() == "Document.xml")
@@ -141,10 +146,7 @@ fn write_seekable(
         let file_options = SimpleFileOptions::default()
             .compression_method(zip::CompressionMethod::Deflated)
             .last_modified_time(zip::DateTime::default());
-        entries.sort_by(|left, right| {
-            (left.name() != "Document.xml", left.name())
-                .cmp(&(right.name() != "Document.xml", right.name()))
-        });
+        restore_entry_order(&mut entries, &source_offsets)?;
         for entry in &entries {
             archive
                 .start_file(entry.name(), file_options)
@@ -189,6 +191,22 @@ struct WriteOutcome {
     geometry_empty: bool,
     census: cadmpeg_ir::report::export::EntityCensus,
     notes: Vec<String>,
+}
+
+fn restore_entry_order(
+    entries: &mut [EntryRecord],
+    source_offsets: &HashMap<&str, u64>,
+) -> Result<(), CodecError> {
+    for entry in &*entries {
+        if !source_offsets.contains_key(entry.name()) {
+            return Err(CodecError::NotImplemented(format!(
+                "FCStd output entry {} has no retained restoration order",
+                entry.name()
+            )));
+        }
+    }
+    entries.sort_by_key(|entry| (entry.name() != "Document.xml", source_offsets[entry.name()]));
+    Ok(())
 }
 
 fn validate_entry_names(entries: &[EntryRecord]) -> Result<(), CodecError> {

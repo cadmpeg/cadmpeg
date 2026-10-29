@@ -29,8 +29,8 @@ fn current_typed_act_records_reemit_without_source_frames_or_locations() {
             .into_iter()
             .map(document_record)
             .collect(),
-        act_root_components: original
-            .root_components
+        act_component_links: original
+            .component_links
             .into_iter()
             .map(document_record)
             .collect(),
@@ -41,7 +41,7 @@ fn current_typed_act_records_reemit_without_source_frames_or_locations() {
             .collect(),
         ..Default::default()
     };
-    let root = &mut native.act_root_components[0];
+    let root = &mut native.act_component_links[0];
     root.try_set_strings(
         root.layout().entity_id().to_owned(),
         "Current part label".into(),
@@ -76,7 +76,7 @@ fn current_typed_act_records_reemit_without_source_frames_or_locations() {
     assert_eq!(output.untyped_records, 0);
     assert_eq!(output.entities.len(), native.act_entities.len());
     assert_eq!(
-        output.root_components[0].layout().display_name(),
+        output.component_links[0].layout().display_name(),
         "Current part label"
     );
     assert_eq!(

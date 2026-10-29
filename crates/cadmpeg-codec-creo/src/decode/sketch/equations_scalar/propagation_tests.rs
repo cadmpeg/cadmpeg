@@ -153,7 +153,7 @@ fn radial_constraint_overflowing_derived_distance_is_not_admitted() {
 }
 
 #[test]
-fn relation_diameter_underflow_does_not_seed_radius() {
+fn diameter_dimension_seeds_the_stored_positive_radius() {
     use crate::feature::definitions::{
         DimensionValue, FeatureDimension, FeatureDimensionTable, FeatureRelation,
         FeatureRelationTable,
@@ -197,7 +197,10 @@ fn relation_diameter_underflow_does_not_seed_radius() {
         triples: None,
         offset: 0,
     });
-    assert!(section_relation_radius_scalar_values(&definition).is_empty());
+    assert_eq!(
+        section_relation_radius_scalar_values(&definition),
+        vec![((VariableType::Radius, 6), f64::from_bits(1))]
+    );
 }
 
 #[test]
@@ -600,6 +603,24 @@ fn dimension_equations_accept_scalar_values_proved_by_equality() {
         section_equation_scalar_seed_values(&dimension_driven)
             .get(&(crate::feature::definitions::VariableType::Dimension, 0)),
         Some(&Some(5.0))
+    );
+
+    let mut diameter_driven = dimension_driven.clone();
+    diameter_driven
+        .dimensions
+        .as_mut()
+        .expect("dimensions")
+        .rows[0]
+        .dimension_type = 4;
+    diameter_driven.variables.as_mut().expect("variables").rows[1].value = ScalarLane::Value(10.0);
+    assert_eq!(
+        section_equation_unsigned_coordinate_distance_rows(&diameter_driven, &BTreeSet::new())[0]
+            .value,
+        10.0
+    );
+    assert_eq!(
+        section_equation_scalar_seed_values(&diameter_driven).get(&(VariableType::Dimension, 0)),
+        Some(&Some(10.0))
     );
 
     let mut conflicting = coordinate_definition;

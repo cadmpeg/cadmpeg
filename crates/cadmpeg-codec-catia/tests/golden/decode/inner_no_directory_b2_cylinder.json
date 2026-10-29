@@ -1,6 +1,7 @@
 {
   "ir": {
-    "ir_version": "8",
+    "decode_depth": "full",
+    "ir_version": "9",
     "model": {
       "appearance_bindings": [],
       "appearances": [],
@@ -80,6 +81,7 @@
         "consolidated_cones": [],
         "consolidated_cylinders": [
           {
+            "byte_offset": 32,
             "header": {
               "header_token": 5,
               "width": 1
@@ -130,7 +132,6 @@
         "consolidated_tori": [],
         "consolidated_vertex_identities": [],
         "design_objects": [],
-        "display_colors": [],
         "e5_curve_supports": [],
         "entity_records": [],
         "external_references": [],
@@ -164,15 +165,13 @@
         "zero_entity_vertex_incidences": []
       }
     },
-    "scope": {
-      "design": true,
-      "model": true
-    },
     "source": {
       "attributes": {
         "external_reference_count": "0",
         "file_size": "359",
         "finjpl_segment_count": "0",
+        "inner_offset": "16",
+        "outer_dir_offset": "359",
         "preview_count": "0",
         "stream_count": "2"
       },
@@ -561,10 +560,7 @@
     ],
     "transfer": {
       "geometry_transferred": true,
-      "scope": {
-        "design": true,
-        "model": true
-      }
+      "transfer": "full"
     }
   },
   "source_fidelity": {
@@ -591,11 +587,6 @@
         }
       }
     },
-    "metadata": {
-      "native.catia.consolidated_cylinders.catia:consolidated:cylinder#0.byte_offset": "32",
-      "source.inner_offset": "16",
-      "source.outer_dir_offset": "359"
-    },
     "retained_records": {
       "catia:payload:unknown#freeform": {
         "bytes": {
@@ -603,19 +594,8 @@
           "retention": "inline"
         },
         "offset": 0,
-        "stream": "catia:CATPart",
-        "untyped": []
-      },
-      "catia:source:image#whole": {
-        "bytes": {
-          "data": "VjVfQ0ZWMgAAAAFnAAAAAFY1X0NGVjIAAAAAcAAAAOeyAyhaBQAAAAAAAPA/AAAAAAAAAEAAAAAAAAAIQBkAAAAAAADwPwAAAAAAAAAAAAAAAAAA8D8AAAAAAAAAQAAAAAAAAAAAGC1EVPshKUAAAAAAAAAQwAAAAAAAABRABwBDQVRJQV9WNSBDQjAwMDEAAAAAAAAAAAAAAAAAAAAAX1gAYQBpAG4ARABhAHQAYQBTAHQAcgBlAGEAbQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAABAAAAEAAAAF8AAABfAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAABUwB1AHIAZgBhAGMAaQBjAFIAZQBwAHMAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAEAAABvAAAAAQAAAAEAAAAAAAAAAENCX19FTkQ=",
-          "retention": "inline"
-        },
-        "offset": 0,
-        "stream": "catia:source",
-        "untyped": []
+        "stream": "catia:CATPart"
       }
-    },
-    "unrepresented": []
+    }
   }
 }

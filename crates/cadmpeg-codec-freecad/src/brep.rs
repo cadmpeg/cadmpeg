@@ -216,7 +216,11 @@ pub(crate) struct Tables<'a> {
 
 impl<'a> Tables<'a> {
     pub(crate) fn from_payload(payload: &'a ShapePayloadRecord) -> Option<Self> {
-        let set = payload.payload.shape_set()?;
+        Self::from_shape(&payload.payload)
+    }
+
+    pub(crate) fn from_shape(payload: &'a ShapePayload) -> Option<Self> {
+        let set = payload.shape_set()?;
         Some(Self {
             locations: &set.locations,
             curve2ds: &set.curve2ds,
@@ -2327,6 +2331,25 @@ pub(crate) fn surface_parameter_affine(surface: &TextSurface) -> SurfaceParamete
         }
         TextSurface::Offset { basis, .. } => surface_parameter_affine(basis.surface()),
         _ => identity,
+    }
+}
+
+/// Parse a persisted drawing reference shape without adding model geometry.
+pub(crate) fn parse_reference_payload(
+    name: &str,
+    view: View<'_>,
+) -> Result<ShapePayload, CodecError> {
+    if view.window().is_empty() {
+        Ok(ShapePayload::Empty)
+    } else if name
+        .rsplit_once('.')
+        .is_some_and(|(_, extension)| extension.eq_ignore_ascii_case("bin"))
+    {
+        let (facts, version) = parse_binary_prefix(view.window())?;
+        Ok(ShapePayload::Binary { facts, version })
+    } else {
+        let (facts, version) = parse_text(view.window())?;
+        Ok(ShapePayload::Text { facts, version })
     }
 }
 

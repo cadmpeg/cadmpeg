@@ -1,7 +1,8 @@
 {
   "decode": {
     "ir": {
-      "ir_version": "8",
+      "decode_depth": "full",
+      "ir_version": "9",
       "model": {
         "appearance_bindings": [],
         "appearances": [],
@@ -48,7 +49,9 @@
               "id": "nx:om-entry-0:class#8",
               "name": "UGS::ModlFeature",
               "ordinal": 0,
+              "section_offset": 76,
               "source_entry": "/Root/UG_PART/UG_PART",
+              "source_offset": 84,
               "trailing_code": 129
             }
           ],
@@ -58,9 +61,11 @@
               "byte_len": 16,
               "id": "nx:om-data-blocks-0:block#0",
               "role": "control",
+              "section_offset": 76,
               "section_ordinal": 0,
               "sha256": "468fb56723f3e5c56e68cbbc0e4fd14009f7a035c0a0c1cee55602e697fcef49",
               "source_entry": "/Root/UG_PART/UG_PART",
+              "source_offset": 122,
               "stable_identity": "nx:om:data-block:8f024974f7e887f3370a38dc1670ed125fdd3824d049658078a3665d50d030b4"
             },
             {
@@ -68,9 +73,11 @@
               "byte_len": 38,
               "id": "nx:om-data-blocks-0:block#1",
               "role": "column",
+              "section_offset": 76,
               "section_ordinal": 0,
               "sha256": "655fbb302e7c31f8a52d752e7c00791b1040a6ec629b66ca6b1b0a9fea2c9a3c",
               "source_entry": "/Root/UG_PART/UG_PART",
+              "source_offset": 138,
               "stable_identity": "nx:om:data-block:b7393535adf9abdefced56f2a6e19fee2dbc71b40def62a6564fca6e319eec70"
             },
             {
@@ -78,9 +85,11 @@
               "byte_len": 8,
               "id": "nx:om-data-blocks-0:block#2",
               "role": "column",
+              "section_offset": 76,
               "section_ordinal": 0,
               "sha256": "8c7d2c6f7def9a50d4ad3023702df661be86637f2854eff94de603676a813341",
               "source_entry": "/Root/UG_PART/UG_PART",
+              "source_offset": 176,
               "stable_identity": "nx:om:data-block:3fb5fe362266428f6c3516a67f1ebc9a7818f1ebffc7b6c9b41cc3160efd7682"
             }
           ],
@@ -92,16 +101,13 @@
               "id": "nx:offset-store:named-point#0-1",
               "name": "Point7",
               "raw_values": [
-                {
-                  "byte_len": 8,
-                  "record_id": "nx:source:evidence#2d1e1f3b0d544bf762c08d16d0db3e86522805b871f360eee396e13d9b916401",
-                  "sha256": "4e42614074cb179e88df0829a5b4d10334c77f7199123d2f064f61a9839ded1e"
-                },
-                {
-                  "byte_len": 8,
-                  "record_id": "nx:source:evidence#02a02bf58e79833b81ece4771721090511b53f18e06864d09f06139022fca4a9",
-                  "sha256": "4e42614074cb179e88df0829a5b4d10334c77f7199123d2f064f61a9839ded1e"
-                }
+                "304c933333333307",
+                "304c933333333307"
+              ],
+              "source_offset": 138,
+              "value_source_offsets": [
+                147,
+                163
               ],
               "values": [
                 57.149999999999686,
@@ -115,6 +121,7 @@
               "object_id": null,
               "section_ordinal": 0,
               "source_entry": "/Root/UG_PART/UG_PART",
+              "source_offset": 122,
               "version": "NX 2027.3102"
             }
           ],
@@ -131,10 +138,6 @@
           ]
         }
       },
-      "scope": {
-        "design": false,
-        "model": false
-      },
       "source": {
         "attributes": {
           "classified_offset_store_control_count": "0",
@@ -143,6 +146,7 @@
           "file_size": "198",
           "footer_entry_count": "0",
           "footer_fingerprint": "00000000",
+          "footer_offset": "184",
           "header_entry_count": "1",
           "jpeg_preview_count": "0",
           "offset_store_control_count": "1",
@@ -207,17 +211,6 @@
           },
           "message": "1 of 1 bounded offset-store control block(s) have no admitted complete grammar.",
           "severity": "warning"
-        },
-        {
-          "code": {
-            "code": "depth.not-delivered",
-            "kind": "geometry_not_transferred",
-            "namespace": "decode",
-            "scope": "namespaced",
-            "strict_floor": "warning"
-          },
-          "message": "requested full depth but the nx decoder did not deliver classes: model, design",
-          "severity": "error"
         }
       ],
       "notes": [
@@ -228,10 +221,7 @@
       ],
       "transfer": {
         "geometry_transferred": false,
-        "scope": {
-          "design": false,
-          "model": false
-        }
+        "transfer": "full"
       }
     },
     "source_fidelity": {
@@ -264,20 +254,6 @@
           }
         }
       },
-      "metadata": {
-        "native.nx.class_definitions.nx:om-entry-0:class#8.section_offset": "76",
-        "native.nx.class_definitions.nx:om-entry-0:class#8.source_offset": "84",
-        "native.nx.data_blocks.nx:om-data-blocks-0:block#0.section_offset": "76",
-        "native.nx.data_blocks.nx:om-data-blocks-0:block#0.source_offset": "122",
-        "native.nx.data_blocks.nx:om-data-blocks-0:block#1.section_offset": "76",
-        "native.nx.data_blocks.nx:om-data-blocks-0:block#1.source_offset": "138",
-        "native.nx.data_blocks.nx:om-data-blocks-0:block#2.section_offset": "76",
-        "native.nx.data_blocks.nx:om-data-blocks-0:block#2.source_offset": "176",
-        "native.nx.offset_store_named_points.nx:offset-store:named-point#0-1.source_offset": "138",
-        "native.nx.offset_store_named_points.nx:offset-store:named-point#0-1.value_source_offsets": "[147,163]",
-        "native.nx.store_headers.nx:om-store-headers:store#0.source_offset": "122",
-        "source.footer_offset": "184"
-      },
       "retained_records": {
         "nx:om-section-0:block#0": {
           "bytes": {
@@ -285,8 +261,7 @@
             "retention": "inline"
           },
           "offset": 122,
-          "stream": "nx:container",
-          "untyped": []
+          "stream": "nx:container"
         },
         "nx:om-section-0:block#1": {
           "bytes": {
@@ -294,8 +269,7 @@
             "retention": "inline"
           },
           "offset": 138,
-          "stream": "nx:container",
-          "untyped": []
+          "stream": "nx:container"
         },
         "nx:om-section-0:block#2": {
           "bytes": {
@@ -303,46 +277,9 @@
             "retention": "inline"
           },
           "offset": 176,
-          "stream": "nx:container",
-          "untyped": []
-        },
-        "nx:source:evidence#02a02bf58e79833b81ece4771721090511b53f18e06864d09f06139022fca4a9": {
-          "bytes": {
-            "byte_len": 8,
-            "retention": "digest",
-            "sha256": "4e42614074cb179e88df0829a5b4d10334c77f7199123d2f064f61a9839ded1e"
-          },
-          "offset": 0,
-          "stream": "native.nx.offset_store_named_points.nx:offset-store:named-point#0-1.raw_values[1]",
-          "untyped": []
-        },
-        "nx:source:evidence#2d1e1f3b0d544bf762c08d16d0db3e86522805b871f360eee396e13d9b916401": {
-          "bytes": {
-            "byte_len": 8,
-            "retention": "digest",
-            "sha256": "4e42614074cb179e88df0829a5b4d10334c77f7199123d2f064f61a9839ded1e"
-          },
-          "offset": 0,
-          "stream": "native.nx.offset_store_named_points.nx:offset-store:named-point#0-1.raw_values[0]",
-          "untyped": []
-        },
-        "nx:source:image#whole": {
-          "bytes": {
-            "data": "U1BMTVNTVFIGAAAAAAAAAAC4AAAAAAAAAEhFQURFUgEAAAAVAAAAL1Jvb3QvVUdfUEFSVC9VR19QQVJUTAAAAAAAAABsAAAAAAAAAKqqqqqqqqqqEVVHUzo6TW9kbEZlYXR1cmWBLgAAAD4AAABkAAAAbAAAAAIAAAAEAQ5OWCAyMDI3LjMxMDIAAwhQb2ludDcAUFlmWAAwTJMzMzMzB0UEAFBZZlgAMEyTMzMzMwe7u7u7u7u7u0ZPT1RFUgAAAAAAAAAA",
-            "retention": "inline"
-          },
-          "offset": 0,
-          "stream": "nx:source",
-          "untyped": [
-            "model",
-            "design"
-          ]
+          "stream": "nx:container"
         }
-      },
-      "unrepresented": [
-        "model",
-        "design"
-      ]
+      }
     }
   },
   "inspect": {

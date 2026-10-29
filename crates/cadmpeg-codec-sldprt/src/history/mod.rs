@@ -311,13 +311,65 @@ pub(crate) fn histories(
                 "Keywords",
                 Exactness::ByteExact,
             )?;
-            let properties = keyed_attributes(
+            let mut properties = keyed_attributes(
                 losses,
                 &id,
                 root.attributes()
                     .filter(|attribute| attribute.name() != "Name")
                     .map(|attribute| (attribute.name(), attribute.value())),
             );
+            let mut spans: BTreeMap<String, Vec<(usize, usize)>> = BTreeMap::new();
+            for node in feature_nodes() {
+                let Some(raw) = node.attribute("id") else {
+                    continue;
+                };
+                if crate::records::FeatureSource::try_from(raw).is_err() {
+                    continue;
+                }
+                let range = node.range();
+                let Some(len) = range.end.checked_sub(range.start) else {
+                    return Err(CodecError::malformed(
+                        "SLDPRT history feature range ends before it starts",
+                    ));
+                };
+                spans
+                    .entry(raw.to_owned())
+                    .or_default()
+                    .push((range.start, len));
+            }
+            let mut duplicates: Vec<(String, Vec<(usize, usize)>)> = spans
+                .into_iter()
+                .filter(|(_, occurrences)| occurrences.len() > 1)
+                .collect();
+            duplicates.sort();
+            duplicates.truncate(8);
+            if !duplicates.is_empty() {
+                let ids = duplicates
+                    .iter()
+                    .map(|(source, _)| source.clone())
+                    .collect::<Vec<_>>()
+                    .join(",");
+                let span_text = duplicates
+                    .iter()
+                    .map(|(source, occurrences)| {
+                        let list = occurrences
+                            .iter()
+                            .map(|(offset, len)| format!("{offset}+{len}"))
+                            .collect::<Vec<_>>()
+                            .join(",");
+                        format!("source {source} at {list}")
+                    })
+                    .collect::<Vec<_>>()
+                    .join("; ");
+                for (key, value) in [
+                    ("duplicate_source_ids", ids),
+                    ("duplicate_source_spans", span_text),
+                ] {
+                    if let Some(key) = cadmpeg_core::text::NonBlankString::new(key.to_owned()) {
+                        properties.insert(key, value);
+                    }
+                }
+            }
             histories.push(FeatureHistory {
                 id,
                 part_name: root

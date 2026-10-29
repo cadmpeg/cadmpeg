@@ -62,6 +62,9 @@ impl<'a> PathSourceDraft<'a> {
         Some(draft)
     }
 
+    pub(super) fn header_start(&self) -> Option<usize> {
+        self.header.start().checked_sub(self.bulk.start())
+    }
     pub(super) fn locator_start(&self) -> Option<usize> {
         self.link
             .as_ref()?

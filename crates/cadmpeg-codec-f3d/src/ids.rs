@@ -81,6 +81,14 @@ pub(crate) fn file_source_image_id() -> cadmpeg_ir::ids::UnknownId {
     )
 }
 
+/// The root product definition of a merged archive member.
+pub(crate) fn archive_product_definition_id() -> cadmpeg_ir::ids::ProductDefinitionId {
+    cadmpeg_ir::ids::ProductDefinitionId::compose(
+        &cadmpeg_ir::identity_namespace!("f3d", "archive", "product-definition"),
+        cadmpeg_ir::identity_key!("0"),
+    )
+}
+
 /// The neutral B-rep identity for one face slot.
 pub(crate) fn brep_face_id(
     index: impl Into<cadmpeg_ir::ids::IdentityKey>,
@@ -211,12 +219,28 @@ pub(crate) fn neutral_xref_occurrence_id(
 
 /// Neutral root product projected from one typed ACT document-root record.
 pub(crate) fn neutral_act_root_product_id(
-    root: &crate::records::act::ActRootComponent,
+    root: &crate::records::act::ActComponentLink,
 ) -> cadmpeg_ir::ids::ProductDefinitionId {
     cadmpeg_ir::ids::ProductDefinitionId::compose(
         &cadmpeg_ir::identity_namespace!("f3d", "model", "component"),
         cadmpeg_ir::identity_key!("act-root-")
             .with_tail(&cadmpeg_ir::ids::IdentityKeyTail::percent_encode(root.id())),
+    )
+}
+
+/// External occurrence identified by its complete containing instance path.
+pub(crate) fn nested_xref_occurrence_id(
+    parent: &cadmpeg_ir::ids::OccurrenceId,
+    reference_ordinal: u32,
+    occurrence_ordinal: u32,
+) -> cadmpeg_ir::ids::OccurrenceId {
+    cadmpeg_ir::ids::OccurrenceId::compose(
+        &cadmpeg_ir::identity_namespace!("f3d", "model", "occurrence"),
+        cadmpeg_ir::ids::Identity::from(parent.clone()).key().colon(
+            cadmpeg_ir::identity_key!("xref")
+                .dash(reference_ordinal)
+                .dash(occurrence_ordinal),
+        ),
     )
 }
 
@@ -237,6 +261,45 @@ pub(crate) fn neutral_component_occurrence_id(
     cadmpeg_ir::ids::OccurrenceId::compose(
         &cadmpeg_ir::identity_namespace!("f3d", "model", "occurrence"),
         guid.occurrence_identity_key(),
+    )
+}
+
+/// Neutral occurrence whose native key also occurs in another Design stream.
+pub(crate) fn stream_component_occurrence_id(
+    stream: &str,
+    key: &impl crate::records::mesh::OccurrenceIdentity,
+) -> cadmpeg_ir::ids::OccurrenceId {
+    cadmpeg_ir::ids::OccurrenceId::compose(
+        &cadmpeg_ir::identity_namespace!("f3d", "model", "occurrence"),
+        cadmpeg_ir::identity_key!("stream")
+            .with_hex_bytes(stream.as_bytes())
+            .colon(key.occurrence_identity_key()),
+    )
+}
+
+/// Neutral root occurrence for a context shared by several Design streams.
+pub(crate) fn stream_root_occurrence_id(
+    stream: &str,
+    context: &crate::records::mesh::DesignRelaxedGuidText,
+) -> cadmpeg_ir::ids::OccurrenceId {
+    cadmpeg_ir::ids::OccurrenceId::compose(
+        &cadmpeg_ir::identity_namespace!("f3d", "model", "occurrence"),
+        cadmpeg_ir::identity_key!("stream")
+            .with_hex_bytes(stream.as_bytes())
+            .colon(cadmpeg_ir::identity_key!("root").dash(context.identity_key())),
+    )
+}
+
+/// Neutral nested occurrence identified by its complete containing path.
+pub(crate) fn nested_component_occurrence_id(
+    parent: &cadmpeg_ir::ids::OccurrenceId,
+    key: &impl crate::records::mesh::OccurrenceIdentity,
+) -> cadmpeg_ir::ids::OccurrenceId {
+    cadmpeg_ir::ids::OccurrenceId::compose(
+        &cadmpeg_ir::identity_namespace!("f3d", "model", "occurrence"),
+        cadmpeg_ir::ids::Identity::from(parent.clone())
+            .key()
+            .colon(key.occurrence_identity_key()),
     )
 }
 
@@ -350,11 +413,19 @@ pub(crate) fn neutral_configuration_id(
     )
 }
 
+/// The equation container for document parameters in a merged member.
+pub(crate) fn document_parameter_scope_id() -> cadmpeg_ir::features::FeatureId {
+    cadmpeg_ir::features::FeatureId::compose(
+        &cadmpeg_ir::identity_namespace!("f3d", "model", "document-parameters"),
+        cadmpeg_ir::identity_key!("0"),
+    )
+}
+
 /// The neutral feature key for a parameter `scope`.
 pub(crate) fn neutral_feature_id(scope: &DesignParameterScope) -> cadmpeg_ir::features::FeatureId {
     neutral_feature_id_parts(
         native_stream(&scope.id).unwrap_or(DEFAULT_STREAM),
-        scope.kind_name(),
+        scope.source_kind_name(),
         scope.feature_ordinal.get(),
         scope.record_index,
     )

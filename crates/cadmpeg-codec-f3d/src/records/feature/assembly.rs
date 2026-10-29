@@ -293,8 +293,16 @@ pub(crate) struct DesignAssemblyAlignment {
     pub(crate) form: Option<DesignAssemblyAlignmentForm>,
     /// How the two operand frames mate, when the scope stores it.
     pub(crate) frame_sense: Option<DesignJointFrameSense>,
+    pub(crate) additional_owner_run: Option<DesignAssemblyOwnerRun>,
     /// Members of a rigid group after the two in `form`, in scope order.
     pub(crate) additional_members: Vec<DesignQualifiedAssemblyOperand>,
+}
+
+/// Counted owner references before a placement-ordered scope's locator run.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub(crate) struct DesignAssemblyOwnerRun {
+    pub(crate) count: Sourced<u32>,
+    pub(crate) references: Vec<Sourced<u32>>,
 }
 
 /// How a joint's two operand frames mate: with their z axes opposed or
@@ -380,6 +388,7 @@ impl DesignAssemblyAlignment {
             owners,
             form,
             frame_sense: None,
+            additional_owner_run: None,
             additional_members: Vec::new(),
         })
     }
@@ -534,11 +543,23 @@ struct DesignAssemblyAlignmentSerde {
         deserialize_with = "deserialize_frame_sense"
     )]
     frame_sense: Option<DesignJointFrameSense>,
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_additional_owner_run"
+    )]
+    additional_owner_run: Option<DesignAssemblyOwnerRun>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     additional_operand_frames: Vec<DesignAssemblyOperandFrame>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     additional_operand_qualifiers: Vec<DesignAssemblyOperandQualifier>,
 }
+
+cadmpeg_core::named_optional_field!(
+    deserialize_additional_owner_run,
+    DesignAssemblyOwnerRun,
+    "additional_owner_run"
+);
 
 cadmpeg_core::named_optional_field!(
     deserialize_frame_sense,
@@ -604,15 +625,17 @@ impl TryFrom<DesignAssemblyAlignmentSerde> for DesignAssemblyAlignment {
             .zip(wire.additional_operand_qualifiers)
             .map(|(frame, qualifier)| DesignQualifiedAssemblyOperand { frame, qualifier })
             .collect();
-        Self::try_new(wire.angle, wire.offset, owners, form)?
+        let mut alignment = Self::try_new(wire.angle, wire.offset, owners, form)?
             .with_frame_sense(wire.frame_sense)
-            .with_additional_members(additional_members)
+            .with_additional_members(additional_members)?;
+        alignment.additional_owner_run = wire.additional_owner_run;
+        Ok(alignment)
     }
 }
 
 impl Serialize for DesignAssemblyAlignment {
     fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
-        let mut record = serializer.serialize_struct("DesignAssemblyAlignmentSerde", 13)?;
+        let mut record = serializer.serialize_struct("DesignAssemblyAlignmentSerde", 14)?;
         record.serialize_field("angle", &self.angle.get())?;
         record.serialize_field("offset", &self.offset.map(FiniteReal::get))?;
         record.serialize_field("owner_record_indices", &OwnerRecordIndices(&self.owners))?;
@@ -682,6 +705,9 @@ impl Serialize for DesignAssemblyAlignment {
                 record.serialize_field("operand_frames", &frames)?;
                 record.serialize_field("operand_qualifiers", &qualifiers)?;
             }
+        }
+        if let Some(run) = &self.additional_owner_run {
+            record.serialize_field("additional_owner_run", run)?;
         }
         if let Some(sense) = &self.frame_sense {
             record.serialize_field("frame_sense", sense)?;
@@ -1256,10 +1282,11 @@ impl DesignAssemblyOperandPath {
         if occurrence_guids.is_empty() || (legacy_pair && occurrence_guids.len() != 1) {
             return Err("occurrence_guids has invalid assembly path arity".into());
         }
-        // A typed path continued over further typed records keeps the four
-        // identity GUIDs of each record.
+        let root_path = occurrence_guids.len() == 1
+            && occurrence_guids[0].as_str() == "00000000-0000-0000-0000-000000000000"
+            && identity_guids.len() == 2;
         let identity_arity = if typed {
-            !identity_guids.is_empty() && identity_guids.len().is_multiple_of(4)
+            root_path || !identity_guids.is_empty() && identity_guids.len().is_multiple_of(4)
         } else if legacy_pair {
             identity_guids.len() == 1
         } else {
@@ -1292,6 +1319,12 @@ impl DesignAssemblyOperandPath {
     pub(crate) fn admitted_by_type(&self) -> bool {
         self.type_guid.is_some()
     }
+    pub(crate) fn is_root(&self) -> bool {
+        self.admitted_by_type()
+            && self.occurrence_guids.len() == 1
+            && self.occurrence_guids[0].as_str() == "00000000-0000-0000-0000-000000000000"
+            && self.identity_guids.len() == 2
+    }
     pub(crate) fn occurrence_guids(&self) -> &[DesignOccurrenceKey] {
         &self.occurrence_guids
     }
@@ -1315,6 +1348,9 @@ impl DesignAssemblyOperandPath {
     /// This path continued by a further path record of its own form: two
     /// class-330 records, or two records admitted by the typed path type.
     pub(crate) fn try_append(self, continuation: Self) -> Option<Self> {
+        if self.is_root() || continuation.is_root() {
+            return None;
+        }
         let typed = self.admitted_by_type() && continuation.admitted_by_type();
         if !typed && (self.class_tag.as_str() != "330" || continuation.class_tag.as_str() != "330")
         {
@@ -1414,7 +1450,7 @@ impl DesignAssemblyOperandQualifier {
 /// One operand frame embedded by an assembly-operation scope.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub(crate) struct DesignAssemblyOperandFrame {
-    /// Construction record referenced by the operand.
+    /// Record that supplies or carries the operand frame.
     pub(crate) reference_record_index: u32,
     /// Byte offset of `reference_record_index`.
     #[serde(skip)]

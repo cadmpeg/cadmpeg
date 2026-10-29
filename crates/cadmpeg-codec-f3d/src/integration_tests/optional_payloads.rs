@@ -54,7 +54,8 @@ fn damaged_first_optional_frame_keeps_detection_and_required_brep_admission() {
     assert!(!decoded.report().losses.is_empty());
     assert!(<F3dCodec as CodecBackend>::validate_native(
         &cadmpeg_test_support::service_decode_context(),
-        decoded.ir()
+        decoded.ir(),
+        None,
     )
     .unwrap()
     .is_empty());
@@ -138,7 +139,8 @@ fn unreadable_assets_keep_geometry_and_native_write_omits_unrepresented_payloads
             super::assert_valid(&decoded);
             assert!(<F3dCodec as CodecBackend>::validate_native(
                 &cadmpeg_test_support::service_decode_context(),
-                decoded.ir()
+                decoded.ir(),
+                None,
             )
             .unwrap()
             .is_empty());

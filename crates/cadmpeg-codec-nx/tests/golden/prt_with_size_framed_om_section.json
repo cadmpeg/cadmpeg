@@ -1,7 +1,8 @@
 {
   "decode": {
     "ir": {
-      "ir_version": "8",
+      "decode_depth": "full",
+      "ir_version": "9",
       "model": {
         "appearance_bindings": [],
         "appearances": [],
@@ -150,19 +151,19 @@
               "id": "nx:om-entry-0:class#19",
               "name": "UGS::FEATURE_RECORD",
               "ordinal": 0,
-              "registry_suffix": {
-                "byte_len": 11,
-                "record_id": "nx:source:evidence#f167b04a9ab35583fa3a5481f679c4fc7d2b46492f3d296b63fda424cd2c1754",
-                "sha256": "3577471a7217e8fde1557f2db265bab6b34e7b8e563b69fbed40af86e574abb7"
-              },
+              "registry_suffix": "81210123456789abcdef06",
+              "section_offset": 76,
               "source_entry": "/Root/UG_PART/UG_PART",
+              "source_offset": 95,
               "trailing_code": 160
             },
             {
               "id": "nx:om-entry-0:class#51",
               "name": "UGS::ModlUtils::BooleanComponent",
               "ordinal": 1,
+              "section_offset": 76,
               "source_entry": "/Root/UG_PART/UG_PART",
+              "source_offset": 127,
               "trailing_code": 101
             }
           ],
@@ -173,19 +174,19 @@
               "ordinal": 0,
               "registry_owner_class": 2,
               "registry_storage_code": 2,
-              "registry_suffix": {
-                "byte_len": 2,
-                "record_id": "nx:source:evidence#5a39d6eb805c19984ec786bfd09c4c6c4473c6c8a42be818979d27dbd32a9126",
-                "sha256": "a12871fee210fb8619291eaea194581cbd2531e4b23759d225f6806923f63222"
-              },
+              "registry_suffix": "0102",
+              "section_offset": 76,
               "source_entry": "/Root/UG_PART/UG_PART",
+              "source_offset": 161,
               "trailing_code": 128
             },
             {
               "id": "nx:om-entry-0:field#97",
               "name": "m_tools",
               "ordinal": 1,
+              "section_offset": 76,
               "source_entry": "/Root/UG_PART/UG_PART",
+              "source_offset": 173,
               "trailing_code": 129
             }
           ],
@@ -201,10 +202,6 @@
           ]
         }
       },
-      "scope": {
-        "design": true,
-        "model": true
-      },
       "source": {
         "attributes": {
           "deltas_streams": "0",
@@ -212,6 +209,7 @@
           "file_size": "445",
           "footer_entry_count": "0",
           "footer_fingerprint": "00000000",
+          "footer_offset": "431",
           "header_entry_count": "1",
           "jpeg_preview_count": "0",
           "partition_streams": "1",
@@ -290,7 +288,7 @@
             "scope": "namespaced",
             "strict_floor": "warning"
           },
-          "message": "The B-rep topology graph (body→shell→face→loop→fin→edge→vertex) was not reconstructed because the surviving typed records did not form a complete connected ownership graph. Exact-key supported partition↔deltas replacements and deletions were applied before graph construction. Required unresolved records prevent their dependent incidence from being emitted; decoded geometry then remains unattached.",
+          "message": "The B-rep topology graph (body→shell→face→loop→fin→edge→vertex) was not reconstructed because the surviving typed records did not form a complete connected ownership graph. Graph construction used the primary input bytes. Required unresolved records prevent their dependent incidence from being emitted; decoded geometry then remains unattached.",
           "severity": "blocking"
         },
         {
@@ -312,10 +310,7 @@
       ],
       "transfer": {
         "geometry_transferred": true,
-        "scope": {
-          "design": true,
-          "model": true
-        }
+        "transfer": "full"
       }
     },
     "source_fidelity": {
@@ -417,17 +412,6 @@
           }
         }
       },
-      "metadata": {
-        "native.nx.class_definitions.nx:om-entry-0:class#19.section_offset": "76",
-        "native.nx.class_definitions.nx:om-entry-0:class#19.source_offset": "95",
-        "native.nx.class_definitions.nx:om-entry-0:class#51.section_offset": "76",
-        "native.nx.class_definitions.nx:om-entry-0:class#51.source_offset": "127",
-        "native.nx.field_definitions.nx:om-entry-0:field#85.section_offset": "76",
-        "native.nx.field_definitions.nx:om-entry-0:field#85.source_offset": "161",
-        "native.nx.field_definitions.nx:om-entry-0:field#97.section_offset": "76",
-        "native.nx.field_definitions.nx:om-entry-0:field#97.source_offset": "173",
-        "source.footer_offset": "431"
-      },
       "retained_records": {
         "nx:container:parasolid#0": {
           "bytes": {
@@ -435,40 +419,9 @@
             "retention": "inline"
           },
           "offset": 209,
-          "stream": "nx:container",
-          "untyped": []
-        },
-        "nx:source:evidence#5a39d6eb805c19984ec786bfd09c4c6c4473c6c8a42be818979d27dbd32a9126": {
-          "bytes": {
-            "byte_len": 2,
-            "retention": "digest",
-            "sha256": "a12871fee210fb8619291eaea194581cbd2531e4b23759d225f6806923f63222"
-          },
-          "offset": 0,
-          "stream": "native.nx.field_definitions.nx:om-entry-0:field#85.registry_suffix",
-          "untyped": []
-        },
-        "nx:source:evidence#f167b04a9ab35583fa3a5481f679c4fc7d2b46492f3d296b63fda424cd2c1754": {
-          "bytes": {
-            "byte_len": 11,
-            "retention": "digest",
-            "sha256": "3577471a7217e8fde1557f2db265bab6b34e7b8e563b69fbed40af86e574abb7"
-          },
-          "offset": 0,
-          "stream": "native.nx.class_definitions.nx:om-entry-0:class#19.registry_suffix",
-          "untyped": []
-        },
-        "nx:source:image#whole": {
-          "bytes": {
-            "data": "U1BMTVNTVFIGAAAAAAAAAACvAQAAAAAAAEhFQURFUgEAAAAVAAAAL1Jvb3QvVUdfUEFSVC9VR19QQVJUTAAAAAAAAABjAQAAAAAAAP////8AAAAAAAAAdU9N//8AAQIUVUdTOjpGRUFUVVJFX1JFQ09SRKCBIQEjRWeJq83vBiFVR1M6Ok1vZGxVdGlsczo6Qm9vbGVhbkNvbXBvbmVudGUJbV90YXJnZXSAAQIIbV90b29sc4EDBHVuZnJhbWVkIFVHUzo6UGF5bG9hZFRleHR4AY1MvQsBYRh/8rFYLFZ6F0W3+IpY3iRfhXC3Xz7eQfnqHIWJSJklk9EoZVH+AH+CwcRqMViVtzt3nXTl6fn4ffT88iwA4AjiitEcm01zKJHOxJGrXRLEmlhrNd2oIpCSSKqo3EeNVpXU60RAPSJ0qIn8AY/HGwrSCCsbS/FcnOV4Lx+mBWAHA9XVxjsVSgDPDV1nwrIBHxglQV0M3o/Ol+fspSo6AD9kQ7ky02w/mDSMQobOX61E4vbyuDrdxgr/eXaA+Vtj8GRwTW5tQ7z43PWhcJ86DnoRb+z1Oe9GT09URVIAAAAAAAAAAA==",
-            "retention": "inline"
-          },
-          "offset": 0,
-          "stream": "nx:source",
-          "untyped": []
+          "stream": "nx:container"
         }
-      },
-      "unrepresented": []
+      }
     }
   },
   "inspect": {

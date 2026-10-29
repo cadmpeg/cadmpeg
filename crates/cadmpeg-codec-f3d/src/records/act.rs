@@ -10,7 +10,7 @@ use super::identity::{Located, NativeRecordId};
 use super::mesh::DesignGuidText;
 use super::references::DesignClassTag;
 
-/// ACT root-component registry flag.
+/// ACT component-link registry flag.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(try_from = "u32", into = "u32")]
 pub(crate) enum ActRegistryFlag {
@@ -924,42 +924,45 @@ impl From<ActRegistryChannel> for ActRegistryChannelWire {
     }
 }
 
-/// ACT link from the document root entity to the instance/component registries.
+#[derive(Debug, Clone, PartialEq)]
+pub(crate) struct ActComponentReferences {
+    pub(crate) instance_root: u32,
+    pub(crate) tracked_entity: u32,
+    pub(crate) components_root: u32,
+}
+
+/// ACT link from a tracked Design entity to the instance/component registries.
 #[derive(Debug, PartialEq, Deserialize)]
 #[cfg_attr(not(test), derive(Clone))]
-#[serde(try_from = "ActRootComponentWire")]
-pub(crate) struct ActRootComponent {
+#[serde(try_from = "ActComponentLinkWire")]
+pub(crate) struct ActComponentLink {
     /// Globally unique deterministic identifier for this native record.
     id: NativeRecordId,
     /// Index of this record within the ACT `BulkStream`.
     pub(crate) record_index: u32,
     /// Source per-file dynamic three-digit ASCII class tag naming this record's type.
     class_tag: DesignClassTag,
-    /// Record index of the instance registry root.
-    pub(crate) instance_root_record: u32,
-    /// Record index of the components registry root.
-    pub(crate) components_root_record: u32,
+    pub(crate) references: ActComponentReferences,
     /// Source counter/registry flag; 0 and 1 are both valid.
     pub(crate) registry_flag: ActRegistryFlag,
     /// Checked source layout and the two variable-length strings.
-    layout: ActRootLayout,
+    layout: ActComponentLayout,
 }
 
 #[cfg(test)]
 std::thread_local! {
-    static ACT_ROOT_COMPONENT_CLONE_COUNT: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
+    static ACT_COMPONENT_LINK_CLONE_COUNT: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
 }
 
 #[cfg(test)]
-impl Clone for ActRootComponent {
+impl Clone for ActComponentLink {
     fn clone(&self) -> Self {
-        ACT_ROOT_COMPONENT_CLONE_COUNT.with(|count| count.set(count.get() + 1));
+        ACT_COMPONENT_LINK_CLONE_COUNT.with(|count| count.set(count.get() + 1));
         Self {
             id: self.id.clone(),
             record_index: self.record_index,
             class_tag: self.class_tag.clone(),
-            instance_root_record: self.instance_root_record,
-            components_root_record: self.components_root_record,
+            references: self.references.clone(),
             registry_flag: self.registry_flag,
             layout: self.layout.clone(),
         }
@@ -967,7 +970,7 @@ impl Clone for ActRootComponent {
 }
 
 #[derive(Serialize)]
-struct ActRootComponentWireRef<'a> {
+struct ActComponentLinkWireRef<'a> {
     id: &'a str,
     #[serde(skip_serializing_if = "Option::is_none")]
     byte_offset: Option<u64>,
@@ -982,17 +985,17 @@ struct ActRootComponentWireRef<'a> {
     entity_id: &'a str,
     display_name: &'a str,
 }
-impl Serialize for ActRootComponent {
+impl Serialize for ActComponentLink {
     fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
-        ActRootComponentWireRef {
+        ActComponentLinkWireRef {
             id: self.id.text(),
             byte_offset: self.layout.byte_offset(),
             padding: self.layout.source.map(|source| source.padding),
             record_index: self.record_index,
             class_tag: self.class_tag.as_str(),
-            instance_root_record: self.instance_root_record,
-            tracked_entity_record: 3,
-            components_root_record: self.components_root_record,
+            instance_root_record: self.references.instance_root,
+            tracked_entity_record: self.references.tracked_entity,
+            components_root_record: self.references.components_root,
             registry_flag: self.registry_flag,
             entity_id: self.layout.entity_id(),
             display_name: self.layout.display_name(),
@@ -1001,13 +1004,17 @@ impl Serialize for ActRootComponent {
     }
 }
 
-impl ActRootComponent {
+impl ActComponentLink {
     /// Returns the admitted native identity.
     pub(crate) fn id(&self) -> &String {
         self.id.text()
     }
-    /// Returns the ACT root source layout.
-    pub(crate) fn layout(&self) -> &ActRootLayout {
+    /// Whether the link tracks the document root entity, record 3.
+    pub(crate) fn tracks_document_root(&self) -> bool {
+        self.references.tracked_entity == 3
+    }
+    /// Returns the ACT component-link source layout.
+    pub(crate) fn layout(&self) -> &ActComponentLayout {
         &self.layout
     }
     /// Returns the native stream encoded in the identity.
@@ -1019,29 +1026,27 @@ impl ActRootComponent {
         id: String,
         record_index: u32,
         class_tag: DesignClassTag,
-        instance_root_record: u32,
-        components_root_record: u32,
+        references: ActComponentReferences,
         registry_flag: ActRegistryFlag,
-        layout: ActRootLayout,
+        layout: ActComponentLayout,
     ) -> Result<Self, String> {
         let id = NativeRecordId::try_new(
             id,
-            "act-root-component",
+            "act-component-link",
             layout
                 .byte_offset()
-                .ok_or("source ACT root requires an actual byte_offset")?,
+                .ok_or("source ACT component link requires an actual byte_offset")?,
         )?;
         Ok(Self {
             id,
             record_index,
             class_tag,
-            instance_root_record,
-            components_root_record,
+            references,
             registry_flag,
             layout,
         })
     }
-    /// Changes root strings without changing the identity offset.
+    /// Changes component-link strings without changing the identity offset.
     pub(crate) fn try_set_strings(
         &mut self,
         entity_id: String,
@@ -1055,7 +1060,7 @@ impl ActRootComponent {
 #[derive(Deserialize)]
 #[cfg_attr(test, derive(Serialize))]
 #[serde(deny_unknown_fields)]
-struct ActRootComponentWire {
+struct ActComponentLinkWire {
     id: String,
     #[serde(
         default,
@@ -1078,44 +1083,49 @@ struct ActRootComponentWire {
     entity_id: String,
     display_name: String,
 }
-impl TryFrom<ActRootComponentWire> for ActRootComponent {
+impl TryFrom<ActComponentLinkWire> for ActComponentLink {
     type Error = String;
-    fn try_from(wire: ActRootComponentWire) -> Result<Self, String> {
-        if wire.tracked_entity_record != 3 {
-            return Err("tracked_entity_record must identify document root record 3".into());
-        }
+    fn try_from(wire: ActComponentLinkWire) -> Result<Self, String> {
         Ok(Self {
-            id: NativeRecordId::from_content(wire.id, "act-root-component")?,
+            id: NativeRecordId::from_content(wire.id, "act-component-link")?,
             record_index: wire.record_index,
             class_tag: wire
                 .class_tag
                 .try_into()
                 .map_err(|error| format!("class_tag: {error}"))?,
-            instance_root_record: wire.instance_root_record,
-            components_root_record: wire.components_root_record,
+            references: ActComponentReferences {
+                instance_root: wire.instance_root_record,
+                tracked_entity: wire.tracked_entity_record,
+                components_root: wire.components_root_record,
+            },
             registry_flag: wire.registry_flag,
             layout: match (wire.byte_offset, wire.padding) {
-                (Some(byte_offset), Some(padding)) => {
-                    ActRootLayout::new(byte_offset, wire.entity_id, wire.display_name, padding)?
+                (Some(byte_offset), Some(padding)) => ActComponentLayout::new(
+                    byte_offset,
+                    wire.entity_id,
+                    wire.display_name,
+                    padding,
+                )?,
+                (None, None) => {
+                    ActComponentLayout::from_content(wire.entity_id, wire.display_name)?
                 }
-                (None, None) => ActRootLayout::from_content(wire.entity_id, wire.display_name)?,
                 _ => return Err("byte_offset and padding must occur together".into()),
             },
         })
     }
 }
 #[cfg(test)]
-impl From<ActRootComponent> for ActRootComponentWire {
-    fn from(root: ActRootComponent) -> Self {
+impl From<ActComponentLink> for ActComponentLinkWire {
+    fn from(root: ActComponentLink) -> Self {
         Self {
             id: root.id.into_string(),
             byte_offset: root.layout.byte_offset(),
             padding: root.layout.source.map(|source| source.padding),
             record_index: root.record_index,
             class_tag: root.class_tag.into(),
-            instance_root_record: root.instance_root_record,
-            tracked_entity_record: 3,
-            components_root_record: root.components_root_record,
+            instance_root_record: root.references.instance_root,
+            tracked_entity_record: root.references.tracked_entity,
+            components_root_record: root.references.components_root,
             registry_flag: root.registry_flag,
             entity_id: root.layout.entity_id,
             display_name: root.layout.display_name,
@@ -1123,9 +1133,9 @@ impl From<ActRootComponent> for ActRootComponentWire {
     }
 }
 
-/// Source extent of an ACT root link. Offsets follow its fixed grammar.
+/// Source extent of an ACT component link. Offsets follow its fixed grammar.
 #[derive(Debug, Clone, PartialEq)]
-pub(crate) struct ActRootLayout {
+pub(crate) struct ActComponentLayout {
     source: Option<ActRootSource>,
     entity_id: String,
     display_name: String,
@@ -1136,7 +1146,7 @@ struct ActRootSource {
     padding: u64,
 }
 
-impl ActRootLayout {
+impl ActComponentLayout {
     pub(crate) fn new(
         byte_offset: u64,
         entity_id: String,
@@ -1157,12 +1167,12 @@ impl ActRootLayout {
             .checked_add(display_name.encode_utf16().count())
             .and_then(|length| u64::try_from(length).ok())
             .and_then(|length| length.checked_mul(2))
-            .ok_or("ACT root string lengths overflow")?;
+            .ok_or("ACT component-link string lengths overflow")?;
         byte_offset
             .checked_add(56)
             .and_then(|offset| offset.checked_add(string_bytes))
             .and_then(|offset| offset.checked_add(padding))
-            .ok_or("components_root_record_offset overflows ACT root layout")?;
+            .ok_or("components_root_record_offset overflows ACT component-link layout")?;
         Ok(Self {
             source: Some(ActRootSource {
                 byte_offset,
@@ -1207,7 +1217,7 @@ impl ActRootLayout {
     pub(crate) fn entity_id_offset(&self) -> Option<u64> {
         self.byte_offset()?.checked_add(36)
     }
-    fn tracked_entity_record_offset(&self) -> Option<u64> {
+    pub(crate) fn tracked_entity_record_offset(&self) -> Option<u64> {
         self.entity_id_offset()?
             .checked_add(u64_from_index(self.entity_id.encode_utf16().count()).checked_mul(2)?)?
             .checked_add(1)
@@ -1225,13 +1235,12 @@ impl ActRootLayout {
             .checked_add(1)
     }
 }
-impl ActRootComponent {
+impl ActComponentLink {
     pub(crate) fn content_eq(&self, other: &Self) -> bool {
         self.id == other.id
             && self.record_index == other.record_index
             && self.class_tag == other.class_tag
-            && self.instance_root_record == other.instance_root_record
-            && self.components_root_record == other.components_root_record
+            && self.references == other.references
             && self.registry_flag == other.registry_flag
             && self.layout.entity_id == other.layout.entity_id
             && self.layout.display_name == other.layout.display_name

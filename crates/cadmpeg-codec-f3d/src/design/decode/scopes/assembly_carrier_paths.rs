@@ -249,10 +249,7 @@ fn exact_class_307_joint_origin(
             start.checked_add(class_307_joint_origin::SECOND_REFERENCE)?,
         )
         .is_none()
-        || identity_end
-            != start
-                .checked_add(class_307_joint_origin::REFERENCE_COUNT)?
-                .checked_sub(3)?
+        || identity_end != start.checked_add(class_307_joint_origin::IDENTITY_SEPARATOR)?
         || kind_end != start.checked_add(class_307_joint_origin::FEATURE_ORDINAL)?
         || View::u32_le_at(
             bytes,

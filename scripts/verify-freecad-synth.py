@@ -96,7 +96,7 @@ def verify(app, root: Path, report: Path) -> int:
         print(f"CADMPEG_NATIVE_END {path.name} accepted={result['accepted']}", file=sys.stderr, flush=True)
         results.append(result)
     report.write_text(json.dumps({"files": results}, indent=2) + "\n")
-    if len(results) != 12 or not all(result["accepted"] for result in results):
+    if len(results) != 18 or not all(result["accepted"] for result in results):
         raise RuntimeError("synthesized FCStd acceptance failed; see report")
     return len(results)
 

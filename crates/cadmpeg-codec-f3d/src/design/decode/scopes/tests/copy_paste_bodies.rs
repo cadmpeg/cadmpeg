@@ -75,6 +75,7 @@ fn generated_copy_paste_bodies_decode_parameter_scopes() {
                 &crate::design::decode::scopes::parameter_scope::ParameterScopeSources::default(),
             )
             .unwrap()
+            .scopes
             .is_empty()
         );
     });

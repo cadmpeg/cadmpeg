@@ -1,6 +1,7 @@
 {
   "ir": {
-    "ir_version": "8",
+    "decode_depth": "full",
+    "ir_version": "9",
     "model": {
       "appearance_bindings": [],
       "appearances": [
@@ -230,7 +231,6 @@
             "source_index": 0
           }
         ],
-        "document_metadata": [],
         "feature_histories": [
           {
             "configurations": [],
@@ -274,14 +274,33 @@
         ]
       }
     },
-    "scope": {
-      "design": true,
-      "model": true
-    },
     "source": {
       "attributes": {
+        "active_parasolid_block": "Contents/Config-0-Partition",
+        "block_count": "4",
+        "bmp_thumbnail_count": "0",
+        "brep_local_sha256": "<elided: digest over tolerantly compared geometry>",
+        "compound_stream_count": "0",
+        "document_local_sha256": "<elided: digest over tolerantly compared geometry>",
+        "outer_version": "0x00000004",
         "parasolid_description": "partition body",
         "parasolid_schema": "SCH_SW_33103_11000",
+        "png_preview_count": "0",
+        "sldprt_configuration_feature_states_local_sha256": "<elided: digest over tolerantly compared geometry>",
+        "sldprt_configuration_parameter_values_local_sha256": "<elided: digest over tolerantly compared geometry>",
+        "sldprt_configuration_snapshot_synthesized": "sldprt:model:configuration#456:0",
+        "sldprt_native_configuration_sha256": "206e4d8e2f96af97a902307adc18ed967fe3433106fd8955b46428628b1a54d8",
+        "sldprt_native_history_sha256": "8b570173acbc3c928c14aefee0b4bc315010f484a87a01c1603a14a016dfa746",
+        "sldprt_native_parameter_sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+        "sldprt_native_sketch_sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+        "sldprt_neutral_configuration_local_sha256": "<elided: digest over tolerantly compared geometry>",
+        "sldprt_neutral_feature_local_sha256": "<elided: digest over tolerantly compared geometry>",
+        "sldprt_neutral_parameter_local_sha256": "<elided: digest over tolerantly compared geometry>",
+        "sldprt_neutral_sketch_constraint_local_sha256": "<elided: digest over tolerantly compared geometry>",
+        "sldprt_neutral_sketch_local_sha256": "<elided: digest over tolerantly compared geometry>",
+        "sldprt_swobjects_local_sha256": "<elided: digest over tolerantly compared geometry>",
+        "sldprt_swobjects_material_local_sha256": "<elided: digest over tolerantly compared geometry>",
+        "sldprt_swobjects_metadata_identity_local_sha256": "<elided: digest over tolerantly compared geometry>",
         "sw_configuration_0_most_recent": "YES",
         "sw_configuration_name": "Default"
       },
@@ -344,16 +363,6 @@
         },
         "message": "the document carries no swSolidWorks swVersion declaration, so no declared identity was verified. The document is read on the `sldprt:unknown` residual path without substituting a declared dialect grammar: the feature-operation form-code padding filter is not applied, and an operation code binds only where the four- and eight-byte candidates agree. Agreement is consistency, not a declaration.",
         "severity": "warning"
-      },
-      {
-        "code": {
-          "code": "source.opaque-records-unrepresented",
-          "kind": "record_not_typed",
-          "namespace": "sldprt",
-          "scope": "namespaced"
-        },
-        "message": "source record sldprt:file:block#576 has no typed neutral or native payload representation",
-        "severity": "warning"
       }
     ],
     "notes": [
@@ -363,10 +372,7 @@
     ],
     "transfer": {
       "geometry_transferred": true,
-      "scope": {
-        "design": true,
-        "model": true
-      }
+      "transfer": "full"
     }
   },
   "source_fidelity": {
@@ -512,15 +518,6 @@
         }
       }
     },
-    "metadata": {
-      "active_parasolid_block": "Contents/Config-0-Partition",
-      "brep_local_sha256": "9eb57dfd034507ec6f252a2e84d8a3d188fb192da6773984d90bd30798ea4b48",
-      "document_local_sha256": "213a20c9216705da21dbea3f5c5f84031907d3072632e5843ab6af80e65917d2",
-      "outer_version": "0x00000004",
-      "sldprt_swobjects_local_sha256": "ceb75de8d44db6b3d5a7d966d82340cf15a20cc4e84d85aa96e622cd8e698efa",
-      "sldprt_swobjects_material_local_sha256": "f31cd281aef2406d40866898ed36299709f1e78c9a1d76b60a37ab2a97ef1da9",
-      "sldprt_swobjects_metadata_identity_local_sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945"
-    },
     "retained_records": {
       "sldprt:file:block#12": {
         "bytes": {
@@ -528,8 +525,7 @@
           "retention": "inline"
         },
         "offset": 0,
-        "stream": "Contents/Config-0-Partition",
-        "untyped": []
+        "stream": "Contents/Config-0-Partition"
       },
       "sldprt:file:block#348": {
         "bytes": {
@@ -537,8 +533,7 @@
           "retention": "inline"
         },
         "offset": 0,
-        "stream": "SWObjects",
-        "untyped": []
+        "stream": "SWObjects"
       },
       "sldprt:file:block#456": {
         "bytes": {
@@ -546,8 +541,7 @@
           "retention": "inline"
         },
         "offset": 0,
-        "stream": "Contents/Keywords",
-        "untyped": []
+        "stream": "Contents/Keywords"
       },
       "sldprt:file:block#576": {
         "bytes": {
@@ -555,11 +549,7 @@
           "retention": "inline"
         },
         "offset": 0,
-        "stream": "Contents/Features",
-        "untyped": [
-          "model",
-          "design"
-        ]
+        "stream": "Contents/Features"
       },
       "sldprt:file:source-image#0": {
         "bytes": {
@@ -567,13 +557,8 @@
           "retention": "inline"
         },
         "offset": 0,
-        "stream": "source",
-        "untyped": []
+        "stream": "source"
       }
-    },
-    "unrepresented": [
-      "model",
-      "design"
-    ]
+    }
   }
 }

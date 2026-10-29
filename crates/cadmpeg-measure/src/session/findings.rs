@@ -7,6 +7,9 @@
 //! - [`Check::RingOrder`] on a loop: the ring's coedges form one closed
 //!   traversal by vertex identity in another order, several closed
 //!   traversals, or none.
+//! - [`Check::PcurveOrder`] on a coedge: its pcurve uses form one chain
+//!   from its end to its start, the `boundary.pcurve-order` caveat of its
+//!   face.
 //! - [`Check::Orientation`] on a face: its sense disagrees with the winding
 //!   of its loops, or its loops disagree with each other.
 //! - [`Check::Orientation`] on a body whose shells are closed: its volume
@@ -36,6 +39,7 @@ use crate::context::{Eval, Work};
 use crate::edges::{measure_edge, EdgeGeometry};
 use crate::face::{FaceInput, FaceResult, Verdict};
 use crate::failure::{settle, Outcome};
+use crate::reason::CaveatCode;
 use crate::report::{ListedOrder, NormalReading};
 use crate::traversal::{traverse_counted, TraversalError};
 use crate::witness::WitnessInput;
@@ -224,6 +228,7 @@ impl<'ir> Measurer<'ir> {
             let Some(result) = faces.get(face.id.as_str()) else {
                 continue;
             };
+            findings.extend(pcurve_order_findings(result));
             if let Some(finding) = face_finding(result) {
                 findings.push(finding);
             }
@@ -356,6 +361,25 @@ impl<'ir> Measurer<'ir> {
 /// `count` followed by the singular or plural noun.
 fn counted(count: usize, one: &str, many: &str) -> String {
     format!("{count} {}", if count == 1 { one } else { many })
+}
+
+/// One finding per coedge of the face whose pcurve uses are listed from its
+/// end to its start.
+fn pcurve_order_findings<'a>(result: &'a FaceResult<'_>) -> impl Iterator<Item = Finding> + 'a {
+    result
+        .row
+        .caveats
+        .iter()
+        .filter(|caveat| caveat.code() == CaveatCode::BoundaryPcurveOrder)
+        .filter_map(|caveat| caveat.entity.as_deref())
+        .map(|coedge| {
+            warning(
+                Check::PcurveOrder,
+                coedge,
+                vec![result.row.face.clone()],
+                "the coedge lists its pcurve uses from its end to its start".to_owned(),
+            )
+        })
 }
 
 /// The finding of a face whose sense disagrees with its loop winding, or

@@ -10,8 +10,8 @@ import tempfile
 def prepare(cadmpeg: Path, fixtures: Path, output: Path) -> int:
     output.mkdir(parents=True, exist_ok=True)
     sources = sorted(fixtures.glob("*.FCStd"))
-    if len(sources) != 12:
-        raise RuntimeError(f"expected 12 public FCStd fixtures, found {len(sources)}")
+    if len(sources) != 18:
+        raise RuntimeError(f"expected 18 public FCStd fixtures, found {len(sources)}")
     with tempfile.TemporaryDirectory(prefix="cadmpeg-fcstd-synth-") as temporary:
         temporary = Path(temporary)
         for source in sources:

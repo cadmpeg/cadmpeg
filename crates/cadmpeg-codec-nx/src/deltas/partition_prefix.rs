@@ -2,9 +2,7 @@
 //! Leading ordinary PARTITION and current PMARK nodes.
 
 use super::pmark_state::PmarkState;
-use crate::framing::read_xmt_view;
 use crate::framing::xmt_reference::NonNullXmt;
-use cadmpeg_core::decode::View;
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -45,23 +43,13 @@ impl TryFrom<PrefixWire> for PartitionPrefixState {
 }
 
 impl PartitionPrefixState {
-    /// Read the two first-use schema-match nodes at the header endpoint.
-    pub(super) fn read(stream: &[u8], offset: usize) -> Option<(Self, usize)> {
-        let mut view = View::over_retained(stream);
-        view.seek(offset)?;
-        Self::read_view(view.child(offset, stream.len())?)
-    }
-
-    pub(crate) fn read_view(mut view: View<'_>) -> Option<(Self, usize)> {
-        view.window().starts_with(&[0, 3, 255]).then_some(())?;
-        view.skip(3)?;
-        let xmt = NonNullXmt::try_from(read_xmt_view(&mut view)?).ok()?;
-        let current_pmark = NonNullXmt::try_from(read_xmt_view(&mut view)?).ok()?;
-        let highest_id = view.u32_be()?;
-        view.unread().starts_with(&[0, 4, 255]).then_some(())?;
-        view.skip(3)?;
-        let (mark, end) = PmarkState::read_view(view)?;
-        let state = Self::try_from(PrefixWire {
+    pub(crate) fn new(
+        xmt: NonNullXmt,
+        current_pmark: NonNullXmt,
+        highest_id: u32,
+        mark: PmarkState,
+    ) -> Option<Self> {
+        Self::try_from(PrefixWire {
             partition: PartitionState {
                 xmt,
                 current_pmark,
@@ -69,20 +57,7 @@ impl PartitionPrefixState {
             },
             current_pmark: mark,
         })
-        .ok()?;
-        Some((state, end))
-    }
-
-    pub(crate) fn current_pmark(self) -> PmarkState {
-        self.current_pmark
-    }
-
-    pub(super) fn partition_xmt(self) -> u32 {
-        self.partition.xmt.into()
-    }
-
-    pub(crate) fn highest_id(self) -> u32 {
-        self.partition.highest_id
+        .ok()
     }
 }
 

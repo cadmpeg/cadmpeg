@@ -8,6 +8,11 @@ use std::num::NonZeroU32;
 
 cadmpeg_core::named_optional_field!(deserialize_scope_record_index, u32, "scope_record_index");
 cadmpeg_core::named_optional_field!(deserialize_visibility, DesignSketchVisibility, "visibility");
+cadmpeg_core::named_optional_field!(
+    deserialize_ordinal_collection,
+    std::num::NonZeroU64,
+    "ordinal_collection"
+);
 /// Typed sketch-container visibility bound to a Design sketch entity.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(
@@ -15,11 +20,12 @@ cadmpeg_core::named_optional_field!(deserialize_visibility, DesignSketchVisibili
     into = "DesignSketchVisibilityWire"
 )]
 pub(crate) struct DesignSketchVisibility {
-    /// One-based ordinal among sketch Geometry members in the Design stream.
+    /// One-based ordinal among sketch Geometry members in the referenced collection.
     pub(crate) stream_ordinal: NonZeroU32,
     stream_ordinal_offset: Option<u64>,
     /// Direct display visibility.
     pub(crate) visible: bool,
+    pub(crate) ordinal_collection: Option<std::num::NonZeroU64>,
 }
 
 impl DesignSketchVisibility {
@@ -35,6 +41,7 @@ impl DesignSketchVisibility {
             stream_ordinal,
             stream_ordinal_offset: Some(stream_ordinal_offset),
             visible,
+            ordinal_collection: None,
         })
     }
 
@@ -52,6 +59,12 @@ impl DesignSketchVisibility {
 struct DesignSketchVisibilityWire {
     stream_ordinal: u32,
     visible: bool,
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_ordinal_collection"
+    )]
+    ordinal_collection: Option<std::num::NonZeroU64>,
 }
 impl TryFrom<DesignSketchVisibilityWire> for DesignSketchVisibility {
     type Error = String;
@@ -61,6 +74,7 @@ impl TryFrom<DesignSketchVisibilityWire> for DesignSketchVisibility {
                 .ok_or("stream_ordinal must be nonzero")?,
             stream_ordinal_offset: None,
             visible: wire.visible,
+            ordinal_collection: wire.ordinal_collection,
         })
     }
 }
@@ -69,6 +83,7 @@ impl From<DesignSketchVisibility> for DesignSketchVisibilityWire {
         Self {
             stream_ordinal: value.stream_ordinal.get(),
             visible: value.visible,
+            ordinal_collection: value.ordinal_collection,
         }
     }
 }

@@ -12,6 +12,8 @@ use cadmpeg_ir::tessellation::Tessellation;
 use cadmpeg_ir::topology::Point;
 use cadmpeg_ir::SourceObjectAssociation;
 
+pub(crate) mod mesh_placement;
+
 use crate::layout::mesh_facet;
 use crate::layout::mesh_kernel_side_entry_header as mesh_hdr;
 use crate::native::{EntryRecord, PropertyRecord};

@@ -474,3 +474,58 @@ fn direct_parasolid_decode_route_emits_bodies() {
         .unwrap();
     assert!(!decoded.ir().model.bodies.is_empty());
 }
+
+#[test]
+fn stream_header_states_no_stream_for_truncated_framing() {
+    let valid = parasolid_payload("partition body", "SCH_SW_33103_11000");
+    assert!(crate::parasolid::stream_header(&valid).unwrap().is_some());
+    for end in [0, 1, 4, 5, 6] {
+        assert!(
+            crate::parasolid::stream_header(&valid[..end])
+                .unwrap()
+                .is_none(),
+            "prefix of {end} bytes states no stream"
+        );
+    }
+    let mut overrun = valid.clone();
+    overrun[4..6].copy_from_slice(&u16::MAX.to_be_bytes());
+    assert!(crate::parasolid::stream_header(&overrun).unwrap().is_none());
+    let schema_at = valid
+        .windows(4)
+        .position(|window| window == b"SCH_")
+        .expect("synthetic schema token");
+    assert!(crate::parasolid::stream_header(&valid[..schema_at + 5])
+        .unwrap()
+        .is_none());
+    let mut unmarked = valid.clone();
+    unmarked[schema_at..schema_at + 4].copy_from_slice(b"XXX_");
+    assert!(crate::parasolid::stream_header(&unmarked)
+        .unwrap()
+        .is_none());
+    let mut delayed = vec![0; 70];
+    delayed.extend_from_slice(&valid);
+    assert!(crate::parasolid::stream_header(&delayed).unwrap().is_none());
+}
+
+#[test]
+fn body_stream_identity_follows_the_partition_deltas_descriptions() {
+    for (description, body) in [
+        ("partition body", true),
+        ("PARTITION", true),
+        ("my deltas stream", true),
+        ("DELTAS", true),
+        ("construction curve", false),
+        ("boundary_polyline mesh", false),
+        ("", false),
+    ] {
+        let stream = parasolid_payload(description, "SCH_SW_33103_11000");
+        let header = crate::parasolid::stream_header(&stream)
+            .unwrap()
+            .expect("synthetic header");
+        assert_eq!(
+            crate::parasolid::is_body_stream(&header),
+            body,
+            "description {description:?}"
+        );
+    }
+}

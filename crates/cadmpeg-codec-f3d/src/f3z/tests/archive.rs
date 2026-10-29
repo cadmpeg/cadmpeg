@@ -606,7 +606,21 @@ fn f3z_archive_composes_nonidentity_nested_occurrence_placements() {
     assert_eq!(resolved.rows()[0][3], 10.0);
     assert_eq!(resolved.rows()[1][3], 20.0);
     assert_eq!(decoded.ir().model.bodies.len(), 1);
-    assert_eq!(decoded.ir().model.bodies[0].transform, None);
+    assert!(decoded.ir().model.bodies[0].transform.is_none());
+    let cadmpeg_ir::products::PrototypeReference::Local { definition } = &child.prototype else {
+        panic!("merged member must have a local prototype");
+    };
+    assert_eq!(
+        decoded
+            .ir()
+            .model
+            .product_definitions
+            .iter()
+            .find(|item| &item.id == definition)
+            .unwrap()
+            .bodies,
+        [decoded.ir().model.bodies[0].id.clone()]
+    );
 }
 
 #[test]
@@ -700,7 +714,20 @@ fn f3z_archive_preserves_noncommuting_parent_and_child_placements() {
             expected
         );
         assert_eq!(ir.model.bodies.len(), 1);
-        assert_eq!(ir.model.bodies[0].transform, None);
+        assert!(ir.model.bodies[0].transform.is_none());
+        let cadmpeg_ir::products::PrototypeReference::Local { definition } = &child.prototype
+        else {
+            panic!("merged member must have a local prototype");
+        };
+        assert_eq!(
+            ir.model
+                .product_definitions
+                .iter()
+                .find(|item| &item.id == definition)
+                .unwrap()
+                .bodies,
+            [ir.model.bodies[0].id.clone()]
+        );
     }
 }
 

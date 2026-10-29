@@ -22,7 +22,7 @@ pub(crate) mod records;
 mod user_knots;
 use edits::{
     validate_act_appearance_bindings, validate_act_entity_edits, validate_act_guid_edits,
-    validate_act_registry_channel_edits, validate_act_root_edits, validate_body_color_edits,
+    validate_act_link_edits, validate_act_registry_channel_edits, validate_body_color_edits,
     validate_body_member_edits, validate_body_native_key_edits, validate_body_transform_edits,
     validate_body_visibility_edits, validate_coedge_sense_edits, validate_configuration_edits,
     validate_construction_recipe_edits, validate_creation_timestamp_edits, validate_curve_edits,
@@ -40,7 +40,7 @@ use edits::{
 };
 use geometry::patch_geometry;
 use records::{
-    patch_act_entities, patch_act_guids, patch_act_roots, patch_body_members,
+    patch_act_entities, patch_act_guids, patch_act_links, patch_body_members,
     patch_body_native_keys, patch_body_visibilities, patch_construction_recipes,
     patch_design_body_keys, patch_design_types, patch_edge_ownerships, patch_entity_headers,
     patch_history_states, patch_lost_edge_references, patch_material_assignments,
@@ -198,7 +198,7 @@ pub(crate) fn write_semantic(
     for (stream, edits) in validate_act_registry_channel_edits(natives)? {
         act_guid_edits.entry(stream).or_default().extend(edits);
     }
-    let act_root_edits = validate_act_root_edits(natives)?;
+    let act_link_edits = validate_act_link_edits(natives)?;
     let act_entity_edits = validate_act_entity_edits(natives)?;
     let baseline_act_table_references = natives
         .baseline
@@ -380,8 +380,8 @@ pub(crate) fn write_semantic(
             .act_registry_channels
             .clone_from(&target_native.act_registry_channels);
         supported
-            .act_root_components
-            .clone_from(&target_native.act_root_components);
+            .act_component_links
+            .clone_from(&target_native.act_component_links);
         supported
             .act_entities
             .clone_from(&target_native.act_entities);
@@ -750,8 +750,8 @@ pub(crate) fn write_semantic(
             if let Some(edits) = act_guid_edits.get(&name) {
                 patch_act_guids(&mut bytes, edits)?;
             }
-            if let Some(edits) = act_root_edits.get(&name) {
-                patch_act_roots(&mut bytes, edits)?;
+            if let Some(edits) = act_link_edits.get(&name) {
+                patch_act_links(&mut bytes, edits)?;
             }
             if let Some(edits) = act_entity_edits.get(&name) {
                 patch_act_entities(&mut bytes, edits)?;

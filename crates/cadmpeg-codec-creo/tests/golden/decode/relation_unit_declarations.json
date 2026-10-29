@@ -1,6 +1,7 @@
 {
   "ir": {
-    "ir_version": "8",
+    "decode_depth": "full",
+    "ir_version": "9",
     "model": {
       "appearance_bindings": [],
       "appearances": [],
@@ -19,34 +20,13 @@
             "definition": "native",
             "kind": "CurveFromEquation",
             "parameters": {
-              "assignment_count": {
-                "kind": "literal",
-                "value": {
-                  "tokens": [
-                    {
-                      "kind": "text",
-                      "value": "5"
-                    }
-                  ]
-                }
-              },
-              "entity_id": {
-                "kind": "literal",
-                "value": {
-                  "tokens": [
-                    {
-                      "kind": "text",
-                      "value": "7"
-                    }
-                  ]
-                }
-              }
+              "assignment_count": "5",
+              "entity_id": "7"
             }
           },
           "id": "creo:depdb:curve_expression_feature#7-102",
           "name": "Curve Equation 7",
           "native_ref": "creo:depdb:curve_expression#active-7-102",
-          "needs_recompute": false,
           "ordinal": 0,
           "source_content": [
             {
@@ -71,6 +51,7 @@
             }
           ],
           "source_tag": "crv_fr_eqn",
+          "source_text": "span[inch]=2\ncopy=span+25.4[mm]\nstress[N/mm^2]=2\nangle=atan2(span,25.4[mm])\nfreezing[C]=0",
           "suppressed": false
         }
       ],
@@ -78,15 +59,7 @@
       "occurrences": [],
       "parameters": [
         {
-          "driving": true,
-          "expression": {
-            "tokens": [
-              {
-                "kind": "text",
-                "value": "2"
-              }
-            ]
-          },
+          "expression": "2",
           "id": "creo:depdb:curve_expression_parameter#7-102-0",
           "name": "span",
           "native_ref": "creo:depdb:curve_expression#active-7-102",
@@ -103,19 +76,10 @@
           }
         },
         {
-          "driving": true,
-          "expression": {
-            "tokens": [
-              {
-                "kind": "parameter",
-                "value": "creo:depdb:curve_expression_parameter#7-102-0"
-              },
-              {
-                "kind": "text",
-                "value": "+25.4[mm]"
-              }
-            ]
-          },
+          "dependencies": [
+            "creo:depdb:curve_expression_parameter#7-102-0"
+          ],
+          "expression": "span+25.4[mm]",
           "id": "creo:depdb:curve_expression_parameter#7-102-1",
           "name": "copy",
           "native_ref": "creo:depdb:curve_expression#active-7-102",
@@ -131,15 +95,7 @@
           }
         },
         {
-          "driving": true,
-          "expression": {
-            "tokens": [
-              {
-                "kind": "text",
-                "value": "2"
-              }
-            ]
-          },
+          "expression": "2",
           "id": "creo:depdb:curve_expression_parameter#7-102-2",
           "name": "stress",
           "native_ref": "creo:depdb:curve_expression#active-7-102",
@@ -154,23 +110,10 @@
           }
         },
         {
-          "driving": true,
-          "expression": {
-            "tokens": [
-              {
-                "kind": "text",
-                "value": "atan2("
-              },
-              {
-                "kind": "parameter",
-                "value": "creo:depdb:curve_expression_parameter#7-102-0"
-              },
-              {
-                "kind": "text",
-                "value": ",25.4[mm])"
-              }
-            ]
-          },
+          "dependencies": [
+            "creo:depdb:curve_expression_parameter#7-102-0"
+          ],
+          "expression": "atan2(span,25.4[mm])",
           "id": "creo:depdb:curve_expression_parameter#7-102-3",
           "name": "angle",
           "native_ref": "creo:depdb:curve_expression#active-7-102",
@@ -186,15 +129,7 @@
           }
         },
         {
-          "driving": true,
-          "expression": {
-            "tokens": [
-              {
-                "kind": "text",
-                "value": "0"
-              }
-            ]
-          },
+          "expression": "0",
           "id": "creo:depdb:curve_expression_parameter#7-102-4",
           "name": "freezing",
           "native_ref": "creo:depdb:curve_expression#active-7-102",
@@ -349,10 +284,6 @@
         ]
       }
     },
-    "scope": {
-      "design": true,
-      "model": true
-    },
     "source": {
       "attributes": {
         "expanded_section_byte_count": "0",
@@ -364,6 +295,7 @@
         "section.0.raw_name": "DEPDB_DATA",
         "section.0.role": "metadata",
         "section_count": "1",
+        "unresolved_feature_state_selection_count": "0",
         "version_line": "#UGC:2 P c"
       },
       "identity": {
@@ -735,6 +667,7 @@
       "unresolved_feature_dimension_driven_variable_count": 0,
       "unresolved_feature_dimension_value_count": 0,
       "unresolved_feature_segment_geometry_count": 0,
+      "unresolved_feature_state_selection_count": 0,
       "untransferred_visible_cone_surface_row_count": 0,
       "untransferred_visible_curve_row_count": 0,
       "untransferred_visible_cylinder_surface_row_count": 0,
@@ -838,10 +771,7 @@
     ],
     "transfer": {
       "geometry_transferred": false,
-      "scope": {
-        "design": true,
-        "model": true
-      }
+      "transfer": "full"
     }
   },
   "source_fidelity": {
@@ -909,22 +839,6 @@
           "tag": "curve_expression_assignment"
         }
       }
-    },
-    "retained_records": {
-      "creo:source:image#whole": {
-        "bytes": {
-          "data": "I1VHQzoyIFAgYwojLUVORF9PRl9VR0NfSEVBREVSCiNVR0NfVE9DCnRvYyBlbnRyeSBsaW5lCiNFTkRfT0ZfVE9DX0hFQURFUgojCiNERVBEQl9EQVRBCuAAcF9kZXBfZGIA4+AAZW50aXR5KGNydl9mcl9lcW4pAOPgAWlkAAfgCmV4cHJlc3Npb24A+AVzcGFuW2luY2hdPTIAY29weT1zcGFuKzI1LjRbbW1dAHN0cmVzc1tOL21tXjJdPTIAYW5nbGU9YXRhbjIoc3BhbiwyNS40W21tXSkAZnJlZXppbmdbQ109MAA=",
-          "retention": "inline"
-        },
-        "offset": 0,
-        "stream": "creo:source",
-        "untyped": [
-          "model"
-        ]
-      }
-    },
-    "unrepresented": [
-      "model"
-    ]
+    }
   }
 }

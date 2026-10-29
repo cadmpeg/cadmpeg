@@ -48,7 +48,13 @@ fn decoded(bytes: Vec<u8>) -> CadIr {
 /// counterclockwise around the unit square. Its third model curve is stated
 /// from `(0, 1, 0)` to `(1, 1, 0)` and used with sense 2; every parameter
 /// curve runs in the traversal.
-fn bounded_square_file() -> Vec<u8> {
+pub(crate) fn bounded_square_file() -> Vec<u8> {
+    bounded_square_file_with("110,1,1,0,0,1,0;", 1)
+}
+
+/// The bounded unit square with `third` as the parameter curve of the
+/// reversed third model curve and `preference` as the Type 141 `PREF`.
+fn bounded_square_file_with(third: &str, preference: u8) -> Vec<u8> {
     let entity = |entity_type, status, parameters: &str| OwnedTestEntity {
         entity_type,
         form: 0,
@@ -64,15 +70,29 @@ fn bounded_square_file() -> Vec<u8> {
         entity(110, "00010000", "110,0,1,0,0,0,0;"),
         entity(110, "00010500", "110,0,0,0,1,0,0;"),
         entity(110, "00010500", "110,1,0,0,1,1,0;"),
-        entity(110, "00010500", "110,1,1,0,0,1,0;"),
+        entity(110, "00010500", third),
         entity(110, "00010500", "110,0,1,0,0,0,0;"),
         entity(
             141,
             "00010000",
-            "141,1,1,1,4,3,1,1,11,5,1,1,13,7,2,1,15,9,1,1,17;",
+            &format!("141,1,{preference},1,4,3,1,1,11,5,1,1,13,7,2,1,15,9,1,1,17;"),
         ),
         entity(143, "00000000", "143,1,1,1,19;"),
     ])
+}
+
+/// The bounded unit square whose reversed third model curve has its
+/// parameter curve stated in the direction of that model curve, from
+/// `(0, 1)` to `(1, 1)`, with `preference` as the Type 141 `PREF`.
+pub(crate) fn edge_direction_parameter_curve_square_file(preference: u8) -> Vec<u8> {
+    bounded_square_file_with("110,0,1,0,1,1,0;", preference)
+}
+
+/// The bounded unit square whose reversed third model curve has a parameter
+/// curve from `(0, 0.5)` to `(1, 0.5)`, whose image is not that model curve,
+/// with `preference` as the Type 141 `PREF`.
+pub(crate) fn disagreeing_parameter_curve_square_file(preference: u8) -> Vec<u8> {
+    bounded_square_file_with("110,0,0.5,0,1,0.5,0;", preference)
 }
 
 /// The bounded unit square with its one loop classified as the outer loop,

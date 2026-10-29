@@ -6,6 +6,7 @@ use serde::{Deserialize, Serialize};
 
 cadmpeg_core::named_optional_field!(deserialize_limits, DesignJointLimitLanes, "limits");
 cadmpeg_core::named_optional_field!(deserialize_entry_value, f64, "value");
+cadmpeg_core::named_optional_field!(deserialize_rest, DesignJointRest, "rest");
 
 /// The freedoms and limits of one assembly joint, read from its motion record
 /// and its joint record. A joint without freedom entries has no motion record
@@ -40,7 +41,7 @@ pub(crate) struct DesignJointMotion {
 }
 
 /// The two limit flags and the maximum and minimum after a joint record's
-/// self-reference.
+/// self-reference, with its rest flag and rest value.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub(crate) struct DesignJointLimitLanes {
@@ -56,6 +57,26 @@ pub(crate) struct DesignJointLimitLanes {
     pub(crate) minimum: f64,
     /// Byte offset of the maximum; the minimum follows it.
     pub(crate) values_offset: u64,
+    /// The rest flag and rest value, when either is nonzero.
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_rest"
+    )]
+    pub(crate) rest: Option<DesignJointRest>,
+    /// The stored rest flag or value is invalid or incomplete.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub(crate) rest_malformed: bool,
+}
+
+/// The rest flag byte after a joint record's two limit flags, and the f64
+/// rest value after its minimum.
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+pub(crate) struct DesignJointRest {
+    /// The rest flag byte, `0` or `1`.
+    pub(crate) flag: u8,
+    /// Rest value, in the freedom's internal unit.
+    pub(crate) value: f64,
 }
 
 /// The u32 word before a freedom entry's code, and the f64 a word-`1` entry
@@ -64,6 +85,10 @@ pub(crate) struct DesignJointLimitLanes {
 pub(crate) struct DesignJointFreedomWord {
     /// The u32 word, `1` or `3`.
     pub(crate) word: u32,
+    /// Whether the entry's second f64 is `0` rather than π. Only a word-`1`
+    /// entry stores `0` there.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub(crate) zero_second_value: bool,
     /// The f64 after the code of a word-`1` entry.
     #[serde(
         default,

@@ -14,7 +14,7 @@ use crate::container::ContainerScan;
 use crate::design::decode::meta::{
     metadata_for_bulk_stream, typed_primary_frames, TypedPrimaryFrame,
 };
-use crate::design::decode::scopes::parameter_scope::parse_parameter_scope;
+use crate::design::decode::scopes::parameter_scope::parse_parameter_scope_with_type_guid;
 use crate::design::decode::sketch::IndexedRecordOffsets;
 
 use crate::layout::indexed_design_record_header as indexed_header;
@@ -1066,12 +1066,13 @@ fn parse_mesh_scope_record(
         (record.get(feature_scope::ZERO_RUN_10..feature_scope::BODY_COUNT) == Some(&[0; 10]))
             .then_some(())?;
         let (body_records, body_list_end) = counted_bodies?;
-        let scope = match parse_parameter_scope(
+        let scope = match parse_parameter_scope_with_type_guid(
             bytes,
             records,
             identity.record_index(),
             identity.class_tag(),
             u64::try_from(frame.start).ok()?,
+            Some(frame.design_type.type_guid.as_str()),
         ) {
             Ok(Some(scope)) => scope,
             Ok(None) => return None,

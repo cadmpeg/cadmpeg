@@ -29,9 +29,28 @@ pub(crate) fn plan(
         None => StepSchema::ALL[0],
     };
     let mut bytes = Vec::new();
-    let outcome = write_step_outcome(input.ir, &mut bytes, schema, &codec.options)?;
+    let recovered = cadmpeg_ir::codec::write::edge_recovery::recover_edge_curves(input.ir)?;
+    let outcome = write_step_outcome(
+        &recovered.document,
+        &mut bytes,
+        schema,
+        &codec.options,
+        recovered.recovered_edges,
+    )?;
     let coverage = coverage(schema, &outcome.losses);
     let mut losses = outcome.losses;
+    if !recovered.sampled_agreements.is_empty() {
+        losses.push(StepLossCode::EdgePcurveAgreementSampled.note(format!(
+            "{} recovered edge(s) have coedge curves compared at five parameters; agreement between samples is not established",
+            recovered.sampled_agreements.len()
+        )));
+    }
+    if !recovered.sampled_fits.is_empty() {
+        losses.push(StepLossCode::EdgePcurveSampledToBspline.note(format!(
+            "{} recovered edge(s) were fitted as B-splines with sampled residual at most {} model length units",
+            recovered.sampled_fits.len(), recovered.residual_limit
+        )));
+    }
     if let Some(message) = resolved.displacement_message() {
         losses.push(StepLossCode::SourceDialectDisplaced.note(message));
     }

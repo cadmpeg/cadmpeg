@@ -67,11 +67,13 @@ impl Serialize for DesignParameterScope {
             };
         }
 
+        emit_opt!("occurrence_transfer", self.occurrence_transfer.as_ref());
         emit!("id", &self.id);
         emit!("class_tag", self.class_tag.as_str());
         emit!("record_index", self.record_index);
         emit!("generation", self.generation);
         emit!("kind", self.kind_name());
+        emit_opt!("source_kind", self.source_kind.as_ref());
 
         if let Some(extrude) = self.extrude() {
             emit_opt!("extrude_prologue", extrude.extrude_prologue.as_ref());
@@ -193,6 +195,7 @@ impl Serialize for DesignParameterScope {
 
         emit_opt!("combine_operation", self.combine_operation());
         emit_opt!("thread_construction", self.thread_construction());
+        emit_opt!("emboss_construction", self.emboss_construction());
         emit_opt!("draft_operation", self.draft_operation());
         match &self.payload {
             DesignScopePayload::CPattern(value)
@@ -252,6 +255,7 @@ impl Serialize for DesignParameterScope {
             );
         }
         emit_opt!("hole_construction", self.hole_construction());
+        emit_opt!("hole_extent", self.hole_extent());
         if let Some(sketch) = self.sketch_entity() {
             emit!("entity_id", sketch.entity_id.as_str());
             emit!("entity_suffix", sketch.entity_id.suffix());

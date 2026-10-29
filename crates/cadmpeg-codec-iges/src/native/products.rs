@@ -62,6 +62,7 @@ pub(super) fn project(
         definitions.insert(
             source.clone(),
             ProductDefinition {
+                sketches: Vec::new(),
                 id,
                 kind: ProductDefinitionKind::Part,
                 source_name: None,

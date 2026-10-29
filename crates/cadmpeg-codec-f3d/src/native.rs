@@ -33,7 +33,7 @@ use crate::history_records::{
 };
 use crate::records::act_table::ActTable;
 use crate::records::{
-    act::{ActEntity, ActGuid, ActRegistryChannel, ActRootComponent, ActTableReference},
+    act::{ActComponentLink, ActEntity, ActGuid, ActRegistryChannel, ActTableReference},
     bodies::{BodyVisibility, DesignBodyBinding, DesignBodyBounds, DesignBodyMember},
     canvas::DesignCanvasImage,
     configuration::DesignConfiguration,
@@ -106,10 +106,10 @@ fn group_by_owner<T>(
 }
 
 pub(crate) const F3D_ARENA_NAMES: &[&str] = &[
+    "act_component_links",
     "act_entities",
     "act_guids",
     "act_registry_channels",
-    "act_root_components",
     "act_table_references",
     "act_tables",
     "act_types",
@@ -395,13 +395,13 @@ const F3D_FAMILIES: &[F3dFamilyRow] = &[
         counts_toward_emptiness: true,
     },
     F3dFamilyRow {
-        arena: "act_root_components",
+        arena: "act_component_links",
         exactness: (),
         phase: Phase::ArenaOnly,
         emit: |ctx, model, row, namespace| {
-            namespace.set_arena(ctx, row.arena, &model.act_root_components)
+            namespace.set_arena(ctx, row.arena, &model.act_component_links)
         },
-        len: |model| model.act_root_components.len(),
+        len: |model| model.act_component_links.len(),
         counts_toward_emptiness: true,
     },
     F3dFamilyRow {
@@ -1270,9 +1270,9 @@ pub(crate) struct F3dNative {
     /// Fusion ACT stream-wide named channel registry.
     #[serde(default)]
     pub(crate) act_registry_channels: Vec<ActRegistryChannel>,
-    /// Fusion ACT document-root-to-registry links.
+    /// Fusion ACT component-to-registry links.
     #[serde(default)]
-    pub(crate) act_root_components: Vec<ActRootComponent>,
+    pub(crate) act_component_links: Vec<ActComponentLink>,
     /// Fusion ACT table references between the GUID pool and channel registry.
     #[serde(default)]
     pub(crate) act_table_references: Vec<ActTableReference>,
@@ -1562,7 +1562,7 @@ impl F3dNative {
             act_entities: read_arena!("act_entities"),
             act_guids: read_arena!("act_guids"),
             act_registry_channels: read_arena!("act_registry_channels"),
-            act_root_components: read_arena!("act_root_components"),
+            act_component_links: read_arena!("act_component_links"),
             act_table_references: read_arena!("act_table_references"),
             body_native_keys: read_arena!("body_native_keys"),
             body_visibilities: read_arena!("body_visibilities"),
@@ -1717,6 +1717,7 @@ impl F3dNative {
         for (history, states) in native.asm_histories.iter_mut().zip(states_by_history) {
             *history.states_mut() = states;
         }
+        crate::records::feature::path_features::pipe::admit_native(&native)?;
         Ok(native)
     }
 
@@ -1733,7 +1734,7 @@ impl F3dNative {
                     .insert(format!("{}.byte_offset", header.id), offset.to_string());
             }
         }
-        for root in &self.act_root_components {
+        for root in &self.act_component_links {
             root.retain_source(&mut fidelity);
         }
         for guid in &self.act_guids {

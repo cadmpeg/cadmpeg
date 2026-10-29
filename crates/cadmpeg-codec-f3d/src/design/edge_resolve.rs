@@ -2569,8 +2569,13 @@ pub(super) fn project_fixed_fillet_with_corners(
     }) {
         complete_edge_groups.push(group);
     }
-    let edge_groups = if complete_edge_groups.len() == fixed.groups.len() {
-        complete_edge_groups
+    let selection_pair =
+        crate::design::decode::operands::fillet_edge_and_face_groups(&scope_groups);
+    let assignments = if let (Some(pair), [fixed_group]) = (selection_pair, fixed.groups.as_slice())
+    {
+        pair.map(|group| (fixed_group, group)).to_vec()
+    } else if complete_edge_groups.len() == fixed.groups.len() {
+        fixed.groups.iter().zip(complete_edge_groups).collect()
     } else if fixed.groups.len() == 1 && complete_edge_groups.is_empty() {
         let group = {
             // A sole construction group is the Fillet edge selection when
@@ -2603,12 +2608,12 @@ pub(super) fn project_fixed_fillet_with_corners(
             ));
             *group
         };
-        vec![group]
+        vec![(&fixed.groups[0], group)]
     } else {
         return Ok(None);
     };
     let mut groups = Vec::new();
-    for (fixed_group, edge_group) in fixed.groups.iter().zip(edge_groups) {
+    for (fixed_group, edge_group) in assignments {
         let radius = or_none!(radius_spec(fixed_group)?);
         let edge_radius = match &radius {
             RadiusSpec::Constant { radius } => Some(or_none!(radius.literal()).get()),

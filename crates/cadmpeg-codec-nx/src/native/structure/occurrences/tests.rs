@@ -8,7 +8,7 @@ use super::{FastLoadComponentOccurrenceWire, FastLoadOccurrences};
 
 fn validate_native(ir: &cadmpeg_ir::CadIr) -> Vec<cadmpeg_ir::report::check::Finding> {
     crate::test_support::with_decode_context(|ctx| {
-        crate::NxCodec::validate_native(ctx, ir)
+        crate::NxCodec::validate_native(ctx, ir, None)
             .expect("native validation stays within session limits")
     })
 }
@@ -88,7 +88,7 @@ fn native_occurrence_admission_preserves_caller_resource_refusals() {
         &[],
         |policy| policy.limits.max_recursion_depth = 0,
         |ctx| {
-            let error = crate::NxCodec::validate_native(ctx, &ir).unwrap_err();
+            let error = crate::NxCodec::validate_native(ctx, &ir, None).unwrap_err();
             assert!(matches!(
                 error,
                 cadmpeg_core::CodecError::ResourceLimit(limit)

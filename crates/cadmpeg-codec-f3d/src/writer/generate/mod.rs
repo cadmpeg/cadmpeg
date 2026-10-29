@@ -245,7 +245,12 @@ fn coverage(
         spatial_sketch_entities: Omitted,
         spatial_sketch_constraints: Omitted,
         spreadsheets: Omitted,
-        product_definitions: if native.act_root_components.len() == 1
+        product_definitions: if native
+            .act_component_links
+            .iter()
+            .filter(|link| link.tracks_document_root())
+            .count()
+            == 1
             && target.model.product_definitions.len() == 1
         {
             let product = &target.model.product_definitions[0];

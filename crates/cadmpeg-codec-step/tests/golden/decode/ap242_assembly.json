@@ -1,6 +1,7 @@
 {
   "ir": {
-    "ir_version": "8",
+    "decode_depth": "full",
+    "ir_version": "9",
     "model": {
       "appearance_bindings": [],
       "appearances": [],
@@ -19,6 +20,7 @@
         {
           "id": "step:product:occurrence#12",
           "name": "Placed child",
+          "native_ref": "#12",
           "ordinal": 0,
           "parent": {
             "kind": "occurrence",
@@ -28,6 +30,11 @@
             "definition": "step:product:product#8",
             "scope": "local"
           },
+          "scale": [
+            1.0,
+            1.0,
+            1.0
+          ],
           "transform": [
             [
               1.0,
@@ -59,6 +66,11 @@
             "definition": "step:product:product#3",
             "scope": "local"
           },
+          "scale": [
+            1.0,
+            1.0,
+            1.0
+          ],
           "transform": [
             [
               1.0,
@@ -94,6 +106,7 @@
           "id": "step:product:product#3",
           "kind": "part",
           "label": "Root assembly",
+          "native_ref": "#6",
           "part_number": "ROOT",
           "source_name": "Root assembly"
         },
@@ -101,6 +114,7 @@
           "id": "step:product:product#8",
           "kind": "part",
           "label": "Child part",
+          "native_ref": "#10",
           "part_number": "CHILD",
           "source_name": "Child part"
         }
@@ -120,15 +134,17 @@
       "vertices": [],
       "view_presentations": []
     },
-    "native": {
-      "step": {}
-    },
-    "scope": {
-      "design": true,
-      "model": true
-    },
+    "native": {},
     "source": {
-      "attributes": {},
+      "attributes": {
+        "bytes_named_opaque": "0",
+        "bytes_structural": "291",
+        "bytes_typed": "1403",
+        "bytes_unclassified": "0",
+        "data_sections": "1",
+        "entity_instances": "28",
+        "schema": "AP242_MANAGED_MODEL_BASED_3D_ENGINEERING_MIM_LF"
+      },
       "identity": {
         "classification": "classified",
         "dialects": {
@@ -205,721 +221,10 @@
     ],
     "transfer": {
       "geometry_transferred": false,
-      "scope": {
-        "design": true,
-        "model": true
-      }
+      "transfer": "full"
     }
   },
   "source_fidelity": {
-    "annotations": {},
-    "metadata": {
-      "bytes_named_opaque": "0",
-      "bytes_structural": "291",
-      "bytes_typed": "1403",
-      "bytes_unclassified": "0",
-      "data_sections": "1",
-      "entity_instances": "28",
-      "schema": "AP242_MANAGED_MODEL_BASED_3D_ENGINEERING_MIM_LF"
-    },
-    "parts": {
-      "step:source:part#110ab3bf1bf6429089a67bfa6ed534c126b3b599254e6132b362e7b1f533eed1": {
-        "byte_len": 29,
-        "framing_bytes": [
-          {
-            "end": 1291,
-            "start": 1288
-          },
-          {
-            "end": 1292,
-            "start": 1291
-          },
-          {
-            "end": 1317,
-            "start": 1316
-          }
-        ],
-        "level": "step.simple_entity_instance",
-        "offset": 1288,
-        "parent": null,
-        "state": {
-          "state": "decoded"
-        },
-        "stream": "file"
-      },
-      "step:source:part#1e66a40920576522d8cec4d5046d407fa0ce79230c6fc26213702fd6270a45e6": {
-        "byte_len": 59,
-        "framing_bytes": [
-          {
-            "end": 856,
-            "start": 853
-          },
-          {
-            "end": 857,
-            "start": 856
-          },
-          {
-            "end": 858,
-            "start": 857
-          },
-          {
-            "end": 911,
-            "start": 910
-          },
-          {
-            "end": 912,
-            "start": 911
-          }
-        ],
-        "level": "step.complex_entity_instance",
-        "offset": 853,
-        "parent": null,
-        "state": {
-          "state": "decoded"
-        },
-        "stream": "file"
-      },
-      "step:source:part#23b9536ed325c2c5625a505fafc62568172a174c02ef52a788964bb7a8b9e7bc": {
-        "byte_len": 61,
-        "framing_bytes": [
-          {
-            "end": 411,
-            "start": 409
-          },
-          {
-            "end": 412,
-            "start": 411
-          },
-          {
-            "end": 470,
-            "start": 469
-          }
-        ],
-        "level": "step.simple_entity_instance",
-        "offset": 409,
-        "parent": null,
-        "state": {
-          "state": "decoded"
-        },
-        "stream": "file"
-      },
-      "step:source:part#29295c887b9a58e657a105d779848283947fcdfbad4e00e9283c27056f726fdc": {
-        "byte_len": 47,
-        "framing_bytes": [
-          {
-            "end": 1079,
-            "start": 1076
-          },
-          {
-            "end": 1080,
-            "start": 1079
-          },
-          {
-            "end": 1123,
-            "start": 1122
-          }
-        ],
-        "level": "step.simple_entity_instance",
-        "offset": 1076,
-        "parent": null,
-        "state": {
-          "state": "decoded"
-        },
-        "stream": "file"
-      },
-      "step:source:part#32ad7b649c74b42f5dbe700eb6e4b334874c5cb9a236145f7ee6abcf96ba0d13": {
-        "byte_len": 138,
-        "framing_bytes": [
-          {
-            "end": 1479,
-            "start": 1476
-          },
-          {
-            "end": 1480,
-            "start": 1479
-          },
-          {
-            "end": 1481,
-            "start": 1480
-          },
-          {
-            "end": 1613,
-            "start": 1612
-          },
-          {
-            "end": 1614,
-            "start": 1613
-          }
-        ],
-        "level": "step.complex_entity_instance",
-        "offset": 1476,
-        "parent": null,
-        "state": {
-          "state": "decoded"
-        },
-        "stream": "file"
-      },
-      "step:source:part#3a1717069992336ea5ac0930a39b40edda8303f37b51c250d6d263ef93bb9480": {
-        "byte_len": 52,
-        "framing_bytes": [
-          {
-            "end": 649,
-            "start": 646
-          },
-          {
-            "end": 650,
-            "start": 649
-          },
-          {
-            "end": 698,
-            "start": 697
-          }
-        ],
-        "level": "step.simple_entity_instance",
-        "offset": 646,
-        "parent": null,
-        "state": {
-          "state": "decoded"
-        },
-        "stream": "file"
-      },
-      "step:source:part#46a398b75fdf48e2c07e72448cabfa9467df52ab9ead8b60232e22cb61d5e247": {
-        "byte_len": 39,
-        "framing_bytes": [
-          {
-            "end": 1351,
-            "start": 1348
-          },
-          {
-            "end": 1352,
-            "start": 1351
-          },
-          {
-            "end": 1387,
-            "start": 1386
-          }
-        ],
-        "level": "step.simple_entity_instance",
-        "offset": 1348,
-        "parent": null,
-        "state": {
-          "state": "decoded"
-        },
-        "stream": "file"
-      },
-      "step:source:part#6f8f7fa8ff07831e9c612f21d4d0f5b94013bc5912c8b7c14699b3acb4b37fe7": {
-        "byte_len": 40,
-        "framing_bytes": [
-          {
-            "end": 702,
-            "start": 699
-          },
-          {
-            "end": 703,
-            "start": 702
-          },
-          {
-            "end": 739,
-            "start": 738
-          }
-        ],
-        "level": "step.simple_entity_instance",
-        "offset": 699,
-        "parent": null,
-        "state": {
-          "state": "decoded"
-        },
-        "stream": "file"
-      },
-      "step:source:part#710fd5edb9c77f3f14b8f72c9896bb4f8e32338ff7cd5f8de1a516abd688808a": {
-        "byte_len": 47,
-        "framing_bytes": [
-          {
-            "end": 1431,
-            "start": 1428
-          },
-          {
-            "end": 1432,
-            "start": 1431
-          },
-          {
-            "end": 1475,
-            "start": 1474
-          }
-        ],
-        "level": "step.simple_entity_instance",
-        "offset": 1428,
-        "parent": null,
-        "state": {
-          "state": "decoded"
-        },
-        "stream": "file"
-      },
-      "step:source:part#730e8423925e80c32908aabd6de1b8ba6023779dc9f6967b83f35ecf62c5f286": {
-        "byte_len": 36,
-        "framing_bytes": [
-          {
-            "end": 1254,
-            "start": 1251
-          },
-          {
-            "end": 1255,
-            "start": 1254
-          },
-          {
-            "end": 1287,
-            "start": 1286
-          }
-        ],
-        "level": "step.simple_entity_instance",
-        "offset": 1251,
-        "parent": null,
-        "state": {
-          "state": "decoded"
-        },
-        "stream": "file"
-      },
-      "step:source:part#774d94e2aeaff06dfe66452a211d10c850b749d53ae0aa69d122dceb51739c8b": {
-        "byte_len": 42,
-        "framing_bytes": [
-          {
-            "end": 605,
-            "start": 603
-          },
-          {
-            "end": 606,
-            "start": 605
-          },
-          {
-            "end": 645,
-            "start": 644
-          }
-        ],
-        "level": "step.simple_entity_instance",
-        "offset": 603,
-        "parent": null,
-        "state": {
-          "state": "decoded"
-        },
-        "stream": "file"
-      },
-      "step:source:part#78a509d1c92b172503557837aa2f85f18716d54bf09fc5001828c457e718e8ac": {
-        "byte_len": 42,
-        "framing_bytes": [
-          {
-            "end": 368,
-            "start": 366
-          },
-          {
-            "end": 369,
-            "start": 368
-          },
-          {
-            "end": 408,
-            "start": 407
-          }
-        ],
-        "level": "step.simple_entity_instance",
-        "offset": 366,
-        "parent": null,
-        "state": {
-          "state": "decoded"
-        },
-        "stream": "file"
-      },
-      "step:source:part#8493642b1c0741017589c4f88712a0eb0aedad62e601ea93e9d036f0109352cf": {
-        "byte_len": 45,
-        "framing_bytes": [
-          {
-            "end": 1172,
-            "start": 1169
-          },
-          {
-            "end": 1173,
-            "start": 1172
-          },
-          {
-            "end": 1214,
-            "start": 1213
-          }
-        ],
-        "level": "step.simple_entity_instance",
-        "offset": 1169,
-        "parent": null,
-        "state": {
-          "state": "decoded"
-        },
-        "stream": "file"
-      },
-      "step:source:part#89d4a7d36303122d00c07ae8e0b23b0b6161d0171d0abc268c8695d62968a329": {
-        "byte_len": 29,
-        "framing_bytes": [
-          {
-            "end": 1321,
-            "start": 1318
-          },
-          {
-            "end": 1322,
-            "start": 1321
-          },
-          {
-            "end": 1347,
-            "start": 1346
-          }
-        ],
-        "level": "step.simple_entity_instance",
-        "offset": 1318,
-        "parent": null,
-        "state": {
-          "state": "decoded"
-        },
-        "stream": "file"
-      },
-      "step:source:part#983c5b1ce9660d9b17dfc727061103416baf65536e8e1f7517ae94c1ed076cc7": {
-        "byte_len": 41,
-        "framing_bytes": [
-          {
-            "end": 563,
-            "start": 561
-          },
-          {
-            "end": 564,
-            "start": 563
-          },
-          {
-            "end": 602,
-            "start": 601
-          }
-        ],
-        "level": "step.simple_entity_instance",
-        "offset": 561,
-        "parent": null,
-        "state": {
-          "state": "decoded"
-        },
-        "stream": "file"
-      },
-      "step:source:part#9d3f908a66d564d04fe4812bc71f54a94467d8b18e4289eef3cd5aab01f15015": {
-        "byte_len": 46,
-        "framing_bytes": [
-          {
-            "end": 1032,
-            "start": 1029
-          },
-          {
-            "end": 1033,
-            "start": 1032
-          },
-          {
-            "end": 1075,
-            "start": 1074
-          }
-        ],
-        "level": "step.simple_entity_instance",
-        "offset": 1029,
-        "parent": null,
-        "state": {
-          "state": "decoded"
-        },
-        "stream": "file"
-      },
-      "step:source:part#9d4bedf86a750f5297f8a5234fcb537ea70017b2af83510b2dcb3655c0d1f1ea": {
-        "byte_len": 38,
-        "framing_bytes": [
-          {
-            "end": 524,
-            "start": 522
-          },
-          {
-            "end": 525,
-            "start": 524
-          },
-          {
-            "end": 560,
-            "start": 559
-          }
-        ],
-        "level": "step.simple_entity_instance",
-        "offset": 522,
-        "parent": null,
-        "state": {
-          "state": "decoded"
-        },
-        "stream": "file"
-      },
-      "step:source:part#9e8e4649dd60b20b86febb924ce89d969c1f05222e52dcffea69fdd6af53ec53": {
-        "byte_len": 39,
-        "framing_bytes": [
-          {
-            "end": 284,
-            "start": 282
-          },
-          {
-            "end": 285,
-            "start": 284
-          },
-          {
-            "end": 321,
-            "start": 320
-          }
-        ],
-        "level": "step.simple_entity_instance",
-        "offset": 282,
-        "parent": null,
-        "state": {
-          "state": "decoded"
-        },
-        "stream": "file"
-      },
-      "step:source:part#a86bf500ad24ace1a002db772751970fb3aa2a9f3e5e697b8810357c267dfa5b": {
-        "byte_len": 50,
-        "framing_bytes": [
-          {
-            "end": 473,
-            "start": 471
-          },
-          {
-            "end": 474,
-            "start": 473
-          },
-          {
-            "end": 521,
-            "start": 520
-          }
-        ],
-        "level": "step.simple_entity_instance",
-        "offset": 471,
-        "parent": null,
-        "state": {
-          "state": "decoded"
-        },
-        "stream": "file"
-      },
-      "step:source:part#a9fdac80ae41ec462335ea7a80239edeb0b464843eec997c9f84ae65d1677070": {
-        "byte_len": 71,
-        "framing_bytes": [
-          {
-            "end": 743,
-            "start": 740
-          },
-          {
-            "end": 744,
-            "start": 743
-          },
-          {
-            "end": 811,
-            "start": 810
-          }
-        ],
-        "level": "step.simple_entity_instance",
-        "offset": 740,
-        "parent": null,
-        "state": {
-          "state": "decoded"
-        },
-        "stream": "file"
-      },
-      "step:source:part#af895d82c5922e603a8db1e4811d4eed20293acde272a2b5316bd2bf02b73e7e": {
-        "byte_len": 40,
-        "framing_bytes": [
-          {
-            "end": 815,
-            "start": 812
-          },
-          {
-            "end": 816,
-            "start": 815
-          },
-          {
-            "end": 852,
-            "start": 851
-          }
-        ],
-        "level": "step.simple_entity_instance",
-        "offset": 812,
-        "parent": null,
-        "state": {
-          "state": "decoded"
-        },
-        "stream": "file"
-      },
-      "step:source:part#afdb7b69d5a84565f8d6ab5cb081ba2a161c198973a08ead358edcbf7bad7f81": {
-        "byte_len": 39,
-        "framing_bytes": [
-          {
-            "end": 1391,
-            "start": 1388
-          },
-          {
-            "end": 1392,
-            "start": 1391
-          },
-          {
-            "end": 1427,
-            "start": 1426
-          }
-        ],
-        "level": "step.simple_entity_instance",
-        "offset": 1388,
-        "parent": null,
-        "state": {
-          "state": "decoded"
-        },
-        "stream": "file"
-      },
-      "step:source:part#b1b2556b175556898872870920b96d3e9fbfc121cc07e267fd58d7e72e12daa3": {
-        "byte_len": 52,
-        "framing_bytes": [
-          {
-            "end": 1618,
-            "start": 1615
-          },
-          {
-            "end": 1619,
-            "start": 1618
-          },
-          {
-            "end": 1667,
-            "start": 1666
-          }
-        ],
-        "level": "step.simple_entity_instance",
-        "offset": 1615,
-        "parent": null,
-        "state": {
-          "state": "decoded"
-        },
-        "stream": "file"
-      },
-      "step:source:part#c200ea8b12d239b69c475af09b24a96a99e46f8af48c480a6a2cff272c197ef0": {
-        "byte_len": 43,
-        "framing_bytes": [
-          {
-            "end": 324,
-            "start": 322
-          },
-          {
-            "end": 325,
-            "start": 324
-          },
-          {
-            "end": 365,
-            "start": 364
-          }
-        ],
-        "level": "step.simple_entity_instance",
-        "offset": 322,
-        "parent": null,
-        "state": {
-          "state": "decoded"
-        },
-        "stream": "file"
-      },
-      "step:source:part#ca4e6101370fdfa6cef752854f2bc3c56683fd2be7e035d8a4fcd4c91d6cc927": {
-        "byte_len": 44,
-        "framing_bytes": [
-          {
-            "end": 239,
-            "start": 237
-          },
-          {
-            "end": 240,
-            "start": 239
-          },
-          {
-            "end": 281,
-            "start": 280
-          }
-        ],
-        "level": "step.simple_entity_instance",
-        "offset": 237,
-        "parent": null,
-        "state": {
-          "state": "decoded"
-        },
-        "stream": "file"
-      },
-      "step:source:part#e0448263fefa314b7f9508dc2d1dfc31e5b579853532860b2660c52dca3217f1": {
-        "byte_len": 115,
-        "framing_bytes": [
-          {
-            "end": 916,
-            "start": 913
-          },
-          {
-            "end": 917,
-            "start": 916
-          },
-          {
-            "end": 918,
-            "start": 917
-          },
-          {
-            "end": 1027,
-            "start": 1026
-          },
-          {
-            "end": 1028,
-            "start": 1027
-          }
-        ],
-        "level": "step.complex_entity_instance",
-        "offset": 913,
-        "parent": null,
-        "state": {
-          "state": "decoded"
-        },
-        "stream": "file"
-      },
-      "step:source:part#fadc02a11cb8f8ebbed49464dfdbcb0e40067fa07a2c5a9d78c20b470660dd38": {
-        "byte_len": 44,
-        "framing_bytes": [
-          {
-            "end": 1127,
-            "start": 1124
-          },
-          {
-            "end": 1128,
-            "start": 1127
-          },
-          {
-            "end": 1168,
-            "start": 1167
-          }
-        ],
-        "level": "step.simple_entity_instance",
-        "offset": 1124,
-        "parent": null,
-        "state": {
-          "state": "decoded"
-        },
-        "stream": "file"
-      },
-      "step:source:part#ff43a5ffa5d976c85662a584fc4d596ac0230341eba1d8e10ede2dd897863f21": {
-        "byte_len": 35,
-        "framing_bytes": [
-          {
-            "end": 1218,
-            "start": 1215
-          },
-          {
-            "end": 1219,
-            "start": 1218
-          },
-          {
-            "end": 1250,
-            "start": 1249
-          }
-        ],
-        "level": "step.simple_entity_instance",
-        "offset": 1215,
-        "parent": null,
-        "state": {
-          "state": "decoded"
-        },
-        "stream": "file"
-      }
-    },
-    "unrepresented": []
+    "annotations": {}
   }
 }

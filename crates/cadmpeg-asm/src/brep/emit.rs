@@ -51,6 +51,18 @@ use cadmpeg_ir::ids::{
 use cadmpeg_ir::topology::{Body, Coedge, Edge, Face, Loop, Point, Region, Sense, Shell, Vertex};
 use cadmpeg_ir::unknown::UnknownRecord;
 
+const SAVED_EDGE_BODY_ORIGIN: cadmpeg_ir::ids::IdentityComponent =
+    cadmpeg_ir::identity_component!("saved-edge-body");
+
+/// Return whether a body ID has the saved free-edge emitter origin.
+#[must_use]
+pub fn is_saved_free_edge_body(id: &BodyId) -> bool {
+    id.as_str()
+        .rsplit_once(':')
+        .and_then(|(_, tail)| tail.split_once('#'))
+        .is_some_and(|(origin, _)| origin == SAVED_EDGE_BODY_ORIGIN.as_str())
+}
+
 #[derive(Clone, Copy)]
 pub(super) struct CurveSenseRefs<'a> {
     pub(super) reversed_curve_refs: &'a HashSet<i64>,
@@ -5225,7 +5237,7 @@ pub fn emit_containers(
         }
     }
     for &edge in saved_free_edges {
-        let body_id = brep_id!(format, BodyId, "saved-edge-body", edge);
+        let body_id = BodyId::compose(&format.brep_namespace(&SAVED_EDGE_BODY_ORIGIN), edge);
         let region_id = brep_id!(format, RegionId, "saved-edge-region", edge);
         let shell_id = brep_id!(format, ShellId, "saved-edge-shell", edge);
         out.bodies.push(Body {

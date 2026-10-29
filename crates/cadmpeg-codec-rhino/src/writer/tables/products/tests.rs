@@ -19,6 +19,7 @@ fn absent_occurrence_placement_omits_only_that_reference_with_a_named_loss() {
         part_number: None,
         bom_properties: Default::default(),
         bodies: vec![],
+        sketches: Vec::new(),
         native_ref: None,
     });
     for (ordinal, (key, transform)) in [("unknown", None), ("known", Some(Transform::identity()))]
@@ -76,6 +77,7 @@ fn unknown_ancestor_cascades_without_changing_known_local_reference_frames() {
         part_number: None,
         bom_properties: Default::default(),
         bodies: vec![],
+        sketches: Vec::new(),
         native_ref: None,
     });
     let mut leaf = ir.model.product_definitions[0].clone();

@@ -1,6 +1,7 @@
 {
   "ir": {
-    "ir_version": "8",
+    "decode_depth": "full",
+    "ir_version": "9",
     "model": {
       "appearance_bindings": [],
       "appearances": [],
@@ -66,7 +67,6 @@
         "consolidated_tori": [],
         "consolidated_vertex_identities": [],
         "design_objects": [],
-        "display_colors": [],
         "e5_curve_supports": [],
         "entity_records": [],
         "external_references": [],
@@ -97,15 +97,12 @@
         "zero_entity_vertex_incidences": []
       }
     },
-    "scope": {
-      "design": false,
-      "model": false
-    },
     "source": {
       "attributes": {
         "external_reference_count": "0",
         "file_size": "163",
         "finjpl_segment_count": "0",
+        "outer_dir_offset": "36",
         "preview_count": "0"
       },
       "identity": {
@@ -498,17 +495,6 @@
         },
         "message": "This container matched no CATIA V5 storage family's structural invariants, so it is `catia:unknown`. No decode route declares a grammar for that row, and no declared dialect grammar was substituted; the file was admitted under the metadata-IR fallback, which enumerates the container and retains the source bytes without applying any family's record grammar.",
         "severity": "warning"
-      },
-      {
-        "code": {
-          "code": "depth.not-delivered",
-          "kind": "geometry_not_transferred",
-          "namespace": "decode",
-          "scope": "namespaced",
-          "strict_floor": "warning"
-        },
-        "message": "requested full depth but the catia decoder did not deliver classes: model, design",
-        "severity": "error"
       }
     ],
     "notes": [
@@ -519,10 +505,7 @@
     ],
     "transfer": {
       "geometry_transferred": false,
-      "scope": {
-        "design": false,
-        "model": false
-      }
+      "transfer": "full"
     }
   },
   "source_fidelity": {
@@ -541,9 +524,6 @@
         }
       }
     },
-    "metadata": {
-      "source.outer_dir_offset": "36"
-    },
     "retained_records": {
       "catia:payload:unknown#container": {
         "bytes": {
@@ -551,19 +531,8 @@
           "retention": "inline"
         },
         "offset": 0,
-        "stream": "catia:CATPart",
-        "untyped": []
-      },
-      "catia:source:image#whole": {
-        "bytes": {
-          "data": "VjVfQ0ZWMgAAAAAkAAAAf291dGVyIGxvZ2ljYWwgc3RyZWFtQ0FUSUFfVjUgQ0IwMDAxAAAAAAAAAAAAAAAAAAAAABRSAG8AbwB0AFMAdABvAHIAYQBnAGUAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAQAAABAAAAAUAAAAFAAAAAAAAAAAQ0JfX0VORA==",
-          "retention": "inline"
-        },
-        "offset": 0,
-        "stream": "catia:source",
-        "untyped": []
+        "stream": "catia:CATPart"
       }
-    },
-    "unrepresented": []
+    }
   }
 }

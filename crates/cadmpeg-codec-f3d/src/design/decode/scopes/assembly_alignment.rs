@@ -67,6 +67,60 @@ pub(super) fn exact_assembly_alignment(
     )
 }
 
+use crate::layout::assembly_as_built_scope_owner_run as as_built;
+
+/// Whether a placement-ordered `As-built` scope stores its owner run: the u32
+/// additional-owner count at offset 43 is the count its frame length implies, the
+/// marked references after it name the owners after the four alignment owners
+/// in local order, the reference table has nine entries more than that count,
+/// the four alignment owners appear once and contiguously in it, and every
+/// additional owner appears in it.
+fn placement_ordered_owner_run(
+    bytes: &[u8],
+    scope: &DesignParameterScope,
+    lanes: &[&DesignParameterOwner],
+    owners: &[crate::records::identity::Sourced<u32>],
+) -> bool {
+    let Some(count) = scope
+        .frame_length()
+        .and_then(crate::design::assembly::as_built_additional_owner_count)
+    else {
+        return false;
+    };
+    let Some(Ok(start)) = scope.byte_offset().map(usize::try_from) else {
+        return false;
+    };
+    let stored = View::u32_le_at(bytes, start + as_built::ADDITIONAL_OWNER_COUNT);
+    let additional_owners = lanes.get(4..).unwrap_or_default();
+    let table = scope.reference_members();
+    let unextended_positions_hold = count != 0
+        || table
+            .values_in(5..9)
+            .is_some_and(|values| values.eq(owners.iter().map(|owner| &owner.value)));
+    unextended_positions_hold
+        && stored.and_then(|stored| usize::try_from(stored).ok()) == Some(count)
+        && table.len() == 9 + count
+        && additional_owners.len() == count
+        && additional_owners
+            .iter()
+            .enumerate()
+            .all(|(ordinal, owner)| {
+                super::shared_frames::marked_record_reference(
+                    bytes,
+                    start + as_built::ADDITIONAL_OWNER_REFERENCES + 11 * ordinal,
+                ) == Some(owner.record_index())
+                    && table.values().any(|value| *value == owner.record_index())
+            })
+        && (0..table.len())
+            .filter(|&at| {
+                table
+                    .values_in(at..at + owners.len())
+                    .is_some_and(|values| values.eq(owners.iter().map(|owner| &owner.value)))
+            })
+            .count()
+            == 1
+}
+
 /// The alignment of an assembly scope. `stream_types` names the stream's
 /// record types, which admit typed operand-path records.
 pub(super) fn exact_assembly_alignment_with_types<'a>(
@@ -121,11 +175,7 @@ pub(super) fn exact_assembly_alignment_with_types<'a>(
             scope.class_tag.as_str(),
             scope.paired_class_tag.as_str(),
         );
-        let generation = crate::design::assembly::AssemblyScopeGeneration::new(
-            scope.frame_length()?,
-            scope.class_tag.as_str(),
-            scope.paired_class_tag.as_str(),
-        );
+        let generation = crate::design::assembly::AssemblyScopeGeneration::for_scope(scope);
         let legacy_class_388 = matches!(
             generation.operand_frame_variant(),
             Some(crate::design::assembly::AssemblyOperandFrameVariant::LegacyClass388)
@@ -160,12 +210,15 @@ pub(super) fn exact_assembly_alignment_with_types<'a>(
             {
                 return None;
             }
+            // Only an `As-built` scope has the additional-owner run.
+            if matches!(scope.frame_length(), Some(422 | 444))
+                && scope.kind() != crate::records::feature::scope::DesignFeatureKind::AsBuilt
+            {
+                return None;
+            }
             let (alignment_start, alignment_end) = generation.alignment_lane_bounds(lanes.len())?;
             let alignment_lanes = lanes.get(alignment_start..alignment_end)?;
-            let placement_ordered = crate::design::assembly::placement_ordered_as_built_scope(
-                scope.frame_length()?,
-                scope.kind() == crate::records::feature::scope::DesignFeatureKind::AsBuilt,
-            );
+            let placement_ordered = crate::design::assembly::placement_ordered_as_built_scope(scope);
             let (angle, offset) = match alignment_lanes {
                 [offset_x, offset_y, offset_z, angle] if placement_ordered => (
                     angle.evaluated_value().get(),
@@ -188,10 +241,7 @@ pub(super) fn exact_assembly_alignment_with_types<'a>(
                     [0.0, 0.0, axial_offset.evaluated_value().get()],
                 ),
                 // A rigid as-built joint has no alignment owners.
-                [] if crate::design::assembly::rigid_as_built_scope(
-                    scope.frame_length()?,
-                    scope.kind() == crate::records::feature::scope::DesignFeatureKind::AsBuilt,
-                ) =>
+                [] if crate::design::assembly::rigid_as_built_scope(scope) =>
                 {
                     (0.0, [0.0; 3])
                 }
@@ -247,7 +297,8 @@ pub(super) fn exact_assembly_alignment_with_types<'a>(
                 {
                     return None;
                 }
-            } else if crate::design::assembly::variable_reference_assembly_generation(
+            } else if !crate::design::assembly::rigid_as_built_scope(scope)
+                && crate::design::assembly::variable_reference_assembly_generation(
                 scope.class_tag.as_str(),
                 scope.paired_class_tag.as_str(),
             ) {
@@ -281,6 +332,10 @@ pub(super) fn exact_assembly_alignment_with_types<'a>(
                 {
                     return None;
                 }
+            } else if placement_ordered {
+                if !placement_ordered_owner_run(bytes, scope, &lanes, &owners) {
+                    return None;
+                }
             } else if !scope
                 .reference_members()
                 .values()
@@ -300,7 +355,7 @@ pub(super) fn exact_assembly_alignment_with_types<'a>(
             };
             // A rigid group's members after its first two tie to its first.
             if let Some(leading) = paths.as_ref().filter(|_| {
-                crate::design::assembly::scope_is_rigid_as_built(scope)
+                crate::design::assembly::rigid_as_built_scope(scope)
             }) {
                 let member_paths = match super::assembly_operand_paths::exact_rigid_group_member_paths(
                     source,
@@ -314,7 +369,7 @@ pub(super) fn exact_assembly_alignment_with_types<'a>(
                 };
                 for path in member_paths {
                     let frame = super::assembly_operand_frames::exact_as_built_operand_frame(
-                        bytes, &path, true,
+                        bytes, &path, scope, stream_types,
                     )?;
                     additional_members.push(assembly::DesignQualifiedAssemblyOperand {
                         frame,
@@ -326,11 +381,8 @@ pub(super) fn exact_assembly_alignment_with_types<'a>(
             }
             let form = paths
                 .map(|paths| {
-                    let frames = exact_as_built_operand_frames(
-                        bytes,
-                        &paths,
-                        crate::design::assembly::scope_is_wide_as_built(scope),
-                    );
+                    let frames =
+                        exact_as_built_operand_frames(bytes, &paths, scope, stream_types);
                     let paths = paths.map(|path| path.content);
                     DesignAssemblyAlignmentForm::try_from(AsBuiltAlignmentDraft {
                         frames,
@@ -355,7 +407,8 @@ pub(super) fn exact_assembly_alignment_with_types<'a>(
                 paths.map(|paths| {
                     paths.map(|path| DesignAssemblyOperandQualifier::OccurrencePath { path: path.content })
                 })
-            } else if crate::design::assembly::variable_reference_assembly_generation(
+            } else if !crate::design::assembly::rigid_as_built_scope(scope)
+                && crate::design::assembly::variable_reference_assembly_generation(
                 scope.class_tag.as_str(),
                 scope.paired_class_tag.as_str(),
             ) {
@@ -408,8 +461,30 @@ pub(super) fn exact_assembly_alignment_with_types<'a>(
                 Some(0) => Some(assembly::DesignJointFrameSense::Aligned),
                 _ => None,
             });
+        let additional_owner_run = if crate::design::assembly::placement_ordered_as_built_scope(scope) {
+            let start = usize::try_from(scope.byte_offset()?).ok()?;
+            let count_at = start + as_built::ADDITIONAL_OWNER_COUNT;
+            let count = View::u32_le_at(bytes, count_at)?;
+            let references = lanes.iter().skip(4).enumerate().map(|(ordinal, _)| {
+                let at = start + as_built::ADDITIONAL_OWNER_REFERENCES + 11 * ordinal;
+                Some(crate::records::identity::Sourced::at(
+                    super::shared_frames::marked_record_reference(bytes, at)?,
+                    cadmpeg_core::decode::u64_from_index(at),
+                ))
+            }).collect::<Option<Vec<_>>>()?;
+            Some(assembly::DesignAssemblyOwnerRun {
+                count: crate::records::identity::Sourced::at(
+                    count,
+                    cadmpeg_core::decode::u64_from_index(count_at),
+                ),
+                references,
+            })
+        } else {
+            None
+        };
         DesignAssemblyAlignment::try_new(angle, offset, owners, form)
-            .and_then(|alignment| {
+            .and_then(|mut alignment| {
+                alignment.additional_owner_run = additional_owner_run;
                 alignment
                     .with_frame_sense(frame_sense)
                     .with_additional_members(additional_members)

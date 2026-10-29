@@ -1,8 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use super::{
-    DesignAssemblyFrame, DesignDeleteFaceFrame, DesignExtrudeFrame, DesignScopeGeneration,
-    DesignSplitFaceFrame, ScopeFrameFacts,
+    DesignAssemblyFrame, DesignDeleteFaceFrame, DesignExtrudeFrame, DesignRigidGroupTail,
+    DesignScopeGeneration, DesignSplitFaceFrame, ScopeFrameFacts,
 };
 use crate::records::feature::scope::DesignFeatureKind;
 
@@ -20,20 +20,21 @@ fn facts<'a>(
         reference_count_delta: 0,
         kind_delta: 0,
         reference_count,
+        tail_length: 0,
     }
 }
 
 /// f3d.md "parameter scope": the rigid `As-built` scope of an N-member rigid
-/// group is 269 + 11(N − 2) bytes.
+/// group with the ordinary prologue and 88-byte tail is 269 + 11(N − 2) bytes.
 #[test]
 fn a_rigid_group_frame_names_its_member_count() {
     for (length, members) in [(269, 2), (280, 3), (302, 5)] {
-        let frame = DesignAssemblyFrame::from_frame_length(length).unwrap();
-        assert_eq!(frame, DesignAssemblyFrame::Rigid { members });
-        assert_eq!(frame.frame_length(), Some(length));
+        let frame = DesignAssemblyFrame::rigid(length, 88).unwrap();
         assert_eq!(frame.rigid_members(), usize::try_from(members).ok());
+        assert_eq!(frame.frame_length(), Some(length));
+        assert_eq!(frame.rigid_tail_length(), Some(88));
     }
-    assert_eq!(DesignAssemblyFrame::from_frame_length(270), None);
+    assert_eq!(DesignAssemblyFrame::rigid(270, 88), None);
 }
 
 #[test]
@@ -109,11 +110,22 @@ fn a_generation_admits_only_its_family() {
 
 #[test]
 fn the_wire_form_names_the_generation() {
-    let generation = DesignScopeGeneration::Assembly(DesignAssemblyFrame::Rigid { members: 3 });
+    let generation = DesignScopeGeneration::Assembly(DesignAssemblyFrame::Rigid {
+        members: 3,
+        alternate_prologue: false,
+        tail: DesignRigidGroupTail::Ordinary {
+            additional_reference: false,
+            wide_field: true,
+        },
+    });
     let wire = serde_json::to_value(generation).unwrap();
     assert_eq!(
         wire,
-        serde_json::json!({"form": "assembly", "frame": {"rigid": {"members": 3}}})
+        serde_json::json!({"form": "assembly", "frame": {"rigid": {
+            "members": 3,
+            "alternate_prologue": false,
+            "tail": {"ordinary": {"additional_reference": false, "wide_field": true}}
+        }}})
     );
     assert_eq!(
         serde_json::from_value::<DesignScopeGeneration>(wire).unwrap(),

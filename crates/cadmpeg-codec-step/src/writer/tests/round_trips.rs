@@ -705,6 +705,7 @@ pub(crate) fn writer_round_trips_product_body_ownership() {
     ir.model
         .product_definitions
         .push(cadmpeg_ir::products::ProductDefinition {
+            sketches: Vec::default(),
             id: product.clone(),
             kind: cadmpeg_ir::products::ProductDefinitionKind::Part,
             source_name: Some("Cube part".into()),
@@ -1862,6 +1863,7 @@ fn replica_written_with(
         &mut bytes,
         StepSchema::Ap242Edition3,
         &StepWriteOptions::default(),
+        std::collections::HashSet::new(),
     )?;
     Ok(String::from_utf8(bytes).expect("STEP output is UTF-8"))
 }

@@ -4,6 +4,7 @@
 #![allow(clippy::unwrap_used)]
 
 pub(crate) mod box_brep;
+pub(crate) mod curve_bounded;
 pub(crate) mod exchange;
 
 use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};

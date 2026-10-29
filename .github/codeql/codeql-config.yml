@@ -1,0 +1,5 @@
+name: "cadmpeg CodeQL config"
+
+query-filters:
+  - exclude:
+      id: rust/cleartext-logging

@@ -48,7 +48,7 @@ fn decode(bytes: Vec<u8>) -> CadIr {
 fn segment_state_findings(ir: &CadIr) -> Vec<Finding> {
     let ctx = crate::native::test_ctx();
     InventorCodec
-        .validate_native(&ctx, ir)
+        .validate_native(&ctx, ir, None)
         .expect("validation")
         .into_iter()
         .filter(|finding| finding.message.ends_with("state has no paired segment"))
@@ -223,13 +223,13 @@ fn face_collection(marker: u16, references: &[u32]) -> TestResult<PmDcFeaturePro
 }
 
 #[test]
-fn face_items_require_their_record_type_and_nonempty_type_two_indices() -> TestResult {
+fn face_items_require_their_record_type_and_type_two_indices() -> TestResult {
     let valid = face_item(2, &[0, 0x8000_0001, u32::MAX])?;
     assert!(face_property_is_admitted(&valid, |_| None));
     let wire = serde_json::to_value(&valid)?;
     let restored: PmDcFeatureProperty = serde_json::from_value(wire.clone())?;
     assert_eq!(serde_json::to_value(restored)?, wire);
-    assert!(!face_property_is_admitted(&face_item(2, &[])?, |_| None));
+    assert!(face_property_is_admitted(&face_item(2, &[])?, |_| None));
     assert!(!face_property_is_admitted(&face_item(3, &[1])?, |_| None));
     let wrong_type = property(&valid.kind, FACE_COLLECTION_TYPE)?;
     assert!(!face_property_is_admitted(&wrong_type, |_| None));
@@ -262,8 +262,11 @@ fn face_collections_require_decoded_face_items() -> TestResult {
     ] {
         assert!(!face_property_is_admitted(&collection, resolves));
     }
+    let empty_item = face_item(2, &[])?;
+    assert!(face_property_is_admitted(&valid_collection, |_| Some(
+        &empty_item
+    )));
     let invalid_items = [
-        face_item(2, &[])?,
         face_item(3, &[1])?,
         property(&valid_item.kind, FACE_COLLECTION_TYPE)?,
         property(
@@ -312,6 +315,9 @@ fn empty_data() -> super::NativeData {
         ufrx: super::UfrxRecord::Absent { id: String::new() },
         assembly_occurrences: Vec::new(),
         assembly_placements: Vec::new(),
+        design_view_representations: Vec::new(),
+        design_view_visibility: Vec::new(),
+        assembly_groundings: Vec::new(),
         pm_app_default_styles: Vec::new(),
         pm_app_rendering_styles: Vec::new(),
         pm_graphics_faces: Vec::new(),
@@ -319,6 +325,7 @@ fn empty_data() -> super::NativeData {
         pm_graphics_primary_color_styles: Vec::new(),
         face_native_keys: Vec::new(),
         face_sidedness: Vec::new(),
+        body_native_keys: Vec::new(),
         pm_dc_parameters: Vec::new(),
         pm_dc_expressions: Vec::new(),
         pm_dc_units: Vec::new(),
@@ -333,8 +340,12 @@ fn empty_data() -> super::NativeData {
         sketch_record_issues: Vec::new(),
         pm_dc_features: Vec::new(),
         pm_dc_pattern_features: Vec::new(),
+        pm_dc_pattern_operands: Vec::new(),
         pm_dc_feature_terminators: Vec::new(),
         pm_dc_feature_properties: Vec::new(),
+        pm_dc_sheet_metal_styles: Vec::new(),
+        pm_dc_sheet_metal_flanges: Vec::new(),
+        pm_dc_feature_dimensions: Vec::new(),
         pm_dc_feature_labels: Vec::new(),
         pm_dc_entity_style_links: Vec::new(),
         pm_dc_kernel_entity_links: Vec::new(),
@@ -347,6 +358,12 @@ fn empty_data() -> super::NativeData {
 
 #[test]
 fn a_thread_annotation_cannot_use_a_sketch_as_its_native_feature() -> TestResult {
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+        &[],
+        &arena,
+        &cadmpeg_core::decode::DecodePolicy::service(),
+    )?;
     let mut data = empty_data();
     let null = PmDcReference::from_packed(0);
     let sketch = crate::record_identity::Located::new(
@@ -379,7 +396,7 @@ fn a_thread_annotation_cannot_use_a_sketch_as_its_native_feature() -> TestResult
     ir.model.features.push(annotation(sketch.id()));
     data.pm_dc_sketches.push(sketch);
     let mut findings = Vec::new();
-    super::validate_features(&ir, &data, &mut findings);
+    super::validate_features(&ctx, &ir, &data, &mut findings)?;
     assert_eq!(findings.len(), 1);
     assert_eq!(
         findings[0].check,
@@ -529,19 +546,25 @@ fn thread_data() -> TestResult<super::NativeData> {
 
 #[test]
 fn thread_validation_requires_decoded_numeric_parameters_and_the_thread_class() -> TestResult {
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+        &[],
+        &arena,
+        &cadmpeg_core::decode::DecodePolicy::service(),
+    )?;
     let mut data = thread_data()?;
     let mut ir = cadmpeg_ir::CadIr::empty();
     ir.model
         .features
         .push(annotation(data.pm_dc_features[0].id()));
     let mut findings = Vec::new();
-    super::validate_features(&ir, &data, &mut findings);
+    super::validate_features(&ctx, &ir, &data, &mut findings)?;
     assert!(findings.is_empty(), "{findings:?}");
     let parameter = data
         .pm_dc_parameters
         .pop()
         .ok_or("missing parameter fixture")?;
-    super::validate_features(&ir, &data, &mut findings);
+    super::validate_features(&ctx, &ir, &data, &mut findings)?;
     assert_eq!(findings.len(), 1);
     assert_eq!(
         findings[0].message,
@@ -552,7 +575,7 @@ fn thread_validation_requires_decoded_numeric_parameters_and_the_thread_class() 
     label["class_id"] = serde_json::json!("00000000000000000000000000000000");
     data.pm_dc_feature_labels[0] = serde_json::from_value(label)?;
     findings.clear();
-    super::validate_features(&ir, &data, &mut findings);
+    super::validate_features(&ctx, &ir, &data, &mut findings)?;
     assert_eq!(findings.len(), 1);
     assert_eq!(
         findings[0].message,
@@ -628,4 +651,332 @@ fn asm_face_key_validation_follows_the_actual_native_sidedness_reference() {
         findings[0].check,
         cadmpeg_ir::report::check::Check::NativeLinks
     );
+}
+
+#[test]
+fn fillet_continuity_is_nullable_and_rejects_a_resolved_non_boolean() {
+    let boolean_type = crate::pmdc::type_id_string(crate::feature::BOOLEAN_TYPE);
+    for (index, admitted) in [(0, true), (1, true), (2, false), (3, true)] {
+        let kind = PmDcFeaturePropertyKind::FilletEdgeSet {
+            edges: PmDcReference::new(0, false).expect("null"),
+            radius: PmDcReference::new(0, false).expect("null"),
+            selection: PmDcReference::new(0, false).expect("null"),
+            continuity: PmDcReference::new(index, false).expect("reference"),
+            option: None,
+        };
+        let types = |ordinal| match ordinal {
+            0 => Some(boolean_type.as_str()),
+            1 => Some("00000000000000000000000000000000"),
+            _ => None,
+        };
+        assert_eq!(
+            super::fillet_continuity_type_error(&kind, types).is_none(),
+            admitted
+        );
+    }
+}
+
+#[test]
+fn native_loft_and_sweep_slots_are_checked_without_a_neutral_feature() -> TestResult {
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+        &[],
+        &arena,
+        &cadmpeg_core::decode::DecodePolicy::service(),
+    )?;
+    for class in [
+        "05daba90d111386100080bbd0663dc09",
+        "e0ef542fd111340900084eba32a3dc09",
+        "808b00afd41140881000fca5bba647b5",
+    ] {
+        let mut data = thread_data()?;
+        let mut label = serde_json::to_value(&data.pm_dc_feature_labels[0])?;
+        label["class_id"] = serde_json::json!(class);
+        data.pm_dc_feature_labels[0] = serde_json::from_value(label)?;
+        for (reference, invalid) in [(0, false), (1, true)] {
+            let source = &data.pm_dc_features[0];
+            let mut payload = (**source).clone();
+            payload.properties = PmDcReferenceList::new(
+                2,
+                Some(PmDcListMetadata::U32([1, 0])),
+                vec![PmDcReference::from_packed(reference)],
+            )
+            .ok_or("invalid slot fixture")?;
+            data.pm_dc_features[0] = crate::record_identity::Located::new(
+                payload,
+                source.identity.type_id.clone(),
+                source.identity.segment_token.clone(),
+                source.identity.record_ordinal,
+            );
+            let mut findings = Vec::new();
+            super::validate_features(&ctx, &cadmpeg_ir::CadIr::empty(), &data, &mut findings)?;
+            assert_eq!(findings.len(), usize::from(invalid));
+            if invalid {
+                assert_eq!(
+                    findings[0].message,
+                    "Inventor loft or sweep property slot has an invalid record type"
+                );
+            }
+        }
+    }
+    Ok(())
+}
+
+fn sketch_point(
+    version: u8,
+    ordinal: u32,
+    tail: serde_json::Value,
+) -> TestResult<crate::sketch::PmDcSketchEntity> {
+    let serde_json::Value::Object(tail) = tail else {
+        return Err("point tail".into());
+    };
+    let list = serde_json::json!({"marker": 2, "metadata": null, "references": []});
+    let mut kind = serde_json::json!({
+        "form": "point", "position": [0.0, 0.0], "endpoint_of": list, "center_of": list
+    });
+    kind.as_object_mut().ok_or("point kind")?.extend(tail);
+    let mut payload: crate::sketch::PmDcSketchEntityPayload =
+        serde_json::from_value(serde_json::json!({
+            "save_version_major": version,
+            "header": {
+                "header_value": 0, "header_id": 0, "next": PmDcReference::from_packed(0),
+                "flags": 0, "context": PmDcReference::from_packed(0), "source_index": 0
+            },
+            "entity_flags": 0, "sketch": PmDcReference::from_packed(0),
+            "kind": {
+                "form": "point", "position": [0.0, 0.0],
+                "endpoint_of": list, "center_of": list, "state": null, "associations": null
+            }
+        }))?;
+    payload.kind = serde_json::from_value(kind)?;
+    Ok(crate::record_identity::Located::new(
+        payload,
+        crate::record_identity::RecordTypeId::try_from(
+            "35df52ced011d0d20008ccbc0663dc09".to_owned(),
+        )?,
+        cadmpeg_ir::identity_key!("generated"),
+        ordinal,
+    ))
+}
+
+fn paired_tail(operands: [u32; 2]) -> serde_json::Value {
+    serde_json::json!({
+        "state": 2, "associations": null,
+        "paired": {
+            "scalar_metadata": [2, 0], "scalars": [0.25, 0.75],
+            "operand_metadata": [2, 7], "operands": operands.map(PmDcReference::from_packed)
+        }
+    })
+}
+
+fn sketch_records(data: &mut super::NativeData) -> TestResult {
+    for entity in &data.pm_dc_sketch_entities {
+        let ordinal = entity.identity.record_ordinal;
+        data.records.push(serde_json::from_value(serde_json::json!({
+            "id": format!("inventor:rse:record#generated-{ordinal}"),
+            "token": "generated", "ordinal": ordinal, "selector": 0, "type_index": 0,
+            "type_id": entity.identity.type_id.as_str(),
+            "payload_offset": 0, "payload_len": 0, "payload_sha256": "",
+            "trailing_payload_len": 0, "trailer_len": 0, "trailer_sha256": ""
+        }))?);
+    }
+    Ok(())
+}
+
+fn sketch_findings(data: &super::NativeData) -> Vec<cadmpeg_ir::report::check::Finding> {
+    let mut findings = Vec::new();
+    super::validate_sketches(data, &cadmpeg_ir::CadIr::empty(), &mut findings);
+    findings
+}
+
+#[test]
+fn paired_point_operands_require_sketch_entities_in_the_same_carrier() -> TestResult {
+    for operands in [[2, 3], [0x8000_0002, 0x8000_0003]] {
+        let mut data = empty_data();
+        data.pm_dc_sketch_entities
+            .push(sketch_point(25, 0, paired_tail(operands))?);
+        for ordinal in [1, 2] {
+            data.pm_dc_sketch_entities.push(sketch_point(
+                25,
+                ordinal,
+                serde_json::json!({"state": null, "associations": null}),
+            )?);
+        }
+        sketch_records(&mut data)?;
+        assert!(sketch_findings(&data).is_empty());
+        let nonentity_type = "114d8790d011f8d10008cabc0663dc09";
+        data.pm_dc_sketch_entities[2].identity.type_id =
+            crate::record_identity::RecordTypeId::try_from(nonentity_type.to_owned())?;
+        data.records[2].type_id = nonentity_type.into();
+        assert_eq!(sketch_findings(&data).len(), 1);
+        data.pm_dc_sketch_entities.pop();
+        data.records[2].type_id = "114d8790d011f8d10008cabc0663dc09".into();
+        assert_eq!(sketch_findings(&data).len(), 1);
+        data.pm_dc_sketch_entities[0] = sketch_point(25, 0, paired_tail([0, 2]))?;
+        assert_eq!(sketch_findings(&data).len(), 1);
+        data.pm_dc_sketch_entities[0] = sketch_point(25, 0, paired_tail([2, 4]))?;
+        assert_eq!(sketch_findings(&data).len(), 2);
+        data.pm_dc_sketch_entities[0] = sketch_point(25, 0, paired_tail([2, 3]))?;
+        data.records[2].token = "other".into();
+        assert_eq!(sketch_findings(&data).len(), 2);
+    }
+    Ok(())
+}
+
+#[test]
+fn native_validation_checks_point_tail_save_version() -> TestResult {
+    let list = serde_json::json!({"marker": 2, "metadata": null, "references": []});
+    for version in [23, 25, 31] {
+        for (tail, valid) in [
+            (
+                serde_json::json!({"state": null, "associations": null}),
+                true,
+            ),
+            (
+                serde_json::json!({"state": 0, "associations": list}),
+                version < 25,
+            ),
+            (
+                serde_json::json!({"state": 0, "associations": list, "links": list}),
+                version >= 25,
+            ),
+            (
+                serde_json::json!({"state": 2, "associations": list}),
+                version < 25,
+            ),
+            (paired_tail([1, 1]), version >= 25),
+        ] {
+            let mut data = empty_data();
+            data.pm_dc_sketch_entities
+                .push(sketch_point(version, 0, tail)?);
+            sketch_records(&mut data)?;
+            assert_eq!(
+                sketch_findings(&data).is_empty(),
+                valid,
+                "version {version}"
+            );
+        }
+    }
+    Ok(())
+}
+
+#[test]
+fn work_plane_features_match_their_work_plane_frames() -> TestResult {
+    use crate::feature::work_plane::{frame, tests::work_plane};
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+        &[],
+        &arena,
+        &cadmpeg_core::decode::DecodePolicy::service(),
+    )?;
+    let plane = work_plane(3, [0.0, 0.0, 1.5], [1.0, 0.0, 0.0], [0.0, 1.0, 0.0]);
+    let skewed = work_plane(4, [0.0; 3], [1.0, 0.0, 0.0], [0.6, 0.8, 0.0]);
+    let admitted = frame(&plane).ok_or("orthonormal frame")?;
+    let shifted = admitted.with_origin(
+        cadmpeg_ir::features::FinitePoint3::new(cadmpeg_ir::math::Point3::new(0.0, 0.0, 16.0))
+            .ok_or("finite origin")?,
+    );
+    let native = FeatureOperation::Native {
+        kind: cadmpeg_ir::features::NativeFeatureKind::Other("WorkPlane".into()),
+        parameters: std::collections::BTreeMap::new(),
+    };
+    for (operation, source, findings) in [
+        (FeatureOperation::DatumPlane { frame: admitted }, &plane, 0),
+        (FeatureOperation::DatumPlane { frame: shifted }, &plane, 1),
+        (native.clone(), &skewed, 0),
+        (native, &plane, 1),
+        (FeatureOperation::DatumPlane { frame: admitted }, &skewed, 1),
+    ] {
+        let mut data = empty_data();
+        data.pm_dc_work_planes = vec![plane.clone(), skewed.clone()];
+        let mut feature = annotation(source.id());
+        feature.evaluation =
+            FeatureEvaluation::from_definition(FeatureDefinition::Operation(operation));
+        let mut ir = cadmpeg_ir::CadIr::empty();
+        ir.model.features.push(feature);
+        let mut found = Vec::new();
+        super::validate_features(&ctx, &ir, &data, &mut found)?;
+        let mismatches = found
+            .iter()
+            .filter(|finding| {
+                finding.message == "Inventor work-plane feature does not match its work-plane frame"
+            })
+            .count();
+        assert_eq!(mismatches, findings, "{found:?}");
+    }
+    Ok(())
+}
+
+#[test]
+fn split_validation_recomputes_operands_and_the_plane_feature() -> TestResult {
+    use crate::feature::split::tests::solid::{plane_split_at, properties_at};
+    use crate::feature::work_plane::{frame, tests::work_plane};
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+        &[],
+        &arena,
+        &cadmpeg_core::decode::DecodePolicy::service(),
+    )?;
+    let plane = work_plane(42, [0.0, 0.0, 1.5], [1.0, 0.0, 0.0], [0.0, 1.0, 0.0]);
+    let split = plane_split_at(30, 60, 42);
+    let properties = properties_at(60, 2);
+    let mut datum = annotation(plane.id());
+    datum.id = crate::feature::history_feature_id(&plane.identity)?;
+    datum.evaluation = FeatureEvaluation::from_definition(FeatureDefinition::Operation(
+        FeatureOperation::DatumPlane {
+            frame: frame(&plane).ok_or("orthonormal frame")?,
+        },
+    ));
+    let target = cadmpeg_ir::features::BodySelection::Native(properties[7].id());
+    let other = FeatureId::compose(
+        &cadmpeg_ir::identity_namespace!("inventor", "design", "feature"),
+        cadmpeg_ir::identity_key!("other"),
+    );
+    for (tool, mismatches) in [
+        (
+            cadmpeg_ir::features::SplitBodyTool::Plane {
+                plane: datum.id.clone(),
+            },
+            0,
+        ),
+        (
+            cadmpeg_ir::features::SplitBodyTool::Plane { plane: other },
+            1,
+        ),
+        (
+            cadmpeg_ir::features::SplitBodyTool::Faces(FaceSelection::Native(properties[10].id())),
+            1,
+        ),
+    ] {
+        let mut data = empty_data();
+        data.pm_dc_work_planes = vec![plane.clone()];
+        data.pm_dc_features = vec![split.clone()];
+        data.pm_dc_feature_properties = properties.clone();
+        data.pm_dc_feature_labels = vec![crate::feature::tests::test_label(
+            30,
+            4,
+            crate::feature::split::CLASS_ID,
+            &[],
+        )];
+        let mut feature = annotation(split.id());
+        feature.id = crate::feature::history_feature_id(&split.identity)?;
+        feature.evaluation = FeatureEvaluation::from_definition(FeatureDefinition::Operation(
+            FeatureOperation::SplitBody {
+                targets: target.clone(),
+                tool,
+            },
+        ));
+        let mut ir = cadmpeg_ir::CadIr::empty();
+        ir.model.features = vec![datum.clone(), feature];
+        let mut found = Vec::new();
+        super::validate_features(&ctx, &ir, &data, &mut found)?;
+        let count = found
+            .iter()
+            .filter(|finding| {
+                finding.message == "Inventor neutral split does not match its PmDc operands"
+            })
+            .count();
+        assert_eq!(count, mismatches, "{found:?}");
+    }
+    Ok(())
 }

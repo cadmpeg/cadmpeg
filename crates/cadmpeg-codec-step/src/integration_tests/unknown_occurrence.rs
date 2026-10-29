@@ -18,6 +18,7 @@ fn unknown_occurrence_pose_is_omitted_and_known_sibling_round_trips() {
         ("part", vec![ir.model.bodies[0].id.clone()]),
     ] {
         ir.model.product_definitions.push(ProductDefinition {
+            sketches: Vec::new(),
             id: format!("test:model:product#{key}").try_into().unwrap(),
             kind: ProductDefinitionKind::Part,
             source_name: Some(key.to_owned()),
@@ -104,6 +105,7 @@ fn unknown_ancestor_omits_descendants_and_keeps_known_local_frames() {
         ("part", vec![ir.model.bodies[0].id.clone()]),
     ] {
         ir.model.product_definitions.push(ProductDefinition {
+            sketches: Vec::new(),
             id: format!("test:model:product#{key}").try_into().unwrap(),
             kind: ProductDefinitionKind::Part,
             source_name: Some(key.to_owned()),

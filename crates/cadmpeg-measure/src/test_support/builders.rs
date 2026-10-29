@@ -6,9 +6,11 @@ use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
 use cadmpeg_ir::geometry::analytic::{
     CircleCurve, ConeSurface, CylinderSurface, LineCurve, PlaneSurface, SphereSurface, TorusSurface,
 };
-use cadmpeg_ir::geometry::nurbs::{NurbsPoleGrid, NurbsSurface, NurbsSurfaceAxis, WeightedPole3};
+use cadmpeg_ir::geometry::nurbs::{
+    NurbsCurve, NurbsPoleGrid, NurbsPoles3, NurbsSurface, NurbsSurfaceAxis, WeightedPole3,
+};
 use cadmpeg_ir::geometry::pcurve::{
-    CirclePcurve, LinePcurve, Pcurve, PcurveGeometry, PcurveMetadata,
+    CirclePcurve, LinePcurve, Pcurve, PcurveGeometry, PcurveMetadata, PcurveNurbs, PcurveNurbsPoles,
 };
 use cadmpeg_ir::geometry::{
     Curve, CurveGeometry, DirectedParameterRange, SolvedCurveGeometry, SolvedSurfaceGeometry,
@@ -331,6 +333,56 @@ impl Builder {
         )
     }
 
+    /// A closed edge on the degree-1 B-spline through `corners` and back to
+    /// the first, on `[0, corners.len()]` with one knot per corner, whose
+    /// one vertex is `vertex`. It stores no parameter range.
+    pub(crate) fn closed_polyline(&mut self, corners: &[[f64; 3]], vertex: &VertexId) -> EdgeId {
+        let points = corners
+            .iter()
+            .chain(corners.first())
+            .map(|&[x, y, z]| Point3::new(x, y, z))
+            .collect();
+        let curve = self.curve(SolvedCurveGeometry::Nurbs(
+            NurbsCurve::new(
+                1,
+                polyline_knots(corners.len()),
+                NurbsPoles3::from_lanes(points, None).expect("poles"),
+                false,
+            )
+            .expect("polyline"),
+        ));
+        self.edge(
+            EdgeCarrier::unbounded(Some(curve)),
+            vertex.clone(),
+            vertex.clone(),
+        )
+    }
+
+    /// Append the closed degree-1 pcurve through `corners`, parameterized as
+    /// [`Self::closed_polyline`], on the use interval `range` or on none, to
+    /// the pcurve uses of the coedge at `position` of ring `ring` of `face`.
+    pub(crate) fn closed_polyline_pcurve(
+        &mut self,
+        face: &FaceId,
+        at: [usize; 2],
+        corners: &[[f64; 2]],
+        range: Option<[f64; 2]>,
+    ) {
+        let points = corners
+            .iter()
+            .chain(corners.first())
+            .map(|&[u, v]| Point2::new(u, v))
+            .collect();
+        let nurbs = PcurveNurbs::new(
+            1,
+            polyline_knots(corners.len()),
+            PcurveNurbsPoles::from_lanes(points, None).expect("poles"),
+            false,
+        )
+        .expect("polyline pcurve");
+        self.pcurve_use(face, at, PcurveGeometry::Nurbs { nurbs }, range);
+    }
+
     /// An edge with no 3D curve.
     pub(crate) fn bare_edge(&mut self, start: &VertexId, end: &VertexId) -> EdgeId {
         self.edge(EdgeCarrier::unbounded(None), start.clone(), end.clone())
@@ -353,7 +405,7 @@ impl Builder {
             )
             .expect("line pcurve"),
         );
-        self.pcurve_use(face, at, geometry, range);
+        self.pcurve_use(face, at, geometry, Some(range));
     }
 
     /// Append the counterclockwise circle pcurve of `radius` about `center`
@@ -376,7 +428,7 @@ impl Builder {
             )
             .expect("circle pcurve"),
         );
-        self.pcurve_use(face, at, geometry, range);
+        self.pcurve_use(face, at, geometry, Some(range));
     }
 
     fn pcurve_use(
@@ -384,7 +436,7 @@ impl Builder {
         face: &FaceId,
         [ring, position]: [usize; 2],
         geometry: PcurveGeometry,
-        range: [f64; 2],
+        range: Option<[f64; 2]>,
     ) {
         let n = self.serial();
         let pcurve = id(PcurveId::mint, "pcurve", n);
@@ -420,7 +472,7 @@ impl Builder {
         coedge.pcurves.push(PcurveUse {
             pcurve,
             isoparametric: None,
-            parameter_range: Some(DirectedParameterRange::new(range).expect("range")),
+            parameter_range: range.map(|range| DirectedParameterRange::new(range).expect("range")),
         });
     }
 
@@ -707,6 +759,16 @@ impl Builder {
     }
 }
 
+/// The clamped degree-1 knots of a closed polyline through `corners`
+/// corners: `0, 0, 1, …, corners, corners`.
+fn polyline_knots(corners: usize) -> Vec<f64> {
+    let last = u32::try_from(corners).expect("corner count");
+    std::iter::once(0.0)
+        .chain((0..=last).map(f64::from))
+        .chain(std::iter::once(f64::from(last)))
+        .collect()
+}
+
 /// A box face: outward normal, plane origin, `u` axis, and its ring of
 /// edge indices with their forward flags.
 type BoxFace = ([f64; 3], [f64; 3], [f64; 3], [(usize, bool); 4]);
@@ -939,4 +1001,54 @@ pub(crate) fn plate_with_hole(classified: bool) -> CadIr {
         classified,
     );
     builder.finish(BodyKind::Sheet)
+}
+
+/// The unit square at `z = 0`, bounded counterclockwise by four line edges
+/// with line pcurves. The first coedge's two pcurve uses split its side at
+/// the midpoint. When `listed_backward`, they form their chain from the
+/// coedge's end to its start: the end half first, each on a decreasing
+/// range. Returns the document, that coedge and the face.
+pub(crate) fn square_with_split_side(listed_backward: bool) -> (CadIr, CoedgeId, FaceId) {
+    let mut builder = Builder::new();
+    let corners = [
+        builder.vertex([0.0, 0.0, 0.0]),
+        builder.vertex([1.0, 0.0, 0.0]),
+        builder.vertex([1.0, 1.0, 0.0]),
+        builder.vertex([0.0, 1.0, 0.0]),
+    ];
+    let sides: Vec<(EdgeId, Sense)> = (0..4)
+        .map(|index| {
+            (
+                builder.line(&corners[index], &corners[(index + 1) % 4]),
+                Sense::Forward,
+            )
+        })
+        .collect();
+    let surface = builder.plane([0.0; 3], [0.0, 0.0, 1.0], [1.0, 0.0, 0.0]);
+    let face = builder.face(&surface, Sense::Forward, &[sides], true);
+    let halves = if listed_backward {
+        [[1.0, 0.5], [0.5, 0.0]]
+    } else {
+        [[0.0, 0.5], [0.5, 1.0]]
+    };
+    for range in halves {
+        builder.line_pcurve(&face, [0, 0], [0.0, 0.0], [1.0, 0.0], range);
+    }
+    let rest = [
+        ([1.0, 0.0], [0.0, 1.0]),
+        ([1.0, 1.0], [-1.0, 0.0]),
+        ([0.0, 1.0], [0.0, -1.0]),
+    ];
+    for (position, (origin, direction)) in rest.into_iter().enumerate() {
+        builder.line_pcurve(&face, [0, position + 1], origin, direction, [0.0, 1.0]);
+    }
+    let ir = builder.finish(BodyKind::Sheet);
+    let split = ir
+        .model
+        .loops
+        .iter()
+        .find(|face_loop| face_loop.face == face)
+        .and_then(|face_loop| face_loop.coedges().first().cloned())
+        .expect("the face's first coedge");
+    (ir, split, face)
 }

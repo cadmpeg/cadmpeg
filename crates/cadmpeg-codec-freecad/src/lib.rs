@@ -25,6 +25,7 @@ mod control_links;
 mod design;
 mod dialect;
 mod drawing;
+mod drawing_content;
 mod element_map;
 mod entry_sources;
 mod fidelity;
@@ -705,7 +706,11 @@ fn finding(check: Check, message: impl Into<String>, entity: Option<String>) -> 
 impl CodecBackend for FcstdCodec {
     const FORMAT: FormatId = FormatId::new(dialect::FORMAT);
 
-    fn validate_native(ctx: &DecodeContext<'_>, ir: &CadIr) -> Result<Vec<Finding>, CodecError> {
+    fn validate_native(
+        ctx: &DecodeContext<'_>,
+        ir: &CadIr,
+        _source: Option<&cadmpeg_ir::SourceFidelity>,
+    ) -> Result<Vec<Finding>, CodecError> {
         crate::validate_native(ctx, ir)
     }
 
@@ -952,6 +957,19 @@ impl CodecBackend for FcstdCodec {
                 &graph.properties,
                 &drawings,
             )?;
+            drawing::content::enrich(
+                &property_reader,
+                &mut ir.model,
+                &graph.properties,
+                &scan.data,
+                &mut scan.losses,
+            )?;
+            annotation::enrich_dimensions(
+                &property_reader,
+                &mut ir.model,
+                &graph.properties,
+                &mut scan.losses,
+            )?;
             namespace.set_arena(ctx, "annotations", &annotations)?;
             application::install(
                 ctx,
@@ -996,12 +1014,6 @@ impl CodecBackend for FcstdCodec {
                 &mut transfer_losses,
             )?;
             topology_transfer::apply_body_names(ctx, &mut ir, &shape_payloads, &graph.properties)?;
-            design::hide_intermediate_bodies(
-                &mut ir,
-                &graph.objects,
-                &graph.properties,
-                &shape_payloads,
-            );
             if ctx.depth() == DecodeDepth::Full {
                 let (cycle_affected, design_losses) = design::transfer(
                     &property_reader,
@@ -1024,6 +1036,12 @@ impl CodecBackend for FcstdCodec {
                     &topology_occurrences,
                 );
             }
+            transfer_losses.extend(drawing_content::transfer(
+                ctx,
+                &mut ir.model,
+                &graph.properties,
+                &scan.data,
+            )?);
             ctx.admit_entities(
                 cadmpeg_core::decode::u64_from_index(ir.model.entity_count()),
                 &mut admitted_entities,
@@ -1047,8 +1065,21 @@ impl CodecBackend for FcstdCodec {
                 &shape_payloads,
                 &ir.model.bodies,
             )?;
+            product::localize_definition_bodies(
+                &product_definitions,
+                &occurrences,
+                &mut ir.model.bodies,
+            );
             ir.model.product_definitions = product_definitions;
             ir.model.occurrences = occurrences;
+            application_geometry::mesh_placement::project(
+                ctx,
+                &mut ir,
+                &graph.properties,
+                &product_nodes,
+                &mut transfer_losses,
+                &mut admitted_entities,
+            )?;
             ir.model.assembly_joints =
                 joint::transfer_neutral(&joint_records, &ir.model.occurrences)?;
             for feature in &mut ir.model.features {
@@ -1108,6 +1139,12 @@ impl CodecBackend for FcstdCodec {
                     [cadmpeg_ir::ArenaClass::Model].into_iter().collect(),
                 )?;
             }
+            design::hide_intermediate_bodies(
+                &mut ir,
+                &graph.objects,
+                &graph.properties,
+                &shape_payloads,
+            );
             writer::body_styles::apply(&mut ir, &shape_payloads, &graph.properties)?;
             gui_losses = std::mem::take(&mut gui_graph.losses);
             ctx.admit_entities(

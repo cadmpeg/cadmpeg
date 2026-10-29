@@ -1,6 +1,7 @@
 {
   "ir": {
-    "ir_version": "8",
+    "decode_depth": "full",
+    "ir_version": "9",
     "model": {
       "appearance_bindings": [],
       "appearances": [],
@@ -19,34 +20,13 @@
             "definition": "native",
             "kind": "CurveFromEquation",
             "parameters": {
-              "assignment_count": {
-                "kind": "literal",
-                "value": {
-                  "tokens": [
-                    {
-                      "kind": "text",
-                      "value": "1"
-                    }
-                  ]
-                }
-              },
-              "entity_id": {
-                "kind": "literal",
-                "value": {
-                  "tokens": [
-                    {
-                      "kind": "text",
-                      "value": "7"
-                    }
-                  ]
-                }
-              }
+              "assignment_count": "1",
+              "entity_id": "7"
             }
           },
           "id": "creo:depdb:curve_expression_feature#7-125",
           "name": "Curve Equation 7",
           "native_ref": "creo:depdb:curve_expression#active-7-125",
-          "needs_recompute": false,
           "ordinal": 0,
           "source_content": [
             {
@@ -55,6 +35,7 @@
             }
           ],
           "source_tag": "crv_fr_eqn",
+          "source_text": "name=rel_model_name()",
           "suppressed": false
         }
       ],
@@ -71,6 +52,11 @@
             "definition": "creo:model:product_definition#root",
             "scope": "local"
           },
+          "scale": [
+            1.0,
+            1.0,
+            1.0
+          ],
           "transform": [
             [
               1.0,
@@ -95,15 +81,7 @@
       ],
       "parameters": [
         {
-          "driving": true,
-          "expression": {
-            "tokens": [
-              {
-                "kind": "text",
-                "value": "rel_model_name()"
-              }
-            ]
-          },
+          "expression": "rel_model_name()",
           "id": "creo:depdb:curve_expression_parameter#7-125-0",
           "name": "name",
           "native_ref": "creo:depdb:curve_expression#active-7-125",
@@ -185,10 +163,6 @@
         ]
       }
     },
-    "scope": {
-      "design": true,
-      "model": true
-    },
     "source": {
       "attributes": {
         "expanded_section_byte_count": "0",
@@ -201,6 +175,7 @@
         "section.0.raw_name": "DEPDB_DATA",
         "section.0.role": "metadata",
         "section_count": "1",
+        "unresolved_feature_state_selection_count": "0",
         "version_line": "#UGC:2 P c"
       },
       "identity": {
@@ -572,6 +547,7 @@
       "unresolved_feature_dimension_driven_variable_count": 0,
       "unresolved_feature_dimension_value_count": 0,
       "unresolved_feature_segment_geometry_count": 0,
+      "unresolved_feature_state_selection_count": 0,
       "untransferred_visible_cone_surface_row_count": 0,
       "untransferred_visible_curve_row_count": 0,
       "untransferred_visible_cylinder_surface_row_count": 0,
@@ -676,10 +652,7 @@
     ],
     "transfer": {
       "geometry_transferred": false,
-      "scope": {
-        "design": true,
-        "model": true
-      }
+      "transfer": "full"
     }
   },
   "source_fidelity": {
@@ -729,22 +702,6 @@
           "tag": "part_product"
         }
       }
-    },
-    "retained_records": {
-      "creo:source:image#whole": {
-        "bytes": {
-          "data": "I1VHQzoyIFAgYwojLSBDTU5NIDAwYndpZGdldC5wcnQgCiMtRU5EX09GX1VHQ19IRUFERVIKI1VHQ19UT0MKdG9jIGVudHJ5IGxpbmUKI0VORF9PRl9UT0NfSEVBREVSCiMKI0RFUERCX0RBVEEK4ABwX2RlcF9kYgDj4ABlbnRpdHkoY3J2X2ZyX2VxbikA4+ABaWQAB+AKZXhwcmVzc2lvbgD4AW5hbWU9cmVsX21vZGVsX25hbWUoKQA=",
-          "retention": "inline"
-        },
-        "offset": 0,
-        "stream": "creo:source",
-        "untyped": [
-          "model"
-        ]
-      }
-    },
-    "unrepresented": [
-      "model"
-    ]
+    }
   }
 }

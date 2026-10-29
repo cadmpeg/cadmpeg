@@ -135,6 +135,9 @@ pub(crate) enum FrameMap {
     /// A decoded cone axis opposite the native axis negates both frame
     /// coordinates.
     Negated,
+    /// The native sphere chart uses the radius magnitude, while the neutral
+    /// sphere retains a negative radius.
+    Antipodal,
     /// A torus whose decoded radii differ in sign from the radii of its
     /// native chart.
     Torus {
@@ -153,6 +156,7 @@ impl FrameMap {
         match self {
             Self::Frame => frame,
             Self::Negated => Point2::new(-frame.u, -frame.v),
+            Self::Antipodal => Point2::new(frame.u + std::f64::consts::PI, -frame.v),
             Self::Torus {
                 opposite_major,
                 opposite_minor,
@@ -193,11 +197,15 @@ impl SupportChart {
         })
     }
 
-    /// The chart of a sphere with v-sense slot `reverse_v`.
-    pub(crate) fn sphere(reverse_v: bool) -> Self {
+    /// The chart of a sphere with signed `radius` and v-sense slot `reverse_v`.
+    pub(crate) fn sphere(radius: f64, reverse_v: bool) -> Self {
         Self::Native {
             chart: NativeChart::LatitudeFirst { reverse_v },
-            map: FrameMap::Frame,
+            map: if radius < 0.0 {
+                FrameMap::Antipodal
+            } else {
+                FrameMap::Frame
+            },
         }
     }
 

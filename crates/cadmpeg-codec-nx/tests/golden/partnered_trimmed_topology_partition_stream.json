@@ -1,7 +1,8 @@
 {
   "decode": {
     "ir": {
-      "ir_version": "8",
+      "decode_depth": "full",
+      "ir_version": "9",
       "model": {
         "appearance_bindings": [],
         "appearances": [],
@@ -222,6 +223,7 @@
             {
               "basis_xmt": 9,
               "id": "nx:s0:trimmed-curve-record#12",
+              "inflated_offset": 473,
               "parameters": [
                 0.00075,
                 0.00025
@@ -253,10 +255,6 @@
           ]
         }
       },
-      "scope": {
-        "design": true,
-        "model": true
-      },
       "source": {
         "attributes": {
           "deltas_streams": "0",
@@ -264,6 +262,7 @@
           "file_size": "428",
           "footer_entry_count": "0",
           "footer_fingerprint": "00000000",
+          "footer_offset": "414",
           "header_entry_count": "1",
           "jpeg_preview_count": "0",
           "partition_streams": "1",
@@ -352,10 +351,7 @@
       ],
       "transfer": {
         "geometry_transferred": true,
-        "scope": {
-          "design": true,
-          "model": true
-        }
+        "transfer": "full"
       }
     },
     "source_fidelity": {
@@ -517,10 +513,6 @@
           }
         }
       },
-      "metadata": {
-        "native.nx.parasolid_trimmed_curve_records.nx:s0:trimmed-curve-record#12.inflated_offset": "473",
-        "source.footer_offset": "414"
-      },
       "retained_records": {
         "nx:container:parasolid#0": {
           "bytes": {
@@ -528,20 +520,9 @@
             "retention": "inline"
           },
           "offset": 76,
-          "stream": "nx:container",
-          "untyped": []
-        },
-        "nx:source:image#whole": {
-          "bytes": {
-            "data": "U1BMTVNTVFIGAAAAAAAAAACeAQAAAAAAAEhFQURFUgEAAAAVAAAAL1Jvb3QvVUdfUEFSVC9VR19QQVJUTAAAAAAAAABSAQAAAAAAAHgBfVHNTsJAEP4qP1WpIEgLMWJ6VBoiYmKil40hGEjEGFvPTZEeMCim6cWLN5/Ap+AdfAofwasXvRoPzvbHburPdGf2m29murM7ZyaAnUPdOj86NYcDSz8enPT0rVvH8yf+ZHazrV96ruO7Y310p1/Pxu506npUUjK7fdvqmZa9ax+QAAoWiP+5VpAJSIniErKQ6FNIi4TBhTX3X143ui1Uic1Rdt7gdKQl5CIkI0sJZcjk58jKWIaGRSwBBlYJgAvbmzfbFx2HEkCikPLVQZ5viYpnJOwviL2FZLyHnmA3eQeCT92InoD//EWFriLkocDWozcB1uhlxVgDBdFl7dHw+X3+KXIBfkjVwUj3GaT9a1j/0X+6uv/4PqSIaljA4qHxkarIIDU0FaFoVCChDI1clayGGmSalQS0UEGN6GTVWXLtBupJAIg7ETmOvwBl0j0+Rk9PVEVSAAAAAAAAAAA=",
-            "retention": "inline"
-          },
-          "offset": 0,
-          "stream": "nx:source",
-          "untyped": []
+          "stream": "nx:container"
         }
-      },
-      "unrepresented": []
+      }
     }
   },
   "inspect": {

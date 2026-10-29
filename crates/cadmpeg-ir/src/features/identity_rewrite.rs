@@ -99,6 +99,7 @@ rewrite_enum!(ScaleFactors, []; {
     PerAxis { factors },
 });
 rewrite_scalar!(SheetMetalBendPosition);
+rewrite_scalar!(super::SheetMetalCornerEffect);
 rewrite_scalar!(SheetMetalHeightDatum);
 rewrite_scalar!(SheetMetalHemBendPosition);
 rewrite_scalar!(SheetMetalHemDirection);
@@ -123,3 +124,8 @@ rewrite_enum!(WrapMode, []; {
 rewrite_record!(super::SweepCircularRegion, []; { outer_radius, wall_thickness });
 
 rewrite_scalar!(FilledSurfaceBoundaryCondition);
+
+rewrite_scalar!(super::SheetMetalReliefForm);
+rewrite_scalar!(super::SheetMetalTransitionForm);
+rewrite_record!(super::SheetMetalRelief, []; {form, width, depth, minimum_remnant, seam_gap});
+rewrite_record!(super::SheetMetalTransition, []; {form, radius});

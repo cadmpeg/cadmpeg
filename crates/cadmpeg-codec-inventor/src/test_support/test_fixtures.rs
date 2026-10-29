@@ -261,6 +261,7 @@ pub(crate) fn primary_envelope_fixture_with_unavailable_carrier() -> Vec<u8> {
         false,
         false,
         [1, 1],
+        None,
     )
 }
 
@@ -279,7 +280,48 @@ pub(crate) fn primary_envelope_fixture_with_design(
         false,
         false,
         [1, 1],
+        None,
     )
+}
+
+pub(crate) struct BaseEnvelopeRecords {
+    pub(crate) design_version: u8,
+    pub(crate) brep: Vec<([u8; 16], Vec<u8>)>,
+    pub(crate) pairs: Vec<u8>,
+    pub(crate) revisions: Vec<u8>,
+    pub(crate) references: Vec<u8>,
+}
+
+pub(crate) fn base_envelope_fixture(
+    kernel: &[u8],
+    design: &[([u8; 16], Vec<u8>)],
+    base: &BaseEnvelopeRecords,
+) -> Vec<u8> {
+    let carrier = stored_kernel_body_fixture(kernel, 0x8000_0001);
+    primary_envelope_fixture_with_carrier_and_failures(
+        EnvelopeDeclarations::default(),
+        &carrier,
+        design,
+        false,
+        false,
+        [1, 1],
+        Some(base),
+    )
+}
+
+pub(crate) fn stored_kernel_body_fixture(kernel: &[u8], reference: u32) -> Vec<u8> {
+    let mut bytes = Vec::new();
+    push_u32(&mut bytes, 1);
+    push_u16(&mut bytes, 2);
+    push_u32(&mut bytes, 3);
+    push_u32(&mut bytes, 4);
+    bytes.extend_from_slice(kernel);
+    push_u32(&mut bytes, reference);
+    bytes.push(1);
+    bytes.extend_from_slice(&(-1_i32).to_le_bytes());
+    push_u32(&mut bytes, 6);
+    push_u32(&mut bytes, u32::MAX);
+    bytes
 }
 
 /// One `RSe` segment's registry and metadata identity.
@@ -320,6 +362,7 @@ fn primary_envelope_fixture_with_kernel_and_failures(
         break_database_body,
         break_metadata_body,
         [1, 1],
+        None,
     )
 }
 
@@ -331,6 +374,7 @@ pub(crate) fn primary_envelope_with_compression(kernel: &[u8], methods: [u8; 2])
         false,
         false,
         methods,
+        None,
     )
 }
 
@@ -341,6 +385,7 @@ fn primary_envelope_fixture_with_carrier_and_failures(
     break_database_body: bool,
     break_metadata_body: bool,
     methods: [u8; 2],
+    base: Option<&BaseEnvelopeRecords>,
 ) -> Vec<u8> {
     primary_envelope_with_segment(
         declarations,
@@ -350,6 +395,7 @@ fn primary_envelope_fixture_with_carrier_and_failures(
         break_metadata_body,
         methods,
         &DESIGN_SEGMENT,
+        base,
     )
 }
 
@@ -360,6 +406,10 @@ pub(crate) fn assembly_envelope_fixture(records: &[([u8; 16], Vec<u8>)]) -> Vec<
 
 pub(crate) fn assembly_graphics_envelope_fixture(records: &[([u8; 16], Vec<u8>)]) -> Vec<u8> {
     assembly_envelope(records, "AmGRxSegment", "AmGRxSegmentType")
+}
+
+pub(crate) fn design_view_envelope_fixture(records: &[([u8; 16], Vec<u8>)]) -> Vec<u8> {
+    assembly_envelope(records, "FWxDesignView", "FWxDesignViewType")
 }
 
 pub(crate) fn presentation_envelope_fixture(
@@ -395,6 +445,7 @@ fn assembly_envelope(
         false,
         [1, 1],
         &identity,
+        None,
     )
 }
 
@@ -406,6 +457,7 @@ fn primary_envelope_with_segment(
     break_metadata_body: bool,
     methods: [u8; 2],
     design_identity: &SegmentIdentity,
+    base: Option<&BaseEnvelopeRecords>,
 ) -> Vec<u8> {
     const ROOT: usize = 0;
     const RSE_STORAGE: usize = 1;
@@ -424,24 +476,38 @@ fn primary_envelope_with_segment(
     const FREE_SECTOR: u32 = 0xffff_ffff;
     const FAT_SECTOR: u32 = 0xffff_fffd;
 
-    let mut meta = meta_stream_fixture(
-        &BREP_SEGMENT,
-        &[(CARRIER_TYPE_ID, carrier.len())],
-        declarations,
-        methods[0],
-    );
+    let mut brep_records = vec![(CARRIER_TYPE_ID, carrier)];
+    if let Some(base) = base {
+        brep_records.extend(
+            base.brep
+                .iter()
+                .map(|(kind, bytes)| (*kind, bytes.as_slice())),
+        );
+    }
+    let brep_layout = brep_records
+        .iter()
+        .map(|(kind, bytes)| (*kind, bytes.len()))
+        .collect::<Vec<_>>();
+    let brep_payloads = brep_records
+        .iter()
+        .map(|(_, bytes)| *bytes)
+        .collect::<Vec<_>>();
+    let mut meta = meta_stream_fixture(&BREP_SEGMENT, &brep_layout, declarations, methods[0], None);
     if break_metadata_body {
         meta.push(0xff);
     }
-    let bulk = bulk_stream_fixture(&[carrier], methods[1]);
+    let bulk = bulk_stream_fixture(&brep_payloads, methods[1]);
     let mut database = database_fixture(declarations.schema);
     if break_database_body {
         database.truncate(20);
     }
     let registry = if design.is_empty() {
-        registry_fixture(&[&BREP_SEGMENT])
+        registry_fixture(&[&BREP_SEGMENT], 18)
     } else {
-        registry_fixture(&[&BREP_SEGMENT, design_identity])
+        registry_fixture(
+            &[&BREP_SEGMENT, design_identity],
+            base.map_or(18, |base| base.design_version),
+        )
     };
     let revisions = revision_fixture();
     let mut streams = vec![
@@ -463,12 +529,16 @@ fn primary_envelope_with_segment(
         streams.push((
             DESIGN_BULK,
             "Bdc",
-            bulk_stream_fixture(&payloads, methods[1]),
+            bulk_stream_fixture_at_version(
+                &payloads,
+                methods[1],
+                base.map_or(18, |base| base.design_version),
+            ),
         ));
         streams.push((
             DESIGN_META,
             "Mdc",
-            meta_stream_fixture(design_identity, &records, declarations, methods[0]),
+            meta_stream_fixture(design_identity, &records, declarations, methods[0], base),
         ));
     }
 
@@ -685,7 +755,7 @@ fn database_fixture(schema: u32) -> Vec<u8> {
     bytes
 }
 
-fn registry_fixture(segments: &[&SegmentIdentity]) -> Vec<u8> {
+fn registry_fixture(segments: &[&SegmentIdentity], design_version: u8) -> Vec<u8> {
     let mut bytes = Vec::new();
     push_u32(
         &mut bytes,
@@ -704,7 +774,14 @@ fn registry_fixture(segments: &[&SegmentIdentity]) -> Vec<u8> {
         push_utf16(&mut bytes, segment.type_name);
         push_u32(&mut bytes, 10);
         push_u32(&mut bytes, 11);
-        push_version(&mut bytes, 18);
+        push_version(
+            &mut bytes,
+            if segment.type_name == DESIGN_SEGMENT.type_name {
+                design_version
+            } else {
+                18
+            },
+        );
         push_u32(&mut bytes, 12);
         bytes.extend_from_slice(&[0x20; 16]);
         bytes.extend_from_slice(&[0x30; 9]);
@@ -738,8 +815,9 @@ fn meta_stream_fixture(
     records: &[([u8; 16], usize)],
     declarations: EnvelopeDeclarations,
     method: u8,
+    base: Option<&BaseEnvelopeRecords>,
 ) -> Vec<u8> {
-    let body = meta_table_body(records);
+    let body = meta_table_body(records, base);
     let mut bytes = Vec::new();
     push_bytes_vec(&mut bytes, declarations.meta_marker.as_bytes());
     bytes.extend_from_slice(&declarations.meta_version.to_le_bytes());
@@ -759,7 +837,7 @@ fn meta_stream_fixture(
     bytes
 }
 
-fn meta_table_body(records: &[([u8; 16], usize)]) -> Vec<u8> {
+fn meta_table_body(records: &[([u8; 16], usize)], base: Option<&BaseEnvelopeRecords>) -> Vec<u8> {
     let mut body = Vec::new();
     for value in [3_u16, 0, 2, 1, 0, 4, 0] {
         body.extend_from_slice(&value.to_le_bytes());
@@ -781,17 +859,36 @@ fn meta_table_body(records: &[([u8; 16], usize)]) -> Vec<u8> {
         push_u32(&mut body, 4);
     }
     push_u32(&mut body, 4 + type_count * 28);
-    let payloads = [0_usize, 0, 0, 0, 0, 0, 0x48];
-    let discriminators = [u32::MAX, 0, 0, 0, 0, 0, 18];
+    let mut payloads = [
+        Vec::new(),
+        Vec::new(),
+        Vec::new(),
+        Vec::new(),
+        Vec::new(),
+        Vec::new(),
+        vec![0; 0x48],
+    ];
+    let mut discriminators = [u32::MAX, 0, 0, 0, 0, 0, 18];
+    if let Some(base) = base {
+        for (index, width, bytes) in [
+            (2, 32, &base.pairs),
+            (3, 20, &base.revisions),
+            (5, 8, &base.references),
+        ] {
+            payloads[index].clone_from(bytes);
+            discriminators[index] =
+                u32::try_from(bytes.len() / width).expect("synthetic table count");
+        }
+    }
     push_u32(&mut body, discriminators[0]);
-    body.resize(body.len() + payloads[0], 0);
+    body.extend_from_slice(&payloads[0]);
     for index in 1..payloads.len() {
         push_u32(
             &mut body,
-            u32::try_from(payloads[index - 1]).expect("fixture value fits u32") + 4,
+            u32::try_from(payloads[index - 1].len()).expect("fixture value fits u32") + 4,
         );
         push_u32(&mut body, discriminators[index]);
-        body.resize(body.len() + payloads[index], 0);
+        body.extend_from_slice(&payloads[index]);
     }
     body.extend_from_slice(&[0x77; 16]);
     body
@@ -799,6 +896,10 @@ fn meta_table_body(records: &[([u8; 16], usize)]) -> Vec<u8> {
 
 /// One segment's bulk stream; record `n` selects type index `n`.
 fn bulk_stream_fixture(payloads: &[&[u8]], method: u8) -> Vec<u8> {
+    bulk_stream_fixture_at_version(payloads, method, 18)
+}
+
+fn bulk_stream_fixture_at_version(payloads: &[&[u8]], method: u8, version: u8) -> Vec<u8> {
     let mut expanded = Vec::new();
     for (selector, payload) in payloads.iter().enumerate() {
         push_u32(
@@ -810,6 +911,9 @@ fn bulk_stream_fixture(payloads: &[&[u8]], method: u8) -> Vec<u8> {
             &mut expanded,
             u32::try_from(payload.len()).expect("fixture value fits u32"),
         );
+        if version > 18 {
+            expanded.push(0);
+        }
     }
     expanded.extend_from_slice(&u32::MAX.to_le_bytes());
     let mut bytes = vec![0x3c; 16];
@@ -845,17 +949,24 @@ pub(crate) fn acis_kernel_stream(save_format_version: u32) -> Vec<u8> {
 /// whose records decode into geometry. The binary unit is centimetres, so the
 /// 2.5 stored here is a 25 mm radius in the model.
 pub(crate) fn acis_sphere_kernel_stream(save_format_version: u32) -> Vec<u8> {
+    acis_sphere_kernel_stream_with_body_key(save_format_version, -1)
+}
+
+pub(crate) fn acis_sphere_kernel_stream_with_body_key(
+    save_format_version: u32,
+    body_key: i32,
+) -> Vec<u8> {
     let mut kernel = b"ACIS BinaryFile".to_vec();
     for value in [save_format_version, 0, 2, 2] {
         kernel.extend_from_slice(&value.to_le_bytes());
     }
     kernel_trailer(&mut kernel, "synthetic ACIS");
-    append_sphere_records(&mut kernel);
+    append_sphere_records(&mut kernel, body_key);
     kernel
 }
 
 /// The six SAB records of the sphere body, at four-byte reference width.
-fn append_sphere_records(bytes: &mut Vec<u8>) {
+fn append_sphere_records(bytes: &mut Vec<u8>, body_key: i32) {
     fn ident(bytes: &mut Vec<u8>, tag: u8, name: &str) {
         bytes.push(tag);
         bytes.push(u8::try_from(name.len()).expect("fixture value fits u8"));
@@ -880,7 +991,7 @@ fn append_sphere_records(bytes: &mut Vec<u8>) {
     // body (1) -> lump 2
     ident(bytes, 0x0d, "body");
     reference(bytes, -1);
-    long(bytes, -1);
+    long(bytes, body_key);
     for value in [-1, 2, -1, -1] {
         reference(bytes, value);
     }

@@ -1,6 +1,7 @@
 {
   "ir": {
-    "ir_version": "8",
+    "decode_depth": "full",
+    "ir_version": "9",
     "model": {
       "appearance_bindings": [],
       "appearances": [],
@@ -44,11 +45,57 @@
           "bodies": [
             "sldprt:brep:body#900"
           ],
+          "feature_states": {
+            "sldprt:model:feature#348:0": {
+              "definition": {
+                "definition": "extrude",
+                "direction": {
+                  "kind": "profile_normal"
+                },
+                "extent": {
+                  "kind": "one_sided",
+                  "side": {
+                    "termination": {
+                      "kind": "blind",
+                      "length": 12.5
+                    }
+                  }
+                },
+                "op": "join",
+                "profile": {
+                  "kind": "unresolved",
+                  "value": "sldprt:history:feature#348:0"
+                },
+                "solid": true,
+                "start": {
+                  "kind": "profile_plane"
+                }
+              },
+              "evaluation": {
+                "kind": "active"
+              }
+            },
+            "sldprt:model:feature#348:1": {
+              "definition": {
+                "definition": "native",
+                "kind": "EquationDrivenCurve"
+              },
+              "evaluation": {
+                "kind": "active"
+              }
+            }
+          },
           "id": "sldprt:model:configuration#348:0",
           "material": "Steel",
           "name": "Default",
           "native_ref": "sldprt:history:configuration#348:0",
           "ordinal": 0,
+          "parameter_values": {
+            "sldprt:model:parameter#348:0:0": {
+              "kind": "length",
+              "value": 12.5
+            }
+          },
           "properties": {
             "DisplayState": "Shaded"
           },
@@ -103,10 +150,7 @@
               "side": {
                 "termination": {
                   "kind": "blind",
-                  "length": {
-                    "kind": "parameter",
-                    "value": "sldprt:model:parameter#348:0:0"
-                  }
+                  "length": 12.5
                 }
               }
             },
@@ -123,7 +167,6 @@
           "id": "sldprt:model:feature#348:0",
           "name": "Boss",
           "native_ref": "sldprt:history:feature#348:0",
-          "needs_recompute": false,
           "ordinal": 0,
           "source_content": [
             {
@@ -135,6 +178,9 @@
               "value": "sldprt:model:feature#348:1"
             }
           ],
+          "source_properties": {
+            "Scope": "Body1"
+          },
           "source_tag": "Extrusion",
           "suppressed": false
         },
@@ -146,7 +192,6 @@
           "id": "sldprt:model:feature#348:1",
           "name": "Profile",
           "native_ref": "sldprt:history:feature#348:1",
-          "needs_recompute": false,
           "ordinal": 1,
           "regeneration_parent": "sldprt:model:feature#348:0",
           "source_tag": "EquationDrivenCurve",
@@ -170,15 +215,7 @@
       "occurrences": [],
       "parameters": [
         {
-          "driving": true,
-          "expression": {
-            "tokens": [
-              {
-                "kind": "text",
-                "value": "12.5mm"
-              }
-            ]
-          },
+          "expression": "12.5mm",
           "id": "sldprt:model:parameter#348:0:0",
           "name": "Depth",
           "ordinal": 0,
@@ -306,7 +343,6 @@
             "source_index": 0
           }
         ],
-        "document_metadata": [],
         "feature_histories": [
           {
             "configurations": [],
@@ -393,14 +429,30 @@
         ]
       }
     },
-    "scope": {
-      "design": true,
-      "model": true
-    },
     "source": {
       "attributes": {
+        "active_parasolid_block": "Contents/Config-0-Partition",
+        "block_count": "3",
+        "bmp_thumbnail_count": "0",
+        "brep_local_sha256": "<elided: digest over tolerantly compared geometry>",
+        "compound_stream_count": "0",
+        "document_local_sha256": "<elided: digest over tolerantly compared geometry>",
+        "outer_version": "0x00000004",
         "parasolid_description": "partition body",
         "parasolid_schema": "SCH_SW_33103_11000",
+        "png_preview_count": "0",
+        "sldprt_configuration_feature_states_local_sha256": "<elided: digest over tolerantly compared geometry>",
+        "sldprt_configuration_parameter_values_local_sha256": "<elided: digest over tolerantly compared geometry>",
+        "sldprt_configuration_snapshot_synthesized": "sldprt:model:configuration#348:0",
+        "sldprt_native_configuration_sha256": "c8c10b8dd9d280df10250d20f56f529450d7ebd28a5b83c2e52aa1f84eff18b8",
+        "sldprt_native_history_sha256": "2d9c55fb193495e5bc7b565f3cab01b71f034697be1becdea64a83f68bd14271",
+        "sldprt_native_parameter_sha256": "6ebf2685a526a916382a4add0143c479a74a4111a956a1d589882b9956b77182",
+        "sldprt_native_sketch_sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+        "sldprt_neutral_configuration_local_sha256": "<elided: digest over tolerantly compared geometry>",
+        "sldprt_neutral_feature_local_sha256": "<elided: digest over tolerantly compared geometry>",
+        "sldprt_neutral_parameter_local_sha256": "<elided: digest over tolerantly compared geometry>",
+        "sldprt_neutral_sketch_constraint_local_sha256": "<elided: digest over tolerantly compared geometry>",
+        "sldprt_neutral_sketch_local_sha256": "<elided: digest over tolerantly compared geometry>",
         "sw_configuration_0_most_recent": "YES",
         "sw_configuration_name": "Default"
       },
@@ -483,16 +535,6 @@
         },
         "message": "1 typed feature(s) retain native or unresolved required operation operands.",
         "severity": "warning"
-      },
-      {
-        "code": {
-          "code": "source.opaque-records-unrepresented",
-          "kind": "record_not_typed",
-          "namespace": "sldprt",
-          "scope": "namespaced"
-        },
-        "message": "source record sldprt:file:block#583 has no typed neutral or native payload representation",
-        "severity": "warning"
       }
     ],
     "notes": [
@@ -502,10 +544,7 @@
     ],
     "transfer": {
       "geometry_transferred": true,
-      "scope": {
-        "design": true,
-        "model": true
-      }
+      "transfer": "full"
     }
   },
   "source_fidelity": {
@@ -651,15 +690,6 @@
         }
       }
     },
-    "metadata": {
-      "active_parasolid_block": "Contents/Config-0-Partition",
-      "brep_local_sha256": "9eb57dfd034507ec6f252a2e84d8a3d188fb192da6773984d90bd30798ea4b48",
-      "document_local_sha256": "5b492b02d8e802fe8784612d1c8cdbc3d0b480c44148dc6c901985d1b9313ef5",
-      "outer_version": "0x00000004",
-      "sldprt_swobjects_local_sha256": "586ffb909b0bba2aacc4d34937062d2b3c9cb6c81d2f794c686ad550b192d8dc",
-      "sldprt_swobjects_material_local_sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
-      "sldprt_swobjects_metadata_identity_local_sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945"
-    },
     "retained_records": {
       "sldprt:file:block#12": {
         "bytes": {
@@ -667,8 +697,7 @@
           "retention": "inline"
         },
         "offset": 0,
-        "stream": "Contents/Config-0-Partition",
-        "untyped": []
+        "stream": "Contents/Config-0-Partition"
       },
       "sldprt:file:block#348": {
         "bytes": {
@@ -676,8 +705,7 @@
           "retention": "inline"
         },
         "offset": 0,
-        "stream": "Contents/Keywords",
-        "untyped": []
+        "stream": "Contents/Keywords"
       },
       "sldprt:file:block#583": {
         "bytes": {
@@ -685,11 +713,7 @@
           "retention": "inline"
         },
         "offset": 0,
-        "stream": "Contents/Features",
-        "untyped": [
-          "model",
-          "design"
-        ]
+        "stream": "Contents/Features"
       },
       "sldprt:file:source-image#0": {
         "bytes": {
@@ -697,13 +721,8 @@
           "retention": "inline"
         },
         "offset": 0,
-        "stream": "source",
-        "untyped": []
+        "stream": "source"
       }
-    },
-    "unrepresented": [
-      "model",
-      "design"
-    ]
+    }
   }
 }

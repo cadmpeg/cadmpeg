@@ -174,111 +174,127 @@ fn legacy_short_sections_are_bounded_by_complete_transmit_headers() {
 
 #[test]
 fn parasolid_entity_51_records_retain_layout_selected_references() {
-    let mut bytes = vec![0, 0x51];
-    bytes.extend_from_slice(&1u32.to_be_bytes());
-    bytes.extend_from_slice(&10u16.to_be_bytes());
-    bytes.extend_from_slice(&2u32.to_be_bytes());
-    bytes.extend_from_slice(&0x21u16.to_be_bytes());
-    for reference in 3..=8u16 {
-        bytes.extend_from_slice(&reference.to_be_bytes());
-    }
-    bytes.extend_from_slice(&[0xaa, 0xbb]);
+    crate::test_support::with_decode_context(|_ctx| {
+        let mut bytes = vec![0, 0x51];
+        bytes.extend_from_slice(&1u32.to_be_bytes());
+        bytes.extend_from_slice(&10u16.to_be_bytes());
+        bytes.extend_from_slice(&2u32.to_be_bytes());
+        bytes.extend_from_slice(&0x21u16.to_be_bytes());
+        for reference in 3..=8u16 {
+            bytes.extend_from_slice(&reference.to_be_bytes());
+        }
+        bytes.extend_from_slice(&[0xaa, 0xbb]);
 
-    let records = crate::parasolid::entity_51_records(&bytes);
-    assert_eq!(records.len(), 1);
-    assert_eq!(records[0].offset, 0);
-    assert_eq!(records[0].byte_len, 26);
-    assert_eq!(u32::from(records[0].xmt), 10);
-    assert_eq!(records[0].sequence.get(), 2);
-    assert_eq!(records[0].definition_xmt, 0x21);
-    assert_eq!(records[0].leading_references, [3, 4, 5, 6, 7]);
-    assert_eq!(records[0].trailing_references.values(), [8]);
-    assert_eq!(
-        crate::parasolid::entity_51_record_at(&bytes, 0),
-        Some(records[0].clone())
+        let records = crate::parasolid::entity_51_records(&bytes);
+        assert_eq!(records.len(), 1);
+        assert_eq!(records[0].offset, 0);
+        assert_eq!(records[0].byte_len, 26);
+        assert_eq!(u32::from(records[0].xmt), 10);
+        assert_eq!(records[0].sequence.get(), 2);
+        assert_eq!(records[0].definition_xmt, 0x21);
+        assert_eq!(records[0].leading_references, [3, 4, 5, 6, 7]);
+        assert_eq!(records[0].trailing_references.values(), [8]);
+        assert!(entity_51_record_at_start(&bytes[..25]).is_none());
+    });
+}
+
+/// The single type-81 record the scan frames at the start of `bytes`, if any.
+fn entity_51_record_at_start(bytes: &[u8]) -> Option<crate::parasolid::Entity51Record> {
+    let mut records = crate::parasolid::entity_51_records(bytes);
+    assert!(
+        records.len() <= 1,
+        "fixtures frame at most one entity-51 record"
     );
-    assert!(crate::parasolid::entity_51_record_at(&bytes[..25], 0).is_none());
+    let record = records.pop()?;
+    assert_eq!(record.offset, 0);
+    Some(record)
 }
 
 #[test]
 fn parasolid_entity_51_definition_uses_extended_xmt_framing() {
-    let mut bytes = vec![0, 0x51];
-    bytes.extend_from_slice(&1u32.to_be_bytes());
-    bytes.extend_from_slice(&10u16.to_be_bytes());
-    bytes.extend_from_slice(&2u32.to_be_bytes());
-    bytes.extend_from_slice(&(-7_233i16).to_be_bytes());
-    bytes.extend_from_slice(&1u16.to_be_bytes());
-    for reference in 3..=8u16 {
-        bytes.extend_from_slice(&reference.to_be_bytes());
-    }
+    crate::test_support::with_decode_context(|_ctx| {
+        let mut bytes = vec![0, 0x51];
+        bytes.extend_from_slice(&1u32.to_be_bytes());
+        bytes.extend_from_slice(&10u16.to_be_bytes());
+        bytes.extend_from_slice(&2u32.to_be_bytes());
+        bytes.extend_from_slice(&(-7_233i16).to_be_bytes());
+        bytes.extend_from_slice(&1u16.to_be_bytes());
+        for reference in 3..=8u16 {
+            bytes.extend_from_slice(&reference.to_be_bytes());
+        }
 
-    let record = crate::parasolid::entity_51_record_at(&bytes, 0).unwrap();
-    assert_eq!(record.definition_xmt, 40_000);
-    assert_eq!(record.byte_len, 28);
-    assert!(crate::parasolid::entity_51_record_at(&bytes[..27], 0).is_none());
+        let record = entity_51_record_at_start(&bytes).unwrap();
+        assert_eq!(record.definition_xmt, 40_000);
+        assert_eq!(record.byte_len, 28);
+        assert!(entity_51_record_at_start(&bytes[..27]).is_none());
+    });
 }
 
 #[test]
 fn parasolid_entity_51_reference_count_is_five_plus_flags() {
-    for flags in 1..=0x20u32 {
-        let mut direct = vec![0, 0x51];
-        direct.extend_from_slice(&flags.to_be_bytes());
-        direct.extend_from_slice(&10u16.to_be_bytes());
-        direct.extend_from_slice(&2u32.to_be_bytes());
-        direct.extend_from_slice(&0x21u16.to_be_bytes());
-        for reference in 0..flags + 5 {
-            direct.extend_from_slice(
-                &(u16::try_from(reference).expect("fixture value fits u16") + 3).to_be_bytes(),
-            );
-        }
-        direct.extend_from_slice(&[0xaa, 0xbb]);
+    crate::test_support::with_decode_context(|_ctx| {
+        for flags in 1..=0x20u32 {
+            let mut direct = vec![0, 0x51];
+            direct.extend_from_slice(&flags.to_be_bytes());
+            direct.extend_from_slice(&10u16.to_be_bytes());
+            direct.extend_from_slice(&2u32.to_be_bytes());
+            direct.extend_from_slice(&0x21u16.to_be_bytes());
+            for reference in 0..flags + 5 {
+                direct.extend_from_slice(
+                    &(u16::try_from(reference).expect("fixture value fits u16") + 3).to_be_bytes(),
+                );
+            }
+            direct.extend_from_slice(&[0xaa, 0xbb]);
 
-        let record = crate::parasolid::entity_51_record_at(&direct, 0).unwrap();
-        assert_eq!(record.leading_references.len(), 5);
-        assert_eq!(
-            record.trailing_references.values().len(),
-            usize::try_from(flags).expect("fixture value fits usize")
-        );
-        assert_eq!(record.byte_len, direct.len() - 2);
-        assert!(crate::parasolid::entity_51_record_at(&direct[..direct.len() - 3], 0).is_none());
-        let mut prefixed = vec![0, 0x51];
-        prefixed.extend_from_slice(&flags.to_be_bytes());
-        prefixed.extend_from_slice(&10u16.to_be_bytes());
-        prefixed.extend_from_slice(&2u32.to_be_bytes());
-        prefixed.extend_from_slice(&0x21u16.to_be_bytes());
-        for reference in 0..flags + 5 {
-            prefixed.push(u8::from(reference % 2 == 0));
-            prefixed.extend_from_slice(
-                &(u16::try_from(reference).expect("fixture value fits u16") + 3).to_be_bytes(),
+            let record = entity_51_record_at_start(&direct).unwrap();
+            assert_eq!(record.leading_references.len(), 5);
+            assert_eq!(
+                record.trailing_references.values().len(),
+                usize::try_from(flags).expect("fixture value fits usize")
             );
+            assert_eq!(record.byte_len, direct.len() - 2);
+            assert!(entity_51_record_at_start(&direct[..direct.len() - 3]).is_none());
+
+            let mut prefixed = vec![0, 0x51];
+            prefixed.extend_from_slice(&flags.to_be_bytes());
+            prefixed.extend_from_slice(&10u16.to_be_bytes());
+            prefixed.extend_from_slice(&2u32.to_be_bytes());
+            prefixed.extend_from_slice(&0x21u16.to_be_bytes());
+            for reference in 0..flags + 5 {
+                prefixed.push(u8::from(reference % 2 == 0));
+                prefixed.extend_from_slice(
+                    &(u16::try_from(reference).expect("fixture value fits u16") + 3).to_be_bytes(),
+                );
+            }
+            prefixed.push(0);
+            prefixed.extend_from_slice(&[0xaa, 0xbb]);
+
+            let record = entity_51_record_at_start(&prefixed).unwrap();
+            assert_eq!(record.leading_references.len(), 5);
+            assert_eq!(
+                record.trailing_references.values().len(),
+                usize::try_from(flags).expect("fixture value fits usize")
+            );
+            assert_eq!(record.byte_len, prefixed.len() - 2);
+            assert!(entity_51_record_at_start(&prefixed[..prefixed.len() - 3]).is_none());
         }
-        prefixed.push(0);
-        prefixed.extend_from_slice(&[0xaa, 0xbb]);
-        let record = crate::parasolid::entity_51_record_at(&prefixed, 0).unwrap();
-        assert_eq!(record.leading_references.len(), 5);
-        assert_eq!(
-            record.trailing_references.values().len(),
-            usize::try_from(flags).expect("fixture value fits usize")
-        );
-        assert_eq!(record.byte_len, prefixed.len() - 2);
-        assert!(
-            crate::parasolid::entity_51_record_at(&prefixed[..prefixed.len() - 3], 0).is_none()
-        );
-    }
+    });
 }
 
 #[test]
 fn parasolid_entity_51_rejects_nonzero_upper_flag_bytes() {
-    let mut bytes = vec![0, 0x51];
-    bytes.extend_from_slice(&0x0100_0001u32.to_be_bytes());
-    bytes.extend_from_slice(&10u16.to_be_bytes());
-    bytes.extend_from_slice(&2u32.to_be_bytes());
-    bytes.extend_from_slice(&0x21u16.to_be_bytes());
-    for reference in 3..=8u16 {
-        bytes.extend_from_slice(&reference.to_be_bytes());
-    }
+    crate::test_support::with_decode_context(|_ctx| {
+        let mut bytes = vec![0, 0x51];
+        bytes.extend_from_slice(&0x0100_0001u32.to_be_bytes());
+        bytes.extend_from_slice(&10u16.to_be_bytes());
+        bytes.extend_from_slice(&2u32.to_be_bytes());
+        bytes.extend_from_slice(&0x21u16.to_be_bytes());
+        for reference in 3..=8u16 {
+            bytes.extend_from_slice(&reference.to_be_bytes());
+        }
 
-    assert!(crate::parasolid::entity_51_record_at(&bytes, 0).is_none());
+        assert!(entity_51_record_at_start(&bytes).is_none());
+    });
 }
 
 #[test]
@@ -1001,15 +1017,6 @@ fn a_packed_member_reporting_fewer_bytes_than_a_zlib_member_holds_is_refused_by_
 }
 
 #[test]
-fn numeric_identity_probe_reports_kind_identity_and_extent() {
-    let bytes = [0, 0x52, 0, 0, 0, 1, 0, 17, 0, 0, 0, 9];
-    assert_eq!(
-        crate::parasolid::value_records::entity_value_record_identity_at(&bytes, 0),
-        Some((0x52, 17, 12))
-    );
-}
-
-#[test]
 fn structural_entity_references_do_not_own_value_records() {
     let mut bytes = vec![0, 0x51];
     bytes.extend_from_slice(&1_u32.to_be_bytes());
@@ -1025,13 +1032,13 @@ fn structural_entity_references_do_not_own_value_records() {
     bytes.extend_from_slice(&2_u32.to_be_bytes());
     bytes.extend_from_slice(&3_u16.to_be_bytes());
     bytes.extend_from_slice(&[0, b'N', 0, b'X']);
-    let owned = super::referenced_value_offsets(&bytes, super::ValueMultiplicity::UniqueSnapshot);
+    let owned = super::referenced_value_record_offsets(&bytes);
     assert!(!owned.contains(&value_offset));
-    let references = super::referenced_value_xmts(&bytes, super::ValueMultiplicity::UniqueSnapshot);
+    let references = super::referenced_value_xmts(&bytes);
     assert!(!references.contains(&3));
     assert!(references.contains(&8));
     bytes[24..26].copy_from_slice(&3_u16.to_be_bytes());
-    let owned = super::referenced_value_offsets(&bytes, super::ValueMultiplicity::UniqueSnapshot);
+    let owned = super::referenced_value_record_offsets(&bytes);
     assert!(owned.contains(&value_offset));
 }
 
@@ -1075,7 +1082,7 @@ fn attribute_owner_grouping_retains_trailing_references() {
         }
         bytes.extend_from_slice(&[0xaa, 0xbb]);
     }
-    let references = super::referenced_value_xmts(&bytes, super::ValueMultiplicity::UniqueSnapshot);
+    let references = super::referenced_value_xmts(&bytes);
     assert!(references.contains(&8));
 }
 

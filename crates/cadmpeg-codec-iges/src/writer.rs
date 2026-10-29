@@ -644,33 +644,14 @@ fn synthesis_graph(ir: &CadIr, version: crate::IgesVersion) -> Result<SynthesisG
                 &mut losses,
             )?;
         }
-        for directrix in ir.model.surfaces.iter().filter_map(|surface| {
-            ownership.surface_status(surface)?;
-            let SurfaceGeometry::Procedural {
-                construction,
-                cache: None,
-            } = &surface.geometry
-            else {
-                return None;
-            };
+        mark_native_construction_curves(
+            ir,
             ir.model
-                .procedural_surfaces
+                .surfaces
                 .iter()
-                .find(|procedural| procedural.id == *construction)
-                .and_then(|procedural| match procedural.definition() {
-                    ProceduralSurfaceDefinition::Revolution(definition_payload) => {
-                        let directrix = definition_payload.directrix();
-                        Some(directrix)
-                    }
-                    ProceduralSurfaceDefinition::Extrusion(definition_payload) => {
-                        let directrix = definition_payload.directrix();
-                        Some(directrix)
-                    }
-                    _ => None,
-                })
-        }) {
-            mark_curve_descendants(ir, directrix, &mut consumed_curves, &mut BTreeSet::new())?;
-        }
+                .filter(|surface| ownership.surface_status(surface).is_some()),
+            &mut consumed_curves,
+        )?;
         let mut edges = ir.model.edges.iter().collect::<Vec<_>>();
         edges.sort_by(|left, right| left.id.as_str().cmp(right.id.as_str()));
         for edge in edges {
@@ -722,37 +703,17 @@ fn synthesis_graph(ir: &CadIr, version: crate::IgesVersion) -> Result<SynthesisG
             consumed_points.insert(vertex_point_id(ir, &edge.end)?);
         }
 
-        let mut curves = ir.model.curves.iter().collect::<Vec<_>>();
-        curves.sort_by(|left, right| left.id.as_str().cmp(right.id.as_str()));
-        for curve in curves {
-            if consumed_curves.contains(curve.id.as_str()) {
-                continue;
-            }
-            let Some(status) = ownership.curve_status(curve, &mut losses) else {
-                continue;
-            };
-            let geometry = flatten_curve(curve.geometry.solved().ok_or_else(|| {
-                CodecError::UnsupportedContent("IGES curve carrier has no solved geometry".into())
-            })?)?;
-            let span = curve
-                .parameter_range
-                .map(|_| curve_reference_span(ir, &curve.id, &geometry))
-                .transpose()?;
-            append_curve_entity(
-                &mut entities,
+        append_unowned_curves(
+            UnownedCurves {
                 ir,
-                CurveEntityRequest {
-                    version,
-                    curve_id: &curve.id,
-                    geometry: &geometry,
-                    span: span.as_ref(),
-                    sense: Sense::Forward,
-                    status,
-                    reference_offset: 0,
-                },
-            )?;
-            mark_curve_descendants(ir, &curve.id, &mut consumed_curves, &mut BTreeSet::new())?;
-        }
+                version,
+                ownership: &ownership,
+                ignored: &BTreeSet::new(),
+            },
+            &mut entities,
+            &mut consumed_curves,
+            &mut losses,
+        )?;
 
         let mut points = ir.model.points.iter().collect::<Vec<_>>();
         points.sort_by(|left, right| left.id.as_str().cmp(right.id.as_str()));
@@ -1934,42 +1895,25 @@ fn brep_entities(
         mark_curve_descendants(ir, curve_id, &mut consumed_curve_ids, &mut BTreeSet::new())?;
     }
 
-    let mut curves = ir.model.curves.iter().collect::<Vec<_>>();
-    curves.sort_by(|left, right| left.id.as_str().cmp(right.id.as_str()));
-    let mut ignored_curves = 0_usize;
-    for curve in curves {
-        if consumed_curve_ids.contains(curve.id.as_str()) {
-            continue;
-        }
-        if ignored_carriers.curves.contains(curve.id.as_str()) {
-            ignored_curves += 1;
-            continue;
-        }
-        let Some(status) = ownership.curve_status(curve, losses) else {
-            continue;
-        };
-        let geometry = flatten_curve(curve.geometry.solved().ok_or_else(|| {
-            CodecError::UnsupportedContent("IGES curve carrier has no solved geometry".into())
-        })?)?;
-        let span = curve
-            .parameter_range
-            .map(|_| curve_reference_span(ir, &curve.id, &geometry))
-            .transpose()?;
-        append_curve_entity(
-            &mut entities,
+    mark_native_construction_curves(
+        ir,
+        ir.model
+            .surfaces
+            .iter()
+            .filter(|surface| surface_indices.contains_key(surface.id.as_str())),
+        &mut consumed_curve_ids,
+    )?;
+    let ignored_curves = append_unowned_curves(
+        UnownedCurves {
             ir,
-            CurveEntityRequest {
-                version,
-                curve_id: &curve.id,
-                geometry: &geometry,
-                span: span.as_ref(),
-                sense: Sense::Forward,
-                status,
-                reference_offset: 0,
-            },
-        )?;
-        mark_curve_descendants(ir, &curve.id, &mut consumed_curve_ids, &mut BTreeSet::new())?;
-    }
+            version,
+            ownership: &ownership,
+            ignored: &ignored_carriers.curves,
+        },
+        &mut entities,
+        &mut consumed_curve_ids,
+        losses,
+    )?;
     ignored_carriers.report_omitted(ignored_curves, "B-rep", losses);
 
     let mut written_pcurves = BTreeMap::new();
@@ -2928,42 +2872,25 @@ fn topology_entities(
         edge_indices.insert(edge.id.as_str().to_owned(), stored);
     }
 
-    let mut curves = ir.model.curves.iter().collect::<Vec<_>>();
-    curves.sort_by(|left, right| left.id.as_str().cmp(right.id.as_str()));
-    let mut ignored_curves = 0_usize;
-    for curve in curves {
-        if consumed_curves.contains(curve.id.as_str()) {
-            continue;
-        }
-        if ignored_carriers.curves.contains(curve.id.as_str()) {
-            ignored_curves += 1;
-            continue;
-        }
-        let Some(status) = ownership.curve_status(curve, losses) else {
-            continue;
-        };
-        let geometry = flatten_curve(curve.geometry.solved().ok_or_else(|| {
-            CodecError::UnsupportedContent("IGES curve carrier has no solved geometry".into())
-        })?)?;
-        let span = curve
-            .parameter_range
-            .map(|_| curve_reference_span(ir, &curve.id, &geometry))
-            .transpose()?;
-        append_curve_entity(
-            &mut entities,
+    mark_native_construction_curves(
+        ir,
+        ir.model
+            .surfaces
+            .iter()
+            .filter(|surface| surface_indices.contains_key(surface.id.as_str())),
+        &mut consumed_curves,
+    )?;
+    let ignored_curves = append_unowned_curves(
+        UnownedCurves {
             ir,
-            CurveEntityRequest {
-                version,
-                curve_id: &curve.id,
-                geometry: &geometry,
-                span: span.as_ref(),
-                sense: Sense::Forward,
-                status,
-                reference_offset: 0,
-            },
-        )?;
-        mark_curve_descendants(ir, &curve.id, &mut consumed_curves, &mut BTreeSet::new())?;
-    }
+            version,
+            ownership: &ownership,
+            ignored: &ignored_carriers.curves,
+        },
+        &mut entities,
+        &mut consumed_curves,
+        losses,
+    )?;
     ignored_carriers.report_omitted(ignored_curves, "trimmed-sheet", losses);
 
     let mut pcurve_indices = BTreeMap::new();
@@ -6113,15 +6040,35 @@ fn revolution_surface_entities(
         ),
     })?;
     let axis_direction = axis_direction.to_unit_length();
-    let axis_end = axis_origin.translated(*axis_direction.as_raw(), 1.0);
-    let axis_geometry = CurveGeometry::Solved(SolvedCurveGeometry::Line(
-        cadmpeg_ir::geometry::analytic::LineCurve::new(axis_origin, axis_direction),
-    ));
-    let axis_span = CurveSpan {
-        range: FiniteVector::from([FiniteReal::ZERO, FiniteReal::ONE]),
-        start: *axis_origin,
-        end: axis_end,
-    };
+    let (axis_geometry, axis_span) =
+        match revolution_axis_curve(ir, axis_origin.get(), *axis_direction.as_raw(), None).filter(
+            |_| {
+                !matches!(
+                    source_curve.geometry.solved(),
+                    Some(SolvedCurveGeometry::Transformed(_))
+                )
+            },
+        ) {
+            Some(axis) => {
+                let geometry = flatten_curve(axis.geometry.solved().ok_or_else(|| {
+                    CodecError::UnsupportedContent(
+                        "IGES curve carrier has no solved geometry".into(),
+                    )
+                })?)?;
+                let span = curve_reference_span(ir, &axis.id, &geometry)?;
+                (geometry, span)
+            }
+            None => (
+                CurveGeometry::Solved(SolvedCurveGeometry::Line(
+                    cadmpeg_ir::geometry::analytic::LineCurve::new(axis_origin, axis_direction),
+                )),
+                CurveSpan {
+                    range: FiniteVector::from([FiniteReal::ZERO, FiniteReal::ONE]),
+                    start: *axis_origin,
+                    end: axis_origin.translated(*axis_direction.as_raw(), 1.0),
+                },
+            ),
+        };
     let generatrix_span = CurveSpan {
         range: FiniteVector::from(cadmpeg_ir::topology::ParameterInterval::from(
             parameter_interval,
@@ -7020,6 +6967,207 @@ fn curve_reference_span_inner(
     };
     active.remove(curve_id);
     result
+}
+
+/// Marks as consumed the stored curves that the native Type 120 or Type 122
+/// entity of each of `surfaces` writes as its own constituents.
+fn mark_native_construction_curves<'ir>(
+    ir: &'ir CadIr,
+    surfaces: impl Iterator<Item = &'ir Surface>,
+    consumed: &mut BTreeSet<String>,
+) -> Result<(), CodecError> {
+    for surface in surfaces {
+        let SurfaceGeometry::Procedural {
+            construction,
+            cache: None,
+        } = &surface.geometry
+        else {
+            continue;
+        };
+        let Some(procedural) = ir
+            .model
+            .procedural_surfaces
+            .iter()
+            .find(|procedural| procedural.id == *construction)
+        else {
+            continue;
+        };
+        let directrix = match procedural.definition() {
+            ProceduralSurfaceDefinition::Revolution(definition_payload) => {
+                definition_payload.directrix()
+            }
+            ProceduralSurfaceDefinition::Extrusion(definition_payload) => {
+                definition_payload.directrix()
+            }
+            _ => continue,
+        };
+        let placement = ir
+            .model
+            .curves
+            .iter()
+            .find(|curve| curve.id == *directrix)
+            .and_then(|curve| match curve.geometry.solved() {
+                Some(SolvedCurveGeometry::Transformed(placed)) => Some(placed),
+                _ => None,
+            });
+        let mut curves = vec![directrix];
+        if let Some(placed) = placement {
+            curves.extend(
+                ir.model
+                    .curves
+                    .iter()
+                    .filter(|curve| {
+                        is_support_curve(curve) && curve.geometry.solved() == Some(placed.basis())
+                    })
+                    .map(|curve| &curve.id),
+            );
+        }
+        if let ProceduralSurfaceDefinition::Revolution(definition_payload) = procedural.definition()
+        {
+            if let Some(axis) = revolution_axis_curve(
+                ir,
+                definition_payload.axis_origin().get(),
+                *definition_payload.axis_direction().as_raw(),
+                placement.map(cadmpeg_ir::geometry::PlacedCurve::transform),
+            ) {
+                curves.push(&axis.id);
+            }
+        }
+        for curve in curves {
+            mark_curve_descendants(ir, curve, consumed, &mut BTreeSet::new())?;
+        }
+    }
+    Ok(())
+}
+
+/// Whether the source states `curve` as support geometry.
+fn is_support_curve(curve: &cadmpeg_ir::geometry::Curve) -> bool {
+    curve
+        .source_object
+        .as_ref()
+        .and_then(|source| source.geometry_role)
+        == Some(cadmpeg_ir::SourceGeometryRole::Support)
+}
+
+/// The one support line that, under `placement`, starts at the axis origin
+/// of a revolution and runs along its axis direction. That line is the axis
+/// of revolution of the source Type 120 entity.
+fn revolution_axis_curve<'ir>(
+    ir: &'ir CadIr,
+    origin: Point3,
+    direction: Vector3,
+    placement: Option<&cadmpeg_ir::transform::Transform>,
+) -> Option<&'ir cadmpeg_ir::geometry::Curve> {
+    let placed_axis = |line: &cadmpeg_ir::geometry::analytic::LineCurve| {
+        let line_origin = line.origin().get();
+        let line_direction = *line.direction().as_raw();
+        match placement {
+            None => Some((line_origin, line_direction)),
+            Some(transform) => Some((
+                transform.apply_point(line_origin)?.get(),
+                transform.apply_vector(line_direction)?.get().unit()?,
+            )),
+        }
+    };
+    let mut lines = ir.model.curves.iter().filter(|curve| {
+        is_support_curve(curve)
+            && curve
+                .geometry
+                .solved()
+                .and_then(|solved| flatten_curve(solved).ok())
+                .is_some_and(|geometry| match geometry {
+                    CurveGeometry::Solved(SolvedCurveGeometry::Line(line)) => placed_axis(&line)
+                        .is_some_and(|(line_origin, line_direction)| {
+                            same_point(line_origin, origin)
+                                && same_float(line_direction.x, direction.x)
+                                && same_float(line_direction.y, direction.y)
+                                && same_float(line_direction.z, direction.z)
+                        }),
+                    _ => false,
+                })
+    });
+    let line = lines.next()?;
+    lines.next().is_none().then_some(line)
+}
+
+/// The writer state for curves that no written entity has consumed.
+#[derive(Clone, Copy)]
+struct UnownedCurves<'a, 'ir> {
+    ir: &'ir CadIr,
+    version: crate::IgesVersion,
+    ownership: &'a ownership::SourceOwnership<'ir>,
+    ignored: &'a BTreeSet<String>,
+}
+
+/// Writes each curve that no written entity has consumed, in identity order,
+/// and returns the number of `ignored` curves skipped. A physically dependent
+/// entity is valid only under a written parent, so a physically dependent
+/// curve that no written curve consumes is withheld with a loss.
+fn append_unowned_curves(
+    request: UnownedCurves<'_, '_>,
+    entities: &mut Vec<Entity>,
+    consumed: &mut BTreeSet<String>,
+    losses: &mut Vec<LossNote>,
+) -> Result<usize, CodecError> {
+    let UnownedCurves {
+        ir,
+        version,
+        ownership,
+        ignored,
+    } = request;
+    let mut curves = ir.model.curves.iter().collect::<Vec<_>>();
+    curves.sort_by(|left, right| left.id.as_str().cmp(right.id.as_str()));
+    let mut ignored_curves = 0_usize;
+    let mut dependent = Vec::new();
+    for curve in curves {
+        if consumed.contains(curve.id.as_str()) {
+            continue;
+        }
+        if ignored.contains(curve.id.as_str()) {
+            ignored_curves += 1;
+            continue;
+        }
+        let status = ownership.status(curve.source_object.as_ref());
+        if status.is_physically_dependent() {
+            dependent.push((curve, status));
+            continue;
+        }
+        let geometry = flatten_curve(curve.geometry.solved().ok_or_else(|| {
+            CodecError::UnsupportedContent("IGES curve carrier has no solved geometry".into())
+        })?)?;
+        let span = curve
+            .parameter_range
+            .map(|_| curve_reference_span(ir, &curve.id, &geometry))
+            .transpose()?;
+        append_curve_entity(
+            entities,
+            ir,
+            CurveEntityRequest {
+                version,
+                curve_id: &curve.id,
+                geometry: &geometry,
+                span: span.as_ref(),
+                sense: Sense::Forward,
+                status,
+                reference_offset: 0,
+            },
+        )?;
+        mark_curve_descendants(ir, &curve.id, consumed, &mut BTreeSet::new())?;
+    }
+    for (curve, status) in dependent {
+        if consumed.contains(curve.id.as_str()) {
+            continue;
+        }
+        if matches!(status, EntityStatus::ParameterCurve) {
+            losses.push(IgesLossCode::WriterSupportGeometryNotRepresented.note(format!(
+                "1 support geometry record ({}) was withheld because its parameter-space carrier has no exported owner",
+                curve.id
+            )));
+        } else {
+            report_unowned_support(losses, curve.id.as_str());
+        }
+    }
+    Ok(ignored_curves)
 }
 
 fn mark_curve_descendants(

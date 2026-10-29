@@ -1,6 +1,7 @@
 {
   "ir": {
-    "ir_version": "8",
+    "decode_depth": "full",
+    "ir_version": "9",
     "model": {
       "appearance_bindings": [],
       "appearances": [],
@@ -26,7 +27,7 @@
             }
           ],
           "radial_next": "creo:visibgeom:coedge#10:1",
-          "sense": "forward"
+          "sense": "reversed"
         },
         {
           "edge": "creo:visibgeom:edge#10",
@@ -38,7 +39,7 @@
             }
           ],
           "radial_next": "creo:visibgeom:coedge#10:0",
-          "sense": "reversed"
+          "sense": "forward"
         },
         {
           "edge": "creo:visibgeom:edge#11",
@@ -50,7 +51,7 @@
             }
           ],
           "radial_next": "creo:visibgeom:coedge#11:1",
-          "sense": "forward"
+          "sense": "reversed"
         },
         {
           "edge": "creo:visibgeom:edge#11",
@@ -62,7 +63,7 @@
             }
           ],
           "radial_next": "creo:visibgeom:coedge#11:0",
-          "sense": "reversed"
+          "sense": "forward"
         },
         {
           "edge": "creo:visibgeom:edge#12",
@@ -74,7 +75,7 @@
             }
           ],
           "radial_next": "creo:visibgeom:coedge#12:1",
-          "sense": "forward"
+          "sense": "reversed"
         },
         {
           "edge": "creo:visibgeom:edge#12",
@@ -86,7 +87,7 @@
             }
           ],
           "radial_next": "creo:visibgeom:coedge#12:0",
-          "sense": "reversed"
+          "sense": "forward"
         },
         {
           "edge": "creo:visibgeom:edge#13",
@@ -98,7 +99,7 @@
             }
           ],
           "radial_next": "creo:visibgeom:coedge#13:1",
-          "sense": "forward"
+          "sense": "reversed"
         },
         {
           "edge": "creo:visibgeom:edge#13",
@@ -110,7 +111,7 @@
             }
           ],
           "radial_next": "creo:visibgeom:coedge#13:0",
-          "sense": "reversed"
+          "sense": "forward"
         },
         {
           "edge": "creo:visibgeom:edge#14",
@@ -122,7 +123,7 @@
             }
           ],
           "radial_next": "creo:visibgeom:coedge#14:1",
-          "sense": "forward"
+          "sense": "reversed"
         },
         {
           "edge": "creo:visibgeom:edge#14",
@@ -134,7 +135,7 @@
             }
           ],
           "radial_next": "creo:visibgeom:coedge#14:0",
-          "sense": "reversed"
+          "sense": "forward"
         },
         {
           "edge": "creo:visibgeom:edge#15",
@@ -146,7 +147,7 @@
             }
           ],
           "radial_next": "creo:visibgeom:coedge#15:1",
-          "sense": "forward"
+          "sense": "reversed"
         },
         {
           "edge": "creo:visibgeom:edge#15",
@@ -158,7 +159,7 @@
             }
           ],
           "radial_next": "creo:visibgeom:coedge#15:0",
-          "sense": "reversed"
+          "sense": "forward"
         }
       ],
       "configurations": [],
@@ -461,14 +462,15 @@
           },
           "id": "creo:model:feature#4",
           "name": "Round id 4",
-          "needs_recompute": false,
           "ordinal": 0,
           "outputs": [
             "creo:visibgeom:body#1"
           ],
           "source_properties": {
             "featdefs_row_schema_classes": "913",
-            "featdefs_schema_class": "913"
+            "featdefs_schema_class": "913",
+            "native_parameter.affected_edge_ids": "10,11",
+            "native_parameter.affected_geometry_ids": "99"
           },
           "suppressed": false
         }
@@ -477,9 +479,9 @@
         {
           "boundary": {
             "coedges": [
-              "creo:visibgeom:coedge#10:0",
+              "creo:visibgeom:coedge#11:0",
               "creo:visibgeom:coedge#12:0",
-              "creo:visibgeom:coedge#11:0"
+              "creo:visibgeom:coedge#10:0"
             ],
             "kind": "ring"
           },
@@ -489,9 +491,9 @@
         {
           "boundary": {
             "coedges": [
-              "creo:visibgeom:coedge#10:1",
+              "creo:visibgeom:coedge#14:0",
               "creo:visibgeom:coedge#13:0",
-              "creo:visibgeom:coedge#14:0"
+              "creo:visibgeom:coedge#10:1"
             ],
             "kind": "ring"
           },
@@ -501,9 +503,9 @@
         {
           "boundary": {
             "coedges": [
-              "creo:visibgeom:coedge#11:1",
+              "creo:visibgeom:coedge#13:1",
               "creo:visibgeom:coedge#15:0",
-              "creo:visibgeom:coedge#13:1"
+              "creo:visibgeom:coedge#11:1"
             ],
             "kind": "ring"
           },
@@ -513,9 +515,9 @@
         {
           "boundary": {
             "coedges": [
-              "creo:visibgeom:coedge#12:1",
+              "creo:visibgeom:coedge#15:1",
               "creo:visibgeom:coedge#14:1",
-              "creo:visibgeom:coedge#15:1"
+              "creo:visibgeom:coedge#12:1"
             ],
             "kind": "ring"
           },
@@ -3091,10 +3093,6 @@
         ]
       }
     },
-    "scope": {
-      "design": true,
-      "model": true
-    },
     "source": {
       "attributes": {
         "crv_array_count": "6",
@@ -3118,6 +3116,7 @@
         "section.2.role": "metadata",
         "section_count": "3",
         "srf_array_count": "4",
+        "unresolved_feature_state_selection_count": "0",
         "version_line": "#UGC:2 P c"
       },
       "identity": {
@@ -3491,6 +3490,7 @@
       "unresolved_feature_dimension_driven_variable_count": 0,
       "unresolved_feature_dimension_value_count": 0,
       "unresolved_feature_segment_geometry_count": 0,
+      "unresolved_feature_state_selection_count": 0,
       "untransferred_visible_cone_surface_row_count": 0,
       "untransferred_visible_curve_row_count": 0,
       "untransferred_visible_cylinder_surface_row_count": 0,
@@ -3636,10 +3636,7 @@
     ],
     "transfer": {
       "geometry_transferred": true,
-      "scope": {
-        "design": true,
-        "model": true
-      }
+      "transfer": "full"
     }
   },
   "source_fidelity": {
@@ -4429,23 +4426,8 @@
           "retention": "inline"
         },
         "offset": 76,
-        "stream": "creo:VisibGeom",
-        "untyped": []
-      },
-      "creo:source:image#whole": {
-        "bytes": {
-          "data": "I1VHQzoyIFAgYwojLUVORF9PRl9VR0NfSEVBREVSCiNVR0NfVE9DCnRvYyBlbnRyeSBsaW5lCiNFTkRfT0ZfVE9DX0hFQURFUgojCiNWaXNpYkdlb20Kc3JmX2FycmF5APgEASIE9gAADw8PDw9D8ABD8AAPLwAALwAA4w/kDw8P5A8PDw8PD+MCIgQBAAAPDw8PQ/AAD0PwAOQPLwAA4w8P5OQPDw8PDw8PD+MDIgQBAAAPDw8PQ/AAQ/AAD+QvAAAP4+QPDw/kDw8PDw8PD+MEIgQBAAAPDw8PDw8PDw8P40gAAEPwAC8AAC8AAEgAAOQPDw/kDw/jY3J2X2FycmF5APP4BnRvcG9sX3JlZl9kYXRhAAoIBAH2AQIMDQAA4+H1BfbjCwgEAfYBAwoPAADj4fUF9uMMCAQB9gEECw4AAOPh9QX24w0IBAH2AgMOCwAA4+H1BfbjDggEAfYCBAoPAADj4fUF9uMPCAQB9gMEDQwAAOPh9QX24yMKI0FsbEZlYXR1cgoE6wQAEAEA5eP2g5Hh4CFnZW9tc19hZmZlY3RlZAD4AWPgIWVkZ3NfYWZmZWN0ZWQA+AIKCyMKI01kbFN0YXR1cwpSb3VuZCBpZCA0AA==",
-          "retention": "inline"
-        },
-        "offset": 0,
-        "stream": "creo:source",
-        "untyped": [
-          "model"
-        ]
+        "stream": "creo:VisibGeom"
       }
-    },
-    "unrepresented": [
-      "model"
-    ]
+    }
   }
 }

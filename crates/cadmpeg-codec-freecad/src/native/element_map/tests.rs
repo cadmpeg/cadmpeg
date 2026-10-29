@@ -68,7 +68,7 @@ fn child_map_reference_is_rejected_by_complete_cadir_admission() {
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service())
         .expect("validation context");
     let findings = crate::FcstdCodec
-        .validate_native(&ctx, &reparsed)
+        .validate_native(&ctx, &reparsed, None)
         .expect("validation fits service policy");
     assert!(
         findings.iter().any(|finding| {

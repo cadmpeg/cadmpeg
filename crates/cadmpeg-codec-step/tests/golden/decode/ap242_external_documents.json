@@ -1,43 +1,12 @@
 {
   "ir": {
-    "ir_version": "8",
+    "decode_depth": "full",
+    "ir_version": "9",
     "model": {
       "appearance_bindings": [],
       "appearances": [],
       "assembly_joints": [],
-      "assets": [
-        {
-          "content": {
-            "kind": "external",
-            "uri": "SPEC-42"
-          },
-          "id": "step:data:external-document#2",
-          "name": "Interface control drawing"
-        },
-        {
-          "content": {
-            "kind": "external",
-            "uri": "https://example.invalid/library"
-          },
-          "id": "step:data:external-item#5",
-          "name": "fastener-table"
-        }
-      ],
-      "attributes": [
-        {
-          "id": "step:data:document-reference-source#3",
-          "name": "DOCUMENT_REFERENCE #3 source",
-          "target": {
-            "kind": "document"
-          },
-          "values": [
-            {
-              "kind": "string",
-              "value": "supplier vault"
-            }
-          ]
-        }
-      ],
+      "attributes": [],
       "bodies": [],
       "coedges": [],
       "configurations": [],
@@ -72,15 +41,17 @@
       "vertices": [],
       "view_presentations": []
     },
-    "native": {
-      "step": {}
-    },
-    "scope": {
-      "design": true,
-      "model": true
-    },
+    "native": {},
     "source": {
-      "attributes": {},
+      "attributes": {
+        "bytes_named_opaque": "0",
+        "bytes_structural": "289",
+        "bytes_typed": "396",
+        "bytes_unclassified": "0",
+        "data_sections": "1",
+        "entity_instances": "7",
+        "schema": "AP242_MANAGED_MODEL_BASED_3D_ENGINEERING_MIM_LF"
+      },
       "identity": {
         "classification": "classified",
         "dialects": {
@@ -150,193 +121,10 @@
     ],
     "transfer": {
       "geometry_transferred": false,
-      "scope": {
-        "design": true,
-        "model": true
-      }
+      "transfer": "full"
     }
   },
   "source_fidelity": {
-    "annotations": {},
-    "metadata": {
-      "bytes_named_opaque": "0",
-      "bytes_structural": "289",
-      "bytes_typed": "396",
-      "bytes_unclassified": "0",
-      "data_sections": "1",
-      "entity_instances": "7",
-      "schema": "AP242_MANAGED_MODEL_BASED_3D_ENGINEERING_MIM_LF"
-    },
-    "parts": {
-      "step:source:part#307f8369e8f92956d9630f30fbe092e7e0dc1e892da168ac44bb7d49e8376764": {
-        "byte_len": 48,
-        "framing_bytes": [
-          {
-            "end": 491,
-            "start": 489
-          },
-          {
-            "end": 492,
-            "start": 491
-          },
-          {
-            "end": 537,
-            "start": 536
-          }
-        ],
-        "level": "step.simple_entity_instance",
-        "offset": 489,
-        "parent": null,
-        "state": {
-          "state": "decoded"
-        },
-        "stream": "file"
-      },
-      "step:source:part#8b3df129c211961efb0b2612b44af8b02adbb76bfea7927b6b4bc8e08ba48235": {
-        "byte_len": 58,
-        "framing_bytes": [
-          {
-            "end": 602,
-            "start": 600
-          },
-          {
-            "end": 603,
-            "start": 602
-          },
-          {
-            "end": 658,
-            "start": 657
-          }
-        ],
-        "level": "step.simple_entity_instance",
-        "offset": 600,
-        "parent": null,
-        "state": {
-          "state": "decoded"
-        },
-        "stream": "file"
-      },
-      "step:source:part#9d62662d9269afd292e399c85d10df646632ecf138ac405797b1a41389683660": {
-        "byte_len": 62,
-        "framing_bytes": [
-          {
-            "end": 258,
-            "start": 256
-          },
-          {
-            "end": 259,
-            "start": 258
-          },
-          {
-            "end": 318,
-            "start": 317
-          }
-        ],
-        "level": "step.simple_entity_instance",
-        "offset": 256,
-        "parent": null,
-        "state": {
-          "state": "decoded"
-        },
-        "stream": "file"
-      },
-      "step:source:part#a090971e64523917f9d294c8aa6b9e4a5f5ea2d64bddd4d0cbe44bee11a4b7fb": {
-        "byte_len": 54,
-        "framing_bytes": [
-          {
-            "end": 436,
-            "start": 434
-          },
-          {
-            "end": 437,
-            "start": 436
-          },
-          {
-            "end": 488,
-            "start": 487
-          }
-        ],
-        "level": "step.simple_entity_instance",
-        "offset": 434,
-        "parent": null,
-        "state": {
-          "state": "decoded"
-        },
-        "stream": "file"
-      },
-      "step:source:part#c2503d1dbfa214f17601777122a78e080cc53e3ae8a8730842a43808792f91f3": {
-        "byte_len": 57,
-        "framing_bytes": [
-          {
-            "end": 321,
-            "start": 319
-          },
-          {
-            "end": 322,
-            "start": 321
-          },
-          {
-            "end": 376,
-            "start": 375
-          }
-        ],
-        "level": "step.simple_entity_instance",
-        "offset": 319,
-        "parent": null,
-        "state": {
-          "state": "decoded"
-        },
-        "stream": "file"
-      },
-      "step:source:part#c7ab7a433f85cee49b8214098257bf925417442dedc67047bacabb2517c2cfce": {
-        "byte_len": 61,
-        "framing_bytes": [
-          {
-            "end": 540,
-            "start": 538
-          },
-          {
-            "end": 541,
-            "start": 540
-          },
-          {
-            "end": 599,
-            "start": 598
-          }
-        ],
-        "level": "step.simple_entity_instance",
-        "offset": 538,
-        "parent": null,
-        "state": {
-          "state": "decoded"
-        },
-        "stream": "file"
-      },
-      "step:source:part#f4ef008474cf3149eff137bf010f9ccb5a461ecd3836d4c916e788ba8a3a387c": {
-        "byte_len": 56,
-        "framing_bytes": [
-          {
-            "end": 379,
-            "start": 377
-          },
-          {
-            "end": 380,
-            "start": 379
-          },
-          {
-            "end": 433,
-            "start": 432
-          }
-        ],
-        "level": "step.simple_entity_instance",
-        "offset": 377,
-        "parent": null,
-        "state": {
-          "state": "decoded"
-        },
-        "stream": "file"
-      }
-    },
-    "unrepresented": []
+    "annotations": {}
   }
 }

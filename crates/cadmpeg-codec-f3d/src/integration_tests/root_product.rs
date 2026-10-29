@@ -9,7 +9,7 @@ use crate::F3dCodec;
 fn single_component_act_root_projects_its_label_and_writes_neutral_edits() {
     let mut decoded = decode(f3d_with_smbh_and_protein(&synthetic_geometry_smbh()));
     let native = f3d_native(decoded.ir());
-    let [root] = native.act_root_components.as_slice() else {
+    let [root] = native.act_component_links.as_slice() else {
         panic!("one ACT root in the generated standalone design");
     };
     let [product] = decoded.ir().model.product_definitions.as_slice() else {
@@ -44,7 +44,7 @@ fn single_component_act_root_projects_its_label_and_writes_neutral_edits() {
     );
     let native = f3d_native(output.ir());
     assert_eq!(
-        native.act_root_components[0].layout().display_name(),
+        native.act_component_links[0].layout().display_name(),
         "Edited root label"
     );
 }

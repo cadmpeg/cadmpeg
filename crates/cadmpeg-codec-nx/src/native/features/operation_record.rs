@@ -294,7 +294,7 @@ mod tests {
                     std::slice::from_ref(&wire),
                 )
                 .unwrap();
-            assert!(crate::NxCodec::validate_native(ctx, &ir)
+            assert!(crate::NxCodec::validate_native(ctx, &ir, None)
                 .unwrap()
                 .is_empty());
             for (field, value) in [
@@ -314,7 +314,7 @@ mod tests {
                     .namespace_mut("nx")
                     .set_arena(ctx, "feature_operation_records", &[bad])
                     .unwrap();
-                let findings = crate::NxCodec::validate_native(ctx, &ir).unwrap();
+                let findings = crate::NxCodec::validate_native(ctx, &ir, None).unwrap();
                 assert_eq!(findings.len(), 1, "{field}");
                 assert!(findings[0].message.contains(field), "{field}: {findings:?}");
             }

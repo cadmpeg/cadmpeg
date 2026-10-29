@@ -25,8 +25,10 @@ use cadmpeg_core::decode::{DecodeDepth, ResourceLimits};
 use cadmpeg_core::target::TargetCatalog;
 use cadmpeg_core::CodecError;
 
+pub mod approximation;
 mod carried;
 mod coverage;
+pub mod edge_recovery;
 mod error;
 mod loss;
 pub mod subset_lowering;

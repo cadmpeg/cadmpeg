@@ -104,6 +104,184 @@ fn convert_stdout_contains_only_json_artifact() {
     assert!(String::from_utf8_lossy(&output.stderr).contains("check: OK"));
 }
 
+#[cfg(all(feature = "f3d", feature = "sldprt", feature = "step"))]
+#[test]
+fn curveless_faces_keep_their_source_vertices_as_points() {
+    let dir = tempdir().unwrap();
+    let cases: [(&str, &[u8], f64); 2] = [
+        (
+            "topology.f3d",
+            include_bytes!("../../../cadmpeg-codec-f3d/tests/golden/fixtures/topology_base.f3d"),
+            10.0,
+        ),
+        (
+            "planar.sldprt",
+            include_bytes!("../../../cadmpeg-codec-sldprt/tests/golden/fixtures/authored_complete_planar.sldprt"),
+            1000.0,
+        ),
+    ];
+    for (name, bytes, extent) in cases {
+        let input = dir.path().join(name);
+        let output = dir.path().join(format!("{name}.step"));
+        let report = dir.path().join(format!("{name}.report.json"));
+        let decoded = dir.path().join(format!("{name}.cadir.json"));
+        fs::write(&input, bytes).unwrap();
+        Command::cargo_bin("cadmpeg")
+            .unwrap()
+            .args([
+                "convert",
+                input.to_str().unwrap(),
+                "-o",
+                output.to_str().unwrap(),
+                "--report",
+                report.to_str().unwrap(),
+            ])
+            .assert()
+            .success();
+        let report: serde_json::Value = serde_json::from_slice(&fs::read(report).unwrap()).unwrap();
+        assert_eq!(report["status"], "ok");
+        assert!(report["export"]["losses"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|loss| loss["code"]["code"] == "topology.region-vertices-recovered"));
+        Command::cargo_bin("cadmpeg")
+            .unwrap()
+            .args([
+                "dump",
+                output.to_str().unwrap(),
+                "-o",
+                decoded.to_str().unwrap(),
+            ])
+            .assert()
+            .success();
+        let decoded: serde_json::Value =
+            serde_json::from_slice(&fs::read(decoded).unwrap()).unwrap();
+        let points = decoded["model"]["points"].as_array().unwrap();
+        assert_eq!(points.len(), 3, "{name}");
+        assert!(points.iter().any(|point| point["position"]["x"] == extent));
+        assert!(points.iter().any(|point| point["position"]["y"] == extent));
+        assert!(decoded["model"]["faces"].as_array().unwrap().is_empty());
+    }
+}
+
+#[cfg(all(feature = "f3d", feature = "step"))]
+#[test]
+fn pcurves_recover_edges_even_when_the_face_cannot_be_written() {
+    let dir = tempdir().unwrap();
+    for (name, bytes) in [
+        (
+            "inline.f3d",
+            include_bytes!("../../../cadmpeg-codec-f3d/tests/golden/fixtures/pcurve_inline.f3d")
+                .as_slice(),
+        ),
+        (
+            "rational.f3d",
+            include_bytes!("../../../cadmpeg-codec-f3d/tests/golden/fixtures/pcurve_rational.f3d")
+                .as_slice(),
+        ),
+    ] {
+        let input = dir.path().join(name);
+        let output = dir.path().join(format!("{name}.step"));
+        let report = dir.path().join(format!("{name}.json"));
+        fs::write(&input, bytes).unwrap();
+        Command::cargo_bin("cadmpeg")
+            .unwrap()
+            .args([
+                "convert",
+                input.to_str().unwrap(),
+                "-o",
+                output.to_str().unwrap(),
+                "--report",
+                report.to_str().unwrap(),
+            ])
+            .assert()
+            .success();
+        let report: serde_json::Value = serde_json::from_slice(&fs::read(report).unwrap()).unwrap();
+        let losses = report["export"]["losses"].as_array().unwrap();
+        assert_eq!(
+            losses
+                .iter()
+                .filter(|loss| loss["code"]["code"] == "topology.edge-no-3d-curve")
+                .count(),
+            2
+        );
+        assert!(losses
+            .iter()
+            .any(|loss| loss["code"]["code"] == "topology.region-edges-recovered"));
+        let text = fs::read_to_string(output).unwrap();
+        assert!(text.contains("EDGE_BASED_WIREFRAME_MODEL("));
+        assert!(text.contains("EDGE_CURVE("));
+    }
+}
+
+/// Sphere poles, a cone apex, and Rhino singular trims are edges with no 3D
+/// curve whose pcurves stay at their one vertex. STEP writes every face of
+/// these sources without those edges and reports no loss for them.
+#[cfg(all(feature = "fcstd", feature = "rhino"))]
+#[test]
+fn step_conversion_leaves_collapsed_curveless_edges_out_without_a_loss() {
+    let dir = tempdir().unwrap();
+    let sources: [(&str, &[u8]); 3] = [
+        (
+            "geometry_topology.FCStd",
+            include_bytes!("../../../../corpus/freecad_fcstd/fixtures/geometry_topology.FCStd"),
+        ),
+        (
+            "binary_exact_shape.FCStd",
+            include_bytes!("../../../../corpus/freecad_fcstd/fixtures/binary_exact_shape.FCStd"),
+        ),
+        (
+            "brep_singular_seam.3dm",
+            include_bytes!(
+                "../../../cadmpeg-codec-rhino/tests/golden/fixtures/brep_singular_seam.3dm"
+            ),
+        ),
+    ];
+    for (name, bytes) in sources {
+        let input = dir.path().join(name);
+        fs::write(&input, bytes).unwrap();
+        let output = dir.path().join(format!("{name}.step"));
+        let report = dir.path().join(format!("{name}.json"));
+        Command::cargo_bin("cadmpeg")
+            .unwrap()
+            .args([
+                "convert",
+                input.to_str().unwrap(),
+                "-o",
+                output.to_str().unwrap(),
+                "--report",
+                report.to_str().unwrap(),
+            ])
+            .assert()
+            .success();
+        let report: serde_json::Value =
+            serde_json::from_slice(&fs::read(&report).unwrap()).unwrap();
+        let codes: Vec<&str> = report["export"]["losses"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|loss| loss["code"]["code"].as_str().unwrap())
+            .collect();
+        for code in [
+            "topology.edge-no-3d-curve",
+            "geometry.curveless-edge-omitted",
+        ] {
+            assert!(!codes.contains(&code), "{name}: {codes:?}");
+        }
+        let faces = report["check_report"]["entity_counts"]["faces"]
+            .as_u64()
+            .unwrap();
+        assert!(faces > 0, "{name}");
+        let text = fs::read_to_string(&output).unwrap();
+        assert_eq!(
+            u64::try_from(text.matches("ADVANCED_FACE(").count()).unwrap(),
+            faces,
+            "{name}"
+        );
+    }
+}
+
 /// The decode report line names the content scope the codec delivered. A codec with
 /// no geometry-depth cut delivers `full` for STEP's geometry request, with or
 /// without `--full-decode`, which excludes `--container-only`.

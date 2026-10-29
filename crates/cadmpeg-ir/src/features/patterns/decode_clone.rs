@@ -29,7 +29,7 @@ rewrite_record!(PatternStage, []; { pattern });
 
 rewrite_enum!(PatternTransform<C>, [C]; {
     Unresolved { form },
-    Linear { direction, distance, count, second },
+    Linear { direction, distance, count, second, omitted_instances },
     LinearOffsets { direction, offsets },
     Circular { axis_origin, axis_dir, angle, count },
     CircularAngles { axis_origin, axis_dir, angles },

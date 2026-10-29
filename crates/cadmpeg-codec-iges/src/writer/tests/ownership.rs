@@ -195,12 +195,11 @@ fn face_owned_support_surface_remains_available_to_its_owner() {
     assert_eq!(ir.model.surfaces.len(), 1);
     ir.model.surfaces[0].source_object = Some(support_association());
     ir.native = cadmpeg_ir::native::Native::default();
+    let support = ir.model.surfaces[0].id.to_string();
     let generated = super::super::synthesize(&ir, IgesVersion::V5_3).unwrap();
-    assert!(!generated
-        .losses
-        .iter()
-        .any(|loss| loss.code
-            == crate::loss::IgesLossCode::WriterSupportGeometryNotRepresented.kind()));
+    assert!(!generated.losses.iter().any(|loss| loss.code
+        == crate::loss::IgesLossCode::WriterSupportGeometryNotRepresented.kind()
+        && loss.message.contains(&support)));
     let result = IgesCodec
         .decode(&mut Cursor::new(generated.bytes), &DecodeOptions::default())
         .unwrap();
@@ -219,8 +218,10 @@ fn face_owned_support_surface_remains_available_to_its_owner() {
         .is_ok());
 }
 
+/// A physically dependent entity is valid only under a written parent, so a
+/// support curve that nothing written owns is withheld.
 #[test]
-fn support_curve_without_topology_keeps_physical_dependency() {
+fn support_curve_without_topology_is_withheld_with_loss() {
     let mut ir = rectangle();
     let fixture = IgesCodec
         .decode(
@@ -232,17 +233,14 @@ fn support_curve_without_topology_keeps_physical_dependency() {
     assert!(curve.parameter_range.is_some());
     curve.source_object = Some(support_association());
     ir.model.curves.push(curve);
+    let generated = super::super::synthesize(&ir, IgesVersion::V5_3).unwrap();
+    assert!(generated.losses.iter().any(|loss| loss.code
+        == crate::loss::IgesLossCode::WriterSupportGeometryNotRepresented.kind()
+        && loss.message.starts_with("1 support geometry record")));
     let result = round_trip(&ir);
-    assert_eq!(result.ir().model.curves.len(), 1);
+    assert!(result.ir().model.curves.is_empty());
     assert!(result.ir().model.edges.is_empty());
-    assert_eq!(
-        result.ir().model.curves[0]
-            .source_object
-            .as_ref()
-            .unwrap()
-            .geometry_role,
-        Some(SourceGeometryRole::Support)
-    );
+    assert_eq!(result.ir().model.surfaces.len(), 1);
 }
 
 #[test]
@@ -258,17 +256,10 @@ fn dependent_iges_curve_cannot_round_trip_as_an_independent_edge() {
         .unwrap();
     assert_eq!(decoded.ir().model.curves.len(), 1);
     assert!(decoded.ir().model.edges.is_empty());
-    let result = round_trip(decoded.ir());
-    assert_eq!(result.ir().model.curves.len(), 1);
-    assert!(result.ir().model.edges.is_empty());
-    assert_eq!(
-        result.ir().model.curves[0]
-            .source_object
-            .as_ref()
-            .unwrap()
-            .geometry_role,
-        Some(SourceGeometryRole::Support)
-    );
+    assert!(matches!(
+        super::super::synthesize(decoded.ir(), IgesVersion::V5_3),
+        Err(cadmpeg_core::CodecError::NotImplemented(_))
+    ));
 }
 
 #[test]
@@ -292,21 +283,16 @@ fn standalone_edge_with_support_curve_is_withheld_with_counted_export_loss() {
     assert!(plan.report().losses.iter().any(|loss| loss.code
         == crate::loss::IgesLossCode::WriterSupportEdgeNotRepresented.kind()
         && loss.message.starts_with("1 standalone edge record")));
+    assert!(plan.report().losses.iter().any(|loss| loss.code
+        == crate::loss::IgesLossCode::WriterSupportGeometryNotRepresented.kind()
+        && loss.message.starts_with("1 support geometry record")));
     let mut written = Vec::new();
     plan.write_to(&mut written).unwrap();
     let result = IgesCodec
         .decode(&mut Cursor::new(written), &DecodeOptions::default())
         .unwrap();
-    assert_eq!(result.ir().model.curves.len(), 1);
+    assert!(result.ir().model.curves.is_empty());
     assert!(result.ir().model.edges.is_empty());
-    assert_eq!(
-        result.ir().model.curves[0]
-            .source_object
-            .as_ref()
-            .unwrap()
-            .geometry_role,
-        Some(SourceGeometryRole::Support)
-    );
 }
 
 #[test]

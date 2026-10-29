@@ -1,9 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 
-use super::{
-    GroupMemberTarget, ParasolidDeltasRecord, ParasolidDeltasTombstone, ParasolidGroupMember,
-};
-use crate::deltas::record_family::RecordFamily;
+use super::{GroupMemberTarget, ParasolidGroupMember};
 use crate::records::group::{MembershipKind, MembershipRecord};
 use std::collections::{BTreeMap, BTreeSet};
 
@@ -30,49 +27,6 @@ impl GroupState {
             }
         }
         state
-    }
-
-    pub(super) fn apply_deltas(
-        &mut self,
-        stream_ordinal: u32,
-        records: &[ParasolidDeltasRecord],
-        tombstones: &[ParasolidDeltasTombstone],
-    ) {
-        enum Event<'a> {
-            Record(&'a ParasolidDeltasRecord),
-            Tombstone(u32),
-        }
-        let mut events = Vec::new();
-        for record in records
-            .iter()
-            .filter(|record| record.stream_ordinal == stream_ordinal)
-        {
-            events.push((record.inflated_offset, Event::Record(record)));
-        }
-        for tombstone in tombstones
-            .iter()
-            .filter(|record| record.stream_ordinal == stream_ordinal)
-        {
-            events.push((tombstone.inflated_offset, Event::Tombstone(tombstone.xmt)));
-        }
-        events.sort_by_key(|(first, _)| *first);
-        for (_, event) in events {
-            match event {
-                Event::Record(record) => {
-                    if matches!(self.records.get(&record.xmt), Some(Entry::Ambiguous)) {
-                        continue;
-                    }
-                    self.records.contains_key(&record.xmt);
-                    self.records
-                        .insert(record.xmt, Entry::Record(delta_kind(&record.family)));
-                }
-                Event::Tombstone(xmt) => {
-                    if !matches!(self.records.get(&xmt), Some(Entry::Ambiguous)) {
-                        self.records.remove(&xmt);
-                    }
-                }
-            }
-        }
     }
 
     pub(super) fn append_members(
@@ -167,32 +121,5 @@ impl GroupState {
                 });
             }
         }
-    }
-}
-
-fn delta_kind(record: &RecordFamily) -> MembershipKind {
-    match record {
-        RecordFamily::Group {
-            node_id,
-            selector,
-            references,
-            ..
-        } => MembershipKind::Group {
-            node_id: *node_id,
-            selector: *selector,
-            first_member: references[4],
-        },
-        RecordFamily::Type91 { references } => MembershipKind::Member {
-            owning_group: references[0],
-            owner: references[1],
-            next_member: references[4],
-            previous_member: references[5],
-        },
-        _ => record
-            .node_id()
-            .map_or(MembershipKind::Other, |node_id| MembershipKind::Node {
-                kind: record.kind(),
-                node_id,
-            }),
     }
 }
