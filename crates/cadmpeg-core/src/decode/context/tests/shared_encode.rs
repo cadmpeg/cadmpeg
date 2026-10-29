@@ -124,10 +124,10 @@ fn independent_expansions_charge_actual_bytes_to_one_eight_byte_ceiling() {
     let third = DecodeContext::for_encode_session(&arena, &session).unwrap();
     let mut a = first.begin_expand(ExpandSpec::Exact(3)).unwrap();
     a.write(b"abc").unwrap();
-    assert_eq!(a.completed_bytes().unwrap(), b"abc");
+    assert_eq!(a.finalize_owned().unwrap(), b"abc");
     let mut b = second.begin_expand(ExpandSpec::Exact(5)).unwrap();
     b.write(b"defgh").unwrap();
-    assert_eq!(b.completed_bytes().unwrap(), b"defgh");
+    assert_eq!(b.finalize_owned().unwrap(), b"defgh");
     let mut c = third.begin_expand(ExpandSpec::Exact(1)).unwrap();
     let refusal = resource(c.write(b"i").unwrap_err());
     assert_eq!(refusal.dimension, ResourceDimension::DecompressedBytes);

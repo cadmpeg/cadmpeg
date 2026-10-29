@@ -697,12 +697,6 @@ impl<'a> ExpandWriter<'_, 'a> {
         Ok(())
     }
 
-    /// Borrows the output after validating its declared exact size.
-    pub fn completed_bytes(&self) -> Result<&[u8], CodecError> {
-        self.check_exact()?;
-        Ok(&self.buffer)
-    }
-
     /// Finalizes the expansion, stores it in the arena, and registers its space.
     pub fn finalize(self) -> Result<View<'a>, CodecError> {
         self.check_exact()?;
