@@ -107,6 +107,12 @@ pub(crate) enum InventorLossCode {
     FeatureSweepControlsUnresolved,
     /// Loft construction controls and section conditions have no exact neutral interpretation.
     FeatureLoftControlsUnresolved,
+    /// Section scalar operands do not close a positional loft construction.
+    FeatureLoftSectionScalarsNative,
+    /// Solid-loft operands do not close the positional construction.
+    FeatureLoftOperandsNative,
+    /// Generated result operands do not close the solid-loft construction.
+    FeatureLoftResultOperandsNative,
     /// Inventor operations retain unresolved suppression and dependency state.
     FeatureStateUnresolved,
     /// Derived components retain external source construction only natively.
@@ -214,6 +220,9 @@ impl InventorLossCode {
         Self::FeatureRevolveControlUnresolved,
         Self::FeatureSweepControlsUnresolved,
         Self::FeatureLoftControlsUnresolved,
+        Self::FeatureLoftSectionScalarsNative,
+        Self::FeatureLoftOperandsNative,
+        Self::FeatureLoftResultOperandsNative,
         Self::FeatureStateUnresolved,
         Self::FeatureDerivedSourceNative,
         Self::FeatureDerivedTaggingNative,
@@ -301,6 +310,9 @@ impl InventorLossCode {
             Self::FeatureRevolveControlUnresolved => "feature.revolve-control-unresolved",
             Self::FeatureSweepControlsUnresolved => "feature.sweep-controls-unresolved",
             Self::FeatureLoftControlsUnresolved => "feature.loft-controls-unresolved",
+            Self::FeatureLoftSectionScalarsNative => "feature.loft-section-scalars-native",
+            Self::FeatureLoftOperandsNative => "feature.loft-operands-native",
+            Self::FeatureLoftResultOperandsNative => "feature.loft-result-operands-native",
             Self::FeatureStateUnresolved => "feature.state-unresolved",
             Self::FeatureDerivedSourceNative => "feature.derived-source-native",
             Self::FeatureDerivedTaggingNative => "feature.derived-tagging-native",
@@ -392,6 +404,9 @@ impl InventorLossCode {
             | Self::FeatureRevolveControlUnresolved
             | Self::FeatureSweepControlsUnresolved
             | Self::FeatureLoftControlsUnresolved
+            | Self::FeatureLoftSectionScalarsNative
+            | Self::FeatureLoftOperandsNative
+            | Self::FeatureLoftResultOperandsNative
             | Self::FeatureProfileBodyUndecoded
             | Self::SketchConstructionUnresolved
             | Self::SketchPairedAssociationUnprojected
@@ -496,6 +511,9 @@ mod tests {
                 "feature.revolve-control-unresolved",
                 "feature.sweep-controls-unresolved",
                 "feature.loft-controls-unresolved",
+                "feature.loft-section-scalars-native",
+                "feature.loft-operands-native",
+                "feature.loft-result-operands-native",
                 "feature.state-unresolved",
                 "feature.derived-source-native",
                 "feature.derived-tagging-native",

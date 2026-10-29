@@ -19,6 +19,7 @@ use cadmpeg_ir::topology::EdgeCarrier;
 
 use super::{PmDcEntityStyleLink, PmDcKernelEntityLink};
 
+mod membership;
 mod selection;
 use crate::rse::{RecordFrameState, RseInventory, SegmentBulkState, SegmentKind};
 use crate::sketch::{PmDcSketchEntity, PmDcSketchEntityKind};

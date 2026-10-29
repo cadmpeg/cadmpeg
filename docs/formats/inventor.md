@@ -734,6 +734,10 @@ Loft property slots are:
 | 10 | Loft construction enumeration | `02e2e3e0d111480900084eba32a3dc09` |
 | 13 | Solid-loft result object collection | `ae70680ed14a1e86d76248b03c2a96e1` |
 
+The positional two-section solid-loft form has 14 property slots in a type-2 reference list. Slots 3, 4, 5, 6, 7, 8, 11, and 12 are null. Slot 1 selects an enumeration with type 5 and value 1. Slots 2 and 9 select false Boolean records. Slot 10 selects an enumeration with type 2 and value 0. The list at slot 0 has two distinct section references. The collection at slot 13 has one result-body reference.
+
+Each section in this form has `value = 0`, `map_value = 0`, and `source_value = 1`. Its condition has enumeration type 2 and value 0. Its option is null or false. The first numeric parameter is dimensionless, with nominal and model values 0. The second numeric parameter is angular, with nominal and model values π/2 radians.
+
 Sweep property slots are:
 
 | Slot | Operand | Record type |
@@ -753,7 +757,7 @@ Schema-44 generated-face attributes use type `ATTRIB_CUSTOM-attrib`. Five common
 
 Family `INV_NMX_SWEEPGENERATED_TAG` then stores `section`, `span`, `role`, and seven zero integers. Role 20 identifies a side face; `section` and `span` identify the associative names of its section curve and path curve. Roles 4 and 12 identify the two terminal cap faces and have zero `section` and `span` values.
 
-Family `INV_NMX_GEN_TAG` with the trailing integers 0, `section`, 260 identifies a loft cap. Family `INV_NMX_ORDERED_GEN_TAG` with the trailing integers 2, `curve`, `first_section`, 258, 0, 0, 3, `last_section`, 258, 4, `member` identifies a loft side face. The cap `section` and the side `first_section` and `last_section` are source indices of the section sketches. `member` is the one-based side-face member index. The side face stores a procedural loft surface. Its ordered profile members state any support surfaces and directions; a null support surface and an absent direction impose neither support continuity nor a direction constraint. The cap and side attributes refer to the same generating feature.
+Family `INV_NMX_GEN_TAG` with the trailing integers 0, `section`, 260 identifies a loft cap. Family `INV_NMX_ORDERED_GEN_TAG` with the trailing integers 2, `curve`, `first_section`, 258, 0, 0, `last_curve`, `last_section`, 258, 4, `member` identifies a loft side face. The cap `section` and the side `first_section` and `last_section` are source indices of the section sketches. `member` is the one-based side-face member index. In the positional form, `curve` is the associative name of a curve in the selected first-section boundary. `last_curve` is the associative name of a curve in the selected last-section boundary. The side face stores a procedural loft surface. Its ordered profile members state any support surfaces and directions; a null support surface and an absent direction impose neither support continuity nor a direction constraint. The cap and side attributes refer to the same generating feature.
 
 A sweep path selection uses the profile-selection grammar. Its kernel-entity link selects one keyed wire. The wire's ordered edges are the complete selected chain. A path wire can be open. Its edge naming attributes use the same naming-type and associative-name grammar as section boundaries.
 

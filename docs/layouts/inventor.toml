@@ -2819,6 +2819,26 @@ contains = '''(13, &[super::super::OBJECT_COLLECTION_TYPE]),'''
 note = "Slot 13 selects the record types in the specification."
 
 [[record]]
+name = "pm_dc_positional_loft_property_vector"
+kind = "slot"
+section = "13.2"
+anchor = "The positional two-section solid-loft form has 14 property slots"
+size = 14
+parsed_by = "crates/cadmpeg-codec-inventor/src/feature/loft_sweep/controls.rs"
+note = "The positional solid-loft operand pattern. Slot numbers are reference-list indices."
+
+[[record.field]]
+name = "properties"
+type = "u32[14]"
+source = "spec"
+anchor = "The positional two-section solid-loft form has 14 property slots"
+
+[[record.code]]
+path = "crates/cadmpeg-codec-inventor/src/feature/loft_sweep/controls.rs"
+contains = "slots.len() != 14"
+note = "The positional property vector has 14 slots."
+
+[[record]]
 name = "pm_dc_sweep_property_slots"
 kind = "slot"
 section = "13.2"

@@ -947,6 +947,23 @@ Cross-checked against code:
 - `crates/cadmpeg-codec-inventor/src/feature/loft_sweep/slots.rs` — Slot 10 selects the record types in the specification.
 - `crates/cadmpeg-codec-inventor/src/feature/loft_sweep/slots.rs` — Slot 13 selects the record types in the specification.
 
+## `pm_dc_positional_loft_property_vector`
+
+Spec §13.2 · layout: ordered slots (no stated byte offsets) · size: 14 B
+
+The positional solid-loft operand pattern. Slot numbers are reference-list indices.
+
+Parsed by:
+- `crates/cadmpeg-codec-inventor/src/feature/loft_sweep/controls.rs`
+
+| # | Slot | Type | Endian | Src | Meaning |
+| -: | ---- | ---- | ------ | --- | ------- |
+| 0 | `properties` | `u32[14]` | little | spec | The positional two-section solid-loft form has 14 property slots |
+
+Cross-checked against code:
+
+- `crates/cadmpeg-codec-inventor/src/feature/loft_sweep/controls.rs` — The positional property vector has 14 slots.
+
 ## `pm_dc_sweep_property_slots`
 
 Spec §13.2 · layout: ordered slots (no stated byte offsets) · size: not stated
