@@ -410,18 +410,18 @@ fn emboss_scope() -> super::DesignParameterScope {
         super::DesignFeatureKind::Emboss,
         40,
     );
-    let construction = serde_json::from_value(serde_json::json!({
-        "control_words": [7, 9],
-        "native_pair": [17, 23],
-        "depth_owner": {"value": 60, "offset": 29},
-        "auxiliary_group": {"value": 72, "offset": 40},
-        "horizontal_owner": {"value": 63, "offset": 51},
-        "rotation_owner": {"value": 69, "offset": 82},
-        "face_group": {"value": 48, "offset": 93},
-        "vertical_owner": {"value": 66, "offset": 104},
-        "profile_group": {"value": 41, "offset": 119}
-    }))
-    .unwrap();
+    let construction = crate::records::feature::emboss::DesignEmbossConstruction {
+        control_words: [7, 9],
+        native_pair: [17, 23],
+        depth_owner: crate::records::identity::Sourced::at(60, 29),
+        auxiliary_group: crate::records::identity::Sourced::at(72, 40),
+        horizontal_owner: crate::records::identity::Sourced::at(63, 51),
+        rotation_owner: crate::records::identity::Sourced::at(69, 82),
+        face_group: crate::records::identity::Sourced::at(48, 93),
+        vertical_owner: crate::records::identity::Sourced::at(66, 104),
+        profile_group: crate::records::identity::Sourced::at(41, 119),
+        sketch_profile: None,
+    };
     scope
         .try_edit(|draft| {
             draft.frame_length = 430;

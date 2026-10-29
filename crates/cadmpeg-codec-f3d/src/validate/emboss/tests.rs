@@ -77,14 +77,11 @@ fn parameter(owner: u32, kind: &str, value: f64, unit: &str) -> DesignParameter 
 fn owner(index: u32, value: f64) -> DesignParameterOwner {
     serde_json::from_value(serde_json::json!({
         "id": format!("{STREAM}:design-parameter-owner#{index}"),
-        "byte_offset": 2000,
-        "frame_length": 104,
         "class_tag": "901",
         "record_index": index,
         "scope_record_index": 40,
         "local_ordinal": 1,
         "evaluated_value": value,
-        "evaluated_value_offset": 2040,
         "parameter_record_index": index + 1,
         "owned_ordinal": 1,
         "variant": 0,

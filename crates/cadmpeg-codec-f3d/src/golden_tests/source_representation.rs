@@ -368,6 +368,112 @@ const UNREPRESENTED: &[(F3dLossCode, Representation)] = &[
         F3dLossCode::UnindexedRecordsRetained,
         Representation::Design,
     ),
+    (F3dLossCode::OperationPoseApplied, Representation::Typed),
+    (F3dLossCode::OperationPoseDisagrees, Representation::Typed),
+    (F3dLossCode::OperationPoseNative, Representation::Typed),
+    (F3dLossCode::WorkPlaneFrameUnbound, Representation::Typed),
+    (
+        F3dLossCode::LocalOccurrenceOwnerUnbound,
+        Representation::Typed,
+    ),
+    (
+        F3dLossCode::ComponentBodyOwnerUnresolved,
+        Representation::Typed,
+    ),
+    (
+        F3dLossCode::ComponentBodyOwnerFallback,
+        Representation::Typed,
+    ),
+    (
+        F3dLossCode::LocalOccurrenceOwnerCycle,
+        Representation::Typed,
+    ),
+    (
+        F3dLossCode::LocalOccurrenceExpansionLimit,
+        Representation::Typed,
+    ),
+    (
+        F3dLossCode::FeatureOccurrencePathUnresolved,
+        Representation::Typed,
+    ),
+    (F3dLossCode::SketchOwnerUnresolved, Representation::Typed),
+    (
+        F3dLossCode::ComponentNamingSpaceUnbound,
+        Representation::Typed,
+    ),
+    (
+        F3dLossCode::RootInstanceDefinitionUnbound,
+        Representation::Typed,
+    ),
+    (
+        F3dLossCode::LocalOccurrenceEnvelopeSuperseded,
+        Representation::Typed,
+    ),
+    (F3dLossCode::SavedFreeEdgeBodyUnowned, Representation::Typed),
+    (
+        F3dLossCode::AssemblyRigidGroupFrameUnparsed,
+        Representation::Design,
+    ),
+    (
+        F3dLossCode::AssemblyJointRestUnprojected,
+        Representation::Typed,
+    ),
+    (
+        F3dLossCode::AssemblyJointAngularLimitsNative,
+        Representation::Typed,
+    ),
+    (
+        F3dLossCode::AssemblyRootPathIdentitiesNative,
+        Representation::Typed,
+    ),
+    (
+        F3dLossCode::AssemblyOperandDescentAmbiguous,
+        Representation::Typed,
+    ),
+    (F3dLossCode::HoleExtentUnproven, Representation::Typed),
+    (
+        F3dLossCode::FeatureExtrudeExtentNative,
+        Representation::Typed,
+    ),
+    (
+        F3dLossCode::XrefPlacementMetadataNative,
+        Representation::Typed,
+    ),
+    (F3dLossCode::XrefPlacementRoleUnbound, Representation::Typed),
+    (F3dLossCode::XrefPlacementCurrentPose, Representation::Typed),
+    (F3dLossCode::XrefCurrentPoseNative, Representation::Typed),
+    (F3dLossCode::XrefCurrentPoseAmbiguous, Representation::Typed),
+    (
+        F3dLossCode::LocalOccurrenceCurrentPose,
+        Representation::Typed,
+    ),
+    (
+        F3dLossCode::LocalOccurrenceCurrentPoseNative,
+        Representation::Typed,
+    ),
+    (
+        F3dLossCode::LocalOccurrenceCurrentPoseAmbiguous,
+        Representation::Typed,
+    ),
+    (F3dLossCode::XrefContainedPose, Representation::Typed),
+    (
+        F3dLossCode::XrefContainedPoseDisagrees,
+        Representation::Typed,
+    ),
+    (F3dLossCode::XrefContainedPoseNative, Representation::Typed),
+    (F3dLossCode::XrefOwnedPose, Representation::Typed),
+    (F3dLossCode::XrefOwnedPoseDisagrees, Representation::Typed),
+    (F3dLossCode::XrefOwnedPoseNative, Representation::Typed),
+    (F3dLossCode::XrefOwnerUnresolved, Representation::Typed),
+    (F3dLossCode::VertexToleranceWidened, Representation::Typed),
+    (
+        F3dLossCode::SpringSupportPcurveUnresolved,
+        Representation::Model,
+    ),
+    (
+        F3dLossCode::ProceduralSupportChartUnresolved,
+        Representation::Model,
+    ),
 ];
 
 /// Classes with source records that have no typed document representation.
