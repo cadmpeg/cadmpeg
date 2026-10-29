@@ -457,6 +457,7 @@ fn hole_package_projection_counts_uses_and_templates_over_many_packages() {
 fn current_body_writers_close_false_suppression_without_a_configuration() {
     let body = BodyId::mint("test:model:entity#body").expect("identity grammar");
     let feature = |id: &str, ordinal, dependencies: Vec<FeatureId>, outputs: Vec<BodyId>| Feature {
+        product_definition: Default::default(),
         id: FeatureId::mint(id).expect("identity grammar"),
         ordinal,
         name: None,

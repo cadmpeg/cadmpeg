@@ -1452,6 +1452,7 @@ fn fixed_kind_edge_and_revolve_operations(
         }) if construction.axis().is_none()
     ));
     let mut feature = cadmpeg_ir::features::Feature {
+        product_definition: Default::default(),
         id: crate::ids::neutral_feature_id(&indexed_revolve_scope),
         ordinal: 0,
         name: None,

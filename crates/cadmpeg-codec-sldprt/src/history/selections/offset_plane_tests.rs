@@ -158,6 +158,7 @@ fn unresolved_face_frame_resolves_one_preceding_parallel_plane() {
 #[test]
 fn unresolved_face_frame_resolves_a_later_principal_plane_from_support_geometry() {
     let mut offset = cadmpeg_ir::features::Feature {
+        product_definition: Default::default(),
         id: FeatureId::mint("synthetic:test:id#offset").expect("identity grammar"),
         ordinal: 0,
         name: None,
@@ -206,6 +207,7 @@ fn unresolved_face_frame_resolves_a_later_principal_plane_from_support_geometry(
         "0,0,-1".into(),
     );
     let mut principal = cadmpeg_ir::features::Feature {
+        product_definition: Default::default(),
         id: FeatureId::mint("synthetic:test:id#right").expect("identity grammar"),
         ordinal: 1,
         name: None,
@@ -243,6 +245,7 @@ fn unresolved_face_frame_resolves_a_later_principal_plane_from_support_geometry(
 #[test]
 fn unresolved_face_frame_collapses_a_zero_offset_plane_alias() {
     let mut base = cadmpeg_ir::features::Feature {
+        product_definition: Default::default(),
         id: FeatureId::mint("synthetic:test:id#base").expect("identity grammar"),
         ordinal: 0,
         name: None,
@@ -267,6 +270,7 @@ fn unresolved_face_frame_collapses_a_zero_offset_plane_alias() {
     base.native_ref = Some("sldprt:history:feature#0:base".into());
 
     let mut alias = cadmpeg_ir::features::Feature {
+        product_definition: Default::default(),
         id: FeatureId::mint("synthetic:test:id#alias").expect("identity grammar"),
         ordinal: 1,
         name: None,
@@ -299,6 +303,7 @@ fn unresolved_face_frame_collapses_a_zero_offset_plane_alias() {
         .insert(cadmpeg_core::nonblank_literal!("UAxis"), "0,0,-1".into());
 
     let mut offset = cadmpeg_ir::features::Feature {
+        product_definition: Default::default(),
         id: FeatureId::mint("synthetic:test:id#offset").expect("identity grammar"),
         ordinal: 2,
         name: None,
@@ -366,6 +371,7 @@ fn unresolved_face_frame_collapses_a_zero_offset_plane_alias() {
 #[test]
 fn explicit_later_constructed_plane_survives_without_result_offset_frame() {
     let mut offset = cadmpeg_ir::features::Feature {
+        product_definition: Default::default(),
         id: FeatureId::mint("synthetic:test:id#offset").expect("identity grammar"),
         ordinal: 0,
         name: None,
@@ -402,6 +408,7 @@ fn explicit_later_constructed_plane_survives_without_result_offset_frame() {
         .source_properties
         .insert(cadmpeg_core::nonblank_literal!("UAxis"), "0,0,-1".into());
     let mut reference = cadmpeg_ir::features::Feature {
+        product_definition: Default::default(),
         id: FeatureId::mint("synthetic:test:id#reference").expect("identity grammar"),
         ordinal: 1,
         name: None,

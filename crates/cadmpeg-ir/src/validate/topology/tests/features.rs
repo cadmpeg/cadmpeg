@@ -39,6 +39,7 @@ fn historical_vertex_selection_requires_input_state_membership() {
             native_ref: None,
         });
     ir.model.features.push(Feature {
+        product_definition: Default::default(),
         id: feature_id.clone(),
         ordinal: 0,
         name: None,
@@ -175,6 +176,7 @@ fn neutral_features_resolve_sketch_profile_and_path_operands() {
 
     let mut ir = unit_cube().expect("valid unit cube fixture");
     ir.model.features.push(Feature {
+        product_definition: Default::default(),
         id: FeatureId::mint("synthetic:test:feature#sketch-ref").expect("identity grammar"),
         ordinal: 0,
         name: None,
@@ -213,6 +215,7 @@ fn feature_history_rejects_dangling_and_forward_dependencies() {
     let mut ir = unit_cube().expect("valid unit cube fixture");
     let feature_id = FeatureId::mint("synthetic:test:feature#invalid").expect("identity grammar");
     ir.model.features.push(Feature {
+        product_definition: Default::default(),
         id: feature_id.clone(),
         ordinal: 0,
         name: None,
@@ -266,6 +269,7 @@ fn feature_history_rejects_dangling_and_forward_dependencies() {
         native_ref: None,
     });
     ir.model.features.push(Feature {
+        product_definition: Default::default(),
         id: FeatureId::mint("synthetic:test:feature#duplicate-order").expect("identity grammar"),
         ordinal: 0,
         name: None,
@@ -315,6 +319,7 @@ fn feature_parameters_require_unique_names_and_ordinals() {
     let mut ir = unit_cube().expect("valid unit cube fixture");
     let owner = FeatureId::mint("synthetic:test:feature#parameters").expect("identity grammar");
     ir.model.features.push(Feature {
+        product_definition: Default::default(),
         id: owner.clone(),
         ordinal: 0,
         name: None,
@@ -335,6 +340,7 @@ fn feature_parameters_require_unique_names_and_ordinals() {
     });
     for (index, name) in ["Width", "Width"].into_iter().enumerate() {
         ir.model.parameters.push(DesignParameter {
+            product_definition: Default::default(),
             id: ParameterId::mint(format!("synthetic:test:parameter#{index}"))
                 .expect("identity grammar"),
             owner: Some(owner.clone()),
@@ -372,6 +378,7 @@ fn parameter_dependencies_must_exist_and_precede_consumers() {
     let owner =
         FeatureId::mint("synthetic:test:feature#dependency-owner").expect("identity grammar");
     ir.model.features.push(Feature {
+        product_definition: Default::default(),
         id: owner.clone(),
         ordinal: 0,
         name: None,
@@ -401,6 +408,7 @@ fn parameter_dependencies_must_exist_and_precede_consumers() {
         ),
     ] {
         ir.model.parameters.push(DesignParameter {
+            product_definition: Default::default(),
             id,
             owner: Some(owner.clone()),
             ordinal,
@@ -455,6 +463,7 @@ fn document_parameters_can_feed_feature_parameters() {
     let mut ir = unit_cube().expect("valid unit cube fixture");
     let owner = FeatureId::mint("synthetic:test:feature#consumer").expect("identity grammar");
     ir.model.features.push(Feature {
+        product_definition: Default::default(),
         id: owner.clone(),
         ordinal: 0,
         name: None,
@@ -476,6 +485,7 @@ fn document_parameters_can_feed_feature_parameters() {
     let document =
         ParameterId::mint("synthetic:test:parameter#document").expect("identity grammar");
     ir.model.parameters.push(DesignParameter {
+        product_definition: Default::default(),
         id: document.clone(),
         owner: None,
         ordinal: 0,
@@ -489,6 +499,7 @@ fn document_parameters_can_feed_feature_parameters() {
         native_ref: None,
     });
     ir.model.parameters.push(DesignParameter {
+        product_definition: Default::default(),
         id: ParameterId::mint("synthetic:test:parameter#owned").expect("identity grammar"),
         owner: Some(owner),
         ordinal: 0,
@@ -520,6 +531,7 @@ fn offset_plane_references_form_an_acyclic_graph_independent_of_list_order() {
     let mut ir = unit_cube().expect("valid unit cube fixture");
     let principal = FeatureId::mint("synthetic:test:feature#principal").expect("identity grammar");
     let feature = |id: &str, ordinal: u64, definition: FeatureDefinition| Feature {
+        product_definition: Default::default(),
         id: FeatureId::mint(id).expect("identity grammar"),
         ordinal,
         name: None,
@@ -617,6 +629,7 @@ fn generated_termination_vertices_require_declared_feature_dependencies() {
     let source =
         FeatureId::mint("synthetic:test:feature#0-vertex-source").expect("identity grammar");
     ir.model.features.push(Feature {
+        product_definition: Default::default(),
         id: source.clone(),
         ordinal: 0,
         name: None,
@@ -636,6 +649,7 @@ fn generated_termination_vertices_require_declared_feature_dependencies() {
         native_ref: None,
     });
     ir.model.features.push(Feature {
+        product_definition: Default::default(),
         id: FeatureId::mint("synthetic:test:feature#1-extrude").expect("identity grammar"),
         ordinal: 1,
         name: None,
@@ -741,6 +755,7 @@ fn pattern_feature_seeds_must_be_declared_dependencies() {
     let mut ir = unit_cube().expect("valid unit cube fixture");
     let seed = FeatureId::mint("synthetic:test:feature#pattern-seed").expect("identity grammar");
     ir.model.features.push(Feature {
+        product_definition: Default::default(),
         id: seed.clone(),
         ordinal: 0,
         name: None,
@@ -760,6 +775,7 @@ fn pattern_feature_seeds_must_be_declared_dependencies() {
         native_ref: None,
     });
     ir.model.features.push(Feature {
+        product_definition: Default::default(),
         id: FeatureId::mint("synthetic:test:feature#pattern").expect("identity grammar"),
         ordinal: 1,
         name: None,
@@ -828,6 +844,7 @@ fn definition_references_must_be_declared_dependencies_in_every_configuration() 
     let profile =
         FeatureId::mint("synthetic:test:feature#6-profile-consumer").expect("identity grammar");
     let feature = |id, ordinal, definition| Feature {
+        product_definition: Default::default(),
         id,
         ordinal,
         name: None,
@@ -1027,6 +1044,7 @@ fn generated_body_selection_must_name_a_declared_producer_result() {
     let mut ir = CadIr::empty();
     let producer = FeatureId::mint("synthetic:test:feature#0-producer").expect("identity grammar");
     ir.model.features.push(Feature {
+        product_definition: Default::default(),
         id: producer.clone(),
         ordinal: 0,
         name: None,
@@ -1064,6 +1082,7 @@ fn generated_body_selection_must_name_a_declared_producer_result() {
         .unwrap(),
     );
     ir.model.features.push(Feature {
+        product_definition: Default::default(),
         id: FeatureId::mint("synthetic:test:feature#1-consumer").expect("identity grammar"),
         ordinal: 1,
         name: None,
@@ -1134,6 +1153,7 @@ fn reference_images_require_valid_assets_and_plane_placements() {
         .expect("valid asset"),
     );
     ir.model.features.push(Feature {
+        product_definition: Default::default(),
         id: feature_id.clone(),
         ordinal: 0,
         name: None,
@@ -1207,6 +1227,7 @@ fn decals_require_valid_assets_faces_and_opacity() {
         .expect("valid asset"),
     );
     ir.model.features.push(Feature {
+        product_definition: Default::default(),
         id: feature_id.clone(),
         ordinal: 0,
         name: None,
@@ -1266,6 +1287,7 @@ fn input_edge_geometry_names_its_own_state_members_once() {
             native_ref: None,
         });
     ir.model.features.push(Feature {
+        product_definition: Default::default(),
         id: feature_id,
         ordinal: 0,
         name: None,

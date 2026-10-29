@@ -20,6 +20,7 @@ fn feature_operation_geometry_is_validated() {
     let mut ir = unit_cube().expect("valid unit cube fixture");
     for (ordinal, definition) in definitions.into_iter().enumerate() {
         ir.model.features.push(Feature {
+            product_definition: Default::default(),
             id: FeatureId::mint(format!("synthetic:test:feature#invalid-{ordinal}"))
                 .expect("identity grammar"),
             ordinal: cadmpeg_core::decode::u64_from_index(ordinal),
@@ -52,6 +53,7 @@ fn feature(
     definition: crate::features::FeatureDefinition,
 ) -> crate::features::Feature {
     crate::features::Feature {
+        product_definition: Default::default(),
         id: crate::features::FeatureId::mint(id).unwrap(),
         ordinal: cadmpeg_core::decode::u64_from_index(ordinal),
         name: None,

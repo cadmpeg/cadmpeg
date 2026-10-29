@@ -24,6 +24,7 @@ fn planar_fixture() -> (Sketch, Feature, FeatureInputLane) {
         native_ref: Some("lane".into()),
     };
     let feature = Feature {
+        product_definition: Default::default(),
         id: FeatureId::mint("synthetic:test:id#feature").unwrap(),
         ordinal: 0,
         name: None,
@@ -314,6 +315,7 @@ fn project_dimensional_with_policy(policy: &DecodePolicy) -> Result<(), CodecErr
     )
     .with_geometry_ref(Some("relation".into()));
     let parameter = DesignParameter {
+        product_definition: Default::default(),
         id: ParameterId::mint("synthetic:test:id#dimension").unwrap(),
         owner: None,
         ordinal: 0,
@@ -386,6 +388,7 @@ fn project_dimensional_points_with_policy(policy: &DecodePolicy) -> Result<(), C
         })
         .collect();
     let parameter = DesignParameter {
+        product_definition: Default::default(),
         id: ParameterId::mint("synthetic:test:id#point-dimension").unwrap(),
         owner: None,
         ordinal: 0,
@@ -460,6 +463,7 @@ fn project_dimensional_lines_with_policy(policy: &DecodePolicy) -> Result<(), Co
         })
         .collect();
     let parameter = DesignParameter {
+        product_definition: Default::default(),
         id: ParameterId::mint("synthetic:test:id#line-dimension").unwrap(),
         owner: None,
         ordinal: 0,
@@ -529,6 +533,7 @@ fn project_repeated_circles_with_policy(policy: &DecodePolicy) -> Result<(), Cod
         })
         .collect();
     let parameter = DesignParameter {
+        product_definition: Default::default(),
         id: ParameterId::mint("synthetic:test:id#dimension").unwrap(),
         owner: None,
         ordinal: 0,
@@ -604,6 +609,7 @@ fn project_dynamic_lines_with_policy(policy: &DecodePolicy) -> Result<(), CodecE
         })
         .collect();
     let parameter = DesignParameter {
+        product_definition: Default::default(),
         id: ParameterId::mint("synthetic:test:id#line-dimension").unwrap(),
         owner: None,
         ordinal: 0,
@@ -702,6 +708,7 @@ fn project_dynamic_marker_points_with_policy(policy: &DecodePolicy) -> Result<()
         entities.push(entity);
     }
     let parameter = DesignParameter {
+        product_definition: Default::default(),
         id: ParameterId::mint("synthetic:test:id#marker-dimension").unwrap(),
         owner: None,
         ordinal: 0,

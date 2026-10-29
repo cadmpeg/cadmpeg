@@ -211,6 +211,7 @@ mod tests {
             )]),
         };
         let mut feature = Feature {
+            product_definition: Default::default(),
             id: cadmpeg_ir::features::FeatureId::mint("f3d:model:feature#copy").unwrap(),
             ordinal: 0,
             name: None,

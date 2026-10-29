@@ -116,6 +116,7 @@ pub(super) fn project(
     }
     Some(Ok((
         Feature {
+            product_definition: Default::default(),
             id,
             ordinal: u64::from(label.index),
             name: label.name().map(str::to_owned),

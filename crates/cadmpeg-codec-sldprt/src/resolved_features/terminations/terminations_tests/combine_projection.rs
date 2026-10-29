@@ -72,6 +72,7 @@ fn combine_projection_binds_generated_target_and_tool_bodies() {
         sketch_entities: Vec::new(),
     };
     let model = |native: &str, ordinal, definition| cadmpeg_ir::features::Feature {
+        product_definition: Default::default(),
         id: FeatureId::mint(format!("test:model:feature#{native}")).unwrap(),
         ordinal,
         name: None,

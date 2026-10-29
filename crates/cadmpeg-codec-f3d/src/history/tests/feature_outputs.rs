@@ -16,6 +16,7 @@ fn base_feature() -> cadmpeg_ir::features::Feature {
     };
     use cadmpeg_ir::ids::BodyId;
     Feature {
+        product_definition: Default::default(),
         id: FeatureId::mint("test:model:feature#feature").unwrap(),
         ordinal: 0,
         name: None,

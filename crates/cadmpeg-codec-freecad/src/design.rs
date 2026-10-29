@@ -458,6 +458,7 @@ pub(crate) fn transfer(
         let mut dependency_members = DistinctMembers::default();
         dependency_members.extend(dependencies);
         ir.model.features.push(Feature {
+            product_definition: Default::default(),
             id,
             ordinal: feature_ordinals[object.id().as_str()],
             name: Some(object.name().to_owned()),
@@ -1149,6 +1150,7 @@ fn append_spreadsheet(
             }
         }
         parameters.push(DesignParameter {
+            product_definition: Default::default(),
             id,
             owner: Some(feature_id(object)?),
             ordinal: u32::try_from(index).map_err(|_| {
@@ -1420,6 +1422,7 @@ fn append_operation_parameters(
             },
         };
         parameters.push(DesignParameter {
+            product_definition: Default::default(),
             id: ParameterId::mint(design_identity_text(
                 "parameter",
                 object,
@@ -2615,6 +2618,7 @@ fn parse_constraints(
                         properties: parameter_properties,
                         pmi: None,
                         native_ref: Some(property.id.clone()),
+                        product_definition: None,
                     });
                     Ok::<_, CodecError>(id)
                 })

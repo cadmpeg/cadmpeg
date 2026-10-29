@@ -7,6 +7,7 @@ use std::collections::BTreeMap;
 
 fn parameter(id: &str, native_ref: &str) -> cadmpeg_ir::features::DesignParameter {
     cadmpeg_ir::features::DesignParameter {
+        product_definition: Default::default(),
         id: ParameterId::mint(format!("synthetic:test:id#{id}")).expect("identity grammar"),
         owner: None,
         ordinal: 99,

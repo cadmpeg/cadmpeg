@@ -329,6 +329,7 @@ pub(crate) fn transfer_parameters(
                             let output_native_ref = output.id.clone();
                             transferred.push(FormulaParameterCandidate {
                                 parameter: DesignParameter {
+                                    product_definition: Default::default(),
                                     id: output_id,
                                     owner: None,
                                     ordinal: 0,
@@ -720,6 +721,7 @@ fn definition_chain_parameter_candidate(
     }
     Ok(Some(FormulaParameterCandidate {
         parameter: DesignParameter {
+            product_definition: Default::default(),
             id,
             owner: None,
             ordinal: 0,
@@ -850,6 +852,7 @@ fn collect_legacy_parameters(
             let native_ref = run.id.clone();
             let candidate = FormulaParameterCandidate {
                 parameter: DesignParameter {
+                    product_definition: Default::default(),
                     id: parameter_id,
                     owner: None,
                     ordinal: 0,
@@ -909,6 +912,7 @@ fn collect_legacy_parameters(
             let native_ref = run.id.clone();
             let candidate = FormulaParameterCandidate {
                 parameter: DesignParameter {
+                    product_definition: Default::default(),
                     id: parameter_id,
                     owner: None,
                     ordinal: 0,
@@ -968,6 +972,7 @@ fn collect_legacy_parameters(
             let native_ref = run.id.clone();
             let candidate = FormulaParameterCandidate {
                 parameter: DesignParameter {
+                    product_definition: Default::default(),
                     id: parameter_id,
                     owner: None,
                     ordinal: 0,
@@ -1366,6 +1371,7 @@ fn typed_entity_parameter_candidate(
     };
     Ok(Some(FormulaParameterCandidate {
         parameter: DesignParameter {
+            product_definition: Default::default(),
             id,
             owner: None,
             ordinal: 0,
@@ -1611,6 +1617,7 @@ fn relation_program_output_candidate<'a>(
     output_dependencies.extend(dependencies.iter().cloned());
     let candidate = FormulaParameterCandidate {
         parameter: DesignParameter {
+            product_definition: Default::default(),
             id: candidate_id,
             owner: None,
             ordinal: 0,
@@ -1765,6 +1772,7 @@ fn copy_design_parameter(
         .as_ref()
         .map(std::borrow::ToOwned::to_owned);
     Ok(DesignParameter {
+        product_definition: Default::default(),
         id,
         owner,
         ordinal: source.ordinal,
@@ -3888,6 +3896,7 @@ mod parser_tests {
                 properties: BTreeMap::new(),
                 pmi: None,
                 native_ref: Some("native-parameter".to_string()),
+                product_definition: None,
             },
             parameter_type,
             role: FormulaParameterRole::Input,

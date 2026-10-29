@@ -158,6 +158,7 @@ fn split_face_case() -> (
         vec![state(2, Some(1)), state(1, None)],
     );
     let mut features = vec![Feature {
+        product_definition: Default::default(),
         id: FeatureId::mint("f3d:test:feature#42").expect("identity grammar"),
         ordinal: 0,
         name: None,
@@ -600,6 +601,7 @@ fn unresolved_new_body_sweep_mode_follows_output_body_kind() {
         visible: None,
     };
     let sweep = |id: &str, outputs: Vec<BodyId>| Feature {
+        product_definition: Default::default(),
         id: FeatureId::mint(id).expect("identity grammar"),
         ordinal: 0,
         name: None,
@@ -833,6 +835,7 @@ fn hole_face_case() -> (
         });
     }
     let mut feature = Feature {
+        product_definition: Default::default(),
         id: feature_id.clone(),
         ordinal: 0,
         name: None,

@@ -90,6 +90,7 @@ fn native_spatial_sketch_constraints_are_reported_as_design_losses() {
 fn typed_native_operands_are_reported_as_design_losses() {
     let mut ir = CadIr::empty();
     ir.model.features.push(Feature {
+        product_definition: Default::default(),
         id: FeatureId::mint("synthetic:test:id#combine").expect("identity grammar"),
         ordinal: 0,
         name: None,

@@ -556,6 +556,7 @@ pub(crate) fn synthesize_display_relation_parameters<'a>(
                 source_name.to_string(),
             );
             parameters.push(DesignParameter {
+                product_definition: Default::default(),
                 id,
                 owner: Some(owner.clone()),
                 ordinal: current_ordinal,

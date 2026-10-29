@@ -185,6 +185,7 @@ fn encoder_rejects_source_less_unresolved_extrusion_profile() {
 
     let mut ir = cadmpeg_ir::examples::unit_cube().expect("unit cube fixture is admitted");
     ir.model.features.push(Feature {
+        product_definition: Default::default(),
         id: FeatureId::mint("synthetic:test:feature#extrude").expect("identity grammar"),
         ordinal: 0,
         name: Some("Extrude".into()),
@@ -371,6 +372,7 @@ fn encoder_writes_authored_with_retained_native_envelope_line_sketches() {
     let sketch_feature_id =
         FeatureId::mint("synthetic:test:feature#profile").expect("identity grammar");
     ir.model.features.push(Feature {
+        product_definition: Default::default(),
         id: sketch_feature_id.clone(),
         ordinal: 0,
         name: Some("Profile".into()),
@@ -467,6 +469,7 @@ fn encoder_writes_authored_with_retained_native_envelope_line_sketches() {
     ];
     for (index, definition) in generated.into_iter().enumerate() {
         ir.model.features.push(Feature {
+            product_definition: Default::default(),
             id: FeatureId::mint(format!("synthetic:test:feature#profile-op-{index}"))
                 .expect("identity grammar"),
             ordinal: cadmpeg_core::decode::u64_from_index(index) + 2,
@@ -484,6 +487,7 @@ fn encoder_writes_authored_with_retained_native_envelope_line_sketches() {
     let extrude_feature_id =
         FeatureId::mint("synthetic:test:feature#extrude").expect("identity grammar");
     ir.model.features.push(Feature {
+        product_definition: Default::default(),
         id: extrude_feature_id.clone(),
         ordinal: 1,
         name: Some("Boss".into()),
@@ -786,6 +790,7 @@ fn encoder_writes_authored_with_retained_native_envelope_spatial_point_and_line_
             .unwrap(),
         ));
     ir.model.features.push(Feature {
+        product_definition: Default::default(),
         id: FeatureId::mint("synthetic:test:feature#spatial-path").expect("identity grammar"),
         ordinal: 0,
         name: Some("Spatial path".into()),

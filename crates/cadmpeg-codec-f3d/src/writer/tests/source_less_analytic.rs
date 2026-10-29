@@ -886,6 +886,7 @@ fn generated_source_less_f3d_rejects_unbacked_design_parameters() {
         .model
         .parameters
         .push(cadmpeg_ir::features::DesignParameter {
+            product_definition: Default::default(),
             id: cadmpeg_ir::features::ParameterId::mint("test:f3d:parameter#0")
                 .expect("identity grammar"),
             owner: None,

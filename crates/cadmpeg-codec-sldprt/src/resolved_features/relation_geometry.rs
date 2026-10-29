@@ -3237,6 +3237,7 @@ mod relation_geometry_tests {
 
         let sketch = cadmpeg_ir::sketches::SketchId::mint("synthetic:test:id#sketch").unwrap();
         let feature = Feature {
+            product_definition: Default::default(),
             id: FeatureId::mint("synthetic:test:id#feature").expect("identity grammar"),
             ordinal: 0,
             name: None,
@@ -3335,6 +3336,7 @@ mod relation_geometry_tests {
             ],
         };
         let parameter = cadmpeg_ir::features::DesignParameter {
+            product_definition: Default::default(),
             id: ParameterId::mint("synthetic:test:id#distance").expect("identity grammar"),
             owner: Some(feature.id.clone()),
             ordinal: 0,
@@ -3431,6 +3433,7 @@ mod relation_geometry_tests {
 
         let sketch_id = SketchId::mint("synthetic:test:id#sketch").unwrap();
         let feature = Feature {
+            product_definition: Default::default(),
             id: FeatureId::mint("synthetic:test:id#feature").expect("identity grammar"),
             ordinal: 0,
             name: None,
@@ -3564,6 +3567,7 @@ mod relation_geometry_tests {
             ],
         };
         let parameter = cadmpeg_ir::features::DesignParameter {
+            product_definition: Default::default(),
             id: ParameterId::mint("synthetic:test:id#distance").expect("identity grammar"),
             owner: Some(feature.id.clone()),
             ordinal: 0,
@@ -3893,6 +3897,7 @@ mod relation_geometry_tests {
             native_ref: Some(LANE.into()),
         };
         let feature = Feature {
+            product_definition: Default::default(),
             id: FeatureId::mint(FEATURE).expect("identity grammar"),
             ordinal: 0,
             name: None,
@@ -3910,6 +3915,7 @@ mod relation_geometry_tests {
             native_ref: Some(FEATURE.into()),
         };
         let parameter = cadmpeg_ir::features::DesignParameter {
+            product_definition: Default::default(),
             id: ParameterId::mint("synthetic:test:id#parameter").expect("identity grammar"),
             owner: Some(feature.id.clone()),
             ordinal: 0,

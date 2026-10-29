@@ -1002,6 +1002,7 @@ fn mixed_current_and_generated_edges_remain_native() {
     ]);
     let mut ir = CadIr::empty();
     ir.model.features.push(Feature {
+        product_definition: Default::default(),
         id: IrFeatureId::mint("creo:model:feature#97".to_string()).expect("identity grammar"),
         ordinal: 0,
         name: None,

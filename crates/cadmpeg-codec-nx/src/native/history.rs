@@ -308,6 +308,7 @@ mod tests {
         native: bool,
     ) -> Feature {
         Feature {
+            product_definition: Default::default(),
             id: FeatureId::mint(id).expect("identity grammar"),
             ordinal,
             name: Some(id.into()),
@@ -586,6 +587,7 @@ mod tests {
         let mut ir = CadIr::empty();
         ir.model.features = vec![
             Feature {
+                product_definition: Default::default(),
                 id: FeatureId::mint("synthetic:test:id#base").expect("identity grammar"),
                 ordinal: 0,
                 name: Some("base".into()),
@@ -673,6 +675,7 @@ mod tests {
     fn retained_history_input_alone_is_not_an_active_feature_closure() {
         let body = BodyId::mint("test:model:entity#body").expect("identity grammar");
         let (ir, _) = closure_ir(vec![Feature {
+            product_definition: Default::default(),
             id: FeatureId::mint("synthetic:test:id#initial").expect("identity grammar"),
             ordinal: 0,
             name: None,

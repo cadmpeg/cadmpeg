@@ -72,6 +72,7 @@ fn one_dimension_transfer() -> (crate::container::ContainerScan<'static>, CadIr)
         });
     let mut ir = CadIr::empty();
     ir.model.features.push(Feature {
+        product_definition: Default::default(),
         id: cadmpeg_ir::features::FeatureId::mint("creo:model:sketch_feature#917")
             .expect("feature ID"),
         ordinal: 0,
@@ -247,6 +248,7 @@ fn dimension_transfer_rejects_duplicate_owner_feature_ids() {
     let mut ir = CadIr::empty();
     for ordinal in 0..2 {
         ir.model.features.push(Feature {
+            product_definition: Default::default(),
             id: cadmpeg_ir::features::FeatureId::mint("creo:model:feature#40")
                 .expect("identity grammar"),
             ordinal,

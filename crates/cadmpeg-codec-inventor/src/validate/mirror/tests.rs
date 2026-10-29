@@ -15,6 +15,7 @@ use cadmpeg_ir::scalar::PositiveLength;
 
 fn feature() -> Feature {
     Feature {
+        product_definition: Default::default(),
         id: FeatureId::compose(
             &cadmpeg_ir::identity_namespace!("inventor", "design", "feature"),
             cadmpeg_ir::ids::IdentityKey::try_new("test-1").expect("feature key"),

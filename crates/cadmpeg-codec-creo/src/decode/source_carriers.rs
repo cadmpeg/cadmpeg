@@ -821,6 +821,7 @@ mod tests {
 
     fn source_feature(definition: FeatureDefinition) -> Feature {
         Feature {
+            product_definition: Default::default(),
             id: cadmpeg_ir::features::FeatureId::mint("creo:test:feature#1")
                 .expect("identity grammar"),
             ordinal: 0,
@@ -838,6 +839,7 @@ mod tests {
 
     fn source_length_parameter(value: f64) -> DesignParameter {
         DesignParameter {
+            product_definition: Default::default(),
             id: cadmpeg_ir::features::ParameterId::mint("creo:test:parameter#1")
                 .expect("identity grammar"),
             owner: None,

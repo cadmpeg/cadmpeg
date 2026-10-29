@@ -84,6 +84,7 @@ fn fixture() -> (
         });
     }
     let feature = Feature {
+        product_definition: Default::default(),
         id: FeatureId::mint("synthetic:test:id#f3d:feature:work-point").unwrap(),
         ordinal: 0,
         name: None,

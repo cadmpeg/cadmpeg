@@ -402,6 +402,7 @@ fn compact_spatial_profile_points_project_and_ignore_unindexed_anchors() {
         }],
     };
     let mut features = vec![cadmpeg_ir::features::Feature {
+        product_definition: Default::default(),
         id: FeatureId::mint("sldprt:model:feature#spatial").expect("identity grammar"),
         ordinal: 0,
         name: Some("3D Sketch".into()),
@@ -506,6 +507,7 @@ fn current_indexed_profile_spatial_points_project_from_indexed_markers() {
         }],
     };
     let mut features = vec![cadmpeg_ir::features::Feature {
+        product_definition: Default::default(),
         id: FeatureId::mint("sldprt:model:feature#spatial-indexed-profile")
             .expect("identity grammar"),
         ordinal: 0,

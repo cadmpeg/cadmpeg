@@ -93,6 +93,7 @@ fn start_binder_fixture(
         native_ref: None,
     };
     let feature = Feature {
+        product_definition: Default::default(),
         id: cadmpeg_ir::features::FeatureId::mint("test:model:feature#start").unwrap(),
         ordinal: 0,
         name: None,

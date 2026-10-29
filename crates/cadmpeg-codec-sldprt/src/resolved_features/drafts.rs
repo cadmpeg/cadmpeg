@@ -729,6 +729,7 @@ mod tests {
             features: vec![feature],
         };
         let mut projected = vec![cadmpeg_ir::features::Feature {
+            product_definition: Default::default(),
             id: FeatureId::mint("synthetic:test:id#draft").expect("identity grammar"),
             ordinal: 0,
             name: Some("Draft1".into()),

@@ -326,6 +326,7 @@ mod tests {
         let feature_id = FeatureId::mint("test:model:feature#sketch").expect("identity grammar");
         let sketch_id = SketchId::mint("test:model:sketch#sketch").unwrap();
         ir.model.features.push(Feature {
+            product_definition: Default::default(),
             id: feature_id.clone(),
             ordinal: 0,
             name: None,
@@ -395,6 +396,7 @@ mod tests {
                        ordinal,
                        dependencies: Vec<FeatureId>,
                        definition: FeatureDefinition| Feature {
+            product_definition: Default::default(),
             id,
             ordinal,
             name: None,
@@ -452,6 +454,7 @@ mod tests {
                        ordinal,
                        dependencies: Vec<FeatureId>,
                        definition: FeatureDefinition| Feature {
+            product_definition: Default::default(),
             id,
             ordinal,
             name: None,

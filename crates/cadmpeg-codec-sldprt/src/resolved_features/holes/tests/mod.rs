@@ -51,6 +51,7 @@ fn profile_reference_plane_payload(with_component_frame: bool) -> Vec<u8> {
 
 fn model_hole() -> cadmpeg_ir::features::Feature {
     cadmpeg_ir::features::Feature {
+        product_definition: Default::default(),
         id: FeatureId::mint("synthetic:test:id#hole").expect("identity grammar"),
         ordinal: 0,
         name: Some("Hole".into()),

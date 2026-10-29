@@ -30,6 +30,7 @@ mod reference_planes;
 
 fn feature(id: &str, native_ref: &str) -> Feature {
     Feature {
+        product_definition: Default::default(),
         id: FeatureId::mint(format!("synthetic:test:id#{id}")).expect("identity grammar"),
         ordinal: 0,
         name: None,

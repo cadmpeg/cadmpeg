@@ -39,6 +39,7 @@ mod tests {
 
         let mut changed = cadmpeg_ir::CadIr::empty();
         changed.model.features.push(Feature {
+            product_definition: Default::default(),
             id: FeatureId::mint("test:model:feature#changed").unwrap(),
             ordinal: 0,
             name: None,

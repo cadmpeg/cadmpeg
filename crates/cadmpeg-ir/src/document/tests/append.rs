@@ -26,6 +26,7 @@ fn staged_document() -> CadIr {
     });
     for (ordinal, key) in ["parent", "child"].into_iter().enumerate() {
         ir.model.features.push(Feature {
+            product_definition: Default::default(),
             id: format!("test:append:feature#{key}").try_into().unwrap(),
             ordinal: cadmpeg_core::decode::u64_from_index(ordinal),
             name: None,
