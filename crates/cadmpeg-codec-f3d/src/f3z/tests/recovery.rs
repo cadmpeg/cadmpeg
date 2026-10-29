@@ -1,7 +1,9 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Optional archive recovery and required-member admission boundaries.
 
-use crate::test_support::assembly_test::{f3d_without_brep, f3z_archive, XREF_ROLE};
+use crate::test_support::assembly_test::{
+    f3d_without_brep, f3z_archive, redirections_json, XREF_ROLE,
+};
 use crate::test_support::smbh_geometry_test::synthetic_geometry_smbh;
 use crate::test_support::zip_test::f3d_with_smbh;
 use crate::{F3dCodec, F3dLossCode};
@@ -171,4 +173,79 @@ fn unreadable_referenced_document_withholds_the_occurrence_with_named_losses() {
         .losses
         .iter()
         .any(|loss| loss.code == F3dLossCode::ArchiveEntryUnreadable.note("").code));
+}
+
+/// Smallest cumulative decompression ceiling at which `archive` decodes.
+fn smallest_decompression_ceiling(archive: &[u8]) -> u64 {
+    let decodes = |ceiling: u64| {
+        let mut policy = DecodePolicy::desktop();
+        policy.limits.max_decompressed_bytes_total = ceiling;
+        F3dCodec
+            .decode(
+                &mut Cursor::new(archive),
+                &DecodeOptions {
+                    policy,
+                    ..DecodeOptions::default()
+                },
+            )
+            .is_ok()
+    };
+    let (mut low, mut high) = (
+        0_u64,
+        DecodePolicy::desktop().limits.max_decompressed_bytes_total,
+    );
+    assert!(decodes(high));
+    while low + 1 < high {
+        let middle = low + (high - low) / 2;
+        if decodes(middle) {
+            high = middle;
+        } else {
+            low = middle;
+        }
+    }
+    high
+}
+
+#[test]
+fn failed_referenced_document_decodes_once_for_every_reference() {
+    let mut component = f3d_with_smbh(&synthetic_geometry_smbh());
+    damage_local_frame(
+        &mut component,
+        "FusionAssetName[Active]/Breps.BlobParts/Body1.smbh",
+    );
+    let archive = |references: usize| {
+        let targets = vec![("component.f3d", XREF_ROLE); references];
+        let root = f3d_without_brep("assembly-design", "root.f3d", &targets);
+        f3z_archive(
+            "root.f3d",
+            &[("root.f3d", &root), ("component.f3d", &component)],
+        )
+    };
+    let once = archive(1);
+    // The root's redirections table grows with each reference.
+    let table_growth = u64::try_from(
+        redirections_json("root.f3d", &[("component.f3d", XREF_ROLE); 3]).len()
+            - redirections_json("root.f3d", &[("component.f3d", XREF_ROLE)]).len(),
+    )
+    .unwrap();
+    let ceiling = smallest_decompression_ceiling(&once) + table_growth;
+    let repeated = archive(3);
+    let mut policy = DecodePolicy::desktop();
+    policy.limits.max_decompressed_bytes_total = ceiling;
+    let decoded = F3dCodec
+        .decode(
+            &mut Cursor::new(&repeated),
+            &DecodeOptions {
+                policy,
+                ..DecodeOptions::default()
+            },
+        )
+        .unwrap();
+    let undecoded = decoded
+        .report()
+        .losses
+        .iter()
+        .filter(|loss| loss.code == F3dLossCode::XrefMemberUndecoded.note("").code)
+        .count();
+    assert_eq!(undecoded, 3);
 }
