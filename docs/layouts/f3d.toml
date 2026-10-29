@@ -23934,3 +23934,33 @@ endianness = "little"
 section = "3.1"
 anchor = "The single untyped Body-container membership"
 note = "A u32 body count and an eleven-byte untyped owner reference enclose the single body list."
+
+[[record]]
+name = "operation_table_header"
+kind = "byte"
+section = "1.4"
+anchor = "a three-digit LP-ASCII class tag, a u64 indexed record identity"
+size = 15
+parsed_by = "crates/cadmpeg-codec-f3d/src/xref/operation_pose.rs"
+
+[[record.field]]
+name = "class_tag_length"
+offset = 0
+type = "u32"
+value = 3
+source = "spec"
+anchor = "a three-digit LP-ASCII class tag"
+
+[[record.field]]
+name = "class_tag"
+offset = 4
+type = "bytes[3]"
+source = "spec"
+anchor = "a three-digit LP-ASCII class tag"
+
+[[record.field]]
+name = "record_index"
+offset = 7
+type = "u64"
+source = "spec"
+anchor = "a u64 indexed record identity"

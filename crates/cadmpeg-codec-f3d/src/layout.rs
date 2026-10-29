@@ -6878,3 +6878,19 @@ pub(crate) mod edge_flange_corner_operation {
     /// Offset of `edge_group_two_reference` (`bytes[11]`). Spec §3.1.
     pub(crate) const EDGE_GROUP_TWO_REFERENCE: usize = 288;
 }
+
+/// Byte offsets for the `operation_table_header` record.
+///
+/// Spec §1.4. Record length 15 B.
+pub(crate) mod operation_table_header {
+    /// Record length in bytes. Spec §1.4.
+    pub(crate) const LEN: usize = 15;
+    /// Offset of `class_tag_length` (`u32`, little-endian). Spec §1.4.
+    pub(crate) const CLASS_TAG_LENGTH: usize = 0;
+    /// Stated value of `class_tag_length` (`u32`). Spec §1.4.
+    pub(crate) const CLASS_TAG_LENGTH_VALUE: u32 = 0x0000_0003;
+    /// Offset of `class_tag` (`bytes[3]`). Spec §1.4.
+    pub(crate) const CLASS_TAG: usize = 4;
+    /// Offset of `record_index` (`u64`, little-endian). Spec §1.4.
+    pub(crate) const RECORD_INDEX: usize = 7;
+}

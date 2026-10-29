@@ -3149,8 +3149,34 @@ pub(crate) fn decode<'a>(ctx: &DecodeContext<'a>, root: View<'a>) -> Result<Deco
     match &scan.kind {
         container::F3dContainerKind::MultiDocument { .. } => crate::f3z::decode(ctx, &scan),
         container::F3dContainerKind::Document { .. } => {
-            decode_scanned_document(ctx, &scan, crate::report::ReportScope::Standalone)
-                .map(AuthoredDecoded::into_decoded)
+            let mut decoded =
+                decode_scanned_document(ctx, &scan, crate::report::ReportScope::Standalone)?;
+            let poses = crate::xref::operation_pose::collect(
+                ctx,
+                &scan,
+                &decoded.ir,
+                &mut decoded.body.losses,
+            )?;
+            crate::xref::operation_pose::project(
+                ctx,
+                &mut decoded.ir,
+                &poses,
+                &std::collections::BTreeSet::new(),
+                &mut decoded.body.losses,
+            )?;
+            decoded.ir.finalize();
+            let hash = cadmpeg_ir::hash::document_local_sha256(
+                ctx,
+                &decoded.ir,
+                Some(&decoded.source),
+                "f3d",
+                crate::ids::FILE_SOURCE_IMAGE_ID,
+            )?;
+            decoded.source.attributes.insert(
+                cadmpeg_core::nonblank_const!(cadmpeg_ir::hash::DOCUMENT_LOCAL_DIGEST_ATTRIBUTE),
+                hash,
+            );
+            Ok(decoded.into_decoded())
         }
     }
 }
@@ -3161,11 +3187,14 @@ pub(crate) fn decode_archive_member<'a>(
     scan: &'a ContainerScan<'a>,
     dialects: &cadmpeg_core::dialect::DialectLayers,
 ) -> Result<AuthoredDecoded, CodecError> {
-    decode_scanned_document(
+    let mut decoded = decode_scanned_document(
         ctx,
         scan,
         crate::report::ReportScope::ArchiveMember(dialects.clone()),
-    )
+    )?;
+    decoded.operation_poses =
+        crate::xref::operation_pose::collect(ctx, scan, &decoded.ir, &mut decoded.body.losses)?;
+    Ok(decoded)
 }
 
 fn decode_scanned_document<'a>(
@@ -4123,6 +4152,8 @@ impl std::fmt::Display for XrefPropertyNote<'_> {
 
 /// A decoded member whose authored source remains available to archive composition.
 pub(crate) struct AuthoredDecoded {
+    pub(crate) operation_poses:
+        std::collections::BTreeMap<String, crate::xref::operation_pose::OperationPose>,
     pub(crate) ir: CadIr,
     pub(crate) source: cadmpeg_ir::SourceMeta,
     pub(crate) body: DecodeBody,
@@ -4188,6 +4219,7 @@ fn decode_result(
         hash,
     );
     Ok(AuthoredDecoded {
+        operation_poses: std::collections::BTreeMap::new(),
         ir,
         source,
         body: report,

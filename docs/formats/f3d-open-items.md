@@ -402,13 +402,13 @@ the native feature when a fixed lane carries a symmetric distance.
 
 **Question.** Which native relation, if any, selects the current solved pose of an inserted occurrence when no assembly operand path binds to it?
 
-**Known.** `f3d.md` §1.4 defines the occurrence-placement carrier's stored transform. Assembly operand paths can select occurrences whose solved poses differ from their stored transforms.
+**Known.** `f3d.md` §1.4 defines stored occurrence placement and component-path pose precedence. Assembly operand paths can select occurrences whose solved poses differ from their stored transforms. Operation-table type `549FBB80-B890-473E-A5C0-415D3D9BF4E6` has version-0 and version-1 forms. A typed one-element path identifies the affected occurrence. A parent descendant-path table can equal a child table's final Position matrix while the child's stored matrix equals its insertion entry. The direct table's final entry is a property of the occurrence inside its component definition, common to every instance. Component-path world poses constrain the containing instance. An instance-specific edit of the shared child violates this relation. The direct version-0 and version-1 grammar and precedence are in `f3d.md` §1.4.
 
-**Need.** Independently authored saves that change only an inserted occurrence's pose and retain the complete occurrence and constraint carriers must identify the relation that supplies its solved placement.
+**Need.** Bind each operation-associated transform to its typed occurrence path, coordinate frame, and saved state. Establish its precedence relative to occurrence-placement and component-path transforms. Distinguish a contained placement change from a containing placement change. Identify the operation suppression state and saved timeline marker before selecting an entry. Independently authored saves must change one placement or one suppression or timeline state and retain the complete occurrence, operation, and constraint carriers.
 
 **Conflict.** A stored placement can disagree with the checked assembly while no projected joint selects the occurrence. This does not distinguish an unbound constraint, an unread placement carrier, and a different saved assembly state.
 
-**Note.** For an external occurrence at the document root, a two-element component-path record supplies the current pose (`f3d.md` §1.4). This item remains open for occurrences without such a record and for nested occurrences (DR-111). Retain the stored transform and native records.
+**Note.** The root, local, contained, and owned component-path forms in `f3d.md` §1.4 keep their precedence. The remaining Need applies to other path forms, incompatible constraints, and saved-state selectors (DR-111). Direct one-element tables do not select suppression or an active timeline marker. A definition with incompatible component-path and table constraints keeps its stored pose for every instance; the operation table stays native. Other path forms and saved-state selectors remain unresolved.
 
 ### DR-109. Legacy external placement control and extended envelopes
 

@@ -23,11 +23,9 @@ pub(super) fn merge_archive(
     scan: &ContainerScan<'_>,
     archive: &ArchiveSession<'_>,
     model_root: String,
-    ir: &mut cadmpeg_ir::CadIr,
-    report: &mut cadmpeg_ir::codec::DecodeBody,
-    fidelity: &mut cadmpeg_ir::SourceFidelity,
+    root: &mut crate::decode::AuthoredDecoded,
 ) -> Result<usize, CodecError> {
-    let table = xref_table_from_ir(ctx, ir)?;
+    let table = xref_table_from_ir(ctx, &root.ir)?;
 
     let stack = vec![model_root];
     MergeSession {
@@ -36,8 +34,15 @@ pub(super) fn merge_archive(
         archive,
         stack,
         members: std::collections::BTreeMap::new(),
+        operation_poses: std::mem::take(&mut root.operation_poses),
+        operation_protected: std::collections::BTreeSet::new(),
     }
-    .merge(ir, report, fidelity, &table)
+    .merge(
+        &mut root.ir,
+        &mut root.body,
+        &mut root.source_fidelity,
+        &table,
+    )
 }
 
 /// Reassigns only repeated sibling ordinals after independent document graphs
@@ -168,6 +173,8 @@ struct MergeSession<'r, 'a> {
     archive: &'r ArchiveSession<'a>,
     stack: Vec<String>,
     members: std::collections::BTreeMap<String, MemberDefinition>,
+    operation_poses: std::collections::BTreeMap<String, crate::xref::operation_pose::OperationPose>,
+    operation_protected: std::collections::BTreeSet<cadmpeg_ir::ids::OccurrenceId>,
 }
 
 impl MergeSession<'_, '_> {
@@ -194,7 +201,20 @@ impl MergeSession<'_, '_> {
             &member_roots,
             &mut parent_report.losses,
         )?;
-        place_contained_poses(self.ctx, parent_ir, table, &mut parent_report.losses)?;
+        place_contained_poses_with_protected(
+            self.ctx,
+            parent_ir,
+            table,
+            &mut parent_report.losses,
+            &mut self.operation_protected,
+        )?;
+        crate::xref::operation_pose::project(
+            self.ctx,
+            parent_ir,
+            &self.operation_poses,
+            &self.operation_protected,
+            &mut parent_report.losses,
+        )?;
         parent_report
             .losses
             .retain(|loss| loss.code != F3dLossCode::SavedFreeEdgeBodyUnowned.kind());
@@ -282,7 +302,15 @@ impl MergeSession<'_, '_> {
                     member_scan,
                     &self.archive.layers,
                 ) {
-                    Ok(component) => component.into_decoded(),
+                    Ok(component) => {
+                        for (key, pose) in &component.operation_poses {
+                            let key = rescope(key, &occurrence).ok_or_else(|| {
+                                CodecError::malformed("invalid F3Z operation-pose identity")
+                            })?;
+                            self.operation_poses.insert(key, pose.clone());
+                        }
+                        component.into_decoded()
+                    }
                     Err(error @ CodecError::ResourceLimit(_)) => return Err(error),
                     Err(error) => {
                         super::push_loss(&mut parent_report.losses, F3dLossCode::XrefMemberUndecoded, format_args!(
@@ -516,11 +544,28 @@ const CONTAINED_POSE_ROTATION: f64 = 1.0e-9;
 /// occurrence's world pose. An instance takes it only when its owners begin with the
 /// carrier's and every carrier that reaches it through the most owners gives the
 /// same pose.
+#[cfg(test)]
 fn place_contained_poses(
     ctx: &DecodeContext<'_>,
     ir: &mut cadmpeg_ir::CadIr,
     table: &XrefTable,
     losses: &mut Vec<cadmpeg_ir::report::loss::LossNote>,
+) -> Result<(), CodecError> {
+    place_contained_poses_with_protected(
+        ctx,
+        ir,
+        table,
+        losses,
+        &mut std::collections::BTreeSet::new(),
+    )
+}
+
+fn place_contained_poses_with_protected(
+    ctx: &DecodeContext<'_>,
+    ir: &mut cadmpeg_ir::CadIr,
+    table: &XrefTable,
+    losses: &mut Vec<cadmpeg_ir::report::loss::LossNote>,
+    protected: &mut std::collections::BTreeSet<cadmpeg_ir::ids::OccurrenceId>,
 ) -> Result<(), CodecError> {
     use crate::records::feature::assembly_features::DesignComponentOccurrence;
     use cadmpeg_ir::products::OccurrenceParent;
@@ -613,6 +658,9 @@ fn place_contained_poses(
             .map(|(position, _)| position)
             .collect::<Vec<_>>();
         for instance in instances {
+            if let Some(occurrence) = ir.model.occurrences.get(instance) {
+                protected.insert(occurrence.id.clone());
+            }
             // The local carriers that hold the instance, innermost first.
             let mut owners = Vec::new();
             let mut at = parent_of(instance);
@@ -662,7 +710,7 @@ fn place_contained_poses(
                 if !owners.starts_with(&pose.owner_record_indices) {
                     continue;
                 }
-                let Some([(_, below)]) =
+                let Some([(target, below)]) =
                     inside.get(&pose.contained_record_index).map(Vec::as_slice)
                 else {
                     continue;
@@ -675,6 +723,9 @@ fn place_contained_poses(
                 else {
                     continue;
                 };
+                if let Some(occurrence) = ir.model.occurrences.get(*target) {
+                    protected.insert(occurrence.id.clone());
+                }
                 let implied = below
                     .try_inverse_affine()
                     .and_then(|inverse| stored.compose(inverse))

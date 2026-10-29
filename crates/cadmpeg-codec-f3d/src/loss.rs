@@ -24,6 +24,12 @@ use cadmpeg_ir::report::{
 /// string form (via [`F3dLossCode::code`]) is the stable contract.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub(crate) enum F3dLossCode {
+    /// A direct operation-table pose is applied uniformly to its definition.
+    OperationPoseApplied,
+    /// Component-path constraints prevent a uniform operation-table pose.
+    OperationPoseDisagrees,
+    /// An operation table has no unique admitted neutral placement.
+    OperationPoseNative,
     /// Payload-bearing Design dimension companions have no typed locus frame.
     DimensionCompanionUntyped,
     /// A whole-body reference tail has no admitted standard reference-run frame.
@@ -350,6 +356,9 @@ impl F3dLossCode {
     /// Every code, in declaration order.
     #[cfg(test)]
     const ALL: &'static [F3dLossCode] = &[
+        Self::OperationPoseApplied,
+        Self::OperationPoseDisagrees,
+        Self::OperationPoseNative,
         Self::DimensionCompanionUntyped,
         Self::BodyReferenceTailUntyped,
         Self::PlacementConstructionUntyped,
@@ -504,6 +513,9 @@ impl F3dLossCode {
     #[must_use]
     const fn code(self) -> &'static str {
         match self {
+            Self::OperationPoseApplied => "assembly.operation-table-pose",
+            Self::OperationPoseDisagrees => "assembly.operation-table-pose-disagrees",
+            Self::OperationPoseNative => "assembly.operation-table-pose-native",
             Self::DimensionCompanionUntyped => "dimension.companion-untyped",
             Self::BodyReferenceTailUntyped => "body-reference.tail-untyped",
             Self::PlacementConstructionUntyped => "placement.construction-untyped",
@@ -674,7 +686,9 @@ impl F3dLossCode {
     const fn severity(self) -> Severity {
         match self {
             Self::WriterAppearancePropertiesOmitted => Severity::Warning,
-            Self::BodylessDesignCarrier
+            Self::OperationPoseApplied
+            | Self::OperationPoseNative
+            | Self::BodylessDesignCarrier
             | Self::XrefPlacementMetadataNative
             | Self::XrefPlacementCurrentPose
             | Self::XrefCurrentPoseNative
@@ -703,7 +717,8 @@ impl F3dLossCode {
             Self::GeometryNotTransferred
             | Self::TopologyNotTransferred
             | Self::SourcePreservedImageUnavailable => Severity::Blocking,
-            Self::DimensionCompanionUntyped
+            Self::OperationPoseDisagrees
+            | Self::DimensionCompanionUntyped
             | Self::BodyReferenceTailUntyped
             | Self::WorkPlaneFrameUnbound
             | Self::PlacementConstructionUntyped
@@ -838,7 +853,10 @@ impl F3dLossCode {
             | Self::SolvedRecordUntyped
             | Self::KernelCarrierUnparseable
             | Self::TsplineRecordUntyped => LossTaxonomy::RecordNotTyped,
-            Self::ConfigurationMemberUnassigned
+            Self::OperationPoseApplied
+            | Self::OperationPoseDisagrees
+            | Self::OperationPoseNative
+            | Self::ConfigurationMemberUnassigned
             | Self::ConfigurationRuleUnbound
             | Self::ConfigurationParameterOverrideUnbound
             | Self::ConfigurationFeatureSuppressionUnbound
@@ -1027,6 +1045,9 @@ mod tests {
         assert_eq!(
             codes,
             [
+                "assembly.operation-table-pose",
+                "assembly.operation-table-pose-disagrees",
+                "assembly.operation-table-pose-native",
                 "dimension.companion-untyped",
                 "body-reference.tail-untyped",
                 "placement.construction-untyped",
