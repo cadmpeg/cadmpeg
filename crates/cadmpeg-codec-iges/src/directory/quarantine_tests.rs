@@ -11,7 +11,7 @@ use crate::test_support::test_cards::card;
 use crate::test_support::test_owned::{
     owned_test_file, owned_test_file_with_global, OwnedTestEntity,
 };
-use crate::test_support::{code_count, decode, strict_options};
+use crate::test_support::{code_count, decode, given_up_count, given_up_parts, strict_options};
 use crate::IgesCodec;
 
 /// Zero-based index of the Parameter Data pointer in the first Directory card.
@@ -77,14 +77,9 @@ fn corrupt_field(bytes: &[u8], card_index: usize, field: usize, value: [u8; 8]) 
 }
 
 #[test]
-fn a_non_integer_directory_field_quarantines_the_two_card_pair() {
+fn a_non_integer_directory_field_gives_up_its_field_part() {
     let bytes = corrupt_field(&two_point_file(), 2, PARAMETER_FIELD, *b"     abc");
-    let first_card = directory_card_offset(&bytes, 2);
-    let expected_bytes = [
-        &bytes[first_card..first_card + 80],
-        &bytes[first_card + 81..first_card + 161],
-    ]
-    .concat();
+    let field_start = directory_card_offset(&bytes, 2) + PARAMETER_FIELD * 8;
 
     let result = decode(bytes.clone());
 
@@ -94,28 +89,14 @@ fn a_non_integer_directory_field_quarantines_the_two_card_pair() {
         native.arenas()["entities"][0].id(),
         "iges:entity:directory#1"
     );
-    let quarantined = &native.arenas()["quarantined_directory_records"];
-    assert_eq!(quarantined.len(), 1);
-    assert_eq!(quarantined[0].id(), "iges:quarantine:directory#3");
-    let fields = quarantined[0].fields().unwrap();
-    assert_eq!(fields["section"], "directory-entry");
-    assert_eq!(fields["sequence"], 3);
-    assert_eq!(fields["source_offset"], first_card);
-    assert_eq!(fields["cards"], 2);
-    assert_eq!(fields["defect"], "field-not-an-integer");
-    assert_eq!(
-        crate::test_support::native_bytes(&fields["bytes"]),
-        expected_bytes
-    );
+    let parts = given_up_parts(result.source_fidelity());
+    assert_eq!(parts.len(), 1);
+    assert!(!parts[0].untyped().is_empty());
+    assert_eq!(parts[0].offset(), u64::try_from(field_start).unwrap());
+    assert_eq!(parts[0].byte_len(), 8);
+    assert_eq!(parts[0].data(), Some(&bytes[field_start..field_start + 8]));
     assert_eq!(result.report().losses.len(), 1);
-    assert_eq!(
-        code_count(result.report(), IgesLossCode::DirectoryRecordQuarantined),
-        1
-    );
-    assert!(cadmpeg_ir::index::ModelIndex::build(result.ir()).contains(
-        "iges:quarantine:directory#3",
-        cadmpeg_ir::index::StandardIndex
-    ));
+    assert_eq!(given_up_count(result.report(), "iges.directory_field"), 1);
     assert!(serde_json::to_value(result.report())
         .unwrap()
         .get("transfer_ledger")
@@ -131,33 +112,55 @@ fn a_non_integer_directory_field_quarantines_the_two_card_pair() {
 }
 
 #[test]
-fn every_directory_defect_key_names_its_own_failure() {
-    for (card_index, field, value, defect) in [
-        (2, PARAMETER_FIELD, *b"     \xff\xfe\xfd", "field-not-ascii"),
-        (2, PARAMETER_FIELD, *b"     abc", "field-not-an-integer"),
-        (2, 8, *b"0000 201", "status-number-invalid"),
-        (3, 0, *b"     110", "repeated-entity-type-mismatch"),
+fn every_directory_defect_names_its_own_failure() {
+    for (card_index, field, value, part, failure) in [
+        (
+            2,
+            PARAMETER_FIELD,
+            *b"     \xff\xfe\xfd",
+            "iges.directory_field",
+            "the Parameter Data start field is not ASCII",
+        ),
+        (
+            2,
+            PARAMETER_FIELD,
+            *b"     abc",
+            "iges.directory_field",
+            "the Parameter Data start field is not a decimal integer",
+        ),
+        (
+            2,
+            8,
+            *b"0000 201",
+            "iges.directory_field",
+            "the status number is neither blank nor an eight-digit decimal integer",
+        ),
+        (
+            3,
+            0,
+            *b"     110",
+            "iges.directory_entry",
+            "the repeated entity type 110 does not equal the entity type 116",
+        ),
     ] {
         let bytes = corrupt_field(&two_point_file(), card_index, field, value);
 
         let result = decode(bytes);
 
-        let native = result.ir().native.namespace("iges").unwrap();
-        let quarantined = &native.arenas()["quarantined_directory_records"];
-        assert_eq!(quarantined.len(), 1, "{defect}");
-        assert_eq!(quarantined[0].fields().unwrap()["defect"], defect);
-        assert_eq!(
-            code_count(result.report(), IgesLossCode::DirectoryRecordQuarantined),
-            1,
-            "{defect}"
+        assert_eq!(given_up_count(result.report(), part), 1, "{failure}");
+        assert_eq!(result.report().losses.len(), 1, "{failure}");
+        assert!(
+            result.report().losses[0].message.contains(failure),
+            "{failure}"
         );
     }
 }
 
 #[test]
-fn v4_blank_no_default_directory_fields_quarantine_the_record() {
+fn v4_blank_no_default_directory_fields_give_up_their_field() {
     for (card_index, field) in [(2, 0), (2, 1), (3, 0), (3, 3)] {
         let bytes = corrupt_field(&v4_two_point_file(), card_index, field, *b"        ");
+        let field_start = directory_card_offset(&bytes, card_index) + field * 8;
         let result = decode(bytes);
         let native = result.ir().native.namespace("iges").unwrap();
         assert_eq!(
@@ -165,23 +168,26 @@ fn v4_blank_no_default_directory_fields_quarantine_the_record() {
             1,
             "card {card_index}, field {field}"
         );
-        let quarantined = &native.arenas()["quarantined_directory_records"];
-        assert_eq!(quarantined.len(), 1, "card {card_index}, field {field}");
+        let parts = given_up_parts(result.source_fidelity());
+        assert_eq!(parts.len(), 1, "card {card_index}, field {field}");
+        assert_eq!(parts[0].offset(), u64::try_from(field_start).unwrap());
+        assert_eq!(parts[0].byte_len(), 8);
         assert_eq!(
-            quarantined[0].fields().unwrap()["defect"],
-            "field-blank-not-allowed",
+            given_up_count(result.report(), "iges.directory_field"),
+            1,
             "card {card_index}, field {field}"
         );
-        assert_eq!(
-            code_count(result.report(), IgesLossCode::DirectoryRecordQuarantined),
-            1,
+        assert!(
+            result.report().losses[0]
+                .message
+                .contains("is blank and IGES 4.0 defines no default"),
             "card {card_index}, field {field}"
         );
     }
 }
 
 #[test]
-fn an_unpaired_trailing_directory_card_is_quarantined_on_its_own() {
+fn an_unpaired_trailing_directory_card_is_given_up_on_its_own() {
     let mut bytes = two_point_file();
     let parameter_start = bytes
         .chunks_exact(81)
@@ -194,25 +200,19 @@ fn an_unpaired_trailing_directory_card_is_quarantined_on_its_own() {
     let result = decode(bytes);
 
     let native = result.ir().native.namespace("iges").unwrap();
-    let quarantined = &native.arenas()["quarantined_directory_records"];
     assert_eq!(native.arenas()["entities"].len(), 2);
-    assert_eq!(quarantined.len(), 1);
-    assert_eq!(quarantined[0].id(), "iges:quarantine:directory#5");
-    let fields = quarantined[0].fields().unwrap();
-    assert_eq!(fields["cards"], 1);
-    assert_eq!(fields["defect"], "unpaired-card");
-    assert_eq!(
-        crate::test_support::native_bytes(&fields["bytes"]).len(),
-        80
-    );
-    assert_eq!(
-        code_count(result.report(), IgesLossCode::DirectoryRecordQuarantined),
-        1
-    );
+    let parts = given_up_parts(result.source_fidelity());
+    assert_eq!(parts.len(), 1);
+    assert_eq!(parts[0].offset(), u64::try_from(parameter_start).unwrap());
+    assert_eq!(parts[0].data(), Some(unpaired.as_slice()));
+    assert_eq!(given_up_count(result.report(), "iges.directory_entry"), 1);
+    assert!(result.report().losses.iter().any(|loss| loss
+        .message
+        .contains("the Directory Entry section ends with an unpaired card")));
 }
 
 #[test]
-fn a_pointer_into_a_quarantined_record_does_not_resolve() {
+fn a_pointer_into_a_given_up_record_does_not_resolve() {
     let mut bytes = two_point_file();
     let color_field = directory_card_offset(&bytes, 1) + 2 * 8;
     bytes[color_field..color_field + 8].copy_from_slice(b"      -3");
@@ -224,10 +224,7 @@ fn a_pointer_into_a_quarantined_record_does_not_resolve() {
         code_count(result.report(), IgesLossCode::PointerUnresolved),
         1
     );
-    assert_eq!(
-        code_count(result.report(), IgesLossCode::DirectoryRecordQuarantined),
-        1
-    );
+    assert_eq!(given_up_count(result.report(), "iges.directory_field"), 1);
 
     let error = IgesCodec
         .decode(&mut Cursor::new(bytes), &strict_options())
@@ -244,7 +241,7 @@ fn a_pointer_into_a_quarantined_record_does_not_resolve() {
 }
 
 #[test]
-fn the_outbound_pointers_of_a_quarantined_record_are_not_analyzed() {
+fn the_outbound_pointers_of_a_given_up_record_are_not_analyzed() {
     let mut bytes = two_point_file();
     let color_field = directory_card_offset(&bytes, 3) + 2 * 8;
     bytes[color_field..color_field + 8].copy_from_slice(b"      -1");
@@ -257,10 +254,7 @@ fn the_outbound_pointers_of_a_quarantined_record_are_not_analyzed() {
         0
     );
     assert_eq!(result.report().losses.len(), 1);
-    assert_eq!(
-        code_count(result.report(), IgesLossCode::DirectoryRecordQuarantined),
-        1
-    );
+    assert_eq!(given_up_count(result.report(), "iges.directory_field"), 1);
 }
 
 #[test]

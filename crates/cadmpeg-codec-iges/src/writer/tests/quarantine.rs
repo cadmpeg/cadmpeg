@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-//! The semantic writer admits both quarantine arenas as native passthrough.
+//! The semantic writer writes the records that survive a given-up Directory Entry.
 #![allow(clippy::unwrap_used)]
 
 use crate::IgesVersion;
@@ -10,7 +10,6 @@ use cadmpeg_ir::codec::write::{EncodeInput, Encoder};
 use cadmpeg_ir::codec::{Codec, DecodeOptions};
 use cadmpeg_ir::report::export::WritePath;
 
-use crate::loss::IgesLossCode;
 use crate::test_support::test_owned::{owned_test_file, OwnedTestEntity};
 use crate::IgesCodec;
 
@@ -42,7 +41,7 @@ fn quarantined_directory_file() -> Vec<u8> {
 }
 
 #[test]
-fn a_quarantine_arena_is_written_as_an_omitted_passthrough_arena() {
+fn a_given_up_directory_entry_is_not_written() {
     let decoded = IgesCodec
         .decode(
             &mut Cursor::new(quarantined_directory_file()),
@@ -50,8 +49,7 @@ fn a_quarantine_arena_is_written_as_an_omitted_passthrough_arena() {
         )
         .unwrap();
     assert_eq!(
-        decoded.ir().native.namespace("iges").unwrap().arenas()["quarantined_directory_records"]
-            .len(),
+        crate::test_support::given_up_count(decoded.report(), "iges.directory_field"),
         1
     );
 
@@ -66,23 +64,12 @@ fn a_quarantine_arena_is_written_as_an_omitted_passthrough_arena() {
         WritePath::Synthesized { .. }
     ));
     let mut written = Vec::new();
-    let report = plan.write_to(&mut written).unwrap();
-
-    let passthrough = report
-        .losses
-        .iter()
-        .filter(|loss| loss.code == IgesLossCode::PassthroughRecordOmitted.kind())
-        .collect::<Vec<_>>();
-    assert!(passthrough
-        .iter()
-        .any(|loss| loss.message.contains("quarantined_directory_records")));
+    plan.write_to(&mut written).unwrap();
     assert!(!written.is_empty());
 
     let round_trip = IgesCodec
         .decode(&mut Cursor::new(written), &DecodeOptions::default())
         .unwrap();
     assert_eq!(round_trip.ir().model.points.len(), 1);
-    assert!(round_trip.ir().native.namespace("iges").unwrap().arenas()
-        ["quarantined_directory_records"]
-        .is_empty());
+    assert!(crate::test_support::given_up_parts(round_trip.source_fidelity()).is_empty());
 }
