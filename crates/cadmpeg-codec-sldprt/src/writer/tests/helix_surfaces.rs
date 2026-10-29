@@ -494,6 +494,79 @@ fn semantic_writer_round_trips_native_axis_helix() {
 }
 
 #[test]
+fn semantic_writer_rejects_embedded_helix_geometry_edits() {
+    use cadmpeg_ir::features::{FeatureDefinition, FeatureOperation};
+
+    let mut source = sldprt_with_body(&triangle_body());
+    source.extend(make_block(
+        0x42,
+        "Contents/Keywords",
+        r#"<Keywords><Feature Name="Helix/Spiral1" Type="Helix/Spiral" id="30"><Dimension Name="D3">3200</Dimension><Dimension Name="D4">12800</Dimension><Dimension Name="D5">0.25</Dimension><Dimension Name="D7">0°</Dimension></Feature></Keywords>"#
+            .as_bytes(),
+    ));
+    source.extend(make_block(
+        0x42,
+        "Contents/Config-0-ResolvedFeatures",
+        &resolved_feature_classes_with_ids(&[("moHelix_c", "Helix/Spiral1", 30)]),
+    ));
+    let decoded = SldprtCodec
+        .decode(&mut Cursor::new(source), &DecodeOptions::default())
+        .unwrap();
+    let mut decoded = EditableDecodeResult::from(decoded);
+    {
+        let mut ir_edit = decoded.ir_mut();
+        crate::test_support::native::update_sldprt_native(&mut ir_edit, |native| {
+            let points = (0..=64)
+                .map(|index| {
+                    let t = f64::from(index) / 64.0;
+                    let angle = std::f64::consts::FRAC_PI_2 * t;
+                    [
+                        10000.0 + 3500.0 * angle.cos(),
+                        20000.0 - 3200.0 * t,
+                        30000.0 + 3500.0 * angle.sin(),
+                    ]
+                })
+                .collect::<Vec<_>>();
+            let stream = crate::test_support::parasolid::construction_curve::stream(&points);
+            native.feature_input_lanes[0].native_payload.extend(stream);
+        });
+        let native = sldprt_native(&ir_edit);
+        let parameters = ir_edit.model.parameters.clone();
+        let arena = cadmpeg_core::decode::DecodeArena::new();
+        let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+            &[],
+            &arena,
+            &cadmpeg_core::decode::DecodePolicy::service(),
+        )
+        .unwrap();
+        crate::resolved_features::holes::project_helix_axes(
+            &ctx,
+            &mut ir_edit.model.features,
+            &native.feature_histories,
+            &native.feature_input_lanes,
+            &parameters,
+        )
+        .unwrap();
+        ir_edit.model.features[0].evaluation.edit(|definition, _| {
+            let FeatureDefinition::Operation(FeatureOperation::Helix { radius, .. }) = definition
+            else {
+                panic!("embedded helix geometry");
+            };
+            *radius = cadmpeg_ir::features::Dimension::Literal(
+                cadmpeg_ir::scalar::PositiveLength::new(9.0).unwrap(),
+            );
+        });
+    }
+
+    let reason =
+        crate::test_support::assert_synthesis_fallback(decoded.ir(), decoded.source_fidelity());
+    assert!(
+        reason.contains("changes embedded helix geometry"),
+        "{reason}"
+    );
+}
+
+#[test]
 fn semantic_writer_synthesizes_embedded_helix_geometry_edits() {
     use cadmpeg_ir::{
         features::{FeatureOperation, ParameterValue},

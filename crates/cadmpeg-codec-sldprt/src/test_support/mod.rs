@@ -127,7 +127,8 @@ pub(crate) fn serialize_edited_history(
 }
 
 /// A declined native layout writes the document through synthesis and reports it.
-pub(crate) fn assert_synthesis_fallback(ir: &CadIr, fidelity: &SourceFidelity) {
+/// Returns the reason the patch path declined.
+pub(crate) fn assert_synthesis_fallback(ir: &CadIr, fidelity: &SourceFidelity) -> String {
     use cadmpeg_ir::codec::{Codec, DecodeOptions};
     let plan = SldprtCodec
         .plan(EncodeInput::new(ir, Some(fidelity)), TargetRequest::Inherit)
@@ -136,8 +137,11 @@ pub(crate) fn assert_synthesis_fallback(ir: &CadIr, fidelity: &SourceFidelity) {
         plan.report().write_path(),
         WritePath::Synthesized { .. }
     ));
-    assert!(matches!(plan.report().synthesis_cause(),
-        Some(cadmpeg_ir::codec::write::SynthesisCause::PatchDeclined { reason }) if !reason.is_empty()));
+    let reason = match plan.report().synthesis_cause() {
+        Some(cadmpeg_ir::codec::write::SynthesisCause::PatchDeclined { reason }) => reason.clone(),
+        other => panic!("expected a declined patch, got {other:?}"),
+    };
+    assert!(!reason.is_empty());
     assert!(!plan.report().losses.is_empty());
     let mut bytes = Vec::new();
     plan.write_to(&mut bytes).unwrap();
@@ -146,6 +150,7 @@ pub(crate) fn assert_synthesis_fallback(ir: &CadIr, fidelity: &SourceFidelity) {
         .unwrap();
     assert_eq!(decoded.ir().model.bodies.len(), ir.model.bodies.len());
     assert_eq!(decoded.ir().model.faces.len(), ir.model.faces.len());
+    reason
 }
 
 /// Independently synthesize current content and compare every Written arena.
