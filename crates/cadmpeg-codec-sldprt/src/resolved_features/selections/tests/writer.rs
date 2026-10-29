@@ -96,7 +96,12 @@ fn semantic_writer_synthesizes_compact_edge_selection_edits() {
         });
     }
 
-    crate::test_support::assert_synthesis_fallback(decoded.ir(), decoded.source_fidelity());
+    let reason =
+        crate::test_support::assert_synthesis_fallback(decoded.ir(), decoded.source_fidelity());
+    assert!(
+        reason.contains("changes a compact edge selection"),
+        "{reason}"
+    );
 }
 
 #[test]
@@ -193,5 +198,10 @@ fn semantic_writer_synthesizes_compact_surface_selection_edits() {
         updated_feature_evaluation.set_definition(updated_feature_definition);
     }
 
-    crate::test_support::assert_synthesis_fallback(decoded.ir(), decoded.source_fidelity());
+    let reason =
+        crate::test_support::assert_synthesis_fallback(decoded.ir(), decoded.source_fidelity());
+    assert!(
+        reason.contains("changes a compact surface selection"),
+        "{reason}"
+    );
 }

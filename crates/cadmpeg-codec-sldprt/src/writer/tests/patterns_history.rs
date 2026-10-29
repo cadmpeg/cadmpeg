@@ -642,3 +642,194 @@ mod sweep_loft;
 mod renames;
 
 mod omissions;
+
+#[test]
+fn semantic_writer_patches_resolved_feature_sketch_types() {
+    use crate::records::{FeatureInputClassRole, SketchInputKind};
+
+    assert_eq!(
+        serde_json::from_str::<SketchInputKind>(r#""curve""#).unwrap(),
+        SketchInputKind::LineOrCircle
+    );
+    assert_eq!(
+        serde_json::to_string(&SketchInputKind::LineOrCircle).unwrap(),
+        r#""line_or_circle""#
+    );
+
+    let source = sldprt_with_body_and_resolved_features(&triangle_body(), &[0, 1, 2, 3, 9]);
+    let decoded = SldprtCodec
+        .decode(&mut Cursor::new(source), &DecodeOptions::default())
+        .unwrap();
+    let mut decoded = cadmpeg_test_support::EditableDecodeResult::from(decoded);
+    let native = sldprt_native(decoded.ir());
+    assert_eq!(native.feature_input_lanes.len(), 1);
+    let lane = &native.feature_input_lanes[0];
+    assert_eq!(lane.configuration.as_deref(), Some("0"));
+    assert_eq!(
+        lane.classes
+            .iter()
+            .map(|class| class.name.as_str())
+            .collect::<Vec<_>>(),
+        [
+            "sgPointHandle",
+            "sgLineHandle",
+            "sgArcHandle",
+            "sgPntPntDist"
+        ]
+    );
+    assert!(lane.classes[..3]
+        .iter()
+        .all(|class| class.role() == FeatureInputClassRole::SketchEntity));
+    assert_eq!(
+        lane.classes[3].role(),
+        FeatureInputClassRole::SketchConstraint
+    );
+    assert_eq!(
+        lane.names
+            .iter()
+            .map(|name| name.value.as_str())
+            .collect::<Vec<_>>(),
+        ["Sketch1", "Boss-Extrude1", "D1"]
+    );
+    assert_eq!(lane.scalars.len(), 1);
+    assert_eq!(lane.scalars[0].name, lane.names[2].id);
+    assert_eq!(lane.scalars[0].value.get(), 0.025);
+    assert_eq!(lane.scalars[0].object_id, 1);
+    assert_eq!(lane.scalars[0].entity_indices(), [0, 2]);
+    assert_eq!(lane.references.len(), 2);
+    assert_eq!(lane.references[0].object_index, 0);
+    assert_eq!(lane.references[1].object_index, 2);
+    assert!(lane
+        .references
+        .iter()
+        .all(|reference| reference.kind == crate::records::FeatureInputOperandKind::D6));
+    assert_eq!(lane.scalars[0].operands.len(), 2);
+    assert_eq!(lane.scalars[0].operands[0].entity_index, 0);
+    assert_eq!(lane.scalars[0].operands[1].entity_index, 2);
+    assert_eq!(
+        lane.scalars[0].operands[0].reference_ref,
+        lane.references[0].id
+    );
+    assert_eq!(
+        lane.scalars[0].operands[1].reference_ref,
+        lane.references[1].id
+    );
+    assert!(lane.scalars[0]
+        .operands
+        .iter()
+        .all(|operand| operand.kind == crate::records::FeatureInputOperandKind::D6));
+    assert_eq!(lane.relation_bindings.len(), 1);
+    assert_eq!(
+        lane.relation_bindings[0].family,
+        crate::records::FeatureInputRelationFamily::PointPointDistance
+    );
+    assert_eq!(lane.relation_bindings[0].class_ref, lane.classes[3].id);
+    assert_eq!(lane.relation_bindings[0].scalar_ref, lane.scalars[0].id);
+    assert_eq!(lane.relation_bindings[0].feature_ref, None);
+    assert_eq!(
+        lane.scalars[0].role,
+        crate::records::FeatureInputScalarRole::Driving
+    );
+    assert!(
+        lane.classes
+            .iter()
+            .enumerate()
+            .all(|(ordinal, class)| class.ordinal
+                == u32::try_from(ordinal).expect("ordinal fits u32"))
+    );
+    assert!(lane
+        .sketch_entities
+        .windows(2)
+        .all(|entities| entities[0].offset() < entities[1].offset()));
+    assert!(lane
+        .sketch_entities
+        .iter()
+        .enumerate()
+        .all(|(ordinal, entity)| entity.ordinal()
+            == u32::try_from(ordinal).expect("ordinal fits u32")));
+    assert!(lane
+        .sketch_entities
+        .iter()
+        .enumerate()
+        .all(|(ordinal, entity)| entity.local_id()
+            == Some(u32::try_from(ordinal).expect("ordinal fits u32") + 1)));
+    assert!(lane
+        .sketch_entities
+        .iter()
+        .enumerate()
+        .all(
+            |(ordinal, entity)| entity.state_value.map(cadmpeg_ir::scalar::FiniteReal::get)
+                == Some(
+                    cadmpeg_core::convert::f64_from_index(ordinal).expect("ordinal is exact") + 1.0
+                )
+        ));
+    let by_ordinal = |ordinal| {
+        lane.sketch_entities
+            .iter()
+            .find(|entity| entity.ordinal() == ordinal)
+            .unwrap()
+    };
+    assert_eq!(by_ordinal(0).kind(), SketchInputKind::Point);
+    assert_eq!(
+        by_ordinal(1).kind(),
+        SketchInputKind::Relation(crate::records::SketchRelationKind::Distance)
+    );
+    assert_eq!(
+        by_ordinal(2).kind(),
+        SketchInputKind::Relation(crate::records::SketchRelationKind::Angle)
+    );
+    assert_eq!(
+        by_ordinal(3).kind(),
+        SketchInputKind::Relation(crate::records::SketchRelationKind::Radius)
+    );
+    assert_eq!(
+        by_ordinal(4).kind(),
+        SketchInputKind::Relation(crate::records::SketchRelationKind::Coincident)
+    );
+    update_sldprt_native(&mut decoded.ir_mut(), |native| {
+        let entity = native.feature_input_lanes[0]
+            .sketch_entities
+            .iter_mut()
+            .find(|entity| entity.ordinal() == 1)
+            .unwrap();
+        entity.reclassify(SketchInputKind::from_native_code(5));
+        entity.state_value = cadmpeg_ir::scalar::FiniteReal::new(12.5);
+    });
+
+    let mut encoded = Vec::new();
+    crate::test_support::plan_fixture_write_with_native_envelope(
+        decoded.ir(),
+        decoded.source_fidelity(),
+        &mut encoded,
+    )
+    .unwrap();
+    let scan = crate::test_support::container::scan(&encoded);
+    assert_eq!(
+        scan.blocks
+            .iter()
+            .filter(|block| block.section.name() == Some("Contents/Config-0-ResolvedFeatures"))
+            .count(),
+        1
+    );
+    let regenerated = SldprtCodec
+        .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
+        .unwrap();
+    let entity = &sldprt_native(regenerated.ir()).feature_input_lanes[0].sketch_entities[1];
+    assert_eq!(
+        entity.kind(),
+        SketchInputKind::Relation(crate::records::SketchRelationKind::Vertical)
+    );
+    assert_eq!(
+        entity.state_value.map(cadmpeg_ir::scalar::FiniteReal::get),
+        Some(12.5)
+    );
+    assert_eq!(
+        sldprt_native(regenerated.ir()).feature_input_lanes[0]
+            .sketch_entities
+            .iter()
+            .find(|entity| entity.ordinal() == 1)
+            .unwrap()
+            .kind(),
+        SketchInputKind::Relation(crate::records::SketchRelationKind::Vertical)
+    );
+}

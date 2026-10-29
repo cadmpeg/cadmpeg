@@ -1120,7 +1120,7 @@ fn semantically_distinct_pmi_records_remain_unbound() {
 }
 
 #[test]
-fn ordinate_pmi_values_survive_reported_annotation_omission() {
+fn ordinate_pmi_dimensions_round_trip_typed_values() {
     use cadmpeg_ir::{features::ParameterValue, scalar::Length};
 
     let mut source = sldprt_with_body(&triangle_body());
@@ -1176,10 +1176,23 @@ fn ordinate_pmi_values_survive_reported_annotation_omission() {
     }
 
     let mut encoded = Vec::new();
-    write_with_regenerated_pmi(decoded.ir(), decoded.source_fidelity(), &mut encoded);
+    crate::test_support::plan_inherited_write(
+        decoded.ir(),
+        decoded.source_fidelity(),
+        &mut encoded,
+    )
+    .unwrap();
     let regenerated = SldprtCodec
         .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
         .unwrap();
+    assert_eq!(
+        sldprt_native(regenerated.ir())
+            .pmi_dimensions
+            .iter()
+            .find(|dimension| dimension.cad_text == "D1@Sketch1")
+            .map(|dimension| dimension.value.get()),
+        Some(0.05)
+    );
     assert_written_scalar_with_pmi(&regenerated);
 }
 

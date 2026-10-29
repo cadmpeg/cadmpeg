@@ -2355,6 +2355,46 @@ mod tests {
     }
 
     #[test]
+    fn pmi_display_text_wire_keeps_text_and_offset_together() {
+        #[derive(serde::Serialize, serde::Deserialize)]
+        struct Display {
+            #[serde(flatten, with = "super::pmi_display_text_wire")]
+            value: Option<(String, u64)>,
+        }
+        let wire = serde_json::json!({"display_text": "25 mm", "display_text_offset": 17});
+        let display: Display = serde_json::from_value(wire.clone()).unwrap();
+        assert_eq!(serde_json::to_value(display).unwrap(), wire);
+        for field in ["display_text", "display_text_offset"] {
+            let mut split = wire.clone();
+            split.as_object_mut().unwrap().remove(field);
+            assert!(serde_json::from_value::<Display>(split).is_err());
+        }
+        let absent: Display = serde_json::from_value(serde_json::json!({})).unwrap();
+        assert_eq!(serde_json::to_value(absent).unwrap(), serde_json::json!({}));
+    }
+
+    #[test]
+    fn pmi_display_text_wire_refuses_null_for_either_key() {
+        #[derive(serde::Serialize, serde::Deserialize)]
+        struct Display {
+            #[serde(flatten, with = "super::pmi_display_text_wire")]
+            value: Option<(String, u64)>,
+        }
+        for wire in [
+            serde_json::json!({"display_text": null, "display_text_offset": null}),
+            serde_json::json!({"display_text": null, "display_text_offset": 17}),
+            serde_json::json!({"display_text": "25 mm", "display_text_offset": null}),
+        ] {
+            assert!(
+                serde_json::from_value::<Display>(wire.clone()).is_err(),
+                "{wire}"
+            );
+        }
+        let absent: Display = serde_json::from_value(serde_json::json!({})).unwrap();
+        assert!(absent.value.is_none());
+    }
+
+    #[test]
     fn tree_parent_wire_refuses_null_for_either_key() {
         #[derive(serde::Serialize, serde::Deserialize)]
         struct Parent {
