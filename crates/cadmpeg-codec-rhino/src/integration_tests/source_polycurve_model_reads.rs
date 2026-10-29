@@ -93,8 +93,7 @@ fn class_at(data: &[u8], start: usize, end: usize) -> (Range<usize>, usize) {
 }
 
 #[test]
-fn stored_model_line_and_polyline_source_edits_keep_the_final_component_id_and_only_its_field_reads(
-) {
+fn stored_model_line_and_polyline_source_edits_keep_the_final_component_id() {
     for polyline in [false, true] {
         for height in [0.25, 0.75] {
             let (fixture, fields_len) = fixture(polyline, height, false);
@@ -103,20 +102,18 @@ fn stored_model_line_and_polyline_source_edits_keep_the_final_component_id_and_o
             let range = scan.objects[0]
                 .framed()
                 .expect("actual object")
-                .class_data_range();
+                .class_data_range
+                .clone();
             let (on_surface, _) = class_at(
                 scan.data,
                 range.start + fixture.parameter_array.end,
                 range.end,
             );
-            let (c2, next) = class_at(scan.data, on_surface.start, on_surface.end);
+            let (_, next) = class_at(scan.data, on_surface.start, on_surface.end);
             let mut reader =
                 BoundedReader::new(scan.data, next, on_surface.end).expect("actual presence field");
-            let presence_start = reader.position();
             assert_eq!(reader.i32().expect("native C3 presence"), 1);
-            let presence = presence_start..reader.position();
-            let (c3, next) = class_at(scan.data, reader.position(), on_surface.end);
-            let (support, _) = class_at(scan.data, next, on_surface.end);
+            let (c3, _) = class_at(scan.data, reader.position(), on_surface.end);
             assert!(c3.start > range.start);
             assert!(c3.start + fields_len < c3.end);
             let decoded = RhinoCodec
@@ -180,54 +177,20 @@ fn stored_model_line_and_polyline_source_edits_keep_the_final_component_id_and_o
                     [0.0, 1.0]
                 );
             }
-            assert_eq!(decoded.source_fidelity().record_layout().len(), 3);
-            let layout = &decoded.source_fidelity().record_layout()[child.id.as_str()];
-            assert_eq!(
-                layout.offset(),
-                u64::try_from(c3.start).expect("small start")
-            );
-            assert_eq!(
-                layout.byte_len(),
-                u64::try_from(c3.len()).expect("small extent")
-            );
-            assert_eq!(
-                layout.reads()["file"],
-                [u64::try_from(c3.start).expect("small start")
-                    ..u64::try_from(c3.start + fields_len).expect("small fields end"),]
-            );
-            for layout in decoded.source_fidelity().record_layout().values() {
-                for read in layout.reads().values().flatten() {
-                    for excluded in [&c2, &presence, &support] {
-                        assert!(
-                            read.end <= u64::try_from(excluded.start).expect("small start")
-                                || read.start >= u64::try_from(excluded.end).expect("small end")
-                        );
-                    }
-                }
-            }
         }
     }
 }
 
 #[test]
-fn a_late_support_failure_rolls_back_model_leaf_reads_before_the_valid_peer() {
+fn a_late_support_failure_keeps_the_valid_peer() {
     for polyline in [false, true] {
         let (bad, _) = fixture(polyline, 0.25, true);
         let (valid, _) = fixture(polyline, 0.75, false);
         let bytes = archive(&[&bad.bytes, &valid.bytes]);
-        let scan = crate::container::scan_owned(bytes.clone()).expect("actual peer source");
-        let peer = scan.objects[1]
-            .framed()
-            .expect("actual valid peer")
-            .class_data_range();
         let decoded = RhinoCodec
             .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
             .expect("independent peer survives");
         assert_eq!(decoded.ir().model.curves.len(), 2);
         assert_eq!(decoded.ir().model.procedural_curves.len(), 1);
-        assert_eq!(decoded.source_fidelity().record_layout().len(), 3);
-        for layout in decoded.source_fidelity().record_layout().values() {
-            assert!(layout.offset() >= u64::try_from(peer.start).expect("small peer start"));
-        }
     }
 }

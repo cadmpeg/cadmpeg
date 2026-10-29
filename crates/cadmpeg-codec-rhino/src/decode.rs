@@ -527,7 +527,10 @@ impl<'a> DecodeContext<'a> {
                 continue;
             };
             if crate::instances::is_reference_class(object.class_uuid) {
-                match crate::instances::parse_reference(self.scan.data, object.class_data_range()) {
+                match crate::instances::parse_reference(
+                    self.scan.data,
+                    object.class_data_range.clone(),
+                ) {
                     Ok(_) => self.mark_decoded(source_order),
                     Err(_) => self.mark_failed(source_order),
                 };
@@ -586,7 +589,7 @@ impl<'a> DecodeContext<'a> {
                 let decoded = crate::mesh::decode(
                     self.expand,
                     self.scan.data,
-                    object.class_data_range(),
+                    object.class_data_range.clone(),
                     self.archive(),
                     crate::mesh::MeshDecodeOptions {
                         writer_version: self.scan.metadata.properties.writer_version,
@@ -676,134 +679,18 @@ impl<'a> DecodeContext<'a> {
                 }
                 continue;
             }
-            let source = self.expand.root();
-            let source_key = if (crate::curves::is_point(object.class_uuid)
-                || crate::curves::is_line(object.class_uuid)
-                || crate::curves::is_arc(object.class_uuid)
-                || crate::curves::is_polyline(object.class_uuid)
-                || crate::curves::is_nurbs_curve(object.class_uuid)
-                || crate::surfaces::is_nurbs_surface(object.class_uuid)
-                || crate::curves::is_polycurve(object.class_uuid))
-                && source.has_source_tracking()
-            {
-                let Some(key) = self.checked_object_key(&object.identity, source_order) else {
-                    continue;
-                };
-                Some(key)
-            } else {
-                None
-            };
-            let ctx = self.expand.ctx();
-            let read_scope = source_key
-                .as_ref()
-                .map(|_| ctx.read_transaction())
-                .transpose()?;
-            let decoded = if let Some(key) = source_key {
-                let polycurve_key =
-                    crate::curves::is_polycurve(object.class_uuid).then(|| key.clone());
-                let id: cadmpeg_ir::ids::Identity = if crate::curves::is_point(object.class_uuid) {
-                    cadmpeg_ir::ids::PointId::compose(
-                        &cadmpeg_ir::identity_namespace!("rhino", "object", "point"),
-                        key,
-                    )
-                    .into()
-                } else if crate::surfaces::is_nurbs_surface(object.class_uuid) {
-                    cadmpeg_ir::ids::SurfaceId::compose(
-                        &cadmpeg_ir::identity_namespace!("rhino", "object", "surface"),
-                        key,
-                    )
-                    .into()
-                } else {
-                    cadmpeg_ir::ids::CurveId::compose(
-                        &cadmpeg_ir::identity_namespace!("rhino", "object", "curve"),
-                        key,
-                    )
-                    .into()
-                };
-                let extent = source
-                    .child(
-                        object.class_data_range().start,
-                        object.class_data_range().end,
-                    )
-                    .ok_or_else(|| crate::chunks::FramingError::OutOfBounds {
-                        offset: object.class_data_range().start,
-                        end: object.class_data_range().end,
-                        bound: source.end(),
-                    })
-                    .map_err(crate::container::framing_error)?;
-                ctx.record(id.as_str(), extent, || {
-                    Ok(if crate::curves::is_point(object.class_uuid) {
-                        crate::curves::decode_point_view(
-                            ctx,
-                            source,
-                            object.class_data_range(),
-                            scale,
-                        )
-                    } else if crate::curves::is_line(object.class_uuid) {
-                        crate::curves::decode_line_view(
-                            ctx,
-                            source,
-                            object.class_data_range(),
-                            scale,
-                        )
-                    } else if crate::curves::is_arc(object.class_uuid) {
-                        crate::curves::decode_arc_view(
-                            ctx,
-                            source,
-                            object.class_data_range(),
-                            scale,
-                        )
-                    } else if crate::curves::is_polyline(object.class_uuid) {
-                        crate::curves::decode_polyline_view(
-                            ctx,
-                            source,
-                            object.class_data_range(),
-                            scale,
-                        )
-                    } else if let Some(key) = &polycurve_key {
-                        crate::curves::source_polycurve::decode(
-                            ctx,
-                            source,
-                            self.scan.data,
-                            object.class_data_range(),
-                            scale,
-                            self.archive(),
-                            key,
-                        )
-                    } else if crate::curves::is_nurbs_curve(object.class_uuid) {
-                        crate::curves::decode_nurbs_view(
-                            ctx,
-                            source,
-                            object.class_data_range(),
-                            scale,
-                        )
-                    } else {
-                        crate::surfaces::decode_nurbs_view(
-                            ctx,
-                            source,
-                            object.class_data_range(),
-                            scale,
-                        )
-                        .map(|surface| crate::curves::DecodedGeometry::Surface { surface })
-                    })
-                })?
-            } else {
-                crate::curves::decode(
-                    ctx,
-                    self.scan.data,
-                    object.class_uuid,
-                    object.class_data_range(),
-                    scale,
-                    self.archive(),
-                )
-            };
+            let decoded = crate::curves::decode(
+                self.expand.ctx(),
+                self.scan.data,
+                object.class_uuid,
+                object.class_data_range.clone(),
+                scale,
+                self.archive(),
+            );
             let procedural_surface = crate::surfaces::is_procedural_class(object.class_uuid);
             match decoded {
                 Ok(value) => {
                     if self.commit_geometry(source_order, value)? {
-                        if let Some(scope) = read_scope {
-                            scope.commit()?;
-                        }
                         self.mark_decoded(source_order);
                     } else if procedural_surface {
                         self.scan_warning(
@@ -869,7 +756,7 @@ impl<'a> DecodeContext<'a> {
                 self.expand.ctx(),
                 self.scan.data,
                 object.class_uuid,
-                object.class_data_range(),
+                object.class_data_range.clone(),
                 scale,
                 self.archive(),
             ) {
@@ -989,7 +876,7 @@ impl<'a> DecodeContext<'a> {
         let identity = &object.identity;
         let mut hatch = match crate::hatch::decode(
             self.expand,
-            object.class_data_range(),
+            object.class_data_range.clone(),
             scale,
             self.archive(),
         ) {
@@ -1204,18 +1091,21 @@ impl<'a> DecodeContext<'a> {
         use cadmpeg_ir::features::{Feature, FeatureDefinition, FeatureId, FeatureOperation};
 
         let identity = &object.identity;
-        let polyedge =
-            match crate::polyedge::decode(self.expand, object.class_data_range(), self.archive()) {
-                Ok(value) => value,
-                Err(crate::chunks::FramingError::Resource(limit)) => {
-                    return Err(cadmpeg_core::CodecError::ResourceLimit(limit));
-                }
-                Err(error) => {
-                    self.scan_warning(source_order, format_args!("polyedge retained: {error}"));
-                    self.mark_failed(source_order);
-                    return Ok(());
-                }
-            };
+        let polyedge = match crate::polyedge::decode(
+            self.expand,
+            object.class_data_range.clone(),
+            self.archive(),
+        ) {
+            Ok(value) => value,
+            Err(crate::chunks::FramingError::Resource(limit)) => {
+                return Err(cadmpeg_core::CodecError::ResourceLimit(limit));
+            }
+            Err(error) => {
+                self.scan_warning(source_order, format_args!("polyedge retained: {error}"));
+                self.mark_failed(source_order);
+                return Ok(());
+            }
+        };
         let Some(construction) = crate::polyedge::semantic_json(&polyedge) else {
             self.scan_warning(
                 source_order,
@@ -1314,7 +1204,7 @@ impl<'a> DecodeContext<'a> {
         let identity = &object.identity;
         let detail = match crate::detail::decode(
             self.scan.data,
-            object.class_data_range(),
+            object.class_data_range.clone(),
             self.archive(),
         ) {
             Ok(detail) => detail,
@@ -1457,7 +1347,7 @@ impl<'a> DecodeContext<'a> {
         let identity = &object.identity;
         let cage = match crate::cage::decode(
             self.expand,
-            object.class_data_range(),
+            object.class_data_range.clone(),
             scale,
             self.archive(),
         ) {
@@ -1600,7 +1490,7 @@ impl<'a> DecodeContext<'a> {
         let identity = &object.identity;
         let morph = match crate::morph::decode(
             self.expand,
-            object.class_data_range(),
+            object.class_data_range.clone(),
             scale,
             self.archive(),
         ) {
@@ -1682,7 +1572,7 @@ impl<'a> DecodeContext<'a> {
         let construction = match crate::curve_on_surface::decode(
             self.expand.ctx(),
             self.scan.data,
-            object.class_data_range(),
+            object.class_data_range.clone(),
             scale,
             self.archive(),
             0,
@@ -1923,7 +1813,7 @@ impl<'a> DecodeContext<'a> {
         );
         match crate::subd::decode(
             self.scan.data,
-            object.class_data_range(),
+            object.class_data_range.clone(),
             self.archive(),
             scale,
             id,
@@ -2039,7 +1929,7 @@ impl<'a> DecodeContext<'a> {
         let decoded = crate::extrusion::decode(
             self.expand,
             self.scan.data,
-            object.class_data_range(),
+            object.class_data_range.clone(),
             crate::extrusion::ExtrusionFormat {
                 archive: self.archive(),
                 writer_version: self.scan.metadata.properties.writer_version,
@@ -2088,7 +1978,6 @@ impl<'a> DecodeContext<'a> {
 
     /// Commits the transaction and produces canonical IR and report state.
     pub(crate) fn commit(mut self) -> Result<Decoded, cadmpeg_core::CodecError> {
-        let mut source_layout = BTreeMap::new();
         let ctx = self.expand.ctx();
         for loss in &self.scan.metadata.losses {
             self.report.phase_losses.push(loss.clone());
@@ -2100,7 +1989,6 @@ impl<'a> DecodeContext<'a> {
         )?);
         let document_data =
             crate::document_data::install(ctx, self.scan, self.session.document_mut()?)?;
-        source_layout.extend(document_data.source_layout);
         self.report.typed_losses.extend(document_data.losses);
         for source in document_data.opaque_records {
             self.retain_opaque_record(&source)?;
@@ -2111,7 +1999,6 @@ impl<'a> DecodeContext<'a> {
             self.scan,
             self.session.document_mut()?,
         )?;
-        source_layout.extend(presentation.source_layout);
         self.report.typed_losses.extend(presentation.losses);
         for source in presentation.opaque_records {
             self.retain_opaque_record(&source)?;
@@ -2123,7 +2010,6 @@ impl<'a> DecodeContext<'a> {
         )?);
         let (views, view_projections) =
             crate::views::install(ctx, self.scan, self.session.document_mut()?)?;
-        source_layout.extend(views.source_layout);
         self.report.typed_losses.extend(views.losses);
         for source in views.opaque_records {
             self.retain_opaque_record(&source)?;
@@ -2271,7 +2157,6 @@ impl<'a> DecodeContext<'a> {
             }
         }
         let mut source_fidelity = cadmpeg_ir::SourceFidelity::with_annotations(self.annotations);
-        source_fidelity.metadata.extend(source_layout);
         let (mut ir, unknowns) = self.session.into_parts();
         source_fidelity.attach_native_unknown_records(&mut ir, "rhino", unknowns, ctx)?;
         losses.extend(crate::product::project(ctx, self.scan, &mut ir)?);
@@ -2286,9 +2171,6 @@ impl<'a> DecodeContext<'a> {
         ir.scope = scope;
         ir.finalize();
         source_fidelity.retain_unknown_records("rhino", self.opaque_records)?;
-        if self.expand.root().has_source_tracking() {
-            source_fidelity.install_record_captures(ctx, |_, _| Ok(()))?;
-        }
         let primary = crate::container::dialect_match(self.scan);
         // Charged from the admission the source records, so the document-level
         // residual admission and its loss cannot be reported apart.
@@ -2303,13 +2185,6 @@ impl<'a> DecodeContext<'a> {
                 attributes,
             },
         )?);
-        source_fidelity
-            .metadata
-            .extend(crate::container::source_layout(self.scan)?);
-        for (key, value) in &source_fidelity.metadata {
-            ctx.retain_bytes(u64_from_index(key.len()), "Rhino fidelity metadata key")?;
-            ctx.retain_bytes(u64_from_index(value.len()), "Rhino fidelity metadata value")?;
-        }
         for (id, classes) in self.untyped_records {
             source_fidelity.mark_untyped(id.as_str(), classes)?;
         }
@@ -3167,7 +3042,7 @@ impl<'a> DecodeContext<'a> {
         let parsed = crate::brep::parse(
             self.expand.ctx(),
             self.scan.data,
-            object.class_data_range(),
+            object.class_data_range.clone(),
             self.archive(),
             self.scan.metadata.properties.writer_version,
             &object.userdata,

@@ -172,8 +172,6 @@ pub(crate) struct OpaqueRecord {
 /// Losses and opaque records from one native-arena install pass.
 #[derive(Debug, Clone, PartialEq)]
 pub(crate) struct NativeInstall {
-    /// Physical positions of typed source records, retained outside CADIR.
-    pub(crate) source_layout: BTreeMap<String, String>,
     /// Losses from records that could not be transferred.
     pub(crate) losses: Vec<LossNote>,
     /// Complete records whose registered class payload was not admitted.
@@ -367,7 +365,7 @@ fn acquire(root: View<'_>) -> &[u8] {
     root.window()
 }
 
-pub(crate) fn framing_error(error: FramingError) -> CodecError {
+fn framing_error(error: FramingError) -> CodecError {
     match error {
         FramingError::Resource(limit) => CodecError::ResourceLimit(limit),
         FramingError::Truncated { offset, .. } => CodecError::truncated(
@@ -1276,7 +1274,6 @@ fn scan_with_record_limit<'a>(
                     ctx,
                     data,
                     &record,
-                    &chunk,
                     archive,
                     writer_version,
                     &mut warnings,
@@ -1620,47 +1617,6 @@ fn chunked_source_attributes(
     Ok(())
 }
 
-pub(crate) fn source_layout(scan: &Scan<'_>) -> Result<BTreeMap<String, String>, CodecError> {
-    let tables = scan
-        .tables
-        .iter()
-        .map(|table| {
-            (
-                table.typecode,
-                table
-                    .records
-                    .iter()
-                    .map(|record| (record.typecode, record.range.start, record.range.end))
-                    .collect::<Vec<_>>(),
-            )
-        })
-        .collect::<Vec<_>>();
-    let objects = scan
-        .objects
-        .iter()
-        .map(super::objects::ObjectRecord::range)
-        .collect::<Vec<_>>();
-    let history = scan
-        .history
-        .iter()
-        .map(|record| record.source_range.clone())
-        .collect::<Vec<_>>();
-    Ok(BTreeMap::from([
-        (
-            "rhino.table_layout".to_owned(),
-            serde_json::to_string(&tables).map_err(CodecError::malformed)?,
-        ),
-        (
-            "rhino.object_layout".to_owned(),
-            serde_json::to_string(&objects).map_err(CodecError::malformed)?,
-        ),
-        (
-            "rhino.history_layout".to_owned(),
-            serde_json::to_string(&history).map_err(CodecError::malformed)?,
-        ),
-    ]))
-}
-
 /// Build an empty current-version IR and a container-only report.
 pub(crate) fn container_only_result(
     ctx: &DecodeContext<'_>,
@@ -1721,7 +1677,6 @@ pub(crate) fn container_only_result(
                 .with_untyped(untyped),
         )?;
     }
-    source_fidelity.metadata.extend(source_layout(scan)?);
     Ok(Decoded {
         ir,
         body: DecodeBody {

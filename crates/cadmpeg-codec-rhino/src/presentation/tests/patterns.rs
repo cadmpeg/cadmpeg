@@ -171,7 +171,6 @@ fn legacy_hatch_pattern_record(archive: ArchiveVersion) -> Vec<u8> {
 fn absent_component_index_does_not_alias_system_index_minus_one() {
     let record = LinetypeRecord {
         id: "rhino:presentation:linetype#record-7".to_owned(),
-        source_offset: 7,
         archive_index: None,
         source_uuid: None,
         name: String::new(),
