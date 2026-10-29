@@ -1034,9 +1034,17 @@ fn validation_checks_generic_sweep_group_carriers() {
     // exists yet, so the independent carrier finding remains.
     assert_eq!(group_native_finding_count(&ir), 1);
 
+    // Both body roles are admitted Sweep roles; a role outside the Sweep set
+    // adds the frame finding.
     f3d_native_mut(&mut ir).design_construction_operand_groups[0].operand_role =
         crate::records::topology::construction::DesignConstructionOperandRole::Other(
             DesignOperandRole::BODIES_B,
+        );
+    assert_eq!(group_native_finding_count(&ir), 1);
+
+    f3d_native_mut(&mut ir).design_construction_operand_groups[0].operand_role =
+        crate::records::topology::construction::DesignConstructionOperandRole::Other(
+            DesignOperandRole::ROLE_0X10,
         );
     assert_eq!(group_native_finding_count(&ir), 2);
 }
