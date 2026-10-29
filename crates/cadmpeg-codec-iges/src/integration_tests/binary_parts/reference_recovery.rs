@@ -23,7 +23,7 @@ struct Recovery<'a> {
 fn binary_format_five_parameter_reference_gives_up_its_parameter_record_and_keeps_the_real_peer() {
     recovered_peer(
         broken_parameter_reference(false),
-        broken_parameter_reference(true),
+        &broken_parameter_reference(true),
         &Recovery {
             peer: 3,
             failures: 1,
@@ -37,7 +37,7 @@ fn binary_format_five_parameter_reference_gives_up_its_parameter_record_and_keep
 fn binary_transform_dependencies_drop_transitively_and_keep_the_independent_point_identity() {
     recovered_peer(
         broken_transform_chain(false),
-        broken_transform_chain(true),
+        &broken_transform_chain(true),
         &Recovery {
             peer: 5,
             failures: 4,
@@ -102,11 +102,11 @@ fn binary_late_transform_value_fault_gives_up_only_its_value_part_and_drops_the_
     assert_eq!(
         entities
             .iter()
-            .map(|record| record.id())
+            .map(cadmpeg_ir::NativeRecord::id)
             .collect::<Vec<_>>(),
         old_entities
             .iter()
-            .map(|record| record.id())
+            .map(cadmpeg_ir::NativeRecord::id)
             .collect::<Vec<_>>()
     );
     assert_eq!(
@@ -165,7 +165,7 @@ fn binary_directory_mandatory_scalar_faults_preserve_the_independent_peer() {
         let original = directory_admission_fault(fault, false);
         recovered_peer(
             original,
-            directory_admission_fault(fault, true),
+            &directory_admission_fault(fault, true),
             &DIRECTORY_FAULT,
         );
     }
@@ -175,7 +175,7 @@ fn binary_directory_mandatory_scalar_faults_preserve_the_independent_peer() {
 fn binary_directory_invalid_status_preserves_the_independent_peer() {
     recovered_peer(
         directory_admission_fault(DirectoryAdmissionFault::Status, false),
-        directory_admission_fault(DirectoryAdmissionFault::Status, true),
+        &directory_admission_fault(DirectoryAdmissionFault::Status, true),
         &DIRECTORY_FAULT,
     );
 }
@@ -184,7 +184,7 @@ fn binary_directory_invalid_status_preserves_the_independent_peer() {
 fn binary_directory_invalid_entity_type_preserves_the_independent_peer() {
     recovered_peer(
         directory_admission_fault(DirectoryAdmissionFault::EntityType, false),
-        directory_admission_fault(DirectoryAdmissionFault::EntityType, true),
+        &directory_admission_fault(DirectoryAdmissionFault::EntityType, true),
         &DIRECTORY_FAULT,
     );
 }
@@ -197,7 +197,7 @@ const DIRECTORY_FAULT: Recovery<'static> = Recovery {
     dependents: &[],
 };
 
-fn recovered_peer(original: Vec<u8>, bytes: Vec<u8>, recovery: &Recovery<'_>) {
+fn recovered_peer(original: Vec<u8>, bytes: &[u8], recovery: &Recovery<'_>) {
     let Recovery {
         peer: ordinal,
         failures,
@@ -206,11 +206,11 @@ fn recovered_peer(original: Vec<u8>, bytes: Vec<u8>, recovery: &Recovery<'_>) {
     } = *recovery;
     assert_eq!(original.len(), bytes.len());
     assert_eq!(
-        original.iter().zip(&bytes).filter(|(a, b)| a != b).count(),
+        original.iter().zip(bytes).filter(|(a, b)| a != b).count(),
         1
     );
     let baseline = crate::test_support::decode(original);
-    let decoded = crate::test_support::decode(bytes.clone());
+    let decoded = crate::test_support::decode(bytes.to_vec());
     let point = crate::ids::point(&crate::ids::Stem::directory(ordinal));
     let vertex = crate::ids::vertex(&crate::ids::Stem::directory(ordinal));
     assert_eq!(decoded.ir().model.points.len(), 1);

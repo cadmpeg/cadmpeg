@@ -616,7 +616,9 @@ pub(crate) fn entity_without_padding(
 ) -> serde_json::Value {
     let mut value = serde_json::to_value(entity).expect("native entity");
     let padding = value["comment"].as_str().expect("hex comment");
-    assert!(padding.len() % 2 == 0 && padding.as_bytes().chunks(2).all(|pair| pair == b"20"));
+    assert!(
+        padding.len().is_multiple_of(2) && padding.as_bytes().chunks(2).all(|pair| pair == b"20")
+    );
     value["comment"] = serde_json::Value::Null;
     value
 }

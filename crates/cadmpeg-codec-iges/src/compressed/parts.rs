@@ -121,8 +121,13 @@ pub(crate) fn normalize(
                     expected = expected
                         .checked_add(2)
                         .ok_or_else(|| malformed("Directory sequence overflows"))?;
-                    let fields =
-                        source::Fields::apply(previous, &lines, at, &parsed, record_delimiter)?;
+                    let fields = source::Fields::apply(
+                        previous.as_ref(),
+                        &lines,
+                        at,
+                        &parsed,
+                        record_delimiter,
+                    )?;
                     let count = fields.count()?;
                     let end = parsed
                         .next

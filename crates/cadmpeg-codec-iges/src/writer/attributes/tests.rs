@@ -142,8 +142,10 @@ mod linkage;
 #[test]
 fn unreadable_ordered_slots_drop_only_their_source_positions() {
     let mut ir = CadIr::empty();
-    let point = cadmpeg_ir::ids::PointId::mint("test:model:point#holes").unwrap();
-    let id = cadmpeg_ir::ids::AttributeId::mint("test:model:attribute#holes").unwrap();
+    let point = cadmpeg_ir::ids::PointId::mint("test:model:point#holes")
+        .expect("the authored point identity is valid");
+    let id = cadmpeg_ir::ids::AttributeId::mint("test:model:attribute#holes")
+        .expect("the authored attribute identity is valid");
     ir.model.attributes.push(SourceAttribute {
         id: id.clone(),
         native_ref: None,
@@ -203,8 +205,10 @@ fn structured_and_empty_link_values_are_not_coerced_into_generic_scalars() {
         }]),
     ] {
         let mut ir = CadIr::empty();
-        let point = cadmpeg_ir::ids::PointId::mint("test:model:point#structured").unwrap();
-        let id = cadmpeg_ir::ids::AttributeId::mint("test:model:attribute#structured").unwrap();
+        let point = cadmpeg_ir::ids::PointId::mint("test:model:point#structured")
+            .expect("the authored point identity is valid");
+        let id = cadmpeg_ir::ids::AttributeId::mint("test:model:attribute#structured")
+            .expect("the authored attribute identity is valid");
         ir.model.attributes.push(SourceAttribute {
             id: id.clone(),
             native_ref: None,

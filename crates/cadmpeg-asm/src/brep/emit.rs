@@ -4946,18 +4946,38 @@ pub(super) fn emit_loops(
     Ok(())
 }
 
+/// Source records and decode settings for emitting faces.
+#[derive(Clone, Copy)]
+pub(super) struct FaceInputs<'a, 'record> {
+    /// Face records and records needed by their chains.
+    pub(super) records: &'record [Record],
+    /// Records indexed by stable slot.
+    pub(super) by_index: &'a HashMap<i64, &'record Record>,
+    /// Admitted topology slots.
+    pub(super) reach: &'a Reachable,
+    /// Surfaces whose analytic normal points inward.
+    pub(super) inward_normal_surfaces: &'a HashSet<i64>,
+    /// Identity format.
+    pub(super) format: IdFormat,
+    /// Model or geometry-only decode.
+    pub(super) purpose: super::DecodePurpose,
+}
+
 /// Emit reachable faces, folding surface reversal into the normalized sense and
 /// recording native sidedness.
 pub(super) fn emit_faces(
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     out: &mut AsmBrep,
-    records: &[Record],
-    by_index: &HashMap<i64, &Record>,
-    reach: &Reachable,
-    inward_normal_surfaces: &HashSet<i64>,
-    format: IdFormat,
-    purpose: super::DecodePurpose,
+    inputs: FaceInputs<'_, '_>,
 ) -> Result<(), cadmpeg_core::CodecError> {
+    let FaceInputs {
+        records,
+        by_index,
+        reach,
+        inward_normal_surfaces,
+        format,
+        purpose,
+    } = inputs;
     let Reachable {
         faces: kept_faces,
         loops: kept_loops,

@@ -35,19 +35,10 @@ pub(crate) fn normalize(
         |sections, global, output| {
             let dependencies = Dependencies::inspect(sections, global, ctx)?;
             let mut directory = read_directory(source, sections, ctx, output, &dependencies)?;
-            let mut directory_by_offset = BTreeMap::new();
-            for (index, record) in directory.iter().enumerate() {
-                ctx.retain_bytes(
-                    u64_from_index(size_of::<(u32, usize)>()),
-                    "IGES Binary owner index",
-                )?;
-                directory_by_offset.insert(record.offset, index);
-            }
             let parameters = read_parameters(
                 source,
                 sections,
                 &directory,
-                &directory_by_offset,
                 ctx,
                 output,
                 &dependencies,
@@ -278,12 +269,20 @@ fn read_parameters(
     source: View<'_>,
     sections: &BinarySections<'_>,
     directory: &[BinaryDirectory],
-    directory_by_offset: &BTreeMap<u32, usize>,
     ctx: &DecodeContext<'_>,
     output: &mut PartOutput,
     dependencies: &Dependencies,
     global: &crate::global::ResolvedGlobal,
 ) -> Result<Vec<BinaryParameter>, CodecError> {
+    let mut directory_by_offset = BTreeMap::new();
+    for (index, record) in directory.iter().enumerate() {
+        ctx.retain_bytes(
+            u64_from_index(size_of::<(u32, usize)>()),
+            "IGES Binary owner index",
+        )?;
+        directory_by_offset.insert(record.offset, index);
+    }
+    let directory_by_offset = &directory_by_offset;
     let payload = sections.parameter;
     let start = payload
         .start()

@@ -178,7 +178,7 @@ fn compressed_missing_parameter_line_count_gives_up_its_actual_known_data_sectio
     let (original, bytes) =
         crate::test_support::compressed_parts::without_initial_field(b"@14_1", false);
     assert_eq!(original.len() - bytes.len(), b"@14_1".len());
-    unknown_count(original, bytes);
+    unknown_count(original, &bytes);
 }
 
 #[test]
@@ -193,10 +193,10 @@ fn compressed_unreadable_parameter_line_count_gives_up_its_actual_known_data_sec
             .count(),
         1
     );
-    unknown_count(original, bytes);
+    unknown_count(original, &bytes);
 }
 
-fn unknown_count(original: Vec<u8>, bytes: Vec<u8>) {
+fn unknown_count(original: Vec<u8>, bytes: &[u8]) {
     let baseline = crate::test_support::decode(original);
     assert_eq!(baseline.ir().model.points.len(), 2);
     let mut offset = 0;
@@ -213,7 +213,7 @@ fn unknown_count(original: Vec<u8>, bytes: Vec<u8>) {
         offset += line.len();
     }
     let extent = extent.expect("original bounded Data section");
-    let decoded = crate::test_support::decode(bytes.clone());
+    let decoded = crate::test_support::decode(bytes.to_vec());
     assert!(decoded.ir().model.points.is_empty());
     assert!(decoded.ir().model.vertices.is_empty());
     assert_eq!(decoded.ir().tolerances, baseline.ir().tolerances);

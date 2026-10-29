@@ -8,7 +8,7 @@ use serde_json::json;
 
 const PROPERTY: &str = "iges:property:record#source";
 
-fn property(owners: Vec<String>) -> NativeRecord {
+fn property(owners: &[String]) -> NativeRecord {
     NativeRecord::new(
         Identity::new(PROPERTY).expect("native identity"),
         serde_json::from_value(json!({
@@ -39,7 +39,7 @@ fn inward_property_link_preserves_native_values_and_writes_current_name_and_nume
     ir.native
         .namespace_mut("iges")
         .arenas_mut()
-        .insert("properties".into(), vec![property(Vec::new())]);
+        .insert("properties".into(), vec![property(&[])]);
     let before = ir.clone();
     let mut owner = entity(116, 0, "0,0,0;".into());
     owner.source_targets.push(point.to_string());
@@ -67,7 +67,7 @@ fn unlinked_typed_property_writes_under_full_scope_when_its_references_resolve()
     let mut ir = CadIr::empty();
     ir.native.namespace_mut("iges").arenas_mut().insert(
         "properties".into(),
-        vec![property(vec!["iges:entity:directory#1".into()])],
+        vec![property(&["iges:entity:directory#1".into()])],
     );
     let mut owner = entity(116, 0, "0,0,0;".into());
     owner.source_targets.push("iges:entity:directory#1".into());
@@ -84,7 +84,7 @@ fn unlinked_typed_property_writes_under_full_scope_when_its_references_resolve()
     );
     ir.native.namespace_mut("iges").arenas_mut().insert(
         "properties".into(),
-        vec![property(vec!["iges:entity:directory#missing".into()])],
+        vec![property(&["iges:entity:directory#missing".into()])],
     );
     let mut entities = vec![owner];
     let exported = append(&ir, &mut entities, crate::IgesVersion::V5_3);
@@ -114,7 +114,7 @@ fn duplicate_current_property_fields_refuse_the_group_instead_of_selecting_one()
             values: vec![Some(AttributeValue::Integer(ordinal))],
         });
     }
-    let record = property(Vec::new());
+    let record = property(&[]);
     let attributes = BTreeMap::from([(PROPERTY, ir.model.attributes.iter().collect::<Vec<_>>())]);
     let error = fields::groups(&record, &attributes, fields::Family::Property)
         .err()
@@ -248,7 +248,7 @@ fn equal_current_property_is_written_and_a_changed_counterpart_is_regenerated() 
     });
     ir.native.namespace_mut("iges").arenas_mut().insert(
         "properties".into(),
-        vec![property(vec!["iges:entity:directory#1".into()])],
+        vec![property(&["iges:entity:directory#1".into()])],
     );
     let mut owner = entity(116, 0, "0,0,0;".into());
     owner.source_targets = vec![
@@ -351,8 +351,10 @@ fn removing_the_last_counterparts_keeps_one_shared_typed_property_with_all_owner
 #[test]
 fn generic_holes_keep_actual_native_no_value_fields_without_restoring_unread_values() {
     let mut ir = CadIr::empty();
-    let point = PointId::mint("test:model:point#source").unwrap();
-    let id = AttributeId::mint("test:model:attribute#source").unwrap();
+    let point =
+        PointId::mint("test:model:point#source").expect("the authored point identity is valid");
+    let id = AttributeId::mint("test:model:attribute#source")
+        .expect("the authored attribute identity is valid");
     ir.model.attributes.push(SourceAttribute {
         id: id.clone(),
         native_ref: Some(PROPERTY.into()),
@@ -361,7 +363,7 @@ fn generic_holes_keep_actual_native_no_value_fields_without_restoring_unread_val
         values: vec![None, Some(AttributeValue::String("B".into()))],
     });
     let record = NativeRecord::new(
-        Identity::new(PROPERTY).unwrap(),
+        Identity::new(PROPERTY).expect("the native property identity is valid"),
         serde_json::from_value(json!({
             "source_entity":"iges:entity:directory#3", "form":27, "property_kind":"generic_data",
             "name":NativeBytes::from(b"NAME".to_vec()), "declared_value_count":8, "owners":[],
@@ -370,8 +372,8 @@ fn generic_holes_keep_actual_native_no_value_fields_without_restoring_unread_val
                 {"data_type":1,"value":{"kind":"integer","value":91}},
                 {"data_type":3,"value":{"kind":"string","value":NativeBytes::from(b"source".to_vec())}}
             ]
-        })).unwrap(),
-    ).unwrap();
+        })).expect("the native property fields deserialize"),
+    ).expect("the native property record builds");
     ir.native
         .namespace_mut("iges")
         .arenas_mut()
@@ -394,8 +396,10 @@ fn generic_holes_keep_actual_native_no_value_fields_without_restoring_unread_val
 #[test]
 fn scalar_hole_is_not_replayed_from_native_or_rehomed_as_generic_data() {
     let mut ir = CadIr::empty();
-    let point = PointId::mint("test:model:point#scalar").unwrap();
-    let id = AttributeId::mint("test:model:attribute#scalar").unwrap();
+    let point =
+        PointId::mint("test:model:point#scalar").expect("the authored point identity is valid");
+    let id = AttributeId::mint("test:model:attribute#scalar")
+        .expect("the authored attribute identity is valid");
     ir.model.attributes.push(SourceAttribute {
         id: id.clone(),
         native_ref: Some(PROPERTY.into()),
@@ -404,14 +408,14 @@ fn scalar_hole_is_not_replayed_from_native_or_rehomed_as_generic_data() {
         values: vec![None],
     });
     let record = NativeRecord::new(
-        Identity::new(PROPERTY).unwrap(),
+        Identity::new(PROPERTY).expect("the native property identity is valid"),
         serde_json::from_value(json!({
             "source_entity":"iges:entity:directory#3", "form":15, "property_kind":"name",
             "value":NativeBytes::from(b"SOURCE".to_vec()), "owners":[]
         }))
-        .unwrap(),
+        .expect("the native property fields deserialize"),
     )
-    .unwrap();
+    .expect("the native property record builds");
     ir.native
         .namespace_mut("iges")
         .arenas_mut()

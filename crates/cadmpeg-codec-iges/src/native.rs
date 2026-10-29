@@ -5845,7 +5845,7 @@ pub(crate) fn store(
             ir,
             sequences,
             &entities,
-            attributes::PropertyRecords {
+            &attributes::PropertyRecords {
                 properties: &properties,
                 definitions: &attribute_table_definitions,
                 instances: &attribute_table_instances,

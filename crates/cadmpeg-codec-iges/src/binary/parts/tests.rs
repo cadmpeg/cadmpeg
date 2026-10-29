@@ -22,9 +22,12 @@ fn repeated_binary_values_keep_the_exact_physical_directory_pointer_extent() {
         prefixed.extend_from_slice(b"post");
         let arena = DecodeArena::new();
         let (_ctx, root) =
-            DecodeContext::from_root_bytes(&prefixed, &arena, &DecodePolicy::service()).unwrap();
-        let body = root.child(3, 3 + bytes.len()).unwrap();
-        let prefix = parameter_prefix(body, lengths).unwrap();
+            DecodeContext::from_root_bytes(&prefixed, &arena, &DecodePolicy::service())
+                .expect("the prefixed record fits the service policy");
+        let body = root
+            .child(3, 3 + bytes.len())
+            .expect("the record body lies inside the root");
+        let prefix = parameter_prefix(body, lengths).expect("the parameter prefix parses");
         assert_eq!(prefix.entity_type, 116);
         assert_eq!(prefix.directory_pointer, pointer);
         assert_eq!(prefix.stream.value_extent, expected.clone());
@@ -33,7 +36,7 @@ fn repeated_binary_values_keep_the_exact_physical_directory_pointer_extent() {
                 body.start() + prefix.stream.value_extent.start,
                 body.start() + prefix.stream.value_extent.end,
             )
-            .unwrap();
+            .expect("the value extent lies inside the record body");
         assert_eq!(extent.window(), &bytes[expected]);
         assert_eq!(extent.location().space, body.location().space);
     }
@@ -46,10 +49,11 @@ fn binary_reference_values_resolve_actual_source_offsets_before_semantic_creatio
 
     let bytes = crate::test_support::binary_parts::point_pair(false);
     let arena = DecodeArena::new();
-    let (_ctx, root) =
-        DecodeContext::from_root_bytes(&bytes, &arena, &DecodePolicy::service()).unwrap();
-    let sections = parse_sections(root).unwrap();
-    let records = read_directory(sections.directory, sections.lengths).unwrap();
+    let (_ctx, root) = DecodeContext::from_root_bytes(&bytes, &arena, &DecodePolicy::service())
+        .expect("the point pair fits the service policy");
+    let sections = parse_sections(root).expect("the point pair splits into binary sections");
+    let records =
+        read_directory(sections.directory, sections.lengths).expect("the directory section reads");
     assert_eq!(records.len(), 2);
     assert_eq!(records[0].source_sequence, 1);
     assert_eq!(records[1].source_sequence, 3);
@@ -61,15 +65,18 @@ fn binary_reference_values_resolve_actual_source_offsets_before_semantic_creatio
     let target = i64::from(records[1].offset);
     assert_ne!(target, 3);
     assert_eq!(
-        resolve_value(&BinaryValue::Pointer(target), &records, &index).unwrap(),
+        resolve_value(&BinaryValue::Pointer(target), &records, &index)
+            .expect("a pointer to a directory record resolves"),
         BinaryValue::Pointer(3)
     );
     assert_eq!(
-        resolve_value(&BinaryValue::Pointer(-target), &records, &index).unwrap(),
+        resolve_value(&BinaryValue::Pointer(-target), &records, &index)
+            .expect("a negated pointer to a directory record resolves"),
         BinaryValue::Pointer(-3)
     );
     assert_eq!(
-        resolve_value(&BinaryValue::Integer(target), &records, &index).unwrap(),
+        resolve_value(&BinaryValue::Integer(target), &records, &index)
+            .expect("an integer value passes through unchanged"),
         BinaryValue::Integer(target)
     );
     assert!(resolve_value(&BinaryValue::Pointer(target + 1), &records, &index).is_err());
@@ -80,15 +87,33 @@ fn normalized_grammar_positions_keep_the_original_counted_record_identity() {
     for corrupt_first in [false, true] {
         let bytes = crate::test_support::binary_parts::point_pair(corrupt_first);
         let arena = DecodeArena::new();
-        let (ctx, root) =
-            DecodeContext::from_root_bytes(&bytes, &arena, &DecodePolicy::service()).unwrap();
-        let (normalized, _) = super::normalize(root, &ctx).unwrap();
+        let (ctx, root) = DecodeContext::from_root_bytes(&bytes, &arena, &DecodePolicy::service())
+            .expect("the point pair fits the service policy");
+        let (normalized, _) = super::normalize(root, &ctx).expect("the point pair normalizes");
         if corrupt_first {
-            assert_eq!(normalized.identities.semantic_sequence(1).unwrap(), 3);
+            assert_eq!(
+                normalized
+                    .identities
+                    .semantic_sequence(1)
+                    .expect("the surviving record binds semantic sequence 1"),
+                3
+            );
             assert!(normalized.identities.semantic_sequence(3).is_err());
         } else {
-            assert_eq!(normalized.identities.semantic_sequence(1).unwrap(), 1);
-            assert_eq!(normalized.identities.semantic_sequence(3).unwrap(), 3);
+            assert_eq!(
+                normalized
+                    .identities
+                    .semantic_sequence(1)
+                    .expect("the first record binds semantic sequence 1"),
+                1
+            );
+            assert_eq!(
+                normalized
+                    .identities
+                    .semantic_sequence(3)
+                    .expect("the second record binds semantic sequence 3"),
+                3
+            );
         }
         for unbound in [0, 2, 5] {
             assert!(normalized.identities.semantic_sequence(unbound).is_err());

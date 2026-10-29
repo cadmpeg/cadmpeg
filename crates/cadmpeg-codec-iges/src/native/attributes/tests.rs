@@ -288,7 +288,7 @@ fn absent_attribute_cells_keep_native_slots_and_neutral_column_positions() {
             &mut ir,
             &crate::entities::geometry::SourceSequences::default(),
             &[],
-            super::PropertyRecords {
+            &super::PropertyRecords {
                 properties: &[],
                 definitions: &[definition],
                 instances: &[instance],

@@ -35,7 +35,7 @@ fn sidedness_joins_only_actual_native_namespace_and_source_record() {
         source_namespace: NativeRecordNamespace::new(crate::asm_format!("sat")),
         ..key.clone()
     };
-    assert!(!side.owns_native_ref(Some(&foreign.id()), &[foreign.clone()]));
+    assert!(!side.owns_native_ref(Some(&foreign.id()), std::slice::from_ref(&foreign)));
     for reference in [
         "f3d:brep:entity#4",
         "f3d:asm:face-sidedness#04",
@@ -64,6 +64,7 @@ fn sidedness_wire_keeps_native_sense_containment_and_rejects_removed_backlink() 
 
 #[test]
 fn keyless_emitted_face_links_the_actual_sidedness_row_atomically() {
+    use super::super::super::DecodePurpose;
     let records = [Record {
         index: 4,
         name: "face".into(),
@@ -91,7 +92,6 @@ fn keyless_emitted_face_links_the_actual_sidedness_row_atomically() {
     let expected_side = sidedness(4);
     let expected_reference = expected_side.id();
     let needed = cadmpeg_core::decode::u64_from_index(expected_reference.len());
-    use super::super::super::DecodePurpose;
     let mut outputs = Vec::new();
     for purpose in [DecodePurpose::Model, DecodePurpose::History] {
         for limit in [0, needed - 1, needed] {
@@ -103,12 +103,14 @@ fn keyless_emitted_face_links_the_actual_sidedness_row_atomically() {
             let result = emit_faces(
                 &ctx,
                 &mut out,
-                &records,
-                &by_index,
-                &reach,
-                &HashSet::new(),
-                crate::asm_format!("f3d"),
-                purpose,
+                FaceInputs {
+                    records: &records,
+                    by_index: &by_index,
+                    reach: &reach,
+                    inward_normal_surfaces: &HashSet::new(),
+                    format: crate::asm_format!("f3d"),
+                    purpose,
+                },
             );
             if purpose == DecodePurpose::History || limit == needed {
                 result.unwrap();
@@ -151,7 +153,7 @@ fn keyless_emitted_face_links_the_actual_sidedness_row_atomically() {
         };
         let mut out = AsmBrep::default();
         assert!(
-            matches!(emit_faces(&ctx, &mut out, &records, &by_index, &reach, &HashSet::new(), crate::asm_format!("f3d"), purpose), Err(CodecError::ResourceLimit(actual)) if actual == refusal)
+            matches!(emit_faces(&ctx, &mut out, FaceInputs { records: &records, by_index: &by_index, reach: &reach, inward_normal_surfaces: &HashSet::new(), format: crate::asm_format!("f3d"), purpose }), Err(CodecError::ResourceLimit(actual)) if actual == refusal)
         );
         assert!(out.faces.is_empty());
         assert!(out.face_sidedness.is_empty());
@@ -166,13 +168,13 @@ fn keyless_emitted_face_links_the_actual_sidedness_row_atomically() {
 fn native_namespace_outer_id_rewrites_preserve_keyed_and_direct_inverse_links() {
     use cadmpeg_ir::ids::Identity;
     use cadmpeg_ir::native::NativeRecord;
-    fn rewritten(source: &str) -> Result<String, CodecError> {
-        Ok(match source {
+    fn rewritten(source: &str) -> String {
+        match source {
             "f3d:asm:face-native-key#4" => "f3d:independent-key/asm:face-native-key#4",
             "f3d:asm:face-sidedness#4" => "f3d:independent-side/asm:face-sidedness#4",
             other => other,
         }
-        .to_owned())
+        .to_owned()
     }
     for keyed in [false, true] {
         let arena = DecodeArena::new();
@@ -202,24 +204,24 @@ fn native_namespace_outer_id_rewrites_preserve_keyed_and_direct_inverse_links() 
                 .unwrap();
         }
         for record in namespace.arenas_mut().get_mut("face_sidedness").unwrap() {
-            let id = Identity::new(rewritten(record.id()).unwrap()).unwrap();
+            let id = Identity::new(rewritten(record.id())).unwrap();
             let fields = record
-                .rewrite_fields::<FaceSidedness, _>(&ctx, rewritten)
+                .rewrite_fields::<FaceSidedness, _>(&ctx, |source: &str| Ok(rewritten(source)))
                 .unwrap();
             *record = NativeRecord::new(id, fields).unwrap();
         }
         if keyed {
             for record in namespace.arenas_mut().get_mut("face_native_keys").unwrap() {
-                let id = Identity::new(rewritten(record.id()).unwrap()).unwrap();
+                let id = Identity::new(rewritten(record.id())).unwrap();
                 let fields = record
-                    .rewrite_fields::<FaceNativeKey, _>(&ctx, rewritten)
+                    .rewrite_fields::<FaceNativeKey, _>(&ctx, |source: &str| Ok(rewritten(source)))
                     .unwrap();
                 *record = NativeRecord::new(id, fields).unwrap();
             }
         }
         let sides: Vec<FaceSidedness> = namespace.arena_as("face_sidedness").unwrap();
         let keys: Vec<FaceNativeKey> = namespace.arena_as("face_native_keys").unwrap();
-        let reference = rewritten(&reference).unwrap();
+        let reference = rewritten(&reference);
         ir.model.faces[0].native_ref = Some(reference);
         assert_eq!(sides[0].id(), namespace.arenas()["face_sidedness"][0].id());
         assert!(sides[0].owns_native_ref(ir.model.faces[0].native_ref.as_deref(), &keys));

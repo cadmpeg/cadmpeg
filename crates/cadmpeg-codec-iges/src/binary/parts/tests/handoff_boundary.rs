@@ -170,23 +170,22 @@ fn a_required_point_symbol_failure_gives_up_only_its_parameter_record_and_keeps_
     let (_ctx, source) = DecodeContext::from_root_bytes(&bytes, &arena, &DecodePolicy::service())
         .expect("independent physical source envelope");
     let sections = crate::binary::parse_sections(source).expect("original section boundaries");
-    for section in [sections.parameter] {
-        let (_, extent, _) = crate::binary::counted_record(section, 0, "source")
-            .expect("original actual counted source record");
-        let failed = crate::test_support::given_up_parts(fidelity);
-        assert_eq!(failed.len(), 1);
-        let failed = failed[0];
-        assert!(!failed.untyped().is_empty());
-        assert_eq!(
-            failed.offset(),
-            u64::try_from(extent.start()).expect("source offset")
-        );
-        assert_eq!(
-            failed.byte_len(),
-            u64::try_from(extent.window().len()).expect("source length")
-        );
-        assert_eq!(failed.data(), Some(extent.window()));
-    }
+    let section = sections.parameter;
+    let (_, extent, _) = crate::binary::counted_record(section, 0, "source")
+        .expect("original actual counted source record");
+    let failed = crate::test_support::given_up_parts(fidelity);
+    assert_eq!(failed.len(), 1);
+    let failed = failed[0];
+    assert!(!failed.untyped().is_empty());
+    assert_eq!(
+        failed.offset(),
+        u64::try_from(extent.start()).expect("source offset")
+    );
+    assert_eq!(
+        failed.byte_len(),
+        u64::try_from(extent.window().len()).expect("source length")
+    );
+    assert_eq!(failed.data(), Some(extent.window()));
     let errors: Vec<_> = decoded
         .report()
         .losses

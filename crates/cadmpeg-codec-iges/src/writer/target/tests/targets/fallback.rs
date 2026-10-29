@@ -16,7 +16,7 @@ fn off_catalog_inherit_synthesizes_and_reads_the_reported_catalog_default() {
         .expect("original version-1 point fixture");
     let ir = decoded.ir();
     let plan = IgesCodec
-        .plan(EncodeInput::new(&ir, None), TargetRequest::Inherit)
+        .plan(EncodeInput::new(ir, None), TargetRequest::Inherit)
         .expect("§5.0 selects catalog-default synthesis");
     assert!(matches!(
         plan.report().write_path(),
