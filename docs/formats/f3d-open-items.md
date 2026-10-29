@@ -666,3 +666,15 @@ the native feature when a fixed lane carries a symmetric distance.
 **Need.** Cage entries that fail at each program stage must show which failures this loss covers, before a reader can distinguish malformed cages from unsupported program generations.
 
 **Note.** This item is minor: the B-rep stream retains the committed face geometry of an undecoded cage.
+
+### DR-121. Emboss controls and extended selections
+
+**Question.** What do the Emboss control words and native pairs mean, and which values select material effect, direction, placement, and contour membership?
+
+**Known.** The prefix has one or two control words, a counted run of native pairs, four scalar-owner links, two selection-group links, an auxiliary-group link, and the common ordered reference table. The table indices are in increasing order; prefix references bind by record identity. A sketch entity link identifies a Sketch but does not identify its selected contours.
+
+**Need.** Independent files that change one effect, direction, placement, or contour selection at a time; complete operand frames for the extended reference table.
+
+**Conflict.** None.
+
+**Note.** Keep controls and extended selections native. A neutral Wrap requires a proven effect, selected profile, target face, and placement. The existing Wrap operation has no independent horizontal, vertical, or rotation controls.
