@@ -116,6 +116,11 @@ pub(crate) enum SldprtLossCode {
     TessellationFaceOwnershipUnresolved,
     /// Surface-owner assignment ran out of its local work cap.
     TessellationOwnerWorkCapped,
+    /// Display-face tables carry conflicting reused class tags, so the
+    /// persistent join is withheld.
+    TessellationReusedTagAmbiguous,
+    /// `DisplayLists` meshes transferred without B-rep geometry ownership.
+    TessellationDisplayWithoutGeometry,
     /// No body record was available; a body hierarchy was derived.
     TopologyBodyHierarchyDerived,
     /// Shared-edge coedge senses give an odd-parity face cycle, so some face
@@ -125,6 +130,16 @@ pub(crate) enum SldprtLossCode {
     TopologyFaceUnclaimed,
     /// Referenced FIN records have conflicting complete frames.
     TopologyFinRecordAmbiguous,
+    /// A canonical edge whose FIN record is an unwalked boundary dummy lacks
+    /// reciprocal partner corroboration of both ring-order endpoints, or a
+    /// mutual twin FIN contradicts the ring-order endpoint.
+    TopologyFinPartnerUnresolved,
+    /// A FIN backward link names no reciprocal same-loop forward link, so
+    /// its ring is withheld instead of walked on doubt.
+    TopologyFinLinkUnresolved,
+    /// Vertexless ring FINs fail strict reciprocal-circle single-loop
+    /// admission, so no vertex is invented for them.
+    TopologyRingEdgeWithheld,
     /// Referenced LOOP records have conflicting complete frames.
     TopologyLoopRecordAmbiguous,
     /// Referenced VERTEX records lack a complete owner-verified frame or IR-supported tolerance.
@@ -229,10 +244,15 @@ impl SldprtLossCode {
         Self::NativeAppearanceScopeUnresolved,
         Self::TessellationFaceOwnershipUnresolved,
         Self::TessellationOwnerWorkCapped,
+        Self::TessellationReusedTagAmbiguous,
+        Self::TessellationDisplayWithoutGeometry,
         Self::TopologyBodyHierarchyDerived,
         Self::TopologyFaceSenseConflict,
         Self::TopologyFaceUnclaimed,
         Self::TopologyFinRecordAmbiguous,
+        Self::TopologyFinPartnerUnresolved,
+        Self::TopologyFinLinkUnresolved,
+        Self::TopologyRingEdgeWithheld,
         Self::TopologyLoopRecordAmbiguous,
         Self::TopologyVertexRecordUnresolved,
         Self::TopologyPcurveCarrierOffSurface,
@@ -305,10 +325,15 @@ impl SldprtLossCode {
             Self::NativeAppearanceScopeUnresolved => "appearance.native-scope-unresolved",
             Self::TessellationFaceOwnershipUnresolved => "tessellation.face-ownership-unresolved",
             Self::TessellationOwnerWorkCapped => "tessellation.owner-work-capped",
+            Self::TessellationReusedTagAmbiguous => "tessellation.reused-tag-ambiguous",
+            Self::TessellationDisplayWithoutGeometry => "tessellation.display-without-geometry",
             Self::TopologyBodyHierarchyDerived => "topology.body-hierarchy-derived",
             Self::TopologyFaceSenseConflict => "topology.face-sense-conflict",
             Self::TopologyFaceUnclaimed => "topology.face-unclaimed",
             Self::TopologyFinRecordAmbiguous => "topology.fin-record-ambiguous",
+            Self::TopologyFinPartnerUnresolved => "topology.fin-partner-unresolved",
+            Self::TopologyFinLinkUnresolved => "topology.fin-link-unresolved",
+            Self::TopologyRingEdgeWithheld => "topology.ring-edge-withheld",
             Self::TopologyLoopRecordAmbiguous => "topology.loop-record-ambiguous",
             Self::TopologyVertexRecordUnresolved => "topology.vertex-record-unresolved",
             Self::TopologyPcurveCarrierOffSurface => "topology.pcurve-carrier-off-surface",
@@ -396,10 +421,15 @@ impl SldprtLossCode {
             | Self::NativeAppearanceScopeUnresolved
             | Self::TessellationFaceOwnershipUnresolved
             | Self::TessellationOwnerWorkCapped
+            | Self::TessellationReusedTagAmbiguous
+            | Self::TessellationDisplayWithoutGeometry
             | Self::TopologyBodyHierarchyDerived
             | Self::TopologyFaceSenseConflict
             | Self::TopologyFaceUnclaimed
             | Self::TopologyFinRecordAmbiguous
+            | Self::TopologyFinPartnerUnresolved
+            | Self::TopologyFinLinkUnresolved
+            | Self::TopologyRingEdgeWithheld
             | Self::TopologyLoopRecordAmbiguous
             | Self::TopologyVertexRecordUnresolved
             | Self::TopologyPcurveCarrierOffSurface
@@ -436,6 +466,9 @@ impl SldprtLossCode {
             }
             Self::TopologyFaceUnclaimed
             | Self::TopologyFinRecordAmbiguous
+            | Self::TopologyFinPartnerUnresolved
+            | Self::TopologyFinLinkUnresolved
+            | Self::TopologyRingEdgeWithheld
             | Self::TopologyLoopRecordAmbiguous
             | Self::TopologyVertexRecordUnresolved => LossTaxonomy::TopologyNotTransferred,
             Self::TopologyPcurveCarrierOffSurface => LossTaxonomy::PcurveOmitted,
@@ -452,9 +485,10 @@ impl SldprtLossCode {
             Self::AppearanceFaceColorUnresolved
             | Self::AppearanceAssignmentUnresolved
             | Self::NativeAppearanceScopeUnresolved => LossTaxonomy::MaterialNotTransferred,
-            Self::TessellationFaceOwnershipUnresolved | Self::TessellationOwnerWorkCapped => {
-                LossTaxonomy::ReferenceGraphNotClosed
-            }
+            Self::TessellationFaceOwnershipUnresolved
+            | Self::TessellationOwnerWorkCapped
+            | Self::TessellationReusedTagAmbiguous
+            | Self::TessellationDisplayWithoutGeometry => LossTaxonomy::ReferenceGraphNotClosed,
             Self::MaterialMetadataNotTransferred => LossTaxonomy::MaterialNotTransferred,
             Self::ConfigActiveIdentityUnresolved
             | Self::ConfigActivePartitionMismatch
@@ -674,10 +708,15 @@ mod tests {
                 "appearance.native-scope-unresolved",
                 "tessellation.face-ownership-unresolved",
                 "tessellation.owner-work-capped",
+                "tessellation.reused-tag-ambiguous",
+                "tessellation.display-without-geometry",
                 "topology.body-hierarchy-derived",
                 "topology.face-sense-conflict",
                 "topology.face-unclaimed",
                 "topology.fin-record-ambiguous",
+                "topology.fin-partner-unresolved",
+                "topology.fin-link-unresolved",
+                "topology.ring-edge-withheld",
                 "topology.loop-record-ambiguous",
                 "topology.vertex-record-unresolved",
                 "topology.pcurve-carrier-off-surface",

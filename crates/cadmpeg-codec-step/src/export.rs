@@ -5607,44 +5607,59 @@ impl<'a> Builder<'a> {
         // EDGE_CURVE carries its bounded domain through the two vertex
         // endpoints. The IR parameter interval is a derived parameterization
         // detail, not a separate STEP attribute, so it is not a loss here.
+        // The file states one global uncertainty, so the largest dropped
+        // tolerance is how far a reader can be wrong to take the geometry as exact.
+        let census = |tolerances: Vec<f64>| {
+            let largest = tolerances.iter().copied().fold(0.0, f64::max);
+            (tolerances.len(), largest)
+        };
         let topology_metadata = [
             (
                 "face tolerance",
-                self.ir
-                    .model
-                    .faces
-                    .iter()
-                    .filter(|face| face.tolerance.is_some())
-                    .count(),
+                census(
+                    self.ir
+                        .model
+                        .faces
+                        .iter()
+                        .filter_map(|face| face.tolerance)
+                        .map(cadmpeg_ir::scalar::PositiveReal::get)
+                        .collect(),
+                ),
             ),
             (
                 "edge tolerance",
-                self.ir
-                    .model
-                    .edges
-                    .iter()
-                    .filter(|edge| edge.tolerance.is_some())
-                    .count(),
+                census(
+                    self.ir
+                        .model
+                        .edges
+                        .iter()
+                        .filter_map(|edge| edge.tolerance)
+                        .map(cadmpeg_ir::scalar::PositiveReal::get)
+                        .collect(),
+                ),
             ),
             (
                 "vertex tolerance",
-                self.ir
-                    .model
-                    .vertices
-                    .iter()
-                    .filter(|vertex| vertex.tolerance.is_some())
-                    .count(),
+                census(
+                    self.ir
+                        .model
+                        .vertices
+                        .iter()
+                        .filter_map(|vertex| vertex.tolerance)
+                        .map(cadmpeg_ir::scalar::PositiveReal::get)
+                        .collect(),
+                ),
             ),
         ];
         let topology_metadata_count = topology_metadata
             .iter()
-            .map(|(_, count)| count)
+            .map(|(_, (count, _))| count)
             .sum::<usize>();
         if topology_metadata_count > 0 {
             let details = topology_metadata
                 .iter()
-                .filter(|(_, count)| *count > 0)
-                .map(|(kind, count)| format!("{kind}={count}"))
+                .filter(|(_, (count, _))| *count > 0)
+                .map(|(kind, (count, largest))| format!("{kind}={count} (largest {largest} mm)"))
                 .collect::<Vec<_>>()
                 .join(", ");
             self.loss(

@@ -227,7 +227,12 @@ fn cap_center(model: &Model, face: &Face, radius: f64) -> Option<Point3> {
     center
 }
 
-pub(super) fn loft(model: &Model, generator: u32, sections: [u32; 2]) -> Option<()> {
+pub(in crate::feature::loft_sweep) fn loft(
+    model: &Model,
+    generator: u32,
+    sections: [u32; 2],
+    curve_member: impl Fn(usize, i64) -> bool,
+) -> Option<()> {
     let faces = owned_faces(model, generator)?;
     let mut caps = HashSet::new();
     let mut sides = HashSet::new();
@@ -249,8 +254,13 @@ pub(super) fn loft(model: &Model, generator: u32, sections: [u32; 2]) -> Option<
                     return None;
                 }
             }
-            ("INV_NMX_ORDERED_GEN_TAG", [2, _, first, 258, 0, 0, 3, last, 258, 4, member])
-                if *first == i64::from(sections[0]) && *last == i64::from(sections[1]) =>
+            (
+                "INV_NMX_ORDERED_GEN_TAG",
+                [2, curve, first, 258, 0, 0, last_curve, last, 258, 4, member],
+            ) if *first == i64::from(sections[0])
+                && *last == i64::from(sections[1])
+                && curve_member(0, *curve)
+                && curve_member(1, *last_curve) =>
             {
                 let construction = surface.geometry.procedural_construction()?;
                 let procedural = model

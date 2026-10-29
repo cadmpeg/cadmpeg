@@ -246,6 +246,16 @@ the native feature when a fixed lane carries a symmetric distance.
 
 **Need.** The value can count mesh bodies removed from the feature. A design in which mesh bodies are inserted and removed one at a time, saved after each step, fixes the value and shows whether a flagged collection keeps bodies.
 
+### DR-115. Mesh container decode-failure taxonomy
+
+**Question.** Which malformed or unsupported container states does `mesh.container-undecoded` cover, and does the retained error identify the failing stage?
+
+**Known.** `f3d.md` §1.1.2 "When a document's mesh-body metadata" defines the omission: a mesh body whose metadata or referenced `.paramesh` container fails the container grammar transfers no tessellation and reports `mesh.container-undecoded` with the entry name and the decode error. B-rep evaluation then proceeds. The specification gives the container layout; the per-stage failure taxonomy awaits definition.
+
+**Need.** Containers that fail at each stage (magic, version, reserved run, protobuf framing, name-table order, descriptor grammar, stream encoding, declared counts) must show which failures this loss covers and whether the retained error text identifies the failing stage, before a reader can distinguish malformed input from an unsupported container generation.
+
+**Note.** A resource-limit failure returns an error through the error path.
+
 ### DR-86. Linked component-binding entity
 
 **Question.** What is the entity that a linked component context binding names between the component reference and the context UUID?
@@ -390,25 +400,25 @@ the native feature when a fixed lane carries a symmetric distance.
 
 **Question.** How does a component-path record with more than two path elements join to a nested occurrence, and does its world pose supersede that occurrence's own placement?
 
-**Known.** A two-element path of a cross-document element and a local element naming an occurrence-placement record stores the current world pose of that placed occurrence. A two-element path of a Component record and a local occurrence carrier of that component stores the current pose of a local occurrence in the root component. Longer paths continue through further cross-document and local elements, each with an instance discriminator, and also store a world transform.
+**Known.** A two-element path of a cross-document element and a local element naming an occurrence-placement record stores the current world pose of that placed occurrence. A two-element path of a Component record and a local occurrence carrier of that component stores the current pose of a local occurrence in the root component. Longer paths continue through further cross-document and local elements, each with an instance discriminator, and also store a world transform. A path of a referenced design's root component and occurrence placement, then this document's placement of the external occurrence and some of its local owners, stores the world pose of the inner occurrence; when the records of one instance that list the most owners agree, they place it. A path of a referenced design's root component, then this document's placement of an external occurrence and one or more of its local owners, stores that external occurrence's world pose; it places an instance that no contained record places.
 
-**Need.** The join from each later path element to the placement record of the nested occurrence in its placed design, and the relation between that world pose and the nested occurrence's own placement and joints, and whether a two-local-element pose of an occurrence below another component is local to its container or in the world.
+**Need.** Why an external occurrence's own two-element record, and a contained record that lists fewer owners, can keep an earlier pose while the records that list more owners give another; the join from each later path element to the placement record of the nested occurrence in its placed design, and the relation between that world pose and the nested occurrence's own placement and joints, and whether a two-local-element pose of an occurrence below another component is local to its container or in the world.
 
 **Conflict.** None.
 
-**Note.** Longer component-path records do not place occurrences; their bytes stay in the source stream.
+**Note.** The contained and own forms above place occurrences (`f3d.md` §1.4). Other longer component-path records do not place occurrences; their bytes stay in the source stream.
 
 ### DR-113. Solved placement without a bound assembly operand
 
 **Question.** Which native relation, if any, selects the current solved pose of an inserted occurrence when no assembly operand path binds to it?
 
-**Known.** `f3d.md` §1.4 defines the occurrence-placement carrier's stored transform. Assembly operand paths can select occurrences whose solved poses differ from their stored transforms.
+**Known.** `f3d.md` §1.4 defines stored occurrence placement and component-path pose precedence. Assembly operand paths can select occurrences whose solved poses differ from their stored transforms. Operation-table type `549FBB80-B890-473E-A5C0-415D3D9BF4E6` has version-0 and version-1 forms. A typed one-element path identifies the affected occurrence. A parent descendant-path table can equal a child table's final Position matrix while the child's stored matrix equals its insertion entry. The direct table's final entry is a property of the occurrence inside its component definition, common to every instance. Component-path world poses constrain the containing instance. An instance-specific edit of the shared child violates this relation. The direct version-0 and version-1 grammar and precedence are in `f3d.md` §1.4.
 
-**Need.** Independently authored saves that change only an inserted occurrence's pose and retain the complete occurrence and constraint carriers must identify the relation that supplies its solved placement.
+**Need.** Bind each operation-associated transform to its typed occurrence path, coordinate frame, and saved state. Establish its precedence relative to occurrence-placement and component-path transforms. Distinguish a contained placement change from a containing placement change. Identify the operation suppression state and saved timeline marker before selecting an entry. Independently authored saves must change one placement or one suppression or timeline state and retain the complete occurrence, operation, and constraint carriers.
 
 **Conflict.** A stored placement can disagree with the checked assembly while no projected joint selects the occurrence. This does not distinguish an unbound constraint, an unread placement carrier, and a different saved assembly state.
 
-**Note.** For an external occurrence at the document root, a two-element component-path record supplies the current pose (`f3d.md` §1.4). This item remains open for occurrences without such a record and for nested occurrences (DR-111). Retain the stored transform and native records.
+**Note.** The root, local, contained, and owned component-path forms in `f3d.md` §1.4 keep their precedence. The remaining Need applies to other path forms, incompatible constraints, and saved-state selectors (DR-111). Direct one-element tables do not select suppression or an active timeline marker. A definition with incompatible component-path and table constraints keeps its stored pose for every instance; the operation table stays native. Other path forms and saved-state selectors remain unresolved.
 
 ### DR-109. Legacy external placement control and extended envelopes
 
@@ -518,6 +528,49 @@ the native feature when a fixed lane carries a symmetric distance.
 
 **Need.** A primary indexed record registered to `CE2913AA-CFE0-4F04-9102-24424ED3BCFA` must close under either proposed additional envelope before that envelope can define a placement or a tagged field.
 
+
+### DR-114. Body-container Fusion owners
+
+**Question.** How does an owner of type `074F9459-89C2-4B7D-8AB4-DCE67AE944FE` bind its Body container to a component definition?
+
+**Known.** `f3d.md` §3.1 "The paired untyped Body-container membership" requires registered Body and Component targets. A registered version-4 Body container has a paired untyped terminal list naming Body entities 9741 and 11861 and owner entity 9709. The owner has type `074F9459-89C2-4B7D-8AB4-DCE67AE944FE`, base type `63D6AD42-466A-40B7-9CCD-EB21BC500EF6`, version 1, module `Fusion`.
+
+**Need.** A typed reference chain from this owner to a Component definition, with the containing record boundaries and registrations.
+
+**Conflict.** None. The Fusion owner is outside the direct Component-owner grammar.
+
+**Note.** The body identities and terminal list are defined; their component-definition join is unresolved.
+
+### DR-116. Joint-placed identity occurrences of inserted designs
+
+**Question.** Which native relation binds a joint to each inserted-design occurrence that stores the identity, and in which frame does that joint define the solved pose?
+
+**Known.** `f3d.md` §1.4 "The matrix is a proper rigid motion." defines stored identity placement and the component-path world-pose carriers. A joint names an occurrence directly through an occurrence container, or names an inserted design through an external operand container, leaving the neutral tie unresolved; each distinct external document then accounts for at most one unnamed identity occurrence. The decoder counts these occurrences, reports `assembly.joint-placed-occurrence-unsolved`, and places them at the identity with the joint unsolved.
+
+**Need.** An inserted design whose occurrence stores the identity and whose joint solution is known must name the binding relation (direct occurrence reference or external-document container) and the frame of the solved pose, before the decoder can place these occurrences from their joints.
+
+**Note.** DR-113 covers solved placement without a bound assembly operand generally; this joint-to-occurrence binding is a separate question.
+
+### DR-119. Entity-cluster component-ownership fallback
+
+**Question.** When no admitted Body-container membership names a solved body, which entity cluster selects its component owner, and when does that selection disagree with the authored ownership?
+
+**Known.** `f3d.md` §3.1 "The paired untyped Body-container membership" defines the admitted membership join. A solved body binding without that membership takes entity-cluster component ownership, and the decoder reports `assembly.component-body-owner-fallback`. Owner-graph cycles and expansion-limit drops leave occurrences unplaced under `assembly.local-occurrence-owner-cycle` and `assembly.local-occurrence-expansion-limit`.
+
+**Need.** Controlled saves that delete or omit Body-container memberships while holding entity clusters fixed must show which cluster the fallback selects and whether the selected owner matches the authored component, before neutral ownership can rely on the fallback.
+
+**Note.** DR-75 defines the local occurrence carrier GUID; the validity of this fallback is a separate question.
+
+### XR-05. F3Z member cycle, absence, and decode-failure paths
+
+**Question.** Do the cycle, absence, and decode-failure losses exhaust the unresolvable member states of a multi-document merge?
+
+**Known.** `f3d.md` §1.5 "Reference resolution is member-local and recursive." defines member-local recursive resolution. A member path that recurs in the active chain reports `xref.cycle` and stays unresolved. A member absent from the archive reports `xref.member-missing`. A present member that is not an F3D document member, that cannot be scanned, or that fails to decode reports `xref.member-undecoded`. Unscannable members are marked unreadable at scan time and skipped at merge time with that scan-time mark as their record. Resource-limit failures return an error.
+
+**Need.** A merge that must continue past each unresolvable member needs each such state mapped to its loss, so the mapping covers every unresolvable state and every skipped resolvable member.
+
+**Note.** The occurrence keeps its placement while its member stays unresolved; the merge continues with the remaining members.
+
 ## 3. Material assets
 
 ### MA-04. Texture map-channel values
@@ -579,3 +632,49 @@ the native feature when a fixed lane carries a symmetric distance.
 **Conflict.** None.
 
 **Note.** The layout slot name does not establish the control's physical role.
+
+### DR-117. Current mixed face and distance extent payload
+
+**Question.** Which reference assignments and orientation fields define a first-side face termination with a second-side distance, and what does target option zero select?
+
+**Known.** The current seven-slot prologue can carry direction two, first-side extent two, and a payload second-side extent one. Target option zero also occurs with a payload second-side extent one or two. The final zero word before the scope reference count does not identify the second-side termination.
+
+**Need.** Controlled face-then-distance changes with both direction states and independent side tapers.
+
+**Conflict.** None.
+
+**Note.** The scope and ordered references stay native with `feature.extrude-extent-native` until the complete assignment is defined.
+
+### DR-118. Split tool face without a tool group
+
+**Question.** Which tool does a `Split` scope select when reference zero is a direct face operand record instead of a counted tool group?
+
+**Known.** The face operand has a complete `face_recipe_data` frame and an exact scope reference at reference zero.
+
+**Need.** Controlled Split changes that select a face as the tool, with one and with several target bodies.
+
+**Conflict.** None.
+
+**Note.** The face operand record is validated as a frame. The Split operation keeps its existing projection rules.
+
+### TS-07. T-spline cage decode-failure taxonomy
+
+**Question.** Which cage program failures does `tspline.cage-undecoded` cover?
+
+**Known.** `f3d.md` §1.1.1 "A `TSplines.BlobParts/*.tsm` entry is a UTF-8" defines the cage program. A cage entry that fails to parse transfers no surface and reports `tspline.cage-undecoded` with the entry name and the error. Untyped records and unresolved radial pairs have their own losses and remain outside this item.
+
+**Need.** Cage entries that fail at each program stage must show which failures this loss covers, before a reader can distinguish malformed cages from unsupported program generations.
+
+**Note.** This item is minor: the B-rep stream retains the committed face geometry of an undecoded cage.
+
+### DR-121. Emboss controls and extended selections
+
+**Question.** What do the Emboss control words and native pairs mean, and which values select material effect, direction, placement, and contour membership?
+
+**Known.** The prefix has one or two control words, a counted run of native pairs, four scalar-owner links, two selection-group links, an auxiliary-group link, and the common ordered reference table. The table indices are in increasing order; prefix references bind by record identity. A sketch entity link identifies a Sketch but does not identify its selected contours.
+
+**Need.** Independent files that change one effect, direction, placement, or contour selection at a time; complete operand frames for the extended reference table.
+
+**Conflict.** None.
+
+**Note.** Keep controls and extended selections native. A neutral Wrap requires a proven effect, selected profile, target face, and placement. The existing Wrap operation has no independent horizontal, vertical, or rotation controls.

@@ -21,6 +21,7 @@ mod container;
 mod design;
 mod dialect;
 mod drawing;
+mod drawing_content;
 mod element_map;
 mod gui;
 mod joint;
@@ -995,6 +996,14 @@ impl CodecBackend for FcstdCodec {
                 &graph.properties,
                 &drawings,
             )?;
+            drawing::content::enrich(
+                ctx,
+                &mut ir.model,
+                &graph.properties,
+                &scan.data,
+                &mut scan.losses,
+            )?;
+            annotation::enrich_dimensions(ctx, &mut ir.model, &graph.properties, &mut scan.losses)?;
             namespace.set_arena(ctx, "annotations", &annotations)?;
             application::install(
                 ctx,
@@ -1058,6 +1067,12 @@ impl CodecBackend for FcstdCodec {
                     &topology_occurrences,
                 );
             }
+            transfer_losses.extend(drawing_content::transfer(
+                ctx,
+                &mut ir.model,
+                &graph.properties,
+                &scan.data,
+            )?);
             ctx.admit_entities(
                 cadmpeg_core::decode::u64_from_index(ir.model.entity_count()),
                 &mut admitted_entities,

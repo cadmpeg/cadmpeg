@@ -25,6 +25,38 @@ const NAMESPACE: LossNamespace<'static> = cadmpeg_ir::loss_namespace!("fcstd");
 /// string form (via [`FreecadLossCode::code`]) is the stable contract.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub(crate) enum FreecadLossCode {
+    /// Template geometry or positioned text remains in its SVG asset.
+    TemplateNotTransferred,
+    /// The stored horizontal view axis has no nonzero neutral direction.
+    DrawingViewAxisNotTransferred,
+    /// Projected model-view edges have no persisted curve collection.
+    ViewGeometryNotStored,
+    /// The view family has no admitted projected geometry.
+    ViewGeometryNotTransferred,
+    /// An exact dimension value has no admitted page reference anchors.
+    DimensionAnchorsNotTransferred,
+    /// Drawing appearance has no complete physical style.
+    DrawingStyleNotTransferred,
+    /// Caption text has no normalized page position.
+    CaptionNotTransferred,
+    /// Persisted drawing content remains native.
+    DrawingSheetNotTransferred,
+    /// Persisted drawing content remains native.
+    DrawingTitleBlockNotTransferred,
+    /// Persisted drawing content remains native.
+    DrawingCosmeticEdgeNotTransferred,
+    /// Persisted drawing content remains native.
+    DrawingCosmeticVertexNotTransferred,
+    /// Persisted drawing content remains native.
+    DrawingCenterLineNotTransferred,
+    /// Persisted drawing content remains native.
+    DrawingGeometryFormatNotTransferred,
+    /// Persisted drawing content remains native.
+    DrawingDimensionKindNotTransferred,
+    /// Persisted drawing content remains native.
+    DrawingDimensionGeometryNotTransferred,
+    /// Persisted drawing content remains native.
+    DrawingDimensionToleranceNotTransferred,
     /// A bounded archive payload cannot be opened; its stored bytes remain retained.
     ArchiveEntryUnreadable,
     /// A mesh use has no complete neutral placement path.
@@ -85,6 +117,22 @@ impl FreecadLossCode {
     /// Every code, in declaration order.
     #[cfg(test)]
     const ALL: &'static [FreecadLossCode] = &[
+        Self::TemplateNotTransferred,
+        Self::DrawingViewAxisNotTransferred,
+        Self::ViewGeometryNotStored,
+        Self::ViewGeometryNotTransferred,
+        Self::DimensionAnchorsNotTransferred,
+        Self::DrawingStyleNotTransferred,
+        Self::CaptionNotTransferred,
+        Self::DrawingSheetNotTransferred,
+        Self::DrawingTitleBlockNotTransferred,
+        Self::DrawingCosmeticEdgeNotTransferred,
+        Self::DrawingCosmeticVertexNotTransferred,
+        Self::DrawingCenterLineNotTransferred,
+        Self::DrawingGeometryFormatNotTransferred,
+        Self::DrawingDimensionKindNotTransferred,
+        Self::DrawingDimensionGeometryNotTransferred,
+        Self::DrawingDimensionToleranceNotTransferred,
         Self::ArchiveEntryUnreadable,
         Self::MeshPlacementNotTransferred,
         Self::MeshPlacementBounded,
@@ -118,6 +166,26 @@ impl FreecadLossCode {
     #[must_use]
     const fn code(self) -> &'static str {
         match self {
+            Self::DrawingViewAxisNotTransferred => "drawing.view-axis-not-transferred",
+            Self::TemplateNotTransferred => "drawing.template-not-transferred",
+            Self::ViewGeometryNotStored => "drawing.view-geometry-not-stored",
+            Self::ViewGeometryNotTransferred => "drawing.view-geometry-not-transferred",
+            Self::DimensionAnchorsNotTransferred => "annotation.dimension-anchors-not-transferred",
+            Self::DrawingStyleNotTransferred => "drawing.style-not-transferred",
+            Self::CaptionNotTransferred => "drawing.caption-not-transferred",
+            Self::DrawingSheetNotTransferred => "drawing.sheet-not-transferred",
+            Self::DrawingTitleBlockNotTransferred => "drawing.title-block-not-transferred",
+            Self::DrawingCosmeticEdgeNotTransferred => "drawing.cosmetic-edge-not-transferred",
+            Self::DrawingCosmeticVertexNotTransferred => "drawing.cosmetic-vertex-not-transferred",
+            Self::DrawingCenterLineNotTransferred => "drawing.center-line-not-transferred",
+            Self::DrawingGeometryFormatNotTransferred => "drawing.geometry-format-not-transferred",
+            Self::DrawingDimensionKindNotTransferred => "drawing.dimension-kind-not-transferred",
+            Self::DrawingDimensionGeometryNotTransferred => {
+                "drawing.dimension-geometry-not-transferred"
+            }
+            Self::DrawingDimensionToleranceNotTransferred => {
+                "drawing.dimension-tolerance-not-transferred"
+            }
             Self::ArchiveEntryUnreadable => "source.archive-entry-unreadable",
             Self::MeshPlacementNotTransferred => "geometry.mesh-placement-not-transferred",
             Self::MeshPlacementBounded => "geometry.mesh-placement-bounded",
@@ -164,7 +232,23 @@ impl FreecadLossCode {
             | Self::SketchNativeConstraint
             | Self::PcurveLocationAmbiguous
             | Self::TopologyLocationIdentityBounded => Severity::Blocking,
-            Self::SketchExternalCacheUnresolved
+            Self::DrawingViewAxisNotTransferred
+            | Self::TemplateNotTransferred
+            | Self::ViewGeometryNotStored
+            | Self::ViewGeometryNotTransferred
+            | Self::DimensionAnchorsNotTransferred
+            | Self::DrawingStyleNotTransferred
+            | Self::CaptionNotTransferred
+            | Self::DrawingSheetNotTransferred
+            | Self::DrawingTitleBlockNotTransferred
+            | Self::DrawingCosmeticEdgeNotTransferred
+            | Self::DrawingCosmeticVertexNotTransferred
+            | Self::DrawingCenterLineNotTransferred
+            | Self::DrawingGeometryFormatNotTransferred
+            | Self::DrawingDimensionKindNotTransferred
+            | Self::DrawingDimensionGeometryNotTransferred
+            | Self::DrawingDimensionToleranceNotTransferred
+            | Self::SketchExternalCacheUnresolved
             | Self::SketchExternalReferenceUnresolved
             | Self::SketchProfileMatchingBounded
             | Self::ArchiveEntryUnreadable
@@ -191,7 +275,23 @@ impl FreecadLossCode {
             Self::MeshPlacementNotTransferred | Self::MeshPlacementBounded => {
                 LossTaxonomy::GeometryNotTransferred
             }
-            Self::ArchiveEntryUnreadable
+            Self::DrawingViewAxisNotTransferred
+            | Self::TemplateNotTransferred
+            | Self::ViewGeometryNotStored
+            | Self::ViewGeometryNotTransferred
+            | Self::DimensionAnchorsNotTransferred
+            | Self::DrawingStyleNotTransferred
+            | Self::CaptionNotTransferred
+            | Self::DrawingSheetNotTransferred
+            | Self::DrawingTitleBlockNotTransferred
+            | Self::DrawingCosmeticEdgeNotTransferred
+            | Self::DrawingCosmeticVertexNotTransferred
+            | Self::DrawingCenterLineNotTransferred
+            | Self::DrawingGeometryFormatNotTransferred
+            | Self::DrawingDimensionKindNotTransferred
+            | Self::DrawingDimensionGeometryNotTransferred
+            | Self::DrawingDimensionToleranceNotTransferred
+            | Self::ArchiveEntryUnreadable
             | Self::PersistencePayloadUnresolved
             | Self::PersistenceSideEntryUnresolved => LossTaxonomy::RecordNotTyped,
             Self::FeatureCyclicHistory | Self::FeatureNativeKindRetained => {
@@ -255,6 +355,22 @@ mod tests {
         assert_eq!(
             codes,
             [
+                "drawing.template-not-transferred",
+                "drawing.view-axis-not-transferred",
+                "drawing.view-geometry-not-stored",
+                "drawing.view-geometry-not-transferred",
+                "annotation.dimension-anchors-not-transferred",
+                "drawing.style-not-transferred",
+                "drawing.caption-not-transferred",
+                "drawing.sheet-not-transferred",
+                "drawing.title-block-not-transferred",
+                "drawing.cosmetic-edge-not-transferred",
+                "drawing.cosmetic-vertex-not-transferred",
+                "drawing.center-line-not-transferred",
+                "drawing.geometry-format-not-transferred",
+                "drawing.dimension-kind-not-transferred",
+                "drawing.dimension-geometry-not-transferred",
+                "drawing.dimension-tolerance-not-transferred",
                 "source.archive-entry-unreadable",
                 "geometry.mesh-placement-not-transferred",
                 "geometry.mesh-placement-bounded",

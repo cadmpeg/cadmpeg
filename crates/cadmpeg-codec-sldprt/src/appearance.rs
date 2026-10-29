@@ -22,6 +22,7 @@ const VISUAL_PROPERTIES_CLASS: &[u8] = b"moVisualProperties_c";
 pub(crate) struct AppearanceDefinition {
     pub(crate) name: String,
     pub(crate) color: Color,
+    pub(crate) packed_hex: String,
     pub(crate) source_name: StreamName,
     pub(crate) record_offset: usize,
 }
@@ -43,9 +44,25 @@ pub(crate) struct FeatureAppearanceAssignment {
     pub(crate) feature_source_id: FeatureSourceId,
     feature_timestamp: u32,
     packed_color: u32,
+    packed_hex: String,
     color: Color,
     source_name: StreamName,
     record_offset: usize,
+}
+
+/// One appearance binding the decoder does not resolve to a neutral target.
+///
+/// The record carries the owner class, the source identity, the appearance
+/// index, the reason it stays unresolved, and the source offset, so the
+/// diagnostic names the exact record instead of dropping it silently.
+#[derive(Debug, Clone)]
+pub(crate) struct UnresolvedAppearanceBinding {
+    pub(crate) owner_class: String,
+    pub(crate) identity: String,
+    pub(crate) appearance_index: usize,
+    pub(crate) reason: String,
+    pub(crate) source_offset: usize,
+    pub(crate) packed_hex: Option<String>,
 }
 
 pub(crate) struct ResolvedDisplayDefinition {
@@ -56,6 +73,7 @@ pub(crate) struct ResolvedDisplayDefinition {
 pub(crate) struct ResolvedDisplayAppearances {
     pub(crate) by_face: BTreeMap<usize, ResolvedDisplayDefinition>,
     pub(crate) matched_feature_sources: BTreeSet<FeatureSourceId>,
+    pub(crate) unresolved: Vec<UnresolvedAppearanceBinding>,
 }
 
 fn packed_rgb(packed: u32) -> Color {
@@ -124,6 +142,7 @@ fn definition_at(
     Ok(Some(AppearanceDefinition {
         name,
         color: packed_rgb(packed_color),
+        packed_hex: format!("{packed_color:08x}"),
         source_name,
         record_offset,
     }))
@@ -286,6 +305,7 @@ pub(crate) fn feature_assignments(scan: &ContainerScan) -> Vec<FeatureAppearance
                 feature_source_id,
                 feature_timestamp,
                 packed_color,
+                packed_hex: format!("{packed_color:08x}"),
                 color: packed_rgb(packed_color),
                 source_name,
                 record_offset,
@@ -319,25 +339,19 @@ pub(crate) fn resolve_display_appearances(
         }
     }
 
-    let mut feature_by_source =
-        HashMap::<FeatureSourceId, Option<FeatureAppearanceAssignment>>::new();
+    let mut feature_by_source: HashMap<FeatureSourceId, Vec<FeatureAppearanceAssignment>> =
+        HashMap::new();
     for assignment in feature_assignments(scan)
         .into_iter()
         .filter(|assignment| eligible_features.contains(&assignment.feature_source_id))
     {
         feature_by_source
             .entry(assignment.feature_source_id)
-            .and_modify(|existing| {
-                if existing.as_ref().is_some_and(|previous| {
-                    previous.feature_timestamp != assignment.feature_timestamp
-                        || previous.packed_color != assignment.packed_color
-                }) {
-                    *existing = None;
-                }
-            })
-            .or_insert_with(|| Some(assignment));
+            .or_default()
+            .push(assignment);
     }
     let mut matched_feature_sources = BTreeSet::new();
+    let mut unresolved = Vec::new();
     let mut faces_by_source = BTreeMap::<FeatureSourceId, Vec<usize>>::new();
     for (table_index, face) in faces.iter().enumerate() {
         if let Some(source_id) = face.feature_source_id() {
@@ -350,14 +364,41 @@ pub(crate) fn resolve_display_appearances(
     for (source_id, face_indexes) in faces_by_source {
         const FEATURE_APPEARANCE_NAME: &str = "SolidWorks feature appearance";
 
-        let Some(Some(assignment)) = feature_by_source.get(&source_id) else {
+        let Some(candidates) = feature_by_source.get(&source_id) else {
             continue;
         };
+        let Some(first) = candidates.first() else {
+            continue;
+        };
+        let agreed = candidates.iter().all(|candidate| {
+            candidate.feature_timestamp == first.feature_timestamp
+                && candidate.packed_color == first.packed_color
+        });
+        if !agreed {
+            let offsets = candidates
+                .iter()
+                .map(|candidate| candidate.record_offset.to_string())
+                .collect::<Vec<_>>()
+                .join(",");
+            unresolved.push(UnresolvedAppearanceBinding {
+                owner_class: "moCompFeature_c".to_owned(),
+                identity: source_id.value().to_string(),
+                appearance_index: 0,
+                reason: format!(
+                    "conflicting feature appearance records disagree on timestamp or color at offsets {offsets}"
+                ),
+                source_offset: first.record_offset,
+                packed_hex: Some(first.packed_hex.clone()),
+            });
+            continue;
+        }
+        let assignment = first;
         matched_feature_sources.insert(source_id);
         let name = FEATURE_APPEARANCE_NAME.to_owned();
         let definition = AppearanceDefinition {
             name,
             color: assignment.color,
+            packed_hex: assignment.packed_hex.clone(),
             source_name: assignment.source_name.clone(),
             record_offset: assignment.record_offset,
         };
@@ -385,6 +426,7 @@ pub(crate) fn resolve_display_appearances(
     Ok(ResolvedDisplayAppearances {
         by_face,
         matched_feature_sources,
+        unresolved,
     })
 }
 

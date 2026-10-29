@@ -156,9 +156,12 @@ pub(crate) fn decode_parameter_scopes(
             if let scope::DesignScopePayloadMut::SurfacePatch(patch) = scope.payload_mut() {
                 patch.normal = normal;
             }
-            let emboss = exact_emboss_construction(bytes, &scope);
+            let emboss = exact_emboss_construction(ctx, bytes, &scope)?;
             if let scope::DesignScopePayloadMut::Emboss(slot) = scope.payload_mut() {
                 *slot = emboss;
+            }
+            if let Some(loss) = extrude_extent_native_loss(&scope) {
+                losses.push(loss);
             }
             bind_coil_extent_from_parameters(&mut scope, parameters, parameter_owners);
             bind_hem_operation_from_parameters(bytes, &mut scope, parameters, parameter_owners);
@@ -1787,6 +1790,19 @@ pub(crate) fn parameter_scope_payload_length(scope: &DesignParameterScope) -> Op
         .ok()?
         .checked_mul(2)?;
     scope.frame_length().checked_sub(kind_bytes)
+}
+
+fn extrude_extent_native_loss(
+    scope: &DesignParameterScope,
+) -> Option<cadmpeg_ir::report::loss::LossNote> {
+    (design_feature_family(&scope.kind()) == Some(DesignFeatureFamily::Extrude)
+        && scope.extrude_prologue().is_none())
+    .then(|| {
+        crate::loss::F3dLossCode::FeatureExtrudeExtentNative.note(format!(
+            "Extrude scope {} retains its unassigned extent payload and ordered references.",
+            scope.id
+        ))
+    })
 }
 
 #[cfg(test)]

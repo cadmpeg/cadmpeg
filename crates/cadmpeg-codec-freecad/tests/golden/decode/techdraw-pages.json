@@ -1,0 +1,640 @@
+{
+  "ir": {
+    "decode_depth": "full",
+    "ir_version": "9",
+    "model": {
+      "appearance_bindings": [],
+      "appearances": [],
+      "assembly_joints": [],
+      "attributes": [],
+      "bodies": [],
+      "coedges": [],
+      "configurations": [],
+      "curves": [],
+      "drawings": [
+        {
+          "id": "fcstd:model:drawing#First:entity",
+          "kind": "page",
+          "native_ref": "fcstd:native:drawing#First",
+          "object": "fcstd:native:object#First",
+          "order": 0,
+          "parameters": {
+            "ProjectionType": "<Integer value=\"0\"/>",
+            "Scale": "<Float value=\"1.0000000000000000\"/>"
+          },
+          "relationships": {
+            "Template": [
+              {
+                "target": {
+                  "kind": "local",
+                  "target": "fcstd:model:drawing#FirstTemplate:entity"
+                }
+              }
+            ],
+            "Views": [
+              {
+                "target": {
+                  "kind": "local",
+                  "target": "fcstd:model:drawing#FirstNote:entity"
+                }
+              }
+            ]
+          },
+          "runtime_type": "TechDraw::DrawPage",
+          "scale": 1.0,
+          "template": "fcstd:model:drawing#FirstTemplate:entity"
+        },
+        {
+          "id": "fcstd:model:drawing#FirstNote:entity",
+          "kind": "annotation",
+          "native_ref": "fcstd:native:drawing#FirstNote",
+          "object": "fcstd:native:object#FirstNote",
+          "order": 2,
+          "parameters": {
+            "Caption": "<String value=\"\"/>",
+            "LockPosition": "<Bool value=\"false\"/>",
+            "Rotation": "<Float value=\"0.0000000000000000\"/>",
+            "Scale": "<Float value=\"1.0000000000000000\"/>",
+            "ScaleType": "<Integer value=\"0\"/>",
+            "X": "<Float value=\"20.0000000000000000\"/>",
+            "Y": "<Float value=\"30.0000000000000000\"/>"
+          },
+          "position": [
+            20.0,
+            30.0
+          ],
+          "relationships": {
+            "Owner": [
+              {
+                "target": {
+                  "kind": "null"
+                }
+              }
+            ]
+          },
+          "rotation_degrees": 0.0,
+          "runtime_type": "TechDraw::DrawViewAnnotation",
+          "scale": 1.0
+        },
+        {
+          "assets": [
+            "fcstd:native:entry#techdraw-template.svg"
+          ],
+          "id": "fcstd:model:drawing#FirstTemplate:entity",
+          "kind": "template",
+          "native_ref": "fcstd:native:drawing#FirstTemplate",
+          "object": "fcstd:native:object#FirstTemplate",
+          "order": 1,
+          "runtime_type": "TechDraw::DrawSVGTemplate",
+          "sheet": {
+            "fields": [
+              {
+                "name": "Title",
+                "value": "Synthetic box"
+              }
+            ],
+            "height_mm": 297.0,
+            "width_mm": 210.0
+          },
+          "template_geometry": {
+            "curves": [
+              {
+                "end": [
+                  200.0,
+                  287.0
+                ],
+                "kind": "line",
+                "start": [
+                  10.0,
+                  287.0
+                ]
+              },
+              {
+                "end": [
+                  200.0,
+                  10.0
+                ],
+                "kind": "line",
+                "start": [
+                  200.0,
+                  287.0
+                ]
+              },
+              {
+                "end": [
+                  10.0,
+                  10.0
+                ],
+                "kind": "line",
+                "start": [
+                  200.0,
+                  10.0
+                ]
+              },
+              {
+                "end": [
+                  10.0,
+                  287.0
+                ],
+                "kind": "line",
+                "start": [
+                  10.0,
+                  10.0
+                ]
+              },
+              {
+                "end": [
+                  200.0,
+                  30.0
+                ],
+                "kind": "line",
+                "start": [
+                  110.0,
+                  30.0
+                ]
+              },
+              {
+                "end": [
+                  110.0,
+                  10.0
+                ],
+                "kind": "line",
+                "start": [
+                  110.0,
+                  30.0
+                ]
+              }
+            ],
+            "texts": [
+              {
+                "height": 4.0,
+                "position": [
+                  115.0,
+                  19.0
+                ],
+                "text": "Synthetic box"
+              }
+            ]
+          }
+        },
+        {
+          "id": "fcstd:model:drawing#Second:entity",
+          "kind": "page",
+          "native_ref": "fcstd:native:drawing#Second",
+          "object": "fcstd:native:object#Second",
+          "order": 3,
+          "parameters": {
+            "ProjectionType": "<Integer value=\"0\"/>",
+            "Scale": "<Float value=\"1.0000000000000000\"/>"
+          },
+          "relationships": {
+            "Template": [
+              {
+                "target": {
+                  "kind": "local",
+                  "target": "fcstd:model:drawing#SecondTemplate:entity"
+                }
+              }
+            ],
+            "Views": [
+              {
+                "target": {
+                  "kind": "local",
+                  "target": "fcstd:model:drawing#SecondNote:entity"
+                }
+              }
+            ]
+          },
+          "runtime_type": "TechDraw::DrawPage",
+          "scale": 1.0,
+          "template": "fcstd:model:drawing#SecondTemplate:entity"
+        },
+        {
+          "id": "fcstd:model:drawing#SecondNote:entity",
+          "kind": "annotation",
+          "native_ref": "fcstd:native:drawing#SecondNote",
+          "object": "fcstd:native:object#SecondNote",
+          "order": 5,
+          "parameters": {
+            "Caption": "<String value=\"\"/>",
+            "LockPosition": "<Bool value=\"false\"/>",
+            "Rotation": "<Float value=\"0.0000000000000000\"/>",
+            "Scale": "<Float value=\"1.0000000000000000\"/>",
+            "ScaleType": "<Integer value=\"0\"/>",
+            "X": "<Float value=\"40.0000000000000000\"/>",
+            "Y": "<Float value=\"30.0000000000000000\"/>"
+          },
+          "position": [
+            40.0,
+            30.0
+          ],
+          "relationships": {
+            "Owner": [
+              {
+                "target": {
+                  "kind": "null"
+                }
+              }
+            ]
+          },
+          "rotation_degrees": 0.0,
+          "runtime_type": "TechDraw::DrawViewAnnotation",
+          "scale": 1.0
+        },
+        {
+          "assets": [
+            "fcstd:native:entry#techdraw-template1.svg"
+          ],
+          "id": "fcstd:model:drawing#SecondTemplate:entity",
+          "kind": "template",
+          "native_ref": "fcstd:native:drawing#SecondTemplate",
+          "object": "fcstd:native:object#SecondTemplate",
+          "order": 4,
+          "runtime_type": "TechDraw::DrawSVGTemplate",
+          "sheet": {
+            "fields": [
+              {
+                "name": "Title",
+                "value": "Synthetic box"
+              }
+            ],
+            "height_mm": 297.0,
+            "width_mm": 210.0
+          },
+          "template_geometry": {
+            "curves": [
+              {
+                "end": [
+                  200.0,
+                  287.0
+                ],
+                "kind": "line",
+                "start": [
+                  10.0,
+                  287.0
+                ]
+              },
+              {
+                "end": [
+                  200.0,
+                  10.0
+                ],
+                "kind": "line",
+                "start": [
+                  200.0,
+                  287.0
+                ]
+              },
+              {
+                "end": [
+                  10.0,
+                  10.0
+                ],
+                "kind": "line",
+                "start": [
+                  200.0,
+                  10.0
+                ]
+              },
+              {
+                "end": [
+                  10.0,
+                  287.0
+                ],
+                "kind": "line",
+                "start": [
+                  10.0,
+                  10.0
+                ]
+              },
+              {
+                "end": [
+                  200.0,
+                  30.0
+                ],
+                "kind": "line",
+                "start": [
+                  110.0,
+                  30.0
+                ]
+              },
+              {
+                "end": [
+                  110.0,
+                  10.0
+                ],
+                "kind": "line",
+                "start": [
+                  110.0,
+                  30.0
+                ]
+              }
+            ],
+            "texts": [
+              {
+                "height": 4.0,
+                "position": [
+                  115.0,
+                  19.0
+                ],
+                "text": "Synthetic box"
+              }
+            ]
+          }
+        }
+      ],
+      "edges": [],
+      "faces": [],
+      "features": [],
+      "loops": [],
+      "occurrences": [],
+      "parameters": [],
+      "pcurves": [],
+      "pmi": [],
+      "points": [],
+      "presentation_documents": [],
+      "presentation_layers": [],
+      "procedural_curves": [],
+      "procedural_surfaces": [],
+      "product_definitions": [],
+      "regions": [],
+      "semantic_annotations": [
+        {
+          "id": "fcstd:model:semantic-annotation#FirstNote:content",
+          "kind": "text",
+          "native_ref": "fcstd:native:annotation#FirstNote",
+          "object": "fcstd:native:object#FirstNote",
+          "order": 0,
+          "parameters": {
+            "Caption": "<Property name=\"Caption\" type=\"App::PropertyString\" status=\"134217728\">\n                    <String value=\"\"/>\n                </Property>",
+            "ExpressionEngine": "<Property name=\"ExpressionEngine\" type=\"App::PropertyExpressionEngine\" status=\"67108864\">\n                    <ExpressionEngine count=\"0\">\n                    </ExpressionEngine>\n                </Property>",
+            "Font": "<Property name=\"Font\" type=\"App::PropertyFont\">\n                    <String value=\"osifont\"/>\n                </Property>",
+            "Label": "<Property name=\"Label\" type=\"App::PropertyString\" status=\"134217728\">\n                    <String value=\"FirstNote\"/>\n                </Property>",
+            "Label2": "<Property name=\"Label2\" type=\"App::PropertyString\" status=\"67108992\">\n                    <String value=\"\"/>\n                </Property>",
+            "LineSpace": "<Property name=\"LineSpace\" type=\"App::PropertyInteger\">\n                    <Integer value=\"100\"/>\n                </Property>",
+            "LockPosition": "<Property name=\"LockPosition\" type=\"App::PropertyBool\" status=\"134217728\">\n                    <Bool value=\"false\"/>\n                </Property>",
+            "MaxWidth": "<Property name=\"MaxWidth\" type=\"App::PropertyFloat\">\n                    <Float value=\"-1.0000000000000000\"/>\n                </Property>",
+            "Rotation": "<Property name=\"Rotation\" type=\"App::PropertyAngle\" status=\"134217728\">\n                    <Float value=\"0.0000000000000000\"/>\n                </Property>",
+            "Scale": "<Property name=\"Scale\" type=\"App::PropertyFloatConstraint\" status=\"12\">\n                    <Float value=\"1.0000000000000000\"/>\n                </Property>",
+            "ScaleType": "<Property name=\"ScaleType\" type=\"App::PropertyEnumeration\" status=\"134217736\">\n                    <Integer value=\"0\"/>\n                </Property>",
+            "Text": "<Property name=\"Text\" type=\"App::PropertyStringList\">\n                    <StringList count=\"1\">\n                        <String value=\"First\"/>\n                    </StringList>\n                </Property>",
+            "TextColor": "<Property name=\"TextColor\" type=\"App::PropertyColor\">\n                    <PropertyColor value=\"255\"/>\n                </Property>",
+            "TextSize": "<Property name=\"TextSize\" type=\"App::PropertyLength\">\n                    <Float value=\"5.0000000000000000\"/>\n                </Property>",
+            "TextStyle": "<Property name=\"TextStyle\" type=\"App::PropertyEnumeration\">\n                    <Integer value=\"0\"/>\n                </Property>",
+            "Visibility": "<Property name=\"Visibility\" type=\"App::PropertyBool\" status=\"648\">\n                    <Bool value=\"true\"/>\n                </Property>",
+            "X": "<Property name=\"X\" type=\"App::PropertyDistance\">\n                    <Float value=\"20.0000000000000000\"/>\n                </Property>",
+            "Y": "<Property name=\"Y\" type=\"App::PropertyDistance\">\n                    <Float value=\"30.0000000000000000\"/>\n                </Property>"
+          },
+          "position": [
+            20.0,
+            30.0,
+            0.0
+          ],
+          "references": {
+            "Owner": [
+              {
+                "target": {
+                  "kind": "null"
+                }
+              }
+            ]
+          },
+          "runtime_type": "TechDraw::DrawViewAnnotation",
+          "text": [
+            "First"
+          ],
+          "text_style": {
+            "font_family": "osifont",
+            "height": 5.0
+          }
+        },
+        {
+          "id": "fcstd:model:semantic-annotation#SecondNote:content",
+          "kind": "text",
+          "native_ref": "fcstd:native:annotation#SecondNote",
+          "object": "fcstd:native:object#SecondNote",
+          "order": 1,
+          "parameters": {
+            "Caption": "<Property name=\"Caption\" type=\"App::PropertyString\" status=\"134217728\">\n                    <String value=\"\"/>\n                </Property>",
+            "ExpressionEngine": "<Property name=\"ExpressionEngine\" type=\"App::PropertyExpressionEngine\" status=\"67108864\">\n                    <ExpressionEngine count=\"0\">\n                    </ExpressionEngine>\n                </Property>",
+            "Font": "<Property name=\"Font\" type=\"App::PropertyFont\">\n                    <String value=\"osifont\"/>\n                </Property>",
+            "Label": "<Property name=\"Label\" type=\"App::PropertyString\" status=\"134217728\">\n                    <String value=\"SecondNote\"/>\n                </Property>",
+            "Label2": "<Property name=\"Label2\" type=\"App::PropertyString\" status=\"67108992\">\n                    <String value=\"\"/>\n                </Property>",
+            "LineSpace": "<Property name=\"LineSpace\" type=\"App::PropertyInteger\">\n                    <Integer value=\"100\"/>\n                </Property>",
+            "LockPosition": "<Property name=\"LockPosition\" type=\"App::PropertyBool\" status=\"134217728\">\n                    <Bool value=\"false\"/>\n                </Property>",
+            "MaxWidth": "<Property name=\"MaxWidth\" type=\"App::PropertyFloat\">\n                    <Float value=\"-1.0000000000000000\"/>\n                </Property>",
+            "Rotation": "<Property name=\"Rotation\" type=\"App::PropertyAngle\" status=\"134217728\">\n                    <Float value=\"0.0000000000000000\"/>\n                </Property>",
+            "Scale": "<Property name=\"Scale\" type=\"App::PropertyFloatConstraint\" status=\"12\">\n                    <Float value=\"1.0000000000000000\"/>\n                </Property>",
+            "ScaleType": "<Property name=\"ScaleType\" type=\"App::PropertyEnumeration\" status=\"134217736\">\n                    <Integer value=\"0\"/>\n                </Property>",
+            "Text": "<Property name=\"Text\" type=\"App::PropertyStringList\">\n                    <StringList count=\"1\">\n                        <String value=\"Second\"/>\n                    </StringList>\n                </Property>",
+            "TextColor": "<Property name=\"TextColor\" type=\"App::PropertyColor\">\n                    <PropertyColor value=\"255\"/>\n                </Property>",
+            "TextSize": "<Property name=\"TextSize\" type=\"App::PropertyLength\">\n                    <Float value=\"5.0000000000000000\"/>\n                </Property>",
+            "TextStyle": "<Property name=\"TextStyle\" type=\"App::PropertyEnumeration\">\n                    <Integer value=\"0\"/>\n                </Property>",
+            "Visibility": "<Property name=\"Visibility\" type=\"App::PropertyBool\" status=\"648\">\n                    <Bool value=\"true\"/>\n                </Property>",
+            "X": "<Property name=\"X\" type=\"App::PropertyDistance\">\n                    <Float value=\"40.0000000000000000\"/>\n                </Property>",
+            "Y": "<Property name=\"Y\" type=\"App::PropertyDistance\">\n                    <Float value=\"30.0000000000000000\"/>\n                </Property>"
+          },
+          "position": [
+            40.0,
+            30.0,
+            0.0
+          ],
+          "references": {
+            "Owner": [
+              {
+                "target": {
+                  "kind": "null"
+                }
+              }
+            ]
+          },
+          "runtime_type": "TechDraw::DrawViewAnnotation",
+          "text": [
+            "Second"
+          ],
+          "text_style": {
+            "font_family": "osifont",
+            "height": 5.0
+          }
+        }
+      ],
+      "shells": [],
+      "sketch_constraints": [],
+      "sketch_entities": [],
+      "sketches": [],
+      "spatial_sketch_entities": [],
+      "spatial_sketches": [],
+      "spreadsheets": [],
+      "subds": [],
+      "surfaces": [],
+      "tessellations": [],
+      "vertices": [],
+      "view_presentations": []
+    },
+    "native": {
+      "__arena_counts": {
+        "fcstd": {
+          "annotations": 2,
+          "applications": 6,
+          "attachments": 0,
+          "byte_coverage": 1,
+          "carrier_census": 0,
+          "design_census": 0,
+          "document": 1,
+          "drawings": 6,
+          "element_maps": 0,
+          "entries": 3,
+          "extensions": 0,
+          "gui_documents": 0,
+          "gui_properties": 0,
+          "gui_view_providers": 0,
+          "joints": 0,
+          "logical_ledger": 199,
+          "objects": 6,
+          "physical_ledger": 22,
+          "product_nodes": 0,
+          "properties": 98,
+          "shape_payloads": 0,
+          "string_tables": 1
+        }
+      },
+      "__arena_sha256": {
+        "fcstd": {
+          "annotations": "2776a8b3ffc14e0cf2bad459a63cfc0b7ff94baa1b35a50abe8b3c432b9881b5",
+          "applications": "4c02fc6f7838ab9b144a1bd2bc4b3cdbae0efb69a97083715135cfb700b8c444",
+          "attachments": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+          "byte_coverage": "279458f49da7696d0c3d34868c97d6d841dc90a93f897e529de0552b40ceeb67",
+          "carrier_census": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+          "design_census": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+          "document": "e8bf34055c74cf54337477bc1bcf132bd8e5eca917aa63a6696ffe71977f376e",
+          "drawings": "5a2f272fcd561cf3ac8c5d06496ef7263cfe2fd39906bb00e4bd1bf150b37b4b",
+          "element_maps": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+          "entries": "6bed100e5bcd68bb9bba501e2ce992f22ad45a5daec19b35a0ab689b779cbf9f",
+          "extensions": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+          "gui_documents": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+          "gui_properties": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+          "gui_view_providers": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+          "joints": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+          "logical_ledger": "0c43f0539e6f3d66541c59b17f36021b2fff0bd833f2b8b115f2496c38b8c845",
+          "objects": "f13220e6c2475d17d34d3dd8829d5bc88f806322082872e83529a9ccb6384266",
+          "physical_ledger": "e4e7bb67223bacd889dafaae4b22b9e706d32304d5e9dfd8f802597218d600bf",
+          "product_nodes": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+          "properties": "cf6fcee22cf75ac94a2a8474694bbabafe06b683508292d208a1fc650ba86c80",
+          "shape_payloads": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+          "string_tables": "4f6f6cceca6ea119f3668ff3a172117f84c610a3266dc4414d3070969caa5c4f"
+        }
+      },
+      "__elided": "native arena values are omitted; the records are pinned by a digest over their canonical JSON"
+    },
+    "source": {
+      "attributes": {
+        "application_domains": "TechDraw",
+        "archive_entry_count": "3",
+        "document_kind": "drawing",
+        "document_local_sha256": "<elided: digest over tolerantly compared geometry>",
+        "document_root": "Document",
+        "object_count": "6",
+        "physical_archive_bytes": "2851",
+        "physical_ledger_spans": "22",
+        "program_version": "1.1R45039 (Git)"
+      },
+      "identity": {
+        "classification": "classified",
+        "dialects": {
+          "extra": [],
+          "primary": {
+            "admission": "admitted",
+            "declared": {
+              "file_version": "1",
+              "program_version": "1.1R45039 (Git)",
+              "schema_version": "4"
+            },
+            "dialect": "fcstd:schema-4"
+          }
+        }
+      }
+    },
+    "tolerances": {
+      "angular": 1e-10,
+      "linear": 1e-6
+    },
+    "units": {
+      "length": "millimeter"
+    }
+  },
+  "report": {
+    "identity": {
+      "classification": "classified",
+      "dialects": {
+        "extra": [],
+        "primary": {
+          "admission": "admitted",
+          "declared": {
+            "file_version": "1",
+            "program_version": "1.1R45039 (Git)",
+            "schema_version": "4"
+          },
+          "dialect": "fcstd:schema-4"
+        }
+      }
+    },
+    "losses": [
+      {
+        "code": {
+          "code": "drawing.style-not-transferred",
+          "kind": "record_not_typed",
+          "namespace": "fcstd",
+          "scope": "namespaced"
+        },
+        "message": "fcstd:native:object#FirstTemplate: SVG stroke, fill and font appearance remain in the asset; text em sizes are millimetres",
+        "severity": "warning"
+      },
+      {
+        "code": {
+          "code": "drawing.style-not-transferred",
+          "kind": "record_not_typed",
+          "namespace": "fcstd",
+          "scope": "namespaced"
+        },
+        "message": "fcstd:native:object#FirstNote: untyped font properties, alignment, colour, line spacing, rich text, captions and dimension presentation remain native",
+        "severity": "warning"
+      },
+      {
+        "code": {
+          "code": "drawing.style-not-transferred",
+          "kind": "record_not_typed",
+          "namespace": "fcstd",
+          "scope": "namespaced"
+        },
+        "message": "fcstd:native:object#SecondTemplate: SVG stroke, fill and font appearance remain in the asset; text em sizes are millimetres",
+        "severity": "warning"
+      },
+      {
+        "code": {
+          "code": "drawing.style-not-transferred",
+          "kind": "record_not_typed",
+          "namespace": "fcstd",
+          "scope": "namespaced"
+        },
+        "message": "fcstd:native:object#SecondNote: untyped font properties, alignment, colour, line spacing, rich text, captions and dimension presentation remain native",
+        "severity": "warning"
+      }
+    ],
+    "notes": [
+      "SchemaVersion=4",
+      "FileVersion=1",
+      "document root=Document",
+      "document kind=drawing",
+      "object count=6",
+      "physical ledger spans=22 coverage=exact",
+      "ProgramVersion=1.1R45039 (Git)"
+    ],
+    "transfer": {
+      "geometry_transferred": false,
+      "transfer": "full"
+    }
+  },
+  "source_fidelity": {
+    "annotations": {}
+  }
+}

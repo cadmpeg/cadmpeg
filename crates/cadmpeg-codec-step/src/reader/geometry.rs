@@ -5323,8 +5323,16 @@ fn surface_geometry_parameter_scales<'a>(
         SolvedSurfaceGeometry::Nurbs(_) => Some([1.0, 1.0]),
         SolvedSurfaceGeometry::Transformed(_) => None,
         SolvedSurfaceGeometry::Unknown { .. } => {
+            let constructions: Vec<_> = ir
+                .model
+                .surfaces
+                .iter()
+                .filter(|surface| surface.id == *surface_id)
+                .filter_map(|surface| surface.geometry.procedural_construction())
+                .collect();
             let mut candidates = ir.model.procedural_surfaces.iter().filter(|procedural| {
-                ir.model.procedural_surface_owner(&procedural.id) == Some(surface_id)
+                constructions.contains(&&procedural.id)
+                    && ir.model.procedural_surface_owner(&procedural.id) == Some(surface_id)
             });
             let Some(procedural) = candidates.next() else {
                 return Ok(SurfaceScaleStep::Value(None));

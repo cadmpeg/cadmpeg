@@ -1,0 +1,139 @@
+{
+  "entries": [
+    {
+      "name": "Document.xml",
+      "payload_len": 77900,
+      "payload_sha256": "c41a13ecddd2d4afd5f125e161ebd8eb0e293c6155cbe5f988172e82192a1f7b"
+    },
+    {
+      "name": "Box.Shape.brp",
+      "payload_len": 8938,
+      "payload_sha256": "d61000b1ee6f64badd6f75f70e8c70d23c9bf84e1f26a3977219d76c535758d0"
+    },
+    {
+      "name": "techdraw-template.svg",
+      "payload_len": 531,
+      "payload_sha256": "5a71b2965cf7374ff68e3d6fa2de719864f2cf4f2d5d0b9b694130a4c232d817"
+    },
+    {
+      "name": "BoxCorners",
+      "payload_len": 52,
+      "payload_sha256": "4c1939e3046e1ba86a888c8eccd81f4d2b5b0eb7325c392e0b859228aa262dbb"
+    },
+    {
+      "name": "Length.SavedGeometry.0.brp",
+      "payload_len": 566,
+      "payload_sha256": "401381b137057fb4368d157aef9e15dda17a708ad3075eab94678c82bd30b487"
+    },
+    {
+      "name": "techdraw-template1.svg",
+      "payload_len": 462,
+      "payload_sha256": "72d5cf7f1b02f68d56ddd6a29b9f4fe443c45be385234abfa923fd724054ec9b"
+    },
+    {
+      "name": "BoxCorners1",
+      "payload_len": 52,
+      "payload_sha256": "4c1939e3046e1ba86a888c8eccd81f4d2b5b0eb7325c392e0b859228aa262dbb"
+    },
+    {
+      "name": "Euclidean.SavedGeometry.0.brp",
+      "payload_len": 566,
+      "payload_sha256": "401381b137057fb4368d157aef9e15dda17a708ad3075eab94678c82bd30b487"
+    },
+    {
+      "name": "BoxCorners2",
+      "payload_len": 52,
+      "payload_sha256": "4c1939e3046e1ba86a888c8eccd81f4d2b5b0eb7325c392e0b859228aa262dbb"
+    },
+    {
+      "name": "Vertical.SavedGeometry.0.brp",
+      "payload_len": 563,
+      "payload_sha256": "3eb76f9cf3a029e9e033af352eede843dc5be1ffa3a8063b9379516dc2b32df1"
+    },
+    {
+      "name": "Triangle.Shape.brp",
+      "payload_len": 1346,
+      "payload_sha256": "565007594d07fbe394a8c9313107b8c641928467e1c657e574558d71a11bf783"
+    }
+  ],
+  "report": {
+    "census": {
+      "basis": "ir_arenas",
+      "counts": {
+        "appearance_bindings": 0,
+        "appearances": 0,
+        "assembly_joints": 0,
+        "assets": 0,
+        "attributes": 0,
+        "bodies": 2,
+        "coedges": 24,
+        "configurations": 0,
+        "curves": 15,
+        "drawings": 13,
+        "edges": 15,
+        "faces": 6,
+        "feature_input_topologies": 0,
+        "feature_result_topologies": 0,
+        "features": 2,
+        "loops": 6,
+        "native.fcstd.annotations": 4,
+        "native.fcstd.applications": 15,
+        "native.fcstd.attachments": 2,
+        "native.fcstd.byte_coverage": 1,
+        "native.fcstd.carrier_census": 2,
+        "native.fcstd.design_census": 2,
+        "native.fcstd.document": 1,
+        "native.fcstd.drawings": 13,
+        "native.fcstd.entries": 11,
+        "native.fcstd.extensions": 7,
+        "native.fcstd.logical_ledger": 835,
+        "native.fcstd.objects": 15,
+        "native.fcstd.physical_ledger": 78,
+        "native.fcstd.properties": 412,
+        "native.fcstd.shape_payloads": 2,
+        "native.fcstd.string_tables": 1,
+        "occurrences": 0,
+        "parameters": 1,
+        "pcurves": 24,
+        "pmi": 0,
+        "points": 11,
+        "presentation_documents": 0,
+        "presentation_layers": 0,
+        "procedural_curves": 0,
+        "procedural_surfaces": 0,
+        "product_definitions": 0,
+        "regions": 2,
+        "semantic_annotations": 4,
+        "shells": 2,
+        "sketch_constraints": 0,
+        "sketch_entities": 0,
+        "sketches": 0,
+        "spatial_sketch_constraints": 0,
+        "spatial_sketch_entities": 0,
+        "spatial_sketches": 0,
+        "spreadsheets": 0,
+        "subds": 0,
+        "surfaces": 6,
+        "surfaces_unknown_geometry": 0,
+        "tessellations": 0,
+        "vertices": 11,
+        "view_presentations": 0
+      }
+    },
+    "identity": {
+      "payload": "native",
+      "target": "fcstd:schema-4"
+    },
+    "losses": [],
+    "notes": [
+      "semantic FCStd archive written for fcstd:schema-4 (SchemaVersion=4 FileVersion=1)",
+      "unsupported retained entries and unedited XML records were preserved"
+    ],
+    "write_path": {
+      "fidelity": {
+        "status": "not_consumed"
+      },
+      "path": "patched"
+    }
+  }
+}

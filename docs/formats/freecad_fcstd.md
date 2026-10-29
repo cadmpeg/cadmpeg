@@ -1862,3 +1862,183 @@ source object. Whole-body appearance, per-face overrides, per-edge line styles, 
 point styles have distinct targets. Each target resolves in its own topology arena; a declared
 override also retains its precedence over the whole-object appearance. An appearance asset's
 presence alone does not establish that target or precedence association.
+
+### Neutral drawing sheets, curves, and dimensions
+
+A template's `PageResult` property identifies its embedded SVG through a
+`FileIncluded` file attribute. If `PageResult` is absent, the `Template` property
+can identify the embedded SVG. External file paths do not select archive members.
+The SVG root `width` and `height` attributes give sheet size. Each attribute has
+a positive finite decimal number and an explicit, case-sensitive unit suffix.
+Leading and trailing whitespace and whitespace before the suffix are permitted.
+The admitted suffixes and millimetre factors are `mm` = 1, `cm` = 10,
+`in` = 25.4, `pt` = 25.4/72, `pc` = 25.4/6, and `px` = 25.4/96.
+A unitless number, percentage, unknown suffix, nonpositive number, or nonfinite
+number has no neutral sheet size. `viewBox` does not supply physical dimensions.
+A `drawing.sheet-not-transferred` loss identifies an SVG carrier without an
+admitted size. `EditableTexts`, an `App::PropertyMap`, contains a counted `Map`
+of `Item` elements. Each `key` names a title-block field and each `value` gives
+its text. Neutral sheet fields retain this order and empty values; names must be
+nonblank and unique. A blank field name has a `drawing.title-block-not-transferred`
+loss. A page obtains its sheet through its template identity.
+
+Neutral view curves use a two-dimensional Cartesian frame with origin at the
+view origin, positive X to the right, and positive Y up. Coordinates are
+millimetres before view scale and rotation. Curve order follows property and
+record order. Each curve has a mandatory hidden-line class (`visible` or
+`hidden`) and source class (`projected_model_edge`, `cosmetic`, or `center_line`).
+The optional `displayed` flag retains presentation visibility separately.
+Neutral geometry admits lines, circles, and circular arcs. An arc has a center,
+positive radius, and distinct start, middle, and end points. The middle point
+selects the sweep from start to end. Each point must lie on the circle within
+relative radial error 1e-9. All curve coordinates must be finite.
+
+`CosmeticEdgeList` records supply cosmetic curves. Neutral transfer admits
+`ExtractType` 0, matching `GeometryType` and `GeomType`, `Source` 1, and
+`Reversed` false. `HLRVisible` selects the hidden-line class and `Visible`
+selects `displayed`. Geometry type 7 supplies a line only when `Points` has
+exactly two points. Geometry type 1 supplies a circle from `Center` and a
+positive `Radius`. All selected points must have Z equal to zero. Arc records and other forms
+retain their native records and emit `drawing.cosmetic-edge-not-transferred`.
+
+`CenterLineList` uses source class `center_line` and `Source` 2. Neutral transfer
+admits a type-7 line with `HShift`, `VShift`, `Rotate`, and `Extend` equal to zero,
+`Flip` false, `Mode` and `Type` each in 0 through 2, and `Start` and `End` equal
+to the two stored branch points. Other curve gates are the cosmetic-edge gates.
+Other forms emit `drawing.center-line-not-transferred`. Cosmetic vertices remain
+native and emit `drawing.cosmetic-vertex-not-transferred` per record. Geometry
+format overrides remain native and emit `drawing.geometry-format-not-transferred`
+per record. Empty lists emit no loss. A model view stores its model references
+and view parameters, without projected hidden-line edges. Source B-rep edges and selected dimension caches are not complete projected
+visible/hidden edge collections.
+
+The semantic-annotation arena owns dimension category, measurement, format,
+replacement text, tolerances, and text position. A dimension drawing retains its
+relationships but has no duplicate typed text position. The dimension `Type` property contains an
+`Integer` selector. A `CustomEnumList`, when present, supplies ordered `Enum`
+labels indexed from zero by that selector. Labels `Distance`, `DistanceX`,
+`DistanceY`, `Radius`, `Diameter`, `Angle`, and `Angle3Pt` select distance,
+horizontal distance, vertical distance, radius, diameter, angle, and three-point
+angle. Without a custom list, selectors 0, 1, 2, 4, 5, and 6 select distance,
+horizontal distance, vertical distance, radius, diameter, and angle. Other selectors or
+labels select neutral `other` with the native selector or label and emit
+`drawing.dimension-kind-not-transferred`.
+
+`FormatSpec` supplies the dimension format. `Arbitrary` true also selects it as
+replacement text. `OverTolerance` and `UnderTolerance` are
+`App::PropertyQuantityConstraint` properties with direct `Float` values. Finite
+nonzero values supply signed upper and lower tolerances when
+`ArbitraryTolerances` is false or absent. Zero means unset. Numeric tolerance
+values under `ArbitraryTolerances` true remain native and emit
+`drawing.dimension-tolerance-not-transferred`. Under that flag, the present
+`FormatSpecOverTolerance` and `FormatSpecUnderTolerance` strings also remain native
+with this loss. Linear dimension values and
+tolerances use millimetres; angular values and tolerances use degrees. The
+existing `X` and `Y` pair supplies the text position. View and subelement
+references retain their existing relationship roles.
+
+`SavedGeometry` is a `Part::PropertyTopoShapeList` with ordered `TopoShape` file
+references. An empty saved shape with `TShapes 0` and null root `*` supplies no
+measurement. A saved shape is a reference cache, not an authoritative measurement. Its
+reference geometry must agree with the current source topology before it gives
+an exact value. Format text and arbitrary property names do not give measurements.
+
+### Template geometry and positioned text
+
+`Drawing.template_geometry` contains physical template geometry. Its coordinates
+are page millimetres, X right and Y up. `Drawing.curves` remains in the view frame.
+Template curves reuse the line, circle, and three-point arc geometry types. They
+have no hidden-line or view-source classification. Each template retains its
+sheet through `Drawing.sheet`; pages link to that template.
+
+The normalized SVG viewport has explicit `width` and `height` in `mm` and a
+matching `viewBox="0 0 width height"`. Coordinates are `(svg_x, height-svg_y)`.
+Ordered line segments represent `rect` without corner radii, `line`, `polyline`,
+and `polygon`. A closed chain includes its last-to-first segment. `circle`
+represents a complete circle. A path contains M/m, L/l, H/h, V/v, Z/z, and
+circular A/a segments. Path numbers have whitespace or comma separators;
+command letters can touch numbers. Exponent notation is outside this grammar.
+Circular arcs have equal positive radii, binary large-arc and sweep flags,
+distinct endpoints, and a chord no longer than the diameter. Their middle
+point selects the stored sweep after reflection into the page frame.
+
+Groups have no inherited presentation or transform. Root presentation overrides,
+transforms, CSS, elliptical arcs, other path commands, and positioned text spans
+are outside the normalized grammar. Stylesheets and scripts can change peer
+geometry and prevent static normalization of the whole template.
+
+Text has explicit X/Y baseline coordinates and a positive `font-size` in viewport
+units, hence millimetres. Plain text and unpositioned `tspan` children form one
+string. Each `EditableTexts` key replaces the content of a `text` element whose
+`freecad:editable` attribute equals that key. The attribute namespace is
+`http://www.freecadweb.org/wiki/index.php?title=Svg_Namespace`. Replacement text
+keeps its baseline and em height. An editable element requires a matching key.
+Stroke, fill, and remaining font appearance are separate from these primitives.
+
+### Orthographic view placement
+
+For `TechDraw::DrawViewPart`, `Direction` points from the model toward the viewer.
+Let `n` be its unit vector. Remove the component of `XDirection` parallel to `n`
+and normalize the result to obtain the rightward basis `u`. The upward basis is
+`v = n cross u`. For model point `p`, the uncentred projection is
+`r = (dot(p,u), dot(p,v))`. Let `c` be the centre of the axis-aligned bounds of the
+unrotated projected geometry. With `theta = rotation_degrees`, page position is
+`position + scale * R(theta) * (r-c)`, where `R` is a counterclockwise 2D rotation.
+Centring precedes rotation. The final rotated bounds need not be centred at
+`position`. X/Y are page millimetres and scale is dimensionless. `XDirection`
+supplies `Drawing.x_direction`, a finite nonzero model-space vector.
+
+`DrawProjGroup` X/Y is a page origin. A `DrawProjGroupItem` X/Y pair is an offset
+from that origin in page millimetres. Add the group position once to obtain the
+child page origin. Its stored Scale is the resolved child scale; it has no second
+factor from the group Scale. The group's ordered `Views` relationship identifies
+its children. Section and Detail X/Y pairs are page positions independent of
+BaseView. Perspective and section/detail construction have additional controls.
+
+### Exact saved reference measurements
+
+An exact reference measurement has `MeasureType=1` (projected) without a custom
+enumeration list, and `Bool value="false"` for `Arbitrary`, `Inverted`, and
+`AngleOverride`, and local `References2D` entries
+that all target one `DrawViewPart` with stored false `Perspective`. Horizontal
+and vertical distance require zero Rotation. Distance, radius, diameter, and
+the admitted right angle are rotation invariant. Each saved shape has one root
+edge with identity location, no degeneration, and one located-at-zero 3D curve
+representation with its trim interval. The reference subelement count equals
+the saved curve count.
+
+The current source projection consists of trimmed lines and full circles
+parallel to the view plane. Its edges have the same source-object ownership as
+the view's local Source targets. Body placements are absent. Curve translations
+apply before projection; other curve placements are outside this form. Edge
+carriers and the finite projected envelope are complete. Referenced faces are
+planar or axial cylinders whose axes are parallel to Direction. Other surfaces
+need silhouette bounds. The unrotated projected bounds give the view centre,
+with Y negated for the cache frame. Source line endpoints are stored edge vertex
+positions. Each saved line's endpoints, or circle's centre and radius, equals a
+current projected source primitive exactly. A cache that disagrees with that
+source does not establish a current measurement.
+
+One planar line gives distance, absolute X distance, or absolute Y distance
+from its trimmed endpoints. One planar circle gives radius or twice radius.
+Two perpendicular planar line directions with a positive first-cross-second
+component in the saved XY frame give a 90-degree angle. The annotation uses
+`dimension_kind` and the existing canonical units: millimetres for linear
+measurements and degrees for angular measurements.
+
+Saved reference coordinates are centred and unscaled, with Y down. At zero
+rotation, page anchors are `(view.X + view.Scale*reference.x,
+view.Y - view.Scale*reference.y)`. Position and positive scale are required for
+anchors. A value is independent of anchor placement. Line anchors are trimmed
+endpoints. Radius anchors are the centre and its positive reference-axis point.
+Diameter anchors are opposite points on that axis. Circular anchors require the
+full-circle interval `[0,2*pi]`. Angles have no point anchors. The annotation's
+`reference_anchors` is empty or contains two ordered page-space points. These
+are reference points, not dimension-line endpoints or a complete presentation.
+
+### Physical annotation text
+
+A TechDraw annotation's `TextSize` has physical millimetre units with the
+`App::PropertyLength` carrier. A positive value gives `text_style.height`.
+Its `App::PropertyFont` `Font` string gives `text_style.font_family` with that
+height. GUI point and pixel sizes are distinct from physical em height.

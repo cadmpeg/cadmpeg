@@ -16,6 +16,9 @@ use crate::test_support::test_fixtures::{
 };
 use crate::InventorCodec;
 
+mod combine;
+mod surface_extrusion;
+
 #[test]
 fn rse_compression_methods_reach_records_and_valid_sphere_geometry() {
     for methods in [[1, 1], [1, 2], [2, 1], [2, 2]] {

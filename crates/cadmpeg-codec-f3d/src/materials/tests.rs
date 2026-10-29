@@ -70,6 +70,8 @@ fn resolved_body_binding(
 ) -> crate::records::bodies::DesignBodyBinding {
     crate::records::bodies::DesignBodyBinding::try_from(
         crate::records::bodies::DesignBodyBindingWire {
+            component_owner: None,
+            component_owner_unresolved: false,
             id: crate::ids::native_design_body_binding_id(stream, asm_key_offset),
             stream: stream.into(),
             pair_count: 1,

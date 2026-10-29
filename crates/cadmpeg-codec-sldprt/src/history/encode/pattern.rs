@@ -218,7 +218,14 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
                     spacing,
                     count,
                     second,
+                    omitted_instances,
                 } => {
+                    if !omitted_instances.is_empty() {
+                        return Err(CodecError::NotImplemented(format!(
+                            "SLDPRT feature {} has omitted pattern instances",
+                            feature.id
+                        )));
+                    }
                     match direction {
                         Some(direction) => {
                             properties.insert(

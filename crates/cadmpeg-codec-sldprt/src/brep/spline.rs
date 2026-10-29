@@ -1181,6 +1181,538 @@ pub(crate) fn scan_surface_carriers(
     out
 }
 
+/// Exact-read spans of the admitted NURBS carriers of one stream body.
+///
+/// Each carrier names its wrapper span, its descriptor span, and the semantic
+/// value spans of the array lanes its admission consumed. Wrapper, descriptor,
+/// and array spans are separate entries. Array value spans cover the semantic
+/// prefix only: physical slots past the descriptor knot counts (surfaces) or
+/// past knot-vector completion (curves) are not recorded. Compact array
+/// records carry no tag byte; their spans use tag zero.
+pub(super) fn spline_spans(body: &[u8]) -> Vec<super::read_ledger::RawSpan> {
+    let mut spans = Vec::new();
+    curve_spans(body, &mut spans);
+    surface_spans(body, &mut spans);
+    spans
+}
+
+/// One array record in sweep order: plain records name their tag byte,
+/// compact records carry no tag byte and use tag zero.
+#[derive(Debug, Clone, Copy)]
+struct ArrayRecord {
+    record_start: usize,
+    values_at: usize,
+    count: usize,
+    tag: u8,
+}
+
+fn push_raw_span(
+    spans: &mut Vec<super::read_ledger::RawSpan>,
+    body: &[u8],
+    offset: usize,
+    end: usize,
+    tag: u8,
+    record: u16,
+) {
+    if let Some(length) = end.checked_sub(offset) {
+        if body.get(offset..end).is_some() {
+            if let Some(span) = super::read_ledger::RawSpan::at(offset, length, tag, record) {
+                spans.push(span);
+            }
+        }
+    }
+}
+
+fn push_values_span(
+    spans: &mut Vec<super::read_ledger::RawSpan>,
+    body: &[u8],
+    record: &ArrayRecord,
+    semantic_count: usize,
+    element_size: usize,
+    record_id: u16,
+) {
+    if let Some(values_end) = semantic_count
+        .checked_mul(element_size)
+        .and_then(|size| record.values_at.checked_add(size))
+    {
+        push_raw_span(
+            spans,
+            body,
+            record.record_start,
+            values_end,
+            record.tag,
+            record_id,
+        );
+    }
+}
+
+/// Plain array records with one attribute, in body order. `f64_lane` selects
+/// the `0x2d`/`0x80` value tags; otherwise the `0x7f` multiplicity tag.
+fn plain_array_records(bytes: &[u8], attr: u16, f64_lane: bool) -> Vec<ArrayRecord> {
+    let mut out = Vec::new();
+    for off in 0..bytes.len().checked_sub(9).map_or(0, |end| end) {
+        let tag = match bytes.get(off..off + 2) {
+            Some([0x00, tag @ (0x2d | 0x7f | 0x80)]) => *tag,
+            _ => continue,
+        };
+        if (tag == 0x7f) == f64_lane {
+            continue;
+        }
+        let Some(p) = array_body(bytes, off, tag) else {
+            continue;
+        };
+        let Some(count) = View::u32_be_at(bytes, p + arr_hdr::COUNT).map(index_from_u32) else {
+            continue;
+        };
+        if View::u16_be_at(bytes, p + arr_hdr::ATTR) != Some(attr) {
+            continue;
+        }
+        if attr <= 1 || count > MAX_ARRAY_VALUES {
+            continue;
+        }
+        let Some(values_at) = p.checked_add(arr_hdr::LEN) else {
+            continue;
+        };
+        let element_size = if f64_lane { 8 } else { 2 };
+        let Some(values_end) = count
+            .checked_mul(element_size)
+            .and_then(|size| values_at.checked_add(size))
+        else {
+            continue;
+        };
+        if values_end > bytes.len() {
+            continue;
+        }
+        out.push(ArrayRecord {
+            record_start: off,
+            values_at,
+            count,
+            tag,
+        });
+    }
+    out
+}
+
+/// Compact array records with one attribute, in body order. Compact records
+/// carry no tag byte, so their spans use tag zero.
+fn compact_array_records(
+    bytes: &[u8],
+    arrays: &Arrays,
+    attr: u16,
+    f64_lane: bool,
+) -> Vec<ArrayRecord> {
+    let mut out = Vec::new();
+    for array in arrays.compact.get(&attr).into_iter().flatten() {
+        let values_at = array.offset + compact_arr::LEN;
+        let element_size = if f64_lane { 8 } else { 2 };
+        let Some(values_end) = array
+            .count
+            .checked_mul(element_size)
+            .and_then(|size| values_at.checked_add(size))
+        else {
+            continue;
+        };
+        if values_end > bytes.len() {
+            continue;
+        }
+        out.push(ArrayRecord {
+            record_start: array.offset,
+            values_at,
+            count: array.count,
+            tag: 0,
+        });
+    }
+    out
+}
+
+fn read_record_f64(bytes: &[u8], record: &ArrayRecord) -> Option<Vec<f64>> {
+    f64_values(
+        bytes,
+        ArraySpan {
+            start: record.values_at,
+            count: record.count,
+        },
+    )
+}
+
+fn read_record_u16(bytes: &[u8], record: &ArrayRecord) -> Option<Vec<u16>> {
+    u16_values(
+        bytes,
+        ArraySpan {
+            start: record.values_at,
+            count: record.count,
+        },
+    )
+}
+
+/// The attribute position of a curve or surface wrapper record.
+fn wrapper_attr_pos(bytes: &[u8], off: usize) -> Option<usize> {
+    let mut p = off.checked_add(2)?;
+    if bytes.get(p) == Some(&0xff) {
+        p = p.checked_add(1)?;
+    }
+    View::u16_be_at(bytes, p)?;
+    Some(p)
+}
+
+/// Curve descriptor records keyed by descriptor attribute, each with the
+/// body-relative span of its fixed record extent.
+fn curve_descriptor_offsets(bytes: &[u8]) -> HashMap<u16, (usize, usize)> {
+    let mut out = HashMap::new();
+    for off in 0..bytes.len().checked_sub(29).map_or(0, |end| end) {
+        if bytes.get(off..off + 2) != Some(&[0x00, 0x88]) {
+            continue;
+        }
+        let mut p = off + 2;
+        if bytes.get(p) == Some(&0xff) {
+            p += 1;
+        }
+        let Some(attr) = View::u16_be_at(bytes, p) else {
+            continue;
+        };
+        let Some(_) = View::u16_be_at(bytes, p + 2).map(u32::from) else {
+            continue;
+        };
+        let Some(control_count) = View::u32_be_at(bytes, p + 4).map(index_from_u32) else {
+            continue;
+        };
+        let Some(dimension) = View::u16_be_at(bytes, p + 8).map(usize::from) else {
+            continue;
+        };
+        let Some(_) = View::u16_be_at(bytes, p + 19) else {
+            continue;
+        };
+        let Some(_) = View::u16_be_at(bytes, p + 21) else {
+            continue;
+        };
+        let Some(_) = View::u16_be_at(bytes, p + 23) else {
+            continue;
+        };
+        if attr <= 1 || !(dimension == 3 || dimension == 4) || control_count == 0 {
+            continue;
+        }
+        let Some(end) = p.checked_add(25).filter(|end| *end <= bytes.len()) else {
+            continue;
+        };
+        out.entry(attr).or_insert((off, end));
+    }
+    out
+}
+
+/// The descriptor attribute the wrapper at `attr_at` links, with the end of
+/// the link the wrapper scan consumed. Mirrors the search in
+/// [`curve_descriptor`].
+fn curve_descriptor_link(
+    bytes: &[u8],
+    attr_at: usize,
+    descriptors: &HashMap<u16, CurveDescriptor>,
+) -> Option<(u16, usize)> {
+    let start = attr_at.checked_add(2)?;
+    let limit = attr_at
+        .checked_add(24)?
+        .min(bytes.len().checked_sub(1).map_or(0, |end| end));
+    (start..limit)
+        .filter_map(|at| View::u16_be_at(bytes, at).map(|reference| (at, reference)))
+        .find_map(|(at, reference)| {
+            descriptors
+                .contains_key(&reference)
+                .then_some(reference)
+                .zip(at.checked_add(2))
+        })
+}
+
+/// Slots of the knot lanes the admission expansion consumed: the count of
+/// leading slots whose multiplicities complete the knot vector. Reserved
+/// slots past completion are not semantic.
+fn knot_consumed(unique: &[f64], multiplicities: &[u16], expected: usize) -> Option<usize> {
+    let mut total = 0usize;
+    for (index, multiplicity) in multiplicities.iter().enumerate() {
+        if index >= unique.len() {
+            break;
+        }
+        if *multiplicity == 0 {
+            continue;
+        }
+        total = total.checked_add(usize::from(*multiplicity))?;
+        if total > expected {
+            return None;
+        }
+        if total == expected {
+            return Some(index + 1);
+        }
+    }
+    (total == expected).then_some(multiplicities.len().min(unique.len()))
+}
+
+fn curve_spans(body: &[u8], spans: &mut Vec<super::read_ledger::RawSpan>) {
+    let mut refusals = Vec::new();
+    let carriers = scan_curve_carriers(body, &mut refusals);
+    if carriers.is_empty() {
+        return;
+    }
+    let descriptors = scan_curve_descriptors(body);
+    let desc_offsets = curve_descriptor_offsets(body);
+    for (wrapper_attr, carrier) in &carriers {
+        let off = carrier.offset;
+        let Some(attr_at) = wrapper_attr_pos(body, off) else {
+            continue;
+        };
+        let Some((desc_attr, link_end)) = curve_descriptor_link(body, attr_at, &descriptors) else {
+            continue;
+        };
+        push_raw_span(spans, body, off, link_end, 0x86, *wrapper_attr);
+        let Some(&(desc_off, desc_end)) = desc_offsets.get(&desc_attr) else {
+            continue;
+        };
+        push_raw_span(spans, body, desc_off, desc_end, 0x88, desc_attr);
+        let Some(descriptor) = descriptors.get(&desc_attr) else {
+            continue;
+        };
+        let Some(expected_control) = descriptor.control_count.checked_mul(descriptor.dimension)
+        else {
+            continue;
+        };
+        if let Some(record) = plain_array_records(body, descriptor.control_attr, true)
+            .into_iter()
+            .next()
+        {
+            if record.count == expected_control {
+                push_values_span(
+                    spans,
+                    body,
+                    &record,
+                    record.count,
+                    8,
+                    descriptor.control_attr,
+                );
+            }
+        }
+        let knot_record = plain_array_records(body, descriptor.knot_attr, true)
+            .into_iter()
+            .next();
+        let mult_record = plain_array_records(body, descriptor.multiplicity_attr, false)
+            .into_iter()
+            .next();
+        if let (Some(knot_record), Some(mult_record)) = (knot_record, mult_record) {
+            let knots = read_record_f64(body, &knot_record);
+            let mults = read_record_u16(body, &mult_record);
+            if let (Some(knots), Some(mults)) = (knots, mults) {
+                let Some(expected) = descriptor
+                    .control_count
+                    .checked_add(index_from_u32(descriptor.degree))
+                    .and_then(|count| count.checked_add(1))
+                else {
+                    continue;
+                };
+                if let Some(consumed) = knot_consumed(&knots, &mults, expected) {
+                    push_values_span(spans, body, &knot_record, consumed, 8, descriptor.knot_attr);
+                    push_values_span(
+                        spans,
+                        body,
+                        &mult_record,
+                        consumed,
+                        2,
+                        descriptor.multiplicity_attr,
+                    );
+                }
+            }
+        }
+    }
+}
+
+/// Surface descriptor records keyed by descriptor attribute, each with the
+/// body-relative span of its fixed record extent.
+fn surface_descriptor_offsets(bytes: &[u8]) -> HashMap<u16, (usize, usize)> {
+    let mut out = HashMap::new();
+    for off in 0..bytes.len().checked_sub(1).map_or(0, |end| end) {
+        if bytes.get(off..off + 2) != Some(&[0x00, 0x7e]) {
+            continue;
+        }
+        let Some(descriptor) = parse_surface_descriptor(bytes, off) else {
+            continue;
+        };
+        let Some(end) = surface_descriptor_prefix_end(bytes, off) else {
+            continue;
+        };
+        out.entry(descriptor.attr).or_insert((off, end));
+    }
+    out
+}
+
+/// The ordered float candidates of one surface control lane: the plain record
+/// first, then the compact records, each with its values.
+fn surface_control_candidates(
+    bytes: &[u8],
+    arrays: &Arrays,
+    attr: u16,
+) -> Vec<(Vec<f64>, ArrayRecord)> {
+    let mut out = Vec::new();
+    if let Some(record) = plain_array_records(bytes, attr, true).into_iter().next() {
+        if let Some(values) = read_record_f64(bytes, &record) {
+            out.push((values, record));
+        }
+    }
+    for record in compact_array_records(bytes, arrays, attr, true) {
+        if let Some(values) = read_record_f64(bytes, &record) {
+            if !out.iter().any(|(candidate, _)| *candidate == values) {
+                out.push((values, record));
+            }
+        }
+    }
+    out
+}
+
+/// The ordered float candidates of one surface knot lane, each with its values.
+fn surface_knot_candidates(
+    bytes: &[u8],
+    arrays: &Arrays,
+    attr: u16,
+) -> Vec<(Vec<f64>, ArrayRecord)> {
+    surface_control_candidates(bytes, arrays, attr)
+}
+
+/// The ordered multiplicity candidates of one surface knot lane, grouped by
+/// stored length, each with its values. Mirrors the grouping in
+/// [`surface_knot_values`]: the plain record first, then the compact records.
+fn surface_multiplicity_candidates(
+    bytes: &[u8],
+    arrays: &Arrays,
+    attr: u16,
+) -> HashMap<usize, Vec<(Vec<u16>, ArrayRecord)>> {
+    let mut out: HashMap<usize, Vec<(Vec<u16>, ArrayRecord)>> = HashMap::new();
+    if let Some(record) = plain_array_records(bytes, attr, false).into_iter().next() {
+        if let Some(values) = read_record_u16(bytes, &record) {
+            out.entry(values.len()).or_default().push((values, record));
+        }
+    }
+    for record in compact_array_records(bytes, arrays, attr, false) {
+        if let Some(values) = read_record_u16(bytes, &record) {
+            out.entry(values.len()).or_default().push((values, record));
+        }
+    }
+    out
+}
+
+fn surface_spans(body: &[u8], spans: &mut Vec<super::read_ledger::RawSpan>) {
+    let mut refusals = Vec::new();
+    let carriers = scan_surface_carriers(body, &mut refusals);
+    if carriers.is_empty() {
+        return;
+    }
+    let descriptors = scan_surface_descriptors(body);
+    let desc_offsets = surface_descriptor_offsets(body);
+    let compact_attrs = descriptors
+        .values()
+        .flat_map(|descriptor| descriptor.refs)
+        .collect::<HashSet<_>>();
+    let arrays = scan_arrays(body, Some(&compact_attrs), Some(&compact_attrs));
+    for (wrapper_attr, carrier) in &carriers {
+        let off = carrier.offset;
+        let Some(attr_at) = wrapper_attr_pos(body, off) else {
+            continue;
+        };
+        let Some(descriptor_at) = attr_at.checked_add(17) else {
+            continue;
+        };
+        let Some(desc_attr) = View::u16_be_at(body, descriptor_at) else {
+            continue;
+        };
+        let Some(link_end) = descriptor_at.checked_add(2) else {
+            continue;
+        };
+        push_raw_span(spans, body, off, link_end, 0x7c, *wrapper_attr);
+        let Some(descriptor) = descriptors.get(&desc_attr) else {
+            continue;
+        };
+        let Some(&(desc_off, desc_end)) = desc_offsets.get(&desc_attr) else {
+            continue;
+        };
+        push_raw_span(spans, body, desc_off, desc_end, 0x7e, desc_attr);
+        let Some(expected_poles) = descriptor.u_count.checked_mul(descriptor.v_count) else {
+            continue;
+        };
+        let Some(expected_control) = expected_poles.checked_mul(descriptor.dimension) else {
+            continue;
+        };
+        let control_candidates: Vec<(Vec<f64>, ArrayRecord)> =
+            surface_control_candidates(body, &arrays, descriptor.refs[0])
+                .into_iter()
+                .filter(|(values, _)| values.len() == expected_control)
+                .collect();
+        if let Some((first_values, _)) = control_candidates.first() {
+            if control_candidates
+                .iter()
+                .all(|(values, _)| values == first_values)
+            {
+                let record = control_candidates
+                    .iter()
+                    .find(|(values, _)| values == first_values);
+                if let Some((_, record)) = record {
+                    push_values_span(spans, body, record, expected_control, 8, descriptor.refs[0]);
+                }
+            }
+        }
+        for (knot_attr, mult_attr, declared) in [
+            (
+                descriptor.refs[3],
+                descriptor.refs[1],
+                descriptor.u_knot_count,
+            ),
+            (
+                descriptor.refs[4],
+                descriptor.refs[2],
+                descriptor.v_knot_count,
+            ),
+        ] {
+            if let Some((knot_record, mult_record)) =
+                surface_knot_records(body, &arrays, knot_attr, mult_attr, declared)
+            {
+                push_values_span(spans, body, &knot_record, declared, 8, knot_attr);
+                push_values_span(spans, body, &mult_record, declared, 2, mult_attr);
+            }
+        }
+    }
+}
+
+/// One resolved surface knot lane: the semantic unique and multiplicity
+/// vectors with the array records that hold them.
+type ResolvedKnotLane = ((Vec<f64>, Vec<u16>), (ArrayRecord, ArrayRecord));
+
+/// The first resolving knot/multiplicity record pair of one surface knot lane,
+/// in scan order. The semantic vectors must resolve uniquely, matching
+/// [`surface_knot_values`]; the pair returned is the first pair that resolves
+/// to them.
+fn surface_knot_records(
+    bytes: &[u8],
+    arrays: &Arrays,
+    knot_attr: u16,
+    mult_attr: u16,
+    declared: usize,
+) -> Option<(ArrayRecord, ArrayRecord)> {
+    let unique = surface_knot_candidates(bytes, arrays, knot_attr);
+    let by_count = surface_multiplicity_candidates(bytes, arrays, mult_attr);
+    let mut resolved: Vec<ResolvedKnotLane> = Vec::new();
+    for (unique_values, knot_record) in &unique {
+        let Some(candidates) = by_count.get(&unique_values.len()) else {
+            continue;
+        };
+        for (mult_values, mult_record) in candidates {
+            let Some((knots, mults)) = surface_knot_arrays(unique_values, mult_values, declared)
+            else {
+                continue;
+            };
+            let entry = (knots.to_vec(), mults.to_vec());
+            if !resolved.iter().any(|(candidate, _)| *candidate == entry) {
+                resolved.push((entry, (*knot_record, *mult_record)));
+            }
+        }
+    }
+    if resolved.len() != 1 {
+        return None;
+    }
+    resolved.pop().map(|(_, records)| records)
+}
+
 #[cfg(test)]
 mod tests {
     use super::{

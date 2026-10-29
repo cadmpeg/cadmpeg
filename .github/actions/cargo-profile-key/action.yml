@@ -1,0 +1,24 @@
+# SPDX-License-Identifier: Apache-2.0
+name: Hash the Cargo profiles
+description: >
+  Output a hash of the root manifest's [profile.*] tables for rust-cache's
+  prefix-key. The automatic cache key ignores those tables, and a shared-key
+  replaces the `key` input, so a cache built under old profiles would restore
+  as a full match and never be saved again.
+
+outputs:
+  hash:
+    description: Git object id of the profile tables without comments or blank lines
+    value: ${{ steps.hash.outputs.hash }}
+
+runs:
+  using: composite
+  steps:
+    - name: Hash the profile tables
+      id: hash
+      shell: bash
+      run: |
+        set -euo pipefail
+        hash="$(awk '/^\[/{p = /^\[profile[].]/} p && !/^[[:space:]]*(#|$)/' Cargo.toml \
+          | git hash-object --stdin)"
+        echo "hash=$hash" >> "$GITHUB_OUTPUT"

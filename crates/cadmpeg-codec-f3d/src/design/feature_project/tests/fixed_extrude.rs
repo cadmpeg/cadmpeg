@@ -181,6 +181,7 @@ fn fixed_two_sided_distance_lanes_project_two_blind_sides() {
             side_two_taper_angle: None,
             profile_offset: None,
             side_one_offset: None,
+            ..Default::default()
         },
     );
     let definition = projected(&scope).expect("typed two-sided Extrude");
@@ -222,6 +223,7 @@ fn fixed_symmetric_distance_lane_keeps_the_native_feature() {
             side_two_taper_angle: None,
             profile_offset: None,
             side_one_offset: None,
+            ..Default::default()
         },
     );
     assert!(projected(&scope).is_none());

@@ -132,7 +132,7 @@ offset = 4
 type = "u32"
 endianness = "big"
 source = "spec"
-anchor = "`version` (u32 **big-endian**, value `0x00000004`)"
+anchor = "`version` (u32 **big-endian**; observed value `0x00000004`)"
 
 [[record]]
 name = "block_frame_header"

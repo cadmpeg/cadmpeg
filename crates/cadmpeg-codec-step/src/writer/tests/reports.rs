@@ -152,14 +152,6 @@ fn writer_reports_unhandled_neutral_arenas_and_product_metadata() {
     ir.model
         .semantic_annotations
         .push(cadmpeg_ir::semantic_annotations::SemanticAnnotation {
-            id: cadmpeg_ir::semantic_annotations::SemanticAnnotationId::mint(
-                "test:model:semantic#note",
-            )
-            .expect("identity grammar"),
-            object: "note".into(),
-            kind: cadmpeg_ir::semantic_annotations::SemanticAnnotationKind::Text,
-            runtime_type: "TextNote".into(),
-            order: 0,
             text: vec!["inspection note".into()],
             references: std::collections::BTreeMap::new(),
             value: None,
@@ -167,7 +159,17 @@ fn writer_reports_unhandled_neutral_arenas_and_product_metadata() {
             position: None,
             parameters: std::collections::BTreeMap::new(),
             assets: Vec::new(),
-            native_ref: "native-note".into(),
+            ..cadmpeg_ir::semantic_annotations::SemanticAnnotation::new(
+                cadmpeg_ir::semantic_annotations::SemanticAnnotationId::mint(
+                    "test:model:semantic#note",
+                )
+                .expect("identity grammar"),
+                "note".into(),
+                cadmpeg_ir::semantic_annotations::SemanticAnnotationKind::Text,
+                "TextNote".into(),
+                0,
+                "native-note".into(),
+            )
         });
     let mut bom_properties = std::collections::BTreeMap::new();
     bom_properties.insert(cadmpeg_core::nonblank_literal!("stock_code"), "A-1".into());
@@ -262,9 +264,11 @@ fn writer_reports_unrepresented_topology_metadata() {
     assert!(report.losses.iter().any(|loss| {
         loss.code == StepLossCode::TopologyMetadataNotRepresented.kind()
             && loss.message.contains("topology metadata")
-            && loss.message.contains("face tolerance=1")
-            && loss.message.contains("edge tolerance=1")
-            && loss.message.contains("vertex tolerance=1")
+            && loss.message.contains("face tolerance=1 (largest 0.01 mm)")
+            && loss.message.contains("edge tolerance=1 (largest 0.02 mm)")
+            && loss
+                .message
+                .contains("vertex tolerance=1 (largest 0.03 mm)")
     }));
 }
 

@@ -18,6 +18,7 @@ use crate::test_support::parasolid::cone_carrier;
 use crate::test_support::parasolid::cylinder_carrier;
 use crate::test_support::parasolid::edge_use;
 use crate::test_support::parasolid::ellipse_carrier;
+use crate::test_support::parasolid::framed_topology_fin;
 use crate::test_support::parasolid::line_carrier;
 use crate::test_support::parasolid::linear_nurbs_curve_carrier;
 use crate::test_support::parasolid::loop_head;
@@ -79,7 +80,7 @@ fn closed_cylinder_gets_derived_seam() {
 }
 
 #[test]
-fn closed_cylinder_anchors_sentinel_vertices_to_the_surface_branch() {
+fn sentinel_vertices_without_partners_withhold_the_rim_edges() {
     let mut body = closed_cylinder_body();
     for coedge_attr in [30u16, 31] {
         let offset = body
@@ -98,38 +99,15 @@ fn closed_cylinder_anchors_sentinel_vertices_to_the_surface_branch() {
         )
         .unwrap();
 
-    let seam = decoded
-        .ir()
-        .model
-        .edges
-        .iter()
-        .find(|edge| edge.id.as_str().contains("#seam:"))
-        .expect("derived seam");
-    let positions = [&seam.start, &seam.end].map(|vertex_id| {
-        let vertex = decoded
-            .ir()
-            .model
-            .vertices
-            .iter()
-            .find(|vertex| vertex.id == *vertex_id)
-            .unwrap();
+    assert_eq!(decoded.ir().model.faces.len(), 0);
+    assert_eq!(
         decoded
-            .ir()
-            .model
-            .points
+            .report()
+            .losses
             .iter()
-            .find(|point| point.id == vertex.point)
-            .unwrap()
-            .position()
-            .get()
-    });
-    assert_eq!(
-        positions[0],
-        cadmpeg_ir::math::Point3::new(-1000.0, 0.0, 0.0)
-    );
-    assert_eq!(
-        positions[1],
-        cadmpeg_ir::math::Point3::new(-1000.0, 0.0, 1000.0)
+            .filter(|loss| loss.code.local_code() == "topology.ring-edge-withheld")
+            .count(),
+        1
     );
 }
 
@@ -145,7 +123,14 @@ fn closed_circle_edge_gets_a_derived_seam_vertex() {
     body.extend(circle_carrier(200, [1.0, 2.0, 0.0], [0.0, 0.0, 1.0], 0.5));
     body.extend(bridge(10, 20, 100));
     body.extend(loop_head(20, 30, 10));
-    body.extend(coedge(30, 20, 30, 1, 0, 40, false));
+    body.extend(coedge(30, 20, 30, 1, 31, 40, false));
+    body.extend(framed_topology_fin(
+        31,
+        [0, 0, 0, 0, 1, 30, 40, 0, 0],
+        false,
+        false,
+        true,
+    ));
     body.extend(edge_use(40, 200));
 
     let decoded = SldprtCodec

@@ -176,6 +176,8 @@ fn saved_edge_loss_counts_final_archive_ownership_once() {
             archive: &archive,
             stack: vec!["root.f3d".to_owned()],
             members: std::collections::BTreeMap::new(),
+            operation_poses: std::collections::BTreeMap::new(),
+            operation_protected: std::collections::BTreeSet::new(),
         }
         .merge(
             &mut ir,
@@ -513,6 +515,9 @@ fn occurrence_key_preserves_authored_roles() {
     assert!(crate::records::xref::RequiredXrefText::try_from(String::new()).is_err());
     let reference = |role: &str, ordinal: u32| XrefReference {
         current_pose: None,
+        operation_pose: None,
+        contained_poses: Vec::new(),
+        owned_poses: Vec::new(),
         id: "f3d:xref:reference#1".into(),
         ordinal,
         occurrence_ordinal: 0,
@@ -541,6 +546,9 @@ fn occurrence_key_preserves_authored_roles() {
 fn occurrence_key_separates_same_role_references_with_reset_ordinals() {
     let reference = |ordinal| XrefReference {
         current_pose: None,
+        operation_pose: None,
+        contained_poses: Vec::new(),
+        owned_poses: Vec::new(),
         id: format!("f3d:xref:reference#{ordinal}"),
         ordinal,
         occurrence_ordinal: 0,
@@ -795,6 +803,9 @@ fn repeated_local_owners_merge_each_external_child_tree_in_its_composed_frame() 
     let archive = crate::f3z::archive::classify_members(&ctx, &scan).unwrap();
     let reference = XrefReference {
         current_pose: None,
+        operation_pose: None,
+        contained_poses: Vec::new(),
+        owned_poses: Vec::new(),
         id: "f3d:xref:reference#0".to_owned(),
         ordinal: 0,
         occurrence_ordinal: 0,
@@ -879,6 +890,8 @@ fn repeated_local_owners_merge_each_external_child_tree_in_its_composed_frame() 
         archive: &archive,
         stack: vec!["root.f3d".to_owned()],
         members: std::collections::BTreeMap::new(),
+        operation_poses: std::collections::BTreeMap::new(),
+        operation_protected: std::collections::BTreeSet::new(),
     }
     .merge(&mut ir, &mut report, &mut fidelity, &table)
     .unwrap();
@@ -1364,6 +1377,8 @@ fn merged_joint_descent_selects_unique_member_children_and_retains_ambiguous_pat
                 archive: &archive,
                 stack: vec!["root.f3d".into()],
                 members: std::collections::BTreeMap::from([("member.f3d".into(), member)]),
+                operation_poses: std::collections::BTreeMap::new(),
+                operation_protected: std::collections::BTreeSet::new(),
             }
             .merge(
                 &mut ir,
