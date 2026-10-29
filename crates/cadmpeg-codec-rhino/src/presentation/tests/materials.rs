@@ -234,7 +234,6 @@ fn v2_v3_material_reads_direct_prefix_and_legacy_textures() {
         assert_eq!(material.textures[2].legacy_file_path, "environment.png");
         assert_eq!(material.textures[2].texture_type, 86);
         assert_eq!(material.textures[2].mode, 1);
-        assert_eq!(material.textures[0].source_offset, 77);
         assert_eq!(material.textures[0].wrap, [0, 0, 0]);
         assert_eq!(
             material.textures[0].uvw_transform[0],

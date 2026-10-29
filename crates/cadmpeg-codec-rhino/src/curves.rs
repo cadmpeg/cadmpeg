@@ -5,7 +5,7 @@ use crate::loss::Diagnostics;
 use std::f64::consts::{FRAC_PI_2, TAU};
 use std::ops::Range;
 
-use cadmpeg_core::decode::{DecodeContext, View};
+use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::features::FinitePoint3;
 use cadmpeg_ir::geometry::{nurbs::NurbsCurve, CurveGeometry, SolvedCurveGeometry};
@@ -17,8 +17,6 @@ use crate::chunks::{ArchiveVersion, BoundedReader, FramingError};
 use crate::objects::parse_class_wrapper;
 use crate::settings::{bbox, interval, plane, MillimeterScale, Point3 as NativePoint3};
 use crate::wire::{vector, Uuid};
-
-pub(crate) mod source_polycurve;
 
 const EPS_CURVE_POSITION: f64 = 1.0e-8;
 const EPS_CURVE_DEGENERATE: f64 = 1.0e-10;
@@ -499,115 +497,6 @@ pub(crate) fn decode(
     archive: ArchiveVersion,
 ) -> Result<DecodedGeometry, GeometryError> {
     decode_inner(ctx, data, class_uuid, range, scale, archive, 0)
-}
-
-pub(crate) fn is_point(class: Uuid) -> bool {
-    class == POINT
-}
-
-pub(crate) fn is_line(class: Uuid) -> bool {
-    class == LINE
-}
-
-pub(crate) fn is_arc(class: Uuid) -> bool {
-    class == ARC
-}
-
-pub(crate) fn is_polyline(class: Uuid) -> bool {
-    class == POLYLINE
-}
-
-pub(crate) fn is_polycurve(class: Uuid) -> bool {
-    matches!(class, POLYCURVE | POLYCURVE_LEGACY)
-}
-
-pub(crate) fn is_nurbs_curve(class: Uuid) -> bool {
-    matches!(class, NURBS_CURVE | NURBS_CURVE_TL | NURBS_CURVE_LEGACY)
-}
-
-/// Decode the point fields through their actual source view.
-pub(crate) fn decode_point_view(
-    ctx: &DecodeContext<'_>,
-    source: View<'_>,
-    range: Range<usize>,
-    scale: MillimeterScale,
-) -> Result<DecodedGeometry, GeometryError> {
-    let _depth_guard = ctx.enter_nested("Rhino curve tree")?;
-    let mut reader = BoundedReader::from_view(source, range.start, range.end)?;
-    let position = read_point(&mut reader, scale)?;
-    reader.skip_remaining()?;
-    Ok(DecodedGeometry::Point {
-        position,
-        scaled: scale != MillimeterScale::IDENTITY,
-    })
-}
-
-/// Decode the line fields through their actual source view.
-pub(crate) fn decode_line_view(
-    ctx: &DecodeContext<'_>,
-    source: View<'_>,
-    range: Range<usize>,
-    scale: MillimeterScale,
-) -> Result<DecodedGeometry, GeometryError> {
-    let _depth_guard = ctx.enter_nested("Rhino curve tree")?;
-    let mut reader = BoundedReader::from_view(source, range.start, range.end)?;
-    let curve = DecodedCurve::line(read_line(&mut reader, scale, None)?);
-    reader.skip_remaining()?;
-    Ok(DecodedGeometry::Curve { curve })
-}
-
-/// Decode the arc fields through their actual source view.
-pub(crate) fn decode_arc_view(
-    ctx: &DecodeContext<'_>,
-    source: View<'_>,
-    range: Range<usize>,
-    scale: MillimeterScale,
-) -> Result<DecodedGeometry, GeometryError> {
-    let _depth_guard = ctx.enter_nested("Rhino curve tree")?;
-    let mut reader = BoundedReader::from_view(source, range.start, range.end)?;
-    let (geometry, warnings) = read_arc(&mut reader, scale, None, false)?;
-    reader.skip_remaining()?;
-    Ok(DecodedGeometry::Curve {
-        curve: DecodedCurve::leaf(geometry, warnings),
-    })
-}
-
-/// Decode the polyline fields through their actual source view.
-pub(crate) fn decode_polyline_view(
-    ctx: &DecodeContext<'_>,
-    source: View<'_>,
-    range: Range<usize>,
-    scale: MillimeterScale,
-) -> Result<DecodedGeometry, GeometryError> {
-    let _depth_guard = ctx.enter_nested("Rhino curve tree")?;
-    let mut reader = BoundedReader::from_view(source, range.start, range.end)?;
-    let geometry = CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(read_polyline(
-        ctx,
-        &mut reader,
-        scale,
-        None,
-    )?));
-    reader.skip_remaining()?;
-    Ok(DecodedGeometry::Curve {
-        curve: DecodedCurve::leaf(geometry, Diagnostics::new()),
-    })
-}
-
-/// Decode a NURBS curve through its actual source view.
-pub(crate) fn decode_nurbs_view(
-    ctx: &DecodeContext<'_>,
-    source: View<'_>,
-    range: Range<usize>,
-    scale: MillimeterScale,
-) -> Result<DecodedGeometry, GeometryError> {
-    let _depth_guard = ctx.enter_nested("Rhino curve tree")?;
-    let mut reader = BoundedReader::from_view(source, range.start, range.end)?;
-    let geometry = CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(
-        crate::surfaces::read_nurbs_curve_in(ctx, &mut reader, scale)?,
-    ));
-    Ok(DecodedGeometry::Curve {
-        curve: DecodedCurve::leaf(geometry, Diagnostics::new()),
-    })
 }
 
 /// Decodes a Brep C2 curve in surface parameter space.
@@ -2017,25 +1906,6 @@ fn read_polycurve(
     archive: ArchiveVersion,
     depth: usize,
 ) -> Result<DecodedCurve, GeometryError> {
-    read_polycurve_with(
-        data,
-        reader,
-        archive,
-        |reader, count| read_polycurve_parameters(ctx, reader, count, "polycurve"),
-        |_, class, range| decode_inner(ctx, data, class, range, scale, archive, depth + 1),
-    )
-}
-
-fn read_polycurve_with(
-    data: &[u8],
-    reader: &mut BoundedReader<'_>,
-    archive: ArchiveVersion,
-    mut parameters: impl FnMut(
-        &mut BoundedReader<'_>,
-        usize,
-    ) -> Result<(Vec<FiniteReal>, FiniteReal), GeometryError>,
-    mut decode_child: impl FnMut(usize, Uuid, Range<usize>) -> Result<DecodedGeometry, GeometryError>,
-) -> Result<DecodedCurve, GeometryError> {
     let version = reader.u8()?;
     if version >> 4 != 1 {
         return Err(GeometryError::unsupported(
@@ -2050,12 +1920,13 @@ fn read_polycurve_with(
             "polycurve has no segments",
         ));
     }
-    reader.skip(std::mem::size_of::<i32>())?;
-    reader.skip(std::mem::size_of::<i32>())?;
+    reader.i32()?;
+    reader.i32()?;
     reader.skip(48)?;
-    let (parameters, end_parameter) = parameters(reader, segment_count)?;
+    let (parameters, end_parameter) =
+        read_polycurve_parameters(ctx, reader, segment_count, "polycurve")?;
     let mut children = Vec::new();
-    for (index, parameter) in parameters.into_iter().enumerate() {
+    for parameter in parameters {
         let start = reader.position();
         let wrapper = crate::chunks::chunk_at(data, start, reader.end(), archive, false)?;
         let mut wrapper_warnings = Diagnostics::new();
@@ -2072,7 +1943,15 @@ fn read_polycurve_with(
                 "polycurve child is not a curve",
             ));
         }
-        let child = decode_child(index, class.class_uuid, class.class_data_range)?;
+        let child = decode_inner(
+            ctx,
+            data,
+            class.class_uuid,
+            class.class_data_range,
+            scale,
+            archive,
+            depth + 1,
+        )?;
         let DecodedGeometry::Curve { mut curve } = child else {
             return Err(GeometryError::malformed(
                 start,
@@ -2285,10 +2164,8 @@ pub(crate) fn error(offset: usize, message: impl Into<String>) -> GeometryError 
 
 #[cfg(test)]
 mod tests {
-    mod source_arc_reads;
-    mod source_line_reads;
     mod source_nurbs_reads;
-    mod source_point_reads;
+    mod source_polycurve_reads;
     mod source_polyline_reads;
     #[test]
     fn numerical_audit_nurbs_elevation_preserves_active_spans_and_discontinuities() {

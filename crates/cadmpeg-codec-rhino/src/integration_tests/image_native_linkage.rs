@@ -140,10 +140,10 @@ fn payload(asset: &cadmpeg_ir::assets::Asset) -> &[u8] {
 }
 
 #[test]
-fn image_source_buffers_are_record_layout_extents_not_document_fields() {
-    let (source, bitmap_buffer) = source();
+fn image_source_buffers_are_not_document_fields() {
+    let (source, _) = source();
     let decoded = RhinoCodec
-        .decode(&mut Cursor::new(source.clone()), &DecodeOptions::default())
+        .decode(&mut Cursor::new(source), &DecodeOptions::default())
         .unwrap();
     let namespace = decoded.ir().native.namespace("rhino").unwrap();
     let image = &namespace.arenas()["embedded_images"][0];
@@ -159,21 +159,6 @@ fn image_source_buffers_are_record_layout_extents_not_document_fields() {
         assert_eq!(bitmap.field(key), None, "{key}");
     }
     assert!(bitmap.field("image_byte_len").is_some());
-    let mut image_buffer = 3_u32.to_le_bytes().to_vec();
-    image_buffer.extend([0x11, 0x22, 0x33]);
-    for (record, buffer) in [(image, image_buffer), (bitmap, bitmap_buffer)] {
-        let layout = &decoded.source_fidelity().record_layout()[record.id()];
-        let start = usize::try_from(layout.offset()).unwrap();
-        let len = usize::try_from(layout.byte_len()).unwrap();
-        assert_eq!(len, buffer.len(), "{}", record.id());
-        assert_eq!(
-            &source[start..start + len],
-            buffer.as_slice(),
-            "{}",
-            record.id()
-        );
-        assert!(layout.payloads().is_empty(), "{}", record.id());
-    }
 }
 
 #[test]

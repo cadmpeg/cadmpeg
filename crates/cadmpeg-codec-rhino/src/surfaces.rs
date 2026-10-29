@@ -4,7 +4,7 @@
 use std::f64::consts::{FRAC_PI_2, TAU};
 use std::ops::Range;
 
-use cadmpeg_core::decode::{DecodeContext, View};
+use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_ir::features::FinitePoint3;
 use cadmpeg_ir::geometry::{
     nurbs::{
@@ -53,27 +53,6 @@ pub(crate) const REV_SURFACE_LEGACY: Uuid = Uuid::from_canonical([
 pub(crate) const SUM_SURFACE: Uuid = Uuid::from_canonical([
     0xc4, 0xcd, 0x53, 0x59, 0x44, 0x6d, 0x46, 0x90, 0x9f, 0xf5, 0x29, 0x05, 0x97, 0x32, 0x47, 0x2b,
 ]);
-
-pub(crate) fn is_nurbs_surface(class: Uuid) -> bool {
-    matches!(
-        class,
-        NURBS_SURFACE | NURBS_SURFACE_TL | NURBS_SURFACE_LEGACY
-    )
-}
-
-pub(crate) fn decode_nurbs_view(
-    ctx: &DecodeContext<'_>,
-    source: View<'_>,
-    range: Range<usize>,
-    scale: MillimeterScale,
-) -> Result<DecodedSurface, GeometryError> {
-    let _depth_guard = ctx.enter_nested("Rhino curve tree")?;
-    let mut reader = BoundedReader::from_view(source, range.start, range.end)?;
-    Ok(DecodedSurface::Typed {
-        geometry: TypedSurface::Nurbs(read_nurbs_surface_in(ctx, &mut reader, scale)?),
-        derived: true,
-    })
-}
 
 /// Returns whether a class is one of the native procedural surfaces.
 pub(crate) fn is_procedural_class(uuid: Uuid) -> bool {
