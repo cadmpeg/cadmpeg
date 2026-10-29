@@ -1912,13 +1912,20 @@ fn effective_reports_the_resolved_display_colour_of_each_record() {
         serde_json::to_value(unit_cube().expect("unit cube fixture is admitted")).unwrap();
     let color = serde_json::json!({"r": 0.25, "g": 0.5, "b": 0.75, "a": 1.0});
     document["model"]["bodies"][0]["color"] = color.clone();
-    let body = document["model"]["bodies"][0]["id"].as_str().unwrap().to_owned();
+    let body = document["model"]["bodies"][0]["id"]
+        .as_str()
+        .unwrap()
+        .to_owned();
     let model = write(dir.path(), "cube.cadir.json", &document.to_string());
     let output = cadmpeg()
         .args(["query", "effective", "--json", model.to_str().unwrap()])
         .output()
         .unwrap();
-    assert!(output.status.success(), "{}", String::from_utf8_lossy(&output.stderr));
+    assert!(
+        output.status.success(),
+        "{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
     let value: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
     let payload = &value["payload"];
     assert_eq!(payload["protocol"], "cadmpeg-effective-values-v1");
