@@ -36,6 +36,8 @@ jobs:
       - uses: Swatinem/rust-cache@v2
         with:
           shared-key: freecad-native
+          # The automatic key ignores [profile] sections, which change every artifact.
+          key: ${{ hashFiles('Cargo.toml') }}
       - name: Install native runtime
         run: |
           set -euo pipefail
