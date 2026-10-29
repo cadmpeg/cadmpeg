@@ -40,14 +40,17 @@ fn nonzero_working_box_preserves_the_value_and_its_single_drop() {
         drops: &drops,
     };
     assert!(size_of::<Counted<'_>>() > 0);
-    let boxed: Box<Counted<'_>> = ctx.alloc_box_working(value, "working nonzero box").unwrap();
+    let boxed: Box<Counted<'_>> = ctx
+        .alloc_box_working(value, "working nonzero box")
+        .expect("a working box needs no retained or entity allowance");
     assert_eq!(boxed.value, "held non-Copy value");
     assert_eq!(drops.get(), 0);
     assert_eq!(ctx.retained_bytes_available(), 0);
     assert_eq!(ctx.resource_refusal(), None);
     drop(boxed);
     assert_eq!(drops.get(), 1);
-    ctx.finish_session().unwrap();
+    ctx.finish_session()
+        .expect("the session finishes without a refusal");
 }
 
 #[test]
@@ -61,13 +64,14 @@ fn zero_sized_working_box_keeps_ownership_until_the_box_drops() {
     assert_eq!(size_of::<ZeroSized>(), 0);
     let boxed: Box<ZeroSized> = ctx
         .alloc_box_working(ZeroSized, "working zero-sized box")
-        .unwrap();
+        .expect("a zero-sized working box needs no allowance");
     ZERO_DROPS.with(|drops| assert_eq!(drops.get(), 0));
     assert_eq!(ctx.retained_bytes_available(), 0);
     assert_eq!(ctx.resource_refusal(), None);
     drop(boxed);
     ZERO_DROPS.with(|drops| assert_eq!(drops.get(), 1));
-    ctx.finish_session().unwrap();
+    ctx.finish_session()
+        .expect("the session finishes without a refusal");
 }
 
 #[test]
@@ -77,24 +81,32 @@ fn working_boxes_preserve_live_output_entity_and_source_capture_state() {
     policy.limits.max_retained_bytes = 8;
     policy.limits.max_entities = 1;
     let ctx = DecodeContext::for_encode(&arena, &policy);
-    let session = crate::encode::EncodeSession::from_context(&ctx).unwrap();
-    ctx.retain_bytes(3, "held typed output").unwrap();
+    let session = crate::encode::EncodeSession::from_context(&ctx)
+        .expect("encode session opens from a fresh context");
+    ctx.retain_bytes(3, "held typed output")
+        .expect("three retained bytes fit the eight-byte ceiling");
     let mut output = session.buffer();
-    output.append(b"12", "actual live output").unwrap();
+    output
+        .append(b"12", "actual live output")
+        .expect("two output bytes fit the remaining ceiling");
     assert_eq!(ctx.retained_bytes_available(), 3);
     let boxed = ctx
         .alloc_box_working([1_u64, 2, 3], "temporary working box")
-        .unwrap();
+        .expect("a working box leaves the retained allowance unchanged");
     assert_eq!(*boxed, [1, 2, 3]);
     assert_eq!(ctx.retained_bytes_available(), 3);
     assert_eq!(ctx.resource_refusal(), None);
-    ctx.charge_entities(1, "the actual output record").unwrap();
+    ctx.charge_entities(1, "the actual output record")
+        .expect("one entity fits the ceiling");
     drop(boxed);
     assert_eq!(ctx.retained_bytes_available(), 3);
-    session.finish().unwrap();
+    session
+        .finish()
+        .expect("the session finishes without a refusal");
     drop(output);
     assert_eq!(ctx.retained_bytes_available(), 5);
-    ctx.finish_session().unwrap();
+    ctx.finish_session()
+        .expect("the session finishes without a refusal");
 }
 
 #[test]
@@ -106,14 +118,18 @@ fn prior_refusal_reaches_nonzero_and_zero_sized_boxes_without_a_new_account() {
     let mut policy = DecodePolicy::service();
     policy.limits.max_retained_bytes = 8;
     let ctx = DecodeContext::for_encode(&arena, &policy);
-    let session = crate::encode::EncodeSession::from_context(&ctx).unwrap();
-    ctx.retain_bytes(3, "held typed output").unwrap();
+    let session = crate::encode::EncodeSession::from_context(&ctx)
+        .expect("encode session opens from a fresh context");
+    ctx.retain_bytes(3, "held typed output")
+        .expect("three retained bytes fit the eight-byte ceiling");
     let mut output = session.buffer();
-    output.append(b"12", "actual live output").unwrap();
+    output
+        .append(b"12", "actual live output")
+        .expect("two output bytes fit the remaining ceiling");
     let mut impossible = Vec::<u64>::new();
     let crate::CodecError::ResourceLimit(refusal) = ctx
         .reserve_working(&mut impossible, usize::MAX, "prior working overflow")
-        .unwrap_err()
+        .expect_err("a usize::MAX working reservation is refused")
     else {
         panic!("the overflowing request records its actual allocation refusal");
     };

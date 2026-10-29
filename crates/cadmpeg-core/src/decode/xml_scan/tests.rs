@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 use super::{XmlElementScan, XmlEncoding, XmlFramingIssue, XmlTermination};
-use crate::decode::{DecodeArena, DecodeContext, DecodePolicy, LimitScope, ResourceDimension};
+use crate::decode::{
+    DecodeArena, DecodeContext, DecodePolicy, LimitScope, ResourceDimension, View,
+};
 use crate::CodecError;
 
 fn names(scan: &XmlElementScan<'_>) -> Vec<Vec<u8>> {
@@ -53,14 +55,14 @@ fn complete_nested_and_empty_elements_keep_exact_xml_framing() {
     assert_eq!(
         scan.elements()[0]
             .framing()
-            .map(|view| view.window())
+            .map(View::window)
             .collect::<Vec<_>>(),
         [b"<root".as_slice(), b">", b"</root>"]
     );
     assert_eq!(
         scan.elements()[3]
             .framing()
-            .map(|view| view.window())
+            .map(View::window)
             .collect::<Vec<_>>(),
         [b"<last".as_slice(), b"/>"]
     );

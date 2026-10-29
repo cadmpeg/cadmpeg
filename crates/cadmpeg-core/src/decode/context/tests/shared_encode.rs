@@ -9,11 +9,11 @@ use crate::decode::{
 use crate::encode::EncodeSession;
 use crate::CodecError;
 
-fn resource(error: CodecError) -> crate::decode::ResourceLimit {
+fn resource(error: &CodecError) -> crate::decode::ResourceLimit {
     let CodecError::ResourceLimit(limit) = error else {
         panic!("actual caller resource refusal")
     };
-    limit
+    *limit
 }
 
 #[test]
@@ -23,21 +23,29 @@ fn independent_contexts_and_live_output_share_the_exact_retained_ceiling() {
     policy.limits.max_retained_bytes = 8;
     policy.mode = crate::decode::DecodeMode::Strict;
     let first = DecodeContext::for_encode(&arena, &policy);
-    let session = EncodeSession::from_context(&first).unwrap();
+    let session =
+        EncodeSession::from_context(&first).expect("encode session opens from a fresh context");
     let second_arena = DecodeArena::new();
-    let second = DecodeContext::for_encode_session(&second_arena, &session).unwrap();
+    let second = DecodeContext::for_encode_session(&second_arena, &session)
+        .expect("attached context opens on a live session");
     assert_eq!(second.policy(), &policy);
-    first.retain_bytes(3, "first held record").unwrap();
-    second.retain_bytes(3, "second held record").unwrap();
+    first
+        .retain_bytes(3, "first held record")
+        .expect("three retained bytes fit the eight-byte ceiling");
+    second
+        .retain_bytes(3, "second held record")
+        .expect("three more retained bytes fit the ceiling");
     let mut output = session.buffer();
-    output.append(b"12", "live output").unwrap();
+    output
+        .append(b"12", "live output")
+        .expect("two output bytes fit the remaining ceiling");
     assert_eq!(output.as_bytes(), b"12");
     assert_eq!(first.retained_bytes_available(), 0);
     assert_eq!(second.retained_bytes_available(), 0);
     let refusal = resource(
-        second
+        &second
             .retain_bytes(1, "aggregate retained overflow")
-            .unwrap_err(),
+            .expect_err("the ninth retained byte exceeds the ceiling"),
     );
     assert_eq!(refusal.dimension, ResourceDimension::RetainedBytes);
     assert_eq!((refusal.limit, refusal.used, refusal.additional), (8, 8, 1));
@@ -46,9 +54,9 @@ fn independent_contexts_and_live_output_share_the_exact_retained_ceiling() {
     assert_eq!(session.finish(), Err(refusal));
     assert_eq!(
         resource(
-            first
+            &first
                 .retain_bytes(0, "empty after output drop")
-                .unwrap_err()
+                .expect_err("the latched refusal blocks a later charge")
         ),
         refusal
     );
@@ -60,15 +68,23 @@ fn independent_contexts_and_emission_share_the_exact_entity_ceiling() {
     let mut policy = DecodePolicy::service();
     policy.limits.max_entities = 3;
     let first = DecodeContext::for_encode(&arena, &policy);
-    let session = EncodeSession::from_context(&first).unwrap();
-    let second = DecodeContext::for_encode_session(&arena, &session).unwrap();
-    first.charge_entities(1, "first record").unwrap();
-    second.charge_entities(1, "second record").unwrap();
-    session.charge_entities(1, "written record").unwrap();
+    let session =
+        EncodeSession::from_context(&first).expect("encode session opens from a fresh context");
+    let second = DecodeContext::for_encode_session(&arena, &session)
+        .expect("attached context opens on a live session");
+    first
+        .charge_entities(1, "first record")
+        .expect("first entity fits the ceiling");
+    second
+        .charge_entities(1, "second record")
+        .expect("second entity fits the ceiling");
+    session
+        .charge_entities(1, "written record")
+        .expect("written entity fits the ceiling");
     let refusal = resource(
-        second
+        &second
             .charge_entities(1, "aggregate entity overflow")
-            .unwrap_err(),
+            .expect_err("the fourth entity exceeds the ceiling"),
     );
     assert_eq!(refusal.dimension, ResourceDimension::Entities);
     assert_eq!((refusal.limit, refusal.used, refusal.additional), (3, 3, 1));
@@ -85,25 +101,28 @@ fn independent_contexts_charge_actual_input_to_one_eight_byte_ceiling() {
     let mut policy = DecodePolicy::service();
     policy.limits.max_input_bytes = 8;
     let first = DecodeContext::for_encode(&arena, &policy);
-    let session = EncodeSession::from_context(&first).unwrap();
-    let second = DecodeContext::for_encode_session(&arena, &session).unwrap();
-    let third = DecodeContext::for_encode_session(&arena, &session).unwrap();
+    let session =
+        EncodeSession::from_context(&first).expect("encode session opens from a fresh context");
+    let second = DecodeContext::for_encode_session(&arena, &session)
+        .expect("second context opens on a live session");
+    let third = DecodeContext::for_encode_session(&arena, &session)
+        .expect("third context opens on a live session");
     assert_eq!(
         first
             .read_input_prefix(&mut Cursor::new(b"abc"), 3)
-            .unwrap(),
+            .expect("three input bytes fit the ceiling"),
         b"abc"
     );
     assert_eq!(
         second
             .read_input_prefix(&mut Cursor::new(b"defgh"), 5)
-            .unwrap(),
+            .expect("five more input bytes fit the ceiling"),
         b"defgh"
     );
     let refusal = resource(
-        third
+        &third
             .read_input_prefix(&mut Cursor::new(b"i"), 1)
-            .unwrap_err(),
+            .expect_err("the ninth input byte exceeds the ceiling"),
     );
     assert_eq!(refusal.dimension, ResourceDimension::InputBytes);
     assert_eq!((refusal.limit, refusal.used, refusal.additional), (8, 8, 1));
@@ -119,17 +138,37 @@ fn independent_expansions_charge_actual_bytes_to_one_eight_byte_ceiling() {
     policy.limits.max_decompressed_bytes_total = 8;
     policy.limits.max_decompressed_bytes_per_expand = 8;
     let first = DecodeContext::for_encode(&arena, &policy);
-    let session = EncodeSession::from_context(&first).unwrap();
-    let second = DecodeContext::for_encode_session(&arena, &session).unwrap();
-    let third = DecodeContext::for_encode_session(&arena, &session).unwrap();
-    let mut a = first.begin_expand(ExpandSpec::Exact(3)).unwrap();
-    a.write(b"abc").unwrap();
-    assert_eq!(a.finalize_owned().unwrap(), b"abc");
-    let mut b = second.begin_expand(ExpandSpec::Exact(5)).unwrap();
-    b.write(b"defgh").unwrap();
-    assert_eq!(b.finalize_owned().unwrap(), b"defgh");
-    let mut c = third.begin_expand(ExpandSpec::Exact(1)).unwrap();
-    let refusal = resource(c.write(b"i").unwrap_err());
+    let session =
+        EncodeSession::from_context(&first).expect("encode session opens from a fresh context");
+    let second = DecodeContext::for_encode_session(&arena, &session)
+        .expect("second context opens on a live session");
+    let third = DecodeContext::for_encode_session(&arena, &session)
+        .expect("third context opens on a live session");
+    let mut a = first
+        .begin_expand(ExpandSpec::Exact(3))
+        .expect("three-byte expansion fits the ceiling");
+    a.write(b"abc")
+        .expect("three expanded bytes fit the ceiling");
+    assert_eq!(
+        a.finalize_owned().expect("three-byte expansion finalizes"),
+        b"abc"
+    );
+    let mut b = second
+        .begin_expand(ExpandSpec::Exact(5))
+        .expect("five-byte expansion fits the ceiling");
+    b.write(b"defgh")
+        .expect("five expanded bytes fit the ceiling");
+    assert_eq!(
+        b.finalize_owned().expect("five-byte expansion finalizes"),
+        b"defgh"
+    );
+    let mut c = third
+        .begin_expand(ExpandSpec::Exact(1))
+        .expect("one-byte expansion opens before any byte is charged");
+    let refusal = resource(
+        &c.write(b"i")
+            .expect_err("the ninth expanded byte exceeds the ceiling"),
+    );
     assert_eq!(refusal.dimension, ResourceDimension::DecompressedBytes);
     assert_eq!((refusal.limit, refusal.used, refusal.additional), (8, 8, 1));
     assert_eq!(first.resource_refusal(), Some(refusal));
@@ -141,13 +180,15 @@ fn independent_expansions_charge_actual_bytes_to_one_eight_byte_ceiling() {
 fn working_allocation_refusal_remains_shared_after_context_drop_and_attachment() {
     let arena = DecodeArena::new();
     let origin = DecodeContext::for_encode(&arena, &DecodePolicy::service());
-    let session = EncodeSession::from_context(&origin).unwrap();
-    let attached = DecodeContext::for_encode_session(&arena, &session).unwrap();
+    let session =
+        EncodeSession::from_context(&origin).expect("encode session opens from a fresh context");
+    let attached = DecodeContext::for_encode_session(&arena, &session)
+        .expect("attached context opens on a live session");
     let mut values = Vec::<u64>::new();
     let refusal = resource(
-        attached
+        &attached
             .reserve_working(&mut values, usize::MAX, "actual working overflow")
-            .unwrap_err(),
+            .expect_err("a usize::MAX working reservation is refused"),
     );
     assert_eq!(refusal.reason, ResourceFailure::AllocationFailed);
     assert_eq!(origin.resource_refusal(), Some(refusal));
@@ -156,7 +197,14 @@ fn working_allocation_refusal_remains_shared_after_context_drop_and_attachment()
     assert!(
         matches!(DecodeContext::for_encode_session(&arena, &session), Err(actual) if actual == refusal)
     );
-    assert_eq!(resource(origin.finish_session().unwrap_err()), refusal);
+    assert_eq!(
+        resource(
+            &origin
+                .finish_session()
+                .expect_err("the origin session reports the shared refusal")
+        ),
+        refusal
+    );
 }
 
 #[test]
@@ -164,19 +212,22 @@ fn attached_input_includes_the_origins_already_admitted_root_length() {
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
     policy.limits.max_input_bytes = 8;
-    let (origin, _) = DecodeContext::from_root_bytes(b"abc", &arena, &policy).unwrap();
-    let session = EncodeSession::from_context(&origin).unwrap();
-    let attached = DecodeContext::for_encode_session(&arena, &session).unwrap();
+    let (origin, _) = DecodeContext::from_root_bytes(b"abc", &arena, &policy)
+        .expect("three root bytes fit the eight-byte ceiling");
+    let session =
+        EncodeSession::from_context(&origin).expect("encode session opens from the root context");
+    let attached = DecodeContext::for_encode_session(&arena, &session)
+        .expect("attached context opens on a live session");
     assert_eq!(
         attached
             .read_input_prefix(&mut Cursor::new(b"defgh"), 5)
-            .unwrap(),
+            .expect("five more input bytes fit the ceiling"),
         b"defgh"
     );
     let refusal = resource(
-        attached
+        &attached
             .read_input_prefix(&mut Cursor::new(b"i"), 1)
-            .unwrap_err(),
+            .expect_err("the ninth input byte exceeds the ceiling"),
     );
     assert_eq!(refusal.dimension, ResourceDimension::InputBytes);
     assert_eq!((refusal.limit, refusal.used, refusal.additional), (8, 8, 1));
@@ -189,12 +240,20 @@ fn ordinary_independent_decodes_keep_separate_caller_accounts() {
     let mut policy = DecodePolicy::service();
     policy.limits.max_input_bytes = 3;
     policy.limits.max_entities = 1;
-    let (a, _) = DecodeContext::from_root_bytes(b"abc", &arena, &policy).unwrap();
-    let (b, _) = DecodeContext::from_root_bytes(b"def", &arena, &policy).unwrap();
-    a.charge_entities(1, "independent first").unwrap();
-    b.charge_entities(1, "independent second").unwrap();
-    let refusal = resource(a.charge_entities(1, "first decode overflow").unwrap_err());
+    let (a, _) = DecodeContext::from_root_bytes(b"abc", &arena, &policy)
+        .expect("first root fits its own ceiling");
+    let (b, _) = DecodeContext::from_root_bytes(b"def", &arena, &policy)
+        .expect("second root fits its own ceiling");
+    a.charge_entities(1, "independent first")
+        .expect("first decode admits one entity");
+    b.charge_entities(1, "independent second")
+        .expect("second decode admits one entity");
+    let refusal = resource(
+        &a.charge_entities(1, "first decode overflow")
+            .expect_err("the second entity exceeds the first decode ceiling"),
+    );
     assert_eq!(refusal.dimension, ResourceDimension::Entities);
     assert_eq!(b.resource_refusal(), None);
-    b.finish_session().unwrap();
+    b.finish_session()
+        .expect("second decode finishes without a refusal");
 }
