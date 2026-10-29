@@ -1831,10 +1831,17 @@ fn curve_parameters(
 fn two_chart_pcurves(
     sections: &[ScannedSection<'_>],
     face_ids: &BTreeSet<u32>,
+    unit_plane_ids: &BTreeSet<u32>,
 ) -> Result<Vec<TwoChartPcurveSamples>, CodecError> {
     let mut records = collect_section_records_result(
         sections.iter(),
-        |bytes| Ok(curve::two_chart_pcurve_samples(bytes, Some(face_ids))),
+        |bytes| {
+            Ok(curve::two_chart_pcurve_samples(
+                bytes,
+                Some(face_ids),
+                unit_plane_ids,
+            ))
+        },
         |record, base| record.offset += base,
         |record| record.offset,
     )?;
@@ -2836,7 +2843,28 @@ pub(crate) fn scan_bytes<'a>(
     );
     let cross_section_curve_rows = cross_section_curve_rows(ctx, sections)?;
     let mut pcurves = curve::pcurve_endpoints(&curve_parameters, &curve_topology_rows);
-    let two_chart_pcurves = two_chart_pcurves(&model_geometry_sections, &topology_face_ids)?;
+    let unique_surface_ids = crate::identity::uniquely_identified_rows(&surface_rows, |row| row.id)
+        .into_iter()
+        .map(|row| row.id)
+        .collect::<BTreeSet<_>>();
+    let unit_plane_ids =
+        crate::identity::uniquely_identified_rows(&plane_local_systems, |frame| frame.surface_id)
+            .into_iter()
+            .filter(|frame| unique_surface_ids.contains(&frame.surface_id))
+            .filter(|frame| {
+                crate::scalar::decode_short_x_full_z_unit_plane_frame(
+                    &frame.body,
+                    &crate::scalar::ScalarCache::default(),
+                )
+                .is_some()
+            })
+            .map(|frame| frame.surface_id)
+            .collect::<BTreeSet<_>>();
+    let two_chart_pcurves = two_chart_pcurves(
+        &model_geometry_sections,
+        &topology_face_ids,
+        &unit_plane_ids,
+    )?;
     if matches!(layout, Layout::LegacyAscii(_)) {
         append_legacy_curve_witnesses(
             &mut curve_topology_rows,

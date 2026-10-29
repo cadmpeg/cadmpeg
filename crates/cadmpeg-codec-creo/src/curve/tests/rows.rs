@@ -159,7 +159,7 @@ fn canonical_and_positional_two_chart_input() -> (Vec<u8>, BTreeSet<u32>) {
 #[test]
 fn decodes_canonical_and_positional_two_chart_sample_rows() {
     let (payload, face_ids) = canonical_and_positional_two_chart_input();
-    let decoded = two_chart_pcurve_samples(&payload, Some(&face_ids));
+    let decoded = two_chart_pcurve_samples(&payload, Some(&face_ids), &BTreeSet::new());
     assert_eq!(decoded.len(), 2);
     assert_eq!(decoded[0].curve_id, 7);
     assert_eq!(decoded[0].faces, [10, 11]);
@@ -180,7 +180,7 @@ fn two_chart_sample_rows_require_exact_counted_consumption() {
     ]);
 
     let face_ids = BTreeSet::from([10, 11]);
-    assert!(two_chart_pcurve_samples(&payload, Some(&face_ids)).is_empty());
+    assert!(two_chart_pcurve_samples(&payload, Some(&face_ids), &BTreeSet::new()).is_empty());
 }
 
 #[test]
@@ -197,7 +197,8 @@ fn fc08_body_is_an_eight_sample_two_chart_count() {
     }
     payload.extend_from_slice(&[10, 11, 7, 7, 0, 0, 0xe3, 0xe1, 0xe3]);
 
-    let decoded = two_chart_pcurve_samples(&payload, Some(&BTreeSet::from([10, 11])));
+    let decoded =
+        two_chart_pcurve_samples(&payload, Some(&BTreeSet::from([10, 11])), &BTreeSet::new());
     let [record] = decoded.as_slice() else {
         panic!("one counted fc 08 body");
     };
@@ -225,7 +226,11 @@ fn counted_two_chart_bodies_read_2d_positive_and_46_negative() {
     first_row.extend_from_slice(&[0x2d, 0x14, 0, 0, 0, 0, 0, 0]);
     let face_ids = BTreeSet::from([10, 11]);
 
-    let counted = two_chart_pcurve_samples(&two_chart_body_payload(3, &first_row), Some(&face_ids));
+    let counted = two_chart_pcurve_samples(
+        &two_chart_body_payload(3, &first_row),
+        Some(&face_ids),
+        &BTreeSet::new(),
+    );
     let [record] = counted.as_slice() else {
         panic!("one counted fc 03 body");
     };
@@ -234,19 +239,112 @@ fn counted_two_chart_bodies_read_2d_positive_and_46_negative() {
     let short_forms = [
         0x2f, 0x08, 0x00, 0x48, 0x08, 0x00, 0x48, 0x14, 0x00, 0x2f, 0x14, 0x00,
     ];
-    let counted =
-        two_chart_pcurve_samples(&two_chart_body_payload(3, &short_forms), Some(&face_ids));
+    let counted = two_chart_pcurve_samples(
+        &two_chart_body_payload(3, &short_forms),
+        Some(&face_ids),
+        &BTreeSet::new(),
+    );
     let [record] = counted.as_slice() else {
         panic!("one counted fc 03 body with short forms");
     };
     assert_eq!(record.samples[0], [[3.0, -3.0], [-5.0, 5.0]]);
 
-    let two_sample =
-        two_chart_pcurve_samples(&two_chart_body_payload(2, &first_row), Some(&face_ids));
+    let two_sample = two_chart_pcurve_samples(
+        &two_chart_body_payload(2, &first_row),
+        Some(&face_ids),
+        &BTreeSet::new(),
+    );
     let [record] = two_sample.as_slice() else {
         panic!("one counted fc 02 body");
     };
     assert_eq!(record.samples[0], [[-3.0, 3.0], [5.0, -5.0]]);
+}
+
+#[test]
+fn two_sample_cylinder_plane_endpoints_match_stored_step_edges() {
+    const EPS_STEP_ENDPOINT_MM: f64 = 1.0e-6;
+    let cases = [
+        (
+            [
+                0x2d, 0x19, 0x3d, 0xb7, 0xd5, 0xa1, 0x3e, 0x28, 0xda, 0x8f, 0x21, 0xc7, 0x6c, 0x7e,
+                0x9d, 0x18, 0x4f, 0xa6, 0xdb, 0x73, 0x90, 0x20, 0x40, 0x2d, 0x19, 0x3d, 0xb7, 0xd5,
+                0xa1, 0x3e, 0x28, 0xd9, 0x8f, 0xf9, 0x08, 0xb7, 0x0d, 0x64, 0x18, 0x5b, 0xcc, 0xb3,
+                0xaf, 0x73, 0x99, 0xe8,
+            ],
+            -3.207793225694403,
+            6.31027158543251,
+            [
+                [30.0, -3.069888648376, 6.310271585914],
+                [30.0, -2.945299213492, 6.310271585433],
+            ],
+        ),
+        (
+            [
+                0x2d, 0x19, 0x3d, 0xb7, 0xd5, 0xa1, 0x3e, 0x28, 0xc4, 0x3b, 0x52, 0x45, 0xbd, 0x75,
+                0xea, 0x18, 0x4f, 0xa6, 0xdb, 0x73, 0x90, 0x20, 0x48, 0x2d, 0x19, 0x3d, 0xb7, 0xd5,
+                0xa1, 0x3e, 0x28, 0xc1, 0x3f, 0x60, 0x6d, 0x7f, 0xe9, 0xf0, 0x18, 0x5c, 0x41, 0xf5,
+                0xf5, 0xbe, 0x13, 0xea,
+            ],
+            -1.214887336587364,
+            6.31027158543251,
+            [
+                [30.0, -0.9452364100137, 6.310271585433],
+                [30.0, -1.076982757961, 6.310271585457],
+            ],
+        ),
+        (
+            [
+                0x2d, 0x19, 0x3d, 0xb7, 0xd5, 0xa1, 0x3e, 0x28, 0x78, 0x88, 0xd7, 0xbf, 0x28, 0xc5,
+                0xff, 0x18, 0x4f, 0xa6, 0xdb, 0x73, 0x90, 0x20, 0x44, 0x2d, 0x19, 0x3d, 0xb7, 0xd5,
+                0xa1, 0x3e, 0x28, 0x7b, 0xe1, 0x07, 0x7e, 0xce, 0x16, 0x1e, 0x18, 0x5c, 0x45, 0xdc,
+                0x36, 0xae, 0xdc, 0x9c,
+            ],
+            0.7850498599345295,
+            6.31027158543251,
+            [
+                [30.0, 1.054938790492, 6.310271586123],
+                [30.0, 0.9229544385509, 6.310271585433],
+            ],
+        ),
+    ];
+    for (body, origin_y, origin_z, expected) in cases {
+        let mut payload = b"topol_ref_data\0".to_vec();
+        payload.extend_from_slice(&[7, 0, 4, 1, 0xf6, 0xfc, 2]);
+        payload.extend_from_slice(&body);
+        payload.extend_from_slice(&[10, 11, 7, 7, 0, 0, 0xe3, 0xe1, 0xe3]);
+        let records =
+            two_chart_pcurve_samples(&payload, Some(&BTreeSet::from([10, 11])), &BTreeSet::new());
+        let [record] = records.as_slice() else {
+            panic!("one complete two-sample curve");
+        };
+        assert_eq!(record.samples.len(), 2);
+        let actual = record
+            .samples
+            .iter()
+            .map(|sample| {
+                assert_eq!(sample[1][0], 0.0);
+                [
+                    [30.0, sample[0][1], -sample[0][0]],
+                    [30.0, origin_y + sample[1][1], origin_z],
+                ]
+            })
+            .collect::<Vec<_>>();
+        for chart in 0..2 {
+            let forward = actual.iter().zip(expected).all(|(pair, point)| {
+                pair[chart]
+                    .into_iter()
+                    .zip(point)
+                    .all(|(a, b)| (a - b).abs() <= EPS_STEP_ENDPOINT_MM)
+            });
+            let reverse = actual.iter().rev().zip(expected).all(|(pair, point)| {
+                pair[chart]
+                    .into_iter()
+                    .zip(point)
+                    .all(|(a, b)| (a - b).abs() <= EPS_STEP_ENDPOINT_MM)
+            });
+            assert!(forward || reverse);
+        }
+    }
 }
 
 #[test]
@@ -255,7 +353,11 @@ fn counted_two_chart_first_coordinate_reads_positive_dict_prefixes() {
     first_row.extend_from_slice(&[0x18, 0x18, 0x18]);
     let face_ids = BTreeSet::from([10, 11]);
 
-    let counted = two_chart_pcurve_samples(&two_chart_body_payload(3, &first_row), Some(&face_ids));
+    let counted = two_chart_pcurve_samples(
+        &two_chart_body_payload(3, &first_row),
+        Some(&face_ids),
+        &BTreeSet::new(),
+    );
     let [record] = counted.as_slice() else {
         panic!("one counted fc 03 body");
     };
@@ -273,7 +375,7 @@ fn two_chart_sample_rows_do_not_claim_fc05_circle_bodies() {
     payload.extend_from_slice(&[10, 11, 7, 7, 0, 0, 0xe3, 0xe1, 0xe3]);
 
     let face_ids = BTreeSet::from([10, 11]);
-    assert!(two_chart_pcurve_samples(&payload, Some(&face_ids)).is_empty());
+    assert!(two_chart_pcurve_samples(&payload, Some(&face_ids), &BTreeSet::new()).is_empty());
 }
 
 #[test]
@@ -292,7 +394,8 @@ fn two_chart_replay_consumes_curve_local_scalar_forms() {
     payload.extend(samples);
     payload.extend_from_slice(&[10, 11, 7, 7, 0, 0, 0xe3, 0xe1, 0xe3]);
 
-    let decoded = two_chart_pcurve_samples(&payload, Some(&BTreeSet::from([10, 11])));
+    let decoded =
+        two_chart_pcurve_samples(&payload, Some(&BTreeSet::from([10, 11])), &BTreeSet::new());
     assert_eq!(decoded.len(), 1);
     assert_eq!(decoded[0].samples.len(), 2);
     let expected_first = f64::from_be_bytes([0x3f, 0, 0, 0, 0, 0, 0, 0]);
@@ -1264,9 +1367,11 @@ fn declared_bare_rows_use_complete_parameter_boundary() {
         assert!(replay.references.is_empty());
         assert_eq!(replay.opaque_spans.len(), 1);
         assert_eq!(replay.opaque_spans[0].raw, [0x18; 16]);
-        assert!(two_chart_pcurve_samples(&payload, Some(&faces))
-            .iter()
-            .all(|sample| sample.curve_id != 9));
+        assert!(
+            two_chart_pcurve_samples(&payload, Some(&faces), &BTreeSet::new())
+                .iter()
+                .all(|sample| sample.curve_id != 9)
+        );
     }
 }
 
@@ -1377,4 +1482,53 @@ fn declared_bare_rows_replay_extended_named_entry_footer() {
         .expect("complete named replay");
     assert_eq!(replay.faces, [300, 0].map(NonZeroU32::new));
     assert_eq!(replay.next_edges, [301, 302]);
+}
+
+#[test]
+fn unit_plane_two_sample_roles_match_source_chart_coordinates() {
+    let cases = [
+        ("fc026afffffffffdee2d4de66666666666184ef90032ec36e06686f1c49bfba62d4de666666666661856eb1ca9b43ba0", 0, [[0.4999999999999706, 59.8], [0.43011135292175096, 59.8]]),
+        ("327aaaaaaaa503ba5699999999996455f1d8055bb26229c999327aaaaaaaaaaa192d4de6666666666655f1d8055bb2622d4de66666666666", 1, [[0.19488048802976993, 0.19999999999999998], [0.19488048802976993, 59.8]]),
+    ];
+    for (raw, side, expected) in cases {
+        let mut body = raw
+            .as_bytes()
+            .chunks_exact(2)
+            .map(|pair| u8::from_str_radix(std::str::from_utf8(pair).unwrap(), 16).unwrap())
+            .collect::<Vec<_>>();
+        if body.starts_with(&[0xfc, 2]) {
+            body.drain(..2);
+        }
+        let mut payload = b"topol_ref_data\0".to_vec();
+        payload.extend_from_slice(&[7, 0, 4, 1, 0xf6, 0xfc, 2]);
+        payload.extend(&body);
+        payload.extend_from_slice(&[10, 11, 7, 7, 0, 0, 0xe3, 0xe1, 0xe3]);
+        let ids = BTreeSet::from([10, 11]);
+        let before = two_chart_pcurve_samples(&payload, Some(&ids), &BTreeSet::new());
+        let after =
+            two_chart_pcurve_samples(&payload, Some(&ids), &BTreeSet::from([10 + side as u32]));
+        assert_eq!(after.len(), 1);
+        for sample in 0..2 {
+            assert_eq!(after[0].samples[sample][side], expected[sample]);
+            if let Some(before) = before.first() {
+                assert_eq!(
+                    after[0].samples[sample][1 - side],
+                    before.samples[sample][1 - side]
+                );
+            }
+        }
+    }
+}
+
+#[test]
+fn unit_plane_roles_do_not_change_counted_sample_lanes() {
+    let mut first = vec![0x2d, 0x08, 0, 0, 0, 0, 0, 0];
+    first.extend([0x46, 0x08, 0, 0, 0, 0, 0, 0]);
+    first.extend([0x18, 0x18]);
+    let payload = two_chart_body_payload(3, &first);
+    let ids = BTreeSet::from([10, 11]);
+    let ordinary = two_chart_pcurve_samples(&payload, Some(&ids), &BTreeSet::new());
+    let contextual = two_chart_pcurve_samples(&payload, Some(&ids), &ids);
+    assert_eq!(ordinary.len(), 1);
+    assert_eq!(ordinary, contextual);
 }

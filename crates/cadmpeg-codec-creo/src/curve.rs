@@ -7700,7 +7700,7 @@ fn decode_two_chart_scalar(
         (true, true) => scalar::decode_counted_two_chart_first_coordinate(body, cursor, cache),
         (true, false) => scalar::decode_two_chart_first_coordinate(body, cursor, cache),
         (false, true) => scalar::decode_counted_two_chart_second_coordinate(body, cursor, cache),
-        (false, false) => scalar::decode_two_chart_second_coordinate(body, cursor, cache),
+        (false, false) => scalar::decode_short_axial_coordinate(body, cursor, cache),
     }
 }
 
@@ -7712,6 +7712,7 @@ fn complete_two_chart_samples(
     start: usize,
     count: u32,
     cache: &scalar::ScalarCache,
+    unit_plane_sides: [bool; 2],
 ) -> Option<Vec<[[f64; 2]; 2]>> {
     let remaining = body.len().checked_sub(start)?;
     let sample_count = bounded_len(u64::from(count), 4, remaining)?;
@@ -7723,13 +7724,21 @@ fn complete_two_chart_samples(
     for _ in 0..sample_count {
         let mut sample = [[0.0; 2]; 2];
         for (slot, value) in sample.iter_mut().flatten().enumerate() {
-            let (decoded, next) = decode_two_chart_scalar(
-                body,
-                cursor,
-                slot % 2 == 0,
-                sample_count >= MIN_COUNTED_LANE_SAMPLES,
-                cache,
-            )?;
+            let (decoded, next) = if sample_count == 2 && unit_plane_sides[slot / 2] {
+                if body.get(cursor) == Some(&0x18) {
+                    (0.0, cursor + 1)
+                } else {
+                    scalar::decode_unit_plane_chart_coordinate(body, cursor, cache)?
+                }
+            } else {
+                decode_two_chart_scalar(
+                    body,
+                    cursor,
+                    slot % 2 == 0,
+                    sample_count >= MIN_COUNTED_LANE_SAMPLES,
+                    cache,
+                )?
+            };
             if next <= cursor || !decoded.is_finite() {
                 return None;
             }
@@ -7749,6 +7758,7 @@ fn complete_two_chart_samples(
 pub(crate) fn two_chart_pcurve_samples(
     payload: &[u8],
     face_ids: Option<&BTreeSet<u32>>,
+    unit_plane_ids: &BTreeSet<u32>,
 ) -> Vec<TwoChartPcurveSamples> {
     let cache = scalar::ScalarCache::from_section_checked(payload);
     let framed = framed_rows_with_face_ids(payload, face_ids);
@@ -7759,13 +7769,15 @@ pub(crate) fn two_chart_pcurve_samples(
             continue;
         };
         let body = &bytes[prefix.end..row.suffix_start];
+        let unit_plane_sides =
+            [row.suffix[0], row.suffix[1]].map(|id| unit_plane_ids.contains(&id));
         if body.first() != Some(&0xfc) || body.get(1) == Some(&0x05) {
             continue;
         }
         let (count, start) = compact_int(body, 1);
         if prefix.feature_id != 0
             && start > 1
-            && complete_two_chart_samples(body, start, count, &cache).is_some()
+            && complete_two_chart_samples(body, start, count, &cache, unit_plane_sides).is_some()
         {
             let group_key = (row.namespace_start, prefix.feature_id, prefix.type_byte);
             let counts = match canonical_counts.entry(group_key) {
@@ -7786,13 +7798,15 @@ pub(crate) fn two_chart_pcurve_samples(
             continue;
         };
         let body = &bytes[prefix.end..row.suffix_start];
+        let unit_plane_sides =
+            [row.suffix[0], row.suffix[1]].map(|id| unit_plane_ids.contains(&id));
         let samples = if body.first() == Some(&0xfc) {
             if body.get(1) == Some(&0x05) {
                 continue;
             }
             let (count, start) = compact_int(body, 1);
             if start > 1 {
-                complete_two_chart_samples(body, start, count, &cache)
+                complete_two_chart_samples(body, start, count, &cache, unit_plane_sides)
             } else {
                 None
             }
@@ -7805,7 +7819,9 @@ pub(crate) fn two_chart_pcurve_samples(
             let mut candidate = None;
             let mut ambiguous = false;
             for count in counts {
-                if let Some(samples) = complete_two_chart_samples(body, 0, *count, &cache) {
+                if let Some(samples) =
+                    complete_two_chart_samples(body, 0, *count, &cache, unit_plane_sides)
+                {
                     if candidate.is_some() {
                         ambiguous = true;
                         break;
@@ -8495,7 +8511,7 @@ fn topology_suffix_with_face_ids(
             return false;
         }
         let (count, start) = compact_int(body, 1);
-        start > 1 && complete_two_chart_samples(body, start, count, &cache).is_some()
+        start > 1 && complete_two_chart_samples(body, start, count, &cache, [false; 2]).is_some()
     });
     match (complete_counts.next(), complete_counts.next()) {
         (Some(candidate), None) => return Some((*candidate, legacy != Some(*candidate))),

@@ -486,6 +486,86 @@ pub(crate) fn decode_two_chart_second_coordinate(
     decode_tabulated_cylinder_second_coordinate(data, offset, cache)
 }
 
+pub(crate) fn decode_short_axial_coordinate(
+    data: &[u8],
+    offset: usize,
+    cache: &ScalarCache,
+) -> Option<(f64, usize)> {
+    match data.get(offset) {
+        Some(0x4f) => return ieee7_dict(data, offset, 0x3fc1),
+        Some(0x50) => return ieee7_dict(data, offset, 0x3fc2),
+        Some(0x57) => return ieee7_dict(data, offset, 0x3fca),
+        _ => {}
+    }
+    decode_two_chart_second_coordinate(data, offset, cache)
+}
+
+pub(crate) fn decode_unit_plane_chart_coordinate(
+    body: &[u8],
+    cursor: usize,
+    cache: &ScalarCache,
+) -> Option<(f64, usize)> {
+    let head = *body.get(cursor)?;
+    let code = match head {
+        0x4f => Some(0x3fc1),
+        0x50 => Some(0x3fc2),
+        0x55 => Some(0x3fc8),
+        0x57 => Some(0x3fca),
+        0x4b..=0xa3 => Some(0x3f75 + u16::from(head)),
+        _ => None,
+    };
+    if let Some(code) = code {
+        return ieee7_dict(body, cursor, code);
+    }
+    match head {
+        0x2d => ieee8(body, cursor, 0x40),
+        0x46 => ieee8(body, cursor, 0xc0),
+        0x32 => ieee8(body, cursor, 0x3f),
+        _ => decode_two_chart_second_coordinate(body, cursor, cache),
+    }
+}
+
+pub(crate) fn decode_short_x_full_z_unit_plane_frame(
+    body: &[u8],
+    cache: &ScalarCache,
+) -> Option<[f64; 12]> {
+    let (u_y, normal_z) = match body.get(..7)? {
+        [0x18, 0x0f, 0x18, 0x0f, 0x18, 0xe6, 0x10] => (1.0, -1.0),
+        [0x18, 0x0f, 0x18, 0x10, 0x18, 0xe6, 0x0f] => (-1.0, 1.0),
+        _ => return None,
+    };
+    (body.get(7) == Some(&0x48)).then_some(())?;
+    let (x, cursor) = decode_in_surface_row_lane(body, 7, cache)?;
+    matches!(
+        body.get(cursor),
+        Some(0x28 | 0x29 | 0x2a | 0x2d..=0x2f | 0x41..=0x43 | 0x46..=0x48 | 0x5c | 0x5e..=0xdf)
+    )
+    .then_some(())?;
+    let (y, cursor) = decode_cylinder_envelope_y_coordinate(body, cursor, cache)?;
+    let high = match body.get(cursor) {
+        Some(0x2d) => 0xc0,
+        Some(0x46) => 0x40,
+        _ => return None,
+    };
+    let (z, end) = ieee8(body, cursor, high)?;
+    (end == body.len()).then_some(())?;
+    Some([0.0, u_y, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, normal_z, x, y, z])
+}
+
+pub(crate) fn decode_cylinder_envelope_y_coordinate(
+    data: &[u8],
+    offset: usize,
+    cache: &ScalarCache,
+) -> Option<(f64, usize)> {
+    match data.get(offset)? {
+        0x18 => Some((0.0, offset + 1)),
+        0x2d => ieee8(data, offset, 0x40),
+        0x46 => ieee8(data, offset, 0xc0),
+        0x41 => ieee8(data, offset, 0xbf),
+        _ => decode_tabulated_cylinder_second_coordinate(data, offset, cache),
+    }
+}
+
 /// Decode the first coordinate of one chart in a counted two-chart body with
 /// three or more samples.
 ///
@@ -2687,6 +2767,34 @@ mod tests {
                 encoded.len()
             ))
         );
+    }
+
+    #[test]
+    fn short_axial_scalar_codes_keep_the_explicit_ieee_tail() {
+        let cases = [
+            (
+                [0x4f, 0xa6, 0xdb, 0x73, 0x90, 0x20, 0x40],
+                [0x3f, 0xc1, 0xa6, 0xdb, 0x73, 0x90, 0x20, 0x40],
+            ),
+            (
+                [0x50, 0xdc, 0x8b, 0x6d, 0x4e, 0x04, 0xe0],
+                [0x3f, 0xc2, 0xdc, 0x8b, 0x6d, 0x4e, 0x04, 0xe0],
+            ),
+            (
+                [0x57, 0x98, 0xf7, 0xea, 0x58, 0x24, 0xa0],
+                [0x3f, 0xca, 0x98, 0xf7, 0xea, 0x58, 0x24, 0xa0],
+            ),
+        ];
+        let cache = ScalarCache::default();
+        for (raw, expected) in cases {
+            assert_eq!(
+                super::decode_short_axial_coordinate(&raw, 0, &cache),
+                Some((f64::from_be_bytes(expected), raw.len()))
+            );
+            for end in 0..raw.len() {
+                assert!(super::decode_short_axial_coordinate(&raw[..end], 0, &cache).is_none());
+            }
+        }
     }
 
     #[test]

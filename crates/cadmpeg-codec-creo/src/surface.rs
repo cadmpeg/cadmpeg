@@ -4864,7 +4864,9 @@ fn decode_inline_selector_cylinder_envelope(
     cache: &scalar::ScalarCache,
 ) -> Option<InlineSurfaceEnvelope> {
     (kind == SurfaceKind::Cylinder).then_some(())?;
+    let short_axial = body.get(..2) == Some(&[0x18, 0x4f]);
     let selector_end = |cursor: usize| match body.get(cursor..) {
+        Some([0x00, _, _, ..]) if short_axial => Some(cursor + 3),
         Some([0x00, 0x11, 0x13, ..]) => Some(cursor + 3),
         Some([0x11..=0x14 | 0x17 | 0x18 | 0x20, ..]) => Some(cursor + 1),
         _ => None,
@@ -4878,21 +4880,38 @@ fn decode_inline_selector_cylinder_envelope(
         let value = -value;
         value.is_finite().then_some((value, next))
     };
+    let decode_axial = |cursor| {
+        if short_axial {
+            scalar::decode_short_axial_coordinate(body, cursor, cache)
+        } else {
+            decode_coordinate(cursor)
+        }
+    };
     let mut cursor = selector_end(0)?;
-    let (first_axial, next) = decode_coordinate(cursor)?;
+    let (first_axial, next) = decode_axial(cursor)?;
     cursor = selector_end(next)?;
-    let (second_axial, next) = decode_coordinate(cursor)?;
+    let (second_axial, next) = decode_axial(cursor)?;
     cursor = next;
     (first_axial != second_axial).then_some(())?;
 
     let mut corners = [[None; 3]; 2];
-    for coordinate in corners.iter_mut().flatten() {
-        if matches!(body.get(cursor), Some(0x92 | 0xda)) {
+    for (index, coordinate) in corners.iter_mut().flatten().enumerate() {
+        if !short_axial && matches!(body.get(cursor), Some(0x92 | 0xda)) {
             body.get(cursor..cursor.checked_add(7)?)?;
             cursor += 7;
             continue;
         }
-        let (decoded, next) = decode_coordinate(cursor)?;
+        let (decoded, next) = if short_axial {
+            if index % 3 == 1 {
+                scalar::decode_cylinder_envelope_y_coordinate(body, cursor, cache)?
+            } else if body.get(cursor) == Some(&0x18) {
+                (0.0, cursor + 1)
+            } else {
+                decode_row_scalar(kind, body, cursor, cache)?
+            }
+        } else {
+            decode_coordinate(cursor)?
+        };
         *coordinate = Some(decoded);
         cursor = next;
     }
@@ -7431,6 +7450,14 @@ pub(crate) fn complete_plane_local_system(
     CodecError,
 > {
     let frame_body = body.strip_suffix(&[0xe1]).unwrap_or(body);
+    if let Some(slots) = scalar::decode_short_x_full_z_unit_plane_frame(frame_body, cache)
+        .and_then(cadmpeg_ir::units::FiniteVector::new)
+    {
+        return Ok(Some((
+            slots,
+            scalar::PlaneSupportFrameLayout::DirectNormalTriples,
+        )));
+    }
     if let Some(prefix) = frame_body.strip_suffix(&[0x00, 0x0c, 0x98]) {
         let mut normalized = Vec::new();
         normalized.extend_from_slice(prefix);

@@ -1388,6 +1388,21 @@ magnitude; the missing bound is the opposite extreme. An absent axial
 coordinate, two absent transverse coordinates, or a non-unique center sign
 withholds the envelope.
 
+A short axial selector envelope begins with `18 4f <tail6>`. Its second
+selector is one ordinary selector byte or a three-byte `00 XX YY` image.
+Its selectors are opaque. Axial values use the positive forms
+`4f→3f c1`, `50→3f c2`, and `57→3f ca`, each followed by six IEEE bytes.
+Other axial values use the second directrix-coordinate lane. The six outline
+coordinates are two XYZ corners. X and Z use the positional surface-row lane.
+Y uses `2d <tail7>→40 <tail7>`, `46 <tail7>→c0 <tail7>`, and
+`41 <tail7>→bf <tail7>`; other Y values use the second directrix-coordinate
+lane. A bare `18` is zero in each corner coordinate. The complete corners,
+axial bounds, local system and cylinder radius select the signed axis and
+origin. A corner's ordinal does not pair it with the same ordinal axial bound.
+For an axis-aligned cylinder, the corresponding world corner coordinates
+bound the face along its axis. A circle with a parallel axis has a constant
+axial coordinate; that coordinate must lie within these bounds.
+
 An obliquely trimmed cylinder can instead store four consecutive envelope
 bounds `u0 v0 u1 v1` without a separator. The `u` bounds use the positive
 DICT or positional row lane, and the `v` bounds use the first
@@ -2007,7 +2022,15 @@ Bytes outside these layouts do not form a plane envelope.
 
 `local_sys` has twelve scalar slots. Plane rows use three storage forms.
 Compact and specialized plane-support bodies expand their direction values into
-three support triples. A generic direct-normal body stores a parameter
+three support triples. The compact unit-matrix prefixes
+`18 0f 18 0f 18 e6 10` and `18 0f 18 10 18 e6 0f` store the respective
+parameter/normal direction pairs `(Y, -Z)` and `(-Y, Z)`. The `18 e6`
+image supplies four zero matrix slots. In the short-X/full-Z origin form,
+X is a three-byte negative `48` scalar, Y uses the world-Y lane of a short
+axial envelope, and Z is an eight-byte `2d` negative or `46` positive scalar.
+The three origin values consume the whole bounded frame. These unit forms
+expand to the direct-normal layout.
+ A generic direct-normal body stores a parameter
 direction, an exact zero-rank triple, and a stored plane normal. A generic
 coordinate-first body starts with a coordinate scalar, not one of the control
 openers `0e`, `0f`, `10`, or `18`, and contains an `18` zero-slot prefix at a
@@ -2508,8 +2531,18 @@ coordinate lane. In this bounded curve grammar, `32 <tail7>` is an eight-byte
 positive sub-unit first-coordinate scalar that reconstructs IEEE-754 bytes
 `3f <tail7>`. Its second coordinate uses the second directrix coordinate lane.
 The positive-DICT lattice extends through prefixes `4b..a3` in this grammar;
-the prefix and six-byte tail reconstruct by the positive-DICT rule. In a body
-of three or more samples, `2d <tail7>` reconstructs `40 <tail7>` and
+the prefix and six-byte tail reconstruct by the positive-DICT rule. In a
+two-sample matrix, the second-coordinate forms `4f <tail6>`, `50 <tail6>`,
+and `57 <tail6>` instead reconstruct `3f c1 <tail6>`, `3f c2 <tail6>`,
+and `3f ca <tail6>`. These rules also apply to a replay of that two-sample
+shape. A chart owned by the complete short-X/full-Z unit-plane form reads
+both coordinates of a two-sample matrix in its plane-coordinate lane:
+`2d <tail7>` is positive `40 <tail7>`, `46 <tail7>` is negative
+`c0 <tail7>`, and `32 <tail7>` is positive `3f <tail7>`. Positive DICT
+forms use the lattice through `4b..a3`, with the short forms `4f→3f c1`,
+`50→3f c2`, `55→3f c8`, and `57→3f ca`. This chart role follows the
+unique original surface owner, separately for each pair of columns.
+In a body of three or more samples, `2d <tail7>` reconstructs `40 <tail7>` and
 `46 <tail7>` reconstructs `c0 <tail7>` in both coordinates, and the first
 coordinate reads `4b`, `66..68`, `77`, and `82..8f` by the positive-DICT
 rule. The three-byte forms keep their signs: `2e` and `2f` are positive, and
