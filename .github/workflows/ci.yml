@@ -7,6 +7,10 @@ on:
     branches: [main]
     types: [opened, synchronize, reopened, ready_for_review]
   merge_group:
+  # Nightly full gate on every platform. It also covers what PR and push
+  # scoping did not select.
+  schedule:
+    - cron: "13 2 * * *"
   workflow_dispatch:
 
 permissions:
@@ -74,6 +78,15 @@ jobs:
           case "$EVENT" in
             pull_request) base="$PR_BASE" ;;
             merge_group) base="$QUEUE_BASE" ;;
+            schedule)
+              passed="$(gh api "repos/$REPOSITORY/actions/runs?head_sha=$SHA&event=schedule&status=success" \
+                --jq '[.workflow_runs[] | select(.path == ".github/workflows/ci.yml")] | length')"
+              if [ "$passed" -gt 0 ]; then
+                python3 scripts/ci_scope.py --tested --github-output "$GITHUB_OUTPUT"
+                exit 0
+              fi
+              base=""
+              ;;
             *)
               base="$PUSH_BASE"
               mode=(--cache-writer)
@@ -410,10 +423,13 @@ jobs:
         run: python3 scripts/ci_cargo.py check
 
   # Byte-level codecs are the code most likely to break across platforms.
-  # These jobs run in the merge queue and on main, not on PR pushes.
+  # These jobs run only for a full gate outside PRs: the nightly run, a manual
+  # dispatch, and a main or queue commit that changes a manifest, the lock
+  # file, the toolchain, or a gate workflow. The release bump changes
+  # Cargo.toml, so every release passes them.
   cross-platform:
     needs: changes
-    if: ${{ github.event_name != 'pull_request' && always() && needs.changes.result != 'cancelled' && (needs.changes.result != 'success' || needs.changes.outputs.rust == 'true') }}
+    if: ${{ github.event_name != 'pull_request' && always() && needs.changes.result != 'cancelled' && (needs.changes.result != 'success' || needs.changes.outputs.full == 'true') }}
     name: build / test (${{ matrix.os }})
     env:
       CI_PACKAGES: ${{ needs.changes.outputs.packages }}

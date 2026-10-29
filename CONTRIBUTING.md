@@ -77,7 +77,7 @@ Manifest levels apply to every cargo command, so a warning fails `cargo build` a
 
 CI builds test binaries without debug information. A failure there reports a backtrace without `file:line`; run the failing test locally to get the line numbers back.
 
-PR CI tests only the packages a change reaches ([`scripts/ci_scope.py`](scripts/ci_scope.py)). A draft PR runs the static checks and clippy only. macOS and Windows run in the merge queue and on `main`.
+PR CI tests only the packages a change reaches ([`scripts/ci_scope.py`](scripts/ci_scope.py)). A draft PR runs the static checks and clippy only. macOS and Windows run in the nightly full gate, and on a `main` or merge-queue commit that selects the full gate, which includes every release bump. To run them on a branch, dispatch CI on it: `gh workflow run ci.yml --ref BRANCH`. CodeQL analyzes Rust only in its nightly run.
 
 The `JsonSchema` derives sit behind a `schema` feature that is off by default, because only `cadmpeg_ir::cadir_json_schema()` consumes them and building them costs 26% of `cadmpeg-ir`'s compile time. Run the schema side when you change IR or native record types:
 
