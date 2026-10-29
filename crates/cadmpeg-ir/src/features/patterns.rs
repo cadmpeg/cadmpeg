@@ -474,7 +474,9 @@ impl<C> PatternKind<C> {
                         "pattern second.count must be positive",
                     )?;
                 }
-                let second_count = second.as_ref().map_or(Some(&1), |axis| axis.count.literal());
+                let second_count = second
+                    .as_ref()
+                    .map_or(Some(&1), |axis| axis.count.literal());
                 let mut distinct = std::collections::HashSet::new();
                 require(
                     omitted_instances.iter().all(|position| {
@@ -558,8 +560,12 @@ impl<C> PatternKind<C> {
             } => usize::try_from(*count.literal()?)
                 .ok()?
                 .checked_mul(
-                    usize::try_from(*second.as_ref().map_or(Some(&1), |axis| axis.count.literal())?)
-                        .ok()?,
+                    usize::try_from(
+                        *second
+                            .as_ref()
+                            .map_or(Some(&1), |axis| axis.count.literal())?,
+                    )
+                    .ok()?,
                 )?
                 .checked_sub(omitted_instances.len()),
             PatternTransform::LinearOffsets { offsets, .. } => Some(offsets.len()),
