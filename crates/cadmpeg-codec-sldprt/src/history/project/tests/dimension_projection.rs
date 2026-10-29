@@ -665,7 +665,7 @@ fn cosmetic_thread_inherits_one_threaded_hole_major_diameter() {
             parent: lane.id.clone(),
             ordinal: 0,
             sequence: 0,
-            offset: Some(0),
+            offset: 0,
             selector: 0,
             kind: crate::records::FeatureInputSurfaceSelectionKind::Component,
             object_name_ref: "thread-name".into(),

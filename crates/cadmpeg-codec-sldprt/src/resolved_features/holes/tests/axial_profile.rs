@@ -874,7 +874,6 @@ fn unique_axial_profile_resolves_the_unique_incomplete_hole() {
     // control. A profile may supply unknown construction, not overwrite truth.
     let mut known = features.clone();
     project_profiled_hole_constructions(
-        &crate::test_support::native::class_sources(std::slice::from_ref(&lane)),
         &ctx,
         &mut known,
         &entities,
@@ -907,7 +906,6 @@ fn unique_axial_profile_resolves_the_unique_incomplete_hole() {
     }
 
     project_profiled_hole_constructions(
-        &crate::test_support::native::class_sources(std::slice::from_ref(&lane)),
         &ctx,
         &mut features,
         &entities,
@@ -1047,7 +1045,6 @@ fn ordered_profile_fallback_excludes_claimed_profiles() {
     // control. A profile may supply unknown construction, not overwrite truth.
     let mut known = features.clone();
     project_profiled_hole_constructions(
-        &crate::resolved_features::class_sources::ClassSources::default(),
         &ctx,
         &mut known,
         &entities,
@@ -1080,7 +1077,6 @@ fn ordered_profile_fallback_excludes_claimed_profiles() {
     }
 
     project_profiled_hole_constructions(
-        &crate::resolved_features::class_sources::ClassSources::default(),
         &ctx,
         &mut features,
         &entities,

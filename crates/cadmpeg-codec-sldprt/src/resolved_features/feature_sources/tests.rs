@@ -68,7 +68,7 @@ fn lane(names: &[(&str, Option<u32>)]) -> FeatureInputLane {
                 parent: "lane".into(),
                 ordinal: 0,
                 sequence: 0,
-                offset: Some(0),
+                offset: 0,
                 object_id: source.and_then(ObjectId::from_value),
                 value: (*name).into(),
             })
@@ -83,7 +83,7 @@ fn lane(names: &[(&str, Option<u32>)]) -> FeatureInputLane {
             id: "selection".into(),
             parent: "lane".into(),
             ordinal: 0,
-            offset: Some(0),
+            offset: 0,
             selector: 0,
             kind: FeatureInputSurfaceSelectionKind::Component,
             object_name_ref: "name:consumer".into(),

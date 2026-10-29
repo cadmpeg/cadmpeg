@@ -2,38 +2,23 @@
 
 use super::super::generated_surface_identities;
 use crate::records::{FeatureInputClass, FeatureInputLane};
-use crate::resolved_features::class_sources::ClassSources;
 use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
 
+/// The parsed identities and the source position of each.
 fn captured_identities(
-    class_sources: &ClassSources,
-    ctx: &DecodeContext<'_>,
-    source: cadmpeg_core::decode::View<'_>,
     lane: &FeatureInputLane,
 ) -> (
     Vec<crate::records::FeatureInputGeneratedSurfaceIdentity>,
-    cadmpeg_ir::SourceFidelity,
+    std::collections::BTreeMap<String, u64>,
 ) {
     let parsed =
-        generated_surface_identities(class_sources, &lane.id, &lane.classes, &lane.native_payload)
-            .unwrap();
-    let mut staged = lane.clone();
-    staged.generated_surface_identities = parsed.records;
-    let mut sources = crate::resolved_features::body_sources::BodySources::from_views([(
-        lane.id.clone(),
-        source,
-    )])
-    .unwrap();
-    crate::resolved_features::generated_surface_layout::capture(ctx, &staged, &mut sources)
-        .unwrap();
-    let mut fidelity = cadmpeg_ir::SourceFidelity::default();
-    crate::pmi::layout::install(
-        ctx,
-        crate::test_support::native::layout_pointers(ctx, sources),
-        &mut fidelity,
-    )
-    .unwrap();
-    (staged.generated_surface_identities, fidelity)
+        generated_surface_identities(&lane.id, &lane.classes, &lane.native_payload).unwrap();
+    let positions = parsed
+        .frames
+        .iter()
+        .map(|(id, frame)| (id.clone(), u64::try_from(frame.extent.start).unwrap()))
+        .collect();
+    (parsed.records, positions)
 }
 
 #[test]
@@ -60,6 +45,7 @@ fn generated_surface_identity_path_keeps_absent_source_component() {
         native_payload: payload.into(),
         classes: vec![FeatureInputClass {
             sequence: 0,
+            offset: 0,
             feature_ref: None,
             id: "class".into(),
             parent: "lane".into(),
@@ -77,19 +63,11 @@ fn generated_surface_identity_path_keeps_absent_source_component() {
         references: Vec::new(),
         sketch_entities: Vec::new(),
     };
-    let arena = DecodeArena::new();
-    let policy = DecodePolicy::service();
-    let (ctx, root) =
-        DecodeContext::from_root_bytes(&lane.native_payload, &arena, &policy).unwrap();
-    let class_sources = ClassSources::from_positions([(&lane.classes[0], 0)]);
-    let (identities, fidelity) = captured_identities(&class_sources, &ctx, root, &lane);
+    let (identities, positions) = captured_identities(&lane);
     assert_eq!(identities.len(), 1);
     let identity = &identities[0];
     assert_eq!(
-        fidelity.record_layout()[&identity.id]
-            .pointers()
-            .get("offset")
-            .copied(),
+        positions.get(&identity.id).copied(),
         Some(u64::try_from(offset).unwrap())
     );
     assert_eq!(identity.feature_source_id.value(), 89);
@@ -128,6 +106,7 @@ fn generated_surface_identity_duplicates_use_the_component_index() {
         native_payload: payload.into(),
         classes: vec![FeatureInputClass {
             sequence: 0,
+            offset: 0,
             feature_ref: None,
             id: "class".into(),
             parent: "lane".into(),
@@ -147,17 +126,12 @@ fn generated_surface_identity_duplicates_use_the_component_index() {
     };
     let arena = DecodeArena::new();
     let policy = DecodePolicy::service();
-    let (ctx, root) =
-        DecodeContext::from_root_bytes(&lane.native_payload, &arena, &policy).unwrap();
-    let class_sources = ClassSources::from_positions([(&lane.classes[0], 0)]);
-    let (identities, fidelity) = captured_identities(&class_sources, &ctx, root, &lane);
+    let (ctx, _) = DecodeContext::from_root_bytes(&lane.native_payload, &arena, &policy).unwrap();
+    let (identities, positions) = captured_identities(&lane);
     assert_eq!(identities.len(), 2048);
     for (index, identity) in identities.iter().enumerate() {
         assert_eq!(
-            fidelity.record_layout()[&identity.id]
-                .pointers()
-                .get("offset")
-                .copied(),
+            positions.get(&identity.id).copied(),
             Some(u64::try_from(first + index * 16).unwrap())
         );
         assert_eq!(identity.feature_source_id.value(), 89);
@@ -200,6 +174,7 @@ fn split_surface_queries_reuse_one_scoped_identity_parse() {
         classes: vec![
             FeatureInputClass {
                 sequence: 0,
+                offset: 0,
                 feature_ref: None,
                 id: "surface-class".into(),
                 parent: "lane".into(),
@@ -208,6 +183,7 @@ fn split_surface_queries_reuse_one_scoped_identity_parse() {
             },
             FeatureInputClass {
                 sequence: 4096,
+                offset: 4096,
                 feature_ref: None,
                 id: "projection-class".into(),
                 parent: "lane".into(),
@@ -230,11 +206,9 @@ fn split_surface_queries_reuse_one_scoped_identity_parse() {
     let policy = DecodePolicy::service();
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     let mut cache = None;
-    let class_sources =
-        ClassSources::from_positions([(&lane.classes[0], 0), (&lane.classes[1], 4096)]);
     for _ in 0..32 {
         let selections = operation_surface_selection_candidates(
-            (&class_sources, &ctx),
+            &ctx,
             FeatureClass::SplitFace,
             &lane,
             0,

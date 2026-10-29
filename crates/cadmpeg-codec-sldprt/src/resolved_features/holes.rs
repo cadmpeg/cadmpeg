@@ -16,7 +16,6 @@ use crate::records::{
     FeatureInputLane, FeatureInputOperandKind, FeatureInputRelationFamily, FeatureInputScalarRole,
     SketchInputKind,
 };
-use crate::resolved_features::class_sources::ClassSources;
 use cadmpeg_core::convert::f64_from_i64;
 use cadmpeg_core::decode::{DecodeContext, View};
 use cadmpeg_core::CodecError;
@@ -88,7 +87,7 @@ pub(crate) fn project_helix_axes(
             let Some(name) = names.of(record) else {
                 continue;
             };
-            let start = name.offset.and_then(|offset| usize::try_from(offset).ok());
+            let start = usize::try_from(name.offset).ok();
             let end = starts.end(name.offset, lane.native_payload.len());
             let Some(object) = start.and_then(|start| lane.native_payload.get(start..end)) else {
                 continue;
@@ -176,9 +175,8 @@ fn hole_position_sketch_source(
     let source = feature
         .source_value()
         .or_else(|| name.object_id.and_then(ObjectId::value))?;
-    let offset = name
-        .offset
-        .and_then(|offset| usize::try_from(offset).ok())?
+    let offset = usize::try_from(name.offset)
+        .ok()?
         .checked_add(6 + name.value.encode_utf16().count().checked_mul(2)?)?;
     if lane.native_payload.get(offset..offset + 8)
         != Some(&[0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x40])
@@ -199,9 +197,7 @@ fn hole_position_sketch_source(
     });
 
     let children = lane.names.iter().filter_map(|child| {
-        let child_offset = child
-            .offset
-            .and_then(|offset| usize::try_from(offset).ok())?;
+        let child_offset = usize::try_from(child.offset).ok()?;
         if !(body_start..body_end).contains(&child_offset) {
             return None;
         }
@@ -1180,7 +1176,6 @@ fn profiled_hole_construction_with_evidence(
 }
 
 pub(crate) fn project_profiled_hole_constructions(
-    class_sources: &ClassSources,
     ctx: &DecodeContext<'_>,
     features: &mut [cadmpeg_ir::features::Feature],
     entities: &[SketchEntity],
@@ -1189,7 +1184,6 @@ pub(crate) fn project_profiled_hole_constructions(
 ) -> Result<(), CodecError> {
     let mut enriched_histories = histories.to_vec();
     crate::history::configuration::enrich_history_parameters_semantic(
-        class_sources,
         &mut enriched_histories,
         lanes,
     );
@@ -4270,9 +4264,7 @@ pub(super) fn feature_object_byte_ranges<'a>(
         let Some(name) = names.of(feature) else {
             continue;
         };
-        if let Some(position) = name.offset {
-            objects.push((position, input_index, feature));
-        }
+        objects.push((name.offset, input_index, feature));
     }
     objects.sort_unstable_by(
         |(left_offset, left_index, _), (right_offset, right_index, _)| {

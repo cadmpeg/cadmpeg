@@ -59,8 +59,7 @@ fn unheld_native_scalar_is_authored_from_typed_fields_after_wire_parse() {
         None,
         bytes,
     )
-    .expect("authored lane admits")
-    .0;
+    .expect("authored lane admits");
     let source = SldprtNative {
         feature_histories: vec![history],
         feature_input_lanes: vec![lane],
@@ -68,36 +67,7 @@ fn unheld_native_scalar_is_authored_from_typed_fields_after_wire_parse() {
     };
     // CADIR retains evidence and typed content, without native lane bytes.
     let wire = serde_json::to_value(&source).expect("typed native serializes");
-    fn no_physical_positions(value: &serde_json::Value) {
-        match value {
-            serde_json::Value::Object(fields) => {
-                for (name, value) in fields {
-                    assert!(
-                        name != "offset" && !name.ends_with("_offset"),
-                        "physical source position {name} leaked into CADIR"
-                    );
-                    no_physical_positions(value);
-                }
-            }
-            serde_json::Value::Array(values) => values.iter().for_each(no_physical_positions),
-            _ => {}
-        }
-    }
-    no_physical_positions(&wire);
     let mut source: SldprtNative = serde_json::from_value(wire).expect("typed native parses");
-    assert!(source.feature_input_lanes[0].classes.iter().all(|record| {
-        crate::resolved_features::class_sources::ClassSources::default()
-            .position(record)
-            .is_none()
-    }));
-    assert!(source.feature_input_lanes[0]
-        .names
-        .iter()
-        .all(|record| record.offset.is_none()));
-    assert!(source.feature_input_lanes[0]
-        .scalars
-        .iter()
-        .all(|record| record.offset.is_none()));
     assert!(source.feature_input_lanes[0].native_payload.is_empty());
     source.feature_input_lanes[0].scalars[0].value =
         cadmpeg_ir::scalar::FiniteReal::new(0.034).expect("finite control");

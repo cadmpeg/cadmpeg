@@ -718,7 +718,6 @@ fn declare(
 mod tests {
     use super::*;
     use crate::records::{FeatureInputBodySelection, FeatureInputClass, FeatureInputName};
-    use crate::resolved_features::class_sources::ClassSources;
     use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
 
     fn component(
@@ -824,6 +823,7 @@ mod tests {
             parent: "lane".into(),
             ordinal: 0,
             sequence: 0,
+            offset: 0,
             name: "moWzdHoleSurfIdRep_c".into(),
         });
         let record = FeatureInputGeneratedSurfaceIdentity {
@@ -850,17 +850,15 @@ mod tests {
         );
         lane.native_payload = bytes.into();
         let arena = cadmpeg_core::decode::DecodeArena::new();
-        let (ctx, source) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+        let (_, source) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
             &lane.native_payload,
             &arena,
             &cadmpeg_core::decode::DecodePolicy::service(),
         )
         .unwrap();
         let classes = super::super::names::class_declarations(source.window(), &lane.id).unwrap();
-        let class_sources = ClassSources::from_source(&ctx, source, &classes).unwrap();
-        assert_eq!(class_sources.position(&classes[0]), Some(0));
+        assert_eq!(classes[0].offset, 0);
         let output = super::super::selections::generated_surface_identities(
-            &class_sources,
             &lane.id,
             &classes,
             &lane.native_payload,
@@ -882,7 +880,7 @@ mod tests {
             parent: "lane".into(),
             ordinal: 0,
             sequence: 0,
-            offset: Some(0),
+            offset: 0,
             object_id: None,
             value: "Body-Delete/Keep 1".into(),
         });
@@ -921,32 +919,15 @@ mod tests {
             parent: "lane".into(),
             ordinal: 0,
             sequence: 0,
+            offset: 0,
             name: "moDeleteBodyData_c".into(),
         });
-        let arena = cadmpeg_core::decode::DecodeArena::new();
-        let (ctx, root) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
-            &lane.native_payload,
-            &arena,
-            &cadmpeg_core::decode::DecodePolicy::service(),
-        )
-        .expect("authored source");
-        let mut body_sources =
-            super::super::body_sources::BodySources::from_views([(lane.id.clone(), root)])
-                .expect("lane source");
-        let class_sources = ClassSources::from_positions([(&lane.classes[0], 0)]);
-        let decoded = super::super::selections::compact_body_selections(
-            &class_sources,
-            &ctx,
-            root,
-            &mut body_sources,
-            &histories,
-            &lane,
-        )
-        .expect("re-read body selection");
+        let decoded = super::super::selections::compact_body_selections(&histories, &lane)
+            .expect("re-read body selection");
         assert_eq!(decoded.len(), 1);
-        assert_eq!(decoded[0].local_body_ids, vec![287, 115]);
-        assert_eq!(decoded[0].body_state_ids, vec![287]);
-        assert_eq!(decoded[0].mode, Some(BodyRetentionMode::DeleteSelected));
+        assert_eq!(decoded[0].0.local_body_ids, vec![287, 115]);
+        assert_eq!(decoded[0].0.body_state_ids, vec![287]);
+        assert_eq!(decoded[0].0.mode, Some(BodyRetentionMode::DeleteSelected));
     }
     fn surface_lane(
         kind: FeatureInputSurfaceSelectionKind,
@@ -963,7 +944,7 @@ mod tests {
             parent: "lane".into(),
             ordinal: 0,
             sequence: 0,
-            offset: Some(0),
+            offset: 0,
             object_id: None,
             value: feature.name.clone(),
         });
@@ -973,7 +954,7 @@ mod tests {
                 parent: "lane".into(),
                 ordinal: 0,
                 sequence: 0,
-                offset: Some(400),
+                offset: 400,
                 selector: 4,
                 kind,
                 object_name_ref: "name".into(),
@@ -1043,19 +1024,14 @@ mod tests {
             parent: "lane".into(),
             ordinal: 0,
             sequence: 0,
+            offset: 0,
             name: "moCompFace_c".into(),
         });
         let arena = DecodeArena::new();
         let policy = DecodePolicy::service();
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("context");
-        let class_sources = ClassSources::from_positions([(&lane.classes[0], 0)]);
-        let actual = super::super::selections::compact_surface_selections(
-            &class_sources,
-            &ctx,
-            &histories,
-            &lane,
-        )
-        .expect("read owned surface selection");
+        let actual = super::super::selections::compact_surface_selections(&ctx, &histories, &lane)
+            .expect("read owned surface selection");
         assert_eq!(actual.len(), 1);
         assert_eq!(actual[0].components, lane.surface_selections[0].components);
         assert_eq!(actual[0].selector, 4);

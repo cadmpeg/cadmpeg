@@ -215,7 +215,7 @@ fn semantic_writer_accepts_matching_resolved_feature_edits() {
             native.feature_histories[0].part_name = Some("Edited".into());
             let scalar = &mut native.feature_input_lanes[0].scalars[0];
             scalar.value = cadmpeg_ir::scalar::FiniteReal::new(0.05).expect("finite test scalar");
-            let offset = usize::try_from(scalar.offset.expect("source scalar offset")).unwrap();
+            let offset = usize::try_from(scalar.offset).unwrap();
             native.feature_input_lanes[0].native_payload[offset..offset + 8]
                 .copy_from_slice(&0.05f64.to_le_bytes());
         });
@@ -485,8 +485,8 @@ fn semantic_writer_rewrites_feature_input_name_values() {
         lane,
         &native.feature_histories,
         std::slice::from_ref(&rename),
-        crate::writer::ClassLayouts::Source(decoded.source_fidelity()),
-        &crate::resolved_features::class_sources::ClassSources::default(),
+        crate::writer::ClassLayouts::Source,
+        &std::collections::BTreeSet::new(),
     )
     .unwrap()
     .0;
@@ -498,7 +498,6 @@ fn semantic_writer_rewrites_feature_input_name_values() {
     assert_eq!(
         crate::resolved_features::scalars::named_scalars(&payload, &lane.id, &written)
             .unwrap()
-            .records
             .len(),
         scalars
     );
@@ -518,8 +517,8 @@ fn semantic_writer_refuses_a_feature_input_name_value_that_disagrees_with_its_pa
         &lane,
         &native.feature_histories,
         &[],
-        crate::writer::ClassLayouts::Source(decoded.source_fidelity()),
-        &crate::resolved_features::class_sources::ClassSources::default(),
+        crate::writer::ClassLayouts::Source,
+        &std::collections::BTreeSet::new(),
     )
     .unwrap_err();
 

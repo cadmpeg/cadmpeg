@@ -1,6 +1,5 @@
 //! Tests for the `projections` module.
 
-use crate::resolved_features::class_sources::ClassSources;
 use crate::test_support::dimensions::source_value;
 
 use super::{
@@ -384,7 +383,7 @@ fn cosmetic_thread_uses_consensus_persistent_face_path_before_radius() {
         parent: parent.into(),
         ordinal: 0,
         sequence: 0,
-        offset: Some(offset),
+        offset,
         selector: 0,
         kind: crate::records::FeatureInputSurfaceSelectionKind::Component,
         object_name_ref: "name".into(),
@@ -426,7 +425,7 @@ fn cosmetic_thread_uses_consensus_persistent_face_path_before_radius() {
         lanes
             .each_ref()
             .map(|lane| lane.surface_selections[0].offset),
-        [Some(40), Some(60)]
+        [40, 60]
     );
     assert_eq!(
         lanes
@@ -436,7 +435,7 @@ fn cosmetic_thread_uses_consensus_persistent_face_path_before_radius() {
     );
     with_projection_context(|ctx| {
         project_unbound_cosmetic_thread_faces(
-            (&crate::test_support::native::class_sources(&lanes), ctx),
+            ctx,
             &mut features,
             std::slice::from_ref(&history),
             &lanes,
@@ -508,10 +507,7 @@ fn cosmetic_thread_uses_consensus_persistent_face_path_before_radius() {
     });
     with_projection_context(|ctx| {
         project_unbound_cosmetic_thread_faces(
-            (
-                &crate::resolved_features::class_sources::ClassSources::default(),
-                ctx,
-            ),
+            ctx,
             &mut features,
             std::slice::from_ref(&history),
             &[],
@@ -603,7 +599,7 @@ fn cosmetic_thread_accepts_repeated_carriers_with_distinct_owner_paths() {
         parent: id.into(),
         ordinal: 0,
         sequence: 0,
-        offset: Some(0),
+        offset: 0,
         selector: 0,
         kind: crate::records::FeatureInputSurfaceSelectionKind::Component,
         object_name_ref: "name".into(),
@@ -698,7 +694,7 @@ fn compact_surface_selection_binds_surface_operation_face_slot() {
             id: "selection".into(),
             parent: "lane".into(),
             ordinal: 0,
-            offset: Some(12),
+            offset: 12,
             selector: 0,
             kind: crate::records::FeatureInputSurfaceSelectionKind::Component,
             object_name_ref: "name".into(),
@@ -783,7 +779,7 @@ fn compact_surface_selection_binds_full_round_fillet_face_sets() {
                 parent: "lane".into(),
                 ordinal: u32::try_from(ordinal).unwrap(),
                 sequence: u32::try_from(ordinal).unwrap(),
-                offset: Some(cadmpeg_core::decode::u64_from_index(ordinal)),
+                offset: cadmpeg_core::decode::u64_from_index(ordinal),
                 selector: 0,
                 kind: crate::records::FeatureInputSurfaceSelectionKind::Component,
                 object_name_ref: "name".into(),
@@ -899,7 +895,7 @@ fn compact_surface_cut_binds_target_body_and_tool_face_by_vector_order() {
             parent: "lane".into(),
             ordinal,
             sequence: ordinal,
-            offset: Some(u64::from(ordinal)),
+            offset: u64::from(ordinal),
             selector,
             kind: crate::records::FeatureInputSurfaceSelectionKind::Component,
             object_name_ref: "cut-name".into(),
@@ -1028,7 +1024,7 @@ fn planar_surface_keeps_unresolved_definition_and_adds_defining_dependencies() {
             parent: "lane".into(),
             ordinal,
             sequence: ordinal,
-            offset: Some(u64::from(ordinal)),
+            offset: u64::from(ordinal),
             selector: if ordinal == 0 { 6 } else { 4 },
             kind: crate::records::FeatureInputSurfaceSelectionKind::Component,
             object_name_ref: "plane-name".into(),
@@ -1149,7 +1145,7 @@ fn compact_surface_selection_accepts_semantic_lane_consensus() {
         parent: parent.into(),
         ordinal: 0,
         sequence: 0,
-        offset: Some(0),
+        offset: 0,
         selector: 0,
         kind: crate::records::FeatureInputSurfaceSelectionKind::Component,
         object_name_ref: "name".into(),
@@ -1320,7 +1316,7 @@ fn split_face_collects_distinct_generated_target_faces() {
             parent: "lane".into(),
             ordinal,
             sequence: ordinal,
-            offset: Some(u64::from(ordinal)),
+            offset: u64::from(ordinal),
             selector: 0,
             kind: crate::records::FeatureInputSurfaceSelectionKind::Component,
             object_name_ref: "split-name".into(),
@@ -1466,7 +1462,7 @@ fn variable_fillet_radii_join_control_vertices_to_edge_endpoints() {
         parent: "lane".into(),
         ordinal: 0,
         sequence: 0,
-        offset: Some(offset),
+        offset,
         object_id: ObjectId::try_from(object_id).ok(),
         value: value.into(),
     };
@@ -1476,6 +1472,7 @@ fn variable_fillet_radii_join_control_vertices_to_edge_endpoints() {
         native_payload: payload.into(),
         classes: vec![FeatureInputClass {
             sequence: u32::try_from(cadmpeg_core::decode::u64_from_index(class_offset)).unwrap(),
+            offset: cadmpeg_core::decode::u64_from_index(class_offset),
             feature_ref: None,
             id: "vertex-class".into(),
             parent: "lane".into(),
@@ -1522,12 +1519,7 @@ fn variable_fillet_radii_join_control_vertices_to_edge_endpoints() {
         terminal_feature_ref: None,
     };
 
-    let class_sources = ClassSources::from_positions([(
-        &lane.classes[0],
-        cadmpeg_core::decode::u64_from_index(class_offset),
-    )]);
     let groups = variable_fillet_radius_groups(
-        &class_sources,
         "variable",
         &mut VariableFilletObjects::new(
             std::slice::from_ref(&history),
@@ -1573,7 +1565,6 @@ fn variable_fillet_radii_join_control_vertices_to_edge_endpoints() {
         native_ref: Some("variable".into()),
     }];
     super::project_compact_edge_selections(
-        &class_sources,
         &mut projected,
         std::slice::from_ref(&history),
         std::slice::from_ref(&lane),
@@ -1667,7 +1658,7 @@ fn variable_fillet_legacy_edge_controls_apply_one_profile_to_endpointless_edges(
         parent: "lane".into(),
         ordinal: 0,
         sequence: 0,
-        offset: Some(offset),
+        offset,
         object_id: ObjectId::try_from(object_id).ok(),
         value: value.into(),
     };
@@ -1677,6 +1668,7 @@ fn variable_fillet_legacy_edge_controls_apply_one_profile_to_endpointless_edges(
         native_payload: payload.into(),
         classes: vec![FeatureInputClass {
             sequence: u32::try_from(cadmpeg_core::decode::u64_from_index(class_offset)).unwrap(),
+            offset: cadmpeg_core::decode::u64_from_index(class_offset),
             feature_ref: None,
             id: "edge-class".into(),
             parent: "lane".into(),
@@ -1725,12 +1717,7 @@ fn variable_fillet_legacy_edge_controls_apply_one_profile_to_endpointless_edges(
         terminal_feature_ref: None,
     };
 
-    let class_sources = ClassSources::from_positions([(
-        &lane.classes[0],
-        cadmpeg_core::decode::u64_from_index(class_offset),
-    )]);
     let groups = variable_fillet_radius_groups(
-        &class_sources,
         "variable",
         &mut VariableFilletObjects::new(std::slice::from_ref(&history), &[lane]),
         &[&selection],
@@ -1751,8 +1738,6 @@ fn variable_fillet_legacy_edge_controls_apply_one_profile_to_endpointless_edges(
 
 #[test]
 fn variable_fillet_two_control_roster_rejects_endpoint_collision() {
-    let class_sources = ClassSources::default();
-
     let feature = Feature {
         id: "variable".into(),
         parent: "history".into(),
@@ -1805,7 +1790,6 @@ fn variable_fillet_two_control_roster_rejects_endpoint_collision() {
     };
 
     let groups = variable_fillet_radius_groups(
-        &class_sources,
         "variable",
         &mut VariableFilletObjects::new(std::slice::from_ref(&history), &[]),
         &[&selection],
@@ -1826,7 +1810,6 @@ fn variable_fillet_two_control_roster_rejects_endpoint_collision() {
     let mut collision = selection;
     collision.references[0][0].instance = Some(0x8083);
     assert!(variable_fillet_radius_groups(
-        &class_sources,
         "variable",
         &mut VariableFilletObjects::new(std::slice::from_ref(&history), &[]),
         &[&collision]
@@ -1841,7 +1824,7 @@ fn a_full_round_fillet_triple_needs_three_ordered_selections_per_lane() {
         parent: parent.into(),
         ordinal: 0,
         sequence: 0,
-        offset: Some(offset),
+        offset,
         selector: 0,
         kind: crate::records::FeatureInputSurfaceSelectionKind::Component,
         object_name_ref: "name".into(),
@@ -1865,7 +1848,7 @@ fn a_full_round_fillet_triple_needs_three_ordered_selections_per_lane() {
         full_round_fillet_selection_triple(&borrowed).expect("one lane of three is a triple");
     assert_eq!(
         [center.offset, side_one.offset, side_two.offset],
-        [Some(20), Some(40), Some(60)]
+        [20, 40, 60]
     );
 
     let short = lane[..2].iter().collect::<Vec<_>>();

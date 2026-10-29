@@ -79,10 +79,7 @@ fn authored_database_round_trips_current_bound_value_names_and_overflow_text() {
     let (ctx, root) =
         DecodeContext::from_root_bytes(&bytes, &arena, &DecodePolicy::service()).unwrap();
     let mut losses = Vec::new();
-    let parsed = crate::pmi::parse_payload(&ctx, root, &mut losses).unwrap();
-    let mut fidelity = cadmpeg_ir::SourceFidelity::default();
-    crate::pmi::layout::install(&ctx, parsed.pointers, &mut fidelity).unwrap();
-    let records = parsed.records;
+    let records = crate::pmi::parse_payload(&ctx, root, &mut losses).unwrap();
     assert!(losses.is_empty(), "{losses:?}");
     let [record] = records.as_slice() else {
         panic!("one semantic dimension survives");
@@ -94,20 +91,7 @@ fn authored_database_round_trips_current_bound_value_names_and_overflow_text() {
         record.display_text(),
         Some("current dimension text".repeat(400).as_str())
     );
-    assert!(
-        fidelity.record_layout()[&record.id]
-            .pointers()
-            .get("offset")
-            .copied()
-            < Some(u64::try_from(bytes.len()).unwrap())
-    );
-    assert!(
-        fidelity.record_layout()[&record.id]
-            .pointers()
-            .get("value_offset")
-            .copied()
-            < Some(u64::try_from(bytes.len()).unwrap())
-    );
+    assert!(record.offset < u64::try_from(bytes.len()).unwrap());
     ctx.finish_session().unwrap();
 }
 

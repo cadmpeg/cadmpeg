@@ -23,7 +23,6 @@ use crate::records::{
     FeatureInputEdgeSelection, FeatureInputLane, FeatureInputRelationFamily,
     FeatureInputScalarRole, FeatureInputSurfaceSelection,
 };
-use crate::resolved_features::class_sources::ClassSources;
 use cadmpeg_core::convert::f64_from_index;
 use cadmpeg_core::decode::View;
 use cadmpeg_ir::geometry::{SolvedSurfaceGeometry, Surface, SurfaceGeometry};
@@ -289,7 +288,7 @@ pub(crate) fn bind_parameter_scalars<'a>(
         let object_names = FeatureObjectNames::new(&lane.names);
         let mut starts = Vec::<(Option<u64>, &crate::records::Feature)>::new();
         for feature in native_features.iter() {
-            let start = object_names.of(feature).and_then(|name| name.offset);
+            let start = object_names.of(feature).map(|name| name.offset);
             starts.push((start, feature));
         }
         starts.sort_by_key(|left| (left.0.is_none(), left.0));
@@ -308,10 +307,10 @@ pub(crate) fn bind_parameter_scalars<'a>(
                 for scalar in &lane.scalars {
                     let owned = match scalar.feature_ref.as_deref() {
                         Some(owner) => owner == native_feature.id,
-                        None => scalar.offset.is_some_and(|offset| {
-                            start.is_some_and(|start| offset > start)
-                                && end.is_none_or(|end| offset < end)
-                        }),
+                        None => {
+                            start.is_some_and(|start| scalar.offset > start)
+                                && end.is_none_or(|end| scalar.offset < end)
+                        }
                     };
                     if !owned {
                         continue;
@@ -319,9 +318,7 @@ pub(crate) fn bind_parameter_scalars<'a>(
                     let name_matches = names_by_id.get(scalar.name.as_str()).is_some_and(|name| {
                         name.value == parameter.name
                             && value_only_scalar_offset(&lane.native_payload, name)
-                                != scalar
-                                    .offset
-                                    .and_then(|offset| usize::try_from(offset).ok())
+                                != usize::try_from(scalar.offset).ok()
                     });
                     if name_matches {
                         scalars.push(scalar);
@@ -756,19 +753,12 @@ pub(crate) fn project_compact_body_selections(
 }
 
 pub(crate) fn project_compact_edge_selections(
-    class_sources: &ClassSources,
     features: &mut [cadmpeg_ir::features::Feature],
     histories: &[crate::records::FeatureHistory],
     lanes: &[FeatureInputLane],
 ) -> Result<(), cadmpeg_core::CodecError> {
     let feature_ids_by_native = compact_edge_feature_ids(features);
-    project_compact_edge_selections_with_ids(
-        class_sources,
-        features,
-        &feature_ids_by_native,
-        histories,
-        lanes,
-    )
+    project_compact_edge_selections_with_ids(features, &feature_ids_by_native, histories, lanes)
 }
 
 /// Feature ids by native ref, for compact edge selection; a repeated native
@@ -795,7 +785,6 @@ pub(crate) fn compact_edge_feature_ids(
 /// producer refs through `feature_ids_by_native`, which may cover features
 /// outside `features`.
 pub(crate) fn project_compact_edge_selections_with_ids(
-    class_sources: &ClassSources,
     features: &mut [cadmpeg_ir::features::Feature],
     feature_ids_by_native: &HashMap<String, cadmpeg_ir::features::FeatureId>,
     histories: &[crate::records::FeatureHistory],
@@ -841,7 +830,7 @@ pub(crate) fn project_compact_edge_selections_with_ids(
                 let fillet_objects = fillet_objects
                     .get_or_insert_with(|| VariableFilletObjects::new(histories, lanes));
                 if let Some(radius_groups) =
-                    variable_fillet_radius_groups(class_sources, native_ref, fillet_objects, edge_selections)
+                    variable_fillet_radius_groups(native_ref, fillet_objects, edge_selections)
                 {
                     let unresolved_edges = matches!(existing_edges, EdgeSelection::Unresolved);
                     if unresolved_edges || radius_groups.len() == 1 {
@@ -993,9 +982,8 @@ impl<'a> VariableFilletObjects<'a> {
                     let mut starts = Vec::new();
                     for candidate in features {
                         if let Some(name) = names.of(candidate) {
-                            if let Some(position) = name.offset {
-                                starts.push((position, candidate));
-                            }
+                            let position = name.offset;
+                            starts.push((position, candidate));
                         }
                     }
                     starts.sort_unstable_by_key(|(left, _)| *left);
@@ -1024,7 +1012,6 @@ impl<'a> VariableFilletObjects<'a> {
 }
 
 fn variable_fillet_radius_groups<'a>(
-    class_sources: &ClassSources,
     feature_ref: &str,
     objects: &mut VariableFilletObjects<'_>,
     selections: &[&'a FeatureInputEdgeSelection],
@@ -1102,9 +1089,7 @@ fn variable_fillet_radius_groups<'a>(
     let mut non_vertex_control_names = HashSet::<String>::new();
     let mut non_vertex_control_references = Vec::new();
     for (lane, object_end) in objects.object_ends(history, feature_ref) {
-        let Some(controls) =
-            variable_fillet_control_references(class_sources, feature, lane, object_end)
-        else {
+        let Some(controls) = variable_fillet_control_references(feature, lane, object_end) else {
             continue;
         };
         for super::selections::VariableFilletControl(name, references) in controls {
@@ -1931,7 +1916,6 @@ fn surface_selections_by_lane<'a>(
 }
 
 pub(crate) fn project_draft_operands(
-    class_sources: &ClassSources,
     features: &mut [cadmpeg_ir::features::Feature],
     histories: &[crate::records::FeatureHistory],
     lanes: &[FeatureInputLane],
@@ -1950,7 +1934,7 @@ pub(crate) fn project_draft_operands(
     }
     let mut candidates = HashMap::<String, Vec<DraftOperands>>::new();
     for lane in lanes {
-        for (feature, operands) in draft_operand_candidates(class_sources, histories, lane)? {
+        for (feature, operands) in draft_operand_candidates(histories, lane)? {
             let by_feature = candidates.entry(feature).or_default();
             by_feature.push(operands);
         }
@@ -2230,7 +2214,7 @@ fn cut_with_surface_selection_pair<'a>(
 /// Resolve an attached thread face when its persistent cylinder reference
 /// cannot bind directly to a generated face.
 pub(crate) fn project_unbound_cosmetic_thread_faces(
-    source: (&ClassSources, &cadmpeg_core::decode::DecodeContext<'_>),
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     features: &mut [cadmpeg_ir::features::Feature],
     histories: &[crate::records::FeatureHistory],
     lanes: &[FeatureInputLane],
@@ -2238,8 +2222,6 @@ pub(crate) fn project_unbound_cosmetic_thread_faces(
     surfaces: &[Surface],
     parameters: &[DesignParameter],
 ) -> Result<(), cadmpeg_core::CodecError> {
-    let (class_sources, ctx) = source;
-
     let native_features = crate::records::HistoryFeatures::new(histories);
     let mut history_features = Vec::new();
     for native_feature in histories.iter().flat_map(|history| &history.features) {
@@ -2318,9 +2300,8 @@ pub(crate) fn project_unbound_cosmetic_thread_faces(
                         if class.name != "moCylinderRef_w" {
                             continue;
                         }
-                        let token = class_sources
-                            .position(class)
-                            .and_then(|offset| usize::try_from(offset).ok())
+                        let token = usize::try_from(class.offset)
+                            .ok()
                             .and_then(|offset| {
                                 class
                                     .name

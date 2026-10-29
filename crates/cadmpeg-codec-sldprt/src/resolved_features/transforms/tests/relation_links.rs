@@ -772,7 +772,7 @@ fn driving_point_distances_resolve_omitted_solver_points() {
         let mut second_center = marker("second-center", Some([0.0015, 0.0]));
         second_center = second_center.with_test_position(second_center.ordinal(), 3);
         let operand = |index, marker: Option<&str>| FeatureInputOperand {
-            offset: Some(u64::from(index)),
+            offset: u64::from(index),
             reference_ref: format!("reference-{index}"),
             kind: FeatureInputOperandKind::Native(tag.try_into().unwrap()),
             entity_index: index,
@@ -784,7 +784,7 @@ fn driving_point_distances_resolve_omitted_solver_points() {
             feature_ref: Some("feature-native".into()),
             ordinal: 0,
             sequence: 0,
-            offset: Some(0),
+            offset: 0,
             object_id: 0,
             name: "name".into(),
             value: cadmpeg_ir::scalar::FiniteReal::new(value).expect("finite test scalar"),
@@ -850,7 +850,7 @@ fn ambiguous_driving_point_distance_does_not_assign_solver_points() {
     let mut third = marker("third", Some([2.0, 0.0]));
     third = third.with_test_position(third.ordinal(), 2);
     let operand = |index| FeatureInputOperand {
-        offset: Some(u64::from(index)),
+        offset: u64::from(index),
         reference_ref: format!("reference-{index}"),
         kind: FeatureInputOperandKind::Native(NativeOperandTag::TAG_8100),
         entity_index: index,
@@ -868,7 +868,7 @@ fn ambiguous_driving_point_distance_does_not_assign_solver_points() {
             parent: "lane".into(),
             feature_ref: Some("feature-native".into()),
             ordinal: 0,
-            offset: Some(0),
+            offset: 0,
             object_id: 0,
             name: "name".into(),
             value: cadmpeg_ir::scalar::FiniteReal::new(1.0).expect("finite test scalar"),

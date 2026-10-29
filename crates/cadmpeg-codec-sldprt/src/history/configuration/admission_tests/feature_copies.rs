@@ -1,7 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use super::{design_configuration, feature_input_lane};
-use crate::resolved_features::class_sources::ClassSources;
 use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::features::ConfigurationFeatureState;
@@ -63,13 +62,12 @@ fn model() -> cadmpeg_ir::CadIr {
     ir
 }
 
-fn run_design(_class_sources: &ClassSources, policy: &DecodePolicy) -> Result<(), CodecError> {
+fn run_design(policy: &DecodePolicy) -> Result<(), CodecError> {
     let arena = DecodeArena::new();
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, policy)?;
     let mut ir = model();
     let features = ir.model.features.clone();
     super::super::project_configuration_design_states(
-        &crate::test_support::native::class_sources(&[&feature_input_lane("lane", Some("0"))]),
         &ctx,
         &mut ir,
         &[],
@@ -82,14 +80,10 @@ fn run_design(_class_sources: &ClassSources, policy: &DecodePolicy) -> Result<()
     Ok(())
 }
 
-fn run_supplemental(_class_sources: &ClassSources) -> Result<(), CodecError> {
+fn run_supplemental() -> Result<(), CodecError> {
     let mut ir = model();
     let expected = ir.clone();
     super::super::project_configuration_supplemental_edge_selections(
-        &crate::test_support::native::class_sources(&[&feature_input_lane(
-            "sldprt:feature-input:config-objects#0",
-            Some("0"),
-        )]),
         &mut ir,
         &[feature_input_lane(
             "sldprt:feature-input:config-objects#0",
@@ -113,13 +107,12 @@ fn run_topology() -> Result<(), CodecError> {
     Ok(())
 }
 
-fn run_sketch(_class_sources: &ClassSources, policy: &DecodePolicy) -> Result<(), CodecError> {
+fn run_sketch(policy: &DecodePolicy) -> Result<(), CodecError> {
     let arena = DecodeArena::new();
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, policy)?;
     let mut ir = model();
     let expected = ir.clone();
     let losses = super::super::project_configuration_sketch_states(
-        &crate::test_support::native::class_sources(&[&feature_input_lane("lane", Some("0"))]),
         &ctx,
         &mut ir,
         &[],
@@ -133,16 +126,12 @@ fn run_sketch(_class_sources: &ClassSources, policy: &DecodePolicy) -> Result<()
 
 #[test]
 fn configuration_feature_copy_design_runs_under_service_policy() {
-    let class_sources = ClassSources::default();
-
-    run_design(&class_sources, &DecodePolicy::service()).unwrap();
+    run_design(&DecodePolicy::service()).unwrap();
 }
 
 #[test]
 fn configuration_feature_copy_supplemental_runs_under_service_policy() {
-    let class_sources = ClassSources::default();
-
-    run_supplemental(&class_sources).unwrap();
+    run_supplemental().unwrap();
 }
 
 #[test]
@@ -152,7 +141,5 @@ fn configuration_feature_copy_topology_runs_under_service_policy() {
 
 #[test]
 fn configuration_feature_copy_sketch_runs_under_service_policy() {
-    let class_sources = ClassSources::default();
-
-    run_sketch(&class_sources, &DecodePolicy::service()).unwrap();
+    run_sketch(&DecodePolicy::service()).unwrap();
 }

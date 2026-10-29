@@ -1,6 +1,5 @@
 //! Tests for the `bindings` module.
 
-use crate::resolved_features::class_sources::ClassSources;
 use crate::test_support::dimensions::source_value;
 
 use super::super::{LEGACY_SKETCH_MARKER, SKETCH_MARKER};
@@ -28,12 +27,11 @@ use cadmpeg_ir::topology::{Face, Sense};
 use std::collections::{BTreeMap, HashSet};
 
 fn bind_pattern_inputs_test(
-    class_sources: &ClassSources,
     features: &mut [Feature],
     histories: &[FeatureHistory],
     lanes: &[FeatureInputLane],
 ) -> Result<(), cadmpeg_core::CodecError> {
-    bind_pattern_inputs(class_sources, features, histories, lanes)
+    bind_pattern_inputs(features, histories, lanes)
 }
 
 #[test]
@@ -99,7 +97,7 @@ fn dissected_profile_scalar_tail_belongs_to_parent_extrusion() {
         parent: "lane".into(),
         ordinal: 0,
         sequence: 0,
-        offset: Some(offset),
+        offset,
         object_id: ObjectId::try_from(object_id).ok(),
         value: value.into(),
     };
@@ -109,7 +107,7 @@ fn dissected_profile_scalar_tail_belongs_to_parent_extrusion() {
         feature_ref: None,
         ordinal: 0,
         sequence: 0,
-        offset: Some(offset),
+        offset,
         object_id: 20,
         name: name.into(),
         value: cadmpeg_ir::scalar::FiniteReal::new(0.001).expect("finite test scalar"),
@@ -160,20 +158,16 @@ fn dissected_profile_scalar_tail_belongs_to_parent_extrusion() {
 
     let source = lane.native_payload.to_vec();
     let arena = cadmpeg_core::decode::DecodeArena::new();
-    let (ctx, root) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
         &source,
         &arena,
         &cadmpeg_core::decode::DecodePolicy::service(),
     )
     .unwrap();
-    let mut body_sources =
-        crate::resolved_features::body_sources::BodySources::from_views([(lane.id.clone(), root)])
-            .unwrap();
     bind_scalar_operands(
         &ctx,
         std::slice::from_ref(&history),
         std::slice::from_mut(&mut lane),
-        &mut body_sources,
     )
     .unwrap();
 
@@ -200,7 +194,7 @@ fn mirror_plane_binds_through_one_persistent_face_identity() {
         parent: "lane".into(),
         ordinal: 0,
         sequence: 0,
-        offset: Some(0),
+        offset: 0,
         selector: 0,
         kind: crate::records::FeatureInputSurfaceSelectionKind::Component,
         object_name_ref: "name".into(),
@@ -462,7 +456,7 @@ fn circular_pattern_seed_binds_from_generated_identity_path() {
             id: "pattern-name".into(),
             parent: "lane".into(),
             ordinal: 0,
-            offset: Some(100),
+            offset: 100,
             object_id: ObjectId::from_value(228),
             value: "CirPattern1".into(),
         }],
@@ -538,7 +532,6 @@ fn circular_pattern_seed_binds_from_generated_identity_path() {
     ];
 
     bind_pattern_inputs_test(
-        &crate::test_support::native::class_sources(std::slice::from_mut(&mut lane)),
         &mut features,
         std::slice::from_ref(&history),
         std::slice::from_mut(&mut lane),
@@ -638,7 +631,7 @@ fn circular_pattern_axis_binds_from_unique_temporary_axis() {
             id: "pattern-name".into(),
             parent: "lane".into(),
             ordinal: 0,
-            offset: Some(100),
+            offset: 100,
             object_id: ObjectId::from_value(228),
             value: "CirPattern1".into(),
         }],
@@ -678,13 +671,7 @@ fn circular_pattern_axis_binds_from_unique_temporary_axis() {
         native_ref: Some("pattern-native".into()),
     }];
 
-    bind_pattern_inputs_test(
-        &crate::test_support::native::class_sources(&[&lane]),
-        &mut features,
-        std::slice::from_ref(&history),
-        &[lane],
-    )
-    .unwrap();
+    bind_pattern_inputs_test(&mut features, std::slice::from_ref(&history), &[lane]).unwrap();
 
     assert!(matches!(
         features[0].evaluation.definition(),
@@ -880,6 +867,7 @@ fn detached_spatial_relation_group_binds_by_its_complete_dimension_signature() {
             parent: "sldprt:feature-input:config-objects#1".into(),
             ordinal: 0,
             sequence: 0,
+            offset,
             name: name.into(),
         };
         (class, offset)
@@ -890,7 +878,7 @@ fn detached_spatial_relation_group_binds_by_its_complete_dimension_signature() {
         parent: "sldprt:feature-input:config-objects#1".into(),
         ordinal: index,
         sequence: index,
-        offset: Some(250 + u64::from(index)),
+        offset: 250 + u64::from(index),
         object_id: None,
         value: value.into(),
     };
@@ -900,7 +888,7 @@ fn detached_spatial_relation_group_binds_by_its_complete_dimension_signature() {
         feature_ref: None,
         ordinal: index,
         sequence: index,
-        offset: Some(300 + 20 * u64::from(index)),
+        offset: 300 + 20 * u64::from(index),
         object_id: index,
         name: format!("name-{index}"),
         value: cadmpeg_ir::scalar::FiniteReal::new(value).expect("finite test scalar"),
@@ -924,11 +912,6 @@ fn detached_spatial_relation_group_binds_by_its_complete_dimension_signature() {
         class(200, "sg3DPlaneHandle"),
         class(500, "suObList"),
     ];
-    let ctx = cadmpeg_test_support::service_decode_context();
-    let mut sources = crate::resolved_features::body_sources::BodySources::default();
-    for (class, position) in &declared {
-        sources.insert_class(&ctx, &class.id, *position).unwrap();
-    }
     let mut lane = FeatureInputLane {
         id: "sldprt:feature-input:config-objects#1".into(),
         configuration: Some("0".into()),
@@ -959,7 +942,6 @@ fn detached_spatial_relation_group_binds_by_its_complete_dimension_signature() {
         std::slice::from_ref(&history),
         &HashSet::default(),
         &mut lane,
-        &sources,
     )
     .unwrap();
     assert_eq!(
@@ -988,7 +970,6 @@ fn detached_spatial_relation_group_binds_by_its_complete_dimension_signature() {
         std::slice::from_ref(&ambiguous_history),
         &HashSet::default(),
         &mut ambiguous,
-        &sources,
     )
     .unwrap();
     assert!(ambiguous

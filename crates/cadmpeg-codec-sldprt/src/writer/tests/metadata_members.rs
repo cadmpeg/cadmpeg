@@ -158,8 +158,8 @@ fn a_real_feature_rename_survives_unchanged_metadata_in_the_same_member() {
         lane,
         &native.feature_histories,
         &renames,
-        crate::writer::ClassLayouts::Source(decoded.source_fidelity()),
-        &crate::resolved_features::class_sources::ClassSources::default(),
+        crate::writer::ClassLayouts::Source,
+        &std::collections::BTreeSet::new(),
     )
     .unwrap_err();
     assert!(
@@ -472,8 +472,8 @@ fn legacy_marker_metadata_edits_preserve_the_complete_marker_bytes() {
             lane,
             &native.feature_histories,
             &[],
-            crate::writer::ClassLayouts::Source(decoded.source_fidelity()),
-            &crate::resolved_features::class_sources::ClassSources::default(),
+            crate::writer::ClassLayouts::Source,
+            &std::collections::BTreeSet::new(),
         )
         .unwrap_err();
         assert!(
@@ -526,8 +526,8 @@ fn marker_replay_requires_reparsed_membership_identity_and_values() {
                 &changed,
                 &native.feature_histories,
                 &[],
-                crate::writer::ClassLayouts::Source(decoded.source_fidelity()),
-                &crate::resolved_features::class_sources::ClassSources::default(),
+                crate::writer::ClassLayouts::Source,
+                &std::collections::BTreeSet::new(),
             )
             .map(|(payload, _)| payload)
             .is_err(),

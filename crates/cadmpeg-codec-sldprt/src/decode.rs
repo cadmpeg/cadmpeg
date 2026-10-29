@@ -15,7 +15,6 @@
 //! metadata-only IR and blocking loss notes. `DecodeDepth::Container`
 //! requests the metadata-only path.
 
-use crate::resolved_features::class_sources::ClassSources;
 mod input_topologies;
 mod previews;
 mod retention;
@@ -125,7 +124,7 @@ pub(crate) fn decode(ctx: &DecodeContext<'_>, root: View<'_>) -> Result<Decoded,
             geometry_transferred: false,
         };
         report.losses.append(&mut pmi_losses);
-        append_design_losses(&retention.class_sources, ctx, &ir, &mut report)?;
+        append_design_losses(ctx, &ir, &mut report)?;
         append_thin_operation_losses(&retention.ambiguous_thin_features, &ir, &mut report);
         return decode_result(ctx, ir, report, annotations, unknowns, retention);
     }
@@ -151,7 +150,7 @@ pub(crate) fn decode(ctx: &DecodeContext<'_>, root: View<'_>) -> Result<Decoded,
             )?;
             report.losses.append(&mut pmi_losses);
             append_tessellation_losses(&ir, &mut report);
-            append_design_losses(&retention.class_sources, ctx, &ir, &mut report)?;
+            append_design_losses(ctx, &ir, &mut report)?;
             append_thin_operation_losses(&retention.ambiguous_thin_features, &ir, &mut report);
             return decode_result(ctx, ir, report, annotations, unknowns, retention);
         }
@@ -168,7 +167,7 @@ pub(crate) fn decode(ctx: &DecodeContext<'_>, root: View<'_>) -> Result<Decoded,
     report.transfer.scope = ir.scope;
     report.losses.append(&mut brep_fallback_losses);
     report.losses.append(&mut pmi_losses);
-    append_design_losses(&retention.class_sources, ctx, &ir, &mut report)?;
+    append_design_losses(ctx, &ir, &mut report)?;
     append_thin_operation_losses(&retention.ambiguous_thin_features, &ir, &mut report);
     decode_result(ctx, ir, report, annotations, unknowns, retention)
 }
@@ -355,7 +354,6 @@ fn decode_result(
             }
         }
     }
-    retention.install_layouts(ctx, &mut source_fidelity)?;
     retention.apply(&mut source_fidelity)?;
     // Layout oracles describe the delivered neutral state, including an
     // explicit Container request and derived configuration snapshots.
@@ -523,7 +521,6 @@ fn has_incoherent_refs<T: Eq + Hash>(references: &[T], known: &HashSet<&T>) -> b
 }
 
 fn append_design_losses(
-    class_sources: &ClassSources,
     ctx: &DecodeContext<'_>,
     ir: &CadIr,
     report: &mut DecodeBody,
@@ -1144,7 +1141,7 @@ fn append_design_losses(
             )));
     }
     let unbound_feature_input_objects = match native.as_ref() {
-        Some(native) => unbound_feature_input_operation_objects(class_sources, native),
+        Some(native) => unbound_feature_input_operation_objects(native),
         None => 0,
     };
     if unbound_feature_input_objects > 0 {
@@ -1856,9 +1853,7 @@ fn names_by_offset(
 ) -> HashMap<u64, &crate::records::FeatureInputName> {
     let mut by_offset = HashMap::new();
     for name in names {
-        if let Some(position) = name.offset {
-            by_offset.entry(position).or_insert(name);
-        }
+        by_offset.entry(name.offset).or_insert(name);
     }
     by_offset
 }
@@ -1879,10 +1874,7 @@ fn unclassed_features_by_source<'a>(
     by_source
 }
 
-fn unbound_feature_input_operation_objects(
-    class_sources: &ClassSources,
-    native: &crate::native::SldprtNative,
-) -> usize {
+fn unbound_feature_input_operation_objects(native: &crate::native::SldprtNative) -> usize {
     use crate::classification::{classify, native_object_class};
     use crate::records::FeatureInputClassRole;
 
@@ -1920,9 +1912,9 @@ fn unbound_feature_input_operation_objects(
                 .iter()
                 .filter(|class| class.role() == FeatureInputClassRole::Feature)
                 .filter_map(move |class| {
-                    let name_offset = class_sources.position(class).and_then(|position| {
-                        position.checked_add(6 + u64_from_index(class.name.len()))
-                    })?;
+                    let name_offset = class
+                        .offset
+                        .checked_add(6 + u64_from_index(class.name.len()))?;
                     names.get(&name_offset).map(|&name| (lane, class, name))
                 })
         })
@@ -2550,30 +2542,15 @@ fn build_geometry_ir(
     previews::project(ctx, scan, &mut ir, &mut annotations)?;
     let mut pmi_losses = Vec::new();
     let mut histories = crate::history::histories(ctx, scan, &mut annotations, &mut pmi_losses)?;
-    let mut body_sources = crate::resolved_features::body_sources::BodySources::default();
-    let mut lanes =
-        crate::resolved_features::assembly::lanes(ctx, scan, &mut body_sources, &mut annotations)?;
+    let mut lanes = crate::resolved_features::assembly::lanes(ctx, scan, &mut annotations)?;
     let mut supplemental_config_lanes =
-        crate::resolved_features::assembly::supplemental_config_lanes(
-            ctx,
-            scan,
-            &mut body_sources,
-            &mut annotations,
-        )?;
-    let class_sources = body_sources.class_sources();
-    retention.class_sources = class_sources.clone();
-    crate::resolved_features::classes::bind_history_classes(&class_sources, &mut histories, &lanes);
-    crate::resolved_features::bindings::bind_scalar_operands(
-        ctx,
-        &histories,
-        &mut lanes,
-        &mut body_sources,
-    )?;
+        crate::resolved_features::assembly::supplemental_config_lanes(ctx, scan, &mut annotations)?;
+    crate::resolved_features::classes::bind_history_classes(&mut histories, &lanes);
+    crate::resolved_features::bindings::bind_scalar_operands(ctx, &histories, &mut lanes)?;
     crate::resolved_features::bindings::bind_scalar_operands(
         ctx,
         &histories,
         &mut supplemental_config_lanes,
-        &mut body_sources,
     )?;
     let mut untyped_pmi_sections = BTreeSet::new();
     let pmi_dimensions = crate::pmi::dimensions(
@@ -2583,15 +2560,12 @@ fn build_geometry_ir(
         &mut pmi_losses,
         &mut untyped_pmi_sections,
     )?;
-    retention.pmi_pointers = pmi_dimensions.pointers;
-    let pmi_dimensions = pmi_dimensions.records;
     for id in untyped_pmi_sections {
         // A malformed or capped map's semantic payload was never admitted as
         // a PmiDimension record; retaining its section does not type it.
         retention.record(&id, cadmpeg_ir::document::ArenaClass::Model);
     }
     project_design_history(
-        &class_sources,
         ctx,
         &mut ir,
         DesignHistoryInput {
@@ -2604,7 +2578,6 @@ fn build_geometry_ir(
         &mut pmi_losses,
     )?;
     crate::resolved_features::operations::bind_feature_operations(
-        &class_sources,
         &mut ir.model.features,
         &histories,
         &lanes,
@@ -2646,7 +2619,6 @@ fn build_geometry_ir(
         retention.record(id.as_str(), cadmpeg_ir::document::ArenaClass::Design);
     }
     crate::resolved_features::profiles::bind_sketch_profiles(
-        &class_sources,
         &mut ir.model.features,
         crate::resolved_features::profiles::SketchArenas {
             sketches: &mut sketches,
@@ -2663,22 +2635,18 @@ fn build_geometry_ir(
         &ir.model.features,
         &histories,
         &mut supplemental_config_lanes,
-        &mut body_sources,
     )?;
-    retention.pmi_pointers.extend(body_sources.into_pointers());
     crate::resolved_features::projections::project_compact_edge_selections(
-        &class_sources,
         &mut ir.model.features,
         &[],
         &supplemental_config_lanes,
     )?;
     crate::history::configuration::project_configuration_supplemental_edge_selections(
-        &class_sources,
         &mut ir,
         &supplemental_config_lanes,
     )?;
     crate::resolved_features::profiles::project_compact_sketch_profiles(
-        (&class_sources, ctx),
+        ctx,
         &mut ir.model.features,
         &mut sketches,
         &mut sketch_entities,
@@ -2695,7 +2663,6 @@ fn build_geometry_ir(
     let sketch_lanes = all_lanes.as_slice();
     let (spatial_sketches, spatial_sketch_entities) =
         crate::resolved_features::markers::spatial_sketches(
-            &class_sources,
             &mut ir.model.features,
             &histories,
             sketch_lanes,
@@ -2703,7 +2670,6 @@ fn build_geometry_ir(
     ir.model.spatial_sketches = spatial_sketches;
     ir.model.spatial_sketch_entities = spatial_sketch_entities;
     crate::resolved_features::profiles::project_marker_backed_sketches(
-        &class_sources,
         ctx,
         &mut ir.model.features,
         &mut sketches,
@@ -2732,7 +2698,6 @@ fn build_geometry_ir(
         &brep.surfaces,
     );
     crate::resolved_features::bindings::bind_pattern_inputs(
-        &class_sources,
         &mut ir.model.features,
         &histories,
         lanes,
@@ -2743,7 +2708,6 @@ fn build_geometry_ir(
         lanes,
     );
     crate::resolved_features::dimensions::project_dimensioned_sketch_geometry(
-        &class_sources,
         &mut sketch_entities,
         &sketches,
         &brep.surfaces,
@@ -2765,7 +2729,6 @@ fn build_geometry_ir(
         sketch_lanes,
     );
     crate::resolved_features::dimensions::project_relation_point_dimensioned_circles(
-        &class_sources,
         &mut sketch_entities,
         &ir.model.features,
         &ir.model.parameters,
@@ -2900,7 +2863,6 @@ fn build_geometry_ir(
         &ir.model.surfaces,
     );
     crate::resolved_features::holes::project_profiled_hole_constructions(
-        &class_sources,
         ctx,
         &mut ir.model.features,
         &ir.model.sketch_entities,
@@ -2996,7 +2958,6 @@ fn build_geometry_ir(
     crate::history::bind::order_features_for_regeneration(ctx, &mut ir.model.features)?;
     assign_configuration_bodies(&mut ir, configuration_bodies)?;
     let configuration_losses = crate::history::configuration::project_configuration_sketch_states(
-        &class_sources,
         ctx,
         &mut ir,
         &histories,
@@ -3012,7 +2973,7 @@ fn build_geometry_ir(
     )?;
     mark_active_configuration(&mut ir);
     crate::resolved_features::projections::project_unbound_cosmetic_thread_faces(
-        (&class_sources, ctx),
+        ctx,
         &mut ir.model.features,
         &histories,
         &all_lanes,
@@ -3781,30 +3742,15 @@ fn build_metadata_ir(
     let mut annotations = Annotations::default();
     let mut pmi_losses = Vec::new();
     let mut histories = crate::history::histories(ctx, scan, &mut annotations, &mut pmi_losses)?;
-    let mut body_sources = crate::resolved_features::body_sources::BodySources::default();
-    let mut lanes =
-        crate::resolved_features::assembly::lanes(ctx, scan, &mut body_sources, &mut annotations)?;
+    let mut lanes = crate::resolved_features::assembly::lanes(ctx, scan, &mut annotations)?;
     let mut supplemental_config_lanes =
-        crate::resolved_features::assembly::supplemental_config_lanes(
-            ctx,
-            scan,
-            &mut body_sources,
-            &mut annotations,
-        )?;
-    let class_sources = body_sources.class_sources();
-    retention.class_sources = class_sources.clone();
-    crate::resolved_features::classes::bind_history_classes(&class_sources, &mut histories, &lanes);
-    crate::resolved_features::bindings::bind_scalar_operands(
-        ctx,
-        &histories,
-        &mut lanes,
-        &mut body_sources,
-    )?;
+        crate::resolved_features::assembly::supplemental_config_lanes(ctx, scan, &mut annotations)?;
+    crate::resolved_features::classes::bind_history_classes(&mut histories, &lanes);
+    crate::resolved_features::bindings::bind_scalar_operands(ctx, &histories, &mut lanes)?;
     crate::resolved_features::bindings::bind_scalar_operands(
         ctx,
         &histories,
         &mut supplemental_config_lanes,
-        &mut body_sources,
     )?;
     let mut untyped_pmi_sections = BTreeSet::new();
     let pmi_dimensions = crate::pmi::dimensions(
@@ -3814,8 +3760,6 @@ fn build_metadata_ir(
         &mut pmi_losses,
         &mut untyped_pmi_sections,
     )?;
-    retention.pmi_pointers = pmi_dimensions.pointers;
-    let pmi_dimensions = pmi_dimensions.records;
     for id in untyped_pmi_sections {
         // A malformed or capped map's semantic payload was never admitted as
         // a PmiDimension record; retaining its section does not type it.
@@ -3894,7 +3838,6 @@ fn build_metadata_ir(
         attributes,
     ));
     project_design_history(
-        &class_sources,
         ctx,
         &mut ir,
         DesignHistoryInput {
@@ -3907,7 +3850,6 @@ fn build_metadata_ir(
         &mut pmi_losses,
     )?;
     crate::resolved_features::operations::bind_feature_operations(
-        &class_sources,
         &mut ir.model.features,
         &histories,
         &lanes,
@@ -3932,7 +3874,6 @@ fn build_metadata_ir(
     )?;
     crate::history::configuration::align_configuration_parameter_kinds(&mut ir);
     crate::resolved_features::profiles::bind_sketch_profiles(
-        &class_sources,
         &mut ir.model.features,
         crate::resolved_features::profiles::SketchArenas {
             sketches: &mut ir.model.sketches,
@@ -3949,22 +3890,18 @@ fn build_metadata_ir(
         &ir.model.features,
         &histories,
         &mut supplemental_config_lanes,
-        &mut body_sources,
     )?;
-    retention.pmi_pointers.extend(body_sources.into_pointers());
     crate::resolved_features::projections::project_compact_edge_selections(
-        &class_sources,
         &mut ir.model.features,
         &[],
         &supplemental_config_lanes,
     )?;
     crate::history::configuration::project_configuration_supplemental_edge_selections(
-        &class_sources,
         &mut ir,
         &supplemental_config_lanes,
     )?;
     crate::resolved_features::profiles::project_compact_sketch_profiles(
-        (&class_sources, ctx),
+        ctx,
         &mut ir.model.features,
         &mut ir.model.sketches,
         &mut ir.model.sketch_entities,
@@ -3981,7 +3918,6 @@ fn build_metadata_ir(
     let sketch_lanes = all_lanes.as_slice();
     let (spatial_sketches, spatial_sketch_entities) =
         crate::resolved_features::markers::spatial_sketches(
-            &class_sources,
             &mut ir.model.features,
             &histories,
             sketch_lanes,
@@ -3989,7 +3925,6 @@ fn build_metadata_ir(
     ir.model.spatial_sketches = spatial_sketches;
     ir.model.spatial_sketch_entities = spatial_sketch_entities;
     crate::resolved_features::profiles::project_marker_backed_sketches(
-        &class_sources,
         ctx,
         &mut ir.model.features,
         &mut ir.model.sketches,
@@ -4022,7 +3957,6 @@ fn build_metadata_ir(
         &ir.model.surfaces,
     );
     crate::resolved_features::bindings::bind_pattern_inputs(
-        &class_sources,
         &mut ir.model.features,
         &histories,
         lanes,
@@ -4033,7 +3967,6 @@ fn build_metadata_ir(
         lanes,
     );
     crate::resolved_features::dimensions::project_dimensioned_sketch_geometry(
-        &class_sources,
         &mut ir.model.sketch_entities,
         &ir.model.sketches,
         &ir.model.surfaces,
@@ -4056,7 +3989,6 @@ fn build_metadata_ir(
         sketch_lanes,
     );
     crate::resolved_features::dimensions::project_relation_point_dimensioned_circles(
-        &class_sources,
         &mut ir.model.sketch_entities,
         &ir.model.features,
         &ir.model.parameters,
@@ -4087,7 +4019,6 @@ fn build_metadata_ir(
         sketch_lanes,
     )?;
     crate::resolved_features::holes::project_profiled_hole_constructions(
-        &class_sources,
         ctx,
         &mut ir.model.features,
         &ir.model.sketch_entities,
@@ -4172,7 +4103,7 @@ fn build_metadata_ir(
         sketch_lanes,
     )?;
     crate::resolved_features::projections::project_unbound_cosmetic_thread_faces(
-        (&class_sources, ctx),
+        ctx,
         &mut ir.model.features,
         &histories,
         lanes,
@@ -4187,7 +4118,6 @@ fn build_metadata_ir(
     );
     crate::history::bind::order_features_for_regeneration(ctx, &mut ir.model.features)?;
     let configuration_losses = crate::history::configuration::project_configuration_sketch_states(
-        &class_sources,
         ctx,
         &mut ir,
         &histories,
@@ -4251,7 +4181,6 @@ struct DesignHistoryInput<'a> {
 }
 
 fn project_design_history(
-    class_sources: &ClassSources,
     ctx: &DecodeContext<'_>,
     ir: &mut CadIr,
     input: DesignHistoryInput<'_>,
@@ -4268,7 +4197,6 @@ fn project_design_history(
     let scene_feature_classes = crate::tessellation::scene_feature_classes(scan);
     crate::history::enrich_scene_classes(&mut semantic_projection, &scene_feature_classes);
     crate::history::configuration::enrich_history_semantic(
-        class_sources,
         ctx,
         &mut semantic_projection,
         lanes,
@@ -4280,13 +4208,11 @@ fn project_design_history(
     crate::history::project::project_feature_model(ctx, &semantic_projection)?
         .install(&mut ir.model, losses)?;
     crate::resolved_features::bindings::bind_pattern_inputs(
-        class_sources,
         &mut ir.model.features,
         &semantic_projection,
         lanes,
     )?;
     crate::history::configuration::project_compact_and_generated(
-        class_sources,
         ctx,
         &mut ir.model.features,
         &semantic_projection,
@@ -4296,12 +4222,10 @@ fn project_design_history(
         crate::history::project::project_configurations(&semantic_projection)?;
     let mut parameter_projection = histories.to_vec();
     crate::resolved_features::direct_edits::enrich_history_move_face_translations(
-        class_sources,
         &mut parameter_projection,
         lanes,
     );
     crate::history::configuration::enrich_history_parameters_values_only(
-        class_sources,
         &mut parameter_projection,
         lanes,
     );
@@ -4311,7 +4235,6 @@ fn project_design_history(
     ir.model.parameters =
         crate::history::parameters::project_parameters(ctx, &parameter_projection)?;
     let unprojected = crate::history::configuration::project_configuration_design_states(
-        class_sources,
         ctx,
         ir,
         histories,

@@ -440,15 +440,8 @@ fn configuration_sketch_state_reuses_projected_neutral_sketch() {
     let mut annotations = cadmpeg_ir::Annotations::default();
     let arena = DecodeArena::new();
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service()).unwrap();
-    project_configuration_sketch_states(
-        &crate::test_support::native::class_sources(&[&lane]),
-        &ctx,
-        &mut ir,
-        &[history],
-        &[lane],
-        &mut annotations,
-    )
-    .unwrap();
+    project_configuration_sketch_states(&ctx, &mut ir, &[history], &[lane], &mut annotations)
+        .unwrap();
 
     assert_eq!(ir.model.sketches.len(), 1);
     assert!(matches!(
@@ -670,15 +663,7 @@ fn configuration_sketch_states_reuse_shared_geometry_across_lanes() {
     let mut annotations = cadmpeg_ir::Annotations::default();
     let arena = DecodeArena::new();
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service()).unwrap();
-    project_configuration_sketch_states(
-        &crate::test_support::native::class_sources(&lanes),
-        &ctx,
-        &mut ir,
-        &[],
-        &lanes,
-        &mut annotations,
-    )
-    .unwrap();
+    project_configuration_sketch_states(&ctx, &mut ir, &[], &lanes, &mut annotations).unwrap();
 
     assert!(ir.model.configurations.iter().all(|configuration| matches!(
         configuration.feature_states[&feature_id].definition().unwrap(),
@@ -748,15 +733,7 @@ fn configuration_sketch_state_reuses_scoped_spatial_sketch() {
     let mut annotations = cadmpeg_ir::Annotations::default();
     let arena = DecodeArena::new();
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service()).unwrap();
-    project_configuration_sketch_states(
-        &crate::test_support::native::class_sources(&lanes),
-        &ctx,
-        &mut ir,
-        &[],
-        &lanes,
-        &mut annotations,
-    )
-    .unwrap();
+    project_configuration_sketch_states(&ctx, &mut ir, &[], &lanes, &mut annotations).unwrap();
 
     assert!(matches!(
         ir.model.configurations[0].feature_states[&feature_id].definition().unwrap(),
@@ -865,12 +842,7 @@ fn supplemental_edge_paths_project_into_matching_configuration_state() {
             terminal_feature_ref: Some("producer-native".into()),
         });
 
-    project_configuration_supplemental_edge_selections(
-        &crate::test_support::native::class_sources(&[&lane]),
-        &mut ir,
-        &[lane],
-    )
-    .unwrap();
+    project_configuration_supplemental_edge_selections(&mut ir, &[lane]).unwrap();
 
     let state = &ir.model.configurations[0].feature_states[&consumer_id];
     assert!(ir
@@ -1005,7 +977,6 @@ fn supplemental_edge_paths_match_projecting_every_configured_feature() {
             }
         }
         crate::resolved_features::projections::project_compact_edge_selections(
-            &crate::test_support::native::class_sources(std::slice::from_ref(lane)),
             &mut features,
             &[],
             std::slice::from_ref(lane),
@@ -1023,12 +994,7 @@ fn supplemental_edge_paths_match_projecting_every_configured_feature() {
             states.insert(feature.id, state);
         }
     }
-    project_configuration_supplemental_edge_selections(
-        &crate::test_support::native::class_sources(&lanes),
-        &mut ir,
-        &lanes,
-    )
-    .unwrap();
+    project_configuration_supplemental_edge_selections(&mut ir, &lanes).unwrap();
 
     assert_eq!(ir, expected);
     for configuration in &ir.model.configurations {
@@ -1627,7 +1593,7 @@ fn configuration_topology_binding_updates_snapshot_face_selection() {
         parent: "lane".into(),
         ordinal: 0,
         sequence: 0,
-        offset: Some(0),
+        offset: 0,
         selector: 0,
         kind: crate::records::FeatureInputSurfaceSelectionKind::Component,
         object_name_ref: String::new(),

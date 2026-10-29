@@ -35,7 +35,6 @@ use crate::records::{
     FeatureInputRelationInstance, FeatureInputScalar, FeatureInputScalarRole, SketchInputEntity,
     SketchInputKind, SketchRelationKind,
 };
-use crate::resolved_features::class_sources::ClassSources;
 use cadmpeg_core::convert::f64_from_i64;
 use cadmpeg_core::decode::{index_from_u64, u64_from_index, DecodeContext, View};
 use cadmpeg_ir::math::{Point2, Point3, Vector3};
@@ -150,9 +149,7 @@ fn spatial_relation_point_line_entities(
         .iter()
         .filter(|marker| marker.feature_ref.as_deref() == Some(relation.feature_ref.as_str()))
         .filter_map(|marker| {
-            let offset = marker
-                .offset()
-                .and_then(|offset| usize::try_from(offset).ok())?;
+            let offset = usize::try_from(marker.offset()).ok()?;
             let code = marker_native_code(&lane.native_payload, offset)?;
             matches!(code, 2..=5).then_some(())?;
             Some((
@@ -185,9 +182,7 @@ fn spatial_relation_point_line_entities(
                 && marker.object_index().is_some()
         })
         .filter_map(|marker| {
-            let offset = marker
-                .offset()
-                .and_then(|offset| usize::try_from(offset).ok())?;
+            let offset = usize::try_from(marker.offset()).ok()?;
             (marker_native_code(&lane.native_payload, offset) == Some(0)).then_some(())?;
             Some((
                 marker,
@@ -540,9 +535,7 @@ pub(crate) fn project_relation_point_geometry(
                 continue;
             };
             if sketch.as_str().contains("sketch#compact:")
-                && marker
-                    .offset()
-                    .and_then(index_from_u64)
+                && index_from_u64(marker.offset())
                     .is_none_or(|offset| !marker_is_geometry_locus(&lane.native_payload, offset))
                 && !entities.iter().any(|entity| {
                     entity
@@ -630,9 +623,7 @@ pub(crate) fn project_relation_point_geometry(
         let marker_roster =
             super::endpoints::coordinate_rosters::CoordinateRosters::new(marker_roster);
         for marker in &lane.sketch_entities {
-            let marker_offset = marker
-                .offset()
-                .and_then(|offset| usize::try_from(offset).ok());
+            let marker_offset = usize::try_from(marker.offset()).ok();
             let undetailed_arc_line = marker.kind() == SketchInputKind::Arc
                 && marker_offset.is_some_and(|offset| {
                     current_undetailed_bounded_curve_is_line(&lane.native_payload, offset)
@@ -1936,7 +1927,6 @@ pub(super) fn declared_entity_handle_owner<'a>(
 /// are required so a slot's center cannot be guessed from its radius or from
 /// the slot's boundary roster alone.
 pub(super) fn declared_slot_handle_dimension_center<'a>(
-    class_sources: &ClassSources,
     lanes: &'a [FeatureInputLane],
     feature: &str,
     operand: &FeatureInputOperand,
@@ -1954,9 +1944,7 @@ pub(super) fn declared_slot_handle_dimension_center<'a>(
                 SketchInputKind::Native(_) | SketchInputKind::NativeHandle(_)
             )
     })?;
-    let marker_offset = marker
-        .offset()
-        .and_then(|offset| usize::try_from(offset).ok())?;
+    let marker_offset = usize::try_from(marker.offset()).ok()?;
     let (_, center_indices) = slot_curve_and_center_indices(&lane.native_payload, marker_offset)?;
     let class_ref = lane
         .references
@@ -1971,8 +1959,8 @@ pub(super) fn declared_slot_handle_dimension_center<'a>(
     let bounds = (|| {
         let mut slot_classes = lane.classes.iter().filter(|class| {
             class.name == "sgSlotHandle"
-                && class_sources.position(class) > class_sources.position(entity_class)
-                && class_sources.position(class) < marker.offset()
+                && class.offset > entity_class.offset
+                && class.offset < marker.offset()
         });
         let (Some(slot_class), None) = (slot_classes.next(), slot_classes.next()) else {
             return None;
@@ -1980,14 +1968,12 @@ pub(super) fn declared_slot_handle_dimension_center<'a>(
         let class_end = lane
             .classes
             .iter()
-            .filter(|class| class_sources.position(class) > class_sources.position(slot_class))
-            .filter_map(|class| class_sources.position(class))
+            .filter(|class| class.offset > slot_class.offset)
+            .map(|class| class.offset)
             .min()
             .unwrap_or_else(|| u64_from_index(lane.native_payload.len()))
-            .min(marker.offset()?);
-        let class_start = class_sources
-            .position(slot_class)
-            .and_then(|offset| usize::try_from(offset).ok())?;
+            .min(marker.offset());
+        let class_start = usize::try_from(slot_class.offset).ok()?;
         let class_end =
             super::DeclaredEnd::of(usize::try_from(class_end).ok()?, lane.native_payload.len())?
                 .get();
@@ -2178,7 +2164,6 @@ pub(super) fn declared_entity_handle_point_dimension_center<'a>(
 /// agree. A point that is the radial member of an encoded center/radial pair
 /// at the dimension's radius is not a circle center.
 pub(super) fn direct_point_dimension_center<'a>(
-    class_sources: &ClassSources,
     lanes: &'a [FeatureInputLane],
     feature: &str,
     operand: &FeatureInputOperand,
@@ -2228,7 +2213,7 @@ pub(super) fn direct_point_dimension_center<'a>(
         unique = Some((lane, marker));
     }
     let (lane, marker) = unique?;
-    for [center, radial] in declared_entity_handle_pairs(class_sources, lane, feature) {
+    for [center, radial] in declared_entity_handle_pairs(lane, feature) {
         if radial.id() != marker.id() {
             continue;
         }
@@ -2246,7 +2231,6 @@ pub(super) fn direct_point_dimension_center<'a>(
 }
 
 pub(super) fn declared_entity_handle_circular_marker<'a>(
-    class_sources: &ClassSources,
     lanes: &'a [FeatureInputLane],
     feature: &str,
     operand: &FeatureInputOperand,
@@ -2259,8 +2243,8 @@ pub(super) fn declared_entity_handle_circular_marker<'a>(
     else {
         return None;
     };
-    let child_pairs = declared_entity_handle_declared_child_pairs(class_sources, lane, feature);
-    let pairs = declared_entity_handle_pairs(class_sources, lane, feature);
+    let child_pairs = declared_entity_handle_declared_child_pairs(lane, feature);
+    let pairs = declared_entity_handle_pairs(lane, feature);
     // An explicit radial identity is stronger than one feature-scoped child
     // declaration. Resolve it first because an unrelated line or arc child
     // can coexist with the circular-dimension point pair. Multiple child
@@ -2337,7 +2321,6 @@ pub(super) fn declared_entity_handle_circular_marker<'a>(
 }
 
 pub(super) fn declared_entity_handle_has_resolved_pair(
-    class_sources: &ClassSources,
     lanes: &[FeatureInputLane],
     feature: &str,
     operand: &FeatureInputOperand,
@@ -2346,14 +2329,13 @@ pub(super) fn declared_entity_handle_has_resolved_pair(
     else {
         return false;
     };
-    !declared_entity_handle_pairs(class_sources, lane, feature).is_empty()
+    !declared_entity_handle_pairs(lane, feature).is_empty()
 }
 
 /// Test whether an explicit point reference is the radial member of a
 /// declared entity-handle pair. Radial identity cannot be reinterpreted as a
 /// center by the native point-identity fallback.
 pub(super) fn declared_entity_handle_point_is_declared_radial(
-    class_sources: &ClassSources,
     lanes: &[FeatureInputLane],
     feature: &str,
     operand: &FeatureInputOperand,
@@ -2365,7 +2347,7 @@ pub(super) fn declared_entity_handle_point_is_declared_radial(
     else {
         return false;
     };
-    for [_, radial] in declared_entity_handle_pairs(class_sources, lane, feature) {
+    for [_, radial] in declared_entity_handle_pairs(lane, feature) {
         if radial.id() == entity_ref {
             return true;
         }
@@ -2374,12 +2356,11 @@ pub(super) fn declared_entity_handle_point_is_declared_radial(
 }
 
 fn declared_entity_handle_pairs<'a>(
-    class_sources: &ClassSources,
     lane: &'a FeatureInputLane,
     feature: &str,
 ) -> Vec<[&'a SketchInputEntity; 2]> {
     let mut pairs = declared_entity_handle_linked_pairs(lane, feature);
-    let children = declared_entity_handle_declared_child_pairs(class_sources, lane, feature);
+    let children = declared_entity_handle_declared_child_pairs(lane, feature);
     pairs.extend(children);
     let indexed = declared_entity_handle_indexed_point_pairs(lane, feature);
     pairs.extend(indexed);
@@ -2429,7 +2410,6 @@ fn declared_entity_handle_indexed_point_pairs<'a>(
 /// alone is not sufficient because the same feature can contain repeated
 /// circular construction carriers.
 fn declared_entity_handle_declared_child_pairs<'a>(
-    class_sources: &ClassSources,
     lane: &'a FeatureInputLane,
     feature: &str,
 ) -> Vec<[&'a SketchInputEntity; 2]> {
@@ -2463,11 +2443,11 @@ fn declared_entity_handle_declared_child_pairs<'a>(
         let next_marker_offset = feature_markers
             .iter()
             .find(|marker| marker.offset() > radial.offset())
-            .and_then(|marker| marker.offset());
+            .map(|marker| marker.offset());
         if !lane.classes.iter().any(|class| {
             class.name == class_name
-                && class_sources.position(class) > radial.offset()
-                && next_marker_offset.is_none_or(|end| class_sources.position(class) < Some(end))
+                && class.offset > radial.offset()
+                && next_marker_offset.is_none_or(|end| class.offset < end)
         }) {
             continue;
         }
@@ -3288,7 +3268,7 @@ mod relation_geometry_tests {
             marker
         };
         let operand = |offset: u64, entity_index: u16| FeatureInputOperand {
-            offset: Some(offset),
+            offset,
             reference_ref: format!("reference-{offset}"),
             kind: FeatureInputOperandKind::Native(NativeOperandTag::TAG_8100),
             entity_index,
@@ -3301,7 +3281,7 @@ mod relation_geometry_tests {
                 feature_ref: Some("feature-native".into()),
                 ordinal: 0,
                 sequence: 0,
-                offset: Some(offset),
+                offset,
                 object_id: 0,
                 name: "distance".into(),
                 value: cadmpeg_ir::scalar::FiniteReal::new(value).expect("finite test scalar"),
@@ -3313,7 +3293,7 @@ mod relation_geometry_tests {
             parent: "lane#test".into(),
             ordinal: 0,
             sequence: 0,
-            offset: Some(30),
+            offset: 30,
             family: FeatureInputRelationFamily::PointPointDistance,
             class_ref: "class".into(),
             feature_ref: "feature-native".into(),
@@ -3326,7 +3306,7 @@ mod relation_geometry_tests {
             operands: vec![operand(40, 12), operand(52, 13)],
         };
         assert_eq!(relation.ordinal, 0);
-        assert_eq!(relation.offset, Some(30));
+        assert_eq!(relation.offset, 30);
         let lane = FeatureInputLane {
             id: "lane#test".into(),
             configuration: None,
@@ -3532,7 +3512,7 @@ mod relation_geometry_tests {
             parent: LANE.into(),
             ordinal: 0,
             sequence: 0,
-            offset: Some(30),
+            offset: 30,
             family: FeatureInputRelationFamily::LineLineDistance,
             class_ref: "class".into(),
             feature_ref: FEATURE.into(),
@@ -3546,7 +3526,7 @@ mod relation_geometry_tests {
                 .into_iter()
                 .enumerate()
                 .map(|(index, entity_index)| FeatureInputOperand {
-                    offset: Some(40 + cadmpeg_core::decode::u64_from_index(index)),
+                    offset: 40 + cadmpeg_core::decode::u64_from_index(index),
                     reference_ref: format!("reference-{index}"),
                     kind: FeatureInputOperandKind::Native(
                         NativeOperandTag::try_from(0x812a).unwrap(),
@@ -3568,7 +3548,7 @@ mod relation_geometry_tests {
                 parent: LANE.into(),
                 feature_ref: Some(FEATURE.into()),
                 ordinal: 0,
-                offset: Some(30),
+                offset: 30,
                 object_id: 0,
                 name: "distance".into(),
                 value: cadmpeg_ir::scalar::FiniteReal::new(0.005).expect("finite test scalar"),
@@ -3612,7 +3592,7 @@ mod relation_geometry_tests {
             .first_mut()
             .expect("synthetic relation");
         fallback_relation.id = "fallback-relation".into();
-        fallback_relation.offset = Some(31);
+        fallback_relation.offset = 31;
         fallback_relation.scalars = crate::records::relation_scalars::RelationScalars::from_refs(
             vec!["fallback-scalar".into()],
             Some("fallback-scalar".into()),
@@ -3625,7 +3605,7 @@ mod relation_geometry_tests {
         let fallback_operands = fallback_relation.operands.clone();
         let fallback_scalar = fallback_lane.scalars.first_mut().expect("synthetic scalar");
         fallback_scalar.id = "fallback-scalar".into();
-        fallback_scalar.offset = Some(31);
+        fallback_scalar.offset = 31;
 
         fallback_scalar.operands = fallback_operands;
         for marker in &mut fallback_lane.sketch_entities {
@@ -3868,7 +3848,7 @@ mod relation_geometry_tests {
             feature_ref: Some(FEATURE.into()),
             ordinal: 0,
             sequence: 0,
-            offset: Some(600),
+            offset: 600,
             object_id: 0,
             name: "distance".into(),
             value: cadmpeg_ir::scalar::FiniteReal::new(0.0065).expect("finite test scalar"),
@@ -3876,7 +3856,7 @@ mod relation_geometry_tests {
             operands: Vec::new(),
         };
         let operand = |entity_index| FeatureInputOperand {
-            offset: Some(700 + u64::from(entity_index)),
+            offset: 700 + u64::from(entity_index),
             reference_ref: format!("reference-{entity_index}"),
             kind: FeatureInputOperandKind::Native(NativeOperandTag::TAG_8100),
             entity_index,
@@ -3887,7 +3867,7 @@ mod relation_geometry_tests {
             parent: LANE.into(),
             ordinal: 0,
             sequence: 0,
-            offset: Some(650),
+            offset: 650,
             family: FeatureInputRelationFamily::PointLineDistance,
             class_ref: "class".into(),
             feature_ref: FEATURE.into(),

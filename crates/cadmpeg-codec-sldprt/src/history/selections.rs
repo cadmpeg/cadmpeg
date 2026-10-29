@@ -803,7 +803,7 @@ mod tests {
             parent: "lane".into(),
             ordinal: 0,
             sequence: 0,
-            offset: Some(0),
+            offset: 0,
             selector: 2,
             kind: crate::records::FeatureInputSurfaceSelectionKind::Component,
             object_name_ref: "feature".into(),

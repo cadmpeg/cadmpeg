@@ -54,7 +54,7 @@ fn dynamic_relation(
         parent: "lane".into(),
         ordinal: 0,
         sequence: 0,
-        offset: Some(0),
+        offset: 0,
         family,
         class_ref: "class".into(),
         feature_ref: "feature".into(),
@@ -68,7 +68,7 @@ fn dynamic_relation(
             .into_iter()
             .enumerate()
             .map(|(index, entity_index)| FeatureInputOperand {
-                offset: Some(cadmpeg_core::decode::u64_from_index(index)),
+                offset: cadmpeg_core::decode::u64_from_index(index),
                 reference_ref: format!("reference-{index}"),
                 kind: FeatureInputOperandKind::Native(NativeOperandTag::try_from(0x812a).unwrap()),
                 entity_index,
@@ -220,7 +220,7 @@ fn circle_dimension_ignores_marker_resolved_to_line() {
         parent: "lane".into(),
         ordinal: 0,
         sequence: 0,
-        offset: Some(0),
+        offset: 0,
         family: FeatureInputRelationFamily::CircleDiameter,
         class_ref: "class".into(),
         feature_ref: "feature".into(),
@@ -231,7 +231,7 @@ fn circle_dimension_ignores_marker_resolved_to_line() {
         )
         .unwrap(),
         operands: vec![FeatureInputOperand {
-            offset: Some(0),
+            offset: 0,
             reference_ref: "reference".into(),
             kind: FeatureInputOperandKind::E1,
             entity_index: 0,

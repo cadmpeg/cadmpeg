@@ -2079,13 +2079,10 @@ pub(super) fn marker_curve_endpoint_markers<'a>(
     if endpoints.len() == 2 {
         return endpoints;
     }
-    let shifted = curve
-        .offset()
-        .and_then(|offset| usize::try_from(offset).ok())
-        .and_then(|offset| {
-            extended_shifted_construction_line_endpoint_indices(payload, offset)
-                .map(|indices| (offset, indices))
-        });
+    let shifted = usize::try_from(curve.offset()).ok().and_then(|offset| {
+        extended_shifted_construction_line_endpoint_indices(payload, offset)
+            .map(|indices| (offset, indices))
+    });
     if let Some((offset, indices)) = shifted {
         let endpoints = if payload.get(offset + 72..offset + 76) == Some(&[0; 4]) {
             let mut owned = collect_endpoint_markers(markers.iter().copied(), curve, |_| true);
@@ -2180,9 +2177,7 @@ fn coordinate_profile_line_endpoints<'a>(
     curve: &'a SketchInputEntity,
     markers_by_id: &HashMap<&str, &'a SketchInputEntity>,
 ) -> Option<[&'a SketchInputEntity; 2]> {
-    let offset = curve
-        .offset()
-        .and_then(|offset| usize::try_from(offset).ok())?;
+    let offset = usize::try_from(curve.offset()).ok()?;
     if curve.kind() != SketchInputKind::LineOrCircle
         || curve.coordinates_m.is_none()
         || !matches!(
@@ -2231,9 +2226,7 @@ pub(super) fn extended_direct_object_line_endpoints<'a>(
     if curve.kind() != SketchInputKind::LineOrCircle {
         return None;
     }
-    let offset = curve
-        .offset()
-        .and_then(|offset| usize::try_from(offset).ok())?;
+    let offset = usize::try_from(curve.offset()).ok()?;
     let endpoint_ids = extended_direct_object_line_endpoint_ids(payload, offset)?;
     let resolve = |id| {
         let mut candidates = markers.iter().copied().filter(|marker| {
@@ -2263,9 +2256,7 @@ pub(super) fn compact_legacy_object_line_endpoints<'a>(
     curve: &SketchInputEntity,
     markers: &[&'a SketchInputEntity],
 ) -> Option<[&'a SketchInputEntity; 2]> {
-    let offset = curve
-        .offset()
-        .and_then(|offset| usize::try_from(offset).ok())?;
+    let offset = usize::try_from(curve.offset()).ok()?;
     let endpoint_ids = compact_legacy_code_one_line_endpoint_indices(payload, offset)?;
     let resolve = |id| {
         let mut candidates = markers.iter().copied().filter(|marker| {
@@ -2292,9 +2283,7 @@ fn extended_wide_selected_axis_endpoints<'a>(
     markers: &[&'a SketchInputEntity],
 ) -> Option<[&'a SketchInputEntity; 2]> {
     let encoded = (|| {
-        let offset = curve
-            .offset()
-            .and_then(|offset| usize::try_from(offset).ok())?;
+        let offset = usize::try_from(curve.offset()).ok()?;
         if curve.kind() != SketchInputKind::LineOrCircle
             || payload.get(offset..offset + LEGACY_EXTENDED_SKETCH_MARKER.len())
                 != Some(LEGACY_EXTENDED_SKETCH_MARKER)
@@ -2367,9 +2356,7 @@ pub(super) fn legacy_marker104_arc_endpoints<'a>(
     markers: &[&'a SketchInputEntity],
 ) -> Option<[&'a SketchInputEntity; 2]> {
     let endpoint_ids = (|| {
-        let offset = curve
-            .offset()
-            .and_then(|offset| usize::try_from(offset).ok())?;
+        let offset = usize::try_from(curve.offset()).ok()?;
         if curve.kind() != SketchInputKind::Arc
             || payload.get(offset..offset + LEGACY_SKETCH_MARKER.len())
                 != Some(LEGACY_SKETCH_MARKER)
@@ -2415,9 +2402,7 @@ fn one_based_point_roster_line_endpoint_markers<'a>(
     markers: &[&'a SketchInputEntity],
 ) -> Option<[&'a SketchInputEntity; 2]> {
     let indices = (|| {
-        let offset = curve
-            .offset()
-            .and_then(|offset| usize::try_from(offset).ok())?;
+        let offset = usize::try_from(curve.offset()).ok()?;
         if payload.get(offset..offset + SKETCH_MARKER.len()) != Some(SKETCH_MARKER)
             || payload.get(offset + 5..offset + 13) != Some(&[0xff; 8])
             || payload.get(offset + 13..offset + 17) != Some(&[0x00, 0x00, 0x80, 0xbf])
@@ -2467,9 +2452,7 @@ fn legacy_point_roster_line_endpoint_markers<'a>(
     markers: &[&'a SketchInputEntity],
 ) -> Option<[&'a SketchInputEntity; 2]> {
     let indices = (|| {
-        let offset = curve
-            .offset()
-            .and_then(|offset| usize::try_from(offset).ok())?;
+        let offset = usize::try_from(curve.offset()).ok()?;
         if curve.kind() != SketchInputKind::LineOrCircle
             || payload.get(offset..offset + LEGACY_SKETCH_MARKER.len())
                 != Some(LEGACY_SKETCH_MARKER)
@@ -2523,9 +2506,7 @@ pub(super) fn legacy_terminal_profile_indexed_endpoints<'a>(
     curve: &SketchInputEntity,
     markers: &[&'a SketchInputEntity],
 ) -> Option<[&'a SketchInputEntity; 2]> {
-    let offset = curve
-        .offset()
-        .and_then(|offset| usize::try_from(offset).ok())?;
+    let offset = usize::try_from(curve.offset()).ok()?;
     let endpoint_offset = legacy_terminal_profile_endpoint_offset(payload, offset)?;
     let endpoint = |relative| Some(u32::from(View::u16_le_at(payload, offset + relative)?));
     let endpoint_ids = [endpoint(endpoint_offset)?, endpoint(endpoint_offset + 2)?];
@@ -2558,9 +2539,7 @@ fn inline_arc_endpoint_markers<'a>(
     arc: &SketchInputEntity,
     markers: &[&'a SketchInputEntity],
 ) -> Option<[&'a SketchInputEntity; 2]> {
-    let offset = arc
-        .offset()
-        .and_then(|offset| usize::try_from(offset).ok())?;
+    let offset = usize::try_from(arc.offset()).ok()?;
     let [_, start, end] = inline_arc_coordinates(payload, offset)?;
     let endpoint = |coordinates: cadmpeg_ir::units::FiniteVector<2>| {
         let mut candidates = markers.iter().copied().filter(|marker| {
@@ -2589,9 +2568,7 @@ fn compact_legacy_142_profile_curve_endpoint_markers<'a>(
     if curve.kind() != SketchInputKind::LineOrCircle || curve.coordinates_m.is_some() {
         return None;
     }
-    let offset = curve
-        .offset()
-        .and_then(|offset| usize::try_from(offset).ok())?;
+    let offset = usize::try_from(curve.offset()).ok()?;
     let [start, end] = compact_legacy_142_profile_curve_endpoints(payload, offset)?;
     let resolve = |coordinates: cadmpeg_ir::units::FiniteVector<2>| {
         let mut candidates = markers.iter().copied().filter(|marker| {
@@ -2647,9 +2624,7 @@ fn current_coordinate_linked_line_endpoints<'a>(
     line: &'a SketchInputEntity,
     markers: &[&'a SketchInputEntity],
 ) -> Option<[&'a SketchInputEntity; 2]> {
-    let offset = line
-        .offset()
-        .and_then(|offset| usize::try_from(offset).ok())?;
+    let offset = usize::try_from(line.offset()).ok()?;
     let cell = payload.get(offset + 86..offset + 98)?;
     let kind = operand_kind(cell[..2].try_into().ok()?)?;
     if payload.get(offset..offset + SKETCH_MARKER.len()) != Some(SKETCH_MARKER)
@@ -2703,9 +2678,7 @@ fn coordinate_centered_line_endpoints<'a>(
     markers: &[&'a SketchInputEntity],
 ) -> Option<[&'a SketchInputEntity; 2]> {
     let center = (|| {
-        let offset = line
-            .offset()
-            .and_then(|offset| usize::try_from(offset).ok())?;
+        let offset = usize::try_from(line.offset()).ok()?;
         let [center_u, center_v] = coordinate_centered_line_center(payload, offset)?.get();
         Some([center_u, center_v])
     })();
@@ -2774,10 +2747,7 @@ fn consecutive_legacy_profile_line_endpoints<'a>(
     line: &'a SketchInputEntity,
     markers: &[&'a SketchInputEntity],
 ) -> Vec<&'a SketchInputEntity> {
-    let Some(offset) = line
-        .offset()
-        .and_then(|offset| usize::try_from(offset).ok())
-    else {
+    let Some(offset) = usize::try_from(line.offset()).ok() else {
         return Vec::new();
     };
     if line.kind() != SketchInputKind::LineOrCircle
@@ -2805,9 +2775,8 @@ fn consecutive_legacy_profile_line_endpoints<'a>(
                 | SketchInputKind::LineOrCircle
                 | SketchInputKind::Arc
         )
-        || next
-            .offset()
-            .and_then(|offset| usize::try_from(offset).ok())
+        || usize::try_from(next.offset())
+            .ok()
             .is_none_or(|next_offset| !sketch_marker_prefix_at(payload, next_offset))
     {
         return Vec::new();
@@ -2820,10 +2789,7 @@ pub(super) fn legacy_terminal_indexed_profile_line(
     curve: &SketchInputEntity,
     markers: &[&SketchInputEntity],
 ) -> bool {
-    let Some(offset) = curve
-        .offset()
-        .and_then(|offset| usize::try_from(offset).ok())
-    else {
+    let Some(offset) = usize::try_from(curve.offset()).ok() else {
         return false;
     };
     if payload.get(offset..offset + LEGACY_EXTENDED_SKETCH_MARKER.len())
@@ -2844,10 +2810,7 @@ pub(super) fn legacy_terminal_indexed_profile_line(
         return false;
     }
     markers.iter().copied().any(|sibling| {
-        let Some(sibling_offset) = sibling
-            .offset()
-            .and_then(|offset| usize::try_from(offset).ok())
-        else {
+        let Some(sibling_offset) = usize::try_from(sibling.offset()).ok() else {
             return false;
         };
         sibling.feature_ref == curve.feature_ref

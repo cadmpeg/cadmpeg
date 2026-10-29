@@ -16,7 +16,6 @@ use crate::records::{
     FeatureInputOperand, FeatureInputOperandKind, FeatureInputScalar, FeatureInputScalarRole,
     SketchInputKind, SketchRelationKind,
 };
-use crate::resolved_features::class_sources::ClassSources;
 use crate::resolved_features::markers::additional_linked_profile_point_coordinates;
 use crate::resolved_features::markers::compact_legacy_profile_vertex;
 use crate::resolved_features::markers::linked_profile_point;
@@ -60,7 +59,7 @@ fn reference_cells_bind_reused_lane_local_tokens_to_their_declared_class() {
     let parent = "sldprt:feature-input:resolved-features#synthetic";
     let kind = FeatureInputOperandKind::Native(NativeOperandTag::try_from(0x81d5).unwrap());
     let reference = |offset| FeatureInputOperand {
-        offset: Some(offset),
+        offset,
         reference_ref: format!("sldprt:feature-input:reference#synthetic:{offset}"),
         kind,
         entity_index: 0,
@@ -72,7 +71,7 @@ fn reference_cells_bind_reused_lane_local_tokens_to_their_declared_class() {
         feature_ref: None,
         ordinal: 0,
         sequence: 0,
-        offset: Some(100),
+        offset: 100,
         object_id: 1,
         name: "name".into(),
         value: cadmpeg_ir::scalar::FiniteReal::new(1.0).expect("finite test scalar"),
@@ -85,13 +84,11 @@ fn reference_cells_bind_reused_lane_local_tokens_to_their_declared_class() {
         parent: parent.into(),
         ordinal: 0,
         sequence: 0,
+        offset: 155,
         name: "sgEntHandle".into(),
     }];
-    let class_sources = ClassSources::from_positions([(&classes[0], 155)]);
 
-    let references = reference_cells(&class_sources, &scalars, &classes)
-        .unwrap()
-        .records;
+    let references = reference_cells(&scalars, &classes).unwrap();
 
     assert_eq!(references.len(), 2);
     assert!(references
@@ -105,23 +102,17 @@ fn reference_cells_bind_reused_lane_local_tokens_to_their_declared_class() {
         parent: parent.into(),
         ordinal: 1,
         sequence: 1,
+        offset: 299,
         name: "sgArcHandle".into(),
     });
-    let class_sources =
-        ClassSources::from_positions([(&ambiguous_classes[0], 155), (&ambiguous_classes[1], 299)]);
-    assert!(
-        reference_cells(&class_sources, &scalars, &ambiguous_classes)
-            .unwrap()
-            .records
-            .iter()
-            .all(|reference| reference.class_ref.is_none())
-    );
+    assert!(reference_cells(&scalars, &ambiguous_classes)
+        .unwrap()
+        .iter()
+        .all(|reference| reference.class_ref.is_none()));
 }
 
 #[test]
 fn reference_cells_copy_operand_identity() {
-    let class_sources = ClassSources::default();
-
     let kind = FeatureInputOperandKind::D6;
     let scalar = FeatureInputScalar {
         id: "scalar".into(),
@@ -129,13 +120,13 @@ fn reference_cells_copy_operand_identity() {
         feature_ref: None,
         ordinal: 0,
         sequence: 0,
-        offset: Some(100),
+        offset: 100,
         object_id: 1,
         name: "name".into(),
         value: cadmpeg_ir::scalar::FiniteReal::new(1.0).unwrap(),
         role: FeatureInputScalarRole::Driving,
         operands: vec![FeatureInputOperand {
-            offset: Some(143),
+            offset: 143,
             reference_ref: "reference".into(),
             kind,
             entity_index: 7,
@@ -143,11 +134,10 @@ fn reference_cells_copy_operand_identity() {
         }],
     };
     assert_eq!(
-        reference_cells(&class_sources, std::slice::from_ref(&scalar), &[])
-            .unwrap()
-            .records,
+        reference_cells(std::slice::from_ref(&scalar), &[]).unwrap(),
         vec![crate::records::FeatureInputReference {
             sequence: 0,
+            offset: scalar.operands[0].offset,
             id: scalar.operands[0].reference_ref.clone(),
             parent: scalar.parent,
             feature_ref: scalar.feature_ref,
@@ -433,12 +423,8 @@ fn compact_spatial_profile_points_project_and_ignore_unindexed_anchors() {
         native_ref: Some(native_ref.into()),
     }];
 
-    let (sketches, entities) = spatial_sketches(
-        &crate::test_support::native::class_sources(std::slice::from_ref(&lane)),
-        &mut features,
-        &[history],
-        std::slice::from_ref(&lane),
-    );
+    let (sketches, entities) =
+        spatial_sketches(&mut features, &[history], std::slice::from_ref(&lane));
 
     assert_eq!(sketches.len(), 1);
     assert_eq!(entities.len(), 2);
@@ -543,12 +529,8 @@ fn current_indexed_profile_spatial_points_project_from_indexed_markers() {
         native_ref: Some(native_ref.into()),
     }];
 
-    let (sketches, entities) = spatial_sketches(
-        &crate::test_support::native::class_sources(std::slice::from_ref(&lane)),
-        &mut features,
-        &[history],
-        std::slice::from_ref(&lane),
-    );
+    let (sketches, entities) =
+        spatial_sketches(&mut features, &[history], std::slice::from_ref(&lane));
 
     assert_eq!(sketches.len(), 1);
     assert_eq!(entities.len(), 2);
@@ -702,11 +684,11 @@ fn relation_binding_requires_family_operand_signature() {
         parent: "lane".into(),
         ordinal: 0,
         sequence: 0,
+        offset: 10,
         name: "sgLLDist".into(),
     };
-    let class_sources = ClassSources::from_positions([(&class, 10)]);
     let operand = |kind, entity_index| FeatureInputOperand {
-        offset: Some(0),
+        offset: 0,
         reference_ref: String::new(),
         kind,
         entity_index,
@@ -718,7 +700,7 @@ fn relation_binding_requires_family_operand_signature() {
         feature_ref: Some("sketch".into()),
         ordinal: 0,
         sequence: 0,
-        offset: Some(20),
+        offset: 20,
         object_id: 1,
         name: "name".into(),
         value: cadmpeg_ir::scalar::FiniteReal::new(1.0).expect("finite test scalar"),
@@ -728,7 +710,6 @@ fn relation_binding_requires_family_operand_signature() {
 
     assert_eq!(
         relation_bindings(
-            &class_sources,
             "lane",
             std::slice::from_ref(&class),
             &[scalar(FeatureInputOperandKind::E1)],
@@ -739,7 +720,6 @@ fn relation_binding_requires_family_operand_signature() {
         1
     );
     assert!(relation_bindings(
-        &class_sources,
         "lane",
         &[class],
         &[scalar(FeatureInputOperandKind::Native(
@@ -760,12 +740,13 @@ fn relation_binding_with_ambiguous_declarations_is_withheld() {
             parent: "lane".into(),
             ordinal: 0,
             sequence: 0,
+            offset,
             name: name.into(),
         };
         (class, offset)
     };
     let operand = |entity_index| FeatureInputOperand {
-        offset: Some(0),
+        offset: 0,
         reference_ref: String::new(),
         kind: FeatureInputOperandKind::Native(NativeOperandTag::TAG_8152),
         entity_index,
@@ -777,7 +758,7 @@ fn relation_binding_with_ambiguous_declarations_is_withheld() {
         feature_ref: Some("sketch".into()),
         ordinal: 0,
         sequence: 0,
-        offset: Some(30),
+        offset: 30,
         object_id: 1,
         name: "name".into(),
         value: cadmpeg_ir::scalar::FiniteReal::new(1.0).expect("finite test scalar"),
@@ -786,14 +767,10 @@ fn relation_binding_with_ambiguous_declarations_is_withheld() {
     };
 
     let declared = [class(10, "sgPntPntDist"), class(20, "sgPntPntVertDist")];
-    let class_sources =
-        ClassSources::from_positions(declared.iter().map(|(class, position)| (class, *position)));
     let classes = declared.map(|(class, _)| class);
-    assert!(
-        relation_bindings(&class_sources, "lane", &classes, &[scalar], &[],)
-            .unwrap()
-            .is_empty()
-    );
+    assert!(relation_bindings("lane", &classes, &[scalar], &[],)
+        .unwrap()
+        .is_empty());
 }
 
 #[test]
@@ -804,11 +781,11 @@ fn scoped_relation_binding_does_not_cross_feature_interval() {
         parent: "lane".into(),
         ordinal: 0,
         sequence: 0,
+        offset: 10,
         name: "sgPntPntDist".into(),
     };
-    let class_sources = ClassSources::from_positions([(&class, 10)]);
     let operand = |entity_index| FeatureInputOperand {
-        offset: Some(0),
+        offset: 0,
         reference_ref: String::new(),
         kind: FeatureInputOperandKind::Native(NativeOperandTag::TAG_8152),
         entity_index,
@@ -820,7 +797,7 @@ fn scoped_relation_binding_does_not_cross_feature_interval() {
         feature_ref: Some("second".into()),
         ordinal: 0,
         sequence: 0,
-        offset: Some(120),
+        offset: 120,
         object_id: 1,
         name: "name".into(),
         value: cadmpeg_ir::scalar::FiniteReal::new(1.0).expect("finite test scalar"),
@@ -829,7 +806,6 @@ fn scoped_relation_binding_does_not_cross_feature_interval() {
     };
 
     assert!(relation_bindings(
-        &class_sources,
         "lane",
         &[class],
         &[scalar],
@@ -1209,7 +1185,7 @@ fn linked_profile_point_carries_coordinates_for_compact_and_long_tails() {
         let entities = super::sketch_input_entities(&payload, "lane");
         let point = entities
             .iter()
-            .find(|entity| entity.offset() == Some(cadmpeg_core::decode::u64_from_index(offset)))
+            .find(|entity| entity.offset() == cadmpeg_core::decode::u64_from_index(offset))
             .expect("linked profile point");
         assert_eq!(point.kind(), SketchInputKind::Point);
         assert_eq!(
@@ -1291,7 +1267,7 @@ fn linked_profile_point_carries_coordinates_for_compact_and_long_tails() {
     let entities = super::sketch_input_entities(&extended, "lane");
     let point = entities
         .iter()
-        .find(|entity| entity.offset() == Some(cadmpeg_core::decode::u64_from_index(offset)))
+        .find(|entity| entity.offset() == cadmpeg_core::decode::u64_from_index(offset))
         .expect("extended-tail linked profile point");
     assert_eq!(point.kind(), SketchInputKind::Point);
     assert_eq!(
@@ -1383,7 +1359,7 @@ fn linked_profile_point_carries_coordinates_for_compact_and_long_tails() {
     );
     let entity = super::sketch_input_entities(&legacy_geometry, "lane")
         .into_iter()
-        .find(|entity| entity.offset() == Some(cadmpeg_core::decode::u64_from_index(offset)))
+        .find(|entity| entity.offset() == cadmpeg_core::decode::u64_from_index(offset))
         .expect("legacy geometry linked profile point");
     assert_eq!(entity.kind(), SketchInputKind::Point);
     assert_eq!(
@@ -1427,7 +1403,7 @@ fn reference_cells_index_classes_by_parent_and_offset() {
     let cell_offset = |index: u64| 1_000 + index * 32;
     let operands = (0..CELLS)
         .map(|index| FeatureInputOperand {
-            offset: Some(cell_offset(index)),
+            offset: cell_offset(index),
             reference_ref: format!("sldprt:feature-input:reference#synthetic:{index}"),
             kind,
             entity_index: 0,
@@ -1440,7 +1416,7 @@ fn reference_cells_index_classes_by_parent_and_offset() {
         feature_ref: None,
         ordinal: 0,
         sequence: 0,
-        offset: Some(100),
+        offset: 100,
         object_id: 1,
         name: "name".into(),
         value: cadmpeg_ir::scalar::FiniteReal::new(1.0).expect("finite test scalar"),
@@ -1454,6 +1430,7 @@ fn reference_cells_index_classes_by_parent_and_offset() {
             parent: parent.into(),
             ordinal: 0,
             sequence: 0,
+            offset,
             name: "sgEntHandle".into(),
         };
         (class, offset)
@@ -1473,16 +1450,12 @@ fn reference_cells_index_classes_by_parent_and_offset() {
         cell_offset(1) + 12,
         "other-lane".into(),
     ));
-    let class_sources =
-        ClassSources::from_positions(declared.iter().map(|(class, position)| (class, *position)));
     let classes = declared
         .into_iter()
         .map(|(class, _)| class)
         .collect::<Vec<_>>();
 
-    let references = reference_cells(&class_sources, &scalars, &classes)
-        .unwrap()
-        .records;
+    let references = reference_cells(&scalars, &classes).unwrap();
 
     assert_eq!(references.len(), usize::try_from(CELLS).unwrap());
     assert!(references

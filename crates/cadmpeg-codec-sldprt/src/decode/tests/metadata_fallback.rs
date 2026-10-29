@@ -145,18 +145,6 @@ fn decode_surfaces_preview_and_solidworks_xml_metadata() {
     );
     assert_eq!(png_data, png);
     assert_eq!(bmp_data, bmp);
-    for asset in [png_assets[0], bmp_assets[0]] {
-        let layout = &decoded.source_fidelity().record_layout()[asset.id.as_str()];
-        assert_eq!(layout.offset(), 0);
-        let cadmpeg_ir::assets::AssetContent::Embedded { data } = &asset.content else {
-            panic!("embedded preview")
-        };
-        assert_eq!(
-            layout.byte_len(),
-            u64::try_from(data.as_bytes().len()).unwrap()
-        );
-        assert_eq!(layout.reads()[layout.stream()], [0..layout.byte_len()]);
-    }
     assert!(attributes
         .keys()
         .all(|key| !key.as_str().starts_with("png_preview_")
