@@ -1,8 +1,7 @@
 {
   "decode": {
     "ir": {
-      "decode_depth": "full",
-      "ir_version": "9",
+      "ir_version": "10",
       "model": {
         "appearance_bindings": [],
         "appearances": [],
@@ -24,6 +23,7 @@
             "id": "nx:feature-history:feature#0000000000-0000000000",
             "name": "FSET",
             "native_ref": "nx:feature-history:operation-label#0000000000-0000000000",
+            "needs_recompute": false,
             "ordinal": 2,
             "source_properties": {
               "object_index.0": "null",
@@ -43,6 +43,7 @@
             "id": "nx:feature-history:feature#0000000000-0000000001",
             "name": "FSET",
             "native_ref": "nx:feature-history:operation-label#0000000000-0000000001",
+            "needs_recompute": false,
             "ordinal": 1,
             "source_properties": {
               "object_index.0": "null",
@@ -63,6 +64,7 @@
             "id": "nx:feature-history:feature#0000000000-0000000002",
             "name": "FSET",
             "native_ref": "nx:feature-history:operation-label#0000000000-0000000002",
+            "needs_recompute": false,
             "ordinal": 0,
             "source_properties": {
               "object_index.0": "null",
@@ -421,6 +423,10 @@
           ]
         }
       },
+      "scope": {
+        "design": true,
+        "model": false
+      },
       "source": {
         "attributes": {
           "deltas_streams": "0",
@@ -428,7 +434,6 @@
           "file_size": "530",
           "footer_entry_count": "0",
           "footer_fingerprint": "00000000",
-          "footer_offset": "516",
           "header_entry_count": "1",
           "jpeg_preview_count": "0",
           "partition_streams": "0",
@@ -481,6 +486,17 @@
           },
           "message": "No B-rep geometry was transferred: no gate-passing analytic carrier was found in the embedded Parasolid streams (they may hold only B-spline/procedural geometry this codec does not yet type). The streams are preserved verbatim as unknown passthrough records.",
           "severity": "blocking"
+        },
+        {
+          "code": {
+            "code": "depth.not-delivered",
+            "kind": "geometry_not_transferred",
+            "namespace": "decode",
+            "scope": "namespaced",
+            "strict_floor": "warning"
+          },
+          "message": "requested full depth but the nx decoder did not deliver classes: model",
+          "severity": "error"
         }
       ],
       "notes": [
@@ -490,7 +506,10 @@
       ],
       "transfer": {
         "geometry_transferred": false,
-        "transfer": "full"
+        "scope": {
+          "design": true,
+          "model": false
+        }
       }
     },
     "source_fidelity": {
@@ -581,7 +600,19 @@
             "tag": "UG_PART_SEGMENT_OM_LINK"
           }
         }
-      }
+      },
+      "retained_records": {
+        "nx:source:image#whole": {
+          "bytes": {
+            "data": "U1BMTVNTVFIGAAAAAAAAAAAEAgAAAAAAAEhFQURFUgEAAAAVAAAAL1Jvb3QvVUdfUEFSVC9VR19QQVJUTAAAAAAAAAC4AQAAAAAAACAAAAAJAAAACwAAAAEAAAABAAAAGAAAAAAAAAAAAAAA/////wAAAAAAAAFST03//wABAhRVR1M6OkZFQVRVUkVfUkVDT1JEoIEhASNFZ4mrze8GIVVHUzo6TW9kbFV0aWxzOjpCb29sZWFuQ29tcG9uZW50ZQltX3RhcmdldIABAghtX3Rvb2xzgQMEdW5mcmFtZWQgVUdTOjpQYXlsb2FkVGV4dJkAAAAAAAAAAAAAAAAAAAAAAAAADQAAAA4AAAAsAAAABQEOTlggMjAyNy4zMTAyAIDNAQQBL6R64UeuFHv///////8DBkZTRVQAMQAAAQAAAAAAAAAAAAAAAAAAAAAAAQl5ZVJhVGSFF14AAwCAzQEEAS+keuFHrhR7////////AwZGU0VUADEAAAEAAAAAAAAAAAAAAAAAAAAAAAAAAwCAzQEEAS+keuFHrhR7////////AwZGU0VUADEAAAEAAAAAAAAAAAAAAAAAAAAAAAEKHBorHRseHyAhAAMAqqqqqqqqqqoRVUdTOjpNb2RsRmVhdHVyZYGoAQAAuAEAAAAAAAAEAQ5OWCAyMDI3LjMxMDIARk9PVEVSAAAAAAAAAAA=",
+            "retention": "inline"
+          },
+          "offset": 0,
+          "stream": "nx:source",
+          "untyped": []
+        }
+      },
+      "unrepresented": []
     }
   },
   "inspect": {

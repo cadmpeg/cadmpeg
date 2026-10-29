@@ -1,8 +1,7 @@
 {
   "decode": {
     "ir": {
-      "decode_depth": "full",
-      "ir_version": "9",
+      "ir_version": "10",
       "model": {
         "appearance_bindings": [],
         "appearances": [],
@@ -158,6 +157,10 @@
           ]
         }
       },
+      "scope": {
+        "design": true,
+        "model": true
+      },
       "source": {
         "attributes": {
           "deltas_streams": "0",
@@ -165,7 +168,6 @@
           "file_size": "312",
           "footer_entry_count": "0",
           "footer_fingerprint": "00000000",
-          "footer_offset": "298",
           "header_entry_count": "1",
           "jpeg_preview_count": "0",
           "partition_streams": "1",
@@ -265,7 +267,10 @@
       ],
       "transfer": {
         "geometry_transferred": true,
-        "transfer": "full"
+        "scope": {
+          "design": true,
+          "model": true
+        }
       }
     },
     "source_fidelity": {
@@ -374,9 +379,20 @@
             "retention": "inline"
           },
           "offset": 76,
-          "stream": "nx:container"
+          "stream": "nx:container",
+          "untyped": []
+        },
+        "nx:source:image#whole": {
+          "bytes": {
+            "data": "U1BMTVNTVFIGESIzAAAAAAAqAQAAAAAAAEhFQURFUgEAAAAVAAAAL1Jvb3QvVUdfUEFSVC9VR19QQVJUTAAAAAAAAADeAAAAAAAAAHgBjUy9CwFhGH/ysVgsVnoXRbf4iljeJF+FcLdfPt5B+eochYlImSWT0ShlUf4Af4LBxGoxWJW3O3eddOXp+fh99PzyLADgCOKK0RybTXMokc7EkatdEsSaWGs13agikJJIqqjcR41WldTrREA9InSoifwBj8cbCtIIKxtL8Vyc5XgvH6YFYAcD1dXGOxVKAM8NXWfCsgEfGCVBXQzej86X5+ylKjoAP2RDuTLTbD+YNIxChs5frUTi9vK4Ot3GCv95doD5W2PwZHBNbm1DvPjc9aFwnzoOehFv7PU570ZPT1RFUgAAAAAAAAAA",
+            "retention": "inline"
+          },
+          "offset": 0,
+          "stream": "nx:source",
+          "untyped": []
         }
-      }
+      },
+      "unrepresented": []
     }
   },
   "inspect": {

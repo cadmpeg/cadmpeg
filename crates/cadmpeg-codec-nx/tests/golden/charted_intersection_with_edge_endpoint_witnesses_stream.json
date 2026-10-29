@@ -1,8 +1,7 @@
 {
   "decode": {
     "ir": {
-      "decode_depth": "full",
-      "ir_version": "9",
+      "ir_version": "10",
       "model": {
         "appearance_bindings": [],
         "appearances": [],
@@ -492,6 +491,10 @@
           ]
         }
       },
+      "scope": {
+        "design": true,
+        "model": true
+      },
       "source": {
         "attributes": {
           "deltas_streams": "0",
@@ -499,7 +502,6 @@
           "file_size": "465",
           "footer_entry_count": "0",
           "footer_fingerprint": "00000000",
-          "footer_offset": "451",
           "header_entry_count": "1",
           "jpeg_preview_count": "0",
           "partition_streams": "1",
@@ -588,7 +590,10 @@
       ],
       "transfer": {
         "geometry_transferred": true,
-        "transfer": "full"
+        "scope": {
+          "design": true,
+          "model": true
+        }
       }
     },
     "source_fidelity": {
@@ -789,9 +794,20 @@
             "retention": "inline"
           },
           "offset": 76,
-          "stream": "nx:container"
+          "stream": "nx:container",
+          "untyped": []
+        },
+        "nx:source:image#whole": {
+          "bytes": {
+            "data": "U1BMTVNTVFIGAAAAAAAAAADDAQAAAAAAAEhFQURFUgEAAAAVAAAAL1Jvb3QvVUdfUEFSVC9VR19QQVJUTAAAAAAAAAB3AQAAAAAAAHgBdVI7TwJBEP4WeSivE+SRGDFXGR4xKiYmWrgxBJUEDPHOmoBcIgmCITRqa2FnYudPoLGzs7K28h/46Gyks7Bw7g64Tbibnd355tuZ3dnJVhUAazuyerx3pFRKqrxfKhfl9EW912/1W91ORj7tafW+1pQbl/J5t6m121qPUiSlcFhTi4pa26htkwBBuIif1hBmDJLRPoMbjEaQZpgwdOHZrY/vpcIqcQweivbmdHo0JaJM6KMEhgh85HoQouEHwyxdjBzmCUAXvjnIrp/k60aYXhUMycNr2Mki3jEh7QD/MdmxNT1hXcac4BF0PNrxiCj8lGdpgC+OegIs6A+0tpBCQPDAb67eDx5j1yJn4JVRHjM8WnLUAoYY4kggiTQxLvLI6CqU5tr9+n26/Twb8mqj8jYc/L083989dICx1ePtpmMpGYpmiJc5WXs1IxJl7njGKyW6kZz6Y1MJEYQo1AMfjbD1QaIIE22pJLQ4BcnacEb/oAZLokZPT1RFUgAAAAAAAAAA",
+            "retention": "inline"
+          },
+          "offset": 0,
+          "stream": "nx:source",
+          "untyped": []
         }
-      }
+      },
+      "unrepresented": []
     }
   },
   "inspect": {

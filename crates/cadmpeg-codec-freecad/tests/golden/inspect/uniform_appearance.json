@@ -101,7 +101,6 @@
     "document root=Document",
     "document kind=part",
     "object count=1",
-    "physical ledger spans=43 coverage=exact",
     "ProgramVersion=1.0R39109 (Git)"
   ]
 }

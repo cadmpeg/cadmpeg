@@ -1,7 +1,6 @@
 {
   "ir": {
-    "decode_depth": "full",
-    "ir_version": "9",
+    "ir_version": "10",
     "model": {
       "appearance_bindings": [],
       "appearances": [],
@@ -138,6 +137,7 @@
         "consolidated_tori": [],
         "consolidated_vertex_identities": [],
         "design_objects": [],
+        "display_colors": [],
         "e5_curve_supports": [],
         "entity_records": [],
         "external_references": [],
@@ -168,13 +168,15 @@
         "zero_entity_vertex_incidences": []
       }
     },
+    "scope": {
+      "design": false,
+      "model": false
+    },
     "source": {
       "attributes": {
         "external_reference_count": "0",
         "file_size": "389",
         "finjpl_segment_count": "0",
-        "inner_offset": "16",
-        "outer_dir_offset": "389",
         "preview_count": "0",
         "stream_count": "1"
       },
@@ -557,6 +559,17 @@
         },
         "message": "B-rep topology graph (body/region/shell/face/loop/coedge/edge/vertex) was not built for this file.",
         "severity": "blocking"
+      },
+      {
+        "code": {
+          "code": "depth.not-delivered",
+          "kind": "geometry_not_transferred",
+          "namespace": "decode",
+          "scope": "namespaced",
+          "strict_floor": "warning"
+        },
+        "message": "requested full depth but the catia decoder did not deliver classes: model, design",
+        "severity": "error"
       }
     ],
     "notes": [
@@ -566,7 +579,10 @@
     ],
     "transfer": {
       "geometry_transferred": false,
-      "transfer": "full"
+      "scope": {
+        "design": false,
+        "model": false
+      }
     }
   },
   "source_fidelity": {
@@ -592,8 +608,19 @@
           "retention": "inline"
         },
         "offset": 0,
-        "stream": "catia:CATPart"
+        "stream": "catia:CATPart",
+        "untyped": []
+      },
+      "catia:source:image#whole": {
+        "bytes": {
+          "data": "VjVfQ0ZWMgAAAAGFAAAAAFY1X0NGVjIAAAAAjgAAAOeyAyRGBYIFCQqHDQAAAAAAAAAAAAAAAAAAJEAAAAAAAADQvwAAAAAAAAAAAAAAAAAAFEAAAAAAAAAAwAAAAAAAACRAAAAAAAAA0D+yAyQuBYIFCQsBAAAAAAAAAAAAAAAAAAAAJEAAAAAAAAAAgAAAAAAAAAAAAAAAAAAAJEBDQVRJQV9WNSBDQjAwMDEAAAAAAAAAAAAAAAAAAAAAfk0AYQBpAG4ARABhAHQAYQBTAHQAcgBlAGEAbQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAABAAAAEAAAAH4AAAB+AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAUwB1AHIAZgBhAGMAaQBjAFIAZQBwAHMAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAEAAACOAAAAAAAAAAAAAAAAAAAAAENCX19FTkQ=",
+          "retention": "inline"
+        },
+        "offset": 0,
+        "stream": "catia:source",
+        "untyped": []
       }
-    }
+    },
+    "unrepresented": []
   }
 }

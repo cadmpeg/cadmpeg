@@ -1,6 +1,6 @@
 {
   "ir": {
-    "ir_version": "8",
+    "ir_version": "10",
     "model": {
       "appearance_bindings": [],
       "appearances": [],
@@ -107,11 +107,8 @@
         "finjpl_segments": [
           {
             "byte_len": 225,
-            "data": {
-              "byte_len": 225,
-              "record_id": "catia:source:evidence#fe674abf16e6b261c586e43781344cec05297d5b3dc4a73cc7755c7ac9050604",
-              "sha256": "b89c2c542c56e1df2f57cf7e1356c8445aece5485e2a2eb0f91a81428b6d15ea"
-            },
+            "byte_offset": 16,
+            "data": "46494e4a504c202001010003000000150043415453756d6d617279496e666f726d6174696f6e4c6173745361766556657273696f6e003c56657273696f6e3e352f3c56657273696f6e3e3c52656c656173653e32372f3c52656c656173653e3c536572766963655061636b3e322f3c536572766963655061636b3e3c4275696c64446174653e30332d31302d323031372e32322e30302f3c4275696c64446174653e3c486f744669783e302f3c486f744669783e00ffd8ffc0000b080120028001011100ffda0008010100003f001122ff0033ffd973756d6d6172792d7461696c",
             "family": "project-flags",
             "id": "catia:outer:finjpl#0",
             "name": "CATSummaryInformation",
@@ -119,11 +116,8 @@
           },
           {
             "byte_len": 134,
-            "data": {
-              "byte_len": 134,
-              "record_id": "catia:source:evidence#1cbbd6be94d7539e15e46214f7624cf4b7ebed821d419d0bb7d49e1bfca1f33b",
-              "sha256": "2277f6fdcc2556d60b190445ba63f8d6b00ec9dee07b3c50fca4a6fcaf4983f1"
-            },
+            "byte_offset": 241,
+            "data": "46494e4a504c2020010100020000000a0043415450726576696577341243415453746f7261676550726f7065727479800100000000220c000000340101003410434154556e69636f6465537472696e67a00200000000340543415449419fa00200000000340f537570706f72742e434154506172749f43415449415f56352043423030303100",
             "family": "project-flags",
             "id": "catia:outer:finjpl#1",
             "name": "CATPreview",
@@ -138,12 +132,9 @@
         "preview_images": [
           {
             "byte_len": 32,
+            "byte_offset": 197,
             "components": 1,
-            "data": {
-              "byte_len": 32,
-              "record_id": "catia:source:evidence#8959ac478b2915dac50619fda35582343d6a109ce04fee0ca1a42a7b366cafad",
-              "sha256": "ef7fecd2f22ffd459c6109400f140c8f7fd8bdce59564bd4a560e00ee8fae8c0"
-            },
+            "data": "ffd8ffc0000b080120028001011100ffda0008010100003f001122ff0033ffd9",
             "height": 288,
             "id": "catia:outer:preview#0",
             "width": 640
@@ -635,13 +626,6 @@
         }
       }
     },
-    "metadata": {
-      "native.catia.external_references.catia:outer:external-reference#0.byte_offset": "341",
-      "native.catia.finjpl_segments.catia:outer:finjpl#0.byte_offset": "16",
-      "native.catia.finjpl_segments.catia:outer:finjpl#1.byte_offset": "241",
-      "native.catia.preview_images.catia:outer:preview#0.byte_offset": "197",
-      "source.outer_dir_offset": "359"
-    },
     "retained_records": {
       "catia:payload:unknown#container": {
         "bytes": {
@@ -650,36 +634,6 @@
         },
         "offset": 0,
         "stream": "catia:CATPart",
-        "untyped": []
-      },
-      "catia:source:evidence#1cbbd6be94d7539e15e46214f7624cf4b7ebed821d419d0bb7d49e1bfca1f33b": {
-        "bytes": {
-          "byte_len": 134,
-          "retention": "digest",
-          "sha256": "2277f6fdcc2556d60b190445ba63f8d6b00ec9dee07b3c50fca4a6fcaf4983f1"
-        },
-        "offset": 0,
-        "stream": "native.catia.finjpl_segments.catia:outer:finjpl#1.data",
-        "untyped": []
-      },
-      "catia:source:evidence#8959ac478b2915dac50619fda35582343d6a109ce04fee0ca1a42a7b366cafad": {
-        "bytes": {
-          "byte_len": 32,
-          "retention": "digest",
-          "sha256": "ef7fecd2f22ffd459c6109400f140c8f7fd8bdce59564bd4a560e00ee8fae8c0"
-        },
-        "offset": 0,
-        "stream": "native.catia.preview_images.catia:outer:preview#0.data",
-        "untyped": []
-      },
-      "catia:source:evidence#fe674abf16e6b261c586e43781344cec05297d5b3dc4a73cc7755c7ac9050604": {
-        "bytes": {
-          "byte_len": 225,
-          "retention": "digest",
-          "sha256": "b89c2c542c56e1df2f57cf7e1356c8445aece5485e2a2eb0f91a81428b6d15ea"
-        },
-        "offset": 0,
-        "stream": "native.catia.finjpl_segments.catia:outer:finjpl#0.data",
         "untyped": []
       },
       "catia:source:image#whole": {

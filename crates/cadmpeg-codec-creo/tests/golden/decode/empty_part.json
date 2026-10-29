@@ -1,7 +1,6 @@
 {
   "ir": {
-    "decode_depth": "full",
-    "ir_version": "9",
+    "ir_version": "10",
     "model": {
       "appearance_bindings": [],
       "appearances": [],
@@ -42,6 +41,10 @@
       "view_presentations": []
     },
     "native": {},
+    "scope": {
+      "design": true,
+      "model": true
+    },
     "source": {
       "attributes": {
         "expanded_section_byte_count": "0",
@@ -525,10 +528,29 @@
     ],
     "transfer": {
       "geometry_transferred": false,
-      "transfer": "full"
+      "scope": {
+        "design": true,
+        "model": true
+      }
     }
   },
   "source_fidelity": {
-    "annotations": {}
+    "annotations": {},
+    "retained_records": {
+      "creo:source:image#whole": {
+        "bytes": {
+          "data": "I1VHQzoyIFAgYwojLUVORF9PRl9VR0NfSEVBREVSCiNVR0NfVE9DCnRvYyBlbnRyeSBsaW5lCiNFTkRfT0ZfVE9DX0hFQURFUgo=",
+          "retention": "inline"
+        },
+        "offset": 0,
+        "stream": "creo:source",
+        "untyped": [
+          "model"
+        ]
+      }
+    },
+    "unrepresented": [
+      "model"
+    ]
   }
 }

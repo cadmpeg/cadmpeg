@@ -1,7 +1,6 @@
 {
   "ir": {
-    "decode_depth": "full",
-    "ir_version": "9",
+    "ir_version": "10",
     "model": {
       "appearance_bindings": [],
       "appearances": [],
@@ -44,6 +43,7 @@
     "native": {
       "sldprt": {
         "configurations": [],
+        "document_metadata": [],
         "feature_histories": [],
         "feature_input_body_selections": [],
         "feature_input_classes": [
@@ -53,7 +53,8 @@
             "offset": 0,
             "ordinal": 0,
             "parent": "sldprt:feature-input:resolved-features#247",
-            "role": "sketch_entity"
+            "role": "sketch_entity",
+            "sequence": 0
           },
           {
             "id": "sldprt:feature-input:class#247:106",
@@ -61,7 +62,8 @@
             "offset": 106,
             "ordinal": 3,
             "parent": "sldprt:feature-input:resolved-features#247",
-            "role": "sketch_constraint"
+            "role": "sketch_constraint",
+            "sequence": 5
           },
           {
             "id": "sldprt:feature-input:class#247:19",
@@ -69,7 +71,8 @@
             "offset": 19,
             "ordinal": 1,
             "parent": "sldprt:feature-input:resolved-features#247",
-            "role": "sketch_entity"
+            "role": "sketch_entity",
+            "sequence": 1
           },
           {
             "id": "sldprt:feature-input:class#247:37",
@@ -77,7 +80,8 @@
             "offset": 37,
             "ordinal": 2,
             "parent": "sldprt:feature-input:resolved-features#247",
-            "role": "sketch_entity"
+            "role": "sketch_entity",
+            "sequence": 2
           }
         ],
         "feature_input_edge_selections": [],
@@ -91,7 +95,10 @@
             "generated_surface_identities": [],
             "id": "sldprt:feature-input:resolved-features#247",
             "names": [],
-            "native_payload": "ffff01000d007367506f696e7448616e646c65ffff01000c0073674c696e6548616e646c65ffff01000b00736741726348616e646c650480fffeff0753006b00650074006300680031000480fffeff0d42006f00730073002d0045007800740072007500640065003100ffff01000c007367506e74506e74446973740480fffeff02440031000000000000000040ffffffff00000000fffeff0000009a9999999999993f0000000100000000000000000000000000000000000000010000000200000000000000d6800000ffffffff00000000d6800200ffffffff00000000ffff1f0003ffffffffffffffff000080bf0200000000000400020001000000000080bf00000400000000000000000000000000000000f03f00000000000000000000000000000000000000000000f0bf00000000000000000100000050530000001f6665617475726520696e70757420656c6c6970746963616c20736b657463680000125343485f53575f33333130335f31313030300032006400000000000000000000000000002b000000000000000000000000000000000000000000000000000000000000000000000000000000003ff00000000000003ff0000000000000000000000000000000000000000000000020004600000000000000000000000000002b000000000000000000000000000000000000000000000000000000000000000000000000000000003ff000000000000000000000000000003ff0000000000000000000000000000040000000000000003ff0000000000000000e000a000000000000c2bc928f996e0000000000000014000000642b00000000000000000000000f0014000000000000001e000a00000011001e000000140000001e003200000028000000002b00100028000000000000c2bc928f996e000000000000000000460000000000120032000000000000000000000000003cc2bc928f996e0000001d003c000000000000000000000000000000000000000040000000000000000000000000000000",
+            "payload_evidence": {
+              "byte_len": 745,
+              "sha256": "a423a752365193f07cedbe08a6ff7690f620987861ca5a260f81039e7b963fde"
+            },
             "references": [],
             "relation_bindings": [],
             "relation_instances": [],
@@ -107,6 +114,7 @@
             "offset": 124,
             "ordinal": 2,
             "parent": "sldprt:feature-input:resolved-features#247",
+            "sequence": 6,
             "value": "D1"
           },
           {
@@ -115,6 +123,7 @@
             "offset": 54,
             "ordinal": 0,
             "parent": "sldprt:feature-input:resolved-features#247",
+            "sequence": 3,
             "value": "Sketch1"
           },
           {
@@ -123,6 +132,7 @@
             "offset": 74,
             "ordinal": 1,
             "parent": "sldprt:feature-input:resolved-features#247",
+            "sequence": 4,
             "value": "Boss-Extrude1"
           }
         ],
@@ -133,7 +143,8 @@
             "object_index": 0,
             "offset": 199,
             "ordinal": 0,
-            "parent": "sldprt:feature-input:resolved-features#247"
+            "parent": "sldprt:feature-input:resolved-features#247",
+            "sequence": 8
           },
           {
             "id": "sldprt:feature-input:reference#247:211",
@@ -141,18 +152,20 @@
             "object_index": 2,
             "offset": 211,
             "ordinal": 1,
-            "parent": "sldprt:feature-input:resolved-features#247"
+            "parent": "sldprt:feature-input:resolved-features#247",
+            "sequence": 9
           }
         ],
         "feature_input_relation_bindings": [
           {
             "class_ref": "sldprt:feature-input:class#247:106",
             "family": "point_point_distance",
-            "id": "sldprt:feature-input:relation-binding#247:106",
+            "id": "sldprt:feature-input:relation-binding#247:3",
             "offset": 106,
             "ordinal": 0,
             "parent": "sldprt:feature-input:resolved-features#247",
-            "scalar_ref": "sldprt:feature-input:scalar#247:156"
+            "scalar_ref": "sldprt:feature-input:scalar#247:156",
+            "sequence": 5
           }
         ],
         "feature_input_relation_instances": [],
@@ -183,6 +196,7 @@
             "ordinal": 0,
             "parent": "sldprt:feature-input:resolved-features#247",
             "role": "driving",
+            "sequence": 7,
             "value": 0.025
           }
         ],
@@ -200,6 +214,7 @@
             "offset": 223,
             "ordinal": 0,
             "parent": "sldprt:feature-input:resolved-features#247",
+            "sequence": 10,
             "state_value": 1.0
           }
         ],
@@ -210,25 +225,13 @@
         ]
       }
     },
+    "scope": {
+      "design": false,
+      "model": false
+    },
     "source": {
       "attributes": {
-        "active_parasolid_block": "Contents/Config-0-Partition",
-        "block_count": "2",
-        "brep_local_sha256": "<elided: digest over tolerantly compared geometry>",
-        "document_local_sha256": "<elided: digest over tolerantly compared geometry>",
-        "outer_version": "0x00000004",
-        "parasolid_schema": "SCH_SW_33103_11000",
-        "sldprt_configuration_feature_states_local_sha256": "<elided: digest over tolerantly compared geometry>",
-        "sldprt_configuration_parameter_values_local_sha256": "<elided: digest over tolerantly compared geometry>",
-        "sldprt_native_configuration_sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
-        "sldprt_native_history_sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
-        "sldprt_native_parameter_sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
-        "sldprt_native_sketch_sha256": "a24822f5b9a7aac0893dba61632d9cfb15500936402629d133692db6250f1dc4",
-        "sldprt_neutral_configuration_local_sha256": "<elided: digest over tolerantly compared geometry>",
-        "sldprt_neutral_feature_local_sha256": "<elided: digest over tolerantly compared geometry>",
-        "sldprt_neutral_parameter_local_sha256": "<elided: digest over tolerantly compared geometry>",
-        "sldprt_neutral_sketch_constraint_local_sha256": "<elided: digest over tolerantly compared geometry>",
-        "sldprt_neutral_sketch_local_sha256": "<elided: digest over tolerantly compared geometry>"
+        "parasolid_schema": "SCH_SW_33103_11000"
       },
       "identity": {
         "classification": "classified",
@@ -362,6 +365,27 @@
         },
         "message": "1 configuration-scoped feature-input lane(s) have duplicate or unresolved configuration identity.",
         "severity": "warning"
+      },
+      {
+        "code": {
+          "code": "sketch.native-geometry",
+          "kind": "feature_history_retained",
+          "namespace": "sldprt",
+          "scope": "namespaced"
+        },
+        "message": "sketch-input entity sldprt:feature-input:sketch-entity#247:223 has no neutral geometry or constraint projection; its typed native marker is retained",
+        "severity": "warning"
+      },
+      {
+        "code": {
+          "code": "depth.not-delivered",
+          "kind": "geometry_not_transferred",
+          "namespace": "decode",
+          "scope": "namespaced",
+          "strict_floor": "warning"
+        },
+        "message": "requested full depth but the sldprt decoder did not deliver classes: model, design",
+        "severity": "error"
       }
     ],
     "notes": [
@@ -371,7 +395,10 @@
     ],
     "transfer": {
       "geometry_transferred": false,
-      "transfer": "full"
+      "scope": {
+        "design": false,
+        "model": false
+      }
     }
   },
   "source_fidelity": {
@@ -402,8 +429,22 @@
           "offset": 0,
           "stream": "source",
           "tag": "source_image"
+        },
+        "sldprt:source:feature-input#3be6fff622b1f76a2eeb17d2418afcbff4036306c78274c4b250c6fe57c92342": {
+          "offset": 0,
+          "stream": "ResolvedFeatures",
+          "tag": "feature_input_layout"
         }
       }
+    },
+    "metadata": {
+      "active_parasolid_block": "Contents/Config-0-Partition",
+      "brep_local_sha256": "887f8427f935ae19a9d4f6884ea91064eec57c60abae9e3bcdc4054c4807e910",
+      "document_local_sha256": "fb2c7757bc92744735b7b36cbccf32f5b806d7ddd472bc0294018ed286b7da08",
+      "outer_version": "0x00000004",
+      "sldprt_swobjects_local_sha256": "586ffb909b0bba2aacc4d34937062d2b3c9cb6c81d2f794c686ad550b192d8dc",
+      "sldprt_swobjects_material_local_sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+      "sldprt_swobjects_metadata_identity_local_sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945"
     },
     "retained_records": {
       "sldprt:file:block#8": {
@@ -412,7 +453,10 @@
           "retention": "inline"
         },
         "offset": 8,
-        "stream": "Contents/Config-0-Partition"
+        "stream": "Contents/Config-0-Partition",
+        "untyped": [
+          "model"
+        ]
       },
       "sldprt:file:source-image#0": {
         "bytes": {
@@ -420,8 +464,21 @@
           "retention": "inline"
         },
         "offset": 0,
-        "stream": "source"
+        "stream": "source",
+        "untyped": []
+      },
+      "sldprt:source:feature-input#3be6fff622b1f76a2eeb17d2418afcbff4036306c78274c4b250c6fe57c92342": {
+        "bytes": {
+          "data": "//8BAA0Ac2dQb2ludEhhbmRsZf//AQAMAHNnTGluZUhhbmRsZf//AQALAHNnQXJjSGFuZGxlBID//v8HUwBrAGUAdABjAGgAMQAEgP/+/w1CAG8AcwBzAC0ARQB4AHQAcgB1AGQAZQAxAP//AQAMAHNnUG50UG50RGlzdASA//7/AkQAMQAAAAAAAAAAQP////8AAAAA//7/AAAAmpmZmZmZmT8AAAABAAAAAAAAAAAAAAAAAAAAAAAAAAEAAAACAAAAAAAAANaAAAD/////AAAAANaAAgD/////AAAAAP//HwAD//////////8AAIC/AgAAAAAABAACAAEAAAAAAIC/AAAEAAAAAAAAAAAAAAAAAAAAAPA/AAAAAAAAAAAAAAAAAAAAAAAAAAAAAPC/AAAAAAAAAAABAAAAUFMAAAAfZmVhdHVyZSBpbnB1dCBlbGxpcHRpY2FsIHNrZXRjaAAAElNDSF9TV18zMzEwM18xMTAwMAAyAGQAAAAAAAAAAAAAAAAAACsAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAP/AAAAAAAAA/8AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAIABGAAAAAAAAAAAAAAAAAAArAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAD/wAAAAAAAAAAAAAAAAAAA/8AAAAAAAAAAAAAAAAAAAQAAAAAAAAAA/8AAAAAAAAAAOAAoAAAAAAADCvJKPmW4AAAAAAAAAFAAAAGQrAAAAAAAAAAAAAAAPABQAAAAAAAAAHgAKAAAAEQAeAAAAFAAAAB4AMgAAACgAAAAAKwAQACgAAAAAAADCvJKPmW4AAAAAAAAAAABGAAAAAAASADIAAAAAAAAAAAAAAAAAPMK8ko+ZbgAAAB0APAAAAAAAAAAAAAAAAAAAAAAAAAAAQAAAAAAAAAAAAAAAAAAAAA==",
+          "retention": "inline"
+        },
+        "offset": 0,
+        "stream": "sldprt",
+        "untyped": []
       }
-    }
+    },
+    "unrepresented": [
+      "model"
+    ]
   }
 }

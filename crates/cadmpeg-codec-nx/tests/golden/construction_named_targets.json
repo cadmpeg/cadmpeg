@@ -1,8 +1,7 @@
 {
   "decode": {
     "ir": {
-      "decode_depth": "full",
-      "ir_version": "9",
+      "ir_version": "10",
       "model": {
         "appearance_bindings": [],
         "appearances": [],
@@ -42,6 +41,7 @@
             "id": "nx:feature-history:feature#0000000000-0000000000",
             "name": "EXTRUDE",
             "native_ref": "nx:feature-history:operation-label#0000000000-0000000000",
+            "needs_recompute": false,
             "ordinal": 1,
             "source_properties": {
               "extrude_construction_profile": "nx:feature-history:extrude-construction-profile#0000000000-0000000000",
@@ -67,6 +67,7 @@
             "id": "nx:feature-history:feature#0000000000-0000000001",
             "name": "Pattern Feature",
             "native_ref": "nx:feature-history:operation-label#0000000000-0000000001",
+            "needs_recompute": false,
             "ordinal": 0,
             "source_properties": {
               "object_index.0": "null",
@@ -697,6 +698,10 @@
           ]
         }
       },
+      "scope": {
+        "design": true,
+        "model": false
+      },
       "source": {
         "attributes": {
           "classified_offset_store_control_count": "0",
@@ -705,7 +710,6 @@
           "file_size": "567",
           "footer_entry_count": "0",
           "footer_fingerprint": "00000000",
-          "footer_offset": "553",
           "header_entry_count": "1",
           "jpeg_preview_count": "0",
           "offset_store_control_count": "1",
@@ -770,6 +774,17 @@
           },
           "message": "1 of 1 bounded offset-store control block(s) have no admitted complete grammar.",
           "severity": "warning"
+        },
+        {
+          "code": {
+            "code": "depth.not-delivered",
+            "kind": "geometry_not_transferred",
+            "namespace": "decode",
+            "scope": "namespaced",
+            "strict_floor": "warning"
+          },
+          "message": "requested full depth but the nx decoder did not deliver classes: model",
+          "severity": "error"
         }
       ],
       "notes": [
@@ -781,7 +796,10 @@
       ],
       "transfer": {
         "geometry_transferred": false,
-        "transfer": "full"
+        "scope": {
+          "design": true,
+          "model": false
+        }
       }
     },
     "source_fidelity": {
@@ -916,7 +934,8 @@
             "retention": "inline"
           },
           "offset": 489,
-          "stream": "nx:container"
+          "stream": "nx:container",
+          "untyped": []
         },
         "nx:om-section-0:block#1": {
           "bytes": {
@@ -924,7 +943,8 @@
             "retention": "inline"
           },
           "offset": 505,
-          "stream": "nx:container"
+          "stream": "nx:container",
+          "untyped": []
         },
         "nx:om-section-0:block#10": {
           "bytes": {
@@ -932,7 +952,8 @@
             "retention": "inline"
           },
           "offset": 552,
-          "stream": "nx:container"
+          "stream": "nx:container",
+          "untyped": []
         },
         "nx:om-section-0:block#2": {
           "bytes": {
@@ -940,7 +961,8 @@
             "retention": "inline"
           },
           "offset": 525,
-          "stream": "nx:container"
+          "stream": "nx:container",
+          "untyped": []
         },
         "nx:om-section-0:block#3": {
           "bytes": {
@@ -948,7 +970,8 @@
             "retention": "inline"
           },
           "offset": 545,
-          "stream": "nx:container"
+          "stream": "nx:container",
+          "untyped": []
         },
         "nx:om-section-0:block#4": {
           "bytes": {
@@ -956,7 +979,8 @@
             "retention": "inline"
           },
           "offset": 546,
-          "stream": "nx:container"
+          "stream": "nx:container",
+          "untyped": []
         },
         "nx:om-section-0:block#5": {
           "bytes": {
@@ -964,7 +988,8 @@
             "retention": "inline"
           },
           "offset": 547,
-          "stream": "nx:container"
+          "stream": "nx:container",
+          "untyped": []
         },
         "nx:om-section-0:block#6": {
           "bytes": {
@@ -972,7 +997,8 @@
             "retention": "inline"
           },
           "offset": 548,
-          "stream": "nx:container"
+          "stream": "nx:container",
+          "untyped": []
         },
         "nx:om-section-0:block#7": {
           "bytes": {
@@ -980,7 +1006,8 @@
             "retention": "inline"
           },
           "offset": 549,
-          "stream": "nx:container"
+          "stream": "nx:container",
+          "untyped": []
         },
         "nx:om-section-0:block#8": {
           "bytes": {
@@ -988,7 +1015,8 @@
             "retention": "inline"
           },
           "offset": 550,
-          "stream": "nx:container"
+          "stream": "nx:container",
+          "untyped": []
         },
         "nx:om-section-0:block#9": {
           "bytes": {
@@ -996,9 +1024,26 @@
             "retention": "inline"
           },
           "offset": 551,
-          "stream": "nx:container"
+          "stream": "nx:container",
+          "untyped": []
+        },
+        "nx:source:image#whole": {
+          "bytes": {
+            "data": "U1BMTVNTVFIGAAAAAAAAAAApAgAAAAAAAEhFQURFUgEAAAAVAAAAL1Jvb3QvVUdfUEFSVC9VR19QQVJUTAAAAAAAAADdAQAAAAAAACAAAAAJAAAACwAAAAEAAAABAAAAGAAAAAAAAAAAAAAA/////wAAAAAAAAEfT03//wABAhRVR1M6OkZFQVRVUkVfUkVDT1JEoIEhASNFZ4mrze8GIVVHUzo6TW9kbFV0aWxzOjpCb29sZWFuQ29tcG9uZW50ZQltX3RhcmdldIABAghtX3Rvb2xzgQMEdW5mcmFtZWQgVUdTOjpQYXlsb2FkVGV4dJkAAAAAAAAAAAAAAAAAAAAAAAAADQAAAA4AAAAsAAAABQEOTlggMjAyNy4zMTAyAIDNAQQBL6R64UeuFHv///////8DCUVYVFJVREUAAQJ+AQLwAQEDeQEC8AEAAIDNAQQBL6R64UeuFHv///////8DEVBhdHRlcm4gRmVhdHVyZQBh8AL/AP8B8APwBGHwBf8A/wHwBvAH/2LwCPAJ/wAAAfAK////AQAAqqqqqqqqqqoRVUdTOjpNb2RsRmVhdHVyZYGdAQAArQEAAMEBAADVAQAA1gEAANcBAADYAQAA2QEAANoBAADbAQAA3AEAAN0BAAAKAAAABAEOTlggMjAyNy4zMTAyAOA8ARahAKcBZjIDCVByb2ZpbGUA4DwBFqEBpwFmMgMJUGF0dGVybgAAAAAAAAAAAEZPT1RFUgAAAAAAAAAA",
+            "retention": "inline"
+          },
+          "offset": 0,
+          "stream": "nx:source",
+          "untyped": [
+            "model",
+            "design"
+          ]
         }
-      }
+      },
+      "unrepresented": [
+        "model",
+        "design"
+      ]
     }
   },
   "inspect": {

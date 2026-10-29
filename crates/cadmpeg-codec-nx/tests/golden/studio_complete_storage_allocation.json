@@ -1,8 +1,7 @@
 {
   "decode": {
     "ir": {
-      "decode_depth": "full",
-      "ir_version": "9",
+      "ir_version": "10",
       "model": {
         "appearance_bindings": [],
         "appearances": [],
@@ -24,6 +23,7 @@
             "id": "nx:feature-history:feature#0000000000-0000000000",
             "name": "Studio Surface",
             "native_ref": "nx:feature-history:operation-label#0000000000-0000000000",
+            "needs_recompute": false,
             "ordinal": 0,
             "source_properties": {
               "object_index.0": "null",
@@ -1103,6 +1103,10 @@
           ]
         }
       },
+      "scope": {
+        "design": true,
+        "model": false
+      },
       "source": {
         "attributes": {
           "classified_offset_store_control_count": "0",
@@ -1111,7 +1115,6 @@
           "file_size": "757",
           "footer_entry_count": "0",
           "footer_fingerprint": "00000000",
-          "footer_offset": "743",
           "header_entry_count": "1",
           "jpeg_preview_count": "0",
           "offset_store_control_count": "1",
@@ -1176,6 +1179,17 @@
           },
           "message": "1 of 1 bounded offset-store control block(s) have no admitted complete grammar.",
           "severity": "warning"
+        },
+        {
+          "code": {
+            "code": "depth.not-delivered",
+            "kind": "geometry_not_transferred",
+            "namespace": "decode",
+            "scope": "namespaced",
+            "strict_floor": "warning"
+          },
+          "message": "requested full depth but the nx decoder did not deliver classes: model",
+          "severity": "error"
         }
       ],
       "notes": [
@@ -1187,7 +1201,10 @@
       ],
       "transfer": {
         "geometry_transferred": false,
-        "transfer": "full"
+        "scope": {
+          "design": true,
+          "model": false
+        }
       }
     },
     "source_fidelity": {
@@ -1393,7 +1410,8 @@
             "retention": "inline"
           },
           "offset": 699,
-          "stream": "nx:container"
+          "stream": "nx:container",
+          "untyped": []
         },
         "nx:om-section-0:block#1": {
           "bytes": {
@@ -1401,7 +1419,8 @@
             "retention": "inline"
           },
           "offset": 715,
-          "stream": "nx:container"
+          "stream": "nx:container",
+          "untyped": []
         },
         "nx:om-section-0:block#10": {
           "bytes": {
@@ -1409,7 +1428,8 @@
             "retention": "inline"
           },
           "offset": 724,
-          "stream": "nx:container"
+          "stream": "nx:container",
+          "untyped": []
         },
         "nx:om-section-0:block#11": {
           "bytes": {
@@ -1417,7 +1437,8 @@
             "retention": "inline"
           },
           "offset": 725,
-          "stream": "nx:container"
+          "stream": "nx:container",
+          "untyped": []
         },
         "nx:om-section-0:block#12": {
           "bytes": {
@@ -1425,7 +1446,8 @@
             "retention": "inline"
           },
           "offset": 726,
-          "stream": "nx:container"
+          "stream": "nx:container",
+          "untyped": []
         },
         "nx:om-section-0:block#13": {
           "bytes": {
@@ -1433,7 +1455,8 @@
             "retention": "inline"
           },
           "offset": 727,
-          "stream": "nx:container"
+          "stream": "nx:container",
+          "untyped": []
         },
         "nx:om-section-0:block#14": {
           "bytes": {
@@ -1441,7 +1464,8 @@
             "retention": "inline"
           },
           "offset": 728,
-          "stream": "nx:container"
+          "stream": "nx:container",
+          "untyped": []
         },
         "nx:om-section-0:block#15": {
           "bytes": {
@@ -1449,7 +1473,8 @@
             "retention": "inline"
           },
           "offset": 729,
-          "stream": "nx:container"
+          "stream": "nx:container",
+          "untyped": []
         },
         "nx:om-section-0:block#16": {
           "bytes": {
@@ -1457,7 +1482,8 @@
             "retention": "inline"
           },
           "offset": 730,
-          "stream": "nx:container"
+          "stream": "nx:container",
+          "untyped": []
         },
         "nx:om-section-0:block#17": {
           "bytes": {
@@ -1465,7 +1491,8 @@
             "retention": "inline"
           },
           "offset": 731,
-          "stream": "nx:container"
+          "stream": "nx:container",
+          "untyped": []
         },
         "nx:om-section-0:block#18": {
           "bytes": {
@@ -1473,7 +1500,8 @@
             "retention": "inline"
           },
           "offset": 732,
-          "stream": "nx:container"
+          "stream": "nx:container",
+          "untyped": []
         },
         "nx:om-section-0:block#19": {
           "bytes": {
@@ -1481,7 +1509,8 @@
             "retention": "inline"
           },
           "offset": 733,
-          "stream": "nx:container"
+          "stream": "nx:container",
+          "untyped": []
         },
         "nx:om-section-0:block#2": {
           "bytes": {
@@ -1489,7 +1518,8 @@
             "retention": "inline"
           },
           "offset": 716,
-          "stream": "nx:container"
+          "stream": "nx:container",
+          "untyped": []
         },
         "nx:om-section-0:block#20": {
           "bytes": {
@@ -1497,7 +1527,8 @@
             "retention": "inline"
           },
           "offset": 734,
-          "stream": "nx:container"
+          "stream": "nx:container",
+          "untyped": []
         },
         "nx:om-section-0:block#21": {
           "bytes": {
@@ -1505,7 +1536,8 @@
             "retention": "inline"
           },
           "offset": 735,
-          "stream": "nx:container"
+          "stream": "nx:container",
+          "untyped": []
         },
         "nx:om-section-0:block#22": {
           "bytes": {
@@ -1513,7 +1545,8 @@
             "retention": "inline"
           },
           "offset": 736,
-          "stream": "nx:container"
+          "stream": "nx:container",
+          "untyped": []
         },
         "nx:om-section-0:block#23": {
           "bytes": {
@@ -1521,7 +1554,8 @@
             "retention": "inline"
           },
           "offset": 737,
-          "stream": "nx:container"
+          "stream": "nx:container",
+          "untyped": []
         },
         "nx:om-section-0:block#24": {
           "bytes": {
@@ -1529,7 +1563,8 @@
             "retention": "inline"
           },
           "offset": 738,
-          "stream": "nx:container"
+          "stream": "nx:container",
+          "untyped": []
         },
         "nx:om-section-0:block#25": {
           "bytes": {
@@ -1537,7 +1572,8 @@
             "retention": "inline"
           },
           "offset": 739,
-          "stream": "nx:container"
+          "stream": "nx:container",
+          "untyped": []
         },
         "nx:om-section-0:block#26": {
           "bytes": {
@@ -1545,7 +1581,8 @@
             "retention": "inline"
           },
           "offset": 740,
-          "stream": "nx:container"
+          "stream": "nx:container",
+          "untyped": []
         },
         "nx:om-section-0:block#27": {
           "bytes": {
@@ -1553,7 +1590,8 @@
             "retention": "inline"
           },
           "offset": 741,
-          "stream": "nx:container"
+          "stream": "nx:container",
+          "untyped": []
         },
         "nx:om-section-0:block#28": {
           "bytes": {
@@ -1561,7 +1599,8 @@
             "retention": "inline"
           },
           "offset": 742,
-          "stream": "nx:container"
+          "stream": "nx:container",
+          "untyped": []
         },
         "nx:om-section-0:block#3": {
           "bytes": {
@@ -1569,7 +1608,8 @@
             "retention": "inline"
           },
           "offset": 717,
-          "stream": "nx:container"
+          "stream": "nx:container",
+          "untyped": []
         },
         "nx:om-section-0:block#4": {
           "bytes": {
@@ -1577,7 +1617,8 @@
             "retention": "inline"
           },
           "offset": 718,
-          "stream": "nx:container"
+          "stream": "nx:container",
+          "untyped": []
         },
         "nx:om-section-0:block#5": {
           "bytes": {
@@ -1585,7 +1626,8 @@
             "retention": "inline"
           },
           "offset": 719,
-          "stream": "nx:container"
+          "stream": "nx:container",
+          "untyped": []
         },
         "nx:om-section-0:block#6": {
           "bytes": {
@@ -1593,7 +1635,8 @@
             "retention": "inline"
           },
           "offset": 720,
-          "stream": "nx:container"
+          "stream": "nx:container",
+          "untyped": []
         },
         "nx:om-section-0:block#7": {
           "bytes": {
@@ -1601,7 +1644,8 @@
             "retention": "inline"
           },
           "offset": 721,
-          "stream": "nx:container"
+          "stream": "nx:container",
+          "untyped": []
         },
         "nx:om-section-0:block#8": {
           "bytes": {
@@ -1609,7 +1653,8 @@
             "retention": "inline"
           },
           "offset": 722,
-          "stream": "nx:container"
+          "stream": "nx:container",
+          "untyped": []
         },
         "nx:om-section-0:block#9": {
           "bytes": {
@@ -1617,9 +1662,26 @@
             "retention": "inline"
           },
           "offset": 723,
-          "stream": "nx:container"
+          "stream": "nx:container",
+          "untyped": []
+        },
+        "nx:source:image#whole": {
+          "bytes": {
+            "data": "U1BMTVNTVFIGAAAAAAAAAADnAgAAAAAAAEhFQURFUgEAAAAVAAAAL1Jvb3QvVUdfUEFSVC9VR19QQVJUTAAAAAAAAACbAgAAAAAAACAAAAAJAAAACwAAAAEAAAABAAAAGAAAAAAAAAAAAAAA/////wAAAAAAAAGpT03//wABAhRVR1M6OkZFQVRVUkVfUkVDT1JEoIEhASNFZ4mrze8GIVVHUzo6TW9kbFV0aWxzOjpCb29sZWFuQ29tcG9uZW50ZQltX3RhcmdldIABAghtX3Rvb2xzgQMEdW5mcmFtZWQgVUdTOjpQYXlsb2FkVGV4dJkAAAAAAAAAAAAAAAAAAAAAAAAADQAAAA4AAAAsAAAABQEOTlggMjAyNy4zMTAyAIDNAQQBL6R64UeuFHv///////8DEFN0dWRpbyBTdXJmYWNlABQAAAEA8AHwAvADAQkCAgIFAgEBAQEJ8ATwBfAG8AfwCPAJ8ArwCwIBoFpQFQEDFgEC8AwBAgAAAAAA/wEC8A0AoBBUFgEC8A4BAgAAAAAA/wEC8A8AXQECFgEC8BABAgAAAAAA/wEC8BEAiRwAAAAAAP//AQAAAAAAAAAAAAEEAgEBAQUBAQEBAQnwEvAT8BTwFfAW8BfwGPAZAQX/////FQEQBAQCAqBaUAgIAgIBAQEBAgIBBS+keuFHrhR7AwMvpHrhR64Ue/Aa8BvwHAEB////////////AAAAAAECqqqqqqqqqqoRVUdTOjpNb2RsRmVhdHVyZYFvAgAAfwIAAIACAACBAgAAggIAAIMCAACEAgAAhQIAAIYCAACHAgAAiAIAAIkCAACKAgAAiwIAAIwCAACNAgAAjgIAAI8CAACQAgAAkQIAAJICAACTAgAAlAIAAJUCAACWAgAAlwIAAJgCAACZAgAAmgIAAJsCAAAcAAAABAEOTlggMjAyNy4zMTAyAEFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFGT09URVIAAAAAAAAAAA==",
+            "retention": "inline"
+          },
+          "offset": 0,
+          "stream": "nx:source",
+          "untyped": [
+            "model",
+            "design"
+          ]
         }
-      }
+      },
+      "unrepresented": [
+        "model",
+        "design"
+      ]
     }
   },
   "inspect": {

@@ -1,7 +1,6 @@
 {
   "ir": {
-    "decode_depth": "full",
-    "ir_version": "9",
+    "ir_version": "10",
     "model": {
       "appearance_bindings": [],
       "appearances": [],
@@ -20,6 +19,7 @@
             "definition": "stored_geometry"
           },
           "id": "creo:model:feature#4",
+          "needs_recompute": false,
           "ordinal": 0,
           "suppressed": false
         }
@@ -31,7 +31,19 @@
       "pmi": [],
       "points": [],
       "presentation_documents": [],
-      "presentation_layers": [],
+      "presentation_layers": [
+        {
+          "id": "creo:document:layer#VisibGeom",
+          "items": [
+            {
+              "kind": "surface",
+              "surface": "creo:visibgeom:surface#7"
+            }
+          ],
+          "name": "VisibGeom",
+          "visible": true
+        }
+      ],
       "procedural_curves": [],
       "procedural_surfaces": [],
       "product_definitions": [],
@@ -230,6 +242,10 @@
           }
         ]
       }
+    },
+    "scope": {
+      "design": true,
+      "model": true
     },
     "source": {
       "attributes": {
@@ -742,7 +758,10 @@
     ],
     "transfer": {
       "geometry_transferred": false,
-      "transfer": "full"
+      "scope": {
+        "design": true,
+        "model": true
+      }
     }
   },
   "source_fidelity": {
@@ -792,8 +811,23 @@
           "retention": "inline"
         },
         "offset": 76,
-        "stream": "creo:VisibGeom"
+        "stream": "creo:VisibGeom",
+        "untyped": []
+      },
+      "creo:source:image#whole": {
+        "bytes": {
+          "data": "I1VHQzoyIFAgYwojLUVORF9PRl9VR0NfSEVBREVSCiNVR0NfVE9DCnRvYyBlbnRyeSBsaW5lCiNFTkRfT0ZfVE9DX0hFQURFUgojCiNWaXNpYkdlb20Kc3JmX2FycmF5APgB4CJwAGNydl9hcnJheQDz+AAHJgQBAAAYGAERLrASRwUzLS3//////ylHBTMuBTMtMaZmZmZmZhjj",
+          "retention": "inline"
+        },
+        "offset": 0,
+        "stream": "creo:source",
+        "untyped": [
+          "model"
+        ]
       }
-    }
+    },
+    "unrepresented": [
+      "model"
+    ]
   }
 }

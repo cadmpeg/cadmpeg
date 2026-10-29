@@ -1,7 +1,6 @@
 {
   "ir": {
-    "decode_depth": "full",
-    "ir_version": "9",
+    "ir_version": "10",
     "model": {
       "appearance_bindings": [],
       "appearances": [],
@@ -675,6 +674,7 @@
           }
         ],
         "design_objects": [],
+        "display_colors": [],
         "e5_curve_supports": [],
         "entity_records": [],
         "external_references": [],
@@ -713,6 +713,10 @@
         "zero_entity_vertex_incidences": []
       }
     },
+    "scope": {
+      "design": true,
+      "model": true
+    },
     "source": {
       "attributes": {
         "brep_stream_len": "324",
@@ -722,8 +726,6 @@
         "fbb_runs": "1",
         "file_size": "1404",
         "finjpl_segment_count": "0",
-        "inner_offset": "833",
-        "outer_dir_offset": "1404",
         "preview_count": "0",
         "stream_count": "2",
         "vertex_records": "3"
@@ -1191,6 +1193,36 @@
         },
         "message": "Standard circles with an exact adjacent-carrier section normal or two non-collinear endpoint radii, plane-plane lines, and same-surface cylinder or cone generators are transferred as curves. Standard spline edges retain exact two-surface intersection constructions and their identity-bound support pcurves when present, but unbound serialized 3D NURBS caches, materials, and document metadata are not yet transferred.",
         "severity": "warning"
+      },
+      {
+        "code": {
+          "code": "projection.record-unprojected",
+          "kind": "metadata_not_transferred",
+          "namespace": "catia",
+          "scope": "namespaced"
+        },
+        "message": "Consolidated pcurve catia:consolidated:pcurve#0 has no neutral pcurve in this projection.",
+        "severity": "warning"
+      },
+      {
+        "code": {
+          "code": "projection.record-unprojected",
+          "kind": "metadata_not_transferred",
+          "namespace": "catia",
+          "scope": "namespaced"
+        },
+        "message": "Consolidated pcurve catia:consolidated:pcurve#1 has no neutral pcurve in this projection.",
+        "severity": "warning"
+      },
+      {
+        "code": {
+          "code": "projection.record-unprojected",
+          "kind": "metadata_not_transferred",
+          "namespace": "catia",
+          "scope": "namespaced"
+        },
+        "message": "Consolidated edge run catia:consolidated:edge-run#0 has no neutral edge in this projection.",
+        "severity": "warning"
       }
     ],
     "notes": [
@@ -1201,7 +1233,10 @@
     ],
     "transfer": {
       "geometry_transferred": true,
-      "transfer": "full"
+      "scope": {
+        "design": true,
+        "model": true
+      }
     }
   },
   "source_fidelity": {
@@ -1362,8 +1397,19 @@
           "retention": "inline"
         },
         "offset": 0,
-        "stream": "catia:MainDataStream+SurfacicReps"
+        "stream": "catia:MainDataStream+SurfacicReps",
+        "untyped": []
+      },
+      "catia:source:image#whole": {
+        "bytes": {
+          "data": "VjVfQ0ZWMgAAAAV8AAAAAKUDIIsAAAAFCDQSFQkICQAAAAAAAAAAAAAAAAAA8D8JAgAAAAAAAAAAAAAAAAAA8D8AAAAAAAAAAAAAAAAAAPA/AAAAAAAA8D8AAAAAAADwPwAAAAAAAAAAAAAAAAAAAAAFAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAPA/B6UDIIsAAAAFCDQSFQkICQAAAAAAAAAAAAAAAAAA8D8JAgAAAAAAAAAAAAAAAAAA8D8AAAAAAAAAAAAAAAAAAAAAAAAAAAAA8D8AAAAAAADwPwAAAAAAAAAAAAAAAAAAAAAFAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAPA/B7IDI04AAAAAAAAAAAAAAAAAAAAAAAAAAADwP43ttaD3xrA+AAAAAAAAAAAAAAAAAADwPwAAAAAAAPA/AAAAAAAAAAAAAAAAAADwP43ttaD3xrA+sgMGBAWCERWIsgMGBAWCFRmEsgNeCAUZBosGjgkFIbIDKFoFAAAAAAAA8D8AAAAAAAAAQAAAAAAAAAhAGQAAAAAAAPA/AAAAAAAAAAAAAAAAAADwPwAAAAAAAABAAAAAAAAAAAAYLURU+yEpQAAAAAAAABDAAAAAAAAAFEAHpQM0FAEAAAAFCQwAAAAAAAAAAAAAAAAAAPA/BQkMAAAAAAAAAAAAAAAAAADwPwEAAAAAAADwPwAAAAAAABBAAAAAAAAACEAAAAAAAADwPwAAAAAAABBAAAAAAAAAEEAAAAAAAAAAQKi+LQOUCg5AfMESHbqrD0AAAAAAAAAAQKi+LQOUCg5AvmCJDt3VE0AFBQUFAAAAAAAAAAAAAAAAAADwPwAAAAAAAAAAAAAAAAAA8D8AAAAAAADwPwAAAAAAAAAAAAAAAAAA8D8AAAAAAAAAAAEBAQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAABAAEABwcFCAEAAIA/AACAQAAAQEAFCAEAAABAoFRwQNFdfUBWNV9DRlYyAAAAAVQAAADnAUEB/wMAAAAAAAABAAIBSQH/AwAAAAAAAAAAAAAAAACAPwAAAAEAAjAEBP/S0tLSMAQE/9LS0tIBAQAQJAT//wAAAAECABAkBP//AAAAAQYDBQgBAAAAAAAAAAAAAAAABQgBAAAgQQAAAAAAAAAABQgBAAAAAAAAIEEAAAAAqrvMABoAMzMAAAAAAAAAAAAAAAAAAAAAAAAAAECgAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAREiMwACADMyAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAP//ESIzAAIAMzIAAIA/AAAAQAAAQEAAAAAAAACAQAAAAAAAAIA/AAAAQAAAQEAAAIBAYERVZgASADM3AAAAAAAAAAAAAAAAQKAAAAABQ0FUSUFfVjUgQ0IwMDAxAAAAAAAAAAAAAAAAAAAAAH5NAGEAaQBuAEQAYQB0AGEAUwB0AHIAZQBhAG0AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAQAAABAAAAB+AAAAfgAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAxlMAdQByAGYAYQBjAGkAYwBSAGUAcABzAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAABAAAAjgAAAMYAAADGAAAAAAAAAABDQl9fRU5E",
+          "retention": "inline"
+        },
+        "offset": 0,
+        "stream": "catia:source",
+        "untyped": []
       }
-    }
+    },
+    "unrepresented": []
   }
 }

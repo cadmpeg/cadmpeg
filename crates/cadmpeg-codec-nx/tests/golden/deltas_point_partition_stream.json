@@ -1,8 +1,7 @@
 {
   "decode": {
     "ir": {
-      "decode_depth": "full",
-      "ir_version": "9",
+      "ir_version": "10",
       "model": {
         "appearance_bindings": [],
         "appearances": [],
@@ -60,6 +59,10 @@
           ]
         }
       },
+      "scope": {
+        "design": false,
+        "model": false
+      },
       "source": {
         "attributes": {
           "deltas.0.bytes_decoded": "0",
@@ -74,7 +77,6 @@
           "file_size": "215",
           "footer_entry_count": "0",
           "footer_fingerprint": "00000000",
-          "footer_offset": "201",
           "header_entry_count": "1",
           "jpeg_preview_count": "0",
           "partition_streams": "0",
@@ -156,6 +158,17 @@
           },
           "message": "The Parasolid stream at stream@76 declares schema \"SCH_TEST_1_9999\", which has no declared grammar. It was admitted as the `parasolid:unknown` residual layer without substituting another schema grammar; bounded structural recovery retains the source stream.",
           "severity": "warning"
+        },
+        {
+          "code": {
+            "code": "depth.not-delivered",
+            "kind": "geometry_not_transferred",
+            "namespace": "decode",
+            "scope": "namespaced",
+            "strict_floor": "warning"
+          },
+          "message": "requested full depth but the nx decoder did not deliver classes: model, design",
+          "severity": "error"
         }
       ],
       "notes": [
@@ -164,7 +177,10 @@
       ],
       "transfer": {
         "geometry_transferred": false,
-        "transfer": "full"
+        "scope": {
+          "design": false,
+          "model": false
+        }
       }
     },
     "source_fidelity": {
@@ -195,9 +211,20 @@
             "retention": "inline"
           },
           "offset": 76,
-          "stream": "nx:container"
+          "stream": "nx:container",
+          "untyped": []
+        },
+        "nx:source:image#whole": {
+          "bytes": {
+            "data": "U1BMTVNTVFIGAAAAAAAAAADJAAAAAAAAAEhFQURFUgEAAAAVAAAAL1Jvb3QvVUdfUEFSVC9VR19QQVJUTAAAAAAAAAB9AAAAAAAAAHgBAXIAjf9QUwAAACw6IFRSQU5TTUlUIEZJTEUgKGRlbHRhcykgY3JlYXRlZCBieSBtb2RlbGxlcgAAAA9TQ0hfVEVTVF8xXzk5OTkAAB0AMgAAA4QAAQEAAQEAAQEAAQE/iZmZmZmZmr9gYk3S8an8P3BiTdLxqfzPLyLJRk9PVEVSAAAAAAAAAAA=",
+            "retention": "inline"
+          },
+          "offset": 0,
+          "stream": "nx:source",
+          "untyped": []
         }
-      }
+      },
+      "unrepresented": []
     }
   },
   "inspect": {

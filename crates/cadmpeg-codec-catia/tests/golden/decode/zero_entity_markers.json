@@ -1,7 +1,6 @@
 {
   "ir": {
-    "decode_depth": "full",
-    "ir_version": "9",
+    "ir_version": "10",
     "model": {
       "appearance_bindings": [],
       "appearances": [],
@@ -67,6 +66,7 @@
         "consolidated_tori": [],
         "consolidated_vertex_identities": [],
         "design_objects": [],
+        "display_colors": [],
         "e5_curve_supports": [],
         "entity_records": [],
         "external_references": [],
@@ -133,12 +133,15 @@
         "zero_entity_vertex_incidences": []
       }
     },
+    "scope": {
+      "design": false,
+      "model": false
+    },
     "source": {
       "attributes": {
         "external_reference_count": "0",
         "file_size": "76",
         "finjpl_segment_count": "0",
-        "outer_dir_offset": "0",
         "preview_count": "0"
       },
       "identity": {
@@ -520,6 +523,67 @@
         },
         "message": "B-rep topology graph (body/region/shell/face/loop/coedge/edge/vertex) was not built for this file.",
         "severity": "blocking"
+      },
+      {
+        "code": {
+          "code": "projection.record-unprojected",
+          "kind": "metadata_not_transferred",
+          "namespace": "catia",
+          "scope": "namespaced"
+        },
+        "message": "Zero-entity record catia:zero-entity:record#1 has no independently constructible neutral record.",
+        "severity": "warning"
+      },
+      {
+        "code": {
+          "code": "projection.record-unprojected",
+          "kind": "metadata_not_transferred",
+          "namespace": "catia",
+          "scope": "namespaced"
+        },
+        "message": "Zero-entity record catia:zero-entity:record#2 has no independently constructible neutral record.",
+        "severity": "warning"
+      },
+      {
+        "code": {
+          "code": "projection.record-unprojected",
+          "kind": "metadata_not_transferred",
+          "namespace": "catia",
+          "scope": "namespaced"
+        },
+        "message": "Zero-entity record catia:zero-entity:record#3 has no independently constructible neutral record.",
+        "severity": "warning"
+      },
+      {
+        "code": {
+          "code": "projection.record-unprojected",
+          "kind": "metadata_not_transferred",
+          "namespace": "catia",
+          "scope": "namespaced"
+        },
+        "message": "Zero-entity record catia:zero-entity:record#4 has no independently constructible neutral record.",
+        "severity": "warning"
+      },
+      {
+        "code": {
+          "code": "projection.record-unprojected",
+          "kind": "metadata_not_transferred",
+          "namespace": "catia",
+          "scope": "namespaced"
+        },
+        "message": "Zero-entity record catia:zero-entity:record#5 has no independently constructible neutral record.",
+        "severity": "warning"
+      },
+      {
+        "code": {
+          "code": "depth.not-delivered",
+          "kind": "geometry_not_transferred",
+          "namespace": "decode",
+          "scope": "namespaced",
+          "strict_floor": "warning"
+        },
+        "message": "requested full depth but the catia decoder did not deliver classes: model, design",
+        "severity": "error"
       }
     ],
     "notes": [
@@ -530,7 +594,10 @@
     ],
     "transfer": {
       "geometry_transferred": false,
-      "transfer": "full"
+      "scope": {
+        "design": false,
+        "model": false
+      }
     }
   },
   "source_fidelity": {
@@ -556,8 +623,19 @@
           "retention": "inline"
         },
         "offset": 0,
-        "stream": "catia:CATPart"
+        "stream": "catia:CATPart",
+        "untyped": []
+      },
+      "catia:source:image#whole": {
+        "bytes": {
+          "data": "VjVfQ0ZWMgAAAAAAAAAAAKkDEAAAAAAAAAAAAKkDEAAAAAAAAAAAAKkDEAAAAAAAAAAAAKkDEAAAAAAAAAAAAKkDEAAAAAAAAAAAAA==",
+          "retention": "inline"
+        },
+        "offset": 0,
+        "stream": "catia:source",
+        "untyped": []
       }
-    }
+    },
+    "unrepresented": []
   }
 }

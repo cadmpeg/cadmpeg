@@ -1,16 +1,783 @@
 {
   "ir": {
-    "decode_depth": "full",
-    "ir_version": "9",
+    "ir_version": "10",
     "model": {
       "appearance_bindings": [],
       "appearances": [],
       "assembly_joints": [],
-      "attributes": [],
+      "attributes": [
+        {
+          "id": "fcstd:model:attribute#0:Comment:property",
+          "name": "Comment",
+          "native_ref": "fcstd:native:property#0:Comment",
+          "target": {
+            "kind": "document"
+          },
+          "values": [
+            {
+              "kind": "string",
+              "value": ""
+            }
+          ]
+        },
+        {
+          "id": "fcstd:model:attribute#0:Company:property",
+          "name": "Company",
+          "native_ref": "fcstd:native:property#0:Company",
+          "target": {
+            "kind": "document"
+          },
+          "values": [
+            {
+              "kind": "string",
+              "value": ""
+            }
+          ]
+        },
+        {
+          "id": "fcstd:model:attribute#0:CreatedBy:property",
+          "name": "CreatedBy",
+          "native_ref": "fcstd:native:property#0:CreatedBy",
+          "target": {
+            "kind": "document"
+          },
+          "values": [
+            {
+              "kind": "string",
+              "value": ""
+            }
+          ]
+        },
+        {
+          "id": "fcstd:model:attribute#0:CreationDate:property",
+          "name": "CreationDate",
+          "native_ref": "fcstd:native:property#0:CreationDate",
+          "target": {
+            "kind": "document"
+          },
+          "values": [
+            {
+              "kind": "string",
+              "value": "2026-01-01T00:00:00Z"
+            }
+          ]
+        },
+        {
+          "id": "fcstd:model:attribute#0:Id:property",
+          "name": "Id",
+          "native_ref": "fcstd:native:property#0:Id",
+          "target": {
+            "kind": "document"
+          },
+          "values": [
+            {
+              "kind": "string",
+              "value": ""
+            }
+          ]
+        },
+        {
+          "id": "fcstd:model:attribute#0:Label:property",
+          "name": "Label",
+          "native_ref": "fcstd:native:property#0:Label",
+          "target": {
+            "kind": "document"
+          },
+          "values": [
+            {
+              "kind": "string",
+              "value": "techdraw_annotations"
+            }
+          ]
+        },
+        {
+          "id": "fcstd:model:attribute#0:LastModifiedBy:property",
+          "name": "LastModifiedBy",
+          "native_ref": "fcstd:native:property#0:LastModifiedBy",
+          "target": {
+            "kind": "document"
+          },
+          "values": [
+            {
+              "kind": "string",
+              "value": ""
+            }
+          ]
+        },
+        {
+          "id": "fcstd:model:attribute#0:LastModifiedDate:property",
+          "name": "LastModifiedDate",
+          "native_ref": "fcstd:native:property#0:LastModifiedDate",
+          "target": {
+            "kind": "document"
+          },
+          "values": [
+            {
+              "kind": "string",
+              "value": "2026-01-01T00:00:00Z"
+            }
+          ]
+        },
+        {
+          "id": "fcstd:model:attribute#0:License:property",
+          "name": "License",
+          "native_ref": "fcstd:native:property#0:License",
+          "target": {
+            "kind": "document"
+          },
+          "values": [
+            {
+              "kind": "string",
+              "value": "All rights reserved"
+            }
+          ]
+        },
+        {
+          "id": "fcstd:model:attribute#0:LicenseURL:property",
+          "name": "LicenseURL",
+          "native_ref": "fcstd:native:property#0:LicenseURL",
+          "target": {
+            "kind": "document"
+          },
+          "values": [
+            {
+              "kind": "string",
+              "value": "__elided_authoring_path_sha256:ec1ef47ab3cdc361e6423591cb34d5619dbc08299f8f3761ee9fb45645a3314c"
+            }
+          ]
+        },
+        {
+          "id": "fcstd:model:attribute#0:ShowHidden:property",
+          "name": "ShowHidden",
+          "native_ref": "fcstd:native:property#0:ShowHidden",
+          "target": {
+            "kind": "document"
+          },
+          "values": [
+            {
+              "kind": "boolean",
+              "value": false
+            }
+          ]
+        },
+        {
+          "id": "fcstd:model:attribute#0:TipName:property",
+          "name": "TipName",
+          "native_ref": "fcstd:native:property#0:TipName",
+          "target": {
+            "kind": "document"
+          },
+          "values": [
+            {
+              "kind": "string",
+              "value": ""
+            }
+          ]
+        },
+        {
+          "id": "fcstd:model:attribute#0:UseHasher:property",
+          "name": "UseHasher",
+          "native_ref": "fcstd:native:property#0:UseHasher",
+          "target": {
+            "kind": "document"
+          },
+          "values": [
+            {
+              "kind": "boolean",
+              "value": true
+            }
+          ]
+        },
+        {
+          "id": "fcstd:model:attribute#CorpusMetadata:Label2:property",
+          "name": "Label2",
+          "native_ref": "fcstd:native:property#CorpusMetadata:Label2",
+          "target": {
+            "id": {
+              "source_id": "fcstd:native:object#CorpusMetadata"
+            },
+            "kind": "source"
+          },
+          "values": [
+            {
+              "kind": "string",
+              "value": ""
+            }
+          ]
+        },
+        {
+          "id": "fcstd:model:attribute#CorpusMetadata:Label:property",
+          "name": "Label",
+          "native_ref": "fcstd:native:property#CorpusMetadata:Label",
+          "target": {
+            "id": {
+              "source_id": "fcstd:native:object#CorpusMetadata"
+            },
+            "kind": "source"
+          },
+          "values": [
+            {
+              "kind": "string",
+              "value": "CorpusMetadata"
+            }
+          ]
+        },
+        {
+          "id": "fcstd:model:attribute#CorpusMetadata:License:property",
+          "name": "License",
+          "native_ref": "fcstd:native:property#CorpusMetadata:License",
+          "target": {
+            "id": {
+              "source_id": "fcstd:native:object#CorpusMetadata"
+            },
+            "kind": "source"
+          },
+          "values": [
+            {
+              "kind": "string",
+              "value": "CC0-1.0"
+            }
+          ]
+        },
+        {
+          "id": "fcstd:model:attribute#CorpusMetadata:Purpose:property",
+          "name": "Purpose",
+          "native_ref": "fcstd:native:property#CorpusMetadata:Purpose",
+          "target": {
+            "id": {
+              "source_id": "fcstd:native:object#CorpusMetadata"
+            },
+            "kind": "source"
+          },
+          "values": [
+            {
+              "kind": "string",
+              "value": "TechDraw page, view, dimension, note, symbol, and template"
+            }
+          ]
+        },
+        {
+          "id": "fcstd:model:attribute#CorpusMetadata:Visibility:property",
+          "name": "Visibility",
+          "native_ref": "fcstd:native:property#CorpusMetadata:Visibility",
+          "target": {
+            "id": {
+              "source_id": "fcstd:native:object#CorpusMetadata"
+            },
+            "kind": "source"
+          },
+          "values": [
+            {
+              "kind": "boolean",
+              "value": true
+            }
+          ]
+        },
+        {
+          "id": "fcstd:model:attribute#Model:AttacherType:property",
+          "name": "AttacherType",
+          "native_ref": "fcstd:native:property#Model:AttacherType",
+          "target": {
+            "id": "fcstd:design:feature#Model",
+            "kind": "feature"
+          },
+          "values": [
+            {
+              "kind": "string",
+              "value": "Attacher::AttachEngine3D"
+            }
+          ]
+        },
+        {
+          "id": "fcstd:model:attribute#Model:Label2:property",
+          "name": "Label2",
+          "native_ref": "fcstd:native:property#Model:Label2",
+          "target": {
+            "id": "fcstd:design:feature#Model",
+            "kind": "feature"
+          },
+          "values": [
+            {
+              "kind": "string",
+              "value": ""
+            }
+          ]
+        },
+        {
+          "id": "fcstd:model:attribute#Model:MapPathParameter:property",
+          "name": "MapPathParameter",
+          "native_ref": "fcstd:native:property#Model:MapPathParameter",
+          "target": {
+            "id": "fcstd:design:feature#Model",
+            "kind": "feature"
+          },
+          "values": [
+            {
+              "kind": "float",
+              "value": 0.0
+            }
+          ]
+        },
+        {
+          "id": "fcstd:model:attribute#Model:MapReversed:property",
+          "name": "MapReversed",
+          "native_ref": "fcstd:native:property#Model:MapReversed",
+          "target": {
+            "id": "fcstd:design:feature#Model",
+            "kind": "feature"
+          },
+          "values": [
+            {
+              "kind": "boolean",
+              "value": false
+            }
+          ]
+        },
+        {
+          "id": "fcstd:model:attribute#Model:Visibility:property",
+          "name": "Visibility",
+          "native_ref": "fcstd:native:property#Model:Visibility",
+          "target": {
+            "id": "fcstd:design:feature#Model",
+            "kind": "feature"
+          },
+          "values": [
+            {
+              "kind": "boolean",
+              "value": true
+            }
+          ]
+        },
+        {
+          "id": "fcstd:model:attribute#Page:KeepUpdated:property",
+          "name": "KeepUpdated",
+          "native_ref": "fcstd:native:property#Page:KeepUpdated",
+          "target": {
+            "id": "fcstd:model:drawing#Page:entity",
+            "kind": "drawing"
+          },
+          "values": [
+            {
+              "kind": "boolean",
+              "value": true
+            }
+          ]
+        },
+        {
+          "id": "fcstd:model:attribute#Page:Label2:property",
+          "name": "Label2",
+          "native_ref": "fcstd:native:property#Page:Label2",
+          "target": {
+            "id": "fcstd:model:drawing#Page:entity",
+            "kind": "drawing"
+          },
+          "values": [
+            {
+              "kind": "string",
+              "value": ""
+            }
+          ]
+        },
+        {
+          "id": "fcstd:model:attribute#Page:Label:property",
+          "name": "Label",
+          "native_ref": "fcstd:native:property#Page:Label",
+          "target": {
+            "id": "fcstd:model:drawing#Page:entity",
+            "kind": "drawing"
+          },
+          "values": [
+            {
+              "kind": "string",
+              "value": "Page"
+            }
+          ]
+        },
+        {
+          "id": "fcstd:model:attribute#Page:NextBalloonIndex:property",
+          "name": "NextBalloonIndex",
+          "native_ref": "fcstd:native:property#Page:NextBalloonIndex",
+          "target": {
+            "id": "fcstd:model:drawing#Page:entity",
+            "kind": "drawing"
+          },
+          "values": [
+            {
+              "kind": "integer",
+              "value": 1
+            }
+          ]
+        },
+        {
+          "id": "fcstd:model:attribute#Page:Visibility:property",
+          "name": "Visibility",
+          "native_ref": "fcstd:native:property#Page:Visibility",
+          "target": {
+            "id": "fcstd:model:drawing#Page:entity",
+            "kind": "drawing"
+          },
+          "values": [
+            {
+              "kind": "boolean",
+              "value": true
+            }
+          ]
+        },
+        {
+          "id": "fcstd:model:attribute#Template:Height:property",
+          "name": "Height",
+          "native_ref": "fcstd:native:property#Template:Height",
+          "target": {
+            "id": "fcstd:model:drawing#Template:entity",
+            "kind": "drawing"
+          },
+          "values": [
+            {
+              "kind": "float",
+              "value": 297.0
+            }
+          ]
+        },
+        {
+          "id": "fcstd:model:attribute#Template:Label2:property",
+          "name": "Label2",
+          "native_ref": "fcstd:native:property#Template:Label2",
+          "target": {
+            "id": "fcstd:model:drawing#Template:entity",
+            "kind": "drawing"
+          },
+          "values": [
+            {
+              "kind": "string",
+              "value": ""
+            }
+          ]
+        },
+        {
+          "id": "fcstd:model:attribute#Template:Label:property",
+          "name": "Label",
+          "native_ref": "fcstd:native:property#Template:Label",
+          "target": {
+            "id": "fcstd:model:drawing#Template:entity",
+            "kind": "drawing"
+          },
+          "values": [
+            {
+              "kind": "string",
+              "value": "Template"
+            }
+          ]
+        },
+        {
+          "id": "fcstd:model:attribute#Template:Orientation:property",
+          "name": "Orientation",
+          "native_ref": "fcstd:native:property#Template:Orientation",
+          "target": {
+            "id": "fcstd:model:drawing#Template:entity",
+            "kind": "drawing"
+          },
+          "values": [
+            {
+              "kind": "integer",
+              "value": 0
+            }
+          ]
+        },
+        {
+          "id": "fcstd:model:attribute#Template:Template:property",
+          "name": "Template",
+          "native_ref": "fcstd:native:property#Template:Template",
+          "target": {
+            "id": "fcstd:model:drawing#Template:entity",
+            "kind": "drawing"
+          },
+          "values": [
+            {
+              "kind": "string",
+              "value": "__elided_authoring_path_sha256:a5fccab6942217b6880d94e60e8a3d0a8721c21259dc7e6d06a506947c836292"
+            }
+          ]
+        },
+        {
+          "id": "fcstd:model:attribute#Template:Visibility:property",
+          "name": "Visibility",
+          "native_ref": "fcstd:native:property#Template:Visibility",
+          "target": {
+            "id": "fcstd:model:drawing#Template:entity",
+            "kind": "drawing"
+          },
+          "values": [
+            {
+              "kind": "boolean",
+              "value": true
+            }
+          ]
+        },
+        {
+          "id": "fcstd:model:attribute#Template:Width:property",
+          "name": "Width",
+          "native_ref": "fcstd:native:property#Template:Width",
+          "target": {
+            "id": "fcstd:model:drawing#Template:entity",
+            "kind": "drawing"
+          },
+          "values": [
+            {
+              "kind": "float",
+              "value": 210.0
+            }
+          ]
+        },
+        {
+          "id": "fcstd:model:attribute#View:CoarseView:property",
+          "name": "CoarseView",
+          "native_ref": "fcstd:native:property#View:CoarseView",
+          "target": {
+            "id": "fcstd:model:drawing#View:entity",
+            "kind": "drawing"
+          },
+          "values": [
+            {
+              "kind": "boolean",
+              "value": false
+            }
+          ]
+        },
+        {
+          "id": "fcstd:model:attribute#View:Focus:property",
+          "name": "Focus",
+          "native_ref": "fcstd:native:property#View:Focus",
+          "target": {
+            "id": "fcstd:model:drawing#View:entity",
+            "kind": "drawing"
+          },
+          "values": [
+            {
+              "kind": "float",
+              "value": 100.0
+            }
+          ]
+        },
+        {
+          "id": "fcstd:model:attribute#View:HardHidden:property",
+          "name": "HardHidden",
+          "native_ref": "fcstd:native:property#View:HardHidden",
+          "target": {
+            "id": "fcstd:model:drawing#View:entity",
+            "kind": "drawing"
+          },
+          "values": [
+            {
+              "kind": "boolean",
+              "value": false
+            }
+          ]
+        },
+        {
+          "id": "fcstd:model:attribute#View:IsoCount:property",
+          "name": "IsoCount",
+          "native_ref": "fcstd:native:property#View:IsoCount",
+          "target": {
+            "id": "fcstd:model:drawing#View:entity",
+            "kind": "drawing"
+          },
+          "values": [
+            {
+              "kind": "integer",
+              "value": 0
+            }
+          ]
+        },
+        {
+          "id": "fcstd:model:attribute#View:IsoHidden:property",
+          "name": "IsoHidden",
+          "native_ref": "fcstd:native:property#View:IsoHidden",
+          "target": {
+            "id": "fcstd:model:drawing#View:entity",
+            "kind": "drawing"
+          },
+          "values": [
+            {
+              "kind": "boolean",
+              "value": false
+            }
+          ]
+        },
+        {
+          "id": "fcstd:model:attribute#View:IsoVisible:property",
+          "name": "IsoVisible",
+          "native_ref": "fcstd:native:property#View:IsoVisible",
+          "target": {
+            "id": "fcstd:model:drawing#View:entity",
+            "kind": "drawing"
+          },
+          "values": [
+            {
+              "kind": "boolean",
+              "value": false
+            }
+          ]
+        },
+        {
+          "id": "fcstd:model:attribute#View:Label2:property",
+          "name": "Label2",
+          "native_ref": "fcstd:native:property#View:Label2",
+          "target": {
+            "id": "fcstd:model:drawing#View:entity",
+            "kind": "drawing"
+          },
+          "values": [
+            {
+              "kind": "string",
+              "value": ""
+            }
+          ]
+        },
+        {
+          "id": "fcstd:model:attribute#View:Label:property",
+          "name": "Label",
+          "native_ref": "fcstd:native:property#View:Label",
+          "target": {
+            "id": "fcstd:model:drawing#View:entity",
+            "kind": "drawing"
+          },
+          "values": [
+            {
+              "kind": "string",
+              "value": "View"
+            }
+          ]
+        },
+        {
+          "id": "fcstd:model:attribute#View:Perspective:property",
+          "name": "Perspective",
+          "native_ref": "fcstd:native:property#View:Perspective",
+          "target": {
+            "id": "fcstd:model:drawing#View:entity",
+            "kind": "drawing"
+          },
+          "values": [
+            {
+              "kind": "boolean",
+              "value": false
+            }
+          ]
+        },
+        {
+          "id": "fcstd:model:attribute#View:ScrubCount:property",
+          "name": "ScrubCount",
+          "native_ref": "fcstd:native:property#View:ScrubCount",
+          "target": {
+            "id": "fcstd:model:drawing#View:entity",
+            "kind": "drawing"
+          },
+          "values": [
+            {
+              "kind": "integer",
+              "value": 1
+            }
+          ]
+        },
+        {
+          "id": "fcstd:model:attribute#View:SeamHidden:property",
+          "name": "SeamHidden",
+          "native_ref": "fcstd:native:property#View:SeamHidden",
+          "target": {
+            "id": "fcstd:model:drawing#View:entity",
+            "kind": "drawing"
+          },
+          "values": [
+            {
+              "kind": "boolean",
+              "value": false
+            }
+          ]
+        },
+        {
+          "id": "fcstd:model:attribute#View:SeamVisible:property",
+          "name": "SeamVisible",
+          "native_ref": "fcstd:native:property#View:SeamVisible",
+          "target": {
+            "id": "fcstd:model:drawing#View:entity",
+            "kind": "drawing"
+          },
+          "values": [
+            {
+              "kind": "boolean",
+              "value": false
+            }
+          ]
+        },
+        {
+          "id": "fcstd:model:attribute#View:SmoothHidden:property",
+          "name": "SmoothHidden",
+          "native_ref": "fcstd:native:property#View:SmoothHidden",
+          "target": {
+            "id": "fcstd:model:drawing#View:entity",
+            "kind": "drawing"
+          },
+          "values": [
+            {
+              "kind": "boolean",
+              "value": false
+            }
+          ]
+        },
+        {
+          "id": "fcstd:model:attribute#View:SmoothVisible:property",
+          "name": "SmoothVisible",
+          "native_ref": "fcstd:native:property#View:SmoothVisible",
+          "target": {
+            "id": "fcstd:model:drawing#View:entity",
+            "kind": "drawing"
+          },
+          "values": [
+            {
+              "kind": "boolean",
+              "value": true
+            }
+          ]
+        },
+        {
+          "id": "fcstd:model:attribute#View:Visibility:property",
+          "name": "Visibility",
+          "native_ref": "fcstd:native:property#View:Visibility",
+          "target": {
+            "id": "fcstd:model:drawing#View:entity",
+            "kind": "drawing"
+          },
+          "values": [
+            {
+              "kind": "boolean",
+              "value": true
+            }
+          ]
+        },
+        {
+          "id": "fcstd:model:attribute#View:XDirection:property",
+          "name": "XDirection",
+          "native_ref": "fcstd:native:property#View:XDirection",
+          "target": {
+            "id": "fcstd:model:drawing#View:entity",
+            "kind": "drawing"
+          },
+          "values": [
+            {
+              "kind": "vector",
+              "value": [
+                1.0,
+                0.0,
+                0.0
+              ]
+            }
+          ]
+        }
+      ],
       "bodies": [
         {
           "id": "fcstd:model:body#Model:Shape:Model.Shape.brp:34%40location1",
           "kind": "solid",
+          "native_ref": "fcstd:native:shape-payload#Model:Shape:Model.Shape.brp:topology-use:1",
           "regions": [
             "fcstd:model:region#Model:Shape:Model.Shape.brp:34%40location1"
           ]
@@ -27,7 +794,7 @@
                 0.0,
                 15.0
               ],
-              "pcurve": "fcstd:model:pcurve#Model:Shape:Model.Shape.brp:8%3A2%3A1"
+              "pcurve": "fcstd:model:pcurve#Model:Shape:Model.Shape.brp:7%3ASome%28SurfaceParameterAffine%20%7B%20u_scale%3A%201.0%2C%20u_offset%3A%200.0%2C%20v_scale%3A%201.0%2C%20v_offset%3A%200.0%20%7D%29%3A%5BFiniteReal%280.0%29%2C%20FiniteReal%2815.0%29%5D"
             }
           ],
           "radial_next": "fcstd:model:coedge#Model:Shape:Model.Shape.brp:30%40location1%3A1%3A4",
@@ -43,7 +810,7 @@
                 0.0,
                 8.0
               ],
-              "pcurve": "fcstd:model:pcurve#Model:Shape:Model.Shape.brp:7%3A2%3A1"
+              "pcurve": "fcstd:model:pcurve#Model:Shape:Model.Shape.brp:5%3ASome%28SurfaceParameterAffine%20%7B%20u_scale%3A%201.0%2C%20u_offset%3A%200.0%2C%20v_scale%3A%201.0%2C%20v_offset%3A%200.0%20%7D%29%3A%5BFiniteReal%280.0%29%2C%20FiniteReal%288.0%29%5D"
             }
           ],
           "radial_next": "fcstd:model:coedge#Model:Shape:Model.Shape.brp:28%40location1%3A1%3A4",
@@ -59,7 +826,7 @@
                 0.0,
                 15.0
               ],
-              "pcurve": "fcstd:model:pcurve#Model:Shape:Model.Shape.brp:5%3A2%3A1"
+              "pcurve": "fcstd:model:pcurve#Model:Shape:Model.Shape.brp:3%3ASome%28SurfaceParameterAffine%20%7B%20u_scale%3A%201.0%2C%20u_offset%3A%200.0%2C%20v_scale%3A%201.0%2C%20v_offset%3A%200.0%20%7D%29%3A%5BFiniteReal%280.0%29%2C%20FiniteReal%2815.0%29%5D"
             }
           ],
           "radial_next": "fcstd:model:coedge#Model:Shape:Model.Shape.brp:32%40location1%3A1%3A1",
@@ -75,7 +842,7 @@
                 0.0,
                 8.0
               ],
-              "pcurve": "fcstd:model:pcurve#Model:Shape:Model.Shape.brp:3%3A2%3A1"
+              "pcurve": "fcstd:model:pcurve#Model:Shape:Model.Shape.brp:1%3ASome%28SurfaceParameterAffine%20%7B%20u_scale%3A%201.0%2C%20u_offset%3A%200.0%2C%20v_scale%3A%201.0%2C%20v_offset%3A%200.0%20%7D%29%3A%5BFiniteReal%280.0%29%2C%20FiniteReal%288.0%29%5D"
             }
           ],
           "radial_next": "fcstd:model:coedge#Model:Shape:Model.Shape.brp:24%40location1%3A1%3A1",
@@ -91,7 +858,7 @@
                 0.0,
                 8.0
               ],
-              "pcurve": "fcstd:model:pcurve#Model:Shape:Model.Shape.brp:13%3A2%3A1"
+              "pcurve": "fcstd:model:pcurve#Model:Shape:Model.Shape.brp:9%3ASome%28SurfaceParameterAffine%20%7B%20u_scale%3A%201.0%2C%20u_offset%3A%200.0%2C%20v_scale%3A%201.0%2C%20v_offset%3A%200.0%20%7D%29%3A%5BFiniteReal%280.0%29%2C%20FiniteReal%288.0%29%5D"
             }
           ],
           "radial_next": "fcstd:model:coedge#Model:Shape:Model.Shape.brp:24%40location1%3A1%3A3",
@@ -107,7 +874,7 @@
                 0.0,
                 15.0
               ],
-              "pcurve": "fcstd:model:pcurve#Model:Shape:Model.Shape.brp:15%3A2%3A1"
+              "pcurve": "fcstd:model:pcurve#Model:Shape:Model.Shape.brp:11%3ASome%28SurfaceParameterAffine%20%7B%20u_scale%3A%201.0%2C%20u_offset%3A%200.0%2C%20v_scale%3A%201.0%2C%20v_offset%3A%200.0%20%7D%29%3A%5BFiniteReal%280.0%29%2C%20FiniteReal%2815.0%29%5D"
             }
           ],
           "radial_next": "fcstd:model:coedge#Model:Shape:Model.Shape.brp:32%40location1%3A1%3A3",
@@ -123,7 +890,7 @@
                 0.0,
                 8.0
               ],
-              "pcurve": "fcstd:model:pcurve#Model:Shape:Model.Shape.brp:17%3A2%3A1"
+              "pcurve": "fcstd:model:pcurve#Model:Shape:Model.Shape.brp:13%3ASome%28SurfaceParameterAffine%20%7B%20u_scale%3A%201.0%2C%20u_offset%3A%200.0%2C%20v_scale%3A%201.0%2C%20v_offset%3A%200.0%20%7D%29%3A%5BFiniteReal%280.0%29%2C%20FiniteReal%288.0%29%5D"
             }
           ],
           "radial_next": "fcstd:model:coedge#Model:Shape:Model.Shape.brp:28%40location1%3A1%3A2",
@@ -139,7 +906,7 @@
                 0.0,
                 15.0
               ],
-              "pcurve": "fcstd:model:pcurve#Model:Shape:Model.Shape.brp:18%3A2%3A1"
+              "pcurve": "fcstd:model:pcurve#Model:Shape:Model.Shape.brp:15%3ASome%28SurfaceParameterAffine%20%7B%20u_scale%3A%201.0%2C%20u_offset%3A%200.0%2C%20v_scale%3A%201.0%2C%20v_offset%3A%200.0%20%7D%29%3A%5BFiniteReal%280.0%29%2C%20FiniteReal%2815.0%29%5D"
             }
           ],
           "radial_next": "fcstd:model:coedge#Model:Shape:Model.Shape.brp:30%40location1%3A1%3A2",
@@ -155,7 +922,7 @@
                 0.0,
                 8.0
               ],
-              "pcurve": "fcstd:model:pcurve#Model:Shape:Model.Shape.brp:3%3A3%3A1"
+              "pcurve": "fcstd:model:pcurve#Model:Shape:Model.Shape.brp:2%3ASome%28SurfaceParameterAffine%20%7B%20u_scale%3A%201.0%2C%20u_offset%3A%200.0%2C%20v_scale%3A%201.0%2C%20v_offset%3A%200.0%20%7D%29%3A%5BFiniteReal%280.0%29%2C%20FiniteReal%288.0%29%5D"
             }
           ],
           "radial_next": "fcstd:model:coedge#Model:Shape:Model.Shape.brp:10%40location1%3A1%3A4",
@@ -171,7 +938,7 @@
                 0.0,
                 25.0
               ],
-              "pcurve": "fcstd:model:pcurve#Model:Shape:Model.Shape.brp:22%3A2%3A1"
+              "pcurve": "fcstd:model:pcurve#Model:Shape:Model.Shape.brp:19%3ASome%28SurfaceParameterAffine%20%7B%20u_scale%3A%201.0%2C%20u_offset%3A%200.0%2C%20v_scale%3A%201.0%2C%20v_offset%3A%200.0%20%7D%29%3A%5BFiniteReal%280.0%29%2C%20FiniteReal%2825.0%29%5D"
             }
           ],
           "radial_next": "fcstd:model:coedge#Model:Shape:Model.Shape.brp:32%40location1%3A1%3A4",
@@ -187,7 +954,7 @@
                 0.0,
                 8.0
               ],
-              "pcurve": "fcstd:model:pcurve#Model:Shape:Model.Shape.brp:13%3A3%3A1"
+              "pcurve": "fcstd:model:pcurve#Model:Shape:Model.Shape.brp:10%3ASome%28SurfaceParameterAffine%20%7B%20u_scale%3A%201.0%2C%20u_offset%3A%200.0%2C%20v_scale%3A%201.0%2C%20v_offset%3A%200.0%20%7D%29%3A%5BFiniteReal%280.0%29%2C%20FiniteReal%288.0%29%5D"
             }
           ],
           "radial_next": "fcstd:model:coedge#Model:Shape:Model.Shape.brp:20%40location1%3A1%3A1",
@@ -203,7 +970,7 @@
                 0.0,
                 25.0
               ],
-              "pcurve": "fcstd:model:pcurve#Model:Shape:Model.Shape.brp:21%3A2%3A1"
+              "pcurve": "fcstd:model:pcurve#Model:Shape:Model.Shape.brp:17%3ASome%28SurfaceParameterAffine%20%7B%20u_scale%3A%201.0%2C%20u_offset%3A%200.0%2C%20v_scale%3A%201.0%2C%20v_offset%3A%200.0%20%7D%29%3A%5BFiniteReal%280.0%29%2C%20FiniteReal%2825.0%29%5D"
             }
           ],
           "radial_next": "fcstd:model:coedge#Model:Shape:Model.Shape.brp:30%40location1%3A1%3A1",
@@ -219,7 +986,7 @@
                 0.0,
                 25.0
               ],
-              "pcurve": "fcstd:model:pcurve#Model:Shape:Model.Shape.brp:25%3A2%3A1"
+              "pcurve": "fcstd:model:pcurve#Model:Shape:Model.Shape.brp:21%3ASome%28SurfaceParameterAffine%20%7B%20u_scale%3A%201.0%2C%20u_offset%3A%200.0%2C%20v_scale%3A%201.0%2C%20v_offset%3A%200.0%20%7D%29%3A%5BFiniteReal%280.0%29%2C%20FiniteReal%2825.0%29%5D"
             }
           ],
           "radial_next": "fcstd:model:coedge#Model:Shape:Model.Shape.brp:30%40location1%3A1%3A3",
@@ -235,7 +1002,7 @@
                 0.0,
                 8.0
               ],
-              "pcurve": "fcstd:model:pcurve#Model:Shape:Model.Shape.brp:17%3A3%3A1"
+              "pcurve": "fcstd:model:pcurve#Model:Shape:Model.Shape.brp:14%3ASome%28SurfaceParameterAffine%20%7B%20u_scale%3A%201.0%2C%20u_offset%3A%200.0%2C%20v_scale%3A%201.0%2C%20v_offset%3A%200.0%20%7D%29%3A%5BFiniteReal%280.0%29%2C%20FiniteReal%288.0%29%5D"
             }
           ],
           "radial_next": "fcstd:model:coedge#Model:Shape:Model.Shape.brp:20%40location1%3A1%3A3",
@@ -251,7 +1018,7 @@
                 0.0,
                 25.0
               ],
-              "pcurve": "fcstd:model:pcurve#Model:Shape:Model.Shape.brp:26%3A2%3A1"
+              "pcurve": "fcstd:model:pcurve#Model:Shape:Model.Shape.brp:23%3ASome%28SurfaceParameterAffine%20%7B%20u_scale%3A%201.0%2C%20u_offset%3A%200.0%2C%20v_scale%3A%201.0%2C%20v_offset%3A%200.0%20%7D%29%3A%5BFiniteReal%280.0%29%2C%20FiniteReal%2825.0%29%5D"
             }
           ],
           "radial_next": "fcstd:model:coedge#Model:Shape:Model.Shape.brp:32%40location1%3A1%3A2",
@@ -267,7 +1034,7 @@
                 0.0,
                 8.0
               ],
-              "pcurve": "fcstd:model:pcurve#Model:Shape:Model.Shape.brp:7%3A3%3A1"
+              "pcurve": "fcstd:model:pcurve#Model:Shape:Model.Shape.brp:6%3ASome%28SurfaceParameterAffine%20%7B%20u_scale%3A%201.0%2C%20u_offset%3A%200.0%2C%20v_scale%3A%201.0%2C%20v_offset%3A%200.0%20%7D%29%3A%5BFiniteReal%280.0%29%2C%20FiniteReal%288.0%29%5D"
             }
           ],
           "radial_next": "fcstd:model:coedge#Model:Shape:Model.Shape.brp:10%40location1%3A1%3A2",
@@ -283,7 +1050,7 @@
                 0.0,
                 25.0
               ],
-              "pcurve": "fcstd:model:pcurve#Model:Shape:Model.Shape.brp:21%3A3%3A1"
+              "pcurve": "fcstd:model:pcurve#Model:Shape:Model.Shape.brp:18%3ASome%28SurfaceParameterAffine%20%7B%20u_scale%3A%201.0%2C%20u_offset%3A%200.0%2C%20v_scale%3A%201.0%2C%20v_offset%3A%200.0%20%7D%29%3A%5BFiniteReal%280.0%29%2C%20FiniteReal%2825.0%29%5D"
             }
           ],
           "radial_next": "fcstd:model:coedge#Model:Shape:Model.Shape.brp:24%40location1%3A1%3A4",
@@ -299,7 +1066,7 @@
                 0.0,
                 15.0
               ],
-              "pcurve": "fcstd:model:pcurve#Model:Shape:Model.Shape.brp:18%3A3%3A1"
+              "pcurve": "fcstd:model:pcurve#Model:Shape:Model.Shape.brp:16%3ASome%28SurfaceParameterAffine%20%7B%20u_scale%3A%201.0%2C%20u_offset%3A%200.0%2C%20v_scale%3A%201.0%2C%20v_offset%3A%200.0%20%7D%29%3A%5BFiniteReal%280.0%29%2C%20FiniteReal%2815.0%29%5D"
             }
           ],
           "radial_next": "fcstd:model:coedge#Model:Shape:Model.Shape.brp:20%40location1%3A1%3A4",
@@ -315,7 +1082,7 @@
                 0.0,
                 25.0
               ],
-              "pcurve": "fcstd:model:pcurve#Model:Shape:Model.Shape.brp:25%3A3%3A1"
+              "pcurve": "fcstd:model:pcurve#Model:Shape:Model.Shape.brp:22%3ASome%28SurfaceParameterAffine%20%7B%20u_scale%3A%201.0%2C%20u_offset%3A%200.0%2C%20v_scale%3A%201.0%2C%20v_offset%3A%200.0%20%7D%29%3A%5BFiniteReal%280.0%29%2C%20FiniteReal%2825.0%29%5D"
             }
           ],
           "radial_next": "fcstd:model:coedge#Model:Shape:Model.Shape.brp:28%40location1%3A1%3A1",
@@ -331,7 +1098,7 @@
                 0.0,
                 15.0
               ],
-              "pcurve": "fcstd:model:pcurve#Model:Shape:Model.Shape.brp:8%3A3%3A1"
+              "pcurve": "fcstd:model:pcurve#Model:Shape:Model.Shape.brp:8%3ASome%28SurfaceParameterAffine%20%7B%20u_scale%3A%201.0%2C%20u_offset%3A%200.0%2C%20v_scale%3A%201.0%2C%20v_offset%3A%200.0%20%7D%29%3A%5BFiniteReal%280.0%29%2C%20FiniteReal%2815.0%29%5D"
             }
           ],
           "radial_next": "fcstd:model:coedge#Model:Shape:Model.Shape.brp:10%40location1%3A1%3A1",
@@ -347,7 +1114,7 @@
                 0.0,
                 15.0
               ],
-              "pcurve": "fcstd:model:pcurve#Model:Shape:Model.Shape.brp:5%3A3%3A1"
+              "pcurve": "fcstd:model:pcurve#Model:Shape:Model.Shape.brp:4%3ASome%28SurfaceParameterAffine%20%7B%20u_scale%3A%201.0%2C%20u_offset%3A%200.0%2C%20v_scale%3A%201.0%2C%20v_offset%3A%200.0%20%7D%29%3A%5BFiniteReal%280.0%29%2C%20FiniteReal%2815.0%29%5D"
             }
           ],
           "radial_next": "fcstd:model:coedge#Model:Shape:Model.Shape.brp:10%40location1%3A1%3A3",
@@ -363,7 +1130,7 @@
                 0.0,
                 25.0
               ],
-              "pcurve": "fcstd:model:pcurve#Model:Shape:Model.Shape.brp:26%3A3%3A1"
+              "pcurve": "fcstd:model:pcurve#Model:Shape:Model.Shape.brp:24%3ASome%28SurfaceParameterAffine%20%7B%20u_scale%3A%201.0%2C%20u_offset%3A%200.0%2C%20v_scale%3A%201.0%2C%20v_offset%3A%200.0%20%7D%29%3A%5BFiniteReal%280.0%29%2C%20FiniteReal%2825.0%29%5D"
             }
           ],
           "radial_next": "fcstd:model:coedge#Model:Shape:Model.Shape.brp:28%40location1%3A1%3A3",
@@ -379,7 +1146,7 @@
                 0.0,
                 15.0
               ],
-              "pcurve": "fcstd:model:pcurve#Model:Shape:Model.Shape.brp:15%3A3%3A1"
+              "pcurve": "fcstd:model:pcurve#Model:Shape:Model.Shape.brp:12%3ASome%28SurfaceParameterAffine%20%7B%20u_scale%3A%201.0%2C%20u_offset%3A%200.0%2C%20v_scale%3A%201.0%2C%20v_offset%3A%200.0%20%7D%29%3A%5BFiniteReal%280.0%29%2C%20FiniteReal%2815.0%29%5D"
             }
           ],
           "radial_next": "fcstd:model:coedge#Model:Shape:Model.Shape.brp:20%40location1%3A1%3A2",
@@ -395,7 +1162,7 @@
                 0.0,
                 25.0
               ],
-              "pcurve": "fcstd:model:pcurve#Model:Shape:Model.Shape.brp:22%3A3%3A1"
+              "pcurve": "fcstd:model:pcurve#Model:Shape:Model.Shape.brp:20%3ASome%28SurfaceParameterAffine%20%7B%20u_scale%3A%201.0%2C%20u_offset%3A%200.0%2C%20v_scale%3A%201.0%2C%20v_offset%3A%200.0%20%7D%29%3A%5BFiniteReal%280.0%29%2C%20FiniteReal%2825.0%29%5D"
             }
           ],
           "radial_next": "fcstd:model:coedge#Model:Shape:Model.Shape.brp:24%40location1%3A1%3A2",
@@ -657,15 +1424,11 @@
           "object": "fcstd:native:object#Dimension",
           "order": 3,
           "parameters": {
-            "Caption": "<String value=\"\"/>",
-            "FormatSpec": "<String value=\"%.2w\"/>",
-            "LockPosition": "<Bool value=\"false\"/>",
-            "MeasureType": "<Integer value=\"1\"/>",
-            "Rotation": "<Float value=\"0.0000000000000000\"/>",
-            "Scale": "<Float value=\"1.0000000000000000\"/>",
-            "ScaleType": "<Integer value=\"0\"/>",
-            "X": "<Float value=\"80.0000000000000000\"/>",
-            "Y": "<Float value=\"125.0000000000000000\"/>"
+            "Caption": "",
+            "FormatSpec": "%.2w",
+            "LockPosition": "false",
+            "MeasureType": "1",
+            "ScaleType": "0"
           },
           "relationships": {
             "References2D": [
@@ -691,13 +1454,9 @@
           "object": "fcstd:native:object#Note",
           "order": 4,
           "parameters": {
-            "Caption": "<String value=\"\"/>",
-            "LockPosition": "<Bool value=\"false\"/>",
-            "Rotation": "<Float value=\"0.0000000000000000\"/>",
-            "Scale": "<Float value=\"1.0000000000000000\"/>",
-            "ScaleType": "<Integer value=\"0\"/>",
-            "X": "<Float value=\"105.0000000000000000\"/>",
-            "Y": "<Float value=\"148.5000000000000000\"/>"
+            "Caption": "",
+            "LockPosition": "false",
+            "ScaleType": "0"
           },
           "position": [
             105.0,
@@ -723,8 +1482,7 @@
           "object": "fcstd:native:object#Page",
           "order": 0,
           "parameters": {
-            "ProjectionType": "<Integer value=\"0\"/>",
-            "Scale": "<Float value=\"1.0000000000000000\"/>"
+            "ProjectionType": "0"
           },
           "relationships": {
             "Template": [
@@ -773,13 +1531,9 @@
           "object": "fcstd:native:object#Symbol",
           "order": 5,
           "parameters": {
-            "Caption": "<String value=\"\"/>",
-            "LockPosition": "<Bool value=\"false\"/>",
-            "Rotation": "<Float value=\"0.0000000000000000\"/>",
-            "Scale": "<Float value=\"1.0000000000000000\"/>",
-            "ScaleType": "<Integer value=\"2\"/>",
-            "X": "<Float value=\"105.0000000000000000\"/>",
-            "Y": "<Float value=\"148.5000000000000000\"/>"
+            "Caption": "",
+            "LockPosition": "false",
+            "ScaleType": "2"
           },
           "position": [
             105.0,
@@ -874,14 +1628,9 @@
           "object": "fcstd:native:object#View",
           "order": 2,
           "parameters": {
-            "Caption": "<String value=\"\"/>",
-            "Direction": "<PropertyVector valueX=\"0.0000000000000000\" valueY=\"-1.0000000000000000\" valueZ=\"0.0000000000000000\"/>",
-            "LockPosition": "<Bool value=\"false\"/>",
-            "Rotation": "<Float value=\"0.0000000000000000\"/>",
-            "Scale": "<Float value=\"1.0000000000000000\"/>",
-            "ScaleType": "<Integer value=\"0\"/>",
-            "X": "<Float value=\"105.0000000000000000\"/>",
-            "Y": "<Float value=\"148.5000000000000000\"/>"
+            "Caption": "",
+            "LockPosition": "false",
+            "ScaleType": "0"
           },
           "position": [
             105.0,
@@ -918,6 +1667,7 @@
           },
           "end": "fcstd:model:vertex#Model:Shape:Model.Shape.brp:11%40location1",
           "id": "fcstd:model:edge#Model:Shape:Model.Shape.brp:13%40location1",
+          "native_ref": "fcstd:native:shape-payload#Model:Shape:Model.Shape.brp:topology-use:30",
           "start": "fcstd:model:vertex#Model:Shape:Model.Shape.brp:12%40location1",
           "tolerance": 1e-7
         },
@@ -931,6 +1681,7 @@
           },
           "end": "fcstd:model:vertex#Model:Shape:Model.Shape.brp:14%40location1",
           "id": "fcstd:model:edge#Model:Shape:Model.Shape.brp:15%40location1",
+          "native_ref": "fcstd:native:shape-payload#Model:Shape:Model.Shape.brp:topology-use:8",
           "start": "fcstd:model:vertex#Model:Shape:Model.Shape.brp:11%40location1",
           "tolerance": 1e-7
         },
@@ -944,6 +1695,7 @@
           },
           "end": "fcstd:model:vertex#Model:Shape:Model.Shape.brp:14%40location1",
           "id": "fcstd:model:edge#Model:Shape:Model.Shape.brp:17%40location1",
+          "native_ref": "fcstd:native:shape-payload#Model:Shape:Model.Shape.brp:topology-use:26",
           "start": "fcstd:model:vertex#Model:Shape:Model.Shape.brp:16%40location1",
           "tolerance": 1e-7
         },
@@ -957,6 +1709,7 @@
           },
           "end": "fcstd:model:vertex#Model:Shape:Model.Shape.brp:16%40location1",
           "id": "fcstd:model:edge#Model:Shape:Model.Shape.brp:18%40location1",
+          "native_ref": "fcstd:native:shape-payload#Model:Shape:Model.Shape.brp:topology-use:18",
           "start": "fcstd:model:vertex#Model:Shape:Model.Shape.brp:12%40location1",
           "tolerance": 1e-7
         },
@@ -970,6 +1723,7 @@
           },
           "end": "fcstd:model:vertex#Model:Shape:Model.Shape.brp:12%40location1",
           "id": "fcstd:model:edge#Model:Shape:Model.Shape.brp:21%40location1",
+          "native_ref": "fcstd:native:shape-payload#Model:Shape:Model.Shape.brp:topology-use:15",
           "start": "fcstd:model:vertex#Model:Shape:Model.Shape.brp:2%40location1",
           "tolerance": 1e-7
         },
@@ -983,6 +1737,7 @@
           },
           "end": "fcstd:model:vertex#Model:Shape:Model.Shape.brp:11%40location1",
           "id": "fcstd:model:edge#Model:Shape:Model.Shape.brp:22%40location1",
+          "native_ref": "fcstd:native:shape-payload#Model:Shape:Model.Shape.brp:topology-use:5",
           "start": "fcstd:model:vertex#Model:Shape:Model.Shape.brp:1%40location1",
           "tolerance": 1e-7
         },
@@ -996,6 +1751,7 @@
           },
           "end": "fcstd:model:vertex#Model:Shape:Model.Shape.brp:16%40location1",
           "id": "fcstd:model:edge#Model:Shape:Model.Shape.brp:25%40location1",
+          "native_ref": "fcstd:native:shape-payload#Model:Shape:Model.Shape.brp:topology-use:20",
           "start": "fcstd:model:vertex#Model:Shape:Model.Shape.brp:6%40location1",
           "tolerance": 1e-7
         },
@@ -1009,6 +1765,7 @@
           },
           "end": "fcstd:model:vertex#Model:Shape:Model.Shape.brp:14%40location1",
           "id": "fcstd:model:edge#Model:Shape:Model.Shape.brp:26%40location1",
+          "native_ref": "fcstd:native:shape-payload#Model:Shape:Model.Shape.brp:topology-use:10",
           "start": "fcstd:model:vertex#Model:Shape:Model.Shape.brp:4%40location1",
           "tolerance": 1e-7
         },
@@ -1022,6 +1779,7 @@
           },
           "end": "fcstd:model:vertex#Model:Shape:Model.Shape.brp:1%40location1",
           "id": "fcstd:model:edge#Model:Shape:Model.Shape.brp:3%40location1",
+          "native_ref": "fcstd:native:shape-payload#Model:Shape:Model.Shape.brp:topology-use:29",
           "start": "fcstd:model:vertex#Model:Shape:Model.Shape.brp:2%40location1",
           "tolerance": 1e-7
         },
@@ -1035,6 +1793,7 @@
           },
           "end": "fcstd:model:vertex#Model:Shape:Model.Shape.brp:4%40location1",
           "id": "fcstd:model:edge#Model:Shape:Model.Shape.brp:5%40location1",
+          "native_ref": "fcstd:native:shape-payload#Model:Shape:Model.Shape.brp:topology-use:12",
           "start": "fcstd:model:vertex#Model:Shape:Model.Shape.brp:1%40location1",
           "tolerance": 1e-7
         },
@@ -1048,6 +1807,7 @@
           },
           "end": "fcstd:model:vertex#Model:Shape:Model.Shape.brp:4%40location1",
           "id": "fcstd:model:edge#Model:Shape:Model.Shape.brp:7%40location1",
+          "native_ref": "fcstd:native:shape-payload#Model:Shape:Model.Shape.brp:topology-use:25",
           "start": "fcstd:model:vertex#Model:Shape:Model.Shape.brp:6%40location1",
           "tolerance": 1e-7
         },
@@ -1061,6 +1821,7 @@
           },
           "end": "fcstd:model:vertex#Model:Shape:Model.Shape.brp:6%40location1",
           "id": "fcstd:model:edge#Model:Shape:Model.Shape.brp:8%40location1",
+          "native_ref": "fcstd:native:shape-payload#Model:Shape:Model.Shape.brp:topology-use:22",
           "start": "fcstd:model:vertex#Model:Shape:Model.Shape.brp:2%40location1",
           "tolerance": 1e-7
         }
@@ -1074,6 +1835,7 @@
               "fcstd:model:loop#Model:Shape:Model.Shape.brp:10%40location1%3A1"
             ]
           },
+          "native_ref": "fcstd:native:shape-payload#Model:Shape:Model.Shape.brp:topology-use:33",
           "sense": "reversed",
           "shell": "fcstd:model:shell#Model:Shape:Model.Shape.brp:33%40location1",
           "surface": "fcstd:model:surface#Model:Shape:Model.Shape.brp:1",
@@ -1087,6 +1849,7 @@
               "fcstd:model:loop#Model:Shape:Model.Shape.brp:20%40location1%3A1"
             ]
           },
+          "native_ref": "fcstd:native:shape-payload#Model:Shape:Model.Shape.brp:topology-use:31",
           "sense": "forward",
           "shell": "fcstd:model:shell#Model:Shape:Model.Shape.brp:33%40location1",
           "surface": "fcstd:model:surface#Model:Shape:Model.Shape.brp:6",
@@ -1100,6 +1863,7 @@
               "fcstd:model:loop#Model:Shape:Model.Shape.brp:24%40location1%3A1"
             ]
           },
+          "native_ref": "fcstd:native:shape-payload#Model:Shape:Model.Shape.brp:topology-use:27",
           "sense": "reversed",
           "shell": "fcstd:model:shell#Model:Shape:Model.Shape.brp:33%40location1",
           "surface": "fcstd:model:surface#Model:Shape:Model.Shape.brp:2",
@@ -1113,6 +1877,7 @@
               "fcstd:model:loop#Model:Shape:Model.Shape.brp:28%40location1%3A1"
             ]
           },
+          "native_ref": "fcstd:native:shape-payload#Model:Shape:Model.Shape.brp:topology-use:23",
           "sense": "forward",
           "shell": "fcstd:model:shell#Model:Shape:Model.Shape.brp:33%40location1",
           "surface": "fcstd:model:surface#Model:Shape:Model.Shape.brp:4",
@@ -1126,6 +1891,7 @@
               "fcstd:model:loop#Model:Shape:Model.Shape.brp:30%40location1%3A1"
             ]
           },
+          "native_ref": "fcstd:native:shape-payload#Model:Shape:Model.Shape.brp:topology-use:13",
           "sense": "reversed",
           "shell": "fcstd:model:shell#Model:Shape:Model.Shape.brp:33%40location1",
           "surface": "fcstd:model:surface#Model:Shape:Model.Shape.brp:5",
@@ -1139,6 +1905,7 @@
               "fcstd:model:loop#Model:Shape:Model.Shape.brp:32%40location1%3A1"
             ]
           },
+          "native_ref": "fcstd:native:shape-payload#Model:Shape:Model.Shape.brp:topology-use:3",
           "sense": "forward",
           "shell": "fcstd:model:shell#Model:Shape:Model.Shape.brp:33%40location1",
           "surface": "fcstd:model:surface#Model:Shape:Model.Shape.brp:3",
@@ -1150,24 +1917,50 @@
           "definition": {
             "definition": "primitive",
             "op": "new_body",
+            "placement": [
+              [
+                1.0,
+                0.0,
+                0.0,
+                0.0
+              ],
+              [
+                0.0,
+                1.0,
+                0.0,
+                0.0
+              ],
+              [
+                0.0,
+                0.0,
+                1.0,
+                0.0
+              ]
+            ],
             "solid": {
-              "height": 8.0,
+              "height": {
+                "kind": "parameter",
+                "value": "fcstd:design:parameter#Model:Height"
+              },
               "kind": "box",
-              "length": 25.0,
-              "width": 15.0
+              "length": {
+                "kind": "parameter",
+                "value": "fcstd:design:parameter#Model:Length"
+              },
+              "width": {
+                "kind": "parameter",
+                "value": "fcstd:design:parameter#Model:Width"
+              }
             }
           },
           "id": "fcstd:design:feature#Model",
           "name": "Model",
           "native_ref": "fcstd:native:object#Model",
-          "ordinal": 1,
+          "needs_recompute": false,
+          "ordinal": 0,
           "outputs": [
             "fcstd:model:body#Model:Shape:Model.Shape.brp:34%40location1"
           ],
-          "source_properties": {
-            "MapMode": "0",
-            "Visibility": "true"
-          },
           "source_tag": "Part::Box",
           "suppressed": null
         }
@@ -1184,7 +1977,8 @@
             "kind": "ring"
           },
           "face": "fcstd:model:face#Model:Shape:Model.Shape.brp:10%40location1",
-          "id": "fcstd:model:loop#Model:Shape:Model.Shape.brp:10%40location1%3A1"
+          "id": "fcstd:model:loop#Model:Shape:Model.Shape.brp:10%40location1%3A1",
+          "native_ref": "fcstd:native:shape-payload#Model:Shape:Model.Shape.brp:topology-use:34"
         },
         {
           "boundary": {
@@ -1197,7 +1991,8 @@
             "kind": "ring"
           },
           "face": "fcstd:model:face#Model:Shape:Model.Shape.brp:20%40location1",
-          "id": "fcstd:model:loop#Model:Shape:Model.Shape.brp:20%40location1%3A1"
+          "id": "fcstd:model:loop#Model:Shape:Model.Shape.brp:20%40location1%3A1",
+          "native_ref": "fcstd:native:shape-payload#Model:Shape:Model.Shape.brp:topology-use:32"
         },
         {
           "boundary": {
@@ -1210,7 +2005,8 @@
             "kind": "ring"
           },
           "face": "fcstd:model:face#Model:Shape:Model.Shape.brp:24%40location1",
-          "id": "fcstd:model:loop#Model:Shape:Model.Shape.brp:24%40location1%3A1"
+          "id": "fcstd:model:loop#Model:Shape:Model.Shape.brp:24%40location1%3A1",
+          "native_ref": "fcstd:native:shape-payload#Model:Shape:Model.Shape.brp:topology-use:28"
         },
         {
           "boundary": {
@@ -1223,7 +2019,8 @@
             "kind": "ring"
           },
           "face": "fcstd:model:face#Model:Shape:Model.Shape.brp:28%40location1",
-          "id": "fcstd:model:loop#Model:Shape:Model.Shape.brp:28%40location1%3A1"
+          "id": "fcstd:model:loop#Model:Shape:Model.Shape.brp:28%40location1%3A1",
+          "native_ref": "fcstd:native:shape-payload#Model:Shape:Model.Shape.brp:topology-use:24"
         },
         {
           "boundary": {
@@ -1236,7 +2033,8 @@
             "kind": "ring"
           },
           "face": "fcstd:model:face#Model:Shape:Model.Shape.brp:30%40location1",
-          "id": "fcstd:model:loop#Model:Shape:Model.Shape.brp:30%40location1%3A1"
+          "id": "fcstd:model:loop#Model:Shape:Model.Shape.brp:30%40location1%3A1",
+          "native_ref": "fcstd:native:shape-payload#Model:Shape:Model.Shape.brp:topology-use:14"
         },
         {
           "boundary": {
@@ -1249,21 +2047,70 @@
             "kind": "ring"
           },
           "face": "fcstd:model:face#Model:Shape:Model.Shape.brp:32%40location1",
-          "id": "fcstd:model:loop#Model:Shape:Model.Shape.brp:32%40location1%3A1"
+          "id": "fcstd:model:loop#Model:Shape:Model.Shape.brp:32%40location1%3A1",
+          "native_ref": "fcstd:native:shape-payload#Model:Shape:Model.Shape.brp:topology-use:4"
         }
       ],
       "occurrences": [],
       "parameters": [
         {
-          "expression": "25.0000000000000000",
+          "driving": true,
+          "expression": {
+            "tokens": [
+              {
+                "kind": "text",
+                "value": "8 mm"
+              }
+            ]
+          },
+          "id": "fcstd:design:parameter#Model:Height",
+          "name": "Height",
+          "native_ref": "fcstd:native:property#Model:Height",
+          "ordinal": 0,
+          "owner": "fcstd:design:feature#Model",
+          "value": {
+            "kind": "length",
+            "value": 8.0
+          }
+        },
+        {
+          "driving": true,
+          "expression": {
+            "tokens": [
+              {
+                "kind": "text",
+                "value": "25 mm"
+              }
+            ]
+          },
           "id": "fcstd:design:parameter#Model:Length",
           "name": "Length",
           "native_ref": "fcstd:native:property#Model:Length",
-          "ordinal": 8,
+          "ordinal": 1,
           "owner": "fcstd:design:feature#Model",
           "value": {
             "kind": "length",
             "value": 25.0
+          }
+        },
+        {
+          "driving": true,
+          "expression": {
+            "tokens": [
+              {
+                "kind": "text",
+                "value": "15 mm"
+              }
+            ]
+          },
+          "id": "fcstd:design:parameter#Model:Width",
+          "name": "Width",
+          "native_ref": "fcstd:native:property#Model:Width",
+          "ordinal": 2,
+          "owner": "fcstd:design:feature#Model",
+          "value": {
+            "kind": "length",
+            "value": 15.0
           }
         }
       ],
@@ -1280,7 +2127,7 @@
               "v": 0.0
             }
           },
-          "id": "fcstd:model:pcurve#Model:Shape:Model.Shape.brp:13%3A2%3A1",
+          "id": "fcstd:model:pcurve#Model:Shape:Model.Shape.brp:1%3ASome%28SurfaceParameterAffine%20%7B%20u_scale%3A%201.0%2C%20u_offset%3A%200.0%2C%20v_scale%3A%201.0%2C%20v_offset%3A%200.0%20%7D%29%3A%5BFiniteReal%280.0%29%2C%20FiniteReal%288.0%29%5D",
           "metadata": {
             "form": {
               "parameter_range": [
@@ -1303,7 +2150,7 @@
               "v": 25.0
             }
           },
-          "id": "fcstd:model:pcurve#Model:Shape:Model.Shape.brp:13%3A3%3A1",
+          "id": "fcstd:model:pcurve#Model:Shape:Model.Shape.brp:10%3ASome%28SurfaceParameterAffine%20%7B%20u_scale%3A%201.0%2C%20u_offset%3A%200.0%2C%20v_scale%3A%201.0%2C%20v_offset%3A%200.0%20%7D%29%3A%5BFiniteReal%280.0%29%2C%20FiniteReal%288.0%29%5D",
           "metadata": {
             "form": {
               "parameter_range": [
@@ -1326,7 +2173,7 @@
               "v": 0.0
             }
           },
-          "id": "fcstd:model:pcurve#Model:Shape:Model.Shape.brp:15%3A2%3A1",
+          "id": "fcstd:model:pcurve#Model:Shape:Model.Shape.brp:11%3ASome%28SurfaceParameterAffine%20%7B%20u_scale%3A%201.0%2C%20u_offset%3A%200.0%2C%20v_scale%3A%201.0%2C%20v_offset%3A%200.0%20%7D%29%3A%5BFiniteReal%280.0%29%2C%20FiniteReal%2815.0%29%5D",
           "metadata": {
             "form": {
               "parameter_range": [
@@ -1349,7 +2196,7 @@
               "v": 0.0
             }
           },
-          "id": "fcstd:model:pcurve#Model:Shape:Model.Shape.brp:15%3A3%3A1",
+          "id": "fcstd:model:pcurve#Model:Shape:Model.Shape.brp:12%3ASome%28SurfaceParameterAffine%20%7B%20u_scale%3A%201.0%2C%20u_offset%3A%200.0%2C%20v_scale%3A%201.0%2C%20v_offset%3A%200.0%20%7D%29%3A%5BFiniteReal%280.0%29%2C%20FiniteReal%2815.0%29%5D",
           "metadata": {
             "form": {
               "parameter_range": [
@@ -1372,7 +2219,7 @@
               "v": -15.0
             }
           },
-          "id": "fcstd:model:pcurve#Model:Shape:Model.Shape.brp:17%3A2%3A1",
+          "id": "fcstd:model:pcurve#Model:Shape:Model.Shape.brp:13%3ASome%28SurfaceParameterAffine%20%7B%20u_scale%3A%201.0%2C%20u_offset%3A%200.0%2C%20v_scale%3A%201.0%2C%20v_offset%3A%200.0%20%7D%29%3A%5BFiniteReal%280.0%29%2C%20FiniteReal%288.0%29%5D",
           "metadata": {
             "form": {
               "parameter_range": [
@@ -1395,7 +2242,7 @@
               "v": 25.0
             }
           },
-          "id": "fcstd:model:pcurve#Model:Shape:Model.Shape.brp:17%3A3%3A1",
+          "id": "fcstd:model:pcurve#Model:Shape:Model.Shape.brp:14%3ASome%28SurfaceParameterAffine%20%7B%20u_scale%3A%201.0%2C%20u_offset%3A%200.0%2C%20v_scale%3A%201.0%2C%20v_offset%3A%200.0%20%7D%29%3A%5BFiniteReal%280.0%29%2C%20FiniteReal%288.0%29%5D",
           "metadata": {
             "form": {
               "parameter_range": [
@@ -1418,7 +2265,7 @@
               "v": 0.0
             }
           },
-          "id": "fcstd:model:pcurve#Model:Shape:Model.Shape.brp:18%3A2%3A1",
+          "id": "fcstd:model:pcurve#Model:Shape:Model.Shape.brp:15%3ASome%28SurfaceParameterAffine%20%7B%20u_scale%3A%201.0%2C%20u_offset%3A%200.0%2C%20v_scale%3A%201.0%2C%20v_offset%3A%200.0%20%7D%29%3A%5BFiniteReal%280.0%29%2C%20FiniteReal%2815.0%29%5D",
           "metadata": {
             "form": {
               "parameter_range": [
@@ -1441,7 +2288,7 @@
               "v": 0.0
             }
           },
-          "id": "fcstd:model:pcurve#Model:Shape:Model.Shape.brp:18%3A3%3A1",
+          "id": "fcstd:model:pcurve#Model:Shape:Model.Shape.brp:16%3ASome%28SurfaceParameterAffine%20%7B%20u_scale%3A%201.0%2C%20u_offset%3A%200.0%2C%20v_scale%3A%201.0%2C%20v_offset%3A%200.0%20%7D%29%3A%5BFiniteReal%280.0%29%2C%20FiniteReal%2815.0%29%5D",
           "metadata": {
             "form": {
               "parameter_range": [
@@ -1464,7 +2311,7 @@
               "v": 0.0
             }
           },
-          "id": "fcstd:model:pcurve#Model:Shape:Model.Shape.brp:21%3A2%3A1",
+          "id": "fcstd:model:pcurve#Model:Shape:Model.Shape.brp:17%3ASome%28SurfaceParameterAffine%20%7B%20u_scale%3A%201.0%2C%20u_offset%3A%200.0%2C%20v_scale%3A%201.0%2C%20v_offset%3A%200.0%20%7D%29%3A%5BFiniteReal%280.0%29%2C%20FiniteReal%2825.0%29%5D",
           "metadata": {
             "form": {
               "parameter_range": [
@@ -1487,7 +2334,7 @@
               "v": 0.0
             }
           },
-          "id": "fcstd:model:pcurve#Model:Shape:Model.Shape.brp:21%3A3%3A1",
+          "id": "fcstd:model:pcurve#Model:Shape:Model.Shape.brp:18%3ASome%28SurfaceParameterAffine%20%7B%20u_scale%3A%201.0%2C%20u_offset%3A%200.0%2C%20v_scale%3A%201.0%2C%20v_offset%3A%200.0%20%7D%29%3A%5BFiniteReal%280.0%29%2C%20FiniteReal%2825.0%29%5D",
           "metadata": {
             "form": {
               "parameter_range": [
@@ -1510,7 +2357,7 @@
               "v": 0.0
             }
           },
-          "id": "fcstd:model:pcurve#Model:Shape:Model.Shape.brp:22%3A2%3A1",
+          "id": "fcstd:model:pcurve#Model:Shape:Model.Shape.brp:19%3ASome%28SurfaceParameterAffine%20%7B%20u_scale%3A%201.0%2C%20u_offset%3A%200.0%2C%20v_scale%3A%201.0%2C%20v_offset%3A%200.0%20%7D%29%3A%5BFiniteReal%280.0%29%2C%20FiniteReal%2825.0%29%5D",
           "metadata": {
             "form": {
               "parameter_range": [
@@ -1533,7 +2380,30 @@
               "v": 0.0
             }
           },
-          "id": "fcstd:model:pcurve#Model:Shape:Model.Shape.brp:22%3A3%3A1",
+          "id": "fcstd:model:pcurve#Model:Shape:Model.Shape.brp:2%3ASome%28SurfaceParameterAffine%20%7B%20u_scale%3A%201.0%2C%20u_offset%3A%200.0%2C%20v_scale%3A%201.0%2C%20v_offset%3A%200.0%20%7D%29%3A%5BFiniteReal%280.0%29%2C%20FiniteReal%288.0%29%5D",
+          "metadata": {
+            "form": {
+              "parameter_range": [
+                0.0,
+                8.0
+              ]
+            },
+            "source": "general"
+          }
+        },
+        {
+          "geometry": {
+            "direction": {
+              "u": 1.0,
+              "v": 0.0
+            },
+            "kind": "line",
+            "origin": {
+              "u": 0.0,
+              "v": 0.0
+            }
+          },
+          "id": "fcstd:model:pcurve#Model:Shape:Model.Shape.brp:20%3ASome%28SurfaceParameterAffine%20%7B%20u_scale%3A%201.0%2C%20u_offset%3A%200.0%2C%20v_scale%3A%201.0%2C%20v_offset%3A%200.0%20%7D%29%3A%5BFiniteReal%280.0%29%2C%20FiniteReal%2825.0%29%5D",
           "metadata": {
             "form": {
               "parameter_range": [
@@ -1556,7 +2426,7 @@
               "v": 0.0
             }
           },
-          "id": "fcstd:model:pcurve#Model:Shape:Model.Shape.brp:25%3A2%3A1",
+          "id": "fcstd:model:pcurve#Model:Shape:Model.Shape.brp:21%3ASome%28SurfaceParameterAffine%20%7B%20u_scale%3A%201.0%2C%20u_offset%3A%200.0%2C%20v_scale%3A%201.0%2C%20v_offset%3A%200.0%20%7D%29%3A%5BFiniteReal%280.0%29%2C%20FiniteReal%2825.0%29%5D",
           "metadata": {
             "form": {
               "parameter_range": [
@@ -1579,7 +2449,7 @@
               "v": 15.0
             }
           },
-          "id": "fcstd:model:pcurve#Model:Shape:Model.Shape.brp:25%3A3%3A1",
+          "id": "fcstd:model:pcurve#Model:Shape:Model.Shape.brp:22%3ASome%28SurfaceParameterAffine%20%7B%20u_scale%3A%201.0%2C%20u_offset%3A%200.0%2C%20v_scale%3A%201.0%2C%20v_offset%3A%200.0%20%7D%29%3A%5BFiniteReal%280.0%29%2C%20FiniteReal%2825.0%29%5D",
           "metadata": {
             "form": {
               "parameter_range": [
@@ -1602,7 +2472,7 @@
               "v": 0.0
             }
           },
-          "id": "fcstd:model:pcurve#Model:Shape:Model.Shape.brp:26%3A2%3A1",
+          "id": "fcstd:model:pcurve#Model:Shape:Model.Shape.brp:23%3ASome%28SurfaceParameterAffine%20%7B%20u_scale%3A%201.0%2C%20u_offset%3A%200.0%2C%20v_scale%3A%201.0%2C%20v_offset%3A%200.0%20%7D%29%3A%5BFiniteReal%280.0%29%2C%20FiniteReal%2825.0%29%5D",
           "metadata": {
             "form": {
               "parameter_range": [
@@ -1625,58 +2495,12 @@
               "v": 15.0
             }
           },
-          "id": "fcstd:model:pcurve#Model:Shape:Model.Shape.brp:26%3A3%3A1",
+          "id": "fcstd:model:pcurve#Model:Shape:Model.Shape.brp:24%3ASome%28SurfaceParameterAffine%20%7B%20u_scale%3A%201.0%2C%20u_offset%3A%200.0%2C%20v_scale%3A%201.0%2C%20v_offset%3A%200.0%20%7D%29%3A%5BFiniteReal%280.0%29%2C%20FiniteReal%2825.0%29%5D",
           "metadata": {
             "form": {
               "parameter_range": [
                 0.0,
                 25.0
-              ]
-            },
-            "source": "general"
-          }
-        },
-        {
-          "geometry": {
-            "direction": {
-              "u": 1.0,
-              "v": 0.0
-            },
-            "kind": "line",
-            "origin": {
-              "u": 0.0,
-              "v": 0.0
-            }
-          },
-          "id": "fcstd:model:pcurve#Model:Shape:Model.Shape.brp:3%3A2%3A1",
-          "metadata": {
-            "form": {
-              "parameter_range": [
-                0.0,
-                8.0
-              ]
-            },
-            "source": "general"
-          }
-        },
-        {
-          "geometry": {
-            "direction": {
-              "u": 1.0,
-              "v": 0.0
-            },
-            "kind": "line",
-            "origin": {
-              "u": 0.0,
-              "v": 0.0
-            }
-          },
-          "id": "fcstd:model:pcurve#Model:Shape:Model.Shape.brp:3%3A3%3A1",
-          "metadata": {
-            "form": {
-              "parameter_range": [
-                0.0,
-                8.0
               ]
             },
             "source": "general"
@@ -1694,7 +2518,7 @@
               "v": 0.0
             }
           },
-          "id": "fcstd:model:pcurve#Model:Shape:Model.Shape.brp:5%3A2%3A1",
+          "id": "fcstd:model:pcurve#Model:Shape:Model.Shape.brp:3%3ASome%28SurfaceParameterAffine%20%7B%20u_scale%3A%201.0%2C%20u_offset%3A%200.0%2C%20v_scale%3A%201.0%2C%20v_offset%3A%200.0%20%7D%29%3A%5BFiniteReal%280.0%29%2C%20FiniteReal%2815.0%29%5D",
           "metadata": {
             "form": {
               "parameter_range": [
@@ -1717,7 +2541,7 @@
               "v": 0.0
             }
           },
-          "id": "fcstd:model:pcurve#Model:Shape:Model.Shape.brp:5%3A3%3A1",
+          "id": "fcstd:model:pcurve#Model:Shape:Model.Shape.brp:4%3ASome%28SurfaceParameterAffine%20%7B%20u_scale%3A%201.0%2C%20u_offset%3A%200.0%2C%20v_scale%3A%201.0%2C%20v_offset%3A%200.0%20%7D%29%3A%5BFiniteReal%280.0%29%2C%20FiniteReal%2815.0%29%5D",
           "metadata": {
             "form": {
               "parameter_range": [
@@ -1740,7 +2564,7 @@
               "v": -15.0
             }
           },
-          "id": "fcstd:model:pcurve#Model:Shape:Model.Shape.brp:7%3A2%3A1",
+          "id": "fcstd:model:pcurve#Model:Shape:Model.Shape.brp:5%3ASome%28SurfaceParameterAffine%20%7B%20u_scale%3A%201.0%2C%20u_offset%3A%200.0%2C%20v_scale%3A%201.0%2C%20v_offset%3A%200.0%20%7D%29%3A%5BFiniteReal%280.0%29%2C%20FiniteReal%288.0%29%5D",
           "metadata": {
             "form": {
               "parameter_range": [
@@ -1763,7 +2587,7 @@
               "v": 0.0
             }
           },
-          "id": "fcstd:model:pcurve#Model:Shape:Model.Shape.brp:7%3A3%3A1",
+          "id": "fcstd:model:pcurve#Model:Shape:Model.Shape.brp:6%3ASome%28SurfaceParameterAffine%20%7B%20u_scale%3A%201.0%2C%20u_offset%3A%200.0%2C%20v_scale%3A%201.0%2C%20v_offset%3A%200.0%20%7D%29%3A%5BFiniteReal%280.0%29%2C%20FiniteReal%288.0%29%5D",
           "metadata": {
             "form": {
               "parameter_range": [
@@ -1786,7 +2610,7 @@
               "v": 0.0
             }
           },
-          "id": "fcstd:model:pcurve#Model:Shape:Model.Shape.brp:8%3A2%3A1",
+          "id": "fcstd:model:pcurve#Model:Shape:Model.Shape.brp:7%3ASome%28SurfaceParameterAffine%20%7B%20u_scale%3A%201.0%2C%20u_offset%3A%200.0%2C%20v_scale%3A%201.0%2C%20v_offset%3A%200.0%20%7D%29%3A%5BFiniteReal%280.0%29%2C%20FiniteReal%2815.0%29%5D",
           "metadata": {
             "form": {
               "parameter_range": [
@@ -1809,12 +2633,35 @@
               "v": 0.0
             }
           },
-          "id": "fcstd:model:pcurve#Model:Shape:Model.Shape.brp:8%3A3%3A1",
+          "id": "fcstd:model:pcurve#Model:Shape:Model.Shape.brp:8%3ASome%28SurfaceParameterAffine%20%7B%20u_scale%3A%201.0%2C%20u_offset%3A%200.0%2C%20v_scale%3A%201.0%2C%20v_offset%3A%200.0%20%7D%29%3A%5BFiniteReal%280.0%29%2C%20FiniteReal%2815.0%29%5D",
           "metadata": {
             "form": {
               "parameter_range": [
                 0.0,
                 15.0
+              ]
+            },
+            "source": "general"
+          }
+        },
+        {
+          "geometry": {
+            "direction": {
+              "u": 1.0,
+              "v": 0.0
+            },
+            "kind": "line",
+            "origin": {
+              "u": 0.0,
+              "v": 0.0
+            }
+          },
+          "id": "fcstd:model:pcurve#Model:Shape:Model.Shape.brp:9%3ASome%28SurfaceParameterAffine%20%7B%20u_scale%3A%201.0%2C%20u_offset%3A%200.0%2C%20v_scale%3A%201.0%2C%20v_offset%3A%200.0%20%7D%29%3A%5BFiniteReal%280.0%29%2C%20FiniteReal%288.0%29%5D",
+          "metadata": {
+            "form": {
+              "parameter_range": [
+                0.0,
+                8.0
               ]
             },
             "source": "general"
@@ -1825,6 +2672,7 @@
       "points": [
         {
           "id": "fcstd:model:point#Model:Shape:Model.Shape.brp:1%40location1",
+          "native_ref": "fcstd:native:shape-payload#Model:Shape:Model.Shape.brp:topology-use:6",
           "position": {
             "x": 0.0,
             "y": 0.0,
@@ -1837,6 +2685,7 @@
         },
         {
           "id": "fcstd:model:point#Model:Shape:Model.Shape.brp:11%40location1",
+          "native_ref": "fcstd:native:shape-payload#Model:Shape:Model.Shape.brp:topology-use:7",
           "position": {
             "x": 25.0,
             "y": 0.0,
@@ -1849,6 +2698,7 @@
         },
         {
           "id": "fcstd:model:point#Model:Shape:Model.Shape.brp:12%40location1",
+          "native_ref": "fcstd:native:shape-payload#Model:Shape:Model.Shape.brp:topology-use:17",
           "position": {
             "x": 25.0,
             "y": 0.0,
@@ -1861,6 +2711,7 @@
         },
         {
           "id": "fcstd:model:point#Model:Shape:Model.Shape.brp:14%40location1",
+          "native_ref": "fcstd:native:shape-payload#Model:Shape:Model.Shape.brp:topology-use:9",
           "position": {
             "x": 25.0,
             "y": 15.0,
@@ -1873,6 +2724,7 @@
         },
         {
           "id": "fcstd:model:point#Model:Shape:Model.Shape.brp:16%40location1",
+          "native_ref": "fcstd:native:shape-payload#Model:Shape:Model.Shape.brp:topology-use:19",
           "position": {
             "x": 25.0,
             "y": 15.0,
@@ -1885,6 +2737,7 @@
         },
         {
           "id": "fcstd:model:point#Model:Shape:Model.Shape.brp:2%40location1",
+          "native_ref": "fcstd:native:shape-payload#Model:Shape:Model.Shape.brp:topology-use:16",
           "position": {
             "x": 0.0,
             "y": 0.0,
@@ -1897,6 +2750,7 @@
         },
         {
           "id": "fcstd:model:point#Model:Shape:Model.Shape.brp:4%40location1",
+          "native_ref": "fcstd:native:shape-payload#Model:Shape:Model.Shape.brp:topology-use:11",
           "position": {
             "x": 0.0,
             "y": 15.0,
@@ -1909,6 +2763,7 @@
         },
         {
           "id": "fcstd:model:point#Model:Shape:Model.Shape.brp:6%40location1",
+          "native_ref": "fcstd:native:shape-payload#Model:Shape:Model.Shape.brp:topology-use:21",
           "position": {
             "x": 0.0,
             "y": 15.0,
@@ -1929,6 +2784,7 @@
         {
           "body": "fcstd:model:body#Model:Shape:Model.Shape.brp:34%40location1",
           "id": "fcstd:model:region#Model:Shape:Model.Shape.brp:34%40location1",
+          "native_ref": "fcstd:native:shape-payload#Model:Shape:Model.Shape.brp:topology-use:1",
           "shells": [
             "fcstd:model:shell#Model:Shape:Model.Shape.brp:33%40location1"
           ]
@@ -1950,37 +2806,30 @@
           "object": "fcstd:native:object#Dimension",
           "order": 0,
           "parameters": {
-            "AngleOverride": "<Property name=\"AngleOverride\" type=\"App::PropertyBool\" status=\"134217728\">\n                    <Bool value=\"false\"/>\n                </Property>",
-            "Arbitrary": "<Property name=\"Arbitrary\" type=\"App::PropertyBool\" status=\"134217728\">\n                    <Bool value=\"false\"/>\n                </Property>",
-            "ArbitraryTolerances": "<Property name=\"ArbitraryTolerances\" type=\"App::PropertyBool\" status=\"134217728\">\n                    <Bool value=\"false\"/>\n                </Property>",
-            "BoxCorners": "<Property name=\"BoxCorners\" type=\"App::PropertyVectorList\">\n                    <VectorList file=\"BoxCorners\"/>\n                </Property>",
-            "Caption": "<Property name=\"Caption\" type=\"App::PropertyString\" status=\"134217736\">\n                    <String value=\"\"/>\n                </Property>",
-            "EqualTolerance": "<Property name=\"EqualTolerance\" type=\"App::PropertyBool\" status=\"134217728\">\n                    <Bool value=\"true\"/>\n                </Property>",
-            "ExpressionEngine": "<Property name=\"ExpressionEngine\" type=\"App::PropertyExpressionEngine\" status=\"67108864\">\n                    <ExpressionEngine count=\"0\">\n                    </ExpressionEngine>\n                </Property>",
-            "ExtensionAngle": "<Property name=\"ExtensionAngle\" type=\"App::PropertyAngle\" status=\"134217728\">\n                    <Float value=\"0.0000000000000000\"/>\n                </Property>",
-            "FormatSpec": "<Property name=\"FormatSpec\" type=\"App::PropertyString\" status=\"134217728\">\n                    <String value=\"%.2w\"/>\n                </Property>",
-            "FormatSpecOverTolerance": "<Property name=\"FormatSpecOverTolerance\" type=\"App::PropertyString\" status=\"134217728\">\n                    <String value=\"%+.2w\"/>\n                </Property>",
-            "FormatSpecUnderTolerance": "<Property name=\"FormatSpecUnderTolerance\" type=\"App::PropertyString\" status=\"134217732\">\n                    <String value=\"%+.2w\"/>\n                </Property>",
-            "Inverted": "<Property name=\"Inverted\" type=\"App::PropertyBool\" status=\"134217728\">\n                    <Bool value=\"false\"/>\n                </Property>",
-            "Label": "<Property name=\"Label\" type=\"App::PropertyString\" status=\"134217728\">\n                    <String value=\"Dimension\"/>\n                </Property>",
-            "Label2": "<Property name=\"Label2\" type=\"App::PropertyString\" status=\"67108992\">\n                    <String value=\"\"/>\n                </Property>",
-            "LineAngle": "<Property name=\"LineAngle\" type=\"App::PropertyAngle\" status=\"134217728\">\n                    <Float value=\"0.0000000000000000\"/>\n                </Property>",
-            "LockPosition": "<Property name=\"LockPosition\" type=\"App::PropertyBool\" status=\"134217736\">\n                    <Bool value=\"false\"/>\n                </Property>",
-            "MeasureType": "<Property name=\"MeasureType\" type=\"App::PropertyEnumeration\">\n                    <Integer value=\"1\"/>\n                </Property>",
-            "OverTolerance": "<Property name=\"OverTolerance\" type=\"App::PropertyQuantityConstraint\" status=\"134217728\">\n                    <Float value=\"0.0000000000000000\"/>\n                </Property>",
-            "References3D": "<Property name=\"References3D\" type=\"App::PropertyLinkSubList\" status=\"4\">\n                    <LinkSubList count=\"0\">\n                    </LinkSubList>\n                </Property>",
-            "Rotation": "<Property name=\"Rotation\" type=\"App::PropertyAngle\" status=\"134217740\">\n                    <Float value=\"0.0000000000000000\"/>\n                </Property>",
-            "SavedGeometry": "<Property name=\"SavedGeometry\" type=\"Part::PropertyTopoShapeList\" status=\"8192\">\n                    <ShapeList count=\"1\">\n                        <TopoShape                         file=\"Dimension.SavedGeometry.0.brp\"/>\n                    </ShapeList>\n                </Property>",
-            "Scale": "<Property name=\"Scale\" type=\"App::PropertyFloatConstraint\" status=\"12\">\n                    <Float value=\"1.0000000000000000\"/>\n                </Property>",
-            "ScaleType": "<Property name=\"ScaleType\" type=\"App::PropertyEnumeration\" status=\"134217740\">\n                    <Integer value=\"0\"/>\n                </Property>",
-            "ShowUnits": "<Property name=\"ShowUnits\" type=\"App::PropertyBool\">\n                    <Bool value=\"false\"/>\n                </Property>",
-            "TheoreticalExact": "<Property name=\"TheoreticalExact\" type=\"App::PropertyBool\" status=\"134217728\">\n                    <Bool value=\"false\"/>\n                </Property>",
-            "Type": "<Property name=\"Type\" type=\"App::PropertyEnumeration\">\n                    <Integer value=\"0\"/>\n                </Property>",
-            "UnderTolerance": "<Property name=\"UnderTolerance\" type=\"App::PropertyQuantityConstraint\" status=\"134217732\">\n                    <Float value=\"0.0000000000000000\"/>\n                </Property>",
-            "UseActualArea": "<Property name=\"UseActualArea\" type=\"App::PropertyBool\" status=\"134217728\">\n                    <Bool value=\"true\"/>\n                </Property>",
-            "Visibility": "<Property name=\"Visibility\" type=\"App::PropertyBool\" status=\"648\">\n                    <Bool value=\"true\"/>\n                </Property>",
-            "X": "<Property name=\"X\" type=\"App::PropertyDistance\">\n                    <Float value=\"80.0000000000000000\"/>\n                </Property>",
-            "Y": "<Property name=\"Y\" type=\"App::PropertyDistance\">\n                    <Float value=\"125.0000000000000000\"/>\n                </Property>"
+            "AngleOverride": "false",
+            "Arbitrary": "false",
+            "ArbitraryTolerances": "false",
+            "Caption": "",
+            "EqualTolerance": "true",
+            "ExtensionAngle": "0.0",
+            "FormatSpecOverTolerance": "%+.2w",
+            "FormatSpecUnderTolerance": "%+.2w",
+            "Inverted": "false",
+            "Label": "Dimension",
+            "Label2": "",
+            "LineAngle": "0.0",
+            "LockPosition": "false",
+            "MeasureType": "1",
+            "OverTolerance": "0.0",
+            "Rotation": "0.0",
+            "Scale": "1.0",
+            "ScaleType": "0",
+            "ShowUnits": "false",
+            "TheoreticalExact": "false",
+            "Type": "0",
+            "UnderTolerance": "0.0",
+            "UseActualArea": "true",
+            "Visibility": "true"
           },
           "position": [
             80.0,
@@ -2012,24 +2861,19 @@
           "object": "fcstd:native:object#Note",
           "order": 1,
           "parameters": {
-            "Caption": "<Property name=\"Caption\" type=\"App::PropertyString\" status=\"134217728\">\n                    <String value=\"\"/>\n                </Property>",
-            "ExpressionEngine": "<Property name=\"ExpressionEngine\" type=\"App::PropertyExpressionEngine\" status=\"67108864\">\n                    <ExpressionEngine count=\"0\">\n                    </ExpressionEngine>\n                </Property>",
-            "Font": "<Property name=\"Font\" type=\"App::PropertyFont\">\n                    <String value=\"osifont\"/>\n                </Property>",
-            "Label": "<Property name=\"Label\" type=\"App::PropertyString\" status=\"134217728\">\n                    <String value=\"Note\"/>\n                </Property>",
-            "Label2": "<Property name=\"Label2\" type=\"App::PropertyString\" status=\"67108992\">\n                    <String value=\"\"/>\n                </Property>",
-            "LineSpace": "<Property name=\"LineSpace\" type=\"App::PropertyInteger\">\n                    <Integer value=\"100\"/>\n                </Property>",
-            "LockPosition": "<Property name=\"LockPosition\" type=\"App::PropertyBool\" status=\"134217728\">\n                    <Bool value=\"false\"/>\n                </Property>",
-            "MaxWidth": "<Property name=\"MaxWidth\" type=\"App::PropertyFloat\">\n                    <Float value=\"-1.0000000000000000\"/>\n                </Property>",
-            "Rotation": "<Property name=\"Rotation\" type=\"App::PropertyAngle\" status=\"134217728\">\n                    <Float value=\"0.0000000000000000\"/>\n                </Property>",
-            "Scale": "<Property name=\"Scale\" type=\"App::PropertyFloatConstraint\" status=\"12\">\n                    <Float value=\"1.0000000000000000\"/>\n                </Property>",
-            "ScaleType": "<Property name=\"ScaleType\" type=\"App::PropertyEnumeration\" status=\"134217736\">\n                    <Integer value=\"0\"/>\n                </Property>",
-            "Text": "<Property name=\"Text\" type=\"App::PropertyStringList\">\n                    <StringList count=\"1\">\n                        <String value=\"CC0 INSPECTION NOTE\"/>\n                    </StringList>\n                </Property>",
-            "TextColor": "<Property name=\"TextColor\" type=\"App::PropertyColor\">\n                    <PropertyColor value=\"556083711\"/>\n                </Property>",
-            "TextSize": "<Property name=\"TextSize\" type=\"App::PropertyLength\">\n                    <Float value=\"5.0000000000000000\"/>\n                </Property>",
-            "TextStyle": "<Property name=\"TextStyle\" type=\"App::PropertyEnumeration\">\n                    <Integer value=\"0\"/>\n                </Property>",
-            "Visibility": "<Property name=\"Visibility\" type=\"App::PropertyBool\" status=\"648\">\n                    <Bool value=\"true\"/>\n                </Property>",
-            "X": "<Property name=\"X\" type=\"App::PropertyDistance\">\n                    <Float value=\"105.0000000000000000\"/>\n                </Property>",
-            "Y": "<Property name=\"Y\" type=\"App::PropertyDistance\">\n                    <Float value=\"148.5000000000000000\"/>\n                </Property>"
+            "Caption": "",
+            "Font": "osifont",
+            "Label": "Note",
+            "Label2": "",
+            "LineSpace": "100",
+            "LockPosition": "false",
+            "MaxWidth": "-1.0",
+            "Rotation": "0.0",
+            "Scale": "1.0",
+            "ScaleType": "0",
+            "TextSize": "5.0",
+            "TextStyle": "0",
+            "Visibility": "true"
           },
           "position": [
             105.0,
@@ -2061,19 +2905,15 @@
           "object": "fcstd:native:object#Symbol",
           "order": 2,
           "parameters": {
-            "Caption": "<Property name=\"Caption\" type=\"App::PropertyString\" status=\"134217728\">\n                    <String value=\"\"/>\n                </Property>",
-            "EditableTexts": "<Property name=\"EditableTexts\" type=\"App::PropertyStringList\">\n                    <StringList count=\"0\">\n                    </StringList>\n                </Property>",
-            "ExpressionEngine": "<Property name=\"ExpressionEngine\" type=\"App::PropertyExpressionEngine\" status=\"67108864\">\n                    <ExpressionEngine count=\"0\">\n                    </ExpressionEngine>\n                </Property>",
-            "Label": "<Property name=\"Label\" type=\"App::PropertyString\" status=\"134217728\">\n                    <String value=\"Symbol\"/>\n                </Property>",
-            "Label2": "<Property name=\"Label2\" type=\"App::PropertyString\" status=\"67108992\">\n                    <String value=\"\"/>\n                </Property>",
-            "LockPosition": "<Property name=\"LockPosition\" type=\"App::PropertyBool\" status=\"134217728\">\n                    <Bool value=\"false\"/>\n                </Property>",
-            "Rotation": "<Property name=\"Rotation\" type=\"App::PropertyAngle\" status=\"134217728\">\n                    <Float value=\"0.0000000000000000\"/>\n                </Property>",
-            "Scale": "<Property name=\"Scale\" type=\"App::PropertyFloatConstraint\">\n                    <Float value=\"1.0000000000000000\"/>\n                </Property>",
-            "ScaleType": "<Property name=\"ScaleType\" type=\"App::PropertyEnumeration\" status=\"134217728\">\n                    <Integer value=\"2\"/>\n                </Property>",
-            "Symbol": "__elided_authoring_path_sha256:2b25790b13dd250c3b22415fb776cfa6d8dba840cae08d2a270fda72f57b2ef7",
-            "Visibility": "<Property name=\"Visibility\" type=\"App::PropertyBool\" status=\"648\">\n                    <Bool value=\"true\"/>\n                </Property>",
-            "X": "<Property name=\"X\" type=\"App::PropertyDistance\">\n                    <Float value=\"105.0000000000000000\"/>\n                </Property>",
-            "Y": "<Property name=\"Y\" type=\"App::PropertyDistance\">\n                    <Float value=\"148.5000000000000000\"/>\n                </Property>"
+            "Caption": "",
+            "Label": "Symbol",
+            "Label2": "",
+            "LockPosition": "false",
+            "Rotation": "0.0",
+            "Scale": "1.0",
+            "ScaleType": "2",
+            "Symbol": "__elided_authoring_path_sha256:a5fccab6942217b6880d94e60e8a3d0a8721c21259dc7e6d06a506947c836292",
+            "Visibility": "true"
           },
           "position": [
             105.0,
@@ -2121,6 +2961,7 @@
               "kind": "face"
             }
           ],
+          "native_ref": "fcstd:native:shape-payload#Model:Shape:Model.Shape.brp:topology-use:2",
           "region": "fcstd:model:region#Model:Shape:Model.Shape.brp:34%40location1"
         }
       ],
@@ -2287,41 +3128,49 @@
       "vertices": [
         {
           "id": "fcstd:model:vertex#Model:Shape:Model.Shape.brp:1%40location1",
+          "native_ref": "fcstd:native:shape-payload#Model:Shape:Model.Shape.brp:topology-use:6",
           "point": "fcstd:model:point#Model:Shape:Model.Shape.brp:1%40location1",
           "tolerance": 1e-7
         },
         {
           "id": "fcstd:model:vertex#Model:Shape:Model.Shape.brp:11%40location1",
+          "native_ref": "fcstd:native:shape-payload#Model:Shape:Model.Shape.brp:topology-use:7",
           "point": "fcstd:model:point#Model:Shape:Model.Shape.brp:11%40location1",
           "tolerance": 1e-7
         },
         {
           "id": "fcstd:model:vertex#Model:Shape:Model.Shape.brp:12%40location1",
+          "native_ref": "fcstd:native:shape-payload#Model:Shape:Model.Shape.brp:topology-use:17",
           "point": "fcstd:model:point#Model:Shape:Model.Shape.brp:12%40location1",
           "tolerance": 1e-7
         },
         {
           "id": "fcstd:model:vertex#Model:Shape:Model.Shape.brp:14%40location1",
+          "native_ref": "fcstd:native:shape-payload#Model:Shape:Model.Shape.brp:topology-use:9",
           "point": "fcstd:model:point#Model:Shape:Model.Shape.brp:14%40location1",
           "tolerance": 1e-7
         },
         {
           "id": "fcstd:model:vertex#Model:Shape:Model.Shape.brp:16%40location1",
+          "native_ref": "fcstd:native:shape-payload#Model:Shape:Model.Shape.brp:topology-use:19",
           "point": "fcstd:model:point#Model:Shape:Model.Shape.brp:16%40location1",
           "tolerance": 1e-7
         },
         {
           "id": "fcstd:model:vertex#Model:Shape:Model.Shape.brp:2%40location1",
+          "native_ref": "fcstd:native:shape-payload#Model:Shape:Model.Shape.brp:topology-use:16",
           "point": "fcstd:model:point#Model:Shape:Model.Shape.brp:2%40location1",
           "tolerance": 1e-7
         },
         {
           "id": "fcstd:model:vertex#Model:Shape:Model.Shape.brp:4%40location1",
+          "native_ref": "fcstd:native:shape-payload#Model:Shape:Model.Shape.brp:topology-use:11",
           "point": "fcstd:model:point#Model:Shape:Model.Shape.brp:4%40location1",
           "tolerance": 1e-7
         },
         {
           "id": "fcstd:model:vertex#Model:Shape:Model.Shape.brp:6%40location1",
+          "native_ref": "fcstd:native:shape-payload#Model:Shape:Model.Shape.brp:topology-use:21",
           "point": "fcstd:model:point#Model:Shape:Model.Shape.brp:6%40location1",
           "tolerance": 1e-7
         }
@@ -2334,7 +3183,6 @@
           "annotations": 3,
           "applications": 8,
           "attachments": 1,
-          "byte_coverage": 1,
           "carrier_census": 1,
           "design_census": 1,
           "document": 1,
@@ -2346,38 +3194,35 @@
           "gui_properties": 0,
           "gui_view_providers": 0,
           "joints": 0,
-          "logical_ledger": 329,
           "objects": 8,
-          "physical_ledger": 36,
           "product_nodes": 0,
           "properties": 162,
           "shape_payloads": 1,
-          "string_tables": 1
+          "string_tables": 1,
+          "topology_uses": 34
         }
       },
       "__arena_sha256": {
         "fcstd": {
-          "annotations": "c74391f48553a73d9607242a8ae4bfa2021edce975741f27e19161c667c4c93f",
-          "applications": "a2d4b4b0e1c220308225fbc8a6e95ea222d7e598cad139b610c75f7c296cdc74",
-          "byte_coverage": "a80605792f4defd0bd2bf8417b540530e553c202041b23b3c4c48b8e78c828f3",
+          "annotations": "fc4aa87de03311dda60040d0cb3d936be17db5df30d5cbbff737376b85362555",
+          "applications": "23e16a11390a3900af9e33f2f84f1cd281d5c61708277e0ebe87f550e748fc90",
           "carrier_census": "efa84ccb5acbee7f3408b19c2d98278e5324cb914eae7422f6137782c9f45aec",
-          "design_census": "36fa88b89a1dbe73989e2f0e0d30bcbbd58c94c8d73b8cef24757d8207dcfef3",
+          "design_census": "389b7225d9a487541f263a6ad1ee5d24993fb853ba6d5495efaf797613ad9983",
           "document": "49c32df2c71ab8d28178fc633c063765d5d41f35656d27686d0fabd47fb26485",
-          "drawings": "5cdcec5c4482f7c3a6ad0b12e6e2ed2241129b2c68b8e20852100edfcb490d16",
+          "drawings": "efd7da12db41130568e33bb9b42336cfbca2cdb33f9b521d33d4886e487a9b1b",
           "element_maps": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
-          "entries": "79f225f6b4969c8724282d6fb640a39df0b9a9e2c3db7677359d9281314fb219",
-          "extensions": "591c321408a3afc92e72ad67590a489a98ea5d23662a7b93757493b8310b095f",
+          "entries": "76bd1463480f2c6a5cea7efd1482254d9333bf9167fdf85f2ec1456aa7724182",
+          "extensions": "19495cb0b8ceb84b1577dd5440e20cffa497654577f3a960f7b66e26b85b7405",
           "gui_documents": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
           "gui_properties": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
           "gui_view_providers": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
           "joints": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
-          "logical_ledger": "ae6dc42c0dc8de36661733550307086f878ae8f8e8225ff20627b1d5d61fd03e",
-          "objects": "958927243c96567f3f526b0c4935392329d1a127ef1967d04f56ffd896696566",
-          "physical_ledger": "a5a34d2f8a4dd4692f975cbd1448c63c5225d6ca8b3f1c860827d2a68e6096f2",
+          "objects": "0639e07557af7849b20719db99dc2cd4b37dee5f9ae4a94ed980ba8f41be14cb",
           "product_nodes": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
-          "properties": "1ccacf02cb538308289c10b9137703cf90d4a460a81bf8d359860f0d67ff61ff",
+          "properties": "3763a80b635bd07791c9bdd6a26b72188717acad401bcc502a8dde0fc8b8d41c",
           "shape_payloads": "d371e79d860d5c655eb5abef73453c570b741dd9321fe278f5d840a709a687cf",
-          "string_tables": "4f6f6cceca6ea119f3668ff3a172117f84c610a3266dc4414d3070969caa5c4f"
+          "string_tables": "4f6f6cceca6ea119f3668ff3a172117f84c610a3266dc4414d3070969caa5c4f",
+          "topology_uses": "bc672b1f00ef0ac1864c4cd8a6c6f784ebaea24636431f9ae79168d71fc1f746"
         }
       },
       "__arena_values": {
@@ -2472,16 +3317,15 @@
       },
       "__elided": "attachment and product-node records are pinned directly; remaining native arena values are omitted and pinned by a digest over their canonical JSON"
     },
+    "scope": {
+      "design": true,
+      "model": true
+    },
     "source": {
       "attributes": {
         "application_domains": "App,Part,TechDraw",
-        "archive_entry_count": "5",
         "document_kind": "drawing",
-        "document_local_sha256": "<elided: digest over tolerantly compared geometry>",
         "document_root": "Document",
-        "object_count": "8",
-        "physical_archive_bytes": "5014",
-        "physical_ledger_spans": "36",
         "program_version": "1.1R20260414 (Git shallow)"
       },
       "identity": {
@@ -2574,6 +3418,316 @@
         },
         "message": "fcstd:native:object#Note: untyped font properties, alignment, colour, line spacing, rich text, captions and dimension presentation remain native",
         "severity": "warning"
+      },
+      {
+        "code": {
+          "code": "attribute.property-unprojected",
+          "kind": "metadata_not_transferred",
+          "namespace": "fcstd",
+          "scope": "namespaced"
+        },
+        "message": "property fcstd:native:property#0:Material (App::PropertyMap) has no neutral attribute encoding; its admitted typed native values remain held",
+        "severity": "warning"
+      },
+      {
+        "code": {
+          "code": "attribute.property-unprojected",
+          "kind": "metadata_not_transferred",
+          "namespace": "fcstd",
+          "scope": "namespaced"
+        },
+        "message": "property fcstd:native:property#0:Meta (App::PropertyMap) has no neutral attribute encoding; its admitted typed native values remain held",
+        "severity": "warning"
+      },
+      {
+        "code": {
+          "code": "attribute.property-unprojected",
+          "kind": "metadata_not_transferred",
+          "namespace": "fcstd",
+          "scope": "namespaced"
+        },
+        "message": "property fcstd:native:property#0:Uid (App::PropertyUUID) has no neutral attribute encoding; its admitted typed native values remain held",
+        "severity": "warning"
+      },
+      {
+        "code": {
+          "code": "attribute.property-unprojected",
+          "kind": "metadata_not_transferred",
+          "namespace": "fcstd",
+          "scope": "namespaced"
+        },
+        "message": "property fcstd:native:property#0:UnitSystem (App::PropertyEnumeration) has no neutral attribute encoding; its admitted typed native values remain held",
+        "severity": "warning"
+      },
+      {
+        "code": {
+          "code": "attribute.property-unprojected",
+          "kind": "metadata_not_transferred",
+          "namespace": "fcstd",
+          "scope": "namespaced"
+        },
+        "message": "property fcstd:native:property#CorpusMetadata:ExpressionEngine (App::PropertyExpressionEngine) has no neutral attribute encoding; its admitted typed native values remain held",
+        "severity": "warning"
+      },
+      {
+        "code": {
+          "code": "attribute.property-unprojected",
+          "kind": "metadata_not_transferred",
+          "namespace": "fcstd",
+          "scope": "namespaced"
+        },
+        "message": "property fcstd:native:property#CorpusMetadata:InertValue (App::PropertyPythonObject) has no neutral attribute encoding; its admitted typed native values remain held",
+        "severity": "warning"
+      },
+      {
+        "code": {
+          "code": "attribute.property-unprojected",
+          "kind": "metadata_not_transferred",
+          "namespace": "fcstd",
+          "scope": "namespaced"
+        },
+        "message": "property fcstd:native:property#CorpusMetadata:Proxy (App::PropertyPythonObject) has no neutral attribute encoding; its admitted typed native values remain held",
+        "severity": "warning"
+      },
+      {
+        "code": {
+          "code": "attribute.property-unprojected",
+          "kind": "metadata_not_transferred",
+          "namespace": "fcstd",
+          "scope": "namespaced"
+        },
+        "message": "property fcstd:native:property#Dimension:BoxCorners (App::PropertyVectorList) has no neutral attribute encoding; its admitted typed native values remain held",
+        "severity": "warning"
+      },
+      {
+        "code": {
+          "code": "attribute.property-unprojected",
+          "kind": "metadata_not_transferred",
+          "namespace": "fcstd",
+          "scope": "namespaced"
+        },
+        "message": "property fcstd:native:property#Dimension:ExpressionEngine (App::PropertyExpressionEngine) has no neutral attribute encoding; its admitted typed native values remain held",
+        "severity": "warning"
+      },
+      {
+        "code": {
+          "code": "attribute.property-unprojected",
+          "kind": "metadata_not_transferred",
+          "namespace": "fcstd",
+          "scope": "namespaced"
+        },
+        "message": "property fcstd:native:property#Dimension:References3D (App::PropertyLinkSubList) has no neutral attribute encoding; its admitted typed native values remain held",
+        "severity": "warning"
+      },
+      {
+        "code": {
+          "code": "attribute.property-unprojected",
+          "kind": "metadata_not_transferred",
+          "namespace": "fcstd",
+          "scope": "namespaced"
+        },
+        "message": "property fcstd:native:property#Dimension:SavedGeometry (Part::PropertyTopoShapeList) has no neutral attribute encoding; its admitted typed native values remain held",
+        "severity": "warning"
+      },
+      {
+        "code": {
+          "code": "attribute.property-unprojected",
+          "kind": "metadata_not_transferred",
+          "namespace": "fcstd",
+          "scope": "namespaced"
+        },
+        "message": "property fcstd:native:property#Model:AttacherEngine (App::PropertyEnumeration) has no neutral attribute encoding; its admitted typed native values remain held",
+        "severity": "warning"
+      },
+      {
+        "code": {
+          "code": "attribute.property-unprojected",
+          "kind": "metadata_not_transferred",
+          "namespace": "fcstd",
+          "scope": "namespaced"
+        },
+        "message": "property fcstd:native:property#Model:AttachmentSupport (App::PropertyLinkSubList) has no neutral attribute encoding; its admitted typed native values remain held",
+        "severity": "warning"
+      },
+      {
+        "code": {
+          "code": "attribute.property-unprojected",
+          "kind": "metadata_not_transferred",
+          "namespace": "fcstd",
+          "scope": "namespaced"
+        },
+        "message": "property fcstd:native:property#Model:ShapeMaterial (Materials::PropertyMaterial) has no neutral attribute encoding; its admitted typed native values remain held",
+        "severity": "warning"
+      },
+      {
+        "code": {
+          "code": "attribute.property-unprojected",
+          "kind": "metadata_not_transferred",
+          "namespace": "fcstd",
+          "scope": "namespaced"
+        },
+        "message": "property fcstd:native:property#Note:ExpressionEngine (App::PropertyExpressionEngine) has no neutral attribute encoding; its admitted typed native values remain held",
+        "severity": "warning"
+      },
+      {
+        "code": {
+          "code": "attribute.property-unprojected",
+          "kind": "metadata_not_transferred",
+          "namespace": "fcstd",
+          "scope": "namespaced"
+        },
+        "message": "property fcstd:native:property#Note:TextColor (App::PropertyColor) has no neutral attribute encoding; its admitted typed native values remain held",
+        "severity": "warning"
+      },
+      {
+        "code": {
+          "code": "attribute.property-unprojected",
+          "kind": "metadata_not_transferred",
+          "namespace": "fcstd",
+          "scope": "namespaced"
+        },
+        "message": "property fcstd:native:property#Page:ExpressionEngine (App::PropertyExpressionEngine) has no neutral attribute encoding; its admitted typed native values remain held",
+        "severity": "warning"
+      },
+      {
+        "code": {
+          "code": "attribute.property-unprojected",
+          "kind": "metadata_not_transferred",
+          "namespace": "fcstd",
+          "scope": "namespaced"
+        },
+        "message": "property fcstd:native:property#Symbol:EditableTexts (App::PropertyStringList) has no neutral attribute encoding; its admitted typed native values remain held",
+        "severity": "warning"
+      },
+      {
+        "code": {
+          "code": "attribute.property-unprojected",
+          "kind": "metadata_not_transferred",
+          "namespace": "fcstd",
+          "scope": "namespaced"
+        },
+        "message": "property fcstd:native:property#Symbol:ExpressionEngine (App::PropertyExpressionEngine) has no neutral attribute encoding; its admitted typed native values remain held",
+        "severity": "warning"
+      },
+      {
+        "code": {
+          "code": "attribute.property-unprojected",
+          "kind": "metadata_not_transferred",
+          "namespace": "fcstd",
+          "scope": "namespaced"
+        },
+        "message": "property fcstd:native:property#Template:EditableTexts (App::PropertyMap) has no neutral attribute encoding; its admitted typed native values remain held",
+        "severity": "warning"
+      },
+      {
+        "code": {
+          "code": "attribute.property-unprojected",
+          "kind": "metadata_not_transferred",
+          "namespace": "fcstd",
+          "scope": "namespaced"
+        },
+        "message": "property fcstd:native:property#Template:ExpressionEngine (App::PropertyExpressionEngine) has no neutral attribute encoding; its admitted typed native values remain held",
+        "severity": "warning"
+      },
+      {
+        "code": {
+          "code": "attribute.property-unprojected",
+          "kind": "metadata_not_transferred",
+          "namespace": "fcstd",
+          "scope": "namespaced"
+        },
+        "message": "property fcstd:native:property#Template:PageResult (App::PropertyFileIncluded) has no neutral attribute encoding; its admitted typed native values remain held",
+        "severity": "warning"
+      },
+      {
+        "code": {
+          "code": "attribute.property-unprojected",
+          "kind": "metadata_not_transferred",
+          "namespace": "fcstd",
+          "scope": "namespaced"
+        },
+        "message": "property fcstd:native:property#View:CenterLines (TechDraw::PropertyCenterLineList) has no neutral attribute encoding; its admitted typed native values remain held",
+        "severity": "warning"
+      },
+      {
+        "code": {
+          "code": "attribute.property-unprojected",
+          "kind": "metadata_not_transferred",
+          "namespace": "fcstd",
+          "scope": "namespaced"
+        },
+        "message": "property fcstd:native:property#View:CosmeticEdges (TechDraw::PropertyCosmeticEdgeList) has no neutral attribute encoding; its admitted typed native values remain held",
+        "severity": "warning"
+      },
+      {
+        "code": {
+          "code": "attribute.property-unprojected",
+          "kind": "metadata_not_transferred",
+          "namespace": "fcstd",
+          "scope": "namespaced"
+        },
+        "message": "property fcstd:native:property#View:CosmeticVertexes (TechDraw::PropertyCosmeticVertexList) has no neutral attribute encoding; its admitted typed native values remain held",
+        "severity": "warning"
+      },
+      {
+        "code": {
+          "code": "attribute.property-unprojected",
+          "kind": "metadata_not_transferred",
+          "namespace": "fcstd",
+          "scope": "namespaced"
+        },
+        "message": "property fcstd:native:property#View:ExpressionEngine (App::PropertyExpressionEngine) has no neutral attribute encoding; its admitted typed native values remain held",
+        "severity": "warning"
+      },
+      {
+        "code": {
+          "code": "attribute.property-unprojected",
+          "kind": "metadata_not_transferred",
+          "namespace": "fcstd",
+          "scope": "namespaced"
+        },
+        "message": "property fcstd:native:property#View:GeomFormats (TechDraw::PropertyGeomFormatList) has no neutral attribute encoding; its admitted typed native values remain held",
+        "severity": "warning"
+      },
+      {
+        "code": {
+          "code": "attribute.property-unprojected",
+          "kind": "metadata_not_transferred",
+          "namespace": "fcstd",
+          "scope": "namespaced"
+        },
+        "message": "property fcstd:native:property#View:XSource (App::PropertyXLinkList) has no neutral attribute encoding; its admitted typed native values remain held",
+        "severity": "warning"
+      },
+      {
+        "code": {
+          "code": "source.model-payload-unrepresented",
+          "kind": "record_not_typed",
+          "namespace": "fcstd",
+          "scope": "namespaced"
+        },
+        "message": "opaque payload BoxCorners survives only as source bytes; its Model content has no typed representation",
+        "severity": "warning"
+      },
+      {
+        "code": {
+          "code": "source.model-payload-unrepresented",
+          "kind": "record_not_typed",
+          "namespace": "fcstd",
+          "scope": "namespaced"
+        },
+        "message": "opaque payload Dimension.SavedGeometry.0.brp survives only as source bytes; its Model content has no typed representation",
+        "severity": "warning"
+      },
+      {
+        "code": {
+          "code": "source.model-payload-unrepresented",
+          "kind": "record_not_typed",
+          "namespace": "fcstd",
+          "scope": "namespaced"
+        },
+        "message": "opaque payload cc0_template.svg survives only as source bytes; its Model content has no typed representation",
+        "severity": "warning"
       }
     ],
     "notes": [
@@ -2582,15 +3736,72 @@
       "document root=Document",
       "document kind=drawing",
       "object count=8",
-      "physical ledger spans=36 coverage=exact",
       "ProgramVersion=1.1R20260414 (Git shallow)"
     ],
     "transfer": {
       "geometry_transferred": true,
-      "transfer": "full"
+      "scope": {
+        "design": true,
+        "model": true
+      }
     }
   },
   "source_fidelity": {
-    "annotations": {}
+    "annotations": {},
+    "metadata": {
+      "document_local_sha256": "4008c1adf5c88ff32c2404a05a6a55d89cc81524859aad3f1580a847ba2f14fd",
+      "fcstd.archive_entry_count": "5",
+      "fcstd.object_count": "8"
+    },
+    "retained_records": {
+      "fcstd:native:entry#BoxCorners": {
+        "bytes": {
+          "byte_len": 52,
+          "retention": "digest",
+          "sha256": "b0430ea9a0cdc1bac8ac17a53156d35f467925840fd9da0a7ffba8e647712991"
+        },
+        "offset": 0,
+        "stream": "BoxCorners",
+        "untyped": [
+          "model"
+        ]
+      },
+      "fcstd:native:entry#Dimension.SavedGeometry.0.brp": {
+        "bytes": {
+          "byte_len": 154,
+          "retention": "digest",
+          "sha256": "896636196a9db69f01fe6a3bdccec46f1f1e00b90985671f605b0a0aa8b32912"
+        },
+        "offset": 0,
+        "stream": "Dimension.SavedGeometry.0.brp",
+        "untyped": [
+          "model"
+        ]
+      },
+      "fcstd:native:entry#cc0_template.svg": {
+        "bytes": {
+          "byte_len": 207,
+          "retention": "digest",
+          "sha256": "38a164c4e77be9189204641ee2739a27204ab78b642ceddeb5d569c95d5e949d"
+        },
+        "offset": 0,
+        "stream": "cc0_template.svg",
+        "untyped": [
+          "model"
+        ]
+      },
+      "fcstd:source:image#archive": {
+        "bytes": {
+          "data": "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",
+          "retention": "inline"
+        },
+        "offset": 0,
+        "stream": "",
+        "untyped": []
+      }
+    },
+    "unrepresented": [
+      "model"
+    ]
   }
 }

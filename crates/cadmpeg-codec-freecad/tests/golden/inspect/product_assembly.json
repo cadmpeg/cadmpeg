@@ -192,7 +192,6 @@
     "document root=Document",
     "document kind=assembly",
     "object count=24",
-    "physical ledger spans=92 coverage=exact",
     "ProgramVersion=1.1R20260414 (Git shallow)"
   ]
 }

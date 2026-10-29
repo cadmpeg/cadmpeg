@@ -1,12 +1,27 @@
 {
   "ir": {
-    "decode_depth": "full",
-    "ir_version": "9",
+    "ir_version": "10",
     "model": {
       "appearance_bindings": [],
       "appearances": [],
       "assembly_joints": [],
-      "attributes": [],
+      "attributes": [
+        {
+          "id": "iges:application:attribute#D1:0:0",
+          "name": "name",
+          "native_ref": "iges:entity:directory#1",
+          "target": {
+            "id": "iges:model:curve#D1",
+            "kind": "curve"
+          },
+          "values": [
+            {
+              "kind": "string",
+              "value": "MEMBER"
+            }
+          ]
+        }
+      ],
       "bodies": [],
       "coedges": [],
       "configurations": [],
@@ -33,10 +48,7 @@
           "source_object": {
             "format": "iges",
             "geometry_role": "support",
-            "layer": "0",
-            "name": "MEMBER",
-            "object_id": "D1",
-            "visible": true
+            "object_id": "D1"
           }
         }
       ],
@@ -45,16 +57,106 @@
       "faces": [],
       "features": [],
       "loops": [],
-      "occurrences": [],
+      "occurrences": [
+        {
+          "id": "iges:model:occurrence#D9",
+          "native_ref": "iges:product:occurrence#9",
+          "ordinal": 9,
+          "parent": {
+            "kind": "root"
+          },
+          "prototype": {
+            "definition": "iges:model:product#D7",
+            "scope": "local"
+          },
+          "transform": [
+            [
+              2.0,
+              0.0,
+              0.0,
+              10.0
+            ],
+            [
+              0.0,
+              2.0,
+              0.0,
+              20.0
+            ],
+            [
+              0.0,
+              0.0,
+              2.0,
+              30.0
+            ]
+          ]
+        },
+        {
+          "id": "iges:model:occurrence#D9:D5",
+          "native_ref": "iges:product:occurrence#9/5",
+          "ordinal": 5,
+          "parent": {
+            "kind": "occurrence",
+            "occurrence": "iges:model:occurrence#D9"
+          },
+          "prototype": {
+            "definition": "iges:model:product#D3",
+            "scope": "local"
+          },
+          "transform": [
+            [
+              0.5,
+              0.0,
+              0.0,
+              1.0
+            ],
+            [
+              0.0,
+              0.5,
+              0.0,
+              2.0
+            ],
+            [
+              0.0,
+              0.0,
+              0.5,
+              3.0
+            ]
+          ]
+        }
+      ],
       "parameters": [],
       "pcurves": [],
       "pmi": [],
       "points": [],
       "presentation_documents": [],
-      "presentation_layers": [],
+      "presentation_layers": [
+        {
+          "id": "iges:presentation:level#0",
+          "items": [
+            {
+              "curve": "iges:model:curve#D1",
+              "kind": "curve"
+            }
+          ],
+          "name": "0"
+        }
+      ],
       "procedural_curves": [],
       "procedural_surfaces": [],
-      "product_definitions": [],
+      "product_definitions": [
+        {
+          "id": "iges:model:product#D3",
+          "kind": "part",
+          "label": "CHILD",
+          "native_ref": "iges:product:subfigure-definition#D3"
+        },
+        {
+          "id": "iges:model:product#D7",
+          "kind": "part",
+          "label": "PARENT",
+          "native_ref": "iges:product:subfigure-definition#D7"
+        }
+      ],
       "regions": [],
       "semantic_annotations": [],
       "shells": [],
@@ -80,155 +182,79 @@
         "cards": [
           {
             "id": "iges:physical:card#1",
-            "line_ending": "0a",
-            "offset": 0,
-            "payload": "6f726967696e616c206669787475726520202020202020202020202020202020202020202020202020202020202020202020202020202020202020202020202020202020202020205320202020202031",
-            "section": "start",
-            "sequence": 1
+            "section": "start"
           },
           {
             "id": "iges:physical:card#10",
-            "line_ending": "0a",
-            "offset": 729,
-            "payload": "2020202020333038202020202020203420202020202020302020202020202030202020202020203020202020202020302020202020202030202020202020203030303030303230304420202020202037",
-            "section": "directory",
-            "sequence": 7
+            "section": "directory"
           },
           {
             "id": "iges:physical:card#11",
-            "line_ending": "0a",
-            "offset": 810,
-            "payload": "20202020203330382020202020202030202020202020203020202020202020312020202020202030202020202020202020202020202020202020504152454e5420202020202020304420202020202038",
-            "section": "directory",
-            "sequence": 8
+            "section": "directory"
           },
           {
             "id": "iges:physical:card#12",
-            "line_ending": "0a",
-            "offset": 891,
-            "payload": "2020202020343038202020202020203520202020202020302020202020202030202020202020203020202020202020302020202020202030202020202020203030303030303030304420202020202039",
-            "section": "directory",
-            "sequence": 9
+            "section": "directory"
           },
           {
             "id": "iges:physical:card#13",
-            "line_ending": "0a",
-            "offset": 972,
-            "payload": "2020202020343038202020202020203020202020202020302020202020202031202020202020203020202020202020202020202020202020504152454e54494e20202020202020304420202020203130",
-            "section": "directory",
-            "sequence": 10
+            "section": "directory"
           },
           {
             "id": "iges:physical:card#14",
-            "line_ending": "0a",
-            "offset": 1053,
-            "payload": "3131302c302c302c302c312c302c303b20202020202020202020202020202020202020202020202020202020202020202020202020202020202020202020202020202020202020315020202020202031",
-            "section": "parameter",
-            "sequence": 1
+            "section": "parameter"
           },
           {
             "id": "iges:physical:card#15",
-            "line_ending": "0a",
-            "offset": 1134,
-            "payload": "3330382c302c35484348494c442c312c313b2020202020202020202020202020202020202020202020202020202020202020202020202020202020202020202020202020202020335020202020202032",
-            "section": "parameter",
-            "sequence": 2
+            "section": "parameter"
           },
           {
             "id": "iges:physical:card#16",
-            "line_ending": "0a",
-            "offset": 1215,
-            "payload": "3430382c332c312c322c332c302e353b20202020202020202020202020202020202020202020202020202020202020202020202020202020202020202020202020202020202020355020202020202033",
-            "section": "parameter",
-            "sequence": 3
+            "section": "parameter"
           },
           {
             "id": "iges:physical:card#17",
-            "line_ending": "0a",
-            "offset": 1296,
-            "payload": "3330382c312c3648504152454e542c312c353b20202020202020202020202020202020202020202020202020202020202020202020202020202020202020202020202020202020375020202020202034",
-            "section": "parameter",
-            "sequence": 4
+            "section": "parameter"
           },
           {
             "id": "iges:physical:card#18",
-            "line_ending": "0a",
-            "offset": 1377,
-            "payload": "3430382c372c31302c32302c33302c323b202020202020202020202020202020202020202020202020202020202020202020202020202020202020202020202020202020202020395020202020202035",
-            "section": "parameter",
-            "sequence": 5
+            "section": "parameter"
           },
           {
             "id": "iges:physical:card#19",
-            "line_ending": "0a",
-            "offset": 1458,
-            "payload": "5330303030303031473030303030303244303030303031305030303030303035202020202020202020202020202020202020202020202020202020202020202020202020202020205420202020202031",
-            "section": "terminate",
-            "sequence": 1
+            "section": "terminate"
           },
           {
             "id": "iges:physical:card#2",
-            "line_ending": "0a",
-            "offset": 81,
-            "payload": "31482c2c31483b2c374870726f647563742c3848706172742e6967732c37486361646d7065672c3348302e312c33322c33382c362c3330382c31352c30482c312e302c322c32484d4720202020202031",
-            "section": "global",
-            "sequence": 1
+            "section": "global"
           },
           {
             "id": "iges:physical:card#3",
-            "line_ending": "0a",
-            "offset": 162,
-            "payload": "4d2c312c312e302c31354832303236303731342e3030303030302c302e3030312c313030302e302c3648617574686f722c33486f72672c31312c302c30482c30483b2020202020204720202020202032",
-            "section": "global",
-            "sequence": 2
+            "section": "global"
           },
           {
             "id": "iges:physical:card#4",
-            "line_ending": "0a",
-            "offset": 243,
-            "payload": "2020202020313130202020202020203120202020202020302020202020202030202020202020203020202020202020302020202020202030202020202020203030303031303030304420202020202031",
-            "section": "directory",
-            "sequence": 1
+            "section": "directory"
           },
           {
             "id": "iges:physical:card#5",
-            "line_ending": "0a",
-            "offset": 324,
-            "payload": "202020202031313020202020202020302020202020202030202020202020203120202020202020302020202020202020202020202020202020204d454d42455220202020202020304420202020202032",
-            "section": "directory",
-            "sequence": 2
+            "section": "directory"
           },
           {
             "id": "iges:physical:card#6",
-            "line_ending": "0a",
-            "offset": 405,
-            "payload": "2020202020333038202020202020203220202020202020302020202020202030202020202020203020202020202020302020202020202030202020202020203030303030303230304420202020202033",
-            "section": "directory",
-            "sequence": 3
+            "section": "directory"
           },
           {
             "id": "iges:physical:card#7",
-            "line_ending": "0a",
-            "offset": 486,
-            "payload": "20202020203330382020202020202030202020202020203020202020202020312020202020202030202020202020202020202020202020202020204348494c4420202020202020304420202020202034",
-            "section": "directory",
-            "sequence": 4
+            "section": "directory"
           },
           {
             "id": "iges:physical:card#8",
-            "line_ending": "0a",
-            "offset": 567,
-            "payload": "2020202020343038202020202020203320202020202020302020202020202030202020202020203020202020202020302020202020202030202020202020203030303030303030304420202020202035",
-            "section": "directory",
-            "sequence": 5
+            "section": "directory"
           },
           {
             "id": "iges:physical:card#9",
-            "line_ending": "0a",
-            "offset": 648,
-            "payload": "20202020203430382020202020202030202020202020203020202020202020312020202020202030202020202020202020202020202020204348494c44494e5320202020202020304420202020202036",
-            "section": "directory",
-            "sequence": 6
+            "section": "directory"
           }
         ],
         "circular_arrays": [],
@@ -327,63 +353,45 @@
             "line_font": 0,
             "line_weight": 0,
             "links": [],
-            "parameter_bytes": "3131302c302c302c302c312c302c303b202020202020202020202020202020202020202020202020202020202020202020202020202020202020202020202020",
             "parameter_line_count": 1,
-            "parameter_line_end": 2,
-            "parameter_line_start": 1,
-            "parameter_start": 1,
             "parameters": [
               {
-                "end": 3,
-                "start": 0,
                 "value": {
                   "kind": "integer",
                   "value": 110
                 }
               },
               {
-                "end": 5,
-                "start": 4,
                 "value": {
                   "kind": "integer",
                   "value": 0
                 }
               },
               {
-                "end": 7,
-                "start": 6,
                 "value": {
                   "kind": "integer",
                   "value": 0
                 }
               },
               {
-                "end": 9,
-                "start": 8,
                 "value": {
                   "kind": "integer",
                   "value": 0
                 }
               },
               {
-                "end": 11,
-                "start": 10,
                 "value": {
                   "kind": "integer",
                   "value": 1
                 }
               },
               {
-                "end": 13,
-                "start": 12,
                 "value": {
                   "kind": "integer",
                   "value": 0
                 }
               },
               {
-                "end": 15,
-                "start": 14,
                 "value": {
                   "kind": "integer",
                   "value": 0
@@ -421,47 +429,33 @@
             "links": [
               "iges:entity:directory#1"
             ],
-            "parameter_bytes": "3330382c302c35484348494c442c312c313b20202020202020202020202020202020202020202020202020202020202020202020202020202020202020202020",
             "parameter_line_count": 1,
-            "parameter_line_end": 3,
-            "parameter_line_start": 2,
-            "parameter_start": 2,
             "parameters": [
               {
-                "end": 3,
-                "start": 0,
                 "value": {
                   "kind": "integer",
                   "value": 308
                 }
               },
               {
-                "end": 5,
-                "start": 4,
                 "value": {
                   "kind": "integer",
                   "value": 0
                 }
               },
               {
-                "end": 13,
-                "start": 6,
                 "value": {
                   "kind": "string",
                   "value": "4348494c44"
                 }
               },
               {
-                "end": 15,
-                "start": 14,
                 "value": {
                   "kind": "integer",
                   "value": 1
                 }
               },
               {
-                "end": 17,
-                "start": 16,
                 "value": {
                   "kind": "integer",
                   "value": 1
@@ -508,55 +502,39 @@
             "links": [
               "iges:entity:directory#3"
             ],
-            "parameter_bytes": "3430382c332c312c322c332c302e353b202020202020202020202020202020202020202020202020202020202020202020202020202020202020202020202020",
             "parameter_line_count": 1,
-            "parameter_line_end": 4,
-            "parameter_line_start": 3,
-            "parameter_start": 3,
             "parameters": [
               {
-                "end": 3,
-                "start": 0,
                 "value": {
                   "kind": "integer",
                   "value": 408
                 }
               },
               {
-                "end": 5,
-                "start": 4,
                 "value": {
                   "kind": "integer",
                   "value": 3
                 }
               },
               {
-                "end": 7,
-                "start": 6,
                 "value": {
                   "kind": "integer",
                   "value": 1
                 }
               },
               {
-                "end": 9,
-                "start": 8,
                 "value": {
                   "kind": "integer",
                   "value": 2
                 }
               },
               {
-                "end": 11,
-                "start": 10,
                 "value": {
                   "kind": "integer",
                   "value": 3
                 }
               },
               {
-                "end": 15,
-                "start": 12,
                 "value": {
                   "kind": "real",
                   "value": 0.5
@@ -603,47 +581,33 @@
             "links": [
               "iges:entity:directory#5"
             ],
-            "parameter_bytes": "3330382c312c3648504152454e542c312c353b202020202020202020202020202020202020202020202020202020202020202020202020202020202020202020",
             "parameter_line_count": 1,
-            "parameter_line_end": 5,
-            "parameter_line_start": 4,
-            "parameter_start": 4,
             "parameters": [
               {
-                "end": 3,
-                "start": 0,
                 "value": {
                   "kind": "integer",
                   "value": 308
                 }
               },
               {
-                "end": 5,
-                "start": 4,
                 "value": {
                   "kind": "integer",
                   "value": 1
                 }
               },
               {
-                "end": 14,
-                "start": 6,
                 "value": {
                   "kind": "string",
                   "value": "504152454e54"
                 }
               },
               {
-                "end": 16,
-                "start": 15,
                 "value": {
                   "kind": "integer",
                   "value": 1
                 }
               },
               {
-                "end": 18,
-                "start": 17,
                 "value": {
                   "kind": "integer",
                   "value": 5
@@ -690,55 +654,39 @@
             "links": [
               "iges:entity:directory#7"
             ],
-            "parameter_bytes": "3430382c372c31302c32302c33302c323b2020202020202020202020202020202020202020202020202020202020202020202020202020202020202020202020",
             "parameter_line_count": 1,
-            "parameter_line_end": 6,
-            "parameter_line_start": 5,
-            "parameter_start": 5,
             "parameters": [
               {
-                "end": 3,
-                "start": 0,
                 "value": {
                   "kind": "integer",
                   "value": 408
                 }
               },
               {
-                "end": 5,
-                "start": 4,
                 "value": {
                   "kind": "integer",
                   "value": 7
                 }
               },
               {
-                "end": 8,
-                "start": 6,
                 "value": {
                   "kind": "integer",
                   "value": 10
                 }
               },
               {
-                "end": 11,
-                "start": 9,
                 "value": {
                   "kind": "integer",
                   "value": 20
                 }
               },
               {
-                "end": 14,
-                "start": 12,
                 "value": {
                   "kind": "integer",
                   "value": 30
                 }
               },
               {
-                "end": 16,
-                "start": 15,
                 "value": {
                   "kind": "integer",
                   "value": 2
@@ -1016,9 +964,12 @@
         "views": []
       }
     },
+    "scope": {
+      "design": true,
+      "model": true
+    },
     "source": {
       "attributes": {
-        "document_local_sha256": "<elided: digest over tolerantly compared geometry>",
         "native_file_name": "part.igs",
         "native_units": "MM",
         "parameter_delimiter": ",",
@@ -1066,7 +1017,18 @@
         }
       }
     },
-    "losses": [],
+    "losses": [
+      {
+        "code": {
+          "code": "projection.native-only",
+          "kind": "metadata_not_transferred",
+          "namespace": "iges",
+          "scope": "namespaced"
+        },
+        "message": "iges:product:occurrence#9/5/D1 member iges:entity:directory#1: product membership of carrier iges:model:curve#D1 has no neutral body owner",
+        "severity": "warning"
+      }
+    ],
     "notes": [
       "entities=5",
       "entity.110.form.0=1",
@@ -1079,55 +1041,17 @@
     ],
     "transfer": {
       "geometry_transferred": true,
-      "transfer": "full"
-    },
-    "transfer_ledger": {
-      "entries": [
-        {
-          "outcome": {
-            "disposition": "retained",
-            "note": "native record retained; semantic projection emitted",
-            "target": "iges:entity:directory#1"
-          },
-          "source": "D1"
-        },
-        {
-          "outcome": {
-            "disposition": "retained",
-            "note": "native record retained; semantic projection emitted",
-            "target": "iges:entity:directory#3"
-          },
-          "source": "D3"
-        },
-        {
-          "outcome": {
-            "disposition": "retained",
-            "note": "native record retained; semantic projection emitted",
-            "target": "iges:entity:directory#5"
-          },
-          "source": "D5"
-        },
-        {
-          "outcome": {
-            "disposition": "retained",
-            "note": "native record retained; semantic projection emitted",
-            "target": "iges:entity:directory#7"
-          },
-          "source": "D7"
-        },
-        {
-          "outcome": {
-            "disposition": "retained",
-            "note": "native record retained; semantic projection emitted",
-            "target": "iges:entity:directory#9"
-          },
-          "source": "D9"
-        }
-      ]
+      "scope": {
+        "design": true,
+        "model": true
+      }
     }
   },
   "source_fidelity": {
     "annotations": {},
+    "metadata": {
+      "document_local_sha256": "73adc4e1463df60a5179eb5d38709e449dc59c2f8f07b76a169003c4e641afa4"
+    },
     "retained_records": {
       "iges:file:source-image#0": {
         "bytes": {
@@ -1135,8 +1059,10 @@
           "retention": "inline"
         },
         "offset": 0,
-        "stream": "iges"
+        "stream": "iges",
+        "untyped": []
       }
-    }
+    },
+    "unrepresented": []
   }
 }

@@ -2,33 +2,33 @@
   "entries": [
     {
       "name": "Document.xml",
-      "payload_len": 5436,
-      "payload_sha256": "4d5ea95105271304192385bbc6640651f642e863eaabbdee847235df271e4a3e"
+      "payload_len": 5164,
+      "payload_sha256": "985c5ebb32d2454b1e67d1f5a5402f25193f90a07d528c4d55dc3c2bd97bd83b"
     },
     {
-      "name": "Box.Shape.brp",
-      "payload_len": 8938,
-      "payload_sha256": "2f23debb8d96bb228ed8333894911b5f9b6a287b86837f7c653ceb3a56464d99"
+      "name": "Box.LineColorArray",
+      "payload_len": 52,
+      "payload_sha256": "9e278ccd32d4704a1b59de5a48dcd00941c1b6a31a4684bed6cea00a5cfa608a"
+    },
+    {
+      "name": "Box.PointColorArray",
+      "payload_len": 36,
+      "payload_sha256": "a55a30a3072ec167000ca0aea47e6f4dd237b06b9b550e44188c7f87796c6ed2"
+    },
+    {
+      "name": "Box.brp",
+      "payload_len": 2561,
+      "payload_sha256": "c0fb11f1a0a8291be1363a1e4337c141b1cb065194145c112861787402b9a422"
+    },
+    {
+      "name": "Cadmpeg.StringHasher.0.txt",
+      "payload_len": 22,
+      "payload_sha256": "fb6584f9f9e27a1800242afb8012578f820f423a4ae7fda4be20731580cbe0a1"
     },
     {
       "name": "GuiDocument.xml",
-      "payload_len": 4739,
-      "payload_sha256": "d6783eefa1ff776b43bd75d711dde787c23553134f2649b4afd146679a611f3b"
-    },
-    {
-      "name": "LineColorArray",
-      "payload_len": 8,
-      "payload_sha256": "6d166fda423bd3390f4f638e72a9e649937426ee559a1609f9ef0d31345cf0b8"
-    },
-    {
-      "name": "PointColorArray",
-      "payload_len": 8,
-      "payload_sha256": "615b22db14fbfdea625ae4fbaa8222d8e0efb10fec1c531353418edded738022"
-    },
-    {
-      "name": "ShapeAppearance",
-      "payload_len": 76,
-      "payload_sha256": "97968b38261cfc1bde5c892142c1cd46be0089492166ea7adbb125ecccd82de4"
+      "payload_len": 2118,
+      "payload_sha256": "0ca78a2fa89a5a78af222d85e6fa81808a2bdb25a28328eabc85405526ccb15f"
     }
   ],
   "report": {
@@ -39,7 +39,7 @@
         "appearances": 5,
         "assembly_joints": 0,
         "assets": 0,
-        "attributes": 0,
+        "attributes": 16,
         "bodies": 1,
         "coedges": 24,
         "configurations": 0,
@@ -49,24 +49,21 @@
         "faces": 6,
         "feature_input_topologies": 0,
         "feature_result_topologies": 0,
-        "features": 1,
+        "features": 0,
         "loops": 6,
         "native.fcstd.applications": 1,
         "native.fcstd.attachments": 1,
-        "native.fcstd.byte_coverage": 1,
         "native.fcstd.carrier_census": 1,
-        "native.fcstd.design_census": 1,
         "native.fcstd.document": 1,
         "native.fcstd.entries": 6,
         "native.fcstd.gui_documents": 1,
         "native.fcstd.gui_properties": 21,
         "native.fcstd.gui_view_providers": 1,
-        "native.fcstd.logical_ledger": 106,
         "native.fcstd.objects": 1,
-        "native.fcstd.physical_ledger": 43,
         "native.fcstd.properties": 27,
         "native.fcstd.shape_payloads": 1,
         "native.fcstd.string_tables": 1,
+        "native.fcstd.topology_uses": 34,
         "occurrences": 0,
         "parameters": 0,
         "pcurves": 24,
@@ -95,20 +92,766 @@
         "view_presentations": 1
       }
     },
+    "coverage": {
+      "arenas": {
+        "appearance_bindings": "reported",
+        "appearances": "reported",
+        "assembly_joints": "written",
+        "assets": "dropped",
+        "attributes": "reported",
+        "bodies": "written",
+        "coedges": "written",
+        "configurations": "dropped",
+        "curves": "written",
+        "drawings": "dropped",
+        "edges": "written",
+        "faces": "written",
+        "feature_input_topologies": "dropped",
+        "feature_result_topologies": "dropped",
+        "features": "written",
+        "loops": "written",
+        "occurrences": "written",
+        "parameters": "written",
+        "pcurves": "written",
+        "pmi": "dropped",
+        "points": "written",
+        "presentation_documents": "written",
+        "presentation_layers": "dropped",
+        "procedural_curves": "written",
+        "procedural_surfaces": "written",
+        "product_definitions": "written",
+        "regions": "written",
+        "semantic_annotations": "dropped",
+        "shells": "written",
+        "sketch_constraints": "written",
+        "sketch_entities": "written",
+        "sketches": "written",
+        "spatial_sketch_constraints": "dropped",
+        "spatial_sketch_entities": "dropped",
+        "spatial_sketches": "dropped",
+        "spreadsheets": "written",
+        "subds": "dropped",
+        "surfaces": "written",
+        "tessellations": "dropped",
+        "vertices": "written",
+        "view_presentations": "written"
+      },
+      "coverage": "declared"
+    },
     "identity": {
       "payload": "native",
       "target": "fcstd:schema-4"
     },
-    "losses": [],
-    "notes": [
-      "semantic FCStd archive written for fcstd:schema-4 (SchemaVersion=4 FileVersion=1)",
-      "unsupported retained entries and unedited XML records were preserved"
+    "losses": [
+      {
+        "code": {
+          "code": "attribute.not-transferred",
+          "kind": "metadata_not_transferred",
+          "namespace": "fcstd",
+          "scope": "namespaced"
+        },
+        "message": "attribute fcstd:model:attribute#Box:Label:property conflicts with operation property Label",
+        "severity": "warning"
+      },
+      {
+        "code": {
+          "code": "metadata.native-property-not-transferred",
+          "kind": "metadata_not_transferred",
+          "namespace": "fcstd",
+          "scope": "namespaced"
+        },
+        "message": "GUI property fcstd:native:gui-property#Box:LineColorArray has no typed writable side payload and is omitted",
+        "severity": "info"
+      },
+      {
+        "code": {
+          "code": "metadata.native-property-not-transferred",
+          "kind": "metadata_not_transferred",
+          "namespace": "fcstd",
+          "scope": "namespaced"
+        },
+        "message": "GUI property fcstd:native:gui-property#Box:PointColorArray has no typed writable side payload and is omitted",
+        "severity": "info"
+      },
+      {
+        "code": {
+          "code": "metadata.native-property-not-transferred",
+          "kind": "metadata_not_transferred",
+          "namespace": "fcstd",
+          "scope": "namespaced"
+        },
+        "message": "GUI property fcstd:native:gui-property#Box:ShapeAppearance has no typed writable side payload and is omitted",
+        "severity": "info"
+      },
+      {
+        "code": {
+          "code": "appearance.not-transferred",
+          "kind": "material_not_transferred",
+          "namespace": "fcstd",
+          "scope": "namespaced"
+        },
+        "message": "appearance binding fcstd:appearance:binding#edge:Box:1:Box:Shape:Box.Shape.brp:13%40location1 independent visibility/channel gates are reduced to the effective native provider state",
+        "severity": "warning"
+      },
+      {
+        "code": {
+          "code": "appearance.not-transferred",
+          "kind": "material_not_transferred",
+          "namespace": "fcstd",
+          "scope": "namespaced"
+        },
+        "message": "appearance fcstd:appearance:edge#Box:1 catalog identity metadata has no FreeCAD GUI encoding",
+        "severity": "warning"
+      },
+      {
+        "code": {
+          "code": "appearance.not-transferred",
+          "kind": "material_not_transferred",
+          "namespace": "fcstd",
+          "scope": "namespaced"
+        },
+        "message": "appearance binding fcstd:appearance:binding#edge:Box:1:Box:Shape:Box.Shape.brp:15%40location1 independent visibility/channel gates are reduced to the effective native provider state",
+        "severity": "warning"
+      },
+      {
+        "code": {
+          "code": "appearance.not-transferred",
+          "kind": "material_not_transferred",
+          "namespace": "fcstd",
+          "scope": "namespaced"
+        },
+        "message": "appearance fcstd:appearance:edge#Box:1 catalog identity metadata has no FreeCAD GUI encoding",
+        "severity": "warning"
+      },
+      {
+        "code": {
+          "code": "appearance.not-transferred",
+          "kind": "material_not_transferred",
+          "namespace": "fcstd",
+          "scope": "namespaced"
+        },
+        "message": "appearance binding fcstd:appearance:binding#edge:Box:1:Box:Shape:Box.Shape.brp:17%40location1 independent visibility/channel gates are reduced to the effective native provider state",
+        "severity": "warning"
+      },
+      {
+        "code": {
+          "code": "appearance.not-transferred",
+          "kind": "material_not_transferred",
+          "namespace": "fcstd",
+          "scope": "namespaced"
+        },
+        "message": "appearance fcstd:appearance:edge#Box:1 catalog identity metadata has no FreeCAD GUI encoding",
+        "severity": "warning"
+      },
+      {
+        "code": {
+          "code": "appearance.not-transferred",
+          "kind": "material_not_transferred",
+          "namespace": "fcstd",
+          "scope": "namespaced"
+        },
+        "message": "appearance binding fcstd:appearance:binding#edge:Box:1:Box:Shape:Box.Shape.brp:18%40location1 independent visibility/channel gates are reduced to the effective native provider state",
+        "severity": "warning"
+      },
+      {
+        "code": {
+          "code": "appearance.not-transferred",
+          "kind": "material_not_transferred",
+          "namespace": "fcstd",
+          "scope": "namespaced"
+        },
+        "message": "appearance fcstd:appearance:edge#Box:1 catalog identity metadata has no FreeCAD GUI encoding",
+        "severity": "warning"
+      },
+      {
+        "code": {
+          "code": "appearance.not-transferred",
+          "kind": "material_not_transferred",
+          "namespace": "fcstd",
+          "scope": "namespaced"
+        },
+        "message": "appearance binding fcstd:appearance:binding#edge:Box:1:Box:Shape:Box.Shape.brp:21%40location1 independent visibility/channel gates are reduced to the effective native provider state",
+        "severity": "warning"
+      },
+      {
+        "code": {
+          "code": "appearance.not-transferred",
+          "kind": "material_not_transferred",
+          "namespace": "fcstd",
+          "scope": "namespaced"
+        },
+        "message": "appearance fcstd:appearance:edge#Box:1 catalog identity metadata has no FreeCAD GUI encoding",
+        "severity": "warning"
+      },
+      {
+        "code": {
+          "code": "appearance.not-transferred",
+          "kind": "material_not_transferred",
+          "namespace": "fcstd",
+          "scope": "namespaced"
+        },
+        "message": "appearance binding fcstd:appearance:binding#edge:Box:1:Box:Shape:Box.Shape.brp:22%40location1 independent visibility/channel gates are reduced to the effective native provider state",
+        "severity": "warning"
+      },
+      {
+        "code": {
+          "code": "appearance.not-transferred",
+          "kind": "material_not_transferred",
+          "namespace": "fcstd",
+          "scope": "namespaced"
+        },
+        "message": "appearance fcstd:appearance:edge#Box:1 catalog identity metadata has no FreeCAD GUI encoding",
+        "severity": "warning"
+      },
+      {
+        "code": {
+          "code": "appearance.not-transferred",
+          "kind": "material_not_transferred",
+          "namespace": "fcstd",
+          "scope": "namespaced"
+        },
+        "message": "appearance binding fcstd:appearance:binding#edge:Box:1:Box:Shape:Box.Shape.brp:25%40location1 independent visibility/channel gates are reduced to the effective native provider state",
+        "severity": "warning"
+      },
+      {
+        "code": {
+          "code": "appearance.not-transferred",
+          "kind": "material_not_transferred",
+          "namespace": "fcstd",
+          "scope": "namespaced"
+        },
+        "message": "appearance fcstd:appearance:edge#Box:1 catalog identity metadata has no FreeCAD GUI encoding",
+        "severity": "warning"
+      },
+      {
+        "code": {
+          "code": "appearance.not-transferred",
+          "kind": "material_not_transferred",
+          "namespace": "fcstd",
+          "scope": "namespaced"
+        },
+        "message": "appearance binding fcstd:appearance:binding#edge:Box:1:Box:Shape:Box.Shape.brp:26%40location1 independent visibility/channel gates are reduced to the effective native provider state",
+        "severity": "warning"
+      },
+      {
+        "code": {
+          "code": "appearance.not-transferred",
+          "kind": "material_not_transferred",
+          "namespace": "fcstd",
+          "scope": "namespaced"
+        },
+        "message": "appearance fcstd:appearance:edge#Box:1 catalog identity metadata has no FreeCAD GUI encoding",
+        "severity": "warning"
+      },
+      {
+        "code": {
+          "code": "appearance.not-transferred",
+          "kind": "material_not_transferred",
+          "namespace": "fcstd",
+          "scope": "namespaced"
+        },
+        "message": "appearance binding fcstd:appearance:binding#edge:Box:1:Box:Shape:Box.Shape.brp:3%40location1 independent visibility/channel gates are reduced to the effective native provider state",
+        "severity": "warning"
+      },
+      {
+        "code": {
+          "code": "appearance.not-transferred",
+          "kind": "material_not_transferred",
+          "namespace": "fcstd",
+          "scope": "namespaced"
+        },
+        "message": "appearance fcstd:appearance:edge#Box:1 catalog identity metadata has no FreeCAD GUI encoding",
+        "severity": "warning"
+      },
+      {
+        "code": {
+          "code": "appearance.not-transferred",
+          "kind": "material_not_transferred",
+          "namespace": "fcstd",
+          "scope": "namespaced"
+        },
+        "message": "appearance binding fcstd:appearance:binding#edge:Box:1:Box:Shape:Box.Shape.brp:5%40location1 independent visibility/channel gates are reduced to the effective native provider state",
+        "severity": "warning"
+      },
+      {
+        "code": {
+          "code": "appearance.not-transferred",
+          "kind": "material_not_transferred",
+          "namespace": "fcstd",
+          "scope": "namespaced"
+        },
+        "message": "appearance fcstd:appearance:edge#Box:1 catalog identity metadata has no FreeCAD GUI encoding",
+        "severity": "warning"
+      },
+      {
+        "code": {
+          "code": "appearance.not-transferred",
+          "kind": "material_not_transferred",
+          "namespace": "fcstd",
+          "scope": "namespaced"
+        },
+        "message": "appearance binding fcstd:appearance:binding#edge:Box:1:Box:Shape:Box.Shape.brp:7%40location1 independent visibility/channel gates are reduced to the effective native provider state",
+        "severity": "warning"
+      },
+      {
+        "code": {
+          "code": "appearance.not-transferred",
+          "kind": "material_not_transferred",
+          "namespace": "fcstd",
+          "scope": "namespaced"
+        },
+        "message": "appearance fcstd:appearance:edge#Box:1 catalog identity metadata has no FreeCAD GUI encoding",
+        "severity": "warning"
+      },
+      {
+        "code": {
+          "code": "appearance.not-transferred",
+          "kind": "material_not_transferred",
+          "namespace": "fcstd",
+          "scope": "namespaced"
+        },
+        "message": "appearance binding fcstd:appearance:binding#edge:Box:1:Box:Shape:Box.Shape.brp:8%40location1 independent visibility/channel gates are reduced to the effective native provider state",
+        "severity": "warning"
+      },
+      {
+        "code": {
+          "code": "appearance.not-transferred",
+          "kind": "material_not_transferred",
+          "namespace": "fcstd",
+          "scope": "namespaced"
+        },
+        "message": "appearance fcstd:appearance:shape-material#Box:1 property ambient_packed has no FreeCAD GUI encoding",
+        "severity": "warning"
+      },
+      {
+        "code": {
+          "code": "appearance.not-transferred",
+          "kind": "material_not_transferred",
+          "namespace": "fcstd",
+          "scope": "namespaced"
+        },
+        "message": "appearance fcstd:appearance:shape-material#Box:1 property emissive_packed has no FreeCAD GUI encoding",
+        "severity": "warning"
+      },
+      {
+        "code": {
+          "code": "appearance.not-transferred",
+          "kind": "material_not_transferred",
+          "namespace": "fcstd",
+          "scope": "namespaced"
+        },
+        "message": "appearance fcstd:appearance:shape-material#Box:1 property specular_packed has no FreeCAD GUI encoding",
+        "severity": "warning"
+      },
+      {
+        "code": {
+          "code": "appearance.not-transferred",
+          "kind": "material_not_transferred",
+          "namespace": "fcstd",
+          "scope": "namespaced"
+        },
+        "message": "appearance fcstd:appearance:shape-material#Box:1 property transparency has no FreeCAD GUI encoding",
+        "severity": "warning"
+      },
+      {
+        "code": {
+          "code": "appearance.not-transferred",
+          "kind": "material_not_transferred",
+          "namespace": "fcstd",
+          "scope": "namespaced"
+        },
+        "message": "appearance fcstd:appearance:shape-material#Box:1 catalog identity metadata has no FreeCAD GUI encoding",
+        "severity": "warning"
+      },
+      {
+        "code": {
+          "code": "appearance.not-transferred",
+          "kind": "material_not_transferred",
+          "namespace": "fcstd",
+          "scope": "namespaced"
+        },
+        "message": "appearance binding fcstd:appearance:binding#vertex:Box:1:Box:Shape:Box.Shape.brp:1%40location1 independent visibility/channel gates are reduced to the effective native provider state",
+        "severity": "warning"
+      },
+      {
+        "code": {
+          "code": "appearance.not-transferred",
+          "kind": "material_not_transferred",
+          "namespace": "fcstd",
+          "scope": "namespaced"
+        },
+        "message": "appearance fcstd:appearance:vertex#Box:1 catalog identity metadata has no FreeCAD GUI encoding",
+        "severity": "warning"
+      },
+      {
+        "code": {
+          "code": "appearance.not-transferred",
+          "kind": "material_not_transferred",
+          "namespace": "fcstd",
+          "scope": "namespaced"
+        },
+        "message": "appearance binding fcstd:appearance:binding#vertex:Box:1:Box:Shape:Box.Shape.brp:11%40location1 independent visibility/channel gates are reduced to the effective native provider state",
+        "severity": "warning"
+      },
+      {
+        "code": {
+          "code": "appearance.not-transferred",
+          "kind": "material_not_transferred",
+          "namespace": "fcstd",
+          "scope": "namespaced"
+        },
+        "message": "appearance fcstd:appearance:vertex#Box:1 catalog identity metadata has no FreeCAD GUI encoding",
+        "severity": "warning"
+      },
+      {
+        "code": {
+          "code": "appearance.not-transferred",
+          "kind": "material_not_transferred",
+          "namespace": "fcstd",
+          "scope": "namespaced"
+        },
+        "message": "appearance binding fcstd:appearance:binding#vertex:Box:1:Box:Shape:Box.Shape.brp:12%40location1 independent visibility/channel gates are reduced to the effective native provider state",
+        "severity": "warning"
+      },
+      {
+        "code": {
+          "code": "appearance.not-transferred",
+          "kind": "material_not_transferred",
+          "namespace": "fcstd",
+          "scope": "namespaced"
+        },
+        "message": "appearance fcstd:appearance:vertex#Box:1 catalog identity metadata has no FreeCAD GUI encoding",
+        "severity": "warning"
+      },
+      {
+        "code": {
+          "code": "appearance.not-transferred",
+          "kind": "material_not_transferred",
+          "namespace": "fcstd",
+          "scope": "namespaced"
+        },
+        "message": "appearance binding fcstd:appearance:binding#vertex:Box:1:Box:Shape:Box.Shape.brp:14%40location1 independent visibility/channel gates are reduced to the effective native provider state",
+        "severity": "warning"
+      },
+      {
+        "code": {
+          "code": "appearance.not-transferred",
+          "kind": "material_not_transferred",
+          "namespace": "fcstd",
+          "scope": "namespaced"
+        },
+        "message": "appearance fcstd:appearance:vertex#Box:1 catalog identity metadata has no FreeCAD GUI encoding",
+        "severity": "warning"
+      },
+      {
+        "code": {
+          "code": "appearance.not-transferred",
+          "kind": "material_not_transferred",
+          "namespace": "fcstd",
+          "scope": "namespaced"
+        },
+        "message": "appearance binding fcstd:appearance:binding#vertex:Box:1:Box:Shape:Box.Shape.brp:16%40location1 independent visibility/channel gates are reduced to the effective native provider state",
+        "severity": "warning"
+      },
+      {
+        "code": {
+          "code": "appearance.not-transferred",
+          "kind": "material_not_transferred",
+          "namespace": "fcstd",
+          "scope": "namespaced"
+        },
+        "message": "appearance fcstd:appearance:vertex#Box:1 catalog identity metadata has no FreeCAD GUI encoding",
+        "severity": "warning"
+      },
+      {
+        "code": {
+          "code": "appearance.not-transferred",
+          "kind": "material_not_transferred",
+          "namespace": "fcstd",
+          "scope": "namespaced"
+        },
+        "message": "appearance binding fcstd:appearance:binding#vertex:Box:1:Box:Shape:Box.Shape.brp:2%40location1 independent visibility/channel gates are reduced to the effective native provider state",
+        "severity": "warning"
+      },
+      {
+        "code": {
+          "code": "appearance.not-transferred",
+          "kind": "material_not_transferred",
+          "namespace": "fcstd",
+          "scope": "namespaced"
+        },
+        "message": "appearance binding fcstd:appearance:binding#vertex:Box:1:Box:Shape:Box.Shape.brp:4%40location1 independent visibility/channel gates are reduced to the effective native provider state",
+        "severity": "warning"
+      },
+      {
+        "code": {
+          "code": "appearance.not-transferred",
+          "kind": "material_not_transferred",
+          "namespace": "fcstd",
+          "scope": "namespaced"
+        },
+        "message": "appearance fcstd:appearance:vertex#Box:1 catalog identity metadata has no FreeCAD GUI encoding",
+        "severity": "warning"
+      },
+      {
+        "code": {
+          "code": "appearance.not-transferred",
+          "kind": "material_not_transferred",
+          "namespace": "fcstd",
+          "scope": "namespaced"
+        },
+        "message": "appearance binding fcstd:appearance:binding#vertex:Box:1:Box:Shape:Box.Shape.brp:6%40location1 independent visibility/channel gates are reduced to the effective native provider state",
+        "severity": "warning"
+      },
+      {
+        "code": {
+          "code": "appearance.not-transferred",
+          "kind": "material_not_transferred",
+          "namespace": "fcstd",
+          "scope": "namespaced"
+        },
+        "message": "appearance fcstd:appearance:vertex#Box:1 catalog identity metadata has no FreeCAD GUI encoding",
+        "severity": "warning"
+      },
+      {
+        "code": {
+          "code": "appearance.not-transferred",
+          "kind": "material_not_transferred",
+          "namespace": "fcstd",
+          "scope": "namespaced"
+        },
+        "message": "unbound appearance fcstd:appearance:edge#Box has no FreeCAD GUI owner and is omitted",
+        "severity": "warning"
+      },
+      {
+        "code": {
+          "code": "appearance.not-transferred",
+          "kind": "material_not_transferred",
+          "namespace": "fcstd",
+          "scope": "namespaced"
+        },
+        "message": "unbound appearance fcstd:appearance:vertex#Box has no FreeCAD GUI owner and is omitted",
+        "severity": "warning"
+      },
+      {
+        "code": {
+          "code": "native.records-omitted",
+          "kind": "record_not_typed",
+          "namespace": "export",
+          "scope": "namespaced"
+        },
+        "message": "the fcstd write omits 4 native record(s) from `fcstd.entries`: fcstd:native:entry#Box.Shape.brp, fcstd:native:entry#LineColorArray, fcstd:native:entry#PointColorArray, fcstd:native:entry#ShapeAppearance",
+        "severity": "info"
+      },
+      {
+        "code": {
+          "code": "native.records-omitted",
+          "kind": "record_not_typed",
+          "namespace": "export",
+          "scope": "namespaced"
+        },
+        "message": "the fcstd write omits 11 native record(s) from `fcstd.gui_properties`: fcstd:native:gui-property#Box:AngularDeflection, fcstd:native:gui-property#Box:BoundingBox, fcstd:native:gui-property#Box:Deviation, fcstd:native:gui-property#Box:DrawStyle, fcstd:native:gui-property#Box:Lighting, fcstd:native:gui-property#Box:LineColor, fcstd:native:gui-property#Box:OnTopWhenSelected, fcstd:native:gui-property#Box:PointColor, fcstd:native:gui-property#Box:Selectable, fcstd:native:gui-property#Box:ShapeAppearance, fcstd:native:gui-property#Box:ShowInTree",
+        "severity": "info"
+      },
+      {
+        "code": {
+          "code": "native.records-omitted",
+          "kind": "record_not_typed",
+          "namespace": "export",
+          "scope": "namespaced"
+        },
+        "message": "the fcstd write omits 1 native record(s) from `fcstd.properties`: fcstd:native:property#Box:ExpressionEngine",
+        "severity": "info"
+      }
     ],
+    "native_dispositions": {
+      "namespaces": {
+        "fcstd": {
+          "arenas": {
+            "annotations": {
+              "disposition": "dropped"
+            },
+            "applications": {
+              "disposition": "dropped",
+              "records": {
+                "fcstd:native:application#Box": "regenerated"
+              }
+            },
+            "attachments": {
+              "disposition": "dropped",
+              "records": {
+                "fcstd:native:attachment#Box": "written"
+              }
+            },
+            "carrier_census": {
+              "disposition": "dropped",
+              "records": {
+                "fcstd:native:carrier-census#Box:Shape:Box.Shape.brp:families": "regenerated"
+              }
+            },
+            "design_census": {
+              "disposition": "dropped"
+            },
+            "document": {
+              "disposition": "dropped",
+              "records": {
+                "fcstd:native:document#0": "regenerated"
+              }
+            },
+            "drawings": {
+              "disposition": "dropped"
+            },
+            "element_maps": {
+              "disposition": "dropped"
+            },
+            "entries": {
+              "disposition": "dropped",
+              "records": {
+                "fcstd:native:entry#Document.xml": "regenerated",
+                "fcstd:native:entry#GuiDocument.xml": "regenerated"
+              }
+            },
+            "extensions": {
+              "disposition": "dropped"
+            },
+            "gui_documents": {
+              "disposition": "dropped",
+              "records": {
+                "fcstd:gui:document#0": "regenerated"
+              }
+            },
+            "gui_properties": {
+              "disposition": "dropped",
+              "records": {
+                "fcstd:native:gui-property#Box:DisplayMode": "regenerated",
+                "fcstd:native:gui-property#Box:LineColorArray": "regenerated",
+                "fcstd:native:gui-property#Box:LineMaterial": "regenerated",
+                "fcstd:native:gui-property#Box:LineWidth": "regenerated",
+                "fcstd:native:gui-property#Box:PointColorArray": "regenerated",
+                "fcstd:native:gui-property#Box:PointMaterial": "regenerated",
+                "fcstd:native:gui-property#Box:PointSize": "regenerated",
+                "fcstd:native:gui-property#Box:SelectionStyle": "regenerated",
+                "fcstd:native:gui-property#Box:Transparency": "regenerated",
+                "fcstd:native:gui-property#Box:Visibility": "regenerated"
+              }
+            },
+            "gui_view_providers": {
+              "disposition": "dropped",
+              "records": {
+                "fcstd:native:gui-view-provider#Box": "regenerated"
+              }
+            },
+            "joints": {
+              "disposition": "dropped"
+            },
+            "objects": {
+              "disposition": "dropped",
+              "records": {
+                "fcstd:native:object#Box": "written"
+              }
+            },
+            "product_nodes": {
+              "disposition": "dropped"
+            },
+            "properties": {
+              "disposition": "dropped",
+              "records": {
+                "fcstd:native:property#0:Comment": "regenerated",
+                "fcstd:native:property#0:Company": "regenerated",
+                "fcstd:native:property#0:CreatedBy": "regenerated",
+                "fcstd:native:property#0:CreationDate": "regenerated",
+                "fcstd:native:property#0:FileName": "written",
+                "fcstd:native:property#0:Id": "regenerated",
+                "fcstd:native:property#0:Label": "regenerated",
+                "fcstd:native:property#0:LastModifiedBy": "regenerated",
+                "fcstd:native:property#0:LastModifiedDate": "regenerated",
+                "fcstd:native:property#0:License": "regenerated",
+                "fcstd:native:property#0:LicenseURL": "regenerated",
+                "fcstd:native:property#0:Material": "written",
+                "fcstd:native:property#0:Meta": "written",
+                "fcstd:native:property#0:ShowHidden": "regenerated",
+                "fcstd:native:property#0:Tip": "written",
+                "fcstd:native:property#0:TipName": "regenerated",
+                "fcstd:native:property#0:TransientDir": "written",
+                "fcstd:native:property#0:Uid": "written",
+                "fcstd:native:property#0:UnitSystem": "written",
+                "fcstd:native:property#0:UseHasher": "regenerated",
+                "fcstd:native:property#Box:Label": "regenerated",
+                "fcstd:native:property#Box:Label2": "regenerated",
+                "fcstd:native:property#Box:Placement": "regenerated",
+                "fcstd:native:property#Box:Shape": "regenerated",
+                "fcstd:native:property#Box:ShapeMaterial": "written",
+                "fcstd:native:property#Box:Visibility": "regenerated"
+              }
+            },
+            "shape_payloads": {
+              "disposition": "dropped",
+              "records": {
+                "fcstd:native:shape-payload#Box:Shape:Box.Shape.brp": "regenerated"
+              }
+            },
+            "string_tables": {
+              "disposition": "dropped",
+              "records": {
+                "fcstd:native:string-table#0": "written"
+              }
+            },
+            "topology_uses": {
+              "disposition": "dropped",
+              "records": {
+                "fcstd:native:shape-payload#Box:Shape:Box.Shape.brp:topology-use:1": "regenerated",
+                "fcstd:native:shape-payload#Box:Shape:Box.Shape.brp:topology-use:10": "regenerated",
+                "fcstd:native:shape-payload#Box:Shape:Box.Shape.brp:topology-use:11": "regenerated",
+                "fcstd:native:shape-payload#Box:Shape:Box.Shape.brp:topology-use:12": "regenerated",
+                "fcstd:native:shape-payload#Box:Shape:Box.Shape.brp:topology-use:13": "regenerated",
+                "fcstd:native:shape-payload#Box:Shape:Box.Shape.brp:topology-use:14": "regenerated",
+                "fcstd:native:shape-payload#Box:Shape:Box.Shape.brp:topology-use:15": "regenerated",
+                "fcstd:native:shape-payload#Box:Shape:Box.Shape.brp:topology-use:16": "regenerated",
+                "fcstd:native:shape-payload#Box:Shape:Box.Shape.brp:topology-use:17": "regenerated",
+                "fcstd:native:shape-payload#Box:Shape:Box.Shape.brp:topology-use:18": "regenerated",
+                "fcstd:native:shape-payload#Box:Shape:Box.Shape.brp:topology-use:19": "regenerated",
+                "fcstd:native:shape-payload#Box:Shape:Box.Shape.brp:topology-use:2": "regenerated",
+                "fcstd:native:shape-payload#Box:Shape:Box.Shape.brp:topology-use:20": "regenerated",
+                "fcstd:native:shape-payload#Box:Shape:Box.Shape.brp:topology-use:21": "regenerated",
+                "fcstd:native:shape-payload#Box:Shape:Box.Shape.brp:topology-use:22": "regenerated",
+                "fcstd:native:shape-payload#Box:Shape:Box.Shape.brp:topology-use:23": "regenerated",
+                "fcstd:native:shape-payload#Box:Shape:Box.Shape.brp:topology-use:24": "regenerated",
+                "fcstd:native:shape-payload#Box:Shape:Box.Shape.brp:topology-use:25": "regenerated",
+                "fcstd:native:shape-payload#Box:Shape:Box.Shape.brp:topology-use:26": "regenerated",
+                "fcstd:native:shape-payload#Box:Shape:Box.Shape.brp:topology-use:27": "regenerated",
+                "fcstd:native:shape-payload#Box:Shape:Box.Shape.brp:topology-use:28": "regenerated",
+                "fcstd:native:shape-payload#Box:Shape:Box.Shape.brp:topology-use:29": "regenerated",
+                "fcstd:native:shape-payload#Box:Shape:Box.Shape.brp:topology-use:3": "regenerated",
+                "fcstd:native:shape-payload#Box:Shape:Box.Shape.brp:topology-use:30": "regenerated",
+                "fcstd:native:shape-payload#Box:Shape:Box.Shape.brp:topology-use:31": "regenerated",
+                "fcstd:native:shape-payload#Box:Shape:Box.Shape.brp:topology-use:32": "regenerated",
+                "fcstd:native:shape-payload#Box:Shape:Box.Shape.brp:topology-use:33": "regenerated",
+                "fcstd:native:shape-payload#Box:Shape:Box.Shape.brp:topology-use:34": "regenerated",
+                "fcstd:native:shape-payload#Box:Shape:Box.Shape.brp:topology-use:4": "regenerated",
+                "fcstd:native:shape-payload#Box:Shape:Box.Shape.brp:topology-use:5": "regenerated",
+                "fcstd:native:shape-payload#Box:Shape:Box.Shape.brp:topology-use:6": "regenerated",
+                "fcstd:native:shape-payload#Box:Shape:Box.Shape.brp:topology-use:7": "regenerated",
+                "fcstd:native:shape-payload#Box:Shape:Box.Shape.brp:topology-use:8": "regenerated",
+                "fcstd:native:shape-payload#Box:Shape:Box.Shape.brp:topology-use:9": "regenerated"
+              }
+            },
+            "unknowns": {
+              "disposition": "dropped"
+            }
+          }
+        }
+      }
+    },
+    "notes": [],
+    "synthesis_cause": {
+      "cause": "patch_declined",
+      "reason": "unsupported writer content: the typed property has no independent projection"
+    },
     "write_path": {
       "fidelity": {
         "status": "not_consumed"
       },
-      "path": "patched"
+      "path": "synthesized"
     }
   }
 }

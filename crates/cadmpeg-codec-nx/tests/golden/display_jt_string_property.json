@@ -1,13 +1,30 @@
 {
   "decode": {
     "ir": {
-      "decode_depth": "full",
-      "ir_version": "9",
+      "ir_version": "10",
       "model": {
         "appearance_bindings": [],
         "appearances": [],
         "assembly_joints": [],
-        "attributes": [],
+        "attributes": [
+          {
+            "id": "nx:document:attribute#jt-string-0",
+            "name": "JT string property",
+            "native_ref": "nx:display-jt:segment#0-row-0-0-string-property-atom-0",
+            "target": {
+              "id": {
+                "source_id": "nx:display-jt:segment#0-row-0-0-string-property-atom-0"
+              },
+              "kind": "source"
+            },
+            "values": [
+              {
+                "kind": "string",
+                "value": "JT"
+              }
+            ]
+          }
+        ],
         "bodies": [
           {
             "id": "nx:derived:point-body#0",
@@ -261,6 +278,10 @@
           ]
         }
       },
+      "scope": {
+        "design": true,
+        "model": true
+      },
       "source": {
         "attributes": {
           "deltas_streams": "0",
@@ -268,7 +289,6 @@
           "file_size": "617",
           "footer_entry_count": "0",
           "footer_fingerprint": "00000000",
-          "footer_offset": "603",
           "header_entry_count": "2",
           "jpeg_preview_count": "0",
           "partition_streams": "1",
@@ -368,7 +388,10 @@
       ],
       "transfer": {
         "geometry_transferred": true,
-        "transfer": "full"
+        "scope": {
+          "design": true,
+          "model": true
+        }
       }
     },
     "source_fidelity": {
@@ -477,9 +500,20 @@
             "retention": "inline"
           },
           "offset": 119,
-          "stream": "nx:container"
+          "stream": "nx:container",
+          "untyped": []
+        },
+        "nx:source:image#whole": {
+          "bytes": {
+            "data": "U1BMTVNTVFIGAAAAAAAAAABbAgAAAAAAAEhFQURFUgIAAAAVAAAAL1Jvb3QvVUdfUEFSVC9VR19QQVJUdwAAAAAAAADeAAAAAAAAABcAAAAvUm9vdC9VR19QQVJUL0Rpc3BsYXlKVFUBAAAAAAAABgEAAAAAAAB4AY1MvQsBYRh/8rFYLFZ6F0W3+IpY3iRfhXC3Xz7eQfnqHIWJSJklk9EoZVH+AH+CwcRqMViVtzt3nXTl6fn4ffT88iwA4AjiitEcm01zKJHOxJGrXRLEmlhrNd2oIpCSSKqo3EeNVpXU60RAPSJ0qIn8AY/HGwrSCCsbS/FcnOV4Lx+mBWAHA9XVxjsVSgDPDV1nwrIBHxglQV0M3o/Ol+fspSo6AD9kQ7ky02w/mDSMQobOX61E4vbyuDrdxgr/eXaA+Vtj8GRwTW5tQ7z43PWhcJ86DnoRb+z1Oe8JAAAAAQAAAAAAAABkAAAAAAAAABwAAAAAAAAAVmVyc2lvbiA5LjQgSlQgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAAAAAAAGkAAAABAQEBAQEBAQEBAQEBAQEBAQAAAAICAgICAgICAgICAgICAgKJAAAAYQAAAAAAAB8CAgICAgICAgICAgICAgICHwAAAGEAAAACAAAAQQAAAAJ4AV3DsQ1AQBQA0HcS/TeExhRqtcYMEjPYQmEUA9AawCwu195LXo8tvniGtztX+30tR5tQGpMGk1ngr2QKjBhFRk9PVEVSAAAAAAAAAAA=",
+            "retention": "inline"
+          },
+          "offset": 0,
+          "stream": "nx:source",
+          "untyped": []
         }
-      }
+      },
+      "unrepresented": []
     }
   },
   "inspect": {

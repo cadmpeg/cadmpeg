@@ -1,8 +1,7 @@
 {
   "decode": {
     "ir": {
-      "decode_depth": "full",
-      "ir_version": "9",
+      "ir_version": "10",
       "model": {
         "appearance_bindings": [],
         "appearances": [],
@@ -199,6 +198,10 @@
           ]
         }
       },
+      "scope": {
+        "design": true,
+        "model": true
+      },
       "source": {
         "attributes": {
           "deltas.0.bytes_decoded": "0",
@@ -213,7 +216,6 @@
           "file_size": "541",
           "footer_entry_count": "0",
           "footer_fingerprint": "00000000",
-          "footer_offset": "527",
           "header_entry_count": "1",
           "jpeg_preview_count": "0",
           "partition_streams": "1",
@@ -343,7 +345,10 @@
       ],
       "transfer": {
         "geometry_transferred": true,
-        "transfer": "full"
+        "scope": {
+          "design": true,
+          "model": true
+        }
       }
     },
     "source_fidelity": {
@@ -487,7 +492,8 @@
             "retention": "inline"
           },
           "offset": 76,
-          "stream": "nx:container"
+          "stream": "nx:container",
+          "untyped": []
         },
         "nx:container:parasolid#1": {
           "bytes": {
@@ -495,9 +501,20 @@
             "retention": "inline"
           },
           "offset": 362,
-          "stream": "nx:container"
+          "stream": "nx:container",
+          "untyped": []
+        },
+        "nx:source:image#whole": {
+          "bytes": {
+            "data": "U1BMTVNTVFIGAAAAAAAAAAAPAgAAAAAAAEhFQURFUgEAAAAVAAAAL1Jvb3QvVUdfUEFSVC9VR19QQVJUTAAAAAAAAADDAQAAAAAAAHgBlVC7TsNAEJwDgoEYwqtCEF0JiRAQEBI0JxQFiAQIsKktQ1xECgRZboAW/oCanoY6vwNtGj4h49gXnfIosvbtzszu3u3dtQNg51i6tydXzmXVlafVi4rcfPbDqB7Vm09b8iEM/CioyfsX+disBY1GELIl55TPPbfiuN6ed0QDbExQH/znMdkVBfMCUxD8bK4FYsSmCod/7fXyNjWBDKvtYiynK0cpgRYbBJZgkWboLcxBYAazQBGLBIhN7X8Xdu9KPgtAY5IeKGG6G3vOPKMnDgPqP1F1TJjh8/EEBuc0JjPwyC2WeRWjDlm1lr4JsMKXNXMbyJpUvb/+nv2svqnPNH61btof+RYO+vow/o3TrfVxenwdta5jB9lFNjl4AV1MMQrCQBDcYCv4hS0VbQQbbRaRiIFEgneF3ZmYA5GIEK/Rwi9YWOkP9AFWvsIXWAo22oqFx0VCyDDMwMwwPgOARgf5qDtknsOx77g2ViMZq2BVw2kiAyUjDNe4WOowloneV1hvILjNuGiKtgZAC8oApR1YVp518kPv9j59afL32V5d59uP/jCkl7FM6GBwpHsa0fOyeYzdMxV2aQvwA5nALrtGT09URVIAAAAAAAAAAA==",
+            "retention": "inline"
+          },
+          "offset": 0,
+          "stream": "nx:source",
+          "untyped": []
         }
-      }
+      },
+      "unrepresented": []
     }
   },
   "inspect": {

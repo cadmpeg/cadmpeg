@@ -1,8 +1,7 @@
 {
   "decode": {
     "ir": {
-      "decode_depth": "full",
-      "ir_version": "9",
+      "ir_version": "10",
       "model": {
         "appearance_bindings": [],
         "appearances": [],
@@ -225,6 +224,10 @@
           ]
         }
       },
+      "scope": {
+        "design": true,
+        "model": true
+      },
       "source": {
         "attributes": {
           "deltas_streams": "0",
@@ -232,7 +235,6 @@
           "file_size": "370",
           "footer_entry_count": "0",
           "footer_fingerprint": "00000000",
-          "footer_offset": "356",
           "header_entry_count": "1",
           "jpeg_preview_count": "0",
           "partition_streams": "1",
@@ -331,7 +333,10 @@
       ],
       "transfer": {
         "geometry_transferred": true,
-        "transfer": "full"
+        "scope": {
+          "design": true,
+          "model": true
+        }
       }
     },
     "source_fidelity": {
@@ -475,9 +480,24 @@
             "retention": "inline"
           },
           "offset": 76,
-          "stream": "nx:container"
+          "stream": "nx:container",
+          "untyped": []
+        },
+        "nx:source:image#whole": {
+          "bytes": {
+            "data": "U1BMTVNTVFIGAAAAAAAAAABkAQAAAAAAAEhFQURFUgEAAAAVAAAAL1Jvb3QvVUdfUEFSVC9VR19QQVJUTAAAAAAAAAAYAQAAAAAAAHgBdVDPLwNREP4G7aJL/ToJzTsJ3QgqkXB5kaZogmDXebN0D01KZbMXXPkPnN1dnPvvcO3Fn+B7dttuop038+ab7828ycyFC2DrQHlXh+fuWd1TR/XTmlp/CKK4GTfb9xvqNgqDOGyom0d1126ErVYYsaToVk98r+Z6/o6/TwFsjJH/rzMY/yOF74IJCI9NmyWGEV3e++6uVDfJCXLMzjuGTq1IKoEWCwTzsBjmeFuYhmCSjeFgjgBG9O5Hefu6EjABFJtmtIK8cQPL9hiwQ5D+ScieT6LMXcJUJiIc+fXILxY4Cgv7WtDL6U6ARTNg/wVYRSETQb88fR1/Lj3rt9S/dy67r6UO1tI66WU7yPMIdyaQX0LoLw1GT09URVIAAAAAAAAAAA==",
+            "retention": "inline"
+          },
+          "offset": 0,
+          "stream": "nx:source",
+          "untyped": [
+            "model"
+          ]
         }
-      }
+      },
+      "unrepresented": [
+        "model"
+      ]
     }
   },
   "inspect": {

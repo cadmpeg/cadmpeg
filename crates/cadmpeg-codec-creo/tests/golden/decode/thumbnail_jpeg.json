@@ -1,11 +1,21 @@
 {
   "ir": {
-    "decode_depth": "full",
-    "ir_version": "9",
+    "ir_version": "10",
     "model": {
       "appearance_bindings": [],
       "appearances": [],
       "assembly_joints": [],
+      "assets": [
+        {
+          "content": {
+            "data": "/9j/4AAQ",
+            "kind": "embedded"
+          },
+          "id": "creo:document:asset#thumbnail-76",
+          "media_type": "image/jpeg",
+          "name": "THMB_IMG_MAIN"
+        }
+      ],
       "attributes": [],
       "bodies": [],
       "coedges": [],
@@ -49,6 +59,10 @@
           }
         ]
       }
+    },
+    "scope": {
+      "design": true,
+      "model": true
     },
     "source": {
       "attributes": {
@@ -539,7 +553,10 @@
     ],
     "transfer": {
       "geometry_transferred": false,
-      "transfer": "full"
+      "scope": {
+        "design": true,
+        "model": true
+      }
     }
   },
   "source_fidelity": {
@@ -559,8 +576,23 @@
           "retention": "inline"
         },
         "offset": 91,
-        "stream": "creo:THMB_IMG_MAIN"
+        "stream": "creo:THMB_IMG_MAIN",
+        "untyped": []
+      },
+      "creo:source:image#whole": {
+        "bytes": {
+          "data": "I1VHQzoyIFAgYwojLUVORF9PRl9VR0NfSEVBREVSCiNVR0NfVE9DCnRvYyBlbnRyeSBsaW5lCiNFTkRfT0ZfVE9DX0hFQURFUgojCiNUSE1CX0lNR19NQUlOCv/Y/+AAEA==",
+          "retention": "inline"
+        },
+        "offset": 0,
+        "stream": "creo:source",
+        "untyped": [
+          "model"
+        ]
       }
-    }
+    },
+    "unrepresented": [
+      "model"
+    ]
   }
 }

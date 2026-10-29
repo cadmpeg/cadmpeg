@@ -1,7 +1,6 @@
 {
   "ir": {
-    "decode_depth": "full",
-    "ir_version": "9",
+    "ir_version": "10",
     "model": {
       "appearance_bindings": [],
       "appearances": [],
@@ -54,6 +53,10 @@
           }
         ]
       }
+    },
+    "scope": {
+      "design": true,
+      "model": true
     },
     "source": {
       "attributes": {
@@ -544,7 +547,10 @@
     ],
     "transfer": {
       "geometry_transferred": false,
-      "transfer": "full"
+      "scope": {
+        "design": true,
+        "model": true
+      }
     }
   },
   "source_fidelity": {
@@ -562,6 +568,22 @@
           "tag": "unix_compress_expanded_section"
         }
       }
-    }
+    },
+    "retained_records": {
+      "creo:source:image#whole": {
+        "bytes": {
+          "data": "I1VHQzoyIFAgdGVzdAojLUVORF9PRl9VR0NfSEVBREVSCiNVR0NfVE9DIDIgMSA4MSAxNyAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgClNvbGlkUHJpbWRhdGEgYTIgMTYgMyAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgCiNTb2xpZFByaW1kYXRhCh+dEEGEDAE=",
+          "retention": "inline"
+        },
+        "offset": 0,
+        "stream": "creo:source",
+        "untyped": [
+          "model"
+        ]
+      }
+    },
+    "unrepresented": [
+      "model"
+    ]
   }
 }

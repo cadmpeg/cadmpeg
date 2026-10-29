@@ -1,7 +1,6 @@
 {
   "ir": {
-    "decode_depth": "full",
-    "ir_version": "9",
+    "ir_version": "10",
     "model": {
       "appearance_bindings": [
         {
@@ -28,7 +27,22 @@
         }
       ],
       "assembly_joints": [],
-      "attributes": [],
+      "attributes": [
+        {
+          "id": "step:data:geometry-name#48-0",
+          "name": "name",
+          "target": {
+            "id": "step:data:point#48",
+            "kind": "point"
+          },
+          "values": [
+            {
+              "kind": "string",
+              "value": "centre point"
+            }
+          ]
+        }
+      ],
       "bodies": [
         {
           "id": "step:data:body#38",
@@ -236,6 +250,18 @@
             "format": "step",
             "geometry_role": "support",
             "object_id": "#12"
+          }
+        },
+        {
+          "id": "step:data:point#48",
+          "position": {
+            "x": 3.333333333333333,
+            "y": 3.333333333333333,
+            "z": 0.0
+          },
+          "source_object": {
+            "format": "step",
+            "object_id": "#48"
           }
         }
       ],
@@ -451,16 +477,12 @@
       "view_presentations": []
     },
     "native": {},
+    "scope": {
+      "design": true,
+      "model": true
+    },
     "source": {
-      "attributes": {
-        "bytes_named_opaque": "0",
-        "bytes_structural": "329",
-        "bytes_typed": "3013",
-        "bytes_unclassified": "0",
-        "data_sections": "1",
-        "entity_instances": "67",
-        "schema": "AP242_MANAGED_MODEL_BASED_3D_ENGINEERING_MIM_LF"
-      },
+      "attributes": {},
       "identity": {
         "classification": "classified",
         "dialects": {
@@ -532,10 +554,23 @@
     ],
     "transfer": {
       "geometry_transferred": true,
-      "transfer": "full"
+      "scope": {
+        "design": true,
+        "model": true
+      }
     }
   },
   "source_fidelity": {
-    "annotations": {}
+    "annotations": {},
+    "metadata": {
+      "bytes_named_opaque": "0",
+      "bytes_structural": "329",
+      "bytes_typed": "3013",
+      "bytes_unclassified": "0",
+      "data_sections": "1",
+      "entity_instances": "67",
+      "schema": "AP242_MANAGED_MODEL_BASED_3D_ENGINEERING_MIM_LF"
+    },
+    "unrepresented": []
   }
 }

@@ -1,7 +1,6 @@
 {
   "ir": {
-    "decode_depth": "full",
-    "ir_version": "9",
+    "ir_version": "10",
     "model": {
       "appearance_bindings": [],
       "appearances": [],
@@ -453,6 +452,7 @@
         "consolidated_tori": [],
         "consolidated_vertex_identities": [],
         "design_objects": [],
+        "display_colors": [],
         "e5_curve_supports": [],
         "entity_records": [],
         "external_references": [],
@@ -491,6 +491,10 @@
         "zero_entity_vertex_incidences": []
       }
     },
+    "scope": {
+      "design": true,
+      "model": true
+    },
     "source": {
       "attributes": {
         "brep_stream_len": "324",
@@ -500,8 +504,6 @@
         "fbb_runs": "1",
         "file_size": "1174",
         "finjpl_segment_count": "0",
-        "inner_offset": "603",
-        "outer_dir_offset": "1174",
         "preview_count": "0",
         "stream_count": "2",
         "vertex_records": "3"
@@ -979,7 +981,10 @@
     ],
     "transfer": {
       "geometry_transferred": true,
-      "transfer": "full"
+      "scope": {
+        "design": true,
+        "model": true
+      }
     }
   },
   "source_fidelity": {
@@ -1140,8 +1145,19 @@
           "retention": "inline"
         },
         "offset": 0,
-        "stream": "catia:MainDataStream+SurfacicReps"
+        "stream": "catia:MainDataStream+SurfacicReps",
+        "untyped": []
+      },
+      "catia:source:image#whole": {
+        "bytes": {
+          "data": "VjVfQ0ZWMgAAAASWAAAAAKUDMkMCAAAFCRUJDAAAAAAAAAAAAAAAAAAA8D8AAAAAAADwPwAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAPA/AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAYLURU+yH5PwAAAAAAAABAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAEAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAABgtRFT7Ifk/AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAPA/AAAAAAAAAAAAAAAAAAAAQAAAAAAAAABAAwAAAAAAAAAAAAAAAAAAAEAFAAAAAAAAAAAAAAAAAAAAAAAAAPA/VjVfQ0ZWMgAAAAFUAAAA5wFBAf8DAAAAAAAAAQACAUkB/wMAAAAAAAAAAAAAAAAAgD8AAAABAAIwBAT/0tLS0jAEBP/S0tLSAQEAECQE//8AAAABAgAQJAT//wAAAAEGAwUIAQAAAAAAAAAAAAAAAAUIAQAAIEEAAAAAAAAAAAUIAQAAAAAAACBBAAAAAKq7zAAaADMzAAAAAAAAAAAAAAAAAAAAAAAAAABAoAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAERIjMAAgAzMgAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAD//xEiMwACADMyAACAPwAAAEAAAEBAAAAAAAAAgEAAAAAAAACAPwAAAEAAAEBAAACAQGBEVWYAEgAzNwAAAAAAAAAAAAAAAECgAAAAAUNBVElBX1Y1IENCMDAwMQAAAAAAAAAAAAAAAAAAAAB+TQBhAGkAbgBEAGEAdABhAFMAdAByAGUAYQBtAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAEAAAAQAAAAfgAAAH4AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAMZTAHUAcgBmAGEAYwBpAGMAUgBlAHAAcwAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAQAAAI4AAADGAAAAxgAAAAAAAAAAQ0JfX0VORA==",
+          "retention": "inline"
+        },
+        "offset": 0,
+        "stream": "catia:source",
+        "untyped": []
       }
-    }
+    },
+    "unrepresented": []
   }
 }

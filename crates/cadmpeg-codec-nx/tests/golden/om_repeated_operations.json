@@ -1,8 +1,7 @@
 {
   "decode": {
     "ir": {
-      "decode_depth": "full",
-      "ir_version": "9",
+      "ir_version": "10",
       "model": {
         "appearance_bindings": [],
         "appearances": [],
@@ -171,6 +170,7 @@
             "id": "nx:feature-history:feature#0000000000-0000000000",
             "name": "UNITE",
             "native_ref": "nx:feature-history:operation-label#0000000000-0000000000",
+            "needs_recompute": false,
             "ordinal": 11,
             "source_properties": {
               "body_reference.0": "6466",
@@ -207,6 +207,7 @@
             "id": "nx:feature-history:feature#0000000000-0000000001",
             "name": "UNITE",
             "native_ref": "nx:feature-history:operation-label#0000000000-0000000001",
+            "needs_recompute": false,
             "ordinal": 10,
             "source_properties": {
               "body_reference.0": "6466",
@@ -243,6 +244,7 @@
             "id": "nx:feature-history:feature#0000000000-0000000002",
             "name": "UNITE",
             "native_ref": "nx:feature-history:operation-label#0000000000-0000000002",
+            "needs_recompute": false,
             "ordinal": 9,
             "source_properties": {
               "body_reference.0": "6466",
@@ -279,6 +281,7 @@
             "id": "nx:feature-history:feature#0000000000-0000000003",
             "name": "UNITE",
             "native_ref": "nx:feature-history:operation-label#0000000000-0000000003",
+            "needs_recompute": false,
             "ordinal": 8,
             "source_properties": {
               "body_reference.0": "6466",
@@ -315,6 +318,7 @@
             "id": "nx:feature-history:feature#0000000000-0000000004",
             "name": "UNITE",
             "native_ref": "nx:feature-history:operation-label#0000000000-0000000004",
+            "needs_recompute": false,
             "ordinal": 7,
             "source_properties": {
               "body_reference.0": "6466",
@@ -351,6 +355,7 @@
             "id": "nx:feature-history:feature#0000000000-0000000005",
             "name": "UNITE",
             "native_ref": "nx:feature-history:operation-label#0000000000-0000000005",
+            "needs_recompute": false,
             "ordinal": 6,
             "source_properties": {
               "body_reference.0": "6466",
@@ -387,6 +392,7 @@
             "id": "nx:feature-history:feature#0000000000-0000000006",
             "name": "UNITE",
             "native_ref": "nx:feature-history:operation-label#0000000000-0000000006",
+            "needs_recompute": false,
             "ordinal": 5,
             "source_properties": {
               "body_reference.0": "6466",
@@ -423,6 +429,7 @@
             "id": "nx:feature-history:feature#0000000000-0000000007",
             "name": "UNITE",
             "native_ref": "nx:feature-history:operation-label#0000000000-0000000007",
+            "needs_recompute": false,
             "ordinal": 4,
             "source_properties": {
               "body_reference.0": "6466",
@@ -459,6 +466,7 @@
             "id": "nx:feature-history:feature#0000000000-0000000008",
             "name": "UNITE",
             "native_ref": "nx:feature-history:operation-label#0000000000-0000000008",
+            "needs_recompute": false,
             "ordinal": 3,
             "source_properties": {
               "body_reference.0": "6466",
@@ -495,6 +503,7 @@
             "id": "nx:feature-history:feature#0000000000-0000000009",
             "name": "UNITE",
             "native_ref": "nx:feature-history:operation-label#0000000000-0000000009",
+            "needs_recompute": false,
             "ordinal": 2,
             "source_properties": {
               "body_reference.0": "6466",
@@ -531,6 +540,7 @@
             "id": "nx:feature-history:feature#0000000000-0000000010",
             "name": "UNITE",
             "native_ref": "nx:feature-history:operation-label#0000000000-0000000010",
+            "needs_recompute": false,
             "ordinal": 1,
             "source_properties": {
               "body_reference.0": "6466",
@@ -564,6 +574,7 @@
             "id": "nx:feature-history:feature#0000000000-0000000011",
             "name": "UNITE",
             "native_ref": "nx:feature-history:operation-label#0000000000-0000000011",
+            "needs_recompute": false,
             "ordinal": 0,
             "source_properties": {
               "body_reference.0": "6466",
@@ -1524,6 +1535,10 @@
           ]
         }
       },
+      "scope": {
+        "design": true,
+        "model": false
+      },
       "source": {
         "attributes": {
           "deltas_streams": "0",
@@ -1531,7 +1546,6 @@
           "file_size": "1198",
           "footer_entry_count": "0",
           "footer_fingerprint": "00000000",
-          "footer_offset": "1184",
           "header_entry_count": "1",
           "jpeg_preview_count": "0",
           "partition_streams": "0",
@@ -1584,6 +1598,17 @@
           },
           "message": "No B-rep geometry was transferred: no gate-passing analytic carrier was found in the embedded Parasolid streams (they may hold only B-spline/procedural geometry this codec does not yet type). The streams are preserved verbatim as unknown passthrough records.",
           "severity": "blocking"
+        },
+        {
+          "code": {
+            "code": "depth.not-delivered",
+            "kind": "geometry_not_transferred",
+            "namespace": "decode",
+            "scope": "namespaced",
+            "strict_floor": "warning"
+          },
+          "message": "requested full depth but the nx decoder did not deliver classes: model",
+          "severity": "error"
         }
       ],
       "notes": [
@@ -1593,7 +1618,10 @@
       ],
       "transfer": {
         "geometry_transferred": false,
-        "transfer": "full"
+        "scope": {
+          "design": true,
+          "model": false
+        }
       }
     },
     "source_fidelity": {
@@ -2040,7 +2068,19 @@
             "tag": "UG_PART_SEGMENT_OM_LINK"
           }
         }
-      }
+      },
+      "retained_records": {
+        "nx:source:image#whole": {
+          "bytes": {
+            "data": "U1BMTVNTVFIGAAAAAAAAAACgBAAAAAAAAEhFQURFUgEAAAAVAAAAL1Jvb3QvVUdfUEFSVC9VR19QQVJUTAAAAAAAAABUBAAAAAAAABgAAAAJAAAACwAAAAEAAAABAAAAGAAAAP////8AAAAAAAAELE9N//8AAQIUVUdTOjpGRUFUVVJFX1JFQ09SRKCBIQEjRWeJq83vBiFVR1M6Ok1vZGxVdGlsczo6Qm9vbGVhbkNvbXBvbmVudGUJbV90YXJnZXSAAQIIbV90b29sc4EDBHVuZnJhbWVkIFVHUzo6UGF5bG9hZFRleHSZAAAAAAAAAAAAAAAAAAAAAAAAAA0AAAAOAAAALAAAAAUBDk5YIDIwMjcuMzEwMgBmZWF0dXJlLXJlY29yZHOAzQEEAS+keuFHrhR7//8BgkCQF9P/AwdVTklURQAxAAABABQvpHrhR64UewMAAOB/////AQEBApAZQgABA5AZTH8AAQIQkBlC/4DNAQQBL6R64UeuFHv//wGCQJAX0/8DB1VOSVRFADEAAAEAFC+keuFHrhR7AwAA4H////8BAQECkBlCAAEDkBlMfwABAhCQGUL/gM0BBAEvpHrhR64Ue///AYJAkBfT/wMHVU5JVEUAMQAAAQAUL6R64UeuFHsDAADgf////wEBAQKQGUIAAQOQGUx/AAECEJAZQv+AzQEEAS+keuFHrhR7//8BgkCQF9P/AwdVTklURQAxAAABABQvpHrhR64UewMAAOB/////AQEBApAZQgABA5AZTH8AAQIQkBlC/4DNAQQBL6R64UeuFHv//wGCQJAX0/8DB1VOSVRFADEAAAEAFC+keuFHrhR7AwAA4H////8BAQECkBlCAAEDkBlMfwABAhCQGUL/gM0BBAEvpHrhR64Ue///AYJAkBfT/wMHVU5JVEUAMQAAAQAUL6R64UeuFHsDAADgf////wEBAQKQGUIAAQOQGUx/AAECEJAZQv+AzQEEAS+keuFHrhR7//8BgkCQF9P/AwdVTklURQAxAAABABQvpHrhR64UewMAAOB/////AQEBApAZQgABA5AZTH8AAQIQkBlC/4DNAQQBL6R64UeuFHv//wGCQJAX0/8DB1VOSVRFADEAAAEAFC+keuFHrhR7AwAA4H////8BAQECkBlCAAEDkBlMfwABAhCQGUL/gM0BBAEvpHrhR64Ue///AYJAkBfT/wMHVU5JVEUAMQAAAQAUL6R64UeuFHsDAADgf////wEBAQKQGUIAAQOQGUx/AAECEJAZQv+AzQEEAS+keuFHrhR7//8BgkCQF9P/AwdVTklURQAxAAABABQvpHrhR64UewMAAOB/////AQEBApAZQgABA5AZTH8AAQIQkBlC/4DNAQQBL6R64UeuFHv//wGCQJAX0/8DB1VOSVRFADEAAAEAFC+keuFHrhR7AwAA4H////8BAQECkBlCAAEDkBlMfwABAhCQGUL/gM0BBAEvpHrhR64Ue///AYJAkBfT/wMHVU5JVEUAMQAAAQAUL6R64UeuFHsDAADgf////wEBAQKQGUIAAQOQGUx/AAECEJAZQv9GT09URVIAAAAAAAAAAA==",
+            "retention": "inline"
+          },
+          "offset": 0,
+          "stream": "nx:source",
+          "untyped": []
+        }
+      },
+      "unrepresented": []
     }
   },
   "inspect": {

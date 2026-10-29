@@ -1,30 +1,11 @@
 {
   "ir": {
-    "decode_depth": "full",
-    "ir_version": "9",
+    "ir_version": "10",
     "model": {
       "appearance_bindings": [],
       "appearances": [],
       "assembly_joints": [],
-      "attributes": [
-        {
-          "id": "sldprt:metadata:part_record#8:32",
-          "name": "part_record",
-          "target": {
-            "kind": "document"
-          },
-          "values": [
-            {
-              "kind": "integer",
-              "value": 4294901760
-            },
-            {
-              "kind": "integer",
-              "value": 1867411309
-            }
-          ]
-        }
-      ],
+      "attributes": [],
       "bodies": [],
       "coedges": [],
       "configurations": [],
@@ -62,6 +43,32 @@
     "native": {
       "sldprt": {
         "configurations": [],
+        "document_metadata": [
+          {
+            "attributes": [
+              {
+                "id": "sldprt:metadata:part_record#8:32",
+                "name": "part_record",
+                "target": {
+                  "kind": "document"
+                },
+                "values": [
+                  {
+                    "kind": "integer",
+                    "value": 4294901760
+                  },
+                  {
+                    "kind": "integer",
+                    "value": 1867411309
+                  }
+                ]
+              }
+            ],
+            "id": "sldprt:metadata:document#0",
+            "pmi": [],
+            "semantic_annotations": []
+          }
+        ],
         "feature_histories": [],
         "feature_input_body_selections": [],
         "feature_input_classes": [],
@@ -76,7 +83,10 @@
             "generated_surface_identities": [],
             "id": "sldprt:feature-input:resolved-features#128",
             "names": [],
-            "native_payload": "09000000000007800480fffeff0141000000000000000040ffffffff00000000fffeff0000009a9999999999993f0000000100000000000000000000000000000000000000000000000000000000000000ffff0000030078797a",
+            "payload_evidence": {
+              "byte_len": 90,
+              "sha256": "8d1ae24839207d1174a0007ae5b467ddd0d4809724e7188192a5731d1d772b6b"
+            },
             "references": [],
             "relation_bindings": [],
             "relation_instances": [],
@@ -92,6 +102,7 @@
             "offset": 8,
             "ordinal": 0,
             "parent": "sldprt:feature-input:resolved-features#128",
+            "sequence": 0,
             "value": "A"
           }
         ],
@@ -107,6 +118,7 @@
             "ordinal": 0,
             "parent": "sldprt:feature-input:resolved-features#128",
             "role": "native",
+            "sequence": 1,
             "value": 0.025
           }
         ],
@@ -116,27 +128,12 @@
         "sketch_input_entities": []
       }
     },
+    "scope": {
+      "design": false,
+      "model": false
+    },
     "source": {
-      "attributes": {
-        "block_count": "2",
-        "brep_local_sha256": "<elided: digest over tolerantly compared geometry>",
-        "document_local_sha256": "<elided: digest over tolerantly compared geometry>",
-        "outer_version": "0x00000004",
-        "sldprt_configuration_feature_states_local_sha256": "<elided: digest over tolerantly compared geometry>",
-        "sldprt_configuration_parameter_values_local_sha256": "<elided: digest over tolerantly compared geometry>",
-        "sldprt_native_configuration_sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
-        "sldprt_native_history_sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
-        "sldprt_native_parameter_sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
-        "sldprt_native_sketch_sha256": "200ad280acb91f0e0ea6a8bd68bf3d7976c830afb0e5d906fa50baa23f2b6583",
-        "sldprt_neutral_configuration_local_sha256": "<elided: digest over tolerantly compared geometry>",
-        "sldprt_neutral_feature_local_sha256": "<elided: digest over tolerantly compared geometry>",
-        "sldprt_neutral_parameter_local_sha256": "<elided: digest over tolerantly compared geometry>",
-        "sldprt_neutral_sketch_constraint_local_sha256": "<elided: digest over tolerantly compared geometry>",
-        "sldprt_neutral_sketch_local_sha256": "<elided: digest over tolerantly compared geometry>",
-        "sldprt_swobjects_local_sha256": "<elided: digest over tolerantly compared geometry>",
-        "sldprt_swobjects_material_local_sha256": "<elided: digest over tolerantly compared geometry>",
-        "sldprt_swobjects_metadata_identity_local_sha256": "<elided: digest over tolerantly compared geometry>"
-      },
+      "attributes": {},
       "identity": {
         "classification": "classified",
         "dialects": {
@@ -246,6 +243,17 @@
         },
         "message": "1 configuration-scoped feature-input lane(s) have duplicate or unresolved configuration identity.",
         "severity": "warning"
+      },
+      {
+        "code": {
+          "code": "depth.not-delivered",
+          "kind": "geometry_not_transferred",
+          "namespace": "decode",
+          "scope": "namespaced",
+          "strict_floor": "warning"
+        },
+        "message": "requested full depth but the sldprt decoder did not deliver classes: model, design",
+        "severity": "error"
       }
     ],
     "notes": [
@@ -255,7 +263,10 @@
     ],
     "transfer": {
       "geometry_transferred": false,
-      "transfer": "full"
+      "scope": {
+        "design": false,
+        "model": false
+      }
     }
   },
   "source_fidelity": {
@@ -275,8 +286,21 @@
           "offset": 32,
           "stream": "Contents/Config-0",
           "tag": "moPart_c"
+        },
+        "sldprt:source:feature-input#b5a4569519155406f19633dc20259ad21692e021b2398a66df29069b503e0344": {
+          "offset": 0,
+          "stream": "ResolvedFeatures",
+          "tag": "feature_input_layout"
         }
       }
+    },
+    "metadata": {
+      "brep_local_sha256": "887f8427f935ae19a9d4f6884ea91064eec57c60abae9e3bcdc4054c4807e910",
+      "document_local_sha256": "cbb04988a777d59970c0803d41097ded6caabf233ab75f99e19d0ad02b02cb87",
+      "outer_version": "0x00000004",
+      "sldprt_swobjects_local_sha256": "586ffb909b0bba2aacc4d34937062d2b3c9cb6c81d2f794c686ad550b192d8dc",
+      "sldprt_swobjects_material_local_sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+      "sldprt_swobjects_metadata_identity_local_sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945"
     },
     "retained_records": {
       "sldprt:file:source-image#0": {
@@ -285,8 +309,19 @@
           "retention": "inline"
         },
         "offset": 0,
-        "stream": "source"
+        "stream": "source",
+        "untyped": []
+      },
+      "sldprt:source:feature-input#b5a4569519155406f19633dc20259ad21692e021b2398a66df29069b503e0344": {
+        "bytes": {
+          "data": "CQAAAAAAB4AEgP/+/wFBAAAAAAAAAABA/////wAAAAD//v8AAACamZmZmZmZPwAAAAEAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA//8AAAMAeHl6",
+          "retention": "inline"
+        },
+        "offset": 0,
+        "stream": "sldprt",
+        "untyped": []
       }
-    }
+    },
+    "unrepresented": []
   }
 }

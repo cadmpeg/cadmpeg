@@ -1,7 +1,6 @@
 {
   "ir": {
-    "decode_depth": "full",
-    "ir_version": "9",
+    "ir_version": "10",
     "model": {
       "appearance_bindings": [],
       "appearances": [],
@@ -51,7 +50,6 @@
         "active_carrier": [
           {
             "carrier_len": 95,
-            "carrier_offset": 18,
             "carrier_sha256": "a7035f79b059782669443978e618f275354009908bdcc551817b03b87532ca0d",
             "delta_state": -1,
             "detail": null,
@@ -73,7 +71,6 @@
         "assembly_groundings": [],
         "assembly_occurrences": [],
         "assembly_placements": [],
-        "assembly_record_issues": [],
         "body_native_keys": [],
         "database_issues": [],
         "databases": [
@@ -242,7 +239,6 @@
         "pm_graphics_faces": [],
         "pm_graphics_primary_color_styles": [],
         "pm_graphics_style_collections": [],
-        "presentation_record_issues": [],
         "properties": [],
         "property_sections": [],
         "property_set_issues": [],
@@ -266,7 +262,6 @@
             "id": "inventor:rse:record#seg-0",
             "ordinal": 0,
             "payload_len": 126,
-            "payload_offset": 4,
             "payload_sha256": "4474a8a9e83fcd67903be2ef864c2282573f36f4f0c3b65aa468486f1932d865",
             "selector": 0,
             "token": "seg",
@@ -398,6 +393,10 @@
         "wire_topologies": []
       }
     },
+    "scope": {
+      "design": true,
+      "model": true
+    },
     "source": {
       "attributes": {
         "cfb_major_version": "3",
@@ -453,7 +452,6 @@
       "assembly_occurrences": 0,
       "assembly_occurrences_transferred": 0,
       "assembly_placements": 0,
-      "assembly_record_issues": 0,
       "design_parameters_transferred": 0,
       "design_record_issues": 0,
       "embedded_references": 0,
@@ -485,7 +483,6 @@
       "pm_graphics_faces": 0,
       "pm_graphics_primary_color_styles": 0,
       "pm_graphics_style_collections": 0,
-      "presentation_record_issues": 0,
       "preview_assets": 0,
       "properties": 0,
       "property_sets": 0,
@@ -563,7 +560,10 @@
     "notes": [],
     "transfer": {
       "geometry_transferred": false,
-      "transfer": "full"
+      "scope": {
+        "design": true,
+        "model": true
+      }
     }
   },
   "source_fidelity": {
@@ -575,8 +575,26 @@
           "retention": "inline"
         },
         "offset": 18,
-        "stream": "RSeStorage/Bseg:expanded"
+        "stream": "RSeStorage/Bseg:expanded",
+        "untyped": []
+      },
+      "inventor:source:image#whole": {
+        "bytes": {
+          "byte_len": 4096,
+          "retention": "digest",
+          "sha256": "e531689d06aa6dd0b5465c36aeb99b62e52deedf5cde9f56b1db50cda72bb02a"
+        },
+        "offset": 0,
+        "stream": "inventor:source",
+        "untyped": [
+          "model",
+          "design"
+        ]
       }
-    }
+    },
+    "unrepresented": [
+      "model",
+      "design"
+    ]
   }
 }

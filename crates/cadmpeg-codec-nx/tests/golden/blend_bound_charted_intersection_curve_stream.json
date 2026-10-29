@@ -1,8 +1,7 @@
 {
   "decode": {
     "ir": {
-      "decode_depth": "full",
-      "ir_version": "9",
+      "ir_version": "10",
       "model": {
         "appearance_bindings": [],
         "appearances": [],
@@ -459,6 +458,10 @@
           ]
         }
       },
+      "scope": {
+        "design": true,
+        "model": true
+      },
       "source": {
         "attributes": {
           "deltas_streams": "0",
@@ -466,7 +469,6 @@
           "file_size": "485",
           "footer_entry_count": "0",
           "footer_fingerprint": "00000000",
-          "footer_offset": "471",
           "header_entry_count": "1",
           "jpeg_preview_count": "0",
           "partition_streams": "1",
@@ -555,7 +557,10 @@
       ],
       "transfer": {
         "geometry_transferred": true,
-        "transfer": "full"
+        "scope": {
+          "design": true,
+          "model": true
+        }
       }
     },
     "source_fidelity": {
@@ -714,9 +719,20 @@
             "retention": "inline"
           },
           "offset": 76,
-          "stream": "nx:container"
+          "stream": "nx:container",
+          "untyped": []
+        },
+        "nx:source:image#whole": {
+          "bytes": {
+            "data": "U1BMTVNTVFIGAAAAAAAAAADXAQAAAAAAAEhFQURFUgEAAAAVAAAAL1Jvb3QvVUdfUEFSVC9VR19QQVJUTAAAAAAAAACLAQAAAAAAAHgBfVI5TwJREP4ecimXB0dilGxlOGJUTEzUxBdDUEnAoGBNQEgkQTCERm01sTMxNjb2NHYmFFbWVv4Dj45GOgsL57G7sALr7Myb+b43M+/Yl0oDWFiTMvubu+lkPCNtxRMxKXCSq9VL9VK1EpQOa8VcvViQ8qfScbVQLJeLNSpxpaM72UwsnckuZVdJADsMxA+qAyMdktE8gxGMPjuZk2II4aGV99ZMdJ44BhNlm8OCVsxFlBxaqIBhAhaCJhotGAODlRZGGOMUQAhfboQWDyI5SgCJnUxoBGbheqZdo8cOifiXTKpeRprRj1ENolC3tW6LSToKFXbVxqeVOwGmxAG7M8AsbBoEfnH2tv3gPue3ir9v7rUu/U3MKXVMzQ7DDCfc8MALHwJEGwiRE6rZmmHj8/vx6uOozVP55Gu78fP8dHN9VwFUL/KHGVe2MjAXJIbBk+Dkh6uc4U1w3R4vVGiFz0juX+1v0I8RgeNvA93fpaZx5QXoYZXHOt0v6DUwepcdE60d+AVD3Fa+Rk9PVEVSAAAAAAAAAAA=",
+            "retention": "inline"
+          },
+          "offset": 0,
+          "stream": "nx:source",
+          "untyped": []
         }
-      }
+      },
+      "unrepresented": []
     }
   },
   "inspect": {
