@@ -124,12 +124,12 @@ fn zstd_member_with_a_window_past_the_allowance_is_skipped_without_fusing() {
     let frames = snapshot.member_frames(&ctx).expect("actual member frames");
     let frame = frames[0].expect("streamed entry frame");
     let payload = snapshot
-        .read_member_header(&ctx, frame)
+        .read_member_header(frame)
         .expect("actual local header");
     let outcome = ctx
-        .part_transaction(payload.view(), || snapshot.open_member(&ctx, payload))
+        .run_part(|| snapshot.open_member(&ctx, payload))
         .expect("Part refusal does not escape its owner");
-    let Err(CodecError::ResourceLimit(refusal)) = outcome.result() else {
+    let Err(CodecError::ResourceLimit(refusal)) = outcome else {
         panic!("a window past the per-expansion allowance must give up its part");
     };
     assert_eq!(refusal.scope, cadmpeg_core::decode::LimitScope::Part);
@@ -427,7 +427,6 @@ fn central_directory_signature_after_entries_keeps_archive_readable() {
             .len(),
         1
     );
-    drop(ctx);
     let end = end + 9;
     let size = View::u32_le_at(&bytes, end + 12).expect("directory size");
     cadmpeg_test_support::bytes::put_u32(&mut bytes, end + 12, size + 9);
@@ -674,4 +673,3 @@ fn nested_archive_members_keep_distinct_address_spaces() {
 }
 
 mod compression;
-mod provenance;

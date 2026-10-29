@@ -34,50 +34,6 @@ pub fn inflate_zlib_member_owned(
     Ok((writer.finalize_owned()?, consumed))
 }
 
-/// Inflates one zlib member with its exact compressed source provenance.
-/// The derived stream name identifies the canonical parent and consumed extent.
-pub fn inflate_zlib_member_tracked<'a>(
-    ctx: &DecodeContext<'a>,
-    source: View<'_>,
-    spec: ExpandSpec,
-) -> Result<(View<'a>, usize), CodecError> {
-    inflate_zlib_member_if(ctx, source, spec, |_, _| Ok(true))?
-        .ok_or_else(|| CodecError::malformed("unconditional zlib admission returned no member"))
-}
-
-/// Inflate and validate one zlib member, then admit its actual expanded bytes.
-/// A rejected member retains its resource charges but registers no stream.
-/// The callback runs only after the trailer, checksum, and exact-size checks.
-/// An accepted member has the same exact provenance as [`inflate_zlib_member_tracked`].
-pub fn inflate_zlib_member_if<'a>(
-    ctx: &DecodeContext<'a>,
-    source: View<'_>,
-    spec: ExpandSpec,
-    admit: impl FnOnce(&[u8], usize) -> Result<bool, CodecError>,
-) -> Result<Option<(View<'a>, usize)>, CodecError> {
-    ctx.require_source(source)?;
-    let (writer, consumed) = inflate_zlib_writer(ctx, source, spec)?;
-    if !admit(writer.completed_bytes()?, consumed)? {
-        return Ok(None);
-    }
-    let end = source
-        .start()
-        .checked_add(consumed)
-        .ok_or_else(|| CodecError::malformed("zlib compressed source extent overflows"))?;
-    let member = source
-        .child(source.start(), end)
-        .ok_or_else(|| CodecError::malformed("zlib compressed source extent escapes its input"))?;
-    let capture = ctx.capture_part_extent(member)?;
-    let name = format!(
-        "zlib:{}:{}:{}:{}",
-        capture.stream().len(),
-        capture.stream(),
-        capture.offset(),
-        capture.byte_len()
-    );
-    Ok(Some((writer.finalize_from(member, &name)?, consumed)))
-}
-
 fn inflate_zlib_writer<'ctx, 'a>(
     ctx: &'ctx DecodeContext<'a>,
     source: View<'_>,
@@ -144,30 +100,6 @@ pub fn inflate_zstd_exact<'a>(
     ctx: &DecodeContext<'a>,
     source: View<'a>,
 ) -> Result<View<'a>, CodecError> {
-    inflate_zstd_writer(ctx, source)?.finalize()
-}
-
-/// Inflate exactly one Zstandard frame with its actual compressed-source lineage.
-pub fn inflate_zstd_exact_tracked<'a>(
-    ctx: &DecodeContext<'a>,
-    source: View<'a>,
-) -> Result<View<'a>, CodecError> {
-    let writer = inflate_zstd_writer(ctx, source)?;
-    let capture = ctx.capture_part_extent(source)?;
-    let name = format!(
-        "zstd:{}:{}:{}:{}",
-        capture.stream().len(),
-        capture.stream(),
-        capture.offset(),
-        capture.byte_len()
-    );
-    writer.finalize_from(source, &name)
-}
-
-fn inflate_zstd_writer<'ctx, 'a>(
-    ctx: &'ctx DecodeContext<'a>,
-    source: View<'a>,
-) -> Result<ExpandWriter<'ctx, 'a>, CodecError> {
     require_single_zstd_frame(source)?;
     let mut decoder = ctx.open_zstd(source)?;
     let mut writer = ctx.begin_expand(ExpandSpec::Unknown)?;
@@ -179,7 +111,7 @@ fn inflate_zstd_writer<'ctx, 'a>(
         }
         writer.write(&chunk[..count])?;
     }
-    Ok(writer)
+    writer.finalize()
 }
 
 // RFC 8878 sections 3.1.1.1 and 3.1.1.2 delimit one frame without decoding it.
@@ -338,8 +270,6 @@ mod tests {
         inflate_zlib_member, inflate_zlib_member_owned,
     };
 
-    mod admission;
-    mod provenance;
     mod zstd;
 
     #[test]

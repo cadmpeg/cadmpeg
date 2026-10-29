@@ -23,22 +23,6 @@ impl<'a> MemberFrame<'a> {
         self.header
     }
 
-    /// Returns only the Appendix C framing fields in the local header.
-    ///
-    /// # Errors
-    /// Rejects fields outside the proven header extent.
-    pub fn header_framing(self) -> Result<[View<'a>; 4], CodecError> {
-        let field = |offset: usize, length: usize| {
-            self.header
-                .start()
-                .checked_add(offset)
-                .and_then(|start| start.checked_add(length).map(|end| (start, end)))
-                .and_then(|(start, end)| self.header.child(start, end))
-                .ok_or_else(|| CodecError::malformed("ZIP framing field escapes local header"))
-        };
-        Ok([field(0, 4)?, field(6, 2)?, field(18, 4)?, field(26, 4)?])
-    }
-
     /// Returns the original declared compressed-payload extent.
     pub const fn payload(self) -> View<'a> {
         self.payload
@@ -56,19 +40,18 @@ impl<'a> MemberPayload<'a> {
 }
 
 impl<'a> ArchiveSnapshot<'a> {
-    /// Locates member boundaries without reading semantic values or admitting headers.
+    /// Locates member boundaries without admitting headers.
     ///
     /// The result follows directory order. An absent frame means the declared
     /// locator and actual local length fields cannot prove disjoint extents.
     /// A bad signature can still have a bounded header, whose parser then fails.
     ///
     /// # Errors
-    /// Rejects foreign source views and allocation failures.
+    /// Rejects allocation failures.
     pub fn member_frames(
         &self,
         ctx: &DecodeContext<'a>,
     ) -> Result<Vec<Option<MemberFrame<'a>>>, CodecError> {
-        ctx.require_source(self.root)?;
         let count = self.entries.len();
         let mut order = ctx.alloc_filled(count, 0_usize, STORAGE)?;
         for (index, value) in order.iter_mut().enumerate() {
@@ -114,10 +97,9 @@ impl<'a> ArchiveSnapshot<'a> {
     /// Rejects foreign frames, invalid signatures and inconsistent local boundaries.
     pub fn read_member_header(
         &self,
-        ctx: &DecodeContext<'a>,
         frame: MemberFrame<'a>,
     ) -> Result<MemberPayload<'a>, CodecError> {
-        let entry = self.frame_entry(ctx, &frame)?;
+        let entry = self.frame_entry(&frame)?;
         let end = entry::local_data_start(
             self.root.window(),
             entry.header_start,
@@ -143,7 +125,7 @@ impl<'a> ArchiveSnapshot<'a> {
         ctx: &DecodeContext<'a>,
         payload: MemberPayload<'a>,
     ) -> Result<View<'a>, CodecError> {
-        let entry = self.frame_entry(ctx, &payload.0)?;
+        let entry = self.frame_entry(&payload.0)?;
         let view = payload.view();
         self.open_payload(
             ctx,
@@ -155,13 +137,7 @@ impl<'a> ArchiveSnapshot<'a> {
         )
     }
 
-    fn frame_entry(
-        &self,
-        ctx: &DecodeContext<'a>,
-        frame: &MemberFrame<'a>,
-    ) -> Result<&EntryRecord, CodecError> {
-        ctx.require_source(self.root)?;
-        ctx.require_source(frame.archive)?;
+    fn frame_entry(&self, frame: &MemberFrame<'a>) -> Result<&EntryRecord, CodecError> {
         if self.root.location() != frame.archive.location()
             || self.root.end() != frame.archive.end()
         {

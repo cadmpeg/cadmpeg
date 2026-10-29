@@ -7,11 +7,9 @@ use std::io::Read;
 use cadmpeg_core::decode::{ByteRange, DecodeContext, ExpandSpec, View};
 use cadmpeg_core::{CodecError, ContainerEntry};
 mod entry;
-mod framing;
 mod index;
 mod local;
 mod member;
-mod name;
 mod probe;
 
 pub use member::{MemberFrame, MemberPayload};
@@ -160,13 +158,11 @@ pub struct ArchiveSnapshot<'a> {
     entries: Vec<EntryRecord>,
     by_name: BTreeMap<String, usize>,
     recovery: Option<Box<local::Recovery>>,
-    footer: Option<DirectoryPreflight>,
 }
 
 /// Dependency index over the admitted central directory.
 struct ZipIndex<'bytes> {
     archive: zip::ZipArchive<index::NamespaceReader<'bytes>>,
-    footer: DirectoryPreflight,
 }
 
 enum Admission<T> {
@@ -197,10 +193,7 @@ impl<'bytes> ZipIndex<'bytes> {
                     )))
                 }
             };
-        Ok(Admission::Indexed(Self {
-            archive,
-            footer: admitted,
-        }))
+        Ok(Admission::Indexed(Self { archive }))
     }
 }
 
@@ -253,7 +246,6 @@ impl<'a> ArchiveSnapshot<'a> {
             central = next;
         }
         entry::frame_unreadable_members(&mut entries, archive_central_start);
-        let footer = index.footer;
         drop(index);
         let by_name = entries
             .iter()
@@ -266,7 +258,6 @@ impl<'a> ArchiveSnapshot<'a> {
             entries,
             by_name,
             recovery: None,
-            footer: Some(footer),
         })
     }
 
@@ -318,38 +309,6 @@ impl<'a> ArchiveSnapshot<'a> {
         &self.entries
     }
 
-    /// Original raw filename field from the admitted central or recovered local declaration.
-    pub fn entry_name_source(&self, entry: &EntryRecord) -> Result<View<'a>, CodecError> {
-        self.require_entry(entry)?;
-        name::raw_source(self.root, entry)
-    }
-
-    /// Decodes an entry name from typed reads in the current record owner.
-    pub fn read_entry_name(
-        &self,
-        ctx: &DecodeContext<'_>,
-        entry: &EntryRecord,
-    ) -> Result<String, CodecError> {
-        self.require_entry(entry)?;
-        ctx.require_source(self.root)?;
-        name::read(ctx, self.root, entry)
-    }
-
-    fn require_entry(&self, entry: &EntryRecord) -> Result<(), CodecError> {
-        if self
-            .by_name
-            .get(&entry.name)
-            .and_then(|index| self.entries.get(*index))
-            .is_some_and(|admitted| std::ptr::eq(admitted, entry))
-        {
-            Ok(())
-        } else {
-            Err(CodecError::malformed(
-                "ZIP entry does not belong to this archive snapshot",
-            ))
-        }
-    }
-
     /// Finds an entry record by its exact archive name.
     pub fn entry(&self, name: &str) -> Option<&EntryRecord> {
         self.by_name.get(name).map(|index| &self.entries[*index])
@@ -369,7 +328,7 @@ impl<'a> ArchiveSnapshot<'a> {
         self.recovery.as_ref().and_then(|recovery| recovery.tail)
     }
 
-    /// Opens an exact entry name as a named, source-tracked stored or expanded view.
+    /// Opens an exact entry name as a borrowed stored slice or budgeted expanded view.
     pub fn open(&self, ctx: &DecodeContext<'a>, name: &str) -> Result<View<'a>, CodecError> {
         let entry = self
             .entry(name)
@@ -413,17 +372,16 @@ impl<'a> ArchiveSnapshot<'a> {
                 entry.name
             )));
         }
-        let stream = self.entry_stream_name(ctx, entry)?;
         match entry.compression {
             ZipCompression::Unsupported(method) => Err(CodecError::NotImplemented(format!(
                 "ZIP compression {method:?} for {}",
                 entry.name
             ))),
-            ZipCompression::Stored => self.open_stored(ctx, entry, range, &stream),
+            ZipCompression::Stored => self.open_stored(ctx, entry, range),
             ZipCompression::Deflate => {
                 let source = self.compressed_source(entry, range)?;
                 let mut decoder = flate2::read::DeflateDecoder::new(source.window());
-                let view = Self::open_expanded(ctx, entry, source, &stream, |chunk| {
+                let view = Self::open_expanded(ctx, entry, |chunk| {
                     let read = decoder.read(chunk).map_err(|error| {
                         CodecError::malformed(format_args!(
                             "cannot inflate {}: {error}",
@@ -443,27 +401,9 @@ impl<'a> ArchiveSnapshot<'a> {
             ZipCompression::Zstd => {
                 let source = self.compressed_source(entry, range)?;
                 let mut decoder = ctx.open_zstd(source)?;
-                Self::open_expanded(ctx, entry, source, &stream, |chunk| {
-                    decoder.read_chunk(chunk)
-                })
+                Self::open_expanded(ctx, entry, |chunk| decoder.read_chunk(chunk))
             }
         }
-    }
-
-    fn entry_stream_name(
-        &self,
-        ctx: &DecodeContext<'_>,
-        entry: &EntryRecord,
-    ) -> Result<String, CodecError> {
-        let archive = ctx.capture_part_extent(self.root)?;
-        Ok(format!(
-            "zip:{}:{}:{}:{}:{}",
-            archive.stream().len(),
-            archive.stream(),
-            archive.offset(),
-            archive.byte_len(),
-            entry.name
-        ))
     }
 
     fn compressed_source(
@@ -488,9 +428,8 @@ impl<'a> ArchiveSnapshot<'a> {
         ctx: &DecodeContext<'a>,
         entry: &EntryRecord,
         range: ByteRange,
-        stream: &str,
     ) -> Result<View<'a>, CodecError> {
-        let view = self.compressed_source(entry, range)?;
+        let view = ctx.register_slice(self.root, range)?;
         if cadmpeg_core::decode::u64_from_index(view.window().len()) != entry.uncompressed_size {
             return Err(CodecError::malformed(format_args!(
                 "stored size mismatch for {}",
@@ -503,18 +442,15 @@ impl<'a> ArchiveSnapshot<'a> {
                 entry.name
             )));
         }
-        ctx.register_named_slice(self.root, range, stream)
+        Ok(view)
     }
 
     fn open_expanded(
         ctx: &DecodeContext<'a>,
         entry: &EntryRecord,
-        source: View<'_>,
-        stream: &str,
         mut read_chunk: impl FnMut(&mut [u8]) -> Result<usize, CodecError>,
     ) -> Result<View<'a>, CodecError> {
         let mut writer = ctx.begin_expand(ExpandSpec::Exact(entry.uncompressed_size))?;
-        let mut checksum = crc32fast::Hasher::new();
         let mut chunk = [0_u8; 16 * 1024];
         loop {
             let read = read_chunk(&mut chunk)?;
@@ -522,15 +458,15 @@ impl<'a> ArchiveSnapshot<'a> {
                 break;
             }
             writer.write(&chunk[..read])?;
-            checksum.update(&chunk[..read]);
         }
-        if writer.written() == entry.uncompressed_size && checksum.finalize() != entry.crc32 {
+        let view = writer.finalize()?;
+        if crc32fast::hash(view.window()) != entry.crc32 {
             return Err(CodecError::malformed(format_args!(
                 "CRC mismatch for {}",
                 entry.name
             )));
         }
-        writer.finalize_from(source, stream)
+        Ok(view)
     }
 
     /// Builds generic entry summaries using a codec-owned role classifier.
@@ -599,10 +535,9 @@ impl<'a> ArchiveSnapshot<'a> {
     }
 }
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug)]
 struct DirectoryPreflight {
     end_record: usize,
-    zip64_record: Option<usize>,
 }
 
 fn preflight_central_directory(
@@ -645,16 +580,13 @@ fn directory_admission(
     };
     for end in candidates {
         match central_directory_inventory(ctx, bytes, end, &mut search) {
-            Ok(zip64_record) => {
+            Ok(()) => {
                 if admitted.is_some() {
                     return Err(CodecError::malformed(
                         "ZIP has ambiguous terminal central-directory declarations",
                     ));
                 }
-                admitted = Some(DirectoryPreflight {
-                    end_record: end,
-                    zip64_record,
-                });
+                admitted = Some(DirectoryPreflight { end_record: end });
             }
             Err(error @ CodecError::ResourceLimit(_)) => return Err(error),
             Err(error) => {
@@ -713,7 +645,7 @@ fn central_directory_inventory(
     bytes: &[u8],
     end: usize,
     search: &mut DirectorySearch,
-) -> Result<Option<usize>, CodecError> {
+) -> Result<(), CodecError> {
     let comment_len = View::u16_le_at(bytes, end + 20)
         .ok_or_else(|| CodecError::Malformed("ZIP end record is truncated".into()))?;
     if end
@@ -754,7 +686,6 @@ fn central_directory_inventory(
             .ok_or_else(|| CodecError::Malformed("ZIP directory offset is truncated".into()))?;
         (u64::from(count), u64::from(size), u64::from(start), end)
     };
-    let zip64_record = locator_start.map(|_| directory_end);
     let directory_end = cadmpeg_core::decode::u64_from_index(directory_end);
     let canonical_start = directory_end
         .checked_sub(directory_size)
@@ -822,7 +753,7 @@ fn central_directory_inventory(
             "ZIP directory count and declared size disagree",
         ));
     }
-    Ok(zip64_record)
+    Ok(())
 }
 
 fn reject_duplicate_central_names(bytes: &[u8], central_start: u64) -> Result<usize, CodecError> {

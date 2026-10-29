@@ -165,17 +165,10 @@ fn open_expanded_is_not_defeated_by_a_short_read_or_an_error() {
     let snapshot = ArchiveSnapshot::new(&ctx, root).expect("archive snapshots");
     let entry = snapshot.entry("probe").expect("record");
 
-    let source = snapshot
-        .compressed_source(entry, entry.stored_range().expect("payload range"))
-        .expect("compressed source");
-    let stream = snapshot
-        .entry_stream_name(&ctx, entry)
-        .expect("entry stream");
-
     // Short reads must be reassembled in full.
     for step in [1_usize, 7, 4096] {
         let mut rest = plain.as_slice();
-        let view = ArchiveSnapshot::open_expanded(&ctx, entry, source, &stream, |chunk| {
+        let view = ArchiveSnapshot::open_expanded(&ctx, entry, |chunk| {
             let n = step.min(chunk.len()).min(rest.len());
             chunk[..n].copy_from_slice(&rest[..n]);
             rest = &rest[n..];
@@ -191,7 +184,7 @@ fn open_expanded_is_not_defeated_by_a_short_read_or_an_error() {
 
     // A mid-stream error must propagate, not read as end of stream.
     let mut served = 0_usize;
-    let result = ArchiveSnapshot::open_expanded(&ctx, entry, source, &stream, |chunk| {
+    let result = ArchiveSnapshot::open_expanded(&ctx, entry, |chunk| {
         if served >= 4096 {
             return Err(CodecError::Malformed(
                 "planted mid-stream read error".into(),
