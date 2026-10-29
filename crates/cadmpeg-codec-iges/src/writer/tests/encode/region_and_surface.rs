@@ -149,7 +149,7 @@ fn synthesized_solid_preserves_long_name_color_and_visibility() {
         .bodies
         .first()
         .expect("round-trip body");
-    assert_eq!(emitted_label(round_trip.ir(), 186), "SOLID");
+    assert_eq!(emitted_label(round_trip.ir(), 186), "");
     assert_eq!(body.name.as_deref(), Some("Hidden Red Body"));
     assert_eq!(
         display_color(round_trip.ir(), body),

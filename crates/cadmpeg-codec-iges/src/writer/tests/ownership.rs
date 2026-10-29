@@ -256,10 +256,18 @@ fn dependent_iges_curve_cannot_round_trip_as_an_independent_edge() {
         .unwrap();
     assert_eq!(decoded.ir().model.curves.len(), 1);
     assert!(decoded.ir().model.edges.is_empty());
-    assert!(matches!(
-        super::super::synthesize(decoded.ir(), IgesVersion::V5_3),
-        Err(cadmpeg_core::CodecError::NotImplemented(_))
-    ));
+    let generated = super::super::synthesize(decoded.ir(), IgesVersion::V5_3)
+        .expect("an empty model is written");
+    assert!(generated
+        .losses
+        .iter()
+        .any(|loss| loss.code
+            == crate::loss::IgesLossCode::WriterSupportGeometryNotRepresented.kind()));
+    let round_trip = IgesCodec
+        .decode(&mut Cursor::new(generated.bytes), &DecodeOptions::default())
+        .expect("the written file decodes");
+    assert!(round_trip.ir().model.curves.is_empty());
+    assert!(round_trip.ir().model.edges.is_empty());
 }
 
 #[test]

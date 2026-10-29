@@ -129,35 +129,43 @@ fn eight_digit_directory_status_supplies_four_two_digit_fields() {
 }
 
 #[test]
-fn a_nonblank_space_in_the_status_number_quarantines_the_record() {
+fn a_nonblank_space_in_the_status_number_gives_up_the_status_field() {
     for status in ["0000 201", "0000020 "] {
+        let bytes = owned_test_file(&[OwnedTestEntity {
+            entity_type: 116,
+            form: 0,
+            label: "STATUS".into(),
+            status,
+            parameters: "116,1,2,3,0;".into(),
+        }]);
+        let status_field = bytes
+            .chunks_exact(81)
+            .position(|line| line[72] == b'D')
+            .expect("Directory card")
+            * 81
+            + 8 * 8;
         let result = IgesCodec
-            .decode(
-                &mut Cursor::new(owned_test_file(&[OwnedTestEntity {
-                    entity_type: 116,
-                    form: 0,
-                    label: "STATUS".into(),
-                    status,
-                    parameters: "116,1,2,3,0;".into(),
-                }])),
-                &DecodeOptions::default(),
-            )
+            .decode(&mut Cursor::new(bytes.clone()), &DecodeOptions::default())
             .unwrap();
 
         let native = result.ir().native.namespace("iges").unwrap();
-        let quarantined = &native.arenas()["quarantined_directory_records"];
         let losses = &result.report().losses;
         assert!(native.arenas()["entities"].is_empty(), "{status}");
-        assert_eq!(quarantined.len(), 1, "{status}");
+        let parts = crate::test_support::given_up_parts(result.source_fidelity());
+        assert_eq!(parts.len(), 1, "{status}");
+        assert_eq!(parts[0].offset(), u64::try_from(status_field).unwrap());
         assert_eq!(
-            quarantined[0].fields().unwrap()["defect"],
-            "status-number-invalid"
+            parts[0].data(),
+            Some(&bytes[status_field..status_field + 8])
         );
         assert_eq!(losses.len(), 1, "{status}: {losses:#?}");
         assert_eq!(
-            losses[0].code,
-            IgesLossCode::DirectoryRecordQuarantined.kind()
+            crate::test_support::given_up_count(result.report(), "iges.directory_field"),
+            1
         );
+        assert!(losses[0]
+            .message
+            .contains("the status number is neither blank nor an eight-digit decimal integer"));
     }
 }
 

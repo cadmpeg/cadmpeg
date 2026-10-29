@@ -208,7 +208,7 @@ fn a_parameter_card_count_disagreement_recovers_from_the_card_census() {
 }
 
 #[test]
-fn a_back_pointer_naming_another_entry_quarantines_both_records() {
+fn a_back_pointer_naming_another_entry_gives_up_both_records() {
     let mut bytes = owned_test_file(&[
         OwnedTestEntity {
             entity_type: 116,
@@ -235,13 +235,20 @@ fn a_back_pointer_naming_another_entry_quarantines_both_records() {
     let result = IgesCodec
         .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
         .unwrap();
-    let native = result.ir().native.namespace("iges").unwrap();
     let losses = &result.report().losses;
-    let code = IgesLossCode::ParameterDataQuarantined.kind();
-    assert_eq!(native.arenas()["quarantined_parameter_records"].len(), 2);
+    assert_eq!(
+        crate::test_support::given_up_count(result.report(), "iges.parameter_record"),
+        2
+    );
+    assert_eq!(
+        crate::test_support::given_up_parts(result.source_fidelity()).len(),
+        2
+    );
     assert!(result.ir().model.points.is_empty());
     assert_eq!(losses.len(), 2, "{losses:#?}");
-    assert!(losses.iter().all(|loss| loss.code == code));
+    assert!(losses.iter().all(|loss| loss
+        .message
+        .contains("Parameter Data card ownership conflicts")));
 }
 
 #[test]

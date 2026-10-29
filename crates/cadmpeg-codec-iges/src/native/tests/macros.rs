@@ -93,7 +93,7 @@ fn macro_definition_and_instance_are_retained_in_v4_and_v5_profiles() {
 }
 
 #[test]
-fn malformed_macro_definition_is_quarantined_without_outside_envelope_loss() {
+fn malformed_macro_definition_is_given_up_without_outside_envelope_loss() {
     let bytes = owned_test_file_with_global_and_directory_fields(
         &[OwnedTestEntity {
             entity_type: 306,
@@ -114,10 +114,12 @@ fn malformed_macro_definition_is_quarantined_without_outside_envelope_loss() {
         .unwrap();
     let native = result.ir().native.namespace("iges").unwrap();
     assert!(!native.arenas().contains_key("macro_definitions"));
-    assert_eq!(native.arenas()["quarantined_parameter_records"].len(), 1);
+    assert_eq!(
+        crate::test_support::given_up_count(result.report(), "iges.parameter_record"),
+        1
+    );
     assert!(result.report().losses.iter().any(|loss| {
-        loss.code == IgesLossCode::ParameterDataQuarantined.kind()
-            && loss.message.contains("no ENDM statement")
+        loss.code.local_code() == "record.unreadable" && loss.message.contains("no ENDM statement")
     }));
     assert!(!result
         .report()

@@ -8,7 +8,7 @@ use cadmpeg_ir::codec::{Codec, DecodeOptions};
 
 use crate::loss::IgesLossCode;
 use crate::test_support::test_owned::{owned_test_file, OwnedTestEntity};
-use crate::test_support::{code_count, decode, strict_options};
+use crate::test_support::{code_count, decode, given_up_count, given_up_parts, strict_options};
 use crate::IgesCodec;
 
 /// Zero-based index of the Parameter Data count field in the second card.
@@ -78,20 +78,20 @@ fn an_unreadable_literal_retains_the_other_fields_and_refuses_required_geometry(
 }
 
 #[test]
-fn a_first_token_disagreeing_with_the_entity_type_quarantines_the_parameter_data() {
-    let result = decode(point_file("110,1,2,3,0;"));
+fn a_first_token_disagreeing_with_the_entity_type_gives_up_the_parameter_record() {
+    let bytes = point_file("110,1,2,3,0;");
+    let start = parameter_card_offset(&bytes);
 
-    let native = result.ir().native.namespace("iges").unwrap();
-    let quarantined = &native.arenas()["quarantined_parameter_records"];
-    assert_eq!(quarantined.len(), 1);
-    assert_eq!(
-        quarantined[0].fields().unwrap()["defect"],
-        "entity-type-token-mismatch"
-    );
-    assert_eq!(
-        code_count(result.report(), IgesLossCode::ParameterDataQuarantined),
-        1
-    );
+    let result = decode(bytes.clone());
+
+    let parts = given_up_parts(result.source_fidelity());
+    assert_eq!(parts.len(), 1);
+    assert_eq!(parts[0].offset(), u64::try_from(start).unwrap());
+    assert_eq!(parts[0].data(), Some(&bytes[start..start + 81]));
+    assert_eq!(given_up_count(result.report(), "iges.parameter_record"), 1);
+    assert!(result.report().losses[0]
+        .message
+        .contains("the first token disagrees with the Directory Entry entity type"));
     assert_eq!(result.report().losses.len(), 1);
 }
 
@@ -162,7 +162,7 @@ fn a_declared_count_of_zero_defers_to_the_back_pointer_census() {
 }
 
 #[test]
-fn a_declared_card_that_does_not_exist_quarantines_the_parameter_data() {
+fn a_declared_card_that_does_not_exist_gives_up_the_parameter_section() {
     let bytes = set_second_card_field(
         &point_file("116,1,2,3,0;"),
         PARAMETER_COUNT_FIELD,
@@ -173,43 +173,45 @@ fn a_declared_card_that_does_not_exist_quarantines_the_parameter_data() {
     let mut bytes = bytes;
     bytes[back_pointer..back_pointer + 8].copy_from_slice(b"      99");
 
-    let result = decode(bytes);
+    let result = decode(bytes.clone());
 
     let native = result.ir().native.namespace("iges").unwrap();
-    let quarantined = &native.arenas()["quarantined_parameter_records"];
-    assert_eq!(quarantined.len(), 1);
-    assert_eq!(
-        quarantined[0].fields().unwrap()["defect"],
-        "declared-card-missing"
-    );
-    assert_eq!(quarantined[0].fields().unwrap()["cards"], 0);
-    assert_eq!(
-        code_count(result.report(), IgesLossCode::ParameterDataQuarantined),
-        1
-    );
-    assert_eq!(
-        code_count(result.report(), IgesLossCode::CardFramingRecovered),
-        1
-    );
+    assert_eq!(native.arenas()["entities"].len(), 1);
+    assert!(result.ir().model.points.is_empty());
+    let parts = given_up_parts(result.source_fidelity());
+    assert_eq!(parts.len(), 1);
+    assert_eq!(parts[0].offset(), u64::try_from(card_offset).unwrap());
+    assert_eq!(parts[0].data(), Some(&bytes[card_offset..card_offset + 81]));
+    assert_eq!(given_up_count(result.report(), "iges.parameter_section"), 1);
+    assert_eq!(result.report().losses.len(), 1);
 }
 
 #[test]
-fn every_token_defect_key_names_its_own_failure() {
-    for (parameters, defect) in [
+fn every_token_defect_names_its_own_failure() {
+    for (parameters, failure) in [
         (
             "116,1,2,99999999999999999999H;",
-            "hollerith-count-unreadable",
+            "a Hollerith byte count is unreadable",
         ),
-        ("116,1,2,64Hshort;", "hollerith-payload-truncated"),
-        ("116,1,2,0H;", "hollerith-count-zero"),
-        ("116,1,2,3,0", "delimiter-missing"),
+        ("116,1,2,64Hshort;", "a Hollerith payload is truncated"),
+        ("116,1,2,0H;", "a Hollerith byte count is zero"),
+        ("116,1,2,3,0", "a delimiter is missing"),
     ] {
         let result = decode(point_file(parameters));
 
-        let native = result.ir().native.namespace("iges").unwrap();
-        let quarantined = &native.arenas()["quarantined_parameter_records"];
-        assert_eq!(quarantined.len(), 1, "{defect}");
-        assert_eq!(quarantined[0].fields().unwrap()["defect"], defect);
+        assert_eq!(
+            given_up_count(result.report(), "iges.parameter_record"),
+            1,
+            "{failure}"
+        );
+        assert!(
+            result
+                .report()
+                .losses
+                .iter()
+                .any(|loss| loss.message.contains(failure)),
+            "{failure}"
+        );
     }
 }
 
@@ -234,20 +236,19 @@ fn a_non_ascii_literal_retains_its_framed_record() {
 }
 
 #[test]
-fn a_record_with_no_delimiter_quarantines_the_parameter_data() {
-    let result = decode(point_file("116,1,2,3,0"));
+fn a_record_with_no_delimiter_gives_up_the_parameter_record() {
+    let bytes = point_file("116,1,2,3,0");
+    let start = parameter_card_offset(&bytes);
 
-    let native = result.ir().native.namespace("iges").unwrap();
-    let quarantined = &native.arenas()["quarantined_parameter_records"];
-    assert_eq!(quarantined.len(), 1);
-    assert_eq!(
-        quarantined[0].fields().unwrap()["defect"],
-        "delimiter-missing"
-    );
-    assert_eq!(
-        code_count(result.report(), IgesLossCode::ParameterDataQuarantined),
-        1
-    );
+    let result = decode(bytes.clone());
+
+    let parts = given_up_parts(result.source_fidelity());
+    assert_eq!(parts.len(), 1);
+    assert_eq!(parts[0].data(), Some(&bytes[start..start + 81]));
+    assert_eq!(given_up_count(result.report(), "iges.parameter_record"), 1);
+    assert!(result.report().losses[0]
+        .message
+        .contains("a delimiter is missing"));
     assert_eq!(result.report().losses.len(), 1);
 }
 
