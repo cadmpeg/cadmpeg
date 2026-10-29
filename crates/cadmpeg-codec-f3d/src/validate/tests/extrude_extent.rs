@@ -90,7 +90,8 @@ fn geometry_depth_does_not_require_omitted_extrude_face_groups() {
     assert!(conflicts(&native));
     crate::test_support::with_decode_context(|decode| {
         let mut value = serde_json::to_value(cadmpeg_ir::CadIr::empty()).unwrap();
-        value["decode_depth"] = serde_json::json!("geometry");
+        value["scope"] =
+            serde_json::to_value(cadmpeg_ir::document::ContentScope::geometry()).unwrap();
         let ir = serde_json::from_value(value).unwrap();
         let ctx = super::super::Ctx::new(&ir, &native, decode);
         let mut findings = Vec::new();

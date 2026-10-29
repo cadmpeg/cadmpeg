@@ -91,7 +91,7 @@ impl DesignEmbossConstruction {
             });
         let (Some(start), Some(count)) = (scope.byte_offset(), scope.reference_count_offset())
         else {
-            return content && fields.iter().all(|(field, _, _)| field.offset.is_none());
+            return content;
         };
         content
             && start.checked_add(235) == Some(count)

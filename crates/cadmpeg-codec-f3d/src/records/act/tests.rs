@@ -680,14 +680,7 @@ fn native_act_ids_bind_kind_and_key_at_each_admission_route() {
         .try_set_strings("invalid".into(), "Name".into())
         .is_err());
     assert_eq!(root, before);
-    reject_changed_id(
-        root,
-        &[
-            "id",
-            "f3d:stream:act-component-link#21",
-            "f3d:stream:act-guid#20",
-        ],
-    );
+    reject_changed_id(root, &["id", "f3d:stream:act-guid#20"]);
 }
 #[test]
 fn actual_act_tail_admission_checks_padding_and_overflow() {

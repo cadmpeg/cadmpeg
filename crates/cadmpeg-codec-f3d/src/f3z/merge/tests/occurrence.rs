@@ -1288,8 +1288,7 @@ fn merged_joint_descent_selects_unique_member_children_and_retains_ambiguous_pat
             let mut occurrence = serde_json::from_value::<Occurrence>(serde_json::json!({
                 "id":format!("f3d:model:occurrence#{name}"),
                 "prototype":{"scope":"local", "definition":definition},
-                "parent":parent, "ordinal":0, "transform":Transform::identity(),
-                "scale":[1.0, 1.0, 1.0]
+                "parent":parent, "ordinal":0, "transform":Transform::identity()
             }))
             .unwrap();
             occurrence.native_ref = native.map(str::to_owned);
@@ -1392,7 +1391,7 @@ fn merged_joint_descent_selects_unique_member_children_and_retains_ambiguous_pat
         ir.model.occurrences.push(serde_json::from_value(serde_json::json!({
             "id":placing, "prototype":{"scope":"external", "document":ExternalDocument::path("member.f3d")},
             "parent":{"kind":"root"}, "ordinal":0, "transform":Transform::identity(),
-            "scale":[1.0, 1.0, 1.0], "native_ref":reference.id
+            "native_ref":reference.id
         })).unwrap());
         let root_operand = JointOperand::root("object", keys.clone());
         ir.model.assembly_joints.push(joint(

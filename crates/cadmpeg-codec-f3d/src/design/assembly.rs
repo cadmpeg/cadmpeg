@@ -1200,7 +1200,9 @@ fn project_assembly_joint(
         )) => {
             let projected = project_qualified_operands(
                 operands.each_ref().map(|operand| &operand.qualifier),
-                operands.each_ref().map(null_construction_operand),
+                operands.each_ref().map(|operand| {
+                    rigid_as_built_scope(scope) && null_construction_operand(operand)
+                }),
                 stream,
                 occurrences,
                 scopes,
@@ -1382,7 +1384,8 @@ fn rigid_group_member_joints(
     for (ordinal, member) in alignment.additional_members.iter().enumerate() {
         let operands = project_qualified_operands(
             [&first.qualifier, &member.qualifier],
-            [first, member].map(null_construction_operand),
+            [first, member]
+                .map(|operand| rigid_as_built_scope(scope) && null_construction_operand(operand)),
             stream,
             occurrences,
             scopes,
@@ -1487,6 +1490,8 @@ fn projected_frame_sense(scope: &DesignParameterScope) -> Option<cadmpeg_ir::pro
         })
 }
 
+/// Whether a rigid-group operand frame names its locator record in place of
+/// a construction record.
 fn null_construction_operand(
     operand: &crate::records::feature::assembly::DesignQualifiedAssemblyOperand,
 ) -> bool {
