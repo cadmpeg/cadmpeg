@@ -61,7 +61,7 @@ fn annotation_projection_keeps_every_native_field_and_only_the_neutral_record_li
     let mut ir = CadIr::empty();
     crate::annotations::install(&ctx, &scan, &mut ir).unwrap();
     let before = ir.native.clone();
-    crate::neutral_projection::project(&ctx, &scan, Vec::new(), &mut ir).unwrap();
+    crate::neutral_projection::project(&ctx, &scan, Vec::new(), Vec::new(), &mut ir).unwrap();
     assert_eq!(ir.native, before);
     let [annotation] = ir.model.semantic_annotations.as_slice() else {
         panic!("one source dot")
@@ -252,7 +252,7 @@ fn document_metadata_projection_keeps_typed_values_order_and_native_owners() {
     crate::document_data::install(&ctx, &scan, &mut ir).unwrap();
     let before = ir.native.clone();
     assert!(
-        crate::neutral_projection::project(&ctx, &scan, Vec::new(), &mut ir)
+        crate::neutral_projection::project(&ctx, &scan, Vec::new(), Vec::new(), &mut ir)
             .unwrap()
             .is_empty()
     );
@@ -501,7 +501,8 @@ fn material_typed_handoff_keeps_native_order_values_and_optional_field_absence()
     assert!(installed.losses.is_empty(), "{:?}", installed.losses);
     assert!(installed.opaque_records.is_empty());
     let before = ir.native.clone();
-    let losses = crate::neutral_projection::project(&ctx, &scan, materials, &mut ir).unwrap();
+    let losses =
+        crate::neutral_projection::project(&ctx, &scan, materials, Vec::new(), &mut ir).unwrap();
     assert_eq!(losses.len(), 2);
     for (loss, (order, uuid)) in losses.iter().zip([
         (0, "44444444-4444-4444-4444-444444444444"),
@@ -584,4 +585,126 @@ fn material_typed_handoff_keeps_native_order_values_and_optional_field_absence()
         Some(serde_json::json!(-2))
     );
     assert_eq!(native[2].field("archive_index"), Some(serde_json::json!(7)));
+}
+
+fn saved_view_source(name: &str, location: [f64; 3]) -> Vec<u8> {
+    let archive = ArchiveVersion::V8;
+    let mut viewport = vec![0x15];
+    for value in [1_i32, 1, 1, 2] {
+        viewport.extend(value.to_le_bytes());
+    }
+    for vector in [
+        location,
+        [0.0, 0.0, -1.0],
+        [0.0, 1.0, 0.0],
+        [1.0, 0.0, 0.0],
+        [0.0, 1.0, 0.0],
+        [0.0, 0.0, 1.0],
+    ] {
+        bytes::point(&mut viewport, vector);
+    }
+    for value in [-2.0_f64, 2.0, -1.0, 1.0, 0.1, 100.0] {
+        viewport.extend(value.to_le_bytes());
+    }
+    for value in [0_i32, 1920, 1080, 0, 0, 1] {
+        viewport.extend(value.to_le_bytes());
+    }
+    viewport.extend([0x11; 16]);
+    viewport.extend([1, 0, 1, 0, 1]);
+    bytes::point(&mut viewport, [4.0, 5.0, 6.0]);
+    viewport.push(1);
+    for value in [1.0_f64, 2.0, 3.0] {
+        viewport.extend(value.to_le_bytes());
+    }
+    bytes::nested_crc_chunk(
+        archive,
+        0x2000_803b,
+        &[
+            bytes::crc_chunk(archive, 0x2000_8a3b, &bytes::utf16_bytes(name)),
+            bytes::crc_chunk(archive, 0x2000_823b, &viewport),
+            bytes::short_chunk(archive, 0xa000_033b, 0),
+            bytes::short_chunk(archive, 0xa000_043b, 1),
+            bytes::short_chunk(archive, 0xa000_053b, 0),
+            bytes::short_chunk(archive, 0xa000_093b, 2),
+            bytes::short_chunk(archive, 0xffff_ffff, 0),
+        ]
+        .concat(),
+    )
+}
+
+#[test]
+fn typed_view_handoff_orders_native_owners_without_reordering_camera_values() {
+    let archive = ArchiveVersion::V8;
+    let list = |typecode, view: Vec<u8>| {
+        let mut payload = 1_i32.to_le_bytes().to_vec();
+        payload.extend(view);
+        bytes::crc_chunk_excluding(archive, typecode, &payload, &[4..payload.len()])
+    };
+    let source = bytes::minimal_document(
+        "80",
+        &[
+            bytes::table(
+                archive,
+                0x1000_0015,
+                &[
+                    bytes::units_record(archive, 2),
+                    list(
+                        0x2000_8036,
+                        saved_view_source("Named source", [1.25, -2.5, 3.75]),
+                    ),
+                    list(
+                        0x2000_8037,
+                        saved_view_source("Active source", [10.0, 20.0, 30.0]),
+                    ),
+                ],
+            ),
+            bytes::table(archive, 0x1000_0013, &[]),
+        ],
+    );
+    let arena = DecodeArena::new();
+    let (ctx, _) =
+        DecodeContext::from_root_bytes(&source, &arena, &DecodePolicy::service()).unwrap();
+    let scan = crate::container::scan(&ctx, &source).unwrap();
+    let mut ir = CadIr::empty();
+    let (installed, views) = crate::views::install(&ctx, &scan, &mut ir).unwrap();
+    assert!(installed.losses.is_empty(), "{:?}", installed.losses);
+    assert!(installed.opaque_records.is_empty());
+    let native_before = ir.native.clone();
+    let losses =
+        crate::neutral_projection::project(&ctx, &scan, Vec::new(), views, &mut ir).unwrap();
+    assert!(losses.is_empty(), "{losses:?}");
+    assert_eq!(ir.native, native_before);
+    let records = &ir.native.namespace("rhino").unwrap().arenas()["views"];
+    assert_eq!(records.len(), 2);
+    assert_eq!(ir.model.view_presentations.len(), 2);
+    assert_eq!(ir.model.presentation_documents.len(), 2);
+    for (ordinal, (name, location)) in [
+        ("Active source", [10.0, 20.0, 30.0]),
+        ("Named source", [1.25, -2.5, 3.75]),
+    ]
+    .into_iter()
+    .enumerate()
+    {
+        let view = &ir.model.view_presentations[ordinal];
+        assert_eq!(view.native_ref.as_deref(), Some(records[ordinal].id()));
+        assert_eq!(view.order, u32::try_from(ordinal).unwrap());
+        assert_eq!(
+            view.properties
+                .iter()
+                .find(|(key, _)| key.as_str() == "name")
+                .unwrap()
+                .1,
+            name
+        );
+        assert_eq!(view.display_mode.as_deref(), Some("2"));
+        let document = &ir.model.presentation_documents[ordinal];
+        assert_eq!(document.native_ref.as_deref(), Some(records[ordinal].id()));
+        let cadmpeg_ir::presentation::PresentationStateKind::Camera(camera) =
+            &document.states()[0].kind
+        else {
+            panic!("camera")
+        };
+        assert_eq!(camera.position.unwrap().get(), location);
+        assert_eq!(camera.orientation.unwrap().get(), [0.0, 0.0, 1.0, 0.0]);
+    }
 }

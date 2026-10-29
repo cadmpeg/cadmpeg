@@ -61,8 +61,9 @@ pub(super) fn read(records: &[Vec<u8>], project: bool) -> CadIr {
     );
     if project {
         let native = serde_json::to_value(&ir.native).expect("native snapshot");
-        let losses = crate::neutral_projection::project(&ctx, &scan, materials, &mut ir)
-            .expect("project material");
+        let losses =
+            crate::neutral_projection::project(&ctx, &scan, materials, Vec::new(), &mut ir)
+                .expect("project material");
         assert!(losses.is_empty(), "{losses:?}");
         assert_eq!(
             serde_json::to_value(&ir.native).expect("projected native"),

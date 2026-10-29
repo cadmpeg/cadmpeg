@@ -2,7 +2,58 @@
 
 use super::*;
 use cadmpeg_ir::ids::Identity;
+use cadmpeg_ir::scalar::FiniteReal;
 use cadmpeg_ir::NativeRecord;
+use serde_json::{Map, Value};
+
+fn camera(fields: &Map<String, Value>) -> Option<CameraProjection> {
+    fn vector(fields: &Map<String, Value>, key: &str) -> Option<[FiniteReal; 3]> {
+        let values = fields.get(key)?.as_array()?;
+        (values.len() == 3).then_some(())?;
+        Some([
+            FiniteReal::new(values[0].as_f64()?)?,
+            FiniteReal::new(values[1].as_f64()?)?,
+            FiniteReal::new(values[2].as_f64()?)?,
+        ])
+    }
+    Some(CameraProjection {
+        location: vector(fields, "camera_location_mm")?,
+        direction: vector(fields, "camera_direction")?,
+        up: vector(fields, "camera_up")?,
+        x_axis: vector(fields, "camera_x_axis")?,
+        y_axis: vector(fields, "camera_y_axis")?,
+        z_axis: vector(fields, "camera_z_axis")?,
+    })
+}
+
+fn orientation(fields: &Map<String, Value>) -> Option<NonzeroVector<4>> {
+    super::orientation(&camera(fields)?)
+}
+
+fn project(ctx: &DecodeContext<'_>, ir: &mut CadIr) -> Result<Vec<LossNote>, CodecError> {
+    let sources = ir.native.namespace("rhino")
+        .and_then(|namespace| namespace.arenas().get("views"))
+        .into_iter().flatten().map(|record| {
+            let bool_field = |key| record.field(key).and_then(|value| value.as_bool())
+                .expect("original unit input contains the declared view flag");
+            ViewProjection {
+                native_id: record.id().to_owned(),
+                name: record.field("name").and_then(|value| value.as_str().map(str::to_owned))
+                    .expect("original unit input contains the declared view name"),
+                show_construction_grid: bool_field("show_construction_grid"),
+                show_construction_axes: bool_field("show_construction_axes"),
+                show_world_axes: bool_field("show_world_axes"),
+                legacy_display_mode: record.field("legacy_display_mode").and_then(|value| value.as_i64()),
+                modern_display_mode: record.field("attributes").and_then(|value| value.as_object()
+                    .and_then(|fields| fields.get("display"))
+                    .and_then(|value| value.as_str().map(str::to_owned))),
+                has_attributes: record.field("attributes").is_some_and(|value| value.is_object()),
+                camera: record.field("viewport").and_then(|value| value.as_object().map(|fields|
+                    camera(fields).expect("original unit input contains six finite three-coordinate camera vectors"))),
+            }
+        }).collect();
+    super::project(ctx, sources, ir)
+}
 
 fn fields() -> Map<String, Value> {
     serde_json::from_value(serde_json::json!({

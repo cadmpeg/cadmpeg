@@ -2121,7 +2121,8 @@ impl<'a> DecodeContext<'a> {
             self.scan,
             self.session.document_mut()?,
         )?);
-        let views = crate::views::install(ctx, self.scan, self.session.document_mut()?)?;
+        let (views, view_projections) =
+            crate::views::install(ctx, self.scan, self.session.document_mut()?)?;
         source_layout.extend(views.source_layout);
         self.report.typed_losses.extend(views.losses);
         for source in views.opaque_records {
@@ -2275,7 +2276,11 @@ impl<'a> DecodeContext<'a> {
         source_fidelity.attach_native_unknown_records(&mut ir, "rhino", unknowns, ctx)?;
         losses.extend(crate::product::project(ctx, self.scan, &mut ir)?);
         losses.extend(crate::neutral_projection::project(
-            ctx, self.scan, materials, &mut ir,
+            ctx,
+            self.scan,
+            materials,
+            view_projections,
+            &mut ir,
         )?);
         let scope = self.scan.content_scope(&ir);
         ir.scope = scope;

@@ -127,12 +127,13 @@ pub(crate) fn project(
     ctx: &DecodeContext<'_>,
     scan: &Scan<'_>,
     materials: Vec<crate::presentation::MaterialProjection>,
+    views: Vec<crate::views::ViewProjection>,
     ir: &mut CadIr,
 ) -> Result<Vec<LossNote>, CodecError> {
     let mut losses = materials::project(ctx, scan, materials, ir)?;
     losses.extend(document::project(ctx, scan, ir)?);
     losses.extend(annotations::project(ctx, ir)?);
-    losses.extend(views::project(ctx, ir)?);
+    losses.extend(views::project(ctx, views, ir)?);
     let layers = &scan.metadata.layers;
     let mut by_uuid = BTreeMap::new();
     for (ordinal, layer) in layers.iter().enumerate() {

@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Saved views expose their names and admitted camera poses as neutral state.
 
+use crate::views::{CameraProjection, ViewProjection};
 use cadmpeg_core::{decode::DecodeContext, CodecError};
 use cadmpeg_ir::ids::IdentityKey;
 use cadmpeg_ir::presentation::{
@@ -10,20 +11,9 @@ use cadmpeg_ir::presentation::{
 use cadmpeg_ir::report::loss::LossNote;
 use cadmpeg_ir::units::{FiniteVector, NonzeroVector};
 use cadmpeg_ir::CadIr;
-use serde_json::{Map, Value};
 use std::collections::BTreeMap;
 
 const EPS_CAMERA_FRAME: f64 = 1e-10;
-
-fn vector(fields: &Map<String, Value>, key: &str) -> Option<[f64; 3]> {
-    let values = fields.get(key)?.as_array()?;
-    (values.len() == 3).then_some(())?;
-    Some([
-        values[0].as_f64()?,
-        values[1].as_f64()?,
-        values[2].as_f64()?,
-    ])
-}
 
 fn dot(a: [f64; 3], b: [f64; 3]) -> f64 {
     a.into_iter().zip(b).map(|(a, b)| a * b).sum()
@@ -35,10 +25,10 @@ fn close(a: [f64; 3], b: [f64; 3]) -> bool {
         .all(|(a, b)| (a - b).abs() <= EPS_CAMERA_FRAME)
 }
 
-fn orientation(viewport: &Map<String, Value>) -> Option<NonzeroVector<4>> {
-    let camera_x = vector(viewport, "camera_x_axis")?;
-    let camera_y = vector(viewport, "camera_y_axis")?;
-    let camera_z = vector(viewport, "camera_z_axis")?;
+fn orientation(viewport: &CameraProjection) -> Option<NonzeroVector<4>> {
+    let camera_x = viewport.x_axis.map(|value| value.get());
+    let camera_y = viewport.y_axis.map(|value| value.get());
+    let camera_z = viewport.z_axis.map(|value| value.get());
     // This is admission of the stored orthonormal camera frame, not a repair
     // of an inconsistent source frame or a geometric tolerance substitution.
     if [camera_x, camera_y, camera_z]
@@ -60,10 +50,10 @@ fn orientation(viewport: &Map<String, Value>) -> Option<NonzeroVector<4>> {
             camera_z,
         )
         || !close(
-            vector(viewport, "camera_direction")?,
+            viewport.direction.map(|value| value.get()),
             camera_z.map(|value| -value),
         )
-        || !close(vector(viewport, "camera_up")?, camera_y)
+        || !close(viewport.up.map(|value| value.get()), camera_y)
     {
         return None;
     }
@@ -137,46 +127,36 @@ fn property(
 
 pub(super) fn project(
     ctx: &DecodeContext<'_>,
+    sources: Vec<ViewProjection>,
     ir: &mut CadIr,
 ) -> Result<Vec<LossNote>, CodecError> {
-    let mut sources = Vec::new();
-    if let Some(records) = ir
-        .native
-        .namespace("rhino")
-        .and_then(|namespace| namespace.arenas().get("views"))
-    {
-        for record in records {
-            sources.push((record.id().to_owned(), record.copy_fields(ctx)?));
+    for source in &sources {
+        let _object = ctx.enter_nested("copy native field object")?;
+        if source.has_attributes {
+            let _attributes = ctx.enter_nested("copy native field object")?;
+        }
+        if source.camera.is_some() {
+            let _viewport = ctx.enter_nested("copy native field object")?;
+            let _vector = ctx.enter_nested("copy native field sequence")?;
         }
     }
     let mut losses = Vec::new();
-    for (ordinal, (native_id, fields)) in sources.into_iter().enumerate() {
+    for (ordinal, source) in sources.into_iter().enumerate() {
+        let native_id = source.native_id;
         let view_id = id("view", ordinal)?;
         let mut properties = BTreeMap::new();
-        if let Some(name) = fields
-            .get("name")
-            .and_then(|value| value.as_str().map(str::to_owned))
-            .filter(|name| !name.trim().is_empty())
-        {
-            property(&mut properties, "name", name)?;
+        if !source.name.trim().is_empty() {
+            property(&mut properties, "name", source.name)?;
         }
-        for name in [
-            "show_construction_grid",
-            "show_construction_axes",
-            "show_world_axes",
+        for (name, value) in [
+            ("show_construction_grid", source.show_construction_grid),
+            ("show_construction_axes", source.show_construction_axes),
+            ("show_world_axes", source.show_world_axes),
         ] {
-            if let Some(value) = fields.get(name).and_then(Value::as_bool) {
-                property(&mut properties, name, value.to_string())?;
-            }
+            property(&mut properties, name, value.to_string())?;
         }
-        let legacy_mode = fields
-            .get("legacy_display_mode")
-            .and_then(serde_json::Value::as_i64);
-        let modern_mode = fields
-            .get("attributes")
-            .and_then(Value::as_object)
-            .and_then(|attributes| attributes.get("display"))
-            .and_then(|value| value.as_str().map(str::to_owned));
+        let legacy_mode = source.legacy_display_mode;
+        let modern_mode = source.modern_display_mode;
         if modern_mode.is_some() {
             if let Some(legacy) = legacy_mode {
                 property(
@@ -202,10 +182,9 @@ pub(super) fn project(
             properties,
             native_ref: Some(native_id.clone()),
         });
-        if let Some(viewport) = fields.get("viewport").and_then(Value::as_object) {
-            let camera = vector(viewport, "camera_location_mm")
-                .and_then(FiniteVector::new)
-                .zip(orientation(viewport));
+        if let Some(viewport) = source.camera {
+            let camera = FiniteVector::new(viewport.location.map(|value| value.get()))
+                .zip(orientation(&viewport));
             if let Some((position, orientation)) = camera {
                 let camera_id = id("camera", ordinal)?;
                 let mut document = PresentationDocument::new(camera_id.clone());

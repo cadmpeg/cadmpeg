@@ -50,7 +50,8 @@ fn read(settings: &[Vec<u8>], project: bool) -> CadIr {
         DecodeContext::from_root_bytes(&archive, &arena, &policy).expect("decode context");
     let scan = crate::container::scan(&ctx, &archive).expect("scan saved view");
     let mut ir = CadIr::empty();
-    let installed = crate::views::install(&ctx, &scan, &mut ir).expect("read saved-view grammar");
+    let (installed, views) =
+        crate::views::install(&ctx, &scan, &mut ir).expect("read saved-view grammar");
     assert!(installed.losses.is_empty(), "{:?}", installed.losses);
     assert!(
         installed.opaque_records.is_empty(),
@@ -59,7 +60,7 @@ fn read(settings: &[Vec<u8>], project: bool) -> CadIr {
     );
     if project {
         let before = serde_json::to_value(&ir.native).expect("native snapshot");
-        let losses = crate::neutral_projection::project(&ctx, &scan, Vec::new(), &mut ir)
+        let losses = crate::neutral_projection::project(&ctx, &scan, Vec::new(), views, &mut ir)
             .expect("project saved view");
         assert!(losses.is_empty(), "{losses:?}");
         assert_eq!(
