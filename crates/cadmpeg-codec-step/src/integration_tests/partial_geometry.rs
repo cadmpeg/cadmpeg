@@ -117,10 +117,10 @@ fn a_mesh_only_export_is_not_reported_as_empty() {
         &StepWriteOptions::default(),
     )
     .unwrap();
-    assert!(!report.losses.iter().any(|loss| {
-        loss.code == StepLossCode::NoGeometryWritten.kind()
-            || loss.code == StepLossCode::NoExportableSolids.kind()
-    }));
+    assert!(!report
+        .losses
+        .iter()
+        .any(|loss| loss.code == StepLossCode::NoExportableSolids.kind()));
     let decoded = StepCodec::default()
         .decode(&mut Cursor::new(output), &DecodeOptions::default())
         .unwrap();

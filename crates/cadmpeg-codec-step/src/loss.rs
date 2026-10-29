@@ -307,8 +307,6 @@ pub(crate) enum StepLossCode {
     RegionVerticesRecovered,
     /// Edges of unwritable faces were retained as wire geometry.
     RegionEdgesRecovered,
-    /// No geometry was placed in the output representations.
-    NoGeometryWritten,
     /// Different coedge pcurves were compared at discrete parameters.
     EdgePcurveAgreementSampled,
     /// A recovered edge was fitted at sampled parameters.
@@ -523,7 +521,6 @@ impl StepLossCode {
         Self::RegionSolidReducedToSheet,
         Self::RegionVerticesRecovered,
         Self::RegionEdgesRecovered,
-        Self::NoGeometryWritten,
         Self::EdgePcurveAgreementSampled,
         Self::EdgePcurveSampledToBspline,
         Self::ShellOmittedOuterFace,
@@ -717,7 +714,6 @@ impl StepLossCode {
             Self::RegionSolidReducedToSheet => "topology.region-solid-reduced-to-sheet",
             Self::RegionVerticesRecovered => "topology.region-vertices-recovered",
             Self::RegionEdgesRecovered => "topology.region-edges-recovered",
-            Self::NoGeometryWritten => "export.no-geometry-written",
             Self::EdgePcurveAgreementSampled => "geometry.edge-pcurve-agreement-sampled",
             Self::EdgePcurveSampledToBspline => "geometry.edge-pcurve-sampled-to-bspline",
             Self::ShellOmittedOuterFace => "topology.shell-omitted-outer-face",
@@ -777,7 +773,6 @@ impl StepLossCode {
             | Self::RegionSolidReducedToSheet
             | Self::RegionVerticesRecovered
             | Self::RegionEdgesRecovered
-            | Self::NoGeometryWritten
             | Self::ShellOmittedOuterFace
             | Self::ShellOmittedUnclassifiedFace
             | Self::FaceOmittedOuterLoop
@@ -963,7 +958,6 @@ impl StepLossCode {
             | Self::AssemblyOccurrenceOmittedNoParentProduct
             | Self::AssemblyJointOmitted => LossTaxonomy::AssemblyPlacementsNotTransferred,
             Self::NoExportableSolids => LossTaxonomy::NoExportableSolids,
-            Self::NoGeometryWritten => LossTaxonomy::GeometryNotTransferred,
             Self::EdgePcurveAgreementSampled | Self::EdgePcurveSampledToBspline => {
                 LossTaxonomy::GeometryAgreementSampled
             }
@@ -1380,7 +1374,6 @@ mod tests {
                 "topology.region-solid-reduced-to-sheet",
                 "topology.region-vertices-recovered",
                 "topology.region-edges-recovered",
-                "export.no-geometry-written",
                 "geometry.edge-pcurve-agreement-sampled",
                 "geometry.edge-pcurve-sampled-to-bspline",
                 "topology.shell-omitted-outer-face",

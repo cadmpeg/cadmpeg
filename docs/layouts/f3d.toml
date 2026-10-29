@@ -21072,7 +21072,7 @@ anchor = "The `Emboss` fixed-prefix form has nine ordered references."
 
 [[record.code]]
 path = "crates/cadmpeg-codec-f3d/src/records/feature/emboss.rs"
-contains = "scope.byte_offset().checked_add(235) != Some(scope.reference_count_offset())"
+contains = "start.checked_add(235) == Some(count)"
 note = "The common reference count follows the complete null-GUID separator."
 
 [[record]]
