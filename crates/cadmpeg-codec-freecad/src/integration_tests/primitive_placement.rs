@@ -55,12 +55,10 @@ fn primitive_placement_cc0_recipe_frames_and_validator() {
                 for j in 0..3 {
                     let expected = if variant == 'c' {
                         [[1.0, 0.0, 0.0], [0.0, 0.0, -1.0], [0.0, 1.0, 0.0]][i][j]
+                    } else if i == j {
+                        1.0
                     } else {
-                        if i == j {
-                            1.0
-                        } else {
-                            0.0
-                        }
+                        0.0
                     };
                     assert!((rows[i][j] - expected).abs() < EPS_PRIMITIVE_FRAME);
                 }
@@ -237,14 +235,16 @@ fn primitive_placement_all_eight_additive_and_subtractive_families() {
     ];
     for (family, dimensions) in dimensions {
         for prefix in ["Additive", "Subtractive"] {
-            let properties = dimensions.split_whitespace().map(|pair| {
+            let properties = dimensions.split_whitespace().fold(String::new(), |mut out, pair| {
+                use std::fmt::Write as _;
                 let (name, value) = pair.split_once('=').unwrap();
                 let (runtime, tag) = if name == "Polygon" { ("IntegerConstraint", "Integer") }
                     else if name.starts_with("Angle") { ("Angle", "Float") }
                     else if family == "Wedge" { ("Distance", "Float") }
                     else { ("Length", "Float") };
-                format!(r#"<Property name="{name}" type="App::Property{runtime}"><{tag} value="{value}"/></Property>"#)
-            }).collect::<String>();
+                write!(out, r#"<Property name="{name}" type="App::Property{runtime}"><{tag} value="{value}"/></Property>"#).unwrap();
+                out
+            });
             let count = dimensions.split_whitespace().count() + 1;
             let document = format!(
                 r#"<Document SchemaVersion="4" FileVersion="1"><Objects Count="1"><Object type="PartDesign::{prefix}{family}" name="Primitive"/></Objects><ObjectData Count="1"><Object name="Primitive"><Properties Count="{count}">{properties}{PLACEMENT}</Properties></Object></ObjectData></Document>"#
