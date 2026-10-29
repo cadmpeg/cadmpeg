@@ -6654,7 +6654,7 @@ The reference starts at offset 36 relative to the Geometry-member indexed header
 | -----: | ---: | ----- | ---- | ------ | --- | ------- |
 | 0 | 1 | `marker` | `u8` | little | spec | byte 36 is `01` · value `1` |
 | 1 | 8 | `target` | `u64` | little | spec | its u64 target at member offset 37 names the ordinal collection |
-| 9 | 2 | `flags` | `bytes[2]` | little | spec | Byte 36 opens a same-segment marked reference; its u64 target at member offset 37 names the ordinal collection. |
+| 9 | 2 | `flags` | `bytes[2]` | little | spec | When it is `01`, its u64 target at member offset 37 names the ordinal collection. |
 
 ## `sketch_ordinal_collection_prefix`
 

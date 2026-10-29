@@ -8015,28 +8015,30 @@ fn validate_sketch_placements(ctx: &Ctx<'_, '_>, findings: &mut Vec<Finding>) {
                 .entities_by_suffix
                 .get(&(native_stream, placement.entity_id.suffix()))
                 .is_some_and(|entity| visibility.stream_ordinal_offset() > entity.byte_offset);
-            visibility.ordinal_collection.is_some_and(|collection| {
-                let collection = collection.get();
-                if header_valid
-                    && collections.contains(&(ids::design_segment(&placement.id), collection))
-                    && visibility_ordinals.insert((
-                        native_stream,
-                        collection,
-                        visibility.stream_ordinal.get(),
-                    ))
-                {
-                    ordinals_by_namespace
-                        .entry((native_stream, collection))
-                        .or_default()
-                        .push((
-                            placement.entity_id.suffix(),
+            visibility
+                .ordinal_collection
+                .map_or(header_valid, |collection| {
+                    let collection = collection.get();
+                    if header_valid
+                        && collections.contains(&(ids::design_segment(&placement.id), collection))
+                        && visibility_ordinals.insert((
+                            native_stream,
+                            collection,
                             visibility.stream_ordinal.get(),
-                        ));
-                    visibility_offsets.insert((native_stream, visibility.visible_offset()))
-                } else {
-                    false
-                }
-            })
+                        ))
+                    {
+                        ordinals_by_namespace
+                            .entry((native_stream, collection))
+                            .or_default()
+                            .push((
+                                placement.entity_id.suffix(),
+                                visibility.stream_ordinal.get(),
+                            ));
+                        visibility_offsets.insert((native_stream, visibility.visible_offset()))
+                    } else {
+                        false
+                    }
+                })
         } else {
             true
         };

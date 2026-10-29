@@ -394,10 +394,10 @@ fn add_ordinal_collection_types(native: &mut crate::native::F3dNative) {
 }
 
 #[test]
-fn sketch_visibility_requires_decoded_ordinal_collection() {
+fn sketch_visibility_names_a_decoded_ordinal_collection_or_none() {
     crate::test_support::with_decode_context(|service_ctx| {
         let ir = cadmpeg_ir::examples::unit_cube().unwrap();
-        for collection in [None, std::num::NonZeroU64::new(999)] {
+        for (collection, finding_count) in [(None, 0), (std::num::NonZeroU64::new(999), 1)] {
             let mut native = two_sketch_placements(false, [1, 2]);
             native.design_sketch_placements[0]
                 .visibility
@@ -407,11 +407,9 @@ fn sketch_visibility_requires_decoded_ordinal_collection() {
             let ctx = super::super::Ctx::new(&ir, &native, service_ctx);
             let mut findings = Vec::new();
             super::super::validate_sketch_placements(&ctx, &mut findings);
-            assert_eq!(findings.len(), 1);
-            assert_eq!(
-                findings[0].message,
-                "Fusion Design sketch placement has an invalid frame or scope link"
-            );
+            assert_eq!(findings.len(), finding_count);
+            assert!(findings.iter().all(|finding| finding.message
+                == "Fusion Design sketch placement has an invalid frame or scope link"));
         }
         let mut native = two_sketch_placements(false, [1, 2]);
         native.design_types.clear();
