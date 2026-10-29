@@ -3,14 +3,14 @@
 
 use serde_json::{json, Value};
 
-use super::{agree, assert_decodes_agree, Allowances, Mode};
+use super::{assert_decodes_agree, decodes_agree, Allowances, Mode};
 
 fn document(rows: Value) -> Value {
     json!({"model": {"points": rows}, "native": {}})
 }
 
 fn accepts(before: &Value, after: &Value) -> bool {
-    agree(before, after, &Allowances::default(), Mode::Same).is_ok()
+    decodes_agree(before, after, &Allowances::default(), Mode::Same).is_ok()
 }
 
 #[test]
@@ -104,8 +104,9 @@ fn shell_can_lose_only_an_allowed_face_entry() {
     let (before, after) = face_removal();
     let allowances = Allowances {
         removed: ["f2".to_owned()].into(),
+        removed_fields: std::collections::BTreeSet::new(),
     };
-    assert!(agree(&before, &after, &allowances, Mode::Same).is_ok());
+    assert!(decodes_agree(&before, &after, &allowances, Mode::Same).is_ok());
 }
 
 #[test]
@@ -149,11 +150,12 @@ fn removal_in_a_nested_list_preserves_the_holder() {
         json!({"model":{"faces":[],"shells":[{"id":"t","groups":[{"name":"kept","members":[]}]}]}});
     let allowances = Allowances {
         removed: ["f".to_owned()].into(),
+        removed_fields: std::collections::BTreeSet::new(),
     };
-    assert!(agree(&before, &after, &allowances, Mode::Same).is_ok());
+    assert!(decodes_agree(&before, &after, &allowances, Mode::Same).is_ok());
     let mut dropped_holder = after;
     dropped_holder["model"]["shells"][0]["groups"] = json!([]);
-    assert!(agree(&before, &dropped_holder, &allowances, Mode::Same).is_err());
+    assert!(decodes_agree(&before, &dropped_holder, &allowances, Mode::Same).is_err());
 }
 
 #[test]
