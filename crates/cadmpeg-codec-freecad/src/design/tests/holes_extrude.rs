@@ -292,14 +292,32 @@ fn uses_only_direct_custom_hole_enumeration_labels() {
                     .ok()
             })
             .is_some_and(|properties| {
+                let xml = format!("<Property>{raw_value}</Property>");
+                let tree = roxmltree::Document::parse(&xml).expect("case value XML");
+                let source = tree
+                    .root_element()
+                    .descendants()
+                    .skip(1)
+                    .filter(roxmltree::Node::is_element)
+                    .map(|node| {
+                        (
+                            node.tag_name().name().to_owned(),
+                            node.attributes()
+                                .map(|attribute| {
+                                    (attribute.name().to_owned(), attribute.value().to_owned())
+                                })
+                                .collect::<std::collections::BTreeMap<_, _>>(),
+                        )
+                    })
+                    .collect::<Vec<_>>();
                 properties.iter().any(|property| {
                     property.name == "ThreadSize"
-                        && std::str::from_utf8(&crate::test_support::source_fidelity::bytes(
-                            result.source_fidelity(),
-                            &property.id,
-                        ))
-                        .expect("source property XML")
-                        .contains(raw_value)
+                        && property
+                            .values()
+                            .iter()
+                            .map(|value| (value.tag.clone(), value.attributes.clone()))
+                            .collect::<Vec<_>>()
+                            == source
                 })
             })
     }

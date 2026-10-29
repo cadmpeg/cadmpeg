@@ -1022,6 +1022,23 @@ fn symmetry_uses_the_third_operand_kind_and_position() {
                 native_losses[0].severity,
                 cadmpeg_ir::report::Severity::Blocking
             );
+        } else if expected == "line" {
+            assert!(native_losses.is_empty(), "{name}");
+            let errors = cadmpeg_ir::validate_neutral(decoded.ir(), Vec::new())
+                .expect("validate the neutral model")
+                .findings
+                .into_iter()
+                .filter(|finding| finding.severity >= cadmpeg_ir::report::Severity::Error)
+                .collect::<Vec<_>>();
+            assert_eq!(errors.len(), 1, "{name}: {errors:#?}");
+            assert_eq!(
+                errors[0].check,
+                cadmpeg_ir::report::check::Check::GeometricConsistency
+            );
+            assert_eq!(
+                errors[0].entity.as_deref(),
+                Some(model.sketch_constraints[0].id.as_str())
+            );
         } else {
             assert!(native_losses.is_empty(), "{name}");
             assert_valid_document(decoded.ir());
