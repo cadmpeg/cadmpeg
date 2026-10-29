@@ -262,10 +262,10 @@ fn give_up(
         .classes
         .clone()
         .unwrap_or_else(|| ctx.depth().required_scope().classes().collect());
-    ctx.retain_bytes(
-        u64_from_index(bytes.len()).saturating_add(u64_from_index(id.as_str().len())),
-        "given-up part source bytes",
-    )?;
+    let retained = u64_from_index(bytes.len())
+        .checked_add(u64_from_index(id.as_str().len()))
+        .ok_or_else(|| CodecError::malformed("given-up part size overflows"))?;
+    ctx.retain_bytes(retained, "given-up part source bytes")?;
     let mut data = ctx.alloc_filled(bytes.len(), 0_u8, "given-up part source bytes")?;
     data.copy_from_slice(bytes);
     let owner = spec
@@ -322,11 +322,14 @@ fn reserve<T>(
     values: &mut Vec<T>,
     additional: usize,
 ) -> Result<(), CodecError> {
+    let bytes = additional
+        .checked_mul(size_of::<T>())
+        .ok_or_else(|| CodecError::malformed("part output storage overflows"))?;
     values.try_reserve(additional).map_err(|_| {
         ResourceLimit::allocation_failed(
             ResourceDimension::RetainedBytes,
             ctx.policy().limits.max_retained_bytes,
-            u64_from_index(additional.saturating_mul(size_of::<T>())),
+            u64_from_index(bytes),
             "part output storage",
         )
         .into()
