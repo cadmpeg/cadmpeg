@@ -23,8 +23,7 @@ fn lost_edge_bytes() -> Vec<u8> {
 fn lost_edge_reference_scan_preserves_record_fields() {
     let bytes = lost_edge_bytes();
     let mut references = Vec::new();
-    decode_lost_edge_references_from_stream("BulkStream.dat", &bytes, &mut references)
-        .expect("valid lost edge record");
+    decode_lost_edge_references_from_stream("BulkStream.dat", &bytes, &mut references);
     assert_eq!(references.len(), 1);
     assert_eq!(
         references[0].id,

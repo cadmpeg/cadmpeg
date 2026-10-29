@@ -1089,7 +1089,7 @@ fn extend_related_design_records(
             scan,
             &prereqs.design_parameter_owners,
             &design.design_record_headers,
-        )?;
+        );
     design.design_face_source_groups = crate::design::decode::operands::decode_face_source_groups(
         ctx,
         scan,

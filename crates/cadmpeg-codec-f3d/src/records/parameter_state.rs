@@ -7,7 +7,7 @@ use serde::{Deserialize, Serialize};
 
 use super::references::DesignClassTag;
 
-/// CommonData version-4 state selected by a typed parameter tail.
+/// `CommonData` version-4 state selected by a typed parameter tail.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub(crate) struct DesignParameterState {
@@ -23,7 +23,7 @@ pub(crate) struct DesignParameterState {
     pub(crate) document_root: String,
 }
 
-/// CommonData version-1 companion of a parameter state.
+/// `CommonData` version-1 companion of a parameter state.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub(crate) struct DesignParameterStateCompanion {

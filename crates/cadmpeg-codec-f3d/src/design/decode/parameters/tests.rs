@@ -1059,8 +1059,7 @@ fn parameter_companion_decode_emits_one_identified_companion() {
     zip.write_all(&prefix).unwrap();
     let archive = zip.finish().unwrap().into_inner();
     with_scan(&archive, |scan| {
-        let decoded =
-            super::decode_parameter_companions(scan, &[owner.clone()], &[header.clone()]).unwrap();
+        let decoded = super::decode_parameter_companions(scan, &[owner.clone()], &[header.clone()]);
         assert_eq!(decoded.len(), 1);
         assert_eq!(
             decoded[0].id(),

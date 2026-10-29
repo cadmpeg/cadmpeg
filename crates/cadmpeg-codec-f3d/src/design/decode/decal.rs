@@ -143,12 +143,12 @@ fn parse_decal_image(
 /// records. `read` returns the stream bytes of a range; the
 /// grammar reads the fixed prefix, each candidate asset record and its name
 /// record through it.
-fn parse_decal_image_frame<'a>(
+fn parse_decal_image_frame(
     bytes: &[u8],
     stream: &str,
     scope_record_index: u32,
     scope_at: usize,
-    read: &super::image::ImageRead<'a, '_>,
+    read: &super::image::ImageRead<'_, '_>,
 ) -> Result<Option<DesignDecalImage>, CodecError> {
     let parsed = (|| {
         let prefix = read(scope_at..scope_at.checked_add(decal_scope::LEN)?)?;
@@ -202,11 +202,11 @@ fn parse_decal_image_frame<'a>(
 /// Parse the asset record at `asset_at` and its image-name record, each read
 /// through `read`. The name record starts at the next indexed header, which
 /// is the asset record's end, and ends at the next indexed header after it.
-fn parse_decal_asset_record<'a>(
+fn parse_decal_asset_record(
     bytes: &[u8],
     asset_at: usize,
     asset_record_index: u32,
-    read: &super::image::ImageRead<'a, '_>,
+    read: &super::image::ImageRead<'_, '_>,
 ) -> Result<Option<DesignDecalAsset>, CodecError> {
     let parsed = (|| {
         let name_at = next_indexed_record_offset(bytes, asset_at + decal_asset::ZERO_RUN_8)?;

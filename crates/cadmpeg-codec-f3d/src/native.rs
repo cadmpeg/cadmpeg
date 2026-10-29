@@ -1407,10 +1407,10 @@ pub(crate) struct F3dNative {
     /// Indexed Design parameter and expression records.
     #[serde(default)]
     pub(crate) design_parameters: Vec<DesignParameter>,
-    /// CommonData states selected by typed parameter tails.
+    /// `CommonData` states selected by typed parameter tails.
     #[serde(default)]
     pub(crate) design_parameter_states: Vec<DesignParameterState>,
-    /// Reciprocal CommonData parameter-state companions.
+    /// Reciprocal `CommonData` parameter-state companions.
     #[serde(default)]
     pub(crate) design_parameter_state_companions: Vec<DesignParameterStateCompanion>,
     /// Headers of the document roots linked by parameter states.

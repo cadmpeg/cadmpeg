@@ -692,7 +692,8 @@ fn circular_pattern_axis_wire_preserves_shared_identity_and_rejects_partial_rows
             let axis: crate::records::feature::patterns::DesignCircularPatternAxis =
                 serde_json::from_value(wire.clone()).unwrap();
             assert_eq!(serde_json::to_value(&axis).unwrap(), wire);
-            for field in ["persistent_identities"] {
+            {
+                let field = "persistent_identities";
                 let mut invalid = wire.clone();
                 invalid[field]
                     .as_array_mut()
@@ -1282,7 +1283,7 @@ fn bend_radius_requires_a_positive_finite_value() {
             serde_json::from_value(wire.clone()).expect("valid radius");
         assert_eq!(operation.bend_radius.get(), radius);
         assert_eq!(
-            serde_json::to_value(&operation).expect("serialize hem"),
+            serde_json::to_value(operation).expect("serialize hem"),
             wire
         );
         for invalid in [0.0, -1.0] {

@@ -38,7 +38,8 @@ fn selection_secondary_identities_preserve_wire_and_reject_partial_locations() {
             };
             assert_eq!(encoded, wire);
         }
-        for field in ["curve_secondary_identity"] {
+        {
+            let field = "curve_secondary_identity";
             let wire = format!("{prefix}{fields},\"{field}\":1{suffix}");
             let error = if prefix == "{" {
                 serde_json::from_str::<crate::records::feature::hole::DesignHoleFaceSelection>(

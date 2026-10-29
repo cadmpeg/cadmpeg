@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-//! Source-owned CommonData parameter-state records.
+//! Source-owned `CommonData` parameter-state records.
 
 use super::meta::DesignPrimaryFrame;
 use crate::layout::{
@@ -143,7 +143,7 @@ fn extent<'a>(source: View<'a>, frame: &DesignPrimaryFrame<'_>) -> Result<View<'
         .ok_or_else(|| CodecError::malformed("parameter state primary extent exceeds its source"))
 }
 
-fn at<'a>(source: View<'a>, offset: usize, len: usize) -> Result<View<'a>, CodecError> {
+fn at(source: View<'_>, offset: usize, len: usize) -> Result<View<'_>, CodecError> {
     let start = source
         .start()
         .checked_add(offset)

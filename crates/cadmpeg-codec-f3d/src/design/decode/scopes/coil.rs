@@ -87,7 +87,7 @@ pub(super) fn exact_coil_placement(
             ("353", "259", Some(427), 8) => {}
             (_, _, Some(411), 7)
                 if matches!(scope.coil_extent(), Some(DesignCoilExtent::Spiral)) => {}
-            (_, _, Some(432) | Some(442), 8) => {}
+            (_, _, Some(432 | 442), 8) => {}
             _ => return None,
         }
         let selection_record_index = *scope.reference_members().values().next()?;

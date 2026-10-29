@@ -991,7 +991,7 @@ pub(crate) fn decode_lost_edge_references(
         let source = scan
             .entry_view(&entry.name)
             .ok_or_else(|| CodecError::malformed(format_args!("entry {} not found", entry.name)))?;
-        decode_lost_edge_references_from_stream(&entry.name, source.window(), &mut out)?;
+        decode_lost_edge_references_from_stream(&entry.name, source.window(), &mut out);
     }
     Ok(out)
 }
@@ -1034,7 +1034,7 @@ pub(crate) fn decode_lost_edge_references_from_stream(
     entry_name: &str,
     bytes: &[u8],
     out: &mut Vec<LostEdgeReference>,
-) -> Result<(), CodecError> {
+) {
     let marker = b"EDGE_REFERENCE_LOST";
     let mut cursor = 0;
     while let Some(relative) = bytes[cursor..]
@@ -1058,7 +1058,7 @@ pub(crate) fn decode_lost_edge_references_from_stream(
         else {
             continue;
         };
-        let reference = match LostEdgeReference::new(
+        let Ok(reference) = LostEdgeReference::new(
             design_record_id(
                 entry_name,
                 ":lost-edge-reference#",
@@ -1069,13 +1069,11 @@ pub(crate) fn decode_lost_edge_references_from_stream(
             record_index,
             next_class_tag.to_owned(),
             next_record_index,
-        ) {
-            Ok(reference) => reference,
-            Err(_) => continue,
+        ) else {
+            continue;
         };
         out.push(reference);
     }
-    Ok(())
 }
 
 /// Parse the fixed entity-header layout at `start`: a u64 entity suffix, five
@@ -2076,7 +2074,8 @@ pub(crate) fn decode_sketch_points_from_stream(
                     "F3D sketch point {record_index} has no valid inverse companion"
                 ))
             })?;
-            let point = SketchPoint::try_from(crate::records::sketch_geometry::SketchPointDraft {
+
+            SketchPoint::try_from(crate::records::sketch_geometry::SketchPointDraft {
                 id: id.clone(),
                 record_index,
                 owner_reference: decoded.owner_reference,
@@ -2088,8 +2087,7 @@ pub(crate) fn decode_sketch_points_from_stream(
                 paired_reference: decoded.paired_reference,
                 coordinates: Point2::new(u, v),
             })
-            .map_err(CodecError::Malformed)?;
-            point
+            .map_err(CodecError::Malformed)?
         };
         out.push(point);
     }

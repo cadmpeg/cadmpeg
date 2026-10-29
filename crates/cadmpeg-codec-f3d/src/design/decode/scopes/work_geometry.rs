@@ -425,7 +425,7 @@ pub(super) fn exact_joint_origin_frame(
     scope: &DesignParameterScope,
 ) -> Option<ScopePlacementFrame> {
     if scope.kind() != scope::DesignFeatureKind::JointOrigin
-        || matches!(scope.frame_length(), Some(300) | Some(322) | Some(344))
+        || matches!(scope.frame_length(), Some(300 | 322 | 344))
     {
         return None;
     }

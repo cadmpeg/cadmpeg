@@ -501,7 +501,7 @@ fn rectangular_pattern_directions(
             return Ok(None);
         }
         let dimension = source.distance_parameter.clone().map_or_else(
-            || cadmpeg_ir::scalar::Length::from(source.distance).into(),
+            || source.distance.into(),
             cadmpeg_ir::features::Dimension::Parameter,
         );
         let distance = match distance_form {

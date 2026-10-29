@@ -4867,6 +4867,7 @@ mod native_interval_curve_tests {
     fn source_less_sweep_reduces_locally_bounded_conic_intervals() {
         use cadmpeg_ir::codec::write::{target::TargetRequest, EncodeInput, Encoder};
         use cadmpeg_ir::codec::{Codec, DecodeOptions};
+        use cadmpeg_ir::geometry::nurbs::{NurbsSurface, NurbsSurfaceAxis, NurbsSurfaceLanes};
         use cadmpeg_ir::geometry::surface_payloads::SweepSurfacePayload;
         use cadmpeg_ir::geometry::{analytic::CircleCurve, SweepSurfaceLayout};
         use std::io::Cursor;
@@ -4882,7 +4883,6 @@ mod native_interval_curve_tests {
         let (mut target, _, _) = decoded.into_parts();
         target.source = None;
         target.native = cadmpeg_ir::native::Native::default();
-        use cadmpeg_ir::geometry::nurbs::{NurbsSurface, NurbsSurfaceAxis, NurbsSurfaceLanes};
         let held = cadmpeg_ir::geometry::SolvedSurfaceGeometry::Nurbs(
             NurbsSurface::from_lanes(
                 NurbsSurfaceAxis::new(1, vec![0.0, 0.0, 1.0, 1.0], false),

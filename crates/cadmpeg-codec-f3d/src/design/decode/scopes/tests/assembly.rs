@@ -198,7 +198,7 @@ fn assembly_operand_paths_follow_ordered_locator_envelopes() {
         identity_paths[0]
             .identity_guids()
             .iter()
-            .map(|guid| guid.as_str())
+            .map(crate::records::mesh::DesignRelaxedGuidText::as_str)
             .collect::<Vec<_>>(),
         identities.to_vec()
     );
@@ -235,7 +235,7 @@ fn assembly_operand_paths_follow_ordered_locator_envelopes() {
             && path
                 .identity_guids()
                 .iter()
-                .map(|guid| guid.as_str())
+                .map(crate::records::mesh::DesignRelaxedGuidText::as_str)
                 .eq(identities.iter().copied())
     }));
     // The header, the path count and two counted occurrence GUIDs precede
@@ -441,7 +441,7 @@ fn assembly_operand_paths_follow_ordered_locator_envelopes() {
             && path
                 .identity_guids()
                 .iter()
-                .map(|guid| guid.as_str())
+                .map(crate::records::mesh::DesignRelaxedGuidText::as_str)
                 .eq(class_294_identities.iter().copied())
     }));
     for path_at in [first_class_294_path_at, second_class_294_path_at] {
@@ -462,7 +462,7 @@ fn assembly_operand_paths_follow_ordered_locator_envelopes() {
             && path
                 .identity_guids()
                 .iter()
-                .map(|guid| guid.as_str())
+                .map(crate::records::mesh::DesignRelaxedGuidText::as_str)
                 .eq(class_294_identities.iter().copied())
     }));
 
