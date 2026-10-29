@@ -136,6 +136,16 @@ pub(super) fn bind(
         .filter(|parameter| parameter.owner.as_ref() == Some(owner))
         .map(|parameter| (parameter.name.as_str(), &parameter.id))
         .collect();
+    let mut values = BTreeMap::new();
+    for parameter in parameters
+        .iter()
+        .filter(|parameter| parameter.owner.as_ref() == Some(owner))
+    {
+        if let Some(value) = &parameter.value {
+            let value = serde_json::to_value(value).map_err(CodecError::malformed)?;
+            values.insert(&parameter.id, value["value"].clone());
+        }
+    }
     let mut value = serde_json::to_value(definition).map_err(CodecError::malformed)?;
     let operation = if value["definition"] == "post_process" {
         if value["fuzzy_tolerance"]["kind"] == "explicit" {
@@ -172,7 +182,7 @@ pub(super) fn bind(
             }
         }
     } else {
-        visit(operation, &tag, &mut Vec::new(), &ids);
+        visit(operation, &tag, &mut Vec::new(), &ids, &values);
     }
     serde_json::from_value(value).map_err(CodecError::malformed)
 }
@@ -182,13 +192,22 @@ fn visit(
     operation: &str,
     path: &mut Vec<String>,
     parameters: &BTreeMap<&str, &ParameterId>,
+    values: &BTreeMap<&ParameterId, Value>,
 ) {
     if value["kind"] == "literal"
         && value
             .as_object()
             .is_some_and(|object| object.len() == 2 && object.contains_key("value"))
     {
-        if let Some(id) = operand(operation, path, parameters).and_then(|name| parameters.get(name))
+        if let Some(id) = operand(operation, path, parameters)
+            .and_then(|name| parameters.get(name))
+            .filter(|id| {
+                values
+                    .get(**id)
+                    .and_then(Value::as_f64)
+                    .zip(value["value"].as_f64())
+                    .is_some_and(|(parameter, literal)| parameter == literal)
+            })
         {
             *value = serde_json::json!({"kind":"parameter","value":id});
         }
@@ -206,7 +225,7 @@ fn visit(
             }
             for (key, value) in object {
                 path.push(key.clone());
-                visit(value, operation, path, parameters);
+                visit(value, operation, path, parameters, values);
                 path.pop();
             }
             if form.is_some() {
@@ -216,7 +235,7 @@ fn visit(
         Value::Array(array) => {
             for (index, value) in array.iter_mut().enumerate() {
                 path.push(index.to_string());
-                visit(value, operation, path, parameters);
+                visit(value, operation, path, parameters, values);
                 path.pop();
             }
         }
