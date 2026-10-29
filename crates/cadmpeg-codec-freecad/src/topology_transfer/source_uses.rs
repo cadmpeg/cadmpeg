@@ -246,6 +246,7 @@ pub(super) struct ResolvedUse {
     pub(super) id: String,
     pub(super) owner: String,
     pub(super) node: usize,
+    pub(super) root: Option<usize>,
     key: Key,
 }
 
@@ -393,10 +394,15 @@ pub(super) fn resolve_namespace(
         let node = resolved[index]
             .ok_or_else(|| CodecError::malformed("source-use native row was not resolved"))?;
         let key = plans[row.owner.as_str()].nodes[node].key;
+        let root = match row.source_use {
+            SourceUse::Root { root } => Some(root),
+            SourceUse::Child { .. } => None,
+        };
         result.push(ResolvedUse {
             id: row.id,
             owner: row.owner,
             node,
+            root,
             key,
         });
     }

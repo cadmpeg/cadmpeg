@@ -1071,7 +1071,7 @@ impl CodecBackend for FcstdCodec {
                 &graph.properties,
                 &mut transfer_losses,
             )?;
-            topology_transfer::apply_body_names(&mut ir, &shape_payloads, &graph.properties);
+            topology_transfer::apply_body_names(ctx, &mut ir, &shape_payloads, &graph.properties)?;
             design::hide_intermediate_bodies(
                 &mut ir,
                 &graph.objects,

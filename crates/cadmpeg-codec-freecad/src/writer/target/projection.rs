@@ -58,7 +58,7 @@ pub(super) fn agrees(ctx: &DecodeContext<'_>, ir: &CadIr) -> Result<(), CodecErr
         &properties,
         &mut losses,
     )?;
-    crate::topology_transfer::apply_body_names(&mut projected, &payloads, &properties);
+    crate::topology_transfer::apply_body_names(ctx, &mut projected, &payloads, &properties)?;
     if ir.scope.design {
         let extensions = namespace.arena_as::<native::ExtensionRecord>("extensions")?;
         crate::design::transfer(

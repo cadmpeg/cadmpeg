@@ -59,7 +59,7 @@ pub(super) fn project(
         &typed_properties,
         &mut losses,
     )?;
-    crate::topology_transfer::apply_body_names(&mut projected, &payloads, &typed_properties);
+    crate::topology_transfer::apply_body_names(ctx, &mut projected, &payloads, &typed_properties)?;
     let objects = namespace.arena_as::<native::ObjectRecord>("objects")?;
     let products = namespace.arena_as::<native::ProductNodeRecord>("product_nodes")?;
     let joints = namespace.arena_as::<native::joint::JointRecord>("joints")?;
