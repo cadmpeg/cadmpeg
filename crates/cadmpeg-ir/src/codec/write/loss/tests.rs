@@ -11,12 +11,6 @@ use crate::report::{
 fn shared_export_codes_have_fixed_namespace_and_severity() {
     for (factory, code, severity, taxonomy) in [
         (
-            ExportLossCode::SourceUndecodedOmitted,
-            "source.undecoded-omitted",
-            Severity::Warning,
-            LossTaxonomy::RecordNotTyped,
-        ),
-        (
             ExportLossCode::RecordResidualUnavailable,
             "record.residual-unavailable",
             Severity::Warning,

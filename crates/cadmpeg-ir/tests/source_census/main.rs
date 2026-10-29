@@ -7,7 +7,6 @@ use std::sync::OnceLock;
 
 mod encode_paths;
 mod reader_routes;
-mod record_layout;
 
 /// Every hand-written `Deserialize` in the three wire crates, with the reader
 /// route that admits its wire value.
@@ -59,11 +58,6 @@ const HAND_IMPLS: &[(&str, &str, &str)] = &[
         "keyless",
     ),
     ("crates/cadmpeg-ir/src/document.rs", "ArenaName", "keyless"),
-    (
-        "crates/cadmpeg-ir/src/source_fidelity/parts.rs",
-        "PartLevel",
-        "keyless",
-    ),
     ("crates/cadmpeg-ir/src/document.rs", "CadIr", "wire"),
     ("crates/cadmpeg-ir/src/document.rs", "CensusKey", "keyless"),
     (
@@ -537,6 +531,12 @@ const HAND_IMPL_NULL_REFUSALS: &[(&str, &str, &str, &str)] = &[
         "crates/cadmpeg-asm/src/brep/records.rs",
         "FaceSidedness",
         "containment",
+        "FaceSidednessWire",
+    ),
+    (
+        "crates/cadmpeg-asm/src/brep/records.rs",
+        "FaceSidedness",
+        "face_key",
         "FaceSidednessWire",
     ),
 ];

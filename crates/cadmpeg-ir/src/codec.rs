@@ -299,24 +299,6 @@ pub trait CodecBackend {
         Ok(Vec::new())
     }
 
-    /// Findings this codec's own validator reports over the source layout
-    /// that its decoder retained in the document's [`SourceFidelity`].
-    ///
-    /// Source offsets and lengths are `record_layout` pointers and extents,
-    /// not document content, so a check on them reads `fidelity`. The
-    /// default reports nothing, for a codec that keeps no checked source
-    /// layout. The sealed wrapper exposes it as
-    /// [`Codec::validate_source_layout`], which the application runs after
-    /// [`Codec::validate_native`] whenever the document carries its decode
-    /// sidecar.
-    fn validate_source_layout(
-        _ctx: &DecodeContext<'_>,
-        _ir: &CadIr,
-        _fidelity: &SourceFidelity,
-    ) -> Result<Vec<Finding>, CodecError> {
-        Ok(Vec::new())
-    }
-
     /// Judge, from a leading byte prefix, whether this codec applies.
     fn detect_impl(
         &self,
@@ -401,15 +383,6 @@ pub trait Codec: sealed::Sealed {
         ir: &CadIr,
     ) -> Result<Vec<Finding>, CodecError>;
 
-    /// Findings this codec reports over the source layout of its records in
-    /// `fidelity`, [`CodecBackend::validate_source_layout`].
-    fn validate_source_layout(
-        &self,
-        ctx: &DecodeContext<'_>,
-        ir: &CadIr,
-        fidelity: &SourceFidelity,
-    ) -> Result<Vec<Finding>, CodecError>;
-
     /// Inspects the source under its input and resource limits.
     fn inspect(
         &self,
@@ -459,15 +432,6 @@ impl<C: CodecBackend + ?Sized> Codec for C {
         ir: &CadIr,
     ) -> Result<Vec<Finding>, CodecError> {
         C::validate_native(ctx, ir)
-    }
-
-    fn validate_source_layout(
-        &self,
-        ctx: &DecodeContext<'_>,
-        ir: &CadIr,
-        fidelity: &SourceFidelity,
-    ) -> Result<Vec<Finding>, CodecError> {
-        C::validate_source_layout(ctx, ir, fidelity)
     }
 
     fn inspect(

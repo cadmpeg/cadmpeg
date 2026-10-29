@@ -119,7 +119,6 @@ impl<'ctx, D: BorrowMut<CadIr>> CommitSession<'ctx, D> {
         if let Some(limit) = self.ctx.resource_refusal() {
             return Err(limit.into());
         }
-        let reads = self.ctx.read_transaction()?;
         let checkpoint = ModelCheckpoint::with_parents(
             &self.document().model,
             crate::document::FeatureRegenerationParents::default(),
@@ -133,7 +132,6 @@ impl<'ctx, D: BorrowMut<CadIr>> CommitSession<'ctx, D> {
             return Err(limit.into());
         }
         if result.as_ref().is_ok_and(Option::is_some) {
-            reads.commit()?;
             stage.checkpoint = None;
         }
         result

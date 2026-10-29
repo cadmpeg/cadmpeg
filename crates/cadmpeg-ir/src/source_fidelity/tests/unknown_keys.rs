@@ -13,10 +13,6 @@ const DIGEST: &str = "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f2
 // Their values are still visited through the complete sidecar reader.
 const MAP_PATHS: &[&str] = &[
     "/fidelity/retained_records",
-    "/fidelity/record_layout",
-    "/fidelity/record_layout/synthetic:source:record#inline/reads",
-    "/fidelity/record_layout/synthetic:source:record#inline/pointers",
-    "/fidelity/record_layout/synthetic:source:record#inline/payloads",
     "/fidelity/annotations/provenance",
     "/fidelity/annotations/exactness",
     "/fidelity/annotations/exactness/synthetic:source:record#inline/fields",
@@ -48,11 +44,6 @@ fn fixture() -> Value {
             "notes": []
         },
         "fidelity": {
-            "record_layout": {
-                FIRST: {"stream":"source", "offset":7, "byte_len":3,
-                    "reads":{"source":[{"start":7,"end":9}]},
-                    "pointers":{"next":10}, "payloads":{"tail":"03"}}
-            },
             "annotations": {
                 "provenance": {FIRST: {"stream": "source", "offset": 7, "tag": "record"}},
                 "exactness": {

@@ -19,8 +19,6 @@ pub enum ExportLossCode {
     ArenaOmitted(EntityKind),
     /// Typed native records were omitted by this writer.
     NativeRecordsOmitted,
-    /// Source content absent from the typed document was omitted.
-    SourceUndecodedOmitted,
     /// A record residual is absent, so a target field uses its specified default.
     RecordResidualUnavailable,
     /// A target field stores a value at reduced precision.
@@ -38,7 +36,6 @@ impl ExportLossCode {
             Self::ArenaOmitted(_) => "arena.omitted",
             Self::NativeRecordsOmitted => "native.records-omitted",
             Self::EvaluationStale => "evaluation.stale",
-            Self::SourceUndecodedOmitted => "source.undecoded-omitted",
             Self::RecordResidualUnavailable => "record.residual-unavailable",
             Self::ValueQuantized => "value.quantized",
             Self::OutputEmpty => "output.empty",
@@ -49,9 +46,7 @@ impl ExportLossCode {
         match self {
             Self::ArenaOmitted(_) => Severity::Warning,
             Self::NativeRecordsOmitted | Self::ValueQuantized => Severity::Info,
-            Self::SourceUndecodedOmitted | Self::RecordResidualUnavailable | Self::OutputEmpty => {
-                Severity::Warning
-            }
+            Self::RecordResidualUnavailable | Self::OutputEmpty => Severity::Warning,
             Self::EvaluationStale => Severity::Warning,
         }
     }
@@ -62,7 +57,6 @@ impl ExportLossCode {
             Self::ArenaOmitted(kind) => kind,
             Self::NativeRecordsOmitted => return LossTaxonomy::RecordNotTyped,
             Self::EvaluationStale => return LossTaxonomy::FeatureHistoryRetained,
-            Self::SourceUndecodedOmitted => return LossTaxonomy::RecordNotTyped,
             Self::RecordResidualUnavailable => return LossTaxonomy::PreservedSourceUnavailable,
             Self::ValueQuantized => return LossTaxonomy::ValueQuantized,
             Self::OutputEmpty => return LossTaxonomy::NoExportableSolids,

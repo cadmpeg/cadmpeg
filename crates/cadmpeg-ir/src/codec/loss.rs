@@ -16,8 +16,6 @@ const NAMESPACE: LossNamespace<'static> = crate::loss_namespace!("decode");
 /// A stable, machine-readable identifier for one shared decode loss.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum DecodeLossCode {
-    /// A maximal source span was not consumed by any typed record.
-    SourceBytesUndecoded,
     /// One independently framed part could not be decoded.
     RecordUnreadable,
     /// A sidecar does not match the source document and was not consumed.
@@ -33,7 +31,6 @@ impl DecodeLossCode {
     /// The stable string identifier. This is the gating contract.
     const fn code(self) -> &'static str {
         match self {
-            Self::SourceBytesUndecoded => "source.bytes-undecoded",
             Self::DepthNotDelivered { .. } => "depth.not-delivered",
             Self::RecordUnreadable => "record.unreadable",
             Self::SidecarStale => "sidecar.stale",
@@ -43,7 +40,7 @@ impl DecodeLossCode {
     const fn severity(self) -> Severity {
         match self {
             Self::DepthNotDelivered { .. } | Self::RecordUnreadable => Severity::Error,
-            Self::SidecarStale | Self::SourceBytesUndecoded => Severity::Warning,
+            Self::SidecarStale => Severity::Warning,
         }
     }
 
@@ -55,7 +52,6 @@ impl DecodeLossCode {
             }
             Self::DepthNotDelivered { .. } => LossTaxonomy::GeometryNotTransferred,
             Self::SidecarStale => LossTaxonomy::PreservedSourceUnavailable,
-            Self::SourceBytesUndecoded => LossTaxonomy::RecordNotTyped,
             Self::RecordUnreadable => LossTaxonomy::DecodeDiagnostic,
         }
     }
@@ -64,14 +60,9 @@ impl DecodeLossCode {
         let kind = NamespacedLossKind::new(NAMESPACE, self.code(), self.shared_taxonomy());
         match self {
             Self::DepthNotDelivered { .. } => kind.with_strict_floor(Some(Severity::Warning)),
-            Self::SidecarStale | Self::RecordUnreadable | Self::SourceBytesUndecoded => kind,
+            Self::SidecarStale | Self::RecordUnreadable => kind,
         }
         .into()
-    }
-
-    /// Whether `note` carries this code.
-    pub(crate) fn is_code_of(self, note: &LossNote) -> bool {
-        note.code == self.kind()
     }
 
     /// Build a [`LossNote`] for this code with the given per-instance message.

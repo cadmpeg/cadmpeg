@@ -5,9 +5,7 @@ use cadmpeg_core::CodecError;
 
 use crate::draft::{CommitSession, DraftError, ModelDraft};
 use crate::math::Point3;
-use crate::source_fidelity::parts::{
-    DecodeParts, ParserPartOutput, PartLevel, PartSpec, PartState,
-};
+use crate::source_fidelity::parts::{DecodeParts, PartOutput, PartSpec};
 use crate::topology::{Point, Vertex};
 use crate::{CadIr, CodecFormat};
 
@@ -36,11 +34,8 @@ fn vertex_draft(id: &str, point: &str) -> ModelDraft {
     draft
 }
 
-fn spec(level: &str) -> PartSpec {
-    PartSpec::new(
-        PartLevel::parse(level).expect("Appendix C level"),
-        Vec::new(),
-    )
+fn spec(label: &'static str) -> PartSpec {
+    PartSpec::new(label)
 }
 
 fn feature(id: &str, ordinal: u64) -> crate::features::Feature {
@@ -90,21 +85,22 @@ fn a_given_up_parent_discards_admitted_child_geometry_and_keeps_the_valid_peer()
         .commit_model(point_draft(existing))
         .expect("prefix admission")
         .expect("valid prefix");
-    let mut parts = ParserPartOutput::new(CodecFormat::Fcstd);
+    let mut parts = PartOutput::new(CodecFormat::Fcstd);
     let first = root.child(0, 2).expect("first parent");
     let first_child = first.child(0, 1).expect("first child");
     let result = session
         .model_append_transaction(|stage| {
-            ctx.decode_parser_scope(&mut parts, first, spec("zip.archive"), |parent| {
-                ctx.decode_parser_part(parent, first_child, spec("zip.entry"), || {
-                    ctx.record(rejected, first_child, || {
-                        assert_eq!(first_child.read_at(0, 1), Some(b"A".as_slice()));
-                        stage
-                            .commit_model(point_draft(rejected))?
-                            .expect("child is valid before its parent fails");
-                        assert!(stage.contains(rejected)?);
-                        Ok(())
-                    })
+            ctx.decode_part(&mut parts, first, spec("zip.archive"), |parent| {
+                ctx.decode_part(parent, first_child, spec("zip.entry"), |_| {
+                    assert_eq!(
+                        first_child.child(0, 1).map(|view| view.window()),
+                        Some(b"A".as_slice())
+                    );
+                    stage
+                        .commit_model(point_draft(rejected))?
+                        .expect("child is valid before its parent fails");
+                    assert!(stage.contains(rejected)?);
+                    Ok(())
                 })?;
                 Err::<(), _>(CodecError::malformed("parent parser cannot finish"))
             })
@@ -120,21 +116,19 @@ fn a_given_up_parent_discards_admitted_child_geometry_and_keeps_the_valid_peer()
     assert_eq!(
         session
             .model_append_transaction(|stage| {
-                ctx.decode_parser_scope(&mut parts, second, spec("zip.archive"), |parent| {
-                    ctx.decode_parser_part(parent, second_child, spec("zip.entry"), || {
-                        ctx.record(surviving, second_child, || {
-                            assert_eq!(second_child.read_at(2, 1), Some(b"C".as_slice()));
-                            stage
-                                .commit_model(point_draft(surviving))?
-                                .expect("valid peer geometry");
-                            stage
-                                .commit_model(vertex_draft(
-                                    "test:model:vertex#valid-peer",
-                                    surviving,
-                                ))?
-                                .expect("reference to the peer's admitted point");
-                            Ok(7)
-                        })
+                ctx.decode_part(&mut parts, second, spec("zip.archive"), |parent| {
+                    ctx.decode_part(parent, second_child, spec("zip.entry"), |_| {
+                        assert_eq!(
+                            second_child.child(2, 3).map(|view| view.window()),
+                            Some(b"C".as_slice())
+                        );
+                        stage
+                            .commit_model(point_draft(surviving))?
+                            .expect("valid peer geometry");
+                        stage
+                            .commit_model(vertex_draft("test:model:vertex#valid-peer", surviving))?
+                            .expect("reference to the peer's admitted point");
+                        Ok(7)
                     })
                 })
             })
@@ -148,28 +142,7 @@ fn a_given_up_parent_discards_admitted_child_geometry_and_keeps_the_valid_peer()
         surviving
     );
 
-    let (_, native, fidelity, losses) = parts
-        .into_parts(&ctx)
-        .expect("parser dependency closure")
-        .into_parts();
-    assert_eq!(fidelity.parts().len(), 4);
-    assert_eq!(
-        fidelity
-            .parts()
-            .values()
-            .filter(|part| part.state() == &PartState::GivenUp {})
-            .count(),
-        1
-    );
-    assert_eq!(
-        native
-            .namespace("fcstd")
-            .expect("single failure namespace")
-            .arena_as::<crate::NativeUnknownRecord>("unknowns")
-            .expect("typed failure stub")
-            .len(),
-        1
-    );
+    let (_, _, fidelity, losses) = parts.into_parts();
     assert_eq!(fidelity.retained_records().len(), 1);
     assert_eq!(
         fidelity
@@ -180,28 +153,17 @@ fn a_given_up_parent_discards_admitted_child_geometry_and_keeps_the_valid_peer()
             .data(),
         Some(b"AB".as_slice())
     );
-    let (failed_id, failed_parent) = fidelity
-        .parts()
-        .iter()
-        .find(|(_, part)| part.state() == &PartState::GivenUp {})
+    let failed_parent = fidelity
+        .retained_records()
+        .values()
+        .next()
         .expect("one given-up parent");
-    assert_eq!(failed_parent.level().as_str(), "zip.archive");
     assert_eq!(failed_parent.offset(), 0);
     assert_eq!(failed_parent.byte_len(), 2);
-    assert!(fidelity.parts().values().any(|part| {
-        part.parent() == Some(failed_id)
-            && part.state()
-                == &PartState::Covered {
-                    by: failed_id.clone(),
-                }
-    }));
     assert_eq!(losses.len(), 1);
     assert_eq!(losses[0].code.local_code(), "record.unreadable");
     assert_eq!(losses[0].severity, crate::report::Severity::Error);
-    assert!(losses[0].message.contains(rejected));
-    let captures = ctx.take_record_captures().expect("single capture drain");
-    assert_eq!(captures.len(), 1);
-    assert_eq!(captures[0].id(), surviving);
+    assert!(losses[0].message.contains("zip.archive"));
 }
 
 #[test]
@@ -439,37 +401,39 @@ fn an_independent_child_give_up_rolls_back_only_its_suffix_inside_a_successful_p
     let (ctx, root) = DecodeContext::from_root_bytes(b"AB", &arena, &DecodePolicy::service())
         .expect("registered source");
     let mut session = CommitSession::new(CadIr::empty(), &ctx, None).expect("commit session");
-    let mut parts = ParserPartOutput::new(CodecFormat::Fcstd);
+    let mut parts = PartOutput::new(CodecFormat::Fcstd);
     let rejected = "test:model:point#failed-child";
     let surviving = "test:model:point#valid-peer";
     let first = root.child(0, 1).expect("failed child extent");
     let second = root.child(1, 2).expect("valid peer extent");
     let result = session
         .model_append_transaction(|parent_stage| {
-            ctx.decode_parser_scope(&mut parts, root, spec("zip.archive"), |parent_parts| {
+            ctx.decode_part(&mut parts, root, spec("zip.archive"), |parent_parts| {
                 let first_result = parent_stage.model_append_transaction(|child_stage| {
-                    ctx.decode_parser_part(parent_parts, first, spec("zip.entry"), || {
-                        ctx.record(rejected, first, || {
-                            assert_eq!(first.read_at(0, 1), Some(b"A".as_slice()));
-                            child_stage
-                                .commit_model(point_draft(rejected))?
-                                .expect("valid tentative child");
-                            Err::<(), _>(CodecError::malformed("child parser cannot finish"))
-                        })
+                    ctx.decode_part(parent_parts, first, spec("zip.entry"), |_| {
+                        assert_eq!(
+                            first.child(0, 1).map(|view| view.window()),
+                            Some(b"A".as_slice())
+                        );
+                        child_stage
+                            .commit_model(point_draft(rejected))?
+                            .expect("valid tentative child");
+                        Err::<(), _>(CodecError::malformed("child parser cannot finish"))
                     })
                 })?;
                 assert_eq!(first_result, None);
                 assert!(!parent_stage.contains(rejected)?);
                 assert_eq!(
                     parent_stage.model_append_transaction(|child_stage| {
-                        ctx.decode_parser_part(parent_parts, second, spec("zip.entry"), || {
-                            ctx.record(surviving, second, || {
-                                assert_eq!(second.read_at(1, 1), Some(b"B".as_slice()));
-                                child_stage
-                                    .commit_model(point_draft(surviving))?
-                                    .expect("valid peer admission");
-                                Ok(7)
-                            })
+                        ctx.decode_part(parent_parts, second, spec("zip.entry"), |_| {
+                            assert_eq!(
+                                second.child(1, 2).map(|view| view.window()),
+                                Some(b"B".as_slice())
+                            );
+                            child_stage
+                                .commit_model(point_draft(surviving))?
+                                .expect("valid peer admission");
+                            Ok(7)
                         })
                     })?,
                     Some(7)
@@ -481,76 +445,8 @@ fn an_independent_child_give_up_rolls_back_only_its_suffix_inside_a_successful_p
     assert_eq!(result, Some(9));
     assert_eq!(session.document().model.points.len(), 1);
     assert_eq!(session.document().model.points[0].id.as_str(), surviving);
-    let (_, native, fidelity, losses) = parts
-        .into_parts(&ctx)
-        .expect("parser dependency closure")
-        .into_parts();
-    assert_eq!(fidelity.parts().len(), 3);
-    assert_eq!(
-        fidelity
-            .parts()
-            .values()
-            .filter(|p| p.state() == &PartState::GivenUp {})
-            .count(),
-        1
-    );
+    let (_, _, fidelity, losses) = parts.into_parts();
     assert_eq!(fidelity.retained_records().len(), 1);
-    assert_eq!(
-        native
-            .namespace("fcstd")
-            .expect("failure namespace")
-            .arena_as::<crate::NativeUnknownRecord>("unknowns")
-            .expect("failure stub")
-            .len(),
-        1
-    );
     assert_eq!(losses.len(), 1);
     assert_eq!(losses[0].code.local_code(), "record.unreadable");
-    let captures = ctx.take_record_captures().expect("one capture drain");
-    assert_eq!(captures.len(), 1);
-    assert_eq!(captures[0].id(), surviving);
-}
-
-#[test]
-fn an_actual_shared_output_preflight_error_rolls_back_records_and_read_captures() {
-    let arena = DecodeArena::new();
-    let (ctx, root) = DecodeContext::from_root_bytes(b"A", &arena, &DecodePolicy::service())
-        .expect("registered source");
-    let mut parts = ParserPartOutput::new(CodecFormat::Fcstd);
-    ctx.decode_parser_part(&mut parts, root, spec("zip.entry"), || Ok(()))
-        .expect("first actual part invocation")
-        .expect("decoded first part");
-    let mut session = CommitSession::new(CadIr::empty(), &ctx, None).expect("commit session");
-    let id = "test:model:point#unpublished";
-    let admitted = std::cell::Cell::new(false);
-    let error = session
-        .model_append_transaction(|stage| {
-            ctx.decode_parser_part(&mut parts, root, spec("zip.entry"), || {
-                ctx.record(id, root, || {
-                    assert_eq!(root.read_at(0, 1), Some(b"A".as_slice()));
-                    stage
-                        .commit_model(point_draft(id))?
-                        .expect("valid tentative candidate");
-                    admitted.set(true);
-                    Ok(7)
-                })
-            })
-        })
-        .expect_err("shared helper rejects the actual duplicate invocation identity");
-    assert!(
-        admitted.get(),
-        "the shared callback admitted its candidate before output preflight failed"
-    );
-    assert!(matches!(error, CodecError::Malformed(ref message)
-        if message.contains("duplicate part invocation identity")));
-    assert!(session.document().model.points.is_empty());
-    assert!(ctx.take_record_captures().expect("single drain").is_empty());
-    let (_, native, fidelity, losses) = parts
-        .into_parts(&ctx)
-        .expect("unchanged original parser output")
-        .into_parts();
-    assert_eq!(fidelity.parts().len(), 1);
-    assert!(fidelity.retained_records().is_empty());
-    assert!(native.namespace("fcstd").is_none());
-    assert!(losses.is_empty());
 }
