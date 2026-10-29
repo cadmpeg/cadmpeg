@@ -31,8 +31,10 @@ Record offsets, field widths, and endianness are also maintained as a machine-ch
 0x0c..0x0f   constant 0x00000000
 0x10         constant 0x00
 0x11..0x16   FOOTER offset, 48-bit LE (points into the FOOTER region near EOF)
+0x17..0x18   two bytes with no assigned field (the parser does not read them)
 0x19..0x1e   ASCII "HEADER"
-0x1f..       variable-length directory entries
+0x1f..0x22   entry_count:u32 LE
+0x23..       exactly entry_count directory entries
 ```
 
 The HEADER directory is `HEADER, entry_count:u32 LE`, followed by exactly
@@ -570,7 +572,7 @@ paths and both time strings. Duplicate asset mappings, a missing texture asset,
 an unexpected child element, or incomplete time children invalidate the
 catalog atomically.
 
-`EXTREFSTREAM` contains `EXTREFSTREAM` magic, `version:u32 LE (3)`, `payload_size:u32 LE`, a record region, and a trailing string table: `01` + `count:u32 LE` + `count × (len:u16 LE + control-free UTF-8)`. The string table contains child `.prt` names and paths.
+`EXTREFSTREAM` contains 12-byte `EXTREFSTREAM` magic, `version:u32 LE (3)`, `payload_size:u32 LE`, four bytes with no assigned field, a record region, and a trailing string table: `01` + `count:u32 LE` + `count × (len:u16 LE + control-free UTF-8)`. The record region's leading `0x00` is at byte 24 and the first directory pair follows at byte 25. The string table contains child `.prt` names and paths.
 
 Assembly `.prt` files contain no inline Parasolid partition, deltas, or plain cached-body streams. Their component geometry resides in the external child `.prt` files named by `EXTREFSTREAM`. Occurrence placement binds each external component instance.
 
@@ -896,6 +898,7 @@ Parasolid XT node type.
 |   30 | LINE    |     67 |  134 | B_CURVE       | 23         |
 |   31 | CIRCLE  |     99 |  137 | SP_CURVE      | 33 + shift |
 |   32 | ELLIPSE |    107 |      |               |            |
+|   38 | INTERSECTION |  31 |      |               |            |
 
 Types carrying `node_id:u32` place it at record offset `+4` (after shifts). Every `u32` value is valid; node admission has no smaller numerical bound. FIN has no `node_id`. EDGE and VERTEX candidates with denormal tolerance (`abs(tol) < 1e-100`) are payload coincidences, not records. Every POINT coordinate is finite and its converted millimeter value is finite; no normality or model-magnitude condition applies.
 
@@ -1712,7 +1715,7 @@ When pcurve inversion produces multiple equal-distance parameters, every paramet
 
 ### 7.1 NX object model (OM)
 
-UG_PART begins with a 12-byte row table of LE u32 triples pointing at OM sections and Parasolid wrapper headers. An OM section starts at signature `ff ff ff ff`, optionally preceded by `c0 d1 f1 ed`, and stores `payload_size:u32 BE` at `+8` with `section_end = signature_offset + 16 + payload_size`. Bytes `+12..+14` are `OM`. The section decomposes into preamble, type registry, field registry, object-id table, and entity records.
+UG_PART begins with a 12-byte row table of LE u32 triples pointing at OM sections and Parasolid wrapper headers. An OM section starts at signature `ff ff ff ff`, optionally preceded by `c0 d1 f1 ed`, and stores `payload_size:u32 BE` at `+8` with `section_end = signature_offset + 16 + payload_size`. Bytes `+4..+8` carry no assigned field. Bytes `+12..+14` are `OM`. Bytes `+14..+16` belong to the 16-byte header but carry no assigned field. The section decomposes into preamble, type registry, field registry, object-id table, and entity records.
 
 **Externalized record boundaries.** Every OM section with an id-table carries, immediately before its `object_id_table`, a `(count+1)`-entry monotone `u32 LE` **entity_index** with `index[0] == 0`. OM entity records have no inline length prefix; lengths live in the entity_index:
 
@@ -3082,7 +3085,7 @@ in different partition namespaces do not identify one GROUP.
 
 ### 9.1 `EXTREFSTREAM`
 
-An `EXTREFSTREAM` record region begins with `0x00`, followed by little-endian `(record_id, record_offset)` pairs terminated by a single `record_id == 0`. Record IDs are nonzero and unique, offsets are strictly increasing, the directory ends no later than the first record, and the last record ends at the trailing string table. Every indexed record transfers with its ID, exact byte boundary and digest. An empty indexed record is exactly `01 00 00 00 00 01`, optionally followed by a closing `01`; the form retains whether that marker is present. A handle-set record at `record_offset` begins `01 00 00 00`, then `n:u16 BE`, `01`, four `u32 LE` ID slots, `01`, `count:u8`, `count - 1` occurrences of `e0 + handle:u32 BE`, and a closing byte equal to `count`. Handles are non-decreasing. The final occurrence may repeat the preceding handle as a closing duplicate; transfer records whether that closing duplicate is present and omits only that final duplicate from the normalized handle list. Earlier repeated handles remain separate serialized occurrences. Within the remaining bounded tail, an adjacent pair `e0 + handle:u32 BE + tagged:u32 BE` is retained when the high nibble of `tagged` is `0xC`; the normalized tagged reference is its low 28 bits. Unpaired tokens and other tail structure remain opaque. Other indexed record layouts remain opaque. The trailing string table is `01 + count:u32 LE + count × (len:u16 LE + nonempty control-free UTF-8)`. The final string ends at the stream boundary. The nominal `16 + payload_size` boundary can fall inside a string record. Each string transfers with its table ordinal and absolute byte offset.
+An `EXTREFSTREAM` record region begins at byte 24 with `0x00`, followed by little-endian `(record_id, record_offset)` pairs terminated by a single `record_id == 0`. Bytes 20..24 carry no assigned field. Record IDs are nonzero and unique, offsets are strictly increasing, the directory ends no later than the first record, and the last record ends at the trailing string table. Every indexed record transfers with its ID, exact byte boundary and digest. An empty indexed record is exactly `01 00 00 00 00 01`, optionally followed by a closing `01`; the form retains whether that marker is present. A handle-set record at `record_offset` begins `01 00 00 00`, then `n:u16 BE`, `01`, four `u32 LE` ID slots, `01`, `count:u8`, `count - 1` occurrences of `e0 + handle:u32 BE`, and a closing byte equal to `count`. Handles are non-decreasing. The final occurrence may repeat the preceding handle as a closing duplicate; transfer records whether that closing duplicate is present and omits only that final duplicate from the normalized handle list. Earlier repeated handles remain separate serialized occurrences. Within the remaining bounded tail, an adjacent pair `e0 + handle:u32 BE + tagged:u32 BE` is retained when the high nibble of `tagged` is `0xC`; the normalized tagged reference is its low 28 bits. Unpaired tokens and other tail structure remain opaque. Other indexed record layouts remain opaque. The trailing string table is `01 + count:u32 LE + count × (len:u16 LE + nonempty control-free UTF-8)`. The final string ends at the stream boundary. The nominal `16 + payload_size` boundary can fall inside a string record. Each string transfers with its table ordinal and absolute byte offset.
 
 Each of the four ID slots indexes the trailing string table in the same `EXTREFSTREAM`. A complete record-to-string relation retains the record, slot, serialized index and byte offset, and target string identity. If any slot is out of range or its `(stream, ordinal)` target is not unique, none of the record's four relations transfer.
 

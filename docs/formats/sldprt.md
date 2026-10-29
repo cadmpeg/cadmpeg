@@ -68,7 +68,7 @@ with one frame is the degenerate chained form.
 
 ### 1.1 Outer header and block frame
 
-The file starts with an 8-byte header: `file_id` (u32), then `version` (u32 **big-endian**, value `0x00000004`). The rest is a sequence of compressed blocks.
+The file starts with an 8-byte header: `file_id` (u32), then `version` (u32 **big-endian**; observed value `0x00000004`). The decoder reads this word only into the `outer_version` attribute and never compares it (`dialect.rs`), so the value is observed, not required. The rest is a sequence of compressed blocks.
 
 Native compressed members use ZIP local-file-header fields with a substituted
 four-byte signature token and nibble-swapped member names. The signature token

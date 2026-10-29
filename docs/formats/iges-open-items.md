@@ -45,17 +45,144 @@ from a conformant file.
 
 
 
+## 1. Physical representation and binary framing
+
+### BIN-01. Binary envelope fixture coverage
+
+**Question.** Which committed fixtures establish the Binary representation envelope?
+
+**Known.** The golden harness pins `FIXTURE_EXTENSION=igs` only (`golden_tests.rs:23`). No committed fixture exercises the Binary Flag, section, control-byte, or null-padding envelope. Binary coverage is unit tests in `binary.rs` only. `format-support.md` calls the Binary representation structurally validated.
+
+**Need.** Binary producer files or generated Binary fixtures must establish the envelope before the validated claim is settled.
+
 ## 2. Global metadata
 
-Type 406 Forms 5001 through 9999 are settled. Under [IGES 4.0 §4.3.7](https://www.govinfo.gov/content/pkg/GOVPUB-C13-7b81ba8b0f709555f162cb496aa63b3b/pdf/GOVPUB-C13-7b81ba8b0f709555f162cb496aa63b3b.pdf) and [IGES 5.3 §4.97](https://paulbourke.net/dataformats/iges/IGES.pdf), each property has `NP` at Parameter index 1, `NP` variable values, and any additional pointer groups. `parameter.rs::entity_primary_end` applies the common boundary before generic recovery. The owner tests `type406_implementor_defined_forms_use_common_count_boundary` and `type406_implementor_defined_malformed_count_or_span_suppresses_generic_recovery` cover Forms 5557, 6007, and 9999 and malformed count or span input. The neutral model has no standard meaning for these forms, so the decoder retains their complete native entity records without semantic projection.
-
-
 ## 3. Directory fields, the reference graph, and the native arenas
+
+### DIR-01. Unreadable Directory interpretation fields
+
+**Question.** What disposition applies when a Directory interpretation field is unreadable?
+
+**Known.** The decoder charges `iges/directory.metadata-unreadable` when line font, level, view, label display, line weight, color, or subscript is unreadable (`directory.rs:271`). Interpretation fields and exact source cards remain available. `iges.md` states no rule for unreadable interpretation fields.
+
+**Need.** Producer documentation or controlled files must establish whether an unreadable field means a default, a null, or a refusal.
 
 ## 4. Geometry carriers and tolerances
 
 ## 5. Surfaces and topology
 
+### BND-01. Boundary pcurve outside support domain
+
+**Question.** What disposition applies when a boundary parameter curve leaves the finite parameter domain of its support surface?
+
+**Known.** The decoder charges `iges/topology.boundary-pcurve-outside-support-domain` on both paths (`trimming.rs:2644,2657`). An authoritative pcurve outside the declared support bounds fails the boundary. An alternate pcurve outside the bounds retains the model-space curve. `iges.md` states no rule for out-of-domain boundary pcurves.
+
+**Need.** Producer files with out-of-domain pcurves must establish the correct disposition for each path.
+
+### NUR-01. Non-finite NURBS transform result
+
+**Question.** What disposition applies when a NURBS coordinate or parameter transformation produces a non-finite value?
+
+**Known.** The decoder charges `iges/geometry.nurbs-transform-non-finite` and skips the rail when reversed second-rail knots are non-finite (`surfaces.rs:1619`). `iges.md` states no rule for non-finite transform results.
+
+**Need.** A source file that produces a non-finite knot under transformation must establish whether the rail is skipped or the record is refused.
+
 ## 6. Product structure, annotation, and presentation
 
+### OCC-01. Product occurrence expansion limits
+
+**Question.** What output and nesting limits bound product occurrence expansion?
+
+**Known.** The decoder stops expansion at a configured output limit and charges `iges/occurrence.expansion-output-truncated` (`reader.rs:507`). It stops at a configured nesting-depth limit and charges `iges/occurrence.expansion-depth-truncated` (`reader.rs:516`). `iges.md` states no expansion limits.
+
+**Need.** The largest honest product structure in producer files must establish limits that admit it, or a source rule must bound nesting.
+
+### ATT-01. Unstatable attribute table count
+
+**Question.** What disposition applies when a Type 422 attribute table instance states a count that no row grid supports?
+
+**Known.** The decoder charges `iges/parameter.attribute-table-count-unstatable` and reads no attribute row (`reader.rs:577`). `iges.md` states the Type 322 and Type 422 layout but no rule for an unstatable count.
+
+**Need.** Files with degenerate attribute counts must establish the correct disposition.
+
+### DIS-01. Unprojected display data
+
+**Question.** Which display data has no neutral projection, and what disposition applies to it?
+
+**Known.** The decoder charges `iges/presentation.display-data-not-projected` for an invalid Type 116 display symbol pointer, for incomplete or non-finite Type 125 flash shape parameters, and for a Type 125 Form 0 record with no defining entity pointer (`geometry.rs:1812,1918,1926`). `iges.md` states no rule for these display defects.
+
+**Need.** Producer display data variants must establish the projection for each valid form and the disposition for each defect.
+
+### BNA-01. Conflicting body names
+
+**Question.** Which name applies when one body owner has conflicting valid Type 406 Form 15 names?
+
+**Known.** The decoder charges `iges/presentation.body-name-ambiguous` and assigns no name (`presentation.rs:665`). `iges.md` states that Form 15 attaches one name but no rule for conflicts.
+
+**Need.** A file with conflicting valid names must establish the correct selection rule.
+
 ## 7. Write path
+
+### PRO-01. Procedural reduction in the writer
+
+**Question.** Which procedural definitions reduce to solved carriers, and which refuse the write?
+
+**Known.** The semantic writer reduces procedural surface and curve definitions to writable solved carriers and charges `iges/geometry.procedural-reduced` (`writer.rs:1118`). `iges.md` states no rule for which procedural definitions reduce and which refuse.
+
+**Need.** Neutral documents with procedural definitions must establish the reduction boundary.
+
+### EDG-01. Sampled edge agreement and fitting
+
+**Question.** What sample count and residual bound establish recovered edge agreement and B-spline fits?
+
+**Known.** The writer compares recovered coedge curves at five parameters and charges `iges/geometry.edge-pcurve-agreement-sampled` without establishing agreement between samples (`writer/target.rs:90`). It fits recovered edges as B-splines and charges `iges/geometry.edge-pcurve-sampled-to-bspline` with a sampled residual bound (`writer/target.rs:96`). `iges.md` states no sampling rule.
+
+**Need.** A tolerance basis must establish the sample count and the residual limit.
+
+### TGT-01. Write target displacement
+
+**Question.** When does a write target that differs from the source dialect charge a loss, and when is it silent?
+
+**Known.** The writer charges `iges/target.source-dialect-displaced` when the selected write target differs from the same-format source dialect (`writer/target.rs:135`). `iges.md` states the target profiles but no rule for the charge.
+
+**Need.** Cross-target writes must establish the charge condition.
+
+### SRC-01. Unavailable preserved source image
+
+**Question.** What disposition applies when the preserved source image for byte-exact replay is unavailable?
+
+**Known.** The writer declines replay, regenerates semantically, and charges `iges/source.preserved-image-unavailable` (`writer/target.rs:141`). `iges.md` states the replay rule for an intact source baseline but no rule for a missing image.
+
+**Need.** Source-less edit workflows must establish when regeneration is accepted and when it is refused.
+
+### PAS-01. Omitted passthrough records
+
+**Question.** Which native arenas does the semantic writer regenerate, and which does it omit?
+
+**Known.** The writer charges `iges/writer.passthrough-omitted` for native arenas it does not regenerate, including quarantined records that have no fields to write (`writer.rs:5373`). `iges.md` states no per-arena regeneration table.
+
+**Need.** A complete arena inventory must establish the regenerated set and the omitted set.
+
+### SUP-01. Withheld support and free geometry
+
+**Question.** Which support and free geometry does the semantic writer withhold on the topology path?
+
+**Known.** The writer withholds a standalone edge whose curve is support geometry and charges `iges/writer.support-edge-not-represented` (`writer.rs:581`). It withholds unowned free vertices and charges `iges/writer.free-geometry-omitted` (`writer.rs:496`). It withholds free edges and curves that duplicate a written carrier and charges `iges/writer.duplicate-carrier-omitted` (`writer.rs:2407,2413`). `iges.md` states the withheld-parent rule but no rule for these three dispositions.
+
+**Need.** Topology-path writes must establish which support and free geometry is withheld and which is written.
+
+### OUT-01. Body presentation without Directory owner
+
+**Question.** Which body presentation has no Directory representation?
+
+**Known.** The writer charges `iges/writer.body-name-not-represented` when a body name cannot encode as a Type 406 Form 15 name (`writer.rs:289`). It charges `iges/writer.body-color-not-represented` when a free-geometry body has no owning Directory Entry for color (`writer.rs:452`). It charges `iges/writer.body-opacity-not-represented` when Directory color cannot carry opacity (`writer.rs:323`). It charges `iges/writer.body-visibility-not-represented` when a free-geometry body has no single Directory Entry for visibility (`writer.rs:459`). `iges.md` states no rule for these four dispositions.
+
+**Need.** Body presentation variants must establish the encoding for each case or the refusal condition.
+
+### ENC-01. Encode golden target coverage
+
+**Question.** What pins writer output for targets other than IGES 5.3?
+
+**Known.** The encode golden decodes each fixture and re-encodes through the semantic writer with an explicit IGES 5.3 target only (`golden_tests.rs:81-90`). Targets 4.0, 5.0, 5.1, and 5.2 have no encode golden. `iges.md` states all five target profiles.
+
+**Need.** Encode goldens for the remaining targets, or a settled statement that the 5.3 golden pins the shared writer path, must establish coverage.

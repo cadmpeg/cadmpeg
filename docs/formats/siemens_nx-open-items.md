@@ -146,6 +146,22 @@ bodies. Keep an unestablished edge selection unresolved. This includes repeated 
 
 **Need.** Establish the active range and the role of excess stored values before applying basis cardinality or individual multiplicity bounds to an entire storage node. Distinguish active basis values from padding and other retained values through the owning descriptor and schema.
 
+### PS-38. Supported release and schema envelope
+
+**Question.** Which NX releases, SPLMSSTR container versions, UGII payload versions, and Parasolid schema tokens does the decoder accept, and which does it reject?
+
+**Known.** `siemens_nx.md` §2 admits only container version tag `0x06`; `container.rs` rejects every other version byte. `siemens_nx.md` §2.4 retains the UGII version byte at `0x08` with no enumerated values. `siemens_nx.md` §3.1 names base schemas `11004` and `13006` with embedded-schema edits. `dialect.rs` declares `VERIFIED_PARASOLID_GRAMMARS` empty; unverified kernel carriers report `source.kernel-dialect-unverified`.
+
+**Need.** We must record the envelope to distinguish an out-of-support release from a malformed file, and to assign each embedded schema token a verified grammar or a residual recovery.
+
+### PS-39. SPLMSSTR header `file_tag` and gap bytes
+
+**Question.** What do the `file_tag` u24 at `0x09..0x0b` and the two bytes at `0x17..0x18` encode?
+
+**Known.** `siemens_nx.md` §2 states the file tag correlates with file complexity, not the footer offset. `container.rs` retains it as an unsigned 24-bit value with no semantic mapping. The gap bytes carry no assigned field and the parser does not read them.
+
+**Need.** We must know the value domains to preserve release or complexity signals and to detect header corruption instead of ignoring the bytes.
+
 ## 2. Object model and body composition
 
 ### OM-01. Per-class OM field serialization
@@ -698,6 +714,30 @@ assigns control geometry, continuity, or terminal semantics.
 
 **Conflict.** A complete head proves its own end. It does not prove where a following plain-name declaration lane ends. A complete-looking next declaration alone does not establish that lane.
 
+### OM-63. OM section header undescribed bytes
+
+**Question.** What do OM section header bytes `+4..+8` and `+14..+16` carry?
+
+**Known.** `siemens_nx.md` §7.1 computes `section_end = signature_offset + 16 + payload_size`, names `payload_size` at `+8` and `OM` at `+12..+14`, and assigns no field to `+4..+8` or `+14..+16`.
+
+**Need.** We must assign these bytes a field or confirm them as padding before the header grammar is complete.
+
+### OM-64. Golden coverage for `MIRROR_FACE`, `SUBDIVISION_BODY`, and `TOPOLOGY_OPTIMIZATION`
+
+**Question.** Which code-built golden fixtures exercise the `MIRROR_FACE`, `SUBDIVISION_BODY`, and `TOPOLOGY_OPTIMIZATION` constructions end to end?
+
+**Known.** `siemens_nx.md` §7.1 admits each family as a body-writing construction with unresolved roles (OM-57, OM-58, OM-59). `attach/tests` carries unit tests for each family (`mirror_face.rs`, `subdivision_body.rs`, `topology_optimization.rs`). `test_support` and `golden_tests.rs` supply no fixture constructors for these families.
+
+**Need.** We must add golden fixtures to lock the admitted framing and to measure coverage-floor progress for these families.
+
+### OM-65. Skipped golden fixture-export test
+
+**Question.** Which tests are skipped by default, and what does each skip hide?
+
+**Known.** `golden_tests.rs:1018` marks `export_golden_fixture_inputs` `#[ignore]`; it writes code-built fixtures only when `CADMPEG_NX_FIXTURE_DIR` is set. It is the single `#[ignore]` in that file.
+
+**Need.** We must keep an inventory of skipped tests so a passing suite is not mistaken for complete golden coverage.
+
 ## 3. Assembly and material data
 
 ### AM-01. Fast-load structure stream
@@ -773,7 +813,7 @@ establish that instance-level relation.
 
 **Question.** What are the field boundaries and roles of the residual bytes in an indexed `EXTREFSTREAM` record tail?
 
-**Known.** `siemens_nx.md` §9.1 "An `EXTREFSTREAM` record region begins with" and `siemens_nx.md` §9.1 "Slot zero names the child `.prt`, slot one is the reference code," define the indexed-record boundary, handle-set prefix, persistent-handle pairs, tagged references, string uses, and child binding. Other tail bytes remain opaque.
+**Known.** `siemens_nx.md` §9.1 "An `EXTREFSTREAM` record region begins at byte 24 with" and `siemens_nx.md` §9.1 "Slot zero names the child `.prt`, slot one is the reference code," define the indexed-record boundary, handle-set prefix, persistent-handle pairs, tagged references, string uses, and child binding. Other tail bytes remain opaque.
 
 **Need.** We must know the fields to decode complete occurrence and external-reference state.
 
@@ -801,3 +841,19 @@ The closure test only exercises already-populated `ParasolidAttributeFieldUse` v
 **Known.** `siemens_nx.md` §2.3 "The JT 9 topologically compressed representation begins with Int32 Compressed Data Packet Mk. 2" defines the fixed prefix packets, the split packets, the vertex-record header agreement test, and the rule that exactly one lane count must satisfy it. It states that one or more high-degree lanes occur. It gives no count field and no maximum.
 
 **Need.** We must know the serialized count rule to frame the packet sequence directly. A unique vertex-header agreement does not establish whether the format has a count field or maximum.
+
+### AM-12. `DisplayJT` version envelope
+
+**Question.** Which JT major versions decode to tessellations, and which reject or yield nothing?
+
+**Known.** `siemens_nx.md` §2.3 parses the `Version ` major and minor components and rejects missing, nondecimal, or oversized components. Scene-graph nodes use the pre-10 framing below major 10 and the byte-wide version at major 10 and later. Tri-strip shape-LOD elements decode at major 9 with pre-10 partition and range-LOD nodes. Shape segments at other majors, and major 10 and later scene segments, yield no tessellation without rejection.
+
+**Need.** We must record the version envelope to distinguish an unsupported JT generation from a malformed document.
+
+### AM-13. Material and appearance loss vocabulary
+
+**Question.** Which loss code records the drop of a JT material attribute channel or a physical-material binding that has no neutral transfer?
+
+**Known.** `siemens_nx.md` §2.3 retains ambient, diffuse, specular, and emission RGBA vectors with shininess and optional reflectivity, and transfers only the effective diffuse RGBA value to the tessellation source-object color. The accumulation test covers diffuse inhibit, final, and force behavior; emission never enters the shared path. `loss.rs` defines no material or appearance code. AM-10 records the missing physical-material binding.
+
+**Need.** We must add the code before a dropped emission, specular, or material binding becomes a silent loss.

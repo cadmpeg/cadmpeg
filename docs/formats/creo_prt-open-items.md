@@ -177,6 +177,8 @@ length unit.
 
 **Need.** Resolve each remaining body through complete scalar ownership and chart roles before it supplies curve or endpoint geometry.
 
+**Note.** UPDATE. The body counts predate #425, which binds the source circle of a two-cap circular sweep table. Re-verify the 72 counted, two short, and 68 opaque counts against the current decoder before using them as coverage evidence.
+
 ### GS-09. Other `fc 05` variants
 
 **Question.** What grammar does an `fc 05` body use when it does not satisfy the defined cap-circle production?
@@ -828,6 +830,19 @@ face meaning.
 
 **Need.** We must know the joins before `lo_array` rows can contribute to
 neutral loop ownership or face admission.
+
+### TP-20. Unstatable topological vertex identifiers
+
+**Question.** Which half-edge orbits lie past the one-based topological vertex
+identifier width, and what vertex must each such orbit state?
+
+**Known.** `loss.rs` defines `TopologyVertexIdentifierUnstatable`, and
+`decode/build/report_losses.rs` states no vertex for such orbits: their
+half-edges carry no incidence. The first dropped orbit is identified by its
+seed half-edge curve and side.
+
+**Need.** We must know the identifier width rule and the intended vertex to
+restore incidence without inventing topology.
 
 ## 5. Packed persistence data
 
