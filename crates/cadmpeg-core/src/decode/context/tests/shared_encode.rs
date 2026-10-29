@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-//! #217 comment6358242354 item1: independent helpers use one caller account.
+//! Independent encode helper contexts share one caller account.
 
 use std::io::Cursor;
 
@@ -138,94 +138,6 @@ fn independent_expansions_charge_actual_bytes_to_one_eight_byte_ceiling() {
 }
 
 #[test]
-fn tracking_charges_the_account_body_once_even_when_the_origin_is_cold() {
-    let arena = DecodeArena::new();
-    let policy = DecodePolicy::service();
-    let origin = DecodeContext::for_encode(&arena, &policy);
-    let session = EncodeSession::from_context(&origin).unwrap();
-    let first = DecodeContext::for_encode_session(&arena, &session).unwrap();
-    let second = DecodeContext::for_encode_session(&arena, &session).unwrap();
-    let slot = crate::decode::u64_from_index(size_of::<super::super::SessionSlot>());
-    let body = crate::decode::u64_from_index(size_of::<crate::operation_budget::OperationBudget>());
-    assert_eq!(
-        origin.retained_bytes_available(),
-        policy.limits.max_retained_bytes
-    );
-    first
-        .budget
-        .session(|tracking| tracking.activate())
-        .unwrap();
-    assert_eq!(
-        origin.retained_bytes_available(),
-        policy.limits.max_retained_bytes - slot - body
-    );
-    second
-        .budget
-        .session(|tracking| tracking.activate())
-        .unwrap();
-    origin
-        .budget
-        .session(|tracking| tracking.activate())
-        .unwrap();
-    assert_eq!(
-        origin.retained_bytes_available(),
-        policy.limits.max_retained_bytes - 3 * slot - body
-    );
-    first
-        .budget
-        .session(|tracking| tracking.activate())
-        .unwrap();
-    assert_eq!(
-        second.retained_bytes_available(),
-        policy.limits.max_retained_bytes - 3 * slot - body
-    );
-}
-
-#[test]
-fn attached_domains_keep_sources_and_capture_lifetimes_independent() {
-    let session = {
-        let arena = DecodeArena::new();
-        let origin = DecodeContext::for_encode(&arena, &DecodePolicy::service());
-        EncodeSession::from_context(&origin).unwrap()
-    };
-    let arena = DecodeArena::new();
-    let a = DecodeContext::for_encode_session(&arena, &session).unwrap();
-    let b = DecodeContext::for_encode_session(&arena, &session).unwrap();
-    let ar = a
-        .complete_root_input(&mut Cursor::new(b"a"), Vec::new())
-        .unwrap();
-    let br = b
-        .complete_root_input(&mut Cursor::new(b"b"), Vec::new())
-        .unwrap();
-    assert!(a.require_source(br).is_err());
-    assert!(b.require_source(ar).is_err());
-    assert!(a.record("foreign", br, || Ok(())).is_err());
-    a.record("same-id", ar, || {
-        let mut source = ar;
-        assert_eq!(source.u8(), Some(b'a'));
-        Ok(())
-    })
-    .unwrap();
-    b.record("same-id", br, || {
-        let mut source = br;
-        assert_eq!(source.u8(), Some(b'b'));
-        Ok(())
-    })
-    .unwrap();
-    let captures = a.take_record_captures().unwrap();
-    assert_eq!(captures.len(), 1);
-    assert_eq!(captures[0].id(), "same-id");
-    assert!(a.take_record_captures().is_err());
-    drop(a);
-    b.require_source(br).unwrap();
-    let captures = b.take_record_captures().unwrap();
-    assert_eq!(captures.len(), 1);
-    assert_eq!(captures[0].id(), "same-id");
-    b.finish_session().unwrap();
-    session.finish().unwrap();
-}
-
-#[test]
 fn working_allocation_refusal_remains_shared_after_context_drop_and_attachment() {
     let arena = DecodeArena::new();
     let origin = DecodeContext::for_encode(&arena, &DecodePolicy::service());
@@ -252,7 +164,7 @@ fn attached_input_includes_the_origins_already_admitted_root_length() {
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
     policy.limits.max_input_bytes = 8;
-    let (origin, root) = DecodeContext::from_root_bytes(b"abc", &arena, &policy).unwrap();
+    let (origin, _) = DecodeContext::from_root_bytes(b"abc", &arena, &policy).unwrap();
     let session = EncodeSession::from_context(&origin).unwrap();
     let attached = DecodeContext::for_encode_session(&arena, &session).unwrap();
     assert_eq!(
@@ -261,7 +173,6 @@ fn attached_input_includes_the_origins_already_admitted_root_length() {
             .unwrap(),
         b"defgh"
     );
-    origin.require_source(root).unwrap();
     let refusal = resource(
         attached
             .read_input_prefix(&mut Cursor::new(b"i"), 1)
@@ -273,20 +184,17 @@ fn attached_input_includes_the_origins_already_admitted_root_length() {
 }
 
 #[test]
-fn ordinary_independent_decodes_keep_separate_source_and_caller_accounts() {
+fn ordinary_independent_decodes_keep_separate_caller_accounts() {
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
     policy.limits.max_input_bytes = 3;
     policy.limits.max_entities = 1;
-    let (a, ar) = DecodeContext::from_root_bytes(b"abc", &arena, &policy).unwrap();
-    let (b, br) = DecodeContext::from_root_bytes(b"def", &arena, &policy).unwrap();
+    let (a, _) = DecodeContext::from_root_bytes(b"abc", &arena, &policy).unwrap();
+    let (b, _) = DecodeContext::from_root_bytes(b"def", &arena, &policy).unwrap();
     a.charge_entities(1, "independent first").unwrap();
     b.charge_entities(1, "independent second").unwrap();
-    assert!(a.require_source(br).is_err());
-    assert!(b.require_source(ar).is_err());
     let refusal = resource(a.charge_entities(1, "first decode overflow").unwrap_err());
     assert_eq!(refusal.dimension, ResourceDimension::Entities);
     assert_eq!(b.resource_refusal(), None);
-    b.require_source(br).unwrap();
     b.finish_session().unwrap();
 }

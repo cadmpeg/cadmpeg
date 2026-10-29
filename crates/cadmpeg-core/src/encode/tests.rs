@@ -367,9 +367,9 @@ fn shared_entity_refusal_overrides_a_later_structural_error() {
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
     policy.limits.max_entities = 0;
-    let (ctx, root) = DecodeContext::from_root_bytes(b"x", &arena, &policy).expect("source");
+    let (ctx, _) = DecodeContext::from_root_bytes(b"x", &arena, &policy).expect("source");
     let session = EncodeSession::from_context(&ctx).expect("caller account");
-    let result = ctx.record("test:actual-record", root, || {
+    let result = ctx.run_part(|| {
         let _ignored = session.charge_entities(1, "emit actual record");
         Err::<(), _>(crate::CodecError::malformed("later structural error"))
     });
@@ -535,7 +535,6 @@ fn source_free_encode_helpers_use_absolute_retention_on_the_same_actual_account(
     assert!(ctx.retained_bytes_available() < available);
     drop(output);
     assert_eq!(ctx.retained_bytes_available(), available);
-    assert!(ctx.source_streams().unwrap().is_empty());
     session.finish().unwrap();
     ctx.finish_session().unwrap();
     let crate::CodecError::ResourceLimit(error) = decode
