@@ -233,17 +233,8 @@ fn delete_native_design(document: &mut serde_json::Value) {
         !removed.is_empty(),
         "the editor must identify source design objects"
     );
-    // Source-layout and census records no longer describe the edited native state.
-    for arena in [
-        "document",
-        "document_facts",
-        "physical_ledger",
-        "logical_ledger",
-        "byte_coverage",
-        "archive_spans",
-        "design_census",
-        "carrier_census",
-    ] {
+    // Document and census records no longer describe the edited native state.
+    for arena in ["document", "design_census", "carrier_census"] {
         namespace.remove(arena);
     }
     loop {
