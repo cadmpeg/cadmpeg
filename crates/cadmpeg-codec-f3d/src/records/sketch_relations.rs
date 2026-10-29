@@ -975,12 +975,24 @@ pub(crate) struct SketchRelationSerde {
     id: String,
     record_index: u32,
     class_tag: String,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_byte_offset_u64"
+    )]
     byte_offset: Option<u64>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_state_offset_u32"
+    )]
     state_offset: Option<u32>,
     owner_reference: u32,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_owner_reference_offset_u32"
+    )]
     owner_reference_offset: Option<u32>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     auxiliary_reference_offsets: Vec<u32>,
@@ -1401,3 +1413,12 @@ pub(crate) struct SketchPatternDirection {
 
 #[cfg(test)]
 mod tests;
+
+// Each optional source offset below names itself in whatever it refuses.
+cadmpeg_core::named_optional_field!(deserialize_byte_offset_u64, u64, "byte_offset");
+cadmpeg_core::named_optional_field!(
+    deserialize_owner_reference_offset_u32,
+    u32,
+    "owner_reference_offset"
+);
+cadmpeg_core::named_optional_field!(deserialize_state_offset_u32, u32, "state_offset");

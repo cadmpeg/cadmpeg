@@ -137,7 +137,11 @@ struct ConstructionRecipeWire {
         deserialize_with = "deserialize_design_id"
     )]
     design_id: Option<String>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_design_id_offset_u64"
+    )]
     design_id_offset: Option<u64>,
     #[serde(
         default,
@@ -152,7 +156,11 @@ struct ConstructionRecipeWire {
         deserialize_with = "deserialize_record_index"
     )]
     record_index: Option<i32>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_record_index_offset_u64"
+    )]
     record_index_offset: Option<u64>,
 }
 impl Serialize for ConstructionRecipe {
@@ -312,3 +320,11 @@ pub(crate) struct ConstructionRecipeSelector {
 mod tests;
 
 mod identity_rewrite;
+
+// Each optional source offset below names itself in whatever it refuses.
+cadmpeg_core::named_optional_field!(deserialize_design_id_offset_u64, u64, "design_id_offset");
+cadmpeg_core::named_optional_field!(
+    deserialize_record_index_offset_u64,
+    u64,
+    "record_index_offset"
+);

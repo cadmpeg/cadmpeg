@@ -1229,9 +1229,17 @@ pub(super) struct SketchPointSerde {
     )]
     owner_reference: Option<u32>,
     class_tag: String,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_byte_offset_u64"
+    )]
     byte_offset: Option<u64>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_coordinate_offset_u32"
+    )]
     coordinate_offset: Option<u32>,
     #[serde(
         default,
@@ -1477,10 +1485,18 @@ pub(crate) struct SketchCurveIdentity {
     /// Source per-file dynamic three-digit ASCII class tag naming this record's type.
     pub(crate) class_tag: DesignClassTag,
     /// Byte offset of this record within its Design `BulkStream`.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_byte_offset_u64"
+    )]
     pub(crate) byte_offset: Option<u64>,
     /// Byte offset of the fixed analytic geometry payload relative to the record start.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_geometry_offset_u32"
+    )]
     pub(crate) geometry_offset: Option<u32>,
     /// Optional `EntityGenesis` origin bitfield carried ahead of the curve identities.
     #[serde(
@@ -2881,3 +2897,8 @@ mod tests {
         assert!(serde_json::from_value::<SketchCurveGeometry>(geometry).is_err());
     }
 }
+
+// Each optional source offset below names itself in whatever it refuses.
+cadmpeg_core::named_optional_field!(deserialize_byte_offset_u64, u64, "byte_offset");
+cadmpeg_core::named_optional_field!(deserialize_coordinate_offset_u32, u32, "coordinate_offset");
+cadmpeg_core::named_optional_field!(deserialize_geometry_offset_u32, u32, "geometry_offset");

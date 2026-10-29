@@ -68,7 +68,11 @@ impl AsmHistory {
 #[serde(deny_unknown_fields)]
 struct AsmHistorySerde {
     id: String,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_byte_offset_u64"
+    )]
     byte_offset: Option<u64>,
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     binding_budget_exceeded: bool,
@@ -141,7 +145,11 @@ pub(crate) fn is_default<T: Default + PartialEq>(value: &T) -> bool {
 struct AsmDeltaStateWire {
     id: String,
     parent: String,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_byte_offset_u64"
+    )]
     byte_offset: Option<u64>,
     state_id: i64,
     version_flag: i64,
@@ -571,7 +579,11 @@ impl AsmHistoryRecord {
 struct AsmHistoryRecordWire {
     id: String,
     parent: String,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_byte_offset_u64"
+    )]
     byte_offset: Option<u64>,
     /// Construction-history revision identity paired from the ordered
     /// old-reference run; absent only for the stream terminator or an opaque
@@ -660,7 +672,11 @@ impl From<AsmHistoryRecord> for AsmHistoryRecordWire {
 pub(crate) struct AsmBulletinBoard {
     pub(crate) id: String,
     pub(crate) parent: String,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_byte_offset_u64"
+    )]
     pub(crate) byte_offset: Option<u64>,
     pub(crate) owner_ref: i64,
     pub(crate) number: i64,
@@ -766,7 +782,11 @@ impl AsmEntityChange {
 struct AsmEntityChangeSerde {
     id: String,
     parent: String,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_byte_offset_u64"
+    )]
     byte_offset: Option<u64>,
     kind: AsmEntityChangeKindWire,
     #[serde(
@@ -1269,3 +1289,6 @@ pub(crate) enum AsmTransitionError {
 
 pub(crate) use chain::{AsmStateSnapshot, MaterializedTopologies};
 mod chain;
+
+// Each optional source offset below names itself in whatever it refuses.
+cadmpeg_core::named_optional_field!(deserialize_byte_offset_u64, u64, "byte_offset");

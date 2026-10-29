@@ -245,10 +245,18 @@ impl Serialize for SegmentType {
 struct SegmentTypeWire {
     id: String,
     class_tag: DesignClassTag,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_byte_offset_u64"
+    )]
     byte_offset: Option<u64>,
     type_guid: DesignRelaxedGuidText,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_type_guid_offset_u64"
+    )]
     type_guid_offset: Option<u64>,
     #[serde(
         default,
@@ -256,10 +264,18 @@ struct SegmentTypeWire {
         deserialize_with = "deserialize_base_type_guid"
     )]
     base_type_guid: Option<String>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_base_type_guid_offset_u64"
+    )]
     base_type_guid_offset: Option<u64>,
     version: u32,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_version_offset_u64"
+    )]
     version_offset: Option<u64>,
     module: String,
     entity_ids: Vec<u64>,
@@ -876,7 +892,11 @@ struct DesignEntityHeaderWire {
         deserialize_with = "deserialize_record_reference"
     )]
     record_reference: Option<u32>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_record_reference_offset_u64"
+    )]
     record_reference_offset: Option<u64>,
     #[serde(
         default,
@@ -884,7 +904,11 @@ struct DesignEntityHeaderWire {
         deserialize_with = "deserialize_reference_indices"
     )]
     reference_indices: Option<Vec<u32>>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_reference_offsets_vec_u64"
+    )]
     reference_offsets: Option<Vec<u64>>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     member_indices: Vec<u32>,
@@ -1029,3 +1053,23 @@ impl DesignEntityHeader {
 cadmpeg_core::named_optional_field!(deserialize_reference_indices, Vec<u32>, "reference_indices");
 #[cfg(test)]
 mod tests;
+
+// Each optional source offset below names itself in whatever it refuses.
+cadmpeg_core::named_optional_field!(
+    deserialize_base_type_guid_offset_u64,
+    u64,
+    "base_type_guid_offset"
+);
+cadmpeg_core::named_optional_field!(deserialize_byte_offset_u64, u64, "byte_offset");
+cadmpeg_core::named_optional_field!(
+    deserialize_record_reference_offset_u64,
+    u64,
+    "record_reference_offset"
+);
+cadmpeg_core::named_optional_field!(
+    deserialize_reference_offsets_vec_u64,
+    Vec<u64>,
+    "reference_offsets"
+);
+cadmpeg_core::named_optional_field!(deserialize_type_guid_offset_u64, u64, "type_guid_offset");
+cadmpeg_core::named_optional_field!(deserialize_version_offset_u64, u64, "version_offset");

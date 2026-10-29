@@ -110,7 +110,11 @@ impl DesignBodyMember {
 #[serde(deny_unknown_fields)]
 pub(crate) struct DesignBodyMemberContent {
     pub(crate) id: String,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_byte_offset_u64"
+    )]
     pub(crate) byte_offset: Option<u64>,
     pub(crate) entity_suffix: u64,
     pub(crate) flags: u16,
@@ -705,9 +709,17 @@ pub(crate) struct BodyVisibilityContent {
     pub(crate) id: String,
     pub(crate) body: BodyId,
     pub(crate) stream: String,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_byte_offset_u64"
+    )]
     pub(crate) byte_offset: Option<u64>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_asm_body_key_offset_u64"
+    )]
     pub(crate) asm_body_key_offset: Option<u64>,
     pub(crate) asm_body_key: u64,
     pub(crate) entity_suffix: u64,
@@ -1131,3 +1143,11 @@ mod tests {
 }
 
 mod identity_rewrite;
+
+// Each optional source offset below names itself in whatever it refuses.
+cadmpeg_core::named_optional_field!(
+    deserialize_asm_body_key_offset_u64,
+    u64,
+    "asm_body_key_offset"
+);
+cadmpeg_core::named_optional_field!(deserialize_byte_offset_u64, u64, "byte_offset");
