@@ -113,10 +113,11 @@ fn named_constraint_path_grammar_and_ambiguity() {
             Some(crate::loss::FreecadLossCode::SketchConstraintBindingConflict),
         ),
     ] {
-        let expressions = paths
-            .iter()
-            .map(|path| format!(r#"<Expression path="{path}" expression="Sheet.w"/>"#))
-            .collect::<String>();
+        let expressions = paths.iter().fold(String::new(), |mut out, path| {
+            use std::fmt::Write as _;
+            write!(out, r#"<Expression path="{path}" expression="Sheet.w"/>"#).unwrap();
+            out
+        });
         let document = format!(
             r#"<Document SchemaVersion="4" FileVersion="1">
 <Objects Count="2"><Object name="Sketch" type="Sketcher::SketchObject"/><Object name="Sheet" type="Spreadsheet::Sheet"/></Objects>
