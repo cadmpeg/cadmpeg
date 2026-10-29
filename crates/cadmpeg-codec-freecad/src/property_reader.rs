@@ -36,8 +36,6 @@ impl<'ctx, 'arena> PropertyReader<'ctx, 'arena> {
         document: View<'ctx>,
         ranges: &'ctx BTreeMap<String, ValueSourceRanges>,
     ) -> Result<Self, CodecError> {
-        // Capturing provenance validates the live source session; it reads no bytes.
-        context.capture_part_extent(document)?;
         Ok(Self {
             context,
             trees: PropertyTrees::Source { document, ranges },
@@ -56,9 +54,6 @@ impl<'ctx, 'arena> PropertyReader<'ctx, 'arena> {
         context: &'ctx DecodeContext<'arena>,
         sources: BTreeMap<String, View<'ctx>>,
     ) -> Result<Self, CodecError> {
-        for source in sources.values() {
-            context.capture_part_extent(*source)?;
-        }
         Ok(Self {
             context,
             trees: PropertyTrees::Fixtures(sources),

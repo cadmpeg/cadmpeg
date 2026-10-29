@@ -1,21 +1,18 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Original XML source reads while kept property fields are constructed.
 
-use cadmpeg_core::decode::{DecodeContext, View};
+use cadmpeg_core::decode::View;
 use cadmpeg_core::CodecError;
 
-pub(crate) struct Source<'ctx, 'source> {
-    ctx: &'ctx DecodeContext<'source>,
+pub(crate) struct Source<'source> {
     view: View<'source>,
 }
 
-impl<'ctx, 'source> Source<'ctx, 'source> {
+impl<'source> Source<'source> {
     pub(crate) fn new(
-        ctx: &'ctx DecodeContext<'source>,
         view: View<'source>,
         xml: &roxmltree::Document<'_>,
     ) -> Result<Self, CodecError> {
-        ctx.capture_part_extent(view)?;
         let original = xml.input_text().as_bytes();
         if original.len() != view.window().len()
             || !std::ptr::eq(original.as_ptr(), view.window().as_ptr())
@@ -24,17 +21,7 @@ impl<'ctx, 'source> Source<'ctx, 'source> {
                 "XML DOM does not borrow its original source View",
             ));
         }
-        Ok(Self { ctx, view })
-    }
-
-    pub(crate) fn record<T>(
-        &self,
-        id: &str,
-        node: roxmltree::Node<'_, '_>,
-        parse: impl FnOnce() -> Result<T, CodecError>,
-    ) -> Result<T, CodecError> {
-        let extent = crate::fidelity::relative_xml_extent(self.view, node.range())?;
-        self.ctx.record(id, extent, parse)
+        Ok(Self { view })
     }
 
     pub(crate) fn required_attribute(
@@ -116,116 +103,10 @@ impl<'ctx, 'source> Source<'ctx, 'source> {
             return Err(CodecError::malformed("XML source value is inverted"));
         }
         if start < end {
-            self.view.read_slice(start..end).ok_or_else(|| {
+            self.view.child(start, end).ok_or_else(|| {
                 CodecError::malformed("XML value read escapes its original source View")
             })?;
         }
         Ok(attribute.value().to_owned())
     }
-
-    pub(crate) fn retained_attributes(
-        &self,
-        node: roxmltree::Node<'_, '_>,
-    ) -> Result<std::collections::BTreeMap<String, String>, CodecError> {
-        let input = node.document().input_text().as_bytes();
-        if input.len() != self.view.window().len() || input.as_ptr() != self.view.window().as_ptr()
-        {
-            return Err(CodecError::malformed(
-                "retained attribute node does not borrow its source",
-            ));
-        }
-        let mut values = std::collections::BTreeMap::new();
-        for attribute in node.attributes().rev() {
-            if values.contains_key(attribute.name()) {
-                continue;
-            }
-            let range = attribute.range();
-            let raw = self
-                .view
-                .window()
-                .get(range.clone())
-                .ok_or_else(|| CodecError::malformed("attribute name escapes its source"))?;
-            let end = raw
-                .iter()
-                .position(|byte| matches!(byte, b'=' | b' ' | b'\t' | b'\r' | b'\n'))
-                .ok_or_else(|| CodecError::malformed("attribute name has no delimiter"))?;
-            let start = raw[..end]
-                .iter()
-                .rposition(|byte| *byte == b':')
-                .map_or(0, |at| at + 1);
-            if raw.get(start..end) != Some(attribute.name().as_bytes()) {
-                return Err(CodecError::malformed(
-                    "retained attribute name differs from source",
-                ));
-            }
-            let start = self
-                .view
-                .start()
-                .checked_add(range.start)
-                .and_then(|at| at.checked_add(start))
-                .ok_or_else(|| CodecError::malformed("attribute name source start overflows"))?;
-            let end = self
-                .view
-                .start()
-                .checked_add(range.start)
-                .and_then(|at| at.checked_add(end))
-                .ok_or_else(|| CodecError::malformed("attribute name source end overflows"))?;
-            let key = self
-                .view
-                .read_slice(start..end)
-                .ok_or_else(|| CodecError::malformed("attribute name read escapes source"))?;
-            let key = std::str::from_utf8(key)
-                .map_err(|_| CodecError::malformed("attribute name is not UTF-8"))?
-                .to_owned();
-            values.insert(key, self.attribute(&attribute)?);
-        }
-        Ok(values)
-    }
-
-    pub(crate) fn plain_text(
-        &self,
-        element: roxmltree::Node<'_, '_>,
-    ) -> Result<Option<String>, CodecError> {
-        let Some(text) = element.first_child().filter(roxmltree::Node::is_text) else {
-            return Ok(None);
-        };
-        let value = text
-            .text()
-            .ok_or_else(|| CodecError::malformed("XML text node has no value"))?;
-        let range = text.range();
-        let raw =
-            self.view.window().get(range.clone()).ok_or_else(|| {
-                CodecError::malformed("XML text escapes its original source View")
-            })?;
-        let remainder = self
-            .view
-            .window()
-            .get(range.end..element.range().end)
-            .ok_or_else(|| CodecError::malformed("XML text suffix escapes its owning element"))?;
-        if element.last_child() != Some(text)
-            || raw.contains(&b'<')
-            || !remainder.starts_with(b"</")
-        {
-            return Ok(Some(value.to_owned()));
-        }
-        let start = self
-            .view
-            .start()
-            .checked_add(range.start)
-            .ok_or_else(|| CodecError::malformed("XML source text start overflows"))?;
-        let end = self
-            .view
-            .start()
-            .checked_add(range.end)
-            .ok_or_else(|| CodecError::malformed("XML source text end overflows"))?;
-        if start < end {
-            self.view.read_slice(start..end).ok_or_else(|| {
-                CodecError::malformed("XML text read escapes its original source View")
-            })?;
-        }
-        Ok(Some(value.to_owned()))
-    }
 }
-
-#[cfg(test)]
-mod tests;

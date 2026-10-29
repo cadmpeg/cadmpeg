@@ -44,9 +44,8 @@ mod property_reader;
 mod source_archive;
 mod topology_transfer;
 mod writer;
-mod xml_framing;
 
-use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
+use std::collections::{BTreeSet, HashMap, HashSet};
 
 use cadmpeg_core::bytes::contains;
 use cadmpeg_core::decode::{DecodeContext, DecodeDepth, View};
@@ -753,9 +752,17 @@ impl CodecBackend for FcstdCodec {
             container::ScanOutcome::GivenUp {
                 summary,
                 parts,
-                pointers,
+                document_found,
+                archive_given_up,
             } => {
-                return archive_recovery::decoded(ctx, root, summary, parts, pointers);
+                return archive_recovery::decoded(
+                    ctx,
+                    root,
+                    summary,
+                    parts,
+                    document_found,
+                    archive_given_up,
+                );
             }
         };
         let gui_source = if ctx.container_only() {
@@ -766,8 +773,6 @@ impl CodecBackend for FcstdCodec {
                 .map(|source| gui::source::parse(ctx, *source))
                 .transpose()?
         };
-        let source_admission = fidelity::b1::prepare(ctx, root, &scan, gui_source.as_ref())?;
-        let legacy_source_evidence = !source_admission.is_complete();
         let mut admitted_entities = 0_u64;
         let mut attributes = container::source_attributes(&scan)?;
         let summary_notes = container::summary_notes(&scan);
@@ -787,15 +792,7 @@ impl CodecBackend for FcstdCodec {
             );
         }
         let mut source_fidelity = cadmpeg_ir::SourceFidelity::default();
-        let mut layout_payloads = BTreeMap::new();
-        let mut layout_pointers = BTreeMap::new();
-        for key in [
-            "object_count",
-            "archive_entry_count",
-            "physical_ledger_spans",
-            "physical_archive_bytes",
-            "thumbnail_bytes",
-        ] {
+        for key in ["object_count", "archive_entry_count", "thumbnail_bytes"] {
             if let Some(value) = attributes.remove(key) {
                 source_fidelity
                     .metadata
@@ -806,17 +803,16 @@ impl CodecBackend for FcstdCodec {
             cadmpeg_core::decode::u64_from_index(root.window().len()),
             "retain FCStd source image",
         )?;
-        let archive_capture = ctx.capture_part_extent(root)?;
         fidelity::retain(
             &mut source_fidelity,
             fidelity::SOURCE_IMAGE,
-            archive_capture.stream(),
-            archive_capture.offset(),
+            "",
+            cadmpeg_core::decode::u64_from_index(root.start()),
             root.window(),
             cadmpeg_ir::ArenaClasses::new(),
         )?;
 
-        let entry_sources = entry_sources::EntrySources::new(ctx, &scan.data)?;
+        let entry_sources = entry_sources::EntrySources::new(&scan.data);
         let mut geometry_transferred = false;
         let mut cycle_affected_design_objects = BTreeSet::new();
         let mut gui_losses = Vec::new();
@@ -828,7 +824,7 @@ impl CodecBackend for FcstdCodec {
         ir.set_scope(ctx.depth().required_scope())
             .map_err(CodecError::malformed)?;
         if let Some((name, source)) = thumbnail {
-            let capture = ctx.capture_part_extent(source)?;
+            let offset = cadmpeg_core::decode::u64_from_index(source.start());
             let bytes = source.window();
             let id = UnknownId::compose(
                 &cadmpeg_ir::identity_namespace!("fcstd", "native", "thumbnail"),
@@ -839,8 +835,8 @@ impl CodecBackend for FcstdCodec {
             );
             annotations.annotate(
                 &id,
-                capture.stream(),
-                capture.offset(),
+                name,
+                offset,
                 "thumbnail",
                 cadmpeg_ir::Exactness::ByteExact,
             )?;
@@ -854,7 +850,7 @@ impl CodecBackend for FcstdCodec {
                 "fcstd",
                 [UnknownRecord::retained(
                     id,
-                    capture.offset(),
+                    offset,
                     bytes.to_vec(),
                     vec![native::native_id("document", "0")],
                 )]
@@ -870,7 +866,6 @@ impl CodecBackend for FcstdCodec {
         if decode_document {
             let document_xml = &scan.document_xml;
             let mut graph = persistence::parse_document_source_with_properties(
-                ctx,
                 *scan
                     .data
                     .get("Document.xml")
@@ -896,7 +891,6 @@ impl CodecBackend for FcstdCodec {
                     &mut source_fidelity,
                     property,
                     &graph.objects,
-                    legacy_source_evidence,
                 )? {
                     let code = match class {
                         cadmpeg_ir::ArenaClass::Model => {
@@ -909,70 +903,7 @@ impl CodecBackend for FcstdCodec {
                     scan.losses.push(code.note(format!("property {} Python payload has no decoded value; opaque encoding retained only in fidelity", property.id)));
                 }
             }
-            for (id, range) in &graph.object_sources {
-                fidelity::captured_object_layout_payloads(
-                    ctx,
-                    *scan
-                        .data
-                        .get("Document.xml")
-                        .ok_or_else(|| CodecError::malformed("object data has no source entry"))?,
-                    id,
-                    range.clone(),
-                    &mut layout_payloads,
-                    &mut layout_pointers,
-                )?;
-            }
-            for property in &graph.properties {
-                let source = graph.property_sources.get(&property.id).ok_or_else(|| {
-                    CodecError::malformed("property has no original source range")
-                })?;
-                fidelity::captured_property_layout_payloads(
-                    ctx,
-                    *scan
-                        .data
-                        .get("Document.xml")
-                        .ok_or_else(|| CodecError::malformed("property has no source entry"))?,
-                    source,
-                    property,
-                    &mut layout_payloads,
-                    &mut layout_pointers,
-                )?;
-            }
-            for (id, range) in &graph.extension_sources {
-                fidelity::xml_layout_payload(
-                    ctx,
-                    *scan
-                        .data
-                        .get("Document.xml")
-                        .ok_or_else(|| CodecError::malformed("extension has no source entry"))?,
-                    id,
-                    range.clone(),
-                    &mut layout_payloads,
-                )?;
-            }
             let mut entry_records = container::entry_records(&scan, &graph.properties)?;
-            for entry in &entry_records {
-                let source = scan.data.get(entry.name()).ok_or_else(|| {
-                    CodecError::malformed("archive entry has no genuine source View")
-                })?;
-                ctx.record(entry.id(), *source, || Ok::<(), CodecError>(()))?;
-                if layout_pointers
-                    .insert(
-                        entry.id().to_owned(),
-                        source_archive::entry_pointers(
-                            scan.archive.entry(entry.name()).ok_or_else(|| {
-                                CodecError::malformed("entry has no original ZIP declaration")
-                            })?,
-                            cadmpeg_core::decode::u64_from_index(source.window().len()),
-                        )?,
-                    )
-                    .is_some()
-                {
-                    return Err(CodecError::malformed(
-                        "duplicate archive entry layout pointers",
-                    ));
-                }
-            }
             let shape_payloads = brep::parse_payloads(
                 &property_reader,
                 &graph.properties,
@@ -987,14 +918,7 @@ impl CodecBackend for FcstdCodec {
                 &entry_records,
                 &entry_sources,
                 &mut scan.losses,
-                Some(&mut element_map::SourceLayouts {
-                    document: *scan.data.get("Document.xml").ok_or_else(|| {
-                        CodecError::malformed("string table has no document source")
-                    })?,
-                    entries: &scan.data,
-                    fidelity: &mut source_fidelity,
-                    payloads: &mut layout_payloads,
-                }),
+                Some(&mut source_fidelity),
             )?;
             namespace.set_arena(ctx, "objects", &graph.objects)?;
             namespace.set_arena(ctx, "extensions", &graph.extensions)?;
@@ -1171,60 +1095,18 @@ impl CodecBackend for FcstdCodec {
             } else {
                 gui::Graph::default()
             };
-            if gui_graph.untyped && legacy_source_evidence {
+            if gui_graph.untyped {
                 let source = *scan.data.get("GuiDocument.xml").ok_or_else(|| {
                     CodecError::malformed("untyped GUI document has no actual source")
                 })?;
-                let capture = ctx.capture_part_extent(source)?;
                 fidelity::evidence(
                     &mut source_fidelity,
                     &native::native_id("entry", "GuiDocument.xml"),
-                    capture.stream(),
-                    capture.offset(),
+                    "GuiDocument.xml",
+                    cadmpeg_core::decode::u64_from_index(source.start()),
                     source.window(),
                     [cadmpeg_ir::ArenaClass::Model].into_iter().collect(),
                 )?;
-            }
-            for source in gui_graph.state_sources.values() {
-                fidelity::state_layout_payloads(
-                    ctx,
-                    *scan
-                        .data
-                        .get("GuiDocument.xml")
-                        .ok_or_else(|| CodecError::malformed("GUI state has no source entry"))?,
-                    source,
-                    &mut layout_payloads,
-                    &mut layout_pointers,
-                )?;
-            }
-            for source in gui_graph
-                .value_sources
-                .iter()
-                .filter(|source| gui_graph.property_sources.contains_key(source.id()))
-                .chain(
-                    gui_graph
-                        .property_sources
-                        .values()
-                        .filter(|source| !source.has_values()),
-                )
-            {
-                fidelity::gui_property_layout_payloads(
-                    ctx,
-                    *scan
-                        .data
-                        .get("GuiDocument.xml")
-                        .ok_or_else(|| CodecError::malformed("GUI property has no source entry"))?,
-                    source,
-                    &mut layout_payloads,
-                    &mut layout_pointers,
-                )?;
-            }
-            for (id, range) in &gui_graph.provider_sources {
-                let view = scan
-                    .data
-                    .get("GuiDocument.xml")
-                    .ok_or_else(|| CodecError::malformed("GUI provider has no source entry"))?;
-                fidelity::xml_layout_payload(ctx, *view, id, range.clone(), &mut layout_payloads)?;
             }
             writer::body_styles::apply(&mut ir, &shape_payloads, &graph.properties)?;
             gui_losses = std::mem::take(&mut gui_graph.losses);
@@ -1276,53 +1158,9 @@ impl CodecBackend for FcstdCodec {
                 "gui_properties",
                 &gui_graph.properties,
             )?;
-            let logical_ledger = container::logical_ledger(
-                &entry_records,
-                &graph.properties,
-                &graph.property_sources,
-                &entry_sources,
-                &gui_graph,
-                &shape_payloads,
-                string_tables.as_slice(),
-                &element_maps,
-            )?;
-
-            let physical_byte_len = scan.ledger.last().map_or(0, |span| span.span.end());
-            let coverage = container::byte_coverage(
-                &scan.ledger,
-                &entry_records,
-                &entry_sources,
-                &logical_ledger,
-                physical_byte_len,
-            )?;
-            source_fidelity.insert_freecad_ledgers(
-                archive_capture.stream().to_owned(),
-                cadmpeg_ir::source_fidelity::freecad::FreecadSourceLedgers {
-                    physical_ledger: std::mem::take(&mut scan.ledger),
-                    logical_ledger,
-                    byte_coverage: coverage,
-                },
-            )?;
             ir.native
                 .namespace_mut("fcstd")
                 .set_arena(ctx, "element_maps", &element_maps)?;
-        } else {
-            let physical_byte_len = scan.ledger.last().map_or(0, |span| span.span.end());
-            let coverage = container::byte_coverage(
-                &scan.ledger,
-                &[],
-                &entry_sources,
-                &[],
-                physical_byte_len,
-            )?;
-            source_fidelity.insert_freecad_ledgers(
-                archive_capture.stream().to_owned(),
-                cadmpeg_ir::source_fidelity::freecad::FreecadSourceLedgers {
-                    physical_ledger: std::mem::take(&mut scan.ledger),
-                    logical_ledger: Vec::new(),
-                    byte_coverage: coverage,
-                },
-            )?;
         }
         if !ctx.container_only() {
             let objects = ir
@@ -1359,15 +1197,11 @@ impl CodecBackend for FcstdCodec {
         losses.extend(dialect_losses);
         losses.extend(part_losses);
         losses.extend(loss::payloads::decode_losses(
-            ctx,
             &ir,
             &entry_sources,
             &mut source_fidelity,
-            legacy_source_evidence,
         )?);
-        if legacy_source_evidence {
-            fidelity::mark_unreadable(&ir, &mut source_fidelity)?;
-        }
+        fidelity::mark_unreadable(&ir, &mut source_fidelity)?;
         let document_digest = writer::target::document_local_sha256(ctx, &ir)?;
         source_fidelity.metadata.insert(
             cadmpeg_ir::hash::DOCUMENT_FINGERPRINT_METADATA_KEY.into(),
@@ -1378,10 +1212,6 @@ impl CodecBackend for FcstdCodec {
             &mut admitted_entities,
             "admit FCStd entities",
         )?;
-        fidelity::install_layouts(ctx, &mut source_fidelity, layout_payloads, layout_pointers)?;
-        if let fidelity::b1::Admission::Complete(inventory) = source_admission {
-            inventory.finalize(ctx, &ir, &mut source_fidelity, &mut losses)?;
-        }
         let scope = ir.scope;
         Ok(Decoded {
             ir,

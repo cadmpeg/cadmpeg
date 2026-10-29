@@ -4,7 +4,6 @@
 use super::{PropertyBody, PropertyRecord};
 use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_core::CodecError;
-use cadmpeg_ir::schema::rewrite::typed::prune::{DependencyPosition, DependencyReference};
 use cadmpeg_ir::schema::rewrite::typed::{IdentityMap, RewriteIdentities};
 use serde::{Deserialize, Serialize};
 
@@ -41,17 +40,6 @@ impl RewriteIdentities for DocumentString {
         visitor: &mut dyn FnMut(&str) -> Result<(), CodecError>,
     ) -> Result<(), CodecError> {
         visitor(&self.0.owner)
-    }
-    fn visit_dependency_references(
-        &self,
-        _ctx: &DecodeContext<'_>,
-        visitor: &mut dyn FnMut(DependencyReference<'_>) -> Result<(), CodecError>,
-    ) -> Result<(), CodecError> {
-        visitor(DependencyReference {
-            target: &self.0.owner,
-            position: DependencyPosition::Required,
-            field: Some("owner"),
-        })
     }
     fn rewrite_identities<F: FnMut(&str) -> Result<String, CodecError>>(
         mut self,
@@ -94,17 +82,6 @@ mod tests {
         let original = graph.properties.into_iter().next().unwrap();
         let ctx = cadmpeg_test_support::service_decode_context();
         let property = DocumentString::new(original.clone()).unwrap();
-        let mut owners = Vec::new();
-        property
-            .visit_dependency_references(&ctx, &mut |reference| {
-                owners.push((reference.target.to_owned(), reference.position));
-                Ok(())
-            })
-            .unwrap();
-        assert_eq!(
-            owners,
-            [(original.owner.clone(), DependencyPosition::Required)]
-        );
         let mut map = IdentityMap::new(|id: &str| Ok(id.replace("#", "#changed-")));
         let rewritten = property.rewrite_identities(&ctx, &mut map).unwrap();
         assert_ne!(rewritten.0.id, original.id);

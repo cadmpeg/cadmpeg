@@ -48,7 +48,6 @@ fn source_reader_keeps_direct_mixed_text_and_never_credits_lookup_as_a_read() {
             let text = tree.root_element().first_element_child().unwrap();
             assert_eq!(text.text(), Some("direct Ω"));
             assert_eq!(text.last_child().unwrap().text(), Some("tail"));
-            assert!(reader.take_record_captures().unwrap().is_empty());
         },
     );
 }
@@ -75,22 +74,4 @@ fn typed_reader_uses_current_values_after_an_edit_and_deletion() {
     let deleted = reader.property_xml(&property).unwrap();
     assert!(!deleted.contains("<String"));
     assert!(!deleted.contains("new Ω"));
-}
-
-#[test]
-fn source_reader_rejects_a_view_from_another_session() {
-    let xml = b"<Property><String value='old'/></Property>";
-    let arena = DecodeArena::new();
-    let (context, _) =
-        DecodeContext::from_root_bytes(xml, &arena, &DecodePolicy::service()).unwrap();
-    let other_arena = DecodeArena::new();
-    let (_foreign_context, foreign) =
-        DecodeContext::from_root_bytes(xml, &other_arena, &DecodePolicy::service()).unwrap();
-    let document = roxmltree::Document::parse(std::str::from_utf8(xml).unwrap()).unwrap();
-    let property = property();
-    let ranges = BTreeMap::from([(
-        property.id.clone(),
-        crate::fidelity::property_source(document.root_element(), &property).unwrap(),
-    )]);
-    assert!(PropertyReader::source(&context, foreign, &ranges).is_err());
 }

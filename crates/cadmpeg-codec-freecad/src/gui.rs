@@ -34,9 +34,6 @@ use schema::Admission as GuiSchemaAdmission;
 pub(crate) struct Graph {
     pub(crate) documents: Vec<GuiDocumentRecord>,
     pub(crate) providers: Vec<GuiViewProviderRecord>,
-    pub(crate) provider_sources: Vec<(String, std::ops::Range<usize>)>,
-    pub(crate) value_sources: Vec<crate::fidelity::ValueSourceRanges>,
-    pub(crate) state_sources: BTreeMap<String, crate::fidelity::ValueSourceRanges>,
     pub(crate) property_sources: BTreeMap<String, crate::fidelity::ValueSourceRanges>,
     pub(crate) properties: Vec<GuiPropertyRecord>,
     pub(crate) losses: Vec<LossNote>,
@@ -259,7 +256,7 @@ fn transfer_document(
     ir: &mut CadIr,
     xml: &roxmltree::Document<'_>,
     sources: &GuiSources<'_, '_>,
-    source: Option<&crate::persistence::source::Source<'_, '_>>,
+    source: Option<&crate::persistence::source::Source<'_>>,
     origins: GuiOrigins<'_>,
 ) -> Result<Graph, CodecError> {
     let schema_declaration = crate::container::canonical_attribute(
@@ -297,11 +294,7 @@ fn transfer_document(
     };
     // The source value constructs the kept GUI document and presentation schema.
     // A rejected provider transfer rolls this scope back before source-only recovery.
-    let transferred = match source {
-        Some(source) => source.record("fcstd:gui:document#0", xml.root_element(), parse),
-        None => parse(),
-    };
-    let mut graph = match transferred {
+    let mut graph = match parse() {
         Ok((graph, plan)) => {
             plan.apply(ir);
             graph
@@ -346,19 +339,13 @@ fn transfer_schema_one(
         .filter(|node| node.has_tag_name("Camera"))
         .count();
     let mut states = Vec::new();
-    let mut state_sources = BTreeMap::new();
     for (order, node) in root
         .children()
         .filter(roxmltree::Node::is_element)
         .filter(|node| !node.has_tag_name("ViewProviderData"))
         .enumerate()
     {
-        let state = gui_state(order, node)?;
-        state_sources.insert(
-            state.id.clone(),
-            crate::fidelity::state_source(node, &state)?,
-        );
-        states.push(state);
+        states.push(gui_state(order, node)?);
     }
     let document = GuiDocumentRecord {
         id: "fcstd:gui:document#0".into(),
@@ -374,7 +361,6 @@ fn transfer_schema_one(
         objects_by_name.insert(object.name().as_str(), object.id().as_str());
     }
     let mut native_providers = Vec::new();
-    let mut provider_sources = Vec::new();
     let mut property_sources = BTreeMap::new();
     let mut native_properties = Vec::new();
     let mut losses = Vec::new();
@@ -436,10 +422,6 @@ fn transfer_schema_one(
                 "GuiDocument.xml has duplicate ViewProvider names".into(),
             ));
         }
-        provider_sources.push((
-            crate::native::native_id("gui-view-provider", name),
-            provider.range(),
-        ));
         let provider_key = provider_identity_key(name);
         let Some(object_id) = objects_by_name.get(name).copied() else {
             append_native_provider(
@@ -765,23 +747,9 @@ fn transfer_schema_one(
             });
         }
     }
-    let mut value_sources = property_sources
-        .values()
-        .filter(|source| source.has_values())
-        .cloned()
-        .collect::<Vec<_>>();
-    value_sources.extend(
-        state_sources
-            .values()
-            .filter(|source| source.has_values())
-            .cloned(),
-    );
     let mut graph = Graph {
         documents: vec![document],
         providers: native_providers,
-        provider_sources,
-        value_sources,
-        state_sources,
         property_sources,
         properties: native_properties,
         losses,
@@ -1703,7 +1671,7 @@ fn append_native_provider(
         };
         property_sources.insert(
             record.id.clone(),
-            crate::fidelity::gui_property_source(property, &record)?,
+            crate::fidelity::property_source(property),
         );
         properties.push(record);
     }

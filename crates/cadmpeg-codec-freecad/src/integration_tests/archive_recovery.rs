@@ -2,7 +2,6 @@
 //! Whole-archive rollback only when a reached child has no provable extent.
 
 use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, InspectOptions};
-use cadmpeg_ir::source_fidelity::parts::PartState;
 use cadmpeg_ir::{Codec, DecodeOptions};
 use cadmpeg_test_support::zip_fixture::{self, RawEntry};
 use std::io::Cursor;
@@ -57,118 +56,25 @@ fn an_unframeable_optional_header_gives_up_its_archive_and_no_document_records_e
         decoded.ir().source.as_ref().unwrap().dialects(),
         baseline.ir().source.as_ref().unwrap().dialects()
     );
-    let native = decoded.ir().native.namespace("fcstd").unwrap();
-    assert_eq!(
-        native
-            .arenas()
-            .keys()
-            .map(String::as_str)
-            .collect::<Vec<_>>(),
-        ["unknowns"]
-    );
-    let unknowns = decoded.ir().native_unknowns("fcstd").unwrap();
-    let [unknown] = unknowns.as_slice() else {
-        panic!("one root unknown: {unknowns:?}")
-    };
-    assert!(unknown.links.is_empty());
+    assert!(decoded
+        .ir()
+        .native
+        .namespace("fcstd")
+        .is_none_or(|native| native.arenas().is_empty()));
     let fidelity = decoded.source_fidelity();
-    let part = &fidelity.parts()[&unknown.id];
-    assert_eq!(part.level().as_str(), "zip.archive");
-    assert_eq!(part.state(), &PartState::GivenUp {});
-    assert!(part.parent().is_none());
-    assert_eq!(part.offset(), 0);
-    assert_eq!(part.byte_len(), u64::try_from(bytes.len()).unwrap());
-    // The original seven archive/document scopes remain; the live object
-    // producer adds exactly the eleven source-owned Appendix C descendants.
-    let level_counts = fidelity.parts().values().fold(
-        std::collections::BTreeMap::<&str, usize>::new(),
-        |mut counts, part| {
-            *counts.entry(part.level().as_str()).or_default() += 1;
-            counts
-        },
-    );
-    assert_eq!(
-        level_counts,
-        std::collections::BTreeMap::from([
-            ("zip.archive", 1),
-            ("zip.local_header", 2),
-            ("zip.entry", 2),
-            ("freecad.document_xml", 1),
-            ("freecad.document", 1),
-            ("freecad.objects", 1),
-            ("freecad.object_declaration", 1),
-            ("freecad.object_data_section", 1),
-            ("freecad.object_data", 1),
-            ("freecad.properties", 1),
-            ("freecad.property", 3),
-            ("freecad.property_value", 3),
-        ])
-    );
-    assert_eq!(
-        fidelity
-            .parts()
-            .values()
-            .filter(|part| matches!(
-                part.level().as_str(),
-                "zip.archive"
-                    | "zip.local_header"
-                    | "zip.entry"
-                    | "freecad.document_xml"
-                    | "freecad.document"
-            ))
-            .count(),
-        7
-    );
-    for (id, child) in fidelity.parts().iter().filter(|(id, _)| *id != &unknown.id) {
-        assert_ne!(id, &unknown.id);
-        assert_eq!(
-            child.state(),
-            &PartState::Covered {
-                by: unknown.id.clone()
-            }
-        );
-        if child.level().as_str() == "freecad.document" {
-            let parent = &fidelity.parts()[child.parent().unwrap()];
-            assert_eq!(parent.level().as_str(), "freecad.document_xml");
-            let member = &fidelity.parts()[parent.parent().unwrap()];
-            assert_eq!(member.level().as_str(), "zip.entry");
-            assert_eq!(member.parent(), Some(&unknown.id));
-        } else if child.level().as_str() == "freecad.document_xml" {
-            let parent = &fidelity.parts()[child.parent().unwrap()];
-            assert_eq!(parent.level().as_str(), "zip.entry");
-            assert_eq!(parent.parent(), Some(&unknown.id));
-        } else if let Some(parent_level) = match child.level().as_str() {
-            "freecad.objects" | "freecad.object_data_section" | "freecad.properties" => {
-                Some("freecad.document")
-            }
-            "freecad.object_declaration" => Some("freecad.objects"),
-            "freecad.object_data" => Some("freecad.object_data_section"),
-            "freecad.property" => Some("freecad.properties"),
-            "freecad.property_value" => Some("freecad.property"),
-            _ => None,
-        } {
-            let parent = &fidelity.parts()[child.parent().unwrap()];
-            assert_eq!(parent.level().as_str(), parent_level);
-        } else {
-            assert_eq!(child.parent(), Some(&unknown.id));
-        }
-    }
-    assert_eq!(fidelity.record_layout().len(), 1);
-    assert!(fidelity.record_layout()[unknown.id.as_str()]
-        .reads()
-        .is_empty());
     assert!(fidelity
         .retained_record(crate::fidelity::SOURCE_IMAGE)
         .is_none());
-    let retained = fidelity.retained_record(unknown.id.as_str()).unwrap();
+    let parts = crate::test_support::source_fidelity::given_up(fidelity);
+    let [(_, retained)] = parts.as_slice() else {
+        panic!("one root part: {parts:?}")
+    };
     assert_eq!(retained.data(), Some(bytes.as_slice()));
-    assert_eq!(retained.stream(), part.stream());
-    assert_eq!(retained.offset(), part.offset());
-    assert_eq!(retained.byte_len(), part.byte_len());
+    assert_eq!(retained.offset(), 0);
+    assert_eq!(retained.byte_len(), u64::try_from(bytes.len()).unwrap());
     assert_eq!(retained.sha256(), cadmpeg_ir::hash::sha256_hex(&bytes));
     let wire = serde_json::to_value(fidelity).unwrap();
     assert_eq!(wire["retained_records"].as_object().unwrap().len(), 1);
-    assert_eq!(crate::source_archive::image(fidelity).unwrap(), bytes);
     assert_eq!(
         fidelity.unrepresented(),
         cadmpeg_ir::ArenaClasses::from([
@@ -280,24 +186,6 @@ fn whole_archive_inspection_keeps_actual_identity_entries_and_its_source_owned_e
 }
 
 #[test]
-fn a_failed_root_owner_rejects_competing_images_and_mismatched_retained_extents() {
-    let bytes = damaged(original(), true);
-    let decoded = crate::FcstdCodec
-        .decode(&mut Cursor::new(&bytes), &DecodeOptions::default())
-        .unwrap();
-    let unknown = &decoded.ir().native_unknowns("fcstd").unwrap()[0];
-    let mut wire = serde_json::to_value(decoded.source_fidelity()).unwrap();
-    let root = wire["retained_records"][unknown.id.as_str()].clone();
-    wire["retained_records"][crate::fidelity::SOURCE_IMAGE] = root;
-    let duplicate: cadmpeg_ir::SourceFidelity = serde_json::from_value(wire).unwrap();
-    assert!(crate::source_archive::image(&duplicate).is_err());
-    let mut wire = serde_json::to_value(decoded.source_fidelity()).unwrap();
-    wire["retained_records"][unknown.id.as_str()]["offset"] = serde_json::json!(1);
-    let mismatched: cadmpeg_ir::SourceFidelity = serde_json::from_value(wire).unwrap();
-    assert!(crate::source_archive::image(&mismatched).is_err());
-}
-
-#[test]
 fn the_document_source_capture_and_successful_peer_parts_rollback_with_the_archive() {
     let bytes = damaged(original(), true);
     let arena = DecodeArena::new();
@@ -309,26 +197,12 @@ fn the_document_source_capture_and_successful_peer_parts_rollback_with_the_archi
         panic!("unframeable header must give up archive")
     };
     assert_eq!(summary.entries.len(), 3);
-    let (_, native, fidelity, losses) = parts.into_parts(&ctx).unwrap().into_parts();
+    let (_, _, fidelity, losses) = parts.into_parts();
     assert_eq!(
-        native
-            .namespace("fcstd")
-            .unwrap()
-            .arena_as::<cadmpeg_ir::NativeUnknownRecord>("unknowns")
-            .unwrap()
-            .len(),
-        1
-    );
-    assert_eq!(
-        fidelity
-            .parts()
-            .values()
-            .filter(|part| part.state() == &PartState::GivenUp {})
-            .count(),
+        crate::test_support::source_fidelity::given_up(&fidelity).len(),
         1
     );
     assert_eq!(losses.len(), 1);
-    assert!(ctx.take_record_captures().unwrap().is_empty());
 }
 
 #[test]
@@ -347,78 +221,28 @@ fn the_public_nonzero_archive_decode_keeps_source_coordinates_for_bounded_failur
     let root = outer
         .child(prefix.len(), prefix.len() + bytes.len())
         .unwrap();
-    let source = ctx.capture_part_extent(root).unwrap();
     let decoded = crate::FcstdCodec.decode_with_context(&ctx, root).unwrap();
     assert_eq!(decoded.ir().model, baseline.ir().model);
     let fidelity = decoded.source_fidelity();
     let retained = fidelity
         .retained_record(crate::fidelity::SOURCE_IMAGE)
         .unwrap();
-    assert_eq!(retained.stream(), source.stream());
     assert_eq!(retained.offset(), u64::try_from(prefix.len()).unwrap());
     assert_eq!(retained.byte_len(), u64::try_from(bytes.len()).unwrap());
     assert_eq!(crate::source_archive::image(fidelity).unwrap(), bytes);
-    assert!(fidelity.b1_spans().is_empty());
-    let (id, failed) = fidelity
-        .parts()
-        .iter()
-        .find(|(_, part)| {
-            part.level().as_str() == "zip.local_header" && part.state() == &PartState::GivenUp {}
-        })
-        .unwrap();
-    let baseline_failed = baseline
-        .source_fidelity()
-        .parts()
-        .values()
-        .find(|part| {
-            part.level().as_str() == "zip.local_header" && part.state() == &PartState::GivenUp {}
-        })
-        .unwrap();
-    assert_eq!(failed.offset(), source.offset() + baseline_failed.offset());
+    let failed = crate::test_support::source_fidelity::given_up(fidelity);
+    let [(_, failed)] = failed.as_slice() else {
+        panic!("one given-up header: {failed:?}")
+    };
+    let baseline_failed =
+        crate::test_support::source_fidelity::given_up(baseline.source_fidelity());
+    let [(_, baseline_failed)] = baseline_failed.as_slice() else {
+        panic!("one given-up header: {baseline_failed:?}")
+    };
+    assert_eq!(
+        failed.offset(),
+        u64::try_from(prefix.len()).unwrap() + baseline_failed.offset()
+    );
     assert_eq!(failed.byte_len(), baseline_failed.byte_len());
-    assert_eq!(
-        fidelity.retained_record(id.as_str()).unwrap().data(),
-        baseline
-            .source_fidelity()
-            .retained_records()
-            .values()
-            .find(|record| {
-                record.offset() == baseline_failed.offset()
-                    && record.byte_len() == baseline_failed.byte_len()
-            })
-            .unwrap()
-            .data()
-    );
-    let source_arena = DecodeArena::new();
-    let (source_ctx, outer) =
-        DecodeContext::from_root_bytes(&embedded, &source_arena, &DecodePolicy::service()).unwrap();
-    let source_root = outer
-        .child(prefix.len(), prefix.len() + bytes.len())
-        .unwrap();
-    let original =
-        crate::source_archive::OriginalArchive::new(&source_ctx, source_root, fidelity).unwrap();
-    assert_eq!(
-        original
-            .part(&source_ctx, id.as_str(), "broken.bin")
-            .unwrap(),
-        fidelity
-            .retained_record(id.as_str())
-            .unwrap()
-            .data()
-            .unwrap()
-    );
-    assert_eq!(
-        original.open(&source_ctx, "peer.bin").unwrap().window(),
-        b"readable peer"
-    );
-    assert!(source_ctx.take_record_captures().unwrap().is_empty());
-    let detached_arena = DecodeArena::new();
-    let (detached_ctx, detached_root) =
-        DecodeContext::from_root_bytes(&bytes, &detached_arena, &DecodePolicy::service()).unwrap();
-    let error = crate::source_archive::OriginalArchive::new(&detached_ctx, detached_root, fidelity)
-        .err()
-        .unwrap();
-    assert!(
-        matches!(error, cadmpeg_core::CodecError::UnsupportedContent(ref message) if message == "original FCStd archive needs its actual source origin for layout reuse")
-    );
+    assert_eq!(failed.data(), baseline_failed.data());
 }

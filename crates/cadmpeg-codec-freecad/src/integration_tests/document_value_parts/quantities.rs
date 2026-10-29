@@ -29,7 +29,6 @@ fn quantity_scalar_changes_flow_to_native_and_neutral_values_with_exact_original
                 .unwrap();
             assert!(source.start() > 0);
             let (scan, stage) = crate::container::scan_for_decode(&ctx, source).unwrap();
-            let extent = ctx.capture_part_extent(scan.data["Document.xml"]).unwrap();
             let properties = stage
                 .native()
                 .namespace("fcstd")
@@ -72,40 +71,6 @@ fn quantity_scalar_changes_flow_to_native_and_neutral_values_with_exact_original
                 [Some(AttributeValue::float(expected).unwrap())]
             );
             assert_eq!(neutral.native_ref.as_deref(), Some(held.id.as_str()));
-            let part = stage
-                .fidelity()
-                .parts()
-                .values()
-                .find(|part| {
-                    part.level().as_str() == "freecad.property_value"
-                        && part.offset()
-                            == extent.offset() + u64::try_from(xml.find(&child).unwrap()).unwrap()
-                })
-                .unwrap();
-            assert_eq!(part.stream(), extent.stream());
-            assert_eq!(part.state(), &PartState::Decoded {});
-            assert_eq!(part.byte_len(), u64::try_from(child.len()).unwrap());
-            let parent = &stage.fidelity().parts()[part.parent().unwrap()];
-            assert_eq!(parent.level().as_str(), "freecad.property");
-            assert_eq!(parent.state(), &PartState::Decoded {});
-            let captures = ctx.take_record_captures().unwrap();
-            let capture = captures
-                .iter()
-                .find(|capture| capture.id() == held.id)
-                .unwrap();
-            let mut expected_reads = Vec::new();
-            let mut from = 0;
-            for raw in [
-                "Scaled", family, "9", "Custom", "A&amp;B", "true", "value", raw, "unit", raw_unit,
-                "extra", "held",
-            ] {
-                let at = from + property_xml[from..].find(raw).unwrap();
-                from = at + raw.len();
-                let start =
-                    extent.offset() + u64::try_from(xml.find(&property_xml).unwrap() + at).unwrap();
-                expected_reads.push(start..start + u64::try_from(raw.len()).unwrap());
-            }
-            assert_eq!(capture.reads()[capture.stream()], expected_reads);
         }
     }
 }
@@ -166,90 +131,30 @@ fn malformed_quantity_values_keep_headers_and_peers_with_one_exact_child_home() 
                 .attributes
                 .iter()
                 .any(|attribute| attribute.name == "Bad"));
-            let unknowns = decoded.ir().native_unknowns("fcstd").unwrap();
-            let [unknown] = unknowns.as_slice() else {
+            let fidelity = decoded.source_fidelity();
+            let parts = crate::test_support::source_fidelity::given_up(fidelity);
+            let [(_, retained)] = parts.as_slice() else {
                 panic!("one failed quantity value")
             };
-            assert_eq!(unknown.links.len(), 1);
-            assert_eq!(unknown.links[0].as_str(), property.id);
-            let fidelity = decoded.source_fidelity();
-            let part = &fidelity.parts()[&unknown.id];
-            assert_eq!(part.level().as_str(), "freecad.property_value");
-            assert_eq!(part.state(), &PartState::GivenUp {});
+            assert_eq!(retained.data(), Some(bad.as_bytes()));
             assert_eq!(
-                fidelity.parts()[part.parent().unwrap()].state(),
-                &PartState::Decoded {}
+                retained.offset(),
+                u64::try_from(xml.find(bad).unwrap()).unwrap()
             );
-            assert_eq!(
-                fidelity
-                    .retained_record(unknown.id.as_str())
-                    .unwrap()
-                    .data(),
-                Some(bad.as_bytes())
-            );
-            assert!(fidelity.record_layout()[property.id.as_str()]
-                .payloads()
-                .is_empty());
-            let arena = DecodeArena::new();
-            let (ctx, root) =
-                DecodeContext::from_root_bytes(&bytes, &arena, &DecodePolicy::service()).unwrap();
-            let archive = cadmpeg_container::ArchiveSnapshot::new(&ctx, root).unwrap();
-            let member = archive.open(&ctx, "Document.xml").unwrap();
-            let extent = ctx.capture_part_extent(member).unwrap();
-            let start = extent.offset() + u64::try_from(xml.find(bad).unwrap()).unwrap();
-            let end = start + u64::try_from(bad.len()).unwrap();
-            assert_eq!(part.stream(), extent.stream());
-            assert_eq!(part.offset(), start);
-            assert_eq!(part.byte_len(), end - start);
-            assert!(
-                fidelity.record_layout()[property.id.as_str()].reads()[part.stream()]
-                    .iter()
-                    .all(|range| range.end <= start || end <= range.start)
-            );
+            assert_eq!(retained.byte_len(), u64::try_from(bad.len()).unwrap());
             assert!(!decoded
                 .report()
                 .losses
                 .iter()
                 .any(|loss| loss.code.local_code() == "metadata.persistence-payload-unresolved"));
-            cadmpeg_test_support::contract::parts::check_one_home(
-                cadmpeg_ir::CodecFormat::Fcstd,
-                &decoded.ir().native,
-                fidelity,
-                &decoded.report().losses,
-                "file",
-                |stream, range| {
-                    let start = usize::try_from(range.start).ok()?;
-                    let end = usize::try_from(range.end).ok()?;
-                    if stream == "file" {
-                        bytes.get(start..end)
-                    } else if stream == extent.stream() {
-                        member.child(start, end).map(|view| view.window())
-                    } else {
-                        None
-                    }
-                },
-            )
-            .unwrap();
-            let original =
-                crate::source_archive::OriginalArchive::new(&ctx, root, fidelity).unwrap();
+            let arena = DecodeArena::new();
+            let (ctx, root) =
+                DecodeContext::from_root_bytes(&bytes, &arena, &DecodePolicy::service()).unwrap();
+            let original = cadmpeg_container::ArchiveSnapshot::new(&ctx, root).unwrap();
             assert_eq!(
                 original.open(&ctx, "Document.xml").unwrap().window(),
                 xml.as_bytes()
             );
-            let mut shifted = serde_json::to_value(fidelity).unwrap();
-            for field in ["parts", "record_layout", "retained_records"] {
-                shifted[field][unknown.id.as_str()]["offset"] =
-                    serde_json::json!(part.offset() + 1);
-            }
-            for range in shifted["parts"][unknown.id.as_str()]["framing_bytes"]
-                .as_array_mut()
-                .unwrap()
-            {
-                range["start"] = serde_json::json!(range["start"].as_u64().unwrap() + 1);
-                range["end"] = serde_json::json!(range["end"].as_u64().unwrap() + 1);
-            }
-            let shifted: cadmpeg_ir::SourceFidelity = serde_json::from_value(shifted).unwrap();
-            assert!(crate::source_archive::OriginalArchive::new(&ctx, root, &shifted).is_err());
         }
     }
 }

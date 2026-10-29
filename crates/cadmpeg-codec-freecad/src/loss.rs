@@ -787,8 +787,10 @@ mod tests {
             let decoded = crate::FcstdCodec
                 .decode(&mut std::io::Cursor::new(bytes), &DecodeOptions::default())
                 .unwrap();
-            let unknowns = decoded.ir().native_unknowns("fcstd").unwrap();
-            assert_eq!(unknowns.len(), 1);
+            let parts = crate::test_support::source_fidelity::given_up(decoded.source_fidelity());
+            let [(_, retained)] = parts.as_slice() else {
+                panic!("one given-up member: {parts:?}")
+            };
             assert!(decoded
                 .report()
                 .losses
@@ -801,14 +803,7 @@ mod tests {
                 .unwrap()
                 .arenas()
                 .contains_key("unreadable_entries"));
-            assert_eq!(
-                decoded
-                    .source_fidelity()
-                    .retained_record(unknowns[0].id.as_str())
-                    .unwrap()
-                    .data(),
-                Some([1].as_slice())
-            );
+            assert_eq!(retained.data(), Some([1].as_slice()));
             assert_eq!(
                 decoded.source_fidelity().unrepresented(),
                 cadmpeg_ir::ArenaClasses::from([expected])

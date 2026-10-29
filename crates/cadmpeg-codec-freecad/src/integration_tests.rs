@@ -11,8 +11,6 @@ mod metadata_recovery;
 mod object_declaration_parts;
 mod product_native_order;
 mod ring_traversal;
-mod source_b1;
-mod source_ledgers;
 mod source_parts;
 
 use super::FcstdCodec;
@@ -297,9 +295,6 @@ fn compatibility_and_refusal_pipeline_keeps_states_atomic() {
         .expect("container-only FCStd decode");
     assert!(result.report().container_only());
     assert!(result.ir().model.features.is_empty());
-    let physical: Vec<cadmpeg_ir::source_fidelity::freecad::ArchiveSpan> =
-        crate::test_support::source_fidelity::layout(result.source_fidelity(), "physical-ledger");
-    assert!(!physical.is_empty());
     assert_valid(&result);
 }
 
