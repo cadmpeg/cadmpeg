@@ -2427,6 +2427,9 @@ fn merge_brep(target: &mut Brep, mut source: Brep) -> Result<(), CodecError> {
     target.stats.unresolved_topology_loops += source.stats.unresolved_topology_loops;
     target.stats.unresolved_topology_fins += source.stats.unresolved_topology_fins;
     target.stats.unresolved_topology_vertices += source.stats.unresolved_topology_vertices;
+    target.stats.withheld_fin_partners += source.stats.withheld_fin_partners;
+    target.stats.withheld_fin_links += source.stats.withheld_fin_links;
+    target.stats.withheld_ring_edges += source.stats.withheld_ring_edges;
     target.stats.unclaimed_faces += source.stats.unclaimed_faces;
     target.stats.synthetic_body_grouping |= source.stats.synthetic_body_grouping;
     Ok(())
@@ -3926,6 +3929,24 @@ fn append_topology_record_losses(
                 "{count} referenced {family} record(s) were withheld because complete records conflict and no current occurrence is selected."
             )));
         }
+    }
+    if stats.withheld_fin_partners > 0 {
+        losses.push(SldprtLossCode::TopologyFinPartnerUnresolved.note(format!(
+            "{} edge(s) were withheld because an unwalked boundary-dummy canonical FIN lacks reciprocal partner corroboration of both ring-order endpoints or a mutual twin FIN contradicts the ring-order endpoint; no dummy enters a public face loop.",
+            stats.withheld_fin_partners,
+        )));
+    }
+    if stats.withheld_fin_links > 0 {
+        losses.push(SldprtLossCode::TopologyFinLinkUnresolved.note(format!(
+            "{} ring(s) were withheld because a FIN backward link names no reciprocal same-loop forward link; the ring is not walked on doubt.",
+            stats.withheld_fin_links,
+        )));
+    }
+    if stats.withheld_ring_edges > 0 {
+        losses.push(SldprtLossCode::TopologyRingEdgeWithheld.note(format!(
+            "{} vertexless ring edge(s) fail strict reciprocal-circle single-loop admission; no vertex is invented and the edge is withheld.",
+            stats.withheld_ring_edges,
+        )));
     }
 }
 
