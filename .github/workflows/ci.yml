@@ -68,6 +68,7 @@ jobs:
           EVENT: ${{ github.event_name }}
           PR_BASE: ${{ github.event.pull_request.base.sha }}
           QUEUE_BASE: ${{ github.event.merge_group.base_sha }}
+          QUEUE_REF: ${{ github.event.merge_group.head_ref }}
           PUSH_BASE: ${{ github.event.before }}
           GH_TOKEN: ${{ github.token }}
           REPOSITORY: ${{ github.repository }}
@@ -77,7 +78,26 @@ jobs:
           mode=()
           case "$EVENT" in
             pull_request) base="$PR_BASE" ;;
-            merge_group) base="$QUEUE_BASE" ;;
+            merge_group)
+              # Skip the gate when this PR's own run passed it on the same base
+              # and tree. The `tested` job names that record.
+              base="$QUEUE_BASE"
+              number="$(sed -nE 's#^refs/heads/gh-readonly-queue/[^/]+/pr-([0-9]+)-[0-9a-f]+$#\1#p' <<<"$QUEUE_REF")"
+              head=""
+              if [ -n "$number" ]; then
+                head="$(gh api "repos/$REPOSITORY/pulls/$number" --jq .head.sha || true)"
+              fi
+              if [[ "$head" =~ ^[0-9a-f]{40}$ ]]; then
+                key="ci-tested-$base-$(git rev-parse 'HEAD^{tree}')"
+                found="$(gh api "repos/$REPOSITORY/actions/artifacts?name=$key&per_page=100" \
+                  --jq "[.artifacts[] | select(.expired == false and .workflow_run.head_sha == \"$head\")] | length" \
+                  || true)"
+                if [[ "$found" =~ ^[1-9][0-9]*$ ]]; then
+                  python3 scripts/ci_scope.py --tested --github-output "$GITHUB_OUTPUT"
+                  exit 0
+                fi
+              fi
+              ;;
             schedule)
               passed="$(gh api "repos/$REPOSITORY/actions/runs?head_sha=$SHA&event=schedule&status=success" \
                 --jq '[.workflow_runs[] | select(.path == ".github/workflows/ci.yml")] | length')"
@@ -489,3 +509,53 @@ jobs:
 
       - name: Audit dependencies
         run: cargo audit
+
+  # Records that this PR run passed every gate it selected on its base and
+  # merge tree. The merge queue skips a commit with the same base and tree.
+  # A full gate also runs macOS and Windows, which PR runs never do.
+  tested:
+    needs: [changes, static, lint, test, features, fuzz, msrv, audit]
+    if: ${{ github.event_name == 'pull_request' && github.event.pull_request.draft != true && !failure() && !cancelled() && needs.changes.outputs.full == 'false' }}
+    name: record tested tree
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7.0.1
+
+      - name: Name the tested base and tree
+        id: key
+        env:
+          PR_BASE: ${{ github.event.pull_request.base.sha }}
+        run: |
+          set -euo pipefail
+          echo "name=ci-tested-$PR_BASE-$(git rev-parse 'HEAD^{tree}')" >> "$GITHUB_OUTPUT"
+          git rev-parse HEAD > tested-commit
+
+      - name: Record
+        uses: actions/upload-artifact@v7
+        with:
+          name: ${{ steps.key.outputs.name }}
+          path: tested-commit
+          retention-days: 7
+
+  schedule-alert:
+    needs: [changes, static, lint, test, features, fuzz, msrv, cross-platform, audit]
+    if: ${{ always() && github.event_name == 'schedule' }}
+    name: report scheduled result
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+      issues: write
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7.0.1
+        with:
+          sparse-checkout: .github/actions
+
+      - name: Open, update, or close the failure issue
+        uses: ./.github/actions/schedule-alert
+        with:
+          result: ${{ contains(needs.*.result, 'failure') && 'failure' || contains(needs.*.result, 'cancelled') && 'cancelled' || 'success' }}
+          assignee: ${{ vars.SCHEDULE_ALERT_ASSIGNEE }}
