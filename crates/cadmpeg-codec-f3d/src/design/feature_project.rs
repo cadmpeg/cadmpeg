@@ -6465,6 +6465,7 @@ fn project_rectangular_pattern_scalars(
         spacing,
         count,
         second,
+        omitted_instances: Vec::new(),
     })
     .ok()?;
     Some(FeatureDefinition::Operation(FeatureOperation::Pattern {

@@ -1440,3 +1440,38 @@ Parsed by:
 | -----: | ---: | ----- | ---- | ------ | --- | ------- |
 | 0 | 4 | `first` | `u32` | little | spec | pairs of u32 coordinates |
 | 4 | 4 | `second` | `u32` | little | spec | pairs of u32 coordinates |
+
+## `pm_dc_sheet_metal_face_plate_body_v29`
+
+Spec §13 · layout: byte offsets · size: 28 B
+
+Offsets are relative to the end of the state content header.
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 4 | `state` | `i32` | little | spec | The segment-major-29 one-plate face suffix occupies · value `-1` |
+| 4 | 2 | `marker` | `u16` | little | spec | The segment-major-29 one-plate face suffix occupies · value `2` |
+| 6 | 2 | `signature` | `u16` | little | spec | The segment-major-29 one-plate face suffix occupies · value `12288` |
+| 8 | 4 | `count` | `u32` | little | spec | The segment-major-29 one-plate face suffix occupies · value `1` |
+| 12 | 4 | `metadata0` | `u32` | little | spec | The segment-major-29 one-plate face suffix occupies · value `1` |
+| 16 | 4 | `metadata1` | `u32` | little | spec | The segment-major-29 one-plate face suffix occupies · value `16` |
+| 20 | 4 | `plate_reference` | `u32` | little | spec | The segment-major-29 one-plate face suffix occupies |
+| 24 | 4 | `value` | `u32` | little | spec | The segment-major-29 one-plate face suffix occupies · value `0` |
+
+## `pm_dc_sheet_metal_face_plate_bend_body_v19`
+
+Spec §13 · layout: byte offsets · size: 32 B
+
+Offsets are relative to the end of the state content header.
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 4 | `state` | `i32` | little | spec | The segment-major-19 plate-and-bend face suffix occupies · value `-1` |
+| 4 | 2 | `marker` | `u16` | little | spec | The segment-major-19 plate-and-bend face suffix occupies · value `2` |
+| 6 | 2 | `signature` | `u16` | little | spec | The segment-major-19 plate-and-bend face suffix occupies · value `12288` |
+| 8 | 4 | `count` | `u32` | little | spec | The segment-major-19 plate-and-bend face suffix occupies · value `2` |
+| 12 | 4 | `metadata0` | `u32` | little | spec | The segment-major-19 plate-and-bend face suffix occupies · value `2` |
+| 16 | 4 | `metadata1` | `u32` | little | spec | The segment-major-19 plate-and-bend face suffix occupies · value `0` |
+| 20 | 4 | `plate_reference` | `u32` | little | spec | The segment-major-19 plate-and-bend face suffix occupies |
+| 24 | 4 | `bend_reference` | `u32` | little | spec | The segment-major-19 plate-and-bend face suffix occupies |
+| 28 | 4 | `value` | `u32` | little | spec | The segment-major-19 plate-and-bend face suffix occupies · value `0` |
