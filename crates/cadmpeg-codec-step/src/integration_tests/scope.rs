@@ -97,10 +97,9 @@ fn located_empty_and_failed_data_sections_keep_model_in_scope() {
                 );
                 assert!(decoded
                     .source_fidelity()
-                    .parts()
+                    .retained_records()
                     .values()
-                    .any(|part| part.state()
-                        == &cadmpeg_ir::source_fidelity::parts::PartState::GivenUp {}));
+                    .any(|record| !record.untyped().is_empty()));
             }
         }
     }
