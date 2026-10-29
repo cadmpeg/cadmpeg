@@ -6,6 +6,11 @@ use serde::{Deserialize, Serialize};
 
 cadmpeg_core::named_optional_field!(deserialize_transform, XrefPlacementTransform, "transform");
 cadmpeg_core::named_optional_field!(deserialize_current_pose, XrefCurrentPose, "current_pose");
+cadmpeg_core::named_optional_field!(
+    deserialize_operation_pose,
+    XrefOperationPose,
+    "operation_pose"
+);
 cadmpeg_core::named_optional_field!(deserialize_type_guid, String, "type_guid");
 cadmpeg_core::named_optional_field!(deserialize_owner, XrefLocalOwner, "owner");
 cadmpeg_core::named_optional_field!(
@@ -171,8 +176,7 @@ pub(crate) struct XrefPlacementSource {
     pub(crate) owner: Option<XrefLocalOwner>,
 }
 
-/// The `CommonData` component-path carrier that stores the current pose of an
-/// external occurrence placed at the document root
+/// The component-path carrier that stores an occurrence's current world pose
 /// ([spec §1.4](https://github.com/cadmpeg/cadmpeg/blob/main/docs/formats/f3d.md#14-external-references)).
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub(crate) struct XrefCurrentPose {
@@ -180,6 +184,63 @@ pub(crate) struct XrefCurrentPose {
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub(crate) frame_bytes: cadmpeg_ir::native::bytes::NativeBytes,
     /// Current pose in centimetres. `None` is the stored identity form.
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_transform"
+    )]
+    pub(crate) transform: Option<XrefPlacementTransform>,
+}
+
+/// A direct operation table's pose in the source component definition frame.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub(crate) struct XrefOperationPose {
+    pub(crate) carrier_record_index: u64,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub(crate) frame_bytes: cadmpeg_ir::native::bytes::NativeBytes,
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_transform"
+    )]
+    pub(crate) transform: Option<XrefPlacementTransform>,
+}
+
+/// The world pose that a component-path carrier stores for one occurrence
+/// inside an external occurrence
+/// ([spec §1.4](https://github.com/cadmpeg/cadmpeg/blob/main/docs/formats/f3d.md#14-external-references)).
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub(crate) struct XrefContainedPose {
+    pub(crate) carrier_record_index: u64,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub(crate) frame_bytes: cadmpeg_ir::native::bytes::NativeBytes,
+    /// The contained occurrence's placement record in the referenced design.
+    pub(crate) contained_record_index: u64,
+    /// The local occurrence carriers that hold the external occurrence,
+    /// innermost first.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub(crate) owner_record_indices: Vec<u64>,
+    /// World pose in centimetres. `None` is the stored identity form.
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_transform"
+    )]
+    pub(crate) transform: Option<XrefPlacementTransform>,
+}
+
+/// The world pose that a component-path carrier stores for an external
+/// occurrence below local owners
+/// ([spec §1.4](https://github.com/cadmpeg/cadmpeg/blob/main/docs/formats/f3d.md#14-external-references)).
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub(crate) struct XrefOwnedPose {
+    pub(crate) carrier_record_index: u64,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub(crate) frame_bytes: cadmpeg_ir::native::bytes::NativeBytes,
+    /// The local occurrence carriers that hold the external occurrence,
+    /// innermost first.
+    pub(crate) owner_record_indices: Vec<u64>,
+    /// World pose in centimetres. `None` is the stored identity form.
     #[serde(
         default,
         skip_serializing_if = "Option::is_none",
@@ -225,14 +286,28 @@ pub(crate) struct XrefReference {
         deserialize_with = "deserialize_transform"
     )]
     pub(crate) transform: Option<XrefPlacementTransform>,
-    /// Current pose from the occurrence's component-path carrier, when one
-    /// names this placement.
+    /// Current world pose from the occurrence's component-path carrier.
     #[serde(
         default,
         skip_serializing_if = "Option::is_none",
         deserialize_with = "deserialize_current_pose"
     )]
     pub(crate) current_pose: Option<XrefCurrentPose>,
+    /// The definition-local pose retained from a direct operation table.
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_operation_pose"
+    )]
+    pub(crate) operation_pose: Option<XrefOperationPose>,
+    /// World poses that component-path carriers store for occurrences inside
+    /// this external occurrence, each through this placement.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub(crate) contained_poses: Vec<XrefContainedPose>,
+    /// World poses that component-path carriers store for this external
+    /// occurrence below its local owners.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub(crate) owned_poses: Vec<XrefOwnedPose>,
 }
 
 #[cfg(test)]

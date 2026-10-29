@@ -1,0 +1,46 @@
+# Replaces a GitHub Release body with the notes from scripts/release-notes.py.
+#
+# The dist-generated release workflow calls this after it publishes a release
+# (dist-workspace.toml `post-announce-jobs = ["./release-notes"]`). Dispatch it
+# by hand with a tag to rewrite the notes of an existing release. If the script
+# fails, the release keeps its current body.
+name: Release notes
+
+on:
+  workflow_call:
+    inputs:
+      plan:
+        required: true
+        type: string
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Release tag, e.g. v0.6.7"
+        required: true
+        type: string
+
+permissions:
+  contents: write
+  pull-requests: read
+
+jobs:
+  notes:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Write the release notes
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          # A called workflow sees the caller's tag push as its event.
+          TAG: ${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.ref_name }}
+        run: |
+          set -euo pipefail
+          python3 scripts/release-notes.py "$TAG" --repo "$GH_REPO" > "$RUNNER_TEMP/notes.md"
+          gh release edit "$TAG" --notes-file "$RUNNER_TEMP/notes.md"

@@ -796,7 +796,7 @@ fn construction_operand_groups_have_exact_counted_and_direct_frames() {
         project_split(&split_body_scope, &split_groups, std::slice::from_ref(&split_tool)).unwrap(),
         Some(FeatureDefinition::Operation(FeatureOperation::SplitBody {
             targets: cadmpeg_ir::features::BodySelection::Native(ref targets),
-            tools: cadmpeg_ir::features::FaceSelection::Native(ref tool),
+            tool: cadmpeg_ir::features::SplitBodyTool::Faces(cadmpeg_ir::features::FaceSelection::Native(ref tool)),
         })) if targets.ends_with("#400") && tool.ends_with("#200")
     ));
 
@@ -827,7 +827,7 @@ fn construction_operand_groups_have_exact_counted_and_direct_frames() {
     assert!(matches!(
         project_split(&historical_split_scope, &split_groups, std::slice::from_ref(&historical_split_tool)).unwrap(),
         Some(FeatureDefinition::Operation(FeatureOperation::SplitBody {
-            tools: FaceSelection::Historical { faces, native, .. },
+            tool: cadmpeg_ir::features::SplitBodyTool::Faces(FaceSelection::Historical { faces, native, .. }),
             ..
         })) if faces.len() == 1 && native.as_str() == historical_split_tool.id
     ));
@@ -900,7 +900,7 @@ fn construction_operand_groups_have_exact_counted_and_direct_frames() {
     assert!(matches!(
         project_split(&construction_tool_scope, &[split_target_group.clone(), construction_tool], &[]).unwrap(),
         Some(FeatureDefinition::Operation(FeatureOperation::SplitBody {
-            tools: cadmpeg_ir::features::FaceSelection::Native(ref tool),
+            tool: cadmpeg_ir::features::SplitBodyTool::Faces(cadmpeg_ir::features::FaceSelection::Native(ref tool)),
             ..
         })) if tool.ends_with("#100")
     ));

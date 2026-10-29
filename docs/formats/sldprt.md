@@ -68,7 +68,7 @@ with one frame is the degenerate chained form.
 
 ### 1.1 Outer header and block frame
 
-The file starts with an 8-byte header: `file_id` (u32), then `version` (u32 **big-endian**, value `0x00000004`). The rest is a sequence of compressed blocks.
+The file starts with an 8-byte header: `file_id` (u32), then `version` (u32 **big-endian**; observed value `0x00000004`). The decoder stores the word in the `outer_version` attribute; every value decodes (`dialect.rs`). The rest is a sequence of compressed blocks.
 
 Native compressed members use ZIP local-file-header fields with a substituted
 four-byte signature token and nibble-swapped member names. The signature token
@@ -1010,7 +1010,7 @@ A compact parting-line Draft uses direct duplicated component-vector records wit
 
 A planar sketch history name ending in `<N>`, where `N` is one or more decimal digits, aliases the uniquely named unsuffixed sketch when both records have the same XML element tag, resolved feature-input class, ordered content, and complete parameter map. The unsuffixed history feature remains the sole owner of the solved sketch geometry, and the geometry-less alias feature depends on that owner. Feature operands naming the alias bind to the owner's sketch and depend on the unsuffixed owner. A missing base, multiple matching bases, or any record-content difference leaves the alias operand native.
 
-Keywords `Configuration` elements carry a non-empty, document-unique `Name`; `Material` carries the configuration material override. Decimal `SourceIndex=N` binds the configuration to `Config-N-Partition`; without it, the decimal `id=N` does. A configuration can carry `id` without `SourceIndex`. An `id` with no partition is a configuration never rebuilt; a partition no `id` names is left by a deleted configuration (an orphan, not a configuration). All other attributes are configuration-local named values. Source indices are document-unique and independent of element order and the resolved-features slot identity. A matching partition supplies the configuration body set. When no `Config-N-Partition` section exists, the body set is empty. A configuration without `SourceIndex` has no ordinary partition binding; the uniquely manifest-selected configuration receives the selected `swID` when its name binds uniquely.
+Keywords `Configuration` elements carry a non-empty, document-unique `Name`; `Material` carries the configuration material override. Decimal `SourceIndex=N` binds the configuration to `Config-N-Partition`. The decimal `id` selects the `Config-N-ResolvedFeatures` slot. All other attributes are configuration-local named values. Source indices are document-unique and independent of element order and the resolved-features slot identity. A matching partition supplies the configuration body set; without a matching partition the body membership stays unresolved. A configuration without `SourceIndex` has no ordinary partition binding; the uniquely manifest-selected configuration receives the selected `swID` when its name binds uniquely.
 
 The unique `swMostRecentConfiguration="YES"` manifest row is the active
 configuration identity, including when the manifest contains several
@@ -2129,7 +2129,7 @@ active configuration; its `swID` selects `Config-<swID>-Partition`. The row's
 `swModel` supplies the configuration name. `swConfigurationId` on that model
 has the same value as `swID`.
 
-Selection precedence is a valid `SourceIndex=N` (else `id=N`) on the active
+Selection precedence is a valid `SourceIndex=N` on the active
 Keywords configuration, then the unique manifest row's `swID`, then a sole non-ghost
 partition. A `Deltas`, `GhostPartition`, or `ResolvedFeatures` section is not
 a partition substitute. A manifest with zero or several `YES` rows supplies no
@@ -2825,6 +2825,8 @@ A support-pair record has zero `offset0` and `offset1`; its first two references
 For a blend record, `spine` names the center/spine curve that selects the blend branch. The spine is the locus of rolling-ball centers: it lies at the common offset magnitude from each support, on the side each support's resolved sense selects, and it is therefore not a curve on either support and not their intersection curve. `abs(offset0) == abs(offset1) > 0`; their common magnitude is the constant rolling-ball radius. A sign difference between the offsets reverses the second support relative to the first. Each `side` value is exactly `+1` or `-1`; a negative value independently reverses that support's side. Lengths are metres.
 
 The side a direct support's offset and `side` value select is stated against that carrier's ORIENTED normal (§7.1), not the neutral surface's natural normal: a `0x2d` compact support carrier reverses the stated side once more, exactly as it reverses a face's sense. A `0x2b` carrier under a `0x2d` bridge keeps the stated side, so the carrier's marker decides. For a support-pair reference, the stated side is the PAIR's, and no field read here maps it onto the chosen member: a pair member chosen from the spine takes its side from the spine as well, on whichever side of the member the spine lies.
+
+The record stores no surface. The blend surface is the envelope of the ball along the spine: at each spine station, the circular arc of the ball radius about the centre between the two contact points, the closest points of the two supports to the centre. Its natural normal points away from the ball centre, and a face's sense is stated against that normal. A spine that is a chart (§7.3) of the centre locus lies near the locus, not on it. The exact centre at a chart point is the point of the chart's normal plane at the ball radius from both supports. Where the two contacts meet, the section is one point.
 
 A variable-radius blend result uses a `00 7c` B-spline surface-use wrapper and the solved NURBS carrier defined in §7.2. The B-rep stores the result surface, not a second procedural blend record or its radius law. The feature-history record carries the variable-radius design intent.
 

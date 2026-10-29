@@ -20856,38 +20856,8 @@ anchor = "The `Emboss` fixed-prefix form has nine ordered references."
 
 [[record.code]]
 path = "crates/cadmpeg-codec-f3d/src/records/feature/emboss.rs"
-contains = "(self.depth_owner, 4, 29)"
-note = "The value offset is one byte after the reference marker; the middle value is its ordered-table ordinal."
-
-[[record.code]]
-path = "crates/cadmpeg-codec-f3d/src/records/feature/emboss.rs"
-contains = "(self.auxiliary_group, 8, 40)"
-note = "The value offset is one byte after the reference marker; the middle value is its ordered-table ordinal."
-
-[[record.code]]
-path = "crates/cadmpeg-codec-f3d/src/records/feature/emboss.rs"
-contains = "(self.horizontal_owner, 5, 51)"
-note = "The value offset is one byte after the reference marker; the middle value is its ordered-table ordinal."
-
-[[record.code]]
-path = "crates/cadmpeg-codec-f3d/src/records/feature/emboss.rs"
-contains = "(self.rotation_owner, 7, 82)"
-note = "The value offset is one byte after the reference marker; the middle value is its ordered-table ordinal."
-
-[[record.code]]
-path = "crates/cadmpeg-codec-f3d/src/records/feature/emboss.rs"
-contains = "(self.face_group, 2, 93)"
-note = "The value offset is one byte after the reference marker; the middle value is its ordered-table ordinal."
-
-[[record.code]]
-path = "crates/cadmpeg-codec-f3d/src/records/feature/emboss.rs"
-contains = "(self.vertical_owner, 6, 104)"
-note = "The value offset is one byte after the reference marker; the middle value is its ordered-table ordinal."
-
-[[record.code]]
-path = "crates/cadmpeg-codec-f3d/src/records/feature/emboss.rs"
-contains = "(self.profile_group, 0, 119)"
-note = "The value offset is one byte after the reference marker; the middle value is its ordered-table ordinal."
+contains = "[4, 8, 5, 7, 2, 6, 0]"
+note = "Prefix-field order is Depth, auxiliary group, Horizontal Distance, Rotation Angle, target-face group, Vertical Distance, profile group. This table order selects the sole-member operand grammar."
 
 [[record]]
 name = "emboss_scope_reference_table_prefix"
@@ -20935,11 +20905,6 @@ type = "u32"
 value = 9
 source = "spec"
 anchor = "The `Emboss` fixed-prefix form has nine ordered references."
-
-[[record.code]]
-path = "crates/cadmpeg-codec-f3d/src/records/feature/emboss.rs"
-contains = "scope.byte_offset().checked_add(235) != Some(scope.reference_count_offset())"
-note = "The common reference count follows the complete null-GUID separator."
 
 [[record]]
 name = "rectangular_pattern_spacing_direction_record"
@@ -23892,3 +23857,369 @@ anchor = "The fixed fields are defined by `edge_flange_corner_operation`"
 offset = 299
 size = 321
 note = "Scope envelope follows the edge groups."
+
+
+[[type]]
+name = "component_body_membership_count"
+bytes = 4
+endianness = "little"
+section = "3.1"
+anchor = "The terminal Body-container membership"
+note = "The u32 count precedes the terminal Body-reference list."
+
+[[type]]
+name = "component_body_membership_reference"
+bytes = 51
+endianness = "little"
+section = "3.1"
+anchor = "The terminal Body-container membership"
+note = "A present same-segment reference with a nonzero u64 target, a 36-byte ASCII type GUID, and two trailing zero bytes."
+
+[[type]]
+name = "component_body_membership_local_reference"
+bytes = 11
+endianness = "little"
+section = "3.1"
+anchor = "The paired untyped Body-container membership"
+note = "A present untyped same-segment reference with a nonzero u64 target and two zero bytes."
+
+[[type]]
+name = "component_body_membership_local_entry"
+bytes = 15
+endianness = "little"
+section = "3.1"
+anchor = "The paired untyped Body-container membership"
+note = "An 11-byte untyped Body reference followed by u32 1 in the repeated body list. List order is independent; both lists contain the same unique body identities."
+
+
+[[type]]
+name = "component_body_membership_single_overhead"
+bytes = 15
+endianness = "little"
+section = "3.1"
+anchor = "The single untyped Body-container membership"
+note = "A u32 body count and an eleven-byte untyped owner reference enclose the single body list."
+
+[[record]]
+name = "operation_table_header"
+kind = "byte"
+section = "1.4"
+anchor = "a three-digit LP-ASCII class tag, a u64 indexed record identity"
+size = 15
+parsed_by = "crates/cadmpeg-codec-f3d/src/xref/operation_pose.rs"
+
+[[record.field]]
+name = "class_tag_length"
+offset = 0
+type = "u32"
+value = 3
+source = "spec"
+anchor = "a three-digit LP-ASCII class tag"
+
+[[record.field]]
+name = "class_tag"
+offset = 4
+type = "bytes[3]"
+source = "spec"
+anchor = "a three-digit LP-ASCII class tag"
+
+[[record.field]]
+name = "record_index"
+offset = 7
+type = "u64"
+source = "spec"
+anchor = "a u64 indexed record identity"
+
+[[record]]
+name = "current_extrude_face_target_payload"
+parsed_by = "crates/cadmpeg-codec-f3d/src/design/decode/scopes/fixed_parameters.rs"
+kind = "byte"
+section = "3.1"
+anchor = "The current face-target payload starts at the first-side extent"
+size = 54
+
+[[record.field]]
+name = "first_side_extent"
+offset = 0
+type = "u32"
+source = "spec"
+anchor = "The current face-target payload starts at the first-side extent"
+
+[[record.field]]
+name = "first_side_offset_reference"
+offset = 4
+type = "bytes[11]"
+source = "spec"
+anchor = "first-side offset reference at payload offset 4"
+
+[[record.gap]]
+offset = 15
+size = 4
+note = "Target padding."
+
+[[record.field]]
+name = "target_option"
+offset = 19
+type = "u32"
+source = "spec"
+anchor = "target option at offset 19 is one"
+value = 1
+
+[[record.field]]
+name = "second_side_extent"
+offset = 23
+type = "u32"
+source = "spec"
+anchor = "offset 23 stores the second-side extent"
+
+[[record.gap]]
+offset = 27
+size = 1
+note = "Target separator."
+
+[[record.field]]
+name = "second_side_offset_reference"
+offset = 28
+type = "bytes[11]"
+source = "spec"
+anchor = "offset 28 stores the second-side offset reference"
+
+[[record.gap]]
+offset = 39
+size = 4
+note = "Target padding."
+
+[[record.field]]
+name = "second_side_taper_reference"
+offset = 43
+type = "bytes[11]"
+source = "spec"
+anchor = "offset 43 stores the second-side taper reference"
+
+[[record]]
+name = "emboss_single_control_head"
+kind = "byte"
+section = "3.1"
+anchor = "Both heads contain the indexed header, nine zero bytes, the control lane"
+size = 61
+parsed_by = ["crates/cadmpeg-codec-f3d/src/design/decode/scopes/emboss.rs", "crates/cadmpeg-codec-f3d/src/records/feature/emboss.rs"]
+
+[[record.field]]
+name = "indexed_header"
+offset = 0
+type = "bytes[11]"
+source = "spec"
+anchor = "Both heads contain the indexed header, nine zero bytes, the control lane"
+
+[[record.field]]
+name = "zero_run"
+offset = 11
+type = "bytes[9]"
+source = "spec"
+anchor = "Both heads contain the indexed header, nine zero bytes, the control lane"
+value = [0, 0, 0, 0, 0, 0, 0, 0, 0]
+
+[[record.field]]
+name = "control_words"
+offset = 20
+type = "u32"
+source = "spec"
+anchor = "Both heads contain the indexed header, nine zero bytes, the control lane"
+
+[[record.field]]
+name = "depth_owner_reference"
+offset = 24
+type = "bytes[11]"
+source = "spec"
+anchor = "Both heads contain the indexed header, nine zero bytes, the control lane"
+
+[[record.field]]
+name = "auxiliary_group_reference"
+offset = 35
+type = "bytes[11]"
+source = "spec"
+anchor = "Both heads contain the indexed header, nine zero bytes, the control lane"
+
+[[record.field]]
+name = "horizontal_owner_reference"
+offset = 46
+type = "bytes[11]"
+source = "spec"
+anchor = "Both heads contain the indexed header, nine zero bytes, the control lane"
+
+[[record.field]]
+name = "native_pair_count"
+offset = 57
+type = "u32"
+source = "spec"
+anchor = "Both heads contain the indexed header, nine zero bytes, the control lane"
+
+[[record]]
+name = "emboss_two_control_head"
+kind = "byte"
+section = "3.1"
+anchor = "Both heads contain the indexed header, nine zero bytes, the control lane"
+size = 65
+parsed_by = ["crates/cadmpeg-codec-f3d/src/design/decode/scopes/emboss.rs", "crates/cadmpeg-codec-f3d/src/records/feature/emboss.rs"]
+
+[[record.field]]
+name = "indexed_header"
+offset = 0
+type = "bytes[11]"
+source = "spec"
+anchor = "Both heads contain the indexed header, nine zero bytes, the control lane"
+
+[[record.field]]
+name = "zero_run"
+offset = 11
+type = "bytes[9]"
+source = "spec"
+anchor = "Both heads contain the indexed header, nine zero bytes, the control lane"
+value = [0, 0, 0, 0, 0, 0, 0, 0, 0]
+
+[[record.field]]
+name = "control_words"
+offset = 20
+type = "u32[2]"
+source = "spec"
+anchor = "Both heads contain the indexed header, nine zero bytes, the control lane"
+
+[[record.field]]
+name = "depth_owner_reference"
+offset = 28
+type = "bytes[11]"
+source = "spec"
+anchor = "Both heads contain the indexed header, nine zero bytes, the control lane"
+
+[[record.field]]
+name = "auxiliary_group_reference"
+offset = 39
+type = "bytes[11]"
+source = "spec"
+anchor = "Both heads contain the indexed header, nine zero bytes, the control lane"
+
+[[record.field]]
+name = "horizontal_owner_reference"
+offset = 50
+type = "bytes[11]"
+source = "spec"
+anchor = "Both heads contain the indexed header, nine zero bytes, the control lane"
+
+[[record.field]]
+name = "native_pair_count"
+offset = 61
+type = "u32"
+source = "spec"
+anchor = "Both heads contain the indexed header, nine zero bytes, the control lane"
+
+[[record]]
+name = "emboss_native_pair"
+kind = "byte"
+section = "3.1"
+anchor = "An `Emboss` native pair contains two u64 values."
+size = 16
+parsed_by = ["crates/cadmpeg-codec-f3d/src/design/decode/scopes/emboss.rs", "crates/cadmpeg-codec-f3d/src/records/feature/emboss.rs"]
+
+[[record.field]]
+name = "values"
+offset = 0
+type = "u64[2]"
+source = "spec"
+anchor = "An `Emboss` native pair contains two u64 values."
+
+[[record]]
+name = "emboss_counted_suffix"
+kind = "byte"
+section = "3.1"
+anchor = "The `emboss_counted_suffix` layout starts immediately after the native pair run."
+size = 158
+parsed_by = ["crates/cadmpeg-codec-f3d/src/design/decode/scopes/emboss.rs", "crates/cadmpeg-codec-f3d/src/records/feature/emboss.rs"]
+
+[[record.field]]
+name = "rotation_owner_reference"
+offset = 0
+type = "bytes[11]"
+source = "spec"
+anchor = "The `emboss_counted_suffix` layout starts immediately after the native pair run."
+
+[[record.field]]
+name = "face_group_reference"
+offset = 11
+type = "bytes[11]"
+source = "spec"
+anchor = "The `emboss_counted_suffix` layout starts immediately after the native pair run."
+
+[[record.field]]
+name = "vertical_owner_reference"
+offset = 22
+type = "bytes[11]"
+source = "spec"
+anchor = "The `emboss_counted_suffix` layout starts immediately after the native pair run."
+
+[[record.field]]
+name = "profile_group_count"
+offset = 33
+type = "u32"
+source = "spec"
+anchor = "The `emboss_counted_suffix` layout starts immediately after the native pair run."
+value = 1
+
+[[record.field]]
+name = "profile_group_reference"
+offset = 37
+type = "bytes[11]"
+source = "spec"
+anchor = "The `emboss_counted_suffix` layout starts immediately after the native pair run."
+
+[[record.field]]
+name = "zero_tail"
+offset = 48
+type = "bytes[12]"
+source = "spec"
+anchor = "The `emboss_counted_suffix` layout starts immediately after the native pair run."
+value = [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
+
+[[record.field]]
+name = "face_group_count"
+offset = 60
+type = "u32"
+source = "spec"
+anchor = "The `emboss_counted_suffix` layout starts immediately after the native pair run."
+value = 1
+
+[[record.field]]
+name = "repeated_face_group_reference"
+offset = 64
+type = "bytes[11]"
+source = "spec"
+anchor = "The `emboss_counted_suffix` layout starts immediately after the native pair run."
+
+[[record.field]]
+name = "null_guid_count"
+offset = 75
+type = "u32"
+source = "spec"
+anchor = "The `emboss_counted_suffix` layout starts immediately after the native pair run."
+value = 36
+
+[[record.field]]
+name = "null_guid"
+offset = 79
+type = "u16[36]"
+source = "spec"
+anchor = "The `emboss_counted_suffix` layout starts immediately after the native pair run."
+
+[[record.field]]
+name = "zero_separator"
+offset = 151
+type = "bytes[3]"
+source = "spec"
+anchor = "The `emboss_counted_suffix` layout starts immediately after the native pair run."
+value = [0, 0, 0]
+
+[[record.field]]
+name = "reference_count"
+offset = 154
+type = "u32"
+source = "spec"
+anchor = "The `emboss_counted_suffix` layout starts immediately after the native pair run."

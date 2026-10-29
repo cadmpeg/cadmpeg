@@ -77,7 +77,9 @@ Manifest levels apply to every cargo command, so a warning fails `cargo build` a
 
 CI builds test binaries without debug information. A failure there reports a backtrace without `file:line`; run the failing test locally to get the line numbers back.
 
-PR CI tests only the packages a change reaches ([`scripts/ci_scope.py`](scripts/ci_scope.py)). A draft PR runs the static checks and clippy only. macOS and Windows run in the merge queue and on `main`.
+PR CI tests only the packages a change reaches ([`scripts/ci_scope.py`](scripts/ci_scope.py)). A draft PR runs the static checks and clippy only. macOS and Windows run in the nightly full gate, and on a `main` or merge-queue commit that selects the full gate, which includes every release bump. To run them on a branch, dispatch CI on it: `gh workflow run ci.yml --ref BRANCH`. CodeQL analyzes Rust and Python in its nightly run, not on pull requests. To run it on a branch, dispatch CodeQL: `gh workflow run codeql.yml --ref BRANCH`.
+
+PRs merge through the merge queue. The queue skips the gate when the PR's last passing run used the same base and merge tree. When main moved after that run, the queue runs the gate on the combined result. The `main` ruleset names the required checks by job name, so a renamed or added gate job also needs a ruleset change. A failing scheduled run opens a `scheduled-failure` issue for its workflow, assigned to the login in the `SCHEDULE_ALERT_ASSIGNEE` repository variable. The next passing scheduled run closes it.
 
 The `JsonSchema` derives sit behind a `schema` feature that is off by default, because only `cadmpeg_ir::cadir_json_schema()` consumes them and building them costs 26% of `cadmpeg-ir`'s compile time. Run the schema side when you change IR or native record types:
 
@@ -125,6 +127,7 @@ The checks cover recurring review points, not all of them. A check is a `scripts
 
 - [ ] The `Signed off` box in the pull request description is ticked.
 - [ ] For decoder/spec PRs: the provenance declaration is in the description.
+- [ ] The `Release note` section names a change that users see, starts with `Breaking:` when users must change a command, a script, or a stored file, or is empty. The release notes list each line (`scripts/release-notes.py`).
 - [ ] `python3 scripts/preflight.py` reports no `FAIL`.
 - [ ] `cargo fmt --all --check` passes.
 - [ ] `cargo clippy --workspace --all-targets` passes.

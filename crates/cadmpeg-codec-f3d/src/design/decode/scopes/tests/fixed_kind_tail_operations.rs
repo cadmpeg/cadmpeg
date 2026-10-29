@@ -993,6 +993,7 @@ pub(super) fn fixed_kind_tail_operations(
             side_two_taper_angle: None,
             profile_offset: None,
             side_one_offset: None,
+            ..Default::default()
         })
     );
     extrude_scope
@@ -1026,6 +1027,7 @@ pub(super) fn fixed_kind_tail_operations(
             side_two_taper_angle: None,
             profile_offset: None,
             side_one_offset: None,
+            ..Default::default()
         })
     );
     extrude_scope
@@ -1426,6 +1428,7 @@ pub(super) fn fixed_kind_tail_operations(
             side_two_taper_angle: None,
             profile_offset: None,
             side_one_offset: None,
+            ..Default::default()
         })
     );
     extrude_scope

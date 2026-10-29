@@ -38,6 +38,7 @@ pub(crate) struct Plan {
     pub(crate) faces: BTreeMap<FaceId, Choice>,
     pub(crate) feature_sources: BTreeSet<FeatureSourceId>,
     pub(crate) unresolved: usize,
+    pub(crate) unresolved_details: Vec<super::UnresolvedAppearanceBinding>,
     pub(crate) blocked_display_rank: u8,
 }
 
@@ -200,6 +201,7 @@ fn record_definition(
     (packed >> 24 == 0).then(|| AppearanceDefinition {
         name: "SolidWorks scoped appearance".into(),
         color: super::packed_rgb(packed),
+        packed_hex: format!("{packed:08x}"),
         source_name: section.source_stream().clone(),
         record_offset: at,
     })
@@ -332,6 +334,19 @@ pub(crate) fn resolve(
         let classes = crate::tessellation::class_intervals(bytes);
         let Some(bodies) = selected_bodies(ctx, bytes, inputs.model)? else {
             plan.unresolved += 1;
+            plan.unresolved_details
+                .push(super::UnresolvedAppearanceBinding {
+                    owner_class: "VisualStates".to_owned(),
+                    identity: section
+                        .name()
+                        .unwrap_or("ThirdPtyStore/VisualStates")
+                        .to_owned(),
+                    appearance_index: 0,
+                    reason: "display-state scope does not resolve to active configuration bodies"
+                        .to_owned(),
+                    source_offset: 0,
+                    packed_hex: None,
+                });
             for class in &classes {
                 let rank = match class.name.as_str() {
                     "moCompFeature_c" => 3,
@@ -449,6 +464,25 @@ pub(crate) fn resolve(
                                 .clone()?;
                             if !faces.uncertain.is_empty() {
                                 plan.unresolved += 1;
+                                plan.unresolved_details.push(
+                                    super::UnresolvedAppearanceBinding {
+                                        owner_class: "moCompFace_c".to_owned(),
+                                        identity: format!("{source}:{timestamp}"),
+                                        appearance_index: 0,
+                                        reason:
+                                            "feature faces contain uncertain members outside the resolved set"
+                                                .to_owned(),
+                                        source_offset: at,
+                                        packed_hex: Some(format!(
+                                            "{packed:08x}",
+                                            packed = View::u32_le_at(
+                                                bytes,
+                                                at + record::PACKED_COLOR
+                                            )
+                                            .unwrap_or(0)
+                                        )),
+                                    },
+                                );
                             }
                             for face in faces.uncertain.intersection(&scope) {
                                 merge(
@@ -483,6 +517,23 @@ pub(crate) fn resolve(
                     }
                 } else {
                     plan.unresolved += 1;
+                    plan.unresolved_details
+                        .push(super::UnresolvedAppearanceBinding {
+                            owner_class: class.name.clone(),
+                            identity: match rank {
+                                2 => "body".to_owned(),
+                                3 => View::u32_le_at(bytes, at + record::FEATURE_SOURCE_ID)
+                                    .map(|source| source.to_string())
+                                    .unwrap_or_default(),
+                                _ => "face".to_owned(),
+                            },
+                            appearance_index: 0,
+                            reason: "appearance target does not resolve to in-scope faces"
+                                .to_owned(),
+                            source_offset: at,
+                            packed_hex: View::u32_le_at(bytes, at + record::PACKED_COLOR)
+                                .map(|packed| format!("{packed:08x}")),
+                        });
                     for target in &scope {
                         merge(
                             &mut plan.faces,

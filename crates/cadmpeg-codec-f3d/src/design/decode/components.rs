@@ -702,7 +702,6 @@ pub(crate) struct ComponentDefinition {
 /// Local component definitions of one Design stream.
 #[derive(Debug, Clone, Default, PartialEq)]
 pub(crate) struct StreamComponents {
-    /// Root entity of every component naming space in the stream.
     pub(crate) root_entities: std::collections::BTreeSet<u64>,
     /// Component definition record to the naming space whose binding it stores.
     pub(crate) roots: std::collections::BTreeMap<u64, ComponentDefinition>,
@@ -778,6 +777,16 @@ pub(crate) fn revised_definitions_loss(
     })
 }
 
+/// Registered component entities with no context-UUID binding in this
+/// document; the session reports the dropped naming spaces.
+pub(crate) fn unbound_naming_spaces_loss(
+    count: usize,
+) -> Option<cadmpeg_ir::report::loss::LossNote> {
+    (count != 0).then(|| crate::loss::F3dLossCode::ComponentNamingSpaceUnbound.note(format!(
+        "{count} registered Design component(s) have no context-UUID binding in this document; their naming spaces were dropped and occurrences naming them stay unplaced."
+    )))
+}
+
 pub(crate) fn unbound_roots_loss(
     components: &std::collections::BTreeMap<String, StreamComponents>,
 ) -> Option<cadmpeg_ir::report::loss::LossNote> {
@@ -808,6 +817,11 @@ pub(crate) fn decode_local_components(
             .iter()
             .filter(|space| crate::ids::native_stream(&space.id) == Some(scope.as_str()))
             .collect::<Vec<_>>();
+        // A stream with no bound naming space contributes no entry: an empty
+        // StreamComponents holds no definition and no root, so every lookup
+        // misses the same way with or without it. Occurrences that name its
+        // dropped components stay unplaced through the existing
+        // NoRootComponent and DefinitionUnbound counts.
         if spaces.is_empty() {
             continue;
         }

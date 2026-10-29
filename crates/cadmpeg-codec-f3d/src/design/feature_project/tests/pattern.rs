@@ -176,10 +176,12 @@ fn assert_linear_seed(definition: FeatureDefinition, expected_seed: PatternSeed)
         spacing,
         count,
         second,
+        omitted_instances,
     } = pattern.definition().clone()
     else {
         panic!("linear rectangular pattern");
     };
+    assert!(omitted_instances.is_empty());
     assert!(direction.is_none());
     assert!((spacing.get() - 50.0).abs() < EPS_SPACING);
     assert_eq!(count, 3);
@@ -278,10 +280,12 @@ fn rectangular_pattern_direction_records_supply_both_directions() {
         spacing,
         count,
         second,
+        omitted_instances,
     } = pattern.definition().clone()
     else {
         panic!("linear rectangular pattern");
     };
+    assert!(omitted_instances.is_empty());
     let direction =
         cadmpeg_ir::features::FiniteVector3::from(direction.expect("first direction")).get();
     assert!((direction.x - 1.0).abs() < EPS_SPACING);
@@ -367,9 +371,15 @@ fn linear_direction(definition: FeatureDefinition) -> Option<cadmpeg_ir::math::V
     let FeatureDefinition::Operation(FeatureOperation::Pattern { pattern, .. }) = definition else {
         panic!("rectangular pattern definition");
     };
-    let PatternTransform::Linear { direction, .. } = pattern.definition().clone() else {
+    let PatternTransform::Linear {
+        direction,
+        omitted_instances,
+        ..
+    } = pattern.definition().clone()
+    else {
         panic!("linear rectangular pattern");
     };
+    assert!(omitted_instances.is_empty());
     direction.map(|direction| cadmpeg_ir::features::FiniteVector3::from(direction).get())
 }
 
@@ -557,10 +567,12 @@ fn spacing_pattern_payload_projects_both_axes_and_feature_seed() {
         spacing,
         count,
         second,
+        omitted_instances,
     } = pattern.definition()
     else {
         panic!("linear pattern");
     };
+    assert!(omitted_instances.is_empty());
     assert_eq!(*count, 5);
     assert!((spacing.get() - 17.0).abs() < EPS_SPACING);
     assert_eq!(

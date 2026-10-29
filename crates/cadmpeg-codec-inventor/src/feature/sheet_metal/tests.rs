@@ -373,3 +373,111 @@ fn projected_unchanged_corner_reports_every_retained_control() {
         assert!(losses[0].message.contains(control));
     }
 }
+
+fn native_corner_round() -> (FeatureInventory, cadmpeg_ir::features::Feature) {
+    use crate::feature::{PmDcFeatureLabelPayload, PmDcLinkedHeader};
+    use crate::test_support::sheet_metal::{feature, list, reference};
+    use cadmpeg_ir::ids::IdentityKey;
+
+    let source = feature(100, &[]);
+    let label = Located::new(
+        PmDcFeatureLabelPayload {
+            save_version_major: 29,
+            header: PmDcLinkedHeader {
+                header_value: 0,
+                header_id: 0,
+                values: [0, 0],
+                flags_extension: Some(0),
+                owner: reference(101),
+                parent: reference(0),
+                next: reference(0),
+            },
+            index: 1,
+            participants: list(&[]),
+            name: String::new(),
+            name_units: None,
+            class_id: super::super::CORNER_ROUND_CLASS_ID,
+        },
+        RecordTypeId::from_bytes(super::super::FEATURE_LABEL_TYPE),
+        IdentityKey::try_new("fixture").expect("token"),
+        200,
+    );
+    let mut native = corner_loss_input();
+    native.native_ref = Some(source.id());
+    native.evaluation = FeatureEvaluation::from_definition(FeatureDefinition::Operation(
+        FeatureOperation::Native {
+            kind: "Fillet".into(),
+            parameters: BTreeMap::new(),
+        },
+    ));
+    (
+        FeatureInventory {
+            features: vec![source],
+            labels: vec![label],
+            ..Default::default()
+        },
+        native,
+    )
+}
+
+#[test]
+fn native_corner_round_reports_its_pinned_operand_loss() {
+    let (inventory, feature) = native_corner_round();
+    let losses = native_kind_losses(&inventory, &[feature]);
+    assert_eq!(losses.len(), 1);
+    assert_eq!(
+        losses[0].code,
+        crate::loss::InventorLossCode::FeatureSheetMetalCornerRoundOperandsNative.kind()
+    );
+    assert_eq!(
+        losses[0].code.local_code(),
+        "feature.sheet-metal-corner-round-operands-native"
+    );
+    assert!(losses[0].message.contains("1 sheet-metal corner round(s)"));
+}
+
+#[test]
+fn corner_round_loss_requires_a_unique_class_owner_and_native_source() {
+    use cadmpeg_ir::ids::IdentityKey;
+
+    let (mut inventory, feature) = native_corner_round();
+    let mut label = serde_json::to_value(&inventory.labels[0]).expect("label");
+    label["class_id"] = serde_json::to_value(super::super::FILLET_CLASS_ID).expect("class");
+    inventory.labels[0] = serde_json::from_value(label).expect("ordinary fillet label");
+    assert!(native_kind_losses(&inventory, std::slice::from_ref(&feature)).is_empty());
+
+    let (mut inventory, feature) = native_corner_round();
+    inventory.labels.push(inventory.labels[0].clone());
+    assert!(native_kind_losses(&inventory, std::slice::from_ref(&feature)).is_empty());
+
+    let (mut inventory, feature) = native_corner_round();
+    inventory.labels[0].identity.segment_token = IdentityKey::try_new("other").expect("token");
+    assert!(native_kind_losses(&inventory, std::slice::from_ref(&feature)).is_empty());
+
+    let (mut inventory, feature) = native_corner_round();
+    let mut label = serde_json::to_value(&inventory.labels[0]).expect("label");
+    label["header"]["owner"] =
+        serde_json::to_value(crate::test_support::sheet_metal::reference(102)).expect("owner");
+    inventory.labels[0] = serde_json::from_value(label).expect("other owner");
+    assert!(native_kind_losses(&inventory, std::slice::from_ref(&feature)).is_empty());
+
+    let (inventory, mut feature) = native_corner_round();
+    feature.native_ref = None;
+    assert!(native_kind_losses(&inventory, &[feature]).is_empty());
+
+    let (inventory, mut feature) = native_corner_round();
+    feature.evaluation = FeatureEvaluation::from_definition(FeatureDefinition::Operation(
+        FeatureOperation::Fillet {
+            groups: vec![cadmpeg_ir::features::edge_treatments::FilletGroup {
+                edges: cadmpeg_ir::features::EdgeSelection::Native("synthetic-edges".to_owned()),
+                radius: cadmpeg_ir::features::edge_treatments::RadiusSpec::Constant {
+                    radius: cadmpeg_ir::scalar::PositiveLength::new(3.0).expect("radius"),
+                },
+                tangency_weight: None,
+            }]
+            .try_into()
+            .expect("groups"),
+        },
+    ));
+    assert!(native_kind_losses(&inventory, &[feature]).is_empty());
+}

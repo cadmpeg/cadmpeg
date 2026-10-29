@@ -57,6 +57,8 @@ fn validation_body_bounds(with_binding: bool) -> crate::native::F3dNative {
     if with_binding {
         native.design_body_bindings.push(
             DesignBodyBinding::try_from(DesignBodyBindingWire {
+                component_owner: None,
+                component_owner_unresolved: false,
                 id: binding_id.into(),
                 stream: "Design/BulkStream.dat".into(),
                 pair_count: 1,

@@ -339,6 +339,7 @@ pub(crate) fn bind_pattern_inputs(
                             spacing,
                             count,
                             second: None,
+                            omitted_instances: Vec::new(),
                         })
                         .map_err(|message| cadmpeg_core::CodecError::Malformed(message.into()))?;
                         model_features[model_index]
@@ -612,6 +613,7 @@ pub(crate) fn bind_pattern_inputs(
                         spacing,
                         count,
                         second,
+                        omitted_instances,
                     } = pattern.definition()
                     else {
                         return Ok(());
@@ -640,6 +642,7 @@ pub(crate) fn bind_pattern_inputs(
                         spacing: *spacing,
                         count: *count,
                         second,
+                        omitted_instances: omitted_instances.clone(),
                     })
                     .map_err(|message| cadmpeg_core::CodecError::Malformed(message.into()))?;
                 }

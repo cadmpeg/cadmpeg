@@ -5668,11 +5668,6 @@ fn text_semantic_annotation(
     let mut parameters = BTreeMap::new();
     parameters.insert(key, (*font_family).to_owned());
     Ok(Some(SemanticAnnotation {
-        id,
-        object: native_ref.to_owned(),
-        kind: SemanticAnnotationKind::Text,
-        runtime_type: "TEXT".to_owned(),
-        order,
         text: vec![(*text).to_owned()],
         references: BTreeMap::new(),
         value: None,
@@ -5680,7 +5675,14 @@ fn text_semantic_annotation(
         position: None,
         parameters,
         assets: Vec::new(),
-        native_ref: native_ref.to_owned(),
+        ..SemanticAnnotation::new(
+            id,
+            native_ref.to_owned(),
+            SemanticAnnotationKind::Text,
+            "TEXT".to_owned(),
+            order,
+            native_ref.to_owned(),
+        )
     }))
 }
 

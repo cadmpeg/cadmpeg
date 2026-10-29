@@ -667,10 +667,6 @@
             "X": "<Float value=\"80.0000000000000000\"/>",
             "Y": "<Float value=\"125.0000000000000000\"/>"
           },
-          "position": [
-            80.0,
-            125.0
-          ],
           "relationships": {
             "References2D": [
               {
@@ -811,7 +807,60 @@
           "native_ref": "fcstd:native:drawing#Template",
           "object": "fcstd:native:object#Template",
           "order": 1,
-          "runtime_type": "TechDraw::DrawSVGTemplate"
+          "runtime_type": "TechDraw::DrawSVGTemplate",
+          "sheet": {
+            "height_mm": 297.0,
+            "width_mm": 210.0
+          },
+          "template_geometry": {
+            "curves": [
+              {
+                "end": [
+                  205.0,
+                  292.0
+                ],
+                "kind": "line",
+                "start": [
+                  5.0,
+                  292.0
+                ]
+              },
+              {
+                "end": [
+                  205.0,
+                  5.0
+                ],
+                "kind": "line",
+                "start": [
+                  205.0,
+                  292.0
+                ]
+              },
+              {
+                "end": [
+                  5.0,
+                  5.0
+                ],
+                "kind": "line",
+                "start": [
+                  205.0,
+                  5.0
+                ]
+              },
+              {
+                "end": [
+                  5.0,
+                  292.0
+                ],
+                "kind": "line",
+                "start": [
+                  5.0,
+                  5.0
+                ]
+              }
+            ],
+            "texts": []
+          }
         },
         {
           "direction": [
@@ -850,7 +899,12 @@
           },
           "rotation_degrees": 0.0,
           "runtime_type": "TechDraw::DrawViewPart",
-          "scale": 1.0
+          "scale": 1.0,
+          "x_direction": [
+            1.0,
+            0.0,
+            0.0
+          ]
         }
       ],
       "edges": [
@@ -1886,6 +1940,9 @@
             "fcstd:native:entry#BoxCorners",
             "fcstd:native:entry#Dimension.SavedGeometry.0.brp"
           ],
+          "dimension_kind": {
+            "kind": "distance"
+          },
           "format": "%.2w",
           "id": "fcstd:model:semantic-annotation#Dimension:content",
           "kind": "dimension",
@@ -1991,7 +2048,11 @@
           "runtime_type": "TechDraw::DrawViewAnnotation",
           "text": [
             "CC0 INSPECTION NOTE"
-          ]
+          ],
+          "text_style": {
+            "font_family": "osifont",
+            "height": 5.0
+          }
         },
         {
           "id": "fcstd:model:semantic-annotation#Symbol:content",
@@ -2463,7 +2524,58 @@
         }
       }
     },
-    "losses": [],
+    "losses": [
+      {
+        "code": {
+          "code": "drawing.template-not-transferred",
+          "kind": "record_not_typed",
+          "namespace": "fcstd",
+          "scope": "namespaced"
+        },
+        "message": "fcstd:native:object#Template: unsupported or invalid SVG text subtree; original asset is retained",
+        "severity": "warning"
+      },
+      {
+        "code": {
+          "code": "drawing.style-not-transferred",
+          "kind": "record_not_typed",
+          "namespace": "fcstd",
+          "scope": "namespaced"
+        },
+        "message": "fcstd:native:object#Template: SVG stroke, fill and font appearance remain in the asset; text em sizes are millimetres",
+        "severity": "warning"
+      },
+      {
+        "code": {
+          "code": "drawing.view-geometry-not-stored",
+          "kind": "record_not_typed",
+          "namespace": "fcstd",
+          "scope": "namespaced"
+        },
+        "message": "fcstd:native:object#View: projected view edges are runtime geometry; source B-rep and view parameters are retained",
+        "severity": "warning"
+      },
+      {
+        "code": {
+          "code": "drawing.style-not-transferred",
+          "kind": "record_not_typed",
+          "namespace": "fcstd",
+          "scope": "namespaced"
+        },
+        "message": "fcstd:native:object#Dimension: untyped font properties, alignment, colour, line spacing, rich text, captions and dimension presentation remain native",
+        "severity": "warning"
+      },
+      {
+        "code": {
+          "code": "drawing.style-not-transferred",
+          "kind": "record_not_typed",
+          "namespace": "fcstd",
+          "scope": "namespaced"
+        },
+        "message": "fcstd:native:object#Note: untyped font properties, alignment, colour, line spacing, rich text, captions and dimension presentation remain native",
+        "severity": "warning"
+      }
+    ],
     "notes": [
       "SchemaVersion=4",
       "FileVersion=1",

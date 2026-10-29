@@ -31,6 +31,7 @@ fn linear<C>(count: u32) -> PatternTransform<C> {
         spacing: PositiveLength::new(1.0).unwrap(),
         count,
         second: None,
+        omitted_instances: Vec::new(),
     }
 }
 
@@ -57,6 +58,7 @@ fn pattern_admission_rejects_invalid_numeric_operands() {
                 spacing: PositiveLength::new(1.0).unwrap(),
                 count: 0,
             }),
+            omitted_instances: Vec::new(),
         },
         PatternTransform::Circular {
             axis_origin: origin,
@@ -286,6 +288,7 @@ fn composite_pattern_counts_use_primary_instance_counts() {
             spacing: PositiveLength::new(1.0).unwrap(),
             count: 3,
         }),
+        omitted_instances: Vec::new(),
     };
     let scale = PatternTransform::Scale {
         center: PatternScaleCenter::FirstSeedCentroid,
@@ -367,3 +370,5 @@ fn circular_angle_patterns_admit_only_a_unit_axis_on_the_wire() {
     let decoded = serde_json::from_value::<PatternKind>(near_unit.clone()).unwrap();
     assert_eq!(serde_json::to_value(decoded).unwrap(), near_unit);
 }
+
+mod omissions;

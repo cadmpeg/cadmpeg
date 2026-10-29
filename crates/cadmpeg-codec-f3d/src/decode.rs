@@ -916,8 +916,14 @@ fn feature_definition_is_incomplete(definition: &cadmpeg_ir::features::FeatureDe
             let replacements = operands.replacements();
             !face_selection_is_resolved(targets) || !face_selection_is_resolved(replacements)
         }
-        FeatureDefinition::Operation(FeatureOperation::SplitBody { targets, tools }) => {
-            !body_selection_is_resolved(targets) || !face_selection_is_resolved(tools)
+        FeatureDefinition::Operation(FeatureOperation::SplitBody { targets, tool }) => {
+            !body_selection_is_resolved(targets)
+                || match tool {
+                    cadmpeg_ir::features::SplitBodyTool::Faces(faces) => {
+                        !face_selection_is_resolved(faces)
+                    }
+                    cadmpeg_ir::features::SplitBodyTool::Plane { .. } => false,
+                }
         }
         FeatureDefinition::Operation(FeatureOperation::OffsetSurface {
             faces, distance, ..
@@ -1945,6 +1951,23 @@ fn report_design_projection_gaps(
             gaps.unrepaired_lost_edge_references
         ),);
     }
+    for scope in &native.design_parameter_scopes {
+        if scope.kind() != crate::records::feature::scope::DesignFeatureKind::Emboss {
+            continue;
+        }
+        let (code, reason) = if scope.emboss_construction().is_some() {
+            (F3dLossCode::EmbossControlsNative,
+             "control words, native pairs, scalar-owner links, selection links, contour membership, and placement have no neutral Wrap mapping")
+        } else {
+            (
+                F3dLossCode::EmbossPrefixUnparsed,
+                "the operation prefix does not match an admitted native Emboss form",
+            )
+        };
+        report
+            .losses
+            .push(code.note(format!("{}: {reason}.", scope.id)));
+    }
     let mut push = |code: F3dLossCode,
                     count: usize,
                     message: std::fmt::Arguments<'_>|
@@ -2456,6 +2479,7 @@ impl<'a> F3dDecodeSession<'a> {
             );
         }
         let design_body_bindings = crate::design::decode::body::decode_design_body_bindings(
+            ctx,
             scan,
             Some(&primary_model_brep.name),
             &brep.asm.body_native_keys,
@@ -2593,6 +2617,11 @@ impl<'a> F3dDecodeSession<'a> {
                 prereqs.design_ambiguous_current_poses,
             ),
         );
+        self.report.losses.extend(
+            crate::design::decode::components::unbound_naming_spaces_loss(
+                prereqs.design_unbound_component_naming_spaces,
+            ),
+        );
         let path = self.decode_products(path, &prereqs)?;
         let design = self.decode_design_state(&path, &prereqs)?;
         self.finalize(path, prereqs, design)
@@ -2683,6 +2712,7 @@ impl<'a> F3dDecodeSession<'a> {
             SessionPath::Geometry(_) => std::mem::take(&mut self.native.design_body_bindings),
             SessionPath::Bodyless { .. } => {
                 crate::design::decode::body::decode_design_body_bindings(
+                    self.ctx,
                     self.scan,
                     None,
                     &self.native.body_native_keys,
@@ -2849,10 +2879,19 @@ impl<'a> F3dDecodeSession<'a> {
                 || !prereqs.design_body_bindings.is_empty()
                 || container::text_brep_names(scan).next().is_some(),
         );
+        let hidden_bodies = self
+            .ir
+            .model
+            .bodies
+            .iter()
+            .filter(|body| body.visible == Some(false))
+            .map(|body| body.id.clone())
+            .collect::<std::collections::BTreeSet<_>>();
         let local_sources = crate::design::components::LocalComponentSources {
             scopes: &prereqs.design_parameter_scopes,
             occurrences: &prereqs.design_component_occurrences,
             components: &local_components,
+            hidden_bodies: Some(&hidden_bodies),
             body_bindings: &prereqs.design_body_bindings,
             bodies: bodies.as_ref(),
             root_ordinal_start: prereqs
@@ -3127,8 +3166,34 @@ pub(crate) fn decode<'a>(ctx: &DecodeContext<'a>, root: View<'a>) -> Result<Deco
     match &scan.kind {
         container::F3dContainerKind::MultiDocument { .. } => crate::f3z::decode(ctx, &scan),
         container::F3dContainerKind::Document { .. } => {
-            decode_scanned_document(ctx, &scan, crate::report::ReportScope::Standalone)
-                .map(AuthoredDecoded::into_decoded)
+            let mut decoded =
+                decode_scanned_document(ctx, &scan, crate::report::ReportScope::Standalone)?;
+            let poses = crate::xref::operation_pose::collect(
+                ctx,
+                &scan,
+                &decoded.ir,
+                &mut decoded.body.losses,
+            )?;
+            crate::xref::operation_pose::project(
+                ctx,
+                &mut decoded.ir,
+                &poses,
+                &std::collections::BTreeSet::new(),
+                &mut decoded.body.losses,
+            )?;
+            decoded.ir.finalize();
+            let hash = cadmpeg_ir::hash::document_local_sha256(
+                ctx,
+                &decoded.ir,
+                Some(&decoded.source),
+                "f3d",
+                crate::ids::FILE_SOURCE_IMAGE_ID,
+            )?;
+            decoded.source.attributes.insert(
+                cadmpeg_core::nonblank_const!(cadmpeg_ir::hash::DOCUMENT_LOCAL_DIGEST_ATTRIBUTE),
+                hash,
+            );
+            Ok(decoded.into_decoded())
         }
     }
 }
@@ -3139,11 +3204,14 @@ pub(crate) fn decode_archive_member<'a>(
     scan: &'a ContainerScan<'a>,
     dialects: &cadmpeg_core::dialect::DialectLayers,
 ) -> Result<AuthoredDecoded, CodecError> {
-    decode_scanned_document(
+    let mut decoded = decode_scanned_document(
         ctx,
         scan,
         crate::report::ReportScope::ArchiveMember(dialects.clone()),
-    )
+    )?;
+    decoded.operation_poses =
+        crate::xref::operation_pose::collect(ctx, scan, &decoded.ir, &mut decoded.body.losses)?;
+    Ok(decoded)
 }
 
 fn decode_scanned_document<'a>(
@@ -3199,7 +3267,7 @@ fn decode_scanned_document<'a>(
 
     let model_selection = crate::design::decode::body::design_model_selection(scan)?;
     let unbound_body_bindings =
-        crate::design::decode::body::decode_design_body_bindings(scan, None, &[])?;
+        crate::design::decode::body::decode_design_body_bindings(ctx, scan, None, &[])?;
     let model_breps = model_brep_candidates(scan, &model_selection.blob_names)?;
     let mut brep_outcome = if model_selection.explicitly_empty {
         ModelBrepOutcome::NoPhysicalModel
@@ -3502,7 +3570,21 @@ fn project_mesh_bodies(
     native: &mut F3dNative,
     report: &mut DecodeBody,
 ) -> Result<MeshProjection, CodecError> {
-    let decoded = crate::design::decode::mesh::decode_mesh_bodies(ctx, scan)?;
+    let decoded = match crate::design::decode::mesh::decode_mesh_bodies(ctx, scan) {
+        Ok(decoded) => decoded,
+        Err(CodecError::ResourceLimit(e)) => return Err(CodecError::ResourceLimit(e)),
+        Err(e) => {
+            push_loss_vec(
+                &mut report.losses,
+                F3dLossCode::MeshContainerUndecoded,
+                format_args!("mesh bodies could not be decoded: {e}"),
+            );
+            return Ok(MeshProjection {
+                count: 0,
+                tessellations_by_scope: std::collections::HashMap::new(),
+            });
+        }
+    };
     native.design_mesh_features = decoded.features;
     let mut texture_assets = Vec::new();
     for texture in native
@@ -4101,6 +4183,8 @@ impl std::fmt::Display for XrefPropertyNote<'_> {
 
 /// A decoded member whose authored source remains available to archive composition.
 pub(crate) struct AuthoredDecoded {
+    pub(crate) operation_poses:
+        std::collections::BTreeMap<String, crate::xref::operation_pose::OperationPose>,
     pub(crate) ir: CadIr,
     pub(crate) source: cadmpeg_ir::SourceMeta,
     pub(crate) body: DecodeBody,
@@ -4166,6 +4250,7 @@ fn decode_result(
         hash,
     );
     Ok(AuthoredDecoded {
+        operation_poses: std::collections::BTreeMap::new(),
         ir,
         source,
         body: report,

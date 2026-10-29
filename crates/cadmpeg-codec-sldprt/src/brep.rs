@@ -40,11 +40,13 @@ const EPS_BREP_VALID_CARRIER_SCALARS_E9: f64 = 1.0e-9;
 
 pub(crate) mod attrib;
 mod blend;
+mod blend_surface;
 pub(crate) mod entity;
 pub(crate) mod evaluation;
 mod index;
 mod intersection;
 mod offset;
+pub(crate) mod read_ledger;
 pub(crate) mod spline;
 mod subset;
 mod sweep;
@@ -277,6 +279,39 @@ pub(crate) fn parse_carrier(body: &[u8], off: usize) -> Option<Carrier> {
         .filter_map(|marker_at| parse_carrier_at_marker(body, off, tt, attr, n, marker_at));
     let carrier = candidates.next()?;
     candidates.next().is_none().then_some(carrier)
+}
+
+/// Every compact analytic carrier the body admits, as body-relative spans.
+///
+/// The sweep matches [`index::scan_carriers`]: each `00 TT` offset is parsed
+/// with the same structural and geometry invariants, and every success names
+/// its record extent. Spline tags are not analytic carriers and never match.
+pub(crate) fn analytic_spans(body: &[u8]) -> Vec<read_ledger::RawSpan> {
+    let mut spans = Vec::new();
+    let mut i = 0usize;
+    while i + 2 <= body.len() {
+        if body[i] == 0x00 {
+            if let Some(carrier) = parse_carrier(body, i) {
+                let (attr, end) = match &carrier {
+                    Carrier::Curve(carrier) => (carrier.attr, carrier.end),
+                    Carrier::Surface(carrier) => (carrier.attr, carrier.end),
+                };
+                if let (Some(tag), Some(length)) = (
+                    body.get(i + 1).copied(),
+                    end.checked_sub(i).filter(|length| *length > 0),
+                ) {
+                    spans.push(read_ledger::RawSpan {
+                        offset: i,
+                        length,
+                        tag,
+                        record: attr,
+                    });
+                }
+            }
+        }
+        i += 1;
+    }
+    spans
 }
 
 /// Map a tag's decoded f64 run to IR geometry, applying the ×1000 length rule to

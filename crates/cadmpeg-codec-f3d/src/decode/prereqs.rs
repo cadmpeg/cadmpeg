@@ -57,6 +57,9 @@ pub(super) struct ProductPrereqs {
     /// the document stays here; design intent then does not run.
     pub(super) design_feature_timelines: Result<Vec<DesignFeatureTimeline>, CodecError>,
     pub(super) design_component_naming_spaces: Vec<DesignComponentNamingSpace>,
+    /// Registered component entities with no context-UUID binding in this
+    /// document; the session reports them as a loss.
+    pub(super) design_unbound_component_naming_spaces: usize,
     pub(super) design_body_bindings: Vec<DesignBodyBinding>,
     pub(super) design_body_members: Vec<DesignBodyMember>,
     /// Retained-byte allowance for ASM history binding, taken before phase 1.
@@ -108,6 +111,7 @@ impl ProductPrereqs {
             design_joint_motions,
             design_feature_timelines,
             design_component_naming_spaces,
+            design_unbound_component_naming_spaces: _,
             design_body_bindings,
             design_body_members,
             history_retained_allowance: _,
@@ -212,8 +216,10 @@ pub(super) fn decode(
         Err(error @ CodecError::ResourceLimit(_)) => return Err(error),
         other => other,
     };
-    let design_component_naming_spaces =
-        crate::design::decode::meta::decode_component_naming_spaces(scan)?;
+    let crate::design::decode::meta::DecodedComponentNamingSpaces {
+        spaces: design_component_naming_spaces,
+        unbound: design_unbound_component_naming_spaces,
+    } = crate::design::decode::meta::decode_component_naming_spaces(scan)?;
     let design_body_members = crate::design::decode::body::decode_body_members(scan)?;
     let xref = match crate::xref::decode_with_scopes(ctx, scan, &design_parameter_scopes) {
         Err(error @ (CodecError::ResourceLimit(_) | CodecError::NotImplemented(_))) => {
@@ -241,6 +247,7 @@ pub(super) fn decode(
         design_joint_motions,
         design_feature_timelines,
         design_component_naming_spaces,
+        design_unbound_component_naming_spaces,
         design_body_bindings,
         design_body_members,
         history_retained_allowance,

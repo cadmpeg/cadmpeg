@@ -65,11 +65,15 @@ pub(crate) enum InventorLossCode {
     FeatureLabelNameReplaced,
     /// Typed feature records have an operation graph that is not closed.
     FeatureOperationGraphOpen,
+    /// Extrusion construction operands remain native.
+    FeatureExtrusionOperandsNative,
+    /// An extrusion retains its exact profile selection without a neutral sketch graph.
+    FeatureExtrusionProfileNative,
     /// Rectangular patterns retain construction operands outside the fixed-spacing feature form.
     FeatureRectangularPatternOperandsNative,
     /// Thread annotations retain sizing and termination operands only natively.
     FeatureThreadDefinitionPartial,
-    /// Thicken selections and thickness side remain native operands.
+    /// Thicken selections, construction controls, or thickness side remain native.
     FeatureThickenOperandsNative,
     /// Shell operations retain construction controls only natively.
     FeatureShellDefinitionPartial,
@@ -79,6 +83,8 @@ pub(crate) enum InventorLossCode {
     FeatureSheetMetalBendControlsNative,
     /// Corner topology transitions and construction operands remain native.
     FeatureSheetMetalCornerEffectNative,
+    /// Sheet-metal corner rounds retain unresolved fillet operands.
+    FeatureSheetMetalCornerRoundOperandsNative,
     /// Projected unchanged corners retain construction controls natively.
     FeatureSheetMetalCornerControlsRetained,
     /// Projected attached plates retain construction controls in native records.
@@ -91,6 +97,8 @@ pub(crate) enum InventorLossCode {
     FeatureRevolveOperandsNative,
     /// Mirror operands differ from the identity-frame, zero-option construction.
     FeatureMirrorOperandsNative,
+    /// A history work plane's stored in-plane axes are not orthonormal.
+    FeatureWorkPlaneFrameNative,
     /// Revolve extents retain unresolved angular termination operands.
     FeatureRevolveExtentNative,
     /// Fixed-angle revolutions retain an unresolved direction control.
@@ -101,8 +109,20 @@ pub(crate) enum InventorLossCode {
     FeatureSweepControlsUnresolved,
     /// Loft construction controls and section conditions have no exact neutral interpretation.
     FeatureLoftControlsUnresolved,
+    /// Section scalar operands do not close a positional loft construction.
+    FeatureLoftSectionScalarsNative,
+    /// Solid-loft operands do not close the positional construction.
+    FeatureLoftOperandsNative,
+    /// Generated result operands do not close the solid-loft construction.
+    FeatureLoftResultOperandsNative,
+    /// Surface-loft section selections have no complete neutral construction.
+    FeatureSurfaceLoftSectionsNative,
     /// Inventor operations retain unresolved suppression and dependency state.
     FeatureStateUnresolved,
+    /// Derived components retain external source construction only natively.
+    FeatureDerivedSourceNative,
+    /// Derived-part tagging has no neutral construction rule.
+    FeatureDerivedTaggingNative,
     /// Parameter records have a unit or expression graph that is not closed.
     ParameterGraphOpen,
     /// Parameter records have an expression whose text passes the local cap.
@@ -143,6 +163,8 @@ pub(crate) enum InventorLossCode {
     AssemblyComponentExternal,
     /// Assembly occurrence placements could not be transferred.
     AssemblyPlacementNotTransferred,
+    /// Occurrences hidden below a root occurrence stay in native records.
+    AssemblyVisibilityNestedNative,
     /// The document was read with a grammar its own declarations do not select.
     SourceDialectUnverified,
     /// The active kernel carrier used an unverified Spatial ACIS grammar band.
@@ -181,6 +203,8 @@ impl InventorLossCode {
         Self::FeatureProfileBodyUndecoded,
         Self::FeatureLabelNameReplaced,
         Self::FeatureOperationGraphOpen,
+        Self::FeatureExtrusionOperandsNative,
+        Self::FeatureExtrusionProfileNative,
         Self::FeatureRectangularPatternOperandsNative,
         Self::FeatureThreadDefinitionPartial,
         Self::FeatureThickenOperandsNative,
@@ -188,18 +212,26 @@ impl InventorLossCode {
         Self::FeatureSheetMetalAttachmentControlsNative,
         Self::FeatureSheetMetalBendControlsNative,
         Self::FeatureSheetMetalCornerEffectNative,
+        Self::FeatureSheetMetalCornerRoundOperandsNative,
         Self::FeatureSheetMetalCornerControlsRetained,
         Self::FeatureSheetMetalAttachmentControlsRetained,
         Self::FeatureSheetMetalBendControlsRetained,
         Self::FeatureSheetMetalStyleFormsNative,
         Self::FeatureRevolveOperandsNative,
         Self::FeatureMirrorOperandsNative,
+        Self::FeatureWorkPlaneFrameNative,
         Self::FeatureRevolveExtentNative,
         Self::FeatureRevolveDirectionNative,
         Self::FeatureRevolveControlUnresolved,
         Self::FeatureSweepControlsUnresolved,
         Self::FeatureLoftControlsUnresolved,
+        Self::FeatureLoftSectionScalarsNative,
+        Self::FeatureLoftOperandsNative,
+        Self::FeatureLoftResultOperandsNative,
+        Self::FeatureSurfaceLoftSectionsNative,
         Self::FeatureStateUnresolved,
+        Self::FeatureDerivedSourceNative,
+        Self::FeatureDerivedTaggingNative,
         Self::ParameterGraphOpen,
         Self::ParameterExpressionBounded,
         Self::ParameterScopeUnresolved,
@@ -220,6 +252,7 @@ impl InventorLossCode {
         Self::UfrxSchemaUnsupported,
         Self::AssemblyComponentExternal,
         Self::AssemblyPlacementNotTransferred,
+        Self::AssemblyVisibilityNestedNative,
         Self::SourceDialectUnverified,
         Self::KernelDialectUnverified,
         Self::KernelCarrierUnparseable,
@@ -254,6 +287,8 @@ impl InventorLossCode {
             Self::FeatureRectangularPatternOperandsNative => {
                 "feature.rectangular-pattern-operands-native"
             }
+            Self::FeatureExtrusionOperandsNative => "feature.extrusion-operands-native",
+            Self::FeatureExtrusionProfileNative => "feature.extrusion-profile-native",
             Self::FeatureOperationGraphOpen => "feature.operation-graph-open",
             Self::FeatureThreadDefinitionPartial => "feature.thread-definition-partial",
             Self::FeatureThickenOperandsNative => "feature.thicken-operands-native",
@@ -263,6 +298,9 @@ impl InventorLossCode {
             }
             Self::FeatureSheetMetalBendControlsNative => "feature.sheet-metal-bend-controls-native",
             Self::FeatureSheetMetalCornerEffectNative => "feature.sheet-metal-corner-effect-native",
+            Self::FeatureSheetMetalCornerRoundOperandsNative => {
+                "feature.sheet-metal-corner-round-operands-native"
+            }
             Self::FeatureSheetMetalCornerControlsRetained => {
                 "feature.sheet-metal-corner-controls-retained"
             }
@@ -274,13 +312,20 @@ impl InventorLossCode {
             }
             Self::FeatureSheetMetalStyleFormsNative => "feature.sheet-metal-style-forms-native",
             Self::FeatureMirrorOperandsNative => "feature.mirror-operands-native",
+            Self::FeatureWorkPlaneFrameNative => "feature.work-plane-frame-native",
             Self::FeatureRevolveOperandsNative => "feature.revolve-operands-native",
             Self::FeatureRevolveExtentNative => "feature.revolve-extent-native",
             Self::FeatureRevolveDirectionNative => "feature.revolve-direction-native",
             Self::FeatureRevolveControlUnresolved => "feature.revolve-control-unresolved",
             Self::FeatureSweepControlsUnresolved => "feature.sweep-controls-unresolved",
             Self::FeatureLoftControlsUnresolved => "feature.loft-controls-unresolved",
+            Self::FeatureLoftSectionScalarsNative => "feature.loft-section-scalars-native",
+            Self::FeatureLoftOperandsNative => "feature.loft-operands-native",
+            Self::FeatureLoftResultOperandsNative => "feature.loft-result-operands-native",
+            Self::FeatureSurfaceLoftSectionsNative => "feature.surface-loft-sections-native",
             Self::FeatureStateUnresolved => "feature.state-unresolved",
+            Self::FeatureDerivedSourceNative => "feature.derived-source-native",
+            Self::FeatureDerivedTaggingNative => "feature.derived-tagging-native",
             Self::ParameterGraphOpen => "parameter.graph-open",
             Self::ParameterExpressionBounded => "parameter.expression-bounded",
             Self::ParameterScopeUnresolved => "parameter.scope-unresolved",
@@ -301,6 +346,7 @@ impl InventorLossCode {
             Self::UfrxSchemaUnsupported => "ufrx.schema-unsupported",
             Self::AssemblyComponentExternal => "assembly.component-external",
             Self::AssemblyPlacementNotTransferred => "assembly.placement-not-transferred",
+            Self::AssemblyVisibilityNestedNative => "assembly.visibility-nested-native",
             Self::SourceDialectUnverified => "source.dialect-unverified",
             Self::KernelDialectUnverified => "source.kernel-dialect-unverified",
             Self::KernelCarrierUnparseable => "source.kernel-carrier-unparseable",
@@ -347,6 +393,8 @@ impl InventorLossCode {
             }
             Self::KernelHeaderToleranceUnresolved => LossTaxonomy::GeometryNotTransferred,
             Self::FeatureOperationGraphOpen
+            | Self::FeatureExtrusionOperandsNative
+            | Self::FeatureExtrusionProfileNative
             | Self::FeatureRectangularPatternOperandsNative
             | Self::FeatureThreadDefinitionPartial
             | Self::FeatureThickenOperandsNative
@@ -354,21 +402,29 @@ impl InventorLossCode {
             | Self::FeatureSheetMetalAttachmentControlsNative
             | Self::FeatureSheetMetalBendControlsNative
             | Self::FeatureSheetMetalCornerEffectNative
+            | Self::FeatureSheetMetalCornerRoundOperandsNative
             | Self::FeatureSheetMetalCornerControlsRetained
             | Self::FeatureSheetMetalAttachmentControlsRetained
             | Self::FeatureSheetMetalBendControlsRetained
             | Self::FeatureSheetMetalStyleFormsNative
             | Self::FeatureMirrorOperandsNative
+            | Self::FeatureWorkPlaneFrameNative
             | Self::FeatureRevolveOperandsNative
             | Self::FeatureRevolveExtentNative
             | Self::FeatureRevolveDirectionNative
             | Self::FeatureRevolveControlUnresolved
             | Self::FeatureSweepControlsUnresolved
             | Self::FeatureLoftControlsUnresolved
+            | Self::FeatureLoftSectionScalarsNative
+            | Self::FeatureLoftOperandsNative
+            | Self::FeatureLoftResultOperandsNative
+            | Self::FeatureSurfaceLoftSectionsNative
             | Self::FeatureProfileBodyUndecoded
             | Self::SketchConstructionUnresolved
             | Self::SketchPairedAssociationUnprojected
             | Self::FeatureStateUnresolved
+            | Self::FeatureDerivedSourceNative
+            | Self::FeatureDerivedTaggingNative
             | Self::SketchGraphOpen => LossTaxonomy::FeatureHistoryRetained,
             Self::ParameterGraphOpen
             | Self::ParameterExpressionBounded
@@ -383,9 +439,9 @@ impl InventorLossCode {
             | Self::ProteinGuidAmbiguous
             | Self::MaterialDistanceUnitUntyped
             | Self::AppearanceFaceOverrideUnresolved => LossTaxonomy::MaterialNotTransferred,
-            Self::UfrxSchemaUnsupportedAssembly | Self::AssemblyComponentExternal => {
-                LossTaxonomy::AssemblyComponentsExternal
-            }
+            Self::UfrxSchemaUnsupportedAssembly
+            | Self::AssemblyComponentExternal
+            | Self::AssemblyVisibilityNestedNative => LossTaxonomy::AssemblyComponentsExternal,
             Self::AssemblyPlacementNotTransferred => LossTaxonomy::AssemblyPlacementsNotTransferred,
             Self::SourceDialectUnverified | Self::KernelDialectUnverified => {
                 LossTaxonomy::SourceDialectUnverified
@@ -446,6 +502,8 @@ mod tests {
                 "feature.profile-body-undecoded",
                 "feature.label-name-replaced",
                 "feature.operation-graph-open",
+                "feature.extrusion-operands-native",
+                "feature.extrusion-profile-native",
                 "feature.rectangular-pattern-operands-native",
                 "feature.thread-definition-partial",
                 "feature.thicken-operands-native",
@@ -453,18 +511,26 @@ mod tests {
                 "feature.sheet-metal-attachment-controls-native",
                 "feature.sheet-metal-bend-controls-native",
                 "feature.sheet-metal-corner-effect-native",
+                "feature.sheet-metal-corner-round-operands-native",
                 "feature.sheet-metal-corner-controls-retained",
                 "feature.sheet-metal-attachment-controls-retained",
                 "feature.sheet-metal-bend-controls-retained",
                 "feature.sheet-metal-style-forms-native",
                 "feature.revolve-operands-native",
                 "feature.mirror-operands-native",
+                "feature.work-plane-frame-native",
                 "feature.revolve-extent-native",
                 "feature.revolve-direction-native",
                 "feature.revolve-control-unresolved",
                 "feature.sweep-controls-unresolved",
                 "feature.loft-controls-unresolved",
+                "feature.loft-section-scalars-native",
+                "feature.loft-operands-native",
+                "feature.loft-result-operands-native",
+                "feature.surface-loft-sections-native",
                 "feature.state-unresolved",
+                "feature.derived-source-native",
+                "feature.derived-tagging-native",
                 "parameter.graph-open",
                 "parameter.expression-bounded",
                 "parameter.scope-unresolved",
@@ -485,6 +551,7 @@ mod tests {
                 "ufrx.schema-unsupported",
                 "assembly.component-external",
                 "assembly.placement-not-transferred",
+                "assembly.visibility-nested-native",
                 "source.dialect-unverified",
                 "source.kernel-dialect-unverified",
                 "source.kernel-carrier-unparseable",

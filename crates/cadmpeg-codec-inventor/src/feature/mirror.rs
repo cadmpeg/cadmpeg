@@ -482,7 +482,9 @@ pub(crate) fn seed_feature_id(
                 super::RECTANGULAR_PATTERN_FEATURE_TYPE
             }
         }
-        super::history::HistoryNodeKind::Sketch => return None,
+        super::history::HistoryNodeKind::Sketch | super::history::HistoryNodeKind::WorkPlane => {
+            return None
+        }
     };
     if seed.type_id != crate::record_identity::RecordTypeId::from_bytes(seed_type) {
         return None;

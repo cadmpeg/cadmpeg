@@ -143,6 +143,11 @@ impl From<crate::topology::IncreasingParameterInterval> for FiniteVector<2> {
 pub struct NonzeroVector<const N: usize>([f64; N]);
 
 impl<const N: usize> NonzeroVector<N> {
+    /// Borrow the finite, nonzero coordinates.
+    pub const fn as_raw(&self) -> &[f64; N] {
+        &self.0
+    }
+
     /// Construct finite coordinates with a nonzero accepted norm.
     pub fn new(value: [f64; N]) -> Option<Self> {
         FiniteVector::new(value).and_then(Self::from_finite)

@@ -377,7 +377,7 @@ The spec's field list places the record region at byte 20. The parser expects th
 | -----: | ---: | ----- | ---- | ------ | --- | ------- |
 | 0 | 12 | `magic` | `bytes[12]` | little | derived | Width derived from the length of the stated ASCII magic. |
 | 12 | 4 | `version` | `u32` | little | spec | `version:u32 LE (3)` |
-| 16 | 4 | `payload_size` | `u32` | little | spec | `payload_size:u32 LE`, a record region |
+| 16 | 4 | `payload_size` | `u32` | little | spec | `payload_size:u32 LE`, four unassigned bytes, a record region |
 
 ## `extrefstream_handle_set_record`
 

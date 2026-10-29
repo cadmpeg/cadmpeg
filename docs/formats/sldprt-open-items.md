@@ -34,6 +34,38 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 **Need.** An explicit native field relation must distinguish a complete selector from a prefix-only selector before a colliding source/local pair can select one face.
 
+### BC-09. Dummy-FIN partner corroboration
+
+**Question.** Which native field corroborates the ring-order endpoints of an unwalked boundary-dummy canonical FIN before the dummy joins a face loop?
+
+**Known.** `decode.rs` withholds an edge through `TopologyFinPartnerUnresolved` when an unwalked boundary-dummy canonical FIN lacks reciprocal partner corroboration of both ring-order endpoints, or when a mutual twin FIN contradicts the ring-order endpoint; every dummy in a public face loop carries this corroboration (#517).
+
+**Need.** We must know the corroborating field that admits a dummy FIN to a face loop.
+
+### BC-10. FIN-link withholding
+
+**Question.** Which native field distinguishes a FIN backward link that names no reciprocal same-loop forward link from a valid ring closure?
+
+**Known.** `decode.rs` withholds a ring through `TopologyFinLinkUnresolved` when a FIN backward link names no reciprocal same-loop forward link; the ring stays unwalked (#517).
+
+**Need.** We must know the link grammar that walks such a ring.
+
+### BC-11. Vertexless ring-edge admission
+
+**Question.** Which native record admits a vertexless ring edge onto its carrier?
+
+**Known.** `decode.rs` admits a vertexless ring edge only with reciprocal opposite FINs on the same unbounded circle carrier, a face-owned single-FIN loop, and at most one sheet dummy; every other vertexless ring edge stays native under `TopologyRingEdgeWithheld`, with vertices as stored (#517).
+
+**Need.** We must know the native admission record that places such an edge on its carrier.
+
+### BC-12. Stored face-sense against coedge parity
+
+**Question.** Which native field decides the face sense when the stored sense contradicts the shared-edge coedge parity?
+
+**Known.** The decoder keeps each face's stored sense and reports the disagreement through `TopologyFaceSenseConflict` (#504). `sldprt.md` §7.1 gives the three-reversal neutral sense composition and states that coedge markers do not constrain face senses. The native rule for the disagreement awaits a specimen.
+
+**Need.** We must know the native rule that resolves the disagreement.
+
 ## 2. Geometry carriers
 
 ### GC-02. Missing intersection witnesses
@@ -110,6 +142,16 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 **Need.** We must define whether the wrapper marker, the basis curve marker, or another field sets the direction of such an edge.
 
+### GC-13. `00 28` chart field offsets
+
+**Question.** Which byte offsets hold the seventh f64, the two absent-value sentinels, and the point block of a `00 28` chart?
+
+**Known.** `sldprt.md` §7.3 lists the ordered fields `count u32 BE, attr u16 BE, base_parameter f64 BE, base_scale f64 BE, chart_count u32 BE, chordal_error f64 BE`, one further f64, then the sentinels at body +36 and +44, then `count` point entries at body +52. The unnamed seventh f64 occupies body +34 through +41 and overlaps the first sentinel at body +36. `docs/layouts/sldprt.toml` records the overlap as a `[[record.discrepancy]]`; `brep/intersection.rs` reads the sentinels at `preamble + 36` and `preamble + 44` and the point block at `preamble + 52` with `preamble = body + 6`. §4 uses body-relative offsets elsewhere, so the two conventions collide in one document.
+
+**Need.** We must know the native offsets to emit the record: seventh f64, sentinels, point block.
+
+**Conflict.** The specification's stated offsets and the decoder's read offsets disagree, and no open item tracked the native truth.
+
 ## 3. Container metadata
 
 ### CM-01. Cache-cell prefix
@@ -166,9 +208,19 @@ A later `PS\0\0` is a boundary only when the bytes from that position contain a 
 
 **Question.** Which field binds an inactive configuration without `SourceIndex` to its bodies?
 
-**Known.** Decimal `SourceIndex=N` binds a Keywords configuration to `Config-N-Partition`. The Keywords decimal `id` selects `Config-N-ResolvedFeatures` and is independent of the partition identity. Element order and regeneration ordinal do not bind a partition. A uniquely named active configuration can use the active geometry partition. `crates/cadmpeg-ir/src/features.rs:57` defines `ConfigurationBodies::Unresolved` for every remaining configuration whose body membership is not established.
+**Known.** Decimal `SourceIndex=N` binds a Keywords configuration to `Config-N-Partition`. The Keywords decimal `id` selects `Config-N-ResolvedFeatures` and is independent of the partition identity. Element order and regeneration ordinal do not bind a partition. A uniquely named active configuration can use the active geometry partition. `decode.rs` counts configurations with no body selection and reports them through `ConfigIncoherentBodyRefs`; `BodySelection::Unresolved` (`cadmpeg-ir/src/features.rs`) marks every remaining configuration whose body membership is not established.
 
 **Need.** We must know whether another stored field binds an inactive source-less configuration. The body membership stays `Unresolved`.
+
+### CM-15. Outer version word
+
+**Question.** Which values can the outer header version word take?
+
+**Known.** `sldprt.md` §1.1 records the word (u32 big-endian at offset 4) with observed value `0x00000004`. In `dialect.rs`, `scan` stores `0` on the compound-file branch and stores the read value in the `outer_version` attribute; admission ignores the value.
+
+**Need.** Observed values from native files settle whether the word is fixed.
+
+**Conflict.** The specification records a fixed value; the decoder admits every value.
 
 ## 4. Auxiliary lanes
 
@@ -194,7 +246,7 @@ A later `PS\0\0` is a boundary only when the bytes from that position contain a 
 
 **Known.** `sldprt.md` §8 defines native display-state selection, three complete part-default class chains, body identity through `ATOM_ID_2001`, and generated-face feature scope through current `FACE_ID_2001` source and timestamp values. Four-word face values identify a feature-scoped owner set without a local face selector. A `moCompFace_c` object can carry a complete multi-component path. A terminal source, timestamp, and local triple can match more than one current face or omit another affected current face. A bare definition supplies no ownership. Unresolved higher-rank paths do not supply lower-rank appearance fallbacks.
 
-**Need.** The complete path-to-current-face binding for retained or modified feature faces and direct face assignments, and a complete holderless part-default owner relation. A unique terminal triple in one current identity set does not establish a general path-truncation rule.
+**Need.** The complete path-to-current-face binding for retained or modified feature faces and direct face assignments, and a complete holderless part-default owner relation. A unique terminal triple in one current identity set does not establish a general path-truncation rule. A DisplayLists display-face table with conflicting reused class tags withholds its persistent join through `TessellationReusedTagAmbiguous` (`decode.rs`, #506, 78e93f783b). The reused class tag is part of this item's open binding question.
 
 ### AL-06. Decal mapping fields
 
