@@ -326,7 +326,7 @@ pub(in crate::design) fn parse_design_parameter(
         // The earlier discriminated family writes the document trailer as
         // six zero bytes and `01 00 01`.
         let earlier_family = family_discriminator
-            .is_some_and(|discriminator| matches!(discriminator.code(), 0 | 3 | 4));
+            .is_some_and(|discriminator| matches!(discriminator.code(), 0..=4));
         let valid_expression_trailer = if document {
             expression_trailer == [0, 0, 0, 0, 0, 0, 0, 0, 1]
                 || long_document_trailer
@@ -744,7 +744,7 @@ fn valid_design_parameter_family(
     tail: u8,
 ) -> bool {
     use crate::records::parameters::DesignParameterDiscriminator::{
-        Code0, Code3, Code4, Code5, Code6,
+        Code0, Code1, Code2, Code3, Code4, Code5, Code6,
     };
     match tail {
         16 => {
@@ -753,7 +753,7 @@ fn valid_design_parameter_family(
         }
         17 => discriminator == Some(Code6),
         18 | 19 => discriminator.is_none_or(|value| {
-            matches!(value, Code0 | Code3 | Code4)
+            matches!(value, Code0 | Code1 | Code2 | Code3 | Code4)
                 || (value == Code6 && source_kind == "TangencyWeight")
         }),
         _ => false,

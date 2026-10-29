@@ -342,7 +342,7 @@ the native feature when a fixed lane carries a symmetric distance.
 
 **Question.** What do the u32 and u64 fields in the fourteen-byte persistent selection tail select?
 
-**Known.** The 204-byte member retains the complete local, asset, and context identity and a present optional slot. Its extra bytes are `00`, u32 `2`, u64 `1`, and `00`. A following Design header or the stream-end boundary terminates the tail. The frame extent distinguishes this form from the 190-byte member without a new identity field.
+**Known.** The 204-byte member retains the complete local, asset, and context identity and a present optional slot. Its extra bytes are `00`, u32 `2`, u64 `1`, and `00`. A following Design header or the stream-end boundary terminates the tail. The frame extent distinguishes this form from the 190-byte member without a new identity field. A further member form follows the context identity with u32 `2`, eleven zero bytes, and a run of u32 `255` values up to the next Design header; its owning Extrude selection group then has no admitted member.
 
 **Need.** Independently varied tail fields and an unchanged selected entity must establish each field's meaning before the grammar admits other values.
 

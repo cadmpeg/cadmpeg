@@ -275,7 +275,7 @@ fn parameter_variants_have_exact_string_and_scalar_boundaries() {
     assert_eq!(scale_factor.unit(), None);
     assert_eq!(scale_factor.evaluated_value().get(), 1.0);
 
-    for discriminator in [3u64, 4] {
+    for discriminator in [1u64, 2, 3, 4] {
         let mut earlier_distance = parameter_record(
             Some(44),
             "Width / 2",
