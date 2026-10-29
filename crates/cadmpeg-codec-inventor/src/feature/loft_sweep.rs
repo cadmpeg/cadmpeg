@@ -12,8 +12,10 @@ use crate::pmdc::{
     content_header, type_id_string, Cursor, PmDcListMetadata, PmDcReference, PmDcReferenceList,
 };
 
+pub(crate) mod controls;
 pub(super) mod projection;
 pub(crate) mod slots;
+pub(crate) mod validation;
 
 pub(crate) fn retained_control_losses<'a>(
     definitions: impl IntoIterator<Item = &'a cadmpeg_ir::features::FeatureDefinition>,

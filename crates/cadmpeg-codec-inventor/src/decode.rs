@@ -862,6 +862,7 @@ fn decode_container<'a>(
         ));
         losses.extend(unresolved.extrusion_losses);
         losses.extend(unresolved.revolve_losses);
+        losses.extend(unresolved.loft_losses);
         losses.extend(unresolved.mirror_losses);
         losses.extend(crate::feature::work_plane::native_losses(
             &feature_inventory.work_planes,
@@ -1375,6 +1376,7 @@ struct UnresolvedDesign {
     sketch_construction: usize,
     extrusion_losses: Vec<cadmpeg_ir::report::loss::LossNote>,
     revolve_losses: Vec<cadmpeg_ir::report::loss::LossNote>,
+    loft_losses: Vec<cadmpeg_ir::report::loss::LossNote>,
     mirror_losses: Vec<cadmpeg_ir::report::loss::LossNote>,
 }
 
@@ -1451,6 +1453,7 @@ fn project_design(
         sketch_construction: sketches.unresolved_construction,
         extrusion_losses: features.extrusion_losses,
         revolve_losses: features.revolve_losses,
+        loft_losses: features.loft_losses,
         mirror_losses: features.mirror_losses,
     })
 }

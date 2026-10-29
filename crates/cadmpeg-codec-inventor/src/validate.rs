@@ -1465,6 +1465,27 @@ fn validate_features(
             model: &ir.model,
         },
     );
+    let loft_index = ir
+        .model
+        .features
+        .iter()
+        .any(|feature| {
+            matches!(
+                feature.evaluation.definition(),
+                cadmpeg_ir::features::FeatureDefinition::Operation(
+                    cadmpeg_ir::features::FeatureOperation::Loft { .. }
+                )
+            )
+        })
+        .then(|| {
+            crate::feature::loft_sweep::validation::ValidationIndex::new(
+                &ir.model,
+                &data.pm_dc_sketches,
+                &data.pm_dc_kernel_entity_links,
+                &data.pm_dc_entity_style_links,
+                &data.pm_dc_sketch_entities,
+            )
+        });
     let motion_index = crate::feature::motion::ValidationIndex::new(
         &data.pm_dc_feature_properties,
         &data.pm_dc_transforms,
@@ -1759,6 +1780,47 @@ fn validate_features(
             ));
             continue;
         };
+        if matches!(
+            definition,
+            cadmpeg_ir::features::FeatureDefinition::Operation(
+                cadmpeg_ir::features::FeatureOperation::Loft { .. }
+            )
+        ) {
+            let token = raw_feature.identity.segment_token.as_str();
+            let matches = labels
+                .get(&(token, raw_feature.identity.record_ordinal))
+                .is_some_and(|label| {
+                    loft_index.as_ref().is_some_and(|index| {
+                        index.matches(
+                            raw_feature,
+                            label,
+                            definition,
+                            |reference| {
+                                feature_properties
+                                    .get(&(token, reference.record_ordinal()?))?
+                                    .as_ref()
+                                    .copied()
+                            },
+                            |reference| {
+                                let parameter = feature_parameters
+                                    .get(&(token, reference.record_ordinal()?))?
+                                    .as_ref()?;
+                                let value = parameter_values
+                                    .get(parameter.id().as_str())?
+                                    .as_ref()?
+                                    .value
+                                    .as_ref()?;
+                                Some((*parameter, value))
+                            },
+                        )
+                    })
+                });
+            if !matches {
+                findings.push(finding(Check::NativeLinks,
+                    "Inventor solid loft does not match its positional operands or generated result".into(),
+                    Some(feature.id.as_str().to_owned())));
+            }
+        }
         if matches!(family, crate::feature::FeatureFamily::Extrusion)
             && !labels
                 .get(&(

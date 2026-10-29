@@ -185,6 +185,7 @@ pub(crate) struct FeatureProjection {
     pub(crate) unresolved_states: usize,
     pub(crate) extrusion_losses: Vec<cadmpeg_ir::report::loss::LossNote>,
     pub(crate) revolve_losses: Vec<cadmpeg_ir::report::loss::LossNote>,
+    pub(crate) loft_losses: Vec<cadmpeg_ir::report::loss::LossNote>,
     pub(crate) mirror_losses: Vec<cadmpeg_ir::report::loss::LossNote>,
     /// Closed loops that resolved extrusion profiles append to sketch
     /// profile tables, by sketch id, in table order.
@@ -2044,6 +2045,7 @@ pub(crate) fn project(
             unresolved_states: 0,
             extrusion_losses: Vec::new(),
             revolve_losses: Vec::new(),
+            loft_losses: Vec::new(),
             mirror_losses: mirror::native_losses(&inventory.pattern_features, &[]),
             added_profiles: HashMap::new(),
         });
@@ -2228,6 +2230,7 @@ pub(crate) fn project(
     let mut projected = Vec::new();
     let mut extrusion_losses = Vec::new();
     let mut revolve_losses = Vec::new();
+    let mut loft_losses = Vec::new();
     let mut neutral = 0_usize;
     for feature in &inventory.features {
         let label = label_of(feature.identity.record_ordinal);
@@ -2248,9 +2251,14 @@ pub(crate) fn project(
                 FeatureFamily::Bend => None,
                 FeatureFamily::Thicken => project_thicken(ctx, feature, label, &index, inventory),
                 FeatureFamily::Shell => project_shell(ctx, feature, label, &index),
-                FeatureFamily::Sweep | FeatureFamily::Loft => {
-                    loft_sweep::projection::project(ctx, feature, label, &index, family)
-                }
+                FeatureFamily::Sweep | FeatureFamily::Loft => loft_sweep::projection::project(
+                    ctx,
+                    feature,
+                    label,
+                    &index,
+                    family,
+                    &mut loft_losses,
+                ),
                 FeatureFamily::Revolve => {
                     project_revolve(ctx, feature, label, &index, &mut revolve_losses)
                 }
@@ -2482,6 +2490,7 @@ pub(crate) fn project(
         unresolved_states: unresolved_states.min(neutral),
         extrusion_losses,
         revolve_losses,
+        loft_losses,
         mirror_losses: mirror::native_losses(&inventory.pattern_features, &features),
         features,
         result_topologies,
