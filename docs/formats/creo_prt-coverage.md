@@ -59,7 +59,14 @@ include each section's header; they are byte counts.
 
 The release checks below used the reader before the extended order-table fix.
 `dump`, `query`, and native `check` complete for every release. `check` has no
-findings. Every decode has 393 coverage counters and 20 loss notes.
+findings. Every decode then had 393 coverage counters and 20 loss notes.
+These counts are stale: they predate #360 (Creo 11 through 13 order tables),
+#415 (compact plane axes and boundary orientation), #416 (operation-state
+projection), #418 (type-4 dimension radius), and #425 (circular sweep-table
+source circle). `loss.rs` now defines 79 loss codes. The mandated rebuild
+with the current reader and the confirmation of three retained order rows in
+Creo 11 through 13, with repeated geometry, feature, and loss comparisons,
+are still pending. The counts below read as historical until that rebuild confirms them.
 The visible namespace contains 19 surface rows and 48 curve-topology rows.
 Five surface carriers and 20 curve carriers remain untransferred. Face
 admission retains nine faces and rejects ten: five lack a surface carrier and

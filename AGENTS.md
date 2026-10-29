@@ -3,6 +3,9 @@ A task brief or issue that states its own rule for its work takes precedence ove
 Writing:
 
 - Write dense, direct technical prose in ASD-STE100. No hype, filler, rhetorical framing, or emphasis.
+- State each fact once, affirmatively. Never define by negation: no "X, not Y" doublets, no "only X ... never Y" pairs, no "the spec gives/states/names no ..." tails. The open item's existence already records the gap; a Known paragraph that ends with the code behavior needs no closing "no rule" sentence.
+  - Bad: "the value is observed, not required"; "reads the word only into `outer_version` and never compares it"; "`sldprt.md` §8 gives no prose for reused class tags".
+  - Good: "every value decodes"; "the decoder stores the word in `outer_version`"; cut the tail.
 - Specifications state the settled format model as fact: byte semantics and invariants only. They carry no corpus, sample, experiment, or provenance qualifiers, and no research history, project status, implementation bugs, or export behavior.
 - Genuine unknowns go in `docs/formats/*-open-items.md`, with the fields Question, Known, Need, Conflict, and Note only. Finite evidence is not an unknown. When an item is settled, write the answer into the specification and delete the item in the same change.
 - Fixed byte offsets live in `docs/layouts/<format>.toml`. Read the table before you derive an offset, and record a settled fixed-offset layout there. `docs/layouts/README.md` gives the check and regeneration commands.

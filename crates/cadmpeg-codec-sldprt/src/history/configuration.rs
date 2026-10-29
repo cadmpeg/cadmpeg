@@ -889,7 +889,7 @@ pub(crate) fn project_configuration_sketch_states(
         configuration_lane_assignments(&ir.model.configurations, lanes);
     let base = configuration_definitions(&ir.model.features);
     for (configuration_index, configuration) in ir.model.configurations.iter_mut().enumerate() {
-        // DI-55: a valid configuration lane owns its unresolved slots. The
+        // A valid configuration lane owns its unresolved slots. The
         // document definition is a fallback only for an unscoped snapshot.
         if scoped_configuration_indices
             .iter()

@@ -246,6 +246,16 @@ the native feature when a fixed lane carries a symmetric distance.
 
 **Need.** The value can count mesh bodies removed from the feature. A design in which mesh bodies are inserted and removed one at a time, saved after each step, fixes the value and shows whether a flagged collection keeps bodies.
 
+### DR-115. Mesh container decode-failure taxonomy
+
+**Question.** Which malformed or unsupported container states does `mesh.container-undecoded` cover, and does the retained error identify the failing stage?
+
+**Known.** `f3d.md` §1.1.2 "When a document's mesh-body metadata" defines the omission: a mesh body whose metadata or referenced `.paramesh` container fails the container grammar transfers no tessellation and reports `mesh.container-undecoded` with the entry name and the decode error. B-rep evaluation then proceeds. The specification gives the container layout; the per-stage failure taxonomy awaits definition.
+
+**Need.** Containers that fail at each stage (magic, version, reserved run, protobuf framing, name-table order, descriptor grammar, stream encoding, declared counts) must show which failures this loss covers and whether the retained error text identifies the failing stage, before a reader can distinguish malformed input from an unsupported container generation.
+
+**Note.** A resource-limit failure returns an error through the error path.
+
 ### DR-86. Linked component-binding entity
 
 **Question.** What is the entity that a linked component context binding names between the component reference and the context UUID?
@@ -531,6 +541,36 @@ the native feature when a fixed lane carries a symmetric distance.
 
 **Note.** The body identities and terminal list are defined; their component-definition join is unresolved.
 
+### DR-116. Joint-placed identity occurrences of inserted designs
+
+**Question.** Which native relation binds a joint to each inserted-design occurrence that stores the identity, and in which frame does that joint define the solved pose?
+
+**Known.** `f3d.md` §1.4 "The matrix is a proper rigid motion." defines stored identity placement and the component-path world-pose carriers. A joint names an occurrence directly through an occurrence container, or names an inserted design through an external operand container, leaving the neutral tie unresolved; each distinct external document then accounts for at most one unnamed identity occurrence. The decoder counts these occurrences, reports `assembly.joint-placed-occurrence-unsolved`, and places them at the identity with the joint unsolved.
+
+**Need.** An inserted design whose occurrence stores the identity and whose joint solution is known must name the binding relation (direct occurrence reference or external-document container) and the frame of the solved pose, before the decoder can place these occurrences from their joints.
+
+**Note.** DR-113 covers solved placement without a bound assembly operand generally; this joint-to-occurrence binding is a separate question.
+
+### DR-119. Entity-cluster component-ownership fallback
+
+**Question.** When no admitted Body-container membership names a solved body, which entity cluster selects its component owner, and when does that selection disagree with the authored ownership?
+
+**Known.** `f3d.md` §3.1 "The paired untyped Body-container membership" defines the admitted membership join. A solved body binding without that membership takes entity-cluster component ownership, and the decoder reports `assembly.component-body-owner-fallback`. Owner-graph cycles and expansion-limit drops leave occurrences unplaced under `assembly.local-occurrence-owner-cycle` and `assembly.local-occurrence-expansion-limit`.
+
+**Need.** Controlled saves that delete or omit Body-container memberships while holding entity clusters fixed must show which cluster the fallback selects and whether the selected owner matches the authored component, before neutral ownership can rely on the fallback.
+
+**Note.** DR-75 defines the local occurrence carrier GUID; the validity of this fallback is a separate question.
+
+### XR-05. F3Z member cycle, absence, and decode-failure paths
+
+**Question.** Do the cycle, absence, and decode-failure losses exhaust the unresolvable member states of a multi-document merge?
+
+**Known.** `f3d.md` §1.5 "Reference resolution is member-local and recursive." defines member-local recursive resolution. A member path that recurs in the active chain reports `xref.cycle` and stays unresolved. A member absent from the archive reports `xref.member-missing`. A present member that is not an F3D document member, that cannot be scanned, or that fails to decode reports `xref.member-undecoded`. Unscannable members are marked unreadable at scan time and skipped at merge time with that scan-time mark as their record. Resource-limit failures return an error.
+
+**Need.** A merge that must continue past each unresolvable member needs each such state mapped to its loss, so the mapping covers every unresolvable state and every skipped resolvable member.
+
+**Note.** The occurrence keeps its placement while its member stays unresolved; the merge continues with the remaining members.
+
 ## 3. Material assets
 
 ### MA-04. Texture map-channel values
@@ -616,6 +656,16 @@ the native feature when a fixed lane carries a symmetric distance.
 **Conflict.** None.
 
 **Note.** The face operand record is validated as a frame. The Split operation keeps its existing projection rules.
+
+### TS-07. T-spline cage decode-failure taxonomy
+
+**Question.** Which cage program failures does `tspline.cage-undecoded` cover?
+
+**Known.** `f3d.md` §1.1.1 "A `TSplines.BlobParts/*.tsm` entry is a UTF-8" defines the cage program. A cage entry that fails to parse transfers no surface and reports `tspline.cage-undecoded` with the entry name and the error. Untyped records and unresolved radial pairs have their own losses and remain outside this item.
+
+**Need.** Cage entries that fail at each program stage must show which failures this loss covers, before a reader can distinguish malformed cages from unsupported program generations.
+
+**Note.** This item is minor: the B-rep stream retains the committed face geometry of an undecoded cage.
 
 ### DR-121. Emboss controls and extended selections
 
