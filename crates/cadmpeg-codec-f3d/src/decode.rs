@@ -1855,7 +1855,7 @@ fn report_unparsed_parameter_records(
             &mut report.losses,
             F3dLossCode::ParameterRecordUnparsed,
             format_args!(
-                "{} typed compact parameter frame(s) in {} match no parameter grammar and were not decoded.",
+                "{} parameter frame(s) in {} match no parameter grammar and were not decoded.",
                 records.count, records.stream
             ),
         );
