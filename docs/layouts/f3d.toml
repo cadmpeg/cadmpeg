@@ -23964,3 +23964,69 @@ offset = 7
 type = "u64"
 source = "spec"
 anchor = "a u64 indexed record identity"
+
+[[record]]
+name = "current_extrude_face_target_payload"
+parsed_by = "crates/cadmpeg-codec-f3d/src/design/decode/scopes/fixed_parameters.rs"
+kind = "byte"
+section = "3.1"
+anchor = "The current face-target payload starts at the first-side extent"
+size = 54
+
+[[record.field]]
+name = "first_side_extent"
+offset = 0
+type = "u32"
+source = "spec"
+anchor = "The current face-target payload starts at the first-side extent"
+
+[[record.field]]
+name = "first_side_offset_reference"
+offset = 4
+type = "bytes[11]"
+source = "spec"
+anchor = "first-side offset reference at payload offset 4"
+
+[[record.gap]]
+offset = 15
+size = 4
+note = "Target padding."
+
+[[record.field]]
+name = "target_option"
+offset = 19
+type = "u32"
+source = "spec"
+anchor = "target option at offset 19 is one"
+value = 1
+
+[[record.field]]
+name = "second_side_extent"
+offset = 23
+type = "u32"
+source = "spec"
+anchor = "offset 23 stores the second-side extent"
+
+[[record.gap]]
+offset = 27
+size = 1
+note = "Target separator."
+
+[[record.field]]
+name = "second_side_offset_reference"
+offset = 28
+type = "bytes[11]"
+source = "spec"
+anchor = "offset 28 stores the second-side offset reference"
+
+[[record.gap]]
+offset = 39
+size = 4
+note = "Target padding."
+
+[[record.field]]
+name = "second_side_taper_reference"
+offset = 43
+type = "bytes[11]"
+source = "spec"
+anchor = "offset 43 stores the second-side taper reference"

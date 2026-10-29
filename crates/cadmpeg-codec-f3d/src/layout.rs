@@ -6894,3 +6894,20 @@ pub(crate) mod operation_table_header {
     /// Offset of `record_index` (`u64`, little-endian). Spec §1.4.
     pub(crate) const RECORD_INDEX: usize = 7;
 }
+
+/// Byte offsets for the `current_extrude_face_target_payload` record.
+///
+/// Spec §3.1. Record length 54 B.
+pub(crate) mod current_extrude_face_target_payload {
+    /// Offset of `first_side_offset_reference` (`bytes[11]`). Spec §3.1.
+    #[cfg(test)]
+    pub(crate) const FIRST_SIDE_OFFSET_REFERENCE: usize = 4;
+    /// Offset of `target_option` (`u32`, little-endian). Spec §3.1.
+    pub(crate) const TARGET_OPTION: usize = 19;
+    /// Offset of `second_side_extent` (`u32`, little-endian). Spec §3.1.
+    pub(crate) const SECOND_SIDE_EXTENT: usize = 23;
+    /// Offset of `second_side_offset_reference` (`bytes[11]`). Spec §3.1.
+    pub(crate) const SECOND_SIDE_OFFSET_REFERENCE: usize = 28;
+    /// Offset of `second_side_taper_reference` (`bytes[11]`). Spec §3.1.
+    pub(crate) const SECOND_SIDE_TAPER_REFERENCE: usize = 43;
+}

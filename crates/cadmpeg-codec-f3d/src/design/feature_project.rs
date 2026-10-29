@@ -8079,10 +8079,17 @@ fn project_extrude(
     let face_side_one_offset =
         side_one_offset.or_else(|| omitted_zero_side_one_offset.then_some(Length::ZERO));
     let effective_side_one_offset = side_one_offset.filter(|offset| offset.get() != 0.0);
-    let side_two_offset = match or_none!(unique("Side2Offset")) {
+    let parameter_side_two_offset = match or_none!(unique("Side2Offset")) {
         Some(parameter) => Some(or_none!(design_length(parameter))),
         None => None,
     };
+    let side_two_offset = or_none!(offset(
+        parameter_side_two_offset,
+        or_none!(fixed_length(
+            fixed_lanes.and_then(|fixed| fixed.side_two_offset.as_ref())
+        )),
+    )
+    .ok());
     let effective_side_two_offset = side_two_offset.filter(|offset| offset.get() != 0.0);
     if effective_side_two_offset.is_some()
         && !matches!(

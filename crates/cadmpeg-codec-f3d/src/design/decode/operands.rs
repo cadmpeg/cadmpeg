@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Parse edge, face, and body operand frames and recipe structure.
 
+mod fillet_variable_groups;
+
 use crate::bytes::lp_utf16_bounded;
 use crate::records::topology::{
     construction::DesignConstructionOperandRole, extrude_selection::DesignExtrudeFaceEncoding,
@@ -2161,6 +2163,14 @@ pub(crate) fn decode_fillet_radius_groups(
                 continue;
             }
         }
+        if scope_groups.len() > 1 {
+            if let Some(assignments) =
+                fillet_variable_groups::assign(stream, &scope_groups, &owned_parameters)
+            {
+                out.extend(assignments);
+            }
+            continue;
+        }
         let [group] = scope_groups.as_slice() else {
             continue;
         };
@@ -2339,6 +2349,18 @@ enum PendingExtrudeRole {
 /// for their termination groups. It is also a valid Thicken role, so the
 /// extent and exact-layout gates are part of this admission rule rather than
 /// a global role alias.
+pub(crate) fn extrude_has_selected_termination(scope: &DesignParameterScope) -> bool {
+    matches!(
+        scope.extrude_prologue(),
+        Some(DesignExtrudePrologue::ReferenceAware {
+            extent: DesignExtrudeExtent::OneSidedToFace | DesignExtrudeExtent::TwoSidedToFaces,
+            start: DesignExtrudeStart::ProfilePlane,
+            first_side_target_ordinal: None,
+            ..
+        })
+    )
+}
+
 fn extrude_operand_role(
     scope: &DesignParameterScope,
     role: DesignOperandRole,
@@ -2361,6 +2383,9 @@ fn extrude_operand_role(
                 DesignExtrudeFaceEncoding::SelectedStart,
             ))
         }
+        DesignOperandRole::ROLE_0X5 if extrude_has_selected_termination(scope) => Some(
+            PendingExtrudeRole::Faces(DesignExtrudeFaceEncoding::SelectedStart),
+        ),
         DesignOperandRole::ROLE_0X12
             if scope
                 .extrude_prologue()
@@ -6074,8 +6099,26 @@ pub(super) fn parse_face_operand(
         *slot = offset;
         position = offset.checked_add(11)?;
     }
+    let stream = native_stream(&scope.id)?;
+    let recipe_start = u64::try_from(offsets[3]).ok()?;
+    let first_recipe = recipes
+        .iter()
+        .filter(|recipe| {
+            native_stream(&recipe.id) == Some(stream)
+                && recipe.byte_offset > recipe_start
+                && next_byte_offset.is_none_or(|end| recipe.byte_offset < end)
+        })
+        .min_by_key(|recipe| recipe.byte_offset)?;
+    let family_name_len = match first_recipe.kind {
+        ConstructionRecipeKind::Face => b"face_recipe_data".len(),
+        ConstructionRecipeKind::BoundedFace => b"bounded_face_recipe_data".len(),
+        _ => return None,
+    };
+    let program_start = usize::try_from(first_recipe.byte_offset)
+        .ok()?
+        .checked_add(family_name_len)?;
     let (immediate_next, next_record_index) =
-        face_recipe_next_boundary(bytes, position, header.record_index, next_byte_offset)?;
+        face_recipe_next_boundary(bytes, program_start, header.record_index, next_byte_offset)?;
     offsets[4] = immediate_next;
     let mut indexed = [("", 0u32); 5];
     for (offset, slot) in offsets.iter().zip(&mut indexed) {
@@ -6092,8 +6135,6 @@ pub(super) fn parse_face_operand(
     {
         return None;
     }
-    let stream = native_stream(&scope.id)?;
-    let recipe_start = u64::try_from(offsets[3]).ok()?;
     let next_byte_offset = u64::try_from(offsets[4]).ok()?;
     let mut matches = recipes.iter().filter(|recipe| {
         recipe.byte_offset > recipe_start

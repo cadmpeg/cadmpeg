@@ -592,3 +592,27 @@ the native feature when a fixed lane carries a symmetric distance.
 **Conflict.** None.
 
 **Note.** The layout slot name does not establish the control's physical role.
+
+### DR-117. Current mixed face and distance extent payload
+
+**Question.** Which reference assignments and orientation fields define a first-side face termination with a second-side distance, and what does target option zero select?
+
+**Known.** The current seven-slot prologue can carry direction two, first-side extent two, and a payload second-side extent one. Target option zero also occurs with a payload second-side extent one or two. The final zero word before the scope reference count does not identify the second-side termination.
+
+**Need.** Controlled face-then-distance changes with both direction states and independent side tapers.
+
+**Conflict.** None.
+
+**Note.** The scope and ordered references stay native with `feature.extrude-extent-native` until the complete assignment is defined.
+
+### DR-118. Split tool face without a tool group
+
+**Question.** Which tool does a `Split` scope select when reference zero is a direct face operand record instead of a counted tool group?
+
+**Known.** The face operand has a complete `face_recipe_data` frame and an exact scope reference at reference zero.
+
+**Need.** Controlled Split changes that select a face as the tool, with one and with several target bodies.
+
+**Conflict.** None.
+
+**Note.** The face operand record is validated as a frame. The Split operation keeps its existing projection rules.
