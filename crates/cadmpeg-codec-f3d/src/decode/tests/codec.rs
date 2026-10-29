@@ -365,19 +365,6 @@ fn asm_history_preamble_need_not_name_the_head_state() {
         .decode(&mut Cursor::new(f3d), &DecodeOptions::default())
         .unwrap();
     let mut history = f3d_native(result.ir()).asm_histories[0].clone();
-    assert!(
-        history.preamble.is_none(),
-        "document content excludes the source preamble"
-    );
-    let source_value = |field: &str| {
-        result.source_fidelity().metadata[&format!("{}.{field}", history.id)]
-            .parse::<i64>()
-            .expect("exact source preamble value")
-    };
-    history.preamble = Some(crate::history_records::AsmPreamble {
-        stream_size: source_value("stream_size"),
-        history_entry_count: source_value("history_entry_count"),
-    });
     assert!(crate::history::graph_is_coherent(&history));
 
     // The first preamble field names the state after the head.
@@ -399,14 +386,8 @@ fn decode_retains_generated_asm_history_graph() {
 
     assert_eq!(f3d_native(result.ir()).asm_histories.len(), 1);
     let history = &f3d_native(result.ir()).asm_histories[0];
-    assert_eq!(
-        result.source_fidelity().metadata[&format!("{}.stream_size", history.id)],
-        "2"
-    );
-    assert_eq!(
-        result.source_fidelity().metadata[&format!("{}.history_entry_count", history.id)],
-        "99"
-    );
+    assert_eq!(history.stream_size(), Some(2));
+    assert_eq!(history.history_entry_count(), Some(99));
     assert_eq!(history.states().len(), 2);
     assert_eq!(history.states()[0].state_id, 2);
     assert_eq!(history.states()[0].next_ref, Some(1));

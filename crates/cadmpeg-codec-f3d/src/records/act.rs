@@ -748,6 +748,13 @@ impl ActTableReference {
     pub(crate) fn target_record_offset(&self) -> Option<u64> {
         self.byte_offset.and_then(|offset| offset.checked_add(1))
     }
+
+    /// Whether two references hold the same document content.
+    pub(crate) fn content_eq(&self, other: &Self) -> bool {
+        self.id == other.id
+            && self.ordinal == other.ordinal
+            && self.target_record == other.target_record
+    }
 }
 
 #[derive(Deserialize)]
