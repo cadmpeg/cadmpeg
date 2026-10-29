@@ -611,7 +611,7 @@ pub(crate) fn project_parameter_design_with_edge_identities(
 ) -> Result<ProjectedParameterDesign, CodecError> {
     use cadmpeg_ir::features::{
         patterns::PatternKind, DesignParameter as NeutralParameter, DimensionDisplay, Feature,
-        FeatureDefinition, FeatureOperation, ParameterId, ParameterValue,
+        FeatureDefinition, FeatureOperation, ParameterId, ParameterValue, UnresolvedFamily,
     };
     use cadmpeg_ir::scalar::{Angle, Length};
     use std::collections::BTreeMap;
@@ -766,12 +766,9 @@ pub(crate) fn project_parameter_design_with_edge_identities(
                     face_operands,
                     (placements, curve_identities),
                 )
-                .unwrap_or_else(|| {
-                    FeatureDefinition::Operation(FeatureOperation::Native {
-                        kind: scope.kind_name().into(),
-                        parameters: BTreeMap::new(),
-                    })
-                }),
+                .unwrap_or(FeatureDefinition::Operation(FeatureOperation::Unresolved {
+                    family: UnresolvedFamily::Revolve,
+                })),
                 Some(DesignFeatureFamily::Loft) => project_fixed_loft(scope, inputs, ctx)?
                     .unwrap_or_else(|| {
                         FeatureDefinition::Operation(FeatureOperation::Native {
@@ -1003,7 +1000,13 @@ pub(crate) fn project_parameter_design_with_edge_identities(
                             .map(|size| (construction, size))
                     })
                     .map_or_else(
-                        || native_scope_definition(scope, &parameters),
+                        || {
+                            Ok::<_, CodecError>(FeatureDefinition::Operation(
+                                FeatureOperation::Unresolved {
+                                    family: UnresolvedFamily::Thread,
+                                },
+                            ))
+                        },
                         |(construction, nominal_size)| {
                             let face = project_thread_face_selection(
                                 scope,

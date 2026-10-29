@@ -102,6 +102,56 @@ fn dispatcher_projects_datum_feature_scopes() {
 }
 
 #[test]
+fn revolve_and_thread_scopes_without_a_construction_keep_their_family() {
+    use cadmpeg_ir::features::UnresolvedFamily;
+
+    let revolve = DesignParameterScope::empty(
+        "f3d:native/BulkStream.dat:parameter-scope#1",
+        crate::records::feature::scope::DesignFeatureKind::Revolve,
+        1,
+    );
+    let thread = DesignParameterScope::empty(
+        "f3d:native/BulkStream.dat:parameter-scope#2",
+        crate::records::feature::scope::DesignFeatureKind::Thread,
+        2,
+    );
+    let scopes = vec![revolve, thread];
+    let crate::design::feature_project::ProjectedParameterDesign { features, .. } =
+        crate::test_support::with_decode_context(|ctx| {
+            let scopes = &scopes;
+            let timelines = crate::design::test_support::synthetic_feature_timelines(scopes);
+            project_parameter_design_with_edge_identities(
+                ctx,
+                &crate::design::feature_project::ProjectInputs {
+                    scopes,
+                    timelines: &timelines,
+                    ..Default::default()
+                },
+            )
+            .expect("test projection has a synthetic exact timeline")
+        });
+
+    let definition = |kind: &str| {
+        features
+            .iter()
+            .find(|feature| feature.source_tag.as_deref() == Some(kind))
+            .map(|feature| feature.evaluation.definition().clone())
+    };
+    assert_eq!(
+        definition("Revolve"),
+        Some(FeatureDefinition::Operation(FeatureOperation::Unresolved {
+            family: UnresolvedFamily::Revolve,
+        }))
+    );
+    assert_eq!(
+        definition("Thread"),
+        Some(FeatureDefinition::Operation(FeatureOperation::Unresolved {
+            family: UnresolvedFamily::Thread,
+        }))
+    );
+}
+
+#[test]
 fn dispatcher_projects_scale_point_center_in_neutral_units() {
     let mut scale = DesignParameterScope::empty(
         "f3d:native/BulkStream.dat:parameter-scope#4",
