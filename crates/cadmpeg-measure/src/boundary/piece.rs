@@ -5,6 +5,7 @@
 use std::rc::Rc;
 
 use cadmpeg_ir::features::FiniteVector3;
+use cadmpeg_ir::geometry::pcurve::PcurveGeometry;
 use cadmpeg_ir::math::{Point3, Vector3};
 use cadmpeg_ir::topology::Coedge;
 
@@ -123,6 +124,42 @@ impl<'ir> Piece<'ir> {
             reference: Vec::new(),
             periods: chart.periods(),
             alpha: use_.alpha,
+        }
+    }
+
+    /// The pcurve piece lifted continuously onto a periodic chart when its
+    /// stored image takes an angle on its principal branch. A piece that does
+    /// not unwrap within the sample cap keeps its stored image.
+    pub(crate) fn unwrapped(mut self, eval: &Eval<'_, '_>) -> Measure<Self> {
+        let Source::Pcurve { span, .. } = &self.source else {
+            return Ok(self);
+        };
+        if self.periods.iter().all(Option::is_none) || !principal_branch(span.geometry) {
+            return Ok(self);
+        }
+        let mut count = 4_usize;
+        while count <= MAX_NESTING_SAMPLES_PER_PIECE {
+            let mut samples = Vec::with_capacity(count + 1);
+            for index in 0..=count {
+                let t = interpolate(self.t0, self.t1, index, count);
+                samples.push((t, span.uv(eval, t)?, false));
+            }
+            let (reference, smooth) = unwrap(self.periods, &samples)?;
+            if smooth {
+                self.reference = reference;
+                return Ok(self);
+            }
+            count *= 2;
+        }
+        Ok(self)
+    }
+
+    /// The stored pcurve image at `t`, lifted onto the piece's reference.
+    fn pcurve_uv(&self, raw: [f64; 2], t: f64) -> [f64; 2] {
+        if self.reference.is_empty() {
+            raw
+        } else {
+            nearest(self.periods, raw, self.reference_at(t))
         }
     }
 
@@ -299,7 +336,7 @@ impl<'ir> Piece<'ir> {
                 duv: [to[0] - from[0], to[1] - from[1]],
             }),
             Source::Pcurve { span, .. } => {
-                let uv = span.uv(eval, t)?;
+                let uv = self.pcurve_uv(span.uv(eval, t)?, t);
                 Ok(Sample {
                     uv: [uv[0] + self.shift[0], uv[1] + self.shift[1]],
                     duv: span.duv(eval, t)?,
@@ -335,7 +372,7 @@ impl<'ir> Piece<'ir> {
         match &self.source {
             Source::Segment { from, to, .. } => Ok(self.segment_uv(*from, *to, t)),
             Source::Pcurve { span, .. } => {
-                let uv = span.uv(eval, t)?;
+                let uv = self.pcurve_uv(span.uv(eval, t)?, t);
                 Ok([uv[0] + self.shift[0], uv[1] + self.shift[1]])
             }
             Source::Curve(curve) => {
@@ -453,6 +490,18 @@ impl<'ir> Piece<'ir> {
             }
         }
         Ok(points)
+    }
+}
+
+/// Whether a pcurve's stored image takes an angle on its principal branch,
+/// so that it jumps by a period where the angle crosses the branch cut.
+fn principal_branch(geometry: &PcurveGeometry) -> bool {
+    match geometry {
+        PcurveGeometry::PolarHarmonic(_) => true,
+        PcurveGeometry::Transformed(placed) => principal_branch(placed.basis()),
+        PcurveGeometry::Offset(offset) => principal_branch(offset.basis()),
+        PcurveGeometry::Trimmed(trimmed) => principal_branch(trimmed.basis()),
+        _ => false,
     }
 }
 

@@ -166,8 +166,8 @@ impl<'ir> NurbsChart<'ir> {
     }
 
     /// The parameters of a model point within `tolerance`, seeded at
-    /// `seed`, refined by Gauss–Newton steps until a step is below the
-    /// parameter resolution.
+    /// `seed`, refined by Gauss–Newton steps until a step moves it less
+    /// than the parameter resolution.
     fn invert(
         &self,
         eval: &Eval<'_, '_>,
@@ -210,13 +210,16 @@ impl<'ir> NurbsChart<'ir> {
                 break;
             };
             let step = [step_u.get(), step_v.get()];
+            let mut moved = [0.0; 2];
             for axis in 0..2 {
-                uv[axis] += step[axis];
+                let mut next = uv[axis] + step[axis];
                 if self.periods[axis].is_none() {
-                    uv[axis] = uv[axis].clamp(self.domain[axis][0], self.domain[axis][1]);
+                    next = next.clamp(self.domain[axis][0], self.domain[axis][1]);
                 }
+                moved[axis] = next - uv[axis];
+                uv[axis] = next;
             }
-            if step[0].abs() <= resolution[0] && step[1].abs() <= resolution[1] {
+            if moved[0].abs() <= resolution[0] && moved[1].abs() <= resolution[1] {
                 break;
             }
         }
@@ -703,6 +706,60 @@ mod tests {
                 assert!(again.distance(point) < 1.0e-12, "{chart:?} {u} {v}");
             }
         }
+    }
+
+    /// A point just beyond a patch's edge inverts onto that edge, settling
+    /// there in no more work than an interior point takes.
+    #[test]
+    fn a_point_beyond_a_domain_edge_settles_on_it() {
+        use crate::budget::{PassAllowance, WorkProfile};
+        use crate::canonical::placement::Placement;
+        use crate::context::Eval;
+        use crate::test_support::builders::{service_context, Builder};
+        use cadmpeg_ir::geometry::{SolvedSurfaceGeometry, SurfaceGeometry};
+        use cadmpeg_ir::topology::{BodyKind, Sense};
+
+        // The bilinear patch `(x, y) = (2u, 2v)` on `[0, 1]²` at `z = 0`.
+        let mut builder = Builder::new();
+        let patch = builder.nurbs(
+            (1, vec![0.0, 0.0, 1.0, 1.0]),
+            (1, vec![0.0, 0.0, 1.0, 1.0]),
+            &[
+                vec![([0.0, 0.0, 0.0], 1.0), ([0.0, 2.0, 0.0], 1.0)],
+                vec![([2.0, 0.0, 0.0], 1.0), ([2.0, 2.0, 0.0], 1.0)],
+            ],
+        );
+        builder.face(&patch, Sense::Forward, &[], false);
+        let ir = builder.finish(BodyKind::Sheet);
+        let SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(surface)) =
+            &ir.model.surfaces[0].geometry
+        else {
+            panic!("a NURBS surface");
+        };
+        let chart = Chart::Nurbs(super::NurbsChart::new(surface, Placement::identity()).unwrap());
+        let ctx = service_context();
+        let index = cadmpeg_ir::index::ModelIndex::new_model_only(&ir);
+        let pass = PassAllowance::new(WorkProfile::Desktop.pass_allowance(1).unwrap());
+        let invert = |point: Point3| {
+            let slice = pass.face_slice();
+            let eval = Eval {
+                ctx: &ctx,
+                index: &index,
+                work: &slice,
+            };
+            let before = pass.used();
+            let uv = chart
+                .invert(&eval, point, Some([0.4, 0.9]), 1.0e-5)
+                .unwrap()
+                .unwrap();
+            (uv, pass.used() - before)
+        };
+        let (inside, inside_work) = invert(Point3::new(1.0, 1.9, 0.0));
+        assert!((inside[0] - 0.5).abs() < 1.0e-12 && (inside[1] - 0.95).abs() < 1.0e-12);
+        let (beyond, beyond_work) = invert(Point3::new(1.0, 2.0 + 2.0e-6, 0.0));
+        assert!((beyond[0] - 0.5).abs() < 1.0e-12, "{beyond:?}");
+        assert_eq!(beyond[1], 1.0);
+        assert!(beyond_work <= inside_work, "{beyond_work} {inside_work}");
     }
 
     #[test]
