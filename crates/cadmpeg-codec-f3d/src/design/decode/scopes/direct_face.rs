@@ -332,7 +332,7 @@ pub(super) fn exact_scale_operation(
             } else if scope.kind() == scope::DesignFeatureKind::Scale
                 && matches!(
                     (scope.frame_length(), scope.reference_members().len()),
-                    (Some(307) | Some(309), 5) | (Some(318), 6)
+                    (Some(307 | 309), 5) | (Some(318), 6)
                 )
             {
                 if scope.frame_length() == Some(309) {

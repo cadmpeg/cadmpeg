@@ -255,7 +255,7 @@ fn parsed_parameter(view: View<'_>, offset: usize) -> crate::records::parameters
             state_target,
         } => {
             assert_eq!(state_target, Some(401));
-            parameter
+            *parameter
         }
         _ => panic!("expected a typed parameter"),
     }

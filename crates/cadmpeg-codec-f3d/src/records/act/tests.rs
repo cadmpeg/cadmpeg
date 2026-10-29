@@ -314,9 +314,9 @@ fn act_channels_reject_unpaired_keys_and_preserve_split_wire_maps() {
     });
     let entity: crate::records::act::ActEntity = serde_json::from_value(wire.clone()).unwrap();
     assert_eq!(serde_json::to_value(entity).unwrap(), wire);
-    for offsets in [serde_json::json!({"Material": 120})] {
+    {
         let mut invalid = wire.clone();
-        invalid["channel_guid_offsets"] = offsets;
+        invalid["channel_guid_offsets"] = serde_json::json!({"Material": 120});
         let error = serde_json::from_value::<crate::records::act::ActEntity>(invalid).unwrap_err();
         assert!(error.to_string().contains("channel_guid_offsets"));
     }

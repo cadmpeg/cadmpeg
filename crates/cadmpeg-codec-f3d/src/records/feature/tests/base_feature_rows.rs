@@ -106,7 +106,8 @@ fn legacy_base_feature_form_owns_its_compact_mode() {
                         "{field}"
                     );
                 }
-                for field in ["body_reference_records"] {
+                {
+                    let field = "body_reference_records";
                     let mut invalid = value.clone();
                     invalid[field][0] = serde_json::json!(999);
                     let error = serde_json::from_value::<

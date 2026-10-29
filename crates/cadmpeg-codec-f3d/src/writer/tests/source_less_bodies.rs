@@ -226,7 +226,7 @@ fn generated_source_less_writes_persistent_body_and_sketch_provenance_attributes
             suffix_index(attribute.id.as_str())
         }
 
-        fn reference_index(value: &Option<AttributeValue>) -> i64 {
+        fn reference_index(value: Option<&AttributeValue>) -> i64 {
             let Some(AttributeValue::Reference(value)) = value else {
                 panic!("generated attribute link is not a reference");
             };
@@ -249,16 +249,16 @@ fn generated_source_less_writes_persistent_body_and_sketch_provenance_attributes
         assert!(!attributes.is_empty());
         for attribute in attributes {
             assert!(attribute.values.len() >= 5);
-            assert_eq!(reference_index(&attribute.values[0]), -1);
+            assert_eq!(reference_index(attribute.values[0].as_ref()), -1);
             assert_eq!(attribute.values[1], Some(AttributeValue::Integer(-1)));
             assert_eq!(
-                reference_index(&attribute.values[4]),
+                reference_index(attribute.values[4].as_ref()),
                 target_index(&attribute.target)
             );
 
             let index = attribute_index(attribute);
             for (field, reciprocal) in [(2usize, 3usize), (3, 2)] {
-                let linked = reference_index(&attribute.values[field]);
+                let linked = reference_index(attribute.values[field].as_ref());
                 if linked < 0 {
                     continue;
                 }
@@ -267,7 +267,10 @@ fn generated_source_less_writes_persistent_body_and_sketch_provenance_attributes
                     .find(|candidate| attribute_index(candidate) == linked)
                     .expect("generated attribute link resolves");
                 assert_eq!(linked_attribute.target, attribute.target);
-                assert_eq!(reference_index(&linked_attribute.values[reciprocal]), index);
+                assert_eq!(
+                    reference_index(linked_attribute.values[reciprocal].as_ref()),
+                    index
+                );
             }
         }
         for (ordinal, attribute) in attributes.iter().enumerate() {
@@ -283,13 +286,13 @@ fn generated_source_less_writes_persistent_body_and_sketch_provenance_attributes
             assert_eq!(
                 owned
                     .clone()
-                    .filter(|candidate| reference_index(&candidate.values[3]) == -1)
+                    .filter(|candidate| reference_index(candidate.values[3].as_ref()) == -1)
                     .count(),
                 1
             );
             assert_eq!(
                 owned
-                    .filter(|candidate| reference_index(&candidate.values[2]) == -1)
+                    .filter(|candidate| reference_index(candidate.values[2].as_ref()) == -1)
                     .count(),
                 1
             );

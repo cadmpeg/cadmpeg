@@ -261,7 +261,7 @@ pub(super) fn exact_component_insert_construction(
                     None,
                     exact_component_insert_identity_scope(bytes, start, relation_record_index)?,
                 ),
-                (Some(257) | Some(267), "264") if scope.class_tag.as_str() == "414" => (
+                (Some(257 | 267), "264") if scope.class_tag.as_str() == "414" => (
                     crate::records::sketch_placement::SketchPlacementMatrix::IDENTITY,
                     None,
                     exact_component_insert_identity_scope_shifted(

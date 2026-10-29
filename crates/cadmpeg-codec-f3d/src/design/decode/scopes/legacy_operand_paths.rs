@@ -804,12 +804,12 @@ fn exact_legacy_class_388_operand_path_envelope<'a>(
     parsed.transpose()
 }
 
-fn exact_legacy_class_412_path<'a>(
-    source: View<'a>,
+fn exact_legacy_class_412_path(
+    source: View<'_>,
     start: usize,
     record_index: u32,
     end: usize,
-) -> Result<Option<LegacyClass412Path<'a>>, CodecError> {
+) -> Result<Option<LegacyClass412Path<'_>>, CodecError> {
     let bytes = source.window();
     let parsed = (|| {
         if exact_indexed_header_at(bytes, start, record_index)?.as_str() != "412"

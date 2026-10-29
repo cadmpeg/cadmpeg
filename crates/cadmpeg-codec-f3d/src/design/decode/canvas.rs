@@ -38,7 +38,7 @@ pub(crate) fn decode_canvas_images(
                 .filter(|end| *end > start)?;
             Some(ids::native_design_canvas_image_id(stream, start))
         },
-        parse_canvas_image,
+        |bytes, stream, scope, read| Ok(parse_canvas_image(bytes, stream, scope, read)),
     )
 }
 
@@ -105,9 +105,9 @@ pub(crate) fn project_canvas_images(
 
 /// The geometry reference of a Canvas scope prefix: after ten zero bytes,
 /// or after nine zero bytes and a marked null reference.
-fn canvas_geometry_reference<'a>(
+fn canvas_geometry_reference(
     scope_at: usize,
-    read: &super::image::ImageRead<'a, '_>,
+    read: &super::image::ImageRead<'_, '_>,
 ) -> Option<(usize, u32)> {
     let zeros = read(scope_at + 11..scope_at + 21)?;
     let geometry_reference_at = if zeros == [0; 10] {
@@ -141,8 +141,8 @@ fn parse_canvas_image(
     stream: &str,
     scope: &DesignParameterScope,
     read: &super::image::ImageRead<'_, '_>,
-) -> Result<Option<DesignCanvasImage>, CodecError> {
-    let parsed = (|| {
+) -> Option<DesignCanvasImage> {
+    (|| {
         let scope_at = usize::try_from(scope.byte_offset()?).ok()?;
         let (geometry_reference_at, geometry_record_index) =
             canvas_geometry_reference(scope_at, read)?;
@@ -169,8 +169,7 @@ fn parse_canvas_image(
         } else {
             None
         }
-    })();
-    Ok(parsed)
+    })()
 }
 
 pub(in crate::design::decode) fn typed_canvas_reference(
@@ -536,7 +535,6 @@ mod tests {
                 parse_canvas_image(bytes, "Design/BulkStream.dat", &scope, &|range| {
                     bytes.get(range)
                 })
-                .unwrap()
             };
             let image = parse(&bytes).unwrap();
             assert_eq!(image.asset_name(), "a.png");
@@ -571,7 +569,6 @@ mod tests {
         let image = parse_canvas_image(&bytes, "Design/BulkStream.dat", &scope, &|range| {
             bytes.get(range)
         })
-        .unwrap()
         .unwrap();
         assert_eq!(image.asset_name(), "a.png");
     }
@@ -590,7 +587,6 @@ mod tests {
         let image = parse_canvas_image(&bytes, "Design/BulkStream.dat", &scope, &|range| {
             bytes.get(range)
         })
-        .unwrap()
         .unwrap();
         let feature = || Feature {
             needs_recompute: false,

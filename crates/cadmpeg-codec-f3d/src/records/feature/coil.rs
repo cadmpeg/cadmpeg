@@ -345,6 +345,42 @@ impl Clone for DesignCoilScope {
     }
 }
 
+/// Whether a Coil form stores a setting as a member or fixes it in its
+/// envelope. The wire spells it as the setting's `_stored` Boolean.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
+#[serde(from = "bool", into = "bool")]
+enum CoilSettingStorage {
+    #[default]
+    Envelope,
+    Member,
+}
+
+impl CoilSettingStorage {
+    fn of<T: Copy>(field: Option<MaybeRecordedValue<T>>) -> Self {
+        if field.is_some_and(|field| field.is_stored()) {
+            Self::Member
+        } else {
+            Self::Envelope
+        }
+    }
+}
+
+impl From<bool> for CoilSettingStorage {
+    fn from(stored: bool) -> Self {
+        if stored {
+            Self::Member
+        } else {
+            Self::Envelope
+        }
+    }
+}
+
+impl From<CoilSettingStorage> for bool {
+    fn from(storage: CoilSettingStorage) -> Self {
+        storage == CoilSettingStorage::Member
+    }
+}
+
 #[derive(Serialize)]
 struct DesignCoilScopeRef<'a> {
     #[serde(rename = "coil_operation")]
@@ -354,26 +390,26 @@ struct DesignCoilScopeRef<'a> {
     #[serde(skip_serializing_if = "Option::is_none")]
     extent: Option<DesignCoilExtent>,
     #[serde(rename = "coil_extent_stored")]
-    #[serde(skip_serializing_if = "std::ops::Not::not")]
-    extent_stored: bool,
+    #[serde(skip_serializing_if = "crate::history_records::is_default")]
+    extent_stored: CoilSettingStorage,
     #[serde(rename = "coil_section")]
     #[serde(skip_serializing_if = "Option::is_none")]
     section: Option<DesignCoilSection>,
     #[serde(rename = "coil_section_stored")]
-    #[serde(skip_serializing_if = "std::ops::Not::not")]
-    section_stored: bool,
+    #[serde(skip_serializing_if = "crate::history_records::is_default")]
+    section_stored: CoilSettingStorage,
     #[serde(rename = "coil_section_placement")]
     #[serde(skip_serializing_if = "Option::is_none")]
     section_placement: Option<DesignCoilSectionPlacement>,
     #[serde(rename = "coil_section_placement_stored")]
-    #[serde(skip_serializing_if = "std::ops::Not::not")]
-    section_placement_stored: bool,
+    #[serde(skip_serializing_if = "crate::history_records::is_default")]
+    section_placement_stored: CoilSettingStorage,
     #[serde(rename = "coil_clockwise")]
     #[serde(skip_serializing_if = "Option::is_none")]
     clockwise: Option<bool>,
     #[serde(rename = "coil_clockwise_stored")]
-    #[serde(skip_serializing_if = "std::ops::Not::not")]
-    clockwise_stored: bool,
+    #[serde(skip_serializing_if = "crate::history_records::is_default")]
+    clockwise_stored: CoilSettingStorage,
     #[serde(rename = "coil_placement")]
     #[serde(skip_serializing_if = "Option::is_none")]
     placement: Option<&'a DesignCoilPlacement>,
@@ -387,15 +423,13 @@ impl Serialize for DesignCoilScope {
         DesignCoilScopeRef {
             operation: self.operation.map(|field| field.value),
             extent: self.extent.map(|field| field.value()),
-            extent_stored: self.extent.is_some_and(|field| field.is_stored()),
+            extent_stored: CoilSettingStorage::of(self.extent),
             section: self.section.map(|field| field.value()),
-            section_stored: self.section.is_some_and(|field| field.is_stored()),
+            section_stored: CoilSettingStorage::of(self.section),
             section_placement: self.section_placement.map(|field| field.value()),
-            section_placement_stored: self
-                .section_placement
-                .is_some_and(|field| field.is_stored()),
+            section_placement_stored: CoilSettingStorage::of(self.section_placement),
             clockwise: self.clockwise.map(|field| field.value()),
-            clockwise_stored: self.clockwise.is_some_and(|field| field.is_stored()),
+            clockwise_stored: CoilSettingStorage::of(self.clockwise),
             placement: self.placement.as_ref(),
             transform: self.transform.as_ref(),
         }
@@ -424,9 +458,9 @@ struct DesignCoilScopeWire {
     #[serde(rename = "coil_extent")]
     extent: Option<DesignCoilExtent>,
     /// Whether the form stores the Coil mode enum as a member.
-    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    #[serde(default, skip_serializing_if = "crate::history_records::is_default")]
     #[serde(rename = "coil_extent_stored")]
-    extent_stored: bool,
+    extent_stored: CoilSettingStorage,
     /// Generated Coil section family.
     #[serde(
         default,
@@ -436,9 +470,9 @@ struct DesignCoilScopeWire {
     #[serde(rename = "coil_section")]
     section: Option<DesignCoilSection>,
     /// Whether the form stores the Coil section enum as a member.
-    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    #[serde(default, skip_serializing_if = "crate::history_records::is_default")]
     #[serde(rename = "coil_section_stored")]
-    section_stored: bool,
+    section_stored: CoilSettingStorage,
     /// Radial placement of the generated Coil section.
     #[serde(
         default,
@@ -448,9 +482,9 @@ struct DesignCoilScopeWire {
     #[serde(rename = "coil_section_placement")]
     section_placement: Option<DesignCoilSectionPlacement>,
     /// Whether the form stores the Coil section-placement enum as a member.
-    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    #[serde(default, skip_serializing_if = "crate::history_records::is_default")]
     #[serde(rename = "coil_section_placement_stored")]
-    section_placement_stored: bool,
+    section_placement_stored: CoilSettingStorage,
     /// Whether Coil angular travel is clockwise.
     #[serde(
         default,
@@ -460,9 +494,9 @@ struct DesignCoilScopeWire {
     #[serde(rename = "coil_clockwise")]
     clockwise: Option<bool>,
     /// Whether the form stores the Coil direction enum as a member.
-    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    #[serde(default, skip_serializing_if = "crate::history_records::is_default")]
     #[serde(rename = "coil_clockwise_stored")]
-    clockwise_stored: bool,
+    clockwise_stored: CoilSettingStorage,
     /// Exact placement construction carried by a compact Coil scope.
     #[serde(
         default,
@@ -489,20 +523,24 @@ impl TryFrom<DesignCoilScopeWire> for DesignCoilScope {
                 value,
                 offset: None,
             }),
-            extent: MaybeRecordedValue::from_wire(wire.extent, wire.extent_stored, "coil_extent")?,
+            extent: MaybeRecordedValue::from_wire(
+                wire.extent,
+                wire.extent_stored == CoilSettingStorage::Member,
+                "coil_extent",
+            )?,
             section: MaybeRecordedValue::from_wire(
                 wire.section,
-                wire.section_stored,
+                wire.section_stored == CoilSettingStorage::Member,
                 "coil_section",
             )?,
             section_placement: MaybeRecordedValue::from_wire(
                 wire.section_placement,
-                wire.section_placement_stored,
+                wire.section_placement_stored == CoilSettingStorage::Member,
                 "coil_section_placement",
             )?,
             clockwise: MaybeRecordedValue::from_wire(
                 wire.clockwise,
-                wire.clockwise_stored,
+                wire.clockwise_stored == CoilSettingStorage::Member,
                 "coil_clockwise",
             )?,
             placement: wire.placement,
@@ -517,15 +555,13 @@ impl From<DesignCoilScope> for DesignCoilScopeWire {
         Self {
             operation: value.operation.map(|field| field.value),
             extent: value.extent.map(|field| field.value()),
-            extent_stored: value.extent.is_some_and(|field| field.is_stored()),
+            extent_stored: CoilSettingStorage::of(value.extent),
             section: value.section.map(|field| field.value()),
-            section_stored: value.section.is_some_and(|field| field.is_stored()),
+            section_stored: CoilSettingStorage::of(value.section),
             section_placement: value.section_placement.map(|field| field.value()),
-            section_placement_stored: value
-                .section_placement
-                .is_some_and(|field| field.is_stored()),
+            section_placement_stored: CoilSettingStorage::of(value.section_placement),
             clockwise: value.clockwise.map(|field| field.value()),
-            clockwise_stored: value.clockwise.is_some_and(|field| field.is_stored()),
+            clockwise_stored: CoilSettingStorage::of(value.clockwise),
             placement: value.placement,
             transform: value.transform,
         }

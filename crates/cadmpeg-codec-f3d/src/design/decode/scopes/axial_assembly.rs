@@ -132,7 +132,7 @@ pub(super) fn bind_axial_assembly_operand_targets(
 ) -> Result<(), CodecError> {
     let mut bindings = Vec::new();
     for (ordinal, scope) in scopes.iter().enumerate() {
-        if !matches!(scope.frame_length(), Some(705) | Some(772)) {
+        if !matches!(scope.frame_length(), Some(705 | 772)) {
             continue;
         }
         let Some(alignment) = scope.assembly_alignment() else {
@@ -257,7 +257,7 @@ fn exact_assembly_axial_component_operand(
     scope: &DesignParameterScope,
     frame: &DesignAssemblyOperandFrame,
 ) -> Result<Option<AxialComponentOperand>, CodecError> {
-    if !matches!(scope.frame_length(), Some(705) | Some(772))
+    if !matches!(scope.frame_length(), Some(705 | 772))
         || scope
             .reference_members()
             .values()

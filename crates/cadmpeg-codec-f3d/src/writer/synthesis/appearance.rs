@@ -151,6 +151,7 @@ fn opaque(color: &mut Option<cadmpeg_ir::topology::Color>, id: &str, losses: &mu
 }
 
 fn asset_guid(identity: &str) -> String {
+    const HEX_DIGITS: &[u8; 16] = b"0123456789ABCDEF";
     let mut hash = Sha256::new();
     hash.update(b"cadmpeg:f3d:appearance:v1\0");
     hash.update(identity.as_bytes());
@@ -161,7 +162,12 @@ fn asset_guid(identity: &str) -> String {
     bytes[8] = (bytes[8] & 0x3f) | 0x80;
     let hex = bytes
         .iter()
-        .map(|byte| format!("{byte:02X}"))
+        .flat_map(|byte| {
+            [
+                char::from(HEX_DIGITS[usize::from(byte >> 4)]),
+                char::from(HEX_DIGITS[usize::from(byte & 0x0f)]),
+            ]
+        })
         .collect::<String>();
     format!(
         "{}-{}-{}-{}-{}",

@@ -23,7 +23,7 @@ fn parameter(name: &str, ordinal: u32, value: ParameterValue) -> DesignParameter
         display: None,
         value: Some(value),
 
-        properties: Default::default(),
+        properties: std::collections::BTreeMap::default(),
         pmi: None,
         native_ref: None,
     }
@@ -165,8 +165,8 @@ fn neutral_configurations_and_parameters_are_authored_together() {
             .into(),
             parameter_overrides: [(ir.model.parameters[0].id.clone(), "24 mm".into())].into(),
             bodies: None,
-            parameter_values: Default::default(),
-            feature_states: Default::default(),
+            parameter_values: std::collections::BTreeMap::default(),
+            feature_states: std::collections::BTreeMap::default(),
             native_ref: None,
         });
     let mut bytes = Vec::new();
@@ -310,9 +310,9 @@ fn unsupported_typed_histories_reduce_without_losing_neutral_geometry() {
             inserted: vec![3],
             ..Default::default()
         },
-        topology: Default::default(),
+        topology: crate::history_records::AsmHistoricalTopologyDelta::default(),
         record_revisions: vec![],
-        rows: Default::default(),
+        rows: crate::history_records::AsmHistoricalRowsDelta::default(),
     });
     let mut external_owner = history(0);
     external_owner.states_mut()[0].owner_ref = 7;
@@ -595,12 +595,12 @@ fn historical_bulletin_slots_are_omitted_when_their_revisions_have_no_typed_writ
         assert!(native
             .asm_histories
             .iter()
-            .flat_map(|history| history.states())
+            .flat_map(crate::history_records::AsmHistory::states)
             .any(|state| !state.bulletin_boards.is_empty()));
         for state in native
             .asm_histories
             .iter_mut()
-            .flat_map(|history| history.states_mut())
+            .flat_map(crate::history_records::AsmHistory::states_mut)
         {
             state.records.clear();
             state.transition = None;

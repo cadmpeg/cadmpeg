@@ -159,7 +159,7 @@ pub(crate) struct DecodedParameters {
 pub(crate) enum ParsedFrame {
     /// The frame is a parameter record.
     Parameter {
-        parameter: DesignParameter,
+        parameter: Box<DesignParameter>,
         /// Local entity index named by the typed parameter tail reference.
         state_target: Option<u64>,
     },
@@ -201,7 +201,7 @@ pub(crate) fn parse_frame(
     let state_target = parsed.state_target();
     let parameter = locate_design_parameter(parsed, stream, offset)?;
     Ok(ParsedFrame::Parameter {
-        parameter,
+        parameter: Box::new(parameter),
         state_target,
     })
 }
@@ -284,7 +284,7 @@ pub(crate) fn decode_parameters(scan: &ContainerScan) -> Result<DecodedParameter
                     if let Some(target) = state_target {
                         state_targets.insert(parameter.id.clone(), target);
                     }
-                    out.push(parameter);
+                    out.push(*parameter);
                     position = end;
                 }
                 ParsedFrame::Repeated => position = end,
@@ -1612,7 +1612,7 @@ pub(crate) fn decode_parameter_companions(
     scan: &ContainerScan,
     owners: &[DesignParameterOwner],
     headers: &[DesignRecordHeader],
-) -> Result<Vec<DesignParameterCompanion>, CodecError> {
+) -> Vec<DesignParameterCompanion> {
     let mut headers_by_record = HashMap::new();
     for header in headers {
         let Some(stream) = native_stream(&header.id) else {
@@ -1672,7 +1672,7 @@ pub(crate) fn decode_parameter_companions(
         out.push(companion);
     }
     out.sort_by(|a, b| a.id().cmp(b.id()));
-    Ok(out)
+    out
 }
 
 /// Parameter companion prefix parsed in frame-relative coordinates.

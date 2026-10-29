@@ -69,7 +69,7 @@ pub(super) fn pcurves(
     for boundary in &mut target.model.loops {
         match &mut boundary.boundary {
             LoopBoundary::Vertex { pcurves, .. } => {
-                pcurves.retain(|use_| !omitted.contains(&use_.pcurve))
+                pcurves.retain(|use_| !omitted.contains(&use_.pcurve));
             }
             LoopBoundary::Ring(ring) => {
                 let mut vertices = ring.vertex_uses().to_vec();
@@ -104,7 +104,7 @@ pub(super) fn auxiliary(target: &mut CadIr, losses: &mut Vec<LossNote>) {
         if face.tolerance.take().is_some() {
             losses.push(
                 F3dLossCode::WriterAuxiliaryOmitted
-                    .note(format!("face {} tolerance is not encoded", face.id,)),
+                    .note(format!("face {} tolerance is not encoded", face.id)),
             );
         }
     }

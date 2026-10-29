@@ -394,8 +394,11 @@ mod tests {
             super::GeneratedDesignType::from(&source)
                 .base_type_guid
                 .as_ref()
-                .map(|guid| guid.as_str()),
-            source.base_type_guid.value().map(|guid| guid.as_str())
+                .map(crate::records::mesh::DesignRelaxedGuidText::as_str),
+            source
+                .base_type_guid
+                .value()
+                .map(crate::records::mesh::DesignRelaxedGuidText::as_str)
         );
     }
 

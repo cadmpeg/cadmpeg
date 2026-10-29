@@ -2285,7 +2285,7 @@ impl DesignParameterScopeDraft {
         // The reference-table stride shows the reference spelling: 11-byte
         // plain references or 51-byte typed references.
         // A table that fits neither width falls through to the plain checks.
-        let stride = reference_table_stride(&draft).unwrap_or(11);
+        let stride = reference_table_stride(draft).unwrap_or(11);
         let typed = stride == crate::bytes::TYPED_LOCAL_REFERENCE_LEN
             || (draft.reference_members.is_empty()
                 && kind == "As-built"

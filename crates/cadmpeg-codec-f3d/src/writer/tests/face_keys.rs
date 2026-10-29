@@ -101,9 +101,8 @@ fn native_face_key_slot_refuses_duplicate_targets_and_capacity_overflow() {
             &[first_wire, second_wire],
         )
         .unwrap();
-    let error = match F3dCodec.plan(EncodeInput::new(&ir, None), TargetRequest::Inherit) {
-        Ok(_) => panic!("the removed native backlink cannot encode duplicate target claims"),
-        Err(error) => error,
+    let Err(error) = F3dCodec.plan(EncodeInput::new(&ir, None), TargetRequest::Inherit) else {
+        panic!("the removed native backlink cannot encode duplicate target claims")
     };
     assert!(
         error.to_string().contains("unknown field `face`"),
@@ -119,9 +118,8 @@ fn native_face_key_slot_refuses_duplicate_targets_and_capacity_overflow() {
             &[oversized],
         )
         .unwrap();
-    let error = match F3dCodec.plan(EncodeInput::new(&ir, None), TargetRequest::Inherit) {
-        Ok(_) => panic!("the signed native field cannot hold u64::MAX"),
-        Err(error) => error,
+    let Err(error) = F3dCodec.plan(EncodeInput::new(&ir, None), TargetRequest::Inherit) else {
+        panic!("the signed native field cannot hold u64::MAX")
     };
     assert!(
         error.to_string().contains("signed 64-bit native slot"),

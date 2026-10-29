@@ -512,7 +512,7 @@ fn assembly_path_wire_pairs_guid_locations() {
             assert_eq!(
                 path.occurrence_guids()
                     .iter()
-                    .map(|value| value.as_str())
+                    .map(crate::records::mesh::DesignOccurrenceKey::as_str)
                     .collect::<Vec<_>>(),
                 values.iter().map(String::as_str).collect::<Vec<_>>()
             );
@@ -590,7 +590,8 @@ fn component_insert_pairs_explicit_matrix_with_scope_and_carrier_locations() {
     ] {
         let mut wire = prefix.to_owned();
         if let Some(matrix) = matrix {
-            wire.push_str(&format!(",\"transform\":{matrix}"));
+            std::fmt::Write::write_fmt(&mut wire, format_args!(",\"transform\":{matrix}"))
+                .expect("writing to a String succeeds");
         }
         if carrier {
             wire.push_str(",\"carrier_transform_stored\":true");

@@ -64,10 +64,13 @@ pub(super) fn reconcile(target: &mut CadIr, losses: &mut Vec<LossNote>) -> Resul
                         && state.owner_ref < 0
                         && state.partner_ref.is_none()
                         && state.transition.as_ref().is_none_or(|transition| {
-                            transition.records == Default::default()
-                                && transition.topology == Default::default()
+                            transition.records
+                                == crate::history_records::AsmHistoricalEntityDelta::default()
+                                && transition.topology
+                                    == crate::history_records::AsmHistoricalTopologyDelta::default()
                                 && transition.record_revisions.is_empty()
-                                && transition.rows == Default::default()
+                                && transition.rows
+                                    == crate::history_records::AsmHistoricalRowsDelta::default()
                         })
                 })
         })
@@ -380,11 +383,7 @@ pub(super) fn prune(target: &mut CadIr) -> Result<(), CodecError> {
     })
 }
 
-pub(super) fn coverage(
-    original: &CadIr,
-    written: &CadIr,
-    _losses: &mut Vec<LossNote>,
-) -> Result<NativeDispositions, CodecError> {
+pub(super) fn coverage(original: &CadIr, written: &CadIr) -> NativeDispositions {
     let mut result = NativeDispositions::for_namespace(
         "f3d",
         crate::native::F3D_ARENA_NAMES,
@@ -431,7 +430,7 @@ pub(super) fn coverage(
             }
         }
     }
-    Ok(result)
+    result
 }
 
 /// (C) checks concern relationships inside the typed native document. A

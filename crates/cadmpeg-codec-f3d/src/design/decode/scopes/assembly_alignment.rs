@@ -123,15 +123,15 @@ fn placement_ordered_owner_run(
 
 /// The alignment of an assembly scope. `stream_types` names the stream's
 /// record types, which admit typed operand-path records.
-pub(super) fn exact_assembly_alignment_with_types<'a>(
-    source: View<'a>,
+pub(super) fn exact_assembly_alignment_with_types(
+    source: View<'_>,
     records: &IndexedRecordOffsets,
     scope: &DesignParameterScope,
     parameter_owners: &[DesignParameterOwner],
     stream_types: &super::assembly_operand_paths::StreamTypes<'_>,
 ) -> Result<Option<DesignAssemblyAlignment>, CodecError> {
-    let bytes = source.window();
     use assembly::DesignAssemblyAlignmentForm;
+    let bytes = source.window();
     if design_feature_family(&scope.kind()) != Some(DesignFeatureFamily::Assemble) {
         return Ok(None);
     }
@@ -205,7 +205,7 @@ pub(super) fn exact_assembly_alignment_with_types<'a>(
             .map(Ok);
         }
         let (angle, offset, owners) = {
-            if matches!(scope.frame_length(), Some(671) | Some(744) | Some(748))
+            if matches!(scope.frame_length(), Some(671 | 744 | 748))
                 && generation.operand_frame_variant().is_none()
             {
                 return None;
@@ -379,19 +379,18 @@ pub(super) fn exact_assembly_alignment_with_types<'a>(
                     });
                 }
             }
-            let form = paths
+            paths
                 .map(|paths| {
                     let frames =
                         exact_as_built_operand_frames(bytes, &paths, scope, stream_types);
                     let paths = paths.map(|path| path.content);
                     DesignAssemblyAlignmentForm::try_from(AsBuiltAlignmentDraft {
-                        frames,
                         paths,
+                        frames,
                     })
                 })
                 .transpose()
-                .ok()?;
-            form
+                .ok()?
         } else if let Some(frames) = exact_assembly_operand_frames(bytes, scope) {
             let qualifiers = if legacy_class_383 {
                 let paths = match exact_legacy_class_383_operand_paths(source, records, scope, &frames) {
