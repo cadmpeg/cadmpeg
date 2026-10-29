@@ -340,7 +340,7 @@ fn diameter_parameter_doubles_the_native_radius() {
     .expect("dimensions transfer");
     assert_eq!(
         ir.model.parameters[0].expression.literal_text().as_deref(),
-        Some("14")
+        Some("14 mm")
     );
     assert_eq!(
         ir.model.parameters[0].value,
