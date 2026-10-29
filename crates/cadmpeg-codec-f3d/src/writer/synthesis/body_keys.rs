@@ -114,6 +114,8 @@ pub(super) fn reconcile(target: &CadIr, native: &mut F3dNative) -> Result<(), Co
                 id: format!("f3d:generated:body-visibility#{key}"),
                 body: body.id.clone(),
                 stream: "generated/Design1/BulkStream.dat".into(),
+                byte_offset: None,
+                asm_body_key_offset: None,
                 asm_body_key: key,
                 entity_suffix: suffix,
                 visible,

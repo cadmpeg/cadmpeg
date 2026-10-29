@@ -56,10 +56,6 @@ fn current_typed_act_records_reemit_without_source_frames_or_locations() {
                 .unwrap(),
         )
         .unwrap();
-    assert!(native
-        .act_types
-        .iter()
-        .all(|record| record.byte_offset.is_none()));
     let segments = encode(&native).unwrap();
     let mut archive = zip::ZipWriter::new(Cursor::new(Vec::new()));
     let options = crate::zip_write::file_options(zip::CompressionMethod::Stored);

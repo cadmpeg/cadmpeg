@@ -233,8 +233,16 @@ struct ActEntityWireRef<'a> {
     record_index: u32,
     entity_id: &'a str,
     in_table: bool,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    table_record_index_offset: Option<u64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    channel_record_index_offset: Option<u64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    channel_entity_id_offset: Option<u64>,
     channel_class_tag: &'a str,
     channels: ChannelValues<'a>,
+    #[serde(skip_serializing_if = "BTreeMap::is_empty")]
+    channel_guid_offsets: BTreeMap<&'a str, u64>,
     #[serde(skip_serializing_if = "Option::is_none")]
     class_tail_frame: Option<&'a super::source_frame::SourceFrame>,
 }
@@ -245,8 +253,17 @@ impl Serialize for ActEntity {
             record_index: self.record_index,
             entity_id: &self.entity_id,
             in_table: self.in_table(),
+            table_record_index_offset: self.table_record_index_offset(),
+            channel_record_index_offset: self.channel_record_index_offset(),
+            channel_entity_id_offset: self.channel_entity_id_offset(),
             channel_class_tag: self.channel_class_tag(),
             channels: ChannelValues(&self.channel_group.channels),
+            channel_guid_offsets: self
+                .channel_group
+                .channels
+                .iter()
+                .filter_map(|(name, channel)| Some((name.as_str(), channel.offset?)))
+                .collect(),
             class_tail_frame: self
                 .channel_group
                 .class_tail
@@ -391,9 +408,17 @@ struct ActEntitySerde {
     record_index: u32,
     entity_id: String,
     in_table: bool,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    table_record_index_offset: Option<u64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    channel_record_index_offset: Option<u64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    channel_entity_id_offset: Option<u64>,
     channel_class_tag: String,
     #[serde(deserialize_with = "cadmpeg_core::distinct_keys::btree_map")]
     channels: BTreeMap<String, String>,
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    channel_guid_offsets: BTreeMap<String, u64>,
     #[serde(
         default,
         skip_serializing_if = "Option::is_none",
@@ -415,14 +440,25 @@ impl TryFrom<ActEntitySerde> for ActEntity {
         if wire.channels.is_empty() || wire.channels.len() > 8 {
             return Err("ACT channels must contain 1 through 8 entries".into());
         }
+        if wire
+            .channel_guid_offsets
+            .keys()
+            .any(|name| !wire.channels.contains_key(name))
+        {
+            return Err("channel_guid_offsets must name declared channels".into());
+        }
+        if wire.table_record_index_offset.is_some() && !wire.in_table {
+            return Err("table_record_index_offset requires an ACTTable row".into());
+        }
         let mut channels = BTreeMap::new();
         for (name, value) in wire.channels {
             validate_act_channel_name(&name)?;
+            let offset = wire.channel_guid_offsets.get(&name).copied();
             channels.insert(
                 name,
                 ActChannel {
                     value: value.try_into()?,
-                    offset: None,
+                    offset,
                 },
             );
         }
@@ -438,11 +474,11 @@ impl TryFrom<ActEntitySerde> for ActEntity {
             record_index: wire.record_index,
             entity_id: wire.entity_id,
             table_row: wire.in_table.then_some(ActTableRow {
-                record_index_offset: None,
+                record_index_offset: wire.table_record_index_offset,
             }),
             channel_group: ActChannelGroup {
-                record_index_offset: None,
-                entity_id_offset: None,
+                record_index_offset: wire.channel_record_index_offset,
+                entity_id_offset: wire.channel_entity_id_offset,
                 class_tag: wire.channel_class_tag.try_into()?,
                 channels,
                 class_tail: wire.class_tail_frame.map(|frame| ActStreamResidue {
@@ -461,6 +497,18 @@ impl From<ActEntity> for ActEntitySerde {
             record_index: entity.record_index,
             entity_id: entity.entity_id,
             in_table: entity.table_row.is_some(),
+            table_record_index_offset: entity
+                .table_row
+                .as_ref()
+                .and_then(|row| row.record_index_offset),
+            channel_record_index_offset: entity.channel_group.record_index_offset,
+            channel_entity_id_offset: entity.channel_group.entity_id_offset,
+            channel_guid_offsets: entity
+                .channel_group
+                .channels
+                .iter()
+                .filter_map(|(name, channel)| Some((name.clone(), channel.offset?)))
+                .collect(),
             channel_class_tag: entity.channel_group.class_tag.as_str().to_owned(),
             channels: entity
                 .channel_group
@@ -509,6 +557,8 @@ impl Clone for ActGuid {
 #[derive(Serialize)]
 struct ActGuidWireRef<'a> {
     id: &'a str,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    byte_offset: Option<u64>,
     ordinal: u32,
     guid: &'a str,
 }
@@ -517,6 +567,7 @@ impl Serialize for ActGuid {
     fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
         ActGuidWireRef {
             id: self.id.text(),
+            byte_offset: self.byte_offset,
             ordinal: self.ordinal,
             guid: self.guid.as_str(),
         }
@@ -565,6 +616,8 @@ impl ActGuid {
 #[serde(deny_unknown_fields)]
 struct ActGuidWire {
     id: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    byte_offset: Option<u64>,
     ordinal: u32,
     guid: String,
 }
@@ -575,7 +628,7 @@ impl TryFrom<ActGuidWire> for ActGuid {
     fn try_from(wire: ActGuidWire) -> Result<Self, Self::Error> {
         Ok(Self {
             id: NativeRecordId::from_content(wire.id, "act-guid")?,
-            byte_offset: None,
+            byte_offset: wire.byte_offset,
             ordinal: wire.ordinal,
             guid: wire.guid.try_into()?,
         })
@@ -587,6 +640,7 @@ impl From<ActGuid> for ActGuidWire {
     fn from(guid: ActGuid) -> Self {
         Self {
             id: guid.id.into_string(),
+            byte_offset: guid.byte_offset,
             ordinal: guid.ordinal,
             guid: guid.guid.into(),
         }
@@ -748,6 +802,8 @@ impl Clone for ActRegistryChannel {
 struct ActRegistryChannelWireRef<'a> {
     id: &'a str,
     ordinal: u32,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    byte_offset: Option<u64>,
     name: &'a str,
     guid: &'a str,
 }
@@ -757,6 +813,7 @@ impl Serialize for ActRegistryChannel {
         ActRegistryChannelWireRef {
             id: self.id.text(),
             ordinal: self.ordinal,
+            byte_offset: self.byte_offset,
             name: &self.name,
             guid: self.guid.as_str(),
         }
@@ -814,6 +871,8 @@ impl ActRegistryChannel {
 struct ActRegistryChannelWire {
     id: String,
     ordinal: u32,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    byte_offset: Option<u64>,
     name: String,
     guid: String,
 }
@@ -825,7 +884,7 @@ impl TryFrom<ActRegistryChannelWire> for ActRegistryChannel {
         Ok(Self {
             id: NativeRecordId::from_content(wire.id, "act-registry-channel")?,
             ordinal: wire.ordinal,
-            byte_offset: None,
+            byte_offset: wire.byte_offset,
             name: wire.name,
             guid: wire.guid.try_into()?,
         })
@@ -838,6 +897,7 @@ impl From<ActRegistryChannel> for ActRegistryChannelWire {
         Self {
             id: channel.id.into_string(),
             ordinal: channel.ordinal,
+            byte_offset: channel.byte_offset,
             name: channel.name,
             guid: channel.guid.as_str().into(),
         }
@@ -889,6 +949,10 @@ impl Clone for ActRootComponent {
 #[derive(Serialize)]
 struct ActRootComponentWireRef<'a> {
     id: &'a str,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    byte_offset: Option<u64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    padding: Option<u64>,
     record_index: u32,
     class_tag: &'a str,
     instance_root_record: u32,
@@ -902,6 +966,8 @@ impl Serialize for ActRootComponent {
     fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
         ActRootComponentWireRef {
             id: self.id.text(),
+            byte_offset: self.layout.byte_offset(),
+            padding: self.layout.source.map(|source| source.padding),
             record_index: self.record_index,
             class_tag: self.class_tag.as_str(),
             instance_root_record: self.instance_root_record,
@@ -971,6 +1037,10 @@ impl ActRootComponent {
 #[serde(deny_unknown_fields)]
 struct ActRootComponentWire {
     id: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    byte_offset: Option<u64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    padding: Option<u64>,
     record_index: u32,
     class_tag: String,
     instance_root_record: u32,
@@ -996,7 +1066,13 @@ impl TryFrom<ActRootComponentWire> for ActRootComponent {
             instance_root_record: wire.instance_root_record,
             components_root_record: wire.components_root_record,
             registry_flag: wire.registry_flag,
-            layout: ActRootLayout::from_content(wire.entity_id, wire.display_name)?,
+            layout: match (wire.byte_offset, wire.padding) {
+                (Some(byte_offset), Some(padding)) => {
+                    ActRootLayout::new(byte_offset, wire.entity_id, wire.display_name, padding)?
+                }
+                (None, None) => ActRootLayout::from_content(wire.entity_id, wire.display_name)?,
+                _ => return Err("byte_offset and padding must occur together".into()),
+            },
         })
     }
 }
@@ -1005,6 +1081,8 @@ impl From<ActRootComponent> for ActRootComponentWire {
     fn from(root: ActRootComponent) -> Self {
         Self {
             id: root.id.into_string(),
+            byte_offset: root.layout.byte_offset(),
+            padding: root.layout.source.map(|source| source.padding),
             record_index: root.record_index,
             class_tag: root.class_tag.into(),
             instance_root_record: root.instance_root_record,

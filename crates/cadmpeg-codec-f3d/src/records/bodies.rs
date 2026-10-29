@@ -110,6 +110,8 @@ impl DesignBodyMember {
 #[serde(deny_unknown_fields)]
 pub(crate) struct DesignBodyMemberContent {
     pub(crate) id: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub(crate) byte_offset: Option<u64>,
     pub(crate) entity_suffix: u64,
     pub(crate) flags: u16,
 }
@@ -118,7 +120,7 @@ impl TryFrom<DesignBodyMemberContent> for DesignBodyMember {
     fn try_from(wire: DesignBodyMemberContent) -> Result<Self, String> {
         Ok(Self {
             id: NativeRecordId::from_content(wire.id, "design-body-member")?,
-            byte_offset: None,
+            byte_offset: wire.byte_offset,
             entity_suffix: wire.entity_suffix,
             flags: wire.flags,
         })
@@ -127,8 +129,13 @@ impl TryFrom<DesignBodyMemberContent> for DesignBodyMember {
 impl Serialize for DesignBodyMember {
     fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
         use serde::ser::SerializeStruct;
-        let mut record = serializer.serialize_struct("DesignBodyMember", 3)?;
+        let mut record = serializer.serialize_struct("DesignBodyMember", 4)?;
         record.serialize_field("id", self.id.text())?;
+        if let Some(offset) = self.byte_offset {
+            record.serialize_field("byte_offset", &offset)?;
+        } else {
+            record.skip_field("byte_offset")?;
+        }
         record.serialize_field("entity_suffix", &self.entity_suffix)?;
         record.serialize_field("flags", &self.flags)?;
         record.end()
@@ -698,6 +705,10 @@ pub(crate) struct BodyVisibilityContent {
     pub(crate) id: String,
     pub(crate) body: BodyId,
     pub(crate) stream: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub(crate) byte_offset: Option<u64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub(crate) asm_body_key_offset: Option<u64>,
     pub(crate) asm_body_key: u64,
     pub(crate) entity_suffix: u64,
     pub(crate) visible: bool,
@@ -709,8 +720,8 @@ impl TryFrom<BodyVisibilityContent> for BodyVisibility {
             id: NativeRecordId::try_f3d_new(wire.id, "body-visibility", wire.asm_body_key)?,
             body: wire.body,
             stream: DesignBulkStreamPath::try_from(wire.stream)?,
-            byte_offset: None,
-            asm_body_key_offset: None,
+            byte_offset: wire.byte_offset,
+            asm_body_key_offset: wire.asm_body_key_offset,
             asm_body_key: wire.asm_body_key,
             entity_suffix: wire.entity_suffix,
             visible: wire.visible,
@@ -720,10 +731,20 @@ impl TryFrom<BodyVisibilityContent> for BodyVisibility {
 impl Serialize for BodyVisibility {
     fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
         use serde::ser::SerializeStruct;
-        let mut record = serializer.serialize_struct("BodyVisibility", 6)?;
+        let mut record = serializer.serialize_struct("BodyVisibility", 8)?;
         record.serialize_field("id", self.id.text())?;
         record.serialize_field("body", &self.body)?;
         record.serialize_field("stream", self.stream.as_str())?;
+        for (name, offset) in [
+            ("byte_offset", self.byte_offset),
+            ("asm_body_key_offset", self.asm_body_key_offset),
+        ] {
+            if let Some(offset) = offset {
+                record.serialize_field(name, &offset)?;
+            } else {
+                record.skip_field(name)?;
+            }
+        }
         record.serialize_field("asm_body_key", &self.asm_body_key)?;
         record.serialize_field("entity_suffix", &self.entity_suffix)?;
         record.serialize_field("visible", &self.visible)?;
@@ -737,6 +758,8 @@ impl From<BodyVisibility> for BodyVisibilityContent {
             id: value.id.into_string(),
             body: value.body,
             stream: value.stream.0.into_string(),
+            byte_offset: value.byte_offset,
+            asm_body_key_offset: value.asm_body_key_offset,
             asm_body_key: value.asm_body_key,
             entity_suffix: value.entity_suffix,
             visible: value.visible,
@@ -1066,7 +1089,6 @@ mod tests {
         let mut wire = serde_json::to_value(&source).unwrap();
         wire["id"] = "f3d:Design/BulkStream.dat:design-body-member#authored".into();
         let document: super::DesignBodyMember = serde_json::from_value(wire.clone()).unwrap();
-        assert!(document.byte_offset().is_none());
         assert_eq!(serde_json::to_value(document).unwrap(), wire);
         assert!(
             super::DesignBodyMember::try_from(super::DesignBodyMemberWire {

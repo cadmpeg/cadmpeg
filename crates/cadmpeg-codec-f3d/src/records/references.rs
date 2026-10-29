@@ -25,10 +25,10 @@ pub(crate) struct PersistentReference {
     /// Globally unique deterministic identifier for this native record.
     pub(crate) id: String,
     /// Byte offset of the persistent-reference field name in its Design `BulkStream`.
-    #[serde(skip)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub(crate) byte_offset: Option<u64>,
     /// Byte offset of the u64 value relative to `byte_offset`.
-    #[serde(skip)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub(crate) value_offset: Option<u32>,
     /// Whether this reference identifies a persistent point or one end of a curve.
     pub(crate) kind: PersistentReferenceKind,
@@ -119,6 +119,8 @@ impl Clone for LostEdgeReference {
 #[derive(Serialize)]
 struct LostEdgeReferenceWireRef<'a> {
     id: &'a str,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    record_byte_offset: Option<u64>,
     class_tag: &'a str,
     record_index: u32,
     next_class_tag: &'a str,
@@ -128,6 +130,7 @@ impl Serialize for LostEdgeReference {
     fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
         LostEdgeReferenceWireRef {
             id: &self.id,
+            record_byte_offset: self.record_byte_offset,
             class_tag: self.class_tag.as_str(),
             record_index: self.record_index,
             next_class_tag: self.next_class_tag.as_str(),
@@ -181,6 +184,8 @@ impl LostEdgeReference {
 #[serde(deny_unknown_fields)]
 struct LostEdgeReferenceWire {
     id: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    record_byte_offset: Option<u64>,
     class_tag: String,
     record_index: u32,
     next_class_tag: String,
@@ -189,9 +194,17 @@ struct LostEdgeReferenceWire {
 impl TryFrom<LostEdgeReferenceWire> for LostEdgeReference {
     type Error = String;
     fn try_from(wire: LostEdgeReferenceWire) -> Result<Self, String> {
+        if wire
+            .record_byte_offset
+            .is_some_and(|offset| offset.checked_add(48).is_none())
+        {
+            return Err(
+                "lost_edge_reference.record_byte_offset overflows the record extent".into(),
+            );
+        }
         Ok(Self {
             id: wire.id,
-            record_byte_offset: None,
+            record_byte_offset: wire.record_byte_offset,
             class_tag: wire.class_tag.try_into()?,
             record_index: wire.record_index,
             next_class_tag: wire
@@ -207,6 +220,7 @@ impl From<LostEdgeReference> for LostEdgeReferenceWire {
     fn from(record: LostEdgeReference) -> Self {
         Self {
             id: record.id,
+            record_byte_offset: record.record_byte_offset,
             class_tag: record.class_tag.into(),
             record_index: record.record_index,
             next_class_tag: record.next_class_tag.into(),
@@ -326,12 +340,24 @@ struct DesignMaterialAssignmentWireRef<'a> {
     id: &'a str,
     body_binding_id: &'a super::bodies::DesignBodyBindingId,
     asm_body_key: u64,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    asm_body_key_offset: Option<u64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    entity_suffix_offset: Option<u64>,
     entity_id: &'a str,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    entity_id_offset: Option<u64>,
     visual_guid: &'a DesignVisualToken,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    visual_guid_offset: Option<u64>,
     #[serde(skip_serializing_if = "Option::is_none")]
     physical_token: Option<&'a str>,
     #[serde(skip_serializing_if = "Option::is_none")]
+    physical_token_offset: Option<u64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     visual_preset: Option<&'a str>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    visual_preset_offset: Option<u64>,
 }
 impl Serialize for DesignMaterialAssignment {
     fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
@@ -339,16 +365,22 @@ impl Serialize for DesignMaterialAssignment {
             id: &self.id,
             body_binding_id: &self.body_binding_id,
             asm_body_key: self.asm_body_key,
+            asm_body_key_offset: self.asm_body_key_offset,
+            entity_suffix_offset: self.entity_suffix_offset,
             entity_id: self.entity_id.as_str(),
+            entity_id_offset: self.entity_id_offset,
             visual_guid: &self.visual_guid,
+            visual_guid_offset: self.visual_guid_offset,
             physical_token: self
                 .physical_token
                 .as_ref()
                 .map(|field| field.value.as_str()),
+            physical_token_offset: self.physical_token.as_ref().and_then(|field| field.offset),
             visual_preset: self
                 .visual_preset
                 .as_ref()
                 .map(|field| field.value.as_str()),
+            visual_preset_offset: self.visual_preset.as_ref().and_then(|field| field.offset),
         }
         .serialize(serializer)
     }
@@ -360,41 +392,59 @@ struct DesignMaterialAssignmentWire {
     id: String,
     body_binding_id: super::bodies::DesignBodyBindingId,
     asm_body_key: u64,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    asm_body_key_offset: Option<u64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    entity_suffix_offset: Option<u64>,
     entity_id: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    entity_id_offset: Option<u64>,
     visual_guid: DesignVisualToken,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    visual_guid_offset: Option<u64>,
     #[serde(
         default,
         skip_serializing_if = "Option::is_none",
         deserialize_with = "deserialize_physical_token"
     )]
     physical_token: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    physical_token_offset: Option<u64>,
     #[serde(
         default,
         skip_serializing_if = "Option::is_none",
         deserialize_with = "deserialize_visual_preset"
     )]
     visual_preset: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    visual_preset_offset: Option<u64>,
 }
 impl TryFrom<DesignMaterialAssignmentWire> for DesignMaterialAssignment {
     type Error = String;
     fn try_from(wire: DesignMaterialAssignmentWire) -> Result<Self, String> {
+        if wire.physical_token_offset.is_some() && wire.physical_token.is_none() {
+            return Err("physical_token_offset requires physical_token".into());
+        }
+        if wire.visual_preset_offset.is_some() && wire.visual_preset.is_none() {
+            return Err("visual_preset_offset requires visual_preset".into());
+        }
         Ok(Self {
             id: wire.id,
             body_binding_id: wire.body_binding_id,
             asm_body_key: wire.asm_body_key,
-            asm_body_key_offset: None,
-            entity_suffix_offset: None,
+            asm_body_key_offset: wire.asm_body_key_offset,
+            entity_suffix_offset: wire.entity_suffix_offset,
             entity_id: wire.entity_id.try_into()?,
-            entity_id_offset: None,
+            entity_id_offset: wire.entity_id_offset,
             visual_guid: wire.visual_guid,
-            visual_guid_offset: None,
+            visual_guid_offset: wire.visual_guid_offset,
             physical_token: wire.physical_token.map(|value| RecordedValue {
                 value,
-                offset: None,
+                offset: wire.physical_token_offset,
             }),
             visual_preset: wire.visual_preset.map(|value| RecordedValue {
                 value,
-                offset: None,
+                offset: wire.visual_preset_offset,
             }),
         })
     }
@@ -406,9 +456,15 @@ impl From<DesignMaterialAssignment> for DesignMaterialAssignmentWire {
             id: value.id,
             body_binding_id: value.body_binding_id,
             asm_body_key: value.asm_body_key,
+            asm_body_key_offset: value.asm_body_key_offset,
+            entity_suffix_offset: value.entity_suffix_offset,
             entity_id: value.entity_id.into_string(),
+            entity_id_offset: value.entity_id_offset,
             visual_guid: value.visual_guid,
+            visual_guid_offset: value.visual_guid_offset,
+            physical_token_offset: value.physical_token.as_ref().and_then(|field| field.offset),
             physical_token: value.physical_token.map(|field| field.value),
+            visual_preset_offset: value.visual_preset.as_ref().and_then(|field| field.offset),
             visual_preset: value.visual_preset.map(|field| field.value),
         }
     }

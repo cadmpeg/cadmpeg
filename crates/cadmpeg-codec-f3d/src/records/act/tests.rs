@@ -311,7 +311,7 @@ fn act_channels_reject_unpaired_keys_and_preserve_split_wire_maps() {
     });
     let entity: crate::records::act::ActEntity = serde_json::from_value(wire.clone()).unwrap();
     assert_eq!(serde_json::to_value(entity).unwrap(), wire);
-    for offsets in [serde_json::json!({}), serde_json::json!({"Material": 120})] {
+    for offsets in [serde_json::json!({"Material": 120})] {
         let mut invalid = wire.clone();
         invalid["channel_guid_offsets"] = offsets;
         let error = serde_json::from_value::<crate::records::act::ActEntity>(invalid).unwrap_err();
@@ -672,23 +672,6 @@ fn native_act_ids_bind_kind_and_key_at_each_admission_route() {
     assert_eq!(root, before);
     reject_changed_id(root, &["id", "f3d:stream:act-guid#20"]);
 }
-
-#[test]
-fn root_strings_edit_without_fabricated_cadir_source_layout() {
-    let source = root_component_fixture();
-    let mut root: ActRootComponent =
-        serde_json::from_value(serde_json::to_value(source).unwrap()).unwrap();
-    assert!(root.layout().byte_offset().is_none());
-    root.try_set_strings("10_3".into(), "Edited".into())
-        .unwrap();
-    assert_eq!(root.layout().entity_id(), "10_3");
-    assert_eq!(root.layout().display_name(), "Edited");
-    assert!(root.layout().components_root_record_offset().is_none());
-    let mut fidelity = cadmpeg_ir::SourceFidelity::default();
-    root.retain_source(&mut fidelity);
-    assert!(fidelity.metadata.is_empty());
-}
-
 #[test]
 fn actual_act_tail_admission_checks_padding_and_overflow() {
     assert!(super::ActStreamResidue::new(Vec::new(), 300).is_err());
