@@ -18,14 +18,7 @@ use crate::unknown::UnknownRecord;
 use cadmpeg_core::decode::{u64_from_index, DecodeContext};
 use cadmpeg_core::CodecError;
 
-pub mod b1;
-pub mod freecad;
-mod part;
 pub mod parts;
-mod source_exclusion;
-
-pub use part::RecordLayout;
-pub use source_exclusion::SourceRecordExclusion;
 
 /// Retained-byte operation for one appended native unknown record.
 const ATTACH_UNKNOWN_RECORD: &str = "attach native unknown record";
@@ -380,23 +373,15 @@ pub struct SourceFidelity {
     pub annotations: Annotations,
     /// Source layout and fingerprint facts, never document content or payload bytes.
     pub metadata: BTreeMap<String, String>,
-    /// Source extents and reads keyed by native or neutral record identity.
-    record_layout: BTreeMap<String, RecordLayout>,
     /// Native records retained for recovery or replay, keyed by record id.
     retained_records: BTreeMap<UnknownId, RetainedSourceRecord>,
-    /// Every reached independently framed decode part.
-    parts: BTreeMap<UnknownId, parts::PartRecord>,
-    /// Owner-derived maximal B1 spans for finalized source streams.
-    b1_spans: BTreeMap<String, b1::finalization::ClassifiedStream>,
-    /// Closed FCStd source-ledger arenas keyed by their actual archive stream.
-    freecad_ledgers: BTreeMap<String, freecad::FreecadSourceLedgers>,
 }
 
 #[derive(Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(deny_unknown_fields)]
 struct SourceFidelityWire {
-    /// Union of B1 span classes and retained records' untyped content classes.
+    /// Union of the retained records' untyped content classes.
     #[serde(default)]
     unrepresented: crate::document::ArenaClasses,
     /// Sparse source locations and conversion exactness.
@@ -405,21 +390,9 @@ struct SourceFidelityWire {
     /// Facts about source layout and fingerprints.
     #[serde(default, deserialize_with = "cadmpeg_core::distinct_keys::btree_map")]
     metadata: BTreeMap<String, String>,
-    /// Source extents and reads keyed by native or neutral record identity.
-    #[serde(default, deserialize_with = "cadmpeg_core::distinct_keys::btree_map")]
-    record_layout: BTreeMap<String, RecordLayout>,
     /// Native records retained for recovery or replay.
     #[serde(default, deserialize_with = "cadmpeg_core::distinct_keys::btree_map")]
     retained_records: BTreeMap<UnknownId, RetainedSourceRecord>,
-    /// Every reached independently framed decode part.
-    #[serde(default, deserialize_with = "cadmpeg_core::distinct_keys::btree_map")]
-    parts: BTreeMap<UnknownId, parts::PartRecord>,
-    /// Owner-derived maximal B1 spans for finalized source streams.
-    #[serde(default, deserialize_with = "cadmpeg_core::distinct_keys::btree_map")]
-    b1_spans: BTreeMap<String, b1::finalization::ClassifiedStream>,
-    /// Closed FCStd source-ledger arenas keyed by actual archive stream.
-    #[serde(default, deserialize_with = "cadmpeg_core::distinct_keys::btree_map")]
-    freecad_ledgers: BTreeMap<String, freecad::FreecadSourceLedgers>,
 }
 
 impl TryFrom<SourceFidelityWire> for SourceFidelity {
@@ -429,25 +402,12 @@ impl TryFrom<SourceFidelityWire> for SourceFidelity {
         let value = Self {
             annotations: wire.annotations,
             metadata: wire.metadata,
-            record_layout: wire.record_layout,
             retained_records: wire.retained_records,
-            parts: wire.parts,
-            b1_spans: wire.b1_spans,
-            freecad_ledgers: wire.freecad_ledgers,
         };
-        parts::validate_tree(&value.parts)?;
-        for stream in value.freecad_ledgers.keys() {
-            if stream.is_empty() {
-                return Err("FCStd source ledgers require a named archive stream".into());
-            }
-        }
-        if value.b1_spans.keys().any(String::is_empty) {
-            return Err("B1 coverage requires a named source stream".into());
-        }
         let derived = value.unrepresented();
         if wire.unrepresented != derived {
             return Err(format!(
-                "unrepresented classes ({}) differ from the B1/retained untyped union ({derived})",
+                "unrepresented classes ({}) differ from the retained untyped union ({derived})",
                 wire.unrepresented,
             ));
         }
@@ -466,26 +426,13 @@ impl Serialize for SourceFidelity {
             #[serde(skip_serializing_if = "BTreeMap::is_empty")]
             metadata: &'a BTreeMap<String, String>,
             #[serde(skip_serializing_if = "BTreeMap::is_empty")]
-            record_layout: &'a BTreeMap<String, RecordLayout>,
-            #[serde(skip_serializing_if = "BTreeMap::is_empty")]
             retained_records: &'a BTreeMap<UnknownId, RetainedSourceRecord>,
-            /// Every reached independently framed decode part.
-            #[serde(skip_serializing_if = "BTreeMap::is_empty")]
-            parts: &'a BTreeMap<UnknownId, parts::PartRecord>,
-            #[serde(skip_serializing_if = "BTreeMap::is_empty")]
-            b1_spans: &'a BTreeMap<String, b1::finalization::ClassifiedStream>,
-            #[serde(skip_serializing_if = "BTreeMap::is_empty")]
-            freecad_ledgers: &'a BTreeMap<String, freecad::FreecadSourceLedgers>,
         }
         Wire {
             unrepresented: self.unrepresented(),
             annotations: &self.annotations,
             metadata: &self.metadata,
-            record_layout: &self.record_layout,
             retained_records: &self.retained_records,
-            parts: &self.parts,
-            b1_spans: &self.b1_spans,
-            freecad_ledgers: &self.freecad_ledgers,
         }
         .serialize(serializer)
     }
@@ -497,11 +444,7 @@ impl SourceFidelity {
         Self {
             annotations,
             metadata: BTreeMap::new(),
-            record_layout: BTreeMap::new(),
-            retained_records: std::collections::BTreeMap::new(),
-            parts: BTreeMap::new(),
-            b1_spans: BTreeMap::new(),
-            freecad_ledgers: BTreeMap::new(),
+            retained_records: BTreeMap::new(),
         }
     }
 
@@ -512,35 +455,16 @@ impl SourceFidelity {
         Annotations,
         BTreeMap<UnknownId, RetainedSourceRecord>,
         BTreeMap<String, String>,
-        BTreeMap<String, RecordLayout>,
-        BTreeMap<UnknownId, parts::PartRecord>,
-        BTreeMap<String, b1::finalization::ClassifiedStream>,
-        BTreeMap<String, freecad::FreecadSourceLedgers>,
     ) {
-        (
-            self.annotations,
-            self.retained_records,
-            self.metadata,
-            self.record_layout,
-            self.parts,
-            self.b1_spans,
-            self.freecad_ledgers,
-        )
+        (self.annotations, self.retained_records, self.metadata)
     }
 
-    /// Classes whose source content survives in no typed document record.
-    ///
-    /// This is the union of finalized B1 span classes and retained source classes.
+    /// Classes whose source content survives in no typed document record:
+    /// the union of the retained records' untyped classes.
     pub fn unrepresented(&self) -> crate::document::ArenaClasses {
         self.retained_records
             .values()
             .flat_map(|record| record.untyped().iter().copied())
-            .chain(
-                self.b1_spans
-                    .values()
-                    .flat_map(|stream| stream.spans())
-                    .flat_map(|span| span.classes()),
-            )
             .collect()
     }
 
@@ -560,34 +484,6 @@ impl SourceFidelity {
     /// Append source metadata after checking all tables for identity collisions.
     /// Failure leaves this source metadata unchanged.
     pub fn append(&mut self, mut other: Self) -> Result<(), cadmpeg_core::CodecError> {
-        for stream in other.freecad_ledgers.keys() {
-            if self.freecad_ledgers.contains_key(stream) {
-                return Err(CodecError::malformed(format_args!(
-                    "duplicate FCStd source ledgers for stream {stream}"
-                )));
-            }
-        }
-        for stream in other.b1_spans.keys() {
-            if self.b1_spans.contains_key(stream) {
-                return Err(CodecError::malformed(format_args!(
-                    "duplicate B1 source stream {stream}"
-                )));
-            }
-        }
-        for id in other.parts.keys() {
-            if self.parts.contains_key(id) {
-                return Err(CodecError::malformed(format_args!(
-                    "duplicate source part {id}"
-                )));
-            }
-        }
-        for id in other.record_layout.keys() {
-            if self.record_layout.contains_key(id) {
-                return Err(CodecError::malformed(format_args!(
-                    "duplicate source record layout {id}"
-                )));
-            }
-        }
         for key in other.metadata.keys() {
             if self.metadata.contains_key(key) {
                 return Err(CodecError::malformed(format_args!(
@@ -605,69 +501,7 @@ impl SourceFidelity {
         self.annotations.append(other.annotations)?;
         self.retained_records.append(&mut other.retained_records);
         self.metadata.append(&mut other.metadata);
-        self.record_layout.append(&mut other.record_layout);
-        self.parts.append(&mut other.parts);
-        self.b1_spans.append(&mut other.b1_spans);
-        self.freecad_ledgers.append(&mut other.freecad_ledgers);
         Ok(())
-    }
-
-    /// The three closed FCStd source-ledger arenas by actual archive stream.
-    pub fn freecad_ledgers(&self) -> &BTreeMap<String, freecad::FreecadSourceLedgers> {
-        &self.freecad_ledgers
-    }
-
-    /// Retain one complete set of FCStd source ledgers without replacing a stream.
-    pub fn insert_freecad_ledgers(
-        &mut self,
-        stream: String,
-        ledgers: freecad::FreecadSourceLedgers,
-    ) -> Result<(), CodecError> {
-        let stream =
-            String::from(crate::StreamName::try_from(stream).map_err(CodecError::malformed)?);
-        match self.freecad_ledgers.entry(stream) {
-            Entry::Vacant(entry) => {
-                entry.insert(ledgers);
-                Ok(())
-            }
-            Entry::Occupied(entry) => Err(CodecError::malformed(format_args!(
-                "duplicate FCStd source ledgers for stream {}",
-                entry.key()
-            ))),
-        }
-    }
-
-    /// Borrow exact source coverage without permitting arbitrary class assignment.
-    pub fn b1_spans(&self) -> &BTreeMap<String, b1::finalization::ClassifiedStream> {
-        &self.b1_spans
-    }
-
-    /// Read every reached part without changing its delivery state or source extent.
-    pub fn parts(&self) -> &BTreeMap<UnknownId, parts::PartRecord> {
-        &self.parts
-    }
-
-    /// Borrow source layouts without permitting replacement or read attribution.
-    pub const fn record_layout(&self) -> &BTreeMap<String, RecordLayout> {
-        &self.record_layout
-    }
-
-    /// Inserts a source layout without replacing an existing record identity.
-    pub fn insert_record_layout(
-        &mut self,
-        id: String,
-        layout: RecordLayout,
-    ) -> Result<(), CodecError> {
-        match self.record_layout.entry(id) {
-            Entry::Vacant(entry) => {
-                entry.insert(layout);
-                Ok(())
-            }
-            Entry::Occupied(entry) => Err(CodecError::malformed(format_args!(
-                "duplicate source record layout {}",
-                entry.key()
-            ))),
-        }
     }
 
     /// Finds a retained source record by identifier.
@@ -833,7 +667,6 @@ fn duplicate_record(id: &UnknownId) -> NativeConvertError {
 #[cfg(test)]
 mod tests {
     mod admission;
-    mod record_layout;
     mod unknown_keys;
 
     use std::path::{Path, PathBuf};

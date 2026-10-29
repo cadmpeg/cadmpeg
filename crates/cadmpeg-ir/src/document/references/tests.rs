@@ -101,7 +101,6 @@ fn registry_reference_visit_keeps_real_owners_expression_multiplicity_optional_d
         .iter()
         .all(|(owner, target)| owner != target && target != "test:model:parameter#plain-text"));
     assert_eq!(ir.model, before);
-    assert!(ctx.take_record_captures().unwrap().is_empty());
 }
 
 #[test]

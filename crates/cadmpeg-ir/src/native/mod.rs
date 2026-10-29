@@ -16,10 +16,7 @@ mod canon;
 pub mod catalogue;
 mod compare;
 mod copy;
-mod provenance;
-pub(crate) mod prune;
 mod replay;
-mod source_exclusion;
 pub(crate) mod view;
 
 #[cfg(test)]
