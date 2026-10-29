@@ -65,6 +65,8 @@ pub(crate) enum InventorLossCode {
     FeatureLabelNameReplaced,
     /// Typed feature records have an operation graph that is not closed.
     FeatureOperationGraphOpen,
+    /// An edge treatment retains an unresolved empty edge-item index list.
+    FeatureEdgeSelectionEmptyItemsNative,
     /// Extrusion construction operands remain native.
     FeatureExtrusionOperandsNative,
     /// An extrusion retains its exact profile selection without a neutral sketch graph.
@@ -203,6 +205,7 @@ impl InventorLossCode {
         Self::FeatureProfileBodyUndecoded,
         Self::FeatureLabelNameReplaced,
         Self::FeatureOperationGraphOpen,
+        Self::FeatureEdgeSelectionEmptyItemsNative,
         Self::FeatureExtrusionOperandsNative,
         Self::FeatureExtrusionProfileNative,
         Self::FeatureRectangularPatternOperandsNative,
@@ -290,6 +293,9 @@ impl InventorLossCode {
             Self::FeatureExtrusionOperandsNative => "feature.extrusion-operands-native",
             Self::FeatureExtrusionProfileNative => "feature.extrusion-profile-native",
             Self::FeatureOperationGraphOpen => "feature.operation-graph-open",
+            Self::FeatureEdgeSelectionEmptyItemsNative => {
+                "feature.edge-selection-empty-items-native"
+            }
             Self::FeatureThreadDefinitionPartial => "feature.thread-definition-partial",
             Self::FeatureThickenOperandsNative => "feature.thicken-operands-native",
             Self::FeatureShellDefinitionPartial => "feature.shell-definition-partial",
@@ -393,6 +399,7 @@ impl InventorLossCode {
             }
             Self::KernelHeaderToleranceUnresolved => LossTaxonomy::GeometryNotTransferred,
             Self::FeatureOperationGraphOpen
+            | Self::FeatureEdgeSelectionEmptyItemsNative
             | Self::FeatureExtrusionOperandsNative
             | Self::FeatureExtrusionProfileNative
             | Self::FeatureRectangularPatternOperandsNative
@@ -502,6 +509,7 @@ mod tests {
                 "feature.profile-body-undecoded",
                 "feature.label-name-replaced",
                 "feature.operation-graph-open",
+                "feature.edge-selection-empty-items-native",
                 "feature.extrusion-operands-native",
                 "feature.extrusion-profile-native",
                 "feature.rectangular-pattern-operands-native",
