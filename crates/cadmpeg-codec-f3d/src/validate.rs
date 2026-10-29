@@ -9,6 +9,7 @@
 //! [`Finding`] values in a fixed emission order; callers append them to the
 //! generic IR validation report.
 
+mod body_ownership;
 mod emboss;
 mod sheet_metal_settings;
 mod xref;
@@ -1856,6 +1857,7 @@ fn validate_body_bindings(
     findings: &mut Vec<Finding>,
 ) -> Result<(), CodecError> {
     let native = ctx.native;
+    let ownership_types = body_ownership::OwnerTypes::new(native, ctx.decode)?;
     let mut binding_offsets = HashSet::new();
     let mut binding_groups =
         std::collections::HashMap::<(&str, u64), Vec<&records::bodies::DesignBodyBinding>>::new();
@@ -1883,6 +1885,7 @@ fn validate_body_bindings(
             true
         };
         let valid = design_stream_contains_entry(native_stream, binding.stream())
+            && ownership_types.matches(binding)
             && resolved_valid
             && binding_offsets.insert((native_stream, binding.asm_body_key_offset()));
         if !valid {

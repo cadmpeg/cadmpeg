@@ -41,6 +41,7 @@ pub(crate) struct LocalComponentSources<'a> {
     pub(crate) body_bindings: &'a [DesignBodyBinding],
     /// Solved model bodies, or `None` when bodies are projected after product structure.
     pub(crate) bodies: Option<&'a BTreeSet<BodyId>>,
+    pub(crate) hidden_bodies: Option<&'a BTreeSet<BodyId>>,
     /// First free ordinal among root occurrences already in the model.
     pub(crate) root_ordinal_start: usize,
     pub(crate) limits: cadmpeg_core::decode::ResourceLimits,
@@ -735,6 +736,25 @@ impl<'a> Projector<'a> {
                     "Fusion Design placed more current poses than its carriers hold",
                 )
             })?;
+        let fallback_owners =
+            self.sources
+                .body_bindings
+                .iter()
+                .filter(|binding| {
+                    binding.body.is_some()
+                        && binding.component_owner.is_none()
+                        && !binding.component_owner_unresolved
+                        && self.sources.components.contains_key(
+                            crate::ids::native_stream(binding.id()).unwrap_or_default(),
+                        )
+                })
+                .count();
+        let unresolved_owners = self
+            .sources
+            .body_bindings
+            .iter()
+            .filter(|binding| binding.body.is_some() && binding.component_owner_unresolved)
+            .count();
         let mut losses: Vec<LossNote> = self
             .unplaced
             .into_iter()
@@ -764,6 +784,16 @@ impl<'a> Projector<'a> {
                 self.current_poses
             )));
         }
+        if unresolved_owners != 0 {
+            losses.push(F3dLossCode::ComponentBodyOwnerUnresolved.note(format!(
+                "{unresolved_owners} solved body binding(s) have no unique admitted Body-container component owner."
+            )));
+        }
+        if fallback_owners != 0 {
+            losses.push(F3dLossCode::ComponentBodyOwnerFallback.note(format!(
+                "{fallback_owners} solved body binding(s) use entity-cluster component ownership because no admitted Body-container component membership names them."
+            )));
+        }
         if native_poses != 0 {
             losses.push(F3dLossCode::LocalOccurrenceCurrentPoseNative.note(format!(
                 "{native_poses} local occurrence(s) keep their stored placement; the pose of their component-path carrier stays native"
@@ -776,8 +806,7 @@ impl<'a> Projector<'a> {
         })
     }
 
-    /// Definition identified by a component naming space; it owns the bodies
-    /// of that component's entity cluster.
+    /// Definition identified by a component naming space.
     fn naming_space_definition(
         &mut self,
         stream: &str,
@@ -785,7 +814,7 @@ impl<'a> Projector<'a> {
     ) -> ProductDefinitionId {
         let id = crate::ids::neutral_component_id(&root.context_uuid);
         if !self.definitions.contains_key(id.as_str()) {
-            let bodies = self.cluster_bodies(stream, root.root_entity);
+            let bodies = self.definition_bodies(stream, root.root_entity);
             let mut definition = component_definition(id.clone(), bodies);
             definition.source_name.clone_from(&root.name);
             self.definitions.insert(id.as_str().to_owned(), definition);
@@ -806,31 +835,35 @@ impl<'a> Projector<'a> {
         id
     }
 
-    /// Solved bodies whose body-map entity suffix lies in the entity cluster
-    /// that starts at `root_entity`.
-    fn cluster_bodies(&self, stream: &str, root_entity: u64) -> Vec<BodyId> {
-        let end = self
-            .sources
-            .components
-            .get(stream)
-            .and_then(|components| {
-                components
-                    .root_entities
-                    .range((
-                        std::ops::Bound::Excluded(root_entity),
-                        std::ops::Bound::Unbounded,
-                    ))
-                    .next()
-            })
-            .copied();
+    fn definition_bodies(&self, stream: &str, root_entity: u64) -> Vec<BodyId> {
+        let end = self.sources.components.get(stream).and_then(|components| {
+            components
+                .roots
+                .values()
+                .map(|root| root.root_entity)
+                .chain(components.root_entities.iter().copied())
+                .filter(|entity| *entity > root_entity)
+                .min()
+        });
         let mut bodies = self
             .sources
             .body_bindings
             .iter()
             .filter(|binding| {
                 crate::ids::native_stream(binding.id()) == Some(stream)
-                    && binding.entity_suffix >= root_entity
-                    && end.is_none_or(|end| binding.entity_suffix < end)
+                    && match &binding.component_owner {
+                        Some(owner) => owner
+                            .component_for(binding.entity_suffix)
+                            .and_then(|component| {
+                                self.sources.components.get(stream)?.roots.get(&component)
+                            })
+                            .is_some_and(|definition| definition.root_entity == root_entity),
+                        None => {
+                            !binding.component_owner_unresolved
+                                && binding.entity_suffix >= root_entity
+                                && end.is_none_or(|end| binding.entity_suffix < end)
+                        }
+                    }
             })
             .filter_map(|binding| binding.body.clone())
             .filter(|body| {
@@ -844,17 +877,21 @@ impl<'a> Projector<'a> {
         bodies
     }
 
-    /// Whether every solved body lies in the cluster of a component definition.
     fn every_body_has_a_definition(&self) -> bool {
         let mut owned = BTreeSet::new();
         for (stream, components) in self.sources.components {
             for root in components.roots.values() {
-                owned.extend(self.cluster_bodies(stream, root.root_entity));
+                owned.extend(self.definition_bodies(stream, root.root_entity));
             }
         }
-        self.sources
-            .bodies
-            .is_some_and(|bodies| bodies.iter().all(|body| owned.contains(body)))
+        self.sources.bodies.is_some_and(|bodies| {
+            bodies.iter().all(|body| {
+                self.sources
+                    .hidden_bodies
+                    .is_some_and(|hidden| hidden.contains(body))
+                    || owned.contains(body)
+            })
+        })
     }
 }
 
@@ -1195,6 +1232,7 @@ mod tests {
         let components = BTreeMap::new();
         let bodies = BTreeSet::new();
         let projection = super::project_local_components(&super::LocalComponentSources {
+            hidden_bodies: None,
             scopes,
             occurrences,
             components: &components,
@@ -1217,7 +1255,6 @@ mod tests {
         BTreeMap::from([(
             STREAM.to_owned(),
             StreamComponents {
-                root_entities: BTreeSet::from([COMPONENT_ROOT, DOCUMENT_ROOT]),
                 roots: BTreeMap::from([
                     (
                         159,
@@ -1242,6 +1279,24 @@ mod tests {
         )])
     }
 
+    fn ownership_layout(body: u64, component: u64) -> Vec<u8> {
+        let mut bytes = 1_u32.to_le_bytes().to_vec();
+        for (target, guid) in [
+            (
+                body,
+                crate::design::presentation::BODY_PRESENTATION_TYPE_GUID,
+            ),
+            (component, crate::records::body_ownership::COMPONENT_GUID),
+        ] {
+            bytes.push(1);
+            bytes.extend_from_slice(&target.to_le_bytes());
+            bytes.extend_from_slice(&36_u32.to_le_bytes());
+            bytes.extend_from_slice(guid.as_bytes());
+            bytes.extend_from_slice(&[0, 0]);
+        }
+        bytes
+    }
+
     fn binding(offset: u64, entity_suffix: u64, body: &str) -> DesignBodyBinding {
         serde_json::from_value(serde_json::json!({
             "id": format!("{STREAM}:design-body-binding#{offset}"),
@@ -1255,6 +1310,7 @@ mod tests {
             "blob_name": "BREP.",
             "blob_name_offset": offset + 32,
             "body": body,
+            "component_owner": crate::records::body_ownership::membership(&ownership_layout(entity_suffix, if entity_suffix < DOCUMENT_ROOT { 159 } else { 276 })).unwrap().proof(900, 0, 0).unwrap(),
         }))
         .unwrap()
     }
@@ -1301,6 +1357,7 @@ mod tests {
             .map(|body| BodyId::mint(*body).unwrap())
             .collect::<BTreeSet<_>>();
         super::project_local_components(&super::LocalComponentSources {
+            hidden_bodies: None,
             scopes: &[],
             occurrences: carriers,
             components,
@@ -1368,6 +1425,7 @@ mod tests {
         let bodies = BTreeSet::new();
         for count in [1, 2] {
             let mut sources = super::LocalComponentSources {
+                hidden_bodies: None,
                 scopes: &[],
                 occurrences: &carriers[..count],
                 components: &components,
@@ -1460,6 +1518,7 @@ mod tests {
         let components = two_component_stream(Some(276));
         let bodies = BTreeSet::new();
         let sources = super::LocalComponentSources {
+            hidden_bodies: None,
             scopes: &[],
             occurrences: &[],
             components: &components,
@@ -1495,12 +1554,209 @@ mod tests {
     }
 
     #[test]
+    fn explicit_membership_places_a_late_body_in_its_child_component() {
+        let components = two_component_stream(Some(276));
+        let body = BodyId::mint(COMPONENT_BODY).unwrap();
+        let bodies = BTreeSet::from([body.clone()]);
+        let mut binding = binding(1000, 900, COMPONENT_BODY);
+        binding.component_owner = Some(
+            crate::records::body_ownership::membership(&ownership_layout(900, 159))
+                .unwrap()
+                .proof(900, 0, 0)
+                .unwrap(),
+        );
+        let bindings = [binding];
+        let carriers = [carrier(
+            100,
+            "00000000-0000-4000-8000-000000000001",
+            placed(
+                1,
+                [
+                    [0.0, -1.0, 0.0, 2.0],
+                    [1.0, 0.0, 0.0, 3.0],
+                    [0.0, 0.0, 1.0, 4.0],
+                    [0.0, 0.0, 0.0, 1.0],
+                ],
+            ),
+            DOCUMENT_ROOT,
+        )];
+        let projection = super::project_local_components(&super::LocalComponentSources {
+            hidden_bodies: None,
+            scopes: &[],
+            occurrences: &carriers,
+            components: &components,
+            body_bindings: &bindings,
+            bodies: Some(&bodies),
+            root_ordinal_start: 0,
+            limits: cadmpeg_core::decode::ResourceLimits::default(),
+        })
+        .unwrap();
+        assert!(projection.losses.is_empty());
+        let occurrence = projection
+            .occurrences
+            .iter()
+            .find(|occurrence| occurrence.native_ref.is_some())
+            .unwrap();
+        assert_eq!(
+            occurrence.transform.rows(),
+            [
+                [0.0, -1.0, 0.0, 20.0],
+                [1.0, 0.0, 0.0, 30.0],
+                [0.0, 0.0, 1.0, 40.0],
+                [0.0, 0.0, 0.0, 1.0]
+            ]
+        );
+
+        let child = crate::ids::neutral_component_id(&guid(COMPONENT_CONTEXT));
+        let root = crate::ids::neutral_component_id(&guid(ROOT_CONTEXT));
+        assert_eq!(
+            projection
+                .definitions
+                .iter()
+                .find(|d| d.id == child)
+                .unwrap()
+                .bodies,
+            [body]
+        );
+        assert!(projection
+            .definitions
+            .iter()
+            .find(|d| d.id == root)
+            .unwrap()
+            .bodies
+            .is_empty());
+    }
+
+    #[test]
+    fn missing_component_membership_uses_entity_cluster_and_reports_it() {
+        let components = two_component_stream(Some(276));
+        let body = BodyId::mint(COMPONENT_BODY).unwrap();
+        let bodies = BTreeSet::from([body]);
+        let mut binding = binding(1000, 194, COMPONENT_BODY);
+        binding.component_owner = None;
+        let bindings = [binding];
+        let carriers = [carrier(
+            100,
+            "00000000-0000-4000-8000-000000000001",
+            DesignComponentOccurrencePlacement::Base,
+            DOCUMENT_ROOT,
+        )];
+        let projection = super::project_local_components(&super::LocalComponentSources {
+            hidden_bodies: None,
+            scopes: &[],
+            occurrences: &carriers,
+            components: &components,
+            body_bindings: &bindings,
+            bodies: Some(&bodies),
+            root_ordinal_start: 0,
+            limits: cadmpeg_core::decode::ResourceLimits::default(),
+        })
+        .unwrap();
+        assert_eq!(projection.occurrences.len(), 2);
+        assert!(!projection
+            .losses
+            .iter()
+            .any(|loss| loss.code == crate::loss::F3dLossCode::LocalOccurrenceUnplaced.kind()));
+        assert_eq!(
+            projection
+                .definitions
+                .iter()
+                .flat_map(|definition| &definition.bodies)
+                .count(),
+            1
+        );
+        assert!(projection
+            .losses
+            .iter()
+            .any(|loss| loss.code == crate::loss::F3dLossCode::ComponentBodyOwnerFallback.kind()));
+    }
+
+    #[test]
+    fn a_hidden_body_without_membership_uses_its_cluster_and_keeps_placement() {
+        let components = two_component_stream(Some(276));
+        let body = BodyId::mint(COMPONENT_BODY).unwrap();
+        let bodies = BTreeSet::from([body]);
+        let mut binding = binding(1000, 194, COMPONENT_BODY);
+        binding.component_owner = None;
+        let bindings = [binding];
+        let carriers = [carrier(
+            100,
+            "00000000-0000-4000-8000-000000000001",
+            DesignComponentOccurrencePlacement::Base,
+            DOCUMENT_ROOT,
+        )];
+        let projection = super::project_local_components(&super::LocalComponentSources {
+            hidden_bodies: Some(&bodies),
+            scopes: &[],
+            occurrences: &carriers,
+            components: &components,
+            body_bindings: &bindings,
+            bodies: Some(&bodies),
+            root_ordinal_start: 0,
+            limits: cadmpeg_core::decode::ResourceLimits::default(),
+        })
+        .unwrap();
+        assert_eq!(projection.occurrences.len(), 2);
+        assert_eq!(
+            projection
+                .definitions
+                .iter()
+                .flat_map(|definition| &definition.bodies)
+                .count(),
+            1
+        );
+        assert!(projection
+            .losses
+            .iter()
+            .any(|loss| loss.code == crate::loss::F3dLossCode::ComponentBodyOwnerFallback.kind()));
+        assert!(!projection
+            .losses
+            .iter()
+            .any(|loss| loss.code == crate::loss::F3dLossCode::LocalOccurrenceUnplaced.kind()));
+    }
+
+    #[test]
+    fn explicit_membership_and_cluster_fallback_share_one_stream() {
+        let components = two_component_stream(Some(276));
+        let mut explicit = binding(1000, 901, COMPONENT_BODY);
+        explicit.component_owner = Some(
+            crate::records::body_ownership::membership(&ownership_layout(901, 159))
+                .unwrap()
+                .proof(900, 0, 0)
+                .unwrap(),
+        );
+        let mut fallback = binding(1100, 900, ROOT_BODY);
+        fallback.component_owner = None;
+        let bindings = [explicit, fallback];
+        let sources = super::LocalComponentSources {
+            hidden_bodies: None,
+            scopes: &[],
+            occurrences: &[],
+            components: &components,
+            body_bindings: &bindings,
+            bodies: None,
+            root_ordinal_start: 0,
+            limits: cadmpeg_core::decode::ResourceLimits::default(),
+        };
+        let projector = super::Projector::new(&sources);
+        assert_eq!(
+            projector.definition_bodies(STREAM, COMPONENT_ROOT),
+            [BodyId::mint(COMPONENT_BODY).unwrap()]
+        );
+        assert_eq!(
+            projector.definition_bodies(STREAM, DOCUMENT_ROOT),
+            [BodyId::mint(ROOT_BODY).unwrap()]
+        );
+    }
+
+    #[test]
     fn every_body_has_a_definition_counts_an_ordinary_body_without_a_native_key() {
         let components = two_component_stream(Some(276));
         let id = BodyId::mint(COMPONENT_BODY).unwrap();
         let bodies = BTreeSet::from([id.clone()]);
         let bindings = [binding(1000, 194, COMPONENT_BODY)];
         let sources = super::LocalComponentSources {
+            hidden_bodies: None,
             scopes: &[],
             occurrences: &[],
             components: &components,
@@ -1510,9 +1766,13 @@ mod tests {
             limits: cadmpeg_core::decode::ResourceLimits::default(),
         };
         let projector = super::Projector::new(&sources);
-        assert_eq!(projector.cluster_bodies(STREAM, COMPONENT_ROOT), vec![id]);
+        assert_eq!(
+            projector.definition_bodies(STREAM, COMPONENT_ROOT),
+            vec![id]
+        );
         assert!(projector.every_body_has_a_definition());
         let sources = super::LocalComponentSources {
+            hidden_bodies: None,
             body_bindings: &[],
             ..sources
         };
@@ -1625,7 +1885,6 @@ mod tests {
         const EMPTY_CONTEXT: &str = "00000000-0000-4000-8000-000000000010";
         let mut components = two_component_stream(Some(276));
         let stream = components.get_mut(STREAM).unwrap();
-        stream.root_entities.insert(220);
         stream.roots.insert(
             219,
             ComponentDefinition {
@@ -1776,7 +2035,6 @@ mod tests {
     ) {
         let mut components = two_component_stream(Some(276));
         let stream = components.get_mut(STREAM).unwrap();
-        stream.root_entities.insert(101);
         stream.roots.insert(
             100,
             ComponentDefinition {
@@ -1839,6 +2097,7 @@ mod tests {
         carriers[1].current_pose = pose(9.0);
         let empty = BTreeSet::new();
         let projection = super::project_local_components(&super::LocalComponentSources {
+            hidden_bodies: None,
             scopes: &[],
             occurrences: &carriers,
             components: &components,
@@ -1895,6 +2154,7 @@ mod tests {
         let empty = BTreeSet::new();
         for bodies in [Some(&empty), None] {
             let projection = super::project_local_components(&super::LocalComponentSources {
+                hidden_bodies: None,
                 scopes: &[],
                 occurrences: &carriers,
                 components: &components,
@@ -2075,6 +2335,7 @@ mod tests {
         }
         let bodies = BTreeSet::new();
         let projection = super::project_local_components(&super::LocalComponentSources {
+            hidden_bodies: None,
             scopes: &[scope],
             occurrences: &carriers,
             components: &components,
@@ -2145,7 +2406,6 @@ mod tests {
         let mut owner = DOCUMENT_ROOT;
         for index in 0..64 {
             let record = 1000 + index * 2;
-            stream.root_entities.insert(record + 1);
             stream.roots.insert(
                 record,
                 ComponentDefinition {
@@ -2189,6 +2449,7 @@ mod tests {
         let (carriers, components) = nested_fixture();
         let bodies = BTreeSet::new();
         let projection = super::project_local_components(&super::LocalComponentSources {
+            hidden_bodies: None,
             scopes: &[],
             occurrences: &carriers,
             components: &components,
@@ -2491,6 +2752,7 @@ mod tests {
         let components = BTreeMap::new();
         let bodies = BTreeSet::new();
         let sources = super::LocalComponentSources {
+            hidden_bodies: None,
             scopes: &[],
             occurrences: &[],
             components: &components,

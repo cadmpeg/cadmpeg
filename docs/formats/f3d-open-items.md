@@ -518,6 +518,19 @@ the native feature when a fixed lane carries a symmetric distance.
 
 **Need.** A primary indexed record registered to `CE2913AA-CFE0-4F04-9102-24424ED3BCFA` must close under either proposed additional envelope before that envelope can define a placement or a tagged field.
 
+
+### DR-114. Body-container Fusion owners
+
+**Question.** How does an owner of type `074F9459-89C2-4B7D-8AB4-DCE67AE944FE` bind its Body container to a component definition?
+
+**Known.** `f3d.md` §3.1 "The paired untyped Body-container membership" requires registered Body and Component targets. A registered version-4 Body container has a paired untyped terminal list naming Body entities 9741 and 11861 and owner entity 9709. The owner has type `074F9459-89C2-4B7D-8AB4-DCE67AE944FE`, base type `63D6AD42-466A-40B7-9CCD-EB21BC500EF6`, version 1, module `Fusion`.
+
+**Need.** A typed reference chain from this owner to a Component definition, with the containing record boundaries and registrations.
+
+**Conflict.** None. The Fusion owner is outside the direct Component-owner grammar.
+
+**Note.** The body identities and terminal list are defined; their component-definition join is unresolved.
+
 ## 3. Material assets
 
 ### MA-04. Texture map-channel values

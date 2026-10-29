@@ -270,3 +270,5 @@ pub(crate) mod placement_construction;
 pub(crate) mod pipe;
 
 pub(crate) mod work_plane;
+
+pub(crate) mod component_body_test;

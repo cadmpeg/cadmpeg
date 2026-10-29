@@ -152,7 +152,7 @@ fn an_allowance_that_skips_history_binding_keeps_the_placements() {
 #[test]
 fn attributed_local_children_repeat_under_each_containing_instance() {
     const TOLERANCE: f64 = 1e-12;
-    let (bulk, meta) = crate::test_support::streams_test::nested_local_component_design();
+    let (bulk, meta) = crate::test_support::streams_test::nested_local_component_design(&[300]);
     let bytes = f3d_with_breps_and_design(
         &[(
             "BREP.module.smbh",
@@ -203,5 +203,67 @@ fn attributed_local_children_repeat_under_each_containing_instance() {
             .get();
         assert!((face.y - 50.0).abs() < TOLERANCE);
         assert!((face.x - 30.0).abs() < TOLERANCE);
+    }
+}
+
+#[test]
+fn only_absent_membership_uses_the_component_cluster() {
+    for owners in [&[][..], &[200, 300][..], &[999][..]] {
+        let (bulk, meta) = crate::test_support::streams_test::nested_local_component_design(owners);
+        let bytes = f3d_with_breps_and_design(
+            &[(
+                "BREP.module.smbh",
+                &crate::test_support::smbh_geometry_test::synthetic_geometry_smbh(),
+            )],
+            &bulk,
+            &meta,
+        );
+        let result = super::decode(bytes);
+        assert_eq!(result.ir().model.bodies.len(), 1);
+        assert_eq!(
+            result
+                .ir()
+                .model
+                .product_definitions
+                .iter()
+                .flat_map(|definition| &definition.bodies)
+                .count(),
+            usize::from(owners.is_empty())
+        );
+        assert!(result.report().losses.iter().any(|loss| loss.code
+            == if owners.is_empty() {
+                F3dLossCode::ComponentBodyOwnerFallback.kind()
+            } else {
+                F3dLossCode::ComponentBodyOwnerUnresolved.kind()
+            }));
+    }
+}
+
+#[test]
+fn admitted_component_membership_wins_over_an_unregistered_owner() {
+    for owners in [&[999, 300][..], &[300, 999][..]] {
+        let (bulk, meta) = crate::test_support::streams_test::nested_local_component_design(owners);
+        let bytes = f3d_with_breps_and_design(
+            &[(
+                "BREP.module.smbh",
+                &crate::test_support::smbh_geometry_test::synthetic_geometry_smbh(),
+            )],
+            &bulk,
+            &meta,
+        );
+        let result = super::decode(bytes);
+        assert_eq!(
+            result
+                .ir()
+                .model
+                .product_definitions
+                .iter()
+                .flat_map(|definition| &definition.bodies)
+                .count(),
+            1
+        );
+        assert!(!result.report().losses.iter().any(|loss| loss.code
+            == F3dLossCode::ComponentBodyOwnerFallback.kind()
+            || loss.code == F3dLossCode::ComponentBodyOwnerUnresolved.kind()));
     }
 }

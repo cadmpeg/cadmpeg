@@ -23892,3 +23892,45 @@ anchor = "The fixed fields are defined by `edge_flange_corner_operation`"
 offset = 299
 size = 321
 note = "Scope envelope follows the edge groups."
+
+
+[[type]]
+name = "component_body_membership_count"
+bytes = 4
+endianness = "little"
+section = "3.1"
+anchor = "The terminal Body-container membership"
+note = "The u32 count precedes the terminal Body-reference list."
+
+[[type]]
+name = "component_body_membership_reference"
+bytes = 51
+endianness = "little"
+section = "3.1"
+anchor = "The terminal Body-container membership"
+note = "A present same-segment reference with a nonzero u64 target, a 36-byte ASCII type GUID, and two trailing zero bytes."
+
+[[type]]
+name = "component_body_membership_local_reference"
+bytes = 11
+endianness = "little"
+section = "3.1"
+anchor = "The paired untyped Body-container membership"
+note = "A present untyped same-segment reference with a nonzero u64 target and two zero bytes."
+
+[[type]]
+name = "component_body_membership_local_entry"
+bytes = 15
+endianness = "little"
+section = "3.1"
+anchor = "The paired untyped Body-container membership"
+note = "An 11-byte untyped Body reference followed by u32 1 in the repeated body list. List order is independent; both lists contain the same unique body identities."
+
+
+[[type]]
+name = "component_body_membership_single_overhead"
+bytes = 15
+endianness = "little"
+section = "3.1"
+anchor = "The single untyped Body-container membership"
+note = "A u32 body count and an eleven-byte untyped owner reference enclose the single body list."

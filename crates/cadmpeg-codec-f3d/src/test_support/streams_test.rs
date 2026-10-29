@@ -4,6 +4,7 @@
 
 use cadmpeg_core::decode::u64_from_index;
 
+use crate::test_support::component_body_test::{append_body_owners, body_type, container_type};
 use crate::test_support::{
     indexed_header, lp_ascii, lp_utf16, push_marked_reference, push_reference_u64,
     write_indexed_header, write_marked_reference,
@@ -1865,7 +1866,7 @@ pub(super) fn generated_design_sketch_dimension_bulkstream() -> (Vec<u8>, Vec<(u
 }
 
 /// A repeated local module with two children and one existing body-map binding.
-pub(crate) fn nested_local_component_design() -> (Vec<u8>, Vec<u8>) {
+pub(crate) fn nested_local_component_design(body_owners: &[u64]) -> (Vec<u8>, Vec<u8>) {
     let mut bulk = Vec::new();
     let mut records = Vec::new();
     for (record, root, context) in [
@@ -1951,10 +1952,11 @@ pub(crate) fn nested_local_component_design() -> (Vec<u8>, Vec<u8>) {
     bulk.extend_from_slice(&1793_u64.to_le_bytes());
     bulk.extend_from_slice(&0_u32.to_le_bytes());
     lp_utf16(&mut bulk, "BREP.module.smbh");
+    let containers = append_body_owners(&mut bulk, &mut records, body_owners);
     let meta = design_metastream_with_records(
         &[
             (
-                "00000000-0000-4000-8000-000000000010",
+                crate::records::body_ownership::COMPONENT_GUID,
                 "",
                 2,
                 "Component",
@@ -1981,6 +1983,8 @@ pub(crate) fn nested_local_component_design() -> (Vec<u8>, Vec<u8>) {
                 "Component",
                 &[101, 201, 301],
             ),
+            container_type(&containers),
+            body_type(),
         ],
         &records,
     );
