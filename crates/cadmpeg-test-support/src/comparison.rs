@@ -8,10 +8,7 @@ use std::collections::{BTreeMap, BTreeSet};
 
 use serde_json::Value;
 
-mod given_up;
 mod graph;
-
-pub use given_up::DecodeSnapshot;
 
 use graph::Document;
 

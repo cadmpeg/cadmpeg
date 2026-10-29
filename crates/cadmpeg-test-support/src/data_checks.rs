@@ -1,6 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-//! Data checks 1, 5, 6 and 7 (#246 IV.2), P-closure (#219 §4.3) and the
-//! `Native` kind check (#209 §2.2) over serialized CADIR documents.
+//! Data checks 1, 5, 6 and 7 (#246 IV.2) over serialized CADIR documents.
 //!
 //! Each check returns one finding per violation, so a caller names every
 //! failing record of every golden in one run.
@@ -309,7 +308,6 @@ fn text_tokens(
 }
 
 pub mod conformance;
-pub mod p_closure;
 pub mod properties;
 
 #[cfg(test)]
