@@ -73,8 +73,7 @@ fn write_seekable(
         &source_arena,
         &source_policy,
     )?;
-    let source_archive =
-        crate::source_archive::OriginalArchive::new(&source_context, source_root, fidelity)?;
+    let source_archive = cadmpeg_container::ArchiveSnapshot::new(&source_context, source_root)?;
     let mut payloads = HashMap::new();
     for entry in &entries {
         if entry.id() != crate::native::native_id("entry", entry.name()) {

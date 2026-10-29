@@ -1,7 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Public decode keeps vector facts while unrelated bytes stay unrepresented.
 
-use cadmpeg_core::decode::u64_from_index;
 use cadmpeg_ir::{Codec, DecodeOptions};
 use std::io::Cursor;
 
@@ -47,45 +46,6 @@ fn current_vector_fields_retain_exact_source_reads_without_crediting_opaque_extr
             .collect::<Vec<_>>(),
         [1.25, -2.0, 3.0]
     );
-    let fidelity = decoded.source_fidelity();
-    let layout = &fidelity.record_layout()[&native.id];
-    let range = |key: &str, raw: &str| {
-        let start = document.find(&format!("{key}='{raw}'")).unwrap() + key.len() + "='".len();
-        u64_from_index(start)..u64_from_index(start + raw.len())
-    };
-    let key = |key: &str, raw: &str| {
-        let at = document.find(&format!("{key}='{raw}'")).unwrap();
-        u64_from_index(at)..u64_from_index(at + key.len())
-    };
-    assert_eq!(
-        layout.reads()[layout.stream()],
-        [
-            range("name", "ExtraVector"),
-            range("type", "App::PropertyVector"),
-            key("valueX", "1.25"),
-            range("valueX", "1.25"),
-            key("valueY", "-2"),
-            range("valueY", "-2"),
-            key("valueZ", "3"),
-            range("valueZ", "3"),
-            key("Vendor", "opaque-extra"),
-            range("Vendor", "opaque-extra")
-        ]
-    );
-    assert_eq!(
-        crate::test_support::source_fidelity::bytes(fidelity, &native.id),
-        property.as_bytes()
-    );
-    // This attribute is held verbatim in the typed native value, so its
-    // actual source producer must read it even though it is not a coordinate.
-    let held_extra = range("Vendor", "opaque-extra");
-    assert!(fidelity.b1_spans()[layout.stream()]
-        .spans()
-        .iter()
-        .all(|span| {
-            let unread = span.range();
-            unread.end <= held_extra.start || held_extra.end <= unread.start
-        }));
     let changed_document = document.replace("Vendor='opaque-extra'", "Vendor='current-extra'");
     let changed = crate::FcstdCodec
         .decode(

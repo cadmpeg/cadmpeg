@@ -53,7 +53,6 @@ struct FixtureProfile {
     blocking_losses: usize,
     neutral_errors: usize,
     native_errors: usize,
-    exact_byte_coverage: bool,
     #[serde(flatten)]
     write: FixtureWriteFlags,
     side_entries_preserved: bool,
@@ -269,7 +268,6 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 .iter()
                 .filter(|finding| finding.severity >= Severity::Error)
                 .count(),
-            exact_byte_coverage: exact_byte_coverage(first.ir()),
             write: FixtureWriteFlags {
                 write_deterministic: first_write == second_write,
                 semantic_round_trip,
@@ -693,26 +691,7 @@ fn insert_map_keys(
     }
 }
 
-fn exact_byte_coverage(ir: &CadIr) -> bool {
-    ir.native
-        .namespace("fcstd")
-        .and_then(|namespace| namespace.arenas().get("byte_coverage"))
-        .is_some_and(|records| {
-            records.len() == 1
-                && records[0].field("exact").as_ref().and_then(Value::as_bool) == Some(true)
-        })
-}
-
-fn semantic_fingerprint(mut ir: CadIr) -> Result<String, Box<dyn std::error::Error>> {
-    if let Some(source) = &mut ir.source {
-        source.attributes.remove("physical_archive_bytes");
-        source.attributes.remove("physical_ledger_spans");
-    }
-    if let Some(namespace) = ir.native.0.get_mut("fcstd") {
-        namespace.arenas_mut().remove("physical_ledger");
-        namespace.arenas_mut().remove("byte_coverage");
-        namespace.arenas_mut().remove("logical_ledger");
-    }
+fn semantic_fingerprint(ir: CadIr) -> Result<String, Box<dyn std::error::Error>> {
     Ok(ir.to_canonical_json()?)
 }
 
@@ -852,7 +831,6 @@ fn gates(
             && fixture.neutral_errors == 0
             && fixture.native_errors == 0
     });
-    let exact = fixtures.iter().all(|fixture| fixture.exact_byte_coverage);
     let count = |name: &str| counts.get(name).copied().unwrap_or_default();
     let required_carriers = BTreeSet::from([
         "circle", "ellipse", "line", "nurbs", "plane", "cylinder", "cone", "sphere", "torus",
@@ -1033,7 +1011,6 @@ fn gates(
             "L0",
             vec![
                 assertion("clean_decode", clean, &clean, &"all fixtures decode deterministically and validate",),
-                assertion("physical_coverage", exact, &exact, &"exact physical and logical byte partitions",),
             ],
         ),
         gate(
@@ -1128,11 +1105,10 @@ fn gates(
                     ), &format!("types={required_drawing_types:?}, drawings and annotations"),),
                 assertion("application_retention", observed.native_arenas.contains("applications")
                         && required_application_types.is_subset(&application_types)
-                        && required_application_constructs.is_subset(&application_constructs)
-                        && exact, &format!(
-                        "types={application_types:?}, constructs={application_constructs:?}, exact={exact}"
+                        && required_application_constructs.is_subset(&application_constructs), &format!(
+                        "types={application_types:?}, constructs={application_constructs:?}"
                     ), &format!(
-                        "types={required_application_types:?}, constructs={required_application_constructs:?}, exact byte coverage"
+                        "types={required_application_types:?}, constructs={required_application_constructs:?}"
                     ),),
             ],
         ),

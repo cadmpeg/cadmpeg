@@ -52,7 +52,7 @@ fn test_parse_string_table(
     count: usize,
     side_entry: bool,
 ) -> Result<Vec<crate::native::StringTableEntry>, CodecError> {
-    parse_string_table(bytes, count, side_entry).map(|(entries, _)| entries)
+    parse_string_table(bytes, count, side_entry)
 }
 
 fn test_parse_element_map(bytes: &[u8], side_entry: bool) -> Result<super::ParsedMap, CodecError> {
@@ -1004,11 +1004,6 @@ fn empty_legacy_element_map_markers_are_typed_absence_not_unread_payloads() {
             .arena_as::<crate::native::element_map::ElementMapRecord>("element_maps")
             .unwrap()
             .is_empty());
-        let evidence = result
-            .source_fidelity()
-            .retained_record("fcstd:native:property#Shape:Shape")
-            .unwrap();
-        assert!(evidence.untyped().is_empty());
     }
     let xml = r#"<Document SchemaVersion="4" FileVersion="1"><Objects Count="1"><Object name="Shape" type="Part::Feature"/></Objects><ObjectData Count="1"><Object name="Shape"><Properties Count="1"><Property name="Shape" type="Part::PropertyPartShape"><Part/><ElementMap count="bad"/></Property></Properties></Object></ObjectData></Document>"#;
     let source = archive(xml);
@@ -1024,8 +1019,6 @@ fn empty_legacy_element_map_markers_are_typed_absence_not_unread_payloads() {
             .note("")
             .code));
 }
-
-mod string_table_layout;
 
 fn ownership_ranges<'a>(
     ranges: &[(&'a PropertyRecord, usize, &str)],

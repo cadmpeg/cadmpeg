@@ -33,26 +33,24 @@ fn unknown_runtime_keeps_multiple_opaque_members_without_list_dispatch() {
     let (context, root) = DecodeContext::from_root_bytes(&bytes, &arena, &policy).unwrap();
     let end = u64::try_from(xml.len()).unwrap();
     let gui = context
-        .register_named_slice(root, ByteRange { start: 0, end }, "GuiDocument.xml")
+        .register_slice(root, ByteRange { start: 0, end })
         .unwrap();
     let first = context
-        .register_named_slice(
+        .register_slice(
             root,
             ByteRange {
                 start: end,
                 end: end + 4,
             },
-            "first.bin",
         )
         .unwrap();
     let second = context
-        .register_named_slice(
+        .register_slice(
             root,
             ByteRange {
                 start: end + 4,
                 end: end + 8,
             },
-            "second.bin",
         )
         .unwrap();
     let entries = BTreeMap::from([
@@ -119,10 +117,10 @@ fn single_member_grammars_still_reject_multiple_valid_empty_payloads() {
     let policy = DecodePolicy::service();
     let (context, root) = DecodeContext::from_root_bytes(&bytes, &arena, &policy).unwrap();
     let first = context
-        .register_named_slice(root, ByteRange { start: 0, end: 4 }, "first.bin")
+        .register_slice(root, ByteRange { start: 0, end: 4 })
         .unwrap();
     let second = context
-        .register_named_slice(root, ByteRange { start: 4, end: 8 }, "second.bin")
+        .register_slice(root, ByteRange { start: 4, end: 8 })
         .unwrap();
     let entries = BTreeMap::from([("first.bin".into(), first), ("second.bin".into(), second)]);
     for runtime in [
@@ -150,10 +148,10 @@ fn topo_shape_lists_still_resolve_every_plural_member() {
     let policy = DecodePolicy::service();
     let (context, root) = DecodeContext::from_root_bytes(&bytes, &arena, &policy).unwrap();
     let first = context
-        .register_named_slice(root, ByteRange { start: 0, end: 4 }, "first.bin")
+        .register_slice(root, ByteRange { start: 0, end: 4 })
         .unwrap();
     let second = context
-        .register_named_slice(root, ByteRange { start: 4, end: 8 }, "second.bin")
+        .register_slice(root, ByteRange { start: 4, end: 8 })
         .unwrap();
     let entries = BTreeMap::from([("first.bin".into(), first), ("second.bin".into(), second)]);
     let property = property("Part::PropertyTopoShapeList", &["first.bin", "second.bin"]);

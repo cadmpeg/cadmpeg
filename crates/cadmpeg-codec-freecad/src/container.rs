@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-//! Bounded `FCStd` archive scanning and physical byte accounting.
+//! Bounded `FCStd` archive scanning.
 
 use cadmpeg_core::container::ContainerRole;
 
@@ -13,15 +13,7 @@ use cadmpeg_core::text::NonBlankString;
 use cadmpeg_core::{CodecError, ContainerEntry};
 use cadmpeg_ir::ContainerSummary;
 
-use crate::brep::ShapePayloadRecord;
-use crate::gui;
-use crate::native::element_map::ElementMapRecord;
-use crate::native::{
-    DocumentFacts, EntryRecord, PropertyFamily, PropertyRecord, StringTableRecord,
-};
-use cadmpeg_ir::source_fidelity::freecad::{
-    ArchiveSpan, ArchiveSpanRole, ByteCoverageRecord, LogicalClassification, LogicalSpan,
-};
+use crate::native::{DocumentFacts, EntryRecord, PropertyRecord};
 
 pub(crate) mod parts;
 
@@ -75,8 +67,6 @@ pub(crate) fn has_document_markers(
 
 /// Fully scanned container used by inspection and decode.
 pub(crate) struct Scan<'a> {
-    /// Actual source archive retained transiently for entry-origin framing.
-    pub(crate) archive: ArchiveSnapshot<'a>,
     /// Recoverable container metadata diagnostics.
     pub(crate) losses: Vec<cadmpeg_ir::report::loss::LossNote>,
     /// Container summary entries.
@@ -89,8 +79,6 @@ pub(crate) struct Scan<'a> {
     pub(crate) document_xml: roxmltree::Document<'a>,
     pub(crate) document_properties: Option<crate::persistence::document_properties::RootProperties>,
     pub(crate) object_declarations: Option<crate::persistence::object_parts::ObjectDeclarations>,
-    /// Exact physical archive partition.
-    pub(crate) ledger: Vec<ArchiveSpan>,
     /// Independently framed members given up by the shared part helper.
     pub(crate) failed_members: BTreeSet<String>,
     /// Inflated entry views, each retaining its [`SpaceId`](cadmpeg_core::decode::SpaceId).
@@ -105,7 +93,10 @@ pub(crate) enum ScanOutcome<'a> {
     GivenUp {
         summary: ContainerSummary,
         parts: cadmpeg_ir::source_fidelity::parts::PartOutput,
-        pointers: BTreeMap<String, BTreeMap<String, u64>>,
+        /// The `Document.xml` member opened, so the document class was located.
+        document_found: bool,
+        /// The archive part itself gave up and retained the whole source.
+        archive_given_up: bool,
     },
 }
 
@@ -116,13 +107,13 @@ pub(crate) fn inspect(
     match attempt(ctx, root)? {
         ScanOutcome::Readable { scan, parts } => {
             let mut summary = summarize(&scan);
-            summary.losses.extend(parts.into_parts(ctx)?.into_parts().3);
+            summary.losses.extend(parts.into_parts().3);
             Ok(summary)
         }
         ScanOutcome::GivenUp {
             mut summary, parts, ..
         } => {
-            summary.losses.extend(parts.into_parts(ctx)?.into_parts().3);
+            summary.losses.extend(parts.into_parts().3);
             Ok(summary)
         }
     }
@@ -131,7 +122,7 @@ pub(crate) fn inspect(
 #[cfg(test)]
 pub(crate) fn scan<'a>(ctx: &DecodeContext<'a>, root: View<'a>) -> Result<Scan<'a>, CodecError> {
     let (mut scan, parts) = scan_for_decode(ctx, root)?;
-    scan.losses.extend(parts.into_parts(ctx)?.into_parts().3);
+    scan.losses.extend(parts.into_parts().3);
     Ok(scan)
 }
 
@@ -165,11 +156,9 @@ pub(crate) fn attempt<'a>(
         Vec::new(),
     );
     let mut parts = PartOutput::new(cadmpeg_ir::CodecFormat::Fcstd);
-    let outcome = ctx.decode_part(&mut parts, root, parts::archive_spec()?, |stage| {
-        let parts::DocumentRead {
-            document,
-            mut pointers,
-        } = parts::document(ctx, &archive, stage)?;
+    let mut document_found = false;
+    let outcome = ctx.decode_part(&mut parts, root, parts::part("zip.archive"), |stage| {
+        let document = parts::document(ctx, &archive, stage, &mut document_found)?;
         if let Some(document) = &document {
             let matched = crate::dialect::FcstdDialect::classify(&document.facts, &document.schema);
             summary = ContainerSummary::classified(
@@ -184,28 +173,24 @@ pub(crate) fn attempt<'a>(
         }
         let opened = parts::open_optional(ctx, &archive, stage)?;
         let Some(document) = document else {
-            pointers.extend(parts::keep_readable_entries(ctx, &archive, &opened, stage)?);
-            return Ok((None, pointers));
+            parts::keep_readable_entries(ctx, &archive, &opened, stage)?;
+            return Ok(None);
         };
-        Ok((Some(scan_impl(archive, document, opened)?), BTreeMap::new()))
+        scan_impl(&archive, document, opened).map(Some)
     })?;
     match outcome {
-        Some((Some(scan), _)) => Ok(ScanOutcome::Readable { scan, parts }),
-        Some((None, pointers)) => Ok(ScanOutcome::GivenUp {
+        Some(Some(scan)) => Ok(ScanOutcome::Readable { scan, parts }),
+        outcome => Ok(ScanOutcome::GivenUp {
             summary,
             parts,
-            pointers,
-        }),
-        None => Ok(ScanOutcome::GivenUp {
-            summary,
-            parts,
-            pointers: BTreeMap::new(),
+            document_found,
+            archive_given_up: outcome.is_none(),
         }),
     }
 }
 
 fn scan_impl<'a>(
-    archive: ArchiveSnapshot<'a>,
+    archive: &ArchiveSnapshot<'a>,
     document: parts::Document<'a>,
     mut opened: parts::OptionalMembers<'a>,
 ) -> Result<Scan<'a>, CodecError> {
@@ -239,27 +224,15 @@ fn scan_impl<'a>(
         };
         data.insert(name, view);
     }
-    let physical_ledger = archive.physical_ledger()?;
-    let mut ledger = Vec::new();
-    for (index, span) in physical_ledger.into_iter().enumerate() {
-        ledger.push(ArchiveSpan {
-            id: crate::native::native_id("archive-span", index.to_string()),
-            span: cadmpeg_ir::source_fidelity::freecad::ByteSpan::try_new(span.start, span.end)
-                .map_err(CodecError::Malformed)?,
-            role: archive_span_role(&span.role),
-        });
-    }
     Ok(Scan {
         losses,
         entries: archive.container_entries(classify),
-        archive,
         document,
         schema_version,
         document_xml,
         document_properties,
         object_declarations,
         failed_members: opened.failed,
-        ledger,
         data,
     })
 }
@@ -325,17 +298,8 @@ pub(crate) fn source_attributes(
         ),
         ("application_domains", scan.document.domains.join(",")),
         ("archive_entry_count", format!("{}", scan.entries.len())),
-        ("physical_ledger_spans", format!("{}", scan.ledger.len())),
     ]
     .into_iter()
-    .chain(
-        scan.ledger
-            .last()
-            .map(|last| {
-                Ok::<_, CodecError>(("physical_archive_bytes", format!("{}", last.span.end())))
-            })
-            .transpose()?,
-    )
     .chain(
         scan.document
             .program_version
@@ -392,7 +356,6 @@ pub(crate) fn summary_notes(scan: &Scan<'_>) -> Vec<String> {
         format!("document root={}", scan.document.root_name),
         format!("document kind={}", scan.document.document_kind().as_str()),
         format!("object count={}", scan.document.object_count),
-        format!("physical ledger spans={} coverage=exact", scan.ledger.len()),
     ]);
     if let Some(version) = &scan.document.program_version {
         notes.push(format!("ProgramVersion={version}"));
@@ -586,7 +549,7 @@ pub(crate) fn parse_document(
 fn parse_document_impl(
     xml: &roxmltree::Document<'_>,
     losses: &mut Vec<cadmpeg_ir::report::loss::LossNote>,
-    source: Option<&crate::persistence::source::Source<'_, '_>>,
+    source: Option<&crate::persistence::source::Source<'_>>,
 ) -> Result<(DocumentFacts, String), CodecError> {
     let root = xml.root_element();
     if root.tag_name().name() != "Document" {
@@ -662,7 +625,7 @@ fn metadata_attribute(
     alias: &str,
     code: crate::loss::FreecadLossCode,
     losses: &mut Vec<cadmpeg_ir::report::loss::LossNote>,
-    source: Option<&crate::persistence::source::Source<'_, '_>>,
+    source: Option<&crate::persistence::source::Source<'_>>,
 ) -> Result<Option<String>, CodecError> {
     let value = root.attribute(canonical);
     if let Some(alias_value) = root.attribute(alias) {
@@ -687,267 +650,5 @@ fn metadata_attribute(
     }
 }
 
-pub(crate) fn logical_ledger(
-    entries: &[EntryRecord],
-    properties: &[PropertyRecord],
-    property_sources: &BTreeMap<String, crate::fidelity::ValueSourceRanges>,
-    sources: &crate::entry_sources::EntrySources<'_>,
-    gui: &gui::Graph,
-    shape_payloads: &[ShapePayloadRecord],
-    string_tables: &[StringTableRecord],
-    element_maps: &[ElementMapRecord],
-) -> Result<Vec<LogicalSpan>, CodecError> {
-    let mut typed_entries = HashSet::new();
-    for payload in shape_payloads {
-        typed_entries.insert(payload.entry.as_str());
-    }
-    for name in string_tables
-        .iter()
-        .filter_map(|table| table.source_entry.as_deref())
-    {
-        typed_entries.insert(name);
-    }
-    for name in element_maps
-        .iter()
-        .filter_map(|map| map.source_entry.as_deref())
-    {
-        typed_entries.insert(name);
-    }
-    let mut output = Vec::new();
-    for entry in entries {
-        let entry_len = sources.byte_len(entry)?;
-        if typed_entries.contains(entry.id()) || typed_entries.contains(entry.name()) {
-            push_logical_span(
-                &mut output,
-                entry,
-                0,
-                entry_len,
-                LogicalClassification::Typed {
-                    owner: entry.id().to_owned(),
-                },
-            )?;
-        } else if entry.name() == "Document.xml" || entry.name() == "GuiDocument.xml" {
-            let mut ranges = Vec::new();
-            if entry.name() == "Document.xml" {
-                for property in properties {
-                    let range = property_sources
-                        .get(&property.id)
-                        .ok_or_else(|| {
-                            CodecError::malformed("property has no original source range")
-                        })?
-                        .record_range();
-                    ranges.push((
-                        cadmpeg_core::decode::u64_from_index(range.start),
-                        cadmpeg_core::decode::u64_from_index(range.end),
-                        if property.body.is_none() || property.family == PropertyFamily::Unknown {
-                            "named_opaque"
-                        } else {
-                            "typed"
-                        },
-                        property.id.clone(),
-                    ));
-                }
-            } else {
-                for property in &gui.properties {
-                    let source = gui.property_sources.get(&property.id).ok_or_else(|| {
-                        CodecError::malformed("GUI property has no original source range")
-                    })?;
-                    let range = source.record_range();
-                    ranges.push((
-                        cadmpeg_core::decode::u64_from_index(range.start),
-                        cadmpeg_core::decode::u64_from_index(range.end),
-                        if gui::has_registered_property_grammar(&property.name, &property.type_name)
-                        {
-                            "typed"
-                        } else {
-                            "named_opaque"
-                        },
-                        property.id.clone(),
-                    ));
-                }
-                for source in gui.state_sources.values() {
-                    let range = source.record_range();
-                    ranges.push((
-                        cadmpeg_core::decode::u64_from_index(range.start),
-                        cadmpeg_core::decode::u64_from_index(range.end),
-                        "typed",
-                        source.id().to_owned(),
-                    ));
-                }
-            }
-            ranges.sort_by_key(|left| left.0);
-            let mut cursor = 0_u64;
-            for (start, end, classification, owner) in ranges {
-                if start < cursor || end < start || end > entry_len {
-                    return Err(CodecError::malformed(format_args!(
-                        "overlapping or invalid {} record spans",
-                        entry.name()
-                    )));
-                }
-                push_logical_span(
-                    &mut output,
-                    entry,
-                    cursor,
-                    start,
-                    LogicalClassification::Structural,
-                )?;
-                let classification = match classification {
-                    "typed" => LogicalClassification::Typed { owner },
-                    _ => LogicalClassification::NamedOpaque { owner },
-                };
-                push_logical_span(&mut output, entry, start, end, classification)?;
-                cursor = end;
-            }
-            push_logical_span(
-                &mut output,
-                entry,
-                cursor,
-                entry_len,
-                LogicalClassification::Structural,
-            )?;
-        } else {
-            push_logical_span(
-                &mut output,
-                entry,
-                0,
-                entry_len,
-                LogicalClassification::NamedOpaque {
-                    owner: entry.id().to_owned(),
-                },
-            )?;
-        }
-    }
-    Ok(output)
-}
-
-pub(crate) fn byte_coverage(
-    physical: &[ArchiveSpan],
-    entries: &[EntryRecord],
-    sources: &crate::entry_sources::EntrySources<'_>,
-    logical: &[LogicalSpan],
-    physical_byte_len: u64,
-) -> Result<ByteCoverageRecord, CodecError> {
-    let logical_byte_len = entries.iter().try_fold(0_u64, |total, entry| {
-        total
-            .checked_add(sources.byte_len(entry)?)
-            .ok_or_else(|| CodecError::malformed("logical entry byte length sum overflows u64"))
-    })?;
-    let mut classification_bytes = BTreeMap::new();
-    let mut named_opaque_entries = BTreeSet::new();
-    for span in logical {
-        let classification = span.classification.as_str();
-        if !classification_bytes.contains_key(classification) {
-            classification_bytes.insert(classification.to_owned(), 0);
-        }
-        if let Some(bytes) = classification_bytes.get_mut(classification) {
-            *bytes += span.span.end() - span.span.start();
-        }
-        if matches!(
-            span.classification,
-            LogicalClassification::NamedOpaque { .. }
-        ) && !named_opaque_entries.contains(&span.entry)
-        {
-            named_opaque_entries.insert(span.entry.clone());
-        }
-    }
-    let mut ordered_physical = Vec::new();
-    ordered_physical.extend(physical.iter());
-    ordered_physical.sort_by_key(|left| left.span.start());
-    let physical_exact = ordered_physical
-        .first()
-        .is_some_and(|span| span.span.start() == 0)
-        && ordered_physical
-            .windows(2)
-            .all(|pair| pair[0].span.end() == pair[1].span.start())
-        && ordered_physical
-            .last()
-            .is_some_and(|span| span.span.end() == physical_byte_len);
-    let mut logical_exact = logical
-        .iter()
-        .all(|span| entries.iter().any(|entry| entry.name() == span.entry));
-    if logical_exact {
-        for entry in entries {
-            let entry_len = sources.byte_len(entry)?;
-            let mut spans = Vec::new();
-            for span in logical.iter().filter(|span| span.entry == entry.name()) {
-                spans.push(span);
-            }
-            spans.sort_by_key(|left| left.span.start());
-            let exact = if entry_len == 0 {
-                spans.is_empty()
-            } else {
-                spans.first().is_some_and(|span| span.span.start() == 0)
-                    && spans
-                        .windows(2)
-                        .all(|pair| pair[0].span.end() == pair[1].span.start())
-                    && spans
-                        .last()
-                        .is_some_and(|span| span.span.end() == entry_len)
-            };
-            if !exact {
-                logical_exact = false;
-                break;
-            }
-        }
-    }
-    let mut opaque_entries = Vec::new();
-    opaque_entries.extend(named_opaque_entries);
-    Ok(ByteCoverageRecord {
-        id: crate::native::native_id("byte-coverage", "0"),
-        physical_byte_len,
-        physical_span_count: physical.len(),
-        logical_entry_count: entries.len(),
-        logical_byte_len,
-        logical_span_count: logical.len(),
-        classification_bytes,
-        named_opaque_entries: opaque_entries,
-        exact: physical_exact && logical_exact,
-    })
-}
-
-fn push_logical_span(
-    output: &mut Vec<LogicalSpan>,
-    entry: &EntryRecord,
-    start: u64,
-    end: u64,
-    classification: LogicalClassification,
-) -> Result<(), CodecError> {
-    if start == end {
-        return Ok(());
-    }
-    output.push(LogicalSpan {
-        id: crate::native::native_id("logical-span", output.len().to_string()),
-        entry: entry.name().to_owned(),
-        span: cadmpeg_ir::source_fidelity::freecad::ByteSpan::try_new(start, end)
-            .map_err(CodecError::Malformed)?,
-        classification,
-    });
-    Ok(())
-}
-
 #[cfg(test)]
 pub(crate) mod tests;
-
-fn archive_span_role(role: &cadmpeg_container::ZipSpanRole) -> ArchiveSpanRole {
-    use cadmpeg_container::ZipSpanRole;
-    match role {
-        ZipSpanRole::LocalSignature(entry) => ArchiveSpanRole::LocalSignature(entry.clone()),
-        ZipSpanRole::LocalFields(entry) => ArchiveSpanRole::LocalFields(entry.clone()),
-        ZipSpanRole::LocalName(entry) => ArchiveSpanRole::LocalName(entry.clone()),
-        ZipSpanRole::LocalExtra(entry) => ArchiveSpanRole::LocalExtra(entry.clone()),
-        ZipSpanRole::CompressedPayload(entry) => ArchiveSpanRole::CompressedPayload(entry.clone()),
-        ZipSpanRole::DataDescriptor(entry) => ArchiveSpanRole::DataDescriptor(entry.clone()),
-        ZipSpanRole::CentralSignature(entry) => ArchiveSpanRole::CentralSignature(entry.clone()),
-        ZipSpanRole::CentralFields(entry) => ArchiveSpanRole::CentralFields(entry.clone()),
-        ZipSpanRole::CentralName(entry) => ArchiveSpanRole::CentralName(entry.clone()),
-        ZipSpanRole::CentralExtra(entry) => ArchiveSpanRole::CentralExtra(entry.clone()),
-        ZipSpanRole::CentralComment(entry) => ArchiveSpanRole::CentralComment(entry.clone()),
-        ZipSpanRole::Padding { entry: Some(entry) } => {
-            ArchiveSpanRole::EntryArchivePadding(entry.clone())
-        }
-        ZipSpanRole::Padding { entry: None } => ArchiveSpanRole::ArchivePadding,
-        ZipSpanRole::Zip64EndRecord => ArchiveSpanRole::Zip64EndRecord,
-        ZipSpanRole::Zip64EndLocator => ArchiveSpanRole::Zip64EndLocator,
-        ZipSpanRole::EndRecord => ArchiveSpanRole::EndRecord,
-    }
-}

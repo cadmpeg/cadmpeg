@@ -27,18 +27,11 @@ fn the_real_codec_composes_shared_unknowns_and_retains_successful_member_records
             .collect::<BTreeSet<_>>(),
         BTreeSet::from(["Document.xml", "peer.bin"])
     );
-    let unknowns = decoded.ir().native_unknowns("fcstd").unwrap();
-    let [unknown] = unknowns.as_slice() else {
-        panic!("one unknown: {unknowns:?}")
+    let parts = crate::test_support::source_fidelity::given_up(decoded.source_fidelity());
+    let [(_, record)] = parts.as_slice() else {
+        panic!("one given-up part: {parts:?}")
     };
-    assert_eq!(
-        decoded
-            .source_fidelity()
-            .retained_record(unknown.id.as_str())
-            .unwrap()
-            .data(),
-        Some(b"\x07".as_slice())
-    );
+    assert_eq!(record.data(), Some(b"\x07".as_slice()));
     assert_eq!(
         crate::source_archive::image(decoded.source_fidelity()).unwrap(),
         bytes

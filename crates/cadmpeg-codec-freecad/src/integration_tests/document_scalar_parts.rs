@@ -3,7 +3,6 @@
 
 use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
 use cadmpeg_ir::attributes::AttributeValue;
-use cadmpeg_ir::source_fidelity::parts::PartState;
 use cadmpeg_ir::{Codec, DecodeOptions};
 use cadmpeg_test_support::zip_fixture::{self, RawEntry};
 use std::io::Cursor;
@@ -62,7 +61,6 @@ fn bool_and_float_native_and_neutral_values_flow_from_exact_original_attribute_r
         let (ctx, root) =
             DecodeContext::from_root_bytes(&bytes, &arena, &DecodePolicy::service()).unwrap();
         let (scan, output) = crate::container::scan_for_decode(&ctx, root).unwrap();
-        let origin = ctx.capture_part_extent(scan.data["Document.xml"]).unwrap();
         let properties = output
             .native()
             .namespace("fcstd")
@@ -86,31 +84,6 @@ fn bool_and_float_native_and_neutral_values_flow_from_exact_original_attribute_r
         };
         assert_eq!(attribute.values, [Some(expected)]);
         assert_eq!(attribute.native_ref.as_deref(), Some(kept.id.as_str()));
-        let captures = ctx.take_record_captures().unwrap();
-        let capture = captures
-            .iter()
-            .find(|capture| capture.id() == kept.id)
-            .unwrap();
-        assert_eq!(capture.stream(), origin.stream());
-        let start = xml.find(&property).unwrap();
-        assert_eq!(
-            capture.offset(),
-            origin.offset() + u64::try_from(start).unwrap()
-        );
-        assert_eq!(capture.byte_len(), u64::try_from(property.len()).unwrap());
-        let mut from = 0;
-        let expected_reads =
-            ["Input", type_name, "value", raw, "extra", "native-only"].map(|text| {
-                let at = from + property[from..].find(text).unwrap();
-                from = at + text.len();
-                let start = origin.offset() + u64::try_from(start + at).unwrap();
-                start..start + u64::try_from(text.len()).unwrap()
-            });
-        assert_eq!(capture.reads()[capture.stream()], expected_reads);
-        let unheld = origin.offset() + u64::try_from(xml.find("unheld").unwrap()).unwrap();
-        assert!(capture.reads()[capture.stream()]
-            .iter()
-            .all(|read| read.end <= unheld || unheld + 6 <= read.start));
     }
 }
 
@@ -149,17 +122,6 @@ fn changing_unheld_property_header_bytes_keeps_scalar_content_equal_without_read
         decoded.ir().model.attributes,
         baseline.ir().model.attributes
     );
-    for property in &properties {
-        let layout = &decoded.source_fidelity().record_layout()[property.id.as_str()];
-        let reads = &layout.reads()[layout.stream()];
-        for (offset, _) in changed.match_indices("other") {
-            let start = u64::try_from(offset).unwrap();
-            let end = start + u64::try_from("other".len()).unwrap();
-            assert!(reads
-                .iter()
-                .all(|read| read.end <= start || end <= read.start));
-        }
-    }
 }
 
 #[test]
@@ -226,48 +188,17 @@ fn invalid_scalar_give_up_keeps_exact_float_bool_integer_and_string_peers() {
             decoded.ir().model.attributes,
             baseline.ir().model.attributes
         );
-        let unknowns = decoded.ir().native_unknowns("fcstd").unwrap();
-        let [unknown] = unknowns.as_slice() else {
+        let fidelity = decoded.source_fidelity();
+        let parts = crate::test_support::source_fidelity::given_up(fidelity);
+        let [(_, retained)] = parts.as_slice() else {
             panic!("one bounded scalar failure")
         };
-        let fidelity = decoded.source_fidelity();
-        let part = &fidelity.parts()[&unknown.id];
-        assert_eq!(part.level().as_str(), "freecad.property_value");
-        assert_eq!(part.state(), &PartState::GivenUp {});
         assert_eq!(
-            part.offset(),
+            retained.offset(),
             u64::try_from(xml.find(bad).unwrap() + value_range.start).unwrap()
         );
-        assert_eq!(part.byte_len(), u64::try_from(raw_value.len()).unwrap());
-        assert_eq!(
-            fidelity
-                .retained_record(unknown.id.as_str())
-                .unwrap()
-                .data(),
-            Some(raw_value.as_bytes())
-        );
-        assert_eq!(
-            fidelity.parts()[part.parent().unwrap()].state(),
-            &PartState::Decoded {}
-        );
-        assert_eq!(
-            fidelity.parts()[part.parent().unwrap()].level().as_str(),
-            "freecad.property"
-        );
-        let bad_id = crate::native::native_child_id(
-            "property",
-            &crate::native::native_id("document", "0"),
-            "Bad",
-        );
-        assert_eq!(unknown.links.len(), 1);
-        assert_eq!(unknown.links[0].as_str(), bad_id);
-        assert!(fidelity.record_layout()[bad_id.as_str()]
-            .payloads()
-            .is_empty());
-        assert_eq!(
-            fidelity.record_layout()[bad_id.as_str()].byte_len(),
-            u64::try_from(bad.len()).unwrap()
-        );
+        assert_eq!(retained.byte_len(), u64::try_from(raw_value.len()).unwrap());
+        assert_eq!(retained.data(), Some(raw_value.as_bytes()));
         let errors = decoded
             .report()
             .losses
@@ -281,15 +212,11 @@ fn invalid_scalar_give_up_keeps_exact_float_bool_integer_and_string_peers() {
             .losses
             .iter()
             .any(|loss| loss.code.local_code() == "metadata.persistence-payload-unresolved"));
-        let arena = DecodeArena::new();
-        let (ctx, source) =
-            DecodeContext::from_root_bytes(&bytes, &arena, &DecodePolicy::service()).unwrap();
         assert_eq!(
-            crate::source_archive::OriginalArchive::new(&ctx, source, fidelity)
-                .unwrap()
-                .open(&ctx, "Document.xml")
-                .unwrap()
-                .window(),
+            crate::test_support::source_fidelity::entry_bytes(
+                fidelity,
+                &crate::native::native_id("entry", "Document.xml")
+            ),
             xml.as_bytes()
         );
     }
@@ -320,48 +247,23 @@ fn scalar_native_and_neutral_births_are_rolled_back_with_the_failed_archive_pare
         .decode(&mut Cursor::new(&bytes), &DecodeOptions::default())
         .unwrap();
     assert!(decoded.ir().model.attributes.is_empty());
-    let ns = decoded.ir().native.namespace("fcstd").unwrap();
-    assert!(ns
+    let ns = decoded.ir().native.namespace("fcstd");
+    assert!(ns.is_none_or(|ns| ns
         .arena_as::<crate::native::PropertyRecord>("properties")
         .unwrap()
-        .is_empty());
-    assert!(ns
+        .is_empty()));
+    assert!(ns.is_none_or(|ns| ns
         .arena_as::<crate::native::DocumentFacts>("document")
         .unwrap()
-        .is_empty());
-    let unknowns = decoded.ir().native_unknowns("fcstd").unwrap();
-    let [unknown] = unknowns.as_slice() else {
+        .is_empty()));
+    let parts = crate::test_support::source_fidelity::given_up(decoded.source_fidelity());
+    let [(_, retained)] = parts.as_slice() else {
         panic!("one covering archive failure")
     };
-    assert_eq!(
-        decoded.source_fidelity().parts()[&unknown.id]
-            .level()
-            .as_str(),
-        "zip.archive"
-    );
-    for name in ["Bool", "Float"] {
-        let id = crate::native::native_child_id(
-            "property",
-            &crate::native::native_id("document", "0"),
-            name,
-        );
-        assert!(!decoded.source_fidelity().record_layout().contains_key(&id));
-    }
-    assert_eq!(
-        decoded
-            .source_fidelity()
-            .parts()
-            .values()
-            .filter(|part| part.level().as_str() == "freecad.property"
-                && matches!(part.state(), PartState::Covered { by } if by == &unknown.id))
-            .count(),
-        2
-    );
+    assert_eq!(retained.offset(), 0);
+    assert_eq!(retained.byte_len(), u64::try_from(bytes.len()).unwrap());
     assert_eq!(decoded.source_fidelity().retained_records().len(), 1);
-    assert_eq!(
-        crate::source_archive::image(decoded.source_fidelity()).unwrap(),
-        bytes
-    );
+    assert_eq!(retained.data(), Some(bytes.as_slice()));
 }
 
 #[test]
@@ -390,24 +292,10 @@ fn unsupported_scalar_shapes_and_dynamic_fallbacks_retain_the_generic_native_mea
                 .arena_as::<crate::native::PropertyRecord>("properties")
                 .unwrap();
             assert_eq!(properties, pure.properties);
-            assert!(!decoded
-                .source_fidelity()
-                .parts()
-                .values()
-                .any(|part| part.level().as_str() == "freecad.property"));
-            if !dynamic.is_empty() {
-                let layout = &decoded.source_fidelity().record_layout()[properties[0].id.as_str()];
-                let reads = &layout.reads()[layout.stream()];
-                let range = |text: &str| {
-                    let start = u64::try_from(xml.find(text).unwrap()).unwrap();
-                    start..start + u64::try_from(text.len()).unwrap()
-                };
-                assert!(reads.contains(&range("TrUe")));
-                let unknown = range("unknown");
-                assert!(reads
-                    .iter()
-                    .all(|read| read.end <= unknown.start || unknown.end <= read.start));
-            }
+            assert!(
+                crate::test_support::source_fidelity::given_up(decoded.source_fidelity())
+                    .is_empty()
+            );
         }
     }
 }

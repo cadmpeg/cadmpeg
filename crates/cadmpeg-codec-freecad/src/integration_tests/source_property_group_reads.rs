@@ -1,7 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Kept local property group strings have genuine source reads and parameter flow.
 
-use cadmpeg_core::decode::u64_from_index;
 use cadmpeg_ir::{Codec, DecodeOptions};
 use std::io::Cursor;
 
@@ -49,37 +48,4 @@ fn current_group_and_documentation_fields_keep_exact_source_ownership_and_dynami
         ))
     );
     assert!(parameter.owner.is_some());
-    let fidelity = decoded.source_fidelity();
-    let layout = &fidelity.record_layout()[&native.id];
-    let range = |key: &str, raw: &str| {
-        let at = document.find(&format!("{key}='{raw}'")).unwrap() + key.len() + "='".len();
-        u64_from_index(at)..u64_from_index(at + raw.len())
-    };
-    assert_eq!(
-        layout.reads()[layout.stream()],
-        [
-            range("name", "CustomMeasure"),
-            range("type", "App::PropertyFloat"),
-            range("group", "Custom&amp;Parameters"),
-            range("doc", " Ω &amp; β "),
-            // The key is kept in ValueRecord.attributes as well as its value.
-            {
-                let at = document.find("value='7.5'").unwrap();
-                u64_from_index(at)..u64_from_index(at + "value".len())
-            },
-            range("value", "7.5")
-        ]
-    );
-    assert_eq!(
-        crate::test_support::source_fidelity::bytes(fidelity, &native.id),
-        property.as_bytes()
-    );
-    let opaque = range("Vendor", "opaque-extra");
-    assert!(fidelity.b1_spans()[layout.stream()]
-        .spans()
-        .iter()
-        .any(|span| {
-            let unread = span.range();
-            unread.start <= opaque.start && opaque.end <= unread.end
-        }));
 }

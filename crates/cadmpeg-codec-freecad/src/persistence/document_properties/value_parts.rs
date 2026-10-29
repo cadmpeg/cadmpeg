@@ -4,12 +4,12 @@
 use crate::native::{PropertyBody, PropertyRecord};
 use cadmpeg_core::decode::{DecodeContext, View};
 use cadmpeg_core::CodecError;
-use cadmpeg_ir::source_fidelity::parts::{DecodeParts, PartLevel, PartOutput, PartSpec};
+use cadmpeg_ir::source_fidelity::parts::{DecodeParts, PartOutput};
 
 pub(super) fn decode<'source>(
     ctx: &DecodeContext<'source>,
     view: View<'source>,
-    source: &crate::persistence::source::Source<'_, 'source>,
+    source: &crate::persistence::source::Source<'source>,
     node: roxmltree::Node<'_, '_>,
     owner: &str,
     order: usize,
@@ -21,13 +21,12 @@ pub(super) fn decode<'source>(
         .children()
         .find(roxmltree::Node::is_element)
         .ok_or_else(|| CodecError::malformed("selected property has no value element"))?;
-    let (extent, fields) = crate::xml_framing::element_fields(ctx, view, value)?;
-    let level = PartLevel::parse("freecad.property_value")
-        .ok_or_else(|| CodecError::malformed("property value level is absent from Appendix C"))?;
-    let body = ctx.decode_part(stage, extent, PartSpec::new(level, fields), |value_stage| {
+    let extent = crate::fidelity::relative_xml_extent(view, value.range())?;
+    let spec = crate::persistence::document_part("freecad.property_value");
+    let body = ctx.decode_part(stage, extent, spec, |value_stage| {
         let mut losses = Vec::new();
         let body = crate::persistence::property_body(
-            node, owner, &property.name, &property.type_name, &mut losses, Some(source), true,
+            node, owner, &property.name, &property.type_name, &mut losses,
         )?;
         if let PropertyBody::Unreadable(detail) = &body {
             return Err(CodecError::malformed(detail));

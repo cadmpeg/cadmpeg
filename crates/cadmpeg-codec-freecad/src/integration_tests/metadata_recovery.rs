@@ -76,33 +76,14 @@ fn damaged_late_optional_frame_validates_in_identity_sorted_native_arenas() {
     assert!(crate::test_support::validate_native(decoded.ir()).is_empty());
     crate::test_support::test_archive::assert_valid_document(decoded.ir());
     let namespace = decoded.ir().native.namespace("fcstd").unwrap();
-    let unknowns = decoded.ir().native_unknowns("fcstd").unwrap();
-    assert_eq!(unknowns.len(), 1);
+    let parts = crate::test_support::source_fidelity::given_up(decoded.source_fidelity());
+    let [(_, retained)] = parts.as_slice() else {
+        panic!("one given-up part: {parts:?}")
+    };
     assert!(!namespace.arenas().contains_key("unreadable_entries"));
-    let part = &decoded.source_fidelity().parts()[&unknowns[0].id];
-    assert_eq!(part.level().as_str(), "zip.local_header");
-    let start = usize::try_from(part.offset()).unwrap();
-    let end = start + usize::try_from(part.byte_len()).unwrap();
-    assert_eq!(
-        decoded
-            .source_fidelity()
-            .retained_record(unknowns[0].id.as_str())
-            .unwrap()
-            .data(),
-        Some(&changed[start..end])
-    );
-    let physical = &decoded
-        .source_fidelity()
-        .freecad_ledgers()
-        .values()
-        .next()
-        .expect("FCStd source ledgers")
-        .physical_ledger;
-    let last_identity = physical
-        .iter()
-        .max_by(|left, right| left.id.cmp(&right.id))
-        .unwrap();
-    assert!(last_identity.span.end() < part.offset() + part.byte_len());
+    let start = usize::try_from(retained.offset()).unwrap();
+    let end = start + usize::try_from(retained.byte_len()).unwrap();
+    assert_eq!(retained.data(), Some(&changed[start..end]));
     let archive_arena = DecodeArena::new();
     let (archive_ctx, archive_root) =
         DecodeContext::from_root_bytes(&changed, &archive_arena, &policy).unwrap();
@@ -119,41 +100,6 @@ fn damaged_late_optional_frame_validates_in_identity_sorted_native_arenas() {
             [original_start..original_end],
         &changed[original_start..original_end]
     );
-    let original_source = crate::source_archive::OriginalArchive::new(
-        &archive_ctx,
-        archive_root,
-        decoded.source_fidelity(),
-    )
-    .unwrap();
-    assert_eq!(
-        original_source
-            .part(&archive_ctx, unknowns[0].id.as_str(), "Thumbnail.png")
-            .unwrap(),
-        &changed[start..end]
-    );
-    let mut shifted = serde_json::to_value(decoded.source_fidelity()).unwrap();
-    for section in ["parts", "retained_records", "record_layout"] {
-        let offset = shifted[section][unknowns[0].id.as_str()]["offset"]
-            .as_u64()
-            .unwrap();
-        shifted[section][unknowns[0].id.as_str()]["offset"] = serde_json::json!(offset + 1);
-    }
-    for range in shifted["parts"][unknowns[0].id.as_str()]["framing_bytes"]
-        .as_array_mut()
-        .unwrap()
-    {
-        for edge in ["start", "end"] {
-            let value = range[edge].as_u64().unwrap();
-            range[edge] = serde_json::json!(value + 1);
-        }
-    }
-    let shifted: cadmpeg_ir::SourceFidelity = serde_json::from_value(shifted).unwrap();
-    let error = crate::source_archive::OriginalArchive::new(&archive_ctx, archive_root, &shifted)
-        .err()
-        .expect("+1 source extent must fail physical proof");
-    assert!(error
-        .to_string()
-        .contains("given-up part extent disagrees with its physical ZIP entry"));
 }
 
 #[test]
@@ -188,24 +134,16 @@ fn unreadable_optional_payload_retains_stored_bytes_and_checked_geometry() {
         .native
         .namespace("fcstd")
         .expect("native graph");
-    let raw = decoded.ir().native_unknowns("fcstd").unwrap();
-    assert_eq!(raw.len(), 1);
-    let part = &decoded.source_fidelity().parts()[&raw[0].id];
-    assert_eq!(part.level().as_str(), "zip.entry");
-    assert_eq!(usize::try_from(part.offset()).unwrap(), payload);
-    let retained = decoded
-        .source_fidelity()
-        .retained_record(raw[0].id.as_str())
-        .unwrap();
+    let parts = crate::test_support::source_fidelity::given_up(decoded.source_fidelity());
+    let [(id, retained)] = parts.as_slice() else {
+        panic!("one given-up part: {parts:?}")
+    };
+    assert_eq!(usize::try_from(retained.offset()).unwrap(), payload);
     assert_eq!(
         retained.data(),
         Some(&changed[payload..payload + b"preview".len()])
     );
-    assert!(!crate::test_support::source_fidelity::bytes(
-        decoded.source_fidelity(),
-        raw[0].id.as_str()
-    )
-    .is_empty());
+    assert!(!crate::test_support::source_fidelity::bytes(decoded.source_fidelity(), id).is_empty());
     let admitted = namespace
         .arena_as::<crate::native::EntryRecord>("entries")
         .expect("admitted entries");
@@ -234,65 +172,13 @@ fn empty_unreadable_payload_still_requires_its_physical_source_entry() {
         .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
         .unwrap();
     assert!(crate::test_support::validate_native(result.ir()).is_empty());
-    let unknowns = result.ir().native_unknowns("fcstd").unwrap();
-    assert_eq!(unknowns.len(), 1);
-    let part = &result.source_fidelity().parts()[&unknowns[0].id];
-    assert_eq!(part.level().as_str(), "zip.entry");
-    assert_eq!(part.byte_len(), 0);
-    assert_eq!(
-        result
-            .source_fidelity()
-            .retained_record(unknowns[0].id.as_str())
-            .unwrap()
-            .data(),
-        Some([].as_slice())
-    );
-    let source_bytes = crate::source_archive::image(result.source_fidelity()).unwrap();
-    let source_arena = DecodeArena::new();
-    let (source_ctx, source_root) =
-        DecodeContext::from_root_bytes(source_bytes, &source_arena, &policy).unwrap();
-    let source = crate::source_archive::OriginalArchive::new(
-        &source_ctx,
-        source_root,
-        result.source_fidelity(),
-    )
-    .unwrap();
-    assert!(source
-        .part(&source_ctx, unknowns[0].id.as_str(), "Thumbnail.png")
-        .unwrap()
-        .is_empty());
-    let error = source
-        .part(&source_ctx, unknowns[0].id.as_str(), "Absent.png")
-        .expect_err("empty source still requires its actual member");
-    assert!(error
-        .to_string()
-        .contains("original ZIP member Absent.png is absent"));
-    let missing_bytes = archive_entries(&[("Document.xml", document.as_bytes())]);
-    let image = result
-        .source_fidelity()
-        .retained_record(crate::fidelity::SOURCE_IMAGE)
-        .unwrap();
-    let replacement = cadmpeg_ir::source_fidelity::RetainedSourceRecord::from_bytes(
-        image.stream().to_owned(),
-        image.offset(),
-        cadmpeg_ir::source_fidelity::RetainedBytes::Inline {
-            data: missing_bytes.clone(),
-        },
-    )
-    .unwrap();
-    let mut missing = serde_json::to_value(result.source_fidelity()).unwrap();
-    missing["retained_records"][crate::fidelity::SOURCE_IMAGE] =
-        serde_json::to_value(replacement).unwrap();
-    let missing: cadmpeg_ir::SourceFidelity = serde_json::from_value(missing).unwrap();
-    let missing_arena = DecodeArena::new();
-    let (missing_ctx, missing_root) =
-        DecodeContext::from_root_bytes(&missing_bytes, &missing_arena, &policy).unwrap();
-    let error = crate::source_archive::OriginalArchive::new(&missing_ctx, missing_root, &missing)
-        .err()
-        .expect("removed physical entry must fail source proof");
-    assert!(error
-        .to_string()
-        .contains("given-up part extent disagrees with its physical ZIP entry"));
+    let parts = crate::test_support::source_fidelity::given_up(result.source_fidelity());
+    let [(_, retained)] = parts.as_slice() else {
+        panic!("one given-up part: {parts:?}")
+    };
+    assert_eq!(retained.byte_len(), 0);
+    assert_eq!(retained.data(), Some([].as_slice()));
+    assert!(crate::source_archive::image(result.source_fidelity()).is_ok());
 }
 
 #[test]
@@ -533,7 +419,7 @@ fn a_bodiless_document_property_is_omitted_as_undecoded_source() {
     assert_eq!(omitted.len(), 1);
     assert_eq!(
         omitted[0].code,
-        cadmpeg_ir::codec::write::ExportLossCode::SourceUndecodedOmitted
+        crate::loss::FreecadLossCode::ExportNativePropertyNotTransferred
             .note(String::new())
             .code
     );

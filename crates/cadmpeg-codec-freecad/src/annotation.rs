@@ -967,12 +967,11 @@ pub(crate) mod tests {
                 &DecodeOptions::default(),
             )
             .unwrap_or_else(|error| panic!("{case}: {error:?}"));
-        let unknowns = decoded.ir().native_unknowns("fcstd").unwrap();
-        let [unknown] = unknowns.as_slice() else {
+        let fidelity = decoded.source_fidelity();
+        let parts = crate::test_support::source_fidelity::given_up(fidelity);
+        let [(_, retained)] = parts.as_slice() else {
             panic!("{case}: one failed document XML part")
         };
-        let fidelity = decoded.source_fidelity();
-        let part = &fidelity.parts()[&unknown.id];
         let entries = decoded
             .ir()
             .native
@@ -984,28 +983,13 @@ pub(crate) mod tests {
             panic!("{case}: one independently opened Document.xml member")
         };
         assert_eq!(entry.name(), "Document.xml", "{case}");
-        let entry_layout = &fidelity.record_layout()[entry.id()];
-        assert_eq!(part.stream(), entry_layout.stream(), "{case}");
-        assert_eq!(part.level().as_str(), "freecad.document_xml", "{case}");
+        assert_eq!(retained.offset(), 0, "{case}");
         assert_eq!(
-            part.state(),
-            &cadmpeg_ir::source_fidelity::parts::PartState::GivenUp {},
-            "{case}"
-        );
-        assert_eq!(part.offset(), 0, "{case}");
-        assert_eq!(
-            part.byte_len(),
+            retained.byte_len(),
             u64::try_from(document.len()).unwrap(),
             "{case}"
         );
-        assert_eq!(
-            fidelity
-                .retained_record(unknown.id.as_str())
-                .unwrap()
-                .data(),
-            Some(document.as_bytes()),
-            "{case}"
-        );
+        assert_eq!(retained.data(), Some(document.as_bytes()), "{case}");
         let errors = decoded
             .report()
             .losses
@@ -1022,17 +1006,16 @@ pub(crate) mod tests {
         );
         assert!(
             error.message.contains(&format!(
-                "freecad.document_xml stream={} offset={} length={}",
-                part.stream(),
-                part.offset(),
-                part.byte_len()
+                "freecad.document_xml stream=\"Document.xml\" offset={} length={}",
+                retained.offset(),
+                retained.byte_len()
             )),
             "{case}"
         );
         let provenance = error.provenance.as_ref().unwrap();
-        assert_eq!(provenance.stream_name(), Some(part.stream()), "{case}");
-        assert_eq!(provenance.offset, part.offset(), "{case}");
-        assert_eq!(provenance.byte_len(), Some(part.byte_len()), "{case}");
+        assert_eq!(provenance.stream_name(), Some("Document.xml"), "{case}");
+        assert_eq!(provenance.offset, retained.offset(), "{case}");
+        assert_eq!(provenance.byte_len(), Some(retained.byte_len()), "{case}");
         assert!(decoded.ir().model.semantic_annotations.is_empty(), "{case}");
     }
 

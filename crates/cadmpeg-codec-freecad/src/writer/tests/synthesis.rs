@@ -449,7 +449,7 @@ fn omitted_unreadable_feature_cannot_leave_a_dangling_dependency() {
         )
         .unwrap();
     assert!(plan.report().losses.iter().any(|loss| loss.code
-        == cadmpeg_ir::codec::write::ExportLossCode::SourceUndecodedOmitted
+        == crate::loss::FreecadLossCode::ExportNativePropertyNotTransferred
             .note("")
             .code
         && loss.severity == cadmpeg_ir::report::Severity::Warning

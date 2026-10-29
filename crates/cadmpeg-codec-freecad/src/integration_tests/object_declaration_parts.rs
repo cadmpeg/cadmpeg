@@ -2,7 +2,6 @@
 //! Application object births belong to their actual declaration and value scopes.
 
 use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
-use cadmpeg_ir::source_fidelity::parts::PartState;
 use cadmpeg_ir::{Codec, DecodeOptions};
 use cadmpeg_test_support::zip_fixture::{self, RawEntry};
 use std::io::Cursor;
@@ -45,7 +44,6 @@ fn native_objects_and_owned_values_are_born_in_original_parts_and_reused_without
             .child(prefix.len(), prefix.len() + archive.len())
             .unwrap();
         let (scan, stage) = crate::container::scan_for_decode(&ctx, source).unwrap();
-        let member = ctx.capture_part_extent(scan.data["Document.xml"]).unwrap();
         let staged = stage
             .native()
             .namespace("fcstd")
@@ -56,7 +54,6 @@ fn native_objects_and_owned_values_are_born_in_original_parts_and_reused_without
         let object = staged.iter().find(|object| object.name() == "A&B").unwrap();
         assert_eq!(object.type_name, "Vendor::Feature");
         let graph = crate::persistence::parse_document_source_with_properties(
-            &ctx,
             scan.data["Document.xml"],
             &scan.document_xml,
             crate::persistence::Vocabulary::from_declaration(&scan.schema_version).unwrap(),
@@ -71,7 +68,6 @@ fn native_objects_and_owned_values_are_born_in_original_parts_and_reused_without
         .unwrap();
         assert_eq!(graph.objects, pure.objects);
         assert_eq!(graph.properties, pure.properties);
-        assert_eq!(graph.object_sources, pure.object_sources);
         assert_eq!(
             graph.property_sources.keys().collect::<Vec<_>>(),
             pure.property_sources.keys().collect::<Vec<_>>()
@@ -85,86 +81,6 @@ fn native_objects_and_owned_values_are_born_in_original_parts_and_reused_without
         assert_eq!(held.values()[0].attributes["unit"], "mm");
         assert_eq!(held.values()[0].attributes["extra"], "held");
         assert!(stage.model().attributes.is_empty());
-        let part = stage
-            .fidelity()
-            .parts()
-            .values()
-            .find(|part| {
-                part.level().as_str() == "freecad.object_declaration"
-                    && part.offset()
-                        == member.offset() + u64::try_from(xml.find(&declaration).unwrap()).unwrap()
-            })
-            .unwrap();
-        assert_eq!(part.state(), &PartState::Decoded {});
-        assert_eq!(part.byte_len(), u64::try_from(declaration.len()).unwrap());
-        let parent = &stage.fidelity().parts()[part.parent().unwrap()];
-        assert_eq!(parent.level().as_str(), "freecad.objects");
-        assert_eq!(
-            stage.fidelity().parts()[parent.parent().unwrap()]
-                .level()
-                .as_str(),
-            "freecad.document"
-        );
-        let value_part = stage
-            .fidelity()
-            .parts()
-            .values()
-            .find(|part| {
-                part.level().as_str() == "freecad.property_value"
-                    && part.offset()
-                        == member.offset() + u64::try_from(xml.find(child).unwrap()).unwrap()
-            })
-            .unwrap();
-        let property_part = &stage.fidelity().parts()[value_part.parent().unwrap()];
-        assert_eq!(property_part.level().as_str(), "freecad.property");
-        let properties_part = &stage.fidelity().parts()[property_part.parent().unwrap()];
-        assert_eq!(properties_part.level().as_str(), "freecad.properties");
-        assert_eq!(
-            stage.fidelity().parts()[properties_part.parent().unwrap()]
-                .level()
-                .as_str(),
-            "freecad.document"
-        );
-        let captures = ctx.take_record_captures().unwrap();
-        assert_eq!(captures.len(), 5);
-        assert_eq!(
-            captures
-                .iter()
-                .filter(|capture| capture.id() == object.id())
-                .count(),
-            1
-        );
-        assert_eq!(
-            captures
-                .iter()
-                .filter(|capture| capture.id() == held.id)
-                .count(),
-            1
-        );
-        let capture = captures
-            .iter()
-            .find(|capture| capture.id() == object.id())
-            .unwrap();
-        assert_eq!(
-            capture.offset(),
-            member.offset() + u64::try_from(xml.find(&declaration).unwrap()).unwrap()
-        );
-        assert_eq!(
-            capture.byte_len(),
-            u64::try_from(declaration.len()).unwrap()
-        );
-        let mut expected = Vec::new();
-        for (source, raw) in [
-            (&declaration, "A&amp;B"),
-            (&declaration, "Vendor::Feature"),
-            (&data, "A&#38;B"),
-        ] {
-            let start = member.offset()
-                + u64::try_from(xml.find(source).unwrap() + source.find(raw).unwrap()).unwrap();
-            expected.push(start..start + u64::try_from(raw.len()).unwrap());
-        }
-        assert_eq!(capture.reads()[capture.stream()], expected);
-        assert!(expected[2].start >= capture.offset() + capture.byte_len());
     }
 }
 
@@ -216,34 +132,17 @@ fn bad_owned_value_keeps_the_real_object_header_and_linked_property_with_an_exac
     };
     assert_eq!(kind.as_str(), "Vendor::Feature");
     assert!(!parameters.keys().any(|name| name.as_str() == "Length"));
-    let unknowns = decoded.ir().native_unknowns("fcstd").unwrap();
-    let [unknown] = unknowns.as_slice() else {
+    let fidelity = decoded.source_fidelity();
+    let parts = crate::test_support::source_fidelity::given_up(fidelity);
+    let [(_, retained)] = parts.as_slice() else {
         panic!("one failed owned value")
     };
-    assert_eq!(unknown.links.len(), 1);
-    assert_eq!(unknown.links[0].as_str(), property.id);
-    let fidelity = decoded.source_fidelity();
-    let part = &fidelity.parts()[&unknown.id];
-    assert_eq!(part.level().as_str(), "freecad.property_value");
+    assert_eq!(retained.data(), Some(bad.as_bytes()));
     assert_eq!(
-        fidelity
-            .retained_record(unknown.id.as_str())
-            .unwrap()
-            .data(),
-        Some(bad.as_bytes())
-    );
-    assert!(fidelity.record_layout()[property.id.as_str()]
-        .payloads()
-        .is_empty());
-    let arena = DecodeArena::new();
-    let (ctx, root) =
-        DecodeContext::from_root_bytes(&bytes, &arena, &DecodePolicy::service()).unwrap();
-    assert_eq!(
-        crate::source_archive::OriginalArchive::new(&ctx, root, fidelity)
-            .unwrap()
-            .open(&ctx, "Document.xml")
-            .unwrap()
-            .window(),
+        crate::test_support::source_fidelity::entry_bytes(
+            fidelity,
+            &crate::native::native_id("entry", "Document.xml")
+        ),
         xml.as_bytes()
     );
 }
@@ -266,81 +165,24 @@ fn a_failed_declaration_has_its_original_source_home_and_keeps_an_independent_na
     assert_eq!(objects.len(), 1);
     assert_eq!(objects[0].name(), "Peer");
     assert_eq!(objects[0].type_name, "Vendor::Feature");
-    let unknowns = decoded.ir().native_unknowns("fcstd").unwrap();
-    assert_eq!(unknowns.len(), 2);
     let fidelity = decoded.source_fidelity();
-    let arena = DecodeArena::new();
-    let (ctx, root) =
-        DecodeContext::from_root_bytes(&bytes, &arena, &DecodePolicy::service()).unwrap();
-    let archive = cadmpeg_container::ArchiveSnapshot::new(&ctx, root).unwrap();
-    let member = archive.open(&ctx, "Document.xml").unwrap();
-    let extent = ctx.capture_part_extent(member).unwrap();
-    for (level, raw, parent) in [
-        ("freecad.object_declaration", bad, "freecad.objects"),
-        (
-            "freecad.object_data",
-            "<Object name='Bad'><Properties Count='0'/></Object>",
-            "freecad.object_data_section",
-        ),
-    ] {
-        let expected_offset = extent.offset() + u64::try_from(xml.find(raw).unwrap()).unwrap();
-        let part = fidelity
-            .parts()
-            .values()
-            .find(|part| part.level().as_str() == level && part.offset() == expected_offset)
-            .unwrap();
-        assert_eq!(part.state(), &PartState::GivenUp {});
-        assert_eq!(part.stream(), extent.stream());
-        assert_eq!(
-            part.offset(),
-            extent.offset() + u64::try_from(xml.find(raw).unwrap()).unwrap()
-        );
-        assert_eq!(part.byte_len(), u64::try_from(raw.len()).unwrap());
-        assert_eq!(
-            fidelity.parts()[part.parent().unwrap()].level().as_str(),
-            parent
-        );
-        assert_eq!(
-            fidelity.parts()[part.parent().unwrap()].state(),
-            &PartState::Decoded {}
-        );
-        let unknown = unknowns
+    let parts = crate::test_support::source_fidelity::given_up(fidelity);
+    assert_eq!(parts.len(), 2);
+    for raw in [bad, "<Object name='Bad'><Properties Count='0'/></Object>"] {
+        let expected_offset = u64::try_from(xml.find(raw).unwrap()).unwrap();
+        let (_, retained) = parts
             .iter()
-            .find(|unknown| fidelity.parts()[&unknown.id].level().as_str() == level)
+            .find(|(_, retained)| retained.offset() == expected_offset)
             .unwrap();
-        assert_eq!(
-            fidelity
-                .retained_record(unknown.id.as_str())
-                .unwrap()
-                .data(),
-            Some(raw.as_bytes())
-        );
+        assert_eq!(retained.stream(), "Document.xml");
+        assert_eq!(retained.byte_len(), u64::try_from(raw.len()).unwrap());
+        assert_eq!(retained.data(), Some(raw.as_bytes()));
     }
-    cadmpeg_test_support::contract::parts::check_one_home(
-        cadmpeg_ir::CodecFormat::Fcstd,
-        &decoded.ir().native,
-        fidelity,
-        &decoded.report().losses,
-        "file",
-        |stream, range| {
-            let start = usize::try_from(range.start).ok()?;
-            let end = usize::try_from(range.end).ok()?;
-            if stream == "file" {
-                bytes.get(start..end)
-            } else if stream == extent.stream() {
-                member.child(start, end).map(|view| view.window())
-            } else {
-                None
-            }
-        },
-    )
-    .unwrap();
     assert_eq!(
-        crate::source_archive::OriginalArchive::new(&ctx, root, fidelity)
-            .unwrap()
-            .open(&ctx, "Document.xml")
-            .unwrap()
-            .window(),
+        crate::test_support::source_fidelity::entry_bytes(
+            fidelity,
+            &crate::native::native_id("entry", "Document.xml")
+        ),
         xml.as_bytes()
     );
 }
@@ -352,14 +194,9 @@ fn unsupported_object_header_metadata_keeps_the_original_generic_property_gramma
     let arena = DecodeArena::new();
     let (ctx, root) =
         DecodeContext::from_root_bytes(&bytes, &arena, &DecodePolicy::service()).unwrap();
-    let (scan, stage) = crate::container::scan_for_decode(&ctx, root).unwrap();
+    let (scan, _) = crate::container::scan_for_decode(&ctx, root).unwrap();
     assert!(scan.object_declarations.is_none());
-    assert!(!stage.fidelity().parts().values().any(|part| matches!(
-        part.level().as_str(),
-        "freecad.objects" | "freecad.object_declaration"
-    )));
     let graph = crate::persistence::parse_document_source_with_properties(
-        &ctx,
         scan.data["Document.xml"],
         &scan.document_xml,
         crate::persistence::Vocabulary::Objects,
@@ -405,41 +242,25 @@ fn archive_failure_rolls_back_the_real_object_and_owned_property_births_together
     let decoded = crate::FcstdCodec
         .decode(&mut Cursor::new(&bytes), &DecodeOptions::default())
         .unwrap();
-    let namespace = decoded.ir().native.namespace("fcstd").unwrap();
-    assert!(namespace
+    let namespace = decoded.ir().native.namespace("fcstd");
+    assert!(namespace.is_none_or(|namespace| namespace
         .arena_as::<crate::native::ObjectRecord>("objects")
         .unwrap()
-        .is_empty());
-    assert!(namespace
+        .is_empty()));
+    assert!(namespace.is_none_or(|namespace| namespace
         .arena_as::<crate::native::PropertyRecord>("properties")
         .unwrap()
-        .is_empty());
+        .is_empty()));
     assert!(decoded.ir().model.features.is_empty());
-    let unknowns = decoded.ir().native_unknowns("fcstd").unwrap();
-    let [unknown] = unknowns.as_slice() else {
+    let fidelity = decoded.source_fidelity();
+    let parts = crate::test_support::source_fidelity::given_up(fidelity);
+    let [(_, retained)] = parts.as_slice() else {
         panic!("one failed archive parent")
     };
-    let fidelity = decoded.source_fidelity();
-    assert_eq!(
-        fidelity.parts()[&unknown.id].level().as_str(),
-        "zip.archive"
-    );
-    assert_eq!(
-        fidelity
-            .parts()
-            .values()
-            .filter(|part| part.level().as_str() == "freecad.object_declaration"
-                && matches!(part.state(), PartState::Covered { by } if by == &unknown.id))
-            .count(),
-        2
-    );
-    for name in ["A", "Peer"] {
-        assert!(!fidelity
-            .record_layout()
-            .contains_key(&crate::native::native_id("object", name)));
-    }
+    assert_eq!(retained.offset(), 0);
+    assert_eq!(retained.byte_len(), u64::try_from(bytes.len()).unwrap());
     assert_eq!(fidelity.retained_records().len(), 1);
-    assert_eq!(crate::source_archive::image(fidelity).unwrap(), bytes);
+    assert_eq!(retained.data(), Some(bytes.as_slice()));
 }
 
 #[test]
@@ -478,7 +299,6 @@ fn prepared_object_properties_preserve_exact_original_population_diagnostics_onc
         let schema =
             crate::persistence::Vocabulary::from_declaration(&scan.schema_version).unwrap();
         let graph = crate::persistence::parse_document_source_with_properties(
-            &ctx,
             scan.data["Document.xml"],
             &scan.document_xml,
             schema,
@@ -510,13 +330,5 @@ fn prepared_object_properties_preserve_exact_original_population_diagnostics_onc
             .find(|property| property.name == "Label")
             .unwrap();
         assert_eq!(label.values()[0].attributes["value"], "held");
-        let captures = ctx.take_record_captures().unwrap();
-        assert_eq!(
-            captures
-                .iter()
-                .filter(|capture| capture.id() == label.id)
-                .count(),
-            1
-        );
     }
 }

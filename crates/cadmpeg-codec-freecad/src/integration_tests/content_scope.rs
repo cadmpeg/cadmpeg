@@ -204,7 +204,7 @@ fn design_operand_and_sheet_ownership_is_independent_of_delivery_depth() {
             let exact_xml =
                 crate::test_support::source_fidelity::bytes(decoded.source_fidelity(), &sheet.id);
             assert_eq!(
-                std::str::from_utf8(exact_xml).unwrap(),
+                std::str::from_utf8(&exact_xml).unwrap(),
                 format!(
                     r#"<Property name="cells" type="Spreadsheet::PropertySheet">{cells}</Property>"#
                 )

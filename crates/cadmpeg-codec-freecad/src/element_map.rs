@@ -3,10 +3,8 @@
 
 use std::collections::{BTreeMap, HashMap};
 
-use cadmpeg_core::decode::{bounded_len, DecodeContext, ExpandSpec, View};
+use cadmpeg_core::decode::bounded_len;
 use cadmpeg_core::CodecError;
-use cadmpeg_ir::native::bytes::NativeBytes;
-use std::ops::Range;
 
 use crate::native::element_map::{
     ElementMapGroup, ElementMapNode, ElementMapNodes, ElementMapRecord, ElementMappedName,
@@ -65,13 +63,6 @@ enum ElementMapCarrier<'a, 'input> {
     Legacy(roxmltree::Node<'a, 'input>),
 }
 
-pub(crate) struct SourceLayouts<'a, 'input> {
-    pub(crate) document: View<'input>,
-    pub(crate) entries: &'a BTreeMap<String, View<'input>>,
-    pub(crate) fidelity: &'a mut cadmpeg_ir::SourceFidelity,
-    pub(crate) payloads: &'a mut BTreeMap<String, BTreeMap<String, NativeBytes>>,
-}
-
 /// Recover every string table and element map carried by `Document.xml`.
 pub(crate) fn parse<'input>(
     ctx: &crate::property_reader::PropertyReader<'_, 'input>,
@@ -81,16 +72,8 @@ pub(crate) fn parse<'input>(
     entries: &[EntryRecord],
     sources: &crate::entry_sources::EntrySources<'_>,
     losses: &mut Vec<cadmpeg_ir::report::loss::LossNote>,
-    mut fidelity: Option<&mut SourceLayouts<'_, 'input>>,
+    mut fidelity: Option<&mut cadmpeg_ir::SourceFidelity>,
 ) -> Result<(StringTables, Vec<ElementMapRecord>), CodecError> {
-    if fidelity
-        .as_ref()
-        .is_some_and(|source| source.document.window() != xml.input_text().as_bytes())
-    {
-        return Err(CodecError::malformed(
-            "string-table document View differs from its parsed XML source",
-        ));
-    }
     // Orphan carriers are diagnosed once; each marker still proves its own
     // framing so a damaged table cannot erase independently framed peers.
     // discarded-value: framing errors become diagnostics; node admission below is authoritative
@@ -190,8 +173,7 @@ pub(crate) fn parse<'input>(
             } else {
                 parse_count(data_node, "StringHasher")?
             };
-            let (entries, ranges) =
-                parse_string_table(bytes, declared_count, source_entry.is_some())?;
+            let entries = parse_string_table(bytes, declared_count, source_entry.is_some())?;
             StringTableRecord::try_new(
                 index,
                 None,
@@ -200,7 +182,7 @@ pub(crate) fn parse<'input>(
                 source_entry.map(ToOwned::to_owned),
                 Some(entries),
             )
-            .map(|record| Some((record, ranges, data_node, inline_bytes)))
+            .map(Some)
             .map_err(CodecError::Malformed)
         })();
         let payload = recover_metadata(parsed, losses, "StringHasher payload")?.flatten();
@@ -213,35 +195,7 @@ pub(crate) fn parse<'input>(
             )?;
         }
         let mut record = match payload {
-            Some((record, ranges, data_node, inline_bytes)) => {
-                if let Some(source) = fidelity.as_deref_mut() {
-                    let view = if let Some(name) =
-                        data_node.attribute("file").filter(|name| !name.is_empty())
-                    {
-                        let view = *source.entries.get(name).ok_or_else(|| {
-                            CodecError::malformed(
-                                "string-table side entry has no genuine source View",
-                            )
-                        })?;
-                        if entry_data
-                            .get(name)
-                            .is_none_or(|bytes| *bytes != view.window())
-                        {
-                            return Err(CodecError::malformed(
-                                "string-table side-entry View differs from its parsed bytes",
-                            ));
-                        }
-                        view
-                    } else {
-                        let bytes = inline_bytes.as_deref().ok_or_else(|| {
-                            CodecError::malformed("inline string table has no decoded text")
-                        })?;
-                        inline_string_table_view(ctx, source.document, data_node.range(), bytes)?
-                    };
-                    retain_string_table(ctx, view, &record.id(), &ranges, source.payloads)?;
-                }
-                record
-            }
+            Some(record) => record,
             None => StringTableRecord::try_new(index, None, save_all, threshold, None, None)
                 .map_err(CodecError::Malformed)?,
         };
@@ -436,14 +390,11 @@ pub(crate) fn parse<'input>(
 /// A parsed carrier with no typed payload still exists only in its source
 /// image. Record this at the recovery branch, independently of loss taxonomy.
 fn source_only(
-    fidelity: &mut Option<&mut SourceLayouts<'_, '_>>,
+    fidelity: &mut Option<&mut cadmpeg_ir::SourceFidelity>,
     record: &str,
 ) -> Result<(), CodecError> {
     if let Some(fidelity) = fidelity {
-        fidelity
-            .fidelity
-            .mark_untyped(record, [cadmpeg_ir::ArenaClass::Model])
-            .map_err(CodecError::malformed)?;
+        crate::fidelity::mark_untyped(fidelity, record, cadmpeg_ir::ArenaClass::Model)?;
     }
     Ok(())
 }
@@ -1075,66 +1026,11 @@ fn parse_hex(value: &str, field: &str) -> Result<i64, CodecError> {
     Ok(if negative { -value } else { value })
 }
 
-fn inline_string_table_view<'input>(
-    ctx: &DecodeContext<'input>,
-    document: View<'input>,
-    range: Range<usize>,
-    decoded_text: &[u8],
-) -> Result<View<'input>, CodecError> {
-    let carrier = crate::fidelity::relative_xml_extent(document, range)?;
-    let capture = ctx.capture_part_extent(carrier)?;
-    let name = format!(
-        "fcstd:string-table-text:{}:{}:{}:{}",
-        capture.stream().len(),
-        capture.stream(),
-        capture.offset(),
-        capture.byte_len()
-    );
-    let mut writer = ctx.begin_expand(ExpandSpec::Exact(cadmpeg_core::decode::u64_from_index(
-        decoded_text.len(),
-    )))?;
-    writer.write(decoded_text)?;
-    writer.finalize_from(carrier, &name)
-}
-
-fn retain_string_table(
-    ctx: &DecodeContext<'_>,
-    view: View<'_>,
-    id: &str,
-    ranges: &[Range<usize>],
-    payloads: &mut BTreeMap<String, BTreeMap<String, NativeBytes>>,
-) -> Result<(), CodecError> {
-    let fields = ctx.record(id, view, || {
-        let mut fields = BTreeMap::new();
-        for (ordinal, range) in ranges.iter().enumerate() {
-            let record = crate::fidelity::relative_xml_extent(view, range.clone())?;
-            ctx.retain_bytes(
-                cadmpeg_core::decode::u64_from_index(record.window().len()),
-                "retain FCStd string-table raw record",
-            )?;
-            let mut bytes = ctx.alloc_filled(
-                record.window().len(),
-                0_u8,
-                "retain FCStd string-table raw record",
-            )?;
-            bytes.copy_from_slice(record.window());
-            fields.insert(format!("entries.{ordinal}.raw"), NativeBytes::from(bytes));
-        }
-        Ok(fields)
-    })?;
-    if payloads.insert(id.to_owned(), fields).is_some() {
-        return Err(CodecError::malformed(
-            "duplicate string-table source layout identity",
-        ));
-    }
-    Ok(())
-}
-
 fn parse_string_table(
     bytes: &[u8],
     declared_count: usize,
     side_entry: bool,
-) -> Result<(Vec<StringTableEntry>, Vec<Range<usize>>), CodecError> {
+) -> Result<Vec<StringTableEntry>, CodecError> {
     let text = std::str::from_utf8(bytes)
         .map_err(|_| CodecError::Malformed("string table is not UTF-8".into()))?;
     let mut scanner = TextScanner::new(text);
@@ -1159,11 +1055,9 @@ fn parse_string_table(
     )
     .ok_or_else(|| CodecError::Malformed("string-table record count exceeds input".into()))?;
     let mut output = Vec::new();
-    let mut ranges = Vec::new();
     let mut previous_id = 0_i64;
     for _ in 0..declared_count {
         scanner.skip_whitespace();
-        let record_start = scanner.position;
         let header = scanner.token()?;
         let mut fields = header.split('.');
         let encoded_id_field = fields.next().ok_or_else(|| {
@@ -1218,13 +1112,6 @@ fn parse_string_table(
             }
             values.join(" ")
         };
-        let raw_len = text[record_start..scanner.position]
-            .trim_end_matches(char::is_whitespace)
-            .len();
-        let raw_end = record_start
-            .checked_add(raw_len)
-            .ok_or_else(|| CodecError::malformed("string-table raw range overflows"))?;
-        ranges.push(record_start..raw_end);
         output.push(StringTableEntry {
             string_id,
             flags,
@@ -1239,7 +1126,7 @@ fn parse_string_table(
             "string table contains records beyond declared count".into(),
         ));
     }
-    Ok((output, ranges))
+    Ok(output)
 }
 
 struct TextScanner<'a> {
