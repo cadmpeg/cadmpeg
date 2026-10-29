@@ -281,7 +281,6 @@ impl DesignCopyPasteBodiesOperation {
         &self.bodies
     }
     /// Byte offset of the body group's primary header of a located scope.
-    #[cfg(test)]
     pub(crate) fn body_group_byte_offset(&self) -> Option<u64> {
         self.body_group_byte_offset
     }

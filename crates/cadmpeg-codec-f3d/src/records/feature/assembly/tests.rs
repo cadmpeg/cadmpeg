@@ -311,9 +311,12 @@ fn assembly_forms_preserve_partial_and_mixed_qualifier_wire() {
         let decoded: crate::records::feature::assembly::DesignAssemblyAlignment =
             serde_json::from_str(&wire).unwrap();
         assert_eq!(serde_json::to_string(&decoded).unwrap(), wire);
+        let pointers = crate::records::source_offsets::collect(&mut alignment.clone());
+        assert_eq!(pointers["value_offsets.0"], 11);
+        assert_eq!(pointers["value_offsets.1"], 22);
         assert_eq!(
-            crate::records::feature::test_support::relocated(decoded, &alignment),
-            alignment
+            serde_json::to_string(&decoded).unwrap(),
+            serde_json::to_string(&alignment).unwrap()
         );
         if alignment.operand_paths().is_some() {
             let mut unframed = serde_json::from_str::<serde_json::Value>(&wire).unwrap();
@@ -454,10 +457,24 @@ fn legacy_assembly_wire_derives_carrier_frames_and_checks_repeated_fields() {
         let decoded: crate::records::feature::assembly::DesignAssemblyAlignment =
             serde_json::from_str(&wire).unwrap();
         assert_eq!(serde_json::to_string(&decoded).unwrap(), wire);
-        assert_eq!(
-            crate::records::feature::test_support::relocated(decoded, &alignment),
-            alignment
-        );
+        let pointers = crate::records::source_offsets::collect(&mut alignment.clone());
+        for (name, offset) in [
+            ("legacy_operand_carriers.0.reference_offset", 11),
+            ("legacy_operand_carriers.1.reference_offset", 22),
+            (
+                "legacy_operand_carriers.0.construction.point_record_byte_offset",
+                100,
+            ),
+            (
+                "legacy_operand_carriers.1.construction.point_record_byte_offset",
+                200,
+            ),
+            ("solved_frame.reference_offset", 33),
+            ("solved_frame.record_byte_offset", 300),
+            ("solved_frame.transform_offset", 325),
+        ] {
+            assert_eq!(pointers[name], offset, "{name}");
+        }
         let value: serde_json::Value = serde_json::from_str(&wire).unwrap();
         assert_eq!(value.get("operand_frames").is_some(), frames_field_present);
         for (field, replacement) in [
