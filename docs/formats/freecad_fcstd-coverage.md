@@ -262,3 +262,13 @@ removed from the expansion index. Local work exhaustion withholds the entire cur
 all subsequent uses with blocking `geometry.mesh-placement-bounded`. Independent source meshes
 and earlier complete uses remain. Cloned mesh storage, loss text, and mesh entities are admitted
 before retention.
+
+## Primitive placement
+
+Primitive frames use the saved resolved `Placement` for map modes 0, 1 and 5. The projector does
+not reconstruct a missing frame from support geometry. Other map modes, conflicting support
+names, and incomplete or cyclic container paths keep the native operation and emit
+`feature.primitive-placement-unresolved`. Dimension-only definitions without placement or
+attachment properties keep an absent neutral placement and emit the same loss. The native
+attachment summary product is separate from the neutral primitive frame. Multiple parent
+containers violate product or feature-tree ownership and refuse the document.

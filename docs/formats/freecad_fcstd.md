@@ -1480,11 +1480,15 @@ the ordered many-reference relation and can contain more than one property or GU
 
 The native namespace holds attachment records. Support links retain ordered object and
 subelement identity separately from the map mode. The persisted resolved `Placement` and local
-`AttachmentOffset` remain distinct matrices. Neutral geometry composes them as
-`Placement × AttachmentOffset` when both are present, and uses the sole present matrix otherwise.
-Validation checks support identity, finite matrices, and this effective-frame rule. Each named attachment
+`AttachmentOffset` remain distinct matrices. The native `effective_frame` summary contains
+`Placement × AttachmentOffset` when both are present, and the sole present matrix otherwise.
+The neutral primitive frame uses the resolved `Placement`.
+Validation checks support identity, finite matrices, and the native effective-frame rule. Each named attachment
 carrier occurs at most once. `AttachmentSupport` is an `App::PropertyLinkSubList` with one
 `LinkSubList` value whose zero or more `Link` children carry `obj` and `sub` attributes in order.
+A primitive with `MapMode` can use `Support` in place of `AttachmentSupport`, with the same
+carrier grammar. Simultaneous support names retain the primitive natively and emit
+`feature.primitive-placement-unresolved`.
 `MapMode` is an
 `App::PropertyEnumeration` with one `Integer` value; its zero-based index selects, in order,
 `Deactivated`, `Translate`, `ObjectXY`, `ObjectXZ`, `ObjectYZ`, `FlatFace`, `TangentPlane`,
@@ -1558,6 +1562,17 @@ and persisted degree-valued angular bounds become radians. A standalone primitiv
 body; additive and subtractive families explicitly join or cut. Required dimensions must be finite,
 linear sizes must be positive except that one cone end radius may be zero, and latitude bounds must
 be ordered. Incomplete or invalid primitive definitions remain attributable native operations.
+
+The neutral primitive placement maps the primitive feature frame into the document model frame.
+`Placement` carries the resolved object frame. In attached modes this value includes the support
+frame and attachment-local `AttachmentOffset`. The offset is not multiplied into this frame again.
+`MapMode` indices 0, 1, and 5 admit the persisted resolved frame. Other indices retain the operation natively and emit
+`feature.primitive-placement-unresolved`. The native attachment record retains the support links,
+mode, placement and offset as distinct fields. Each enclosing `PartDesign::Body` or `App::Part`
+frame premultiplies the member frame. Each object has at most one parent placement container.
+Multiple parent containers are malformed. A placement path requires finite rigid placements and
+no cycle. Missing frames and cyclic placement paths emit
+`feature.primitive-placement-unresolved`; no identity frame replaces a missing placement.
 
 Part cut, fuse, common, multi-fuse, and multi-common objects transfer as neutral Boolean combine
 operations. Two-input forms retain distinct `Base` and `Tool` property identities. Multi-input

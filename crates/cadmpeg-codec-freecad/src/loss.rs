@@ -73,6 +73,8 @@ pub(crate) enum FreecadLossCode {
     FeatureCyclicHistory,
     /// Feature retains its native kind without a complete neutral operation.
     FeatureNativeKindRetained,
+    /// A primitive has no admitted local-to-model frame.
+    FeaturePrimitivePlacementUnresolved,
     /// Sketch geometry record retains a native kind without solved geometry.
     SketchNativeGeometry,
     /// Cached sketch geometry has no matching live external reference.
@@ -141,6 +143,7 @@ impl FreecadLossCode {
         Self::PersistenceCountNoncanonical,
         Self::FeatureCyclicHistory,
         Self::FeatureNativeKindRetained,
+        Self::FeaturePrimitivePlacementUnresolved,
         Self::SketchNativeGeometry,
         Self::SketchNativeConstraint,
         Self::SketchExternalReferenceUnresolved,
@@ -193,6 +196,7 @@ impl FreecadLossCode {
             Self::PersistenceSideEntryUnresolved => "metadata.persistence-side-entry-unresolved",
             Self::PersistenceCountNoncanonical => "metadata.persistence-count-noncanonical",
             Self::FeatureCyclicHistory => "feature.cyclic-history",
+            Self::FeaturePrimitivePlacementUnresolved => "feature.primitive-placement-unresolved",
             Self::FeatureNativeKindRetained => "feature.native-kind-retained",
             Self::SketchNativeGeometry => "sketch.native-geometry",
             Self::SketchNativeConstraint => "sketch.native-constraint",
@@ -228,6 +232,7 @@ impl FreecadLossCode {
             | Self::MeshPlacementBounded
             | Self::FeatureCyclicHistory
             | Self::FeatureNativeKindRetained
+            | Self::FeaturePrimitivePlacementUnresolved
             | Self::SketchNativeGeometry
             | Self::SketchNativeConstraint
             | Self::PcurveLocationAmbiguous
@@ -294,9 +299,9 @@ impl FreecadLossCode {
             | Self::ArchiveEntryUnreadable
             | Self::PersistencePayloadUnresolved
             | Self::PersistenceSideEntryUnresolved => LossTaxonomy::RecordNotTyped,
-            Self::FeatureCyclicHistory | Self::FeatureNativeKindRetained => {
-                LossTaxonomy::FeatureHistoryRetained
-            }
+            Self::FeatureCyclicHistory
+            | Self::FeatureNativeKindRetained
+            | Self::FeaturePrimitivePlacementUnresolved => LossTaxonomy::FeatureHistoryRetained,
             Self::SketchExternalCacheUnresolved
             | Self::SketchExternalReferenceUnresolved
             | Self::SketchNativeGeometry
@@ -379,6 +384,7 @@ mod tests {
                 "metadata.persistence-count-noncanonical",
                 "feature.cyclic-history",
                 "feature.native-kind-retained",
+                "feature.primitive-placement-unresolved",
                 "sketch.native-geometry",
                 "sketch.native-constraint",
                 "sketch.external-reference-unresolved",

@@ -5,6 +5,7 @@
 mod measured_geometry;
 mod mesh_placement;
 mod metadata_recovery;
+mod primitive_placement;
 mod ring_traversal;
 mod shape_placement;
 mod visibility;
