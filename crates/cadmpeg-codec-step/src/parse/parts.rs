@@ -110,7 +110,11 @@ impl<'input, 'ctx, 'arena> Parser<'input, 'ctx, 'arena> {
             } else {
                 "step.simple_entity_instance"
             };
-            Some((extent, PartSpec::new(label), end))
+            Some((
+                extent,
+                PartSpec::new(label).holding([cadmpeg_ir::ArenaClass::Model]),
+                end,
+            ))
         })())
     }
 }
