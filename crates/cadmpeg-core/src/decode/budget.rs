@@ -31,6 +31,11 @@ pub(super) struct DecodeBudget {
 }
 
 impl DecodeBudget {
+    /// Returns the policy applied to this budget.
+    pub(super) fn policy(&self) -> &DecodePolicy {
+        &self.policy
+    }
+
     pub(super) fn new(policy: DecodePolicy, input_bytes: u64) -> Self {
         Self {
             policy,
