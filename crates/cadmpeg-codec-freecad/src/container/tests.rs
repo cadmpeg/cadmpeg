@@ -670,3 +670,109 @@ fn equivalent_numeric_schema_declarations_select_the_same_persistence_grammar() 
         assert!(crate::test_support::validate_native(recovered.ir()).is_empty());
     }
 }
+
+#[test]
+fn byte_coverage_is_inexact_when_a_span_leaves_a_gap_overlaps_or_names_no_entry() {
+    use crate::native::EntryRecord;
+    use cadmpeg_ir::source_fidelity::freecad::{
+        ArchiveSpan, ArchiveSpanRole, ByteSpan, LogicalClassification, LogicalSpan,
+    };
+    let entry = |name: &str| {
+        EntryRecord::new(
+            format!("fcstd:native:entry#{name}"),
+            name.into(),
+            cadmpeg_core::container::ContainerRole::Auxiliary,
+            Vec::new(),
+        )
+        .unwrap()
+    };
+    let logical = |spans: &[(&str, u64, u64)]| {
+        spans
+            .iter()
+            .enumerate()
+            .map(|(index, (entry, start, end))| LogicalSpan {
+                id: format!("fcstd:native:logical-span#{index}"),
+                entry: (*entry).into(),
+                span: ByteSpan::try_new(*start, *end).unwrap(),
+                classification: LogicalClassification::Structural,
+            })
+            .collect::<Vec<_>>()
+    };
+    let physical = |spans: &[(u64, u64)]| {
+        spans
+            .iter()
+            .enumerate()
+            .map(|(index, (start, end))| ArchiveSpan {
+                id: format!("fcstd:native:archive-span#{index}"),
+                span: ByteSpan::try_new(*start, *end).unwrap(),
+                role: ArchiveSpanRole::LocalName("a".into()),
+            })
+            .collect::<Vec<_>>()
+    };
+    let entries = [entry("a"), entry("b"), entry("empty")];
+    let source_bytes = [0_u8; 10];
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let policy = cadmpeg_core::decode::DecodePolicy::service();
+    let (context, root) =
+        cadmpeg_core::decode::DecodeContext::from_root_bytes(&source_bytes, &arena, &policy)
+            .unwrap();
+    let views = [("a", 0, 4), ("b", 4, 6), ("empty", 6, 6)]
+        .into_iter()
+        .map(|(name, start, end)| {
+            let view = context
+                .register_named_slice(root, cadmpeg_core::decode::ByteRange { start, end }, name)
+                .unwrap();
+            (name.to_owned(), view)
+        })
+        .collect::<std::collections::BTreeMap<_, _>>();
+    let sources = crate::entry_sources::EntrySources::new(&context, &views).unwrap();
+    let whole = physical(&[(0, 6), (6, 10)]);
+    let exact = |physical: &[ArchiveSpan], spans: &[(&str, u64, u64)]| {
+        super::byte_coverage(physical, &entries, &sources, &logical(spans), 10)
+            .unwrap()
+            .exact
+    };
+
+    assert!(exact(&whole, &[("a", 0, 2), ("a", 2, 4), ("b", 0, 2)]));
+    assert!(
+        exact(&whole, &[("b", 0, 2), ("a", 2, 4), ("a", 0, 2)]),
+        "spans are ordered by start before they are checked"
+    );
+    assert!(
+        exact(
+            &physical(&[(6, 10), (0, 6)]),
+            &[("a", 0, 2), ("a", 2, 4), ("b", 0, 2)]
+        ),
+        "archive spans are ordered by start before they are checked"
+    );
+    for (case, spans) in [
+        ("gap", &[("a", 0, 1), ("a", 2, 4), ("b", 0, 2)][..]),
+        ("overlap", &[("a", 0, 3), ("a", 2, 4), ("b", 0, 2)][..]),
+        ("late start", &[("a", 1, 4), ("b", 0, 2)][..]),
+        ("short end", &[("a", 0, 3), ("b", 0, 2)][..]),
+        ("long end", &[("a", 0, 5), ("b", 0, 2)][..]),
+        ("entry without spans", &[("a", 0, 4)][..]),
+        (
+            "missing entry",
+            &[("a", 0, 4), ("b", 0, 2), ("c", 0, 1)][..],
+        ),
+        (
+            "span in an empty entry",
+            &[("a", 0, 4), ("b", 0, 2), ("empty", 0, 1)][..],
+        ),
+    ] {
+        assert!(!exact(&whole, spans), "{case}");
+    }
+
+    let spans = [("a", 0, 4), ("b", 0, 2)];
+    for (case, archive) in [
+        ("archive gap", physical(&[(0, 5), (6, 10)])),
+        ("archive overlap", physical(&[(0, 7), (6, 10)])),
+        ("archive late start", physical(&[(1, 10)])),
+        ("archive short of its length", physical(&[(0, 9)])),
+        ("archive past its length", physical(&[(0, 11)])),
+        ("no archive spans", Vec::new()),
+    ] {
+        assert!(!exact(&archive, &spans), "{case}");
+    }
+}
