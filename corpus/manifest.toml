@@ -227,3 +227,16 @@ generator = "freecad_fcstd/author_techdraw_fixture.py"
 license = "CC0-1.0"
 sha256 = "09f0953e5a30c05166725f9c430e0f14ba20b2af3c330ff7837b7134b77a5ed8"
 notes = "Second original TechDraw dimension configuration: 42 mm box length, 11 mm cylinder radius and an asymmetric reference with a stored Y-down cache; no installed template or third-party model."
+
+[[file]]
+filename = "1WireRGBWController.f3d"
+format = "f3d"
+dialect = "f3d:manifest-3-2-0-0"
+author = "Alastair D'Silva"
+authoring_app = "Autodesk Fusion 360"
+authoring_app_version = "2.0"
+acquisition_date = "2026-10-25"
+license = "CC0-1.0"
+sha256 = "89d9366b8fdc313e73f3eccb3851f61b78b70c2af315536a5750f25b903ed4a2"
+notes = "1-Wire RGBW LED controller enclosure; exercises multi-feature parametric timeline, extrude profile selection, fillets, chamfers, and construction sketch geometry."
+
