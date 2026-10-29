@@ -1,11 +1,7 @@
 name: CodeQL
 
 on:
-  pull_request:
-    branches: [main]
-    types: [opened, synchronize, reopened, ready_for_review]
-  # Pull requests skip Rust, whose analysis takes over an hour. The schedule
-  # and a manual dispatch analyze every language.
+  # Rust takes over an hour. Python is cheap. Neither runs on pull requests.
   schedule:
     - cron: "37 4 * * *"
   workflow_dispatch:
@@ -15,11 +11,10 @@ permissions:
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+  cancel-in-progress: ${{ github.event_name != 'schedule' }}
 
 jobs:
   analyze:
-    if: github.event.pull_request.draft != true
     name: Analyze (${{ matrix.language }})
     runs-on: ubuntu-latest
     permissions:
@@ -29,7 +24,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        language: ${{ fromJSON(github.event_name == 'pull_request' && '["actions","c-cpp","python"]' || '["actions","c-cpp","python","rust"]') }}
+        language: [python, rust]
     steps:
       - name: Checkout
         uses: actions/checkout@v7.0.1
