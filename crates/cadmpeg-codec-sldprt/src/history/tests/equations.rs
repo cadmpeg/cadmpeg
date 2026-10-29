@@ -141,7 +141,7 @@ fn decode_projects_every_dimension_as_a_neutral_parameter() {
             .iter_mut()
             .find(|parameter| parameter.name == "Radius")
             .unwrap();
-        radius.expression = "2mm".into();
+        radius.expression = "2".into();
         radius.display = Some(cadmpeg_ir::features::DimensionDisplay::Radius);
         radius.value = Some(ParameterValue::Length(Length::new(2.0).unwrap()));
         let modified_diameter = ir
@@ -150,7 +150,7 @@ fn decode_projects_every_dimension_as_a_neutral_parameter() {
             .iter_mut()
             .find(|parameter| parameter.name == "ModifiedDiameter")
             .unwrap();
-        modified_diameter.expression = "4mm".into();
+        modified_diameter.expression = "4".into();
         modified_diameter.display = Some(cadmpeg_ir::features::DimensionDisplay::Diameter);
         modified_diameter.value = Some(ParameterValue::Length(Length::new(4.0).unwrap()));
         let display_angle = ir
@@ -1036,7 +1036,12 @@ fn decode_separates_document_expression_from_evaluated_feature_scalar() {
         .iter()
         .find(|parameter| parameter.owner.as_ref() == Some(&feature.id) && parameter.name == "D1")
         .expect("projected D1 parameter");
-    assert_eq!(parameter.expression.literal_text().as_deref(), Some("2.5"));
+    assert_eq!(
+        parameter
+            .expression
+            .literal_value_as(&ParameterValue::Length(Length::new(25.0).unwrap())),
+        parameter.value
+    );
     assert_eq!(
         parameter.value,
         Some(ParameterValue::Length(Length::new(25.0).unwrap()))
