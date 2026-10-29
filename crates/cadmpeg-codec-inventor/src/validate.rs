@@ -1510,14 +1510,13 @@ fn validate_presentation(ir: &CadIr, data: &NativeData, findings: &mut Vec<Findi
             .filter_map(|record| record.asm_face_key),
         "ASM non-null face Design key",
     );
-    let neutral_faces = ir
-        .model
-        .faces
-        .iter()
-        .filter_map(|face| face.native_ref.as_deref())
-        .collect::<HashSet<_>>();
     for record in &data.face_native_keys {
-        if !neutral_faces.contains(record.id().as_str()) {
+        if !ir
+            .model
+            .faces
+            .iter()
+            .any(|face| record.owns_native_ref(face.native_ref.as_deref(), &data.face_sidedness))
+        {
             findings.push(finding(
                 Check::NativeLinks,
                 "Inventor ASM face-native-key record does not resolve to a neutral face".into(),
@@ -1710,6 +1709,7 @@ struct NativeData {
     pm_graphics_style_collections: Vec<PmGraphicsStyleCollectionRecord>,
     pm_graphics_primary_color_styles: Vec<PmGraphicsPrimaryColorStyleRecord>,
     face_native_keys: Vec<FaceNativeKey>,
+    face_sidedness: Vec<cadmpeg_asm::brep::records::FaceSidedness>,
     pm_dc_parameters: Vec<PmDcParameter>,
     pm_dc_expressions: Vec<PmDcExpression>,
     pm_dc_units: Vec<PmDcUnit>,
@@ -1775,6 +1775,7 @@ impl NativeData {
             pm_graphics_primary_color_styles: namespace
                 .arena_as_for_decode(ctx, "pm_graphics_primary_color_styles")?,
             face_native_keys: namespace.arena_as_for_decode(ctx, "face_native_keys")?,
+            face_sidedness: namespace.arena_as_for_decode(ctx, "face_sidedness")?,
             pm_dc_parameters: namespace.arena_as_for_decode(ctx, "pm_dc_parameters")?,
             pm_dc_expressions: namespace.arena_as_for_decode(ctx, "pm_dc_expressions")?,
             pm_dc_units: namespace.arena_as_for_decode(ctx, "pm_dc_units")?,

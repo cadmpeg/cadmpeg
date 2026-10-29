@@ -1391,7 +1391,7 @@ fn the_join_projections_read_the_key_records() {
     projected.native_ref = Some(brep.face_native_keys[0].id());
     brep.faces.push(projected);
     assert_eq!(
-        super::key_maps::face_keys(&brep.faces, &brep.face_native_keys),
+        super::key_maps::face_keys(&brep.faces, &brep.face_native_keys, &brep.face_sidedness),
         std::collections::HashMap::from([(face, 7)])
     );
 }
@@ -1602,11 +1602,13 @@ fn a_body_of_single_sided_loopless_faces_is_a_solid() {
     classify_body_kinds(&mut brep, &HashSet::new());
     assert_eq!(brep.bodies[0].kind, BodyKind::Solid);
 
+    // #213: the held native row is associated through Face.native_ref.
+    brep.faces[0].native_ref = Some("f3d:asm:face-sidedness#4".into());
     // The same face stored double-sided is a sheet.
     brep.face_sidedness.push(records::FaceSidedness {
         source_namespace: records::identity::NativeRecordNamespace::new(FORMAT),
         record_index: 4,
-        face: face_id,
+        face_key: None,
         native_sense: Sense::Forward,
         carrier_flipped: false,
         containment: Some(records::FaceContainment::Out),

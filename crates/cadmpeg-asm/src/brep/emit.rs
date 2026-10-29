@@ -4998,13 +4998,41 @@ pub(super) fn emit_faces(
             } else {
                 None
             };
-            let native_ref = native_key
-                .as_ref()
-                .map(|key| match purpose {
-                    super::DecodePurpose::Model => key.retain_native_ref(ctx),
-                    super::DecodePurpose::History => key.working_native_ref(ctx),
-                })
-                .transpose()?;
+            let containment = match (r.chunk(9), r.chunk(10)) {
+                (Some(Token::True), Some(Token::True)) => Some(FaceContainment::In),
+                (Some(Token::True), Some(Token::False)) => Some(FaceContainment::Out),
+                _ => None,
+            };
+            let sidedness = FaceSidedness {
+                source_namespace: crate::brep::records::identity::NativeRecordNamespace::new(
+                    format,
+                ),
+                record_index: u32::try_from(r.index).map_err(|_| {
+                    cadmpeg_core::CodecError::malformed(
+                        "ASM native record index exceeds the u32 range",
+                    )
+                })?,
+                face_key: native_key
+                    .as_ref()
+                    .map(|key| match purpose {
+                        super::DecodePurpose::Model => key.retain_native_ref(ctx),
+                        super::DecodePurpose::History => key.working_native_ref(ctx),
+                    })
+                    .transpose()?,
+                native_sense,
+                carrier_flipped,
+                containment,
+            };
+            let native_ref = Some(match native_key.as_ref() {
+                Some(key) => match purpose {
+                    super::DecodePurpose::Model => key.retain_native_ref(ctx)?,
+                    super::DecodePurpose::History => key.working_native_ref(ctx)?,
+                },
+                None => match purpose {
+                    super::DecodePurpose::Model => sidedness.retain_native_ref(ctx)?,
+                    super::DecodePurpose::History => sidedness.working_native_ref(ctx)?,
+                },
+            });
             out.faces.push(Face {
                 native_ref,
                 id: <FaceId>::from(id(format, i)),
@@ -5019,25 +5047,7 @@ pub(super) fn emit_faces(
                 color,
                 tolerance: None,
             });
-            let containment = match (r.chunk(9), r.chunk(10)) {
-                (Some(Token::True), Some(Token::True)) => Some(FaceContainment::In),
-                (Some(Token::True), Some(Token::False)) => Some(FaceContainment::Out),
-                _ => None,
-            };
-            out.face_sidedness.push(FaceSidedness {
-                source_namespace: crate::brep::records::identity::NativeRecordNamespace::new(
-                    format,
-                ),
-                face: <FaceId>::from(id(format, i)),
-                record_index: u32::try_from(r.index).map_err(|_| {
-                    cadmpeg_core::CodecError::malformed(
-                        "ASM native record index exceeds the u32 range",
-                    )
-                })?,
-                native_sense,
-                carrier_flipped,
-                containment,
-            });
+            out.face_sidedness.push(sidedness);
             if let Some(key) = native_key {
                 out.face_native_keys.push(key);
             }

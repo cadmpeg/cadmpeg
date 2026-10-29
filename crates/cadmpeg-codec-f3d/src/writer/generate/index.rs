@@ -40,24 +40,40 @@ impl<'a> NativeGenerationIndex<'a> {
                 .or_default()
                 .push(wire);
         }
-        let native_face_keys: HashMap<_, _> = native
-            .face_native_keys
-            .iter()
-            .map(|record| (record.id(), record))
-            .collect();
         let face_native_keys = target
             .model
             .faces
             .iter()
             .filter_map(|face| {
-                let record = native_face_keys.get(face.native_ref.as_deref()?)?;
-                Some((face.id.as_str(), *record))
+                native
+                    .face_native_keys
+                    .iter()
+                    .find(|record| {
+                        record.owns_native_ref(face.native_ref.as_deref(), &native.face_sidedness)
+                    })
+                    .map(|record| (face.id.as_str(), record))
             })
             .collect();
         Self {
             edge_continuities: first_by_id!(&native.edge_continuities, edge),
             edge_ownerships: &native.edge_ownerships,
-            face_sidedness: first_by_id!(&native.face_sidedness, face),
+            face_sidedness: target
+                .model
+                .faces
+                .iter()
+                .filter_map(|face| {
+                    native
+                        .face_sidedness
+                        .iter()
+                        .find(|row| {
+                            row.owns_native_ref(
+                                face.native_ref.as_deref(),
+                                &native.face_native_keys,
+                            )
+                        })
+                        .map(|row| (face.id.as_str(), row))
+                })
+                .collect(),
             face_native_keys,
             tolerant_coedges: first_by_id!(&native.tolerant_coedge_parameters, coedge),
             tolerant_edges: first_by_id!(&native.tolerant_edge_tails, edge),
@@ -66,5 +82,69 @@ impl<'a> NativeGenerationIndex<'a> {
             vertex_ownerships: first_by_id!(&native.vertex_ownerships, vertex),
             wires_by_shell,
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use cadmpeg_asm::brep::records::{identity::NativeRecordNamespace, FaceContainment};
+    use cadmpeg_ir::topology::Sense;
+
+    fn side() -> FaceSidedness {
+        FaceSidedness {
+            source_namespace: NativeRecordNamespace::new(cadmpeg_asm::asm_format!("f3d")),
+            record_index: 17,
+            face_key: None,
+            native_sense: Sense::Forward,
+            carrier_flipped: true,
+            containment: Some(FaceContainment::Out),
+        }
+    }
+
+    #[test]
+    fn generation_sidedness_resolves_source_keys_and_preserves_shared_native_refs() {
+        let mut target = cadmpeg_ir::examples::unit_cube().unwrap();
+        let key = FaceNativeKey {
+            source_namespace: NativeRecordNamespace::new(cadmpeg_asm::asm_format!("f3d")),
+            record_index: 17,
+            asm_face_key: Some(42),
+        };
+        target.model.faces[0].native_ref = Some(key.id());
+        target.model.faces[1].native_ref = Some(key.id());
+        let mut owned = side();
+        owned.face_key = Some(key.id());
+        let native = F3dNative {
+            face_sidedness: vec![owned],
+            face_native_keys: vec![key],
+            ..F3dNative::default()
+        };
+        let index = NativeGenerationIndex::new(&target, &native);
+        for face in &target.model.faces[..2] {
+            let row = index.face_sidedness[face.id.as_str()];
+            assert_eq!(row.record_index, 17);
+            assert_eq!(row.containment, Some(FaceContainment::Out));
+            assert!(row.carrier_flipped);
+        }
+        assert_eq!(index.face_sidedness.len(), 2);
+    }
+
+    #[test]
+    fn generation_sidedness_direct_reference_does_not_guess_neutral_id_spelling() {
+        let mut target = cadmpeg_ir::examples::unit_cube().unwrap();
+        let row = side();
+        target.model.faces[0].native_ref = Some(row.id());
+        target.model.faces[1].native_ref = Some("sat:asm:face-sidedness#17".into());
+        target.model.faces[2].native_ref = Some("f3d:asm:face-native-key#17".into());
+        let native = F3dNative {
+            face_sidedness: vec![row],
+            ..F3dNative::default()
+        };
+        let index = NativeGenerationIndex::new(&target, &native);
+        assert_eq!(index.face_sidedness.len(), 1);
+        assert_eq!(
+            index.face_sidedness[target.model.faces[0].id.as_str()].record_index,
+            17
+        );
     }
 }

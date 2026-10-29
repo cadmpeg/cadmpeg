@@ -7,15 +7,13 @@ use cadmpeg_ir::document::CadIr;
 use crate::native::F3dNative;
 
 pub(super) fn reconcile(target: &CadIr, native: &mut F3dNative) {
-    let face_native_refs = target
-        .model
-        .faces
-        .iter()
-        .filter_map(|face| face.native_ref.as_deref())
-        .collect::<std::collections::HashSet<_>>();
-    native
-        .face_native_keys
-        .retain(|record| face_native_refs.contains(record.id().as_str()));
+    native.face_native_keys.retain(|record| {
+        target
+            .model
+            .faces
+            .iter()
+            .any(|face| record.owns_native_ref(face.native_ref.as_deref(), &native.face_sidedness))
+    });
     native.wire_topologies.retain_mut(|record| {
         let Some(shell) = target
             .model

@@ -5,7 +5,7 @@
 //! reader that wants the key map builds it here; the map is never written
 //! beside the records it projects.
 
-use crate::brep::records::FaceNativeKey;
+use crate::brep::records::{FaceNativeKey, FaceSidedness};
 use cadmpeg_ir::ids::FaceId;
 use std::collections::HashMap;
 
@@ -14,16 +14,18 @@ use std::collections::HashMap;
 pub fn face_keys(
     faces: &[cadmpeg_ir::topology::Face],
     records: &[FaceNativeKey],
+    sides: &[FaceSidedness],
 ) -> HashMap<FaceId, u64> {
-    let native: HashMap<_, _> = records
-        .iter()
-        .filter_map(|record| record.asm_face_key.map(|key| (record.id(), key)))
-        .collect();
     faces
         .iter()
         .filter_map(|face| {
-            let owner = face.native_ref.as_deref()?;
-            native.get(owner).map(|key| (face.id.clone(), *key))
+            records.iter().find_map(|record| {
+                record
+                    .owns_native_ref(face.native_ref.as_deref(), sides)
+                    .then_some(record.asm_face_key)
+                    .flatten()
+                    .map(|key| (face.id.clone(), key))
+            })
         })
         .collect()
 }
