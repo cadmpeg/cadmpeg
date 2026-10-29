@@ -323,10 +323,7 @@ mod tests {
         let topology = topology_streams(&scan).expect("test topology streams");
         let parsed = ParsedStreams::parse(&scan).expect("test parsed streams");
 
-        assert!(std::ptr::eq(
-            topology[0],
-            scan.streams[0].inflated.as_ref()
-        ));
+        assert!(std::ptr::eq(topology[0], scan.streams[0].inflated.as_ref()));
         assert!(std::ptr::eq(
             parsed.streams[0].view.source,
             scan.streams[0].inflated.as_ref()

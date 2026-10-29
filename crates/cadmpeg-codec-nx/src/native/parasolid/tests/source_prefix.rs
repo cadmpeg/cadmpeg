@@ -36,9 +36,8 @@ fn partition_prefix_native_fields_and_exact_reads_come_from_the_original_nonzero
         let state = serde_json::to_value(events.partition_prefixes[0].state).unwrap();
         assert_eq!(state["partition"]["highest_id"], u32::MAX);
         assert_eq!(state["current_pmark"]["identifier"], identifier);
-        identifiers.push(
-            u32::try_from(state["current_pmark"]["identifier"].as_u64().unwrap()).unwrap(),
-        );
+        identifiers
+            .push(u32::try_from(state["current_pmark"]["identifier"].as_u64().unwrap()).unwrap());
     }
     assert_eq!(identifiers, [0x1234_5678, 0x8765_4321]);
 }
