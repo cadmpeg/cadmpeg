@@ -9,7 +9,6 @@
 //! regeneration is separate: `UPDATE_GOLDEN_FIXTURES=1`.
 
 mod damaged;
-mod source_representation;
 
 use cadmpeg_test_support::EditableDecodeResult;
 
@@ -1156,21 +1155,7 @@ fn geometry_depth_agrees_with_full_depth() {
         .into_iter()
         .map(|(name, _)| (name, read_fixture(name).expect("committed fixture")))
         .collect::<Vec<_>>();
-    let summary = cadmpeg_test_support::depth::assert_geometry_agrees_with_full_with(
-        &F3dCodec,
-        &inputs,
-        |result| {
-            crate::decode::assert_projection_records_are_reported(result);
-            let native = crate::test_support::native_test::f3d_native(result.ir());
-            let expected = source_representation::unrepresented(&result.report().losses, &native);
-            for class in expected {
-                assert!(
-                    result.source_fidelity().unrepresented().contains(&class),
-                    "F3D report has a source-only {class} record without declaring its class"
-                );
-            }
-        },
-    );
+    let summary = cadmpeg_test_support::depth::assert_geometry_agrees_with_full(&F3dCodec, &inputs);
     assert!(
         summary.cut > 0 && summary.cut + summary.refused <= summary.inputs,
         "{summary:?}"

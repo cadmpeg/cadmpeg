@@ -14,8 +14,13 @@ fn work_plane_binds_explicit_unmarked_and_identity_placements() {
         assert!(losses.is_empty());
         assert_eq!(scope.work_plane_transform(), Some(expected));
         let wire = serde_json::to_value(&scope).unwrap();
-        let restored: DesignParameterScope = serde_json::from_value(wire).unwrap();
-        assert_eq!(restored, scope);
+        let restored: DesignParameterScope = serde_json::from_value(wire.clone()).unwrap();
+        assert_eq!(serde_json::to_value(&restored).unwrap(), wire);
+        assert_eq!(restored.work_plane_transform(), Some(expected));
+        assert!(restored
+            .reference_members()
+            .values()
+            .eq(scope.reference_members().values()));
     }
 }
 

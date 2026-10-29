@@ -4,11 +4,15 @@ use super::{PipeIndex, PipeRoleAssessment};
 use crate::records::feature::scope::DesignScopePayload;
 use crate::test_support::pipe::{Config, Fixture};
 
-fn reopened(native: &crate::native::F3dNative) -> crate::native::F3dNative {
+fn stored(native: &crate::native::F3dNative) -> cadmpeg_ir::NativeNamespace {
     let ctx = cadmpeg_test_support::service_decode_context();
     let mut namespace = cadmpeg_ir::NativeNamespace::default();
     native.store(&ctx, &mut namespace).unwrap();
-    crate::native::F3dNative::load(&namespace).unwrap()
+    namespace
+}
+
+fn reopened(native: &crate::native::F3dNative) -> crate::native::F3dNative {
+    crate::native::F3dNative::load(&stored(native)).unwrap()
 }
 
 #[test]
@@ -43,7 +47,7 @@ fn pipe_native_admits_known_roles_and_keeps_role8() {
                 })
             );
             let loaded = reopened(&native);
-            assert_eq!(native, loaded);
+            assert_eq!(stored(&native), stored(&loaded));
             if operation == 1 || operation == 2 {
                 assert_eq!(
                     loaded.design_construction_operand_groups[0].role().raw(),
@@ -71,7 +75,7 @@ fn pipe_native_round_trips_point_relations_and_absent_construction() {
         })
         .decode(&ctx)
         .unwrap();
-        assert_eq!(native, reopened(&native));
+        assert_eq!(stored(&native), stored(&reopened(&native)));
     }
     let mut native = Fixture::new(Config::default()).decode(&ctx).unwrap();
     if let crate::records::feature::scope::DesignScopePayloadMut::Pipe(slot) =
@@ -79,7 +83,7 @@ fn pipe_native_round_trips_point_relations_and_absent_construction() {
     {
         *slot = None;
     }
-    assert_eq!(native, reopened(&native));
+    assert_eq!(stored(&native), stored(&reopened(&native)));
 }
 
 fn reject_mutation(arena: &str, mutate: impl FnOnce(&mut serde_json::Value)) {
@@ -196,6 +200,8 @@ fn pipe_wire_rejects_every_deleted_key_and_incomplete_current_fields() {
         "filled_offset",
         "values",
         "value_offsets",
+        "is_hollow_offset",
+        "opaque_post_operation_offset",
     ] {
         let mut bad = wire.clone();
         bad[key] = serde_json::json!(0);
@@ -204,13 +210,7 @@ fn pipe_wire_rejects_every_deleted_key_and_incomplete_current_fields() {
             "deleted {key}"
         );
     }
-    for key in [
-        "is_hollow",
-        "is_hollow_offset",
-        "opaque_post_operation",
-        "opaque_post_operation_offset",
-        "record_indexes",
-    ] {
+    for key in ["is_hollow", "opaque_post_operation", "record_indexes"] {
         let mut bad = wire.clone();
         bad.as_object_mut().unwrap().remove(key);
         assert!(

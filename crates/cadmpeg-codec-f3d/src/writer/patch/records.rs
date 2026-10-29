@@ -839,6 +839,7 @@ mod tests {
     fn assignment_document(located: bool) -> serde_json::Value {
         let mut document = serde_json::json!({
             "id": "material#0",
+            "body_binding_id": "f3d:native:design-body-binding#0",
             "asm_body_key": 42,
             "asm_body_key_offset": 200,
             "entity_suffix_offset": SUFFIX_AT,
@@ -856,11 +857,15 @@ mod tests {
 
     #[test]
     fn every_admitted_material_physical_token_is_patched_into_the_source_bytes() {
-        let error = serde_json::from_value::<DesignMaterialAssignment>(assignment_document(false))
-            .expect_err("a token the patch cannot write is not admitted")
-            .to_string();
-        assert!(error.contains("physical_token"), "{error}");
-        assert!(error.contains("physical_token_offset"), "{error}");
+        let unlocated: DesignMaterialAssignment =
+            serde_json::from_value(assignment_document(false)).expect("authored material token");
+        let error = patch_material_assignments(&mut [0u8; 128], std::slice::from_ref(&unlocated))
+            .expect_err("a token without a source position declines the patch");
+        assert!(
+            matches!(&error, cadmpeg_core::CodecError::UnsupportedContent(message)
+                if message.contains("material-assignment string offset")),
+            "{error}"
+        );
 
         let assignment: DesignMaterialAssignment =
             serde_json::from_value(assignment_document(true)).expect("located material token");

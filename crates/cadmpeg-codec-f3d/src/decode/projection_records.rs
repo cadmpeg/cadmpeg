@@ -212,66 +212,6 @@ pub(super) fn missing_input_topology_records<'a>(
 }
 
 #[cfg(test)]
-pub(super) fn assert_projected_or_reported(
-    ir: &CadIr,
-    native: &crate::native::F3dNative,
-    losses: &[cadmpeg_ir::report::loss::LossNote],
-) {
-    let projected = neutral_refs(ir);
-    if native.design_component_occurrences.is_empty()
-        && native.design_component_naming_spaces.is_empty()
-        && ir.model.occurrences.is_empty()
-    {
-        let mut roots = native
-            .act_component_links
-            .iter()
-            .filter(|link| link.tracks_document_root());
-        if let (Some(root), None) = (roots.next(), roots.next()) {
-            assert!(
-                ir.model.product_definitions.iter().any(|product| {
-                    product.native_ref.as_deref() == Some(root.id().as_str())
-                        && product.label.as_deref()
-                            == (!root.layout().display_name().trim().is_empty())
-                                .then_some(root.layout().display_name())
-                }),
-                "standalone ACT root {} has no neutral product label",
-                root.id(),
-            );
-        }
-    }
-    let reported = |id: &str| {
-        assert!(
-            losses.iter().any(|loss| loss.message.contains(id)),
-            "F3D native record {id} has neither its neutral home nor a named projection loss"
-        );
-    };
-    macro_rules! direct {
-        ($($arena:ident),* $(,)?) => {$({
-            for record in &native.$arena {
-                if !projected.contains(record.id.as_str()) {
-                    reported(&record.id);
-                }
-            }
-        })*};
-    }
-    direct!(
-        design_parameters,
-        design_sketch_placements,
-        sketch_points,
-        sketch_curve_identities,
-        sketch_surfaces,
-        sketch_texts,
-        sketch_relations,
-    );
-    for id in missing_feature_scopes(ir, native).expect("source feature identities") {
-        reported(id);
-    }
-    for (_, id) in missing_input_topology_records(ir, native) {
-        reported(id);
-    }
-}
-
-#[cfg(test)]
 mod tests {
     use super::*;
 

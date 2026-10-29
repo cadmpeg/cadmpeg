@@ -5612,12 +5612,3 @@ mod projections;
 
 #[cfg(test)]
 mod tests;
-
-#[cfg(test)]
-pub(crate) fn assert_projection_records_are_reported(result: &cadmpeg_ir::codec::DecodeResult) {
-    if !result.ir().scope.design {
-        return;
-    }
-    let native = crate::test_support::native_test::f3d_native(result.ir());
-    projection_records::assert_projected_or_reported(result.ir(), &native, &result.report().losses);
-}

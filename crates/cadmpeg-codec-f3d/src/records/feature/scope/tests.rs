@@ -448,8 +448,8 @@ fn emboss_scope_wire_retains_native_controls_and_matches_the_borrowed_writer() {
         serde_json::to_vec(&owned).unwrap()
     );
     let json = serde_json::to_value(&scope).unwrap();
-    let restored: super::DesignParameterScope = serde_json::from_value(json).unwrap();
-    assert_eq!(restored, scope);
+    let restored: super::DesignParameterScope = serde_json::from_value(json.clone()).unwrap();
+    assert_eq!(serde_json::to_value(&restored).unwrap(), json);
 }
 
 #[test]
