@@ -1261,15 +1261,28 @@ fn damaged_first_ancillary_local_frame_keeps_required_root_readable() {
 }
 
 #[test]
-fn zip_root_parse_obeys_caller_recursion_ceiling() {
+fn zip_root_parse_gives_up_the_part_past_the_caller_recursion_ceiling() {
     let root = b"ISO-10303-21;HEADER;FILE_SCHEMA(('AP242'));ENDSEC;DATA;#1=ITEM((((((((((1))))))))));ENDSEC;END-ISO-10303-21;";
     let bytes = step_zip(&[(ROOT_NAME, root, CompressionMethod::Stored)]);
     let mut options = DecodeOptions::default();
     options.policy.limits.max_recursion_depth = 6;
     for input in [root.as_slice(), bytes.as_slice()] {
-        assert!(
-            matches!(StepCodec::default().decode(&mut Cursor::new(input), &options), Err(cadmpeg_ir::codec::DecodeFailure::Codec(cadmpeg_core::CodecError::ResourceLimit(refusal))) if refusal.dimension == cadmpeg_core::decode::ResourceDimension::RecursionDepth)
-        );
+        let decoded = StepCodec::default()
+            .decode(&mut Cursor::new(input), &options)
+            .expect("a recursion limit gives up its part only");
+        let unreadable = decoded
+            .report()
+            .losses
+            .iter()
+            .filter(|loss| loss.code.local_code() == "record.unreadable")
+            .collect::<Vec<_>>();
+        assert_eq!(unreadable.len(), 1);
+        assert!(unreadable[0].message.contains("RecursionDepth"));
+        assert!(decoded
+            .source_fidelity()
+            .retained_records()
+            .values()
+            .any(|record| record.data() == Some(b"#1=ITEM((((((((((1))))))))));".as_slice())));
         let inspect = InspectOptions {
             limits: options.policy.limits,
         };

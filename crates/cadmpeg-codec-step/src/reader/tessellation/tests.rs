@@ -1016,23 +1016,18 @@ fn non_finite_tessellation_coordinates_omit_dependents_and_retain_source() {
     let result = cadmpeg_test_support::EditableDecodeResult::from(result);
     assert!(result.ir().model.tessellations.is_empty());
     assert!(result.report().losses.iter().any(|loss| {
-        loss.code == StepLossCode::ParseRecordOmitted.kind()
+        loss.code.local_code() == "record.unreadable"
             && loss.message.contains("finite binary64 range")
     }));
-    let retained = result
-        .ir()
-        .native_unknowns("step")
-        .expect("retained source");
     for bytes in [
         b"#1=COORDINATES_LIST('',1,((1E400,0.,0.)));".as_slice(),
         b"#2=TRIANGULATED_SURFACE_SET('',#1,1,$,$,((1,1,1)));",
     ] {
-        assert!(retained.iter().any(|record| {
-            result
-                .source_fidelity()
-                .retained_record(record.id.as_str())
-                .is_some_and(|source| source.data() == Some(bytes))
-        }));
+        assert!(result
+            .source_fidelity()
+            .retained_records()
+            .values()
+            .any(|source| source.data() == Some(bytes)));
     }
 }
 #[test]
