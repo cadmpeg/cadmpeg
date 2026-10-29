@@ -21,7 +21,6 @@ pub(super) struct RseNativeProjection {
     pub(super) meta_sections: Vec<MetaSectionRecord>,
     pub(super) segment_meta_issues: Vec<SegmentMetaIssueRecord>,
     pub(super) rse_records: Vec<RseRecordRecord>,
-    pub(super) layout: std::collections::BTreeMap<String, String>,
     pub(super) segment_bulk: Vec<SegmentBulkRecord>,
     pub(super) segment_bulk_issues: Vec<SegmentBulkIssueRecord>,
     pub(super) unpaired_segments: Vec<UnpairedSegmentRecord>,
@@ -30,7 +29,6 @@ pub(super) struct RseNativeProjection {
 pub(super) fn project(
     ctx: &DecodeContext<'_>,
     container: &InventorContainer<'_>,
-    assembly_parts: &cadmpeg_ir::source_fidelity::parts::PartOutput,
 ) -> Result<RseNativeProjection, CodecError> {
     let mut projection = RseNativeProjection {
         identity_issues: Vec::new(),
@@ -39,7 +37,6 @@ pub(super) fn project(
         meta_sections: Vec::new(),
         segment_meta_issues: Vec::new(),
         rse_records: Vec::new(),
-        layout: std::collections::BTreeMap::new(),
         segment_bulk: Vec::new(),
         segment_bulk_issues: Vec::new(),
         unpaired_segments: Vec::new(),
@@ -81,15 +78,13 @@ pub(super) fn project(
                 meta,
                 false,
             )?,
-            SegmentMetaState::Malformed { source, detail, .. } => {
-                if !super::meta_type_parts::given_up(ctx, assembly_parts, *source)? {
-                    admit_native_items(ctx, 1)?;
-                    projection.segment_meta_issues.push(SegmentMetaIssueRecord {
-                        id: format!("inventor:rse:segment-meta-issue#{token}"),
-                        token: token.to_owned(),
-                        detail: detail.to_owned(),
-                    });
-                }
+            SegmentMetaState::Malformed { detail, .. } => {
+                admit_native_items(ctx, 1)?;
+                projection.segment_meta_issues.push(SegmentMetaIssueRecord {
+                    id: format!("inventor:rse:segment-meta-issue#{token}"),
+                    token: token.to_owned(),
+                    detail: detail.to_owned(),
+                });
             }
         }
         match &segment.bulk {
@@ -100,34 +95,12 @@ pub(super) fn project(
                             if crate::assembly::owns_record(&segment.kind, record.type_id)
                                 || crate::presentation::owns_record(&segment.kind, record.type_id)
                             {
-                                // The source-owned stage either formed this exact wrapper or
-                                // gave up its whole located body. No late reconstruction can
-                                // resurrect a wrapper from a given-up body's frame metadata.
-                                crate::records::source_admission::disposition(
-                                    ctx,
-                                    assembly_parts,
-                                    bulk.expanded,
-                                    token,
-                                    record,
-                                )?
-                                .ok_or_else(|| {
-                                    CodecError::malformed(
-                                        "assembly occurrence body has no reached-part disposition",
-                                    )
-                                })?;
                                 continue;
                             }
                             admit_native_items(ctx, 1)?;
                             projection
                                 .rse_records
                                 .push(RseRecordRecord::from_frame(token, record)?);
-                            projection.layout.insert(
-                                format!(
-                                    "inventor:rse:record#{token}-{}.payload_offset",
-                                    record.ordinal
-                                ),
-                                record.payload_offset.to_string(),
-                            );
                         }
                         if let RecordFrameState::Partial {
                             source_record_count,
@@ -150,18 +123,7 @@ pub(super) fn project(
                             ),
                         }
                     }
-                    RecordFrameState::Withheld => {
-                        if !super::meta_type_parts::given_up(
-                            ctx,
-                            assembly_parts,
-                            Some(bulk.source),
-                        )? {
-                            return Err(CodecError::malformed(
-                                "withheld source bulk has no reached given-up part",
-                            ));
-                        }
-                        continue;
-                    }
+                    RecordFrameState::Withheld => continue,
                     RecordFrameState::Unavailable(detail) => SegmentBulkFrame::Unavailable {
                         detail: detail.to_owned(),
                     },

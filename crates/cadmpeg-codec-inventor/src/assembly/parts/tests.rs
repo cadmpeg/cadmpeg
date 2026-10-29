@@ -2,22 +2,14 @@
 //! Actual compressed AmDc bodies, recoverable damage, and exact peer survival.
 
 use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
-use cadmpeg_ir::source_fidelity::parts::{PartOutput, PartState};
-use cadmpeg_ir::NativeUnknownRecord;
+use cadmpeg_ir::source_fidelity::parts::PartOutput;
 
 use crate::assembly::{inventory, tests::occurrence_fixture, OCCURRENCE_TYPE};
 use crate::container::InventorContainer;
 use crate::native::{AssemblyOccurrenceRecord, RseRecordRecord};
 use crate::rse::{RecordFrameState, SegmentBulkState, SegmentKind};
+use crate::test_support::given_up_records;
 use crate::test_support::test_fixtures::assembly_envelope_fixture;
-
-fn record_body_parts(fidelity: &cadmpeg_ir::SourceFidelity) -> usize {
-    fidelity
-        .parts()
-        .values()
-        .filter(|part| part.level().as_str() == "inventor.rse_record_body")
-        .count()
-}
 
 #[test]
 fn damaged_occurrence_body_has_one_home_and_its_readable_peer_is_exact() {
@@ -50,7 +42,7 @@ fn damaged_occurrence_body_has_one_home_and_its_readable_peer_is_exact() {
     let good_wrapper = format!("inventor:rse:record#{token}-1");
     let good_occurrence = format!("inventor:assembly:occurrence#{token}-1");
     let failed_body =
-        crate::records::source_admission::body(&ctx, bulk.expanded, &table.records[0]).unwrap();
+        crate::records::source_admission::body(bulk.expanded, &table.records[0]).unwrap();
     let failed_bytes = failed_body.window().to_vec();
     // Registry major18 legally has no extended record trailer.
     assert!(table
@@ -77,8 +69,7 @@ fn damaged_occurrence_body_has_one_home_and_its_readable_peer_is_exact() {
     assert_eq!(inventory.occurrences.len(), 1);
     assert_eq!(inventory.occurrences[0].occurrence_id, 42);
     assert_eq!(inventory.occurrences[0].related_references, [0x8000_0008]);
-    let (model, native, mut fidelity, losses) =
-        inventory.parts.into_parts(&ctx).unwrap().into_parts();
+    let (model, native, fidelity, losses) = inventory.parts.into_parts();
     assert_eq!(model.entity_count(), 0);
     let namespace = native.namespace("inventor").unwrap();
     let occurrences = namespace
@@ -86,6 +77,9 @@ fn damaged_occurrence_body_has_one_home_and_its_readable_peer_is_exact() {
         .unwrap();
     assert_eq!(occurrences.len(), 1);
     assert_eq!(occurrences[0].id, good_occurrence);
+    assert!(!occurrences
+        .iter()
+        .any(|record| record.id == failed_occurrence));
     assert_eq!(occurrences[0].occurrence_id, 42);
     assert_eq!(occurrences[0].related_references, [0x8000_0008]);
     let wrappers = namespace
@@ -100,35 +94,14 @@ fn damaged_occurrence_body_has_one_home_and_its_readable_peer_is_exact() {
     );
     assert_eq!(wrappers[0].id, failed_wrapper);
     assert_eq!(wrappers[1].id, good_wrapper);
-    let unknowns = namespace
-        .arena_as_for_decode::<NativeUnknownRecord>(&ctx, "unknowns")
-        .unwrap();
-    assert_eq!(unknowns.len(), 1);
-    assert_eq!(
-        fidelity
-            .retained_record(unknowns[0].id.as_str())
-            .unwrap()
-            .data(),
-        Some(failed_bytes.as_slice())
-    );
-    assert_eq!(
-        fidelity
-            .parts()
-            .values()
-            .filter(|part| matches!(part.state(), PartState::GivenUp {}))
-            .count(),
-        1
-    );
-    // Appendix C `inventor.rse_record_body`: one part per stored record; the
-    // fixture stores 2. The container's metadata parts are not asserted here.
-    assert_eq!(record_body_parts(&fidelity), 2);
+    assert!(!namespace.arenas().contains_key("unknowns"));
+    let given_up = given_up_records(&fidelity);
+    assert_eq!(given_up.len(), 1);
+    assert_eq!(given_up[0].data(), Some(failed_bytes.as_slice()));
+    assert!(!given_up[0].untyped().is_empty());
     assert_eq!(losses.len(), 1);
+    assert_eq!(losses[0].code.to_string(), "decode/record.unreadable");
     assert!(!losses[0].message.contains(&failed_wrapper));
-    assert!(losses[0]
-        .message
-        .ends_with(&format!("dropped=[\"{failed_occurrence}\"]")));
-    assert!(unknowns[0].links.is_empty());
-    assert!(losses[0].message.contains(&failed_occurrence));
     assert!(!losses[0].message.contains(&good_wrapper));
     assert!(!losses[0].message.contains(&good_occurrence));
     assert_eq!(
@@ -139,18 +112,6 @@ fn damaged_occurrence_body_has_one_home_and_its_readable_peer_is_exact() {
             .collect::<Vec<_>>(),
         original_trailers
     );
-    fidelity.install_mapped_record_captures(&ctx, Ok).unwrap();
-    assert!(fidelity.record_layout().contains_key(&failed_wrapper));
-    let wrapper_layout = &fidelity.record_layout()[&failed_wrapper];
-    let failed_part = fidelity
-        .parts()
-        .values()
-        .find(|part| matches!(part.state(), PartState::GivenUp {}))
-        .unwrap();
-    assert_ne!(wrapper_layout.stream(), failed_part.stream());
-    assert!(!fidelity.record_layout().contains_key(&failed_occurrence));
-    assert!(fidelity.record_layout().contains_key(&good_wrapper));
-    assert!(fidelity.record_layout().contains_key(&good_occurrence));
 }
 
 #[test]
@@ -174,27 +135,12 @@ fn detached_or_foreign_payload_cannot_be_admitted_as_a_source_body() {
         panic!("real records")
     };
     table.records[0].payload = cadmpeg_core::decode::View::over_retained(&payload);
-    assert!(
-        crate::records::source_admission::body(&ctx, bulk.expanded, &table.records[0]).is_err()
-    );
+    assert!(crate::records::source_admission::body(bulk.expanded, &table.records[0]).is_err());
     let foreign_arena = DecodeArena::new();
     let (_, foreign) =
         DecodeContext::from_root_bytes(&payload, &foreign_arena, &DecodePolicy::service()).unwrap();
     table.records[0].payload = foreign;
-    assert!(
-        crate::records::source_admission::body(&ctx, bulk.expanded, &table.records[0]).is_err()
-    );
-    // The container open captures only its metadata type descriptors
-    // (Appendix C `inventor.type_descriptor`) and the segment pair records
-    // that enclose the member parts; no body attempt adds one.
-    assert!(ctx
-        .take_record_captures()
-        .unwrap()
-        .iter()
-        .all(
-            |capture| capture.id().starts_with("inventor:rse:meta-type#")
-                || capture.id().starts_with("inventor:rse:segment#")
-        ));
+    assert!(crate::records::source_admission::body(bulk.expanded, &table.records[0]).is_err());
 }
 
 #[test]
@@ -239,7 +185,7 @@ fn placement_parse_and_conversion_failures_share_the_helper_and_keep_the_exact_p
         .records
         .iter()
         .map(|record| {
-            crate::records::source_admission::body(&ctx, bulk.expanded, record)
+            crate::records::source_admission::body(bulk.expanded, record)
                 .unwrap()
                 .window()
                 .to_vec()
@@ -257,7 +203,7 @@ fn placement_parse_and_conversion_failures_share_the_helper_and_keep_the_exact_p
     ))
     .unwrap();
     assert_eq!(expected.occurrence_id, 8);
-    let (_, native, mut fidelity, losses) = inventory.parts.into_parts(&ctx).unwrap().into_parts();
+    let (_, native, fidelity, losses) = inventory.parts.into_parts();
     let namespace = native.namespace("inventor").unwrap();
     assert!(!namespace.arenas().contains_key("assembly_record_issues"));
     let placements = namespace
@@ -291,65 +237,21 @@ fn placement_parse_and_conversion_failures_share_the_helper_and_keep_the_exact_p
             .map(|record| RseRecordRecord::from_frame(token, record).unwrap())
             .collect::<Vec<_>>()
     );
-    // Appendix C `inventor.rse_record_body`: one part per stored record; the
-    // fixture stores 3. The container's metadata parts are not asserted here.
-    assert_eq!(record_body_parts(&fidelity), 3);
-    assert_eq!(
-        fidelity
-            .parts()
-            .values()
-            .filter(|part| matches!(part.state(), PartState::GivenUp {}))
-            .count(),
-        2
-    );
+    assert_eq!(given_up_records(&fidelity).len(), 2);
     assert_eq!(losses.len(), 2);
     for loss in &losses {
         assert_eq!(loss.code.to_string(), "decode/record.unreadable");
         assert_eq!(loss.severity, cadmpeg_ir::report::Severity::Error);
     }
-    for ordinal in 0..2 {
-        let id = format!("inventor:assembly:placement#{token}-{ordinal}");
-        assert!(losses
-            .iter()
-            .any(|loss| loss.message.ends_with(&format!("dropped=[\"{id}\"]"))));
-    }
     assert!(losses
         .iter()
         .any(|loss| loss.message.contains("suffix_len")));
     assert!(losses.iter().any(|loss| loss.message.contains("finite")));
-    let unknowns = namespace
-        .arena_as_for_decode::<NativeUnknownRecord>(&ctx, "unknowns")
-        .unwrap();
-    assert_eq!(unknowns.len(), 2);
-    let retained = unknowns
+    assert!(!namespace.arenas().contains_key("unknowns"));
+    let retained = given_up_records(&fidelity)
         .iter()
-        .map(|unknown| {
-            assert!(unknown.links.is_empty());
-            fidelity
-                .retained_record(unknown.id.as_str())
-                .unwrap()
-                .data()
-                .unwrap()
-                .to_vec()
-        })
+        .map(|record| record.data().unwrap().to_vec())
         .collect::<Vec<_>>();
     assert!(retained.contains(&source_bodies[0]));
     assert!(retained.contains(&source_bodies[1]));
-    fidelity.install_mapped_record_captures(&ctx, Ok).unwrap();
-    for ordinal in 0..2 {
-        assert!(!fidelity
-            .record_layout()
-            .contains_key(&format!("inventor:assembly:placement#{token}-{ordinal}")));
-    }
-    assert!(fidelity
-        .record_layout()
-        .contains_key(&format!("inventor:assembly:placement#{token}-2")));
-    for wrapper in &wrappers {
-        let layout = &fidelity.record_layout()[&wrapper.id];
-        assert!(fidelity
-            .parts()
-            .values()
-            .filter(|part| matches!(part.state(), PartState::GivenUp {}))
-            .all(|part| part.stream() != layout.stream()));
-    }
 }

@@ -280,23 +280,6 @@ pub(crate) fn parse_property_set_stream<'a>(
     ctx: &DecodeContext<'a>,
     source: View<'a>,
 ) -> Result<PropertySetStream<'a>, CodecError> {
-    parse_property_set_stream_with(ctx, source, parse_header, |ctx, source, fmtid| {
-        parse_section(ctx, source, fmtid).map(Some)
-    })
-}
-
-/// Each callback constructs its actual parsed value from the original source
-/// view. The header and each section are sibling CFB-stream parts in Appendix C.
-pub(crate) fn parse_property_set_stream_with<'a>(
-    ctx: &DecodeContext<'a>,
-    source: View<'a>,
-    read_header: impl FnOnce(View<'a>) -> Result<PropertySetHeader, CodecError>,
-    mut read_section: impl FnMut(
-        &DecodeContext<'a>,
-        View<'a>,
-        [u8; 16],
-    ) -> Result<Option<PropertySection<'a>>, CodecError>,
-) -> Result<PropertySetStream<'a>, CodecError> {
     let bytes = source.window();
     if bytes.len() > MAX_STREAM_SIZE {
         return Err(CodecError::malformed(format_args!(
@@ -309,7 +292,7 @@ pub(crate) fn parse_property_set_stream_with<'a>(
         system_identifier,
         clsid,
         mut directories,
-    } = read_header(header_source)?;
+    } = parse_header(header_source)?;
     let header_end = header_source.window().len();
     directories.sort_by_key(|left| left.1);
     let mut previous_end = header_end;
@@ -322,9 +305,7 @@ pub(crate) fn parse_property_set_stream_with<'a>(
     for (fmtid, offset) in directories {
         let section_source = section_extent(source, offset, previous_end)?;
         previous_end = section_source.end() - source.start();
-        if let Some(section) = read_section(ctx, section_source, fmtid)? {
-            sections.push(section);
-        }
+        sections.push(parse_section(ctx, section_source, fmtid)?);
     }
     Ok(PropertySetStream {
         version,
@@ -439,29 +420,12 @@ pub(crate) fn parse_header(source: View<'_>) -> Result<PropertySetHeader, CodecE
     })
 }
 
-pub(crate) fn parse_section<'a>(
-    ctx: &DecodeContext<'a>,
-    source: View<'a>,
-    fmtid: [u8; 16],
-) -> Result<PropertySection<'a>, CodecError> {
-    parse_section_with(ctx, source, fmtid, |ctx, raw, id, name, code_page| {
-        parse_property(ctx, raw, id, name, code_page).map(Some)
-    })
-}
-
 /// Property extents are fixed by the section's complete offset table before
-/// any property callback is invoked.
-pub(crate) fn parse_section_with<'a>(
+/// any property is parsed.
+fn parse_section<'a>(
     ctx: &DecodeContext<'a>,
     source: View<'a>,
     fmtid: [u8; 16],
-    mut read_property: impl FnMut(
-        &DecodeContext<'a>,
-        View<'a>,
-        u32,
-        Option<String>,
-        Option<u16>,
-    ) -> Result<Option<Property<'a>>, CodecError>,
 ) -> Result<PropertySection<'a>, CodecError> {
     let PropertySectionDirectory {
         ranges,
@@ -474,9 +438,13 @@ pub(crate) fn parse_section_with<'a>(
         let raw = source
             .child(source.start() + start, source.start() + end)
             .ok_or_else(|| CodecError::Malformed("OLE property view is invalid".into()))?;
-        if let Some(property) = read_property(ctx, raw, id, names.get(&id).cloned(), code_page)? {
-            properties.push(property);
-        }
+        properties.push(parse_property(
+            ctx,
+            raw,
+            id,
+            names.get(&id).cloned(),
+            code_page,
+        )?);
     }
     properties.sort_by_key(|left| left.id);
     Ok(PropertySection {

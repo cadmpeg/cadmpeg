@@ -68,12 +68,7 @@ fn rse_native_projection_projects_the_fixture() {
     assert!(container.rse.segments[0].identity_issues.is_empty());
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service())
         .expect("build the decode context");
-    rse_native_projection::project(
-        &ctx,
-        &container,
-        &cadmpeg_ir::source_fidelity::parts::PartOutput::new(cadmpeg_ir::CodecFormat::Inventor),
-    )
-    .expect("admitted RSe projection");
+    rse_native_projection::project(&ctx, &container).expect("admitted RSe projection");
 }
 
 #[test]
@@ -87,19 +82,13 @@ fn rse_native_projection_projects_malformed_unpaired_and_unframed_segments() {
     bulk.records = RecordFrameState::Unavailable("frame issue".into());
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service())
         .expect("build the decode context");
-    rse_native_projection::project(
-        &ctx,
-        &container,
-        &cadmpeg_ir::source_fidelity::parts::PartOutput::new(cadmpeg_ir::CodecFormat::Inventor),
-    )
-    .expect("unframed records project");
+    rse_native_projection::project(&ctx, &container).expect("unframed records project");
 
     let token = container.rse.segments[0].pair.token.clone();
     container.rse.segments[0]
         .identity_issues
         .push("identity issue".into());
     container.rse.segments[0].meta = SegmentMetaState::Malformed {
-        source: None,
         framing: None,
         declared: None,
         detail: "metadata issue".into(),
@@ -107,12 +96,7 @@ fn rse_native_projection_projects_malformed_unpaired_and_unframed_segments() {
     container.rse.segments[0].bulk = SegmentBulkState::Malformed("bulk issue".into());
     container.rse.unpaired_metadata.push(token.clone());
     container.rse.unpaired_bulk.push(token);
-    rse_native_projection::project(
-        &ctx,
-        &container,
-        &cadmpeg_ir::source_fidelity::parts::PartOutput::new(cadmpeg_ir::CodecFormat::Inventor),
-    )
-    .expect("malformed segments project");
+    rse_native_projection::project(&ctx, &container).expect("malformed segments project");
 }
 
 #[test]
@@ -600,17 +584,12 @@ fn native_rse_projection_refuses_entity_limit_at_record_creation() {
     let (limited_ctx, _) =
         DecodeContext::from_root_bytes(&bytes, &arena, &policy).expect("decode context");
     assert!(matches!(
-        rse_native_projection::project(&limited_ctx, &container, &cadmpeg_ir::source_fidelity::parts::PartOutput::new(cadmpeg_ir::CodecFormat::Inventor)),
+        rse_native_projection::project(&limited_ctx, &container),
         Err(CodecError::ResourceLimit(limit))
             if limit.dimension == ResourceDimension::Entities
                 && limit.operation == "admit Inventor native structural records"
     ));
-    assert!(rse_native_projection::project(
-        &setup_ctx,
-        &container,
-        &cadmpeg_ir::source_fidelity::parts::PartOutput::new(cadmpeg_ir::CodecFormat::Inventor)
-    )
-    .is_ok());
+    assert!(rse_native_projection::project(&setup_ctx, &container).is_ok());
     assert!(decode_container(&setup_ctx, container).is_ok());
 }
 
@@ -758,28 +737,9 @@ fn nonfinite_assembly_placement_transform_is_rejected_at_parse() {
     assert_eq!(unreadable[0].code.to_string(), "decode/record.unreadable");
     assert_eq!(unreadable[0].severity, cadmpeg_ir::report::Severity::Error);
     assert!(unreadable[0].message.contains("finite"));
-    assert_eq!(
-        decoded
-            .source_fidelity
-            .parts()
-            .values()
-            .filter(|part| matches!(
-                part.state(),
-                cadmpeg_ir::source_fidelity::parts::PartState::GivenUp {}
-            ))
-            .count(),
-        1
-    );
-    let unknowns = namespace
-        .arena_as::<cadmpeg_ir::NativeUnknownRecord>("unknowns")
-        .unwrap();
-    assert_eq!(unknowns.len(), 1);
-    assert!(decoded
-        .source_fidelity
-        .retained_record(unknowns[0].id.as_str())
-        .unwrap()
-        .data()
-        .is_some());
+    let given_up = crate::test_support::given_up_records(&decoded.source_fidelity);
+    assert_eq!(given_up.len(), 1);
+    assert!(given_up[0].data().is_some());
 }
 
 #[test]

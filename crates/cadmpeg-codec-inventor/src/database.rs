@@ -337,7 +337,7 @@ pub(crate) fn parse_revision_source(source: View<'_>) -> Result<RevisionEntry, C
 
 pub(crate) fn frame_revisions<'a>(
     source: View<'a>,
-    mut record: impl FnMut(u32, View<'a>, View<'a>, Option<View<'a>>) -> Result<(), CodecError>,
+    mut record: impl FnMut(u32, View<'a>) -> Result<(), CodecError>,
 ) -> Result<(), CodecError> {
     let mut cursor = Cursor {
         source,
@@ -349,29 +349,16 @@ pub(crate) fn frame_revisions<'a>(
         let start = cursor.source.position();
         crate::reader::take_child(&mut cursor.source, size_of::<[u8; 16]>(), "revision id")?;
         crate::reader::take_child(&mut cursor.source, size_of::<u32>(), "revision flags")?;
-        let kind_start = cursor.source.position();
         let kind = cursor.u16("revision kind")?;
-        let kind_source = source
-            .child(kind_start, cursor.source.position())
-            .ok_or_else(|| CodecError::malformed("revision kind leaves its actual stream"))?;
-        let selector_source = if kind == u16::MAX {
-            let selector_start = cursor.source.position();
+        if kind == u16::MAX {
             let enabled = cursor.u8("revision payload selector")? != 0;
-            let selector = source
-                .child(selector_start, cursor.source.position())
-                .ok_or_else(|| {
-                    CodecError::malformed("revision selector leaves its actual stream")
-                })?;
             let (length, field) = if enabled {
                 (size_of::<[u8; 8]>(), "short revision payload")
             } else {
                 (size_of::<[u8; 16]>(), "long revision payload")
             };
             crate::reader::take_child(&mut cursor.source, length, field)?;
-            Some(selector)
-        } else {
-            None
-        };
+        }
         let extent = source
             .child(start, cursor.source.position())
             .ok_or_else(|| {
@@ -381,8 +368,6 @@ pub(crate) fn frame_revisions<'a>(
             u32::try_from(ordinal)
                 .map_err(|_| CodecError::malformed("Inventor revision ordinal exceeds u32"))?,
             extent,
-            kind_source,
-            selector_source,
         )?;
     }
     cursor.finish()

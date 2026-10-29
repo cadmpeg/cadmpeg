@@ -695,7 +695,7 @@ mod tests {
             });
         let occurrences = result.occurrences.len();
         let placements = result.placements.len();
-        let (_, _, _, losses) = result.parts.into_parts(&ctx)?.into_parts();
+        let (_, _, _, losses) = result.parts.into_parts();
         Ok((occurrences, placements, losses, token))
     }
 

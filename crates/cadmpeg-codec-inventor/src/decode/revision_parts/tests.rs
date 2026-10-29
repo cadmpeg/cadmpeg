@@ -4,11 +4,12 @@
 use crate::container::InventorContainer;
 use crate::native::{DatabaseRecord, RevisionPayloadForm, RevisionRecord};
 use crate::rse::ParsedState;
+use crate::test_support::given_up_records;
 use crate::test_support::test_fixtures::primary_envelope_fixture_with_revisions;
 use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
 use cadmpeg_core::CodecError;
-use cadmpeg_ir::source_fidelity::parts::{PartOutput, PartState};
-use cadmpeg_ir::{CodecFormat, NativeUnknownRecord};
+use cadmpeg_ir::source_fidelity::parts::PartOutput;
+use cadmpeg_ir::CodecFormat;
 
 fn plain() -> Vec<u8> {
     let mut record = vec![0x61; 16];
@@ -43,44 +44,10 @@ fn actual_revision_records_keep_exact_native_fields_and_source_read_ranges() {
         DecodeContext::from_root_bytes(&bytes, &arena, &DecodePolicy::service()).unwrap();
     let container = InventorContainer::open(&ctx, root).unwrap();
     let source = container.rse.revision_source.unwrap();
-    let expected = ctx.capture_part_extent(source).unwrap();
     let mut output = PartOutput::new(CodecFormat::Inventor);
     assert_eq!(super::stage(&ctx, &mut output, source).unwrap(), 2);
-    let (_, native, fidelity, losses) = output.into_parts(&ctx).unwrap().into_parts();
-    let (stream_id, stream_part) = fidelity
-        .parts()
-        .iter()
-        .find(|(_, part)| part.level().as_str() == "cfb.stream")
-        .unwrap();
-    assert_eq!(stream_part.stream(), expected.stream());
-    assert_eq!(stream_part.offset(), expected.offset());
-    assert_eq!(stream_part.byte_len(), expected.byte_len());
-    let children = fidelity
-        .parts()
-        .values()
-        .filter(|part| part.level().as_str() == "inventor.revision_record")
-        .collect::<Vec<_>>();
-    assert_eq!(children.len(), 2);
-    assert!(children.iter().all(|part| part.parent() == Some(stream_id)));
-    let first = children
-        .iter()
-        .find(|part| part.offset() == expected.offset() + 8)
-        .unwrap();
-    assert_eq!(
-        first.framing_bytes(),
-        &[expected.offset() + 28..expected.offset() + 30]
-    );
-    let second = children
-        .iter()
-        .find(|part| part.offset() == expected.offset() + 30)
-        .unwrap();
-    assert_eq!(
-        second.framing_bytes(),
-        &[
-            expected.offset() + 50..expected.offset() + 52,
-            expected.offset() + 52..expected.offset() + 53
-        ]
-    );
+    let (_, native, fidelity, losses) = output.into_parts();
+    assert!(given_up_records(&fidelity).is_empty());
     let records = native
         .namespace("inventor")
         .unwrap()
@@ -108,28 +75,6 @@ fn actual_revision_records_keep_exact_native_fields_and_source_read_ranges() {
         ]
     );
     assert!(losses.is_empty());
-    // The container open also captures each metadata type descriptor
-    // (Appendix C `inventor.type_descriptor`); only the revisions are asserted.
-    let captures = ctx
-        .take_record_captures()
-        .unwrap()
-        .into_iter()
-        .filter(|capture| capture.id().starts_with("inventor:rse:revision#"))
-        .collect::<Vec<_>>();
-    assert_eq!(captures.len(), 2);
-    assert_eq!(captures[0].stream(), expected.stream());
-    assert_eq!(captures[0].offset(), expected.offset() + 8);
-    assert_eq!(captures[0].byte_len(), 22);
-    assert_eq!(
-        captures[0].reads()[expected.stream()],
-        [expected.offset() + 8..expected.offset() + 30]
-    );
-    assert_eq!(captures[1].offset(), expected.offset() + 30);
-    assert_eq!(captures[1].byte_len(), 31);
-    assert_eq!(
-        captures[1].reads()[expected.stream()],
-        [expected.offset() + 30..expected.offset() + 53]
-    );
 }
 
 fn decoded_revisions(bytes: &[u8]) -> Vec<RevisionRecord> {
@@ -139,7 +84,7 @@ fn decoded_revisions(bytes: &[u8]) -> Vec<RevisionRecord> {
     let container = InventorContainer::open(&ctx, root).unwrap();
     let mut output = PartOutput::new(CodecFormat::Inventor);
     super::stage(&ctx, &mut output, container.rse.revision_source.unwrap()).unwrap();
-    let (_, native, _, losses) = output.into_parts(&ctx).unwrap().into_parts();
+    let (_, native, _, losses) = output.into_parts();
     assert!(losses.is_empty());
     native
         .namespace("inventor")
@@ -185,14 +130,13 @@ fn late_revision_stream_failure_discards_formed_records_and_keeps_exact_database
         ParsedState::Unavailable(_)
     ));
     let source = container.rse.revision_source.unwrap();
-    let expected = ctx.capture_part_extent(source).unwrap();
     let mut output = PartOutput::new(CodecFormat::Inventor);
     assert!(
         super::super::database_parts::stage(&ctx, &mut output, &container.rse.databases[0])
             .unwrap()
     );
     assert_eq!(super::stage(&ctx, &mut output, source).unwrap(), 0);
-    let (_, native, mut fidelity, losses) = output.into_parts(&ctx).unwrap().into_parts();
+    let (_, native, fidelity, losses) = output.into_parts();
     let ns = native.namespace("inventor").unwrap();
     assert!(ns
         .arena_as::<RevisionRecord>("revisions")
@@ -203,41 +147,13 @@ fn late_revision_stream_failure_discards_formed_records_and_keeps_exact_database
     assert_eq!(peer[0].id, "inventor:rse:database#v1");
     assert_eq!(peer[0].schema, 31);
     assert_eq!(peer[0].note, "synthetic primary document");
-    let unknowns = ns.arena_as::<NativeUnknownRecord>("unknowns").unwrap();
-    assert_eq!(unknowns.len(), 1);
-    assert_eq!(
-        fidelity
-            .retained_record(unknowns[0].id.as_str())
-            .unwrap()
-            .data(),
-        Some(table.as_slice())
-    );
-    let parts = fidelity
-        .parts()
-        .values()
-        .filter(|part| matches!(part.state(), PartState::GivenUp {}))
-        .collect::<Vec<_>>();
-    assert_eq!(parts.len(), 1);
-    assert_eq!(parts[0].level().as_str(), "cfb.stream");
-    assert_eq!(parts[0].stream(), expected.stream());
-    assert_eq!(parts[0].offset(), expected.offset());
-    assert_eq!(parts[0].byte_len(), expected.byte_len());
+    assert!(!ns.arenas().contains_key("unknowns"));
+    let given_up = given_up_records(&fidelity);
+    assert_eq!(given_up.len(), 1);
+    assert_eq!(given_up[0].data(), Some(table.as_slice()));
     assert_eq!(losses.len(), 1);
     assert_eq!(losses[0].code.to_string(), "decode/record.unreadable");
-    for id in ["inventor:rse:revision#0", "inventor:rse:revision#1"] {
-        assert!(losses[0].message.contains(id));
-    }
     assert!(!losses[0].message.contains("inventor:rse:database#v1"));
-    fidelity.install_mapped_record_captures(&ctx, Ok).unwrap();
-    assert!(!fidelity
-        .record_layout()
-        .contains_key("inventor:rse:revision#0"));
-    assert!(!fidelity
-        .record_layout()
-        .contains_key("inventor:rse:revision#1"));
-    assert!(fidelity
-        .record_layout()
-        .contains_key("inventor:rse:database#v1"));
 }
 
 #[test]
@@ -246,7 +162,7 @@ fn actual_revision_native_entity_refusal_stays_a_fatal_resource_limit() {
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
     // The primary fixture has one metadata stream with one type descriptor;
-    // Appendix C `inventor.type_descriptor` forms one `meta_types` record, so
+    // that descriptor forms one `meta_types` record, so
     // the open admits exactly one entity and the revision stage admits none.
     policy.limits.max_entities = 1;
     let (ctx, root) = DecodeContext::from_root_bytes(&bytes, &arena, &policy).unwrap();
@@ -258,7 +174,4 @@ fn actual_revision_native_entity_refusal_stays_a_fatal_resource_limit() {
     };
     assert_eq!(expected.dimension, ResourceDimension::Entities);
     assert!(output.native().namespace("inventor").is_none());
-    assert!(
-        matches!(ctx.take_record_captures(), Err(CodecError::ResourceLimit(actual)) if actual == expected)
-    );
 }

@@ -2,9 +2,10 @@
 
 use crate::native::{PropertyRecord, PropertySetRecord};
 use crate::property_set::PropertySetState;
+use crate::test_support::given_up_records;
 use cadmpeg_container::compound::CompoundSnapshot;
 use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
-use cadmpeg_ir::source_fidelity::parts::{PartOutput, PartState};
+use cadmpeg_ir::source_fidelity::parts::PartOutput;
 use cadmpeg_ir::CodecFormat;
 
 fn stream(malformed_value: bool) -> Vec<u8> {
@@ -71,7 +72,7 @@ fn untrusted_header_count_gives_up_only_its_actual_stream_and_keeps_the_peer() {
             .as_deref(),
         Some("17")
     );
-    let (_, native, fidelity, losses) = output.into_parts(&ctx).unwrap().into_parts();
+    let (_, native, fidelity, losses) = output.into_parts();
     let namespace = native.namespace("inventor").unwrap();
     assert_eq!(
         namespace
@@ -88,14 +89,7 @@ fn untrusted_header_count_gives_up_only_its_actual_stream_and_keeps_the_peer() {
     );
     assert_eq!(losses.len(), 1);
     assert_eq!(losses[0].code.to_string(), "decode/record.unreadable");
-    assert_eq!(
-        fidelity
-            .parts()
-            .values()
-            .filter(|part| matches!(part.state(), PartState::GivenUp {}))
-            .count(),
-        1
-    );
+    assert_eq!(given_up_records(&fidelity).len(), 1);
 }
 
 #[test]
@@ -125,7 +119,7 @@ fn unreadable_bounded_value_keeps_its_section_and_exact_property_peer() {
             .as_deref(),
         Some("7")
     );
-    let (_, native, _, losses) = output.into_parts(&ctx).unwrap().into_parts();
+    let (_, native, fidelity, losses) = output.into_parts();
     assert_eq!(
         native
             .namespace("inventor")
@@ -136,10 +130,8 @@ fn unreadable_bounded_value_keeps_its_section_and_exact_property_peer() {
         1
     );
     assert_eq!(losses.len(), 1);
-    assert!(losses[0].message.contains(&format!(
-        "inventor:property:value#{}-0-2",
-        descriptors[0].stream.directory_id()
-    )));
+    assert_eq!(losses[0].code.to_string(), "decode/record.unreadable");
+    assert_eq!(given_up_records(&fidelity).len(), 1);
 }
 
 #[test]
@@ -162,6 +154,6 @@ fn cached_failure_does_not_override_actual_readable_source() {
             .as_deref(),
         Some("17")
     );
-    let (_, _, _, losses) = output.into_parts(&ctx).unwrap().into_parts();
+    let (_, _, _, losses) = output.into_parts();
     assert!(losses.is_empty());
 }

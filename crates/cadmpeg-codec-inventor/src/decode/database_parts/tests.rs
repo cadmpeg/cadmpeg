@@ -2,9 +2,10 @@
 
 use crate::native::DatabaseRecord;
 use crate::rse::{DatabaseState, RseInventory};
+use crate::test_support::given_up_records;
 use cadmpeg_container::compound::CompoundSnapshot;
 use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
-use cadmpeg_ir::source_fidelity::parts::{PartOutput, PartState};
+use cadmpeg_ir::source_fidelity::parts::PartOutput;
 use cadmpeg_ir::CodecFormat;
 
 #[test]
@@ -16,10 +17,9 @@ fn actual_database_values_and_record_reads_share_the_source_stage() {
     let snapshot = CompoundSnapshot::new(&ctx, root).unwrap();
     let inventory = RseInventory::build(&ctx, &snapshot).unwrap();
     let descriptor = &inventory.databases[0];
-    let expected = ctx.capture_part_extent(descriptor.source.unwrap()).unwrap();
     let mut output = PartOutput::new(CodecFormat::Inventor);
     assert!(super::stage(&ctx, &mut output, descriptor).unwrap());
-    let (_, native, fidelity, losses) = output.into_parts(&ctx).unwrap().into_parts();
+    let (_, native, fidelity, losses) = output.into_parts();
     let records = native
         .namespace("inventor")
         .unwrap()
@@ -35,21 +35,7 @@ fn actual_database_values_and_record_reads_share_the_source_stage() {
     assert_eq!(records[0].saved_filetime, 18);
     assert_eq!(records[0].note, "synthetic primary document");
     assert!(losses.is_empty());
-    assert_eq!(fidelity.parts().len(), 2);
-    // The inventory build also captures each metadata type descriptor
-    // (Appendix C `inventor.type_descriptor`); only the database is asserted.
-    let captures = ctx
-        .take_record_captures()
-        .unwrap()
-        .into_iter()
-        .filter(|capture| capture.id().starts_with("inventor:rse:database#"))
-        .collect::<Vec<_>>();
-    assert_eq!(captures.len(), 1);
-    assert_eq!(captures[0].id(), records[0].id);
-    assert_eq!(captures[0].stream(), expected.stream());
-    assert_eq!(captures[0].offset(), expected.offset());
-    assert_eq!(captures[0].byte_len(), expected.byte_len());
-    assert!(!captures[0].reads().is_empty());
+    assert!(given_up_records(&fidelity).is_empty());
 }
 
 #[test]
@@ -89,7 +75,7 @@ fn unreadable_database_note_drops_its_actual_record_and_keeps_the_exact_peer() {
     let mut output = PartOutput::new(CodecFormat::Inventor);
     assert!(!super::stage(&ctx, &mut output, &failed.databases[0]).unwrap());
     assert!(super::stage(&ctx, &mut output, &peer.databases[0]).unwrap());
-    let (_, native, mut fidelity, losses) = output.into_parts(&ctx).unwrap().into_parts();
+    let (_, native, fidelity, losses) = output.into_parts();
     let records = native
         .namespace("inventor")
         .unwrap()
@@ -103,22 +89,12 @@ fn unreadable_database_note_drops_its_actual_record_and_keeps_the_exact_peer() {
     assert_eq!(records[0].saved_filetime, 18);
     assert_eq!(losses.len(), 1);
     assert_eq!(losses[0].code.to_string(), "decode/record.unreadable");
-    assert!(losses[0].message.contains("inventor:rse:database#v1"));
+    let given_up = given_up_records(&fidelity);
+    assert_eq!(given_up.len(), 1);
     assert_eq!(
-        fidelity
-            .parts()
-            .values()
-            .filter(|part| matches!(part.state(), PartState::GivenUp {}))
-            .count(),
-        1
+        given_up[0].data(),
+        Some(failed.databases[0].source.unwrap().window())
     );
-    fidelity.install_mapped_record_captures(&ctx, Ok).unwrap();
-    assert!(!fidelity
-        .record_layout()
-        .contains_key("inventor:rse:database#v1"));
-    assert!(fidelity
-        .record_layout()
-        .contains_key("inventor:rse:database#v2"));
 }
 
 #[test]
@@ -132,7 +108,7 @@ fn cached_unreadable_state_cannot_replace_actual_database_fields() {
     inventory.databases[0].state = DatabaseState::Unreadable("stale failure cue".into());
     let mut output = PartOutput::new(CodecFormat::Inventor);
     assert!(super::stage(&ctx, &mut output, &inventory.databases[0]).unwrap());
-    let (_, native, _, losses) = output.into_parts(&ctx).unwrap().into_parts();
+    let (_, native, _, losses) = output.into_parts();
     assert_eq!(
         native
             .namespace("inventor")
