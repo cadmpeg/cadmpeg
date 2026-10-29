@@ -7622,6 +7622,7 @@ fn linear_pattern_axis(
             spacing,
             count,
             second: None,
+            omitted_instances: Vec::new(),
         })
         .ok())
     } else {

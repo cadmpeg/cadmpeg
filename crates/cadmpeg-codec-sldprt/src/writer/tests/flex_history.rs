@@ -1190,6 +1190,7 @@ fn encoder_writes_authored_with_retained_native_envelope_native_features() {
                 spacing: cadmpeg_ir::scalar::PositiveLength::new(20.0).unwrap(),
                 count: 4,
             }),
+            omitted_instances: Vec::new(),
         })
         .unwrap(),
         PatternKind::new(PatternTransform::Circular {

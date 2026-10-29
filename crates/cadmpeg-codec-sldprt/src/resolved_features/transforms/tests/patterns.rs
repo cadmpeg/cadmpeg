@@ -653,6 +653,7 @@ fn pattern_inputs_bind_adjacent_objects_and_line_reference_direction() {
                 spacing: cadmpeg_ir::scalar::PositiveLength::new(5.0).unwrap(),
                 count: 3,
                 second: None,
+                omitted_instances: Vec::new(),
             })
             .unwrap(),
         }));
@@ -744,6 +745,7 @@ fn pattern_inputs_bind_adjacent_objects_and_line_reference_direction() {
                 spacing: cadmpeg_ir::scalar::PositiveLength::new(5.0).unwrap(),
                 count: 3,
                 second: None,
+                omitted_instances: Vec::new(),
             })
             .unwrap(),
         }));
