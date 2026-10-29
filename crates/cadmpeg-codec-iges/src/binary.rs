@@ -1727,7 +1727,7 @@ fn normalize_with_records<T>(
             .ok_or_else(|| malformed("Binary normalized Global card exceeds its payload"))?
             .copy_from_slice(card);
     }
-    let (global, losses) = crate::global::parse_stream(&global_payload)?;
+    let (global, losses) = crate::global::parse_binary_stream(&global_payload)?;
     let (directory, parameters) = parse(&sections, &global, output)?;
     let mut output = Vec::new();
     let mut start_sequence = 1_u32;
@@ -1775,6 +1775,7 @@ fn normalize_with_records<T>(
 
 #[cfg(test)]
 mod tests {
+    mod global_numeric_context;
     mod normalized_global;
     mod source_values;
     #[test]
@@ -2090,7 +2091,10 @@ mod tests {
         writer.integer(value, lengths.single_integer);
     }
 
-    fn global_payload(lengths: PrimitiveLengths) -> Vec<u8> {
+    /// Global fields 7 through 11 of the Binary fixture.
+    const NEUTRAL_NUMERIC_FIELDS: [i64; 5] = [32, 38, 6, 308, 15];
+
+    fn global_payload(lengths: PrimitiveLengths, numeric_fields: [i64; 5]) -> Vec<u8> {
         let mut writer = BitWriter::default();
         writer.control(0);
         writer.control(0);
@@ -2103,7 +2107,7 @@ mod tests {
             writer.control(format);
             writer.string(value, lengths);
         }
-        for value in [32, 38, 6, 308, 15] {
+        for value in numeric_fields {
             writer.control(1);
             writer.integer(value, lengths.single_integer);
         }
@@ -2197,9 +2201,13 @@ mod tests {
     }
 
     fn binary_file_with_start(start_text: &[u8]) -> Vec<u8> {
+        binary_file(start_text, NEUTRAL_NUMERIC_FIELDS)
+    }
+
+    fn binary_file(start_text: &[u8], numeric_fields: [i64; 5]) -> Vec<u8> {
         let lengths = lengths();
         let start = section(b'S', &primitive_string(start_text, lengths));
-        let global = section(b'G', &global_payload(lengths));
+        let global = section(b'G', &global_payload(lengths, numeric_fields));
         let directory = section(b'D', &directory_payload(lengths));
         let parameter = section(b'P', &parameter_payload(lengths));
         let terminate_payload = {

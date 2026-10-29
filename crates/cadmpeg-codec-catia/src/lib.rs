@@ -106,6 +106,7 @@ impl CodecBackend for CatiaCodec {
     fn validate_native(
         ctx: &DecodeContext<'_>,
         ir: &cadmpeg_ir::CadIr,
+        _source: Option<&cadmpeg_ir::SourceFidelity>,
     ) -> Result<Vec<cadmpeg_ir::report::check::Finding>, CodecError> {
         let Some(namespace) = ir.native.namespace("catia") else {
             return Ok(Vec::new());
