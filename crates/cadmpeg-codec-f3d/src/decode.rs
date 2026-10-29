@@ -1951,6 +1951,23 @@ fn report_design_projection_gaps(
             gaps.unrepaired_lost_edge_references
         ),);
     }
+    for scope in &native.design_parameter_scopes {
+        if scope.kind() != crate::records::feature::scope::DesignFeatureKind::Emboss {
+            continue;
+        }
+        let (code, reason) = if scope.emboss_construction().is_some() {
+            (F3dLossCode::EmbossControlsNative,
+             "control words, native pairs, scalar-owner links, selection links, contour membership, and placement have no neutral Wrap mapping")
+        } else {
+            (
+                F3dLossCode::EmbossPrefixUnparsed,
+                "the operation prefix does not match an admitted native Emboss form",
+            )
+        };
+        report
+            .losses
+            .push(code.note(format!("{}: {reason}.", scope.id)));
+    }
     let mut push = |code: F3dLossCode,
                     count: usize,
                     message: std::fmt::Arguments<'_>|

@@ -135,6 +135,10 @@ pub(crate) enum F3dLossCode {
     HoleExtentUnproven,
     /// A decoded native feature envelope has no interpreted specialized payload.
     FeatureScopePayloadUninterpreted,
+    /// Emboss controls, native pairs, and selected contours have no neutral mapping.
+    EmbossControlsNative,
+    /// An Emboss prefix matches no admitted native construction form.
+    EmbossPrefixUnparsed,
     /// A non-equivalent duplicate scope envelope was superseded by the
     /// primary-indexed envelope.
     FeatureScopeEnvelopeSuperseded,
@@ -409,6 +413,8 @@ impl F3dLossCode {
         Self::FeatureScopeUnprojected,
         Self::HoleExtentUnproven,
         Self::FeatureScopePayloadUninterpreted,
+        Self::EmbossControlsNative,
+        Self::EmbossPrefixUnparsed,
         Self::FeatureScopeEnvelopeSuperseded,
         Self::ParameterUnprojected,
         Self::ParameterRecordUnparsed,
@@ -570,6 +576,8 @@ impl F3dLossCode {
             Self::EdgeReferenceLostUnrepaired => "feature.edge-reference-lost",
             Self::FeatureDefinitionIncomplete => "feature.definition-incomplete",
             Self::SheetThicknessUnruled => "feature.sheet-thickness-unruled",
+            Self::EmbossControlsNative => "feature.emboss-controls-native",
+            Self::EmbossPrefixUnparsed => "feature.emboss-prefix-unparsed",
             Self::FeatureScopePayloadUninterpreted => "feature.scope-payload-uninterpreted",
             Self::FeatureScopeEnvelopeSuperseded => "feature.scope-envelope-superseded",
             Self::HoleExtentUnproven => "feature.hole-extent-unproven",
@@ -764,6 +772,8 @@ impl F3dLossCode {
             | Self::SheetThicknessUnruled
             | Self::HoleExtentUnproven
             | Self::FeatureScopeUnprojected
+            | Self::EmbossControlsNative
+            | Self::EmbossPrefixUnparsed
             | Self::FeatureScopePayloadUninterpreted
             | Self::FeatureScopeEnvelopeSuperseded
             | Self::ParameterUnprojected
@@ -899,6 +909,8 @@ impl F3dLossCode {
             | Self::WorkPlaneFrameUnbound
             | Self::HoleExtentUnproven
             | Self::FeatureScopeUnprojected
+            | Self::EmbossControlsNative
+            | Self::EmbossPrefixUnparsed
             | Self::FeatureScopePayloadUninterpreted
             | Self::FeatureScopeEnvelopeSuperseded
             | Self::ParameterUnprojected
@@ -1102,6 +1114,8 @@ mod tests {
                 "feature.scope-unprojected",
                 "feature.hole-extent-unproven",
                 "feature.scope-payload-uninterpreted",
+                "feature.emboss-controls-native",
+                "feature.emboss-prefix-unparsed",
                 "feature.scope-envelope-superseded",
                 "parameter.unprojected",
                 "parameter.record-unparsed",
