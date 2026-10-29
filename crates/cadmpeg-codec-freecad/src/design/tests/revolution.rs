@@ -115,7 +115,7 @@ fn revolve_and_groove_keep_reversed_axis_and_each_side() {
                         assert!(angle_matches(a, first));
                         assert!(angle_matches(b, second));
                     }
-                    _ => {}
+                    RevolveExtent::OneSided { .. } => {}
                 }
                 if mode == 1 {
                     assert!(matches!(

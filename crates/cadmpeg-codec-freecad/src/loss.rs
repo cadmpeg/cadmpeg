@@ -384,6 +384,7 @@ mod tests {
                 "metadata.persistence-count-noncanonical",
                 "feature.cyclic-history",
                 "feature.native-kind-retained",
+                "feature.revolution-not-transferred",
                 "sketch.native-geometry",
                 "sketch.native-constraint",
                 "sketch.external-reference-unresolved",

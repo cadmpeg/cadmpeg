@@ -1376,11 +1376,11 @@ fn revolve_validator_limits_fixed_angles_and_two_side_sum() {
             ordinal: 0,
             name: None,
             suppressed: None,
-            dependencies: Default::default(),
+            dependencies: crate::features::DistinctMembers::default(),
             source_properties: BTreeMap::new(),
             source_tag: None,
             source_text: None,
-            source_content: Default::default(),
+            source_content: crate::features::FeatureContent::default(),
             evaluation: FeatureEvaluation::from_definition(FeatureDefinition::Operation(
                 FeatureOperation::Revolve {
                     construction,
