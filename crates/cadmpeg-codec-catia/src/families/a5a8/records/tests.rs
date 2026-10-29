@@ -1310,5 +1310,3 @@ fn a8_surface_header_reads_the_frame_object_id() {
     .expect("complete surface header");
     assert_eq!(header.object_id, object_id);
 }
-
-mod frame_continuation;

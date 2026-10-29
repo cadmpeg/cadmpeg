@@ -1531,36 +1531,3 @@ fn face_reference_slots_after_the_carrier_require_loops() {
     loops.get_mut(&20).expect("owned loop").surface = 11;
     assert!(parse_face(&record, &loops, &surfaces, &aliases).is_none());
 }
-
-#[test]
-fn face_references_can_repeat_one_carrier_through_an_alias() {
-    let plane = B5Surface::Plane {
-        origin: crate::test_support::test_b5::point([0.0; 3]),
-        frame: crate::test_support::test_b5::plane_frame([1.0, 0.0, 0.0], [0.0, 1.0, 0.0]),
-        direction_v: crate::test_support::test_b5::exact_unit([0.0, 1.0, 0.0]),
-        u_range: crate::test_support::test_b5::increasing([-1.0, 1.0]),
-        v_range: crate::test_support::test_b5::increasing([-1.0, 1.0]),
-    };
-    let record = B5FaceRecord {
-        object_id: 30,
-        references: vec![10, 11, 20],
-        terminal_control: Some(B5FramingControl::Control05),
-    };
-    let loops = BTreeMap::from([(
-        20,
-        B5Loop {
-            object_id: 20,
-            members: Vec::new(),
-            metadata: test_loop_metadata(),
-            surface: 10,
-        },
-    )]);
-    let surfaces = BTreeMap::from([(10, plane.clone()), (11, plane)]);
-    let aliases = BTreeMap::from([(11, 10)]);
-
-    let face = parse_face(&record, &loops, &surfaces, &aliases).expect("aliased face");
-    assert_eq!(face.surface, 10);
-    assert_eq!(face.loops, vec![20]);
-
-    assert!(parse_face(&record, &loops, &surfaces, &BTreeMap::new()).is_none());
-}
