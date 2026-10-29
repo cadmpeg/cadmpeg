@@ -691,15 +691,10 @@ impl<'a> Builder<'a> {
         self.emit_visibility();
         self.emit_tessellations(context);
         if !has_model_items && self.tessellation_step_refs.is_empty() {
-            if !self.ir.model.bodies.is_empty() {
-                self.loss(
-                    StepLossCode::NoExportableSolids,
-                    "no body geometry could be placed in a STEP representation".to_string(),
-                );
-            }
             self.loss(
-                StepLossCode::NoGeometryWritten,
-                "no geometry was written to a STEP representation".to_string(),
+                StepLossCode::NoExportableSolids,
+                "no exportable solids or standalone geometry; the STEP representation is empty"
+                    .to_string(),
             );
         }
         self.emit_presentation(context);

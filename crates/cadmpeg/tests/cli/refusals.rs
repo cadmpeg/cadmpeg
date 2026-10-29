@@ -190,7 +190,11 @@ fn convert_writes_when_native_decode_has_no_geometry() {
         .as_array()
         .unwrap()
         .iter()
-        .any(|loss| { loss["code"]["code"] == "export.no-geometry-written" }));
+        .any(|loss| {
+            loss["code"]["namespace"] == "export"
+                && loss["code"]["code"] == "output.empty"
+                && loss["severity"] == "warning"
+        }));
 }
 
 /// Container-only output remains an explicit caller policy, independent of writer scope.
@@ -559,7 +563,7 @@ fn reject_lossy_scopes_select_which_losses_refuse() {
     }));
     assert!(losses
         .iter()
-        .any(|loss| loss["code"]["code"] == "export.no-geometry-written"));
+        .any(|loss| loss["code"]["code"] == "export.no-exportable-solids"));
 
     let lossless = fixture(
         dir.path(),
