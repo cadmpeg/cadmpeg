@@ -49,28 +49,35 @@ fn bounded_defects_preserve_independent_instances_and_exact_bytes() {
             .decode(&mut Cursor::new(&decoded_source), &DecodeOptions::default())
             .expect("independent points decode");
         assert_eq!(decoded.ir().model.points.len(), 2);
-        assert!(decoded
+        assert_eq!(
+            decoded
+                .report()
+                .losses
+                .iter()
+                .filter(|loss| loss.code.local_code() == "record.unreadable")
+                .count(),
+            1,
+            "{defective}"
+        );
+        assert!(!decoded
             .report()
             .losses
             .iter()
             .any(|loss| loss.code == StepLossCode::ParseRecordOmitted.kind()));
         let (ir, _, fidelity) = decoded.into_parts();
-        let unknowns = ir.native_unknowns("step").expect("retained source");
-        let omitted = unknowns
-            .iter()
-            .find(|record| record.id.as_str().starts_with("step:file:omitted#"))
-            .expect("bounded defect retained");
-        assert_eq!(
-            fidelity
-                .retained_record(omitted.id.as_str())
-                .expect("fidelity payload")
-                .data(),
-            Some(defective.as_bytes())
-        );
-        assert_eq!(
-            ir.source.as_ref().expect("source").attributes["bytes_unclassified"],
-            "0"
-        );
+        let homes = fidelity
+            .retained_records()
+            .values()
+            .filter(|record| record.data() == Some(defective.as_bytes()))
+            .collect::<Vec<_>>();
+        assert_eq!(homes.len(), 1, "{defective}");
+        assert!(!homes[0].untyped().is_empty());
+        assert!(!ir
+            .source
+            .as_ref()
+            .expect("source")
+            .attributes
+            .contains_key("bytes_unclassified"));
     }
 }
 
@@ -309,10 +316,12 @@ fn bounded_draft_header_defects_retain_source_and_independent_geometry() {
                 .data(),
             Some(defective.as_bytes())
         );
-        assert_eq!(
-            ir.source.as_ref().expect("source").attributes["bytes_unclassified"],
-            "0"
-        );
+        assert!(!ir
+            .source
+            .as_ref()
+            .expect("source")
+            .attributes
+            .contains_key("bytes_unclassified"));
     }
 }
 
@@ -336,8 +345,10 @@ fn bounded_draft_preamble_is_retained_with_an_explicit_loss() {
             .data(),
         Some(b"EXTRA".as_slice())
     );
-    assert_eq!(
-        ir.source.as_ref().expect("source").attributes["bytes_unclassified"],
-        "0"
-    );
+    assert!(!ir
+        .source
+        .as_ref()
+        .expect("source")
+        .attributes
+        .contains_key("bytes_unclassified"));
 }

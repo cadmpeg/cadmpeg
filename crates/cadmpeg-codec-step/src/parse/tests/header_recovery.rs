@@ -121,10 +121,13 @@ fn header_literal_recovery_preserves_geometry_and_exact_source() {
                 .unwrap(),
         );
         assert_eq!(recovered.ir().model, expected.ir().model);
-        assert_eq!(
-            recovered.ir().source.as_ref().unwrap().attributes["bytes_unclassified"],
-            "0"
-        );
+        assert!(!recovered
+            .ir()
+            .source
+            .as_ref()
+            .unwrap()
+            .attributes
+            .contains_key("bytes_unclassified"));
         assert!(recovered
             .report()
             .losses
@@ -156,21 +159,20 @@ fn header_literal_recovery_preserves_geometry_and_exact_source() {
         .iter()
         .any(|loss| { loss.code == crate::loss::StepLossCode::ParseRecordOmitted.kind() }));
     assert!(recovered
-        .ir()
-        .native_unknowns("step")
-        .unwrap()
+        .report()
+        .losses
         .iter()
-        .any(|record| {
-            record.id.as_str().starts_with("step:file:omitted#")
-                && recovered
-                    .source_fidelity()
-                    .retained_record(record.id.as_str())
-                    .and_then(|record| record.data())
-                    .is_some_and(|bytes| {
-                        bytes
-                            .windows(b"(0.,0.,1.E999)".len())
-                            .any(|window| window == b"(0.,0.,1.E999)")
-                    })
+        .any(|loss| loss.code.local_code() == "record.unreadable"
+            && loss.message.contains("finite binary64 range")));
+    assert!(recovered
+        .source_fidelity()
+        .retained_records()
+        .values()
+        .filter_map(|record| record.data())
+        .any(|bytes| {
+            bytes
+                .windows(b"(0.,0.,1.E999)".len())
+                .any(|window| window == b"(0.,0.,1.E999)")
         }));
 }
 
@@ -336,9 +338,12 @@ fn unusable_presentation_literals_preserve_shape_and_exact_record() {
             .retained_records()
             .values()
             .any(|record_source| record_source.data() == Some(record.as_bytes())));
-        assert_eq!(
-            recovered.ir().source.as_ref().unwrap().attributes["bytes_unclassified"],
-            "0"
-        );
+        assert!(!recovered
+            .ir()
+            .source
+            .as_ref()
+            .unwrap()
+            .attributes
+            .contains_key("bytes_unclassified"));
     }
 }
