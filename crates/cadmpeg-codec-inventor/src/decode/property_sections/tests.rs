@@ -11,7 +11,7 @@ use crate::property_set::PropertySetState;
 use crate::test_support::given_up_records;
 
 fn padded(mut bytes: Vec<u8>) -> Vec<u8> {
-    while bytes.len() % 4 != 0 {
+    while !bytes.len().is_multiple_of(4) {
         bytes.push(0);
     }
     bytes
@@ -20,7 +20,11 @@ fn padded(mut bytes: Vec<u8>) -> Vec<u8> {
 fn text(value: &str) -> Vec<u8> {
     let units = value.encode_utf16().chain([0]).collect::<Vec<_>>();
     let mut bytes = 31_u32.to_le_bytes().to_vec();
-    bytes.extend_from_slice(&u32::try_from(units.len()).unwrap().to_le_bytes());
+    bytes.extend_from_slice(
+        &u32::try_from(units.len())
+            .expect("the text unit count fits u32")
+            .to_le_bytes(),
+    );
     for unit in units {
         bytes.extend_from_slice(&unit.to_le_bytes());
     }
@@ -29,7 +33,11 @@ fn text(value: &str) -> Vec<u8> {
 
 fn blob(value: &[u8]) -> Vec<u8> {
     let mut bytes = 0x41_u32.to_le_bytes().to_vec();
-    bytes.extend_from_slice(&u32::try_from(value.len()).unwrap().to_le_bytes());
+    bytes.extend_from_slice(
+        &u32::try_from(value.len())
+            .expect("the blob length fits u32")
+            .to_le_bytes(),
+    );
     bytes.extend_from_slice(value);
     padded(bytes)
 }
@@ -39,7 +47,11 @@ fn dictionary() -> Vec<u8> {
     for (id, name) in [(2_u32, "Title"), (17, "Preview")] {
         let units = name.encode_utf16().chain([0]).collect::<Vec<_>>();
         bytes.extend_from_slice(&id.to_le_bytes());
-        bytes.extend_from_slice(&u32::try_from(units.len()).unwrap().to_le_bytes());
+        bytes.extend_from_slice(
+            &u32::try_from(units.len())
+                .expect("the name unit count fits u32")
+                .to_le_bytes(),
+        );
         for unit in units {
             bytes.extend_from_slice(&unit.to_le_bytes());
         }
@@ -55,16 +67,20 @@ fn section(properties: &[(u32, Vec<u8>)]) -> Vec<u8> {
         table.extend_from_slice(&id.to_le_bytes());
         table.extend_from_slice(
             &u32::try_from(8 + properties.len() * 8 + values.len())
-                .unwrap()
+                .expect("the property offset fits u32")
                 .to_le_bytes(),
         );
         values.extend_from_slice(value);
     }
     let mut bytes = u32::try_from(8 + table.len() + values.len())
-        .unwrap()
+        .expect("the section size fits u32")
         .to_le_bytes()
         .to_vec();
-    bytes.extend_from_slice(&u32::try_from(properties.len()).unwrap().to_le_bytes());
+    bytes.extend_from_slice(
+        &u32::try_from(properties.len())
+            .expect("the property count fits u32")
+            .to_le_bytes(),
+    );
     bytes.extend_from_slice(&table);
     bytes.extend_from_slice(&values);
     bytes
@@ -90,7 +106,11 @@ fn stream() -> Vec<u8> {
     bytes.extend_from_slice(&super::super::FMTID_SUMMARY_INFORMATION);
     bytes.extend_from_slice(&68_u32.to_le_bytes());
     bytes.extend_from_slice(&[0x55; 16]);
-    bytes.extend_from_slice(&u32::try_from(68 + bad.len()).unwrap().to_le_bytes());
+    bytes.extend_from_slice(
+        &u32::try_from(68 + bad.len())
+            .expect("the second section offset fits u32")
+            .to_le_bytes(),
+    );
     bytes.extend_from_slice(&bad);
     bytes.extend_from_slice(&good);
     bytes
@@ -100,10 +120,11 @@ fn stream() -> Vec<u8> {
 fn identity_failure_drops_its_real_records_and_asset_and_keeps_the_exact_peer() {
     let bytes = crate::test_support::test_fixtures::fixture_with_ufrx(&stream());
     let arena = DecodeArena::new();
-    let (ctx, root) =
-        DecodeContext::from_root_bytes(&bytes, &arena, &DecodePolicy::service()).unwrap();
-    let snapshot = CompoundSnapshot::new(&ctx, root).unwrap();
-    let descriptors = crate::property_set::inventory(&ctx, &snapshot).unwrap();
+    let (ctx, root) = DecodeContext::from_root_bytes(&bytes, &arena, &DecodePolicy::service())
+        .expect("the fixture fits the service policy");
+    let snapshot = CompoundSnapshot::new(&ctx, root).expect("the fixture is a compound file");
+    let descriptors = crate::property_set::inventory(&ctx, &snapshot)
+        .expect("the property set inventory succeeds");
     let descriptor = &descriptors[0];
     let PropertySetState::Parsed(parsed) = &descriptor.state else {
         panic!("valid bounded property syntax")
@@ -116,15 +137,15 @@ fn identity_failure_drops_its_real_records_and_asset_and_keeps_the_exact_peer() 
         descriptor,
         parsed
     )
-    .unwrap());
+    .expect("the header stage succeeds"));
     let mut ordinal = 0;
     assert!(super::stage(&ctx, &mut output, descriptor, 0, &mut ordinal)
-        .unwrap()
+        .expect("the failed section stage succeeds")
         .is_none());
     assert_eq!(ordinal, 1, "the failed section formed its original preview");
     let peer = super::stage(&ctx, &mut output, descriptor, 1, &mut ordinal)
-        .unwrap()
-        .unwrap();
+        .expect("the peer section stage succeeds")
+        .expect("the peer section is formed");
     assert_eq!(ordinal, 2);
     let mut metadata = super::super::MetadataProjection::default();
     for property in &peer.properties {
@@ -159,21 +180,25 @@ fn identity_failure_drops_its_real_records_and_asset_and_keeps_the_exact_peer() 
     assert!(
         matches!(&model.assets[0].content, AssetContent::Embedded { data } if data.as_bytes() == b"\x89PNG\r\n\x1a\npeer")
     );
-    let namespace = native.namespace("inventor").unwrap();
+    let namespace = native
+        .namespace("inventor")
+        .expect("the inventor namespace exists");
     let sets = namespace
         .arena_as::<PropertySetRecord>("property_sets")
-        .unwrap();
+        .expect("the property sets arena holds property set records");
     assert_eq!(sets.len(), 1);
     assert_eq!(sets[0].section_count, 2);
     let sections = namespace
         .arena_as::<PropertySectionRecord>("property_sections")
-        .unwrap();
+        .expect("the property sections arena holds property section records");
     assert_eq!(sections.len(), 1);
     assert_eq!(sections[0].ordinal, 1);
     assert_eq!(sections[0].property_count, 4);
     assert_eq!(sections[0].dictionary_entries, 2);
     assert_eq!(sections[0].code_page, Some(1200));
-    let properties = namespace.arena_as::<PropertyRecord>("properties").unwrap();
+    let properties = namespace
+        .arena_as::<PropertyRecord>("properties")
+        .expect("the properties arena holds property records");
     assert_eq!(
         properties.iter().map(|p| p.property_id).collect::<Vec<_>>(),
         [0, 1, 2, 17]

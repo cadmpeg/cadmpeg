@@ -552,7 +552,7 @@ fn decode_container<'a>(
     namespace.set_arena(ctx, "segment_registry", &segment_registry)?;
     namespace.set_arena(ctx, "revisions", &revisions)?;
     namespace.set_arena(ctx, "structural_issues", &structural_issues)?;
-    namespace.set_arena(ctx, "property_sets", &[] as &[PropertySetRecord])?;
+    namespace.set_arena::<PropertySetRecord>(ctx, "property_sets", &[])?;
     namespace.set_arena(ctx, "property_sections", &property_sections)?;
     namespace.set_arena(ctx, "properties", &properties)?;
     namespace.set_arena(ctx, "property_set_issues", &property_set_issues)?;
@@ -560,55 +560,35 @@ fn decode_container<'a>(
     namespace.set_arena(ctx, "protein_assets", &protein_assets)?;
     namespace.set_arena(ctx, "protein_rejections", &protein_rejections)?;
     ufrx.install(ctx, namespace)?;
-    namespace.set_arena(
-        ctx,
-        "assembly_occurrences",
-        &[] as &[AssemblyOccurrenceRecord],
-    )?;
-    namespace.set_arena(
-        ctx,
-        "assembly_placements",
-        &[] as &[AssemblyPlacementRecord],
-    )?;
-    namespace.set_arena(
+    namespace.set_arena::<AssemblyOccurrenceRecord>(ctx, "assembly_occurrences", &[])?;
+    namespace.set_arena::<AssemblyPlacementRecord>(ctx, "assembly_placements", &[])?;
+    namespace.set_arena::<DesignViewRepresentationRecord>(
         ctx,
         "design_view_representations",
-        &[] as &[DesignViewRepresentationRecord],
+        &[],
     )?;
-    namespace.set_arena(
-        ctx,
-        "design_view_visibility",
-        &[] as &[DesignViewVisibilityOffRecord],
-    )?;
-    namespace.set_arena(
-        ctx,
-        "assembly_groundings",
-        &[] as &[AssemblyGroundingRecord],
-    )?;
-    namespace.set_arena(
+    namespace.set_arena::<DesignViewVisibilityOffRecord>(ctx, "design_view_visibility", &[])?;
+    namespace.set_arena::<AssemblyGroundingRecord>(ctx, "assembly_groundings", &[])?;
+    namespace.set_arena::<crate::native::PmAppDefaultStyleRecord>(
         ctx,
         "pm_app_default_styles",
-        &[] as &[crate::native::PmAppDefaultStyleRecord],
+        &[],
     )?;
-    namespace.set_arena(
+    namespace.set_arena::<crate::native::PmAppRenderingStyleRecord>(
         ctx,
         "pm_app_rendering_styles",
-        &[] as &[crate::native::PmAppRenderingStyleRecord],
+        &[],
     )?;
-    namespace.set_arena(
-        ctx,
-        "pm_graphics_faces",
-        &[] as &[crate::native::PmGraphicsFaceRecord],
-    )?;
-    namespace.set_arena(
+    namespace.set_arena::<crate::native::PmGraphicsFaceRecord>(ctx, "pm_graphics_faces", &[])?;
+    namespace.set_arena::<crate::native::PmGraphicsStyleCollectionRecord>(
         ctx,
         "pm_graphics_style_collections",
-        &[] as &[crate::native::PmGraphicsStyleCollectionRecord],
+        &[],
     )?;
-    namespace.set_arena(
+    namespace.set_arena::<crate::native::PmGraphicsPrimaryColorStyleRecord>(
         ctx,
         "pm_graphics_primary_color_styles",
-        &[] as &[crate::native::PmGraphicsPrimaryColorStyleRecord],
+        &[],
     )?;
     namespace.set_arena(ctx, "pm_dc_parameters", &design_inventory.parameters)?;
     namespace.set_arena(ctx, "pm_dc_expressions", &design_inventory.expressions)?;
@@ -685,7 +665,7 @@ fn decode_container<'a>(
     namespace.set_arena(ctx, "segment_pairs", &segment_pairs)?;
     namespace.set_arena(ctx, "segment_meta", &segment_meta)?;
     namespace.set_arena(ctx, "meta_sections", &meta_sections)?;
-    namespace.set_arena(ctx, "meta_types", &[] as &[crate::native::MetaTypeRecord])?;
+    namespace.set_arena::<crate::native::MetaTypeRecord>(ctx, "meta_types", &[])?;
     namespace.set_arena(ctx, "segment_meta_issues", &segment_meta_issues)?;
     namespace.set_arena(ctx, "segment_bulk", &segment_bulk)?;
     namespace.set_arena(ctx, "rse_records", &rse_records)?;

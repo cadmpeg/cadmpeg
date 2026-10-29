@@ -545,10 +545,10 @@ pub(crate) fn inventory<'a>(
                     parts::Parsed::Rendering(value) => inventory.rendering_styles.push(value),
                     parts::Parsed::Face(value) => inventory.graphics_faces.push(value),
                     parts::Parsed::Collection(value) => {
-                        inventory.graphics_style_collections.push(value)
+                        inventory.graphics_style_collections.push(value);
                     }
                     parts::Parsed::Primary(value) => {
-                        inventory.graphics_primary_color_styles.push(value)
+                        inventory.graphics_primary_color_styles.push(value);
                     }
                 }
             }
@@ -1249,7 +1249,7 @@ mod tests {
     }
 
     fn inventory_with_record(
-        kind: SegmentKind,
+        kind: &SegmentKind,
         type_id: [u8; 16],
         payload: &[u8],
         policy: DecodePolicy,
@@ -1327,7 +1327,7 @@ mod tests {
                 "admit Inventor graphics primary color style record",
             ),
         ] {
-            let admitted = inventory_with_record(kind, type_id, &payload, DecodePolicy::service())
+            let admitted = inventory_with_record(&kind, type_id, &payload, DecodePolicy::service())
                 .expect("presentation record is admitted");
             assert_eq!(admitted.0, 1, "{operation}");
             assert!(admitted.1.is_empty());
@@ -1338,7 +1338,7 @@ mod tests {
     fn presentation_parse_issue_is_recorded() {
         assert_eq!(
             inventory_with_record(
-                SegmentKind::PmApp,
+                &SegmentKind::PmApp,
                 DEFAULT_STYLE_TYPE,
                 &[],
                 DecodePolicy::service()
@@ -1355,14 +1355,14 @@ mod tests {
         let mut policy = DecodePolicy::service();
         policy.limits.max_entities = 0;
         assert!(matches!(
-            inventory_with_record(SegmentKind::PmApp, DEFAULT_STYLE_TYPE, &[], policy),
+            inventory_with_record(&SegmentKind::PmApp, DEFAULT_STYLE_TYPE, &[], policy),
             Err(CodecError::ResourceLimit(limit))
                 if limit.dimension == ResourceDimension::Entities
                     && limit.operation == "admit Inventor presentation issue"
         ));
         assert_eq!(
             inventory_with_record(
-                SegmentKind::PmApp,
+                &SegmentKind::PmApp,
                 DEFAULT_STYLE_TYPE,
                 &[],
                 DecodePolicy::service()

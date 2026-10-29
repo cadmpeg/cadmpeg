@@ -20,7 +20,11 @@ fn plain() -> Vec<u8> {
 
 fn revisions(records: &[Vec<u8>]) -> Vec<u8> {
     let mut bytes = 3_u32.to_le_bytes().to_vec();
-    bytes.extend(u32::try_from(records.len()).unwrap().to_le_bytes());
+    bytes.extend(
+        u32::try_from(records.len())
+            .expect("the revision count fits u32")
+            .to_le_bytes(),
+    );
     for record in records {
         bytes.extend(record);
     }
@@ -40,19 +44,26 @@ fn short() -> Vec<u8> {
 fn actual_revision_records_keep_exact_native_fields_and_source_read_ranges() {
     let bytes = primary_envelope_fixture_with_revisions(&revisions(&[plain(), short()]));
     let arena = DecodeArena::new();
-    let (ctx, root) =
-        DecodeContext::from_root_bytes(&bytes, &arena, &DecodePolicy::service()).unwrap();
-    let container = InventorContainer::open(&ctx, root).unwrap();
-    let source = container.rse.revision_source.unwrap();
+    let (ctx, root) = DecodeContext::from_root_bytes(&bytes, &arena, &DecodePolicy::service())
+        .expect("the fixture fits the service policy");
+    let container =
+        InventorContainer::open(&ctx, root).expect("the fixture opens as an inventor container");
+    let source = container
+        .rse
+        .revision_source
+        .expect("the container holds a revision source");
     let mut output = PartOutput::new(CodecFormat::Inventor);
-    assert_eq!(super::stage(&ctx, &mut output, source).unwrap(), 2);
+    assert_eq!(
+        super::stage(&ctx, &mut output, source).expect("the revision stage succeeds"),
+        2
+    );
     let (_, native, fidelity, losses) = output.into_parts();
     assert!(given_up_records(&fidelity).is_empty());
     let records = native
         .namespace("inventor")
-        .unwrap()
+        .expect("the inventor namespace exists")
         .arena_as::<RevisionRecord>("revisions")
-        .unwrap();
+        .expect("the revisions arena holds revision records");
     assert_eq!(
         records,
         [
@@ -79,18 +90,27 @@ fn actual_revision_records_keep_exact_native_fields_and_source_read_ranges() {
 
 fn decoded_revisions(bytes: &[u8]) -> Vec<RevisionRecord> {
     let arena = DecodeArena::new();
-    let (ctx, root) =
-        DecodeContext::from_root_bytes(bytes, &arena, &DecodePolicy::service()).unwrap();
-    let container = InventorContainer::open(&ctx, root).unwrap();
+    let (ctx, root) = DecodeContext::from_root_bytes(bytes, &arena, &DecodePolicy::service())
+        .expect("the fixture fits the service policy");
+    let container =
+        InventorContainer::open(&ctx, root).expect("the fixture opens as an inventor container");
     let mut output = PartOutput::new(CodecFormat::Inventor);
-    super::stage(&ctx, &mut output, container.rse.revision_source.unwrap()).unwrap();
+    super::stage(
+        &ctx,
+        &mut output,
+        container
+            .rse
+            .revision_source
+            .expect("the container holds a revision source"),
+    )
+    .expect("the revision stage succeeds");
     let (_, native, _, losses) = output.into_parts();
     assert!(losses.is_empty());
     native
         .namespace("inventor")
-        .unwrap()
+        .expect("the inventor namespace exists")
         .arena_as::<RevisionRecord>("revisions")
-        .unwrap()
+        .expect("the revisions arena holds revision records")
 }
 
 #[test]
@@ -122,27 +142,38 @@ fn late_revision_stream_failure_discards_formed_records_and_keeps_exact_database
     table.push(0xff);
     let bytes = primary_envelope_fixture_with_revisions(&table);
     let arena = DecodeArena::new();
-    let (ctx, root) =
-        DecodeContext::from_root_bytes(&bytes, &arena, &DecodePolicy::service()).unwrap();
-    let container = InventorContainer::open(&ctx, root).unwrap();
+    let (ctx, root) = DecodeContext::from_root_bytes(&bytes, &arena, &DecodePolicy::service())
+        .expect("the fixture fits the service policy");
+    let container =
+        InventorContainer::open(&ctx, root).expect("the fixture opens as an inventor container");
     assert!(matches!(
         container.rse.revisions,
         ParsedState::Unavailable(_)
     ));
-    let source = container.rse.revision_source.unwrap();
+    let source = container
+        .rse
+        .revision_source
+        .expect("the container holds a revision source");
     let mut output = PartOutput::new(CodecFormat::Inventor);
     assert!(
         super::super::database_parts::stage(&ctx, &mut output, &container.rse.databases[0])
-            .unwrap()
+            .expect("the database stage succeeds")
     );
-    assert_eq!(super::stage(&ctx, &mut output, source).unwrap(), 0);
+    assert_eq!(
+        super::stage(&ctx, &mut output, source).expect("the revision stage succeeds"),
+        0
+    );
     let (_, native, fidelity, losses) = output.into_parts();
-    let ns = native.namespace("inventor").unwrap();
+    let ns = native
+        .namespace("inventor")
+        .expect("the inventor namespace exists");
     assert!(ns
         .arena_as::<RevisionRecord>("revisions")
-        .unwrap()
+        .expect("the revisions arena holds revision records")
         .is_empty());
-    let peer = ns.arena_as::<DatabaseRecord>("databases").unwrap();
+    let peer = ns
+        .arena_as::<DatabaseRecord>("databases")
+        .expect("the databases arena holds database records");
     assert_eq!(peer.len(), 1);
     assert_eq!(peer[0].id, "inventor:rse:database#v1");
     assert_eq!(peer[0].schema, 31);
@@ -165,10 +196,19 @@ fn actual_revision_native_entity_refusal_stays_a_fatal_resource_limit() {
     // that descriptor forms one `meta_types` record, so
     // the open admits exactly one entity and the revision stage admits none.
     policy.limits.max_entities = 1;
-    let (ctx, root) = DecodeContext::from_root_bytes(&bytes, &arena, &policy).unwrap();
-    let container = InventorContainer::open(&ctx, root).unwrap();
+    let (ctx, root) = DecodeContext::from_root_bytes(&bytes, &arena, &policy)
+        .expect("the fixture fits the one entity policy");
+    let container = InventorContainer::open(&ctx, root)
+        .expect("the fixture opens within the one entity policy");
     let mut output = PartOutput::new(CodecFormat::Inventor);
-    let result = super::stage(&ctx, &mut output, container.rse.revision_source.unwrap());
+    let result = super::stage(
+        &ctx,
+        &mut output,
+        container
+            .rse
+            .revision_source
+            .expect("the container holds a revision source"),
+    );
     let Err(CodecError::ResourceLimit(expected)) = result else {
         panic!("native insertion must refuse actual entity budget")
     };

@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-//! Actual compressed AmDc bodies, recoverable damage, and exact peer survival.
+//! Actual compressed `AmDc` bodies, recoverable damage, and exact peer survival.
 
 use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
 use cadmpeg_ir::source_fidelity::parts::PartOutput;
@@ -19,15 +19,16 @@ fn damaged_occurrence_body_has_one_home_and_its_readable_peer_is_exact() {
         (OCCURRENCE_TYPE, peer.clone()),
     ]);
     let arena = DecodeArena::new();
-    let (ctx, root) =
-        DecodeContext::from_root_bytes(&bytes, &arena, &DecodePolicy::service()).unwrap();
-    let mut container = InventorContainer::open(&ctx, root).unwrap();
+    let (ctx, root) = DecodeContext::from_root_bytes(&bytes, &arena, &DecodePolicy::service())
+        .expect("the fixture fits the service policy");
+    let mut container =
+        InventorContainer::open(&ctx, root).expect("the fixture opens as an inventor container");
     let segment = container
         .rse
         .segments
         .iter()
         .find(|s| s.kind == SegmentKind::AmDc)
-        .unwrap();
+        .expect("the container holds an am dc segment");
     let SegmentBulkState::Framed(bulk) = &segment.bulk else {
         panic!("real framed bulk")
     };
@@ -41,8 +42,8 @@ fn damaged_occurrence_body_has_one_home_and_its_readable_peer_is_exact() {
     let failed_occurrence = format!("inventor:assembly:occurrence#{token}-0");
     let good_wrapper = format!("inventor:rse:record#{token}-1");
     let good_occurrence = format!("inventor:assembly:occurrence#{token}-1");
-    let failed_body =
-        crate::records::source_admission::body(bulk.expanded, &table.records[0]).unwrap();
+    let failed_body = crate::records::source_admission::body(bulk.expanded, &table.records[0])
+        .expect("the first record frame holds a body");
     let failed_bytes = failed_body.window().to_vec();
     // Registry major18 legally has no extended record trailer.
     assert!(table
@@ -58,12 +59,12 @@ fn damaged_occurrence_body_has_one_home_and_its_readable_peer_is_exact() {
         &mut container.rse.source_parts,
         PartOutput::new(cadmpeg_ir::CodecFormat::Inventor),
     );
-    let inventory = inventory(&ctx, &container.rse, parts).unwrap();
+    let inventory = inventory(&ctx, &container.rse, parts).expect("the assembly inventory decodes");
     assert!(!inventory
         .parts
         .native()
         .namespace("inventor")
-        .unwrap()
+        .expect("the inventor namespace exists")
         .arenas()
         .contains_key("assembly_record_issues"));
     assert_eq!(inventory.occurrences.len(), 1);
@@ -71,10 +72,12 @@ fn damaged_occurrence_body_has_one_home_and_its_readable_peer_is_exact() {
     assert_eq!(inventory.occurrences[0].related_references, [0x8000_0008]);
     let (model, native, fidelity, losses) = inventory.parts.into_parts();
     assert_eq!(model.entity_count(), 0);
-    let namespace = native.namespace("inventor").unwrap();
+    let namespace = native
+        .namespace("inventor")
+        .expect("the inventor namespace exists");
     let occurrences = namespace
         .arena_as_for_decode::<AssemblyOccurrenceRecord>(&ctx, "assembly_occurrences")
-        .unwrap();
+        .expect("the occurrences arena holds occurrence records");
     assert_eq!(occurrences.len(), 1);
     assert_eq!(occurrences[0].id, good_occurrence);
     assert!(!occurrences
@@ -84,12 +87,14 @@ fn damaged_occurrence_body_has_one_home_and_its_readable_peer_is_exact() {
     assert_eq!(occurrences[0].related_references, [0x8000_0008]);
     let wrappers = namespace
         .arena_as_for_decode::<RseRecordRecord>(&ctx, "rse_records")
-        .unwrap();
+        .expect("the rse records arena holds rse records");
     assert_eq!(
         wrappers,
         [
-            RseRecordRecord::from_frame(token, &table.records[0]).unwrap(),
-            RseRecordRecord::from_frame(token, &table.records[1]).unwrap(),
+            RseRecordRecord::from_frame(token, &table.records[0])
+                .expect("the first record frame forms a wrapper"),
+            RseRecordRecord::from_frame(token, &table.records[1])
+                .expect("the second record frame forms a wrapper"),
         ]
     );
     assert_eq!(wrappers[0].id, failed_wrapper);
@@ -119,15 +124,16 @@ fn detached_or_foreign_payload_cannot_be_admitted_as_a_source_body() {
     let payload = occurrence_fixture(7, &[]);
     let bytes = assembly_envelope_fixture(&[(OCCURRENCE_TYPE, payload.clone())]);
     let arena = DecodeArena::new();
-    let (ctx, root) =
-        DecodeContext::from_root_bytes(&bytes, &arena, &DecodePolicy::service()).unwrap();
-    let mut container = InventorContainer::open(&ctx, root).unwrap();
+    let (ctx, root) = DecodeContext::from_root_bytes(&bytes, &arena, &DecodePolicy::service())
+        .expect("the fixture fits the service policy");
+    let mut container =
+        InventorContainer::open(&ctx, root).expect("the fixture opens as an inventor container");
     let segment = container
         .rse
         .segments
         .iter_mut()
         .find(|s| s.kind == SegmentKind::AmDc)
-        .unwrap();
+        .expect("the container holds an am dc segment");
     let SegmentBulkState::Framed(bulk) = &mut segment.bulk else {
         panic!("real bulk")
     };
@@ -138,7 +144,8 @@ fn detached_or_foreign_payload_cannot_be_admitted_as_a_source_body() {
     assert!(crate::records::source_admission::body(bulk.expanded, &table.records[0]).is_err());
     let foreign_arena = DecodeArena::new();
     let (_, foreign) =
-        DecodeContext::from_root_bytes(&payload, &foreign_arena, &DecodePolicy::service()).unwrap();
+        DecodeContext::from_root_bytes(&payload, &foreign_arena, &DecodePolicy::service())
+            .expect("the payload fits the service policy");
     table.records[0].payload = foreign;
     assert!(crate::records::source_admission::body(bulk.expanded, &table.records[0]).is_err());
 }
@@ -162,15 +169,16 @@ fn placement_parse_and_conversion_failures_share_the_helper_and_keep_the_exact_p
         (PLACEMENT_TYPE_CA, peer.clone()),
     ]);
     let arena = DecodeArena::new();
-    let (ctx, root) =
-        DecodeContext::from_root_bytes(&bytes, &arena, &DecodePolicy::service()).unwrap();
-    let mut container = InventorContainer::open(&ctx, root).unwrap();
+    let (ctx, root) = DecodeContext::from_root_bytes(&bytes, &arena, &DecodePolicy::service())
+        .expect("the fixture fits the service policy");
+    let mut container =
+        InventorContainer::open(&ctx, root).expect("the fixture opens as an inventor container");
     let segment = container
         .rse
         .segments
         .iter()
         .find(|s| s.kind == SegmentKind::AmGraphics)
-        .unwrap();
+        .expect("the container holds an am graphics segment");
     let token = segment.pair.token.as_str();
     let SegmentBulkState::Framed(bulk) = &segment.bulk else {
         panic!("actual framed bulk")
@@ -186,7 +194,7 @@ fn placement_parse_and_conversion_failures_share_the_helper_and_keep_the_exact_p
         .iter()
         .map(|record| {
             crate::records::source_admission::body(bulk.expanded, record)
-                .unwrap()
+                .expect("each record frame holds a body")
                 .window()
                 .to_vec()
         })
@@ -195,20 +203,22 @@ fn placement_parse_and_conversion_failures_share_the_helper_and_keep_the_exact_p
         &mut container.rse.source_parts,
         PartOutput::new(cadmpeg_ir::CodecFormat::Inventor),
     );
-    let inventory = inventory(&ctx, &container.rse, parts).unwrap();
+    let inventory = inventory(&ctx, &container.rse, parts).expect("the assembly inventory decodes");
     assert!(inventory.occurrences.is_empty());
     assert_eq!(inventory.placements.len(), 1);
     let expected = AssemblyPlacementRecord::try_from(AssemblyPlacementRecordWire::from_placement(
         &inventory.placements[0],
     ))
-    .unwrap();
+    .expect("the placement converts to a record");
     assert_eq!(expected.occurrence_id, 8);
     let (_, native, fidelity, losses) = inventory.parts.into_parts();
-    let namespace = native.namespace("inventor").unwrap();
+    let namespace = native
+        .namespace("inventor")
+        .expect("the inventor namespace exists");
     assert!(!namespace.arenas().contains_key("assembly_record_issues"));
     let placements = namespace
         .arena_as_for_decode::<AssemblyPlacementRecord>(&ctx, "assembly_placements")
-        .unwrap();
+        .expect("the placements arena holds placement records");
     assert_eq!(placements, [expected]);
     assert_eq!(
         placements[0].id,
@@ -228,13 +238,14 @@ fn placement_parse_and_conversion_failures_share_the_helper_and_keep_the_exact_p
     );
     let wrappers = namespace
         .arena_as_for_decode::<RseRecordRecord>(&ctx, "rse_records")
-        .unwrap();
+        .expect("the rse records arena holds rse records");
     assert_eq!(
         wrappers,
         table
             .records
             .iter()
-            .map(|record| RseRecordRecord::from_frame(token, record).unwrap())
+            .map(|record| RseRecordRecord::from_frame(token, record)
+                .expect("each record frame forms a wrapper"))
             .collect::<Vec<_>>()
     );
     assert_eq!(given_up_records(&fidelity).len(), 2);
@@ -250,7 +261,12 @@ fn placement_parse_and_conversion_failures_share_the_helper_and_keep_the_exact_p
     assert!(!namespace.arenas().contains_key("unknowns"));
     let retained = given_up_records(&fidelity)
         .iter()
-        .map(|record| record.data().unwrap().to_vec())
+        .map(|record| {
+            record
+                .data()
+                .expect("each given-up record retains its data")
+                .to_vec()
+        })
         .collect::<Vec<_>>();
     assert!(retained.contains(&source_bodies[0]));
     assert!(retained.contains(&source_bodies[1]));

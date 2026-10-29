@@ -330,7 +330,7 @@ fn schema_keeps_nullable_slots_and_exact_recursive_integer_bounds() {
         .unwrap();
     assert_eq!(
         unsigned["properties"]["value"]["minimum"].as_u64(),
-        Some(i64::MAX as u64 + 1)
+        Some(i64::MAX.unsigned_abs() + 1)
     );
     assert_eq!(
         unsigned["properties"]["value"]["maximum"].as_u64(),

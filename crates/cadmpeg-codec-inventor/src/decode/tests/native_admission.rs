@@ -727,7 +727,7 @@ fn nonfinite_assembly_placement_transform_is_rejected_at_parse() {
     assert!(!namespace.arenas().contains_key("assembly_record_issues"));
     assert!(namespace
         .arena_as::<AssemblyPlacementRecord>("assembly_placements")
-        .unwrap()
+        .expect("the placements arena holds placement records")
         .is_empty());
     let unreadable = decoded
         .body
@@ -761,13 +761,14 @@ fn rejected_placement_digest_records_its_source_and_keeps_later_placements() {
     assert_eq!(bad.segment_token, "segment");
     assert_eq!(bad.record_ordinal, 1);
     assert!(AssemblyPlacementRecord::try_from(bad)
-        .unwrap_err()
+        .expect_err("an invalid suffix digest is refused")
         .contains("suffix_sha256"));
     let mut wire = wire;
     wire["suffix_sha256"] = serde_json::json!("0".repeat(64));
     let good = serde_json::from_value(wire).expect("wire fixture");
     let arena = DecodeArena::new();
-    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service()).unwrap();
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service())
+        .expect("the empty source fits the service policy");
     stage_placement(&ctx, good).expect("later placement remains admitted");
 }
 
@@ -787,7 +788,7 @@ fn placement_wire(suffix_len: u64, suffix_sha256: &str) -> AssemblyPlacementReco
 fn empty_placement_suffix_becomes_an_issue() {
     let wire = placement_wire(0, &"0".repeat(64));
     assert!(AssemblyPlacementRecord::try_from(wire)
-        .unwrap_err()
+        .expect_err("an empty placement suffix is refused")
         .contains("suffix_len"));
 }
 
@@ -795,7 +796,7 @@ fn empty_placement_suffix_becomes_an_issue() {
 fn uppercase_placement_digest_becomes_an_issue() {
     let wire = placement_wire(48, &"A".repeat(64));
     assert!(AssemblyPlacementRecord::try_from(wire)
-        .unwrap_err()
+        .expect_err("an uppercase suffix digest is refused")
         .contains("suffix_sha256"));
 }
 

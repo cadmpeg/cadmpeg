@@ -36,7 +36,7 @@ fn typed_accessor_keeps_labels_distinct_and_visits_unlinked_entities() {
 fn empty_model_has_no_placeholder_projection() {
     let mut count = 0;
     visit_native_references(&crate::document::Model::default(), &mut |_, _, _, _| {
-        count += 1
+        count += 1;
     });
     assert_eq!(count, 0);
 }

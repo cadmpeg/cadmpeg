@@ -98,7 +98,7 @@ pub(crate) fn fixture_with_property_set_peers(first: &[u8], second: &[u8]) -> Ve
             if sector == 9 || sector == 17 {
                 END_OF_CHAIN
             } else {
-                u32::try_from(sector + 1).unwrap()
+                u32::try_from(sector + 1).expect("the fat sector index fits u32")
             },
         );
     }
@@ -391,15 +391,17 @@ fn primary_envelope_fixture_with_carrier_and_failures(
         declarations,
         carrier,
         design,
-        break_database_body,
-        break_metadata_body,
+        BodyBreaks {
+            database: break_database_body,
+            metadata: break_metadata_body,
+        },
         methods,
         &DESIGN_SEGMENT,
         base,
     )
 }
 
-/// Actual AmDc source metadata and compressed bodies for assembly controls.
+/// Actual `AmDc` source metadata and compressed bodies for assembly controls.
 pub(crate) fn assembly_envelope_fixture(records: &[([u8; 16], Vec<u8>)]) -> Vec<u8> {
     assembly_envelope(records, "AmDcSegment", "AmDcSegmentType")
 }
@@ -413,7 +415,7 @@ pub(crate) fn design_view_envelope_fixture(records: &[([u8; 16], Vec<u8>)]) -> V
 }
 
 pub(crate) fn presentation_envelope_fixture(
-    kind: crate::rse::SegmentKind,
+    kind: &crate::rse::SegmentKind,
     records: &[([u8; 16], Vec<u8>)],
 ) -> Vec<u8> {
     match kind {
@@ -441,20 +443,28 @@ fn assembly_envelope(
         EnvelopeDeclarations::default(),
         &kernel_carrier_fixture(&[]),
         records,
-        false,
-        false,
+        BodyBreaks {
+            database: false,
+            metadata: false,
+        },
         [1, 1],
         &identity,
         None,
     )
 }
 
+/// Which compressed bodies a fixture corrupts.
+#[derive(Clone, Copy)]
+struct BodyBreaks {
+    database: bool,
+    metadata: bool,
+}
+
 fn primary_envelope_with_segment(
     declarations: EnvelopeDeclarations,
     carrier: &[u8],
     design: &[([u8; 16], Vec<u8>)],
-    break_database_body: bool,
-    break_metadata_body: bool,
+    breaks: BodyBreaks,
     methods: [u8; 2],
     design_identity: &SegmentIdentity,
     base: Option<&BaseEnvelopeRecords>,
@@ -475,6 +485,10 @@ fn primary_envelope_with_segment(
     const END_OF_CHAIN: u32 = 0xffff_fffe;
     const FREE_SECTOR: u32 = 0xffff_ffff;
     const FAT_SECTOR: u32 = 0xffff_fffd;
+    let BodyBreaks {
+        database: break_database_body,
+        metadata: break_metadata_body,
+    } = breaks;
 
     let mut brep_records = vec![(CARRIER_TYPE_ID, carrier)];
     if let Some(base) = base {
@@ -1198,14 +1212,19 @@ pub(crate) fn primary_envelope_fixture_with_revisions(revisions: &[u8]) -> Vec<u
     assert!(revisions.len() <= MINI_SECTOR_SIZE);
     let mut file = primary_envelope_fixture();
     let arena = DecodeArena::new();
-    let (ctx, root) =
-        DecodeContext::from_root_bytes(&file, &arena, &DecodePolicy::service()).unwrap();
-    let snapshot = cadmpeg_container::compound::CompoundSnapshot::new(&ctx, root).unwrap();
-    let stream = snapshot.stream("RSeStorage/RSeDbRevisionInfo").unwrap();
+    let (ctx, root) = DecodeContext::from_root_bytes(&file, &arena, &DecodePolicy::service())
+        .expect("the fixture fits the service policy");
+    let snapshot = cadmpeg_container::compound::CompoundSnapshot::new(&ctx, root)
+        .expect("the fixture is a compound file");
+    let stream = snapshot
+        .stream("RSeStorage/RSeDbRevisionInfo")
+        .expect("the fixture holds the revision info stream");
     let directory = SECTOR_SIZE
         + cadmpeg_core::decode::index_from_u32(stream.id().directory_id()) * DIRECTORY_ENTRY_SIZE;
-    let root_mini_start = View::u32_le_at(&file, SECTOR_SIZE + STREAM_START).unwrap();
-    let mini_start = View::u32_le_at(&file, directory + STREAM_START).unwrap();
+    let root_mini_start = View::u32_le_at(&file, SECTOR_SIZE + STREAM_START)
+        .expect("the root entry carries a mini stream start");
+    let mini_start = View::u32_le_at(&file, directory + STREAM_START)
+        .expect("the revision stream entry carries a start");
     let physical = (cadmpeg_core::decode::index_from_u32(root_mini_start) + 1) * SECTOR_SIZE
         + cadmpeg_core::decode::index_from_u32(mini_start) * MINI_SECTOR_SIZE;
     drop(snapshot);

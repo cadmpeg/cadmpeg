@@ -13,7 +13,11 @@ fn padded(mut bytes: Vec<u8>) -> Vec<u8> {
 fn text(value: &str) -> Vec<u8> {
     let units = value.encode_utf16().chain([0]).collect::<Vec<_>>();
     let mut bytes = 31_u32.to_le_bytes().to_vec();
-    bytes.extend(u32::try_from(units.len()).unwrap().to_le_bytes());
+    bytes.extend(
+        u32::try_from(units.len())
+            .expect("the text unit count fits u32")
+            .to_le_bytes(),
+    );
     for unit in units {
         bytes.extend(unit.to_le_bytes());
     }
@@ -25,7 +29,11 @@ fn source() -> Vec<u8> {
     for (id, name) in [(2_u32, "CustomName"), (3, "CustomCount")] {
         let units = name.encode_utf16().chain([0]).collect::<Vec<_>>();
         dictionary.extend(id.to_le_bytes());
-        dictionary.extend(u32::try_from(units.len()).unwrap().to_le_bytes());
+        dictionary.extend(
+            u32::try_from(units.len())
+                .expect("the name unit count fits u32")
+                .to_le_bytes(),
+        );
         for unit in units {
             dictionary.extend(unit.to_le_bytes());
         }
@@ -47,14 +55,18 @@ fn source() -> Vec<u8> {
         (3, [3_i32.to_le_bytes(), (-17_i32).to_le_bytes()].concat()),
     ];
     let mut section = vec![0; 8 + properties.len() * 8];
-    section[4..8].copy_from_slice(&u32::try_from(properties.len()).unwrap().to_le_bytes());
+    section[4..8].copy_from_slice(
+        &u32::try_from(properties.len())
+            .expect("the property count fits u32")
+            .to_le_bytes(),
+    );
     for (index, (id, value)) in properties.iter().enumerate() {
         section[8 + index * 8..12 + index * 8].copy_from_slice(&id.to_le_bytes());
-        let offset = u32::try_from(section.len()).unwrap();
+        let offset = u32::try_from(section.len()).expect("the value offset fits u32");
         section[12 + index * 8..16 + index * 8].copy_from_slice(&offset.to_le_bytes());
         section.extend(value);
     }
-    let length = u32::try_from(section.len()).unwrap();
+    let length = u32::try_from(section.len()).expect("the section size fits u32");
     section[..4].copy_from_slice(&length.to_le_bytes());
     let mut stream = vec![0; 48];
     stream[..2].copy_from_slice(&0xfffe_u16.to_le_bytes());
@@ -72,14 +84,20 @@ fn decode() -> cadmpeg_ir::DecodeResult {
             &mut std::io::Cursor::new(source()),
             &DecodeOptions::default(),
         )
-        .unwrap()
+        .expect("the property set fixture decodes")
 }
 
 #[test]
 fn decoded_iproperties_keep_exact_native_values_and_each_neutral_attribute_owns_its_native_ref() {
     let decoded = decode();
-    let native = decoded.ir().native.namespace("inventor").unwrap();
-    let properties = native.arena_as::<PropertyRecord>("properties").unwrap();
+    let native = decoded
+        .ir()
+        .native
+        .namespace("inventor")
+        .expect("the inventor namespace exists");
+    let properties = native
+        .arena_as::<PropertyRecord>("properties")
+        .expect("the properties arena holds property records");
     assert_eq!(properties.len(), 8);
     assert_eq!(decoded.ir().model.attributes.len(), 4);
     let mut links = std::collections::BTreeSet::new();
@@ -92,7 +110,7 @@ fn decoded_iproperties_keep_exact_native_values_and_each_neutral_attribute_owns_
         let property = properties
             .iter()
             .find(|property| property.id == link)
-            .unwrap();
+            .expect("each attribute links to a property record");
         assert_eq!(property.name.as_deref(), Some(attribute.name.as_str()));
         match attribute.name.as_str() {
             "CustomName" => {
@@ -118,7 +136,7 @@ fn decoded_iproperties_keep_exact_native_values_and_each_neutral_attribute_owns_
         }
     }
     for record in &native.arenas()["properties"] {
-        let fields = record.fields().unwrap();
+        let fields = record.fields().expect("each property record holds fields");
         assert!(!fields.contains_key("neutral_attribute"));
         assert!(fields.contains_key("name"));
         assert!(fields.contains_key("scalar_value"));
@@ -136,18 +154,23 @@ fn source_free_native_property_admission_does_not_depend_on_the_neutral_attribut
         &DecodePolicy::service(),
         cadmpeg_core::decode::DecodeDepth::Full,
     );
-    let findings = InventorCodec.validate_native(&ctx, &ir, None).unwrap();
+    let findings = InventorCodec
+        .validate_native(&ctx, &ir, None)
+        .expect("the native validation runs");
     ir.model.attributes[0].values = vec![Some(AttributeValue::String(
         "Edited current attribute".into(),
     ))];
     assert_eq!(
-        InventorCodec.validate_native(&ctx, &ir, None).unwrap(),
+        InventorCodec
+            .validate_native(&ctx, &ir, None)
+            .expect("the native validation runs after the attribute edit"),
         findings
     );
     assert_eq!(ir.native, before);
     let attribute_id = ir.model.attributes[0].id.to_string();
     ir.model.attributes[0].native_ref = Some("inventor:property:missing#0".into());
-    let checked = cadmpeg_ir::validate_neutral(&ir, Vec::new()).unwrap();
+    let checked =
+        cadmpeg_ir::validate_neutral(&ir, Vec::new()).expect("the neutral validation runs");
     assert!(checked.findings.iter().any(|finding| {
         finding.entity.as_deref() == Some(attribute_id.as_str())
             && finding.message == "native_ref `inventor:property:missing#0` does not resolve"
@@ -163,25 +186,30 @@ fn malformed_kept_native_property_fields_still_fail_typed_native_admission() {
         .namespace_mut("inventor")
         .arenas_mut()
         .get_mut("properties")
-        .unwrap();
+        .expect("the inventor namespace holds a properties arena");
     let record = records
         .iter_mut()
-        .find(|record| record.fields().unwrap()["name"] == "CustomName")
-        .unwrap();
-    let mut fields = record.fields().unwrap();
+        .find(|record| {
+            record.fields().expect("each property record holds fields")["name"] == "CustomName"
+        })
+        .expect("a property record is named CustomName");
+    let mut fields = record.fields().expect("the CustomName record holds fields");
     fields.insert("name".into(), serde_json::json!(17));
     *record = cadmpeg_ir::native::NativeRecord::new(
-        cadmpeg_ir::ids::Identity::try_from(record.id()).unwrap(),
+        cadmpeg_ir::ids::Identity::try_from(record.id())
+            .expect("the record id is a valid identity"),
         fields,
     )
-    .unwrap();
+    .expect("the edited fields form a native record");
     let arena = DecodeArena::new();
     let ctx = DecodeContext::new(
         &arena,
         &DecodePolicy::service(),
         cadmpeg_core::decode::DecodeDepth::Full,
     );
-    let findings = InventorCodec.validate_native(&ctx, &ir, None).unwrap();
+    let findings = InventorCodec
+        .validate_native(&ctx, &ir, None)
+        .expect("the native validation runs");
     assert!(findings.iter().any(|finding| finding
         .message
         .starts_with("Inventor native arenas are invalid:")));

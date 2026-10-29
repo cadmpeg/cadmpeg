@@ -71,7 +71,7 @@ fn geometry_model() -> crate::CadIr {
             )
             .unwrap(),
         ),
-        metadata: Default::default(),
+        metadata: crate::geometry::pcurve::PcurveMetadata::default(),
     });
     ir.model.subds.push(crate::subd::SubdSurface {
         id: "test:model:subd#one".try_into().unwrap(),
