@@ -18,10 +18,7 @@ fn semantic_writer_splices_two_renames_in_one_lane_at_the_offsets_the_first_move
     assert_eq!(
         lane.names
             .iter()
-            .map(|name| (
-                name.offset.expect("source name offset"),
-                name.value.as_str()
-            ))
+            .map(|name| (name.offset, name.value.as_str()))
             .collect::<Vec<_>>(),
         vec![(54, "Sketch1"), (74, "Boss-Extrude1"), (124, "D1")]
     );
@@ -46,8 +43,8 @@ fn semantic_writer_splices_two_renames_in_one_lane_at_the_offsets_the_first_move
         lane,
         &native.feature_histories,
         &renames,
-        crate::writer::ClassLayouts::Source(decoded.source_fidelity()),
-        &crate::resolved_features::class_sources::ClassSources::default(),
+        crate::writer::ClassLayouts::Source,
+        &std::collections::BTreeSet::new(),
     )
     .unwrap()
     .0;
@@ -56,10 +53,7 @@ fn semantic_writer_splices_two_renames_in_one_lane_at_the_offsets_the_first_move
     assert_eq!(
         written
             .iter()
-            .map(|name| (
-                name.offset.expect("source name offset"),
-                name.value.as_str()
-            ))
+            .map(|name| (name.offset, name.value.as_str()))
             .collect::<Vec<_>>(),
         vec![
             (54, "RenamedSketchLong1"),
@@ -70,7 +64,6 @@ fn semantic_writer_splices_two_renames_in_one_lane_at_the_offsets_the_first_move
     assert_eq!(
         crate::resolved_features::scalars::named_scalars(&payload, &lane.id, &written)
             .unwrap()
-            .records
             .len(),
         scalars
     );

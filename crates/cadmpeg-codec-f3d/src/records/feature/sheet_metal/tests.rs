@@ -95,10 +95,6 @@ fn hem_operand_indices_derive_from_groups_and_reject_wire_disagreement() {
     }
     let mut operation: DesignHemOperation = serde_json::from_value(wire.clone()).unwrap();
     assert_eq!(serde_json::to_value(&operation).unwrap(), wire);
-    operation = crate::records::feature::test_support::assert_located_at(
-        operation,
-        &[("bend_radius_offset", 100)],
-    );
     for (group, operand) in [
         ("edge_group_record_index", "edge_operand_record_index"),
         (

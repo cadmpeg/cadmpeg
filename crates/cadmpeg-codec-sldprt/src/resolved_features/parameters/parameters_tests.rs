@@ -11,7 +11,6 @@ use crate::records::{
     FeatureContent, FeatureHistory, FeatureInputClass, FeatureInputLane, FeatureInputName,
     FeatureInputScalar, FeatureInputScalarRole,
 };
-use crate::resolved_features::class_sources::ClassSources;
 use std::collections::BTreeMap;
 
 #[test]
@@ -230,7 +229,7 @@ fn explicit_sketch_dimension_scalar_preserves_display_outside_object_range() {
                 id: "feature-name".into(),
                 parent: "lane".into(),
                 ordinal: 0,
-                offset: Some(0),
+                offset: 0,
                 object_id: ObjectId::from_value(1738),
                 value: "Sketch".into(),
             },
@@ -240,7 +239,7 @@ fn explicit_sketch_dimension_scalar_preserves_display_outside_object_range() {
                 id: "later-feature-name".into(),
                 parent: "lane".into(),
                 ordinal: 1,
-                offset: Some(64),
+                offset: 64,
                 object_id: ObjectId::from_value(2000),
                 value: "Later".into(),
             },
@@ -250,7 +249,7 @@ fn explicit_sketch_dimension_scalar_preserves_display_outside_object_range() {
                 id: "d1-name".into(),
                 parent: "lane".into(),
                 ordinal: 2,
-                offset: Some(100),
+                offset: 100,
                 object_id: None,
                 value: "D1".into(),
             },
@@ -261,7 +260,7 @@ fn explicit_sketch_dimension_scalar_preserves_display_outside_object_range() {
             parent: "lane".into(),
             feature_ref: Some("feature".into()),
             ordinal: 0,
-            offset: Some(128),
+            offset: 128,
             object_id: 1739,
             name: "d1-name".into(),
             value: cadmpeg_ir::scalar::FiniteReal::new(0.007_137_4).expect("finite test scalar"),
@@ -277,23 +276,12 @@ fn explicit_sketch_dimension_scalar_preserves_display_outside_object_range() {
         references: Vec::new(),
         sketch_entities: Vec::new(),
     };
-    enrich_history_parameters(
-        &crate::test_support::native::class_sources(&[&lane]),
-        &mut histories,
-        [&lane],
-        true,
-    );
+    enrich_history_parameters(&mut histories, [&lane], true);
     assert_eq!(
         histories[0].features[0].parameters["D1"],
         "<MOD-DIAM>7.1374"
     );
-    // A semantic native load has no source offsets. Two unavailable offsets
-    // are not evidence that this scalar has the value-only wire framing.
-    let mut semantic_lane = lane.clone();
-    for name in &mut semantic_lane.names {
-        name.offset = None;
-    }
-    semantic_lane.scalars[0].offset = None;
+    let semantic_lane = lane.clone();
     histories[0].features[0].dimension_properties.insert(
         "D1".to_owned(),
         BTreeMap::from([(
@@ -301,12 +289,7 @@ fn explicit_sketch_dimension_scalar_preserves_display_outside_object_range() {
             "<MOD-DIAM>25".into(),
         )]),
     );
-    enrich_history_parameters(
-        &crate::test_support::native::class_sources(&[&semantic_lane]),
-        &mut histories,
-        [&semantic_lane],
-        true,
-    );
+    enrich_history_parameters(&mut histories, [&semantic_lane], true);
     assert_eq!(
         histories[0].features[0].dimension_properties["D1"]["Value"],
         "<MOD-DIAM>7.1374"
@@ -355,20 +338,19 @@ fn parameter_indexes_match_the_class_name_and_scalar_scans() {
     for _ in 0..256 {
         let declared = (0..next(6))
             .map(|ordinal| {
+                let position = next(40);
                 let class = FeatureInputClass {
                     feature_ref: None,
                     id: format!("class-{ordinal}"),
                     parent: "lane".into(),
                     ordinal: u32::try_from(ordinal).unwrap(),
                     sequence: u32::try_from(ordinal).unwrap(),
+                    offset: position,
                     name: "moLengthParameter_c".into(),
                 };
-                (class, next(40))
+                (class, position)
             })
             .collect::<Vec<_>>();
-        let class_sources = ClassSources::from_positions(
-            declared.iter().map(|(class, position)| (class, *position)),
-        );
         lane.classes = declared.into_iter().map(|(class, _)| class).collect();
         lane.names = (0..next(8))
             .map(|ordinal| FeatureInputName {
@@ -377,7 +359,7 @@ fn parameter_indexes_match_the_class_name_and_scalar_scans() {
                 parent: "lane".into(),
                 ordinal: u32::try_from(ordinal).unwrap(),
                 sequence: u32::try_from(ordinal).unwrap(),
-                offset: Some(next(40)),
+                offset: next(40),
                 object_id: None,
                 value: "D1".into(),
             })
@@ -390,7 +372,7 @@ fn parameter_indexes_match_the_class_name_and_scalar_scans() {
                     .then(|| features[usize::try_from(next(3)).unwrap()].to_owned()),
                 ordinal: u32::try_from(ordinal).unwrap(),
                 sequence: u32::try_from(ordinal).unwrap(),
-                offset: Some(next(40)),
+                offset: next(40),
                 object_id: 0,
                 name: "name".into(),
                 value: cadmpeg_ir::scalar::FiniteReal::new(1.0).unwrap(),
@@ -400,19 +382,13 @@ fn parameter_indexes_match_the_class_name_and_scalar_scans() {
             .collect();
 
         for class in &mut lane.classes {
-            class.sequence = u32::try_from(
-                class_sources
-                    .position(class)
-                    .expect("fixture source position"),
-            )
-            .unwrap();
+            class.sequence = u32::try_from(class.offset).unwrap();
         }
         for name in &mut lane.names {
-            name.sequence = u32::try_from(name.offset.expect("fixture source position")).unwrap();
+            name.sequence = u32::try_from(name.offset).unwrap();
         }
         for scalar in &mut lane.scalars {
-            scalar.sequence =
-                u32::try_from(scalar.offset.expect("fixture source position")).unwrap();
+            scalar.sequence = u32::try_from(scalar.offset).unwrap();
         }
 
         let declared = DeclaredParameters::new(&lane);
@@ -420,12 +396,11 @@ fn parameter_indexes_match_the_class_name_and_scalar_scans() {
             let expected = lane
                 .classes
                 .iter()
-                .filter(|class| class_sources.position(class) < name.offset)
-                .max_by_key(|class| class_sources.position(class))
+                .filter(|class| class.offset < name.offset)
+                .max_by_key(|class| class.offset)
                 .filter(|class| {
                     !lane.names.iter().any(|intervening| {
-                        intervening.offset > class_sources.position(class)
-                            && intervening.offset < name.offset
+                        intervening.offset > class.offset && intervening.offset < name.offset
                     })
                 });
             assert_eq!(

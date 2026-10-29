@@ -30,13 +30,13 @@ Both files were decoded with the service resource profile on 2026-08-15. Source 
 ## Machine-checkable gates
 
 - L0: bounded detection, document kind, Fixed ASCII framing, version, and Global metadata assertions.
-- L1: section navigation, entity census, external references, named undecoded content, reference findings, and full physical byte coverage.
+- L1: section navigation, entity census, external references, named undecoded content, and reference findings.
 - L2: typed point, analytic, spline, NURBS, and procedural-carrier evaluation with units and placement.
 - L3: validated body-to-vertex explicit topology and validated face-local sheet topology without inferred adjacency.
 - L4: the accepted inapplicability decision is present in the generated profile.
 - L5: every admitted geometry/topology matrix row has a passing decoder, focused fixture, carrier assertion, and appearance assertion.
 - L6: the accepted inapplicability decision is present in the generated profile.
 - L7: typed definition, occurrence, group, placement, external-reference, and persistent-identity graphs pass; the accepted mates inapplicability decision is present.
-- L8: every admitted presentation and application row is typed or deliberately retained with identity, every relationship validates, and each fixture ledger covers exactly the source length with zero gaps and overlaps.
+- L8: every admitted presentation and application row is typed or deliberately retained with identity and every relationship validates.
 
 The independent FreeCAD gate passed on the same profile in [GitHub Actions run 31923613047](https://github.com/cadmpeg/cadmpeg/actions/runs/31923613047) for [pull request 129](https://github.com/cadmpeg/cadmpeg/pull/129). The exact manifest passed 11 of 11 files with its topology and measure assertions. The broad writer pass imported 37 of 37 files with valid shape-bearing objects, including edited point outputs at `(11, 22, 33)` for targets 5.1, 5.2, and 5.3. Artifact `iges-freecad-report-31923613047` (ID `9257189947`) retains both JSON reports. Their SHA-256 digests are `526a203bbd1435a647c469ff0380c42fad84181272f949b2fb0a0b51248d6cc9` for the exact report and `e7fe30ac62f2b834fe54a799c2d6c0e6bf19a7bc305701a924a44a52c2a15881` for the broad report.

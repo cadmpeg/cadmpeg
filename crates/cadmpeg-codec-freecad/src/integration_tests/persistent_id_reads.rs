@@ -1,15 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Kept declaration IDs read their actual source without crediting ignored attributes.
 
-use cadmpeg_core::decode::u64_from_index;
 use cadmpeg_ir::{Codec, DecodeOptions};
 use std::io::Cursor;
-use std::ops::Range;
-
-fn value_range(document: &str, name: &str, raw: &str) -> Range<u64> {
-    let start = document.find(&format!("{name}='{raw}'")).unwrap() + name.len() + "='".len();
-    u64_from_index(start)..u64_from_index(start + raw.len())
-}
 
 fn check_id(raw: Option<&str>, expected: Option<i64>) {
     let id = raw.map_or_else(String::new, |value| format!(" id='{value}'"));
@@ -33,45 +26,6 @@ fn check_id(raw: Option<&str>, expected: Option<i64>) {
     };
     assert_eq!(object.persistent_id, expected);
     assert_eq!(object.attributes["Vendor"], "opaque-extra");
-    let fidelity = decoded.source_fidelity();
-    let layout = &fidelity.record_layout()[object.id()];
-    assert_eq!(
-        layout.offset(),
-        u64_from_index(document.find(&declaration).unwrap())
-    );
-    assert_eq!(layout.byte_len(), u64_from_index(declaration.len()));
-    let data_start = document.find(data).unwrap();
-    assert_eq!(layout.payloads()["raw_xml"].as_ref(), data.as_bytes());
-    let mut expected_reads = vec![
-        value_range(&document, "name", "Owner"),
-        value_range(&document, "type", "PartDesign::Feature"),
-    ];
-    if expected.is_some() {
-        expected_reads.push(value_range(&document, "id", raw.unwrap()));
-    }
-    let data_name = data_start + "<Object name='".len();
-    expected_reads.push(u64_from_index(data_name)..u64_from_index(data_name + "Owner".len()));
-    assert_eq!(layout.reads()[layout.stream()], expected_reads);
-    let unread = fidelity.b1_spans()[layout.stream()].spans();
-    let vendor = value_range(&document, "Vendor", "opaque-extra");
-    assert!(unread.iter().any(|span| {
-        let range = span.range();
-        range.start <= vendor.start && vendor.end <= range.end
-    }));
-    if let Some(raw) = raw {
-        let id = value_range(&document, "id", raw);
-        if expected.is_some() {
-            assert!(!unread.iter().any(|span| {
-                let range = span.range();
-                range.start < id.end && id.start < range.end
-            }));
-        } else {
-            assert!(unread.iter().any(|span| {
-                let range = span.range();
-                range.start <= id.start && id.end <= range.end
-            }));
-        }
-    }
 }
 
 #[test]

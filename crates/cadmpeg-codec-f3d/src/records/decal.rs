@@ -136,21 +136,6 @@ impl DesignDecalAsset {
     fn name_record_index(&self) -> u32 {
         self.record_index + 1
     }
-    fn name_byte_offset(&self) -> Option<u64> {
-        self.byte_offset?.checked_add(Self::primary_frame_length())
-    }
-    fn entity_reference_offset(&self) -> Option<u64> {
-        self.byte_offset?.checked_add(
-            u64_from_index(
-                crate::layout::design_decal_image_asset_record::DESIGN_ENTITY_SUFFIX_REFERENCE,
-            ) + 1,
-        )
-    }
-    fn name_offset(&self) -> Option<u64> {
-        self.name_byte_offset()?.checked_add(u64_from_index(
-            crate::layout::design_decal_image_name_prefix::LEN,
-        ))
-    }
 }
 
 /// Typed image and target binding owned by one Design `Decal` scope.
@@ -209,44 +194,6 @@ impl DesignDecalImage {
     }
     pub(crate) fn scope_record_index(&self) -> u32 {
         self.scope.value
-    }
-    pub(crate) fn scope_byte_offset(&self) -> Option<u64> {
-        self.scope.offset
-    }
-    fn asset_reference_offset(&self) -> Option<u64> {
-        self.scope.offset?.checked_add(
-            u64_from_index(crate::layout::design_decal_scope_prefix::ASSET_REFERENCE) + 1,
-        )
-    }
-    fn mapping_mode_offset(&self) -> Option<u64> {
-        self.scope.offset?.checked_add(u64_from_index(
-            crate::layout::design_decal_scope_prefix::MAPPING_MODE,
-        ))
-    }
-    fn target_group_reference_offset(&self) -> Option<u64> {
-        self.scope.offset?.checked_add(
-            u64_from_index(crate::layout::design_decal_scope_prefix::TARGET_GROUP_REFERENCE) + 1,
-        )
-    }
-    /// The source offsets of a decoded image, as the `record_layout`
-    /// pointers of its capture.
-    pub(crate) fn source_offsets(&self) -> [(&'static str, Option<u64>); 8] {
-        [
-            ("scope_byte_offset", self.scope_byte_offset()),
-            ("asset_reference_offset", self.asset_reference_offset()),
-            ("mapping_mode_offset", self.mapping_mode_offset()),
-            (
-                "target_group_reference_offset",
-                self.target_group_reference_offset(),
-            ),
-            ("asset_byte_offset", self.asset.byte_offset),
-            (
-                "asset_entity_reference_offset",
-                self.asset.entity_reference_offset(),
-            ),
-            ("name_byte_offset", self.asset.name_byte_offset()),
-            ("asset_name_offset", self.asset.name_offset()),
-        ]
     }
 }
 

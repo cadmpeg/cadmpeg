@@ -183,8 +183,6 @@ pub(crate) struct Properties {
 /// Revision-history property.
 #[derive(Debug, Clone)]
 pub(crate) struct RevisionHistory {
-    /// Source range.
-    pub(crate) source: SourceRange,
     /// Creator.
     pub(crate) created_by: String,
     /// Creation time.
@@ -200,8 +198,6 @@ pub(crate) struct RevisionHistory {
 /// Notes property.
 #[derive(Debug, Clone)]
 pub(crate) struct Notes {
-    /// Source range.
-    pub(crate) source: SourceRange,
     /// HTML flag.
     pub(crate) html: bool,
     /// Text.
@@ -217,8 +213,6 @@ pub(crate) struct Notes {
 /// Application property.
 #[derive(Debug, Clone)]
 pub(crate) struct Application {
-    /// Source range.
-    pub(crate) source: SourceRange,
     /// Application name.
     pub(crate) name: String,
     /// Application URL.
@@ -1228,9 +1222,6 @@ fn parse_revision(
         ));
     }
     let value = RevisionHistory {
-        source: SourceRange {
-            range: record.range.clone(),
-        },
         created_by: utf16_retained(ctx, &mut reader, "Rhino revision creator")?,
         created: times(&mut reader)?,
         last_edited_by: utf16_retained(ctx, &mut reader, "Rhino revision editor")?,
@@ -1260,9 +1251,6 @@ fn parse_notes(
     let rectangle = [reader.i32()?, reader.i32()?, reader.i32()?, reader.i32()?];
     let locked = version.1 >= 1 && reader.bool()?;
     let value = Notes {
-        source: SourceRange {
-            range: record.range.clone(),
-        },
         html,
         text,
         visible,
@@ -1281,9 +1269,6 @@ fn parse_application(
     let mut reader = BoundedReader::new(data, record.body().start, record.body().end)?;
     packed(&mut reader)?;
     let value = Application {
-        source: SourceRange {
-            range: record.range.clone(),
-        },
         name: utf16_retained(ctx, &mut reader, "Rhino application name")?,
         url: utf16_retained(ctx, &mut reader, "Rhino application URL")?,
         details: utf16_retained(ctx, &mut reader, "Rhino application details")?,

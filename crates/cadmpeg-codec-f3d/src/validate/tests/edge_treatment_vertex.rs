@@ -82,21 +82,10 @@ fn vertex_recipe_valid_at(recipe_offset: u64) -> bool {
         };
         let ctx = super::super::Ctx::new(&ir, &native, decode);
         super::super::valid_vertex_recipe(&ctx, &scope, stream, 100, &vertex)
-            && super::super::source_layout::scopes::vertex_recipe_layout_holds(&ctx, &vertex)
     })
 }
 
 #[test]
 fn vertex_recipe_preserves_representable_program_layout() {
     assert!(vertex_recipe_valid_at(1_047));
-}
-
-#[test]
-fn vertex_recipe_rejects_overflowed_program_origin() {
-    assert!(!vertex_recipe_valid_at(u64::MAX - 17));
-}
-
-#[test]
-fn vertex_recipe_rejects_overflowed_program_extent() {
-    assert!(!vertex_recipe_valid_at(u64::MAX - 20));
 }

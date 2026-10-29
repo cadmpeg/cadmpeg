@@ -101,10 +101,6 @@ fn segment_base_guid_preserves_absent_empty_and_named_content() {
             value.filter(|value| !value.is_empty())
         );
         assert_eq!(serde_json::to_value(record).unwrap(), wire);
-        wire["base_type_guid_offset"] = serde_json::json!(44);
-        assert!(
-            serde_json::from_value::<crate::records::entity_header::SegmentType>(wire).is_err()
-        );
     }
 }
 
@@ -525,10 +521,6 @@ fn construction_recipe_record_index_does_not_require_a_location() {
             .record_index
             .is_none_or(|record| record.offset.is_none()));
         assert_eq!(serde_json::to_value(recipe).unwrap(), wire);
-        wire["record_index_offset"] = serde_json::json!(64);
-        assert!(
-            serde_json::from_value::<crate::records::recipes::ConstructionRecipe>(wire).is_err()
-        );
     }
 }
 
@@ -596,22 +588,6 @@ fn companion_timestamp_preserves_wire_and_rejects_zero() {
     assert_eq!(serde_json::to_string(&source).unwrap(), wire);
     let companion: DesignParameterCompanion = serde_json::from_str(wire).unwrap();
     assert_eq!(serde_json::to_string(&companion).unwrap(), wire);
-    // The source positions are `record_layout` pointers of the companion
-    // capture, not metadata.
-    assert_eq!(
-        source.source_offsets(),
-        [
-            ("byte_offset", Some(0)),
-            ("timestamp_micros_offset", Some(42))
-        ]
-    );
-    assert_eq!(
-        source.payload_source_extent(),
-        [
-            ("payload_byte_offset", Some(58)),
-            ("payload_byte_length", Some(0))
-        ]
-    );
     let native = crate::native::F3dNative {
         design_parameter_companions: vec![source.clone()],
         ..Default::default()
@@ -745,15 +721,6 @@ fn sketch_entity_identity_derives_suffix_without_changing_its_spelling() {
         paired_byte_offset: 40,
     })
     .expect("valid source profile ID");
-    let pointers = crate::records::source_offsets::collect(&mut source.clone());
-    for (field, offset) in [
-        ("byte_offset", 10),
-        ("asset_id_offset", 20),
-        ("entity_reference_offset", 30),
-        ("paired_byte_offset", 40),
-    ] {
-        assert_eq!(pointers[field], offset);
-    }
     let wire = serde_json::json!({
         "scope_reference_ordinal": 0, "record_index": 1,
         "class_tag": "300", "asset_id": "0a1b2c3d-4e5f-4a6b-8c7d-9e0f1a2b3c4d",
@@ -1449,7 +1416,7 @@ fn empty_reference_runs_have_one_representation() {
         )
         .unwrap(),
     };
-    let wire = r#"{"id":"header","entity_id":"Sketch_7","class_tag":"256","module":"MSketch","reference_indices":[]}"#;
+    let wire = r#"{"id":"header","entity_id":"Sketch_7","class_tag":"256","module":"MSketch","record_reference_offset":20,"reference_indices":[]}"#;
     assert_eq!(serde_json::to_string(&header).unwrap(), wire);
     assert!(header.content_eq(
         &serde_json::from_str::<crate::records::entity_header::DesignEntityHeader>(wire).unwrap()

@@ -728,7 +728,7 @@ fn transfers_ordered_loft_sections_and_subtractive_pipe_path() {
     assert_eq!(compatibility_properties.len(), 1);
     assert_eq!(compatibility_properties[0].type_name, "App::PropertyBool");
     assert!(
-        std::str::from_utf8(crate::test_support::source_fidelity::bytes(
+        std::str::from_utf8(&crate::test_support::source_fidelity::bytes(
             result.source_fidelity(),
             &compatibility_properties[0].id,
         ))

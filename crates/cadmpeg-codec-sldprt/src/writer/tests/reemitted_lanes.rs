@@ -53,7 +53,7 @@ fn a_reemitted_lane_keeps_a_reclassified_markers_code() {
         &[],
         &[],
         crate::writer::ClassLayouts::Authored,
-        &crate::resolved_features::class_sources::ClassSources::default(),
+        &std::collections::BTreeSet::new(),
     )
     .map(|(payload, _)| payload)
     .unwrap();
@@ -77,7 +77,7 @@ fn a_reemitted_lane_keeps_unchanged_coordinates_in_their_layout() {
     let coordinates =
         crate::resolved_features::markers::marker_coordinates(&payload, 150).expect("coordinates");
     assert_eq!(&payload[150 + 58..150 + 66], &coordinates[0].to_le_bytes());
-    let (staged, _) = crate::resolved_features::write_prepare::generated_native_lane(
+    let staged = crate::resolved_features::write_prepare::generated_native_lane(
         &[],
         &lane.id,
         lane.configuration.clone(),
@@ -95,7 +95,7 @@ fn a_reemitted_lane_keeps_unchanged_coordinates_in_their_layout() {
         &[],
         &[],
         crate::writer::ClassLayouts::Authored,
-        &crate::resolved_features::class_sources::ClassSources::default(),
+        &std::collections::BTreeSet::new(),
     )
     .map(|(payload, _)| payload)
     .unwrap();
@@ -110,7 +110,7 @@ fn a_reemitted_lane_keeps_unchanged_coordinates_in_their_layout() {
         &[],
         &[],
         crate::writer::ClassLayouts::Authored,
-        &crate::resolved_features::class_sources::ClassSources::default(),
+        &std::collections::BTreeSet::new(),
     )
     .map(|(payload, _)| payload)
     .unwrap_err();

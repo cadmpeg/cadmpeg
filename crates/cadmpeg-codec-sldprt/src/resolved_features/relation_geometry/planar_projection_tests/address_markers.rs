@@ -27,7 +27,7 @@ fn project_compact_operand_markers_with_policy(policy: &DecodePolicy) -> Result<
     lane.relation_instances[0].family = FeatureInputRelationFamily::PointPointDistance;
     lane.relation_instances[0].operands = (0u16..2)
         .map(|index| FeatureInputOperand {
-            offset: Some(u64::from(index)),
+            offset: u64::from(index),
             reference_ref: format!("reference-{index}"),
             kind: FeatureInputOperandKind::D6,
             entity_index: index,

@@ -8,9 +8,9 @@ note = """
 FCStd is a ZIP of XML plus embedded OCC B-Rep and application side entries. The
 XML layers have no byte layout, but four side entries do, and those are tabled
 here: the mesh-kernel record, the point-kernel record, the packed-colour list,
-and the link-array element list (§11, §9).
+and the link-array element list (§10, §8).
 
-The §11 side entries state that both integer byte orders are accepted for the
+The §10 side entries state that both integer byte orders are accepted for the
 mesh record when its magic and version agree; every other stated width in these
 records is little-endian.
 """
@@ -19,7 +19,7 @@ records is little-endian.
 name = "mesh_kernel_side_entry_header"
 parsed_by = "crates/cadmpeg-codec-freecad/src/application_geometry.rs"
 kind = "byte"
-section = "11"
+section = "10"
 anchor = "The current typed binary record begins with the 32-bit magic `a0b0c0d0`, the 32-bit version `00010000`, and a 256-byte information field."
 size = 264
 endianness = "unstated"
@@ -57,7 +57,7 @@ anchor = "and a 256-byte information field"
 name = "mesh_facet"
 parsed_by = "crates/cadmpeg-codec-freecad/src/application_geometry.rs"
 kind = "byte"
-section = "11"
+section = "10"
 anchor = "Each facet contains three zero-based point indices followed by three stored neighbour indices."
 size = 24
 note = "Six 32-bit indices. The 24-byte stride is derived from the stated field count and the record's 32-bit index width; the spec states no total."
@@ -81,7 +81,7 @@ note = "Offset derived from the three preceding 32-bit indices."
 [[record]]
 name = "point_kernel_side_entry_header"
 kind = "byte"
-section = "11"
+section = "10"
 anchor = "The entry contains a little-endian 32-bit point count followed by ordered float32 XYZ triples."
 size = 4
 note = "Fixed prefix only; `count` float32 XYZ triples follow at +4. The property's `Points` element carries the sixteen finite row-major transform scalars separately, in XML."
@@ -96,7 +96,7 @@ anchor = "a little-endian 32-bit point count followed by ordered float32 XYZ tri
 [[record]]
 name = "packed_color_list_header"
 kind = "byte"
-section = "11"
+section = "10"
 anchor = "Each list contains a little-endian count followed by packed-color records."
 size = 4
 note = "Applies to `DiffuseColor`, `LineColorArray`, and `PointColorArray`. A count of one applies its colour to every member of the corresponding element-map group; otherwise the count must equal the number of names in that ordered group."
@@ -117,7 +117,7 @@ note = "The parser bounds each packed-colour record at 4 bytes after the little-
 name = "link_array_side_entry_header"
 parsed_by = "crates/cadmpeg-codec-freecad/src/product.rs"
 kind = "byte"
-section = "9"
+section = "8"
 anchor = "Each side entry begins with a little-endian element count followed by either all single-precision or all double-precision components; exact entry length selects the precision."
 size = 4
 note = "Fixed prefix only. Placement records carry position plus quaternion (seven components); scale records carry three. The exact entry length selects f32 or f64 components, so no fixed element stride exists."
@@ -141,14 +141,14 @@ anchor = "An FCStd document is identified by ZIP framing plus a root `Document.x
 [[not_applicable]]
 area = "Binary OCC B-Rep shape sets"
 reason = "The specification states the accepted header band (text V1-V3, binary V1-V4) and which behaviours the version gates, but no record layout. The binary body is a nested, count-driven table stream with a 256-level depth cap."
-section = "7"
+section = "6"
 anchor = "Text shape sets accept the complete declared header band V1 through V3."
 
 [[not_applicable]]
 area = "Element-map and string-table streams"
 reason = "Text streams framed by magic strings and newline counts, with hexadecimal ids and delta encoding. Positional in the line sense, not in the byte or column sense."
 section = "6"
-anchor = "## 6. Byte accounting"
+anchor = "Side-entry streams begin with `StringTableStart v1` and a decimal record count."
 
 [[not_applicable]]
 area = "ZIP container framing"

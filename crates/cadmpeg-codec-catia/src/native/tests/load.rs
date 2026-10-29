@@ -1075,9 +1075,6 @@ fn native_load_restores_segment_source_order_and_validates_retained_views() {
     let mut invalid_target = native.clone();
     invalid_target.external_references[0].target = "Wrong.CATPart".to_string();
     assert_rejected(invalid_target);
-    let mut invalid_reference_offset = native.clone();
-    invalid_reference_offset.external_references[0].byte_offset += 1;
-    assert_rejected(invalid_reference_offset);
     let mut invalid_type = native;
     invalid_type.finjpl_segments[0].type_word ^= 1;
     assert_rejected(invalid_type);

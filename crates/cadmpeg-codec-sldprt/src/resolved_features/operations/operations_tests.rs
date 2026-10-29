@@ -11,7 +11,6 @@ use crate::records::ObjectId;
 use crate::records::{
     Feature, FeatureHistory, FeatureInputClass, FeatureInputLane, FeatureInputName,
 };
-use crate::resolved_features::class_sources::ClassSources;
 use cadmpeg_ir::features::BooleanOp;
 use std::collections::BTreeMap;
 
@@ -55,6 +54,7 @@ fn split_line_projection_mode_requires_one_owned_project_class() {
         native_payload: vec![0; 200].into(),
         classes: vec![FeatureInputClass {
             sequence: 100,
+            offset: 100,
             feature_ref: None,
             id: "project".into(),
             parent: "lane".into(),
@@ -68,7 +68,7 @@ fn split_line_projection_mode_requires_one_owned_project_class() {
                 id: "split-name".into(),
                 parent: "lane".into(),
                 ordinal: 0,
-                offset: Some(20),
+                offset: 20,
                 value: "split".into(),
                 object_id: ObjectId::from_value(40),
             },
@@ -78,7 +78,7 @@ fn split_line_projection_mode_requires_one_owned_project_class() {
                 id: "next-name".into(),
                 parent: "lane".into(),
                 ordinal: 1,
-                offset: Some(150),
+                offset: 150,
                 value: "next".into(),
                 object_id: ObjectId::from_value(50),
             },
@@ -94,9 +94,8 @@ fn split_line_projection_mode_requires_one_owned_project_class() {
         sketch_entities: Vec::new(),
     };
 
-    let class_sources = ClassSources::from_positions([(&lane.classes[0], 100)]);
     let mut projected = vec![history.clone()];
-    enrich_history_split_lines(&class_sources, &mut projected, std::slice::from_ref(&lane));
+    enrich_history_split_lines(&mut projected, std::slice::from_ref(&lane));
     assert_eq!(
         projected[0].features[0]
             .properties
@@ -119,14 +118,11 @@ fn split_line_projection_mode_requires_one_owned_project_class() {
         parent: "lane".into(),
         ordinal: 1,
         sequence: 1,
+        offset: 120,
         name: "moPLineProject_c".into(),
     });
-    let ambiguous_sources = ClassSources::from_positions([
-        (&ambiguous_lane.classes[0], 100),
-        (&ambiguous_lane.classes[1], 120),
-    ]);
     let mut ambiguous = vec![history.clone()];
-    enrich_history_split_lines(&ambiguous_sources, &mut ambiguous, &[ambiguous_lane]);
+    enrich_history_split_lines(&mut ambiguous, &[ambiguous_lane]);
     assert!(!ambiguous[0].features[0]
         .properties
         .contains_key(SPLIT_LINE_MODE_PROPERTY));
@@ -136,7 +132,7 @@ fn split_line_projection_mode_requires_one_owned_project_class() {
     duplicate_sketch.source_id = FeatureSource::from_value(20);
     history.features.insert(2, duplicate_sketch);
     let mut ambiguous_tool = vec![history];
-    enrich_history_split_lines(&class_sources, &mut ambiguous_tool, &[lane]);
+    enrich_history_split_lines(&mut ambiguous_tool, &[lane]);
     assert_eq!(
         ambiguous_tool[0].features[0]
             .properties
@@ -184,7 +180,7 @@ fn inline_operation_binds_join_and_cut_to_their_family_words() {
         parent: "lane".into(),
         ordinal: 0,
         sequence: 0,
-        offset: Some(cadmpeg_core::decode::u64_from_index(name_offset)),
+        offset: cadmpeg_core::decode::u64_from_index(name_offset),
         value: value.into(),
         object_id: ObjectId::from_value(7),
     };
@@ -192,33 +188,15 @@ fn inline_operation_binds_join_and_cut_to_their_family_words() {
     lane.native_payload[name_offset - 6..name_offset - 2].copy_from_slice(&1u32.to_le_bytes());
     lane.native_payload[name_offset - 2..name_offset].copy_from_slice(&0x8d9au16.to_le_bytes());
     assert_eq!(
-        feature_operation_code(
-            &crate::test_support::native::class_sources(std::slice::from_ref(&lane)),
-            &lane,
-            &name,
-            Some("moICE_c"),
-            None
-        ),
+        feature_operation_code(&lane, &name, Some("moICE_c"), None),
         Some(1)
     );
     assert_eq!(
-        feature_operation_code(
-            &crate::test_support::native::class_sources(std::slice::from_ref(&lane)),
-            &lane,
-            &name,
-            Some("moExtrusion_c"),
-            None
-        ),
+        feature_operation_code(&lane, &name, Some("moExtrusion_c"), None),
         None
     );
     assert_eq!(
-        feature_operation_code(
-            &crate::test_support::native::class_sources(std::slice::from_ref(&lane)),
-            &lane,
-            &name,
-            Some("moICE_c"),
-            Some(8)
-        ),
+        feature_operation_code(&lane, &name, Some("moICE_c"), Some(8)),
         Some(1)
     );
     assert_eq!(
@@ -373,6 +351,7 @@ fn ambiguous_form_code_padding_does_not_shift_the_code() {
                 id: "class".into(),
                 parent: "lane".into(),
                 ordinal: 0,
+                offset: cadmpeg_core::decode::u64_from_index(class_offset),
                 name: class_name.into(),
             }],
             names: Vec::new(),
@@ -386,10 +365,6 @@ fn ambiguous_form_code_padding_does_not_shift_the_code() {
             references: Vec::new(),
             sketch_entities: Vec::new(),
         };
-        let class_sources = ClassSources::from_positions([(
-            &lane.classes[0],
-            cadmpeg_core::decode::u64_from_index(class_offset),
-        )]);
         (
             lane,
             FeatureInputName {
@@ -398,41 +373,40 @@ fn ambiguous_form_code_padding_does_not_shift_the_code() {
                 parent: "lane".into(),
                 ordinal: 0,
                 sequence: 0,
-                offset: Some(cadmpeg_core::decode::u64_from_index(name_offset)),
+                offset: cadmpeg_core::decode::u64_from_index(name_offset),
                 value: "Feature".into(),
                 object_id: ObjectId::from_value(1),
             },
-            class_sources,
         )
     };
 
-    let (lane, name, class_sources) = direct_lane(3, 11, 4);
+    let (lane, name) = direct_lane(3, 11, 4);
     assert_eq!(
-        feature_operation_code(&class_sources, &lane, &name, Some("moICE_c"), None),
+        feature_operation_code(&lane, &name, Some("moICE_c"), None),
         Some(3)
     );
 
-    let (lane, name, class_sources) = direct_lane(0, 11, 4);
+    let (lane, name) = direct_lane(0, 11, 4);
     assert_eq!(
-        feature_operation_code(&class_sources, &lane, &name, Some("moICE_c"), None),
+        feature_operation_code(&lane, &name, Some("moICE_c"), None),
         None
     );
 
-    let (lane, name, class_sources) = direct_lane(11, 0, 8);
+    let (lane, name) = direct_lane(11, 0, 8);
     assert_eq!(
-        feature_operation_code(&class_sources, &lane, &name, Some("moICE_c"), None),
+        feature_operation_code(&lane, &name, Some("moICE_c"), None),
         None
     );
 
-    let (lane, name, class_sources) = direct_lane(0, 11, 4);
+    let (lane, name) = direct_lane(0, 11, 4);
     assert_eq!(
-        feature_operation_code(&class_sources, &lane, &name, Some("moICE_c"), Some(4)),
+        feature_operation_code(&lane, &name, Some("moICE_c"), Some(4)),
         Some(0)
     );
 
-    let (lane, name, class_sources) = direct_lane(11, 0, 8);
+    let (lane, name) = direct_lane(11, 0, 8);
     assert_eq!(
-        feature_operation_code(&class_sources, &lane, &name, Some("moICE_c"), Some(8)),
+        feature_operation_code(&lane, &name, Some("moICE_c"), Some(8)),
         Some(11)
     );
 
@@ -462,29 +436,17 @@ fn ambiguous_form_code_padding_does_not_shift_the_code() {
         parent: "compact-lane".into(),
         ordinal: 0,
         sequence: 0,
-        offset: Some(cadmpeg_core::decode::u64_from_index(name_offset)),
+        offset: cadmpeg_core::decode::u64_from_index(name_offset),
         value: "Feature".into(),
         object_id: ObjectId::from_value(1),
     };
 
     assert_eq!(
-        feature_operation_code(
-            &crate::test_support::native::class_sources(std::slice::from_ref(&compact_lane)),
-            &compact_lane,
-            &compact_name,
-            Some("moICE_c"),
-            None
-        ),
+        feature_operation_code(&compact_lane, &compact_name, Some("moICE_c"), None),
         None
     );
     assert_eq!(
-        feature_operation_code(
-            &crate::test_support::native::class_sources(std::slice::from_ref(&compact_lane)),
-            &compact_lane,
-            &compact_name,
-            Some("moICE_c"),
-            Some(8),
-        ),
+        feature_operation_code(&compact_lane, &compact_name, Some("moICE_c"), Some(8),),
         Some(11)
     );
 }
@@ -662,14 +624,7 @@ fn configuration_operation_fallback_fills_only_unresolved_matching_operations() 
         ),
     ];
 
-    inherit_configuration_operations(
-        &crate::resolved_features::class_sources::ClassSources::default(),
-        &mut configured,
-        &base,
-        &histories,
-        &[],
-        None,
-    );
+    inherit_configuration_operations(&mut configured, &base, &histories, &[], None);
 
     assert!(matches!(
         configured[0].evaluation.definition(),
@@ -689,14 +644,7 @@ fn configuration_operation_fallback_fills_only_unresolved_matching_operations() 
     configured[0]
         .evaluation
         .set_definition(extrude(BooleanOp::NewBody));
-    inherit_configuration_operations(
-        &crate::resolved_features::class_sources::ClassSources::default(),
-        &mut configured,
-        &base,
-        &histories,
-        &[],
-        None,
-    );
+    inherit_configuration_operations(&mut configured, &base, &histories, &[], None);
     assert!(matches!(
         configured[0].evaluation.definition(),
         FeatureDefinition::Operation(FeatureOperation::Extrude {
@@ -711,6 +659,7 @@ fn configuration_operation_fallback_fills_only_unresolved_matching_operations() 
         native_payload: vec![0; 128].into(),
         classes: vec![FeatureInputClass {
             sequence: 33,
+            offset: 33,
             feature_ref: None,
             id: "class".into(),
             parent: "lane".into(),
@@ -723,7 +672,7 @@ fn configuration_operation_fallback_fills_only_unresolved_matching_operations() 
             id: "name".into(),
             parent: "lane".into(),
             ordinal: 0,
-            offset: Some(52),
+            offset: 52,
             value: "native-extrude".into(),
             object_id: ObjectId::from_value(1),
         }],
@@ -738,14 +687,12 @@ fn configuration_operation_fallback_fills_only_unresolved_matching_operations() 
         sketch_entities: Vec::new(),
     };
     operation_lane.native_payload[25..29].copy_from_slice(&11_u32.to_le_bytes());
-    let class_sources = ClassSources::from_positions([(&operation_lane.classes[0], 33)]);
     let mut inherited = vec![feature(
         "synthetic:test:id#extrude",
         "native-extrude",
         extrude(BooleanOp::Unresolved),
     )];
     inherit_configuration_operations(
-        &class_sources,
         &mut inherited,
         &base,
         &histories,
@@ -767,7 +714,6 @@ fn configuration_operation_fallback_fills_only_unresolved_matching_operations() 
         extrude(BooleanOp::Unresolved),
     )];
     inherit_configuration_operations(
-        &class_sources,
         &mut unresolved,
         &base,
         &histories,
@@ -807,7 +753,7 @@ fn ambiguous_thin_join_carrier_does_not_resolve_an_operation() {
             feature_ref: None,
             ordinal: 0,
             sequence: 0,
-            offset: Some(10),
+            offset: 10,
             value: "F".into(),
             object_id: ObjectId::from_value(7),
         }],
@@ -884,13 +830,7 @@ fn ambiguous_thin_join_carrier_does_not_resolve_an_operation() {
             configurations: Vec::new(),
             features: vec![native(class)],
         }];
-        super::bind_extrusion_operations(
-            &crate::resolved_features::class_sources::ClassSources::default(),
-            &mut features,
-            &histories,
-            lanes,
-            None,
-        );
+        super::bind_extrusion_operations(&mut features, &histories, lanes, None);
         let lane_names = lanes
             .iter()
             .map(|lane| {
@@ -909,14 +849,7 @@ fn ambiguous_thin_join_carrier_does_not_resolve_an_operation() {
                 };
                 *op = BooleanOp::Join;
             });
-            inherit_configuration_operations(
-                &crate::resolved_features::class_sources::ClassSources::default(),
-                &mut features,
-                &base,
-                &histories,
-                lanes,
-                None,
-            );
+            inherit_configuration_operations(&mut features, &base, &histories, lanes, None);
         }
         let FeatureDefinition::Operation(FeatureOperation::Extrude { op, .. }) =
             features[0].evaluation.definition()

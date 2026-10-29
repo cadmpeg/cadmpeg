@@ -309,53 +309,6 @@ pub(crate) fn decode_edge_treatment_vertex_operands(
     Ok(out)
 }
 
-/// Capture the vertex-recipe envelope of each edge-treatment vertex operand,
-/// from its owning header to the record that closes it, with the recipe's
-/// source offsets as its pointers.
-pub(crate) fn capture_edge_treatment_vertex_operands(
-    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
-    scan: &ContainerScan,
-    operands: &mut [DesignEdgeTreatmentVertexOperand],
-    pointers: &mut std::collections::BTreeMap<String, std::collections::BTreeMap<String, u64>>,
-) -> Result<(), CodecError> {
-    for operand in operands {
-        let malformed =
-            || CodecError::malformed("edge-treatment vertex operand has no source envelope");
-        let stream = native_stream(&operand.id).ok_or_else(malformed)?;
-        let entry = scan
-            .design_stream_entry_for_scope(ContainerRole::Bulkstream, stream)
-            .ok_or_else(malformed)?;
-        let source = scan.entry_view(&entry.name).ok_or_else(malformed)?;
-        let bound = |offset: Option<u64>| {
-            offset
-                .and_then(|relative| usize::try_from(relative).ok())
-                .and_then(|relative| source.start().checked_add(relative))
-                .ok_or_else(malformed)
-        };
-        let start = bound(operand.recipe.byte_offset())?;
-        let end = bound(operand.recipe.next_byte_offset())?;
-        let extent = source.child(start, end).ok_or_else(malformed)?;
-        ctx.record(&operand.id, extent, || Ok(()))?;
-        let fields = crate::records::source_offsets::collect(operand);
-        for name in fields.keys() {
-            let bytes = name
-                .len()
-                .checked_add(size_of::<(String, u64)>())
-                .ok_or_else(|| CodecError::malformed("vertex pointer storage overflows"))?;
-            ctx.retain_bytes(
-                cadmpeg_core::decode::u64_from_index(bytes),
-                "edge-treatment vertex pointer",
-            )?;
-        }
-        if pointers.insert(operand.id.clone(), fields).is_some() {
-            return Err(CodecError::malformed(
-                "edge-treatment vertex operand source owner is duplicated",
-            ));
-        }
-    }
-    Ok(())
-}
-
 /// Bind each `WorkPoint` input to its exact edge, vertex, or `WorkPlane` carrier.
 pub(crate) fn bind_work_point_input_carriers(
     scan: &ContainerScan,

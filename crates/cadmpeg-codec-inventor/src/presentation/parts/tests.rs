@@ -8,8 +8,9 @@ use crate::native::{
     PmGraphicsPrimaryColorStyleRecord, PmGraphicsStyleCollectionRecord, RseRecordRecord,
 };
 use crate::rse::{RecordFrameState, SegmentBulkState, SegmentKind};
+use crate::test_support::given_up_records;
 use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
-use cadmpeg_ir::source_fidelity::parts::{PartOutput, PartState};
+use cadmpeg_ir::source_fidelity::parts::PartOutput;
 use cadmpeg_ir::CodecFormat;
 
 fn default_style() -> Vec<u8> {
@@ -78,7 +79,7 @@ fn all_presentation_grammars_form_native_records_and_actual_source_captures() {
         ],
         [1; 5]
     );
-    let (_, native, mut fidelity, losses) = output.into_parts(&ctx).unwrap().into_parts();
+    let (_, native, fidelity, losses) = output.into_parts();
     assert!(losses.is_empty());
     let ns = native.namespace("inventor").unwrap();
     let styles = ns
@@ -118,25 +119,7 @@ fn all_presentation_grammars_form_native_records_and_actual_source_captures() {
         5
     );
     assert!(!ns.arenas().contains_key("presentation_record_issues"));
-    fidelity.install_mapped_record_captures(&ctx, Ok).unwrap();
-    // Five presentation records (one per grammar) and their five `rse_records`
-    // wrappers. The open's metadata type descriptors (Appendix C
-    // `inventor.type_descriptor`) and segment pair records are not asserted here.
-    assert_eq!(
-        fidelity
-            .record_layout()
-            .keys()
-            .filter(|id| !id.starts_with("inventor:rse:meta-type#")
-                && !id.starts_with("inventor:rse:segment#"))
-            .count(),
-        10
-    );
-    for (arena, records) in ns.arenas() {
-        for record in records {
-            let layout = &fidelity.record_layout()[record.id()];
-            assert!(!layout.reads().is_empty(), "{arena}: {}", record.id());
-        }
-    }
+    assert!(given_up_records(&fidelity).is_empty());
 }
 
 #[test]
@@ -165,18 +148,15 @@ fn malformed_presentation_body_keeps_its_framing_and_exact_readable_peer() {
     let RecordFrameState::Framed(table) = &bulk.records else {
         panic!("record frames")
     };
-    let failed =
-        crate::records::source_admission::body(&ctx, bulk.expanded, &table.records[0]).unwrap();
-    let expected = ctx.capture_part_extent(failed).unwrap();
+    let failed = crate::records::source_admission::body(bulk.expanded, &table.records[0]).unwrap();
     let token = segment.pair.token.as_str();
     let bad_id = format!("inventor:presentation:default-style#{token}-0");
     let good_id = format!("inventor:presentation:default-style#{token}-1");
-    let wrapper_id = format!("inventor:rse:record#{token}-0");
     let mut output = PartOutput::new(CodecFormat::Inventor);
     let inventory = super::super::inventory(&ctx, &container.rse, &mut output).unwrap();
     assert_eq!(inventory.default_styles.len(), 1);
     assert_eq!(inventory.default_styles[0].header_value, 77);
-    let (model, native, mut fidelity, mut losses) = output.into_parts(&ctx).unwrap().into_parts();
+    let (_, native, fidelity, losses) = output.into_parts();
     let ns = native.namespace("inventor").unwrap();
     let styles = ns
         .arena_as::<PmAppDefaultStyleRecord>("pm_app_default_styles")
@@ -193,23 +173,11 @@ fn malformed_presentation_body_keeps_its_framing_and_exact_readable_peer() {
     assert_eq!(losses.len(), 1);
     assert_eq!(losses[0].code.to_string(), "decode/record.unreadable");
     assert_eq!(losses[0].severity, cadmpeg_ir::report::Severity::Error);
-    assert!(losses[0].message.contains(&bad_id));
-    let failed = fidelity
-        .parts()
-        .values()
-        .filter(|part| matches!(part.state(), PartState::GivenUp {}))
-        .collect::<Vec<_>>();
-    assert_eq!(failed.len(), 1);
-    assert_eq!(failed[0].stream(), expected.stream());
-    assert_eq!(failed[0].offset(), expected.offset());
-    assert_eq!(failed[0].byte_len(), expected.byte_len());
-    let failed_id = fidelity
-        .parts()
-        .iter()
-        .find(|(_, part)| matches!(part.state(), PartState::GivenUp {}))
-        .map(|(id, _)| id)
-        .expect("one actual failed part");
-    let retained = fidelity.retained_record(failed_id.as_str()).unwrap();
+    assert!(!styles.iter().any(|style| style.id == bad_id));
+    let given_up = given_up_records(&fidelity);
+    assert_eq!(given_up.len(), 1);
+    let retained = given_up[0];
+    assert_eq!(retained.data(), Some(failed.window()));
     assert_eq!(
         retained.untyped(),
         &cadmpeg_ir::ArenaClasses::from([
@@ -218,64 +186,6 @@ fn malformed_presentation_body_keeps_its_framing_and_exact_readable_peer() {
         ])
     );
     assert_eq!(&fidelity.unrepresented(), retained.untyped());
-    let streams = ctx.source_streams().unwrap();
-    fidelity.install_mapped_record_captures(&ctx, Ok).unwrap();
-    assert!(!fidelity.record_layout().contains_key(&bad_id));
-    assert!(fidelity.record_layout().contains_key(&good_id));
-    assert!(fidelity.record_layout().contains_key(&wrapper_id));
-    let wrapper = &fidelity.record_layout()[&wrapper_id];
-    assert!(
-        wrapper.stream() != expected.stream()
-            || wrapper.offset() < expected.offset()
-            || wrapper.offset() >= expected.offset() + expected.byte_len()
-    );
-    let mut ir = cadmpeg_ir::CadIr::empty();
-    ir.model = model;
-    ir.native = native;
-    let index = cadmpeg_ir::source_fidelity::b1::classification::ClassificationIndex::new_with_owner_resolver(
-        &ctx, &ir, &DefaultStyleOwners).unwrap();
-    let partitions = streams
-        .iter()
-        .map(|stream| {
-            let parts = fidelity
-                .parts()
-                .values()
-                .filter(|part| part.stream() == stream.name());
-            let framing = parts
-                .clone()
-                .flat_map(|part| part.framing_bytes().iter().cloned())
-                .collect::<Vec<_>>();
-            let given_up = parts
-                .filter(|part| matches!(part.state(), PartState::GivenUp {}))
-                .map(|part| part.offset()..part.offset() + part.byte_len())
-                .collect::<Vec<_>>();
-            cadmpeg_ir::source_fidelity::b1::partition_stream(
-                &ctx,
-                stream.name(),
-                stream.byte_len(),
-                fidelity.record_layout(),
-                &framing,
-                &[],
-                &given_up,
-            )
-            .unwrap()
-        })
-        .collect::<Vec<_>>();
-    fidelity
-        .finalize_b1(&ctx, &index, "inventor", &partitions, &mut losses)
-        .unwrap();
-    assert!(fidelity
-        .unrepresented()
-        .contains(&cadmpeg_ir::ArenaClass::Model));
-    assert!(fidelity.b1_spans()[expected.stream()]
-        .spans()
-        .iter()
-        .any(|span| span.range().start <= expected.offset()
-            && span.range().end >= expected.offset() + expected.byte_len()
-            && span.classes().contains(&cadmpeg_ir::ArenaClass::Model)));
-    fidelity
-        .check_b1_closure(&ctx, &index, "inventor", &partitions, &losses)
-        .unwrap();
 }
 
 #[test]
@@ -291,44 +201,8 @@ fn held_binding_projection_moves_actual_entities_through_the_final_stage() {
         super::super::project_bindings(&ctx, &inventory, &[], &[], &keys, Some(&mut output))
             .unwrap();
     assert!(staged.appearances.is_empty() && staged.bindings.is_empty());
-    let (model, _, _, losses) = output.into_parts(&ctx).unwrap().into_parts();
+    let (model, _, _, losses) = output.into_parts();
     assert_eq!(model.appearances, expected.appearances);
     assert_eq!(model.appearance_bindings, expected.bindings);
     assert!(losses.is_empty());
-    assert!(ctx.take_record_captures().unwrap().is_empty());
-}
-
-struct DefaultStyleOwners;
-
-impl cadmpeg_ir::source_fidelity::b1::provenance::NativeOwnerResolver for DefaultStyleOwners {
-    fn visit_owners(
-        &self,
-        ctx: &DecodeContext<'_>,
-        ir: &cadmpeg_ir::CadIr,
-        visitor: &mut dyn FnMut(
-            cadmpeg_ir::source_fidelity::b1::provenance::NativeOwnership,
-        ) -> Result<(), cadmpeg_core::CodecError>,
-    ) -> Result<(), cadmpeg_core::CodecError> {
-        use cadmpeg_ir::source_fidelity::b1::provenance::NativeOwnership;
-        let ns = ir.native.namespace("inventor").unwrap();
-        for record in ns
-            .arena_as_for_decode::<PmAppDefaultStyleRecord>(ctx, "pm_app_default_styles")
-            .unwrap()
-        {
-            visitor(NativeOwnership::new(
-                cadmpeg_ir::ids::Identity::new(record.id).unwrap(),
-                None,
-            ))?;
-        }
-        for record in ns
-            .arena_as_for_decode::<RseRecordRecord>(ctx, "rse_records")
-            .unwrap()
-        {
-            visitor(NativeOwnership::new(
-                cadmpeg_ir::ids::Identity::new(record.id).unwrap(),
-                None,
-            ))?;
-        }
-        Ok(())
-    }
 }

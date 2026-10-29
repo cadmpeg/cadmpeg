@@ -215,7 +215,7 @@ fn semantic_writer_accepts_matching_resolved_feature_edits() {
             native.feature_histories[0].part_name = Some("Edited".into());
             let scalar = &mut native.feature_input_lanes[0].scalars[0];
             scalar.value = cadmpeg_ir::scalar::FiniteReal::new(0.05).expect("finite test scalar");
-            let offset = usize::try_from(scalar.offset.expect("source scalar offset")).unwrap();
+            let offset = usize::try_from(scalar.offset).unwrap();
             native.feature_input_lanes[0].native_payload[offset..offset + 8]
                 .copy_from_slice(&0.05f64.to_le_bytes());
         });
@@ -485,8 +485,8 @@ fn semantic_writer_rewrites_feature_input_name_values() {
         lane,
         &native.feature_histories,
         std::slice::from_ref(&rename),
-        crate::writer::ClassLayouts::Source(decoded.source_fidelity()),
-        &crate::resolved_features::class_sources::ClassSources::default(),
+        crate::writer::ClassLayouts::Source,
+        &std::collections::BTreeSet::new(),
     )
     .unwrap()
     .0;
@@ -498,7 +498,6 @@ fn semantic_writer_rewrites_feature_input_name_values() {
     assert_eq!(
         crate::resolved_features::scalars::named_scalars(&payload, &lane.id, &written)
             .unwrap()
-            .records
             .len(),
         scalars
     );
@@ -518,8 +517,8 @@ fn semantic_writer_refuses_a_feature_input_name_value_that_disagrees_with_its_pa
         &lane,
         &native.feature_histories,
         &[],
-        crate::writer::ClassLayouts::Source(decoded.source_fidelity()),
-        &crate::resolved_features::class_sources::ClassSources::default(),
+        crate::writer::ClassLayouts::Source,
+        &std::collections::BTreeSet::new(),
     )
     .unwrap_err();
 
@@ -581,20 +580,13 @@ fn semantic_writer_updates_linked_resolved_feature_scalar() {
         let parameter = ir_edit
             .model
             .parameters
-            .iter()
+            .iter_mut()
             .find(|parameter| parameter.name == "D1")
-            .expect("projected D1 parameter")
-            .id
-            .clone();
-        ir_edit
-            .set_parameter_expression(
-                &parameter,
-                "50mm".into(),
-                Some(cadmpeg_ir::features::ParameterValue::Length(
-                    cadmpeg_ir::scalar::Length::new(50.0).unwrap(),
-                )),
-            )
-            .unwrap();
+            .expect("projected D1 parameter");
+        parameter.expression = "50mm".into();
+        parameter.value = Some(cadmpeg_ir::features::ParameterValue::Length(
+            cadmpeg_ir::scalar::Length::new(50.0).unwrap(),
+        ));
     }
 
     let mut encoded = Vec::new();
@@ -615,17 +607,15 @@ fn semantic_writer_updates_linked_resolved_feature_scalar() {
         .find(|parameter| parameter.name == "D1")
         .expect("regenerated D1 parameter");
     assert_eq!(parameter.expression, "50mm".into());
-    assert_eq!(
-        parameter.value,
-        Some(cadmpeg_ir::features::ParameterValue::Length(
-            cadmpeg_ir::scalar::Length::new(50.0).unwrap()
-        ))
-    );
-    assert!(parameter.native_ref.is_none());
-    assert!(sldprt_native(regenerated.ir())
+    let native_ref = parameter.native_ref.as_deref().expect("linked scalar");
+    let native = sldprt_native(regenerated.ir());
+    let scalar = native
         .feature_input_lanes
         .iter()
-        .all(|lane| lane.scalars.is_empty()));
+        .flat_map(|lane| &lane.scalars)
+        .find(|scalar| scalar.id == native_ref)
+        .expect("regenerated scalar");
+    assert_eq!(scalar.value.get(), 0.05);
 }
 
 #[test]
@@ -718,13 +708,6 @@ fn semantic_writer_types_resolved_relation_scalar() {
         parameter.value = Some(cadmpeg_ir::features::ParameterValue::Real(
             cadmpeg_ir::scalar::FiniteReal::new(0.5).unwrap(),
         ));
-        let id = parameter.id.clone();
-        let value = parameter.value.clone().unwrap();
-        for configuration in &mut ir_edit.model.configurations {
-            if let Some(current) = configuration.parameter_values.get_mut(&id) {
-                *current = value.clone();
-            }
-        }
     }
 
     let mut encoded = Vec::new();
@@ -744,12 +727,20 @@ fn semantic_writer_types_resolved_relation_scalar() {
         .iter()
         .find(|parameter| parameter.name == "D1")
         .expect("regenerated D1 parameter");
-    assert_eq!(parameter.expression, "0.5".into());
+    assert_eq!(parameter.expression, "500mm".into());
     assert_eq!(
         parameter.value,
-        Some(cadmpeg_ir::features::ParameterValue::Real(
-            cadmpeg_ir::scalar::FiniteReal::new(0.5).unwrap()
+        Some(cadmpeg_ir::features::ParameterValue::Length(
+            cadmpeg_ir::scalar::Length::new(500.0).unwrap()
         ))
     );
-    assert!(parameter.native_ref.is_none());
+    let native_ref = parameter.native_ref.as_deref().expect("linked scalar");
+    let native = sldprt_native(regenerated.ir());
+    let scalar = native
+        .feature_input_lanes
+        .iter()
+        .flat_map(|lane| &lane.scalars)
+        .find(|scalar| scalar.id == native_ref)
+        .expect("regenerated scalar");
+    assert_eq!(scalar.value.get(), 0.5);
 }

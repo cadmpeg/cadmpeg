@@ -196,26 +196,3 @@ fn source_admission_bounds_every_reference_and_preserves_failed_edits() {
         .unwrap();
     assert_eq!(edited.owner_reference_offset(), Some(76));
 }
-#[test]
-fn cadir_relation_keeps_content_without_fabricating_source_positions() {
-    let source = source_relation();
-    let value = serde_json::to_value(&source).unwrap();
-    assert!(value.get("frame").is_some());
-    assert!(value
-        .as_object()
-        .unwrap()
-        .keys()
-        .all(|key| !key.contains("offset") && key != "raw_bytes"));
-    let mut restored: SketchRelation = serde_json::from_value(value.clone()).unwrap();
-    assert!(restored.raw_bytes().is_none());
-    assert!(restored.byte_offset.is_none());
-    assert!(restored
-        .members
-        .iter()
-        .all(|member| member.offset.is_none()));
-    assert_eq!(serde_json::to_value(&restored).unwrap(), value);
-    assert!(restored
-        .try_edit(|draft| draft.owner_reference = 2)
-        .is_err());
-    assert_eq!(serde_json::to_value(&restored).unwrap(), value);
-}

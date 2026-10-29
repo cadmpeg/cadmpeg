@@ -2,16 +2,12 @@
 use std::io::Cursor;
 use std::ops::Range;
 
-use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, View};
 use cadmpeg_ir::codec::{Codec, DecodeOptions};
 use cadmpeg_ir::features::FinitePoint3;
 use cadmpeg_ir::geometry::{CurveGeometry, ProceduralCurveDefinition, SolvedCurveGeometry};
-use cadmpeg_ir::ids::IdentityKey;
 use cadmpeg_ir::math::Point3;
-use cadmpeg_ir::SourceFidelity;
 
 use crate::chunks::ArchiveVersion;
-use crate::settings::MillimeterScale;
 use crate::test_support::test_archive;
 use crate::RhinoCodec;
 
@@ -68,7 +64,7 @@ fn child_windows(
 }
 
 #[test]
-fn source_polyline_edits_survive_in_the_final_ordered_compound_child_with_exact_reads() {
+fn source_polyline_edits_survive_in_the_final_ordered_compound_child() {
     for (height, middle) in [(2.0, 0.5), (5.0, 1.25)] {
         let (fixture, lengths) = mixed(height, middle);
         let bytes = archive(&[&fixture.bytes]);
@@ -76,7 +72,8 @@ fn source_polyline_edits_survive_in_the_final_ordered_compound_child_with_exact_
         let range = scan.objects[0]
             .framed()
             .expect("actual object")
-            .class_data_range();
+            .class_data_range
+            .clone();
         let windows = child_windows(scan.data, range.clone(), &fixture);
         assert!(windows[1].start > range.start);
         assert!(windows[1].start + lengths[1] < windows[1].end);
@@ -135,104 +132,11 @@ fn source_polyline_edits_survive_in_the_final_ordered_compound_child_with_exact_
         assert!(polyline.weights().is_none());
         assert!(!polyline.periodic());
         assert!(children[1].parameter_range.is_none());
-        assert_eq!(decoded.source_fidelity().record_layout().len(), 4);
-        for ((child, window), fields_len) in children.iter().zip(windows).zip(lengths) {
-            let layout = &decoded.source_fidelity().record_layout()[child.id.as_str()];
-            assert_eq!(
-                layout.offset(),
-                u64::try_from(window.start).expect("small start")
-            );
-            assert_eq!(
-                layout.byte_len(),
-                u64::try_from(window.len()).expect("small extent")
-            );
-            assert_eq!(
-                layout.reads()["file"],
-                [u64::try_from(window.start).expect("small start")
-                    ..u64::try_from(window.start + fields_len).expect("small fields end"),]
-            );
-        }
-        let parent = &decoded.source_fidelity().record_layout()[record.id.as_str()];
-        assert!(parent.reads()["file"].iter().all(|read| read.end
-            <= u64::try_from(range.start + fixture.parameter_array.end).expect("small array end")));
     }
 }
 
 #[test]
-fn source_and_detached_polyline_children_use_the_same_grammar_and_one_capture_extraction() {
-    let (fixture, _) = mixed(2.0, 0.5);
-    let mut bytes = b"prefix!".to_vec();
-    let start = bytes.len();
-    bytes.extend(&fixture.bytes);
-    let arena = DecodeArena::new();
-    let (ctx, source) = DecodeContext::from_root_bytes(&bytes, &arena, &DecodePolicy::default())
-        .expect("actual nonzero source window");
-    let key = IdentityKey::try_new("mixed".to_owned()).expect("actual source key");
-    let source = crate::curves::source_polycurve::decode(
-        &ctx,
-        source,
-        &bytes,
-        start..bytes.len(),
-        MillimeterScale::IDENTITY,
-        ArchiveVersion::V5,
-        &key,
-    )
-    .expect("source grammar");
-    let detached = crate::curves::source_polycurve::decode(
-        &ctx,
-        View::over_retained(&bytes),
-        &bytes,
-        start..bytes.len(),
-        MillimeterScale::IDENTITY,
-        ArchiveVersion::V5,
-        &key,
-    )
-    .expect("same detached grammar and caller allowance");
-    let (
-        crate::curves::DecodedGeometry::Curve { curve: source },
-        crate::curves::DecodedGeometry::Curve { curve: detached },
-    ) = (source, detached)
-    else {
-        panic!("same mixed compound");
-    };
-    let (
-        crate::curves::DecodedCurve::Compound {
-            children: source_children,
-            end_parameter: source_end,
-            ..
-        },
-        crate::curves::DecodedCurve::Compound {
-            children: detached_children,
-            end_parameter: detached_end,
-            ..
-        },
-    ) = (&source, &detached)
-    else {
-        panic!("same compound variant");
-    };
-    assert_eq!(source.warnings(), detached.warnings());
-    assert_eq!(source_end, detached_end);
-    assert_eq!(source_children.len(), 2);
-    assert_eq!(source_children.len(), detached_children.len());
-    for ((parameter, child), (copied_parameter, copied)) in
-        source_children.iter().zip(detached_children)
-    {
-        assert_eq!(parameter, copied_parameter);
-        assert!(matches!(child, crate::curves::DecodedCurve::Leaf { .. }));
-        assert!(matches!(copied, crate::curves::DecodedCurve::Leaf { .. }));
-        assert_eq!(child.reported_geometry(), copied.reported_geometry());
-        assert_eq!(child.parameter_range(), copied.parameter_range());
-        assert_eq!(child.warnings(), copied.warnings());
-    }
-    let mut fidelity = SourceFidelity::default();
-    fidelity
-        .install_record_captures(&ctx, |_, _| Ok(()))
-        .expect("one extraction after both parses");
-    assert_eq!(fidelity.record_layout().len(), 3);
-}
-
-#[test]
-fn malformed_late_polyline_parameters_roll_back_child_reads_before_the_real_valid_peer() {
+fn malformed_late_polyline_parameters_keep_the_real_valid_peer() {
     let line = test_archive::line_payload([0.0, 0.0, 0.0], [1.0, 0.0, 0.0], [0.0, 1.0]);
     let bad = test_archive::polyline_payload(
         &[[1.0, 0.0, 0.0], [2.0, 2.0, 0.0], [4.0, 2.0, 0.0]],
@@ -247,18 +151,9 @@ fn malformed_late_polyline_parameters_roll_back_child_reads_before_the_real_vali
     );
     let (valid, _) = mixed(2.0, 0.5);
     let bytes = archive(&[&bad.bytes, &valid.bytes]);
-    let scan = crate::container::scan_owned(bytes.clone()).expect("actual peer archive");
-    let peer = scan.objects[1]
-        .framed()
-        .expect("actual valid object")
-        .class_data_range();
     let decoded = RhinoCodec
         .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
         .expect("malformed child does not discard its valid peer");
     assert_eq!(decoded.ir().model.curves.len(), 3);
     assert_eq!(decoded.ir().model.procedural_curves.len(), 1);
-    assert_eq!(decoded.source_fidelity().record_layout().len(), 4);
-    for layout in decoded.source_fidelity().record_layout().values() {
-        assert!(layout.offset() >= u64::try_from(peer.start).expect("small peer start"));
-    }
 }

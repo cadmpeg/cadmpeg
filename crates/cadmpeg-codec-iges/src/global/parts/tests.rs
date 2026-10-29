@@ -1,8 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
-use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, SourceOrigin, View};
+use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
 use cadmpeg_core::CodecError;
-use cadmpeg_ir::source_fidelity::parts::{ParserPartOutput, PartState};
-use cadmpeg_ir::NativeUnknownRecord;
+use cadmpeg_ir::source_fidelity::parts::PartOutput;
 
 use super::parse;
 use crate::card::{self, Section};
@@ -52,9 +51,9 @@ fn actual_global_callback_preserves_values_losses_and_independent_framing() {
     let arena = DecodeArena::new();
     let (ctx, root) =
         DecodeContext::from_root_bytes(&bytes, &arena, &DecodePolicy::service()).unwrap();
-    let scan = card::scan_source(root, &ctx).unwrap();
+    let scan = card::scan_source(root).unwrap();
     let (expected, expected_losses) = crate::global::parse(&scan).unwrap();
-    let mut output = ParserPartOutput::new(cadmpeg_ir::CodecFormat::Iges);
+    let mut output = PartOutput::new(cadmpeg_ir::CodecFormat::Iges);
     let (actual, losses) = parse(&scan, &ctx, &mut output).unwrap();
     assert_eq!(actual.sender_product(), Some("product"));
     assert_eq!(actual.native_file_name(), Some("part.igs"));
@@ -65,51 +64,9 @@ fn actual_global_callback_preserves_values_losses_and_independent_framing() {
         serde_json::to_value(losses).unwrap(),
         serde_json::to_value(expected_losses).unwrap()
     );
-    let (_, _, fidelity, losses) = output
-        .into_parts(&ctx)
-        .expect("finalize parser dependencies")
-        .into_parts();
+    let (_, _, fidelity, losses) = output.into_parts();
     assert!(losses.is_empty());
-    let mut reference = Vec::new();
-    cadmpeg_test_support::framing::iges::frame_global(&ctx, root, &mut reference).unwrap();
-    let mut expected: Vec<_> = reference
-        .iter()
-        .map(|part| {
-            (
-                part.level().as_str(),
-                part.capture().offset(),
-                part.capture().byte_len(),
-                part.framing().to_vec(),
-            )
-        })
-        .collect();
-    let mut actual: Vec<_> = fidelity
-        .parts()
-        .values()
-        .map(|part| {
-            (
-                part.level().as_str(),
-                part.offset(),
-                part.byte_len(),
-                part.framing_bytes().to_vec(),
-            )
-        })
-        .collect();
-    expected.sort_unstable_by_key(|part| (part.0, part.1, part.2));
-    actual.sort_unstable_by_key(|part| (part.0, part.1, part.2));
-    assert_eq!(actual, expected);
-    assert_eq!(actual.len(), 25);
-    let (parent_id, parent) = fidelity
-        .parts()
-        .iter()
-        .find(|(_, part)| part.level().as_str() == "iges.global_section")
-        .unwrap();
-    assert_eq!(parent.state(), &PartState::Decoded {});
-    assert!(fidelity
-        .parts()
-        .values()
-        .filter(|part| part.level().as_str() == "iges.global_field")
-        .all(|part| part.parent() == Some(parent_id)));
+    assert!(fidelity.retained_records().is_empty());
 }
 
 #[test]
@@ -126,52 +83,16 @@ fn cross_card_metadata_reads_use_actual_composite_value_bytes_only() {
     let (ctx, root) =
         DecodeContext::from_root_bytes(&bytes, &arena, &DecodePolicy::service()).unwrap();
     let source = root.child(3, bytes.len() - 4).unwrap();
-    let scan = card::scan_source(source, &ctx).unwrap();
-    let mut output = ParserPartOutput::new(cadmpeg_ir::CodecFormat::Iges);
+    let scan = card::scan_source(source).unwrap();
+    let mut output = PartOutput::new(cadmpeg_ir::CodecFormat::Iges);
     let (global, _) = parse(&scan, &ctx, &mut output).unwrap();
     assert_eq!(
         global.sender_product(),
         Some(std::str::from_utf8(&payload).unwrap())
     );
     assert_eq!(global.native_file_name(), None);
-    let streams = ctx.source_streams().unwrap();
-    let composite = streams
-        .iter()
-        .find(|stream| matches!(stream.origin(), SourceOrigin::Composite { .. }))
-        .unwrap();
-    let SourceOrigin::Composite { segments } = composite.origin() else {
-        unreachable!()
-    };
-    assert_eq!(segments.len(), 2);
-    assert_eq!(segments[0].extent().start, 84);
-    assert_eq!(segments[0].extent().end, 156);
-    assert_eq!(segments[1].extent().start, 165);
-    assert_eq!(segments[1].extent().end, 237);
-    let captures = ctx.take_record_captures().unwrap();
-    assert_eq!(captures.len(), 2);
-    let metadata = captures
-        .iter()
-        .find(|capture| capture.offset() == 2)
-        .unwrap();
-    assert_eq!(metadata.byte_len(), 84);
-    assert_eq!(
-        metadata.reads(),
-        &std::collections::BTreeMap::from([
-            (composite.name().to_owned(), vec![5..85]),
-            ("file".to_owned(), vec![89..156, 165..178]),
-        ])
-    );
-    assert!(captures
-        .iter()
-        .find(|capture| capture.offset() == 86)
-        .unwrap()
-        .reads()
-        .is_empty());
-    let (_, _, fidelity, losses) = output
-        .into_parts(&ctx)
-        .expect("finalize parser dependencies")
-        .into_parts();
-    assert_eq!(fidelity.parts().len(), 3);
+    let (_, _, fidelity, losses) = output.into_parts();
+    assert!(fidelity.retained_records().is_empty());
     assert!(losses.is_empty());
 }
 
@@ -183,28 +104,11 @@ fn discarded_descriptive_and_unadmitted_metadata_get_no_projection_credit() {
     let arena = DecodeArena::new();
     let (ctx, root) =
         DecodeContext::from_root_bytes(&bytes, &arena, &DecodePolicy::service()).unwrap();
-    let scan = card::scan_source(root, &ctx).unwrap();
-    let mut output = ParserPartOutput::new(cadmpeg_ir::CodecFormat::Iges);
+    let scan = card::scan_source(root).unwrap();
+    let mut output = PartOutput::new(cadmpeg_ir::CodecFormat::Iges);
     let (global, _) = parse(&scan, &ctx, &mut output).unwrap();
     assert_eq!(global.sender_product(), None);
     assert_eq!(global.native_file_name(), Some("part.igs"));
-    let mut captures = ctx.take_record_captures().unwrap();
-    captures.sort_unstable_by_key(|capture| capture.offset());
-    assert_eq!(captures.len(), 24);
-    for index in [2, 4, 5, 17, 19, 20, 21, 23, 24, 25] {
-        assert!(
-            captures[index - 2].reads().is_empty(),
-            "field {}",
-            index + 1
-        );
-    }
-    assert_eq!(
-        captures
-            .iter()
-            .filter(|capture| !capture.reads().is_empty())
-            .count(),
-        3
-    );
 }
 
 #[test]
@@ -213,9 +117,9 @@ fn mandatory_global_failure_has_one_shared_actual_source_home_and_no_reads() {
     let arena = DecodeArena::new();
     let (ctx, root) =
         DecodeContext::from_root_bytes(&bytes, &arena, &DecodePolicy::service()).unwrap();
-    let scan = card::scan_source(root, &ctx).unwrap();
+    let scan = card::scan_source(root).unwrap();
     let original_error = crate::global::parse(&scan).unwrap_err();
-    let mut output = ParserPartOutput::new(cadmpeg_ir::CodecFormat::Iges);
+    let mut output = PartOutput::new(cadmpeg_ir::CodecFormat::Iges);
     // #222 C.5: the delimiter declarations frame the section, so the section
     // is given up. Every Global value is absent and the delimiters are the
     // IGES 5.3 §2.2.4.3.1-2 defaults.
@@ -224,35 +128,18 @@ fn mandatory_global_failure_has_one_shared_actual_source_home_and_no_reads() {
     assert_eq!(global.record_delimiter, b';');
     assert_eq!(global.sender_product(), None);
     assert_eq!(global.native_file_name(), None);
-    let (_, native, fidelity, losses) = output
-        .into_parts(&ctx)
-        .expect("finalize parser dependencies")
-        .into_parts();
-    let unknowns = native
-        .namespace("iges")
-        .unwrap()
-        .arena_as::<NativeUnknownRecord>("unknowns")
-        .unwrap();
-    assert_eq!(unknowns.len(), 1);
+    let (_, native, fidelity, losses) = output.into_parts();
+    assert!(native.namespace("iges").is_none());
     let global = scan.section(Section::Global).next().unwrap().1;
     let start = usize::try_from(global.offset).unwrap();
-    assert_eq!(
-        fidelity
-            .retained_record(unknowns[0].id.as_str())
-            .unwrap()
-            .data(),
-        Some(&bytes[start..start + 81])
-    );
-    assert_eq!(fidelity.parts().len(), 1);
-    assert_eq!(
-        fidelity.parts()[&unknowns[0].id].state(),
-        &PartState::GivenUp {}
-    );
+    assert_eq!(fidelity.retained_records().len(), 1);
+    let (_, section) = fidelity.retained_records().first_key_value().unwrap();
+    assert!(!section.untyped().is_empty());
+    assert_eq!(section.data(), Some(&bytes[start..start + 81]));
     assert_eq!(losses.len(), 1);
     assert_eq!(losses[0].code.local_code(), "record.unreadable");
     assert_eq!(losses[0].severity, cadmpeg_ir::report::Severity::Error);
     assert!(losses[0].message.contains(&original_error.to_string()));
-    assert!(ctx.take_record_captures().unwrap().is_empty());
 }
 
 #[test]
@@ -263,9 +150,9 @@ fn unreadable_descriptive_suffix_keeps_original_preceding_values_and_losses() {
     let arena = DecodeArena::new();
     let (ctx, root) =
         DecodeContext::from_root_bytes(&bytes, &arena, &DecodePolicy::service()).unwrap();
-    let scan = card::scan_source(root, &ctx).unwrap();
+    let scan = card::scan_source(root).unwrap();
     let (expected, expected_losses) = crate::global::parse(&scan).unwrap();
-    let mut output = ParserPartOutput::new(cadmpeg_ir::CodecFormat::Iges);
+    let mut output = PartOutput::new(cadmpeg_ir::CodecFormat::Iges);
     let (actual, losses) = parse(&scan, &ctx, &mut output).unwrap();
     assert_eq!(actual.sender_product(), Some("product"));
     assert_eq!(actual.declared_version_flag(), 11);
@@ -285,35 +172,19 @@ fn unreadable_descriptive_suffix_keeps_original_preceding_values_and_losses() {
         serde_json::to_value(losses).unwrap(),
         serde_json::to_value(expected_losses).unwrap()
     );
-    let (_, native, fidelity, losses) = output
-        .into_parts(&ctx)
-        .expect("finalize parser dependencies")
-        .into_parts();
-    let unknowns = native
-        .namespace("iges")
-        .unwrap()
-        .arena_as::<NativeUnknownRecord>("unknowns")
-        .unwrap();
-    assert_eq!(unknowns.len(), 1);
-    assert_eq!(fidelity.parts().len(), 23);
-    let failed = &fidelity.parts()[&unknowns[0].id];
-    assert_eq!(failed.level().as_str(), "iges.global_field");
-    assert_eq!(failed.state(), &PartState::GivenUp {});
+    let (_, native, fidelity, losses) = output.into_parts();
+    assert!(native.namespace("iges").is_none());
+    assert_eq!(fidelity.retained_records().len(), 1);
+    let (_, failed) = fidelity.retained_records().first_key_value().unwrap();
+    assert!(!failed.untyped().is_empty());
     let start = fields[..23]
         .iter()
         .map(|field| field.len() + 1)
         .sum::<usize>();
     assert_eq!(failed.offset(), u64::try_from(start).unwrap());
-    assert_eq!(
-        fidelity
-            .parts()
-            .values()
-            .filter(|part| part.state() == &PartState::Decoded {})
-            .count(),
-        22
-    );
     assert_eq!(losses.len(), 1);
     assert_eq!(losses[0].code.local_code(), "record.unreadable");
+    assert!(losses[0].message.starts_with("part iges.global_field "));
 }
 
 #[test]
@@ -322,20 +193,15 @@ fn detached_source_and_fatal_session_budget_never_fabricate_global_parts() {
     let arena = DecodeArena::new();
     let (ctx, root) =
         DecodeContext::from_root_bytes(&bytes, &arena, &DecodePolicy::service()).unwrap();
-    assert!(card::scan_source(View::over_retained(&bytes), &ctx).is_err());
-    let scan = card::scan_source(root, &ctx).unwrap();
+    let scan = card::scan_source(root).unwrap();
     ctx.retain_bytes(ctx.retained_bytes_available(), "consume caller allowance")
         .unwrap();
-    let mut output = ParserPartOutput::new(cadmpeg_ir::CodecFormat::Iges);
+    let mut output = PartOutput::new(cadmpeg_ir::CodecFormat::Iges);
     assert!(matches!(
         parse(&scan, &ctx, &mut output),
         Err(CodecError::ResourceLimit(_))
     ));
     assert!(output.native().namespace("iges").is_none());
-    assert!(output.fidelity().parts().is_empty());
+    assert!(output.fidelity().retained_records().is_empty());
     assert!(output.losses().is_empty());
-    assert!(matches!(
-        output.into_parts(&ctx),
-        Err(CodecError::ResourceLimit(refusal)) if Some(refusal) == ctx.resource_refusal()
-    ));
 }

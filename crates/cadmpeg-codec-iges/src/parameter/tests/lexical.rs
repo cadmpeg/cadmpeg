@@ -322,32 +322,16 @@ fn a_split_numeric_parameter_is_quarantined_in_the_decode() {
         assert_eq!(parameters[index]["value"]["value"], value);
     }
     assert!(native.arenas()["quarantined_parameter_records"].is_empty());
-    let unknowns = native
-        .arena_as::<cadmpeg_ir::NativeUnknownRecord>("unknowns")
-        .unwrap();
-    assert_eq!(unknowns.len(), 1);
     let fidelity = result.source_fidelity();
-    let part = &fidelity.parts()[&unknowns[0].id];
-    assert_eq!(part.level().as_str(), "iges.parameter_field");
+    let parts = crate::test_support::given_up_parts(fidelity);
+    assert_eq!(parts.len(), 1);
+    let part = parts[0];
+    assert!(!part.untyped().is_empty());
     assert_eq!(
-        part.state(),
-        &cadmpeg_ir::source_fidelity::parts::PartState::GivenUp {}
+        crate::test_support::given_up_count(result.report(), "iges.parameter_field"),
+        1
     );
     assert_eq!(part.offset(), 4);
     assert_eq!(part.byte_len(), 61);
-    assert_eq!(part.framing_bytes(), &[64..65]);
-    assert_eq!(
-        fidelity
-            .retained_record(unknowns[0].id.as_str())
-            .unwrap()
-            .data(),
-        Some(format!("{x},").as_bytes())
-    );
-    let parent = &fidelity.parts()[part.parent().unwrap()];
-    assert_eq!(parent.level().as_str(), "iges.parameter_record");
-    assert_eq!(
-        parent.state(),
-        &cadmpeg_ir::source_fidelity::parts::PartState::Decoded {}
-    );
-    assert_eq!(parent.byte_len(), 162);
+    assert_eq!(part.data(), Some(format!("{x},").as_bytes()));
 }

@@ -2,7 +2,6 @@
 
 use super::project_configuration_sketch_states;
 use crate::history::tests::{design_configuration, feature_input_lane};
-use crate::resolved_features::class_sources::ClassSources;
 use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::geometry::nurbs::{NurbsSurface, NurbsSurfaceAxis, NurbsSurfaceLanes};
@@ -124,13 +123,12 @@ fn carrier_model() -> cadmpeg_ir::CadIr {
     ir
 }
 
-fn run(_class_sources: &ClassSources, policy: &DecodePolicy) -> Result<(), CodecError> {
+fn run(policy: &DecodePolicy) -> Result<(), CodecError> {
     let arena = DecodeArena::new();
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, policy)?;
     let mut ir = carrier_model();
     let expected = ir.clone();
     let losses = project_configuration_sketch_states(
-        &crate::test_support::native::class_sources(&[&feature_input_lane("lane", Some("0"))]),
         &ctx,
         &mut ir,
         &[],
@@ -181,9 +179,7 @@ fn assert_nesting_refusal(project: fn(&DecodePolicy) -> Result<(), CodecError>) 
 
 #[test]
 fn configuration_sketch_projection_carrier_runs_under_service_policy() {
-    let class_sources = ClassSources::default();
-
-    run(&class_sources, &DecodePolicy::service()).unwrap();
+    run(&DecodePolicy::service()).unwrap();
 }
 
 fn datum_model() -> cadmpeg_ir::CadIr {
@@ -297,7 +293,7 @@ fn configuration_datum_state_projection_refuses_nesting_limit() {
     assert_nesting_refusal(run_datum);
 }
 
-fn run_design(_class_sources: &ClassSources, policy: &DecodePolicy) -> Result<(), CodecError> {
+fn run_design(policy: &DecodePolicy) -> Result<(), CodecError> {
     use cadmpeg_ir::features::{
         Dimension, FeatureDefinition, FeatureOperation, ParameterId, ParameterValue,
     };
@@ -328,7 +324,6 @@ fn run_design(_class_sources: &ClassSources, policy: &DecodePolicy) -> Result<()
         .parameters
         .insert(cadmpeg_core::nonblank_literal!("Length"), "14mm".into());
     super::project_configuration_design_states(
-        &crate::test_support::native::class_sources(&[&feature_input_lane("lane", Some("0"))]),
         &ctx,
         &mut ir,
         &histories,
@@ -400,7 +395,6 @@ fn run_unscoped_datum(policy: &DecodePolicy) -> Result<(), CodecError> {
     };
 
     let losses = project_configuration_sketch_states(
-        &crate::resolved_features::class_sources::ClassSources::default(),
         &ctx,
         &mut ir,
         &[],
@@ -412,10 +406,7 @@ fn run_unscoped_datum(policy: &DecodePolicy) -> Result<(), CodecError> {
     Ok(())
 }
 
-fn run_spatial_ownership(
-    _class_sources: &ClassSources,
-    policy: &DecodePolicy,
-) -> Result<(), CodecError> {
+fn run_spatial_ownership(policy: &DecodePolicy) -> Result<(), CodecError> {
     use cadmpeg_ir::features::{
         Feature, FeatureDefinition, FeatureEvaluation, FeatureId, FeatureOperation,
     };
@@ -485,7 +476,6 @@ fn run_spatial_ownership(
         };
     }
     let losses = project_configuration_sketch_states(
-        &crate::test_support::native::class_sources(&[&feature_input_lane("lane", Some("0"))]),
         &ctx,
         &mut ir,
         &[],
@@ -601,7 +591,6 @@ fn run_hole_construction(policy: &DecodePolicy) -> Result<(), CodecError> {
         };
     }
     let losses = project_configuration_sketch_states(
-        &crate::resolved_features::class_sources::ClassSources::default(),
         &ctx,
         &mut ir,
         &[],
@@ -688,7 +677,6 @@ fn run_hole_operands(policy: &DecodePolicy) -> Result<(), CodecError> {
         definition: Box::new(hole(true)),
     };
     let losses = project_configuration_sketch_states(
-        &crate::resolved_features::class_sources::ClassSources::default(),
         &ctx,
         &mut ir,
         &[],
@@ -896,7 +884,6 @@ fn run_hole_profile_termination(policy: &DecodePolicy) -> Result<(), CodecError>
         };
     }
     let losses = project_configuration_sketch_states(
-        &crate::resolved_features::class_sources::ClassSources::default(),
         &ctx,
         &mut ir,
         &[],
@@ -908,10 +895,7 @@ fn run_hole_profile_termination(policy: &DecodePolicy) -> Result<(), CodecError>
     Ok(())
 }
 
-fn run_parameter_overlay(
-    _class_sources: &ClassSources,
-    policy: &DecodePolicy,
-) -> Result<(), CodecError> {
+fn run_parameter_overlay(policy: &DecodePolicy) -> Result<(), CodecError> {
     use cadmpeg_ir::features::{DesignParameter, ParameterId, ParameterValue};
     let arena = DecodeArena::new();
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, policy)?;
@@ -1039,10 +1023,6 @@ fn run_parameter_overlay(
     }
     let expected = ir.clone();
     let result = project_configuration_sketch_states(
-        &crate::test_support::native::class_sources(&[
-            &feature_input_lane("first", Some("0")),
-            &feature_input_lane("second", Some("1")),
-        ]),
         &ctx,
         &mut ir,
         &[],
@@ -1061,9 +1041,7 @@ fn run_parameter_overlay(
 
 #[test]
 fn configuration_design_projection_runs_under_service_policy() {
-    let class_sources = ClassSources::default();
-
-    run_design(&class_sources, &DecodePolicy::service()).unwrap();
+    run_design(&DecodePolicy::service()).unwrap();
 }
 
 #[test]
@@ -1073,9 +1051,7 @@ fn configuration_sketch_projection_unscoped_datum_runs_under_service_policy() {
 
 #[test]
 fn configuration_sketch_projection_ownership_runs_under_service_policy() {
-    let class_sources = ClassSources::default();
-
-    run_spatial_ownership(&class_sources, &DecodePolicy::service()).unwrap();
+    run_spatial_ownership(&DecodePolicy::service()).unwrap();
 }
 
 #[test]
@@ -1095,9 +1071,7 @@ fn configuration_sketch_projection_hole_profile_termination_runs_under_service_p
 
 #[test]
 fn configuration_sketch_projection_parameter_overlay_runs_under_service_policy() {
-    let class_sources = ClassSources::default();
-
-    run_parameter_overlay(&class_sources, &DecodePolicy::service()).unwrap();
+    run_parameter_overlay(&DecodePolicy::service()).unwrap();
 }
 
 mod feature_copies;
@@ -1139,8 +1113,6 @@ fn configuration_slots_match_the_linear_lookup() {
 
 #[test]
 fn configuration_projection_cap_leaves_later_configurations_empty() -> Result<(), CodecError> {
-    let class_sources = ClassSources::default();
-
     let arena = DecodeArena::new();
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service())?;
     let mut feature = crate::history::tests::feature("feature", None, 0);
@@ -1181,7 +1153,6 @@ fn configuration_projection_cap_leaves_later_configurations_empty() -> Result<()
 
     let mut uncapped = base.clone();
     let unprojected = super::project_configuration_design_states_within(
-        &class_sources,
         &ctx,
         &mut uncapped,
         sources,
@@ -1215,7 +1186,6 @@ fn configuration_projection_cap_leaves_later_configurations_empty() -> Result<()
     let one_pass = super::configuration_history_units(&histories).unwrap();
     let mut capped = base.clone();
     let unprojected = super::project_configuration_design_states_within(
-        &class_sources,
         &ctx,
         &mut capped,
         sources,

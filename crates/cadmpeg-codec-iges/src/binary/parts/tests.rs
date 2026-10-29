@@ -21,28 +21,21 @@ fn repeated_binary_values_keep_the_exact_physical_directory_pointer_extent() {
         prefixed.extend_from_slice(&bytes);
         prefixed.extend_from_slice(b"post");
         let arena = DecodeArena::new();
-        let (ctx, root) =
+        let (_ctx, root) =
             DecodeContext::from_root_bytes(&prefixed, &arena, &DecodePolicy::service()).unwrap();
         let body = root.child(3, 3 + bytes.len()).unwrap();
-        let prefix = ctx
-            .record("iges:entity:prefix#1", body, || {
-                parameter_prefix(body, lengths)
-            })
-            .unwrap();
+        let prefix = parameter_prefix(body, lengths).unwrap();
         assert_eq!(prefix.entity_type, 116);
         assert_eq!(prefix.directory_pointer, pointer);
-        assert_eq!(prefix.pointer_extent, expected.clone());
+        assert_eq!(prefix.stream.value_extent, expected.clone());
         let extent = body
             .child(
-                body.start() + prefix.pointer_extent.start,
-                body.start() + prefix.pointer_extent.end,
+                body.start() + prefix.stream.value_extent.start,
+                body.start() + prefix.stream.value_extent.end,
             )
             .unwrap();
         assert_eq!(extent.window(), &bytes[expected]);
         assert_eq!(extent.location().space, body.location().space);
-        let captures = ctx.take_record_captures().unwrap();
-        assert_eq!(captures.len(), 1);
-        assert!(captures[0].reads().is_empty());
     }
 }
 

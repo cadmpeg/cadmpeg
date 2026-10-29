@@ -262,14 +262,7 @@ fn sync_neutral_parameters(
         let checked = cadmpeg_ir::scalar::FiniteReal::new(value)
             .ok_or_else(|| CodecError::malformed("SLDPRT scalar update is non-finite"))?;
         if !lane.native_payload.is_empty() {
-            // (P): a reloaded typed lane has no physical patch position.
-            let source_offset = scalar.offset.ok_or_else(|| {
-                CodecError::UnsupportedContent(format!(
-                    "SLDPRT scalar {} has no source patch position; regenerate its input lane",
-                    scalar.id
-                ))
-            })?;
-            let offset = usize::try_from(source_offset)
+            let offset = usize::try_from(scalar.offset)
                 .map_err(|_| CodecError::malformed("SLDPRT scalar offset exceeds address space"))?;
             let end = offset.checked_add(8).ok_or_else(|| {
                 CodecError::malformed("SLDPRT scalar extent overflows address space")

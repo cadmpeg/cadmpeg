@@ -1677,7 +1677,6 @@ pub(super) fn source_meta(
         ..
     } = scan.container.layout
     {
-        insert_source_attribute(&mut attributes, "footer_offset", footer.offset);
         insert_source_attribute(
             &mut attributes,
             "footer_entry_count",

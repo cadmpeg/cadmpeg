@@ -4,7 +4,6 @@
 //! These flags are recorded at projection cuts. Loss-code classification is an
 //! independent audit and never supplies this production state.
 
-use crate::resolved_features::class_sources::ClassSources;
 use std::collections::{BTreeMap, BTreeSet};
 
 use cadmpeg_core::CodecError;
@@ -15,24 +14,11 @@ use cadmpeg_ir::{Annotations, SourceFidelity};
 pub(super) struct Retention {
     records: BTreeMap<String, ArenaClasses>,
     source: ArenaClasses,
-    pub(super) class_sources: ClassSources,
-    pub(super) pmi_pointers: BTreeMap<String, BTreeMap<String, u64>>,
     /// History features whose inline thin operation is ambiguous in a lane.
     pub(super) ambiguous_thin_features: BTreeSet<String>,
 }
 
 impl Retention {
-    pub(super) fn install_layouts(
-        &mut self,
-        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
-        fidelity: &mut SourceFidelity,
-    ) -> Result<(), CodecError> {
-        let mut pointers = std::mem::take(&mut self.pmi_pointers);
-        // insert and insert_class enforce disjoint owner identities.
-        pointers.extend(std::mem::take(&mut self.class_sources).into_pointers(ctx)?);
-        crate::pmi::layout::install(ctx, pointers, fidelity)
-    }
-
     pub(super) fn source(&mut self, class: ArenaClass) {
         self.source.insert(class);
     }

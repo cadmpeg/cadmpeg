@@ -411,6 +411,7 @@ fn generated_source_less_writes_design_ownership_and_record_headers() {
     native.design_body_members = vec![
         DesignBodyMember::try_from(crate::records::bodies::DesignBodyMemberContent {
             id: "f3d:generated:design-body-member#0".into(),
+            byte_offset: None,
             entity_suffix: 985,
             flags: 0,
         })

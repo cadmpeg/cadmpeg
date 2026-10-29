@@ -124,12 +124,8 @@ fn native_normal_state_composes_with_boundaries_and_validates_its_owner_and_offs
         });
     }
     let wire = serde_json::to_value(&scope).unwrap();
-    let mut read = serde_json::from_value::<DesignParameterScope>(wire.clone()).unwrap();
-    let pointers = crate::records::source_offsets::collect(&mut scope.clone());
-    assert_eq!(pointers["surface_patch_normal.reversed"], 31);
-    assert!(crate::records::source_offsets::restore(&mut read, &pointers).is_empty());
-    read.restore_frame_length(128);
-    assert_eq!(read, scope);
+    let read = serde_json::from_value::<DesignParameterScope>(wire.clone()).unwrap();
+    assert_eq!(serde_json::to_value(&read).unwrap(), wire);
     for field in ["kind", "surface_patch_normal"] {
         let mut invalid = wire.clone();
         invalid[field] = if field == "kind" {

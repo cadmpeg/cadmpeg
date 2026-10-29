@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-//! Base Feature body rows preserve their wire and their capture pointers.
+//! Base Feature body rows preserve their wire.
 
 #[test]
 fn coil_values_preserve_optional_locations_and_reject_orphan_offsets() {
@@ -19,17 +19,7 @@ fn coil_values_preserve_optional_locations_and_reject_orphan_offsets() {
             let parsed: Coil = serde_json::from_str(wire).expect("valid Coil field");
             assert_eq!(&serde_json::to_string(&parsed).expect("Coil wire"), wire);
         }
-        let stored = wires.last().expect("stored wire");
-        let pointer = format!("{field}_offset");
-        for offset in [0, 30] {
-            crate::records::feature::test_support::assert_located_at(
-                serde_json::from_str::<Coil>(stored).expect("stored Coil field"),
-                &[(pointer.as_str(), offset)],
-            );
-        }
         if stored_flag {
-            let fixed: Coil = serde_json::from_str(&wires[1]).expect("dialect-fixed Coil field");
-            crate::records::feature::test_support::assert_located_pointers(&fixed, &[]);
             let error = serde_json::from_str::<Coil>(&format!("{{\"{field}_stored\":true}}"))
                 .expect_err("stored flag without value")
                 .to_string();
@@ -42,26 +32,17 @@ fn coil_values_preserve_optional_locations_and_reject_orphan_offsets() {
 #[allow(clippy::format_push_string)]
 fn legacy_base_feature_form_owns_its_compact_mode() {
     for form in ["compact_one_body", "expanded_two_body"] {
-        let (suffixes, fields, refs, parameters, auxiliary, body_offsets) =
-            if form == "compact_one_body" {
-                (
-                    "[201]",
-                    "[\"000000000000\"]",
-                    "[201]",
-                    "[301]",
-                    "[303]",
-                    &[(22, 40, 50)][..],
-                )
-            } else {
-                (
-                    "[401,402]",
-                    "[\"000000000000\",\"000000000000\"]",
-                    "[401,402]",
-                    "[301,302]",
-                    "[303,304]",
-                    &[(22, 50, 70), (36, 60, 80)][..],
-                )
-            };
+        let (suffixes, fields, refs, parameters, auxiliary) = if form == "compact_one_body" {
+            ("[201]", "[\"000000000000\"]", "[201]", "[301]", "[303]")
+        } else {
+            (
+                "[401,402]",
+                "[\"000000000000\",\"000000000000\"]",
+                "[401,402]",
+                "[301,302]",
+                "[303,304]",
+            )
+        };
         for mask in 0..2 {
             let mut wire = format!("{{\"form\":\"{form}\"");
             if mask & 1 != 0 {
@@ -76,24 +57,6 @@ fn legacy_base_feature_form_owns_its_compact_mode() {
             {
                 let parsed = parsed.expect("complete legacy form");
                 assert_eq!(serde_json::to_string(&parsed).expect("legacy wire"), wire);
-                let mut pointers = vec![
-                    ("scope_reference_offset".to_owned(), 100),
-                    ("envelope_guid_offset".to_owned(), 110),
-                    ("tag_body_based_on_faces_offset".to_owned(), 190),
-                ];
-                if mask == 1 {
-                    pointers.push(("mode".to_owned(), 17));
-                }
-                for (index, (entity, parameter, auxiliary)) in body_offsets.iter().enumerate() {
-                    pointers.push((format!("bodies.{index}.entity.offset"), *entity));
-                    pointers.push((format!("bodies.{index}.parameter_body"), *parameter));
-                    pointers.push((format!("bodies.{index}.auxiliary"), *auxiliary));
-                }
-                let pointers = pointers
-                    .iter()
-                    .map(|(name, offset)| (name.as_str(), *offset))
-                    .collect::<Vec<_>>();
-                crate::records::feature::test_support::assert_located_at(parsed, &pointers);
                 for guid in ["_".repeat(38), "invalid".into()] {
                     let changed = wire.replace("11111111-2222-3333-4444-555555555555", &guid);
                     let decoded = serde_json::from_str::<
@@ -189,19 +152,6 @@ fn snapshot_body_rows_preserve_wire_and_reject_unequal_arrays() {
             if values == fields {
                 let parsed = parsed.expect("complete snapshot rows");
                 assert_eq!(serde_json::to_string(&parsed).expect("snapshot wire"), wire);
-                let mut pointers = vec![
-                    ("related_guid_offsets.0", 66),
-                    ("related_guid_offsets.1", 142),
-                    ("related_guid_offsets.2", 275),
-                    ("linkage_record_offset", 234),
-                    ("auxiliary_record_offset", 253),
-                ];
-                pointers.extend(
-                    [("bodies.0.offset", 22), ("bodies.1.offset", 37)]
-                        .into_iter()
-                        .take(values),
-                );
-                crate::records::feature::test_support::assert_located_at(parsed, &pointers);
             } else {
                 let error = parsed.expect_err("unequal snapshot arrays").to_string();
                 assert!(error.contains("body_entity_suffixes"));
@@ -233,16 +183,6 @@ fn direct_base_feature_emits_its_single_body_reference_views() {
     }
     assert_eq!(parsed.body_entity_suffixes().collect::<Vec<_>>(), [201]);
     assert_eq!(parsed.body_reference_records().collect::<Vec<_>>(), [201]);
-    crate::records::feature::test_support::assert_located_at(
-        parsed,
-        &[
-            ("body", 22),
-            ("parameter_body_record_offset", 100),
-            ("auxiliary_record_offset", 120),
-            ("envelope_guid_offset", 140),
-            ("tag_body_based_on_faces_offset", 90),
-        ],
-    );
     for (field, old, new) in [
         ("body_entity_suffixes", "[201]", "[]"),
         ("body_entity_suffixes", "[201]", "[201,202]"),
@@ -282,21 +222,6 @@ fn base_feature_result_rows_preserve_complete_and_unrepeated_runs() {
                 serde_json::to_string(&construction).expect("result wire"),
                 wire
             );
-            let mut pointers = vec![("metadata_record_offset".to_owned(), 110)];
-            for (index, (entity, reference, result)) in [(22, 52, 82), (37, 67, 93)]
-                .into_iter()
-                .take(count)
-                .enumerate()
-            {
-                pointers.push((format!("bodies.{index}.entity.offset"), entity));
-                pointers.push((format!("bodies.{index}.reference.offset"), reference));
-                pointers.push((format!("bodies.{index}.result.offset"), result));
-            }
-            let pointers = pointers
-                .iter()
-                .map(|(name, offset)| (name.as_str(), *offset))
-                .collect::<Vec<_>>();
-            crate::records::feature::test_support::assert_located_at(construction, &pointers);
             let value: serde_json::Value = serde_json::from_str(&wire).expect("result JSON");
             for field in [
                 "body_entity_suffixes",

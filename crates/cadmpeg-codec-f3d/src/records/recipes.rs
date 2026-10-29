@@ -137,6 +137,8 @@ struct ConstructionRecipeWire {
         deserialize_with = "deserialize_design_id"
     )]
     design_id: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    design_id_offset: Option<u64>,
     #[serde(
         default,
         skip_serializing_if = "Option::is_none",
@@ -150,6 +152,8 @@ struct ConstructionRecipeWire {
         deserialize_with = "deserialize_record_index"
     )]
     record_index: Option<i32>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    record_index_offset: Option<u64>,
 }
 impl Serialize for ConstructionRecipe {
     fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
@@ -160,18 +164,24 @@ impl Serialize for ConstructionRecipe {
             #[serde(skip_serializing_if = "Option::is_none")]
             design_id: Option<&'a str>,
             #[serde(skip_serializing_if = "Option::is_none")]
+            design_id_offset: Option<u64>,
+            #[serde(skip_serializing_if = "Option::is_none")]
             design_selector: Option<ConstructionRecipeSelector>,
             recipe_index: u32,
             #[serde(skip_serializing_if = "Option::is_none")]
             record_index: Option<i32>,
+            #[serde(skip_serializing_if = "Option::is_none")]
+            record_index_offset: Option<u64>,
         }
         WireRef {
             id: &self.id,
             kind: self.kind,
             design_id: self.design.as_ref().map(|design| design.id.value.as_str()),
+            design_id_offset: self.design.as_ref().and_then(|design| design.id.offset),
             design_selector: self.design.as_ref().and_then(|design| design.selector),
             recipe_index: self.recipe_index,
             record_index: self.record_index.map(|index| index.value),
+            record_index_offset: self.record_index.and_then(|index| index.offset),
         }
         .serialize(serializer)
     }
@@ -179,11 +189,17 @@ impl Serialize for ConstructionRecipe {
 impl TryFrom<ConstructionRecipeWire> for ConstructionRecipe {
     type Error = String;
     fn try_from(wire: ConstructionRecipeWire) -> Result<Self, String> {
+        if wire.design_id_offset.is_some() && wire.design_id.is_none() {
+            return Err("construction recipe design_id_offset requires design_id".into());
+        }
+        if wire.record_index_offset.is_some() && wire.record_index.is_none() {
+            return Err("construction recipe record_index_offset requires record_index".into());
+        }
         let design = match (wire.design_id, wire.design_selector) {
             (Some(value), selector) => Some(ConstructionRecipeDesign {
                 id: RecordedValue {
                     value,
-                    offset: None,
+                    offset: wire.design_id_offset,
                 },
                 selector,
             }),
@@ -200,7 +216,7 @@ impl TryFrom<ConstructionRecipeWire> for ConstructionRecipe {
             recipe_index: wire.recipe_index,
             record_index: wire.record_index.map(|value| RecordedValue {
                 value,
-                offset: None,
+                offset: wire.record_index_offset,
             }),
         })
     }
@@ -212,9 +228,11 @@ impl From<ConstructionRecipe> for ConstructionRecipeWire {
             id: value.id,
             kind: value.kind,
             design_id: value.design.as_ref().map(|design| design.id.value.clone()),
+            design_id_offset: value.design.as_ref().and_then(|design| design.id.offset),
             design_selector: value.design.as_ref().and_then(|design| design.selector),
             recipe_index: value.recipe_index,
             record_index: value.record_index.map(|index| index.value),
+            record_index_offset: value.record_index.and_then(|index| index.offset),
         }
     }
 }

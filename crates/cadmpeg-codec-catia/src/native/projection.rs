@@ -601,17 +601,10 @@ pub(crate) fn external_reference_views(
     let mut views = Vec::new();
     for segment in segments {
         for reference in container::external_references(&segment.data) {
-            let Some(byte_offset) = segment
-                .byte_offset
-                .checked_add(u64_from_index(reference.offset))
-            else {
-                continue;
-            };
             let id = format!("catia:outer:external-reference#{}", views.len());
             let segment_id = segment.id.clone();
             views.push(CatiaExternalReference {
                 id,
-                byte_offset,
                 target: reference.target,
                 segment: segment_id,
             });

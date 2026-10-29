@@ -1258,7 +1258,6 @@ pub(super) fn try_decode_geometry(
     )?;
 
     // Extract once: body selection and annotation attachment both read it.
-    let native_reads = ctx.read_transaction()?;
     let model = crate::native::model::NativeModel::extract(
         ctx,
         &scan.container,
@@ -1280,7 +1279,7 @@ pub(super) fn try_decode_geometry(
         active_body_selection = select_terminal_feature_bodies(&mut ir, &model);
     }
     classify_body_kinds(&mut ir)?;
-    if crate::native::attach_annotations(
+    crate::native::attach_annotations(
         ctx,
         &mut ir,
         &model,
@@ -1288,11 +1287,7 @@ pub(super) fn try_decode_geometry(
         &mut annotations,
         &mut unknowns,
         &mut native_losses,
-    )? {
-        native_reads.commit()?;
-    } else {
-        drop(native_reads);
-    }
+    )?;
     for (si, unknown_index) in stream_unknowns {
         retain_unknown_stream_data(ctx, &scan.streams[si], &mut unknowns[unknown_index])?;
     }

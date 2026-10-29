@@ -20,7 +20,7 @@ use crate::records::feature::scope::DesignParameterScope;
 
 /// Operand reference and transform offsets of a wide-family scope:
 /// first reference, first transform, second reference, second transform.
-pub(crate) fn wide_family_frame_offsets(
+fn wide_family_frame_offsets(
     variant: crate::design::assembly::AssemblyOperandFrameVariant,
 ) -> Option<[usize; 4]> {
     match variant {

@@ -1264,7 +1264,7 @@ mod tests {
             InventorContainer::open(&ctx, source).expect("actual presentation envelope");
         let mut output = PartOutput::new(cadmpeg_ir::CodecFormat::Inventor);
         let result = inventory(&ctx, &container.rse, &mut output)?;
-        let (_, _, _, losses) = output.into_parts(&ctx)?.into_parts();
+        let (_, _, _, losses) = output.into_parts();
         Ok((
             result.default_styles.len()
                 + result.rendering_styles.len()

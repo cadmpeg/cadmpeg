@@ -238,7 +238,7 @@ fn global_hollerith_values_reject_non_printable_ascii() {
 }
 
 /// A forbidden byte breaks a delimiter declaration, which frames the Global
-/// section (Appendix C `iges.global_section`). The section is given up, every
+/// section (`iges.global_section`). The section is given up, every
 /// Global value is absent, and the later sections use the comma and
 /// semicolon of IGES 5.3 §2.2.4.3.1-2, which this file also uses.
 #[test]
@@ -315,7 +315,7 @@ fn a_twenty_seventh_global_field_decodes_with_the_noncanonical_framing_loss() {
 }
 
 /// A prohibited delimiter byte makes its declaration unusable, and the
-/// declarations frame the Global section (Appendix C `iges.global_section`,
+/// declarations frame the Global section (`iges.global_section`,
 /// IGES 5.3 §2.2.3.1). The section is given up and the file is not refused.
 #[test]
 fn prohibited_delimiter_declarations_give_up_the_global_section() {

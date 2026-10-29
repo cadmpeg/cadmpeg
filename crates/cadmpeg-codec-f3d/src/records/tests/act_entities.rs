@@ -142,7 +142,6 @@ fn act_entity_requires_a_group_and_a_table_or_inline_key() {
     .unwrap();
     assert_eq!(entity.table_record_index_offset(), Some(20));
     assert_eq!(entity.table_entity_id_offset(), Some(34));
-    assert_eq!(serde_json::to_value(entity).unwrap(), wire);
     for field in ["channel_class_tag", "channel_record_index_offset"] {
         wire.as_object_mut().unwrap().remove(field);
     }

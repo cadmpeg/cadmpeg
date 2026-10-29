@@ -248,10 +248,10 @@ pub(super) fn attach(
     annotations: &mut AnnotationBuilder,
     unknowns: &mut Vec<UnknownRecord>,
     losses: &mut Vec<LossNote>,
-) -> Result<bool, CodecError> {
+) -> Result<(), CodecError> {
     let snapshot = AttachSnapshot::capture(ir, annotations, unknowns, losses);
     match attach_records(ctx, ir, model, scan, annotations, unknowns, losses) {
-        Ok(()) => Ok(true),
+        Ok(()) => Ok(()),
         Err(error @ CodecError::ResourceLimit(_)) => Err(error),
         Err(error) => {
             snapshot.restore(ir, annotations, unknowns, losses);
@@ -266,7 +266,7 @@ pub(super) fn attach(
                  records, or container passthrough records are kept."
                 )
             }));
-            Ok(false)
+            Ok(())
         }
     }
 }

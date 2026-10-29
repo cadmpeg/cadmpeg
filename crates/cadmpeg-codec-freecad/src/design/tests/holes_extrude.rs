@@ -294,7 +294,7 @@ fn uses_only_direct_custom_hole_enumeration_labels() {
             .is_some_and(|properties| {
                 properties.iter().any(|property| {
                     property.name == "ThreadSize"
-                        && std::str::from_utf8(crate::test_support::source_fidelity::bytes(
+                        && std::str::from_utf8(&crate::test_support::source_fidelity::bytes(
                             result.source_fidelity(),
                             &property.id,
                         ))

@@ -236,44 +236,8 @@ fn companion_findings(
         ctx.records_by_index.insert((stream, 8), &header);
         let mut findings = Vec::new();
         super::super::validate_parameter_companions(&ctx, &mut findings);
-        let mut pointers = vec![
-            ("byte_offset", byte_offset),
-            ("timestamp_micros_offset", timestamp_offset),
-        ];
-        pointers.extend(payload_offset.map(|offset| ("payload_byte_offset", offset)));
-        let fidelity = crate::test_support::source_layout::sidecar(
-            "Design/BulkStream.dat",
-            &[(native.design_parameter_companions[0].id(), 0, 58, &pointers)],
-        );
-        super::super::source_layout::validate_parameter_companion_layouts(
-            &ctx,
-            &super::super::source_layout::Layouts {
-                fidelity: &fidelity,
-            },
-            &mut findings,
-        );
         findings
     })
-}
-
-#[test]
-fn companion_rejects_overflowed_timestamp_origin() {
-    let findings = companion_findings(u64::MAX - 41, u64::MAX, None);
-    assert_eq!(findings.len(), 1);
-    assert_eq!(
-        findings[0].message,
-        "Fusion Design parameter companion has an invalid prefix or owner link"
-    );
-}
-
-#[test]
-fn companion_rejects_overflowed_payload_origin() {
-    let findings = companion_findings(u64::MAX - 57, u64::MAX - 15, Some(u64::MAX));
-    assert_eq!(findings.len(), 1);
-    assert_eq!(
-        findings[0].message,
-        "Fusion Design parameter companion has an invalid prefix or owner link"
-    );
 }
 
 #[test]

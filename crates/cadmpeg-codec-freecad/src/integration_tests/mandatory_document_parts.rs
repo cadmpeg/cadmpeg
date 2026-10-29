@@ -2,7 +2,6 @@
 //! A bounded mandatory document failure preserves independently opened archive members.
 
 use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, InspectOptions, LimitScope};
-use cadmpeg_ir::source_fidelity::parts::PartState;
 use cadmpeg_ir::{Codec, DecodeOptions};
 use cadmpeg_test_support::zip_fixture::{self, RawEntry};
 use std::io::Cursor;
@@ -36,17 +35,14 @@ fn bounded_xml_utf8_and_schema_failures_preserve_the_same_successful_peer() {
         .iter()
         .find(|entry| entry.name() == "Document.xml")
         .unwrap();
-    for (case, document) in [
+    for document in [
         b"<Document SchemaVersion='4'><Objects></Document>".as_slice(),
         b"<Document SchemaVersion='4'>\xff</Document>".as_slice(),
         b"<Document SchemaVersion='invalid' FileVersion='1'><Objects/><ObjectData/></Document>"
             .as_slice(),
         b"<Document SchemaVersion='4' FileVersion='1'><Objects/><Objects/><ObjectData/></Document>"
             .as_slice(),
-    ]
-    .into_iter()
-    .enumerate()
-    {
+    ] {
         let bytes = source(document);
         let decoded = crate::FcstdCodec
             .decode(&mut Cursor::new(&bytes), &DecodeOptions::default())
@@ -77,11 +73,11 @@ fn bounded_xml_utf8_and_schema_failures_preserve_the_same_successful_peer() {
             .arena_as::<crate::native::DocumentFacts>("document")
             .unwrap()
             .is_empty());
-        let unknowns = decoded.ir().native_unknowns("fcstd").unwrap();
-        let [unknown] = unknowns.as_slice() else {
+        let fidelity = decoded.source_fidelity();
+        let parts = crate::test_support::source_fidelity::given_up(fidelity);
+        let [(_, retained)] = parts.as_slice() else {
             panic!("one failed document")
         };
-        let fidelity = decoded.source_fidelity();
         assert_eq!(
             fidelity.unrepresented(),
             cadmpeg_ir::ArenaClasses::from([
@@ -89,43 +85,9 @@ fn bounded_xml_utf8_and_schema_failures_preserve_the_same_successful_peer() {
                 cadmpeg_ir::ArenaClass::Design
             ])
         );
-        let part = &fidelity.parts()[&unknown.id];
-        let root_framed = case >= 2;
-        assert_eq!(
-            part.level().as_str(),
-            if root_framed {
-                "freecad.document"
-            } else {
-                "freecad.document_xml"
-            }
-        );
-        assert_eq!(part.state(), &PartState::GivenUp {});
-        assert_eq!(part.offset(), 0);
-        assert_eq!(part.byte_len(), u64::try_from(document.len()).unwrap());
-        let parent = &fidelity.parts()[part.parent().unwrap()];
-        let parent = if root_framed {
-            assert_eq!(parent.level().as_str(), "freecad.document_xml");
-            assert_eq!(parent.state(), &PartState::Decoded {});
-            &fidelity.parts()[parent.parent().unwrap()]
-        } else {
-            parent
-        };
-        assert_eq!(parent.level().as_str(), "zip.entry");
-        assert_eq!(parent.state(), &PartState::Decoded {});
-        let archive = &fidelity.parts()[parent.parent().unwrap()];
-        assert_eq!(archive.level().as_str(), "zip.archive");
-        assert_eq!(archive.state(), &PartState::Decoded {});
-        assert_eq!(fidelity.parts().len(), 6 + usize::from(root_framed));
-        let retained = fidelity.retained_record(unknown.id.as_str()).unwrap();
         assert_eq!(retained.data(), Some(document));
-        assert_eq!(retained.stream(), part.stream());
+        assert_eq!(retained.offset(), 0);
         assert_eq!(retained.sha256(), cadmpeg_ir::hash::sha256_hex(document));
-        assert!(fidelity.record_layout()[unknown.id.as_str()]
-            .reads()
-            .is_empty());
-        assert!(!fidelity
-            .record_layout()
-            .contains_key(&crate::native::native_id("document", "0")));
         assert_eq!(crate::source_archive::image(fidelity).unwrap(), bytes);
         let failed = decoded
             .report()
@@ -137,11 +99,11 @@ fn bounded_xml_utf8_and_schema_failures_preserve_the_same_successful_peer() {
         assert_eq!(failed[0].severity, cadmpeg_ir::report::Severity::Error);
         assert_eq!(
             failed[0].provenance.as_ref().unwrap().stream_name(),
-            Some(part.stream())
+            Some("Document.xml")
         );
         assert_eq!(
             failed[0].provenance.as_ref().unwrap().byte_len(),
-            Some(part.byte_len())
+            Some(retained.byte_len())
         );
         assert!(crate::test_support::validate_native(decoded.ir()).is_empty());
         let geometry = crate::FcstdCodec
@@ -188,37 +150,6 @@ fn bounded_xml_utf8_and_schema_failures_preserve_the_same_successful_peer() {
                 .count(),
             1
         );
-        let arena = DecodeArena::new();
-        let (ctx, root) =
-            DecodeContext::from_root_bytes(&bytes, &arena, &DecodePolicy::service()).unwrap();
-        let archive = crate::source_archive::OriginalArchive::new(&ctx, root, fidelity).unwrap();
-        assert_eq!(
-            archive.open(&ctx, "peer.bin").unwrap().window(),
-            b"readable peer"
-        );
-        assert_eq!(
-            archive
-                .part(&ctx, unknown.id.as_str(), "Document.xml")
-                .unwrap(),
-            document
-        );
-        let mut shifted = serde_json::to_value(fidelity).unwrap();
-        for map in ["parts", "retained_records", "record_layout"] {
-            shifted[map][unknown.id.as_str()]["offset"] = serde_json::json!(part.offset() + 1);
-        }
-        if root_framed {
-            for range in shifted["parts"][unknown.id.as_str()]["framing_bytes"]
-                .as_array_mut()
-                .unwrap()
-            {
-                let start = range["start"].as_u64().unwrap();
-                let end = range["end"].as_u64().unwrap();
-                range["start"] = serde_json::json!(start + 1);
-                range["end"] = serde_json::json!(end + 1);
-            }
-        }
-        let shifted: cadmpeg_ir::SourceFidelity = serde_json::from_value(shifted).unwrap();
-        assert!(crate::source_archive::OriginalArchive::new(&ctx, root, &shifted).is_err());
     }
 }
 
@@ -231,14 +162,10 @@ fn a_mandatory_member_decompression_failure_keeps_its_stored_extent_and_peer() {
     let decoded = crate::FcstdCodec
         .decode(&mut Cursor::new(&bytes), &DecodeOptions::default())
         .unwrap();
-    let unknowns = decoded.ir().native_unknowns("fcstd").unwrap();
-    let [unknown] = unknowns.as_slice() else {
+    let parts = crate::test_support::source_fidelity::given_up(decoded.source_fidelity());
+    let [(_, retained)] = parts.as_slice() else {
         panic!("one failed entry")
     };
-    let part = &decoded.source_fidelity().parts()[&unknown.id];
-    assert_eq!(part.level().as_str(), "zip.entry");
-    assert_eq!(part.state(), &PartState::GivenUp {});
-    assert_eq!(part.stream(), "file");
     let arena = DecodeArena::new();
     let (ctx, root) =
         DecodeContext::from_root_bytes(&bytes, &arena, &DecodePolicy::service()).unwrap();
@@ -248,16 +175,9 @@ fn a_mandatory_member_decompression_failure_keeps_its_stored_extent_and_peer() {
         .unwrap()
         .stored_range()
         .unwrap();
-    assert_eq!(part.offset(), extent.start);
-    assert_eq!(part.byte_len(), extent.end - extent.start);
-    assert_eq!(
-        decoded
-            .source_fidelity()
-            .retained_record(unknown.id.as_str())
-            .unwrap()
-            .data(),
-        Some(b"stored mandatory bytes".as_slice())
-    );
+    assert_eq!(retained.offset(), extent.start);
+    assert_eq!(retained.byte_len(), extent.end - extent.start);
+    assert_eq!(retained.data(), Some(b"stored mandatory bytes".as_slice()));
     let entries = decoded
         .ir()
         .native
@@ -318,11 +238,11 @@ fn an_unframeable_mandatory_header_gives_up_only_the_real_archive_parent() {
         cadmpeg_ir::ContentScope::container()
     );
     assert!(decoded.ir().source.as_ref().unwrap().dialects().is_none());
-    let unknowns = decoded.ir().native_unknowns("fcstd").unwrap();
-    let [unknown] = unknowns.as_slice() else {
+    let fidelity = decoded.source_fidelity();
+    let parts = crate::test_support::source_fidelity::given_up(fidelity);
+    let [(_, retained)] = parts.as_slice() else {
         panic!("one real archive failure")
     };
-    let fidelity = decoded.source_fidelity();
     assert_eq!(
         fidelity.unrepresented(),
         cadmpeg_ir::ArenaClasses::from([
@@ -330,20 +250,10 @@ fn an_unframeable_mandatory_header_gives_up_only_the_real_archive_parent() {
             cadmpeg_ir::ArenaClass::Design
         ])
     );
-    assert_eq!(fidelity.parts().len(), 1);
-    let part = &fidelity.parts()[&unknown.id];
-    assert_eq!(part.level().as_str(), "zip.archive");
-    assert_eq!(part.offset(), 0);
-    assert_eq!(part.byte_len(), u64::try_from(bytes.len()).unwrap());
-    assert_eq!(part.state(), &PartState::GivenUp {});
+    assert_eq!(retained.offset(), 0);
+    assert_eq!(retained.byte_len(), u64::try_from(bytes.len()).unwrap());
     assert_eq!(fidelity.retained_records().len(), 1);
-    assert_eq!(
-        fidelity
-            .retained_record(unknown.id.as_str())
-            .unwrap()
-            .data(),
-        Some(bytes.as_slice())
-    );
+    assert_eq!(retained.data(), Some(bytes.as_slice()));
     assert!(fidelity
         .retained_record(crate::fidelity::SOURCE_IMAGE)
         .is_none());
@@ -351,10 +261,10 @@ fn an_unframeable_mandatory_header_gives_up_only_the_real_archive_parent() {
         .ir()
         .native
         .namespace("fcstd")
-        .unwrap()
-        .arena_as::<crate::native::EntryRecord>("entries")
-        .unwrap()
-        .is_empty());
+        .is_none_or(|native| native
+            .arena_as::<crate::native::EntryRecord>("entries")
+            .unwrap()
+            .is_empty()));
     assert_eq!(
         decoded
             .report()

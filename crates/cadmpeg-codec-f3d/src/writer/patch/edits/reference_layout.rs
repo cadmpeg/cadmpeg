@@ -21,7 +21,6 @@ fn reloaded_material_edit_keeps_actual_baseline_string_positions() {
     let mut after: DesignMaterialAssignment =
         serde_json::from_value(serde_json::to_value(&before).unwrap()).unwrap();
     after.physical_token.as_mut().unwrap().value = "Prism-003".into();
-    assert_eq!(after.entity_id_offset, None);
     let baseline = F3dNative {
         design_material_assignments: vec![before],
         ..Default::default()
@@ -58,7 +57,6 @@ fn reloaded_lost_edge_edit_keeps_actual_baseline_header_position() {
     let mut after: LostEdgeReference =
         serde_json::from_value(serde_json::to_value(&before).unwrap()).unwrap();
     after.record_index = 9;
-    assert_eq!(after.record_byte_offset(), None);
     let baseline = F3dNative {
         lost_edge_references: vec![before],
         ..Default::default()
@@ -143,8 +141,6 @@ fn reloaded_sketch_curve_edit_requires_actual_baseline_geometry_position() {
     };
     let mut after: SketchCurveIdentity =
         serde_json::from_value(serde_json::to_value(&before).unwrap()).unwrap();
-    assert_eq!(after.byte_offset, None);
-    assert_eq!(after.geometry_offset, None);
     after.geometry = Some(line(20.0));
     let mut baseline = F3dNative {
         sketch_curve_identities: vec![before],

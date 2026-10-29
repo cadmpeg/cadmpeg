@@ -40,7 +40,7 @@ fn project_with_policy() {
     lane.relation_instances[0].scalars =
         RelationScalars::from_refs(vec!["scalar".into()], None, None).unwrap();
     lane.relation_instances[0].operands = vec![FeatureInputOperand {
-        offset: Some(0),
+        offset: 0,
         reference_ref: "reference".into(),
         kind: FeatureInputOperandKind::D6,
         entity_index: 0,

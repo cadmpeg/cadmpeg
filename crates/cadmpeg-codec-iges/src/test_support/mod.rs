@@ -46,6 +46,33 @@ pub(crate) fn plan_at(
     )
 }
 
+/// The retained records of given-up parts, in identity order.
+pub(crate) fn given_up_parts(
+    fidelity: &cadmpeg_ir::SourceFidelity,
+) -> Vec<&cadmpeg_ir::RetainedSourceRecord> {
+    fidelity
+        .retained_records()
+        .iter()
+        .filter(|(id, _)| id.as_str().starts_with("iges:source:part#"))
+        .map(|(_, record)| record)
+        .collect()
+}
+
+/// The number of parts labelled `label` that the decode gave up.
+pub(crate) fn given_up_count(
+    report: &cadmpeg_ir::report::decode::DecodeReport,
+    label: &str,
+) -> usize {
+    let prefix = format!("part {label} ");
+    report
+        .losses
+        .iter()
+        .filter(|loss| {
+            loss.code.local_code() == "record.unreadable" && loss.message.starts_with(&prefix)
+        })
+        .count()
+}
+
 /// Decode options in strict mode.
 pub(crate) fn strict_options() -> cadmpeg_ir::codec::DecodeOptions {
     let mut options = cadmpeg_ir::codec::DecodeOptions::default();

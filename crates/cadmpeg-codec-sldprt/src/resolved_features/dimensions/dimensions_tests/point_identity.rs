@@ -4,14 +4,11 @@ use crate::records::{
     FeatureInputClass, FeatureInputLane, FeatureInputOperand, FeatureInputOperandKind,
     FeatureInputReference, SketchInputEntity, SketchInputKind,
 };
-use crate::resolved_features::class_sources::ClassSources;
 use crate::resolved_features::relation_geometry::direct_point_dimension_center;
 use std::collections::HashMap;
 
 #[test]
 fn classless_point_identity_requires_exact_reference_and_center_role() {
-    let class_sources = ClassSources::default();
-
     let kind = FeatureInputOperandKind::Native(NativeOperandTag::try_from(0x80fe).unwrap());
     let marker = |id: &str, offset, object_index, local_id, coordinates_m| {
         let marker_id: String = id.into();
@@ -45,6 +42,7 @@ fn classless_point_identity_requires_exact_reference_and_center_role() {
         generated_surface_identities: Vec::new(),
         references: vec![FeatureInputReference {
             sequence: 100,
+            offset: 100,
             id: "reference".into(),
             parent: "lane".into(),
             feature_ref: Some("feature".into()),
@@ -56,7 +54,7 @@ fn classless_point_identity_requires_exact_reference_and_center_role() {
         sketch_entities: vec![marker("center", 10, Some(10), Some(0), [0.010, 0.020])],
     };
     let operand = FeatureInputOperand {
-        offset: Some(100),
+        offset: 100,
         reference_ref: "reference".into(),
         kind,
         entity_index: 0,
@@ -64,14 +62,8 @@ fn classless_point_identity_requires_exact_reference_and_center_role() {
     };
 
     assert_eq!(
-        direct_point_dimension_center(
-            &class_sources,
-            std::slice::from_ref(&lane),
-            "feature",
-            &operand,
-            5.0
-        )
-        .map(crate::records::SketchInputEntity::id),
+        direct_point_dimension_center(std::slice::from_ref(&lane), "feature", &operand, 5.0)
+            .map(crate::records::SketchInputEntity::id),
         Some("center")
     );
     let markers = lane
@@ -80,7 +72,6 @@ fn classless_point_identity_requires_exact_reference_and_center_role() {
         .map(|marker| (marker.id(), marker))
         .collect::<HashMap<_, _>>();
     let carrier = dimensioned_relation_carrier(
-        &class_sources,
         std::slice::from_ref(&lane),
         &markers,
         "feature",
@@ -96,7 +87,6 @@ fn classless_point_identity_requires_exact_reference_and_center_role() {
         ..operand.clone()
     };
     assert!(direct_point_dimension_center(
-        &class_sources,
         std::slice::from_ref(&lane),
         "feature",
         &mismatched,
@@ -115,7 +105,6 @@ fn classless_point_identity_requires_exact_reference_and_center_role() {
     };
     assert_eq!(
         direct_point_dimension_center(
-            &class_sources,
             std::slice::from_ref(&nonmatching_pair_lane),
             "feature",
             &nonmatching_pair,
@@ -135,7 +124,6 @@ fn classless_point_identity_requires_exact_reference_and_center_role() {
         ..operand
     };
     assert!(direct_point_dimension_center(
-        &class_sources,
         std::slice::from_ref(&radial_lane),
         "feature",
         &radial,
@@ -170,6 +158,7 @@ fn native_point_identity_rejects_a_declared_radial_marker() {
         native_payload: Vec::new().into(),
         classes: vec![FeatureInputClass {
             sequence: 112,
+            offset: 112,
             feature_ref: None,
             id: "class".into(),
             parent: "lane".into(),
@@ -186,6 +175,7 @@ fn native_point_identity_rejects_a_declared_radial_marker() {
         generated_surface_identities: Vec::new(),
         references: vec![FeatureInputReference {
             sequence: 100,
+            offset: 100,
             id: "reference".into(),
             parent: "lane".into(),
             feature_ref: Some("feature".into()),
@@ -205,15 +195,13 @@ fn native_point_identity_rejects_a_declared_radial_marker() {
         .map(|marker| (marker.id(), marker))
         .collect::<HashMap<_, _>>();
     let center = FeatureInputOperand {
-        offset: Some(100),
+        offset: 100,
         reference_ref: "reference".into(),
         kind,
         entity_index: 1,
         entity_ref: Some("center".into()),
     };
-    let class_sources = ClassSources::from_positions([(&lane.classes[0], 112)]);
     let carrier = dimensioned_relation_carrier(
-        &class_sources,
         std::slice::from_ref(&lane),
         &markers,
         "feature",
@@ -229,7 +217,6 @@ fn native_point_identity_rejects_a_declared_radial_marker() {
         ..center
     };
     assert!(dimensioned_relation_carrier(
-        &class_sources,
         std::slice::from_ref(&lane),
         &markers,
         "feature",
@@ -266,6 +253,7 @@ fn native_radial_identity_selects_one_of_equal_radius_pairs() {
         classes: vec![
             FeatureInputClass {
                 sequence: 112,
+                offset: 112,
                 feature_ref: None,
                 id: "class".into(),
                 parent: "lane".into(),
@@ -274,6 +262,7 @@ fn native_radial_identity_selects_one_of_equal_radius_pairs() {
             },
             FeatureInputClass {
                 sequence: 250,
+                offset: 250,
                 feature_ref: None,
                 id: "line-class".into(),
                 parent: "lane".into(),
@@ -291,6 +280,7 @@ fn native_radial_identity_selects_one_of_equal_radius_pairs() {
         generated_surface_identities: Vec::new(),
         references: vec![FeatureInputReference {
             sequence: 100,
+            offset: 100,
             id: "reference".into(),
             parent: "lane".into(),
             feature_ref: Some("feature".into()),
@@ -331,17 +321,14 @@ fn native_radial_identity_selects_one_of_equal_radius_pairs() {
         .map(|marker| (marker.id(), marker))
         .collect::<HashMap<_, _>>();
     let operand = FeatureInputOperand {
-        offset: Some(100),
+        offset: 100,
         reference_ref: "reference".into(),
         kind,
         entity_index: 0,
         entity_ref: Some("radial-one".into()),
     };
 
-    let class_sources =
-        ClassSources::from_positions([(&lane.classes[0], 112), (&lane.classes[1], 250)]);
     let carrier = dimensioned_relation_carrier(
-        &class_sources,
         std::slice::from_ref(&lane),
         &markers,
         "feature",

@@ -423,13 +423,10 @@ fn transition_and_history_serde_preserve_data_and_clear_cache() {
     .retained_fidelity()
     .unwrap();
     assert_eq!(fidelity.metadata["history.byte_offset"], "0");
-    let mut expected = history.clone();
-    expected.byte_offset = None;
-    for state in expected.states_mut() {
+    for state in history.states() {
         assert_eq!(fidelity.metadata[&format!("{}.byte_offset", state.id)], "0");
-        state.byte_offset = None;
     }
-    assert_eq!(decoded, expected);
+    assert_eq!(decoded, history);
     assert!(decoded.materialized.states.get().is_none());
     for state in decoded.states() {
         assert_eq!(

@@ -151,7 +151,7 @@ fn lane_with_position_reference(position_source: u32) -> FeatureInputLane {
         parent: "lane".into(),
         ordinal: 0,
         sequence: 0,
-        offset: Some(0),
+        offset: 0,
         value: "Hole".into(),
         object_id: ObjectId::from_value(7),
     });

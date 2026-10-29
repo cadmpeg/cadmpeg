@@ -1,7 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
 use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
-use cadmpeg_ir::source_fidelity::parts::PartState;
-use cadmpeg_ir::NativeUnknownRecord;
 
 use crate::test_support::binary_parts::macro_then_point;
 
@@ -20,7 +18,7 @@ fn actual_binary_callbacks_return_the_same_records_that_the_renderer_binds_and_r
     let sections = crate::binary::parse_sections(source).expect("actual Binary sections");
     let (_, first_extent, _) = crate::binary::counted_record(sections.parameter, 0, "Parameter")
         .expect("counted Macro source");
-    let (_, second_extent, second_body) = crate::binary::counted_record(
+    let (_, _, second_body) = crate::binary::counted_record(
         sections.parameter,
         first_extent.end() - sections.parameter.start(),
         "Parameter",
@@ -52,46 +50,10 @@ fn actual_binary_callbacks_return_the_same_records_that_the_renderer_binds_and_r
     let mut point = crate::binary::parameter_prefix(second_body, sections.lengths)
         .expect("actual peer Point grammar");
     assert_eq!(point.entity_type, 116);
-    let mut point_reads = Vec::new();
     for expected in [1, 2, 3] {
         assert_eq!(
             point.stream.next().expect("original peer coordinate"),
             Some(crate::binary::BinaryValue::Integer(expected))
-        );
-        let range = point.stream.value_extent.clone();
-        point_reads.push(
-            u64::try_from(second_body.start() + range.start).expect("source coordinate")
-                ..u64::try_from(second_body.start() + range.end).expect("source coordinate end"),
-        );
-    }
-    let captures = ctx
-        .take_record_captures()
-        .expect("one completed capture drain");
-    assert_eq!(captures.len(), 2);
-    for (capture, id, extent) in [
-        (&captures[0], "iges:entity:directory#1", first_extent),
-        (&captures[1], "iges:entity:directory#3", second_extent),
-    ] {
-        assert_eq!(capture.id(), id);
-        assert_eq!(
-            capture.offset(),
-            u64::try_from(extent.start()).expect("source offset")
-        );
-        assert_eq!(
-            capture.byte_len(),
-            u64::try_from(extent.window().len()).expect("source length")
-        );
-        if id == "iges:entity:directory#1" {
-            assert!(capture.reads().is_empty());
-        } else {
-            assert_eq!(
-                capture.reads(),
-                &std::collections::BTreeMap::from([("file".to_owned(), point_reads.clone())])
-            );
-        }
-        assert!(
-            capture.offset() + capture.byte_len()
-                <= u64::try_from(source.end()).expect("source end")
         );
     }
 }
@@ -164,46 +126,29 @@ fn malformed_binary_macro_gives_up_only_its_parameter_record_and_keeps_an_exact_
     let sections = crate::binary::parse_sections(root).expect("original source sections");
     let (_, parameter, _) = crate::binary::counted_record(sections.parameter, 0, "Parameter")
         .expect("original Parameter count");
-    let unknowns = native
-        .arena_as::<NativeUnknownRecord>("unknowns")
-        .expect("typed unknowns");
-    assert_eq!(unknowns.len(), 1);
     let fidelity = decoded.source_fidelity();
-    assert!(!fidelity.parts().values().any(|part| {
-        part.level().as_str() == "iges.binary_directory_record"
-            && part.state() == &PartState::GivenUp {}
-    }));
+    assert_eq!(
+        crate::test_support::given_up_count(decoded.report(), "iges.binary_directory_record"),
+        0
+    );
     for (level, extent) in [("iges.binary_parameter_record", parameter)] {
-        let part = fidelity
-            .parts()
-            .values()
-            .find(|part| {
-                part.level().as_str() == level
-                    && part.offset() == u64::try_from(extent.start()).expect("source offset")
-            })
-            .expect("actual required source part");
-        assert_eq!(part.state(), &PartState::GivenUp {});
+        assert_eq!(
+            crate::test_support::given_up_count(decoded.report(), level),
+            1
+        );
+        let parts = crate::test_support::given_up_parts(fidelity);
+        assert_eq!(parts.len(), 1);
+        let part = parts[0];
+        assert!(!part.untyped().is_empty());
+        assert_eq!(
+            part.offset(),
+            u64::try_from(extent.start()).expect("source offset")
+        );
         assert_eq!(
             part.byte_len(),
             u64::try_from(extent.window().len()).expect("source length")
         );
-        let stub = unknowns
-            .iter()
-            .find(|stub| {
-                let candidate = &fidelity.parts()[&stub.id];
-                candidate.level() == part.level() && candidate.offset() == part.offset()
-            })
-            .expect("single exact failure home");
-        assert_eq!(
-            fidelity
-                .retained_record(stub.id.as_str())
-                .expect("source bytes")
-                .data(),
-            Some(extent.window())
-        );
-        assert!(fidelity.record_layout()[stub.id.as_str()]
-            .reads()
-            .is_empty());
+        assert_eq!(part.data(), Some(extent.window()));
     }
     let unreadable: Vec<_> = decoded
         .report()
@@ -215,26 +160,6 @@ fn malformed_binary_macro_gives_up_only_its_parameter_record_and_keeps_an_exact_
     assert!(unreadable
         .iter()
         .all(|loss| loss.severity == cadmpeg_ir::report::Severity::Error));
-    let stream = fidelity
-        .parts()
-        .values()
-        .find(|part| part.state() == &PartState::GivenUp {})
-        .expect("real failure stream")
-        .stream();
-    cadmpeg_test_support::contract::parts::check_one_home(
-        cadmpeg_ir::CodecFormat::Iges,
-        &decoded.ir().native,
-        fidelity,
-        &decoded.report().losses,
-        stream,
-        |requested, range| {
-            if requested != stream {
-                return None;
-            }
-            bytes.get(usize::try_from(range.start).ok()?..usize::try_from(range.end).ok()?)
-        },
-    )
-    .expect("each actual failed part has one source home");
     assert!(cadmpeg_ir::validate_neutral(decoded.ir(), Vec::new())
         .expect("neutral validation")
         .is_ok());
@@ -318,26 +243,19 @@ fn a_group_keeps_an_encoded_member_whose_parameter_record_is_given_up() {
         current.arenas()["entities"][1..],
         native.arenas()["entities"][1..]
     );
-    let unknowns = current
-        .arena_as::<NativeUnknownRecord>("unknowns")
-        .expect("unknowns");
-    assert_eq!(unknowns.len(), 1);
-    let fidelity = decoded.source_fidelity();
     for (level, given_up) in [
         ("iges.binary_directory_record", 0),
         ("iges.binary_parameter_record", 1),
     ] {
         assert_eq!(
-            fidelity
-                .parts()
-                .values()
-                .filter(
-                    |part| part.level().as_str() == level && part.state() == &PartState::GivenUp {}
-                )
-                .count(),
+            crate::test_support::given_up_count(decoded.report(), level),
             given_up
         );
     }
+    assert_eq!(
+        crate::test_support::given_up_parts(decoded.source_fidelity()).len(),
+        1
+    );
     let unreadable: Vec<_> = decoded
         .report()
         .losses
@@ -348,26 +266,6 @@ fn a_group_keeps_an_encoded_member_whose_parameter_record_is_given_up() {
     assert!(unreadable
         .iter()
         .all(|loss| loss.severity == cadmpeg_ir::report::Severity::Error));
-    let stream = fidelity
-        .parts()
-        .values()
-        .find(|part| part.state() == &PartState::GivenUp {})
-        .expect("actual failed source")
-        .stream();
-    cadmpeg_test_support::contract::parts::check_one_home(
-        cadmpeg_ir::CodecFormat::Iges,
-        &decoded.ir().native,
-        fidelity,
-        &decoded.report().losses,
-        stream,
-        |requested, range| {
-            if requested != stream {
-                return None;
-            }
-            bytes.get(usize::try_from(range.start).ok()?..usize::try_from(range.end).ok()?)
-        },
-    )
-    .expect("each failed Macro source part has one exact home");
     assert!(cadmpeg_ir::validate_neutral(decoded.ir(), Vec::new())
         .expect("neutral validation")
         .is_ok());
@@ -410,23 +308,16 @@ fn a_pointer_tagged_discriminator_cannot_change_the_actual_parameter_entity_type
     );
     assert!(native.arenas()["quarantined_directory_records"].is_empty());
     assert!(native.arenas()["quarantined_parameter_records"].is_empty());
-    let unknowns = native
-        .arena_as::<NativeUnknownRecord>("unknowns")
-        .expect("unknowns");
-    assert_eq!(unknowns.len(), 2);
+    assert_eq!(
+        crate::test_support::given_up_parts(decoded.source_fidelity()).len(),
+        2
+    );
     for level in [
         "iges.binary_directory_record",
         "iges.binary_parameter_record",
     ] {
         assert_eq!(
-            decoded
-                .source_fidelity()
-                .parts()
-                .values()
-                .filter(
-                    |part| part.level().as_str() == level && part.state() == &PartState::GivenUp {}
-                )
-                .count(),
+            crate::test_support::given_up_count(decoded.report(), level),
             1
         );
     }
@@ -455,16 +346,7 @@ fn a_non_null_binary_owner_without_parameter_data_keeps_its_directory_entry() {
     );
     assert!(native.arenas()["quarantined_parameter_records"].is_empty());
     assert!(native.arenas().get("unknowns").is_none_or(Vec::is_empty));
-    assert!(!decoded
-        .source_fidelity()
-        .parts()
-        .values()
-        .any(|part| part.state() == &PartState::GivenUp {}));
-    assert!(!decoded
-        .source_fidelity()
-        .parts()
-        .values()
-        .any(|part| part.level().as_str() == "iges.binary_parameter_record"));
+    assert!(crate::test_support::given_up_parts(decoded.source_fidelity()).is_empty());
     assert!(!decoded
         .report()
         .losses
@@ -567,18 +449,9 @@ fn a_group_keeps_every_member_and_its_count_after_a_macro_parameter_record_fails
             )
         );
         assert_eq!(entities[1..], original_native.arenas()["entities"][1..]);
-        let unknowns = native
-            .arena_as::<NativeUnknownRecord>("unknowns")
-            .expect("unknowns");
-        assert_eq!(unknowns.len(), 1);
-        let fidelity = decoded.source_fidelity();
         assert_eq!(
-            fidelity.record_layout()["iges:entity:directory#3"],
-            baseline.source_fidelity().record_layout()["iges:entity:directory#3"],
-        );
-        assert_eq!(
-            fidelity.record_layout()["iges:entity:directory#5"],
-            baseline.source_fidelity().record_layout()["iges:entity:directory#5"],
+            crate::test_support::given_up_parts(decoded.source_fidelity()).len(),
+            1
         );
         let errors: Vec<_> = decoded
             .report()
@@ -590,26 +463,6 @@ fn a_group_keeps_every_member_and_its_count_after_a_macro_parameter_record_fails
         assert!(errors
             .iter()
             .all(|loss| loss.severity == cadmpeg_ir::report::Severity::Error));
-        let stream = fidelity
-            .parts()
-            .values()
-            .find(|part| part.state() == &PartState::GivenUp {})
-            .expect("actual failed Macro source")
-            .stream();
-        cadmpeg_test_support::contract::parts::check_one_home(
-            cadmpeg_ir::CodecFormat::Iges,
-            &decoded.ir().native,
-            fidelity,
-            &decoded.report().losses,
-            stream,
-            |requested, range| {
-                if requested != stream {
-                    return None;
-                }
-                bytes.get(usize::try_from(range.start).ok()?..usize::try_from(range.end).ok()?)
-            },
-        )
-        .expect("only the failed Macro pair owns failure homes");
         assert!(cadmpeg_ir::validate_neutral(decoded.ir(), Vec::new())
             .expect("neutral validation")
             .is_ok());

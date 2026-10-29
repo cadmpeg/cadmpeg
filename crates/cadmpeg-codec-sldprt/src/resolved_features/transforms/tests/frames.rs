@@ -10,7 +10,6 @@ use crate::records::{
     FeatureInputRelationFamily, FeatureInputRelationInstance, FeatureInputScalar,
     FeatureInputScalarRole, SketchInputKind, SketchInputLink, SketchRelationKind,
 };
-use crate::resolved_features::class_sources::ClassSources;
 use crate::resolved_features::dimensions::project_dimensioned_sketch_geometry;
 use crate::resolved_features::profiles::bind_sketch_profiles;
 use crate::resolved_features::profiles::nested_profile_contains_declared_circular_carriers;
@@ -48,7 +47,7 @@ use std::collections::{BTreeMap, HashMap};
 #[test]
 fn circle_dimension_driver_supplies_the_center_operand() {
     let operand = |index, marker: &str| FeatureInputOperand {
-        offset: Some(u64::from(index)),
+        offset: u64::from(index),
         reference_ref: format!("reference-{index}"),
         kind: FeatureInputOperandKind::Native(NativeOperandTag::TAG_929D),
         entity_index: index,
@@ -60,7 +59,7 @@ fn circle_dimension_driver_supplies_the_center_operand() {
         feature_ref: Some("feature".into()),
         ordinal: 0,
         sequence: 0,
-        offset: Some(offset),
+        offset,
         object_id: 1,
         name: "dimension-name".into(),
         value: cadmpeg_ir::scalar::FiniteReal::new(1.0).expect("finite test scalar"),
@@ -88,7 +87,7 @@ fn circle_dimension_driver_supplies_the_center_operand() {
             id: "dimension-name".into(),
             parent: "lane".into(),
             ordinal: 0,
-            offset: Some(0),
+            offset: 0,
             value: "D1".into(),
             object_id: None,
         }],
@@ -107,7 +106,7 @@ fn circle_dimension_driver_supplies_the_center_operand() {
         id: "relation".into(),
         parent: "lane".into(),
         ordinal: 0,
-        offset: Some(10),
+        offset: 10,
         family: FeatureInputRelationFamily::CircleDiameter,
         class_ref: "class".into(),
         feature_ref: "feature".into(),
@@ -171,7 +170,7 @@ fn point_distance_preserves_stored_operands_when_geometry_is_inconsistent() {
         parent: "lane".into(),
         ordinal: 0,
         sequence: 0,
-        offset: Some(0),
+        offset: 0,
         family: FeatureInputRelationFamily::PointPointDistance,
         class_ref: "class".into(),
         feature_ref: "feature".into(),
@@ -183,14 +182,14 @@ fn point_distance_preserves_stored_operands_when_geometry_is_inconsistent() {
         .unwrap(),
         operands: vec![
             FeatureInputOperand {
-                offset: Some(1),
+                offset: 1,
                 reference_ref: "reference-a".into(),
                 kind: FeatureInputOperandKind::D6,
                 entity_index: 0,
                 entity_ref: Some(hint_a.id().to_string()),
             },
             FeatureInputOperand {
-                offset: Some(2),
+                offset: 2,
                 reference_ref: "reference-b".into(),
                 kind: FeatureInputOperandKind::D6,
                 entity_index: 1,
@@ -396,7 +395,7 @@ fn display_scalar_name_resolves_one_unclaimed_owner_parameter() {
         feature_ref: Some("native-feature".into()),
         ordinal: 0,
         sequence: 0,
-        offset: Some(10),
+        offset: 10,
         object_id: 1,
         name: "name".into(),
         value: cadmpeg_ir::scalar::FiniteReal::new(0.012).expect("finite test scalar"),
@@ -414,7 +413,7 @@ fn display_scalar_name_resolves_one_unclaimed_owner_parameter() {
             id: "name".into(),
             parent: "lane".into(),
             ordinal: 0,
-            offset: Some(0),
+            offset: 0,
             value: "D1".into(),
             object_id: None,
         }],
@@ -433,7 +432,7 @@ fn display_scalar_name_resolves_one_unclaimed_owner_parameter() {
         parent: "lane".into(),
         ordinal: 0,
         sequence: 0,
-        offset: Some(10),
+        offset: 10,
         family: FeatureInputRelationFamily::PointPointDistance,
         class_ref: "class".into(),
         feature_ref: "native-feature".into(),
@@ -587,7 +586,7 @@ fn display_scalar_name_resolves_one_unclaimed_owner_parameter() {
     let mut driving_scalar = scalar.clone();
     driving_scalar.id = "driving-by-name".into();
     driving_scalar.ordinal = 1;
-    driving_scalar.offset = Some(20);
+    driving_scalar.offset = 20;
     driving_scalar.object_id = 2;
     driving_scalar.name = "driving-name".into();
     driving_scalar.role = FeatureInputScalarRole::Driving;
@@ -935,7 +934,7 @@ fn dimensioned_circle_fixture() -> DimensionedCircleFixture {
         feature_ref: "feature-native".into(),
         ordinal: 0,
         sequence: 0,
-        offset: Some(80),
+        offset: 80,
         family: FeatureInputRelationFamily::CircleDiameter,
         class_ref: "circle-class".into(),
         scalars: crate::records::relation_scalars::RelationScalars::from_refs(
@@ -945,7 +944,7 @@ fn dimensioned_circle_fixture() -> DimensionedCircleFixture {
         )
         .unwrap(),
         operands: vec![FeatureInputOperand {
-            offset: Some(81),
+            offset: 81,
             reference_ref: "circle-reference".into(),
             kind: FeatureInputOperandKind::Native(NativeOperandTag::TAG_8AB6),
             entity_index: 0,
@@ -1000,7 +999,6 @@ fn dimensioned_circle_materializes_from_an_alternate_handle_frame() {
     } = dimensioned_circle_fixture();
 
     project_dimensioned_sketch_geometry(
-        &crate::test_support::native::class_sources(std::slice::from_ref(&lane)),
         &mut entities,
         &[],
         &[],
@@ -1152,7 +1150,7 @@ fn implicit_circle_uses_unique_terminal_radial_point() {
 fn declared_entity_handle_uses_one_linked_center_radial_pair() {
     let kind = FeatureInputOperandKind::Native(NativeOperandTag::try_from(0x81d5).unwrap());
     let operand = FeatureInputOperand {
-        offset: Some(100),
+        offset: 100,
         reference_ref: "reference".into(),
         kind,
         entity_index: 0,
@@ -1164,6 +1162,7 @@ fn declared_entity_handle_uses_one_linked_center_radial_pair() {
         parent: "lane".into(),
         ordinal: 0,
         sequence: 0,
+        offset: 112,
         name: "sgEntHandle".into(),
     };
     let reference = FeatureInputReference {
@@ -1172,6 +1171,7 @@ fn declared_entity_handle_uses_one_linked_center_radial_pair() {
         feature_ref: Some("feature-native".into()),
         ordinal: 0,
         sequence: 0,
+        offset: operand.offset,
         kind,
         class_ref: Some(class.id.clone()),
         object_index: 0,
@@ -1199,9 +1199,7 @@ fn declared_entity_handle_uses_one_linked_center_radial_pair() {
         sketch_entities: vec![center, radial],
     };
 
-    let class_sources = ClassSources::from_positions([(&lane.classes[0], 112)]);
     let (resolved, radius) = declared_entity_handle_circular_marker(
-        &class_sources,
         std::slice::from_ref(&lane),
         "feature-native",
         &operand,
@@ -1216,7 +1214,6 @@ fn declared_entity_handle_uses_one_linked_center_radial_pair() {
         let mut lane = lane.clone();
         lane.sketch_entities[0].reclassify(kind);
         assert!(declared_entity_handle_circular_marker(
-            &class_sources,
             std::slice::from_ref(&lane),
             "feature-native",
             &operand,
@@ -1227,7 +1224,6 @@ fn declared_entity_handle_uses_one_linked_center_radial_pair() {
     let mut invalid_radial = lane.clone();
     invalid_radial.sketch_entities[1].reclassify(SketchInputKind::Arc);
     assert!(declared_entity_handle_circular_marker(
-        &class_sources,
         std::slice::from_ref(&invalid_radial),
         "feature-native",
         &operand,
@@ -1246,7 +1242,6 @@ fn declared_entity_handle_uses_one_linked_center_radial_pair() {
         .sketch_entities
         .extend([second_center, second_radial]);
     assert!(declared_entity_handle_circular_marker(
-        &class_sources,
         std::slice::from_ref(&ambiguous),
         "feature-native",
         &operand,
@@ -1371,7 +1366,7 @@ fn declared_entity_handle_circular_carrier_replaces_nested_support_geometry() {
     };
     let kind = FeatureInputOperandKind::Native(NativeOperandTag::try_from(0x81d5).unwrap());
     let operand = FeatureInputOperand {
-        offset: Some(300),
+        offset: 300,
         reference_ref: "reference".into(),
         kind,
         entity_index: 0,
@@ -1383,6 +1378,7 @@ fn declared_entity_handle_circular_carrier_replaces_nested_support_geometry() {
         parent: "lane".into(),
         ordinal: 0,
         sequence: 0,
+        offset: 312,
         name: "sgEntHandle".into(),
     };
     let mut center = marker("center", Some([0.010, 0.020]));
@@ -1402,7 +1398,7 @@ fn declared_entity_handle_circular_carrier_replaces_nested_support_geometry() {
             id: "feature-name".into(),
             parent: "lane".into(),
             ordinal: 0,
-            offset: Some(100),
+            offset: 100,
             value: "Sketch1".into(),
             object_id: ObjectId::from_value(7),
         }],
@@ -1413,7 +1409,7 @@ fn declared_entity_handle_circular_carrier_replaces_nested_support_geometry() {
             id: "circle-dimension".into(),
             parent: "lane".into(),
             ordinal: 0,
-            offset: Some(280),
+            offset: 280,
             family: FeatureInputRelationFamily::CircleDiameter,
             class_ref: class.id.clone(),
             feature_ref: "feature-native".into(),
@@ -1431,6 +1427,7 @@ fn declared_entity_handle_circular_carrier_replaces_nested_support_geometry() {
         generated_surface_identities: Vec::new(),
         references: vec![FeatureInputReference {
             sequence: 0,
+            offset: operand.offset,
             id: operand.reference_ref,
             parent: "lane".into(),
             feature_ref: Some("feature-native".into()),
@@ -1508,9 +1505,7 @@ fn declared_entity_handle_circular_carrier_replaces_nested_support_geometry() {
     }
     annotations = builder.build();
 
-    let class_sources = ClassSources::from_positions([(&lane.classes[0], 312)]);
     bind_sketch_profiles(
-        &class_sources,
         &mut features,
         crate::resolved_features::profiles::SketchArenas {
             sketches: &mut sketches,
@@ -1594,16 +1589,8 @@ fn dimensioned_sketch_projection_projects_circle() {
         parameter,
         lane,
     } = dimensioned_circle_fixture();
-    project_dimensioned_sketch_geometry(
-        &crate::test_support::native::class_sources(&[&lane]),
-        &mut entities,
-        &[],
-        &[],
-        &[feature],
-        &[parameter],
-        &[lane],
-    )
-    .unwrap();
+    project_dimensioned_sketch_geometry(&mut entities, &[], &[], &[feature], &[parameter], &[lane])
+        .unwrap();
     assert!(matches!(entities[2].geometry.definition(),
         SketchGeometryDefinition::Circle { center, radius }
             if *center == Point2::new(15.0, 40.0) && Length::from(*radius) == Length::new(4.0).unwrap()));

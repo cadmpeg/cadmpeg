@@ -82,23 +82,11 @@ pub(crate) struct ParameterScopeSources<'a> {
 
 /// Decode every canonical sketch or construction-operation scope, including
 /// scopes that own no parameters and therefore have no owner-frame backlink.
-pub(crate) struct DecodedParameterScopes<'a> {
-    pub(crate) records: Vec<DesignParameterScope>,
-    pub(crate) source_layout_drafts: HashMap<String, ScopeSource<'a>>,
-}
-
-/// Genuine source windows retained only until history-envelope admission:
-/// the scope frame, and the assembly operand paths read from it.
-pub(crate) struct ScopeSource<'a> {
-    extent: View<'a>,
-    paths: Vec<(usize, super::assembly_path_layout::PathSourceDraft<'a>)>,
-}
-
-pub(crate) fn decode_parameter_scopes<'a>(
+pub(crate) fn decode_parameter_scopes(
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
-    scan: &ContainerScan<'a>,
+    scan: &ContainerScan<'_>,
     sources: &ParameterScopeSources<'_>,
-) -> Result<DecodedParameterScopes<'a>, CodecError> {
+) -> Result<Vec<DesignParameterScope>, CodecError> {
     let &ParameterScopeSources {
         entities,
         types,
@@ -108,7 +96,6 @@ pub(crate) fn decode_parameter_scopes<'a>(
         recipes,
     } = sources;
     let mut out = Vec::new();
-    let mut source_layout_drafts = HashMap::new();
     for entry in scan
         .entries
         .iter()
@@ -462,52 +449,13 @@ pub(crate) fn decode_parameter_scopes<'a>(
                 }
             }
             {
-                let mut path_sources = Vec::new();
                 let construction = exact_assembly_alignment_with_types(
                     source,
                     &records,
                     &scope,
                     parameter_owners,
                     &stream_types,
-                    &mut path_sources,
                 )?;
-                if construction.is_some() && !path_sources.is_empty() {
-                    let start = usize::try_from(
-                        scope
-                            .byte_offset()
-                            .ok_or_else(crate::records::feature::scope::unlocated_scope)?,
-                    )
-                    .ok()
-                    .and_then(|relative| source.start().checked_add(relative))
-                    .ok_or_else(|| {
-                        CodecError::malformed("assembly scope source start overflows")
-                    })?;
-                    let end = usize::try_from(
-                        scope
-                            .paired_byte_offset()
-                            .ok_or_else(crate::records::feature::scope::unlocated_scope)?,
-                    )
-                    .ok()
-                    .and_then(|relative| source.start().checked_add(relative))
-                    .ok_or_else(|| CodecError::malformed("assembly scope source end overflows"))?;
-                    let extent = source.child(start, end).ok_or_else(|| {
-                        CodecError::malformed("assembly scope source extent is invalid")
-                    })?;
-                    if source_layout_drafts
-                        .insert(
-                            scope.id.clone(),
-                            ScopeSource {
-                                extent,
-                                paths: path_sources,
-                            },
-                        )
-                        .is_some()
-                    {
-                        return Err(CodecError::malformed(
-                            "assembly scope source owner is duplicated",
-                        ));
-                    }
-                }
                 if let scope::DesignScopePayloadMut::Assemble(slot)
                 | scope::DesignScopePayloadMut::AsBuilt(slot) = scope.payload_mut()
                 {
@@ -592,16 +540,6 @@ pub(crate) fn decode_parameter_scopes<'a>(
                 }
             }
 
-            if !source_layout_drafts.contains_key(&scope.id) {
-                let extent = scope_frame_view(source, &scope)?;
-                source_layout_drafts.insert(
-                    scope.id.clone(),
-                    ScopeSource {
-                        extent,
-                        paths: Vec::new(),
-                    },
-                );
-            }
             out.push(scope);
         }
         bind_joint_origin_frames_from_assemblies(bytes, &mut out[stream_scope_start..]);
@@ -609,128 +547,7 @@ pub(crate) fn decode_parameter_scopes<'a>(
     }
     out.sort_by(|a, b| a.id.cmp(&b.id));
     out.dedup_by(|a, b| a.id == b.id);
-    Ok(DecodedParameterScopes {
-        records: out,
-        source_layout_drafts,
-    })
-}
-
-/// The source frame of a decoded scope: its bytes from the primary header to
-/// the paired header.
-fn scope_frame_view<'a>(
-    source: View<'a>,
-    scope: &DesignParameterScope,
-) -> Result<View<'a>, CodecError> {
-    let bound = |offset: Option<u64>| {
-        offset
-            .and_then(|relative| usize::try_from(relative).ok())
-            .and_then(|relative| source.start().checked_add(relative))
-            .ok_or_else(|| CodecError::malformed("parameter scope source frame overflows"))
-    };
-    let start = bound(scope.byte_offset())?;
-    let end = bound(scope.paired_byte_offset())?;
-    source
-        .child(start, end)
-        .ok_or_else(|| CodecError::malformed("parameter scope source frame is invalid"))
-}
-
-/// Capture the frame of every scope retained by the history-envelope
-/// admission, with the reads of its assembly operand paths.
-///
-/// Pointer values use the format's original BulkStream coordinates. The owning
-/// record extent is the actual scope window; operand records can be elsewhere
-/// in that same stream and their genuine reads retain those source positions.
-/// The extent length is the scope frame length.
-pub(crate) fn capture_scope_layouts(
-    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
-    scopes: &[DesignParameterScope],
-    mut drafts: HashMap<String, ScopeSource<'_>>,
-) -> Result<std::collections::BTreeMap<String, std::collections::BTreeMap<String, u64>>, CodecError>
-{
-    let mut owners = std::collections::BTreeMap::new();
-    for scope in scopes {
-        let Some(draft) = drafts.remove(&scope.id) else {
-            return Err(CodecError::malformed(
-                "admitted parameter scope has no source frame",
-            ));
-        };
-        let operands = match scope
-            .assembly_alignment()
-            .and_then(|alignment| alignment.form.as_ref())
-        {
-            Some(assembly::DesignAssemblyAlignmentForm::Qualified(operands)) => Some(operands),
-            _ if draft.paths.is_empty() => None,
-            _ => {
-                return Err(CodecError::malformed(
-                    "assembly source draft has no admitted path content",
-                ))
-            }
-        };
-        let mut pointers = std::collections::BTreeMap::new();
-        ctx.record(&scope.id, draft.extent, || {
-            for (ordinal, source) in &draft.paths {
-                let Some(assembly::DesignAssemblyOperandQualifier::OccurrencePath { path }) =
-                    operands
-                        .and_then(|operands| operands.get(*ordinal))
-                        .map(|operand| &operand.qualifier)
-                else {
-                    return Err(CodecError::malformed(
-                        "assembly path source ordinal is invalid",
-                    ));
-                };
-                source.read(
-                    ctx,
-                    path,
-                    scope.record_index,
-                    &format!("assembly_alignment.operand_qualifiers.{ordinal}.path"),
-                    &mut pointers,
-                )?;
-            }
-            let mut retained = u64_from_index(scope.id.len());
-            for key in pointers.keys() {
-                retained = retained
-                    .checked_add(u64_from_index(key.len()))
-                    .and_then(|bytes| bytes.checked_add(u64_from_index(size_of::<u64>())))
-                    .ok_or_else(|| CodecError::malformed("assembly pointer storage overflows"))?;
-            }
-            ctx.retain_bytes(retained, "assembly path source pointers")?;
-            Ok(())
-        })?;
-        if owners.insert(scope.id.clone(), pointers).is_some() {
-            return Err(CodecError::malformed(
-                "admitted scope source owner is duplicated",
-            ));
-        }
-    }
-    // The remaining drafts belong to physical envelopes rejected by the
-    // existing history admission. No record scope was opened for them.
-    Ok(owners)
-}
-
-/// Add the source offsets of each final scope to the pointers of its capture.
-/// Every scope has a capture; each kept pointer is charged once.
-pub(crate) fn add_scope_source_pointers(
-    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
-    scopes: &mut [DesignParameterScope],
-    pointers: &mut std::collections::BTreeMap<String, std::collections::BTreeMap<String, u64>>,
-) -> Result<(), CodecError> {
-    for scope in scopes {
-        let offsets = crate::records::source_offsets::collect(scope);
-        let owner = pointers.entry(scope.id.clone()).or_default();
-        for (name, offset) in offsets {
-            let bytes = name
-                .len()
-                .checked_add(size_of::<(String, u64)>())
-                .ok_or_else(|| CodecError::malformed("scope pointer storage overflows"))?;
-            ctx.retain_bytes(u64_from_index(bytes), "parameter scope source pointer")?;
-            if owner.insert(name, offset).is_some() {
-                return Err(CodecError::malformed(
-                    "parameter scope source pointer is duplicated",
-                ));
-            }
-        }
-    }
-    Ok(())
+    Ok(out)
 }
 
 fn first_marked_reference_offsets(frame: &[u8]) -> HashMap<u32, usize> {

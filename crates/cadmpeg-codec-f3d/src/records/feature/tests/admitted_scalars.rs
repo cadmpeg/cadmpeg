@@ -11,7 +11,6 @@ use crate::records::feature::{
         DesignSurfaceExtendMethod, DesignSurfaceExtendOperation, DesignSurfaceOffsetSupport,
     },
 };
-use crate::records::source_offsets::SourceOffsets;
 use crate::records::topology::edge_identity::DesignEdgeTreatmentRadiusCandidate;
 use cadmpeg_ir::scalar::{PositiveAngle, PositiveReal};
 use serde::de::DeserializeOwned;
@@ -21,16 +20,14 @@ fn positive(value: f64) -> PositiveReal {
     PositiveReal::new(value).expect("positive fixture value")
 }
 
-/// The located record round-trips through its wire and its pointers.
+/// The located record round-trips through its wire.
 fn located_round_trip<T>(record: &T) -> serde_json::Value
 where
-    T: Serialize + DeserializeOwned + PartialEq + std::fmt::Debug + Clone + SourceOffsets,
+    T: Serialize + DeserializeOwned + std::fmt::Debug,
 {
     let wire = serde_json::to_value(record).expect("serialize record");
-    let pointers = crate::records::source_offsets::collect(&mut record.clone());
-    let mut read = serde_json::from_value::<T>(wire.clone()).expect("round trip");
-    crate::records::source_offsets::restore(&mut read, &pointers);
-    assert_eq!(&read, record);
+    let read = serde_json::from_value::<T>(wire.clone()).expect("round trip");
+    assert_eq!(serde_json::to_value(read).expect("reserialize"), wire);
     wire
 }
 
@@ -38,7 +35,7 @@ where
 /// refused with an error naming `refusal`.
 fn refuses_zero<T>(record: &T, field: &str, refusal: &str)
 where
-    T: Serialize + DeserializeOwned + PartialEq + std::fmt::Debug + Clone + SourceOffsets,
+    T: Serialize + DeserializeOwned + std::fmt::Debug,
 {
     refuses_zero_in::<T>(located_round_trip(record), field, refusal);
 }

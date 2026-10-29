@@ -1,6 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
 use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
-use cadmpeg_ir::source_fidelity::parts::PartState;
 
 fn point_pair(first_x: i32, invalid_coordinate: bool) -> Vec<u8> {
     let mut bytes = crate::test_support::binary_parts::point_pair(false);
@@ -58,7 +57,7 @@ fn original_point_coordinates_keep_exact_nonzero_windows_native_values_and_sourc
             .child(7, 7 + bytes.len())
             .expect("actual nonzero window");
         let sections = crate::binary::parse_sections(source).expect("original sections");
-        let (_, extent, body) = crate::binary::counted_record(sections.parameter, 0, "Point")
+        crate::binary::counted_record(sections.parameter, 0, "Point")
             .expect("actual counted point");
         let (normalized, _) = super::super::normalize(source, &ctx).expect("source-owned points");
         let records = &normalized.admission.parameters;
@@ -80,36 +79,6 @@ fn original_point_coordinates_keep_exact_nonzero_windows_native_values_and_sourc
             crate::parameter::assemble(&scan, &directory, [], &normalized.admission.global)
                 .expect("unchanged Parameter grammar");
         assert_eq!(records, &legacy.records);
-        let captures = ctx.take_record_captures().expect("one actual drain");
-        assert_eq!(captures.len(), 2);
-        let capture = captures
-            .iter()
-            .find(|capture| capture.id() == "iges:entity:directory#1")
-            .expect("actual first point owner");
-        assert_eq!(
-            capture.offset(),
-            u64::try_from(extent.start()).expect("source offset")
-        );
-        assert_eq!(
-            capture.byte_len(),
-            u64::try_from(extent.window().len()).expect("source extent")
-        );
-        let primitive = usize::from(sections.lengths.single_integer).div_ceil(8);
-        let expected: Vec<_> = (2..5)
-            .map(|field| {
-                let start = body.start() + field * (primitive + 1) + 1;
-                u64::try_from(start).expect("source field")
-                    ..u64::try_from(start + primitive).expect("source end")
-            })
-            .collect();
-        assert_eq!(
-            capture.reads(),
-            &std::collections::BTreeMap::from([("file".to_owned(), expected)])
-        );
-        assert!(
-            capture.offset() + capture.byte_len()
-                <= u64::try_from(source.end()).expect("source end")
-        );
         let decoded = crate::test_support::decode(bytes);
         assert_eq!(decoded.ir().model.points.len(), 2);
         assert_eq!(
@@ -184,13 +153,7 @@ fn bad_point_coordinate_gives_up_the_rest_of_its_parameter_values_and_keeps_an_u
         )
     );
     assert_eq!(native.arenas()["entities"][1], old.arenas()["entities"][1]);
-    let unknowns = decoded.ir().native_unknowns("iges").expect("unknowns");
-    assert_eq!(unknowns.len(), 1);
     let fidelity = decoded.source_fidelity();
-    assert!(!fidelity.parts().values().any(|part| {
-        part.level().as_str() == "iges.binary_directory_record"
-            && part.state() == &PartState::GivenUp {}
-    }));
     let arena = DecodeArena::new();
     let (_ctx, source) = DecodeContext::from_root_bytes(&bytes, &arena, &DecodePolicy::service())
         .expect("original source");
@@ -198,12 +161,10 @@ fn bad_point_coordinate_gives_up_the_rest_of_its_parameter_values_and_keeps_an_u
     let (_, record, _) =
         crate::binary::counted_record(sections.parameter, 0, "source").expect("actual record");
     assert_eq!(record.end(), given_up.end);
-    let part = fidelity
-        .parts()
-        .values()
-        .find(|part| part.state() == &PartState::GivenUp {})
-        .expect("owning failed part");
-    assert_eq!(part.level().as_str(), "iges.binary_parameter_value");
+    let parts = crate::test_support::given_up_parts(fidelity);
+    assert_eq!(parts.len(), 1);
+    let part = parts[0];
+    assert!(!part.untyped().is_empty());
     assert_eq!(
         part.offset(),
         u64::try_from(given_up.start).expect("source offset")
@@ -212,24 +173,7 @@ fn bad_point_coordinate_gives_up_the_rest_of_its_parameter_values_and_keeps_an_u
         part.byte_len(),
         u64::try_from(given_up.len()).expect("source size")
     );
-    assert_eq!(
-        fidelity.parts()[part.parent().expect("record part")].state(),
-        &PartState::Decoded {}
-    );
-    let home = unknowns
-        .iter()
-        .find(|unknown| fidelity.parts()[&unknown.id].offset() == part.offset())
-        .expect("exact failed home");
-    assert_eq!(
-        fidelity
-            .retained_record(home.id.as_str())
-            .expect("source bytes")
-            .data(),
-        Some(&bytes[given_up.clone()])
-    );
-    assert!(fidelity.record_layout()[home.id.as_str()]
-        .reads()
-        .is_empty());
+    assert_eq!(part.data(), Some(&bytes[given_up.clone()]));
     let errors: Vec<_> = decoded
         .report()
         .losses
@@ -241,26 +185,9 @@ fn bad_point_coordinate_gives_up_the_rest_of_its_parameter_values_and_keeps_an_u
         .iter()
         .all(|loss| loss.severity == cadmpeg_ir::report::Severity::Error));
     assert!(errors[0].message.contains("iges.binary_parameter_value"));
-    let stream = fidelity
-        .parts()
-        .values()
-        .find(|part| part.state() == &PartState::GivenUp {})
-        .expect("source")
-        .stream();
-    cadmpeg_test_support::contract::parts::check_one_home(
-        cadmpeg_ir::CodecFormat::Iges,
-        &decoded.ir().native,
-        fidelity,
-        &decoded.report().losses,
-        stream,
-        |requested, range| {
-            if requested != stream {
-                return None;
-            }
-            bytes.get(usize::try_from(range.start).ok()?..usize::try_from(range.end).ok()?)
-        },
-    )
-    .expect("one actual home per failed part");
+    assert!(!errors
+        .iter()
+        .any(|loss| loss.message.contains("iges.binary_directory_record")));
 }
 
 #[test]
@@ -289,10 +216,10 @@ fn point_source_repeat_rolls_back_at_its_real_boundary_and_keeps_the_peer_and_fo
     bytes.extend_from_slice(&good);
     bytes.extend_from_slice(b"suffix");
     let arena = DecodeArena::new();
-    let (ctx, root) = DecodeContext::from_root_bytes(&bytes, &arena, &DecodePolicy::service())
+    let (_ctx, root) = DecodeContext::from_root_bytes(&bytes, &arena, &DecodePolicy::service())
         .expect("actual source");
-    let consume = |source| {
-        let mut stream = crate::binary::ValueStream::source_point(source, lengths);
+    let consume = |source: cadmpeg_core::decode::View<'_>| {
+        let mut stream = crate::binary::ValueStream::new(source.window(), lengths);
         let mut values = Vec::new();
         while let Some(value) = stream.next()? {
             values.push(value);
@@ -301,37 +228,13 @@ fn point_source_repeat_rolls_back_at_its_real_boundary_and_keeps_the_peer_and_fo
         Ok::<_, cadmpeg_core::CodecError>(values)
     };
     let failed = root.child(3, 3 + bad.len()).expect("actual failed body");
-    let error = ctx
-        .record("iges:entity:directory#1", failed, || consume(failed))
-        .expect_err("cannot read into actual peer");
+    let error = consume(failed).expect_err("cannot read into actual peer");
     assert!(error.to_string().contains("primitive is truncated"));
     let peer = root
         .child(3 + bad.len(), 3 + bad.len() + good.len())
         .expect("actual peer body");
     assert_eq!(
-        ctx.record("iges:entity:directory#3", peer, || consume(peer))
-            .expect("unchanged peer"),
+        consume(peer).expect("unchanged peer"),
         [116, 1, 1, 2, 3, 0].map(crate::binary::BinaryValue::Integer)
     );
-    let foreign_arena = DecodeArena::new();
-    let (other, _) =
-        DecodeContext::from_root_bytes(&bytes, &foreign_arena, &DecodePolicy::service())
-            .expect("independent session");
-    assert!(other
-        .record("iges:entity:directory#5", peer, || consume(peer))
-        .is_err());
-    let captures = ctx
-        .take_record_captures()
-        .expect("one drain after both actual windows");
-    assert_eq!(captures.len(), 1);
-    assert_eq!(captures[0].id(), "iges:entity:directory#3");
-    let start = u64::try_from(peer.start() + 3).expect("actual first coordinate");
-    assert_eq!(
-        captures[0].reads(),
-        &std::collections::BTreeMap::from([("file".to_owned(), vec![start..start + 3])])
-    );
-    assert!(other
-        .take_record_captures()
-        .expect("foreign source cannot publish captures")
-        .is_empty());
 }

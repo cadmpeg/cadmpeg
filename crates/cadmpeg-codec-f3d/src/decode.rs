@@ -2655,31 +2655,25 @@ impl<'a> F3dDecodeSession<'a> {
             }
             return Ok(DesignState::Absent);
         }
-        let failure =
-            match &prereqs.design_feature_timelines {
-                // The design-intent record scopes commit with the design intent.
-                // A failed design intent keeps no capture.
-                Ok(timelines) => match self.ctx.read_transaction().and_then(|scope| {
-                    Ok((scope, self.decode_design_intent(path, prereqs, timelines)?))
-                }) {
-                    Ok((scope, design)) => {
-                        scope.commit()?;
-                        self.ir.scope.design = true;
-                        return Ok(DesignState::Projected(Box::new(self.merge_design(design))));
-                    }
-                    Err(error)
-                        if matches!(error, CodecError::ResourceLimit(_))
-                            || self.ctx.resource_refusal().is_some() =>
-                    {
-                        return Err(error)
-                    }
-                    Err(error) => error.to_string(),
-                },
-                Err(error) => match self.ctx.resource_refusal() {
-                    Some(limit) => return Err(CodecError::ResourceLimit(limit)),
-                    None => error.to_string(),
-                },
-            };
+        let failure = match &prereqs.design_feature_timelines {
+            Ok(timelines) => match self.decode_design_intent(path, prereqs, timelines) {
+                Ok(design) => {
+                    self.ir.scope.design = true;
+                    return Ok(DesignState::Projected(Box::new(self.merge_design(design))));
+                }
+                Err(error)
+                    if matches!(error, CodecError::ResourceLimit(_))
+                        || self.ctx.resource_refusal().is_some() =>
+                {
+                    return Err(error)
+                }
+                Err(error) => error.to_string(),
+            },
+            Err(error) => match self.ctx.resource_refusal() {
+                Some(limit) => return Err(CodecError::ResourceLimit(limit)),
+                None => error.to_string(),
+            },
+        };
         push_loss_vec(
             &mut self.report.losses,
             F3dLossCode::DesignIntentUndecoded,
@@ -3004,26 +2998,12 @@ impl<'a> F3dDecodeSession<'a> {
         mut self,
         path: FinalizePath,
         mut prereqs: prereqs::ProductPrereqs,
-        mut design: DesignState,
+        design: DesignState,
     ) -> Result<AuthoredDecoded, CodecError> {
-        let mut source_layout_pointers = std::mem::take(&mut prereqs.source_layout_pointers);
-        if let DesignState::Projected(design) = &mut design {
-            for (id, pointers) in std::mem::take(&mut design.source_layout_pointers) {
-                if source_layout_pointers.insert(id, pointers).is_some() {
-                    return Err(CodecError::malformed("source pointer owner is duplicated"));
-                }
-            }
-            crate::design::decode::scopes::parameter_scope::add_scope_source_pointers(
-                self.ctx,
-                &mut design.design_parameter_scopes,
-                &mut source_layout_pointers,
-            )?;
-        }
         self.report
             .losses
             .extend(std::mem::take(&mut prereqs.parameter_state_parts.losses));
         let parameter_state_fidelity = std::mem::take(&mut prereqs.parameter_state_parts.fidelity);
-        let parameter_state_unknowns = std::mem::take(&mut prereqs.parameter_state_parts.unknowns);
         let scan = self.scan;
         let ctx = self.ctx;
         let geometry = match path {
@@ -3105,11 +3085,6 @@ impl<'a> F3dDecodeSession<'a> {
                 }
                 self.native
                     .store(ctx, self.ir.native.namespace_mut("f3d"))?;
-                crate::design::decode::parameter_state::install_unknowns(
-                    ctx,
-                    &mut self.ir,
-                    parameter_state_unknowns,
-                )?;
                 let annotations =
                     populate_annotations(&self.ir, scan, &self.native, None, &self.unknowns)?;
                 let source_image = preserve_source_image(scan);
@@ -3122,7 +3097,6 @@ impl<'a> F3dDecodeSession<'a> {
                     self.report,
                     RetainedArtifacts {
                         native_fidelity: self.native.retained_fidelity()?,
-                        source_layout_pointers,
                         annotations,
                         parameter_state_fidelity,
                         native_layout: Some(self.native),
@@ -3143,11 +3117,6 @@ impl<'a> F3dDecodeSession<'a> {
         )?;
         self.native
             .store(ctx, self.ir.native.namespace_mut("f3d"))?;
-        crate::design::decode::parameter_state::install_unknowns(
-            ctx,
-            &mut self.ir,
-            parameter_state_unknowns,
-        )?;
         let annotations = populate_annotations(
             &self.ir,
             scan,
@@ -3168,7 +3137,6 @@ impl<'a> F3dDecodeSession<'a> {
             self.report,
             RetainedArtifacts {
                 native_fidelity: self.native.retained_fidelity()?,
-                source_layout_pointers,
                 annotations,
                 parameter_state_fidelity,
                 native_layout: Some(self.native),
@@ -3218,9 +3186,7 @@ pub(crate) fn decode<'a>(ctx: &DecodeContext<'a>, root: View<'a>) -> Result<Deco
         container::F3dContainerKind::Document { .. } => {
             let authored =
                 decode_scanned_document(ctx, &scan, crate::report::ReportScope::Standalone)?;
-            let (mut decoded, pending) = authored.into_decoded();
-            source_layout::install(ctx, &mut decoded.source_fidelity, pending)?;
-            Ok(decoded)
+            Ok(authored.into_decoded())
         }
     }
 }
@@ -3240,8 +3206,6 @@ pub(crate) fn decode_patch_baseline<'a>(
     }
     let mut decoded = decode_scanned_document(ctx, &scan, crate::report::ReportScope::Standalone)?;
     decoded.ir.source = Some(decoded.source.clone());
-    // The patch path reads the native layout and the IR, not record layouts.
-    decoded.pending_layouts.clear();
     Ok(decoded)
 }
 
@@ -3259,22 +3223,6 @@ pub(crate) fn decode_archive_member<'a>(
 }
 
 fn decode_scanned_document<'a>(
-    ctx: &DecodeContext<'a>,
-    scan: &'a ContainerScan<'a>,
-    report_scope: crate::report::ReportScope,
-) -> Result<AuthoredDecoded, CodecError> {
-    let (mut decoded, batch) =
-        ctx.record_batch(|| decode_scanned_document_inner(ctx, scan, report_scope))?;
-    let pointers = std::mem::take(&mut decoded.source_layout_pointers);
-    source_layout::append(
-        ctx,
-        &mut decoded.pending_layouts,
-        [source_layout::PendingLayouts::new(batch, pointers)],
-    )?;
-    Ok(decoded)
-}
-
-fn decode_scanned_document_inner<'a>(
     ctx: &DecodeContext<'a>,
     scan: &'a ContainerScan<'a>,
     report_scope: crate::report::ReportScope,
@@ -3327,7 +3275,6 @@ fn decode_scanned_document_inner<'a>(
             ir,
             report,
             RetainedArtifacts {
-                source_layout_pointers: Default::default(),
                 annotations,
                 native_fidelity: cadmpeg_ir::SourceFidelity::default(),
                 parameter_state_fidelity: cadmpeg_ir::SourceFidelity::default(),
@@ -4200,28 +4147,20 @@ pub(crate) struct AuthoredDecoded {
     pub(crate) source: cadmpeg_ir::SourceMeta,
     pub(crate) body: DecodeBody,
     pub(crate) source_fidelity: cadmpeg_ir::SourceFidelity,
-    source_layout_pointers:
-        std::collections::BTreeMap<String, std::collections::BTreeMap<String, u64>>,
-    pub(crate) pending_layouts: Vec<source_layout::PendingLayouts>,
 }
 
 impl AuthoredDecoded {
-    pub(crate) fn into_decoded(mut self) -> (Decoded, Vec<source_layout::PendingLayouts>) {
+    pub(crate) fn into_decoded(mut self) -> Decoded {
         self.ir.source = Some(self.source);
-        (
-            Decoded {
-                ir: self.ir,
-                body: self.body,
-                source_fidelity: self.source_fidelity,
-            },
-            self.pending_layouts,
-        )
+        Decoded {
+            ir: self.ir,
+            body: self.body,
+            source_fidelity: self.source_fidelity,
+        }
     }
 }
 
 struct RetainedArtifacts {
-    source_layout_pointers:
-        std::collections::BTreeMap<String, std::collections::BTreeMap<String, u64>>,
     native_layout: Option<F3dNative>,
     annotations: cadmpeg_ir::Annotations,
     native_fidelity: cadmpeg_ir::SourceFidelity,
@@ -4341,8 +4280,6 @@ fn decode_result(
         hash,
     );
     Ok(AuthoredDecoded {
-        source_layout_pointers: retained.source_layout_pointers,
-        pending_layouts: Vec::new(),
         native_layout: retained.native_layout,
         ir,
         source,
@@ -5429,7 +5366,6 @@ pub(crate) mod design_intent;
 mod prereqs;
 mod projection_records;
 mod projections;
-pub(crate) mod source_layout;
 
 #[cfg(test)]
 mod tests;

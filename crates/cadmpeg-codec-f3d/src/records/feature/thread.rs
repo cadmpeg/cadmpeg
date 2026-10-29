@@ -230,18 +230,6 @@ impl TryFrom<DesignThreadConstructionWire> for DesignThreadConstruction {
     }
 }
 
-impl crate::records::source_offsets::SourceOffsets for DesignThreadConstruction {
-    fn visit_source_offsets(
-        &mut self,
-        offsets: &mut crate::records::source_offsets::OffsetVisitor<'_>,
-    ) {
-        offsets.offset("designation_offset", &mut self.designation_offset);
-        if let DesignThreadForm::Compact(Some(reference)) = &mut self.form {
-            offsets.sourced("trailing_reference_offset", reference);
-        }
-    }
-}
-
 #[cfg(test)]
 mod tests;
 

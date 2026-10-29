@@ -4,7 +4,6 @@
 
 use crate::decode::append_design_losses;
 use crate::history::configuration::normalize_configuration_differences;
-use crate::resolved_features::class_sources::ClassSources;
 use cadmpeg_ir::ids::BodyId;
 use cadmpeg_ir::math::{Point3, Vector3};
 use cadmpeg_ir::CadIr;
@@ -22,8 +21,6 @@ use std::collections::BTreeMap;
 
 #[test]
 fn complete_parting_line_draft_does_not_require_an_outward_flag() {
-    let class_sources = ClassSources::default();
-
     let faces = FaceSelection::generated(
         vec![cadmpeg_ir::features::GeneratedFaceRef::new(
             FeatureId::mint("synthetic:test:id#producer").expect("identity grammar"),
@@ -69,7 +66,6 @@ fn complete_parting_line_draft_does_not_require_an_outward_flag() {
     let mut report = super::empty_report(true);
 
     append_design_losses(
-        &class_sources,
         &cadmpeg_test_support::service_decode_context(),
         &ir,
         &mut report,
@@ -108,7 +104,6 @@ fn complete_parting_line_draft_does_not_require_an_outward_flag() {
     let mut neutral_plane_report = super::empty_report(true);
 
     append_design_losses(
-        &class_sources,
         &cadmpeg_test_support::service_decode_context(),
         &ir,
         &mut neutral_plane_report,
@@ -123,8 +118,6 @@ fn complete_parting_line_draft_does_not_require_an_outward_flag() {
 
 #[test]
 fn configuration_feature_states_drive_design_completeness_accounting() {
-    let class_sources = ClassSources::default();
-
     let mut ir = CadIr::empty();
     let feature_id = FeatureId::mint("synthetic:test:id#configured").expect("identity grammar");
     ir.model.features.push(Feature {
@@ -201,7 +194,6 @@ fn configuration_feature_states_drive_design_completeness_accounting() {
     let mut report = super::empty_report(true);
 
     append_design_losses(
-        &class_sources,
         &cadmpeg_test_support::service_decode_context(),
         &ir,
         &mut report,
@@ -222,8 +214,6 @@ fn configuration_feature_states_drive_design_completeness_accounting() {
 
 #[test]
 fn metadata_only_native_feature_does_not_report_missing_operation() {
-    let class_sources = ClassSources::default();
-
     let mut ir = CadIr::empty();
     ir.model.features.push(Feature {
         id: FeatureId::mint("synthetic:test:id#metadata-only").expect("identity grammar"),
@@ -247,7 +237,6 @@ fn metadata_only_native_feature_does_not_report_missing_operation() {
     let mut report = super::empty_report(true);
 
     append_design_losses(
-        &class_sources,
         &cadmpeg_test_support::service_decode_context(),
         &ir,
         &mut report,
@@ -411,8 +400,6 @@ fn active_configuration_inherits_late_feature_resolutions() {
 
 #[test]
 fn sparse_configuration_maps_do_not_imply_missing_source_content() {
-    let class_sources = ClassSources::default();
-
     let mut ir = CadIr::empty();
     let feature_id = FeatureId::mint("synthetic:test:id#feature").expect("identity grammar");
     ir.model.features.push(Feature {
@@ -477,7 +464,6 @@ fn sparse_configuration_maps_do_not_imply_missing_source_content() {
     let mut report = super::empty_report(true);
 
     append_design_losses(
-        &class_sources,
         &cadmpeg_test_support::service_decode_context(),
         &ir,
         &mut report,
@@ -502,7 +488,6 @@ fn sparse_configuration_maps_do_not_imply_missing_source_content() {
     ));
     report.losses.clear();
     append_design_losses(
-        &class_sources,
         &cadmpeg_test_support::service_decode_context(),
         &ir,
         &mut report,

@@ -3,11 +3,12 @@
 use cadmpeg_container::compound::CompoundSnapshot;
 use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
 use cadmpeg_ir::assets::AssetContent;
-use cadmpeg_ir::source_fidelity::parts::{PartOutput, PartState};
+use cadmpeg_ir::source_fidelity::parts::PartOutput;
 use cadmpeg_ir::CodecFormat;
 
 use crate::native::{PropertyRecord, PropertySectionRecord, PropertySetRecord};
 use crate::property_set::PropertySetState;
+use crate::test_support::given_up_records;
 
 fn padded(mut bytes: Vec<u8>) -> Vec<u8> {
     while bytes.len() % 4 != 0 {
@@ -141,7 +142,7 @@ fn identity_failure_drops_its_real_records_and_asset_and_keeps_the_exact_peer() 
         );
     }
     assert_eq!(metadata.title.as_deref(), Some("readable peer title"));
-    let (model, native, mut fidelity, losses) = output.into_parts(&ctx).unwrap().into_parts();
+    let (model, native, fidelity, losses) = output.into_parts();
     assert_eq!(model.assets.len(), 1);
     assert_eq!(
         model.assets[0].id.as_str(),
@@ -189,68 +190,5 @@ fn identity_failure_drops_its_real_records_and_asset_and_keeps_the_exact_peer() 
     assert!(losses[0]
         .message
         .contains("embedded property-set name does not match its FMTID"));
-    for id in [
-        format!(
-            "inventor:property:section#{}-0",
-            descriptor.stream.directory_id()
-        ),
-        format!(
-            "inventor:property:value#{}-0-2",
-            descriptor.stream.directory_id()
-        ),
-        format!(
-            "inventor:property:value#{}-0-17",
-            descriptor.stream.directory_id()
-        ),
-        format!(
-            "inventor:property:value#{}-0-255",
-            descriptor.stream.directory_id()
-        ),
-        "inventor:document:asset#preview-0".into(),
-    ] {
-        assert!(
-            losses[0].message.contains(&format!("\"{id}\"")),
-            "{id}: {}",
-            losses[0].message
-        );
-    }
-    assert_eq!(
-        fidelity
-            .parts()
-            .values()
-            .filter(|p| matches!(p.state(), PartState::GivenUp {}))
-            .count(),
-        1
-    );
-    assert_eq!(
-        fidelity
-            .parts()
-            .values()
-            .filter(|p| matches!(p.state(), PartState::Covered { .. }))
-            .count(),
-        3
-    );
-    fidelity.install_mapped_record_captures(&ctx, Ok).unwrap();
-    for id in fidelity.record_layout().keys() {
-        assert!(!id.starts_with(&format!(
-            "inventor:property:value#{}-0-",
-            descriptor.stream.directory_id()
-        )));
-    }
-    assert!(fidelity.record_layout().contains_key(&peer_id));
-    for id in sets
-        .iter()
-        .map(|r| r.id.as_str())
-        .chain(sections.iter().map(|r| r.id.as_str()))
-        .chain(properties.iter().map(|r| r.id.as_str()))
-    {
-        let layout = &fidelity.record_layout()[id];
-        assert!(fidelity
-            .parts()
-            .values()
-            .filter(|p| matches!(p.state(), PartState::GivenUp {}))
-            .all(|p| p.stream() != layout.stream()
-                || layout.offset() >= p.offset() + p.byte_len()
-                || layout.offset() + layout.byte_len() <= p.offset()));
-    }
+    assert_eq!(given_up_records(&fidelity).len(), 1);
 }

@@ -4,7 +4,7 @@
 use crate::native::PropertyRecord;
 use cadmpeg_core::decode::{DecodeContext, View};
 use cadmpeg_core::CodecError;
-use cadmpeg_ir::source_fidelity::parts::{DecodeParts, PartLevel, PartOutput, PartSpec};
+use cadmpeg_ir::source_fidelity::parts::{DecodeParts, PartOutput};
 use std::collections::BTreeMap;
 
 mod value_parts;
@@ -127,14 +127,12 @@ pub(crate) fn decode_owned<'source>(
     owner: &str,
     output: &mut PartOutput,
 ) -> Result<RootProperties, CodecError> {
-    let source = super::source::Source::new(ctx, view, xml)?;
-    let (extent, fields) = crate::xml_framing::element_fields(ctx, view, container)?;
-    let properties_level = PartLevel::parse("freecad.properties")
-        .ok_or_else(|| CodecError::malformed("properties level is absent from Appendix C"))?;
+    let source = super::source::Source::new(view, xml)?;
+    let extent = crate::fidelity::relative_xml_extent(view, container.range())?;
     let result = ctx.decode_part(
         output,
         extent,
-        PartSpec::new(properties_level, fields),
+        super::document_part("freecad.properties"),
         |properties_stage| {
             let count = container
                 .children()
@@ -178,26 +176,16 @@ pub(crate) fn decode_owned<'source>(
                 if !selected(node) {
                     continue;
                 }
-                let (extent, fields) = crate::xml_framing::element_fields(ctx, view, node)?;
-                let level = PartLevel::parse("freecad.property").ok_or_else(|| {
-                    CodecError::malformed("property level is absent from Appendix C")
-                })?;
+                let extent = crate::fidelity::relative_xml_extent(view, node.range())?;
                 if let Some(property) = ctx.decode_part(
                     properties_stage,
                     extent,
-                    PartSpec::new(level, fields),
-                    |stage| {
-                        let name = super::required_attr(node, "name")?;
-                        let id = crate::native::native_child_id("property", owner, name);
-                        source.record(&id, node, || {
-                            value_parts::decode(ctx, view, &source, node, owner, order, stage)
-                        })
-                    },
+                    super::document_part("freecad.property"),
+                    |stage| value_parts::decode(ctx, view, &source, node, owner, order, stage),
                 )? {
-                    result.sources.insert(
-                        property.id.clone(),
-                        crate::fidelity::property_source(node, &property)?,
-                    );
+                    result
+                        .sources
+                        .insert(property.id.clone(), crate::fidelity::property_source(node));
                     result.properties.push(property);
                 }
             }

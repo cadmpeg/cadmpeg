@@ -21,7 +21,7 @@ use crate::records::{
 };
 use crate::test_support::lp_utf16;
 use crate::test_support::manifest_test::write_synthetic_manifests;
-use crate::test_support::zip_test::with_context_scan;
+use crate::test_support::zip_test::with_scan;
 
 fn compact_owned_parameter_record(
     owner_record_index: u32,
@@ -367,7 +367,7 @@ fn duplicate_parameter_index_keeps_the_first_serialized_frame() {
     zip.write_all(&bulk).unwrap();
     let archive = zip.finish().unwrap().into_inner();
 
-    let parameters = with_context_scan(&archive, decode_parameters).unwrap();
+    let parameters = with_scan(&archive, decode_parameters).unwrap();
     let [parameter] = parameters.parameters.as_slice() else {
         panic!("expected one canonical parameter");
     };
@@ -415,14 +415,13 @@ fn a_parameter_copy_inside_another_primary_record_is_payload() {
     zip.write_all(&bulk).unwrap();
     let archive = zip.finish().unwrap().into_inner();
 
-    let decoded = with_context_scan(&archive, decode_parameters).unwrap();
+    let decoded = with_scan(&archive, decode_parameters).unwrap();
     let [parameter] = decoded.parameters.as_slice() else {
         panic!("expected only the primary-index parameter record");
     };
     assert_eq!(parameter.byte_offset(), Some(u64::try_from(live).unwrap()));
     assert_eq!(parameter.expression(), "12 mm");
     assert!(decoded.unparsed.is_empty());
-    assert_eq!(decoded.pointers.len(), 1);
 }
 
 fn compact_parameter_owner_frame() -> Vec<u8> {
@@ -1059,16 +1058,9 @@ fn parameter_companion_decode_emits_one_identified_companion() {
     zip.start_file(STREAM, stored).unwrap();
     zip.write_all(&prefix).unwrap();
     let archive = zip.finish().unwrap().into_inner();
-    with_context_scan(&archive, |ctx, scan| {
-        let mut pointers = std::collections::BTreeMap::new();
-        let decoded = super::decode_parameter_companions(
-            ctx,
-            scan,
-            &[owner.clone()],
-            &[header.clone()],
-            &mut pointers,
-        )
-        .unwrap();
+    with_scan(&archive, |scan| {
+        let decoded =
+            super::decode_parameter_companions(scan, &[owner.clone()], &[header.clone()]).unwrap();
         assert_eq!(decoded.len(), 1);
         assert_eq!(
             decoded[0].id(),
@@ -1076,30 +1068,6 @@ fn parameter_companion_decode_emits_one_identified_companion() {
                 "{}:design-parameter-companion#0",
                 crate::ids::native_scope(STREAM)
             )
-        );
-        // The prefix offsets are `record_layout` pointers of the companion
-        // capture. The timestamp follows the 42 bytes of header, zero run,
-        // owner reference and second zero run.
-        assert_eq!(
-            pointers,
-            std::collections::BTreeMap::from([(
-                decoded[0].id().to_owned(),
-                std::collections::BTreeMap::from([
-                    ("byte_offset".to_owned(), 0),
-                    ("timestamp_micros_offset".to_owned(), 42),
-                ]),
-            )])
-        );
-        // The prefix grammar reads each of its 58 bytes.
-        let captures = ctx.take_record_captures().unwrap();
-        let capture = captures
-            .iter()
-            .find(|capture| capture.id() == decoded[0].id())
-            .expect("companion capture");
-        assert_eq!(capture.byte_len(), 58);
-        assert_eq!(
-            capture.reads()[capture.stream()],
-            [capture.offset()..capture.offset() + 58]
         );
     });
 }
@@ -1164,13 +1132,11 @@ fn parameter_owner_uses_the_paired_same_index_header_as_its_boundary() {
 
     let mut exact = parameter_owner_frame();
     exact.extend_from_slice(&paired_header());
-    let owners = with_context_scan(&archive(stream, &exact), |ctx, scan| {
+    let owners = with_scan(&archive(stream, &exact), |scan| {
         crate::design::decode::parameters::decode_parameter_owners(
-            ctx,
             scan,
             std::slice::from_ref(&parameter),
             std::slice::from_ref(&header),
-            &mut std::collections::BTreeMap::new(),
         )
     })
     .expect("exact owner frame");
@@ -1180,51 +1146,14 @@ fn parameter_owner_uses_the_paired_same_index_header_as_its_boundary() {
     assert_eq!(owner.frame_length(), Some(104));
     assert!(owners.unparsed.is_empty());
     assert_eq!(owner.evaluated_value_offset(), Some(40));
-    let (pointers, reads) = with_context_scan(&archive(stream, &exact), |ctx, scan| {
-        let mut pointers = std::collections::BTreeMap::new();
-        crate::design::decode::parameters::decode_parameter_owners(
-            ctx,
-            scan,
-            std::slice::from_ref(&parameter),
-            std::slice::from_ref(&header),
-            &mut pointers,
-        )
-        .expect("exact owner frame");
-        let captures = ctx.take_record_captures().unwrap();
-        let [capture] = captures.as_slice() else {
-            panic!("expected one owner capture");
-        };
-        assert_eq!((capture.offset(), capture.byte_len()), (0, 104));
-        (pointers, capture.reads()[capture.stream()].clone())
-    });
-    // The frame length is the capture extent; the header and scalar offsets
-    // are its pointers.
-    assert_eq!(
-        pointers,
-        std::collections::BTreeMap::from([(
-            owner.id().clone(),
-            std::collections::BTreeMap::from([
-                ("byte_offset".to_owned(), 0),
-                ("evaluated_value_offset".to_owned(), 40),
-            ]),
-        )])
-    );
-    // The owner grammar reads the indexed header and the f64 scalar.
-    for field in [0..11, 40..48] {
-        assert!(reads
-            .iter()
-            .any(|read| read.start <= field.start && read.end >= field.end));
-    }
 
     let mut compact = without_variant_padding(parameter_owner_frame());
     compact.extend_from_slice(&paired_header());
-    let owners = with_context_scan(&archive(stream, &compact), |ctx, scan| {
+    let owners = with_scan(&archive(stream, &compact), |scan| {
         crate::design::decode::parameters::decode_parameter_owners(
-            ctx,
             scan,
             std::slice::from_ref(&parameter),
             std::slice::from_ref(&header),
-            &mut std::collections::BTreeMap::new(),
         )
     })
     .expect("owner frame whose variant ends its scope lane");
@@ -1235,13 +1164,11 @@ fn parameter_owner_uses_the_paired_same_index_header_as_its_boundary() {
     assert!(owners.unparsed.is_empty());
     assert_eq!(owner.evaluated_value_offset(), Some(40));
 
-    let unresolved = with_context_scan(&archive(stream, &[]), |ctx, scan| {
+    let unresolved = with_scan(&archive(stream, &[]), |scan| {
         crate::design::decode::parameters::decode_parameter_owners(
-            ctx,
             scan,
             std::slice::from_ref(&parameter),
             &[],
-            &mut std::collections::BTreeMap::new(),
         )
     })
     .expect("missing owner frame is retained as an unresolved binding");
@@ -1250,13 +1177,11 @@ fn parameter_owner_uses_the_paired_same_index_header_as_its_boundary() {
 
     let mut lone = paired_header().to_vec();
     lone.extend_from_slice(&[0; 19]);
-    let lone_owners = with_context_scan(&archive(stream, &lone), |ctx, scan| {
+    let lone_owners = with_scan(&archive(stream, &lone), |scan| {
         crate::design::decode::parameters::decode_parameter_owners(
-            ctx,
             scan,
             std::slice::from_ref(&parameter),
             std::slice::from_ref(&header),
-            &mut std::collections::BTreeMap::new(),
         )
     })
     .expect("the lone paired record of an omitted owner frame is not an owner");
@@ -1266,13 +1191,11 @@ fn parameter_owner_uses_the_paired_same_index_header_as_its_boundary() {
     let mut extended = parameter_owner_frame();
     extended.push(0);
     extended.extend_from_slice(&paired_header());
-    let unsupported = with_context_scan(&archive(stream, &extended), |ctx, scan| {
+    let unsupported = with_scan(&archive(stream, &extended), |scan| {
         crate::design::decode::parameters::decode_parameter_owners(
-            ctx,
             scan,
             std::slice::from_ref(&parameter),
             std::slice::from_ref(&header),
-            &mut std::collections::BTreeMap::new(),
         )
     })
     .expect("unsupported owner bindings do not prevent decoding");
@@ -1305,13 +1228,11 @@ fn parameter_owner_uses_the_paired_same_index_header_as_its_boundary() {
         byte_offset: Some(supported_at),
     };
     let native_parameters = [parameter, supported_parameter];
-    let decoded = with_context_scan(&archive(stream, &extended), |ctx, scan| {
+    let decoded = with_scan(&archive(stream, &extended), |scan| {
         crate::design::decode::parameters::decode_parameter_owners(
-            ctx,
             scan,
             &native_parameters,
             &[header, supported_header],
-            &mut std::collections::BTreeMap::new(),
         )
     })
     .expect("a supported owner after an unsupported owner still decodes");
@@ -1716,7 +1637,7 @@ fn decode_reports_typed_parameter_frames_that_match_no_grammar() {
     zip.start_file(stream, stored).unwrap();
     zip.write_all(&bulk).unwrap();
     let archive = zip.finish().unwrap().into_inner();
-    let decoded = with_context_scan(&archive, decode_parameters).unwrap();
+    let decoded = with_scan(&archive, decode_parameters).unwrap();
     let [parameter] = decoded.parameters.as_slice() else {
         panic!("expected the one well-formed typed parameter");
     };

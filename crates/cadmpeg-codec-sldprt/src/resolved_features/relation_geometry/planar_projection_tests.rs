@@ -43,7 +43,7 @@ fn planar_fixture() -> (Sketch, Feature, FeatureInputLane) {
     };
     let mut lane = relation_lane();
     lane.relation_instances[0].operands = vec![FeatureInputOperand {
-        offset: Some(0),
+        offset: 0,
         reference_ref: "reference".into(),
         kind: FeatureInputOperandKind::D6,
         entity_index: 0,
@@ -185,7 +185,7 @@ fn project_owned_loci_with_policy(policy: &DecodePolicy) -> Result<(), CodecErro
     ));
     let mut lane = relation_lane();
     lane.relation_instances[0].operands = vec![FeatureInputOperand {
-        offset: Some(0),
+        offset: 0,
         reference_ref: "canonical-reference".into(),
         kind: FeatureInputOperandKind::D6,
         entity_index: 0,
@@ -366,7 +366,7 @@ fn project_dimensional_points_with_policy(policy: &DecodePolicy) -> Result<(), C
         crate::records::FeatureInputRelationFamily::PointPointDistance;
     lane.relation_instances[0].operands = (0u16..2)
         .map(|index| FeatureInputOperand {
-            offset: Some(u64::from(index)),
+            offset: u64::from(index),
             reference_ref: format!("reference-{index}"),
             kind: FeatureInputOperandKind::D6,
             entity_index: index,
@@ -439,7 +439,7 @@ fn project_dimensional_lines_with_policy(policy: &DecodePolicy) -> Result<(), Co
         crate::records::FeatureInputRelationFamily::LineLineDistance;
     lane.relation_instances[0].operands = (0u16..2)
         .map(|index| FeatureInputOperand {
-            offset: Some(u64::from(index)),
+            offset: u64::from(index),
             reference_ref: format!("reference-{index}"),
             kind: FeatureInputOperandKind::D6,
             entity_index: index,
@@ -581,7 +581,7 @@ fn project_dynamic_lines_with_policy(policy: &DecodePolicy) -> Result<(), CodecE
         crate::records::FeatureInputRelationFamily::LineLineDistance;
     lane.relation_instances[0].operands = (0u16..2)
         .map(|index| FeatureInputOperand {
-            offset: Some(u64::from(index)),
+            offset: u64::from(index),
             reference_ref: format!("reference-{index}"),
             kind: FeatureInputOperandKind::Native(
                 crate::records::operand_tag::NativeOperandTag::try_from(0x812a).unwrap(),
@@ -657,7 +657,7 @@ fn project_dynamic_marker_points_with_policy(policy: &DecodePolicy) -> Result<()
         crate::records::FeatureInputRelationFamily::PointPointDistance;
     lane.relation_instances[0].operands = (0u16..2)
         .map(|index| FeatureInputOperand {
-            offset: Some(u64::from(index)),
+            offset: u64::from(index),
             reference_ref: format!("reference-{index}"),
             kind: FeatureInputOperandKind::Native(
                 crate::records::operand_tag::NativeOperandTag::try_from(0x812a).unwrap(),

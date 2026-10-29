@@ -112,8 +112,10 @@ fn a_non_integer_directory_field_quarantines_the_two_card_pair() {
         code_count(result.report(), IgesLossCode::DirectoryRecordQuarantined),
         1
     );
-    assert!(cadmpeg_ir::index::ModelIndex::build(result.ir())
-        .contains("iges:quarantine:directory#3", cadmpeg_ir::index::StandardIndex));
+    assert!(cadmpeg_ir::index::ModelIndex::build(result.ir()).contains(
+        "iges:quarantine:directory#3",
+        cadmpeg_ir::index::StandardIndex
+    ));
     assert!(serde_json::to_value(result.report())
         .unwrap()
         .get("transfer_ledger")

@@ -4,14 +4,13 @@ use crate::records::{
     FeatureInputClass, FeatureInputLane, FeatureInputOperand, FeatureInputOperandKind,
     FeatureInputReference, SketchInputEntity, SketchInputKind, SketchInputLink,
 };
-use crate::resolved_features::class_sources::ClassSources;
 use std::collections::HashMap;
 
 #[test]
 fn duplicate_link_declared_entity_handle_selects_valid_arc_carrier() {
     let kind = FeatureInputOperandKind::Native(NativeOperandTag::try_from(0x8c44).unwrap());
     let operand = FeatureInputOperand {
-        offset: Some(100),
+        offset: 100,
         reference_ref: "reference".into(),
         kind,
         entity_index: 0,
@@ -95,6 +94,7 @@ fn duplicate_link_declared_entity_handle_selects_valid_arc_carrier() {
         native_payload: Vec::new().into(),
         classes: vec![FeatureInputClass {
             sequence: 112,
+            offset: 112,
             feature_ref: None,
             id: "class".into(),
             parent: "lane".into(),
@@ -111,6 +111,7 @@ fn duplicate_link_declared_entity_handle_selects_valid_arc_carrier() {
         generated_surface_identities: Vec::new(),
         references: vec![FeatureInputReference {
             sequence: 0,
+            offset: operand.offset,
             id: operand.reference_ref.clone(),
             parent: "lane".into(),
             feature_ref: Some("feature".into()),
@@ -127,9 +128,7 @@ fn duplicate_link_declared_entity_handle_selects_valid_arc_carrier() {
         .map(|marker| (marker.id(), marker))
         .collect::<HashMap<_, _>>();
 
-    let class_sources = ClassSources::from_positions([(&lane.classes[0], 112)]);
     let carrier = dimensioned_relation_carrier(
-        &class_sources,
         std::slice::from_ref(&lane),
         &markers_by_id,
         "feature",
@@ -160,7 +159,6 @@ fn duplicate_link_declared_entity_handle_selects_valid_arc_carrier() {
         .map(|marker| (marker.id(), marker))
         .collect::<HashMap<_, _>>();
     assert!(dimensioned_relation_carrier(
-        &class_sources,
         std::slice::from_ref(&mismatched_lane),
         &mismatched_markers,
         "feature",
@@ -177,7 +175,6 @@ fn duplicate_link_declared_entity_handle_selects_valid_arc_carrier() {
         .map(|marker| (marker.id(), marker))
         .collect::<HashMap<_, _>>();
     assert!(dimensioned_relation_carrier(
-        &class_sources,
         std::slice::from_ref(&non_arc_lane),
         &non_arc_markers,
         "feature",
@@ -233,7 +230,6 @@ fn duplicate_link_declared_entity_handle_selects_valid_arc_carrier() {
         .map(|marker| (marker.id(), marker))
         .collect::<HashMap<_, _>>();
     assert!(dimensioned_relation_carrier(
-        &class_sources,
         std::slice::from_ref(&ambiguous_lane),
         &ambiguous_markers,
         "feature",

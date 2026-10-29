@@ -1,5 +1,4 @@
 //! Line reference directions and revolution axis inputs.
-use crate::resolved_features::class_sources::ClassSources;
 use cadmpeg_ir::features::PlanarProfileRef;
 
 use super::component_paths::is_profile_feature_object;
@@ -174,19 +173,15 @@ pub(super) fn linear_pattern_display_directions(
         .filter_map(|(dimension_name, expected)| {
             let expected = expected?;
             let mut records = names.iter().filter(|name| {
-                name.object_id == Some(ObjectId::Absent)
-                    && name.value == dimension_name
-                    && name.offset.is_some_and(|position| {
-                        (u64_from_index(object_start)..u64_from_index(end)).contains(&position)
-                    })
+                name.object_id == Some(ObjectId::Absent) && name.value == dimension_name && {
+                    (u64_from_index(object_start)..u64_from_index(end)).contains(&name.offset)
+                }
             });
             let name = records.next()?;
             if records.next().is_some() {
                 return None;
             }
-            let offset = name
-                .offset
-                .and_then(|offset| usize::try_from(offset).ok())?;
+            let offset = usize::try_from(name.offset).ok()?;
             let value_offset = offset.checked_add(VALUE_OFFSET)?;
             let direction_offset = offset.checked_add(DIRECTION_OFFSET)?;
             if direction_offset.checked_add(24)? > end {
@@ -216,7 +211,6 @@ pub(super) struct TypedLinearPatternDimensions<'a> {
 }
 
 pub(super) fn typed_linear_pattern_dimensions<'a>(
-    class_sources: &ClassSources,
     feature: &'a crate::records::Feature,
     lane: &'a FeatureInputLane,
     object_start: usize,
@@ -224,21 +218,18 @@ pub(super) fn typed_linear_pattern_dimensions<'a>(
 ) -> Option<TypedLinearPatternDimensions<'a>> {
     let parameter = |class_name: &str| {
         let mut classes = lane.classes.iter().filter(|class| {
-            class.name == class_name
-                && class_sources.position(class).is_some_and(|position| {
-                    (u64_from_index(object_start)..u64_from_index(object_end)).contains(&position)
-                })
+            class.name == class_name && {
+                (u64_from_index(object_start)..u64_from_index(object_end)).contains(&class.offset)
+            }
         });
         let class = classes.next().filter(|_| classes.next().is_none())?;
-        let class_offset = class_sources
-            .position(class)
-            .and_then(|offset| usize::try_from(offset).ok())?;
+        let class_offset = usize::try_from(class.offset).ok()?;
         let name_end = class_offset.checked_add(128)?.min(object_end);
         let mut names = lane.names.iter().filter(|name| {
             name.object_id == Some(ObjectId::Absent)
-                && name.offset.is_some_and(|position| {
-                    (u64_from_index(class_offset)..u64_from_index(name_end)).contains(&position)
-                })
+                && {
+                    (u64_from_index(class_offset)..u64_from_index(name_end)).contains(&name.offset)
+                }
                 && feature.parameters.contains_key(name.value.as_str())
         });
         let name = names.next().filter(|_| names.next().is_none())?;
@@ -955,7 +946,7 @@ pub(crate) fn enrich_history_revolution_inputs(
         for history in histories.iter() {
             let mut objects = Vec::new();
             for feature in &history.features {
-                if let Some(position) = names.of(feature).and_then(|name| name.offset) {
+                if let Some(position) = names.of(feature).map(|name| name.offset) {
                     objects.push((position, feature));
                 }
             }
@@ -1228,7 +1219,7 @@ fn profile_roster_construction_axis(
         .iter()
         .filter(|marker| marker.feature_ref.as_deref() == Some(profile_native))
     {
-        let Some(offset) = marker.offset().and_then(index_from_u64) else {
+        let Some(offset) = index_from_u64(marker.offset()) else {
             continue;
         };
         if !marker_is_selected_construction_line(&lane.native_payload, offset) {
@@ -1654,10 +1645,7 @@ fn profile_roster_implicit_axis_endpoints<'a>(
     let coordinate_rosters =
         super::endpoints::coordinate_rosters::CoordinateRosters::borrowed(markers);
     let curve_candidates = markers.iter().copied().filter(|marker| {
-        let Some(offset) = marker
-            .offset()
-            .and_then(|offset| usize::try_from(offset).ok())
-        else {
+        let Some(offset) = usize::try_from(marker.offset()).ok() else {
             return false;
         };
         if marker.feature_ref.as_deref() != Some(profile_native) {
@@ -1700,12 +1688,9 @@ fn profile_roster_implicit_axis_endpoints<'a>(
         .iter()
         .copied()
         .filter(|marker| {
-            marker
-                .offset()
-                .and_then(index_from_u64)
-                .is_some_and(|offset| {
-                    lane.native_payload.get(offset + 76..offset + 80) == Some(&1u32.to_le_bytes())
-                })
+            index_from_u64(marker.offset()).is_some_and(|offset| {
+                lane.native_payload.get(offset + 76..offset + 80) == Some(&1u32.to_le_bytes())
+            })
         })
         .take(3)
         .collect::<Vec<_>>();
@@ -1749,14 +1734,10 @@ fn profile_roster_implicit_axis_endpoints<'a>(
         .copied()
         .filter(|marker| marker.feature_ref.as_deref() == Some(profile_native))
     {
-        if !candidate
-            .offset()
-            .and_then(index_from_u64)
-            .is_some_and(|offset| {
-                extended_wide_horizontal_relation_endpoint_indices(&lane.native_payload, offset)
-                    .is_some()
-            })
-        {
+        if !index_from_u64(candidate.offset()).is_some_and(|offset| {
+            extended_wide_horizontal_relation_endpoint_indices(&lane.native_payload, offset)
+                .is_some()
+        }) {
             continue;
         }
         let endpoints =

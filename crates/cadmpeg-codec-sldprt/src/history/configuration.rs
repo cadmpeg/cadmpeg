@@ -1,7 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Configuration-lane enrichment and design-state projection.
 
-use crate::resolved_features::class_sources::ClassSources;
 #[cfg(test)]
 mod admission_tests;
 
@@ -116,32 +115,20 @@ pub(crate) enum HistoryEnrichment {
 /// (the historical `true` argument): projects parameters together with their
 /// downstream semantic feature inputs.
 pub(crate) fn enrich_history_parameters_semantic(
-    class_sources: &ClassSources,
     histories: &mut [FeatureHistory],
     lanes: &[crate::records::FeatureInputLane],
 ) {
-    crate::resolved_features::parameters::enrich_history_parameters(
-        class_sources,
-        histories,
-        lanes,
-        true,
-    );
+    crate::resolved_features::parameters::enrich_history_parameters(histories, lanes, true);
 }
 
 /// Parameter-only mode of `resolved_features::parameters::enrich_history_parameters` (the
 /// historical `false` argument): projects parameter values without the semantic
 /// feature-input projection.
 pub(crate) fn enrich_history_parameters_values_only(
-    class_sources: &ClassSources,
     histories: &mut [FeatureHistory],
     lanes: &[crate::records::FeatureInputLane],
 ) {
-    crate::resolved_features::parameters::enrich_history_parameters(
-        class_sources,
-        histories,
-        lanes,
-        false,
-    );
+    crate::resolved_features::parameters::enrich_history_parameters(histories, lanes, false);
 }
 
 /// The shared native-lane enrichment prefix, declared once for both codec
@@ -151,7 +138,6 @@ pub(crate) fn enrich_history_parameters_values_only(
 /// revolution-input enrichments; the read path additionally applies
 /// hole-construction enrichment (selected by `mode`).
 pub(crate) fn enrich_history_semantic(
-    class_sources: &ClassSources,
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     histories: &mut [FeatureHistory],
     lanes: &[crate::records::FeatureInputLane],
@@ -162,30 +148,14 @@ pub(crate) fn enrich_history_semantic(
         ctx, histories, lanes,
     )?;
     crate::resolved_features::terminations::enrich_history_combine_selections(histories, lanes)?;
-    crate::resolved_features::terminations::enrich_history_sweep_paths(
-        class_sources,
-        histories,
-        lanes,
-    );
+    crate::resolved_features::terminations::enrich_history_sweep_paths(histories, lanes);
     crate::resolved_features::reference_geometry::enrich_history_sketch_block_references(
         histories, lanes,
     );
-    crate::resolved_features::operations::enrich_history_split_lines(
-        class_sources,
-        histories,
-        lanes,
-    );
-    crate::resolved_features::direct_edits::enrich_history_move_face_translations(
-        class_sources,
-        histories,
-        lanes,
-    );
-    crate::resolved_features::direct_edits::enrich_history_move_body_translations(
-        class_sources,
-        histories,
-        lanes,
-    );
-    enrich_history_parameters_semantic(class_sources, histories, lanes);
+    crate::resolved_features::operations::enrich_history_split_lines(histories, lanes);
+    crate::resolved_features::direct_edits::enrich_history_move_face_translations(histories, lanes);
+    crate::resolved_features::direct_edits::enrich_history_move_body_translations(histories, lanes);
+    enrich_history_parameters_semantic(histories, lanes);
     if matches!(mode, HistoryEnrichment::Read) {
         crate::resolved_features::holes::enrich_history_hole_constructions(histories, lanes);
         crate::resolved_features::holes::enrich_history_cosmetic_thread_diameters(histories, lanes);
@@ -194,10 +164,7 @@ pub(crate) fn enrich_history_semantic(
             enrich_history_cosmetic_thread_diameters_without_hole_constructions(histories, lanes);
     }
     crate::resolved_features::reference_geometry::enrich_history_reference_planes(
-        class_sources,
-        ctx,
-        histories,
-        lanes,
+        ctx, histories, lanes,
     )?;
     crate::resolved_features::reference_geometry::enrich_history_reference_points(histories, lanes);
     crate::resolved_features::reference_geometry::enrich_history_coordinate_systems(
@@ -206,10 +173,7 @@ pub(crate) fn enrich_history_semantic(
     crate::pmi::enrich_history_parameters(histories, pmi_dimensions);
     apply_evaluated_parameters(ctx, histories)?;
     crate::resolved_features::reference_geometry::enrich_history_reference_axes(
-        class_sources,
-        ctx,
-        histories,
-        lanes,
+        ctx, histories, lanes,
     )?;
     crate::resolved_features::axes::enrich_history_revolution_inputs(histories, lanes);
     Ok(())
@@ -222,7 +186,6 @@ pub(crate) fn enrich_history_semantic(
 /// sweep/revolution/extrusion operations, spatial sketches, tree-node restore)
 /// stay in each caller, around this block.
 pub(crate) fn project_compact_and_generated(
-    class_sources: &ClassSources,
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     features: &mut [cadmpeg_ir::features::Feature],
     projection: &[FeatureHistory],
@@ -233,25 +196,14 @@ pub(crate) fn project_compact_and_generated(
         features, projection, lanes,
     )?;
     crate::resolved_features::projections::project_compact_edge_selections(
-        class_sources,
-        features,
-        projection,
-        lanes,
+        features, projection, lanes,
     )?;
     crate::resolved_features::projections::project_compact_surface_selections(
         features, projection, lanes,
     )?;
-    crate::resolved_features::projections::project_draft_operands(
-        class_sources,
-        features,
-        projection,
-        lanes,
-    )?;
+    crate::resolved_features::projections::project_draft_operands(features, projection, lanes)?;
     crate::resolved_features::terminations::project_surface_sweep_profiles(
-        class_sources,
-        features,
-        projection,
-        lanes,
+        features, projection, lanes,
     );
     crate::resolved_features::holes::project_helix_axes(
         ctx,
@@ -321,7 +273,6 @@ fn configuration_history_units(histories: &[FeatureHistory]) -> Option<usize> {
 /// Returns how many configurations were left unprojected because the pass
 /// reached [`configuration_projection_work_limit`].
 pub(crate) fn project_configuration_design_states(
-    class_sources: &ClassSources,
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     ir: &mut cadmpeg_ir::CadIr,
     histories: &[FeatureHistory],
@@ -331,7 +282,6 @@ pub(crate) fn project_configuration_design_states(
 ) -> Result<usize, cadmpeg_core::CodecError> {
     let work_limit = configuration_projection_work_limit(ir.model.configurations.len(), histories);
     project_configuration_design_states_within(
-        class_sources,
         ctx,
         ir,
         ConfigurationSources {
@@ -353,7 +303,6 @@ struct ConfigurationSources<'a> {
 }
 
 fn project_configuration_design_states_within(
-    class_sources: &ClassSources,
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     ir: &mut cadmpeg_ir::CadIr,
     sources: ConfigurationSources<'_>,
@@ -367,21 +316,18 @@ fn project_configuration_design_states_within(
     } = sources;
     let mut resolved_base_features = copy_configuration_features(&ir.model.features);
     crate::resolved_features::operations::bind_extrusion_operations(
-        class_sources,
         &mut resolved_base_features,
         histories,
         lanes,
         form_padding,
     );
     crate::resolved_features::operations::bind_revolution_operations(
-        class_sources,
         &mut resolved_base_features,
         histories,
         lanes,
         form_padding,
     );
     crate::resolved_features::operations::bind_sweep_operations(
-        class_sources,
         &mut resolved_base_features,
         histories,
         lanes,
@@ -410,7 +356,7 @@ fn project_configuration_design_states_within(
             pmi_dimensions,
             &ir.model.features,
         );
-        enrich_history_parameters_semantic(class_sources, &mut projection, scoped_lanes);
+        enrich_history_parameters_semantic(&mut projection, scoped_lanes);
         crate::resolved_features::holes::
             enrich_history_cosmetic_thread_diameters_without_hole_constructions(&mut projection, scoped_lanes);
         crate::pmi::enrich_history_parameters_with_features(
@@ -445,7 +391,6 @@ fn project_configuration_design_states_within(
 
         let mut projection = histories.to_vec();
         enrich_history_semantic(
-            class_sources,
             ctx,
             &mut projection,
             scoped_lanes,
@@ -454,41 +399,30 @@ fn project_configuration_design_states_within(
         )?;
         let mut features = project_features(ctx, &projection)?;
         crate::resolved_features::bindings::bind_pattern_inputs(
-            class_sources,
             &mut features,
             &projection,
             scoped_lanes,
         )?;
-        project_compact_and_generated(
-            class_sources,
-            ctx,
-            &mut features,
-            &projection,
-            scoped_lanes,
-        )?;
+        project_compact_and_generated(ctx, &mut features, &projection, scoped_lanes)?;
         crate::resolved_features::operations::bind_extrusion_operations(
-            class_sources,
             &mut features,
             histories,
             scoped_lanes,
             form_padding,
         );
         crate::resolved_features::operations::bind_revolution_operations(
-            class_sources,
             &mut features,
             histories,
             scoped_lanes,
             form_padding,
         );
         crate::resolved_features::operations::bind_sweep_operations(
-            class_sources,
             &mut features,
             histories,
             scoped_lanes,
             form_padding,
         );
         crate::resolved_features::operations::inherit_configuration_operations(
-            class_sources,
             &mut features,
             &resolved_base_features,
             histories,
@@ -546,7 +480,6 @@ fn project_configuration_design_states_within(
 /// Project edge operands carried only by supplemental config-object lanes into
 /// the matching configuration-local feature snapshots.
 pub(crate) fn project_configuration_supplemental_edge_selections(
-    class_sources: &ClassSources,
     ir: &mut cadmpeg_ir::CadIr,
     lanes: &[crate::records::FeatureInputLane],
 ) -> Result<(), cadmpeg_core::CodecError> {
@@ -595,7 +528,6 @@ pub(crate) fn project_configuration_supplemental_edge_selections(
             features.push(feature);
         }
         crate::resolved_features::projections::project_compact_edge_selections_with_ids(
-            class_sources,
             &mut features,
             &feature_ids_by_native,
             &[],
@@ -689,7 +621,6 @@ pub(super) fn restore_configuration_tree_node_definitions(
 
 /// Apply sketch ownership projection to configuration-local feature snapshots.
 pub(crate) fn project_configuration_sketch_states(
-    class_sources: &ClassSources,
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     ir: &mut cadmpeg_ir::CadIr,
     histories: &[FeatureHistory],
@@ -778,7 +709,6 @@ pub(crate) fn project_configuration_sketch_states(
                 saved_values.push((index, parameter.value.replace(copied)));
             }
             crate::resolved_features::profiles::bind_sketch_profiles(
-                class_sources,
                 &mut features,
                 crate::resolved_features::profiles::SketchArenas {
                     sketches: &mut ir.model.sketches,
@@ -791,7 +721,7 @@ pub(crate) fn project_configuration_sketch_states(
                 scoped_lanes,
             );
             crate::resolved_features::profiles::project_compact_sketch_profiles(
-                (class_sources, ctx),
+                ctx,
                 &mut features,
                 &mut ir.model.sketches,
                 &mut ir.model.sketch_entities,
@@ -800,7 +730,6 @@ pub(crate) fn project_configuration_sketch_states(
                 &mut losses,
             )?;
             crate::resolved_features::profiles::project_marker_backed_sketches(
-                class_sources,
                 ctx,
                 &mut features,
                 &mut ir.model.sketches,
@@ -829,7 +758,6 @@ pub(crate) fn project_configuration_sketch_states(
                 &surfaces,
             );
             crate::resolved_features::bindings::bind_pattern_inputs(
-                class_sources,
                 &mut features,
                 histories,
                 scoped_lanes,
@@ -845,7 +773,6 @@ pub(crate) fn project_configuration_sketch_states(
                 scoped_lanes,
             );
             crate::resolved_features::dimensions::project_dimensioned_sketch_geometry(
-                class_sources,
                 &mut ir.model.sketch_entities,
                 &ir.model.sketches,
                 &surfaces,
@@ -867,7 +794,6 @@ pub(crate) fn project_configuration_sketch_states(
                 scoped_lanes,
             );
             crate::resolved_features::dimensions::project_relation_point_dimensioned_circles(
-                class_sources,
                 &mut ir.model.sketch_entities,
                 &features,
                 &parameters,
@@ -898,7 +824,6 @@ pub(crate) fn project_configuration_sketch_states(
                 scoped_lanes,
             )?;
             crate::resolved_features::holes::project_profiled_hole_constructions(
-                class_sources,
                 ctx,
                 &mut features,
                 &ir.model.sketch_entities,

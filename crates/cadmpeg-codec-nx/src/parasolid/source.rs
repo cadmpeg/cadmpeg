@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
-//! Original part and expanded member Views at the source producer.
+//! Part slices and expanded member views.
 
-use cadmpeg_container::compression::{inflate_zlib_member, inflate_zlib_member_if};
+use cadmpeg_container::compression::inflate_zlib_member;
 use cadmpeg_core::decode::{u64_from_index, ByteRange, DecodeContext, ExpandSpec, View};
 use cadmpeg_core::CodecError;
 
@@ -23,21 +23,7 @@ pub(super) fn part<'a>(
         start: u64_from_index(start),
         end: u64_from_index(end),
     };
-    if !root.has_source_tracking() {
-        return ctx.register_slice(root, range);
-    }
-    let view = root
-        .child(start, end)
-        .ok_or_else(|| CodecError::malformed("NX part leaves its actual root"))?;
-    let extent = ctx.capture_part_extent(view)?;
-    let name = format!(
-        "nx:part:{}:{}:{}:{}",
-        extent.stream().len(),
-        extent.stream(),
-        extent.offset(),
-        extent.byte_len()
-    );
-    ctx.register_named_slice(root, range, &name)
+    ctx.register_slice(root, range)
 }
 
 pub(super) enum Candidate<'a> {
@@ -50,24 +36,14 @@ pub(super) fn inflate<'a>(
     source: View<'a>,
     admit: impl FnOnce(&[u8], u64) -> Result<bool, CodecError>,
 ) -> Result<Option<Candidate<'a>>, CodecError> {
-    if source.has_source_tracking() {
-        ctx.require_source(source)?;
-    }
     let mut decoded = false;
     let mut completed = None;
-    let result = if source.has_source_tracking() {
-        inflate_zlib_member_if(ctx, source, ExpandSpec::Unknown, |bytes, consumed| {
-            decoded = true;
-            completed = Some(u64_from_index(consumed));
-            admit(bytes, u64_from_index(consumed))
-        })
-    } else {
+    let result =
         inflate_zlib_member(ctx, source, ExpandSpec::Unknown).and_then(|(view, consumed)| {
             decoded = true;
             completed = Some(u64_from_index(consumed));
             Ok(admit(view.window(), u64_from_index(consumed))?.then_some((view, consumed)))
-        })
-    };
+        });
     match result {
         Ok(Some((source, consumed))) => Ok(Some(Candidate::Accepted {
             source,

@@ -45,7 +45,7 @@ fn binary_global_admission_uses_the_actual_rendered_card_boundaries_and_keeps_re
     for (index, expected) in [(1, 1.0), (2, 2.0), (3, 3.0)] {
         assert_eq!(parameters[0].number(index), Some(expected));
     }
-    let (_, _, _, part_losses) = parts.into_parts(&ctx).expect("part closure").into_parts();
+    let (_, _, _, part_losses) = parts.into_parts();
     assert!(part_losses.is_empty());
     assert_eq!(source, original);
 }

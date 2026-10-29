@@ -15,13 +15,8 @@ pub(crate) struct MapImage<'a> {
 }
 
 impl MapImage<'_> {
-    /// Pointer values retain the containing database's coordinates, while the
-    /// owning RecordLayout extent uses the cell's composite stream.
-    pub(crate) fn original_pointer(
-        &self,
-        ctx: &DecodeContext<'_>,
-        logical: u64,
-    ) -> Result<u64, CodecError> {
+    /// Map a position in the reconstructed value to the database's coordinates.
+    pub(crate) fn original_pointer(&self, logical: u64) -> Result<u64, CodecError> {
         let logical = usize::try_from(logical).map_err(|_| malformed())?;
         let mut start = 0usize;
         for piece in &self.pieces {
@@ -29,21 +24,11 @@ impl MapImage<'_> {
                 .checked_add(piece.window().len())
                 .ok_or_else(malformed)?;
             if start <= logical && logical < end {
-                let position = piece
+                return piece
                     .start()
                     .checked_add(logical - start)
-                    .ok_or_else(malformed)?;
-                let actual = piece
-                    .child(position, position.checked_add(1).ok_or_else(malformed)?)
-                    .ok_or_else(malformed)?;
-                let actual = ctx.capture_part_extent(actual)?;
-                let database = ctx.capture_part_extent(self.database)?;
-                if actual.stream() != database.stream() {
-                    return Err(malformed());
-                }
-                return actual
-                    .offset()
-                    .checked_sub(database.offset())
+                    .and_then(|position| position.checked_sub(self.database.start()))
+                    .map(cadmpeg_core::decode::u64_from_index)
                     .ok_or_else(malformed);
             }
             start = end;
@@ -216,22 +201,7 @@ impl<'context> Reader<'_, 'context> {
         let key = std::str::from_utf8(&bytes[..key_len])
             .map_err(|_| malformed())?
             .to_owned();
-        let header_start = usize::try_from(number)
-            .ok()
-            .and_then(|number| number.checked_mul(self.page_size))
-            .and_then(|page_start| page_start.checked_add(cell))
-            .ok_or_else(malformed)?;
-        let owner = self
-            .ctx
-            .capture_part_extent(self.source_child(header_start, 26)?)?;
-        let stream = format!(
-            "sldprt-pmi-cell:{}:{}:{}:{}",
-            owner.stream().len(),
-            owner.stream(),
-            owner.offset(),
-            owner.byte_len()
-        );
-        let encoded = self.ctx.concat_named_views(&pieces, &stream)?;
+        let encoded = self.ctx.concat_views(&pieces)?;
         Ok(MapImage {
             key,
             encoded,

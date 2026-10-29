@@ -596,7 +596,7 @@ fn a_given_up_type_table_keeps_its_framed_metadata_stream_verified() {
         assert!(recovery.unframed_meta_streams.is_empty());
         recovery.classify()
     };
-    // 256 descriptors is the Appendix C maximum; 300 gives up the type table
+    // 256 descriptors is the section 4 maximum; 300 gives up the type table
     // only. Both metadata streams frame, so both classify the same way.
     assert_eq!(classify(300), classify(256));
 }

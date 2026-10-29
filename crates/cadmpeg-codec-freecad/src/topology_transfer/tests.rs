@@ -1232,11 +1232,6 @@ Co 1001000 +2 0 *
         Some("fcstd:native:object#Shape")
     );
     assert_eq!(gui_properties.len(), 8);
-    assert!(gui_properties.iter().all(|property| std::str::from_utf8(
-        crate::test_support::source_fidelity::bytes(result.source_fidelity(), &property.id,)
-    )
-    .expect("GUI property source XML")
-    .starts_with("<Property")));
     assert!(crate::test_support::validate_native(result.ir()).is_empty());
     assert_valid_document(result.ir());
 

@@ -47,11 +47,7 @@ const VIEWPORT_USERDATA_CHILD_CAP: usize = 1 << 20;
 struct ViewChild {
     typecode: String,
     kind: &'static str,
-    #[serde(skip_serializing)]
-    source_offset: u64,
     byte_len: u64,
-    #[serde(skip_serializing)]
-    sha256: String,
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -84,8 +80,6 @@ impl Serialize for ViewListKind {
 #[derive(Debug, Serialize)]
 struct ViewRecord {
     id: String,
-    #[serde(skip_serializing)]
-    source_offset: u64,
     list_kind: ViewListKind,
     list_index: usize,
     name: String,
@@ -191,8 +185,6 @@ struct ConstructionPlane {
 #[derive(Debug, Serialize)]
 struct NamedConstructionPlane {
     id: String,
-    #[serde(skip_serializing)]
-    source_offset: u64,
     list_index: usize,
     value: ConstructionPlane,
 }
@@ -1364,11 +1356,7 @@ fn parse_view(
         children.push(ViewChild {
             typecode: format!("{:#010x}", child.typecode),
             kind: child_kind(child.typecode),
-            source_offset: cadmpeg_core::decode::u64_from_index(offset),
             byte_len: cadmpeg_core::decode::u64_from_index(child.next_offset() - offset),
-            sha256: crate::instances::hex(&cadmpeg_ir::hash::sha256(
-                &data[offset..child.next_offset()],
-            )),
         });
         if terminated {
             break;
@@ -1400,7 +1388,6 @@ fn parse_view(
     }
     Ok(ViewRecord {
         id: format!("rhino:document:view#{}-{list_index:04}", list_kind.as_str()),
-        source_offset: cadmpeg_core::decode::u64_from_index(record.header_start),
         list_kind,
         list_index,
         name,
@@ -1588,7 +1575,6 @@ fn parse_named_cplanes(
 
         values.push(NamedConstructionPlane {
             id: format!("rhino:document:construction_plane#{index:04}"),
-            source_offset: cadmpeg_core::decode::u64_from_index(chunk.header_start),
             list_index: index,
             value: parse_cplane(ctx, data, chunk.body().clone(), scale)?,
         });
@@ -1741,51 +1727,6 @@ pub(crate) fn install(
             }
         }
     }
-    let mut source_layout = std::collections::BTreeMap::new();
-    for view in &views {
-        source_layout.insert(
-            format!("rhino.layout.{}.offset", view.id),
-            view.source_offset.to_string(),
-        );
-        if let Some(viewport) = &view.viewport {
-            source_layout.insert(
-                format!("rhino.layout.{}.viewport.version", view.id),
-                format!("{}", viewport.version),
-            );
-        }
-        if let Some(position) = &view.window_position {
-            source_layout.insert(
-                format!("rhino.layout.{}.window.version", view.id),
-                format!("{}", position.version),
-            );
-        }
-        if let Some(attributes) = &view.attributes {
-            source_layout.insert(
-                format!("rhino.layout.{}.attributes.version", view.id),
-                format!("{}", attributes.version),
-            );
-        }
-        for (ordinal, child) in view.children.iter().enumerate() {
-            source_layout.insert(
-                format!("rhino.layout.{}.child.{ordinal}.offset", view.id),
-                child.source_offset.to_string(),
-            );
-            source_layout.insert(
-                format!("rhino.layout.{}.child.{ordinal}.byte_len", view.id),
-                child.byte_len.to_string(),
-            );
-            source_layout.insert(
-                format!("rhino.layout.{}.child.{ordinal}.sha256", view.id),
-                child.sha256.clone(),
-            );
-        }
-    }
-    for cplane in &cplanes {
-        source_layout.insert(
-            format!("rhino.layout.{}.offset", cplane.id),
-            cplane.source_offset.to_string(),
-        );
-    }
     let namespace = ir.native.namespace_mut("rhino");
     namespace.set_arena(ctx, "views", &views)?;
     namespace.set_arena(ctx, "construction_planes", &cplanes)?;
@@ -1796,7 +1737,6 @@ pub(crate) fn install(
     views.sort_by(|left, right| left.native_id.cmp(&right.native_id));
     Ok((
         NativeInstall {
-            source_layout,
             losses,
             opaque_records,
         },

@@ -2,10 +2,7 @@
 //! Parameter-state links and their document-root headers.
 
 use cadmpeg_core::{decode::DecodeContext, CodecError};
-use cadmpeg_ir::schema::rewrite::typed::{
-    prune::{DependencyPosition, DependencyReference},
-    RewriteIdentities,
-};
+use cadmpeg_ir::schema::rewrite::typed::RewriteIdentities;
 use serde::{Deserialize, Serialize};
 
 use super::references::DesignClassTag;
@@ -61,10 +58,6 @@ macro_rules! state_identity {
         impl RewriteIdentities for $owner {
             fn visit_identity_references(&self, _ctx: &DecodeContext<'_>, visitor: &mut dyn FnMut(&str) -> Result<(), CodecError>) -> Result<(), CodecError> {
                 $(visitor(&self.$field)?;)*
-                Ok(())
-            }
-            fn visit_dependency_references(&self, _ctx: &DecodeContext<'_>, visitor: &mut dyn FnMut(DependencyReference<'_>) -> Result<(), CodecError>) -> Result<(), CodecError> {
-                $(visitor(DependencyReference { target: &self.$field, position: DependencyPosition::Required, field: Some(stringify!($field)) })?;)*
                 Ok(())
             }
             fn rewrite_identities<F: FnMut(&str) -> Result<String, CodecError>>(mut self, _ctx: &DecodeContext<'_>, map: &mut cadmpeg_ir::schema::rewrite::typed::IdentityMap<'_, F>) -> Result<Self, CodecError> {

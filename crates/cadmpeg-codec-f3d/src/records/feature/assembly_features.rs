@@ -745,40 +745,6 @@ pub(crate) struct DesignCopyPasteComponentOperation {
     pub(crate) copied_transform_offset: Option<u64>,
 }
 
-impl crate::records::source_offsets::SourceOffsets for DesignComponentInsertConstruction {
-    fn visit_source_offsets(
-        &mut self,
-        offsets: &mut crate::records::source_offsets::OffsetVisitor<'_>,
-    ) {
-        offsets.offset("neutron_role_offset", &mut self.neutron_role_offset);
-        if let Some(matrix) = &mut self.placement {
-            offsets.sourced("transform_offset", &mut matrix.scope);
-            if let Some(carrier) = &mut matrix.carrier {
-                offsets.sourced("carrier_transform_offset", carrier);
-            }
-        }
-    }
-}
-
-impl crate::records::source_offsets::SourceOffsets for DesignDerivedInstanceConstruction {
-    fn visit_source_offsets(
-        &mut self,
-        offsets: &mut crate::records::source_offsets::OffsetVisitor<'_>,
-    ) {
-        offsets.offset("transform_offset", &mut self.transform_offset);
-    }
-}
-
-impl crate::records::source_offsets::SourceOffsets for DesignCopyPasteComponentOperation {
-    fn visit_source_offsets(
-        &mut self,
-        offsets: &mut crate::records::source_offsets::OffsetVisitor<'_>,
-    ) {
-        offsets.offset("source_transform_offset", &mut self.source_transform_offset);
-        offsets.offset("copied_transform_offset", &mut self.copied_transform_offset);
-    }
-}
-
 #[cfg(test)]
 mod tests;
 

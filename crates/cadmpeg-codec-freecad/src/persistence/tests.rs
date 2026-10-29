@@ -213,13 +213,12 @@ fn rejects_duplicate_root_property_containers() {
     );
     assert!(entry.referenced_by().is_empty());
 
-    let unknowns = decoded.ir().native_unknowns("fcstd").unwrap();
-    let [unknown] = unknowns.as_slice() else {
-        panic!("one failed document root: {unknowns:?}")
-    };
-    assert!(unknown.links.is_empty());
     assert_eq!(decoded.report().scope(), cadmpeg_ir::ContentScope::full());
     let fidelity = decoded.source_fidelity();
+    let parts = crate::test_support::source_fidelity::given_up(fidelity);
+    let [(_, retained)] = parts.as_slice() else {
+        panic!("one failed document root: {parts:?}")
+    };
     assert_eq!(
         fidelity.unrepresented(),
         cadmpeg_ir::ArenaClasses::from([
@@ -227,62 +226,13 @@ fn rejects_duplicate_root_property_containers() {
             cadmpeg_ir::ArenaClass::Design
         ])
     );
-    let part = &fidelity.parts()[&unknown.id];
-    assert_eq!(part.level().as_str(), "freecad.document");
-    assert_eq!(
-        part.state(),
-        &cadmpeg_ir::source_fidelity::parts::PartState::GivenUp {}
-    );
-    assert_eq!(part.offset(), 0);
-    assert_eq!(part.byte_len(), u64::try_from(document.len()).unwrap());
-    let xml = &fidelity.parts()[part.parent().unwrap()];
-    assert_eq!(xml.level().as_str(), "freecad.document_xml");
-    let member = &fidelity.parts()[xml.parent().unwrap()];
-    assert_eq!(member.level().as_str(), "zip.entry");
-    let archive = &fidelity.parts()[member.parent().unwrap()];
-    assert_eq!(archive.level().as_str(), "zip.archive");
-    assert!(archive.parent().is_none());
-    for parent in [xml, member, archive] {
-        assert_eq!(
-            parent.state(),
-            &cadmpeg_ir::source_fidelity::parts::PartState::Decoded {}
-        );
-    }
-    assert_eq!(
-        fidelity
-            .parts()
-            .values()
-            .filter(|candidate| candidate.state()
-                == &cadmpeg_ir::source_fidelity::parts::PartState::GivenUp {})
-            .count(),
-        1
-    );
-    assert!(!fidelity.parts().values().any(|candidate| matches!(
-        candidate.level().as_str(),
-        "freecad.properties" | "freecad.property" | "freecad.property_value"
-    )));
-    let retained = fidelity.retained_record(unknown.id.as_str()).unwrap();
     assert_eq!(retained.data(), Some(document.as_bytes()));
-    assert_eq!(retained.stream(), part.stream());
-    assert_eq!(retained.offset(), part.offset());
-    assert_eq!(retained.byte_len(), part.byte_len());
+    assert_eq!(retained.offset(), 0);
+    assert_eq!(retained.byte_len(), u64::try_from(document.len()).unwrap());
     assert_eq!(
         retained.sha256(),
         cadmpeg_ir::hash::sha256_hex(document.as_bytes())
     );
-    assert!(fidelity.record_layout()[unknown.id.as_str()]
-        .reads()
-        .is_empty());
-    for layout in fidelity.record_layout().values() {
-        if let Some(reads) = layout.reads().get(part.stream()) {
-            assert!(reads.iter().all(|range| range.end <= part.offset()
-                || range.start >= part.offset() + part.byte_len()));
-        }
-    }
-    assert!(!fidelity
-        .record_layout()
-        .contains_key(&crate::native::native_id("document", "0")));
-    assert!(fidelity.record_layout().contains_key(entry.id()));
     let failures = decoded
         .report()
         .losses
@@ -297,9 +247,9 @@ fn rejects_duplicate_root_property_containers() {
         .message
         .contains("Document.xml has multiple root Properties containers"));
     let location = failure.provenance.as_ref().unwrap();
-    assert_eq!(location.stream_name(), Some(part.stream()));
-    assert_eq!(location.offset, part.offset());
-    assert_eq!(location.byte_len(), Some(part.byte_len()));
+    assert_eq!(location.stream_name(), Some("Document.xml"));
+    assert_eq!(location.offset, retained.offset());
+    assert_eq!(location.byte_len(), Some(retained.byte_len()));
     assert_eq!(crate::source_archive::image(fidelity).unwrap(), bytes);
     assert!(crate::test_support::validate_native(decoded.ir()).is_empty());
     assert!(cadmpeg_ir::validate_neutral(decoded.ir(), Vec::new())
@@ -339,59 +289,20 @@ fn rejects_duplicate_property_names_for_one_owner() {
         .iter()
         .any(|attribute| attribute.name == "Label"));
 
-    let unknowns = decoded.ir().native_unknowns("fcstd").unwrap();
-    let [unknown] = unknowns.as_slice() else {
-        panic!("one failed Properties container: {unknowns:?}")
-    };
     let fidelity = decoded.source_fidelity();
-    let part = &fidelity.parts()[&unknown.id];
+    let parts = crate::test_support::source_fidelity::given_up(fidelity);
+    let [(_, retained)] = parts.as_slice() else {
+        panic!("one failed Properties container: {parts:?}")
+    };
     let start = document.find("<Properties Count=\"2\">").unwrap();
     let end = document.find("</Properties>").unwrap() + "</Properties>".len();
-    assert_eq!(part.level().as_str(), "freecad.properties");
-    assert_eq!(
-        part.state(),
-        &cadmpeg_ir::source_fidelity::parts::PartState::GivenUp {}
-    );
-    assert_eq!(part.offset(), u64::try_from(start).unwrap());
-    assert_eq!(part.byte_len(), u64::try_from(end - start).unwrap());
-    let parent = &fidelity.parts()[part.parent().unwrap()];
-    assert_eq!(parent.level().as_str(), "freecad.document");
-    assert_eq!(
-        parent.state(),
-        &cadmpeg_ir::source_fidelity::parts::PartState::Decoded {}
-    );
-    assert_eq!(
-        fidelity
-            .parts()
-            .values()
-            .filter(|candidate| candidate.state()
-                == &cadmpeg_ir::source_fidelity::parts::PartState::GivenUp {})
-            .count(),
-        1
-    );
-    assert!(!fidelity.parts().values().any(|candidate| matches!(
-        candidate.level().as_str(),
-        "freecad.property" | "freecad.property_value"
-    )));
-    let retained = fidelity.retained_record(unknown.id.as_str()).unwrap();
     assert_eq!(retained.data(), Some(&document.as_bytes()[start..end]));
-    assert_eq!(retained.stream(), part.stream());
-    assert_eq!(retained.offset(), part.offset());
-    assert_eq!(retained.byte_len(), part.byte_len());
+    assert_eq!(retained.offset(), u64::try_from(start).unwrap());
+    assert_eq!(retained.byte_len(), u64::try_from(end - start).unwrap());
     assert_eq!(
         retained.sha256(),
         cadmpeg_ir::hash::sha256_hex(&document.as_bytes()[start..end])
     );
-    assert!(fidelity.record_layout()[unknown.id.as_str()]
-        .reads()
-        .is_empty());
-    for layout in fidelity.record_layout().values() {
-        if let Some(reads) = layout.reads().get(part.stream()) {
-            assert!(reads.iter().all(|range| range.end <= part.offset()
-                || range.start >= part.offset() + part.byte_len()));
-        }
-    }
-    assert!(fidelity.record_layout().contains_key(object.id()));
     let failures = decoded
         .report()
         .losses
@@ -404,9 +315,9 @@ fn rejects_duplicate_property_names_for_one_owner() {
     assert_eq!(failure.severity, cadmpeg_ir::report::Severity::Error);
     assert!(failure.message.contains("duplicate document property name"));
     let location = failure.provenance.as_ref().unwrap();
-    assert_eq!(location.stream_name(), Some(part.stream()));
-    assert_eq!(location.offset, part.offset());
-    assert_eq!(location.byte_len(), Some(part.byte_len()));
+    assert_eq!(location.stream_name(), Some("Document.xml"));
+    assert_eq!(location.offset, retained.offset());
+    assert_eq!(location.byte_len(), Some(retained.byte_len()));
     assert_eq!(crate::source_archive::image(fidelity).unwrap(), bytes);
     assert!(crate::test_support::validate_native(decoded.ir()).is_empty());
     assert!(cadmpeg_ir::validate_neutral(decoded.ir(), Vec::new())
@@ -715,101 +626,8 @@ fn recovers_objects_dynamic_properties_links_and_side_entries() {
         ),
         b"payload"
     );
-    let ledger = result
-        .source_fidelity()
-        .freecad_ledgers()
-        .values()
-        .next()
-        .expect("FCStd source ledgers")
-        .logical_ledger
-        .clone();
-    for entry in &entries {
-        let mut spans = ledger
-            .iter()
-            .filter(|span| span.entry == entry.name())
-            .collect::<Vec<_>>();
-        spans.sort_by_key(|span| span.span.start());
-        assert_eq!(spans.first().map(|span| span.span.start()), Some(0));
-        assert_eq!(
-            spans.last().map(|span| span.span.end()),
-            Some(result.source_fidelity().record_layout()[entry.id()].byte_len())
-        );
-        assert!(spans
-            .windows(2)
-            .all(|pair| pair[0].span.end() == pair[1].span.start()));
-    }
-    assert!(ledger
-        .iter()
-        .filter(|span| span.entry == "Shape.brp")
-        .all(|span| span.classification.as_str() == "typed"));
-    assert!(ledger
-        .iter()
-        .filter(|span| span.entry == "Payload.bin")
-        .all(|span| span.classification.as_str() == "named_opaque"));
-    assert!(ledger
-        .iter()
-        .any(|span| span.entry == "Document.xml" && span.classification.as_str() == "typed"));
-    assert!(ledger.iter().any(|span| {
-        span.entry == "Document.xml" && span.classification.as_str() == "structural"
-    }));
-    let coverage = vec![result
-        .source_fidelity()
-        .freecad_ledgers()
-        .values()
-        .next()
-        .expect("FCStd source ledgers")
-        .byte_coverage
-        .clone()];
-    assert_eq!(coverage.len(), 1);
-    assert!(coverage[0].exact);
-    assert_eq!(coverage[0].logical_entry_count, entries.len());
-    assert_eq!(
-        coverage[0].logical_byte_len,
-        entries
-            .iter()
-            .map(|entry| result.source_fidelity().record_layout()[entry.id()].byte_len())
-            .sum::<u64>()
-    );
-    assert_eq!(
-        coverage[0].classification_bytes.values().sum::<u64>(),
-        coverage[0].logical_byte_len
-    );
-    assert!(coverage[0]
-        .named_opaque_entries
-        .contains(&"Payload.bin".to_owned()));
     let findings = crate::test_support::validate_native(result.ir());
     assert!(findings.is_empty(), "{findings:#?}");
-    for arena in ["physical_ledger", "logical_ledger", "byte_coverage"] {
-        assert!(!namespace.arenas().contains_key(arena));
-    }
-    let restored: cadmpeg_ir::SourceFidelity =
-        serde_json::from_value(serde_json::to_value(result.source_fidelity()).unwrap()).unwrap();
-    assert_eq!(
-        restored.freecad_ledgers(),
-        result.source_fidelity().freecad_ledgers()
-    );
-
-    let mut corrupted = result.ir().clone();
-    let missing_payload = ledger
-        .iter()
-        .filter(|span| span.entry != "Payload.bin")
-        .cloned()
-        .collect::<Vec<_>>();
-    corrupted
-        .native
-        .namespace_mut("fcstd")
-        .set_arena(
-            &cadmpeg_test_support::service_decode_context(),
-            "logical_ledger",
-            &missing_payload,
-        )
-        .expect("replace logical ledger");
-    assert!(crate::test_support::validate_native(&corrupted)
-        .iter()
-        .any(|finding| {
-            finding.check == cadmpeg_ir::report::check::Check::NativeLinks
-                && finding.message == "unregistered FCStd native arena logical_ledger"
-        }));
 }
 
 #[test]

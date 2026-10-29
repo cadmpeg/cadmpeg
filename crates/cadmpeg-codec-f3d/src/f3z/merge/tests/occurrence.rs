@@ -185,7 +185,6 @@ fn repeated_occurrence_merge_remaps_typed_graphs_disjointly() {
         let mut scope = OccurrenceScope {
             ctx: &ctx,
             occurrence: &occurrence,
-            part_ids: &Default::default(),
         };
         merged
             .extend_rewritten(component.clone(), &mut scope)
@@ -222,7 +221,6 @@ fn occurrence_merge_preserves_a_body_name_that_spells_its_identity() {
     let scoped = OccurrenceScope {
         ctx: &ctx,
         occurrence: "component-0",
-        part_ids: &Default::default(),
     }
     .rewrite(body)
     .unwrap();
@@ -272,7 +270,6 @@ fn occurrence_merge_remaps_and_retains_native_records() {
         &mut root,
         component,
         "role/occurrence-0",
-        &Default::default(),
     )
     .unwrap();
 
@@ -312,7 +309,6 @@ fn occurrence_configuration_survives_document_and_typed_native_admission() {
         &mut ir.native,
         component,
         "component-0",
-        &Default::default(),
     )
     .unwrap();
     let wire = ir.to_canonical_json().unwrap();
@@ -390,7 +386,6 @@ fn occurrence_merge_scopes_admitted_native_references_and_preserves_configuratio
         &mut root,
         component,
         "role/occurrence-0",
-        &Default::default(),
     )
     .unwrap();
 
