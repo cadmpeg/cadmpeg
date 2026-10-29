@@ -46,7 +46,7 @@ pub(super) fn encode_smbh(
     native: &F3dNative,
     attributes: &AttributeIndex<'_>,
 ) -> Result<Vec<u8>, CodecError> {
-    let topology = NativeGenerationIndex::new(native);
+    let topology = NativeGenerationIndex::new(target, native);
     if target.model.faces.is_empty() {
         if !target
             .model

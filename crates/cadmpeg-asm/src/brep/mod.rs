@@ -697,6 +697,7 @@ fn decode_with_table(
         &reach,
         &inward_normal_surfaces,
         format,
+        purpose,
     )?;
     emit_containers(
         ctx,

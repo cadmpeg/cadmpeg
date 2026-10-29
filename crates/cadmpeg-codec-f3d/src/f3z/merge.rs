@@ -606,7 +606,7 @@ fn rescope_native_reference_fields(
         "body_native_keys" => &["body"],
         "edge_continuities" => &["edge"],
         "edge_ownerships" => &["edge", "owner_coedge"],
-        "face_native_keys" | "face_sidedness" => &["face"],
+        "face_sidedness" => &["face"],
         "design_body_bounds" => &["body_binding_ids"],
         "design_body_recipe_operands" | "design_edge_operands" | "design_face_operands" => {
             &["recipe_id"]

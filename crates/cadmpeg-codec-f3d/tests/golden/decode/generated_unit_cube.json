@@ -100,6 +100,7 @@
       ],
       "faces": [
         {
+          "native_ref": "f3d:asm:face-native-key#4",
           "id": "f3d:brep:entity#4",
           "shell": "f3d:brep:entity#3",
           "surface": "f3d:brep:entity#16",
@@ -113,6 +114,7 @@
           "name": "back face"
         },
         {
+          "native_ref": "f3d:asm:face-native-key#5",
           "id": "f3d:brep:entity#5",
           "shell": "f3d:brep:entity#3",
           "surface": "f3d:brep:entity#17",
@@ -126,6 +128,7 @@
           "name": "bottom face"
         },
         {
+          "native_ref": "f3d:asm:face-native-key#6",
           "id": "f3d:brep:entity#6",
           "shell": "f3d:brep:entity#3",
           "surface": "f3d:brep:entity#18",
@@ -139,6 +142,7 @@
           "name": "front face"
         },
         {
+          "native_ref": "f3d:asm:face-native-key#7",
           "id": "f3d:brep:entity#7",
           "shell": "f3d:brep:entity#3",
           "surface": "f3d:brep:entity#19",
@@ -152,6 +156,7 @@
           "name": "left face"
         },
         {
+          "native_ref": "f3d:asm:face-native-key#8",
           "id": "f3d:brep:entity#8",
           "shell": "f3d:brep:entity#3",
           "surface": "f3d:brep:entity#20",
@@ -165,6 +170,7 @@
           "name": "right face"
         },
         {
+          "native_ref": "f3d:asm:face-native-key#9",
           "id": "f3d:brep:entity#9",
           "shell": "f3d:brep:entity#3",
           "surface": "f3d:brep:entity#21",
@@ -1628,32 +1634,26 @@
         "face_native_keys": [
           {
             "id": "f3d:asm:face-native-key#4",
-            "face": "f3d:brep:entity#4",
             "record_index": 4
           },
           {
             "id": "f3d:asm:face-native-key#5",
-            "face": "f3d:brep:entity#5",
             "record_index": 5
           },
           {
             "id": "f3d:asm:face-native-key#6",
-            "face": "f3d:brep:entity#6",
             "record_index": 6
           },
           {
             "id": "f3d:asm:face-native-key#7",
-            "face": "f3d:brep:entity#7",
             "record_index": 7
           },
           {
             "id": "f3d:asm:face-native-key#8",
-            "face": "f3d:brep:entity#8",
             "record_index": 8
           },
           {
             "id": "f3d:asm:face-native-key#9",
-            "face": "f3d:brep:entity#9",
             "record_index": 9
           }
         ],
@@ -2415,7 +2415,7 @@
     "metadata": {
       "active_brep": "FusionAssetName[Active]/Breps.BlobParts/BREP.generated.smbh",
       "active_brep_sha256": "49723fbcaf884191a70fd1bb6f56c0f4c02401a8c39f6433c94d597742781e64",
-      "document_local_sha256": "12b2f081393859c0362df93833f61c35dfddb3d61e3ff6649ae6fde113bce31d"
+      "document_local_sha256": "e812ac2876f44a04b661022a3cadae09eb6e29be4a52c68fc544e2e5179e9e87"
     },
     "retained_records": {
       "f3d:file:source-image#0": {

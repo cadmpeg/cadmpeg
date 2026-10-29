@@ -614,3 +614,36 @@ fn thread_validation_requires_decoded_numeric_parameters_and_the_thread_class() 
     );
     Ok(())
 }
+
+#[test]
+fn asm_face_key_validation_resolves_the_typed_neutral_native_reference() {
+    let mut ir = cadmpeg_ir::examples::unit_cube().unwrap();
+    let key = cadmpeg_asm::brep::records::FaceNativeKey {
+        source_namespace: cadmpeg_asm::brep::records::identity::NativeRecordNamespace::new(
+            cadmpeg_asm::asm_format!("inventor"),
+        ),
+        record_index: 17,
+        asm_face_key: Some(7),
+    };
+    let mut data = empty_data();
+    let native_ref = key.id();
+    data.face_native_keys.push(key);
+    let mut findings = Vec::new();
+    super::validate_presentation(&ir, &data, &mut findings);
+    assert_eq!(findings.len(), 1);
+    assert_eq!(
+        findings[0].check,
+        cadmpeg_ir::report::check::Check::NativeLinks
+    );
+    ir.model.faces[0].native_ref = Some(native_ref);
+    findings.clear();
+    super::validate_presentation(&ir, &data, &mut findings);
+    assert!(findings.is_empty(), "{findings:?}");
+    ir.model.faces[0].native_ref = Some("inventor:asm:face-native-key#18".to_owned());
+    super::validate_presentation(&ir, &data, &mut findings);
+    assert_eq!(findings.len(), 1);
+    assert_eq!(
+        findings[0].check,
+        cadmpeg_ir::report::check::Check::NativeLinks
+    );
+}
