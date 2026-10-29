@@ -997,10 +997,10 @@ mod tests {
         let (_, rejection) = losses[0]
             .message
             .split_once("First-failure rejection counts are: ")
-            .unwrap();
+            .expect("the loss states its rejection counts");
         let (rejection, _) = rejection
             .split_once(". Component admission gate: ")
-            .unwrap();
+            .expect("the rejection counts precede the admission gate");
         assert_eq!(rejection, "missing loops=6 (faces: 10,11,12,13,14,15)");
     }
 
@@ -1030,10 +1030,10 @@ mod tests {
         let (_, rejection) = losses[0]
             .message
             .split_once("First-failure rejection counts are: ")
-            .unwrap();
+            .expect("the loss states its rejection counts");
         let (rejection, _) = rejection
             .split_once(". Component admission gate: ")
-            .unwrap();
+            .expect("the rejection counts precede the admission gate");
         assert_eq!(
             rejection,
             "unresolved boundary vertices=1 (faces: 17[edges:4:0;vertices:9])"

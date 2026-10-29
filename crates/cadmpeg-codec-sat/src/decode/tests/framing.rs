@@ -45,11 +45,10 @@ fn framed_entity_presence_controls_the_no_carrier_event_without_unknown_records(
         );
         assert!(decoded.ir.scope.model);
         assert!(decoded.ir.scope.design);
-        assert!(decoded.ir.native.namespace("sat").is_none_or(|native| {
-            native
-                .arenas()
-                .get("unknowns")
-                .is_none_or(|records| records.is_empty())
-        }));
+        assert!(decoded
+            .ir
+            .native
+            .namespace("sat")
+            .is_none_or(|native| { native.arenas().get("unknowns").is_none_or(Vec::is_empty) }));
     }
 }
