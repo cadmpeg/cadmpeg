@@ -36,9 +36,23 @@ fn agreeing_configuration_manager_identity_keeps_the_explicit_index() {
 }
 
 #[test]
-fn conflicting_configuration_manager_identity_resolves_to_unresolved() {
+fn distinct_configuration_slot_and_partition_index_keep_the_explicit_binding() {
     let configurations = parsed_configurations(
         br#"<Keywords><Configuration Name="Default" Type="ConfigurationManager" id="2" SourceIndex="5"/></Keywords>"#,
+    );
+
+    assert_eq!(configurations.len(), 1);
+    assert_eq!(configurations[0].source_index, Some(5));
+    assert_eq!(
+        configurations[0].properties.get("id").map(String::as_str),
+        Some("2")
+    );
+}
+
+#[test]
+fn missing_explicit_index_does_not_bind_the_native_slot() {
+    let configurations = parsed_configurations(
+        br#"<Keywords><Configuration Name="Default" Type="ConfigurationManager" id="3"/></Keywords>"#,
     );
 
     assert_eq!(configurations.len(), 1);
@@ -46,23 +60,13 @@ fn conflicting_configuration_manager_identity_resolves_to_unresolved() {
 }
 
 #[test]
-fn missing_explicit_index_falls_back_to_the_native_id() {
-    let configurations = parsed_configurations(
-        br#"<Keywords><Configuration Name="Default" Type="ConfigurationManager" id="3"/></Keywords>"#,
-    );
-
-    assert_eq!(configurations.len(), 1);
-    assert_eq!(configurations[0].source_index, Some(3));
-}
-
-#[test]
-fn sparse_reordered_native_ids_resolve_independently_of_element_order() {
+fn sparse_reordered_slots_do_not_establish_partition_identity() {
     let configurations = parsed_configurations(
         br#"<Keywords><Configuration Name="Second" Type="ConfigurationManager" id="5"/><Configuration Name="First" Type="ConfigurationManager" id="2" SourceIndex="2"/></Keywords>"#,
     );
 
     assert_eq!(configurations.len(), 2);
-    assert_eq!(configurations[0].source_index, Some(5));
+    assert_eq!(configurations[0].source_index, None);
     assert_eq!(configurations[0].ordinal, 0);
     assert_eq!(configurations[1].source_index, Some(2));
     assert_eq!(configurations[1].ordinal, 1);

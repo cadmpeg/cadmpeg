@@ -1010,7 +1010,7 @@ A compact parting-line Draft uses direct duplicated component-vector records wit
 
 A planar sketch history name ending in `<N>`, where `N` is one or more decimal digits, aliases the uniquely named unsuffixed sketch when both records have the same XML element tag, resolved feature-input class, ordered content, and complete parameter map. The unsuffixed history feature remains the sole owner of the solved sketch geometry, and the geometry-less alias feature depends on that owner. Feature operands naming the alias bind to the owner's sketch and depend on the unsuffixed owner. A missing base, multiple matching bases, or any record-content difference leaves the alias operand native.
 
-Keywords `Configuration` elements carry a non-empty, document-unique `Name`; `Material` carries the configuration material override. Decimal `SourceIndex=N` binds the configuration to `Config-N-Partition`; without it, the decimal `id=N` does. A `SourceIndex` that disagrees with the `ConfigurationManager` `id` leaves the partition identity unresolved. A configuration can carry `id` without `SourceIndex`. An `id` with no partition is a configuration never rebuilt; a partition no `id` names is left by a deleted configuration (an orphan, not a configuration). All other attributes are configuration-local named values. Source indices are document-unique and independent of element order and the resolved-features slot identity. A matching partition supplies the configuration body set; without a matching partition the body membership stays unresolved. A configuration without `SourceIndex` has no ordinary partition binding; the uniquely manifest-selected configuration receives the selected `swID` when its name binds uniquely.
+Keywords `Configuration` elements carry a non-empty, document-unique `Name`; `Material` carries the configuration material override. Decimal `SourceIndex=N` binds the configuration to `Config-N-Partition`. The decimal `id` selects the `Config-N-ResolvedFeatures` slot. All other attributes are configuration-local named values. Source indices are document-unique and independent of element order and the resolved-features slot identity. A matching partition supplies the configuration body set; without a matching partition the body membership stays unresolved. A configuration without `SourceIndex` has no ordinary partition binding; the uniquely manifest-selected configuration receives the selected `swID` when its name binds uniquely.
 
 The unique `swMostRecentConfiguration="YES"` manifest row is the active
 configuration identity, including when the manifest contains several
@@ -2129,7 +2129,7 @@ active configuration; its `swID` selects `Config-<swID>-Partition`. The row's
 `swModel` supplies the configuration name. `swConfigurationId` on that model
 has the same value as `swID`.
 
-Selection precedence is a valid `SourceIndex=N` (else `id=N`) on the active
+Selection precedence is a valid `SourceIndex=N` on the active
 Keywords configuration, then the unique manifest row's `swID`, then a sole non-ghost
 partition. A `Deltas`, `GhostPartition`, or `ResolvedFeatures` section is not
 a partition substitute. A manifest with zero or several `YES` rows supplies no

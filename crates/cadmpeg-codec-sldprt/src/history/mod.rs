@@ -112,19 +112,6 @@ pub(crate) fn histories(
                             })
                             .map(|attribute| (attribute.name(), attribute.value())),
                     );
-                    let explicit_index = node
-                        .attribute("SourceIndex")
-                        .and_then(|value| value.parse::<u32>().ok());
-                    let native_id = node
-                        .attribute("Type")
-                        .filter(|kind| *kind == "ConfigurationManager")
-                        .and_then(|_| node.attribute("id"))
-                        .and_then(|value| value.parse::<u32>().ok());
-                    let source_index = match (explicit_index, native_id) {
-                        (Some(explicit), Some(native)) => (explicit == native).then_some(explicit),
-                        (None, native) => native,
-                        (explicit, None) => explicit,
-                    };
                     configurations.push(Configuration {
                         id,
                         parent: parent.clone(),
@@ -133,7 +120,9 @@ pub(crate) fn histories(
                                 "SLDPRT history configuration ordinal exceeds u32",
                             )
                         })?,
-                        source_index,
+                        source_index: node
+                            .attribute("SourceIndex")
+                            .and_then(|value| value.parse().ok()),
                         name: node.attribute("Name").unwrap_or("").to_owned(),
                         material: node
                             .attribute("Material")
