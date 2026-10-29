@@ -300,7 +300,7 @@ fn decode_refuses_when_max_entities_is_below_object_cardinality() {
 #[test]
 fn decode_keeps_document_objects_and_model_entities_additive() {
     let document = r#"<Document SchemaVersion="4" FileVersion="1">
-<Objects Count="1"><Object type="Part::Box" name="Stored" id="1"/></Objects>
+<Objects Count="1"><Object type="Part::Feature" name="Stored" id="1"/></Objects>
 <ObjectData Count="1"><Object name="Stored"><Properties Count="0"/></Object></ObjectData>
 </Document>"#;
     let decoded = FcstdCodec

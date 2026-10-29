@@ -650,11 +650,30 @@ fn rejects_inconsistent_object_dependency_envelopes() {
 
 #[test]
 fn rejects_ambiguous_persistence_carriers() {
-    let cases = [
+    let document_cases = [
         r#"<Document schemaVersion="4"><Objects Count="0"/><ObjectData Count="0"/></Document>"#,
         r#"<Document SchemaVersion="4" schemaVersion="4"><Objects Count="0"/><ObjectData Count="0"/></Document>"#,
         r#"<Document SchemaVersion="4"><Objects Count="0"/><Objects Count="0"/><ObjectData Count="0"/></Document>"#,
         r#"<Document SchemaVersion="4"><Objects Count="0"/><ObjectData Count="0"/><ObjectData Count="0"/></Document>"#,
+    ];
+    for document in document_cases {
+        let decoded = FcstdCodec
+            .decode(
+                &mut Cursor::new(archive(document)),
+                &DecodeOptions::default(),
+            )
+            .expect("an ambiguous Document element gives up its part");
+        assert!(
+            decoded.report().losses.iter().any(|loss| {
+                loss.code.local_code() == "record.unreadable"
+                    && loss.severity == cadmpeg_ir::report::Severity::Error
+                    && loss.message.contains("stream=\"Document.xml\"")
+            }),
+            "{document}: {:?}",
+            decoded.report().losses
+        );
+    }
+    let cases = [
         r#"<Document SchemaVersion="4"><Objects Count="2" Dependencies="1"><ObjectDeps Name="A" Count="0"/><Object type="App::Feature" name="A"/><ObjectDeps Name="B" Count="0"/><Object type="App::Feature" name="B"/></Objects><ObjectData Count="2"><Object name="A"/><Object name="B"/></ObjectData></Document>"#,
         r#"<Document SchemaVersion="4"><Objects Count="1"><Object type="App::Feature" name="A"/></Objects><ObjectData Count="1"><Object name="A"><Properties Count="2"><Property name="Same" type="App::PropertyString"/><Property name="Same" type="App::PropertyString"/></Properties></Object></ObjectData></Document>"#,
         r#"<Document SchemaVersion="4"><Objects Count="1"><Object type="App::Feature" name="A"/></Objects><ObjectData Count="1"><Object name="A"><Properties Count="0"/><Properties Count="0"/></Object></ObjectData></Document>"#,
