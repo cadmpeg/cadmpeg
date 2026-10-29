@@ -108,11 +108,24 @@ else
   scope=$(python3 scripts/staged-crates.py)
 fi
 
+# libtest runs one test binary at a time, so a long test in one binary idles
+# every core it does not use. nextest runs all selected binaries' tests in one
+# pool, as CI does.
+nextest() {
+  cargo nextest --version >/dev/null 2>&1
+}
+
 if [ "$scope" = "WORKSPACE" ]; then
   echo "pre-commit: cargo clippy --workspace --all-targets"
   cargo clippy --workspace --all-targets
-  echo "pre-commit: cargo test-fast"
-  cargo test-fast
+  if nextest; then
+    echo "pre-commit: cargo nextest run --workspace --lib --bins --tests"
+    cargo nextest run --cargo-quiet --status-level fail --no-tests pass \
+      --workspace --lib --bins --tests --no-fail-fast
+  else
+    echo "pre-commit: cargo test-fast"
+    cargo test-fast
+  fi
 elif [ -n "$scope" ]; then
   pkg_flags=$(printf ' -p %s' $scope)
   # `--all-targets` rather than `--lib --bins --tests`, because `--lib` is an
@@ -121,8 +134,13 @@ elif [ -n "$scope" ]; then
   # gate at all. Clippy uses the same flag so test targets cannot hide style debt.
   echo "pre-commit: cargo clippy$pkg_flags --all-targets"
   cargo clippy $pkg_flags --all-targets
-  echo "pre-commit: cargo test$pkg_flags --all-targets"
-  cargo test $pkg_flags --all-targets
+  if nextest; then
+    echo "pre-commit: cargo nextest run$pkg_flags --all-targets"
+    cargo nextest run --cargo-quiet --status-level fail --no-tests pass $pkg_flags --all-targets
+  else
+    echo "pre-commit: cargo test$pkg_flags --all-targets"
+    cargo test $pkg_flags --all-targets
+  fi
 else
   echo "pre-commit: staged Rust/Cargo files belong to no workspace crate; skipping"
 fi
