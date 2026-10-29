@@ -652,6 +652,7 @@ fn decode_container<'a>(
             &container.rse,
             &feature_inventory,
             &design_inventory,
+            &sketch_inventory.transforms,
             &body_keys,
             &mut ir.model,
         )?;
@@ -846,6 +847,12 @@ fn decode_container<'a>(
                 unresolved.features
             )));
         }
+        losses.extend(crate::feature::derived::native_source_loss(
+            &feature_inventory.labels,
+        ));
+        losses.extend(crate::feature::derived::native_tagging_loss(
+            &feature_inventory.labels,
+        ));
         losses.extend(crate::feature::sheet_metal::native_kind_losses(
             &feature_inventory,
             &ir.model.features,

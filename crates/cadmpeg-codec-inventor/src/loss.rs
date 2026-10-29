@@ -109,6 +109,10 @@ pub(crate) enum InventorLossCode {
     FeatureLoftControlsUnresolved,
     /// Inventor operations retain unresolved suppression and dependency state.
     FeatureStateUnresolved,
+    /// Derived components retain external source construction only natively.
+    FeatureDerivedSourceNative,
+    /// Derived-part tagging has no neutral construction rule.
+    FeatureDerivedTaggingNative,
     /// Parameter records have a unit or expression graph that is not closed.
     ParameterGraphOpen,
     /// Parameter records have an expression whose text passes the local cap.
@@ -211,6 +215,8 @@ impl InventorLossCode {
         Self::FeatureSweepControlsUnresolved,
         Self::FeatureLoftControlsUnresolved,
         Self::FeatureStateUnresolved,
+        Self::FeatureDerivedSourceNative,
+        Self::FeatureDerivedTaggingNative,
         Self::ParameterGraphOpen,
         Self::ParameterExpressionBounded,
         Self::ParameterScopeUnresolved,
@@ -296,6 +302,8 @@ impl InventorLossCode {
             Self::FeatureSweepControlsUnresolved => "feature.sweep-controls-unresolved",
             Self::FeatureLoftControlsUnresolved => "feature.loft-controls-unresolved",
             Self::FeatureStateUnresolved => "feature.state-unresolved",
+            Self::FeatureDerivedSourceNative => "feature.derived-source-native",
+            Self::FeatureDerivedTaggingNative => "feature.derived-tagging-native",
             Self::ParameterGraphOpen => "parameter.graph-open",
             Self::ParameterExpressionBounded => "parameter.expression-bounded",
             Self::ParameterScopeUnresolved => "parameter.scope-unresolved",
@@ -388,6 +396,8 @@ impl InventorLossCode {
             | Self::SketchConstructionUnresolved
             | Self::SketchPairedAssociationUnprojected
             | Self::FeatureStateUnresolved
+            | Self::FeatureDerivedSourceNative
+            | Self::FeatureDerivedTaggingNative
             | Self::SketchGraphOpen => LossTaxonomy::FeatureHistoryRetained,
             Self::ParameterGraphOpen
             | Self::ParameterExpressionBounded
@@ -487,6 +497,8 @@ mod tests {
                 "feature.sweep-controls-unresolved",
                 "feature.loft-controls-unresolved",
                 "feature.state-unresolved",
+                "feature.derived-source-native",
+                "feature.derived-tagging-native",
                 "parameter.graph-open",
                 "parameter.expression-bounded",
                 "parameter.scope-unresolved",

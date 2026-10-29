@@ -1033,6 +1033,14 @@ fn validate_features(
             property.header.context.index(),
         ];
         match &property.kind {
+            PmDcFeaturePropertyKind::Derived { definition } => {
+                references.extend(
+                    definition
+                        .references()
+                        .iter()
+                        .map(|reference| reference.index()),
+                );
+            }
             PmDcFeaturePropertyKind::SheetMetal { definition } => {
                 references.extend(
                     definition

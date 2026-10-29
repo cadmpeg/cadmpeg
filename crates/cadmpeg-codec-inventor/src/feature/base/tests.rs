@@ -183,16 +183,18 @@ fn base_slots_require_two_distinct_surface_wrappers_and_null_tail() {
     let first = wrapper(0);
     let mut second = wrapper(1);
     second.identity.record_ordinal = 3;
-    assert!(wrappers(&source, |ordinal| [&first, &second]
-        .into_iter()
-        .find(|property| property.identity.record_ordinal == ordinal))
+    assert!(wrappers(&source, crate::feature::BASE_CLASS_ID, |ordinal| [
+        &first, &second
+    ]
+    .into_iter()
+    .find(|property| property.identity.record_ordinal == ordinal))
     .is_some());
     let repeated = test_feature(1, 3, &[(0, 2), (1, 2)]);
-    assert!(wrappers(&repeated, |_| Some(&first)).is_none());
+    assert!(wrappers(&repeated, crate::feature::BASE_CLASS_ID, |_| Some(&first)).is_none());
     for invalid in [
         test_feature(1, 2, &[(0, 2), (1, 3)]),
         test_feature(1, 3, &[(0, 2), (1, 3), (2, 4)]),
     ] {
-        assert!(wrappers(&invalid, |_| Some(&first)).is_none());
+        assert!(wrappers(&invalid, crate::feature::BASE_CLASS_ID, |_| Some(&first)).is_none());
     }
 }

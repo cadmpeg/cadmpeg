@@ -107,7 +107,7 @@ The decode result combines neutral IR with the `inventor` native namespace.
 | Protein      | Absent, empty, or packaged state; safe ZIP entry inventory; schema-driven asset records and rejected instance positions through `cadmpeg-protein`.                                                     |
 | References   | `UFRxDoc` external document identities, persisted paths, model states, occurrence identifiers, and unresolved external prototypes. The codec never opens those paths.                                  |
 | Presentation | Document-default appearance and supported body/face style joins, with explicit losses for unresolved assignments.                                                                                      |
-| Design       | Parameters, planar sketch graphs, typed feature records, stored-body Base features, and closed extrude, hole, constant-radius fillet, and equal-distance chamfer branches when every typed operand and result-body join resolves. |
+| Design       | Parameters, planar sketch graphs, typed feature records, stored-body Base and version-19 derived-part features, and closed extrude, hole, constant-radius fillet, and equal-distance chamfer branches when every typed operand and result-body join resolves. |
 
 A Base feature transfers as `StoredGeometry` when its source wrapper has a null
 body reference or resolves to a stored carrier, and its result wrapper resolves

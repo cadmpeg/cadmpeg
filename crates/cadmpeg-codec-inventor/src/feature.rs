@@ -35,6 +35,7 @@ use crate::{design::DesignInventory, sketch::SketchInventory};
 
 pub(crate) mod base;
 pub(crate) mod combine;
+pub(crate) mod derived;
 mod edge_selection;
 pub(crate) mod extrusion;
 pub(crate) mod history;
@@ -200,6 +201,9 @@ pub(crate) struct PmDcFeaturePropertyPayload {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(tag = "form", rename_all = "snake_case")]
 pub(crate) enum PmDcFeaturePropertyKind {
+    Derived {
+        definition: derived::Property,
+    },
     Mirror {
         definition: mirror::Property,
     },
@@ -790,22 +794,24 @@ pub(crate) fn inventory(
                         )
                     })
                 }),
-                type_id => feature_property_parser(type_id).map_or_else(
-                    || Ok(()),
-                    |parser| {
-                        parser(ctx, record.payload, version).and_then(|property| {
-                            push_record(
-                                ctx,
-                                &mut inventory.properties,
-                                property,
-                                record.type_id,
-                                segment.pair.token.key(),
-                                record.ordinal,
-                                "admit Inventor PmDc feature property record",
-                            )
-                        })
-                    },
-                ),
+                type_id => feature_property_parser(type_id)
+                    .or_else(|| derived::parser(type_id, record.payload, version))
+                    .map_or_else(
+                        || Ok(()),
+                        |parser| {
+                            parser(ctx, record.payload, version).and_then(|property| {
+                                push_record(
+                                    ctx,
+                                    &mut inventory.properties,
+                                    property,
+                                    record.type_id,
+                                    segment.pair.token.key(),
+                                    record.ordinal,
+                                    "admit Inventor PmDc feature property record",
+                                )
+                            })
+                        },
+                    ),
             };
             if let Err(error) = parsed {
                 if matches!(error, CodecError::ResourceLimit(_)) {
@@ -1809,7 +1815,7 @@ impl FeatureFamily {
     /// The feature-label classes whose records use this family's layout.
     pub(crate) fn class_ids(self) -> &'static [ClassId] {
         match self {
-            Self::Base => &[BASE_CLASS_ID],
+            Self::Base => &[BASE_CLASS_ID, derived::CLASS_ID],
             Self::Extrusion => &[EXTRUSION_CLASS_ID],
             Self::Fillet => &[FILLET_CLASS_ID, CORNER_ROUND_CLASS_ID],
             Self::Chamfer => &[CHAMFER_CLASS_ID],
@@ -2677,6 +2683,9 @@ fn native_kind(class_id: Option<ClassId>) -> cadmpeg_ir::features::NativeFeature
     let Some(class_id) = class_id else {
         return NativeFeatureKind::Other("InventorFeature".into());
     };
+    if class_id == derived::CLASS_ID {
+        return NativeFeatureKind::Other(format!("InventorClass:{class_id}"));
+    }
     if let Some(family) = FeatureFamily::from_class_id(class_id) {
         return match family {
             FeatureFamily::Base => NativeFeatureKind::Other("Base".into()),
