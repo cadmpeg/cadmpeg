@@ -353,6 +353,32 @@ impl CadIr {
                     .insert(owner.to_string());
             }
         }
+        for constraint in &self.model.sketch_constraints {
+            for parameter in constraint
+                .definition
+                .kind()
+                .dimension_parameters()
+                .map_err(invalid)?
+            {
+                consumers
+                    .entry(parameter.to_string())
+                    .or_default()
+                    .insert(constraint.sketch.to_string());
+            }
+        }
+        for constraint in &self.model.spatial_sketch_constraints {
+            for parameter in constraint
+                .definition
+                .kind()
+                .dimension_parameters()
+                .map_err(invalid)?
+            {
+                consumers
+                    .entry(parameter.to_string())
+                    .or_default()
+                    .insert(constraint.sketch.to_string());
+            }
+        }
         for feature in &self.model.features {
             for dependency in &feature.dependencies {
                 consumers
