@@ -338,7 +338,10 @@ fn diameter_parameter_doubles_the_native_radius() {
         )
     })
     .expect("dimensions transfer");
-    assert_eq!(ir.model.parameters[0].expression, "14");
+    assert_eq!(
+        ir.model.parameters[0].expression.literal_text().as_deref(),
+        Some("14")
+    );
     assert_eq!(
         ir.model.parameters[0].value,
         Some(cadmpeg_ir::features::ParameterValue::Length(
@@ -379,7 +382,10 @@ fn diameter_overflow_retains_a_native_value_and_reports_loss() {
     })
     .expect("dimensions transfer");
     assert_eq!(ir.model.parameters[0].value, None);
-    assert_eq!(ir.model.parameters[0].expression, "");
+    assert_eq!(
+        ir.model.parameters[0].expression.literal_text().as_deref(),
+        Some("")
+    );
     assert_eq!(
         scan.features.definitions[0]
             .dimensions

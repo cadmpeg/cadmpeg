@@ -96,14 +96,22 @@ fn equal_value_packet_colors_keep_actual_native_identity_through_public_decode()
         .unwrap()
         .is_ok());
     let baseline_findings = crate::test_support::with_service_context(|ctx| {
-        <crate::CatiaCodec as cadmpeg_ir::codec::CodecBackend>::validate_native(ctx, decoded.ir())
+        <crate::CatiaCodec as cadmpeg_ir::codec::CodecBackend>::validate_native(
+            ctx,
+            decoded.ir(),
+            None,
+        )
     })
     .unwrap();
     assert!(baseline_findings.is_empty());
     let mut duplicated = decoded.ir().clone();
     duplicated.model.appearances[1].native_ref = duplicated.model.appearances[0].native_ref.clone();
     let findings = crate::test_support::with_service_context(|ctx| {
-        <crate::CatiaCodec as cadmpeg_ir::codec::CodecBackend>::validate_native(ctx, &duplicated)
+        <crate::CatiaCodec as cadmpeg_ir::codec::CodecBackend>::validate_native(
+            ctx,
+            &duplicated,
+            None,
+        )
     })
     .unwrap();
     assert!(findings.iter().any(|finding| finding.entity.as_deref()
