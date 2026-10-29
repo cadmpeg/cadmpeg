@@ -2126,19 +2126,11 @@ fn cache_first_curve_context(
         ),
         _ => return None,
     };
-    let EmbeddedSurfaceWithBounds {
-        surface: first_surface,
-        chart: first_chart,
-        bounds: first_bounds,
-    } = match optional_embedded_surface_with_bounds(ctx, cur, table)? {
+    let first = match optional_embedded_surface_with_bounds(ctx, cur, table)? {
         Ok(surface) => surface,
         Err(error) => return Some(Err(error)),
     };
-    let EmbeddedSurfaceWithBounds {
-        surface: second_surface,
-        chart: second_chart,
-        bounds: second_bounds,
-    } = match optional_embedded_surface_with_bounds(ctx, cur, table)? {
+    let second = match optional_embedded_surface_with_bounds(ctx, cur, table)? {
         Ok(surface) => surface,
         Err(error) => return Some(Err(error)),
     };
@@ -2146,7 +2138,7 @@ fn cache_first_curve_context(
         nullable_embedded_pcurve(cur)?.value(),
         nullable_embedded_pcurve(cur)?.value(),
     ];
-    for (pcurve, chart) in pcurves.iter_mut().zip([first_chart, second_chart]) {
+    for (pcurve, chart) in pcurves.iter_mut().zip([first.chart, second.chart]) {
         if let Some(pcurve) = pcurve {
             chart.normalize(pcurve)?;
         }
@@ -2165,11 +2157,14 @@ fn cache_first_curve_context(
         form: cadmpeg_ir::geometry::CacheFirstCurveForm {
             revision,
             cache,
-            support_bounds: [first_bounds, second_bounds],
+            support_bounds: [first.bounds, second.bounds],
             solved_range,
             extension,
         },
-        surfaces: [first_surface, second_surface],
+        surfaces: [
+            first.into_curve_support(pcurves[0].is_some()),
+            second.into_curve_support(pcurves[1].is_some()),
+        ],
         pcurves,
         discontinuities,
     }))
@@ -2562,7 +2557,10 @@ fn cache_first_intersection(
             chart.normalize(pcurve)?;
         }
     }
-    let surfaces = [first.surface, second.surface];
+    let surfaces = [
+        first.into_curve_support(pcurves[0].is_some()),
+        second.into_curve_support(pcurves[1].is_some()),
+    ];
     let domain = nurbs_curve_parameter_domain(solved)?;
     let parameter_range = [
         cur.take_optional_range_value()?
@@ -2979,6 +2977,17 @@ pub(super) struct EmbeddedSurfaceWithBounds {
     pub(super) surface: SupportSlot,
     pub(super) chart: SupportChart,
     pub(super) bounds: [Option<f64>; 4],
+    cache_chart_matches_construction: bool,
+}
+
+impl EmbeddedSurfaceWithBounds {
+    fn into_curve_support(self, has_pcurve: bool) -> SupportSlot {
+        if has_pcurve && !self.cache_chart_matches_construction {
+            SupportSlot::DeclaredOnly
+        } else {
+            self.surface
+        }
+    }
 }
 
 /// Parse an optional embedded support surface and its U/V bounds.
@@ -2995,6 +3004,7 @@ pub(super) fn optional_embedded_surface_with_bounds(
             surface: SupportSlot::Absent,
             chart: SupportChart::Canonical,
             bounds: [None; 4],
+            cache_chart_matches_construction: true,
         }));
     }
     if kind == Some("spline") {
@@ -3012,6 +3022,10 @@ pub(super) fn optional_embedded_surface_with_bounds(
                 Some(index) => table.span(index),
                 None => Some(scope),
             };
+            let cache_chart_matches_construction = target.as_ref().is_none_or(|target| {
+                !matches!(target.interior().first(), Some(Token::Ident(name) | Token::SubIdent(name))
+                    if matches!(name.as_str(), "rot_spl_sur" | "rotsur"))
+            });
             let surface = if let Some(target) = target {
                 if let Some(surface) = owned_surface_cache_resolving_refs(ctx, target, table) {
                     SupportSlot::Surface(SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(
@@ -3045,6 +3059,7 @@ pub(super) fn optional_embedded_surface_with_bounds(
                 surface,
                 chart: SupportChart::Canonical,
                 bounds,
+                cache_chart_matches_construction,
             }));
         }
     }
@@ -3060,6 +3075,7 @@ pub(super) fn optional_embedded_surface_with_bounds(
         surface: SupportSlot::Surface(surface),
         chart,
         bounds,
+        cache_chart_matches_construction: true,
     }))
 }
 

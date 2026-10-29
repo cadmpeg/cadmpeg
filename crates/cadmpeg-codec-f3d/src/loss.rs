@@ -283,6 +283,8 @@ pub(crate) enum F3dLossCode {
     VertexToleranceWidened,
     /// A cache-first spring support pcurve has no admitted endpoint relation.
     SpringSupportPcurveUnresolved,
+    /// A native support pcurve has no surface in its construction chart.
+    ProceduralSupportChartUnresolved,
     /// Coedges carry a UV pcurve reference with no decodable 2D carrier.
     PcurveUndecoded,
     /// Rolling-ball blend definitions resolved only one of two native supports.
@@ -462,6 +464,7 @@ impl F3dLossCode {
         Self::ProceduralCurveUndecoded,
         Self::VertexToleranceWidened,
         Self::SpringSupportPcurveUnresolved,
+        Self::ProceduralSupportChartUnresolved,
         Self::PcurveUndecoded,
         Self::BlendSupportPartial,
         Self::SolvedRecordUntyped,
@@ -624,6 +627,9 @@ impl F3dLossCode {
             Self::MeshSurfaceSentinel => "geometry.mesh-surface-sentinel",
             Self::ProceduralCurveUndecoded => "geometry.procedural-curve-undecoded",
             Self::VertexToleranceWidened => "geometry.vertex-tolerance-widened",
+            Self::ProceduralSupportChartUnresolved => {
+                "geometry.procedural-support-chart-unresolved"
+            }
             Self::SpringSupportPcurveUnresolved => "geometry.spring-support-pcurve-unresolved",
             Self::PcurveUndecoded => "geometry.pcurve-undecoded",
             Self::BlendSupportPartial => "geometry.blend-support-partial",
@@ -786,6 +792,7 @@ impl F3dLossCode {
             | Self::SurfaceShapeNotDecoded
             | Self::ProceduralCurveUndecoded
             | Self::VertexToleranceWidened
+            | Self::ProceduralSupportChartUnresolved
             | Self::SpringSupportPcurveUnresolved
             | Self::PcurveUndecoded
             | Self::BlendSupportPartial
@@ -941,6 +948,7 @@ impl F3dLossCode {
             | Self::MeshSurfaceSentinel => LossTaxonomy::CarrierSummary,
             Self::VertexToleranceWidened => LossTaxonomy::DecodeDiagnostic,
             Self::ProceduralCurveUndecoded
+            | Self::ProceduralSupportChartUnresolved
             | Self::SpringSupportPcurveUnresolved
             | Self::BlendSupportPartial => LossTaxonomy::ProceduralReduced,
             Self::MaterialNotTransferred => LossTaxonomy::MaterialNotTransferred,
@@ -1125,6 +1133,7 @@ mod tests {
                 "geometry.procedural-curve-undecoded",
                 "geometry.vertex-tolerance-widened",
                 "geometry.spring-support-pcurve-unresolved",
+                "geometry.procedural-support-chart-unresolved",
                 "geometry.pcurve-undecoded",
                 "geometry.blend-support-partial",
                 "geometry.solved-record-untyped",
