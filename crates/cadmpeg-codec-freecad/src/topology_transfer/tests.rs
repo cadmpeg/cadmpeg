@@ -1986,3 +1986,5 @@ So 1001000 +2 0 +6 0 *
         cadmpeg_ir::topology::BodyKind::General
     );
 }
+
+mod point_native_linkage;

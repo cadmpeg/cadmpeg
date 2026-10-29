@@ -5747,6 +5747,7 @@
       "points": [
         {
           "id": "fcstd:model:point#BracketPrototype:Shape:BracketPrototype.Shape.brp:1%40location1",
+          "native_ref": "fcstd:native:shape-payload#BracketPrototype:Shape:BracketPrototype.Shape.brp:topology-use:6",
           "position": {
             "x": 0.0,
             "y": 0.0,
@@ -5759,6 +5760,7 @@
         },
         {
           "id": "fcstd:model:point#BracketPrototype:Shape:BracketPrototype.Shape.brp:11%40location1",
+          "native_ref": "fcstd:native:shape-payload#BracketPrototype:Shape:BracketPrototype.Shape.brp:topology-use:7",
           "position": {
             "x": 20.0,
             "y": 0.0,
@@ -5771,6 +5773,7 @@
         },
         {
           "id": "fcstd:model:point#BracketPrototype:Shape:BracketPrototype.Shape.brp:12%40location1",
+          "native_ref": "fcstd:native:shape-payload#BracketPrototype:Shape:BracketPrototype.Shape.brp:topology-use:17",
           "position": {
             "x": 20.0,
             "y": 0.0,
@@ -5783,6 +5786,7 @@
         },
         {
           "id": "fcstd:model:point#BracketPrototype:Shape:BracketPrototype.Shape.brp:14%40location1",
+          "native_ref": "fcstd:native:shape-payload#BracketPrototype:Shape:BracketPrototype.Shape.brp:topology-use:9",
           "position": {
             "x": 20.0,
             "y": 12.0,
@@ -5795,6 +5799,7 @@
         },
         {
           "id": "fcstd:model:point#BracketPrototype:Shape:BracketPrototype.Shape.brp:16%40location1",
+          "native_ref": "fcstd:native:shape-payload#BracketPrototype:Shape:BracketPrototype.Shape.brp:topology-use:19",
           "position": {
             "x": 20.0,
             "y": 12.0,
@@ -5807,6 +5812,7 @@
         },
         {
           "id": "fcstd:model:point#BracketPrototype:Shape:BracketPrototype.Shape.brp:2%40location1",
+          "native_ref": "fcstd:native:shape-payload#BracketPrototype:Shape:BracketPrototype.Shape.brp:topology-use:16",
           "position": {
             "x": 0.0,
             "y": 0.0,
@@ -5819,6 +5825,7 @@
         },
         {
           "id": "fcstd:model:point#BracketPrototype:Shape:BracketPrototype.Shape.brp:4%40location1",
+          "native_ref": "fcstd:native:shape-payload#BracketPrototype:Shape:BracketPrototype.Shape.brp:topology-use:11",
           "position": {
             "x": 0.0,
             "y": 12.0,
@@ -5831,6 +5838,7 @@
         },
         {
           "id": "fcstd:model:point#BracketPrototype:Shape:BracketPrototype.Shape.brp:6%40location1",
+          "native_ref": "fcstd:native:shape-payload#BracketPrototype:Shape:BracketPrototype.Shape.brp:topology-use:21",
           "position": {
             "x": 0.0,
             "y": 12.0,
@@ -5843,6 +5851,7 @@
         },
         {
           "id": "fcstd:model:point#PinPrototype:Shape:PinPrototype.Shape.brp:1%40location1",
+          "native_ref": "fcstd:native:shape-payload#PinPrototype:Shape:PinPrototype.Shape.brp:topology-use:10",
           "position": {
             "x": 3.0,
             "y": -1e-15,
@@ -5855,6 +5864,7 @@
         },
         {
           "id": "fcstd:model:point#PinPrototype:Shape:PinPrototype.Shape.brp:3%40location1",
+          "native_ref": "fcstd:native:shape-payload#PinPrototype:Shape:PinPrototype.Shape.brp:topology-use:6",
           "position": {
             "x": 3.0,
             "y": -1e-15,

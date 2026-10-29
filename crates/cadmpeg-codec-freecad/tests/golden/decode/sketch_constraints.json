@@ -2824,6 +2824,7 @@
       "points": [
         {
           "id": "fcstd:model:point#DimensionalRelations:Shape:DimensionalRelations.Shape.brp:1%40location1",
+          "native_ref": "fcstd:native:shape-payload#DimensionalRelations:Shape:DimensionalRelations.Shape.brp:topology-use:33",
           "position": {
             "x": -0.062257748326953,
             "y": 0.0,
@@ -2836,6 +2837,7 @@
         },
         {
           "id": "fcstd:model:point#DimensionalRelations:Shape:DimensionalRelations.Shape.brp:10%40location1",
+          "native_ref": "fcstd:native:shape-payload#DimensionalRelations:Shape:DimensionalRelations.Shape.brp:topology-use:24",
           "position": {
             "x": 28.0,
             "y": 9.0,
@@ -2848,6 +2850,7 @@
         },
         {
           "id": "fcstd:model:point#DimensionalRelations:Shape:DimensionalRelations.Shape.brp:13%40location1",
+          "native_ref": "fcstd:native:shape-payload#DimensionalRelations:Shape:DimensionalRelations.Shape.brp:topology-use:21",
           "position": {
             "x": 35.0,
             "y": 0.0,
@@ -2860,6 +2863,7 @@
         },
         {
           "id": "fcstd:model:point#DimensionalRelations:Shape:DimensionalRelations.Shape.brp:14%40location1",
+          "native_ref": "fcstd:native:shape-payload#DimensionalRelations:Shape:DimensionalRelations.Shape.brp:topology-use:20",
           "position": {
             "x": 43.0,
             "y": 4.0,
@@ -2872,6 +2876,7 @@
         },
         {
           "id": "fcstd:model:point#DimensionalRelations:Shape:DimensionalRelations.Shape.brp:17%40location1",
+          "native_ref": "fcstd:native:shape-payload#DimensionalRelations:Shape:DimensionalRelations.Shape.brp:topology-use:17",
           "position": {
             "x": 50.0,
             "y": 0.0,
@@ -2884,6 +2889,7 @@
         },
         {
           "id": "fcstd:model:point#DimensionalRelations:Shape:DimensionalRelations.Shape.brp:18%40location1",
+          "native_ref": "fcstd:native:shape-payload#DimensionalRelations:Shape:DimensionalRelations.Shape.brp:topology-use:16",
           "position": {
             "x": 58.0,
             "y": 4.0,
@@ -2896,6 +2902,7 @@
         },
         {
           "id": "fcstd:model:point#DimensionalRelations:Shape:DimensionalRelations.Shape.brp:2%40location1",
+          "native_ref": "fcstd:native:shape-payload#DimensionalRelations:Shape:DimensionalRelations.Shape.brp:topology-use:32",
           "position": {
             "x": 8.0,
             "y": 4.0,
@@ -2908,6 +2915,7 @@
         },
         {
           "id": "fcstd:model:point#DimensionalRelations:Shape:DimensionalRelations.Shape.brp:21%40location1",
+          "native_ref": "fcstd:native:shape-payload#DimensionalRelations:Shape:DimensionalRelations.Shape.brp:topology-use:11",
           "position": {
             "x": 65.0,
             "y": 0.0,
@@ -2920,6 +2928,7 @@
         },
         {
           "id": "fcstd:model:point#DimensionalRelations:Shape:DimensionalRelations.Shape.brp:22%40location1",
+          "native_ref": "fcstd:native:shape-payload#DimensionalRelations:Shape:DimensionalRelations.Shape.brp:topology-use:13",
           "position": {
             "x": 72.0,
             "y": 7.000000000000001,
@@ -2932,6 +2941,7 @@
         },
         {
           "id": "fcstd:model:point#DimensionalRelations:Shape:DimensionalRelations.Shape.brp:24%40location1",
+          "native_ref": "fcstd:native:shape-payload#DimensionalRelations:Shape:DimensionalRelations.Shape.brp:topology-use:10",
           "position": {
             "x": 75.0,
             "y": 0.0,
@@ -2944,6 +2954,7 @@
         },
         {
           "id": "fcstd:model:point#DimensionalRelations:Shape:DimensionalRelations.Shape.brp:27%40location1",
+          "native_ref": "fcstd:native:shape-payload#DimensionalRelations:Shape:DimensionalRelations.Shape.brp:topology-use:7",
           "position": {
             "x": 89.0,
             "y": 0.0,
@@ -2956,6 +2967,7 @@
         },
         {
           "id": "fcstd:model:point#DimensionalRelations:Shape:DimensionalRelations.Shape.brp:30%40location1",
+          "native_ref": "fcstd:native:shape-payload#DimensionalRelations:Shape:DimensionalRelations.Shape.brp:topology-use:4",
           "position": {
             "x": 104.0,
             "y": 0.0,
@@ -2968,6 +2980,7 @@
         },
         {
           "id": "fcstd:model:point#DimensionalRelations:Shape:DimensionalRelations.Shape.brp:5%40location1",
+          "native_ref": "fcstd:native:shape-payload#DimensionalRelations:Shape:DimensionalRelations.Shape.brp:topology-use:29",
           "position": {
             "x": 15.106777054548552,
             "y": 0.031622776601684,
@@ -2980,6 +2993,7 @@
         },
         {
           "id": "fcstd:model:point#DimensionalRelations:Shape:DimensionalRelations.Shape.brp:6%40location1",
+          "native_ref": "fcstd:native:shape-payload#DimensionalRelations:Shape:DimensionalRelations.Shape.brp:topology-use:28",
           "position": {
             "x": 18.0,
             "y": 3.0,
@@ -2992,6 +3006,7 @@
         },
         {
           "id": "fcstd:model:point#DimensionalRelations:Shape:DimensionalRelations.Shape.brp:9%40location1",
+          "native_ref": "fcstd:native:shape-payload#DimensionalRelations:Shape:DimensionalRelations.Shape.brp:topology-use:25",
           "position": {
             "x": 24.936754446796634,
             "y": 4.968377223398316,
@@ -3004,6 +3019,7 @@
         },
         {
           "id": "fcstd:model:point#GeometricRelations:Shape:GeometricRelations.Shape.brp:1%40location1",
+          "native_ref": "fcstd:native:shape-payload#GeometricRelations:Shape:GeometricRelations.Shape.brp:topology-use:55",
           "position": {
             "x": 0.0,
             "y": 0.0,
@@ -3016,6 +3032,7 @@
         },
         {
           "id": "fcstd:model:point#GeometricRelations:Shape:GeometricRelations.Shape.brp:10%40location1",
+          "native_ref": "fcstd:native:shape-payload#GeometricRelations:Shape:GeometricRelations.Shape.brp:topology-use:46",
           "position": {
             "x": 30.0,
             "y": 4.0,
@@ -3028,6 +3045,7 @@
         },
         {
           "id": "fcstd:model:point#GeometricRelations:Shape:GeometricRelations.Shape.brp:13%40location1",
+          "native_ref": "fcstd:native:shape-payload#GeometricRelations:Shape:GeometricRelations.Shape.brp:topology-use:43",
           "position": {
             "x": 20.0,
             "y": 8.0,
@@ -3040,6 +3058,7 @@
         },
         {
           "id": "fcstd:model:point#GeometricRelations:Shape:GeometricRelations.Shape.brp:14%40location1",
+          "native_ref": "fcstd:native:shape-payload#GeometricRelations:Shape:GeometricRelations.Shape.brp:topology-use:42",
           "position": {
             "x": 30.0,
             "y": 12.0,
@@ -3052,6 +3071,7 @@
         },
         {
           "id": "fcstd:model:point#GeometricRelations:Shape:GeometricRelations.Shape.brp:17%40location1",
+          "native_ref": "fcstd:native:shape-payload#GeometricRelations:Shape:GeometricRelations.Shape.brp:topology-use:39",
           "position": {
             "x": 35.0,
             "y": 0.0,
@@ -3064,6 +3084,7 @@
         },
         {
           "id": "fcstd:model:point#GeometricRelations:Shape:GeometricRelations.Shape.brp:18%40location1",
+          "native_ref": "fcstd:native:shape-payload#GeometricRelations:Shape:GeometricRelations.Shape.brp:topology-use:38",
           "position": {
             "x": 45.0,
             "y": 4.0,
@@ -3076,6 +3097,7 @@
         },
         {
           "id": "fcstd:model:point#GeometricRelations:Shape:GeometricRelations.Shape.brp:2%40location1",
+          "native_ref": "fcstd:native:shape-payload#GeometricRelations:Shape:GeometricRelations.Shape.brp:topology-use:54",
           "position": {
             "x": 10.0,
             "y": 0.0,
@@ -3088,6 +3110,7 @@
         },
         {
           "id": "fcstd:model:point#GeometricRelations:Shape:GeometricRelations.Shape.brp:21%40location1",
+          "native_ref": "fcstd:native:shape-payload#GeometricRelations:Shape:GeometricRelations.Shape.brp:topology-use:35",
           "position": {
             "x": 39.0,
             "y": -5.0,
@@ -3100,6 +3123,7 @@
         },
         {
           "id": "fcstd:model:point#GeometricRelations:Shape:GeometricRelations.Shape.brp:22%40location1",
+          "native_ref": "fcstd:native:shape-payload#GeometricRelations:Shape:GeometricRelations.Shape.brp:topology-use:34",
           "position": {
             "x": 35.0,
             "y": 5.0,
@@ -3112,6 +3136,7 @@
         },
         {
           "id": "fcstd:model:point#GeometricRelations:Shape:GeometricRelations.Shape.brp:25%40location1",
+          "native_ref": "fcstd:native:shape-payload#GeometricRelations:Shape:GeometricRelations.Shape.brp:topology-use:31",
           "position": {
             "x": 50.0117945363695,
             "y": -0.363461244864965,
@@ -3124,6 +3149,7 @@
         },
         {
           "id": "fcstd:model:point#GeometricRelations:Shape:GeometricRelations.Shape.brp:26%40location1",
+          "native_ref": "fcstd:native:shape-payload#GeometricRelations:Shape:GeometricRelations.Shape.brp:topology-use:30",
           "position": {
             "x": 59.96735151773406,
             "y": 2.058809666393606,
@@ -3136,6 +3162,7 @@
         },
         {
           "id": "fcstd:model:point#GeometricRelations:Shape:GeometricRelations.Shape.brp:29%40location1",
+          "native_ref": "fcstd:native:shape-payload#GeometricRelations:Shape:GeometricRelations.Shape.brp:topology-use:27",
           "position": {
             "x": 59.997898689119474,
             "y": 2.066242050618975,
@@ -3148,6 +3175,7 @@
         },
         {
           "id": "fcstd:model:point#GeometricRelations:Shape:GeometricRelations.Shape.brp:30%40location1",
+          "native_ref": "fcstd:native:shape-payload#GeometricRelations:Shape:GeometricRelations.Shape.brp:topology-use:26",
           "position": {
             "x": 65.02295525677697,
             "y": 3.288880660800523,
@@ -3160,6 +3188,7 @@
         },
         {
           "id": "fcstd:model:point#GeometricRelations:Shape:GeometricRelations.Shape.brp:33%40location1",
+          "native_ref": "fcstd:native:shape-payload#GeometricRelations:Shape:GeometricRelations.Shape.brp:topology-use:23",
           "position": {
             "x": 70.0,
             "y": 0.0,
@@ -3172,6 +3201,7 @@
         },
         {
           "id": "fcstd:model:point#GeometricRelations:Shape:GeometricRelations.Shape.brp:34%40location1",
+          "native_ref": "fcstd:native:shape-payload#GeometricRelations:Shape:GeometricRelations.Shape.brp:topology-use:21",
           "position": {
             "x": 80.0,
             "y": 3.0,
@@ -3184,6 +3214,7 @@
         },
         {
           "id": "fcstd:model:point#GeometricRelations:Shape:GeometricRelations.Shape.brp:36%40location1",
+          "native_ref": "fcstd:native:shape-payload#GeometricRelations:Shape:GeometricRelations.Shape.brp:topology-use:20",
           "position": {
             "x": 90.0,
             "y": 6.0,
@@ -3196,6 +3227,7 @@
         },
         {
           "id": "fcstd:model:point#GeometricRelations:Shape:GeometricRelations.Shape.brp:39%40location1",
+          "native_ref": "fcstd:native:shape-payload#GeometricRelations:Shape:GeometricRelations.Shape.brp:topology-use:15",
           "position": {
             "x": 95.0,
             "y": 0.0,
@@ -3208,6 +3240,7 @@
         },
         {
           "id": "fcstd:model:point#GeometricRelations:Shape:GeometricRelations.Shape.brp:40%40location1",
+          "native_ref": "fcstd:native:shape-payload#GeometricRelations:Shape:GeometricRelations.Shape.brp:topology-use:17",
           "position": {
             "x": 105.0,
             "y": -4.0,
@@ -3220,6 +3253,7 @@
         },
         {
           "id": "fcstd:model:point#GeometricRelations:Shape:GeometricRelations.Shape.brp:42%40location1",
+          "native_ref": "fcstd:native:shape-payload#GeometricRelations:Shape:GeometricRelations.Shape.brp:topology-use:14",
           "position": {
             "x": 105.0,
             "y": 4.0,
@@ -3232,6 +3266,7 @@
         },
         {
           "id": "fcstd:model:point#GeometricRelations:Shape:GeometricRelations.Shape.brp:45%40location1",
+          "native_ref": "fcstd:native:shape-payload#GeometricRelations:Shape:GeometricRelations.Shape.brp:topology-use:11",
           "position": {
             "x": 110.0,
             "y": 0.0,
@@ -3244,6 +3279,7 @@
         },
         {
           "id": "fcstd:model:point#GeometricRelations:Shape:GeometricRelations.Shape.brp:46%40location1",
+          "native_ref": "fcstd:native:shape-payload#GeometricRelations:Shape:GeometricRelations.Shape.brp:topology-use:10",
           "position": {
             "x": 120.0,
             "y": 4.0,
@@ -3256,6 +3292,7 @@
         },
         {
           "id": "fcstd:model:point#GeometricRelations:Shape:GeometricRelations.Shape.brp:49%40location1",
+          "native_ref": "fcstd:native:shape-payload#GeometricRelations:Shape:GeometricRelations.Shape.brp:topology-use:7",
           "position": {
             "x": 60.0,
             "y": 0.0,
@@ -3268,6 +3305,7 @@
         },
         {
           "id": "fcstd:model:point#GeometricRelations:Shape:GeometricRelations.Shape.brp:5%40location1",
+          "native_ref": "fcstd:native:shape-payload#GeometricRelations:Shape:GeometricRelations.Shape.brp:topology-use:51",
           "position": {
             "x": 15.0,
             "y": 0.0,
@@ -3280,6 +3318,7 @@
         },
         {
           "id": "fcstd:model:point#GeometricRelations:Shape:GeometricRelations.Shape.brp:52%40location1",
+          "native_ref": "fcstd:native:shape-payload#GeometricRelations:Shape:GeometricRelations.Shape.brp:topology-use:4",
           "position": {
             "x": 60.0,
             "y": 12.0,
@@ -3292,6 +3331,7 @@
         },
         {
           "id": "fcstd:model:point#GeometricRelations:Shape:GeometricRelations.Shape.brp:6%40location1",
+          "native_ref": "fcstd:native:shape-payload#GeometricRelations:Shape:GeometricRelations.Shape.brp:topology-use:50",
           "position": {
             "x": 15.0,
             "y": 10.0,
@@ -3304,6 +3344,7 @@
         },
         {
           "id": "fcstd:model:point#GeometricRelations:Shape:GeometricRelations.Shape.brp:9%40location1",
+          "native_ref": "fcstd:native:shape-payload#GeometricRelations:Shape:GeometricRelations.Shape.brp:topology-use:47",
           "position": {
             "x": 20.0,
             "y": 0.0,
@@ -3316,6 +3357,7 @@
         },
         {
           "id": "fcstd:model:point#InactiveRelation:Shape:InactiveRelation.Shape.brp:1%40location1",
+          "native_ref": "fcstd:native:shape-payload#InactiveRelation:Shape:InactiveRelation.Shape.brp:topology-use:4",
           "position": {
             "x": 0.0,
             "y": 0.0,
@@ -3328,6 +3370,7 @@
         },
         {
           "id": "fcstd:model:point#InactiveRelation:Shape:InactiveRelation.Shape.brp:2%40location1",
+          "native_ref": "fcstd:native:shape-payload#InactiveRelation:Shape:InactiveRelation.Shape.brp:topology-use:3",
           "position": {
             "x": 10.0,
             "y": 0.0,
@@ -3340,6 +3383,7 @@
         },
         {
           "id": "fcstd:model:point#InternalAlignmentRelations:Shape:InternalAlignmentRelations.Shape.brp:1%40location1",
+          "native_ref": "fcstd:native:shape-payload#InternalAlignmentRelations:Shape:InternalAlignmentRelations.Shape.brp:topology-use:3",
           "position": {
             "x": 12.0,
             "y": 0.0,
@@ -3352,6 +3396,7 @@
         },
         {
           "id": "fcstd:model:point#OpticalRelation:Shape:OpticalRelation.Shape.brp:1%40location1",
+          "native_ref": "fcstd:native:shape-payload#OpticalRelation:Shape:OpticalRelation.Shape.brp:topology-use:13",
           "position": {
             "x": -10.041197527567036,
             "y": -4.916827177867217,
@@ -3364,6 +3409,7 @@
         },
         {
           "id": "fcstd:model:point#OpticalRelation:Shape:OpticalRelation.Shape.brp:10%40location1",
+          "native_ref": "fcstd:native:shape-payload#OpticalRelation:Shape:OpticalRelation.Shape.brp:topology-use:4",
           "position": {
             "x": 11.999973848754916,
             "y": -0.037597603995338,
@@ -3376,6 +3422,7 @@
         },
         {
           "id": "fcstd:model:point#OpticalRelation:Shape:OpticalRelation.Shape.brp:2%40location1",
+          "native_ref": "fcstd:native:shape-payload#OpticalRelation:Shape:OpticalRelation.Shape.brp:topology-use:12",
           "position": {
             "x": 0.041197527567036,
             "y": -0.083172822132783,
@@ -3388,6 +3435,7 @@
         },
         {
           "id": "fcstd:model:point#OpticalRelation:Shape:OpticalRelation.Shape.brp:5%40location1",
+          "native_ref": "fcstd:native:shape-payload#OpticalRelation:Shape:OpticalRelation.Shape.brp:topology-use:9",
           "position": {
             "x": 0.121227646125801,
             "y": -0.287633877610994,
@@ -3400,6 +3448,7 @@
         },
         {
           "id": "fcstd:model:point#OpticalRelation:Shape:OpticalRelation.Shape.brp:6%40location1",
+          "native_ref": "fcstd:native:shape-payload#OpticalRelation:Shape:OpticalRelation.Shape.brp:topology-use:8",
           "position": {
             "x": 7.878772353874199,
             "y": 7.136414264868549,
@@ -3412,6 +3461,7 @@
         },
         {
           "id": "fcstd:model:point#OpticalRelation:Shape:OpticalRelation.Shape.brp:9%40location1",
+          "native_ref": "fcstd:native:shape-payload#OpticalRelation:Shape:OpticalRelation.Shape.brp:topology-use:5",
           "position": {
             "x": -11.999973848754916,
             "y": 0.037597603995338,
@@ -3424,6 +3474,7 @@
         },
         {
           "id": "fcstd:model:point#SplineWeightRelation:Shape:SplineWeightRelation.Shape.brp:1%40location1",
+          "native_ref": "fcstd:native:shape-payload#SplineWeightRelation:Shape:SplineWeightRelation.Shape.brp:topology-use:4",
           "position": {
             "x": 0.0,
             "y": 0.0,
@@ -3436,6 +3487,7 @@
         },
         {
           "id": "fcstd:model:point#SplineWeightRelation:Shape:SplineWeightRelation.Shape.brp:2%40location1",
+          "native_ref": "fcstd:native:shape-payload#SplineWeightRelation:Shape:SplineWeightRelation.Shape.brp:topology-use:3",
           "position": {
             "x": 12.0,
             "y": 2.0,
@@ -3448,6 +3500,7 @@
         },
         {
           "id": "fcstd:model:point#SymmetryRelation:Shape:SymmetryRelation.Shape.brp:1%40location1",
+          "native_ref": "fcstd:native:shape-payload#SymmetryRelation:Shape:SymmetryRelation.Shape.brp:topology-use:13",
           "position": {
             "x": -8.0,
             "y": 3.0,
@@ -3460,6 +3513,7 @@
         },
         {
           "id": "fcstd:model:point#SymmetryRelation:Shape:SymmetryRelation.Shape.brp:10%40location1",
+          "native_ref": "fcstd:native:shape-payload#SymmetryRelation:Shape:SymmetryRelation.Shape.brp:topology-use:4",
           "position": {
             "x": 0.0,
             "y": 10.0,
@@ -3472,6 +3526,7 @@
         },
         {
           "id": "fcstd:model:point#SymmetryRelation:Shape:SymmetryRelation.Shape.brp:2%40location1",
+          "native_ref": "fcstd:native:shape-payload#SymmetryRelation:Shape:SymmetryRelation.Shape.brp:topology-use:12",
           "position": {
             "x": -6.0,
             "y": 5.0,
@@ -3484,6 +3539,7 @@
         },
         {
           "id": "fcstd:model:point#SymmetryRelation:Shape:SymmetryRelation.Shape.brp:5%40location1",
+          "native_ref": "fcstd:native:shape-payload#SymmetryRelation:Shape:SymmetryRelation.Shape.brp:topology-use:9",
           "position": {
             "x": 8.0,
             "y": 3.0,
@@ -3496,6 +3552,7 @@
         },
         {
           "id": "fcstd:model:point#SymmetryRelation:Shape:SymmetryRelation.Shape.brp:6%40location1",
+          "native_ref": "fcstd:native:shape-payload#SymmetryRelation:Shape:SymmetryRelation.Shape.brp:topology-use:8",
           "position": {
             "x": 6.0,
             "y": 5.0,
@@ -3508,6 +3565,7 @@
         },
         {
           "id": "fcstd:model:point#SymmetryRelation:Shape:SymmetryRelation.Shape.brp:9%40location1",
+          "native_ref": "fcstd:native:shape-payload#SymmetryRelation:Shape:SymmetryRelation.Shape.brp:topology-use:5",
           "position": {
             "x": 0.0,
             "y": -10.0,

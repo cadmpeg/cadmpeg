@@ -394,6 +394,9 @@ impl<'a, 'c, 'r> Builder<'a, 'c, 'r> {
     }
 
     fn source_ref(&self, shape: usize, local: Located) -> Result<Option<String>, CodecError> {
+        if let Some(refusal) = self.ctx.resource_refusal() {
+            return Err(refusal.into());
+        }
         let placed = self.compose(self.body_scope, local)?;
         let Some(source) =
             self.source_uses
@@ -1573,13 +1576,12 @@ impl<'a, 'c, 'r> Builder<'a, 'c, 'r> {
                 vertex_use.shape
             )));
         };
-        ir.model.points.push(Point::new(
-            point_id.clone(),
-            position,
-            Some(self.source_association()?),
-        ));
+        let mut point = Point::new(point_id.clone(), position, Some(self.source_association()?));
+        point.native_ref = self.source_ref(vertex_use.shape, transform)?;
+        let vertex_native_ref = self.source_ref(vertex_use.shape, transform)?;
+        ir.model.points.push(point);
         ir.model.vertices.push(Vertex {
-            native_ref: self.source_ref(vertex_use.shape, transform)?,
+            native_ref: vertex_native_ref,
             id: vertex_id.clone(),
             point: point_id,
             tolerance: positive_tolerance(

@@ -731,6 +731,7 @@
       "points": [
         {
           "id": "fcstd:model:point#ConicWitness:Shape:ConicWitness.Shape.brp:1%40location1",
+          "native_ref": "fcstd:native:shape-payload#ConicWitness:Shape:ConicWitness.Shape.brp:topology-use:20",
           "position": {
             "x": 6.368670388392447,
             "y": 4.841491245888317,
@@ -743,6 +744,7 @@
         },
         {
           "id": "fcstd:model:point#ConicWitness:Shape:ConicWitness.Shape.brp:12%40location1",
+          "native_ref": "fcstd:native:shape-payload#ConicWitness:Shape:ConicWitness.Shape.brp:topology-use:12",
           "position": {
             "x": 6.825256883914576,
             "y": 35.86650393919383,
@@ -755,6 +757,7 @@
         },
         {
           "id": "fcstd:model:point#ConicWitness:Shape:ConicWitness.Shape.brp:15%40location1",
+          "native_ref": "fcstd:native:shape-payload#ConicWitness:Shape:ConicWitness.Shape.brp:topology-use:9",
           "position": {
             "x": 38.434720873714745,
             "y": 32.02165247596257,
@@ -767,6 +770,7 @@
         },
         {
           "id": "fcstd:model:point#ConicWitness:Shape:ConicWitness.Shape.brp:16%40location1",
+          "native_ref": "fcstd:native:shape-payload#ConicWitness:Shape:ConicWitness.Shape.brp:topology-use:8",
           "position": {
             "x": 37.46149067127983,
             "y": 37.148506816578966,
@@ -779,6 +783,7 @@
         },
         {
           "id": "fcstd:model:point#ConicWitness:Shape:ConicWitness.Shape.brp:19%40location1",
+          "native_ref": "fcstd:native:shape-payload#ConicWitness:Shape:ConicWitness.Shape.brp:topology-use:5",
           "position": {
             "x": 61.52011141943519,
             "y": 18.52513376432717,
@@ -791,6 +796,7 @@
         },
         {
           "id": "fcstd:model:point#ConicWitness:Shape:ConicWitness.Shape.brp:2%40location1",
+          "native_ref": "fcstd:native:shape-payload#ConicWitness:Shape:ConicWitness.Shape.brp:topology-use:22",
           "position": {
             "x": -2.050487265820181,
             "y": 7.73275513466638,
@@ -803,6 +809,7 @@
         },
         {
           "id": "fcstd:model:point#ConicWitness:Shape:ConicWitness.Shape.brp:20%40location1",
+          "native_ref": "fcstd:native:shape-payload#ConicWitness:Shape:ConicWitness.Shape.brp:topology-use:4",
           "position": {
             "x": 58.79180943082936,
             "y": 22.104726953447198,
@@ -815,6 +822,7 @@
         },
         {
           "id": "fcstd:model:point#ConicWitness:Shape:ConicWitness.Shape.brp:4%40location1",
+          "native_ref": "fcstd:native:shape-payload#ConicWitness:Shape:ConicWitness.Shape.brp:topology-use:19",
           "position": {
             "x": 12.0,
             "y": 10.0,
@@ -827,6 +835,7 @@
         },
         {
           "id": "fcstd:model:point#ConicWitness:Shape:ConicWitness.Shape.brp:8%40location1",
+          "native_ref": "fcstd:native:shape-payload#ConicWitness:Shape:ConicWitness.Shape.brp:topology-use:16",
           "position": {
             "x": 39.49056154779882,
             "y": 3.670291523041618,
@@ -839,6 +848,7 @@
         },
         {
           "id": "fcstd:model:point#ConicWitness:Shape:ConicWitness.Shape.brp:9%40location1",
+          "native_ref": "fcstd:native:shape-payload#ConicWitness:Shape:ConicWitness.Shape.brp:topology-use:15",
           "position": {
             "x": 29.911448138968304,
             "y": 4.490999737757602,

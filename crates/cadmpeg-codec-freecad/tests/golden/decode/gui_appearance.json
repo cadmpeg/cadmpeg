@@ -2931,6 +2931,7 @@
       "points": [
         {
           "id": "fcstd:model:point#ColoredModel:Shape:ColoredModel.Shape.brp:1%40location1",
+          "native_ref": "fcstd:native:shape-payload#ColoredModel:Shape:ColoredModel.Shape.brp:topology-use:39",
           "position": {
             "x": 0.0,
             "y": 0.0,
@@ -2943,6 +2944,7 @@
         },
         {
           "id": "fcstd:model:point#ColoredModel:Shape:ColoredModel.Shape.brp:11%40location1",
+          "native_ref": "fcstd:native:shape-payload#ColoredModel:Shape:ColoredModel.Shape.brp:topology-use:16",
           "position": {
             "x": 18.0,
             "y": 0.0,
@@ -2955,6 +2957,7 @@
         },
         {
           "id": "fcstd:model:point#ColoredModel:Shape:ColoredModel.Shape.brp:13%40location1",
+          "native_ref": "fcstd:native:shape-payload#ColoredModel:Shape:ColoredModel.Shape.brp:topology-use:21",
           "position": {
             "x": 18.0,
             "y": 0.0,
@@ -2967,6 +2970,7 @@
         },
         {
           "id": "fcstd:model:point#ColoredModel:Shape:ColoredModel.Shape.brp:18%40location1",
+          "native_ref": "fcstd:native:shape-payload#ColoredModel:Shape:ColoredModel.Shape.brp:topology-use:19",
           "position": {
             "x": 18.0,
             "y": 12.0,
@@ -2979,6 +2983,7 @@
         },
         {
           "id": "fcstd:model:point#ColoredModel:Shape:ColoredModel.Shape.brp:2%40location1",
+          "native_ref": "fcstd:native:shape-payload#ColoredModel:Shape:ColoredModel.Shape.brp:topology-use:26",
           "position": {
             "x": 0.0,
             "y": 0.0,
@@ -2991,6 +2996,7 @@
         },
         {
           "id": "fcstd:model:point#ColoredModel:Shape:ColoredModel.Shape.brp:22%40location1",
+          "native_ref": "fcstd:native:shape-payload#ColoredModel:Shape:ColoredModel.Shape.brp:topology-use:11",
           "position": {
             "x": 12.0,
             "y": 5.999999999999999,
@@ -3003,6 +3009,7 @@
         },
         {
           "id": "fcstd:model:point#ColoredModel:Shape:ColoredModel.Shape.brp:26%40location1",
+          "native_ref": "fcstd:native:shape-payload#ColoredModel:Shape:ColoredModel.Shape.brp:topology-use:17",
           "position": {
             "x": 18.0,
             "y": 12.0,
@@ -3015,6 +3022,7 @@
         },
         {
           "id": "fcstd:model:point#ColoredModel:Shape:ColoredModel.Shape.brp:36%40location1",
+          "native_ref": "fcstd:native:shape-payload#ColoredModel:Shape:ColoredModel.Shape.brp:topology-use:7",
           "position": {
             "x": 12.0,
             "y": 5.999999999999999,
@@ -3027,6 +3035,7 @@
         },
         {
           "id": "fcstd:model:point#ColoredModel:Shape:ColoredModel.Shape.brp:4%40location1",
+          "native_ref": "fcstd:native:shape-payload#ColoredModel:Shape:ColoredModel.Shape.brp:topology-use:33",
           "position": {
             "x": 0.0,
             "y": 12.0,
@@ -3039,6 +3048,7 @@
         },
         {
           "id": "fcstd:model:point#ColoredModel:Shape:ColoredModel.Shape.brp:6%40location1",
+          "native_ref": "fcstd:native:shape-payload#ColoredModel:Shape:ColoredModel.Shape.brp:topology-use:28",
           "position": {
             "x": 0.0,
             "y": 12.0,

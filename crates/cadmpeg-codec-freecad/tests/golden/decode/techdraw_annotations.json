@@ -2618,6 +2618,7 @@
       "points": [
         {
           "id": "fcstd:model:point#Model:Shape:Model.Shape.brp:1%40location1",
+          "native_ref": "fcstd:native:shape-payload#Model:Shape:Model.Shape.brp:topology-use:6",
           "position": {
             "x": 0.0,
             "y": 0.0,
@@ -2630,6 +2631,7 @@
         },
         {
           "id": "fcstd:model:point#Model:Shape:Model.Shape.brp:11%40location1",
+          "native_ref": "fcstd:native:shape-payload#Model:Shape:Model.Shape.brp:topology-use:7",
           "position": {
             "x": 25.0,
             "y": 0.0,
@@ -2642,6 +2644,7 @@
         },
         {
           "id": "fcstd:model:point#Model:Shape:Model.Shape.brp:12%40location1",
+          "native_ref": "fcstd:native:shape-payload#Model:Shape:Model.Shape.brp:topology-use:17",
           "position": {
             "x": 25.0,
             "y": 0.0,
@@ -2654,6 +2657,7 @@
         },
         {
           "id": "fcstd:model:point#Model:Shape:Model.Shape.brp:14%40location1",
+          "native_ref": "fcstd:native:shape-payload#Model:Shape:Model.Shape.brp:topology-use:9",
           "position": {
             "x": 25.0,
             "y": 15.0,
@@ -2666,6 +2670,7 @@
         },
         {
           "id": "fcstd:model:point#Model:Shape:Model.Shape.brp:16%40location1",
+          "native_ref": "fcstd:native:shape-payload#Model:Shape:Model.Shape.brp:topology-use:19",
           "position": {
             "x": 25.0,
             "y": 15.0,
@@ -2678,6 +2683,7 @@
         },
         {
           "id": "fcstd:model:point#Model:Shape:Model.Shape.brp:2%40location1",
+          "native_ref": "fcstd:native:shape-payload#Model:Shape:Model.Shape.brp:topology-use:16",
           "position": {
             "x": 0.0,
             "y": 0.0,
@@ -2690,6 +2696,7 @@
         },
         {
           "id": "fcstd:model:point#Model:Shape:Model.Shape.brp:4%40location1",
+          "native_ref": "fcstd:native:shape-payload#Model:Shape:Model.Shape.brp:topology-use:11",
           "position": {
             "x": 0.0,
             "y": 15.0,
@@ -2702,6 +2709,7 @@
         },
         {
           "id": "fcstd:model:point#Model:Shape:Model.Shape.brp:6%40location1",
+          "native_ref": "fcstd:native:shape-payload#Model:Shape:Model.Shape.brp:topology-use:21",
           "position": {
             "x": 0.0,
             "y": 15.0,

@@ -951,6 +951,7 @@
       "points": [
         {
           "id": "fcstd:model:point#BinaryCarrier:Shape:BinaryCarrier.Shape.bin:1%40location1",
+          "native_ref": "fcstd:native:shape-payload#BinaryCarrier:Shape:BinaryCarrier.Shape.bin:topology-use:13",
           "position": {
             "x": 6.999999999999902,
             "y": -1.7145055188062708e-15,
@@ -963,6 +964,7 @@
         },
         {
           "id": "fcstd:model:point#BinaryCarrier:Shape:BinaryCarrier.Shape.bin:3%40location1",
+          "native_ref": "fcstd:native:shape-payload#BinaryCarrier:Shape:BinaryCarrier.Shape.bin:topology-use:7",
           "position": {
             "x": 7.0,
             "y": -1.7145055188062944e-15,
@@ -975,6 +977,7 @@
         },
         {
           "id": "fcstd:model:point#BinaryCarrier:Shape:BinaryCarrier.Shape.bin:8%40location1",
+          "native_ref": "fcstd:native:shape-payload#BinaryCarrier:Shape:BinaryCarrier.Shape.bin:topology-use:11",
           "position": {
             "x": 4.898587196589413e-16,
             "y": -1.199807826129486e-31,

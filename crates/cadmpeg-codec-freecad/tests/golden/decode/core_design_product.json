@@ -7912,6 +7912,7 @@
       "points": [
         {
           "id": "fcstd:model:point#Box:Shape:Box.Shape.brp:1%40location1",
+          "native_ref": "fcstd:native:shape-payload#Box:Shape:Box.Shape.brp:topology-use:6",
           "position": {
             "x": 0.0,
             "y": 0.0,
@@ -7924,6 +7925,7 @@
         },
         {
           "id": "fcstd:model:point#Box:Shape:Box.Shape.brp:11%40location1",
+          "native_ref": "fcstd:native:shape-payload#Box:Shape:Box.Shape.brp:topology-use:7",
           "position": {
             "x": 30.0,
             "y": 0.0,
@@ -7936,6 +7938,7 @@
         },
         {
           "id": "fcstd:model:point#Box:Shape:Box.Shape.brp:12%40location1",
+          "native_ref": "fcstd:native:shape-payload#Box:Shape:Box.Shape.brp:topology-use:17",
           "position": {
             "x": 30.0,
             "y": 0.0,
@@ -7948,6 +7951,7 @@
         },
         {
           "id": "fcstd:model:point#Box:Shape:Box.Shape.brp:14%40location1",
+          "native_ref": "fcstd:native:shape-payload#Box:Shape:Box.Shape.brp:topology-use:9",
           "position": {
             "x": 30.0,
             "y": 20.0,
@@ -7960,6 +7964,7 @@
         },
         {
           "id": "fcstd:model:point#Box:Shape:Box.Shape.brp:16%40location1",
+          "native_ref": "fcstd:native:shape-payload#Box:Shape:Box.Shape.brp:topology-use:19",
           "position": {
             "x": 30.0,
             "y": 20.0,
@@ -7972,6 +7977,7 @@
         },
         {
           "id": "fcstd:model:point#Box:Shape:Box.Shape.brp:2%40location1",
+          "native_ref": "fcstd:native:shape-payload#Box:Shape:Box.Shape.brp:topology-use:16",
           "position": {
             "x": 0.0,
             "y": 0.0,
@@ -7984,6 +7990,7 @@
         },
         {
           "id": "fcstd:model:point#Box:Shape:Box.Shape.brp:4%40location1",
+          "native_ref": "fcstd:native:shape-payload#Box:Shape:Box.Shape.brp:topology-use:11",
           "position": {
             "x": 0.0,
             "y": 20.0,
@@ -7996,6 +8003,7 @@
         },
         {
           "id": "fcstd:model:point#Box:Shape:Box.Shape.brp:6%40location1",
+          "native_ref": "fcstd:native:shape-payload#Box:Shape:Box.Shape.brp:topology-use:21",
           "position": {
             "x": 0.0,
             "y": 20.0,
@@ -8008,6 +8016,7 @@
         },
         {
           "id": "fcstd:model:point#Cut:Shape:Cut.Shape.brp:1%40location13",
+          "native_ref": "fcstd:native:shape-payload#Cut:Shape:Cut.Shape.brp:topology-use:38",
           "position": {
             "x": 0.0,
             "y": 0.0,
@@ -8020,6 +8029,7 @@
         },
         {
           "id": "fcstd:model:point#Cut:Shape:Cut.Shape.brp:11%40location13",
+          "native_ref": "fcstd:native:shape-payload#Cut:Shape:Cut.Shape.brp:topology-use:14",
           "position": {
             "x": 30.0,
             "y": 0.0,
@@ -8032,6 +8042,7 @@
         },
         {
           "id": "fcstd:model:point#Cut:Shape:Cut.Shape.brp:13%40location13",
+          "native_ref": "fcstd:native:shape-payload#Cut:Shape:Cut.Shape.brp:topology-use:19",
           "position": {
             "x": 30.0,
             "y": 0.0,
@@ -8044,6 +8055,7 @@
         },
         {
           "id": "fcstd:model:point#Cut:Shape:Cut.Shape.brp:18%40location13",
+          "native_ref": "fcstd:native:shape-payload#Cut:Shape:Cut.Shape.brp:topology-use:17",
           "position": {
             "x": 30.0,
             "y": 20.0,
@@ -8056,6 +8068,7 @@
         },
         {
           "id": "fcstd:model:point#Cut:Shape:Cut.Shape.brp:2%40location13",
+          "native_ref": "fcstd:native:shape-payload#Cut:Shape:Cut.Shape.brp:topology-use:25",
           "position": {
             "x": 0.0,
             "y": 0.0,
@@ -8068,6 +8081,7 @@
         },
         {
           "id": "fcstd:model:point#Cut:Shape:Cut.Shape.brp:22%40location1",
+          "native_ref": "fcstd:native:shape-payload#Cut:Shape:Cut.Shape.brp:topology-use:7",
           "position": {
             "x": 19.0,
             "y": 9.999999999999998,
@@ -8080,6 +8094,7 @@
         },
         {
           "id": "fcstd:model:point#Cut:Shape:Cut.Shape.brp:26%40location13",
+          "native_ref": "fcstd:native:shape-payload#Cut:Shape:Cut.Shape.brp:topology-use:15",
           "position": {
             "x": 30.0,
             "y": 20.0,
@@ -8092,6 +8107,7 @@
         },
         {
           "id": "fcstd:model:point#Cut:Shape:Cut.Shape.brp:33%40location1",
+          "native_ref": "fcstd:native:shape-payload#Cut:Shape:Cut.Shape.brp:topology-use:8",
           "position": {
             "x": 19.0,
             "y": 9.999999999999998,
@@ -8104,6 +8120,7 @@
         },
         {
           "id": "fcstd:model:point#Cut:Shape:Cut.Shape.brp:4%40location13",
+          "native_ref": "fcstd:native:shape-payload#Cut:Shape:Cut.Shape.brp:topology-use:32",
           "position": {
             "x": 0.0,
             "y": 20.0,
@@ -8116,6 +8133,7 @@
         },
         {
           "id": "fcstd:model:point#Cut:Shape:Cut.Shape.brp:6%40location13",
+          "native_ref": "fcstd:native:shape-payload#Cut:Shape:Cut.Shape.brp:topology-use:27",
           "position": {
             "x": 0.0,
             "y": 20.0,
@@ -8128,6 +8146,7 @@
         },
         {
           "id": "fcstd:model:point#Cylinder:Shape:Cylinder.Shape.brp:1%40location1",
+          "native_ref": "fcstd:native:shape-payload#Cylinder:Shape:Cylinder.Shape.brp:topology-use:10",
           "position": {
             "x": 4.0,
             "y": -1e-15,
@@ -8140,6 +8159,7 @@
         },
         {
           "id": "fcstd:model:point#Cylinder:Shape:Cylinder.Shape.brp:1%40location4",
+          "native_ref": "fcstd:native:shape-payload#Cylinder:Shape:Cylinder.Shape.brp:topology-use:6",
           "position": {
             "x": 4.0,
             "y": -1e-15,
@@ -8152,6 +8172,7 @@
         },
         {
           "id": "fcstd:model:point#DesignedFeature:Shape:DesignedFeature.Shape.brp:1%40location1",
+          "native_ref": "fcstd:native:shape-payload#DesignedFeature:Shape:DesignedFeature.Shape.brp:topology-use:6",
           "position": {
             "x": 0.0,
             "y": 0.0,
@@ -8164,6 +8185,7 @@
         },
         {
           "id": "fcstd:model:point#DesignedFeature:Shape:DesignedFeature.Shape.brp:11%40location1",
+          "native_ref": "fcstd:native:shape-payload#DesignedFeature:Shape:DesignedFeature.Shape.brp:topology-use:7",
           "position": {
             "x": 12.0,
             "y": 0.0,
@@ -8176,6 +8198,7 @@
         },
         {
           "id": "fcstd:model:point#DesignedFeature:Shape:DesignedFeature.Shape.brp:12%40location1",
+          "native_ref": "fcstd:native:shape-payload#DesignedFeature:Shape:DesignedFeature.Shape.brp:topology-use:17",
           "position": {
             "x": 12.0,
             "y": 0.0,
@@ -8188,6 +8211,7 @@
         },
         {
           "id": "fcstd:model:point#DesignedFeature:Shape:DesignedFeature.Shape.brp:14%40location1",
+          "native_ref": "fcstd:native:shape-payload#DesignedFeature:Shape:DesignedFeature.Shape.brp:topology-use:9",
           "position": {
             "x": 12.0,
             "y": 8.0,
@@ -8200,6 +8224,7 @@
         },
         {
           "id": "fcstd:model:point#DesignedFeature:Shape:DesignedFeature.Shape.brp:16%40location1",
+          "native_ref": "fcstd:native:shape-payload#DesignedFeature:Shape:DesignedFeature.Shape.brp:topology-use:19",
           "position": {
             "x": 12.0,
             "y": 8.0,
@@ -8212,6 +8237,7 @@
         },
         {
           "id": "fcstd:model:point#DesignedFeature:Shape:DesignedFeature.Shape.brp:2%40location1",
+          "native_ref": "fcstd:native:shape-payload#DesignedFeature:Shape:DesignedFeature.Shape.brp:topology-use:16",
           "position": {
             "x": 0.0,
             "y": 0.0,
@@ -8224,6 +8250,7 @@
         },
         {
           "id": "fcstd:model:point#DesignedFeature:Shape:DesignedFeature.Shape.brp:4%40location1",
+          "native_ref": "fcstd:native:shape-payload#DesignedFeature:Shape:DesignedFeature.Shape.brp:topology-use:11",
           "position": {
             "x": 0.0,
             "y": 8.0,
@@ -8236,6 +8263,7 @@
         },
         {
           "id": "fcstd:model:point#DesignedFeature:Shape:DesignedFeature.Shape.brp:6%40location1",
+          "native_ref": "fcstd:native:shape-payload#DesignedFeature:Shape:DesignedFeature.Shape.brp:topology-use:21",
           "position": {
             "x": 0.0,
             "y": 8.0,
@@ -8248,6 +8276,7 @@
         },
         {
           "id": "fcstd:model:point#Profile:Shape:Profile.Shape.brp:1%40location1",
+          "native_ref": "fcstd:native:shape-payload#Profile:Shape:Profile.Shape.brp:topology-use:3",
           "position": {
             "x": 0.0,
             "y": 0.0,
@@ -8260,6 +8289,7 @@
         },
         {
           "id": "fcstd:model:point#Profile:Shape:Profile.Shape.brp:2%40location1",
+          "native_ref": "fcstd:native:shape-payload#Profile:Shape:Profile.Shape.brp:topology-use:8",
           "position": {
             "x": 12.0,
             "y": 0.0,
@@ -8272,6 +8302,7 @@
         },
         {
           "id": "fcstd:model:point#Profile:Shape:Profile.Shape.brp:4%40location1",
+          "native_ref": "fcstd:native:shape-payload#Profile:Shape:Profile.Shape.brp:topology-use:6",
           "position": {
             "x": 12.0,
             "y": 8.0,
@@ -8284,6 +8315,7 @@
         },
         {
           "id": "fcstd:model:point#Profile:Shape:Profile.Shape.brp:6%40location1",
+          "native_ref": "fcstd:native:shape-payload#Profile:Shape:Profile.Shape.brp:topology-use:4",
           "position": {
             "x": 0.0,
             "y": 8.0,
