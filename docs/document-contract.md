@@ -61,7 +61,7 @@ Serialization, deserialization, `DecodeResult::new`, and `CadIr::set_scope` enfo
 
 A typed record must represent the record's content. An inventory of offsets, identifiers, raw cards, or diagnostic reasons does not represent missing geometry or design merely because the inventory itself is typed. Native diagnostics about retained records remain valid records; they do not infer neutral completeness.
 
-The codec declares this set from its own loss table and retained-record semantics. The wrapper does not derive it from scope. FreeCAD's geometry cut retains readable design objects and properties as typed native records. A cut whose payloads are fully typed has no unrepresented design; opaque binary or Python payloads still add their content class. F3D's geometry cut creates no typed design records, so its set contains design. An unreadable FreeCAD design property's XML is raw content and adds design.
+The set is the union of the `untyped` classes of the retained records. A decoder marks a record where it retains the record without decoding it, with `RetainedSourceRecord::with_untyped` or `SourceFidelity::mark_untyped`. The set is never derived from a loss or from scope. FreeCAD's geometry cut retains readable design objects and properties as typed native records. A cut whose payloads are fully typed has no unrepresented design; opaque binary or Python payloads still add their content class. F3D's geometry cut creates no typed design records, so its set contains design. An unreadable FreeCAD design property's XML is raw content and adds design.
 
 ## Patch rule
 
