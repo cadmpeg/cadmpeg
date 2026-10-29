@@ -745,7 +745,7 @@ macro_rules! declare_arena_name {
 }
 
 /// The IR schema version this build produces and accepts.
-pub const IR_VERSION: &str = "8";
+pub const IR_VERSION: &str = "10";
 
 /// The current IR wire version. Every value writes [`IR_VERSION`].
 /// Deserialization refuses any other version.

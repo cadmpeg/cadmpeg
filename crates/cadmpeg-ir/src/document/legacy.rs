@@ -5,7 +5,7 @@ use super::IR_VERSION;
 
 pub(super) fn unsupported_version(version: Option<&str>) -> String {
     format!(
-        "unsupported ir_version {version:?}; expected {IR_VERSION}; wire v8 replaces decode_depth with scope and changes decode report transfer to delivered scope"
+        "unsupported ir_version {version:?}; expected {IR_VERSION}; wire 10 replaces decode_depth with scope and changes decode report transfer to delivered scope"
     )
 }
 
@@ -15,36 +15,33 @@ mod tests {
 
     use super::super::CadIr;
 
+    const REFUSAL: [&str; 4] = ["expected 10", "decode_depth", "scope", "report"];
+
     #[test]
     fn wire_v6_refusal_names_scope_and_report_changes() {
         let mut value = serde_json::to_value(CadIr::empty()).unwrap();
         value["ir_version"] = serde_json::json!("6");
         let error = CadIr::from_json(&serde_json::to_string(&value).unwrap()).unwrap_err();
-        for message in ["expected 8", "decode_depth", "scope", "report"] {
+        for message in REFUSAL {
             assert!(error.to_string().contains(message), "{error}");
         }
         // Older writers state the wire version before their depth field.
         let old = r#"{"ir_version":"6","decode_depth":"full"}"#;
         let error = CadIr::from_json(old).unwrap_err();
-        for message in ["expected 8", "decode_depth", "scope", "report"] {
+        for message in REFUSAL {
             assert!(error.to_string().contains(message), "{error}");
         }
     }
 
     #[test]
     fn unsupported_version_after_changed_model_shape_keeps_version_diagnostic() {
-        for version in ["6", "7"] {
+        for version in ["6", "7", "8", "9"] {
             let json = format!(
                 r#"{{"model":{{"features":{{"legacy":true}}}},"ir_version":"{version}","decode_depth":"full"}}"#
             );
             let error = CadIr::from_json(&json).unwrap_err().to_string();
-            for expected in [
-                "unsupported ir_version",
-                "expected 8",
-                "decode_depth",
-                "scope",
-                "report",
-            ] {
+            assert!(error.contains("unsupported ir_version"), "{error}");
+            for expected in REFUSAL {
                 assert!(error.contains(expected), "{error}");
             }
         }
@@ -60,7 +57,7 @@ mod tests {
         }
         let json = serde_json::to_string(&value).unwrap();
         let error = CadIr::from_json(&json).unwrap_err();
-        for message in ["expected 8", "decode_depth", "scope", "report"] {
+        for message in REFUSAL {
             assert!(error.to_string().contains(message), "{error}");
         }
     }
@@ -78,5 +75,15 @@ mod tests {
     #[test]
     fn wire_main_v7_refusal_names_scope_and_report_changes() {
         rejected_legacy_shape("7", Some("full"));
+    }
+
+    #[test]
+    fn wire_main_v8_refusal_names_scope_and_report_changes() {
+        rejected_legacy_shape("8", Some("geometry"));
+    }
+
+    #[test]
+    fn wire_main_v9_refusal_names_scope_and_report_changes() {
+        rejected_legacy_shape("9", Some("container"));
     }
 }

@@ -1,6 +1,6 @@
 # cadmpeg architecture
 
-cadmpeg routes native CAD through format codecs into `CadIr` version 8. Source fidelity rides beside the product document as a sidecar. Codecs may validate and encode afterward. [cad-ir.md](cad-ir.md) defines the IR. Crate docs and `cadmpeg --help` define APIs and CLI options. [dialects.toml](dialects.toml) owns dialect identity, [dialect-support.toml](../crates/cadmpeg-registry/docs/dialect-support.toml) owns per-dialect capability, and [format-support.md](format-support.md) renders aggregate format capability.
+cadmpeg routes native CAD through format codecs into `CadIr` version 10. Source fidelity rides beside the product document as a sidecar. Codecs may validate and encode afterward. [cad-ir.md](cad-ir.md) defines the IR. Crate docs and `cadmpeg --help` define APIs and CLI options. [dialects.toml](dialects.toml) owns dialect identity, [dialect-support.toml](../crates/cadmpeg-registry/docs/dialect-support.toml) owns per-dialect capability, and [format-support.md](format-support.md) renders aggregate format capability.
 
 ## Pipeline
 
@@ -21,7 +21,7 @@ native CAD or CADIR ── load + decode/parse ──> CadIr
 - `dump` runs the selected codec and serializes `CadIr` as CADIR JSON.
 - `measure` reads or decodes an input at `geometry` depth and measures its bodies, faces, and edges in model space: carrier parameters, areas, lengths, boxes, volumes, and orientation readings. Each value is measured within its reported error or unavailable with a pinned reason. [measurement.md](measurement.md) states the contract. `diff --geometry` measures both inputs and compares their bodies without entity IDs.
 
-CADIR input parses directly into `CadIr`. The parser accepts exactly IR version 8, including its required `subds` arena. Source annotations and retained records stay in the source-fidelity sidecar. Empty geometry output is written with an `export:output.empty` Warning; `--reject-empty` refuses it. A stale sidecar binding is ignored and reported as a current `sidecar.stale` Warning; sidecar read and parse failures remain errors.
+CADIR input parses directly into `CadIr`. The parser accepts exactly IR version 10, including its required `subds` arena. Source annotations and retained records stay in the source-fidelity sidecar. Empty geometry output is written with an `export:output.empty` Warning; `--reject-empty` refuses it. A stale sidecar binding is ignored and reported as a current `sidecar.stale` Warning; sidecar read and parse failures remain errors.
 
 `convert` requests `geometry` for STEP, IGES, and Rhino and `full` for other encoders through `Encoder::request`. `--full-decode` requests full independently of the target, as does `--reject-lossy`. `--container-only` requests container scope and conflicts with `--full-decode`; its restriction to CADIR output is caller policy. `dump`, `check`, and `diff` request full; `measure` requests `geometry`; for a document whose scope does not hold the model class it prints the scope note and measures the empty model. Stderr reports delivered content scope, not an ordered decode depth.
 
@@ -119,7 +119,7 @@ These hold across every codec, every dialect, and every release. A change that b
 | ------------------------ | -------------------------------------------------------------------------------------------------------------------------------------- |
 | `cadmpeg`                | CLI orchestration, conversion workflow, native validators, and output dispatch.                                                        |
 | `cadmpeg-registry`       | Codec registration, prefix detection, `identify`, the output-format vocabulary, and the embedded dialect registries.                   |
-| `cadmpeg-ir`             | `CadIr` version 8, validation, diff, codec traits, reports, and source-fidelity sidecars.                                              |
+| `cadmpeg-ir`             | `CadIr` version 10, validation, diff, codec traits, reports, and source-fidelity sidecars.                                             |
 | `cadmpeg-measure`        | Geometric measurement of decoded models and ID-free comparison of measured bodies; an oracle that no codec consumes.                   |
 | `cadmpeg-core`           | Shared decode budgets, arenas, views, container summaries, and I/O helpers.                                                            |
 | `cadmpeg-container`      | Shared archive and compression helpers for container codecs.                                                                           |
