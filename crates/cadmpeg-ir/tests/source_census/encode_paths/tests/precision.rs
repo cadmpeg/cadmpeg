@@ -189,9 +189,9 @@ fn unproved_symbol_resolution_is_a_finding_instead_of_a_global_name_fallback() {
     assert!(unresolved[0].contains("unknown_reexport::emit"));
     assert!(unresolved[0].contains("classification remains unresolved"));
     let graph = fixture(
-        r#"
+        r"
         impl EncoderBackend for Writer { fn plan(&self) { unknown_reexport::missing(); } }
-    "#,
+    ",
     );
     let found = graph.findings();
     assert_eq!(found.len(), 1, "{found:?}");
@@ -234,13 +234,13 @@ fn re_exported_renamed_and_glob_imported_paths_reach_the_defining_module() {
 #[test]
 fn types_constants_variants_and_external_paths_are_not_unresolved_calls() {
     let graph = fixture(
-        r#"
+        r"
         struct Wrapper(u8); enum Kind { One(u8) } const LIMIT: u8 = 1;
         impl EncoderBackend for Writer { fn plan(&self) {
             Wrapper(LIMIT); Kind::One(LIMIT); std::mem::take(value); u64::from(LIMIT);
             Vec::with_capacity(1); Some(LIMIT);
         } }
-    "#,
+    ",
     );
     assert!(graph.findings().is_empty(), "{:?}", graph.findings());
 }
@@ -446,11 +446,11 @@ fn conditional_reexport_bindings_conservatively_reach_both_actual_targets() {
 #[test]
 fn a_shadowing_local_value_is_not_a_reexported_error_constructor() {
     let graph = fixture(
-        r#"
+        r"
         mod facade { pub use cadmpeg_core::CodecError::WrongFormat as result; }
         use crate::facade::result;
         impl EncoderBackend for Writer { fn plan(&self) { let result = 5; return result; } }
-    "#,
+    ",
     );
     assert!(graph.findings().is_empty());
     assert_eq!(graph.reachable().len(), 1);

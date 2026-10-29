@@ -64,8 +64,7 @@ fn actual_session_limit_retains_every_evidence_field() {
     policy.limits.max_input_bytes = 3;
     assert!(DecodeContext::from_root_bytes_limit(b"tri", &arena, &policy).is_ok());
     let original = DecodeContext::from_root_bytes_limit(b"four", &arena, &policy)
-        .err()
-        .expect("four input bytes exceed the caller's three-byte allowance");
+        .expect_err("four input bytes exceed the caller's three-byte allowance");
     assert_eq!(original.dimension, ResourceDimension::InputBytes);
     assert_eq!(original.reason, ResourceFailure::BudgetExceeded);
     assert_eq!(original.limit, 3);

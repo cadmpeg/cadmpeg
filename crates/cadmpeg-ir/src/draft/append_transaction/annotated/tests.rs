@@ -53,7 +53,7 @@ fn a_failed_child_loses_its_admitted_exactness_while_the_parent_and_peer_survive
                     parent_stage.annotated_model_append_transaction(|child_stage| {
                         ctx.decode_part(parent_parts, first, spec("zip.entry"), |_| {
                             assert_eq!(
-                                first.child(0, 1).map(|view| view.window()),
+                                first.child(0, 1).map(cadmpeg_core::decode::View::window),
                                 Some(b"A".as_slice())
                             );
                             child_stage
@@ -77,7 +77,7 @@ fn a_failed_child_loses_its_admitted_exactness_while_the_parent_and_peer_survive
                     parent_stage.annotated_model_append_transaction(|child_stage| {
                         ctx.decode_part(parent_parts, second, spec("zip.entry"), |_| {
                             assert_eq!(
-                                second.child(1, 2).map(|view| view.window()),
+                                second.child(1, 2).map(cadmpeg_core::decode::View::window),
                                 Some(b"B".as_slice())
                             );
                             child_stage

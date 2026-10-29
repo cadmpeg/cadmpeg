@@ -25,7 +25,7 @@ pub enum AttributeJson {
     Boolean(bool),
     /// An integer in the signed 64-bit domain.
     Integer(i64),
-    /// An integer above the signed domain, through u64::MAX.
+    /// An integer above the signed domain, through `u64::MAX`.
     Unsigned(
         #[serde(deserialize_with = "deserialize_unsigned")]
         #[cfg_attr(feature = "schema", schemars(schema_with = "upper_unsigned_schema"))]
@@ -43,7 +43,7 @@ pub enum AttributeJson {
 
 fn deserialize_unsigned<'de, D: serde::Deserializer<'de>>(d: D) -> Result<u64, D::Error> {
     let value = u64::deserialize(d)?;
-    if value > i64::MAX as u64 {
+    if value > i64::MAX.unsigned_abs() {
         Ok(value)
     } else {
         Err(serde::de::Error::custom(
@@ -57,7 +57,7 @@ fn upper_unsigned_schema(generator: &mut schemars::SchemaGenerator) -> schemars:
     let mut schema = u64::json_schema(generator);
     schema.insert(
         "minimum".into(),
-        serde_json::Value::from(i64::MAX as u64 + 1),
+        serde_json::Value::from(i64::MAX.unsigned_abs() + 1),
     );
     schema.insert("maximum".into(), serde_json::Value::from(u64::MAX));
     schema

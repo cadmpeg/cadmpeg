@@ -69,6 +69,7 @@ pub enum ReferencePruneEffect {
 }
 impl ReferencePruneEffect {
     /// Combine fields while keeping an independently proven required drop decisive.
+    #[must_use]
     pub fn merge(self, other: Self) -> Self {
         use ReferencePruneEffect::{DropRequired, ListsChanged, Unchanged};
         match (self, other) {
@@ -190,7 +191,7 @@ pub(super) fn apply_vec<T: RewriteIdentities>(
 }
 
 /// Identity semantics explicitly declared by an existing full-fidelity field owner.
-/// Ordinary String fields do not implement this behavior through RewriteIdentities.
+/// Ordinary `String` fields do not implement this behavior through `RewriteIdentities`.
 pub(crate) trait DeclaredReferenceField {
     const LEAF: bool;
     fn visit(

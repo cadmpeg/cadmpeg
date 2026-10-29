@@ -1487,7 +1487,9 @@ pub(super) fn check_sketches(
                         | SketchGeometryDefinition::Arc { radius, .. } => Some(radius.get()),
                         _ => None,
                     });
-            let diameter = ir.dimension_value(parameter).map(|value| value.get());
+            let diameter = ir
+                .dimension_value(parameter)
+                .map(crate::scalar::PositiveLength::get);
             if constraint.active != Some(false)
                 && diameter.zip(radius).is_some_and(|(diameter, radius)| {
                     let half = diameter * 0.5;

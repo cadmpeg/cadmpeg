@@ -93,7 +93,9 @@ fn a_given_up_parent_discards_admitted_child_geometry_and_keeps_the_valid_peer()
             ctx.decode_part(&mut parts, first, spec("zip.archive"), |parent| {
                 ctx.decode_part(parent, first_child, spec("zip.entry"), |_| {
                     assert_eq!(
-                        first_child.child(0, 1).map(|view| view.window()),
+                        first_child
+                            .child(0, 1)
+                            .map(cadmpeg_core::decode::View::window),
                         Some(b"A".as_slice())
                     );
                     stage
@@ -119,7 +121,9 @@ fn a_given_up_parent_discards_admitted_child_geometry_and_keeps_the_valid_peer()
                 ctx.decode_part(&mut parts, second, spec("zip.archive"), |parent| {
                     ctx.decode_part(parent, second_child, spec("zip.entry"), |_| {
                         assert_eq!(
-                            second_child.child(2, 3).map(|view| view.window()),
+                            second_child
+                                .child(2, 3)
+                                .map(cadmpeg_core::decode::View::window),
                             Some(b"C".as_slice())
                         );
                         stage
@@ -336,7 +340,7 @@ fn prefix_parent_edits_are_rejected_and_only_appended_feature_relations_are_roll
             .document()
             .model
             .feature_regeneration_parent(&child.try_into().expect("child identity"))
-            .map(|id| id.as_str()),
+            .map(crate::features::FeatureId::as_str),
         Some(parent)
     );
 }
@@ -412,7 +416,7 @@ fn an_independent_child_give_up_rolls_back_only_its_suffix_inside_a_successful_p
                 let first_result = parent_stage.model_append_transaction(|child_stage| {
                     ctx.decode_part(parent_parts, first, spec("zip.entry"), |_| {
                         assert_eq!(
-                            first.child(0, 1).map(|view| view.window()),
+                            first.child(0, 1).map(cadmpeg_core::decode::View::window),
                             Some(b"A".as_slice())
                         );
                         child_stage
@@ -427,7 +431,7 @@ fn an_independent_child_give_up_rolls_back_only_its_suffix_inside_a_successful_p
                     parent_stage.model_append_transaction(|child_stage| {
                         ctx.decode_part(parent_parts, second, spec("zip.entry"), |_| {
                             assert_eq!(
-                                second.child(1, 2).map(|view| view.window()),
+                                second.child(1, 2).map(cadmpeg_core::decode::View::window),
                                 Some(b"B".as_slice())
                             );
                             child_stage

@@ -76,7 +76,7 @@ pub(super) fn check_values(
                     }
                 }
                 AttributeValue::Json(value) => {
-                    check_json(ctx, attribute.id.as_str(), value, findings)?
+                    check_json(ctx, attribute.id.as_str(), value, findings)?;
                 }
                 _ => {}
             }
@@ -103,7 +103,7 @@ fn check_json(
 ) -> Result<(), CodecError> {
     let _depth = ctx.enter_nested("validate attribute JSON")?;
     match value {
-        AttributeJson::Unsigned(value) if *value <= i64::MAX as u64 => {
+        AttributeJson::Unsigned(value) if i64::try_from(*value).is_ok() => {
             invalid(
                 findings,
                 owner,

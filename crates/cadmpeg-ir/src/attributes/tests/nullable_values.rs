@@ -198,14 +198,14 @@ fn recursive_json_keeps_all_typed_domains_and_literal_strings() {
 
 #[test]
 fn json_unsigned_is_exactly_the_upper_u64_domain() {
-    for value in [i64::MAX as u64 + 1, u64::MAX] {
+    for value in [i64::MAX.unsigned_abs() + 1, u64::MAX] {
         assert_eq!(
             serde_json::from_value::<AttributeJson>(json!({"kind":"unsigned","value":value}))
                 .unwrap(),
             AttributeJson::Unsigned(value)
         );
     }
-    for value in [0, i64::MAX as u64] {
+    for value in [0, i64::MAX.unsigned_abs()] {
         assert!(
             serde_json::from_value::<AttributeJson>(json!({"kind":"unsigned","value":value}))
                 .is_err()

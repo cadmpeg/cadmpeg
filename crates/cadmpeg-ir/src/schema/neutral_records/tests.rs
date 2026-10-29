@@ -196,13 +196,15 @@ fn captured_feature_compares_its_actual_serialized_regeneration_parent_only() {
         }
     }
     let ctx = cadmpeg_test_support::service_decode_context();
-    let mut source = Model::default();
-    source.features = vec![
-        feature("first-parent", 0),
-        feature("second-parent", 1),
-        feature("captured-child", 2),
-        feature("peer-child", 3),
-    ];
+    let mut source = Model {
+        features: vec![
+            feature("first-parent", 0),
+            feature("second-parent", 1),
+            feature("captured-child", 2),
+            feature("peer-child", 3),
+        ],
+        ..Model::default()
+    };
     let first_parent = source.features[0].id.clone();
     let second_parent = source.features[1].id.clone();
     let child = source.features[2].id.clone();
@@ -294,14 +296,18 @@ fn procedural_record_comparison_includes_actual_unique_carrier_wire_links() {
     });
     source.procedural_curves.push(curve);
     source.procedural_surfaces.push(surface);
-    let mut curve_population = Model::default();
-    curve_population.procedural_curves = source.procedural_curves.clone();
+    let curve_population = Model {
+        procedural_curves: source.procedural_curves.clone(),
+        ..Model::default()
+    };
     let curve_members = ModelRecordIndex::new(&ctx, &curve_population)
         .unwrap()
         .owned_identities(&ctx)
         .unwrap();
-    let mut surface_population = Model::default();
-    surface_population.procedural_surfaces = source.procedural_surfaces.clone();
+    let surface_population = Model {
+        procedural_surfaces: source.procedural_surfaces.clone(),
+        ..Model::default()
+    };
     let surface_members = ModelRecordIndex::new(&ctx, &surface_population)
         .unwrap()
         .owned_identities(&ctx)
