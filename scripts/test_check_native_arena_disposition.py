@@ -80,7 +80,7 @@ class NativeArenaDispositionTests(unittest.TestCase):
     def test_hand_edited_policy_text_is_checked_too(self):
         self.assertEqual(checker.main(['--root', str(self.root), '--write']), 0)
         document = self.root / checker.DOCUMENT
-        document.write_text(document.read_text().replace('source fidelity', 'hidden source bytes'))
+        document.write_text(document.read_text().replace('neutral counterparts', 'hidden source bytes'))
         with redirect_stderr(io.StringIO()):
             self.assertEqual(checker.main(['--root', str(self.root)]), 1)
 
