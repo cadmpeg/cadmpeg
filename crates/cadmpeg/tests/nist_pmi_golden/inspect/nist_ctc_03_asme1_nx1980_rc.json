@@ -1,0 +1,885 @@
+{
+  "container_kind": "splmsstr",
+  "entries": [
+    {
+      "attributes": {
+        "kind": "directory",
+        "region": "HEADER"
+      },
+      "compression": "storage",
+      "name": "/Root/",
+      "role": "directory"
+    },
+    {
+      "attributes": {
+        "kind": "directory",
+        "region": "HEADER"
+      },
+      "compression": "storage",
+      "name": "/Root/FastLoad/",
+      "role": "directory"
+    },
+    {
+      "attributes": {
+        "kind": "directory",
+        "region": "HEADER"
+      },
+      "compression": "storage",
+      "name": "/Root/images/",
+      "role": "directory"
+    },
+    {
+      "attributes": {
+        "kind": "directory",
+        "region": "HEADER"
+      },
+      "compression": "storage",
+      "name": "/Root/part/",
+      "role": "directory"
+    },
+    {
+      "attributes": {
+        "kind": "directory",
+        "region": "HEADER"
+      },
+      "compression": "storage",
+      "name": "/Root/UG_PART/",
+      "role": "directory"
+    },
+    {
+      "attributes": {
+        "file_offset": "1364",
+        "region": "HEADER"
+      },
+      "compression": "none",
+      "name": "/Root/FastLoad/RMFastLoad",
+      "role": "active-body-index",
+      "size": {
+        "form": "exact",
+        "size": 37125
+      }
+    },
+    {
+      "attributes": {
+        "file_offset": "38489",
+        "region": "HEADER"
+      },
+      "compression": "none",
+      "name": "/Root/FastLoad/Structure",
+      "role": "fast-load-structure",
+      "size": {
+        "form": "exact",
+        "size": 2330
+      }
+    },
+    {
+      "attributes": {
+        "file_offset": "40819",
+        "region": "HEADER"
+      },
+      "compression": "none",
+      "name": "/Root/FastLoad/ExternalReferences",
+      "role": "external-references",
+      "size": {
+        "form": "exact",
+        "size": 99
+      }
+    },
+    {
+      "attributes": {
+        "file_offset": "40918",
+        "region": "HEADER"
+      },
+      "compression": "none",
+      "name": "/Root/FastLoad/JT",
+      "role": "fast-load-jt",
+      "size": {
+        "form": "exact",
+        "size": 31446
+      }
+    },
+    {
+      "attributes": {
+        "file_offset": "72364",
+        "region": "HEADER"
+      },
+      "compression": "none",
+      "name": "/Root/UG_PART/UG_PART",
+      "role": "part-payload",
+      "size": {
+        "form": "exact",
+        "size": 932412
+      }
+    },
+    {
+      "attributes": {
+        "file_offset": "1004776",
+        "region": "HEADER"
+      },
+      "compression": "none",
+      "name": "/Root/UG_PART/ExternalReferences",
+      "role": "external-references",
+      "size": {
+        "form": "exact",
+        "size": 8321
+      }
+    },
+    {
+      "attributes": {
+        "file_offset": "1013097",
+        "region": "HEADER"
+      },
+      "compression": "none",
+      "name": "/Root/part/attrs",
+      "role": "part-attributes",
+      "size": {
+        "form": "exact",
+        "size": 1132
+      }
+    },
+    {
+      "attributes": {
+        "file_offset": "1014229",
+        "region": "HEADER"
+      },
+      "compression": "none",
+      "name": "/Root/qafmetadata",
+      "role": "asset-catalog",
+      "size": {
+        "form": "exact",
+        "size": 2806
+      }
+    },
+    {
+      "attributes": {
+        "file_offset": "1017035",
+        "region": "HEADER"
+      },
+      "compression": "none",
+      "name": "/Root/images/preview",
+      "role": "preview-image",
+      "size": {
+        "form": "exact",
+        "size": 17841
+      }
+    },
+    {
+      "attributes": {
+        "kind": "directory",
+        "region": "FOOTER"
+      },
+      "compression": "storage",
+      "name": "/Root/images/model_views/",
+      "role": "directory"
+    },
+    {
+      "attributes": {
+        "kind": "directory",
+        "region": "FOOTER"
+      },
+      "compression": "storage",
+      "name": "/Root/pmi/",
+      "role": "directory"
+    },
+    {
+      "attributes": {
+        "file_offset": "1034876",
+        "region": "FOOTER"
+      },
+      "compression": "none",
+      "name": "/Root/UG_PART/DisplayJT",
+      "role": "display-jt",
+      "size": {
+        "form": "exact",
+        "size": 29189
+      }
+    },
+    {
+      "attributes": {
+        "file_offset": "1064065",
+        "region": "FOOTER"
+      },
+      "compression": "none",
+      "name": "/Root/pmi/INHERIT_TABLE",
+      "role": "named-opaque-stream",
+      "size": {
+        "form": "exact",
+        "size": 12296
+      }
+    },
+    {
+      "attributes": {
+        "file_offset": "1076361",
+        "region": "FOOTER"
+      },
+      "compression": "none",
+      "name": "/Root/pmi/INSTANCES_TABLE",
+      "role": "named-opaque-stream",
+      "size": {
+        "form": "exact",
+        "size": 11830
+      }
+    },
+    {
+      "attributes": {
+        "file_offset": "1088191",
+        "region": "FOOTER"
+      },
+      "compression": "none",
+      "name": "/Root/pmi/EXPORT",
+      "role": "named-opaque-stream",
+      "size": {
+        "form": "exact",
+        "size": 11985
+      }
+    },
+    {
+      "attributes": {
+        "file_offset": "1100176",
+        "region": "FOOTER"
+      },
+      "compression": "none",
+      "name": "/Root/pmi/WAVE_LINK",
+      "role": "named-opaque-stream",
+      "size": {
+        "form": "exact",
+        "size": 11822
+      }
+    },
+    {
+      "attributes": {
+        "file_offset": "1111998",
+        "region": "FOOTER"
+      },
+      "compression": "none",
+      "name": "/Root/images/model_views/Isometric",
+      "role": "named-opaque-stream",
+      "size": {
+        "form": "exact",
+        "size": 13396
+      }
+    },
+    {
+      "attributes": {
+        "file_offset": "1125394",
+        "region": "FOOTER"
+      },
+      "compression": "none",
+      "name": "/Root/images/model_views/Top",
+      "role": "named-opaque-stream",
+      "size": {
+        "form": "exact",
+        "size": 8846
+      }
+    },
+    {
+      "attributes": {
+        "file_offset": "1134240",
+        "region": "FOOTER"
+      },
+      "compression": "none",
+      "name": "/Root/images/model_views/Trimetric",
+      "role": "named-opaque-stream",
+      "size": {
+        "form": "exact",
+        "size": 15545
+      }
+    },
+    {
+      "attributes": {
+        "file_offset": "1149785",
+        "region": "FOOTER"
+      },
+      "compression": "none",
+      "name": "/Root/images/model_views/Right",
+      "role": "named-opaque-stream",
+      "size": {
+        "form": "exact",
+        "size": 6509
+      }
+    },
+    {
+      "attributes": {
+        "file_offset": "1156294",
+        "region": "FOOTER"
+      },
+      "compression": "none",
+      "name": "/Root/images/model_views/MBD_0",
+      "role": "named-opaque-stream",
+      "size": {
+        "form": "exact",
+        "size": 19031
+      }
+    },
+    {
+      "attributes": {
+        "file_offset": "1175325",
+        "region": "FOOTER"
+      },
+      "compression": "none",
+      "name": "/Root/images/model_views/Back",
+      "role": "named-opaque-stream",
+      "size": {
+        "form": "exact",
+        "size": 8516
+      }
+    },
+    {
+      "attributes": {
+        "file_offset": "1183841",
+        "region": "FOOTER"
+      },
+      "compression": "none",
+      "name": "/Root/images/model_views/Left",
+      "role": "named-opaque-stream",
+      "size": {
+        "form": "exact",
+        "size": 5854
+      }
+    },
+    {
+      "attributes": {
+        "file_offset": "1189695",
+        "region": "FOOTER"
+      },
+      "compression": "none",
+      "name": "/Root/images/model_views/Front",
+      "role": "named-opaque-stream",
+      "size": {
+        "form": "exact",
+        "size": 7402
+      }
+    },
+    {
+      "attributes": {
+        "file_offset": "1197097",
+        "region": "FOOTER"
+      },
+      "compression": "none",
+      "name": "/Root/images/model_views/Bottom",
+      "role": "named-opaque-stream",
+      "size": {
+        "form": "exact",
+        "size": 8726
+      }
+    },
+    {
+      "attributes": {
+        "file_offset": "728644",
+        "kind": "partition",
+        "records.body": "46",
+        "records.edge": "391",
+        "records.face": "139",
+        "records.fin": "780",
+        "records.live.body": "46",
+        "records.live.edge": "391",
+        "records.live.face": "139",
+        "records.live.fin": "780",
+        "records.live.loop": "191",
+        "records.live.region": "38",
+        "records.live.shell": "3",
+        "records.live.vertex": "241",
+        "records.loop": "191",
+        "records.region": "38",
+        "records.shell": "3",
+        "records.vertex": "241",
+        "schema": "SCH_3301176_33103_13006"
+      },
+      "compression": "zlib",
+      "expanded": 197961,
+      "name": "parasolid#0",
+      "role": "parasolid-stream"
+    },
+    {
+      "attributes": {
+        "file_offset": "825022",
+        "kind": "deltas",
+        "records.delta.bytes_decoded": "253967",
+        "records.delta.full.body": "38",
+        "records.delta.full.circle": "48",
+        "records.delta.full.custom": "23",
+        "records.delta.full.cylinder": "19",
+        "records.delta.full.edge": "1430",
+        "records.delta.full.entity_51": "1252",
+        "records.delta.full.entity_52": "236",
+        "records.delta.full.entity_53": "38",
+        "records.delta.full.entity_54": "38",
+        "records.delta.full.face": "776",
+        "records.delta.full.fin": "511",
+        "records.delta.full.geometric_owner": "19",
+        "records.delta.full.group": "75",
+        "records.delta.full.line": "119",
+        "records.delta.full.list": "38",
+        "records.delta.full.loop": "188",
+        "records.delta.full.plane": "23",
+        "records.delta.full.point": "138",
+        "records.delta.full.pointer_lis_block": "38",
+        "records.delta.full.region": "50",
+        "records.delta.full.shell": "50",
+        "records.delta.full.trimmed_curve": "20",
+        "records.delta.full.type_91": "366",
+        "records.delta.full.vertex": "219",
+        "records.delta.full.world": "39",
+        "records.delta.instances": "5791",
+        "records.delta.schemas": "27",
+        "records.delta.selection": "unresolved",
+        "schema": "SCH_3301176_33103_13006"
+      },
+      "compression": "zlib",
+      "expanded": 253967,
+      "name": "parasolid#1",
+      "role": "parasolid-stream"
+    },
+    {
+      "attributes": {
+        "file_offset": "932677",
+        "kind": "plain",
+        "records.body": "8",
+        "records.edge": "61",
+        "records.face": "9",
+        "records.fin": "122",
+        "records.loop": "16",
+        "records.region": "2",
+        "records.shell": "5",
+        "records.vertex": "53",
+        "schema": "SCH_3301176_33103_13006"
+      },
+      "compression": "zlib",
+      "expanded": 23113,
+      "name": "parasolid#2",
+      "role": "parasolid-stream"
+    },
+    {
+      "attributes": {
+        "file_offset": "943538",
+        "kind": "plain",
+        "records.body": "3",
+        "records.edge": "17",
+        "records.face": "2",
+        "records.fin": "30",
+        "records.loop": "3",
+        "records.region": "0",
+        "records.shell": "2",
+        "records.vertex": "13",
+        "schema": "SCH_3301176_33103_13006"
+      },
+      "compression": "zlib",
+      "expanded": 6613,
+      "name": "parasolid#3",
+      "role": "parasolid-stream"
+    },
+    {
+      "attributes": {
+        "file_offset": "946865",
+        "kind": "plain",
+        "records.body": "3",
+        "records.edge": "17",
+        "records.face": "2",
+        "records.fin": "30",
+        "records.loop": "3",
+        "records.region": "0",
+        "records.shell": "2",
+        "records.vertex": "13",
+        "schema": "SCH_3301176_33103_13006"
+      },
+      "compression": "zlib",
+      "expanded": 6613,
+      "name": "parasolid#4",
+      "role": "parasolid-stream"
+    },
+    {
+      "attributes": {
+        "file_offset": "950180",
+        "kind": "plain",
+        "records.body": "3",
+        "records.edge": "17",
+        "records.face": "2",
+        "records.fin": "30",
+        "records.loop": "3",
+        "records.region": "0",
+        "records.shell": "2",
+        "records.vertex": "13",
+        "schema": "SCH_3301176_33103_13006"
+      },
+      "compression": "zlib",
+      "expanded": 6613,
+      "name": "parasolid#5",
+      "role": "parasolid-stream"
+    },
+    {
+      "attributes": {
+        "file_offset": "953528",
+        "kind": "plain",
+        "records.body": "3",
+        "records.edge": "34",
+        "records.face": "2",
+        "records.fin": "64",
+        "records.loop": "7",
+        "records.region": "0",
+        "records.shell": "2",
+        "records.vertex": "28",
+        "schema": "SCH_3301176_33103_13006"
+      },
+      "compression": "zlib",
+      "expanded": 12345,
+      "name": "parasolid#6",
+      "role": "parasolid-stream"
+    },
+    {
+      "attributes": {
+        "file_offset": "959423",
+        "kind": "plain",
+        "records.body": "3",
+        "records.edge": "34",
+        "records.face": "2",
+        "records.fin": "64",
+        "records.loop": "7",
+        "records.region": "0",
+        "records.shell": "2",
+        "records.vertex": "28",
+        "schema": "SCH_3301176_33103_13006"
+      },
+      "compression": "zlib",
+      "expanded": 12345,
+      "name": "parasolid#7",
+      "role": "parasolid-stream"
+    },
+    {
+      "attributes": {
+        "file_offset": "965314",
+        "kind": "plain",
+        "records.body": "3",
+        "records.edge": "34",
+        "records.face": "2",
+        "records.fin": "64",
+        "records.loop": "7",
+        "records.region": "0",
+        "records.shell": "2",
+        "records.vertex": "28",
+        "schema": "SCH_3301176_33103_13006"
+      },
+      "compression": "zlib",
+      "expanded": 12345,
+      "name": "parasolid#8",
+      "role": "parasolid-stream"
+    },
+    {
+      "attributes": {
+        "file_offset": "971234",
+        "kind": "plain",
+        "records.body": "3",
+        "records.edge": "15",
+        "records.face": "2",
+        "records.fin": "28",
+        "records.loop": "4",
+        "records.region": "0",
+        "records.shell": "2",
+        "records.vertex": "11",
+        "schema": "SCH_3301176_33103_13006"
+      },
+      "compression": "zlib",
+      "expanded": 6408,
+      "name": "parasolid#9",
+      "role": "parasolid-stream"
+    },
+    {
+      "attributes": {
+        "file_offset": "974455",
+        "kind": "plain",
+        "records.body": "3",
+        "records.edge": "15",
+        "records.face": "2",
+        "records.fin": "28",
+        "records.loop": "4",
+        "records.region": "0",
+        "records.shell": "2",
+        "records.vertex": "11",
+        "schema": "SCH_3301176_33103_13006"
+      },
+      "compression": "zlib",
+      "expanded": 6408,
+      "name": "parasolid#10",
+      "role": "parasolid-stream"
+    },
+    {
+      "attributes": {
+        "file_offset": "977682",
+        "kind": "plain",
+        "records.body": "3",
+        "records.edge": "15",
+        "records.face": "2",
+        "records.fin": "28",
+        "records.loop": "4",
+        "records.region": "0",
+        "records.shell": "2",
+        "records.vertex": "11",
+        "schema": "SCH_3301176_33103_13006"
+      },
+      "compression": "zlib",
+      "expanded": 6408,
+      "name": "parasolid#11",
+      "role": "parasolid-stream"
+    }
+  ],
+  "identity": {
+    "classification": "classified",
+    "dialects": {
+      "extra": [
+        {
+          "admission": "residual",
+          "declared": {
+            "carrier": "stream@728644",
+            "schema": "SCH_3301176_33103_13006"
+          },
+          "dialect": "parasolid:format-13006",
+          "instance": "stream@728644"
+        },
+        {
+          "admission": "residual",
+          "declared": {
+            "carrier": "stream@825022",
+            "schema": "SCH_3301176_33103_13006"
+          },
+          "dialect": "parasolid:format-13006",
+          "instance": "stream@825022"
+        },
+        {
+          "admission": "residual",
+          "declared": {
+            "carrier": "stream@932677",
+            "schema": "SCH_3301176_33103_13006"
+          },
+          "dialect": "parasolid:format-13006",
+          "instance": "stream@932677"
+        },
+        {
+          "admission": "residual",
+          "declared": {
+            "carrier": "stream@943538",
+            "schema": "SCH_3301176_33103_13006"
+          },
+          "dialect": "parasolid:format-13006",
+          "instance": "stream@943538"
+        },
+        {
+          "admission": "residual",
+          "declared": {
+            "carrier": "stream@946865",
+            "schema": "SCH_3301176_33103_13006"
+          },
+          "dialect": "parasolid:format-13006",
+          "instance": "stream@946865"
+        },
+        {
+          "admission": "residual",
+          "declared": {
+            "carrier": "stream@950180",
+            "schema": "SCH_3301176_33103_13006"
+          },
+          "dialect": "parasolid:format-13006",
+          "instance": "stream@950180"
+        },
+        {
+          "admission": "residual",
+          "declared": {
+            "carrier": "stream@953528",
+            "schema": "SCH_3301176_33103_13006"
+          },
+          "dialect": "parasolid:format-13006",
+          "instance": "stream@953528"
+        },
+        {
+          "admission": "residual",
+          "declared": {
+            "carrier": "stream@959423",
+            "schema": "SCH_3301176_33103_13006"
+          },
+          "dialect": "parasolid:format-13006",
+          "instance": "stream@959423"
+        },
+        {
+          "admission": "residual",
+          "declared": {
+            "carrier": "stream@965314",
+            "schema": "SCH_3301176_33103_13006"
+          },
+          "dialect": "parasolid:format-13006",
+          "instance": "stream@965314"
+        },
+        {
+          "admission": "residual",
+          "declared": {
+            "carrier": "stream@971234",
+            "schema": "SCH_3301176_33103_13006"
+          },
+          "dialect": "parasolid:format-13006",
+          "instance": "stream@971234"
+        },
+        {
+          "admission": "residual",
+          "declared": {
+            "carrier": "stream@974455",
+            "schema": "SCH_3301176_33103_13006"
+          },
+          "dialect": "parasolid:format-13006",
+          "instance": "stream@974455"
+        },
+        {
+          "admission": "residual",
+          "declared": {
+            "carrier": "stream@977682",
+            "schema": "SCH_3301176_33103_13006"
+          },
+          "dialect": "parasolid:format-13006",
+          "instance": "stream@977682"
+        }
+      ],
+      "primary": {
+        "admission": "admitted",
+        "declared": {
+          "splmsstr_version": "6"
+        },
+        "dialect": "nx:splmsstr"
+      }
+    }
+  },
+  "losses": [
+    {
+      "code": {
+        "code": "source.kernel-dialect-unverified",
+        "kind": "source_dialect_unverified",
+        "namespace": "nx",
+        "scope": "namespaced",
+        "strict_floor": "warning"
+      },
+      "message": "The Parasolid stream at stream@728644 declares schema \"SCH_3301176_33103_13006\", which maps to the named `parasolid:format-13006` row, but the host did not verify that row's schema grammar. It was admitted without substituting another schema grammar; bounded structural recovery retains the source stream.",
+      "severity": "warning"
+    },
+    {
+      "code": {
+        "code": "source.kernel-dialect-unverified",
+        "kind": "source_dialect_unverified",
+        "namespace": "nx",
+        "scope": "namespaced",
+        "strict_floor": "warning"
+      },
+      "message": "The Parasolid stream at stream@825022 declares schema \"SCH_3301176_33103_13006\", which maps to the named `parasolid:format-13006` row, but the host did not verify that row's schema grammar. It was admitted without substituting another schema grammar; bounded structural recovery retains the source stream.",
+      "severity": "warning"
+    },
+    {
+      "code": {
+        "code": "source.kernel-dialect-unverified",
+        "kind": "source_dialect_unverified",
+        "namespace": "nx",
+        "scope": "namespaced",
+        "strict_floor": "warning"
+      },
+      "message": "The Parasolid stream at stream@932677 declares schema \"SCH_3301176_33103_13006\", which maps to the named `parasolid:format-13006` row, but the host did not verify that row's schema grammar. It was admitted without substituting another schema grammar; bounded structural recovery retains the source stream.",
+      "severity": "warning"
+    },
+    {
+      "code": {
+        "code": "source.kernel-dialect-unverified",
+        "kind": "source_dialect_unverified",
+        "namespace": "nx",
+        "scope": "namespaced",
+        "strict_floor": "warning"
+      },
+      "message": "The Parasolid stream at stream@943538 declares schema \"SCH_3301176_33103_13006\", which maps to the named `parasolid:format-13006` row, but the host did not verify that row's schema grammar. It was admitted without substituting another schema grammar; bounded structural recovery retains the source stream.",
+      "severity": "warning"
+    },
+    {
+      "code": {
+        "code": "source.kernel-dialect-unverified",
+        "kind": "source_dialect_unverified",
+        "namespace": "nx",
+        "scope": "namespaced",
+        "strict_floor": "warning"
+      },
+      "message": "The Parasolid stream at stream@946865 declares schema \"SCH_3301176_33103_13006\", which maps to the named `parasolid:format-13006` row, but the host did not verify that row's schema grammar. It was admitted without substituting another schema grammar; bounded structural recovery retains the source stream.",
+      "severity": "warning"
+    },
+    {
+      "code": {
+        "code": "source.kernel-dialect-unverified",
+        "kind": "source_dialect_unverified",
+        "namespace": "nx",
+        "scope": "namespaced",
+        "strict_floor": "warning"
+      },
+      "message": "The Parasolid stream at stream@950180 declares schema \"SCH_3301176_33103_13006\", which maps to the named `parasolid:format-13006` row, but the host did not verify that row's schema grammar. It was admitted without substituting another schema grammar; bounded structural recovery retains the source stream.",
+      "severity": "warning"
+    },
+    {
+      "code": {
+        "code": "source.kernel-dialect-unverified",
+        "kind": "source_dialect_unverified",
+        "namespace": "nx",
+        "scope": "namespaced",
+        "strict_floor": "warning"
+      },
+      "message": "The Parasolid stream at stream@953528 declares schema \"SCH_3301176_33103_13006\", which maps to the named `parasolid:format-13006` row, but the host did not verify that row's schema grammar. It was admitted without substituting another schema grammar; bounded structural recovery retains the source stream.",
+      "severity": "warning"
+    },
+    {
+      "code": {
+        "code": "source.kernel-dialect-unverified",
+        "kind": "source_dialect_unverified",
+        "namespace": "nx",
+        "scope": "namespaced",
+        "strict_floor": "warning"
+      },
+      "message": "The Parasolid stream at stream@959423 declares schema \"SCH_3301176_33103_13006\", which maps to the named `parasolid:format-13006` row, but the host did not verify that row's schema grammar. It was admitted without substituting another schema grammar; bounded structural recovery retains the source stream.",
+      "severity": "warning"
+    },
+    {
+      "code": {
+        "code": "source.kernel-dialect-unverified",
+        "kind": "source_dialect_unverified",
+        "namespace": "nx",
+        "scope": "namespaced",
+        "strict_floor": "warning"
+      },
+      "message": "The Parasolid stream at stream@965314 declares schema \"SCH_3301176_33103_13006\", which maps to the named `parasolid:format-13006` row, but the host did not verify that row's schema grammar. It was admitted without substituting another schema grammar; bounded structural recovery retains the source stream.",
+      "severity": "warning"
+    },
+    {
+      "code": {
+        "code": "source.kernel-dialect-unverified",
+        "kind": "source_dialect_unverified",
+        "namespace": "nx",
+        "scope": "namespaced",
+        "strict_floor": "warning"
+      },
+      "message": "The Parasolid stream at stream@971234 declares schema \"SCH_3301176_33103_13006\", which maps to the named `parasolid:format-13006` row, but the host did not verify that row's schema grammar. It was admitted without substituting another schema grammar; bounded structural recovery retains the source stream.",
+      "severity": "warning"
+    },
+    {
+      "code": {
+        "code": "source.kernel-dialect-unverified",
+        "kind": "source_dialect_unverified",
+        "namespace": "nx",
+        "scope": "namespaced",
+        "strict_floor": "warning"
+      },
+      "message": "The Parasolid stream at stream@974455 declares schema \"SCH_3301176_33103_13006\", which maps to the named `parasolid:format-13006` row, but the host did not verify that row's schema grammar. It was admitted without substituting another schema grammar; bounded structural recovery retains the source stream.",
+      "severity": "warning"
+    },
+    {
+      "code": {
+        "code": "source.kernel-dialect-unverified",
+        "kind": "source_dialect_unverified",
+        "namespace": "nx",
+        "scope": "namespaced",
+        "strict_floor": "warning"
+      },
+      "message": "The Parasolid stream at stream@977682 declares schema \"SCH_3301176_33103_13006\", which maps to the named `parasolid:format-13006` row, but the host did not verify that row's schema grammar. It was admitted without substituting another schema grammar; bounded structural recovery retains the source stream.",
+      "severity": "warning"
+    }
+  ],
+  "notes": [
+    "SPLMSSTR container: file tag 72364, footer offset 1205823, 14 HEADER and 16 FOOTER directory entry/ies, fingerprint 16e637d1",
+    "embedded streams: 1 partition, 1 deltas, 10 plain (cached body), 0 preview/non-Parasolid",
+    "NX object model: 6 size-framed section(s), 660 class declaration(s), 27 field declaration(s)"
+  ]
+}

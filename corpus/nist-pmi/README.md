@@ -4,7 +4,7 @@ Curated subset of the NIST Model-Based Engineering (MBE) Product and Manufacturi
 
 cadmpeg did not author these files and does not dedicate them CC0. They are U.S. government works in the public domain.
 
-This is not a dump of the NIST archives. Whales, overlapping STC natives, drawing PDFs, and McMaster fastener SLDPRTs from the MTC zip are omitted. The files here are producer evidence, not default `cargo test` goldens.
+This is not a dump of the NIST archives. Whales, overlapping STC natives, drawing PDFs, and McMaster fastener SLDPRTs from the MTC zip are omitted. The files here are producer evidence, not default `cargo test` goldens. Inspect and decode snapshots live under `crates/cadmpeg/tests/nist_pmi_golden/` and run on the scheduled [NIST PMI producer-evidence goldens](../../.github/workflows/nist-pmi-goldens.yml) workflow (`#[ignore]` in `cargo test-fast`). Regenerate with `UPDATE_GOLDEN=1 cargo test -p cadmpeg --test nist_pmi_goldens -- --ignored`.
 
 ## Disclaimer (NIST)
 

@@ -1,0 +1,366 @@
+{
+  "container_kind": "splmsstr",
+  "entries": [
+    {
+      "attributes": {
+        "kind": "directory",
+        "region": "HEADER"
+      },
+      "compression": "storage",
+      "name": "/Root/",
+      "role": "directory"
+    },
+    {
+      "attributes": {
+        "kind": "directory",
+        "region": "HEADER"
+      },
+      "compression": "storage",
+      "name": "/Root/DFA/",
+      "role": "directory"
+    },
+    {
+      "attributes": {
+        "kind": "directory",
+        "region": "HEADER"
+      },
+      "compression": "storage",
+      "name": "/Root/FastLoad/",
+      "role": "directory"
+    },
+    {
+      "attributes": {
+        "kind": "directory",
+        "region": "HEADER"
+      },
+      "compression": "storage",
+      "name": "/Root/images/",
+      "role": "directory"
+    },
+    {
+      "attributes": {
+        "kind": "directory",
+        "region": "HEADER"
+      },
+      "compression": "storage",
+      "name": "/Root/part/",
+      "role": "directory"
+    },
+    {
+      "attributes": {
+        "kind": "directory",
+        "region": "HEADER"
+      },
+      "compression": "storage",
+      "name": "/Root/UG_PART/",
+      "role": "directory"
+    },
+    {
+      "attributes": {
+        "file_offset": "1364",
+        "region": "HEADER"
+      },
+      "compression": "none",
+      "name": "/Root/FastLoad/RMFastLoad",
+      "role": "active-body-index",
+      "size": {
+        "form": "exact",
+        "size": 8505
+      }
+    },
+    {
+      "attributes": {
+        "file_offset": "9869",
+        "region": "HEADER"
+      },
+      "compression": "none",
+      "name": "/Root/FastLoad/Structure",
+      "role": "fast-load-structure",
+      "size": {
+        "form": "exact",
+        "size": 5463
+      }
+    },
+    {
+      "attributes": {
+        "file_offset": "15332",
+        "region": "HEADER"
+      },
+      "compression": "none",
+      "name": "/Root/FastLoad/ExternalReferences",
+      "role": "external-references",
+      "size": {
+        "form": "exact",
+        "size": 5131
+      }
+    },
+    {
+      "attributes": {
+        "file_offset": "20463",
+        "region": "HEADER"
+      },
+      "compression": "none",
+      "name": "/Root/UG_PART/UG_PART",
+      "role": "part-payload",
+      "size": {
+        "form": "exact",
+        "size": 510989
+      }
+    },
+    {
+      "attributes": {
+        "file_offset": "531452",
+        "region": "HEADER"
+      },
+      "compression": "none",
+      "name": "/Root/UG_PART/ExternalReferences",
+      "role": "external-references",
+      "size": {
+        "form": "exact",
+        "size": 15576
+      }
+    },
+    {
+      "attributes": {
+        "file_offset": "547028",
+        "region": "HEADER"
+      },
+      "compression": "none",
+      "name": "/Root/images/preview",
+      "role": "preview-image",
+      "size": {
+        "form": "exact",
+        "size": 12310
+      }
+    },
+    {
+      "attributes": {
+        "file_offset": "559338",
+        "region": "HEADER"
+      },
+      "compression": "none",
+      "name": "/Root/part/arrangements",
+      "role": "arrangements",
+      "size": {
+        "form": "exact",
+        "size": 121
+      }
+    },
+    {
+      "attributes": {
+        "file_offset": "559459",
+        "region": "HEADER"
+      },
+      "compression": "none",
+      "name": "/Root/part/attrs",
+      "role": "part-attributes",
+      "size": {
+        "form": "exact",
+        "size": 1066
+      }
+    },
+    {
+      "attributes": {
+        "file_offset": "560525",
+        "region": "HEADER"
+      },
+      "compression": "none",
+      "name": "/Root/qafmetadata",
+      "role": "asset-catalog",
+      "size": {
+        "form": "exact",
+        "size": 3015
+      }
+    },
+    {
+      "attributes": {
+        "kind": "directory",
+        "region": "FOOTER"
+      },
+      "compression": "storage",
+      "name": "/Root/images/model_views/",
+      "role": "directory"
+    },
+    {
+      "attributes": {
+        "kind": "directory",
+        "region": "FOOTER"
+      },
+      "compression": "storage",
+      "name": "/Root/materialsTif/",
+      "role": "directory"
+    },
+    {
+      "attributes": {
+        "kind": "directory",
+        "region": "FOOTER"
+      },
+      "compression": "storage",
+      "name": "/Root/materialsXML/",
+      "role": "directory"
+    },
+    {
+      "attributes": {
+        "file_offset": "563540",
+        "region": "FOOTER"
+      },
+      "compression": "none",
+      "name": "/Root/images/model_views/Section #1",
+      "role": "named-opaque-stream",
+      "size": {
+        "form": "exact",
+        "size": 10254
+      }
+    },
+    {
+      "attributes": {
+        "file_offset": "573794",
+        "region": "FOOTER"
+      },
+      "compression": "none",
+      "name": "/Root/materialsTif/Nodular Ductile Iron",
+      "role": "material-texture",
+      "size": {
+        "form": "exact",
+        "size": 5520
+      }
+    },
+    {
+      "attributes": {
+        "file_offset": "579314",
+        "region": "FOOTER"
+      },
+      "compression": "none",
+      "name": "/Root/materialsTif/Steel Hot Rolled",
+      "role": "material-texture",
+      "size": {
+        "form": "exact",
+        "size": 6148
+      }
+    },
+    {
+      "attributes": {
+        "file_offset": "585462",
+        "region": "FOOTER"
+      },
+      "compression": "none",
+      "name": "/Root/materialsTif/Paint Matte Blue",
+      "role": "material-texture",
+      "size": {
+        "form": "exact",
+        "size": 8406
+      }
+    },
+    {
+      "attributes": {
+        "file_offset": "593868",
+        "region": "FOOTER"
+      },
+      "compression": "none",
+      "name": "/Root/materialsTif/Steel Rolled",
+      "role": "material-texture",
+      "size": {
+        "form": "exact",
+        "size": 5798
+      }
+    },
+    {
+      "attributes": {
+        "file_offset": "599666",
+        "region": "FOOTER"
+      },
+      "compression": "none",
+      "name": "/Root/materialsTif/Matte Plastic Cyan",
+      "role": "material-texture",
+      "size": {
+        "form": "exact",
+        "size": 7682
+      }
+    },
+    {
+      "attributes": {
+        "file_offset": "607348",
+        "region": "FOOTER"
+      },
+      "compression": "none",
+      "name": "/Root/materialsXML/Steel Rolled",
+      "role": "named-opaque-stream",
+      "size": {
+        "form": "exact",
+        "size": 10700
+      }
+    },
+    {
+      "attributes": {
+        "file_offset": "618048",
+        "region": "FOOTER"
+      },
+      "compression": "none",
+      "name": "/Root/materialsXML/Paint Matte Blue",
+      "role": "named-opaque-stream",
+      "size": {
+        "form": "exact",
+        "size": 15713
+      }
+    },
+    {
+      "attributes": {
+        "file_offset": "633761",
+        "region": "FOOTER"
+      },
+      "compression": "none",
+      "name": "/Root/materialsXML/Steel Hot Rolled",
+      "role": "named-opaque-stream",
+      "size": {
+        "form": "exact",
+        "size": 13448
+      }
+    },
+    {
+      "attributes": {
+        "file_offset": "647209",
+        "region": "FOOTER"
+      },
+      "compression": "none",
+      "name": "/Root/materialsXML/Nodular Ductile Iron",
+      "role": "named-opaque-stream",
+      "size": {
+        "form": "exact",
+        "size": 20303
+      }
+    },
+    {
+      "attributes": {
+        "file_offset": "667512",
+        "region": "FOOTER"
+      },
+      "compression": "none",
+      "name": "/Root/materialsXML/Matte Plastic Cyan",
+      "role": "named-opaque-stream",
+      "size": {
+        "form": "exact",
+        "size": 10824
+      }
+    }
+  ],
+  "identity": {
+    "classification": "classified",
+    "dialects": {
+      "extra": [],
+      "primary": {
+        "admission": "admitted",
+        "declared": {
+          "splmsstr_version": "6"
+        },
+        "dialect": "nx:splmsstr"
+      }
+    }
+  },
+  "notes": [
+    "SPLMSSTR container: file tag 20463, footer offset 678336, 15 HEADER and 14 FOOTER directory entry/ies, fingerprint ff2fb9e7",
+    "embedded streams: 0 partition, 0 deltas, 0 plain (cached body), 0 preview/non-Parasolid",
+    "NX object model: 6 size-framed section(s), 587 class declaration(s), 28 field declaration(s)",
+    "NX object model: 1 indexed section(s), 74 bounded entity record(s)",
+    "no inline Parasolid geometry (assembly .prt: geometry in external child parts)"
+  ]
+}

@@ -1,0 +1,1273 @@
+{
+  "container_kind": "v5-cfv2",
+  "entries": [
+    {
+      "attributes": {
+        "desc_offset": "308",
+        "directory": "outer",
+        "extent_count": "1",
+        "extent_words": "0x00000000"
+      },
+      "compression": "none",
+      "name": "D.f47bb2eaa4390000fd7c275d239b0100",
+      "role": "stream",
+      "size": {
+        "form": "exact",
+        "size": 94
+      }
+    },
+    {
+      "attributes": {
+        "desc_offset": "508",
+        "directory": "outer",
+        "extent_count": "1",
+        "extent_words": "0x00000000"
+      },
+      "compression": "none",
+      "name": "CATIA1",
+      "role": "stream",
+      "size": {
+        "form": "exact",
+        "size": 1150
+      }
+    },
+    {
+      "attributes": {
+        "desc_offset": "708",
+        "directory": "outer",
+        "extent_count": "1",
+        "extent_words": "0x00000000"
+      },
+      "compression": "none",
+      "name": "Format",
+      "role": "stream",
+      "size": {
+        "form": "exact",
+        "size": 24
+      }
+    },
+    {
+      "attributes": {
+        "desc_offset": "912",
+        "directory": "outer",
+        "extent_count": "1",
+        "extent_words": "0x00000000"
+      },
+      "compression": "none",
+      "name": "GesToler",
+      "role": "stream",
+      "size": {
+        "form": "exact",
+        "size": 1540
+      }
+    },
+    {
+      "attributes": {
+        "desc_offset": "1112",
+        "directory": "outer",
+        "extent_count": "1",
+        "extent_words": "0x00000000"
+      },
+      "compression": "none",
+      "name": "Indexe",
+      "role": "stream",
+      "size": {
+        "form": "exact",
+        "size": 4480
+      }
+    },
+    {
+      "attributes": {
+        "desc_offset": "1308",
+        "directory": "outer",
+        "extent_count": "1",
+        "extent_words": "0x00000000"
+      },
+      "compression": "none",
+      "name": "Data",
+      "role": "stream",
+      "size": {
+        "form": "exact",
+        "size": 121136
+      }
+    },
+    {
+      "attributes": {
+        "desc_offset": "1522",
+        "directory": "outer",
+        "extent_count": "1",
+        "extent_words": "0x00000000"
+      },
+      "compression": "none",
+      "name": "ProjectHeader",
+      "role": "stream",
+      "size": {
+        "form": "exact",
+        "size": 120
+      }
+    },
+    {
+      "attributes": {
+        "desc_offset": "1724",
+        "directory": "outer",
+        "extent_count": "1",
+        "extent_words": "0x00000000"
+      },
+      "compression": "none",
+      "name": "Project",
+      "role": "stream",
+      "size": {
+        "form": "exact",
+        "size": 325
+      }
+    },
+    {
+      "attributes": {
+        "desc_offset": "1930",
+        "directory": "outer",
+        "extent_count": "1",
+        "extent_words": "0x00000000"
+      },
+      "compression": "none",
+      "name": "TimeStamp",
+      "role": "stream",
+      "size": {
+        "form": "exact",
+        "size": 7
+      }
+    },
+    {
+      "attributes": {
+        "desc_offset": "2166",
+        "directory": "outer",
+        "extent_count": "1",
+        "extent_words": "0x00000000"
+      },
+      "compression": "none",
+      "name": "2d43f8c0f_e10_5c926228_b1",
+      "role": "stream",
+      "size": {
+        "form": "exact",
+        "size": 188
+      }
+    },
+    {
+      "attributes": {
+        "desc_offset": "2412",
+        "directory": "outer",
+        "extent_count": "1",
+        "extent_words": "0x00000000"
+      },
+      "compression": "none",
+      "name": "<Cont_d43f8c0f_e10_5c926228_b1",
+      "role": "stream",
+      "size": {
+        "form": "exact",
+        "size": 1368
+      }
+    },
+    {
+      "attributes": {
+        "desc_offset": "2638",
+        "directory": "outer",
+        "extent_count": "1",
+        "extent_words": "0x00000000"
+      },
+      "compression": "none",
+      "name": "CATStorageProperty",
+      "role": "stream",
+      "size": {
+        "form": "exact",
+        "size": 248
+      }
+    },
+    {
+      "attributes": {
+        "desc_offset": "2858",
+        "directory": "outer",
+        "extent_count": "1",
+        "extent_words": "0x00000000"
+      },
+      "compression": "none",
+      "name": "CATPropertySets",
+      "role": "stream",
+      "size": {
+        "form": "exact",
+        "size": 70
+      }
+    },
+    {
+      "attributes": {
+        "desc_offset": "3094",
+        "directory": "outer",
+        "extent_count": "1",
+        "extent_words": "0x00000000"
+      },
+      "compression": "none",
+      "name": "2d43f8c0f_e10_5c926228_b4",
+      "role": "stream",
+      "size": {
+        "form": "exact",
+        "size": 188
+      }
+    },
+    {
+      "attributes": {
+        "desc_offset": "3340",
+        "directory": "outer",
+        "extent_count": "1",
+        "extent_words": "0x00000000"
+      },
+      "compression": "none",
+      "name": "<Cont_d43f8c0f_e10_5c926228_b4",
+      "role": "stream",
+      "size": {
+        "form": "exact",
+        "size": 331356
+      }
+    },
+    {
+      "attributes": {
+        "desc_offset": "3566",
+        "directory": "outer",
+        "extent_count": "1",
+        "extent_words": "0x00000000"
+      },
+      "compression": "none",
+      "name": "CATStorageProperty",
+      "role": "stream",
+      "size": {
+        "form": "exact",
+        "size": 246
+      }
+    },
+    {
+      "attributes": {
+        "desc_offset": "3786",
+        "directory": "outer",
+        "extent_count": "1",
+        "extent_words": "0x00000000"
+      },
+      "compression": "none",
+      "name": "CATPropertySets",
+      "role": "stream",
+      "size": {
+        "form": "exact",
+        "size": 571
+      }
+    },
+    {
+      "attributes": {
+        "desc_offset": "4022",
+        "directory": "outer",
+        "extent_count": "1",
+        "extent_words": "0x00000000"
+      },
+      "compression": "none",
+      "name": "2d43f8c0f_e10_5c926228_b5",
+      "role": "stream",
+      "size": {
+        "form": "exact",
+        "size": 140
+      }
+    },
+    {
+      "attributes": {
+        "desc_offset": "4268",
+        "directory": "outer",
+        "extent_count": "3",
+        "extent_words": "0x00000000,0x00000000,0x00000000"
+      },
+      "compression": "none",
+      "name": "<Cont_d43f8c0f_e10_5c926228_b5",
+      "role": "stream",
+      "size": {
+        "form": "exact",
+        "size": 350669
+      }
+    },
+    {
+      "attributes": {
+        "desc_offset": "4534",
+        "directory": "outer",
+        "extent_count": "1",
+        "extent_words": "0x00000000"
+      },
+      "compression": "none",
+      "name": "CATStorageProperty",
+      "role": "stream",
+      "size": {
+        "form": "exact",
+        "size": 240
+      }
+    },
+    {
+      "attributes": {
+        "desc_offset": "4770",
+        "directory": "outer",
+        "extent_count": "1",
+        "extent_words": "0x00000000"
+      },
+      "compression": "none",
+      "name": "2d43f8c0f_e10_5c926228_b6",
+      "role": "stream",
+      "size": {
+        "form": "exact",
+        "size": 140
+      }
+    },
+    {
+      "attributes": {
+        "desc_offset": "5016",
+        "directory": "outer",
+        "extent_count": "1",
+        "extent_words": "0x00000000"
+      },
+      "compression": "none",
+      "name": "<Cont_d43f8c0f_e10_5c926228_b6",
+      "role": "stream",
+      "size": {
+        "form": "exact",
+        "size": 42391
+      }
+    },
+    {
+      "attributes": {
+        "desc_offset": "5242",
+        "directory": "outer",
+        "extent_count": "1",
+        "extent_words": "0x00000000"
+      },
+      "compression": "none",
+      "name": "CATStorageProperty",
+      "role": "stream",
+      "size": {
+        "form": "exact",
+        "size": 240
+      }
+    },
+    {
+      "attributes": {
+        "desc_offset": "5478",
+        "directory": "outer",
+        "extent_count": "1",
+        "extent_words": "0x00000000"
+      },
+      "compression": "none",
+      "name": "2d43f8c0f_e10_5c926228_b7",
+      "role": "stream",
+      "size": {
+        "form": "exact",
+        "size": 188
+      }
+    },
+    {
+      "attributes": {
+        "desc_offset": "5724",
+        "directory": "outer",
+        "extent_count": "1",
+        "extent_words": "0x00000000"
+      },
+      "compression": "none",
+      "name": "<Cont_d43f8c0f_e10_5c926228_b7",
+      "role": "stream",
+      "size": {
+        "form": "exact",
+        "size": 32
+      }
+    },
+    {
+      "attributes": {
+        "desc_offset": "5950",
+        "directory": "outer",
+        "extent_count": "1",
+        "extent_words": "0x00000000"
+      },
+      "compression": "none",
+      "name": "CATStorageProperty",
+      "role": "stream",
+      "size": {
+        "form": "exact",
+        "size": 254
+      }
+    },
+    {
+      "attributes": {
+        "desc_offset": "6170",
+        "directory": "outer",
+        "extent_count": "1",
+        "extent_words": "0x00000000"
+      },
+      "compression": "none",
+      "name": "CATPropertySets",
+      "role": "stream",
+      "size": {
+        "form": "exact",
+        "size": 100
+      }
+    },
+    {
+      "attributes": {
+        "desc_offset": "6406",
+        "directory": "outer",
+        "extent_count": "1",
+        "extent_words": "0x00000000"
+      },
+      "compression": "none",
+      "name": "2d43f8c0f_e10_5c926228_b8",
+      "role": "stream",
+      "size": {
+        "form": "exact",
+        "size": 140
+      }
+    },
+    {
+      "attributes": {
+        "desc_offset": "6652",
+        "directory": "outer",
+        "extent_count": "1",
+        "extent_words": "0x00000000"
+      },
+      "compression": "none",
+      "name": "<Cont_d43f8c0f_e10_5c926228_b8",
+      "role": "stream",
+      "size": {
+        "form": "exact",
+        "size": 572
+      }
+    },
+    {
+      "attributes": {
+        "desc_offset": "6878",
+        "directory": "outer",
+        "extent_count": "1",
+        "extent_words": "0x00000000"
+      },
+      "compression": "none",
+      "name": "CATStorageProperty",
+      "role": "stream",
+      "size": {
+        "form": "exact",
+        "size": 266
+      }
+    },
+    {
+      "attributes": {
+        "desc_offset": "7114",
+        "directory": "outer",
+        "extent_count": "1",
+        "extent_words": "0x00000000"
+      },
+      "compression": "none",
+      "name": "2d43f8c0f_e10_5c926228_c9",
+      "role": "stream",
+      "size": {
+        "form": "exact",
+        "size": 140
+      }
+    },
+    {
+      "attributes": {
+        "desc_offset": "7360",
+        "directory": "outer",
+        "extent_count": "1",
+        "extent_words": "0x00000000"
+      },
+      "compression": "none",
+      "name": "<Cont_d43f8c0f_e10_5c926228_c9",
+      "role": "stream",
+      "size": {
+        "form": "exact",
+        "size": 258759
+      }
+    },
+    {
+      "attributes": {
+        "desc_offset": "7586",
+        "directory": "outer",
+        "extent_count": "1",
+        "extent_words": "0x00000000"
+      },
+      "compression": "none",
+      "name": "CATStorageProperty",
+      "role": "stream",
+      "size": {
+        "form": "exact",
+        "size": 246
+      }
+    },
+    {
+      "attributes": {
+        "desc_offset": "7824",
+        "directory": "outer",
+        "extent_count": "1",
+        "extent_words": "0x00000000"
+      },
+      "compression": "none",
+      "name": "4d43f8c0f_e10_5c926228_11f",
+      "role": "stream",
+      "size": {
+        "form": "exact",
+        "size": 142
+      }
+    },
+    {
+      "attributes": {
+        "desc_offset": "8072",
+        "directory": "outer",
+        "extent_count": "1",
+        "extent_words": "0x00000000"
+      },
+      "compression": "none",
+      "name": ">Cont_d43f8c0f_e10_5c926228_11f",
+      "role": "stream",
+      "size": {
+        "form": "exact",
+        "size": 249134
+      }
+    },
+    {
+      "attributes": {
+        "desc_offset": "8298",
+        "directory": "outer",
+        "extent_count": "1",
+        "extent_words": "0x00000000"
+      },
+      "compression": "none",
+      "name": "CATStorageProperty",
+      "role": "stream",
+      "size": {
+        "form": "exact",
+        "size": 246
+      }
+    },
+    {
+      "attributes": {
+        "desc_offset": "8536",
+        "directory": "outer",
+        "extent_count": "1",
+        "extent_words": "0x00000000"
+      },
+      "compression": "none",
+      "name": "4d43f8c0f_e10_5c92622a_12e",
+      "role": "stream",
+      "size": {
+        "form": "exact",
+        "size": 190
+      }
+    },
+    {
+      "attributes": {
+        "desc_offset": "8784",
+        "directory": "outer",
+        "extent_count": "1",
+        "extent_words": "0x00000000"
+      },
+      "compression": "none",
+      "name": ">Cont_d43f8c0f_e10_5c92622a_12e",
+      "role": "stream",
+      "size": {
+        "form": "exact",
+        "size": 3770
+      }
+    },
+    {
+      "attributes": {
+        "desc_offset": "9010",
+        "directory": "outer",
+        "extent_count": "1",
+        "extent_words": "0x00000000"
+      },
+      "compression": "none",
+      "name": "CATStorageProperty",
+      "role": "stream",
+      "size": {
+        "form": "exact",
+        "size": 270
+      }
+    },
+    {
+      "attributes": {
+        "desc_offset": "9230",
+        "directory": "outer",
+        "extent_count": "1",
+        "extent_words": "0x00000000"
+      },
+      "compression": "none",
+      "name": "CATPropertySets",
+      "role": "stream",
+      "size": {
+        "form": "exact",
+        "size": 70
+      }
+    },
+    {
+      "attributes": {
+        "desc_offset": "9474",
+        "directory": "outer",
+        "extent_count": "1",
+        "extent_words": "0x00000000"
+      },
+      "compression": "none",
+      "name": ":eab27bf4_39a4_5d26faf2_13fc1",
+      "role": "stream",
+      "size": {
+        "form": "exact",
+        "size": 196
+      }
+    },
+    {
+      "attributes": {
+        "desc_offset": "9728",
+        "directory": "outer",
+        "extent_count": "1",
+        "extent_words": "0x00000000"
+      },
+      "compression": "none",
+      "name": "DCont_eab27bf4_39a4_5d26faf2_13fc1",
+      "role": "stream",
+      "size": {
+        "form": "exact",
+        "size": 11877
+      }
+    },
+    {
+      "attributes": {
+        "desc_offset": "9954",
+        "directory": "outer",
+        "extent_count": "1",
+        "extent_words": "0x00000000"
+      },
+      "compression": "none",
+      "name": "CATStorageProperty",
+      "role": "stream",
+      "size": {
+        "form": "exact",
+        "size": 250
+      }
+    },
+    {
+      "attributes": {
+        "desc_offset": "10174",
+        "directory": "outer",
+        "extent_count": "1",
+        "extent_words": "0x00000000"
+      },
+      "compression": "none",
+      "name": "CATPropertySets",
+      "role": "stream",
+      "size": {
+        "form": "exact",
+        "size": 70
+      }
+    },
+    {
+      "attributes": {
+        "desc_offset": "10418",
+        "directory": "outer",
+        "extent_count": "1",
+        "extent_words": "0x00000000"
+      },
+      "compression": "none",
+      "name": ":eab27bf4_39a4_5d26fc00_13fee",
+      "role": "stream",
+      "size": {
+        "form": "exact",
+        "size": 606
+      }
+    },
+    {
+      "attributes": {
+        "desc_offset": "10672",
+        "directory": "outer",
+        "extent_count": "1",
+        "extent_words": "0x00000000"
+      },
+      "compression": "none",
+      "name": "DCont_eab27bf4_39a4_5d26fc00_13fee",
+      "role": "stream",
+      "size": {
+        "form": "exact",
+        "size": 110118
+      }
+    },
+    {
+      "attributes": {
+        "desc_offset": "10898",
+        "directory": "outer",
+        "extent_count": "1",
+        "extent_words": "0x00000000"
+      },
+      "compression": "none",
+      "name": "CATStorageProperty",
+      "role": "stream",
+      "size": {
+        "form": "exact",
+        "size": 246
+      }
+    },
+    {
+      "attributes": {
+        "desc_offset": "11118",
+        "directory": "outer",
+        "extent_count": "1",
+        "extent_words": "0x00000000"
+      },
+      "compression": "none",
+      "name": "CATPropertySets",
+      "role": "stream",
+      "size": {
+        "form": "exact",
+        "size": 94
+      }
+    },
+    {
+      "attributes": {
+        "desc_offset": "11372",
+        "directory": "outer",
+        "extent_count": "1",
+        "extent_words": "0x00000000"
+      },
+      "compression": "none",
+      "name": "DCont_eab27bf4_39a4_5d26fc00_13ff1",
+      "role": "stream",
+      "size": {
+        "form": "exact",
+        "size": 990
+      }
+    },
+    {
+      "attributes": {
+        "desc_offset": "11860",
+        "directory": "outer",
+        "extent_count": "1",
+        "extent_words": "0x00000000"
+      },
+      "compression": "none",
+      "name": "DCont_eab27bf4_39a4_5d26fc00_13ff5",
+      "role": "stream",
+      "size": {
+        "form": "exact",
+        "size": 3123
+      }
+    },
+    {
+      "attributes": {
+        "desc_offset": "12114",
+        "directory": "outer",
+        "extent_count": "1",
+        "extent_words": "0x00000000"
+      },
+      "compression": "none",
+      "name": "DCont_eab27bf4_39a4_5d26fc00_13ff6",
+      "role": "stream",
+      "size": {
+        "form": "exact",
+        "size": 2461
+      }
+    },
+    {
+      "attributes": {
+        "desc_offset": "12368",
+        "directory": "outer",
+        "extent_count": "1",
+        "extent_words": "0x00000000"
+      },
+      "compression": "none",
+      "name": "DCont_eab27bf4_39a4_5d26fc00_13ff7",
+      "role": "stream",
+      "size": {
+        "form": "exact",
+        "size": 139
+      }
+    },
+    {
+      "attributes": {
+        "desc_offset": "12594",
+        "directory": "outer",
+        "extent_count": "1",
+        "extent_words": "0x00000000"
+      },
+      "compression": "none",
+      "name": "CATStorageProperty",
+      "role": "stream",
+      "size": {
+        "form": "exact",
+        "size": 258
+      }
+    },
+    {
+      "attributes": {
+        "desc_offset": "12822",
+        "directory": "outer",
+        "extent_count": "1",
+        "extent_words": "0x00000000"
+      },
+      "compression": "none",
+      "name": "CATDocumentProperty",
+      "role": "stream",
+      "size": {
+        "form": "exact",
+        "size": 5259
+      }
+    },
+    {
+      "attributes": {
+        "desc_offset": "13042",
+        "directory": "outer",
+        "extent_count": "1",
+        "extent_words": "0x00000000"
+      },
+      "compression": "none",
+      "name": "CATPropertySets",
+      "role": "stream",
+      "size": {
+        "form": "exact",
+        "size": 877
+      }
+    },
+    {
+      "attributes": {
+        "desc_offset": "13252",
+        "directory": "outer",
+        "extent_count": "1",
+        "extent_words": "0x00000000"
+      },
+      "compression": "none",
+      "name": "CATPreview",
+      "role": "stream",
+      "size": {
+        "form": "exact",
+        "size": 2205
+      }
+    },
+    {
+      "attributes": {
+        "desc_offset": "13478",
+        "directory": "outer",
+        "extent_count": "1",
+        "extent_words": "0x00000000"
+      },
+      "compression": "none",
+      "name": "CATStorageProperty",
+      "role": "stream",
+      "size": {
+        "form": "exact",
+        "size": 231
+      }
+    },
+    {
+      "attributes": {
+        "desc_offset": "308",
+        "directory": "inner",
+        "extent_count": "1",
+        "extent_words": "0x00000000"
+      },
+      "compression": "none",
+      "name": "D.f47bb2eaa4390000fd7c275d249b0100",
+      "role": "stream",
+      "size": {
+        "form": "exact",
+        "size": 132
+      }
+    },
+    {
+      "attributes": {
+        "desc_offset": "504",
+        "directory": "inner",
+        "extent_count": "1",
+        "extent_words": "0x00000000"
+      },
+      "compression": "none",
+      "name": "MAIN",
+      "role": "stream",
+      "size": {
+        "form": "exact",
+        "size": 9
+      }
+    },
+    {
+      "attributes": {
+        "desc_offset": "708",
+        "directory": "inner",
+        "extent_count": "1",
+        "extent_words": "0x00000000"
+      },
+      "compression": "none",
+      "name": "Describe",
+      "role": "stream",
+      "size": {
+        "form": "exact",
+        "size": 88
+      }
+    },
+    {
+      "attributes": {
+        "desc_offset": "912",
+        "directory": "inner",
+        "extent_count": "1",
+        "extent_words": "0x00000000"
+      },
+      "compression": "none",
+      "name": "Describe",
+      "role": "stream",
+      "size": {
+        "form": "exact",
+        "size": 9
+      }
+    },
+    {
+      "attributes": {
+        "desc_offset": "1128",
+        "directory": "inner",
+        "extent_count": "1",
+        "extent_words": "0x00000000"
+      },
+      "compression": "none",
+      "name": "MainDataStream",
+      "role": "stream",
+      "size": {
+        "form": "exact",
+        "size": 19
+      }
+    },
+    {
+      "attributes": {
+        "desc_offset": "1328",
+        "directory": "inner",
+        "extent_count": "1",
+        "extent_words": "0x00000000"
+      },
+      "compression": "none",
+      "name": "Header",
+      "role": "stream",
+      "size": {
+        "form": "exact",
+        "size": 84
+      }
+    },
+    {
+      "attributes": {
+        "desc_offset": "1528",
+        "directory": "inner",
+        "extent_count": "1",
+        "extent_words": "0x00000000"
+      },
+      "compression": "none",
+      "name": "Header",
+      "role": "stream",
+      "size": {
+        "form": "exact",
+        "size": 9
+      }
+    },
+    {
+      "attributes": {
+        "desc_offset": "1744",
+        "directory": "inner",
+        "extent_count": "1",
+        "extent_words": "0x00000000"
+      },
+      "compression": "none",
+      "name": "MainDataStream",
+      "role": "stream",
+      "size": {
+        "form": "exact",
+        "size": 63
+      }
+    },
+    {
+      "attributes": {
+        "desc_offset": "1952",
+        "directory": "inner",
+        "extent_count": "1",
+        "extent_words": "0x00000000"
+      },
+      "compression": "none",
+      "name": "SceneGraph",
+      "role": "stream",
+      "size": {
+        "form": "exact",
+        "size": 132
+      }
+    },
+    {
+      "attributes": {
+        "desc_offset": "2160",
+        "directory": "inner",
+        "extent_count": "1",
+        "extent_words": "0x00000000"
+      },
+      "compression": "none",
+      "name": "SceneGraph",
+      "role": "stream",
+      "size": {
+        "form": "exact",
+        "size": 9
+      }
+    },
+    {
+      "attributes": {
+        "desc_offset": "2376",
+        "directory": "inner",
+        "extent_count": "2",
+        "extent_words": "0x00000000,0x00000000"
+      },
+      "compression": "none",
+      "name": "MainDataStream",
+      "role": "stream",
+      "size": {
+        "form": "exact",
+        "size": 205161
+      }
+    },
+    {
+      "attributes": {
+        "desc_offset": "2608",
+        "directory": "inner",
+        "extent_count": "1",
+        "extent_words": "0x00000000"
+      },
+      "compression": "none",
+      "name": "SurfacicReps",
+      "role": "stream",
+      "size": {
+        "form": "exact",
+        "size": 40631
+      }
+    },
+    {
+      "attributes": {
+        "components": "3",
+        "file_offset": "1506838",
+        "height": "110",
+        "width": "130"
+      },
+      "compression": "jpeg",
+      "name": "CATPreview#0",
+      "role": "preview",
+      "stored": 2201
+    },
+    {
+      "attributes": {
+        "family": "project-flags",
+        "file_offset": "129304",
+        "type_word": "0x01010001"
+      },
+      "compression": "none",
+      "name": "CATProjectFlags",
+      "role": "finjpl-segment",
+      "size": {
+        "form": "exact",
+        "size": 331860
+      }
+    },
+    {
+      "attributes": {
+        "family": "project-flags",
+        "file_offset": "461164",
+        "type_word": "0x01010001"
+      },
+      "compression": "none",
+      "name": "CATProjectFlags",
+      "role": "finjpl-segment",
+      "size": {
+        "form": "exact",
+        "size": 351668
+      }
+    },
+    {
+      "attributes": {
+        "family": "other",
+        "file_offset": "812832",
+        "type_word": "0x0000008c"
+      },
+      "compression": "none",
+      "name": "FINJPL#2",
+      "role": "finjpl-segment",
+      "size": {
+        "form": "exact",
+        "size": 42771
+      }
+    },
+    {
+      "attributes": {
+        "family": "other",
+        "file_offset": "855603",
+        "type_word": "0x0000008c"
+      },
+      "compression": "none",
+      "name": "FINJPL#3",
+      "role": "finjpl-segment",
+      "size": {
+        "form": "exact",
+        "size": 426
+      }
+    },
+    {
+      "attributes": {
+        "family": "project-flags",
+        "file_offset": "856029",
+        "type_word": "0x01010001"
+      },
+      "compression": "none",
+      "name": "CATProjectFlags",
+      "role": "finjpl-segment",
+      "size": {
+        "form": "exact",
+        "size": 1126
+      }
+    },
+    {
+      "attributes": {
+        "family": "other",
+        "file_offset": "857155",
+        "type_word": "0x0000008c"
+      },
+      "compression": "none",
+      "name": "FINJPL#5",
+      "role": "finjpl-segment",
+      "size": {
+        "form": "exact",
+        "size": 259145
+      }
+    },
+    {
+      "attributes": {
+        "family": "other",
+        "file_offset": "1116300",
+        "type_word": "0x0000008c"
+      },
+      "compression": "none",
+      "name": "FINJPL#6",
+      "role": "finjpl-segment",
+      "size": {
+        "form": "exact",
+        "size": 249520
+      }
+    },
+    {
+      "attributes": {
+        "family": "storage",
+        "file_offset": "1365820",
+        "type_word": "0x0000008e"
+      },
+      "compression": "none",
+      "name": "FINJPL#7",
+      "role": "finjpl-segment",
+      "size": {
+        "form": "exact",
+        "size": 4182
+      }
+    },
+    {
+      "attributes": {
+        "family": "project-flags",
+        "file_offset": "1370002",
+        "type_word": "0x01010001"
+      },
+      "compression": "none",
+      "name": "CATProjectFlags",
+      "role": "finjpl-segment",
+      "size": {
+        "form": "exact",
+        "size": 12387
+      }
+    },
+    {
+      "attributes": {
+        "family": "project-flags",
+        "file_offset": "1382389",
+        "type_word": "0x01010001"
+      },
+      "compression": "none",
+      "name": "CATProjectFlags",
+      "role": "finjpl-segment",
+      "size": {
+        "form": "exact",
+        "size": 110630
+      }
+    },
+    {
+      "attributes": {
+        "family": "project-flags",
+        "file_offset": "1493019",
+        "type_word": "0x01010001"
+      },
+      "compression": "none",
+      "name": "CATProjectFlags",
+      "role": "finjpl-segment",
+      "size": {
+        "form": "exact",
+        "size": 7671
+      }
+    },
+    {
+      "attributes": {
+        "family": "other",
+        "file_offset": "1500690",
+        "type_word": "0x4d110000"
+      },
+      "compression": "none",
+      "name": "FINJPL#11",
+      "role": "finjpl-segment",
+      "size": {
+        "form": "exact",
+        "size": 5259
+      }
+    },
+    {
+      "attributes": {
+        "family": "project-flags",
+        "file_offset": "1505949",
+        "type_word": "0x01010003"
+      },
+      "compression": "none",
+      "name": "CATSummaryInformation",
+      "role": "finjpl-segment",
+      "size": {
+        "form": "exact",
+        "size": 3313
+      }
+    },
+    {
+      "attributes": {
+        "family": "other",
+        "file_offset": "1509262",
+        "type_word": "0x0000047e"
+      },
+      "compression": "none",
+      "name": "FINJPL#13",
+      "role": "finjpl-segment",
+      "size": {
+        "form": "exact",
+        "size": 1252
+      }
+    }
+  ],
+  "identity": {
+    "classification": "classified",
+    "dialects": {
+      "extra": [],
+      "primary": {
+        "admission": "admitted",
+        "declared": {
+          "last_save_build_date": "06-20-2019.20.00",
+          "last_save_hot_fix": "0",
+          "last_save_release": "29",
+          "last_save_service_pack": "3",
+          "last_save_version": "5"
+        },
+        "dialect": "catia:standard-nested"
+      }
+    }
+  },
+  "notes": [
+    "outer V5_CFV2 container: directory offset 1510514 + length 13594 = 1524108 (file size 1524108); variant: standard nested V5_CFV2 (complete FBB edge/vertex walk): geometry decode supported",
+    "outer CATIA_V5 CB0001 directory with 57 stream(s)",
+    "nested V5_CFV2 at file offset 1116448 with a CATIA_V5 CB0001 directory of 12 stream(s)",
+    "MainDataStream census: 1 FBB group(s) containing 304 face row(s), 582 vertex record(s), 3 edge-table delimiter(s)",
+    "last saved by CATIA V5R29 SP3 HF0 (06-20-2019.20.00)",
+    "container-level enumeration; `decode` applies the identified storage family's standard, freeform, E5, zero-entity, or metadata-fallback route"
+  ]
+}

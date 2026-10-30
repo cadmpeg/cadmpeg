@@ -1,0 +1,1742 @@
+{
+  "container_kind": "sldprt-blocks",
+  "entries": [
+    {
+      "attributes": {
+        "family": "sw-objects",
+        "offset": "360",
+        "sha256": "5d49f00e30e733826623fee2d41f5bdd8f30d4412638f4149263bb9de9ed13c7",
+        "type_id": "0x33e2d8df"
+      },
+      "compression": "deflate",
+      "expanded": 10338,
+      "name": "Contents/CMgr",
+      "role": "block",
+      "stored": 3223
+    },
+    {
+      "attributes": {
+        "family": "sw-objects",
+        "offset": "3713",
+        "sha256": "e6b4cc05e51f035c5545825b2cb3b718bfb491f7f492894c7aa1378fccaf3ca4",
+        "type_id": "0x3362d8df"
+      },
+      "compression": "deflate",
+      "expanded": 129,
+      "name": "Contents/CMgrHdr2",
+      "role": "block",
+      "stored": 83
+    },
+    {
+      "attributes": {
+        "family": "unknown",
+        "offset": "3930",
+        "sha256": "bd73ab522b6448d75c03e3afd76221fafc8dd57ef9fc189f693a6dac86a08ddb",
+        "type_id": "0x3362d8df"
+      },
+      "compression": "deflate",
+      "expanded": 188,
+      "name": "Contents/CnfgObjs",
+      "role": "block",
+      "stored": 59
+    },
+    {
+      "attributes": {
+        "family": "sw-objects",
+        "offset": "4123",
+        "sha256": "59452144159f602eb9e03ee24d3943c65cc56576583e41ec8478f191b2da5bfe",
+        "type_id": "0x3362d8df"
+      },
+      "compression": "deflate",
+      "expanded": 33154,
+      "name": "Contents/Config-0",
+      "role": "block",
+      "stored": 5996
+    },
+    {
+      "attributes": {
+        "family": "parasolid",
+        "offset": "10253",
+        "parasolid_description": ": TRANSMIT FILE (partition) created by modeller version 3000269",
+        "parasolid_schema": "SCH_3000269_30000_13006",
+        "sha256": "32c8249f4b7ec72d5394b53930ecdc1261e22a0c23750a31d674b7d87d7bd304",
+        "type_id": "0x3722d8df"
+      },
+      "compression": "deflate",
+      "expanded": 827,
+      "name": "Contents/Config-0-GhostPartition",
+      "role": "block",
+      "stored": 832
+    },
+    {
+      "attributes": {
+        "family": "unknown",
+        "offset": "11147",
+        "sha256": "9402df368fbb8ea2722c622231f8117ee50521d5caecc4786042596ffb1eada3",
+        "type_id": "0x3322d8df"
+      },
+      "compression": "deflate",
+      "expanded": 1681,
+      "name": "Contents/Config-0-LWDATA",
+      "role": "block",
+      "stored": 575
+    },
+    {
+      "attributes": {
+        "family": "sw-objects",
+        "offset": "11776",
+        "sha256": "40885d7e6053bdb7802d810da0efba2bcd7d616691d073aecc3c009a15953ada",
+        "type_id": "0x33e2d8df"
+      },
+      "compression": "deflate",
+      "expanded": 37226,
+      "name": "Contents/Config-0-ModelHeader",
+      "role": "block",
+      "stored": 6210
+    },
+    {
+      "attributes": {
+        "family": "parasolid",
+        "offset": "18045",
+        "parasolid_description": ": TRANSMIT FILE (partition) created by modeller version 3000269",
+        "parasolid_schema": "SCH_3000269_30000_13006",
+        "sha256": "97958eb69d47a9e3e355237eba768d41fc2646cb8d832822de36944f416eee29",
+        "type_id": "0x33a2d8df"
+      },
+      "compression": "deflate",
+      "expanded": 320867,
+      "name": "Contents/Config-0-Partition",
+      "role": "block",
+      "stored": 319010
+    },
+    {
+      "attributes": {
+        "family": "parasolid",
+        "offset": "337199",
+        "parasolid_description": ": TRANSMIT FILE created by modeller version 3000269",
+        "parasolid_schema": "SCH_3000269_30000_13006",
+        "sha256": "4a5fc82e9f73e70ee68a8edffa288f80d913d59e67d37b4e05a8b4e00c9f0c9f",
+        "type_id": "0x3762d8df"
+      },
+      "compression": "deflate",
+      "expanded": 757058,
+      "name": "Contents/Config-0-ResolvedFeatures",
+      "role": "block",
+      "stored": 117530
+    },
+    {
+      "attributes": {
+        "family": "sw-objects",
+        "offset": "454793",
+        "sha256": "6fbb13f916248d34245475ccdd8d0c3179b9f80bfe26800f4d2e62826e25da56",
+        "type_id": "0x3362d8df"
+      },
+      "compression": "deflate",
+      "expanded": 32,
+      "name": "Contents/CusProps",
+      "role": "block",
+      "stored": 27
+    },
+    {
+      "attributes": {
+        "family": "unknown",
+        "offset": "454867",
+        "sha256": "fe5acfd2ffa4440d1f7d2434c75d8ad768fc4a6dcb8817afa45f23db0e620187",
+        "type_id": "0x33a2d8df"
+      },
+      "compression": "deflate",
+      "expanded": 5360,
+      "name": "Contents/Definition",
+      "role": "block",
+      "stored": 1589
+    },
+    {
+      "attributes": {
+        "family": "tessellation",
+        "offset": "456505",
+        "sha256": "2434482cb9b1df7bb19816682f0f5a0a6128f889fc9e95f463ecdec8b4c78cb0",
+        "type_id": "0x33e2d8df"
+      },
+      "compression": "deflate",
+      "expanded": 790877,
+      "name": "Contents/DisplayLists",
+      "role": "block",
+      "stored": 134879
+    },
+    {
+      "attributes": {
+        "family": "unknown",
+        "offset": "591435",
+        "sha256": "b0f66adc83641586656866813fd9dd0b8ebb63796075661ba45d1aa8089e1d44",
+        "type_id": "0x33a2d8df"
+      },
+      "compression": "deflate",
+      "expanded": 6,
+      "name": "Contents/MBLinkData",
+      "role": "block",
+      "stored": 5
+    },
+    {
+      "attributes": {
+        "family": "unknown",
+        "offset": "591489",
+        "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "type_id": "0x3322d8df"
+      },
+      "compression": "deflate",
+      "expanded": 0,
+      "name": "Contents/ModelBasedViews",
+      "role": "block",
+      "stored": 2
+    },
+    {
+      "attributes": {
+        "family": "unknown",
+        "offset": "591632",
+        "sha256": "df3f619804a92fdb4057192dc43dd748ea778adc52bc498ce80524c014b81119",
+        "type_id": "0x3362d8df"
+      },
+      "compression": "deflate",
+      "expanded": 4,
+      "name": "Contents/OleItems",
+      "role": "block",
+      "stored": 6
+    },
+    {
+      "attributes": {
+        "family": "unknown",
+        "offset": "591685",
+        "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "type_id": "0x3362d8df"
+      },
+      "compression": "deflate",
+      "expanded": 0,
+      "name": "Contents/User Units Table",
+      "role": "block",
+      "stored": 2
+    },
+    {
+      "attributes": {
+        "family": "xml",
+        "offset": "591742",
+        "sha256": "f9ce32061aa9b9da07dc68a9c6c7be7a1af2878cb92d12b504787a1b4dfaa443",
+        "type_id": "0x33e2d8df"
+      },
+      "compression": "deflate",
+      "expanded": 48,
+      "name": "Contents/View Orientation Data",
+      "role": "block",
+      "stored": 50
+    },
+    {
+      "attributes": {
+        "family": "unknown",
+        "offset": "591852",
+        "sha256": "fb5e512425fc9449316ec95969ebe71e2d576dbab833d61e2a5b9330fd70ee02",
+        "type_id": "0x3362d8df"
+      },
+      "compression": "deflate",
+      "expanded": 4,
+      "name": "Contents/eModelLic",
+      "role": "block",
+      "stored": 6
+    },
+    {
+      "attributes": {
+        "family": "sw-objects",
+        "offset": "591906",
+        "sha256": "40885d7e6053bdb7802d810da0efba2bcd7d616691d073aecc3c009a15953ada",
+        "type_id": "0x297f18df"
+      },
+      "compression": "deflate",
+      "expanded": 37226,
+      "name": "Header2",
+      "role": "block",
+      "stored": 6210
+    },
+    {
+      "attributes": {
+        "family": "unknown",
+        "offset": "598153",
+        "sha256": "df3f619804a92fdb4057192dc43dd748ea778adc52bc498ce80524c014b81119",
+        "type_id": "0x3722d8df"
+      },
+      "compression": "deflate",
+      "expanded": 4,
+      "name": "ModelBasedImages/3DViewMetaData",
+      "role": "block",
+      "stored": 6
+    },
+    {
+      "attributes": {
+        "family": "png-preview",
+        "offset": "598220",
+        "sha256": "f4690fa4c6263a38962fdb22f5d95eb7dc97d09fd9e682868040d8afb778f5e9",
+        "type_id": "0x3762d8df"
+      },
+      "compression": "deflate",
+      "expanded": 23720,
+      "name": "ModelBasedImages/ModelBasedImage0",
+      "role": "block",
+      "stored": 22063
+    },
+    {
+      "attributes": {
+        "family": "png-preview",
+        "offset": "620346",
+        "sha256": "b3a5a6f3fc226b7a6adaf70fb9ecda211afbfd3b01db6f28e903e44326c81365",
+        "type_id": "0x3762d8df"
+      },
+      "compression": "deflate",
+      "expanded": 28449,
+      "name": "ModelBasedImages/ModelBasedImage1",
+      "role": "block",
+      "stored": 26736
+    },
+    {
+      "attributes": {
+        "family": "png-preview",
+        "offset": "647145",
+        "sha256": "bf0c472df217f04cd74a5f4e5bcc48e4ec8eab9ac2e7578b75c69311aaca25dc",
+        "type_id": "0x3762d8df"
+      },
+      "compression": "deflate",
+      "expanded": 23056,
+      "name": "ModelBasedImages/ModelBasedImage2",
+      "role": "block",
+      "stored": 21506
+    },
+    {
+      "attributes": {
+        "family": "png-preview",
+        "offset": "668714",
+        "sha256": "519986c593ba4ad7235e8d51ce446956f4a625383a77fbe9199578f3d649a4eb",
+        "type_id": "0x3762d8df"
+      },
+      "compression": "deflate",
+      "expanded": 32234,
+      "name": "ModelBasedImages/ModelBasedImage3",
+      "role": "block",
+      "stored": 30391
+    },
+    {
+      "attributes": {
+        "family": "unknown",
+        "offset": "699255",
+        "sha256": "8a6c47ff4f72546defada0f805371442af6933e1b547c4b61e1154598951470b",
+        "type_id": "0x33a2d8df"
+      },
+      "compression": "deflate",
+      "expanded": 12,
+      "name": "ModelStamps",
+      "role": "block",
+      "stored": 12
+    },
+    {
+      "attributes": {
+        "family": "bmp-thumbnail",
+        "offset": "699308",
+        "sha256": "cfc0dd7ddc8fe196fb6fb510c5372e0a5b661a4ba32214d29a58ccfdc038c46d",
+        "type_id": "0x297f18df"
+      },
+      "compression": "deflate",
+      "expanded": 75582,
+      "name": "Preview",
+      "role": "block",
+      "stored": 24750
+    },
+    {
+      "attributes": {
+        "family": "png-preview",
+        "offset": "724095",
+        "sha256": "32a7b581d9361139bf92e4d8ae6205197d49bd6180817ef5ef9984f27931f6f7",
+        "type_id": "0x3362d8df"
+      },
+      "compression": "deflate",
+      "expanded": 41515,
+      "name": "PreviewPNG",
+      "role": "block",
+      "stored": 39426
+    },
+    {
+      "attributes": {
+        "family": "unknown",
+        "offset": "763561",
+        "sha256": "f4378e44ae2e5d763c1051a3dcead3a048d50333423b659dd944b930192c8ed4",
+        "type_id": "0x3722d8df"
+      },
+      "compression": "deflate",
+      "expanded": 54438,
+      "name": "SWIFT/Config0-MachiningWrapper0",
+      "role": "block",
+      "stored": 5474
+    },
+    {
+      "attributes": {
+        "family": "unknown",
+        "offset": "769096",
+        "sha256": "44a593812fa934a6f5df07fcf61312f648f947bd9d0c918f8eb98781a260985b",
+        "type_id": "0x33e2d8df"
+      },
+      "compression": "deflate",
+      "expanded": 557003,
+      "name": "SWIFT/Config0-Schema1",
+      "role": "block",
+      "stored": 54016
+    },
+    {
+      "attributes": {
+        "family": "sw-objects",
+        "offset": "823163",
+        "sha256": "516e03c8786a5f3f772545dccd51a2972fa9bd240e9999b573dd16a6aefe160d",
+        "type_id": "0x37a2d8df"
+      },
+      "compression": "deflate",
+      "expanded": 457,
+      "name": "SwDocContentMgr/SwDocContentMgrInfo",
+      "role": "block",
+      "stored": 188
+    },
+    {
+      "attributes": {
+        "family": "unknown",
+        "offset": "823416",
+        "sha256": "4e07ac613645d76cb4710e025bdb6f300d7d12514ed48b9552da206f4342d9d5",
+        "type_id": "0x3362d8df"
+      },
+      "compression": "deflate",
+      "expanded": 338,
+      "name": "ThirdPty/Animator",
+      "role": "block",
+      "stored": 173
+    },
+    {
+      "attributes": {
+        "family": "unknown",
+        "offset": "823636",
+        "sha256": "6fe33dbe7c73fe9371512c903cb9b5cf2536c4ba8882a00ffd632f70933d917b",
+        "type_id": "0x3362d8df"
+      },
+      "compression": "deflate",
+      "expanded": 56,
+      "name": "ThirdPty/CMMotionLoadMapU",
+      "role": "block",
+      "stored": 51
+    },
+    {
+      "attributes": {
+        "family": "unknown",
+        "offset": "823742",
+        "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "type_id": "0x3362d8df"
+      },
+      "compression": "deflate",
+      "expanded": 0,
+      "name": "ThirdPty/CM_MOTION_LOAD_1",
+      "role": "block",
+      "stored": 2
+    },
+    {
+      "attributes": {
+        "family": "unknown",
+        "offset": "823799",
+        "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "type_id": "0x33e2d8df"
+      },
+      "compression": "deflate",
+      "expanded": 0,
+      "name": "ThirdPty/SWA_Schedules",
+      "role": "block",
+      "stored": 2
+    },
+    {
+      "attributes": {
+        "family": "unknown",
+        "offset": "823940",
+        "sha256": "62a4e2629f8f1b55a263e6d942d235af078cfc3e1ef4211631e1d138ce136c42",
+        "type_id": "0x33e2d8df"
+      },
+      "compression": "deflate",
+      "expanded": 3076,
+      "name": "ThirdPtyStore/ThirdPtySTGStore",
+      "role": "block",
+      "stored": 530
+    },
+    {
+      "attributes": {
+        "family": "unknown",
+        "offset": "824530",
+        "sha256": "e3f292c8c8cdfed1acaeb4654686485287d875ae306492992685e3caf0af6fa0",
+        "type_id": "0x3362d8df"
+      },
+      "compression": "deflate",
+      "expanded": 50136,
+      "name": "ThirdPtyStore/VisualStates",
+      "role": "block",
+      "stored": 7496
+    },
+    {
+      "attributes": {
+        "family": "xml",
+        "offset": "832082",
+        "sha256": "a50ae48af011114c4a400111c09ca34e083c21db7e82a2f3e3c641c752b89f4d",
+        "type_id": "0x33a2d8df"
+      },
+      "compression": "deflate",
+      "expanded": 556,
+      "name": "[Content_Types].xml",
+      "role": "block",
+      "stored": 232
+    },
+    {
+      "attributes": {
+        "family": "unknown",
+        "offset": "832363",
+        "sha256": "cb0078864887f834f241a3a695ae366a2e487efbcab33dff40390e701ec61e79",
+        "type_id": "0x3722d8df"
+      },
+      "compression": "deflate",
+      "expanded": 6,
+      "name": "_DL_VERSION_11000/DLUpdateStamp",
+      "role": "block",
+      "stored": 6
+    },
+    {
+      "attributes": {
+        "family": "unknown",
+        "offset": "832430",
+        "sha256": "df3f619804a92fdb4057192dc43dd748ea778adc52bc498ce80524c014b81119",
+        "type_id": "0x3722d8df"
+      },
+      "compression": "deflate",
+      "expanded": 4,
+      "name": "_MO_VERSION_11000/AssyVisualData",
+      "role": "block",
+      "stored": 6
+    },
+    {
+      "attributes": {
+        "family": "sw-objects",
+        "offset": "832498",
+        "sha256": "db2eefd9ce1c53b8482d7899121e1d2bab17ca4b2fe2ad31b9651ae88bb6f547",
+        "type_id": "0x33a2d8df"
+      },
+      "compression": "deflate",
+      "expanded": 31183,
+      "name": "_MO_VERSION_11000/Biography",
+      "role": "block",
+      "stored": 4790
+    },
+    {
+      "attributes": {
+        "family": "sw-objects",
+        "offset": "837345",
+        "sha256": "2e88d277e7818d29eaa10133ff2d4ac63c9180cd464d00736a098fcc766b26ca",
+        "type_id": "0x3362d8df"
+      },
+      "compression": "deflate",
+      "expanded": 201,
+      "name": "_MO_VERSION_11000/History",
+      "role": "block",
+      "stored": 149
+    },
+    {
+      "attributes": {
+        "family": "xml",
+        "offset": "837549",
+        "sha256": "8fae89749a8d95ff5996361cf8f7dedb7c74a374c6ed87285d3d8c9e5a48717b",
+        "type_id": "0x33a2d8df"
+      },
+      "compression": "deflate",
+      "expanded": 597,
+      "name": "_rels/.rels",
+      "role": "block",
+      "stored": 234
+    },
+    {
+      "attributes": {
+        "family": "xml",
+        "offset": "837824",
+        "sha256": "1b46a6af5dfde88fbdaad49c4f6b84a6cccf3ba24f0773709e343d8522a3ca84",
+        "type_id": "0x3722d8df"
+      },
+      "compression": "deflate",
+      "expanded": 745,
+      "name": "docProps/Config-0-Properties.xml",
+      "role": "block",
+      "stored": 322
+    },
+    {
+      "attributes": {
+        "family": "xml",
+        "offset": "838208",
+        "sha256": "3661e5a6d65b7d24fd3830fd032571ffec9f84ef635cae82bdefccc50c437256",
+        "type_id": "0x37a2d8df"
+      },
+      "compression": "deflate",
+      "expanded": 10402,
+      "name": "docProps/ISolidWorksInformation.xml",
+      "role": "block",
+      "stored": 1617
+    },
+    {
+      "attributes": {
+        "family": "xml",
+        "offset": "839977",
+        "sha256": "3b27acf7354eda7b810c8649faa4f95485c70ca0c94f9ca73cff062350038d6d",
+        "type_id": "0x33e2d8df"
+      },
+      "compression": "deflate",
+      "expanded": 444,
+      "name": "docProps/OpenTime.xml",
+      "role": "block",
+      "stored": 224
+    },
+    {
+      "attributes": {
+        "family": "xml",
+        "offset": "840252",
+        "sha256": "d69d246f37c251bb4a300d89745e66fbb6c19a4f6a23cf3dcb1cec93c24f6f51",
+        "type_id": "0x3322d8df"
+      },
+      "compression": "deflate",
+      "expanded": 570,
+      "name": "docProps/app.xml",
+      "role": "block",
+      "stored": 327
+    },
+    {
+      "attributes": {
+        "family": "xml",
+        "offset": "840625",
+        "sha256": "29dfdc8b087fbb08743fb878126a7b958115a80ddd4d5577c6a8bfb7d83259cc",
+        "type_id": "0x3362d8df"
+      },
+      "compression": "deflate",
+      "expanded": 1387,
+      "name": "docProps/core.xml",
+      "role": "block",
+      "stored": 397
+    },
+    {
+      "attributes": {
+        "family": "xml",
+        "offset": "841069",
+        "sha256": "81dfdcf960e6fb0f9b885e6e32568cdf53e1a71880e1caf6e63ed82faa149f83",
+        "type_id": "0x33a2d8df"
+      },
+      "compression": "deflate",
+      "expanded": 1871,
+      "name": "docProps/custom.xml",
+      "role": "block",
+      "stored": 555
+    },
+    {
+      "attributes": {
+        "family": "xml",
+        "offset": "841673",
+        "sha256": "2a05b3cb068c23a9cedd86c237c44e5293cb2f00c1a612eeabf0761cbe6f4638",
+        "type_id": "0x33e2d8df"
+      },
+      "compression": "deflate",
+      "expanded": 903,
+      "name": "swXmlContents/Features",
+      "role": "block",
+      "stored": 441
+    },
+    {
+      "attributes": {
+        "family": "xml",
+        "offset": "842166",
+        "sha256": "a3ae77da328a0e6e8631cb6542e73f77bb406fd6347459c0109cc6f0f7e339b0",
+        "type_id": "0x33e2d8df"
+      },
+      "compression": "deflate",
+      "expanded": 12523,
+      "name": "swXmlContents/KeyWords",
+      "role": "block",
+      "stored": 2795
+    },
+    {
+      "attributes": {
+        "family": "xml",
+        "offset": "845013",
+        "sha256": "011567611c5bab88ba9681db1144544e863c4b12968fe9266c6d43bf7402c7c6",
+        "type_id": "0x3362d8df"
+      },
+      "compression": "deflate",
+      "expanded": 3722,
+      "name": "swXmlContents/MATERIALTREE",
+      "role": "block",
+      "stored": 1091
+    },
+    {
+      "attributes": {
+        "family": "unknown",
+        "offset": "846160",
+        "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "type_id": "0x33a2d8df"
+      },
+      "compression": "deflate",
+      "expanded": 0,
+      "name": "swXmlContents/Tables",
+      "role": "block",
+      "stored": 2
+    },
+    {
+      "attributes": {
+        "family": "unknown",
+        "offset": "846212",
+        "sha256": "984b45316f79f4bd2ee12e43e8082732d7d21faa21d4cfb720df1b49740c42c6",
+        "type_id": "0xf5690001"
+      },
+      "compression": "deflate",
+      "expanded": 284,
+      "name": "ThirdPty/GSSLCAMWorksPDM",
+      "role": "block",
+      "stored": 50
+    },
+    {
+      "attributes": {
+        "family": "unknown",
+        "offset": "846316",
+        "sha256": "2e351968078ddc17bd22013a030220721cf5669e2ac7d6a01fab14481b67ebc5",
+        "type_id": "0xf5690001"
+      },
+      "compression": "deflate",
+      "expanded": 32926,
+      "name": "ThirdPty/GSSLMachineWorks",
+      "role": "block",
+      "stored": 7617
+    },
+    {
+      "attributes": {
+        "family": "unknown",
+        "offset": "854075",
+        "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "type_id": "0xf5690001"
+      },
+      "compression": "deflate",
+      "expanded": 0,
+      "name": "ThirdPty/SWNGREStream",
+      "role": "block",
+      "stored": 2
+    },
+    {
+      "attributes": {
+        "family": "parasolid",
+        "offset": "854128",
+        "parasolid_description": ": TRANSMIT FILE created by modeller version 2900195",
+        "parasolid_schema": "SCH_2900195_28101_13006",
+        "sha256": "7d0c11892692f800f571a147d3c3bb2515b511929ac8acd3ba08e33f15444575",
+        "type_id": "0xf5690001"
+      },
+      "compression": "deflate",
+      "expanded": 189446,
+      "name": "ThirdPty/WELDMENT_STORAGE",
+      "role": "block",
+      "stored": 39505
+    },
+    {
+      "attributes": {
+        "offset": "893690",
+        "type_id": "0x33e2d8df"
+      },
+      "compression": "none",
+      "name": "Contents/CMgr",
+      "role": "directory-entry",
+      "size": {
+        "form": "payload_only",
+        "payload": 3223
+      }
+    },
+    {
+      "attributes": {
+        "offset": "893749",
+        "type_id": "0x3362d8df"
+      },
+      "compression": "none",
+      "name": "Contents/CMgrHdr2",
+      "role": "directory-entry",
+      "size": {
+        "form": "payload_only",
+        "payload": 83
+      }
+    },
+    {
+      "attributes": {
+        "offset": "893812",
+        "type_id": "0x3362d8df"
+      },
+      "compression": "none",
+      "name": "Contents/CnfgObjs",
+      "role": "directory-entry",
+      "size": {
+        "form": "payload_only",
+        "payload": 59
+      }
+    },
+    {
+      "attributes": {
+        "offset": "893875",
+        "type_id": "0x3362d8df"
+      },
+      "compression": "none",
+      "name": "Contents/Config-0",
+      "role": "directory-entry",
+      "size": {
+        "form": "payload_only",
+        "payload": 5996
+      }
+    },
+    {
+      "attributes": {
+        "offset": "893938",
+        "type_id": "0x3722d8df"
+      },
+      "compression": "none",
+      "name": "Contents/Config-0-GhostPartition",
+      "role": "directory-entry",
+      "size": {
+        "form": "payload_only",
+        "payload": 832
+      }
+    },
+    {
+      "attributes": {
+        "offset": "894016",
+        "type_id": "0x3322d8df"
+      },
+      "compression": "none",
+      "name": "Contents/Config-0-LWDATA",
+      "role": "directory-entry",
+      "size": {
+        "form": "payload_only",
+        "payload": 575
+      }
+    },
+    {
+      "attributes": {
+        "offset": "894086",
+        "type_id": "0x33e2d8df"
+      },
+      "compression": "none",
+      "name": "Contents/Config-0-ModelHeader",
+      "role": "directory-entry",
+      "size": {
+        "form": "payload_only",
+        "payload": 6210
+      }
+    },
+    {
+      "attributes": {
+        "offset": "894161",
+        "type_id": "0x33a2d8df"
+      },
+      "compression": "none",
+      "name": "Contents/Config-0-Partition",
+      "role": "directory-entry",
+      "size": {
+        "form": "payload_only",
+        "payload": 319010
+      }
+    },
+    {
+      "attributes": {
+        "offset": "894234",
+        "type_id": "0x3762d8df"
+      },
+      "compression": "none",
+      "name": "Contents/Config-0-ResolvedFeatures",
+      "role": "directory-entry",
+      "size": {
+        "form": "payload_only",
+        "payload": 117530
+      }
+    },
+    {
+      "attributes": {
+        "offset": "894314",
+        "type_id": "0x3362d8df"
+      },
+      "compression": "none",
+      "name": "Contents/CusProps",
+      "role": "directory-entry",
+      "size": {
+        "form": "payload_only",
+        "payload": 27
+      }
+    },
+    {
+      "attributes": {
+        "offset": "894377",
+        "type_id": "0x33a2d8df"
+      },
+      "compression": "none",
+      "name": "Contents/Definition",
+      "role": "directory-entry",
+      "size": {
+        "form": "payload_only",
+        "payload": 1589
+      }
+    },
+    {
+      "attributes": {
+        "offset": "894442",
+        "type_id": "0x33e2d8df"
+      },
+      "compression": "none",
+      "name": "Contents/DisplayLists",
+      "role": "directory-entry",
+      "size": {
+        "form": "payload_only",
+        "payload": 134879
+      }
+    },
+    {
+      "attributes": {
+        "offset": "894509",
+        "type_id": "0x33a2d8df"
+      },
+      "compression": "none",
+      "name": "Contents/MBLinkData",
+      "role": "directory-entry",
+      "size": {
+        "form": "payload_only",
+        "payload": 5
+      }
+    },
+    {
+      "attributes": {
+        "offset": "894574",
+        "type_id": "0x3322d8df"
+      },
+      "compression": "none",
+      "name": "Contents/ModelBasedViews",
+      "role": "directory-entry",
+      "size": {
+        "form": "payload_only",
+        "payload": 2
+      }
+    },
+    {
+      "attributes": {
+        "offset": "894644",
+        "type_id": "0x3362d8df"
+      },
+      "compression": "none",
+      "name": "Contents/OleItems",
+      "role": "directory-entry",
+      "size": {
+        "form": "payload_only",
+        "payload": 6
+      }
+    },
+    {
+      "attributes": {
+        "offset": "894707",
+        "type_id": "0x3362d8df"
+      },
+      "compression": "none",
+      "name": "Contents/User Units Table",
+      "role": "directory-entry",
+      "size": {
+        "form": "payload_only",
+        "payload": 2
+      }
+    },
+    {
+      "attributes": {
+        "offset": "894778",
+        "type_id": "0x33e2d8df"
+      },
+      "compression": "none",
+      "name": "Contents/View Orientation Data",
+      "role": "directory-entry",
+      "size": {
+        "form": "payload_only",
+        "payload": 50
+      }
+    },
+    {
+      "attributes": {
+        "offset": "894854",
+        "type_id": "0x3362d8df"
+      },
+      "compression": "none",
+      "name": "Contents/eModelLic",
+      "role": "directory-entry",
+      "size": {
+        "form": "payload_only",
+        "payload": 6
+      }
+    },
+    {
+      "attributes": {
+        "offset": "894918",
+        "type_id": "0x297f18df"
+      },
+      "compression": "none",
+      "name": "Header2",
+      "role": "directory-entry",
+      "size": {
+        "form": "payload_only",
+        "payload": 6210
+      }
+    },
+    {
+      "attributes": {
+        "offset": "894971",
+        "type_id": "0x3722d8df"
+      },
+      "compression": "none",
+      "name": "ModelBasedImages/3DViewMetaData",
+      "role": "directory-entry",
+      "size": {
+        "form": "payload_only",
+        "payload": 6
+      }
+    },
+    {
+      "attributes": {
+        "offset": "895048",
+        "type_id": "0x3762d8df"
+      },
+      "compression": "none",
+      "name": "ModelBasedImages/ModelBasedImage0",
+      "role": "directory-entry",
+      "size": {
+        "form": "payload_only",
+        "payload": 22063
+      }
+    },
+    {
+      "attributes": {
+        "offset": "895127",
+        "type_id": "0x3762d8df"
+      },
+      "compression": "none",
+      "name": "ModelBasedImages/ModelBasedImage1",
+      "role": "directory-entry",
+      "size": {
+        "form": "payload_only",
+        "payload": 26736
+      }
+    },
+    {
+      "attributes": {
+        "offset": "895206",
+        "type_id": "0x3762d8df"
+      },
+      "compression": "none",
+      "name": "ModelBasedImages/ModelBasedImage2",
+      "role": "directory-entry",
+      "size": {
+        "form": "payload_only",
+        "payload": 21506
+      }
+    },
+    {
+      "attributes": {
+        "offset": "895285",
+        "type_id": "0x3762d8df"
+      },
+      "compression": "none",
+      "name": "ModelBasedImages/ModelBasedImage3",
+      "role": "directory-entry",
+      "size": {
+        "form": "payload_only",
+        "payload": 30391
+      }
+    },
+    {
+      "attributes": {
+        "offset": "895364",
+        "type_id": "0x33a2d8df"
+      },
+      "compression": "none",
+      "name": "ModelStamps",
+      "role": "directory-entry",
+      "size": {
+        "form": "payload_only",
+        "payload": 12
+      }
+    },
+    {
+      "attributes": {
+        "offset": "895421",
+        "type_id": "0x297f18df"
+      },
+      "compression": "none",
+      "name": "Preview",
+      "role": "directory-entry",
+      "size": {
+        "form": "payload_only",
+        "payload": 24750
+      }
+    },
+    {
+      "attributes": {
+        "offset": "895474",
+        "type_id": "0x3362d8df"
+      },
+      "compression": "none",
+      "name": "PreviewPNG",
+      "role": "directory-entry",
+      "size": {
+        "form": "payload_only",
+        "payload": 39426
+      }
+    },
+    {
+      "attributes": {
+        "offset": "895530",
+        "type_id": "0x3722d8df"
+      },
+      "compression": "none",
+      "name": "SWIFT/Config0-MachiningWrapper0",
+      "role": "directory-entry",
+      "size": {
+        "form": "payload_only",
+        "payload": 5474
+      }
+    },
+    {
+      "attributes": {
+        "offset": "895607",
+        "type_id": "0x33e2d8df"
+      },
+      "compression": "none",
+      "name": "SWIFT/Config0-Schema1",
+      "role": "directory-entry",
+      "size": {
+        "form": "payload_only",
+        "payload": 54016
+      }
+    },
+    {
+      "attributes": {
+        "offset": "895674",
+        "type_id": "0x37a2d8df"
+      },
+      "compression": "none",
+      "name": "SwDocContentMgr/SwDocContentMgrInfo",
+      "role": "directory-entry",
+      "size": {
+        "form": "payload_only",
+        "payload": 188
+      }
+    },
+    {
+      "attributes": {
+        "offset": "895755",
+        "type_id": "0x3362d8df"
+      },
+      "compression": "none",
+      "name": "ThirdPty/Animator",
+      "role": "directory-entry",
+      "size": {
+        "form": "payload_only",
+        "payload": 173
+      }
+    },
+    {
+      "attributes": {
+        "offset": "895818",
+        "type_id": "0x3362d8df"
+      },
+      "compression": "none",
+      "name": "ThirdPty/CMMotionLoadMapU",
+      "role": "directory-entry",
+      "size": {
+        "form": "payload_only",
+        "payload": 51
+      }
+    },
+    {
+      "attributes": {
+        "offset": "895889",
+        "type_id": "0x3362d8df"
+      },
+      "compression": "none",
+      "name": "ThirdPty/CM_MOTION_LOAD_1",
+      "role": "directory-entry",
+      "size": {
+        "form": "payload_only",
+        "payload": 2
+      }
+    },
+    {
+      "attributes": {
+        "offset": "895960",
+        "type_id": "0x33e2d8df"
+      },
+      "compression": "none",
+      "name": "ThirdPty/SWA_Schedules",
+      "role": "directory-entry",
+      "size": {
+        "form": "payload_only",
+        "payload": 2
+      }
+    },
+    {
+      "attributes": {
+        "offset": "896028",
+        "type_id": "0x33e2d8df"
+      },
+      "compression": "none",
+      "name": "ThirdPtyStore/ThirdPtySTGStore",
+      "role": "directory-entry",
+      "size": {
+        "form": "payload_only",
+        "payload": 530
+      }
+    },
+    {
+      "attributes": {
+        "offset": "896104",
+        "type_id": "0x3362d8df"
+      },
+      "compression": "none",
+      "name": "ThirdPtyStore/VisualStates",
+      "role": "directory-entry",
+      "size": {
+        "form": "payload_only",
+        "payload": 7496
+      }
+    },
+    {
+      "attributes": {
+        "offset": "896176",
+        "type_id": "0x33a2d8df"
+      },
+      "compression": "none",
+      "name": "[Content_Types].xml",
+      "role": "directory-entry",
+      "size": {
+        "form": "payload_only",
+        "payload": 232
+      }
+    },
+    {
+      "attributes": {
+        "offset": "896241",
+        "type_id": "0x3722d8df"
+      },
+      "compression": "none",
+      "name": "_DL_VERSION_11000/DLUpdateStamp",
+      "role": "directory-entry",
+      "size": {
+        "form": "payload_only",
+        "payload": 6
+      }
+    },
+    {
+      "attributes": {
+        "offset": "896318",
+        "type_id": "0x3722d8df"
+      },
+      "compression": "none",
+      "name": "_MO_VERSION_11000/AssyVisualData",
+      "role": "directory-entry",
+      "size": {
+        "form": "payload_only",
+        "payload": 6
+      }
+    },
+    {
+      "attributes": {
+        "offset": "896396",
+        "type_id": "0x33a2d8df"
+      },
+      "compression": "none",
+      "name": "_MO_VERSION_11000/Biography",
+      "role": "directory-entry",
+      "size": {
+        "form": "payload_only",
+        "payload": 4790
+      }
+    },
+    {
+      "attributes": {
+        "offset": "896469",
+        "type_id": "0x3362d8df"
+      },
+      "compression": "none",
+      "name": "_MO_VERSION_11000/History",
+      "role": "directory-entry",
+      "size": {
+        "form": "payload_only",
+        "payload": 149
+      }
+    },
+    {
+      "attributes": {
+        "offset": "896540",
+        "type_id": "0x33a2d8df"
+      },
+      "compression": "none",
+      "name": "_rels/.rels",
+      "role": "directory-entry",
+      "size": {
+        "form": "payload_only",
+        "payload": 234
+      }
+    },
+    {
+      "attributes": {
+        "offset": "896597",
+        "type_id": "0x3722d8df"
+      },
+      "compression": "none",
+      "name": "docProps/Config-0-Properties.xml",
+      "role": "directory-entry",
+      "size": {
+        "form": "payload_only",
+        "payload": 322
+      }
+    },
+    {
+      "attributes": {
+        "offset": "896675",
+        "type_id": "0x37a2d8df"
+      },
+      "compression": "none",
+      "name": "docProps/ISolidWorksInformation.xml",
+      "role": "directory-entry",
+      "size": {
+        "form": "payload_only",
+        "payload": 1617
+      }
+    },
+    {
+      "attributes": {
+        "offset": "896756",
+        "type_id": "0x33e2d8df"
+      },
+      "compression": "none",
+      "name": "docProps/OpenTime.xml",
+      "role": "directory-entry",
+      "size": {
+        "form": "payload_only",
+        "payload": 224
+      }
+    },
+    {
+      "attributes": {
+        "offset": "896823",
+        "type_id": "0x3322d8df"
+      },
+      "compression": "none",
+      "name": "docProps/app.xml",
+      "role": "directory-entry",
+      "size": {
+        "form": "payload_only",
+        "payload": 327
+      }
+    },
+    {
+      "attributes": {
+        "offset": "896885",
+        "type_id": "0x3362d8df"
+      },
+      "compression": "none",
+      "name": "docProps/core.xml",
+      "role": "directory-entry",
+      "size": {
+        "form": "payload_only",
+        "payload": 397
+      }
+    },
+    {
+      "attributes": {
+        "offset": "896948",
+        "type_id": "0x33a2d8df"
+      },
+      "compression": "none",
+      "name": "docProps/custom.xml",
+      "role": "directory-entry",
+      "size": {
+        "form": "payload_only",
+        "payload": 555
+      }
+    },
+    {
+      "attributes": {
+        "offset": "897013",
+        "type_id": "0x33e2d8df"
+      },
+      "compression": "none",
+      "name": "swXmlContents/Features",
+      "role": "directory-entry",
+      "size": {
+        "form": "payload_only",
+        "payload": 441
+      }
+    },
+    {
+      "attributes": {
+        "offset": "897081",
+        "type_id": "0x33e2d8df"
+      },
+      "compression": "none",
+      "name": "swXmlContents/KeyWords",
+      "role": "directory-entry",
+      "size": {
+        "form": "payload_only",
+        "payload": 2795
+      }
+    },
+    {
+      "attributes": {
+        "offset": "897149",
+        "type_id": "0x3362d8df"
+      },
+      "compression": "none",
+      "name": "swXmlContents/MATERIALTREE",
+      "role": "directory-entry",
+      "size": {
+        "form": "payload_only",
+        "payload": 1091
+      }
+    },
+    {
+      "attributes": {
+        "offset": "897221",
+        "type_id": "0x33a2d8df"
+      },
+      "compression": "none",
+      "name": "swXmlContents/Tables",
+      "role": "directory-entry",
+      "size": {
+        "form": "payload_only",
+        "payload": 2
+      }
+    },
+    {
+      "attributes": {
+        "offset": "897287",
+        "type_id": "0xf5690001"
+      },
+      "compression": "none",
+      "name": "ThirdPty/GSSLCAMWorksPDM",
+      "role": "directory-entry",
+      "size": {
+        "form": "payload_only",
+        "payload": 50
+      }
+    },
+    {
+      "attributes": {
+        "offset": "897357",
+        "type_id": "0xf5690001"
+      },
+      "compression": "none",
+      "name": "ThirdPty/GSSLMachineWorks",
+      "role": "directory-entry",
+      "size": {
+        "form": "payload_only",
+        "payload": 7617
+      }
+    },
+    {
+      "attributes": {
+        "offset": "897428",
+        "type_id": "0xf5690001"
+      },
+      "compression": "none",
+      "name": "ThirdPty/SWNGREStream",
+      "role": "directory-entry",
+      "size": {
+        "form": "payload_only",
+        "payload": 2
+      }
+    },
+    {
+      "attributes": {
+        "offset": "897495",
+        "type_id": "0xf5690001"
+      },
+      "compression": "none",
+      "name": "ThirdPty/WELDMENT_STORAGE",
+      "role": "directory-entry",
+      "size": {
+        "form": "payload_only",
+        "payload": 39505
+      }
+    },
+    {
+      "attributes": {
+        "logical_len": "609",
+        "offset": "15"
+      },
+      "compression": "none",
+      "name": "swXmlContents/KeyWords",
+      "role": "cache-cell",
+      "size": {
+        "form": "payload_only",
+        "payload": 609
+      }
+    },
+    {
+      "attributes": {
+        "logical_len": "1044",
+        "offset": "107"
+      },
+      "compression": "none",
+      "name": "PreviewPNG",
+      "role": "cache-cell",
+      "size": {
+        "form": "payload_only",
+        "payload": 1044
+      }
+    },
+    {
+      "attributes": {
+        "logical_len": "522",
+        "offset": "188"
+      },
+      "compression": "none",
+      "name": "Preview",
+      "role": "cache-cell",
+      "size": {
+        "form": "payload_only",
+        "payload": 522
+      }
+    },
+    {
+      "attributes": {
+        "logical_len": "870",
+        "offset": "279"
+      },
+      "compression": "none",
+      "name": "Contents/DisplayLists",
+      "role": "cache-cell",
+      "size": {
+        "form": "payload_only",
+        "payload": 870
+      }
+    },
+    {
+      "attributes": {
+        "logical_len": "435",
+        "offset": "3627"
+      },
+      "compression": "none",
+      "name": "Preview",
+      "role": "cache-cell",
+      "size": {
+        "form": "payload_only",
+        "payload": 435
+      }
+    },
+    {
+      "attributes": {
+        "logical_len": "1131",
+        "offset": "3852"
+      },
+      "compression": "none",
+      "name": "Preview",
+      "role": "cache-cell",
+      "size": {
+        "form": "payload_only",
+        "payload": 1131
+      }
+    },
+    {
+      "attributes": {
+        "logical_len": "435",
+        "offset": "4037"
+      },
+      "compression": "none",
+      "name": "Contents/Config-0-Partition",
+      "role": "cache-cell",
+      "size": {
+        "form": "payload_only",
+        "payload": 435
+      }
+    },
+    {
+      "attributes": {
+        "logical_len": "1131",
+        "offset": "10175"
+      },
+      "compression": "none",
+      "name": "Contents/Config-0-ResolvedFeatures",
+      "role": "cache-cell",
+      "size": {
+        "form": "payload_only",
+        "payload": 1131
+      }
+    },
+    {
+      "attributes": {
+        "logical_len": "1044",
+        "offset": "337120"
+      },
+      "compression": "none",
+      "name": "PreviewPNG",
+      "role": "cache-cell",
+      "size": {
+        "form": "payload_only",
+        "payload": 1044
+      }
+    },
+    {
+      "attributes": {
+        "logical_len": "522",
+        "offset": "591547"
+      },
+      "compression": "none",
+      "name": "Contents/Config-0-ResolvedFeatures",
+      "role": "cache-cell",
+      "size": {
+        "form": "payload_only",
+        "payload": 522
+      }
+    },
+    {
+      "attributes": {
+        "logical_len": "609",
+        "offset": "699171"
+      },
+      "compression": "none",
+      "name": "Contents/DisplayLists",
+      "role": "cache-cell",
+      "size": {
+        "form": "payload_only",
+        "payload": 609
+      }
+    },
+    {
+      "attributes": {
+        "logical_len": "1044",
+        "offset": "823861"
+      },
+      "compression": "none",
+      "name": "Preview",
+      "role": "cache-cell",
+      "size": {
+        "form": "payload_only",
+        "payload": 1044
+      }
+    },
+    {
+      "attributes": {
+        "logical_len": "783",
+        "offset": "839895"
+      },
+      "compression": "none",
+      "name": "swXmlContents/KeyWords",
+      "role": "cache-cell",
+      "size": {
+        "form": "payload_only",
+        "payload": 783
+      }
+    },
+    {
+      "attributes": {
+        "logical_len": "783",
+        "offset": "853993"
+      },
+      "compression": "none",
+      "name": "Preview",
+      "role": "cache-cell",
+      "size": {
+        "form": "payload_only",
+        "payload": 783
+      }
+    }
+  ],
+  "identity": {
+    "classification": "classified",
+    "dialects": {
+      "extra": [
+        {
+          "admission": "admitted",
+          "declared": {
+            "carrier": "block@10253:Contents/Config-0-GhostPartition+0",
+            "schema": "SCH_3000269_30000_13006"
+          },
+          "dialect": "parasolid:format-13006",
+          "instance": "block@10253:Contents/Config-0-GhostPartition+0"
+        },
+        {
+          "admission": "admitted",
+          "declared": {
+            "carrier": "block@18045:Contents/Config-0-Partition+0",
+            "schema": "SCH_3000269_30000_13006"
+          },
+          "dialect": "parasolid:format-13006",
+          "instance": "block@18045:Contents/Config-0-Partition+0"
+        },
+        {
+          "admission": "admitted",
+          "declared": {
+            "carrier": "block@18045:Contents/Config-0-Partition+147212",
+            "schema": "SCH_3000269_30000_13006"
+          },
+          "dialect": "parasolid:format-13006",
+          "instance": "block@18045:Contents/Config-0-Partition+147212"
+        },
+        {
+          "admission": "admitted",
+          "declared": {
+            "carrier": "block@337199:Contents/Config-0-ResolvedFeatures+109193",
+            "schema": "SCH_3000269_30000_13006"
+          },
+          "dialect": "parasolid:format-13006",
+          "instance": "block@337199:Contents/Config-0-ResolvedFeatures+109193"
+        },
+        {
+          "admission": "admitted",
+          "declared": {
+            "carrier": "block@337199:Contents/Config-0-ResolvedFeatures+220568",
+            "schema": "SCH_3000269_30000_13006"
+          },
+          "dialect": "parasolid:format-13006",
+          "instance": "block@337199:Contents/Config-0-ResolvedFeatures+220568"
+        },
+        {
+          "admission": "admitted",
+          "declared": {
+            "carrier": "block@337199:Contents/Config-0-ResolvedFeatures+726815",
+            "schema": "SCH_3000269_30000_13006"
+          },
+          "dialect": "parasolid:format-13006",
+          "instance": "block@337199:Contents/Config-0-ResolvedFeatures+726815"
+        },
+        {
+          "admission": "admitted",
+          "declared": {
+            "carrier": "block@337199:Contents/Config-0-ResolvedFeatures+747155",
+            "schema": "SCH_3000269_30000_13006"
+          },
+          "dialect": "parasolid:format-13006",
+          "instance": "block@337199:Contents/Config-0-ResolvedFeatures+747155"
+        },
+        {
+          "admission": "admitted",
+          "declared": {
+            "carrier": "block@854128:ThirdPty/WELDMENT_STORAGE+106701",
+            "schema": "SCH_2900195_28101_13006"
+          },
+          "dialect": "parasolid:format-13006",
+          "instance": "block@854128:ThirdPty/WELDMENT_STORAGE+106701"
+        }
+      ],
+      "primary": {
+        "admission": "admitted",
+        "declared": {
+          "sw_version": "11000"
+        },
+        "dialect": "sldprt:sw-version-pre-12000"
+      }
+    }
+  },
+  "notes": [
+    "outer version word: 0x00000004; 56 CRC-validated block(s), 56 tail-directory entry/entries, 14 cache-cell(s), 0 compound stream(s)",
+    "active Parasolid B-rep candidate: Contents/Config-0-Partition (357202 bytes, schema SCH_3000269_30000_13006)",
+    "Parasolid body streams supply the typed topology and analytic carriers used by decode"
+  ]
+}

@@ -3,6 +3,7 @@
 # every codec's golden tree rather than the two that happened to have readers,
 # because a newly wired tree otherwise fails only on Windows.
 crates/*/tests/golden/**/*.json text eol=lf
+crates/cadmpeg/tests/nist_pmi_golden/**/*.json text eol=lf
 crates/*/tests/golden/**/*.txt text eol=lf
 crates/*/tests/golden/**/*.step text eol=lf
 crates/*/tests/golden/**/*.bin binary

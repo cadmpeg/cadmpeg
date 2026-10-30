@@ -1,0 +1,559 @@
+{
+  "container_kind": "iso-10303-21-clear-text",
+  "entries": [
+    {
+      "attributes": {},
+      "compression": "none",
+      "name": "HEADER",
+      "role": "metadata",
+      "size": {
+        "form": "unreported"
+      }
+    },
+    {
+      "attributes": {
+        "entity_count": "13394",
+        "unknown_entities": "APPLICATION_PROTOCOL_DEFINITION:1,CAMERA_MODEL_D3:2,CARTESIAN_POINT:2,CHARACTERIZED_ITEM_WITHIN_REPRESENTATION:20,COLOUR_RGB:6,COMPOUND_REPRESENTATION_ITEM:1,CURVE_STYLE:5,DATUM_FEATURE:2,DESCRIPTIVE_REPRESENTATION_ITEM:15,DIMENSIONAL_EXPONENTS:2,DOCUMENT_PRODUCT_EQUIVALENCE:1,DRAUGHTING_PRE_DEFINED_COLOUR:1,DRAUGHTING_PRE_DEFINED_CURVE_FONT:5,FILL_AREA_STYLE:2,FILL_AREA_STYLE_COLOUR:2,GENERAL_PROPERTY:12,GENERAL_PROPERTY_ASSOCIATION:12,GEOMETRIC_CURVE_SET:24,GEOMETRIC_ITEM_SPECIFIC_USAGE:28,INTEGER_REPRESENTATION_ITEM:4,MEASURE_QUALIFICATION:4,MEASURE_REPRESENTATION_ITEM:20,MECHANICAL_DESIGN_AND_DRAUGHTING_RELATIONSHIP:2,OBJECT_ROLE:1,OVER_RIDING_STYLED_ITEM:2,PLANAR_BOX:2,PRESENTATION_STYLE_ASSIGNMENT:8,PRODUCT_CATEGORY_RELATIONSHIP:1,PRODUCT_DEFINITION_CONTEXT_ASSOCIATION:1,PRODUCT_DEFINITION_CONTEXT_ROLE:1,PRODUCT_RELATED_PRODUCT_CATEGORY:3,PROPERTY_DEFINITION:59,PROPERTY_DEFINITION_REPRESENTATION:57,REPRESENTATION:57,ROLE_ASSOCIATION:1,SHAPE_ASPECT:28,SHAPE_ASPECT_RELATIONSHIP:4,SHAPE_REPRESENTATION_WITH_PARAMETERS:2,SURFACE_SIDE_STYLE:2,SURFACE_STYLE_FILL_AREA:2,SURFACE_STYLE_USAGE:2,TOLERANCE_ZONE:1,TOLERANCE_ZONE_FORM:1,TYPE_QUALIFIER:6,VALUE_FORMAT_TYPE_QUALIFIER:6,VALUE_REPRESENTATION_ITEM:5,VIEW_VOLUME:2"
+      },
+      "compression": "none",
+      "name": "DATA[0]",
+      "role": "entity-records",
+      "size": {
+        "form": "unreported"
+      }
+    },
+    {
+      "attributes": {
+        "dependencies": "external document ISO 16792 (Geometric Tolerancing Standard) from Standards Body",
+        "dependency_count": "1"
+      },
+      "compression": "none",
+      "name": "EXTERNAL_DEPENDENCIES",
+      "role": "external-references",
+      "size": {
+        "form": "unreported"
+      }
+    }
+  ],
+  "identity": {
+    "classification": "classified",
+    "dialects": {
+      "extra": [],
+      "primary": {
+        "admission": "admitted",
+        "declared": {
+          "file_schema_identifier": "AP242_MANAGED_MODEL_BASED_3D_ENGINEERING_MIM_LF {1 0 10303 442 1 1 4 }",
+          "implementation_level": "2;1",
+          "long_form_arcs": "1 0 10303 442 1 1 4 "
+        },
+        "dialect": "step:ap242-e1"
+      }
+    }
+  },
+  "losses": [
+    {
+      "code": {
+        "code": "presentation.conflicting-scalar-colors",
+        "kind": "metadata_not_transferred",
+        "namespace": "step",
+        "scope": "namespaced"
+      },
+      "message": "STYLED_ITEM #111 has distinct equal-precedence colors; no scalar color is selected and the source style graph remains retained",
+      "severity": "warning"
+    },
+    {
+      "code": {
+        "code": "presentation.conflicting-scalar-colors",
+        "kind": "metadata_not_transferred",
+        "namespace": "step",
+        "scope": "namespaced"
+      },
+      "message": "STYLED_ITEM #112 has distinct equal-precedence colors; no scalar color is selected and the source style graph remains retained",
+      "severity": "warning"
+    },
+    {
+      "code": {
+        "code": "drawing.relationship-target-ambiguous",
+        "kind": "reference_graph_not_closed",
+        "namespace": "step",
+        "scope": "namespaced",
+        "strict_floor": "warning"
+      },
+      "message": "STEP drawing #99 DRAUGHTING_MODEL relationship items references source record #100 with multiple neutral identities (step:data:body#1205, step:data:region#1205); no target was selected and the raw source parameter is retained",
+      "severity": "warning"
+    },
+    {
+      "code": {
+        "code": "decode.opaque-record-preserved",
+        "kind": "record_not_typed",
+        "namespace": "step",
+        "scope": "namespaced"
+      },
+      "message": "preserved 1 APPLICATION_PROTOCOL_DEFINITION instance(s) as named opaque STEP records",
+      "severity": "warning"
+    },
+    {
+      "code": {
+        "code": "decode.opaque-record-preserved",
+        "kind": "record_not_typed",
+        "namespace": "step",
+        "scope": "namespaced"
+      },
+      "message": "preserved 2 CAMERA_MODEL_D3 instance(s) as named opaque STEP records",
+      "severity": "warning"
+    },
+    {
+      "code": {
+        "code": "decode.opaque-record-preserved",
+        "kind": "record_not_typed",
+        "namespace": "step",
+        "scope": "namespaced"
+      },
+      "message": "preserved 2 CARTESIAN_POINT instance(s) as named opaque STEP records",
+      "severity": "warning"
+    },
+    {
+      "code": {
+        "code": "decode.opaque-record-preserved",
+        "kind": "record_not_typed",
+        "namespace": "step",
+        "scope": "namespaced"
+      },
+      "message": "preserved 20 CHARACTERIZED_ITEM_WITHIN_REPRESENTATION instance(s) as named opaque STEP records",
+      "severity": "warning"
+    },
+    {
+      "code": {
+        "code": "decode.opaque-record-preserved",
+        "kind": "record_not_typed",
+        "namespace": "step",
+        "scope": "namespaced"
+      },
+      "message": "preserved 6 COLOUR_RGB instance(s) as named opaque STEP records",
+      "severity": "warning"
+    },
+    {
+      "code": {
+        "code": "decode.opaque-record-preserved",
+        "kind": "record_not_typed",
+        "namespace": "step",
+        "scope": "namespaced"
+      },
+      "message": "preserved 1 COMPOUND_REPRESENTATION_ITEM instance(s) as named opaque STEP records",
+      "severity": "warning"
+    },
+    {
+      "code": {
+        "code": "decode.opaque-record-preserved",
+        "kind": "record_not_typed",
+        "namespace": "step",
+        "scope": "namespaced"
+      },
+      "message": "preserved 5 CURVE_STYLE instance(s) as named opaque STEP records",
+      "severity": "warning"
+    },
+    {
+      "code": {
+        "code": "decode.opaque-record-preserved",
+        "kind": "record_not_typed",
+        "namespace": "step",
+        "scope": "namespaced"
+      },
+      "message": "preserved 2 DATUM_FEATURE instance(s) as named opaque STEP records",
+      "severity": "warning"
+    },
+    {
+      "code": {
+        "code": "decode.opaque-record-preserved",
+        "kind": "record_not_typed",
+        "namespace": "step",
+        "scope": "namespaced"
+      },
+      "message": "preserved 15 DESCRIPTIVE_REPRESENTATION_ITEM instance(s) as named opaque STEP records",
+      "severity": "warning"
+    },
+    {
+      "code": {
+        "code": "decode.opaque-record-preserved",
+        "kind": "record_not_typed",
+        "namespace": "step",
+        "scope": "namespaced"
+      },
+      "message": "preserved 2 DIMENSIONAL_EXPONENTS instance(s) as named opaque STEP records",
+      "severity": "warning"
+    },
+    {
+      "code": {
+        "code": "decode.opaque-record-preserved",
+        "kind": "record_not_typed",
+        "namespace": "step",
+        "scope": "namespaced"
+      },
+      "message": "preserved 1 DOCUMENT_PRODUCT_EQUIVALENCE instance(s) as named opaque STEP records",
+      "severity": "warning"
+    },
+    {
+      "code": {
+        "code": "decode.opaque-record-preserved",
+        "kind": "record_not_typed",
+        "namespace": "step",
+        "scope": "namespaced"
+      },
+      "message": "preserved 1 DRAUGHTING_PRE_DEFINED_COLOUR instance(s) as named opaque STEP records",
+      "severity": "warning"
+    },
+    {
+      "code": {
+        "code": "decode.opaque-record-preserved",
+        "kind": "record_not_typed",
+        "namespace": "step",
+        "scope": "namespaced"
+      },
+      "message": "preserved 5 DRAUGHTING_PRE_DEFINED_CURVE_FONT instance(s) as named opaque STEP records",
+      "severity": "warning"
+    },
+    {
+      "code": {
+        "code": "decode.opaque-record-preserved",
+        "kind": "record_not_typed",
+        "namespace": "step",
+        "scope": "namespaced"
+      },
+      "message": "preserved 2 FILL_AREA_STYLE instance(s) as named opaque STEP records",
+      "severity": "warning"
+    },
+    {
+      "code": {
+        "code": "decode.opaque-record-preserved",
+        "kind": "record_not_typed",
+        "namespace": "step",
+        "scope": "namespaced"
+      },
+      "message": "preserved 2 FILL_AREA_STYLE_COLOUR instance(s) as named opaque STEP records",
+      "severity": "warning"
+    },
+    {
+      "code": {
+        "code": "decode.opaque-record-preserved",
+        "kind": "record_not_typed",
+        "namespace": "step",
+        "scope": "namespaced"
+      },
+      "message": "preserved 12 GENERAL_PROPERTY instance(s) as named opaque STEP records",
+      "severity": "warning"
+    },
+    {
+      "code": {
+        "code": "decode.opaque-record-preserved",
+        "kind": "record_not_typed",
+        "namespace": "step",
+        "scope": "namespaced"
+      },
+      "message": "preserved 12 GENERAL_PROPERTY_ASSOCIATION instance(s) as named opaque STEP records",
+      "severity": "warning"
+    },
+    {
+      "code": {
+        "code": "decode.opaque-record-preserved",
+        "kind": "record_not_typed",
+        "namespace": "step",
+        "scope": "namespaced"
+      },
+      "message": "preserved 24 GEOMETRIC_CURVE_SET instance(s) as named opaque STEP records",
+      "severity": "warning"
+    },
+    {
+      "code": {
+        "code": "decode.opaque-record-preserved",
+        "kind": "record_not_typed",
+        "namespace": "step",
+        "scope": "namespaced"
+      },
+      "message": "preserved 28 GEOMETRIC_ITEM_SPECIFIC_USAGE instance(s) as named opaque STEP records",
+      "severity": "warning"
+    },
+    {
+      "code": {
+        "code": "decode.opaque-record-preserved",
+        "kind": "record_not_typed",
+        "namespace": "step",
+        "scope": "namespaced"
+      },
+      "message": "preserved 4 INTEGER_REPRESENTATION_ITEM instance(s) as named opaque STEP records",
+      "severity": "warning"
+    },
+    {
+      "code": {
+        "code": "decode.opaque-record-preserved",
+        "kind": "record_not_typed",
+        "namespace": "step",
+        "scope": "namespaced"
+      },
+      "message": "preserved 4 MEASURE_QUALIFICATION instance(s) as named opaque STEP records",
+      "severity": "warning"
+    },
+    {
+      "code": {
+        "code": "decode.opaque-record-preserved",
+        "kind": "record_not_typed",
+        "namespace": "step",
+        "scope": "namespaced"
+      },
+      "message": "preserved 20 MEASURE_REPRESENTATION_ITEM instance(s) as named opaque STEP records",
+      "severity": "warning"
+    },
+    {
+      "code": {
+        "code": "decode.opaque-record-preserved",
+        "kind": "record_not_typed",
+        "namespace": "step",
+        "scope": "namespaced"
+      },
+      "message": "preserved 2 MECHANICAL_DESIGN_AND_DRAUGHTING_RELATIONSHIP instance(s) as named opaque STEP records",
+      "severity": "warning"
+    },
+    {
+      "code": {
+        "code": "decode.opaque-record-preserved",
+        "kind": "record_not_typed",
+        "namespace": "step",
+        "scope": "namespaced"
+      },
+      "message": "preserved 1 OBJECT_ROLE instance(s) as named opaque STEP records",
+      "severity": "warning"
+    },
+    {
+      "code": {
+        "code": "decode.opaque-record-preserved",
+        "kind": "record_not_typed",
+        "namespace": "step",
+        "scope": "namespaced"
+      },
+      "message": "preserved 2 OVER_RIDING_STYLED_ITEM instance(s) as named opaque STEP records",
+      "severity": "warning"
+    },
+    {
+      "code": {
+        "code": "decode.opaque-record-preserved",
+        "kind": "record_not_typed",
+        "namespace": "step",
+        "scope": "namespaced"
+      },
+      "message": "preserved 2 PLANAR_BOX instance(s) as named opaque STEP records",
+      "severity": "warning"
+    },
+    {
+      "code": {
+        "code": "decode.opaque-record-preserved",
+        "kind": "record_not_typed",
+        "namespace": "step",
+        "scope": "namespaced"
+      },
+      "message": "preserved 8 PRESENTATION_STYLE_ASSIGNMENT instance(s) as named opaque STEP records",
+      "severity": "warning"
+    },
+    {
+      "code": {
+        "code": "decode.opaque-record-preserved",
+        "kind": "record_not_typed",
+        "namespace": "step",
+        "scope": "namespaced"
+      },
+      "message": "preserved 1 PRODUCT_CATEGORY_RELATIONSHIP instance(s) as named opaque STEP records",
+      "severity": "warning"
+    },
+    {
+      "code": {
+        "code": "decode.opaque-record-preserved",
+        "kind": "record_not_typed",
+        "namespace": "step",
+        "scope": "namespaced"
+      },
+      "message": "preserved 1 PRODUCT_DEFINITION_CONTEXT_ASSOCIATION instance(s) as named opaque STEP records",
+      "severity": "warning"
+    },
+    {
+      "code": {
+        "code": "decode.opaque-record-preserved",
+        "kind": "record_not_typed",
+        "namespace": "step",
+        "scope": "namespaced"
+      },
+      "message": "preserved 1 PRODUCT_DEFINITION_CONTEXT_ROLE instance(s) as named opaque STEP records",
+      "severity": "warning"
+    },
+    {
+      "code": {
+        "code": "decode.opaque-record-preserved",
+        "kind": "record_not_typed",
+        "namespace": "step",
+        "scope": "namespaced"
+      },
+      "message": "preserved 3 PRODUCT_RELATED_PRODUCT_CATEGORY instance(s) as named opaque STEP records",
+      "severity": "warning"
+    },
+    {
+      "code": {
+        "code": "decode.opaque-record-preserved",
+        "kind": "record_not_typed",
+        "namespace": "step",
+        "scope": "namespaced"
+      },
+      "message": "preserved 59 PROPERTY_DEFINITION instance(s) as named opaque STEP records",
+      "severity": "warning"
+    },
+    {
+      "code": {
+        "code": "decode.opaque-record-preserved",
+        "kind": "record_not_typed",
+        "namespace": "step",
+        "scope": "namespaced"
+      },
+      "message": "preserved 57 PROPERTY_DEFINITION_REPRESENTATION instance(s) as named opaque STEP records",
+      "severity": "warning"
+    },
+    {
+      "code": {
+        "code": "decode.opaque-record-preserved",
+        "kind": "record_not_typed",
+        "namespace": "step",
+        "scope": "namespaced"
+      },
+      "message": "preserved 57 REPRESENTATION instance(s) as named opaque STEP records",
+      "severity": "warning"
+    },
+    {
+      "code": {
+        "code": "decode.opaque-record-preserved",
+        "kind": "record_not_typed",
+        "namespace": "step",
+        "scope": "namespaced"
+      },
+      "message": "preserved 1 ROLE_ASSOCIATION instance(s) as named opaque STEP records",
+      "severity": "warning"
+    },
+    {
+      "code": {
+        "code": "decode.opaque-record-preserved",
+        "kind": "record_not_typed",
+        "namespace": "step",
+        "scope": "namespaced"
+      },
+      "message": "preserved 28 SHAPE_ASPECT instance(s) as named opaque STEP records",
+      "severity": "warning"
+    },
+    {
+      "code": {
+        "code": "decode.opaque-record-preserved",
+        "kind": "record_not_typed",
+        "namespace": "step",
+        "scope": "namespaced"
+      },
+      "message": "preserved 4 SHAPE_ASPECT_RELATIONSHIP instance(s) as named opaque STEP records",
+      "severity": "warning"
+    },
+    {
+      "code": {
+        "code": "decode.opaque-record-preserved",
+        "kind": "record_not_typed",
+        "namespace": "step",
+        "scope": "namespaced"
+      },
+      "message": "preserved 2 SHAPE_REPRESENTATION_WITH_PARAMETERS instance(s) as named opaque STEP records",
+      "severity": "warning"
+    },
+    {
+      "code": {
+        "code": "decode.opaque-record-preserved",
+        "kind": "record_not_typed",
+        "namespace": "step",
+        "scope": "namespaced"
+      },
+      "message": "preserved 2 SURFACE_SIDE_STYLE instance(s) as named opaque STEP records",
+      "severity": "warning"
+    },
+    {
+      "code": {
+        "code": "decode.opaque-record-preserved",
+        "kind": "record_not_typed",
+        "namespace": "step",
+        "scope": "namespaced"
+      },
+      "message": "preserved 2 SURFACE_STYLE_FILL_AREA instance(s) as named opaque STEP records",
+      "severity": "warning"
+    },
+    {
+      "code": {
+        "code": "decode.opaque-record-preserved",
+        "kind": "record_not_typed",
+        "namespace": "step",
+        "scope": "namespaced"
+      },
+      "message": "preserved 2 SURFACE_STYLE_USAGE instance(s) as named opaque STEP records",
+      "severity": "warning"
+    },
+    {
+      "code": {
+        "code": "decode.opaque-record-preserved",
+        "kind": "record_not_typed",
+        "namespace": "step",
+        "scope": "namespaced"
+      },
+      "message": "preserved 1 TOLERANCE_ZONE instance(s) as named opaque STEP records",
+      "severity": "warning"
+    },
+    {
+      "code": {
+        "code": "decode.opaque-record-preserved",
+        "kind": "record_not_typed",
+        "namespace": "step",
+        "scope": "namespaced"
+      },
+      "message": "preserved 1 TOLERANCE_ZONE_FORM instance(s) as named opaque STEP records",
+      "severity": "warning"
+    },
+    {
+      "code": {
+        "code": "decode.opaque-record-preserved",
+        "kind": "record_not_typed",
+        "namespace": "step",
+        "scope": "namespaced"
+      },
+      "message": "preserved 6 TYPE_QUALIFIER instance(s) as named opaque STEP records",
+      "severity": "warning"
+    },
+    {
+      "code": {
+        "code": "decode.opaque-record-preserved",
+        "kind": "record_not_typed",
+        "namespace": "step",
+        "scope": "namespaced"
+      },
+      "message": "preserved 6 VALUE_FORMAT_TYPE_QUALIFIER instance(s) as named opaque STEP records",
+      "severity": "warning"
+    },
+    {
+      "code": {
+        "code": "decode.opaque-record-preserved",
+        "kind": "record_not_typed",
+        "namespace": "step",
+        "scope": "namespaced"
+      },
+      "message": "preserved 5 VALUE_REPRESENTATION_ITEM instance(s) as named opaque STEP records",
+      "severity": "warning"
+    },
+    {
+      "code": {
+        "code": "decode.opaque-record-preserved",
+        "kind": "record_not_typed",
+        "namespace": "step",
+        "scope": "namespaced"
+      },
+      "message": "preserved 2 VIEW_VOLUME instance(s) as named opaque STEP records",
+      "severity": "warning"
+    }
+  ],
+  "notes": [
+    "schema AP242_MANAGED_MODEL_BASED_3D_ENGINEERING_MIM_LF {1 0 10303 442 1 1 4 }; dialect step:ap242-e1"
+  ]
+}

@@ -1,0 +1,84 @@
+name: NIST PMI producer-evidence goldens
+
+# Slow-cadence inspect and decode snapshots over corpus/nist-pmi. These files
+# are producer evidence, not default cargo-test goldens: the snapshots are
+# large and a full decode pass is minutes, not seconds. They do not gate pull
+# requests. Dispatch this workflow on a branch to run them there.
+
+on:
+  schedule:
+    # Daily at 05:23 UTC, after the CI nightly full gate at 02:13.
+    - cron: "23 5 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name != 'schedule' }}
+
+env:
+  CARGO_TERM_COLOR: always
+  RUST_BACKTRACE: 1
+  CARGO_INCREMENTAL: 0
+  CARGO_PROFILE_DEV_DEBUG: 0
+  CARGO_PROFILE_TEST_DEBUG: 0
+
+jobs:
+  nist-pmi-goldens:
+    name: inspect and decode goldens
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7.0.1
+
+      - name: Install pinned toolchain
+        uses: ./.github/actions/pinned-rust
+
+      - name: Match cargo's job count to the runner
+        uses: ./.github/actions/cargo-job-count
+
+      - name: Hash the Cargo profiles
+        id: profiles
+        uses: ./.github/actions/cargo-profile-key
+
+      - name: Cache cargo registry and target
+        uses: Swatinem/rust-cache@v2
+        with:
+          shared-key: stable
+          prefix-key: v0-rust-${{ steps.profiles.outputs.hash }}
+          save-if: false
+
+      - name: Install cargo-nextest
+        uses: taiki-e/install-action@v2.87.29
+        with:
+          tool: cargo-nextest
+
+      - name: NIST PMI inspect and decode goldens
+        run: |
+          cargo nextest run --cargo-quiet --status-level fail --no-tests pass \
+            -p cadmpeg --test nist_pmi_goldens \
+            --run-ignored ignored-only --no-fail-fast
+
+  schedule-alert:
+    needs: [nist-pmi-goldens]
+    if: ${{ always() && github.event_name == 'schedule' }}
+    name: report scheduled result
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+      issues: write
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7.0.1
+        with:
+          sparse-checkout: .github/actions
+
+      - name: Open, update, or close the failure issue
+        uses: ./.github/actions/schedule-alert
+        with:
+          result: ${{ contains(needs.*.result, 'failure') && 'failure' || contains(needs.*.result, 'cancelled') && 'cancelled' || 'success' }}
+          assignee: ${{ vars.SCHEDULE_ALERT_ASSIGNEE }}
