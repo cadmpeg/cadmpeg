@@ -84,3 +84,8 @@ names = [
     "StepSchema",
 ]
 fuzz = "required"
+
+[[crate]]
+id = "usd"
+names = ["UsdCodec"]
+fuzz = "required"

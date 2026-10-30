@@ -137,6 +137,7 @@ These hold across every codec, every dialect, and every release. A change that b
 | `cadmpeg-codec-sat`      | Bare ASM/ACIS `.sat`/`.smt`/`.smb`/`.sab` stream inspection and B-rep transfer outside any container.                                  |
 | `cadmpeg-codec-pvz`      | Creo View `.pvz` package inspection, product structure, exact B-rep, tessellation, and appearance decode.                              |
 | `cadmpeg-codec-iges`     | IGES Fixed ASCII, Compressed ASCII, and Binary decode; retained replay; and bounded Fixed ASCII semantic writing.                       |
+| `cadmpeg-codec-usd`      | `OpenUSD` USDA layer parsing, single-layer composition, mesh, curve, and NURBS patch decode, and USDA semantic writing.               |
 | `cadmpeg-codec-step`     | STEP Part 21 inspection, decode, semantic writing, and export loss accounting.                                                         |
 | `cadmpeg-fuzz`           | Nightly `cargo-fuzz` targets outside the default workspace.                                                                            |
 
