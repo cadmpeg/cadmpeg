@@ -2563,8 +2563,58 @@ fn decode_stateful_scalar_frame_prefix<const N: usize>(
 
 #[derive(Clone, Copy)]
 pub(crate) enum StatefulScalarKind {
+    CylinderRotation,
     Plane,
     Pcurve,
+}
+
+fn rotation_pcurve_literal(body: &[u8], cursor: usize) -> Option<(f64, usize)> {
+    let mut view = View::over_retained(body);
+    view.seek(cursor)?;
+    let constant = |tag| match tag {
+        0x0e => Some(0.5_f64),
+        0x0f => Some(1.0),
+        0x10 => Some(-1.0),
+        0x11 => Some(std::f64::consts::PI),
+        0x12 => Some(std::f64::consts::FRAC_PI_2),
+        0x13 => Some(std::f64::consts::TAU),
+        _ => None,
+    };
+    let value = match view.u8()? {
+        0x00 => {
+            let base = constant(view.u8()?)?;
+            let mut raw = base.to_be_bytes();
+            raw[7] = view.u8()?;
+            be_f64(raw)
+        }
+        tag @ (0x1b | 0x34) => be_f64([
+            if tag == 0x1b { 0x3c } else { 0xbc },
+            view.u8()?,
+            view.u8()?,
+            0,
+            0,
+            0,
+            0,
+            0,
+        ]),
+        tag @ (0x11 | 0x13) => constant(tag)?,
+        _ => return None,
+    };
+    Some((value, view.read_len()))
+}
+
+pub(crate) fn decode_cylinder_rotation_prefix(
+    body: &[u8],
+    cache: &ScalarCache,
+) -> Option<(FiniteVector<12>, usize)> {
+    let (frame, end) = decode_stateful_scalar_frame_prefix::<12>(
+        body,
+        cache,
+        StatefulScalarKind::CylinderRotation,
+    )?;
+    rotation_plane_axes(&frame.values)?;
+    let values = FiniteVector::new(frame.values)?;
+    Some((values, end))
 }
 
 pub(crate) fn decode_stateful_scalar_run(
@@ -2575,6 +2625,14 @@ pub(crate) fn decode_stateful_scalar_run(
     kind: StatefulScalarKind,
 ) -> Option<(f64, usize, usize)> {
     let token = *body.get(cursor)?;
+    if matches!(
+        kind,
+        StatefulScalarKind::Pcurve | StatefulScalarKind::CylinderRotation
+    ) {
+        if let Some((value, end)) = rotation_pcurve_literal(body, cursor) {
+            return Some((value, 1, end));
+        }
+    }
     let run = match token {
         0xe4..=0xe6 => (previous?, usize::from(token - 0xe3), cursor + 1),
         0xe7 if matches!(kind, StatefulScalarKind::Pcurve) => {

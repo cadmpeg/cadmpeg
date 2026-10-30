@@ -675,8 +675,9 @@ Named prototype fields describe the first surface instance. Within a complete
 counted `srf_array` frame, the immediately preceding row is the first instance
 when it has the prototype's family. When the immediately preceding row has a
 different family, or when the prototype occurs before the first row header, the
-following same-family row is the first instance. Positional row bodies carry
-the per-instance values for subsequent instances.
+following same-family row is the first instance. The first instance retains
+its named chart origin and signed basis through carrier reconstruction.
+Positional row bodies carry the per-instance values for subsequent instances.
 
 A later positional `geom_type = 0x28` row replays its `splsrf` prototype
 positionally. The row and prototype must be in one complete counted `srf_array`
@@ -710,7 +711,12 @@ lane and leaves the local system unresolved.
 A plane, cylinder, cone, or torus prototype can store a complete signed
 axis-permutation matrix inside its bounded `local_sys f9 04 03` field.
 This body uses the compact rotation production in §3.4. The following named
-field bounds the frame.
+field bounds the frame. A cylinder prototype also admits a complete general
+orthonormal rotation matrix in the pcurve and cylinder-rotation scalar stream.
+Its first nine slots are row-major direction values, its final three slots
+are the origin, and the columns are the radial reference, transverse direction,
+and signed axis. The complete field has twelve finite slots and an optional
+terminal `e1` null marker. Its unique positive `radius` completes the carrier.
 
 Within a sequential support-triple named prototype `local_sys`, `e7 <count>` advances over `count`
 inherited scalar slots. The count is a positive compact integer, must not cross
@@ -973,6 +979,34 @@ origin and use the first tabulated-cylinder coordinate lane, including its
 signed `46` form. The terminal scalar is the radius. This body defines an
 unbounded carrier and no axial extent. Prefix bytes before the unique complete
 suffix do not contribute carrier geometry.
+
+A bounded rotation-matrix cylinder stores four parameter bounds in the order
+`u0`, `v0`, `u1`, `v1`, followed by two XYZ envelope corners. Both parameter
+intervals have increasing finite bounds. The ten scalars use the signed
+first-coordinate lane and the compact rotation scalar forms in §4.1.
+`18` is zero, and `e4`, `e5`, and `e6` repeat the preceding scalar one, two,
+and three times. Repetition carries across the four parameter bounds and
+across the six corner coordinates; each group must be complete.
+
+An `e3` closes a positional envelope. Twelve finite scalar slots follow in
+row-major order: a right-handed orthonormal rotation matrix and three origin
+coordinates. The matrix columns are the radial reference, transverse
+direction, and signed axis. The direction and origin slots share the compact
+scalar stream; repetition carries across their boundary. One positive radius
+and `e3` complete the body.
+
+An active-datum first cylinder stores the envelope before its named cylinder
+prototype. The unique prototype between that row header and the next row
+header supplies the complete `local_sys f9 04 03` matrix and unique positive
+`radius`. The row and prototype belong to one complete counted surface array.
+Its named frame and a later positional frame use the same placement gate.
+
+The axis is a signed model axis. Each radial corner coordinate lies between
+the stored origin coordinate minus and plus the radius. The axial corner
+pair equals the origin plus the signed axis times each axial parameter bound,
+in either order. The origin, axis, reference direction, radius, and axial
+span define the instance carrier. Complete scalar consumption and all corner
+conditions are required together.
 
 A referenced inline-cylinder envelope begins with one complete `32` model
 reference, followed by three first-directrix-coordinate scalars, six
@@ -2418,9 +2452,13 @@ topology fields make the prototype ambiguous.
 The named prototype's `crv_pnt_dir` array stores the two half-edge direction
 flags. A unique named prototype topology record supplies a rowless edge when a
 positional or prototype topology suffix references its `crv_id` as `E0` or
-`E1`. The decoder promotes that record to the half-edge graph only when the
-prototype, its topology record, its direction array, and both face references
-are unique in the enclosing model namespace. A named prototype that is not
+`E1`. That record forms a half-edge graph row when the prototype, its
+topology record, its direction array, and both face references are unique in
+the enclosing model namespace. The face-reference roster contains visible
+and non-visible surface-row identifiers and the `geom_id` values of complete
+active-datum cylinder rows with admitted carriers and unique identifiers.
+The active-datum row binds its identifier to its feature owner and signed
+carrier frame. A named prototype that is not
 referenced as a successor remains schema data.
 
 ### 4.1.1 Legacy ASCII curve topology and endpoints
@@ -2472,6 +2510,17 @@ unprefixed replay body.
 
 Each chart sample at one index describes the same spatial point. All sample
 indices belong to the stored curve.
+
+The pcurve and cylinder-rotation scalar streams define `11` as positive pi
+and `13` as positive two pi. The three-byte form `00 K B`, with
+`K` in `0e`, `0f`, `10`, `11`, `12`, or `13`, replaces the low IEEE-754 byte
+of the corresponding constant with `B`. Those constants are positive one
+half, positive one, negative one, positive pi, positive pi/2, and positive
+two pi. The three-byte scalar `1b X Y` reconstructs IEEE-754 bytes
+`3c X Y 00 00 00 00 00`; `34 X Y` reconstructs
+`bc X Y 00 00 00 00 00`. These forms occupy one scalar slot and replace
+the preceding value used by subsequent repeats. Cylinder-rotation repeats
+use `e4`, `e5`, and `e6`; pcurve streams also admit the counted `e7` form.
 
 The scalar stream uses the direct eight-slot pcurve literals and bounded
 repeats, including `12` positive pi/2 and `e7 <count>`. The first scalar is
@@ -2672,6 +2721,16 @@ changes neither carrier equation and does not assign native parameter
 semantics.
 
 ## 5. Topology and section records
+
+A planar face can have one strictly convex polygon perimeter of typed line
+edges and disjoint two-edge circular hole loops. Each circle loop has two
+distinct circle carriers with one center, radius, and axis parallel to the
+plane normal. Its closed native pcurve paths have diametrically opposite
+endpoints. Every polygon edge places all other polygon vertices strictly on
+its interior side. Every circle center lies farther than its radius from each
+polygon edge, and every center pair is farther apart than the sum of their
+radii. These conditions establish the polygon as the outer loop and each
+circle as an inner loop.
 
 Build the B-rep half-edge graph from the `crv_array` suffixes. A single-loop face has an outer boundary by topology. A two-edge loop is admissible only when its distinct edge carriers have typed non-linear geometry, complete native pcurve endpoint paths close in traversal order, and the resulting boundary is otherwise ordered by the same face rules. For multiple two-edge circular loops on a plane, complete circle carriers with a common center and distinct radii provide the outer-to-inner order. Two-edge line-only loops and ambiguous circular loop sets remain native. Multi-loop faces otherwise require parameter-space containment to distinguish outer from inner loops. When no placed surface chart is available, complete solved boundary vertices must prove one common plane before the same containment rule is applied. Native body components follow connected components of nonzero face references. In a legacy ASCII layout, a component is eligible for neutral admission when it contains at least one face whose visible surface carrier, boundary loops, edge carriers, and solved vertices all pass the admission gates. Only those eligible faces and edges enter the neutral body; references in the same component that do not pass the gates remain native. A component with no eligible visible face remains native. Neutral shells follow connected components of admitted face topology through shared edges or vertices.
 

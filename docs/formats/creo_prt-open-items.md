@@ -65,11 +65,16 @@ surface, or pcurve transition semantics apply.
 
 ### SE-04. Other pcurve array transitions
 
-**Question.** What slot transition does each other stateful `crv_pnt_arr f9 02 04` token encode?
+**Question.** What slot transitions and count bindings define the remaining
+stateful `crv_pnt_arr f9 02 04` and named `crv_pnt_arr f9 07 04` productions?
 
-**Known.** `creo_prt.md` §4.1 "A direct curve body consisting of exactly eight scalar slots and no references" defines the direct and named prototype eight-slot pcurve bodies, their endpoint order, signed literals, the positive pi/2 literal, bounded fixed and positive compact-count repeats of the preceding scalar, standalone zero slots, and the separate direct held-scalar wrapper. Complete counted two-chart bodies and uniquely count-bound replays use the legacy or angular scalar stream in §4.1. Named angular four-column arrays require their complete field boundary and unique prototype topology. Angular model-space constraints require both admitted chart images and complete pointwise agreement.
+**Known.** `creo_prt.md` §4.1 "A direct curve body consisting of exactly eight scalar slots and no references" defines the direct and named prototype eight-slot pcurve bodies, their endpoint order, signed literals, the positive pi, pi/2, and two-pi literals, low-byte constant variants, tiny signed short forms, bounded fixed and positive compact-count repeats of the preceding scalar, standalone zero slots, and the separate direct held-scalar wrapper. Complete counted two-chart bodies and uniquely count-bound replays use the legacy or angular scalar stream in §4.1. Named angular four-column arrays require their complete field boundary and unique prototype topology. Angular model-space constraints require both admitted chart images and complete pointwise agreement.
 
-**Need.** We must know the other transitions to decode all pcurve endpoint arrays.
+**Need.** Determine the remaining scalar widths, sign and exponent mappings,
+and chart-coordinate roles in complete counted and replayed pcurve arrays.
+Bind each prefix to its pcurve slot before applying another record grammar's
+scalar mapping. Establish the named array's count extent and chart-coordinate
+group boundaries before using its endpoint pairs.
 
 ### SE-07. Other `double_xar` slots
 
@@ -377,6 +382,19 @@ unadmitted angular pair to its curve and byte position.
 
 **Need.** Establish the chart origin, scale, orientation, and parameter map
 from bounded source fields and independent carrier or vertex constraints.
+
+### GS-24. Other extrusion-family side-row carriers
+
+**Question.** Which complete profile, direction, and chart production defines a
+`0x2a` side row outside the admitted `tab_cyl` forms?
+
+**Known.** The surface row retains its family discriminator, feature owner,
+successor, and bounded positional body. Incident curve headers connect the
+side-face uses to placed planar caps and adjacent side-face uses. The cap
+frames and face references establish the incident face graph.
+
+**Need.** Determine the scalar extent, profile carrier, direction binding, and
+both parameter senses from the owning row and prototype fields.
 
 ## 3. Section solving and feature placement
 
@@ -777,7 +795,7 @@ carriers.
 
 **Question.** Which fields bind a rowless face-use reference to its face, loop, edge, and orientation outside the round-feature rowless-cylinder table?
 
-**Known.** `creo_prt.md` §6 "Classes 913" through `creo_prt.md` §6 "For a class-913 cylindrical slot fillet, the first two `geoms_affected`" define the round-feature rowless-cylinder special case.
+**Known.** `creo_prt.md` §6 "Classes 913" through `creo_prt.md` §6 "For a class-913 cylindrical slot fillet, the first two `geoms_affected`" define the round-feature rowless-cylinder special case. The face-reference roster in §4.1 also includes complete active-datum cylinder identities and their signed carriers.
 
 **Need.** We must know the general binding to construct those face uses.
 

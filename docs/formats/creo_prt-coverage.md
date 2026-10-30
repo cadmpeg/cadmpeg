@@ -1047,3 +1047,22 @@ Compact-frame face components require a unique solved carrier for every
 boundary curve before neutral face admission. An unresolved boundary retains
 the complete component as native topology and emits
 `geometry.brep-compact-frame-boundary-unresolved` for each withheld face.
+
+Bounded cylinder rotation matrices share one complete gate for row framing,
+active-datum prototype placement, carrier transfer, and contour framing. Signed stored origins and axes must
+agree with every envelope corner. Compact angular constants, low-byte
+constant variants, and signed tiny short forms feed the stateful pcurve
+stream. Synthetic tests cover signed placement, bounded repeats, scalar
+values, decoder/validator agreement, and attributed surface refusal. Conflicting
+cylinder rotation frames emit `creo/geometry.cylinder-rotation-frame-unresolved`.
+
+Validated active-datum cylinder identities participate in named-edge topology
+admission. The same uniqueness and successor-reference gate closes their cap
+cycles. First-instance named cylinder matrices retain their chart origin and
+signed basis when positional envelope carriers transfer later.
+
+Planar caps with one strictly convex line perimeter and disjoint two-edge
+circle holes use analytic disk containment. Circle carriers, diametric native
+pcurve endpoints, strict perimeter containment, and pairwise disk separation
+remain required. Synthetic coverage admits separated holes and refuses
+boundary tangency and intersecting holes.

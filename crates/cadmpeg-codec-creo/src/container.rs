@@ -2830,11 +2830,20 @@ pub(crate) fn scan_bytes<'a>(
             .as_ref()
             .and_then(|model| relation_model_name(&model.name)),
     )?;
+    let datum_cylinders = datum_cylinders(ctx, sections, &mut local_work_cap_losses)?;
+    let unique_datum_cylinders =
+        crate::decode::uniqueness::UniqueById::new(&datum_cylinders, |cylinder| cylinder.id);
     let topology_face_ids = topology_face_ids(
         nonvisible_surface_rows
             .iter()
             .chain(surface_rows.iter())
-            .map(|row| row.id),
+            .map(|row| row.id)
+            .chain(
+                datum_cylinders
+                    .iter()
+                    .filter(|cylinder| unique_datum_cylinders.get(cylinder.id).is_some())
+                    .map(|cylinder| cylinder.id),
+            ),
     );
     let nonvisible_curve_parameters =
         curve_parameters(ctx, &nonvisible_geometry_sections, &topology_face_ids)?;
@@ -2886,7 +2895,6 @@ pub(crate) fn scan_bytes<'a>(
     let vertex_orbits = topology::vertex_orbits(&half_edges)?;
     let face_components = topology::face_components(&curve_topology_rows)?;
     let datum_planes = datum_planes(sections)?;
-    let datum_cylinders = datum_cylinders(ctx, sections, &mut local_work_cap_losses)?;
     let feature_operation_states = feature_operation_states(sections)?;
     let feature_operations = feature_operations(sections)?;
     let feature_reference_names = feature_reference_names(sections);

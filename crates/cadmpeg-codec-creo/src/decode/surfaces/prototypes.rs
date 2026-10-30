@@ -191,6 +191,24 @@ fn prototype_analytic_local_frame(
         return Ok(generic);
     };
     let cache = crate::scalar::ScalarCache::default();
+    if matches!(
+        record.family,
+        crate::surface::SurfacePrototypeFamily::Cylinder
+    ) {
+        if let Some((values, end)) = crate::scalar::decode_cylinder_rotation_prefix(body, &cache) {
+            if end != body.len() && body.get(end..) != Some(&[0xe1]) {
+                losses.push(crate::loss::CreoLossCode::CylinderRotationFrameUnresolved.note(format!(
+                    "Cylinder {surface_id} prototype at byte {} has trailing rotation-frame bytes; its source remains native",
+                    field.value_offset,
+                )));
+                return Ok(None);
+            }
+            let slots = values.get();
+            let reference = [slots[0], slots[3], slots[6]];
+            let axis = [slots[2], slots[5], slots[8]];
+            return Ok(Some(([slots[9], slots[10], slots[11]], axis, reference)));
+        }
+    }
     if !crate::scalar::axis_unit_matrix_body(body, &cache) {
         return Ok(generic);
     }
@@ -441,15 +459,38 @@ pub(in super::super) fn transfer_first_instance_prototype_surfaces(
                 ))
             }
             SupportedPrototype::Cylinder(_) => {
-                let Some((origin, axis, reference)) =
-                    prototype_analytic_local_frame(ctx, record, row.id, losses)?
-                else {
-                    continue;
-                };
-                let Some(radius) = prototype_scalar(record, "radius")
-                    .filter(|radius| radius.is_finite() && *radius > 0.0)
-                else {
-                    continue;
+                let named = crate::surface::unique_surface_parameter(
+                    &scan.surfaces.parameters,
+                    row.id,
+                )
+                .and_then(|parameter| {
+                    crate::surface::cylinder_frame_readers::named_rotation_cylinder_parameter_frame(
+                        parameter,
+                        record,
+                        &crate::scalar::ScalarCache::default(),
+                    )
+                });
+                let (origin, axis, reference, radius) = match named {
+                    Some(Some(frame)) => (
+                        frame.frame().origin(),
+                        frame.frame().axis(),
+                        frame.frame().ref_direction(),
+                        frame.radius().get(),
+                    ),
+                    Some(None) => continue,
+                    None => {
+                        let Some((origin, axis, reference)) =
+                            prototype_analytic_local_frame(ctx, record, row.id, losses)?
+                        else {
+                            continue;
+                        };
+                        let Some(radius) = prototype_scalar(record, "radius")
+                            .filter(|radius| radius.is_finite() && *radius > 0.0)
+                        else {
+                            continue;
+                        };
+                        (origin, axis, reference, radius)
+                    }
                 };
                 SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(
                     match cadmpeg_ir::geometry::analytic::CylinderSurface::try_new(

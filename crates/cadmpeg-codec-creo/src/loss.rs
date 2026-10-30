@@ -97,6 +97,8 @@ pub(crate) enum CreoLossCode {
     PlaneEnvelopeUnresolved,
     PlaneCarrierUnresolved,
     PrototypeLocalSystemUnresolved,
+    /// A cylinder rotation frame fails its bounded envelope gate.
+    CylinderRotationFrameUnresolved,
     TwoChartScalarFrameUnresolved,
     /// A positional pcurve has no complete bounded scalar frame.
     PcurveScalarFrameUnresolved,
@@ -271,6 +273,7 @@ impl CreoLossCode {
             Self::PlaneEnvelopeUnresolved => "geometry.plane-envelope-unresolved",
             Self::PlaneCarrierUnresolved => "geometry.plane-carrier-unresolved",
             Self::PrototypeLocalSystemUnresolved => "geometry.prototype-local-system-unresolved",
+            Self::CylinderRotationFrameUnresolved => "geometry.cylinder-rotation-frame-unresolved",
             Self::TwoChartScalarFrameUnresolved => "geometry.two-chart-scalar-frame-unresolved",
             Self::PcurveScalarFrameUnresolved => "geometry.pcurve-scalar-frame-unresolved",
             Self::PcurveChartUnresolved => "geometry.pcurve-chart-unresolved",
@@ -404,6 +407,7 @@ impl CreoLossCode {
             | Self::PlaneEnvelopeUnresolved
             | Self::PlaneCarrierUnresolved
             | Self::PrototypeLocalSystemUnresolved
+            | Self::CylinderRotationFrameUnresolved
             | Self::TwoChartScalarFrameUnresolved
             | Self::PcurveScalarFrameUnresolved
             | Self::PcurveChartUnresolved
@@ -495,6 +499,7 @@ impl CreoLossCode {
             | Self::PlaneEnvelopeUnresolved
             | Self::PlaneCarrierUnresolved
             | Self::PrototypeLocalSystemUnresolved
+            | Self::CylinderRotationFrameUnresolved
             | Self::TwoChartScalarFrameUnresolved
             | Self::PcurveScalarFrameUnresolved
             | Self::PcurveChartUnresolved
@@ -613,6 +618,7 @@ mod tests {
                 "geometry.plane-envelope-unresolved",
                 "geometry.plane-carrier-unresolved",
                 "geometry.prototype-local-system-unresolved",
+                "geometry.cylinder-rotation-frame-unresolved",
                 "geometry.two-chart-scalar-frame-unresolved",
                 "geometry.pcurve-scalar-frame-unresolved",
                 "geometry.pcurve-chart-unresolved",
