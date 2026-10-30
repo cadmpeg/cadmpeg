@@ -1714,17 +1714,15 @@ pub(in crate::decode) fn transfer_sampled_sweep_circles(
     }
     if transferred != 0 {
         losses.push(CreoLossCode::CarrierSampledSweepCircles.note(format!(
-            "Transferred {} circular boundaries from complete paired sweep charts.",
-            transferred
+            "Transferred {transferred} circular boundaries from complete paired sweep charts."
         )));
     }
     Ok(transferred)
 }
 
-#[derive(Clone, Copy)]
 pub(in crate::decode) enum SampledCircleRange {
     Unrelated,
-    Refused,
+    Refused(cadmpeg_ir::report::loss::LossNote),
     Admitted([f64; 2]),
 }
 
@@ -1736,7 +1734,6 @@ pub(in crate::decode) fn sampled_sweep_circle_range(
     surfaces: &[Surface],
     endpoints: [[f64; 3]; 2],
     source_carriers: &SourceUnitCarriers,
-    losses: &mut Vec<cadmpeg_ir::report::loss::LossNote>,
 ) -> Result<SampledCircleRange, CodecError> {
     if !scan
         .curves
@@ -1774,10 +1771,12 @@ pub(in crate::decode) fn sampled_sweep_circle_range(
         source_carriers,
     )? {
         Some(range) => Ok(SampledCircleRange::Admitted(range)),
-        None => {
-            losses.push(CreoLossCode::SampledPcurveCarrierUnresolved.note(format!("Curve {} at byte {} has no unique ordered circular sweep interval; its interval remains native",record.curve_id,record.offset)));
-            Ok(SampledCircleRange::Refused)
-        }
+        None => Ok(SampledCircleRange::Refused(
+            CreoLossCode::SampledPcurveCarrierUnresolved.note(format!(
+                "Curve {} at byte {} has no unique ordered circular sweep interval; its interval remains native",
+                record.curve_id, record.offset
+            )),
+        )),
     }
 }
 

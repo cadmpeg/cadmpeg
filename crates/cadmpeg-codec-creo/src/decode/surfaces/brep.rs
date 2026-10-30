@@ -2155,13 +2155,17 @@ pub(in super::super) fn transfer_native_brep(
                             &ir.model.surfaces,
                             points,
                             source_carriers,
-                            losses,
                         )?;
-                        if let SampledCircleRange::Admitted(sampled_range) = sampled_range {
-                            range = Some(sampled_range);
-                            sampled_sweep_circles.insert(*curve_id);
+                        let unrelated = matches!(sampled_range, SampledCircleRange::Unrelated);
+                        match sampled_range {
+                            SampledCircleRange::Admitted(sampled_range) => {
+                                range = Some(sampled_range);
+                                sampled_sweep_circles.insert(*curve_id);
+                            }
+                            SampledCircleRange::Refused(loss) => losses.push(loss),
+                            SampledCircleRange::Unrelated => {}
                         }
-                        if matches!(sampled_range, SampledCircleRange::Unrelated) {
+                        if unrelated {
                             range = pcurve_backed_periodic_conic_parameter_range(
                                 ctx,
                                 &geometry,
