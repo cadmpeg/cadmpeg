@@ -456,6 +456,8 @@ pub(super) fn exact_fixed_fillet_parameters(
     bytes: &[u8],
     records: &IndexedRecordOffsets,
     scope: &DesignParameterScope,
+    parameters: &[DesignParameter],
+    parameter_owners: &[DesignParameterOwner],
 ) -> Option<DesignFixedFilletParameters> {
     use crate::records::feature::fixed_parameters::{
         DesignFixedFilletIntermediate, DesignFixedFilletLaw, DesignFixedFilletScalar,
@@ -493,10 +495,42 @@ pub(super) fn exact_fixed_fillet_parameters(
         let value = group(None, DesignFixedFilletLaw::Constant(scalar(&lanes[0])))?;
         groups.push(value);
     } else if lanes.len() % 2 == 0 {
+        let scope_stream = native_stream(&scope.id);
+        let lane_kind = |lane: u32| -> Option<Option<&str>> {
+            let mut matching_owners = parameter_owners.iter().filter(|owner| {
+                (scope_stream.is_none() || native_stream(owner.id()) == scope_stream)
+                    && owner.scope_record_index() == scope.record_index
+                    && owner.record_index() == lane
+            });
+            let owner = matching_owners.next();
+            if matching_owners.next().is_some() {
+                return None;
+            }
+            let Some(owner) = owner else {
+                return Some(None);
+            };
+            let mut matching_parameters = parameters.iter().filter(|parameter| {
+                (scope_stream.is_none() || native_stream(&parameter.id) == scope_stream)
+                    && parameter.record_index == owner.parameter_record_index()
+                    && parameter.owner_record_index() == Some(owner.record_index())
+            });
+            let parameter = matching_parameters.next()?;
+            if matching_parameters.next().is_some() {
+                return None;
+            }
+            Some(Some(parameter.source_kind_str()))
+        };
         for pair in lanes.chunks_exact(2) {
+            let first_kind = lane_kind(pair[0].0)?;
+            let second_kind = lane_kind(pair[1].0)?;
+            let (tangency_lane, radius_lane) = match (first_kind, second_kind) {
+                (None, None) | (Some("TangencyWeight"), Some("Radius")) => (&pair[0], &pair[1]),
+                (Some("Radius"), Some("TangencyWeight")) => (&pair[1], &pair[0]),
+                _ => return None,
+            };
             let value = group(
-                Some(&pair[0]),
-                DesignFixedFilletLaw::Constant(scalar(&pair[1])),
+                Some(tangency_lane),
+                DesignFixedFilletLaw::Constant(scalar(radius_lane)),
             )?;
             groups.push(value);
         }
