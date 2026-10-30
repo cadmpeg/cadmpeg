@@ -36,7 +36,7 @@ use crate::{design::DesignInventory, sketch::SketchInventory};
 pub(crate) mod base;
 pub(crate) mod combine;
 pub(crate) mod derived;
-mod edge_selection;
+pub(crate) mod edge_selection;
 pub(crate) mod extrusion;
 pub(crate) mod history;
 mod hole;
@@ -5300,11 +5300,46 @@ pub(crate) mod tests {
             vec![fillet_properties[8].id()]
         );
 
+        for members in [&[11][..], &[8, 11][..]] {
+            let mut properties = fillet_properties.clone();
+            properties[3] = test_property(
+                4,
+                PmDcFeaturePropertyKind::References {
+                    family: PmDcFeatureReferenceFamily::EdgeCollection,
+                    items: reference_list(members),
+                },
+            );
+            properties.push(test_property(
+                10,
+                PmDcFeaturePropertyKind::EdgeItem {
+                    index_references: PmDcU32List::new(2, None, Vec::new())
+                        .expect("empty index list"),
+                    index_reference_value: -1,
+                    value: 0,
+                },
+            ));
+            let index = test_projection_index(
+                &properties,
+                std::slice::from_ref(&raw_radius),
+                std::slice::from_ref(&neutral_radius),
+                &[],
+                &[],
+                &[],
+                &[],
+                &[],
+            );
+            for class in [FILLET_CLASS_ID, super::CORNER_ROUND_CLASS_ID] {
+                let label = test_label(100, 7, class, &[]);
+                assert!(project_fillet(&ctx, &fillet, &label, &index).is_none());
+            }
+        }
+
         for (type_value, value, continuity, admitted) in [
             (0x0002_0004, 0, Some(false), true),
             (0x0002_0004, 0, Some(true), false),
             (0x0002_0004, 0, None, false),
             (0x0002_0004, 1, Some(false), false),
+            (0x0001_0004, 0, Some(false), false),
             (4, 1, Some(false), false),
             (5, 0, Some(false), false),
         ] {
