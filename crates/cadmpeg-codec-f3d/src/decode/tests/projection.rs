@@ -1515,3 +1515,71 @@ fn emboss_native_and_refused_prefixes_have_exact_scope_losses() {
         assert!(retained.message.contains(carrier));
     }
 }
+
+#[test]
+fn move_transform_refusal_reports_exact_loss_for_transform_or_selection() {
+    use crate::records::feature::direct_face::{DesignMoveForm, DesignMoveOperation};
+    use crate::records::feature::scope::{DesignFeatureKind, DesignScopePayloadMut};
+    let ir = cadmpeg_ir::document::CadIr::empty();
+    let mut native = F3dNative::default();
+    native
+        .design_parameter_scopes
+        .push(DesignParameterScope::empty(
+            "f3d:Design/BulkStream.dat:scope#17",
+            DesignFeatureKind::Move,
+            17,
+        ));
+    for (typed, reflected) in [(false, false), (true, false), (true, true)] {
+        if typed {
+            let DesignScopePayloadMut::Move(slot) = native.design_parameter_scopes[0].payload_mut()
+            else {
+                panic!("Move payload");
+            };
+            *slot = Some(DesignMoveOperation {
+                transform: if reflected {
+                    [
+                        [-1., 0., 0., 0.],
+                        [0., 1., 0., 0.],
+                        [0., 0., 1., 0.],
+                        [0., 0., 0., 1.],
+                    ]
+                    .try_into()
+                    .unwrap()
+                } else {
+                    crate::records::sketch_placement::SketchPlacementMatrix::IDENTITY
+                },
+                transform_offset: 448,
+                transform_record_index: 71,
+                form: DesignMoveForm::Form1,
+                form_offset: 443,
+            });
+        }
+        let mut report = cadmpeg_ir::codec::DecodeBody {
+            transfer: cadmpeg_ir::report::decode::DecodeTransfer::full(true),
+            coverage: Default::default(),
+            losses: Vec::new(),
+            notes: Vec::new(),
+            transfer_ledger: Default::default(),
+        };
+        report_design_projection_gaps(
+            &mut report,
+            &cadmpeg_test_support::service_decode_context(),
+            &ir,
+            &native,
+        )
+        .unwrap();
+        let losses: Vec<_> = report
+            .losses
+            .iter()
+            .filter(|loss| loss.code == F3dLossCode::MoveUnprojected.kind())
+            .collect();
+        assert_eq!(losses.len(), 1);
+        assert!(losses[0].message.contains(if reflected {
+            "stored basis reverses orientation"
+        } else if typed {
+            "no neutral MoveBody feature for its body selection"
+        } else {
+            "no unique admitted rigid-transform record"
+        }));
+    }
+}

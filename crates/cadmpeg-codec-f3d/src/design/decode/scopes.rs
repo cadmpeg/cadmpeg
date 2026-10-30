@@ -12,7 +12,7 @@ mod coil;
 mod combine;
 mod component_constructions;
 mod copy_paste_bodies;
-mod direct_face;
+pub(crate) mod direct_face;
 mod draft;
 mod emboss;
 pub(crate) mod extrude;
