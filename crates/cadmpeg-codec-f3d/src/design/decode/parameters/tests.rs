@@ -1814,8 +1814,11 @@ fn document_parameter_admits_the_ten_byte_expression_trailer() {
     assert_eq!(parameter.evaluated_value().get(), 2.0);
     assert!(parse_design_parameter_record(&frame(&[0, 0, 0, 0, 0, 0, 0, 0, 1])).is_some());
     assert!(parse_design_parameter_record(&frame(&[0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1])).is_none());
-    // The `01 00 01` document trailer belongs to the earlier family only.
-    assert!(parse_design_parameter_record(&frame(&[0, 0, 0, 0, 0, 0, 1, 0, 1])).is_none());
+    assert!(parse_design_parameter_record(&frame(&[0, 0, 0, 0, 0, 0, 1, 0, 1])).is_some());
+    assert!(parse_design_parameter_record(&frame(&[0, 0, 0, 0, 0, 0, 2, 0, 1])).is_none());
+    assert!(parse_design_parameter_record(&frame(&[0, 0, 0, 1, 0, 0, 0, 0, 1])).is_none());
+    // The last flag byte marks a document parameter.
+    assert!(parse_design_parameter_record(&frame(&[0, 0, 0, 0, 0, 0, 0, 1, 0])).is_none());
 }
 
 /// The earlier discriminated family stores a document parameter with
@@ -1892,4 +1895,74 @@ fn wide_owned_parameter_accepts_eleven_zero_bytes_after_expression() {
     let expression_end = 50 + 4 + 2;
     scale.splice(expression_end..expression_end, [0; 2]);
     assert!(parse_design_parameter_record(&scale).is_none());
+}
+
+/// A discriminated expression trailer is four zero bytes and five flag bytes;
+/// the last flag byte is set exactly for a document parameter.
+#[test]
+fn discriminated_expression_trailer_carries_flag_bytes() {
+    let with_trailer = |owner: Option<u32>, source_kind: &str, flags: [u8; 5]| {
+        let mut frame = parameter_record(owner, "4.00 mm", source_kind, Some("mm"), "d14", 0.4);
+        frame[22..30].copy_from_slice(&4u64.to_le_bytes());
+        let expression_at = if owner.is_some() { 46 } else { 36 };
+        let (_, expression_end) =
+            crate::bytes::lp_utf16_bounded(&frame, expression_at, 1..=256).expect("expression");
+        frame[expression_end + 4..expression_end + 9].copy_from_slice(&flags);
+        frame
+    };
+    for flags in [
+        [1, 0, 0, 0, 0],
+        [0, 1, 0, 0, 0],
+        [0, 0, 1, 0, 0],
+        [0, 1, 1, 0, 0],
+    ] {
+        let parameter =
+            parse_design_parameter_record(&with_trailer(Some(344), "Linear Dimension-10", flags))
+                .expect("owned parameter with trailer flags");
+        assert_eq!(parameter.owner_record_index(), Some(344));
+        assert_eq!(parameter.kind(), DesignParameterKind::Dimension);
+    }
+    for flags in [[0, 0, 0, 1, 0], [1, 0, 0, 1, 0], [0, 0, 1, 1, 0], [0; 5]] {
+        let parameter =
+            parse_design_parameter_record(&with_trailer(None, "Linear Dimension-12", flags))
+                .expect("owner-less dimension parameter with trailer flags");
+        assert_eq!(parameter.owner_record_index(), None);
+        assert_eq!(parameter.kind(), DesignParameterKind::Dimension);
+    }
+    assert!(parse_design_parameter_record(&with_trailer(
+        Some(344),
+        "AlongDistance",
+        [0, 2, 0, 0, 0]
+    ))
+    .is_none());
+    assert!(parse_design_parameter_record(&with_trailer(
+        Some(344),
+        "AlongDistance",
+        [0, 0, 0, 0, 1]
+    ))
+    .is_none());
+    assert!(parse_design_parameter_record(&with_trailer(None, "User Parameter", [0; 5])).is_none());
+    let user =
+        parse_design_parameter_record(&with_trailer(None, "User Parameter", [0, 0, 0, 1, 1]))
+            .expect("document parameter with trailer flags");
+    assert_eq!(user.kind(), DesignParameterKind::User);
+}
+
+/// The intermediate discriminated family stores discriminator 5 or 6.
+#[test]
+fn intermediate_family_admits_discriminators_five_and_six() {
+    for (discriminator, admitted) in [(5u64, true), (6, true), (4, false)] {
+        let mut frame = parameter_record(
+            Some(77),
+            "25.0 deg",
+            "Angle Threshold",
+            Some("deg"),
+            "d1",
+            0.436,
+        );
+        frame[22..30].copy_from_slice(&discriminator.to_le_bytes());
+        let tail = frame.len() - 12;
+        frame[tail + 2] = 17;
+        assert_eq!(parse_design_parameter_record(&frame).is_some(), admitted);
+    }
 }
