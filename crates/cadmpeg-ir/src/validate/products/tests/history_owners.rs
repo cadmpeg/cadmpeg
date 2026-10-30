@@ -27,7 +27,7 @@ fn model() -> CadIr {
     let mut evaluation = FeatureEvaluation::from_definition(FeatureDefinition::Operation(
         FeatureOperation::Native {
             kind: "synthetic".into(),
-            parameters: Default::default(),
+            parameters: std::collections::BTreeMap::default(),
         },
     ));
     evaluation.set_outputs(DistinctMembers::try_from(vec![ir.model.bodies[0].id.clone()]).unwrap());
@@ -38,7 +38,7 @@ fn model() -> CadIr {
         name: None,
         suppressed: None,
         dependencies: DistinctMembers::default(),
-        source_properties: Default::default(),
+        source_properties: std::collections::BTreeMap::default(),
         source_tag: None,
         source_text: None,
         source_content: FeatureContent::default(),
@@ -110,8 +110,8 @@ fn product_history_owner_validates_parameter_definition() {
         expression: "2".into(),
         display: None,
         value: None,
-        dependencies: Default::default(),
-        properties: Default::default(),
+        dependencies: crate::features::DistinctMembers::default(),
+        properties: std::collections::BTreeMap::default(),
         pmi: None,
         native_ref: None,
     });
