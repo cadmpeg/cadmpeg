@@ -25,6 +25,7 @@
 //! ```
 
 mod boundary;
+mod count;
 mod domain;
 mod face;
 mod plane;

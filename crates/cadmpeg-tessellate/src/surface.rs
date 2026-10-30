@@ -16,7 +16,7 @@ use cadmpeg_ir::index::{ModelIndex, StandardIndex};
 use cadmpeg_ir::math::{Point2, Point3};
 
 use crate::face::Refusal;
-use crate::plane::{cross, distance, dot, length, sub, Uv};
+use crate::plane::{angle, cross, distance, dot, length, sub, Uv};
 
 /// Gauss-Newton steps of one point projection.
 const PROJECTION_STEPS: usize = 32;
@@ -24,6 +24,9 @@ const PROJECTION_STEPS: usize = 32;
 const PROJECTION_CONVERGED: f64 = 1e-13;
 /// Grid steps per parameter of the search that seeds a projection.
 const SEED_GRID: u8 = 16;
+/// Share of a face's parameter span across which finite-difference curvature
+/// measures the turn of the unit normal.
+const CURVATURE_STEP: f64 = 1e-3;
 /// Ratio of a partial derivative's length to the surface size below which
 /// the parameter is singular at a point.
 const SINGULAR_RATIO: f64 = 1e-9;
@@ -356,6 +359,48 @@ impl<'t, 'ir> Carrier<'t, 'ir> {
             return Ok(None);
         };
         Ok(self.point(uv)?.map(|on| (distance(on, point), uv)))
+    }
+
+    /// Normal curvature along parameter `axis` at `uv`. A sphere or cylinder
+    /// uses the closed form; other carriers sample the normal across a small
+    /// share of `span`.
+    pub(crate) fn curvature(
+        &self,
+        uv: Uv,
+        axis: usize,
+        span: f64,
+        scale: f64,
+    ) -> Result<f64, Refusal> {
+        if let Some(kappa) = self.analytic_curvature(axis) {
+            return Ok(kappa);
+        }
+        let step = span * CURVATURE_STEP;
+        let (mut before, mut after) = (uv, uv);
+        before[axis] -= step;
+        after[axis] += step;
+        let (Some(first), Some(second)) = (self.normal(before)?, self.normal(after)?) else {
+            return Ok(0.0);
+        };
+        let length = 2.0 * step * scale;
+        if length.partial_cmp(&0.0) != Some(std::cmp::Ordering::Greater) {
+            return Ok(0.0);
+        }
+        Ok(angle(first, second) / length)
+    }
+
+    fn analytic_curvature(&self, axis: usize) -> Option<f64> {
+        match self.solved.map(basis) {
+            Some(SolvedSurfaceGeometry::Sphere(sphere)) => {
+                let radius = sphere.radius().get().abs();
+                (radius > 0.0).then_some(1.0 / radius)
+            }
+            Some(SolvedSurfaceGeometry::Cylinder(cylinder)) => Some(if axis == 0 {
+                1.0 / cylinder.radius().get()
+            } else {
+                0.0
+            }),
+            _ => None,
+        }
     }
 
     /// `value` moved by whole periods of parameter `axis` to lie nearest

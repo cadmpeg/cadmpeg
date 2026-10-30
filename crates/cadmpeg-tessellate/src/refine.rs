@@ -11,6 +11,7 @@ use std::collections::{BTreeMap, BTreeSet};
 
 use cadmpeg_ir::math::{Point3, Vector3};
 
+use crate::count::{exceeds_limit, floor_count};
 use crate::face::Refusal;
 use crate::plane::{angle, centroid3, cross2, distance, mid3, midpoint, Uv};
 use crate::surface::Carrier;
@@ -25,9 +26,6 @@ const FLIP_PASSES: usize = 32;
 const FLIP_SLACK: f64 = 1e-9;
 /// Flips one inserted vertex may cause.
 const LEGALIZE_STEPS: usize = 4096;
-/// Share of a face's parameter span across which seeding measures the
-/// surface curvature.
-const CURVATURE_STEP: f64 = 1e-3;
 /// Smallest ratio of one metric scale to the other.
 const METRIC_FLOOR: f64 = 1e-6;
 
@@ -64,29 +62,6 @@ pub(crate) fn scales(carrier: &Carrier<'_, '_>, uv: Uv) -> Result<[f64; 2], Refu
         return Ok([1.0, 1.0]);
     }
     Ok([u.max(floor), v.max(floor)])
-}
-
-/// The normal curvature of the surface at `uv` along parameter `axis`,
-/// from the turn of the unit normal across a small share of `span`.
-fn curvature(
-    carrier: &Carrier<'_, '_>,
-    uv: Uv,
-    axis: usize,
-    span: f64,
-    scale: f64,
-) -> Result<f64, Refusal> {
-    let step = span * CURVATURE_STEP;
-    let (mut before, mut after) = (uv, uv);
-    before[axis] -= step;
-    after[axis] += step;
-    let (Some(first), Some(second)) = (carrier.normal(before)?, carrier.normal(after)?) else {
-        return Ok(0.0);
-    };
-    let length = 2.0 * step * scale;
-    if length.partial_cmp(&0.0) != Some(std::cmp::Ordering::Greater) {
-        return Ok(0.0);
-    }
-    Ok(angle(first, second) / length)
 }
 
 /// The limits of one refinement.
@@ -175,12 +150,17 @@ impl Mesh {
                     return false;
                 }
                 match (self.normals[from], self.normals[to]) {
-                    (Some(first), Some(second)) => angle(first, second) > limits.angle,
+                    (Some(first), Some(second)) => {
+                        exceeds_limit(angle(first, second), limits.angle)
+                    }
                     _ => false,
                 }
             });
             let edge_error = worst_edge.unwrap_or(0.0);
-            if edge_error <= limits.chord && centre_error <= limits.chord && !turned {
+            if !exceeds_limit(edge_error, limits.chord)
+                && !exceeds_limit(centre_error, limits.chord)
+                && !turned
+            {
                 continue;
             }
             // The longest interior edge splits, which keeps triangles from
@@ -407,7 +387,8 @@ impl Mesh {
         let mut step = [0.0; 2];
         for axis in 0..2 {
             let extent = (high[axis] - low[axis]) * metric[axis];
-            let curvature = curvature(carrier, centre, axis, high[axis] - low[axis], metric[axis])?;
+            let curvature =
+                carrier.curvature(centre, axis, high[axis] - low[axis], metric[axis])?;
             let allowed = if curvature > 0.0 {
                 (8.0 * limits.chord / curvature)
                     .sqrt()
@@ -417,11 +398,7 @@ impl Mesh {
             };
             step[axis] = allowed.max(spacing) / metric[axis];
         }
-        let counts = [0, 1].map(|axis| {
-            cadmpeg_core::convert::truncate_f64_to_usize(
-                ((high[axis] - low[axis]) / step[axis]).floor(),
-            )
-        });
+        let counts = [0, 1].map(|axis| floor_count((high[axis] - low[axis]) / step[axis]));
         let [Some(columns), Some(rows)] = counts else {
             return Ok(());
         };
