@@ -47,7 +47,7 @@ pub(crate) fn admission(source: &PmDcFeature) -> Result<(), NativeReason> {
     Err(NativeReason::Controls)
 }
 
-/// One loss for each DeleteFace record that the projected history retains
+/// One loss for each `DeleteFace` record that the projected history retains
 /// as a native feature. A record that no model feature places has no loss.
 pub(crate) fn native_losses(
     inventory: &FeatureInventory,

@@ -10,7 +10,11 @@ fn delete_face_validation_keeps_unresolved_controls_native() -> TestResult {
         &cadmpeg_core::decode::DecodePolicy::service(),
     )?;
     for (marker, count, detail) in [
-        (2, 4, "slots 1 and 2 Boolean construction roles are unresolved"),
+        (
+            2,
+            4,
+            "slots 1 and 2 Boolean construction roles are unresolved",
+        ),
         (2, 3, "property vector differs from the four-slot form"),
         (2, 5, "property vector differs from the four-slot form"),
         (8, 4, "property vector marker differs from type 2"),
