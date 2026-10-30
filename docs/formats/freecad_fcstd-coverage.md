@@ -262,3 +262,15 @@ removed from the expansion index. Local work exhaustion withholds the entire cur
 all subsequent uses with blocking `geometry.mesh-placement-bounded`. Independent source meshes
 and earlier complete uses remain. Cloned mesh storage, loss text, and mesh entities are admitted
 before retention.
+
+## Revolution admission
+
+The neutral revolution axis retains the normalized resolved direction, origin, and native
+axis link. Reversal negates the direction. One-sided, symmetric, and two-sided fixed angular
+extents use the right-hand rule defined in the specification. Both two-sided angles are retained.
+Revolution Type 1 uses last-intersection termination; Groove Type 1 uses through-all termination.
+Types 2 and 3 use first-intersection and selected-face termination.
+A nonzero Type with `Midplane=true`, an unknown Type, an invalid flag, a missing required
+selection, a malformed axis origin, a zero axis, or an angular extent outside one turn remains native and emits
+`fcstd/feature.revolution-not-transferred`. Two fixed sides must have a sum at most one turn.
+An inactive `Angle2` does not change a Type 0 extent.

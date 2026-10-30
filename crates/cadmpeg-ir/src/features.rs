@@ -7282,8 +7282,11 @@ pub enum ExtrudeExtent {
     },
 }
 
-/// Revolution sidedness around the profile plane. Revolution sides carry no
-/// side-local modifiers, only their termination laws.
+/// Revolution sides use the right-hand rule about the stated axis direction.
+/// The source profile is at zero radians. One-sided travel runs from zero to
+/// the positive angle. Two-sided travel runs from zero to the first angle and
+/// from zero to the negative second angle. Symmetric travel runs from minus
+/// half the total angle to plus half the total angle.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
@@ -7306,6 +7309,22 @@ pub enum RevolveExtent {
         /// The mirrored side's termination.
         termination: AngularTermination,
     },
+}
+
+impl RevolveExtent {
+    /// Whether each fixed angle and their combined travel fit within one turn.
+    #[must_use]
+    pub fn angles_within_turn(&self) -> bool {
+        let angle = |termination: &AngularTermination| match termination {
+            AngularTermination::Angle { angle } => angle.get(),
+            _ => 0.0,
+        };
+        let total = match self {
+            Self::OneSided { termination } | Self::Symmetric { termination } => angle(termination),
+            Self::TwoSided { first, second } => angle(first) + angle(second),
+        };
+        total <= std::f64::consts::TAU
+    }
 }
 
 /// Persisted source of a resolved linear-extrusion direction.

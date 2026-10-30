@@ -8,6 +8,7 @@ pub(crate) mod holes_extrude;
 mod ordering;
 pub(crate) mod primitives;
 mod resource_admission;
+mod revolution;
 pub(crate) mod sketches;
 mod taper;
 

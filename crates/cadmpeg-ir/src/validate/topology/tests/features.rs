@@ -1304,3 +1304,97 @@ fn input_edge_geometry_names_its_own_state_members_once() {
     )];
     assert_eq!(state_findings(&ir), 2);
 }
+
+#[test]
+fn revolve_validator_limits_fixed_angles_and_two_side_sum() {
+    use crate::features::{
+        AngularTermination, BooleanOp, Feature, FeatureDefinition, FeatureEvaluation, FeatureId,
+        FeatureOperation, PartialRevolveConstruction, RevolveConstruction, RevolveExtent,
+    };
+    use crate::scalar::PositiveAngle;
+    use std::f64::consts::{PI, TAU};
+
+    let angle = |value| AngularTermination::Angle {
+        angle: PositiveAngle::new(value).unwrap(),
+    };
+    for (extent, valid) in [
+        (
+            RevolveExtent::OneSided {
+                termination: angle(TAU),
+            },
+            true,
+        ),
+        (
+            RevolveExtent::OneSided {
+                termination: angle(TAU + PI),
+            },
+            false,
+        ),
+        (
+            RevolveExtent::Symmetric {
+                termination: angle(TAU),
+            },
+            true,
+        ),
+        (
+            RevolveExtent::Symmetric {
+                termination: angle(TAU + PI),
+            },
+            false,
+        ),
+        (
+            RevolveExtent::TwoSided {
+                first: angle(PI),
+                second: angle(PI),
+            },
+            true,
+        ),
+        (
+            RevolveExtent::TwoSided {
+                first: angle(TAU),
+                second: angle(PI),
+            },
+            false,
+        ),
+    ] {
+        let mut ir = CadIr::empty();
+        let mut construction: RevolveConstruction = serde_json::from_value(serde_json::json!({
+            "state": "unresolved", "missing": "profile"
+        }))
+        .unwrap();
+        if let RevolveConstruction::Unresolved(PartialRevolveConstruction::Profile {
+            extent: target,
+            ..
+        }) = &mut construction
+        {
+            *target = Some(extent);
+        } else {
+            panic!("default revolution must lack its profile");
+        }
+        ir.model.features.push(Feature {
+            id: FeatureId::mint("test:model:feature#revolve").unwrap(),
+            ordinal: 0,
+            name: None,
+            suppressed: None,
+            dependencies: crate::features::DistinctMembers::default(),
+            source_properties: BTreeMap::new(),
+            source_tag: None,
+            source_text: None,
+            source_content: crate::features::FeatureContent::default(),
+            evaluation: FeatureEvaluation::from_definition(FeatureDefinition::Operation(
+                FeatureOperation::Revolve {
+                    construction,
+                    op: BooleanOp::NewBody,
+                },
+            )),
+            native_ref: None,
+        });
+        let report = validate_neutral(&ir, Vec::new()).unwrap();
+        assert_eq!(
+            report.findings.iter().any(|finding| finding
+                .message
+                .contains("revolution angular travel must not exceed one turn")),
+            !valid
+        );
+    }
+}
