@@ -24629,8 +24629,8 @@
                 }
               },
               "angle": {
-                "kind": "parameter",
-                "value": "fcstd:design:parameter#Draft:Angle"
+                "kind": "literal",
+                "value": -0.08726646259971647
               },
               "definition": "draft",
               "faces": {
