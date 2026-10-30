@@ -14,7 +14,7 @@ use cadmpeg_core::convert::truncate_f64_to_usize;
 use cadmpeg_ir::compare::floats_agree;
 
 /// Relative quantum of a sag, turn, or length used to decide a split.
-pub(crate) const SPLIT_RATIO: f64 = 5e-3;
+pub(crate) const SPLIT_RATIO: f64 = 1e-3;
 
 /// Smallest integer at least `x`, or the nearest integer when `x` is within
 /// [`cadmpeg_ir::compare::FLOAT_TOLERANCE`] of one.
