@@ -39,9 +39,127 @@ struct Chart {
 }
 
 /// One validated intersection curve and its solved chart.
+#[derive(Clone)]
 pub(super) struct IntersectionCarrier {
     pub(super) carrier: CurveCarrier,
     pub(super) support_data: IntersectionSupportData,
+}
+
+impl IntersectionCarrier {
+    /// The chart between the stored parameters of a `00 85` wrapper (spec
+    /// §7.3): a degree-one curve with the stored points as its end poles, or
+    /// `None` when a stored point lies off the chart or the wrapper bounds no
+    /// curve. `record` is the wrapper's byte span; `points` and `parameters`
+    /// are in stored order.
+    pub(super) fn bounded(
+        &self,
+        attr: u16,
+        record: std::ops::Range<usize>,
+        points: [Point3; 2],
+        parameters: [f64; 2],
+    ) -> Option<Self> {
+        let CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(chart)) = &self.carrier.geometry
+        else {
+            return None;
+        };
+        let cadmpeg_ir::geometry::nurbs::NurbsPoles3::Polynomial { points: poles } =
+            chart.pole_rows()
+        else {
+            return None;
+        };
+        let knots = chart.knots().as_slice();
+        if chart.degree() != 1 || chart.periodic() || knots.len() != poles.len() + 2 {
+            return None;
+        }
+        let nodes = poles
+            .iter()
+            .zip(&knots[1..=poles.len()])
+            .map(|(pole, knot)| (*knot, pole.get()))
+            .collect::<Vec<_>>();
+        let (&(low, seam), &(high, last_pole)) = (nodes.first()?, nodes.last()?);
+        let tolerance = self.support_data.fit_tolerance_mm;
+        let ascending = parameters[0] < parameters[1];
+        let ([from, to], [from_point, mut to_point]) = if ascending {
+            (parameters, points)
+        } else if parameters[0] > parameters[1] {
+            ([parameters[1], parameters[0]], [points[1], points[0]])
+        } else {
+            return None;
+        };
+        if to <= low || from >= high {
+            return None;
+        }
+        for (point, parameter) in points.iter().zip(parameters) {
+            if chart_point(&nodes, parameter.clamp(low, high))?.distance(*point) > tolerance {
+                return None;
+            }
+        }
+        let mut to = to;
+        // A ring wrapper ends at the seam.
+        if seam == last_pole && points[0].distance(points[1]) <= super::graph::LINEAR_RESOLUTION_MM
+        {
+            if chart_point(&nodes, from.clamp(low, high))?.distance(seam) > tolerance {
+                return None;
+            }
+            to = high;
+            to_point = seam;
+        }
+        let mut sub_knots = vec![from, from];
+        let mut sub_poles = vec![from_point];
+        for &(knot, pole) in &nodes {
+            if knot > from
+                && knot < to
+                && knot > low
+                && knot < high
+                && pole.distance(from_point) > super::graph::LINEAR_RESOLUTION_MM
+                && pole.distance(to_point) > super::graph::LINEAR_RESOLUTION_MM
+            {
+                sub_knots.push(knot);
+                sub_poles.push(pole);
+            }
+        }
+        sub_knots.extend([to, to]);
+        sub_poles.push(to_point);
+        let curve = cadmpeg_ir::geometry::nurbs::NurbsCurve::from_lanes(
+            1, sub_knots, sub_poles, None, false,
+        )
+        .ok()?;
+        let range = if ascending { [from, to] } else { [to, from] };
+        Some(Self {
+            carrier: CurveCarrier {
+                attr,
+                offset: record.start,
+                end: record.end,
+                geometry: CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(curve)),
+                parameter_range: Some(cadmpeg_ir::units::FiniteVector::new(range)?),
+                runs_against_edges: false,
+            },
+            support_data: IntersectionSupportData {
+                supports: self.support_data.supports,
+                fit_tolerance_mm: tolerance,
+                support_uv: None,
+            },
+        })
+    }
+}
+
+/// The point of a degree-one chart at `parameter`, from its `(knot, pole)`
+/// nodes in parameter order.
+fn chart_point(nodes: &[(f64, Point3)], parameter: f64) -> Option<Point3> {
+    let segment = nodes
+        .windows(2)
+        .find(|pair| pair[0].0 <= parameter && parameter <= pair[1].0)?;
+    let [(a, from), (b, to)] = [segment[0], segment[1]];
+    let fraction = if b > a {
+        (parameter - a) / (b - a)
+    } else {
+        0.0
+    };
+    Some(Point3::new(
+        from.x + (to.x - from.x) * fraction,
+        from.y + (to.y - from.y) * fraction,
+        from.z + (to.z - from.z) * fraction,
+    ))
 }
 
 /// Ordered supports and optional UV lanes for the model-space chart curve.
@@ -454,6 +572,33 @@ fn nearest_term(
                 _ => Some(candidate),
             }
         })
+}
+
+/// Composite intersection records whose chart record is absent, keyed by
+/// attribute, with their two support references. Such a curve is the
+/// intersection of its supports; a bounded wrapper that names it supplies its
+/// ends (spec §7.3).
+pub(super) fn scan_chartless_intersections(bytes: &[u8]) -> HashMap<u16, [u16; 2]> {
+    let mut out = HashMap::new();
+    let charts = chart_records(bytes);
+    for (_, body, _) in composite_records(bytes) {
+        let Some(attr) = View::u16_be_at(bytes, body + isect::ATTR) else {
+            continue;
+        };
+        let payload = body + isect::PAYLOAD;
+        let (Some(first), Some(second), Some(chart)) = (
+            View::u16_be_at(bytes, payload),
+            View::u16_be_at(bytes, payload + 2),
+            View::u16_be_at(bytes, payload + 4),
+        ) else {
+            continue;
+        };
+        if first == 0 || second == 0 || chart == 0 || charts.contains_key(&chart) {
+            continue;
+        }
+        out.entry(attr).or_insert([first, second]);
+    }
+    out
 }
 
 /// Scan intersection carriers whose referenced chart and terminators resolve,
@@ -1040,5 +1185,149 @@ mod tests {
         bytes.extend(term(6, end));
         bytes.extend(uv(7, 2));
         assert!(scan_intersection_carriers(&bytes, &mut Vec::new()).is_empty());
+    }
+
+    /// A chart through `poles` in millimetres at the given chord parameters,
+    /// with a chordal error of 0.02 mm.
+    fn chart_carrier(poles: &[[f64; 3]], parameters: &[f64]) -> super::IntersectionCarrier {
+        let mut knots = vec![parameters[0]];
+        knots.extend_from_slice(parameters);
+        knots.push(parameters[parameters.len() - 1]);
+        let poles = poles
+            .iter()
+            .map(|p| Point3::new(p[0], p[1], p[2]))
+            .collect::<Vec<_>>();
+        super::IntersectionCarrier {
+            carrier: super::CurveCarrier {
+                runs_against_edges: false,
+                attr: 9,
+                offset: 0,
+                end: 0,
+                geometry: CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(
+                    cadmpeg_ir::geometry::nurbs::NurbsCurve::from_lanes(
+                        1, knots, poles, None, false,
+                    )
+                    .unwrap(),
+                )),
+                parameter_range: None,
+            },
+            support_data: super::IntersectionSupportData {
+                supports: [2, 3],
+                fit_tolerance_mm: 0.02,
+                support_uv: None,
+            },
+        }
+    }
+
+    /// The knots, poles and parameter range of a bounded chart.
+    fn parts(bounded: &super::IntersectionCarrier) -> (Vec<f64>, Vec<Point3>, [f64; 2]) {
+        let Some(SolvedCurveGeometry::Nurbs(curve)) = bounded.carrier.geometry.solved() else {
+            panic!("expected a NURBS polyline");
+        };
+        (
+            curve.knots().as_slice().to_vec(),
+            curve
+                .control_points()
+                .iter()
+                .map(|pole| pole.get())
+                .collect(),
+            bounded.carrier.parameter_range.unwrap().get(),
+        )
+    }
+
+    #[test]
+    fn a_wrapper_of_a_chart_bounds_the_chart_between_its_stored_parameters() {
+        let open = chart_carrier(
+            &[
+                [0.0, 0.0, 0.0],
+                [10.0, 0.0, 0.0],
+                [10.0, 10.0, 0.0],
+                [0.0, 10.0, 0.0],
+            ],
+            &[0.0, 10.0, 20.0, 30.0],
+        );
+        let (a, b) = (Point3::new(5.0, 0.0, 0.0), Point3::new(10.0, 5.0, 0.0));
+        let bounded = open.bounded(11, 40..110, [a, b], [5.0, 15.0]).unwrap();
+        let (knots, poles, range) = parts(&bounded);
+        assert_eq!(knots, [5.0, 5.0, 10.0, 15.0, 15.0]);
+        assert_eq!(poles, [a, Point3::new(10.0, 0.0, 0.0), b]);
+        assert_eq!(range, [5.0, 15.0]);
+        assert_eq!(
+            (
+                bounded.carrier.attr,
+                bounded.carrier.offset,
+                bounded.carrier.end
+            ),
+            (11, 40, 110)
+        );
+        // A wrapper against the chart keeps its stored order in its range.
+        let reversed = open.bounded(11, 40..110, [b, a], [15.0, 5.0]).unwrap();
+        let (_, reversed_poles, reversed_range) = parts(&reversed);
+        assert_eq!(reversed_poles, poles);
+        assert_eq!(reversed_range, [15.0, 5.0]);
+        // A stored end at a chart point is that end, with no pole beside it.
+        let at_corner = Point3::new(10.0, 0.0, 0.0);
+        let (_, poles, _) = parts(
+            &open
+                .bounded(11, 40..110, [at_corner, b], [9.99, 15.0])
+                .unwrap(),
+        );
+        assert_eq!(poles, [at_corner, b]);
+        // A stored point off the chart, a zero-width interval and an interval
+        // past the domain bound no curve.
+        let off = Point3::new(5.0, 1.0, 0.0);
+        assert!(open.bounded(11, 40..110, [off, b], [5.0, 15.0]).is_none());
+        assert!(open.bounded(11, 40..110, [a, a], [5.0, 5.0]).is_none());
+        let past = Point3::new(0.0, 10.0, 0.0);
+        assert!(open
+            .bounded(11, 40..110, [past, past], [31.0, 40.0])
+            .is_none());
+    }
+
+    #[test]
+    fn a_ring_wrapper_of_a_closed_chart_runs_from_its_seam() {
+        let ring = chart_carrier(
+            &[
+                [0.0, 0.0, 0.0],
+                [10.0, 0.0, 0.0],
+                [10.0, 10.0, 0.0],
+                [0.0, 10.0, 0.0],
+                [0.0, 0.0, 0.0],
+            ],
+            &[0.0, 10.0, 20.0, 30.0, 40.0],
+        );
+        let seam = Point3::new(0.0, 0.0, 0.0);
+        let (knots, poles, range) =
+            parts(&ring.bounded(11, 0..0, [seam, seam], [0.0, 40.0]).unwrap());
+        assert_eq!(knots, [0.0, 0.0, 10.0, 20.0, 30.0, 40.0, 40.0]);
+        assert_eq!((poles[0], poles[4]), (seam, seam));
+        assert_eq!(range, [0.0, 40.0]);
+        // Stored ends just past the seam: the high end is the seam itself.
+        let near = Point3::new(0.005, 0.0, 0.0);
+        let (knots, poles, range) = parts(
+            &ring
+                .bounded(11, 0..0, [near, near], [0.005, 40.005])
+                .unwrap(),
+        );
+        assert_eq!(
+            (knots[knots.len() - 1], poles[poles.len() - 1]),
+            (40.0, seam)
+        );
+        assert_eq!(range, [0.005, 40.0]);
+        // From an interior point the held high end is off the stored point.
+        let corner = Point3::new(10.0, 0.0, 0.0);
+        assert!(ring
+            .bounded(11, 0..0, [corner, corner], [10.0, 50.0])
+            .is_none());
+    }
+
+    #[test]
+    fn a_composite_without_its_chart_is_chartless() {
+        assert_eq!(
+            super::scan_chartless_intersections(&composite(9, [2, 3, 4, 5, 6, 7])),
+            std::collections::HashMap::from([(9, [2, 3])])
+        );
+        assert!(super::scan_chartless_intersections(&stream()).is_empty());
+        assert!(super::scan_chartless_intersections(&composite(9, [0, 3, 4, 5, 6, 7])).is_empty());
     }
 }

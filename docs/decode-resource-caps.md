@@ -412,6 +412,10 @@ report a loss; a caller may report a general failure for the same item.
 | `cadmpeg-codec-sldprt`   | `src/brep/blend_fit.rs`                            | `MAX_EDGE_STEPS`                          | `32`                                                    | 4    | Steps for one point of a support pair's edge. A point that does not converge leaves its section unresolved. |
 | `cadmpeg-codec-sldprt`   | `src/brep/blend_fit.rs`                            | `MAX_SPINE_CACHE_DEPTH`                   | `10`                                                    | 4    | Midpoint splits below one stored spine segment of an exact spine. Past it the run ends there, and centres in the gap are solved one at a time. |
 | `cadmpeg-codec-sldprt`   | `src/brep/blend_fit.rs`                            | `MAX_NEAREST_STEPS`                       | `16`                                                    | 4    | Newton steps when a point is inverted onto a contact track or the spine. Past it the point has no foot. |
+| `cadmpeg-codec-sldprt`   | `src/brep/chart_refine.rs`                         | `MAX_TRACE_POINTS`                        | `1 << 12`                                               | 4    | Points of one traced intersection. A longer trace leaves the stored chart unrefined. |
+| `cadmpeg-codec-sldprt`   | `src/brep/chart_refine.rs`                         | `MAX_NEWTON_STEPS`                        | `32`                                                    | 4    | Newton steps for one point of an intersection. A point that does not converge leaves the stored chart unrefined. |
+| `cadmpeg-codec-sldprt`   | `src/brep/chart_refine.rs`                         | `MAX_SUBDIVISION_DEPTH`                   | `10`                                                    | 4    | Midpoint splits below one stored chart segment. A piece at the limit is kept within its chord limit; a farther one leaves the chart unrefined. |
+| `cadmpeg-codec-sldprt`   | `src/brep/chart_refine.rs`                         | `MAX_REFINED_PIECES`                      | `1 << 10`                                               | 4    | Pieces of one refined chart. A refinement that needs more leaves the stored chart unrefined. |
 | `cadmpeg-codec-sldprt`   | `src/brep/evaluation.rs`                           | `MAX_FOOT_STEPS`                          | `16`                                                    | 4    | Newton steps of the nearest point on an analytic surface. Past it the point has no foot. |
 | `cadmpeg-codec-sldprt`   | `src/brep/fit.rs`                                  | `MAX_SPANS`                               | `4096`                                                  | 4    | Spans of one fitted curve on a support. A fit that needs more leaves the curve without a cache. |
 | `cadmpeg-codec-sldprt`   | `src/brep/index.rs`                                | `MAX_BLEND_NESTING`                       | `3`                                                     | 4    | Blends a rolling-ball support may nest within. A deeper support leaves the blend without a cache. |
@@ -505,16 +509,16 @@ are the slice mechanisms themselves.
 
 ## Totals
 
-Production `MAX_*` constants: 290.
+Production `MAX_*` constants: 294.
 
 | Kind | Meaning                    | Count |
 | ---- | -------------------------- | ----- |
 | 1    | Format or reader invariant | 38    |
 | 2    | Per-input bound            | 71    |
 | 3    | Session ceiling            | 0     |
-| 4    | Local work cap             | 146   |
+| 4    | Local work cap             | 150   |
 | N    | Not a decode bound         | 35    |
-|      | Total                      | 290   |
+|      | Total                      | 294   |
 
 The six `ResourceLimits` fields are the session ceilings and are not
 `MAX_*` constants. No `MAX_*` constant is kind 3.
@@ -523,7 +527,7 @@ By crate: `cadmpeg-core` 3, `cadmpeg-ir` 17, `cadmpeg-measure` 21, `cadmpeg-asm`
 `cadmpeg-protein` 3, `cadmpeg` 2, `cadmpeg-codec-step` 8,
 `cadmpeg-codec-iges` 16, `cadmpeg-codec-inventor` 3,
 `cadmpeg-codec-freecad` 16, `cadmpeg-codec-rhino` 32, `cadmpeg-codec-f3d` 19,
-`cadmpeg-codec-nx` 28, `cadmpeg-codec-creo` 20, `cadmpeg-codec-sldprt` 28,
+`cadmpeg-codec-nx` 28, `cadmpeg-codec-creo` 20, `cadmpeg-codec-sldprt` 32,
 `cadmpeg-codec-catia` 57, `cadmpeg-codec-pvz` 3, `cadmpeg-codec-usd` 6, and
 `cadmpeg-tessellate` 4.
 

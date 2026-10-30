@@ -2200,6 +2200,57 @@ path = "crates/cadmpeg-codec-sldprt/src/brep/blend.rs"
 contains = "for selector in [0x45, 0x52]"
 note = "The parser's selector value set; see the `selector` field note."
 
+[[record]]
+name = "blend_bound_00_3b"
+kind = "byte"
+section = "7.4"
+anchor = "00 3b [ff]? attr u16 BE  ordinal u32 BE  refs u16 BE[5]"
+size = 21
+endianness = "big"
+note = "Body-relative, after the two-byte tag and the optional `ff`. The offsets are the narrow-pointer form: `attr` and every reference is a §4 pointer that takes four bytes past `0x7ffe`, moving each later field by two."
+
+[[record.field]]
+name = "attr"
+offset = 0
+type = "u16"
+source = "spec"
+anchor = "00 3b [ff]? attr u16 BE  ordinal u32 BE"
+
+[[record.field]]
+name = "ordinal"
+offset = 2
+type = "u32"
+source = "spec"
+anchor = "ordinal u32 BE  refs u16 BE[5]"
+
+[[record.field]]
+name = "refs"
+offset = 6
+type = "u16[5]"
+source = "spec"
+anchor = "refs u16 BE[5]"
+
+[[record.field]]
+name = "marker"
+offset = 16
+type = "u8"
+source = "spec"
+anchor = "marker u8 (0x2b|0x2d)"
+
+[[record.field]]
+name = "side"
+offset = 17
+type = "u16"
+source = "spec"
+anchor = "side u16 BE (0|1)  blend u16 BE"
+
+[[record.field]]
+name = "blend"
+offset = 19
+type = "u16"
+source = "spec"
+anchor = "blend u16 BE"
+
 # --- §7.5 Offset surface ----------------------------------------------------
 
 [[record]]

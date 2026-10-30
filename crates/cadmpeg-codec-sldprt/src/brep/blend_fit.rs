@@ -655,6 +655,33 @@ impl<'a, 'ctx> BlendGeometry<'a, 'ctx> {
         Some([self.member(0, point)?, self.member(1, point)?])
     }
 
+    /// The point of the contact track of side `side` nearest `point`, and the
+    /// track's unit tangent there in the spine's direction.
+    pub(super) fn track_point(
+        &self,
+        side: usize,
+        point: Point3,
+    ) -> Option<(Point3, cadmpeg_ir::math::Vector3)> {
+        let track = |s: f64| {
+            let members = self.members_at(s)?;
+            let center = self.center_with(s, members)?;
+            self.side_normal(self.candidates(members)?.get(side).copied()?, center)
+                .map(|(foot, _)| foot)
+        };
+        let (_, contact, tangent) = self.nearest_on(point, track)?;
+        let length = tangent.norm();
+        (length > 0.0 && length.is_finite()).then(|| {
+            (
+                contact,
+                cadmpeg_ir::math::Vector3::new(
+                    tangent.x / length,
+                    tangent.y / length,
+                    tangent.z / length,
+                ),
+            )
+        })
+    }
+
     fn pair_member(&self, vertices: &[Point3]) -> Option<usize> {
         let [low, high] = self.range(vertices)?;
         let mut qualifies = [true, true];
@@ -1828,5 +1855,48 @@ mod tests {
         assert!((spine.point(2.5).unwrap().x - 2.5).abs() < 1.0e-12);
         assert!(spine.point(1.5).is_none());
         assert!(spine.point(3.5).is_none());
+    }
+
+    #[test]
+    fn a_track_point_is_the_contact_of_its_side_nearest_the_point() {
+        // A unit ball between the floor z = 0 and the wall x = 0 rolls along
+        // y. It touches the floor on the line x = 1, z = 0, and the wall on
+        // the line x = 0, z = 1. Both tracks run along +y.
+        let floor = plane(
+            Point3::new(0.0, 0.0, 0.0),
+            Vector3::new(0.0, 0.0, 1.0),
+            Vector3::new(1.0, 0.0, 0.0),
+        );
+        let wall = plane(
+            Point3::new(0.0, 0.0, 0.0),
+            Vector3::new(1.0, 0.0, 0.0),
+            Vector3::new(0.0, 0.0, 1.0),
+        );
+        let spine = polyline(
+            &[0.0, 2.0],
+            &[Point3::new(1.0, 0.0, 1.0), Point3::new(1.0, 2.0, 1.0)],
+        );
+        let arena = DecodeArena::new();
+        let policy = DecodePolicy::service();
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+        let geometry = super::BlendGeometry::new(
+            &ctx,
+            &spine,
+            [vec![Side::Surface(&floor)], vec![Side::Surface(&wall)]],
+            1.0,
+        )
+        .unwrap();
+        for (side, near, contact) in [
+            (0, Point3::new(1.3, 1.0, 0.2), Point3::new(1.0, 1.0, 0.0)),
+            (1, Point3::new(0.2, 1.0, 1.3), Point3::new(0.0, 1.0, 1.0)),
+        ] {
+            let (point, tangent) = geometry.track_point(side, near).unwrap();
+            assert!(point.distance(contact) < 1.0e-9, "{side}: {point:?}");
+            assert!(
+                tangent.cross(Vector3::new(0.0, 1.0, 0.0)).norm() < 1.0e-9,
+                "{side}: {tangent:?}"
+            );
+            assert!((tangent.y - 1.0).abs() < 1.0e-9, "{side}: {tangent:?}");
+        }
     }
 }

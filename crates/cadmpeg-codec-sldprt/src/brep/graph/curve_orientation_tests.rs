@@ -430,3 +430,102 @@ fn a_full_turn_edge_range_starts_at_its_vertex() {
     assert!((start - 3.0 * std::f64::consts::FRAC_PI_2).abs() < 1.0e-12);
     assert!((end - start - std::f64::consts::TAU).abs() < 1.0e-12);
 }
+
+/// A surface-intersection chart through `poles` in millimetres at the given
+/// chord parameters, with a chordal error of 0.01 mm.
+fn chart(poles: &[[f64; 3]], parameters: &[f64]) -> crate::brep::intersection::IntersectionCarrier {
+    let mut knots = vec![parameters[0]];
+    knots.extend_from_slice(parameters);
+    knots.push(parameters[parameters.len() - 1]);
+    let poles = poles
+        .iter()
+        .map(|p| Point3::new(p[0], p[1], p[2]))
+        .collect::<Vec<_>>();
+    crate::brep::intersection::IntersectionCarrier {
+        carrier: crate::brep::CurveCarrier {
+            runs_against_edges: false,
+            attr: 70,
+            offset: 0,
+            end: 0,
+            geometry: CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(
+                NurbsCurve::from_lanes(1, knots, poles, None, false).unwrap(),
+            )),
+            parameter_range: None,
+        },
+        support_data: crate::brep::intersection::IntersectionSupportData {
+            supports: [2, 3],
+            fit_tolerance_mm: 0.01,
+            support_uv: None,
+        },
+    }
+}
+
+const SQUARE: [[f64; 3]; 4] = [
+    [0.0, 0.0, 0.0],
+    [10.0, 0.0, 0.0],
+    [10.0, 10.0, 0.0],
+    [0.0, 10.0, 0.0],
+];
+
+#[test]
+fn an_edge_on_a_chart_inverts_each_vertex_into_one_run_of_spans() {
+    let policy = DecodePolicy::service();
+    let arena = DecodeArena::new();
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let range = |carrier: &crate::brep::intersection::IntersectionCarrier, ends: [[f64; 3]; 2]| {
+        super::chart_edge_range(
+            &ctx,
+            carrier,
+            ends.map(|p| Point3::new(p[0], p[1], p[2])),
+            0.01,
+        )
+        .unwrap()
+        .map(|(range, reversed, _)| (range.map(|t| (t * 1.0e6).round() / 1.0e6), reversed))
+    };
+    let open = chart(&SQUARE, &[0.0, 10.0, 20.0, 30.0]);
+    let (a, b) = ([5.0, 0.0, 0.0], [10.0, 5.0, 0.0]);
+    assert_eq!(range(&open, [a, b]), Some(([5.0, 15.0], false)));
+    assert_eq!(range(&open, [b, a]), Some(([5.0, 15.0], true)));
+    // A vertex beyond the allowance, and two vertices at one parameter, give
+    // no range.
+    assert_eq!(range(&open, [[5.0, 1.0, 0.0], b]), None);
+    assert_eq!(range(&open, [a, a]), None);
+    // A vertex between two separated spans of a folded chart is ambiguous.
+    let folded = chart(
+        &[
+            [0.0, 0.0, 0.0],
+            [10.0, 0.0, 0.0],
+            [10.0, 0.005, 0.0],
+            [0.0, 0.005, 0.0],
+        ],
+        &[0.0, 10.0, 10.005, 20.005],
+    );
+    assert_eq!(
+        range(&folded, [[5.0, 0.0025, 0.0], [10.0, 0.0025, 0.0]]),
+        None
+    );
+    // On a closed chart a vertex at the seam has two parameters.
+    let mut ring = SQUARE.to_vec();
+    ring.push(SQUARE[0]);
+    let closed = chart(&ring, &[0.0, 10.0, 20.0, 30.0, 40.0]);
+    assert_eq!(
+        range(&closed, [b, [0.0, 5.0, 0.0]]),
+        Some(([15.0, 35.0], false))
+    );
+    assert_eq!(range(&closed, [SQUARE[0], b]), None);
+    assert_eq!(range(&closed, [b, SQUARE[0]]), None);
+}
+
+#[test]
+fn a_closed_chart_starts_a_ring_edge_at_its_seam() {
+    let mut ring = SQUARE.to_vec();
+    ring.push(SQUARE[0]);
+    let closed =
+        crate::brep::index::IndexedCurve::Derived(chart(&ring, &[0.0, 10.0, 20.0, 30.0, 40.0]));
+    assert_eq!(
+        super::closed_edge_start(Some(&closed)),
+        Some((Point3::new(0.0, 0.0, 0.0), [0.0, 40.0]))
+    );
+    let open = crate::brep::index::IndexedCurve::Derived(chart(&SQUARE, &[0.0, 10.0, 20.0, 30.0]));
+    assert_eq!(super::closed_edge_start(Some(&open)), None);
+}

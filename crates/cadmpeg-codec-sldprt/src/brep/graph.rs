@@ -1101,10 +1101,12 @@ fn walk_face(bridge: &topology::Bridge, t: &topology::Tables) -> WalkedFace {
 }
 
 /// The start point and parameter range of a closed edge whose vertex uses
-/// are sentinels: a circle from its reference direction through one turn.
+/// are sentinels: a circle from its reference direction through one turn, or
+/// a surface-intersection chart whose first and last poles are the same
+/// point, over its domain (spec §7.2).
 fn closed_edge_start(curve: Option<&IndexedCurve>) -> Option<(cadmpeg_ir::math::Point3, [f64; 2])> {
-    match &curve?.carrier().geometry {
-        CurveGeometry::Solved(SolvedCurveGeometry::Circle(circle_curve)) => {
+    match (&curve?.carrier().geometry, curve?) {
+        (CurveGeometry::Solved(SolvedCurveGeometry::Circle(circle_curve)), _) => {
             let center = circle_curve.center().get();
             let ref_direction = circle_curve.frame().reference().as_raw();
             let radius = circle_curve.radius().get();
@@ -1112,6 +1114,17 @@ fn closed_edge_start(curve: Option<&IndexedCurve>) -> Option<(cadmpeg_ir::math::
                 center.translated(*ref_direction, radius),
                 [0.0, std::f64::consts::TAU],
             ))
+        }
+        (CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(nurbs)), IndexedCurve::Derived(_))
+            if !nurbs.periodic() =>
+        {
+            let cadmpeg_ir::geometry::nurbs::NurbsPoles3::Polynomial { points } = nurbs.pole_rows()
+            else {
+                return None;
+            };
+            let (first, last) = (points.first()?.get(), points.last()?.get());
+            let domain = nurbs_curve_parameter_domain(nurbs)?;
+            (first == last).then_some((first, domain.endpoints()))
         }
         _ => None,
     }
@@ -1215,6 +1228,105 @@ fn conic_edge_range(
             ],
             false,
         )
+    })
+}
+
+/// The range of an edge carried directly by a chart (spec §7.3), whether it
+/// reverses, and the larger vertex distance from the chart.
+fn chart_edge_range(
+    ctx: &DecodeContext<'_>,
+    chart: &super::intersection::IntersectionCarrier,
+    endpoints: [cadmpeg_ir::math::Point3; 2],
+    allowance: f64,
+) -> Result<Option<([f64; 2], bool, f64)>, cadmpeg_core::CodecError> {
+    let geometry = &chart.carrier.geometry;
+    let CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(nurbs)) = geometry else {
+        return Ok(None);
+    };
+    let cadmpeg_ir::geometry::nurbs::NurbsPoles3::Polynomial { points } = nurbs.pole_rows() else {
+        return Ok(None);
+    };
+    let closed = matches!(
+        (points.first(), points.last()),
+        (Some(first), Some(last)) if first.get() == last.get()
+    );
+    let Some(domain) = nurbs_curve_parameter_domain(nurbs) else {
+        return Ok(None);
+    };
+    let [low, high] = domain.endpoints();
+    let mut breaks: Vec<f64> = nurbs.knots().as_slice().to_vec();
+    breaks.retain(|knot| (low..=high).contains(knot));
+    breaks.dedup();
+    let Some(samples) = f64_from_index(NURBS_CACHE_SAMPLES_PER_SPAN) else {
+        return Ok(None);
+    };
+    let mut parameters = [0.0; 2];
+    let mut gap: f64 = 0.0;
+    for (slot, target) in endpoints.into_iter().enumerate() {
+        let mut distance = |parameter: f64| {
+            super::evaluation::curve_point(ctx, geometry, parameter)
+                .map(|point| point.map(|point| point.get().distance(target)))
+        };
+        // The closest approach of each span, in span order.
+        let mut spans = Vec::with_capacity(breaks.len());
+        for pair in breaks.windows(2) {
+            let (a, b) = (pair[0], pair[1]);
+            let step = (b - a) / samples;
+            let mut nearest = (f64::INFINITY, a);
+            for index in 0..=NURBS_CACHE_SAMPLES_PER_SPAN {
+                let Some(position) = f64_from_index(index) else {
+                    return Ok(None);
+                };
+                let parameter = a + step * position;
+                if let Some(sampled) = distance(parameter)? {
+                    if sampled < nearest.0 {
+                        nearest = (sampled, parameter);
+                    }
+                }
+            }
+            let bracket = [(nearest.1 - step).max(a), (nearest.1 + step).min(b)];
+            spans.push(
+                golden_section_minimum(bracket[0], bracket[1], &mut distance)?
+                    .filter(|&(_, refined)| refined <= nearest.0)
+                    .map_or((nearest.1, nearest.0), |found| found),
+            );
+        }
+        let within = spans
+            .iter()
+            .map(|&(_, span_gap)| span_gap <= allowance)
+            .collect::<Vec<_>>();
+        let starts = (0..within.len())
+            .filter(|&index| within[index] && (index == 0 || !within[index - 1]))
+            .count();
+        let wraps = closed && within.len() > 1 && within[0] && within[within.len() - 1];
+        let runs = if wraps && starts > 1 {
+            starts - 1
+        } else {
+            starts
+        };
+        if runs != 1 {
+            return Ok(None);
+        }
+        let Some((nearest, &(parameter, span_gap))) = spans
+            .iter()
+            .enumerate()
+            .filter(|(_, &(_, span_gap))| span_gap <= allowance)
+            .min_by(|left, right| left.1 .1.total_cmp(&right.1 .1))
+        else {
+            return Ok(None);
+        };
+        // At the seam of a closed chart the vertex has two parameters.
+        if wraps && starts > 1 && (nearest == 0 || nearest + 1 == spans.len()) {
+            return Ok(None);
+        }
+        parameters[slot] = parameter;
+        gap = gap.max(span_gap);
+    }
+    let [start, end] = parameters;
+    Ok(match start.partial_cmp(&end) {
+        Some(std::cmp::Ordering::Less) => Some(([start, end], false, gap)),
+        Some(std::cmp::Ordering::Greater) => Some(([end, start], true, gap)),
+        _ => None,
     })
 }
 
@@ -1645,7 +1757,7 @@ fn blend_boundary(
 
 /// Distance within which a curve end lies at a vertex without a stored
 /// tolerance: the stream's linear resolution, `1e-8` m.
-const LINEAR_RESOLUTION_MM: f64 = 1.0e-5;
+pub(super) const LINEAR_RESOLUTION_MM: f64 = 1.0e-5;
 
 /// Whether an edge runs against an open NURBS curve that stores no range,
 /// from the curve's points at the two ends of its knot domain. Each end
@@ -2348,6 +2460,7 @@ fn decode_graph(
         let face = walk_face(bridge, t);
         carriers.note_blend_face(face.surface_attr, &face_vertex_positions(t, &face));
     }
+    carriers.refine_intersections(ctx)?;
     let lane_refusals = std::mem::take(&mut carriers.lane_refusals);
     let carriers: &CarrierIndex = carriers;
     let blend_memo: super::index::BlendMemo<'_, '_> = std::cell::RefCell::new(HashMap::new());
@@ -2676,20 +2789,41 @@ fn decode_graph(
                 .and_then(|vertex| vertex.tolerance_m)
                 .map(|tolerance| tolerance * LEN_TO_MM)
         };
-        let parameter_range = carriers
-            .curve(curve_attr)
-            .filter(|_| !carriers.marker_conflict(curve_attr))
-            .map(|carrier| {
-                edge_parameter_range(
-                    ctx,
-                    carrier.carrier(),
-                    edge_endpoint_positions.get(&e).copied(),
-                    [start_v, end_v].map(vertex_tolerance),
-                    start_v == end_v,
-                )
-            })
-            .transpose()?
-            .flatten();
+        let mut chart_vertex_gap: f64 = 0.0;
+        let parameter_range = match carriers.curve(curve_attr) {
+            Some(IndexedCurve::Derived(chart)) if chart.carrier.parameter_range.is_none() => {
+                match edge_endpoint_positions.get(&e) {
+                    Some(endpoints) => {
+                        let allowance = [start_v, end_v]
+                            .map(vertex_tolerance)
+                            .into_iter()
+                            .flatten()
+                            .fold(
+                                carriers
+                                    .stored_chordal_error(curve_attr)
+                                    .unwrap_or(chart.support_data.fit_tolerance_mm),
+                                f64::max,
+                            );
+                        chart_edge_range(ctx, chart, *endpoints, allowance)?.map(
+                            |(range, reversed, gap)| {
+                                chart_vertex_gap = gap;
+                                (range, reversed)
+                            },
+                        )
+                    }
+                    None => None,
+                }
+            }
+            Some(_) if carriers.marker_conflict(curve_attr) => None,
+            Some(carrier) => edge_parameter_range(
+                ctx,
+                carrier.carrier(),
+                edge_endpoint_positions.get(&e).copied(),
+                [start_v, end_v].map(vertex_tolerance),
+                start_v == end_v,
+            )?,
+            None => None,
+        };
         edge_curve_spans.insert(e, (curve_attr, parameter_range.map(|(range, _)| range)));
         // An edge without a resolved range takes its direction from the ends of
         // its curve's domain, and else from a compact analytic curve's
@@ -2824,8 +2958,8 @@ fn decode_graph(
             start: start_id,
             end: end_id,
             tolerance: match carriers.curve(curve_attr) {
-                Some(IndexedCurve::Derived(intersection)) => {
-                    Some(intersection.support_data.fit_tolerance_mm)
+                Some(IndexedCurve::Derived(chart)) => {
+                    Some(chart.support_data.fit_tolerance_mm.max(chart_vertex_gap))
                 }
                 _ => None,
             }

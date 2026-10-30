@@ -42,6 +42,7 @@ pub(crate) mod attrib;
 mod blend;
 mod blend_fit;
 mod blend_surface;
+mod chart_refine;
 pub(crate) mod entity;
 pub(crate) mod evaluation;
 mod fit;
