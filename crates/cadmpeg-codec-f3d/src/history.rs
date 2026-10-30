@@ -23,6 +23,7 @@ pub(crate) mod face_admission;
 mod loop_index;
 mod recipe_index;
 pub(crate) mod selection;
+pub(crate) mod stored_bodies;
 mod topology_cache;
 mod treatment_index;
 
@@ -877,8 +878,8 @@ pub(crate) fn bind_feature_outputs(
         .filter_map(|feature| feature_history_states(feature, scopes))
         .map(|(state_id, _)| state_id)
         .collect::<HashSet<_>>();
-    let mut state_outputs = HashMap::<i64, Option<Vec<i64>>>::new();
-    for history in histories.iter_mut() {
+    let mut state_outputs = HashMap::<i64, Option<(usize, Vec<i64>)>>::new();
+    for (history_index, history) in histories.iter_mut().enumerate() {
         let mut by_node = HashMap::new();
         for (index, state) in history.states().iter().enumerate() {
             by_node.insert(state.node_index, index);
@@ -963,10 +964,11 @@ pub(crate) fn bind_feature_outputs(
             state_outputs
                 .entry(state_id)
                 .and_modify(|outputs| *outputs = None)
-                .or_insert_with(|| Some(outputs));
+                .or_insert_with(|| Some((history_index, outputs)));
         }
     }
     let mut active = HashMap::new();
+    let stored_active = stored_bodies::ActiveBodies::new(active_bodies);
     for body in active_bodies {
         let Some(slot) = stable_ref(body.id.as_str()) else {
             continue;
@@ -974,11 +976,11 @@ pub(crate) fn bind_feature_outputs(
         let id = body.id.clone();
         active.insert(slot, id);
     }
-    for feature in features {
+    for feature in features.iter_mut() {
         let Some((state_id, previous_state_id)) = feature_history_states(feature, scopes) else {
             continue;
         };
-        let Some(Some(outputs)) = state_outputs.get(&state_id) else {
+        let Some(Some((history_index, outputs))) = state_outputs.get(&state_id) else {
             continue;
         };
         let transition_matches = histories
@@ -1005,8 +1007,26 @@ pub(crate) fn bind_feature_outputs(
                 cadmpeg_ir::features::DistinctMembers::try_from(resolved)
                     .map_err(cadmpeg_core::CodecError::from)?,
             );
-            bind_base_feature_output_selection(feature)?;
+            if let Some(scope) = feature
+                .native_ref
+                .as_deref()
+                .and_then(|id| scopes.iter().find(|scope| scope.id == id))
+            {
+                let source = historical_brep_source(&histories[*history_index].id);
+                if stored_bodies::bind_history_outputs(
+                    feature,
+                    scope,
+                    outputs,
+                    source,
+                    &stored_active,
+                ) {
+                    bind_base_feature_output_selection(feature)?;
+                }
+            }
         }
+    }
+    for feature in features {
+        stored_bodies::finalize_body_sets(feature);
     }
     Ok(())
 }
@@ -1029,9 +1049,6 @@ fn feature_history_states(
 fn bind_base_feature_output_selection(
     feature: &mut cadmpeg_ir::features::Feature,
 ) -> Result<(), cadmpeg_core::CodecError> {
-    if feature.evaluation.outputs().is_empty() {
-        return Ok(());
-    }
     let cadmpeg_ir::features::FeatureDefinition::Operation(
         cadmpeg_ir::features::FeatureOperation::BaseFeature {
             bodies: cadmpeg_ir::features::BodySelection::Native(native),
@@ -5561,10 +5578,10 @@ fn body_recipe_operand_state_indexes(
 }
 
 fn active_brep_face_matches_source(face: &cadmpeg_ir::ids::FaceId, source: &str) -> bool {
-    face.as_str().starts_with("f3d:brep:entity#") || face_in_brep_source(face.as_str(), source)
+    face.as_str().starts_with("f3d:brep:entity#") || entity_in_brep_source(face.as_str(), source)
 }
 
-fn face_in_brep_source(id: &str, source: &str) -> bool {
+fn entity_in_brep_source(id: &str, source: &str) -> bool {
     id.strip_prefix("f3d:brep/")
         .and_then(|tail| tail.strip_prefix(source))
         .is_some_and(|tail| tail.starts_with('/'))
@@ -5603,7 +5620,7 @@ fn select_legacy_extrude_face_candidate(
             let mut matches = candidates
                 .iter()
                 .enumerate()
-                .filter(|(_, face)| face_in_brep_source(face.as_str(), source));
+                .filter(|(_, face)| entity_in_brep_source(face.as_str(), source));
             let first = matches.next().map(|(index, _)| index);
             first.filter(|_| matches.next().is_none())
         };

@@ -126,6 +126,16 @@ pub(crate) enum F3dLossCode {
     EdgeReferenceLostUnrepaired,
     /// Feature scopes have no complete neutral feature definition.
     FeatureDefinitionIncomplete,
+    /// A stored-body operation has an empty proven body set.
+    FeatureStoredBodiesEmpty,
+    /// A decoded body snapshot supplies no construction recipe.
+    FeatureStoredBodiesRecipeAbsent,
+    /// A Base Feature has no complete unique body binding.
+    FeatureStoredBodiesUnbound,
+    /// A derived base scope has no proven source body and frame.
+    FeatureDerivedBaseUnresolved,
+    /// A box scope has no fully decoded dimensions and local frame.
+    FeatureBoxPrimitiveUnresolved,
     /// Sheet-metal base flanges projected with their stored thickness copy because
     /// their rule states no thickness.
     SheetThicknessUnruled,
@@ -411,6 +421,11 @@ impl F3dLossCode {
         Self::DecalNativeRetained,
         Self::EdgeReferenceLostUnrepaired,
         Self::FeatureDefinitionIncomplete,
+        Self::FeatureStoredBodiesEmpty,
+        Self::FeatureStoredBodiesRecipeAbsent,
+        Self::FeatureStoredBodiesUnbound,
+        Self::FeatureDerivedBaseUnresolved,
+        Self::FeatureBoxPrimitiveUnresolved,
         Self::SheetThicknessUnruled,
         Self::FeatureScopeUnprojected,
         Self::MoveUnprojected,
@@ -577,6 +592,11 @@ impl F3dLossCode {
             Self::ReferenceImageNativeRetained => "appearance.reference-image-native",
             Self::DecalNativeRetained => "appearance.decal-native",
             Self::EdgeReferenceLostUnrepaired => "feature.edge-reference-lost",
+            Self::FeatureStoredBodiesEmpty => "feature.stored-bodies-empty",
+            Self::FeatureStoredBodiesRecipeAbsent => "feature.stored-bodies-recipe-absent",
+            Self::FeatureStoredBodiesUnbound => "feature.stored-bodies-unbound",
+            Self::FeatureDerivedBaseUnresolved => "feature.derived-base-unresolved",
+            Self::FeatureBoxPrimitiveUnresolved => "feature.box-primitive-unresolved",
             Self::FeatureDefinitionIncomplete => "feature.definition-incomplete",
             Self::SheetThicknessUnruled => "feature.sheet-thickness-unruled",
             Self::EmbossControlsNative => "feature.emboss-controls-native",
@@ -772,6 +792,11 @@ impl F3dLossCode {
             | Self::ReferenceImageNativeRetained
             | Self::DecalNativeRetained
             | Self::EdgeReferenceLostUnrepaired
+            | Self::FeatureStoredBodiesEmpty
+            | Self::FeatureStoredBodiesRecipeAbsent
+            | Self::FeatureStoredBodiesUnbound
+            | Self::FeatureDerivedBaseUnresolved
+            | Self::FeatureBoxPrimitiveUnresolved
             | Self::FeatureDefinitionIncomplete
             | Self::SheetThicknessUnruled
             | Self::HoleExtentUnproven
@@ -909,6 +934,11 @@ impl F3dLossCode {
             | Self::HistoryBindingWorkExceeded
             | Self::RecipeSideSearchBudgetExceeded
             | Self::ParameterOrderBudgetExceeded
+            | Self::FeatureStoredBodiesEmpty
+            | Self::FeatureStoredBodiesRecipeAbsent
+            | Self::FeatureStoredBodiesUnbound
+            | Self::FeatureDerivedBaseUnresolved
+            | Self::FeatureBoxPrimitiveUnresolved
             | Self::FeatureDefinitionIncomplete
             | Self::SheetThicknessUnruled
             | Self::WorkPlaneFrameUnbound
@@ -1116,6 +1146,11 @@ mod tests {
                 "appearance.decal-native",
                 "feature.edge-reference-lost",
                 "feature.definition-incomplete",
+                "feature.stored-bodies-empty",
+                "feature.stored-bodies-recipe-absent",
+                "feature.stored-bodies-unbound",
+                "feature.derived-base-unresolved",
+                "feature.box-primitive-unresolved",
                 "feature.sheet-thickness-unruled",
                 "feature.scope-unprojected",
                 "feature.move-unprojected",
