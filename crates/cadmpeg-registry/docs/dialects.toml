@@ -1261,6 +1261,164 @@ discriminants = { pvs_signature = "any other leading ten bytes", pvs_xml_version
 witness = "code:crates/cadmpeg-codec-pvz/src/dialect.rs:66"
 
 # --------------------------------------------------------------------------
+# OpenUSD layers (.usda, .usdc, .usd) and packages (.usdz)
+# --------------------------------------------------------------------------
+# A layer is a USDA text layer or a USDC binary (Crate) layer; the first bytes
+# select the encoding, never the extension (docs/formats/usd.md section 1).
+# A USDZ package is a ZIP archive whose first member is the root layer.
+# The text discriminant is the version on the header line (section 3.1). The
+# binary discriminant is the major, minor, and patch bytes of the 88-byte
+# bootstrap header (section 9). `detect::classify`
+# (crates/cadmpeg-codec-usd/src/detect.rs) reads both, and
+# `dialect::classify` (crates/cadmpeg-codec-usd/src/dialect.rs) is the codec's
+# single construction path for a `DialectMatch`.
+#
+# USDC version 0.3.0 is not a defined layout and has no row.
+#
+# `complete = false`: each OpenUSD release can add a text or binary version.
+[format.usd]
+complete = false
+
+[[dialect]]
+id = "usd:usda-1.0"
+title = "USDA 1.0 text layer"
+discriminants = { header = "#usda 1.0" }
+witness = "spec:docs/formats/usd.md section 3.1"
+
+[[dialect]]
+id = "usd:usda-1.1"
+title = "USDA 1.1 text layer, spline tangent algorithms"
+discriminants = { header = "#usda 1.1" }
+witness = "spec:docs/formats/usd.md section 3.1"
+
+[[dialect]]
+id = "usd:usda-1.2"
+title = "USDA 1.2 text layer, array edits"
+discriminants = { header = "#usda 1.2" }
+witness = "spec:docs/formats/usd.md section 3.1"
+
+[[dialect]]
+id = "usd:usda-1.3"
+title = "USDA 1.3 text layer, spline loop boundary times"
+discriminants = { header = "#usda 1.3" }
+witness = "spec:docs/formats/usd.md section 3.1"
+
+[[dialect]]
+id = "usd:sdf-1.4.32"
+title = "Legacy Sdf text layer, USDA 1.0 grammar"
+discriminants = { header = "#sdf 1.4.32" }
+witness = "spec:docs/formats/usd.md section 3.1"
+
+[[dialect]]
+id = "usd:usdc-0.0.1"
+title = "USDC 0.0.1 binary layer, the initial layout"
+discriminants = { identifier = "PXR-USDC", version = "0.0.1" }
+witness = "spec:docs/formats/usd.md section 9"
+
+[[dialect]]
+id = "usd:usdc-0.1.0"
+title = "USDC 0.1.0 binary layer, a corrected path-item header layout"
+discriminants = { identifier = "PXR-USDC", version = "0.1.0" }
+witness = "spec:docs/formats/usd.md section 9"
+
+[[dialect]]
+id = "usd:usdc-0.2.0"
+title = "USDC 0.2.0 binary layer, list-operation prepend and append fields"
+discriminants = { identifier = "PXR-USDC", version = "0.2.0" }
+witness = "spec:docs/formats/usd.md section 9"
+
+[[dialect]]
+id = "usd:usdc-0.4.0"
+title = "USDC 0.4.0 binary layer, compressed structural sections"
+discriminants = { identifier = "PXR-USDC", version = "0.4.0" }
+witness = "spec:docs/formats/usd.md section 9"
+
+[[dialect]]
+id = "usd:usdc-0.5.0"
+title = "USDC 0.5.0 binary layer, compressed integer arrays"
+discriminants = { identifier = "PXR-USDC", version = "0.5.0" }
+witness = "spec:docs/formats/usd.md section 9"
+
+[[dialect]]
+id = "usd:usdc-0.6.0"
+title = "USDC 0.6.0 binary layer, compressed floating-point arrays"
+discriminants = { identifier = "PXR-USDC", version = "0.6.0" }
+witness = "spec:docs/formats/usd.md section 9"
+
+[[dialect]]
+id = "usd:usdc-0.7.0"
+title = "USDC 0.7.0 binary layer, 64-bit array sizes"
+discriminants = { identifier = "PXR-USDC", version = "0.7.0" }
+witness = "spec:docs/formats/usd.md section 9"
+
+[[dialect]]
+id = "usd:usdc-0.8.0"
+title = "USDC 0.8.0 binary layer, payload list operations"
+discriminants = { identifier = "PXR-USDC", version = "0.8.0" }
+witness = "spec:docs/formats/usd.md section 9"
+
+[[dialect]]
+id = "usd:usdc-0.9.0"
+title = "USDC 0.9.0 binary layer, timecode value types"
+discriminants = { identifier = "PXR-USDC", version = "0.9.0" }
+witness = "spec:docs/formats/usd.md section 9"
+
+[[dialect]]
+id = "usd:usdc-0.10.0"
+title = "USDC 0.10.0 binary layer, the pathExpression value type"
+discriminants = { identifier = "PXR-USDC", version = "0.10.0" }
+witness = "spec:docs/formats/usd.md section 9"
+
+[[dialect]]
+id = "usd:usdc-0.11.0"
+title = "USDC 0.11.0 binary layer, layer-metadata relocates"
+discriminants = { identifier = "PXR-USDC", version = "0.11.0" }
+witness = "spec:docs/formats/usd.md section 9"
+
+[[dialect]]
+id = "usd:usdc-0.12.0"
+title = "USDC 0.12.0 binary layer, splines"
+discriminants = { identifier = "PXR-USDC", version = "0.12.0" }
+witness = "spec:docs/formats/usd.md section 9"
+
+[[dialect]]
+id = "usd:usdc-0.13.0"
+title = "USDC 0.13.0 binary layer, spline tangent algorithms"
+discriminants = { identifier = "PXR-USDC", version = "0.13.0" }
+witness = "spec:docs/formats/usd.md section 9"
+
+[[dialect]]
+id = "usd:usdc-0.14.0"
+title = "USDC 0.14.0 binary layer, array edits"
+discriminants = { identifier = "PXR-USDC", version = "0.14.0" }
+witness = "spec:docs/formats/usd.md section 9"
+
+[[dialect]]
+id = "usd:usdc-0.15.0"
+title = "USDC 0.15.0 binary layer, spline loop boundary times"
+discriminants = { identifier = "PXR-USDC", version = "0.15.0" }
+witness = "spec:docs/formats/usd.md section 9"
+
+[[dialect]]
+# The package is the primary layer of a decode. The root layer is an extra
+# layer of its own text or binary row, with the member name as its instance.
+id = "usd:usdz"
+title = "USDZ package, a ZIP archive whose first member is the root layer"
+discriminants = { container = "ZIP", root = "first member named *.usda, *.usdc, or *.usd" }
+witness = "spec:docs/formats/usd.md section 1"
+
+[[dialect]]
+# Mandatory `unknown` row (B4). A text layer whose header names no declared
+# version is read on the residual path with the USDA 1.3 grammar, and decode
+# charges `usd/source.dialect-unverified`. A `PXR-USDC` header with an
+# undeclared version is classified here and refused.
+id = "usd:unknown"
+unknown_kind = "recovered-residual"
+title = "OpenUSD layer with an undeclared header version"
+discriminants = { header = "#usda or #sdf with any other version", version = "any other PXR-USDC version" }
+witness = "code:crates/cadmpeg-codec-usd/src/dialect.rs:87"
+
+# --------------------------------------------------------------------------
 # ACIS / ASM kernel namespace (embedded layer)
 # --------------------------------------------------------------------------
 # Owned by `cadmpeg-asm`, cited by `sat`, `f3d`, and `inventor`. These ids are

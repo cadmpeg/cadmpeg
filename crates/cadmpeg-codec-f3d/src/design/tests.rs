@@ -362,7 +362,8 @@ fn design_streams_scope_sketch_graphs_identities_and_parameter_names() {
             1.0e-6,
         )
     })
-    .expect("sketch lanes pair");
+    .expect("sketch lanes pair")
+    .into_tuple();
     let mut constraints = crate::test_support::with_decode_context(|decode_ctx| {
         project_sketch_constraints(
             decode_ctx,

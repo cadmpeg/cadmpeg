@@ -118,6 +118,7 @@ impl Memberships {
     pub(super) fn has_retained_rows(&self) -> bool {
         !self.face_surfaces.is_empty()
             || !self.surface_planes.is_empty()
+            || !self.surface_cylinders.is_empty()
             || !self.face_loops.is_empty()
             || !self.loop_coedges.is_empty()
             || !self.coedge_topology.is_empty()

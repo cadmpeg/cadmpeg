@@ -717,24 +717,24 @@ the native feature when a fixed lane carries a symmetric distance.
 
 ### DR-122. Derived Base Feature source and frame
 
-**Question.** Which fields identify the source body and local frame of a `Derived Base Feature` scope?
+**Question.** Which field of a `Derived Base Feature` scope identifies the derived source body, and which field stores its local frame or mirror plane?
 
-**Known.** The scope has a reference table and current and previous ASM history-state identities. Its result transition identifies result bodies. The result body identity does not identify a derived source body or a source frame.
+**Known.** The 711-byte frame stores nine typed-reference elements, a zero GUID, the kind, the ordinal, and an f64 of unknown meaning. The second body element of the 711-byte frame stores the Design body entity suffix of the result body. Every reference in the scope is a Design record of the same stream. The frame stores no matrix. The `DerivedBaseFeature` forms (707 and 491 bytes) store the same elements and roles, a part with a mirror label places its occurrence with an identity rotation, and no field in either form stores a plane or a matrix. The 761-byte frame has one additional typed-reference element with a role GUID that no 711-byte frame stores. Its record index is lower than the scope record index.
 
-**Need.** Independent source-body and placement changes with the other scope fields fixed.
-
-**Conflict.** None.
-
-**Note.** The scope remains native with `feature.derived-base-unresolved` until both source and frame have a complete binding.
-
-### DR-123. Typed-reference BoxPrimitive construction
-
-**Question.** Which fields define dimensions, operation, and the local frame in a `BoxPrimitive` scope with eight typed reference members?
-
-**Known.** The named five-owner box form defines three lengths and two planar offsets. The eight-member form has a scope envelope and a result-state transition. These fields do not assign the extra references or establish a local placement frame.
-
-**Need.** Independent changes to the three dimensions, local origin, local axes, and result operation in this form.
+**Need.** A scope whose source document or source body changes with the result body fixed. The meaning of the f64 and of the additional 761-byte element.
 
 **Conflict.** None.
 
-**Note.** A scope without complete dimensions and frame remains native with `feature.box-primitive-unresolved`.
+**Note.** A scope without proven result bodies remains native with `feature.derived-base-unresolved`. A scope with proven result bodies is kept as a stored snapshot with the same code until source and frame have a complete binding.
+
+### DR-123. Typed-reference BoxPrimitive offsets and other forms
+
+**Question.** How does a nonzero `OffsetDistanceX` or `OffsetDistanceY` owner combine with the stored frame in a `BoxPrimitive` scope with eight typed reference members, and which other frame lengths does the form have?
+
+**Known.** The 1295-byte form stores the result operation, a rigid local frame, and the five box parameter owners; the frame is the box placement when both offset owners are zero. The support-face selection and placement construction references are table members, and the form stores one further typed reference at offset 517 that is not a table member.
+
+**Need.** A scope in this form with a nonzero offset owner and a changed placement, and a scope in any other frame length.
+
+**Conflict.** None.
+
+**Note.** A scope outside the 1295-byte form, or with a nonzero offset owner, remains native with `feature.box-primitive-unresolved`.

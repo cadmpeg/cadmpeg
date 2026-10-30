@@ -6483,7 +6483,7 @@ fn clamp_nurbs_curve_to_domain_lanes(
     Some((segment_knots, control_points, weights))
 }
 
-fn clamp_nurbs_curve_to_domain(
+pub(crate) fn clamp_nurbs_curve_to_domain(
     curve: &cadmpeg_ir::geometry::nurbs::NurbsCurve,
     domain: [f64; 2],
 ) -> Result<Option<cadmpeg_ir::geometry::nurbs::NurbsCurve>, cadmpeg_ir::geometry::nurbs::NurbsError>

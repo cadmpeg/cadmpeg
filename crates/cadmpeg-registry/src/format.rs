@@ -31,6 +31,9 @@ pub enum Format {
     /// IGES `.igs` or `.iges`. Also spelled `igs`.
     #[cfg(feature = "iges")]
     Iges,
+    /// `OpenUSD` `.usda` text layer, or a `.usdz` package.
+    #[cfg(feature = "usd")]
+    Usd,
 }
 
 impl Format {
@@ -56,6 +59,8 @@ impl Format {
             Self::Rhino,
             #[cfg(feature = "iges")]
             Self::Iges,
+            #[cfg(feature = "usd")]
+            Self::Usd,
         ]
         .into_iter()
     }
@@ -92,6 +97,19 @@ impl Format {
                 .extensions
                 .contains(&extension.as_str())
         })
+    }
+
+    /// The dialect that a filename extension of this format names,
+    /// case-insensitively, for an extension that names one.
+    #[must_use]
+    pub fn dialect_for_extension(self, extension: &str) -> Option<&'static str> {
+        let extension = extension.to_ascii_lowercase();
+        self.descriptor()
+            .1
+            .extension_dialects
+            .iter()
+            .find(|(candidate, _)| *candidate == extension)
+            .map(|(_, dialect)| *dialect)
     }
 
     /// The stable format id, which is also its canonical `--to` spelling.
@@ -139,6 +157,7 @@ mod tests {
             "acis",
             "parasolid",
             "pvz",
+            "usd",
         ] {
             assert!(
                 Format::is_known_name(name).expect("embedded registry loads"),

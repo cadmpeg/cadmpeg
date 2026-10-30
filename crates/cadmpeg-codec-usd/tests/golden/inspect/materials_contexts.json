@@ -1,0 +1,38 @@
+{
+  "container_kind": "flat",
+  "entries": [
+    {
+      "attributes": {
+        "defaultPrim": "Root",
+        "header": "#usda 1.0",
+        "metersPerUnit": "0.01",
+        "prim_specs": "8",
+        "property_specs": "26",
+        "upAxis": "Z"
+      },
+      "compression": "stored",
+      "name": "layer",
+      "role": "document",
+      "size": {
+        "form": "exact",
+        "size": 2014
+      }
+    }
+  ],
+  "identity": {
+    "classification": "classified",
+    "dialects": {
+      "extra": [],
+      "primary": {
+        "admission": "admitted",
+        "declared": {
+          "header": "#usda 1.0"
+        },
+        "dialect": "usd:usda-1.0"
+      }
+    }
+  },
+  "notes": [
+    "prim types: Material 2, Mesh 2, Scope 1, Shader 2, Xform 1"
+  ]
+}

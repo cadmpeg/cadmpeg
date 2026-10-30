@@ -15,6 +15,7 @@ use crate::records::decal::DesignRecordHeader;
 use crate::records::feature::scope::DesignParameterScope;
 
 use crate::records::sketch_geometry::SketchCurveIdentity;
+use crate::records::sketch_geometry::SketchPoint;
 use crate::records::sketch_relations::SketchRelationOperand;
 
 use crate::records::topology::construction::DesignConstructionOperandIdentity;
@@ -357,7 +358,7 @@ fn extrude_selection_group_and_members_have_exact_counted_frames() {
             std::slice::from_ref(&group),
             std::slice::from_ref(&owning_scope),
             &[],
-            &[curve],
+            &[curve.clone()],
         );
         assert!(matches!(
             member.resolved_geometry,
@@ -367,6 +368,113 @@ fn extrude_selection_group_and_members_have_exact_counted_frames() {
                 secondary_id: 0,
             })
         ));
+
+        // Ownerless curve uniquely matches
+        let mut ownerless_curve = curve.clone();
+        ownerless_curve.owner_reference = None;
+        let mut test_member = member.clone();
+        test_member.resolved_geometry = None;
+        bind_extrude_selection_geometry(
+            std::slice::from_mut(&mut test_member),
+            std::slice::from_ref(&group),
+            std::slice::from_ref(&owning_scope),
+            &[],
+            &[ownerless_curve.clone()],
+        );
+        assert!(matches!(
+            test_member.resolved_geometry,
+            Some(SketchRelationOperand::Curve {
+                record_index: 400,
+                primary_id: 586,
+                secondary_id: 0,
+            })
+        ));
+
+        // Owned plus ownerless curve with same ID resolves to None (ambiguity)
+        let mut second_curve = ownerless_curve;
+        second_curve.record_index = 401;
+        test_member.resolved_geometry = None;
+        bind_extrude_selection_geometry(
+            std::slice::from_mut(&mut test_member),
+            std::slice::from_ref(&group),
+            std::slice::from_ref(&owning_scope),
+            &[],
+            &[curve, second_curve],
+        );
+        assert!(test_member.resolved_geometry.is_none());
+
+        // Ownerless point uniquely matches
+        let point = SketchPoint::try_from(crate::records::sketch_geometry::SketchPointDraft {
+            id: "f3d:Design/BulkStream.dat:sketch-point#500".into(),
+            record_index: 500,
+            owner_reference: None,
+            class_tag: crate::records::references::DesignClassTag::try_from("256".to_owned())
+                .unwrap(),
+            byte_offset: 5000,
+            coordinate_offset: 141,
+            companion: crate::records::sketch_geometry::SketchPointCompanion {
+                incident_curves: Vec::new(),
+            },
+            record_form: crate::records::sketch_geometry::SketchPointRecordForm::version11(
+                586,
+                crate::records::sketch_geometry::SketchPointClosure::Selector0State0,
+                None,
+                0.0,
+            ),
+            paired_reference: 0,
+            coordinates: Point2::new(0.0, 0.0),
+        })
+        .unwrap();
+
+        test_member.resolved_geometry = None;
+        bind_extrude_selection_geometry(
+            std::slice::from_mut(&mut test_member),
+            std::slice::from_ref(&group),
+            std::slice::from_ref(&owning_scope),
+            &[point.clone()],
+            &[],
+        );
+        assert!(matches!(
+            test_member.resolved_geometry,
+            Some(SketchRelationOperand::Point {
+                record_index: 500,
+                persistent_id: Some(586),
+            })
+        ));
+
+        // Owned plus ownerless point with same ID resolves to None (ambiguity)
+        let owned_point =
+            SketchPoint::try_from(crate::records::sketch_geometry::SketchPointDraft {
+                id: "f3d:Design/BulkStream.dat:sketch-point#501".into(),
+                record_index: 501,
+                owner_reference: Some(172),
+                class_tag: crate::records::references::DesignClassTag::try_from("256".to_owned())
+                    .unwrap(),
+                byte_offset: 5100,
+                coordinate_offset: 141,
+                companion: crate::records::sketch_geometry::SketchPointCompanion {
+                    incident_curves: Vec::new(),
+                },
+                record_form: crate::records::sketch_geometry::SketchPointRecordForm::version11(
+                    586,
+                    crate::records::sketch_geometry::SketchPointClosure::Selector0State0,
+                    None,
+                    0.0,
+                ),
+                paired_reference: 0,
+                coordinates: Point2::new(0.0, 0.0),
+            })
+            .unwrap();
+
+        test_member.resolved_geometry = None;
+        bind_extrude_selection_geometry(
+            std::slice::from_mut(&mut test_member),
+            std::slice::from_ref(&group),
+            std::slice::from_ref(&owning_scope),
+            &[point, owned_point],
+            &[],
+        );
+        assert!(test_member.resolved_geometry.is_none());
 
         let all_members = group
             .members()

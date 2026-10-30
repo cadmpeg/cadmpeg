@@ -899,7 +899,12 @@ pub(super) fn push_structural_layer_notes(losses: &mut Vec<LossNote>, scan: &Con
         .iter()
         .chain(&scan.surfaces.nonvisible_prototype_field_refusals)
     {
-        push_report_loss(losses, CreoLossCode::SurfacePrototypeFieldRetained, refusal);
+        let code = if refusal.contains(crate::scalar::COMPACT_PLANE_ORIGIN_REFUSAL) {
+            CreoLossCode::PlaneCompactFrameUnresolved
+        } else {
+            CreoLossCode::SurfacePrototypeFieldRetained
+        };
+        push_report_loss(losses, code, refusal);
     }
 
     // The specific undecoded PSB layers that gate per-instance geometry.

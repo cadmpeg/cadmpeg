@@ -1,0 +1,38 @@
+{
+  "container_kind": "flat",
+  "entries": [
+    {
+      "attributes": {
+        "defaultPrim": "Curves",
+        "header": "PXR-USDC 0.8.0",
+        "metersPerUnit": "1",
+        "prim_specs": "7",
+        "property_specs": "27",
+        "upAxis": "Z"
+      },
+      "compression": "stored",
+      "name": "layer",
+      "role": "document",
+      "size": {
+        "form": "exact",
+        "size": 2260
+      }
+    }
+  ],
+  "identity": {
+    "classification": "classified",
+    "dialects": {
+      "extra": [],
+      "primary": {
+        "admission": "admitted",
+        "declared": {
+          "version": "0.8.0"
+        },
+        "dialect": "usd:usdc-0.8.0"
+      }
+    }
+  },
+  "notes": [
+    "prim types: BasisCurves 5, NurbsCurves 1, Xform 1"
+  ]
+}
