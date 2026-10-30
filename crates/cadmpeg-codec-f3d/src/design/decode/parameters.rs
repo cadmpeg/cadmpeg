@@ -319,18 +319,12 @@ pub(in crate::design) fn parse_design_parameter(
             };
         let (expression, expression_end) = parameter_text!(payload, expression_at, 1..=256);
         let expression_trailer = payload.get(expression_end..expression_end + trailer_len)?;
-        let document = discriminated && owner_record_index.is_none();
-        let long_document_trailer = document
+        let long_document_trailer = discriminated
+            && owner_record_index.is_none()
             && payload.get(expression_end..expression_end + 10)
                 == Some(&[0, 0, 0, 0, 0, 0, 0, 0, 0, 1]);
-        // The earlier discriminated family writes the document trailer as
-        // six zero bytes and `01 00 01`.
-        let earlier_family =
-            family_discriminator.is_some_and(|discriminator| matches!(discriminator.code(), 0..=4));
-        let valid_expression_trailer = if document {
-            expression_trailer == [0, 0, 0, 0, 0, 0, 0, 0, 1]
-                || long_document_trailer
-                || (earlier_family && expression_trailer == [0, 0, 0, 0, 0, 0, 1, 0, 1])
+        let valid_expression_trailer = if discriminated {
+            long_document_trailer || is_flagged_expression_trailer(expression_trailer)
         } else {
             expression_trailer.iter().all(|byte| *byte == 0)
         };
@@ -366,6 +360,13 @@ pub(in crate::design) fn parse_design_parameter(
             Some(value) => value,
             None => parameter_text!(payload, source_kind_at, 1..=256),
         };
+        if discriminated
+            && !long_document_trailer
+            && (expression_trailer[DOCUMENT_TRAILER_FLAG] == 1)
+                != (source_kind == TYPED_DOCUMENT_SOURCE_KIND)
+        {
+            return None;
+        }
         let first_at = source_kind_end + usize::from(discriminated) * 4;
         if discriminated && View::u32_le_at(payload, source_kind_end) != Some(0) {
             return None;
@@ -421,6 +422,17 @@ pub(in crate::design) fn parse_design_parameter(
         }))
     })();
     parsed.transpose()
+}
+
+/// Index of the expression-trailer flag byte that marks a document parameter.
+const DOCUMENT_TRAILER_FLAG: usize = 8;
+
+/// Whether a discriminated expression trailer is four zero bytes followed by
+/// five flag bytes that are each zero or one.
+fn is_flagged_expression_trailer(trailer: &[u8]) -> bool {
+    trailer.len() == DOCUMENT_TRAILER_FLAG + 1
+        && trailer[..4] == [0; 4]
+        && trailer[4..].iter().all(|byte| *byte <= 1)
 }
 
 /// Whether a discriminated parameter frame stores four further zero bytes
@@ -747,8 +759,7 @@ fn valid_design_parameter_family(
         Code0, Code1, Code2, Code3, Code4, Code5, Code6,
     };
     match tail {
-        16 => matches!(discriminator, Some(Code5 | Code6)),
-        17 => discriminator == Some(Code6),
+        16 | 17 => matches!(discriminator, Some(Code5 | Code6)),
         18 => discriminator.is_none_or(|value| {
             matches!(value, Code0 | Code3 | Code4)
                 || (value == Code6 && source_kind == "TangencyWeight")

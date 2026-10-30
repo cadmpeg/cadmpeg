@@ -98,10 +98,11 @@ static USER_PARAMETER_SOURCE_KIND: LazyLock<NonBlankString> =
     LazyLock::new(|| cadmpeg_core::nonblank_literal!("User Parameter"));
 
 /// An owned source family. Its nonempty name cannot identify a user parameter.
+/// A frame with a null owner reference has no owner record index.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct OwnedDesignParameter {
     source_kind: NonBlankString,
-    owner_record_index: u32,
+    owner_record_index: Option<u32>,
     family_discriminator: Option<Located<DesignParameterDiscriminator>>,
 }
 
@@ -124,14 +125,11 @@ impl DesignParameterSource {
             (true, Some(_)) => {
                 Err("design parameter owner_record_index is present for user source_kind".into())
             }
-            (false, Some(owner_record_index)) => Ok(Self::Owned(OwnedDesignParameter {
+            (false, owner_record_index) => Ok(Self::Owned(OwnedDesignParameter {
                 source_kind,
                 owner_record_index,
                 family_discriminator,
             })),
-            (false, None) => {
-                Err("design parameter owner_record_index is missing for owned source_kind".into())
-            }
         }
     }
 }
@@ -380,7 +378,7 @@ impl DesignParameter {
     pub(crate) fn owner_record_index(&self) -> Option<u32> {
         match &self.source {
             DesignParameterSource::User { .. } => None,
-            DesignParameterSource::Owned(source) => Some(source.owner_record_index),
+            DesignParameterSource::Owned(source) => source.owner_record_index,
         }
     }
 }
