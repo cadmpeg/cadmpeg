@@ -4178,18 +4178,6 @@ pub(crate) mod thread_compact_construction_tail {
     pub(crate) const COMPACT_TRAILER: usize = 38;
 }
 
-/// Byte offsets for the `thread_standard_compact_construction_tail` record.
-///
-/// Spec §3.1. Record length 40 B.
-///
-/// ```text
-/// Offsets are relative to the first byte after the third LP-UTF16 string. The trailer zero run is two or three bytes; the trailer `01`, the count, and the marked reference follow it at variable offsets.
-/// ```
-pub(crate) mod thread_standard_compact_construction_tail {
-    /// Offset of `trailer_zero_run` (`bytes[2]`). Spec §3.1.
-    pub(crate) const TRAILER_ZERO_RUN: usize = 38;
-}
-
 /// Byte offsets for the `thread_standard_legacy_construction_tail` record.
 ///
 /// Spec §3.1. Record length 42 B.

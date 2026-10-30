@@ -207,7 +207,7 @@ fn standard_compact_thread_bytes(zero_run: usize, group: u32) -> Vec<u8> {
     bytes.extend_from_slice(&1u32.to_le_bytes());
     bytes.push(1);
     bytes.extend_from_slice(&group.to_le_bytes());
-    bytes.extend_from_slice(&[0; 6]);
+    bytes.extend_from_slice(&[0; 4]);
     bytes
 }
 
@@ -275,7 +275,7 @@ fn thread_scope_refuses_standard_prefix_compact_marker_trailer_deviations() {
     // The marked reference names the first scope reference.
     assert_eq!(admit(&standard_compact_thread_bytes(2, 613)), None);
     let base = standard_compact_thread_bytes(2, 612);
-    let flag_at = base.len() - (1 + 4 + 1 + 4 + 6);
+    let flag_at = base.len() - (1 + 4 + 1 + 4 + 4);
     let count_at = flag_at + 1;
     let marker_at = count_at + 4;
     assert_eq!(base[flag_at], 1);
@@ -288,6 +288,10 @@ fn thread_scope_refuses_standard_prefix_compact_marker_trailer_deviations() {
     let pitch_marker_at = flag_at - 2 - 8 - 8 - 1;
     let mut bytes = base.clone();
     bytes[pitch_marker_at] = 1;
+    assert_eq!(admit(&bytes), None);
+    // The reference padding is four zero bytes.
+    let mut bytes = base.clone();
+    *bytes.last_mut().unwrap() = 1;
     assert_eq!(admit(&bytes), None);
     // A truncated trailer is refused.
     assert_eq!(admit(&base[..base.len() - 8]), None);

@@ -785,7 +785,7 @@ the native feature when a fixed lane carries a symmetric distance.
 
 **Conflict.** None.
 
-**Note.** A scope whose marker combination no admitted form accepts stays a native feature.
+**Note.** A scope whose marker combination no admitted form accepts stays an unresolved Thread operation.
 
 ### DR-143. Thread modeled state
 

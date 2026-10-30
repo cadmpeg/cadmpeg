@@ -4196,14 +4196,13 @@ Unstated regions:
 
 ## `thread_standard_compact_construction_tail`
 
-Spec §3.1 · layout: byte offsets · size: 40 B
+Spec §3.1 · layout: byte offsets · size: 38 B
 
-Offsets are relative to the first byte after the third LP-UTF16 string. The trailer zero run is two or three bytes; the trailer `01`, the count, and the marked reference follow it at variable offsets.
+Offsets are relative to the first byte after the third LP-UTF16 string. The variable trailer starts at offset 38 and is stated in the specification.
 
 | Offset | Size | Field | Type | Endian | Src | Meaning |
 | -----: | ---: | ----- | ---- | ------ | --- | ------- |
 | 0 | 5 | `construction_marker` | `bytes[5]` | little | spec | with the construction marker `01 02 00 00 00` |
-| 38 | 2 | `trailer_zero_run` | `bytes[2]` | little | spec | Its trailer at relative offset 38 is a run of two or three zero bytes |
 
 Unstated regions:
 
