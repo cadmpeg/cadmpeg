@@ -915,9 +915,9 @@ fn validation_checks_generic_sweep_group_carriers() {
             crate::records::feature::path_features::DesignSweepConstruction {
                 operation: DesignExtrudeOperation::NewBody,
                 operation_offset: 0,
-                values: crate::test_support::reals([0.0; 6]),
-                record_indexes: [11, 12, 13, 14, 15, 16],
-                value_offsets: [0; 6],
+                values: crate::test_support::reals([0.0; 6]).to_vec(),
+                record_indexes: vec![11, 12, 13, 14, 15, 16],
+                value_offsets: vec![0; 6],
             },
         ));
         scope

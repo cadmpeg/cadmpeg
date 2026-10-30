@@ -6805,7 +6805,7 @@ pub(super) fn project_fixed_sweep(
         else {
             return None;
         };
-        let values = values.map(cadmpeg_ir::scalar::FiniteReal::get);
+        let values: Vec<f64> = values.iter().map(|value| value.get()).collect();
         let stream = native_stream(&scope.id)?;
         let mut groups = Vec::new();
         for group in construction_groups.iter().filter(|group| {
@@ -6900,9 +6900,22 @@ pub(super) fn project_fixed_sweep(
             || groups.len() != expected_group_count
             || (*operation == DesignExtrudeOperation::NewBody && !bodies.is_empty())
             || (guide_surface_form && paths.len() != 1)
-            || values[..4].iter().any(|value| !(0.0..=1.0).contains(value))
-            || (paths.len() == 1 && values[2..4] != [1.0; 2])
         {
+            return None;
+        }
+        let valid_lanes = match values.as_slice() {
+            [along, against] => {
+                paths.len() == 1 && (0.0..=1.0).contains(along) && (0.0..=1.0).contains(against)
+            }
+            [along, against, along_rail, against_rail, _twist, _taper] => {
+                [along, against, along_rail, against_rail]
+                    .iter()
+                    .all(|value| (0.0..=1.0).contains(*value))
+                    && (paths.len() != 1 || (*along_rail == 1.0 && *against_rail == 1.0))
+            }
+            _ => false,
+        };
+        if !valid_lanes {
             return None;
         }
         Some((operation, values, profile, *path, paths, guide_surfaces))
@@ -6917,24 +6930,39 @@ pub(super) fn project_fixed_sweep(
         scope,
         ctx,
     )?;
-    let guide_extent = SweepPathExtent {
-        along_fraction: or_none!(cadmpeg_ir::scalar::Fraction::new(values[2])),
-        against_fraction: or_none!(cadmpeg_ir::scalar::Fraction::new(values[3])),
-    };
-    let guide_rail = if let Some(rail) = paths.get(1) {
-        Some(SweepGuideRail {
-            path: resolved_loft_path(
-                rail,
-                construction_groups,
-                edge_operands,
-                edge_identity_operands,
-                scope,
-                ctx,
-            )?,
-            extent: guide_extent,
-        })
-    } else {
-        None
+    let (along, against, guide_rail, twist, taper) = match values.as_slice() {
+        [along, against] => (*along, *against, None, None, None),
+        [along, against, along_rail, against_rail, twist, taper] => {
+            let guide_extent = SweepPathExtent {
+                along_fraction: or_none!(cadmpeg_ir::scalar::Fraction::new(*along_rail)),
+                against_fraction: or_none!(cadmpeg_ir::scalar::Fraction::new(*against_rail)),
+            };
+            let guide_rail = if let Some(rail) = paths.get(1) {
+                Some(SweepGuideRail {
+                    path: resolved_loft_path(
+                        rail,
+                        construction_groups,
+                        edge_operands,
+                        edge_identity_operands,
+                        scope,
+                        ctx,
+                    )?,
+                    extent: guide_extent,
+                })
+            } else {
+                None
+            };
+            let twist_angle = or_none!(Angle::new(*twist));
+            let taper_angle = or_none!(Angle::new(*taper));
+            (
+                *along,
+                *against,
+                guide_rail,
+                (*twist != 0.0).then_some(twist_angle),
+                (*taper != 0.0).then_some(taper_angle),
+            )
+        }
+        _ => return Ok(None),
     };
     let orientation = guide_surfaces
         .first()
@@ -6949,8 +6977,6 @@ pub(super) fn project_fixed_sweep(
                 None => FaceSelection::Native(group.id.clone()),
             },
         });
-    let twist_angle = or_none!(Angle::new(values[4]));
-    let taper_angle = or_none!(Angle::new(values[5]));
     Ok(Some(FeatureDefinition::Operation(
         FeatureOperation::Sweep {
             shape: cadmpeg_ir::features::SweepShape::Solid {
@@ -6972,13 +6998,13 @@ pub(super) fn project_fixed_sweep(
             transformation: None,
             path_tangent: false,
             linearize: false,
-            twist: (values[4] != 0.0).then_some(twist_angle),
+            twist,
             path_extent: Some(SweepPathExtent {
-                along_fraction: or_none!(cadmpeg_ir::scalar::Fraction::new(values[0])),
-                against_fraction: or_none!(cadmpeg_ir::scalar::Fraction::new(values[1])),
+                along_fraction: or_none!(cadmpeg_ir::scalar::Fraction::new(along)),
+                against_fraction: or_none!(cadmpeg_ir::scalar::Fraction::new(against)),
             }),
             guide_rail,
-            taper: (values[5] != 0.0).then_some(taper_angle),
+            taper,
             scale: None,
             allow_multi_profile_faces: None,
         },

@@ -194,13 +194,14 @@ pub(crate) struct DesignSweepConstruction {
     pub(crate) operation: DesignExtrudeOperation,
     /// Byte offset of the operation u32.
     pub(crate) operation_offset: u64,
-    /// Six scalar values in `AlongDistance`, `AgainstDistance`,
-    /// `AlongRailDistance`, `AgainstRailDistance`, `TwistAngle`, and `TaperAngle` order.
-    pub(crate) values: [FiniteReal; 6],
+    /// Scalar values in lane order: `AlongDistance` and `AgainstDistance`,
+    /// followed by `AlongRailDistance`, `AgainstRailDistance`, `TwistAngle`, and
+    /// `TaperAngle` when present.
+    pub(crate) values: Vec<FiniteReal>,
     /// Referenced scalar records in lane order.
-    pub(crate) record_indexes: [u32; 6],
+    pub(crate) record_indexes: Vec<u32>,
     /// Byte offsets of the scalar values in lane order.
-    pub(crate) value_offsets: [u64; 6],
+    pub(crate) value_offsets: Vec<u64>,
 }
 
 /// Native construction of a `Pipe` scope.

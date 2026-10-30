@@ -24,9 +24,10 @@ fn sweep_input() -> (
                     operation: DesignExtrudeOperation::NewBody,
                     operation_offset: 128,
                     values: [0.0, 0.0, 1.0, 1.0, 0.0, 0.0]
-                        .map(|value| FiniteReal::new(value).unwrap()),
-                    record_indexes: [0; 6],
-                    value_offsets: [128; 6],
+                        .map(|value| FiniteReal::new(value).unwrap())
+                        .to_vec(),
+                    record_indexes: vec![0; 6],
+                    value_offsets: vec![128; 6],
                 }),
                 sweep_profile: None,
             }));
@@ -179,5 +180,41 @@ fn sweep_projects_guide_surface() {
             }),
             ..
         })
+    ));
+}
+
+#[test]
+fn two_lane_sweep_projects_with_along_and_against_extents() {
+    let (mut scope, groups) = sweep_input();
+    scope
+        .try_edit(|draft| {
+            draft.payload = DesignScopePayload::Sweep(Some(DesignSweepScope {
+                construction: Some(DesignSweepConstruction {
+                    operation: DesignExtrudeOperation::NewBody,
+                    operation_offset: 128,
+                    values: vec![FiniteReal::new(1.0).unwrap(), FiniteReal::new(0.0).unwrap()],
+                    record_indexes: vec![97580, 97583],
+                    value_offsets: vec![1_152_647, 1_152_971],
+                }),
+                sweep_profile: None,
+            }));
+        })
+        .unwrap();
+    let projected =
+        crate::test_support::with_decode_context(|decode_ctx| project(decode_ctx, &scope, &groups))
+            .unwrap()
+            .unwrap();
+    assert!(matches!(
+        projected,
+        FeatureDefinition::Operation(FeatureOperation::Sweep {
+            guide_rail: None,
+            twist: None,
+            taper: None,
+            path_extent: Some(cadmpeg_ir::features::SweepPathExtent {
+                along_fraction,
+                against_fraction,
+            }),
+            ..
+        }) if along_fraction.get() == 1.0 && against_fraction.get() == 0.0
     ));
 }
