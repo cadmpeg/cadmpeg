@@ -3092,6 +3092,7 @@ fn decode_graph(
     solve_face_orientation(&mut out);
     synthesize_cylinder_seams(ctx, &mut out, &mut annotations, &source_stream)?;
     synthesize_sphere_seams(ctx, &mut out, &mut annotations, &source_stream)?;
+    phase_full_turn_edge_ranges(&mut out);
     derive_planar_pcurves(ctx, &mut out, &mut annotations, &source_stream)?;
     derive_cylindrical_pcurves(ctx, &mut out, &mut annotations, &source_stream)?;
     derive_revolved_circle_pcurves(ctx, &mut out, &mut annotations, &source_stream)?;
@@ -3352,6 +3353,63 @@ fn decode_graph(
     annotations.retain_exactness(keep);
     out.annotations = annotations.build();
     Ok(out)
+}
+
+/// Tolerance in radians for a circle or ellipse edge range that spans a full turn.
+const PERIODIC_FULL_TURN_TOLERANCE: f64 = 1.0e-9;
+
+/// Start each full-turn circle or ellipse edge range at its vertex (spec
+/// §7.2), once the seam passes have placed the derived vertex of a sentinel
+/// closed circle.
+fn phase_full_turn_edge_ranges(out: &mut Brep) {
+    let tau = std::f64::consts::TAU;
+    let vertex_points = out
+        .vertices
+        .iter()
+        .map(|vertex| (&vertex.id, &vertex.point))
+        .collect::<HashMap<_, _>>();
+    let points = out
+        .points
+        .iter()
+        .map(|point| (&point.id, point.position().get()))
+        .collect::<HashMap<_, _>>();
+    let curves = out
+        .curves
+        .iter()
+        .map(|curve| (&curve.id, &curve.geometry))
+        .collect::<HashMap<_, _>>();
+    for edge in &mut out.edges {
+        if edge.start != edge.end {
+            continue;
+        }
+        let Some([start, end]) = edge.param_range().map(cadmpeg_ir::units::FiniteVector::get)
+        else {
+            continue;
+        };
+        if ((end - start).abs() - tau).abs() > PERIODIC_FULL_TURN_TOLERANCE {
+            continue;
+        }
+        let Some(curve_id) = edge.curve() else {
+            continue;
+        };
+        let (Some(geometry), Some(point)) = (
+            curves.get(curve_id),
+            vertex_points
+                .get(&edge.start)
+                .and_then(|point| points.get(*point)),
+        ) else {
+            continue;
+        };
+        let Some(phase) = carrier_angle(geometry, *point, f64::INFINITY) else {
+            continue;
+        };
+        if let Ok(carrier) = cadmpeg_ir::topology::EdgeCarrier::new(
+            Some(curve_id.clone()),
+            Some([phase, phase + tau]),
+        ) {
+            edge.carrier = carrier;
+        }
+    }
 }
 
 fn prune_rejected_topology(out: &mut Brep) {

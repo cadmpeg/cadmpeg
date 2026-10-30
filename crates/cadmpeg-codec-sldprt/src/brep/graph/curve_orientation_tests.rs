@@ -383,3 +383,50 @@ fn a_stored_range_shorter_than_its_vertex_tolerances_takes_the_nearer_order() {
         Some(([0.0, 1.0e-3], true))
     );
 }
+
+#[test]
+fn a_full_turn_edge_range_starts_at_its_vertex() {
+    use cadmpeg_ir::ids::{CurveId, EdgeId, PointId, VertexId};
+    use cadmpeg_ir::topology::{Edge, Point, Vertex};
+
+    let curve_id = CurveId::mint("test:model:curve#circle").expect("curve id");
+    let mut brep = super::Brep::default();
+    brep.curves.push(cadmpeg_ir::geometry::Curve {
+        parameter_range: None,
+        id: curve_id.clone(),
+        geometry: unit_circle(),
+        source_object: None,
+    });
+    let point_id = PointId::mint("test:model:point#seam").expect("point id");
+    brep.points.push(Point::new(
+        point_id.clone(),
+        cadmpeg_ir::features::FinitePoint3::new(Point3::new(0.0, -1.0, 0.0)).expect("finite point"),
+        None,
+    ));
+    let vertex_id = VertexId::mint("test:model:vertex#seam").expect("vertex id");
+    brep.vertices.push(Vertex {
+        id: vertex_id.clone(),
+        point: point_id,
+        tolerance: None,
+    });
+    // A sentinel closed circle starts at its reference direction; its vertex
+    // has since moved to θ = 3π/2.
+    brep.edges.push(Edge {
+        id: EdgeId::mint("test:model:edge#circle").expect("edge id"),
+        carrier: cadmpeg_ir::topology::EdgeCarrier::new(
+            Some(curve_id),
+            Some([0.0, std::f64::consts::TAU]),
+        )
+        .expect("edge carrier"),
+        start: vertex_id.clone(),
+        end: vertex_id,
+        tolerance: None,
+    });
+    super::phase_full_turn_edge_ranges(&mut brep);
+    let [start, end] = brep.edges[0]
+        .param_range()
+        .expect("the edge keeps its range")
+        .get();
+    assert!((start - 3.0 * std::f64::consts::FRAC_PI_2).abs() < 1.0e-12);
+    assert!((end - start - std::f64::consts::TAU).abs() < 1.0e-12);
+}
