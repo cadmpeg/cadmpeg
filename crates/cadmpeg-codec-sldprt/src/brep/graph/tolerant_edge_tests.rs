@@ -228,7 +228,7 @@ fn a_bounded_sp_curve_is_emitted_on_its_supports_face_surface() {
         Some("sldprt:brep:surf#100@block@1.body0")
     );
 
-    // So does a support whose face surface is itself opaque.
+    // A support whose face surface is opaque leaves the curve opaque.
     let mut out = Brep::default();
     let mut opaque = plane("sldprt:brep:surf#100");
     opaque.geometry = SurfaceGeometry::Solved(SolvedSurfaceGeometry::Unknown { record: None });
@@ -495,4 +495,18 @@ fn a_tolerant_edge_whose_fins_name_no_curve_has_no_curve() {
         [1.0, 0.0],
     ));
     assert_eq!(edge.curve(), None);
+}
+
+#[test]
+fn a_ring_on_a_bounded_sp_curve_seams_where_its_stored_ends_meet() {
+    let mut ring = bounded(75, 200);
+    ring.parameter_range = [1.0, 0.0];
+    ring.points = [Point3::new(2.0, 0.0, 0.0), Point3::new(2.0, 0.0, 5.0e-6)];
+    // The low end of the range is the second stored point.
+    assert_eq!(
+        super::surface_curve_ring_start(&ring),
+        Some((Point3::new(2.0, 0.0, 5.0e-6), [0.0, 1.0]))
+    );
+    ring.points[1] = Point3::new(2.0, 0.0, 2.0e-5);
+    assert_eq!(super::surface_curve_ring_start(&ring), None);
 }

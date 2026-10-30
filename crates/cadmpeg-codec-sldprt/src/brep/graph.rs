@@ -1379,6 +1379,19 @@ fn bare_surface_curves(
     Ok(admitted)
 }
 
+/// Distance within which a tolerant ring's two stored ends meet (spec §7.6).
+const RING_CLOSURE_MM: f64 = 1.0e-5;
+
+/// The seam point and range of a ring edge on a bounded `SP_CURVE` whose
+/// stored ends meet: the low end of its range (spec §7.6).
+fn surface_curve_ring_start(
+    carrier: &super::sp_curve::SurfaceCurveCarrier,
+) -> Option<(Point3, [f64; 2])> {
+    let [low, high] = surface_curve_ends(carrier);
+    let [first, second] = carrier.parameter_range;
+    (low.distance(high) <= RING_CLOSURE_MM).then_some((low, [first.min(second), first.max(second)]))
+}
+
 /// A bounded `SP_CURVE`'s stored end points, the low end of its range first.
 fn surface_curve_ends(carrier: &super::sp_curve::SurfaceCurveCarrier) -> [Point3; 2] {
     let [start, end] = carrier.points;
@@ -2563,19 +2576,7 @@ fn decode_graph(
         let vertexless = !resolved_endpoints && start_v <= 1 && end_v <= 1;
         let closed_point = if vertexless {
             match closed_edge_start(carriers.curve(curve_attr)) {
-                // A ring on a bounded SP_CURVE begins where its range does.
-                None => surface_curve(curve_attr)
-                    .filter(|carrier| {
-                        carrier.points[0].distance(carrier.points[1])
-                            <= super::subset::SURFACE_POINT_TOLERANCE_MM
-                    })
-                    .map(|carrier| {
-                        let [first, second] = carrier.parameter_range;
-                        (
-                            surface_curve_ends(carrier)[0],
-                            [first.min(second), first.max(second)],
-                        )
-                    }),
+                None => surface_curve(curve_attr).and_then(surface_curve_ring_start),
                 closed => closed,
             }
         } else {
@@ -2599,19 +2600,14 @@ fn decode_graph(
         let (mut start_id, mut end_id) = if let Some((position, _)) = closed_point {
             let point_id = id_closed_point(e);
             let vertex_id = id_closed_vertex(e);
-            annotations.note(
-                point_id.as_str(),
-                &source_stream,
-                0,
-                Some("derived_closed_circle_seam"),
-            );
+            let seam_note = if carriers.curve(curve_attr).is_some() {
+                "derived_closed_circle_seam"
+            } else {
+                "derived_closed_curve_seam"
+            };
+            annotations.note(point_id.as_str(), &source_stream, 0, Some(seam_note));
             annotations.exactness(point_id.as_str(), Exactness::Derived);
-            annotations.note(
-                vertex_id.as_str(),
-                &source_stream,
-                0,
-                Some("derived_closed_circle_seam"),
-            );
+            annotations.note(vertex_id.as_str(), &source_stream, 0, Some(seam_note));
             annotations.exactness(vertex_id.as_str(), Exactness::Derived);
             let finite_position = cadmpeg_ir::features::FinitePoint3::new(position)
                 .ok_or(Point::NON_FINITE_POSITION)

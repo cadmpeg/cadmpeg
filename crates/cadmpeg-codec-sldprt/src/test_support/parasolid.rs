@@ -1001,7 +1001,6 @@ fn suffix_prefixed_edge_use(attr: u16, curve_attr: u16) -> Vec<u8> {
     b
 }
 
-/// Vertex-use `00 12`: `refs[4]` = world-point attr; magic at body+16.
 /// The compact common header of `tag`: `attr`, an ordinal, five references
 /// and the sense marker.
 pub(crate) fn sp_curve_header(tag: u8, attr: u16) -> Vec<u8> {
@@ -1072,6 +1071,7 @@ pub(crate) fn tolerant_edge_use(attr: u16, tolerance_m: f64) -> Vec<u8> {
     b
 }
 
+/// Vertex-use `00 12`: `refs[4]` = world-point attr; magic at body+16.
 pub(crate) fn vertex_use(attr: u16, point_attr: u16) -> Vec<u8> {
     framed_topology_vertex(attr, 0, [0, 0, 0, 0, point_attr], None, 0, false, false)
 }

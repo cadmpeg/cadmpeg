@@ -232,11 +232,13 @@ pub(super) fn scan_carriers(
         out.insert_intersection(intersection);
     }
     // SP_CURVEs read on the supports indexed above.
-    let pcurves = spline::scan_pcurve_carriers(body);
-    out.sp_curves = sp_curve::scan(body, &pcurves);
-    for wrapper in subset::scan(ctx, body, &out, subset::Pass::SurfaceCurves)? {
-        if let subset::Wrapper::SurfaceCurve(carrier) = wrapper {
-            out.surface_curves.insert(carrier.attr, *carrier);
+    if body.windows(2).any(|tag| tag == [0x00, 0x89]) {
+        let pcurves = spline::scan_pcurve_carriers(body);
+        out.sp_curves = sp_curve::scan(body, &pcurves);
+        for wrapper in subset::scan(ctx, body, &out, subset::Pass::SurfaceCurves)? {
+            if let subset::Wrapper::SurfaceCurve(carrier) = wrapper {
+                out.surface_curves.insert(carrier.attr, *carrier);
+            }
         }
     }
     out.lane_refusals = lane_refusals;

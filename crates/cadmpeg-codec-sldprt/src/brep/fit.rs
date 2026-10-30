@@ -77,7 +77,6 @@ impl Span {
         if !(width > 0.0 && width.is_finite()) {
             return Ok(None);
         }
-        // Fourth-order one-sided stencil, stepping into the span from `at`.
         let derivative = |at: f64, step: f64| -> Result<Option<V3>, CodecError> {
             let mut sum = [0.0; 3];
             for (steps, weight) in STENCIL {
@@ -140,7 +139,6 @@ impl Span {
                 return Ok(None);
             };
             let gap = norm(sub(self.at(fraction), exact));
-            // `f64::max` would drop a NaN gap.
             if !gap.is_finite() {
                 return Ok(None);
             }
@@ -171,7 +169,7 @@ pub(super) fn fit_curve(
         let p = [p.x, p.y, p.z];
         Ok(p.iter().all(|value| value.is_finite()).then_some(p))
     };
-    // Breaks closer to a neighbour than the stencil can resolve are dropped.
+    // Breaks within a billionth of the range of a kept break or an end are one (spec §7.6).
     let least = (high - low) * LEAST_SPAN_SHARE;
     let mut inner = Vec::new();
     for t in breaks.iter().copied() {
@@ -225,7 +223,6 @@ pub(super) fn fit_curve(
         return Ok(None);
     };
 
-    // A span adds at most four knots and three poles.
     let mut knots = Vec::new();
     knots.extend([low; 4]);
     let mut poles = Vec::new();
@@ -317,9 +314,8 @@ mod tests {
         knots.iter().filter(|knot| **knot == at).count()
     }
 
-    /// A helix of radius 100 mm over two turns: within the bound everywhere,
-    /// not only where the fit sampled it, in the helix's own parameter, C1
-    /// at every break, and through both ends.
+    /// A helix of radius 100 mm over two turns: within the bound at dense
+    /// samples, in its own parameter, C1 at every break, through both ends.
     #[test]
     fn a_smooth_curve_is_fitted_within_the_bound_in_its_own_parameter() {
         let helix = |t: f64| Some(Point3::new(100.0 * t.cos(), 100.0 * t.sin(), 7.0 * t));
@@ -443,7 +439,7 @@ mod tests {
         assert!(fit(jump, [0.0, 1.0], &[], |_, _| true).is_none());
     }
 
-    /// A refusal of the evaluator is the fit's refusal, not a missing point.
+    /// An evaluator refusal is the fit's error.
     #[test]
     fn a_refused_evaluation_refuses_the_fit() {
         let refused = fit_curve(

@@ -519,7 +519,7 @@ mod tests {
                 "{t}: {point:?} {expected:?}"
             );
         }
-        // Not a point both parameters reach by symmetry.
+        // Swapped parameters give another point.
         let swapped = on_surface(0.7, 0.45);
         let middle = point_at(&ctx, &surface, &pcurve, 0.5).unwrap().unwrap();
         assert!(middle.distance(swapped) > 1.0);
@@ -583,8 +583,8 @@ mod tests {
         assert!(crosses(&plane, &along_u, 0.0, 1.0));
     }
 
-    /// The ridge is within the bound of the fit that resolves it, and
-    /// 6.7e-3 mm outside the one that judges the whole curve by its samples.
+    /// The fit that resolves knot lines is within the bound; the fit judged by
+    /// samples alone misses the ridge by more than 1e-3 mm.
     #[test]
     fn a_fit_resolves_a_ridge_narrower_than_its_samples() {
         let ctx = cadmpeg_test_support::service_decode_context();

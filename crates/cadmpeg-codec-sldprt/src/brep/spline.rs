@@ -18,6 +18,7 @@ use super::{CurveCarrier, SurfaceCarrier, LEN_TO_MM};
 
 use crate::layout::bspline_array_header as arr_hdr;
 use crate::layout::bspline_compact_array_header as compact_arr;
+use crate::layout::bspline_curve_descriptor as curve_desc;
 use crate::layout::bspline_surface_descriptor as surf_desc;
 
 #[derive(Debug, Default)]
@@ -360,25 +361,29 @@ fn scan_curve_descriptors(
         if bytes.get(p) == Some(&0xff) {
             p += 1;
         }
-        let Some(attr) = View::u16_be_at(bytes, p) else {
+        let Some(attr) = View::u16_be_at(bytes, p + curve_desc::ATTR) else {
             continue;
         };
-        let Some(degree) = View::u16_be_at(bytes, p + 2).map(u32::from) else {
+        let Some(degree) = View::u16_be_at(bytes, p + curve_desc::DEGREE).map(u32::from) else {
             continue;
         };
-        let Some(control_count) = View::u32_be_at(bytes, p + 4).map(index_from_u32) else {
+        let Some(control_count) =
+            View::u32_be_at(bytes, p + curve_desc::CONTROL_COUNT).map(index_from_u32)
+        else {
             continue;
         };
-        let Some(dimension) = View::u16_be_at(bytes, p + 8).map(usize::from) else {
+        let Some(dimension) = View::u16_be_at(bytes, p + curve_desc::DIMENSION).map(usize::from)
+        else {
             continue;
         };
-        let Some(control_attr) = View::u16_be_at(bytes, p + 19) else {
+        let Some(control_attr) = View::u16_be_at(bytes, p + curve_desc::CONTROL_ATTR) else {
             continue;
         };
-        let Some(multiplicity_attr) = View::u16_be_at(bytes, p + 21) else {
+        let Some(multiplicity_attr) = View::u16_be_at(bytes, p + curve_desc::MULTIPLICITY_ATTR)
+        else {
             continue;
         };
-        let Some(knot_attr) = View::u16_be_at(bytes, p + 23) else {
+        let Some(knot_attr) = View::u16_be_at(bytes, p + curve_desc::KNOT_ATTR) else {
             continue;
         };
         if attr <= 1 || !(2..=4).contains(&dimension) || control_count == 0 {
@@ -386,10 +391,10 @@ fn scan_curve_descriptors(
         }
         let descriptor = CurveDescriptor {
             degree,
-            periodic: bytes.get(p + 15) == Some(&1),
+            periodic: bytes.get(p + curve_desc::PERIODIC) == Some(&1),
             control_count,
             dimension,
-            rational: bytes.get(p + 17) == Some(&1),
+            rational: bytes.get(p + curve_desc::RATIONAL) == Some(&1),
             control_attr,
             multiplicity_attr,
             knot_attr,
