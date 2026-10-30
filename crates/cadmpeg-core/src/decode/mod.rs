@@ -7,6 +7,7 @@
 mod arena;
 mod budget;
 pub mod collect;
+mod companion;
 mod context;
 mod deflate;
 mod depth;
@@ -29,6 +30,7 @@ mod tests;
 
 pub use arena::DecodeArena;
 pub use budget::{work_units, BudgetExhausted, DepthGuard, WorkBudget, WorkBudgetRecursionGuard};
+pub use companion::{Companion, CompanionLoad, Companions};
 pub use context::{DecodeContext, ExpandSpec, ExpandWriter};
 pub use depth::DecodeDepth;
 pub use error::{ResourceDimension, ResourceFailure, ResourceLimit, SourceLocation};

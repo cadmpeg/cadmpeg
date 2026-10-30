@@ -595,6 +595,34 @@ struct NeutralShellSpec {
     wire_curves: BTreeSet<u32>,
 }
 
+fn retain_complete_compact_frame_components(
+    scan: &ContainerScan,
+    eligible_faces: &mut BTreeMap<u32, Vec<&crate::topology::Loop>>,
+    losses: &mut Vec<cadmpeg_ir::report::loss::LossNote>,
+) {
+    for component in &scan.topology.face_components {
+        let has_compact_frame = scan.planes.local_systems.iter().any(|frame| {
+            frame.layout == Some(crate::scalar::PlaneSupportFrameLayout::CompactRotation)
+                && component.face_ids().contains(&frame.surface_id)
+        });
+        if !has_compact_frame
+            || component
+                .face_ids()
+                .iter()
+                .all(|face| eligible_faces.contains_key(face))
+        {
+            continue;
+        }
+        for face in component.face_ids() {
+            if eligible_faces.remove(face).is_some() {
+                losses.push(crate::loss::CreoLossCode::BrepCompactFrameComponentUnresolved.note(
+                    format!("source face {face} retained as native: the connected component has unresolved source faces"),
+                ));
+            }
+        }
+    }
+}
+
 fn admitted_face_components<'a>(
     scan: &'a ContainerScan,
     eligible_face_ids: &BTreeSet<u32>,
@@ -1861,6 +1889,7 @@ pub(in super::super) fn transfer_native_brep(
         };
         eligible_faces.insert(face_id, ordered);
     }
+    retain_complete_compact_frame_components(scan, &mut eligible_faces, losses);
     diagnostics.admitted_face_count = eligible_faces.len();
     let BrepEligibleFaceIndexes {
         emitted_half_edges,

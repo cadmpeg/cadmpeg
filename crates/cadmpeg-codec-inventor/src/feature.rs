@@ -34,6 +34,7 @@ use crate::rse::{RecordFrameState, RseInventory, SegmentBulkState, SegmentKind};
 use crate::{design::DesignInventory, sketch::SketchInventory};
 
 pub(crate) mod base;
+pub(crate) mod body_selection;
 pub(crate) mod combine;
 pub(crate) mod derived;
 pub(crate) mod edge_selection;

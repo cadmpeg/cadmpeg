@@ -93,6 +93,20 @@ pub enum EntityKind {
     PmiAnnotation,
     /// Presentation layer.
     PresentationLayer,
+    /// Physical material.
+    PhysicalMaterial,
+    /// Mass properties.
+    MassProperties,
+    /// Rigid body.
+    RigidBody,
+    /// Collider.
+    Collider,
+    /// Articulation.
+    Articulation,
+    /// Physics scene.
+    PhysicsScene,
+    /// Solver settings.
+    SolverSettings,
 }
 
 impl EntityKind {
@@ -140,11 +154,18 @@ impl EntityKind {
             Self::SourceAttribute => 38,
             Self::PmiAnnotation => 39,
             Self::PresentationLayer => 40,
+            Self::PhysicalMaterial => 41,
+            Self::MassProperties => 42,
+            Self::RigidBody => 43,
+            Self::Collider => 44,
+            Self::Articulation => 45,
+            Self::PhysicsScene => 46,
+            Self::SolverSettings => 47,
         }
     }
 
     /// Every registered entity kind in canonical arena order.
-    pub const ALL: [Self; 41] = [
+    pub const ALL: [Self; 48] = [
         Self::Body,
         Self::Region,
         Self::Shell,
@@ -186,6 +207,13 @@ impl EntityKind {
         Self::SourceAttribute,
         Self::PmiAnnotation,
         Self::PresentationLayer,
+        Self::PhysicalMaterial,
+        Self::MassProperties,
+        Self::RigidBody,
+        Self::Collider,
+        Self::Articulation,
+        Self::PhysicsScene,
+        Self::SolverSettings,
     ];
 }
 
@@ -366,6 +394,13 @@ impl_entity_schema!(
     id;
     id, name, description, visible, items
 );
+impl_entity_schema!(crate::physics::PhysicalMaterial, PhysicalMaterial, id; id, name, density, static_friction, dynamic_friction, restitution, native_ref);
+impl_entity_schema!(crate::physics::MassProperties, MassProperties, id; id, target, mass, density, center_of_mass, inertia, material, native_ref);
+impl_entity_schema!(crate::physics::RigidBody, RigidBody, id; id, target, kinematic, enabled, linear_velocity, angular_velocity, starts_asleep, native_ref);
+impl_entity_schema!(crate::physics::Articulation, Articulation, id; id, root, native_ref);
+impl_entity_schema!(crate::physics::PhysicsScene, PhysicsScene, id; id, name, gravity_direction, gravity_magnitude, native_ref);
+impl_entity_schema!(crate::physics::solver::SolverSettings, SolverSettings, id; id, solver, schema, target, values, native_ref);
+impl_entity_schema!(crate::physics::Collider, Collider, id; id, target, shape, enabled, material, native_ref);
 
 #[cfg(test)]
 mod tests;

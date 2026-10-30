@@ -157,6 +157,26 @@ pub(super) fn exact_direct_face_operation(
                             && bytes.get(start + 20) == Some(&1)
                             && matches!(bytes.get(start + 21), Some(0 | 1))
                             && bytes.get(start + 22..start + 25) == Some(&[0; 3])
+                            && bytes.get(start + 25..start + 29) == Some(&[1, 0, 0, 1])
+                            && bytes.get(start + 33..start + 51) == Some(&[0; 18])
+                            && View::u32_le_at(bytes, start + 51) == Some(1)
+                            && bytes.get(start + 55) == Some(&1)
+                            && View::u32_le_at(bytes, start + 56)
+                                == scope.reference_members().values().nth(1).copied()
+                            && bytes.get(start + 60..start + 66) == Some(&[0; 6]) =>
+                    {
+                        (
+                            View::u32_le_at(bytes, start + 29)?,
+                            true,
+                            bytes[start + 21] != 0,
+                            start + 21,
+                        )
+                    }
+                    Some(268)
+                        if bytes.get(start + 11..start + 20) == Some(&[0; 9])
+                            && bytes.get(start + 20) == Some(&1)
+                            && matches!(bytes.get(start + 21), Some(0 | 1))
+                            && bytes.get(start + 22..start + 25) == Some(&[0; 3])
                             && bytes.get(start + 25..start + 27) == Some(&[1, 0])
                             && bytes.get(start + 27) == Some(&1)
                             && bytes.get(start + 32..start + 51) == Some(&[0; 19])

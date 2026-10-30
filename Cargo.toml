@@ -10,6 +10,7 @@ members = [
   "crates/cadmpeg-measure",
   "crates/cadmpeg-parasolid",
   "crates/cadmpeg-registry",
+  "crates/cadmpeg-tessellate",
   "crates/cadmpeg-test-support",
   "crates/cadmpeg-protein",
   "crates/cadmpeg-codec-f3d",
@@ -24,6 +25,7 @@ members = [
   "crates/cadmpeg-codec-step",
   "crates/cadmpeg-codec-sat",
   "crates/cadmpeg-codec-pvz",
+  "crates/cadmpeg-codec-usd",
 ]
 # cadmpeg-fuzz is intentionally excluded: cargo-fuzz targets link libFuzzer and
 # require a nightly toolchain, so keeping the crate out of the default workspace
@@ -47,6 +49,7 @@ cadmpeg-ir = { path = "crates/cadmpeg-ir", version = "0.6.7" }
 cadmpeg-measure = { path = "crates/cadmpeg-measure", version = "0.6.7" }
 cadmpeg-parasolid = { path = "crates/cadmpeg-parasolid", version = "0.6.7" }
 cadmpeg-registry = { path = "crates/cadmpeg-registry", version = "0.6.7", default-features = false }
+cadmpeg-tessellate = { path = "crates/cadmpeg-tessellate", version = "0.6.7" }
 cadmpeg-test-support = { path = "crates/cadmpeg-test-support" }
 cadmpeg-protein = { path = "crates/cadmpeg-protein", version = "0.6.7" }
 cadmpeg-codec-f3d = { path = "crates/cadmpeg-codec-f3d", version = "0.6.7" }
@@ -61,6 +64,7 @@ cadmpeg-codec-iges = { path = "crates/cadmpeg-codec-iges", version = "0.6.7" }
 cadmpeg-codec-step = { path = "crates/cadmpeg-codec-step", version = "0.6.7" }
 cadmpeg-codec-sat = { path = "crates/cadmpeg-codec-sat", version = "0.6.7" }
 cadmpeg-codec-pvz = { path = "crates/cadmpeg-codec-pvz", version = "0.6.7" }
+cadmpeg-codec-usd = { path = "crates/cadmpeg-codec-usd", version = "0.6.7" }
 
 # 1.0.229 is the floor, not a preference: serde_derive gained the
 # collected_deny_unknown_fields epilogue there, which is what makes
@@ -77,6 +81,8 @@ thiserror = "2"
 sha2 = "0.11"
 sha1 = "0.11"
 memchr = "2"
+# XID_Start and XID_Continue classes for USDA identifiers.
+unicode-ident = "1"
 base64 = "0.23"
 clap = { version = "4", features = ["derive"] }
 anyhow = "1"

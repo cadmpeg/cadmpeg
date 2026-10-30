@@ -284,42 +284,69 @@ pub(super) fn exact_path_feature_construction(
             ))
         }
         DesignFeatureFamily::Sweep => {
-            let mut candidate_lanes =
-                scope
-                    .reference_members()
-                    .values()
-                    .filter_map(|record_index| {
-                        let scalar = exact_fixed_scalar(bytes, records, *record_index)?;
-                        (scalar.owner_record_index == Some(scope.record_index))
-                            .then_some((*record_index, scalar))
-                    });
-            let lanes = [
-                candidate_lanes.next()?,
-                candidate_lanes.next()?,
-                candidate_lanes.next()?,
-                candidate_lanes.next()?,
-                candidate_lanes.next()?,
-                candidate_lanes.next()?,
-            ];
-            if candidate_lanes.next().is_some() {
-                return None;
-            }
-            if lanes
+            let candidate_lanes: Vec<_> = scope
+                .reference_members()
+                .values()
+                .filter_map(|record_index| {
+                    let scalar = exact_fixed_scalar(bytes, records, *record_index)?;
+                    (scalar.owner_record_index == Some(scope.record_index))
+                        .then_some((*record_index, scalar))
+                })
+                .collect();
+            if candidate_lanes
                 .iter()
                 .enumerate()
                 .any(|(ordinal, (_, scalar))| usize::from(scalar.ordinal) != ordinal)
             {
                 return None;
             }
-            Some(DesignPathFeatureConstruction::Sweep(
-                path_features::DesignSweepConstruction {
-                    operation: operation(start + 25)?,
-                    operation_offset: u64::try_from(start + 25).ok()?,
-                    values: lanes.map(|(_, scalar)| scalar.value),
-                    record_indexes: lanes.map(|(record_index, _)| record_index),
-                    value_offsets: lanes.map(|(_, scalar)| scalar.value_offset),
-                },
-            ))
+            match candidate_lanes.as_slice() {
+                [l0, l1, l2, l3, l4, l5] => {
+                    let lanes = [*l0, *l1, *l2, *l3, *l4, *l5];
+                    Some(DesignPathFeatureConstruction::Sweep(
+                        path_features::DesignSweepConstruction {
+                            operation: operation(start + 25)?,
+                            operation_offset: u64::try_from(start + 25).ok()?,
+                            values: lanes.iter().map(|(_, scalar)| scalar.value).collect(),
+                            record_indexes: lanes
+                                .iter()
+                                .map(|(record_index, _)| *record_index)
+                                .collect(),
+                            value_offsets: lanes
+                                .iter()
+                                .map(|(_, scalar)| scalar.value_offset)
+                                .collect(),
+                        },
+                    ))
+                }
+                [l0, l1]
+                    if scope.class_tag.as_str() == "372"
+                        && scope.paired_class_tag.as_str() == "260"
+                        && parameter_scope_payload_length(scope) == Some(423)
+                        && scope.reference_members().len() == 9
+                        && bytes.get(start + 11..start + 21) == Some(&[0; 10])
+                        && bytes.get(start + 25) == Some(&1) =>
+                {
+                    let op_offset = start + 21;
+                    let lanes = [*l0, *l1];
+                    Some(DesignPathFeatureConstruction::Sweep(
+                        path_features::DesignSweepConstruction {
+                            operation: operation(op_offset)?,
+                            operation_offset: u64::try_from(op_offset).ok()?,
+                            values: lanes.iter().map(|(_, scalar)| scalar.value).collect(),
+                            record_indexes: lanes
+                                .iter()
+                                .map(|(record_index, _)| *record_index)
+                                .collect(),
+                            value_offsets: lanes
+                                .iter()
+                                .map(|(_, scalar)| scalar.value_offset)
+                                .collect(),
+                        },
+                    ))
+                }
+                _ => None,
+            }
         }
         _ => None,
     }

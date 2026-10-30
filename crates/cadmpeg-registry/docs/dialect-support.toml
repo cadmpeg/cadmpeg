@@ -150,6 +150,10 @@ scored = ["sat:text"]
 level = 3
 scored = ["pvz:pvs-0301", "pvz:pvs-0302", "pvz:pvs-0303", "pvz:pvs-0304", "pvz:pvs-0305"]
 
+[format.usd]
+level = 2
+scored = ["usd:usda-1.0"]
+
 
 # --------------------------------------------------------------------------
 # iges
@@ -968,6 +972,123 @@ reason = """
 no known structure-member signature or XML version; the member is read on the
 residual path with the grammar its leading bytes select and charges
 pvz/source.dialect-unverified"""
+
+# --------------------------------------------------------------------------
+# usd
+# --------------------------------------------------------------------------
+
+[[support]]
+dialect = "usd:usda-1.0"
+read = "L2"
+write = "verified"
+
+[[support]]
+dialect = "usd:usda-1.1"
+read = "detected"
+write = "emitted"
+
+[[support]]
+dialect = "usd:usda-1.2"
+read = "detected"
+write = "emitted"
+
+[[support]]
+dialect = "usd:usda-1.3"
+read = "detected"
+write = "emitted"
+
+[[support]]
+dialect = "usd:sdf-1.4.32"
+read = "detected"
+write = "none"
+
+[[support]]
+dialect = "usd:usdc-0.0.1"
+read = "L2"
+write = "none"
+
+[[support]]
+dialect = "usd:usdc-0.1.0"
+read = "L2"
+write = "none"
+
+[[support]]
+dialect = "usd:usdc-0.2.0"
+read = "L2"
+write = "none"
+
+[[support]]
+dialect = "usd:usdc-0.4.0"
+read = "L2"
+write = "none"
+
+[[support]]
+dialect = "usd:usdc-0.5.0"
+read = "L2"
+write = "none"
+
+[[support]]
+dialect = "usd:usdc-0.6.0"
+read = "L2"
+write = "none"
+
+[[support]]
+dialect = "usd:usdc-0.7.0"
+read = "L2"
+write = "none"
+
+[[support]]
+dialect = "usd:usdc-0.8.0"
+read = "L2"
+write = "emitted"
+
+[[support]]
+dialect = "usd:usdc-0.9.0"
+read = "L2"
+write = "none"
+
+[[support]]
+dialect = "usd:usdc-0.10.0"
+read = "L2"
+write = "none"
+
+[[support]]
+dialect = "usd:usdc-0.11.0"
+read = "L2"
+write = "none"
+
+[[support]]
+dialect = "usd:usdc-0.12.0"
+read = "L2"
+write = "none"
+
+[[support]]
+dialect = "usd:usdc-0.13.0"
+read = "L2"
+write = "none"
+
+[[support]]
+dialect = "usd:usdc-0.14.0"
+read = "L2"
+write = "none"
+
+[[support]]
+dialect = "usd:usdc-0.15.0"
+read = "L2"
+write = "none"
+
+[[support]]
+dialect = "usd:usdz"
+read = "L2"
+write = "emitted"
+
+[[support]]
+dialect = "usd:unknown"
+read = "unclassified-recovered"
+write = "none"
+reason = """
+a text header names no declared version; the layer is read on the residual
+path with the USDA 1.3 grammar and charges usd/source.dialect-unverified"""
 
 # --------------------------------------------------------------------------
 # acis

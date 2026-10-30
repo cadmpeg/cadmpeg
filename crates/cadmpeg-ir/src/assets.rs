@@ -42,6 +42,12 @@ impl AssetData {
     pub fn new(data: Vec<u8>) -> Option<Self> {
         (!data.is_empty()).then_some(Self(data))
     }
+
+    /// The bytes.
+    #[must_use]
+    pub fn as_bytes(&self) -> &[u8] {
+        &self.0
+    }
 }
 
 impl<'de> Deserialize<'de> for AssetData {
