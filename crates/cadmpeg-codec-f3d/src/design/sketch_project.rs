@@ -557,6 +557,10 @@ pub(crate) fn project_sketch_design(
         let Some(scope) = native_stream(&text.id) else {
             continue;
         };
+        // A model-space sketch has no planar sketch to own a text entity.
+        if spatial_owners.contains(&(scope, text.owner_reference)) {
+            continue;
+        }
         let Some(placement) = placements_by_suffix.get(&(scope, text.owner_reference)) else {
             continue;
         };
