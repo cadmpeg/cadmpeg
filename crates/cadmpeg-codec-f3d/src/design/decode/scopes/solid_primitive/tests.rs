@@ -527,7 +527,12 @@ mod typed_reference_box {
             ],
             [1.2, 0.8, 2.5]
         );
-        assert_eq!(primitive.transform.map(|frame| frame.rows()), Some(FRAME));
+        assert_eq!(
+            primitive
+                .transform
+                .map(crate::records::sketch_placement::SketchPlacementMatrix::rows),
+            Some(FRAME)
+        );
         assert_eq!(primitive.transform_offset, Some(385));
         for (value, expected) in [
             (1, DesignExtrudeOperation::Join),
