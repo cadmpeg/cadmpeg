@@ -2020,6 +2020,41 @@ Unstated regions:
 - `429..456` (27 B): Scope-tail bytes between the feature ordinal and previous history state.
 - `460..502` (42 B): Scope-tail bytes before the paired indexed header.
 
+## `typed_reference_box_primitive_1295_frame`
+
+Spec §3.1 · layout: byte offsets · size: 1295 B
+
+Offsets are relative to the primary indexed scope header. The generic scope reference table begins at offset 655; the paired header follows the complete scope frame.
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 11 | `indexed_header` | `bytes[11]` | little | spec | Its bytes 11 through 20 are zero, byte 21 is `0x01`, the result-operation u32 is at offset 22 with the four values of the named form |
+| 11 | 10 | `zero_run_10` | `bytes[10]` | little | spec | Its bytes 11 through 20 are zero, byte 21 is `0x01`, the result-operation u32 is at offset 22 with the four values of the named form |
+| 21 | 1 | `form_marker` | `u8` | little | spec | byte 21 is `0x01`, the result-operation u32 is at offset 22 with the four values of the named form · value `1` |
+| 22 | 4 | `operation` | `u32` | little | spec | byte 21 is `0x01`, the result-operation u32 is at offset 22 with the four values of the named form |
+| 26 | 1 | `nested_marker` | `u8` | little | spec | byte 26 is `0x01` · value `1` |
+| 27 | 357 | `typed_references` | `bytes[357]` | little | spec | Seven typed local references begin at offsets 27, 78, 129, 180, 231, 282, and 333 |
+| 384 | 1 | `zero_before_matrix` | `u8` | little | spec | Byte 384 is zero |
+| 385 | 128 | `matrix` | `f64[16]` | little | spec | A row-major rigid right-handed 4x4 f64 frame starts at offset 385 |
+| 513 | 4 | `one_count` | `u32` | little | spec | The u32 `1` at offset 513 precedes one typed local reference at offset 517 · value `1` |
+| 517 | 51 | `tail_reference` | `bytes[51]` | little | spec | one typed local reference at offset 517 |
+| 568 | 8 | `zero_run_8` | `bytes[8]` | little | spec | Eight zero bytes at offsets 568 through 575 |
+| 576 | 4 | `guid_code_unit_count` | `u32` | little | spec | 36-code-unit LP-UTF16 null GUID at offset 576 · value `36` |
+| 580 | 72 | `guid` | `bytes[72]` | little | spec | 36-code-unit LP-UTF16 null GUID at offset 576 |
+| 652 | 3 | `zero_run_3_after_guid` | `bytes[3]` | little | spec | Bytes 652 through 654 are zero |
+| 655 | 4 | `reference_count` | `u32` | little | spec | the reference count at offset 655 · value `8` |
+| 659 | 408 | `references` | `bytes[408]` | little | spec | the ordered 51-byte typed reference run at offset 659 |
+| 1067 | 4 | `history_state_id` | `u32` | little | spec | the current history state at offset 1067 |
+| 1071 | 4 | `kind_code_unit_count` | `u32` | little | spec | the 12-code-unit `BoxPrimitive` kind at offset 1071 · value `12` |
+| 1075 | 24 | `kind` | `bytes[24]` | little | spec | the 12-code-unit `BoxPrimitive` kind at offset 1071 |
+| 1099 | 4 | `feature_ordinal` | `u32` | little | spec | the feature ordinal at offset 1099 |
+| 1169 | 4 | `previous_history_state_id` | `u32` | little | spec | the previous history state at offset 1169 |
+
+Unstated regions:
+
+- `1103..1169` (66 B): Scope-tail bytes between the feature ordinal and previous history state.
+- `1173..1295` (122 B): Scope-tail bytes before the paired indexed header.
+
 ## `compact_loft_operation_prefix`
 
 Spec §3.1 · layout: byte offsets · size: 45 B

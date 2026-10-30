@@ -413,15 +413,23 @@ pub(crate) fn take_reference<'a>(
 /// Byte width of a same-segment reference that carries an inline type GUID.
 pub(crate) const TYPED_LOCAL_REFERENCE_LEN: usize = 51;
 
+/// The u32 target and type GUID of the typed local reference that occupies
+/// exactly `bytes[at..at + 51]`: `01`, u64 target, LP-ASCII 36 type GUID,
+/// `00 00`.
+pub(crate) fn typed_local_reference(bytes: &[u8], at: usize) -> Option<(u32, &str)> {
+    let mut cursor = at;
+    let reference = take_reference(bytes, &mut cursor)?;
+    let (target, guid) = reference.into_local()?;
+    let guid = guid?;
+    (cursor == at.checked_add(TYPED_LOCAL_REFERENCE_LEN)?)
+        .then(|| u32::try_from(target).ok().map(|target| (target, guid)))
+        .flatten()
+}
+
 /// The u32 target of the typed local reference that occupies exactly
 /// `bytes[at..at + 51]`: `01`, u64 target, LP-ASCII 36 type GUID, `00 00`.
 pub(crate) fn typed_local_reference_target(bytes: &[u8], at: usize) -> Option<u32> {
-    let mut cursor = at;
-    let reference = take_reference(bytes, &mut cursor)?;
-    let (target, guid) = reference.local()?;
-    (guid.is_some() && cursor == at.checked_add(TYPED_LOCAL_REFERENCE_LEN)?)
-        .then(|| u32::try_from(target).ok())
-        .flatten()
+    typed_local_reference(bytes, at).map(|(target, _)| target)
 }
 
 /// The u32 target of the local reference at `at` in one spelling: the plain

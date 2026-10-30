@@ -6179,6 +6179,177 @@ size = 42
 note = "Scope-tail bytes before the paired indexed header."
 
 [[record]]
+name = "typed_reference_box_primitive_1295_frame"
+kind = "byte"
+section = "3.1"
+anchor = "The typed-reference `BoxPrimitive` form has a frame length of 1295 bytes"
+size = 1295
+note = "Offsets are relative to the primary indexed scope header. The generic scope reference table begins at offset 655; the paired header follows the complete scope frame."
+
+[[record.field]]
+name = "indexed_header"
+offset = 0
+type = "bytes[11]"
+source = "spec"
+anchor = "Its bytes 11 through 20 are zero, byte 21 is `0x01`, the result-operation u32 is at offset 22 with the four values of the named form"
+
+[[record.field]]
+name = "zero_run_10"
+offset = 11
+type = "bytes[10]"
+source = "spec"
+anchor = "Its bytes 11 through 20 are zero, byte 21 is `0x01`, the result-operation u32 is at offset 22 with the four values of the named form"
+
+[[record.field]]
+name = "form_marker"
+offset = 21
+type = "u8"
+source = "spec"
+anchor = "byte 21 is `0x01`, the result-operation u32 is at offset 22 with the four values of the named form"
+value = 1
+
+[[record.field]]
+name = "operation"
+offset = 22
+type = "u32"
+source = "spec"
+anchor = "byte 21 is `0x01`, the result-operation u32 is at offset 22 with the four values of the named form"
+
+[[record.field]]
+name = "nested_marker"
+offset = 26
+type = "u8"
+source = "spec"
+anchor = "byte 26 is `0x01`"
+value = 1
+
+[[record.field]]
+name = "typed_references"
+offset = 27
+type = "bytes[357]"
+source = "spec"
+anchor = "Seven typed local references begin at offsets 27, 78, 129, 180, 231, 282, and 333"
+
+[[record.field]]
+name = "zero_before_matrix"
+offset = 384
+type = "u8"
+source = "spec"
+anchor = "Byte 384 is zero"
+
+[[record.field]]
+name = "matrix"
+offset = 385
+type = "f64[16]"
+source = "spec"
+anchor = "A row-major rigid right-handed 4x4 f64 frame starts at offset 385"
+
+[[record.field]]
+name = "one_count"
+offset = 513
+type = "u32"
+source = "spec"
+anchor = "The u32 `1` at offset 513 precedes one typed local reference at offset 517"
+value = 1
+
+[[record.field]]
+name = "tail_reference"
+offset = 517
+type = "bytes[51]"
+source = "spec"
+anchor = "one typed local reference at offset 517"
+
+[[record.field]]
+name = "zero_run_8"
+offset = 568
+type = "bytes[8]"
+source = "spec"
+anchor = "Eight zero bytes at offsets 568 through 575"
+
+[[record.field]]
+name = "guid_code_unit_count"
+offset = 576
+type = "u32"
+source = "spec"
+anchor = "36-code-unit LP-UTF16 null GUID at offset 576"
+value = 36
+
+[[record.field]]
+name = "guid"
+offset = 580
+type = "bytes[72]"
+source = "spec"
+anchor = "36-code-unit LP-UTF16 null GUID at offset 576"
+
+[[record.field]]
+name = "zero_run_3_after_guid"
+offset = 652
+type = "bytes[3]"
+source = "spec"
+anchor = "Bytes 652 through 654 are zero"
+
+[[record.field]]
+name = "reference_count"
+offset = 655
+type = "u32"
+source = "spec"
+anchor = "the reference count at offset 655"
+value = 8
+
+[[record.field]]
+name = "references"
+offset = 659
+type = "bytes[408]"
+source = "spec"
+anchor = "the ordered 51-byte typed reference run at offset 659"
+
+[[record.field]]
+name = "history_state_id"
+offset = 1067
+type = "u32"
+source = "spec"
+anchor = "the current history state at offset 1067"
+
+[[record.field]]
+name = "kind_code_unit_count"
+offset = 1071
+type = "u32"
+source = "spec"
+anchor = "the 12-code-unit `BoxPrimitive` kind at offset 1071"
+value = 12
+
+[[record.field]]
+name = "kind"
+offset = 1075
+type = "bytes[24]"
+source = "spec"
+anchor = "the 12-code-unit `BoxPrimitive` kind at offset 1071"
+
+[[record.field]]
+name = "feature_ordinal"
+offset = 1099
+type = "u32"
+source = "spec"
+anchor = "the feature ordinal at offset 1099"
+
+[[record.gap]]
+offset = 1103
+size = 66
+note = "Scope-tail bytes between the feature ordinal and previous history state."
+
+[[record.field]]
+name = "previous_history_state_id"
+offset = 1169
+type = "u32"
+source = "spec"
+anchor = "the previous history state at offset 1169"
+
+[[record.gap]]
+offset = 1173
+size = 122
+note = "Scope-tail bytes before the paired indexed header."
+
+[[record]]
 name = "compact_loft_operation_prefix"
 kind = "byte"
 section = "3.1"

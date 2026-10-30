@@ -1759,15 +1759,28 @@ fn project_solid_primitive(
                 height,
                 offset_x,
                 offset_y,
+                transform,
                 operation: result,
                 ..
             },
         )) => {
-            let placement = cadmpeg_ir::transform::Transform::affine([
-                [1.0, 0.0, 0.0, offset_x.get() * 10.0],
-                [0.0, 1.0, 0.0, offset_y.get() * 10.0],
-                [0.0, 0.0, 1.0, 0.0],
-            ])?;
+            // The typed-reference form stores the complete local frame; the
+            // named form places the box by its two planar offsets.
+            let placement = match transform {
+                Some(frame) => {
+                    let rows = frame.rows();
+                    let row = |index: usize| {
+                        let [x, y, z, translation] = rows[index];
+                        [x, y, z, translation * 10.0]
+                    };
+                    cadmpeg_ir::transform::Transform::affine([row(0), row(1), row(2)])?
+                }
+                None => cadmpeg_ir::transform::Transform::affine([
+                    [1.0, 0.0, 0.0, offset_x.get() * 10.0],
+                    [0.0, 1.0, 0.0, offset_y.get() * 10.0],
+                    [0.0, 0.0, 1.0, 0.0],
+                ])?,
+            };
             FeatureDefinition::Operation(FeatureOperation::Block {
                 dimensions: Some([
                     cadmpeg_ir::scalar::PositiveLength::new(length.get() * 10.0)?,
