@@ -791,7 +791,11 @@ fn check_semantic_support(ir: &CadIr, annotations: &Annotations) -> Result<(), C
             && annotations
                 .exactness()
                 .get(edge.id.as_str())
-                .is_none_or(|note| note.entity() != cadmpeg_ir::Exactness::Derived)
+                .is_none_or(|note| {
+                    note.entity() != cadmpeg_ir::Exactness::Derived
+                        && note.fields().get("carrier.param_range")
+                            != Some(&cadmpeg_ir::Exactness::Derived)
+                })
     }) {
         return Err(CodecError::NotImplemented(
             "SLDPRT semantic writer does not encode explicit edge parameter ranges".into(),

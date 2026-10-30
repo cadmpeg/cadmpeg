@@ -1074,6 +1074,100 @@ fn walk_face(bridge: &topology::Bridge, t: &topology::Tables) -> WalkedFace {
     }
 }
 
+/// The start point and parameter range of a closed edge whose vertex uses
+/// are sentinels: a circle from its reference direction through one turn.
+fn closed_edge_start(curve: Option<&IndexedCurve>) -> Option<(cadmpeg_ir::math::Point3, [f64; 2])> {
+    match &curve?.carrier().geometry {
+        CurveGeometry::Solved(SolvedCurveGeometry::Circle(circle_curve)) => {
+            let center = circle_curve.center().get();
+            let ref_direction = circle_curve.frame().reference().as_raw();
+            let radius = circle_curve.radius().get();
+            Some((
+                center.translated(*ref_direction, radius),
+                [0.0, std::f64::consts::TAU],
+            ))
+        }
+        _ => None,
+    }
+}
+
+/// The angle of `point` on a circle or ellipse carrier in `[0, 2π)`, when
+/// `point` lies within `allowance` of the carrier.
+fn carrier_angle(
+    geometry: &CurveGeometry,
+    point: cadmpeg_ir::math::Point3,
+    allowance: f64,
+) -> Option<f64> {
+    let (center, frame, major, minor) = match geometry {
+        CurveGeometry::Solved(SolvedCurveGeometry::Circle(circle)) => (
+            circle.center().get(),
+            circle.frame(),
+            circle.radius().get(),
+            circle.radius().get(),
+        ),
+        CurveGeometry::Solved(SolvedCurveGeometry::Ellipse(ellipse)) => (
+            ellipse.center().get(),
+            ellipse.frame(),
+            ellipse.major_radius().get(),
+            ellipse.minor_radius().get(),
+        ),
+        _ => return None,
+    };
+    let reference = *frame.reference().as_raw();
+    let binormal = *frame.binormal().as_raw();
+    let offset = point.vector_from(center);
+    let x = offset.dot(reference) / major;
+    let y = offset.dot(binormal) / minor;
+    let radius = x.hypot(y);
+    if radius.is_nan() || radius <= 0.0 {
+        return None;
+    }
+    let nearest = center
+        .translated(reference, major * x / radius)
+        .translated(binormal, minor * y / radius);
+    (point.distance(nearest) <= allowance).then(|| periodic_phase([y.atan2(x); 2])[0])
+}
+
+/// The range of a compact circle or ellipse edge from its vertex angles and
+/// marker (spec §7.2), and whether the marker reverses it. `allowances` bound
+/// how far each vertex may lie off the carrier.
+fn conic_edge_range(
+    geometry: &CurveGeometry,
+    marker_reversed: bool,
+    [start, end]: [cadmpeg_ir::math::Point3; 2],
+    allowances: [f64; 2],
+    closed: bool,
+) -> Option<([f64; 2], bool)> {
+    let tau = std::f64::consts::TAU;
+    let (start_angle, end_angle) = (
+        carrier_angle(geometry, start, allowances[0])?,
+        carrier_angle(geometry, end, allowances[1])?,
+    );
+    if closed {
+        return Some(([start_angle, start_angle + tau], marker_reversed));
+    }
+    if start.distance(end) <= LINEAR_RESOLUTION_MM {
+        return None;
+    }
+    Some(if marker_reversed {
+        (
+            [
+                end_angle,
+                end_angle + (start_angle - end_angle).rem_euclid(tau),
+            ],
+            true,
+        )
+    } else {
+        (
+            [
+                start_angle,
+                start_angle + (end_angle - start_angle).rem_euclid(tau),
+            ],
+            false,
+        )
+    })
+}
+
 /// Whether every walked FIN's forward link is reciprocal when present.
 ///
 /// A null forward link carries no claim. A present one must name a FIN of
@@ -1097,11 +1191,26 @@ fn edge_parameter_range(
     ctx: &DecodeContext<'_>,
     carrier: &CurveCarrier,
     endpoints: Option<[cadmpeg_ir::math::Point3; 2]>,
+    vertex_tolerances: [Option<f64>; 2],
+    closed: bool,
 ) -> Result<Option<([f64; 2], bool)>, cadmpeg_core::CodecError> {
     const TOLERANCE_MM: f64 = 1.0e-7;
 
+    let allowances = |exact: f64| {
+        vertex_tolerances.map(|tolerance| {
+            tolerance.map_or(exact, |tolerance| looser_tolerance(exact, tolerance))
+        })
+    };
     let Some(range) = carrier.parameter_range else {
-        return Ok(None);
+        return Ok(endpoints.and_then(|endpoints| {
+            conic_edge_range(
+                &carrier.geometry,
+                carrier.runs_against_edges,
+                endpoints,
+                allowances(LINEAR_RESOLUTION_MM),
+                closed,
+            )
+        }));
     };
     let range = range.get();
     let range = match &carrier.geometry {
@@ -1135,15 +1244,22 @@ fn edge_parameter_range(
             .hypot(left.y - right.y)
             .hypot(left.z - right.z)
     };
-    if distance(first.get(), endpoints[0]).max(distance(second.get(), endpoints[1])) <= TOLERANCE_MM
-    {
-        Ok(Some((range, false)))
-    } else if distance(first.get(), endpoints[1]).max(distance(second.get(), endpoints[0]))
-        <= TOLERANCE_MM
-    {
-        Ok(Some((range, true)))
-    } else {
-        Ok(None)
+    let [start_allowance, end_allowance] = allowances(TOLERANCE_MM);
+    let forward = [
+        distance(first.get(), endpoints[0]),
+        distance(second.get(), endpoints[1]),
+    ];
+    let backward = [
+        distance(second.get(), endpoints[0]),
+        distance(first.get(), endpoints[1]),
+    ];
+    let fits = |[start, end]: [f64; 2]| start <= start_allowance && end <= end_allowance;
+    let worse = |[start, end]: [f64; 2]| start.max(end);
+    match (fits(forward), fits(backward)) {
+        (true, true) if worse(backward) < worse(forward) => Ok(Some((range, true))),
+        (true, _) => Ok(Some((range, false))),
+        (false, true) => Ok(Some((range, true))),
+        (false, false) => Ok(None),
     }
 }
 
@@ -2121,30 +2237,17 @@ fn decode_graph(
         let (start_v, end_v, curve_attr, fin_attr) = edge_ends[&e];
         let resolved_endpoints = kept_vertices.contains(&start_v) && kept_vertices.contains(&end_v);
         let vertexless = !resolved_endpoints && start_v <= 1 && end_v <= 1;
+        let closed_point = vertexless
+            .then(|| closed_edge_start(carriers.curve(curve_attr)))
+            .flatten();
         if vertexless && !admit_vertexless_ring_edge(e, fin_attr, &faces, t, carriers) {
             out.stats.withheld_ring_edges += 1;
             continue;
         }
-        let closed_circle_point = vertexless
-            .then(|| carriers.curve(curve_attr))
-            .flatten()
-            .and_then(|carrier| match &carrier.carrier().geometry {
-                CurveGeometry::Solved(SolvedCurveGeometry::Circle(circle_curve)) => {
-                    let center = circle_curve.center().get();
-                    let ref_direction = circle_curve.frame().reference().as_raw();
-                    let radius = circle_curve.radius().get();
-                    Some(cadmpeg_ir::math::Point3::new(
-                        center.x + ref_direction.x * radius,
-                        center.y + ref_direction.y * radius,
-                        center.z + ref_direction.z * radius,
-                    ))
-                }
-                _ => None,
-            });
-        if !resolved_endpoints && closed_circle_point.is_none() {
+        if !resolved_endpoints && closed_point.is_none() {
             continue;
         }
-        let (mut start_id, mut end_id) = if let Some(position) = closed_circle_point {
+        let (mut start_id, mut end_id) = if let Some((position, _)) = closed_point {
             let point_id = id_closed_point(e);
             let vertex_id = id_closed_vertex(e);
             annotations.note(
@@ -2191,13 +2294,22 @@ fn decode_graph(
                 edge_endpoint_positions.insert(e, [start, end]);
             }
         }
+        let vertex_tolerance = |vertex_use: u16| {
+            t.vertex_uses()
+                .get(&vertex_use)
+                .and_then(|vertex| vertex.tolerance_m)
+                .map(|tolerance| tolerance * LEN_TO_MM)
+        };
         let parameter_range = carriers
             .curve(curve_attr)
+            .filter(|_| !carriers.marker_conflict(curve_attr))
             .map(|carrier| {
                 edge_parameter_range(
                     ctx,
                     carrier.carrier(),
                     edge_endpoint_positions.get(&e).copied(),
+                    [start_v, end_v].map(vertex_tolerance),
+                    start_v == end_v,
                 )
             })
             .transpose()?
@@ -2211,12 +2323,9 @@ fn decode_graph(
             None => {
                 let carrier = carriers.curve(curve_attr).map(IndexedCurve::carrier);
                 let vertex_bound = |vertex_use: u16| {
-                    t.vertex_uses()
-                        .get(&vertex_use)
-                        .and_then(|record| record.tolerance_m)
-                        .map_or(LINEAR_RESOLUTION_MM, |tolerance| {
-                            looser_tolerance(tolerance * LEN_TO_MM, LINEAR_RESOLUTION_MM)
-                        })
+                    vertex_tolerance(vertex_use).map_or(LINEAR_RESOLUTION_MM, |tolerance| {
+                        looser_tolerance(tolerance, LINEAR_RESOLUTION_MM)
+                    })
                 };
                 let domain_reversed = carrier
                     .map(|carrier| {
@@ -2300,12 +2409,22 @@ fn decode_graph(
             }
             _ => None,
         };
+        let stored_range = carriers
+            .curve(curve_attr)
+            .is_some_and(|carrier| carrier.carrier().parameter_range.is_some());
+        if (parameter_range.is_some() && !stored_range) || closed_point.is_some() {
+            annotations
+                .derived(id_edge(e).as_str(), "carrier.param_range")
+                .map_err(cadmpeg_core::CodecError::malformed)?;
+        }
         admit_brep_entity(ctx)?;
         out.edges.push(Edge {
             id: id_edge(e),
             carrier: cadmpeg_ir::topology::EdgeCarrier::new(
                 curve,
-                parameter_range.map(|(range, _)| range),
+                parameter_range
+                    .map(|(range, _)| range)
+                    .or(closed_point.map(|(_, range)| range)),
             )
             .map_err(cadmpeg_core::CodecError::malformed)?,
             start: start_id,
@@ -7433,7 +7552,9 @@ mod tests {
             super::edge_parameter_range(
                 &cadmpeg_test_support::service_decode_context(),
                 &carrier,
-                Some(endpoints)
+                Some(endpoints),
+                [None; 2],
+                false,
             )
             .unwrap(),
             Some(([-14.0, 16.5], true))
@@ -7470,6 +7591,8 @@ mod tests {
             &cadmpeg_test_support::service_decode_context(),
             &carrier,
             Some(endpoints),
+            [None; 2],
+            false,
         )
         .unwrap()
         .expect("the arc's ends are its vertices");
