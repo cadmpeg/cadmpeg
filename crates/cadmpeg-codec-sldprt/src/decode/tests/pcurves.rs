@@ -325,6 +325,28 @@ fn sphere_patch_gets_degenerate_meridian_seam() {
     assert_eq!(result.ir().model.points.len(), 3);
     assert_eq!(result.ir().model.loops[0].coedges().len(), 4);
     assert_eq!(result.ir().model.pcurves.len(), 4);
+    let model = &result.ir().model;
+    let ends = |id: &cadmpeg_ir::ids::CoedgeId| {
+        let coedge = model
+            .coedges
+            .iter()
+            .find(|coedge| &coedge.id == id)
+            .unwrap();
+        let edge = model
+            .edges
+            .iter()
+            .find(|edge| edge.id == coedge.edge)
+            .unwrap();
+        match coedge.sense {
+            cadmpeg_ir::topology::Sense::Forward => (edge.start.clone(), edge.end.clone()),
+            cadmpeg_ir::topology::Sense::Reversed => (edge.end.clone(), edge.start.clone()),
+        }
+    };
+    let ring = model.loops[0].coedges();
+    for (index, id) in ring.iter().enumerate() {
+        let next = &ring[(index + 1) % ring.len()];
+        assert_eq!(ends(id).1, ends(next).0, "{id} -> {next}");
+    }
     let pole = result
         .ir()
         .model

@@ -7102,6 +7102,23 @@ fn synthesize_sphere_seams(
                 vertex_id
             }
         };
+        // The seam follows the coedge that ends at the pole.
+        let after_pole = ring
+            .iter()
+            .position(|id| {
+                coedge_indices
+                    .get(id)
+                    .and_then(|&index| out.coedges.get(index))
+                    .and_then(|coedge| {
+                        let edge = out.edges.iter().find(|edge| edge.id == coedge.edge)?;
+                        Some(match coedge.sense {
+                            Sense::Forward => edge.end == pole_vertex,
+                            Sense::Reversed => edge.start == pole_vertex,
+                        })
+                    })
+                    .unwrap_or(false)
+            })
+            .map_or(ring.len(), |index| index + 1);
         for id in [
             curve_id.as_str(),
             edge_id.as_str(),
@@ -7140,7 +7157,7 @@ fn synthesize_sphere_seams(
                 None,
             ),
         });
-        ring.push(coedge_id.clone());
+        ring.insert(after_pole, coedge_id.clone());
         coedge_indices.insert(coedge_id.clone(), out.coedges.len());
         let pcurve_uses = vec![cadmpeg_ir::topology::PcurveUse {
             pcurve: pcurve_id,

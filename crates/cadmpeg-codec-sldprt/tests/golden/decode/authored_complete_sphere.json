@@ -218,8 +218,8 @@
             "coedges": [
               "sldprt:brep:coedge#30",
               "sldprt:brep:coedge#32",
-              "sldprt:brep:coedge#31",
-              "sldprt:brep:coedge#sphere-seam-face:0"
+              "sldprt:brep:coedge#sphere-seam-face:0",
+              "sldprt:brep:coedge#31"
             ],
             "kind": "ring"
           },
