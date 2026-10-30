@@ -5,6 +5,7 @@
 mod measured_geometry;
 mod mesh_placement;
 mod metadata_recovery;
+mod named_bindings;
 mod primitive_placement;
 mod revolve_direction;
 mod ring_traversal;
