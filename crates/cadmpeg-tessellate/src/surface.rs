@@ -5,6 +5,7 @@
 use std::f64::consts::{FRAC_PI_2, TAU};
 
 use cadmpeg_core::decode::WorkBudget;
+use cadmpeg_ir::compare::floats_agree;
 use cadmpeg_ir::eval::admission::EvaluationAdmission;
 use cadmpeg_ir::eval::{
     analytic_surface_parameters_solved, finite_or_refusal, model_surface_partials_by_id,
@@ -361,9 +362,9 @@ impl<'t, 'ir> Carrier<'t, 'ir> {
         Ok(self.point(uv)?.map(|on| (distance(on, point), uv)))
     }
 
-    /// Normal curvature along parameter `axis` at `uv`. A sphere or cylinder
-    /// uses the closed form; other carriers sample the normal across a small
-    /// share of `span`.
+    /// Normal curvature along parameter `axis` at `uv`. A plane, sphere,
+    /// circular cylinder, or circular cone uses the closed form; other
+    /// carriers sample the normal across a small share of `span`.
     pub(crate) fn curvature(
         &self,
         uv: Uv,
@@ -371,7 +372,7 @@ impl<'t, 'ir> Carrier<'t, 'ir> {
         span: f64,
         scale: f64,
     ) -> Result<f64, Refusal> {
-        if let Some(kappa) = self.analytic_curvature(axis) {
+        if let Some(kappa) = self.analytic_curvature(axis, uv) {
             return Ok(kappa);
         }
         let step = span * CURVATURE_STEP;
@@ -388,8 +389,9 @@ impl<'t, 'ir> Carrier<'t, 'ir> {
         Ok(angle(first, second) / length)
     }
 
-    fn analytic_curvature(&self, axis: usize) -> Option<f64> {
+    fn analytic_curvature(&self, axis: usize, uv: Uv) -> Option<f64> {
         match self.solved.map(basis) {
+            Some(SolvedSurfaceGeometry::Plane(_)) => Some(0.0),
             Some(SolvedSurfaceGeometry::Sphere(sphere)) => {
                 let radius = sphere.radius().get().abs();
                 (radius > 0.0).then_some(1.0 / radius)
@@ -399,6 +401,17 @@ impl<'t, 'ir> Carrier<'t, 'ir> {
             } else {
                 0.0
             }),
+            Some(SolvedSurfaceGeometry::Cone(cone)) => {
+                if !floats_agree(cone.ratio().get(), 1.0) {
+                    return None;
+                }
+                circular_cone_normal_curvature(
+                    axis,
+                    uv[1],
+                    cone.radius().get(),
+                    cone.half_angle().get(),
+                )
+            }
             _ => None,
         }
     }
@@ -412,3 +425,24 @@ impl<'t, 'ir> Carrier<'t, 'ir> {
         }
     }
 }
+
+/// Closed-form normal curvature of a circular cone. The generatrix (`axis`
+/// 1) is a straight line.
+fn circular_cone_normal_curvature(
+    axis: usize,
+    v: f64,
+    radius: f64,
+    half_angle: f64,
+) -> Option<f64> {
+    if axis != 0 {
+        return Some(0.0);
+    }
+    let rho = radius + v * half_angle.tan();
+    if !rho.is_finite() || rho == 0.0 {
+        return None;
+    }
+    Some(half_angle.cos().abs() / rho.abs())
+}
+
+#[cfg(test)]
+mod tests;

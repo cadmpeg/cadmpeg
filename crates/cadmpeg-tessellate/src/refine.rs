@@ -9,6 +9,7 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 
+use cadmpeg_ir::compare::floats_agree;
 use cadmpeg_ir::math::{Point3, Vector3};
 
 use crate::count::{exceeds_limit, floor_count};
@@ -45,6 +46,22 @@ pub(crate) struct Mesh {
 
 fn key(a: usize, b: usize) -> (usize, usize) {
     (a.min(b), a.max(b))
+}
+
+/// Which of two interior edges is longer. Last-place length noise does not
+/// change the choice: the lower vertex-id pair wins when the lengths agree.
+fn longer_edge(
+    points: &[Point3],
+    first: (usize, usize),
+    second: (usize, usize),
+) -> std::cmp::Ordering {
+    let length = |edge: (usize, usize)| distance(points[edge.0], points[edge.1]);
+    let (left, right) = (length(first), length(second));
+    if floats_agree(left, right) {
+        key(first.0, first.1).cmp(&key(second.0, second.1))
+    } else {
+        left.total_cmp(&right)
+    }
 }
 
 /// The lengths of the partial derivatives at `uv`, each kept above a share
@@ -169,11 +186,7 @@ impl Mesh {
             let longest = [(a, b), (b, c), (c, a)]
                 .into_iter()
                 .filter(|(from, to)| !self.fixed.contains(&key(*from, *to)))
-                .max_by(|first, second| {
-                    let length =
-                        |(from, to): (usize, usize)| distance(self.points[from], self.points[to]);
-                    length(*first).total_cmp(&length(*second))
-                });
+                .max_by(|first, second| longer_edge(&self.points, *first, *second));
             match longest {
                 Some(edge) => {
                     let uv = midpoint(self.uv[edge.0], self.uv[edge.1]);
@@ -472,3 +485,6 @@ impl Mesh {
         Ok(())
     }
 }
+
+#[cfg(test)]
+mod tests;
