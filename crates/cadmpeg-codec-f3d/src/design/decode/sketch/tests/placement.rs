@@ -3,7 +3,7 @@ use cadmpeg_core::decode::u64_from_index;
 
 use crate::design::decode::sketch::bind_sketch_graph;
 use crate::design::decode::sketch::parse_sketch_placement_candidates;
-use crate::design::sketch_project::project_sketch_design;
+use crate::design::sketch_project::{project_sketch_design, SketchProjectInputs};
 use crate::records::entity_header::DesignEntityHeader;
 use crate::records::entity_header::DESIGN_MODULE_SKETCH;
 use crate::records::sketch_geometry::SketchCurveGeometry;
@@ -279,13 +279,15 @@ fn entity_genesis_placement_origin_scales_to_neutral_units() {
     let (sketches, entities) = crate::test_support::with_decode_context(|decode_ctx| {
         project_sketch_design(
             decode_ctx,
-            &[placement(
-                crate::records::sketch_placement::DesignSketchFrameForm::ScopeGenesisExplicit,
-            )],
-            &[point.clone(), identityless_point],
-            &[],
-            &[],
-            &[],
+            &SketchProjectInputs::new(
+                &[placement(
+                    crate::records::sketch_placement::DesignSketchFrameForm::ScopeGenesisExplicit,
+                )],
+                &[point.clone(), identityless_point],
+                &[],
+                &[],
+                &[],
+            ),
             1.0e-6,
         )
     })
@@ -314,13 +316,15 @@ fn entity_genesis_placement_origin_scales_to_neutral_units() {
     let (sketches, _) = crate::test_support::with_decode_context(|decode_ctx| {
         project_sketch_design(
             decode_ctx,
-            &[placement(
-                crate::records::sketch_placement::DesignSketchFrameForm::ScopeExplicit,
-            )],
-            &[point],
-            &[],
-            &[],
-            &[],
+            &SketchProjectInputs::new(
+                &[placement(
+                    crate::records::sketch_placement::DesignSketchFrameForm::ScopeExplicit,
+                )],
+                &[point],
+                &[],
+                &[],
+                &[],
+            ),
             1.0e-6,
         )
     })
