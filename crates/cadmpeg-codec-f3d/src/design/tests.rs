@@ -50,16 +50,38 @@ fn feature_family_tokens_are_localized() {
     assert_eq!(family("Esquisse"), Some(DesignFeatureFamily::Sketch));
     assert_eq!(family("Extrusion"), Some(DesignFeatureFamily::Extrude));
     assert_eq!(family("Extrusão"), Some(DesignFeatureFamily::Extrude));
-    for token in ["Skizze", "Esboço"] {
+    for token in ["Skizze", "Esboço", "Boceto", "スケッチ"] {
         assert_eq!(family(token), Some(DesignFeatureFamily::Sketch));
     }
     assert_eq!(family("Congé"), Some(DesignFeatureFamily::Fillet));
-    for token in ["Abrundung", "Arredondamento"] {
+    for token in ["Abrundung", "Arredondamento", "Empalme", "フィレット"] {
         assert_eq!(family(token), Some(DesignFeatureFamily::Fillet));
         assert!(treatment(token));
     }
     assert_eq!(family("Chanfrein"), Some(DesignFeatureFamily::Chamfer));
-    for token in ["Congé", "Abrundung", "Arredondamento", "Chanfrein"] {
+    for token in ["Chaflán", "面取り"] {
+        assert_eq!(family(token), Some(DesignFeatureFamily::Chamfer));
+        assert!(treatment(token));
+    }
+    for token in ["Extruir", "押し出し"] {
+        assert_eq!(family(token), Some(DesignFeatureFamily::Extrude));
+    }
+    assert_eq!(family("Escala"), Some(DesignFeatureFamily::Scale));
+    assert_eq!(family("Solevación"), Some(DesignFeatureFamily::Loft));
+    assert_eq!(family("Vaciado"), Some(DesignFeatureFamily::Shell));
+    assert_eq!(family("PlanoDeObra"), None);
+    assert_eq!(family("Lienzo"), None);
+    assert_eq!(family("EsferaPrimitiva"), None);
+    for token in [
+        "Congé",
+        "Abrundung",
+        "Arredondamento",
+        "Chanfrein",
+        "Empalme",
+        "フィレット",
+        "Chaflán",
+        "面取り",
+    ] {
         assert!(localized(token));
     }
     for token in ["Fillet", "Chamfer", "Extrusion", "unknown"] {

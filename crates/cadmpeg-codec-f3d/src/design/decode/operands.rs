@@ -328,7 +328,11 @@ pub(crate) fn bind_work_point_input_carriers(
     }
     let mut work_planes: HashMap<String, HashMap<u32, u32>> = HashMap::new();
     for scope in scopes.iter().filter(|scope| {
-        scope.kind() == crate::records::feature::scope::DesignFeatureKind::WorkPlane
+        matches!(
+            scope.kind(),
+            crate::records::feature::scope::DesignFeatureKind::WorkPlane
+                | crate::records::feature::scope::DesignFeatureKind::PlanoDeObra
+        )
     }) {
         let (Some(stream), Some(preceding_index)) =
             (native_stream(&scope.id), scope.record_index.checked_sub(1))
@@ -508,7 +512,11 @@ pub(crate) fn bind_work_plane_constructions(
     let mut record_offset_index: HashMap<String, IndexedRecordOffsets> = HashMap::new();
 
     for scope in scopes.iter_mut().filter(|scope| {
-        scope.kind() == crate::records::feature::scope::DesignFeatureKind::WorkPlane
+        matches!(
+            scope.kind(),
+            crate::records::feature::scope::DesignFeatureKind::WorkPlane
+                | crate::records::feature::scope::DesignFeatureKind::PlanoDeObra
+        )
     }) {
         if let Some(frame) = scope.work_plane_frame_mut() {
             frame.work_plane_construction = None;
@@ -1642,7 +1650,9 @@ pub(crate) fn bind_sketch_profiles(
             }
         } else if let crate::records::feature::scope::DesignScopePayloadMut::Extrude(slot)
         | crate::records::feature::scope::DesignScopePayloadMut::Extrusion(slot)
-        | crate::records::feature::scope::DesignScopePayloadMut::Extrusao(slot) =
+        | crate::records::feature::scope::DesignScopePayloadMut::Extrusao(slot)
+        | crate::records::feature::scope::DesignScopePayloadMut::Extruir(slot)
+        | crate::records::feature::scope::DesignScopePayloadMut::ExtrudeJa(slot) =
             scope.payload_mut()
         {
             slot.get_or_insert_with(Default::default).extrude_profile = Some(profile);
@@ -2304,7 +2314,9 @@ pub(crate) fn disambiguate_fixed_fillet_parameters(
             if let crate::records::feature::scope::DesignScopePayloadMut::Fillet(slot)
             | crate::records::feature::scope::DesignScopePayloadMut::Conge(slot)
             | crate::records::feature::scope::DesignScopePayloadMut::Abrundung(slot)
-            | crate::records::feature::scope::DesignScopePayloadMut::Arredondamento(slot) =
+            | crate::records::feature::scope::DesignScopePayloadMut::Arredondamento(slot)
+            | crate::records::feature::scope::DesignScopePayloadMut::Empalme(slot)
+            | crate::records::feature::scope::DesignScopePayloadMut::FilletJa(slot) =
                 scope.payload_mut()
             {
                 *slot = None;
