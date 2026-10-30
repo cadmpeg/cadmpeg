@@ -344,6 +344,7 @@ fn revolve_axes_turn_the_profile_toward_the_sketch_normal() {
                 }),
             ),
             native_ref: None,
+            product_definition: None,
         }];
         super::super::orient_revolve_axes(&mut features, &[sketch], &[entity], (1.0e-6, 1.0e-9));
         let FeatureDefinition::Operation(FeatureOperation::Revolve { construction, .. }) =

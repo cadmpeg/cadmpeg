@@ -15,6 +15,7 @@ type TestResult<T = ()> = Result<T, Box<dyn std::error::Error>>;
 
 fn annotation(native: String) -> Feature {
     Feature {
+        product_definition: None,
         id: FeatureId::compose(
             &cadmpeg_ir::identity_namespace!("inventor", "design", "feature"),
             cadmpeg_ir::identity_key!("generated"),

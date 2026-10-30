@@ -155,6 +155,7 @@ fn neutral_feature(
     definition: cadmpeg_ir::features::FeatureDefinition,
 ) -> cadmpeg_ir::features::Feature {
     cadmpeg_ir::features::Feature {
+        product_definition: None,
         id: cadmpeg_ir::features::FeatureId::mint(format!("sldprt:model:feature#{id}"))
             .expect("identity grammar"),
         ordinal,

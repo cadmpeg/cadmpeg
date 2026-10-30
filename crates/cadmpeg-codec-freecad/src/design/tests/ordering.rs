@@ -399,6 +399,7 @@ fn parameter(id: usize, owner: usize, dependencies: &[usize]) -> DesignParameter
         ParameterId::mint(format!("test:test:parameter#{index}")).expect("parameter id")
     };
     DesignParameter {
+        product_definition: None,
         id: parameter_id(id),
         owner: Some(FeatureId::mint(format!("test:test:feature#{owner}")).expect("feature id")),
         ordinal: 0,

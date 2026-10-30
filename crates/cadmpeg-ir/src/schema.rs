@@ -294,7 +294,7 @@ impl EntitySchema for crate::geometry::ProceduralCurve {
     }
 }
 impl_entity_schema!(crate::assets::Asset, Asset, id; id, name, media_type, content, native_ref);
-impl_entity_schema!(crate::features::Feature, Feature, id; id, ordinal, name, suppressed, dependencies, source_properties, source_tag, source_text, source_content, evaluation, native_ref);
+impl_entity_schema!(crate::features::Feature, Feature, id; id, product_definition, ordinal, name, suppressed, dependencies, source_properties, source_tag, source_text, source_content, evaluation, native_ref);
 impl_entity_schema!(
     crate::features::FeatureInputTopology,
     FeatureInputTopology,
@@ -315,7 +315,7 @@ impl_entity_schema!(
     id, ordinal, active, source_index, name, material, properties, parameter_overrides,
     bodies, parameter_values, feature_states, native_ref
 );
-impl_entity_schema!(crate::features::DesignParameter, DesignParameter, id; id, owner, ordinal, name, expression, display, value, dependencies, properties, pmi, native_ref);
+impl_entity_schema!(crate::features::DesignParameter, DesignParameter, id; id, product_definition, owner, ordinal, name, expression, display, value, dependencies, properties, pmi, native_ref);
 impl_entity_schema!(crate::sketches::Sketch, Sketch, id; id, name, configuration, visible, placement, profiles, native_ref);
 impl EntitySchema for crate::sketches::SketchEntity {
     const KIND: EntityKind = EntityKind::SketchEntity;

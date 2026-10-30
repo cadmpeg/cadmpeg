@@ -251,6 +251,7 @@ pub(crate) fn project_feature_model(
                         )?,
                     ),
                     native_ref: Some(feature.id.clone()),
+                    product_definition: None,
                 };
                 features.push(projected);
                 parents.push(parent);

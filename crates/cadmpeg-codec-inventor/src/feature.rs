@@ -2661,6 +2661,7 @@ fn native_feature(
     ctx.charge_entities(1, "project Inventor history feature")?;
     let kind = native_kind(label.map(|label| label.class_id()));
     Ok(Feature {
+        product_definition: None,
         id: history_feature_id(identity)?,
         ordinal: label.map_or(0, |label| u64::from(label.index)),
         name: label.and_then(|label| label.name()).map(str::to_owned),
@@ -2691,6 +2692,7 @@ fn sketch_feature(
     ctx.charge_entities(1, "project Inventor history feature")?;
     let sketch = index.sketch_ids.get(native_id.as_str()).cloned();
     Ok(Feature {
+        product_definition: None,
         id: history_feature_id(&record.identity)?,
         ordinal: label.map_or(0, |label| u64::from(label.index)),
         name: label.and_then(|label| label.name()).map(str::to_owned),
@@ -2847,6 +2849,7 @@ fn project_thread(
         Err(error) => return Some(Err(error)),
     };
     Some(Ok(Feature {
+        product_definition: None,
         id: FeatureId::compose(
             &cadmpeg_ir::identity_namespace!("inventor", "design", "feature"),
             key,
@@ -3003,6 +3006,7 @@ fn project_extrusion(
         None => native_profile?,
     };
     let feature = Feature {
+        product_definition: None,
         id: feature_id,
         ordinal: u64::from(label.index),
         name: label.name().map(str::to_owned),
@@ -3058,6 +3062,7 @@ fn project_revolve(
     }
     let profile = boundary.resolve(index)?;
     let feature = Feature {
+        product_definition: None,
         id: feature_id,
         ordinal: u64::from(label.index),
         name: label.name().map(str::to_owned),
@@ -3179,6 +3184,7 @@ fn project_plate(
         return Some(Err(error));
     }
     let feature = Feature {
+        product_definition: None,
         id: feature_id,
         ordinal: u64::from(label.index),
         name: label.name().map(str::to_owned),
@@ -3558,6 +3564,7 @@ fn project_fillet(
     }
     Some(Ok((
         Feature {
+            product_definition: None,
             id: feature_id,
             ordinal: u64::from(label.index),
             name: label.name().map(str::to_owned),
@@ -3655,6 +3662,7 @@ fn project_chamfer(
     }
     Some(Ok((
         Feature {
+            product_definition: None,
             id: feature_id,
             ordinal: u64::from(label.index),
             name: label.name().map(str::to_owned),
@@ -3731,6 +3739,7 @@ fn project_shell(
     }
     Some(Ok((
         Feature {
+            product_definition: None,
             id: feature_id,
             ordinal: u64::from(label.index),
             name: label.name().map(str::to_owned),
@@ -3838,6 +3847,7 @@ fn project_hole(
     }
     Some(Ok((
         Feature {
+            product_definition: None,
             id: feature_id,
             ordinal: u64::from(label.index),
             name: label.name().map(str::to_owned),
@@ -4032,6 +4042,7 @@ fn project_thicken(
     }
     Some(Ok((
         Feature {
+            product_definition: None,
             id: feature_id,
             ordinal: u64::from(label.index),
             name: label.name().map(str::to_owned),
@@ -4889,6 +4900,7 @@ pub(crate) mod tests {
         value: ParameterValue,
     ) -> DesignParameter {
         DesignParameter {
+            product_definition: None,
             id: ParameterId::mint(format!(
                 "inventor:design:parameter#{}",
                 raw.identity.record_ordinal

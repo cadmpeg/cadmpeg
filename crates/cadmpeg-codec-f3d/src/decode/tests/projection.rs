@@ -275,6 +275,7 @@ fn mesh_feature_binds_tessellations_in_design_body_order() {
         })
         .unwrap();
     let mut features = vec![Feature {
+        product_definition: None,
         id: FeatureId::mint("test:model:feature#mesh-import").expect("identity grammar"),
         ordinal: 0,
         name: None,
@@ -418,6 +419,7 @@ fn full_round_fillet_with_automatic_sides_is_complete() {
 
     let mut ir = cadmpeg_ir::document::CadIr::empty();
     ir.model.features.push(Feature {
+        product_definition: None,
         id: FeatureId::mint("test:model:feature#full-round").expect("identity grammar"),
         ordinal: 0,
         name: None,
@@ -1075,6 +1077,7 @@ fn coil_completeness_requires_neutral_placement_and_boolean_targets() {
 
     let mut ir = cadmpeg_ir::document::CadIr::empty();
     ir.model.features.push(cadmpeg_ir::features::Feature {
+        product_definition: None,
         id: cadmpeg_ir::features::FeatureId::mint("test:model:feature#coil")
             .expect("identity grammar"),
         ordinal: 0,
@@ -1177,6 +1180,7 @@ fn loft_completeness_and_gap_counts_require_resolved_sections_and_paths() {
 
     let mut ir = cadmpeg_ir::document::CadIr::empty();
     ir.model.features.push(Feature {
+        product_definition: None,
         id: FeatureId::mint("test:model:feature#loft").expect("identity grammar"),
         ordinal: 0,
         name: None,
@@ -1203,6 +1207,7 @@ fn incomplete_feature_families_are_counted_by_source_operation() {
 
     let mut ir = cadmpeg_ir::document::CadIr::empty();
     let feature = |id: &str, source_tag: Option<&str>, kind: &str| Feature {
+        product_definition: None,
         id: FeatureId::mint(id).expect("identity grammar"),
         ordinal: 0,
         name: None,
@@ -1372,6 +1377,7 @@ fn mesh_texture_bytes_refuse_one_byte_below_their_retained_ceiling() {
 fn refused_edge_flange_payload_reports_its_retained_scope_loss() {
     let mut ir = cadmpeg_ir::document::CadIr::empty();
     ir.model.features.push(cadmpeg_ir::features::Feature {
+        product_definition: None,
         id: cadmpeg_ir::features::FeatureId::mint("synthetic:test:feature#flange").unwrap(),
         ordinal: 0,
         name: None,
@@ -1608,6 +1614,7 @@ fn typed_profile_ambiguous_selection_retains_profile_loss() {
         source_content: Default::default(),
         evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(definition),
         native_ref: None,
+        product_definition: None,
     });
     let mut report = cadmpeg_ir::codec::DecodeBody {
         transfer: cadmpeg_ir::report::decode::DecodeTransfer::full(true),
@@ -1671,6 +1678,7 @@ fn stored_body_scope_keeps_opaque_payload_loss_after_history_projection() {
             },
         )),
         native_ref: Some(scope.id.clone()),
+        product_definition: None,
     });
     let box_scope = DesignParameterScope::empty(
         "f3d:Design/BulkStream.dat:design-parameter-scope#91",

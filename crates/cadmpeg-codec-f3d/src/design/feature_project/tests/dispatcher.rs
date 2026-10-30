@@ -1169,6 +1169,7 @@ fn form_dispatcher_retains_a_result_owner_without_a_cage_identity_join() {
         .unwrap();
     let feature_id = crate::ids::neutral_feature_id(&scope);
     let mut features = vec![cadmpeg_ir::features::Feature {
+        product_definition: None,
         id: feature_id,
         ordinal: 0,
         name: None,
@@ -1311,6 +1312,7 @@ fn form_dispatcher_retains_a_group_without_a_cage_identity_join() {
             .unwrap();
         let feature_id = crate::ids::neutral_feature_id(&scope);
         let mut features = vec![cadmpeg_ir::features::Feature {
+            product_definition: None,
             id: feature_id,
             ordinal: 0,
             name: None,

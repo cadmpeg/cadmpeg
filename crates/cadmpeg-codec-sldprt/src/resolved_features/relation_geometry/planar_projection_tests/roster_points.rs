@@ -36,6 +36,7 @@ fn project_roster_points_with_policy(policy: &DecodePolicy) -> Result<(), CodecE
         })
         .collect();
     let parameter = DesignParameter {
+        product_definition: None,
         id: ParameterId::mint("synthetic:test:id#roster-dimension").unwrap(),
         owner: None,
         ordinal: 0,
@@ -109,6 +110,7 @@ fn project_roster_point_line_with_policy(policy: &DecodePolicy) -> Result<(), Co
         .unwrap(),
     );
     let parameter = DesignParameter {
+        product_definition: None,
         id: ParameterId::mint("synthetic:test:id#roster-dimension").unwrap(),
         owner: None,
         ordinal: 0,

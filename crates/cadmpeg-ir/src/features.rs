@@ -4,6 +4,7 @@
 use std::collections::{BTreeMap, HashSet};
 
 use crate::assets::AssetId;
+use crate::ids::ProductDefinitionId;
 use crate::ids::{
     BodyId, CurveId, EdgeId, FaceId, FeatureInputTopologyId, FeatureResultTopologyId,
     HistoricalBodyId, HistoricalEdgeId, HistoricalFaceId, HistoricalVertexId, OccurrenceId, SubdId,
@@ -1321,6 +1322,13 @@ crate::ids::id_type!(
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(deny_unknown_fields)]
 pub struct DesignParameter {
+    /// Product definition whose frame contains this parameter.
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_product_definition"
+    )]
+    pub product_definition: Option<ProductDefinitionId>,
     /// Globally unique parameter id.
     pub id: ParameterId,
     /// Feature that consumes this parameter; absent for a document parameter.
@@ -1558,6 +1566,8 @@ impl FeatureEvaluation {
 /// no public [`Default`]: an empty id with an arbitrary definition is illegal.
 #[derive(Debug, Clone, PartialEq)]
 pub struct Feature {
+    /// Product definition whose frame contains this feature.
+    pub product_definition: Option<ProductDefinitionId>,
     /// Globally unique feature id.
     pub id: FeatureId,
     /// Stable construction order within the source history.
@@ -1584,6 +1594,8 @@ pub struct Feature {
 
 #[derive(Serialize)]
 pub(crate) struct FeatureWriteWire<'a> {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    product_definition: &'a Option<ProductDefinitionId>,
     id: &'a FeatureId,
     ordinal: u64,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -1612,6 +1624,7 @@ pub(crate) struct FeatureWriteWire<'a> {
 impl<'a> FeatureWriteWire<'a> {
     pub(crate) fn new(feature: &'a Feature, regeneration_parent: Option<&'a FeatureId>) -> Self {
         Self {
+            product_definition: &feature.product_definition,
             id: &feature.id,
             ordinal: feature.ordinal,
             name: &feature.name,
@@ -1644,6 +1657,8 @@ impl<'a> FeatureWriteWire<'a> {
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(deny_unknown_fields)]
 pub(crate) struct FeatureRowWire {
+    #[serde(default, deserialize_with = "deserialize_product_definition")]
+    product_definition: Option<ProductDefinitionId>,
     id: FeatureId,
     ordinal: u64,
     #[serde(default, deserialize_with = "deserialize_name")]
@@ -1675,6 +1690,7 @@ impl FeatureRowWire {
     pub(crate) fn into_parts(self) -> (Feature, Option<FeatureId>) {
         let regeneration_parent = self.regeneration_parent;
         let feature = FeatureReadWire {
+            product_definition: self.product_definition,
             id: self.id,
             ordinal: self.ordinal,
             name: self.name,
@@ -1702,6 +1718,8 @@ impl FeatureRowWire {
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(deny_unknown_fields)]
 struct FeatureReadWire {
+    #[serde(default, deserialize_with = "deserialize_product_definition")]
+    product_definition: Option<ProductDefinitionId>,
     id: FeatureId,
     ordinal: u64,
     #[serde(default, deserialize_with = "deserialize_name")]
@@ -1730,6 +1748,7 @@ struct FeatureReadWire {
 impl FeatureReadWire {
     fn into_feature(self) -> Feature {
         Feature {
+            product_definition: self.product_definition,
             id: self.id,
             ordinal: self.ordinal,
             name: self.name,
@@ -9494,3 +9513,9 @@ impl Feature {
 mod identity_rewrite;
 
 mod serialization;
+
+cadmpeg_core::named_optional_field!(
+    deserialize_product_definition,
+    ProductDefinitionId,
+    "product_definition"
+);

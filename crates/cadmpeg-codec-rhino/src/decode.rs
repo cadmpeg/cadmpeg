@@ -1244,6 +1244,7 @@ impl<'a> DecodeContext<'a> {
                     .as_str()
                     .to_owned(),
             ),
+            product_definition: None,
         };
         let hatch_loops = hatch.loops;
         let session = self.expand.ctx();
@@ -1365,6 +1366,7 @@ impl<'a> DecodeContext<'a> {
                 }),
             ),
             native_ref: Some(Self::mint_unknown_id(source_order).to_string()),
+            product_definition: None,
         };
         match self
             .validate_candidate(|candidate, _annotations| candidate.model.features.push(feature))
@@ -1475,6 +1477,7 @@ impl<'a> DecodeContext<'a> {
                     .as_str()
                     .to_owned(),
             ),
+            product_definition: None,
         };
         let session = self.expand.ctx();
         let result = self.validate_candidate_fallible(|candidate, candidate_annotations| {
@@ -1622,6 +1625,7 @@ impl<'a> DecodeContext<'a> {
                     .as_str()
                     .to_owned(),
             ),
+            product_definition: None,
         };
         match self
             .validate_candidate(|candidate, _annotations| candidate.model.features.push(feature))
@@ -1825,6 +1829,7 @@ impl<'a> DecodeContext<'a> {
                     .as_str()
                     .to_owned(),
             ),
+            product_definition: None,
         };
         let parameter_curve = construction.parameter_curve;
         let model_curve = construction.model_curve;

@@ -514,6 +514,12 @@ const HAND_IMPL_NULL_REFUSALS: &[(&str, &str, &str, &str)] = &[
         "FeatureReadWire",
     ),
     (
+        "crates/cadmpeg-ir/src/features.rs",
+        "Feature",
+        "product_definition",
+        "FeatureReadWire",
+    ),
+    (
         "crates/cadmpeg-ir/src/provenance.rs",
         "Provenance",
         "tag",

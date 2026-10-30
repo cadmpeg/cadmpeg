@@ -2612,6 +2612,7 @@ mod tests {
         ));
 
         let mut feature = Feature {
+            product_definition: None,
             id: FeatureId::mint("f3d:model:feature#derived").expect("identity grammar"),
             ordinal: 1,
             name: None,
@@ -2784,6 +2785,7 @@ mod tests {
             let mut inserts = super::ComponentInserts::decide(&scopes, &timelines, &references);
             inserts.bind_external_paths(&references, &projected);
             let mut feature = Feature {
+                product_definition: None,
                 id: FeatureId::mint("f3d:model:feature#external").unwrap(),
                 ordinal: 0,
                 name: None,
@@ -2936,6 +2938,7 @@ mod tests {
         );
         let occurrences = inserts.unresolved_occurrences(0).unwrap();
         let mut feature = Feature {
+            product_definition: None,
             id: FeatureId::mint("f3d:model:feature#insert").expect("identity grammar"),
             ordinal: 1,
             name: None,
