@@ -1,7 +1,9 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Optional archive recovery and required-member admission boundaries.
 
-use crate::test_support::assembly_test::{f3d_without_brep, f3z_archive, XREF_ROLE};
+use crate::test_support::assembly_test::{
+    f3d_with_text_brep_stream, f3d_without_brep, f3z_archive, XREF_ROLE,
+};
 use crate::test_support::smbh_geometry_test::synthetic_geometry_smbh;
 use crate::test_support::zip_test::f3d_with_smbh;
 use crate::{F3dCodec, F3dLossCode};
@@ -171,4 +173,47 @@ fn unreadable_referenced_document_withholds_the_occurrence_with_named_losses() {
         .losses
         .iter()
         .any(|loss| loss.code == F3dLossCode::ArchiveEntryUnreadable.note("").code));
+}
+
+#[test]
+fn failed_member_placed_by_two_parents_reports_each_reference() {
+    // An invalid text BREP stream passes the archive scan and fails inside
+    // member decode.
+    let component = f3d_with_text_brep_stream(
+        &["FusionAssetName[Active]/Breps.BlobParts/BREP0.sat"],
+        b"invalid SAT stream",
+    );
+    let root = f3d_without_brep(
+        "assembly-design",
+        "root.f3d",
+        &[("first.f3d", XREF_ROLE), ("second.f3d", XREF_ROLE)],
+    );
+    let first = f3d_without_brep("design", "first.f3d", &[("component.f3d", XREF_ROLE)]);
+    let second = f3d_without_brep("design", "second.f3d", &[("component.f3d", XREF_ROLE)]);
+    let archive = f3z_archive(
+        "root.f3d",
+        &[
+            ("root.f3d", &root),
+            ("first.f3d", &first),
+            ("second.f3d", &second),
+            ("component.f3d", &component),
+        ],
+    );
+    let decoded = F3dCodec
+        .decode(&mut Cursor::new(&archive), &DecodeOptions::default())
+        .unwrap();
+    let failures = decoded
+        .report()
+        .losses
+        .iter()
+        .filter(|loss| {
+            loss.code == F3dLossCode::XrefMemberUndecoded.note("").code
+                && loss
+                    .message
+                    .contains("member component.f3d failed to decode")
+        })
+        .map(|loss| loss.message.split(": member ").nth(1).unwrap_or_default())
+        .collect::<Vec<_>>();
+    assert_eq!(failures.len(), 2, "{failures:?}");
+    assert_eq!(failures[0], failures[1]);
 }
