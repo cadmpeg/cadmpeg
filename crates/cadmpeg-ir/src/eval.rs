@@ -731,10 +731,11 @@ fn refine_nurbs_surface_parameters(
         let Some(candidate) = accepted else {
             break;
         };
+        let (moved_u, moved_v) = (candidate.u - parameters.u, candidate.v - parameters.v);
         parameters = candidate;
-        if scale.get() * step_u.get().abs()
+        if moved_u.abs()
             <= EPS_EVAL_REFINE_NURBS_SURFACE_PARAMETERS_E12 * (1.0 + parameters.u.abs())
-            && scale.get() * step_v.get().abs()
+            && moved_v.abs()
                 <= EPS_EVAL_REFINE_NURBS_SURFACE_PARAMETERS_E12 * (1.0 + parameters.v.abs())
         {
             break;

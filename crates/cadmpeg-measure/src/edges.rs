@@ -312,23 +312,23 @@ fn pcurve_trace(
     aabb.include(end);
     let mut numeric_error: f64 = 0.0;
     for span in &resolved.spans {
-        for (axis, direction) in [
-            Vector3::new(1.0, 0.0, 0.0),
-            Vector3::new(0.0, 1.0, 0.0),
-            Vector3::new(0.0, 0.0, 1.0),
-        ]
-        .into_iter()
-        .enumerate()
-        {
-            let mut charge = |units| eval.charge(units);
-            let mut f = |t: f64| -> Measure<(f64, f64)> {
-                let (point, tangent) = velocity(span, t)?;
-                Ok((
-                    point.vector_from(Point3::new(0.0, 0.0, 0.0)).dot(direction),
-                    tangent.dot(direction),
-                ))
-            };
-            let found = extrema(&mut charge, &mut f, span.t0, span.t1, &span.breaks())?;
+        let mut charge = |units| eval.charge(units);
+        let mut f = |t: f64| -> Measure<([f64; 3], [f64; 3])> {
+            let (point, tangent) = velocity(span, t)?;
+            Ok((
+                [point.x, point.y, point.z],
+                [tangent.x, tangent.y, tangent.z],
+            ))
+        };
+        let found = extrema(
+            &mut charge,
+            &mut f,
+            span.t0,
+            span.t1,
+            &span.breaks(),
+            [0.0; 3],
+        )?;
+        for (axis, found) in found.iter().enumerate() {
             aabb.min[axis] = aabb.min[axis].min(found.min);
             aabb.max[axis] = aabb.max[axis].max(found.max);
             numeric_error = numeric_error.max(found.error);

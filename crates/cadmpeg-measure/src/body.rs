@@ -18,7 +18,7 @@ use crate::edges::EdgeGeometry;
 use crate::face::{box_value, FaceResult};
 use crate::geom::Aabb;
 use crate::owners::Owners;
-use crate::reason::CaveatCode;
+use crate::reason::{CaveatCode, UnavailableReason};
 use crate::report::{
     BodyMeasures, BodyOrientation, CaveatCount, ShellMeasures, ShellRole, StatusTally,
 };
@@ -100,16 +100,30 @@ impl<'a> BodyInput<'a, '_> {
                 Some(Ok(placement)) => placement.model_term(dimension, value),
                 _ => 0.0,
             };
-            let area_value = area
-                .as_ref()
-                .and_then(Quantity::measured)
-                .map_or(0.0, |area| area.value().value.get());
-            let diagonal = bbox.measured().map_or(0.0, |bbox| {
-                std::iter::once(bbox.value())
+            // Without a body box, the union of the faces' reading boxes.
+            let diagonal = match &bbox {
+                Quantity::Measured(bbox) => Ok(std::iter::once(bbox.value())
                     .chain(bbox.candidates().iter().map(Candidate::value))
                     .map(|value| value.min.get().distance(value.max.get()))
-                    .fold(0.0, f64::max)
-            });
+                    .fold(0.0, f64::max)),
+                Quantity::Unavailable(unavailable) => self
+                    .members(body)
+                    .iter()
+                    .map(|member| member.result.reading_boxes().copied().reduce(Aabb::union))
+                    .collect::<Option<Vec<_>>>()
+                    .and_then(|boxes| boxes.into_iter().reduce(Aabb::union))
+                    .map(|union| union.diagonal())
+                    .ok_or_else(|| {
+                        Unavailable::aggregate(
+                            unavailable.category(),
+                            id,
+                            format!(
+                                "the body's box, which bounds its model uncertainty, is unavailable: {}",
+                                unavailable.message()
+                            ),
+                        )
+                    }),
+            };
             let input = VolumeInput {
                 id,
                 members: self.members(body),
@@ -123,7 +137,6 @@ impl<'a> BodyInput<'a, '_> {
                     .copied()
                     .unwrap_or(Point3::new(0.0, 0.0, 0.0)),
                 handedness,
-                area: area_value,
                 diagonal,
                 placement: &placement_term,
                 density: self.density,
@@ -215,8 +228,11 @@ impl<'a> BodyInput<'a, '_> {
                 .copied()
                 .unwrap_or(Point3::new(0.0, 0.0, 0.0)),
             handedness: handedness(placement),
-            area: 0.0,
-            diagonal: 0.0,
+            diagonal: Err(Unavailable::new(
+                UnavailableReason::AggregateMemberUnavailable,
+                Some(id),
+                "the conflict check reads no model uncertainty",
+            )),
             placement: &no_term,
             density: None,
         };

@@ -3,6 +3,7 @@
 
 mod acceptance;
 mod aggregates;
+mod boundaries;
 mod compare;
 mod cones;
 mod cube;

@@ -65,6 +65,9 @@ pub(crate) struct ResolvedLoop<'ir> {
     /// The largest distance between a boundary point and its inverted
     /// surface point.
     pub(crate) off_surface: f64,
+    /// Each edge's largest measured deviation: the gaps at its vertices and
+    /// at the junctions it meets, and its pieces' distance from the surface.
+    pub(crate) deviations: Vec<(&'ir str, f64)>,
     /// Whether the traversal direction is known for every coedge.
     pub(crate) directed: bool,
     /// The coedges whose pcurve uses are listed from their end to their
@@ -85,6 +88,8 @@ struct Join {
     to: [f64; 2],
     /// The model distance between the points.
     gap: f64,
+    /// The largest gap the two pieces may leave.
+    allowance: f64,
 }
 
 /// The pieces of one coedge.
@@ -148,6 +153,7 @@ impl<'ir> FaceFrame<'_, 'ir> {
                         net_shift: [0, 0],
                         max_gap: 0.0,
                         off_surface: 0.0,
+                        deviations: Vec::new(),
                         directed: true,
                         pcurve_order: Vec::new(),
                     }),
@@ -274,6 +280,16 @@ impl<'ir> FaceFrame<'_, 'ir> {
         let mut pieces: Vec<Piece<'ir>> = Vec::new();
         let mut max_gap: f64 = 0.0;
         let mut off_surface: f64 = 0.0;
+        let mut deviations: Vec<(&'ir str, f64)> = Vec::new();
+        let mut deviate = |edge: Option<&'ir Coedge>, amount: f64| {
+            let Some(edge) = edge.map(|coedge| coedge.edge.as_str()) else {
+                return;
+            };
+            match deviations.iter_mut().find(|(id, _)| *id == edge) {
+                Some((_, largest)) => *largest = largest.max(amount),
+                None => deviations.push((edge, amount)),
+            }
+        };
         let mut directed = true;
         let mut pcurve_order = Vec::new();
         let mut pending_pole: Option<&'ir Coedge> = None;
@@ -304,15 +320,20 @@ impl<'ir> FaceFrame<'_, 'ir> {
                 new_pieces.first(),
                 self.owners.vertex_position(start_vertex),
             ) {
-                max_gap = max_gap.max(self.body.point(position).distance(first.start_point(eval)?));
+                let gap = self.body.point(position).distance(first.start_point(eval)?);
+                max_gap = max_gap.max(gap);
+                deviate(Some(coedge), gap);
             }
             if let (Some(last), Some(position)) =
                 (new_pieces.last(), self.owners.vertex_position(end_vertex))
             {
-                max_gap = max_gap.max(self.body.point(position).distance(last.end_point(eval)?));
+                let gap = self.body.point(position).distance(last.end_point(eval)?);
+                max_gap = max_gap.max(gap);
+                deviate(Some(coedge), gap);
             }
             for mut piece in new_pieces {
                 off_surface = off_surface.max(piece.off_surface);
+                deviate(Some(coedge), piece.off_surface);
                 let start = piece.start_point(eval)?;
                 if let Some(previous) = pieces.last() {
                     let from = previous.end_uv(eval, self.chart)?;
@@ -326,12 +347,15 @@ impl<'ir> FaceFrame<'_, 'ir> {
                     let to = piece.start_uv(eval, self.chart)?;
                     let gap = end.distance(start);
                     max_gap = max_gap.max(gap);
+                    deviate(previous.coedge, gap);
+                    deviate(Some(coedge), gap);
                     let join = Join {
                         from_point: end,
                         to_point: start,
                         from,
                         to,
                         gap,
+                        allowance: self.join_allowance(previous, &piece),
                     };
                     if let Some(junction) = self.junction(eval, join, pending_pole.take())? {
                         pieces.push(junction);
@@ -354,7 +378,8 @@ impl<'ir> FaceFrame<'_, 'ir> {
         let start_point = first.start_point(eval)?;
         let end_point = last.end_point(eval)?;
         let gap = end_point.distance(start_point);
-        if gap > self.alpha {
+        let closing_allowance = self.join_allowance(last, first);
+        if gap > closing_allowance {
             return Err(MeasureFailure::unavailable(
                 UnavailableReason::BoundaryNotClosed,
                 None,
@@ -362,6 +387,8 @@ impl<'ir> FaceFrame<'_, 'ir> {
             ));
         }
         max_gap = max_gap.max(gap);
+        deviate(first.coedge, gap);
+        deviate(last.coedge, gap);
         let mut net_shift = [0_i32; 2];
         let mut target = start;
         for direction in 0..2 {
@@ -391,6 +418,7 @@ impl<'ir> FaceFrame<'_, 'ir> {
             from: end,
             to: target,
             gap,
+            allowance: closing_allowance,
         };
         match self.junction(eval, join, closing_pole) {
             Ok(Some(closing)) => pieces.push(closing),
@@ -413,6 +441,7 @@ impl<'ir> FaceFrame<'_, 'ir> {
             net_shift,
             max_gap,
             off_surface,
+            deviations,
             directed,
             pcurve_order,
         })
@@ -457,6 +486,18 @@ impl<'ir> FaceFrame<'_, 'ir> {
         (turn != 0.0).then_some(turn)
     }
 
+    /// The gap two consecutive pieces may leave: the sum of their edges'
+    /// tolerances, at least the face's allowance.
+    fn join_allowance(&self, from: &Piece<'ir>, to: &Piece<'ir>) -> f64 {
+        let tau = |piece: &Piece<'ir>| {
+            piece
+                .coedge
+                .and_then(|coedge| self.edges.get(coedge.edge.as_str()))
+                .map_or(0.0, |edge| edge.tau)
+        };
+        self.alpha.max(tau(from) + tau(to))
+    }
+
     /// A synthesized segment that bridges a parameter jump between two
     /// boundary points that coincide within the allowance. `None` when there
     /// is no jump.
@@ -472,8 +513,9 @@ impl<'ir> FaceFrame<'_, 'ir> {
             from,
             to,
             gap,
+            allowance,
         } = join;
-        if gap > self.alpha {
+        if gap > allowance {
             return Err(MeasureFailure::unavailable(
                 UnavailableReason::BoundaryNotClosed,
                 None,
@@ -602,8 +644,9 @@ impl<'ir> FaceFrame<'_, 'ir> {
                         },
                         farthest,
                     )
+                    .unwrapped(eval)
                 })
-                .collect();
+                .collect::<Measure<Vec<_>>>()?;
             return Ok(CoedgePieces::Pieces {
                 pieces,
                 directed: resolved.directed,

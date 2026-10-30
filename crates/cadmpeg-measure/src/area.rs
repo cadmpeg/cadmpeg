@@ -9,6 +9,7 @@
 //! traversal is known.
 
 use crate::boundary::ResolvedLoop;
+use crate::canonical::column::Column;
 use crate::canonical::surface::{Chart, NurbsChart};
 use crate::context::Eval;
 use crate::failure::{Measure, MeasureFailure};
@@ -134,9 +135,10 @@ fn inner(
     [from, to]: [f64; 2],
     scale: f64,
 ) -> Measure<(f64, f64)> {
+    let column = Column::new(eval, chart, u)?;
     let mut charge = |units| eval.charge(units);
     let mut density = |s: f64| -> Measure<[f64; 1]> {
-        let partials = chart.partials(eval, u, s)?;
+        let partials = column.partials(eval, s)?;
         Ok([partials.du.cross(partials.dv).norm()])
     };
     let integral = integrate(
