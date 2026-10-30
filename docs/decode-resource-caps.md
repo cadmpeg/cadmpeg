@@ -395,7 +395,16 @@ report a loss; a caller may report a general failure for the same item.
 | `cadmpeg-codec-sldprt`   | `src/resolved_features/relation_table.rs`          | `MAX_ARRAY`                               | `100_000`                                               | 2    | Declared record count of one relation-table marker array. A larger count ends the marker walk; later rows stay unprojected.                                                                                                                                                  |
 | `cadmpeg-codec-sldprt`   | `src/resolved_features/relation_table.rs`          | `MAX_OPERANDS`                            | `16`                                                    | 1    | Handle cells read from one relation-table row. The cells after the sixteenth stay unread.                                                                                                                                                                                    |
 | `cadmpeg-codec-sldprt`   | `src/brep/blend_surface.rs`                        | `MAX_PATCHES`                             | `512`                                                   | 4    | Spine patches of one rolling-ball blend cache. A fit that needs more leaves the blend without a cache, and its face keeps the procedural surface alone.                                                                                                                      |
+| `cadmpeg-codec-sldprt`   | `src/brep/blend_fit.rs`                            | `MAX_SPLIT_DEPTH`                         | `12`                                                    | 4    | Midpoint splits of one seed span of a fitted blend cache. A span at the limit is kept within 1e-3 mm of the exact section; a farther one leaves the blend without a cache. |
+| `cadmpeg-codec-sldprt`   | `src/brep/blend_fit.rs`                            | `MAX_SPANS`                               | `1 << 10`                                               | 4    | Spans of one fitted blend cache. A fit that needs more leaves the blend without a cache. |
+| `cadmpeg-codec-sldprt`   | `src/brep/blend_fit.rs`                            | `MAX_CENTER_STEPS`                        | `32`                                                    | 4    | Newton steps for one ball centre. A centre that does not converge leaves its section, and the blend cache, unresolved. |
+| `cadmpeg-codec-sldprt`   | `src/brep/blend_fit.rs`                            | `MAX_CENTER_SOLVES`                       | `1 << 20`                                               | 4    | Centre solves of one use of a blend: one fit, or one chart or face side it supports. Past it the remaining centres do not solve. |
+| `cadmpeg-codec-sldprt`   | `src/brep/blend_fit.rs`                            | `MAX_EDGE_STEPS`                          | `32`                                                    | 4    | Steps for one point of a support pair's edge. A point that does not converge leaves its section unresolved. |
+| `cadmpeg-codec-sldprt`   | `src/brep/blend_fit.rs`                            | `MAX_SPINE_CACHE_DEPTH`                   | `10`                                                    | 4    | Midpoint splits below one stored spine segment of an exact spine. Past it the run ends there, and centres in the gap are solved one at a time. |
+| `cadmpeg-codec-sldprt`   | `src/brep/blend_fit.rs`                            | `MAX_NEAREST_STEPS`                       | `16`                                                    | 4    | Newton steps when a point is inverted onto a contact track or the spine. Past it the point has no foot. |
+| `cadmpeg-codec-sldprt`   | `src/brep/evaluation.rs`                           | `MAX_FOOT_STEPS`                          | `16`                                                    | 4    | Newton steps of the nearest point on an analytic surface. Past it the point has no foot. |
 | `cadmpeg-codec-sldprt`   | `src/brep/fit.rs`                                  | `MAX_SPANS`                               | `4096`                                                  | 4    | Spans of one fitted curve on a support. A fit that needs more leaves the curve without a cache. |
+| `cadmpeg-codec-sldprt`   | `src/brep/index.rs`                                | `MAX_BLEND_NESTING`                       | `3`                                                     | 4    | Blends a rolling-ball support may nest within. A deeper support leaves the blend without a cache. |
 | `cadmpeg-codec-catia`    | `src/families/standard/topology.rs`                | `MAX_DUPLICATE_FACE_OPERATIONS`           | `65_536`                                                | 4    | Branch operations of the duplicate-face edge search; its depth stops at the budget's recursion guard. Exhaustion also exhausts the enclosing topology `WorkBudget`, so the decode reports the topology search failure. |
 | `cadmpeg-codec-catia` | `src/families/consolidated/records/class25.rs` | `MAX_SAMPLE_PAIRS` | `12` | 1 | The one-byte B-family payload length permits at most twelve source and target pairs after the fixed fields. |
 | `cadmpeg-codec-catia`    | `src/families/zero_entity/topology_transfer.rs`             | `MAX_ZERO_ENTITY_TOPOLOGY_OPERATIONS`     | `1_000_000`                                             | 4    | Floor of the local comparison budget for source-bound zero-entity vertex contributors. Exhaustion skips topology and reports `topology.zero-entity-candidates-bounded`. |
@@ -486,16 +495,16 @@ are the slice mechanisms themselves.
 
 ## Totals
 
-Production `MAX_*` constants: 271.
+Production `MAX_*` constants: 280.
 
 | Kind | Meaning                    | Count |
 | ---- | -------------------------- | ----- |
 | 1    | Format or reader invariant | 35    |
 | 2    | Per-input bound            | 71    |
 | 3    | Session ceiling            | 0     |
-| 4    | Local work cap             | 135   |
+| 4    | Local work cap             | 144   |
 | N    | Not a decode bound         | 30    |
-|      | Total                      | 271   |
+|      | Total                      | 280   |
 
 The six `ResourceLimits` fields are the session ceilings and are not
 `MAX_*` constants. No `MAX_*` constant is kind 3.
@@ -504,7 +513,7 @@ By crate: `cadmpeg-core` 3, `cadmpeg-ir` 17, `cadmpeg-measure` 21, `cadmpeg-asm`
 `cadmpeg-protein` 3, `cadmpeg` 2, `cadmpeg-codec-step` 8,
 `cadmpeg-codec-iges` 16, `cadmpeg-codec-inventor` 3,
 `cadmpeg-codec-freecad` 16, `cadmpeg-codec-rhino` 32, `cadmpeg-codec-f3d` 19,
-`cadmpeg-codec-nx` 28, `cadmpeg-codec-creo` 20, `cadmpeg-codec-sldprt` 19,
+`cadmpeg-codec-nx` 28, `cadmpeg-codec-creo` 20, `cadmpeg-codec-sldprt` 28,
 `cadmpeg-codec-catia` 57, and `cadmpeg-codec-pvz` 3.
 
 ## Routing

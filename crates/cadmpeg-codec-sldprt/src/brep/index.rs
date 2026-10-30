@@ -5,6 +5,7 @@ use super::{
 };
 use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_ir::report::loss::LossNote;
+use std::cell::RefCell;
 use std::collections::{HashMap, HashSet};
 use std::hash::Hash;
 
@@ -24,6 +25,13 @@ impl IndexedCurve {
     }
 }
 
+/// Rolling balls already resolved, keyed by blend attribute and nesting depth.
+pub(super) type BlendMemo<'a, 'ctx> =
+    RefCell<HashMap<(u16, usize), Option<std::rc::Rc<super::blend_fit::BlendGeometry<'a, 'ctx>>>>>;
+
+/// Blends a rolling-ball support may nest within one another.
+const MAX_BLEND_NESTING: usize = 3;
+
 #[derive(Default)]
 pub(super) struct CarrierIndex {
     curves: HashMap<u16, IndexedCurve>,
@@ -39,6 +47,8 @@ pub(super) struct CarrierIndex {
     /// Compact curves whose records share one attribute and geometry but not
     /// one orientation marker (spec §7.2).
     marker_conflicts: HashSet<u16>,
+    /// The vertex positions of the faces on each blend surface carrier.
+    blend_face_vertices: HashMap<u16, Vec<cadmpeg_ir::math::Point3>>,
     /// `SP_CURVE` records whose `b_curve` decodes (spec §7.6).
     sp_curves: HashMap<u16, sp_curve::SpCurve>,
     /// Bounded curves on an `SP_CURVE`, the curves of a tolerant edge's fins.
@@ -153,6 +163,164 @@ impl CarrierIndex {
     /// Zero-offset surface pair carried by `attr`.
     pub(super) fn blend_support_pair(&self, attr: u16) -> Option<&blend::SupportPairCarrier> {
         self.blend_support_pairs.get(&attr)
+    }
+
+    /// Record the vertex positions of a face on the blend surface carrier
+    /// `blend`.
+    pub(super) fn note_blend_face(&mut self, blend: u16, vertices: &[cadmpeg_ir::math::Point3]) {
+        if self.blends.contains_key(&blend) {
+            self.blend_face_vertices
+                .entry(blend)
+                .or_default()
+                .extend_from_slice(vertices);
+        }
+    }
+
+    /// The wedge of the support pair at `attr` about the spine of the blend
+    /// carrier `blend`, when both its members are surface carriers.
+    ///
+    /// # Errors
+    ///
+    /// Propagates an evaluator's resource refusal.
+    pub(super) fn support_pair_wedge<'a>(
+        &'a self,
+        ctx: &DecodeContext<'_>,
+        attr: u16,
+        blend: u16,
+        spine: &cadmpeg_ir::geometry::CurveGeometry,
+    ) -> Result<Option<super::blend_fit::Wedge<'a>>, cadmpeg_core::CodecError> {
+        let Some(pair) = self.blend_support_pairs.get(&attr) else {
+            return Ok(None);
+        };
+        let [Some(first), Some(second)] = pair.supports.map(|member| self.surfaces.get(&member))
+        else {
+            return Ok(None);
+        };
+        super::blend_fit::Wedge::new(
+            ctx,
+            spine,
+            [&first.geometry, &second.geometry],
+            self.blend_face_vertices
+                .get(&blend)
+                .map_or(&[][..], Vec::as_slice),
+        )
+    }
+
+    /// The rolling ball of the blend carried by `attr`, `depth` supports
+    /// below the blend asked for, when its spine resolves and each support is
+    /// analytic or itself such a blend. `memo` shares each blend's rolling
+    /// ball between callers.
+    ///
+    /// # Errors
+    ///
+    /// Propagates an evaluator's resource refusal.
+    fn nested_blend_geometry<'a, 'ctx>(
+        &'a self,
+        ctx: &'a DecodeContext<'ctx>,
+        attr: u16,
+        depth: usize,
+        memo: &BlendMemo<'a, 'ctx>,
+    ) -> Result<
+        Option<std::rc::Rc<super::blend_fit::BlendGeometry<'a, 'ctx>>>,
+        cadmpeg_core::CodecError,
+    > {
+        if depth > MAX_BLEND_NESTING {
+            return Ok(None);
+        }
+        if let Some(known) = memo.borrow().get(&(attr, depth)) {
+            return Ok(known.clone());
+        }
+        let geometry = self.solve_blend_geometry(ctx, attr, depth, memo)?;
+        memo.borrow_mut().insert((attr, depth), geometry.clone());
+        Ok(geometry)
+    }
+
+    fn solve_blend_geometry<'a, 'ctx>(
+        &'a self,
+        ctx: &'a DecodeContext<'ctx>,
+        attr: u16,
+        depth: usize,
+        memo: &BlendMemo<'a, 'ctx>,
+    ) -> Result<
+        Option<std::rc::Rc<super::blend_fit::BlendGeometry<'a, 'ctx>>>,
+        cadmpeg_core::CodecError,
+    > {
+        let Some(blend) = self.blends.get(&attr) else {
+            return Ok(None);
+        };
+        let Some(spine) = self.curves.get(&blend.spine) else {
+            return Ok(None);
+        };
+        let spine = &spine.carrier().geometry;
+        let mut sides: [Vec<super::blend_fit::Side<'a, 'ctx>>; 2] = [Vec::new(), Vec::new()];
+        for (slot, support) in blend.supports.iter().enumerate() {
+            let (blend::BlendSupportRef::Surface(reference)
+            | blend::BlendSupportRef::Pair(reference)) = *support;
+            let members = match self.blend_support_pairs.get(&reference) {
+                Some(pair) => match pair.supports.map(|member| self.surfaces.get(&member)) {
+                    [Some(first), Some(second)] => {
+                        let Some(wedge) = super::blend_fit::Wedge::new(
+                            ctx,
+                            spine,
+                            [&first.geometry, &second.geometry],
+                            self.blend_face_vertices
+                                .get(&attr)
+                                .map_or(&[][..], Vec::as_slice),
+                        )?
+                        else {
+                            return Ok(None);
+                        };
+                        sides[slot].push(super::blend_fit::Side::Wedge(wedge));
+                        continue;
+                    }
+                    _ => pair.supports.to_vec(),
+                },
+                None => vec![reference],
+            };
+            for member in members {
+                let Some(side) = self.nested_blend_side(ctx, member, depth, memo)? else {
+                    return Ok(None);
+                };
+                sides[slot].push(side);
+            }
+        }
+        Ok(
+            super::blend_fit::BlendGeometry::new(ctx, spine, sides, blend.signed_radius)
+                .map(std::rc::Rc::new),
+        )
+    }
+
+    /// The support at `attr` as a blend side: its surface carrier, or the
+    /// rolling ball of the blend it carries.
+    ///
+    /// # Errors
+    ///
+    /// Propagates an evaluator's resource refusal.
+    pub(super) fn blend_side<'a, 'ctx>(
+        &'a self,
+        ctx: &'a DecodeContext<'ctx>,
+        attr: u16,
+        memo: &BlendMemo<'a, 'ctx>,
+    ) -> Result<Option<super::blend_fit::Side<'a, 'ctx>>, cadmpeg_core::CodecError> {
+        for blend in memo.borrow().values().flatten() {
+            blend.reset_seed();
+        }
+        self.nested_blend_side(ctx, attr, 0, memo)
+    }
+
+    fn nested_blend_side<'a, 'ctx>(
+        &'a self,
+        ctx: &'a DecodeContext<'ctx>,
+        attr: u16,
+        depth: usize,
+        memo: &BlendMemo<'a, 'ctx>,
+    ) -> Result<Option<super::blend_fit::Side<'a, 'ctx>>, cadmpeg_core::CodecError> {
+        match self.surfaces.get(&attr) {
+            Some(surface) => Ok(Some(super::blend_fit::Side::Surface(&surface.geometry))),
+            None => Ok(self
+                .nested_blend_geometry(ctx, attr, depth + 1, memo)?
+                .map(super::blend_fit::Side::Blend)),
+        }
     }
 
     fn insert_intersection(&mut self, intersection: intersection::IntersectionCarrier) {

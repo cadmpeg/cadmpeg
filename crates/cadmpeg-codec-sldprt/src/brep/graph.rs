@@ -1117,6 +1117,30 @@ fn closed_edge_start(curve: Option<&IndexedCurve>) -> Option<(cadmpeg_ir::math::
     }
 }
 
+/// The model positions of the vertices a walked face's coedges start at.
+fn face_vertex_positions(t: &topology::Tables, face: &WalkedFace) -> Vec<cadmpeg_ir::math::Point3> {
+    let mut positions = Vec::new();
+    for (_, ring) in &face.loops {
+        for coedge in ring {
+            let Some(point) = t
+                .coedges()
+                .get(coedge)
+                .and_then(|coedge| t.vertex_uses().get(&coedge.refs[4]))
+                .and_then(|vertex_use| t.points().get(&vertex_use.refs[4]))
+            else {
+                continue;
+            };
+            let [x, y, z] = point.xyz_m;
+            positions.push(cadmpeg_ir::math::Point3::new(
+                x * LEN_TO_MM,
+                y * LEN_TO_MM,
+                z * LEN_TO_MM,
+            ));
+        }
+    }
+    positions
+}
+
 /// The angle of `point` on a circle or ellipse carrier in `[0, 2π)`, when
 /// `point` lies within `allowance` of the carrier.
 fn carrier_angle(
@@ -2320,6 +2344,13 @@ fn decode_graph(
     typed_facts: &typed::Facts,
     stream: &cadmpeg_ir::StreamName,
 ) -> Result<Brep, cadmpeg_core::CodecError> {
+    for bridge in t.bridges().values() {
+        let face = walk_face(bridge, t);
+        carriers.note_blend_face(face.surface_attr, &face_vertex_positions(t, &face));
+    }
+    let lane_refusals = std::mem::take(&mut carriers.lane_refusals);
+    let carriers: &CarrierIndex = carriers;
+    let blend_memo: super::index::BlendMemo<'_, '_> = std::cell::RefCell::new(HashMap::new());
     let typed_records = typed_body_records(typed_facts, t);
     let body_records = typed_records.unwrap_or_default();
     let body_modifiers = unique_body_modifiers(entity_facts.body_modifiers);
@@ -2355,7 +2386,7 @@ fn decode_graph(
         edge_use_sequences,
         vertex_use_sequences,
         body_modifiers,
-        losses: std::mem::take(&mut carriers.lane_refusals),
+        losses: lane_refusals,
         stats: Stats {
             source_entity_records: entity_facts.entity_count,
             unresolved_face_colors: entity_facts.unresolved_face_colors + conflicting_face_colors,
@@ -3149,27 +3180,55 @@ fn decode_graph(
                             }
                         }
                     }
-                    let [Some(first_attr), Some(second_attr)] =
-                        blend.supports.map(|support| match support {
-                            BlendSupportRef::Surface(attr) => Some(attr),
-                            BlendSupportRef::Pair(attr) => {
-                                let pair = carriers.blend_support_pair(attr)?;
-                                carriers.curve(pair.intersection)?;
-                                let mut adjacent = pair.supports.iter().filter_map(|candidate| {
-                                    face_edges_by_surface_carrier
-                                        .get(candidate)?
-                                        .iter()
-                                        .any(|edges| !face_edges.is_disjoint(edges))
-                                        .then_some(*candidate)
-                                });
-                                let support = adjacent.next()?;
-                                if adjacent.next().is_some() {
-                                    return None;
+                    let vertices = face_vertex_positions(t, f);
+                    let spine = carriers
+                        .curve(blend.spine)
+                        .map(|spine| &spine.carrier().geometry);
+                    let mut resolved = [None, None];
+                    for (slot, support) in blend.supports.iter().enumerate() {
+                        let attr = match support {
+                            BlendSupportRef::Surface(attr) | BlendSupportRef::Pair(attr) => *attr,
+                        };
+                        resolved[slot] = if let Some(pair) = carriers.blend_support_pair(attr) {
+                            if carriers.curve(pair.intersection).is_none() {
+                                None
+                            } else {
+                                let members = pair.supports.map(|member| carriers.surface(member));
+                                let chosen = match (spine, members) {
+                                    (Some(spine), [Some(first), Some(second)]) => {
+                                        super::blend_fit::pair_member(
+                                            ctx,
+                                            spine,
+                                            [&first.geometry, &second.geometry],
+                                            blend.signed_radius,
+                                            &vertices,
+                                        )?
+                                    }
+                                    _ => None,
+                                };
+                                match chosen {
+                                    Some(member) => Some(pair.supports[member]),
+                                    None => {
+                                        let mut adjacent =
+                                            pair.supports.iter().filter_map(|candidate| {
+                                                face_edges_by_surface_carrier
+                                                    .get(candidate)?
+                                                    .iter()
+                                                    .any(|edges| !face_edges.is_disjoint(edges))
+                                                    .then_some(*candidate)
+                                            });
+                                        match (adjacent.next(), adjacent.next()) {
+                                            (Some(member), None) => Some(member),
+                                            _ => None,
+                                        }
+                                    }
                                 }
-                                Some(support)
                             }
-                        })
-                    else {
+                        } else {
+                            Some(attr)
+                        };
+                    }
+                    let [Some(first_attr), Some(second_attr)] = resolved else {
                         return Ok(None);
                     };
                     for attr in [first_attr, second_attr] {
@@ -3275,6 +3334,41 @@ fn decode_graph(
                             )?
                         }
                         _ => None,
+                    };
+                    // Fallback for blends `blend_surface::solve` leaves without a cache.
+                    let cache = match (cache, carriers.curve(blend.spine)) {
+                        (Some(cache), _) => Some(cache),
+                        (None, Some(spine)) => {
+                            let mut sides = [None, None];
+                            for (slot, resolved) in support_attrs.into_iter().enumerate() {
+                                let (BlendSupportRef::Surface(reference)
+                                | BlendSupportRef::Pair(reference)) = blend.supports[slot];
+                                sides[slot] = match carriers.support_pair_wedge(
+                                    ctx,
+                                    reference,
+                                    f.surface_attr,
+                                    &spine.carrier().geometry,
+                                )? {
+                                    Some(wedge) => Some(super::blend_fit::Side::Wedge(wedge)),
+                                    None => carriers.blend_side(ctx, resolved, &blend_memo)?,
+                                };
+                            }
+                            match sides {
+                                [Some(first), Some(second)] => super::blend_fit::fit(
+                                    ctx,
+                                    &spine.carrier().geometry,
+                                    [first, second],
+                                    blend.signed_radius,
+                                    &face_vertex_positions(t, f),
+                                )?
+                                .map(|fit| blend_surface::BlendCache {
+                                    surface: fit.surface,
+                                    fit_tolerance: fit.fit_tolerance,
+                                }),
+                                _ => None,
+                            }
+                        }
+                        (None, None) => None,
                     };
                     let admitted_payload = BlendRadiusLaw::constant(blend.signed_radius)
                         .and_then(|radius| {
