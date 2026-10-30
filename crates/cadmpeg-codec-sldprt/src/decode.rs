@@ -2416,6 +2416,7 @@ fn merge_brep(target: &mut Brep, mut source: Brep) -> Result<(), CodecError> {
     target.stats.unknown_procedural_supports += source.stats.unknown_procedural_supports;
     target.stats.unknown_curve_edges += source.stats.unknown_curve_edges;
     target.stats.ambiguous_pcurve_parameters += source.stats.ambiguous_pcurve_parameters;
+    target.stats.marker_conflict_edges += source.stats.marker_conflict_edges;
     target.stats.off_surface_nurbs_pcurves += source.stats.off_surface_nurbs_pcurves;
     target
         .stats
@@ -3989,6 +3990,13 @@ fn build_geometry_report(
                 s.unknown_curve_edges
             )),
         );
+    }
+    if s.marker_conflict_edges > 0 {
+        losses.push(SldprtLossCode::GeometryCurveMarkerConflict.note(format!(
+            "{} edge(s) have no parameter range because the compact curve records of their \
+             curve attribute disagree on orientation.",
+            s.marker_conflict_edges
+        )));
     }
     if s.ambiguous_pcurve_parameters > 0 {
         losses.push(SldprtLossCode::GeometryPcurveAmbiguous.note(format!(
