@@ -7631,11 +7631,11 @@ pub(crate) fn two_chart_pcurve_samples(
         let mut previous = None;
         let mut repeated = 0usize;
         let mut value = 0.0;
-        let mut slot = 0;
         let mut complete = true;
-        for target in samples
+        for (slot, target) in samples
             .iter_mut()
             .flat_map(|sample| sample.iter_mut().flatten())
+            .enumerate()
         {
             if repeated == 0 {
                 let Some((decoded, repeat, end)) =
@@ -7651,7 +7651,6 @@ pub(crate) fn two_chart_pcurve_samples(
             }
             *target = value;
             repeated -= 1;
-            slot += 1;
         }
         if !complete || cursor != frame.body.len() || repeated != 0 {
             continue;
