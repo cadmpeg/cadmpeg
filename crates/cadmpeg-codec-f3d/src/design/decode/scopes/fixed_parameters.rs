@@ -551,10 +551,13 @@ pub(super) fn exact_fixed_chamfer_parameters(
     })
 }
 
+/// The one positive angle owner of a `Revolve` scope at `local_ordinal`: zero
+/// for travel in the revolution direction, one for the opposite side.
 pub(super) fn unique_revolve_angle_owner<'a>(
     scope: &DesignParameterScope,
     parameter_owners: &'a [DesignParameterOwner],
     record_index: Option<u32>,
+    local_ordinal: u32,
 ) -> Option<&'a DesignParameterOwner> {
     let mut candidates = parameter_owners.iter().filter(|owner| {
         native_stream(owner.id()) == native_stream(&scope.id)
@@ -564,7 +567,7 @@ pub(super) fn unique_revolve_angle_owner<'a>(
                 .values()
                 .any(|value| value == &owner.record_index())
             && record_index.is_none_or(|index| owner.record_index() == index)
-            && owner.local_ordinal() == 0
+            && owner.local_ordinal() == local_ordinal
             && owner.evaluated_value().get() > 0.0
     });
     let angle = candidates.next()?;

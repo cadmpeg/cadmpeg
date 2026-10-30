@@ -13,6 +13,11 @@ use crate::bytes::lp_ascii_filtered_view;
 use crate::design::decode::sketch::IndexedRecordOffsets;
 use crate::design::design_feature_family;
 use crate::design::DesignFeatureFamily;
+use crate::layout::indexed_design_record_header as indexed_header;
+use crate::layout::move_transform_frame_253 as move_frame;
+use crate::layout::move_transform_frame_254 as move_frame_254;
+use crate::layout::move_transform_frame_273 as move_frame_273;
+use crate::layout::move_transform_frame_274 as move_frame_274;
 use crate::records::feature::body_ops::DesignScaleOperation;
 use crate::records::feature::direct_face;
 use crate::records::feature::direct_face::DesignDirectFaceOperation;
@@ -216,18 +221,22 @@ pub(super) fn exact_move_operation(
             }
             let frame_length = paired.checked_sub(start)?;
             if View::u32_le_at(bytes, after_tag) != Some(*record_index)
-                || bytes.get(start + 11..start + 43) != Some(&[0; 32])
+                || bytes.get(start + indexed_header::LEN..start + move_frame::FORM)
+                    != Some(&[0; move_frame::FORM - indexed_header::LEN])
             {
                 continue;
             }
-            let Some((form_offset, transform_offset)) =
-                move_transform_layout(class_tag, frame_length)
-            else {
+            let Some(lengths) = move_transform_lengths(class_tag) else {
                 continue;
             };
+            if !lengths.contains(&frame_length) {
+                continue;
+            }
+            let (form_offset, transform_offset) = (move_frame::FORM, move_frame::TRANSFORM);
             let expected_paired_class = match class_tag {
                 "447" => Some("263"),
                 "456" => Some("258"),
+                "452" => Some("262"),
                 _ => None,
             };
             if expected_paired_class.is_some_and(|expected| {
@@ -236,7 +245,7 @@ pub(super) fn exact_move_operation(
             }) {
                 continue;
             }
-            if bytes.get(start + 47) != Some(&0) {
+            if bytes.get(start + move_frame::RESERVED_ZERO) != Some(&0) {
                 continue;
             }
             let Ok(form) =
@@ -244,6 +253,9 @@ pub(super) fn exact_move_operation(
             else {
                 continue;
             };
+            if !move_transform_form_holds(class_tag, form) {
+                continue;
+            }
             let mut view = View::over_retained(bytes.get(start + transform_offset..)?);
             let mut transform = [[0.0; 4]; 4];
             for row in &mut transform {
@@ -271,20 +283,53 @@ pub(super) fn exact_move_operation(
     candidate
 }
 
-/// Return the fixed envelope offsets admitted for one Move transform class.
-///
-/// The legacy classes carry the same matrix envelope as the current classes;
-/// their class tags are the generation discriminator. Keeping the admission
-/// keyed by class avoids treating an arbitrary 253-byte record as a transform.
-fn move_transform_layout(class_tag: &str, frame_length: usize) -> Option<(usize, usize)> {
-    let admitted = match class_tag {
-        "296" | "362" | "433" | "447" if frame_length == 253 => true,
-        "349" if matches!(frame_length, 254 | 274) => true,
-        "368" if frame_length == 254 => true,
-        "293" | "393" | "442" | "451" | "456" if frame_length == 253 => true,
-        _ => false,
-    };
-    admitted.then_some((43, 48))
+fn move_transform_lengths(class_tag: &str) -> Option<&'static [usize]> {
+    match class_tag {
+        "296" | "362" | "433" | "447" | "293" | "393" | "442" | "451" | "456" | "452" => {
+            Some(&[move_frame::LEN])
+        }
+        "349" => Some(&[move_frame_254::LEN, move_frame_274::LEN]),
+        "368" => Some(&[move_frame_254::LEN]),
+        "330" | "273" | "408" | "372" | "289" | "394" | "406" | "282" | "403" | "391" => {
+            Some(&[move_frame_273::LEN])
+        }
+        _ => None,
+    }
+}
+
+fn move_transform_form_holds(class_tag: &str, form: direct_face::DesignMoveForm) -> bool {
+    match class_tag {
+        "330" | "273" | "408" | "372" | "289" | "394" | "406" | "282" | "403" | "391" => {
+            form == direct_face::DesignMoveForm::Form1
+        }
+        "452" => form == direct_face::DesignMoveForm::Form5,
+        _ => true,
+    }
+}
+
+pub(crate) fn move_operation_links_hold(
+    scope: &DesignParameterScope,
+    header: Option<&crate::records::decal::DesignRecordHeader>,
+) -> bool {
+    scope.move_operation().is_none_or(|operation| {
+        header.is_some_and(|header| {
+            move_transform_lengths(header.class_tag.as_str()).is_some()
+                && move_transform_form_holds(header.class_tag.as_str(), operation.form)
+                && scope
+                    .reference_members()
+                    .values()
+                    .any(|index| *index == operation.transform_record_index)
+                && header.record_index == operation.transform_record_index
+                && header
+                    .byte_offset
+                    .checked_add(u64_from_index(move_frame::FORM))
+                    == Some(operation.form_offset)
+                && header
+                    .byte_offset
+                    .checked_add(u64_from_index(move_frame::TRANSFORM))
+                    == Some(operation.transform_offset)
+        })
+    })
 }
 
 pub(super) fn exact_scale_operation(

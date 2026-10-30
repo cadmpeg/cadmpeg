@@ -131,6 +131,8 @@ pub(crate) enum F3dLossCode {
     SheetThicknessUnruled,
     /// Decoded feature scopes have no neutral construction-history feature.
     FeatureScopeUnprojected,
+    /// A Move scope has no neutral `MoveBody` feature.
+    MoveUnprojected,
     /// Hole extent controls do not define an admitted termination.
     HoleExtentUnproven,
     /// Align operand roles and motion have no neutral binding.
@@ -417,6 +419,7 @@ impl F3dLossCode {
         Self::FeatureDefinitionIncomplete,
         Self::SheetThicknessUnruled,
         Self::FeatureScopeUnprojected,
+        Self::MoveUnprojected,
         Self::HoleExtentUnproven,
         Self::AlignOperandsUnresolved,
         Self::AlignEnvelopeUnparsed,
@@ -594,6 +597,7 @@ impl F3dLossCode {
             Self::FeatureScopeEnvelopeSuperseded => "feature.scope-envelope-superseded",
             Self::HoleExtentUnproven => "feature.hole-extent-unproven",
             Self::FeatureScopeUnprojected => "feature.scope-unprojected",
+            Self::MoveUnprojected => "feature.move-unprojected",
             Self::ParameterUnprojected => "parameter.unprojected",
             Self::ParameterRecordUnparsed => "parameter.record-unparsed",
             Self::ParameterOwnerUnrecognized => "parameter.owner-unrecognized",
@@ -789,6 +793,7 @@ impl F3dLossCode {
             | Self::AlignOperandsUnresolved
             | Self::AlignEnvelopeUnparsed
             | Self::AlignConstructionUnparsed
+            | Self::MoveUnprojected
             | Self::FeatureScopePayloadUninterpreted
             | Self::FeatureScopeEnvelopeSuperseded
             | Self::ParameterUnprojected
@@ -929,6 +934,7 @@ impl F3dLossCode {
             | Self::AlignOperandsUnresolved
             | Self::AlignEnvelopeUnparsed
             | Self::AlignConstructionUnparsed
+            | Self::MoveUnprojected
             | Self::FeatureScopePayloadUninterpreted
             | Self::FeatureScopeEnvelopeSuperseded
             | Self::ParameterUnprojected
@@ -1130,6 +1136,7 @@ mod tests {
                 "feature.definition-incomplete",
                 "feature.sheet-thickness-unruled",
                 "feature.scope-unprojected",
+                "feature.move-unprojected",
                 "feature.hole-extent-unproven",
                 "feature.align-operands-unresolved",
                 "feature.align-envelope-unparsed",

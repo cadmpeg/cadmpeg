@@ -4,6 +4,7 @@
 use super::fixed_parameters::unique_revolve_angle_owner;
 use super::parameter_scope::parameter_scope_payload_length;
 use super::shared_frames::exact_fixed_scalar;
+use super::shared_frames::extrude_operation_at;
 use super::shared_frames::marked_record_reference;
 use crate::design::decode::sketch::IndexedRecordOffsets;
 use crate::design::design_feature_family;
@@ -12,12 +13,82 @@ use crate::layout::class_403_revolve_scope_frame as class_403_revolve;
 use crate::layout::compact_loft_operation_prefix as compact_loft;
 use crate::layout::marker_one_revolve_prologue as revolve;
 use crate::layout::referenced_angle_revolve_prologue as referenced_revolve;
+use crate::layout::two_sided_revolve_prologue as two_sided_revolve;
 use crate::records::feature::extrude::DesignExtrudeOperation;
 use crate::records::feature::path_features;
 use crate::records::feature::path_features::DesignPathFeatureConstruction;
 use crate::records::feature::scope::DesignParameterScope;
 use crate::records::parameters::DesignParameterOwner;
 use cadmpeg_core::decode::View;
+
+/// A Symmetric or Two Sides fixed-angle `Revolve` scope. It has the frame
+/// length and reference count of the 372-byte one-sided form, whose arm
+/// refuses it, so this form is tried first.
+fn two_sided_revolve_construction(
+    bytes: &[u8],
+    scope: &DesignParameterScope,
+    parameter_owners: &[DesignParameterOwner],
+) -> Option<DesignPathFeatureConstruction> {
+    if !matches!(
+        design_feature_family(&scope.kind()),
+        Some(DesignFeatureFamily::Revolve)
+    ) {
+        return None;
+    }
+    let start = usize::try_from(scope.byte_offset()).ok()?;
+    let symmetric = match (
+        bytes.get(start + two_sided_revolve::SYMMETRIC)?,
+        bytes.get(start + two_sided_revolve::TWO_SIDES)?,
+    ) {
+        (1, 0) => true,
+        (0, 1) => false,
+        _ => return None,
+    };
+    if parameter_scope_payload_length(scope) != Some(372)
+        || scope.reference_members().len() != 7
+        || bytes.get(start + two_sided_revolve::MARKER) != Some(&1)
+        || View::u32_le_at(bytes, start + two_sided_revolve::ZERO_VALUE) != Some(0)
+        || View::u32_le_at(bytes, start + two_sided_revolve::EXTENT_KIND) != Some(2)
+        || bytes.get(start + two_sided_revolve::DIRECTION_KIND) != Some(&0)
+        || !matches!(
+            bytes.get(start + two_sided_revolve::PROJECT_AXIS),
+            Some(0 | 1)
+        )
+        || bytes.get(start + two_sided_revolve::SOLID) != Some(&1)
+    {
+        return None;
+    }
+    let opposite_record_index = marked_record_reference(
+        bytes,
+        start + two_sided_revolve::OPPOSITE_ANGLE_REFERENCE_MARKER,
+    )?;
+    let angle_record_index =
+        marked_record_reference(bytes, start + two_sided_revolve::ANGLE_REFERENCE_MARKER)?;
+    let angle = unique_revolve_angle_owner(scope, parameter_owners, Some(angle_record_index), 0)?;
+    let opposite =
+        unique_revolve_angle_owner(scope, parameter_owners, Some(opposite_record_index), 1)?;
+    // Symmetric mirrors one angle; both owners then hold the same value.
+    if symmetric && angle.evaluated_value() != opposite.evaluated_value() {
+        return None;
+    }
+    let operation_offset = start + two_sided_revolve::OPERATION;
+    Some(DesignPathFeatureConstruction::Revolve(
+        path_features::DesignRevolveConstruction {
+            operation: extrude_operation_at(bytes, operation_offset)?,
+            operation_offset: u64::try_from(operation_offset).ok()?,
+            angle: cadmpeg_ir::scalar::PositiveAngle::new(angle.evaluated_value().get())?,
+            angle_record_index,
+            angle_offset: angle.evaluated_value_offset(),
+            opposite_angle: None,
+            second_side: Some(path_features::DesignRevolveSecondSide {
+                symmetric,
+                angle: cadmpeg_ir::scalar::PositiveAngle::new(opposite.evaluated_value().get())?,
+                angle_record_index: opposite_record_index,
+                angle_offset: opposite.evaluated_value_offset(),
+            }),
+        },
+    ))
+}
 
 pub(super) fn exact_path_feature_construction(
     bytes: &[u8],
@@ -35,6 +106,9 @@ pub(super) fn exact_path_feature_construction(
             _ => return None,
         })
     };
+    if let Some(construction) = two_sided_revolve_construction(bytes, scope, parameter_owners) {
+        return Some(construction);
+    }
     match design_feature_family(&scope.kind())? {
         DesignFeatureFamily::Revolve
             if matches!(scope.reference_members().len(), 6 | 8)
@@ -44,7 +118,7 @@ pub(super) fn exact_path_feature_construction(
                 && bytes.get(start + revolve::DIRECTION_KIND) == Some(&0)
                 && View::u32_le_at(bytes, start + revolve::STRUCTURAL_CONSTANT) == Some(1) =>
         {
-            let angle = unique_revolve_angle_owner(scope, parameter_owners, None)?;
+            let angle = unique_revolve_angle_owner(scope, parameter_owners, None, 0)?;
             Some(DesignPathFeatureConstruction::Revolve(
                 path_features::DesignRevolveConstruction {
                     operation: operation(start + revolve::OPERATION)?,
@@ -52,25 +126,29 @@ pub(super) fn exact_path_feature_construction(
                     angle: cadmpeg_ir::scalar::PositiveAngle::new(angle.evaluated_value().get())?,
                     angle_record_index: angle.record_index(),
                     angle_offset: angle.evaluated_value_offset(),
+                    second_side: None,
                     opposite_angle: None,
                 },
             ))
         }
         DesignFeatureFamily::Revolve
-            if scope.frame_length() == 365
+            if parameter_scope_payload_length(scope) == Some(351)
                 && scope.reference_members().len() == 6
                 && bytes.get(start + referenced_revolve::MARKER) == Some(&1)
                 && View::u32_le_at(bytes, start + referenced_revolve::ZERO_VALUE) == Some(0)
                 && View::u32_le_at(bytes, start + referenced_revolve::EXTENT_KIND) == Some(2)
                 && bytes.get(start + referenced_revolve::DIRECTION_KIND) == Some(&0)
-                && bytes.get(start + referenced_revolve::FLAG) == Some(&1)
+                && matches!(
+                    bytes.get(start + referenced_revolve::PROJECT_AXIS),
+                    Some(0 | 1)
+                )
                 && View::u32_le_at(bytes, start + referenced_revolve::STRUCTURAL_CONSTANT)
                     == Some(1) =>
         {
             let angle_record_index =
                 marked_record_reference(bytes, start + referenced_revolve::ANGLE_REFERENCE_MARKER)?;
             let angle =
-                unique_revolve_angle_owner(scope, parameter_owners, Some(angle_record_index))?;
+                unique_revolve_angle_owner(scope, parameter_owners, Some(angle_record_index), 0)?;
             Some(DesignPathFeatureConstruction::Revolve(
                 path_features::DesignRevolveConstruction {
                     operation: operation(start + referenced_revolve::OPERATION)?,
@@ -78,6 +156,7 @@ pub(super) fn exact_path_feature_construction(
                     angle: cadmpeg_ir::scalar::PositiveAngle::new(angle.evaluated_value().get())?,
                     angle_record_index,
                     angle_offset: angle.evaluated_value_offset(),
+                    second_side: None,
                     opposite_angle: None,
                 },
             ))
@@ -115,6 +194,7 @@ pub(super) fn exact_path_feature_construction(
                     angle: cadmpeg_ir::scalar::PositiveAngle::new(angle.value.get())?,
                     angle_record_index,
                     angle_offset: angle.value_offset,
+                    second_side: None,
                     opposite_angle: Some(crate::records::identity::Located {
                         value: opposite_angle_record_index,
                         offset: opposite.value_offset,
@@ -138,7 +218,7 @@ pub(super) fn exact_path_feature_construction(
                 return None;
             }
             let angle =
-                unique_revolve_angle_owner(scope, parameter_owners, Some(angle_record_index))?;
+                unique_revolve_angle_owner(scope, parameter_owners, Some(angle_record_index), 0)?;
             Some(DesignPathFeatureConstruction::Revolve(
                 path_features::DesignRevolveConstruction {
                     operation: operation(start + 21)?,
@@ -146,6 +226,7 @@ pub(super) fn exact_path_feature_construction(
                     angle: cadmpeg_ir::scalar::PositiveAngle::new(angle.evaluated_value().get())?,
                     angle_record_index,
                     angle_offset: angle.evaluated_value_offset(),
+                    second_side: None,
                     opposite_angle: None,
                 },
             ))
@@ -153,7 +234,7 @@ pub(super) fn exact_path_feature_construction(
         DesignFeatureFamily::Revolve
             if scope.class_tag.as_str() == "403"
                 && scope.paired_class_tag.as_str() == "258"
-                && scope.frame_length() == 387
+                && parameter_scope_payload_length(scope) == Some(373)
                 && scope.reference_members().len() == 8
                 && View::u32_le_at(bytes, start + class_403_revolve::EXTENT_KIND) == Some(2)
                 && bytes.get(start + class_403_revolve::DIRECTION_KIND..start + 31)
@@ -162,7 +243,7 @@ pub(super) fn exact_path_feature_construction(
             let angle_record_index =
                 marked_record_reference(bytes, start + class_403_revolve::ANGLE_REFERENCE_MARKER)?;
             let angle =
-                unique_revolve_angle_owner(scope, parameter_owners, Some(angle_record_index))?;
+                unique_revolve_angle_owner(scope, parameter_owners, Some(angle_record_index), 0)?;
             Some(DesignPathFeatureConstruction::Revolve(
                 path_features::DesignRevolveConstruction {
                     operation: operation(start + class_403_revolve::OPERATION)?,
@@ -170,6 +251,7 @@ pub(super) fn exact_path_feature_construction(
                     angle: cadmpeg_ir::scalar::PositiveAngle::new(angle.evaluated_value().get())?,
                     angle_record_index,
                     angle_offset: angle.evaluated_value_offset(),
+                    second_side: None,
                     opposite_angle: None,
                 },
             ))

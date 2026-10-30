@@ -690,3 +690,15 @@ the native feature when a fixed lane carries a symmetric distance.
 **Conflict.** A referenced solved frame alone does not establish the motion applied to a selected body.
 
 **Note.** Keep the operation native until each operand role and motion direction has a byte-defined rule.
+
+### DR-119. Move transform envelopes with leading references
+
+**Question.** In the Move envelope with leading references, is the matrix an absolute transform or a transform relative to a referenced frame?
+
+**Known.** A Move scope can reference a matrix-bearing record with references before its form word. This envelope does not satisfy the zero prefix of the fixed rigid-matrix frames.
+
+**Need.** Independent files that vary the referenced frame and the transform separately, and files that vary the form word.
+
+**Conflict.** None.
+
+**Note.** Keep this envelope native. Emit `feature.move-unprojected` when no admitted transform defines the Move feature.

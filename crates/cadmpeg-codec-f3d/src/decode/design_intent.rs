@@ -822,6 +822,15 @@ pub(super) fn decode(inputs: &DesignInputs<'_>) -> Result<DesignOutputs, CodecEr
         },
         &mut model.features,
     )?;
+    crate::design::feature_project::orient_revolve_axes(
+        &mut model.features,
+        &model.sketches,
+        &model.sketch_entities,
+        (
+            geometry.tolerances.linear.get(),
+            geometry.tolerances.angular.get(),
+        ),
+    );
     crate::design::feature_project::bind_sketch_feature_geometry(
         &mut model.features,
         &design.design_parameter_scopes,

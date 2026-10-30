@@ -4506,7 +4506,7 @@ Unstated regions:
 
 Spec §3.1 · layout: byte offsets · size: 253 B
 
-Offsets are relative to the transform record's primary indexed header. The class tags are the admission discriminator; the class-447 form uses paired class 263; the same-index paired header follows at offset 253.
+Offsets are relative to the transform record's primary indexed header. The class tags are the admission discriminator; the class-447 form uses paired class 263, the class-456 form uses paired class 258, and the class-452 form uses paired class 262 and form word 5; the same-index paired header follows at offset 253.
 
 | Offset | Size | Field | Type | Endian | Src | Meaning |
 | -----: | ---: | ----- | ---- | ------ | --- | ------- |
@@ -4519,6 +4519,60 @@ Unstated regions:
 
 - `11..43` (32 B): Offsets 11 through 42 are zero.
 - `176..253` (77 B): The transform record's native tail precedes the same-index paired header at offset 253.
+
+## `move_transform_frame_254`
+
+Spec §3.1 · layout: byte offsets · size: 254 B
+
+Offsets are relative to the transform record's primary indexed header.
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 11 | `indexed_header` | `bytes[11]` | little | spec | class `368` transform records are 254 bytes |
+| 43 | 4 | `form` | `u32` | little | spec | offset 43 stores u32 form `1` or `5` |
+| 47 | 1 | `reserved_zero` | `u8` | little | spec | offset 47 is zero |
+| 48 | 128 | `transform` | `f64[16]` | little | spec | sixteen row-major f64 values begin at offset 48 |
+
+Unstated regions:
+
+- `11..43` (32 B): Offsets 11 through 42 are zero.
+- `176..254` (78 B): The transform record's tail precedes the same-index paired header at offset 254.
+
+## `move_transform_frame_273`
+
+Spec §3.1 · layout: byte offsets · size: 273 B
+
+Offsets are relative to the transform record's primary indexed header.
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 11 | `indexed_header` | `bytes[11]` | little | spec | transform records are 273 bytes |
+| 43 | 4 | `form` | `u32` | little | spec | The 273-byte frames use form word `1` · value `1` |
+| 47 | 1 | `reserved_zero` | `u8` | little | spec | offset 47 is zero |
+| 48 | 128 | `transform` | `f64[16]` | little | spec | sixteen row-major f64 values begin at offset 48 |
+
+Unstated regions:
+
+- `11..43` (32 B): Offsets 11 through 42 are zero.
+- `176..273` (97 B): The transform record's tail precedes the same-index paired header at offset 273.
+
+## `move_transform_frame_274`
+
+Spec §3.1 · layout: byte offsets · size: 274 B
+
+Offsets are relative to the transform record's primary indexed header.
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 11 | `indexed_header` | `bytes[11]` | little | spec | Class `349` transform records are 254 or 274 bytes |
+| 43 | 4 | `form` | `u32` | little | spec | offset 43 stores u32 form `1` or `5` |
+| 47 | 1 | `reserved_zero` | `u8` | little | spec | offset 47 is zero |
+| 48 | 128 | `transform` | `f64[16]` | little | spec | sixteen row-major f64 values begin at offset 48 |
+
+Unstated regions:
+
+- `11..43` (32 B): Offsets 11 through 42 are zero.
+- `176..274` (98 B): The transform record's tail precedes the same-index paired header at offset 274.
 
 ## `legacy_body_group_frame_123`
 
@@ -5650,14 +5704,43 @@ Parsed by:
 | 25 | 4 | `operation` | `u32` | little | spec | It uses the marker-one prologue through offset 33 |
 | 29 | 4 | `extent_kind` | `u32` | little | spec | It uses the marker-one prologue through offset 33 |
 | 33 | 1 | `direction_kind` | `u8` | little | spec | It uses the marker-one prologue through offset 33 |
-| 34 | 1 | `flag` | `u8` | little | spec | Offset 34 is marker `1` |
-| 35 | 4 | `structural_constant` | `u32` | little | spec | offset 35 stores u32 one |
+| 34 | 1 | `project_axis` | `u8` | little | spec | Offset 34 stores the Project Axis flag |
+| 35 | 4 | `structural_constant` | `u32` | little | spec | Offset 35 stores u32 one |
 | 39 | 1 | `angle_reference_marker` | `u8` | little | spec | The marked angle-owner reference starts at offset 39 |
 
 Unstated regions:
 
 - `0..20` (20 B): The indexed header and the preceding Revolve envelope are outside this field run.
 - `40..50` (10 B): The marked reference stores the u32 angle-owner record index followed by six zero bytes.
+
+## `two_sided_revolve_prologue`
+
+Spec §3.1 · layout: byte offsets · size: 60 B
+
+Offsets are relative to the Revolve primary indexed header. The marked opposite-angle reference occupies offsets 38 through 48 and the marked angle-owner reference occupies offsets 49 through 59.
+
+Parsed by:
+- `crates/cadmpeg-codec-f3d/src/design/decode/scopes/path_feature.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 20 | 1 | `marker` | `u8` | little | spec | It uses the marker-one prologue through offset 33, and offset 34 |
+| 21 | 4 | `zero_value` | `u32` | little | spec | It uses the marker-one prologue through offset 33, and offset 34 |
+| 25 | 4 | `operation` | `u32` | little | spec | It uses the marker-one prologue through offset 33, and offset 34 |
+| 29 | 4 | `extent_kind` | `u32` | little | spec | It uses the marker-one prologue through offset 33, and offset 34 |
+| 33 | 1 | `direction_kind` | `u8` | little | spec | It uses the marker-one prologue through offset 33, and offset 34 |
+| 34 | 1 | `project_axis` | `u8` | little | spec | and offset 34 stores the Project Axis flag |
+| 35 | 1 | `solid` | `u8` | little | spec | Offset 35 stores the solid flag `1` |
+| 36 | 1 | `symmetric` | `u8` | little | spec | Offset 36 stores the Symmetric flag |
+| 37 | 1 | `two_sides` | `u8` | little | spec | offset 37 stores the Two Sides flag |
+| 38 | 1 | `opposite_angle_reference_marker` | `u8` | little | spec | The marked opposite-angle reference starts at offset 38 |
+| 49 | 1 | `angle_reference_marker` | `u8` | little | spec | The marked angle-owner reference starts at offset 49 |
+
+Unstated regions:
+
+- `0..20` (20 B): The indexed header and the preceding Revolve envelope are outside this field run.
+- `39..49` (10 B): The marked reference stores the u32 opposite-angle owner record index followed by six zero bytes.
+- `50..60` (10 B): The marked reference stores the u32 angle-owner record index followed by six zero bytes.
 
 ## `typed_reference_parameter_scope_tail`
 
