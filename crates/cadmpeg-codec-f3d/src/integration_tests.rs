@@ -2,6 +2,7 @@
 //! End-to-end contracts over synthesized F3D and F3Z archives.
 
 mod act_links;
+mod align;
 mod archive_session;
 mod attribute_colors;
 mod body_reference_tails;

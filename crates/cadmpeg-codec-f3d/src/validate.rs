@@ -4189,6 +4189,17 @@ fn validate_parameter_scopes(ctx: &Ctx, findings: &mut Vec<Finding>) -> Result<(
             && copy_paste_link
             && rectangular_pattern_link
             && assembly_alignment_link
+            && scope.align_envelope().is_none_or(|envelope| {
+                design::decode::scopes::align::align_envelope_links_hold(scope, envelope)
+                    && envelope.construction.as_ref().is_none_or(|construction| {
+                        records_by_index
+                            .get(&(native_stream, construction.record_index))
+                            .is_some_and(|header| {
+                                header.byte_offset == construction.byte_offset
+                                    && header.class_tag == construction.class_tag
+                            })
+                    })
+            })
             && component_insert_link
             && copy_paste_component_link
             && scope.occurrence_transfer.as_ref().is_none_or(|operation| {

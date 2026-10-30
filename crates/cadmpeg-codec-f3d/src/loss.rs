@@ -147,6 +147,12 @@ pub(crate) enum F3dLossCode {
     MoveUnprojected,
     /// Hole extent controls do not define an admitted termination.
     HoleExtentUnproven,
+    /// Align operand roles and motion have no neutral binding.
+    AlignOperandsUnresolved,
+    /// Align has no admitted specialized prefix.
+    AlignEnvelopeUnparsed,
+    /// The referenced Align constructor has no admitted layout.
+    AlignConstructionUnparsed,
     /// A decoded native feature envelope has no interpreted specialized payload.
     FeatureScopePayloadUninterpreted,
     /// Emboss controls, native pairs, and selected contours have no neutral mapping.
@@ -439,6 +445,9 @@ impl F3dLossCode {
         Self::FeatureScopeUnprojected,
         Self::MoveUnprojected,
         Self::HoleExtentUnproven,
+        Self::AlignOperandsUnresolved,
+        Self::AlignEnvelopeUnparsed,
+        Self::AlignConstructionUnparsed,
         Self::FeatureScopePayloadUninterpreted,
         Self::EmbossControlsNative,
         Self::EmbossPrefixUnparsed,
@@ -616,6 +625,9 @@ impl F3dLossCode {
             Self::SheetThicknessUnruled => "feature.sheet-thickness-unruled",
             Self::EmbossControlsNative => "feature.emboss-controls-native",
             Self::EmbossPrefixUnparsed => "feature.emboss-prefix-unparsed",
+            Self::AlignOperandsUnresolved => "feature.align-operands-unresolved",
+            Self::AlignEnvelopeUnparsed => "feature.align-envelope-unparsed",
+            Self::AlignConstructionUnparsed => "feature.align-construction-unparsed",
             Self::FeatureScopePayloadUninterpreted => "feature.scope-payload-uninterpreted",
             Self::FeatureScopeEnvelopeSuperseded => "feature.scope-envelope-superseded",
             Self::HoleExtentUnproven => "feature.hole-extent-unproven",
@@ -822,6 +834,9 @@ impl F3dLossCode {
             | Self::FeatureScopeUnprojected
             | Self::EmbossControlsNative
             | Self::EmbossPrefixUnparsed
+            | Self::AlignOperandsUnresolved
+            | Self::AlignEnvelopeUnparsed
+            | Self::AlignConstructionUnparsed
             | Self::MoveUnprojected
             | Self::FeatureScopePayloadUninterpreted
             | Self::FeatureScopeEnvelopeSuperseded
@@ -968,6 +983,9 @@ impl F3dLossCode {
             | Self::FeatureScopeUnprojected
             | Self::EmbossControlsNative
             | Self::EmbossPrefixUnparsed
+            | Self::AlignOperandsUnresolved
+            | Self::AlignEnvelopeUnparsed
+            | Self::AlignConstructionUnparsed
             | Self::MoveUnprojected
             | Self::FeatureScopePayloadUninterpreted
             | Self::FeatureScopeEnvelopeSuperseded
@@ -1182,6 +1200,9 @@ mod tests {
                 "feature.scope-unprojected",
                 "feature.move-unprojected",
                 "feature.hole-extent-unproven",
+                "feature.align-operands-unresolved",
+                "feature.align-envelope-unparsed",
+                "feature.align-construction-unparsed",
                 "feature.scope-payload-uninterpreted",
                 "feature.emboss-controls-native",
                 "feature.emboss-prefix-unparsed",

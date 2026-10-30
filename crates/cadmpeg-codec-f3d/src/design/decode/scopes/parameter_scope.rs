@@ -339,6 +339,17 @@ pub(crate) fn decode_parameter_scopes(
                     _ => {}
                 }
             }
+            if scope.kind() == scope::DesignFeatureKind::Align {
+                let mut envelope = super::align::decode_align_envelope(bytes, &scope);
+                if let Some(envelope) = envelope.as_mut() {
+                    envelope.construction = super::align::construction::decode_align_construction(
+                        bytes, &records, &scope, envelope,
+                    );
+                }
+                if let scope::DesignScopePayloadMut::Align(slot) = scope.payload_mut() {
+                    *slot = envelope;
+                }
+            }
             {
                 let construction = exact_move_operation(bytes, &records, &scope);
                 if let scope::DesignScopePayloadMut::Move(slot) = scope.payload_mut() {
@@ -581,6 +592,15 @@ pub(crate) fn decode_parameter_scopes(
     }
     out.sort_by(|a, b| a.id.cmp(&b.id));
     out.dedup_by(|a, b| a.id == b.id);
+    for scope in out
+        .iter()
+        .filter(|scope| scope.kind() == scope::DesignFeatureKind::Align)
+    {
+        losses.push(super::align::align_native_loss(
+            scope,
+            scope.align_envelope(),
+        ));
+    }
     Ok(DecodedParameterScopes {
         scopes: out,
         losses,
