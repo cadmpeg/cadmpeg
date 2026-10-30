@@ -94,6 +94,11 @@ and Protein appearances. Records that block faithful transfer land in
 container metadata and retained source data, with blocking geometry and
 topology losses.
 
+Generic appearance transparency maps to the opacity channel of the CADIR base
+colour. The RGB channels stay unchanged. An absent transparency property keeps
+the colour carrier's alpha. Prism transmission colour, attenuation distance,
+and IOR do not define a scalar opacity.
+
 ## Documentation
 
 - [API documentation][docs]
