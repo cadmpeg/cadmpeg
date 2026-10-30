@@ -762,3 +762,15 @@ the native feature when a fixed lane carries a symmetric distance.
 **Conflict.** None.
 
 **Note.** A path selection retains its native selection and loss. The selected region can be the union of several atomic arrangement faces, which no single face proves.
+
+### DR-146. Later ordinal in a fixed identity occurrence
+
+**Question.** What placement does a fixed untyped occurrence with identity flag `1` and ordinal greater than one select?
+
+**Known.** Two standard 229-byte frames store ordinal `2` and identity flag `1`. Attributed identity frames retain later ordinals.
+
+**Need.** Independent files that vary the occurrence ordinal and placement separately.
+
+**Conflict.** None.
+
+**Note.** Emit `assembly.local-occurrence-identity-ordinal-unresolved` and keep the occurrence out of neutral product structure.
