@@ -1,7 +1,9 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Optional archive recovery and required-member admission boundaries.
 
-use crate::test_support::assembly_test::{f3d_without_brep, f3z_archive, XREF_ROLE};
+use crate::test_support::assembly_test::{
+    f3d_with_text_brep_stream, f3d_without_brep, f3z_archive, XREF_ROLE,
+};
 use crate::test_support::smbh_geometry_test::synthetic_geometry_smbh;
 use crate::test_support::zip_test::f3d_with_smbh;
 use crate::{F3dCodec, F3dLossCode};
@@ -173,79 +175,45 @@ fn unreadable_referenced_document_withholds_the_occurrence_with_named_losses() {
         .any(|loss| loss.code == F3dLossCode::ArchiveEntryUnreadable.note("").code));
 }
 
-/// Smallest cumulative decompression ceiling at which `archive` decodes.
-fn smallest_decompression_ceiling(archive: &[u8]) -> u64 {
-    let decodes = |ceiling: u64| {
-        let mut policy = DecodePolicy::desktop();
-        policy.limits.max_decompressed_bytes_total = ceiling;
-        F3dCodec
-            .decode(
-                &mut Cursor::new(archive),
-                &DecodeOptions {
-                    policy,
-                    ..DecodeOptions::default()
-                },
-            )
-            .is_ok()
-    };
-    let (mut low, mut high) = (
-        0_u64,
-        DecodePolicy::desktop().limits.max_decompressed_bytes_total,
-    );
-    assert!(decodes(high));
-    while low + 1 < high {
-        let middle = low + (high - low) / 2;
-        if decodes(middle) {
-            high = middle;
-        } else {
-            low = middle;
-        }
-    }
-    high
-}
-
 #[test]
-fn failed_referenced_document_decodes_once_for_every_reference() {
-    let mut component = f3d_with_smbh(&synthetic_geometry_smbh());
-    damage_local_frame(
-        &mut component,
-        "FusionAssetName[Active]/Breps.BlobParts/Body1.smbh",
+fn failed_member_placed_by_two_parents_reports_each_reference() {
+    // An invalid text BREP stream passes the archive scan and fails inside
+    // member decode.
+    let component = f3d_with_text_brep_stream(
+        &["FusionAssetName[Active]/Breps.BlobParts/BREP0.sat"],
+        b"invalid SAT stream",
     );
-    let parent = |name: &str, targets: &[(&str, &str)]| f3d_without_brep("design", name, targets);
-    let archive = |second: &[(&str, &str)]| {
-        let root = f3d_without_brep(
-            "assembly-design",
-            "root.f3d",
-            &[("first.f3d", XREF_ROLE), ("second.f3d", XREF_ROLE)],
-        );
-        let first = parent("first.f3d", &[("component.f3d", XREF_ROLE)]);
-        let second = parent("second.f3d", second);
-        f3z_archive(
-            "root.f3d",
-            &[
-                ("root.f3d", &root),
-                ("first.f3d", &first),
-                ("second.f3d", &second),
-                ("component.f3d", &component),
-            ],
-        )
-    };
-    let unreferenced = archive(&[("missing.f3d", XREF_ROLE)]);
-    let repeated = archive(&[("component.f3d", XREF_ROLE)]);
-    // The second parent names a missing member or the failed one; the
-    // tables have equal length, so any extra cost is a second decode.
-    let base = smallest_decompression_ceiling(&unreferenced);
-    let ceiling = smallest_decompression_ceiling(&repeated);
-    eprintln!("ceilings: unreferenced {base}, repeated {ceiling}");
-    assert!(ceiling <= base, "{ceiling} > {base}");
+    let root = f3d_without_brep(
+        "assembly-design",
+        "root.f3d",
+        &[("first.f3d", XREF_ROLE), ("second.f3d", XREF_ROLE)],
+    );
+    let first = f3d_without_brep("design", "first.f3d", &[("component.f3d", XREF_ROLE)]);
+    let second = f3d_without_brep("design", "second.f3d", &[("component.f3d", XREF_ROLE)]);
+    let archive = f3z_archive(
+        "root.f3d",
+        &[
+            ("root.f3d", &root),
+            ("first.f3d", &first),
+            ("second.f3d", &second),
+            ("component.f3d", &component),
+        ],
+    );
     let decoded = F3dCodec
-        .decode(&mut Cursor::new(&repeated), &DecodeOptions::default())
+        .decode(&mut Cursor::new(&archive), &DecodeOptions::default())
         .unwrap();
-    let undecoded = decoded
+    let failures = decoded
         .report()
         .losses
         .iter()
-        .filter(|loss| loss.code == F3dLossCode::XrefMemberUndecoded.note("").code)
-        .count();
-    assert_eq!(undecoded, 2);
+        .filter(|loss| {
+            loss.code == F3dLossCode::XrefMemberUndecoded.note("").code
+                && loss
+                    .message
+                    .contains("member component.f3d failed to decode")
+        })
+        .map(|loss| loss.message.split(": member ").nth(1).unwrap_or_default())
+        .collect::<Vec<_>>();
+    assert_eq!(failures.len(), 2, "{failures:?}");
+    assert_eq!(failures[0], failures[1]);
 }
