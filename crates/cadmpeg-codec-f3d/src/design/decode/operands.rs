@@ -816,7 +816,9 @@ pub(crate) fn decode_face_operands(
             scope.kind() == crate::records::feature::scope::DesignFeatureKind::SplitFace;
         let is_delete_face_operand = matches!(
             scope.kind(),
-            crate::records::feature::scope::DesignFeatureKind::DeleteFace
+            crate::records::feature::scope::DesignFeatureKind::MoveFace
+                | crate::records::feature::scope::DesignFeatureKind::DeplacerFace
+                | crate::records::feature::scope::DesignFeatureKind::DeleteFace
                 | crate::records::feature::scope::DesignFeatureKind::SurfaceDeleteFace
         );
         let is_emboss_face = scope.kind()
@@ -1739,6 +1741,8 @@ pub(crate) fn decode_construction_operand_groups(
             || design_feature_family(&scope.kind()) == Some(DesignFeatureFamily::Mirror)
             || scope.kind() == crate::records::feature::scope::DesignFeatureKind::RemoveBody
             || scope.kind() == crate::records::feature::scope::DesignFeatureKind::SurfaceStitch
+            || scope.kind() == crate::records::feature::scope::DesignFeatureKind::MoveFace
+            || scope.kind() == crate::records::feature::scope::DesignFeatureKind::DeplacerFace
             || scope.kind() == crate::records::feature::scope::DesignFeatureKind::DeleteFace
             || scope.kind() == crate::records::feature::scope::DesignFeatureKind::SurfaceDeleteFace
             || scope.kind() == crate::records::feature::scope::DesignFeatureKind::Decal

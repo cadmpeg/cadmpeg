@@ -5032,7 +5032,9 @@ fn validate_construction_operand_groups(ctx: &Ctx, findings: &mut Vec<Finding>) 
                 }
                 None if matches!(
                     scope.kind(),
-                    crate::records::feature::scope::DesignFeatureKind::DeleteFace
+                    crate::records::feature::scope::DesignFeatureKind::MoveFace
+                        | crate::records::feature::scope::DesignFeatureKind::DeplacerFace
+                        | crate::records::feature::scope::DesignFeatureKind::DeleteFace
                         | crate::records::feature::scope::DesignFeatureKind::SurfaceDeleteFace
                 ) =>
                 {
@@ -5071,6 +5073,8 @@ fn validate_construction_operand_groups(ctx: &Ctx, findings: &mut Vec<Finding>) 
                         | crate::records::feature::scope::DesignFeatureKind::RemoveBody
                         | crate::records::feature::scope::DesignFeatureKind::SurfaceStitch
                         | crate::records::feature::scope::DesignFeatureKind::SplitFace
+                        | crate::records::feature::scope::DesignFeatureKind::MoveFace
+                        | crate::records::feature::scope::DesignFeatureKind::DeplacerFace
                         | crate::records::feature::scope::DesignFeatureKind::DeleteFace
                         | crate::records::feature::scope::DesignFeatureKind::SurfaceDeleteFace
                         | crate::records::feature::scope::DesignFeatureKind::Decal
@@ -7642,7 +7646,9 @@ fn validate_face_operands<'a>(
                             }
                             None if matches!(
                                 scope.kind(),
-                                crate::records::feature::scope::DesignFeatureKind::DeleteFace
+                                crate::records::feature::scope::DesignFeatureKind::MoveFace
+                                    | crate::records::feature::scope::DesignFeatureKind::DeplacerFace
+                                    | crate::records::feature::scope::DesignFeatureKind::DeleteFace
                                     | crate::records::feature::scope::DesignFeatureKind::SurfaceDeleteFace
                             ) =>
                             {
