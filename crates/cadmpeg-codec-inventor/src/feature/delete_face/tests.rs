@@ -31,6 +31,7 @@ fn placed(sources: &[PmDcFeature]) -> Vec<cadmpeg_ir::features::Feature> {
                 },
             )),
             native_ref: Some(source.id()),
+            product_definition: None,
         })
         .collect()
 }
