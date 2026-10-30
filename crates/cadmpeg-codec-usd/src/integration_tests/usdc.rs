@@ -138,3 +138,48 @@ fn a_written_crate_layer_reads_as_its_text_layer() {
         assert_eq!(from_text.ir().model, from_crate.ir().model, "{name}");
     }
 }
+
+/// A value representation that sets an unused bit is refused.
+#[test]
+fn a_representation_with_an_unused_bit_is_refused() {
+    use cadmpeg_ir::codec::write::target::TargetRequest;
+    let source =
+        crate::test_support::decode("#usda 1.0\ndef Xform \"A\"\n{\n    double value = 1\n}\n");
+    let mut bytes = crate::test_support::encode_bytes(source.ir(), TargetRequest::Explicit("usdc"));
+    let toc = usize::try_from(u64::from_le_bytes(bytes[16..24].try_into().unwrap())).unwrap();
+    let sections =
+        usize::try_from(u64::from_le_bytes(bytes[toc..toc + 8].try_into().unwrap())).unwrap();
+    let fields = (0..sections)
+        .map(|index| toc + 8 + index * 32)
+        .find(|record| bytes[*record..*record + 6] == *b"FIELDS")
+        .map(|record| {
+            usize::try_from(u64::from_le_bytes(
+                bytes[record + 16..record + 24].try_into().unwrap(),
+            ))
+            .unwrap()
+        })
+        .expect("a FIELDS section");
+    // The section holds the field count, the compressed token indices, the
+    // size of the representation buffer, then that buffer: a chunk count of
+    // zero, an LZ4 token, its length bytes, and the representations as
+    // literals.
+    let count = usize::try_from(u64::from_le_bytes(
+        bytes[fields..fields + 8].try_into().unwrap(),
+    ))
+    .unwrap();
+    let tokens = usize::try_from(u64::from_le_bytes(
+        bytes[fields + 8..fields + 16].try_into().unwrap(),
+    ))
+    .unwrap();
+    let buffer = fields + 16 + tokens + 8;
+    let literals = 8 * count;
+    let header = 2 + if literals < 15 {
+        0
+    } else {
+        1 + (literals - 15) / 255
+    };
+    bytes[buffer + header + 7] |= 1;
+    let refused = UsdCodec.decode(&mut Cursor::new(&bytes), &DecodeOptions::default());
+    let error = refused.expect_err("refused").to_string();
+    assert!(error.contains("bits 56 to 59"), "{error}");
+}

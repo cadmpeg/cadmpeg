@@ -149,3 +149,25 @@ fn an_unparsable_unit_is_reported() {
     let result = decode("#usda 1.0\n(\n    metersPerUnit = -1\n)\ndef \"A\" {\n}\n");
     assert!(has_loss(&result, UsdLossCode::AttributeValueMalformed));
 }
+
+#[test]
+fn an_unparsable_mass_unit_or_up_axis_is_reported() {
+    for metadata in [
+        "kilogramsPerUnit = \"heavy\"",
+        "kilogramsPerUnit = 0",
+        "upAxis = \"W\"",
+        "upAxis = 1",
+    ] {
+        let result = decode(&format!(
+            "#usda 1.0\n(\n    {metadata}\n)\ndef \"A\" {{\n}}\n"
+        ));
+        assert!(
+            has_loss(&result, UsdLossCode::AttributeValueMalformed),
+            "{metadata}"
+        );
+    }
+    let clean = decode(
+        "#usda 1.0\n(\n    kilogramsPerUnit = 0.001\n    upAxis = \"Z\"\n)\ndef \"A\" {\n}\n",
+    );
+    assert!(!has_loss(&clean, UsdLossCode::AttributeValueMalformed));
+}

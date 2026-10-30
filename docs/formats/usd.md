@@ -677,6 +677,8 @@ A value representation is a `uint64`.
 | 62 | inlined |
 | 63 | array |
 
+Bits 56 to 59 are zero.
+
 | Type | Value | Type | Value |
 | --- | --- | --- | --- |
 | 1 | `bool` | 31 | dictionary |

@@ -87,6 +87,10 @@ pub(crate) struct Metrics {
     pub(crate) default_prim: Option<String>,
     /// `metersPerUnit` is authored and is not a positive finite number.
     pub(crate) malformed_units: bool,
+    /// `kilogramsPerUnit` is authored and is not a positive finite number.
+    pub(crate) malformed_mass_units: bool,
+    /// `upAxis` is authored and is not the token `Y` or `Z`.
+    pub(crate) malformed_up_axis: bool,
 }
 
 fn layer_value<'l>(layer: &'l Layer, key: &str) -> Option<&'l Value> {
@@ -112,23 +116,31 @@ pub(crate) fn metrics(layer: &Layer) -> Metrics {
         Some(Some(value)) if value.is_finite() && value > 0.0 => (value, false),
         Some(_) => (DEFAULT_METERS_PER_UNIT, true),
     };
-    let kilograms_per_unit = match layer_value(layer, "kilogramsPerUnit") {
+    let (kilograms_per_unit, malformed_mass_units) = match layer_value(layer, "kilogramsPerUnit") {
+        None => (1.0, false),
         Some(Value::Number(number)) if number.float.is_finite() && number.float > 0.0 => {
-            number.float
+            (number.float, false)
         }
-        _ => 1.0,
+        Some(_) => (1.0, true),
     };
     let text = |key| match layer_value(layer, key) {
         Some(Value::String(text)) => Some(text.clone()),
         _ => None,
     };
+    let (up_axis, malformed_up_axis) = match layer_value(layer, "upAxis") {
+        None => ("Y".to_owned(), false),
+        Some(Value::String(axis)) if axis == "Y" || axis == "Z" => (axis.clone(), false),
+        Some(_) => ("Y".to_owned(), true),
+    };
     Metrics {
         scale: meters_per_unit * MILLIMETRES_PER_METRE,
         meters_per_unit,
         kilograms_per_unit,
-        up_axis: text("upAxis").unwrap_or_else(|| "Y".to_owned()),
+        up_axis,
         default_prim: text("defaultPrim"),
         malformed_units,
+        malformed_mass_units,
+        malformed_up_axis,
     }
 }
 
@@ -1466,6 +1478,16 @@ fn tally_losses(tallies: &Tallies, issues: &Issues, metrics: &Metrics) -> Vec<Lo
         UsdLossCode::AttributeValueMalformed,
         metrics.malformed_units,
         "`metersPerUnit` is not a positive number; the layer was read in centimetres".to_owned(),
+    );
+    push(
+        UsdLossCode::AttributeValueMalformed,
+        metrics.malformed_mass_units,
+        "`kilogramsPerUnit` is not a positive number; masses were read in kilograms".to_owned(),
+    );
+    push(
+        UsdLossCode::AttributeValueMalformed,
+        metrics.malformed_up_axis,
+        "`upAxis` is not the token `Y` or `Z`; the layer was read with the `Y` axis up".to_owned(),
     );
     push(
         UsdLossCode::CompositionExternalArc,

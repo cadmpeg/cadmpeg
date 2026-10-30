@@ -29,6 +29,8 @@ const ARRAY_EDIT_BIT: u64 = 1 << 60;
 const TYPE_SHIFT: u32 = 48;
 /// The payload bits.
 const PAYLOAD_MASK: u64 = (1 << 48) - 1;
+/// Representation bits 56 to 59, which no field uses.
+const UNUSED_BITS: u64 = 0xF << 56;
 /// The low 32 bits of a payload, which hold an inlined value.
 const INLINE_MASK: u64 = 0xFFFF_FFFF;
 /// Arrays shorter than this are stored uncompressed under the compressed bit.
@@ -869,6 +871,9 @@ impl<'s, 'a> Unpacker<'s, 'a> {
     /// Reads the value representation `rep`.
     pub(super) fn unpack(&mut self, rep: u64) -> Result<Datum, CodecError> {
         let _depth = self.ctx.enter_nested("usdc_value_nesting")?;
+        if rep & UNUSED_BITS != 0 {
+            return Err(malformed("a value representation sets bits 56 to 59"));
+        }
         let ty = u8::try_from((rep >> TYPE_SHIFT) & 0xFF).map_err(|_| malformed("a type"))?;
         let payload = rep & PAYLOAD_MASK;
         let low = u32::try_from(payload & INLINE_MASK).map_err(|_| malformed("a payload"))?;
