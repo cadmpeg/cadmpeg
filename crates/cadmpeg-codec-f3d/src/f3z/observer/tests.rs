@@ -5,11 +5,10 @@ use std::io::Cursor;
 use std::rc::Rc;
 
 use super::*;
-use crate::test_support::assembly_test::{f3d_without_brep, f3z_archive, XREF_ROLE};
-use crate::test_support::smbh_geometry_test::synthetic_geometry_smbh;
-use crate::test_support::zip_test::f3d_with_smbh;
+use crate::test_support::assembly_test::{
+    f3d_with_text_brep_stream, f3d_without_brep, f3z_archive, XREF_ROLE,
+};
 use crate::F3dCodec;
-use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
 use cadmpeg_ir::{Codec, DecodeOptions};
 
 #[derive(Default)]
@@ -26,22 +25,11 @@ impl F3zMemberObserver for Events {
     }
 }
 
-fn damage_local_frame(bytes: &mut [u8], name: &str) {
-    let arena = DecodeArena::new();
-    let policy = DecodePolicy::service();
-    let (ctx, root) = DecodeContext::from_root_bytes(bytes, &arena, &policy).unwrap();
-    let snapshot = cadmpeg_container::ArchiveSnapshot::new(&ctx, root).unwrap();
-    let entry = snapshot.entry(name).unwrap();
-    let start = usize::try_from(entry.header_start).unwrap();
-    bytes[start] ^= 1;
-}
-
 /// A root placing two parents, each of which places one failing member.
 fn archive_with_shared_failing_member() -> Vec<u8> {
-    let mut component = f3d_with_smbh(&synthetic_geometry_smbh());
-    damage_local_frame(
-        &mut component,
-        "FusionAssetName[Active]/Breps.BlobParts/Body1.smbh",
+    let component = f3d_with_text_brep_stream(
+        &["FusionAssetName[Active]/Breps.BlobParts/BREP0.sat"],
+        b"invalid SAT stream",
     );
     let root = f3d_without_brep(
         "assembly-design",
