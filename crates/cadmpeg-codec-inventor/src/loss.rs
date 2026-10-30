@@ -129,6 +129,8 @@ pub(crate) enum InventorLossCode {
     FeatureDerivedSourceNative,
     /// Derived-part tagging has no neutral construction rule.
     FeatureDerivedTaggingNative,
+    /// Tagging selection effects remain native.
+    FeatureTaggingNative,
     /// Parameter records have a unit or expression graph that is not closed.
     ParameterGraphOpen,
     /// Parameter records have an expression whose text passes the local cap.
@@ -241,6 +243,7 @@ impl InventorLossCode {
         Self::FeatureStateUnresolved,
         Self::FeatureDerivedSourceNative,
         Self::FeatureDerivedTaggingNative,
+        Self::FeatureTaggingNative,
         Self::ParameterGraphOpen,
         Self::ParameterExpressionBounded,
         Self::ParameterScopeUnresolved,
@@ -340,6 +343,7 @@ impl InventorLossCode {
             Self::FeatureStateUnresolved => "feature.state-unresolved",
             Self::FeatureDerivedSourceNative => "feature.derived-source-native",
             Self::FeatureDerivedTaggingNative => "feature.derived-tagging-native",
+            Self::FeatureTaggingNative => "feature.tagging-native",
             Self::ParameterGraphOpen => "parameter.graph-open",
             Self::ParameterExpressionBounded => "parameter.expression-bounded",
             Self::ParameterScopeUnresolved => "parameter.scope-unresolved",
@@ -442,6 +446,7 @@ impl InventorLossCode {
             | Self::FeatureStateUnresolved
             | Self::FeatureDerivedSourceNative
             | Self::FeatureDerivedTaggingNative
+            | Self::FeatureTaggingNative
             | Self::SketchGraphOpen => LossTaxonomy::FeatureHistoryRetained,
             Self::ParameterGraphOpen
             | Self::ParameterExpressionBounded

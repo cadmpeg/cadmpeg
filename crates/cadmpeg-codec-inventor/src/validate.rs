@@ -845,6 +845,15 @@ fn validate_sketches(data: &NativeData, ir: &CadIr, findings: &mut Vec<Finding>)
     }
 }
 
+fn tagging_definition_matches(
+    feature: &cadmpeg_ir::features::Feature,
+    has_result: bool,
+    unique_label: bool,
+) -> bool {
+    feature.evaluation.definition() == &crate::feature::tagging::definition(unique_label)
+        && !has_result
+}
+
 fn validate_features(
     ctx: &DecodeContext<'_>,
     ir: &CadIr,
@@ -1312,6 +1321,17 @@ fn validate_features(
             ));
         }
     }
+    let tagging_owners = data
+        .pm_dc_feature_labels
+        .iter()
+        .filter(|label| label.class_id() == crate::feature::tagging::CLASS_ID)
+        .filter_map(|label| {
+            Some((
+                label.identity.segment_token.as_str(),
+                label.header.owner.record_ordinal()?,
+            ))
+        })
+        .collect::<HashSet<_>>();
     let raw_features = data
         .pm_dc_features
         .iter()
@@ -1641,6 +1661,23 @@ fn validate_features(
             ));
             continue;
         };
+        if tagging_owners.contains(&(
+            raw_feature.identity.segment_token.as_str(),
+            raw_feature.identity.record_ordinal,
+        )) {
+            if !tagging_definition_matches(
+                feature,
+                results.contains_key(&feature.id),
+                crate::feature::tagging::unique_owner(&data.pm_dc_feature_labels, raw_feature),
+            ) {
+                findings.push(finding(
+                    Check::NativeLinks,
+                    "Inventor Tagging selection effect requires its native definition".into(),
+                    Some(feature.id.as_str().to_owned()),
+                ));
+            }
+            continue;
+        }
         if let cadmpeg_ir::features::FeatureDefinition::Operation(
             cadmpeg_ir::features::FeatureOperation::CosmeticThread {
                 face,

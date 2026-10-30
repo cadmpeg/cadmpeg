@@ -49,6 +49,7 @@ pub(crate) mod profile;
 pub(crate) mod revolve;
 pub(crate) mod sheet_metal;
 pub(crate) mod split;
+pub(crate) mod tagging;
 pub(crate) mod work_plane;
 
 const EPS_FEATURE_PROJECT_HOLE_E10: f64 = 1.0e-10;
