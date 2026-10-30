@@ -199,6 +199,142 @@ pub(super) fn fixed_kind_path_operations(
         .unwrap(),
         None
     );
+    let mut six_member_scope = loft_scope.clone();
+    six_member_scope
+        .try_edit(|draft| {
+            draft.reference_members =
+                crate::records::identity::ReferenceRun::unlocated(vec![0, 1, 2, 3, 4, 5]);
+            draft.layout_fixture_references();
+            draft.paired_byte_offset = draft.paired_byte_offset.max(draft.kind_offset + 96);
+            draft.frame_length = draft.paired_byte_offset - draft.byte_offset;
+            draft.layout_fixture_tail();
+        })
+        .unwrap();
+    assert!(matches!(
+        crate::test_support::with_decode_context(|decode_ctx| {
+            crate::design::feature_project::project_fixed_loft(
+                &six_member_scope,
+                &crate::design::feature_project::ProjectInputs {
+                    construction_groups: &legacy_cut,
+                    ..Default::default()
+                },
+                decode_ctx,
+            )
+        })
+        .unwrap(),
+        Some(cadmpeg_ir::features::FeatureDefinition::Operation(cadmpeg_ir::features::FeatureOperation::Loft {
+            sections,
+            op: cadmpeg_ir::features::BooleanOp::Cut,
+            ..
+        })) if sections.len() == 2
+    ));
+    let mut five_member_scope = loft_scope.clone();
+    five_member_scope
+        .try_edit(|draft| {
+            draft.reference_members =
+                crate::records::identity::ReferenceRun::unlocated(vec![0, 1, 2, 3, 4]);
+            draft.layout_fixture_references();
+            draft.paired_byte_offset = draft.paired_byte_offset.max(draft.kind_offset + 96);
+            draft.frame_length = draft.paired_byte_offset - draft.byte_offset;
+            draft.layout_fixture_tail();
+        })
+        .unwrap();
+    assert_eq!(
+        crate::test_support::with_decode_context(|decode_ctx| {
+            crate::design::feature_project::project_fixed_loft(
+                &five_member_scope,
+                &crate::design::feature_project::ProjectInputs {
+                    construction_groups: &legacy_cut,
+                    ..Default::default()
+                },
+                decode_ctx,
+            )
+        })
+        .unwrap(),
+        None
+    );
+    let mut seven_member_scope = loft_scope.clone();
+    seven_member_scope
+        .try_edit(|draft| {
+            draft.reference_members =
+                crate::records::identity::ReferenceRun::unlocated(vec![0, 1, 2, 3, 4, 5, 6]);
+            draft.layout_fixture_references();
+            draft.paired_byte_offset = draft.paired_byte_offset.max(draft.kind_offset + 96);
+            draft.frame_length = draft.paired_byte_offset - draft.byte_offset;
+            draft.layout_fixture_tail();
+        })
+        .unwrap();
+    assert_eq!(
+        crate::test_support::with_decode_context(|decode_ctx| {
+            crate::design::feature_project::project_fixed_loft(
+                &seven_member_scope,
+                &crate::design::feature_project::ProjectInputs {
+                    construction_groups: &legacy_cut,
+                    ..Default::default()
+                },
+                decode_ctx,
+            )
+        })
+        .unwrap(),
+        None
+    );
+    let body_ordinal_2 = [
+        loft_group(1, DesignOperandRole::PROFILE),
+        loft_group(2, DesignOperandRole::BODIES_B),
+        loft_group(3, DesignOperandRole::ROLE_0X43),
+    ];
+    assert_eq!(
+        crate::test_support::with_decode_context(|decode_ctx| {
+            crate::design::feature_project::project_fixed_loft(
+                &six_member_scope,
+                &crate::design::feature_project::ProjectInputs {
+                    construction_groups: &body_ordinal_2,
+                    ..Default::default()
+                },
+                decode_ctx,
+            )
+        })
+        .unwrap(),
+        None
+    );
+    let with_bodies_a = [
+        loft_group(0, DesignOperandRole::BODIES_A),
+        loft_group(1, DesignOperandRole::BODIES_B),
+        loft_group(2, DesignOperandRole::PROFILE),
+        loft_group(3, DesignOperandRole::ROLE_0X43),
+    ];
+    assert_eq!(
+        crate::test_support::with_decode_context(|decode_ctx| {
+            crate::design::feature_project::project_fixed_loft(
+                &six_member_scope,
+                &crate::design::feature_project::ProjectInputs {
+                    construction_groups: &with_bodies_a,
+                    ..Default::default()
+                },
+                decode_ctx,
+            )
+        })
+        .unwrap(),
+        None
+    );
+    let single_section = [
+        loft_group(1, DesignOperandRole::BODIES_B),
+        loft_group(2, DesignOperandRole::PROFILE),
+    ];
+    assert_eq!(
+        crate::test_support::with_decode_context(|decode_ctx| {
+            crate::design::feature_project::project_fixed_loft(
+                &six_member_scope,
+                &crate::design::feature_project::ProjectInputs {
+                    construction_groups: &single_section,
+                    ..Default::default()
+                },
+                decode_ctx,
+            )
+        })
+        .unwrap(),
+        None
+    );
     {
         let value = Some(DesignPathFeatureConstruction::Loft(
             crate::records::feature::path_features::DesignLoftConstruction {
