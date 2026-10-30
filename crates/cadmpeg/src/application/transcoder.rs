@@ -344,6 +344,8 @@ pub(crate) struct PreparedConversion {
     pub(crate) validation: ValidationReport,
     encoder: Box<dyn Encoder>,
     selection: TargetSelection,
+    /// The files that external assets of the document name.
+    assets: loader::companions::Directory,
     destination: ResolvedDestination,
     loss_policy: LossPolicy,
     allow_errors: bool,
@@ -380,6 +382,7 @@ pub(crate) fn prepare(
         validation,
         encoder: target.encoder,
         selection: target.selection,
+        assets: loader::companions::Directory::beside(source.path),
         destination,
         loss_policy: policy.losses,
         allow_errors: policy.allow_errors,
@@ -396,7 +399,7 @@ impl PreparedConversion {
         // reflects this build's feature set. Restating it here would be a
         // second vocabulary to keep in step with the first.
         let plan = match self.encoder.plan(
-            EncodeInput::new(&self.document.ir, self.document.fidelity()),
+            EncodeInput::new(&self.document.ir, self.document.fidelity()).with_assets(&self.assets),
             self.selection.request(),
         ) {
             Ok(plan) => plan,
