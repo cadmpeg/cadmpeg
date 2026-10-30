@@ -503,6 +503,21 @@ fn rational_nurbs_curve_carrier(wrapper_attr: u16, descriptor_attr: u16) -> Vec<
 }
 
 pub(crate) fn linear_nurbs_curve_carrier(wrapper_attr: u16, descriptor_attr: u16) -> Vec<u8> {
+    linear_nurbs_curve_carrier_through(
+        wrapper_attr,
+        descriptor_attr,
+        [0.0, 0.0, 0.0],
+        [1.0, 0.0, 0.0],
+    )
+}
+
+/// A degree-one B-spline carrier with poles `first` and `last` in metres.
+pub(crate) fn linear_nurbs_curve_carrier_through(
+    wrapper_attr: u16,
+    descriptor_attr: u16,
+    first: [f64; 3],
+    last: [f64; 3],
+) -> Vec<u8> {
     let control_attr = descriptor_attr + 1;
     let mult_attr = descriptor_attr + 2;
     let knot_attr = descriptor_attr + 3;
@@ -521,11 +536,10 @@ pub(crate) fn linear_nurbs_curve_carrier(wrapper_attr: u16, descriptor_attr: u16
     be16(&mut b, control_attr);
     be16(&mut b, mult_attr);
     be16(&mut b, knot_attr);
-    b.extend(f64_array(
-        0x2d,
-        control_attr,
-        &[0.0, 0.0, 0.0, 1.0, 0.0, 0.0],
-    ));
+    let mut poles = Vec::new();
+    poles.extend(first);
+    poles.extend(last);
+    b.extend(f64_array(0x2d, control_attr, &poles));
     b.extend(u16_array(mult_attr, &[2, 2]));
     b.extend(f64_array(0x80, knot_attr, &[0.0, 1.0]));
     b
