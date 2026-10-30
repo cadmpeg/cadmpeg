@@ -1632,8 +1632,8 @@ fn tally_losses(tallies: &Tallies, issues: &Issues, metrics: &Metrics) -> Vec<Lo
         UsdLossCode::BrepSubsetNotTransferred,
         !tallies.brep_subsets.is_empty(),
         format!(
-            "geometry subsets of BrepArray prims and their material bindings were not \
-             transferred: {}",
+            "geometry subsets of BrepArray prims that bind no material to faces or B-reps \
+             were not transferred: {}",
             counted(&tallies.brep_subsets)
         ),
     );

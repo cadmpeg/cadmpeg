@@ -3,8 +3,8 @@
     "census": {
       "basis": "ir_arenas",
       "counts": {
-        "appearance_bindings": 0,
-        "appearances": 0,
+        "appearance_bindings": 6,
+        "appearances": 1,
         "articulations": 0,
         "assembly_joints": 0,
         "assets": 0,
@@ -58,7 +58,18 @@
       "payload": "native",
       "target": "usd:usda-1.0"
     },
-    "losses": [],
+    "losses": [
+      {
+        "code": {
+          "code": "export.appearance-reduced",
+          "kind": "appearance_reduced",
+          "namespace": "usd",
+          "scope": "namespaced"
+        },
+        "message": "6 appearance bindings to faces, edges, or carriers were not written",
+        "severity": "info"
+      }
+    ],
     "notes": [
       "USDA 1.0 text layer, metre units"
     ],
@@ -77,6 +88,26 @@
     "    upAxis = \"Z\"",
     ")",
     "",
+    "def Scope \"Looks\"",
+    "{",
+    "    def Material \"Box_face_1_material\"",
+    "    {",
+    "        token outputs:surface.connect = </Looks/Box_face_1_material/PreviewSurface.outputs:surface>",
+    "        token outputs:mtlx:surface.connect = </Looks/Box_face_1_material/MaterialX.outputs:out>",
+    "        def Shader \"PreviewSurface\"",
+    "        {",
+    "            uniform token info:id = \"UsdPreviewSurface\"",
+    "            color3f inputs:diffuseColor = (0.2, 0.4, 0.6)",
+    "            token outputs:surface",
+    "        }",
+    "        def Shader \"MaterialX\"",
+    "        {",
+    "            uniform token info:id = \"ND_open_pbr_surface_surfaceshader\"",
+    "            color3f inputs:base_color = (0.2, 0.4, 0.6)",
+    "            token outputs:out",
+    "        }",
+    "    }",
+    "}",
     "def Xform \"Occurrence\"",
     "{",
     "    def BrepArray \"Brep\" (",
@@ -237,6 +268,14 @@
     "            1, 1, 1, 1, 1, 1, 1, 1,",
     "            1, 1, 1, 1, 1, 1, 1, 1",
     "        ]",
+    "        def GeomSubset \"Box_face_1_material\" (",
+    "            prepend apiSchemas = [\"MaterialBindingAPI\"]",
+    "        )",
+    "        {",
+    "            uniform token elementType = \"face\"",
+    "            int[] indices = [0, 1, 2, 3, 4, 5]",
+    "            rel material:binding = </Looks/Box_face_1_material>",
+    "        }",
     "    }",
     "    def Mesh \"Mesh\" (",
     "        customData = { string brepArray = \"Brep\" }",

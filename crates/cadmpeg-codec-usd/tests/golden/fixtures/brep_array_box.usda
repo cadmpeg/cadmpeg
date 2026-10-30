@@ -219,6 +219,14 @@ def Xform "Occurrence"
             1, 1, 1, 1, 1, 1, 1, 1,
             1, 1, 1, 1, 1, 1, 1, 1
         ]
+        def GeomSubset "Box_face_1_material" (
+            prepend apiSchemas = ["MaterialBindingAPI"]
+        )
+        {
+            uniform token elementType = "face"
+            int[] indices = [0, 1, 2, 3, 4, 5]
+            rel material:binding = </Looks/Box_face_1_material>
+        }
     }
     def Mesh "Mesh" (
         customData = { string brepArray = "Brep" }

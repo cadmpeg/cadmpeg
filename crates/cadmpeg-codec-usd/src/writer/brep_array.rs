@@ -9,6 +9,12 @@ use crate::brep::solid::{
     Curves, Packed, EDGE_CURVE_API, SURFACE_API, TRIM_CURVE_API, VERTEX_POINT_API,
 };
 
+/// The arrays of a `BrepArray` prim and the IR face of each of its faces.
+pub(super) struct BrepPrim {
+    pub(super) packed: Packed,
+    pub(super) faces: Vec<cadmpeg_ir::ids::FaceId>,
+}
+
 /// The `BrepArray` prim name of a body written with fallback prims.
 pub(super) const PRIM_NAME: &str = "Brep";
 
@@ -71,7 +77,7 @@ fn outward(value: f64, upper: bool) -> f32 {
 impl Writer<'_> {
     /// The `BrepArray` arrays of `body`, in metres, or `None` when a face or
     /// edge of the body has no NURBS form.
-    pub(super) fn brep_packed(&mut self, body: &Body) -> Option<Box<Packed>> {
+    pub(super) fn brep_packed(&mut self, body: &Body) -> Option<Box<BrepPrim>> {
         let exported = records::export(self.ir, body, &mut self.tessellator, false)?;
         let name = body.name.clone().unwrap_or_else(|| body.id.to_string());
         if exported.unwritten.faces > 0 || exported.unwritten.edges > 0 {
@@ -103,17 +109,21 @@ impl Writer<'_> {
             self.unwritten.breps.push(format!("{name}: {reason}"));
             return None;
         }
-        Some(Box::new(packed))
+        Some(Box::new(BrepPrim {
+            packed,
+            faces: exported.faces,
+        }))
     }
 
     /// Writes `packed` as a `BrepArray` prim named `name`.
     pub(super) fn brep_array_prim(
         &mut self,
-        packed: &Packed,
+        brep: &BrepPrim,
         name: &str,
         body: &Body,
         placement: &Placement<'_>,
     ) {
+        let packed = &brep.packed;
         let mut schemas = vec![VERTEX_POINT_API, EDGE_CURVE_API, SURFACE_API];
         if packed.trim_curves.is_some() {
             schemas.push(TRIM_CURVE_API);
@@ -347,7 +357,40 @@ impl Writer<'_> {
         if let Some(trims) = &packed.trim_curves {
             curves(out, "brep:curveUv:nurb", trims, "double2");
         }
+        self.face_subsets(&brep.faces);
         self.out.close();
+    }
+}
+
+impl Writer<'_> {
+    /// Writes a `GeomSubset` of the faces of each material that an
+    /// appearance binding binds to faces (spec §17.4).
+    fn face_subsets(&mut self, faces: &[cadmpeg_ir::ids::FaceId]) {
+        let mut groups: std::collections::BTreeMap<String, Vec<usize>> =
+            std::collections::BTreeMap::new();
+        for (index, face) in faces.iter().enumerate() {
+            if let Some(path) = self.binding_path(&face.to_string()) {
+                groups.entry(path).or_default().push(index);
+            }
+        }
+        let mut names = super::Names::default();
+        for (path, indices) in groups {
+            let name = names.unique(path.rsplit('/').next().unwrap_or("Faces"));
+            self.prim_head(
+                "def GeomSubset",
+                &name,
+                &["prepend apiSchemas = [\"MaterialBindingAPI\"]".to_owned()],
+            );
+            self.out.open();
+            self.out.line("uniform token elementType = \"face\"");
+            self.out.array(
+                "int[] indices",
+                &indices.iter().map(ToString::to_string).collect::<Vec<_>>(),
+                "",
+            );
+            self.out.line(&format!("rel material:binding = <{path}>"));
+            self.out.close();
+        }
     }
 }
 

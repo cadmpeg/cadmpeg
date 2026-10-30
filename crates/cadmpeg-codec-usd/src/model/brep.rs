@@ -841,19 +841,6 @@ impl super::Builder<'_, '_, '_, '_> {
                 return Ok(Vec::new());
             }
         };
-        let subsets = prim
-            .children
-            .iter()
-            .filter_map(|child| self.stage.prims.get(*child))
-            .filter(|child| child.type_name() == Some("GeomSubset"))
-            .count();
-        if subsets > 0 {
-            *self
-                .tallies
-                .brep_subsets
-                .entry(prim.path.clone())
-                .or_default() += subsets;
-        }
         if decoded.untransferred > 0 {
             *self
                 .tallies
@@ -862,6 +849,7 @@ impl super::Builder<'_, '_, '_, '_> {
                 .or_default() += decoded.untransferred;
         }
         let mut bodies = Vec::new();
+        let mut keys: BTreeMap<usize, String> = BTreeMap::new();
         for (ordinal, records) in decoded.breps.iter().enumerate() {
             let body_key = if ordinal == 0 {
                 key.to_owned()
@@ -872,6 +860,7 @@ impl super::Builder<'_, '_, '_, '_> {
                 Ok(body) => {
                     self.body_material(prim, &body_key, &body)?;
                     bodies.push(body);
+                    keys.insert(ordinal, body_key);
                 }
                 Err(reason) => self
                     .tallies
@@ -879,6 +868,7 @@ impl super::Builder<'_, '_, '_, '_> {
                     .push(format!("{}: {reason}", prim.path)),
             }
         }
+        self.brep_subsets(prim, key, &decoded.faces, &keys)?;
         if let Some(body) = bodies.first() {
             for (ordinal, fallback) in fallbacks.iter().enumerate() {
                 let Some(fallback) = self.stage.prims.get(*fallback) else {
@@ -893,6 +883,88 @@ impl super::Builder<'_, '_, '_, '_> {
             }
         }
         Ok(bodies)
+    }
+
+    /// Binds the materials of the face and B-rep subsets of the `BrepArray`
+    /// prim `prim` (spec §17.4). `faces` gives the array face of each record
+    /// face of each B-rep, and `keys` the body key of each imported B-rep.
+    fn brep_subsets(
+        &mut self,
+        prim: &crate::stage::Prim<'_>,
+        key: &str,
+        faces: &[Vec<usize>],
+        keys: &BTreeMap<usize, String>,
+    ) -> Result<(), cadmpeg_core::CodecError> {
+        let stage = self.stage;
+        for child in prim
+            .children
+            .iter()
+            .filter_map(|child| stage.prims.get(*child))
+        {
+            if child.type_name() != Some("GeomSubset") {
+                continue;
+            }
+            let element = crate::schema::token(child, "elementType", &mut self.issues);
+            let indices =
+                crate::schema::integers(child, "indices", &mut self.issues).unwrap_or_default();
+            let bound = child
+                .relationship_targets("material:binding")
+                .first()
+                .map(|target| crate::schema::shading::material(stage, target, &mut self.issues));
+            let targets: Option<Vec<cadmpeg_ir::appearance::AppearanceTarget>> =
+                match element.as_deref() {
+                    Some("face") => indices
+                        .iter()
+                        .map(|index| {
+                            let index = usize::try_from(*index).ok()?;
+                            faces.iter().enumerate().find_map(|(brep, list)| {
+                                let record = list.iter().position(|face| *face == index)?;
+                                let body_key = keys.get(&brep)?;
+                                Some(cadmpeg_ir::appearance::AppearanceTarget::Face(
+                                    crate::ids::brep::face(body_key, record),
+                                ))
+                            })
+                        })
+                        .collect(),
+                    Some("brep") => indices
+                        .iter()
+                        .map(|index| {
+                            let body_key = keys.get(&usize::try_from(*index).ok()?)?;
+                            Some(cadmpeg_ir::appearance::AppearanceTarget::Body(
+                                crate::ids::body(body_key),
+                            ))
+                        })
+                        .collect(),
+                    _ => None,
+                };
+            let (Some(targets), Some(crate::schema::shading::Bound::Surface(surface))) =
+                (targets, bound)
+            else {
+                *self
+                    .tallies
+                    .brep_subsets
+                    .entry(prim.path.clone())
+                    .or_default() += 1;
+                continue;
+            };
+            let appearance = self.appearance(&surface)?;
+            for (ordinal, target) in targets.into_iter().enumerate() {
+                self.ir
+                    .model
+                    .appearance_bindings
+                    .push(cadmpeg_ir::appearance::AppearanceBinding {
+                        id: crate::ids::subset_binding(key, &format!("{}#{ordinal}", child.path)),
+                        target,
+                        appearance: appearance.clone(),
+                        source_entity_id: Some(surface.material.clone()),
+                        object_type: None,
+                        visible: None,
+                        channels: BTreeMap::new(),
+                    });
+                self.admit("usd_appearance")?;
+            }
+        }
+        Ok(())
     }
 
     /// Binds the material of `prim` to `body`.

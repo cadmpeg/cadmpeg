@@ -627,6 +627,8 @@ pub(super) struct Unwritten {
 /// The B-rep of one body.
 pub(super) struct Exported {
     pub(super) brep: Brep,
+    /// The IR face of each face record.
+    pub(super) faces: Vec<FaceId>,
     pub(super) unwritten: Unwritten,
 }
 
@@ -1427,6 +1429,7 @@ pub(super) fn export<'ir>(
     }
     Some(Exported {
         brep: exporter.brep,
+        faces: exporter.faces,
         unwritten: exporter.unwritten,
     })
 }

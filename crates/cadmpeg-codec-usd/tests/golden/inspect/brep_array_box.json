@@ -6,8 +6,8 @@
         "defaultPrim": "Occurrence",
         "header": "#usda 1.0",
         "metersPerUnit": "1",
-        "prim_specs": "13",
-        "property_specs": "77",
+        "prim_specs": "14",
+        "property_specs": "80",
         "upAxis": "Z"
       },
       "compression": "stored",
@@ -15,7 +15,7 @@
       "role": "document",
       "size": {
         "form": "exact",
-        "size": 12675
+        "size": 12966
       }
     }
   ],
@@ -33,6 +33,6 @@
     }
   },
   "notes": [
-    "prim types: BrepArray 1, Material 3, Mesh 1, Scope 1, Shader 6, Xform 1"
+    "prim types: BrepArray 1, GeomSubset 1, Material 3, Mesh 1, Scope 1, Shader 6, Xform 1"
   ]
 }

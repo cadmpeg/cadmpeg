@@ -99,7 +99,8 @@ pub(crate) enum UsdLossCode {
     /// Wire edges and point shells of a `BrepArray` prim were not
     /// transferred.
     BrepElementNotTransferred,
-    /// Geometry subsets of a `BrepArray` prim were not transferred.
+    /// Geometry subsets of a `BrepArray` prim that are not `face` or `brep`
+    /// subsets binding a material were not transferred.
     BrepSubsetNotTransferred,
     /// A joint whose bodies or frames do not resolve was not transferred.
     JointRejected,

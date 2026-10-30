@@ -223,7 +223,7 @@ impl Default for Placement<'_> {
 /// One geometry prim of a body.
 enum Geometry<'ir> {
     /// The exact B-rep of a body.
-    Brep(Box<crate::brep::solid::Packed>),
+    Brep(Box<brep_array::BrepPrim>),
     Mesh(&'ir Tessellation),
     /// The mesh of faces of a body with no tessellation.
     Meshed(Box<Tessellation>),
@@ -308,6 +308,7 @@ impl<'ir> Writer<'ir> {
             let key = match &binding.target {
                 AppearanceTarget::Tessellation(id) => id.clone(),
                 AppearanceTarget::Body(id) => id.to_string(),
+                AppearanceTarget::Face(id) => id.to_string(),
                 AppearanceTarget::TriangleGroup {
                     tessellation,
                     group,
@@ -950,7 +951,7 @@ impl<'ir> Writer<'ir> {
         collider: &physics::PrimPhysics,
     ) {
         match prim {
-            Geometry::Brep(packed) => self.brep_array_prim(&packed, name, body, placement),
+            Geometry::Brep(brep) => self.brep_array_prim(&brep, name, body, placement),
             Geometry::Mesh(tessellation) => {
                 let mut placement = placement.clone();
                 placement.metadata.extend(collider.0.iter().cloned());

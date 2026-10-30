@@ -3,8 +3,83 @@
     "decode_depth": "full",
     "ir_version": "9",
     "model": {
-      "appearance_bindings": [],
-      "appearances": [],
+      "appearance_bindings": [
+        {
+          "appearance": "usd:stage:appearance#/Looks/Box_face_1_material",
+          "id": "usd:stage:subset-binding#/Occurrence:/Occurrence/Brep/Box_face_1_material%230",
+          "source_entity_id": "/Looks/Box_face_1_material",
+          "target": {
+            "id": "usd:stage:face#/Occurrence:face:0",
+            "kind": "face"
+          }
+        },
+        {
+          "appearance": "usd:stage:appearance#/Looks/Box_face_1_material",
+          "id": "usd:stage:subset-binding#/Occurrence:/Occurrence/Brep/Box_face_1_material%231",
+          "source_entity_id": "/Looks/Box_face_1_material",
+          "target": {
+            "id": "usd:stage:face#/Occurrence:face:1",
+            "kind": "face"
+          }
+        },
+        {
+          "appearance": "usd:stage:appearance#/Looks/Box_face_1_material",
+          "id": "usd:stage:subset-binding#/Occurrence:/Occurrence/Brep/Box_face_1_material%232",
+          "source_entity_id": "/Looks/Box_face_1_material",
+          "target": {
+            "id": "usd:stage:face#/Occurrence:face:2",
+            "kind": "face"
+          }
+        },
+        {
+          "appearance": "usd:stage:appearance#/Looks/Box_face_1_material",
+          "id": "usd:stage:subset-binding#/Occurrence:/Occurrence/Brep/Box_face_1_material%233",
+          "source_entity_id": "/Looks/Box_face_1_material",
+          "target": {
+            "id": "usd:stage:face#/Occurrence:face:3",
+            "kind": "face"
+          }
+        },
+        {
+          "appearance": "usd:stage:appearance#/Looks/Box_face_1_material",
+          "id": "usd:stage:subset-binding#/Occurrence:/Occurrence/Brep/Box_face_1_material%234",
+          "source_entity_id": "/Looks/Box_face_1_material",
+          "target": {
+            "id": "usd:stage:face#/Occurrence:face:4",
+            "kind": "face"
+          }
+        },
+        {
+          "appearance": "usd:stage:appearance#/Looks/Box_face_1_material",
+          "id": "usd:stage:subset-binding#/Occurrence:/Occurrence/Brep/Box_face_1_material%235",
+          "source_entity_id": "/Looks/Box_face_1_material",
+          "target": {
+            "id": "usd:stage:face#/Occurrence:face:5",
+            "kind": "face"
+          }
+        }
+      ],
+      "appearances": [
+        {
+          "base_color": {
+            "a": 1.0,
+            "b": 0.6000000238418579,
+            "g": 0.4000000059604645,
+            "r": 0.20000000298023224
+          },
+          "id": "usd:stage:appearance#/Looks/Box_face_1_material",
+          "name": "Box_face_1_material",
+          "properties": {
+            "UsdPreviewSurface/diffuseColor.b": 0.6000000238418579,
+            "UsdPreviewSurface/diffuseColor.g": 0.4000000059604645,
+            "UsdPreviewSurface/diffuseColor.r": 0.20000000298023224,
+            "base_color.b": 0.6000000238418579,
+            "base_color.g": 0.4000000059604645,
+            "base_color.r": 0.20000000298023224
+          },
+          "schema": "ND_open_pbr_surface_surfaceshader"
+        }
+      ],
       "assembly_joints": [],
       "attributes": [],
       "bodies": [

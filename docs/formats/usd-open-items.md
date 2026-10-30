@@ -84,6 +84,6 @@ This document uses ASD-STE100 Simplified Technical English. Attribute names and 
 
 **Question.** Are `face` and `brep` element types of `GeomSubset` on a `BrepArray` prim, and which family names go with them?
 
-**Known.** `usd.md` §17.4 gives the proposal examples, which bind materials through subsets with `elementType = "face"` and `elementType = "brep"`. `UsdGeomSubset` registers neither token for a `BrepArray`. The decoder reports these subsets as `usd/brep.subset-not-transferred`.
+**Known.** `usd.md` §17.4 gives the proposal examples, which bind materials through subsets with `elementType = "face"` and `elementType = "brep"`. `UsdGeomSubset` registers neither token for a `BrepArray`. The decoder binds the material of such a subset to the faces or bodies it selects, and the encoder writes a `face` subset for each material bound to faces of a body.
 
 **Need.** We must read face and B-rep appearances.
