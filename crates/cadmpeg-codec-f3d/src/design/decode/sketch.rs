@@ -473,11 +473,11 @@ fn decode_sketch_visibilities_in_stream(
         }
     }
     for (entity, visibility) in &out {
-        if !visibility
-            .ordinal_collection
-            .is_some_and(|collection| collections.contains(&collection.get()))
-            || !listed.contains(entity)
-        {
+        let collection_valid = match visibility.ordinal_collection {
+            Some(collection) => collections.contains(&collection.get()) && listed.contains(entity),
+            None => !listed.contains(entity),
+        };
+        if !collection_valid {
             return Err(crate::design::text::malformed_design(format_args!(
                 "F3D sketch container {entity} has an invalid ordinal collection"
             )));
@@ -558,9 +558,6 @@ fn decode_sketch_visibility_member(
         Some(1) => true,
         _ => return None,
     };
-    if bytes.get(member_at + visibility_member::TAIL_MARKER) != Some(&1) {
-        return None;
-    }
     let mut visibility = DesignSketchVisibility::new(
         stream_ordinal,
         u64_from_index(stream_ordinal_offset),
@@ -569,6 +566,9 @@ fn decode_sketch_visibility_member(
     .ok()?;
     let mut collection_at = member_at + visibility_member::TAIL_MARKER;
     let reference = take_reference(bytes, &mut collection_at)?;
+    if matches!(reference, Reference::Null) {
+        return Some(visibility);
+    }
     let (target, None) = reference.local()? else {
         return None;
     };

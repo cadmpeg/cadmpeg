@@ -22187,7 +22187,7 @@ anchor = "The payload has a 133-byte prefix and a 37-byte suffix."
 name = "sketch_geometry_ordinal_collection_reference"
 kind = "byte"
 section = "3.1"
-anchor = "Byte 36 opens a same-segment marked reference; its u64 target at member offset 37 names the ordinal collection."
+anchor = "When it is `01`, its u64 target at member offset 37 names the ordinal collection."
 size = 11
 note = "The reference starts at offset 36 relative to the Geometry-member indexed header."
 
@@ -22211,7 +22211,7 @@ name = "flags"
 offset = 9
 type = "bytes[2]"
 source = "spec"
-anchor = "Byte 36 opens a same-segment marked reference; its u64 target at member offset 37 names the ordinal collection."
+anchor = "When it is `01`, its u64 target at member offset 37 names the ordinal collection."
 
 [[record]]
 name = "sketch_ordinal_collection_prefix"

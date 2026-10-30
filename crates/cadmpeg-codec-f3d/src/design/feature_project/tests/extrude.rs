@@ -874,6 +874,7 @@ fn extrude_parameters_project_blind_two_sided_and_reversed_extents() {
                     opaque_scalar: 0.125,
                     opaque_scalar_offset: 1076,
                     variant: false,
+                    closing_flag: false,
                 },
             )
             .unwrap(),

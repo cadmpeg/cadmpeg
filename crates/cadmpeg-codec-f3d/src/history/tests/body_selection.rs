@@ -57,6 +57,7 @@ fn move_body_selection_uses_unique_owning_history() {
                     opaque_scalar: 0.0,
                     opaque_scalar_offset: 22,
                     variant: false,
+                    closing_flag: false,
                 },
             )
             .unwrap(),
@@ -207,6 +208,7 @@ fn pattern_seed_feature() -> cadmpeg_ir::features::Feature {
                     opaque_scalar: 0.0,
                     opaque_scalar_offset: 22,
                     variant: false,
+                    closing_flag: false,
                 },
             )
             .unwrap(),

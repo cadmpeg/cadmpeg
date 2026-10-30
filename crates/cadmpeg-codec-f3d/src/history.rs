@@ -3676,6 +3676,9 @@ pub(crate) fn project_feature_input_topologies(
                 crate::design::feature_project::work_point_recipe_state_id(scope, edge_operands)
             })
             .or_else(|| crate::design::feature_project::work_plane_recipe_state_id(scope))
+            .or_else(|| {
+                crate::design::edge_resolve::edge_treatment_recipe_state_id(scope, edge_operands)
+            })
             .or_else(|| effective_scope_previous_history_state_id(scope, scoped_histories))
         else {
             continue;

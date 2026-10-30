@@ -425,6 +425,8 @@ pub(crate) struct DesignConstructionOperandGroupFrame {
     opaque_scalar: cadmpeg_ir::scalar::NonNegativeReal,
     /// Boolean tail variant.
     pub(crate) variant: bool,
+    /// Last byte of the tail flag block.
+    pub(crate) closing_flag: bool,
 }
 
 #[cfg(test)]
@@ -448,6 +450,7 @@ impl Clone for DesignConstructionOperandGroupFrame {
             opaque_index_offset: self.opaque_index_offset,
             opaque_scalar: self.opaque_scalar,
             variant: self.variant,
+            closing_flag: self.closing_flag,
         }
     }
 }
@@ -478,6 +481,8 @@ impl Serialize for DesignConstructionOperandGroupFrame {
             opaque_scalar: f64,
             opaque_scalar_offset: u64,
             variant: bool,
+            #[serde(skip_serializing_if = "std::ops::Not::not")]
+            closing_flag: bool,
         }
         let trailing = self.trailing_records.as_slice();
         BorrowedWire {
@@ -495,6 +500,7 @@ impl Serialize for DesignConstructionOperandGroupFrame {
             opaque_scalar: self.opaque_scalar().get(),
             opaque_scalar_offset: self.opaque_scalar_offset(),
             variant: self.variant,
+            closing_flag: self.closing_flag,
         }
         .serialize(serializer)
     }
@@ -514,6 +520,7 @@ pub(crate) struct DesignConstructionOperandGroupFrameDraft<T = f64, I = u32> {
     pub(crate) opaque_scalar: T,
     pub(crate) opaque_scalar_offset: u64,
     pub(crate) variant: bool,
+    pub(crate) closing_flag: bool,
 }
 
 impl TryFrom<DesignConstructionOperandGroupFrameDraft> for DesignConstructionOperandGroupFrame {
@@ -539,6 +546,7 @@ impl TryFrom<DesignConstructionOperandGroupFrameDraft> for DesignConstructionOpe
             opaque_scalar,
             opaque_scalar_offset: draft.opaque_scalar_offset,
             variant: draft.variant,
+            closing_flag: draft.closing_flag,
         })
     }
 }
@@ -598,6 +606,7 @@ impl DesignConstructionOperandGroupFrame {
             opaque_index_offset: draft.opaque_index_offset,
             opaque_scalar: draft.opaque_scalar,
             variant: draft.variant,
+            closing_flag: draft.closing_flag,
         })
     }
 }
@@ -731,6 +740,8 @@ struct DesignConstructionOperandGroupFrameWire {
     opaque_scalar: f64,
     opaque_scalar_offset: u64,
     variant: bool,
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    closing_flag: bool,
 }
 
 impl TryFrom<DesignConstructionOperandGroupFrameWire> for DesignConstructionOperandGroupFrame {
@@ -765,6 +776,7 @@ impl TryFrom<DesignConstructionOperandGroupFrameWire> for DesignConstructionOper
             opaque_scalar: wire.opaque_scalar,
             opaque_scalar_offset: wire.opaque_scalar_offset,
             variant: wire.variant,
+            closing_flag: wire.closing_flag,
         })
     }
 }
@@ -806,6 +818,7 @@ impl From<DesignConstructionOperandGroupFrame> for DesignConstructionOperandGrou
             opaque_scalar,
             opaque_scalar_offset,
             variant: frame.variant,
+            closing_flag: frame.closing_flag,
         }
     }
 }

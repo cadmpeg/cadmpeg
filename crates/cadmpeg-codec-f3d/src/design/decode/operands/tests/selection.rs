@@ -275,6 +275,7 @@ fn extrude_operand_identity_walks_shared_wrapper_grammar_to_a_fixed_leaf() {
                     opaque_scalar: 0.125,
                     opaque_scalar_offset: 1075,
                     variant: false,
+                    closing_flag: false,
                 },
             )
             .unwrap(),
@@ -536,6 +537,7 @@ fn nested_entity_selection_member_retains_compact_and_expanded_identities() {
                     opaque_scalar: 0.0,
                     opaque_scalar_offset: 975,
                     variant: false,
+                    closing_flag: false,
                 },
             )
             .unwrap(),

@@ -342,7 +342,7 @@ the native feature when a fixed lane carries a symmetric distance.
 
 **Question.** What do the u32 and u64 fields in the fourteen-byte persistent selection tail select?
 
-**Known.** The 204-byte member retains the complete local, asset, and context identity and a present optional slot. Its extra bytes are `00`, u32 `2`, u64 `1`, and `00`. A following Design header or the stream-end boundary terminates the tail. The frame extent distinguishes this form from the 190-byte member without a new identity field.
+**Known.** The 204-byte member retains the complete local, asset, and context identity and a present optional slot. Its extra bytes are `00`, u32 `2`, u64 `1`, and `00`. A following Design header or the stream-end boundary terminates the tail. The frame extent distinguishes this form from the 190-byte member without a new identity field. A further member form follows the context identity with u32 `2`, eleven zero bytes, and a run of u32 `255` values up to the next Design header; its owning Extrude selection group then has no admitted member.
 
 **Need.** Independently varied tail fields and an unchanged selected entity must establish each field's meaning before the grammar admits other values.
 
@@ -383,6 +383,14 @@ the native feature when a fixed lane carries a symmetric distance.
 **Conflict.** An occurrence ordinal does not state a path-discriminator binding.
 
 **Note.** The fixed native occurrence record retains the discriminator value without a component-path binding.
+
+### DR-130. Construction-operand group closing flag
+
+**Question.** What does closing flag `1` in the tail flag block of a construction-operand group select?
+
+**Known.** `f3d.md` §3.1 "Every `Extrude`, `Extrusion`, `Fillet`" defines the group tail. The flag block ends with the closing flag after `variant`. The closing flag is `0` or `1`, and both values occur in the three-byte block `[1, 1, closing_flag]` of existing-body groups in Extrude scopes. The role, members, and references of the group are the same for both values.
+
+**Need.** A writer that generates a group must choose the closing flag, and a reader must know whether value `1` changes the group's operation semantics.
 
 ### DR-104. ACT component-link root selection
 

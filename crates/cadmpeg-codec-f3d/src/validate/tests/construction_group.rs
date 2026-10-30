@@ -52,6 +52,7 @@ pub(super) fn native(valid: bool, duplicate: bool) -> crate::native::F3dNative {
                 opaque_scalar: 0.0,
                 opaque_scalar_offset: 1_062,
                 variant: false,
+                closing_flag: false,
             },
         )
         .unwrap(),
@@ -125,6 +126,7 @@ fn reference_findings(
                 opaque_scalar: 0.0,
                 opaque_scalar_offset: 1_052 + reference_span,
                 variant: false,
+                closing_flag: false,
             },
         )
         .unwrap();

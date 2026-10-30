@@ -1624,4 +1624,5 @@ fn legacy_move_body_groups_accept_the_unterminated_true_flag_pair() {
     }
 }
 
+mod closing_flag;
 mod roles;

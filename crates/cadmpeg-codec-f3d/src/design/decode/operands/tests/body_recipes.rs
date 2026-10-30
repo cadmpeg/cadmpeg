@@ -51,6 +51,7 @@ fn body_recipe_operand_decodes_counted_and_empty_reference_tables() {
                     opaque_scalar: 0.0,
                     opaque_scalar_offset: 975,
                     variant: false,
+                    closing_flag: false,
                 },
             )
             .unwrap(),
@@ -374,6 +375,7 @@ fn class_367_body_recipe_operand_decodes_scale_member_frame() {
                     opaque_scalar: 0.0,
                     opaque_scalar_offset: 22,
                     variant: false,
+                    closing_flag: false,
                 },
             )
             .unwrap(),

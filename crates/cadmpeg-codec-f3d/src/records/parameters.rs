@@ -42,6 +42,8 @@ pub(crate) enum DesignParameterKind {
 #[repr(u64)]
 pub(crate) enum DesignParameterDiscriminator {
     Code0 = 0,
+    Code1 = 1,
+    Code2 = 2,
     Code3 = 3,
     Code4 = 4,
     Code5 = 5,
@@ -52,6 +54,8 @@ impl DesignParameterDiscriminator {
     pub(crate) fn code(self) -> u64 {
         match self {
             Self::Code0 => 0,
+            Self::Code1 => 1,
+            Self::Code2 => 2,
             Self::Code3 => 3,
             Self::Code4 => 4,
             Self::Code5 => 5,
@@ -66,6 +70,8 @@ impl TryFrom<u64> for DesignParameterDiscriminator {
     fn try_from(value: u64) -> Result<Self, Self::Error> {
         match value {
             0 => Ok(Self::Code0),
+            1 => Ok(Self::Code1),
+            2 => Ok(Self::Code2),
             3 => Ok(Self::Code3),
             4 => Ok(Self::Code4),
             5 => Ok(Self::Code5),
