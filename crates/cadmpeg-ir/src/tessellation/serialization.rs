@@ -3,7 +3,7 @@
 
 use super::{
     ChannelAddressing, Tessellation, TessellationChannel, TessellationId, TessellationMesh,
-    TessellationTextureAssignment, TessellationTriangleGroup,
+    TessellationTextureAssignment, TessellationTriangleGroup, TextureCoordinates,
 };
 use crate::features::{FinitePoint3, FiniteVector3};
 use crate::ids::{BodyId, FaceId};
@@ -31,6 +31,8 @@ impl Serialize for Tessellation {
             triangle_groups: &'a Vec<TessellationTriangleGroup>,
             #[serde(skip_serializing_if = "Vec::is_empty")]
             texture_assignments: &'a Vec<TessellationTextureAssignment>,
+            #[serde(skip_serializing_if = "Vec::is_empty")]
+            texture_coordinates: &'a Vec<TextureCoordinates>,
             channels: &'a [TessellationChannel],
         }
         Wire {
@@ -43,6 +45,7 @@ impl Serialize for Tessellation {
             feature_edges: &self.feature_edges,
             triangle_groups: &self.triangle_groups,
             texture_assignments: &self.texture_assignments,
+            texture_coordinates: &self.texture_coordinates,
             channels: &self.channels,
         }
         .serialize(serializer)

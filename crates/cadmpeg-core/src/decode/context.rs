@@ -28,10 +28,11 @@ const RESERVE_CLAMP: usize = 8 * 1024 * 1024;
 /// Shared monotonic decode state.
 #[derive(Debug)]
 pub struct DecodeContext<'a> {
-    arena: &'a DecodeArena,
+    pub(super) arena: &'a DecodeArena,
     depth: DecodeDepth,
     pub(super) budget: DecodeBudget,
     derived_spaces: Cell<usize>,
+    pub(super) companions: Option<&'a dyn super::companion::Companions>,
 }
 
 impl<'a> DecodeContext<'a> {
@@ -42,6 +43,7 @@ impl<'a> DecodeContext<'a> {
             depth,
             budget: DecodeBudget::new(*policy, 0),
             derived_spaces: Cell::new(0),
+            companions: None,
         }
     }
 
@@ -128,6 +130,7 @@ impl<'a> DecodeContext<'a> {
             depth,
             budget: DecodeBudget::new(*policy, length),
             derived_spaces: Cell::new(0),
+            companions: None,
         };
         Ok((ctx, View::over_space(bytes, SpaceId::ROOT)))
     }
@@ -195,7 +198,7 @@ impl<'a> DecodeContext<'a> {
         self.budget.retained_bytes_available()
     }
 
-    fn allocate_space(&self) -> Result<SpaceId, CodecError> {
+    pub(super) fn allocate_space(&self) -> Result<SpaceId, CodecError> {
         let used = self.derived_spaces.get();
         // Root owns zero; every other `usize` value identifies a derived space.
         let index = used.checked_add(1).ok_or_else(|| {

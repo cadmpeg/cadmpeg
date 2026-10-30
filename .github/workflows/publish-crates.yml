@@ -41,6 +41,7 @@ jobs:
             cadmpeg-protein
             cadmpeg-ir
             cadmpeg-asm
+            cadmpeg-tessellate
             cadmpeg-codec-catia
             cadmpeg-codec-creo
             cadmpeg-codec-f3d

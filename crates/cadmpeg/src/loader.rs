@@ -17,6 +17,8 @@ use crate::application::artifact_store;
 use crate::application::document::LoadedDocument;
 use crate::application::refusal::ApplicationError;
 
+mod companions;
+
 /// Restates a detection failure with the flag that overrides it.
 ///
 /// The registry states the fact; naming `--input-format` is this crate's job,
@@ -39,8 +41,10 @@ pub(crate) fn load_artifact(
     options: DecodeOptions,
     forced: Option<ForcedInput>,
 ) -> Result<LoadedDocument, ApplicationError> {
+    let companions = companions::Directory::beside(path);
     let arena = DecodeArena::new();
-    let ctx = DecodeContext::new(&arena, &options.policy, options.depth);
+    let ctx =
+        DecodeContext::new(&arena, &options.policy, options.depth).with_companions(&companions);
     let mut file = File::open(path).with_context(|| format!("opening {}", path.display()))?;
     let mut prefix =
         cadmpeg_container::compound::read_detection_prefix(&ctx, &mut file, DETECTION_PREFIX_LEN)?;

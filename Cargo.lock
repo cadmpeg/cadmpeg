@@ -538,6 +538,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "cadmpeg-tessellate"
+version = "0.6.7"
+dependencies = [
+ "cadmpeg-core",
+ "cadmpeg-ir",
+]
+
+[[package]]
 name = "cadmpeg-test-support"
 version = "0.6.7"
 dependencies = [

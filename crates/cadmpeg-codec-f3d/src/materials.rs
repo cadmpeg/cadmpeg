@@ -788,7 +788,7 @@ fn appearances_from_schema_records(
                     })?;
                 continue;
             }
-            TextureAssetResult::Usable(texture) => texture,
+            TextureAssetResult::Usable(texture) => *texture,
         };
         match textures.get(&texture.asset_guid) {
             None => {

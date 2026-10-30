@@ -7,7 +7,9 @@ use cadmpeg_core::CodecError;
 
 use super::record_finding;
 use crate::document::CadIr;
-use crate::products::{OccurrenceParent, OperandContainer, PrototypeReference};
+use crate::products::{
+    JointOperands, OccurrenceParent, OperandContainer, PairedJointKind, PrototypeReference,
+};
 use crate::report::check::{Check, Finding};
 
 pub(super) fn check_products(
@@ -28,6 +30,11 @@ pub(super) fn check_products(
     let parameters = BorrowedIdentities::build(|add| {
         for parameter in &ir.model.parameters {
             add(parameter.id.as_str(), ());
+        }
+    });
+    let joints = BorrowedIdentities::build(|add| {
+        for joint in &ir.model.assembly_joints {
+            add(joint.id.as_str(), ());
         }
     });
     let bodies = BorrowedIdentities::build(|add| {
@@ -170,6 +177,26 @@ pub(super) fn check_products(
                 );
             }
         }
+        if let JointOperands::Pair {
+            kind:
+                PairedJointKind::Gears { coupled_joints, .. }
+                | PairedJointKind::RackPinion { coupled_joints, .. },
+            ..
+        } = joint.operands()
+        {
+            let resolved = coupled_joints
+                .iter()
+                .all(|coupled| coupled != &joint.id && joints.contains(coupled.as_str()));
+            if !matches!(coupled_joints.len(), 0 | 2) || !resolved {
+                record_finding(
+                    findings,
+                    Check::ReferentialIntegrity,
+                    crate::report::Severity::Error,
+                    Some(joint.id.as_str()),
+                    format_args!("assembly joint couples other than two other joints"),
+                );
+            }
+        }
         for connector in joint.connectors() {
             if let OperandContainer::Occurrence { occurrence, .. } = &connector.operand.container {
                 if !occurrences.contains(occurrence.as_str()) {
@@ -309,6 +336,64 @@ mod tests {
             "resolution": "unresolved"
         });
         assert!(serde_json::from_value::<AssemblyJoint>(wire).is_err());
+    }
+
+    #[test]
+    fn a_gear_couples_two_other_existing_joints() {
+        let mut ir = CadIr::empty();
+        let gear = |coupled: Vec<JointId>| {
+            AssemblyJoint::paired(
+                JointId::mint("test:model:joint#gear").expect("identity grammar"),
+                PairedJointKind::Gears {
+                    distance: None,
+                    distance2: None,
+                    ratio: crate::scalar::PositiveReal::new(2.0),
+                    coupled_joints: coupled,
+                },
+                [
+                    JointConnector {
+                        operand: JointOperand::root("/", Vec::new()),
+                        frame: Transform::identity(),
+                        detached: false,
+                    },
+                    JointConnector {
+                        operand: JointOperand::root("/", Vec::new()),
+                        frame: Transform::identity(),
+                        detached: false,
+                    },
+                ],
+                None,
+            )
+        };
+        let hinge = |name: &str| {
+            JointId::mint(format!("test:model:joint#{name}")).expect("identity grammar")
+        };
+        let findings = |ir: &CadIr| {
+            let mut findings = Vec::new();
+            check_products(
+                &cadmpeg_test_support::service_decode_context(),
+                ir,
+                &mut findings,
+            )
+            .unwrap();
+            findings.iter().any(|finding| {
+                finding
+                    .message
+                    .contains("couples other than two other joints")
+            })
+        };
+        ir.model
+            .assembly_joints
+            .push(gear(vec![hinge("a"), hinge("b")]));
+        assert!(findings(&ir));
+        for name in ["a", "b"] {
+            let mut other = gear(Vec::new());
+            other.id = hinge(name);
+            ir.model.assembly_joints.push(other);
+        }
+        assert!(!findings(&ir));
+        ir.model.assembly_joints[0] = gear(vec![hinge("a")]);
+        assert!(findings(&ir));
     }
 
     #[test]

@@ -502,6 +502,21 @@ pub(super) fn check_references(
             {
                 ref_error(findings, &owner, "tessellation", tessellation);
             }
+            AppearanceTarget::TriangleGroup {
+                tessellation,
+                group,
+            } => match ids.tessellations(tessellation, crate::index::StandardIndex) {
+                None => ref_error(findings, &owner, "tessellation", tessellation),
+                Some(mesh)
+                    if !mesh
+                        .triangle_groups()
+                        .iter()
+                        .any(|candidate| candidate.source_id.as_deref() == Some(group)) =>
+                {
+                    ref_error(findings, &owner, "triangle group", group);
+                }
+                Some(_) => {}
+            },
             AppearanceTarget::Source { .. } => {}
             _ => {}
         }

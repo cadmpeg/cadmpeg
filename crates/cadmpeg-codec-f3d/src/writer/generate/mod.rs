@@ -230,5 +230,12 @@ fn coverage(has_native: bool) -> ArenaDispositions {
         attributes: Omitted,
         pmi: Omitted,
         presentation_layers: Omitted,
+        physical_materials: Omitted,
+        mass_properties: Omitted,
+        rigid_bodies: Omitted,
+        colliders: Omitted,
+        articulations: Omitted,
+        physics_scenes: Omitted,
+        solver_settings: Omitted,
     }
 }

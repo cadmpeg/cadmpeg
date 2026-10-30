@@ -2,13 +2,17 @@
 //! Rewrite the identities owned by these fields.
 
 use super::{
-    AssemblyJoint, CopyOnChange, CopyOnChangePolicy, ExternalDocument, JointConnector,
-    JointLimitRange, JointLimits, JointOperand, JointOperands, LinkState, Occurrence,
-    OccurrenceParent, OperandContainer, PairedJointKind, PlaneSense, ProductDefinition,
-    ProductDefinitionKind, PrototypeReference, TangentContact,
+    AssemblyJoint, CopyOnChange, CopyOnChangePolicy, DriveAxis, DriveMode, ExternalDocument,
+    FrameAxis, JointConnector, JointDrive, JointLimitRange, JointLimits, JointOperand,
+    JointOperands, LinkState, Occurrence, OccurrenceParent, OperandContainer, PairedJointKind,
+    PlaneSense, ProductDefinition, ProductDefinitionKind, PrototypeReference, TangentContact,
 };
 
-rewrite_record!(AssemblyJoint, []; {id, operands, suppressed, driving_parameter, native_ref});
+rewrite_record!(AssemblyJoint, []; {id, operands, suppressed, driving_parameter, drives, native_ref});
+rewrite_scalar!(FrameAxis);
+rewrite_scalar!(DriveAxis);
+rewrite_scalar!(DriveMode);
+rewrite_record!(JointDrive, []; {axis, mode, target_position, target_velocity, stiffness, damping, max_force});
 rewrite_record!(CopyOnChange, []; {policy, source, group, touched});
 rewrite_enum!(CopyOnChangePolicy, []; {
     Disabled,
@@ -55,9 +59,9 @@ rewrite_enum!(PairedJointKind, []; {
     Parallel {},
     Perpendicular {},
     Angle {angle},
-    RackPinion {distance, distance2},
+    RackPinion {distance, distance2, ratio, coupled_joints},
     Screw {distance},
-    Gears {distance, distance2},
+    Gears {distance, distance2, ratio, coupled_joints},
     Belt {distance, distance2},
     PlaneCoincidence {sense, offset},
     AxisCoincidence {},

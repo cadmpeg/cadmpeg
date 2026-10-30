@@ -80,6 +80,13 @@ impl ExportLossCode {
             EntityKind::SourceAttribute | EntityKind::PresentationLayer => {
                 LossTaxonomy::AttributesNotTransferred
             }
+            EntityKind::PhysicalMaterial
+            | EntityKind::MassProperties
+            | EntityKind::RigidBody
+            | EntityKind::Collider
+            | EntityKind::Articulation
+            | EntityKind::PhysicsScene
+            | EntityKind::SolverSettings => LossTaxonomy::PhysicsNotTransferred,
         }
     }
 

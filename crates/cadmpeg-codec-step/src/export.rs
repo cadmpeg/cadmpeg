@@ -787,6 +787,7 @@ impl<'a> Builder<'a> {
                 | AppearanceTarget::Edge(_)
                 | AppearanceTarget::Vertex(_)
                 | AppearanceTarget::Tessellation(_)
+                | AppearanceTarget::TriangleGroup { .. }
                 | AppearanceTarget::Source { .. } => {}
             }
         }
@@ -968,7 +969,9 @@ impl<'a> Builder<'a> {
                     self.tessellation_step_refs.get(id).copied(),
                     StyleKind::Surface,
                 ),
-                AppearanceTarget::Body(_) | AppearanceTarget::Source { .. } => continue,
+                AppearanceTarget::Body(_)
+                | AppearanceTarget::TriangleGroup { .. }
+                | AppearanceTarget::Source { .. } => continue,
             };
             let Some(target) = target else {
                 let target_id = match &binding.target {
@@ -979,7 +982,9 @@ impl<'a> Builder<'a> {
                     AppearanceTarget::Point(id) => id.as_str().to_owned(),
                     AppearanceTarget::Vertex(id) => id.as_str().to_owned(),
                     AppearanceTarget::Tessellation(id) => id.clone(),
-                    AppearanceTarget::Body(_) | AppearanceTarget::Source { .. } => continue,
+                    AppearanceTarget::Body(_)
+                    | AppearanceTarget::TriangleGroup { .. }
+                    | AppearanceTarget::Source { .. } => continue,
                 };
                 direct_unstyled.insert(target_id);
                 continue;

@@ -38,7 +38,7 @@ pub enum TextureAssetResult {
     /// The record describes another asset type.
     NotTexture,
     /// Every stated distance has a length unit.
-    Usable(TextureAsset),
+    Usable(Box<TextureAsset>),
     /// The source states distance units with no length conversion.
     UnknownDistanceUnit {
         /// Number of stated distance properties with unknown units.
@@ -135,6 +135,7 @@ pub fn texture_asset(
         real_world_offset_y: distances[1],
         real_world_scale_x: distances[2],
         real_world_scale_y: distances[3],
+        coordinates: None,
     };
     let bump = if record.schema == "BumpMapSchema" {
         Some(BumpMap {
@@ -153,7 +154,7 @@ pub fn texture_asset(
         mapping,
         bump,
     };
-    Ok(TextureAssetResult::Usable(texture))
+    Ok(TextureAssetResult::Usable(Box::new(texture)))
 }
 
 fn property_with_suffix<'a>(
