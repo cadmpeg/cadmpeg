@@ -112,6 +112,8 @@ mod writer;
 mod xref;
 mod zip_write;
 
+pub use f3z::{observe_f3z_members, F3zMemberObserver};
+
 use cadmpeg_core::bytes::contains;
 use cadmpeg_core::decode::{DecodeContext, DecodeDepth, View};
 use cadmpeg_core::CodecError;
