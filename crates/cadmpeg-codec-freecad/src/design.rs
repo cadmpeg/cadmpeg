@@ -46,6 +46,7 @@ use cadmpeg_ir::{
 use crate::brep::ShapePayloadRecord;
 use crate::native::{malformed, EntryRecord, ObjectRecord, PropertyRecord};
 
+pub(crate) mod primitive_placement;
 mod sketch_cache;
 
 const MAX_SKETCH_RECORDS: usize = 1_000_000;
@@ -209,8 +210,37 @@ pub(crate) fn transfer(
             part_construction_geometry_definition(ctx, &object.type_name, &owned, entries)?
                 .map_or_else(|| native_definition(ctx, &object.type_name, &owned), Ok)?
         } else if is_primitive(&object.type_name) {
-            primitive_definition(ctx, &object.type_name, &owned)?
-                .map_or_else(|| native_definition(ctx, &object.type_name, &owned), Ok)?
+            match primitive_definition(ctx, &object.type_name, &owned)? {
+                Some(mut definition) => {
+                    match primitive_placement::resolve(object, objects, &properties_by_owner)? {
+                        Some(frame) => {
+                            if let FeatureDefinition::Operation(FeatureOperation::Primitive {
+                                placement,
+                                ..
+                            }) = &mut definition
+                            {
+                                *placement = Some(frame);
+                            }
+                            definition
+                        }
+                        None => {
+                            losses.push(
+                                crate::loss::FreecadLossCode::FeaturePrimitivePlacementUnresolved
+                                    .note(format!(
+                                        "{} has no resolved primitive frame",
+                                        object.id()
+                                    )),
+                            );
+                            if primitive_placement::carries_frame(&owned) {
+                                native_definition(ctx, &object.type_name, &owned)?
+                            } else {
+                                definition
+                            }
+                        }
+                    }
+                }
+                None => native_definition(ctx, &object.type_name, &owned)?,
+            }
         } else if is_boolean(&object.type_name) {
             boolean_definition(ctx, &object.type_name, &owned)?
                 .or_else(|| {
@@ -8210,7 +8240,7 @@ fn is_revolution(kind: &str) -> bool {
         "PartDesign::Revolution" | "PartDesign::Groove" | "Part::Revolution"
     )
 }
-fn is_primitive(kind: &str) -> bool {
+pub(crate) fn is_primitive(kind: &str) -> bool {
     matches!(
         kind,
         "Part::Box"

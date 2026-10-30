@@ -1,0 +1,107 @@
+{
+  "container_kind": "zip",
+  "entries": [
+    {
+      "attributes": {
+        "central_header_offset": "4981",
+        "crc32": "2621536a",
+        "data_offset": "42",
+        "header_offset": "0"
+      },
+      "compression": "deflate",
+      "expanded": 23233,
+      "name": "Document.xml",
+      "role": "document",
+      "stored": 2443
+    },
+    {
+      "attributes": {
+        "central_header_offset": "5039",
+        "crc32": "291240e0",
+        "data_offset": "2529",
+        "header_offset": "2485"
+      },
+      "compression": "deflate",
+      "expanded": 6046,
+      "name": "Body.Shape.brp",
+      "role": "brep",
+      "stored": 648
+    },
+    {
+      "attributes": {
+        "central_header_offset": "5099",
+        "crc32": "b93ff615",
+        "data_offset": "3225",
+        "header_offset": "3177"
+      },
+      "compression": "deflate",
+      "expanded": 265,
+      "name": "Body.Shape.Map.txt",
+      "role": "auxiliary",
+      "stored": 136
+    },
+    {
+      "attributes": {
+        "central_header_offset": "5163",
+        "crc32": "0dfb6b57",
+        "data_offset": "3418",
+        "header_offset": "3361"
+      },
+      "compression": "deflate",
+      "expanded": 8717,
+      "name": "AdditiveBox.AddSubShape.brp",
+      "role": "brep",
+      "stored": 716
+    },
+    {
+      "attributes": {
+        "central_header_offset": "5236",
+        "crc32": "2d2c57fe",
+        "data_offset": "4185",
+        "header_offset": "4134"
+      },
+      "compression": "deflate",
+      "expanded": 8939,
+      "name": "AdditiveBox.Shape.brp",
+      "role": "brep",
+      "stored": 733
+    },
+    {
+      "attributes": {
+        "central_header_offset": "5303",
+        "crc32": "00000000",
+        "data_offset": "4979",
+        "header_offset": "4918"
+      },
+      "compression": "deflate",
+      "expanded": 0,
+      "name": "AdditiveBox.SuppressedShape.brp",
+      "role": "brep",
+      "stored": 2
+    }
+  ],
+  "identity": {
+    "classification": "classified",
+    "dialects": {
+      "extra": [],
+      "primary": {
+        "admission": "admitted",
+        "declared": {
+          "file_version": "1",
+          "program_version": "1.0R39319 (Git)",
+          "schema_version": "4"
+        },
+        "dialect": "fcstd:schema-4"
+      }
+    }
+  },
+  "notes": [
+    "SchemaVersion=4",
+    "FileVersion=1",
+    "document root=Document",
+    "document kind=part-design",
+    "object count=9",
+    "physical ledger spans=43 coverage=exact",
+    "ProgramVersion=1.0R39319 (Git)"
+  ]
+}

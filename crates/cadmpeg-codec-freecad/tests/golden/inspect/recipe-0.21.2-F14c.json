@@ -1,0 +1,81 @@
+{
+  "container_kind": "zip",
+  "entries": [
+    {
+      "attributes": {
+        "central_header_offset": "5013",
+        "crc32": "9c7b83ba",
+        "data_offset": "42",
+        "header_offset": "0"
+      },
+      "compression": "deflate",
+      "expanded": 20390,
+      "name": "Document.xml",
+      "role": "document",
+      "stored": 2270
+    },
+    {
+      "attributes": {
+        "central_header_offset": "5071",
+        "crc32": "55e1b4e3",
+        "data_offset": "2355",
+        "header_offset": "2312"
+      },
+      "compression": "deflate",
+      "expanded": 6075,
+      "name": "PartShape.brp",
+      "role": "brep",
+      "stored": 778
+    },
+    {
+      "attributes": {
+        "central_header_offset": "5130",
+        "crc32": "0dfb6b57",
+        "data_offset": "3177",
+        "header_offset": "3133"
+      },
+      "compression": "deflate",
+      "expanded": 8717,
+      "name": "PartShape1.brp",
+      "role": "brep",
+      "stored": 881
+    },
+    {
+      "attributes": {
+        "central_header_offset": "5190",
+        "crc32": "9b426ac7",
+        "data_offset": "4102",
+        "header_offset": "4058"
+      },
+      "compression": "deflate",
+      "expanded": 8941,
+      "name": "PartShape2.brp",
+      "role": "brep",
+      "stored": 911
+    }
+  ],
+  "identity": {
+    "classification": "classified",
+    "dialects": {
+      "extra": [],
+      "primary": {
+        "admission": "admitted",
+        "declared": {
+          "file_version": "1",
+          "program_version": "0.21R33771 (Git)",
+          "schema_version": "4"
+        },
+        "dialect": "fcstd:schema-4"
+      }
+    }
+  },
+  "notes": [
+    "SchemaVersion=4",
+    "FileVersion=1",
+    "document root=Document",
+    "document kind=part-design",
+    "object count=9",
+    "physical ledger spans=29 coverage=exact",
+    "ProgramVersion=0.21R33771 (Git)"
+  ]
+}
