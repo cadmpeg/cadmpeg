@@ -309,6 +309,7 @@ fn spatial_extrude_profile_uses_persistent_curve_member_without_history() {
                 context_id_offset: 109,
                 tail_slot_present: false,
                 tail_slot_offset: 0,
+                scope_tail: None,
                 resolved_geometry: Some(SketchRelationOperand::Curve {
                     record_index: 20,
                     primary_id: 200,

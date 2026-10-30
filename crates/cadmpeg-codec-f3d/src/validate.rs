@@ -6791,6 +6791,8 @@ fn validate_extrude_selection_members(ctx: &Ctx, findings: &mut Vec<Finding>) {
                 == Some(member.record_index())
         }) && header.is_some_and(|header| {
             header.byte_offset == member.byte_offset() && header.class_tag == member.class_tag
+        }) && member.scope_tail.is_none_or(|tail| {
+            group.is_some_and(|group| tail.scope_record_index == group.scope_record_index)
         }) && selected_profile
             .is_none_or(|profile| profile.asset_id == member.asset_id)
             && member.resolved_geometry == expected_target

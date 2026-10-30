@@ -664,3 +664,80 @@ fn extrude_selection_group_and_members_have_exact_counted_frames() {
         ));
     });
 }
+
+/// Build a 240-byte selection member with synthetic values.
+fn scope_tail_member_bytes(scope: u32) -> Vec<u8> {
+    let mut bytes = Vec::new();
+    indexed_header(&mut bytes, *b"290", 200);
+    bytes.extend_from_slice(&[0; 10]);
+    bytes.extend_from_slice(&586u64.to_le_bytes());
+    lp_utf16(&mut bytes, "df9087bd-02a6-4a3f-a132-7e69990f323c");
+    lp_utf16(&mut bytes, "0b2382d1-caaf-4eb9-b40d-a6322a7ed829");
+    bytes.extend_from_slice(&2u32.to_le_bytes());
+    bytes.extend_from_slice(&[0; 5]);
+    assert_eq!(bytes.len(), 190);
+    bytes.push(0);
+    bytes.extend_from_slice(&0.1f64.to_le_bytes());
+    bytes.extend_from_slice(&0x104u32.to_le_bytes());
+    for (reference, separator) in [(31u32, &[1u8, 0, 0][..]), (32, &[0][..]), (scope, &[][..])] {
+        bytes.push(1);
+        bytes.extend_from_slice(&u64::from(reference).to_le_bytes());
+        bytes.extend_from_slice(&[0; 2]);
+        bytes.extend_from_slice(separator);
+    }
+    assert_eq!(bytes.len(), 240);
+    indexed_header(&mut bytes, *b"290", 201);
+    bytes
+}
+
+#[test]
+fn extrude_selection_scope_tail_member_has_exact_240_byte_frame() {
+    use crate::design::decode::operands::parse_extrude_identity_member;
+    let bytes = scope_tail_member_bytes(12);
+    let member =
+        parse_extrude_identity_member(&bytes, 0, Some(12)).expect("scope-tail selection member");
+    assert_eq!(member.next_byte_offset, 240);
+    assert_eq!(member.next_record_index, 201);
+    assert!(!member.tail_slot_present);
+    let tail = member.scope_tail.expect("scope tail");
+    assert_eq!(f64::from_bits(tail.opaque_scalar_bits), 0.1);
+    assert_eq!(tail.opaque_word, 0x104);
+    assert_eq!(tail.chain_references, [31, 32]);
+    assert_eq!(tail.scope_record_index, 12);
+    // Terminal form.
+    let terminal = parse_extrude_identity_member(&bytes[..240], 0, Some(12))
+        .expect("terminal scope-tail member");
+    assert_eq!(terminal.next_record_index, 0);
+    assert_eq!(terminal.next_byte_offset, 240);
+    // Callers that supply no scope refuse the form.
+    assert!(parse_extrude_identity_member(&bytes, 0, None).is_none());
+    // The closing reference has to name the group scope.
+    assert!(parse_extrude_identity_member(&bytes, 0, Some(13)).is_none());
+    assert!(parse_extrude_identity_member(&scope_tail_member_bytes(13), 0, Some(12)).is_none());
+}
+
+#[test]
+fn extrude_selection_scope_tail_member_refuses_each_broken_condition() {
+    use crate::design::decode::operands::parse_extrude_identity_member;
+    let bytes = scope_tail_member_bytes(12);
+    // Every fixed byte of the tail: leading zero, word, separators, reference
+    // markers and padding.
+    for at in [
+        190, 199, 200, 201, 202, 203, 213, 214, 215, 216, 217, 227, 228, 229, 239,
+    ] {
+        let mut broken = bytes.clone();
+        broken[at] ^= 0x40;
+        assert!(
+            parse_extrude_identity_member(&broken, 0, Some(12)).is_none(),
+            "byte {at}"
+        );
+    }
+    // Truncated tail.
+    for len in [191, 205, 239] {
+        assert!(parse_extrude_identity_member(&bytes[..len], 0, Some(12)).is_none());
+    }
+    // A present optional slot does not admit the form.
+    let mut slot = bytes.clone();
+    slot[185] = 1;
+    assert!(parse_extrude_identity_member(&slot, 0, Some(12)).is_none());
+}
