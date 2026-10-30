@@ -58,7 +58,19 @@
       "payload": "native",
       "target": "usd:usda-1.0"
     },
-    "losses": [],
+    "losses": [
+      {
+        "code": {
+          "code": "export.brep-not-written",
+          "kind": "topology_not_transferred",
+          "namespace": "usd",
+          "scope": "namespaced",
+          "strict_floor": "warning"
+        },
+        "message": "1 bodies have no BrepArray prim: Roof: a face has no loop",
+        "severity": "warning"
+      }
+    ],
     "notes": [
       "USDA 1.0 text layer, metre units"
     ],

@@ -153,6 +153,8 @@ enum Role {
     BasisCurves,
     NurbsCurves,
     NurbsPatch,
+    /// A `BrepArray` prim (spec §17).
+    BrepArray,
     /// An intrinsic primitive: placed, with no geometry transferred.
     Intrinsic,
     /// A prim the model does not carry: its subtree is skipped.
@@ -168,6 +170,7 @@ fn role(type_name: Option<&str>) -> Role {
         Some("BasisCurves") => Role::BasisCurves,
         Some("NurbsCurves") => Role::NurbsCurves,
         Some("NurbsPatch") => Role::NurbsPatch,
+        Some(crate::brep::solid::PRIM_TYPE) => Role::BrepArray,
         Some(
             "Cube" | "Sphere" | "Cylinder" | "Cone" | "Capsule" | "Plane" | "Cylinder_1"
             | "Capsule_1",
@@ -184,6 +187,12 @@ struct Tallies {
     /// Properties of group prims that no reader carries, by name.
     unread_properties: BTreeMap<String, usize>,
     intrinsic: BTreeMap<String, usize>,
+    /// `BrepArray` prims whose arrays do not describe B-reps, with the reason.
+    rejected_breps: Vec<String>,
+    /// Wire edges and point shells of `BrepArray` prims, by prim.
+    brep_elements: BTreeMap<String, usize>,
+    /// Geometry subsets of `BrepArray` prims, by prim.
+    brep_subsets: BTreeMap<String, usize>,
     xform: Vec<String>,
     subdivision: usize,
     rejected_faces: usize,
@@ -228,6 +237,10 @@ const API_SCHEMAS_READ: &[&str] = &[
     "PhysicsMeshCollisionAPI",
     "PhysicsArticulationRootAPI",
     "PhysicsMaterialAPI",
+    crate::brep::solid::VERTEX_POINT_API,
+    crate::brep::solid::EDGE_CURVE_API,
+    crate::brep::solid::SURFACE_API,
+    crate::brep::solid::TRIM_CURVE_API,
 ];
 
 /// Prefix of the multiple-apply drive schema, whose instances the joint
@@ -261,6 +274,9 @@ struct Builder<'s, 'l, 'c, 'a> {
     tallies: Tallies,
     /// Definitions written, by key.
     definitions: BTreeSet<String>,
+    /// Group prims folded into the B-rep of one `BrepArray` child, with the
+    /// child, by path.
+    folded: BTreeMap<String, usize>,
     /// Prototype ordinals by instance key.
     prototypes: BTreeMap<String, usize>,
     appearances: BTreeSet<String>,
@@ -296,6 +312,7 @@ pub(crate) fn build<'a>(
         issues: Issues::default(),
         tallies: Tallies::default(),
         definitions: BTreeSet::new(),
+        folded: BTreeMap::new(),
         prototypes: BTreeMap::new(),
         appearances: BTreeSet::new(),
         physical_materials: BTreeSet::new(),
@@ -420,6 +437,9 @@ impl Builder<'_, '_, '_, '_> {
                 return Ok(false);
             }
             Role::Consumed => return Ok(false),
+            Role::Mesh | Role::NurbsPatch if brep::is_fallback(stage, prim, &mut self.issues) => {
+                return Ok(false);
+            }
             Role::Group if holds_only_shading(stage, prim) => {
                 for child in prim.children.clone() {
                     self.collect_unplaced(child, parent_world)?;
@@ -427,6 +447,11 @@ impl Builder<'_, '_, '_, '_> {
                 return Ok(false);
             }
             _ => {}
+        }
+        if role == Role::Group {
+            if let Some(source) = brep::folded(stage, prim, &mut self.issues) {
+                self.folded.insert(prim.path.clone(), source);
+            }
         }
         let local = match local_transform(prim, &mut self.issues) {
             Ok(local) => local,
@@ -488,6 +513,7 @@ impl Builder<'_, '_, '_, '_> {
         if self.definitions.insert(definition.clone()) {
             self.definition(prim, role, &definition)?;
         }
+        let folded = self.folded.contains_key(&prim.path);
         self.ctx
             .retain_bytes(u64_from_index(prim.name.len()), RETAIN_NAME)?;
         self.ir.model.occurrences.push(Occurrence {
@@ -553,6 +579,9 @@ impl Builder<'_, '_, '_, '_> {
             self.admit("usd_occurrence")?;
         }
         for child in prim.children.clone() {
+            if folded {
+                break;
+            }
             if self.prim(child, Some(&prim.path), &world, child_ordinal)? {
                 child_ordinal = child_ordinal
                     .checked_add(1)
@@ -578,15 +607,84 @@ impl Builder<'_, '_, '_, '_> {
     /// Writes the definition of `prim` and its geometry.
     fn definition(&mut self, prim: &Prim<'_>, role: Role, key: &str) -> Result<(), CodecError> {
         let kind = match role {
-            Role::Mesh | Role::BasisCurves | Role::NurbsCurves | Role::NurbsPatch => {
-                ProductDefinitionKind::Object
-            }
+            Role::Mesh
+            | Role::BasisCurves
+            | Role::NurbsCurves
+            | Role::NurbsPatch
+            | Role::BrepArray => ProductDefinitionKind::Object,
             _ => match prim.metadata_text("kind") {
                 Some("component" | "assembly" | "subcomponent") => ProductDefinitionKind::Part,
                 _ => ProductDefinitionKind::Group,
             },
         };
-        let body = match role {
+        let bodies = match (role, self.folded.get(&prim.path).copied()) {
+            (Role::Group, Some(source)) => {
+                let stage = self.stage;
+                let fallbacks: Vec<usize> = prim
+                    .children
+                    .iter()
+                    .copied()
+                    .filter(|child| *child != source)
+                    .collect();
+                match stage.prims.get(source) {
+                    Some(source_prim) => {
+                        let bodies = self.brep_array(source_prim, &fallbacks, key)?;
+                        let local = local_transform(source_prim, &mut self.issues)
+                            .ok()
+                            .filter(|local| local.matrix != IDENTITY)
+                            .and_then(|local| self.transform(&local.matrix));
+                        for body in self
+                            .ir
+                            .model
+                            .bodies
+                            .iter_mut()
+                            .filter(|body| bodies.contains(&body.id))
+                        {
+                            body.transform = local;
+                        }
+                        bodies
+                    }
+                    None => Vec::new(),
+                }
+            }
+            (Role::BrepArray, _) => self.brep_array(prim, &[], key)?,
+            _ => self.single_body(prim, role, key)?.into_iter().collect(),
+        };
+        if matches!(
+            role,
+            Role::Mesh | Role::BasisCurves | Role::NurbsCurves | Role::NurbsPatch
+        ) {
+            self.unconsumed_primvars(prim, role);
+        }
+        if role == Role::Group {
+            self.unread_group_properties(prim);
+        }
+        if !bodies.is_empty() {
+            self.bodied.insert(key.to_owned());
+        }
+        self.ir.model.product_definitions.push(ProductDefinition {
+            id: crate::ids::definition(key),
+            kind,
+            source_name: Some(definition_name(prim, key).to_owned()),
+            label: None,
+            description: prim.metadata_text("documentation").map(str::to_owned),
+            part_number: None,
+            bom_properties: BTreeMap::new(),
+            bodies,
+            sketches: Vec::new(),
+            native_ref: Some(prim.path.clone()),
+        });
+        self.admit("usd_definition")
+    }
+
+    /// The body of a geometry prim of `role` other than a `BrepArray`.
+    fn single_body(
+        &mut self,
+        prim: &Prim<'_>,
+        role: Role,
+        key: &str,
+    ) -> Result<Option<cadmpeg_ir::ids::BodyId>, CodecError> {
+        Ok(match role {
             Role::Mesh => self.mesh(prim, key)?,
             Role::BasisCurves => {
                 let curves = crate::schema::curves::basis_curves(prim, &mut self.issues);
@@ -598,40 +696,22 @@ impl Builder<'_, '_, '_, '_> {
             }
             Role::NurbsPatch => self.patch(prim, key)?,
             Role::Intrinsic => match crate::schema::intrinsic::records(prim, &mut self.issues) {
-                Ok(records) => self.primitive_body(prim, key, &records)?,
+                Ok(records) => match self.brep_body(prim, key, &records)? {
+                    Ok(body) => Some(body),
+                    Err(reason) => {
+                        let name = format!("{}: {reason}", prim.path);
+                        *self.tallies.intrinsic.entry(name).or_default() += 1;
+                        None
+                    }
+                },
                 Err(reason) => {
                     let name = format!("{}: {reason}", prim.path);
                     *self.tallies.intrinsic.entry(name).or_default() += 1;
                     None
                 }
             },
-            Role::Group | Role::Skipped | Role::Consumed => None,
-        };
-        if matches!(
-            role,
-            Role::Mesh | Role::BasisCurves | Role::NurbsCurves | Role::NurbsPatch
-        ) {
-            self.unconsumed_primvars(prim, role);
-        }
-        if role == Role::Group {
-            self.unread_group_properties(prim);
-        }
-        if body.is_some() {
-            self.bodied.insert(key.to_owned());
-        }
-        self.ir.model.product_definitions.push(ProductDefinition {
-            id: crate::ids::definition(key),
-            kind,
-            source_name: Some(definition_name(prim, key).to_owned()),
-            label: None,
-            description: prim.metadata_text("documentation").map(str::to_owned),
-            part_number: None,
-            bom_properties: BTreeMap::new(),
-            bodies: body.into_iter().collect(),
-            sketches: Vec::new(),
-            native_ref: Some(prim.path.clone()),
-        });
-        self.admit("usd_definition")
+            Role::Group | Role::Skipped | Role::Consumed | Role::BrepArray => None,
+        })
     }
 
     /// Tallies the properties of group prim `prim` that no reader carries.
@@ -1536,6 +1616,33 @@ fn tally_losses(tallies: &Tallies, issues: &Issues, metrics: &Metrics) -> Vec<Lo
         format!(
             "intrinsic primitives were placed without geometry: {}",
             counted(&tallies.intrinsic)
+        ),
+    );
+    push(
+        UsdLossCode::BrepRejected,
+        !tallies.rejected_breps.is_empty(),
+        format!(
+            "{} BrepArray prims or B-reps do not describe a neutral B-rep and were not \
+             transferred: {}",
+            tallies.rejected_breps.len(),
+            joined(tallies.rejected_breps.iter().cloned())
+        ),
+    );
+    push(
+        UsdLossCode::BrepSubsetNotTransferred,
+        !tallies.brep_subsets.is_empty(),
+        format!(
+            "geometry subsets of BrepArray prims and their material bindings were not \
+             transferred: {}",
+            counted(&tallies.brep_subsets)
+        ),
+    );
+    push(
+        UsdLossCode::BrepElementNotTransferred,
+        !tallies.brep_elements.is_empty(),
+        format!(
+            "wire edges and point shells of BrepArray prims were not transferred: {}",
+            counted(&tallies.brep_elements)
         ),
     );
     push(

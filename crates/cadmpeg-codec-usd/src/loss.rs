@@ -93,6 +93,14 @@ pub(crate) enum UsdLossCode {
     /// A texture path names no package member and no companion file; the
     /// texture keeps the path as written.
     TextureUnlocated,
+    /// A `BrepArray` prim, or one B-rep of it, whose arrays do not describe
+    /// a neutral B-rep was not transferred.
+    BrepRejected,
+    /// Wire edges and point shells of a `BrepArray` prim were not
+    /// transferred.
+    BrepElementNotTransferred,
+    /// Geometry subsets of a `BrepArray` prim were not transferred.
+    BrepSubsetNotTransferred,
     /// A joint whose bodies or frames do not resolve was not transferred.
     JointRejected,
     /// Joint properties with no neutral form were not transferred.
@@ -117,6 +125,10 @@ pub(crate) enum UsdLossCode {
     ExportTextureExternal,
     /// B-rep topology was written as the body's tessellation.
     ExportTopologyTessellated,
+    /// A body with faces has no `BrepArray` prim.
+    ExportBrepNotWritten,
+    /// A `BrepArray` prim has no trim curves.
+    ExportBrepUntrimmed,
     /// Points, curves, or surfaces that no topology uses were not written.
     ExportCarrierNotWritten,
     /// An assembly joint or a joint drive with no `UsdPhysics` form was not
@@ -161,6 +173,9 @@ impl UsdLossCode {
         Self::DisplayColorNotTransferred,
         Self::MaterialNotTransferred,
         Self::TextureUnlocated,
+        Self::BrepRejected,
+        Self::BrepElementNotTransferred,
+        Self::BrepSubsetNotTransferred,
         Self::JointRejected,
         Self::JointPropertyNotTransferred,
         Self::SolverPropertyNotTransferred,
@@ -172,6 +187,8 @@ impl UsdLossCode {
         Self::ExportAppearanceReduced,
         Self::ExportTextureExternal,
         Self::ExportTopologyTessellated,
+        Self::ExportBrepNotWritten,
+        Self::ExportBrepUntrimmed,
         Self::ExportCarrierNotWritten,
         Self::ExportJointNotWritten,
         Self::ExportSolverPropertyNotWritten,
@@ -309,6 +326,17 @@ impl UsdLossCode {
                 Info,
                 T::ReferenceGraphNotClosed,
             ),
+            Self::BrepRejected => ("brep.rejected", Warning, T::TopologyNotTransferred),
+            Self::BrepElementNotTransferred => (
+                "brep.element-not-transferred",
+                Info,
+                T::TopologyNotTransferred,
+            ),
+            Self::BrepSubsetNotTransferred => (
+                "brep.subset-not-transferred",
+                Info,
+                T::MaterialNotTransferred,
+            ),
             Self::JointRejected => (
                 "physics.joint-rejected",
                 Warning,
@@ -358,6 +386,12 @@ impl UsdLossCode {
                 Warning,
                 T::TopologyNotTransferred,
             ),
+            Self::ExportBrepNotWritten => (
+                "export.brep-not-written",
+                Warning,
+                T::TopologyNotTransferred,
+            ),
+            Self::ExportBrepUntrimmed => ("export.brep-untrimmed", Info, T::GeometryNotTransferred),
             Self::ExportCarrierNotWritten => (
                 "export.carrier-not-written",
                 Warning,

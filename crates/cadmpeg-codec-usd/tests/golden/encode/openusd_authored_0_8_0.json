@@ -58,7 +58,19 @@
       "payload": "native",
       "target": "usd:usdc-0.8.0"
     },
-    "losses": [],
+    "losses": [
+      {
+        "code": {
+          "code": "export.brep-not-written",
+          "kind": "topology_not_transferred",
+          "namespace": "usd",
+          "scope": "namespaced",
+          "strict_floor": "warning"
+        },
+        "message": "1 bodies have no BrepArray prim: Roof: a face has no loop",
+        "severity": "warning"
+      }
+    ],
     "notes": [
       "USDC 0.8.0 binary layer, metre units"
     ],

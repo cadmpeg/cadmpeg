@@ -61,6 +61,17 @@
     "losses": [
       {
         "code": {
+          "code": "export.brep-not-written",
+          "kind": "topology_not_transferred",
+          "namespace": "usd",
+          "scope": "namespaced",
+          "strict_floor": "warning"
+        },
+        "message": "2 bodies have no BrepArray prim: Bilinear: a face has no loop; Trimmed: a face has no loop",
+        "severity": "warning"
+      },
+      {
+        "code": {
           "code": "export.vertex-precision",
           "kind": "mesh_vertex_precision",
           "namespace": "usd",
