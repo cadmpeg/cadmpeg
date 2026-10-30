@@ -522,6 +522,9 @@ pub(crate) struct Stats {
     pub(crate) unknown_curve_edges: usize,
     /// Pcurves withheld because geometric inverse selection was ambiguous.
     pub(crate) ambiguous_pcurve_parameters: usize,
+    /// Edges left without a range because their curve's records disagree on
+    /// orientation.
+    pub(crate) marker_conflict_edges: usize,
     /// NURBS edge carriers whose vertex range is off their bound surface.
     pub(crate) off_surface_nurbs_pcurves: usize,
     /// Coedges whose derived pcurve stopped at `SURFACE_SOLVER_LOCAL_WORK`.
@@ -2676,9 +2679,13 @@ fn decode_graph(
                 .and_then(|vertex| vertex.tolerance_m)
                 .map(|tolerance| tolerance * LEN_TO_MM)
         };
+        let marker_conflict = carriers.marker_conflict(curve_attr);
+        if marker_conflict {
+            out.stats.marker_conflict_edges += 1;
+        }
         let parameter_range = carriers
             .curve(curve_attr)
-            .filter(|_| !carriers.marker_conflict(curve_attr))
+            .filter(|_| !marker_conflict)
             .map(|carrier| {
                 edge_parameter_range(
                     ctx,
@@ -2806,7 +2813,9 @@ fn decode_graph(
         let stored_range = carriers
             .curve(curve_attr)
             .is_some_and(|carrier| carrier.carrier().parameter_range.is_some());
-        if (parameter_range.is_some() && !stored_range) || closed_point.is_some() {
+        if (parameter_range.is_some() && !stored_range)
+            || (closed_point.is_some() && !marker_conflict)
+        {
             annotations
                 .derived(id_edge(e).as_str(), "carrier.param_range")
                 .map_err(cadmpeg_core::CodecError::malformed)?;
@@ -2816,9 +2825,9 @@ fn decode_graph(
             id: id_edge(e),
             carrier: cadmpeg_ir::topology::EdgeCarrier::new(
                 curve,
-                parameter_range
-                    .map(|(range, _)| range)
-                    .or(closed_point.map(|(_, range)| range)),
+                parameter_range.map(|(range, _)| range).or(closed_point
+                    .filter(|_| !marker_conflict)
+                    .map(|(_, range)| range)),
             )
             .map_err(cadmpeg_core::CodecError::malformed)?,
             start: start_id,
@@ -3571,7 +3580,7 @@ fn decode_graph(
     solve_face_orientation(&mut out);
     synthesize_cylinder_seams(ctx, &mut out, &mut annotations, &source_stream)?;
     synthesize_sphere_seams(ctx, &mut out, &mut annotations, &source_stream)?;
-    phase_full_turn_edge_ranges(&mut out);
+    phase_full_turn_edge_ranges(&mut out, &mut annotations)?;
     derive_planar_pcurves(ctx, &mut out, &mut annotations, &source_stream)?;
     derive_cylindrical_pcurves(ctx, &mut out, &mut annotations, &source_stream)?;
     derive_revolved_circle_pcurves(ctx, &mut out, &mut annotations, &source_stream)?;
@@ -3845,13 +3854,21 @@ const PERIODIC_FULL_TURN_TOLERANCE: f64 = 1.0e-9;
 
 /// Start each full-turn circle or ellipse edge range at its vertex (spec
 /// §7.2), once the seam passes have placed the derived vertex of a sentinel
-/// closed circle.
-fn phase_full_turn_edge_ranges(out: &mut Brep) {
+/// closed circle. A moved range is derived.
+fn phase_full_turn_edge_ranges(
+    out: &mut Brep,
+    annotations: &mut AnnotationBuilder,
+) -> Result<(), cadmpeg_core::CodecError> {
     let tau = std::f64::consts::TAU;
     let vertex_points = out
         .vertices
         .iter()
-        .map(|vertex| (&vertex.id, &vertex.point))
+        .map(|vertex| {
+            let bound = vertex.tolerance.map_or(LINEAR_RESOLUTION_MM, |tolerance| {
+                looser_tolerance(tolerance.get(), LINEAR_RESOLUTION_MM)
+            });
+            (&vertex.id, (&vertex.point, bound))
+        })
         .collect::<HashMap<_, _>>();
     let points = out
         .points
@@ -3877,24 +3894,31 @@ fn phase_full_turn_edge_ranges(out: &mut Brep) {
         let Some(curve_id) = edge.curve() else {
             continue;
         };
-        let (Some(geometry), Some(point)) = (
-            curves.get(curve_id),
-            vertex_points
-                .get(&edge.start)
-                .and_then(|point| points.get(*point)),
-        ) else {
+        let (Some(geometry), Some(&(point, bound))) =
+            (curves.get(curve_id), vertex_points.get(&edge.start))
+        else {
             continue;
         };
-        let Some(phase) = carrier_angle(geometry, *point, f64::INFINITY) else {
+        let Some(phase) = points
+            .get(point)
+            .and_then(|point| carrier_angle(geometry, *point, bound))
+        else {
             continue;
         };
+        if (phase - start.min(end)).abs() <= PERIODIC_FULL_TURN_TOLERANCE {
+            continue;
+        }
         if let Ok(carrier) = cadmpeg_ir::topology::EdgeCarrier::new(
             Some(curve_id.clone()),
             Some([phase, phase + tau]),
         ) {
             edge.carrier = carrier;
+            annotations
+                .derived(edge.id.as_str(), "carrier.param_range")
+                .map_err(cadmpeg_core::CodecError::malformed)?;
         }
     }
+    Ok(())
 }
 
 fn prune_rejected_topology(out: &mut Brep) {

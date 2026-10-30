@@ -112,6 +112,49 @@ fn sentinel_vertices_without_partners_withhold_the_rim_edges() {
 }
 
 #[test]
+fn a_closed_circle_with_conflicting_markers_has_no_range() {
+    let circle = circle_carrier(200, [1.0, 2.0, 0.0], [0.0, 0.0, 1.0], 0.5);
+    let mut against = circle.clone();
+    against[18] = 0x2d;
+    let mut body = Vec::new();
+    body.extend(plane_carrier(
+        100,
+        [0.0, 0.0, 0.0],
+        [0.0, 0.0, 1.0],
+        [1.0, 0.0, 0.0],
+    ));
+    body.extend(circle);
+    body.extend(against);
+    body.extend(bridge(10, 20, 100));
+    body.extend(loop_head(20, 30, 10));
+    body.extend(coedge(30, 20, 30, 1, 31, 40, false));
+    body.extend(framed_topology_fin(
+        31,
+        [0, 0, 0, 0, 1, 30, 40, 0, 0],
+        false,
+        false,
+        true,
+    ));
+    body.extend(edge_use(40, 200));
+
+    let decoded = SldprtCodec
+        .decode(
+            &mut Cursor::new(sldprt_with_body(&body)),
+            &DecodeOptions::default(),
+        )
+        .unwrap();
+
+    let edge = &decoded.ir().model.edges[0];
+    assert_eq!(edge.start, edge.end);
+    assert!(edge.param_range().is_none());
+    assert!(decoded
+        .report()
+        .losses
+        .iter()
+        .any(|loss| loss.code.local_code() == "geometry.curve-marker-conflict"));
+}
+
+#[test]
 fn closed_circle_edge_gets_a_derived_seam_vertex() {
     let mut body = Vec::new();
     body.extend(plane_carrier(
