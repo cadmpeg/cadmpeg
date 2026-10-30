@@ -691,7 +691,7 @@ fn endpoint_incidence_binds_an_existing_profile_line() {
         native_ref: None,
     };
     let feature = Feature {
-        product_definition: Default::default(),
+        product_definition: None,
         id: FeatureId::mint("synthetic:test:id#feature").expect("identity grammar"),
         ordinal: 0,
         name: None,
@@ -781,7 +781,7 @@ fn point_marker_materializing_a_circle_binds_its_center() {
         native_ref: None,
     };
     let feature = Feature {
-        product_definition: Default::default(),
+        product_definition: None,
         id: FeatureId::mint("synthetic:test:id#feature").expect("identity grammar"),
         ordinal: 0,
         name: None,
@@ -860,7 +860,7 @@ fn point_operand_canonicalizes_shared_endpoint_loci() {
         native_ref: None,
     };
     let feature = Feature {
-        product_definition: Default::default(),
+        product_definition: None,
         id: FeatureId::mint("synthetic:test:id#feature").expect("identity grammar"),
         ordinal: 0,
         name: None,
@@ -976,7 +976,7 @@ fn distance_fallback_requires_one_locus_in_the_complete_sketch() {
     let known = point("synthetic:test:id#known", 0.0, 0.0);
     let candidate = point("synthetic:test:id#candidate", 3.0, 4.0);
     let parameter = DesignParameter {
-        product_definition: Default::default(),
+        product_definition: None,
         id: ParameterId::mint("synthetic:test:id#distance").expect("identity grammar"),
         owner: Some(FeatureId::mint("synthetic:test:id#feature").expect("identity grammar")),
         ordinal: 0,
@@ -1550,7 +1550,7 @@ fn dimension_preserves_structurally_typed_operands_when_geometry_disagrees() {
             .collect(),
     };
     let parameter = DesignParameter {
-        product_definition: Default::default(),
+        product_definition: None,
         id: ParameterId::mint("synthetic:test:id#distance").expect("identity grammar"),
         owner: Some(FeatureId::mint("synthetic:test:id#feature").expect("identity grammar")),
         ordinal: 0,
@@ -1652,7 +1652,7 @@ fn line_distance_repairs_distinct_operands_collapsed_to_one_marker() {
             .collect(),
     };
     let parameter = DesignParameter {
-        product_definition: Default::default(),
+        product_definition: None,
         id: ParameterId::mint("synthetic:test:id#distance").expect("identity grammar"),
         owner: Some(FeatureId::mint("synthetic:test:id#feature").expect("identity grammar")),
         ordinal: 0,
@@ -1756,7 +1756,7 @@ fn line_distance_uses_an_addressed_point_to_select_the_missing_line() {
         ],
     };
     let parameter = DesignParameter {
-        product_definition: Default::default(),
+        product_definition: None,
         id: ParameterId::mint("synthetic:test:id#distance").expect("identity grammar"),
         owner: Some(FeatureId::mint("synthetic:test:id#feature").expect("identity grammar")),
         ordinal: 0,

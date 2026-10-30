@@ -7,7 +7,7 @@ use cadmpeg_ir::features::{
 
 fn feature(position: usize, native_ref: Option<String>) -> Feature {
     Feature {
-        product_definition: Default::default(),
+        product_definition: None,
         id: FeatureId::mint(format!("synthetic:test:id#feature-{position}"))
             .expect("identity grammar"),
         ordinal: 0,

@@ -1316,7 +1316,7 @@ pub(crate) fn project_parameter_design_with_edge_identities(
             };
             let outputs = inserted_bodies;
             Ok(Feature {
-                product_definition: Default::default(),
+                product_definition: None,
                 id: scope_ids[&(native_scope, scope.record_index)].clone(),
                 ordinal: source_ordinals[&(native_scope, scope.record_index)],
                 name: Some(format!(
@@ -1566,7 +1566,7 @@ pub(crate) fn project_parameter_design_with_edge_identities(
                 }
             };
             NeutralParameter {
-                product_definition: Default::default(),
+                product_definition: None,
                 id: crate::ids::neutral_parameter_id(parameter),
                 owner: owner.cloned(),
                 ordinal: owner

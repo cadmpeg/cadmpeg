@@ -14,7 +14,7 @@ use std::collections::BTreeMap;
 
 fn pattern_fixture() -> (Vec<Feature>, FeatureHistory, FeatureInputLane) {
     let neutral = |id: &str, native_ref: &str, definition| Feature {
-        product_definition: Default::default(),
+        product_definition: None,
         id: FeatureId::mint(id).expect("identity grammar"),
         ordinal: 0,
         name: None,

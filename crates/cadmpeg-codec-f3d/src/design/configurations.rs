@@ -533,7 +533,7 @@ mod tests {
         )
         .unwrap();
         let parameter = NeutralParameter {
-            product_definition: Default::default(),
+            product_definition: None,
             id: ParameterId::mint("f3d:model:parameter#width").expect("identity grammar"),
             owner: None,
             ordinal: 0,
@@ -595,7 +595,7 @@ mod tests {
         )
         .unwrap();
         let feature = Feature {
-            product_definition: Default::default(),
+            product_definition: None,
             id: FeatureId::mint("f3d:model:feature#fillet-1").expect("identity grammar"),
             ordinal: 0,
             name: Some("Fillet 1".into()),

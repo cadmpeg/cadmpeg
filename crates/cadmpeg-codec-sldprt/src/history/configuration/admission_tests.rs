@@ -189,7 +189,7 @@ fn datum_model() -> cadmpeg_ir::CadIr {
     .zip(definitions)
     {
         ir.model.features.push(Feature {
-            product_definition: Default::default(),
+            product_definition: None,
             id,
             ordinal,
             name: None,
@@ -378,7 +378,7 @@ fn run_spatial_ownership(policy: &DecodePolicy) -> Result<(), CodecError> {
     ] {
         let id = FeatureId::mint(format!("sldprt:model:feature#{name}")).unwrap();
         ir.model.features.push(Feature {
-            product_definition: Default::default(),
+            product_definition: None,
             id: id.clone(),
             ordinal,
             name: None,
@@ -497,7 +497,7 @@ fn run_hole_construction(policy: &DecodePolicy) -> Result<(), CodecError> {
     ] {
         let id = FeatureId::mint(format!("synthetic:test:id#{name}")).unwrap();
         ir.model.features.push(Feature {
-            product_definition: Default::default(),
+            product_definition: None,
             id: id.clone(),
             ordinal,
             name: None,
@@ -589,7 +589,7 @@ fn run_hole_operands(policy: &DecodePolicy) -> Result<(), CodecError> {
     let id = FeatureId::mint("synthetic:test:id#hole-operands").unwrap();
     let mut ir = cadmpeg_ir::CadIr::empty();
     ir.model.features.push(Feature {
-        product_definition: Default::default(),
+        product_definition: None,
         id: id.clone(),
         ordinal: 0,
         name: None,
@@ -789,7 +789,7 @@ fn run_hole_profile_termination(policy: &DecodePolicy) -> Result<(), CodecError>
     for index in 0..profiles.len().max(terminations.len()) {
         let id = FeatureId::mint(format!("synthetic:test:id#hole-profile-{index}")).unwrap();
         ir.model.features.push(Feature {
-            product_definition: Default::default(),
+            product_definition: None,
             id: id.clone(),
             ordinal: u64::try_from(index).unwrap(),
             name: None,
@@ -846,7 +846,7 @@ fn run_parameter_overlay(policy: &DecodePolicy) -> Result<(), CodecError> {
     let mut ir = cadmpeg_ir::CadIr::empty();
     for index in 0..7 {
         ir.model.parameters.push(DesignParameter {
-            product_definition: Default::default(),
+            product_definition: None,
             id: ParameterId::mint(format!("synthetic:test:id#parameter-{index}")).unwrap(),
             owner: None,
             ordinal: index,

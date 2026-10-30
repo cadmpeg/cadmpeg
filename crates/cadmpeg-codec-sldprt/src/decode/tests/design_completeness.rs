@@ -23,7 +23,7 @@ use std::collections::BTreeMap;
 fn design_completeness_rejects_unresolved_and_unaudited_typed_families() {
     let mut ir = CadIr::empty();
     let feature = |id: &str, ordinal, definition| Feature {
-        product_definition: Default::default(),
+        product_definition: None,
         id: FeatureId::mint(id).expect("identity grammar"),
         ordinal,
         name: None,
@@ -103,7 +103,7 @@ fn design_completeness_audits_direct_body_and_shape_families() {
     let mut push =
         |id: &str, ordinal, dependencies: Vec<FeatureId>, outputs: Vec<BodyId>, definition| {
             ir.model.features.push(Feature {
-                product_definition: Default::default(),
+                product_definition: None,
                 id: FeatureId::mint(id).expect("identity grammar"),
                 ordinal,
                 name: None,
@@ -339,7 +339,7 @@ fn design_completeness_audits_typed_construction_families() {
     ];
     for (ordinal, definition) in definitions.into_iter().enumerate() {
         ir.model.features.push(Feature {
-            product_definition: Default::default(),
+            product_definition: None,
             id: FeatureId::mint(format!("synthetic:test:id#construction-{ordinal}"))
                 .expect("identity grammar"),
             ordinal: cadmpeg_core::decode::u64_from_index(ordinal),
@@ -374,7 +374,7 @@ fn binder_completeness_requires_resolved_targets_and_shape_arity() {
     let mut ir = CadIr::empty();
     let source = FeatureId::mint("synthetic:test:id#source").expect("identity grammar");
     let feature = |id: &str, ordinal, dependencies: Vec<FeatureId>, definition| Feature {
-        product_definition: Default::default(),
+        product_definition: None,
         id: FeatureId::mint(id).expect("identity grammar"),
         ordinal,
         name: None,
@@ -496,7 +496,7 @@ fn post_process_completeness_delegates_to_the_wrapped_operation() {
     .enumerate()
     {
         ir.model.features.push(Feature {
-            product_definition: Default::default(),
+            product_definition: None,
             id: FeatureId::mint(format!("synthetic:test:id#post-process-{ordinal}"))
                 .expect("identity grammar"),
             ordinal: cadmpeg_core::decode::u64_from_index(ordinal),
@@ -592,7 +592,7 @@ fn design_completeness_recurses_through_pattern_operands() {
         ),
     ] {
         ir.model.features.push(Feature {
-            product_definition: Default::default(),
+            product_definition: None,
             id: FeatureId::mint(format!("synthetic:test:id#pattern-{ordinal}"))
                 .expect("identity grammar"),
             ordinal,
@@ -690,7 +690,7 @@ fn design_completeness_checks_secondary_sweep_and_loft_paths() {
     ];
     for (ordinal, definition) in definitions.into_iter().enumerate() {
         ir.model.features.push(Feature {
-            product_definition: Default::default(),
+            product_definition: None,
             id: FeatureId::mint(format!("synthetic:test:id#path-feature-{ordinal}"))
                 .expect("identity grammar"),
             ordinal: cadmpeg_core::decode::u64_from_index(ordinal),
@@ -817,7 +817,7 @@ fn design_completeness_rejects_explicitly_unresolved_operation_fields() {
     ];
     for (ordinal, definition) in definitions.into_iter().enumerate() {
         ir.model.features.push(Feature {
-            product_definition: Default::default(),
+            product_definition: None,
             id: FeatureId::mint(format!("synthetic:test:id#operation-{ordinal}"))
                 .expect("identity grammar"),
             ordinal: cadmpeg_core::decode::u64_from_index(ordinal),
@@ -851,7 +851,7 @@ fn design_completeness_rejects_explicitly_unresolved_operation_fields() {
 fn empty_required_operands_are_incomplete_design_semantics() {
     let mut ir = CadIr::empty();
     let feature = |ordinal, definition| Feature {
-        product_definition: Default::default(),
+        product_definition: None,
         id: FeatureId::mint(format!("synthetic:test:id#feature-{ordinal}"))
             .expect("identity grammar"),
         ordinal,
@@ -1026,7 +1026,7 @@ fn hole_completeness_checks_optional_operands_when_present() {
     .enumerate()
     {
         ir.model.features.push(Feature {
-            product_definition: Default::default(),
+            product_definition: None,
             id: FeatureId::mint(format!("synthetic:test:id#hole-{ordinal}"))
                 .expect("identity grammar"),
             ordinal: cadmpeg_core::decode::u64_from_index(ordinal),
@@ -1061,7 +1061,7 @@ fn incomplete_parameter_semantics_are_reported_as_design_losses() {
     let mut ir = CadIr::empty();
     let owner = FeatureId::mint("synthetic:test:id#owner").expect("identity grammar");
     ir.model.features.push(Feature {
-        product_definition: Default::default(),
+        product_definition: None,
         id: owner.clone(),
         ordinal: 0,
         name: Some("Boss-Extrude1".into()),
@@ -1080,7 +1080,7 @@ fn incomplete_parameter_semantics_are_reported_as_design_losses() {
         native_ref: None,
     });
     ir.model.parameters.push(DesignParameter {
-        product_definition: Default::default(),
+        product_definition: None,
         id: ParameterId::mint("synthetic:test:id#base-parameter").expect("identity grammar"),
         owner: Some(owner.clone()),
         ordinal: 0,
@@ -1096,7 +1096,7 @@ fn incomplete_parameter_semantics_are_reported_as_design_losses() {
         native_ref: None,
     });
     ir.model.parameters.push(DesignParameter {
-        product_definition: Default::default(),
+        product_definition: None,
         id: ParameterId::mint("synthetic:test:id#parameter").expect("identity grammar"),
         owner: Some(owner.clone()),
         ordinal: 1,
@@ -1110,7 +1110,7 @@ fn incomplete_parameter_semantics_are_reported_as_design_losses() {
         native_ref: None,
     });
     ir.model.parameters.push(DesignParameter {
-        product_definition: Default::default(),
+        product_definition: None,
         id: ParameterId::mint("synthetic:test:id#bare-reference").expect("identity grammar"),
         owner: Some(owner.clone()),
         ordinal: 2,
@@ -1126,7 +1126,7 @@ fn incomplete_parameter_semantics_are_reported_as_design_losses() {
         native_ref: None,
     });
     ir.model.parameters.push(DesignParameter {
-        product_definition: Default::default(),
+        product_definition: None,
         id: ParameterId::mint("synthetic:test:id#malformed-reference").expect("identity grammar"),
         owner: Some(owner.clone()),
         ordinal: 3,
@@ -1143,7 +1143,7 @@ fn incomplete_parameter_semantics_are_reported_as_design_losses() {
     });
     let future = ParameterId::mint("synthetic:test:id#future").expect("identity grammar");
     ir.model.parameters.push(DesignParameter {
-        product_definition: Default::default(),
+        product_definition: None,
         id: ParameterId::mint("synthetic:test:id#forward-reference").expect("identity grammar"),
         owner: Some(owner.clone()),
         ordinal: 4,
@@ -1160,7 +1160,7 @@ fn incomplete_parameter_semantics_are_reported_as_design_losses() {
         native_ref: None,
     });
     ir.model.parameters.push(DesignParameter {
-        product_definition: Default::default(),
+        product_definition: None,
         id: future,
         owner: Some(owner.clone()),
         ordinal: 5,
@@ -1176,7 +1176,7 @@ fn incomplete_parameter_semantics_are_reported_as_design_losses() {
         native_ref: None,
     });
     ir.model.parameters.push(DesignParameter {
-        product_definition: Default::default(),
+        product_definition: None,
         id: ParameterId::mint("synthetic:test:id#omitted-dependency").expect("identity grammar"),
         owner: Some(owner.clone()),
         ordinal: 6,
@@ -1192,7 +1192,7 @@ fn incomplete_parameter_semantics_are_reported_as_design_losses() {
         native_ref: None,
     });
     ir.model.parameters.push(DesignParameter {
-        product_definition: Default::default(),
+        product_definition: None,
         id: ParameterId::mint("synthetic:test:id#cached-unsupported-expression")
             .expect("identity grammar"),
         owner: Some(owner.clone()),
@@ -1215,7 +1215,7 @@ fn incomplete_parameter_semantics_are_reported_as_design_losses() {
         ("ordinal", 10, "Unique"),
     ] {
         ir.model.parameters.push(DesignParameter {
-            product_definition: Default::default(),
+            product_definition: None,
             id: ParameterId::mint(format!("synthetic:test:id#identity:{id}"))
                 .expect("identity grammar"),
             owner: Some(owner.clone()),
@@ -1258,7 +1258,7 @@ fn incoherent_feature_graph_is_reported_as_design_loss() {
     let second = FeatureId::mint("synthetic:test:id#second").expect("identity grammar");
     let missing = FeatureId::mint("synthetic:test:id#missing").expect("identity grammar");
     let feature = |id, ordinal, dependencies: Vec<FeatureId>| Feature {
-        product_definition: Default::default(),
+        product_definition: None,
         id,
         ordinal,
         name: None,
@@ -1328,7 +1328,7 @@ fn missing_feature_outputs_are_reported_as_design_loss() {
     let repeated = vec![body.clone(), body.clone()];
     assert!(cadmpeg_ir::features::DistinctMembers::try_from(repeated,).is_err());
     let feature = |id: &str, ordinal: u64, outputs: Vec<BodyId>| Feature {
-        product_definition: Default::default(),
+        product_definition: None,
         id: FeatureId::mint(id).expect("identity grammar"),
         ordinal,
         name: None,
@@ -1449,7 +1449,7 @@ fn thin_operation_ambiguity_has_a_stable_loss() {
             allow_multi_profile_faces: None,
         });
         let features = [cadmpeg_ir::features::Feature {
-            product_definition: Default::default(),
+            product_definition: None,
             id: cadmpeg_ir::features::FeatureId::mint("synthetic:test:id#extrude").unwrap(),
             ordinal: 0,
             name: None,

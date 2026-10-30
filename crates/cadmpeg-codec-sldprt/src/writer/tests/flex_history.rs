@@ -258,7 +258,7 @@ fn encoder_writes_authored_with_retained_native_envelope_curved_sketches() {
     });
     let feature_id = FeatureId::mint("synthetic:test:feature#curves").expect("identity grammar");
     ir.model.features.push(Feature {
-        product_definition: Default::default(),
+        product_definition: None,
         id: feature_id.clone(),
         ordinal: 0,
         name: Some("Curves".into()),
@@ -358,7 +358,7 @@ fn encoder_writes_authored_with_retained_native_envelope_curved_sketches() {
         ),
     ] {
         ir.model.parameters.push(DesignParameter {
-            product_definition: Default::default(),
+            product_definition: None,
             id,
             owner: Some(feature_id.clone()),
             ordinal,
@@ -940,7 +940,7 @@ fn encoder_binds_multiple_authored_with_retained_native_envelope_sketches_by_obj
             .unwrap(),
         ));
         ir.model.features.push(Feature {
-            product_definition: Default::default(),
+            product_definition: None,
             id: FeatureId::mint(format!("synthetic:test:feature#named-{ordinal}"))
                 .expect("identity grammar"),
             ordinal: cadmpeg_core::decode::u64_from_index(ordinal),
@@ -1021,7 +1021,7 @@ fn encoder_writes_authored_with_retained_native_envelope_native_features() {
         .for_each(|edge| edge.set_param_range(None));
     let seed_id = FeatureId::mint("sldprt:model:feature#generated:0").expect("identity grammar");
     ir.model.features.push(Feature {
-        product_definition: Default::default(),
+        product_definition: None,
         id: seed_id.clone(),
         ordinal: 0,
         name: Some("Boss".into()),
@@ -1165,7 +1165,7 @@ fn encoder_writes_authored_with_retained_native_envelope_native_features() {
     ];
     for (index, definition) in definitions.into_iter().enumerate() {
         ir.model.features.push(Feature {
-            product_definition: Default::default(),
+            product_definition: None,
             id: FeatureId::mint(format!("synthetic:test:feature#direct-{index}"))
                 .expect("identity grammar"),
             ordinal: cadmpeg_core::decode::u64_from_index(index) + 1,
@@ -1217,7 +1217,7 @@ fn encoder_writes_authored_with_retained_native_envelope_native_features() {
     ];
     for (index, pattern) in patterns.into_iter().enumerate() {
         ir.model.features.push(Feature {
-            product_definition: Default::default(),
+            product_definition: None,
             id: FeatureId::mint(format!("synthetic:test:feature#pattern-{index}"))
                 .expect("identity grammar"),
             ordinal: cadmpeg_core::decode::u64_from_index(index) + 10,

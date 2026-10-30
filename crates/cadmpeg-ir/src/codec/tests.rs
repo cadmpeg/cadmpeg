@@ -35,7 +35,7 @@ fn decode_result(ir: CadIr) -> DecodeResult {
 
 fn with_parameter(mut ir: CadIr) -> CadIr {
     ir.model.parameters.push(crate::features::DesignParameter {
-        product_definition: Default::default(),
+        product_definition: None,
         id: crate::features::ParameterId::mint("synthetic:test:parameter#depth").unwrap(),
         owner: None,
         ordinal: 0,

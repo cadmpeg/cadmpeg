@@ -34,7 +34,7 @@ fn complete_parting_line_draft_does_not_require_an_outward_flag() {
     .unwrap();
     let mut ir = CadIr::empty();
     ir.model.features.push(Feature {
-        product_definition: Default::default(),
+        product_definition: None,
         id: FeatureId::mint("synthetic:test:id#draft").expect("identity grammar"),
         ordinal: 0,
         name: None,
@@ -121,7 +121,7 @@ fn configuration_feature_states_drive_design_completeness_accounting() {
     let mut ir = CadIr::empty();
     let feature_id = FeatureId::mint("synthetic:test:id#configured").expect("identity grammar");
     ir.model.features.push(Feature {
-        product_definition: Default::default(),
+        product_definition: None,
         id: feature_id.clone(),
         ordinal: 0,
         name: None,
@@ -238,7 +238,7 @@ fn configuration_feature_states_drive_design_completeness_accounting() {
 fn metadata_only_native_feature_does_not_report_missing_operation() {
     let mut ir = CadIr::empty();
     ir.model.features.push(Feature {
-        product_definition: Default::default(),
+        product_definition: None,
         id: FeatureId::mint("synthetic:test:id#metadata-only").expect("identity grammar"),
         ordinal: 0,
         name: Some("Localized tree item".into()),
@@ -278,7 +278,7 @@ fn active_configuration_inherits_late_feature_resolutions() {
     let seed =
         PatternSeed::Feature(FeatureId::mint("synthetic:test:id#seed").expect("identity grammar"));
     ir.model.features.push(Feature {
-        product_definition: Default::default(),
+        product_definition: None,
         id: feature_id.clone(),
         ordinal: 0,
         name: None,
@@ -308,7 +308,7 @@ fn active_configuration_inherits_late_feature_resolutions() {
     });
     let hole_id = FeatureId::mint("synthetic:test:id#hole").expect("identity grammar");
     ir.model.features.push(Feature {
-        product_definition: Default::default(),
+        product_definition: None,
         id: hole_id.clone(),
         ordinal: 1,
         name: None,
@@ -476,7 +476,7 @@ fn incomplete_configuration_snapshots_are_reported_as_design_losses() {
     let mut ir = CadIr::empty();
     let feature_id = FeatureId::mint("synthetic:test:id#feature").expect("identity grammar");
     ir.model.features.push(Feature {
-        product_definition: Default::default(),
+        product_definition: None,
         id: feature_id.clone(),
         ordinal: 0,
         name: None,
@@ -495,7 +495,7 @@ fn incomplete_configuration_snapshots_are_reported_as_design_losses() {
         native_ref: None,
     });
     ir.model.parameters.push(DesignParameter {
-        product_definition: Default::default(),
+        product_definition: None,
         id: ParameterId::mint("synthetic:test:id#parameter").expect("identity grammar"),
         owner: Some(feature_id),
         ordinal: 0,
@@ -509,7 +509,7 @@ fn incomplete_configuration_snapshots_are_reported_as_design_losses() {
         native_ref: None,
     });
     ir.model.parameters.push(DesignParameter {
-        product_definition: Default::default(),
+        product_definition: None,
         id: ParameterId::mint("synthetic:test:id#unevaluated-parameter").expect("identity grammar"),
         owner: None,
         ordinal: 1,
@@ -577,7 +577,7 @@ fn active_configuration_snapshots_final_neutral_design_state() {
     let mut ir = CadIr::empty();
     let feature_id = FeatureId::mint("synthetic:test:id#feature").expect("identity grammar");
     ir.model.features.push(Feature {
-        product_definition: Default::default(),
+        product_definition: None,
         id: feature_id.clone(),
         ordinal: 0,
         name: None,
@@ -606,7 +606,7 @@ fn active_configuration_snapshots_final_neutral_design_state() {
     });
     let parameter_id = ParameterId::mint("synthetic:test:id#parameter").expect("identity grammar");
     ir.model.parameters.push(DesignParameter {
-        product_definition: Default::default(),
+        product_definition: None,
         id: parameter_id.clone(),
         owner: Some(feature_id.clone()),
         ordinal: 0,
@@ -689,7 +689,7 @@ fn resolved_configuration_snapshots_inherit_only_independent_parameter_values() 
     let overridden = ParameterId::mint("synthetic:test:id#overridden").expect("identity grammar");
     let dependent = ParameterId::mint("synthetic:test:id#dependent").expect("identity grammar");
     let parameter = |id: ParameterId, value, dependencies: Vec<ParameterId>| DesignParameter {
-        product_definition: Default::default(),
+        product_definition: None,
         id,
         owner: None,
         ordinal: 0,

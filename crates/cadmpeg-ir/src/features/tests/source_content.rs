@@ -52,7 +52,7 @@ fn source_content_rejects_repeated_references_and_preserves_repeated_text() {
 #[test]
 fn feature_membership_is_checked_on_standalone_and_model_wire_routes() {
     let mut feature = Feature {
-        product_definition: Default::default(),
+        product_definition: None,
         id: FeatureId::mint("test:test:feature#owner").unwrap(),
         ordinal: 1,
         name: None,

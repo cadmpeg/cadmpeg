@@ -367,7 +367,7 @@ fn matching_numbered_sketch_alias_binds_the_base_geometry() {
     };
     let neutral =
         |id: &str, name: &str, native_ref: &str, definition| cadmpeg_ir::features::Feature {
-            product_definition: Default::default(),
+            product_definition: None,
             id: FeatureId::mint(id).expect("identity grammar"),
             ordinal: 0,
             name: Some(name.into()),

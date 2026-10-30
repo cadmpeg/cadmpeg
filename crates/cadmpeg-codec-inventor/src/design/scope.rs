@@ -401,7 +401,7 @@ pub(crate) fn project_model_features(
         ctx.charge_entities(1, "project Inventor flat-pattern feature")?;
         let native_ref = root.id();
         features.push(Feature {
-            product_definition: Default::default(),
+            product_definition: None,
             id: model_feature_id(root)?,
             ordinal,
             name: None,

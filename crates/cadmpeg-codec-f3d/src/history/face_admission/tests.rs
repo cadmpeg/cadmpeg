@@ -45,7 +45,7 @@ fn resolved_face_operations_require_current_or_emitted_historical_membership() {
     let topology = input(&id, 2);
     for topologies in [vec![], vec![topology.clone()]] {
         let mut features = [Feature {
-            product_definition: Default::default(),
+            product_definition: None,
             id: id.clone(),
             ordinal: 0,
             name: None,
@@ -196,7 +196,7 @@ fn feature_admission_keeps_extrude_face_operands_native_without_an_input_topolog
     let id = FeatureId::mint("f3d:model:feature#extrude").unwrap();
     let topology = input(&id, 2);
     let mut features = [Feature {
-        product_definition: Default::default(),
+        product_definition: None,
         id,
         ordinal: 0,
         name: None,
@@ -285,7 +285,7 @@ fn feature_gate_changes_hole_namespace() {
     let id = FeatureId::mint("f3d:model:feature#hole").unwrap();
     let topology = input(&id, 2);
     let original = Feature {
-        product_definition: Default::default(),
+        product_definition: None,
         id,
         ordinal: 0,
         name: None,

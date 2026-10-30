@@ -775,7 +775,7 @@ fn unique_axial_profile_resolves_the_unique_incomplete_hole() {
         profile_line(&sketch, 2, Point2::new(-8.6, 4.5), Point2::new(-23.0, 4.5)),
     ];
     let sketch_feature = cadmpeg_ir::features::Feature {
-        product_definition: Default::default(),
+        product_definition: None,
         id: FeatureId::mint("synthetic:test:id#profile-feature").expect("identity grammar"),
         ordinal: 1,
         name: Some("Profile".into()),
@@ -793,7 +793,7 @@ fn unique_axial_profile_resolves_the_unique_incomplete_hole() {
         native_ref: Some("native-profile".into()),
     };
     let position_feature = cadmpeg_ir::features::Feature {
-        product_definition: Default::default(),
+        product_definition: None,
         id: FeatureId::mint("synthetic:test:id#position-feature").expect("identity grammar"),
         ordinal: 2,
         name: Some("Position".into()),
@@ -937,7 +937,7 @@ fn ordered_profile_fallback_excludes_claimed_profiles() {
     ]);
 
     let model_sketch = |id: &str, sketch: &str, ordinal| cadmpeg_ir::features::Feature {
-        product_definition: Default::default(),
+        product_definition: None,
         id: FeatureId::mint(format!("synthetic:test:id#{id}-feature")).expect("identity grammar"),
         ordinal,
         name: None,

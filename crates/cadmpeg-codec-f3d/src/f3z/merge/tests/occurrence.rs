@@ -24,7 +24,7 @@ use cadmpeg_ir::features::FeatureOperation;
 
 fn feature(id: &str, ordinal: u64) -> Feature {
     Feature {
-        product_definition: Default::default(),
+        product_definition: None,
         id: FeatureId::mint(id).expect("identity grammar"),
         ordinal,
         name: None,

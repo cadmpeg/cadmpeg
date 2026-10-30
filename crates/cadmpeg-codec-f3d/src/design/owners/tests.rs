@@ -49,7 +49,7 @@ fn model(native: &F3dNative) -> Model {
     }
     for scope in &native.design_parameter_scopes {
         model.features.push(cadmpeg_ir::features::Feature {
-            product_definition: Default::default(),
+            product_definition: None,
             id: crate::ids::neutral_feature_id(scope),
             ordinal: u64::from(scope.record_index),
             name: None,
@@ -84,7 +84,7 @@ fn product_history_owner_uses_distinct_component_namespaces() {
                 id: format!("f3d:test:parameter#{}", feature.ordinal)
                     .try_into()
                     .unwrap(),
-                product_definition: Default::default(),
+                product_definition: None,
                 owner: Some(feature.id.clone()),
                 ordinal: 0,
                 name: "distance".into(),
@@ -231,7 +231,7 @@ fn product_history_owner_uses_parameter_scope_before_parameter_record() {
         .parameters
         .push(cadmpeg_ir::features::DesignParameter {
             id: crate::ids::neutral_parameter_id(&parameter),
-            product_definition: Default::default(),
+            product_definition: None,
             owner: None,
             ordinal: 0,
             name: "distance".into(),

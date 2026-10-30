@@ -115,7 +115,7 @@ fn dimension(subtype: &str, value: f64) -> PmiDimension {
 
 fn named_feature(id: &str, name: &str) -> Feature {
     Feature {
-        product_definition: Default::default(),
+        product_definition: None,
         id: FeatureId::mint(id).expect("identity grammar"),
         ordinal: 0,
         name: Some(name.into()),
@@ -156,7 +156,7 @@ fn linear_pattern_primary_and_secondary_counts_are_count_parameters() {
     };
 
     let feature = Feature {
-        product_definition: Default::default(),
+        product_definition: None,
         id: FeatureId::mint("synthetic:test:id#pattern").expect("identity grammar"),
         ordinal: 0,
         name: None,
@@ -192,7 +192,7 @@ fn explicit_keywords_dimension_precedes_pmi_value() {
     let owner = FeatureId::mint("synthetic:test:id#feature").expect("identity grammar");
     let feature = named_feature("synthetic:test:id#feature", "Pattern1");
     let mut parameters = vec![DesignParameter {
-        product_definition: Default::default(),
+        product_definition: None,
         id: ParameterId::mint("synthetic:test:id#keywords-parameter").expect("identity grammar"),
         owner: Some(owner),
         ordinal: 0,
@@ -1094,7 +1094,7 @@ fn pmi_parameter_ordinal_overflow_is_refused_not_saturated() {
     let owner = FeatureId::mint("synthetic:test:id#feature").expect("identity grammar");
     let feature = named_feature("synthetic:test:id#feature", "Pattern1");
     let mut parameters = vec![DesignParameter {
-        product_definition: Default::default(),
+        product_definition: None,
         id: ParameterId::mint("synthetic:test:id#other-parameter").expect("identity grammar"),
         owner: Some(owner),
         ordinal: u32::MAX,

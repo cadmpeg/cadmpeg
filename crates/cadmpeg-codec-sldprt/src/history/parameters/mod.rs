@@ -83,7 +83,7 @@ pub(crate) fn project_parameters(
                     CodecError::malformed("SLDPRT feature parameter ordinal exceeds u32")
                 })?;
                 let parameter = DesignParameter {
-                    product_definition: Default::default(),
+                    product_definition: None,
                     id: neutral_parameter_id(feature, ordinal)?,
                     owner: Some(neutral_feature_id(&feature.id)?),
                     ordinal: ordinal_u32,

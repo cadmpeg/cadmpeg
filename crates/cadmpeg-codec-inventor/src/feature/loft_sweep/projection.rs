@@ -73,7 +73,7 @@ pub(in crate::feature) fn project(
     }
     Some(Ok((
         Feature {
-            product_definition: Default::default(),
+            product_definition: None,
             id,
             ordinal: u64::from(label.index),
             name: label.name().map(str::to_owned),

@@ -2516,7 +2516,7 @@ mod tests {
             .model
             .parameters
             .push(cadmpeg_ir::features::DesignParameter {
-                product_definition: Default::default(),
+                product_definition: None,
                 id: id.clone(),
                 owner: None,
                 ordinal: 0,

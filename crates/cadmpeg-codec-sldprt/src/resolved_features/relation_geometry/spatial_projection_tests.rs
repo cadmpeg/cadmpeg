@@ -19,7 +19,7 @@ fn project_with_policy() {
         native_ref: Some("lane".into()),
     };
     let feature = Feature {
-        product_definition: Default::default(),
+        product_definition: None,
         id: FeatureId::mint("synthetic:test:id#feature").unwrap(),
         ordinal: 0,
         name: None,

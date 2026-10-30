@@ -181,7 +181,7 @@ fn encoder_writes_authored_with_retained_native_envelope_datum_features() {
     ];
     for (ordinal, definition) in definitions.into_iter().enumerate() {
         ir.model.features.push(Feature {
-            product_definition: Default::default(),
+            product_definition: None,
             id: FeatureId::mint(format!("synthetic:test:feature#datum-{ordinal}"))
                 .expect("identity grammar"),
             ordinal: cadmpeg_core::decode::u64_from_index(ordinal),
@@ -776,7 +776,7 @@ fn encoder_writes_authored_with_retained_native_envelope_neutral_parameters() {
     let feature_id =
         FeatureId::mint("sldprt:model:feature#generated:equation").expect("identity grammar");
     ir.model.features.push(Feature {
-        product_definition: Default::default(),
+        product_definition: None,
         id: feature_id.clone(),
         ordinal: 0,
         name: Some("Equation".into()),
@@ -801,7 +801,7 @@ fn encoder_writes_authored_with_retained_native_envelope_neutral_parameters() {
         native_ref: None,
     });
     ir.model.parameters.push(DesignParameter {
-        product_definition: Default::default(),
+        product_definition: None,
         id: ParameterId::mint("sldprt:model:parameter#generated:equation:0")
             .expect("identity grammar"),
         owner: Some(feature_id),

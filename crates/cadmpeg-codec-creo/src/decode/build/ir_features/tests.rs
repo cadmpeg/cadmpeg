@@ -48,7 +48,7 @@ fn feature_for_output_refresh() -> cadmpeg_ir::features::Feature {
     };
 
     Feature {
-        product_definition: Default::default(),
+        product_definition: None,
         id: FeatureId::mint("creo:model:feature#40").expect("identity grammar"),
         ordinal: 3,
         name: None,

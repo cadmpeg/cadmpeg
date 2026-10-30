@@ -105,7 +105,7 @@ fn one_generated_face_dependency() -> IrFeatureDefinition {
 fn reconciliation_ir_with_generated_dependency() -> CadIr {
     let mut ir = CadIr::empty();
     ir.model.features.push(cadmpeg_ir::features::Feature {
-        product_definition: Default::default(),
+        product_definition: None,
         id: IrFeatureId::mint("creo:model:feature#10").expect("identity grammar"),
         ordinal: 0,
         name: None,

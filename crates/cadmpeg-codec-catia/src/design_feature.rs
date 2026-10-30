@@ -308,7 +308,7 @@ fn transfer_principal_plane(
     let source_tag = candidate.declaration_class.to_owned();
     let native_ref = object.id.clone();
     ir.model.features.push(Feature {
-        product_definition: Default::default(),
+        product_definition: None,
         id: feature_id,
         ordinal: object.first_field_byte_offset,
         name: None,
@@ -351,7 +351,7 @@ fn transfer_reference_plane(
     let source_tag = candidate.kind.to_owned();
     let native_ref = object.id.clone();
     ir.model.features.push(Feature {
-        product_definition: Default::default(),
+        product_definition: None,
         id: feature_id,
         ordinal: object.first_field_byte_offset,
         name: None,
@@ -410,7 +410,7 @@ fn transfer_sketch(
     let feature_ref = object.id.clone();
     let source_tag = "Sketch".to_owned();
     ir.model.features.push(Feature {
-        product_definition: Default::default(),
+        product_definition: None,
         id: feature_id,
         ordinal: object.first_field_byte_offset,
         name: None,

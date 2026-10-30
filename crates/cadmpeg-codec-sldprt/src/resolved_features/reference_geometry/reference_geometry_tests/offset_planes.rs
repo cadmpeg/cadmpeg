@@ -195,7 +195,7 @@ fn offset_plane_frame_translates_its_reference_frame() {
         content: Vec::new(),
     };
     let neutral = |id: &str, native_ref: &str, definition| NeutralFeature {
-        product_definition: Default::default(),
+        product_definition: None,
         id: FeatureId::mint(id).expect("identity grammar"),
         ordinal: 0,
         name: None,

@@ -1455,7 +1455,7 @@ fn native_reference_index_matches_the_first_feature_scan() {
             .map(|position| {
                 let native = next(6);
                 Feature {
-                    product_definition: Default::default(),
+                    product_definition: None,
                     id: FeatureId::mint(format!("synthetic:test:id#feature-{position}"))
                         .expect("identity grammar"),
                     ordinal: 0,

@@ -21,7 +21,7 @@ fn input_fixture() -> (
         })
         .unwrap();
     let feature = Feature {
-        product_definition: Default::default(),
+        product_definition: None,
         id: "f3d:model:feature#input".to_owned().try_into().unwrap(),
         ordinal: 0,
         name: None,

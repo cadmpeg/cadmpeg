@@ -789,7 +789,7 @@ pub(crate) fn project(
         }
     }
     Ok(Feature {
-        product_definition: Default::default(),
+        product_definition: None,
         id: feature_id.clone(),
         ordinal,
         name,

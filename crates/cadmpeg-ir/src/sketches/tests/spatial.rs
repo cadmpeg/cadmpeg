@@ -123,7 +123,7 @@ fn spatial_sketch_geometry_round_trips_and_validates() {
     let distance =
         ParameterId::mint("synthetic:test:parameter#spatial-distance").expect("identity grammar");
     ir.model.parameters.push(DesignParameter {
-        product_definition: Default::default(),
+        product_definition: None,
         id: distance.clone(),
         owner: None,
         ordinal: 0,
@@ -139,7 +139,7 @@ fn spatial_sketch_geometry_round_trips_and_validates() {
     let line_length = ParameterId::mint("synthetic:test:parameter#spatial-line-length")
         .expect("identity grammar");
     ir.model.parameters.push(DesignParameter {
-        product_definition: Default::default(),
+        product_definition: None,
         id: line_length.clone(),
         owner: None,
         ordinal: 1,

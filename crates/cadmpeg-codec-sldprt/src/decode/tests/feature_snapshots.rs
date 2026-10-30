@@ -56,7 +56,7 @@ fn run() -> Result<(), CodecError> {
     ];
     for (ordinal, definition) in (0_u64..).zip(definitions) {
         ir.model.features.push(Feature {
-            product_definition: Default::default(),
+            product_definition: None,
             id: FeatureId::mint(format!("synthetic:test:id#snapshot-{ordinal}")).unwrap(),
             ordinal,
             name: None,

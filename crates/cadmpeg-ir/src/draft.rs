@@ -1283,7 +1283,7 @@ mod tests {
         });
         for (ordinal, key) in ["parent", "child"].into_iter().enumerate() {
             model.features.push(Feature {
-                product_definition: Default::default(),
+                product_definition: None,
                 id: format!("test:checkpoint:feature#{key}").try_into().unwrap(),
                 ordinal: cadmpeg_core::decode::u64_from_index(ordinal),
                 name: None,
@@ -1331,7 +1331,7 @@ mod tests {
         for (ordinal, key) in ["parent", "child"].into_iter().enumerate() {
             draft
                 .insert(Feature {
-                    product_definition: Default::default(),
+                    product_definition: None,
                     id: format!("test:draft:feature#{key}").try_into().unwrap(),
                     ordinal: cadmpeg_core::decode::u64_from_index(ordinal),
                     name: None,

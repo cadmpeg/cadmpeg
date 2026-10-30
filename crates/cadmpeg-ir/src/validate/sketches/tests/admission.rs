@@ -86,7 +86,7 @@ fn index_fixture(kind: usize) -> crate::CadIr {
                     .unwrap(),
                 )),
             3 => ir.model.parameters.push(crate::features::DesignParameter {
-                product_definition: Default::default(),
+                product_definition: None,
                 id: format!("test:model:parameter#{key}").try_into().unwrap(),
                 owner: None,
                 ordinal: 0,

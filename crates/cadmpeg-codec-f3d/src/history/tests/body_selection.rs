@@ -121,7 +121,7 @@ fn move_body_selection_uses_unique_owning_history() {
     );
     let histories = [history, unrelated_history];
     let mut feature = Feature {
-        product_definition: Default::default(),
+        product_definition: None,
         id: FeatureId::mint("f3d:test:feature#move").expect("identity grammar"),
         ordinal: 0,
         name: None,
@@ -221,7 +221,7 @@ fn pattern_seed_feature() -> cadmpeg_ir::features::Feature {
     )
     .unwrap();
     let mut feature = Feature {
-        product_definition: Default::default(),
+        product_definition: None,
         id: FeatureId::mint("f3d:test:feature#pattern").unwrap(),
         ordinal: 0,
         name: None,

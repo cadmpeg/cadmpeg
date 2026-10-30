@@ -61,7 +61,7 @@ fn dynamic_angle_disambiguates_one_marker_scoped_line_by_angle() {
     relation.operands[0].entity_ref = Some("first-marker".into());
     relation.operands[1].entity_ref = Some("second-marker".into());
     let parameter = DesignParameter {
-        product_definition: Default::default(),
+        product_definition: None,
         id: ParameterId::mint("synthetic:test:id#parameter").expect("identity grammar"),
         owner: None,
         ordinal: 0,
@@ -115,7 +115,7 @@ fn dynamic_angle_uses_the_unoriented_solver_line_witness() {
     second.geometry_ref = Some("feature:solver-line:1".into());
     let relation = dynamic_relation(FeatureInputRelationFamily::Angle, [0, 1]);
     let parameter = DesignParameter {
-        product_definition: Default::default(),
+        product_definition: None,
         id: ParameterId::mint("synthetic:test:id#parameter").expect("identity grammar"),
         owner: None,
         ordinal: 0,
@@ -163,7 +163,7 @@ fn dynamic_angle_uses_unique_complete_roster_when_no_line_resolves() {
     );
     let relation = dynamic_relation(FeatureInputRelationFamily::Angle, [0, 1]);
     let parameter = DesignParameter {
-        product_definition: Default::default(),
+        product_definition: None,
         id: ParameterId::mint("synthetic:test:id#parameter").expect("identity grammar"),
         owner: None,
         ordinal: 0,
@@ -232,7 +232,7 @@ fn dynamic_angle_repairs_one_resolved_line_from_the_profile_roster() {
     let mut relation = dynamic_relation(FeatureInputRelationFamily::Angle, [0, 1]);
     relation.operands[0].entity_ref = Some("known-marker".into());
     let parameter = DesignParameter {
-        product_definition: Default::default(),
+        product_definition: None,
         id: ParameterId::mint("synthetic:test:id#parameter").expect("identity grammar"),
         owner: None,
         ordinal: 0,
@@ -288,7 +288,7 @@ fn dynamic_angle_uses_solver_lines_for_indirect_operand_references() {
     relation.operands[0].entity_ref = Some("indirect-marker".into());
     relation.operands[1].entity_ref = Some("indirect-point".into());
     let parameter = DesignParameter {
-        product_definition: Default::default(),
+        product_definition: None,
         id: ParameterId::mint("synthetic:test:id#parameter").expect("identity grammar"),
         owner: None,
         ordinal: 0,
@@ -346,7 +346,7 @@ fn dynamic_angle_prefers_an_explicit_line_over_a_conflicting_solver_alias() {
     let mut relation = dynamic_relation(FeatureInputRelationFamily::Angle, [0, 1]);
     relation.operands[0].entity_ref = Some("line-marker".into());
     let parameter = DesignParameter {
-        product_definition: Default::default(),
+        product_definition: None,
         id: ParameterId::mint("synthetic:test:id#parameter").expect("identity grammar"),
         owner: None,
         ordinal: 0,

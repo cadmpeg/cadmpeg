@@ -30,7 +30,7 @@ fn one_incomplete_expression_parameter() -> cadmpeg_ir::CadIr {
 
     let mut ir = cadmpeg_ir::CadIr::empty();
     ir.model.parameters.push(DesignParameter {
-        product_definition: Default::default(),
+        product_definition: None,
         id: ParameterId::mint("test:model:parameter#incomplete")
             .expect("parameter identity grammar"),
         owner: None,
@@ -633,7 +633,7 @@ fn nx_loft_completeness_checks_native_point_sections_and_centerlines() {
         })
     };
     ir.model.features.push(Feature {
-        product_definition: Default::default(),
+        product_definition: None,
         id: FeatureId::mint("test:test:feature#loft").expect("identity grammar"),
         ordinal: 0,
         name: None,
@@ -828,7 +828,7 @@ fn nx_extrude_completeness_requires_direction_start_and_solid_state() {
         Some(true),
     );
     ir.model.features.push(Feature {
-        product_definition: Default::default(),
+        product_definition: None,
         id: FeatureId::mint("test:test:feature#extrude").expect("identity grammar"),
         ordinal: 0,
         name: None,
@@ -1044,7 +1044,7 @@ fn nx_revolve_completeness_checks_construction_and_output_lineage() {
     ));
 
     ir.model.features.push(Feature {
-        product_definition: Default::default(),
+        product_definition: None,
         id: FeatureId::mint("test:test:feature#revolve").expect("identity grammar"),
         ordinal: 0,
         name: None,
@@ -1161,7 +1161,7 @@ fn nx_sketch_completeness_reports_native_geometry_and_constraints() {
     let mut ir = cadmpeg_ir::examples::unit_cube().expect("unit cube fixture is admitted");
     let sketch_id = SketchId::mint("test:test:sketch#0").unwrap();
     ir.model.features.push(Feature {
-        product_definition: Default::default(),
+        product_definition: None,
         id: FeatureId::mint("test:test:feature#sketch").expect("identity grammar"),
         ordinal: 0,
         name: None,
@@ -1305,7 +1305,7 @@ fn nx_arrangement_state_stays_unresolved_for_complete_part_state() {
     ir.model.configurations[0].active = true;
     let output = ir.model.bodies[0].id.clone();
     let feature = Feature {
-        product_definition: Default::default(),
+        product_definition: None,
         id: FeatureId::mint("test:test:feature#base").expect("identity grammar"),
         ordinal: 0,
         name: None,
@@ -1352,7 +1352,7 @@ fn nx_arrangement_state_stays_unresolved_for_complete_part_state() {
     assert!(losses[0].message.contains("1 NX arrangement(s)"));
 
     let parameter = DesignParameter {
-        product_definition: Default::default(),
+        product_definition: None,
         id: ParameterId::mint("test:test:parameter#length").expect("identity grammar"),
         owner: Some(feature.id),
         ordinal: 0,
@@ -1382,7 +1382,7 @@ fn nx_arrangement_state_stays_unresolved_for_complete_part_state() {
     assert!(losses[0].message.contains("1 NX arrangement(s)"));
 
     let suppressed = Feature {
-        product_definition: Default::default(),
+        product_definition: None,
         id: FeatureId::mint("test:test:feature#suppressed").expect("identity grammar"),
         ordinal: 1,
         name: None,
@@ -1437,7 +1437,7 @@ fn nx_body_producing_feature_families_require_history_outputs() {
 
     let mut ir = cadmpeg_ir::CadIr::empty();
     ir.model.features.push(Feature {
-        product_definition: Default::default(),
+        product_definition: None,
         id: FeatureId::mint("test:test:feature#block").expect("identity grammar"),
         ordinal: 0,
         name: None,
@@ -1604,7 +1604,7 @@ fn nx_body_producing_feature_families_require_history_outputs() {
 
     ir.model.features[0].ordinal = 1;
     ir.model.features.push(Feature {
-        product_definition: Default::default(),
+        product_definition: None,
         id: datum.clone(),
         ordinal: 0,
         name: None,
@@ -1773,7 +1773,7 @@ fn nx_exact_empty_base_feature_is_a_complete_replay_boundary() {
 
     let mut ir = cadmpeg_ir::CadIr::empty();
     ir.model.features.push(Feature {
-        product_definition: Default::default(),
+        product_definition: None,
         id: FeatureId::mint("test:test:feature#initial-bodies").expect("identity grammar"),
         ordinal: 0,
         name: Some("Retained history input".into()),
@@ -1811,7 +1811,7 @@ fn nx_master_snapshot_base_feature_is_an_output_free_replay_boundary() {
 
     let mut ir = cadmpeg_ir::CadIr::empty();
     ir.model.features.push(Feature {
-        product_definition: Default::default(),
+        product_definition: None,
         id: FeatureId::mint("test:test:feature#snapshot").expect("identity grammar"),
         ordinal: 0,
         name: Some("MASTER SNAPSHOT BODY".into()),
@@ -1853,7 +1853,7 @@ fn nx_sew_completeness_does_not_invent_a_gap_tolerance() {
     let second = second_body.id.clone();
     ir.model.bodies.push(second_body);
     ir.model.features.push(Feature {
-        product_definition: Default::default(),
+        product_definition: None,
         id: FeatureId::mint("test:test:feature#sew").expect("identity grammar"),
         ordinal: 0,
         name: None,
