@@ -945,6 +945,39 @@ source sample. A failed candidate emits
 native samples remain retained. Synthetic coverage admits a sampled line and
 refuses an endpoint chord with a displaced interior sample.
 
+## Angular sweep carriers
+
+Angular paths supply model-space constraints after both incident charts have
+independently resolved complete frames and every corresponding point agrees.
+The native directed endpoint binding must satisfy every admitted analytic
+carrier incident to each vertex orbit.
+Legacy paths supply the existing plane-frame branch witnesses. The scan keeps the
+scalar-production tag outside the IR. `geometry.angular-pcurve-pair-unresolved`
+identifies each path whose paired chart or directed endpoint construction is unavailable. Independent
+angular chart construction remains in GS-31. Legacy
+one-sided endpoint evidence retains its established admission.
+
+Complete angular two-chart arrays select one scalar production for every
+sample. Canonical, replayed, and named arrays share the exact slot-count gate;
+complete legacy frames retain their scalar production. Signed angles,
+tiny explicit coordinates, and constant low-byte replacements feed the same
+paired-chart and neutral boundary checks. A terminal counted zero run that begins inside a compact direction matrix
+completes the matrix and its three zero origin slots.
+
+A class-917 envelope-only cylinder or ring-torus replay binds to one preceding
+first-instance prototype of the same family and feature in a complete counted
+surface array. The signed basis and complete parameter rectangle must reproduce
+all six stored XYZ extrema. A conflict retains the native row with
+`geometry.sweep-envelope-replay-unresolved`, including its surface identifier
+and source byte position. `carrier.sweep-envelope-replays` counts transferred
+surfaces. Complete paired sweep samples constrain circular boundaries and
+their oriented intervals. Plane trims use the exact circle projection.
+`carrier.sampled-sweep-circles` counts transferred circular carriers.
+A named sample array records `geometry.pcurve-sample-coordinates-dropped`
+with its curve identifier, byte position, and decoded sample count because
+the individual array is omitted from the IR. Spatial fillet constructions remain in GS-30; extended scalar forms
+remain in SE-04.
+
 ## Plane-carrier and sampled-path reports
 
 The transferred-plane note counts admitted neutral plane rows through

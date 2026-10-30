@@ -67,7 +67,7 @@ surface, or pcurve transition semantics apply.
 
 **Question.** What slot transition does each other stateful `crv_pnt_arr f9 02 04` token encode?
 
-**Known.** `creo_prt.md` §4.1 "A direct curve body consisting of exactly eight scalar slots and no references" defines the direct and named prototype eight-slot pcurve bodies, their endpoint order, signed literals, the positive pi/2 literal, bounded fixed and positive compact-count repeats of the preceding scalar, standalone zero slots, and the separate direct held-scalar wrapper. The complete counted two-chart sample production and its uniquely scoped replay use the same stateful coordinate stream.
+**Known.** `creo_prt.md` §4.1 "A direct curve body consisting of exactly eight scalar slots and no references" defines the direct and named prototype eight-slot pcurve bodies, their endpoint order, signed literals, the positive pi/2 literal, bounded fixed and positive compact-count repeats of the preceding scalar, standalone zero slots, and the separate direct held-scalar wrapper. Complete counted two-chart bodies and uniquely count-bound replays use the legacy or angular scalar stream in §4.1. Named angular four-column arrays require their complete field boundary and unique prototype topology. Angular model-space constraints require both admitted chart images and complete pointwise agreement.
 
 **Need.** We must know the other transitions to decode all pcurve endpoint arrays.
 
@@ -346,6 +346,37 @@ The native record retains the complete curve body and both chart references.
 **Need.** Resolve the complete saved curve and its chart coordinates through
 independent interior witnesses. Prove the model-space boundary between the
 stored endpoints before assigning its curve carrier or pcurves.
+
+### GS-30. Spatial circular-sweep fillet construction
+
+**Question.** Which bounded nested `fillet_srf` spline records define the circular section,
+spatial center curve, moving frame, and surface parameters of a swept tube?
+
+**Known.** The named body retains `type`, `flip`, `tan_cond`, `i_pnts`,
+`params`, `ctr_spline`, `tan_spline`, and parameter-bound fields. Its paired
+positional rows retain angular envelopes and model-space outlines. The plane
+charts use oblique local systems. The decoder retains the native bodies and
+attributes missing carriers to their source faces.
+
+**Need.** Establish each pointer and positional-body extent, the complete spline and
+moving-frame construction, the plane charts, the parameter reparametrization,
+and independent paired-boundary constraints.
+
+
+### GS-31. Independent angular chart construction
+
+**Question.** Which bounded fields establish an angular path's model-space
+chart independently of its companion chart?
+
+**Known.** Complete angular arrays define finite coordinate pairs in two
+incident-face charts. Their model-space constraints require complete chart
+frames, pointwise agreement, and directed endpoint bindings consistent with
+every admitted incident analytic carrier. A geometric support carrier can exist while
+its source parameter frame remains unresolved. The decoder attributes each
+unadmitted angular pair to its curve and byte position.
+
+**Need.** Establish the chart origin, scale, orientation, and parameter map
+from bounded source fields and independent carrier or vertex constraints.
 
 ## 3. Section solving and feature placement
 

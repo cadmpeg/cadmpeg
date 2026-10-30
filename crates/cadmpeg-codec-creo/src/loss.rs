@@ -102,6 +102,9 @@ pub(crate) enum CreoLossCode {
     PcurveScalarFrameUnresolved,
     PcurveChartUnresolved,
     SampledPcurveCarrierUnresolved,
+    SweepEnvelopeReplayUnresolved,
+    PcurveSampleCoordinatesDropped,
+    AngularPcurvePairUnresolved,
     SampledPcurveEvaluationUnresolved,
     /// Unique `VisibGeom` curve-topology rows were not transferred as carriers.
     VisibGeomCurveUntransferred,
@@ -127,6 +130,8 @@ pub(crate) enum CreoLossCode {
     CarrierPairedEnvelopeSpheres,
     /// Exact positional torus carriers transferred.
     CarrierPositionalTori,
+    CarrierSweepEnvelopeReplays,
+    CarrierSampledSweepCircles,
     /// Exact positional cylinder carriers transferred.
     CarrierPositionalCylinders,
     /// Exact positional cone carriers transferred.
@@ -252,6 +257,9 @@ impl CreoLossCode {
             }
             Self::SectionSplineUnresolved => "geometry.section-spline-unresolved",
             Self::SurfacePrototypeFieldRetained => "geometry.surface-prototype-field-retained",
+            Self::SweepEnvelopeReplayUnresolved => "geometry.sweep-envelope-replay-unresolved",
+            Self::PcurveSampleCoordinatesDropped => "geometry.pcurve-sample-coordinates-dropped",
+            Self::AngularPcurvePairUnresolved => "geometry.angular-pcurve-pair-unresolved",
             Self::PlaneCompactFrameUnresolved => "geometry.plane-compact-frame-unresolved",
             Self::CylinderRotationEnvelopeUnresolved => {
                 "geometry.cylinder-rotation-envelope-unresolved"
@@ -280,6 +288,8 @@ impl CreoLossCode {
             Self::CarrierTopologyBoundPlanes => "carrier.topology-bound-planes",
             Self::CarrierFirstInstancePrototypes => "carrier.first-instance-prototypes",
             Self::CarrierPairedEnvelopeSpheres => "carrier.paired-envelope-spheres",
+            Self::CarrierSweepEnvelopeReplays => "carrier.sweep-envelope-replays",
+            Self::CarrierSampledSweepCircles => "carrier.sampled-sweep-circles",
             Self::CarrierPositionalTori => "carrier.positional-tori",
             Self::CarrierPositionalCylinders => "carrier.positional-cylinders",
             Self::CarrierPositionalCones => "carrier.positional-cones",
@@ -343,6 +353,8 @@ impl CreoLossCode {
             | Self::CarrierTopologyBoundPlanes
             | Self::CarrierFirstInstancePrototypes
             | Self::CarrierPairedEnvelopeSpheres
+            | Self::CarrierSweepEnvelopeReplays
+            | Self::CarrierSampledSweepCircles
             | Self::CarrierPositionalTori
             | Self::CarrierPositionalCylinders
             | Self::CarrierPositionalCones
@@ -369,6 +381,9 @@ impl CreoLossCode {
             Self::SectionSplineUnresolved
             | Self::CompressedSectionUnexpanded
             | Self::SurfacePrototypeFieldRetained
+            | Self::SweepEnvelopeReplayUnresolved
+            | Self::PcurveSampleCoordinatesDropped
+            | Self::AngularPcurvePairUnresolved
             | Self::PlaneCompactFrameUnresolved
             | Self::CylinderRotationEnvelopeUnresolved
             | Self::SourceDialectUnverified
@@ -438,6 +453,8 @@ impl CreoLossCode {
             | Self::CarrierTopologyBoundPlanes
             | Self::CarrierFirstInstancePrototypes
             | Self::CarrierPairedEnvelopeSpheres
+            | Self::CarrierSweepEnvelopeReplays
+            | Self::CarrierSampledSweepCircles
             | Self::CarrierPositionalTori
             | Self::CarrierPositionalCylinders
             | Self::CarrierPositionalCones
@@ -491,6 +508,9 @@ impl CreoLossCode {
             | Self::SectionSegmentGeometryUnresolved
             | Self::SectionSplineUnresolved
             | Self::SurfacePrototypeFieldRetained
+            | Self::SweepEnvelopeReplayUnresolved
+            | Self::PcurveSampleCoordinatesDropped
+            | Self::AngularPcurvePairUnresolved
             | Self::PlaneCompactFrameUnresolved
             | Self::CylinderRotationEnvelopeUnresolved
             | Self::PlaneSupportVariantsCapped => LossTaxonomy::GeometryNotTransferred,
@@ -597,6 +617,9 @@ mod tests {
                 "geometry.pcurve-scalar-frame-unresolved",
                 "geometry.pcurve-chart-unresolved",
                 "geometry.sampled-pcurve-carrier-unresolved",
+                "geometry.sweep-envelope-replay-unresolved",
+                "geometry.pcurve-sample-coordinates-dropped",
+                "geometry.angular-pcurve-pair-unresolved",
                 "geometry.sampled-pcurve-evaluation-unresolved",
                 "geometry.visibgeom-curve-untransferred",
                 "geometry.legacy-surface-carrier-unresolved",
@@ -609,6 +632,8 @@ mod tests {
                 "carrier.first-instance-prototypes",
                 "carrier.paired-envelope-spheres",
                 "carrier.positional-tori",
+                "carrier.sweep-envelope-replays",
+                "carrier.sampled-sweep-circles",
                 "carrier.positional-cylinders",
                 "carrier.positional-cones",
                 "carrier.line-extrusion-planes",

@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 //! PSB scalar forms with context-independent IEEE-754 mappings.
 
+pub(crate) mod sweep;
+
 use std::collections::{BTreeMap, HashSet};
 
 use cadmpeg_core::bytes::{assemble_f32_be, assemble_f64_be, find_from};
@@ -107,6 +109,18 @@ pub(crate) fn decode_compact_plane_rotation(
         match view.u8()? {
             token @ 0xe4..=0xe6 => {
                 repeat_scalar_slots(&mut values, &mut slot, token)?;
+                repeated = true;
+            }
+            0xe7 => {
+                let (count, end) = crate::psb::reference_id(body, view.read_len()).ok()?;
+                let count = usize::try_from(count).ok()?;
+                (count > 0).then_some(())?;
+                let previous = *values.get(slot.checked_sub(1)?)?;
+                let next = slot.checked_add(count)?;
+                (previous == 0.0 && next == values.len() && end == body.len()).then_some(())?;
+                values.get_mut(slot..next)?.fill(previous);
+                slot = next;
+                view.seek(end)?;
                 repeated = true;
             }
             token @ (0x18 | 0x0f | 0x10) => {

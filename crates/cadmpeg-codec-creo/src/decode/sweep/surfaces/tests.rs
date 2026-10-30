@@ -328,3 +328,183 @@ fn saved_spline_extrusion_transfers_one_surface() {
     .expect("extrusion surface transfer");
     assert_eq!(count, 1);
 }
+
+#[test]
+fn sweep_carriers_require_complete_envelopes_and_ordered_arcs() {
+    use cadmpeg_ir::geometry::{
+        analytic::{CylinderSurface, TorusSurface},
+        SolvedSurfaceGeometry, SurfaceGeometry,
+    };
+    use cadmpeg_ir::math::{Point3, Vector3};
+    let circle_geometry = cadmpeg_ir::geometry::analytic::CircleCurve::try_new(
+        Point3::new(0., 0., 0.),
+        Vector3::new(0., 0., 1.),
+        Vector3::new(1., 0., 0.),
+        3.,
+    )
+    .expect("circle");
+    let circle = cadmpeg_ir::geometry::CurveGeometry::Solved(
+        cadmpeg_ir::geometry::SolvedCurveGeometry::Circle(circle_geometry),
+    );
+    let samples = [[3., 0., 0.], [0., 3., 0.], [-3., 0., 0.], [0., -3., 0.]];
+    for endpoints in [[samples[0], samples[3]], [samples[3], samples[0]]] {
+        let (_, range) =
+            super::orient_sampled_circle(&circle, &samples, endpoints).expect("ordered major arc");
+        assert!((range[1] - 3. * std::f64::consts::FRAC_PI_2).abs() < 1.0e-12);
+    }
+    let mut out_of_order = samples;
+    out_of_order.swap(1, 2);
+    assert!(
+        super::orient_sampled_circle(&circle, &out_of_order, [samples[0], samples[3]]).is_none()
+    );
+    let cylinder = SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(
+        CylinderSurface::try_new(
+            Point3::new(0., 0., 0.),
+            Vector3::new(0., 0., 1.),
+            Vector3::new(1., 0., 0.),
+            3.,
+        )
+        .expect("cylinder"),
+    ));
+    let body = [
+        0x18, 0xe4, 0x11, 0x2f, 0x10, 0x00, 0x48, 0x08, 0x00, 0x18, 0xe4, 0x2f, 0x08, 0x00, 0xe4,
+        0x2f, 0x10, 0x00,
+    ];
+    crate::decode::with_service_context(|ctx| {
+        assert!(super::envelope_matches(ctx, &body, &cylinder)?);
+        assert!(super::circle_on_surface(&circle_geometry, &cylinder));
+        let charts = vec![
+            cadmpeg_ir::geometry::Surface {
+                id: cadmpeg_ir::ids::SurfaceId::mint("creo:visibgeom:surface#7").expect("surface"),
+                geometry: cylinder.clone(),
+                source_object: None,
+            },
+            cadmpeg_ir::geometry::Surface {
+                id: cadmpeg_ir::ids::SurfaceId::mint("creo:visibgeom:surface#8").expect("surface"),
+                geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
+                    cadmpeg_ir::geometry::analytic::PlaneSurface::try_new(
+                        Point3::new(0., 0., 0.),
+                        Vector3::new(0., 0., 1.),
+                        Vector3::new(1., 0., 0.),
+                    )
+                    .expect("plane"),
+                )),
+                source_object: None,
+            },
+        ];
+        let path = crate::curve::TwoChartPcurveSamples {
+            curve_id: 9,
+            faces: [7, 8],
+            offset: 13,
+            samples: vec![
+                [[0., 0.], [3., 0.]],
+                [[std::f64::consts::FRAC_PI_2, 0.], [0., 3.]],
+                [[std::f64::consts::PI, 0.], [-3., 0.]],
+            ],
+        };
+        let cylinder_carrier = crate::decode::analytic::carriers::surface_carrier(&cylinder)
+            .expect("analytic cylinder");
+        let endpoints = [[3., 0., 0.], [-3., 0., 0.]];
+        let mut incident = [vec![cylinder_carrier], vec![cylinder_carrier]];
+        assert!(super::endpoints_on_incident_carriers(endpoints, &incident));
+        incident[0].push(crate::decode::analytic::equations::CarrierEquation::Plane(
+            crate::decode::analytic::equations::PlaneEquation {
+                origin: [1., 0., 0.],
+                normal: [1., 0., 0.],
+            },
+        ));
+        assert!(!super::endpoints_on_incident_carriers(endpoints, &incident));
+        let source = crate::decode::source_carriers::SourceUnitCarriers::default();
+        let unresolved = std::collections::BTreeSet::new();
+        assert!(super::admit_angular_chart_pair(
+            ctx,
+            &path,
+            &charts,
+            &source,
+            &unresolved,
+            None
+        )?);
+        let empty = crate::container::scan_bytes_ok(crate::test_support::build_prt("angular", &[]));
+        let mut binding_losses = Vec::new();
+        assert!(!super::admit_angular_constraints(
+            ctx,
+            &empty,
+            &path,
+            &charts,
+            &source,
+            Some(&mut binding_losses)
+        )?);
+        assert_eq!(binding_losses.len(), 1);
+        assert_eq!(
+            binding_losses[0].code,
+            crate::loss::CreoLossCode::AngularPcurvePairUnresolved.kind()
+        );
+        assert!(binding_losses[0].message.contains("Curve 9 at byte 13"));
+        assert!(binding_losses[0].message.contains("endpoint binding"));
+        let mut pair_losses = Vec::new();
+        assert!(!super::admit_angular_chart_pair(
+            ctx,
+            &path,
+            &charts[..1],
+            &source,
+            &unresolved,
+            Some(&mut pair_losses)
+        )?);
+        assert_eq!(pair_losses.len(), 1);
+        assert_eq!(
+            pair_losses[0].code,
+            crate::loss::CreoLossCode::AngularPcurvePairUnresolved.kind()
+        );
+        assert!(pair_losses[0].message.contains("Curve 9 at byte 13"));
+        assert!(!super::admit_angular_chart_pair(
+            ctx,
+            &path,
+            &charts,
+            &source,
+            &std::collections::BTreeSet::from([8]),
+            None
+        )?);
+        let mut invalid = body;
+        invalid[8] = 0x10;
+        let mut losses = Vec::new();
+        assert!(!super::sweep_envelope_replay_matches(
+            ctx,
+            &invalid,
+            &cylinder,
+            17,
+            29,
+            &mut losses
+        )?);
+        assert_eq!(losses.len(), 1);
+        assert_eq!(
+            losses[0].code,
+            crate::loss::CreoLossCode::SweepEnvelopeReplayUnresolved.kind()
+        );
+        assert!(losses[0].message.contains("Surface 17 at byte 29"));
+        let torus = SurfaceGeometry::Solved(SolvedSurfaceGeometry::Torus(
+            TorusSurface::try_new(
+                Point3::new(0., 0., 0.),
+                Vector3::new(0., 0., 1.),
+                Vector3::new(1., 0., 0.),
+                7.,
+                3.,
+            )
+            .expect("torus"),
+        ));
+        let meridian = cadmpeg_ir::geometry::analytic::CircleCurve::try_new(
+            Point3::new(7., 0., 0.),
+            Vector3::new(0., 1., 0.),
+            Vector3::new(1., 0., 0.),
+            3.,
+        )
+        .expect("meridian");
+        assert!(super::circle_on_surface(&meridian, &torus));
+        assert!(!super::circle_on_surface(&circle_geometry, &torus));
+        let torus_body = [
+            0x18, 0xe4, 0x11, 0x12, 0x48, 0x24, 0, 0x18, 0xe4, 0x2f, 0x24, 0, 0xe4, 0x2f, 0x08, 0,
+        ];
+        assert!(super::envelope_matches(ctx, &torus_body, &torus)?);
+        Ok::<_, cadmpeg_core::CodecError>(())
+    })
+    .expect("finite envelope evaluation");
+}
