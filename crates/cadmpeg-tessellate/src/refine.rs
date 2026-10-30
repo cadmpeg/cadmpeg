@@ -47,6 +47,13 @@ fn key(a: usize, b: usize) -> (usize, usize) {
     (a.min(b), a.max(b))
 }
 
+/// A platform-stable order of one triangle by its vertex ids.
+fn triangle_order(corners: [usize; 3]) -> [usize; 3] {
+    let mut keys = corners;
+    keys.sort_unstable();
+    keys
+}
+
 /// Which of two interior edges is longer. Lengths that agree within
 /// [`crate::count::SPLIT_RATIO`] pick the lower vertex-id pair.
 fn longer_edge(
@@ -124,6 +131,7 @@ impl Mesh {
         let smallest = total * SMALLEST_AREA_RATIO;
         let mut edges = self.edges();
         let mut queue: Vec<usize> = (0..self.triangles.len()).collect();
+        queue.sort_by_key(|&at| (self.triangles[at].map(triangle_order), at));
         while let Some(at) = queue.pop() {
             if self.uv.len() >= limits.max_vertices {
                 break;
