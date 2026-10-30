@@ -485,6 +485,7 @@ pub(crate) fn transfer(
     let parameter_cycle_features = bind_parameter_dependencies(
         &mut ir.model.parameters,
         objects,
+        properties,
         &initial_cycle_affected_features,
     )?;
     for object in objects {
@@ -1935,7 +1936,8 @@ fn parse_sketch(
             .with_native_ref(Some(object.id().to_owned())),
         );
     }
-    let (constraints, parameters) = parse_constraints(ctx, object, properties, &id, &entities)?;
+    let (constraints, parameters) =
+        parse_constraints(ctx, object, properties, &id, &entities, losses)?;
     let profiles = build_profiles(&entities, &constraints, profile_work).unwrap_or_else(|| {
         losses.push(
             crate::loss::FreecadLossCode::SketchProfileMatchingBounded.note(format!(
@@ -2447,6 +2449,7 @@ fn parse_constraints(
     properties: &[&PropertyRecord],
     sketch: &SketchId,
     entities: &[SketchEntity],
+    losses: &mut Vec<cadmpeg_ir::report::loss::LossNote>,
 ) -> Result<(Vec<SketchConstraint>, Vec<DesignParameter>), CodecError> {
     let Some(property) = property(properties, "Constraints") else {
         return Ok((Vec::new(), Vec::new()));
@@ -2469,6 +2472,22 @@ fn parse_constraints(
             ))
         })?;
     let records = direct_counted_records(&xml, "ConstraintList", "Constrain", &property.id)?;
+    let mut name_counts = BTreeMap::<&str, usize>::new();
+    for node in &records {
+        if let Some(name) = node.attribute("Name").filter(|name| !name.is_empty()) {
+            *name_counts.entry(name).or_default() += 1;
+        }
+    }
+    for (name, count) in &name_counts {
+        if *count > 1 {
+            losses.push(
+                crate::loss::FreecadLossCode::SketchConstraintNameAmbiguous.note(format!(
+                    "{} has {count} constraints named {name}",
+                    property.id
+                )),
+            );
+        }
+    }
     let mut constraints = Vec::new();
     let mut parameters = Vec::new();
     for (index, node) in records.into_iter().enumerate() {
@@ -2538,7 +2557,27 @@ fn parse_constraints(
                         })?),
                     };
                     let path = format!("Constraints[{index}]");
-                    let expression = expression_binding(properties, &path);
+                    let indexed = expression_binding(properties, &path);
+                    let named = node
+                        .attribute("Name")
+                        .filter(|name| name_counts.get(name) == Some(&1))
+                        .and_then(|name| {
+                            expression_binding(properties, &format!(".Constraints.{name}"))
+                        });
+                    let expression = match (indexed, named) {
+                        (Some(_), Some(_)) => {
+                            losses.push(
+                                crate::loss::FreecadLossCode::SketchConstraintBindingConflict.note(
+                                    format!(
+                                        "{} constraint {index} has index and name bindings",
+                                        property.id
+                                    ),
+                                ),
+                            );
+                            None
+                        }
+                        (indexed, named) => indexed.or(named),
+                    };
                     let mut parameter_properties = BTreeMap::new();
                     parameter_properties.insert(
                         cadmpeg_core::nonblank_literal!("is_driving"),
@@ -2909,22 +2948,48 @@ fn expression_binding(properties: &[&PropertyRecord], path: &str) -> Option<(Str
 fn bind_parameter_dependencies(
     parameters: &mut Vec<DesignParameter>,
     objects: &[ObjectRecord],
+    properties: &[PropertyRecord],
     cycle_affected_features: &BTreeSet<FeatureId>,
 ) -> Result<BTreeSet<FeatureId>, CodecError> {
     let mut object_names = HashMap::new();
     for object in objects {
         object_names.insert(feature_id(object)?, object.name().as_str());
     }
+    let mut constraint_names = HashMap::new();
+    for property in properties
+        .iter()
+        .filter(|property| property.type_name == "Sketcher::PropertyConstraintList")
+    {
+        let mut counts = HashMap::<&str, usize>::new();
+        for value in property
+            .values()
+            .iter()
+            .filter(|value| value.tag == "Constrain")
+        {
+            if let Some(name) = value.attributes.get("Name").filter(|name| !name.is_empty()) {
+                *counts.entry(name).or_default() += 1;
+            }
+        }
+        constraint_names.insert(property.id.as_str(), counts);
+    }
     let mut candidates = Vec::new();
     for parameter in parameters.iter() {
-        let source_name = parameter
-            .properties
-            .get("source_name")
-            .filter(|source_name| *source_name != &parameter.name);
+        let source_name = parameter.properties.get("source_name");
         let mut names = Vec::new();
         names.push(parameter.name.clone());
         if let Some(source_name) = source_name {
-            names.push(source_name.to_owned());
+            let constraint = parameter
+                .native_ref
+                .as_deref()
+                .and_then(|id| constraint_names.get(id));
+            if constraint.is_none_or(|counts| counts.get(source_name.as_str()) == Some(&1)) {
+                if source_name != &parameter.name {
+                    names.push(source_name.to_owned());
+                }
+                if constraint.is_some() {
+                    names.push(format!("Constraints.{source_name}"));
+                }
+            }
         }
         candidates.push((parameter.id.clone(), parameter.owner.clone(), names));
     }

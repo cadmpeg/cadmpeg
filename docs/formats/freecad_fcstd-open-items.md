@@ -86,3 +86,15 @@ shape end faces that identify the active sides.
 **Conflict.** None.
 
 **Note.** These combinations remain native and emit `fcstd/feature.revolution-not-transferred`.
+
+## EX-01. Concurrent index and name constraint bindings
+
+**Question.** How do concurrent index and name paths select the expression of one constraint?
+
+**Known.** `Constraints[i]` and `.Constraints.name` select a constraint by index and name.
+
+**Need.** A saved document with both target paths for one constraint and its evaluated value.
+
+**Conflict.** Both paths can identify the same constraint; their precedence is not established.
+
+**Note.** The neutral projection reports a conflict and retains both native records.

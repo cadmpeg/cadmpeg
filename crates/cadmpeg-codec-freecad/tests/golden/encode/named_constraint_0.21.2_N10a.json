@@ -1,0 +1,106 @@
+{
+  "entries": [
+    {
+      "name": "Document.xml",
+      "payload_len": 30285,
+      "payload_sha256": "05301fe2376ae320b9fd81223be69ac0d086ad0f54d89c532496cd515973d682"
+    },
+    {
+      "name": "PartShape.brp",
+      "payload_len": 7070,
+      "payload_sha256": "466cf3b915f469f3bd1587c18e63f2acbf92760248017d6405fb9592e6b87d81"
+    },
+    {
+      "name": "PartShape1.brp",
+      "payload_len": 1655,
+      "payload_sha256": "ae4b0dc7d32167e2f21e4cef79da665bd37b0877200e7c65afb78813b57babc5"
+    },
+    {
+      "name": "PartShape2.brp",
+      "payload_len": 4964,
+      "payload_sha256": "d05ce7b078f45aebe0d5668744410c6873e194350bc72163e0aee63a384ba360"
+    },
+    {
+      "name": "PartShape3.brp",
+      "payload_len": 5187,
+      "payload_sha256": "fb585e1af4c400a34407ca471534c2a5d7135a72ba852e78da4b879407518bad"
+    }
+  ],
+  "report": {
+    "census": {
+      "basis": "ir_arenas",
+      "counts": {
+        "appearance_bindings": 0,
+        "appearances": 0,
+        "assembly_joints": 0,
+        "assets": 0,
+        "attributes": 0,
+        "bodies": 4,
+        "coedges": 72,
+        "configurations": 0,
+        "curves": 44,
+        "drawings": 0,
+        "edges": 40,
+        "faces": 18,
+        "feature_input_topologies": 0,
+        "feature_result_topologies": 0,
+        "features": 3,
+        "loops": 18,
+        "native.fcstd.applications": 10,
+        "native.fcstd.attachments": 9,
+        "native.fcstd.byte_coverage": 1,
+        "native.fcstd.carrier_census": 4,
+        "native.fcstd.design_census": 3,
+        "native.fcstd.document": 1,
+        "native.fcstd.entries": 5,
+        "native.fcstd.extensions": 3,
+        "native.fcstd.logical_ledger": 231,
+        "native.fcstd.objects": 10,
+        "native.fcstd.physical_ledger": 36,
+        "native.fcstd.properties": 113,
+        "native.fcstd.shape_payloads": 4,
+        "occurrences": 0,
+        "parameters": 4,
+        "pcurves": 0,
+        "pmi": 0,
+        "points": 28,
+        "presentation_documents": 0,
+        "presentation_layers": 0,
+        "procedural_curves": 0,
+        "procedural_surfaces": 0,
+        "product_definitions": 0,
+        "regions": 4,
+        "semantic_annotations": 0,
+        "shells": 4,
+        "sketch_constraints": 11,
+        "sketch_entities": 5,
+        "sketches": 1,
+        "spatial_sketch_constraints": 0,
+        "spatial_sketch_entities": 0,
+        "spatial_sketches": 0,
+        "spreadsheets": 0,
+        "subds": 0,
+        "surfaces": 19,
+        "surfaces_unknown_geometry": 0,
+        "tessellations": 0,
+        "vertices": 28,
+        "view_presentations": 0
+      }
+    },
+    "identity": {
+      "payload": "native",
+      "target": "fcstd:schema-4"
+    },
+    "losses": [],
+    "notes": [
+      "semantic FCStd archive written for fcstd:schema-4 (SchemaVersion=4 FileVersion=1)",
+      "unsupported retained entries and unedited XML records were preserved"
+    ],
+    "write_path": {
+      "fidelity": {
+        "status": "not_consumed"
+      },
+      "path": "patched"
+    }
+  }
+}
