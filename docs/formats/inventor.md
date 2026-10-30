@@ -757,6 +757,10 @@ Sweep property slots are:
 | 10 | Sweep scaling enumeration | `e211b05c3e46583e928a0cbf3a085834` |
 | 15 | Result object collection | `ae70680ed14a1e86d76248b03c2a96e1` |
 
+The zero-control circular solid sweep form uses a type-2 property vector with at least 16 slots. Slots 5, 6, 11, 12, 13, and 14, and all slots after 15, are null. Slot 2 has enumeration type 5 and value 1, which selects a new solid body. Slot 4 has the versioned extent type from section 13 and value 3. Slots 8, 9, and 10 have type/value pairs `(3, 0)`, `(2, 0)`, and `(2, 0)`. Slot 3 is angular, with nominal and model values 0. A non-null slot 7 selects a feature-dimension list with one member; that member's parameter reference selects the slot-3 parameter record. Slot 15 contains one non-null result-body reference.
+
+Slot 0 contains one profile selection with value 0 and a non-null kernel-entity link. Its selected boundary is one complete circle in one consumed planar sketch. Slot 1 is a profile selection with value 0 and a non-null kernel-entity link. Its selected path is one complete ordered open wire. The complete result consists of two planar circular caps at the path endpoints and one cylindrical or toroidal side face for each named path span. Each cap circle, cylindrical radius, and toroidal minor radius equals the section radius. All these faces belong to the generating sweep and to one solid body.
+
 Schema-44 generated-face attributes use type `ATTRIB_CUSTOM-attrib`. Five common attribute fields precede a family string and the integers 1, 44, 1, `generator`, and −1. `generator` is the generating feature's content-header source index. The target of the attribute is the generated face.
 
 Family `INV_NMX_SWEEPGENERATED_TAG` then stores `section`, `span`, `role`, and seven zero integers. Role 20 identifies a side face; `section` and `span` identify the associative names of its section curve and path curve. Roles 4 and 12 identify the two terminal cap faces and have zero `section` and `span` values.

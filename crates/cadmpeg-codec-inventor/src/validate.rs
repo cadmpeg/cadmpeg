@@ -1779,6 +1779,47 @@ fn validate_features(
                 ));
             }
         }
+        if matches!(
+            definition,
+            cadmpeg_ir::features::FeatureDefinition::Operation(
+                cadmpeg_ir::features::FeatureOperation::Sweep { .. }
+            )
+        ) {
+            let token = raw_feature.identity.segment_token.as_str();
+            if !crate::feature::loft_sweep::sweep::validates(
+                raw_feature,
+                definition,
+                |reference| {
+                    feature_properties
+                        .get(&(token, reference.record_ordinal()?))?
+                        .as_ref()
+                        .copied()
+                },
+                |reference| {
+                    let raw = feature_parameters
+                        .get(&(token, reference.record_ordinal()?))?
+                        .as_ref()?;
+                    let value = parameter_values
+                        .get(raw.id().as_str())?
+                        .as_ref()?
+                        .value
+                        .as_ref()?;
+                    Some((*raw, value))
+                },
+                |reference| {
+                    revolve_dimensions
+                        .get(&(token, reference.record_ordinal()?))?
+                        .as_ref()
+                        .copied()
+                },
+            ) {
+                findings.push(finding(
+                    Check::NativeLinks,
+                    "Inventor neutral sweep operands do not match their PmDc slots".into(),
+                    Some(feature.id.as_str().to_owned()),
+                ));
+            }
+        }
         // The label class selects the record layout; the neutral operation
         // must be the one that layout projects.
         let Some(family) = labels

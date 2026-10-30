@@ -111,7 +111,7 @@ fn owned_faces(model: &Model, generator: u32) -> Option<Vec<NamedFace<'_>>> {
     Some(selected)
 }
 
-pub(super) fn sweep(
+pub(in crate::feature::loft_sweep) fn sweep(
     model: &Model,
     generator: u32,
     radius: f64,
