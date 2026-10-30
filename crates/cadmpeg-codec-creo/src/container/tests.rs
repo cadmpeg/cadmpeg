@@ -236,7 +236,10 @@ fn two_chart_pcurves_collect_both_rows() {
         .expect("one bounded section");
     let sections = [section];
     let face_ids = BTreeSet::from([10, 11]);
-    let rows = super::two_chart_pcurves(&sections, &face_ids).expect("two rows");
+    let rows = crate::decode::with_service_context(|ctx| {
+        super::two_chart_pcurves(ctx, &sections, &face_ids, &mut Vec::new())
+    })
+    .expect("two rows");
     assert_eq!(rows.len(), 2);
 }
 

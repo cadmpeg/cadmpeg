@@ -96,3 +96,51 @@ fn tabulated_cylinder_chart_origin_rejects_other_local_system_shapes() {
         None
     );
 }
+
+#[test]
+fn compact_plane_prototype_uses_the_complete_plane_frame_gate() {
+    let mut plane = record([0.0; 12]);
+    plane.family = SurfacePrototypeFamily::Plane;
+    plane.parameters[0].value = SurfaceNamedValue::Opaque(Vec::new());
+    plane.parameters[0].body = vec![
+        0xf9, 4, 3, 0x0f, 0x18, 0xe6, 0x0f, 0x18, 0x10, 0x18, 0x2f, 0, 0, 0x2f, 8, 0, 0x2f, 0x10, 0,
+    ];
+    let mut losses = Vec::new();
+    let decoded = crate::decode::with_service_context(|ctx| {
+        super::super::prototype_analytic_local_frame(ctx, &plane, 7, &mut losses)
+    })
+    .expect("bounded plane frame");
+    assert_eq!(
+        decoded,
+        Some(([2.0, 3.0, 4.0], [0.0, 1.0, 0.0], [1.0, 0.0, 0.0]))
+    );
+    assert!(losses.is_empty());
+    plane.parameters[0].body.push(0x18);
+    let refused = crate::decode::with_service_context(|ctx| {
+        super::super::prototype_analytic_local_frame(ctx, &plane, 7, &mut losses)
+    })
+    .expect("bounded refused plane frame");
+    assert!(refused.is_none());
+    assert!(losses
+        .iter()
+        .any(|loss| loss.code == crate::loss::CreoLossCode::PrototypeLocalSystemUnresolved.kind()));
+}
+
+#[test]
+fn compact_cylinder_matrix_columns_override_generic_support_slot_guesses() {
+    let mut cylinder = record([0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 1.0, 2.0, 3.0, 4.0]);
+    cylinder.family = SurfacePrototypeFamily::Cylinder;
+    cylinder.parameters[0].body = vec![
+        0xf9, 4, 3, 0x18, 0x10, 0x18, 0x0f, 0x18, 0xe6, 0x0f, 0x2f, 0, 0, 0x2f, 8, 0, 0x2f, 0x10, 0,
+    ];
+    let mut losses = Vec::new();
+    let frame = crate::decode::with_service_context(|ctx| {
+        super::super::prototype_analytic_local_frame(ctx, &cylinder, 7, &mut losses)
+    })
+    .expect("bounded cylinder matrix");
+    assert_eq!(
+        frame,
+        Some(([2.0, 3.0, 4.0], [0.0, 0.0, 1.0], [0.0, 1.0, 0.0]))
+    );
+    assert!(losses.is_empty());
+}

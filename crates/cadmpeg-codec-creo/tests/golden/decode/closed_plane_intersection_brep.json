@@ -3562,7 +3562,7 @@
           "namespace": "creo",
           "scope": "namespaced"
         },
-        "message": "Transferred 4 model-space plane carrier(s) from complete VisibGeom local-system support frames.",
+        "message": "Transferred 4 model-space plane carrier(s) from admitted VisibGeom plane rows.",
         "severity": "info"
       },
       {

@@ -2,7 +2,6 @@
 //! Decode-report assembly from coverage counters and container census.
 
 use crate::container::SectionRole;
-
 use std::collections::BTreeSet;
 
 use cadmpeg_ir::document::CadIr;
@@ -21,7 +20,6 @@ use super::report_losses::{
     push_brep_transfer_note, push_carrier_transfer_notes, push_legacy_value_losses,
     push_report_loss, push_structural_layer_notes,
 };
-use crate::decode::analytic::planes::is_axis_aligned;
 use cadmpeg_ir::codec::DecodeBody;
 
 pub(in super::super) fn has_transferred_geometry(ir: &CadIr) -> bool {
@@ -95,32 +93,6 @@ pub(in super::super) fn build_report(
         .iter()
         .filter(|s| s.role() == SectionRole::PsbGeometry)
         .count();
-    let placed_frames = scan
-        .planes
-        .local_systems
-        .iter()
-        .filter(|frame| {
-            let frame = frame.frame();
-            frame.origin.is_some()
-                && frame.u_axis.is_some()
-                && frame
-                    .normal()
-                    .is_some_and(|normal| !is_axis_aligned(normal))
-        })
-        .map(|frame| frame.surface_id);
-    let mut placed_plane_ids = BTreeSet::new();
-    for id in placed_frames
-        .chain(scan.planes.outlines.iter().map(|plane| plane.surface_id))
-        .chain(
-            scan.planes
-                .positional_frames
-                .iter()
-                .map(|plane| plane.surface_id),
-        )
-    {
-        placed_plane_ids.insert(id);
-    }
-    let placed_plane_count = placed_plane_ids.len();
     let mut losses = Vec::new();
     for message in &scan.framing.expansion_losses {
         push_report_loss(
@@ -130,6 +102,7 @@ pub(in super::super) fn build_report(
         );
     }
     losses.extend(scan.framing.local_work_cap_losses.iter().cloned());
+    losses.extend(crate::decode::analytic::pcurves::unresolved_pcurve_chart_losses(scan));
 
     // The admission charge, first: it describes how the whole document was
     // read, not what any one record cost. Identity itself is authored once, in
@@ -167,17 +140,38 @@ pub(in super::super) fn build_report(
         scan.topology.loops.len(),
     ));
 
+    let transferred_plane_ids: BTreeSet<_> = ir
+        .model
+        .surfaces
+        .iter()
+        .filter(|surface| {
+            matches!(
+                surface.geometry.solved(),
+                Some(SolvedSurfaceGeometry::Plane(_))
+            )
+        })
+        .map(|surface| &surface.id)
+        .collect();
+    let namespaces = crate::decode::surfaces::NativeSurfaceNamespaces::new(scan);
+    for row in &scan.surfaces.rows {
+        if row.kind != crate::surface::SurfaceKind::Plane {
+            continue;
+        }
+        let id = namespaces.surface_id(row.id)?;
+        let transferred = transferred_plane_ids.contains(&id);
+        if !container_only && !transferred {
+            losses.push(CreoLossCode::PlaneCarrierUnresolved.note(format!(
+                "Plane {} at byte {} has no transferred carrier; its source records remain native",
+                row.id, row.offset
+            )));
+        }
+    }
+
     push_legacy_value_losses(&mut losses, &coverage);
 
     push_brep_transfer_note(&mut losses, brep_diagnostics, geom_sections);
 
-    push_carrier_transfer_notes(
-        &mut losses,
-        scan,
-        &coverage,
-        container_only,
-        placed_plane_count,
-    );
+    push_carrier_transfer_notes(&mut losses, scan, &coverage, container_only);
     push_structural_layer_notes(&mut losses, scan);
     let mut solve_work_caps = Vec::new();
     for bound in scan

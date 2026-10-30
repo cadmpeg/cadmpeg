@@ -703,7 +703,7 @@ fn decode_transfers_axis_aligned_plane_from_outline() {
 }
 
 #[test]
-fn decode_transfers_plane_from_shared_rank_two_local_system_image() {
+fn decode_transfers_plane_from_complete_compact_rotation() {
     let mut payload = visibgeom_payload(1, 0);
     payload.extend_from_slice(&[7, 0x22, 4, 0x01, 0, 0]);
     payload.extend_from_slice(&[0x0f; 10]);
