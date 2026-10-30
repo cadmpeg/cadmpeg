@@ -1,0 +1,107 @@
+{
+  "container_kind": "zip",
+  "entries": [
+    {
+      "attributes": {
+        "central_header_offset": "5926",
+        "crc32": "207bfcf2",
+        "data_offset": "42",
+        "header_offset": "0"
+      },
+      "compression": "deflate",
+      "expanded": 28879,
+      "name": "Document.xml",
+      "role": "document",
+      "stored": 2991
+    },
+    {
+      "attributes": {
+        "central_header_offset": "5984",
+        "crc32": "5a947008",
+        "data_offset": "3076",
+        "header_offset": "3033"
+      },
+      "compression": "deflate",
+      "expanded": 6047,
+      "name": "PartShape.brp",
+      "role": "brep",
+      "stored": 719
+    },
+    {
+      "attributes": {
+        "central_header_offset": "6043",
+        "crc32": "0dfb6b57",
+        "data_offset": "3839",
+        "header_offset": "3795"
+      },
+      "compression": "deflate",
+      "expanded": 8717,
+      "name": "PartShape1.brp",
+      "role": "brep",
+      "stored": 881
+    },
+    {
+      "attributes": {
+        "central_header_offset": "6103",
+        "crc32": "894e0f92",
+        "data_offset": "4764",
+        "header_offset": "4720"
+      },
+      "compression": "deflate",
+      "expanded": 8939,
+      "name": "PartShape2.brp",
+      "role": "brep",
+      "stored": 905
+    },
+    {
+      "attributes": {
+        "central_header_offset": "6163",
+        "crc32": "00000000",
+        "data_offset": "5713",
+        "header_offset": "5669"
+      },
+      "compression": "deflate",
+      "expanded": 0,
+      "name": "PartShape3.brp",
+      "role": "brep",
+      "stored": 2
+    },
+    {
+      "attributes": {
+        "central_header_offset": "6223",
+        "crc32": "aeb042d6",
+        "data_offset": "5759",
+        "header_offset": "5715"
+      },
+      "compression": "deflate",
+      "expanded": 470,
+      "name": "PartShape4.brp",
+      "role": "brep",
+      "stored": 167
+    }
+  ],
+  "identity": {
+    "classification": "classified",
+    "dialects": {
+      "extra": [],
+      "primary": {
+        "admission": "admitted",
+        "declared": {
+          "file_version": "1",
+          "program_version": "0.21R33771 (Git)",
+          "schema_version": "4"
+        },
+        "dialect": "fcstd:schema-4"
+      }
+    }
+  },
+  "notes": [
+    "SchemaVersion=4",
+    "FileVersion=1",
+    "document root=Document",
+    "document kind=part-design",
+    "object count=11",
+    "physical ledger spans=43 coverage=exact",
+    "ProgramVersion=0.21R33771 (Git)"
+  ]
+}

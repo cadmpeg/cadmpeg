@@ -679,7 +679,7 @@ the native feature when a fixed lane carries a symmetric distance.
 
 **Note.** Keep controls and extended selections native. A neutral Wrap requires a proven effect, selected profile, target face, and placement. The existing Wrap operation has no independent horizontal, vertical, or rotation controls.
 
-### DR-119. Move transform envelopes with leading references
+### DR-126. Move transform envelopes with leading references
 
 **Question.** In the Move envelope with leading references, is the matrix an absolute transform or a transform relative to a referenced frame?
 
@@ -690,3 +690,51 @@ the native feature when a fixed lane carries a symmetric distance.
 **Conflict.** None.
 
 **Note.** Keep this envelope native. Emit `feature.move-unprojected` when no admitted transform defines the Move feature.
+
+### DR-124. Trim operands in typed profile curve entries
+
+**Question.** How do the three u32 operands of a typed profile curve entry select a partial curve when one source loop repeats a curve identity?
+
+**Known.** The identity record stores two region lists. Each region has counted boundary loops with exterior flags. Each curve entry stores a primary identity, a secondary identity, and three u32 operands. A complete neutral loop match or a unique atomic arrangement boundary program resolves without a partial-curve interpretation.
+
+**Need.** Controlled selections of adjacent regions with one shared curve, and of intersecting curves with distinct selected regions, to bind each operand to curve orientation and trim bounds.
+
+**Conflict.** None.
+
+**Note.** A repeated identity within one source loop does not prove a complete neutral loop. A program without one unique atomic arrangement match retains its native identity and loss.
+
+### DR-125. Counted face-target recipe without a unique historical face
+
+**Question.** Which counted bounded-face recipe clauses select a termination face when persistent references retain several preceding support faces?
+
+**Known.** A termination group identifies the face operand. The operand retains its counted recipe nodes, ordered prefix references, and state-local support contexts. A unique preceding face or convergent support context supplies a historical selection.
+
+**Need.** Controlled face-target selections that vary the selected planar face while the body topology and other prefix references remain fixed.
+
+**Conflict.** None.
+
+**Note.** Candidate membership, planar support, and absence of changed faces do not by themselves identify a selected face.
+
+### DR-122. Derived Base Feature source and frame
+
+**Question.** Which fields identify the source body and local frame of a `Derived Base Feature` scope?
+
+**Known.** The scope has a reference table and current and previous ASM history-state identities. Its result transition identifies result bodies. The result body identity does not identify a derived source body or a source frame.
+
+**Need.** Independent source-body and placement changes with the other scope fields fixed.
+
+**Conflict.** None.
+
+**Note.** The scope remains native with `feature.derived-base-unresolved` until both source and frame have a complete binding.
+
+### DR-123. Typed-reference BoxPrimitive construction
+
+**Question.** Which fields define dimensions, operation, and the local frame in a `BoxPrimitive` scope with eight typed reference members?
+
+**Known.** The named five-owner box form defines three lengths and two planar offsets. The eight-member form has a scope envelope and a result-state transition. These fields do not assign the extra references or establish a local placement frame.
+
+**Need.** Independent changes to the three dimensions, local origin, local axes, and result operation in this form.
+
+**Conflict.** None.
+
+**Note.** A scope without complete dimensions and frame remains native with `feature.box-primitive-unresolved`.

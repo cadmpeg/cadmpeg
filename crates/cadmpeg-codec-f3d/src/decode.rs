@@ -1900,6 +1900,10 @@ fn report_design_projection_gaps(
         }
     }
     let gaps = design_projection_gaps(ir, native)?;
+    report.losses.extend(crate::history::stored_bodies::losses(
+        &ir.model.features,
+        &native.design_parameter_scopes,
+    ));
     let incomplete_families = incomplete_feature_families(ir);
     let history_budget_skips = native
         .asm_histories
@@ -2844,6 +2848,7 @@ impl<'a> F3dDecodeSession<'a> {
                 let face_losses =
                     resolve_face_appearance_bindings(&mut self.ir, &materials.face_assignments)?;
                 apply_appearance_base_colors(&mut self.ir);
+                apply_body_presentation_names(&mut self.ir, scan, &prereqs.design_body_bindings)?;
                 self.ir
                     .model
                     .appearance_bindings
@@ -5368,6 +5373,56 @@ fn apply_appearance_base_colors(ir: &mut CadIr) {
             face.color = face_colors.get(&face.id).copied().flatten();
         }
     }
+}
+
+pub(crate) fn is_default_body_name(name: &str) -> bool {
+    name == "Body"
+        || name
+            .strip_prefix("Body")
+            .is_some_and(|rest| !rest.is_empty() && rest.chars().all(|c| c.is_ascii_digit()))
+}
+
+pub(crate) fn apply_body_presentation_names(
+    ir: &mut CadIr,
+    scan: &ContainerScan,
+    body_bindings: &[crate::records::bodies::DesignBodyBinding],
+) -> Result<(), CodecError> {
+    for entry in scan
+        .entries
+        .iter()
+        .filter(|entry| scan.is_design_stream(entry, ContainerRole::Bulkstream))
+    {
+        let bytes = scan.entry_bytes(&entry.name)?;
+        let Some(metadata) =
+            crate::design::decode::meta::metadata_for_bulk_stream(scan, &entry.name)?
+        else {
+            continue;
+        };
+        let presentations =
+            crate::design::decode::presentation::body_presentations(bytes, &metadata)?;
+        for presentation in presentations {
+            let Some(name) = presentation.name.as_deref() else {
+                continue;
+            };
+            if is_default_body_name(name) {
+                continue;
+            }
+            let mut matching = body_bindings.iter().filter(|b| {
+                b.stream() == entry.name && b.entity_suffix == presentation.entity_suffix
+            });
+            let (Some(binding), None) = (matching.next(), matching.next()) else {
+                continue;
+            };
+            if let Some(body_id) = &binding.body {
+                if let Some(body) = ir.model.bodies.iter_mut().find(|b| b.id == *body_id) {
+                    if body.name.is_none() {
+                        body.name = Some(name.to_string());
+                    }
+                }
+            }
+        }
+    }
+    Ok(())
 }
 
 pub(crate) mod design_intent;

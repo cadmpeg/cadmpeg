@@ -320,6 +320,44 @@ fn validate_native(ctx: &DecodeContext<'_>, ir: &CadIr) -> Result<Vec<Finding>, 
         )),
         _ => {}
     }
+    let mut primitive_properties =
+        std::collections::HashMap::<&str, Vec<&native::PropertyRecord>>::new();
+    for property in &properties {
+        primitive_properties
+            .entry(property.owner.as_str())
+            .or_default()
+            .push(property);
+    }
+    for feature in &ir.model.features {
+        let operation = match feature.evaluation.definition() {
+            cadmpeg_ir::features::FeatureDefinition::Operation(operation)
+            | cadmpeg_ir::features::FeatureDefinition::PostProcess { operation, .. } => operation,
+        };
+        let cadmpeg_ir::features::FeatureOperation::Primitive { placement, .. } = operation else {
+            continue;
+        };
+        let Some(object) = objects
+            .iter()
+            .find(|object| feature.native_ref.as_deref() == Some(object.id().as_str()))
+        else {
+            continue;
+        };
+        match design::primitive_placement::resolve(object, &objects, &primitive_properties) {
+            Ok(expected)
+                if expected == *placement
+                    && (expected.is_some()
+                        || !design::primitive_placement::carries_frame(
+                            primitive_properties
+                                .get(object.id().as_str())
+                                .map_or(&[][..], Vec::as_slice),
+                        )) => {}
+            _ => findings.push(finding(
+                Check::NativeLinks,
+                "FCStd primitive placement does not match its resolved object and container frames",
+                Some(object.id().to_owned()),
+            )),
+        }
+    }
     let gui_provider_ids = gui_providers
         .iter()
         .map(|provider| provider.id.as_str())
@@ -1315,6 +1353,14 @@ fn semantic_losses(
             (
                 FreecadLossCode::FeatureCyclicHistory,
                 " is retained natively because neutral dependency ordering is cycle-affected",
+            )
+        } else if matches!(
+            kind.as_str(),
+            "PartDesign::Revolution" | "PartDesign::Groove" | "Part::Revolution"
+        ) {
+            (
+                FreecadLossCode::FeatureRevolutionNotTransferred,
+                " has an unsupported revolution type, axis, selection, flag, or angular extent and remains native",
             )
         } else {
             (

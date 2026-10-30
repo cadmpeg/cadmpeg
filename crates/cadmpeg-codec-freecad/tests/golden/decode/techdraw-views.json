@@ -1682,6 +1682,26 @@
           "definition": {
             "definition": "primitive",
             "op": "new_body",
+            "placement": [
+              [
+                1.0,
+                0.0,
+                0.0,
+                0.0
+              ],
+              [
+                0.0,
+                1.0,
+                0.0,
+                0.0
+              ],
+              [
+                0.0,
+                0.0,
+                1.0,
+                0.0
+              ]
+            ],
             "solid": {
               "height": 10.0,
               "kind": "box",

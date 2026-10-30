@@ -15,6 +15,17 @@
 use super::lifts::Lifts;
 use crate::failure::Outcome;
 
+/// The distance, relative to the largest `|v|` in play, within which a
+/// polyline point lies at a path level.
+const MEMBERSHIP_LEVEL_RELATIVE: f64 = 1.0e-9;
+
+/// The smallest `|v|` scale of the level tolerance.
+const MEMBERSHIP_LEVEL_SCALE_FLOOR: f64 = 1.0;
+
+/// The step to a clear level when no polyline point lies above `v` on a
+/// domain whose `v` is not periodic.
+const MEMBERSHIP_LEVEL_OPEN_GAP: f64 = 1.0;
+
 /// A loop polyline in the parameter plane, oriented with the region on its
 /// left.
 #[derive(Debug, Clone)]
@@ -128,7 +139,56 @@ impl Indicator {
         let [u, v] = self.reference;
         let v_target = self.nearest(1, v, target[1]);
         let u_target = self.nearest(0, u, target[0]);
-        Ok(1 + self.along_v(u, v, v_target)? + self.along_u(v_target, u, u_target)?)
+        let level = self.clear_level(v_target);
+        Ok(1 + self.along_v(u, v, level)?
+            + self.along_u(level, u, u_target)?
+            + self.along_v(u_target, level, v_target)?)
+    }
+
+    /// `v`, or a level just above it halfway to the next polyline point
+    /// `v` when a polyline point lies at `v`.
+    fn clear_level(&self, v: f64) -> f64 {
+        let scale = self
+            .loops
+            .iter()
+            .flat_map(|polyline| polyline.points.iter())
+            .fold(v.abs(), |scale, point| scale.max(point[1].abs()))
+            .max(MEMBERSHIP_LEVEL_SCALE_FLOOR);
+        let level_tolerance = MEMBERSHIP_LEVEL_RELATIVE * scale;
+        let offsets = self.loops.iter().flat_map(|polyline| {
+            polyline.points.iter().map(move |point| {
+                let offset = point[1] - v;
+                match self.periods[1] {
+                    Some(period) => offset.rem_euclid(period),
+                    None => offset,
+                }
+            })
+        });
+        let mut touches = false;
+        let mut next = f64::INFINITY;
+        for offset in offsets {
+            let wrapped = self.periods[1].map_or(offset, |period| {
+                if period - offset <= level_tolerance {
+                    offset - period
+                } else {
+                    offset
+                }
+            });
+            if wrapped.abs() <= level_tolerance {
+                touches = true;
+            } else if wrapped > 0.0 {
+                next = next.min(wrapped);
+            }
+        }
+        if !touches {
+            return v;
+        }
+        let gap = if next.is_finite() {
+            next
+        } else {
+            self.periods[1].unwrap_or(MEMBERSHIP_LEVEL_OPEN_GAP)
+        };
+        v + gap / 2.0
     }
 
     /// The indicator above every loop point (`toward = 1`) or below every
@@ -172,6 +232,15 @@ mod tests {
         assert_eq!(square.at([1.5, 3.0]), Ok(0));
         assert_eq!(square.beyond(1.0), Ok(0));
         assert_eq!(square.beyond(-1.0), Ok(0));
+    }
+
+    #[test]
+    fn a_target_level_with_a_loop_vertex_reads_its_side() {
+        let square = square();
+        for target in [[3.0, 1.0], [3.0, 2.0], [0.5, 2.0], [0.5, 1.0]] {
+            assert_eq!(square.at(target), Ok(0), "{target:?}");
+        }
+        assert_eq!(square.at([1.5, 2.0 - 1.0e-3]), Ok(1));
     }
 
     #[test]

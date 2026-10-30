@@ -1480,11 +1480,15 @@ the ordered many-reference relation and can contain more than one property or GU
 
 The native namespace holds attachment records. Support links retain ordered object and
 subelement identity separately from the map mode. The persisted resolved `Placement` and local
-`AttachmentOffset` remain distinct matrices. Neutral geometry composes them as
-`Placement × AttachmentOffset` when both are present, and uses the sole present matrix otherwise.
-Validation checks support identity, finite matrices, and this effective-frame rule. Each named attachment
+`AttachmentOffset` remain distinct matrices. The native `effective_frame` summary contains
+`Placement × AttachmentOffset` when both are present, and the sole present matrix otherwise.
+The neutral primitive frame uses the resolved `Placement`.
+Validation checks support identity, finite matrices, and the native effective-frame rule. Each named attachment
 carrier occurs at most once. `AttachmentSupport` is an `App::PropertyLinkSubList` with one
 `LinkSubList` value whose zero or more `Link` children carry `obj` and `sub` attributes in order.
+A primitive with `MapMode` can use `Support` in place of `AttachmentSupport`, with the same
+carrier grammar. Simultaneous support names retain the primitive natively and emit
+`feature.primitive-placement-unresolved`.
 `MapMode` is an
 `App::PropertyEnumeration` with one `Integer` value; its zero-based index selects, in order,
 `Deactivated`, `Translate`, `ObjectXY`, `ObjectXZ`, `ObjectYZ`, `FlatFace`, `TangentPlane`,
@@ -1571,6 +1575,17 @@ and persisted degree-valued angular bounds become radians. A standalone primitiv
 body; additive and subtractive families explicitly join or cut. Required dimensions must be finite,
 linear sizes must be positive except that one cone end radius may be zero, and latitude bounds must
 be ordered. Incomplete or invalid primitive definitions remain attributable native operations.
+
+The neutral primitive placement maps the primitive feature frame into the document model frame.
+`Placement` carries the resolved object frame. In attached modes this value includes the support
+frame and attachment-local `AttachmentOffset`. The offset is not multiplied into this frame again.
+`MapMode` indices 0, 1, and 5 admit the persisted resolved frame. Other indices retain the operation natively and emit
+`feature.primitive-placement-unresolved`. The native attachment record retains the support links,
+mode, placement and offset as distinct fields. Each enclosing `PartDesign::Body` or `App::Part`
+frame premultiplies the member frame. Each object has at most one parent placement container.
+Multiple parent containers are malformed. A placement path requires finite rigid placements and
+no cycle. Missing frames and cyclic placement paths emit
+`feature.primitive-placement-unresolved`; no identity frame replaces a missing placement.
 
 Part cut, fuse, common, multi-fuse, and multi-common objects transfer as neutral Boolean combine
 operations. Two-input forms retain distinct `Base` and `Tool` property identities. Multi-input
@@ -1839,12 +1854,26 @@ frame. Reversal inverts the direction. A pad joins and a pocket cuts. Missing re
 or selections and invalid directions remain attributable native operations instead of being
 rewritten as zero-length or blind features.
 
-Part and PartDesign revolutions normalize the persisted axis direction and retain its model-space
-origin. Angular, symmetric-angular, two-angle, through-all or last-intersection,
-first-intersection, and selected-face termination remain distinct. Reversal changes the oriented
-axis rather than the magnitude of the angular extent. Standalone Part revolutions create a new
-body, PartDesign revolutions join, and grooves cut. A missing profile, zero axis, invalid angle, or
-incomplete selected termination remains an attributable native operation.
+Part and PartDesign revolutions use `Base` as the model-space axis origin and normalize `Axis`
+as the axis direction. `AxisLink` or `ReferenceAxis` identifies the native axis selection.
+The neutral angular coordinate is zero at the linked profile and increases by the right-hand
+rule about the neutral axis direction. PartDesign `Reversed=true` negates that direction.
+The positive angular magnitudes do not change sign.
+
+Stored `Angle` and `Angle2` values use degrees. Let `A = Angle*pi/180` and
+`B = Angle2*pi/180`. Neutral angular extents and endpoints use radians.
+PartDesign `Type=0` uses `A`. With `Midplane=false`, the side starts at zero and ends at `A`.
+With `Midplane=true`, the sides start at zero and end at `A/2` and `-A/2`; the symmetric
+extent stores the total angle `A`. `Type=4` uses two independent sides: the first starts at
+zero and ends at `A`; the second starts at zero and ends at `-B`.
+These signed endpoints use the neutral axis after reversal. Part `Symmetric` uses the same
+symmetric total-angle convention. Neutral fixed angular magnitudes are strictly positive and
+at most one turn. The sum of two fixed side magnitudes is at most one turn.
+
+Revolution `Type=1` selects last-intersection termination; Groove `Type=1` selects through-all
+termination. `Type=2` selects first-intersection termination, and `Type=3` selects the face in
+`UpToFace`. These terminations have no fixed angular endpoint.
+Standalone Part revolutions create a new body, PartDesign revolutions join, and grooves cut.
 
 Part and PartDesign fillets distinguish an explicit edge selection from the persisted all-edges
 mode and require a finite positive constant radius. Chamfers retain equal-distance,

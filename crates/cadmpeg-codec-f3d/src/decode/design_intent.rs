@@ -733,11 +733,14 @@ pub(super) fn decode(inputs: &DesignInputs<'_>) -> Result<DesignOutputs, CodecEr
     );
     (model.sketches, model.sketch_entities) = crate::design::sketch_project::project_sketch_design(
         ctx,
-        &design.design_sketch_placements,
-        &design.sketch_points,
-        &design.sketch_curve_identities,
-        &design.sketch_relations,
-        &design.sketch_texts,
+        &crate::design::sketch_project::SketchProjectInputs::new(
+            &design.design_sketch_placements,
+            &design.sketch_points,
+            &design.sketch_curve_identities,
+            &design.sketch_relations,
+            &design.sketch_texts,
+        )
+        .with_scan(inputs.scan),
         geometry.tolerances.linear.get(),
     )?;
     let spatial = crate::design::sketch_project::project_spatial_sketch_design(
@@ -1360,6 +1363,7 @@ fn extend_related_design_records(
         )?;
     design.design_profile_curve_selections =
         crate::design::decode::operands::decode_profile_curve_selections(
+            ctx,
             scan,
             &design.design_construction_operand_groups,
             &design.design_record_headers,
