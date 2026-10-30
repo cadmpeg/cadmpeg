@@ -1758,6 +1758,13 @@ fn exact_canvas_scope_tail(tail: &[u8], record_index: u32) -> bool {
         && tail.get(canvas_tail::ZERO_TAIL) == Some(&canvas_tail::ZERO_TAIL_VALUE)
 }
 
+/// Largest repeated lane value of a named-scope lane block: the high byte of the
+/// three descending 16-bit field targets.
+const NAMED_LANE_VALUE_MAX: u64 = 0xff;
+/// Three-digit dynamic class numbers admitted for the two equal class words of
+/// a named-scope lane block.
+const NAMED_LANE_CLASS_WORDS: std::ops::RangeInclusive<u32> = 100..=999;
+
 fn named_parameter_scope_tail_is_valid(
     bytes: &[u8],
     kind_end: usize,
@@ -1781,18 +1788,19 @@ fn named_parameter_scope_tail_is_valid(
         let first_lane_value = View::u64_le_at(bytes, marker + 2)?;
         let second_lane_value = View::u64_le_at(bytes, marker + 34)?;
         let third_lane_value = View::u64_le_at(bytes, marker + 48)?;
+        let class_word = View::u32_le_at(bytes, marker + 16)?;
         Some(
             bytes.get(kind_end + 4..kind_end + 8)? == [0; 4]
                 && bytes.get(marker) == Some(&1)
                 && bytes.get(marker + 1).is_some_and(|field_id| *field_id != 0)
-                && matches!(first_lane_value, 0 | 1)
+                && first_lane_value <= NAMED_LANE_VALUE_MAX
                 && second_lane_value == first_lane_value
                 && third_lane_value == first_lane_value
                 && bytes.get(marker + 10..marker + 12)? == [0; 2]
                 && View::u32_le_at(bytes, marker + 12)? > 0
-                && View::u32_le_at(bytes, marker + 16)? == 0xfc
+                && NAMED_LANE_CLASS_WORDS.contains(&class_word)
                 && View::f64_le_at(bytes, marker + 20)?.is_finite()
-                && View::u32_le_at(bytes, marker + 28)? == 0xfc
+                && View::u32_le_at(bytes, marker + 28)? == class_word
                 && bytes.get(marker + 32) == Some(&1)
                 && bytes
                     .get(marker + 33)

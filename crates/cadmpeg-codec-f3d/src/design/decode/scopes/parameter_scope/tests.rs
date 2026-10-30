@@ -5,6 +5,10 @@ use super::named_parameter_scope_tail_is_valid;
 use crate::test_support::lp_utf16;
 
 fn named_scope_tail(lane_value: u64) -> Vec<u8> {
+    named_scope_tail_with_class_word(lane_value, 0xfc)
+}
+
+fn named_scope_tail_with_class_word(lane_value: u64, class_word: u32) -> Vec<u8> {
     let label = "Canvas";
     let label_code_units = label.encode_utf16().count();
     let marker = 19 + label_code_units * 2;
@@ -17,9 +21,9 @@ fn named_scope_tail(lane_value: u64) -> Vec<u8> {
     bytes[marker + 1] = 0xd5;
     bytes[marker + 2..marker + 10].copy_from_slice(&lane_value.to_le_bytes());
     bytes[marker + 12..marker + 16].copy_from_slice(&u32::MAX.to_le_bytes());
-    bytes[marker + 16..marker + 20].copy_from_slice(&0xfcu32.to_le_bytes());
+    bytes[marker + 16..marker + 20].copy_from_slice(&class_word.to_le_bytes());
     bytes[marker + 20..marker + 28].copy_from_slice(&0.25f64.to_le_bytes());
-    bytes[marker + 28..marker + 32].copy_from_slice(&0xfcu32.to_le_bytes());
+    bytes[marker + 28..marker + 32].copy_from_slice(&class_word.to_le_bytes());
     bytes[marker + 32] = 1;
     bytes[marker + 33] = 0xd4;
     bytes[marker + 34..marker + 42].copy_from_slice(&lane_value.to_le_bytes());
@@ -31,8 +35,8 @@ fn named_scope_tail(lane_value: u64) -> Vec<u8> {
 }
 
 #[test]
-fn named_scope_tail_requires_one_repeated_binary_lane_value() {
-    for lane_value in [0, 1] {
+fn named_scope_tail_requires_one_repeated_byte_lane_value() {
+    for lane_value in [0, 1, 8, 0xff] {
         let bytes = named_scope_tail(lane_value);
         assert_eq!(
             named_parameter_scope_tail_is_valid(&bytes, 0, bytes.len(), bytes.len()),
@@ -48,7 +52,7 @@ fn named_scope_tail_requires_one_repeated_binary_lane_value() {
         Some(false)
     );
 
-    let outside_domain = named_scope_tail(2);
+    let outside_domain = named_scope_tail(0x100);
     assert_eq!(
         named_parameter_scope_tail_is_valid(
             &outside_domain,
@@ -56,6 +60,31 @@ fn named_scope_tail_requires_one_repeated_binary_lane_value() {
             outside_domain.len(),
             outside_domain.len()
         ),
+        Some(false)
+    );
+}
+
+#[test]
+fn named_scope_tail_admits_equal_three_digit_class_words_only() {
+    for class_word in [100, 0xfc, 0x101, 999] {
+        let bytes = named_scope_tail_with_class_word(8, class_word);
+        assert_eq!(
+            named_parameter_scope_tail_is_valid(&bytes, 0, bytes.len(), bytes.len()),
+            Some(true)
+        );
+    }
+    for class_word in [0, 99, 1000] {
+        let bytes = named_scope_tail_with_class_word(8, class_word);
+        assert_eq!(
+            named_parameter_scope_tail_is_valid(&bytes, 0, bytes.len(), bytes.len()),
+            Some(false)
+        );
+    }
+    let mut unequal = named_scope_tail_with_class_word(8, 0x101);
+    let marker = unequal.len() - 59;
+    unequal[marker + 28..marker + 32].copy_from_slice(&0xfcu32.to_le_bytes());
+    assert_eq!(
+        named_parameter_scope_tail_is_valid(&unequal, 0, unequal.len(), unequal.len()),
         Some(false)
     );
 }
