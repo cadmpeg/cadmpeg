@@ -1646,6 +1646,7 @@ fn validate_features(
                 face,
                 diameter,
                 extent,
+                ..
             },
         ) = feature.evaluation.definition()
         {

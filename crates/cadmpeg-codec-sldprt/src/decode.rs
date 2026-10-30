@@ -1292,6 +1292,7 @@ fn append_design_losses(
                     face,
                     diameter,
                     extent,
+                    ..
                 } => incomplete_face_selection(face) || diameter.is_none() || extent.is_none(),
                 FeatureOperation::SketchBlockDefinition { sketch } => sketch.is_none(),
                 FeatureOperation::SketchBlockInstance { block, placement } => {
@@ -4912,6 +4913,7 @@ fn sync_active_configuration_resolutions(ir: &mut CadIr) -> Result<(), cadmpeg_c
                 face: resolved_face,
                 diameter: resolved_diameter,
                 extent: resolved_extent,
+                ..
             },
         ) = feature.evaluation.definition()
         else {
@@ -4935,6 +4937,7 @@ fn sync_active_configuration_resolutions(ir: &mut CadIr) -> Result<(), cadmpeg_c
                 face,
                 diameter,
                 extent,
+                ..
             },
         ) = &mut state.definition
         else {

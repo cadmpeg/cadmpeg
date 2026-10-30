@@ -1739,3 +1739,59 @@ fn sheet_metal_thickness_sides_name_themselves_on_the_wire() {
     }
     assert!(serde_json::from_value::<SheetMetalThicknessSide>(serde_json::json!("both")).is_err());
 }
+
+#[test]
+fn thread_wire_round_trips_and_keeps_unproven_fields_absent() {
+    use crate::features::{FeatureDefinition, FeatureOperation};
+
+    let full = serde_json::json!({
+        "definition": "cosmetic_thread",
+        "face": {"kind": "unresolved"},
+        "standard": "Profile",
+        "designation": "D5",
+        "diameter": 5.0,
+        "pitch": 0.8,
+        "modeled": false,
+        "extent": {"kind": "through"}
+    });
+    let definition: FeatureDefinition = serde_json::from_value(full.clone()).unwrap();
+    assert!(matches!(
+        &definition,
+        FeatureDefinition::Operation(FeatureOperation::CosmeticThread {
+            modeled: Some(false),
+            ..
+        })
+    ));
+    assert_eq!(serde_json::to_value(definition).unwrap(), full);
+
+    let minimal =
+        serde_json::json!({"definition": "cosmetic_thread", "face": {"kind": "unresolved"}});
+    let definition: FeatureDefinition = serde_json::from_value(minimal.clone()).unwrap();
+    assert!(matches!(
+        &definition,
+        FeatureDefinition::Operation(FeatureOperation::CosmeticThread {
+            standard: None,
+            designation: None,
+            diameter: None,
+            pitch: None,
+            modeled: None,
+            extent: None,
+            ..
+        })
+    ));
+    assert_eq!(serde_json::to_value(definition).unwrap(), minimal);
+
+    for (field, value) in [
+        ("modeled", serde_json::json!(null)),
+        ("standard", serde_json::json!("")),
+        ("designation", serde_json::json!(" ")),
+        ("pitch", serde_json::json!(0.0)),
+    ] {
+        let mut wire = minimal.clone();
+        wire[field] = value;
+        assert!(
+            serde_json::from_value::<FeatureDefinition>(wire).is_err(),
+            "{field} must be refused"
+        );
+    }
+}

@@ -131,6 +131,7 @@ fn selected(ir: &CadIr) -> FaceSelection {
             face,
             diameter,
             extent,
+            ..
         }) = definitions(ctx, ir, &[thread()])
             .unwrap()
             .remove("operation")

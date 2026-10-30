@@ -2692,10 +2692,31 @@ pub enum FeatureOperation {
         /// Ordered control cages committed by the session.
         cages: Vec<SubdId>,
     },
-    /// Non-geometric thread annotation attached to a cylindrical face.
+    /// Thread attached to a cylindrical face.
+    ///
+    /// The source may also model the helical form in the body geometry;
+    /// `modeled` states whether it does, and absent means unproven. A field
+    /// that the source encoding does not prove stays absent. F3D threads set
+    /// `standard`, `designation` and `pitch` and stay definition-incomplete
+    /// while `modeled` is absent (DR-143); the `nx`, `sldprt`, and `inventor` codecs do not
+    /// set the four new fields.
     CosmeticThread {
-        /// Cylindrical face carrying the annotation.
+        /// Cylindrical face carrying the thread.
         face: FaceSelection,
+        /// Thread standard family or profile name, as the source spells it.
+        #[serde(
+            default,
+            skip_serializing_if = "Option::is_none",
+            deserialize_with = "deserialize_thread_standard"
+        )]
+        standard: Option<NonBlankString>,
+        /// Size designation within the standard, as the source spells it.
+        #[serde(
+            default,
+            skip_serializing_if = "Option::is_none",
+            deserialize_with = "deserialize_thread_designation"
+        )]
+        designation: Option<NonBlankString>,
         /// Nominal thread diameter, when resolved.
         #[serde(
             default,
@@ -2703,7 +2724,21 @@ pub enum FeatureOperation {
             deserialize_with = "deserialize_diameter"
         )]
         diameter: Option<PositiveLength>,
-        /// Axial extent of the annotation, when resolved.
+        /// Thread pitch along the axis, when resolved.
+        #[serde(
+            default,
+            skip_serializing_if = "Option::is_none",
+            deserialize_with = "deserialize_thread_pitch"
+        )]
+        pitch: Option<PositiveLength>,
+        /// Whether the body geometry already contains the helical form.
+        #[serde(
+            default,
+            skip_serializing_if = "Option::is_none",
+            deserialize_with = "deserialize_thread_modeled"
+        )]
+        modeled: Option<bool>,
+        /// Axial extent of the thread, when resolved.
         #[serde(
             default,
             skip_serializing_if = "Option::is_none",
@@ -9276,6 +9311,14 @@ cadmpeg_core::named_optional_field!(deserialize_source_text, String, "source_tex
 cadmpeg_core::named_optional_field!(deserialize_active_child, FeatureId, "active_child");
 cadmpeg_core::named_optional_field!(deserialize_diameter, PositiveLength, "diameter");
 cadmpeg_core::named_optional_field!(deserialize_extent, CosmeticThreadExtent, "extent");
+cadmpeg_core::named_optional_field!(deserialize_thread_standard, NonBlankString, "standard");
+cadmpeg_core::named_optional_field!(
+    deserialize_thread_designation,
+    NonBlankString,
+    "designation"
+);
+cadmpeg_core::named_optional_field!(deserialize_thread_pitch, PositiveLength, "pitch");
+cadmpeg_core::named_optional_field!(deserialize_thread_modeled, bool, "modeled");
 cadmpeg_core::named_optional_field!(deserialize_opacity, Fraction, "opacity");
 cadmpeg_core::named_optional_field!(deserialize_reference, DatumPlaneReference, "reference");
 cadmpeg_core::named_optional_field!(

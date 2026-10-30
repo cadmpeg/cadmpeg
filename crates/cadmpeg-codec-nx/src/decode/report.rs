@@ -702,6 +702,7 @@ pub(crate) fn append_design_intent_losses(
                 face,
                 diameter,
                 extent,
+                ..
             }) if face_selection_is_incomplete(face) || diameter.is_none() || extent.is_none() => {
                 "cosmetic thread"
             }

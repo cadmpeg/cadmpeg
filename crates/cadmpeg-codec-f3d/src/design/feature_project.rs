@@ -58,6 +58,8 @@ use std::hash::Hash;
 
 pub(crate) mod form_cages;
 
+/// Millimetres per Design length unit (the Design stream stores centimetres).
+const DESIGN_LENGTH_TO_MILLIMETRE: f64 = 10.0;
 const EPS_FEATURE_PROJECT_PROJECT_OFFSET_FACES_E9: f64 = 1.0e-9;
 const EPS_FEATURE_PROJECT_MATRIX_AXIS_ANGLE_E12: f64 = 1.0e-12;
 const EPS_FEATURE_PROJECT_MATRIX_AXIS_ANGLE_E8: f64 = 1.0e-8;
@@ -1071,7 +1073,13 @@ pub(crate) fn project_parameter_design_with_edge_identities(
                             Ok(FeatureDefinition::Operation(
                                 FeatureOperation::CosmeticThread {
                                     face,
+                                    standard: Some(construction.profile.clone()),
+                                    designation: Some(construction.designation.clone()),
                                     diameter: Some(nominal_size),
+                                    pitch: cadmpeg_ir::scalar::PositiveLength::new(
+                                        construction.pitch.get() * DESIGN_LENGTH_TO_MILLIMETRE,
+                                    ),
+                                    modeled: None,
                                     extent,
                                 },
                             ))
