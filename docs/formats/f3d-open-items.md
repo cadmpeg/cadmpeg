@@ -727,14 +727,14 @@ the native feature when a fixed lane carries a symmetric distance.
 
 **Note.** The scope remains native with `feature.derived-base-unresolved` until both source and frame have a complete binding.
 
-### DR-123. Typed-reference BoxPrimitive construction
+### DR-123. Typed-reference BoxPrimitive offsets and other forms
 
-**Question.** Which fields define dimensions, operation, and the local frame in a `BoxPrimitive` scope with eight typed reference members?
+**Question.** How does a nonzero `OffsetDistanceX` or `OffsetDistanceY` owner combine with the stored frame in a `BoxPrimitive` scope with eight typed reference members, and which other frame lengths does the form have?
 
-**Known.** The named five-owner box form defines three lengths and two planar offsets. The eight-member form has a scope envelope and a result-state transition. These fields do not assign the extra references or establish a local placement frame.
+**Known.** The 1295-byte form stores the result operation, a rigid local frame, and the five box parameter owners; the frame is the box placement when both offset owners are zero. The support-face selection and placement construction references are table members, and the form stores one further typed reference at offset 517 that is not a table member.
 
-**Need.** Independent changes to the three dimensions, local origin, local axes, and result operation in this form.
+**Need.** A scope in this form with a nonzero offset owner and a changed placement, and a scope in any other frame length.
 
 **Conflict.** None.
 
-**Note.** A scope without complete dimensions and frame remains native with `feature.box-primitive-unresolved`.
+**Note.** A scope outside the 1295-byte form, or with a nonzero offset owner, remains native with `feature.box-primitive-unresolved`.

@@ -358,3 +358,255 @@ fn shifted_cylinder_primitives_bind_exact_generation_frames() {
         .is_none());
     }
 }
+
+mod typed_reference_box {
+    use super::*;
+
+    const TABLE_GUIDS: [&str; 8] = [
+        "5A1BF548-241F-46FD-9FB5-E4B05126EB9D",
+        "7B6C3C2D-4096-4E6D-B225-699E8C2D9355",
+        "D91D429C-1BB5-4640-B49F-69AF14F463E9",
+        "D91D429C-1BB5-4640-B49F-69AF14F463E9",
+        "D91D429C-1BB5-4640-B49F-69AF14F463E9",
+        "D91D429C-1BB5-4640-B49F-69AF14F463E9",
+        "D91D429C-1BB5-4640-B49F-69AF14F463E9",
+        "CAA90BED-408E-4F03-A4E5-B1552D95C8EE",
+    ];
+    const PREFIX_MEMBERS: [usize; 7] = [7, 2, 3, 4, 1, 5, 6];
+    const MEMBERS: [u32; 8] = [300, 301, 302, 303, 304, 305, 306, 307];
+    const STREAM: &str = "Design/BulkStream.dat";
+    const FRAME: [[f64; 4]; 4] = [
+        [0.0, 1.0, 0.0, 3.0],
+        [0.0, 0.0, 1.0, -1.5],
+        [1.0, 0.0, 0.0, 0.25],
+        [0.0, 0.0, 0.0, 1.0],
+    ];
+
+    fn typed_reference(bytes: &mut [u8], at: usize, target: u32, guid: &str) {
+        bytes[at] = 1;
+        bytes[at + 1..at + 5].copy_from_slice(&target.to_le_bytes());
+        bytes[at + 9..at + 13].copy_from_slice(&36u32.to_le_bytes());
+        bytes[at + 13..at + 49].copy_from_slice(guid.as_bytes());
+    }
+
+    fn form(operation: u32, frame: [[f64; 4]; 4]) -> Vec<u8> {
+        let mut bytes = vec![0; 1295];
+        bytes[0..4].copy_from_slice(&3u32.to_le_bytes());
+        bytes[4..7].copy_from_slice(b"264");
+        bytes[7..11].copy_from_slice(&12u32.to_le_bytes());
+        bytes[21] = 1;
+        bytes[22..26].copy_from_slice(&operation.to_le_bytes());
+        bytes[26] = 1;
+        for (ordinal, member) in PREFIX_MEMBERS.into_iter().enumerate() {
+            typed_reference(
+                &mut bytes,
+                27 + 51 * ordinal,
+                MEMBERS[member],
+                TABLE_GUIDS[member],
+            );
+        }
+        for (ordinal, value) in frame.into_iter().flatten().enumerate() {
+            let at = 385 + ordinal * 8;
+            bytes[at..at + 8].copy_from_slice(&value.to_le_bytes());
+        }
+        bytes[513..517].copy_from_slice(&1u32.to_le_bytes());
+        typed_reference(&mut bytes, 517, 99, "11111111-2222-3333-4444-555555555555");
+        bytes[576..580].copy_from_slice(&36u32.to_le_bytes());
+        for (ordinal, unit) in "00000000-0000-0000-0000-000000000000"
+            .encode_utf16()
+            .enumerate()
+        {
+            let at = 580 + ordinal * 2;
+            bytes[at..at + 2].copy_from_slice(&unit.to_le_bytes());
+        }
+        bytes[655..659].copy_from_slice(&8u32.to_le_bytes());
+        for (ordinal, member) in MEMBERS.into_iter().enumerate() {
+            typed_reference(&mut bytes, 659 + 51 * ordinal, member, TABLE_GUIDS[ordinal]);
+        }
+        bytes
+    }
+
+    /// A scope whose layout is that of the 1295-byte form, shortened by one
+    /// 51-byte entry for each reference fewer than eight.
+    fn scope(members: &[u32]) -> DesignParameterScope {
+        let shortfall = 51 * (8 - members.len());
+        let frame_length = 1295 - shortfall;
+        let mut scope = DesignParameterScope::empty(
+            &format!("f3d:{STREAM}:scope#12"),
+            crate::records::feature::scope::DesignFeatureKind::BoxPrimitive,
+            12,
+        );
+        scope.class_tag =
+            crate::records::references::DesignClassTag::try_from("264".to_owned()).unwrap();
+        scope.paired_class_tag =
+            crate::records::references::DesignClassTag::try_from("262".to_owned()).unwrap();
+        scope
+            .try_edit(|draft| {
+                draft.byte_offset = 0;
+                draft.paired_byte_offset = u64_from_index(frame_length);
+                draft.frame_length = u64_from_index(frame_length);
+                draft.reference_count_offset = 655;
+                draft.reference_members = crate::records::identity::ReferenceRun::located(
+                    members
+                        .iter()
+                        .enumerate()
+                        .map(|(ordinal, value)| crate::records::identity::Located {
+                            value: *value,
+                            offset: 655 + 5 + 51 * u64_from_index(ordinal),
+                        })
+                        .collect(),
+                );
+                draft.kind_offset = u64_from_index(1075 - shortfall);
+                draft.feature_ordinal_offset = u64_from_index(1099 - shortfall);
+                draft.history_state_id = Some(66);
+                draft.previous_history_state_id = Some(65);
+                draft.previous_history_state_id_offset = Some(u64_from_index(1169 - shortfall));
+            })
+            .unwrap();
+        scope
+    }
+
+    fn owner(record_index: u32, local_ordinal: u32, value: f64) -> DesignParameterOwner {
+        DesignParameterOwner::try_from(crate::records::parameters::DesignParameterOwnerWire {
+            id: format!("f3d:{STREAM}:owner#{record_index}"),
+            byte_offset: u64::from(record_index),
+            frame_length: 103,
+            class_tag: crate::records::references::DesignClassTag::try_from("294".to_owned())
+                .unwrap(),
+            record_index,
+            scope_record_index: 12,
+            local_ordinal,
+            evaluated_value: value,
+            evaluated_value_offset: u64::from(record_index) + 40,
+            parameter_record_index: record_index + 1,
+            owned_ordinal: local_ordinal,
+            variant: None,
+            companion_record_index: record_index + 2,
+        })
+        .unwrap()
+    }
+
+    fn owners(offset_x: f64, offset_y: f64) -> Vec<DesignParameterOwner> {
+        vec![
+            owner(MEMBERS[2], 0, 1.2),
+            owner(MEMBERS[3], 1, 0.8),
+            owner(MEMBERS[4], 2, 2.5),
+            owner(MEMBERS[5], 3, offset_x),
+            owner(MEMBERS[6], 4, offset_y),
+        ]
+    }
+
+    fn decode(
+        bytes: &[u8],
+        scope: &DesignParameterScope,
+        owners: &[DesignParameterOwner],
+    ) -> Option<DesignSolidPrimitive> {
+        exact_solid_primitive(
+            bytes,
+            &crate::design::test_support::indexed_record_offsets_for_test(bytes),
+            scope,
+            owners,
+        )
+    }
+
+    #[test]
+    fn binds_operation_dimensions_and_frame() {
+        let bytes = form(4, FRAME);
+        let Some(DesignSolidPrimitive::Box(primitive)) =
+            decode(&bytes, &scope(&MEMBERS), &owners(0.0, 0.0))
+        else {
+            panic!("typed-reference box");
+        };
+        assert_eq!(primitive.operation, DesignExtrudeOperation::NewBody);
+        assert_eq!(primitive.operation_offset, 22);
+        assert_eq!(
+            [
+                primitive.length.get(),
+                primitive.width.get(),
+                primitive.height.get()
+            ],
+            [1.2, 0.8, 2.5]
+        );
+        assert_eq!(primitive.transform.map(|frame| frame.rows()), Some(FRAME));
+        assert_eq!(primitive.transform_offset, Some(385));
+        for (value, expected) in [
+            (1, DesignExtrudeOperation::Join),
+            (2, DesignExtrudeOperation::Cut),
+        ] {
+            let bytes = form(value, FRAME);
+            assert!(matches!(
+                decode(&bytes, &scope(&MEMBERS), &owners(0.0, 0.0)),
+                Some(DesignSolidPrimitive::Box(primitive)) if primitive.operation == expected
+            ));
+        }
+    }
+
+    #[test]
+    fn refuses_each_deviation() {
+        let scope = scope(&MEMBERS);
+        let owners = owners(0.0, 0.0);
+        let valid = form(4, FRAME);
+        assert!(decode(&valid, &scope, &owners).is_some());
+
+        let mutate = |edit: &dyn Fn(&mut Vec<u8>)| {
+            let mut bytes = valid.clone();
+            edit(&mut bytes);
+            decode(&bytes, &scope, &owners)
+        };
+        // Header, prologue and fixed-byte deviations.
+        assert!(mutate(&|bytes| bytes[21] = 0).is_none());
+        assert!(mutate(&|bytes| bytes[15] = 1).is_none());
+        assert!(mutate(&|bytes| bytes[24] = 1).is_none());
+        assert!(mutate(&|bytes| bytes[26] = 0).is_none());
+        assert!(mutate(&|bytes| bytes[384] = 1).is_none());
+        assert!(mutate(&|bytes| bytes[513] = 2).is_none());
+        assert!(mutate(&|bytes| bytes[570] = 1).is_none());
+        assert!(mutate(&|bytes| bytes[653] = 1).is_none());
+        assert!(mutate(&|bytes| bytes[22] = 5).is_none());
+        assert!(mutate(&|bytes| bytes[22] = 0).is_none());
+        // Null GUID and tail reference.
+        assert!(mutate(&|bytes| bytes[580] = b'1').is_none());
+        assert!(mutate(&|bytes| bytes[518..522].copy_from_slice(&0u32.to_le_bytes())).is_none());
+        // Prefix reference target, type GUID and table type GUID.
+        assert!(mutate(&|bytes| bytes[28] ^= 1).is_none());
+        assert!(mutate(&|bytes| bytes[27 + 13] = b'6').is_none());
+        assert!(mutate(&|bytes| bytes[27 + 51 * 4 + 13] = b'6').is_none());
+        assert!(mutate(&|bytes| bytes[659 + 13] = b'6').is_none());
+        assert!(mutate(&|bytes| bytes[659 + 51 * 7 + 13] = b'6').is_none());
+        assert!(mutate(&|bytes| bytes[655] = 7).is_none());
+        // Frame: left-handed, scaled and non-bottom rows.
+        for edit in [
+            FRAME.map(|row| [row[0], row[1], -row[2], row[3]]),
+            FRAME.map(|row| [row[0] * 2.0, row[1], row[2], row[3]]),
+            [FRAME[0], FRAME[1], FRAME[2], [0.0, 0.0, 1.0, 1.0]],
+        ] {
+            let bytes = form(4, edit);
+            assert!(decode(&bytes, &scope, &owners).is_none());
+        }
+    }
+
+    #[test]
+    fn refuses_scope_and_owner_deviations() {
+        let valid = form(4, FRAME);
+        let good_owners = owners(0.0, 0.0);
+        // A nonzero offset owner leaves the composition with the frame undecoded.
+        for (offset_x, offset_y) in [(0.5, 0.0), (0.0, -0.5)] {
+            assert!(decode(&valid, &scope(&MEMBERS), &owners(offset_x, offset_y)).is_none());
+        }
+        // Reference count and reference order.
+        assert!(decode(&valid, &scope(&MEMBERS[..7]), &good_owners).is_none());
+        let mut reordered = MEMBERS;
+        reordered.swap(2, 3);
+        assert!(decode(&valid, &scope(&reordered), &good_owners).is_none());
+        // An owner whose record is not the ordered member of its ordinal.
+        let mut shifted = good_owners.clone();
+        shifted[0] = owner(MEMBERS[2] + 50, 0, 1.2);
+        assert!(decode(&valid, &scope(&MEMBERS), &shifted).is_none());
+        let mut swapped = good_owners.clone();
+        swapped[0] = owner(MEMBERS[3], 0, 1.2);
+        swapped[1] = owner(MEMBERS[2], 1, 0.8);
+        assert!(decode(&valid, &scope(&MEMBERS), &swapped).is_none());
+        // A missing owner.
+        assert!(decode(&valid, &scope(&MEMBERS), &good_owners[..4]).is_none());
+    }
+}
