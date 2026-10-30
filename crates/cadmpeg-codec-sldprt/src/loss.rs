@@ -134,7 +134,7 @@ pub(crate) enum SldprtLossCode {
     /// reciprocal partner corroboration of both ring-order endpoints, or a
     /// mutual twin FIN contradicts the ring-order endpoint.
     TopologyFinPartnerUnresolved,
-    /// A FIN backward link names no reciprocal same-loop forward link, so
+    /// A FIN forward link names no reciprocal same-loop backward link, so
     /// its ring is withheld instead of walked on doubt.
     TopologyFinLinkUnresolved,
     /// Vertexless ring FINs fail strict reciprocal-circle single-loop

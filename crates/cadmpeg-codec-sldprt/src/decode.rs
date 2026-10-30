@@ -3938,7 +3938,7 @@ fn append_topology_record_losses(
     }
     if stats.withheld_fin_links > 0 {
         losses.push(SldprtLossCode::TopologyFinLinkUnresolved.note(format!(
-            "{} ring(s) were withheld because a FIN backward link names no reciprocal same-loop forward link; the ring is not walked on doubt.",
+            "{} ring(s) were withheld because a FIN forward link names no reciprocal same-loop backward link; the ring is not walked on doubt.",
             stats.withheld_fin_links,
         )));
     }

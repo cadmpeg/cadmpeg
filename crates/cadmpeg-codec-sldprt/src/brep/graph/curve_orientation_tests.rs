@@ -81,7 +81,7 @@ fn decode_marked_circle_edge(marker: u8) -> (String, String, Sense) {
 
 #[test]
 fn against_marker_trims_a_circle_edge_through_its_short_arc() {
-    let (start, end, sense) = decode_marked_circle_edge(0x2b);
+    let (start, end, sense) = decode_marked_circle_edge(0x2d);
     assert_eq!(sense, Sense::Reversed);
     let sweep = circle_sweep_degrees(&start, &end);
     assert!((sweep - SHORT_ARC_DEGREES).abs() < 1.0e-9, "{sweep}");
@@ -89,7 +89,7 @@ fn against_marker_trims_a_circle_edge_through_its_short_arc() {
 
 #[test]
 fn along_marker_trims_a_circle_edge_through_its_long_arc() {
-    let (start, end, sense) = decode_marked_circle_edge(0x2d);
+    let (start, end, sense) = decode_marked_circle_edge(0x2b);
     assert_eq!(sense, Sense::Forward);
     let sweep = circle_sweep_degrees(&start, &end);
     assert!(
@@ -100,7 +100,7 @@ fn along_marker_trims_a_circle_edge_through_its_long_arc() {
 
 #[test]
 fn along_marker_keeps_the_stored_edge_direction() {
-    let (start, end, sense) = decode_marked_line_edge(0x2d);
+    let (start, end, sense) = decode_marked_line_edge(0x2b);
     assert!(start.ends_with("#50"), "{start}");
     assert!(end.ends_with("#51"), "{end}");
     assert_eq!(sense, Sense::Forward);
@@ -108,7 +108,7 @@ fn along_marker_keeps_the_stored_edge_direction() {
 
 #[test]
 fn against_marker_reverses_the_stored_edge_direction() {
-    let (start, end, sense) = decode_marked_line_edge(0x2b);
+    let (start, end, sense) = decode_marked_line_edge(0x2d);
     assert!(start.ends_with("#51"), "{start}");
     assert!(end.ends_with("#50"), "{end}");
     assert_eq!(sense, Sense::Reversed);

@@ -374,8 +374,9 @@ fn parse_edge_use_candidates(buf: &[u8], off: usize) -> Vec<(EdgeUse, usize)> {
 /// `refs[3]` = support curve carrier. The compact layout has no canonical-coedge slot.
 ///
 /// Coedge `00 11`: 21-byte body, no magic, `refs[9]` at body+2, marker at
-/// body+20. `refs[1]` = owning loop, `refs[3]` = next coedge, `refs[4]` = start
-/// vertex-use, `refs[5]` = twin coedge, `refs[6]` = edge-use.
+/// body+20. `refs[1]` = owning loop, `refs[2]`/`refs[3]` = forward/backward
+/// coedge, `refs[4]` = forward (end) vertex-use, `refs[5]` = twin coedge,
+/// `refs[6]` = edge-use.
 fn parse_coedge_candidates(buf: &[u8], off: usize) -> Vec<(Coedge, usize)> {
     let Some(p) = body_start(buf, off, 0x11) else {
         return Vec::new();
@@ -1099,10 +1100,10 @@ impl Candidate for Point {
 #[derive(Clone, Copy)]
 struct CoedgeEvidence<'a> {
     owner: Option<&'a Loop>,
-    start: bool,
+    end: bool,
     edge: Option<&'a [EdgeUse]>,
-    next_owner: Option<bool>,
-    previous: bool,
+    backward_owner: Option<bool>,
+    forward: bool,
     loop_head: bool,
 }
 
@@ -1110,11 +1111,11 @@ impl CoedgeEvidence<'_> {
     fn flags(self) -> [bool; 7] {
         [
             self.owner.is_some(),
-            self.start,
+            self.end,
             self.edge.is_some(),
-            self.next_owner == Some(true),
-            self.next_owner.is_some(),
-            self.previous,
+            self.backward_owner == Some(true),
+            self.backward_owner.is_some(),
+            self.forward,
             self.loop_head,
         ]
     }
@@ -1172,27 +1173,27 @@ fn coedge_evidence<'a>(
     let owner_evidence = loops
         .iter()
         .find(|loop_| loop_.attr == owner && owner != 0 && loop_is_owned(loop_, bridges));
-    let start = candidate.refs[4];
-    let start_evidence = start > 1 && vertex_uses.contains(&start);
+    let end = candidate.refs[4];
+    let end_evidence = end > 1 && vertex_uses.contains(&end);
     let edge = candidate.refs[6];
     let edge_evidence = edge_candidates
         .get(&edge)
         .filter(|_| edge != 0)
         .map(Vec::as_slice);
-    let next = candidate.refs[3];
-    let next_owner_valid = coedge_candidates
-        .get(&next)
-        .filter(|_| next != 0)
+    let backward = candidate.refs[3];
+    let backward_owner_valid = coedge_candidates
+        .get(&backward)
+        .filter(|_| backward != 0)
         .map(|candidates| {
             candidates
                 .iter()
-                .any(|next_candidate| next_candidate.refs[1] == owner)
+                .any(|backward_candidate| backward_candidate.refs[1] == owner)
         });
-    let previous = candidate.refs[2];
-    let previous_valid = previous <= 1
-        || coedge_candidates.get(&previous).is_some_and(|candidates| {
-            candidates.iter().any(|previous_candidate| {
-                previous_candidate.refs[3] == candidate.attr && previous_candidate.refs[1] == owner
+    let forward = candidate.refs[2];
+    let forward_valid = forward <= 1
+        || coedge_candidates.get(&forward).is_some_and(|candidates| {
+            candidates.iter().any(|forward_candidate| {
+                forward_candidate.refs[3] == candidate.attr && forward_candidate.refs[1] == owner
             })
         });
     let loop_head_valid = loops.iter().rev().any(|loop_| {
@@ -1200,10 +1201,10 @@ fn coedge_evidence<'a>(
     });
     CoedgeEvidence {
         owner: owner_evidence,
-        start: start_evidence,
+        end: end_evidence,
         edge: edge_evidence,
-        next_owner: next_owner_valid,
-        previous: previous_valid,
+        backward_owner: backward_owner_valid,
+        forward: forward_valid,
         loop_head: loop_head_valid,
     }
 }
@@ -2316,7 +2317,7 @@ mod tests {
 
     fn partition_without_middle_fin() -> Vec<u8> {
         let mut bytes = crate::test_support::parasolid::triangle_body();
-        let original = crate::test_support::parasolid::coedge(31, 20, 32, 51, 0, 41, false);
+        let original = crate::test_support::parasolid::coedge(31, 20, 30, 52, 0, 41, false);
         let at = bytes
             .windows(original.len())
             .position(|window| window == original)
@@ -2382,7 +2383,7 @@ mod tests {
             candidate.refs[2] = null;
             let evidence =
                 super::coedge_evidence(&candidate, &[], &bridges, &vertices, &edges, &coedges);
-            assert!(evidence.previous);
+            assert!(evidence.forward);
         }
     }
 
