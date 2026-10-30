@@ -6324,6 +6324,23 @@ Offsets are relative to the end of the 190-byte selection-member frame.
 | 5 | 8 | `value` | `u64` | little | spec | byte `00`, u32 `2`, u64 `1`, and byte `00` · value `1` |
 | 13 | 1 | `trailing_zero` | `u8` | little | spec | byte `00`, u32 `2`, u64 `1`, and byte `00` · value `0` |
 
+## `extrude_selection_member_scope_tail`
+
+Spec §3.1 · layout: byte offsets · size: 50 B
+
+Offsets are relative to the end of the 190-byte selection-member frame.
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 1 | `leading_zero` | `u8` | little | spec | A selection member whose optional slot is absent can instead be a 240-byte indexed record · value `0` |
+| 1 | 8 | `opaque_scalar` | `f64` | little | spec | A selection member whose optional slot is absent can instead be a 240-byte indexed record |
+| 9 | 4 | `opaque_word` | `u32` | little | spec | A selection member whose optional slot is absent can instead be a 240-byte indexed record · value `260` |
+| 13 | 11 | `chain_reference_first` | `bytes[11]` | little | spec | A selection member whose optional slot is absent can instead be a 240-byte indexed record |
+| 24 | 3 | `separator` | `bytes[3]` | little | spec | A selection member whose optional slot is absent can instead be a 240-byte indexed record |
+| 27 | 11 | `chain_reference_second` | `bytes[11]` | little | spec | A selection member whose optional slot is absent can instead be a 240-byte indexed record |
+| 38 | 1 | `second_separator` | `u8` | little | spec | A selection member whose optional slot is absent can instead be a 240-byte indexed record · value `0` |
+| 39 | 11 | `scope_reference` | `bytes[11]` | little | spec | A selection member whose optional slot is absent can instead be a 240-byte indexed record |
+
 ## `cut_paste_prefix`
 
 Spec §3.1 · layout: byte offsets · size: 72 B

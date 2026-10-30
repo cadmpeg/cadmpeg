@@ -394,6 +394,18 @@ the native feature when a fixed lane carries a symmetric distance.
 
 **Conflict.** No complete root-selection rule is defined.
 
+### DR-145. Extrude selection member scope tail
+
+**Question.** What do the f64, the u32 with value `0x104`, and the two chain references in the 50-byte scope tail of an Extrude selection member mean?
+
+**Known.** The tail follows the 190-byte member frame when the optional slot is absent. The u32 has value `0x104`. The two chain references name indexed records of the same segment that follow the member. The closing marked reference names the owning Extrude scope.
+
+**Need.** Files that vary the Extrude options and the selected profile, to find which option writes the tail and what the chain records carry.
+
+**Conflict.** None.
+
+**Note.** None.
+
 ## 2. External references
 
 ### DR-111. Component-path poses of nested occurrences

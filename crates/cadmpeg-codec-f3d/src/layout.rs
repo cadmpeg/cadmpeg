@@ -6124,6 +6124,40 @@ pub(crate) mod extrude_selection_member_long_tail {
     pub(crate) const TRAILING_ZERO_VALUE: u8 = 0;
 }
 
+/// Byte offsets for the `extrude_selection_member_scope_tail` record.
+///
+/// Spec §3.1. Record length 50 B.
+///
+/// ```text
+/// Offsets are relative to the end of the 190-byte selection-member frame.
+/// ```
+pub(crate) mod extrude_selection_member_scope_tail {
+    /// Record length in bytes. Spec §3.1.
+    pub(crate) const LEN: usize = 50;
+    /// Offset of `leading_zero` (`u8`). Spec §3.1.
+    pub(crate) const LEADING_ZERO: usize = 0;
+    /// Stated value of `leading_zero` (`u8`). Spec §3.1.
+    pub(crate) const LEADING_ZERO_VALUE: u8 = 0;
+    /// Offset of `opaque_scalar` (`f64`, little-endian). Spec §3.1.
+    pub(crate) const OPAQUE_SCALAR: usize = 1;
+    /// Offset of `opaque_word` (`u32`, little-endian). Spec §3.1.
+    pub(crate) const OPAQUE_WORD: usize = 9;
+    /// Stated value of `opaque_word` (`u32`). Spec §3.1.
+    pub(crate) const OPAQUE_WORD_VALUE: u32 = 0x0000_0104;
+    /// Offset of `chain_reference_first` (`bytes[11]`). Spec §3.1.
+    pub(crate) const CHAIN_REFERENCE_FIRST: usize = 13;
+    /// Offset of `separator` (`bytes[3]`). Spec §3.1.
+    pub(crate) const SEPARATOR: usize = 24;
+    /// Offset of `chain_reference_second` (`bytes[11]`). Spec §3.1.
+    pub(crate) const CHAIN_REFERENCE_SECOND: usize = 27;
+    /// Offset of `second_separator` (`u8`). Spec §3.1.
+    pub(crate) const SECOND_SEPARATOR: usize = 38;
+    /// Stated value of `second_separator` (`u8`). Spec §3.1.
+    pub(crate) const SECOND_SEPARATOR_VALUE: u8 = 0;
+    /// Offset of `scope_reference` (`bytes[11]`). Spec §3.1.
+    pub(crate) const SCOPE_REFERENCE: usize = 39;
+}
+
 /// Byte offsets for the `cut_paste_prefix` record.
 ///
 /// Spec §3.1. Record length 72 B.
