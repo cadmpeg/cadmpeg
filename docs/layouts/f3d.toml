@@ -26357,3 +26357,120 @@ offset = 65
 type = "u64"
 source = "spec"
 anchor = "The carrier header is followed by ten zero bytes, u32 values `1, 0, 1`, a u32 lane with value `2` or `3`"
+
+[[record]]
+name = "local_component_occurrence_empty_attributes_prefix"
+parsed_by = "crates/cadmpeg-codec-f3d/src/design/decode/components.rs"
+kind = "byte"
+section = "3.1"
+anchor = "An empty-attribute local component occurrence stores an empty attribute list after its path."
+size = 213
+note = "Offsets are relative to the indexed header. The identity or matrix tail follows at offset 213."
+
+[[record.gap]]
+offset = 0
+size = 11
+note = "Indexed header."
+
+[[record.field]]
+name = "empty_instance_name"
+offset = 11
+type = "bytes[8]"
+source = "spec"
+anchor = "An empty-attribute local component occurrence stores an empty attribute list after its path."
+
+[[record.field]]
+name = "path_marker"
+offset = 19
+type = "u8"
+source = "spec"
+anchor = "An empty-attribute local component occurrence stores an empty attribute list after its path."
+value = 1
+
+[[record.field]]
+name = "path_count"
+offset = 20
+type = "u32"
+source = "spec"
+anchor = "An empty-attribute local component occurrence stores an empty attribute list after its path."
+value = 1
+
+[[record.field]]
+name = "component_reference"
+offset = 24
+type = "bytes[9]"
+source = "spec"
+anchor = "An empty-attribute local component occurrence stores an empty attribute list after its path."
+
+[[record.gap]]
+offset = 33
+size = 2
+note = "Two zero trailing bytes of the local component reference."
+
+[[record.field]]
+name = "path_discriminator"
+offset = 35
+type = "u32"
+source = "spec"
+anchor = "An empty-attribute local component occurrence stores an empty attribute list after its path."
+
+[[record.field]]
+name = "attributes_marker"
+offset = 39
+type = "u8"
+source = "spec"
+anchor = "An empty-attribute local component occurrence stores an empty attribute list after its path."
+value = 1
+
+[[record.field]]
+name = "attribute_count"
+offset = 40
+type = "u32"
+source = "spec"
+anchor = "An empty-attribute local component occurrence stores an empty attribute list after its path."
+value = 0
+
+[[record.field]]
+name = "occurrence_ordinal"
+offset = 44
+type = "u32"
+source = "spec"
+anchor = "An empty-attribute local component occurrence stores an empty attribute list after its path."
+
+[[record.field]]
+name = "carrier_guid"
+offset = 48
+type = "bytes[76]"
+source = "spec"
+anchor = "An empty-attribute local component occurrence stores an empty attribute list after its path."
+
+[[record.field]]
+name = "occurrence_guid"
+offset = 124
+type = "bytes[76]"
+source = "spec"
+anchor = "An empty-attribute local component occurrence stores an empty attribute list after its path."
+
+[[record.gap]]
+offset = 200
+size = 1
+note = "Zero separator."
+
+[[record.field]]
+name = "component_reference_repeat"
+offset = 201
+type = "bytes[9]"
+source = "spec"
+anchor = "An empty-attribute local component occurrence stores an empty attribute list after its path."
+
+[[record.gap]]
+offset = 210
+size = 2
+note = "Zero trailing field of the repeated component-record reference."
+
+[[record.field]]
+name = "identity_flag"
+offset = 212
+type = "u8"
+source = "spec"
+anchor = "An empty-attribute local component occurrence stores an empty attribute list after its path."

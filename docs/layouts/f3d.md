@@ -7717,6 +7717,37 @@ Unstated regions:
 
 - `0..11` (11 B): The indexed header precedes this field run.
 
+## `local_component_occurrence_empty_attributes_prefix`
+
+Spec §3.1 · layout: byte offsets · size: 213 B
+
+Offsets are relative to the indexed header. The identity or matrix tail follows at offset 213.
+
+Parsed by:
+- `crates/cadmpeg-codec-f3d/src/design/decode/components.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 11 | 8 | `empty_instance_name` | `bytes[8]` | little | spec | An empty-attribute local component occurrence stores an empty attribute list after its path. |
+| 19 | 1 | `path_marker` | `u8` | little | spec | An empty-attribute local component occurrence stores an empty attribute list after its path. · value `1` |
+| 20 | 4 | `path_count` | `u32` | little | spec | An empty-attribute local component occurrence stores an empty attribute list after its path. · value `1` |
+| 24 | 9 | `component_reference` | `bytes[9]` | little | spec | An empty-attribute local component occurrence stores an empty attribute list after its path. |
+| 35 | 4 | `path_discriminator` | `u32` | little | spec | An empty-attribute local component occurrence stores an empty attribute list after its path. |
+| 39 | 1 | `attributes_marker` | `u8` | little | spec | An empty-attribute local component occurrence stores an empty attribute list after its path. · value `1` |
+| 40 | 4 | `attribute_count` | `u32` | little | spec | An empty-attribute local component occurrence stores an empty attribute list after its path. · value `0` |
+| 44 | 4 | `occurrence_ordinal` | `u32` | little | spec | An empty-attribute local component occurrence stores an empty attribute list after its path. |
+| 48 | 76 | `carrier_guid` | `bytes[76]` | little | spec | An empty-attribute local component occurrence stores an empty attribute list after its path. |
+| 124 | 76 | `occurrence_guid` | `bytes[76]` | little | spec | An empty-attribute local component occurrence stores an empty attribute list after its path. |
+| 201 | 9 | `component_reference_repeat` | `bytes[9]` | little | spec | An empty-attribute local component occurrence stores an empty attribute list after its path. |
+| 212 | 1 | `identity_flag` | `u8` | little | spec | An empty-attribute local component occurrence stores an empty attribute list after its path. |
+
+Unstated regions:
+
+- `0..11` (11 B): Indexed header.
+- `33..35` (2 B): Two zero trailing bytes of the local component reference.
+- `200..201` (1 B): Zero separator.
+- `210..212` (2 B): Zero trailing field of the repeated component-record reference.
+
 ## Not tabulated
 
 | Area | Spec | Reason |

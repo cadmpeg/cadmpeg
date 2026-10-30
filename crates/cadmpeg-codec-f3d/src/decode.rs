@@ -2642,6 +2642,9 @@ impl<'a> F3dDecodeSession<'a> {
                 ),
             );
         }
+        self.report
+            .losses
+            .extend(prereqs.design_component_occurrence_losses.iter().cloned());
         self.report.losses.extend(
             crate::design::decode::components::superseded_occurrences_loss(
                 prereqs.design_superseded_component_occurrences,

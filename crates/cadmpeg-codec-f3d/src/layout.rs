@@ -7209,3 +7209,27 @@ pub(crate) mod sketch_typed_compact_member_head {
     /// Offset of `reference` (`bytes[51]`). Spec §3.1.
     pub(crate) const REFERENCE: usize = 23;
 }
+
+/// Byte offsets for the `local_component_occurrence_empty_attributes_prefix` record.
+///
+/// Spec §3.1. Record length 213 B.
+///
+/// ```text
+/// Offsets are relative to the indexed header. The identity or matrix tail follows at offset 213.
+/// ```
+pub(crate) mod local_component_occurrence_empty_attributes_prefix {
+    /// Record length in bytes. Spec §3.1.
+    pub(crate) const LEN: usize = 213;
+    /// Offset of `attributes_marker` (`u8`). Spec §3.1.
+    pub(crate) const ATTRIBUTES_MARKER: usize = 39;
+    /// Stated value of `attributes_marker` (`u8`). Spec §3.1.
+    pub(crate) const ATTRIBUTES_MARKER_VALUE: u8 = 1;
+    /// Offset of `attribute_count` (`u32`, little-endian). Spec §3.1.
+    pub(crate) const ATTRIBUTE_COUNT: usize = 40;
+    /// Stated value of `attribute_count` (`u32`). Spec §3.1.
+    pub(crate) const ATTRIBUTE_COUNT_VALUE: u32 = 0x0000_0000;
+    /// Offset of `carrier_guid` (`bytes[76]`). Spec §3.1.
+    pub(crate) const CARRIER_GUID: usize = 48;
+    /// Offset of `occurrence_guid` (`bytes[76]`). Spec §3.1.
+    pub(crate) const OCCURRENCE_GUID: usize = 124;
+}
