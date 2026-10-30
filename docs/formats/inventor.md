@@ -560,7 +560,7 @@ The extent-7 target is the work plane in slot 11, or the model face recorded by 
 
 Type `fd24893dd211fa99000840ab0663dc09` is a termination flag. It adds one `value:u8` after the content header. An extrusion face target requires value 1.
 
-Type `f0801215d4119e8eef90a8ac7f9ac3ff` is a surface record. After the content header it stores three record references, `state:u8`, `form:u32`, and `value:u32`. Form 25 is a plane: nine f64 values follow and end the record. They are the origin, the u axis, and the v axis in internal centimetres. The plane normal is the cross product of the u and v axes.
+Type `f0801215d4119e8eef90a8ac7f9ac3ff` is a surface record. After the content header it stores three record references, `state:u8`, `form:u32`, and `value:u32`; segment major versions above 21 add one u32 extension value after the three references. Form 25 is a plane: nine f64 values follow and end the record. They are the origin, the u axis, and the v axis in internal centimetres. The plane normal is the cross product of the u and v axes. An extrusion face target has a zero extension.
 
 Type `42df52ced011d0d20008ccbc0663dc09` is a work plane. After the content header it stores `entity_flags:u32` and two u32 values. Segment major versions above 21 add one u32 value. An optional u32 `0x203` and one u32 value follow. The record ends with nine f64 values: the origin, the u axis, and the v axis in internal centimetres. The plane normal is the cross product of the u and v axes. A work plane that owns a feature label is a browser node. A browser work plane whose u and v axes are orthonormal is a datum plane with that origin, u axis, and normal. A browser work plane with other axes stays a native work-plane feature with the loss `feature.work-plane-frame-native`.
 
