@@ -11,7 +11,7 @@ use crate::design::constraints::project_sketch_constraints;
 use crate::design::decode::operands::has_typed_edge_treatment_group;
 use crate::design::decode::parameters::parse_design_parameter_record;
 use crate::design::decode::sketch::bind_sketch_graph;
-use crate::design::sketch_project::project_sketch_design;
+use crate::design::sketch_project::{project_sketch_design, SketchProjectInputs};
 use crate::design::test_support::parameter_record;
 use crate::design::{design_feature_family, is_localized_edge_treatment_kind, DesignFeatureFamily};
 use crate::ids::feature_input_topology_id;
@@ -356,7 +356,11 @@ fn design_streams_scope_sketch_graphs_identities_and_parameter_names() {
     .is_err());
 
     let (mut sketches, mut entities) = crate::test_support::with_decode_context(|decode_ctx| {
-        project_sketch_design(decode_ctx, &placements, &points, &[], &[], &[], 1.0e-6)
+        project_sketch_design(
+            decode_ctx,
+            &SketchProjectInputs::new(&placements, &points, &[], &[], &[]),
+            1.0e-6,
+        )
     })
     .expect("sketch lanes pair");
     let mut constraints = crate::test_support::with_decode_context(|decode_ctx| {
