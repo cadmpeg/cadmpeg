@@ -26,7 +26,7 @@ pub(crate) fn attach(
         {
             continue;
         }
-        let owner = resolve(native, model, losses, &scope.id, scope.record_index)?;
+        let owner = resolve(native, model, losses, &scope.id, scope.record_index);
         owners.insert(scope.id.as_str(), owner);
     }
     for feature in &mut model.features {
@@ -59,8 +59,11 @@ pub(crate) fn attach(
                             && row.record_index() == record
                     })
                 })
-                .map_or(source.record_index, |row| row.scope_record_index());
-            resolve(native, model, losses, &source.id, record_index)?
+                .map_or(
+                    source.record_index,
+                    crate::records::parameters::DesignParameterOwner::scope_record_index,
+                );
+            resolve(native, model, losses, &source.id, record_index)
         } else {
             None
         };
@@ -143,11 +146,11 @@ pub(crate) fn attach(
 
 fn resolve(
     native: &F3dNative,
-    model: &mut Model,
+    model: &Model,
     losses: &mut Vec<LossNote>,
     id: &str,
     record_index: u32,
-) -> Result<Option<ProductDefinitionId>, CodecError> {
+) -> Option<ProductDefinitionId> {
     let namespace = ScopeHistoryGraph::component_namespace_at(
         id,
         record_index,
@@ -172,7 +175,7 @@ fn resolve(
         Some(ComponentHistoryNamespace::Aggregate) => {
             candidates.insert(crate::ids::archive_product_definition_id());
         }
-        None => return Ok(None),
+        None => return None,
     }
     let owner: Option<ProductDefinitionId> = if candidates.len() == 1 {
         candidates.into_iter().next()
@@ -182,13 +185,13 @@ fn resolve(
         } else {
             "multiple-definitions"
         };
-        losses.push(F3dLossCode::ScopeOwnerUnresolved.note(format!(
-            "Scope {} product ownership unresolved: {cause}.",
-            id
-        )));
+        losses.push(
+            F3dLossCode::ScopeOwnerUnresolved
+                .note(format!("Scope {id} product ownership unresolved: {cause}.")),
+        );
         None
     };
-    Ok(owner)
+    owner
 }
 
 /// Clears product owners that name a definition absent from the document.

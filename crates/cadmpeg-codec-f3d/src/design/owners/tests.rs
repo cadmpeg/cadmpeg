@@ -19,22 +19,23 @@ fn space(record: u64, uuid: &str) -> DesignComponentNamingSpace {
 }
 
 fn native() -> F3dNative {
-    let mut native = F3dNative::default();
-    native.design_component_naming_spaces = vec![
-        space(10, "11111111-1111-1111-1111-111111111111"),
-        space(30, "22222222-2222-2222-2222-222222222222"),
-    ];
-    native.design_parameter_scopes = [20, 40]
-        .into_iter()
-        .map(|record| {
-            DesignParameterScope::empty(
-                &format!("f3d:Design/BulkStream.dat:design-parameter-scope#{record}"),
-                DesignFeatureKind::Extrude,
-                record,
-            )
-        })
-        .collect();
-    native
+    F3dNative {
+        design_component_naming_spaces: vec![
+            space(10, "11111111-1111-1111-1111-111111111111"),
+            space(30, "22222222-2222-2222-2222-222222222222"),
+        ],
+        design_parameter_scopes: [20, 40]
+            .into_iter()
+            .map(|record| {
+                DesignParameterScope::empty(
+                    &format!("f3d:Design/BulkStream.dat:design-parameter-scope#{record}"),
+                    DesignFeatureKind::Extrude,
+                    record,
+                )
+            })
+            .collect(),
+        ..F3dNative::default()
+    }
 }
 
 fn model(native: &F3dNative) -> Model {
@@ -54,16 +55,16 @@ fn model(native: &F3dNative) -> Model {
             ordinal: u64::from(scope.record_index),
             name: None,
             suppressed: None,
-            dependencies: Default::default(),
-            source_properties: Default::default(),
+            dependencies: DistinctMembers::default(),
+            source_properties: BTreeMap::default(),
             source_tag: None,
             source_text: None,
-            source_content: Default::default(),
+            source_content: cadmpeg_ir::features::FeatureContent::default(),
             evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
                 cadmpeg_ir::features::FeatureDefinition::Operation(
                     cadmpeg_ir::features::FeatureOperation::Native {
                         kind: "synthetic".into(),
-                        parameters: Default::default(),
+                        parameters: BTreeMap::default(),
                     },
                 ),
             ),
@@ -91,8 +92,8 @@ fn product_history_owner_uses_distinct_component_namespaces() {
                 expression: "2".into(),
                 display: None,
                 value: None,
-                dependencies: Default::default(),
-                properties: Default::default(),
+                dependencies: DistinctMembers::default(),
+                properties: BTreeMap::default(),
                 pmi: None,
                 native_ref: None,
             });
@@ -238,8 +239,8 @@ fn product_history_owner_uses_parameter_scope_before_parameter_record() {
             expression: "2".into(),
             display: None,
             value: None,
-            dependencies: Default::default(),
-            properties: Default::default(),
+            dependencies: DistinctMembers::default(),
+            properties: BTreeMap::default(),
             pmi: None,
             native_ref: Some(parameter.id.clone()),
         });
