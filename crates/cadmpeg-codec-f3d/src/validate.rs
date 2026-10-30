@@ -2110,7 +2110,7 @@ fn validate_parameter_scopes(ctx: &Ctx, findings: &mut Vec<Finding>) -> Result<(
         let sweep_profile_link = scope.sweep_profile().is_none_or(valid_sketch_profile);
         let base_flange_profile_link = scope.base_flange_profile().is_none_or(valid_sketch_profile);
         let emboss_profile_link = scope
-            .emboss_construction()
+            .emboss_operand_construction()
             .and_then(|construction| construction.sketch_profile.as_ref())
             .is_none_or(valid_sketch_profile);
         let base_flange_link = match scope.base_flange_operation() {
@@ -4594,11 +4594,13 @@ fn validate_extrude_selection_groups(ctx: &Ctx<'_, '_>, findings: &mut Vec<Findi
         let frame_valid = scope.is_some_and(|scope| {
             (design::design_feature_family(&scope.kind())
                 == Some(design::DesignFeatureFamily::Extrude)
-                || scope.emboss_construction().is_some_and(|construction| {
-                    group.record_index == construction.auxiliary_group.value
-                        && group.scope_reference_ordinal == 8
-                        && !group.typed_references
-                }))
+                || scope
+                    .emboss_operand_construction()
+                    .is_some_and(|construction| {
+                        group.record_index == construction.auxiliary_group.value
+                            && group.scope_reference_ordinal == 8
+                            && !group.typed_references
+                    }))
                 && usize::try_from(group.scope_reference_ordinal)
                     .ok()
                     .and_then(|ordinal| scope.reference_members().values().nth(ordinal))
@@ -4989,7 +4991,7 @@ fn validate_construction_operand_groups(ctx: &Ctx, findings: &mut Vec<Finding>) 
                 None if scope.kind()
                     == crate::records::feature::scope::DesignFeatureKind::Emboss =>
                 {
-                    scope.emboss_construction().is_some_and(|construction| {
+                    scope.emboss_operand_construction().is_some_and(|construction| {
                         (group.record_index == construction.profile_group.value
                             && group.role() == DesignOperandRole::PROFILE)
                             || (group.record_index == construction.face_group.value
@@ -6838,7 +6840,7 @@ fn validate_extrude_selection_group_members(ctx: &Ctx<'_, '_>, findings: &mut Ve
         if ctx
             .scopes_by_index
             .get(&(native_stream, group.scope_record_index))
-            .is_some_and(|scope| scope.emboss_construction().is_some())
+            .is_some_and(|scope| scope.emboss_operand_construction().is_some())
         {
             continue;
         }
@@ -7597,7 +7599,7 @@ fn validate_face_operands<'a>(
                             {
                                 group.is_some_and(|group| {
                                     group.role() == DesignOperandRole::ROLE_0X10
-                                        && scope.emboss_construction().is_some_and(|construction| {
+                                        && scope.emboss_operand_construction().is_some_and(|construction| {
                                             group.record_index == construction.face_group.value
                                         })
                                 }) && operand.recipe_kind

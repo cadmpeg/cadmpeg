@@ -5980,6 +5980,18 @@ pub(crate) mod component_insert_identity_scope_272_prefix {
     pub(crate) const NULL_GUID: usize = 50;
 }
 
+/// Byte offsets for the `emboss_scope_reference_table_prefix` record.
+///
+/// Spec §3.1. Record length 239 B.
+///
+/// ```text
+/// The operation prefix, null GUID, and separator precede the common reference count.
+/// ```
+pub(crate) mod emboss_scope_reference_table_prefix {
+    /// Stated value of `reference_count` (`u32`). Spec §3.1.
+    pub(crate) const REFERENCE_COUNT_VALUE: u32 = 0x0000_0009;
+}
+
 /// Byte offsets for the `rectangular_pattern_spacing_direction_record` record.
 ///
 /// Spec §Assembly operands. Record length 221 B.
@@ -6910,4 +6922,73 @@ pub(crate) mod current_extrude_face_target_payload {
     pub(crate) const SECOND_SIDE_OFFSET_REFERENCE: usize = 28;
     /// Offset of `second_side_taper_reference` (`bytes[11]`). Spec §3.1.
     pub(crate) const SECOND_SIDE_TAPER_REFERENCE: usize = 43;
+}
+
+/// Byte offsets for the `emboss_single_control_head` record.
+///
+/// Spec §3.1. Record length 61 B.
+pub(crate) mod emboss_single_control_head {
+    /// Record length in bytes. Spec §3.1.
+    pub(crate) const LEN: usize = 61;
+    /// Offset of `depth_owner_reference` (`bytes[11]`). Spec §3.1.
+    pub(crate) const DEPTH_OWNER_REFERENCE: usize = 24;
+    /// Offset of `auxiliary_group_reference` (`bytes[11]`). Spec §3.1.
+    pub(crate) const AUXILIARY_GROUP_REFERENCE: usize = 35;
+    /// Offset of `horizontal_owner_reference` (`bytes[11]`). Spec §3.1.
+    pub(crate) const HORIZONTAL_OWNER_REFERENCE: usize = 46;
+}
+
+/// Byte offsets for the `emboss_two_control_head` record.
+///
+/// Spec §3.1. Record length 65 B.
+pub(crate) mod emboss_two_control_head {
+    /// Record length in bytes. Spec §3.1.
+    pub(crate) const LEN: usize = 65;
+    /// Stated value of `zero_run` (`bytes[9]`). Spec §3.1.
+    pub(crate) const ZERO_RUN_VALUE: [u8; 9] =
+        [0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00];
+    /// Offset of `depth_owner_reference` (`bytes[11]`). Spec §3.1.
+    pub(crate) const DEPTH_OWNER_REFERENCE: usize = 28;
+    /// Offset of `auxiliary_group_reference` (`bytes[11]`). Spec §3.1.
+    pub(crate) const AUXILIARY_GROUP_REFERENCE: usize = 39;
+    /// Offset of `horizontal_owner_reference` (`bytes[11]`). Spec §3.1.
+    pub(crate) const HORIZONTAL_OWNER_REFERENCE: usize = 50;
+}
+
+/// Byte offsets for the `emboss_native_pair` record.
+///
+/// Spec §3.1. Record length 16 B.
+pub(crate) mod emboss_native_pair {
+    /// Record length in bytes. Spec §3.1.
+    pub(crate) const LEN: usize = 16;
+}
+
+/// Byte offsets for the `emboss_counted_suffix` record.
+///
+/// Spec §3.1. Record length 158 B.
+pub(crate) mod emboss_counted_suffix {
+    /// Record length in bytes. Spec §3.1.
+    pub(crate) const LEN: usize = 158;
+    /// Offset of `rotation_owner_reference` (`bytes[11]`). Spec §3.1.
+    pub(crate) const ROTATION_OWNER_REFERENCE: usize = 0;
+    /// Offset of `face_group_reference` (`bytes[11]`). Spec §3.1.
+    pub(crate) const FACE_GROUP_REFERENCE: usize = 11;
+    /// Offset of `vertical_owner_reference` (`bytes[11]`). Spec §3.1.
+    pub(crate) const VERTICAL_OWNER_REFERENCE: usize = 22;
+    /// Stated value of `profile_group_count` (`u32`). Spec §3.1.
+    pub(crate) const PROFILE_GROUP_COUNT_VALUE: u32 = 0x0000_0001;
+    /// Offset of `profile_group_reference` (`bytes[11]`). Spec §3.1.
+    pub(crate) const PROFILE_GROUP_REFERENCE: usize = 37;
+    /// Stated value of `zero_tail` (`bytes[12]`). Spec §3.1.
+    pub(crate) const ZERO_TAIL_VALUE: [u8; 12] = [
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+    ];
+    /// Stated value of `face_group_count` (`u32`). Spec §3.1.
+    pub(crate) const FACE_GROUP_COUNT_VALUE: u32 = 0x0000_0001;
+    /// Stated value of `null_guid_count` (`u32`). Spec §3.1.
+    pub(crate) const NULL_GUID_COUNT_VALUE: u32 = 0x0000_0024;
+    /// Stated value of `zero_separator` (`bytes[3]`). Spec §3.1.
+    pub(crate) const ZERO_SEPARATOR_VALUE: [u8; 3] = [0x00, 0x00, 0x00];
+    /// Offset of `reference_count` (`u32`, little-endian). Spec §3.1.
+    pub(crate) const REFERENCE_COUNT: usize = 154;
 }
