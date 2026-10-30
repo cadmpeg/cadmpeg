@@ -319,47 +319,39 @@ fn stored_body_scope_keeps_proven_empty_history_as_no_op() {
 }
 
 #[test]
-fn stored_body_scope_does_not_type_derived_or_box_from_outputs() {
+fn stored_body_scope_does_not_type_box_from_outputs() {
     use crate::loss::F3dLossCode;
     use crate::records::feature::scope::{DesignFeatureKind, DesignParameterScope};
     use cadmpeg_ir::features::{FeatureDefinition, FeatureOperation};
-    for (kind, code) in [
-        (
-            DesignFeatureKind::try_from("Derived Base Feature".to_owned()).unwrap(),
-            F3dLossCode::FeatureDerivedBaseUnresolved,
-        ),
-        (
-            DesignFeatureKind::BoxPrimitive,
-            F3dLossCode::FeatureBoxPrimitiveUnresolved,
-        ),
-    ] {
-        let (mut feature, _, _, body) = native_base_feature();
-        feature.evaluation.set_outputs(
-            cadmpeg_ir::features::DistinctMembers::try_from(vec![body.id.clone()]).unwrap(),
-        );
-        let scope = DesignParameterScope::empty(
-            "f3d:Design/BulkStream.dat:design-parameter-scope#9",
-            kind,
-            1,
-        );
-        feature.native_ref = Some(scope.id.clone());
-        let active = [body];
-        let index = super::super::stored_bodies::ActiveBodies::new(&active);
-        assert!(!super::super::stored_bodies::bind_history_outputs(
-            &mut feature,
-            &scope,
-            &[1],
-            None,
-            &index,
-        ));
-        assert!(matches!(
-            feature.evaluation.definition(),
-            FeatureDefinition::Operation(FeatureOperation::Native { .. })
-        ));
-        let losses = super::super::stored_bodies::losses(&[feature], &[scope]);
-        assert_eq!(losses.len(), 1);
-        assert_eq!(losses[0].code, code.kind());
-    }
+    let (mut feature, _, _, body) = native_base_feature();
+    feature.evaluation.set_outputs(
+        cadmpeg_ir::features::DistinctMembers::try_from(vec![body.id.clone()]).unwrap(),
+    );
+    let scope = DesignParameterScope::empty(
+        "f3d:Design/BulkStream.dat:design-parameter-scope#9",
+        DesignFeatureKind::BoxPrimitive,
+        1,
+    );
+    feature.native_ref = Some(scope.id.clone());
+    let active = [body];
+    let index = super::super::stored_bodies::ActiveBodies::new(&active);
+    assert!(!super::super::stored_bodies::bind_history_outputs(
+        &mut feature,
+        &scope,
+        &[1],
+        None,
+        &index,
+    ));
+    assert!(matches!(
+        feature.evaluation.definition(),
+        FeatureDefinition::Operation(FeatureOperation::Native { .. })
+    ));
+    let losses = super::super::stored_bodies::losses(&[feature], &[scope]);
+    assert_eq!(losses.len(), 1);
+    assert_eq!(
+        losses[0].code,
+        F3dLossCode::FeatureBoxPrimitiveUnresolved.kind()
+    );
 }
 
 #[test]
@@ -556,4 +548,169 @@ fn stored_body_scope_binds_explicit_body_members_without_history() {
             bodies: BodySelection::Resolved { .. }
         })
     ));
+}
+
+const DERIVED_KINDS: [&str; 2] = ["Derived Base Feature", "DerivedBaseFeature"];
+
+fn derived_scope(
+    kind: &str,
+    state_id: i64,
+    previous_state_id: i64,
+) -> crate::records::feature::scope::DesignParameterScope {
+    use crate::records::feature::scope::{DesignFeatureKind, DesignParameterScope};
+    let mut scope = DesignParameterScope::empty(
+        &format!("f3d:Design/BulkStream.dat:design-parameter-scope#{state_id}"),
+        DesignFeatureKind::try_from(kind.to_owned()).unwrap(),
+        1,
+    );
+    scope
+        .try_edit(|draft| {
+            draft.history_state_id = Some(state_id);
+            draft.previous_history_state_id = Some(previous_state_id);
+            draft.layout_fixture_tail();
+        })
+        .unwrap();
+    scope
+}
+
+fn derived_native_feature(
+    scope: &crate::records::feature::scope::DesignParameterScope,
+) -> cadmpeg_ir::features::Feature {
+    let (mut feature, _, _, _) = native_base_feature();
+    feature.native_ref = Some(scope.id.clone());
+    feature
+        .evaluation
+        .set_definition(cadmpeg_ir::features::FeatureDefinition::Operation(
+            cadmpeg_ir::features::FeatureOperation::Native {
+                kind: scope.kind_name().into(),
+                parameters: Default::default(),
+            },
+        ));
+    feature
+}
+
+#[test]
+fn derived_base_scope_with_proven_bodies_is_a_stored_snapshot() {
+    use crate::loss::F3dLossCode;
+    use cadmpeg_ir::features::{BodySelection, FeatureDefinition, FeatureOperation};
+    for kind in DERIVED_KINDS {
+        let scope = derived_scope(kind, 1, 0);
+        let mut feature = derived_native_feature(&scope);
+        let (_, _, history, body) = native_base_feature();
+        super::super::bind_feature_outputs(
+            std::slice::from_mut(&mut feature),
+            std::slice::from_ref(&scope),
+            &mut [history],
+            std::slice::from_ref(&body),
+        )
+        .unwrap();
+        assert!(
+            matches!(feature.evaluation.definition(),
+            FeatureDefinition::Operation(FeatureOperation::BaseFeature {
+                bodies: BodySelection::Resolved { bodies, native }
+            }) if bodies.as_slice() == [body.id.clone()] && native == &scope.id),
+            "{kind}"
+        );
+        let losses = super::super::stored_bodies::losses(&[feature], &[scope]);
+        assert_eq!(losses.len(), 1, "{kind}");
+        assert_eq!(
+            losses[0].code,
+            F3dLossCode::FeatureDerivedBaseUnresolved.kind()
+        );
+        assert!(losses[0].message.contains("stored snapshot"));
+    }
+}
+
+#[test]
+fn derived_base_scope_without_proven_bodies_stays_native() {
+    use crate::loss::F3dLossCode;
+    use cadmpeg_ir::features::{FeatureDefinition, FeatureOperation};
+    for kind in DERIVED_KINDS {
+        for refusal in [
+            "missing body",
+            "duplicate state",
+            "ambiguous body",
+            "no history",
+        ] {
+            let scope = derived_scope(kind, 1, 0);
+            let mut feature = derived_native_feature(&scope);
+            let (_, _, history, body) = native_base_feature();
+            let mut histories = vec![history];
+            let bodies = match refusal {
+                "duplicate state" => {
+                    histories.push(native_base_feature().2);
+                    vec![body]
+                }
+                "ambiguous body" => {
+                    let mut other = body.clone();
+                    other.id = cadmpeg_ir::ids::BodyId::mint("test:model:body#1").unwrap();
+                    vec![body, other]
+                }
+                "no history" => {
+                    histories.clear();
+                    vec![body]
+                }
+                _ => Vec::new(),
+            };
+            super::super::bind_feature_outputs(
+                std::slice::from_mut(&mut feature),
+                std::slice::from_ref(&scope),
+                &mut histories,
+                &bodies,
+            )
+            .unwrap();
+            assert!(
+                matches!(
+                    feature.evaluation.definition(),
+                    FeatureDefinition::Operation(FeatureOperation::Native { kind: native, .. })
+                        if native.as_str() == kind
+                ),
+                "{kind} {refusal}"
+            );
+            let losses = super::super::stored_bodies::losses(&[feature], &[scope]);
+            assert_eq!(losses.len(), 1);
+            assert_eq!(
+                losses[0].code,
+                F3dLossCode::FeatureDerivedBaseUnresolved.kind()
+            );
+            assert!(losses[0].message.contains("native derived source"));
+        }
+    }
+}
+
+#[test]
+fn derived_base_scope_with_proven_empty_transition_is_a_typed_no_op() {
+    use crate::loss::F3dLossCode;
+    use cadmpeg_ir::features::{BodySelection, FeatureDefinition, FeatureOperation};
+    for kind in DERIVED_KINDS {
+        let scope = derived_scope(kind, 1, 0);
+        let mut feature = derived_native_feature(&scope);
+        let history = crate::test_support::history::history(
+            "f3d:asm-history#1".into(),
+            0,
+            None,
+            false,
+            vec![
+                state(1, 1, Some(0), bodies_topology(&[])),
+                state(0, 0, None, bodies_topology(&[])),
+            ],
+        );
+        super::super::bind_feature_outputs(
+            std::slice::from_mut(&mut feature),
+            std::slice::from_ref(&scope),
+            &mut [history],
+            &[],
+        )
+        .unwrap();
+        assert!(
+            matches!(feature.evaluation.definition(),
+            FeatureDefinition::Operation(FeatureOperation::BaseFeature {
+                bodies: BodySelection::Resolved { bodies, .. }
+            }) if bodies.is_empty()),
+            "{kind}"
+        );
+        let losses = super::super::stored_bodies::losses(&[feature], &[scope]);
+        assert_eq!(losses.len(), 1);
+        assert_eq!(losses[0].code, F3dLossCode::FeatureStoredBodiesEmpty.kind());
+    }
 }
