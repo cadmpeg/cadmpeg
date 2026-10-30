@@ -23,6 +23,8 @@ use crate::test_support::lp_utf16;
 use crate::test_support::manifest_test::write_synthetic_manifests;
 use crate::test_support::zip_test::with_scan;
 
+mod unparsed_frames;
+
 fn compact_owned_parameter_record(
     owner_record_index: u32,
     source_ordinal: u32,
@@ -1617,31 +1619,6 @@ fn typed_compact_parameters_read_owned_and_document_forms() {
     let guid_at = other_tail.len() - 38;
     other_tail[guid_at] = b'C';
     assert!(parse_design_parameter_record(&other_tail).is_none());
-}
-
-#[test]
-fn decode_reports_typed_parameter_frames_that_match_no_grammar() {
-    let stream = "FusionAssetName[Active]/Design1/BulkStream.dat";
-    let mut bulk = typed_parameter_record(537, Some(536), "AlongDistance");
-    let mut rejected = typed_parameter_record(541, Some(540), "AlongDistance");
-    rejected[81 + 4 + 2 * "3 mm".len()] = 7;
-    bulk.extend_from_slice(&rejected);
-    let stored = crate::zip_write::file_options(CompressionMethod::Stored);
-    let mut zip = zip::ZipWriter::new(Cursor::new(Vec::new()));
-    write_synthetic_manifests(&mut zip, stored);
-    zip.start_file(stream, stored).unwrap();
-    zip.write_all(&bulk).unwrap();
-    let archive = zip.finish().unwrap().into_inner();
-    let decoded = with_scan(&archive, decode_parameters).unwrap();
-    let [parameter] = decoded.parameters.as_slice() else {
-        panic!("expected the one well-formed typed parameter");
-    };
-    assert_eq!(parameter.record_index, 537);
-    let [unparsed] = decoded.unparsed.as_slice() else {
-        panic!("expected one stream with unparsed typed parameter frames");
-    };
-    assert_eq!(unparsed.stream, stream);
-    assert_eq!(unparsed.count, 1);
 }
 
 /// A scalar owner frame whose five references all use the typed spelling.

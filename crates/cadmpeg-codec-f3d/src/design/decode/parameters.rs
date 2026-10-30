@@ -111,7 +111,7 @@ pub(crate) fn decode_parameters(scan: &ContainerScan) -> Result<DecodedParameter
                 out.push(locate_design_parameter(parsed, &entry.name, at)?);
                 position = end;
             } else {
-                if is_typed_parameter_frame(frame) {
+                if is_typed_parameter_frame(frame) || is_untyped_parameter_frame(frame) {
                     unparsed_count = unparsed_count.checked_add(1).ok_or_else(|| {
                         CodecError::malformed(
                             "Fusion Design unparsed parameter count exceeds the platform range",
@@ -574,6 +574,25 @@ fn typed_parameter_tail_start(payload: &[u8]) -> Option<usize> {
 pub(in crate::design) fn is_typed_parameter_frame(payload: &[u8]) -> bool {
     payload.get(typed::ZERO_RUN_15..typed::SOURCE_ORDINAL) == Some(&[0; 15])
         && typed_parameter_tail_start(payload).is_some()
+}
+
+/// Third byte of the twelve-byte parameter tail `00 01 xx` and nine zero
+/// bytes in the container generations without typed references.
+const UNTYPED_PARAMETER_TAIL_MARKERS: [u8; 4] = [0x10, 0x11, 0x12, 0x13];
+
+/// Whether `payload` is shaped as a parameter frame of a generation without
+/// typed references: at least eleven zero bytes after the indexed header and
+/// the twelve-byte parameter tail.
+fn is_untyped_parameter_frame(payload: &[u8]) -> bool {
+    let Some(tail_start) = payload.len().checked_sub(12) else {
+        return false;
+    };
+    payload.get(11..22) == Some(&[0; 11])
+        && payload.get(tail_start..tail_start + 2) == Some(&[0, 1])
+        && payload
+            .get(tail_start + 2)
+            .is_some_and(|marker| UNTYPED_PARAMETER_TAIL_MARKERS.contains(marker))
+        && payload.get(tail_start + 3..) == Some(&[0; 9])
 }
 
 /// Parse the typed compact parameter form.
