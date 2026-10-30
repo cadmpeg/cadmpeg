@@ -10541,6 +10541,183 @@ size = 168
 note = "The class-400 construction-reference tail is retained as a named opaque carrier."
 
 [[record]]
+name = "work_plane_direct_352_matrix_frame"
+kind = "byte"
+section = "3.1"
+anchor = "The 352-, 363-, and 374-byte direct forms store"
+size = 352
+note = "Offsets are relative to the primary indexed placement header (class 293 paired with class 261, or class 316 paired with class 260). The two-byte lane at offset 62 is opaque."
+
+[[record.gap]]
+offset = 0
+size = 11
+note = "The indexed placement header occupies the first eleven bytes."
+
+[[record.gap]]
+offset = 11
+size = 44
+note = "Bytes 11 through 54 are zero."
+
+[[record.field]]
+name = "marker"
+offset = 55
+type = "u8"
+value = 1
+source = "spec"
+anchor = "store `0x01` at offset 55"
+
+[[record.field]]
+name = "zero_run"
+offset = 56
+type = "bytes[6]"
+source = "spec"
+anchor = "six zero bytes at offsets 56 through 61"
+
+[[record.field]]
+name = "opaque_u16"
+offset = 62
+type = "u16"
+source = "spec"
+anchor = "an opaque little-endian u16 at offset 62"
+
+[[record.field]]
+name = "zero_pair"
+offset = 64
+type = "bytes[2]"
+source = "spec"
+anchor = "two zero bytes at offsets 64 and 65"
+
+[[record.field]]
+name = "matrix"
+offset = 66
+type = "f64[16]"
+source = "spec"
+anchor = "the matrix at offset 66"
+
+[[record.gap]]
+offset = 194
+size = 158
+note = "The placement carrier tail is retained as a named opaque carrier."
+
+[[record]]
+name = "work_plane_direct_363_matrix_frame"
+kind = "byte"
+section = "3.1"
+anchor = "The 352-, 363-, and 374-byte direct forms store"
+size = 363
+note = "Offsets are relative to the class-289 primary indexed placement header paired with class 258. The two-byte lane at offset 62 is opaque."
+
+[[record.gap]]
+offset = 0
+size = 11
+note = "The indexed placement header occupies the first eleven bytes."
+
+[[record.gap]]
+offset = 11
+size = 44
+note = "Bytes 11 through 54 are zero."
+
+[[record.field]]
+name = "marker"
+offset = 55
+type = "u8"
+value = 1
+source = "spec"
+anchor = "store `0x01` at offset 55"
+
+[[record.field]]
+name = "zero_run"
+offset = 56
+type = "bytes[6]"
+source = "spec"
+anchor = "six zero bytes at offsets 56 through 61"
+
+[[record.field]]
+name = "opaque_u16"
+offset = 62
+type = "u16"
+source = "spec"
+anchor = "an opaque little-endian u16 at offset 62"
+
+[[record.field]]
+name = "zero_pair"
+offset = 64
+type = "bytes[2]"
+source = "spec"
+anchor = "two zero bytes at offsets 64 and 65"
+
+[[record.field]]
+name = "matrix"
+offset = 66
+type = "f64[16]"
+source = "spec"
+anchor = "the matrix at offset 66"
+
+[[record.gap]]
+offset = 194
+size = 169
+note = "The placement carrier tail is retained as a named opaque carrier."
+
+[[record]]
+name = "work_plane_direct_374_matrix_frame"
+kind = "byte"
+section = "3.1"
+anchor = "The 352-, 363-, and 374-byte direct forms store"
+size = 374
+note = "Offsets are relative to the class-267 primary indexed placement header paired with class 258. The two-byte lane at offset 62 is opaque."
+
+[[record.gap]]
+offset = 0
+size = 11
+note = "The indexed placement header occupies the first eleven bytes."
+
+[[record.gap]]
+offset = 11
+size = 44
+note = "Bytes 11 through 54 are zero."
+
+[[record.field]]
+name = "marker"
+offset = 55
+type = "u8"
+value = 1
+source = "spec"
+anchor = "store `0x01` at offset 55"
+
+[[record.field]]
+name = "zero_run"
+offset = 56
+type = "bytes[6]"
+source = "spec"
+anchor = "six zero bytes at offsets 56 through 61"
+
+[[record.field]]
+name = "opaque_u16"
+offset = 62
+type = "u16"
+source = "spec"
+anchor = "an opaque little-endian u16 at offset 62"
+
+[[record.field]]
+name = "zero_pair"
+offset = 64
+type = "bytes[2]"
+source = "spec"
+anchor = "two zero bytes at offsets 64 and 65"
+
+[[record.field]]
+name = "matrix"
+offset = 66
+type = "f64[16]"
+source = "spec"
+anchor = "the matrix at offset 66"
+
+[[record.gap]]
+offset = 194
+size = 180
+note = "The placement carrier tail is retained as a named opaque carrier."
+
+[[record]]
 name = "work_axis_direct_carrier_class_297"
 kind = "byte"
 section = "3.1"

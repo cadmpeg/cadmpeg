@@ -10,6 +10,9 @@ use crate::design::decode::sketch::IndexedRecordOffsets;
 use crate::layout::joint_origin_legacy_class_337_266_frame as joint_origin_class_337_266;
 use crate::layout::work_axis_direct_carrier_class_297 as work_axis_297;
 use crate::layout::work_axis_direct_carrier_class_335 as work_axis_335;
+use crate::layout::work_plane_direct_352_matrix_frame as work_plane_direct_352;
+use crate::layout::work_plane_direct_363_matrix_frame as work_plane_direct_363;
+use crate::layout::work_plane_direct_374_matrix_frame as work_plane_direct_374;
 use crate::layout::work_plane_legacy_321_opaque_matrix_frame as work_plane_321_opaque;
 use crate::layout::work_plane_legacy_325_matrix_frame as work_plane_325;
 use crate::layout::work_plane_legacy_337_matrix_frame as work_plane_337;
@@ -175,11 +178,37 @@ pub(super) fn exact_work_plane_frame(
                 {
                     (start + work_plane_337::MATRIX, None)
                 }
-                352 | 363 | 374
-                    if bytes.get(start + 55) == Some(&1)
-                        && bytes.get(start + 56..start + 66) == Some(&[0u8; 10][..]) =>
+                work_plane_direct_352::LEN
+                | work_plane_direct_363::LEN
+                | work_plane_direct_374::LEN
+                    if matches!(
+                        (
+                            frame_length,
+                            bytes.get(start + 4..start + 7),
+                            bytes.get(paired + 4..paired + 7),
+                        ),
+                        (work_plane_direct_352::LEN, Some(b"293"), Some(b"261"),)
+                            | (work_plane_direct_352::LEN, Some(b"316"), Some(b"260"),)
+                            | (work_plane_direct_363::LEN, Some(b"289"), Some(b"258"),)
+                            | (work_plane_direct_374::LEN, Some(b"267"), Some(b"258"),)
+                    ) && bytes.get(start + work_plane_direct_352::MARKER)
+                        == Some(&work_plane_direct_352::MARKER_VALUE)
+                        && bytes.get(
+                            start + work_plane_direct_352::ZERO_RUN
+                                ..start + work_plane_direct_352::OPAQUE_U16,
+                        ) == Some(
+                            &[0u8; work_plane_direct_352::OPAQUE_U16
+                                - work_plane_direct_352::ZERO_RUN][..],
+                        )
+                        && bytes.get(
+                            start + work_plane_direct_352::ZERO_PAIR
+                                ..start + work_plane_direct_352::MATRIX,
+                        ) == Some(
+                            &[0u8; work_plane_direct_352::MATRIX
+                                - work_plane_direct_352::ZERO_PAIR][..],
+                        ) =>
                 {
-                    (start + 66, None)
+                    (start + work_plane_direct_352::MATRIX, None)
                 }
                 362 | 373
                     if bytes.get(start + 55..start + 58) == Some(&[1, 0, 1][..])

@@ -3227,6 +3227,66 @@ Unstated regions:
 - `11..49` (38 B): The class-400 placement prefix is zero.
 - `177..345` (168 B): The class-400 construction-reference tail is retained as a named opaque carrier.
 
+## `work_plane_direct_352_matrix_frame`
+
+Spec §3.1 · layout: byte offsets · size: 352 B
+
+Offsets are relative to the primary indexed placement header (class 293 paired with class 261, or class 316 paired with class 260). The two-byte lane at offset 62 is opaque.
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 55 | 1 | `marker` | `u8` | little | spec | store `0x01` at offset 55 · value `1` |
+| 56 | 6 | `zero_run` | `bytes[6]` | little | spec | six zero bytes at offsets 56 through 61 |
+| 62 | 2 | `opaque_u16` | `u16` | little | spec | an opaque little-endian u16 at offset 62 |
+| 64 | 2 | `zero_pair` | `bytes[2]` | little | spec | two zero bytes at offsets 64 and 65 |
+| 66 | 128 | `matrix` | `f64[16]` | little | spec | the matrix at offset 66 |
+
+Unstated regions:
+
+- `0..11` (11 B): The indexed placement header occupies the first eleven bytes.
+- `11..55` (44 B): Bytes 11 through 54 are zero.
+- `194..352` (158 B): The placement carrier tail is retained as a named opaque carrier.
+
+## `work_plane_direct_363_matrix_frame`
+
+Spec §3.1 · layout: byte offsets · size: 363 B
+
+Offsets are relative to the class-289 primary indexed placement header paired with class 258. The two-byte lane at offset 62 is opaque.
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 55 | 1 | `marker` | `u8` | little | spec | store `0x01` at offset 55 · value `1` |
+| 56 | 6 | `zero_run` | `bytes[6]` | little | spec | six zero bytes at offsets 56 through 61 |
+| 62 | 2 | `opaque_u16` | `u16` | little | spec | an opaque little-endian u16 at offset 62 |
+| 64 | 2 | `zero_pair` | `bytes[2]` | little | spec | two zero bytes at offsets 64 and 65 |
+| 66 | 128 | `matrix` | `f64[16]` | little | spec | the matrix at offset 66 |
+
+Unstated regions:
+
+- `0..11` (11 B): The indexed placement header occupies the first eleven bytes.
+- `11..55` (44 B): Bytes 11 through 54 are zero.
+- `194..363` (169 B): The placement carrier tail is retained as a named opaque carrier.
+
+## `work_plane_direct_374_matrix_frame`
+
+Spec §3.1 · layout: byte offsets · size: 374 B
+
+Offsets are relative to the class-267 primary indexed placement header paired with class 258. The two-byte lane at offset 62 is opaque.
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 55 | 1 | `marker` | `u8` | little | spec | store `0x01` at offset 55 · value `1` |
+| 56 | 6 | `zero_run` | `bytes[6]` | little | spec | six zero bytes at offsets 56 through 61 |
+| 62 | 2 | `opaque_u16` | `u16` | little | spec | an opaque little-endian u16 at offset 62 |
+| 64 | 2 | `zero_pair` | `bytes[2]` | little | spec | two zero bytes at offsets 64 and 65 |
+| 66 | 128 | `matrix` | `f64[16]` | little | spec | the matrix at offset 66 |
+
+Unstated regions:
+
+- `0..11` (11 B): The indexed placement header occupies the first eleven bytes.
+- `11..55` (44 B): Bytes 11 through 54 are zero.
+- `194..374` (180 B): The placement carrier tail is retained as a named opaque carrier.
+
 ## `work_axis_direct_carrier_class_297`
 
 Spec §3.1 · layout: byte offsets · size: 215 B

@@ -3201,6 +3201,54 @@ pub(crate) mod work_plane_legacy_class_400_matrix_frame {
     pub(crate) const MATRIX: usize = 49;
 }
 
+/// Byte offsets for the `work_plane_direct_352_matrix_frame` record.
+///
+/// Spec §3.1. Record length 352 B.
+///
+/// ```text
+/// Offsets are relative to the primary indexed placement header (class 293 paired with class 261, or class 316 paired with class 260). The two-byte lane at offset 62 is opaque.
+/// ```
+pub(crate) mod work_plane_direct_352_matrix_frame {
+    /// Record length in bytes. Spec §3.1.
+    pub(crate) const LEN: usize = 352;
+    /// Offset of `marker` (`u8`). Spec §3.1.
+    pub(crate) const MARKER: usize = 55;
+    /// Stated value of `marker` (`u8`). Spec §3.1.
+    pub(crate) const MARKER_VALUE: u8 = 1;
+    /// Offset of `zero_run` (`bytes[6]`). Spec §3.1.
+    pub(crate) const ZERO_RUN: usize = 56;
+    /// Offset of `opaque_u16` (`u16`, little-endian). Spec §3.1.
+    pub(crate) const OPAQUE_U16: usize = 62;
+    /// Offset of `zero_pair` (`bytes[2]`). Spec §3.1.
+    pub(crate) const ZERO_PAIR: usize = 64;
+    /// Offset of `matrix` (`f64[16]`, little-endian). Spec §3.1.
+    pub(crate) const MATRIX: usize = 66;
+}
+
+/// Byte offsets for the `work_plane_direct_363_matrix_frame` record.
+///
+/// Spec §3.1. Record length 363 B.
+///
+/// ```text
+/// Offsets are relative to the class-289 primary indexed placement header paired with class 258. The two-byte lane at offset 62 is opaque.
+/// ```
+pub(crate) mod work_plane_direct_363_matrix_frame {
+    /// Record length in bytes. Spec §3.1.
+    pub(crate) const LEN: usize = 363;
+}
+
+/// Byte offsets for the `work_plane_direct_374_matrix_frame` record.
+///
+/// Spec §3.1. Record length 374 B.
+///
+/// ```text
+/// Offsets are relative to the class-267 primary indexed placement header paired with class 258. The two-byte lane at offset 62 is opaque.
+/// ```
+pub(crate) mod work_plane_direct_374_matrix_frame {
+    /// Record length in bytes. Spec §3.1.
+    pub(crate) const LEN: usize = 374;
+}
+
 /// Byte offsets for the `work_axis_direct_carrier_class_297` record.
 ///
 /// Spec §3.1. Record length 215 B.
