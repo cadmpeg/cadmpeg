@@ -75,6 +75,65 @@ fn fixture_text_styles_project_only_representable_states() {
 }
 
 #[test]
+fn text_of_a_model_space_sketch_has_no_planar_sketch_to_reference() {
+    for (depth, planar) in [(5.0, false), (0.0, true)] {
+        let text = crate::test_support::sketch_text::neutral_text_record();
+        let owner = text.owner_reference;
+        let placement = DesignSketchPlacement {
+            frame: crate::records::sketch_placement::DesignSketchFrame::new(
+                0,
+                crate::records::sketch_placement::DesignSketchFrameForm::ScopeCompact,
+            )
+            .unwrap(),
+            id: "f3d:Design/BulkStream.dat:placement#0".into(),
+            scope_record_index: None,
+            entity_id: format!("Sketch_{owner}").try_into().unwrap(),
+            visibility: None,
+            class_tag: "256".to_owned().try_into().unwrap(),
+            record_index: 1,
+            paired_class_tag: "257".to_owned().try_into().unwrap(),
+        };
+        let point = SketchPoint::try_from(crate::records::sketch_geometry::SketchPointDraft {
+            id: "f3d:Design/BulkStream.dat:point#14".into(),
+            record_index: 14,
+            owner_reference: Some(owner),
+            class_tag: crate::records::references::DesignClassTag::try_from("413".to_owned())
+                .unwrap(),
+            byte_offset: 14,
+            coordinate_offset: 0,
+            companion: crate::records::sketch_geometry::SketchPointCompanion {
+                incident_curves: Vec::new(),
+            },
+            record_form: crate::records::sketch_geometry::SketchPointRecordForm::version11(
+                14,
+                crate::records::sketch_geometry::SketchPointClosure::Selector4State0,
+                None,
+                depth,
+            ),
+            paired_reference: 15,
+            coordinates: Point2::new(0.0, 0.0),
+        })
+        .unwrap();
+        let design = crate::test_support::with_decode_context(|ctx| {
+            project_sketch_design(
+                ctx,
+                &SketchProjectInputs::new(&[placement], &[point], &[], &[], &[text]),
+                EPS_POINT_PROJECTION,
+            )
+        })
+        .unwrap();
+        let (sketches, entities) = design.into_tuple();
+        assert_eq!(!sketches.is_empty(), planar);
+        for entity in &entities {
+            assert!(sketches.iter().any(|sketch| sketch.id == entity.sketch));
+        }
+        if !planar {
+            assert!(entities.is_empty());
+        }
+    }
+}
+
+#[test]
 fn sketch_text_alignment_ordinals_project_to_named_positions() {
     assert_eq!(
         sketch_text_horizontal_alignment(Some(1)),
