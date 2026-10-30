@@ -1,5 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
+mod tagging;
+
 use super::face_property_is_admitted;
 use crate::feature::{
     PmDcFeatureProperty, PmDcFeaturePropertyKind, PmDcFeatureReferenceFamily, FACE_COLLECTION_TYPE,
