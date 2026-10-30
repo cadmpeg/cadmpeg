@@ -109,8 +109,9 @@ impl F3zDecodedMember {
 /// Open and classification charge the caller's context once. Each member
 /// starts with a private copy of the post-open resource counters and a private
 /// scan cache. Composition charges reachable member decodes at their original
-/// traversal positions. Successful definitions are charged once per path;
-/// failed members are retried at each reference. Arrival order does not affect
+/// traversal positions. Each member path decodes at most once: later
+/// references reuse its definition, charged per reference, or report its
+/// failure again. Arrival order does not affect
 /// composition.
 ///
 /// Member traces are speculative until composition. If a trace would refuse,
