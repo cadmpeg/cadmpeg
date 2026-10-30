@@ -9,10 +9,9 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 
-use cadmpeg_ir::compare::floats_agree;
 use cadmpeg_ir::math::{Point3, Vector3};
 
-use crate::count::{exceeds_limit, floor_count};
+use crate::count::{cmp_ranked, exceeds_limit, floor_count};
 use crate::face::Refusal;
 use crate::plane::{angle, centroid3, cross2, distance, mid3, midpoint, Uv};
 use crate::surface::Carrier;
@@ -48,19 +47,17 @@ fn key(a: usize, b: usize) -> (usize, usize) {
     (a.min(b), a.max(b))
 }
 
-/// Which of two interior edges is longer. Last-place length noise does not
-/// change the choice: the lower vertex-id pair wins when the lengths agree.
+/// Which of two interior edges is longer. Lengths that agree within
+/// [`crate::count::SPLIT_RATIO`] pick the lower vertex-id pair.
 fn longer_edge(
     points: &[Point3],
     first: (usize, usize),
     second: (usize, usize),
 ) -> std::cmp::Ordering {
     let length = |edge: (usize, usize)| distance(points[edge.0], points[edge.1]);
-    let (left, right) = (length(first), length(second));
-    if floats_agree(left, right) {
-        key(first.0, first.1).cmp(&key(second.0, second.1))
-    } else {
-        left.total_cmp(&right)
+    match cmp_ranked(length(first), length(second)) {
+        std::cmp::Ordering::Equal => key(first.0, first.1).cmp(&key(second.0, second.1)),
+        order => order,
     }
 }
 

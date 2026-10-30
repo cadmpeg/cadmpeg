@@ -1,19 +1,20 @@
 // SPDX-License-Identifier: Apache-2.0
-//! Integer sample counts and limit tests that stay on one side of a whole
-//! number when last-place libm noise crosses it.
+//! Integer sample counts and limit tests that stay on one side of a cut
+//! when platform libm noise crosses it.
 //!
 //! Adaptive tessellation takes `ceil` and `floor` of ratios, and splits a
-//! segment when sag or turn is above a limit. glibc, the MSVC runtime, and
-//! Apple's libm disagree by one or two units in the last place, and those
-//! functions are discontinuous at integers: a semicircle that divides to
-//! exactly four eighth-turns becomes five on one platform. The same
-//! discontinuity adds a seed-grid row or an extra refinement split. The
-//! counts and tests here snap to the nearby integer within
-//! [`cadmpeg_ir::compare::FLOAT_TOLERANCE`], the budget this workspace already
-//! treats as platform libm rather than a different model.
+//! segment when sag or turn is above a limit. Those functions are
+//! discontinuous at integers. Count ratios snap to a nearby whole number
+//! within [`cadmpeg_ir::compare::FLOAT_TOLERANCE`]. Split tests require sag
+//! or turn to pass the limit by [`SPLIT_RATIO`], and rank near-equal
+//! lengths on the same quantum, so a 3D chord from platform libm does not
+//! pick a different branch.
 
 use cadmpeg_core::convert::truncate_f64_to_usize;
 use cadmpeg_ir::compare::floats_agree;
+
+/// Relative quantum of a sag, turn, or length used to decide a split.
+pub(crate) const SPLIT_RATIO: f64 = 1e-3;
 
 /// Smallest integer at least `x`, or the nearest integer when `x` is within
 /// [`cadmpeg_ir::compare::FLOAT_TOLERANCE`] of one.
@@ -51,9 +52,28 @@ pub(crate) fn floor_count(x: f64) -> Option<usize> {
     truncate_f64_to_usize(count)
 }
 
-/// Whether `error` is above `limit` by more than last-place libm disagreement.
+/// `value` in units of `SPLIT_RATIO * |scale|`.
+fn ranked(value: f64, scale: f64) -> Option<f64> {
+    if !value.is_finite() || !scale.is_finite() {
+        return None;
+    }
+    let quantum = scale.abs().max(f64::MIN_POSITIVE) * SPLIT_RATIO;
+    let rank = (value / quantum).round();
+    rank.is_finite().then_some(rank)
+}
+
+/// Order of two lengths or angles after ranking on [`SPLIT_RATIO`].
+pub(crate) fn cmp_ranked(left: f64, right: f64) -> std::cmp::Ordering {
+    let scale = left.abs().max(right.abs());
+    match (ranked(left, scale), ranked(right, scale)) {
+        (Some(left), Some(right)) => left.total_cmp(&right),
+        _ => std::cmp::Ordering::Equal,
+    }
+}
+
+/// Whether `error` is above `limit` by more than [`SPLIT_RATIO`].
 pub(crate) fn exceeds_limit(error: f64, limit: f64) -> bool {
-    error > limit && !floats_agree(error, limit)
+    limit.is_finite() && error > limit * (1.0 + SPLIT_RATIO)
 }
 
 #[cfg(test)]

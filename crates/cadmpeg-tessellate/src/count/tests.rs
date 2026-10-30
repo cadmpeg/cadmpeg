@@ -2,9 +2,7 @@
 
 use std::f64::consts::{FRAC_PI_2, TAU};
 
-use cadmpeg_ir::compare::FLOAT_TOLERANCE;
-
-use super::{ceil_count, exceeds_limit, floor_count};
+use super::{ceil_count, exceeds_limit, floor_count, SPLIT_RATIO};
 
 /// A whole number of eighth-turns must not gain a seed from last-place noise.
 /// A full circle is eight seeds, a semicircle four, a quarter two.
@@ -80,9 +78,17 @@ fn a_limit_plus_last_place_does_not_split() {
 }
 
 #[test]
-fn a_change_beyond_the_tolerance_still_splits() {
+fn a_change_inside_the_split_quantum_does_not_split() {
     let limit = 0.3_f64;
-    let over = limit * (1.0 + 1000.0 * FLOAT_TOLERANCE);
+    let over = limit * (1.0 + 0.25 * SPLIT_RATIO);
+    assert!(over > limit);
+    assert!(!exceeds_limit(over, limit));
+}
+
+#[test]
+fn a_change_beyond_the_split_quantum_still_splits() {
+    let limit = 0.3_f64;
+    let over = limit * (1.0 + 2.0 * SPLIT_RATIO);
     assert!(exceeds_limit(over, limit));
     assert!(exceeds_limit(limit + 1.0, limit));
 }
