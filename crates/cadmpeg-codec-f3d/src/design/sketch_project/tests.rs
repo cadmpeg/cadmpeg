@@ -63,7 +63,8 @@ fn fixture_text_styles_project_only_representable_states() {
                 EPS_POINT_PROJECTION,
             )
         })
-        .unwrap();
+        .unwrap()
+        .into_tuple();
         assert_eq!(
             entities.len(),
             usize::from(case.neutral_state),
@@ -141,7 +142,8 @@ fn sketch_container_visibility_projects_to_the_neutral_sketch() {
             1.0e-6,
         )
     })
-    .expect("sketch lanes pair");
+    .expect("sketch lanes pair")
+    .into_tuple();
     assert!(entities.is_empty());
     assert_eq!(sketches.len(), 1);
     assert_eq!(sketches[0].visible, Some(false));
@@ -274,7 +276,8 @@ fn text_frame_curves_are_construction_geometry_not_profiles() {
             EPS_POINT_PROJECTION,
         )
     })
-    .expect("sketch lanes pair");
+    .expect("sketch lanes pair")
+    .into_tuple();
     assert_eq!(sketches.len(), 1);
     assert!(sketches[0].profiles.is_empty());
     assert_eq!(entities.len(), 6);
@@ -386,7 +389,8 @@ fn point_closure_does_not_mark_construction_geometry() {
             EPS_POINT_PROJECTION,
         )
     })
-    .expect("sketch lanes pair");
+    .expect("sketch lanes pair")
+    .into_tuple();
     assert_eq!(sketches.len(), 1);
     assert!(sketches[0].profiles.is_empty());
     assert_eq!(entities.len(), 3);
@@ -532,7 +536,8 @@ fn placed_sketch_projects_signed_normal_and_nonclamped_curves() {
             1.0e-6,
         )
     })
-    .expect("sketch lanes pair");
+    .expect("sketch lanes pair")
+    .into_tuple();
     assert_eq!(sketches.len(), 1);
     assert_eq!(
         sketches[0]
@@ -1197,7 +1202,8 @@ fn nonplanar_sketch_curves_project_in_model_space() {
                 1.0e-6,
             )
         })
-        .expect("sketch lanes pair");
+        .expect("sketch lanes pair")
+        .into_tuple();
     assert!(planar_sketches.is_empty());
     assert!(planar_entities.is_empty());
     let surfaces = [surface];
@@ -1342,7 +1348,8 @@ fn surface_only_owner_preserves_planar_and_spatial_projection_policies() {
             EPS_POINT_PROJECTION,
         )
     })
-    .expect("sketch lanes pair");
+    .expect("sketch lanes pair")
+    .into_tuple();
     let SpatialSketchDesign {
         sketches: spatial,
         entities: spatial_entities,
@@ -1448,7 +1455,8 @@ fn shared_curve_identity_pairs_project_distinct_entities() {
             EPS_POINT_PROJECTION,
         )
     })
-    .expect("planar sketch projects");
+    .expect("planar sketch projects")
+    .into_tuple();
     assert_eq!(sketches.len(), 1);
     assert_eq!(entities.len(), 3);
     let planar_ids = entities
@@ -1773,7 +1781,8 @@ fn sketch_curve_tail_construction_flags_and_profile_exclusion() {
                     .with_scan(scan),
                 EPS_POINT_PROJECTION,
             )
-            .expect("sketch projection succeeds");
+            .expect("sketch projection succeeds")
+            .into_tuple();
 
             assert_eq!(sketches.len(), 1);
             let ent_by_rec = |rec: u32| {
@@ -1850,7 +1859,8 @@ fn sketch_curve_tail_construction_flags_and_profile_exclusion() {
                     .with_scan(scan),
                 EPS_POINT_PROJECTION,
             )
-            .expect("square projection succeeds");
+            .expect("square projection succeeds")
+            .into_tuple();
 
             assert_eq!(sketches.len(), 1);
             assert_eq!(
@@ -1881,7 +1891,8 @@ fn sketch_curve_tail_construction_flags_and_profile_exclusion() {
                     .with_scan(scan),
                 EPS_POINT_PROJECTION,
             )
-            .expect("square projection succeeds");
+            .expect("square projection succeeds")
+            .into_tuple();
 
             assert_eq!(sketches.len(), 1);
             assert!(

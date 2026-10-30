@@ -731,7 +731,7 @@ pub(super) fn decode(inputs: &DesignInputs<'_>) -> Result<DesignOutputs, CodecEr
         geometry.faces,
         geometry.surfaces,
     );
-    (model.sketches, model.sketch_entities) = crate::design::sketch_project::project_sketch_design(
+    let planar = crate::design::sketch_project::project_sketch_design(
         ctx,
         &crate::design::sketch_project::SketchProjectInputs::new(
             &design.design_sketch_placements,
@@ -743,6 +743,9 @@ pub(super) fn decode(inputs: &DesignInputs<'_>) -> Result<DesignOutputs, CodecEr
         .with_scan(inputs.scan),
         geometry.tolerances.linear.get(),
     )?;
+    model.sketches = planar.sketches;
+    model.sketch_entities = planar.entities;
+    losses.extend(planar.losses);
     let spatial = crate::design::sketch_project::project_spatial_sketch_design(
         ctx,
         &design.design_sketch_placements,

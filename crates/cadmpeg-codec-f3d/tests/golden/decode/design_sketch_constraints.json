@@ -2126,6 +2126,16 @@
         "code": {
           "scope": "namespaced",
           "namespace": "f3d",
+          "code": "sketch.curve-unprofiled",
+          "kind": "feature_history_retained"
+        },
+        "severity": "warning",
+        "message": "sketch entity f3d:model:sketch-entity#81:f3d%3Amodel%3Asketch%23f3d%253AFusionAssetName[Active]/Design1/BulkStream.dat@277c440:0: curve is not part of any closed profile loop"
+      },
+      {
+        "code": {
+          "scope": "namespaced",
+          "namespace": "f3d",
           "code": "feature.edge-reference-lost",
           "kind": "attributes_not_transferred"
         },

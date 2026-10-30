@@ -202,6 +202,8 @@ pub(crate) enum F3dLossCode {
     SketchPatternStateUnprojected,
     /// A spatial sketch's closed-profile search stopped at a local cap.
     SketchProfileSearchCapped,
+    /// Non-construction sketch curves form no closed profile loop.
+    SketchCurveUnprofiled,
     /// Design dimension parameters have no parameter-backed sketch constraint.
     DimensionUnprojected,
     /// Feature profile selections retain native identities; no unique profile.
@@ -462,6 +464,7 @@ impl F3dLossCode {
         Self::SketchRelationUnprojected,
         Self::SketchPatternStateUnprojected,
         Self::SketchProfileSearchCapped,
+        Self::SketchCurveUnprofiled,
         Self::DimensionUnprojected,
         Self::FeatureProfileSelectionNative,
         Self::FeatureProfileArrangementCapped,
@@ -636,6 +639,7 @@ impl F3dLossCode {
             Self::SketchRelationUnprojected => "sketch.relation-unprojected",
             Self::SketchPatternStateUnprojected => "sketch.pattern-state-unprojected",
             Self::SketchProfileSearchCapped => "sketch.profile-search-capped",
+            Self::SketchCurveUnprofiled => "sketch.curve-unprofiled",
             Self::DimensionUnprojected => "dimension.unprojected",
             Self::FeatureProfileSelectionNative => "feature.profile-selection-native",
             Self::FeatureProfileArrangementCapped => "feature.profile-arrangement-capped",
@@ -838,6 +842,7 @@ impl F3dLossCode {
             | Self::SketchRelationUnprojected
             | Self::SketchPatternStateUnprojected
             | Self::SketchProfileSearchCapped
+            | Self::SketchCurveUnprofiled
             | Self::DimensionUnprojected
             | Self::FeatureProfileSelectionNative
             | Self::FeatureProfileArrangementCapped
@@ -979,6 +984,7 @@ impl F3dLossCode {
             | Self::SketchRelationUnprojected
             | Self::SketchPatternStateUnprojected
             | Self::SketchProfileSearchCapped
+            | Self::SketchCurveUnprofiled
             | Self::DimensionUnprojected
             | Self::FeatureProfileSelectionNative
             | Self::FeatureProfileArrangementCapped
@@ -1195,6 +1201,7 @@ mod tests {
                 "sketch.relation-unprojected",
                 "sketch.pattern-state-unprojected",
                 "sketch.profile-search-capped",
+                "sketch.curve-unprofiled",
                 "dimension.unprojected",
                 "feature.profile-selection-native",
                 "feature.profile-arrangement-capped",
