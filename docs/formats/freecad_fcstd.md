@@ -557,6 +557,19 @@ integer lists with equal lengths. Legacy `First`/`Second`/`Third` fields require
 `*Pos` field, and each supplied value must be an integer. Malformed or incomplete operand fields
 are invalid rather than partially decoded.
 
+A sketch constraint expression target is the `Expression` attribute `path` in the sketch's
+`ExpressionEngine`. `Constraints[i]` selects the zero-based constraint index `i`, written in
+decimal without leading zeros except for `0`. `.Constraints.name` selects the constraint whose
+nonempty `Name` equals `name`.
+The name form has exactly one leading dot; the index form has none. Path matching is exact and
+case-sensitive. An absent or empty `Name` supplies no name path. A repeated name has no unique
+target. An expression can refer to a named constraint with `object.Constraints.name`, where
+`object` is the sketch object's persisted name.
+
+CADIR decision: repeated names emit `sketch.constraint-name-ambiguous` and do not bind by name.
+Concurrent index and name bindings emit `sketch.constraint-binding-conflict`; neither binding
+enters the neutral parameter. Exact expression records remain native.
+
 An expression binding is retained independently from its target property's cached scalar. The
 neutral parameter carries the exact decoded expression, evaluated canonical value, scalar-property
 identity, expression-engine identity, and dependencies on other decoded parameters when qualified
