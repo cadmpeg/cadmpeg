@@ -1900,6 +1900,10 @@ fn report_design_projection_gaps(
         }
     }
     let gaps = design_projection_gaps(ir, native)?;
+    report.losses.extend(crate::history::stored_bodies::losses(
+        &ir.model.features,
+        &native.design_parameter_scopes,
+    ));
     let incomplete_families = incomplete_feature_families(ir);
     let history_budget_skips = native
         .asm_histories
@@ -2638,6 +2642,9 @@ impl<'a> F3dDecodeSession<'a> {
                 ),
             );
         }
+        self.report
+            .losses
+            .extend(prereqs.design_component_occurrence_losses.iter().cloned());
         self.report.losses.extend(
             crate::design::decode::components::superseded_occurrences_loss(
                 prereqs.design_superseded_component_occurrences,

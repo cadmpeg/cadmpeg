@@ -29,16 +29,20 @@ fn unreadable_unrelated_members_preserve_geometry_source_image_and_named_loss() 
         "FusionAssetName[Active]/Previews/preview.png",
     ] {
         let original = f3z_archive("root.f3d", &[(name, &preview), ("root.f3d", &root)]);
-        let baseline = F3dCodec
-            .decode(&mut Cursor::new(&original), &DecodeOptions::default())
-            .unwrap();
+        let baseline = crate::test_support::archive_session::decode(
+            &mut Cursor::new(&original),
+            &DecodeOptions::default(),
+        )
+        .unwrap();
         assert!(!baseline.ir().model.faces.is_empty());
         let mut changed = original;
         damage_local_frame(&mut changed, name);
         let decoded = cadmpeg_test_support::EditableDecodeResult::from(
-            F3dCodec
-                .decode(&mut Cursor::new(&changed), &DecodeOptions::default())
-                .unwrap(),
+            crate::test_support::archive_session::decode(
+                &mut Cursor::new(&changed),
+                &DecodeOptions::default(),
+            )
+            .unwrap(),
         );
         assert_eq!(decoded.ir().model, baseline.ir().model);
         assert!(cadmpeg_ir::validate_neutral(decoded.ir(), Vec::new())
@@ -78,14 +82,18 @@ fn unreadable_unrelated_members_preserve_geometry_source_image_and_named_loss() 
 fn unreadable_unreferenced_document_does_not_hide_a_readable_model_root() {
     let root = f3d_with_smbh(&synthetic_geometry_smbh());
     let original = f3z_archive("root.f3d", &[("unused.f3d", &root), ("root.f3d", &root)]);
-    let baseline = F3dCodec
-        .decode(&mut Cursor::new(&original), &DecodeOptions::default())
-        .unwrap();
+    let baseline = crate::test_support::archive_session::decode(
+        &mut Cursor::new(&original),
+        &DecodeOptions::default(),
+    )
+    .unwrap();
     let mut changed = original;
     damage_local_frame(&mut changed, "unused.f3d");
-    let decoded = F3dCodec
-        .decode(&mut Cursor::new(&changed), &DecodeOptions::default())
-        .unwrap();
+    let decoded = crate::test_support::archive_session::decode(
+        &mut Cursor::new(&changed),
+        &DecodeOptions::default(),
+    )
+    .unwrap();
     assert_eq!(decoded.ir().model, baseline.ir().model);
     assert!(decoded
         .report()
@@ -102,9 +110,11 @@ fn unreadable_required_members_still_refuse_the_document() {
         let mut changed = original.clone();
         damage_local_frame(&mut changed, name);
         assert!(
-            F3dCodec
-                .decode(&mut Cursor::new(changed), &DecodeOptions::default())
-                .is_err(),
+            crate::test_support::archive_session::decode(
+                &mut Cursor::new(changed),
+                &DecodeOptions::default()
+            )
+            .is_err(),
             "{name}"
         );
     }
@@ -115,9 +125,11 @@ fn unreadable_required_members_still_refuse_the_document() {
         let mut changed = root.clone();
         damage_local_frame(&mut changed, name);
         assert!(
-            F3dCodec
-                .decode(&mut Cursor::new(changed), &DecodeOptions::default())
-                .is_err(),
+            crate::test_support::archive_session::decode(
+                &mut Cursor::new(changed),
+                &DecodeOptions::default()
+            )
+            .is_err(),
             "{name}"
         );
     }
@@ -135,14 +147,18 @@ fn unreadable_referenced_document_withholds_the_occurrence_with_named_losses() {
         "root.f3d",
         &[("root.f3d", &root), ("component.f3d", &component)],
     );
-    let baseline = F3dCodec
-        .decode(&mut Cursor::new(&changed), &DecodeOptions::default())
-        .unwrap();
+    let baseline = crate::test_support::archive_session::decode(
+        &mut Cursor::new(&changed),
+        &DecodeOptions::default(),
+    )
+    .unwrap();
     assert!(!baseline.ir().model.faces.is_empty());
     damage_local_frame(&mut changed, "component.f3d");
-    let decoded = F3dCodec
-        .decode(&mut Cursor::new(changed), &DecodeOptions::default())
-        .unwrap();
+    let decoded = crate::test_support::archive_session::decode(
+        &mut Cursor::new(changed),
+        &DecodeOptions::default(),
+    )
+    .unwrap();
     assert!(decoded.ir().model.faces.is_empty());
     assert!(decoded.ir().model.surfaces.is_empty());
     assert!(decoded

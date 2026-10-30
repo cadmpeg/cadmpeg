@@ -1449,6 +1449,16 @@
         "code": {
           "scope": "namespaced",
           "namespace": "f3d",
+          "code": "feature.stored-bodies-empty",
+          "kind": "feature_history_retained"
+        },
+        "severity": "warning",
+        "message": "f3d:FusionAssetName[Active]/Design1/BulkStream.dat:design-parameter-scope#3026 has an empty stored-body set and is a no-op."
+      },
+      {
+        "code": {
+          "scope": "namespaced",
+          "namespace": "f3d",
           "code": "feature.edge-reference-lost",
           "kind": "attributes_not_transferred"
         },

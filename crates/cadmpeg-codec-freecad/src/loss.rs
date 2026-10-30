@@ -75,6 +75,8 @@ pub(crate) enum FreecadLossCode {
     FeatureNativeKindRetained,
     /// A revolution has no complete admitted angular construction.
     FeatureRevolutionNotTransferred,
+    /// A primitive has no admitted local-to-model frame.
+    FeaturePrimitivePlacementUnresolved,
     /// Sketch geometry record retains a native kind without solved geometry.
     SketchNativeGeometry,
     /// A sketch B-spline has no admitted finite neutral representation.
@@ -85,6 +87,10 @@ pub(crate) enum FreecadLossCode {
     SketchExternalCacheUnresolved,
     /// Sketch constraint retains a native relation kind without neutral semantics.
     SketchNativeConstraint,
+    /// More than one sketch constraint has the same nonempty name.
+    SketchConstraintNameAmbiguous,
+    /// A sketch constraint has both index and name expression bindings.
+    SketchConstraintBindingConflict,
     /// Sketch profiles are not chained because endpoint matching reached its work cap.
     SketchProfileMatchingBounded,
     /// Topology color values were retained because their count did not match mapped topology.
@@ -146,9 +152,12 @@ impl FreecadLossCode {
         Self::FeatureCyclicHistory,
         Self::FeatureNativeKindRetained,
         Self::FeatureRevolutionNotTransferred,
+        Self::FeaturePrimitivePlacementUnresolved,
         Self::SketchNativeGeometry,
         Self::SketchNurbsNative,
         Self::SketchNativeConstraint,
+        Self::SketchConstraintNameAmbiguous,
+        Self::SketchConstraintBindingConflict,
         Self::SketchExternalReferenceUnresolved,
         Self::SketchExternalCacheUnresolved,
         Self::SketchProfileMatchingBounded,
@@ -199,11 +208,14 @@ impl FreecadLossCode {
             Self::PersistenceSideEntryUnresolved => "metadata.persistence-side-entry-unresolved",
             Self::PersistenceCountNoncanonical => "metadata.persistence-count-noncanonical",
             Self::FeatureCyclicHistory => "feature.cyclic-history",
+            Self::FeaturePrimitivePlacementUnresolved => "feature.primitive-placement-unresolved",
             Self::FeatureNativeKindRetained => "feature.native-kind-retained",
             Self::FeatureRevolutionNotTransferred => "feature.revolution-not-transferred",
             Self::SketchNativeGeometry => "sketch.native-geometry",
             Self::SketchNurbsNative => "sketch.nurbs-native",
             Self::SketchNativeConstraint => "sketch.native-constraint",
+            Self::SketchConstraintNameAmbiguous => "sketch.constraint-name-ambiguous",
+            Self::SketchConstraintBindingConflict => "sketch.constraint-binding-conflict",
             Self::SketchExternalReferenceUnresolved => "sketch.external-reference-unresolved",
             Self::SketchExternalCacheUnresolved => "sketch.external-cache-unresolved",
             Self::SketchProfileMatchingBounded => "sketch.profile-matching-bounded",
@@ -237,9 +249,12 @@ impl FreecadLossCode {
             | Self::FeatureCyclicHistory
             | Self::FeatureNativeKindRetained
             | Self::FeatureRevolutionNotTransferred
+            | Self::FeaturePrimitivePlacementUnresolved
             | Self::SketchNativeGeometry
             | Self::SketchNurbsNative
             | Self::SketchNativeConstraint
+            | Self::SketchConstraintNameAmbiguous
+            | Self::SketchConstraintBindingConflict
             | Self::PcurveLocationAmbiguous
             | Self::TopologyLocationIdentityBounded => Severity::Blocking,
             Self::DrawingViewAxisNotTransferred
@@ -306,12 +321,15 @@ impl FreecadLossCode {
             | Self::PersistenceSideEntryUnresolved => LossTaxonomy::RecordNotTyped,
             Self::FeatureCyclicHistory
             | Self::FeatureNativeKindRetained
-            | Self::FeatureRevolutionNotTransferred => LossTaxonomy::FeatureHistoryRetained,
+            | Self::FeatureRevolutionNotTransferred
+            | Self::FeaturePrimitivePlacementUnresolved => LossTaxonomy::FeatureHistoryRetained,
             Self::SketchExternalCacheUnresolved
             | Self::SketchExternalReferenceUnresolved
             | Self::SketchNativeGeometry
             | Self::SketchNurbsNative
             | Self::SketchNativeConstraint
+            | Self::SketchConstraintNameAmbiguous
+            | Self::SketchConstraintBindingConflict
             | Self::SketchProfileMatchingBounded
             | Self::SourceGuiPropertyKeyBlank
             | Self::SourceGuiMetadataUnresolved
@@ -391,9 +409,12 @@ mod tests {
                 "feature.cyclic-history",
                 "feature.native-kind-retained",
                 "feature.revolution-not-transferred",
+                "feature.primitive-placement-unresolved",
                 "sketch.native-geometry",
                 "sketch.nurbs-native",
                 "sketch.native-constraint",
+                "sketch.constraint-name-ambiguous",
+                "sketch.constraint-binding-conflict",
                 "sketch.external-reference-unresolved",
                 "sketch.external-cache-unresolved",
                 "sketch.profile-matching-bounded",

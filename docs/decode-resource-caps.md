@@ -238,6 +238,16 @@ report a loss; a caller may report a general failure for the same item.
 | `cadmpeg-codec-pvz`      | `src/model.rs`                                     | `MAX_OCCURRENCES`                         | `100_000`                                               | 4    | Occurrences expanded from the structure definition graph, roots included; child occurrences that close a cycle count toward it. At the limit expansion stops, and a path of `max_recursion_depth` definitions stops its branch; both report `structure.occurrence-expansion-truncated`. |
 | `cadmpeg-codec-pvz`      | `src/brep/records.rs`                              | `MAX_BSPLINE_DEGREE`                      | `20`                                                    | 1    | Admitted degree of an exact-stream B-spline surface, edge curve or pcurve, as for ASM `MAX_NURBS_DEGREE`. A record of a higher order refuses the exact stream as malformed; the member keeps its tessellation and `geometry.exact-undecoded` is reported. |
 | `cadmpeg-codec-pvz`      | `src/brep/topology.rs`                             | `MAX_TOPOLOGY_WORK`                       | `1 << 24`                                               | 4    | Floor of the derived-search `WorkBudget` of one exact stream; the allowance is the larger of this floor and 1,024 times its face, loop, coedge and edge records. Face-region nesting charges one unit per polygon sample of each containment test, and coincident-edge pairing one unit per candidate test. A face whose nesting finds the budget empty keeps one unclassified region; pairing stops; each skip is reported as `exact.topology-work-exhausted`. |
+| `cadmpeg-codec-usd`      | `src/detect.rs`                                    | `MAX_VERSION_TOKEN`                       | `32`                                                    | 1    | Bytes of the version token read after a `#usda ` or `#sdf ` header cookie. A longer token is cut at the bound and classifies as `usd:unknown`.                                                                                                                                                                                                                                                                                                                  |
+| `cadmpeg-codec-usd`      | `src/schema/shading.rs`                            | `MAX_CONNECTION_HOPS`                     | `16`                                                    | 4    | Input connections followed from one `UsdPreviewSurface` input to a value. At the bound the input is not read and its material is reported as `appearance.material-not-transferred`.                                                                                                                                                                                                                                                                             |
+| `cadmpeg-codec-usd`      | `src/schema/texture.rs`                            | `MAX_NETWORK_HOPS`                        | `16`                                                    | 4    | Connections followed from one surface input through an image node to its texture-coordinate reader, or from a texture input to its value. At the bound the input has no texture and its material is reported as `appearance.material-not-transferred`. |
+| `cadmpeg-codec-usd`      | `src/usdc/write/encode.rs`                         | `MAX_CHUNK`                               | `0x7E00_0000`                                          | N    | Encoder: the most bytes one chunk of a written compressed buffer expands to, the USDC chunk bound (spec §9.3). Not a decode path. |
+| `cadmpeg-codec-usd`      | `src/usdc/compression.rs`                          | `MAX_CHUNK_OUTPUT`                        | `0x7E00_0000`                                         | 1    | Bytes one chunk of the USDC compressed-buffer framing expands to (spec §9.3). A chunk that yields more is refused as malformed. |
+| `cadmpeg-codec-usd`      | `src/usdc/compression.rs`                          | `MAX_RATIO`                               | `255`                                                 | 1    | Output bytes one input byte of an LZ4 block yields at most. A buffer of unknown expanded size is charged against the expansion allowance at this ratio before it is decoded. |
+| `cadmpeg-tessellate`     | `src/boundary.rs`                                  | `MAX_SEEDS`                               | `256`                                                   | N    | Seed segments of one edge when the export tessellator samples a face boundary. A larger count is clamped to the bound. |
+| `cadmpeg-tessellate`     | `src/boundary.rs`                                  | `MAX_DEPTH`                               | `18`                                                    | N    | Bisection depth of one edge segment while the export tessellator refines a face boundary to its chord tolerance. |
+| `cadmpeg-tessellate`     | `src/boundary.rs`                                  | `MAX_EDGE_SAMPLES`                        | `1 << 17`                                               | N    | Samples of one edge. At the bound the face is refused with a reason, and the writer reports `export.proxy-not-written`. |
+| `cadmpeg-tessellate`     | `src/face.rs`                                      | `MAX_PCURVE_SAMPLES`                      | `1 << 16`                                               | N    | Samples of one refined derived pcurve. At the bound the pcurve is the unrefined boundary trace of the face mesh. |
 | `cadmpeg-ir`             | `src/codec/write/approximation.rs`                 | `MAX_PATCHES`                             | `1024`                                                  | N    | Export fitting: sampled B-spline patches along one parameter axis. A fit that needs more is not written; not a decode path. |
 | `cadmpeg-ir`             | `src/codec/write/approximation.rs`                 | `MAX_POLES`                               | `1 << 20`                                               | N    | Export fitting: sampled approximation poles of one export. A carrier that does not fit is not written; not a decode path. |
 | `cadmpeg-ir`             | `src/codec/write/approximation.rs`                 | `MAX_SAMPLES`                             | `1 << 23`                                               | N    | Export fitting: procedural point evaluations of one export for sampling and residual probes. Exhaustion leaves the carrier unwritten; not a decode path. |
@@ -485,16 +495,16 @@ are the slice mechanisms themselves.
 
 ## Totals
 
-Production `MAX_*` constants: 270.
+Production `MAX_*` constants: 280.
 
 | Kind | Meaning                    | Count |
 | ---- | -------------------------- | ----- |
-| 1    | Format or reader invariant | 35    |
+| 1    | Format or reader invariant | 38    |
 | 2    | Per-input bound            | 71    |
 | 3    | Session ceiling            | 0     |
-| 4    | Local work cap             | 134   |
-| N    | Not a decode bound         | 30    |
-|      | Total                      | 270   |
+| 4    | Local work cap             | 136   |
+| N    | Not a decode bound         | 35    |
+|      | Total                      | 280   |
 
 The six `ResourceLimits` fields are the session ceilings and are not
 `MAX_*` constants. No `MAX_*` constant is kind 3.
@@ -504,7 +514,8 @@ By crate: `cadmpeg-core` 3, `cadmpeg-ir` 17, `cadmpeg-measure` 21, `cadmpeg-asm`
 `cadmpeg-codec-iges` 16, `cadmpeg-codec-inventor` 3,
 `cadmpeg-codec-freecad` 16, `cadmpeg-codec-rhino` 32, `cadmpeg-codec-f3d` 19,
 `cadmpeg-codec-nx` 28, `cadmpeg-codec-creo` 20, `cadmpeg-codec-sldprt` 18,
-`cadmpeg-codec-catia` 57, and `cadmpeg-codec-pvz` 3.
+`cadmpeg-codec-catia` 57, `cadmpeg-codec-pvz` 3, `cadmpeg-codec-usd` 6, and
+`cadmpeg-tessellate` 4.
 
 ## Routing
 
@@ -551,6 +562,16 @@ Current codec routes:
   reports a loss. Occurrences are parent links keyed by expansion index, so
   their storage is linear in the occurrences; definitions and occurrences
   are admitted with `admit_entities`.
+- USDA prim bodies, metadata blocks, dictionaries, tuples, lists, time
+  samples, and variant sets charge `enter_nested`, and every prim and
+  property statement charges one entity. Composition charges
+  `enter_nested` for each composed prim and each arc it expands; an arc to
+  a prim already on the expansion path is a cycle and reports a loss. Every
+  composed prim charges one entity, so internal references that expand a
+  subtree many times stop at `max_entities`. Prim names and tessellation
+  arrays are charged to `retain_bytes` when they enter the model, and
+  occurrences, definitions, and geometry are admitted with
+  `admit_entities`.
 - IGES occurrence expansion, type-124 chains, and composite flattening
   charge `enter_nested`. The occurrence and type-124 depth limits take `min`
   with `max_recursion_depth`. At a local limit the walk stops and reports a

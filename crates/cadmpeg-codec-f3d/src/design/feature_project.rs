@@ -1759,15 +1759,28 @@ fn project_solid_primitive(
                 height,
                 offset_x,
                 offset_y,
+                transform,
                 operation: result,
                 ..
             },
         )) => {
-            let placement = cadmpeg_ir::transform::Transform::affine([
-                [1.0, 0.0, 0.0, offset_x.get() * 10.0],
-                [0.0, 1.0, 0.0, offset_y.get() * 10.0],
-                [0.0, 0.0, 1.0, 0.0],
-            ])?;
+            // The typed-reference form stores the complete local frame; the
+            // named form places the box by its two planar offsets.
+            let placement = match transform {
+                Some(frame) => {
+                    let rows = frame.rows();
+                    let row = |index: usize| {
+                        let [x, y, z, translation] = rows[index];
+                        [x, y, z, translation * 10.0]
+                    };
+                    cadmpeg_ir::transform::Transform::affine([row(0), row(1), row(2)])?
+                }
+                None => cadmpeg_ir::transform::Transform::affine([
+                    [1.0, 0.0, 0.0, offset_x.get() * 10.0],
+                    [0.0, 1.0, 0.0, offset_y.get() * 10.0],
+                    [0.0, 0.0, 1.0, 0.0],
+                ])?,
+            };
             FeatureDefinition::Operation(FeatureOperation::Block {
                 dimensions: Some([
                     cadmpeg_ir::scalar::PositiveLength::new(length.get() * 10.0)?,
@@ -2604,16 +2617,13 @@ fn design_body_selection(
     let expected_count = entity_suffixes.len();
     let mut bodies = Vec::new();
     for suffix in entity_suffixes {
-        let mut matches = body_bindings
-            .iter()
-            .filter(|binding| {
-                native_stream(binding.id()) == Some(stream) && binding.entity_suffix == suffix
-            })
-            .filter_map(|binding| binding.body.as_ref());
-        let Some(body) = matches.next() else {
+        let mut matches = body_bindings.iter().filter(|binding| {
+            native_stream(binding.id()) == Some(stream) && binding.entity_suffix == suffix
+        });
+        let Some(body) = matches.next().and_then(|binding| binding.body.as_ref()) else {
             return BodySelection::Native(scope.id.clone());
         };
-        if matches.any(|candidate| candidate != body) {
+        if matches.any(|candidate| candidate.body.as_ref() != Some(body)) {
             return BodySelection::Native(scope.id.clone());
         }
         bodies.push(body.clone());
@@ -5950,9 +5960,12 @@ pub(super) fn project_fixed_loft(
         ..
     } = inputs;
 
-    let crate::records::feature::scope::DesignScopePayload::Loft(Some(
-        crate::records::feature::path_features::DesignLoftConstruction { operation, .. },
-    )) = &scope.payload()
+    let crate::records::feature::scope::DesignScopePayload::Loft(loft_payload) = &scope.payload()
+    else {
+        return Ok(None);
+    };
+    let Some(crate::records::feature::path_features::DesignLoftConstruction { operation, .. }) =
+        loft_payload
     else {
         return Ok(None);
     };
@@ -5975,7 +5988,6 @@ pub(super) fn project_fixed_loft(
         matching_legacy_carriers.next(),
         matching_legacy_carriers.next(),
     ) {
-        (None, _) => None,
         (Some(_), None) => {
             if groups
                 .iter()
@@ -5991,6 +6003,39 @@ pub(super) fn project_fixed_loft(
                 return Ok(None);
             }
             Some((body_group.record_index, body_group.scope_reference_ordinal))
+        }
+        (None, _) => {
+            // A carrier-free Boolean Loft scope with exactly six ordered reference
+            // members, at least two sections, and no BODIES_A group admits a single
+            // BODIES_B target body selection at scope-reference ordinal one.
+            if scope.reference_members().len() == 6
+                && !groups
+                    .iter()
+                    .any(|group| group.role() == DesignOperandRole::BODIES_A)
+                && groups
+                    .iter()
+                    .filter(|group| {
+                        matches!(
+                            group.role(),
+                            DesignOperandRole::PROFILE | DesignOperandRole::ROLE_0X43
+                        )
+                    })
+                    .count()
+                    >= 2
+            {
+                let mut body_groups = groups.iter().filter(|group| {
+                    group.role() == DesignOperandRole::BODIES_B
+                        && group.scope_reference_ordinal == 1
+                });
+                match (body_groups.next(), body_groups.next()) {
+                    (Some(body_group), None) => {
+                        Some((body_group.record_index, body_group.scope_reference_ordinal))
+                    }
+                    _ => None,
+                }
+            } else {
+                None
+            }
         }
         _ => return Ok(None),
     };
@@ -6760,7 +6805,7 @@ pub(super) fn project_fixed_sweep(
         else {
             return None;
         };
-        let values = values.map(cadmpeg_ir::scalar::FiniteReal::get);
+        let values: Vec<f64> = values.iter().map(|value| value.get()).collect();
         let stream = native_stream(&scope.id)?;
         let mut groups = Vec::new();
         for group in construction_groups.iter().filter(|group| {
@@ -6855,9 +6900,22 @@ pub(super) fn project_fixed_sweep(
             || groups.len() != expected_group_count
             || (*operation == DesignExtrudeOperation::NewBody && !bodies.is_empty())
             || (guide_surface_form && paths.len() != 1)
-            || values[..4].iter().any(|value| !(0.0..=1.0).contains(value))
-            || (paths.len() == 1 && values[2..4] != [1.0; 2])
         {
+            return None;
+        }
+        let valid_lanes = match values.as_slice() {
+            [along, against] => {
+                paths.len() == 1 && (0.0..=1.0).contains(along) && (0.0..=1.0).contains(against)
+            }
+            [along, against, along_rail, against_rail, _twist, _taper] => {
+                [along, against, along_rail, against_rail]
+                    .iter()
+                    .all(|value| (0.0..=1.0).contains(*value))
+                    && (paths.len() != 1 || (*along_rail == 1.0 && *against_rail == 1.0))
+            }
+            _ => false,
+        };
+        if !valid_lanes {
             return None;
         }
         Some((operation, values, profile, *path, paths, guide_surfaces))
@@ -6872,24 +6930,39 @@ pub(super) fn project_fixed_sweep(
         scope,
         ctx,
     )?;
-    let guide_extent = SweepPathExtent {
-        along_fraction: or_none!(cadmpeg_ir::scalar::Fraction::new(values[2])),
-        against_fraction: or_none!(cadmpeg_ir::scalar::Fraction::new(values[3])),
-    };
-    let guide_rail = if let Some(rail) = paths.get(1) {
-        Some(SweepGuideRail {
-            path: resolved_loft_path(
-                rail,
-                construction_groups,
-                edge_operands,
-                edge_identity_operands,
-                scope,
-                ctx,
-            )?,
-            extent: guide_extent,
-        })
-    } else {
-        None
+    let (along, against, guide_rail, twist, taper) = match values.as_slice() {
+        [along, against] => (*along, *against, None, None, None),
+        [along, against, along_rail, against_rail, twist, taper] => {
+            let guide_extent = SweepPathExtent {
+                along_fraction: or_none!(cadmpeg_ir::scalar::Fraction::new(*along_rail)),
+                against_fraction: or_none!(cadmpeg_ir::scalar::Fraction::new(*against_rail)),
+            };
+            let guide_rail = if let Some(rail) = paths.get(1) {
+                Some(SweepGuideRail {
+                    path: resolved_loft_path(
+                        rail,
+                        construction_groups,
+                        edge_operands,
+                        edge_identity_operands,
+                        scope,
+                        ctx,
+                    )?,
+                    extent: guide_extent,
+                })
+            } else {
+                None
+            };
+            let twist_angle = or_none!(Angle::new(*twist));
+            let taper_angle = or_none!(Angle::new(*taper));
+            (
+                *along,
+                *against,
+                guide_rail,
+                (*twist != 0.0).then_some(twist_angle),
+                (*taper != 0.0).then_some(taper_angle),
+            )
+        }
+        _ => return Ok(None),
     };
     let orientation = guide_surfaces
         .first()
@@ -6904,8 +6977,6 @@ pub(super) fn project_fixed_sweep(
                 None => FaceSelection::Native(group.id.clone()),
             },
         });
-    let twist_angle = or_none!(Angle::new(values[4]));
-    let taper_angle = or_none!(Angle::new(values[5]));
     Ok(Some(FeatureDefinition::Operation(
         FeatureOperation::Sweep {
             shape: cadmpeg_ir::features::SweepShape::Solid {
@@ -6927,13 +6998,13 @@ pub(super) fn project_fixed_sweep(
             transformation: None,
             path_tangent: false,
             linearize: false,
-            twist: (values[4] != 0.0).then_some(twist_angle),
+            twist,
             path_extent: Some(SweepPathExtent {
-                along_fraction: or_none!(cadmpeg_ir::scalar::Fraction::new(values[0])),
-                against_fraction: or_none!(cadmpeg_ir::scalar::Fraction::new(values[1])),
+                along_fraction: or_none!(cadmpeg_ir::scalar::Fraction::new(along)),
+                against_fraction: or_none!(cadmpeg_ir::scalar::Fraction::new(against)),
             }),
             guide_rail,
-            taper: (values[5] != 0.0).then_some(taper_angle),
+            taper,
             scale: None,
             allow_multi_profile_faces: None,
         },

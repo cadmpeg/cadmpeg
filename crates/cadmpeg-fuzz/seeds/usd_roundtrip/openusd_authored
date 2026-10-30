@@ -1,0 +1,106 @@
+#usda 1.0
+(
+    defaultPrim = "Plant"
+    doc = "Generated with the OpenUSD Python API (pxr) 26.8."
+    metersPerUnit = 1
+    upAxis = "Z"
+)
+
+def Xform "Plant" (
+    kind = "assembly"
+)
+{
+    def Scope "Looks"
+    {
+        def Material "Steel"
+        {
+            token outputs:surface.connect = </Plant/Looks/Steel/Preview.outputs:surface>
+
+            def Shader "Preview"
+            {
+                uniform token info:id = "UsdPreviewSurface"
+                color3f inputs:diffuseColor = (0.6, 0.62, 0.65)
+                float inputs:metallic = 1
+                float inputs:roughness = 0.3
+                token outputs:surface
+            }
+        }
+    }
+
+    def Xform "Frame"
+    {
+        float xformOp:rotateZ = 30
+        double3 xformOp:translate = (0.5, 0, 0)
+        uniform token[] xformOpOrder = ["xformOp:translate", "xformOp:rotateZ"]
+
+        def Mesh "Tube" (
+            prepend apiSchemas = ["MaterialBindingAPI"]
+        )
+        {
+            float3[] extent = [(0, 0, 0), (1, 1, 1)]
+            int[] faceVertexCounts = [4, 4, 4, 4]
+            int[] faceVertexIndices = [0, 1, 5, 4, 1, 2, 6, 5, 2, 3, 7, 6, 3, 0, 4, 7]
+            rel material:binding = </Plant/Looks/Steel>
+            point3f[] points = [(0, 0, 0), (1, 0, 0), (1, 1, 0), (0, 1, 0), (0, 0, 1), (1, 0, 1), (1, 1, 1), (0, 1, 1)]
+            uniform token subdivisionScheme = "none"
+        }
+
+        def BasisCurves "Rail"
+        {
+            uniform token basis = "bspline"
+            int[] curveVertexCounts = [5]
+            point3f[] points = [(0, 0, 2), (1, 0, 2.5), (2, 0, 2), (3, 0, 2.5), (4, 0, 2)]
+            uniform token type = "cubic"
+            float[] widths = [0.05] (
+                interpolation = "constant"
+            )
+            uniform token wrap = "nonperiodic"
+        }
+    }
+
+    def NurbsPatch "Roof"
+    {
+        point3f[] points = [(0, 0, 3), (2, 0, 4), (4, 0, 3), (0, 3, 3), (2, 3, 4), (4, 3, 3)]
+        double[] uKnots = [0, 0, 0, 1, 1, 1]
+        int uOrder = 3
+        double2 uRange = (0, 1)
+        int uVertexCount = 3
+        double[] vKnots = [0, 0, 1, 1]
+        int vOrder = 2
+        double2 vRange = (0, 1)
+        int vVertexCount = 2
+    }
+
+    class Xform "Prototypes"
+    {
+        def Mesh "Leg"
+        {
+            int[] faceVertexCounts = [4]
+            int[] faceVertexIndices = [0, 1, 2, 3]
+            normal3f[] normals = [(0, 0, 1), (0, 0, 1), (0, 0, 1), (0, 0, 1)] (
+                interpolation = "vertex"
+            )
+            point3f[] points = [(0, 0, 0), (0.1, 0, 0), (0.1, 0.1, 0), (0, 0.1, 0)]
+            uniform token subdivisionScheme = "none"
+        }
+    }
+
+    def "Leg0" (
+        instanceable = true
+        prepend references = </Plant/Prototypes/Leg>
+    )
+    {
+        double3 xformOp:translate = (0, 0, 0)
+        uniform token[] xformOpOrder = ["xformOp:translate"]
+    }
+
+    def "Leg1" (
+        instanceable = true
+        prepend references = </Plant/Prototypes/Leg>
+    )
+    {
+        double3 xformOp:translate = (4, 0, 0)
+        uniform token[] xformOpOrder = ["xformOp:translate"]
+    }
+}
+

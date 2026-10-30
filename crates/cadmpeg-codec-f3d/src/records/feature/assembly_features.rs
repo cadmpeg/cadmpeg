@@ -280,8 +280,11 @@ pub(crate) const OCCURRENCE_OWNER_TYPE_GUID: &str = "904F885E-D859-4755-A7EF-6EB
 pub(crate) enum DesignComponentOccurrenceFrame {
     /// The 229-byte identity frame or the 357-byte matrix frame.
     Fixed,
+    EmptyAttributes,
     /// A fixed frame with typed definition and owner references.
-    FixedTyped { separated: bool },
+    FixedTyped {
+        separated: bool,
+    },
     /// The attributed frame, with a counted attribute run and an occurrence
     /// key that can be a decimal key.
     Attributed(Box<DesignAttributedOccurrenceFrame>),
@@ -384,7 +387,7 @@ pub(crate) struct DesignComponentOccurrenceDraft {
 pub(crate) enum DesignComponentOccurrencePlacement {
     /// Identity placement of the first occurrence; the frame stores no matrix.
     Base,
-    /// A later attributed occurrence with a stored identity marker.
+    /// A later occurrence with a stored identity marker.
     Identity { ordinal: NonZeroU32 },
     /// Explicit matrix and one-based occurrence ordinal.
     Explicit {
@@ -425,6 +428,33 @@ impl DesignComponentOccurrence {
             current_pose: None,
             operation_pose: None,
         })
+    }
+
+    pub(crate) fn has_unresolved_identity_ordinal(&self) -> bool {
+        matches!(
+            self.frame,
+            DesignComponentOccurrenceFrame::Fixed
+                | DesignComponentOccurrenceFrame::EmptyAttributes
+                | DesignComponentOccurrenceFrame::FixedTyped { .. }
+        ) && matches!(
+            self.placement,
+            DesignComponentOccurrencePlacement::Identity { .. }
+        )
+    }
+
+    pub(crate) fn with_empty_attributes(mut self) -> Result<Self, String> {
+        self.owner_entity_offset()
+            .checked_add(Self::empty_attributes_shift())
+            .ok_or("component occurrence offsets overflow byte_offset")?;
+        self.frame = DesignComponentOccurrenceFrame::EmptyAttributes;
+        Ok(self)
+    }
+
+    fn empty_attributes_shift() -> u64 {
+        cadmpeg_core::decode::u64_from_index(
+            crate::layout::local_component_occurrence_empty_attributes_prefix::LEN
+                - crate::layout::local_component_occurrence_prefix::LEN,
+        )
     }
 
     pub(crate) fn try_new_typed(
@@ -497,6 +527,7 @@ impl DesignComponentOccurrence {
     fn attributed_wire(&self) -> Option<DesignAttributedOccurrenceWire> {
         match &self.frame {
             DesignComponentOccurrenceFrame::Fixed
+            | DesignComponentOccurrenceFrame::EmptyAttributes
             | DesignComponentOccurrenceFrame::FixedTyped { .. } => None,
             DesignComponentOccurrenceFrame::Attributed(frame) => {
                 Some(DesignAttributedOccurrenceWire {
@@ -519,6 +550,11 @@ impl DesignComponentOccurrence {
     pub(crate) fn component_guid_offset(&self) -> u64 {
         match &self.frame {
             DesignComponentOccurrenceFrame::Fixed => self.byte_offset + 48,
+            DesignComponentOccurrenceFrame::EmptyAttributes => self.byte_offset
+                + cadmpeg_core::decode::u64_from_index(
+                    crate::layout::local_component_occurrence_empty_attributes_prefix::CARRIER_GUID
+                        + 4,
+                ),
             DesignComponentOccurrenceFrame::FixedTyped { .. } => {
                 self.byte_offset
                     + cadmpeg_core::decode::u64_from_index(
@@ -533,6 +569,9 @@ impl DesignComponentOccurrence {
     fn occurrence_guid_offset(&self) -> u64 {
         match &self.frame {
             DesignComponentOccurrenceFrame::Fixed => self.byte_offset + 124,
+            DesignComponentOccurrenceFrame::EmptyAttributes => {
+                self.byte_offset + cadmpeg_core::decode::u64_from_index(crate::layout::local_component_occurrence_empty_attributes_prefix::OCCURRENCE_GUID + 4)
+            }
             DesignComponentOccurrenceFrame::FixedTyped { .. } => {
                 self.byte_offset
                     + cadmpeg_core::decode::u64_from_index(
@@ -546,8 +585,14 @@ impl DesignComponentOccurrence {
     /// Owner-entity byte offset.
     fn owner_entity_offset(&self) -> u64 {
         match &self.frame {
-            DesignComponentOccurrenceFrame::Fixed => {
+            DesignComponentOccurrenceFrame::Fixed
+            | DesignComponentOccurrenceFrame::EmptyAttributes => {
                 self.byte_offset
+                    + if matches!(self.frame, DesignComponentOccurrenceFrame::EmptyAttributes) {
+                        Self::empty_attributes_shift()
+                    } else {
+                        0
+                    }
                     + match self.placement {
                         DesignComponentOccurrencePlacement::Base
                         | DesignComponentOccurrencePlacement::Identity { .. } => BASE_OWNER_OFFSET,
@@ -587,6 +632,10 @@ impl DesignComponentOccurrence {
                         frame.transform_offset.unwrap_or(self.byte_offset + 209)
                     }
                     DesignComponentOccurrenceFrame::Fixed => self.byte_offset + 209,
+                    DesignComponentOccurrenceFrame::EmptyAttributes => self.byte_offset
+                        + cadmpeg_core::decode::u64_from_index(
+                            crate::layout::local_component_occurrence_empty_attributes_prefix::LEN,
+                        ),
                     DesignComponentOccurrenceFrame::FixedTyped { separated } => {
                         self.byte_offset
                             + cadmpeg_core::decode::u64_from_index(if *separated {
@@ -818,17 +867,13 @@ impl TryFrom<DesignComponentOccurrenceWire> for DesignComponentOccurrence {
         let transform = Located::from_wire(value.transform, value.transform_offset, "transform")?;
         let placement = match (value.occurrence_ordinal, transform) {
             (1, None) => DesignComponentOccurrencePlacement::Base,
-            (ordinal, None) if value.attributed.is_some() => {
-                DesignComponentOccurrencePlacement::Identity {
-                    ordinal: NonZeroU32::new(ordinal)
-                        .ok_or("occurrence_ordinal must be nonzero")?,
-                }
-            }
+            (ordinal, None) => DesignComponentOccurrencePlacement::Identity {
+                ordinal: NonZeroU32::new(ordinal).ok_or("occurrence_ordinal must be nonzero")?,
+            },
             (ordinal, Some(transform)) => DesignComponentOccurrencePlacement::Explicit {
                 ordinal: NonZeroU32::new(ordinal).ok_or("occurrence_ordinal must be nonzero")?,
                 transform: transform.value,
             },
-            (_, None) => return Err("occurrence_ordinal must be 1 when transform is absent".into()),
         };
         let draft = DesignComponentOccurrenceDraft {
             id: value.id,
@@ -871,9 +916,18 @@ impl TryFrom<DesignComponentOccurrenceWire> for DesignComponentOccurrence {
             let separated = value.owner_entity_offset.checked_sub(value.byte_offset)
                 == Some(Self::typed_owner_offset(&draft.placement, true));
             Self::try_new_typed(draft, separated)?
+        } else if value.component_guid_offset.checked_sub(value.byte_offset)
+            == Some(cadmpeg_core::decode::u64_from_index(
+                crate::layout::local_component_occurrence_empty_attributes_prefix::CARRIER_GUID + 4,
+            ))
+        {
+            Self::try_new(draft)?.with_empty_attributes()?
         } else {
             Self::try_new(draft)?
         };
+        if record.has_unresolved_identity_ordinal() {
+            return Err("occurrence_ordinal must be 1 when transform is absent".into());
+        }
         if value.component_guid_offset != record.component_guid_offset() {
             return Err("component_guid_offset disagrees with byte_offset".into());
         }

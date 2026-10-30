@@ -394,6 +394,18 @@ the native feature when a fixed lane carries a symmetric distance.
 
 **Conflict.** No complete root-selection rule is defined.
 
+### DR-145. Extrude selection member scope tail
+
+**Question.** What do the f64, the u32 with value `0x104`, and the two chain references in the 50-byte scope tail of an Extrude selection member mean?
+
+**Known.** The tail follows the 190-byte member frame when the optional slot is absent. The u32 has value `0x104`. The two chain references name indexed records of the same segment that follow the member. The closing marked reference names the owning Extrude scope.
+
+**Need.** Files that vary the Extrude options and the selected profile, to find which option writes the tail and what the chain records carry.
+
+**Conflict.** None.
+
+**Note.** None.
+
 ## 2. External references
 
 ### DR-111. Component-path poses of nested occurrences
@@ -726,3 +738,51 @@ the native feature when a fixed lane carries a symmetric distance.
 **Conflict.** None.
 
 **Note.** Candidate membership, planar support, and absence of changed faces do not by themselves identify a selected face.
+
+### DR-122. Derived Base Feature source and frame
+
+**Question.** Which field of a `Derived Base Feature` scope identifies the derived source body, and which field stores its local frame or mirror plane?
+
+**Known.** The 711-byte frame stores nine typed-reference elements, a zero GUID, the kind, the ordinal, and an f64 of unknown meaning. The second body element of the 711-byte frame stores the Design body entity suffix of the result body. Every reference in the scope is a Design record of the same stream. The frame stores no matrix. The `DerivedBaseFeature` forms (707 and 491 bytes) store the same elements and roles, a part with a mirror label places its occurrence with an identity rotation, and no field in either form stores a plane or a matrix. The 761-byte frame has one additional typed-reference element with a role GUID that no 711-byte frame stores. Its record index is lower than the scope record index.
+
+**Need.** A scope whose source document or source body changes with the result body fixed. The meaning of the f64 and of the additional 761-byte element.
+
+**Conflict.** None.
+
+**Note.** A scope without proven result bodies remains native with `feature.derived-base-unresolved`. A scope with proven result bodies is kept as a stored snapshot with the same code until source and frame have a complete binding.
+
+### DR-123. Typed-reference BoxPrimitive offsets and other forms
+
+**Question.** How does a nonzero `OffsetDistanceX` or `OffsetDistanceY` owner combine with the stored frame in a `BoxPrimitive` scope with eight typed reference members, and which other frame lengths does the form have?
+
+**Known.** The 1295-byte form stores the result operation, a rigid local frame, and the five box parameter owners; the frame is the box placement when both offset owners are zero. The support-face selection and placement construction references are table members, and the form stores one further typed reference at offset 517 that is not a table member.
+
+**Need.** A scope in this form with a nonzero offset owner and a changed placement, and a scope in any other frame length.
+
+**Conflict.** None.
+
+**Note.** A scope outside the 1295-byte form, or with a nonzero offset owner, remains native with `feature.box-primitive-unresolved`.
+
+### DR-147. Region extent of a tracking-path Extrude selection
+
+**Question.** Which Sketch region does an Extrude selection select when its member follows a tracking path?
+
+**Known.** The path stores the primary curve, a one-based fragment ordinal, the fragment count, and the two curves bounding the fragment. The carrier lane is `2` or `3`. The selected fragment can border two bounded Sketch faces.
+
+**Need.** Controlled selections of one region, of two adjacent regions, and of a region with an enclosed island, each in a Sketch whose curves cross, to bind the path to the selected side and to the filled island. CAD Fixture Recipes F29a-F29d select each region of two crossing circles and the union of two of them.
+
+**Conflict.** None.
+
+**Note.** A path selection retains its native selection and loss. The selected region can be the union of several atomic arrangement faces, which no single face proves.
+
+### DR-146. Later ordinal in a fixed identity occurrence
+
+**Question.** What placement does a fixed untyped occurrence with identity flag `1` and ordinal greater than one select?
+
+**Known.** Two standard 229-byte frames store ordinal `2` and identity flag `1`. Attributed identity frames retain later ordinals.
+
+**Need.** Independent files that vary the occurrence ordinal and placement separately.
+
+**Conflict.** None.
+
+**Note.** Emit `assembly.local-occurrence-identity-ordinal-unresolved` and keep the occurrence out of neutral product structure.

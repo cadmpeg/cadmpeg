@@ -752,7 +752,7 @@ fn valid_design_parameter_family(
                 || discriminator == Some(Code6)
         }
         17 => discriminator == Some(Code6),
-        19 => discriminator.is_none_or(|value| {
+        18 | 19 => discriminator.is_none_or(|value| {
             matches!(value, Code0 | Code3 | Code4)
                 || (value == Code6 && source_kind == "TangencyWeight")
         }),

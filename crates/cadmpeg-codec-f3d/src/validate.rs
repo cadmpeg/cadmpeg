@@ -5132,7 +5132,10 @@ fn validate_construction_operand_groups(ctx: &Ctx, findings: &mut Vec<Finding>) 
 
 /// Validate path-feature operand roles against the scope construction.
 ///
-/// The role grammar is shared with the fixed Loft projector. Keeping the
+/// The role grammar is shared with the fixed Loft projector, though the
+/// projector additionally gates admission on scope member count, group
+/// ordinals, and legacy carrier pairing (this validator remains role-only and
+/// reports valid for shapes the projector leaves Native). Keeping the
 /// predicate independent of native byte offsets lets validation reject a
 /// malformed role combination without rejecting a valid section/guide mix.
 pub(crate) fn loft_operand_roles_are_valid(
@@ -6703,7 +6706,7 @@ fn validate_extrude_selection_members(ctx: &Ctx, findings: &mut Vec<Finding>) {
         let point_targets = native.sketch_points.iter().filter_map(|point| {
             (selected_sketch.is_some()
                 && design_stream(&point.id) == native_stream
-                && point.owner_reference == selected_sketch
+                && (point.owner_reference.is_none() || point.owner_reference == selected_sketch)
                 && point.persistent_id() == Some(member.local_id))
             .then_some(records::sketch_relations::SketchRelationOperand::Point {
                 record_index: point.record_index,
@@ -6713,7 +6716,7 @@ fn validate_extrude_selection_members(ctx: &Ctx, findings: &mut Vec<Finding>) {
         let curve_targets = native.sketch_curve_identities.iter().filter_map(|curve| {
             (selected_sketch.is_some()
                 && design_stream(&curve.id) == native_stream
-                && curve.owner_reference == selected_sketch
+                && (curve.owner_reference.is_none() || curve.owner_reference == selected_sketch)
                 && (curve.primary_id.get() == member.local_id
                     || curve.secondary_id != 0 && curve.secondary_id == member.local_id))
                 .then_some(records::sketch_relations::SketchRelationOperand::Curve {
@@ -6799,6 +6802,8 @@ fn validate_extrude_selection_members(ctx: &Ctx, findings: &mut Vec<Finding>) {
                 == Some(member.record_index())
         }) && header.is_some_and(|header| {
             header.byte_offset == member.byte_offset() && header.class_tag == member.class_tag
+        }) && member.scope_tail.is_none_or(|tail| {
+            group.is_some_and(|group| tail.scope_record_index == group.scope_record_index)
         }) && selected_profile
             .is_none_or(|profile| profile.asset_id == member.asset_id)
             && member.resolved_geometry == expected_target

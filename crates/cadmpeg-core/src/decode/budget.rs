@@ -5,7 +5,7 @@
 //! entities, and recursion depth. A refusal in any of them fuses the session:
 //! every later charge fails and `finish_session` returns the refusal.
 
-use std::cell::Cell;
+use std::cell::{Cell, RefCell};
 use std::rc::Rc;
 
 use crate::CodecError;
@@ -26,9 +26,68 @@ pub(super) struct DecodeBudget {
     entities: Cell<u64>,
     recursion_depth: Cell<u64>,
     fuse: Cell<Option<ResourceLimit>>,
+    pub(super) trace: RefCell<Option<Vec<super::transaction::Event>>>,
 }
 
 impl DecodeBudget {
+    pub(super) fn record(&self, event: super::transaction::Event) {
+        if let Some(trace) = self.trace.borrow_mut().as_mut() {
+            super::transaction::record(trace, event);
+        }
+    }
+
+    pub(super) fn state(&self) -> super::transaction::BudgetState {
+        super::transaction::BudgetState {
+            policy: self.policy,
+            input: self.input_bytes.get(),
+            decompressed: self.decompressed.get(),
+            retained: self.retained.get(),
+            entities: self.entities.get(),
+            depth: self.recursion_depth.get(),
+            fuse: self.fuse.get(),
+        }
+    }
+
+    pub(super) fn restore(&self, state: &super::transaction::BudgetState) {
+        self.input_bytes.set(state.input);
+        self.decompressed.set(state.decompressed);
+        self.retained.set(state.retained);
+        self.entities.set(state.entities);
+        self.recursion_depth.set(state.depth);
+        self.fuse.set(state.fuse);
+    }
+
+    pub(super) fn replay_charge(
+        &self,
+        dimension: ResourceDimension,
+        amount: u64,
+        operation: &'static str,
+    ) -> Result<(), CodecError> {
+        match dimension {
+            ResourceDimension::InputBytes => self.charge_input(amount, operation),
+            ResourceDimension::DecompressedBytes => self.charge_decompressed(amount, operation),
+            ResourceDimension::RetainedBytes => {
+                self.retain_bytes(amount, operation).map_err(Into::into)
+            }
+            ResourceDimension::Entities => self.charge_entities(amount, operation),
+            ResourceDimension::RecursionDepth => self
+                .charge(
+                    dimension,
+                    &self.recursion_depth,
+                    self.policy.limits.max_recursion_depth,
+                    amount,
+                    operation,
+                )
+                .map_err(Into::into),
+        }
+    }
+
+    pub(super) fn leave(&self) {
+        if let Some(depth) = self.recursion_depth.get().checked_sub(1) {
+            self.recursion_depth.set(depth);
+        }
+    }
+
     /// Returns the policy applied to this budget.
     pub(super) fn policy(&self) -> &DecodePolicy {
         &self.policy
@@ -43,6 +102,7 @@ impl DecodeBudget {
             entities: Cell::new(0),
             recursion_depth: Cell::new(0),
             fuse: Cell::new(None),
+            trace: RefCell::new(None),
         }
     }
 
@@ -128,6 +188,9 @@ impl DecodeBudget {
         amount: u64,
         operation: &'static str,
     ) -> Result<(), ResourceLimit> {
+        self.record(super::transaction::Event::Charge(
+            dimension, amount, operation,
+        ));
         if let Some(resource) = self.fuse.get() {
             return Err(resource);
         }
@@ -212,14 +275,20 @@ impl DecodeBudget {
 
     /// Retained bytes the session can still charge before `retain_bytes` refuses.
     pub(super) fn retained_bytes_available(&self) -> u64 {
+        let available = self.retained_available();
+        self.record(super::transaction::Event::Available(available));
+        available
+    }
+
+    pub(super) fn retained_available(&self) -> u64 {
         if self.fuse.get().is_some() {
-            return 0;
+            0
+        } else {
+            let Some(available) = self.retained_allowance().checked_sub(self.retained.get()) else {
+                return 0;
+            };
+            available
         }
-        // A session that retained past its allowance can afford nothing more.
-        let Some(remaining) = self.retained_allowance().checked_sub(self.retained.get()) else {
-            return 0;
-        };
-        remaining
     }
 
     /// Reports an allocator refusal for `requested` bytes or slots.
@@ -280,6 +349,7 @@ impl Drop for DepthGuard<'_> {
         let Some(depth) = self.budget.recursion_depth.get().checked_sub(1) else {
             return;
         };
+        self.budget.record(super::transaction::Event::Leave);
         self.budget.recursion_depth.set(depth);
     }
 }
