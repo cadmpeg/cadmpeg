@@ -714,3 +714,27 @@ the native feature when a fixed lane carries a symmetric distance.
 **Conflict.** None.
 
 **Note.** Candidate membership, planar support, and absence of changed faces do not by themselves identify a selected face.
+
+### DR-122. Derived Base Feature source and frame
+
+**Question.** Which fields identify the source body and local frame of a `Derived Base Feature` scope?
+
+**Known.** The scope has a reference table and current and previous ASM history-state identities. Its result transition identifies result bodies. The result body identity does not identify a derived source body or a source frame.
+
+**Need.** Independent source-body and placement changes with the other scope fields fixed.
+
+**Conflict.** None.
+
+**Note.** The scope remains native with `feature.derived-base-unresolved` until both source and frame have a complete binding.
+
+### DR-123. Typed-reference BoxPrimitive construction
+
+**Question.** Which fields define dimensions, operation, and the local frame in a `BoxPrimitive` scope with eight typed reference members?
+
+**Known.** The named five-owner box form defines three lengths and two planar offsets. The eight-member form has a scope envelope and a result-state transition. These fields do not assign the extra references or establish a local placement frame.
+
+**Need.** Independent changes to the three dimensions, local origin, local axes, and result operation in this form.
+
+**Conflict.** None.
+
+**Note.** A scope without complete dimensions and frame remains native with `feature.box-primitive-unresolved`.

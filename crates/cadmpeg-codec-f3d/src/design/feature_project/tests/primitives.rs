@@ -63,3 +63,49 @@ fn shifted_cylinder_frame_places_the_primitive() {
         }))
     ));
 }
+
+#[test]
+fn stored_body_box_requires_dimensions_and_preserves_local_offsets() {
+    use cadmpeg_ir::features::BooleanOp;
+    let mut scope = DesignParameterScope::empty(
+        "f3d:Design/BulkStream.dat:design-parameter-scope#60",
+        DesignFeatureKind::BoxPrimitive,
+        60,
+    );
+    assert!(project_solid_primitive(&scope).is_none());
+    if let DesignScopePayloadMut::BoxPrimitive(slot) = scope.payload_mut() {
+        *slot = Some(
+            serde_json::from_value(serde_json::json!({
+                "length":2.0,"length_record_index":61,"length_offset":0,
+                "width":3.0,"width_record_index":62,"width_offset":0,
+                "height":4.0,"height_record_index":63,"height_offset":0,
+                "offset_x":-1.0,"offset_x_record_index":64,"offset_x_offset":0,
+                "offset_y":2.0,"offset_y_record_index":65,"offset_y_offset":0,
+                "operation":"new_body","operation_offset":0
+            }))
+            .unwrap(),
+        );
+    }
+    let Some(FeatureDefinition::Operation(FeatureOperation::Block {
+        dimensions: Some(dimensions),
+        placement: Some(placement),
+        op,
+    })) = project_solid_primitive(&scope)
+    else {
+        panic!("complete box");
+    };
+    assert_eq!(
+        dimensions.map(cadmpeg_ir::scalar::PositiveLength::get),
+        [20.0, 30.0, 40.0]
+    );
+    assert_eq!(
+        placement.rows(),
+        [
+            [1.0, 0.0, 0.0, -10.0],
+            [0.0, 1.0, 0.0, 20.0],
+            [0.0, 0.0, 1.0, 0.0],
+            [0.0, 0.0, 0.0, 1.0],
+        ]
+    );
+    assert_eq!(op, BooleanOp::NewBody);
+}
