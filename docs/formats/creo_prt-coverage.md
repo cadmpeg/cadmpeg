@@ -889,8 +889,8 @@ boundaries. Invalid repeats and unconsumed bytes remain native; newly refused
 claimed eight-slot bodies emit `creo/geometry.pcurve-scalar-frame-unresolved`.
 Held-scalar bodies keep their separate token-boundary production.
 
-Standard positional plane envelopes use signed literals
-and bounded repeats through the same complete scalar-table function used for
+Standard positional plane envelopes outside the four-initial-`0f` compatibility
+production use signed literals and bounded repeats through the same complete scalar-table function used for
 boundary admission. The corner values and held-coordinate plane therefore use
 the same scalar interpretation. Leading-compact and structural-prefix terminal scalar frames retain
 their row-lane production. A bounded envelope without a complete scalar table
@@ -916,7 +916,7 @@ Synthetic tests cover counted repeats, invalid counts, stock angles, matrix
 columns for a cylinder, and both attributed refusal paths. Named local-system
 inheritance remains separate from pcurve repetition.
 
-A complete standard ten-slot envelope keeps its signed scalar language before
+A complete standard ten-slot envelope keeps its selected scalar language before
 the terminal reference. Boundary validation and corner transfer use the same
 complete table. The auxiliary-corner parser excludes that complete production.
 Synthetic coverage asserts its signed held coordinate, complete consumption,
@@ -935,3 +935,49 @@ source sample. A failed candidate emits
 `creo/geometry.sampled-pcurve-carrier-unresolved`; endpoint constraints and
 native samples remain retained. Synthetic coverage admits a sampled line and
 refuses an endpoint chord with a displaced interior sample.
+
+## Plane-carrier and sampled-path reports
+
+The transferred-plane note counts admitted neutral plane rows through
+`transferred_visible_plane_surface_row_count`. Envelope-derived equations can
+supply carrier constraints while their plane row remains unresolved. Each
+untransferred plane row retains `geometry.plane-carrier-unresolved` with its
+source identifier and byte location.
+
+Sample containment distinguishes an evaluated point outside its inferred
+carrier from a surface evaluation refusal. The first case retains
+`geometry.sampled-pcurve-carrier-unresolved`; the second retains
+`geometry.sampled-pcurve-evaluation-unresolved`. Both retain the sampled path.
+Synthetic tests assert the distinct outcomes and losses.
+
+
+### Reviewed scalar productions
+
+The 53-file envelope inventory has 436 retained records. The stateful reading
+agrees in all 347 evaluable complete standard envelopes; 89 remain unresolved.
+The literal-control alternative agrees in 80 and disagrees in 267. The four
+initial literal `0f` bytes identify a separate compatibility production with
+zero occurrences in this inventory. That production retains the surface-row
+literal reading and must reconcile with its local frame. An unresolved
+visible carrier receives `geometry.plane-carrier-unresolved` with its row ID
+and source offset.
+
+The 2,149 complete pcurve frames contain 9,670 odd slots. The other 633
+retained curve-parameter bodies use another production or fail the complete
+frame predicate. The signed
+first-coordinate reading changes 810 values and gives 232 uniquely agreeing
+paired samples; the second-coordinate alternative gives zero unique
+agreements. Both readings agree in 78 samples, fail in 98, and leave 402
+unevaluable. Standalone `12` occurs 285 times in 177 complete frames. Positive
+pi/2 gives 43 uniquely agreeing samples, the zero alternative gives zero,
+both agree in ten, both fail in 18, and 214 remain unevaluable.
+
+The diagonal middle-sign relation holds in all 410 images examined across the
+53 files. The compact rotation gate requires a direction repeat and a complete
+right-handed rotation. The repeated-origin test supplies a right-handed
+negative-unit matrix and retains its signed-origin assertion.
+
+The frozen `axis_aligned_plane` and `closed_plane_intersection_brep` envelopes
+use the compatibility prefix. Their base geometry is retained. The latter's
+six curve-parameter bodies are empty; its plane placements, line directions,
+and parameter ranges derive from those envelopes.

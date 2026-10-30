@@ -6749,6 +6749,10 @@ fn complete_standard_plane_envelope_slots<'a>(
 ) -> Option<ScalarTokenTable<'a>> {
     (body.first() != Some(&0x0e)).then_some(())?;
     let scalars = body.strip_suffix(&[0xf7, 0x0c]).unwrap_or(body);
+    if scalars.starts_with(&[0x0f; 4]) {
+        let slots = plane_envelope_row_scalar_slots(scalars, 10, cache)?;
+        return (slots.consumed == scalars.len()).then_some(slots);
+    }
     complete_plane_envelope_slots(scalars, 10, cache)
 }
 

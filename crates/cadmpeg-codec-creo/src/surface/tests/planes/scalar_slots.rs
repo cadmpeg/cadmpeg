@@ -284,3 +284,34 @@ fn plane_envelope_initial_repeat_is_retained_with_a_loss() {
         .iter()
         .any(|loss| loss.code == crate::loss::CreoLossCode::PlaneEnvelopeUnresolved.kind()));
 }
+
+#[test]
+fn standard_plane_envelope_prefix_selects_its_literal_production() {
+    let body = [0x0f, 0x0f, 0x0f, 0x0f, 0x0f, 0x0f, 0xe4, 0xe4, 0x0f, 0xe4];
+    let cache = scalar::ScalarCache::default();
+    let slots = crate::surface::complete_standard_plane_envelope_slots(&body, &cache)
+        .expect("complete literal envelope");
+    assert_eq!(
+        slots
+            .slots
+            .iter()
+            .map(|slot| slot.0.expect("finite envelope scalar"))
+            .collect::<Vec<_>>(),
+        [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 1.0, 1.0, 0.0, 1.0]
+    );
+    let mut trailing = body.to_vec();
+    trailing.push(0x18);
+    assert!(crate::surface::complete_standard_plane_envelope_slots(&trailing, &cache).is_none());
+    let mut stateful = body;
+    stateful[0] = 0x18;
+    let slots = crate::surface::complete_standard_plane_envelope_slots(&stateful, &cache)
+        .expect("complete stateful envelope");
+    assert_eq!(
+        slots
+            .slots
+            .iter()
+            .map(|slot| slot.0.expect("finite envelope scalar"))
+            .collect::<Vec<_>>(),
+        [0.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0]
+    );
+}

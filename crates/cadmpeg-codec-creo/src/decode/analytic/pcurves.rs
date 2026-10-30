@@ -1657,13 +1657,30 @@ fn linear_pcurve_carrier(
     })
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum SampledCarrierMatch {
+    Agrees,
+    Disagrees,
+    Unevaluable,
+}
+
+impl SampledCarrierMatch {
+    fn loss_code(self) -> Option<crate::loss::CreoLossCode> {
+        match self {
+            Self::Agrees => None,
+            Self::Disagrees => Some(crate::loss::CreoLossCode::SampledPcurveCarrierUnresolved),
+            Self::Unevaluable => Some(crate::loss::CreoLossCode::SampledPcurveEvaluationUnresolved),
+        }
+    }
+}
+
 fn sampled_pcurve_carrier_matches(
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     surface: &SurfaceGeometry,
     carrier: &CurveGeometry,
     samples: &crate::curve::TwoChartPcurveSamples,
     face_index: usize,
-) -> Result<bool, cadmpeg_core::CodecError> {
+) -> Result<SampledCarrierMatch, cadmpeg_core::CodecError> {
     for sample in &samples.samples {
         let [u, v] = sample[face_index];
         let Some(point) =
@@ -1671,13 +1688,13 @@ fn sampled_pcurve_carrier_matches(
                 cadmpeg_ir::eval::decode::surface_point(ctx, surface, u, v),
             )?)?
         else {
-            return Ok(false);
+            return Ok(SampledCarrierMatch::Unevaluable);
         };
         if !curve_contains_points(carrier, [[point.x, point.y, point.z]; 2]) {
-            return Ok(false);
+            return Ok(SampledCarrierMatch::Disagrees);
         }
     }
-    Ok(true)
+    Ok(SampledCarrierMatch::Agrees)
 }
 
 pub(in crate::decode) fn transfer_analytic_pcurve_carriers(
@@ -1742,12 +1759,22 @@ pub(in crate::decode) fn transfer_analytic_pcurve_carriers(
             }
             if let Some(carrier) = linear_pcurve_carrier(ctx, geometry, endpoints)? {
                 if let Some((samples, face_index)) = sampled {
-                    if !sampled_pcurve_carrier_matches(
+                    let agreement = sampled_pcurve_carrier_matches(
                         ctx, geometry, &carrier, samples, face_index,
-                    )? {
-                        losses.push(crate::loss::CreoLossCode::SampledPcurveCarrierUnresolved.note(
-                            format!("Curve {curve_id} chart on face {face_id} has samples outside its analytic candidate; its sampled path remains native")
-                        ));
+                    )?;
+                    let reason = match agreement {
+                        SampledCarrierMatch::Agrees => "agrees with its analytic candidate",
+                        SampledCarrierMatch::Disagrees => {
+                            "has samples outside its analytic candidate"
+                        }
+                        SampledCarrierMatch::Unevaluable => {
+                            "has samples that cannot be evaluated on its surface"
+                        }
+                    };
+                    if let Some(code) = agreement.loss_code() {
+                        losses.push(code.note(format!(
+                            "Curve {curve_id} chart on face {face_id} {reason}; its sampled path remains native"
+                        )));
                         return Ok(());
                     }
                 }
@@ -2660,6 +2687,42 @@ mod tests {
         .expect("admit the agreeing sampled line");
         assert_eq!(transferred.len(), 1);
         assert!(losses.is_empty());
+    }
+
+    #[test]
+    fn sampled_carrier_evaluation_refusal_has_a_distinct_loss() {
+        let (_, ir) = one_plane_pcurve_fixture();
+        let samples = crate::curve::TwoChartPcurveSamples {
+            curve_id: 7,
+            faces: [10, 11],
+            samples: vec![[[0.0, 0.0]; 2]],
+            offset: 0,
+        };
+        let unknown = SurfaceGeometry::Solved(SolvedSurfaceGeometry::Unknown { record: None });
+        let outcome = crate::decode::with_service_context(|ctx| {
+            let carrier = super::linear_pcurve_carrier(
+                ctx,
+                &ir.model.surfaces[0].geometry,
+                [[0.0, 0.0], [1.0, 0.0]],
+            )?
+            .expect("line on a plane");
+            super::sampled_pcurve_carrier_matches(ctx, &unknown, &carrier, &samples, 0)
+        })
+        .expect("evaluation refusal retains the samples");
+        assert_eq!(outcome, super::SampledCarrierMatch::Unevaluable);
+        let loss = outcome
+            .loss_code()
+            .expect("evaluation refusal loss")
+            .note("unevaluable surface");
+        assert_eq!(
+            loss.code,
+            crate::loss::CreoLossCode::SampledPcurveEvaluationUnresolved.kind()
+        );
+        assert_ne!(
+            loss.code,
+            crate::loss::CreoLossCode::SampledPcurveCarrierUnresolved.kind()
+        );
+        assert_eq!(samples.samples.len(), 1);
     }
 
     #[test]

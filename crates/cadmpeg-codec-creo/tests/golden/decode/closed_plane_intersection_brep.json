@@ -168,14 +168,14 @@
           "geometry": {
             "direction": {
               "x": 0.0,
-              "y": 0.0,
-              "z": -1.0
+              "y": 5.073268178784763e-18,
+              "z": 1.0
             },
             "kind": "line",
             "origin": {
-              "x": 1.0,
-              "y": 1.0,
-              "z": 1.0
+              "x": 0.0,
+              "y": 0.0,
+              "z": 0.0
             }
           },
           "id": "creo:visibgeom:curve#10",
@@ -188,14 +188,14 @@
           "geometry": {
             "direction": {
               "x": 0.0,
-              "y": 1.0,
-              "z": 0.0
+              "y": -1.0,
+              "z": -5.073268178784763e-18
             },
             "kind": "line",
             "origin": {
-              "x": 1.0,
-              "y": -1.0,
-              "z": 1.0
+              "x": 0.0,
+              "y": 0.5,
+              "z": 2.5366340893923816e-18
             }
           },
           "id": "creo:visibgeom:curve#11",
@@ -208,14 +208,14 @@
           "geometry": {
             "direction": {
               "x": 0.0,
-              "y": -0.7071067811865475,
-              "z": 0.7071067811865475
+              "y": 0.7071067811865475,
+              "z": -0.7071067811865475
             },
             "kind": "line",
             "origin": {
-              "x": 1.0,
-              "y": 1.0,
-              "z": -1.0
+              "x": 0.0,
+              "y": 2.5366340893923816e-18,
+              "z": 0.5
             }
           },
           "id": "creo:visibgeom:curve#12",
@@ -227,15 +227,15 @@
         {
           "geometry": {
             "direction": {
-              "x": -1.0,
+              "x": 1.0,
               "y": 0.0,
-              "z": 0.0
+              "z": -3.112280323415352e-17
             },
             "kind": "line",
             "origin": {
-              "x": 1.0,
-              "y": 1.0,
-              "z": 1.0
+              "x": 0.0,
+              "y": 0.0,
+              "z": 0.0
             }
           },
           "id": "creo:visibgeom:curve#13",
@@ -247,15 +247,15 @@
         {
           "geometry": {
             "direction": {
-              "x": 0.8944271909999159,
-              "y": 0.0,
-              "z": -0.4472135954999579
+              "x": -0.8944271909999159,
+              "y": 2.2688345031698572e-18,
+              "z": 0.4472135954999579
             },
             "kind": "line",
             "origin": {
-              "x": -3.0,
-              "y": 1.0,
-              "z": 1.0
+              "x": 1.0,
+              "y": 0.0,
+              "z": -3.112280323415352e-17
             }
           },
           "id": "creo:visibgeom:curve#14",
@@ -267,15 +267,15 @@
         {
           "geometry": {
             "direction": {
-              "x": -0.8944271909999159,
-              "y": 0.4472135954999579,
-              "z": 0.0
+              "x": 0.8944271909999159,
+              "y": -0.4472135954999579,
+              "z": -3.0105915975936884e-17
             },
             "kind": "line",
             "origin": {
-              "x": 1.0,
-              "y": -1.0,
-              "z": 1.0
+              "x": 0.0,
+              "y": 0.5,
+              "z": 2.5366340893923816e-18
             }
           },
           "id": "creo:visibgeom:curve#15",
@@ -292,7 +292,7 @@
             "curve": "creo:visibgeom:curve#10",
             "param_range": [
               0.0,
-              2.0
+              0.5
             ]
           },
           "end": "creo:visibgeom:vertex#2",
@@ -304,7 +304,7 @@
             "curve": "creo:visibgeom:curve#11",
             "param_range": [
               0.0,
-              2.0
+              0.5
             ]
           },
           "end": "creo:visibgeom:vertex#1",
@@ -316,7 +316,7 @@
             "curve": "creo:visibgeom:curve#12",
             "param_range": [
               0.0,
-              2.8284271247461903
+              0.7071067811865476
             ]
           },
           "end": "creo:visibgeom:vertex#3",
@@ -328,7 +328,7 @@
             "curve": "creo:visibgeom:curve#13",
             "param_range": [
               0.0,
-              4.0
+              1.0
             ]
           },
           "end": "creo:visibgeom:vertex#4",
@@ -340,7 +340,7 @@
             "curve": "creo:visibgeom:curve#14",
             "param_range": [
               0.0,
-              4.47213595499958
+              1.118033988749895
             ]
           },
           "end": "creo:visibgeom:vertex#2",
@@ -352,7 +352,7 @@
             "curve": "creo:visibgeom:curve#15",
             "param_range": [
               0.0,
-              4.47213595499958
+              1.118033988749895
             ]
           },
           "end": "creo:visibgeom:vertex#4",
@@ -531,13 +531,13 @@
         {
           "geometry": {
             "direction": {
-              "u": 0.0,
-              "v": -1.0
+              "u": 5.073268178784763e-18,
+              "v": 1.0
             },
             "kind": "line",
             "origin": {
-              "u": 1.0,
-              "v": 1.0
+              "u": 0.0,
+              "v": 0.0
             }
           },
           "id": "creo:visibgeom:pcurve#10:1",
@@ -545,7 +545,7 @@
             "form": {
               "parameter_range": [
                 0.0,
-                2.0
+                0.5
               ]
             },
             "source": "general"
@@ -554,13 +554,13 @@
         {
           "geometry": {
             "direction": {
-              "u": -1.0,
+              "u": 1.0,
               "v": 0.0
             },
             "kind": "line",
             "origin": {
-              "u": 1.0,
-              "v": 1.0
+              "u": 0.0,
+              "v": 0.0
             }
           },
           "id": "creo:visibgeom:pcurve#10:2",
@@ -568,7 +568,7 @@
             "form": {
               "parameter_range": [
                 0.0,
-                2.0
+                0.5
               ]
             },
             "source": "general"
@@ -577,13 +577,13 @@
         {
           "geometry": {
             "direction": {
-              "u": 1.0,
-              "v": 0.0
+              "u": -1.0,
+              "v": -5.073268178784763e-18
             },
             "kind": "line",
             "origin": {
-              "u": -1.0,
-              "v": 1.0
+              "u": 0.5,
+              "v": 2.5366340893923816e-18
             }
           },
           "id": "creo:visibgeom:pcurve#11:1",
@@ -591,7 +591,7 @@
             "form": {
               "parameter_range": [
                 0.0,
-                2.0
+                0.5
               ]
             },
             "source": "general"
@@ -601,12 +601,12 @@
           "geometry": {
             "direction": {
               "u": 0.0,
-              "v": 1.0
+              "v": -1.0
             },
             "kind": "line",
             "origin": {
-              "u": 1.0,
-              "v": -1.0
+              "u": 0.0,
+              "v": 0.5
             }
           },
           "id": "creo:visibgeom:pcurve#11:3",
@@ -614,30 +614,7 @@
             "form": {
               "parameter_range": [
                 0.0,
-                2.0
-              ]
-            },
-            "source": "general"
-          }
-        },
-        {
-          "geometry": {
-            "direction": {
-              "u": -0.7071067811865475,
-              "v": 0.7071067811865475
-            },
-            "kind": "line",
-            "origin": {
-              "u": 1.0,
-              "v": -1.0
-            }
-          },
-          "id": "creo:visibgeom:pcurve#12:1",
-          "metadata": {
-            "form": {
-              "parameter_range": [
-                0.0,
-                2.8284271247461903
+                0.5
               ]
             },
             "source": "general"
@@ -647,12 +624,35 @@
           "geometry": {
             "direction": {
               "u": 0.7071067811865475,
-              "v": 0.7071067811865475
+              "v": -0.7071067811865475
             },
             "kind": "line",
             "origin": {
-              "u": -1.0,
-              "v": -1.0
+              "u": 2.5366340893923816e-18,
+              "v": 0.5
+            }
+          },
+          "id": "creo:visibgeom:pcurve#12:1",
+          "metadata": {
+            "form": {
+              "parameter_range": [
+                0.0,
+                0.7071067811865476
+              ]
+            },
+            "source": "general"
+          }
+        },
+        {
+          "geometry": {
+            "direction": {
+              "u": -0.7071067811865475,
+              "v": -0.7071067811865475
+            },
+            "kind": "line",
+            "origin": {
+              "u": 1.0,
+              "v": -0.5
             }
           },
           "id": "creo:visibgeom:pcurve#12:4",
@@ -660,7 +660,7 @@
             "form": {
               "parameter_range": [
                 0.0,
-                2.8284271247461903
+                0.7071067811865476
               ]
             },
             "source": "general"
@@ -669,13 +669,13 @@
         {
           "geometry": {
             "direction": {
-              "u": 0.0,
-              "v": -1.0
+              "u": -3.112280323415352e-17,
+              "v": 1.0
             },
             "kind": "line",
             "origin": {
-              "u": 1.0,
-              "v": 1.0
+              "u": 0.0,
+              "v": 0.0
             }
           },
           "id": "creo:visibgeom:pcurve#13:2",
@@ -683,7 +683,7 @@
             "form": {
               "parameter_range": [
                 0.0,
-                4.0
+                1.0
               ]
             },
             "source": "general"
@@ -692,13 +692,13 @@
         {
           "geometry": {
             "direction": {
-              "u": -1.0,
+              "u": 1.0,
               "v": 0.0
             },
             "kind": "line",
             "origin": {
-              "u": 1.0,
-              "v": 1.0
+              "u": 0.0,
+              "v": 0.0
             }
           },
           "id": "creo:visibgeom:pcurve#13:3",
@@ -706,7 +706,7 @@
             "form": {
               "parameter_range": [
                 0.0,
-                4.0
+                1.0
               ]
             },
             "source": "general"
@@ -715,13 +715,13 @@
         {
           "geometry": {
             "direction": {
-              "u": -0.4472135954999579,
-              "v": 0.8944271909999159
+              "u": 0.4472135954999579,
+              "v": -0.8944271909999159
             },
             "kind": "line",
             "origin": {
-              "u": 1.0,
-              "v": -3.0
+              "u": -3.112280323415352e-17,
+              "v": 1.0
             }
           },
           "id": "creo:visibgeom:pcurve#14:2",
@@ -729,7 +729,7 @@
             "form": {
               "parameter_range": [
                 0.0,
-                4.47213595499958
+                1.118033988749895
               ]
             },
             "source": "general"
@@ -738,13 +738,13 @@
         {
           "geometry": {
             "direction": {
-              "u": -0.8944271909999157,
-              "v": 0.44721359549995787
+              "u": 0.8944271909999157,
+              "v": -0.44721359549995787
             },
             "kind": "line",
             "origin": {
-              "u": 2.9999999999999996,
-              "v": -2.9999999999999996
+              "u": -2.074853548943568e-17,
+              "v": -1.037426774471784e-17
             }
           },
           "id": "creo:visibgeom:pcurve#14:4",
@@ -752,7 +752,7 @@
             "form": {
               "parameter_range": [
                 0.0,
-                4.47213595499958
+                1.118033988749895
               ]
             },
             "source": "general"
@@ -761,13 +761,13 @@
         {
           "geometry": {
             "direction": {
-              "u": -0.8944271909999159,
-              "v": 0.4472135954999579
+              "u": 0.8944271909999159,
+              "v": -0.4472135954999579
             },
             "kind": "line",
             "origin": {
-              "u": 1.0,
-              "v": -1.0
+              "u": 0.0,
+              "v": 0.5
             }
           },
           "id": "creo:visibgeom:pcurve#15:3",
@@ -775,7 +775,7 @@
             "form": {
               "parameter_range": [
                 0.0,
-                4.47213595499958
+                1.118033988749895
               ]
             },
             "source": "general"
@@ -784,13 +784,13 @@
         {
           "geometry": {
             "direction": {
-              "u": 0.44721359549995787,
-              "v": -0.8944271909999157
+              "u": -0.44721359549995787,
+              "v": 0.8944271909999157
             },
             "kind": "line",
             "origin": {
-              "u": 1.0,
-              "v": 1.0
+              "u": 0.5,
+              "v": -1.0
             }
           },
           "id": "creo:visibgeom:pcurve#15:4",
@@ -798,7 +798,7 @@
             "form": {
               "parameter_range": [
                 0.0,
-                4.47213595499958
+                1.118033988749895
               ]
             },
             "source": "general"
@@ -810,9 +810,9 @@
         {
           "id": "creo:visibgeom:point#1",
           "position": {
-            "x": 1.0,
-            "y": 1.0,
-            "z": 1.0
+            "x": 0.0,
+            "y": 0.0,
+            "z": 0.0
           },
           "source_object": {
             "format": "creo",
@@ -822,9 +822,9 @@
         {
           "id": "creo:visibgeom:point#2",
           "position": {
-            "x": 1.0,
-            "y": 1.0,
-            "z": -1.0
+            "x": 0.0,
+            "y": 2.5366340893923816e-18,
+            "z": 0.5
           },
           "source_object": {
             "format": "creo",
@@ -834,9 +834,9 @@
         {
           "id": "creo:visibgeom:point#3",
           "position": {
-            "x": 1.0,
-            "y": -1.0,
-            "z": 1.0
+            "x": 0.0,
+            "y": 0.5,
+            "z": 2.5366340893923816e-18
           },
           "source_object": {
             "format": "creo",
@@ -846,9 +846,9 @@
         {
           "id": "creo:visibgeom:point#4",
           "position": {
-            "x": -3.0,
-            "y": 1.0,
-            "z": 1.0
+            "x": 1.0,
+            "y": 0.0,
+            "z": -3.112280323415352e-17
           },
           "source_object": {
             "format": "creo",
@@ -912,7 +912,7 @@
               "z": 0.0
             },
             "origin": {
-              "x": 1.0,
+              "x": 0.0,
               "y": 0.0,
               "z": 0.0
             },
@@ -938,7 +938,7 @@
             },
             "origin": {
               "x": 0.0,
-              "y": 1.0,
+              "y": 0.0,
               "z": 0.0
             },
             "u_axis": {
@@ -964,7 +964,7 @@
             "origin": {
               "x": 0.0,
               "y": 0.0,
-              "z": 1.0
+              "z": 0.0
             },
             "u_axis": {
               "x": 1.0,
@@ -1673,7 +1673,7 @@
             ],
             "offset": 105,
             "origin": [
-              1.0,
+              0.0,
               0.0,
               0.0
             ],
@@ -1695,7 +1695,7 @@
             "offset": 143,
             "origin": [
               0.0,
-              1.0,
+              0.0,
               0.0
             ],
             "source_section": "VisibGeom",
@@ -1717,7 +1717,7 @@
             "origin": [
               0.0,
               0.0,
-              1.0
+              0.0
             ],
             "source_section": "VisibGeom",
             "surface_id": 3,
@@ -1739,22 +1739,22 @@
             "envelope": {
               "bounds_2d": [
                 [
-                  1.0,
-                  1.0
+                  0.0,
+                  0.0
                 ],
                 [
-                  1.0,
-                  1.0
+                  0.0,
+                  0.0
                 ]
               ],
               "corners_3d": [
                 [
-                  1.0,
+                  0.0,
                   -1.0,
                   -1.0
                 ],
                 [
-                  1.0,
+                  0.0,
                   2.0,
                   2.0
                 ]
@@ -1782,30 +1782,30 @@
           {
             "body": "0f0f0f0f43f0000f43f000e40f2f0000",
             "corner_coordinate_equal": [
-              true,
+              false,
               true,
               false
             ],
             "envelope": {
               "bounds_2d": [
                 [
-                  1.0,
-                  1.0
+                  0.0,
+                  0.0
                 ],
                 [
-                  1.0,
-                  1.0
+                  0.0,
+                  0.0
                 ]
               ],
               "corners_3d": [
                 [
                   -1.0,
-                  1.0,
+                  0.0,
                   -1.0
                 ],
                 [
-                  -1.0,
                   1.0,
+                  0.0,
                   2.0
                 ]
               ],
@@ -1839,24 +1839,24 @@
             "envelope": {
               "bounds_2d": [
                 [
-                  1.0,
-                  1.0
+                  0.0,
+                  0.0
                 ],
                 [
-                  1.0,
-                  1.0
+                  0.0,
+                  0.0
                 ]
               ],
               "corners_3d": [
                 [
                   -1.0,
                   -1.0,
-                  1.0
+                  0.0
                 ],
                 [
                   1.0,
                   2.0,
-                  1.0
+                  0.0
                 ]
               ],
               "kind": "standard"
@@ -1889,24 +1889,24 @@
             "envelope": {
               "bounds_2d": [
                 [
-                  1.0,
-                  1.0
+                  0.0,
+                  0.0
                 ],
                 [
-                  1.0,
-                  1.0
+                  0.0,
+                  0.0
                 ]
               ],
               "corners_3d": [
                 [
-                  1.0,
-                  1.0,
-                  1.0
+                  0.0,
+                  0.0,
+                  0.0
                 ],
                 [
-                  1.0,
-                  1.0,
-                  1.0
+                  0.0,
+                  0.0,
+                  0.0
                 ]
               ],
               "kind": "standard"
@@ -3562,7 +3562,7 @@
           "namespace": "creo",
           "scope": "namespaced"
         },
-        "message": "Transferred 4 model-space plane carrier(s) from complete VisibGeom local-system support frames.",
+        "message": "Transferred 4 model-space plane carrier(s) from admitted VisibGeom plane rows.",
         "severity": "info"
       },
       {

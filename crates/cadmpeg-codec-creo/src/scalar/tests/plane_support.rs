@@ -1,4 +1,8 @@
 use super::*;
+use crate::scalar::{
+    decode_compact_plane_rotation, decode_pcurve_scalar_frame, decode_stateful_scalar_run,
+    rotation_plane_axes, StatefulScalarKind,
+};
 
 #[test]
 fn plane_support_layout_keeps_an_invalid_generic_frame_unresolved() {
@@ -164,11 +168,40 @@ fn compact_plane_origins_repeat_the_preceding_scalar_and_keep_signed_units() {
         assert_eq!(&slots[9..], &expected);
     }
     for (unit, expected) in [(0x0f, 1.0), (0x10, -1.0)] {
-        let body = [0x0f, 0x18, 0xe5, 0x0f, 0x18, 0xe5, unit, 0xe4, 0x18, 0x18];
+        let body = [0x0f, 0x18, 0xe5, unit, 0x18, 0xe5, unit, 0xe4, 0x18, 0x18];
         let slots = decode_plane_support_local_system_slots(&body, &ScalarCache::default())
             .expect("complete repeated origin");
         assert_eq!(&slots[9..], &[expected, 0.0, 0.0]);
+        let compact = decode_compact_plane_rotation(&body, &ScalarCache::default())
+            .expect("compact signed basis")
+            .expect("complete repeated compact origin");
+        assert_eq!(&compact.as_raw()[9..], &[expected, 0.0, 0.0]);
     }
+    assert!(decode_stateful_scalar_run(
+        &[0x12],
+        0,
+        None,
+        &ScalarCache::default(),
+        StatefulScalarKind::Plane,
+    )
+    .is_none());
+    let literal_matrix = [
+        0x0f, 0x18, 0x18, 0x18, 0x0f, 0x18, 0x18, 0x18, 0x0f, 0x18, 0x18, 0x18,
+    ];
+    assert!(decode_compact_plane_rotation(&literal_matrix, &ScalarCache::default(),).is_none());
+    assert_eq!(
+        crate::decode::with_service_context(|ctx| {
+            crate::surface::complete_plane_local_system(
+                ctx,
+                &literal_matrix,
+                &ScalarCache::default(),
+                &mut Vec::new(),
+            )
+        })
+        .expect("bounded literal support body")
+        .map(|(_, layout)| layout),
+        Some(PlaneSupportFrameLayout::SupportTriples)
+    );
     for origin in [vec![0xe5], vec![0x18, 0xe6], vec![0xe6, 0x18]] {
         let body = [prefix.as_slice(), &origin].concat();
         assert!(decode_plane_support_local_system_slots(&body, &ScalarCache::default()).is_none());
@@ -215,14 +248,14 @@ fn positional_pcurve_frame_has_bounded_repeats_and_signed_coordinates() {
         0x2d, 0x10, 0, 0, 0, 0, 0, 0, 0xe4, 0x18, 0x0f, 0x46, 0x20, 0, 0, 0, 0, 0, 0, 0x10, 0xe5,
     ];
     let frame =
-        super::decode_pcurve_scalar_frame(&body, &ScalarCache::default()).expect("complete pcurve");
+        decode_pcurve_scalar_frame(&body, &ScalarCache::default()).expect("complete pcurve");
     assert_eq!(frame.values, [4.0, 4.0, 0.0, 1.0, -8.0, -1.0, -1.0, -1.0]);
     assert_eq!(frame.token_count, 7);
     for invalid in [
         &body[..body.len() - 1],
         &[body.as_slice(), &[0x18]].concat(),
     ] {
-        assert!(super::decode_pcurve_scalar_frame(invalid, &ScalarCache::default()).is_none());
+        assert!(decode_pcurve_scalar_frame(invalid, &ScalarCache::default()).is_none());
     }
 }
 
@@ -250,7 +283,7 @@ fn rotation_plane_origins_use_signed_coordinate_forms() {
     .expect("complete rotation frame");
     assert_eq!(decoded.1, PlaneSupportFrameLayout::RotationColumns);
     assert_eq!(&decoded.0.get()[9..], &[4.0, 2.0, -8.0]);
-    let (u, n) = super::rotation_plane_axes(decoded.0.as_raw()).expect("rotation axes");
+    let (u, n) = rotation_plane_axes(decoded.0.as_raw()).expect("rotation axes");
     for (actual, expected) in u.into_iter().chain(n).zip([0.6, 0.0, -0.8, 0.8, 0.0, 0.6]) {
         assert!((actual - expected).abs() <= EPS_ROTATION_TEST);
     }

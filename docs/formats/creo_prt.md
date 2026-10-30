@@ -1837,7 +1837,10 @@ slot and does not change the scalar language. A compact envelope can instead be
 the unique terminal nine-slot scalar frame after a nonempty structural prefix.
 Bytes outside these layouts do not form a plane envelope.
 
-The standard positional envelope uses a bounded stateful scalar stream. `18` is zero, `0f` is positive one, `10` is negative one, and
+A standard positional envelope with four initial literal `0f` bytes uses the
+surface-row literal grammar: `0f` is zero and `e4` is positive one. Its complete
+ten-slot body must reconcile with the local frame before carrier transfer.
+Other standard positional envelopes use a bounded stateful scalar stream. `18` is zero, `0f` is positive one, `10` is negative one, and
 `0e` within the scalar stream is positive one half. `e4`, `e5`, and `e6` repeat
 the preceding scalar one, two, and three times. The first scalar is a literal.
 Every literal replaces the preceding value. Repeats carry across domain-bound
@@ -1848,6 +1851,11 @@ slot. The leading-compact and structural-prefix terminal nine-slot frames retain
 surface-row literal grammar and its compact positive-half literal. Their
 structural prefixes are not scalar values.
 
+Across 53 local files, 347 complete standard envelopes agree with the stateful
+reading, and zero disagree; 89 retained envelopes remain unresolved. The
+literal-control alternative gives 80 agreements and 267 disagreements. The
+four-initial-`0f` compatibility prefix has zero occurrences in these files.
+
 `local_sys` has twelve scalar slots. Plane rows use the following storage forms.
 Specialized support-frame bodies expand their direction values into three
 support triples.
@@ -1856,7 +1864,8 @@ A compact rotation body stores a row-major 3x3 rotation matrix followed by
 three model-space origin coordinates.
 In the nine direction slots, `0f` is positive one, `10` is negative one, and
 `18` is zero. `e4`, `e5`, and `e6` repeat the preceding scalar one, two, and
-three additional times. Origin literals also include `0e` positive one half.
+three additional times. At least one repeat occurs in the direction matrix.
+Origin literals also include `0e` positive one half.
 The complete compact rotation production takes precedence over specialized
 support images with the same control-only direction stream.
 A repeat requires a preceding scalar and must end within slot eleven. It can
@@ -1972,6 +1981,9 @@ and `A = 10` selects negative model X. `C = 0f` selects positive model Z
 and `C = 10` selects negative model Z. `B = A * C` under those signed-unit
 values; another middle sign does not establish this compact frame.
 
+The compact diagonal image's middle-sign relation holds in 410 images across
+53 files, with zero failures and zero unevaluable images.
+
 The positional plane image `18 e4 A 18 0f 18 C 18 e4` has opposite signed unit
 tokens `A` and `C`. `A` selects the model-X normal and `C` selects the model-Z
 parameter direction: `0f` is positive and `10` is negative. Its support-triple
@@ -1999,7 +2011,7 @@ The zero components are literal `18` bytes. The middle row is `18 0f 18` for
 nonzero explicit scalars in their signed coordinate lanes. All three matrix columns are finite unit
 vectors, mutually orthogonal, and right-handed. The first column is the
 parameter direction and the third column is the plane normal. The middle row
-is a signed unit row, not a zero-rank marker. The origin production supplies
+is a signed unit row. The origin production supplies
 three coordinates. Its literals use the signed first-coordinate lane, including positive `2d`, negative
 `46`, and the positive DICT exponent lattice. Origin repeat tokens retain the
 preceding scalar value, initially `d`. The complete production must consume
@@ -2288,6 +2300,19 @@ array boundary or the next `e0` named-field boundary. An `e0` inside an explicit
 scalar payload is data. No partial slot or trailing scalar belongs to this
 array.
 
+The complete pcurve inventory contains 2,149 frames and 9,670 odd-coordinate
+slots. Of 810 values changed by the lane choice, paired samples give 232
+agreements unique to the signed first-coordinate reading, 78 agreements under
+both readings, 98 failures under both readings, and 402 unevaluable samples.
+The second-coordinate alternative has zero unique agreements.
+
+Standalone `12` occurs 285 times in 177 complete pcurve frames. The positive
+pi/2 reading gives 20 complete-record agreements, 29 disagreements, and 128
+unresolved records. The zero reading gives zero agreements, 49 disagreements,
+and 128 unresolved records. Affected samples give 43 agreements unique to
+positive pi/2, ten agreements under both readings, 18 failures under both
+readings, and 214 unevaluable samples.
+
 The exact wrapper `d7 e8 03 <scalar> 1e` selects the held-scalar production at
 a token boundary. It occupies one held scalar slot and retains the row-lane
 literal grammar; wrapper bytes are not parameter values. A payload byte sequence
@@ -2371,7 +2396,9 @@ indices belong to the stored curve.
 
 The scalar stream uses the direct eight-slot pcurve literals and bounded
 repeats, including `12` positive pi/2 and `e7 <count>`. The first scalar is
-a literal. Every explicit coordinate uses the signed first-coordinate lane.
+a literal. In complete direct, replay, and counted pcurve bodies, explicit
+`2d` is positive and explicit `46` is negative in both chart-coordinate slots.
+The other explicit coordinates use the signed first-coordinate lane.
 A repeat carries across chart and sample boundaries but cannot exceed
 `4 * count` slots. In either chart's first-coordinate slot, `32 <tail7>`
 is an additional eight-byte positive sub-unit scalar that reconstructs

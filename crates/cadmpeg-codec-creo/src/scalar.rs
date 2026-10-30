@@ -101,11 +101,13 @@ pub(crate) fn decode_compact_plane_rotation(
 ) -> Option<Result<FiniteVector<12>, &'static str>> {
     let mut values = [0.0; 12];
     let mut slot = 0usize;
+    let mut repeated = false;
     let mut view = View::over_retained(body);
     while slot < 9 {
         match view.u8()? {
             token @ 0xe4..=0xe6 => {
                 repeat_scalar_slots(&mut values, &mut slot, token)?;
+                repeated = true;
             }
             token @ (0x18 | 0x0f | 0x10) => {
                 values[slot] = match token {
@@ -118,6 +120,7 @@ pub(crate) fn decode_compact_plane_rotation(
             _ => return None,
         }
     }
+    repeated.then_some(())?;
     let [u, v, normal] =
         [0, 1, 2].map(|column| [values[column], values[column + 3], values[column + 6]]);
     if ![u, v, normal]
@@ -1430,11 +1433,6 @@ pub(crate) fn decode_plane_support_local_system(
         decode_stateful_scalar_frame_prefix::<12>(body, cache, StatefulScalarKind::Plane)
     {
         if axis_unit_matrix_prefix(body, &frame)
-            && !frame
-                .tokens
-                .iter()
-                .flatten()
-                .any(|token| body.get(token.offset) == Some(&0x12))
             && orthogonal_plane_columns(&frame.values).is_some()
         {
             if cursor != body.len() || rotation_plane_axes(&frame.values).is_none() {
@@ -2000,6 +1998,7 @@ fn decode_plane_support_special_prefix(
 
 fn axis_unit_matrix_prefix(body: &[u8], frame: &StatefulScalarFrame<12>) -> bool {
     let mut slots = 0usize;
+    let mut repeated = false;
     for token in frame.tokens.iter().flatten() {
         if !matches!(
             body.get(token.offset),
@@ -2007,12 +2006,13 @@ fn axis_unit_matrix_prefix(body: &[u8], frame: &StatefulScalarFrame<12>) -> bool
         ) {
             return false;
         }
+        repeated |= matches!(body.get(token.offset), Some(0xe4..=0xe6));
         let Some(next) = slots.checked_add(token.repeat) else {
             return false;
         };
         slots = next;
         if slots >= 9 {
-            return true;
+            return repeated;
         }
     }
     false

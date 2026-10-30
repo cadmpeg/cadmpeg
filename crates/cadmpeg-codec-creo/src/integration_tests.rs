@@ -190,6 +190,51 @@ fn rotation_plane_pipeline_shares_boundary_and_origin_admission() {
 }
 
 #[test]
+fn plane_carrier_report_excludes_untransferred_rows() {
+    let fixture = include_bytes!("../tests/golden/fixtures/axis_aligned_plane.prt");
+    for compatible in [true, false] {
+        let mut input = fixture.to_vec();
+        if !compatible {
+            let prefix = [0x0f, 0x0f, 0x0f, 0x0f, 0x43];
+            let offset = input
+                .windows(prefix.len())
+                .position(|bytes| bytes == prefix)
+                .expect("literal envelope prefix");
+            input[offset] = 0x18;
+        }
+        let result = decode(input);
+        let transferred = result
+            .ir()
+            .model
+            .surfaces
+            .iter()
+            .filter(|surface| {
+                matches!(
+                    surface.geometry.solved(),
+                    Some(SolvedSurfaceGeometry::Plane(_))
+                )
+            })
+            .count();
+        assert_eq!(transferred, usize::from(compatible));
+        let losses = &result.report().losses;
+        assert_eq!(
+            losses
+                .iter()
+                .any(|loss| loss.code == crate::loss::CreoLossCode::CarrierVisibGeomPlanes.kind()),
+            compatible
+        );
+        assert_eq!(
+            losses
+                .iter()
+                .any(|loss| loss.code == crate::loss::CreoLossCode::PlaneCarrierUnresolved.kind()),
+            !compatible
+        );
+        assert_eq!(result.report().geometry_transferred(), compatible);
+        assert_valid(&result);
+    }
+}
+
+#[test]
 fn datum_pipeline_merges_placed_geometry_with_ordered_feature_history() {
     let mut datum = b"srf_array\0\xf8\x01".to_vec();
     datum.extend([4, 0x22, 4, 1, 1, 0]);
