@@ -74,11 +74,15 @@ pub(crate) enum CreoLossCode {
     TriangleStripRepresentationConflict,
     /// General model B-rep transfer remains incomplete for later instances.
     BrepTransferIncomplete,
+    /// A compact-frame component has unresolved source faces.
+    BrepCompactFrameComponentUnresolved,
     /// A saved section spline cannot form a NURBS curve.
     SectionSplineUnresolved,
     /// A named surface-prototype field's bounded scalar body states no slots
     /// and is retained opaque.
     SurfacePrototypeFieldRetained,
+    /// A compact plane rotation has no complete finite origin.
+    PlaneCompactFrameUnresolved,
     /// A resolved extrusion body failed shell admission.
     ExtrusionBodyRejected,
     /// Remaining per-instance surfaces, curves, and vertices stay gated.
@@ -226,8 +230,12 @@ impl CreoLossCode {
             Self::LegacyStringEncodingRetained => "legacy.string-encoding-retained",
             Self::TriangleStripRepresentationConflict => "geometry.triangle-strip-conflict",
             Self::BrepTransferIncomplete => "geometry.brep-incomplete",
+            Self::BrepCompactFrameComponentUnresolved => {
+                "geometry.brep-compact-frame-component-unresolved"
+            }
             Self::SectionSplineUnresolved => "geometry.section-spline-unresolved",
             Self::SurfacePrototypeFieldRetained => "geometry.surface-prototype-field-retained",
+            Self::PlaneCompactFrameUnresolved => "geometry.plane-compact-frame-unresolved",
             Self::ExtrusionBodyRejected => "topology.extrusion-body-rejected",
             Self::GeometryInstanceCarriersGated => "geometry.instance-carriers-gated",
             Self::VisibGeomSurfaceUntransferred => "geometry.visibgeom-surface-untransferred",
@@ -321,6 +329,7 @@ impl CreoLossCode {
             | Self::CarrierSharedExtrusionGenerators
             | Self::CarrierTorusParameterRetention => Severity::Info,
             Self::BrepTransferIncomplete
+            | Self::BrepCompactFrameComponentUnresolved
             | Self::GeometryInstanceCarriersGated
             | Self::TopologyIncompleteComponents
             | Self::TopologyVertexIdentifierUnstatable
@@ -328,6 +337,7 @@ impl CreoLossCode {
             Self::SectionSplineUnresolved
             | Self::CompressedSectionUnexpanded
             | Self::SurfacePrototypeFieldRetained
+            | Self::PlaneCompactFrameUnresolved
             | Self::SourceDialectUnverified
             | Self::LegacyRealValueUnresolved
             | Self::LegacyIntegerValueUnresolved
@@ -418,6 +428,7 @@ impl CreoLossCode {
             }
             Self::TriangleStripRepresentationConflict
             | Self::BrepTransferIncomplete
+            | Self::BrepCompactFrameComponentUnresolved
             | Self::GeometryInstanceCarriersGated
             | Self::VisibGeomSurfaceUntransferred
             | Self::VisibGeomCurveUntransferred
@@ -428,6 +439,7 @@ impl CreoLossCode {
             | Self::SectionSegmentGeometryUnresolved
             | Self::SectionSplineUnresolved
             | Self::SurfacePrototypeFieldRetained
+            | Self::PlaneCompactFrameUnresolved
             | Self::PlaneSupportVariantsCapped => LossTaxonomy::GeometryNotTransferred,
             Self::TopologyIncompleteComponents
             | Self::TopologyVertexIdentifierUnstatable
@@ -515,8 +527,10 @@ mod tests {
                 "legacy.string-encoding-retained",
                 "geometry.triangle-strip-conflict",
                 "geometry.brep-incomplete",
+                "geometry.brep-compact-frame-component-unresolved",
                 "geometry.section-spline-unresolved",
                 "geometry.surface-prototype-field-retained",
+                "geometry.plane-compact-frame-unresolved",
                 "topology.extrusion-body-rejected",
                 "geometry.instance-carriers-gated",
                 "geometry.visibgeom-surface-untransferred",
