@@ -14,3 +14,9 @@ crates/*/tests/golden/**/*.bin binary
 crates/*/tests/golden/fixtures/** binary
 crates/*/tests/fixtures/** binary
 crates/*/src/**/tests/data/** binary
+
+# Public corpus CAD bytes are SHA-256 pinned in corpus/manifest.toml. Keep
+# README and other track prose as text.
+corpus/nist-pmi/** binary
+corpus/nist-pmi/**/*.md text eol=lf
+
