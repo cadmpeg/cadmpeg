@@ -717,11 +717,11 @@ the native feature when a fixed lane carries a symmetric distance.
 
 ### DR-122. Derived Base Feature source and frame
 
-**Question.** Which fields identify the source body and local frame of a `Derived Base Feature` scope?
+**Question.** Which field of a `Derived Base Feature` scope identifies the derived source body, and which field stores its local frame or mirror plane?
 
-**Known.** The scope has a reference table and current and previous ASM history-state identities. Its result transition identifies result bodies. The result body identity does not identify a derived source body or a source frame.
+**Known.** The 711-byte frame stores nine typed-reference elements, a zero GUID, the kind, the ordinal, and an f64 that differs in every scope. The element at offset 79 stores the Design body entity suffix of the result body. Every reference in the scope is a Design record of the same stream. The frame stores no matrix. The `DerivedBaseFeature` forms (707 and 491 bytes) store the same elements and roles, a part with a mirror label places its occurrence with an identity rotation, and no field in either form stores a plane or a matrix. The 761-byte frame has one additional typed-reference element with a role GUID that no 711-byte frame stores. Its record index is lower than the scope record index.
 
-**Need.** Independent source-body and placement changes with the other scope fields fixed.
+**Need.** A scope whose source document or source body changes with the result body fixed. The meaning of the f64 and of the additional 761-byte element.
 
 **Conflict.** None.
 
