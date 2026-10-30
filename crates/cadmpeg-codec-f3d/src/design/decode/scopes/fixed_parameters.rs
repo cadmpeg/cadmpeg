@@ -99,6 +99,18 @@ fn exact_ordered_fixed_extrude_lanes(
     let mut against_distance = None;
     let mut side_two_taper_angle = None;
     let mut seen_fixed_ordinals = [false; 4];
+    let ordinal_zero = fixed_lanes
+        .iter()
+        .flatten()
+        .find(|(_, lane)| lane.ordinal == 0);
+    let ordinal_one = fixed_lanes
+        .iter()
+        .flatten()
+        .find(|(_, lane)| lane.ordinal == 1);
+    let swapped_two_lane = lane_count == 2
+        && embedded_distance.is_none()
+        && ordinal_zero.is_some_and(|(_, lane)| lane.value.get() == 0.0)
+        && ordinal_one.is_some_and(|(_, lane)| lane.value.get() != 0.0);
     for (record_index, lane) in fixed_lanes.into_iter().flatten() {
         let ordinal = usize::from(lane.ordinal);
         if ordinal >= lane_count || seen_fixed_ordinals[ordinal] {
@@ -135,6 +147,10 @@ fn exact_ordered_fixed_extrude_lanes(
         };
         let lane_kind = match source_kind {
             Some(kind) => kind.as_str(),
+            None if swapped_two_lane => match lane.ordinal {
+                0 => "TaperAngle",
+                _ => "AlongDistance",
+            },
             None => match lane.ordinal {
                 0 => "AlongDistance",
                 1 => "TaperAngle",

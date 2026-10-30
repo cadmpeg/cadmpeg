@@ -5121,7 +5121,10 @@ fn validate_construction_operand_groups(ctx: &Ctx, findings: &mut Vec<Finding>) 
 
 /// Validate path-feature operand roles against the scope construction.
 ///
-/// The role grammar is shared with the fixed Loft projector. Keeping the
+/// The role grammar is shared with the fixed Loft projector, though the
+/// projector additionally gates admission on scope member count, group
+/// ordinals, and legacy carrier pairing (this validator remains role-only and
+/// reports valid for shapes the projector leaves Native). Keeping the
 /// predicate independent of native byte offsets lets validation reject a
 /// malformed role combination without rejecting a valid section/guide mix.
 pub(crate) fn loft_operand_roles_are_valid(

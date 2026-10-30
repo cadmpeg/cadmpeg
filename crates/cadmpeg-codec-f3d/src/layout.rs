@@ -3301,6 +3301,20 @@ pub(crate) mod marker_one_revolve_prologue {
     pub(crate) const STRUCTURAL_CONSTANT: usize = 34;
 }
 
+/// Byte offsets for the `offset_24_extrude_prologue` record.
+///
+/// Spec §3.1. Record length 28 B.
+///
+/// ```text
+/// Offsets are relative to the Extrude primary indexed header.
+/// ```
+pub(crate) mod offset_24_extrude_prologue {
+    /// Offset of `zero_run_13` (`bytes[13]`). Spec §3.1.
+    pub(crate) const ZERO_RUN_13: usize = 11;
+    /// Offset of `operation` (`u32`, little-endian). Spec §3.1.
+    pub(crate) const OPERATION: usize = 24;
+}
+
 /// Byte offsets for the `current_extrude_operation_fields` record.
 ///
 /// Spec §3.1. Record length 42 B.
