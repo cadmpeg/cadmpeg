@@ -7692,6 +7692,31 @@ Unstated regions:
 - `434..438` (4 B): The specification states no field in this range.
 - `487..491` (4 B): The specification states no field in this range.
 
+## `entity_tracking_carrier_prefix`
+
+Spec §3.1 · layout: byte offsets · size: 73 B
+
+Offsets are relative to the carrier indexed header; the optional related identities follow at offset 73.
+
+Parsed by:
+- `crates/cadmpeg-codec-f3d/src/design/decode/operands.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 11 | 10 | `zero_run_10` | `bytes[10]` | little | spec | The carrier header is followed by ten zero bytes, u32 values `1, 0, 1`, a u32 lane with value `2` or `3` |
+| 21 | 12 | `lead_words` | `bytes[12]` | little | spec | The carrier header is followed by ten zero bytes, u32 values `1, 0, 1`, a u32 lane with value `2` or `3` |
+| 33 | 4 | `lane` | `u32` | little | spec | The carrier header is followed by ten zero bytes, u32 values `1, 0, 1`, a u32 lane with value `2` or `3` |
+| 37 | 8 | `primary_identity` | `u64` | little | spec | The carrier header is followed by ten zero bytes, u32 values `1, 0, 1`, a u32 lane with value `2` or `3` |
+| 45 | 8 | `zero_run_8_first` | `u64` | little | spec | The carrier header is followed by ten zero bytes, u32 values `1, 0, 1`, a u32 lane with value `2` or `3` |
+| 53 | 4 | `one` | `u32` | little | spec | The carrier header is followed by ten zero bytes, u32 values `1, 0, 1`, a u32 lane with value `2` or `3` |
+| 57 | 4 | `selector` | `i32` | little | spec | The carrier header is followed by ten zero bytes, u32 values `1, 0, 1`, a u32 lane with value `2` or `3` |
+| 61 | 4 | `kind` | `u32` | little | spec | The carrier header is followed by ten zero bytes, u32 values `1, 0, 1`, a u32 lane with value `2` or `3` |
+| 65 | 8 | `zero_run_8_second` | `u64` | little | spec | The carrier header is followed by ten zero bytes, u32 values `1, 0, 1`, a u32 lane with value `2` or `3` |
+
+Unstated regions:
+
+- `0..11` (11 B): The indexed header precedes this field run.
+
 ## Not tabulated
 
 | Area | Spec | Reason |

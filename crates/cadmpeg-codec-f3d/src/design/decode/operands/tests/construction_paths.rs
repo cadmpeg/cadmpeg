@@ -500,3 +500,45 @@ fn legacy_loft_body_carriers_admit_only_the_class_keyed_frames() {
     )
     .is_none());
 }
+
+#[test]
+fn construction_tracking_path_admits_lane_two_and_three_only() {
+    fn tracking_path(lane: u32) -> Vec<u8> {
+        let wrapper_record_index = 300u32;
+        let mut bytes = Vec::new();
+        indexed_header(&mut bytes, *b"361", wrapper_record_index);
+        bytes.extend_from_slice(&[0; 10]);
+        bytes.push(1);
+        bytes.extend_from_slice(&u64::from(wrapper_record_index + 1).to_le_bytes());
+        bytes.extend_from_slice(&[0; 3]);
+        indexed_header(&mut bytes, *b"363", wrapper_record_index + 1);
+        bytes.extend_from_slice(&[0; 10]);
+        for word in [1u32, 0, 1, lane] {
+            bytes.extend_from_slice(&word.to_le_bytes());
+        }
+        bytes.extend_from_slice(&158u64.to_le_bytes());
+        bytes.extend_from_slice(&0u64.to_le_bytes());
+        bytes.extend_from_slice(&1u32.to_le_bytes());
+        bytes.extend_from_slice(&2i32.to_le_bytes());
+        bytes.extend_from_slice(&2u32.to_le_bytes());
+        bytes.extend_from_slice(&0u64.to_le_bytes());
+        for identity in [102u64, 102] {
+            bytes.extend_from_slice(&1u32.to_le_bytes());
+            bytes.extend_from_slice(&identity.to_le_bytes());
+        }
+        indexed_header(&mut bytes, *b"301", wrapper_record_index + 2);
+        bytes
+    }
+    let class = crate::records::references::DesignClassTag::try_from("361".to_owned()).unwrap();
+    for lane in [2u32, 3] {
+        let path = parse_construction_tracking_path(&tracking_path(lane), 0, 300, &class)
+            .expect("admitted lane");
+        assert_eq!(path.primary_identity, 158);
+        assert_eq!((path.selector, path.kind), (2, 2));
+        assert_eq!(path.first_related_identity().map(|id| id.value), Some(102));
+        assert_eq!(path.second_related_identity().map(|id| id.value), Some(102));
+    }
+    for lane in [0u32, 1, 4] {
+        assert!(parse_construction_tracking_path(&tracking_path(lane), 0, 300, &class).is_none());
+    }
+}
