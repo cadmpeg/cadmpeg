@@ -679,7 +679,7 @@ the native feature when a fixed lane carries a symmetric distance.
 
 **Note.** Keep controls and extended selections native. A neutral Wrap requires a proven effect, selected profile, target face, and placement. The existing Wrap operation has no independent horizontal, vertical, or rotation controls.
 
-### DR-119. Move transform envelopes with leading references
+### DR-126. Move transform envelopes with leading references
 
 **Question.** In the Move envelope with leading references, is the matrix an absolute transform or a transform relative to a referenced frame?
 
