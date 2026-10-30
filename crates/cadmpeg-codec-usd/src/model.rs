@@ -641,6 +641,7 @@ impl Builder<'_, '_, '_, '_> {
                             .filter(|body| bodies.contains(&body.id))
                         {
                             body.transform = local;
+                            body.name = Some(prim.name.clone());
                         }
                         bodies
                     }

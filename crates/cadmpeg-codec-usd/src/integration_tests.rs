@@ -85,7 +85,8 @@ fn meshed_on_write(result: &cadmpeg_ir::codec::DecodeResult) -> bool {
     })
 }
 
-/// Every coordinate a model's tessellations and curve poles hold, in order.
+/// Every coordinate a model's tessellations and the poles of its curves that
+/// no edge uses hold, in order.
 fn coordinates(result: &cadmpeg_ir::codec::DecodeResult) -> Vec<f64> {
     let model = &result.ir().model;
     let mut out = Vec::new();
@@ -95,7 +96,12 @@ fn coordinates(result: &cadmpeg_ir::codec::DecodeResult) -> Vec<f64> {
             out.extend([point.x, point.y, point.z]);
         }
     }
-    for curve in &model.curves {
+    for curve in model.curves.iter().filter(|curve| {
+        !model
+            .edges
+            .iter()
+            .any(|edge| edge.carrier.curve() == Some(&curve.id))
+    }) {
         if let cadmpeg_ir::geometry::CurveGeometry::Solved(
             cadmpeg_ir::geometry::SolvedCurveGeometry::Nurbs(nurbs),
         ) = &curve.geometry
@@ -129,7 +135,16 @@ fn every_fixture_round_trips_its_geometry() {
                     .iter()
                     .map(cadmpeg_ir::tessellation::Tessellation::triangles)
                     .collect::<Vec<_>>(),
-                model.curves.len(),
+                model
+                    .curves
+                    .iter()
+                    .filter(|curve| {
+                        !model
+                            .edges
+                            .iter()
+                            .any(|edge| edge.carrier.curve() == Some(&curve.id))
+                    })
+                    .count(),
                 model.surfaces.len(),
                 model.occurrences.len(),
                 model.appearances.len(),

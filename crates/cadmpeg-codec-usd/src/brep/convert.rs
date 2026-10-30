@@ -1640,7 +1640,202 @@ pub(crate) fn nurbs_only(brep: &Brep) -> Result<Converted, String> {
         out.nurbs_pcurves = pcurves;
         wind(&mut out);
     }
+    for face in 0..out.faces.len() {
+        if out.faces[face].loops.is_empty() {
+            boundary_loop(&mut out, face, trimmed)?;
+        }
+    }
     Ok(Converted { brep: out, trimmed })
+}
+
+/// The boundary curve of `surface` along `axis` at the low or high end of
+/// the other direction: the control row or column there, which the curve
+/// interpolates on a clamped knot vector.
+fn boundary_curve(
+    surface: &NurbsSurfaceRecord,
+    axis: usize,
+    high: bool,
+) -> Option<NurbsCurveRecord<3>> {
+    let (order, count, knots, other_count) = if axis == 0 {
+        (
+            surface.u_order,
+            surface.u_count,
+            &surface.u_knots,
+            surface.v_count,
+        )
+    } else {
+        (
+            surface.v_order,
+            surface.v_count,
+            &surface.v_knots,
+            surface.u_count,
+        )
+    };
+    let other_knots = if axis == 0 {
+        &surface.v_knots
+    } else {
+        &surface.u_knots
+    };
+    let other_order = if axis == 0 {
+        surface.v_order
+    } else {
+        surface.u_order
+    };
+    let clamped = |knots: &[f64], order: usize| {
+        knots.len() >= 2 * order
+            && knots[..order].iter().all(|knot| *knot == knots[0])
+            && knots[knots.len() - order..]
+                .iter()
+                .all(|knot| *knot == knots[knots.len() - 1])
+    };
+    if !clamped(knots, order) || !clamped(other_knots, other_order) {
+        return None;
+    }
+    let fixed = if high { other_count.checked_sub(1)? } else { 0 };
+    let index = |along: usize| {
+        if axis == 0 {
+            along * surface.v_count + fixed
+        } else {
+            fixed * surface.v_count + along
+        }
+    };
+    Some(NurbsCurveRecord {
+        order,
+        points: (0..count)
+            .map(|along| surface.points.get(index(along)).copied())
+            .collect::<Option<_>>()?,
+        weights: (0..count)
+            .map(|along| surface.weights.get(index(along)).copied())
+            .collect::<Option<_>>()?,
+        knots: knots.clone(),
+        form: Form::Open,
+    })
+}
+
+/// Whether every control point of `curve` lies within `tolerance` of its
+/// first.
+fn collapsed(curve: &NurbsCurveRecord<3>, tolerance: f64) -> bool {
+    curve.points.iter().all(|point| {
+        let gap = sub(*point, curve.points[0]);
+        dot(gap, gap).sqrt() <= tolerance
+    })
+}
+
+/// Gives face `face`, which has no loop, the boundary of its surface domain
+/// as its outer loop: an edge for each side that does not collapse to a
+/// point, one seam edge for two sides that coincide, and, when `trimmed`,
+/// the sides of the domain as pcurves.
+fn boundary_loop(brep: &mut Brep, face: usize, trimmed: bool) -> Result<(), String> {
+    let refused = || format!("face {face} has no loop and no clamped boundary");
+    let surface = brep.nurbs_surfaces.get(face).cloned().ok_or_else(refused)?;
+    let domain = surface_domain(&surface).ok_or_else(refused)?;
+    let tolerance = brep.tolerance;
+    // The sides in counterclockwise order about N: (axis, high end of the
+    // other direction, runs forward along its axis).
+    let sides = [
+        (0, false, true),
+        (1, true, true),
+        (0, true, false),
+        (1, false, false),
+    ];
+    let curves: Vec<NurbsCurveRecord<3>> = sides
+        .iter()
+        .map(|(axis, high, _)| boundary_curve(&surface, *axis, *high))
+        .collect::<Option<_>>()
+        .ok_or_else(refused)?;
+    let same = |a: &NurbsCurveRecord<3>, b: &NurbsCurveRecord<3>| {
+        a.points.len() == b.points.len()
+            && a.points.iter().zip(&b.points).all(|(p, q)| {
+                let gap = sub(*p, *q);
+                dot(gap, gap).sqrt() <= tolerance
+            })
+    };
+    let vertex = |brep: &mut Brep, point: V3| -> usize {
+        if let Some(found) = brep.vertices.iter().position(|known| {
+            let gap = sub(*known, point);
+            dot(gap, gap).sqrt() <= tolerance
+        }) {
+            return found;
+        }
+        brep.vertices.push(point);
+        brep.vertices.len() - 1
+    };
+    let same_sense = brep.faces[face].same_sense;
+    // The record loop goes counterclockwise about the outward normal: the
+    // sides in reverse when the face normal opposes N.
+    let order: [usize; 4] = if same_sense {
+        [0, 1, 2, 3]
+    } else {
+        [3, 2, 1, 0]
+    };
+    let mut edges: [Option<usize>; 4] = [None; 4];
+    for position in order {
+        let curve = &curves[position];
+        if collapsed(curve, tolerance) {
+            continue;
+        }
+        let opposite = (position + 2) % 4;
+        if let Some(seam) = edges[opposite].filter(|_| same(curve, &curves[opposite])) {
+            edges[position] = Some(seam);
+            continue;
+        }
+        let start = vertex(brep, *curve.points.first().ok_or_else(refused)?);
+        let end = vertex(brep, *curve.points.last().ok_or_else(refused)?);
+        let range = [
+            *curve.knots.get(curve.order - 1).ok_or_else(refused)?,
+            *curve.knots.get(curve.points.len()).ok_or_else(refused)?,
+        ];
+        brep.nurbs_curves.push(curve.clone());
+        brep.edges.push(super::EdgeRecord {
+            vertices: [start, end],
+            curve: Some((Catalog::Nurbs, brep.nurbs_curves.len() - 1)),
+            range,
+            same_sense: true,
+            tolerance: None,
+        });
+        edges[position] = Some(brep.edges.len() - 1);
+    }
+    let [u, v] = domain;
+    let corners = [[u[0], v[0]], [u[1], v[0]], [u[1], v[1]], [u[0], v[1]]];
+    let mut oriented = Vec::new();
+    for position in order {
+        let (_, _, forward) = sides[position];
+        let Some(edge) = edges[position] else {
+            continue;
+        };
+        let pcurve = trimmed.then(|| {
+            let (start, end) = (corners[position], corners[(position + 1) % 4]);
+            let (from, to) = if same_sense {
+                (start, end)
+            } else {
+                (end, start)
+            };
+            brep.nurbs_pcurves.push(NurbsCurveRecord {
+                order: 2,
+                points: vec![from, to],
+                weights: vec![1.0, 1.0],
+                knots: vec![0.0, 0.0, 1.0, 1.0],
+                form: Form::Open,
+            });
+            (Catalog::Nurbs, brep.nurbs_pcurves.len() - 1)
+        });
+        brep.oriented_edges.push(super::OrientedEdgeRecord {
+            edge,
+            orientation: forward == same_sense,
+            pcurve,
+        });
+        oriented.push(brep.oriented_edges.len() - 1);
+    }
+    if oriented.is_empty() {
+        return Err(refused());
+    }
+    brep.loops.push(super::LoopRecord {
+        oriented_edges: oriented,
+        vertex: None,
+    });
+    let loop_index = brep.loops.len() - 1;
+    brep.faces[face].loops.push(loop_index);
+    Ok(())
 }
 
 /// Twice the signed area of the polygon of control points of the pcurves

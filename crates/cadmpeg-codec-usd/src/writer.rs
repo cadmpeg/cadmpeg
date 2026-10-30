@@ -841,7 +841,7 @@ impl<'ir> Writer<'ir> {
             let mut meshed = Vec::new();
             for (face, surface) in faces {
                 match surface.and_then(nurbs_surface) {
-                    Some(nurbs) if face.loops.is_empty() => {
+                    Some(nurbs) if face.loops.is_empty() || self.whole_domain(face, nurbs) => {
                         prims.push(Geometry::Patch(face, nurbs));
                     }
                     _ => meshed.push(&face.id),
@@ -865,6 +865,65 @@ impl<'ir> Writer<'ir> {
             prims.push(Geometry::Wires(wires));
         }
         prims
+    }
+
+    /// Whether the one loop of `face` runs along the boundary of the domain
+    /// of its surface `nurbs`: each pcurve is a segment on one side.
+    fn whole_domain(&self, face: &cadmpeg_ir::topology::Face, nurbs: &NurbsSurface) -> bool {
+        let model = &self.ir.model;
+        let [loop_id] = face.loops.iter().collect::<Vec<_>>()[..] else {
+            return false;
+        };
+        let Some(loop_) = model
+            .loops
+            .iter()
+            .find(|candidate| &candidate.id == loop_id)
+        else {
+            return false;
+        };
+        let bounds = |knots: &[f64], degree: u32, count: usize| {
+            let degree = usize::try_from(degree).ok()?;
+            Some([*knots.get(degree)?, *knots.get(count)?])
+        };
+        let (Some(u), Some(v)) = (
+            bounds(
+                nurbs.u_knots().as_slice(),
+                nurbs.u_degree(),
+                nurbs.u_count(),
+            ),
+            bounds(
+                nurbs.v_knots().as_slice(),
+                nurbs.v_degree(),
+                nurbs.v_count(),
+            ),
+        ) else {
+            return false;
+        };
+        !loop_.coedges().is_empty()
+            && loop_.coedges().iter().all(|coedge| {
+                let Some(pcurve) = model
+                    .coedges
+                    .iter()
+                    .find(|candidate| &candidate.id == coedge)
+                    .and_then(|coedge| coedge.pcurves.first())
+                    .and_then(|use_| model.pcurves.iter().find(|pcurve| pcurve.id == use_.pcurve))
+                else {
+                    return false;
+                };
+                let cadmpeg_ir::geometry::pcurve::PcurveGeometry::Nurbs { nurbs: pcurve } =
+                    &pcurve.geometry
+                else {
+                    return false;
+                };
+                let points = pcurve.control_points();
+                let [first, last] = [points.first(), points.last()];
+                let (Some(first), Some(last)) = (first, last) else {
+                    return false;
+                };
+                let (a, b) = (first.get(), last.get());
+                let on = |value: f64, range: [f64; 2]| value == range[0] || value == range[1];
+                points.len() == 2 && ((a.u == b.u && on(a.u, u)) || (a.v == b.v && on(a.v, v)))
+            })
     }
 
     /// Writes one body. A body of one geometry prim is written as that prim

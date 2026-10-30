@@ -87,12 +87,6 @@ impl Writer<'_> {
             ));
             return None;
         }
-        if exported.brep.faces.iter().any(|face| face.loops.is_empty()) {
-            self.unwritten
-                .breps
-                .push(format!("{name}: a face has no loop"));
-            return None;
-        }
         let records = exported.brep.divided(MILLIMETRES_PER_UNIT);
         let converted = match crate::brep::convert::nurbs_only(&records) {
             Ok(converted) => converted,

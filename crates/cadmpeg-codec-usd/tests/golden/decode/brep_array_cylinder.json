@@ -11,7 +11,7 @@
         {
           "id": "usd:stage:body#/Occurrence",
           "kind": "solid",
-          "name": "Brep",
+          "name": "Occurrence",
           "regions": [
             "usd:stage:region#/Occurrence:region:0"
           ]
