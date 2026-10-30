@@ -875,6 +875,123 @@ pub(super) fn fixed_kind_tail_operations(
             ..
         })) if thickness.get() == 0.25 && outward_offset == u64_from_index(shifted_shell_at + 21)
     ));
+    let thickness_first_shell_at = bytes.len();
+    let mut thickness_first_shell = vec![0; 278];
+    thickness_first_shell[20] = 1;
+    thickness_first_shell[21] = 1;
+    thickness_first_shell[25..29].copy_from_slice(&[1, 0, 0, 1]);
+    thickness_first_shell[29..33].copy_from_slice(&9_000u32.to_le_bytes());
+    thickness_first_shell[51..55].copy_from_slice(&1u32.to_le_bytes());
+    thickness_first_shell[55] = 1;
+    thickness_first_shell[56..60].copy_from_slice(&200u32.to_le_bytes());
+    bytes.extend_from_slice(&thickness_first_shell);
+    let thickness_first_shell_scope = DesignParameterScope::try_new(
+        crate::records::feature::scope::DesignParameterScopeDraft {
+            byte_offset: u64_from_index(thickness_first_shell_at),
+            reference_count_offset: u64_from_index(thickness_first_shell_at + 9),
+            frame_length: 278,
+            reference_members: crate::records::identity::ReferenceRun::unlocated(vec![
+                9_000, 200, 201,
+            ]),
+            ..shell_scope.clone().into_draft()
+        }
+        .with_fixture_layout(),
+    )
+    .unwrap();
+    assert!(matches!(
+        exact_direct_face_operation(
+            &bytes,
+            &crate::design::test_support::indexed_record_offsets_for_test(&bytes),
+            &thickness_first_shell_scope,
+        ),
+        Some(DesignDirectFaceOperation::Shell(crate::records::feature::direct_face::DesignShellOperation {
+            thickness,
+            thickness_record_index: 9_000,
+            outward: true,
+            outward_offset,
+            ..
+        })) if thickness.get() == 0.25 && outward_offset == u64_from_index(thickness_first_shell_at + 21)
+    ));
+
+    // Negative rejection tests for the 268-byte thickness-first Shell scope:
+    // 1. byte 27 = 1 rejects because the [1, 0, 0, 1] marker at 25..29 requires byte 27 == 0.
+    let neg_byte_27_at = bytes.len();
+    let mut neg_byte_27 = thickness_first_shell.clone();
+    neg_byte_27[27] = 1;
+    bytes.extend_from_slice(&neg_byte_27);
+    let neg_byte_27_scope = DesignParameterScope::try_new(
+        crate::records::feature::scope::DesignParameterScopeDraft {
+            byte_offset: u64_from_index(neg_byte_27_at),
+            reference_count_offset: u64_from_index(neg_byte_27_at + 9),
+            frame_length: 278,
+            reference_members: crate::records::identity::ReferenceRun::unlocated(vec![
+                9_000, 200, 201,
+            ]),
+            ..shell_scope.clone().into_draft()
+        }
+        .with_fixture_layout(),
+    )
+    .unwrap();
+    assert_eq!(
+        exact_direct_face_operation(
+            &bytes,
+            &crate::design::test_support::indexed_record_offsets_for_test(&bytes),
+            &neg_byte_27_scope,
+        ),
+        None
+    );
+
+    // 2. outward = 2 rejects because outward admits only 0 or 1.
+    let neg_outward_at = bytes.len();
+    let mut neg_outward = thickness_first_shell.clone();
+    neg_outward[21] = 2;
+    bytes.extend_from_slice(&neg_outward);
+    let neg_outward_scope = DesignParameterScope::try_new(
+        crate::records::feature::scope::DesignParameterScopeDraft {
+            byte_offset: u64_from_index(neg_outward_at),
+            reference_count_offset: u64_from_index(neg_outward_at + 9),
+            frame_length: 278,
+            reference_members: crate::records::identity::ReferenceRun::unlocated(vec![
+                9_000, 200, 201,
+            ]),
+            ..shell_scope.clone().into_draft()
+        }
+        .with_fixture_layout(),
+    )
+    .unwrap();
+    assert_eq!(
+        exact_direct_face_operation(
+            &bytes,
+            &crate::design::test_support::indexed_record_offsets_for_test(&bytes),
+            &neg_outward_scope,
+        ),
+        None
+    );
+
+    // 3. thickness/first-reference mismatch rejects when the u32 at offset 29 disagrees with the first member.
+    let neg_mismatch_at = bytes.len();
+    bytes.extend_from_slice(&thickness_first_shell);
+    let neg_mismatch_scope = DesignParameterScope::try_new(
+        crate::records::feature::scope::DesignParameterScopeDraft {
+            byte_offset: u64_from_index(neg_mismatch_at),
+            reference_count_offset: u64_from_index(neg_mismatch_at + 9),
+            frame_length: 278,
+            reference_members: crate::records::identity::ReferenceRun::unlocated(vec![
+                9_001, 200, 201,
+            ]),
+            ..shell_scope.clone().into_draft()
+        }
+        .with_fixture_layout(),
+    )
+    .unwrap();
+    assert_eq!(
+        exact_direct_face_operation(
+            &bytes,
+            &crate::design::test_support::indexed_record_offsets_for_test(&bytes),
+            &neg_mismatch_scope,
+        ),
+        None
+    );
     {
         let construction = exact_direct_face_operation(
             &bytes,
