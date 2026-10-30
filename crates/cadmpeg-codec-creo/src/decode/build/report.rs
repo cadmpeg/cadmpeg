@@ -130,6 +130,7 @@ pub(in super::super) fn build_report(
         );
     }
     losses.extend(scan.framing.local_work_cap_losses.iter().cloned());
+    losses.extend(crate::decode::analytic::pcurves::unresolved_pcurve_chart_losses(scan));
 
     // The admission charge, first: it describes how the whole document was
     // read, not what any one record cost. Identity itself is authored once, in

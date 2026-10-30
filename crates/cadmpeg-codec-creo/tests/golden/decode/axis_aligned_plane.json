@@ -48,22 +48,8 @@
       "surfaces": [
         {
           "geometry": {
-            "kind": "plane",
-            "normal": {
-              "x": 0.0,
-              "y": 0.0,
-              "z": -1.0
-            },
-            "origin": {
-              "x": 3.0,
-              "y": 0.0,
-              "z": 1.0
-            },
-            "u_axis": {
-              "x": 0.0,
-              "y": 1.0,
-              "z": 0.0
-            }
+            "kind": "unknown",
+            "record": "creo:VisibGeom:section#76"
           },
           "id": "creo:visibgeom:surface#7",
           "source_object": {
@@ -82,15 +68,15 @@
           {
             "id": "creo:surface:outline_plane#122:7",
             "normal": [
+              1.0,
               0.0,
-              0.0,
-              -1.0
+              0.0
             ],
             "offset": 122,
             "origin": [
+              -1.0,
               0.0,
-              0.0,
-              1.0
+              0.0
             ],
             "source_section": "VisibGeom",
             "surface_id": 7,
@@ -105,31 +91,31 @@
           {
             "body": "0f0f0f0f43f00043f000e4e42f0000e4",
             "corner_coordinate_equal": [
+              true,
               false,
-              false,
-              true
+              false
             ],
             "envelope": {
               "bounds_2d": [
                 [
-                  0.0,
-                  0.0
+                  1.0,
+                  1.0
                 ],
                 [
-                  0.0,
-                  0.0
+                  1.0,
+                  1.0
                 ]
               ],
               "corners_3d": [
                 [
                   -1.0,
                   -1.0,
-                  1.0
+                  -1.0
                 ],
                 [
-                  1.0,
+                  -1.0,
                   2.0,
-                  1.0
+                  2.0
                 ]
               ],
               "kind": "standard"
@@ -661,9 +647,9 @@
       "retained_unknown_visible_cylinder_surface_row_count": 0,
       "retained_unknown_visible_extrusion_surface_row_count": 0,
       "retained_unknown_visible_fillet_surface_row_count": 0,
-      "retained_unknown_visible_plane_surface_row_count": 0,
+      "retained_unknown_visible_plane_surface_row_count": 1,
       "retained_unknown_visible_spline_surface_row_count": 0,
-      "retained_unknown_visible_surface_row_count": 0,
+      "retained_unknown_visible_surface_row_count": 1,
       "retained_unknown_visible_torus_or_sphere_surface_row_count": 0,
       "round_edge_carrier_validation_failure_count": 0,
       "round_edge_complete_envelope_count": 0,
@@ -807,9 +793,9 @@
       "transferred_visible_cylinder_surface_row_count": 0,
       "transferred_visible_extrusion_surface_row_count": 0,
       "transferred_visible_fillet_surface_row_count": 0,
-      "transferred_visible_plane_surface_row_count": 1,
+      "transferred_visible_plane_surface_row_count": 0,
       "transferred_visible_spline_surface_row_count": 0,
-      "transferred_visible_surface_row_count": 1,
+      "transferred_visible_surface_row_count": 0,
       "transferred_visible_torus_or_sphere_surface_row_count": 0,
       "unique_visible_curve_row_count": 0,
       "unique_visible_surface_row_count": 1,
@@ -826,9 +812,9 @@
       "untransferred_visible_cylinder_surface_row_count": 0,
       "untransferred_visible_extrusion_surface_row_count": 0,
       "untransferred_visible_fillet_surface_row_count": 0,
-      "untransferred_visible_plane_surface_row_count": 0,
+      "untransferred_visible_plane_surface_row_count": 1,
       "untransferred_visible_spline_surface_row_count": 0,
-      "untransferred_visible_surface_row_count": 0,
+      "untransferred_visible_surface_row_count": 1,
       "untransferred_visible_torus_or_sphere_surface_row_count": 0,
       "visible_cone_surface_row_count": 0,
       "visible_cylinder_surface_row_count": 0,
@@ -925,6 +911,17 @@
         },
         "message": "Named feature operations and their decoded dependency/input tables transfer as typed or native design records. Curve-equation assignments transfer with their source, dependencies, and closed numeric and string operator and deterministic function values. Full neutral operation semantics, configuration presence, graph, case-study, cabling, and cross-model relation functions, materials, and display data remain untransferred.",
         "severity": "warning"
+      },
+      {
+        "code": {
+          "code": "geometry.visibgeom-surface-untransferred",
+          "kind": "geometry_not_transferred",
+          "namespace": "creo",
+          "scope": "namespaced",
+          "strict_floor": "warning"
+        },
+        "message": "1 unique VisibGeom surface row(s) were not transferred as carriers and remain structural namespace records (plane=1).",
+        "severity": "warning"
       }
     ],
     "notes": [
@@ -934,7 +931,7 @@
       "container-level enumeration; `decode` preserves PSB geometry sections as unknown records and transfers only carriers whose model-space placement is complete"
     ],
     "transfer": {
-      "geometry_transferred": true,
+      "geometry_transferred": false,
       "transfer": "full"
     }
   },
@@ -946,7 +943,7 @@
           "scope": "entity"
         },
         "creo:visibgeom:surface#7": {
-          "entity": "derived",
+          "entity": "unknown",
           "scope": "entity"
         }
       },
@@ -962,9 +959,9 @@
           "tag": "geometry_generator_feature"
         },
         "creo:visibgeom:surface#7": {
-          "offset": 139,
+          "offset": 116,
           "stream": "creo:VisibGeom",
-          "tag": "plane_local_system"
+          "tag": "unresolved_visible_surface_carrier"
         },
         "creo:visibgeom:surface_parameter#7": {
           "offset": 122,

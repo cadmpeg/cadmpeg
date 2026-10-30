@@ -286,11 +286,11 @@ fn absent_pcurve_faces_remain_zero_in_native_records() {
 fn scan_decodes_pcurve_endpoints_in_both_face_frames() {
     let mut payload = visibgeom_payload(0, 1);
     payload.extend_from_slice(b"topol_ref_data\0\x07\x00\x04\x01\xf6");
-    payload.extend_from_slice(&[0x0f, 0xe4]);
-    payload.extend_from_slice(&[0x46, 0x08, 0, 0, 0, 0, 0, 0]);
-    payload.extend_from_slice(&[0x0f, 0xe4, 0x0f]);
-    payload.extend_from_slice(&[0x46, 0x08, 0, 0, 0, 0, 0, 0]);
-    payload.push(0xe4);
+    payload.extend_from_slice(&[0x18, 0x0f]);
+    payload.extend_from_slice(&[0x2d, 0x08, 0, 0, 0, 0, 0, 0]);
+    payload.extend_from_slice(&[0x18, 0x0f, 0x18]);
+    payload.extend_from_slice(&[0x2d, 0x08, 0, 0, 0, 0, 0, 0]);
+    payload.push(0x0f);
     payload.extend_from_slice(b"\x0a\x0b\x07\x07\0\0\xe3\xe1\xe3");
     let data = build_prt("c", &[("VisibGeom", payload)]);
     let scan = container::scan_bytes_ok(data.clone());
@@ -314,18 +314,21 @@ fn scan_decodes_pcurve_endpoints_in_both_face_frames() {
 
     let mut mismatched_topology = scan.curves.topology_rows.clone();
     mismatched_topology[0].type_byte = 1;
-    assert!(
-        crate::curve::pcurve_endpoints(&scan.curves.parameters, &mismatched_topology).is_empty()
-    );
+    assert!(crate::curve::pcurve_endpoints(
+        &scan.curves.parameters,
+        &mismatched_topology,
+        &mut Vec::new()
+    )
+    .is_empty());
 }
 
 #[test]
 fn scan_decodes_positive_dict_pcurve_slots() {
     let mut payload = visibgeom_payload(0, 1);
     payload.extend_from_slice(b"topol_ref_data\0\x07\x00\x04\x01\xf6");
-    payload.extend_from_slice(&[0x0f, 0xe4]);
+    payload.extend_from_slice(&[0x18, 0x0f]);
     payload.extend_from_slice(&[0x98, 1, 2, 3, 4, 5, 6]);
-    payload.extend_from_slice(&[0x0f, 0xe4, 0x2f, 0x43, 0]);
+    payload.extend_from_slice(&[0x18, 0x0f, 0x2f, 0x43, 0]);
     payload.extend_from_slice(&[0x98, 1, 2, 3, 4, 5, 6]);
     payload.extend_from_slice(&[0x2f, 0x43, 0]);
     payload.extend_from_slice(b"\x0a\x0b\x07\x07\0\0\xe3\xe1\xe3");
@@ -354,21 +357,17 @@ fn scan_decodes_positive_dict_pcurve_slots() {
 fn scan_decodes_standalone_zero_slots_in_pcurve_endpoint_frames() {
     let mut payload = visibgeom_payload(0, 1);
     payload.extend_from_slice(b"topol_ref_data\0\x07\x08\x04\x01\xf6");
-    payload.extend_from_slice(&[0x12, 0xe4]);
-    payload.extend_from_slice(&[0x46, 0x08, 0, 0, 0, 0, 0, 0]);
-    payload.extend_from_slice(&[0x12, 0xe4, 0x12]);
-    payload.extend_from_slice(&[0x46, 0x08, 0, 0, 0, 0, 0, 0]);
-    payload.extend_from_slice(&[0xe4]);
+    payload.extend_from_slice(&[0x18, 0x0f]);
+    payload.extend_from_slice(&[0x2d, 0x08, 0, 0, 0, 0, 0, 0]);
+    payload.extend_from_slice(&[0x18, 0x0f, 0x18]);
+    payload.extend_from_slice(&[0x2d, 0x08, 0, 0, 0, 0, 0, 0]);
+    payload.extend_from_slice(&[0x0f]);
     payload.extend_from_slice(b"\x0a\x0b\x07\x07\0\0\xe3\xe1\xe3");
     let scan = container::scan_bytes_ok(build_prt("c", &[("VisibGeom", payload)]));
 
     assert_eq!(scan.curves.parameters.len(), 1);
-    assert_eq!(scan.curves.parameters[0].scalar_tokens.len(), 5);
-    assert_eq!(scan.curves.parameters[0].opaque_spans.len(), 3);
-    assert!(scan.curves.parameters[0]
-        .opaque_spans
-        .iter()
-        .all(|span| span.raw == [0x12]));
+    assert_eq!(scan.curves.parameters[0].scalar_tokens.len(), 8);
+    assert_eq!(scan.curves.parameters[0].opaque_spans.len(), 0);
     assert_eq!(scan.curves.pcurves.len(), 1);
     assert_eq!(
         scan.curves.pcurves[0].face_0_endpoints,
@@ -546,11 +545,11 @@ fn scan_validates_fc05_circle_from_record_points() {
 fn scan_decodes_labeled_prototype_pcurve_uvs() {
     let mut payload = visibgeom_payload(0, 0);
     payload.extend_from_slice(b"crv_id\0\x2c type\0\x00 crv_pnt_arr\0\xf9\x02\x04");
-    payload.extend_from_slice(&[0x12, 0xe4]);
-    payload.extend_from_slice(&[0x46, 0x08, 0, 0, 0, 0, 0, 0]);
-    payload.extend_from_slice(&[0x12, 0xe4, 0x12]);
-    payload.extend_from_slice(&[0x46, 0x08, 0, 0, 0, 0, 0, 0]);
-    payload.extend_from_slice(&[0xe4]);
+    payload.extend_from_slice(&[0x18, 0x0f]);
+    payload.extend_from_slice(&[0x2d, 0x08, 0, 0, 0, 0, 0, 0]);
+    payload.extend_from_slice(&[0x18, 0x0f, 0x18]);
+    payload.extend_from_slice(&[0x2d, 0x08, 0, 0, 0, 0, 0, 0]);
+    payload.extend_from_slice(&[0x0f]);
     payload.extend_from_slice(b"topol_ref_data\0");
     let scan = container::scan_bytes_ok(build_prt("c", &[("VisibGeom", payload)]));
 
@@ -565,15 +564,15 @@ fn scan_decodes_labeled_prototype_pcurve_uvs() {
 fn scan_withholds_non_exact_labeled_prototype_pcurve_arrays() {
     for tail in [
         vec![0xff],
-        vec![0xe4, 0x12],
+        vec![0xe4, 0x18],
         vec![0x18, 0xe7, 0x04, 0x2f, 0x08, 0x00, 0xe4, 0x18],
     ] {
         let mut payload = visibgeom_payload(0, 0);
         payload.extend_from_slice(b"crv_id\0\x2c type\0\x00 crv_pnt_arr\0\xf9\x02\x04");
-        payload.extend_from_slice(&[0x12, 0xe4]);
-        payload.extend_from_slice(&[0x46, 0x08, 0, 0, 0, 0, 0, 0]);
-        payload.extend_from_slice(&[0x12, 0xe4, 0x12]);
-        payload.extend_from_slice(&[0x46, 0x08, 0, 0, 0, 0, 0, 0]);
+        payload.extend_from_slice(&[0x18, 0x0f]);
+        payload.extend_from_slice(&[0x2d, 0x08, 0, 0, 0, 0, 0, 0]);
+        payload.extend_from_slice(&[0x18, 0x0f, 0x18]);
+        payload.extend_from_slice(&[0x2d, 0x08, 0, 0, 0, 0, 0, 0]);
         payload.extend_from_slice(&tail);
         payload.extend_from_slice(b"topol_ref_data\0");
         let scan = container::scan_bytes_ok(build_prt("c", &[("VisibGeom", payload)]));
@@ -586,11 +585,11 @@ fn scan_withholds_non_exact_labeled_prototype_pcurve_arrays() {
 fn scan_withholds_displaced_labeled_prototype_pcurve_wrapper() {
     let mut payload = visibgeom_payload(0, 0);
     payload.extend_from_slice(b"crv_id\0\x2c type\0\x00 crv_pnt_arr\0junk\xf9\x02\x04");
-    payload.extend_from_slice(&[0x12, 0xe4]);
-    payload.extend_from_slice(&[0x46, 0x08, 0, 0, 0, 0, 0, 0]);
-    payload.extend_from_slice(&[0x12, 0xe4, 0x12]);
-    payload.extend_from_slice(&[0x46, 0x08, 0, 0, 0, 0, 0, 0]);
-    payload.extend_from_slice(&[0xe4]);
+    payload.extend_from_slice(&[0x18, 0x0f]);
+    payload.extend_from_slice(&[0x2d, 0x08, 0, 0, 0, 0, 0, 0]);
+    payload.extend_from_slice(&[0x18, 0x0f, 0x18]);
+    payload.extend_from_slice(&[0x2d, 0x08, 0, 0, 0, 0, 0, 0]);
+    payload.extend_from_slice(&[0x0f]);
     payload.extend_from_slice(b"topol_ref_data\0");
     let scan = container::scan_bytes_ok(build_prt("c", &[("VisibGeom", payload)]));
 
@@ -617,11 +616,11 @@ fn scan_decodes_and_binds_labeled_prototype_topology() {
     payload.extend_from_slice(b"crv_hdr_geom_ptr[0]\0\x0a crv_hdr_geom_ptr[1]\0\x0b");
     payload.extend_from_slice(b"next_crv_hdr_ptr[0]\0\x2c next_crv_hdr_ptr[1]\0\x2c");
     payload.extend_from_slice(b"crv_pnt_arr\0\xf9\x02\x04");
-    payload.extend_from_slice(&[0x0f, 0xe4]);
-    payload.extend_from_slice(&[0x46, 0x08, 0, 0, 0, 0, 0, 0]);
-    payload.extend_from_slice(&[0x0f, 0xe4, 0x0f]);
-    payload.extend_from_slice(&[0x46, 0x08, 0, 0, 0, 0, 0, 0]);
-    payload.push(0xe4);
+    payload.extend_from_slice(&[0x18, 0x0f]);
+    payload.extend_from_slice(&[0x2d, 0x08, 0, 0, 0, 0, 0, 0]);
+    payload.extend_from_slice(&[0x18, 0x0f, 0x18]);
+    payload.extend_from_slice(&[0x2d, 0x08, 0, 0, 0, 0, 0, 0]);
+    payload.push(0x0f);
     payload.extend_from_slice(b"topol_ref_data\0");
     let data = build_prt("c", &[("VisibGeom", payload)]);
     let scan = container::scan_bytes_ok(data.clone());

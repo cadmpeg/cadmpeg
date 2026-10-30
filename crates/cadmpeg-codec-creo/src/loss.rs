@@ -89,6 +89,15 @@ pub(crate) enum CreoLossCode {
     GeometryInstanceCarriersGated,
     /// Unique `VisibGeom` surface rows were not transferred as carriers.
     VisibGeomSurfaceUntransferred,
+    /// A bounded plane local system has no complete admitted scalar frame.
+    PlaneLocalSystemUnresolved,
+    PlaneEnvelopeUnresolved,
+    PrototypeLocalSystemUnresolved,
+    TwoChartScalarFrameUnresolved,
+    /// A positional pcurve has no complete bounded scalar frame.
+    PcurveScalarFrameUnresolved,
+    PcurveChartUnresolved,
+    SampledPcurveCarrierUnresolved,
     /// Unique `VisibGeom` curve-topology rows were not transferred as carriers.
     VisibGeomCurveUntransferred,
     /// A legacy ASCII surface carrier refused a lane, so its geometry stays a
@@ -239,6 +248,13 @@ impl CreoLossCode {
             Self::ExtrusionBodyRejected => "topology.extrusion-body-rejected",
             Self::GeometryInstanceCarriersGated => "geometry.instance-carriers-gated",
             Self::VisibGeomSurfaceUntransferred => "geometry.visibgeom-surface-untransferred",
+            Self::PlaneLocalSystemUnresolved => "geometry.plane-local-system-unresolved",
+            Self::PlaneEnvelopeUnresolved => "geometry.plane-envelope-unresolved",
+            Self::PrototypeLocalSystemUnresolved => "geometry.prototype-local-system-unresolved",
+            Self::TwoChartScalarFrameUnresolved => "geometry.two-chart-scalar-frame-unresolved",
+            Self::PcurveScalarFrameUnresolved => "geometry.pcurve-scalar-frame-unresolved",
+            Self::PcurveChartUnresolved => "geometry.pcurve-chart-unresolved",
+            Self::SampledPcurveCarrierUnresolved => "geometry.sampled-pcurve-carrier-unresolved",
             Self::VisibGeomCurveUntransferred => "geometry.visibgeom-curve-untransferred",
             Self::LegacySurfaceCarrierUnresolved => "geometry.legacy-surface-carrier-unresolved",
             Self::NurbsBoundaryCarrierUnresolved => "geometry.nurbs-boundary-carrier-unresolved",
@@ -352,6 +368,13 @@ impl CreoLossCode {
             | Self::LegacyStringEncodingRetained
             | Self::TriangleStripRepresentationConflict
             | Self::VisibGeomSurfaceUntransferred
+            | Self::PlaneLocalSystemUnresolved
+            | Self::PlaneEnvelopeUnresolved
+            | Self::PrototypeLocalSystemUnresolved
+            | Self::TwoChartScalarFrameUnresolved
+            | Self::PcurveScalarFrameUnresolved
+            | Self::PcurveChartUnresolved
+            | Self::SampledPcurveCarrierUnresolved
             | Self::VisibGeomCurveUntransferred
             | Self::LegacySurfaceCarrierUnresolved
             | Self::NurbsBoundaryCarrierUnresolved
@@ -431,6 +454,13 @@ impl CreoLossCode {
             | Self::BrepCompactFrameComponentUnresolved
             | Self::GeometryInstanceCarriersGated
             | Self::VisibGeomSurfaceUntransferred
+            | Self::PlaneLocalSystemUnresolved
+            | Self::PlaneEnvelopeUnresolved
+            | Self::PrototypeLocalSystemUnresolved
+            | Self::TwoChartScalarFrameUnresolved
+            | Self::PcurveScalarFrameUnresolved
+            | Self::PcurveChartUnresolved
+            | Self::SampledPcurveCarrierUnresolved
             | Self::VisibGeomCurveUntransferred
             | Self::LegacySurfaceCarrierUnresolved
             | Self::NurbsBoundaryCarrierUnresolved
@@ -534,6 +564,13 @@ mod tests {
                 "topology.extrusion-body-rejected",
                 "geometry.instance-carriers-gated",
                 "geometry.visibgeom-surface-untransferred",
+                "geometry.plane-local-system-unresolved",
+                "geometry.plane-envelope-unresolved",
+                "geometry.prototype-local-system-unresolved",
+                "geometry.two-chart-scalar-frame-unresolved",
+                "geometry.pcurve-scalar-frame-unresolved",
+                "geometry.pcurve-chart-unresolved",
+                "geometry.sampled-pcurve-carrier-unresolved",
                 "geometry.visibgeom-curve-untransferred",
                 "geometry.legacy-surface-carrier-unresolved",
                 "geometry.nurbs-boundary-carrier-unresolved",

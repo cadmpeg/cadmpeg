@@ -5,6 +5,7 @@ use cadmpeg_test_support::{wire, EditableDecodeResult};
 use crate::test_support::assert_annotation;
 use crate::test_support::assert_unknown_visible_surface;
 use crate::test_support::build_prt;
+use crate::test_support::push_generated_plane_envelope_scalar;
 use crate::test_support::push_generated_scalar;
 use crate::test_support::push_named_analytic_prototype;
 use crate::test_support::visibgeom_payload;
@@ -642,7 +643,7 @@ fn decode_transfers_axis_aligned_plane_from_outline() {
     let mut payload = visibgeom_payload(1, 0);
     payload.extend_from_slice(&[7, 0x22, 4, 0x01, 0, 0]);
     for value in [0.0, 0.0, 0.0, 0.0, -1.0, -1.0, 1.0, 1.0, 2.0, 1.0] {
-        push_generated_scalar(&mut payload, value);
+        push_generated_plane_envelope_scalar(&mut payload, value);
     }
     payload.push(0xe3);
     payload.extend_from_slice(&[0x0f, 0xe4, 0x0f, 0xe4, 0x0f, 0x0f, 0x0f, 0x0f, 0x0f]);
@@ -703,10 +704,10 @@ fn decode_transfers_axis_aligned_plane_from_outline() {
 }
 
 #[test]
-fn decode_transfers_plane_from_shared_rank_two_local_system_image() {
+fn decode_transfers_plane_from_complete_compact_rotation() {
     let mut payload = visibgeom_payload(1, 0);
     payload.extend_from_slice(&[7, 0x22, 4, 0x01, 0, 0]);
-    payload.extend_from_slice(&[0x0f; 10]);
+    payload.extend_from_slice(&[0x18; 10]);
     payload.push(0xe3);
     payload.extend_from_slice(&[
         0x18, 0xe4, 0x0f, 0xe4, 0x18, 0xe5, 0x0f, 0x18, 0xe6, 0xe1, 0xe3,
@@ -759,7 +760,7 @@ fn decode_transfers_plane_from_shared_rank_two_local_system_image() {
 fn decode_uses_support_frame_to_chart_line_shaped_plane_outline() {
     let mut payload = visibgeom_payload(1, 0);
     payload.extend_from_slice(&[7, 0x22, 4, 0x01, 0, 0]);
-    payload.extend_from_slice(&[0x0f; 10]);
+    payload.extend_from_slice(&[0x18; 10]);
     payload.push(0xe3);
     payload.extend_from_slice(&[0x0f, 0xe4, 0x0f, 0x0f, 0x0f, 0x0f, 0xe4, 0x0f, 0x0f]);
     payload.extend_from_slice(&[0x46, 0x08, 0, 0, 0, 0, 0, 0, 0x0f, 0xe4]);
@@ -791,7 +792,7 @@ fn decode_transfers_held_coordinate_plane_with_canonical_chart() {
     let mut payload = visibgeom_payload(1, 0);
     payload.extend_from_slice(&[7, 0x22, 4, 0x01, 0, 0]);
     for value in [0.0, 0.0, 0.0, 0.0, -1.0, -1.0, 1.0, 1.0, 2.0, 1.0] {
-        push_generated_scalar(&mut payload, value);
+        push_generated_plane_envelope_scalar(&mut payload, value);
     }
     payload.push(0xe3);
 

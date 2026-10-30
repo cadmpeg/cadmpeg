@@ -282,7 +282,7 @@ fn cross_section_filters_boundary_one_body_candidate() {
 
 #[test]
 fn cross_section_plane_envelope_retains_its_namespace_geometry() {
-    let payload = b"Sld_Xsections\0srf_array\0\xf8\x01\x07\x22\x04\x01\x06\0\xe4\xe4\xe4\xe4\x0f\x0f\x0f\xe4\x0f\xe4\xe3";
+    let payload = b"Sld_Xsections\0srf_array\0\xf8\x01\x07\x22\x04\x01\x06\0\x0f\x0f\x0f\x0f\x18\x18\x18\x0f\x18\x0f\xe3";
 
     let envelopes = super::with_decode_ctx(payload, |ctx| {
         crate::surface::cross_section_plane_envelopes(ctx, payload, &mut Vec::new())
@@ -299,7 +299,7 @@ fn cross_section_plane_envelope_retains_its_namespace_geometry() {
 fn plane_records_end_at_the_next_surface_family() {
     let payload = [
         7, 0x22, 4, 0x01, 0, 0, // plane row
-        0xe4, 0xe4, 0xe4, 0xe4, 0x0f, 0x0f, 0x0f, 0xe4, 0x0f, 0xe4, 0xe3, // envelope
+        0x0f, 0x0f, 0x0f, 0x0f, 0x18, 0x18, 0x18, 0x0f, 0x18, 0x0f, 0xe3, // envelope
         8, 0x24, 4, 0x01, 0, 0, // cylinder row
         0x18, 0xe4, 0x0f, 0xe4, 0x18, 0xe5, 0x0f, 0x18, 0xe6, 0xe3,
     ];

@@ -229,4 +229,58 @@ fn compact_plane_origin_requires_exact_consumption_and_reports_its_loss() {
         losses[0].code,
         crate::loss::CreoLossCode::PlaneCompactFrameUnresolved.kind()
     );
+    let reflected = [0x0f, 0x18, 0xe5, 0x0f, 0x18, 0xe5, 0x10, 0x18, 0xe5];
+    losses.clear();
+    assert!(with_surface_ctx(&reflected, |ctx| {
+        crate::surface::complete_plane_local_system(ctx, &reflected, &cache, &mut losses)
+    })
+    .expect("bounded reflected frame")
+    .is_none());
+    assert_eq!(losses.len(), 1);
+    assert_eq!(
+        losses[0].code,
+        crate::loss::CreoLossCode::PlaneCompactFrameUnresolved.kind()
+    );
+}
+
+#[test]
+fn plane_envelope_slots_keep_signed_units_and_bounded_scalar_repeats() {
+    let body = [
+        0x2f, 0, 0, 0xe4, 0x18, 0x0f, 0x2d, 0x10, 0, 0, 0, 0, 0, 0, 0xe5, 0x10, 0x0e, 0xe4,
+    ];
+    let table =
+        crate::surface::complete_plane_envelope_slots(&body, 10, &scalar::ScalarCache::default())
+            .expect("complete stateful envelope");
+    let values: Vec<_> = table.slots.iter().map(|slot| slot.0).collect();
+    assert_eq!(
+        values,
+        [2.0, 2.0, 0.0, 1.0, 4.0, 4.0, 4.0, -1.0, 0.5, 0.5].map(Some)
+    );
+    for body in [
+        &[0xe4, 0x18, 0x18, 0x18, 0x18, 0x18, 0x18, 0x18, 0x18, 0x18][..],
+        &[0x0f, 0xe6, 0xe6, 0xe5, 0xe5][..],
+    ] {
+        assert!(crate::surface::complete_plane_envelope_slots(
+            body,
+            10,
+            &scalar::ScalarCache::default()
+        )
+        .is_none());
+    }
+}
+
+#[test]
+fn plane_envelope_initial_repeat_is_retained_with_a_loss() {
+    let payload = [
+        7, 0x22, 4, 1, 0, 0, 0xe4, 0x18, 0x18, 0x18, 0x18, 0x18, 0x18, 0x18, 0x18, 0x18, 0xe3,
+    ];
+    let mut losses = Vec::new();
+    let envelopes = with_surface_ctx(&payload, |ctx| {
+        crate::surface::plane_envelopes_with_losses(ctx, &payload, &mut losses)
+    })
+    .expect("bounded plane envelope");
+    assert!(envelopes.is_empty());
+    assert!(losses
+        .iter()
+        .any(|loss| loss.code == crate::loss::CreoLossCode::PlaneEnvelopeUnresolved.kind()));
 }

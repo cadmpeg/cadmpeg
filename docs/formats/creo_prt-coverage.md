@@ -864,3 +864,74 @@ class, and parent identifier agree. Disagreement retains the native candidates
 and reports `creo/feature.state-selection-unresolved`. Coverage and source
 metadata record `unresolved_feature_state_selection_count`. A consensus does
 not mark a repeated native candidate as current.
+
+## Plane origin admission
+
+Positional Y-rotation plane frames retain the full signed middle row and use
+matrix columns for the parameter direction and normal. One shared gate checks
+unit length, orthogonality, handedness, and finite origins before transfer.
+Their origins use the signed first-coordinate lane at all three positions. Compact plane origin repeats
+carry the preceding scalar from the direction production and through later
+origin literals. Complete control-only rotations share the compact frame gate with named
+analytic prototypes. Explicit curve-equation and feature-definition frames
+retain their owned support-slot languages.
+The complete scalar-frame function supplies both boundary validation and slot
+decoding. Synthetic tests cover matrix columns, handedness refusal, signed
+origins, repeats of zero and nonzero values, scalar-owned delimiter bytes,
+trailing-byte refusal, and neutral validation. A bounded local system without
+a complete scalar frame remains native and emits
+`creo/geometry.plane-local-system-unresolved`; the synthetic refusal test also
+asserts the untransferred-surface loss.
+
+Direct positional eight-slot pcurve bodies use one bounded stateful scalar
+parser for token values and endpoint tuples. Repeats carry across chart-coordinate
+boundaries. Invalid repeats and unconsumed bytes remain native; newly refused
+claimed eight-slot bodies emit `creo/geometry.pcurve-scalar-frame-unresolved`.
+Held-scalar bodies keep their separate token-boundary production.
+
+Standard positional plane envelopes use signed literals
+and bounded repeats through the same complete scalar-table function used for
+boundary admission. The corner values and held-coordinate plane therefore use
+the same scalar interpretation. Leading-compact and structural-prefix terminal scalar frames retain
+their row-lane production. A bounded envelope without a complete scalar table
+emits `creo/geometry.plane-envelope-unresolved`. Synthetic tests cover nonzero
+repeats, signed units, bounds, and attributed refusal.
+
+Complete signed axis-permutation plane matrices also use the shared unit, orthogonality, and
+handedness gate. Matrix columns define the chart, including signed axis
+permutations. Axis-aligned matrices retain envelope reconciliation. Compact
+analytic-prototype frames use the same complete plane-frame gate; named
+prototype pcurves use the same eight-slot parser as direct pcurve bodies.
+Synthetic tests assert complete admission and attributed refusal for both
+named forms.
+
+Pcurve scalar streams preserve the quarter-turn literal and positive counted
+repeats through both native token values and geometric endpoints. Counted
+two-chart arrays and their uniquely scoped replays use the same scalar gate,
+validate the complete four-times-count extent, and allocate through the decode
+context. Invalid explicit sampled frames emit
+`creo/geometry.two-chart-scalar-frame-unresolved`. Rejected compact analytic
+prototype matrices emit `creo/geometry.prototype-local-system-unresolved`.
+Synthetic tests cover counted repeats, invalid counts, stock angles, matrix
+columns for a cylinder, and both attributed refusal paths. Named local-system
+inheritance remains separate from pcurve repetition.
+
+A complete standard ten-slot envelope keeps its signed scalar language before
+the terminal reference. Boundary validation and corner transfer use the same
+complete table. The auxiliary-corner parser excludes that complete production.
+Synthetic coverage asserts its signed held coordinate, complete consumption,
+and the absence of a competing row-lane plane.
+
+A positional plane with an unresolved local system retains its pcurve chart
+coordinates as native data and emits `creo/geometry.pcurve-chart-unresolved`.
+The complete-frame predicate gates direct endpoint evidence, sampled
+two-chart mapping, and analytic pcurve construction. An envelope-derived
+geometric plane remains available to carrier intersections. Synthetic tests
+assert the shared chart gate, retained plane geometry, attributed loss, and
+neutral validation.
+
+An analytic carrier inferred from a sampled pcurve must contain every mapped
+source sample. A failed candidate emits
+`creo/geometry.sampled-pcurve-carrier-unresolved`; endpoint constraints and
+native samples remain retained. Synthetic coverage admits a sampled line and
+refuses an endpoint chord with a displaced interior sample.

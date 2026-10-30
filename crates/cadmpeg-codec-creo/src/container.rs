@@ -1810,12 +1810,14 @@ fn curve_parameters(
 }
 
 fn two_chart_pcurves(
+    ctx: &DecodeContext<'_>,
     sections: &[ScannedSection<'_>],
     face_ids: &BTreeSet<u32>,
+    losses: &mut Vec<cadmpeg_ir::report::loss::LossNote>,
 ) -> Result<Vec<TwoChartPcurveSamples>, CodecError> {
     let mut records = collect_section_records_result(
         sections.iter(),
-        |bytes| Ok(curve::two_chart_pcurve_samples(bytes, Some(face_ids))),
+        |bytes| curve::two_chart_pcurve_samples(ctx, bytes, Some(face_ids), losses),
         |record, base| record.offset += base,
         |record| record.offset,
     )?;
@@ -1833,10 +1835,11 @@ fn two_chart_pcurves(
 
 fn prototype_pcurves(
     sections: &[ScannedSection<'_>],
+    losses: &mut Vec<cadmpeg_ir::report::loss::LossNote>,
 ) -> Result<Vec<PrototypePcurveEndpoints>, CodecError> {
     collect_section_records_result(
         sections.iter(),
-        |bytes| Ok(curve::prototype_pcurve_endpoints(bytes)),
+        |bytes| Ok(curve::prototype_pcurve_endpoints(bytes, losses)),
         |record, base| record.offset += base,
         |record| record.offset,
     )
@@ -2800,8 +2803,17 @@ pub(crate) fn scan_bytes<'a>(
         prototype_topology_rows.into_iter(),
     );
     let cross_section_curve_rows = cross_section_curve_rows(ctx, sections)?;
-    let mut pcurves = curve::pcurve_endpoints(&curve_parameters, &curve_topology_rows);
-    let two_chart_pcurves = two_chart_pcurves(&model_geometry_sections, &topology_face_ids)?;
+    let mut pcurves = curve::pcurve_endpoints(
+        &curve_parameters,
+        &curve_topology_rows,
+        &mut local_work_cap_losses,
+    );
+    let two_chart_pcurves = two_chart_pcurves(
+        ctx,
+        &model_geometry_sections,
+        &topology_face_ids,
+        &mut local_work_cap_losses,
+    )?;
     if matches!(layout, Layout::LegacyAscii(_)) {
         append_legacy_curve_witnesses(
             &mut curve_topology_rows,
@@ -2814,7 +2826,8 @@ pub(crate) fn scan_bytes<'a>(
     let fc05_circles = curve::fc05_circles(&curve_parameters);
     let fc05_cylinder_cap_pairs =
         curve::fc05_cylinder_cap_pairs(&fc05_circles, &curve_topology_rows, &surface_rows);
-    let prototype_pcurves = prototype_pcurves(&model_geometry_sections)?;
+    let prototype_pcurves =
+        prototype_pcurves(&model_geometry_sections, &mut local_work_cap_losses)?;
     let bound_prototype_pcurves =
         curve::bind_prototype_pcurves(&prototype_pcurves, &curve_prototype_topology);
     let (half_edges, loops) = topology::build(&curve_topology_rows)?;

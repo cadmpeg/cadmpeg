@@ -193,21 +193,61 @@ impl<T> NamedSurfaces<T> {
     }
 }
 
-fn topology_ignored_surface_ids(
-    layout: &crate::container::Layout,
-    rows: &[crate::surface::SurfaceRow],
-) -> BTreeSet<u32> {
-    // The interpolation carrier makes a legacy spline surface evaluable, but
-    // its trim/intersection join is still unresolved. Keep that surface from
-    // vetoing endpoint evidence supplied by a proven adjacent analytic face.
-    if !matches!(layout, crate::container::Layout::LegacyAscii(_)) {
-        return BTreeSet::new();
-    }
-    let mut ignored = BTreeSet::new();
-    for row in rows {
-        if row.kind == crate::surface::SurfaceKind::Spline {
-            ignored.insert(row.id);
-        }
+fn unresolved_plane_chart_ids(scan: &ContainerScan) -> BTreeSet<u32> {
+    scan.planes
+        .local_systems
+        .iter()
+        .filter(|system| !system.has_complete_frame())
+        .map(|system| system.surface_id)
+        .collect()
+}
+
+pub(in crate::decode) fn unresolved_pcurve_chart_losses(
+    scan: &ContainerScan,
+) -> Vec<cadmpeg_ir::report::loss::LossNote> {
+    let referenced: BTreeSet<u32> = scan
+        .curves
+        .pcurves
+        .iter()
+        .flat_map(|pcurve| pcurve.faces)
+        .chain(
+            scan.curves
+                .bound_prototype_pcurves
+                .iter()
+                .flat_map(|pcurve| pcurve.faces),
+        )
+        .flatten()
+        .map(NonZeroU32::get)
+        .chain(
+            scan.curves
+                .two_chart_pcurves
+                .iter()
+                .flat_map(|pcurve| pcurve.faces),
+        )
+        .collect();
+    unresolved_plane_chart_ids(scan)
+        .intersection(&referenced)
+        .map(|face| {
+            crate::loss::CreoLossCode::PcurveChartUnresolved.note(format!(
+                "Plane {face} has an unresolved parameter chart; its pcurve coordinates remain native"
+            ))
+        })
+        .collect()
+}
+
+fn topology_ignored_surface_ids(scan: &ContainerScan) -> BTreeSet<u32> {
+    let mut ignored = unresolved_plane_chart_ids(scan);
+    if matches!(
+        scan.framing.layout,
+        crate::container::Layout::LegacyAscii(_)
+    ) {
+        ignored.extend(
+            scan.surfaces
+                .rows
+                .iter()
+                .filter(|row| row.kind == crate::surface::SurfaceKind::Spline)
+                .map(|row| row.id),
+        );
     }
     ignored
 }
@@ -273,7 +313,12 @@ fn map_two_chart_endpoint_sets(
     let (Some(first), Some(last)) = (pcurve.samples.first(), pcurve.samples.last()) else {
         return Ok(TwoChartMapping::NoSamples);
     };
-    let surfaces = pcurve.faces.map(|face_id| model_surfaces.unique(face_id));
+    let unresolved = unresolved_plane_chart_ids(scan);
+    let surfaces = pcurve.faces.map(|face_id| {
+        (!unresolved.contains(&face_id))
+            .then(|| model_surfaces.unique(face_id))
+            .flatten()
+    });
     let mut mapped = surfaces.map(|surface| surface.is_some());
     let missing_surface_paths = usize::from(!mapped[0]) + usize::from(!mapped[1]);
     let mut unevaluable_paths = 0;
@@ -1045,8 +1090,7 @@ pub(super) fn pcurve_edge_endpoint_evidence_with_carriers(
     ),
     cadmpeg_core::CodecError,
 > {
-    let ignored_surface_ids =
-        topology_ignored_surface_ids(&scan.framing.layout, &scan.surfaces.rows);
+    let ignored_surface_ids = topology_ignored_surface_ids(scan);
     let path_activity = PcurvePathActivity::from_scan(scan);
     let model_surfaces = ModelSurfaceIndex::new(&ir.model.surfaces);
     let mut candidates = BTreeMap::<u32, Vec<PcurveEndpointEvidence>>::new();
@@ -1613,16 +1657,39 @@ fn linear_pcurve_carrier(
     })
 }
 
+fn sampled_pcurve_carrier_matches(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    surface: &SurfaceGeometry,
+    carrier: &CurveGeometry,
+    samples: &crate::curve::TwoChartPcurveSamples,
+    face_index: usize,
+) -> Result<bool, cadmpeg_core::CodecError> {
+    for sample in &samples.samples {
+        let [u, v] = sample[face_index];
+        let Some(point) =
+            cadmpeg_ir::eval::finite_or_refusal(cadmpeg_ir::eval::decode::outer_refusal(
+                cadmpeg_ir::eval::decode::surface_point(ctx, surface, u, v),
+            )?)?
+        else {
+            return Ok(false);
+        };
+        if !curve_contains_points(carrier, [[point.x, point.y, point.z]; 2]) {
+            return Ok(false);
+        }
+    }
+    Ok(true)
+}
+
 pub(in crate::decode) fn transfer_analytic_pcurve_carriers(
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     scan: &ContainerScan,
     ir: &mut CadIr,
     annotations: &mut AnnotationBuilder,
+    losses: &mut Vec<cadmpeg_ir::report::loss::LossNote>,
     source_carriers: &mut crate::decode::source_carriers::SourceUnitCarriers,
 ) -> Result<BTreeSet<CurveId>, cadmpeg_core::CodecError> {
     let reconciled_endpoints = pcurve_edge_endpoints(ctx, scan, ir, source_carriers)?;
-    let ignored_surface_ids =
-        topology_ignored_surface_ids(&scan.framing.layout, &scan.surfaces.rows);
+    let ignored_surface_ids = topology_ignored_surface_ids(scan);
     let mut candidates = BTreeMap::<u32, Vec<(CurveGeometry, usize)>>::new();
     let mut evaluable_path_counts = BTreeMap::<u32, usize>::new();
     {
@@ -1630,7 +1697,8 @@ pub(in crate::decode) fn transfer_analytic_pcurve_carriers(
         let mut retain_path = |curve_id: u32,
                                face_id: Option<NonZeroU32>,
                                endpoints: [[f64; 2]; 2],
-                               offset: usize|
+                               offset: usize,
+                               sampled: Option<(&crate::curve::TwoChartPcurveSamples, usize)>|
          -> Result<(), cadmpeg_core::CodecError> {
             let Some(face_id) = face_id.map(NonZeroU32::get) else {
                 return Ok(());
@@ -1673,6 +1741,16 @@ pub(in crate::decode) fn transfer_analytic_pcurve_carriers(
                 }
             }
             if let Some(carrier) = linear_pcurve_carrier(ctx, geometry, endpoints)? {
+                if let Some((samples, face_index)) = sampled {
+                    if !sampled_pcurve_carrier_matches(
+                        ctx, geometry, &carrier, samples, face_index,
+                    )? {
+                        losses.push(crate::loss::CreoLossCode::SampledPcurveCarrierUnresolved.note(
+                            format!("Curve {curve_id} chart on face {face_id} has samples outside its analytic candidate; its sampled path remains native")
+                        ));
+                        return Ok(());
+                    }
+                }
                 match candidates.entry(curve_id) {
                     std::collections::btree_map::Entry::Occupied(mut entry) => {
                         entry.get_mut().push((carrier, offset));
@@ -1693,7 +1771,7 @@ pub(in crate::decode) fn transfer_analytic_pcurve_carriers(
                 pcurve.face_1_endpoints,
             );
             for (face_id, endpoints) in pcurve.faces.into_iter().zip(endpoint_sets) {
-                retain_path(pcurve.curve_id, face_id, endpoints, pcurve.offset)?;
+                retain_path(pcurve.curve_id, face_id, endpoints, pcurve.offset, None)?;
             }
         }
         for pcurve in &scan.curves.bound_prototype_pcurves {
@@ -1704,7 +1782,7 @@ pub(in crate::decode) fn transfer_analytic_pcurve_carriers(
                 pcurve.face_1_endpoints,
             );
             for (face_id, endpoints) in pcurve.faces.into_iter().zip(endpoint_sets) {
-                retain_path(pcurve.curve_id, face_id, endpoints, pcurve.offset)?;
+                retain_path(pcurve.curve_id, face_id, endpoints, pcurve.offset, None)?;
             }
         }
         for pcurve in &scan.curves.two_chart_pcurves {
@@ -1719,9 +1797,17 @@ pub(in crate::decode) fn transfer_analytic_pcurve_carriers(
             else {
                 continue;
             };
-            for (face_id, endpoints) in faces.into_iter().zip(endpoint_sets.paths()) {
+            for (face_index, (face_id, endpoints)) in
+                faces.into_iter().zip(endpoint_sets.paths()).enumerate()
+            {
                 if let Some(endpoints) = endpoints {
-                    retain_path(pcurve.curve_id, face_id, endpoints, pcurve.offset)?;
+                    retain_path(
+                        pcurve.curve_id,
+                        face_id,
+                        endpoints,
+                        pcurve.offset,
+                        Some((pcurve, face_index)),
+                    )?;
                 }
             }
         }
@@ -1736,7 +1822,13 @@ pub(in crate::decode) fn transfer_analytic_pcurve_carriers(
                 pcurve.face_0_endpoints,
                 pcurve.face_0_endpoints,
             );
-            retain_path(pcurve.curve_id, faces[0], face_0_endpoints, pcurve.offset)?;
+            retain_path(
+                pcurve.curve_id,
+                faces[0],
+                face_0_endpoints,
+                pcurve.offset,
+                None,
+            )?;
         }
     }
     let mut transferred = BTreeSet::new();
@@ -2391,11 +2483,12 @@ mod tests {
             },
         ];
 
-        assert_eq!(
-            topology_ignored_surface_ids(&crate::test_support::legacy_layout(), &rows),
-            BTreeSet::from([7]),
-        );
-        assert!(topology_ignored_surface_ids(&crate::container::Layout::Nd, &rows).is_empty());
+        let mut scan = crate::test_support::empty_container_scan();
+        scan.framing.layout = crate::test_support::legacy_layout();
+        scan.surfaces.rows = rows;
+        assert_eq!(topology_ignored_surface_ids(&scan), BTreeSet::from([7]),);
+        scan.framing.layout = crate::container::Layout::Nd;
+        assert!(topology_ignored_surface_ids(&scan).is_empty());
     }
 
     fn one_plane_pcurve_fixture() -> (crate::container::ContainerScan<'static>, CadIr) {
@@ -2421,6 +2514,58 @@ mod tests {
             source_object: None,
         });
         (scan, ir)
+    }
+
+    #[test]
+    fn unresolved_plane_chart_keeps_envelope_geometry_out_of_endpoint_evidence() {
+        let (mut scan, ir) = one_plane_pcurve_fixture();
+        let carriers = crate::decode::source_carriers::SourceUnitCarriers::default();
+        let before = crate::decode::with_service_context(|ctx| {
+            pcurve_edge_endpoint_evidence_with_diagnostics(ctx, &scan, &ir, &carriers)
+        })
+        .expect("map complete chart");
+        assert!(before.0.contains_key(&7));
+        scan.planes
+            .local_systems
+            .push(crate::surface::PlaneLocalSystem {
+                surface_id: 10,
+                body: vec![0],
+                slots: [None; 12],
+                layout: None,
+                classification: crate::surface::LocalSystemClassification::Unclassified,
+                row_offset: 0,
+                offset: 0,
+            });
+        assert_eq!(topology_ignored_surface_ids(&scan), BTreeSet::from([10]));
+        let losses = super::unresolved_pcurve_chart_losses(&scan);
+        assert_eq!(losses.len(), 1);
+        assert_eq!(
+            losses[0].code,
+            crate::loss::CreoLossCode::PcurveChartUnresolved.kind()
+        );
+        let after = crate::decode::with_service_context(|ctx| {
+            pcurve_edge_endpoint_evidence_with_diagnostics(ctx, &scan, &ir, &carriers)
+        })
+        .expect("retain unresolved chart");
+        assert!(after.0.is_empty());
+        let samples = crate::curve::TwoChartPcurveSamples {
+            curve_id: 7,
+            faces: [10, 11],
+            samples: vec![[[1.0, 2.0]; 2], [[3.0, 4.0]; 2]],
+            offset: 0,
+        };
+        let mapped = crate::decode::with_service_context(|ctx| {
+            mapped_two_chart_endpoint_sets(
+                ctx,
+                &scan,
+                &ModelSurfaceIndex::new(&ir.model.surfaces),
+                &samples,
+                &carriers,
+            )
+        })
+        .expect("retain unresolved sampled chart");
+        assert!(mapped.is_none());
+        assert_eq!(ir.model.surfaces.len(), 1);
     }
 
     #[test]
@@ -2467,6 +2612,57 @@ mod tests {
     }
 
     #[test]
+    fn sampled_pcurve_carrier_requires_every_stored_point() {
+        let (mut scan, mut ir) = one_plane_pcurve_fixture();
+        scan.curves.pcurves.clear();
+        scan.curves
+            .two_chart_pcurves
+            .push(crate::curve::TwoChartPcurveSamples {
+                curve_id: 7,
+                faces: [10, 11],
+                samples: vec![[[0.0, 0.0]; 2], [[1.0, 1.0]; 2], [[2.0, 0.0]; 2]],
+                offset: 0,
+            });
+        let mut annotations = cadmpeg_ir::AnnotationBuilder::new();
+        let mut source_carriers = crate::decode::source_carriers::SourceUnitCarriers::default();
+        let mut losses = Vec::new();
+        let transferred = crate::decode::with_service_context(|ctx| {
+            transfer_analytic_pcurve_carriers(
+                ctx,
+                &scan,
+                &mut ir,
+                &mut annotations,
+                &mut losses,
+                &mut source_carriers,
+            )
+        })
+        .expect("inspect every sampled point");
+        assert!(transferred.is_empty());
+        assert!(ir.model.curves.is_empty());
+        assert_eq!(scan.curves.two_chart_pcurves[0].samples.len(), 3);
+        assert_eq!(losses.len(), 1);
+        assert_eq!(
+            losses[0].code,
+            crate::loss::CreoLossCode::SampledPcurveCarrierUnresolved.kind()
+        );
+        scan.curves.two_chart_pcurves[0].samples[1] = [[1.0, 0.0]; 2];
+        losses.clear();
+        let transferred = crate::decode::with_service_context(|ctx| {
+            transfer_analytic_pcurve_carriers(
+                ctx,
+                &scan,
+                &mut ir,
+                &mut annotations,
+                &mut losses,
+                &mut source_carriers,
+            )
+        })
+        .expect("admit the agreeing sampled line");
+        assert_eq!(transferred.len(), 1);
+        assert!(losses.is_empty());
+    }
+
+    #[test]
     fn analytic_pcurve_transfer_preserves_service_curve() {
         let (scan, mut ir) = one_plane_pcurve_fixture();
         let mut annotations = cadmpeg_ir::AnnotationBuilder::new();
@@ -2477,6 +2673,7 @@ mod tests {
                 &scan,
                 &mut ir,
                 &mut annotations,
+                &mut Vec::new(),
                 &mut source_carriers,
             )
         })
@@ -2980,6 +3177,7 @@ mod tests {
                 &scan,
                 &mut ir,
                 &mut annotations,
+                &mut Vec::new(),
                 &mut crate::decode::source_carriers::SourceUnitCarriers::default(),
             )
         })
@@ -3477,6 +3675,7 @@ mod tests {
                 &scan,
                 &mut ir,
                 &mut annotations,
+                &mut Vec::new(),
                 &mut crate::decode::source_carriers::SourceUnitCarriers::default(),
             )
         })
@@ -3496,6 +3695,7 @@ mod tests {
                 &scan,
                 &mut finite,
                 &mut annotations,
+                &mut Vec::new(),
                 &mut crate::decode::source_carriers::SourceUnitCarriers::default(),
             )
         })
@@ -3694,6 +3894,7 @@ mod tests {
                 &scan,
                 &mut ir,
                 &mut annotations,
+                &mut Vec::new(),
                 &mut crate::decode::source_carriers::SourceUnitCarriers::default(),
             )
         })
