@@ -590,9 +590,21 @@ fn feature_definition_is_incomplete(definition: &cadmpeg_ir::features::FeatureDe
         }
         FeatureDefinition::Operation(FeatureOperation::CosmeticThread {
             face,
+            standard,
+            designation,
             diameter,
-            extent,
-        }) => !face_selection_is_resolved(face) || diameter.is_none() || extent.is_none(),
+            pitch,
+            modeled,
+            extent
+        }) => {
+            !face_selection_is_resolved(face)
+                || standard.is_none()
+                || designation.is_none()
+                || diameter.is_none()
+                || pitch.is_none()
+                || modeled.is_none()
+                || extent.is_none()
+        }
         FeatureDefinition::Operation(FeatureOperation::Unresolved { .. }) => true,
         FeatureDefinition::Operation(FeatureOperation::DatumPlane { frame }) => {
             !datum_plane_frame_is_resolved(*frame)

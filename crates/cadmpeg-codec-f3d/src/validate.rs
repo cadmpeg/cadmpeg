@@ -3152,22 +3152,21 @@ fn validate_parameter_scopes(ctx: &Ctx, findings: &mut Vec<Finding>) -> Result<(
         let thread_link = match scope.thread_construction() {
             None => true,
             Some(construction) => {
-                let expected_groups: Vec<_> = match construction.form {
-                    records::feature::thread::DesignThreadForm::Standard
-                    | records::feature::thread::DesignThreadForm::StandardLegacy => scope
+                let expected_groups: Vec<_> = if construction.form.has_standard_reference_table() {
+                    scope
                         .reference_members()
                         .values()
                         .next()
                         .copied()
                         .into_iter()
-                        .collect::<Vec<_>>(),
-                    records::feature::thread::DesignThreadForm::Compact(_)
-                    | records::feature::thread::DesignThreadForm::CompactLegacy => scope
+                        .collect()
+                } else {
+                    scope
                         .reference_members()
                         .values()
                         .step_by(2)
                         .copied()
-                        .collect::<Vec<_>>(),
+                        .collect()
                 };
                 scope.reference_members().len() >= 2
                     && scope.reference_members().len().is_multiple_of(2)
@@ -3181,7 +3180,8 @@ fn validate_parameter_scopes(ctx: &Ctx, findings: &mut Vec<Finding>) -> Result<(
                                 && scope.paired_class_tag.as_str() == "263"
                         }
                         records::feature::thread::DesignThreadForm::Standard
-                        | records::feature::thread::DesignThreadForm::Compact(_) => true,
+                        | records::feature::thread::DesignThreadForm::Compact(_)
+                        | records::feature::thread::DesignThreadForm::StandardCompact => true,
                     }
                     && construction.face_group_record_indices == expected_groups
                     && matches!(
@@ -3200,6 +3200,7 @@ fn validate_parameter_scopes(ctx: &Ctx, findings: &mut Vec<Finding>) -> Result<(
                         records::feature::thread::DesignThreadForm::Compact(None)
                         | records::feature::thread::DesignThreadForm::Standard
                         | records::feature::thread::DesignThreadForm::StandardLegacy
+                        | records::feature::thread::DesignThreadForm::StandardCompact
                         | records::feature::thread::DesignThreadForm::CompactLegacy => true,
                     }
                     && construction

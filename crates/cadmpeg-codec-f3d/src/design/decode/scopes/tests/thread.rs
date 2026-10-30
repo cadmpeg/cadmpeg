@@ -184,6 +184,120 @@ fn thread_scope_decodes_class_334_legacy_standard_tail() {
     assert_eq!(exact_thread_construction(&bytes, &scope), None);
 }
 
+/// Standard-prefix Thread bytes with the compact construction marker.
+///
+/// `zero_run` is the count of zero bytes before the trailer `01`; the
+/// trailer is followed by u32 `1` and a marked reference to `group`.
+fn standard_compact_thread_bytes(zero_run: usize, group: u32) -> Vec<u8> {
+    let mut bytes = vec![0; 38];
+    bytes[21..29].copy_from_slice(&60.0f64.to_le_bytes());
+    bytes[29..34].copy_from_slice(&[1, 2, 0, 0, 0]);
+    bytes[34..38].copy_from_slice(&[0x36, 0, 0x67, 0]);
+    lp_utf16(&mut bytes, "M5x0.8");
+    lp_utf16(&mut bytes, "5.0");
+    lp_utf16(&mut bytes, "ISO Metric profile");
+    bytes.extend_from_slice(&[1, 2, 0, 0, 0]);
+    bytes.extend_from_slice(&0.4891f64.to_le_bytes());
+    bytes.extend_from_slice(&0.4213f64.to_le_bytes());
+    bytes.push(0);
+    bytes.extend_from_slice(&0.08f64.to_le_bytes());
+    bytes.extend_from_slice(&0.4529f64.to_le_bytes());
+    bytes.extend(std::iter::repeat_n(0, zero_run));
+    bytes.push(1);
+    bytes.extend_from_slice(&1u32.to_le_bytes());
+    bytes.push(1);
+    bytes.extend_from_slice(&group.to_le_bytes());
+    bytes.extend_from_slice(&[0; 6]);
+    bytes
+}
+
+#[test]
+fn thread_scope_decodes_standard_prefix_compact_marker_form() {
+    let expected = |designation_offset: u64| DesignThreadConstruction {
+        form: DesignThreadForm::StandardCompact,
+        designation_offset,
+        designation: cadmpeg_core::text::NonBlankString::new("M5x0.8").unwrap(),
+        nominal_size: crate::records::feature::thread::DesignThreadNominalSize::try_from(
+            "5.0".to_owned(),
+        )
+        .expect("nominal size"),
+        profile: cadmpeg_core::text::NonBlankString::new("ISO Metric profile").unwrap(),
+        pitch: cadmpeg_ir::scalar::PositiveReal::new(0.08).unwrap(),
+        face_group_record_indices: vec![612],
+        diameters: crate::records::feature::thread::DesignThreadDiameters::new(
+            0.4891, 0.4213, 0.4529,
+        )
+        .unwrap(),
+    };
+    for zero_run in [2, 3] {
+        let bytes = standard_compact_thread_bytes(zero_run, 612);
+        assert_thread_construction(
+            parse_thread_payload(&bytes, 38, ThreadPrefix::Standard, vec![612]),
+            &expected(38),
+        );
+    }
+
+    // The scope-level entry point admits the owner-marked prefix with the same payload.
+    let mut owner_marked = standard_compact_thread_bytes(3, 612);
+    owner_marked.splice(20..20, [1, 0, 0, 0]);
+    let mut scope = DesignParameterScope::empty(
+        "f3d:scope#standard-compact-thread",
+        crate::records::feature::scope::DesignFeatureKind::Thread,
+        611,
+    );
+    scope.class_tag =
+        crate::records::references::DesignClassTag::try_from("901".to_owned()).unwrap();
+    scope.paired_class_tag =
+        crate::records::references::DesignClassTag::try_from("902".to_owned()).unwrap();
+    scope
+        .try_edit(|draft| {
+            draft.frame_length = 200;
+            draft.reference_members =
+                crate::records::identity::ReferenceRun::unlocated(vec![612, 615]);
+            draft.paired_byte_offset = draft.byte_offset + draft.frame_length;
+            draft.layout_fixture_references();
+            draft.layout_fixture_tail();
+        })
+        .unwrap();
+    assert_thread_construction(
+        exact_thread_construction(&owner_marked, &scope),
+        &expected(42),
+    );
+}
+
+#[test]
+fn thread_scope_refuses_standard_prefix_compact_marker_trailer_deviations() {
+    let admit = |bytes: &[u8]| parse_thread_payload(bytes, 38, ThreadPrefix::Standard, vec![612]);
+    assert!(admit(&standard_compact_thread_bytes(2, 612)).is_some());
+    // The zero run is two or three bytes.
+    assert_eq!(admit(&standard_compact_thread_bytes(1, 612)), None);
+    assert_eq!(admit(&standard_compact_thread_bytes(4, 612)), None);
+    // The marked reference names the first scope reference.
+    assert_eq!(admit(&standard_compact_thread_bytes(2, 613)), None);
+    let base = standard_compact_thread_bytes(2, 612);
+    let flag_at = base.len() - (1 + 4 + 1 + 4 + 6);
+    let count_at = flag_at + 1;
+    let marker_at = count_at + 4;
+    assert_eq!(base[flag_at], 1);
+    for (at, value) in [(flag_at, 0u8), (count_at, 2), (marker_at, 0)] {
+        let mut bytes = base.clone();
+        bytes[at] = value;
+        assert_eq!(admit(&bytes), None, "byte {at} set to {value}");
+    }
+    // The pitch marker is zero.
+    let pitch_marker_at = flag_at - 2 - 8 - 8 - 1;
+    let mut bytes = base.clone();
+    bytes[pitch_marker_at] = 1;
+    assert_eq!(admit(&bytes), None);
+    // A truncated trailer is refused.
+    assert_eq!(admit(&base[..base.len() - 8]), None);
+    // The compact prefix does not admit the marker with the standard trailer.
+    assert_eq!(
+        parse_thread_payload(&base, 38, ThreadPrefix::Compact, vec![612]),
+        None
+    );
+}
+
 fn assert_thread_construction(
     actual: Option<DesignThreadConstruction>,
     expected: &DesignThreadConstruction,

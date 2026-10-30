@@ -5,6 +5,7 @@ use crate::bytes::lp_utf16_bounded;
 use crate::layout::thread_compact_construction_tail as thread_compact_tail;
 use crate::layout::thread_compact_legacy_construction_tail as thread_compact_legacy_tail;
 use crate::layout::thread_owner_marked_scope_prefix as thread_owner;
+use crate::layout::thread_standard_compact_construction_tail as thread_standard_compact_tail;
 use crate::layout::thread_standard_construction_tail as thread_tail;
 use crate::layout::thread_standard_legacy_construction_tail as thread_standard_legacy_tail;
 use crate::layout::thread_standard_scope_prefix as thread_standard;
@@ -53,7 +54,9 @@ pub(super) fn exact_thread_construction(
         DesignThreadForm::CompactLegacy => {
             scope.class_tag.as_str() == "414" && scope.paired_class_tag.as_str() == "263"
         }
-        DesignThreadForm::Standard | DesignThreadForm::Compact(_) => true,
+        DesignThreadForm::Standard
+        | DesignThreadForm::Compact(_)
+        | DesignThreadForm::StandardCompact => true,
     };
     if !class_pair_is_valid {
         return None;
@@ -122,6 +125,9 @@ pub(super) fn parse_thread_payload(
             match (expected_form, bytes.get(after_profile..after_profile + 5)?) {
                 (ThreadPrefix::Standard, [0, 1, 0, 0, 0]) => (1, ThreadTrailerKind::Standard),
                 (ThreadPrefix::Standard, [1, 1, 0, 0, 0]) => (0, ThreadTrailerKind::StandardLegacy),
+                (ThreadPrefix::Standard, [1, 2, 0, 0, 0]) => {
+                    (0, ThreadTrailerKind::StandardCompact)
+                }
                 (ThreadPrefix::Compact, [1, 2, 0, 0, 0]) => (0, ThreadTrailerKind::Compact),
                 (ThreadPrefix::Compact, [1, 1, 0, 0, 0]) => (0, ThreadTrailerKind::CompactLegacy),
                 _ => return None,
@@ -137,6 +143,7 @@ pub(super) fn parse_thread_payload(
             ThreadTrailerKind::Compact => thread_compact_tail::COMPACT_TRAILER,
             ThreadTrailerKind::StandardLegacy => thread_standard_legacy_tail::LEGACY_TRAILER,
             ThreadTrailerKind::CompactLegacy => thread_compact_legacy_tail::LEGACY_TRAILER,
+            ThreadTrailerKind::StandardCompact => thread_standard_compact_tail::TRAILER_ZERO_RUN,
         };
         let trailer_offset = after_profile.checked_add(trailer_at)?;
         let form = match trailer_kind {
@@ -154,6 +161,15 @@ pub(super) fn parse_thread_payload(
                 if bytes.get(trailer_offset..trailer_offset + 4)? == [0, 0, 0, 1] =>
             {
                 DesignThreadForm::CompactLegacy
+            }
+            ThreadTrailerKind::StandardCompact
+                if standard_compact_trailer_is_valid(
+                    bytes,
+                    trailer_offset,
+                    face_group_record_indices.first().copied()?,
+                ) =>
+            {
+                DesignThreadForm::StandardCompact
             }
             ThreadTrailerKind::Compact
                 if bytes.get(trailer_offset..trailer_offset + 4)? == [0, 0, 0, 1] =>
@@ -191,10 +207,47 @@ pub(super) fn parse_thread_payload(
     })()
 }
 
+/// Admit the trailer of the standard-prefix compact-marker form: a run of two
+/// or three zero bytes, the byte `01`, u32 `1`, and a marked reference to the
+/// face-selection group.
+fn standard_compact_trailer_is_valid(
+    bytes: &[u8],
+    trailer_offset: usize,
+    face_group_record_index: u32,
+) -> bool {
+    let Some(tail) = bytes.get(trailer_offset..) else {
+        return false;
+    };
+    let zero_run = tail.iter().take_while(|byte| **byte == 0).count();
+    if !STANDARD_COMPACT_ZERO_RUNS.contains(&zero_run) {
+        return false;
+    }
+    let Some(flag_at) = trailer_offset.checked_add(zero_run) else {
+        return false;
+    };
+    let Some(count_at) = flag_at.checked_add(1) else {
+        return false;
+    };
+    let Some(marker_at) = count_at.checked_add(4) else {
+        return false;
+    };
+    let Some(index_at) = marker_at.checked_add(1) else {
+        return false;
+    };
+    bytes.get(flag_at) == Some(&1)
+        && View::u32_le_at(bytes, count_at) == Some(1)
+        && bytes.get(marker_at) == Some(&1)
+        && View::u32_le_at(bytes, index_at) == Some(face_group_record_index)
+}
+
+/// Zero-run lengths before the trailer `01` of the standard-prefix compact-marker form.
+const STANDARD_COMPACT_ZERO_RUNS: std::ops::RangeInclusive<usize> = 2..=3;
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum ThreadTrailerKind {
     Standard,
     Compact,
     StandardLegacy,
     CompactLegacy,
+    StandardCompact,
 }

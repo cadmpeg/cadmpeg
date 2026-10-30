@@ -13703,6 +13703,33 @@ source = "spec"
 anchor = "the four bytes `00 00 00 01`"
 
 [[record]]
+name = "thread_standard_compact_construction_tail"
+kind = "byte"
+section = "3.1"
+anchor = "A standard-prefix Thread scope with the construction marker `01 02 00 00 00` is a fifth wire form"
+size = 40
+note = "Offsets are relative to the first byte after the third LP-UTF16 string. The trailer zero run is two or three bytes; the trailer `01`, the count, and the marked reference follow it at variable offsets."
+
+[[record.field]]
+name = "construction_marker"
+offset = 0
+type = "bytes[5]"
+source = "spec"
+anchor = "with the construction marker `01 02 00 00 00`"
+
+[[record.gap]]
+offset = 5
+size = 33
+note = "The scalar lanes use the same offsets as the compact tail."
+
+[[record.field]]
+name = "trailer_zero_run"
+offset = 38
+type = "bytes[2]"
+source = "spec"
+anchor = "Its trailer at relative offset 38 is a run of two or three zero bytes"
+
+[[record]]
 name = "thread_standard_legacy_construction_tail"
 kind = "byte"
 section = "3.1"

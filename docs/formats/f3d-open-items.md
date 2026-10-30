@@ -774,3 +774,27 @@ the native feature when a fixed lane carries a symmetric distance.
 **Conflict.** None.
 
 **Note.** Emit `assembly.local-occurrence-identity-ordinal-unresolved` and keep the occurrence out of neutral product structure.
+
+### DR-142. Thread construction option bytes
+
+**Question.** What do the first and second bytes of the Thread construction marker, the pitch marker, and the zero bytes before the trailer `01` select?
+
+**Known.** The construction marker first byte is `0` or `1` and its second byte is `1` or `2`. The pitch marker is `0` or `1`. The admitted forms fix each combination they accept. In the standard-prefix compact-marker form, the run before the trailer `01` is two or three zero bytes. Every byte in that run is zero in each Thread scope that carries it.
+
+**Need.** Thread scopes saved with one dialog option changed at a time, and Thread scopes whose marker combinations no admitted form accepts.
+
+**Conflict.** None.
+
+**Note.** A scope whose marker combination no admitted form accepts stays a native feature.
+
+### DR-143. Thread modeled state
+
+**Question.** Which stored field, or which result-topology change, marks a Thread as modeled geometry instead of an annotation?
+
+**Known.** The scope stores the designation, nominal-size text, profile name, and four physical scalars. No stored byte is proven to select the modeled state. In every Thread scope with a resolved result transition, the transition updates faces and inserts none.
+
+**Need.** One Thread saved with modeled geometry and the same Thread with it off, with the Design stream and the ASM history of both.
+
+**Conflict.** None.
+
+**Note.** The neutral thread leaves `modeled` absent.
