@@ -3338,6 +3338,24 @@ Unstated regions:
 
 - `0..20` (20 B): The indexed header and the preceding marker-one Revolve envelope are outside this field run.
 
+## `offset_24_extrude_prologue`
+
+Spec §3.1 · layout: byte offsets · size: 28 B
+
+Offsets are relative to the Extrude primary indexed header.
+
+Parsed by:
+- `crates/cadmpeg-codec-f3d/src/design/decode/scopes/extrude.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 11 | 13 | `zero_run_13` | `bytes[13]` | little | spec | at primary-header offset 24 after thirteen zero bytes |
+| 24 | 4 | `operation` | `u32` | little | spec | at primary-header offset 24 after thirteen zero bytes |
+
+Unstated regions:
+
+- `0..11` (11 B): The indexed header precedes this field run.
+
 ## `current_extrude_operation_fields`
 
 Spec §3.1 · layout: byte offsets · size: 42 B

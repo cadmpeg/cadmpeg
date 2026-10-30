@@ -1490,6 +1490,38 @@ pub(super) fn fixed_kind_tail_operations(
             ..Default::default()
         })
     );
+    bytes[embedded_default_at + 115 + 40..embedded_default_at + 115 + 48]
+        .copy_from_slice(&0.1f64.to_le_bytes());
+    assert_eq!(
+        exact_fixed_extrude_parameters(
+            &bytes,
+            &crate::design::test_support::indexed_record_offsets_for_test(&bytes),
+            &extrude_scope,
+            &[],
+            &[],
+        ),
+        Some(DesignFixedExtrudeParameters {
+            along_distance: Some(DesignFixedExtrudeDistance::DistanceConstruction(
+                DesignFixedExtrudeScalar {
+                    value: cadmpeg_ir::scalar::PositiveReal::new(0.25).unwrap(),
+                    record_index: embedded_distance_record_index,
+                    value_offset: u64_from_index(embedded_distance_at + 51),
+                },
+            )),
+            taper_angle: Some(DesignFixedExtrudeScalar {
+                value: crate::test_support::real(0.1),
+                record_index: 274,
+                value_offset: u64_from_index(embedded_default_at + 115 + 40),
+            }),
+            against_distance: None,
+            side_two_taper_angle: None,
+            profile_offset: None,
+            side_one_offset: None,
+            ..Default::default()
+        })
+    );
+    bytes[embedded_default_at + 115 + 40..embedded_default_at + 115 + 48]
+        .copy_from_slice(&0.0f64.to_le_bytes());
     extrude_scope
         .try_edit(|draft| {
             draft.reference_members = {
@@ -1512,6 +1544,178 @@ pub(super) fn fixed_kind_tail_operations(
             &[],
         ),
         None
+    );
+
+    bytes[embedded_default_at + 115 + 40..embedded_default_at + 115 + 48]
+        .copy_from_slice(&1.5f64.to_le_bytes());
+    extrude_scope
+        .try_edit(|draft| {
+            draft.reference_members =
+                crate::records::identity::ReferenceRun::unlocated(vec![50, 273, 274, 51]);
+            draft.layout_fixture_references();
+            draft.paired_byte_offset = draft.paired_byte_offset.max(draft.kind_offset + 96);
+            draft.frame_length = draft.paired_byte_offset - draft.byte_offset;
+            draft.layout_fixture_tail();
+        })
+        .unwrap();
+    assert_eq!(
+        exact_fixed_extrude_parameters(
+            &bytes,
+            &crate::design::test_support::indexed_record_offsets_for_test(&bytes),
+            &extrude_scope,
+            &[],
+            &[],
+        ),
+        Some(DesignFixedExtrudeParameters {
+            along_distance: Some(DesignFixedExtrudeDistance::FixedScalar(
+                DesignFixedExtrudeScalar {
+                    value: cadmpeg_ir::scalar::NonZeroReal::new(1.5).unwrap(),
+                    record_index: 274,
+                    value_offset: u64_from_index(embedded_default_at + 115 + 40),
+                },
+            )),
+            taper_angle: Some(DesignFixedExtrudeScalar {
+                value: crate::test_support::real(0.0),
+                record_index: 273,
+                value_offset: u64_from_index(embedded_default_at + 40),
+            }),
+            against_distance: None,
+            side_two_taper_angle: None,
+            profile_offset: None,
+            side_one_offset: None,
+            ..Default::default()
+        })
+    );
+    extrude_scope
+        .try_edit(|draft| {
+            draft.reference_members =
+                crate::records::identity::ReferenceRun::unlocated(vec![50, 274, 273, 51]);
+            draft.layout_fixture_references();
+            draft.paired_byte_offset = draft.paired_byte_offset.max(draft.kind_offset + 96);
+            draft.frame_length = draft.paired_byte_offset - draft.byte_offset;
+            draft.layout_fixture_tail();
+        })
+        .unwrap();
+    assert_eq!(
+        exact_fixed_extrude_parameters(
+            &bytes,
+            &crate::design::test_support::indexed_record_offsets_for_test(&bytes),
+            &extrude_scope,
+            &[],
+            &[],
+        ),
+        Some(DesignFixedExtrudeParameters {
+            along_distance: Some(DesignFixedExtrudeDistance::FixedScalar(
+                DesignFixedExtrudeScalar {
+                    value: cadmpeg_ir::scalar::NonZeroReal::new(1.5).unwrap(),
+                    record_index: 274,
+                    value_offset: u64_from_index(embedded_default_at + 115 + 40),
+                },
+            )),
+            taper_angle: Some(DesignFixedExtrudeScalar {
+                value: crate::test_support::real(0.0),
+                record_index: 273,
+                value_offset: u64_from_index(embedded_default_at + 40),
+            }),
+            against_distance: None,
+            side_two_taper_angle: None,
+            profile_offset: None,
+            side_one_offset: None,
+            ..Default::default()
+        })
+    );
+    bytes[embedded_default_at + 115 + 40..embedded_default_at + 115 + 48]
+        .copy_from_slice(&0.0f64.to_le_bytes());
+
+    let mut offset_24_bytes = vec![0; 120];
+    offset_24_bytes[0..4].copy_from_slice(&3u32.to_le_bytes());
+    offset_24_bytes[4..7].copy_from_slice(b"375");
+    offset_24_bytes[7..11].copy_from_slice(&1u32.to_le_bytes());
+    offset_24_bytes[24..28].copy_from_slice(&4u32.to_le_bytes());
+    offset_24_bytes[28..32].copy_from_slice(&1u32.to_le_bytes());
+    offset_24_bytes[32..36].copy_from_slice(&2u32.to_le_bytes());
+    offset_24_bytes[36] = 0;
+    offset_24_bytes[37] = 1;
+    offset_24_bytes[38] = 0;
+    offset_24_bytes[42..50].copy_from_slice(&1.0f64.to_le_bytes());
+    offset_24_bytes[73..77].copy_from_slice(&1u32.to_le_bytes());
+    let decoded_offset_24 = crate::design::decode::scopes::extrude::exact_extrude_prologue(
+        &offset_24_bytes,
+        0,
+        120,
+        "375",
+        "260",
+        100,
+        &[],
+    );
+    assert!(matches!(
+        decoded_offset_24,
+        Some(DesignExtrudePrologue::ReferenceAware {
+            operation: DesignExtrudeOperation::NewBody,
+            operation_offset: 24,
+            extent: DesignExtrudeExtent::OneSidedDistance,
+            ..
+        })
+    ));
+
+    let mut scope_375 = extrude_scope.clone();
+    scope_375.class_tag =
+        crate::records::references::DesignClassTag::try_from("375".to_owned()).unwrap();
+    scope_375.paired_class_tag =
+        crate::records::references::DesignClassTag::try_from("260".to_owned()).unwrap();
+    let to_face_prologue = DesignExtrudePrologue::ReferenceAware {
+        reference: None,
+        operation: DesignExtrudeOperation::Join,
+        operation_offset: 28,
+        direction_face_extend_values: [1, 2],
+        side_extent_discriminators: [2, 0],
+        side_extent_discriminator_offsets: [77, 90],
+        first_side_target_ordinal: None,
+        extent: DesignExtrudeExtent::OneSidedToFace,
+        direction_face_extend_offsets: [32, 36],
+        direction_reversed: false,
+        direction_reversed_offset: 40,
+        solid_operation: true,
+        solid_operation_offset: 41,
+        start: DesignExtrudeStart::ProfilePlane,
+        start_offset: 42,
+    };
+    for length in [477, 481] {
+        scope_375
+            .try_edit(|draft| {
+                draft.frame_length = length;
+                draft.paired_byte_offset = draft.byte_offset + draft.frame_length;
+                draft.layout_fixture_tail();
+            })
+            .unwrap();
+        assert!(
+            crate::design::face_resolve::extrude_omits_zero_side_one_offset(
+                &scope_375,
+                &to_face_prologue,
+                0
+            )
+        );
+        assert!(
+            !crate::design::face_resolve::extrude_omits_zero_side_one_offset(
+                &scope_375,
+                &to_face_prologue,
+                1
+            )
+        );
+    }
+    scope_375
+        .try_edit(|draft| {
+            draft.frame_length = 478;
+            draft.paired_byte_offset = draft.byte_offset + draft.frame_length;
+            draft.layout_fixture_tail();
+        })
+        .unwrap();
+    assert!(
+        !crate::design::face_resolve::extrude_omits_zero_side_one_offset(
+            &scope_375,
+            &to_face_prologue,
+            0
+        )
     );
 
     super::fixed_kind_operations::continue_fixed_kind_operations(bytes, scope, &thicken_group);

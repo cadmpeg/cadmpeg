@@ -1620,6 +1620,74 @@ fn extrude_parameters_project_blind_two_sided_and_reversed_extents() {
             .is_none()
         );
 
+        for length in [477, 481] {
+            let mut class_375_scope = scope.clone();
+            class_375_scope.class_tag =
+                crate::records::references::DesignClassTag::try_from("375".to_owned()).unwrap();
+            class_375_scope.paired_class_tag =
+                crate::records::references::DesignClassTag::try_from("260".to_owned()).unwrap();
+            class_375_scope
+                .try_edit(|draft| {
+                    draft.frame_length = length;
+                    draft.paired_byte_offset = draft.byte_offset + draft.frame_length;
+                    draft.layout_fixture_tail();
+                })
+                .unwrap();
+            let omitted_zero_offset = crate::test_support::with_decode_context(|decode_ctx| {
+                project_extrude(
+                    decode_ctx,
+                    &class_375_scope,
+                    &[(0, &taper)],
+                    &[body_group.clone(), face_group.clone()],
+                    &[],
+                    std::slice::from_ref(&placement),
+                    &[],
+                )
+            })
+            .expect("project the extrude feature")
+            .expect("class-375 face-target Extrude admits omitted zero offset");
+            assert!(matches!(
+                omitted_zero_offset,
+                FeatureDefinition::Operation(FeatureOperation::Extrude {
+                    extent: ExtrudeExtent::OneSided {
+                        side: ExtrudeSide {
+                            termination: LinearTermination::ToFace {
+                                face: FaceSelection::Native(ref id),
+                                offset: None,
+                            },
+                            ..
+                        },
+                    },
+                    ..
+                }) if id == &face_group.id
+            ));
+        }
+        let mut invalid_375_scope = scope.clone();
+        invalid_375_scope.class_tag =
+            crate::records::references::DesignClassTag::try_from("375".to_owned()).unwrap();
+        invalid_375_scope.paired_class_tag =
+            crate::records::references::DesignClassTag::try_from("260".to_owned()).unwrap();
+        invalid_375_scope
+            .try_edit(|draft| {
+                draft.frame_length = 478;
+                draft.paired_byte_offset = draft.byte_offset + draft.frame_length;
+                draft.layout_fixture_tail();
+            })
+            .unwrap();
+        assert!(
+            crate::test_support::with_decode_context(|decode_ctx| project_extrude(
+                decode_ctx,
+                &invalid_375_scope,
+                &[(0, &taper)],
+                &[body_group.clone(), face_group.clone()],
+                &[],
+                std::slice::from_ref(&placement),
+                &[]
+            ))
+            .expect("project the extrude feature")
+            .is_none()
+        );
+
         set_extrude_direction_reversed(&mut scope, false);
         set_extrude_extent(&mut scope, DesignExtrudeExtent::TwoSidedToFaces);
         let mut second_face_group = face_group.clone();
