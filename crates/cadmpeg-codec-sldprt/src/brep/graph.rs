@@ -1121,6 +1121,10 @@ fn closed_edge_start(curve: Option<&IndexedCurve>) -> Option<(cadmpeg_ir::math::
 }
 
 /// The model positions of the vertices a walked face's coedges start at.
+/// Share of the ball radius a fitted blend cache may miss a face vertex by;
+/// a larger miss is another branch of the rolling ball.
+const BLEND_VERTEX_MISS_RADIUS_FRACTION: f64 = 0.25;
+
 fn face_vertex_positions(t: &topology::Tables, face: &WalkedFace) -> Vec<cadmpeg_ir::math::Point3> {
     let mut positions = Vec::new();
     for (_, ring) in &face.loops {
@@ -3355,26 +3359,47 @@ fn decode_graph(
                                 sides[slot] = match carriers.support_pair_wedge(
                                     ctx,
                                     reference,
-                                    f.surface_attr,
                                     &spine.carrier().geometry,
+                                    &vertices,
                                 )? {
                                     Some(wedge) => Some(super::blend_fit::Side::Wedge(wedge)),
                                     None => carriers.blend_side(ctx, resolved, &blend_memo)?,
                                 };
                             }
-                            match sides {
+                            let fitted = match sides {
                                 [Some(first), Some(second)] => super::blend_fit::fit(
                                     ctx,
                                     &spine.carrier().geometry,
                                     [first, second],
                                     blend.signed_radius,
-                                    &face_vertex_positions(t, f),
+                                    &vertices,
                                 )?
                                 .map(|fit| blend_surface::BlendCache {
                                     surface: fit.surface,
                                     fit_tolerance: fit.fit_tolerance,
                                 }),
                                 _ => None,
+                            };
+                            // The cache states its largest vertex miss; a miss of
+                            // a sizeable share of the radius is another branch.
+                            match fitted {
+                                Some(mut cache) => match blend_surface::vertex_miss(
+                                    ctx,
+                                    &cache,
+                                    &spine.carrier().geometry,
+                                    &vertices,
+                                )? {
+                                    Some(miss)
+                                        if miss
+                                            <= blend.signed_radius.abs()
+                                                * BLEND_VERTEX_MISS_RADIUS_FRACTION =>
+                                    {
+                                        cache.fit_tolerance = cache.fit_tolerance.max(miss);
+                                        Some(cache)
+                                    }
+                                    _ => None,
+                                },
+                                None => None,
                             }
                         }
                         (None, None) => None,
