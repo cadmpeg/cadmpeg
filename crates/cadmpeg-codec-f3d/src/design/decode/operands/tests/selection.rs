@@ -786,6 +786,9 @@ fn sketch_profile_region_selection_requires_every_delimiter() {
             None
         );
     }
+    let mut flag_1_terminator = bytes;
+    flag_1_terminator[terminator] = 1;
+    assert!(parse_sketch_profile_region_selection(&flag_1_terminator, 100, 0).is_some());
 }
 
 #[test]
