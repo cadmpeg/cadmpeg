@@ -113,7 +113,7 @@ flate2 = "1"
 ruzstd = { version = "0.9.1", default-features = false, features = ["std", "hash"] }
 crc32fast = "1"
 roxmltree = "0.21"
-hdf5-reader = { version = "0.9.1", default-features = false }
+hdf5-reader = { version = "0.10.0", default-features = false }
 regex = "1.13"
 assert_cmd = "2"
 predicates = "3"
