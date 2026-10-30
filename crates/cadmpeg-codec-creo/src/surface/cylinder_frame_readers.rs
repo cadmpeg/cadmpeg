@@ -31,7 +31,7 @@ impl CylinderRotationFrame {
     }
 }
 
-pub(crate) fn rotation_cylinder_envelope(
+pub(crate) fn bounded_rotation_envelope(
     body: &[u8],
     cache: &scalar::ScalarCache,
 ) -> Option<([f64; 4], [f64; 6], usize)> {
@@ -105,7 +105,7 @@ fn rotation_cylinder_body_prefix(
     body: &[u8],
     cache: &scalar::ScalarCache,
 ) -> Option<(CylinderRotationFrame, usize)> {
-    let (bounds, corners, end) = rotation_cylinder_envelope(body, cache)?;
+    let (bounds, corners, end) = bounded_rotation_envelope(body, cache)?;
     let mut view = cadmpeg_core::decode::View::over_retained(body);
     view.seek(end)?;
     (view.u8()? == psb::token::COMPOUND_CLOSE).then_some(())?;
@@ -192,7 +192,7 @@ pub(crate) fn named_rotation_cylinder_parameter_frame(
     prototype: &super::SurfacePrototypeRecord,
     cache: &scalar::ScalarCache,
 ) -> Option<CylinderRotationFrame> {
-    let (bounds, corners, envelope_end) = rotation_cylinder_envelope(&parameter.body, cache)?;
+    let (bounds, corners, envelope_end) = bounded_rotation_envelope(&parameter.body, cache)?;
     (envelope_end == parameter.body.len()).then_some(())?;
     let (slots, complete) = named_rotation_cylinder_slots(prototype, cache)?;
     Some(CylinderRotationFrame::from_frame((|| {
