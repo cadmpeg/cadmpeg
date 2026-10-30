@@ -313,6 +313,106 @@ fn coaxial_torus_circle_gets_constant_minor_angle_pcurve() {
 }
 
 #[test]
+fn a_great_circle_pcurve_keeps_its_latitude_within_the_poles() {
+    // An octant bounded by three great circles with one vertex on the pole.
+    // Each great circle's line pcurve keeps latitude within the poles over
+    // the edge's range and meets the edge's vertices.
+    let mut cur = Cursor::new(sldprt_with_body(&sphere_patch_body()));
+    let result = EditableDecodeResult::from(
+        SldprtCodec
+            .decode(&mut cur, &DecodeOptions::default())
+            .unwrap(),
+    );
+    let model = &result.ir().model;
+    let Some(cadmpeg_ir::geometry::SolvedSurfaceGeometry::Sphere(sphere)) =
+        model.surfaces[0].geometry.solved()
+    else {
+        panic!("the fixture's support is a sphere");
+    };
+    let axis = *sphere.frame().axis().as_raw();
+    let reference = *sphere.frame().reference().as_raw();
+    let binormal = axis.cross(reference);
+    let radius = sphere.radius().get();
+    let on_sphere = |u: f64, v: f64| {
+        let (radial, height) = (radius * v.cos(), radius * v.sin());
+        cadmpeg_ir::math::Point3::new(
+            radial * (u.cos() * reference.x + u.sin() * binormal.x) + height * axis.x,
+            radial * (u.cos() * reference.y + u.sin() * binormal.y) + height * axis.y,
+            radial * (u.cos() * reference.z + u.sin() * binormal.z) + height * axis.z,
+        )
+    };
+    let position = |vertex: &cadmpeg_ir::ids::VertexId| {
+        let vertex = model
+            .vertices
+            .iter()
+            .find(|item| &item.id == vertex)
+            .unwrap();
+        model
+            .points
+            .iter()
+            .find(|point| point.id == vertex.point)
+            .unwrap()
+            .position()
+            .get()
+    };
+    for coedge in &model.coedges {
+        let edge = model
+            .edges
+            .iter()
+            .find(|edge| edge.id == coedge.edge)
+            .unwrap();
+        let Some(circle) = model
+            .curves
+            .iter()
+            .find(|curve| edge.curve() == Some(&curve.id))
+            .and_then(|curve| match &curve.geometry {
+                cadmpeg_ir::geometry::CurveGeometry::Solved(
+                    cadmpeg_ir::geometry::SolvedCurveGeometry::Circle(circle),
+                ) => Some(*circle),
+                _ => None,
+            })
+        else {
+            continue;
+        };
+        let pcurve = model
+            .pcurves
+            .iter()
+            .find(|pcurve| pcurve.id == coedge.pcurves[0].pcurve)
+            .unwrap();
+        let cadmpeg_ir::geometry::pcurve::PcurveGeometry::Line(line) = pcurve.geometry else {
+            panic!("a great circle on its sphere has a line pcurve");
+        };
+        let (origin, direction) = (*line.origin().as_raw(), *line.direction().as_raw());
+        let angle = |vertex: &cadmpeg_ir::ids::VertexId| {
+            let offset = position(vertex).vector_from(circle.center().get());
+            let reference = *circle.frame().reference().as_raw();
+            let binormal = circle.frame().axis().as_raw().cross(reference);
+            offset.dot(binormal).atan2(offset.dot(reference))
+        };
+        // Without a range an edge runs forward along its circle.
+        let [first, last] = edge.param_range().map_or_else(
+            || {
+                let start = angle(&edge.start);
+                let sweep = (angle(&edge.end) - start).rem_euclid(std::f64::consts::TAU);
+                [start, start + sweep]
+            },
+            cadmpeg_ir::units::FiniteVector::get,
+        );
+        for (parameter, vertex) in [(first, &edge.start), (last, &edge.end)] {
+            let (u, v) = (
+                origin.u + parameter * direction.u,
+                origin.v + parameter * direction.v,
+            );
+            assert!(
+                v.abs() <= std::f64::consts::FRAC_PI_2 + 1e-12,
+                "latitude {v}"
+            );
+            assert!(on_sphere(u, v).distance(position(vertex)) < 1e-9 * radius);
+        }
+    }
+}
+
+#[test]
 fn sphere_patch_gets_degenerate_meridian_seam() {
     let mut cur = Cursor::new(sldprt_with_body(&sphere_patch_body()));
     let result = EditableDecodeResult::from(

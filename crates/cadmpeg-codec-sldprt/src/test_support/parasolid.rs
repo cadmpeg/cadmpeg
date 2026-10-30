@@ -345,9 +345,10 @@ pub(crate) fn sphere_patch_body() -> Vec<u8> {
     b.extend(coedge(30, 20, 32, 51, 0, 40, false));
     b.extend(coedge(31, 20, 30, 52, 0, 41, false));
     b.extend(coedge(32, 20, 31, 50, 0, 42, false));
-    b.extend(edge_use(40, 70));
-    b.extend(edge_use(41, 71));
-    b.extend(edge_use(42, 72));
+    // Each edge is the great circle through its vertices.
+    b.extend(edge_use(40, 72));
+    b.extend(edge_use(41, 70));
+    b.extend(edge_use(42, 71));
     b.extend(vertex_use(50, 60));
     b.extend(vertex_use(51, 61));
     b.extend(vertex_use(52, 62));
