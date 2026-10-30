@@ -7883,17 +7883,11 @@ fn project_delete_face(
         .checked_sub(scope.byte_offset())
         .and_then(|offset| offset.checked_sub(reference_bytes)));
     let heal = match scope.kind_name() {
-        // The compact frame's fixed scope tail is 77 or 78 bytes.
+        // The compact frame's fixed scope tail is 77 or 78 bytes. The legacy
+        // frame is the compact frame without its four-byte marker-one field;
+        // its class tags vary between files and do not select it.
         "DeleteFace" => match (base_frame_length, base_kind_offset) {
-            (236 | 237, 139) | (241, 143) => true,
-            (232, 135)
-                if matches!(
-                    (scope.class_tag.as_str(), scope.paired_class_tag.as_str()),
-                    ("264", "262") | ("383", "263")
-                ) =>
-            {
-                true
-            }
+            (236 | 237, 139) | (241, 143) | (232, 135) => true,
             _ => return Ok(None),
         },
         "SurfaceDeleteFace" => {
