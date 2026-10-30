@@ -41,8 +41,9 @@ use crate::decode::analytic::pcurve_geometry::{
     meridian_circle_pcurve, ruled_generator_line_pcurve, surface_of_revolution_parallel_pcurve,
 };
 use crate::decode::analytic::pcurves::{
-    canonicalized_pcurve_endpoints, pcurve_backed_periodic_conic_parameter_range,
-    planar_curve_pcurve, unique_oriented_native_pcurve, NamedSurfaces, NativePcurveCandidates,
+    bounded_cylinder_circle_parameter_range, canonicalized_pcurve_endpoints,
+    pcurve_backed_periodic_conic_parameter_range, planar_curve_pcurve,
+    unique_oriented_native_pcurve, NamedSurfaces, NativePcurveCandidates,
 };
 use crate::decode::analytic::vertices::{
     solve_topological_vertices, TopologicalVertexSolveDiagnostics,
@@ -2048,6 +2049,7 @@ pub(in super::super) fn transfer_native_brep(
             vertex_position,
         );
     }
+    let mut bounded_circle_curves = BTreeSet::new();
     for curve_id in &neutral_edge_curves {
         let [start, end] = edge_vertices[curve_id];
         let curve = crate::identity::compose_checked::<CurveId>(
@@ -2091,6 +2093,22 @@ pub(in super::super) fn transfer_native_brep(
                             points,
                             source_carriers,
                         )?;
+                    }
+                }
+                if range.is_none() {
+                    if let Some(faces) = curve_faces.get(curve_id).copied() {
+                        range = bounded_cylinder_circle_parameter_range(
+                            ctx,
+                            scan,
+                            &mut geometry,
+                            faces,
+                            &ir.model.surfaces,
+                            points,
+                            source_carriers,
+                        )?;
+                        if range.is_some() {
+                            bounded_circle_curves.insert(*curve_id);
+                        }
                     }
                 }
                 if range.is_none() && unbacked_closed_edge {
@@ -2470,7 +2488,10 @@ pub(in super::super) fn transfer_native_brep(
                     } else {
                         None
                     };
+                    let bounded_circle = bounded_circle_curves.contains(&half_edge.curve_id);
+                    let native_witness = native_selection.is_some();
                     let pcurve_geometry = native_selection
+                        .filter(|_| !bounded_circle)
                         .and_then(
                             |crate::decode::analytic::pcurves::OrientedNativePcurve {
                                  endpoints,
@@ -2485,7 +2506,8 @@ pub(in super::super) fn transfer_native_brep(
                             },
                         )
                         .or_else(|| {
-                            native_candidates.is_none().then_some(())?;
+                            (native_candidates.is_none() || (bounded_circle && native_witness))
+                                .then_some(())?;
                             let surface = &ir.model.surfaces[face_surface?];
                             let curve = numbered_curves
                                 .unique(half_edge.curve_id)

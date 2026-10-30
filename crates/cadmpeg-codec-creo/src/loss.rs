@@ -83,6 +83,8 @@ pub(crate) enum CreoLossCode {
     SurfacePrototypeFieldRetained,
     /// A compact plane rotation has no complete finite origin.
     PlaneCompactFrameUnresolved,
+    /// A complete rotation cylinder conflicts with its stored envelope.
+    CylinderRotationEnvelopeUnresolved,
     /// A resolved extrusion body failed shell admission.
     ExtrusionBodyRejected,
     /// Remaining per-instance surfaces, curves, and vertices stay gated.
@@ -247,6 +249,9 @@ impl CreoLossCode {
             Self::SectionSplineUnresolved => "geometry.section-spline-unresolved",
             Self::SurfacePrototypeFieldRetained => "geometry.surface-prototype-field-retained",
             Self::PlaneCompactFrameUnresolved => "geometry.plane-compact-frame-unresolved",
+            Self::CylinderRotationEnvelopeUnresolved => {
+                "geometry.cylinder-rotation-envelope-unresolved"
+            }
             Self::ExtrusionBodyRejected => "topology.extrusion-body-rejected",
             Self::GeometryInstanceCarriersGated => "geometry.instance-carriers-gated",
             Self::VisibGeomSurfaceUntransferred => "geometry.visibgeom-surface-untransferred",
@@ -360,6 +365,7 @@ impl CreoLossCode {
             | Self::CompressedSectionUnexpanded
             | Self::SurfacePrototypeFieldRetained
             | Self::PlaneCompactFrameUnresolved
+            | Self::CylinderRotationEnvelopeUnresolved
             | Self::SourceDialectUnverified
             | Self::LegacyRealValueUnresolved
             | Self::LegacyIntegerValueUnresolved
@@ -480,6 +486,7 @@ impl CreoLossCode {
             | Self::SectionSplineUnresolved
             | Self::SurfacePrototypeFieldRetained
             | Self::PlaneCompactFrameUnresolved
+            | Self::CylinderRotationEnvelopeUnresolved
             | Self::PlaneSupportVariantsCapped => LossTaxonomy::GeometryNotTransferred,
             Self::TopologyIncompleteComponents
             | Self::TopologyVertexIdentifierUnstatable

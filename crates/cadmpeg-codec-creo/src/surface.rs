@@ -1243,7 +1243,7 @@ pub(crate) struct TabulatedCylinderCurveReplay {
 
 impl SurfaceParameterRecord {
     /// Declared surface family, retained even when no carrier is decoded.
-    fn kind(&self) -> SurfaceKind {
+    pub(crate) fn kind(&self) -> SurfaceKind {
         match self.carrier {
             SurfaceParameterCarrier::Unresolved(kind) => kind,
             SurfaceParameterCarrier::Resolved(carrier) => match carrier {
@@ -4358,6 +4358,7 @@ pub(crate) enum InlineSurfaceCarrier {
 struct InlineSurfaceBody {
     terminal_close: usize,
     carrier: Option<InlineSurfaceCarrier>,
+    rotation_cylinder: bool,
 }
 
 const EPS_INLINE_WITNESS: f64 = 1.0e-9;
@@ -4370,6 +4371,20 @@ fn inline_surface_body(
     body: &[u8],
     cache: &scalar::ScalarCache,
 ) -> Result<Option<InlineSurfaceBody>, CodecError> {
+    if kind == SurfaceKind::Cylinder {
+        if let Some((frame, terminal_close)) =
+            cylinder_frame_readers::decode_rotation_cylinder_body(body, cache)
+        {
+            return Ok(Some(InlineSurfaceBody {
+                terminal_close,
+                carrier: frame.map(|frame| InlineSurfaceCarrier::Cylinder {
+                    frame,
+                    split_bounds: None,
+                }),
+                rotation_cylinder: true,
+            }));
+        }
+    }
     if kind == SurfaceKind::Cone {
         let operands = bounded_support_apex_cone_operands(body, cache);
         let mut terminal_close: Option<usize> = None;
@@ -4386,6 +4401,7 @@ fn inline_surface_body(
             return Ok(Some(InlineSurfaceBody {
                 terminal_close,
                 carrier: decode_positional_cone_frame(body, cache).map(InlineSurfaceCarrier::Cone),
+                rotation_cylinder: false,
             }));
         }
     }
@@ -4456,6 +4472,7 @@ fn inline_surface_body(
         let layout = InlineSurfaceBody {
             terminal_close,
             carrier,
+            rotation_cylinder: false,
         };
         if sole_layout.replace(layout).is_some() {
             return Ok(None);
@@ -4561,6 +4578,7 @@ fn inline_surface_suffix_body(
             let layout = InlineSurfaceBody {
                 terminal_close,
                 carrier,
+                rotation_cylinder: false,
             };
             if sole_layout.replace(layout).is_some() {
                 return Ok(None);
@@ -5423,10 +5441,17 @@ fn parameter_records_for_rows(
             body_offset: *body_start,
         };
         let inline_carrier = inline.and_then(|layout| layout.carrier);
+        if inline.is_some_and(|layout| layout.rotation_cylinder && layout.carrier.is_none()) {
+            losses.push(crate::loss::CreoLossCode::CylinderRotationEnvelopeUnresolved.note(format!(
+                "Cylinder {} at byte {} has a complete signed frame and radius that conflict with its envelope; its compounds remain native",
+                row.id, row.offset
+            )));
+        }
         let carrier = match row.kind {
             SurfaceKind::Cylinder => {
                 let frame = match inline_carrier {
                     Some(InlineSurfaceCarrier::Cylinder { frame, .. }) => Some(frame),
+                    _ if inline.is_some_and(|layout| layout.rotation_cylinder) => None,
                     _ => cylinder_frame_readers::decode_positional_cylinder_frame(
                         &record.body,
                         &cache,
@@ -7349,6 +7374,27 @@ pub(crate) fn complete_plane_local_system(
     )>,
     CodecError,
 > {
+    let mut linkage_view = cadmpeg_core::decode::View::over_retained(body);
+    for close in 0..body.len() {
+        if linkage_view.seek(close).is_none()
+            || linkage_view.u8() != Some(0xe1)
+            || linkage_view.u8() != Some(psb::token::ENTITY_REF)
+        {
+            continue;
+        }
+        let Ok((reference, end)) = psb::reference_id(body, close + 2) else {
+            continue;
+        };
+        if reference == 0 || end != body.len() {
+            continue;
+        }
+        if let Some(Ok(values)) = scalar::decode_compact_plane_rotation(&body[..close], cache) {
+            return Ok(Some((
+                values,
+                scalar::PlaneSupportFrameLayout::CompactRotation,
+            )));
+        }
+    }
     let compact_body = body.strip_suffix(&[0xe1]).unwrap_or(body);
     let rotation = scalar::decode_compact_plane_rotation(body, cache);
     let rotation = match rotation {

@@ -5,6 +5,15 @@ It records implementation coverage and verification gates. Byte semantics
 belong in [creo_prt.md](creo_prt.md); unresolved byte meanings belong in
 [creo_prt-open-items.md](creo_prt-open-items.md).
 
+Quarter-turn positional cylinders use the shared compact rotation gate,
+stateful envelope scalars, a positive radius, and agreeing axial and radial
+envelope intervals. Closed compact plane frames admit a following canonical
+linkage reference. Coaxial circle boundaries use the stored cylinder domain
+to select their bounded intervals. Planar circle pcurves retain the complete
+arc, with native endpoint pairs as constraints. Native records retain the complete source compounds.
+Synthetic checks cover carrier admission, conflicting-radius refusal, neutral
+validation, complete linkage framing, domain-bound circle intervals, and attributed losses.
+
 ## Envelope
 
 The implemented format band is `#UGC:2` PSB part documents using the legacy
