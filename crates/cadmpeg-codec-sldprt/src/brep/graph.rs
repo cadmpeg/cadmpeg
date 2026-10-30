@@ -4718,6 +4718,14 @@ fn derive_spherical_pcurves(
         .iter()
         .map(|curve| (&curve.id, curve))
         .collect::<std::collections::HashMap<_, _>>();
+    let vertex_points = out
+        .vertices
+        .iter()
+        .filter_map(|vertex| {
+            let point = out.points.iter().find(|point| point.id == vertex.point)?;
+            Some((&vertex.id, point.position().get()))
+        })
+        .collect::<std::collections::HashMap<_, _>>();
     let mut derived = Vec::new();
     for coedge in &out.coedges {
         if !coedge.pcurves.is_empty() {
@@ -4798,10 +4806,42 @@ fn derive_spherical_pcurves(
             };
             let longitude = equator.dot(tangent).atan2(equator.dot(u_reference));
             let phase = reference.dot(v_reference).atan2(reference.dot(equator));
-            (
-                cadmpeg_ir::math::Point2::new(longitude, phase),
-                cadmpeg_ir::math::Point2::new(0.0, 1.0),
-            )
+            // Shift the line by whole turns so the middle of the range is within
+            // half a turn of the equator. Beyond a pole, use the opposite
+            // meridian, where latitude falls.
+            let middle = edge
+                .param_range()
+                .map(|range| {
+                    let [start, end] = range.get();
+                    start.midpoint(end)
+                })
+                .or_else(|| {
+                    let circle = CurveGeometry::Solved(SolvedCurveGeometry::Circle(*circle_curve));
+                    let angle = |vertex: &VertexId| {
+                        carrier_angle(&circle, *vertex_points.get(vertex)?, f64::INFINITY)
+                    };
+                    let start = angle(&edge.start)?;
+                    let sweep = (angle(&edge.end)? - start).rem_euclid(std::f64::consts::TAU);
+                    Some(start + 0.5 * sweep)
+                });
+            let pi = std::f64::consts::PI;
+            let phase = middle.map_or(phase, |middle| {
+                let tau = std::f64::consts::TAU;
+                phase - ((phase + middle) / tau).round() * tau
+            });
+            match middle.map(|middle| phase + middle) {
+                Some(latitude) if latitude.abs() > std::f64::consts::FRAC_PI_2 => (
+                    cadmpeg_ir::math::Point2::new(
+                        longitude - pi.copysign(longitude),
+                        pi.copysign(latitude) - phase,
+                    ),
+                    cadmpeg_ir::math::Point2::new(0.0, -1.0),
+                ),
+                _ => (
+                    cadmpeg_ir::math::Point2::new(longitude, phase),
+                    cadmpeg_ir::math::Point2::new(0.0, 1.0),
+                ),
+            }
         } else {
             continue;
         };
