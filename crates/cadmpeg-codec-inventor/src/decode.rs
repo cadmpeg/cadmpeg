@@ -611,12 +611,7 @@ fn decode_container<'a>(
         _ => None,
     };
     let kernel_brep = kernel_brep.unwrap_or_else(AsmBrep::default);
-    let body_keys = if delivered == DecodeDepth::Full
-        && feature_inventory.labels.iter().any(|label| {
-            crate::feature::FeatureFamily::Base
-                .class_ids()
-                .contains(&label.class_id())
-        }) {
+    let body_keys = if delivered == DecodeDepth::Full {
         kernel_brep.body_native_keys.clone()
     } else {
         Vec::new()
@@ -662,6 +657,35 @@ fn decode_container<'a>(
             .ok_or_else(|| {
                 CodecError::malformed("Inventor Base projection exceeds unresolved feature count")
             })?;
+    }
+    if delivered == DecodeDepth::Full {
+        let links = crate::feature::body_selection::links(
+            ctx,
+            &container.rse,
+            &feature_inventory,
+            &design_inventory,
+        )?;
+        let joined = crate::feature::body_selection::body_map(
+            &feature_inventory.properties,
+            &feature_inventory.kernel_entity_links,
+            &links,
+            &active_carrier,
+            &body_keys,
+            &ir.model,
+            &crate::feature::body_selection::Scope {
+                metadata: &segment_meta,
+                roots: &design_inventory.model_roots,
+            },
+        );
+        crate::feature::body_selection::project(&mut ir.model, &joined, &feature_inventory);
+        if !links.is_empty() {
+            ir.native
+                .namespace_mut("inventor")
+                .set_arena(ctx, "body_wrapper_links", &links)?;
+        }
+        losses.extend(crate::feature::body_selection::native_losses(
+            &ir.model, &joined,
+        ));
     }
     ir.set_native_unknowns(ctx, "inventor", &[])?;
     let geometry_transferred =

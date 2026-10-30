@@ -2020,6 +2020,41 @@ Unstated regions:
 - `429..456` (27 B): Scope-tail bytes between the feature ordinal and previous history state.
 - `460..502` (42 B): Scope-tail bytes before the paired indexed header.
 
+## `typed_reference_box_primitive_1295_frame`
+
+Spec §3.1 · layout: byte offsets · size: 1295 B
+
+Offsets are relative to the primary indexed scope header. The generic scope reference table begins at offset 655; the paired header follows the complete scope frame.
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 11 | `indexed_header` | `bytes[11]` | little | spec | Its bytes 11 through 20 are zero, byte 21 is `0x01`, the result-operation u32 is at offset 22 with the four values of the named form |
+| 11 | 10 | `zero_run_10` | `bytes[10]` | little | spec | Its bytes 11 through 20 are zero, byte 21 is `0x01`, the result-operation u32 is at offset 22 with the four values of the named form |
+| 21 | 1 | `form_marker` | `u8` | little | spec | byte 21 is `0x01`, the result-operation u32 is at offset 22 with the four values of the named form · value `1` |
+| 22 | 4 | `operation` | `u32` | little | spec | byte 21 is `0x01`, the result-operation u32 is at offset 22 with the four values of the named form |
+| 26 | 1 | `nested_marker` | `u8` | little | spec | byte 26 is `0x01` · value `1` |
+| 27 | 357 | `typed_references` | `bytes[357]` | little | spec | Seven typed local references begin at offsets 27, 78, 129, 180, 231, 282, and 333 |
+| 384 | 1 | `zero_before_matrix` | `u8` | little | spec | Byte 384 is zero |
+| 385 | 128 | `matrix` | `f64[16]` | little | spec | A row-major rigid right-handed 4x4 f64 frame starts at offset 385 |
+| 513 | 4 | `one_count` | `u32` | little | spec | The u32 `1` at offset 513 precedes one typed local reference at offset 517 · value `1` |
+| 517 | 51 | `tail_reference` | `bytes[51]` | little | spec | one typed local reference at offset 517 |
+| 568 | 8 | `zero_run_8` | `bytes[8]` | little | spec | Eight zero bytes at offsets 568 through 575 |
+| 576 | 4 | `guid_code_unit_count` | `u32` | little | spec | 36-code-unit LP-UTF16 null GUID at offset 576 · value `36` |
+| 580 | 72 | `guid` | `bytes[72]` | little | spec | 36-code-unit LP-UTF16 null GUID at offset 576 |
+| 652 | 3 | `zero_run_3_after_guid` | `bytes[3]` | little | spec | Bytes 652 through 654 are zero |
+| 655 | 4 | `reference_count` | `u32` | little | spec | the reference count at offset 655 · value `8` |
+| 659 | 408 | `references` | `bytes[408]` | little | spec | the ordered 51-byte typed reference run at offset 659 |
+| 1067 | 4 | `history_state_id` | `u32` | little | spec | the current history state at offset 1067 |
+| 1071 | 4 | `kind_code_unit_count` | `u32` | little | spec | the 12-code-unit `BoxPrimitive` kind at offset 1071 · value `12` |
+| 1075 | 24 | `kind` | `bytes[24]` | little | spec | the 12-code-unit `BoxPrimitive` kind at offset 1071 |
+| 1099 | 4 | `feature_ordinal` | `u32` | little | spec | the feature ordinal at offset 1099 |
+| 1169 | 4 | `previous_history_state_id` | `u32` | little | spec | the previous history state at offset 1169 |
+
+Unstated regions:
+
+- `1103..1169` (66 B): Scope-tail bytes between the feature ordinal and previous history state.
+- `1173..1295` (122 B): Scope-tail bytes before the paired indexed header.
+
 ## `compact_loft_operation_prefix`
 
 Spec §3.1 · layout: byte offsets · size: 45 B
@@ -7382,6 +7417,202 @@ Parsed by:
 Unstated regions:
 
 - `0..11` (11 B): The indexed header precedes the placement fields.
+
+## `derived_base_feature_scope_711`
+
+Spec §3.1 · layout: byte offsets · size: 711 B
+
+Offsets are relative to the primary indexed header of a `Derived Base Feature` scope with one result body. Element tails are not tabulated; the trailing member fields of the scope reference and parameter elements are listed.
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 19 | 1 | `body_marker` | `u8` | little | spec | The u32 at offset 20 of a derived base frame with result bodies is twice the body count · value `1` |
+| 20 | 4 | `body_count_twice` | `u32` | little | spec | The u32 at offset 20 of a derived base frame with result bodies is twice the body count · value `2` |
+| 24 | 1 | `body_first_marker` | `u8` | little | spec | A typed-reference element of a derived base frame is `u8 1`, a u64 Design record index, u32 36, and a 36-byte uppercase ASCII role GUID · value `1` |
+| 25 | 8 | `body_first_record` | `u64` | little | spec | In the 711-byte form the second body element stores the Design body entity suffix |
+| 33 | 4 | `body_first_role_length` | `u32` | little | spec | A typed-reference element of a derived base frame is `u8 1`, a u64 Design record index, u32 36, and a 36-byte uppercase ASCII role GUID · value `36` |
+| 37 | 36 | `body_first_role` | `bytes[36]` | little | spec | Equal roles have equal GUIDs in different documents · value `"D3937028-C20C-4E65-B010-94AD418A5C20"` |
+| 79 | 1 | `body_entity_marker` | `u8` | little | spec | A typed-reference element of a derived base frame is `u8 1`, a u64 Design record index, u32 36, and a 36-byte uppercase ASCII role GUID · value `1` |
+| 80 | 8 | `body_entity_record` | `u64` | little | spec | In the 711-byte form the second body element stores the Design body entity suffix |
+| 88 | 4 | `body_entity_role_length` | `u32` | little | spec | A typed-reference element of a derived base frame is `u8 1`, a u64 Design record index, u32 36, and a 36-byte uppercase ASCII role GUID · value `36` |
+| 92 | 36 | `body_entity_role` | `bytes[36]` | little | spec | Equal roles have equal GUIDs in different documents · value `"D3937028-C20C-4E65-B010-94AD418A5C20"` |
+| 167 | 1 | `body_first_repeat_marker` | `u8` | little | spec | A typed-reference element of a derived base frame is `u8 1`, a u64 Design record index, u32 36, and a 36-byte uppercase ASCII role GUID · value `1` |
+| 168 | 8 | `body_first_repeat_record` | `u64` | little | spec | In the 711-byte form the second body element stores the Design body entity suffix |
+| 176 | 4 | `body_first_repeat_role_length` | `u32` | little | spec | A typed-reference element of a derived base frame is `u8 1`, a u64 Design record index, u32 36, and a 36-byte uppercase ASCII role GUID · value `36` |
+| 180 | 36 | `body_first_repeat_role` | `bytes[36]` | little | spec | Equal roles have equal GUIDs in different documents · value `"D3937028-C20C-4E65-B010-94AD418A5C20"` |
+| 219 | 1 | `scope_ref_marker` | `u8` | little | spec | A typed-reference element of a derived base frame is `u8 1`, a u64 Design record index, u32 36, and a 36-byte uppercase ASCII role GUID · value `1` |
+| 220 | 8 | `scope_ref_record` | `u64` | little | spec | The scope reference elements store the primary record index plus 4 |
+| 228 | 4 | `scope_ref_role_length` | `u32` | little | spec | A typed-reference element of a derived base frame is `u8 1`, a u64 Design record index, u32 36, and a 36-byte uppercase ASCII role GUID · value `36` |
+| 232 | 36 | `scope_ref_role` | `bytes[36]` | little | spec | Equal roles have equal GUIDs in different documents · value `"493A89BA-E146-498D-9033-2783FE727AF4"` |
+| 274 | 1 | `other_ref_marker` | `u8` | little | spec | A typed-reference element of a derived base frame is `u8 1`, a u64 Design record index, u32 36, and a 36-byte uppercase ASCII role GUID · value `1` |
+| 275 | 8 | `other_ref_record` | `u64` | little | spec | A typed-reference element of a derived base frame is `u8 1`, a u64 Design record index, u32 36, and a 36-byte uppercase ASCII role GUID |
+| 283 | 4 | `other_ref_role_length` | `u32` | little | spec | A typed-reference element of a derived base frame is `u8 1`, a u64 Design record index, u32 36, and a 36-byte uppercase ASCII role GUID · value `36` |
+| 287 | 36 | `other_ref_role` | `bytes[36]` | little | spec | Equal roles have equal GUIDs in different documents · value `"D26351F0-5940-4D23-AA20-2C35475A6D9E"` |
+| 333 | 4 | `zero_role_length` | `u32` | little | spec | A 36-code-unit LP-UTF16 GUID of zeros precedes the second scope reference element · value `36` |
+| 337 | 72 | `zero_role` | `bytes[72]` | little | spec | A 36-code-unit LP-UTF16 GUID of zeros precedes the second scope reference element |
+| 416 | 1 | `scope_ref_repeat_marker` | `u8` | little | spec | A typed-reference element of a derived base frame is `u8 1`, a u64 Design record index, u32 36, and a 36-byte uppercase ASCII role GUID · value `1` |
+| 417 | 8 | `scope_ref_repeat_record` | `u64` | little | spec | The scope reference elements store the primary record index plus 4 |
+| 425 | 4 | `scope_ref_repeat_role_length` | `u32` | little | spec | A typed-reference element of a derived base frame is `u8 1`, a u64 Design record index, u32 36, and a 36-byte uppercase ASCII role GUID · value `36` |
+| 429 | 36 | `scope_ref_repeat_role` | `bytes[36]` | little | spec | Equal roles have equal GUIDs in different documents · value `"493A89BA-E146-498D-9033-2783FE727AF4"` |
+| 467 | 4 | `current_history_state_id` | `u32` | little | spec | The trailing member of the second scope reference element is the current history-state identity |
+| 471 | 4 | `kind_length` | `u32` | little | spec | The kind is length-prefixed UTF-16, followed by the feature ordinal · value `20` |
+| 475 | 40 | `kind` | `bytes[40]` | little | spec | The kind is length-prefixed UTF-16, followed by the feature ordinal |
+| 515 | 4 | `feature_ordinal` | `u32` | little | spec | The kind is length-prefixed UTF-16, followed by the feature ordinal |
+| 534 | 1 | `param_3_marker` | `u8` | little | spec | A typed-reference element of a derived base frame is `u8 1`, a u64 Design record index, u32 36, and a 36-byte uppercase ASCII role GUID · value `1` |
+| 535 | 8 | `param_3_record` | `u64` | little | spec | The three trailing parameter elements store the primary record index plus 3, 2, and 1 |
+| 543 | 4 | `param_3_role_length` | `u32` | little | spec | A typed-reference element of a derived base frame is `u8 1`, a u64 Design record index, u32 36, and a 36-byte uppercase ASCII role GUID · value `36` |
+| 547 | 36 | `param_3_role` | `bytes[36]` | little | spec | Equal roles have equal GUIDs in different documents · value `"B7F34D7B-DAC4-41A5-B67D-D672537C3BFA"` |
+| 585 | 4 | `previous_history_state_id` | `u32` | little | spec | The trailing member of the first trailing parameter element is the previous history-state identity |
+| 589 | 4 | `scalar_head` | `u32` | little | spec | An f64 between two equal u32 values follows the previous history-state identity · value `76` |
+| 593 | 8 | `scalar` | `f64` | little | spec | An f64 between two equal u32 values follows the previous history-state identity |
+| 601 | 4 | `scalar_tail` | `u32` | little | spec | An f64 between two equal u32 values follows the previous history-state identity · value `76` |
+| 605 | 1 | `param_2_marker` | `u8` | little | spec | A typed-reference element of a derived base frame is `u8 1`, a u64 Design record index, u32 36, and a 36-byte uppercase ASCII role GUID · value `1` |
+| 606 | 8 | `param_2_record` | `u64` | little | spec | The three trailing parameter elements store the primary record index plus 3, 2, and 1 |
+| 614 | 4 | `param_2_role_length` | `u32` | little | spec | A typed-reference element of a derived base frame is `u8 1`, a u64 Design record index, u32 36, and a 36-byte uppercase ASCII role GUID · value `36` |
+| 618 | 36 | `param_2_role` | `bytes[36]` | little | spec | Equal roles have equal GUIDs in different documents · value `"5FBE538E-139B-46D4-BCAF-CC796D1E1F78"` |
+| 658 | 1 | `param_1_marker` | `u8` | little | spec | A typed-reference element of a derived base frame is `u8 1`, a u64 Design record index, u32 36, and a 36-byte uppercase ASCII role GUID · value `1` |
+| 659 | 8 | `param_1_record` | `u64` | little | spec | The three trailing parameter elements store the primary record index plus 3, 2, and 1 |
+| 667 | 4 | `param_1_role_length` | `u32` | little | spec | A typed-reference element of a derived base frame is `u8 1`, a u64 Design record index, u32 36, and a 36-byte uppercase ASCII role GUID · value `36` |
+| 671 | 36 | `param_1_role` | `bytes[36]` | little | spec | Equal roles have equal GUIDs in different documents · value `"6CCF41D5-40BE-48ED-A834-18F3EAED6C57"` |
+
+Unstated regions:
+
+- `0..19` (19 B): The specification states no field in this range.
+- `73..79` (6 B): The specification states no field in this range.
+- `128..167` (39 B): The specification states no field in this range.
+- `216..219` (3 B): The specification states no field in this range.
+- `268..274` (6 B): The specification states no field in this range.
+- `323..333` (10 B): The specification states no field in this range.
+- `409..416` (7 B): The specification states no field in this range.
+- `465..467` (2 B): The specification states no field in this range.
+- `519..534` (15 B): The specification states no field in this range.
+- `583..585` (2 B): The specification states no field in this range.
+- `654..658` (4 B): The specification states no field in this range.
+- `707..711` (4 B): The specification states no field in this range.
+
+## `derived_base_feature_scope_707`
+
+Spec §3.1 · layout: byte offsets · size: 707 B
+
+Offsets are relative to the primary indexed header of a `DerivedBaseFeature` scope with one result body.
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 19 | 1 | `body_marker` | `u8` | little | spec | The u32 at offset 20 of a derived base frame with result bodies is twice the body count · value `1` |
+| 20 | 4 | `body_count_twice` | `u32` | little | spec | The u32 at offset 20 of a derived base frame with result bodies is twice the body count · value `2` |
+| 24 | 1 | `body_first_marker` | `u8` | little | spec | A typed-reference element of a derived base frame is `u8 1`, a u64 Design record index, u32 36, and a 36-byte uppercase ASCII role GUID · value `1` |
+| 25 | 8 | `body_first_record` | `u64` | little | spec | In the 711-byte form the second body element stores the Design body entity suffix |
+| 33 | 4 | `body_first_role_length` | `u32` | little | spec | A typed-reference element of a derived base frame is `u8 1`, a u64 Design record index, u32 36, and a 36-byte uppercase ASCII role GUID · value `36` |
+| 37 | 36 | `body_first_role` | `bytes[36]` | little | spec | Equal roles have equal GUIDs in different documents · value `"D3937028-C20C-4E65-B010-94AD418A5C20"` |
+| 79 | 1 | `body_entity_marker` | `u8` | little | spec | A typed-reference element of a derived base frame is `u8 1`, a u64 Design record index, u32 36, and a 36-byte uppercase ASCII role GUID · value `1` |
+| 80 | 8 | `body_entity_record` | `u64` | little | spec | In the 711-byte form the second body element stores the Design body entity suffix |
+| 88 | 4 | `body_entity_role_length` | `u32` | little | spec | A typed-reference element of a derived base frame is `u8 1`, a u64 Design record index, u32 36, and a 36-byte uppercase ASCII role GUID · value `36` |
+| 92 | 36 | `body_entity_role` | `bytes[36]` | little | spec | Equal roles have equal GUIDs in different documents · value `"D3937028-C20C-4E65-B010-94AD418A5C20"` |
+| 167 | 1 | `body_first_repeat_marker` | `u8` | little | spec | A typed-reference element of a derived base frame is `u8 1`, a u64 Design record index, u32 36, and a 36-byte uppercase ASCII role GUID · value `1` |
+| 168 | 8 | `body_first_repeat_record` | `u64` | little | spec | In the 711-byte form the second body element stores the Design body entity suffix |
+| 176 | 4 | `body_first_repeat_role_length` | `u32` | little | spec | A typed-reference element of a derived base frame is `u8 1`, a u64 Design record index, u32 36, and a 36-byte uppercase ASCII role GUID · value `36` |
+| 180 | 36 | `body_first_repeat_role` | `bytes[36]` | little | spec | Equal roles have equal GUIDs in different documents · value `"D3937028-C20C-4E65-B010-94AD418A5C20"` |
+| 219 | 1 | `scope_ref_marker` | `u8` | little | spec | A typed-reference element of a derived base frame is `u8 1`, a u64 Design record index, u32 36, and a 36-byte uppercase ASCII role GUID · value `1` |
+| 220 | 8 | `scope_ref_record` | `u64` | little | spec | The scope reference elements store the primary record index plus 4 |
+| 228 | 4 | `scope_ref_role_length` | `u32` | little | spec | A typed-reference element of a derived base frame is `u8 1`, a u64 Design record index, u32 36, and a 36-byte uppercase ASCII role GUID · value `36` |
+| 232 | 36 | `scope_ref_role` | `bytes[36]` | little | spec | Equal roles have equal GUIDs in different documents · value `"493A89BA-E146-498D-9033-2783FE727AF4"` |
+| 274 | 1 | `other_ref_marker` | `u8` | little | spec | A typed-reference element of a derived base frame is `u8 1`, a u64 Design record index, u32 36, and a 36-byte uppercase ASCII role GUID · value `1` |
+| 275 | 8 | `other_ref_record` | `u64` | little | spec | A typed-reference element of a derived base frame is `u8 1`, a u64 Design record index, u32 36, and a 36-byte uppercase ASCII role GUID |
+| 283 | 4 | `other_ref_role_length` | `u32` | little | spec | A typed-reference element of a derived base frame is `u8 1`, a u64 Design record index, u32 36, and a 36-byte uppercase ASCII role GUID · value `36` |
+| 287 | 36 | `other_ref_role` | `bytes[36]` | little | spec | Equal roles have equal GUIDs in different documents · value `"D26351F0-5940-4D23-AA20-2C35475A6D9E"` |
+| 333 | 4 | `zero_role_length` | `u32` | little | spec | A 36-code-unit LP-UTF16 GUID of zeros precedes the second scope reference element · value `36` |
+| 337 | 72 | `zero_role` | `bytes[72]` | little | spec | A 36-code-unit LP-UTF16 GUID of zeros precedes the second scope reference element |
+| 416 | 1 | `scope_ref_repeat_marker` | `u8` | little | spec | A typed-reference element of a derived base frame is `u8 1`, a u64 Design record index, u32 36, and a 36-byte uppercase ASCII role GUID · value `1` |
+| 417 | 8 | `scope_ref_repeat_record` | `u64` | little | spec | The scope reference elements store the primary record index plus 4 |
+| 425 | 4 | `scope_ref_repeat_role_length` | `u32` | little | spec | A typed-reference element of a derived base frame is `u8 1`, a u64 Design record index, u32 36, and a 36-byte uppercase ASCII role GUID · value `36` |
+| 429 | 36 | `scope_ref_repeat_role` | `bytes[36]` | little | spec | Equal roles have equal GUIDs in different documents · value `"493A89BA-E146-498D-9033-2783FE727AF4"` |
+| 467 | 4 | `current_history_state_id` | `u32` | little | spec | The trailing member of the second scope reference element is the current history-state identity |
+| 471 | 4 | `kind_length` | `u32` | little | spec | The kind is length-prefixed UTF-16, followed by the feature ordinal · value `18` |
+| 475 | 36 | `kind` | `bytes[36]` | little | spec | The kind is length-prefixed UTF-16, followed by the feature ordinal |
+| 511 | 4 | `feature_ordinal` | `u32` | little | spec | The kind is length-prefixed UTF-16, followed by the feature ordinal |
+| 530 | 1 | `param_3_marker` | `u8` | little | spec | A typed-reference element of a derived base frame is `u8 1`, a u64 Design record index, u32 36, and a 36-byte uppercase ASCII role GUID · value `1` |
+| 531 | 8 | `param_3_record` | `u64` | little | spec | The three trailing parameter elements store the primary record index plus 3, 2, and 1 |
+| 539 | 4 | `param_3_role_length` | `u32` | little | spec | A typed-reference element of a derived base frame is `u8 1`, a u64 Design record index, u32 36, and a 36-byte uppercase ASCII role GUID · value `36` |
+| 543 | 36 | `param_3_role` | `bytes[36]` | little | spec | Equal roles have equal GUIDs in different documents · value `"B7F34D7B-DAC4-41A5-B67D-D672537C3BFA"` |
+| 581 | 4 | `previous_history_state_id` | `u32` | little | spec | The trailing member of the first trailing parameter element is the previous history-state identity |
+| 585 | 4 | `scalar_head` | `u32` | little | spec | An f64 between two equal u32 values follows the previous history-state identity · value `69` |
+| 589 | 8 | `scalar` | `f64` | little | spec | An f64 between two equal u32 values follows the previous history-state identity |
+| 597 | 4 | `scalar_tail` | `u32` | little | spec | An f64 between two equal u32 values follows the previous history-state identity · value `69` |
+| 601 | 1 | `param_2_marker` | `u8` | little | spec | A typed-reference element of a derived base frame is `u8 1`, a u64 Design record index, u32 36, and a 36-byte uppercase ASCII role GUID · value `1` |
+| 602 | 8 | `param_2_record` | `u64` | little | spec | The three trailing parameter elements store the primary record index plus 3, 2, and 1 |
+| 610 | 4 | `param_2_role_length` | `u32` | little | spec | A typed-reference element of a derived base frame is `u8 1`, a u64 Design record index, u32 36, and a 36-byte uppercase ASCII role GUID · value `36` |
+| 614 | 36 | `param_2_role` | `bytes[36]` | little | spec | Equal roles have equal GUIDs in different documents · value `"5FBE538E-139B-46D4-BCAF-CC796D1E1F78"` |
+| 654 | 1 | `param_1_marker` | `u8` | little | spec | A typed-reference element of a derived base frame is `u8 1`, a u64 Design record index, u32 36, and a 36-byte uppercase ASCII role GUID · value `1` |
+| 655 | 8 | `param_1_record` | `u64` | little | spec | The three trailing parameter elements store the primary record index plus 3, 2, and 1 |
+| 663 | 4 | `param_1_role_length` | `u32` | little | spec | A typed-reference element of a derived base frame is `u8 1`, a u64 Design record index, u32 36, and a 36-byte uppercase ASCII role GUID · value `36` |
+| 667 | 36 | `param_1_role` | `bytes[36]` | little | spec | Equal roles have equal GUIDs in different documents · value `"6CCF41D5-40BE-48ED-A834-18F3EAED6C57"` |
+
+Unstated regions:
+
+- `0..19` (19 B): The specification states no field in this range.
+- `73..79` (6 B): The specification states no field in this range.
+- `128..167` (39 B): The specification states no field in this range.
+- `216..219` (3 B): The specification states no field in this range.
+- `268..274` (6 B): The specification states no field in this range.
+- `323..333` (10 B): The specification states no field in this range.
+- `409..416` (7 B): The specification states no field in this range.
+- `465..467` (2 B): The specification states no field in this range.
+- `515..530` (15 B): The specification states no field in this range.
+- `579..581` (2 B): The specification states no field in this range.
+- `650..654` (4 B): The specification states no field in this range.
+- `703..707` (4 B): The specification states no field in this range.
+
+## `derived_base_feature_scope_491`
+
+Spec §3.1 · layout: byte offsets · size: 491 B
+
+Offsets are relative to the primary indexed header of a `DerivedBaseFeature` zero-body scope.
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 20 | 1 | `zero_body_marker` | `u8` | little | spec | A zero-body derived base frame stores `u8 1` at offset 20 · value `1` |
+| 54 | 1 | `scope_ref_marker` | `u8` | little | spec | A typed-reference element of a derived base frame is `u8 1`, a u64 Design record index, u32 36, and a 36-byte uppercase ASCII role GUID · value `1` |
+| 55 | 8 | `scope_ref_record` | `u64` | little | spec | The scope reference elements store the primary record index plus 4 |
+| 63 | 4 | `scope_ref_role_length` | `u32` | little | spec | A typed-reference element of a derived base frame is `u8 1`, a u64 Design record index, u32 36, and a 36-byte uppercase ASCII role GUID · value `36` |
+| 67 | 36 | `scope_ref_role` | `bytes[36]` | little | spec | Equal roles have equal GUIDs in different documents · value `"493A89BA-E146-498D-9033-2783FE727AF4"` |
+| 117 | 4 | `zero_role_length` | `u32` | little | spec | A 36-code-unit LP-UTF16 GUID of zeros precedes the second scope reference element · value `36` |
+| 121 | 72 | `zero_role` | `bytes[72]` | little | spec | A 36-code-unit LP-UTF16 GUID of zeros precedes the second scope reference element |
+| 200 | 1 | `scope_ref_repeat_marker` | `u8` | little | spec | A typed-reference element of a derived base frame is `u8 1`, a u64 Design record index, u32 36, and a 36-byte uppercase ASCII role GUID · value `1` |
+| 201 | 8 | `scope_ref_repeat_record` | `u64` | little | spec | The scope reference elements store the primary record index plus 4 |
+| 209 | 4 | `scope_ref_repeat_role_length` | `u32` | little | spec | A typed-reference element of a derived base frame is `u8 1`, a u64 Design record index, u32 36, and a 36-byte uppercase ASCII role GUID · value `36` |
+| 213 | 36 | `scope_ref_repeat_role` | `bytes[36]` | little | spec | Equal roles have equal GUIDs in different documents · value `"493A89BA-E146-498D-9033-2783FE727AF4"` |
+| 251 | 4 | `current_history_state_id` | `u32` | little | spec | The trailing member of the second scope reference element is the current history-state identity |
+| 255 | 4 | `kind_length` | `u32` | little | spec | The kind is length-prefixed UTF-16, followed by the feature ordinal · value `18` |
+| 259 | 36 | `kind` | `bytes[36]` | little | spec | The kind is length-prefixed UTF-16, followed by the feature ordinal |
+| 295 | 4 | `feature_ordinal` | `u32` | little | spec | The kind is length-prefixed UTF-16, followed by the feature ordinal |
+| 314 | 1 | `param_3_marker` | `u8` | little | spec | A typed-reference element of a derived base frame is `u8 1`, a u64 Design record index, u32 36, and a 36-byte uppercase ASCII role GUID · value `1` |
+| 315 | 8 | `param_3_record` | `u64` | little | spec | The three trailing parameter elements store the primary record index plus 3, 2, and 1 |
+| 323 | 4 | `param_3_role_length` | `u32` | little | spec | A typed-reference element of a derived base frame is `u8 1`, a u64 Design record index, u32 36, and a 36-byte uppercase ASCII role GUID · value `36` |
+| 327 | 36 | `param_3_role` | `bytes[36]` | little | spec | Equal roles have equal GUIDs in different documents · value `"B7F34D7B-DAC4-41A5-B67D-D672537C3BFA"` |
+| 365 | 4 | `previous_history_state_id` | `u32` | little | spec | The trailing member of the first trailing parameter element is the previous history-state identity |
+| 369 | 4 | `scalar_head` | `u32` | little | spec | An f64 between two equal u32 values follows the previous history-state identity · value `69` |
+| 373 | 8 | `scalar` | `f64` | little | spec | An f64 between two equal u32 values follows the previous history-state identity |
+| 381 | 4 | `scalar_tail` | `u32` | little | spec | An f64 between two equal u32 values follows the previous history-state identity · value `69` |
+| 385 | 1 | `param_2_marker` | `u8` | little | spec | A typed-reference element of a derived base frame is `u8 1`, a u64 Design record index, u32 36, and a 36-byte uppercase ASCII role GUID · value `1` |
+| 386 | 8 | `param_2_record` | `u64` | little | spec | The three trailing parameter elements store the primary record index plus 3, 2, and 1 |
+| 394 | 4 | `param_2_role_length` | `u32` | little | spec | A typed-reference element of a derived base frame is `u8 1`, a u64 Design record index, u32 36, and a 36-byte uppercase ASCII role GUID · value `36` |
+| 398 | 36 | `param_2_role` | `bytes[36]` | little | spec | Equal roles have equal GUIDs in different documents · value `"5FBE538E-139B-46D4-BCAF-CC796D1E1F78"` |
+| 438 | 1 | `param_1_marker` | `u8` | little | spec | A typed-reference element of a derived base frame is `u8 1`, a u64 Design record index, u32 36, and a 36-byte uppercase ASCII role GUID · value `1` |
+| 439 | 8 | `param_1_record` | `u64` | little | spec | The three trailing parameter elements store the primary record index plus 3, 2, and 1 |
+| 447 | 4 | `param_1_role_length` | `u32` | little | spec | A typed-reference element of a derived base frame is `u8 1`, a u64 Design record index, u32 36, and a 36-byte uppercase ASCII role GUID · value `36` |
+| 451 | 36 | `param_1_role` | `bytes[36]` | little | spec | Equal roles have equal GUIDs in different documents · value `"6CCF41D5-40BE-48ED-A834-18F3EAED6C57"` |
+
+Unstated regions:
+
+- `0..20` (20 B): The specification states no field in this range.
+- `21..54` (33 B): The specification states no field in this range.
+- `103..117` (14 B): The specification states no field in this range.
+- `193..200` (7 B): The specification states no field in this range.
+- `249..251` (2 B): The specification states no field in this range.
+- `299..314` (15 B): The specification states no field in this range.
+- `363..365` (2 B): The specification states no field in this range.
+- `434..438` (4 B): The specification states no field in this range.
+- `487..491` (4 B): The specification states no field in this range.
 
 ## Not tabulated
 
