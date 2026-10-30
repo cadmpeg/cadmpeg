@@ -50,7 +50,7 @@ fn expression_helix(record: &crate::curve::CurveExpressionRecord) -> Option<Curv
 
 fn one_prototype_pcurve_input() -> Vec<u8> {
     let mut payload = b"crv_array\0crv_id\0\x07crv_pnt_arr\0\xf9\x02\x04".to_vec();
-    payload.extend_from_slice(&[0x18; 8]);
+    payload.extend_from_slice(&[0x12; 8]);
     payload
 }
 
@@ -60,17 +60,23 @@ fn prototype_pcurve_endpoint_record_preserves_eight_slots() {
     let records = prototype_pcurve_endpoints(&payload, &mut Vec::new());
     assert_eq!(records.len(), 1);
     assert_eq!(records[0].curve_id, 7);
-    assert_eq!(records[0].face_0_endpoints, [[0.0; 2]; 2]);
-    assert_eq!(records[0].face_1_endpoints, [[0.0; 2]; 2]);
+    assert_eq!(
+        records[0].face_0_endpoints,
+        [[std::f64::consts::FRAC_PI_2; 2]; 2]
+    );
+    assert_eq!(
+        records[0].face_1_endpoints,
+        [[std::f64::consts::FRAC_PI_2; 2]; 2]
+    );
 }
 
-fn pcurve_zero_lane_input() -> (CurveParameterRecord, CurveTopologyRow) {
+fn pcurve_quarter_turn_lane_input() -> (CurveParameterRecord, CurveTopologyRow) {
     let mut record = parameter_record(7);
-    record.body = vec![0x18; 8];
+    record.body = vec![0x12; 8];
     record.scalar_tokens = (0..8)
         .map(|offset| CurveParameterScalar {
-            value: 0.0,
-            raw: vec![0x18],
+            value: std::f64::consts::FRAC_PI_2,
+            raw: vec![0x12],
             offset,
         })
         .collect();
@@ -87,12 +93,18 @@ fn pcurve_zero_lane_input() -> (CurveParameterRecord, CurveTopologyRow) {
 }
 
 #[test]
-fn pcurve_endpoints_preserve_eight_zero_slots() {
-    let (record, topology) = pcurve_zero_lane_input();
+fn pcurve_endpoints_preserve_eight_quarter_turn_slots() {
+    let (record, topology) = pcurve_quarter_turn_lane_input();
     let endpoints = pcurve_endpoints(&[record], &[topology], &mut Vec::new());
     assert_eq!(endpoints.len(), 1);
-    assert_eq!(endpoints[0].face_0_endpoints, [[0.0, 0.0]; 2]);
-    assert_eq!(endpoints[0].face_1_endpoints, [[0.0, 0.0]; 2]);
+    assert_eq!(
+        endpoints[0].face_0_endpoints,
+        [[std::f64::consts::FRAC_PI_2; 2]; 2]
+    );
+    assert_eq!(
+        endpoints[0].face_1_endpoints,
+        [[std::f64::consts::FRAC_PI_2; 2]; 2]
+    );
 }
 
 fn parameter_record(curve_id: u32) -> CurveParameterRecord {
@@ -127,7 +139,7 @@ fn typed_parameter_rows_require_unique_identity() {
 
 #[test]
 fn positional_pcurve_repeat_without_a_preceding_scalar_is_retained_with_a_loss() {
-    let (mut record, topology) = pcurve_zero_lane_input();
+    let (mut record, topology) = pcurve_quarter_turn_lane_input();
     record.body[0] = 0xe4;
     record.scalar_tokens[0] = CurveParameterScalar {
         value: 1.0,
@@ -176,9 +188,9 @@ fn pcurve_endpoint_slots_must_be_finite() {
 
 fn canonical_and_positional_two_chart_input() -> (Vec<u8>, BTreeSet<u32>) {
     let samples = [
-        0x18, 0x0f, 0x0d, 0x18, // point 0
-        0x0f, 0x18, 0x18, 0x0d, // point 1
-        0x0d, 0x18, 0x0f, 0x18, // point 2
+        0x0f, 0xe4, 0x0d, 0x18, // point 0
+        0xe4, 0x0f, 0x18, 0x0d, // point 1
+        0x0d, 0x18, 0xe4, 0x0f, // point 2
     ];
     let mut payload = b"topol_ref_data\0".to_vec();
     payload.extend_from_slice(&[7, 0, 4, 1, 0xf6, 0xfc, 3]);
@@ -199,8 +211,8 @@ fn decodes_canonical_and_positional_two_chart_sample_rows() {
     assert_eq!(decoded[0].curve_id, 7);
     assert_eq!(decoded[0].faces, [10, 11]);
     assert_eq!(decoded[0].samples.len(), 3);
-    assert_eq!(decoded[0].samples[0], [[0.0, 1.0], [-1.0, 0.0]]);
-    assert_eq!(decoded[0].samples[2], [[-1.0, 0.0], [1.0, 0.0]]);
+    assert_eq!(decoded[0].samples[0], [[1.0, 1.0], [-1.0, 0.0]]);
+    assert_eq!(decoded[0].samples[2], [[-1.0, 0.0], [0.0, 1.0]]);
     assert_eq!(decoded[1].curve_id, 8);
     assert_eq!(decoded[1].samples, decoded[0].samples);
 }
@@ -1079,7 +1091,7 @@ fn counted_two_chart_stream_keeps_quarter_turns_and_bounded_repeats() {
 fn positional_pcurve_variable_repeat_has_an_owned_positive_count() {
     let mut record = parameter_record(7);
     record.body = vec![0x18, 0xe7, 4, 0x2f, 0x10, 0, 0x18, 0x2f, 0x10, 0];
-    let (_, topology) = pcurve_zero_lane_input();
+    let (_, topology) = pcurve_quarter_turn_lane_input();
     let endpoints = pcurve_endpoints(
         std::slice::from_ref(&record),
         std::slice::from_ref(&topology),

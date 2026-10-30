@@ -5,7 +5,6 @@ use cadmpeg_test_support::{wire, EditableDecodeResult};
 
 use crate::test_support::assert_unknown_visible_surface;
 use crate::test_support::build_prt;
-use crate::test_support::push_generated_plane_envelope_scalar;
 use crate::test_support::push_generated_scalar;
 use crate::test_support::visibgeom_payload;
 use std::io::Cursor;
@@ -450,7 +449,7 @@ fn scan_decodes_plane_local_system_support_frame() {
     let mut payload = visibgeom_payload(1, 0);
     payload.extend_from_slice(&[7, 0x22, 4, 0x01, 1, 0]);
     for value in [0.0, 0.0, 0.0, 0.0, -1.0, -1.0, 1.0, 1.0, 2.0, 1.0] {
-        push_generated_plane_envelope_scalar(&mut payload, value);
+        push_generated_scalar(&mut payload, value);
     }
     payload.push(0xe3);
     payload.extend_from_slice(&[
@@ -495,7 +494,7 @@ fn scan_resolves_section_scalar_cache_in_surface_rows() {
 fn scan_decodes_standard_and_compact_plane_envelopes() {
     let mut payload = visibgeom_payload(2, 0);
     payload.extend_from_slice(&[7, 0x22, 4, 0x01, 0, 8]);
-    payload.extend_from_slice(&[0x18, 0x0f, 0x0f, 0x18, 0x18, 0x18, 0x0f, 0x0f, 0x18, 0x0f]);
+    payload.extend_from_slice(&[0x0f, 0xe4, 0xe4, 0x0f, 0x0f, 0x0f, 0xe4, 0xe4, 0x0f, 0xe4]);
     payload.push(0xe3);
     payload.extend_from_slice(&[8, 0x22, 4, 0xf6, 0, 0, 0x0e]);
     payload.extend_from_slice(&[0xe4, 0x0f, 0xe4, 0x0f, 0x0f, 0xe4, 0xe4, 0x0f, 0xe4]);

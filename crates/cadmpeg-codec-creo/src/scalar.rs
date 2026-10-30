@@ -2060,25 +2060,31 @@ pub(crate) fn rotation_plane_axes(values: &[f64; 12]) -> Option<([f64; 3], [f64;
 }
 
 fn rotation_plane_prefix(body: &[u8], cache: &ScalarCache) -> Option<([f64; 9], usize)> {
-    if matches!(body.first(), Some(0x0e | 0x0f | 0x10 | 0x18)) {
-        return None;
-    }
+    let explicit_direction = |offset| matches!(body.get(offset), Some(0x41 | 0x45 | 0x71 | 0xb9));
+    explicit_direction(0).then_some(())?;
     let (a, cursor) = decode_plane_support_coordinate(body, 0, 0, cache)?;
     (body.get(cursor) == Some(&0x18)).then_some(())?;
+    explicit_direction(cursor + 1).then_some(())?;
     let (b, cursor) = decode_plane_support_coordinate(body, cursor + 1, 2, cache)?;
     let middle = match body.get(cursor..cursor + 3)? {
         [0x18, 0x0f, 0x18] => 1.0,
         [0x18, 0x10, 0x18] => -1.0,
         _ => return None,
     };
+    explicit_direction(cursor + 3).then_some(())?;
     let (c, cursor) = decode_plane_support_coordinate(body, cursor + 3, 6, cache)?;
     (body.get(cursor) == Some(&0x18)).then_some(())?;
+    explicit_direction(cursor + 1).then_some(())?;
     let (d, cursor) = decode_plane_support_coordinate(body, cursor + 1, 8, cache)?;
     [a, b, c, d]
         .into_iter()
         .all(|value| value != 0.0)
         .then_some(())?;
-    Some(([a, 0.0, b, 0.0, middle, 0.0, c, 0.0, d], cursor))
+    let directions = [a, 0.0, b, 0.0, middle, 0.0, c, 0.0, d];
+    let mut values = [0.0; 12];
+    values[..9].copy_from_slice(&directions);
+    orthogonal_plane_columns(&values)?;
+    Some((directions, cursor))
 }
 
 fn decode_diagonal_z_plane_support(body: &[u8], cache: &ScalarCache) -> Option<([f64; 12], usize)> {

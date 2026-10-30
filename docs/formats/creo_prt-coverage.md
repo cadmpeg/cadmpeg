@@ -981,3 +981,22 @@ The frozen `axis_aligned_plane` and `closed_plane_intersection_brep` envelopes
 use the compatibility prefix. Their base geometry is retained. The latter's
 six curve-parameter bodies are empty; its plane placements, line directions,
 and parameter ranges derive from those envelopes.
+
+
+Complete base-literal envelopes remain admitted when the stateful stream
+cannot parse their extent, including initial `e4` literals. Literal fallback
+also resolves a stateful/frame conflict when the literal corners agree with
+the stored frame. Four-unit stateful domain prefixes retain the base-literal
+compatibility production. The source section supplies its scalar cache.
+Both model and cross-section namespaces use the same reconciliation helper.
+The two original rows tests retain their original inputs and assertions.
+Generic support-frame tests retain `18 0f 18` rank markers: the Y-rotation
+production owns that span after its direction columns satisfy the unit and
+orthogonality gate. Invalid rotation origins and reflected unit rotations
+retain their refusal gates.
+
+The retained Y-rotation inventory has 56 frames in seven local files. Each
+nonzero direction opener is `71` or `b9`. The rotation production also owns
+the explicit `41`/`45` floating forms; other DICT components retain generic
+support-frame ownership. All five original generic support byte images and
+assertions remain covered.

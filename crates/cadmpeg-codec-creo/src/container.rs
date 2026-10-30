@@ -1726,10 +1726,19 @@ fn plane_envelopes(
     ctx: &DecodeContext<'_>,
     sections: &[ScannedSection<'_>],
     losses: &mut Vec<cadmpeg_ir::report::loss::LossNote>,
+    frames: &[PlaneLocalSystem],
 ) -> Result<Vec<PlaneEnvelopeRecord>, CodecError> {
     collect_section_records_result(
         sections.iter(),
-        |bytes| surface::plane_envelopes_with_losses(ctx, bytes, losses),
+        |bytes| {
+            let mut records = surface::plane_envelopes_with_losses(ctx, bytes, losses)?;
+            surface::reconcile_plane_envelope_literals(
+                &mut records,
+                frames,
+                &crate::scalar::ScalarCache::from_section_checked(bytes),
+            );
+            Ok(records)
+        },
         |record, base| {
             record.offset += base;
             record.row_offset += base;
@@ -1742,10 +1751,19 @@ fn cross_section_plane_envelopes(
     ctx: &DecodeContext<'_>,
     sections: &[ScannedSection<'_>],
     losses: &mut Vec<cadmpeg_ir::report::loss::LossNote>,
+    frames: &[PlaneLocalSystem],
 ) -> Result<Vec<PlaneEnvelopeRecord>, CodecError> {
     collect_section_records_result(
         cross_sections(sections),
-        |bytes| surface::cross_section_plane_envelopes(ctx, bytes, losses),
+        |bytes| {
+            let mut records = surface::cross_section_plane_envelopes(ctx, bytes, losses)?;
+            surface::reconcile_plane_envelope_literals(
+                &mut records,
+                frames,
+                &crate::scalar::ScalarCache::from_section_checked(bytes),
+            );
+            Ok(records)
+        },
         |record, base| record.offset += base,
         |record| record.offset,
     )
@@ -2745,10 +2763,18 @@ pub(crate) fn scan_bytes<'a>(
         plane_local_systems(ctx, &model_geometry_sections, &mut local_work_cap_losses)?;
     let cross_section_plane_local_systems =
         cross_section_plane_local_systems(ctx, sections, &mut local_work_cap_losses)?;
-    let plane_envelopes =
-        plane_envelopes(ctx, &model_geometry_sections, &mut local_work_cap_losses)?;
-    let cross_section_plane_envelopes =
-        cross_section_plane_envelopes(ctx, sections, &mut local_work_cap_losses)?;
+    let plane_envelopes = plane_envelopes(
+        ctx,
+        &model_geometry_sections,
+        &mut local_work_cap_losses,
+        &plane_local_systems,
+    )?;
+    let cross_section_plane_envelopes = cross_section_plane_envelopes(
+        ctx,
+        sections,
+        &mut local_work_cap_losses,
+        &cross_section_plane_local_systems,
+    )?;
     let outline_planes = surface::placed_outline_planes(&plane_envelopes, &plane_local_systems);
     let positional_frame_planes =
         surface::positional_frame_planes(&surface_parameters, &surface_rows);

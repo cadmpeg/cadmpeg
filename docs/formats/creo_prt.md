@@ -1837,10 +1837,21 @@ slot and does not change the scalar language. A compact envelope can instead be
 the unique terminal nine-slot scalar frame after a nonempty structural prefix.
 Bytes outside these layouts do not form a plane envelope.
 
-A standard positional envelope with four initial literal `0f` bytes uses the
-surface-row literal grammar: `0f` is zero and `e4` is positive one. Its complete
-ten-slot body must reconcile with the local frame before carrier transfer.
-Other standard positional envelopes use a bounded stateful scalar stream. `18` is zero, `0f` is positive one, `10` is negative one, and
+A standard positional envelope admits a complete surface-row literal production
+and a bounded stateful production. In the literal production, `0f` is zero
+and `e4` is positive one. A complete literal production supplies the envelope
+when the stateful production cannot consume its ten slots. A leading `e4`
+therefore admits a literal positive unit. A four-unit stateful domain prefix
+also admits the literal production; this includes four initial `0f` bytes.
+When the stateful envelope conflicts with an available local frame, a literal
+envelope that agrees with that frame supplies the coordinates. For an
+axis-aligned frame, both corner coordinates on its normal axis equal the
+frame origin coordinate. For an inclined frame, the four mapped UV corners
+have the stored XYZ bounding-box extrema. An envelope without a complete
+frame can establish one held-coordinate plane from its corner relations.
+The selected values and tokens supply native records and carrier placement.
+
+In the stateful production, `18` is zero, `0f` is positive one, `10` is negative one, and
 `0e` within the scalar stream is positive one half. `e4`, `e5`, and `e6` repeat
 the preceding scalar one, two, and three times. The first scalar is a literal.
 Every literal replaces the preceding value. Repeats carry across domain-bound
@@ -2008,7 +2019,12 @@ The positional plane Y-rotation production stores these rows before its origin:
 
 The zero components are literal `18` bytes. The middle row is `18 0f 18` for
 `s = +1` or `18 10 18` for `s = -1`. The four other direction components are
-nonzero explicit scalars in their signed coordinate lanes. All three matrix columns are finite unit
+nonzero explicit scalars with openers `41`, `45`, `71`, or `b9` in their
+signed coordinate lanes. Other DICT direction forms belong to the generic
+support-frame production. The compact paired
+`4e` component in slot 6 and compact negated `50` component in slot 8 belong
+to the generic support-frame production. Unit, orthogonal direction columns
+establish the Y-rotation prefix before its origin is read. All three matrix columns are finite unit
 vectors, mutually orthogonal, and right-handed. The first column is the
 parameter direction and the third column is the plane normal. The middle row
 is a signed unit row. The origin production supplies

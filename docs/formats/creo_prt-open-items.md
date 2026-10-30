@@ -91,7 +91,7 @@ surface, or pcurve transition semantics apply.
 
 **Question.** What scalar value does each undefined prefix in a positional plane envelope encode?
 
-**Known.** `creo_prt.md` §3.4 "Plane row bodies contain envelope/domain data" through `creo_prt.md` §3.4 "In the frame-bound held-coordinate outline form" define the standard stateful envelope scalars, the four-initial-`0f` literal production, the leading-compact and structural-prefix terminal scalar frames, the held-coordinate form, and the planar-envelope plane forms.
+**Known.** `creo_prt.md` §3.4 "Plane row bodies contain envelope/domain data" through `creo_prt.md` §3.4 "In the frame-bound held-coordinate outline form" define the standard stateful envelope scalars, the complete literal fallback and four-unit domain compatibility production, the leading-compact and structural-prefix terminal scalar frames, the held-coordinate form, and the planar-envelope plane forms.
 
 **Need.** We must know the remaining prefixes to construct the plane envelope and domain.
 

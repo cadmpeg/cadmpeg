@@ -200,7 +200,9 @@ fn plane_carrier_report_excludes_untransferred_rows() {
                 .windows(prefix.len())
                 .position(|bytes| bytes == prefix)
                 .expect("literal envelope prefix");
-            input[offset] = 0x18;
+            input[offset + 12] = 0x43;
+            input[offset + 13] = 0xf0;
+            input[offset + 15] = 0x0f;
         }
         let result = decode(input);
         let transferred = result

@@ -2898,6 +2898,155 @@ pub(crate) fn frame_bound_outline_plane(
     })
 }
 
+fn envelope_bounds_match_frame(record: &PlaneEnvelopeRecord, frame: &PlaneFrame) -> bool {
+    let PlaneEnvelope::Standard {
+        bounds_2d,
+        corners_3d,
+    } = &record.envelope
+    else {
+        return false;
+    };
+    let (Some(origin), Some(normal), Some(u)) = (frame.origin, frame.normal(), frame.u_axis())
+    else {
+        return false;
+    };
+    let v = crate::vecmath::cross(normal, u);
+    let [[Some(u0), Some(v0)], [Some(u1), Some(v1)]] = *bounds_2d else {
+        return false;
+    };
+    let points = [(u0, v0), (u0, v1), (u1, v0), (u1, v1)].map(|(a, b)| {
+        std::array::from_fn::<_, 3, _>(|axis| origin[axis] + a * u[axis] + b * v[axis])
+    });
+    (0..3).all(|axis| {
+        let (Some(a), Some(b)) = (corners_3d[0][axis], corners_3d[1][axis]) else {
+            return false;
+        };
+        let low = points.iter().map(|p| p[axis]).fold(f64::INFINITY, f64::min);
+        let high = points
+            .iter()
+            .map(|p| p[axis])
+            .fold(f64::NEG_INFINITY, f64::max);
+        let scale = a.abs().max(b.abs()).max(low.abs()).max(high.abs()).max(1.0);
+        low.is_finite()
+            && high.is_finite()
+            && (a.min(b) - low).abs() <= EPS_FRAME_AGREEMENT * scale
+            && (a.max(b) - high).abs() <= EPS_FRAME_AGREEMENT * scale
+    })
+}
+
+fn envelope_reconciles_with_frames(
+    record: &PlaneEnvelopeRecord,
+    frames: &[PlaneLocalSystem],
+) -> bool {
+    let corners = match &record.envelope {
+        PlaneEnvelope::Standard { corners_3d, .. } | PlaneEnvelope::Compact { corners_3d, .. } => {
+            corners_3d
+        }
+    };
+    let mut found = false;
+    for frame in frames
+        .iter()
+        .filter(|frame| frame.surface_id == record.surface_id)
+    {
+        let frame = frame.frame();
+        let (Some(origin), Some(normal)) = (frame.origin, frame.normal()) else {
+            continue;
+        };
+        let mut axes = normal
+            .iter()
+            .enumerate()
+            .filter_map(|(axis, value)| (value.abs() > EPS_AXIS_COMPONENT_NONZERO).then_some(axis));
+        let (Some(axis), None) = (axes.next(), axes.next()) else {
+            found = true;
+            if !envelope_bounds_match_frame(record, &frame) {
+                return false;
+            }
+            continue;
+        };
+        found = true;
+        let (Some(first), Some(second)) = (corners[0][axis], corners[1][axis]) else {
+            return false;
+        };
+        let scale = first
+            .abs()
+            .max(second.abs())
+            .max(origin[axis].abs())
+            .max(1.0);
+        if record.corner_coordinate_equal[axis] != Some(true)
+            || (first - origin[axis]).abs() > EPS_FRAME_AGREEMENT * scale
+            || (second - origin[axis]).abs() > EPS_FRAME_AGREEMENT * scale
+        {
+            return false;
+        }
+    }
+    found
+}
+
+pub(crate) fn reconcile_plane_envelope_literals(
+    envelopes: &mut [PlaneEnvelopeRecord],
+    frames: &[PlaneLocalSystem],
+    cache: &scalar::ScalarCache,
+) {
+    for record in envelopes {
+        let has_frame = frames
+            .iter()
+            .any(|frame| frame.surface_id == record.surface_id && frame.has_complete_frame());
+        let reconciles = |candidate: &PlaneEnvelopeRecord| {
+            if has_frame {
+                envelope_reconciles_with_frames(candidate, frames)
+            } else {
+                !outline_planes(std::slice::from_ref(candidate)).is_empty()
+            }
+        };
+        if !matches!(record.envelope, PlaneEnvelope::Standard { .. }) || reconciles(record) {
+            continue;
+        }
+        let body = record
+            .body
+            .strip_suffix(&[0xf7, 0x0c])
+            .unwrap_or(&record.body);
+        let Some(slots) =
+            plane_envelope_scalar_slots_with_tokens_and_end(body, 10, cache).filter(|slots| {
+                slots.consumed == body.len()
+                    && slots
+                        .slots
+                        .iter()
+                        .all(|slot| slot.0.is_some_and(f64::is_finite))
+            })
+        else {
+            continue;
+        };
+        let legacy = PlaneEnvelopeRecord {
+            surface_id: record.surface_id,
+            body: record.body.clone(),
+            envelope: PlaneEnvelope::Standard {
+                bounds_2d: [
+                    [slots.slots[0].0, slots.slots[1].0],
+                    [slots.slots[2].0, slots.slots[3].0],
+                ],
+                corners_3d: [
+                    [slots.slots[4].0, slots.slots[5].0, slots.slots[6].0],
+                    [slots.slots[7].0, slots.slots[8].0, slots.slots[9].0],
+                ],
+            },
+            corner_coordinate_equal: [
+                slot_equality(&slots.slots[4], &slots.slots[7]),
+                slot_equality(&slots.slots[5], &slots.slots[8]),
+                slot_equality(&slots.slots[6], &slots.slots[9]),
+            ],
+            scalar_tokens: copied_plane_envelope_tokens(&slots)
+                .into_iter()
+                .map(Into::into)
+                .collect(),
+            row_offset: record.row_offset,
+            offset: record.offset,
+        };
+        if reconciles(&legacy) {
+            *record = legacy;
+        }
+    }
+}
+
 /// Derive outline plane equations and retain complete support-frame directions
 /// for carrier constructions when available.
 pub(crate) fn placed_outline_planes(
@@ -6663,13 +6812,13 @@ fn scalar_slots_with_tokens_and_end<'a>(
     })
 }
 
-fn plane_envelope_scalar_slots_with_tokens_and_end<'a>(
+fn plane_envelope_stateful_scalar_slots_with_tokens_and_end<'a>(
     body: &'a [u8],
     count: usize,
     cache: &scalar::ScalarCache,
 ) -> Option<ScalarTokenTable<'a>> {
     if count != 10 {
-        return plane_envelope_row_scalar_slots(body, count, cache);
+        return plane_envelope_scalar_slots_with_tokens_and_end(body, count, cache);
     }
     let mut slots = Vec::new();
     let mut cursor = 0;
@@ -6699,7 +6848,7 @@ fn plane_envelope_scalar_slots_with_tokens_and_end<'a>(
     })
 }
 
-fn plane_envelope_row_scalar_slots<'a>(
+fn plane_envelope_scalar_slots_with_tokens_and_end<'a>(
     body: &'a [u8],
     count: usize,
     cache: &scalar::ScalarCache,
@@ -6736,7 +6885,7 @@ fn complete_plane_envelope_slots<'a>(
     count: usize,
     cache: &scalar::ScalarCache,
 ) -> Option<ScalarTokenTable<'a>> {
-    let slots = plane_envelope_scalar_slots_with_tokens_and_end(body, count, cache)?;
+    let slots = plane_envelope_stateful_scalar_slots_with_tokens_and_end(body, count, cache)?;
     // The helper states every other condition. This is the caller's own: the
     // envelope owns the whole body, so a table that stops short of its end
     // leaves bytes no slot accounts for.
@@ -6749,11 +6898,24 @@ fn complete_standard_plane_envelope_slots<'a>(
 ) -> Option<ScalarTokenTable<'a>> {
     (body.first() != Some(&0x0e)).then_some(())?;
     let scalars = body.strip_suffix(&[0xf7, 0x0c]).unwrap_or(body);
-    if scalars.starts_with(&[0x0f; 4]) {
-        let slots = plane_envelope_row_scalar_slots(scalars, 10, cache)?;
-        return (slots.consumed == scalars.len()).then_some(slots);
+    let stateful = complete_plane_envelope_slots(scalars, 10, cache);
+    let literal = || {
+        let slots = plane_envelope_scalar_slots_with_tokens_and_end(scalars, 10, cache)?;
+        (slots.consumed == scalars.len()
+            && slots
+                .slots
+                .iter()
+                .all(|slot| slot.0.is_some_and(f64::is_finite)))
+        .then_some(slots)
+    };
+    if stateful
+        .as_ref()
+        .is_some_and(|slots| slots.slots[..4].iter().all(|slot| slot.0 == Some(1.0)))
+    {
+        literal().or(stateful)
+    } else {
+        stateful.or_else(literal)
     }
-    complete_plane_envelope_slots(scalars, 10, cache)
 }
 
 fn complete_plane_envelope_slots_with_final_positive_dict<'a>(
@@ -7610,7 +7772,7 @@ fn complete_plane_compact_scalar_suffix<'a>(
     if frame.offset == 0 || frame.slots.len() != 9 {
         return None;
     }
-    let slots = plane_envelope_row_scalar_slots(&body[frame.offset..], 9, cache)?;
+    let slots = plane_envelope_scalar_slots_with_tokens_and_end(&body[frame.offset..], 9, cache)?;
     (slots.consumed == body.len() - frame.offset).then_some(())?;
     slots
         .slots

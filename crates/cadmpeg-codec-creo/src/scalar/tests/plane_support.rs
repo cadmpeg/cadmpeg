@@ -314,7 +314,7 @@ fn plane_support_frame_selects_an_alternate_coordinate_lane_by_orthogonality() {
     body.extend_from_slice(&positive_subunit_coordinate(first_z));
     body.push(0x18);
     body.extend_from_slice(&positive_subunit_coordinate(-alternate));
-    body.extend_from_slice(&[0x0f, 0x0f, 0x0f]);
+    body.extend_from_slice(&[0x18, 0x0f, 0x18]);
     body.extend_from_slice(&[
         0xb1, 0, 0, 0, 0, 0, 0, // second-coordinate lane supplies `alternate`
     ]);
@@ -348,7 +348,7 @@ fn plane_support_frame_does_not_reinterpret_a_missing_primary_parse() {
     body.extend_from_slice(&positive_subunit_coordinate(first));
     body.push(0x18);
     body.extend_from_slice(&positive_subunit_coordinate(-alternate));
-    body.extend_from_slice(&[0x0f, 0x0f, 0x0f]);
+    body.extend_from_slice(&[0x18, 0x0f, 0x18]);
     body.extend_from_slice(&[0xa4, 0, 0, 0, 0, 0, 0]);
     body.push(0x18);
     body.extend_from_slice(&positive_subunit_coordinate(first));
@@ -502,7 +502,7 @@ fn reflected_plane_support_component_constructs_orthogonal_directions() {
     body.extend_from_slice(&positive_subunit_coordinate(0.6));
     body.push(0x18);
     body.extend_from_slice(&positive_subunit_coordinate(0.8));
-    body.extend_from_slice(&[0x0f, 0x0f, 0x0f]);
+    body.extend_from_slice(&[0x18, 0x0f, 0x18]);
     body.extend_from_slice(&positive_subunit_coordinate(0.8));
     body.push(0x18);
     body.extend_from_slice(&positive_subunit_coordinate(0.6));
@@ -539,7 +539,7 @@ fn plane_support_slot_eight_decodes_compact_negated_component() {
     body.extend_from_slice(&first_x_bytes);
     body.push(0x18);
     body.extend_from_slice(&positive_subunit_coordinate(first_z));
-    body.extend_from_slice(&[0x0f, 0x0f, 0x0f]);
+    body.extend_from_slice(&[0x18, 0x0f, 0x18]);
     body.extend_from_slice(&positive_subunit_coordinate(first_z));
     body.push(0x18);
     body.push(0x50);
@@ -561,7 +561,7 @@ fn plane_support_slot_six_decodes_paired_positive_component() {
     body.extend_from_slice(&positive_subunit_coordinate(first_x));
     body.push(0x18);
     body.extend_from_slice(&[0xa4, 0, 0, 0, 0, 0, 0]);
-    body.extend_from_slice(&[0x0f, 0x0f, 0x0f]);
+    body.extend_from_slice(&[0x18, 0x0f, 0x18]);
     body.extend_from_slice(&[0x4e, 0, 0, 0, 0, 0, 0]);
     body.push(0x18);
     body.extend_from_slice(&positive_subunit_coordinate(first_x));

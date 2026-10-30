@@ -99,15 +99,6 @@ pub(crate) fn push_generated_scalar(bytes: &mut Vec<u8>, value: f64) {
     }
 }
 
-pub(crate) fn push_generated_plane_envelope_scalar(bytes: &mut Vec<u8>, value: f64) {
-    match value {
-        0.0 => bytes.push(0x18),
-        1.0 => bytes.push(0x0f),
-        0.5 => bytes.push(0x0e),
-        _ => push_generated_scalar(bytes, value),
-    }
-}
-
 pub(crate) fn push_generated_plane_row(
     payload: &mut Vec<u8>,
     surface_id: u8,
@@ -140,7 +131,7 @@ pub(crate) fn push_generated_plane_row(
         corners
     });
     for value in [0.0; 4].into_iter().chain(corners.into_iter().flatten()) {
-        push_generated_plane_envelope_scalar(payload, value);
+        push_generated_scalar(payload, value);
     }
     payload.push(0xe3);
     for value in u_axis

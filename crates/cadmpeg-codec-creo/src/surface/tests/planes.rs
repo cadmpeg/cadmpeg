@@ -746,7 +746,7 @@ fn compact_plane_envelope_positive_dict_scalar_owns_an_e3_tail() {
 #[test]
 fn plane_envelope_coordinates_decode_compact_positive_half() {
     let body = [
-        0x18, 0x0f, 0x0d, 0x18, 0x43, 0xe0, 0x00, 0x0f, 0x18, 0x0e, 0x0f, 0x18,
+        0x0f, 0xe4, 0x0d, 0x0f, 0x43, 0xe0, 0x00, 0xe4, 0x0f, 0x0e, 0xe4, 0x0f,
     ];
     let (slots, consumed) = {
         plane_envelope_scalar_slots_with_tokens_and_end(&body, 10, &scalar::ScalarCache::default())
@@ -911,7 +911,7 @@ fn support_frame_maps_shortened_terminal_outline_coordinate() {
 #[test]
 fn positional_plane_frame_decodes_terminal_zero_before_null_tail() {
     let body = [
-        0x18, 0xe4, 0x0f, 0x10, 0x18, 0xe5, 0x10, 0x18, 0x2f, 0x18, 0x00, 0x46, 0x29, 0x3d, 0x70,
+        0x18, 0xe4, 0x0f, 0x10, 0x18, 0xe5, 0x10, 0x18, 0x2f, 0x18, 0x00, 0x2d, 0x29, 0x3d, 0x70,
         0xa3, 0xd7, 0x0a, 0x3d, 0x18, 0xe1,
     ];
 
@@ -919,10 +919,10 @@ fn positional_plane_frame_decodes_terminal_zero_before_null_tail() {
         .expect("complete frame");
     assert_eq!(
         slots,
-        [0.0, -1.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, -1.0, 6.0, -12.62, 0.0]
+        [0.0, -1.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, -1.0, 6.0, 12.62, 0.0]
     );
     let frame = plane_frame(&slots.map(Some));
-    assert_eq!(frame.origin, Some([6.0, -12.62, 0.0]));
+    assert_eq!(frame.origin, Some([6.0, 12.62, 0.0]));
     assert_eq!(frame.u_axis(), Some([0.0, -1.0, 0.0]));
     assert_eq!(frame.normal(), Some([1.0, 0.0, 0.0]));
 }

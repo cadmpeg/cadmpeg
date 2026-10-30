@@ -270,9 +270,9 @@ fn plane_envelope_slots_keep_signed_units_and_bounded_scalar_repeats() {
 }
 
 #[test]
-fn plane_envelope_initial_repeat_is_retained_with_a_loss() {
+fn plane_envelope_invalid_literal_fallback_is_retained_with_a_loss() {
     let payload = [
-        7, 0x22, 4, 1, 0, 0, 0xe4, 0x18, 0x18, 0x18, 0x18, 0x18, 0x18, 0x18, 0x18, 0x18, 0xe3,
+        7, 0x22, 4, 1, 0, 0, 0xe4, 0x18, 0x18, 0x18, 0x18, 0x18, 0x18, 0x18, 0x18, 0x18, 0xff, 0xe3,
     ];
     let mut losses = Vec::new();
     let envelopes = with_surface_ctx(&payload, |ctx| {
@@ -299,6 +299,13 @@ fn standard_plane_envelope_prefix_selects_its_literal_production() {
             .collect::<Vec<_>>(),
         [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 1.0, 1.0, 0.0, 1.0]
     );
+    let mut unsupported_full_ieee = vec![0x0f; 4];
+    unsupported_full_ieee.extend_from_slice(&[0xed, 0x7f, 0xf8, 0, 0, 0, 0, 0, 0]);
+    unsupported_full_ieee.extend_from_slice(&[0x0f; 5]);
+    assert!(
+        crate::surface::complete_standard_plane_envelope_slots(&unsupported_full_ieee, &cache)
+            .is_none()
+    );
     let mut trailing = body.to_vec();
     trailing.push(0x18);
     assert!(crate::surface::complete_standard_plane_envelope_slots(&trailing, &cache).is_none());
@@ -314,4 +321,54 @@ fn standard_plane_envelope_prefix_selects_its_literal_production() {
             .collect::<Vec<_>>(),
         [0.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0]
     );
+}
+
+#[test]
+fn standard_plane_literal_fallback_reconciles_with_the_stored_frame() {
+    let body = [
+        0x2f, 0, 0, 0xe4, 0x0f, 0xe4, 0x0f, 0xe4, 0x0f, 0xe4, 0xe4, 0x0f,
+    ];
+    let cache = scalar::ScalarCache::default();
+    let slots = crate::surface::complete_standard_plane_envelope_slots(&body, &cache)
+        .expect("complete stateful envelope");
+    let record = crate::surface::PlaneEnvelopeRecord {
+        surface_id: 7,
+        body: body.to_vec(),
+        envelope: crate::surface::PlaneEnvelope::Standard {
+            bounds_2d: [
+                [slots.slots[0].0, slots.slots[1].0],
+                [slots.slots[2].0, slots.slots[3].0],
+            ],
+            corners_3d: [
+                [slots.slots[4].0, slots.slots[5].0, slots.slots[6].0],
+                [slots.slots[7].0, slots.slots[8].0, slots.slots[9].0],
+            ],
+        },
+        corner_coordinate_equal: [Some(true); 3],
+        scalar_tokens: crate::surface::copied_plane_envelope_tokens(&slots)
+            .into_iter()
+            .map(Into::into)
+            .collect(),
+        row_offset: 0,
+        offset: 6,
+    };
+    for (z, expected) in [(0.0, 0.0), (1.0, 1.0)] {
+        let frame = crate::surface::PlaneLocalSystem {
+            surface_id: 7,
+            body: Vec::new(),
+            slots: [1.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, z].map(Some),
+            layout: Some(scalar::PlaneSupportFrameLayout::SupportTriples),
+            classification: crate::surface::LocalSystemClassification::Unclassified,
+            row_offset: 0,
+            offset: 20,
+        };
+        let mut records = [record.clone()];
+        crate::surface::reconcile_plane_envelope_literals(&mut records, &[frame], &cache);
+        let crate::surface::PlaneEnvelope::Standard { corners_3d, .. } = &records[0].envelope
+        else {
+            panic!("standard envelope")
+        };
+        assert_eq!(corners_3d[0][2], Some(expected));
+        assert_eq!(corners_3d[1][2], Some(expected));
+    }
 }
