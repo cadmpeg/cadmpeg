@@ -37,6 +37,7 @@ pub(crate) fn attach(
             .cloned()
             .flatten();
     }
+    let mut moved = Vec::new();
     let member_root = crate::ids::archive_product_definition_id();
     let unowned = model
         .bodies
@@ -83,7 +84,8 @@ pub(crate) fn attach(
                 }
             };
             if let Some(holder) = output_owner {
-                feature.product_definition = Some(holder);
+                feature.product_definition = Some(holder.clone());
+                moved.push((feature.id.clone(), holder));
             } else if retained.len() != outputs.len() {
                 losses.push(F3dLossCode::ScopeOutputOwnerMismatch.note(format!(
                     "Feature {} has {} output body link(s) outside its product definition; those links remain native.",
@@ -127,6 +129,7 @@ pub(crate) fn attach(
             }
         }
     }
+    follow_consumed_inputs(model, moved)?;
     for index in 0..model.parameters.len() {
         let parameter = &model.parameters[index];
         let inherited = parameter
@@ -158,6 +161,102 @@ pub(crate) fn attach(
             None
         };
         model.parameters[index].product_definition = owner;
+    }
+    Ok(())
+}
+
+/// Moves the inputs a feature consumes to the definition its outputs moved
+/// it to, so that definition's history replays on its own.
+///
+/// A consumed input is a dependency feature, or the sketch feature whose
+/// sketch the definition names. An input moves only when it produces no body
+/// and every feature that consumes it already belongs to the new definition;
+/// a moved sketch feature carries its planar sketch along.
+fn follow_consumed_inputs(
+    model: &mut Model,
+    mut moved: Vec<(cadmpeg_ir::features::FeatureId, ProductDefinitionId)>,
+) -> Result<(), CodecError> {
+    if moved.is_empty() {
+        return Ok(());
+    }
+    let sketch_rows = model
+        .features
+        .iter()
+        .enumerate()
+        .filter_map(|(index, row)| match row.evaluation.definition() {
+            FeatureDefinition::Operation(FeatureOperation::Sketch {
+                sketch: SketchFeatureBinding::Planar(Some(sketch)),
+            }) => Some((sketch.as_str().to_owned(), index)),
+            _ => None,
+        })
+        .collect::<BTreeMap<_, _>>();
+    let consumed = model
+        .features
+        .iter()
+        .map(|row| {
+            let mut inputs = row
+                .dependencies
+                .iter()
+                .filter_map(|id| model.features.iter().position(|other| &other.id == id))
+                .collect::<BTreeSet<_>>();
+            let text = serde_json::to_string(row.evaluation.definition()).map_err(|error| {
+                CodecError::malformed(format_args!(
+                    "feature definition does not serialize: {error}"
+                ))
+            })?;
+            for (sketch, index) in &sketch_rows {
+                if text.contains(&format!("\"{sketch}\"")) && model.features[*index].id != row.id {
+                    inputs.insert(*index);
+                }
+            }
+            Ok(inputs)
+        })
+        .collect::<Result<Vec<_>, CodecError>>()?;
+    while let Some((feature, owner)) = moved.pop() {
+        let Some(index) = model.features.iter().position(|row| row.id == feature) else {
+            continue;
+        };
+        for &input in &consumed[index] {
+            let row = &model.features[input];
+            if row.product_definition.as_ref() == Some(&owner)
+                || !row.evaluation.outputs().is_empty()
+            {
+                continue;
+            }
+            let all_consumers_moved = consumed.iter().enumerate().all(|(consumer, inputs)| {
+                !inputs.contains(&input)
+                    || model.features[consumer].product_definition.as_ref() == Some(&owner)
+            });
+            if !all_consumers_moved {
+                continue;
+            }
+            let previous = model.features[input]
+                .product_definition
+                .replace(owner.clone());
+            if let FeatureDefinition::Operation(FeatureOperation::Sketch {
+                sketch: SketchFeatureBinding::Planar(Some(sketch)),
+            }) = model.features[input].evaluation.definition().clone()
+            {
+                if let Some(definition) = previous.as_ref().and_then(|old| {
+                    model
+                        .product_definitions
+                        .iter_mut()
+                        .find(|row| &row.id == old)
+                }) {
+                    definition.sketches.retain(|row| row != &sketch);
+                }
+                if let Some(definition) = model
+                    .product_definitions
+                    .iter_mut()
+                    .find(|row| row.id == owner)
+                {
+                    if !definition.sketches.contains(&sketch) {
+                        definition.sketches.push(sketch);
+                    }
+                }
+            }
+            moved.push((model.features[input].id.clone(), owner.clone()));
+        }
     }
     Ok(())
 }

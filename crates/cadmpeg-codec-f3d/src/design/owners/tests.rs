@@ -336,3 +336,73 @@ fn product_history_owner_without_member_definition_is_released() {
     assert_eq!(model.features[1].product_definition, Some(kept));
     assert_eq!(model.product_definitions, definitions);
 }
+
+fn sketch_feature(native: &F3dNative, name: &str) -> cadmpeg_ir::features::Feature {
+    let sketch: cadmpeg_ir::sketches::SketchId =
+        format!("test:model:sketch#{name}").try_into().unwrap();
+    let mut row = model(native).features.remove(0);
+    row.id = format!("test:model:feature#{name}").try_into().unwrap();
+    row.evaluation = cadmpeg_ir::features::FeatureEvaluation::from_definition(
+        FeatureDefinition::Operation(FeatureOperation::Sketch {
+            sketch: SketchFeatureBinding::Planar(Some(sketch)),
+        }),
+    );
+    row
+}
+
+#[test]
+fn product_history_owner_moves_a_consumed_sketch_with_its_feature() {
+    let native = native();
+    let mut model = model(&native);
+    let body: cadmpeg_ir::ids::BodyId = "test:model:body#child".try_into().unwrap();
+    model.product_definitions[1].bodies = vec![body.clone()];
+    let sketch = sketch_feature(&native, "profile");
+    let sketch_id = sketch.id.clone();
+    model.features.push(sketch);
+    model.features[0]
+        .evaluation
+        .set_outputs(DistinctMembers::try_from(vec![body]).unwrap());
+    model.features[0].dependencies = DistinctMembers::try_from(vec![sketch_id.clone()]).unwrap();
+    let holder = model.product_definitions[1].id.clone();
+    let mut losses = Vec::new();
+    attach(&native, &mut model, &mut losses).unwrap();
+    let moved = model
+        .features
+        .iter()
+        .find(|row| row.id == sketch_id)
+        .unwrap();
+    assert_eq!(moved.product_definition, Some(holder));
+    assert_eq!(
+        model.product_definitions[1].sketches,
+        ["test:model:sketch#profile".try_into().unwrap()]
+    );
+    assert!(model.product_definitions[0].sketches.is_empty());
+}
+
+#[test]
+fn product_history_owner_keeps_a_sketch_still_consumed_by_its_old_definition() {
+    let native = native();
+    let mut model = model(&native);
+    let body: cadmpeg_ir::ids::BodyId = "test:model:body#child".try_into().unwrap();
+    model.product_definitions[1].bodies = vec![body.clone()];
+    let sketch = sketch_feature(&native, "shared");
+    let sketch_id = sketch.id.clone();
+    model.features.push(sketch);
+    let mut stay = model.features[0].clone();
+    stay.id = "test:model:feature#stay".try_into().unwrap();
+    stay.dependencies = DistinctMembers::try_from(vec![sketch_id.clone()]).unwrap();
+    model.features.push(stay);
+    model.features[0]
+        .evaluation
+        .set_outputs(DistinctMembers::try_from(vec![body]).unwrap());
+    model.features[0].dependencies = DistinctMembers::try_from(vec![sketch_id.clone()]).unwrap();
+    let old = model.product_definitions[0].id.clone();
+    let mut losses = Vec::new();
+    attach(&native, &mut model, &mut losses).unwrap();
+    let kept = model
+        .features
+        .iter()
+        .find(|row| row.id == sketch_id)
+        .unwrap();
+    assert_eq!(kept.product_definition, Some(old));
+}
