@@ -1,0 +1,38 @@
+{
+  "container_kind": "flat",
+  "entries": [
+    {
+      "attributes": {
+        "defaultPrim": "Surfaces",
+        "header": "PXR-USDC 0.8.0",
+        "metersPerUnit": "0.001",
+        "prim_specs": "3",
+        "property_specs": "25",
+        "upAxis": "Z"
+      },
+      "compression": "stored",
+      "name": "layer",
+      "role": "document",
+      "size": {
+        "form": "exact",
+        "size": 2120
+      }
+    }
+  ],
+  "identity": {
+    "classification": "classified",
+    "dialects": {
+      "extra": [],
+      "primary": {
+        "admission": "admitted",
+        "declared": {
+          "version": "0.8.0"
+        },
+        "dialect": "usd:usdc-0.8.0"
+      }
+    }
+  },
+  "notes": [
+    "prim types: NurbsPatch 2, Xform 1"
+  ]
+}

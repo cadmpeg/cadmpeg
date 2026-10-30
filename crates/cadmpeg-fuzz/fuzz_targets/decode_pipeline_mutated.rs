@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Mutates container bytes, then runs detection, inspection, and decoding with
-//! the registered container codecs, including STEP, IGES, and SAT. The first
+//! the registered container codecs, including STEP, IGES, SAT, and USD. The first
 //! input byte selects deterministic mutation and truncation strategies. Codec
 //! errors are expected; panics are failures.
 
@@ -18,6 +18,7 @@ use cadmpeg_codec_nx::NxCodec;
 use cadmpeg_codec_pvz::PvzCodec;
 use cadmpeg_codec_rhino::RhinoCodec;
 use cadmpeg_codec_sat::SatCodec;
+use cadmpeg_codec_usd::UsdCodec;
 use cadmpeg_codec_sldprt::SldprtCodec;
 use cadmpeg_codec_step::StepCodec;
 use cadmpeg_ir::codec::{Codec, DecodeOptions};
@@ -73,6 +74,7 @@ fuzz_target!(|data: &[u8]| {
         Box::new(IgesCodec),
         Box::new(SatCodec),
         Box::new(PvzCodec),
+        Box::new(UsdCodec),
         Box::new(StepCodec::default()),
     ];
 

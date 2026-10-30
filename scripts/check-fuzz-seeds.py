@@ -93,6 +93,18 @@ AUTHORED = (
     "step_parser/minimal",
     "step_reader/minimal",
     "step_reader/units",
+    "usd_container/composition",
+    "usd_container/mesh_cube",
+    "usd_container/usdc_header",
+    "usd_crate/assembly_instances",
+    "usd_crate/mesh_cube_0_0_1",
+    "usd_crate/mesh_cube_0_8_0",
+    "usd_layer/assembly_instances",
+    "usd_layer/materials",
+    "usd_package/assembly_package",
+    "usd_roundtrip/curves",
+    "usd_roundtrip/nurbs_patch",
+    "usd_roundtrip/openusd_authored",
 )
 
 

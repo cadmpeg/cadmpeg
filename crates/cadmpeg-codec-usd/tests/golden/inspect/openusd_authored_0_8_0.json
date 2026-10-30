@@ -1,0 +1,39 @@
+{
+  "container_kind": "flat",
+  "entries": [
+    {
+      "attributes": {
+        "defaultPrim": "Plant",
+        "doc": "Generated with the OpenUSD Python API (pxr) 26.8.",
+        "header": "PXR-USDC 0.8.0",
+        "metersPerUnit": "1",
+        "prim_specs": "12",
+        "property_specs": "39",
+        "upAxis": "Z"
+      },
+      "compression": "stored",
+      "name": "layer",
+      "role": "document",
+      "size": {
+        "form": "exact",
+        "size": 3299
+      }
+    }
+  ],
+  "identity": {
+    "classification": "classified",
+    "dialects": {
+      "extra": [],
+      "primary": {
+        "admission": "admitted",
+        "declared": {
+          "version": "0.8.0"
+        },
+        "dialect": "usd:usdc-0.8.0"
+      }
+    }
+  },
+  "notes": [
+    "prim types: BasisCurves 1, Material 1, Mesh 2, NurbsPatch 1, Scope 1, Shader 1, Xform 3, untyped 2"
+  ]
+}

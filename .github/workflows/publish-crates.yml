@@ -54,6 +54,7 @@ jobs:
             cadmpeg-codec-sat
             cadmpeg-codec-sldprt
             cadmpeg-codec-step
+            cadmpeg-codec-usd
             cadmpeg-registry
             cadmpeg-measure
             cadmpeg

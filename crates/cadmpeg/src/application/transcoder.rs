@@ -49,14 +49,16 @@ impl ExportTarget {
 /// The output format and target token selected by the command line.
 ///
 /// `--to` names a dialect outright. A `--to` that names only a format, or no
-/// `--to` at all, leaves `request` unstated so the encoder inherits from the
-/// source. The encoder resolves explicit tokens, source-dependent
+/// `--to` at all, takes the dialect that the output extension names, such as
+/// `usdz` for a `.usdz` path; otherwise it leaves `request` unstated so the
+/// encoder inherits from the source. The encoder resolves explicit tokens, source-dependent
 /// preservation, and delivery during planning.
 #[derive(Debug, Clone)]
 pub(crate) struct TargetSelection {
     /// Selected output format.
     format: Format,
-    /// Dialect token from `--to`, as a local id or catalog alias.
+    /// Dialect token from `--to` or from the output extension, as a local id
+    /// or catalog alias.
     request: Option<String>,
 }
 
@@ -71,18 +73,26 @@ impl TargetSelection {
     /// The encoder admits the dialect half during planning.
     pub(crate) fn resolve(to: Option<&str>, out: Option<&Path>) -> Result<Self, ApplicationError> {
         let inferred = format_from_path(out);
+        let extension_dialect = inferred
+            .zip(extension(out))
+            .and_then(|(format, extension)| format.dialect_for_extension(extension))
+            .map(str::to_owned);
         Ok(match to {
             None => Self::new(
                 inferred.ok_or_else(|| {
                     anyhow!("cannot infer format from the output path; pass --to FORMAT")
                 })?,
-                None,
+                extension_dialect,
             ),
-            Some(value) => Self::resolve_value(value, inferred)?,
+            Some(value) => Self::resolve_value(value, inferred, extension_dialect)?,
         })
     }
 
-    fn resolve_value(value: &str, inferred: Option<Format>) -> Result<Self, ApplicationError> {
+    fn resolve_value(
+        value: &str,
+        inferred: Option<Format>,
+        extension_dialect: Option<String>,
+    ) -> Result<Self, ApplicationError> {
         if let Some((left, right)) = value.split_once(':') {
             let format = Format::from_name(left)?.ok_or_else(|| {
                 ConversionRefusal::UnsupportedOutputFormat {
@@ -103,7 +113,8 @@ impl TargetSelection {
         }
         if let Some(format) = Format::from_name(value)? {
             warn_on_extension_disagreement(format, inferred);
-            return Ok(Self::new(format, None));
+            let dialect = extension_dialect.filter(|_| inferred == Some(format));
+            return Ok(Self::new(format, dialect));
         }
         if Format::is_known_name(value)? {
             return Err(ConversionRefusal::UnsupportedOutputFormat {
@@ -139,10 +150,13 @@ impl TargetSelection {
     }
 }
 
-fn format_from_path(path: Option<&Path>) -> Option<Format> {
+fn extension(path: Option<&Path>) -> Option<&str> {
     path.and_then(Path::extension)
         .and_then(|extension| extension.to_str())
-        .and_then(Format::from_extension)
+}
+
+fn format_from_path(path: Option<&Path>) -> Option<Format> {
+    extension(path).and_then(Format::from_extension)
 }
 
 fn warn_on_extension_disagreement(named: Format, inferred: Option<Format>) {

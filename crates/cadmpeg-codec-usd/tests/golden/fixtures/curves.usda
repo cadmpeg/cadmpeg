@@ -1,0 +1,62 @@
+#usda 1.0
+(
+    defaultPrim = "Curves"
+    metersPerUnit = 1
+    upAxis = "Z"
+)
+
+def Xform "Curves"
+{
+    def BasisCurves "Polyline"
+    {
+        uniform token type = "linear"
+        int[] curveVertexCounts = [3]
+        point3f[] points = [(0, 0, 0), (1, 0, 0), (1, 1, 0)]
+    }
+
+    def BasisCurves "Loop"
+    {
+        uniform token type = "linear"
+        uniform token wrap = "periodic"
+        int[] curveVertexCounts = [4]
+        point3f[] points = [(0, 0, 1), (1, 0, 1), (1, 1, 1), (0, 1, 1)]
+    }
+
+    def BasisCurves "Bezier"
+    {
+        uniform token type = "cubic"
+        uniform token basis = "bezier"
+        int[] curveVertexCounts = [7]
+        point3f[] points = [(0, 0, 2), (1, 1, 2), (2, 1, 2), (3, 0, 2), (4, -1, 2), (5, -1, 2), (6, 0, 2)]
+        float[] widths = [0.1] (
+            interpolation = "constant"
+        )
+    }
+
+    def BasisCurves "Splines"
+    {
+        uniform token type = "cubic"
+        uniform token basis = "bspline"
+        uniform token wrap = "pinned"
+        int[] curveVertexCounts = [4, 2]
+        point3f[] points = [(0, 0, 3), (1, 2, 3), (3, 2, 3), (4, 0, 3), (0, 0, 4), (1, 0, 4)]
+    }
+
+    def BasisCurves "CatmullRom"
+    {
+        uniform token type = "cubic"
+        uniform token basis = "catmullRom"
+        int[] curveVertexCounts = [5, 3]
+        point3f[] points = [(0, 0, 5), (1, 1, 5), (2, 0, 5), (3, 1, 5), (4, 0, 5), (0, 0, 6), (1, 0, 6), (2, 0, 6)]
+    }
+
+    def NurbsCurves "Arc"
+    {
+        int[] curveVertexCounts = [3]
+        int[] order = [3]
+        double[] knots = [0, 0, 0, 1, 1, 1]
+        double2[] ranges = [(0, 1)]
+        double[] pointWeights = [1, 0.7071067811865476, 1]
+        point3f[] points = [(1, 0, 7), (1, 1, 7), (0, 1, 7)]
+    }
+}

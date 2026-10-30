@@ -1,0 +1,135 @@
+# SPDX-License-Identifier: Apache-2.0
+schema = 1
+format = "usd"
+spec = "docs/formats/usd.md"
+endianness = "little"
+note = "Fixed-offset records of OpenUSD layers. The USDA text encoding is a grammar; the USDC bootstrap header, table-of-contents records, and path-item headers have fixed offsets."
+
+[[record]]
+name = "usdc_bootstrap"
+kind = "byte"
+parsed_by = "crates/cadmpeg-codec-usd/src/detect.rs"
+section = "9.1"
+anchor = "A USDC layer starts with an 88-byte bootstrap header."
+size = 88
+
+[[record.field]]
+name = "identifier"
+offset = 0
+type = "bytes[8]"
+source = "spec"
+anchor = "| 0 | 8 | identifier, ASCII `PXR-USDC` |"
+value = "PXR-USDC"
+
+[[record.field]]
+name = "major"
+offset = 8
+type = "u8"
+source = "spec"
+anchor = "| 8 | 1 | major version |"
+
+[[record.field]]
+name = "minor"
+offset = 9
+type = "u8"
+source = "spec"
+anchor = "| 9 | 1 | minor version |"
+
+[[record.field]]
+name = "patch"
+offset = 10
+type = "u8"
+source = "spec"
+anchor = "| 10 | 1 | patch version |"
+
+[[record.field]]
+name = "version_padding"
+offset = 11
+type = "bytes[5]"
+source = "spec"
+anchor = "| 11 | 5 | zero |"
+
+[[record.field]]
+name = "toc_offset"
+offset = 16
+type = "i64"
+source = "spec"
+anchor = "| 16 | 8 | `int64` byte offset of the table of contents |"
+
+[[record.field]]
+name = "reserved"
+offset = 24
+type = "bytes[64]"
+source = "spec"
+anchor = "| 24 | 64 | reserved |"
+
+[[record]]
+name = "usdc_section"
+kind = "byte"
+parsed_by = "crates/cadmpeg-codec-usd/src/usdc/sections.rs"
+section = "9.2"
+anchor = "then one 32-byte record for each section."
+size = 32
+
+[[record.field]]
+name = "name"
+offset = 0
+type = "bytes[16]"
+source = "spec"
+anchor = "| 0 | 16 | section name, ASCII, zero-padded |"
+
+[[record.field]]
+name = "start"
+offset = 16
+type = "i64"
+source = "spec"
+anchor = "| 16 | 8 | `int64` byte offset of the section |"
+
+[[record.field]]
+name = "size"
+offset = 24
+type = "i64"
+source = "spec"
+anchor = "| 24 | 8 | `int64` byte size of the section |"
+
+[[record]]
+name = "usdc_path_item"
+kind = "byte"
+parsed_by = "crates/cadmpeg-codec-usd/src/usdc/sections.rs"
+section = "9.5"
+anchor = "Before 0.4.0, each item is a header record."
+size = 12
+
+[[record.field]]
+name = "index"
+offset = 0
+type = "u32"
+source = "spec"
+anchor = "| 0 | 4 | path index of the item |"
+
+[[record.field]]
+name = "element_token"
+offset = 4
+type = "u32"
+source = "spec"
+anchor = "| 4 | 4 | element token index |"
+
+[[record.field]]
+name = "bits"
+offset = 8
+type = "u8"
+source = "spec"
+anchor = "| 8 | 1 | bits |"
+
+[[record.field]]
+name = "padding"
+offset = 9
+type = "bytes[3]"
+source = "spec"
+anchor = "| 9 | 3 | padding |"
+
+[[not_applicable]]
+area = "USDA text layer"
+reason = "N/A, text grammar. A text layer is a header line and a grammar of statements; nothing in it has a fixed byte position or width."
+section = "3.1"
+anchor = "The first line of a layer is the header."

@@ -1,0 +1,473 @@
+{
+  "ir": {
+    "decode_depth": "full",
+    "ir_version": "9",
+    "model": {
+      "appearance_bindings": [],
+      "appearances": [],
+      "assembly_joints": [],
+      "attributes": [],
+      "bodies": [
+        {
+          "color": {
+            "a": 1.0,
+            "b": 0.800000011920929,
+            "g": 0.4000000059604645,
+            "r": 0.20000000298023224
+          },
+          "id": "usd:stage:body#/Surfaces/Bilinear",
+          "kind": "sheet",
+          "name": "Bilinear",
+          "regions": [
+            "usd:stage:region#/Surfaces/Bilinear"
+          ]
+        },
+        {
+          "id": "usd:stage:body#/Surfaces/Trimmed",
+          "kind": "sheet",
+          "name": "Trimmed",
+          "regions": [
+            "usd:stage:region#/Surfaces/Trimmed"
+          ]
+        }
+      ],
+      "coedges": [],
+      "configurations": [],
+      "curves": [],
+      "drawings": [],
+      "edges": [],
+      "faces": [
+        {
+          "id": "usd:stage:face#/Surfaces/Bilinear",
+          "loops": {
+            "classification": "unspecified",
+            "loops": []
+          },
+          "sense": "forward",
+          "shell": "usd:stage:shell#/Surfaces/Bilinear",
+          "surface": "usd:stage:surface#/Surfaces/Bilinear"
+        },
+        {
+          "id": "usd:stage:face#/Surfaces/Trimmed",
+          "loops": {
+            "classification": "unspecified",
+            "loops": []
+          },
+          "sense": "reversed",
+          "shell": "usd:stage:shell#/Surfaces/Trimmed",
+          "surface": "usd:stage:surface#/Surfaces/Trimmed"
+        }
+      ],
+      "features": [],
+      "loops": [],
+      "occurrences": [
+        {
+          "id": "usd:stage:occurrence#/Surfaces",
+          "name": "Surfaces",
+          "native_ref": "/Surfaces",
+          "ordinal": 0,
+          "parent": {
+            "kind": "root"
+          },
+          "prototype": {
+            "definition": "usd:stage:definition#/Surfaces",
+            "scope": "local"
+          },
+          "scale": [
+            1.0,
+            1.0,
+            1.0
+          ],
+          "transform": [
+            [
+              1.0,
+              0.0,
+              0.0,
+              0.0
+            ],
+            [
+              0.0,
+              1.0,
+              0.0,
+              0.0
+            ],
+            [
+              0.0,
+              0.0,
+              1.0,
+              0.0
+            ]
+          ]
+        },
+        {
+          "id": "usd:stage:occurrence#/Surfaces/Bilinear",
+          "name": "Bilinear",
+          "native_ref": "/Surfaces/Bilinear",
+          "ordinal": 0,
+          "parent": {
+            "kind": "occurrence",
+            "occurrence": "usd:stage:occurrence#/Surfaces"
+          },
+          "prototype": {
+            "definition": "usd:stage:definition#/Surfaces/Bilinear",
+            "scope": "local"
+          },
+          "scale": [
+            1.0,
+            1.0,
+            1.0
+          ],
+          "transform": [
+            [
+              1.0,
+              0.0,
+              0.0,
+              0.0
+            ],
+            [
+              0.0,
+              1.0,
+              0.0,
+              0.0
+            ],
+            [
+              0.0,
+              0.0,
+              1.0,
+              0.0
+            ]
+          ]
+        },
+        {
+          "id": "usd:stage:occurrence#/Surfaces/Trimmed",
+          "name": "Trimmed",
+          "native_ref": "/Surfaces/Trimmed",
+          "ordinal": 1,
+          "parent": {
+            "kind": "occurrence",
+            "occurrence": "usd:stage:occurrence#/Surfaces"
+          },
+          "prototype": {
+            "definition": "usd:stage:definition#/Surfaces/Trimmed",
+            "scope": "local"
+          },
+          "scale": [
+            1.0,
+            1.0,
+            1.0
+          ],
+          "transform": [
+            [
+              1.0,
+              0.0,
+              0.0,
+              0.0
+            ],
+            [
+              0.0,
+              1.0,
+              0.0,
+              0.0
+            ],
+            [
+              0.0,
+              0.0,
+              1.0,
+              0.0
+            ]
+          ]
+        }
+      ],
+      "parameters": [],
+      "pcurves": [],
+      "pmi": [],
+      "points": [],
+      "presentation_documents": [],
+      "presentation_layers": [],
+      "procedural_curves": [],
+      "procedural_surfaces": [],
+      "product_definitions": [
+        {
+          "id": "usd:stage:definition#/Surfaces",
+          "kind": "group",
+          "native_ref": "/Surfaces",
+          "source_name": "Surfaces"
+        },
+        {
+          "bodies": [
+            "usd:stage:body#/Surfaces/Bilinear"
+          ],
+          "id": "usd:stage:definition#/Surfaces/Bilinear",
+          "kind": "object",
+          "native_ref": "/Surfaces/Bilinear",
+          "source_name": "Bilinear"
+        },
+        {
+          "bodies": [
+            "usd:stage:body#/Surfaces/Trimmed"
+          ],
+          "id": "usd:stage:definition#/Surfaces/Trimmed",
+          "kind": "object",
+          "native_ref": "/Surfaces/Trimmed",
+          "source_name": "Trimmed"
+        }
+      ],
+      "regions": [
+        {
+          "body": "usd:stage:body#/Surfaces/Bilinear",
+          "id": "usd:stage:region#/Surfaces/Bilinear",
+          "shells": [
+            "usd:stage:shell#/Surfaces/Bilinear"
+          ]
+        },
+        {
+          "body": "usd:stage:body#/Surfaces/Trimmed",
+          "id": "usd:stage:region#/Surfaces/Trimmed",
+          "shells": [
+            "usd:stage:shell#/Surfaces/Trimmed"
+          ]
+        }
+      ],
+      "semantic_annotations": [],
+      "shells": [
+        {
+          "id": "usd:stage:shell#/Surfaces/Bilinear",
+          "members": [
+            {
+              "id": "usd:stage:face#/Surfaces/Bilinear",
+              "kind": "face"
+            }
+          ],
+          "region": "usd:stage:region#/Surfaces/Bilinear"
+        },
+        {
+          "id": "usd:stage:shell#/Surfaces/Trimmed",
+          "members": [
+            {
+              "id": "usd:stage:face#/Surfaces/Trimmed",
+              "kind": "face"
+            }
+          ],
+          "region": "usd:stage:region#/Surfaces/Trimmed"
+        }
+      ],
+      "sketch_constraints": [],
+      "sketch_entities": [],
+      "sketches": [],
+      "spatial_sketch_entities": [],
+      "spatial_sketches": [],
+      "spreadsheets": [],
+      "subds": [],
+      "surfaces": [
+        {
+          "geometry": {
+            "kind": "nurbs",
+            "poles": {
+              "form": "rational",
+              "rows": [
+                [
+                  {
+                    "point": {
+                      "x": 0.0,
+                      "y": 0.0,
+                      "z": 0.0
+                    },
+                    "weight": 1.0
+                  },
+                  {
+                    "point": {
+                      "x": 0.0,
+                      "y": 5.0,
+                      "z": 2.0
+                    },
+                    "weight": 0.5
+                  },
+                  {
+                    "point": {
+                      "x": 0.0,
+                      "y": 10.0,
+                      "z": 0.0
+                    },
+                    "weight": 1.0
+                  }
+                ],
+                [
+                  {
+                    "point": {
+                      "x": 10.0,
+                      "y": 0.0,
+                      "z": 0.0
+                    },
+                    "weight": 1.0
+                  },
+                  {
+                    "point": {
+                      "x": 10.0,
+                      "y": 5.0,
+                      "z": 2.0
+                    },
+                    "weight": 0.5
+                  },
+                  {
+                    "point": {
+                      "x": 10.0,
+                      "y": 10.0,
+                      "z": 0.0
+                    },
+                    "weight": 1.0
+                  }
+                ]
+              ]
+            },
+            "u_degree": 1,
+            "u_knots": [
+              0.0,
+              0.0,
+              1.0,
+              1.0
+            ],
+            "u_periodic": false,
+            "v_degree": 2,
+            "v_knots": [
+              0.0,
+              0.0,
+              0.0,
+              1.0,
+              1.0,
+              1.0
+            ],
+            "v_periodic": false
+          },
+          "id": "usd:stage:surface#/Surfaces/Bilinear"
+        },
+        {
+          "geometry": {
+            "kind": "nurbs",
+            "poles": {
+              "form": "polynomial",
+              "rows": [
+                [
+                  {
+                    "x": 0.0,
+                    "y": 0.0,
+                    "z": 5.0
+                  },
+                  {
+                    "x": 0.0,
+                    "y": 10.0,
+                    "z": 5.0
+                  }
+                ],
+                [
+                  {
+                    "x": 10.0,
+                    "y": 0.0,
+                    "z": 5.0
+                  },
+                  {
+                    "x": 10.0,
+                    "y": 10.0,
+                    "z": 5.0
+                  }
+                ]
+              ]
+            },
+            "u_degree": 1,
+            "u_knots": [
+              0.0,
+              0.0,
+              1.0,
+              1.0
+            ],
+            "u_periodic": false,
+            "v_degree": 1,
+            "v_knots": [
+              0.0,
+              0.0,
+              1.0,
+              1.0
+            ],
+            "v_periodic": false
+          },
+          "id": "usd:stage:surface#/Surfaces/Trimmed"
+        }
+      ],
+      "tessellations": [],
+      "vertices": [],
+      "view_presentations": []
+    },
+    "native": {},
+    "source": {
+      "attributes": {
+        "default_prim": "Surfaces",
+        "meters_per_unit": "0.001",
+        "up_axis": "Z"
+      },
+      "identity": {
+        "classification": "classified",
+        "dialects": {
+          "extra": [],
+          "primary": {
+            "admission": "admitted",
+            "declared": {
+              "header": "#usda 1.0"
+            },
+            "dialect": "usd:usda-1.0"
+          }
+        }
+      }
+    },
+    "tolerances": {
+      "angular": 1e-10,
+      "linear": 1e-6
+    },
+    "units": {
+      "length": "millimeter"
+    }
+  },
+  "report": {
+    "identity": {
+      "classification": "classified",
+      "dialects": {
+        "extra": [],
+        "primary": {
+          "admission": "admitted",
+          "declared": {
+            "header": "#usda 1.0"
+          },
+          "dialect": "usd:usda-1.0"
+        }
+      }
+    },
+    "losses": [
+      {
+        "code": {
+          "code": "metadata.not-transferred",
+          "kind": "metadata_not_transferred",
+          "namespace": "usd",
+          "scope": "namespaced"
+        },
+        "message": "prim metadata was not transferred: doc 1",
+        "severity": "info"
+      },
+      {
+        "code": {
+          "code": "nurbs.trim-not-transferred",
+          "kind": "pcurve_omitted",
+          "namespace": "usd",
+          "scope": "namespaced"
+        },
+        "message": "trim curves of 1 NURBS patches were not transferred; each face covers its whole patch",
+        "severity": "warning"
+      }
+    ],
+    "notes": [],
+    "transfer": {
+      "geometry_transferred": true,
+      "transfer": "full"
+    }
+  },
+  "source_fidelity": {
+    "annotations": {}
+  }
+}

@@ -1,0 +1,863 @@
+{
+  "ir": {
+    "decode_depth": "full",
+    "ir_version": "9",
+    "model": {
+      "appearance_bindings": [
+        {
+          "appearance": "usd:stage:appearance#/Plant/Looks/Steel",
+          "id": "usd:stage:appearance-binding#/Plant/Frame/Tube",
+          "source_entity_id": "/Plant/Looks/Steel",
+          "target": {
+            "id": "usd:stage:tessellation#/Plant/Frame/Tube",
+            "kind": "tessellation"
+          }
+        }
+      ],
+      "appearances": [
+        {
+          "base_color": {
+            "a": 1.0,
+            "b": 0.6499999761581421,
+            "g": 0.6200000047683716,
+            "r": 0.6000000238418579
+          },
+          "id": "usd:stage:appearance#/Plant/Looks/Steel",
+          "name": "Steel",
+          "properties": {
+            "diffuseColor.b": 0.6499999761581421,
+            "diffuseColor.g": 0.6200000047683716,
+            "diffuseColor.r": 0.6000000238418579,
+            "metallic": 1.0,
+            "roughness": 0.30000001192092896
+          },
+          "schema": "UsdPreviewSurface"
+        }
+      ],
+      "assembly_joints": [],
+      "attributes": [],
+      "bodies": [
+        {
+          "id": "usd:stage:body#/Plant/Frame/Rail",
+          "kind": "wire",
+          "name": "Rail",
+          "regions": [
+            "usd:stage:region#/Plant/Frame/Rail"
+          ]
+        },
+        {
+          "id": "usd:stage:body#/Plant/Frame/Tube",
+          "kind": "general",
+          "name": "Tube",
+          "regions": []
+        },
+        {
+          "id": "usd:stage:body#/Plant/Roof",
+          "kind": "sheet",
+          "name": "Roof",
+          "regions": [
+            "usd:stage:region#/Plant/Roof"
+          ]
+        },
+        {
+          "id": "usd:stage:body#prototype0",
+          "kind": "general",
+          "name": "Leg0",
+          "regions": []
+        }
+      ],
+      "coedges": [],
+      "configurations": [],
+      "curves": [
+        {
+          "geometry": {
+            "degree": 3,
+            "kind": "nurbs",
+            "knots": [
+              0.0,
+              1.0,
+              2.0,
+              3.0,
+              4.0,
+              5.0,
+              6.0,
+              7.0,
+              8.0
+            ],
+            "periodic": false,
+            "poles": {
+              "form": "polynomial",
+              "points": [
+                {
+                  "x": 0.0,
+                  "y": 0.0,
+                  "z": 2000.0
+                },
+                {
+                  "x": 1000.0,
+                  "y": 0.0,
+                  "z": 2500.0
+                },
+                {
+                  "x": 2000.0,
+                  "y": 0.0,
+                  "z": 2000.0
+                },
+                {
+                  "x": 3000.0,
+                  "y": 0.0,
+                  "z": 2500.0
+                },
+                {
+                  "x": 4000.0,
+                  "y": 0.0,
+                  "z": 2000.0
+                }
+              ]
+            }
+          },
+          "id": "usd:stage:curve#/Plant/Frame/Rail:0"
+        }
+      ],
+      "drawings": [],
+      "edges": [
+        {
+          "carrier": {
+            "curve": "usd:stage:curve#/Plant/Frame/Rail:0",
+            "param_range": [
+              3.0,
+              5.0
+            ]
+          },
+          "end": "usd:stage:vertex#/Plant/Frame/Rail:0:1",
+          "id": "usd:stage:edge#/Plant/Frame/Rail:0",
+          "start": "usd:stage:vertex#/Plant/Frame/Rail:0:0"
+        }
+      ],
+      "faces": [
+        {
+          "id": "usd:stage:face#/Plant/Roof",
+          "loops": {
+            "classification": "unspecified",
+            "loops": []
+          },
+          "sense": "forward",
+          "shell": "usd:stage:shell#/Plant/Roof",
+          "surface": "usd:stage:surface#/Plant/Roof"
+        }
+      ],
+      "features": [],
+      "loops": [],
+      "occurrences": [
+        {
+          "id": "usd:stage:occurrence#/Plant",
+          "name": "Plant",
+          "native_ref": "/Plant",
+          "ordinal": 0,
+          "parent": {
+            "kind": "root"
+          },
+          "prototype": {
+            "definition": "usd:stage:definition#/Plant",
+            "scope": "local"
+          },
+          "scale": [
+            1.0,
+            1.0,
+            1.0
+          ],
+          "transform": [
+            [
+              1.0,
+              0.0,
+              0.0,
+              0.0
+            ],
+            [
+              0.0,
+              1.0,
+              0.0,
+              0.0
+            ],
+            [
+              0.0,
+              0.0,
+              1.0,
+              0.0
+            ]
+          ]
+        },
+        {
+          "id": "usd:stage:occurrence#/Plant/Frame",
+          "name": "Frame",
+          "native_ref": "/Plant/Frame",
+          "ordinal": 0,
+          "parent": {
+            "kind": "occurrence",
+            "occurrence": "usd:stage:occurrence#/Plant"
+          },
+          "prototype": {
+            "definition": "usd:stage:definition#/Plant/Frame",
+            "scope": "local"
+          },
+          "scale": [
+            1.0,
+            1.0,
+            1.0
+          ],
+          "transform": [
+            [
+              0.8660254037844387,
+              -0.49999999999999994,
+              0.0,
+              500.0
+            ],
+            [
+              0.49999999999999994,
+              0.8660254037844387,
+              0.0,
+              0.0
+            ],
+            [
+              0.0,
+              0.0,
+              1.0,
+              0.0
+            ]
+          ]
+        },
+        {
+          "id": "usd:stage:occurrence#/Plant/Frame/Rail",
+          "name": "Rail",
+          "native_ref": "/Plant/Frame/Rail",
+          "ordinal": 1,
+          "parent": {
+            "kind": "occurrence",
+            "occurrence": "usd:stage:occurrence#/Plant/Frame"
+          },
+          "prototype": {
+            "definition": "usd:stage:definition#/Plant/Frame/Rail",
+            "scope": "local"
+          },
+          "scale": [
+            1.0,
+            1.0,
+            1.0
+          ],
+          "transform": [
+            [
+              1.0,
+              0.0,
+              0.0,
+              0.0
+            ],
+            [
+              0.0,
+              1.0,
+              0.0,
+              0.0
+            ],
+            [
+              0.0,
+              0.0,
+              1.0,
+              0.0
+            ]
+          ]
+        },
+        {
+          "id": "usd:stage:occurrence#/Plant/Frame/Tube",
+          "name": "Tube",
+          "native_ref": "/Plant/Frame/Tube",
+          "ordinal": 0,
+          "parent": {
+            "kind": "occurrence",
+            "occurrence": "usd:stage:occurrence#/Plant/Frame"
+          },
+          "prototype": {
+            "definition": "usd:stage:definition#/Plant/Frame/Tube",
+            "scope": "local"
+          },
+          "scale": [
+            1.0,
+            1.0,
+            1.0
+          ],
+          "transform": [
+            [
+              1.0,
+              0.0,
+              0.0,
+              0.0
+            ],
+            [
+              0.0,
+              1.0,
+              0.0,
+              0.0
+            ],
+            [
+              0.0,
+              0.0,
+              1.0,
+              0.0
+            ]
+          ]
+        },
+        {
+          "id": "usd:stage:occurrence#/Plant/Leg0",
+          "name": "Leg0",
+          "native_ref": "/Plant/Leg0",
+          "ordinal": 2,
+          "parent": {
+            "kind": "occurrence",
+            "occurrence": "usd:stage:occurrence#/Plant"
+          },
+          "prototype": {
+            "definition": "usd:stage:definition#prototype0",
+            "scope": "local"
+          },
+          "scale": [
+            1.0,
+            1.0,
+            1.0
+          ],
+          "transform": [
+            [
+              1.0,
+              0.0,
+              0.0,
+              0.0
+            ],
+            [
+              0.0,
+              1.0,
+              0.0,
+              0.0
+            ],
+            [
+              0.0,
+              0.0,
+              1.0,
+              0.0
+            ]
+          ]
+        },
+        {
+          "id": "usd:stage:occurrence#/Plant/Leg1",
+          "name": "Leg1",
+          "native_ref": "/Plant/Leg1",
+          "ordinal": 3,
+          "parent": {
+            "kind": "occurrence",
+            "occurrence": "usd:stage:occurrence#/Plant"
+          },
+          "prototype": {
+            "definition": "usd:stage:definition#prototype0",
+            "scope": "local"
+          },
+          "scale": [
+            1.0,
+            1.0,
+            1.0
+          ],
+          "transform": [
+            [
+              1.0,
+              0.0,
+              0.0,
+              4000.0
+            ],
+            [
+              0.0,
+              1.0,
+              0.0,
+              0.0
+            ],
+            [
+              0.0,
+              0.0,
+              1.0,
+              0.0
+            ]
+          ]
+        },
+        {
+          "id": "usd:stage:occurrence#/Plant/Roof",
+          "name": "Roof",
+          "native_ref": "/Plant/Roof",
+          "ordinal": 1,
+          "parent": {
+            "kind": "occurrence",
+            "occurrence": "usd:stage:occurrence#/Plant"
+          },
+          "prototype": {
+            "definition": "usd:stage:definition#/Plant/Roof",
+            "scope": "local"
+          },
+          "scale": [
+            1.0,
+            1.0,
+            1.0
+          ],
+          "transform": [
+            [
+              1.0,
+              0.0,
+              0.0,
+              0.0
+            ],
+            [
+              0.0,
+              1.0,
+              0.0,
+              0.0
+            ],
+            [
+              0.0,
+              0.0,
+              1.0,
+              0.0
+            ]
+          ]
+        }
+      ],
+      "parameters": [],
+      "pcurves": [],
+      "pmi": [],
+      "points": [
+        {
+          "id": "usd:stage:point#/Plant/Frame/Rail:0:0",
+          "position": {
+            "x": 1000.0000000000001,
+            "y": 0.0,
+            "z": 2333.3333333333335
+          }
+        },
+        {
+          "id": "usd:stage:point#/Plant/Frame/Rail:0:1",
+          "position": {
+            "x": 3000.0000000000005,
+            "y": 0.0,
+            "z": 2333.3333333333335
+          }
+        }
+      ],
+      "presentation_documents": [],
+      "presentation_layers": [],
+      "procedural_curves": [],
+      "procedural_surfaces": [],
+      "product_definitions": [
+        {
+          "id": "usd:stage:definition#/Plant",
+          "kind": "part",
+          "native_ref": "/Plant",
+          "source_name": "Plant"
+        },
+        {
+          "id": "usd:stage:definition#/Plant/Frame",
+          "kind": "group",
+          "native_ref": "/Plant/Frame",
+          "source_name": "Frame"
+        },
+        {
+          "bodies": [
+            "usd:stage:body#/Plant/Frame/Rail"
+          ],
+          "id": "usd:stage:definition#/Plant/Frame/Rail",
+          "kind": "object",
+          "native_ref": "/Plant/Frame/Rail",
+          "source_name": "Rail"
+        },
+        {
+          "bodies": [
+            "usd:stage:body#/Plant/Frame/Tube"
+          ],
+          "id": "usd:stage:definition#/Plant/Frame/Tube",
+          "kind": "object",
+          "native_ref": "/Plant/Frame/Tube",
+          "source_name": "Tube"
+        },
+        {
+          "bodies": [
+            "usd:stage:body#/Plant/Roof"
+          ],
+          "id": "usd:stage:definition#/Plant/Roof",
+          "kind": "object",
+          "native_ref": "/Plant/Roof",
+          "source_name": "Roof"
+        },
+        {
+          "bodies": [
+            "usd:stage:body#prototype0"
+          ],
+          "id": "usd:stage:definition#prototype0",
+          "kind": "object",
+          "native_ref": "/Plant/Leg0",
+          "source_name": "Leg"
+        }
+      ],
+      "regions": [
+        {
+          "body": "usd:stage:body#/Plant/Frame/Rail",
+          "id": "usd:stage:region#/Plant/Frame/Rail",
+          "shells": [
+            "usd:stage:shell#/Plant/Frame/Rail"
+          ]
+        },
+        {
+          "body": "usd:stage:body#/Plant/Roof",
+          "id": "usd:stage:region#/Plant/Roof",
+          "shells": [
+            "usd:stage:shell#/Plant/Roof"
+          ]
+        }
+      ],
+      "semantic_annotations": [],
+      "shells": [
+        {
+          "id": "usd:stage:shell#/Plant/Frame/Rail",
+          "members": [
+            {
+              "id": "usd:stage:edge#/Plant/Frame/Rail:0",
+              "kind": "wire_edge"
+            }
+          ],
+          "region": "usd:stage:region#/Plant/Frame/Rail"
+        },
+        {
+          "id": "usd:stage:shell#/Plant/Roof",
+          "members": [
+            {
+              "id": "usd:stage:face#/Plant/Roof",
+              "kind": "face"
+            }
+          ],
+          "region": "usd:stage:region#/Plant/Roof"
+        }
+      ],
+      "sketch_constraints": [],
+      "sketch_entities": [],
+      "sketches": [],
+      "spatial_sketch_entities": [],
+      "spatial_sketches": [],
+      "spreadsheets": [],
+      "subds": [],
+      "surfaces": [
+        {
+          "geometry": {
+            "kind": "nurbs",
+            "poles": {
+              "form": "polynomial",
+              "rows": [
+                [
+                  {
+                    "x": 0.0,
+                    "y": 0.0,
+                    "z": 3000.0
+                  },
+                  {
+                    "x": 0.0,
+                    "y": 3000.0,
+                    "z": 3000.0
+                  }
+                ],
+                [
+                  {
+                    "x": 2000.0,
+                    "y": 0.0,
+                    "z": 4000.0
+                  },
+                  {
+                    "x": 2000.0,
+                    "y": 3000.0,
+                    "z": 4000.0
+                  }
+                ],
+                [
+                  {
+                    "x": 4000.0,
+                    "y": 0.0,
+                    "z": 3000.0
+                  },
+                  {
+                    "x": 4000.0,
+                    "y": 3000.0,
+                    "z": 3000.0
+                  }
+                ]
+              ]
+            },
+            "u_degree": 2,
+            "u_knots": [
+              0.0,
+              0.0,
+              0.0,
+              1.0,
+              1.0,
+              1.0
+            ],
+            "u_periodic": false,
+            "v_degree": 1,
+            "v_knots": [
+              0.0,
+              0.0,
+              1.0,
+              1.0
+            ],
+            "v_periodic": false
+          },
+          "id": "usd:stage:surface#/Plant/Roof"
+        }
+      ],
+      "tessellations": [
+        {
+          "body": "usd:stage:body#/Plant/Frame/Tube",
+          "channels": [],
+          "id": "usd:stage:tessellation#/Plant/Frame/Tube",
+          "mesh": {
+            "kind": "list",
+            "triangles": [
+              [
+                0,
+                1,
+                5
+              ],
+              [
+                0,
+                5,
+                4
+              ],
+              [
+                1,
+                2,
+                6
+              ],
+              [
+                1,
+                6,
+                5
+              ],
+              [
+                2,
+                3,
+                7
+              ],
+              [
+                2,
+                7,
+                6
+              ],
+              [
+                3,
+                0,
+                4
+              ],
+              [
+                3,
+                4,
+                7
+              ]
+            ],
+            "vertices": [
+              {
+                "x": 0.0,
+                "y": 0.0,
+                "z": 0.0
+              },
+              {
+                "x": 1000.0,
+                "y": 0.0,
+                "z": 0.0
+              },
+              {
+                "x": 1000.0,
+                "y": 1000.0,
+                "z": 0.0
+              },
+              {
+                "x": 0.0,
+                "y": 1000.0,
+                "z": 0.0
+              },
+              {
+                "x": 0.0,
+                "y": 0.0,
+                "z": 1000.0
+              },
+              {
+                "x": 1000.0,
+                "y": 0.0,
+                "z": 1000.0
+              },
+              {
+                "x": 1000.0,
+                "y": 1000.0,
+                "z": 1000.0
+              },
+              {
+                "x": 0.0,
+                "y": 1000.0,
+                "z": 1000.0
+              }
+            ]
+          }
+        },
+        {
+          "body": "usd:stage:body#prototype0",
+          "channels": [],
+          "id": "usd:stage:tessellation#prototype0",
+          "mesh": {
+            "kind": "shaded_list",
+            "triangles": [
+              [
+                0,
+                1,
+                2
+              ],
+              [
+                0,
+                2,
+                3
+              ]
+            ],
+            "vertices": [
+              {
+                "normal": {
+                  "x": 0.0,
+                  "y": 0.0,
+                  "z": 1.0
+                },
+                "position": {
+                  "x": 0.0,
+                  "y": 0.0,
+                  "z": 0.0
+                }
+              },
+              {
+                "normal": {
+                  "x": 0.0,
+                  "y": 0.0,
+                  "z": 1.0
+                },
+                "position": {
+                  "x": 100.00000149011612,
+                  "y": 0.0,
+                  "z": 0.0
+                }
+              },
+              {
+                "normal": {
+                  "x": 0.0,
+                  "y": 0.0,
+                  "z": 1.0
+                },
+                "position": {
+                  "x": 100.00000149011612,
+                  "y": 100.00000149011612,
+                  "z": 0.0
+                }
+              },
+              {
+                "normal": {
+                  "x": 0.0,
+                  "y": 0.0,
+                  "z": 1.0
+                },
+                "position": {
+                  "x": 0.0,
+                  "y": 100.00000149011612,
+                  "z": 0.0
+                }
+              }
+            ]
+          }
+        }
+      ],
+      "vertices": [
+        {
+          "id": "usd:stage:vertex#/Plant/Frame/Rail:0:0",
+          "point": "usd:stage:point#/Plant/Frame/Rail:0:0"
+        },
+        {
+          "id": "usd:stage:vertex#/Plant/Frame/Rail:0:1",
+          "point": "usd:stage:point#/Plant/Frame/Rail:0:1"
+        }
+      ],
+      "view_presentations": []
+    },
+    "native": {},
+    "source": {
+      "attributes": {
+        "default_prim": "Plant",
+        "meters_per_unit": "1",
+        "up_axis": "Z"
+      },
+      "identity": {
+        "classification": "classified",
+        "dialects": {
+          "extra": [],
+          "primary": {
+            "admission": "admitted",
+            "declared": {
+              "version": "0.8.0"
+            },
+            "dialect": "usd:usdc-0.8.0"
+          }
+        }
+      }
+    },
+    "tolerances": {
+      "angular": 1e-10,
+      "linear": 1e-6
+    },
+    "units": {
+      "length": "millimeter"
+    }
+  },
+  "report": {
+    "identity": {
+      "classification": "classified",
+      "dialects": {
+        "extra": [],
+        "primary": {
+          "admission": "admitted",
+          "declared": {
+            "version": "0.8.0"
+          },
+          "dialect": "usd:usdc-0.8.0"
+        }
+      }
+    },
+    "losses": [
+      {
+        "code": {
+          "code": "metadata.not-transferred",
+          "kind": "metadata_not_transferred",
+          "namespace": "usd",
+          "scope": "namespaced"
+        },
+        "message": "layer metadata was not transferred: doc",
+        "severity": "info"
+      },
+      {
+        "code": {
+          "code": "mesh.primvar-not-transferred",
+          "kind": "attributes_not_transferred",
+          "namespace": "usd",
+          "scope": "namespaced"
+        },
+        "message": "these primvars were not transferred: widths",
+        "severity": "info"
+      }
+    ],
+    "notes": [],
+    "transfer": {
+      "geometry_transferred": true,
+      "transfer": "full"
+    }
+  },
+  "source_fidelity": {
+    "annotations": {}
+  }
+}

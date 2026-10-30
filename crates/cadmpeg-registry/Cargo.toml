@@ -25,6 +25,7 @@ default = [
   "iges",
   "sat",
   "pvz",
+  "usd",
 ]
 fcstd = ["dep:cadmpeg-codec-freecad"]
 f3d = ["dep:cadmpeg-codec-f3d"]
@@ -38,6 +39,7 @@ step = ["dep:cadmpeg-codec-step"]
 iges = ["dep:cadmpeg-codec-iges"]
 sat = ["dep:cadmpeg-codec-sat"]
 pvz = ["dep:cadmpeg-codec-pvz"]
+usd = ["dep:cadmpeg-codec-usd"]
 
 [dependencies]
 cadmpeg-core.workspace = true
@@ -55,6 +57,7 @@ cadmpeg-codec-iges = { workspace = true, optional = true }
 cadmpeg-codec-step = { workspace = true, optional = true }
 cadmpeg-codec-sat = { workspace = true, optional = true }
 cadmpeg-codec-pvz = { workspace = true, optional = true }
+cadmpeg-codec-usd = { workspace = true, optional = true }
 serde.workspace = true
 thiserror.workspace = true
 # The dialect registries are embedded with `include_str!` and parsed on first

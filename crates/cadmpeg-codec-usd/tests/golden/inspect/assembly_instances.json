@@ -1,0 +1,38 @@
+{
+  "container_kind": "flat",
+  "entries": [
+    {
+      "attributes": {
+        "defaultPrim": "Assembly",
+        "header": "#usda 1.0",
+        "metersPerUnit": "0.001",
+        "prim_specs": "8",
+        "property_specs": "20",
+        "upAxis": "Z"
+      },
+      "compression": "stored",
+      "name": "layer",
+      "role": "document",
+      "size": {
+        "form": "exact",
+        "size": 2106
+      }
+    }
+  ],
+  "identity": {
+    "classification": "classified",
+    "dialects": {
+      "extra": [],
+      "primary": {
+        "admission": "admitted",
+        "declared": {
+          "header": "#usda 1.0"
+        },
+        "dialect": "usd:usda-1.0"
+      }
+    }
+  },
+  "notes": [
+    "prim types: Mesh 3, Xform 5"
+  ]
+}

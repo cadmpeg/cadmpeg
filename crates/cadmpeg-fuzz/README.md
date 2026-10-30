@@ -78,6 +78,7 @@ decoding:
 - `iges_container`
 - `sat_container`
 - `pvz_container`
+- `usd_container`
 
 Native writing and replay:
 
@@ -88,6 +89,8 @@ Native writing and replay:
 - `iges_writer` selects IGES 5.1, 5.2, or 5.3 from its control byte; exercises
   source-less planning, topology synthesis, unsupported-native rejection,
   inspection, semantic re-decode, validation, and byte-exact replay.
+- `usd_roundtrip` decodes a USDA layer, writes it as USDA 1.0, and decodes the
+  result.
 
 Focused parser coverage. Focused codec parser targets import `::fuzz` only.
 
@@ -117,6 +120,7 @@ Focused parser coverage. Focused codec parser targets import `::fuzz` only.
 - IGES: `iges_cards`, `iges_global`, `iges_directory`, `iges_parameters` go
   through `cadmpeg_codec_iges::fuzz`
 - Creo View: `pvz_package` and `pvz_exact` go through `cadmpeg_codec_pvz::fuzz`
+- OpenUSD: `usd_layer` goes through `cadmpeg_codec_usd::fuzz`
 
 IR and STEP:
 

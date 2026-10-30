@@ -1,0 +1,4 @@
+#usda 9.9
+def Xform "Future"
+{
+}

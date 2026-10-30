@@ -1,0 +1,926 @@
+{
+  "ir": {
+    "decode_depth": "full",
+    "ir_version": "9",
+    "model": {
+      "appearance_bindings": [],
+      "appearances": [],
+      "articulations": [
+        {
+          "id": "usd:stage:articulation#/Arm",
+          "native_ref": "/Arm",
+          "root": {
+            "kind": "occurrence",
+            "occurrence": "usd:stage:occurrence#/Arm"
+          }
+        }
+      ],
+      "assembly_joints": [
+        {
+          "id": "usd:stage:joint#/Arm/Grip",
+          "native_ref": "/Arm/Grip",
+          "operands": {
+            "arity": "pair",
+            "connectors": [
+              {
+                "detached": false,
+                "frame": [
+                  [
+                    0.0,
+                    0.0,
+                    1.0,
+                    0.0
+                  ],
+                  [
+                    1.0,
+                    0.0,
+                    0.0,
+                    0.0
+                  ],
+                  [
+                    0.0,
+                    1.0,
+                    0.0,
+                    20.0
+                  ]
+                ],
+                "operand": {
+                  "container": {
+                    "container": "occurrence",
+                    "occurrence": "usd:stage:occurrence#/Arm/Link"
+                  },
+                  "object": "/Arm/Link"
+                }
+              },
+              {
+                "detached": false,
+                "frame": [
+                  [
+                    0.0,
+                    0.0,
+                    1.0,
+                    0.0
+                  ],
+                  [
+                    1.0,
+                    0.0,
+                    0.0,
+                    0.0
+                  ],
+                  [
+                    0.0,
+                    1.0,
+                    0.0,
+                    0.0
+                  ]
+                ],
+                "operand": {
+                  "container": {
+                    "container": "occurrence",
+                    "occurrence": "usd:stage:occurrence#/Arm/Finger"
+                  },
+                  "object": "/Arm/Finger"
+                }
+              }
+            ],
+            "kind": {
+              "kind": "slider",
+              "linear_limits": {
+                "bounds": "range",
+                "maximum": 30.0,
+                "minimum": 0.0
+              }
+            }
+          },
+          "suppressed": false
+        },
+        {
+          "id": "usd:stage:joint#/Arm/Shoulder",
+          "native_ref": "/Arm/Shoulder",
+          "operands": {
+            "arity": "pair",
+            "connectors": [
+              {
+                "detached": false,
+                "frame": [
+                  [
+                    0.0,
+                    0.0,
+                    1.0,
+                    0.0
+                  ],
+                  [
+                    1.0,
+                    0.0,
+                    0.0,
+                    0.0
+                  ],
+                  [
+                    0.0,
+                    1.0,
+                    0.0,
+                    20.0
+                  ]
+                ],
+                "operand": {
+                  "container": {
+                    "container": "occurrence",
+                    "occurrence": "usd:stage:occurrence#/Arm/Base"
+                  },
+                  "object": "/Arm/Base"
+                }
+              },
+              {
+                "detached": false,
+                "frame": [
+                  [
+                    0.0,
+                    0.0,
+                    1.0,
+                    0.0
+                  ],
+                  [
+                    1.0,
+                    0.0,
+                    0.0,
+                    0.0
+                  ],
+                  [
+                    0.0,
+                    1.0,
+                    0.0,
+                    0.0
+                  ]
+                ],
+                "operand": {
+                  "container": {
+                    "container": "occurrence",
+                    "occurrence": "usd:stage:occurrence#/Arm/Link"
+                  },
+                  "object": "/Arm/Link"
+                }
+              }
+            ],
+            "kind": {
+              "angular_limits": {
+                "bounds": "range",
+                "maximum": 1.5707963267948966,
+                "minimum": -1.5707963267948966
+              },
+              "kind": "revolute"
+            }
+          },
+          "suppressed": false
+        }
+      ],
+      "attributes": [],
+      "bodies": [
+        {
+          "id": "usd:stage:body#/Arm/Base/Geom",
+          "kind": "general",
+          "name": "Geom",
+          "regions": []
+        }
+      ],
+      "coedges": [],
+      "colliders": [
+        {
+          "enabled": true,
+          "id": "usd:stage:collider#/Arm/Base/Geom",
+          "material": "usd:stage:physical-material#/Arm/Rubber",
+          "native_ref": "/Arm/Base/Geom",
+          "shape": {
+            "kind": "convex_decomposition"
+          },
+          "target": {
+            "body": "usd:stage:body#/Arm/Base/Geom",
+            "kind": "body"
+          }
+        }
+      ],
+      "configurations": [],
+      "curves": [],
+      "drawings": [],
+      "edges": [],
+      "faces": [],
+      "features": [],
+      "loops": [],
+      "occurrences": [
+        {
+          "id": "usd:stage:occurrence#/Arm",
+          "name": "Arm",
+          "native_ref": "/Arm",
+          "ordinal": 0,
+          "parent": {
+            "kind": "root"
+          },
+          "prototype": {
+            "definition": "usd:stage:definition#/Arm",
+            "scope": "local"
+          },
+          "scale": [
+            1.0,
+            1.0,
+            1.0
+          ],
+          "transform": [
+            [
+              1.0,
+              0.0,
+              0.0,
+              0.0
+            ],
+            [
+              0.0,
+              1.0,
+              0.0,
+              0.0
+            ],
+            [
+              0.0,
+              0.0,
+              1.0,
+              0.0
+            ]
+          ]
+        },
+        {
+          "id": "usd:stage:occurrence#/Arm/Base",
+          "name": "Base",
+          "native_ref": "/Arm/Base",
+          "ordinal": 0,
+          "parent": {
+            "kind": "occurrence",
+            "occurrence": "usd:stage:occurrence#/Arm"
+          },
+          "prototype": {
+            "definition": "usd:stage:definition#/Arm/Base",
+            "scope": "local"
+          },
+          "scale": [
+            1.0,
+            1.0,
+            1.0
+          ],
+          "transform": [
+            [
+              1.0,
+              0.0,
+              0.0,
+              0.0
+            ],
+            [
+              0.0,
+              1.0,
+              0.0,
+              0.0
+            ],
+            [
+              0.0,
+              0.0,
+              1.0,
+              0.0
+            ]
+          ]
+        },
+        {
+          "id": "usd:stage:occurrence#/Arm/Base/Geom",
+          "name": "Geom",
+          "native_ref": "/Arm/Base/Geom",
+          "ordinal": 0,
+          "parent": {
+            "kind": "occurrence",
+            "occurrence": "usd:stage:occurrence#/Arm/Base"
+          },
+          "prototype": {
+            "definition": "usd:stage:definition#/Arm/Base/Geom",
+            "scope": "local"
+          },
+          "scale": [
+            1.0,
+            1.0,
+            1.0
+          ],
+          "transform": [
+            [
+              1.0,
+              0.0,
+              0.0,
+              0.0
+            ],
+            [
+              0.0,
+              1.0,
+              0.0,
+              0.0
+            ],
+            [
+              0.0,
+              0.0,
+              1.0,
+              0.0
+            ]
+          ]
+        },
+        {
+          "id": "usd:stage:occurrence#/Arm/Finger",
+          "name": "Finger",
+          "native_ref": "/Arm/Finger",
+          "ordinal": 2,
+          "parent": {
+            "kind": "occurrence",
+            "occurrence": "usd:stage:occurrence#/Arm"
+          },
+          "prototype": {
+            "definition": "usd:stage:definition#/Arm/Finger",
+            "scope": "local"
+          },
+          "scale": [
+            1.0,
+            1.0,
+            1.0
+          ],
+          "transform": [
+            [
+              1.0,
+              0.0,
+              0.0,
+              0.0
+            ],
+            [
+              0.0,
+              1.0,
+              0.0,
+              0.0
+            ],
+            [
+              0.0,
+              0.0,
+              1.0,
+              40.0
+            ]
+          ]
+        },
+        {
+          "id": "usd:stage:occurrence#/Arm/Link",
+          "name": "Link",
+          "native_ref": "/Arm/Link",
+          "ordinal": 1,
+          "parent": {
+            "kind": "occurrence",
+            "occurrence": "usd:stage:occurrence#/Arm"
+          },
+          "prototype": {
+            "definition": "usd:stage:definition#/Arm/Link",
+            "scope": "local"
+          },
+          "scale": [
+            1.0,
+            1.0,
+            1.0
+          ],
+          "transform": [
+            [
+              1.0,
+              0.0,
+              0.0,
+              0.0
+            ],
+            [
+              0.0,
+              1.0,
+              0.0,
+              0.0
+            ],
+            [
+              0.0,
+              0.0,
+              1.0,
+              20.0
+            ]
+          ]
+        }
+      ],
+      "parameters": [],
+      "pcurves": [],
+      "physical_materials": [
+        {
+          "dynamic_friction": 0.800000011920929,
+          "id": "usd:stage:physical-material#/Arm/Rubber",
+          "name": "Rubber",
+          "native_ref": "/Arm/Rubber",
+          "static_friction": 0.8999999761581421
+        }
+      ],
+      "physics_scenes": [
+        {
+          "gravity_direction": {
+            "x": 0.0,
+            "y": 0.0,
+            "z": -1.0
+          },
+          "gravity_magnitude": 9810.0,
+          "id": "usd:stage:physics-scene#/Arm/Scene",
+          "name": "Scene",
+          "native_ref": "/Arm/Scene"
+        }
+      ],
+      "pmi": [],
+      "points": [],
+      "presentation_documents": [],
+      "presentation_layers": [],
+      "procedural_curves": [],
+      "procedural_surfaces": [],
+      "product_definitions": [
+        {
+          "id": "usd:stage:definition#/Arm",
+          "kind": "group",
+          "native_ref": "/Arm",
+          "source_name": "Arm"
+        },
+        {
+          "id": "usd:stage:definition#/Arm/Base",
+          "kind": "group",
+          "native_ref": "/Arm/Base",
+          "source_name": "Base"
+        },
+        {
+          "bodies": [
+            "usd:stage:body#/Arm/Base/Geom"
+          ],
+          "id": "usd:stage:definition#/Arm/Base/Geom",
+          "kind": "object",
+          "native_ref": "/Arm/Base/Geom",
+          "source_name": "Geom"
+        },
+        {
+          "id": "usd:stage:definition#/Arm/Finger",
+          "kind": "group",
+          "native_ref": "/Arm/Finger",
+          "source_name": "Finger"
+        },
+        {
+          "id": "usd:stage:definition#/Arm/Link",
+          "kind": "group",
+          "native_ref": "/Arm/Link",
+          "source_name": "Link"
+        }
+      ],
+      "regions": [],
+      "rigid_bodies": [
+        {
+          "enabled": true,
+          "id": "usd:stage:rigid-body#/Arm/Base",
+          "kinematic": false,
+          "native_ref": "/Arm/Base",
+          "target": {
+            "kind": "occurrence",
+            "occurrence": "usd:stage:occurrence#/Arm/Base"
+          }
+        },
+        {
+          "enabled": true,
+          "id": "usd:stage:rigid-body#/Arm/Finger",
+          "kinematic": false,
+          "native_ref": "/Arm/Finger",
+          "target": {
+            "kind": "occurrence",
+            "occurrence": "usd:stage:occurrence#/Arm/Finger"
+          }
+        },
+        {
+          "enabled": true,
+          "id": "usd:stage:rigid-body#/Arm/Link",
+          "kinematic": false,
+          "native_ref": "/Arm/Link",
+          "target": {
+            "kind": "occurrence",
+            "occurrence": "usd:stage:occurrence#/Arm/Link"
+          }
+        }
+      ],
+      "semantic_annotations": [],
+      "shells": [],
+      "sketch_constraints": [],
+      "sketch_entities": [],
+      "sketches": [],
+      "solver_settings": [
+        {
+          "id": "usd:stage:solver-settings#/Arm.PhysxArticulationAPI",
+          "native_ref": "/Arm",
+          "schema": "PhysxArticulationAPI",
+          "solver": "physx",
+          "target": {
+            "articulation": "usd:stage:articulation#/Arm",
+            "kind": "articulation"
+          },
+          "values": {
+            "physxArticulation:enabledSelfCollisions": {
+              "kind": "bool",
+              "value": false
+            },
+            "physxArticulation:solverPositionIterationCount": {
+              "kind": "integer",
+              "value": 32
+            }
+          }
+        },
+        {
+          "id": "usd:stage:solver-settings#/Arm/Base.PhysxRigidBodyAPI",
+          "native_ref": "/Arm/Base",
+          "schema": "PhysxRigidBodyAPI",
+          "solver": "physx",
+          "target": {
+            "kind": "occurrence",
+            "occurrence": "usd:stage:occurrence#/Arm/Base"
+          },
+          "values": {
+            "physxRigidBody:linearDamping": {
+              "kind": "real",
+              "value": 0.10000000149011612
+            },
+            "physxRigidBody:maxAngularVelocity": {
+              "dimension": {
+                "angle": 1,
+                "length": 0,
+                "mass": 0
+              },
+              "kind": "real",
+              "value": 6.283185307179586
+            },
+            "physxRigidBody:maxLinearVelocity": {
+              "kind": "unbounded",
+              "negative": false
+            },
+            "physxRigidBody:sleepThreshold": {
+              "dimension": {
+                "angle": 0,
+                "length": 2,
+                "mass": 0
+              },
+              "kind": "real",
+              "value": 50.0
+            }
+          }
+        },
+        {
+          "id": "usd:stage:solver-settings#/Arm/Base/Geom.PhysxCollisionAPI",
+          "native_ref": "/Arm/Base/Geom",
+          "schema": "PhysxCollisionAPI",
+          "solver": "physx",
+          "target": {
+            "collider": "usd:stage:collider#/Arm/Base/Geom",
+            "kind": "collider"
+          },
+          "values": {
+            "physxCollision:contactOffset": {
+              "dimension": {
+                "angle": 0,
+                "length": 1,
+                "mass": 0
+              },
+              "kind": "real",
+              "value": 2.0000000298023224
+            },
+            "physxCollision:restOffset": {
+              "kind": "unbounded",
+              "negative": true
+            }
+          }
+        },
+        {
+          "id": "usd:stage:solver-settings#/Arm/Base/Geom.PhysxConvexDecompositionCollisionAPI",
+          "native_ref": "/Arm/Base/Geom",
+          "schema": "PhysxConvexDecompositionCollisionAPI",
+          "solver": "physx",
+          "target": {
+            "collider": "usd:stage:collider#/Arm/Base/Geom",
+            "kind": "collider"
+          },
+          "values": {
+            "physxConvexDecompositionCollision:maxConvexHulls": {
+              "kind": "integer",
+              "value": 8
+            }
+          }
+        },
+        {
+          "id": "usd:stage:solver-settings#/Arm/Grip.PhysxJointAPI",
+          "native_ref": "/Arm/Grip",
+          "schema": "PhysxJointAPI",
+          "solver": "physx",
+          "target": {
+            "joint": "usd:stage:joint#/Arm/Grip",
+            "kind": "joint"
+          },
+          "values": {
+            "physxJoint:armature": {
+              "dimension": {
+                "angle": 0,
+                "length": 0,
+                "mass": 1
+              },
+              "kind": "real",
+              "value": 0.5
+            },
+            "physxJoint:maxJointVelocity": {
+              "dimension": {
+                "angle": 0,
+                "length": 1,
+                "mass": 0
+              },
+              "kind": "real",
+              "value": 100.0
+            }
+          }
+        },
+        {
+          "id": "usd:stage:solver-settings#/Arm/Grip.PhysxMimicJointAPI%3AtransX",
+          "native_ref": "/Arm/Grip",
+          "schema": "PhysxMimicJointAPI:transX",
+          "solver": "physx",
+          "target": {
+            "joint": "usd:stage:joint#/Arm/Grip",
+            "kind": "joint"
+          },
+          "values": {
+            "physxMimicJoint:transX:gearing": {
+              "dimension": {
+                "angle": -1,
+                "length": 1,
+                "mass": 0
+              },
+              "kind": "real",
+              "value": 11.459155646484371
+            },
+            "physxMimicJoint:transX:offset": {
+              "dimension": {
+                "angle": 0,
+                "length": 1,
+                "mass": 0
+              },
+              "kind": "real",
+              "value": 10.0
+            },
+            "physxMimicJoint:transX:referenceJoint": {
+              "kind": "targets",
+              "targets": [
+                {
+                  "joint": "usd:stage:joint#/Arm/Shoulder",
+                  "kind": "joint"
+                }
+              ]
+            },
+            "physxMimicJoint:transX:referenceJointAxis": {
+              "kind": "token",
+              "value": "rotX"
+            }
+          }
+        },
+        {
+          "id": "usd:stage:solver-settings#/Arm/Rubber.PhysxMaterialAPI",
+          "native_ref": "/Arm/Rubber",
+          "schema": "PhysxMaterialAPI",
+          "solver": "physx",
+          "target": {
+            "kind": "physical_material",
+            "material": "usd:stage:physical-material#/Arm/Rubber"
+          },
+          "values": {
+            "physxMaterial:frictionCombineMode": {
+              "kind": "token",
+              "value": "max"
+            }
+          }
+        },
+        {
+          "id": "usd:stage:solver-settings#/Arm/Scene.PhysxSceneAPI",
+          "native_ref": "/Arm/Scene",
+          "schema": "PhysxSceneAPI",
+          "solver": "physx",
+          "target": {
+            "kind": "scene",
+            "scene": "usd:stage:physics-scene#/Arm/Scene"
+          },
+          "values": {
+            "physxScene:bounceThreshold": {
+              "dimension": {
+                "angle": 0,
+                "length": 1,
+                "mass": 0
+              },
+              "kind": "real",
+              "value": 200.0
+            },
+            "physxScene:solverType": {
+              "kind": "token",
+              "value": "TGS"
+            },
+            "physxScene:timeStepsPerSecond": {
+              "kind": "integer",
+              "value": 120
+            }
+          }
+        },
+        {
+          "id": "usd:stage:solver-settings#/Arm/Shoulder.PhysicsJointStateAPI%3Aangular",
+          "native_ref": "/Arm/Shoulder",
+          "schema": "PhysicsJointStateAPI:angular",
+          "solver": "physx",
+          "target": {
+            "joint": "usd:stage:joint#/Arm/Shoulder",
+            "kind": "joint"
+          },
+          "values": {
+            "state:angular:physics:position": {
+              "dimension": {
+                "angle": 1,
+                "length": 0,
+                "mass": 0
+              },
+              "kind": "real",
+              "value": 0.5235987755982988
+            }
+          }
+        },
+        {
+          "id": "usd:stage:solver-settings#/Arm/Shoulder.PhysxJointAPI",
+          "native_ref": "/Arm/Shoulder",
+          "schema": "PhysxJointAPI",
+          "solver": "physx",
+          "target": {
+            "joint": "usd:stage:joint#/Arm/Shoulder",
+            "kind": "joint"
+          },
+          "values": {
+            "physxJoint:armature": {
+              "dimension": {
+                "angle": 0,
+                "length": 2,
+                "mass": 1
+              },
+              "kind": "real",
+              "value": 0.9999999776482582
+            },
+            "physxJoint:jointFriction": {
+              "kind": "real",
+              "value": 0.05000000074505806
+            },
+            "physxJoint:maxJointVelocity": {
+              "dimension": {
+                "angle": 1,
+                "length": 0,
+                "mass": 0
+              },
+              "kind": "real",
+              "value": 3.141592653589793
+            }
+          }
+        },
+        {
+          "id": "usd:stage:solver-settings#/Arm/Shoulder.PhysxLimitAPI%3Aangular",
+          "native_ref": "/Arm/Shoulder",
+          "schema": "PhysxLimitAPI:angular",
+          "solver": "physx",
+          "target": {
+            "joint": "usd:stage:joint#/Arm/Shoulder",
+            "kind": "joint"
+          },
+          "values": {
+            "physxLimit:angular:damping": {
+              "dimension": {
+                "angle": -1,
+                "length": 2,
+                "mass": 1
+              },
+              "kind": "real",
+              "value": 11459.155902616465
+            },
+            "physxLimit:angular:stiffness": {
+              "dimension": {
+                "angle": -1,
+                "length": 2,
+                "mass": 1
+              },
+              "kind": "real",
+              "value": 572957.7951308233
+            }
+          }
+        }
+      ],
+      "spatial_sketch_entities": [],
+      "spatial_sketches": [],
+      "spreadsheets": [],
+      "subds": [],
+      "surfaces": [],
+      "tessellations": [
+        {
+          "body": "usd:stage:body#/Arm/Base/Geom",
+          "channels": [],
+          "id": "usd:stage:tessellation#/Arm/Base/Geom",
+          "mesh": {
+            "kind": "list",
+            "triangles": [
+              [
+                0,
+                2,
+                1
+              ],
+              [
+                0,
+                1,
+                3
+              ],
+              [
+                1,
+                2,
+                3
+              ],
+              [
+                2,
+                0,
+                3
+              ]
+            ],
+            "vertices": [
+              {
+                "x": 0.0,
+                "y": 0.0,
+                "z": 0.0
+              },
+              {
+                "x": 10.0,
+                "y": 0.0,
+                "z": 0.0
+              },
+              {
+                "x": 0.0,
+                "y": 10.0,
+                "z": 0.0
+              },
+              {
+                "x": 0.0,
+                "y": 0.0,
+                "z": 20.0
+              }
+            ]
+          }
+        }
+      ],
+      "vertices": [],
+      "view_presentations": []
+    },
+    "native": {},
+    "source": {
+      "attributes": {
+        "default_prim": "Arm",
+        "meters_per_unit": "0.01",
+        "up_axis": "Z"
+      },
+      "identity": {
+        "classification": "classified",
+        "dialects": {
+          "extra": [],
+          "primary": {
+            "admission": "admitted",
+            "declared": {
+              "header": "#usda 1.0"
+            },
+            "dialect": "usd:usda-1.0"
+          }
+        }
+      }
+    },
+    "tolerances": {
+      "angular": 1e-10,
+      "linear": 1e-6
+    },
+    "units": {
+      "length": "millimeter"
+    }
+  },
+  "report": {
+    "identity": {
+      "classification": "classified",
+      "dialects": {
+        "extra": [],
+        "primary": {
+          "admission": "admitted",
+          "declared": {
+            "header": "#usda 1.0"
+          },
+          "dialect": "usd:usda-1.0"
+        }
+      }
+    },
+    "losses": [],
+    "notes": [],
+    "transfer": {
+      "geometry_transferred": true,
+      "transfer": "full"
+    }
+  },
+  "source_fidelity": {
+    "annotations": {}
+  }
+}

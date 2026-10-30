@@ -47,7 +47,8 @@ pub(crate) enum FormatKind {
         feature = "step",
         feature = "iges",
         feature = "sat",
-        feature = "pvz"
+        feature = "pvz",
+        feature = "usd"
     ))]
     Native(NativeDescriptor),
 }
@@ -86,6 +87,9 @@ impl OutputPhysics {
 #[derive(Debug)]
 pub(crate) struct OutputDescriptor {
     pub(crate) extensions: &'static [&'static str],
+    /// The dialect that an output extension names, for the extensions that
+    /// name one.
+    pub(crate) extension_dialects: &'static [(&'static str, &'static str)],
     pub(crate) physics: OutputPhysics,
     pub(crate) encoder: EncoderConstructor,
 }
@@ -113,7 +117,8 @@ impl FormatDescriptor {
                 feature = "step",
                 feature = "iges",
                 feature = "sat",
-                feature = "pvz"
+                feature = "pvz",
+                feature = "usd"
             ))]
             FormatKind::Native(native) => native.id,
         }
@@ -137,7 +142,8 @@ impl FormatDescriptor {
                 feature = "step",
                 feature = "iges",
                 feature = "sat",
-                feature = "pvz"
+                feature = "pvz",
+                feature = "usd"
             ))]
             FormatKind::Native(native) => native.input_extensions,
         }
@@ -158,7 +164,8 @@ impl FormatDescriptor {
                 feature = "step",
                 feature = "iges",
                 feature = "sat",
-                feature = "pvz"
+                feature = "pvz",
+                feature = "usd"
             ))]
             FormatKind::Native(native) => ForcedInput::Codec(native),
         }
@@ -191,12 +198,27 @@ macro_rules! reader {
     feature = "sldprt",
     feature = "rhino",
     feature = "step",
-    feature = "iges"
+    feature = "iges",
+    feature = "usd"
 ))]
 macro_rules! writable {
     ($name:ident, $output:ident, $id:expr, $input_exts:expr, $decoder:expr, $output_exts:expr, $physics:expr, $encoder:expr) => {
+        writable!(
+            $name,
+            $output,
+            $id,
+            $input_exts,
+            $decoder,
+            $output_exts,
+            $physics,
+            $encoder,
+            &[]
+        );
+    };
+    ($name:ident, $output:ident, $id:expr, $input_exts:expr, $decoder:expr, $output_exts:expr, $physics:expr, $encoder:expr, $extension_dialects:expr) => {
         static $output: OutputDescriptor = OutputDescriptor {
             extensions: $output_exts,
+            extension_dialects: $extension_dialects,
             physics: $physics,
             encoder: $encoder,
         };
@@ -303,8 +325,21 @@ reader!(
 reader!(PVZ, FormatId::new("pvz"), &["pvz"], || Box::new(
     cadmpeg_codec_pvz::PvzCodec
 ));
+#[cfg(feature = "usd")]
+writable!(
+    USD,
+    USD_OUTPUT,
+    FormatId::new("usd"),
+    &["usd", "usda", "usdc", "usdz"],
+    || Box::new(cadmpeg_codec_usd::UsdCodec),
+    &["usda", "usd", "usdz", "usdc"],
+    OutputPhysics::Text,
+    || Box::new(cadmpeg_codec_usd::UsdCodec),
+    &[("usdz", "usdz"), ("usdc", "usdc")]
+);
 static CADIR_OUTPUT: OutputDescriptor = OutputDescriptor {
     extensions: &["cadir", "json"],
+    extension_dialects: &[],
     physics: OutputPhysics::Text,
     encoder: || Box::new(CadirEncoder),
 };
@@ -339,6 +374,8 @@ pub(crate) static FORMAT_DESCRIPTORS: &[&FormatDescriptor] = &[
     &SAT,
     #[cfg(feature = "pvz")]
     &PVZ,
+    #[cfg(feature = "usd")]
+    &USD,
     &CADIR,
 ];
 
@@ -360,6 +397,8 @@ impl Format {
             Self::Rhino => (&RHINO, &RHINO_OUTPUT),
             #[cfg(feature = "iges")]
             Self::Iges => (&IGES, &IGES_OUTPUT),
+            #[cfg(feature = "usd")]
+            Self::Usd => (&USD, &USD_OUTPUT),
         }
     }
 }

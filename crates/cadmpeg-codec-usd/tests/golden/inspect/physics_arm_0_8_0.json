@@ -1,0 +1,39 @@
+{
+  "container_kind": "flat",
+  "entries": [
+    {
+      "attributes": {
+        "defaultPrim": "Arm",
+        "header": "PXR-USDC 0.8.0",
+        "kilogramsPerUnit": "1",
+        "metersPerUnit": "0.01",
+        "prim_specs": "13",
+        "property_specs": "64",
+        "upAxis": "Z"
+      },
+      "compression": "stored",
+      "name": "layer",
+      "role": "document",
+      "size": {
+        "form": "exact",
+        "size": 3100
+      }
+    }
+  ],
+  "identity": {
+    "classification": "classified",
+    "dialects": {
+      "extra": [],
+      "primary": {
+        "admission": "admitted",
+        "declared": {
+          "version": "0.8.0"
+        },
+        "dialect": "usd:usdc-0.8.0"
+      }
+    }
+  },
+  "notes": [
+    "prim types: Material 1, Mesh 3, PhysicsFixedJoint 1, PhysicsPrismaticJoint 1, PhysicsRevoluteJoint 1, Xform 4, untyped 2"
+  ]
+}

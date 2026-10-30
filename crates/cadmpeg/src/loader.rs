@@ -72,7 +72,7 @@ pub(crate) fn load_artifact(
         ResolvedSource::Cadir => {}
         ResolvedSource::Unrecognized => {
             return Err(anyhow!(
-                "unrecognized format for {}; supported: FCStd, f3d, Inventor IPT/IAM, sldprt, CATPart, NX/Creo prt, Rhino 3DM, IGES, STEP, ASM sat/smt/smb/sab, Creo View pvz, .cadir.json; use --input-format to override detection",
+                "unrecognized format for {}; supported: FCStd, f3d, Inventor IPT/IAM, sldprt, CATPart, NX/Creo prt, Rhino 3DM, IGES, STEP, ASM sat/smt/smb/sab, Creo View pvz, OpenUSD usda/usdc/usd/usdz, .cadir.json; use --input-format to override detection",
                 path.display()
             )
             .into());

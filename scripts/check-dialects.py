@@ -96,6 +96,9 @@ GENERATED_ID_OWNERS = {
     "step": GeneratedIdOwner(
         Path("crates/cadmpeg-codec-step/src/dialect/registry_ids.rs"), "pub(crate)"
     ),
+    "usd": GeneratedIdOwner(
+        Path("crates/cadmpeg-codec-usd/src/dialect/registry_ids.rs"), "pub(crate)"
+    ),
 }
 
 # The schema keys a `[[dialect]]` row may carry. Anything else is a typo or an

@@ -1,0 +1,38 @@
+{
+  "container_kind": "flat",
+  "entries": [
+    {
+      "attributes": {
+        "defaultPrim": "Cube",
+        "header": "PXR-USDC 0.14.0",
+        "metersPerUnit": "0.01",
+        "prim_specs": "2",
+        "property_specs": "12",
+        "upAxis": "Y"
+      },
+      "compression": "stored",
+      "name": "layer",
+      "role": "document",
+      "size": {
+        "form": "exact",
+        "size": 1739
+      }
+    }
+  ],
+  "identity": {
+    "classification": "classified",
+    "dialects": {
+      "extra": [],
+      "primary": {
+        "admission": "admitted",
+        "declared": {
+          "version": "0.14.0"
+        },
+        "dialect": "usd:usdc-0.14.0"
+      }
+    }
+  },
+  "notes": [
+    "prim types: Mesh 1, Xform 1"
+  ]
+}

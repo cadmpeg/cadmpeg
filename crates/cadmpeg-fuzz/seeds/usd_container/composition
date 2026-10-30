@@ -1,0 +1,72 @@
+#usda 1.0
+(
+    "Arcs to other layers, overs, classes, and prims with no neutral form."
+    customLayerData = {
+        string creator = "hand"
+    }
+    defaultPrim = "Scene"
+    endTimeCode = 24
+    metersPerUnit = 0.01
+    startTimeCode = 1
+    subLayers = [
+        @./lighting.usda@
+    ]
+    upAxis = "Y"
+)
+
+class "_Base"
+{
+    token visibility = "inherited"
+}
+
+over "Unrelated"
+{
+    def Mesh "Ignored"
+    {
+    }
+}
+
+def Xform "Scene" (
+    inherits = </_Base>
+)
+{
+    def Xform "Robot" (
+        prepend payload = @./robot/payload.usd@</Robot>
+    )
+    {
+        double3 xformOp:translate.timeSamples = {
+            0: (0, 0, 0),
+            24: (100, 0, 0),
+        }
+        uniform token[] xformOpOrder = ["xformOp:translate"]
+    }
+
+    def "Shelf" (
+        references = @shelf.usda@
+    )
+    {
+    }
+
+    def Xform "Hidden" (
+        active = false
+    )
+    {
+        def Mesh "Gone"
+        {
+        }
+    }
+
+    def Cube "Box"
+    {
+        double size = 4
+    }
+
+    def Camera "View"
+    {
+        float focalLength = 35
+    }
+
+    def DistantLight "Sun"
+    {
+    }
+}
