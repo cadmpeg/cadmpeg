@@ -3873,7 +3873,7 @@ pub(crate) fn named_cylinder_prototype_records(
         ctx,
         payload,
         refusals,
-        Some(SurfacePrototypeFamily::Cylinder),
+        Some(&SurfacePrototypeFamily::Cylinder),
     )
 }
 
@@ -3881,15 +3881,12 @@ fn named_prototype_records_for_family(
     ctx: &DecodeContext<'_>,
     payload: &[u8],
     refusals: &mut crate::lane_refusal::LaneRefusals,
-    family: Option<SurfacePrototypeFamily>,
+    family: Option<&SurfacePrototypeFamily>,
 ) -> Result<Vec<SurfacePrototypeRecord>, CodecError> {
     let cache = scalar::ScalarCache::from_section_checked(payload);
     let mut records = Vec::new();
     for frame in named_prototype_frames(payload) {
-        if family
-            .as_ref()
-            .is_some_and(|family| *family != frame.family)
-        {
+        if family.is_some_and(|family| *family != frame.family) {
             continue;
         }
         let mut parameters = Vec::new();
@@ -4424,6 +4421,26 @@ fn inline_surface_body(
             }));
         }
     }
+    let matrix = (kind == SurfaceKind::Cylinder)
+        .then(|| cylinder_frame_readers::compact_rotation_cylinder_body(body, cache))
+        .flatten();
+    if matrix.is_some_and(|layout| layout.carrier.is_some()) {
+        return Ok(matrix);
+    }
+    let legacy = legacy_inline_surface_body(ctx, kind, body, cache)?;
+    Ok(if legacy.is_some_and(|layout| layout.carrier.is_some()) {
+        legacy
+    } else {
+        matrix.or(legacy)
+    })
+}
+
+fn legacy_inline_surface_body(
+    ctx: &DecodeContext<'_>,
+    kind: SurfaceKind,
+    body: &[u8],
+    cache: &scalar::ScalarCache,
+) -> Result<Option<InlineSurfaceBody>, CodecError> {
     if kind == SurfaceKind::Cone {
         let operands = bounded_support_apex_cone_operands(body, cache);
         let mut terminal_close: Option<usize> = None;
@@ -4443,11 +4460,6 @@ fn inline_surface_body(
                 carrier: decode_positional_cone_frame(body, cache).map(InlineSurfaceCarrier::Cone),
                 rotation_cylinder: false,
             }));
-        }
-    }
-    if kind == SurfaceKind::Cylinder {
-        if let Some(layout) = cylinder_frame_readers::compact_rotation_cylinder_body(body, cache) {
-            return Ok(Some(layout));
         }
     }
     let standard_envelope = decode_inline_surface_envelope(kind, body, cache);
@@ -5514,7 +5526,7 @@ fn parameter_records_for_rows(
                     &frame_bounds,
                     &cache,
                 );
-                if named.is_some_and(|frame| frame.is_none())
+                if named.is_some_and(|frame| frame.frame().is_none())
                     || inline.is_some_and(|layout| layout.matrix_frame && layout.carrier.is_none())
                 {
                     losses.push(crate::loss::CreoLossCode::CylinderRotationFrameUnresolved.note(format!(
@@ -5523,7 +5535,7 @@ fn parameter_records_for_rows(
                     )));
                 }
                 let frame = match (named, inline_carrier) {
-                    (Some(frame), _) => frame,
+                    (Some(frame), _) => frame.frame(),
                     (_, Some(InlineSurfaceCarrier::Cylinder { frame, .. })) => Some(frame),
                     _ if inline
                         .is_some_and(|layout| layout.matrix_frame || layout.rotation_cylinder) =>

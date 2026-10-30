@@ -1001,6 +1001,11 @@ header supplies the complete `local_sys f9 04 03` matrix and unique positive
 `radius`. The row and prototype belong to one complete counted surface array.
 Its named frame and a later positional frame use the same placement gate.
 
+Within that complete counted array, a later positional rotation-matrix body
+belongs to the unique preceding cylinder prototype with a complete named
+rotation field and positive radius. Its envelope and matrix use the same
+signed coordinate stream and corner constraints.
+
 The axis is a signed model axis. Each radial corner coordinate lies between
 the stored origin coordinate minus and plus the radius. The axial corner
 pair equals the origin plus the signed axis times each axial parameter bound,

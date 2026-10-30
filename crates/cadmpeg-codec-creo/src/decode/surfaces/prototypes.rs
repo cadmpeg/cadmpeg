@@ -13,6 +13,7 @@ use cadmpeg_ir::{AnnotationBuilder, Exactness, SourceObjectAssociation};
 use crate::container::ContainerScan;
 use crate::lane_refusal::JoinedLaneRecords;
 use crate::legacy_geometry::LegacySurfaceNamespace;
+use crate::surface::cylinder_frame_readers::CylinderRotationFrame;
 use crate::surface::SurfaceParameterRecord;
 
 use super::super::native::annotate;
@@ -471,13 +472,13 @@ pub(in super::super) fn transfer_first_instance_prototype_surfaces(
                     )
                 });
                 let (origin, axis, reference, radius) = match named {
-                    Some(Some(frame)) => (
+                    Some(CylinderRotationFrame::Admitted(frame)) => (
                         frame.frame().origin(),
                         frame.frame().axis(),
                         frame.frame().ref_direction(),
                         frame.radius().get(),
                     ),
-                    Some(None) => continue,
+                    Some(CylinderRotationFrame::Unresolved) => continue,
                     None => {
                         let Some((origin, axis, reference)) =
                             prototype_analytic_local_frame(ctx, record, row.id, losses)?

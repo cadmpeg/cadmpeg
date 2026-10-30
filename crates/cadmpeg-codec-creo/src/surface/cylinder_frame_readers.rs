@@ -12,6 +12,25 @@ use crate::psb;
 use crate::scalar;
 use crate::vecmath::local_system_lanes;
 
+#[derive(Clone, Copy)]
+pub(crate) enum CylinderRotationFrame {
+    Admitted(PositionalCylinderFrame),
+    Unresolved,
+}
+
+impl CylinderRotationFrame {
+    fn from_frame(frame: Option<PositionalCylinderFrame>) -> Self {
+        frame.map_or(Self::Unresolved, Self::Admitted)
+    }
+
+    pub(crate) fn frame(self) -> Option<PositionalCylinderFrame> {
+        match self {
+            Self::Admitted(frame) => Some(frame),
+            Self::Unresolved => None,
+        }
+    }
+}
+
 pub(crate) fn rotation_cylinder_envelope(
     body: &[u8],
     cache: &scalar::ScalarCache,
@@ -82,10 +101,10 @@ pub(crate) fn bounded_rotation_cylinder_frame(
     PositionalCylinderFrame::new(origin, axis, reference, radius, Some(bounds[3] - bounds[1]))
 }
 
-pub(super) fn compact_rotation_cylinder_body(
+fn rotation_cylinder_body_prefix(
     body: &[u8],
     cache: &scalar::ScalarCache,
-) -> Option<super::InlineSurfaceBody> {
+) -> Option<(CylinderRotationFrame, usize)> {
     let (bounds, corners, end) = rotation_cylinder_envelope(body, cache)?;
     let mut view = cadmpeg_core::decode::View::over_retained(body);
     view.seek(end)?;
@@ -95,16 +114,31 @@ pub(super) fn compact_rotation_cylinder_body(
     view.seek(local_start.checked_add(count)?)?;
     let (radius, end) = scalar::decode_inline_surface_suffix_scalar(body, view.read_len(), cache)?;
     view.seek(end)?;
-    let terminal_close = view.read_len();
+    Some((
+        CylinderRotationFrame::from_frame(bounded_rotation_cylinder_frame(
+            bounds, corners, slots, radius,
+        )),
+        view.read_len(),
+    ))
+}
+
+pub(super) fn compact_rotation_cylinder_body(
+    body: &[u8],
+    cache: &scalar::ScalarCache,
+) -> Option<super::InlineSurfaceBody> {
+    let (frame, terminal_close) = rotation_cylinder_body_prefix(body, cache)?;
+    let mut view = cadmpeg_core::decode::View::over_retained(body);
+    view.seek(terminal_close)?;
     (view.u8()? == psb::token::COMPOUND_CLOSE).then_some(())?;
-    let frame = bounded_rotation_cylinder_frame(bounds, corners, slots, radius);
     Some(super::InlineSurfaceBody {
         terminal_close,
         matrix_frame: true,
-        carrier: frame.map(|frame| super::InlineSurfaceCarrier::Cylinder {
-            frame,
-            split_bounds: None,
-        }),
+        carrier: frame
+            .frame()
+            .map(|frame| super::InlineSurfaceCarrier::Cylinder {
+                frame,
+                split_bounds: None,
+            }),
         rotation_cylinder: false,
     })
 }
@@ -116,7 +150,7 @@ pub(crate) fn named_rotation_cylinder_frame(
     prototypes: &[crate::surface::SurfacePrototypeRecord],
     frame_bounds: &[(usize, usize)],
     cache: &scalar::ScalarCache,
-) -> Option<Option<PositionalCylinderFrame>> {
+) -> Option<CylinderRotationFrame> {
     let (frame_start, frame_end) = *frame_bounds
         .iter()
         .find(|(start, end)| row.offset >= *start && row.offset < *end)?;
@@ -134,34 +168,57 @@ pub(crate) fn named_rotation_cylinder_frame(
         ) && prototype.offset > row.offset
             && prototype.offset < row_end
     });
+    if let Some(prototype) = candidates.next() {
+        candidates.next().is_none().then_some(())?;
+        return named_rotation_cylinder_parameter_frame(parameter, prototype, cache);
+    }
+    let mut candidates = prototypes.iter().filter(|prototype| {
+        prototype.family == super::SurfacePrototypeFamily::Cylinder
+            && prototype.offset >= frame_start
+            && prototype.offset < row.offset
+    });
     let prototype = candidates.next()?;
     candidates.next().is_none().then_some(())?;
-    named_rotation_cylinder_parameter_frame(parameter, prototype, cache)
+    let (_, complete) = named_rotation_cylinder_slots(prototype, cache)?;
+    complete.then_some(())?;
+    named_cylinder_radius(prototype)?;
+    let (frame, end) = rotation_cylinder_body_prefix(&parameter.body, cache)?;
+    (end == parameter.body.len() && parameter.boundary == super::SurfaceBodyBoundary::CompoundClose)
+        .then_some(frame)
 }
 
 pub(crate) fn named_rotation_cylinder_parameter_frame(
     parameter: &super::SurfaceParameterRecord,
     prototype: &super::SurfacePrototypeRecord,
     cache: &scalar::ScalarCache,
-) -> Option<Option<PositionalCylinderFrame>> {
-    let field = prototype.field("local_sys")?;
-    let body = field.body.strip_prefix(&[psb::token::SCALAR_BODY, 4, 3])?;
+) -> Option<CylinderRotationFrame> {
     let (bounds, corners, envelope_end) = rotation_cylinder_envelope(&parameter.body, cache)?;
     (envelope_end == parameter.body.len()).then_some(())?;
+    let (slots, complete) = named_rotation_cylinder_slots(prototype, cache)?;
+    Some(CylinderRotationFrame::from_frame((|| {
+        complete.then_some(())?;
+        bounded_rotation_cylinder_frame(bounds, corners, slots, named_cylinder_radius(prototype)?)
+    })()))
+}
+
+fn named_rotation_cylinder_slots(
+    prototype: &super::SurfacePrototypeRecord,
+    cache: &scalar::ScalarCache,
+) -> Option<(cadmpeg_ir::units::FiniteVector<12>, bool)> {
+    let field = prototype.field("local_sys")?;
+    let body = field.body.strip_prefix(&[psb::token::SCALAR_BODY, 4, 3])?;
     let (slots, end) = scalar::decode_cylinder_rotation_prefix(body, cache)?;
-    Some((|| {
-        (end == body.len() || body.get(end..) == Some(&[0xe1])).then_some(())?;
-        let crate::surface::SurfaceNamedValue::ScalarSequence(radii) =
-            &prototype.field("radius")?.value
-        else {
-            return None;
-        };
-        let [radius] = radii.as_slice() else {
-            return None;
-        };
-        let frame = bounded_rotation_cylinder_frame(bounds, corners, slots, *radius)?;
-        Some(frame)
-    })())
+    Some((slots, end == body.len() || body.get(end..) == Some(&[0xe1])))
+}
+
+fn named_cylinder_radius(prototype: &super::SurfacePrototypeRecord) -> Option<f64> {
+    let super::SurfaceNamedValue::ScalarSequence(radii) = &prototype.field("radius")?.value else {
+        return None;
+    };
+    let [radius] = radii.as_slice() else {
+        return None;
+    };
+    (radius.is_finite() && *radius > 0.0).then_some(*radius)
 }
 
 pub(super) fn decode_positional_cylinder_frame(

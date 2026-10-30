@@ -199,7 +199,7 @@ pub(crate) fn cylinders(
             &cache,
         );
         let frame = match named {
-            Some(frame) => frame,
+            Some(frame) => frame.frame(),
             None => parameter
                 .positional_cylinder_frame()
                 .or_else(|| active_cylinder_frame(row, parameter)),

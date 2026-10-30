@@ -538,13 +538,15 @@ fn compact_rotation_cylinder_decode_and_validation_share_admission() {
                 assert!(result.report().losses.iter().any(|loss| {
                     loss.code == crate::loss::CreoLossCode::CylinderRotationFrameUnresolved.kind()
                 }));
-                assert!(!result.ir().model.surfaces.iter().any(|surface| {
-                    surface.id.as_str() == format!("creo:{namespace}:surface#9")
-                        && matches!(
-                            surface.geometry,
-                            SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(_))
-                        )
-                }));
+                for id in [9, 11] {
+                    assert!(!result.ir().model.surfaces.iter().any(|surface| {
+                        surface.id.as_str() == format!("creo:{namespace}:surface#{id}")
+                            && matches!(
+                                surface.geometry,
+                                SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(_))
+                            )
+                    }));
+                }
             }
         }
     }

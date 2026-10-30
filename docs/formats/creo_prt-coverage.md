@@ -1056,6 +1056,11 @@ stream. Synthetic tests cover signed placement, bounded repeats, scalar
 values, decoder/validator agreement, and attributed surface refusal. Conflicting
 cylinder rotation frames emit `creo/geometry.cylinder-rotation-frame-unresolved`.
 
+Later positional rotation bodies bind to the unique preceding complete named
+cylinder prototype in their counted surface array. Synthetic coverage refuses
+both named and positional conflicts in that scope. Complete legacy inline
+cylinder productions retain their frame and envelope gate.
+
 Validated active-datum cylinder identities participate in named-edge topology
 admission. The same uniqueness and successor-reference gate closes their cap
 cycles. First-instance named cylinder matrices retain their chart origin and

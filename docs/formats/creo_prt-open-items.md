@@ -383,7 +383,7 @@ unadmitted angular pair to its curve and byte position.
 **Need.** Establish the chart origin, scale, orientation, and parameter map
 from bounded source fields and independent carrier or vertex constraints.
 
-### GS-24. Other extrusion-family side-row carriers
+### GS-32. Other extrusion-family side-row carriers
 
 **Question.** Which complete profile, direction, and chart production defines a
 `0x2a` side row outside the admitted `tab_cyl` forms?
