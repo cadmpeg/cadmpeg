@@ -58,14 +58,6 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 **Need.** We must know the native admission record that places such an edge on its carrier.
 
-### BC-12. Stored face-sense against coedge parity
-
-**Question.** Which native field decides the face sense when the stored sense contradicts the shared-edge coedge parity?
-
-**Known.** The decoder keeps each face's stored sense and reports the disagreement through `TopologyFaceSenseConflict` (#504). `sldprt.md` §7.1 gives the three-reversal neutral sense composition and states that coedge markers do not constrain face senses. The native rule for the disagreement awaits a specimen.
-
-**Need.** We must know the native rule that resolves the disagreement.
-
 ## 2. Geometry carriers
 
 ### GC-02. Missing intersection witnesses
