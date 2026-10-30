@@ -639,6 +639,42 @@ fn topology_header_prefix_end(buf: &[u8], off: usize, tag: u8) -> Option<usize> 
     ends.into_iter().min()
 }
 
+/// The record tag of an intersection composite.
+const INTERSECTION_COMPOSITE_TAG: u8 = 0x26;
+
+/// The end of a complete `00 26` intersection composite whose body starts at
+/// `p`: a pointer `attr`, a sense marker, and six payload pointers (spec §7.3).
+fn intersection_composite_end(buf: &[u8], p: usize, tag: u8) -> Option<usize> {
+    use crate::layout::intersection_composite as isect;
+    if tag != INTERSECTION_COMPOSITE_TAG {
+        return None;
+    }
+    let attr = attr_at(buf, p)?;
+    if !(2..=MAX_SHORT_POINTER_INDEX).contains(&attr)
+        || !matches!(buf.get(p + isect::MARKER), Some(0x2b | 0x2d))
+    {
+        return None;
+    }
+    let payload = refs_be::<6>(buf, p + isect::PAYLOAD)?;
+    if payload
+        .iter()
+        .any(|reference| *reference > MAX_SHORT_POINTER_INDEX)
+    {
+        return None;
+    }
+    let end = p + isect::LEN;
+    (end <= buf.len()).then_some(end)
+}
+
+/// The end of an intersection composite written as the first record of its
+/// class, after the class's edited type header (spec §4.1): the record has
+/// no tag of its own and its body starts just past the header.
+fn edited_intersection_composite_end(buf: &[u8], off: usize) -> Option<usize> {
+    let (node_type, p) = super::typed::edited_header_end(buf, off)?;
+    (node_type == u16::from(INTERSECTION_COMPOSITE_TAG)).then_some(())?;
+    intersection_composite_end(buf, p, INTERSECTION_COMPOSITE_TAG)
+}
+
 pub(super) struct TopologyScopes {
     pub(super) payloads: Vec<std::ops::Range<usize>>,
     pub(super) excluded_starts: Vec<std::ops::Range<usize>>,
@@ -713,6 +749,12 @@ pub(super) fn topology_scopes(buf: &[u8], prefixed: bool) -> TopologyScopes {
         if let Some(end) = end.filter(|end| *end <= buf.len()) {
             scopes.payloads.push(off..end);
             scopes.excluded_starts.push(off..end);
+            off = end;
+        } else if let Some(end) = intersection_composite_end(buf, p, tag)
+            .or_else(|| edited_intersection_composite_end(buf, off))
+        {
+            // A complete intersection composite holds no topology header.
+            scopes.excluded_starts.push(off + 1..end);
             off = end;
         } else if let Some(end) = topology_header_prefix_end(buf, off, tag) {
             scopes.excluded_starts.push(off + 1..end);
@@ -2849,6 +2891,64 @@ mod tests {
             );
             assert!(!rejected.vertex_frames.contains_key(&211));
         }
+    }
+
+    #[test]
+    fn an_intersection_composite_is_skipped_whole() {
+        let mut bytes = vec![0x00, 0x26];
+        bytes.extend(300_u16.to_be_bytes());
+        bytes.extend(7_u32.to_be_bytes());
+        for reference in [1_u16, 3, 301, 302, 303] {
+            bytes.extend(reference.to_be_bytes());
+        }
+        bytes.push(0x2b);
+        for reference in [40_u16, 41, 42, 43, 44, 45] {
+            bytes.extend(reference.to_be_bytes());
+        }
+        assert_eq!(
+            super::intersection_composite_end(&bytes, 2, 0x26),
+            Some(2 + 29)
+        );
+        assert_eq!(super::intersection_composite_end(&bytes, 2, 0x12), None);
+        let mut unmarked = bytes.clone();
+        unmarked[2 + 16] = 0x00;
+        assert_eq!(super::intersection_composite_end(&unmarked, 2, 0x26), None);
+        let scopes = super::topology_scopes(&bytes, false);
+        assert_eq!(scopes.excluded_starts, vec![1..31]);
+    }
+
+    #[test]
+    fn an_intersection_composite_after_its_class_header_is_skipped_whole() {
+        // The first composite of a stream follows its class's edited type
+        // header (spec §4.1) with no tag of its own. Its sequence number
+        // `00 00 12 1a` holds a false `00 12` vertex header that would run
+        // over the tag of the point record that follows.
+        let mut bytes = vec![0x00, 0x26, 12];
+        bytes.extend([b'C'; 11]);
+        bytes.push(b'A');
+        bytes.push(17);
+        bytes.extend(b"intersection_data");
+        bytes.extend([0x00, 0xcc, 0x00, 0x01]);
+        bytes.push(b'Z');
+        let record = bytes.len();
+        bytes.extend(9_u16.to_be_bytes());
+        bytes.extend(0x121a_u32.to_be_bytes());
+        for reference in [1_u16, 3, 56, 1, 53] {
+            bytes.extend(reference.to_be_bytes());
+        }
+        bytes.push(0x2d);
+        for reference in [50_u16, 8, 54, 55, 58, 61] {
+            bytes.extend(reference.to_be_bytes());
+        }
+        let point = bytes.len();
+        assert_eq!(point, record + 29);
+        bytes.extend(crate::test_support::parasolid::world_point(
+            10,
+            [0.001, 0.002, 0.003],
+        ));
+        let scopes = super::topology_scopes(&bytes, false);
+        assert_eq!(scopes.excluded_starts.first(), Some(&(1..point)));
+        assert!(super::scan(&bytes).points().contains_key(&10));
     }
 
     #[test]
