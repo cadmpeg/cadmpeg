@@ -121,6 +121,7 @@ These hold across every codec, every dialect, and every release. A change that b
 | `cadmpeg-registry`       | Codec registration, prefix detection, `identify`, the output-format vocabulary, and the embedded dialect registries.                   |
 | `cadmpeg-ir`             | `CadIr` version 8, validation, diff, codec traits, reports, and source-fidelity sidecars.                                              |
 | `cadmpeg-measure`        | Geometric measurement of decoded models and ID-free comparison of measured bodies; an oracle that no codec consumes.                   |
+| `cadmpeg-tessellate`     | Display meshes and parameter-space boundary traces of B-rep faces, for writers that need a proxy mesh or a pcurve.                     |
 | `cadmpeg-core`           | Shared decode budgets, arenas, views, container summaries, and I/O helpers.                                                            |
 | `cadmpeg-container`      | Shared archive and compression helpers for container codecs.                                                                           |
 | `cadmpeg-parasolid`      | Shared Parasolid schema-token grammar and embedded-layer identity.                                                                      |

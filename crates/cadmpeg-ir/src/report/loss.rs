@@ -176,6 +176,9 @@ pub enum LossTaxonomy {
     AppearanceReduced,
     /// Preserved source bytes required for a byte-exact write were unavailable.
     PreservedSourceUnavailable,
+    /// Physical materials, mass properties, rigid bodies, colliders, or joint
+    /// drives were not transferred.
+    PhysicsNotTransferred,
 }
 
 impl LossTaxonomy {
@@ -224,6 +227,7 @@ impl LossTaxonomy {
             Self::ParametricRecordOmitted => "parametric_record_omitted",
             Self::AppearanceReduced => "appearance_reduced",
             Self::PreservedSourceUnavailable => "preserved_source_unavailable",
+            Self::PhysicsNotTransferred => "physics_not_transferred",
         }
     }
 
@@ -242,9 +246,9 @@ impl LossTaxonomy {
             Self::FeatureHistoryRetained | Self::ParametricRecordOmitted => {
                 LossCategory::DesignIntent
             }
-            Self::AssemblyComponentsExternal | Self::AssemblyPlacementsNotTransferred => {
-                LossCategory::Product
-            }
+            Self::AssemblyComponentsExternal
+            | Self::AssemblyPlacementsNotTransferred
+            | Self::PhysicsNotTransferred => LossCategory::Product,
             Self::RecordNotTyped
             | Self::DecodeDiagnostic
             | Self::IntegrityFailure

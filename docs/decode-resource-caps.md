@@ -237,6 +237,10 @@ report a loss; a caller may report a general failure for the same item.
 | `cadmpeg-codec-pvz`      | `src/model.rs`                                     | `MAX_OCCURRENCES`                         | `100_000`                                               | 4    | Occurrences expanded from the structure definition graph, roots included; child occurrences that close a cycle count toward it. At the limit expansion stops, and a path of `max_recursion_depth` definitions stops its branch; both report `structure.occurrence-expansion-truncated`. |
 | `cadmpeg-codec-pvz`      | `src/brep/records.rs`                              | `MAX_BSPLINE_DEGREE`                      | `20`                                                    | 1    | Admitted degree of an exact-stream B-spline surface, edge curve or pcurve, as for ASM `MAX_NURBS_DEGREE`. A record of a higher order refuses the exact stream as malformed; the member keeps its tessellation and `geometry.exact-undecoded` is reported. |
 | `cadmpeg-codec-pvz`      | `src/brep/topology.rs`                             | `MAX_TOPOLOGY_WORK`                       | `1 << 24`                                               | 4    | Floor of the derived-search `WorkBudget` of one exact stream; the allowance is the larger of this floor and 1,024 times its face, loop, coedge and edge records. Face-region nesting charges one unit per polygon sample of each containment test, and coincident-edge pairing one unit per candidate test. A face whose nesting finds the budget empty keeps one unclassified region; pairing stops; each skip is reported as `exact.topology-work-exhausted`. |
+| `cadmpeg-tessellate`     | `src/boundary.rs`                                  | `MAX_SEEDS`                               | `256`                                                   | N    | Seed segments of one edge when the export tessellator samples a face boundary. A larger count is clamped to the bound. |
+| `cadmpeg-tessellate`     | `src/boundary.rs`                                  | `MAX_DEPTH`                               | `18`                                                    | N    | Bisection depth of one edge segment while the export tessellator refines a face boundary to its chord tolerance. |
+| `cadmpeg-tessellate`     | `src/boundary.rs`                                  | `MAX_EDGE_SAMPLES`                        | `1 << 17`                                               | N    | Samples of one edge. At the bound the face is refused with a reason, and the writer reports `export.proxy-not-written`. |
+| `cadmpeg-tessellate`     | `src/face.rs`                                      | `MAX_PCURVE_SAMPLES`                      | `1 << 16`                                               | N    | Samples of one refined derived pcurve. At the bound the pcurve is the unrefined boundary trace of the face mesh. |
 | `cadmpeg-ir`             | `src/codec/write/approximation.rs`                 | `MAX_PATCHES`                             | `1024`                                                  | N    | Export fitting: sampled B-spline patches along one parameter axis. A fit that needs more is not written; not a decode path. |
 | `cadmpeg-ir`             | `src/codec/write/approximation.rs`                 | `MAX_POLES`                               | `1 << 20`                                               | N    | Export fitting: sampled approximation poles of one export. A carrier that does not fit is not written; not a decode path. |
 | `cadmpeg-ir`             | `src/codec/write/approximation.rs`                 | `MAX_SAMPLES`                             | `1 << 23`                                               | N    | Export fitting: procedural point evaluations of one export for sampling and residual probes. Exhaustion leaves the carrier unwritten; not a decode path. |
@@ -484,7 +488,7 @@ are the slice mechanisms themselves.
 
 ## Totals
 
-Production `MAX_*` constants: 269.
+Production `MAX_*` constants: 273.
 
 | Kind | Meaning                    | Count |
 | ---- | -------------------------- | ----- |
@@ -492,8 +496,8 @@ Production `MAX_*` constants: 269.
 | 2    | Per-input bound            | 71    |
 | 3    | Session ceiling            | 0     |
 | 4    | Local work cap             | 134   |
-| N    | Not a decode bound         | 29    |
-|      | Total                      | 269   |
+| N    | Not a decode bound         | 33    |
+|      | Total                      | 273   |
 
 The six `ResourceLimits` fields are the session ceilings and are not
 `MAX_*` constants. No `MAX_*` constant is kind 3.
@@ -503,7 +507,8 @@ By crate: `cadmpeg-core` 3, `cadmpeg-ir` 17, `cadmpeg-measure` 20, `cadmpeg-asm`
 `cadmpeg-codec-iges` 16, `cadmpeg-codec-inventor` 3,
 `cadmpeg-codec-freecad` 16, `cadmpeg-codec-rhino` 32, `cadmpeg-codec-f3d` 19,
 `cadmpeg-codec-nx` 28, `cadmpeg-codec-creo` 20, `cadmpeg-codec-sldprt` 18,
-`cadmpeg-codec-catia` 57, and `cadmpeg-codec-pvz` 3.
+`cadmpeg-codec-catia` 57, `cadmpeg-codec-pvz` 3, and
+`cadmpeg-tessellate` 4.
 
 ## Routing
 
