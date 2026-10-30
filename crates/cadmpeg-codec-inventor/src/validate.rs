@@ -1123,6 +1123,16 @@ fn validate_features(
             } => {
                 references.extend(surface.iter().map(|reference| reference.index()));
             }
+            PmDcFeaturePropertyKind::WorkPoint {
+                references: point, ..
+            } => {
+                references.extend(
+                    point
+                        .iter()
+                        .flat_map(crate::pmdc::PmDcReferenceList::references)
+                        .map(|reference| reference.index()),
+                );
+            }
         }
         if raw.get(&(
             property.identity.segment_token.as_str(),
@@ -1505,6 +1515,7 @@ fn validate_features(
             parameters: &data.pm_dc_parameters,
             sketches: &data.pm_dc_sketches,
             directions: &data.pm_dc_directions,
+            transforms: &data.pm_dc_transforms,
             planes: &data.pm_dc_work_planes,
             entity_links: &data.pm_dc_entity_style_links,
             kernel_links: &data.pm_dc_kernel_entity_links,
