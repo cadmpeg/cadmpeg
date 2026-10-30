@@ -533,7 +533,7 @@ pub(in crate::design::decode) struct DesignPrimaryFrame<'a> {
     pub(super) design_type: &'a SegmentTypeData,
 }
 
-fn dynamic_type<'a>(
+pub(super) fn dynamic_type<'a>(
     meta: &'a crate::metastream::MetaStream,
     class_tag: &crate::records::references::DesignClassTag,
 ) -> Option<(usize, &'a SegmentTypeData)> {
@@ -541,7 +541,7 @@ fn dynamic_type<'a>(
     Some((ordinal, meta.types.get(ordinal)?))
 }
 
-fn record_header_class_tag(
+pub(super) fn record_header_class_tag(
     bytes: &[u8],
     at: usize,
     end: usize,

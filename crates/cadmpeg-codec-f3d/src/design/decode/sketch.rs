@@ -1967,26 +1967,32 @@ fn decode_sketch_points_from_stream(
     }
     let mut out = Vec::new();
     for frame in &frames {
-        if !frame
-            .design_type
-            .type_guid
-            .as_str()
-            .eq_ignore_ascii_case(SKETCH_POINT_TYPE_GUID)
-            || frame.design_type.module != CURRENT_SKETCH_POINT_TYPE.2
-            || ![0, 8, 10, CURRENT_SKETCH_POINT_TYPE.1].contains(&frame.design_type.version)
+        let derived = is_derived_sketch_point_type(frame.design_type);
+        if !derived
+            && (!frame
+                .design_type
+                .type_guid
+                .as_str()
+                .eq_ignore_ascii_case(SKETCH_POINT_TYPE_GUID)
+                || frame.design_type.module != CURRENT_SKETCH_POINT_TYPE.2
+                || ![0, 8, 10, CURRENT_SKETCH_POINT_TYPE.1].contains(&frame.design_type.version))
         {
             continue;
         }
         let payload = &bytes[frame.start..frame.end];
         let record_index = u32::try_from(frame.entity_id)
             .map_err(|_| CodecError::Malformed("F3D sketch-point entity ID exceeds u32".into()))?;
-        let decoded =
-            decode_sketch_point_record(payload, frame.design_type.version).ok_or_else(|| {
-                crate::design::text::malformed_design(format_args!(
-                    "F3D sketch point {record_index} has an invalid version-{} member sequence",
-                    frame.design_type.version
-                ))
-            })?;
+        let decoded = if derived {
+            decode_derived_sketch_point_record(bytes, meta, frame)
+        } else {
+            decode_sketch_point_record(payload, frame.design_type.version)
+        }
+        .ok_or_else(|| {
+            crate::design::text::malformed_design(format_args!(
+                "F3D sketch point {record_index} has an invalid version-{} member sequence",
+                frame.design_type.version
+            ))
+        })?;
         let (u, v) = (decoded.coordinates[0] * 10.0, decoded.coordinates[1] * 10.0);
         if !point_target_has_guid(
             &types_by_entity,
@@ -2991,19 +2997,99 @@ fn decode_version_zero_sketch_point(
     })
 }
 
+/// Whether a Design type is the derived sketch-point type: its primary frame
+/// carries the point property block, and its nested base-type frame carries the
+/// version-11 point record.
+fn is_derived_sketch_point_type(
+    design_type: &crate::records::entity_header::SegmentTypeData,
+) -> bool {
+    design_type
+        .type_guid
+        .as_str()
+        .eq_ignore_ascii_case(DERIVED_SKETCH_POINT_TYPE.0)
+        && design_type.version == DERIVED_SKETCH_POINT_TYPE.1
+        && design_type.module == DERIVED_SKETCH_POINT_TYPE.2
+        && design_type
+            .base_type_guid
+            .value()
+            .is_some_and(|base| base.as_str().eq_ignore_ascii_case(SKETCH_POINT_TYPE_GUID))
+}
+
+fn decode_derived_sketch_point_record(
+    bytes: &[u8],
+    meta: &crate::metastream::MetaStream,
+    frame: &super::meta::DesignPrimaryFrame<'_>,
+) -> Option<DecodedSketchPoint> {
+    let primary = &bytes[frame.start..frame.end];
+    let (_, after_class_tag) = lp_ascii_filtered_view(primary, 0, 3..=3, u8::is_ascii_digit)?;
+    let mut cursor = after_class_tag.checked_add(4)?;
+    if primary.get(cursor..cursor.checked_add(9)?) != Some(&[0; 9][..]) {
+        return None;
+    }
+    cursor = cursor.checked_add(9)?;
+    let properties = read_property_block(primary, &mut cursor)?;
+    let nested_at = frame.start.checked_add(cursor)?;
+    if properties.count == 0
+        || nested_at >= frame.end
+        || (frame.member_end != frame.end && frame.member_end != nested_at)
+    {
+        return None;
+    }
+    let nested_class_tag =
+        super::meta::record_header_class_tag(bytes, nested_at, frame.end, frame.entity_id)?;
+    let (_, base_type) = super::meta::dynamic_type(meta, &nested_class_tag)?;
+    if !base_type
+        .type_guid
+        .as_str()
+        .eq_ignore_ascii_case(SKETCH_POINT_TYPE_GUID)
+        || base_type.version != CURRENT_SKETCH_POINT_TYPE.1
+        || base_type.module != CURRENT_SKETCH_POINT_TYPE.2
+    {
+        return None;
+    }
+    let mut decoded = decode_sketch_point_members(
+        &bytes[nested_at..frame.end],
+        CURRENT_SKETCH_POINT_TYPE.1,
+        Some(properties),
+    )?;
+    let SketchPointRecordForm::Version11 { derived_type, .. } = &mut decoded.record_form else {
+        return None;
+    };
+    *derived_type = true;
+    decoded.coordinate_offset = decoded
+        .coordinate_offset
+        .checked_add(u32::try_from(cursor).ok()?)?;
+    Some(decoded)
+}
+
 fn decode_sketch_point_record(payload: &[u8], class_version: u32) -> Option<DecodedSketchPoint> {
+    decode_sketch_point_members(payload, class_version, None)
+}
+
+/// Decode one sketch-point member sequence. `inherited` is the property block
+/// of a derived point's primary frame; the member sequence then stores eight
+/// zero bytes and no property block.
+fn decode_sketch_point_members(
+    payload: &[u8],
+    class_version: u32,
+    inherited: Option<SketchProperties<'_>>,
+) -> Option<DecodedSketchPoint> {
     let (_, after_class_tag) = lp_ascii_filtered_view(payload, 0, 3..=3, u8::is_ascii_digit)?;
     let header_end = after_class_tag.checked_add(4)?;
     if class_version == 0 {
         return decode_version_zero_sketch_point(payload, header_end);
     }
+    let zero_run = if inherited.is_some() { 8 } else { 9 };
     if !matches!(class_version, 8 | 10 | 11)
-        || payload.get(header_end..header_end.checked_add(9)?) != Some(&[0; 9][..])
+        || payload.get(header_end..header_end.checked_add(zero_run)?) != Some(&[0; 9][..zero_run])
     {
         return None;
     }
-    let mut cursor = header_end.checked_add(9)?;
-    let properties = read_property_block(payload, &mut cursor)?;
+    let mut cursor = header_end.checked_add(zero_run)?;
+    let properties = match inherited {
+        Some(inherited) => inherited,
+        None => read_property_block(payload, &mut cursor)?,
+    };
     let (entity_genesis, persistent_id) = match properties.first_two()? {
         (
             SketchProperty {
@@ -3167,6 +3253,7 @@ fn decode_sketch_point_record(payload: &[u8], class_version: u32) -> Option<Deco
                     depth,
                     entity_genesis,
                     padded_paired_reference,
+                    derived_type: false,
                     companion_prefix_present_zero: false,
                     persistent_id,
                     flags: flags.map(|flag| flag == 1),
@@ -3265,6 +3352,8 @@ fn decode_sketch_point_companion(
 const SKETCH_POINT_TYPE_GUID: &str = "C2CEDAE7-1716-47C1-B7B1-07B70081D0FB";
 pub(crate) const CURRENT_SKETCH_POINT_TYPE: (&str, u32, &str) =
     (SKETCH_POINT_TYPE_GUID, 11, "Geometry");
+const DERIVED_SKETCH_POINT_TYPE: (&str, u32, &str) =
+    ("00D157C2-2332-4BD5-BB53-048C4081D1C3", 0, "MSketch");
 pub(crate) const SKETCH_POINT_COMPANION_TYPE: (&str, u32, &str) =
     ("362B7EC3-0F09-47C8-A3BE-DC066715CDAE", 0, "Geometry");
 pub(crate) const SKETCH_CONTAINER_TYPE_GUID: &str = "44A64366-4BD3-4B24-881A-F94C206E8F2D";

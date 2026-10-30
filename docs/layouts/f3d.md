@@ -5728,6 +5728,23 @@ Relative to the first flag byte; excludes the preceding property and first paire
 | 52 | 8 | `unit_pair` | `f32[2]` | little | spec | f32 constants |
 | 60 | 5 | `marker` | `bytes[5]` | little | spec | marker |
 
+## `derived_sketch_point_base_prefix`
+
+Spec §3.1 · layout: byte offsets · size: 30 B
+
+Offsets are relative to the nested base-type frame of a derived sketch-point record. Six zero bytes complete the marked reference.
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 19 | 1 | `paired_reference_marker` | `u8` | little | spec | the marked `paired_reference` at offset 19 · value `1` |
+| 20 | 4 | `paired_reference` | `u32` | little | spec | its u32 record index at offset 20 |
+
+Unstated regions:
+
+- `0..11` (11 B): The nested indexed header repeats the record index of the primary frame.
+- `11..19` (8 B): The nested frame stores zero bytes at offsets 11 through 18.
+- `24..30` (6 B): The marked reference ends with six zero bytes.
+
 ## `sketch_point_v11_tail_prefix`
 
 Spec §3.1 · layout: byte offsets · size: 66 B
