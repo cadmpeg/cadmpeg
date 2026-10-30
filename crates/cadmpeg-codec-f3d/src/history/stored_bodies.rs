@@ -47,6 +47,15 @@ impl<'a> ActiveBodies<'a> {
     }
 }
 
+/// Both spellings of the derived base kind. The scope stores a copy of a source
+/// that the archive does not contain.
+fn is_derived_base(scope: &DesignParameterScope) -> bool {
+    matches!(
+        scope.kind_name(),
+        "Derived Base Feature" | "DerivedBaseFeature"
+    )
+}
+
 pub(super) fn bind_history_outputs(
     feature: &mut Feature,
     scope: &DesignParameterScope,
@@ -54,7 +63,7 @@ pub(super) fn bind_history_outputs(
     source: Option<&str>,
     active: &ActiveBodies<'_>,
 ) -> bool {
-    if scope.kind() != DesignFeatureKind::BaseFeature {
+    if scope.kind() != DesignFeatureKind::BaseFeature && !is_derived_base(scope) {
         return false;
     }
     let native = match feature.evaluation.definition() {
@@ -144,11 +153,27 @@ pub(crate) fn losses(
                     )));
                 }
             }
-            "Derived Base Feature" => {
-                losses.push(F3dLossCode::FeatureDerivedBaseUnresolved.note(format!(
-                    "{} retains its native derived source and frame.",
-                    scope.id
-                )));
+            "Derived Base Feature" | "DerivedBaseFeature" => {
+                let stored = feature.and_then(|feature| match feature.evaluation.definition() {
+                    FeatureDefinition::Operation(FeatureOperation::BaseFeature {
+                        bodies: BodySelection::Resolved { bodies, .. },
+                    }) => Some(bodies.is_empty()),
+                    _ => None,
+                });
+                match stored {
+                    Some(true) => losses.push(F3dLossCode::FeatureStoredBodiesEmpty.note(format!(
+                        "{} has an empty stored-body set and is a no-op.",
+                        scope.id
+                    ))),
+                    Some(false) => losses.push(F3dLossCode::FeatureDerivedBaseUnresolved.note(format!(
+                        "{} derives its bodies from a source and frame that the archive does not contain; the result bodies are retained as a stored snapshot.",
+                        scope.id
+                    ))),
+                    None => losses.push(F3dLossCode::FeatureDerivedBaseUnresolved.note(format!(
+                        "{} retains its native derived source and frame.",
+                        scope.id
+                    ))),
+                }
             }
             "BoxPrimitive" if scope.payload().is_uninterpreted() => {
                 losses.push(F3dLossCode::FeatureBoxPrimitiveUnresolved.note(format!(
