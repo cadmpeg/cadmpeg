@@ -2011,27 +2011,92 @@ fn builtin_reference_usage(
 /// Lanes of a sketch B-spline record, as the source states them.
 struct SketchNurbsLanes {
     degree: u32,
-    knots: KnotVector,
+    knots: Vec<FiniteReal>,
     control_points: Vec<FinitePoint2>,
     weights: Option<Vec<NonZeroReal>>,
     periodic: bool,
 }
 
-/// Read a sketch B-spline record. `Ok(None)` states the record is not a
-/// B-spline; `Err` states a B-spline record whose lanes the carrier refuses.
 fn sketch_nurbs(
     kind: &str,
     node: roxmltree::Node<'_, '_>,
 ) -> Result<Option<SketchGeometry>, CodecError> {
+    if matches!(kind, "Part::GeomBSplineCurve" | "BSplineCurve")
+        || node.has_tag_name("BSplineCurve")
+    {
+        for (attribute, tag) in [("PolesCount", "Pole"), ("KnotsCount", "Knot")] {
+            if let Some(raw_count) = node.attribute(attribute) {
+                let count = raw_count.parse::<usize>().map_err(|_| {
+                    CodecError::malformed(format_args!(
+                        "sketch B-spline {attribute} is not a count"
+                    ))
+                })?;
+                if count == 0
+                    || count
+                        != node
+                            .children()
+                            .filter(|child| child.has_tag_name(tag))
+                            .count()
+                {
+                    return Err(CodecError::malformed(format_args!(
+                        "sketch B-spline {attribute} disagrees with {tag} records"
+                    )));
+                }
+            }
+        }
+        for knot in node.children().filter(|child| child.has_tag_name("Knot")) {
+            if knot
+                .attribute("Mult")
+                .and_then(|value| value.parse::<usize>().ok())
+                == Some(0)
+            {
+                return Err(CodecError::malformed(
+                    "sketch B-spline knot multiplicity is zero",
+                ));
+            }
+        }
+    }
     let Some(lanes) = sketch_nurbs_lanes(kind, node) else {
         return Ok(None);
     };
+    let degree = usize::try_from(lanes.degree)
+        .map_err(|_| CodecError::malformed("sketch B-spline degree exceeds usize"))?;
+    let padding = if lanes.periodic {
+        crate::brep::periodic_knot_padding(&lanes.knots, lanes.degree)?
+    } else {
+        0
+    };
+    let expected = lanes
+        .control_points
+        .len()
+        .checked_add(degree + 1 - padding)
+        .ok_or_else(|| CodecError::malformed("sketch B-spline knot count overflow"))?;
+    if lanes.knots.len() != expected {
+        return Err(CodecError::malformed(format_args!(
+            "sketch B-spline multiplicities must sum to {expected}, found {}",
+            lanes.knots.len()
+        )));
+    }
+    let knots = if lanes.periodic {
+        let Some(knots) = crate::brep::extend_periodic_knots(&lanes.knots, padding) else {
+            return Ok(None);
+        };
+        knots
+    } else {
+        lanes.knots
+    };
+    let mut control_points = lanes.control_points;
+    control_points.extend_from_within(..padding);
+    let mut weights = lanes.weights;
+    if let Some(weights) = &mut weights {
+        weights.extend_from_within(..padding);
+    }
     Ok(Some(SketchGeometry::nurbs(
         cadmpeg_ir::geometry::pcurve::PcurveNurbs::from_checked_lanes(
             lanes.degree,
-            lanes.knots,
-            lanes.control_points,
-            lanes.weights,
+            KnotVector::from_finite_lanes(knots)?,
+            control_points,
+            weights,
             lanes.periodic,
         )?,
     )))
@@ -2044,7 +2109,11 @@ fn sketch_nurbs_lanes(kind: &str, node: roxmltree::Node<'_, '_>) -> Option<Sketc
         return None;
     }
     let degree = node.attribute("Degree")?.parse::<u32>().ok()?;
-    let periodic = matches!(node.attribute("IsPeriodic")?, "1" | "true" | "True");
+    let periodic = match node.attribute("IsPeriodic")? {
+        "1" | "true" | "True" => true,
+        "0" | "false" | "False" => false,
+        _ => return None,
+    };
     let pole_count = node.attribute("PolesCount")?.parse::<usize>().ok()?;
     let knot_count = node.attribute("KnotsCount")?.parse::<usize>().ok()?;
     if pole_count == 0
@@ -2069,7 +2138,7 @@ fn sketch_nurbs_lanes(kind: &str, node: roxmltree::Node<'_, '_>) -> Option<Sketc
             pole.attribute("Y")?.parse().ok()?,
         ))?;
         let z = FiniteReal::new(pole.attribute("Z")?.parse::<f64>().ok()?)?;
-        if z.get().abs() > f64::EPSILON {
+        if z.get() != 0.0 {
             return None;
         }
         let weight = PositiveReal::new(pole.attribute("Weight")?.parse::<f64>().ok()?)?;
@@ -2111,15 +2180,6 @@ fn sketch_nurbs_lanes(kind: &str, node: roxmltree::Node<'_, '_>) -> Option<Sketc
     if expanded_count > MAX_SKETCH_RECORDS {
         return None;
     }
-    if !periodic {
-        let expected = usize::try_from(degree)
-            .ok()
-            .and_then(|degree| pole_count.checked_add(degree))
-            .and_then(|count| count.checked_add(1))?;
-        if expanded_count != expected {
-            return None;
-        }
-    }
     let mut full_knots = Vec::new();
     full_knots.extend(
         knots.iter().flat_map(|(value, multiplicity)| {
@@ -2130,20 +2190,16 @@ fn sketch_nurbs_lanes(kind: &str, node: roxmltree::Node<'_, '_>) -> Option<Sketc
     control_points.extend(poles.iter().map(|(point, _)| *point));
     let mut weights = Vec::new();
     weights.extend(poles.iter().map(|(_, weight)| *weight));
-    let weights = if weights
-        .iter()
-        .any(|weight| (weight.get() - 1.0).abs() > f64::EPSILON)
-    {
+    let weights = if weights.iter().any(|weight| weight.get() != 1.0) {
         let mut converted = Vec::new();
         converted.extend(weights.into_iter().map(NonZeroReal::from));
         Some(converted)
     } else {
         None
     };
-    let knots = KnotVector::from_finite_lanes(full_knots).ok()?;
     Some(SketchNurbsLanes {
         degree,
-        knots,
+        knots: full_knots,
         control_points,
         weights,
         periodic,

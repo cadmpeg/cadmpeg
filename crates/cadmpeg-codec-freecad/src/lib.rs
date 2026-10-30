@@ -1375,7 +1375,14 @@ fn semantic_losses(
         };
         push_semantic_loss(
             &mut losses,
-            FreecadLossCode::SketchNativeGeometry,
+            if matches!(
+                native_kind.as_str(),
+                "Part::GeomBSplineCurve" | "BSplineCurve"
+            ) {
+                FreecadLossCode::SketchNurbsNative
+            } else {
+                FreecadLossCode::SketchNativeGeometry
+            },
             &[
                 "FCStd sketch geometry ",
                 native_kind.as_str(),

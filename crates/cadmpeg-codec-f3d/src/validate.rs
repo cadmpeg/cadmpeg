@@ -2113,6 +2113,14 @@ fn validate_parameter_scopes(ctx: &Ctx, findings: &mut Vec<Finding>) -> Result<(
             .emboss_operand_construction()
             .and_then(|construction| construction.sketch_profile.as_ref())
             .is_none_or(valid_sketch_profile);
+        let move_link = design::decode::scopes::direct_face::move_operation_links_hold(
+            scope,
+            scope.move_operation().and_then(|operation| {
+                records_by_index
+                    .get(&(native_stream, operation.transform_record_index))
+                    .copied()
+            }),
+        );
         let base_flange_link = match scope.base_flange_operation() {
             None => true,
             Some(operation) => {
@@ -4171,6 +4179,7 @@ fn validate_parameter_scopes(ctx: &Ctx, findings: &mut Vec<Finding>) -> Result<(
             && sweep_profile_link
             && base_flange_profile_link
             && emboss_profile_link
+            && move_link
             && base_flange_link
             && edge_flange_link
             && hem_link
@@ -5212,6 +5221,7 @@ fn validate_path_feature_operand_roles(ctx: &Ctx, findings: &mut Vec<Finding>) {
                     operation,
                     angle_record_index,
                     opposite_angle,
+                    second_side,
                     ..
                 },
             )) => {
@@ -5229,6 +5239,13 @@ fn validate_path_feature_operand_roles(ctx: &Ctx, findings: &mut Vec<Finding>) {
                             .reference_members()
                             .values()
                             .any(|value| value == &located.value)
+                    })
+                    && second_side.is_none_or(|side| {
+                        side.angle_record_index != *angle_record_index
+                            && scope
+                                .reference_members()
+                                .values()
+                                .any(|value| value == &side.angle_record_index)
                     })
                     && groups.len() == 2 + expected_body_count
                     && role_count(DesignOperandRole::ROLE_0X21) == 1

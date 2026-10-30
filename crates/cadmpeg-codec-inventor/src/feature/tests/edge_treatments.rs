@@ -126,6 +126,43 @@ fn dimensions(
 }
 
 #[test]
+fn empty_and_mixed_edge_items_refuse_each_chamfer_form() {
+    let raw = [raw_parameter(40), raw_parameter(41), raw_parameter(42)];
+    let neutral = dimensions(&raw, 2.0, 0.5);
+    let source = chamfer_source(100);
+    let label = test_label(100, 1, CHAMFER_CLASS_ID, &[]);
+    let arena = DecodeArena::new();
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service())
+        .expect("projection context");
+    for form in [0, 1, 2] {
+        let mut properties = chamfer_properties(form);
+        let index = test_projection_index(&properties, &raw, &neutral, &[], &[], &[], &[], &[]);
+        project_chamfer(&ctx, &source, &label, &index)
+            .expect("nonempty chamfer candidate")
+            .expect("nonempty chamfer projection");
+        properties.push(test_property(
+            10,
+            PmDcFeaturePropertyKind::EdgeItem {
+                index_references: index_list(&[]),
+                index_reference_value: -1,
+                value: 0,
+            },
+        ));
+        for members in [&[11][..], &[3, 11][..]] {
+            properties[0] = test_property(
+                1,
+                PmDcFeaturePropertyKind::References {
+                    family: PmDcFeatureReferenceFamily::EdgeCollection,
+                    items: reference_list(members),
+                },
+            );
+            let index = test_projection_index(&properties, &raw, &neutral, &[], &[], &[], &[], &[]);
+            assert!(project_chamfer(&ctx, &source, &label, &index).is_none());
+        }
+    }
+}
+
+#[test]
 fn oriented_chamfers_keep_support_identity_and_require_admitted_dimensions() {
     let raw = [raw_parameter(40), raw_parameter(41), raw_parameter(42)];
     let source = chamfer_source(100);

@@ -77,6 +77,8 @@ pub(crate) enum FreecadLossCode {
     FeaturePrimitivePlacementUnresolved,
     /// Sketch geometry record retains a native kind without solved geometry.
     SketchNativeGeometry,
+    /// A sketch B-spline has no admitted finite neutral representation.
+    SketchNurbsNative,
     /// Cached sketch geometry has no matching live external reference.
     SketchExternalReferenceUnresolved,
     /// Optional external sketch cache cannot be projected; live links remain authoritative.
@@ -145,6 +147,7 @@ impl FreecadLossCode {
         Self::FeatureNativeKindRetained,
         Self::FeaturePrimitivePlacementUnresolved,
         Self::SketchNativeGeometry,
+        Self::SketchNurbsNative,
         Self::SketchNativeConstraint,
         Self::SketchExternalReferenceUnresolved,
         Self::SketchExternalCacheUnresolved,
@@ -199,6 +202,7 @@ impl FreecadLossCode {
             Self::FeaturePrimitivePlacementUnresolved => "feature.primitive-placement-unresolved",
             Self::FeatureNativeKindRetained => "feature.native-kind-retained",
             Self::SketchNativeGeometry => "sketch.native-geometry",
+            Self::SketchNurbsNative => "sketch.nurbs-native",
             Self::SketchNativeConstraint => "sketch.native-constraint",
             Self::SketchExternalReferenceUnresolved => "sketch.external-reference-unresolved",
             Self::SketchExternalCacheUnresolved => "sketch.external-cache-unresolved",
@@ -234,6 +238,7 @@ impl FreecadLossCode {
             | Self::FeatureNativeKindRetained
             | Self::FeaturePrimitivePlacementUnresolved
             | Self::SketchNativeGeometry
+            | Self::SketchNurbsNative
             | Self::SketchNativeConstraint
             | Self::PcurveLocationAmbiguous
             | Self::TopologyLocationIdentityBounded => Severity::Blocking,
@@ -305,6 +310,7 @@ impl FreecadLossCode {
             Self::SketchExternalCacheUnresolved
             | Self::SketchExternalReferenceUnresolved
             | Self::SketchNativeGeometry
+            | Self::SketchNurbsNative
             | Self::SketchNativeConstraint
             | Self::SketchProfileMatchingBounded
             | Self::SourceGuiPropertyKeyBlank
@@ -386,6 +392,7 @@ mod tests {
                 "feature.native-kind-retained",
                 "feature.primitive-placement-unresolved",
                 "sketch.native-geometry",
+                "sketch.nurbs-native",
                 "sketch.native-constraint",
                 "sketch.external-reference-unresolved",
                 "sketch.external-cache-unresolved",
