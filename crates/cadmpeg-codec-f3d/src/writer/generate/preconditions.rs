@@ -310,7 +310,10 @@ pub(super) fn validate_source_less_sketch_graph(native: &F3dNative) -> Result<()
         if point.record_form().class_version() != point_type.version
             || !matches!(
                 point.record_form(),
-                crate::records::sketch_geometry::SketchPointRecordForm::Version11 { .. }
+                crate::records::sketch_geometry::SketchPointRecordForm::Version11 {
+                    derived_type: false,
+                    ..
+                }
             )
         {
             return Err(CodecError::NotImplemented(format!(

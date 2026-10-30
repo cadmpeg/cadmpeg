@@ -1,8 +1,9 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use crate::design::decode::sketch::{
-    decode_sketch_point_companion, decode_sketch_point_record, SKETCH_CONTAINER_TYPE_GUID,
-    SKETCH_POINT_COMPANION_TYPE, SKETCH_POINT_TYPE_GUID,
+    decode_derived_sketch_point_record, decode_sketch_point_companion, decode_sketch_point_record,
+    is_derived_sketch_point_type, SKETCH_CONTAINER_TYPE_GUID, SKETCH_POINT_COMPANION_TYPE,
+    SKETCH_POINT_TYPE_GUID,
 };
 use crate::records::sketch_geometry::{
     SketchPointClosure, SketchPointCompanion, SketchPointCompanionReferenceEncoding,
@@ -103,7 +104,7 @@ fn point_record_parser_closes_every_versioned_three_coordinate_form() {
     assert!(
         decode_sketch_point_record(&tagged_point_payload(10, false, 2, 1, false), 10,).is_none()
     );
-    for (selector, state) in [(0, 0), (0, 1), (1, 0), (2, 1), (4, 0)] {
+    for (selector, state) in [(0, 0), (0, 1), (1, 0), (2, 1), (4, 0), (4, 1)] {
         for padded_paired_reference in [false, true] {
             let decoded = decode_sketch_point_record(
                 &tagged_point_payload(11, false, selector, state, padded_paired_reference),
@@ -116,6 +117,7 @@ fn point_record_parser_closes_every_versioned_three_coordinate_form() {
                     depth: 0.25 * 10.0,
                     entity_genesis: None,
                     padded_paired_reference,
+                    derived_type: false,
                     companion_prefix_present_zero: false,
                     persistent_id: std::num::NonZeroU64::new(500).unwrap(),
                     flags: [false; 8],
@@ -128,7 +130,7 @@ fn point_record_parser_closes_every_versioned_three_coordinate_form() {
             );
         }
     }
-    for (selector, state) in [(1, 1), (2, 0), (4, 1), (3, 0), (0, 2)] {
+    for (selector, state) in [(1, 1), (2, 0), (4, 2), (3, 0), (0, 2)] {
         assert!(decode_sketch_point_record(
             &tagged_point_payload(11, false, selector, state, false),
             11,
@@ -225,4 +227,86 @@ fn point_companion_retains_both_prefixes_and_reference_encodings() {
             );
         }
     }
+}
+
+/// A derived sketch-point record: the primary frame stores the property block,
+/// and the nested base-type frame stores eight zero bytes and the version-11
+/// members without a property block.
+fn derived_point_stream(nested_property_block: bool) -> (Vec<u8>, usize) {
+    let base = tagged_point_payload(11, false, 4, 0, false);
+    let property_block = 20..70;
+    let mut bytes = Vec::new();
+    push_header(&mut bytes, "256", POINT);
+    bytes.extend_from_slice(&[0; 9]);
+    bytes.extend_from_slice(&base[property_block.clone()]);
+    let nested_at = bytes.len();
+    if nested_property_block {
+        bytes.extend_from_slice(&base);
+    } else {
+        bytes.extend_from_slice(&base[..19]);
+        bytes.extend_from_slice(&base[property_block.end..]);
+    }
+    (bytes, nested_at)
+}
+
+fn derived_point_meta(secondary_at: Option<usize>) -> crate::metastream::MetaStream {
+    crate::metastream::MetaStream {
+        types: vec![
+            crate::design::test_support::design_type(
+                "00D157C2-2332-4BD5-BB53-048C4081D1C3",
+                Some(SKETCH_POINT_TYPE_GUID),
+                0,
+                "MSketch",
+                vec![u64::from(POINT)],
+            ),
+            crate::design::test_support::design_type(
+                SKETCH_POINT_TYPE_GUID,
+                None,
+                11,
+                "Geometry",
+                Vec::new(),
+            ),
+        ],
+        records: vec![crate::design::test_support::primary_record(
+            u64::from(POINT),
+            0,
+        )],
+        secondary_records: secondary_at
+            .map(|at| crate::design::test_support::primary_record(u64::from(POINT), at))
+            .into_iter()
+            .collect(),
+    }
+}
+
+#[test]
+fn derived_point_reads_the_nested_base_record_with_the_primary_properties() {
+    let (bytes, nested_at) = derived_point_stream(false);
+    for secondary_at in [None, Some(nested_at)] {
+        let meta = derived_point_meta(secondary_at);
+        let frames = crate::design::decode::meta::design_primary_frames(&bytes, &meta).unwrap();
+        assert!(is_derived_sketch_point_type(frames[0].design_type));
+        let decoded = decode_derived_sketch_point_record(&bytes, &meta, &frames[0])
+            .expect("derived sketch point");
+        assert_eq!(decoded.coordinates, [1.25, -2.5]);
+        assert_eq!(decoded.paired_reference, COMPANION);
+        assert_eq!(decoded.owner_reference, Some(OWNER));
+        assert_eq!(decoded.coordinate_offset, 108);
+        assert_eq!(decoded.record_form.persistent_id(), Some(500));
+        assert!(matches!(
+            decoded.record_form,
+            SketchPointRecordForm::Version11 {
+                derived_type: true,
+                closure: SketchPointClosure::Selector4State0,
+                ..
+            }
+        ));
+    }
+}
+
+#[test]
+fn derived_point_nested_record_stores_no_property_block() {
+    let (bytes, nested_at) = derived_point_stream(true);
+    let meta = derived_point_meta(Some(nested_at));
+    let frames = crate::design::decode::meta::design_primary_frames(&bytes, &meta).unwrap();
+    assert!(decode_derived_sketch_point_record(&bytes, &meta, &frames[0]).is_none());
 }

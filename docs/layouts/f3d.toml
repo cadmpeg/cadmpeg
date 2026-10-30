@@ -19080,6 +19080,44 @@ source = "spec"
 anchor = "marker"
 
 [[record]]
+name = "derived_sketch_point_base_prefix"
+kind = "byte"
+section = "3.1"
+anchor = "The nested frame stores eight zero bytes at offsets 11 through 18"
+size = 30
+note = "Offsets are relative to the nested base-type frame of a derived sketch-point record. Six zero bytes complete the marked reference."
+
+[[record.gap]]
+offset = 0
+size = 11
+note = "The nested indexed header repeats the record index of the primary frame."
+
+[[record.gap]]
+offset = 11
+size = 8
+note = "The nested frame stores zero bytes at offsets 11 through 18."
+
+[[record.field]]
+name = "paired_reference_marker"
+offset = 19
+type = "u8"
+value = 1
+source = "spec"
+anchor = "the marked `paired_reference` at offset 19"
+
+[[record.field]]
+name = "paired_reference"
+offset = 20
+type = "u32"
+source = "spec"
+anchor = "its u32 record index at offset 20"
+
+[[record.gap]]
+offset = 24
+size = 6
+note = "The marked reference ends with six zero bytes."
+
+[[record]]
 name = "sketch_point_v11_tail_prefix"
 kind = "byte"
 section = "3.1"
