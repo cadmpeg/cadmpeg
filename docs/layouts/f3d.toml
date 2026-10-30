@@ -18740,6 +18740,245 @@ type = "bytes[5]"
 source = "spec"
 anchor = "marker"
 
+# --- Planar sketch-curve tail layout --------------------------------------
+
+[[record]]
+name = "sketch_curve_tail_1_reference"
+parsed_by = "crates/cadmpeg-codec-f3d/src/design/sketch_project.rs"
+kind = "byte"
+section = "3.1"
+anchor = "Immediately after the 96-byte analytic payload, a planar sketch-curve record stores"
+size = 25
+note = "N = 1. Offsets are relative to the end of the 96-byte analytic payload."
+
+[[record.field]]
+name = "reference_marker"
+offset = 0
+type = "u8"
+source = "spec"
+anchor = "`0x01`"
+
+[[record.field]]
+name = "reference_record_index"
+offset = 1
+type = "u32"
+source = "spec"
+anchor = "u32 `record_index`"
+
+[[record.field]]
+name = "reference_zero_trailer"
+offset = 5
+type = "bytes[6]"
+source = "spec"
+anchor = "six zero bytes"
+
+[[record.field]]
+name = "zero_pad"
+offset = 11
+type = "bytes[5]"
+source = "spec"
+anchor = "`P = 5` when `N = 1`"
+
+[[record.field]]
+name = "opaque"
+offset = 16
+type = "bytes[4]"
+source = "spec"
+anchor = "four opaque bytes"
+
+[[record.field]]
+name = "flag_guard"
+offset = 20
+type = "u32"
+source = "spec"
+anchor = "u32 `1`"
+
+[[record.field]]
+name = "construction_flag"
+offset = 24
+type = "u8"
+source = "spec"
+anchor = "u8 construction flag"
+
+[[record]]
+name = "sketch_curve_tail_2_references"
+parsed_by = "crates/cadmpeg-codec-f3d/src/design/sketch_project.rs"
+kind = "byte"
+section = "3.1"
+anchor = "Immediately after the 96-byte analytic payload, a planar sketch-curve record stores"
+size = 34
+note = "N = 2. Offsets are relative to the end of the 96-byte analytic payload."
+
+[[record.field]]
+name = "first_reference_marker"
+offset = 0
+type = "u8"
+source = "spec"
+anchor = "`0x01`"
+
+[[record.field]]
+name = "first_reference_record_index"
+offset = 1
+type = "u32"
+source = "spec"
+anchor = "u32 `record_index`"
+
+[[record.field]]
+name = "first_reference_zero_trailer"
+offset = 5
+type = "bytes[6]"
+source = "spec"
+anchor = "six zero bytes"
+
+[[record.field]]
+name = "second_reference_marker"
+offset = 11
+type = "u8"
+source = "spec"
+anchor = "`0x01`"
+
+[[record.field]]
+name = "second_reference_record_index"
+offset = 12
+type = "u32"
+source = "spec"
+anchor = "u32 `record_index`"
+
+[[record.field]]
+name = "second_reference_zero_trailer"
+offset = 16
+type = "bytes[6]"
+source = "spec"
+anchor = "six zero bytes"
+
+[[record.field]]
+name = "zero_pad"
+offset = 22
+type = "bytes[3]"
+source = "spec"
+anchor = "`P = 3` when `N` is `2` or `3`"
+
+[[record.field]]
+name = "opaque"
+offset = 25
+type = "bytes[4]"
+source = "spec"
+anchor = "four opaque bytes"
+
+[[record.field]]
+name = "flag_guard"
+offset = 29
+type = "u32"
+source = "spec"
+anchor = "u32 `1`"
+
+[[record.field]]
+name = "construction_flag"
+offset = 33
+type = "u8"
+source = "spec"
+anchor = "u8 construction flag"
+
+[[record]]
+name = "sketch_curve_tail_3_references"
+parsed_by = "crates/cadmpeg-codec-f3d/src/design/sketch_project.rs"
+kind = "byte"
+section = "3.1"
+anchor = "Immediately after the 96-byte analytic payload, a planar sketch-curve record stores"
+size = 45
+note = "N = 3. Offsets are relative to the end of the 96-byte analytic payload."
+
+[[record.field]]
+name = "first_reference_marker"
+offset = 0
+type = "u8"
+source = "spec"
+anchor = "`0x01`"
+
+[[record.field]]
+name = "first_reference_record_index"
+offset = 1
+type = "u32"
+source = "spec"
+anchor = "u32 `record_index`"
+
+[[record.field]]
+name = "first_reference_zero_trailer"
+offset = 5
+type = "bytes[6]"
+source = "spec"
+anchor = "six zero bytes"
+
+[[record.field]]
+name = "second_reference_marker"
+offset = 11
+type = "u8"
+source = "spec"
+anchor = "`0x01`"
+
+[[record.field]]
+name = "second_reference_record_index"
+offset = 12
+type = "u32"
+source = "spec"
+anchor = "u32 `record_index`"
+
+[[record.field]]
+name = "second_reference_zero_trailer"
+offset = 16
+type = "bytes[6]"
+source = "spec"
+anchor = "six zero bytes"
+
+[[record.field]]
+name = "third_reference_marker"
+offset = 22
+type = "u8"
+source = "spec"
+anchor = "`0x01`"
+
+[[record.field]]
+name = "third_reference_record_index"
+offset = 23
+type = "u32"
+source = "spec"
+anchor = "u32 `record_index`"
+
+[[record.field]]
+name = "third_reference_zero_trailer"
+offset = 27
+type = "bytes[6]"
+source = "spec"
+anchor = "six zero bytes"
+
+[[record.field]]
+name = "zero_pad"
+offset = 33
+type = "bytes[3]"
+source = "spec"
+anchor = "`P = 3` when `N` is `2` or `3`"
+
+[[record.field]]
+name = "opaque"
+offset = 36
+type = "bytes[4]"
+source = "spec"
+anchor = "four opaque bytes"
+
+[[record.field]]
+name = "flag_guard"
+offset = 40
+type = "u32"
+source = "spec"
+anchor = "u32 `1`"
+
+[[record.field]]
+name = "construction_flag"
+offset = 44
+type = "u8"
+source = "spec"
+anchor = "u8 construction flag"
+
 # --- Stable-type sheet-metal source-region carrier ------------------------
 
 [[record]]

@@ -146,6 +146,9 @@ const SURFACE_TYPE: [u8; 16] = [
 ];
 /// Surface-form value of a plane in a surface record.
 const PLANE_SURFACE_FORM: u32 = 25;
+/// First segment major version whose surface records store a u32 extension
+/// value after the three references.
+const SURFACE_EXTENSION_FIRST_MAJOR: u8 = 22;
 /// Work-plane value that precedes the explicit plane frame in its extended form.
 const WORK_PLANE_FRAME_MARKER: u32 = 0x203;
 const WORK_AXIS_TYPE: [u8; 16] = [
@@ -294,6 +297,14 @@ pub(crate) enum PmDcFeaturePropertyKind {
     },
     PlaneSurface {
         references: [crate::pmdc::PmDcReference; 3],
+        /// The u32 value that segment major versions above 21 store after the
+        /// references.
+        #[serde(
+            default,
+            skip_serializing_if = "Option::is_none",
+            deserialize_with = "deserialize_surface_extension"
+        )]
+        extension: Option<u32>,
         state: u8,
         surface_form: u32,
         value: u32,
@@ -379,6 +390,7 @@ pub(crate) struct PmDcLinkedHeader {
 }
 
 cadmpeg_core::named_optional_field!(deserialize_linked_flags_extension, u32, "flags_extension");
+cadmpeg_core::named_optional_field!(deserialize_surface_extension, u32, "extension");
 cadmpeg_core::named_optional_field!(
     deserialize_edge_set_option,
     crate::pmdc::PmDcReference,
@@ -1409,6 +1421,9 @@ fn parse_surface(
         cursor.reference("surface reference")?,
         cursor.reference("surface reference")?,
     ];
+    let extension = (version >= SURFACE_EXTENSION_FIRST_MAJOR)
+        .then(|| cursor.u32("surface extension"))
+        .transpose()?;
     let state = cursor.u8("surface state")?;
     let form = cursor.u32("surface form")?;
     if form != PLANE_SURFACE_FORM {
@@ -1424,6 +1439,7 @@ fn parse_surface(
         header,
         PmDcFeaturePropertyKind::PlaneSurface {
             references,
+            extension,
             state,
             surface_form: form,
             value,
@@ -3389,11 +3405,15 @@ fn extent_target_plane(
         origin,
         u_axis,
         v_axis,
+        extension,
         ..
     } = surface.kind
     else {
         return None;
     };
+    if extension.is_some_and(|value| value != 0) {
+        return None;
+    }
     target_plane(origin, u_axis, v_axis, surface.id())
 }
 

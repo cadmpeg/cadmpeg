@@ -18,6 +18,9 @@ use cadmpeg_ir::report::loss::LossNote;
 
 mod archive;
 mod merge;
+mod observer;
+
+pub use observer::{observe_f3z_members, F3zMemberObserver};
 
 fn push_loss(losses: &mut Vec<LossNote>, code: F3dLossCode, args: std::fmt::Arguments<'_>) {
     losses.push(code.note(args.to_string()));
@@ -61,7 +64,9 @@ pub(crate) fn decode<'a>(
     let (model_root, omitted_drawing_root) = archive::model_root(ctx, scan)?;
     let mut outer = archive::classify_members(ctx, scan)?;
     let root_scan = outer.member_scan(&model_root)?;
-    let mut root = crate::decode::decode_archive_member(ctx, root_scan, &outer.layers)?;
+    let mut root = observer::observed(&model_root, || {
+        crate::decode::decode_archive_member(ctx, root_scan, &outer.layers)
+    })?;
     root.source_fidelity
         .remove_retained_record(crate::ids::FILE_SOURCE_IMAGE_ID);
     root.source_fidelity
