@@ -513,13 +513,18 @@ fn validation_detects_changed_translation_rotation_selection_and_copy_count() {
         .expect("valid synthetic motion")
         .operation;
     let index = ValidationIndex::new(&props, &transforms);
-    assert!(index.matches(&source, &FeatureDefinition::Operation(original.clone())));
+    assert!(index.matches(
+        &source,
+        &FeatureDefinition::Operation(original.clone()),
+        &std::collections::HashMap::new()
+    ));
     let mut changed_source = serde_json::to_value(&source).expect("synthetic source");
     changed_source["properties"]["marker"] = serde_json::json!(3);
     let changed_source = serde_json::from_value(changed_source).expect("synthetic source");
     assert!(!index.matches(
         &changed_source,
-        &FeatureDefinition::Operation(original.clone())
+        &FeatureDefinition::Operation(original.clone()),
+        &std::collections::HashMap::new()
     ));
     let FeatureOperation::MoveBody {
         bodies,
@@ -564,7 +569,11 @@ fn validation_detects_changed_translation_rotation_selection_and_copy_count() {
             copies: 1,
         },
     ] {
-        assert!(!index.matches(&source, &FeatureDefinition::Operation(changed)));
+        assert!(!index.matches(
+            &source,
+            &FeatureDefinition::Operation(changed),
+            &std::collections::HashMap::new()
+        ));
     }
 }
 
@@ -832,5 +841,72 @@ fn quaternion_branches_preserve_a_non_coordinate_rotation_axis() {
         for (actual, expected) in [reached.x, reached.y, reached.z].into_iter().zip(expected) {
             assert!((actual - expected).abs() < 1e-10);
         }
+    }
+}
+
+#[test]
+fn each_body_motion_class_resolves_and_validates_the_same_wrapper_join() {
+    let source = test_feature(0, 3, &[(0, 1), (1, 2), (2, 8)]);
+    let props = properties();
+    let transforms = [matrix([
+        [0.0, -1.0, 0.0, 1.0],
+        [1.0, 0.0, 0.0, 2.0],
+        [0.0, 0.0, 1.0, 3.0],
+        [0.0, 0.0, 0.0, 1.0],
+    ])];
+    let index = crate::feature::tests::test_projection_index(
+        &props,
+        &[],
+        &[],
+        &[],
+        &[],
+        &[],
+        &transforms,
+        &[],
+    );
+    let first = cadmpeg_ir::ids::BodyId::mint("test:model:body#first").expect("body id");
+    let second = cadmpeg_ir::ids::BodyId::mint("test:model:body#second").expect("body id");
+    let joins = [
+        (props[2].id(), first.clone()),
+        (props[3].id(), second.clone()),
+    ]
+    .into();
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+        &[],
+        &arena,
+        &cadmpeg_core::decode::DecodePolicy::service(),
+    )
+    .expect("decode context");
+    let validator = ValidationIndex::new(&props, &transforms);
+    for class in [MOVE_CLASS_ID, MOVE_BODY_CLASS_ID, ROTATE_CLASS_ID] {
+        let label = crate::feature::tests::test_label(0, 1, class, &[]);
+        let (feature, result) = project(&ctx, &source, &label, &index)
+            .expect("admitted body motion")
+            .expect("project body motion");
+        let mut actual = feature.evaluation.definition().clone();
+        crate::feature::body_selection::definition(&mut actual, &joins, None);
+        let FeatureDefinition::Operation(FeatureOperation::MoveBody {
+            bodies: BodySelection::Resolved { bodies, native },
+            rotation,
+            ..
+        }) = &actual
+        else {
+            panic!("resolved body motion")
+        };
+        assert_eq!(&**bodies, &[first.clone(), second.clone()]);
+        assert_eq!(native, &props[0].id());
+        assert!(rotation.is_some());
+        assert_eq!(
+            result
+                .bodies()
+                .iter()
+                .map(cadmpeg_core::text::NonBlankString::as_str)
+                .collect::<Vec<_>>(),
+            [props[2].id(), props[3].id()]
+        );
+        assert!(validator.matches(&source, &actual, &joins));
+        assert!(!validator.matches(&source, feature.evaluation.definition(), &joins));
+        assert!(!validator.matches(&source, &actual, &std::collections::HashMap::new()));
     }
 }

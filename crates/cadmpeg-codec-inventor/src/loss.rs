@@ -101,6 +101,8 @@ pub(crate) enum InventorLossCode {
     FeatureMirrorOperandsNative,
     /// Split construction operands or result topology remain native.
     FeatureSplitOperandsNative,
+    /// A persistent body wrapper has no exact current-model join.
+    FeatureBodySelectionNative,
     /// A history work plane's stored in-plane axes are not orthonormal.
     FeatureWorkPlaneFrameNative,
     /// Revolve extents retain unresolved angular termination operands.
@@ -225,6 +227,7 @@ impl InventorLossCode {
         Self::FeatureRevolveOperandsNative,
         Self::FeatureMirrorOperandsNative,
         Self::FeatureSplitOperandsNative,
+        Self::FeatureBodySelectionNative,
         Self::FeatureWorkPlaneFrameNative,
         Self::FeatureRevolveExtentNative,
         Self::FeatureRevolveDirectionNative,
@@ -320,6 +323,7 @@ impl InventorLossCode {
                 "feature.sheet-metal-bend-controls-retained"
             }
             Self::FeatureSheetMetalStyleFormsNative => "feature.sheet-metal-style-forms-native",
+            Self::FeatureBodySelectionNative => "feature.body-selection-native",
             Self::FeatureMirrorOperandsNative => "feature.mirror-operands-native",
             Self::FeatureSplitOperandsNative => "feature.split-operands-native",
             Self::FeatureWorkPlaneFrameNative => "feature.work-plane-frame-native",
@@ -418,6 +422,7 @@ impl InventorLossCode {
             | Self::FeatureSheetMetalAttachmentControlsRetained
             | Self::FeatureSheetMetalBendControlsRetained
             | Self::FeatureSheetMetalStyleFormsNative
+            | Self::FeatureBodySelectionNative
             | Self::FeatureMirrorOperandsNative
             | Self::FeatureSplitOperandsNative
             | Self::FeatureWorkPlaneFrameNative
@@ -532,6 +537,7 @@ mod tests {
                 "feature.revolve-operands-native",
                 "feature.mirror-operands-native",
                 "feature.split-operands-native",
+                "feature.body-selection-native",
                 "feature.work-plane-frame-native",
                 "feature.revolve-extent-native",
                 "feature.revolve-direction-native",
