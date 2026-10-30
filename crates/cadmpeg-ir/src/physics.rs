@@ -177,7 +177,7 @@ pub struct MassProperties {
 pub struct RigidBody {
     /// Globally unique record identity.
     pub id: RigidBodyId,
-    /// The moving entity: an occurrence or a definition.
+    /// The moving entity: a body, an occurrence, or a definition.
     pub target: PhysicsTarget,
     /// Whether the simulation moves the body only by its animated placement.
     pub kinematic: bool,
@@ -272,8 +272,8 @@ pub struct Collider {
 pub struct Articulation {
     /// Globally unique record identity.
     pub id: ArticulationId,
-    /// The root: a rigid body of the tree, or an occurrence or a definition
-    /// that holds the tree.
+    /// The root: a body in the tree, or an occurrence or a definition that
+    /// holds the tree.
     pub root: PhysicsTarget,
     /// Format-native record supplying this articulation.
     #[serde(
