@@ -1893,7 +1893,7 @@ fn validate_features(
                         .map(|id| (*id).clone())
                 },
             );
-            if expected.as_ref() != Some(definition) {
+            if expected.as_ref().ok() != Some(definition) {
                 findings.push(finding(
                     Check::NativeLinks,
                     "Inventor neutral split does not match its PmDc operands".into(),
