@@ -215,8 +215,8 @@ impl CarrierIndex {
         }
     }
 
-    /// The wedge of the support pair at `attr` about the spine of the blend
-    /// carrier `blend`, when both its members are surface carriers.
+    /// The wedge of the support pair at `attr` about `spine` over the face
+    /// with `vertices`, when both its members are surface carriers.
     ///
     /// # Errors
     ///
@@ -225,8 +225,8 @@ impl CarrierIndex {
         &'a self,
         ctx: &DecodeContext<'_>,
         attr: u16,
-        blend: u16,
         spine: &cadmpeg_ir::geometry::CurveGeometry,
+        vertices: &[cadmpeg_ir::math::Point3],
     ) -> Result<Option<super::blend_fit::Wedge<'a>>, cadmpeg_core::CodecError> {
         let Some(pair) = self.blend_support_pairs.get(&attr) else {
             return Ok(None);
@@ -235,14 +235,7 @@ impl CarrierIndex {
         else {
             return Ok(None);
         };
-        super::blend_fit::Wedge::new(
-            ctx,
-            spine,
-            [&first.geometry, &second.geometry],
-            self.blend_face_vertices
-                .get(&blend)
-                .map_or(&[][..], Vec::as_slice),
-        )
+        super::blend_fit::Wedge::new(ctx, spine, [&first.geometry, &second.geometry], vertices)
     }
 
     /// Refine each degree-one chart onto the exact intersection of its

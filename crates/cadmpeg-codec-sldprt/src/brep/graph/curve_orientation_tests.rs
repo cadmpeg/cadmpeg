@@ -422,13 +422,35 @@ fn a_full_turn_edge_range_starts_at_its_vertex() {
         end: vertex_id,
         tolerance: None,
     });
-    super::phase_full_turn_edge_ranges(&mut brep);
+    let mut annotations = cadmpeg_ir::AnnotationBuilder::new();
+    super::phase_full_turn_edge_ranges(&mut brep, &mut annotations).expect("phase");
     let [start, end] = brep.edges[0]
         .param_range()
         .expect("the edge keeps its range")
         .get();
     assert!((start - 3.0 * std::f64::consts::FRAC_PI_2).abs() < 1.0e-12);
     assert!((end - start - std::f64::consts::TAU).abs() < 1.0e-12);
+    let derived = |annotations: cadmpeg_ir::AnnotationBuilder| {
+        annotations
+            .build()
+            .exactness()
+            .contains_key("test:model:edge#circle")
+    };
+    assert!(derived(annotations));
+    // A range that starts at its vertex stays as stored.
+    let mut annotations = cadmpeg_ir::AnnotationBuilder::new();
+    super::phase_full_turn_edge_ranges(&mut brep, &mut annotations).expect("phase");
+    assert!(!derived(annotations));
+    // A vertex off the circle does not phase the range.
+    brep.points[0] = Point::new(
+        brep.points[0].id.clone(),
+        cadmpeg_ir::features::FinitePoint3::new(Point3::new(1.0, 1.0, 0.0)).expect("finite point"),
+        None,
+    );
+    super::phase_full_turn_edge_ranges(&mut brep, &mut cadmpeg_ir::AnnotationBuilder::new())
+        .expect("phase");
+    let [moved, _] = brep.edges[0].param_range().expect("range").get();
+    assert!((moved - start).abs() < 1.0e-12);
 }
 
 /// A surface-intersection chart through `poles` in millimetres at the given
