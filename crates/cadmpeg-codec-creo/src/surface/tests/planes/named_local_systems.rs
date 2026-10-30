@@ -41,17 +41,17 @@ fn named_local_system_expands_row_lane_zero_forms() {
             array
                 .fill_values(vec![
                     Some(0.0),
+                    Some(0.0),
+                    Some(-1.0),
+                    Some(0.0),
+                    Some(0.0),
+                    Some(0.0),
+                    Some(0.0),
                     Some(1.0),
                     Some(0.0),
-                    Some(0.0),
-                    Some(0.0),
-                    Some(0.0),
-                    Some(0.0),
-                    Some(0.0),
-                    Some(1.0),
                     Some(-0.5),
                     Some(0.0),
-                    Some(1.0),
+                    Some(0.0),
                 ])
                 .expect("matching scalar extent");
             array

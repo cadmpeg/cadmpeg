@@ -719,9 +719,9 @@ support scalars satisfy
 5, `e4` copies `b`, and `m` supplies the magnitude of the negated first
 component. The resulting support directions are `(a, 0, b)` and
 `(b, 0, -a)`; the final three scalars occupy slots 9 through 11.
-The compact axis form begins `18 0f 18 e5 0f e4 18 e4`; that prefix defines
-support directions `(1, 0, 0)` and `(0, 0, -1)` with a zero middle rank. Its
-three following scalars are the origin coordinates.
+The compact rotation prefix `18 0f 18 e5 0f e4 18 e4` defines parameter
+directions `(0, 0, 1)` and `(1, 0, 0)`, and normal `(0, 1, 0)`.
+Its final three expanded slots are the origin coordinates.
 The positional prefix `A 18 e6 B 18 C 18` uses signed unit tokens `0f` for
 positive one and `10` for negative one. It defines parameter direction
 `(A, 0, 0)`, zero middle triple, and normal `(0, B, 0)`, with `B = -A*C`.
@@ -1832,7 +1832,27 @@ Bytes outside these layouts do not form a plane envelope.
 
 `local_sys` has twelve scalar slots. Plane rows use three storage forms.
 Compact and specialized plane-support bodies expand their direction values into
-three support triples. A generic direct-normal body stores a parameter
+three support triples.
+
+A compact rotation body stores a row-major 3x3 rotation matrix followed by
+three model-space origin coordinates.
+In the nine direction slots, `0f` is positive one, `10` is negative one, and
+`18` is zero. `e4`, `e5`, and `e6` repeat the preceding scalar one, two, and
+three additional times. At least one repeat occurs in the direction matrix.
+A repeat requires a preceding scalar and must end within slot eleven. It can
+cross the matrix/origin boundary. The expanded body has exactly twelve finite
+slots and consumes its complete field boundary.
+
+Each matrix column is a signed model basis vector. Column zero is the first
+parameter direction, column one is the second parameter direction, and column
+two is the plane normal. The normal equals the cross product of the first two
+columns. Slots nine through eleven are the parameter-chart origin. Origin
+scalars use the positional row lane, then the corresponding first- or
+second-coordinate lane when that row lane does not define the prefix.
+The repeat tokens keep their repeat meaning in the origin slots; `18` is an
+explicit zero there.
+
+A generic direct-normal body stores a parameter
 direction, an exact zero-rank triple, and a stored plane normal. A generic
 coordinate-first body starts with a coordinate scalar, not one of the control
 openers `0e`, `0f`, `10`, or `18`, and contains an `18` zero-slot prefix at a
@@ -1912,7 +1932,7 @@ first component of each support triple. In coordinate-first matrix storage, it
 is the first matrix column. `18` immediately before a complete coordinate
 token occupies one zero slot; the coordinate begins the next slot.
 
-The twelve-slot macro language must consume the complete local-system body. A
+Every twelve-slot local-system production must consume its complete body. A
 terminal `e1` after a complete frame is a null row-tail marker and is not a
 scalar slot. If any other bytes remain, none of the twelve slot positions is
 assigned a numeric value.
@@ -1935,9 +1955,10 @@ parameter direction: `0f` is positive and `10` is negative. Its support-triple
 form contains that parameter direction, a zero middle triple, and positive
 model Y. Its three following scalars are the origin coordinates.
 
-The rank-two body `18 e4 0f e4 18 e5 0f 18 e6` expands to support triples
-`[0, 1, 0]`, `[0, 0, 0]`, and `[1, 0, 0]`, followed by origin `[0, 0, 0]`.
-This image has the same expansion in every twelve-slot local-system field.
+The zero-origin compact plane body `18 e4 0f e4 18 e5 0f 18 e6` expands to
+rotation rows `[0, 0, 1]`, `[1, 0, 0]`, and `[0, 1, 0]`, followed by origin
+`[0, 0, 0]`. Its first parameter direction is positive model Y, its second
+parameter direction is positive model Z, and its normal is positive model X.
 
 When the support-frame guard holds, derive the support-triple normal as:
 

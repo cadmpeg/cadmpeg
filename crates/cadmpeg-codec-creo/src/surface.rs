@@ -3405,8 +3405,34 @@ fn parsed_named_surface_value(
                 named_spline_scalar_slots(family, name, remaining, slot_count, cache, refusal)?;
             arrays::DimensionedScalars::from_tokens(extent, slots)?
         } else if name == "local_sys" {
-            let values =
-                sequential_named_local_system_slots(remaining, slot_count, cache, refusal)?;
+            let compact_plane = (matches!(family, SurfacePrototypeFamily::Plane)
+                && slot_count == 12)
+                .then(|| scalar::decode_compact_plane_rotation(remaining, cache))
+                .flatten();
+            let values = if let Some(rotation) = compact_plane {
+                match rotation {
+                    Ok(values) => {
+                        let mut slots = match ctx.alloc_filled(
+                            slot_count,
+                            None,
+                            "creo compact plane local system",
+                        ) {
+                            Ok(slots) => slots,
+                            Err(error) => return Some(Err(error)),
+                        };
+                        for (slot, value) in slots.iter_mut().zip(values.get()) {
+                            *slot = Some(value);
+                        }
+                        slots
+                    }
+                    Err(reason) => {
+                        refusal.state(reason.to_owned());
+                        return None;
+                    }
+                }
+            } else {
+                sequential_named_local_system_slots(remaining, slot_count, cache, refusal)?
+            };
             arrays::DimensionedScalars::from_values(extent, values)?
         } else {
             let values = scalar_slots(remaining, slot_count, cache, refusal)?;
@@ -7088,7 +7114,16 @@ pub(crate) fn complete_plane_local_system(
         let mut normalized = Vec::new();
         normalized.extend_from_slice(prefix);
         normalized.push(0x0f);
-        return scalar::decode_plane_support_local_system(ctx, &normalized, cache, losses);
+        return complete_plane_local_system(ctx, &normalized, cache, losses);
+    }
+    if let Some(rotation) = scalar::decode_compact_plane_rotation(frame_body, cache) {
+        return Ok(match rotation {
+            Ok(values) => Some((values, scalar::PlaneSupportFrameLayout::CompactRotation)),
+            Err(reason) => {
+                losses.push(crate::loss::CreoLossCode::PlaneCompactFrameUnresolved.note(reason));
+                None
+            }
+        });
     }
     scalar::decode_plane_support_local_system(ctx, frame_body, cache, losses)
 }
