@@ -7,7 +7,7 @@
         "offset": "12",
         "parasolid_description": "partition body",
         "parasolid_schema": "SCH_SW_33103_11000",
-        "sha256": "ce2c8033b7c242f3aac899b6a68f759107ccc2ebc887292d3afabb5da07fc327",
+        "sha256": "5ff22c14ce1e62375cbfbc759dd82417a7c9b72873d5083a25405b794dfbf3f9",
         "type_id": "0x00000020"
       },
       "compression": "deflate",
