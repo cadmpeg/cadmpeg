@@ -25504,7 +25504,7 @@
     "    }",
     "    def Mesh \"Sheet\"",
     "    {",
-    "        float3[] extent = [(-0, -0.025, -0.02), (0, 0.025, 0.02)]",
+    "        float3[] extent = [(0, -0.025, -0.02), (0, 0.025, 0.02)]",
     "        int[] faceVertexCounts = [3, 3]",
     "        int[] faceVertexIndices = [0, 1, 2, 2, 3, 0]",
     "        normal3f[] normals = [(1, 0, -0), (1, 0, -0), (1, 0, -0), (1, 0, -0)] (",

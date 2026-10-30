@@ -1660,21 +1660,21 @@ fn merged_api_schemas(metadata: &[String]) -> Vec<String> {
 
 /// `bounds` grown to hold `point`.
 fn grow(bounds: Option<([f32; 3], [f32; 3])>, point: [f32; 3]) -> ([f32; 3], [f32; 3]) {
-    match bounds {
-        None => (point, point),
-        Some((min, max)) => (
-            [
-                min[0].min(point[0]),
-                min[1].min(point[1]),
-                min[2].min(point[2]),
-            ],
-            [
-                max[0].max(point[0]),
-                max[1].max(point[1]),
-                max[2].max(point[2]),
-            ],
-        ),
+    let Some((mut min, mut max)) = bounds else {
+        return (point, point);
+    };
+    // Strict comparisons keep the bound already held when a coordinate
+    // equals it, so the sign of a zero bound does not depend on how the
+    // platform's `min` and `max` order `0` and `-0`.
+    for axis in 0..3 {
+        if point[axis] < min[axis] {
+            min[axis] = point[axis];
+        }
+        if point[axis] > max[axis] {
+            max[axis] = point[axis];
+        }
     }
+    (min, max)
 }
 
 #[cfg(test)]

@@ -232,3 +232,17 @@ fn parts_and_their_ancestors_carry_model_kinds() {
     assert_eq!(kind_of("G").as_deref(), Some("group"), "{text}");
     assert_eq!(kind_of("C").as_deref(), Some("component"), "{text}");
 }
+
+#[test]
+fn an_extent_keeps_the_zero_bound_it_holds() {
+    let first = super::grow(None, [0.0, -0.0, 1.0]);
+    let (low, high) = super::grow(Some(first), [-0.0, 0.0, 1.0]);
+    assert_eq!(
+        low.map(f32::to_bits),
+        [0.0_f32, -0.0, 1.0].map(f32::to_bits)
+    );
+    assert_eq!(
+        high.map(f32::to_bits),
+        [0.0_f32, -0.0, 1.0].map(f32::to_bits)
+    );
+}
