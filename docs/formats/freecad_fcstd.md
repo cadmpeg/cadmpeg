@@ -1520,12 +1520,25 @@ and `EndAngle + AngleXU`; an absent `AngleXU` is zero. Missing radii, coordinate
 bounds leave the carrier as a named native geometry record; the decoder does not synthesize zero
 coordinates or full-curve bounds.
 
-Sketch B-splines retain degree, periodic state, ordered poles, rational weights, and distinct knot
-values with their positive multiplicities. The neutral NURBS knot vector expands each value by its
-multiplicity. Declared pole and knot counts must match; values and weights must be finite; weights
-must be positive; planar pole z-coordinates must be zero; and degree must be smaller than the pole
-count. A non-periodic full knot vector must contain `pole_count + degree + 1` entries. Invalid or
-resource-exceeding records remain named native carriers.
+`BSplineCurve` stores `Degree`, `IsPeriodic`, `PolesCount`, and `KnotsCount`.
+Each ordered `Pole` stores `X`, `Y`, `Z`, and `Weight`. Each ordered `Knot` stores a
+distinct `Value` and a positive integer `Mult`. `PolesCount` counts poles;
+`KnotsCount` counts distinct knots. Knot values are finite and strictly increase. Weights are positive
+and finite. Sketch poles have zero Z. Degree `p` is positive and smaller than pole count `N`.
+`IsPeriodic` is `0` for a non-periodic curve and `1` for a periodic curve.
+
+Let `U` repeat each knot value by `Mult`, and let `S` be its length. A non-periodic
+curve has `S = N + p + 1`. A clamped curve has endpoint multiplicities `p + 1`.
+Its neutral knots, poles, and weights are `U` and the stored poles and weights.
+A periodic curve has equal endpoint multiplicities `m`, with `1 <= m <= p`,
+and `S = N + m`. Let `a` and `b` be the first and last knots, and `q = p + 1 - m`.
+The neutral knot vector prepends the last `q` entries before the final `m` entries of
+`U`, each minus `b - a`, and appends the first `q` entries after the initial `m`
+entries of `U`, each plus `b - a`. It appends the first `q` poles and weights to
+the stored poles and weights. The periodic flag stays set. The neutral domain is
+`[a,b]`; the extension preserves the rational basis and its parameter values.
+A declared count or multiplicity sum that disagrees with these relations is malformed.
+A record with no admitted finite planar neutral representation remains native with a loss.
 
 Constraint transfer distinguishes whole entities from endpoint and center loci. Two-locus distance
 constraints remain locus-to-locus measurements rather than being reduced to a duplicate entity

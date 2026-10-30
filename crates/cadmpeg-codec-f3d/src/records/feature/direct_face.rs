@@ -60,12 +60,26 @@ pub(crate) struct DesignMoveOperation {
     pub(crate) transform: SketchPlacementMatrix,
     /// Byte offset of the first matrix scalar.
     pub(crate) transform_offset: u64,
-    /// Indexed class-349 record carrying `transform`.
+    /// Indexed record carrying `transform`.
     pub(crate) transform_record_index: u32,
     /// Source transform-form discriminator.
     pub(crate) form: DesignMoveForm,
     /// Byte offset of `form`.
     pub(crate) form_offset: u64,
+}
+
+impl DesignMoveOperation {
+    pub(crate) fn preserves_orientation(&self) -> bool {
+        use cadmpeg_ir::math::Vector3;
+        let column = |index: usize| {
+            Vector3::new(
+                self.transform[0][index],
+                self.transform[1][index],
+                self.transform[2][index],
+            )
+        };
+        column(0).cross(column(1)).dot(column(2)) > 0.0
+    }
 }
 
 /// Source Move transform-form code.

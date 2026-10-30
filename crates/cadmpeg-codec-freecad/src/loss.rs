@@ -75,6 +75,8 @@ pub(crate) enum FreecadLossCode {
     FeatureNativeKindRetained,
     /// Sketch geometry record retains a native kind without solved geometry.
     SketchNativeGeometry,
+    /// A sketch B-spline has no admitted finite neutral representation.
+    SketchNurbsNative,
     /// Cached sketch geometry has no matching live external reference.
     SketchExternalReferenceUnresolved,
     /// Optional external sketch cache cannot be projected; live links remain authoritative.
@@ -142,6 +144,7 @@ impl FreecadLossCode {
         Self::FeatureCyclicHistory,
         Self::FeatureNativeKindRetained,
         Self::SketchNativeGeometry,
+        Self::SketchNurbsNative,
         Self::SketchNativeConstraint,
         Self::SketchExternalReferenceUnresolved,
         Self::SketchExternalCacheUnresolved,
@@ -195,6 +198,7 @@ impl FreecadLossCode {
             Self::FeatureCyclicHistory => "feature.cyclic-history",
             Self::FeatureNativeKindRetained => "feature.native-kind-retained",
             Self::SketchNativeGeometry => "sketch.native-geometry",
+            Self::SketchNurbsNative => "sketch.nurbs-native",
             Self::SketchNativeConstraint => "sketch.native-constraint",
             Self::SketchExternalReferenceUnresolved => "sketch.external-reference-unresolved",
             Self::SketchExternalCacheUnresolved => "sketch.external-cache-unresolved",
@@ -229,6 +233,7 @@ impl FreecadLossCode {
             | Self::FeatureCyclicHistory
             | Self::FeatureNativeKindRetained
             | Self::SketchNativeGeometry
+            | Self::SketchNurbsNative
             | Self::SketchNativeConstraint
             | Self::PcurveLocationAmbiguous
             | Self::TopologyLocationIdentityBounded => Severity::Blocking,
@@ -300,6 +305,7 @@ impl FreecadLossCode {
             Self::SketchExternalCacheUnresolved
             | Self::SketchExternalReferenceUnresolved
             | Self::SketchNativeGeometry
+            | Self::SketchNurbsNative
             | Self::SketchNativeConstraint
             | Self::SketchProfileMatchingBounded
             | Self::SourceGuiPropertyKeyBlank
@@ -380,6 +386,7 @@ mod tests {
                 "feature.cyclic-history",
                 "feature.native-kind-retained",
                 "sketch.native-geometry",
+                "sketch.nurbs-native",
                 "sketch.native-constraint",
                 "sketch.external-reference-unresolved",
                 "sketch.external-cache-unresolved",

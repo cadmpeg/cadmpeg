@@ -4506,7 +4506,7 @@ Unstated regions:
 
 Spec §3.1 · layout: byte offsets · size: 253 B
 
-Offsets are relative to the transform record's primary indexed header. The class tags are the admission discriminator; the class-447 form uses paired class 263; the same-index paired header follows at offset 253.
+Offsets are relative to the transform record's primary indexed header. The class tags are the admission discriminator; the class-447 form uses paired class 263, the class-456 form uses paired class 258, and the class-452 form uses paired class 262 and form word 5; the same-index paired header follows at offset 253.
 
 | Offset | Size | Field | Type | Endian | Src | Meaning |
 | -----: | ---: | ----- | ---- | ------ | --- | ------- |
@@ -4519,6 +4519,60 @@ Unstated regions:
 
 - `11..43` (32 B): Offsets 11 through 42 are zero.
 - `176..253` (77 B): The transform record's native tail precedes the same-index paired header at offset 253.
+
+## `move_transform_frame_254`
+
+Spec §3.1 · layout: byte offsets · size: 254 B
+
+Offsets are relative to the transform record's primary indexed header.
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 11 | `indexed_header` | `bytes[11]` | little | spec | class `368` transform records are 254 bytes |
+| 43 | 4 | `form` | `u32` | little | spec | offset 43 stores u32 form `1` or `5` |
+| 47 | 1 | `reserved_zero` | `u8` | little | spec | offset 47 is zero |
+| 48 | 128 | `transform` | `f64[16]` | little | spec | sixteen row-major f64 values begin at offset 48 |
+
+Unstated regions:
+
+- `11..43` (32 B): Offsets 11 through 42 are zero.
+- `176..254` (78 B): The transform record's tail precedes the same-index paired header at offset 254.
+
+## `move_transform_frame_273`
+
+Spec §3.1 · layout: byte offsets · size: 273 B
+
+Offsets are relative to the transform record's primary indexed header.
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 11 | `indexed_header` | `bytes[11]` | little | spec | transform records are 273 bytes |
+| 43 | 4 | `form` | `u32` | little | spec | The 273-byte frames use form word `1` · value `1` |
+| 47 | 1 | `reserved_zero` | `u8` | little | spec | offset 47 is zero |
+| 48 | 128 | `transform` | `f64[16]` | little | spec | sixteen row-major f64 values begin at offset 48 |
+
+Unstated regions:
+
+- `11..43` (32 B): Offsets 11 through 42 are zero.
+- `176..273` (97 B): The transform record's tail precedes the same-index paired header at offset 273.
+
+## `move_transform_frame_274`
+
+Spec §3.1 · layout: byte offsets · size: 274 B
+
+Offsets are relative to the transform record's primary indexed header.
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 11 | `indexed_header` | `bytes[11]` | little | spec | Class `349` transform records are 254 or 274 bytes |
+| 43 | 4 | `form` | `u32` | little | spec | offset 43 stores u32 form `1` or `5` |
+| 47 | 1 | `reserved_zero` | `u8` | little | spec | offset 47 is zero |
+| 48 | 128 | `transform` | `f64[16]` | little | spec | sixteen row-major f64 values begin at offset 48 |
+
+Unstated regions:
+
+- `11..43` (32 B): Offsets 11 through 42 are zero.
+- `176..274` (98 B): The transform record's tail precedes the same-index paired header at offset 274.
 
 ## `legacy_body_group_frame_123`
 
@@ -6545,7 +6599,7 @@ Parsed by:
 
 Spec §3.1 · layout: byte offsets · size: 289 B
 
-The 349-byte identity frame has one zero separator before the repeated reference.
+The separated identity and matrix frames have one zero separator before the repeated reference.
 
 Parsed by:
 - `crates/cadmpeg-codec-f3d/src/design/decode/components.rs`
@@ -6564,7 +6618,7 @@ Parsed by:
 | 160 | 76 | `occurrence_guid` | `bytes[76]` | little | spec | Typed local component occurrences use local references with inline type GUIDs. |
 | 236 | 1 | `separator` | `u8` | little | spec | Typed local component occurrences use local references with inline type GUIDs. · value `0` |
 | 237 | 51 | `component_reference_repeat` | `bytes[51]` | little | spec | Typed local component occurrences use local references with inline type GUIDs. |
-| 288 | 1 | `identity_flag` | `u8` | little | spec | Typed local component occurrences use local references with inline type GUIDs. · value `1` |
+| 288 | 1 | `identity_flag` | `u8` | little | spec | Typed local component occurrences use local references with inline type GUIDs. |
 
 ## `local_component_occurrence_typed_compact_prefix`
 
@@ -6608,7 +6662,7 @@ Parsed by:
 
 Spec §3.1 · layout: byte offsets · size: 188 B
 
-Relative to the end of the typed compact prefix.
+Relative to the end of the typed prefix.
 
 Parsed by:
 - `crates/cadmpeg-codec-f3d/src/design/decode/components.rs`

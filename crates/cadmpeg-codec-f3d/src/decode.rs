@@ -1868,6 +1868,37 @@ fn report_design_projection_gaps(
     ir: &CadIr,
     native: &F3dNative,
 ) -> Result<(), CodecError> {
+    let projected_moves: std::collections::HashSet<&str> = ir
+        .model
+        .features
+        .iter()
+        .filter(|feature| {
+            matches!(
+                feature.evaluation.definition(),
+                cadmpeg_ir::features::FeatureDefinition::Operation(
+                    cadmpeg_ir::features::FeatureOperation::MoveBody { .. }
+                )
+            )
+        })
+        .filter_map(|feature| feature.native_ref.as_deref())
+        .collect();
+    for scope in &native.design_parameter_scopes {
+        if scope.kind() == crate::records::feature::scope::DesignFeatureKind::Move
+            && !projected_moves.contains(scope.id.as_str())
+        {
+            let reason = match scope.move_operation() {
+                None => "no unique admitted rigid-transform record",
+                Some(operation) if !operation.preserves_orientation() => {
+                    "stored basis reverses orientation"
+                }
+                Some(_) => "no neutral MoveBody feature for its body selection",
+            };
+            report.losses.push(
+                F3dLossCode::MoveUnprojected
+                    .note(format!("Move {} remains native: {reason}.", scope.id)),
+            );
+        }
+    }
     let gaps = design_projection_gaps(ir, native)?;
     let incomplete_families = incomplete_feature_families(ir);
     let history_budget_skips = native
