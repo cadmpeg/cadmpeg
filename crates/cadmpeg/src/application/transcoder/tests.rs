@@ -769,3 +769,23 @@ fn an_f3d_native_design_record_error_does_not_block_a_step_export() {
     assert_eq!(planned.carried_errors(), 0);
     assert!(planned.prepared().validation.findings.contains(&finding));
 }
+
+#[cfg(feature = "usd")]
+#[test]
+fn an_output_extension_that_names_a_dialect_selects_it() {
+    let package = Some(Path::new("assembly.usdz"));
+    let inferred = TargetSelection::resolve(None, package).expect("format from the extension");
+    assert_eq!(inferred.format, Format::Usd);
+    assert_eq!(inferred.request(), TargetRequest::Explicit("usdz"));
+    let format_only = TargetSelection::resolve(Some("usd"), package).expect("format resolves");
+    assert_eq!(format_only.request(), TargetRequest::Explicit("usdz"));
+    let explicit =
+        TargetSelection::resolve(Some("usd:usda-1.0"), package).expect("dialect resolves");
+    assert_eq!(explicit.request(), TargetRequest::Explicit("usda-1.0"));
+    let layer = TargetSelection::resolve(None, Some(Path::new("assembly.usda")))
+        .expect("format from the extension");
+    assert_eq!(layer.request(), TargetRequest::Inherit);
+    let binary = TargetSelection::resolve(None, Some(Path::new("assembly.usdc")))
+        .expect("format from the extension");
+    assert_eq!(binary.request(), TargetRequest::Explicit("usdc"));
+}

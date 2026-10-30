@@ -24,9 +24,10 @@ fn sweep_body_roles_preserve_group_frames_and_operation_contracts() {
                             construction: Some(DesignSweepConstruction {
                                 operation,
                                 operation_offset: 31,
-                                values: crate::test_support::reals([1.0, 1.0, 1.0, 1.0, 0.0, 0.0]),
-                                record_indexes: [211, 223, 227, 229, 233, 239],
-                                value_offsets: [311, 323, 327, 329, 333, 339],
+                                values: crate::test_support::reals([1.0, 1.0, 1.0, 1.0, 0.0, 0.0])
+                                    .to_vec(),
+                                record_indexes: vec![211, 223, 227, 229, 233, 239],
+                                value_offsets: vec![311, 323, 327, 329, 333, 339],
                             }),
                             sweep_profile: None,
                         }));

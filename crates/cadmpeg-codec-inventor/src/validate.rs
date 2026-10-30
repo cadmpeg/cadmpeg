@@ -124,6 +124,7 @@ const ARENAS: &[&str] = &[
 ];
 
 const OPTIONAL_ARENAS: &[&str] = &[
+    "body_wrapper_links",
     "pm_dc_sheet_metal_styles",
     "pm_dc_sheet_metal_flanges",
     "drawing_records",
@@ -1364,6 +1365,31 @@ fn validate_features(
             )
         })
         .collect::<HashMap<_, _>>();
+    let body_joins = crate::feature::body_selection::body_map(
+        &data.pm_dc_feature_properties,
+        &data.pm_dc_kernel_entity_links,
+        &data.body_wrapper_links,
+        &data.active_carrier,
+        &data.body_native_keys,
+        &ir.model,
+        &crate::feature::body_selection::Scope {
+            metadata: &data.metadata,
+            roots: &data.pm_dc_model_roots,
+        },
+    );
+    for feature in &ir.model.features {
+        if !crate::feature::body_selection::outputs_match(
+            feature,
+            &ir.model.feature_result_topologies,
+            &body_joins,
+        ) {
+            findings.push(finding(
+                Check::NativeLinks,
+                "Inventor feature outputs differ from its result body wrapper joins".into(),
+                Some(feature.id.as_str().to_owned()),
+            ));
+        }
+    }
     let results = ir
         .model
         .feature_result_topologies
@@ -1853,7 +1879,7 @@ fn validate_features(
             continue;
         }
         if matches!(family, crate::feature::FeatureFamily::Motion)
-            && !motion_index.matches(raw_feature, definition)
+            && !motion_index.matches(raw_feature, definition, &body_joins)
         {
             findings.push(finding(
                 Check::NativeLinks,
@@ -1868,8 +1894,18 @@ fn validate_features(
                     .get(&(raw_feature.identity.segment_token.as_str(), ordinal))
                     .copied()
             })
-            .as_ref()
-                != Some(definition)
+            .is_none_or(|expected| {
+                !crate::feature::body_selection::matches(
+                    expected,
+                    definition,
+                    &body_joins,
+                    crate::feature::body_selection::tools_group(
+                        raw_feature,
+                        &data.pm_dc_feature_properties,
+                    )
+                    .as_deref(),
+                )
+            })
         {
             findings.push(finding(
                 Check::NativeLinks,
@@ -1893,7 +1929,9 @@ fn validate_features(
                         .map(|id| (*id).clone())
                 },
             );
-            if expected.as_ref() != Some(definition) {
+            if expected.ok().is_none_or(|expected| {
+                !crate::feature::body_selection::matches(expected, definition, &body_joins, None)
+            }) {
                 findings.push(finding(
                     Check::NativeLinks,
                     "Inventor neutral split does not match its PmDc operands".into(),
@@ -2349,6 +2387,7 @@ struct NativeData {
     pm_graphics_primary_color_styles: Vec<PmGraphicsPrimaryColorStyleRecord>,
     face_native_keys: Vec<FaceNativeKey>,
     body_native_keys: Vec<BodyNativeKey>,
+    body_wrapper_links: Vec<crate::feature::body_selection::WrapperLink>,
     presentation_record_issues: Vec<RecordIssue>,
     pm_dc_parameters: Vec<PmDcParameter>,
     pm_dc_expressions: Vec<PmDcExpression>,
@@ -2425,6 +2464,7 @@ impl NativeData {
                 .arena_as_for_decode(ctx, "pm_graphics_primary_color_styles")?,
             face_native_keys: namespace.arena_as_for_decode(ctx, "face_native_keys")?,
             body_native_keys: namespace.arena_as_for_decode(ctx, "body_native_keys")?,
+            body_wrapper_links: namespace.arena_as_for_decode(ctx, "body_wrapper_links")?,
             presentation_record_issues: namespace
                 .arena_as_for_decode(ctx, "presentation_record_issues")?,
             pm_dc_parameters: namespace.arena_as_for_decode(ctx, "pm_dc_parameters")?,

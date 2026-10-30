@@ -160,6 +160,15 @@ that gate.
   carrier, boundary, edge, and vertex gates receives only those eligible faces
   and their incident edges; non-visible-only components and unresolved face
   references remain native.
+- Complete compact plane rotations expand scalar repeats across the nine-slot
+  row-major direction matrix and three-slot chart origin. Named prototypes and
+  positional plane rows use one expansion gate. The direction columns must be
+  a right-handed signed basis, and the twelve finite slots must consume the
+  complete bounded body. Incomplete origins remain native with an explicit
+  loss. Existing carrier and chart witnesses remain active. A connected source
+  component that uses this frame form transfers its faces only when every
+  source face passes admission. Otherwise each projected face stays native with
+  `geometry.brep-compact-frame-component-unresolved`.
 - Native B-rep admission emits one derived `brep_face_admission_rejections`
   record for every rejected candidate face. The record keeps the stable
   first-failure predicate, face identity, and bounded unresolved half-edge and
