@@ -76,6 +76,7 @@ pub(crate) enum CreoLossCode {
     BrepTransferIncomplete,
     /// A compact-frame component has unresolved source faces.
     BrepCompactFrameComponentUnresolved,
+    BrepCompactFrameBoundaryUnresolved,
     /// A saved section spline cannot form a NURBS curve.
     SectionSplineUnresolved,
     /// A named surface-prototype field's bounded scalar body states no slots
@@ -246,6 +247,9 @@ impl CreoLossCode {
             Self::BrepCompactFrameComponentUnresolved => {
                 "geometry.brep-compact-frame-component-unresolved"
             }
+            Self::BrepCompactFrameBoundaryUnresolved => {
+                "geometry.brep-compact-frame-boundary-unresolved"
+            }
             Self::SectionSplineUnresolved => "geometry.section-spline-unresolved",
             Self::SurfacePrototypeFieldRetained => "geometry.surface-prototype-field-retained",
             Self::PlaneCompactFrameUnresolved => "geometry.plane-compact-frame-unresolved",
@@ -357,6 +361,7 @@ impl CreoLossCode {
             | Self::CarrierTorusParameterRetention => Severity::Info,
             Self::BrepTransferIncomplete
             | Self::BrepCompactFrameComponentUnresolved
+            | Self::BrepCompactFrameBoundaryUnresolved
             | Self::GeometryInstanceCarriersGated
             | Self::TopologyIncompleteComponents
             | Self::TopologyVertexIdentifierUnstatable
@@ -466,6 +471,7 @@ impl CreoLossCode {
             Self::TriangleStripRepresentationConflict
             | Self::BrepTransferIncomplete
             | Self::BrepCompactFrameComponentUnresolved
+            | Self::BrepCompactFrameBoundaryUnresolved
             | Self::GeometryInstanceCarriersGated
             | Self::VisibGeomSurfaceUntransferred
             | Self::PlaneLocalSystemUnresolved
@@ -575,9 +581,11 @@ mod tests {
                 "geometry.triangle-strip-conflict",
                 "geometry.brep-incomplete",
                 "geometry.brep-compact-frame-component-unresolved",
+                "geometry.brep-compact-frame-boundary-unresolved",
                 "geometry.section-spline-unresolved",
                 "geometry.surface-prototype-field-retained",
                 "geometry.plane-compact-frame-unresolved",
+                "geometry.cylinder-rotation-envelope-unresolved",
                 "topology.extrusion-body-rejected",
                 "geometry.instance-carriers-gated",
                 "geometry.visibgeom-surface-untransferred",

@@ -1009,3 +1009,8 @@ nonzero direction opener is `71` or `b9`. The rotation production also owns
 the explicit `41`/`45` floating forms; other DICT components retain generic
 support-frame ownership. All five original generic support byte images and
 assertions remain covered.
+
+Compact-frame face components require a unique solved carrier for every
+boundary curve before neutral face admission. An unresolved boundary retains
+the complete component as native topology and emits
+`geometry.brep-compact-frame-boundary-unresolved` for each withheld face.
