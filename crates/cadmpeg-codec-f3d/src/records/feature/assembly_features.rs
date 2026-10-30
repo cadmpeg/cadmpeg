@@ -431,14 +431,6 @@ impl DesignComponentOccurrence {
         draft: DesignComponentOccurrenceDraft,
         separated: bool,
     ) -> Result<Self, String> {
-        if separated
-            && matches!(
-                draft.placement,
-                DesignComponentOccurrencePlacement::Explicit { .. }
-            )
-        {
-            return Err("the separated typed frame must store identity".into());
-        }
         let last_offset = Self::typed_owner_offset(&draft.placement, separated);
         draft
             .byte_offset
@@ -459,7 +451,7 @@ impl DesignComponentOccurrence {
         };
         cadmpeg_core::decode::u64_from_index(match placement {
             DesignComponentOccurrencePlacement::Explicit { .. } => {
-                compact::LEN + matrix::OWNER_REFERENCE + 1
+                (if separated { typed::LEN } else { compact::LEN }) + matrix::OWNER_REFERENCE + 1
             }
             _ if separated => typed::LEN + identity::OWNER_REFERENCE + 1,
             _ => compact::LEN + identity::OWNER_REFERENCE + 1,
@@ -588,21 +580,23 @@ impl DesignComponentOccurrence {
         match self.placement {
             DesignComponentOccurrencePlacement::Base
             | DesignComponentOccurrencePlacement::Identity { .. } => None,
-            DesignComponentOccurrencePlacement::Explicit { transform, .. } => {
-                Some(Located {
-                    value: transform,
-                    offset: match &self.frame {
-                        DesignComponentOccurrenceFrame::Attributed(frame) => {
-                            frame.transform_offset.unwrap_or(self.byte_offset + 209)
-                        }
-                        DesignComponentOccurrenceFrame::Fixed => self.byte_offset + 209,
-                        DesignComponentOccurrenceFrame::FixedTyped { .. } => self.byte_offset
-                            + cadmpeg_core::decode::u64_from_index(
-                                crate::layout::local_component_occurrence_typed_compact_prefix::LEN,
-                            ),
-                    },
-                })
-            }
+            DesignComponentOccurrencePlacement::Explicit { transform, .. } => Some(Located {
+                value: transform,
+                offset: match &self.frame {
+                    DesignComponentOccurrenceFrame::Attributed(frame) => {
+                        frame.transform_offset.unwrap_or(self.byte_offset + 209)
+                    }
+                    DesignComponentOccurrenceFrame::Fixed => self.byte_offset + 209,
+                    DesignComponentOccurrenceFrame::FixedTyped { separated } => {
+                        self.byte_offset
+                            + cadmpeg_core::decode::u64_from_index(if *separated {
+                                crate::layout::local_component_occurrence_typed_prefix::LEN
+                            } else {
+                                crate::layout::local_component_occurrence_typed_compact_prefix::LEN
+                            })
+                    }
+                },
+            }),
         }
     }
 }
@@ -874,10 +868,7 @@ impl TryFrom<DesignComponentOccurrenceWire> for DesignComponentOccurrence {
             == Some(cadmpeg_core::decode::u64_from_index(
                 crate::layout::local_component_occurrence_typed_prefix::CARRIER_GUID + 4,
             )) {
-            let separated = !matches!(
-                draft.placement,
-                DesignComponentOccurrencePlacement::Explicit { .. }
-            ) && value.owner_entity_offset.checked_sub(value.byte_offset)
+            let separated = value.owner_entity_offset.checked_sub(value.byte_offset)
                 == Some(Self::typed_owner_offset(&draft.placement, true));
             Self::try_new_typed(draft, separated)?
         } else {

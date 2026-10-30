@@ -583,7 +583,10 @@ fn typed_component_occurrence(
         DesignComponentOccurrenceDraft, DesignComponentOccurrencePlacement,
     };
     let (repeat_at, flag_at) = match frame.len() {
-        length if length == typed_prefix::LEN + typed_identity_tail::LEN => {
+        length
+            if length == typed_prefix::LEN + typed_identity_tail::LEN
+                || length == typed_prefix::LEN + typed_matrix_tail::LEN =>
+        {
             if frame.get(typed_prefix::SEPARATOR) != Some(&typed_prefix::SEPARATOR_VALUE) {
                 return None;
             }
@@ -637,9 +640,7 @@ fn typed_component_occurrence(
     at += 1;
     let placement = match frame.get(flag_at)? {
         1 if ordinal.get() == 1 => DesignComponentOccurrencePlacement::Base,
-        0 if flag_at == compact_prefix::IDENTITY_FLAG
-            && (class_tag != "256" || ordinal.get() > 1) =>
-        {
+        0 if class_tag != "256" || ordinal.get() > 1 => {
             let transform = super::scopes::shared_frames::rigid_transform_at(frame, at)?;
             at += MATRIX_BYTES;
             DesignComponentOccurrencePlacement::Explicit { ordinal, transform }
@@ -1332,6 +1333,7 @@ mod tests {
     fn typed_component_occurrence_frames_read_both_separator_forms() {
         for (separated, matrix, length, owner_offset) in [
             (true, false, 349, 299),
+            (true, true, 477, 427),
             (false, false, 348, 298),
             (false, true, 476, 426),
         ] {
@@ -1356,7 +1358,7 @@ mod tests {
             assert_eq!(restored, occurrence);
             if matrix {
                 let transform = occurrence.transform().expect("matrix");
-                assert_eq!(transform.offset, 17 + 288);
+                assert_eq!(transform.offset, 17 + 288 + u64::from(separated));
                 assert_eq!(transform.value.rows()[0][3], 2.0);
                 assert_eq!(transform.value.rows()[1][3], 3.0);
                 assert_eq!(transform.value.rows()[2][3], 4.0);
@@ -1367,9 +1369,28 @@ mod tests {
     }
 
     #[test]
+    fn separated_typed_matrix_occurrence_passes_native_validation() {
+        let frame = typed_fixed(true, true);
+        let occurrence = exact_component_occurrence(&frame, 0, "f3d:Design/BulkStream.dat")
+            .expect("separated matrix occurrence");
+        let mut ir = cadmpeg_ir::examples::unit_cube().expect("unit cube");
+        crate::test_support::native_test::f3d_native_mut(&mut ir)
+            .design_component_occurrences
+            .push(occurrence);
+        let findings = crate::test_support::with_decode_context(|ctx| {
+            crate::validate::validate_native(ctx, &ir).expect("native validation")
+        });
+        assert!(findings.iter().all(|finding| {
+            !finding.message.contains("component occurrence")
+                && !finding.message.contains("occurrence definition pose")
+        }));
+    }
+
+    #[test]
     fn typed_component_occurrence_requires_equal_local_references_and_exact_closure() {
         for (separated, matrix, repeat_at, flag_at, owner_at) in [
             (true, false, 237, 288, 298),
+            (true, true, 237, 288, 426),
             (false, false, 236, 287, 297),
             (false, true, 236, 287, 425),
         ] {

@@ -21875,7 +21875,7 @@ kind = "byte"
 section = "3.1"
 anchor = "Typed local component occurrences use local references with inline type GUIDs."
 size = 289
-note = "The 349-byte identity frame has one zero separator before the repeated reference."
+note = "The separated identity and matrix frames have one zero separator before the repeated reference."
 
 [[record.field]]
 name = "indexed_header"
@@ -21971,7 +21971,6 @@ offset = 288
 type = "u8"
 source = "spec"
 anchor = "Typed local component occurrences use local references with inline type GUIDs."
-value = 1
 
 [[record]]
 name = "local_component_occurrence_typed_compact_prefix"
@@ -22099,7 +22098,7 @@ kind = "byte"
 section = "3.1"
 anchor = "Typed local component occurrences use local references with inline type GUIDs."
 size = 188
-note = "Relative to the end of the typed compact prefix."
+note = "Relative to the end of the typed prefix."
 
 [[record.field]]
 name = "transform"
