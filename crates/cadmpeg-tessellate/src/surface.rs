@@ -5,6 +5,7 @@
 use std::f64::consts::{FRAC_PI_2, TAU};
 
 use cadmpeg_core::decode::WorkBudget;
+use cadmpeg_ir::compare::floats_agree;
 use cadmpeg_ir::eval::admission::EvaluationAdmission;
 use cadmpeg_ir::eval::{
     analytic_surface_parameters_solved, finite_or_refusal, model_surface_partials_by_id,
@@ -16,7 +17,7 @@ use cadmpeg_ir::index::{ModelIndex, StandardIndex};
 use cadmpeg_ir::math::{Point2, Point3};
 
 use crate::face::Refusal;
-use crate::plane::{cross, distance, dot, length, sub, Uv};
+use crate::plane::{angle, cross, distance, dot, length, sub, Uv};
 
 /// Gauss-Newton steps of one point projection.
 const PROJECTION_STEPS: usize = 32;
@@ -24,6 +25,9 @@ const PROJECTION_STEPS: usize = 32;
 const PROJECTION_CONVERGED: f64 = 1e-13;
 /// Grid steps per parameter of the search that seeds a projection.
 const SEED_GRID: u8 = 16;
+/// Share of a face's parameter span across which finite-difference curvature
+/// measures the turn of the unit normal.
+const CURVATURE_STEP: f64 = 1e-3;
 /// Ratio of a partial derivative's length to the surface size below which
 /// the parameter is singular at a point.
 const SINGULAR_RATIO: f64 = 1e-9;
@@ -232,6 +236,9 @@ impl<'t, 'ir> Carrier<'t, 'ir> {
 
     /// The unnormalized surface normal `∂S/∂u × ∂S/∂v` at `uv`.
     pub(crate) fn normal(&self, uv: Uv) -> Result<Option<cadmpeg_ir::math::Vector3>, Refusal> {
+        if self.apex.is_some_and(|apex| floats_agree(uv[1], apex)) {
+            return Ok(None);
+        }
         Ok(self
             .partials(uv)?
             .map(|partials| cross(partials.du, partials.dv)))
@@ -358,6 +365,60 @@ impl<'t, 'ir> Carrier<'t, 'ir> {
         Ok(self.point(uv)?.map(|on| (distance(on, point), uv)))
     }
 
+    /// Normal curvature along parameter `axis` at `uv`. A plane, sphere,
+    /// circular cylinder, or circular cone uses the closed form; other
+    /// carriers sample the normal across a small share of `span`.
+    pub(crate) fn curvature(
+        &self,
+        uv: Uv,
+        axis: usize,
+        span: f64,
+        scale: f64,
+    ) -> Result<f64, Refusal> {
+        if let Some(kappa) = self.analytic_curvature(axis, uv) {
+            return Ok(kappa);
+        }
+        let step = span * CURVATURE_STEP;
+        let (mut before, mut after) = (uv, uv);
+        before[axis] -= step;
+        after[axis] += step;
+        let (Some(first), Some(second)) = (self.normal(before)?, self.normal(after)?) else {
+            return Ok(0.0);
+        };
+        let length = 2.0 * step * scale;
+        if length.partial_cmp(&0.0) != Some(std::cmp::Ordering::Greater) {
+            return Ok(0.0);
+        }
+        Ok(angle(first, second) / length)
+    }
+
+    fn analytic_curvature(&self, axis: usize, uv: Uv) -> Option<f64> {
+        match self.solved.map(basis) {
+            Some(SolvedSurfaceGeometry::Plane(_)) => Some(0.0),
+            Some(SolvedSurfaceGeometry::Sphere(sphere)) => {
+                let radius = sphere.radius().get().abs();
+                (radius > 0.0).then_some(1.0 / radius)
+            }
+            Some(SolvedSurfaceGeometry::Cylinder(cylinder)) => Some(if axis == 0 {
+                1.0 / cylinder.radius().get()
+            } else {
+                0.0
+            }),
+            Some(SolvedSurfaceGeometry::Cone(cone)) => {
+                if !floats_agree(cone.ratio().get(), 1.0) {
+                    return None;
+                }
+                circular_cone_normal_curvature(
+                    axis,
+                    uv[1],
+                    cone.radius().get(),
+                    cone.half_angle().get(),
+                )
+            }
+            _ => None,
+        }
+    }
+
     /// `value` moved by whole periods of parameter `axis` to lie nearest
     /// `reference`.
     pub(crate) fn nearest_branch(&self, axis: usize, value: f64, reference: f64) -> f64 {
@@ -367,3 +428,24 @@ impl<'t, 'ir> Carrier<'t, 'ir> {
         }
     }
 }
+
+/// Closed-form normal curvature of a circular cone. The generatrix (`axis`
+/// 1) is a straight line.
+fn circular_cone_normal_curvature(
+    axis: usize,
+    v: f64,
+    radius: f64,
+    half_angle: f64,
+) -> Option<f64> {
+    if axis != 0 {
+        return Some(0.0);
+    }
+    let rho = radius + v * half_angle.tan();
+    if !rho.is_finite() || rho == 0.0 {
+        return None;
+    }
+    Some(half_angle.cos().abs() / rho.abs())
+}
+
+#[cfg(test)]
+mod tests;

@@ -418,7 +418,7 @@ fn finish(
                 Some(normal) => {
                     let oriented = scaled(normal, orientation);
                     if dot(oriented, fallback) < 0.0 && length(*sum) > 0.0 {
-                        fallback
+                        scaled(oriented, -1.0)
                     } else {
                         oriented
                     }
@@ -435,3 +435,6 @@ fn finish(
         deviation,
     }
 }
+
+#[cfg(test)]
+mod tests;

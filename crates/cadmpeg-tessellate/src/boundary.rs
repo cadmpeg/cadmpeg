@@ -17,6 +17,7 @@ use cadmpeg_ir::index::{ModelIndex, StandardIndex};
 use cadmpeg_ir::math::Point3;
 use cadmpeg_ir::topology::{Coedge, Edge, Sense};
 
+use crate::count::{ceil_count, exceeds_limit};
 use crate::face::Refusal;
 use crate::plane::{distance, dot, mid3, sub, Uv};
 use crate::surface::Carrier;
@@ -243,8 +244,7 @@ impl Sampler<'_, '_> {
         let seeds = match geometry.map(basis) {
             Some(SolvedCurveGeometry::Line(_)) => 1,
             Some(SolvedCurveGeometry::Circle(_) | SolvedCurveGeometry::Ellipse(_)) => {
-                let turns = (span.abs() / (TAU / 8.0)).ceil();
-                cadmpeg_core::convert::truncate_f64_to_usize(turns).ok_or_else(|| {
+                ceil_count(span.abs() / (TAU / 8.0)).ok_or_else(|| {
                     Refusal::new(format!("the edge {} has an unbounded range", edge.id))
                 })?
             }
@@ -299,7 +299,8 @@ impl Sampler<'_, '_> {
         // The two half chords turn by half the turn of the curve between the
         // ends.
         let turn = 2.0 * crate::plane::angle(sub(on, a.1), sub(b.1, on));
-        if depth < MAX_DEPTH && (sag > self.chord || turn > self.angle) {
+        if depth < MAX_DEPTH && (exceeds_limit(sag, self.chord) || exceeds_limit(turn, self.angle))
+        {
             self.bisect(point, a, (middle, on), depth + 1, params, points)?;
             self.bisect(point, (middle, on), b, depth + 1, params, points)?;
         } else {
