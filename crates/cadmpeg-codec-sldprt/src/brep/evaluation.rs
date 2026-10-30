@@ -19,6 +19,20 @@ pub(super) fn curve_point(
     )?)
 }
 
+/// A pcurve carrier's surface parameters at `parameter`, absent where the
+/// carrier states none or the evaluation leaves the finite range.
+pub(super) fn pcurve_uv(
+    ctx: &DecodeContext<'_>,
+    pcurve: &cadmpeg_ir::geometry::pcurve::PcurveGeometry,
+    parameter: f64,
+) -> Result<Option<cadmpeg_ir::units::FinitePoint2>, CodecError> {
+    Ok(cadmpeg_ir::eval::finite_or_refusal(
+        cadmpeg_ir::eval::decode::outer_refusal(cadmpeg_ir::eval::decode::pcurve_uv(
+            ctx, pcurve, parameter,
+        ))?,
+    )?)
+}
+
 pub(super) fn nurbs_curve_point(
     ctx: &DecodeContext<'_>,
     curve: &NurbsCurve,
@@ -67,6 +81,29 @@ pub(crate) fn nurbs_surface_partials(
     Ok(cadmpeg_ir::eval::finite_or_refusal(
         cadmpeg_ir::eval::nurbs_surface_partials(ctx, surface, u, v),
     )?)
+}
+
+/// The point and first partials of a surface carrier at `(u, v)`, or `None`
+/// where they have no finite value.
+///
+/// # Errors
+///
+/// Propagates the evaluator's resource refusal.
+pub(super) fn surface_partials(
+    ctx: &DecodeContext<'_>,
+    surface: &cadmpeg_ir::geometry::SurfaceGeometry,
+    u: f64,
+    v: f64,
+) -> Result<
+    Option<cadmpeg_ir::eval::SurfacePartials<FinitePoint3, cadmpeg_ir::features::FiniteVector3>>,
+    cadmpeg_core::decode::ResourceLimit,
+> {
+    cadmpeg_ir::eval::finite_or_refusal(cadmpeg_ir::eval::surface_partials(
+        cadmpeg_ir::eval::admission::EvaluationAdmission::Decode(ctx),
+        surface,
+        u,
+        v,
+    ))
 }
 
 pub(crate) fn surface_point(

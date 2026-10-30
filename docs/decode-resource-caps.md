@@ -394,6 +394,7 @@ report a loss; a caller may report a general failure for the same item.
 | `cadmpeg-codec-sldprt`   | `src/resolved_features/relation_table.rs`          | `MAX_ARRAY`                               | `100_000`                                               | 2    | Declared record count of one relation-table marker array. A larger count ends the marker walk; later rows stay unprojected.                                                                                                                                                  |
 | `cadmpeg-codec-sldprt`   | `src/resolved_features/relation_table.rs`          | `MAX_OPERANDS`                            | `16`                                                    | 1    | Handle cells read from one relation-table row. The cells after the sixteenth stay unread.                                                                                                                                                                                    |
 | `cadmpeg-codec-sldprt`   | `src/brep/blend_surface.rs`                        | `MAX_PATCHES`                             | `512`                                                   | 4    | Spine patches of one rolling-ball blend cache. A fit that needs more leaves the blend without a cache, and its face keeps the procedural surface alone.                                                                                                                      |
+| `cadmpeg-codec-sldprt`   | `src/brep/fit.rs`                                  | `MAX_SPANS`                               | `4096`                                                  | 4    | Spans of one fitted curve on a support. A fit that needs more leaves the curve without a cache. |
 | `cadmpeg-codec-catia`    | `src/families/standard/topology.rs`                | `MAX_DUPLICATE_FACE_OPERATIONS`           | `65_536`                                                | 4    | Branch operations of the duplicate-face edge search; its depth stops at the budget's recursion guard. Exhaustion also exhausts the enclosing topology `WorkBudget`, so the decode reports the topology search failure. |
 | `cadmpeg-codec-catia` | `src/families/consolidated/records/class25.rs` | `MAX_SAMPLE_PAIRS` | `12` | 1 | The one-byte B-family payload length permits at most twelve source and target pairs after the fixed fields. |
 | `cadmpeg-codec-catia`    | `src/families/zero_entity/topology_transfer.rs`             | `MAX_ZERO_ENTITY_TOPOLOGY_OPERATIONS`     | `1_000_000`                                             | 4    | Floor of the local comparison budget for source-bound zero-entity vertex contributors. Exhaustion skips topology and reports `topology.zero-entity-candidates-bounded`. |
@@ -484,16 +485,16 @@ are the slice mechanisms themselves.
 
 ## Totals
 
-Production `MAX_*` constants: 269.
+Production `MAX_*` constants: 270.
 
 | Kind | Meaning                    | Count |
 | ---- | -------------------------- | ----- |
 | 1    | Format or reader invariant | 35    |
 | 2    | Per-input bound            | 71    |
 | 3    | Session ceiling            | 0     |
-| 4    | Local work cap             | 134   |
+| 4    | Local work cap             | 135   |
 | N    | Not a decode bound         | 29    |
-|      | Total                      | 269   |
+|      | Total                      | 270   |
 
 The six `ResourceLimits` fields are the session ceilings and are not
 `MAX_*` constants. No `MAX_*` constant is kind 3.
@@ -502,7 +503,7 @@ By crate: `cadmpeg-core` 3, `cadmpeg-ir` 17, `cadmpeg-measure` 20, `cadmpeg-asm`
 `cadmpeg-protein` 3, `cadmpeg` 2, `cadmpeg-codec-step` 8,
 `cadmpeg-codec-iges` 16, `cadmpeg-codec-inventor` 3,
 `cadmpeg-codec-freecad` 16, `cadmpeg-codec-rhino` 32, `cadmpeg-codec-f3d` 19,
-`cadmpeg-codec-nx` 28, `cadmpeg-codec-creo` 20, `cadmpeg-codec-sldprt` 18,
+`cadmpeg-codec-nx` 28, `cadmpeg-codec-creo` 20, `cadmpeg-codec-sldprt` 19,
 `cadmpeg-codec-catia` 57, and `cadmpeg-codec-pvz` 3.
 
 ## Routing

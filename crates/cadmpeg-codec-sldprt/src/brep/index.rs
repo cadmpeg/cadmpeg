@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 use super::{
-    blend, intersection, offset, parse_carrier, spline, subset, sweep, Carrier, CurveCarrier,
-    SurfaceCarrier,
+    blend, intersection, offset, parse_carrier, sp_curve, spline, subset, sweep, Carrier,
+    CurveCarrier, SurfaceCarrier,
 };
 use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_ir::report::loss::LossNote;
@@ -39,6 +39,10 @@ pub(super) struct CarrierIndex {
     /// Compact curves whose records share one attribute and geometry but not
     /// one orientation marker (spec §7.2).
     marker_conflicts: HashSet<u16>,
+    /// `SP_CURVE` records whose `b_curve` decodes (spec §7.6).
+    sp_curves: HashMap<u16, sp_curve::SpCurve>,
+    /// Bounded curves on an `SP_CURVE`, the curves of a tolerant edge's fins.
+    surface_curves: HashMap<u16, sp_curve::SurfaceCurveCarrier>,
     /// Spline carriers whose pole and weight lanes do not pair, each a loss
     /// naming its attribute id and the pairing's own refusal.
     pub(super) lane_refusals: Vec<LossNote>,
@@ -86,6 +90,56 @@ impl CarrierIndex {
         self.sweeps.get(&attr)
     }
 
+    /// Whether any `SP_CURVE` record decoded.
+    pub(super) fn has_sp_curves(&self) -> bool {
+        !self.sp_curves.is_empty()
+    }
+
+    /// The `SP_CURVE` record carried by `attr` (spec §7.6).
+    pub(super) fn sp_curve(&self, attr: u16) -> Option<&sp_curve::SpCurve> {
+        self.sp_curves.get(&attr)
+    }
+
+    /// A bounded curve on an `SP_CURVE` carried by `attr` (spec §7.6).
+    pub(super) fn surface_curve(&self, attr: u16) -> Option<&sp_curve::SurfaceCurveCarrier> {
+        self.surface_curves.get(&attr)
+    }
+
+    /// The support of an `SP_CURVE` on carrier `attr`: a surface carrier,
+    /// else a swept or spun construction, else an offset of a surface carrier.
+    pub(super) fn sp_curve_support(&self, attr: u16) -> Option<sp_curve::ResolvedSupport<'_>> {
+        if let Some(surface) = self.surfaces.get(&attr) {
+            return Some(sp_curve::ResolvedSupport::Surface(&surface.geometry));
+        }
+        self.sweep_support(attr)
+            .map(sp_curve::ResolvedSupport::Sweep)
+            .or_else(|| {
+                self.offset_support(attr)
+                    .map(sp_curve::ResolvedSupport::Offset)
+            })
+    }
+
+    /// The swept or spun construction `attr` as an `SP_CURVE` support: its
+    /// profile carrier and its spin or sweep, when the profile decodes.
+    pub(super) fn sweep_support(&self, attr: u16) -> Option<sp_curve::SweepSupport> {
+        let construction = self.sweeps.get(&attr)?;
+        let profile = self.curves.get(&construction.profile_attr)?;
+        Some(sp_curve::SweepSupport {
+            profile: profile.carrier().geometry.clone(),
+            kind: construction.kind.clone(),
+        })
+    }
+
+    /// The offset `attr` of a surface carrier as an `SP_CURVE` support.
+    pub(super) fn offset_support(&self, attr: u16) -> Option<sp_curve::OffsetSupport> {
+        let offset = self.offsets.get(&attr)?;
+        let base = self.surfaces.get(&offset.support)?;
+        Some(sp_curve::OffsetSupport {
+            base: base.geometry.clone(),
+            distance: offset.distance.get(),
+        })
+    }
+
     /// Constant-radius rolling-ball construction carried by `attr`.
     pub(super) fn blend(&self, attr: u16) -> Option<&blend::BlendCarrier> {
         self.blends.get(&attr)
@@ -120,6 +174,8 @@ impl CarrierIndex {
         }
         merge_missing_map(&mut self.curves, other.curves);
         merge_missing_map(&mut self.surfaces, other.surfaces);
+        merge_missing_map(&mut self.sp_curves, other.sp_curves);
+        merge_missing_map(&mut self.surface_curves, other.surface_curves);
         merge_missing_map(&mut self.sweeps, other.sweeps);
         merge_missing_map(&mut self.blends, other.blends);
         merge_missing_map(&mut self.offsets, other.offsets);
@@ -160,8 +216,10 @@ pub(super) fn scan_carriers(
     for carrier in spline::scan_surface_carriers(body, &mut lane_refusals).into_values() {
         out.insert(Carrier::Surface(carrier));
     }
-    for carrier in subset::scan(ctx, body, &out)? {
-        out.insert(Carrier::Curve(carrier));
+    for wrapper in subset::scan(ctx, body, &out, subset::Pass::Curves)? {
+        if let subset::Wrapper::Curve(carrier) = wrapper {
+            out.insert(Carrier::Curve(carrier));
+        }
     }
     out.sweeps = sweep::scan_sweep_carriers(body);
     let blend::BlendCarriers { blends, pairs } = blend::scan(body);
@@ -173,9 +231,20 @@ pub(super) fn scan_carriers(
     {
         out.insert_intersection(intersection);
     }
+    // SP_CURVEs read on the supports indexed above.
+    let pcurves = spline::scan_pcurve_carriers(body);
+    out.sp_curves = sp_curve::scan(body, &pcurves);
+    for wrapper in subset::scan(ctx, body, &out, subset::Pass::SurfaceCurves)? {
+        if let subset::Wrapper::SurfaceCurve(carrier) = wrapper {
+            out.surface_curves.insert(carrier.attr, *carrier);
+        }
+    }
     out.lane_refusals = lane_refusals;
     Ok(out)
 }
+
+#[cfg(test)]
+mod sp_curve_tests;
 
 #[cfg(test)]
 mod tests {

@@ -1002,6 +1002,76 @@ fn suffix_prefixed_edge_use(attr: u16, curve_attr: u16) -> Vec<u8> {
 }
 
 /// Vertex-use `00 12`: `refs[4]` = world-point attr; magic at body+16.
+/// The compact common header of `tag`: `attr`, an ordinal, five references
+/// and the sense marker.
+pub(crate) fn sp_curve_header(tag: u8, attr: u16) -> Vec<u8> {
+    let mut bytes = vec![0x00, tag];
+    be16(&mut bytes, attr);
+    be32(&mut bytes, 1);
+    for reference in [0, 11, 0, 0, 0] {
+        be16(&mut bytes, reference);
+    }
+    bytes.push(0x2b);
+    bytes
+}
+
+/// A two-dimensional `00 86` B-curve (attr 60, descriptor 61, arrays 62 to
+/// 64), degree 1 from `from` to `to`; `rational` stores the poles as
+/// `u·w v·w w` with weights 1 and 2.
+pub(crate) fn planar_b_curve(from: [f64; 2], to: [f64; 2], rational: bool) -> Vec<u8> {
+    let mut bytes = sp_curve_header(0x86, 60);
+    be16(&mut bytes, 61);
+    bytes.extend_from_slice(&[0x00, 0x88]);
+    be16(&mut bytes, 61);
+    be16(&mut bytes, 1);
+    be32(&mut bytes, 2);
+    be16(&mut bytes, if rational { 3 } else { 2 });
+    be32(&mut bytes, 2);
+    bytes.extend_from_slice(&[0, 0, 0, u8::from(rational), 0]);
+    for reference in [62, 63, 64] {
+        be16(&mut bytes, reference);
+    }
+    let poles = if rational {
+        vec![from[0], from[1], 1.0, to[0] * 2.0, to[1] * 2.0, 2.0]
+    } else {
+        vec![from[0], from[1], to[0], to[1]]
+    };
+    bytes.extend(f64_array(0x2d, 62, &poles));
+    bytes.extend(u16_array(63, &[2, 2]));
+    bytes.extend(f64_array(0x80, 64, &[0.0, 1.0]));
+    bytes
+}
+
+/// An `SP_CURVE` (attr 70) on `surface` naming the B-curve 60, and a bounded
+/// curve (attr 75) over `[0, 1]` with the stored ends `ends`, in metres.
+pub(crate) fn sp_curve_records(surface: u16, ends: [[f64; 3]; 2]) -> Vec<u8> {
+    let mut bytes = sp_curve_header(0x89, 70);
+    for reference in [surface, 60, 0] {
+        be16(&mut bytes, reference);
+    }
+    bef64(&mut bytes, -3.14158e13);
+    bytes.extend(sp_curve_header(0x85, 75));
+    be16(&mut bytes, 70);
+    for value in ends.into_iter().flatten().chain([0.0, 1.0]) {
+        bef64(&mut bytes, value);
+    }
+    bytes
+}
+
+/// `coedge` bytes with `curve` as the fin's own curve, `refs[7]` (spec §7.6).
+pub(crate) fn with_fin_curve(mut coedge: Vec<u8>, curve: u16) -> Vec<u8> {
+    coedge[18..20].copy_from_slice(&curve.to_be_bytes());
+    coedge
+}
+
+/// A tolerant `00 10` edge-use: the null `1` in its curve slot and
+/// `tolerance_m` in its tolerance slot (spec §7.6).
+pub(crate) fn tolerant_edge_use(attr: u16, tolerance_m: f64) -> Vec<u8> {
+    let mut b = edge_use(attr, 1);
+    b[10..18].copy_from_slice(&tolerance_m.to_be_bytes());
+    b
+}
+
 pub(crate) fn vertex_use(attr: u16, point_attr: u16) -> Vec<u8> {
     framed_topology_vertex(attr, 0, [0, 0, 0, 0, point_attr], None, 0, false, false)
 }

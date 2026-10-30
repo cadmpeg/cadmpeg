@@ -605,7 +605,7 @@ fn null_like_or_existing<T>(value: u32, nodes: &HashMap<u16, T>) -> bool {
     value <= 1 || u16_from_ref(value).is_some_and(|value| nodes.contains_key(&value))
 }
 
-fn read_ref(bytes: &[u8], at: &mut usize) -> Option<u32> {
+pub(super) fn read_ref(bytes: &[u8], at: &mut usize) -> Option<u32> {
     let first = View::u16_be_at(bytes, *at)?;
     *at = at.checked_add(2)?;
     if first <= 0x7ffe {

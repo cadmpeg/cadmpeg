@@ -20,13 +20,14 @@ use cadmpeg_ir::eval::{
 use cadmpeg_ir::geometry::{
     nurbs::SurfaceParameterAxis,
     pcurve::{Pcurve, PcurveGeometry, PcurveNurbs, PolarPcurveNurbs},
-    BlendCrossSection, BlendRadiusLaw, BlendSupport, Curve, CurveGeometry, ProceduralSurface,
+    BlendCrossSection, BlendRadiusLaw, BlendSupport, Curve, CurveGeometry, IntcurveSupportContext,
+    IntcurveSupportSide, ProceduralCurve, ProceduralCurveDefinition, ProceduralSurface,
     ProceduralSurfaceDefinition, SolvedCurveGeometry, SolvedSurfaceGeometry, Surface,
-    SurfaceGeometry,
+    SurfaceCurveFamily, SurfaceGeometry,
 };
 use cadmpeg_ir::ids::{
-    BodyId, CoedgeId, CurveId, EdgeId, FaceId, LoopId, PcurveId, PointId, ProceduralSurfaceId,
-    RegionId, ShellId, SurfaceId, VertexId,
+    BodyId, CoedgeId, CurveId, EdgeId, FaceId, LoopId, PcurveId, PointId, ProceduralCurveId,
+    ProceduralSurfaceId, RegionId, ShellId, SurfaceId, VertexId,
 };
 use cadmpeg_ir::topology::{
     Body, BodyKind, Coedge, Edge, Face, Loop, Point, Region, Sense, Shell, Vertex,
@@ -90,6 +91,8 @@ pub(crate) struct Brep {
     pub(crate) procedural_surfaces: Vec<ProceduralSurface>,
     /// Analytic, NURBS, or opaque support curves.
     pub(crate) curves: Vec<Curve>,
+    /// Parametric constructions behind emitted surface-parameter curves.
+    pub(crate) procedural_curves: Vec<ProceduralCurve>,
     /// Pcurves derived for supported analytic and NURBS-boundary cases.
     pub(crate) pcurves: Vec<Pcurve>,
     /// Records whose carrier kind this codec does not type, retained as
@@ -152,6 +155,7 @@ impl Brep {
             self.surfaces.len(),
             self.procedural_surfaces.len(),
             self.curves.len(),
+            self.procedural_curves.len(),
             self.pcurves.len(),
         ];
         let total = counts.into_iter().try_fold(0_usize, |total, count| {
@@ -325,12 +329,34 @@ impl Brep {
         }
         for curve in &mut self.curves {
             curve.id = qualified(&curve.id, &tail)?;
-            if let CurveGeometry::Solved(SolvedCurveGeometry::Unknown {
-                record: Some(record),
-            }) = &mut curve.geometry
-            {
-                *record = qualified(record, &tail)?;
+            match &mut curve.geometry {
+                CurveGeometry::Solved(SolvedCurveGeometry::Unknown {
+                    record: Some(record),
+                }) => {
+                    *record = qualified(record, &tail)?;
+                }
+                CurveGeometry::Procedural { construction, .. } => {
+                    *construction = qualified(construction, &tail)?;
+                }
+                CurveGeometry::Solved(_) => {}
             }
+        }
+        for procedural in &mut self.procedural_curves {
+            procedural.id = qualified(&procedural.id, &tail)?;
+            procedural.edit_definition(|definition| {
+                if let ProceduralCurveDefinition::SurfaceCurve {
+                    family: SurfaceCurveFamily::Parametric { context, .. },
+                } = definition
+                {
+                    for side in 0..context.sides().len() {
+                        if let Some(surface) = &context.sides()[side].surface {
+                            let surface = qualified(surface, &tail)?;
+                            context.set_surface(side, Some(surface));
+                        }
+                    }
+                }
+                Ok::<_, cadmpeg_core::CodecError>(())
+            })?;
         }
         for pcurve in &mut self.pcurves {
             pcurve.id = qualified(&pcurve.id, &tail)?;
@@ -1263,6 +1289,291 @@ fn edge_parameter_range(
     }
 }
 
+/// The fin curve (`refs[7]`) a tolerant edge reads its geometry from (spec
+/// §7.6): the canonical fin's, else its partner's, a `decoded` one first.
+fn tolerant_edge_curve(
+    canonical: u16,
+    coedges: &HashMap<u16, topology::Coedge>,
+    decoded: impl Fn(u16) -> bool,
+) -> Option<u16> {
+    let fin = coedges.get(&canonical)?;
+    let partner = coedges
+        .get(&fin.refs[5])
+        .filter(|partner| partner.refs[6] == fin.refs[6]);
+    let curves = [Some(fin), partner]
+        .into_iter()
+        .flatten()
+        .map(|fin| fin.refs[7])
+        .filter(|curve| *curve > 1)
+        .collect::<Vec<_>>();
+    curves
+        .iter()
+        .copied()
+        .find(|curve| decoded(*curve))
+        .or_else(|| curves.first().copied())
+}
+
+/// [`tolerant_edge_curve`], taking a curve on a surface carrier first.
+fn tolerant_fin_curve(
+    canonical: u16,
+    coedges: &HashMap<u16, topology::Coedge>,
+    stated: impl Fn(u16) -> bool,
+    decodes: impl Fn(u16) -> bool,
+) -> Option<u16> {
+    tolerant_edge_curve(canonical, coedges, &stated)
+        .filter(|curve| stated(*curve))
+        .or_else(|| tolerant_edge_curve(canonical, coedges, decodes))
+}
+
+/// Bare `SP_CURVE`s named by edge curve slots and admitted by their vertices
+/// (spec §7.6).
+fn bare_surface_curves(
+    ctx: &DecodeContext<'_>,
+    t: &topology::Tables,
+    carriers: &CarrierIndex,
+    edge_ends: &HashMap<u16, (u16, u16, u16, u16)>,
+) -> Result<HashMap<u16, super::sp_curve::SurfaceCurveCarrier>, cadmpeg_core::CodecError> {
+    let position = |vertex_use: u16| {
+        let point_attr = &t.vertex_uses().get(&vertex_use)?.refs[4];
+        let [x, y, z] = t.points().get(point_attr)?.xyz_m;
+        Some(Point3::new(x * LEN_TO_MM, y * LEN_TO_MM, z * LEN_TO_MM))
+    };
+    let mut admitted = HashMap::new();
+    let mut refused = HashSet::new();
+    for (edge, (start, end, attr, _)) in edge_ends {
+        let Some(curve) = carriers.sp_curve(*attr) else {
+            continue;
+        };
+        let own_slot = t
+            .edge_uses()
+            .get(edge)
+            .is_some_and(|edge_use| edge_use.references.curve() == *attr);
+        let mut carrier = None;
+        let resolved = carriers.sp_curve_support(curve.surface);
+        let support = resolved
+            .as_ref()
+            .map(super::sp_curve::ResolvedSupport::support);
+        if let (true, Some(support), Some(ends)) =
+            (own_slot, support, position(*start).zip(position(*end)))
+        {
+            if let Some(whole) = super::sp_curve::whole(ctx, curve, support)? {
+                if super::sp_curve::reaches(
+                    &whole,
+                    [ends.0, ends.1],
+                    super::subset::SURFACE_POINT_TOLERANCE_MM,
+                ) {
+                    carrier = Some(whole);
+                }
+            }
+        }
+        match carrier {
+            Some(carrier) => {
+                admitted.insert(*attr, carrier);
+            }
+            None => {
+                refused.insert(*attr);
+            }
+        }
+    }
+    admitted.retain(|attr, _| !refused.contains(attr));
+    Ok(admitted)
+}
+
+/// A bounded `SP_CURVE`'s stored end points, the low end of its range first.
+fn surface_curve_ends(carrier: &super::sp_curve::SurfaceCurveCarrier) -> [Point3; 2] {
+    let [start, end] = carrier.points;
+    if carrier.parameter_range[0] <= carrier.parameter_range[1] {
+        [start, end]
+    } else {
+        [end, start]
+    }
+}
+
+/// Emit `carrier` as curve `attr` (spec §7.6): a parametric curve on the
+/// emitted support surface with a fitted cache; the fitted B-curve alone on a
+/// sweep or on an offset no face emits; else opaque.
+fn attach_surface_curve(
+    ctx: &DecodeContext<'_>,
+    out: &mut Brep,
+    annotations: &mut AnnotationBuilder,
+    carrier: &super::sp_curve::SurfaceCurveCarrier,
+    emitted_face_surface_by_carrier: &HashMap<u16, u16>,
+    attr: u16,
+    source_stream: &StreamHandle,
+) -> Result<(), cadmpeg_core::CodecError> {
+    let curve_id = id_curve(attr);
+    let surface = emitted_face_surface_by_carrier
+        .get(&carrier.surface)
+        .map(|bridge| id_surf(*bridge))
+        .filter(|id| {
+            out.surfaces.iter().any(|surface| {
+                surface.id == *id
+                    && !matches!(
+                        surface.geometry,
+                        SurfaceGeometry::Solved(SolvedSurfaceGeometry::Unknown { .. })
+                    )
+            })
+        });
+    let breaks: &[f64] = match &carrier.pcurve {
+        PcurveGeometry::Nurbs { nurbs } => nurbs.knots(),
+        _ => &[],
+    };
+    let [first, second] = carrier.parameter_range;
+    let parameter_range = [first.min(second), first.max(second)];
+    let fitted_only = match (&carrier.sweep, &carrier.offset_support, &surface) {
+        (Some(sweep), _, _) => Some((super::sp_curve::Support::Sweep(sweep), "sp_curve_on_sweep")),
+        (None, Some(offset), None) => Some((
+            super::sp_curve::Support::Offset(offset),
+            "sp_curve_on_offset",
+        )),
+        _ => None,
+    };
+    if let Some((support, fitted_note)) = fitted_only {
+        let fitted = super::fit::fit_curve(
+            |t| support.point(ctx, &carrier.pcurve, t),
+            parameter_range,
+            breaks,
+            |low, high| support.resolves(ctx, &carrier.pcurve, low, high),
+        )?;
+        let (geometry, note, exactness) = match fitted {
+            Some(fitted) => (
+                CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(fitted)),
+                fitted_note,
+                Exactness::Derived,
+            ),
+            None => (
+                CurveGeometry::Solved(SolvedCurveGeometry::Unknown { record: None }),
+                "unknown_curve",
+                Exactness::Unknown,
+            ),
+        };
+        annotations.note(
+            curve_id.as_str(),
+            source_stream,
+            u64_from_index(carrier.offset),
+            Some(note),
+        );
+        annotations.exactness(curve_id.as_str(), exactness);
+        admit_brep_entity(ctx)?;
+        out.curves.push(Curve {
+            parameter_range: None,
+            id: curve_id,
+            source_object: None,
+            geometry,
+        });
+        return Ok(());
+    }
+    let context = surface.and_then(|surface| {
+        IntcurveSupportContext::try_new(
+            [
+                IntcurveSupportSide {
+                    surface: Some(surface),
+                    pcurve: Some(carrier.pcurve.clone().into()),
+                },
+                IntcurveSupportSide {
+                    surface: None,
+                    pcurve: None,
+                },
+            ],
+            parameter_range,
+            [Vec::new(), Vec::new(), Vec::new()],
+        )
+        .ok()
+    });
+    let Some(context) = context else {
+        annotations.note(
+            curve_id.as_str(),
+            source_stream,
+            u64_from_index(carrier.offset),
+            Some("unknown_curve"),
+        );
+        annotations.exactness(curve_id.as_str(), Exactness::Unknown);
+        admit_brep_entity(ctx)?;
+        out.curves.push(Curve {
+            parameter_range: None,
+            id: curve_id,
+            source_object: None,
+            geometry: CurveGeometry::Solved(SolvedCurveGeometry::Unknown { record: None }),
+        });
+        return Ok(());
+    };
+    annotations.note(
+        curve_id.as_str(),
+        source_stream,
+        u64_from_index(carrier.offset),
+        Some("sp_curve"),
+    );
+    annotations.exactness(curve_id.as_str(), Exactness::Derived);
+    let support = context.sides()[0]
+        .surface
+        .as_ref()
+        .and_then(|id| out.surfaces.iter().find(|candidate| candidate.id == *id));
+    // An offset's emitted surface has no cache, so the fit evaluates the offset.
+    let support = match (&carrier.offset_support, support) {
+        (Some(offset), _) => Some(super::sp_curve::Support::Offset(offset)),
+        (None, Some(support)) => Some(super::sp_curve::Support::Surface(&support.geometry)),
+        (None, None) => None,
+    };
+    let cache = match support {
+        Some(support) => super::fit::fit_curve(
+            |t| support.point(ctx, &carrier.pcurve, t),
+            parameter_range,
+            breaks,
+            |low, high| support.resolves(ctx, &carrier.pcurve, low, high),
+        )?
+        .map(SolvedCurveGeometry::Nurbs),
+        None => None,
+    };
+    let construction = ProceduralCurveId::compose(
+        &cadmpeg_ir::identity_namespace!("sldprt", "brep", "sp-curve"),
+        attr,
+    );
+    let definition = ProceduralCurveDefinition::SurfaceCurve {
+        family: SurfaceCurveFamily::Parametric {
+            context,
+            tail: cache.as_ref().and_then(|_| fitted_cache_tail()),
+        },
+    };
+    admit_brep_entity(ctx)?;
+    out.procedural_curves
+        .push(ProceduralCurve::new(construction.clone(), definition));
+    admit_brep_entity(ctx)?;
+    out.curves.push(Curve {
+        parameter_range: None,
+        id: curve_id,
+        source_object: None,
+        geometry: CurveGeometry::Procedural {
+            construction,
+            cache,
+        },
+    });
+    Ok(())
+}
+
+/// The solved-cache tail stating [`super::fit::FIT_TOLERANCE_MM`], with
+/// neutral values in its other fields.
+fn fitted_cache_tail() -> Option<
+    cadmpeg_ir::geometry::SurfaceCurveCacheFirst<cadmpeg_ir::geometry::ParametricSurfaceCurveFlags>,
+> {
+    let fit_tolerance =
+        cadmpeg_ir::geometry::FitTolerance::try_new(super::fit::FIT_TOLERANCE_MM).ok()?;
+    let form = cadmpeg_ir::geometry::SurfaceCurveTail::try_new(
+        0,
+        cadmpeg_ir::scalar::PositiveI64::new(1)?,
+        cadmpeg_ir::geometry::RevisionCacheForm::SolvedCache { fit_tolerance },
+        [[None; 4]; 2],
+        [None, None],
+    )
+    .ok()?;
+    Some(cadmpeg_ir::geometry::SurfaceCurveCacheFirst {
+        form,
+        flags: cadmpeg_ir::geometry::ParametricSurfaceCurveFlags {
+            flag: false,
+            second_flag: None,
+        },
+    })
+}
+
 /// The boundary of a face: its vertices (the ends of its edges), and the
 /// vertices with samples along the edges' curves.
 fn blend_boundary(
@@ -1480,15 +1791,15 @@ fn recover_dummy_partner_edge(
     DummyRecovery::Admitted(partner.refs[4], fin.refs[4], partner_attr)
 }
 
-/// Strict admission for one vertexless ring edge.
+/// Strict admission for one vertexless ring edge on `curve_attr`.
 ///
 /// Both endpoints are the native null sentinel. Admission needs reciprocal
-/// opposite FINs on the same exact unbounded circle carrier, opposite
-/// senses, a valid face-owned single-FIN loop, and at most one sheet dummy.
-/// Anything else withholds the edge: no vertex is invented.
+/// opposite FINs on a curve that `closes` on itself and states no range of
+/// its own, opposite senses, a valid face-owned single-FIN loop, and at most
+/// one sheet dummy. Anything else withholds the edge: no vertex is invented.
 fn admit_vertexless_ring_edge(
-    edge_attr: u16,
-    fin_attr: u16,
+    [edge_attr, fin_attr, curve_attr]: [u16; 3],
+    closes: bool,
     faces: &[WalkedFace],
     t: &topology::Tables,
     carriers: &CarrierIndex,
@@ -1513,24 +1824,13 @@ fn admit_vertexless_ring_edge(
     {
         return false;
     }
-    let curve_attr = t
-        .edge_uses()
-        .get(&edge_attr)
-        .map_or(0, |edge_use| edge_use.references.curve());
-    if curve_attr <= 1 {
+    if !closes || curve_attr <= 1 {
         return false;
     }
-    let Some(indexed) = carriers.curve(curve_attr) else {
-        return false;
-    };
-    let carrier = indexed.carrier();
-    if carrier.parameter_range.is_some() {
-        return false;
-    }
-    if !matches!(
-        carrier.geometry,
-        CurveGeometry::Solved(SolvedCurveGeometry::Circle(_))
-    ) {
+    if carriers
+        .curve(curve_attr)
+        .is_some_and(|indexed| indexed.carrier().parameter_range.is_some())
+    {
         return false;
     }
     let mut single = false;
@@ -1575,14 +1875,10 @@ fn insert_edge_ends(
     edge_ends: &mut HashMap<u16, (u16, u16, u16, u16)>,
     kept: &mut KeptTopology<'_>,
     edge_attr: u16,
-    start_vuse: u16,
-    end_vuse: u16,
+    [start_vuse, end_vuse]: [u16; 2],
+    curve_attr: u16,
     fin_attr: u16,
 ) {
-    let curve_attr = t
-        .edge_uses()
-        .get(&edge_attr)
-        .map_or(0, |edge_use| edge_use.references.curve());
     edge_ends.insert(edge_attr, (start_vuse, end_vuse, curve_attr, fin_attr));
     for vuse in [start_vuse, end_vuse] {
         if vuse == 0 {
@@ -2120,6 +2416,7 @@ fn decode_graph(
     // Edge attr -> (canonical start vuse, canonical end vuse, curve carrier
     // attr, walked FIN attr).
     let mut edge_ends: HashMap<u16, (u16, u16, u16, u16)> = HashMap::new();
+    let mut tolerant_edge_tolerance_mm = HashMap::<u16, f64>::new();
 
     let mut unresolved_points = HashSet::new();
     for (edge_attr, incidences) in edge_incidence {
@@ -2127,6 +2424,33 @@ fn decode_graph(
             canonical_coedge_attr(edge_attr, t.edge_uses().get(&edge_attr), t.coedges());
         let Some(canonical) = canonical else {
             continue;
+        };
+        let edge_use = t.edge_uses().get(&edge_attr);
+        let stored_curve = edge_use.map_or(0, |edge_use| edge_use.references.curve());
+        // A tolerant edge takes its fins' curve and carries its tolerance (spec §7.6).
+        let curve_attr = if stored_curve == 1 {
+            if let Some(tolerance) = edge_use.and_then(|edge_use| edge_use.tolerance_m) {
+                tolerant_edge_tolerance_mm.insert(edge_attr, tolerance * LEN_TO_MM);
+            }
+            tolerant_fin_curve(
+                canonical,
+                t.coedges(),
+                |curve| {
+                    carriers.curve(curve).is_some()
+                        || carriers
+                            .surface_curve(curve)
+                            .is_some_and(|carrier| carrier.sweep.is_none())
+                },
+                |curve| carriers.curve(curve).is_some() || carriers.surface_curve(curve).is_some(),
+            )
+            .unwrap_or(0)
+        } else {
+            stored_curve
+        };
+        let mut kept = KeptTopology {
+            vertices: &mut kept_vertices,
+            points: &mut kept_points,
+            unresolved_points: &mut unresolved_points,
         };
         let Some((_, end_vuse, ring_start_vuse)) = incidences
             .iter()
@@ -2137,14 +2461,10 @@ fn decode_graph(
                     insert_edge_ends(
                         t,
                         &mut edge_ends,
-                        &mut KeptTopology {
-                            vertices: &mut kept_vertices,
-                            points: &mut kept_points,
-                            unresolved_points: &mut unresolved_points,
-                        },
+                        &mut kept,
                         edge_attr,
-                        start_vuse,
-                        end_vuse,
+                        [start_vuse, end_vuse],
+                        curve_attr,
                         fin_attr,
                     );
                 }
@@ -2162,19 +2482,22 @@ fn decode_graph(
         insert_edge_ends(
             t,
             &mut edge_ends,
-            &mut KeptTopology {
-                vertices: &mut kept_vertices,
-                points: &mut kept_points,
-                unresolved_points: &mut unresolved_points,
-            },
+            &mut kept,
             edge_attr,
-            start_vuse,
-            *end_vuse,
+            [start_vuse, *end_vuse],
+            curve_attr,
             canonical,
         );
     }
 
     out.stats.unresolved_topology_points = unresolved_points.len();
+
+    let bare_surface_curves = bare_surface_curves(ctx, t, carriers, &edge_ends)?;
+    let surface_curve = |attr: u16| {
+        carriers
+            .surface_curve(attr)
+            .or_else(|| bare_surface_curves.get(&attr))
+    };
 
     // Points.
     let point_attrs = sorted_graph_attrs(kept_points.iter().copied());
@@ -2228,6 +2551,7 @@ fn decode_graph(
     // Curves and edges. An edge keeps a curve only when its carrier decodes to a
     // curve kind; a nonzero-but-untyped carrier is counted as loss.
     let mut emitted_curves: HashSet<u16> = HashSet::new();
+    let mut surface_curve_attrs = Vec::new();
     let mut edge_set: HashSet<u16> = HashSet::new();
     let mut edge_endpoint_positions = HashMap::<u16, [cadmpeg_ir::math::Point3; 2]>::new();
     let mut edge_curve_spans = HashMap::<u16, (u16, Option<[f64; 2]>)>::new();
@@ -2237,10 +2561,35 @@ fn decode_graph(
         let (start_v, end_v, curve_attr, fin_attr) = edge_ends[&e];
         let resolved_endpoints = kept_vertices.contains(&start_v) && kept_vertices.contains(&end_v);
         let vertexless = !resolved_endpoints && start_v <= 1 && end_v <= 1;
-        let closed_point = vertexless
-            .then(|| closed_edge_start(carriers.curve(curve_attr)))
-            .flatten();
-        if vertexless && !admit_vertexless_ring_edge(e, fin_attr, &faces, t, carriers) {
+        let closed_point = if vertexless {
+            match closed_edge_start(carriers.curve(curve_attr)) {
+                // A ring on a bounded SP_CURVE begins where its range does.
+                None => surface_curve(curve_attr)
+                    .filter(|carrier| {
+                        carrier.points[0].distance(carrier.points[1])
+                            <= super::subset::SURFACE_POINT_TOLERANCE_MM
+                    })
+                    .map(|carrier| {
+                        let [first, second] = carrier.parameter_range;
+                        (
+                            surface_curve_ends(carrier)[0],
+                            [first.min(second), first.max(second)],
+                        )
+                    }),
+                closed => closed,
+            }
+        } else {
+            None
+        };
+        if vertexless
+            && !admit_vertexless_ring_edge(
+                [e, fin_attr, curve_attr],
+                closed_point.is_some(),
+                &faces,
+                t,
+                carriers,
+            )
+        {
             out.stats.withheld_ring_edges += 1;
             continue;
         }
@@ -2349,6 +2698,23 @@ fn decode_graph(
             }
             reversed_edge_orientation.insert(e);
         }
+        // An SP_CURVE edge runs from the low end of its range (spec §7.6).
+        if let (None, Some(carrier), Some(endpoints)) = (
+            carriers.curve(curve_attr),
+            surface_curve(curve_attr),
+            edge_endpoint_positions.get(&e).copied(),
+        ) {
+            let [low, high] = surface_curve_ends(carrier);
+            let forward = low.distance(endpoints[0]) + high.distance(endpoints[1]);
+            let backward = low.distance(endpoints[1]) + high.distance(endpoints[0]);
+            if backward < forward {
+                std::mem::swap(&mut start_id, &mut end_id);
+                if let Some(endpoints) = edge_endpoint_positions.get_mut(&e) {
+                    endpoints.swap(0, 1);
+                }
+                reversed_edge_orientation.insert(e);
+            }
+        }
         let eu = t.edge_uses().get(&e);
         let mut curve = None;
         if curve_attr != 0 {
@@ -2368,6 +2734,13 @@ fn decode_graph(
                             annotations
                                 .exactness(id_curve(curve_attr).as_str(), Exactness::Derived);
                         }
+                    }
+                    curve = Some(id_curve(curve_attr));
+                }
+                // Attached once its support surface is emitted, below.
+                None if surface_curve(curve_attr).is_some() => {
+                    if emitted_curves.insert(curve_attr) {
+                        surface_curve_attrs.push(curve_attr);
                     }
                     curve = Some(id_curve(curve_attr));
                 }
@@ -2403,12 +2776,6 @@ fn decode_graph(
             u64_from_index(off),
             Some("00_10"),
         );
-        let tolerance = match carriers.curve(curve_attr) {
-            Some(IndexedCurve::Derived(intersection)) => {
-                cadmpeg_ir::scalar::PositiveReal::new(intersection.support_data.fit_tolerance_mm)
-            }
-            _ => None,
-        };
         let stored_range = carriers
             .curve(curve_attr)
             .is_some_and(|carrier| carrier.carrier().parameter_range.is_some());
@@ -2429,7 +2796,16 @@ fn decode_graph(
             .map_err(cadmpeg_core::CodecError::malformed)?,
             start: start_id,
             end: end_id,
-            tolerance,
+            tolerance: match carriers.curve(curve_attr) {
+                Some(IndexedCurve::Derived(intersection)) => {
+                    Some(intersection.support_data.fit_tolerance_mm)
+                }
+                _ => None,
+            }
+            .into_iter()
+            .chain(tolerant_edge_tolerance_mm.get(&e).copied())
+            .reduce(f64::max)
+            .and_then(cadmpeg_ir::scalar::PositiveReal::new),
         });
         edge_set.insert(e);
     }
@@ -3051,6 +3427,19 @@ fn decode_graph(
             tolerance: None,
         });
     }
+    for attr in surface_curve_attrs {
+        if let Some(carrier) = surface_curve(attr) {
+            attach_surface_curve(
+                ctx,
+                &mut out,
+                &mut annotations,
+                carrier,
+                &emitted_face_surface_by_carrier,
+                attr,
+                &source_stream,
+            )?;
+        }
+    }
     let mut emitted_faces = HashMap::new();
     emitted_faces.extend(out.faces.iter().map(|face| (face.id.as_str(), &face.id)));
     for appearance in &mut out.face_colors {
@@ -3323,6 +3712,7 @@ fn decode_graph(
     out.surfaces.sort_by(|a, b| a.id.cmp(&b.id));
     out.procedural_surfaces.sort_by(|a, b| a.id.cmp(&b.id));
     out.curves.sort_by(|a, b| a.id.cmp(&b.id));
+    out.procedural_curves.sort_by(|a, b| a.id.cmp(&b.id));
     out.pcurves.sort_by(|a, b| a.id.cmp(&b.id));
     out.annotations = annotations.build();
     let retained_ids = out
@@ -3344,6 +3734,11 @@ fn decode_graph(
                 .map(|entity| entity.id.as_str()),
         )
         .chain(out.curves.iter().map(|entity| entity.id.as_str()))
+        .chain(
+            out.procedural_curves
+                .iter()
+                .map(|entity| entity.id.as_str()),
+        )
         .chain(out.pcurves.iter().map(|entity| entity.id.as_str()))
         .collect::<std::collections::HashSet<_>>();
     let mut keep = |id: &str| retained_ids.contains(id);
@@ -3430,6 +3825,18 @@ fn prune_rejected_topology(out: &mut Brep) {
         .collect::<std::collections::HashSet<_>>();
     out.curves
         .retain(|curve| kept_curves.contains(curve.id.as_str()));
+    let kept_constructions = out
+        .curves
+        .iter()
+        .filter_map(|curve| {
+            curve
+                .geometry
+                .procedural_construction()
+                .map(ProceduralCurveId::as_str)
+        })
+        .collect::<std::collections::HashSet<_>>();
+    out.procedural_curves
+        .retain(|procedural| kept_constructions.contains(procedural.id.as_str()));
     out.stats.unknown_curve_edges = out
         .edges
         .iter()
@@ -8162,6 +8569,7 @@ mod tests {
             attr,
             references,
             sequence: 0,
+            tolerance_m: None,
             offset: 0,
         };
         let mut coedges = HashMap::from([
@@ -9298,3 +9706,6 @@ mod nurbs_subset_evaluation_tests;
 
 #[cfg(test)]
 mod partition_framing_tests;
+
+#[cfg(test)]
+mod tolerant_edge_tests;
