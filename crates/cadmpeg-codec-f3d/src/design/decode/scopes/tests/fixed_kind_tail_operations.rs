@@ -423,6 +423,65 @@ pub(super) fn fixed_kind_tail_operations(
         )) if distance.get() == 0.254
     ));
 
+    // Prologue forms whose scope tail does not give the 253- or 264-byte
+    // length: marker zero with the reference count at 126, and marker one
+    // with it at 130. Both name scalar 73 and the face group, reference 1.
+    for (marker_one, count_offset) in [(false, 126), (true, 130)] {
+        let distance_marker = if marker_one { 25 } else { 21 };
+        let prologue_at = bytes.len();
+        let mut prologue = vec![0; 300];
+        prologue[20] = u8::from(marker_one);
+        prologue[distance_marker] = 1;
+        prologue[distance_marker + 1..distance_marker + 5].copy_from_slice(&73u32.to_le_bytes());
+        prologue[distance_marker + 11..distance_marker + 15].copy_from_slice(&1u32.to_le_bytes());
+        prologue[distance_marker + 15] = 1;
+        prologue[distance_marker + 16..distance_marker + 20].copy_from_slice(&1u32.to_le_bytes());
+        bytes.extend_from_slice(&prologue);
+        let mut prologue_scope = offset_scope.clone();
+        prologue_scope
+            .try_edit(|draft| {
+                draft.byte_offset = u64_from_index(prologue_at);
+                draft.reference_members =
+                    crate::records::identity::ReferenceRun::unlocated(vec![1, 2, 73]);
+                draft.reference_count_offset = draft.byte_offset + count_offset;
+                draft.layout_fixture_references();
+                // The kind follows the reference table; the fixture tail follows the kind.
+                draft.paired_byte_offset = draft.kind_offset + 22 + 72;
+                draft.frame_length = draft.paired_byte_offset - draft.byte_offset;
+                draft.layout_fixture_tail();
+            })
+            .unwrap();
+        let operation =
+            |bytes: &[u8], scope: &crate::records::feature::scope::DesignParameterScope| {
+                exact_direct_face_operation(
+                    bytes,
+                    &crate::design::test_support::indexed_record_offsets_for_test(bytes),
+                    scope,
+                )
+            };
+        assert!(matches!(
+            operation(&bytes, &prologue_scope),
+            Some(DesignDirectFaceOperation::OffsetFaces(
+                crate::records::feature::direct_face::DesignOffsetFacesOperation {
+                    distance,
+                    distance_record_index: 73,
+                    ..
+                }
+            )) if distance.get() == -0.5
+        ));
+        // The u32 one and the face-group reference are part of the form.
+        bytes[prologue_at + distance_marker + 11] = 2;
+        assert!(operation(&bytes, &prologue_scope).is_none());
+        bytes[prologue_at + distance_marker + 11] = 1;
+        bytes[prologue_at + distance_marker + 16] = 2;
+        assert!(operation(&bytes, &prologue_scope).is_none());
+        bytes[prologue_at + distance_marker + 16] = 1;
+        // The marker byte must agree with the reference-count offset.
+        bytes[prologue_at + 20] = u8::from(!marker_one);
+        assert!(operation(&bytes, &prologue_scope).is_none());
+        bytes[prologue_at + 20] = u8::from(marker_one);
+    }
+
     let thicken_at = bytes.len();
     let mut thicken = vec![0; 301];
     thicken[47] = 1;

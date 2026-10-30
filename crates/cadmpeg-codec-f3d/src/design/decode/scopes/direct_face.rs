@@ -27,6 +27,46 @@ use crate::records::feature::scope::DesignParameterScope;
 use cadmpeg_core::decode::View;
 use std::collections::HashMap;
 
+/// Primary-header offset of the marked distance reference of an `OffsetFaces`
+/// scope, or `None` when its prologue is not a known form.
+///
+/// The 253- and 264-byte token-independent forms are identified by length.
+/// The other forms are identified by their prologue and by the offset of the
+/// ordered-reference count, because their scope tail can be 77 or 78 bytes.
+/// A marker-one prologue stores `1` at offset 20 and a u32 zero at 21, so its
+/// fields start four bytes later than those of a marker-zero prologue.
+fn offset_faces_distance_marker(
+    bytes: &[u8],
+    scope: &DesignParameterScope,
+    start: usize,
+) -> Option<usize> {
+    let references = scope.reference_members().len();
+    if matches!(
+        (parameter_scope_payload_length(scope), references),
+        (Some(264), 4) | (Some(253), 3)
+    ) && bytes.get(start + 25) == Some(&1)
+    {
+        return Some(25);
+    }
+    if !matches!(references, 3 | 4) {
+        return None;
+    }
+    let count_offset = usize::try_from(scope.reference_count_offset())
+        .ok()?
+        .checked_sub(start)?;
+    let distance_marker = match (bytes.get(start + 20)?, count_offset) {
+        (1, 130) if View::u32_le_at(bytes, start + 21) == Some(0) => 25,
+        (0, 126) => 21,
+        _ => return None,
+    };
+    // A u32 one follows the marked distance reference, then the marked
+    // reference to the selected-face group, the first ordered reference.
+    let first_reference = scope.reference_members().values().next()?;
+    (View::u32_le_at(bytes, start + distance_marker + 11) == Some(1)
+        && marked_record_reference(bytes, start + distance_marker + 15) == Some(*first_reference))
+    .then_some(distance_marker)
+}
+
 pub(super) fn exact_direct_face_operation(
     bytes: &[u8],
     records: &IndexedRecordOffsets,
@@ -40,16 +80,9 @@ pub(super) fn exact_direct_face_operation(
         return exact_shell_class_369_261(bytes, records, scope);
     }
     match design_feature_family(&scope.kind())? {
-        DesignFeatureFamily::OffsetFaces
-            if matches!(
-                (
-                    parameter_scope_payload_length(scope),
-                    scope.reference_members().len()
-                ),
-                (Some(264), 4) | (Some(253), 3)
-            ) && bytes.get(start + 25) == Some(&1) =>
-        {
-            let distance_record_index = View::u32_le_at(bytes, start + 26)?;
+        DesignFeatureFamily::OffsetFaces => {
+            let distance_marker = offset_faces_distance_marker(bytes, scope, start)?;
+            let distance_record_index = View::u32_le_at(bytes, start + distance_marker + 1)?;
             if scope.reference_members().values().next_back() != Some(&distance_record_index) {
                 return None;
             }
