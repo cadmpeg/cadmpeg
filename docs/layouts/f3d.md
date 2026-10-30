@@ -5617,6 +5617,72 @@ Relative to the first flag byte; excludes the preceding property and first paire
 | 53 | 8 | `unit_pair` | `f32[2]` | little | spec | f32 constants |
 | 61 | 5 | `marker` | `bytes[5]` | little | spec | marker |
 
+## `sketch_curve_tail_1_reference`
+
+Spec §3.1 · layout: byte offsets · size: 25 B
+
+N = 1. Offsets are relative to the end of the 96-byte analytic payload.
+
+Parsed by:
+- `crates/cadmpeg-codec-f3d/src/design/sketch_project.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 1 | `reference_marker` | `u8` | little | spec | `0x01` |
+| 1 | 4 | `reference_record_index` | `u32` | little | spec | u32 `record_index` |
+| 5 | 6 | `reference_zero_trailer` | `bytes[6]` | little | spec | six zero bytes |
+| 11 | 5 | `zero_pad` | `bytes[5]` | little | spec | `P = 5` when `N = 1` |
+| 16 | 4 | `opaque` | `bytes[4]` | little | spec | four opaque bytes |
+| 20 | 4 | `flag_guard` | `u32` | little | spec | u32 `1` |
+| 24 | 1 | `construction_flag` | `u8` | little | spec | u8 construction flag |
+
+## `sketch_curve_tail_2_references`
+
+Spec §3.1 · layout: byte offsets · size: 34 B
+
+N = 2. Offsets are relative to the end of the 96-byte analytic payload.
+
+Parsed by:
+- `crates/cadmpeg-codec-f3d/src/design/sketch_project.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 1 | `first_reference_marker` | `u8` | little | spec | `0x01` |
+| 1 | 4 | `first_reference_record_index` | `u32` | little | spec | u32 `record_index` |
+| 5 | 6 | `first_reference_zero_trailer` | `bytes[6]` | little | spec | six zero bytes |
+| 11 | 1 | `second_reference_marker` | `u8` | little | spec | `0x01` |
+| 12 | 4 | `second_reference_record_index` | `u32` | little | spec | u32 `record_index` |
+| 16 | 6 | `second_reference_zero_trailer` | `bytes[6]` | little | spec | six zero bytes |
+| 22 | 3 | `zero_pad` | `bytes[3]` | little | spec | `P = 3` when `N` is `2` or `3` |
+| 25 | 4 | `opaque` | `bytes[4]` | little | spec | four opaque bytes |
+| 29 | 4 | `flag_guard` | `u32` | little | spec | u32 `1` |
+| 33 | 1 | `construction_flag` | `u8` | little | spec | u8 construction flag |
+
+## `sketch_curve_tail_3_references`
+
+Spec §3.1 · layout: byte offsets · size: 45 B
+
+N = 3. Offsets are relative to the end of the 96-byte analytic payload.
+
+Parsed by:
+- `crates/cadmpeg-codec-f3d/src/design/sketch_project.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 1 | `first_reference_marker` | `u8` | little | spec | `0x01` |
+| 1 | 4 | `first_reference_record_index` | `u32` | little | spec | u32 `record_index` |
+| 5 | 6 | `first_reference_zero_trailer` | `bytes[6]` | little | spec | six zero bytes |
+| 11 | 1 | `second_reference_marker` | `u8` | little | spec | `0x01` |
+| 12 | 4 | `second_reference_record_index` | `u32` | little | spec | u32 `record_index` |
+| 16 | 6 | `second_reference_zero_trailer` | `bytes[6]` | little | spec | six zero bytes |
+| 22 | 1 | `third_reference_marker` | `u8` | little | spec | `0x01` |
+| 23 | 4 | `third_reference_record_index` | `u32` | little | spec | u32 `record_index` |
+| 27 | 6 | `third_reference_zero_trailer` | `bytes[6]` | little | spec | six zero bytes |
+| 33 | 3 | `zero_pad` | `bytes[3]` | little | spec | `P = 3` when `N` is `2` or `3` |
+| 36 | 4 | `opaque` | `bytes[4]` | little | spec | four opaque bytes |
+| 40 | 4 | `flag_guard` | `u32` | little | spec | u32 `1` |
+| 44 | 1 | `construction_flag` | `u8` | little | spec | u8 construction flag |
+
 ## `sheet_metal_region_carrier_prefix`
 
 Spec §3.1 · layout: byte offsets · size: 36 B

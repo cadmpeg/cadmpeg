@@ -26,7 +26,7 @@ A measured value has these members, in this order:
 | `unit` | `mm`, `mm2`, `mm3`, `mm5`, `kg`, `kg.mm2`, `rad` or `1`. The unit of the value and of both error terms. |
 | `method` | How the value was obtained (below). |
 | `numeric_error` | A non-negative a-posteriori estimate of the computation error. It is zero for `source` and `closed_form`. It is not a certified bound. |
-| `model_uncertainty` | The non-negative first-order change of the value when the boundary moves by the larger of the declared tolerance, the measured boundary deviations and the bridged gaps, plus the placement term. |
+| `model_uncertainty` | The non-negative first-order change of the value when the boundary moves by the larger of the declared tolerance, the measured boundary deviations and the bridged gaps, plus the placement term. The section Volume, centroid and closure states the terms for a body's volume, centroid and moments. |
 | `provenance` | The source fields `{entity, field, exactness}` the value is read or computed from. Absent when empty. |
 | `reading` | The reading the value is measured under, when the value has several readings. |
 | `candidates` | The other readings: `{reading, value, unit, method, numeric_error, model_uncertainty}`. |
@@ -110,7 +110,7 @@ cites.
 | `boundary.pcurve-curve-mismatch` | input | The surface image of a coedge's pcurve does not follow its 3D curve once, in order, within the allowance. |
 | `boundary.inversion-failed` | input | A boundary point does not invert onto the surface within the allowance. |
 | `boundary.inversion-unsupported` | unsupported | A 3D-only coedge on a carrier with no inverse. |
-| `boundary.not-closed` | input | Consecutive pieces do not join within the allowance. |
+| `boundary.not-closed` | input | Consecutive pieces do not join within the larger of the allowance and the sum of their edges' model tolerances. |
 | `boundary.period-mismatch` | input | A loop's closing shift is not a whole number of periods. |
 | `boundary.loop-degenerate` | input | A ring loop with zero net shift encloses no area relative to its own size. |
 | `boundary.nesting-invalid` | input | The loops form no valid region for the domain. |
@@ -126,7 +126,7 @@ cites.
 | `volume.orientation-unverified` | unsupported | A declared-orientation face of the body is unconfirmed. |
 | `volume.closure-flux` | input | The flux of the unit field exceeds the closure tolerance. |
 | `aggregate.member-unavailable` | from the member | A sum or union has an unavailable member; `entity` names it. |
-| `sweep.unsupported-carrier` | unsupported | Torus and elliptic-cone sweeps. |
+| `sweep.unsupported-carrier` | unsupported | Elliptic-cone sweeps and sweeps of a torus that is not a ring about its axis. |
 | `bbox.interior-unbounded` | unsupported | No interior bound for the carrier. |
 | `bbox.nonpositive-weights` | unsupported | The NURBS control hull needs positive weights. |
 | `length.derivative-unavailable` | unsupported | A procedural curve without a solved cache has no derivative evaluator. |
@@ -397,8 +397,15 @@ from the boundary pieces' ranges; pole pieces carry no direction and do not
 enter the sweep. A latitude circle or meridian that misses the boundary lies
 wholly in the region or wholly out of it, so one membership test decides
 each gap between the boundary's ranges. A loop that goes around the axis
-makes the sweep full. On a torus `angular_sweep` is
-`sweep.unsupported-carrier`.
+makes the sweep full.
+
+On a ring torus (`R > |r|`), `angular_sweep` is about the axis from
+`ref_direction`, with `u` the angle: the union of the boundary pieces'
+`u`-ranges, with each gap between them in the region when its middle
+meridian is. A loop that goes around the axis, or a face without loops,
+makes the sweep full. Gaps smaller than `max(tolerances.angular, allowance
+/ (R + |r|))` are closed. The model uncertainty is `τ_b / (R − |r|)`. On
+any other torus `angular_sweep` is `sweep.unsupported-carrier`.
 
 ## Boxes
 
@@ -562,9 +569,27 @@ failing reason. They carry as candidates the `face_sense` and
 face has a flux under it. A body with closed shells reports each shell's
 signed volume.
 
-`numeric_error` of `V` is the volume flux error. `model_uncertainty` of `V`
-is body area × the largest `τ_b` of its faces plus the placement term. Of
-`C`, it is that value × the body box diagonal / `|V|`.
+`numeric_error` of `V` is the volume flux error. A face's surface
+tolerance `s` is the larger of the document's linear tolerance, the face's
+tolerance and its carrier's fit tolerance. An edge's trim tolerance `t` on
+a face is the larger of the edge's model tolerance (the largest of the
+linear tolerance, the edge's tolerance and its vertices' tolerances) and
+its largest measured deviation on the face: the gaps at its vertices and
+junctions, and its pieces' distance from the surface. A face's area `A` is
+its largest area over its readings. A face's lever `d` is the largest
+distance from `C` to a corner of its boxes over its readings, or the body
+box diagonal when it has no box. An edge's lever `ρ` is the largest
+distance from `C` to a corner of its box. Each face adds `A s`, `A s d` and
+`A s d²` to the volume, first-moment and second-moment sums. Each of its
+edge uses of length `L` adds `⅓ L t ρ`, `¼ L t ρ²` and `⅕ L t ρ³`. A face
+whose boundary is unavailable, or with an edge that has no length or box,
+adds `A τ_b`, `A τ_b d` and `A τ_b d²` instead. `model_uncertainty` of `V` is the volume sum plus the
+placement term. `model_uncertainty` of `C` is the first-moment sum plus the
+placement term of `V` times the largest face lever, over `|V|`. The body
+box diagonal is the largest diagonal of the body box and its candidates.
+When the body box is unavailable, it is the diagonal of the union of every
+face's boxes over its readings. When a needed face area, lever or diagonal
+is unavailable, the value is unavailable (`aggregate.member-unavailable`).
 
 A body with faces and no closed shell reports `area_centroid`, the
 area-weighted centroid `P_ref + Σ Φ_A / A`, where `Φ_A` is the area moment
@@ -600,8 +625,8 @@ it carries no candidate.
   drive the flux quadrature. They are integrated on the panels that the
   volume, first-moment, closure and area-moment components refine, and the
   flux error of each is its own Gauss–Kronrod estimate on those panels.
-- `model_uncertainty` is the volume's boundary term × the squared body box
-  diagonal, plus the placement term. The move of the centroid changes the
+- `model_uncertainty` is the second-moment sum (see Volume, centroid and
+  closure) plus the placement term. The move of the centroid changes the
   tensor only at second order.
 
 `principal_moments` is a list of three values, the eigenvalues of
