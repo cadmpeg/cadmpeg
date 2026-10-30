@@ -76,6 +76,7 @@ pub(crate) enum CreoLossCode {
     BrepTransferIncomplete,
     /// A compact-frame component has unresolved source faces.
     BrepCompactFrameComponentUnresolved,
+    BrepCompactFrameBoundaryUnresolved,
     /// A saved section spline cannot form a NURBS curve.
     SectionSplineUnresolved,
     /// A named surface-prototype field's bounded scalar body states no slots
@@ -83,6 +84,8 @@ pub(crate) enum CreoLossCode {
     SurfacePrototypeFieldRetained,
     /// A compact plane rotation has no complete finite origin.
     PlaneCompactFrameUnresolved,
+    /// A complete rotation cylinder conflicts with its stored envelope.
+    CylinderRotationEnvelopeUnresolved,
     /// A resolved extrusion body failed shell admission.
     ExtrusionBodyRejected,
     /// Remaining per-instance surfaces, curves, and vertices stay gated.
@@ -244,9 +247,15 @@ impl CreoLossCode {
             Self::BrepCompactFrameComponentUnresolved => {
                 "geometry.brep-compact-frame-component-unresolved"
             }
+            Self::BrepCompactFrameBoundaryUnresolved => {
+                "geometry.brep-compact-frame-boundary-unresolved"
+            }
             Self::SectionSplineUnresolved => "geometry.section-spline-unresolved",
             Self::SurfacePrototypeFieldRetained => "geometry.surface-prototype-field-retained",
             Self::PlaneCompactFrameUnresolved => "geometry.plane-compact-frame-unresolved",
+            Self::CylinderRotationEnvelopeUnresolved => {
+                "geometry.cylinder-rotation-envelope-unresolved"
+            }
             Self::ExtrusionBodyRejected => "topology.extrusion-body-rejected",
             Self::GeometryInstanceCarriersGated => "geometry.instance-carriers-gated",
             Self::VisibGeomSurfaceUntransferred => "geometry.visibgeom-surface-untransferred",
@@ -352,6 +361,7 @@ impl CreoLossCode {
             | Self::CarrierTorusParameterRetention => Severity::Info,
             Self::BrepTransferIncomplete
             | Self::BrepCompactFrameComponentUnresolved
+            | Self::BrepCompactFrameBoundaryUnresolved
             | Self::GeometryInstanceCarriersGated
             | Self::TopologyIncompleteComponents
             | Self::TopologyVertexIdentifierUnstatable
@@ -360,6 +370,7 @@ impl CreoLossCode {
             | Self::CompressedSectionUnexpanded
             | Self::SurfacePrototypeFieldRetained
             | Self::PlaneCompactFrameUnresolved
+            | Self::CylinderRotationEnvelopeUnresolved
             | Self::SourceDialectUnverified
             | Self::LegacyRealValueUnresolved
             | Self::LegacyIntegerValueUnresolved
@@ -460,6 +471,7 @@ impl CreoLossCode {
             Self::TriangleStripRepresentationConflict
             | Self::BrepTransferIncomplete
             | Self::BrepCompactFrameComponentUnresolved
+            | Self::BrepCompactFrameBoundaryUnresolved
             | Self::GeometryInstanceCarriersGated
             | Self::VisibGeomSurfaceUntransferred
             | Self::PlaneLocalSystemUnresolved
@@ -480,6 +492,7 @@ impl CreoLossCode {
             | Self::SectionSplineUnresolved
             | Self::SurfacePrototypeFieldRetained
             | Self::PlaneCompactFrameUnresolved
+            | Self::CylinderRotationEnvelopeUnresolved
             | Self::PlaneSupportVariantsCapped => LossTaxonomy::GeometryNotTransferred,
             Self::TopologyIncompleteComponents
             | Self::TopologyVertexIdentifierUnstatable
@@ -568,9 +581,11 @@ mod tests {
                 "geometry.triangle-strip-conflict",
                 "geometry.brep-incomplete",
                 "geometry.brep-compact-frame-component-unresolved",
+                "geometry.brep-compact-frame-boundary-unresolved",
                 "geometry.section-spline-unresolved",
                 "geometry.surface-prototype-field-retained",
                 "geometry.plane-compact-frame-unresolved",
+                "geometry.cylinder-rotation-envelope-unresolved",
                 "topology.extrusion-body-rejected",
                 "geometry.instance-carriers-gated",
                 "geometry.visibgeom-surface-untransferred",

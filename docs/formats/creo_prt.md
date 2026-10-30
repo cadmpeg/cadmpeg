@@ -844,6 +844,40 @@ defines the model-Z axis direction, the sign of the radial difference defines
 the model-X reference direction, and the absolute half-difference is the
 radius. The absolute signed length is the bounded axial length.
 
+A quarter-turn positional cylinder stores two scalar bounds, the angular
+upper-bound token `12`, and seven further scalars. The two leading values are
+angular lower bound zero and axial lower bound. The seven values are axial
+upper bound and two XYZ envelope corners. These values use the signed
+first-coordinate lane with stateful `e4` through `e6` repeats and explicit
+`18` zero slots. Compact literals `0e`, `0f`, and `10` encode positive one
+half, positive one, and negative one. Repeat state continues across `12`;
+a repeat must fit its bounded group. An optional `f7 <canonical-reference>` follows the corners,
+then `e3` closes the envelope.
+
+The next compound contains a complete compact rotation body as defined in
+§3.4, one positive finite radius in the inline surface-suffix scalar lane,
+and `e3`. Matrix columns zero and one are
+the radial parameter directions; column two is the directed cylinder axis.
+The origin is the axis point. The axial corner interval equals the interval
+obtained by mapping the two stored axial bounds through that frame. Each
+transverse corner interval spans one radius and has the axis point at one
+endpoint. Its other endpoint is the corresponding component of
+`origin + radius * (column_zero + column_one)`.
+Exactly one complete frame-and-radius boundary defines this form.
+The absolute axial-bound difference is the positive bounded length.
+`SMT_THICKNESS` is the model parameter for sheet thickness.
+
+For a first instance, the envelope ends at the following named prototype
+header. The prototype supplies the complete signed frame and radius, and the
+same envelope equalities apply. A coaxial circular boundary has constant
+axial parameter. Its endpoint angles lie in the stored angular interval;
+the arc between those angles inside that interval is its bounded circle
+interval. The interval runs from the edge's start vertex to its end vertex.
+Adjacent cylinder domains that qualify the same edge agree on that
+interval. Endpoint pairs on an adjacent plane constrain its circular
+pcurve at those endpoints. The complete circle projected through that
+plane's frame defines the pcurve between them.
+
 A signed axis-aligned positional cylinder begins `11`, one nonzero signed
 axial length, and `13`, followed by one auxiliary scalar and two XYZ corners.
 All seven fields after `13` use the positional surface-row scalar lane. The
@@ -1891,6 +1925,12 @@ scalars use the signed first-coordinate lane at all three positions, including
 positive `2d`, negative `46`, and the positive DICT exponent lattice.
 The repeat tokens keep their repeat meaning in the origin slots; `18` is an
 explicit zero there.
+
+A complete positional compact rotation frame can end with
+`e1 f7 <nonzero-canonical-reference>` before its compound close. The `e1`
+closes the frame. The following reference occupies the linkage field after
+that close. Its complete canonical identifier ends at the compound boundary.
+The scalar frame and linkage retain their separate byte extents.
 
 A generic direct-normal body stores a parameter
 direction, an exact zero-rank triple, and a stored plane normal. A generic zero-rank

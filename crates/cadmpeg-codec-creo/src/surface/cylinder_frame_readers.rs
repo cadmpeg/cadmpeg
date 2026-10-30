@@ -1668,5 +1668,151 @@ fn axis_aligned_cylinder_from_corners(
     corners.frame(axes, orientation, corners.spans[axes.axis])
 }
 
+struct RotationCylinderEnvelope {
+    axial: [f64; 2],
+    corners: [[f64; 3]; 2],
+    end: usize,
+}
+
+fn rotation_cylinder_envelope(
+    body: &[u8],
+    cache: &scalar::ScalarCache,
+) -> Option<RotationCylinderEnvelope> {
+    fn values<const N: usize>(
+        body: &[u8],
+        cursor: &mut usize,
+        previous: &mut Option<f64>,
+        cache: &scalar::ScalarCache,
+    ) -> Option<[f64; N]> {
+        let mut values = [0.0; N];
+        let mut slot = 0usize;
+        while slot < N {
+            let (value, repeat, end) = scalar::decode_stateful_scalar_run(
+                body,
+                *cursor,
+                *previous,
+                cache,
+                scalar::StatefulScalarKind::Plane,
+            )?;
+            let next = slot.checked_add(repeat)?;
+            values.get_mut(slot..next)?.fill(value);
+            *previous = Some(value);
+            *cursor = end;
+            slot = next;
+        }
+        Some(values)
+    }
+    let byte = |offset| {
+        let mut view = cadmpeg_core::decode::View::over_retained(body);
+        view.seek(offset)?;
+        view.u8()
+    };
+    let mut cursor = 0;
+    let mut previous = None;
+    let [angle, lower] = values::<2>(body, &mut cursor, &mut previous, cache)?;
+    (angle == 0.0 && byte(cursor) == Some(0x12)).then_some(())?;
+    cursor += 1;
+    previous = Some(std::f64::consts::FRAC_PI_2);
+    let [upper, x0, y0, z0, x1, y1, z1] = values::<7>(body, &mut cursor, &mut previous, cache)?;
+    if byte(cursor) == Some(psb::token::ENTITY_REF) {
+        let (_, next) = psb::reference_id(body, cursor + 1).ok()?;
+        cursor = next;
+    }
+    (cursor == body.len() || byte(cursor) == Some(psb::token::COMPOUND_CLOSE)).then_some(())?;
+    Some(RotationCylinderEnvelope {
+        axial: [lower, upper],
+        corners: [[x0, y0, z0], [x1, y1, z1]],
+        end: cursor,
+    })
+}
+
+fn rotation_cylinder_envelope_agrees(
+    envelope: &RotationCylinderEnvelope,
+    frame: PositionalCylinderFrame,
+) -> Option<()> {
+    let origin = frame.frame().origin();
+    let axis = frame.frame().axis();
+    let u = frame.frame().ref_direction();
+    let v = crate::vecmath::cross(axis, u);
+    u.into_iter()
+        .chain(v)
+        .all(|value| matches!(value, -1.0 | 0.0 | 1.0))
+        .then_some(())?;
+    let radius = frame.radius().get();
+    let [lower, upper] = envelope.axial;
+    PositiveLength::new((upper - lower).abs())?;
+    let corners = envelope.corners;
+    let axial = crate::decode::uniqueness::exactly_one((0..3).filter(|i| axis[*i].abs() == 1.0))?;
+    let scale = origin
+        .into_iter()
+        .chain(corners.into_iter().flatten())
+        .chain([radius, lower, upper])
+        .map(f64::abs)
+        .fold(1.0, f64::max);
+    let close_value = |a: f64, b: f64| (a - b).abs() <= EPS_SURFACE_AGREEMENT * scale;
+    let endpoints = [
+        origin[axial] + axis[axial] * lower,
+        origin[axial] + axis[axial] * upper,
+    ];
+    (close_value(
+        corners[0][axial].min(corners[1][axial]),
+        endpoints[0].min(endpoints[1]),
+    ) && close_value(
+        corners[0][axial].max(corners[1][axial]),
+        endpoints[0].max(endpoints[1]),
+    ))
+    .then_some(())?;
+    for radial in (0..3).filter(|i| *i != axial) {
+        let bounds = [corners[0][radial], corners[1][radial]];
+        let limit = origin[radial] + radius * (u[radial] + v[radial]);
+        (close_value(bounds[0].min(bounds[1]), origin[radial].min(limit))
+            && close_value(bounds[0].max(bounds[1]), origin[radial].max(limit)))
+        .then_some(())?;
+    }
+    Some(())
+}
+
+pub(crate) fn rotation_cylinder_parameter_bounds(
+    body: &[u8],
+    frame: PositionalCylinderFrame,
+) -> Option<[[f64; 2]; 2]> {
+    let envelope = rotation_cylinder_envelope(body, &scalar::ScalarCache::default())?;
+    rotation_cylinder_envelope_agrees(&envelope, frame)?;
+    Some([[0.0, std::f64::consts::FRAC_PI_2], envelope.axial])
+}
+
+pub(super) fn decode_rotation_cylinder_body(
+    body: &[u8],
+    cache: &scalar::ScalarCache,
+) -> Option<(Option<PositionalCylinderFrame>, usize)> {
+    let envelope = rotation_cylinder_envelope(body, cache)?;
+    let mut view = cadmpeg_core::decode::View::over_retained(body);
+    view.seek(envelope.end)?;
+    (view.u8() == Some(psb::token::COMPOUND_CLOSE)).then_some(())?;
+    let local_start = view.read_len();
+    let mut candidates = (local_start..body.len()).filter_map(|radius_start| {
+        let slots = scalar::decode_compact_plane_rotation(&body[local_start..radius_start], cache)?
+            .ok()?
+            .get();
+        let (radius, close) =
+            scalar::decode_inline_surface_suffix_scalar(body, radius_start, cache)?;
+        view.seek(close)?;
+        (view.u8() == Some(psb::token::COMPOUND_CLOSE)).then_some(())?;
+        let [u, _, v, origin] = local_system_lanes(slots);
+        let axis = crate::vecmath::cross(u, v);
+        let frame = PositionalCylinderFrame::new(
+            origin,
+            axis,
+            u,
+            radius,
+            Some((envelope.axial[1] - envelope.axial[0]).abs()),
+        )?;
+        let frame = rotation_cylinder_envelope_agrees(&envelope, frame).map(|()| frame);
+        Some((frame, close))
+    });
+    let result = candidates.next()?;
+    candidates.next().is_none().then_some(result)
+}
+
 #[cfg(test)]
 mod tests;

@@ -372,3 +372,42 @@ fn standard_plane_literal_fallback_reconciles_with_the_stored_frame() {
         assert_eq!(corners_3d[1][2], Some(expected));
     }
 }
+
+#[test]
+fn compact_plane_linkage_follows_a_complete_closed_frame() {
+    let mut body = vec![0x0f, 0x18, 0xe5, 0x0f, 0x18, 0xe5, 0x0f];
+    body.extend_from_slice(&[0x2f, 0x10, 0x00, 0x2f, 0x18, 0x00, 0x2f, 0x20, 0x00]);
+    body.extend_from_slice(&[0xe1, 0xf7, 0x25]);
+    let cache = scalar::ScalarCache::default();
+    let mut losses = Vec::new();
+    let frame = with_surface_ctx(&body, |ctx| {
+        crate::surface::complete_plane_local_system(ctx, &body, &cache, &mut losses)
+    })
+    .expect("bounded frame")
+    .expect("closed frame with linkage");
+    assert_eq!(&frame.0.as_raw()[9..], &[4.0, 6.0, 8.0]);
+    assert!(losses.is_empty());
+    for suffix in [&[0xf7][..], &[0xf7, 0x25, 0x18][..]] {
+        body.truncate(body.len() - 2);
+        body.extend_from_slice(suffix);
+        losses.clear();
+        assert!(with_surface_ctx(&body, |ctx| {
+            crate::surface::complete_plane_local_system(ctx, &body, &cache, &mut losses)
+        })
+        .expect("bounded refusal")
+        .is_none());
+        assert!(
+            losses
+                .iter()
+                .any(|loss| loss.code
+                    == crate::loss::CreoLossCode::PlaneCompactFrameUnresolved.kind())
+        );
+        body.truncate(
+            body.iter()
+                .position(|byte| *byte == 0xe1)
+                .expect("frame close")
+                + 1,
+        );
+        body.extend_from_slice(&[0xf7, 0x25]);
+    }
+}
