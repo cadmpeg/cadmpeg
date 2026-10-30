@@ -11,7 +11,8 @@ use cadmpeg_ir::{Native, NativeRecord};
 use serde::de::DeserializeOwned;
 use serde_json::{Map, Value};
 
-use super::archive::{ArchiveSession, ClassifiedMember};
+use super::archive::ClassifiedMember;
+use super::{F3zDecodedMember, F3zSession};
 use crate::container::ContainerScan;
 use crate::loss::F3dLossCode;
 use crate::records::xref::XrefReference;
@@ -20,29 +21,29 @@ use crate::xref::{self, XrefTable};
 /// Merges the root document's recursively reachable members in archive scope.
 pub(super) fn merge_archive(
     ctx: &DecodeContext<'_>,
-    scan: &ContainerScan<'_>,
-    archive: &ArchiveSession<'_>,
-    model_root: String,
-    root: &mut crate::decode::AuthoredDecoded,
+    session: &F3zSession<'_>,
+    decoded: &mut std::collections::BTreeMap<String, F3zDecodedMember>,
+    operation_poses: super::session::OperationPoses,
+    ir: &mut cadmpeg_ir::CadIr,
+    report: &mut cadmpeg_ir::codec::DecodeBody,
+    fidelity: &mut cadmpeg_ir::SourceFidelity,
 ) -> Result<usize, CodecError> {
-    let table = xref_table_from_ir(ctx, &root.ir)?;
+    let scan = &session.scan;
+    let table = xref_table_from_ir(ctx, ir)?;
 
-    let stack = vec![model_root];
+    let stack = vec![session.model_root.clone()];
     MergeSession {
         ctx,
         scan,
-        archive,
+        archive: &session.archive,
+        session,
+        decoded,
         stack,
         members: std::collections::BTreeMap::new(),
-        operation_poses: std::mem::take(&mut root.operation_poses),
+        operation_poses,
         operation_protected: std::collections::BTreeSet::new(),
     }
-    .merge(
-        &mut root.ir,
-        &mut root.body,
-        &mut root.source_fidelity,
-        &table,
-    )
+    .merge(ir, report, fidelity, &table)
 }
 
 /// Reassigns only repeated sibling ordinals after independent document graphs
@@ -170,7 +171,9 @@ struct MemberDefinition {
 struct MergeSession<'r, 'a> {
     ctx: &'r DecodeContext<'a>,
     scan: &'r ContainerScan<'a>,
-    archive: &'r ArchiveSession<'a>,
+    archive: &'r super::archive::ArchiveSession,
+    session: &'r F3zSession<'a>,
+    decoded: &'r mut std::collections::BTreeMap<String, F3zDecodedMember>,
     stack: Vec<String>,
     members: std::collections::BTreeMap<String, MemberDefinition>,
     operation_poses: std::collections::BTreeMap<String, crate::xref::operation_pose::OperationPose>,
@@ -195,6 +198,8 @@ impl MergeSession<'_, '_> {
             placements,
             &mut member_roots,
         )?;
+        self.members.clear();
+        self.decoded.clear();
         rebind_joint_descent(
             self.ctx,
             parent_ir,
@@ -280,7 +285,7 @@ impl MergeSession<'_, '_> {
             } else {
                 let Some(member) = self.archive.members.get(reference.relative_path.as_str())
                 else {
-                    if self.scan.entry_view(&reference.relative_path).is_some() {
+                    if self.scan.has_entry(&reference.relative_path) {
                         super::push_loss(&mut parent_report.losses, F3dLossCode::XrefMemberUndecoded, format_args!(
                             "xref {label}: member {} is not an F3D document member; the occurrence was not resolved",
                             reference.relative_path
@@ -293,25 +298,23 @@ impl MergeSession<'_, '_> {
                     }
                     continue;
                 };
-                let member_scan = match member {
-                    ClassifiedMember::Scanned(member_scan) => member_scan,
+                match member {
+                    ClassifiedMember::Scanned { .. } => {}
                     ClassifiedMember::Unreadable(_) => continue,
-                };
-                let component = match super::observer::observed(&reference.relative_path, || {
-                    crate::decode::decode_archive_member(
-                        self.ctx,
-                        member_scan,
-                        &self.archive.layers,
-                    )
-                }) {
-                    Ok(component) => {
-                        for (key, pose) in &component.operation_poses {
+                }
+                let component = match self.session.take_member(
+                    self.ctx,
+                    reference.relative_path.as_str(),
+                    self.decoded,
+                ) {
+                    Ok((component, component_poses)) => {
+                        for (key, pose) in &component_poses {
                             let key = rescope(key, &occurrence).ok_or_else(|| {
                                 CodecError::malformed("invalid F3Z operation-pose identity")
                             })?;
                             self.operation_poses.insert(key, pose.clone());
                         }
-                        component.into_decoded()
+                        component
                     }
                     Err(error @ CodecError::ResourceLimit(_)) => return Err(error),
                     Err(error) => {

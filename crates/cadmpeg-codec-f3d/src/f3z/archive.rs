@@ -3,7 +3,7 @@
 
 use std::collections::BTreeMap;
 
-use cadmpeg_core::decode::DecodeContext;
+use cadmpeg_core::decode::{DecodeArena, DecodeCheckpoint, DecodeContext};
 use cadmpeg_core::dialect::DialectLayers;
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::report::loss::LossNote;
@@ -55,23 +55,25 @@ struct DesignObjectReference {
     ids: Vec<u64>,
 }
 
-/// Classifies every member once and retains the lightweight scans needed by
-/// inspect, root decode, and recursive XREF merge.
-pub(super) struct ArchiveSession<'a> {
-    pub(super) members: BTreeMap<String, ClassifiedMember<'a>>,
+/// Retains member classification and the checkpoints used to reopen each scan.
+pub(super) struct ArchiveSession {
+    pub(super) members: BTreeMap<String, ClassifiedMember>,
     pub(super) layers: DialectLayers,
     pub(super) losses: Vec<LossNote>,
 }
 
-pub(super) enum ClassifiedMember<'a> {
-    Scanned(Box<ContainerScan<'a>>),
+pub(super) enum ClassifiedMember {
+    Scanned {
+        checkpoint: DecodeCheckpoint,
+        working_bytes: Option<u64>,
+    },
     Unreadable(String),
 }
 
-impl ArchiveSession<'_> {
-    pub(super) fn member_scan(&self, path: &str) -> Result<&ContainerScan<'_>, CodecError> {
+impl ArchiveSession {
+    pub(super) fn member_checkpoint(&self, path: &str) -> Result<&DecodeCheckpoint, CodecError> {
         match self.members.get(path) {
-            Some(ClassifiedMember::Scanned(scan)) => Ok(scan),
+            Some(ClassifiedMember::Scanned { checkpoint, .. }) => Ok(checkpoint),
             Some(ClassifiedMember::Unreadable(message)) => Err(CodecError::malformed(
                 format_args!("f3z document member {path} could not be scanned: {message}"),
             )),
@@ -79,6 +81,20 @@ impl ArchiveSession<'_> {
                 "f3z document member {path} is not present in the archive"
             ))),
         }
+    }
+
+    pub(super) fn with_member_scan<T>(
+        &self,
+        outer: &ContainerScan<'_>,
+        path: &str,
+        work: impl FnOnce(&ContainerScan<'_>) -> Result<T, CodecError>,
+    ) -> Result<T, CodecError> {
+        let arena = DecodeArena::new();
+        let root = outer.member_view(&arena, path)?;
+        let local = self.member_checkpoint(path)?.resume(&arena);
+        local.take_trace();
+        let scan = crate::container::scan(&local, root)?;
+        work(&scan)
     }
 }
 
@@ -107,7 +123,7 @@ pub(super) fn model_root(
 pub(super) fn classify_members<'a>(
     ctx: &DecodeContext<'a>,
     scan: &ContainerScan<'a>,
-) -> Result<ArchiveSession<'a>, CodecError> {
+) -> Result<ArchiveSession, CodecError> {
     let mut members = BTreeMap::new();
     let primary = scan.kind.dialect().clone();
     let mut layers = DialectLayers::of(primary);
@@ -118,16 +134,24 @@ pub(super) fn classify_members<'a>(
         .map(|entry| entry.name.as_str())
         .filter(|name| crate::container::is_f3d_name(name))
     {
-        let member_scan = match scan
-            .entry_view(member_path)
-            .ok_or_else(|| {
-                CodecError::malformed(format_args!(
-                    "f3z document member {member_path} is not readable"
-                ))
+        let checkpoint = ctx.checkpoint();
+        let arena = DecodeArena::new();
+        let root = if scan.has_entry(member_path) {
+            scan.member_view(&arena, member_path)
+        } else {
+            Err(CodecError::malformed(format_args!(
+                "f3z document member {member_path} is not readable"
+            )))
+        };
+        let classified = root.and_then(|view| {
+            ctx.with_arena(&arena, |local| {
+                let member_scan = crate::container::scan(local, view)?;
+                Ok(crate::dialect::classify_layers(&member_scan)
+                    .map(|(layers, losses)| (layers, losses, member_scan.declared_working_bytes())))
             })
-            .and_then(|view| crate::container::scan(ctx, view))
-        {
-            Ok(member_scan) => member_scan,
+        });
+        let classified = match classified {
+            Ok(classified) => classified,
             Err(error @ CodecError::ResourceLimit(_)) => return Err(error),
             Err(error) => {
                 let message = format!("{error}");
@@ -141,7 +165,7 @@ pub(super) fn classify_members<'a>(
                 continue;
             }
         };
-        let (member_layers, mut member_losses) = crate::dialect::classify_layers(&member_scan)?;
+        let (member_layers, mut member_losses, working_bytes) = classified?;
         for loss in &mut member_losses {
             loss.message = format!("archive member {member_path}: {}", loss.message);
         }
@@ -154,7 +178,10 @@ pub(super) fn classify_members<'a>(
 
         members.insert(
             member_path.to_owned(),
-            ClassifiedMember::Scanned(Box::new(member_scan)),
+            ClassifiedMember::Scanned {
+                checkpoint,
+                working_bytes,
+            },
         );
     }
     losses.extend(crate::dialect::dialect_losses(&layers));
@@ -246,7 +273,7 @@ fn model_root_member(
         for object in &graph.design_objects {
             if !object.content_type.eq_ignore_ascii_case("f3d")
                 || !crate::container::is_f3d_name(&object.relative_path)
-                || scan.entry_view(&object.relative_path).is_none()
+                || !scan.has_entry(&object.relative_path)
             {
                 continue;
             }

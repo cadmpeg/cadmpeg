@@ -144,7 +144,7 @@ pub(super) fn decode(
     scan: &ContainerScan,
     design_body_bindings: Vec<DesignBodyBinding>,
 ) -> Result<ProductPrereqs, CodecError> {
-    let history_retained_allowance = ctx.retained_bytes_available();
+    let history_retained_allowance = ctx.retained_allowance();
     // Scope-variant admission reads state identities and chain links only.
     let mut history_index = Vec::new();
     for history_brep in container::history_breps(scan) {

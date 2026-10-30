@@ -75,7 +75,12 @@ fn insert_only_chain() -> Vec<AsmDeltaState> {
 fn history_binding_skips_a_chain_past_its_retained_byte_allowance() {
     let unbounded = insert_only_chain();
     assert_eq!(
-        admit_history_binding(&unbounded, &mut { u64::MAX }).unwrap(),
+        admit_history_binding(
+            &cadmpeg_test_support::service_decode_context(),
+            &unbounded,
+            &mut { u64::MAX }
+        )
+        .unwrap(),
         HistoryBindingAdmission::Admitted
     );
     // Three bulletin-board changes and two slots in the tail state.
@@ -84,7 +89,12 @@ fn history_binding_skips_a_chain_past_its_retained_byte_allowance() {
     let mut allowance = bytes;
     let at_bound = insert_only_chain();
     assert_eq!(
-        admit_history_binding(&at_bound, &mut allowance).unwrap(),
+        admit_history_binding(
+            &cadmpeg_test_support::service_decode_context(),
+            &at_bound,
+            &mut allowance
+        )
+        .unwrap(),
         HistoryBindingAdmission::Admitted
     );
     assert_eq!(at_bound, unbounded);
@@ -93,7 +103,12 @@ fn history_binding_skips_a_chain_past_its_retained_byte_allowance() {
     let mut allowance = bytes - 1;
     let past_bound = insert_only_chain();
     assert_eq!(
-        admit_history_binding(&past_bound, &mut allowance).unwrap(),
+        admit_history_binding(
+            &cadmpeg_test_support::service_decode_context(),
+            &past_bound,
+            &mut allowance
+        )
+        .unwrap(),
         HistoryBindingAdmission::Skipped
     );
     assert!(past_bound.iter().all(|state| state.transition.is_none()));
@@ -108,12 +123,22 @@ fn history_streams_of_one_decode_share_the_remaining_retained_bytes() {
     let mut allowance = 2 * bytes - 1;
 
     assert_eq!(
-        admit_history_binding(&first, &mut allowance).unwrap(),
+        admit_history_binding(
+            &cadmpeg_test_support::service_decode_context(),
+            &first,
+            &mut allowance
+        )
+        .unwrap(),
         HistoryBindingAdmission::Admitted
     );
     assert_eq!(allowance, bytes - 1);
     assert_eq!(
-        admit_history_binding(&second, &mut allowance).unwrap(),
+        admit_history_binding(
+            &cadmpeg_test_support::service_decode_context(),
+            &second,
+            &mut allowance
+        )
+        .unwrap(),
         HistoryBindingAdmission::Skipped
     );
     assert_eq!(allowance, bytes - 1);

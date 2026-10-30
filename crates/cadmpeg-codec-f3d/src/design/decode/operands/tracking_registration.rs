@@ -5,7 +5,7 @@ use crate::records::entity_header::SegmentTypeData;
 use crate::records::references::DesignClassTag;
 use crate::records::topology::construction::DesignConstructionTrackingPath;
 use std::collections::{HashMap, HashSet};
-use std::rc::Rc;
+use std::sync::Arc;
 
 #[derive(Clone, Copy, PartialEq, Eq)]
 enum Kind {
@@ -15,7 +15,7 @@ enum Kind {
 }
 
 pub(super) struct Registry {
-    meta: Rc<MetaStream>,
+    meta: Arc<MetaStream>,
     kinds: HashMap<usize, Kind>,
     entities: HashSet<(usize, u64)>,
 }
@@ -55,7 +55,7 @@ fn registration(kind: &SegmentTypeData) -> Option<Kind> {
 }
 
 impl Registry {
-    pub(super) fn new(meta: Rc<MetaStream>) -> Self {
+    pub(super) fn new(meta: Arc<MetaStream>) -> Self {
         let mut kinds = HashMap::new();
         let mut entities = HashSet::new();
         for (ordinal, row) in meta.types.iter().enumerate() {

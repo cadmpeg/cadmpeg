@@ -19,7 +19,15 @@ fuzz = "required"
 
 [[crate]]
 id = "f3d"
-names = ["F3dCodec", "F3zMemberObserver", "observe_f3z_members"]
+names = [
+    "F3dCodec",
+    "F3zDecodedMember",
+    "F3zMember",
+    "F3zMemberKind",
+    "F3zMemberObserver",
+    "F3zSession",
+    "observe_f3z_members",
+]
 fuzz = "absent"
 fuzz_reason = "focused targets call cadmpeg_asm"
 

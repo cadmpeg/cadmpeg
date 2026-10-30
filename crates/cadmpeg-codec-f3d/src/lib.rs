@@ -93,6 +93,9 @@ mod decode;
 mod design;
 mod dialect;
 mod f3z;
+pub use f3z::{
+    observe_f3z_members, F3zDecodedMember, F3zMember, F3zMemberKind, F3zMemberObserver, F3zSession,
+};
 mod history;
 mod history_records;
 mod ids;
@@ -111,8 +114,6 @@ mod validate;
 mod writer;
 mod xref;
 mod zip_write;
-
-pub use f3z::{observe_f3z_members, F3zMemberObserver};
 
 use cadmpeg_core::bytes::contains;
 use cadmpeg_core::decode::{DecodeContext, DecodeDepth, View};

@@ -410,7 +410,7 @@ fn extrude_operand_identity_walks_shared_wrapper_grammar_to_a_fixed_leaf() {
     };
     assert!(parse_construction_operand_identity(&gapped, &group, &gapped_header, None).is_none());
     let registry =
-        super::super::tracking_registration::Registry::new(std::rc::Rc::new(meta.clone()));
+        super::super::tracking_registration::Registry::new(std::sync::Arc::new(meta.clone()));
     let gapped_identity =
         parse_construction_operand_identity(&gapped, &group, &gapped_header, Some(&registry))
             .expect("registered transform starts an identity chain");
@@ -427,7 +427,7 @@ fn extrude_operand_identity_walks_shared_wrapper_grammar_to_a_fixed_leaf() {
             _ => unreachable!(),
         }
         let registry =
-            super::super::tracking_registration::Registry::new(std::rc::Rc::new(invalid));
+            super::super::tracking_registration::Registry::new(std::sync::Arc::new(invalid));
         assert!(parse_construction_operand_identity(
             &gapped,
             &group,

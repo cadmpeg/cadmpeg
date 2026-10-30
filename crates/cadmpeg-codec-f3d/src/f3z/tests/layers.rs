@@ -53,9 +53,11 @@ fn an_f3z_archive_reports_the_multi_document_row_at_inspect_and_decode() {
         &cadmpeg_core::dialect::Admission::Admitted
     );
 
-    let decoded = F3dCodec
-        .decode(&mut Cursor::new(archive), &DecodeOptions::default())
-        .unwrap();
+    let decoded = crate::test_support::archive_session::decode(
+        &mut Cursor::new(archive),
+        &DecodeOptions::default(),
+    )
+    .unwrap();
     assert_eq!(
         decoded
             .report()
@@ -146,9 +148,11 @@ fn f3z_decode_retains_the_root_kernel_row_and_loss() {
         .iter()
         .all(|note| !note.contains("0 ASM BREP stream")));
 
-    let decoded = F3dCodec
-        .decode(&mut Cursor::new(archive), &DecodeOptions::default())
-        .unwrap();
+    let decoded = crate::test_support::archive_session::decode(
+        &mut Cursor::new(archive),
+        &DecodeOptions::default(),
+    )
+    .unwrap();
     let inspected_extras = inspected
         .dialects()
         .unwrap()
@@ -194,9 +198,11 @@ fn f3z_decode_retains_the_root_kernel_row_and_loss() {
 #[test]
 fn f3z_decode_retains_member_identity_and_unverified_loss() {
     let root = f3d_with_smbh_and_manifest_version(&synthetic_smbh(), "9-9-9-9");
-    let member = F3dCodec
-        .decode(&mut Cursor::new(root.clone()), &DecodeOptions::default())
-        .unwrap();
+    let member = crate::test_support::archive_session::decode(
+        &mut Cursor::new(root.clone()),
+        &DecodeOptions::default(),
+    )
+    .unwrap();
     assert!(member
         .report()
         .losses
@@ -204,9 +210,11 @@ fn f3z_decode_retains_member_identity_and_unverified_loss() {
         .any(|loss| loss.code == F3dLossCode::SourceDialectUnverified.kind()));
     let archive = f3z_archive("root.f3d", &[("root.f3d", root.as_slice())]);
 
-    let decoded = F3dCodec
-        .decode(&mut Cursor::new(archive), &DecodeOptions::default())
-        .unwrap();
+    let decoded = crate::test_support::archive_session::decode(
+        &mut Cursor::new(archive),
+        &DecodeOptions::default(),
+    )
+    .unwrap();
     assert!(decoded
         .report()
         .losses
@@ -230,12 +238,11 @@ fn f3z_kernel_loss_is_derived_from_its_archive_member_layer() {
         &["FusionAssetName[Active]/Breps.BlobParts/Body1.sat"],
         &stream,
     );
-    let bare = F3dCodec
-        .decode(
-            &mut Cursor::new(component.clone()),
-            &DecodeOptions::default(),
-        )
-        .unwrap();
+    let bare = crate::test_support::archive_session::decode(
+        &mut Cursor::new(component.clone()),
+        &DecodeOptions::default(),
+    )
+    .unwrap();
     let bare_loss = bare
         .report()
         .losses
@@ -252,9 +259,11 @@ fn f3z_kernel_loss_is_derived_from_its_archive_member_layer() {
         ],
     );
 
-    let decoded = F3dCodec
-        .decode(&mut Cursor::new(archive), &DecodeOptions::default())
-        .unwrap();
+    let decoded = crate::test_support::archive_session::decode(
+        &mut Cursor::new(archive),
+        &DecodeOptions::default(),
+    )
+    .unwrap();
     let kernel_layers = decoded
         .report()
         .dialects()
@@ -303,9 +312,11 @@ fn an_unreferenced_unverified_member_still_charges_its_dialect_loss_once() {
         ],
     );
 
-    let decoded = F3dCodec
-        .decode(&mut Cursor::new(archive), &DecodeOptions::default())
-        .unwrap();
+    let decoded = crate::test_support::archive_session::decode(
+        &mut Cursor::new(archive),
+        &DecodeOptions::default(),
+    )
+    .unwrap();
     let member = decoded
         .report()
         .dialects()
@@ -370,9 +381,11 @@ fn an_unreadable_unreferenced_member_is_retained_without_refusing_the_root() {
         ],
     );
 
-    let decoded = F3dCodec
-        .decode(&mut Cursor::new(archive), &DecodeOptions::default())
-        .expect("an unreadable unreferenced member must not erase the decoded root");
+    let decoded = crate::test_support::archive_session::decode(
+        &mut Cursor::new(archive),
+        &DecodeOptions::default(),
+    )
+    .expect("an unreadable unreferenced member must not erase the decoded root");
     let loss = decoded
         .report()
         .losses
@@ -395,9 +408,11 @@ fn merged_member_losses_keep_their_xref_context() {
         ],
     );
 
-    let decoded = F3dCodec
-        .decode(&mut Cursor::new(archive), &DecodeOptions::default())
-        .expect("the bodyless member still merges its retained metadata");
+    let decoded = crate::test_support::archive_session::decode(
+        &mut Cursor::new(archive),
+        &DecodeOptions::default(),
+    )
+    .expect("the bodyless member still merges its retained metadata");
     let loss = decoded
         .report()
         .losses
