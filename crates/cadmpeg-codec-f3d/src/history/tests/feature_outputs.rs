@@ -579,6 +579,14 @@ fn derived_native_feature(
     let (mut feature, _, _, _) = native_base_feature();
     feature.native_ref = Some(scope.id.clone());
     feature
+        .evaluation
+        .set_definition(cadmpeg_ir::features::FeatureDefinition::Operation(
+            cadmpeg_ir::features::FeatureOperation::Native {
+                kind: scope.kind_name().into(),
+                parameters: Default::default(),
+            },
+        ));
+    feature
 }
 
 #[test]
@@ -654,7 +662,8 @@ fn derived_base_scope_without_proven_bodies_stays_native() {
             assert!(
                 matches!(
                     feature.evaluation.definition(),
-                    FeatureDefinition::Operation(FeatureOperation::Native { .. })
+                    FeatureDefinition::Operation(FeatureOperation::Native { kind: native, .. })
+                        if native.as_str() == kind
                 ),
                 "{kind} {refusal}"
             );

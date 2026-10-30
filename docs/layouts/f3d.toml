@@ -24738,3 +24738,1169 @@ offset = 23
 type = "bytes[51]"
 source = "spec"
 anchor = "a 51-byte typed reference at offset 23"
+
+# --- §3.1 Derived Base Feature scope frames ---------------------------------
+
+[[record]]
+name = "derived_base_feature_scope_711"
+kind = "byte"
+section = "3.1"
+anchor = "Bytes 11 through 18 of a derived base frame are zero"
+size = 711
+note = "Offsets are relative to the primary indexed header of a `Derived Base Feature` scope with one result body. Element tails are not tabulated; the trailing member fields of the scope reference and parameter elements are listed."
+
+[[record.gap]]
+offset = 0
+size = 19
+note = "The specification states no field in this range."
+
+[[record.field]]
+name = "body_marker"
+offset = 19
+type = "u8"
+source = "spec"
+anchor = "The u32 at offset 20 of a derived base frame with result bodies is twice the body count"
+value = 1
+
+[[record.field]]
+name = "body_count_twice"
+offset = 20
+type = "u32"
+source = "spec"
+anchor = "The u32 at offset 20 of a derived base frame with result bodies is twice the body count"
+value = 2
+
+[[record.field]]
+name = "body_first_marker"
+offset = 24
+type = "u8"
+source = "spec"
+anchor = "A typed-reference element of a derived base frame is `u8 1`, a u64 Design record index, u32 36, and a 36-byte uppercase ASCII role GUID"
+value = 1
+
+[[record.field]]
+name = "body_first_record"
+offset = 25
+type = "u64"
+source = "spec"
+anchor = "In the 711-byte form the second body element stores the Design body entity suffix"
+
+[[record.field]]
+name = "body_first_role_length"
+offset = 33
+type = "u32"
+source = "spec"
+anchor = "A typed-reference element of a derived base frame is `u8 1`, a u64 Design record index, u32 36, and a 36-byte uppercase ASCII role GUID"
+value = 36
+
+[[record.field]]
+name = "body_first_role"
+offset = 37
+type = "bytes[36]"
+source = "spec"
+anchor = "Equal roles have equal GUIDs in different documents"
+value = "D3937028-C20C-4E65-B010-94AD418A5C20"
+
+[[record.gap]]
+offset = 73
+size = 6
+note = "The specification states no field in this range."
+
+[[record.field]]
+name = "body_entity_marker"
+offset = 79
+type = "u8"
+source = "spec"
+anchor = "A typed-reference element of a derived base frame is `u8 1`, a u64 Design record index, u32 36, and a 36-byte uppercase ASCII role GUID"
+value = 1
+
+[[record.field]]
+name = "body_entity_record"
+offset = 80
+type = "u64"
+source = "spec"
+anchor = "In the 711-byte form the second body element stores the Design body entity suffix"
+
+[[record.field]]
+name = "body_entity_role_length"
+offset = 88
+type = "u32"
+source = "spec"
+anchor = "A typed-reference element of a derived base frame is `u8 1`, a u64 Design record index, u32 36, and a 36-byte uppercase ASCII role GUID"
+value = 36
+
+[[record.field]]
+name = "body_entity_role"
+offset = 92
+type = "bytes[36]"
+source = "spec"
+anchor = "Equal roles have equal GUIDs in different documents"
+value = "D3937028-C20C-4E65-B010-94AD418A5C20"
+
+[[record.gap]]
+offset = 128
+size = 39
+note = "The specification states no field in this range."
+
+[[record.field]]
+name = "body_first_repeat_marker"
+offset = 167
+type = "u8"
+source = "spec"
+anchor = "A typed-reference element of a derived base frame is `u8 1`, a u64 Design record index, u32 36, and a 36-byte uppercase ASCII role GUID"
+value = 1
+
+[[record.field]]
+name = "body_first_repeat_record"
+offset = 168
+type = "u64"
+source = "spec"
+anchor = "In the 711-byte form the second body element stores the Design body entity suffix"
+
+[[record.field]]
+name = "body_first_repeat_role_length"
+offset = 176
+type = "u32"
+source = "spec"
+anchor = "A typed-reference element of a derived base frame is `u8 1`, a u64 Design record index, u32 36, and a 36-byte uppercase ASCII role GUID"
+value = 36
+
+[[record.field]]
+name = "body_first_repeat_role"
+offset = 180
+type = "bytes[36]"
+source = "spec"
+anchor = "Equal roles have equal GUIDs in different documents"
+value = "D3937028-C20C-4E65-B010-94AD418A5C20"
+
+[[record.gap]]
+offset = 216
+size = 3
+note = "The specification states no field in this range."
+
+[[record.field]]
+name = "scope_ref_marker"
+offset = 219
+type = "u8"
+source = "spec"
+anchor = "A typed-reference element of a derived base frame is `u8 1`, a u64 Design record index, u32 36, and a 36-byte uppercase ASCII role GUID"
+value = 1
+
+[[record.field]]
+name = "scope_ref_record"
+offset = 220
+type = "u64"
+source = "spec"
+anchor = "The scope reference elements store the primary record index plus 4"
+
+[[record.field]]
+name = "scope_ref_role_length"
+offset = 228
+type = "u32"
+source = "spec"
+anchor = "A typed-reference element of a derived base frame is `u8 1`, a u64 Design record index, u32 36, and a 36-byte uppercase ASCII role GUID"
+value = 36
+
+[[record.field]]
+name = "scope_ref_role"
+offset = 232
+type = "bytes[36]"
+source = "spec"
+anchor = "Equal roles have equal GUIDs in different documents"
+value = "493A89BA-E146-498D-9033-2783FE727AF4"
+
+[[record.gap]]
+offset = 268
+size = 6
+note = "The specification states no field in this range."
+
+[[record.field]]
+name = "other_ref_marker"
+offset = 274
+type = "u8"
+source = "spec"
+anchor = "A typed-reference element of a derived base frame is `u8 1`, a u64 Design record index, u32 36, and a 36-byte uppercase ASCII role GUID"
+value = 1
+
+[[record.field]]
+name = "other_ref_record"
+offset = 275
+type = "u64"
+source = "spec"
+anchor = "A typed-reference element of a derived base frame is `u8 1`, a u64 Design record index, u32 36, and a 36-byte uppercase ASCII role GUID"
+
+[[record.field]]
+name = "other_ref_role_length"
+offset = 283
+type = "u32"
+source = "spec"
+anchor = "A typed-reference element of a derived base frame is `u8 1`, a u64 Design record index, u32 36, and a 36-byte uppercase ASCII role GUID"
+value = 36
+
+[[record.field]]
+name = "other_ref_role"
+offset = 287
+type = "bytes[36]"
+source = "spec"
+anchor = "Equal roles have equal GUIDs in different documents"
+value = "D26351F0-5940-4D23-AA20-2C35475A6D9E"
+
+[[record.gap]]
+offset = 323
+size = 10
+note = "The specification states no field in this range."
+
+[[record.field]]
+name = "zero_role_length"
+offset = 333
+type = "u32"
+source = "spec"
+anchor = "A 36-code-unit LP-UTF16 GUID of zeros precedes the second scope reference element"
+value = 36
+
+[[record.field]]
+name = "zero_role"
+offset = 337
+type = "bytes[72]"
+source = "spec"
+anchor = "A 36-code-unit LP-UTF16 GUID of zeros precedes the second scope reference element"
+
+[[record.gap]]
+offset = 409
+size = 7
+note = "The specification states no field in this range."
+
+[[record.field]]
+name = "scope_ref_repeat_marker"
+offset = 416
+type = "u8"
+source = "spec"
+anchor = "A typed-reference element of a derived base frame is `u8 1`, a u64 Design record index, u32 36, and a 36-byte uppercase ASCII role GUID"
+value = 1
+
+[[record.field]]
+name = "scope_ref_repeat_record"
+offset = 417
+type = "u64"
+source = "spec"
+anchor = "The scope reference elements store the primary record index plus 4"
+
+[[record.field]]
+name = "scope_ref_repeat_role_length"
+offset = 425
+type = "u32"
+source = "spec"
+anchor = "A typed-reference element of a derived base frame is `u8 1`, a u64 Design record index, u32 36, and a 36-byte uppercase ASCII role GUID"
+value = 36
+
+[[record.field]]
+name = "scope_ref_repeat_role"
+offset = 429
+type = "bytes[36]"
+source = "spec"
+anchor = "Equal roles have equal GUIDs in different documents"
+value = "493A89BA-E146-498D-9033-2783FE727AF4"
+
+[[record.gap]]
+offset = 465
+size = 2
+note = "The specification states no field in this range."
+
+[[record.field]]
+name = "current_history_state_id"
+offset = 467
+type = "u32"
+source = "spec"
+anchor = "The trailing member of the second scope reference element is the current history-state identity"
+
+[[record.field]]
+name = "kind_length"
+offset = 471
+type = "u32"
+source = "spec"
+anchor = "The kind is length-prefixed UTF-16, followed by the feature ordinal"
+value = 20
+
+[[record.field]]
+name = "kind"
+offset = 475
+type = "bytes[40]"
+source = "spec"
+anchor = "The kind is length-prefixed UTF-16, followed by the feature ordinal"
+
+[[record.field]]
+name = "feature_ordinal"
+offset = 515
+type = "u32"
+source = "spec"
+anchor = "The kind is length-prefixed UTF-16, followed by the feature ordinal"
+
+[[record.gap]]
+offset = 519
+size = 15
+note = "The specification states no field in this range."
+
+[[record.field]]
+name = "param_3_marker"
+offset = 534
+type = "u8"
+source = "spec"
+anchor = "A typed-reference element of a derived base frame is `u8 1`, a u64 Design record index, u32 36, and a 36-byte uppercase ASCII role GUID"
+value = 1
+
+[[record.field]]
+name = "param_3_record"
+offset = 535
+type = "u64"
+source = "spec"
+anchor = "The three trailing parameter elements store the primary record index plus 3, 2, and 1"
+
+[[record.field]]
+name = "param_3_role_length"
+offset = 543
+type = "u32"
+source = "spec"
+anchor = "A typed-reference element of a derived base frame is `u8 1`, a u64 Design record index, u32 36, and a 36-byte uppercase ASCII role GUID"
+value = 36
+
+[[record.field]]
+name = "param_3_role"
+offset = 547
+type = "bytes[36]"
+source = "spec"
+anchor = "Equal roles have equal GUIDs in different documents"
+value = "B7F34D7B-DAC4-41A5-B67D-D672537C3BFA"
+
+[[record.gap]]
+offset = 583
+size = 2
+note = "The specification states no field in this range."
+
+[[record.field]]
+name = "previous_history_state_id"
+offset = 585
+type = "u32"
+source = "spec"
+anchor = "The trailing member of the first trailing parameter element is the previous history-state identity"
+
+[[record.field]]
+name = "scalar_head"
+offset = 589
+type = "u32"
+source = "spec"
+anchor = "An f64 between two equal u32 values follows the previous history-state identity"
+value = 76
+
+[[record.field]]
+name = "scalar"
+offset = 593
+type = "f64"
+source = "spec"
+anchor = "An f64 between two equal u32 values follows the previous history-state identity"
+
+[[record.field]]
+name = "scalar_tail"
+offset = 601
+type = "u32"
+source = "spec"
+anchor = "An f64 between two equal u32 values follows the previous history-state identity"
+value = 76
+
+[[record.field]]
+name = "param_2_marker"
+offset = 605
+type = "u8"
+source = "spec"
+anchor = "A typed-reference element of a derived base frame is `u8 1`, a u64 Design record index, u32 36, and a 36-byte uppercase ASCII role GUID"
+value = 1
+
+[[record.field]]
+name = "param_2_record"
+offset = 606
+type = "u64"
+source = "spec"
+anchor = "The three trailing parameter elements store the primary record index plus 3, 2, and 1"
+
+[[record.field]]
+name = "param_2_role_length"
+offset = 614
+type = "u32"
+source = "spec"
+anchor = "A typed-reference element of a derived base frame is `u8 1`, a u64 Design record index, u32 36, and a 36-byte uppercase ASCII role GUID"
+value = 36
+
+[[record.field]]
+name = "param_2_role"
+offset = 618
+type = "bytes[36]"
+source = "spec"
+anchor = "Equal roles have equal GUIDs in different documents"
+value = "5FBE538E-139B-46D4-BCAF-CC796D1E1F78"
+
+[[record.gap]]
+offset = 654
+size = 4
+note = "The specification states no field in this range."
+
+[[record.field]]
+name = "param_1_marker"
+offset = 658
+type = "u8"
+source = "spec"
+anchor = "A typed-reference element of a derived base frame is `u8 1`, a u64 Design record index, u32 36, and a 36-byte uppercase ASCII role GUID"
+value = 1
+
+[[record.field]]
+name = "param_1_record"
+offset = 659
+type = "u64"
+source = "spec"
+anchor = "The three trailing parameter elements store the primary record index plus 3, 2, and 1"
+
+[[record.field]]
+name = "param_1_role_length"
+offset = 667
+type = "u32"
+source = "spec"
+anchor = "A typed-reference element of a derived base frame is `u8 1`, a u64 Design record index, u32 36, and a 36-byte uppercase ASCII role GUID"
+value = 36
+
+[[record.field]]
+name = "param_1_role"
+offset = 671
+type = "bytes[36]"
+source = "spec"
+anchor = "Equal roles have equal GUIDs in different documents"
+value = "6CCF41D5-40BE-48ED-A834-18F3EAED6C57"
+
+[[record.gap]]
+offset = 707
+size = 4
+note = "The specification states no field in this range."
+
+[[record]]
+name = "derived_base_feature_scope_707"
+kind = "byte"
+section = "3.1"
+anchor = "Bytes 11 through 18 of a derived base frame are zero"
+size = 707
+note = "Offsets are relative to the primary indexed header of a `DerivedBaseFeature` scope with one result body."
+
+[[record.gap]]
+offset = 0
+size = 19
+note = "The specification states no field in this range."
+
+[[record.field]]
+name = "body_marker"
+offset = 19
+type = "u8"
+source = "spec"
+anchor = "The u32 at offset 20 of a derived base frame with result bodies is twice the body count"
+value = 1
+
+[[record.field]]
+name = "body_count_twice"
+offset = 20
+type = "u32"
+source = "spec"
+anchor = "The u32 at offset 20 of a derived base frame with result bodies is twice the body count"
+value = 2
+
+[[record.field]]
+name = "body_first_marker"
+offset = 24
+type = "u8"
+source = "spec"
+anchor = "A typed-reference element of a derived base frame is `u8 1`, a u64 Design record index, u32 36, and a 36-byte uppercase ASCII role GUID"
+value = 1
+
+[[record.field]]
+name = "body_first_record"
+offset = 25
+type = "u64"
+source = "spec"
+anchor = "In the 711-byte form the second body element stores the Design body entity suffix"
+
+[[record.field]]
+name = "body_first_role_length"
+offset = 33
+type = "u32"
+source = "spec"
+anchor = "A typed-reference element of a derived base frame is `u8 1`, a u64 Design record index, u32 36, and a 36-byte uppercase ASCII role GUID"
+value = 36
+
+[[record.field]]
+name = "body_first_role"
+offset = 37
+type = "bytes[36]"
+source = "spec"
+anchor = "Equal roles have equal GUIDs in different documents"
+value = "D3937028-C20C-4E65-B010-94AD418A5C20"
+
+[[record.gap]]
+offset = 73
+size = 6
+note = "The specification states no field in this range."
+
+[[record.field]]
+name = "body_entity_marker"
+offset = 79
+type = "u8"
+source = "spec"
+anchor = "A typed-reference element of a derived base frame is `u8 1`, a u64 Design record index, u32 36, and a 36-byte uppercase ASCII role GUID"
+value = 1
+
+[[record.field]]
+name = "body_entity_record"
+offset = 80
+type = "u64"
+source = "spec"
+anchor = "In the 711-byte form the second body element stores the Design body entity suffix"
+
+[[record.field]]
+name = "body_entity_role_length"
+offset = 88
+type = "u32"
+source = "spec"
+anchor = "A typed-reference element of a derived base frame is `u8 1`, a u64 Design record index, u32 36, and a 36-byte uppercase ASCII role GUID"
+value = 36
+
+[[record.field]]
+name = "body_entity_role"
+offset = 92
+type = "bytes[36]"
+source = "spec"
+anchor = "Equal roles have equal GUIDs in different documents"
+value = "D3937028-C20C-4E65-B010-94AD418A5C20"
+
+[[record.gap]]
+offset = 128
+size = 39
+note = "The specification states no field in this range."
+
+[[record.field]]
+name = "body_first_repeat_marker"
+offset = 167
+type = "u8"
+source = "spec"
+anchor = "A typed-reference element of a derived base frame is `u8 1`, a u64 Design record index, u32 36, and a 36-byte uppercase ASCII role GUID"
+value = 1
+
+[[record.field]]
+name = "body_first_repeat_record"
+offset = 168
+type = "u64"
+source = "spec"
+anchor = "In the 711-byte form the second body element stores the Design body entity suffix"
+
+[[record.field]]
+name = "body_first_repeat_role_length"
+offset = 176
+type = "u32"
+source = "spec"
+anchor = "A typed-reference element of a derived base frame is `u8 1`, a u64 Design record index, u32 36, and a 36-byte uppercase ASCII role GUID"
+value = 36
+
+[[record.field]]
+name = "body_first_repeat_role"
+offset = 180
+type = "bytes[36]"
+source = "spec"
+anchor = "Equal roles have equal GUIDs in different documents"
+value = "D3937028-C20C-4E65-B010-94AD418A5C20"
+
+[[record.gap]]
+offset = 216
+size = 3
+note = "The specification states no field in this range."
+
+[[record.field]]
+name = "scope_ref_marker"
+offset = 219
+type = "u8"
+source = "spec"
+anchor = "A typed-reference element of a derived base frame is `u8 1`, a u64 Design record index, u32 36, and a 36-byte uppercase ASCII role GUID"
+value = 1
+
+[[record.field]]
+name = "scope_ref_record"
+offset = 220
+type = "u64"
+source = "spec"
+anchor = "The scope reference elements store the primary record index plus 4"
+
+[[record.field]]
+name = "scope_ref_role_length"
+offset = 228
+type = "u32"
+source = "spec"
+anchor = "A typed-reference element of a derived base frame is `u8 1`, a u64 Design record index, u32 36, and a 36-byte uppercase ASCII role GUID"
+value = 36
+
+[[record.field]]
+name = "scope_ref_role"
+offset = 232
+type = "bytes[36]"
+source = "spec"
+anchor = "Equal roles have equal GUIDs in different documents"
+value = "493A89BA-E146-498D-9033-2783FE727AF4"
+
+[[record.gap]]
+offset = 268
+size = 6
+note = "The specification states no field in this range."
+
+[[record.field]]
+name = "other_ref_marker"
+offset = 274
+type = "u8"
+source = "spec"
+anchor = "A typed-reference element of a derived base frame is `u8 1`, a u64 Design record index, u32 36, and a 36-byte uppercase ASCII role GUID"
+value = 1
+
+[[record.field]]
+name = "other_ref_record"
+offset = 275
+type = "u64"
+source = "spec"
+anchor = "A typed-reference element of a derived base frame is `u8 1`, a u64 Design record index, u32 36, and a 36-byte uppercase ASCII role GUID"
+
+[[record.field]]
+name = "other_ref_role_length"
+offset = 283
+type = "u32"
+source = "spec"
+anchor = "A typed-reference element of a derived base frame is `u8 1`, a u64 Design record index, u32 36, and a 36-byte uppercase ASCII role GUID"
+value = 36
+
+[[record.field]]
+name = "other_ref_role"
+offset = 287
+type = "bytes[36]"
+source = "spec"
+anchor = "Equal roles have equal GUIDs in different documents"
+value = "D26351F0-5940-4D23-AA20-2C35475A6D9E"
+
+[[record.gap]]
+offset = 323
+size = 10
+note = "The specification states no field in this range."
+
+[[record.field]]
+name = "zero_role_length"
+offset = 333
+type = "u32"
+source = "spec"
+anchor = "A 36-code-unit LP-UTF16 GUID of zeros precedes the second scope reference element"
+value = 36
+
+[[record.field]]
+name = "zero_role"
+offset = 337
+type = "bytes[72]"
+source = "spec"
+anchor = "A 36-code-unit LP-UTF16 GUID of zeros precedes the second scope reference element"
+
+[[record.gap]]
+offset = 409
+size = 7
+note = "The specification states no field in this range."
+
+[[record.field]]
+name = "scope_ref_repeat_marker"
+offset = 416
+type = "u8"
+source = "spec"
+anchor = "A typed-reference element of a derived base frame is `u8 1`, a u64 Design record index, u32 36, and a 36-byte uppercase ASCII role GUID"
+value = 1
+
+[[record.field]]
+name = "scope_ref_repeat_record"
+offset = 417
+type = "u64"
+source = "spec"
+anchor = "The scope reference elements store the primary record index plus 4"
+
+[[record.field]]
+name = "scope_ref_repeat_role_length"
+offset = 425
+type = "u32"
+source = "spec"
+anchor = "A typed-reference element of a derived base frame is `u8 1`, a u64 Design record index, u32 36, and a 36-byte uppercase ASCII role GUID"
+value = 36
+
+[[record.field]]
+name = "scope_ref_repeat_role"
+offset = 429
+type = "bytes[36]"
+source = "spec"
+anchor = "Equal roles have equal GUIDs in different documents"
+value = "493A89BA-E146-498D-9033-2783FE727AF4"
+
+[[record.gap]]
+offset = 465
+size = 2
+note = "The specification states no field in this range."
+
+[[record.field]]
+name = "current_history_state_id"
+offset = 467
+type = "u32"
+source = "spec"
+anchor = "The trailing member of the second scope reference element is the current history-state identity"
+
+[[record.field]]
+name = "kind_length"
+offset = 471
+type = "u32"
+source = "spec"
+anchor = "The kind is length-prefixed UTF-16, followed by the feature ordinal"
+value = 18
+
+[[record.field]]
+name = "kind"
+offset = 475
+type = "bytes[36]"
+source = "spec"
+anchor = "The kind is length-prefixed UTF-16, followed by the feature ordinal"
+
+[[record.field]]
+name = "feature_ordinal"
+offset = 511
+type = "u32"
+source = "spec"
+anchor = "The kind is length-prefixed UTF-16, followed by the feature ordinal"
+
+[[record.gap]]
+offset = 515
+size = 15
+note = "The specification states no field in this range."
+
+[[record.field]]
+name = "param_3_marker"
+offset = 530
+type = "u8"
+source = "spec"
+anchor = "A typed-reference element of a derived base frame is `u8 1`, a u64 Design record index, u32 36, and a 36-byte uppercase ASCII role GUID"
+value = 1
+
+[[record.field]]
+name = "param_3_record"
+offset = 531
+type = "u64"
+source = "spec"
+anchor = "The three trailing parameter elements store the primary record index plus 3, 2, and 1"
+
+[[record.field]]
+name = "param_3_role_length"
+offset = 539
+type = "u32"
+source = "spec"
+anchor = "A typed-reference element of a derived base frame is `u8 1`, a u64 Design record index, u32 36, and a 36-byte uppercase ASCII role GUID"
+value = 36
+
+[[record.field]]
+name = "param_3_role"
+offset = 543
+type = "bytes[36]"
+source = "spec"
+anchor = "Equal roles have equal GUIDs in different documents"
+value = "B7F34D7B-DAC4-41A5-B67D-D672537C3BFA"
+
+[[record.gap]]
+offset = 579
+size = 2
+note = "The specification states no field in this range."
+
+[[record.field]]
+name = "previous_history_state_id"
+offset = 581
+type = "u32"
+source = "spec"
+anchor = "The trailing member of the first trailing parameter element is the previous history-state identity"
+
+[[record.field]]
+name = "scalar_head"
+offset = 585
+type = "u32"
+source = "spec"
+anchor = "An f64 between two equal u32 values follows the previous history-state identity"
+value = 69
+
+[[record.field]]
+name = "scalar"
+offset = 589
+type = "f64"
+source = "spec"
+anchor = "An f64 between two equal u32 values follows the previous history-state identity"
+
+[[record.field]]
+name = "scalar_tail"
+offset = 597
+type = "u32"
+source = "spec"
+anchor = "An f64 between two equal u32 values follows the previous history-state identity"
+value = 69
+
+[[record.field]]
+name = "param_2_marker"
+offset = 601
+type = "u8"
+source = "spec"
+anchor = "A typed-reference element of a derived base frame is `u8 1`, a u64 Design record index, u32 36, and a 36-byte uppercase ASCII role GUID"
+value = 1
+
+[[record.field]]
+name = "param_2_record"
+offset = 602
+type = "u64"
+source = "spec"
+anchor = "The three trailing parameter elements store the primary record index plus 3, 2, and 1"
+
+[[record.field]]
+name = "param_2_role_length"
+offset = 610
+type = "u32"
+source = "spec"
+anchor = "A typed-reference element of a derived base frame is `u8 1`, a u64 Design record index, u32 36, and a 36-byte uppercase ASCII role GUID"
+value = 36
+
+[[record.field]]
+name = "param_2_role"
+offset = 614
+type = "bytes[36]"
+source = "spec"
+anchor = "Equal roles have equal GUIDs in different documents"
+value = "5FBE538E-139B-46D4-BCAF-CC796D1E1F78"
+
+[[record.gap]]
+offset = 650
+size = 4
+note = "The specification states no field in this range."
+
+[[record.field]]
+name = "param_1_marker"
+offset = 654
+type = "u8"
+source = "spec"
+anchor = "A typed-reference element of a derived base frame is `u8 1`, a u64 Design record index, u32 36, and a 36-byte uppercase ASCII role GUID"
+value = 1
+
+[[record.field]]
+name = "param_1_record"
+offset = 655
+type = "u64"
+source = "spec"
+anchor = "The three trailing parameter elements store the primary record index plus 3, 2, and 1"
+
+[[record.field]]
+name = "param_1_role_length"
+offset = 663
+type = "u32"
+source = "spec"
+anchor = "A typed-reference element of a derived base frame is `u8 1`, a u64 Design record index, u32 36, and a 36-byte uppercase ASCII role GUID"
+value = 36
+
+[[record.field]]
+name = "param_1_role"
+offset = 667
+type = "bytes[36]"
+source = "spec"
+anchor = "Equal roles have equal GUIDs in different documents"
+value = "6CCF41D5-40BE-48ED-A834-18F3EAED6C57"
+
+[[record.gap]]
+offset = 703
+size = 4
+note = "The specification states no field in this range."
+
+[[record]]
+name = "derived_base_feature_scope_491"
+kind = "byte"
+section = "3.1"
+anchor = "A zero-body derived base frame stores `u8 1` at offset 20"
+size = 491
+note = "Offsets are relative to the primary indexed header of a `DerivedBaseFeature` zero-body scope."
+
+[[record.gap]]
+offset = 0
+size = 20
+note = "The specification states no field in this range."
+
+[[record.field]]
+name = "zero_body_marker"
+offset = 20
+type = "u8"
+source = "spec"
+anchor = "A zero-body derived base frame stores `u8 1` at offset 20"
+value = 1
+
+[[record.gap]]
+offset = 21
+size = 33
+note = "The specification states no field in this range."
+
+[[record.field]]
+name = "scope_ref_marker"
+offset = 54
+type = "u8"
+source = "spec"
+anchor = "A typed-reference element of a derived base frame is `u8 1`, a u64 Design record index, u32 36, and a 36-byte uppercase ASCII role GUID"
+value = 1
+
+[[record.field]]
+name = "scope_ref_record"
+offset = 55
+type = "u64"
+source = "spec"
+anchor = "The scope reference elements store the primary record index plus 4"
+
+[[record.field]]
+name = "scope_ref_role_length"
+offset = 63
+type = "u32"
+source = "spec"
+anchor = "A typed-reference element of a derived base frame is `u8 1`, a u64 Design record index, u32 36, and a 36-byte uppercase ASCII role GUID"
+value = 36
+
+[[record.field]]
+name = "scope_ref_role"
+offset = 67
+type = "bytes[36]"
+source = "spec"
+anchor = "Equal roles have equal GUIDs in different documents"
+value = "493A89BA-E146-498D-9033-2783FE727AF4"
+
+[[record.gap]]
+offset = 103
+size = 14
+note = "The specification states no field in this range."
+
+[[record.field]]
+name = "zero_role_length"
+offset = 117
+type = "u32"
+source = "spec"
+anchor = "A 36-code-unit LP-UTF16 GUID of zeros precedes the second scope reference element"
+value = 36
+
+[[record.field]]
+name = "zero_role"
+offset = 121
+type = "bytes[72]"
+source = "spec"
+anchor = "A 36-code-unit LP-UTF16 GUID of zeros precedes the second scope reference element"
+
+[[record.gap]]
+offset = 193
+size = 7
+note = "The specification states no field in this range."
+
+[[record.field]]
+name = "scope_ref_repeat_marker"
+offset = 200
+type = "u8"
+source = "spec"
+anchor = "A typed-reference element of a derived base frame is `u8 1`, a u64 Design record index, u32 36, and a 36-byte uppercase ASCII role GUID"
+value = 1
+
+[[record.field]]
+name = "scope_ref_repeat_record"
+offset = 201
+type = "u64"
+source = "spec"
+anchor = "The scope reference elements store the primary record index plus 4"
+
+[[record.field]]
+name = "scope_ref_repeat_role_length"
+offset = 209
+type = "u32"
+source = "spec"
+anchor = "A typed-reference element of a derived base frame is `u8 1`, a u64 Design record index, u32 36, and a 36-byte uppercase ASCII role GUID"
+value = 36
+
+[[record.field]]
+name = "scope_ref_repeat_role"
+offset = 213
+type = "bytes[36]"
+source = "spec"
+anchor = "Equal roles have equal GUIDs in different documents"
+value = "493A89BA-E146-498D-9033-2783FE727AF4"
+
+[[record.gap]]
+offset = 249
+size = 2
+note = "The specification states no field in this range."
+
+[[record.field]]
+name = "current_history_state_id"
+offset = 251
+type = "u32"
+source = "spec"
+anchor = "The trailing member of the second scope reference element is the current history-state identity"
+
+[[record.field]]
+name = "kind_length"
+offset = 255
+type = "u32"
+source = "spec"
+anchor = "The kind is length-prefixed UTF-16, followed by the feature ordinal"
+value = 18
+
+[[record.field]]
+name = "kind"
+offset = 259
+type = "bytes[36]"
+source = "spec"
+anchor = "The kind is length-prefixed UTF-16, followed by the feature ordinal"
+
+[[record.field]]
+name = "feature_ordinal"
+offset = 295
+type = "u32"
+source = "spec"
+anchor = "The kind is length-prefixed UTF-16, followed by the feature ordinal"
+
+[[record.gap]]
+offset = 299
+size = 15
+note = "The specification states no field in this range."
+
+[[record.field]]
+name = "param_3_marker"
+offset = 314
+type = "u8"
+source = "spec"
+anchor = "A typed-reference element of a derived base frame is `u8 1`, a u64 Design record index, u32 36, and a 36-byte uppercase ASCII role GUID"
+value = 1
+
+[[record.field]]
+name = "param_3_record"
+offset = 315
+type = "u64"
+source = "spec"
+anchor = "The three trailing parameter elements store the primary record index plus 3, 2, and 1"
+
+[[record.field]]
+name = "param_3_role_length"
+offset = 323
+type = "u32"
+source = "spec"
+anchor = "A typed-reference element of a derived base frame is `u8 1`, a u64 Design record index, u32 36, and a 36-byte uppercase ASCII role GUID"
+value = 36
+
+[[record.field]]
+name = "param_3_role"
+offset = 327
+type = "bytes[36]"
+source = "spec"
+anchor = "Equal roles have equal GUIDs in different documents"
+value = "B7F34D7B-DAC4-41A5-B67D-D672537C3BFA"
+
+[[record.gap]]
+offset = 363
+size = 2
+note = "The specification states no field in this range."
+
+[[record.field]]
+name = "previous_history_state_id"
+offset = 365
+type = "u32"
+source = "spec"
+anchor = "The trailing member of the first trailing parameter element is the previous history-state identity"
+
+[[record.field]]
+name = "scalar_head"
+offset = 369
+type = "u32"
+source = "spec"
+anchor = "An f64 between two equal u32 values follows the previous history-state identity"
+value = 69
+
+[[record.field]]
+name = "scalar"
+offset = 373
+type = "f64"
+source = "spec"
+anchor = "An f64 between two equal u32 values follows the previous history-state identity"
+
+[[record.field]]
+name = "scalar_tail"
+offset = 381
+type = "u32"
+source = "spec"
+anchor = "An f64 between two equal u32 values follows the previous history-state identity"
+value = 69
+
+[[record.field]]
+name = "param_2_marker"
+offset = 385
+type = "u8"
+source = "spec"
+anchor = "A typed-reference element of a derived base frame is `u8 1`, a u64 Design record index, u32 36, and a 36-byte uppercase ASCII role GUID"
+value = 1
+
+[[record.field]]
+name = "param_2_record"
+offset = 386
+type = "u64"
+source = "spec"
+anchor = "The three trailing parameter elements store the primary record index plus 3, 2, and 1"
+
+[[record.field]]
+name = "param_2_role_length"
+offset = 394
+type = "u32"
+source = "spec"
+anchor = "A typed-reference element of a derived base frame is `u8 1`, a u64 Design record index, u32 36, and a 36-byte uppercase ASCII role GUID"
+value = 36
+
+[[record.field]]
+name = "param_2_role"
+offset = 398
+type = "bytes[36]"
+source = "spec"
+anchor = "Equal roles have equal GUIDs in different documents"
+value = "5FBE538E-139B-46D4-BCAF-CC796D1E1F78"
+
+[[record.gap]]
+offset = 434
+size = 4
+note = "The specification states no field in this range."
+
+[[record.field]]
+name = "param_1_marker"
+offset = 438
+type = "u8"
+source = "spec"
+anchor = "A typed-reference element of a derived base frame is `u8 1`, a u64 Design record index, u32 36, and a 36-byte uppercase ASCII role GUID"
+value = 1
+
+[[record.field]]
+name = "param_1_record"
+offset = 439
+type = "u64"
+source = "spec"
+anchor = "The three trailing parameter elements store the primary record index plus 3, 2, and 1"
+
+[[record.field]]
+name = "param_1_role_length"
+offset = 447
+type = "u32"
+source = "spec"
+anchor = "A typed-reference element of a derived base frame is `u8 1`, a u64 Design record index, u32 36, and a 36-byte uppercase ASCII role GUID"
+value = 36
+
+[[record.field]]
+name = "param_1_role"
+offset = 451
+type = "bytes[36]"
+source = "spec"
+anchor = "Equal roles have equal GUIDs in different documents"
+value = "6CCF41D5-40BE-48ED-A834-18F3EAED6C57"
+
+[[record.gap]]
+offset = 487
+size = 4
+note = "The specification states no field in this range."
