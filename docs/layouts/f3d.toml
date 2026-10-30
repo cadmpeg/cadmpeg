@@ -10541,6 +10541,183 @@ size = 168
 note = "The class-400 construction-reference tail is retained as a named opaque carrier."
 
 [[record]]
+name = "work_plane_direct_352_matrix_frame"
+kind = "byte"
+section = "3.1"
+anchor = "The 352-, 363-, and 374-byte direct forms store"
+size = 352
+note = "Offsets are relative to the primary indexed placement header (class 293 paired with class 261, or class 316 paired with class 260). The two-byte lane at offset 62 is opaque."
+
+[[record.gap]]
+offset = 0
+size = 11
+note = "The indexed placement header occupies the first eleven bytes."
+
+[[record.gap]]
+offset = 11
+size = 44
+note = "Bytes 11 through 54 are zero."
+
+[[record.field]]
+name = "marker"
+offset = 55
+type = "u8"
+value = 1
+source = "spec"
+anchor = "store `0x01` at offset 55"
+
+[[record.field]]
+name = "zero_run"
+offset = 56
+type = "bytes[6]"
+source = "spec"
+anchor = "six zero bytes at offsets 56 through 61"
+
+[[record.field]]
+name = "opaque_u16"
+offset = 62
+type = "u16"
+source = "spec"
+anchor = "an opaque little-endian u16 at offset 62"
+
+[[record.field]]
+name = "zero_pair"
+offset = 64
+type = "bytes[2]"
+source = "spec"
+anchor = "two zero bytes at offsets 64 and 65"
+
+[[record.field]]
+name = "matrix"
+offset = 66
+type = "f64[16]"
+source = "spec"
+anchor = "the matrix at offset 66"
+
+[[record.gap]]
+offset = 194
+size = 158
+note = "The placement carrier tail is retained as a named opaque carrier."
+
+[[record]]
+name = "work_plane_direct_363_matrix_frame"
+kind = "byte"
+section = "3.1"
+anchor = "The 352-, 363-, and 374-byte direct forms store"
+size = 363
+note = "Offsets are relative to the class-289 primary indexed placement header paired with class 258. The two-byte lane at offset 62 is opaque."
+
+[[record.gap]]
+offset = 0
+size = 11
+note = "The indexed placement header occupies the first eleven bytes."
+
+[[record.gap]]
+offset = 11
+size = 44
+note = "Bytes 11 through 54 are zero."
+
+[[record.field]]
+name = "marker"
+offset = 55
+type = "u8"
+value = 1
+source = "spec"
+anchor = "store `0x01` at offset 55"
+
+[[record.field]]
+name = "zero_run"
+offset = 56
+type = "bytes[6]"
+source = "spec"
+anchor = "six zero bytes at offsets 56 through 61"
+
+[[record.field]]
+name = "opaque_u16"
+offset = 62
+type = "u16"
+source = "spec"
+anchor = "an opaque little-endian u16 at offset 62"
+
+[[record.field]]
+name = "zero_pair"
+offset = 64
+type = "bytes[2]"
+source = "spec"
+anchor = "two zero bytes at offsets 64 and 65"
+
+[[record.field]]
+name = "matrix"
+offset = 66
+type = "f64[16]"
+source = "spec"
+anchor = "the matrix at offset 66"
+
+[[record.gap]]
+offset = 194
+size = 169
+note = "The placement carrier tail is retained as a named opaque carrier."
+
+[[record]]
+name = "work_plane_direct_374_matrix_frame"
+kind = "byte"
+section = "3.1"
+anchor = "The 352-, 363-, and 374-byte direct forms store"
+size = 374
+note = "Offsets are relative to the class-267 primary indexed placement header paired with class 258. The two-byte lane at offset 62 is opaque."
+
+[[record.gap]]
+offset = 0
+size = 11
+note = "The indexed placement header occupies the first eleven bytes."
+
+[[record.gap]]
+offset = 11
+size = 44
+note = "Bytes 11 through 54 are zero."
+
+[[record.field]]
+name = "marker"
+offset = 55
+type = "u8"
+value = 1
+source = "spec"
+anchor = "store `0x01` at offset 55"
+
+[[record.field]]
+name = "zero_run"
+offset = 56
+type = "bytes[6]"
+source = "spec"
+anchor = "six zero bytes at offsets 56 through 61"
+
+[[record.field]]
+name = "opaque_u16"
+offset = 62
+type = "u16"
+source = "spec"
+anchor = "an opaque little-endian u16 at offset 62"
+
+[[record.field]]
+name = "zero_pair"
+offset = 64
+type = "bytes[2]"
+source = "spec"
+anchor = "two zero bytes at offsets 64 and 65"
+
+[[record.field]]
+name = "matrix"
+offset = 66
+type = "f64[16]"
+source = "spec"
+anchor = "the matrix at offset 66"
+
+[[record.gap]]
+offset = 194
+size = 180
+note = "The placement carrier tail is retained as a named opaque carrier."
+
+[[record]]
 name = "work_axis_direct_carrier_class_297"
 kind = "byte"
 section = "3.1"
@@ -13524,6 +13701,26 @@ offset = 38
 type = "bytes[4]"
 source = "spec"
 anchor = "the four bytes `00 00 00 01`"
+
+[[record]]
+name = "thread_standard_compact_construction_tail"
+kind = "byte"
+section = "3.1"
+anchor = "A standard-prefix Thread scope with the construction marker `01 02 00 00 00` is a fifth wire form"
+size = 38
+note = "Offsets are relative to the first byte after the third LP-UTF16 string. The variable trailer starts at offset 38 and is stated in the specification."
+
+[[record.field]]
+name = "construction_marker"
+offset = 0
+type = "bytes[5]"
+source = "spec"
+anchor = "with the construction marker `01 02 00 00 00`"
+
+[[record.gap]]
+offset = 5
+size = 33
+note = "The scalar lanes use the same offsets as the compact tail."
 
 [[record]]
 name = "thread_standard_legacy_construction_tail"
@@ -20782,6 +20979,73 @@ anchor = "byte `00`, u32 `2`, u64 `1`, and byte `00`"
 value = 0
 
 [[record]]
+name = "extrude_selection_member_scope_tail"
+kind = "byte"
+section = "3.1"
+anchor = "A selection member whose optional slot is absent can instead be a 240-byte indexed record"
+size = 50
+note = "Offsets are relative to the end of the 190-byte selection-member frame."
+
+[[record.field]]
+name = "leading_zero"
+offset = 0
+type = "u8"
+source = "spec"
+anchor = "A selection member whose optional slot is absent can instead be a 240-byte indexed record"
+value = 0
+
+[[record.field]]
+name = "opaque_scalar"
+offset = 1
+type = "f64"
+source = "spec"
+anchor = "A selection member whose optional slot is absent can instead be a 240-byte indexed record"
+
+[[record.field]]
+name = "opaque_word"
+offset = 9
+type = "u32"
+source = "spec"
+anchor = "A selection member whose optional slot is absent can instead be a 240-byte indexed record"
+value = 260
+
+[[record.field]]
+name = "chain_reference_first"
+offset = 13
+type = "bytes[11]"
+source = "spec"
+anchor = "A selection member whose optional slot is absent can instead be a 240-byte indexed record"
+
+[[record.field]]
+name = "separator"
+offset = 24
+type = "bytes[3]"
+source = "spec"
+anchor = "A selection member whose optional slot is absent can instead be a 240-byte indexed record"
+
+[[record.field]]
+name = "chain_reference_second"
+offset = 27
+type = "bytes[11]"
+source = "spec"
+anchor = "A selection member whose optional slot is absent can instead be a 240-byte indexed record"
+
+[[record.field]]
+name = "second_separator"
+offset = 38
+type = "u8"
+source = "spec"
+anchor = "A selection member whose optional slot is absent can instead be a 240-byte indexed record"
+value = 0
+
+[[record.field]]
+name = "scope_reference"
+offset = 39
+type = "bytes[11]"
+source = "spec"
+anchor = "A selection member whose optional slot is absent can instead be a 240-byte indexed record"
+
+[[record]]
 name = "cut_paste_prefix"
 parsed_by = "crates/cadmpeg-codec-f3d/src/design/decode/scopes/occurrence_transfer.rs"
 kind = "byte"
@@ -24902,6 +25166,508 @@ source = "spec"
 anchor = "The `emboss_counted_suffix` layout starts immediately after the native pair run."
 
 [[record]]
+name = "align_scope_prefix"
+kind = "byte"
+section = "3.1"
+anchor = "An `Align` prefix precedes its ordered reference table"
+size = 126
+parsed_by = "crates/cadmpeg-codec-f3d/src/design/decode/scopes/align.rs"
+
+[[record.field]]
+name = "indexed_header"
+offset = 0
+type = "bytes[11]"
+source = "spec"
+anchor = "An `Align` prefix precedes its ordered reference table"
+
+[[record.field]]
+name = "header_zero"
+offset = 11
+type = "bytes[9]"
+source = "spec"
+anchor = "An `Align` prefix precedes its ordered reference table"
+value = [0, 0, 0, 0, 0, 0, 0, 0, 0]
+
+[[record.field]]
+name = "zero"
+offset = 20
+type = "u8"
+source = "spec"
+anchor = "An `Align` prefix precedes its ordered reference table"
+value = 0
+
+[[record.field]]
+name = "first_marker"
+offset = 21
+type = "u8"
+source = "spec"
+anchor = "An `Align` prefix precedes its ordered reference table"
+value = 1
+
+[[record.field]]
+name = "first_reference"
+offset = 22
+type = "u32"
+source = "spec"
+anchor = "An `Align` prefix precedes its ordered reference table"
+
+[[record.field]]
+name = "first_padding"
+offset = 26
+type = "bytes[6]"
+source = "spec"
+anchor = "An `Align` prefix precedes its ordered reference table"
+value = [0, 0, 0, 0, 0, 0]
+
+[[record.field]]
+name = "source_code"
+offset = 32
+type = "u32"
+source = "spec"
+anchor = "An `Align` prefix precedes its ordered reference table"
+
+[[record.field]]
+name = "second_marker"
+offset = 36
+type = "u8"
+source = "spec"
+anchor = "An `Align` prefix precedes its ordered reference table"
+value = 1
+
+[[record.field]]
+name = "second_reference"
+offset = 37
+type = "u32"
+source = "spec"
+anchor = "An `Align` prefix precedes its ordered reference table"
+
+[[record.field]]
+name = "second_padding"
+offset = 41
+type = "bytes[6]"
+source = "spec"
+anchor = "An `Align` prefix precedes its ordered reference table"
+value = [0, 0, 0, 0, 0, 0]
+
+[[record.field]]
+name = "identity_length"
+offset = 47
+type = "u32"
+source = "spec"
+anchor = "An `Align` prefix precedes its ordered reference table"
+value = 36
+
+[[record.field]]
+name = "identity"
+offset = 51
+type = "bytes[72]"
+source = "spec"
+anchor = "An `Align` prefix precedes its ordered reference table"
+
+[[record.field]]
+name = "tail_zero"
+offset = 123
+type = "bytes[3]"
+source = "spec"
+anchor = "An `Align` prefix precedes its ordered reference table"
+value = [0, 0, 0]
+
+[[record]]
+name = "align_scope_extended_prefix"
+kind = "byte"
+section = "3.1"
+anchor = "An `Align` prefix precedes its ordered reference table"
+size = 130
+parsed_by = "crates/cadmpeg-codec-f3d/src/design/decode/scopes/align.rs"
+
+[[record.field]]
+name = "indexed_header"
+offset = 0
+type = "bytes[11]"
+source = "spec"
+anchor = "An `Align` prefix precedes its ordered reference table"
+
+[[record.field]]
+name = "header_zero"
+offset = 11
+type = "bytes[9]"
+source = "spec"
+anchor = "An `Align` prefix precedes its ordered reference table"
+value = [0, 0, 0, 0, 0, 0, 0, 0, 0]
+
+[[record.field]]
+name = "extra_code"
+offset = 20
+type = "u32"
+source = "spec"
+anchor = "An `Align` prefix precedes its ordered reference table"
+value = 1
+
+[[record.field]]
+name = "zero"
+offset = 24
+type = "u8"
+source = "spec"
+anchor = "An `Align` prefix precedes its ordered reference table"
+value = 0
+
+[[record.field]]
+name = "first_marker"
+offset = 25
+type = "u8"
+source = "spec"
+anchor = "An `Align` prefix precedes its ordered reference table"
+value = 1
+
+[[record.field]]
+name = "first_reference"
+offset = 26
+type = "u32"
+source = "spec"
+anchor = "An `Align` prefix precedes its ordered reference table"
+
+[[record.field]]
+name = "first_padding"
+offset = 30
+type = "bytes[6]"
+source = "spec"
+anchor = "An `Align` prefix precedes its ordered reference table"
+value = [0, 0, 0, 0, 0, 0]
+
+[[record.field]]
+name = "source_code"
+offset = 36
+type = "u32"
+source = "spec"
+anchor = "An `Align` prefix precedes its ordered reference table"
+
+[[record.field]]
+name = "second_marker"
+offset = 40
+type = "u8"
+source = "spec"
+anchor = "An `Align` prefix precedes its ordered reference table"
+value = 1
+
+[[record.field]]
+name = "second_reference"
+offset = 41
+type = "u32"
+source = "spec"
+anchor = "An `Align` prefix precedes its ordered reference table"
+
+[[record.field]]
+name = "second_padding"
+offset = 45
+type = "bytes[6]"
+source = "spec"
+anchor = "An `Align` prefix precedes its ordered reference table"
+value = [0, 0, 0, 0, 0, 0]
+
+[[record.field]]
+name = "identity_length"
+offset = 51
+type = "u32"
+source = "spec"
+anchor = "An `Align` prefix precedes its ordered reference table"
+value = 36
+
+[[record.field]]
+name = "identity"
+offset = 55
+type = "bytes[72]"
+source = "spec"
+anchor = "An `Align` prefix precedes its ordered reference table"
+
+[[record.field]]
+name = "tail_zero"
+offset = 127
+type = "bytes[3]"
+source = "spec"
+anchor = "An `Align` prefix precedes its ordered reference table"
+value = [0, 0, 0]
+
+[[record]]
+name = "align_constructor"
+kind = "byte"
+section = "3.1"
+anchor = "The indexed record named by the first Align prefix reference is its constructor"
+size = 293
+parsed_by = "crates/cadmpeg-codec-f3d/src/design/decode/scopes/align/construction.rs"
+
+[[record.field]]
+name = "indexed_header"
+offset = 0
+type = "bytes[11]"
+source = "spec"
+anchor = "The indexed record named by the first Align prefix reference is its constructor"
+
+[[record.field]]
+name = "header_zero"
+offset = 11
+type = "bytes[20]"
+source = "spec"
+anchor = "The indexed record named by the first Align prefix reference is its constructor"
+value = [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
+
+[[record.field]]
+name = "first_marker"
+offset = 31
+type = "u8"
+source = "spec"
+anchor = "The indexed record named by the first Align prefix reference is its constructor"
+value = 1
+
+[[record.field]]
+name = "first_word"
+offset = 32
+type = "u32"
+source = "spec"
+anchor = "The indexed record named by the first Align prefix reference is its constructor"
+
+[[record.field]]
+name = "first_padding"
+offset = 36
+type = "bytes[6]"
+source = "spec"
+anchor = "The indexed record named by the first Align prefix reference is its constructor"
+value = [0, 0, 0, 0, 0, 0]
+
+[[record.field]]
+name = "second_marker"
+offset = 42
+type = "u8"
+source = "spec"
+anchor = "The indexed record named by the first Align prefix reference is its constructor"
+value = 1
+
+[[record.field]]
+name = "second_word"
+offset = 43
+type = "u32"
+source = "spec"
+anchor = "The indexed record named by the first Align prefix reference is its constructor"
+
+[[record.field]]
+name = "second_padding"
+offset = 47
+type = "bytes[6]"
+source = "spec"
+anchor = "The indexed record named by the first Align prefix reference is its constructor"
+value = [0, 0, 0, 0, 0, 0]
+
+[[record.field]]
+name = "third_marker"
+offset = 53
+type = "u8"
+source = "spec"
+anchor = "The indexed record named by the first Align prefix reference is its constructor"
+value = 1
+
+[[record.field]]
+name = "third_word"
+offset = 54
+type = "u32"
+source = "spec"
+anchor = "The indexed record named by the first Align prefix reference is its constructor"
+
+[[record.field]]
+name = "third_padding"
+offset = 58
+type = "bytes[6]"
+source = "spec"
+anchor = "The indexed record named by the first Align prefix reference is its constructor"
+value = [0, 0, 0, 0, 0, 0]
+
+[[record.field]]
+name = "first_code"
+offset = 64
+type = "u32"
+source = "spec"
+anchor = "The indexed record named by the first Align prefix reference is its constructor"
+
+[[record.field]]
+name = "fourth_marker"
+offset = 68
+type = "u8"
+source = "spec"
+anchor = "The indexed record named by the first Align prefix reference is its constructor"
+value = 1
+
+[[record.field]]
+name = "fourth_word"
+offset = 69
+type = "u32"
+source = "spec"
+anchor = "The indexed record named by the first Align prefix reference is its constructor"
+
+[[record.field]]
+name = "fourth_padding"
+offset = 73
+type = "bytes[10]"
+source = "spec"
+anchor = "The indexed record named by the first Align prefix reference is its constructor"
+value = [0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
+
+[[record.field]]
+name = "second_code"
+offset = 83
+type = "u32"
+source = "spec"
+anchor = "The indexed record named by the first Align prefix reference is its constructor"
+
+[[record.field]]
+name = "matrix_zero"
+offset = 87
+type = "bytes[1]"
+source = "spec"
+anchor = "The indexed record named by the first Align prefix reference is its constructor"
+value = [0]
+
+[[record.field]]
+name = "matrix_scalars"
+offset = 88
+type = "f64[16]"
+source = "spec"
+anchor = "The indexed record named by the first Align prefix reference is its constructor"
+
+[[record.field]]
+name = "matrix_tail_zero"
+offset = 216
+type = "bytes[2]"
+source = "spec"
+anchor = "The indexed record named by the first Align prefix reference is its constructor"
+value = [0, 0]
+
+[[record.field]]
+name = "third_code"
+offset = 218
+type = "u32"
+source = "spec"
+anchor = "The indexed record named by the first Align prefix reference is its constructor"
+
+[[record.field]]
+name = "owner_zero"
+offset = 222
+type = "bytes[1]"
+source = "spec"
+anchor = "The indexed record named by the first Align prefix reference is its constructor"
+value = [0]
+
+[[record.field]]
+name = "owner_marker"
+offset = 223
+type = "u8"
+source = "spec"
+anchor = "The indexed record named by the first Align prefix reference is its constructor"
+value = 1
+
+[[record.field]]
+name = "owner_word"
+offset = 224
+type = "u32"
+source = "spec"
+anchor = "The indexed record named by the first Align prefix reference is its constructor"
+
+[[record.field]]
+name = "owner_padding"
+offset = 228
+type = "bytes[13]"
+source = "spec"
+anchor = "The indexed record named by the first Align prefix reference is its constructor"
+value = [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
+
+[[record.field]]
+name = "first_scalar_code"
+offset = 241
+type = "u32"
+source = "spec"
+anchor = "The indexed record named by the first Align prefix reference is its constructor"
+
+[[record.field]]
+name = "scalar"
+offset = 245
+type = "f64"
+source = "spec"
+anchor = "The indexed record named by the first Align prefix reference is its constructor"
+
+[[record.field]]
+name = "second_scalar_code"
+offset = 253
+type = "u32"
+source = "spec"
+anchor = "The indexed record named by the first Align prefix reference is its constructor"
+
+[[record.field]]
+name = "first_companion_marker"
+offset = 257
+type = "u8"
+source = "spec"
+anchor = "The indexed record named by the first Align prefix reference is its constructor"
+value = 1
+
+[[record.field]]
+name = "first_companion_word"
+offset = 258
+type = "u32"
+source = "spec"
+anchor = "The indexed record named by the first Align prefix reference is its constructor"
+
+[[record.field]]
+name = "first_companion_padding"
+offset = 262
+type = "bytes[7]"
+source = "spec"
+anchor = "The indexed record named by the first Align prefix reference is its constructor"
+value = [0, 0, 0, 0, 0, 0, 0]
+
+[[record.field]]
+name = "second_companion_marker"
+offset = 269
+type = "u8"
+source = "spec"
+anchor = "The indexed record named by the first Align prefix reference is its constructor"
+value = 1
+
+[[record.field]]
+name = "second_companion_word"
+offset = 270
+type = "u32"
+source = "spec"
+anchor = "The indexed record named by the first Align prefix reference is its constructor"
+
+[[record.field]]
+name = "second_companion_padding"
+offset = 274
+type = "bytes[6]"
+source = "spec"
+anchor = "The indexed record named by the first Align prefix reference is its constructor"
+value = [0, 0, 0, 0, 0, 0]
+
+[[record.field]]
+name = "repeated_owner_marker"
+offset = 280
+type = "u8"
+source = "spec"
+anchor = "The indexed record named by the first Align prefix reference is its constructor"
+value = 1
+
+[[record.field]]
+name = "repeated_owner_word"
+offset = 281
+type = "u32"
+source = "spec"
+anchor = "The indexed record named by the first Align prefix reference is its constructor"
+
+[[record.field]]
+name = "repeated_owner_padding"
+offset = 285
+type = "bytes[8]"
+source = "spec"
+anchor = "The indexed record named by the first Align prefix reference is its constructor"
+value = [0, 0, 0, 0, 0, 0, 0, 0]
+
+[[record]]
 name = "sketch_typed_compact_member_head"
 parsed_by = "crates/cadmpeg-codec-f3d/src/design/decode/sketch.rs"
 kind = "byte"
@@ -26103,3 +26869,197 @@ value = "6CCF41D5-40BE-48ED-A834-18F3EAED6C57"
 offset = 487
 size = 4
 note = "The specification states no field in this range."
+
+[[record]]
+name = "entity_tracking_carrier_prefix"
+parsed_by = "crates/cadmpeg-codec-f3d/src/design/decode/operands.rs"
+kind = "byte"
+section = "3.1"
+anchor = "The carrier header is followed by ten zero bytes, u32 values `1, 0, 1`, a u32 lane with value `2` or `3`"
+size = 73
+note = "Offsets are relative to the carrier indexed header; the optional related identities follow at offset 73."
+
+[[record.gap]]
+offset = 0
+size = 11
+note = "The indexed header precedes this field run."
+
+[[record.field]]
+name = "zero_run_10"
+offset = 11
+type = "bytes[10]"
+source = "spec"
+anchor = "The carrier header is followed by ten zero bytes, u32 values `1, 0, 1`, a u32 lane with value `2` or `3`"
+
+[[record.field]]
+name = "lead_words"
+offset = 21
+type = "bytes[12]"
+source = "spec"
+anchor = "The carrier header is followed by ten zero bytes, u32 values `1, 0, 1`, a u32 lane with value `2` or `3`"
+
+[[record.field]]
+name = "lane"
+offset = 33
+type = "u32"
+source = "spec"
+anchor = "The carrier header is followed by ten zero bytes, u32 values `1, 0, 1`, a u32 lane with value `2` or `3`"
+
+[[record.field]]
+name = "primary_identity"
+offset = 37
+type = "u64"
+source = "spec"
+anchor = "The carrier header is followed by ten zero bytes, u32 values `1, 0, 1`, a u32 lane with value `2` or `3`"
+
+[[record.field]]
+name = "zero_run_8_first"
+offset = 45
+type = "u64"
+source = "spec"
+anchor = "The carrier header is followed by ten zero bytes, u32 values `1, 0, 1`, a u32 lane with value `2` or `3`"
+
+[[record.field]]
+name = "one"
+offset = 53
+type = "u32"
+source = "spec"
+anchor = "The carrier header is followed by ten zero bytes, u32 values `1, 0, 1`, a u32 lane with value `2` or `3`"
+
+[[record.field]]
+name = "selector"
+offset = 57
+type = "i32"
+source = "spec"
+anchor = "The carrier header is followed by ten zero bytes, u32 values `1, 0, 1`, a u32 lane with value `2` or `3`"
+
+[[record.field]]
+name = "kind"
+offset = 61
+type = "u32"
+source = "spec"
+anchor = "The carrier header is followed by ten zero bytes, u32 values `1, 0, 1`, a u32 lane with value `2` or `3`"
+
+[[record.field]]
+name = "zero_run_8_second"
+offset = 65
+type = "u64"
+source = "spec"
+anchor = "The carrier header is followed by ten zero bytes, u32 values `1, 0, 1`, a u32 lane with value `2` or `3`"
+
+[[record]]
+name = "local_component_occurrence_empty_attributes_prefix"
+parsed_by = "crates/cadmpeg-codec-f3d/src/design/decode/components.rs"
+kind = "byte"
+section = "3.1"
+anchor = "An empty-attribute local component occurrence stores an empty attribute list after its path."
+size = 213
+note = "Offsets are relative to the indexed header. The identity or matrix tail follows at offset 213."
+
+[[record.gap]]
+offset = 0
+size = 11
+note = "Indexed header."
+
+[[record.field]]
+name = "empty_instance_name"
+offset = 11
+type = "bytes[8]"
+source = "spec"
+anchor = "An empty-attribute local component occurrence stores an empty attribute list after its path."
+
+[[record.field]]
+name = "path_marker"
+offset = 19
+type = "u8"
+source = "spec"
+anchor = "An empty-attribute local component occurrence stores an empty attribute list after its path."
+value = 1
+
+[[record.field]]
+name = "path_count"
+offset = 20
+type = "u32"
+source = "spec"
+anchor = "An empty-attribute local component occurrence stores an empty attribute list after its path."
+value = 1
+
+[[record.field]]
+name = "component_reference"
+offset = 24
+type = "bytes[9]"
+source = "spec"
+anchor = "An empty-attribute local component occurrence stores an empty attribute list after its path."
+
+[[record.gap]]
+offset = 33
+size = 2
+note = "Two zero trailing bytes of the local component reference."
+
+[[record.field]]
+name = "path_discriminator"
+offset = 35
+type = "u32"
+source = "spec"
+anchor = "An empty-attribute local component occurrence stores an empty attribute list after its path."
+
+[[record.field]]
+name = "attributes_marker"
+offset = 39
+type = "u8"
+source = "spec"
+anchor = "An empty-attribute local component occurrence stores an empty attribute list after its path."
+value = 1
+
+[[record.field]]
+name = "attribute_count"
+offset = 40
+type = "u32"
+source = "spec"
+anchor = "An empty-attribute local component occurrence stores an empty attribute list after its path."
+value = 0
+
+[[record.field]]
+name = "occurrence_ordinal"
+offset = 44
+type = "u32"
+source = "spec"
+anchor = "An empty-attribute local component occurrence stores an empty attribute list after its path."
+
+[[record.field]]
+name = "carrier_guid"
+offset = 48
+type = "bytes[76]"
+source = "spec"
+anchor = "An empty-attribute local component occurrence stores an empty attribute list after its path."
+
+[[record.field]]
+name = "occurrence_guid"
+offset = 124
+type = "bytes[76]"
+source = "spec"
+anchor = "An empty-attribute local component occurrence stores an empty attribute list after its path."
+
+[[record.gap]]
+offset = 200
+size = 1
+note = "Zero separator."
+
+[[record.field]]
+name = "component_reference_repeat"
+offset = 201
+type = "bytes[9]"
+source = "spec"
+anchor = "An empty-attribute local component occurrence stores an empty attribute list after its path."
+
+[[record.gap]]
+offset = 210
+size = 2
+note = "Zero trailing field of the repeated component-record reference."
+
+[[record.field]]
+name = "identity_flag"
+offset = 212
+type = "u8"
+source = "spec"
+anchor = "An empty-attribute local component occurrence stores an empty attribute list after its path."

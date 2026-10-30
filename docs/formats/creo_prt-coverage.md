@@ -864,3 +864,139 @@ class, and parent identifier agree. Disagreement retains the native candidates
 and reports `creo/feature.state-selection-unresolved`. Coverage and source
 metadata record `unresolved_feature_state_selection_count`. A consensus does
 not mark a repeated native candidate as current.
+
+## Plane origin admission
+
+Positional Y-rotation plane frames retain the full signed middle row and use
+matrix columns for the parameter direction and normal. One shared gate checks
+unit length, orthogonality, handedness, and finite origins before transfer.
+Their origins use the signed first-coordinate lane at all three positions. Compact plane origin repeats
+carry the preceding scalar from the direction production and through later
+origin literals. Complete control-only rotations share the compact frame gate with named
+analytic prototypes. Explicit curve-equation and feature-definition frames
+retain their owned support-slot languages.
+The complete scalar-frame function supplies both boundary validation and slot
+decoding. Synthetic tests cover matrix columns, handedness refusal, signed
+origins, repeats of zero and nonzero values, scalar-owned delimiter bytes,
+trailing-byte refusal, and neutral validation. A bounded local system without
+a complete scalar frame remains native and emits
+`creo/geometry.plane-local-system-unresolved`; the synthetic refusal test also
+asserts the untransferred-surface loss.
+
+Direct positional eight-slot pcurve bodies use one bounded stateful scalar
+parser for token values and endpoint tuples. Repeats carry across chart-coordinate
+boundaries. Invalid repeats and unconsumed bytes remain native; newly refused
+claimed eight-slot bodies emit `creo/geometry.pcurve-scalar-frame-unresolved`.
+Held-scalar bodies keep their separate token-boundary production.
+
+Standard positional plane envelopes outside the four-initial-`0f` compatibility
+production use signed literals and bounded repeats through the same complete scalar-table function used for
+boundary admission. The corner values and held-coordinate plane therefore use
+the same scalar interpretation. Leading-compact and structural-prefix terminal scalar frames retain
+their row-lane production. A bounded envelope without a complete scalar table
+emits `creo/geometry.plane-envelope-unresolved`. Synthetic tests cover nonzero
+repeats, signed units, bounds, and attributed refusal.
+
+Complete signed axis-permutation plane matrices also use the shared unit, orthogonality, and
+handedness gate. Matrix columns define the chart, including signed axis
+permutations. Axis-aligned matrices retain envelope reconciliation. Compact
+analytic-prototype frames use the same complete plane-frame gate; named
+prototype pcurves use the same eight-slot parser as direct pcurve bodies.
+Synthetic tests assert complete admission and attributed refusal for both
+named forms.
+
+Pcurve scalar streams preserve the quarter-turn literal and positive counted
+repeats through both native token values and geometric endpoints. Counted
+two-chart arrays and their uniquely scoped replays use the same scalar gate,
+validate the complete four-times-count extent, and allocate through the decode
+context. Invalid explicit sampled frames emit
+`creo/geometry.two-chart-scalar-frame-unresolved`. Rejected compact analytic
+prototype matrices emit `creo/geometry.prototype-local-system-unresolved`.
+Synthetic tests cover counted repeats, invalid counts, stock angles, matrix
+columns for a cylinder, and both attributed refusal paths. Named local-system
+inheritance remains separate from pcurve repetition.
+
+A complete standard ten-slot envelope keeps its selected scalar language before
+the terminal reference. Boundary validation and corner transfer use the same
+complete table. The auxiliary-corner parser excludes that complete production.
+Synthetic coverage asserts its signed held coordinate, complete consumption,
+and the absence of a competing row-lane plane.
+
+A positional plane with an unresolved local system retains its pcurve chart
+coordinates as native data and emits `creo/geometry.pcurve-chart-unresolved`.
+The complete-frame predicate gates direct endpoint evidence, sampled
+two-chart mapping, and analytic pcurve construction. An envelope-derived
+geometric plane remains available to carrier intersections. Synthetic tests
+assert the shared chart gate, retained plane geometry, attributed loss, and
+neutral validation.
+
+An analytic carrier inferred from a sampled pcurve must contain every mapped
+source sample. A failed candidate emits
+`creo/geometry.sampled-pcurve-carrier-unresolved`; endpoint constraints and
+native samples remain retained. Synthetic coverage admits a sampled line and
+refuses an endpoint chord with a displaced interior sample.
+
+## Plane-carrier and sampled-path reports
+
+The transferred-plane note counts admitted neutral plane rows through
+`transferred_visible_plane_surface_row_count`. Envelope-derived equations can
+supply carrier constraints while their plane row remains unresolved. Each
+untransferred plane row retains `geometry.plane-carrier-unresolved` with its
+source identifier and byte location.
+
+Sample containment distinguishes an evaluated point outside its inferred
+carrier from a surface evaluation refusal. The first case retains
+`geometry.sampled-pcurve-carrier-unresolved`; the second retains
+`geometry.sampled-pcurve-evaluation-unresolved`. Both retain the sampled path.
+Synthetic tests assert the distinct outcomes and losses.
+
+
+### Reviewed scalar productions
+
+The 53-file envelope inventory has 436 retained records. The stateful reading
+agrees in all 347 evaluable complete standard envelopes; 89 remain unresolved.
+The literal-control alternative agrees in 80 and disagrees in 267. The four
+initial literal `0f` bytes identify a separate compatibility production with
+zero occurrences in this inventory. That production retains the surface-row
+literal reading and must reconcile with its local frame. An unresolved
+visible carrier receives `geometry.plane-carrier-unresolved` with its row ID
+and source offset.
+
+The 2,149 complete pcurve frames contain 9,670 odd slots. The other 633
+retained curve-parameter bodies use another production or fail the complete
+frame predicate. The signed
+first-coordinate reading changes 810 values and gives 232 uniquely agreeing
+paired samples; the second-coordinate alternative gives zero unique
+agreements. Both readings agree in 78 samples, fail in 98, and leave 402
+unevaluable. Standalone `12` occurs 285 times in 177 complete frames. Positive
+pi/2 gives 43 uniquely agreeing samples, the zero alternative gives zero,
+both agree in ten, both fail in 18, and 214 remain unevaluable.
+
+The diagonal middle-sign relation holds in all 410 images examined across the
+53 files. The compact rotation gate requires a direction repeat and a complete
+right-handed rotation. The repeated-origin test supplies a right-handed
+negative-unit matrix and retains its signed-origin assertion.
+
+The frozen `axis_aligned_plane` and `closed_plane_intersection_brep` envelopes
+use the compatibility prefix. Their base geometry is retained. The latter's
+six curve-parameter bodies are empty; its plane placements, line directions,
+and parameter ranges derive from those envelopes.
+
+
+Complete base-literal envelopes remain admitted when the stateful stream
+cannot parse their extent, including initial `e4` literals. Literal fallback
+also resolves a stateful/frame conflict when the literal corners agree with
+the stored frame. Four-unit stateful domain prefixes retain the base-literal
+compatibility production. The source section supplies its scalar cache.
+Both model and cross-section namespaces use the same reconciliation helper.
+The two original rows tests retain their original inputs and assertions.
+Generic support-frame tests retain `18 0f 18` rank markers: the Y-rotation
+production owns that span after its direction columns satisfy the unit and
+orthogonality gate. Invalid rotation origins and reflected unit rotations
+retain their refusal gates.
+
+The retained Y-rotation inventory has 56 frames in seven local files. Each
+nonzero direction opener is `71` or `b9`. The rotation production also owns
+the explicit `41`/`45` floating forms; other DICT components retain generic
+support-frame ownership. All five original generic support byte images and
+assertions remain covered.

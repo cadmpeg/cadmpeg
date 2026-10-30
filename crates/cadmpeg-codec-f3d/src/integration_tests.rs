@@ -2,6 +2,8 @@
 //! End-to-end contracts over synthesized F3D and F3Z archives.
 
 mod act_links;
+mod align;
+mod archive_session;
 mod attribute_colors;
 mod body_reference_tails;
 mod design_containment;
@@ -13,6 +15,7 @@ mod measured_geometry;
 mod optional_payloads;
 mod placement_history;
 mod procedural_support;
+mod product_owners;
 mod work_planes;
 
 use cadmpeg_test_support::{wire, EditableDecodeResult};
@@ -46,9 +49,11 @@ use cadmpeg_ir::geometry::{SolvedCurveGeometry, SolvedSurfaceGeometry};
 
 fn decode(bytes: Vec<u8>) -> EditableDecodeResult {
     EditableDecodeResult::from(
-        F3dCodec
-            .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
-            .expect("synthesized Fusion archive should decode"),
+        crate::test_support::archive_session::decode(
+            &mut Cursor::new(bytes),
+            &DecodeOptions::default(),
+        )
+        .expect("synthesized Fusion archive should decode"),
     )
 }
 
@@ -293,15 +298,14 @@ fn geometry_depth_cuts_only_documents_that_agree_without_design_intent() {
     let delivered = inputs
         .iter()
         .map(|(name, bytes)| {
-            let result = F3dCodec
-                .decode(
-                    &mut Cursor::new(bytes),
-                    &DecodeOptions {
-                        depth: cadmpeg_core::decode::DecodeDepth::Geometry,
-                        ..DecodeOptions::default()
-                    },
-                )
-                .expect("geometry-depth decode");
+            let result = crate::test_support::archive_session::decode(
+                &mut Cursor::new(bytes),
+                &DecodeOptions {
+                    depth: cadmpeg_core::decode::DecodeDepth::Geometry,
+                    ..DecodeOptions::default()
+                },
+            )
+            .expect("geometry-depth decode");
             (*name, result.ir().decode_depth())
         })
         .collect::<Vec<_>>();

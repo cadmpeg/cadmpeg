@@ -394,6 +394,18 @@ the native feature when a fixed lane carries a symmetric distance.
 
 **Conflict.** No complete root-selection rule is defined.
 
+### DR-145. Extrude selection member scope tail
+
+**Question.** What do the f64, the u32 with value `0x104`, and the two chain references in the 50-byte scope tail of an Extrude selection member mean?
+
+**Known.** The tail follows the 190-byte member frame when the optional slot is absent. The u32 has value `0x104`. The two chain references name indexed records of the same segment that follow the member. The closing marked reference names the owning Extrude scope.
+
+**Need.** Files that vary the Extrude options and the selected profile, to find which option writes the tail and what the chain records carry.
+
+**Conflict.** None.
+
+**Note.** None.
+
 ## 2. External references
 
 ### DR-111. Component-path poses of nested occurrences
@@ -679,6 +691,18 @@ the native feature when a fixed lane carries a symmetric distance.
 
 **Note.** Keep controls and extended selections native. A neutral Wrap requires a proven effect, selected profile, target face, and placement. The existing Wrap operation has no independent horizontal, vertical, or rotation controls.
 
+### DR-120. Align operand roles and motion
+
+**Question.** Which referenced constructions identify the moved objects, the source and target frames, and the direction of the resulting motion? What do the prefix codes and the constructor codes and marked words control? What do the matrix block and separate scalar represent, and which units apply?
+
+**Known.** The Align prefix contains two references, an unsigned code, and a zero GUID. The references join to the ordered scope table. The compact and extended forms differ by one u32 word of value 1. The role of this word is not defined. The constructor contains eight marked words, five codes, sixteen matrix scalars, and one separate scalar. Its two scope back-references identify its owner, but do not assign a moved body or a motion relation.
+
+**Need.** Controlled Align exports that change object selection, source and target frames, reversal, and angle independently. F22b supplies a body-alignment recipe.
+
+**Conflict.** A referenced solved frame alone does not establish the motion applied to a selected body.
+
+**Note.** Keep the operation native until each operand role and motion direction has a byte-defined rule.
+
 ### DR-126. Move transform envelopes with leading references
 
 **Question.** In the Move envelope with leading references, is the matrix an absolute transform or a transform relative to a referenced frame?
@@ -738,3 +762,51 @@ the native feature when a fixed lane carries a symmetric distance.
 **Conflict.** None.
 
 **Note.** A scope outside the 1295-byte form, or with a nonzero offset owner, remains native with `feature.box-primitive-unresolved`.
+
+### DR-147. Region extent of a tracking-path Extrude selection
+
+**Question.** Which Sketch region does an Extrude selection select when its member follows a tracking path?
+
+**Known.** The path stores the primary curve, a one-based fragment ordinal, the fragment count, and the two curves bounding the fragment. The carrier lane is `2` or `3`. The selected fragment can border two bounded Sketch faces.
+
+**Need.** Controlled selections of one region, of two adjacent regions, and of a region with an enclosed island, each in a Sketch whose curves cross, to bind the path to the selected side and to the filled island. CAD Fixture Recipes F29a-F29d select each region of two crossing circles and the union of two of them.
+
+**Conflict.** None.
+
+**Note.** A path selection retains its native selection and loss. The selected region can be the union of several atomic arrangement faces, which no single face proves.
+
+### DR-146. Later ordinal in a fixed identity occurrence
+
+**Question.** What placement does a fixed untyped occurrence with identity flag `1` and ordinal greater than one select?
+
+**Known.** Two standard 229-byte frames store ordinal `2` and identity flag `1`. Attributed identity frames retain later ordinals.
+
+**Need.** Independent files that vary the occurrence ordinal and placement separately.
+
+**Conflict.** None.
+
+**Note.** Emit `assembly.local-occurrence-identity-ordinal-unresolved` and keep the occurrence out of neutral product structure.
+
+### DR-142. Thread construction option bytes
+
+**Question.** What do the first and second bytes of the Thread construction marker, the pitch marker, and the zero bytes before the trailer `01` select?
+
+**Known.** The construction marker first byte is `0` or `1` and its second byte is `1` or `2`. The pitch marker is `0` or `1`. The admitted forms fix each combination they accept. In the standard-prefix compact-marker form, the run before the trailer `01` is two or three zero bytes. Every byte in that run is zero in each Thread scope that carries it.
+
+**Need.** Thread scopes saved with one dialog option changed at a time, and Thread scopes whose marker combinations no admitted form accepts.
+
+**Conflict.** None.
+
+**Note.** A scope whose marker combination no admitted form accepts stays an unresolved Thread operation.
+
+### DR-143. Thread modeled state
+
+**Question.** Which stored field, or which result-topology change, marks a Thread as modeled geometry instead of an annotation?
+
+**Known.** The scope stores the designation, nominal-size text, profile name, and four physical scalars. No stored byte is proven to select the modeled state. In every Thread scope with a resolved result transition, the transition updates faces and inserts none.
+
+**Need.** One Thread saved with modeled geometry and the same Thread with it off, with the Design stream and the ASM history of both.
+
+**Conflict.** None.
+
+**Note.** The neutral thread leaves `modeled` absent.

@@ -590,9 +590,21 @@ fn feature_definition_is_incomplete(definition: &cadmpeg_ir::features::FeatureDe
         }
         FeatureDefinition::Operation(FeatureOperation::CosmeticThread {
             face,
+            standard,
+            designation,
             diameter,
-            extent,
-        }) => !face_selection_is_resolved(face) || diameter.is_none() || extent.is_none(),
+            pitch,
+            modeled,
+            extent
+        }) => {
+            !face_selection_is_resolved(face)
+                || standard.is_none()
+                || designation.is_none()
+                || diameter.is_none()
+                || pitch.is_none()
+                || modeled.is_none()
+                || extent.is_none()
+        }
         FeatureDefinition::Operation(FeatureOperation::Unresolved { .. }) => true,
         FeatureDefinition::Operation(FeatureOperation::DatumPlane { frame }) => {
             !datum_plane_frame_is_resolved(*frame)
@@ -2642,6 +2654,9 @@ impl<'a> F3dDecodeSession<'a> {
                 ),
             );
         }
+        self.report
+            .losses
+            .extend(prereqs.design_component_occurrence_losses.iter().cloned());
         self.report.losses.extend(
             crate::design::decode::components::superseded_occurrences_loss(
                 prereqs.design_superseded_component_occurrences,
@@ -3035,6 +3050,11 @@ impl<'a> F3dDecodeSession<'a> {
                         &mut self.ir.model,
                         &mut self.report.losses,
                     )?;
+                    crate::design::owners::attach(
+                        &self.native,
+                        &mut self.ir.model,
+                        &mut self.report.losses,
+                    )?;
                     report_design_projection_gaps(&mut self.report, ctx, &self.ir, &self.native)?;
                 }
                 index
@@ -3054,6 +3074,11 @@ impl<'a> F3dDecodeSession<'a> {
                         crate::design::decode::sketch_owners::attach(
                             ctx,
                             scan,
+                            &self.native,
+                            &mut self.ir.model,
+                            &mut self.report.losses,
+                        )?;
+                        crate::design::owners::attach(
                             &self.native,
                             &mut self.ir.model,
                             &mut self.report.losses,
@@ -3217,6 +3242,7 @@ pub(crate) fn decode<'a>(ctx: &DecodeContext<'a>, root: View<'a>) -> Result<Deco
                 &std::collections::BTreeSet::new(),
                 &mut decoded.body.losses,
             )?;
+            crate::design::owners::release_unbound(&mut decoded.ir.model);
             decoded.ir.finalize();
             let hash = cadmpeg_ir::hash::document_local_sha256(
                 ctx,

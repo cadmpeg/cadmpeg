@@ -58,6 +58,8 @@ use std::hash::Hash;
 
 pub(crate) mod form_cages;
 
+/// Millimetres per Design length unit (the Design stream stores centimetres).
+const DESIGN_LENGTH_TO_MILLIMETRE: f64 = 10.0;
 const EPS_FEATURE_PROJECT_PROJECT_OFFSET_FACES_E9: f64 = 1.0e-9;
 const EPS_FEATURE_PROJECT_MATRIX_AXIS_ANGLE_E12: f64 = 1.0e-12;
 const EPS_FEATURE_PROJECT_MATRIX_AXIS_ANGLE_E8: f64 = 1.0e-8;
@@ -354,7 +356,7 @@ pub(crate) enum ScopeHistoryPredecessor<'a> {
 }
 
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
-enum ComponentHistoryNamespace {
+pub(crate) enum ComponentHistoryNamespace {
     Aggregate,
     Component(u64),
 }
@@ -431,11 +433,19 @@ impl<'a> ScopeHistoryGraph<'a> {
         }
     }
 
-    fn component_namespace(
+    pub(crate) fn component_namespace(
         scope: &DesignParameterScope,
         component_naming_spaces: &[crate::records::recipes::DesignComponentNamingSpace],
     ) -> Option<ComponentHistoryNamespace> {
-        let stream = native_stream(&scope.id)?;
+        Self::component_namespace_at(&scope.id, scope.record_index, component_naming_spaces)
+    }
+
+    pub(crate) fn component_namespace_at(
+        id: &str,
+        record_index: u32,
+        component_naming_spaces: &[crate::records::recipes::DesignComponentNamingSpace],
+    ) -> Option<ComponentHistoryNamespace> {
+        let stream = native_stream(id)?;
         let mut stream_spaces = component_naming_spaces
             .iter()
             .filter(|space| native_stream(&space.id) == Some(stream))
@@ -444,7 +454,7 @@ impl<'a> ScopeHistoryGraph<'a> {
             return Some(ComponentHistoryNamespace::Aggregate);
         }
         stream_spaces
-            .filter(|space| space.component_record_index <= u64::from(scope.record_index))
+            .filter(|space| space.component_record_index <= u64::from(record_index))
             .max_by_key(|space| space.component_record_index)
             .map(|space| ComponentHistoryNamespace::Component(space.component_record_index))
     }
@@ -1071,7 +1081,13 @@ pub(crate) fn project_parameter_design_with_edge_identities(
                             Ok(FeatureDefinition::Operation(
                                 FeatureOperation::CosmeticThread {
                                     face,
+                                    standard: Some(construction.profile.clone()),
+                                    designation: Some(construction.designation.clone()),
                                     diameter: Some(nominal_size),
+                                    pitch: cadmpeg_ir::scalar::PositiveLength::new(
+                                        construction.pitch.get() * DESIGN_LENGTH_TO_MILLIMETRE,
+                                    ),
+                                    modeled: None,
                                     extent,
                                 },
                             ))
@@ -1308,6 +1324,7 @@ pub(crate) fn project_parameter_design_with_edge_identities(
             };
             let outputs = inserted_bodies;
             Ok(Feature {
+                product_definition: None,
                 id: scope_ids[&(native_scope, scope.record_index)].clone(),
                 ordinal: source_ordinals[&(native_scope, scope.record_index)],
                 name: Some(format!(
@@ -1557,6 +1574,7 @@ pub(crate) fn project_parameter_design_with_edge_identities(
                 }
             };
             NeutralParameter {
+                product_definition: None,
                 id: crate::ids::neutral_parameter_id(parameter),
                 owner: owner.cloned(),
                 ordinal: owner
@@ -6805,7 +6823,7 @@ pub(super) fn project_fixed_sweep(
         else {
             return None;
         };
-        let values = values.map(cadmpeg_ir::scalar::FiniteReal::get);
+        let values: Vec<f64> = values.iter().map(|value| value.get()).collect();
         let stream = native_stream(&scope.id)?;
         let mut groups = Vec::new();
         for group in construction_groups.iter().filter(|group| {
@@ -6900,9 +6918,22 @@ pub(super) fn project_fixed_sweep(
             || groups.len() != expected_group_count
             || (*operation == DesignExtrudeOperation::NewBody && !bodies.is_empty())
             || (guide_surface_form && paths.len() != 1)
-            || values[..4].iter().any(|value| !(0.0..=1.0).contains(value))
-            || (paths.len() == 1 && values[2..4] != [1.0; 2])
         {
+            return None;
+        }
+        let valid_lanes = match values.as_slice() {
+            [along, against] => {
+                paths.len() == 1 && (0.0..=1.0).contains(along) && (0.0..=1.0).contains(against)
+            }
+            [along, against, along_rail, against_rail, _twist, _taper] => {
+                [along, against, along_rail, against_rail]
+                    .iter()
+                    .all(|value| (0.0..=1.0).contains(*value))
+                    && (paths.len() != 1 || (*along_rail == 1.0 && *against_rail == 1.0))
+            }
+            _ => false,
+        };
+        if !valid_lanes {
             return None;
         }
         Some((operation, values, profile, *path, paths, guide_surfaces))
@@ -6917,24 +6948,39 @@ pub(super) fn project_fixed_sweep(
         scope,
         ctx,
     )?;
-    let guide_extent = SweepPathExtent {
-        along_fraction: or_none!(cadmpeg_ir::scalar::Fraction::new(values[2])),
-        against_fraction: or_none!(cadmpeg_ir::scalar::Fraction::new(values[3])),
-    };
-    let guide_rail = if let Some(rail) = paths.get(1) {
-        Some(SweepGuideRail {
-            path: resolved_loft_path(
-                rail,
-                construction_groups,
-                edge_operands,
-                edge_identity_operands,
-                scope,
-                ctx,
-            )?,
-            extent: guide_extent,
-        })
-    } else {
-        None
+    let (along, against, guide_rail, twist, taper) = match values.as_slice() {
+        [along, against] => (*along, *against, None, None, None),
+        [along, against, along_rail, against_rail, twist, taper] => {
+            let guide_extent = SweepPathExtent {
+                along_fraction: or_none!(cadmpeg_ir::scalar::Fraction::new(*along_rail)),
+                against_fraction: or_none!(cadmpeg_ir::scalar::Fraction::new(*against_rail)),
+            };
+            let guide_rail = if let Some(rail) = paths.get(1) {
+                Some(SweepGuideRail {
+                    path: resolved_loft_path(
+                        rail,
+                        construction_groups,
+                        edge_operands,
+                        edge_identity_operands,
+                        scope,
+                        ctx,
+                    )?,
+                    extent: guide_extent,
+                })
+            } else {
+                None
+            };
+            let twist_angle = or_none!(Angle::new(*twist));
+            let taper_angle = or_none!(Angle::new(*taper));
+            (
+                *along,
+                *against,
+                guide_rail,
+                (*twist != 0.0).then_some(twist_angle),
+                (*taper != 0.0).then_some(taper_angle),
+            )
+        }
+        _ => return Ok(None),
     };
     let orientation = guide_surfaces
         .first()
@@ -6949,8 +6995,6 @@ pub(super) fn project_fixed_sweep(
                 None => FaceSelection::Native(group.id.clone()),
             },
         });
-    let twist_angle = or_none!(Angle::new(values[4]));
-    let taper_angle = or_none!(Angle::new(values[5]));
     Ok(Some(FeatureDefinition::Operation(
         FeatureOperation::Sweep {
             shape: cadmpeg_ir::features::SweepShape::Solid {
@@ -6972,13 +7016,13 @@ pub(super) fn project_fixed_sweep(
             transformation: None,
             path_tangent: false,
             linearize: false,
-            twist: (values[4] != 0.0).then_some(twist_angle),
+            twist,
             path_extent: Some(SweepPathExtent {
-                along_fraction: or_none!(cadmpeg_ir::scalar::Fraction::new(values[0])),
-                against_fraction: or_none!(cadmpeg_ir::scalar::Fraction::new(values[1])),
+                along_fraction: or_none!(cadmpeg_ir::scalar::Fraction::new(along)),
+                against_fraction: or_none!(cadmpeg_ir::scalar::Fraction::new(against)),
             }),
             guide_rail,
-            taper: (values[5] != 0.0).then_some(taper_angle),
+            taper,
             scale: None,
             allow_multi_profile_faces: None,
         },
