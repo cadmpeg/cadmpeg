@@ -26,6 +26,7 @@ use super::super::expanded::half_edge_ref;
 use super::super::native::annotate;
 use super::super::records::CreoFaceAdmissionRejectionRecord;
 use super::super::sweep::profiles::line_pcurve;
+use super::super::sweep::surfaces::{sampled_sweep_circle_range, SampledCircleRange};
 use super::super::uniqueness::{exactly_one, ExactIdPositions, NumberedIdentityPositions};
 use crate::decode::analytic::carriers::{
     geometry_section_record, native_face_orientations, ordered_face_loops,
@@ -2075,6 +2076,7 @@ pub(in super::super) fn transfer_native_brep(
     let mut exact_surfaces =
         ExactIdPositions::new(ir.model.surfaces.iter().map(|item| item.id.as_str()));
 
+    let mut sampled_sweep_circles = BTreeSet::new();
     for vertex_id in used_vertices {
         if vertex_ids.contains(vertex_id) {
             continue;
@@ -2145,15 +2147,31 @@ pub(in super::super) fn transfer_native_brep(
                 }
                 if range.is_none() {
                     if let Some(faces) = curve_faces.get(curve_id).copied() {
-                        range = pcurve_backed_periodic_conic_parameter_range(
+                        let sampled_range = sampled_sweep_circle_range(
                             ctx,
-                            &geometry,
+                            scan,
+                            &mut geometry,
                             (*curve_id, faces),
-                            &native_pcurves,
                             &ir.model.surfaces,
                             points,
                             source_carriers,
+                            losses,
                         )?;
+                        if let SampledCircleRange::Admitted(sampled_range) = sampled_range {
+                            range = Some(sampled_range);
+                            sampled_sweep_circles.insert(*curve_id);
+                        }
+                        if matches!(sampled_range, SampledCircleRange::Unrelated) {
+                            range = pcurve_backed_periodic_conic_parameter_range(
+                                ctx,
+                                &geometry,
+                                (*curve_id, faces),
+                                &native_pcurves,
+                                &ir.model.surfaces,
+                                points,
+                                source_carriers,
+                            )?;
+                        }
                     }
                 }
                 if range.is_none() {
@@ -2614,6 +2632,48 @@ pub(in super::super) fn transfer_native_brep(
                                 tag,
                             ))
                         });
+                    let sampled_plane = sampled_sweep_circles.contains(&half_edge.curve_id)
+                        && face_surface.is_some_and(|position| {
+                            matches!(
+                                source_carriers.surface_geometry(&ir.model.surfaces[position]),
+                                SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(_))
+                            )
+                        });
+                    let pcurve_geometry = if sampled_plane {
+                        (|| {
+                            let surface = &ir.model.surfaces[face_surface?];
+                            let curve =
+                                &ir.model.curves[numbered_curves.unique(half_edge.curve_id)?];
+                            let edge =
+                                &ir.model.edges[numbered_edges.unique(half_edge.curve_id)?];
+                            let geometry = planar_curve_pcurve(
+                                source_carriers.surface_geometry(surface),
+                                source_carriers.curve_geometry(curve),
+                                &format_args!(
+                                    "Sampled sweep curve {} on face {face_id}",
+                                    half_edge.curve_id
+                                ),
+                                refusal_cell,
+                            )?;
+                            Some((
+                                geometry,
+                                source_carriers.source_edge_parameter_range(edge),
+                                row_offsets.get(&half_edge.curve_id).copied().unwrap_or(0),
+                                "sampled_sweep_planar_pcurve",
+                            ))
+                        })()
+                    } else {
+                        pcurve_geometry
+                    };
+                    if sampled_plane && pcurve_geometry.is_none() {
+                        refusal_cell.note(
+                            format_args!(
+                                "Sampled sweep curve {} on face {face_id}",
+                                half_edge.curve_id
+                            ),
+                            &"the complete circular boundary has no admitted plane projection",
+                        );
+                    }
                     let refused = refusal.take_records();
                     if pcurve_geometry.is_none() {
                         for record in refused {

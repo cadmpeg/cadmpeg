@@ -1518,3 +1518,26 @@ fn stateful_plane_matrix_uses_columns_and_refuses_reflection_or_trailing_slots()
         .is_none());
     }
 }
+
+#[test]
+fn sweep_rotation_counted_repeat_crosses_the_origin_boundary() {
+    let body = [0x18, 0xe4, 0x10, 0x18, 0x0f, 0x18, 0x0f, 0x18, 0xe7, 4];
+    let cache = ScalarCache::default();
+    let slots = super::decode_compact_plane_rotation(&body, &cache)
+        .expect("complete rotation")
+        .expect("proper rotation")
+        .get();
+    assert_eq!(slots, [0., 0., 1., 0., 0., 0., 0., 1., 0., 0., 0., 0.]);
+    for count in [0, 3, 5, 12] {
+        let mut invalid = body;
+        invalid[9] = count;
+        assert!(super::decode_compact_plane_rotation(&invalid, &cache)
+            .and_then(Result::ok)
+            .is_none());
+    }
+    let mut trailing = body.to_vec();
+    trailing.push(0x18);
+    assert!(super::decode_compact_plane_rotation(&trailing, &cache)
+        .and_then(Result::ok)
+        .is_none());
+}

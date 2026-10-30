@@ -712,7 +712,7 @@ axis-permutation matrix inside its bounded `local_sys f9 04 03` field.
 This body uses the compact rotation production in §3.4. The following named
 field bounds the frame.
 
-Within a named prototype `local_sys`, `e7 <count>` advances over `count`
+Within a sequential support-triple named prototype `local_sys`, `e7 <count>` advances over `count`
 inherited scalar slots. The count is a positive compact integer, must not cross
 the declared array extent, and does not assign values to those slots. Scalar
 decoding resumes at the first slot after the inherited interval.
@@ -1589,6 +1589,38 @@ The scalar has precedence over scalar candidates beginning inside its payload;
 the following close byte is not part of the scalar. The bounded body transfers
 the value and source offset as `cone_half_angle_override`.
 
+An ND visible class-917 envelope-only cylinder or ring-torus replay stores
+exactly ten angular stream scalars: `u0, v0, u1, v1`, followed by XYZ minima
+and XYZ maxima. The first-instance prototype and replay belong to one complete
+counted `srf_array`, have the same surface family and feature identifier, and
+occur in that order. Exactly one prototype association qualifies. Its complete
+first-instance carrier supplies the signed axis, reference direction, origin,
+and radii. Both directions are signed model basis vectors. A ring torus has
+major radius greater than the magnitude of its minor radius. The parameter
+bounds are ordered. Angular bounds lie in `[-2*pi, 2*pi]` and span at most one
+turn; the cylinder's second parameter is linear. The complete parameter
+rectangle's six model-space extrema equal the stored XYZ extrema. Endpoints and
+contained multiples of pi/2 supply those extrema for the signed-basis cylinder
+and ring torus. The replay retains the complete first-instance carrier when
+this equality holds.
+
+An analytic circular-sweep boundary production has a class-917 owner, one
+unique complete angular paired path with at least three samples, and a
+constant-coordinate cylinder or torus chart. The constant coordinate agrees
+through the complete sample sequence. This analytic chart defines the circle;
+both carriers are planes, cylinders, or tori, and the circle satisfies their
+complete analytic equations. A plane contains the circle center and has a
+parallel normal. A cylinder is coaxial with the circle and has the same radius.
+A torus contains a parallel ring whose radial and axial offsets satisfy the
+tube-radius equation, or a meridian whose center lies on the major circle and
+whose radius equals the tube radius. Every corresponding model-space sample
+lies on that circle, and both chart images agree. Qualifying charts define the
+same oriented circle. The ordered intermediate samples select exactly one
+circle-axis direction and one arc from the edge's start vertex to its end
+vertex, with a span of at most one turn. All intermediate angles increase
+strictly inside that interval. A plane chart for this boundary is the circle's
+exact projection into the plane frame, with the same parameter interval.
+
 ### 3.3 Torus and sphere representation
 
 A `srf_prim_ptr(torus)` prototype stores `e1[3], e2[3], e3[3], origin[3], radius1, radius2`. A sphere uses `radius1 = 0` and radius `radius2`; a torus uses nonzero `radius1`. Per-instance row-body overrides use a separate grammar.
@@ -1916,6 +1948,11 @@ support images with the same control-only direction stream.
 A repeat requires a preceding scalar and must end within slot eleven. It can
 cross the matrix/origin boundary. The expanded body has exactly twelve finite
 slots and consumes its complete field boundary.
+
+In a compact rotation, a terminal direction-slot `e7 <count>` repeats the
+preceding zero through the remaining direction and origin slots. The count
+is a positive canonical reference integer. The run completes exactly twelve slots at the field boundary. This counted zero-run production precedes the sequential
+support-triple production's inherited-slot reading.
 
 Each matrix column is a signed model basis vector. Column zero is the first
 parameter direction, column one is the second parameter direction, and column
@@ -2356,19 +2393,6 @@ array boundary or the next `e0` named-field boundary. An `e0` inside an explicit
 scalar payload is data. No partial slot or trailing scalar belongs to this
 array.
 
-The complete pcurve inventory contains 2,149 frames and 9,670 odd-coordinate
-slots. Of 810 values changed by the lane choice, paired samples give 232
-agreements unique to the signed first-coordinate reading, 78 agreements under
-both readings, 98 failures under both readings, and 402 unevaluable samples.
-The second-coordinate alternative has zero unique agreements.
-
-Standalone `12` occurs 285 times in 177 complete pcurve frames. The positive
-pi/2 reading gives 20 complete-record agreements, 29 disagreements, and 128
-unresolved records. The zero reading gives zero agreements, 49 disagreements,
-and 128 unresolved records. Affected samples give 43 agreements unique to
-positive pi/2, ten agreements under both readings, 18 failures under both
-readings, and 214 unevaluable samples.
-
 The exact wrapper `d7 e8 03 <scalar> 1e` selects the held-scalar production at
 a token boundary. It occupies one held scalar slot and retains the row-lane
 literal grammar; wrapper bytes are not parameter values. A payload byte sequence
@@ -2443,9 +2467,8 @@ pointwise-corresponding pcurve samples. A later row in the same `crv_array`
 namespace with the same nonzero `feat_id` and raw `type_byte` replays the unique
 canonical sample count without the `fc <count>` prefix. The canonical or
 replay body is complete only when exactly `4 * count` scalar slots consume its
-bounded parameter body. It has no trailing parameter-bound scalars. Multiple
-canonical counts for one feature and raw type
-make an unprefixed replay ambiguous.
+bounded parameter body. It has no trailing parameter-bound scalars. Exactly one canonical count for the feature and raw type must complete the
+unprefixed replay body.
 
 Each chart sample at one index describes the same spatial point. All sample
 indices belong to the stored curve.
@@ -2456,18 +2479,50 @@ a literal. In complete direct, replay, and counted pcurve bodies, explicit
 `2d` is positive and explicit `46` is negative in both chart-coordinate slots.
 The other explicit coordinates use the signed first-coordinate lane.
 A repeat carries across chart and sample boundaries but cannot exceed
-`4 * count` slots. In either chart's first-coordinate slot, `32 <tail7>`
-is an additional eight-byte positive sub-unit scalar that reconstructs
+`4 * count` slots. In the legacy two-chart production, either chart's first
+coordinate slot defines `32 <tail7>`
+as an additional eight-byte positive sub-unit scalar that reconstructs
 IEEE-754 bytes `3f <tail7>`. The `fc 05` circle production is separate and
 does not declare five sample rows. The chart pair
 for a spline face is the interpolation surface's `(u, v)` pair. A plane uses
 its stored affine `(u, v)` frame. An extrusion uses profile parameter followed
 by sweep coordinate. Other surface families use their stored surface chart.
 
+An angular two-chart scalar stream contains at least one standalone angle
+literal from `11 = pi`, `13 = 2*pi`, `14 = 3*pi/2`, `15 = -pi`, or `16 = -pi/2`
+at a token boundary. `12` retains its positive pi/2 value. The stream uses the
+bounded preceding-scalar repeats and signed first-coordinate explicit values.
+Its tiny forms reconstruct IEEE-754 bytes as follows: `19 <tail7>` gives `3c
+<tail7>`, `32 <tail7>` gives `bc <tail7>`, `1a B C` gives `3c B C C C C C C`,
+and `1b B C` gives `3c B C 00 00 00 00 00`. The form `00 <literal> <low>`
+replaces the literal's low IEEE byte with `low`; the literal is an angle or one
+of `04`, `0e`, `0f`, `10`, and `18`. For this replacement, `04` has IEEE image
+`3f ef ff ff ff ff ff ff`. The replacement supplies the value used by following
+repeats. A frame that completes the legacy two-chart production uses that
+production. The angular alternative requires complete scalar consumption, the
+exact declared sample extent, and an additional angle literal. These conditions
+select the scalar production for every sample in the frame.
+
+A type-two named `crv_pnt_arr f9 <count> 04` stores the angular stream in
+`count` four-scalar rows, with `count >= 2`. Its bounded body ends at the
+following type-one `crv_hdr_geom_ptr[0]` field. Its unique prototype topology
+supplies both face identifiers. The first and final rows give the endpoints;
+all intermediate rows retain their corresponding chart samples. The array
+count, both face references, complete field boundary, and angular scalar
+production must all be defined.
+
+The angular chart construction uses two independently defined, complete
+incident-face frames for its model-space constraints. Every corresponding model-space point is finite, and the two
+images agree through the complete path. The unique native curve-topology row
+binds the first and final points to the two half-edge start vertices. Direction
+bytes `01 f6` preserve endpoint order; `f6 01` reverse it. Each directed
+endpoint satisfies every admitted analytic carrier incident to its vertex
+orbit.
+
 Every available face chart is evaluated at every sample. When both face
-surfaces are available, corresponding model-space points must agree. A missing
-face surface does not erase a complete path in the available face chart; that
-path supplies one-sided, non-authoritative endpoint evidence. Two agreeing
+surfaces are available, corresponding model-space points must agree. In the legacy production, a missing face surface leaves a complete path
+in the available face chart; that path supplies one-sided, non-authoritative
+endpoint evidence. Two agreeing
 complete paths supply authoritative endpoint evidence. A nonperiodic spline
 sample marginally outside its stored parameter interval is evaluated with the
 polynomial of the adjacent boundary knot span. It is not clamped or rejected.

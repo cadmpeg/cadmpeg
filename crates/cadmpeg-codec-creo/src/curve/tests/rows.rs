@@ -1110,3 +1110,77 @@ fn positional_pcurve_variable_repeat_has_an_owned_positive_count() {
         .is_empty());
     }
 }
+
+#[test]
+fn sweep_named_samples_keep_signed_angles_and_tiny_coordinates() {
+    use std::f64::consts::{FRAC_PI_2, PI, TAU};
+    let mut body = vec![0x11, 0x19, 0xa7, 0, 0, 0, 0, 0, 0, 0x15, 0x1b, 0xa6, 0x00];
+    body.extend_from_slice(&[0x14, 0x00, 0x04, 0xd3, 0x16, 0x1a, 0xa4, 0x55]);
+    body.extend_from_slice(&[0x13, 0x00, 0x12, 0x1a, 0x11, 0x32, 0xa8, 0, 0, 0, 0, 0, 0]);
+    let make_payload = |body: &[u8]| {
+        let mut payload =
+            b"crv_array\0\xe0\x01crv_id\0\x09\xe0\x02crv_pnt_arr\0\xf9\x03\x04".to_vec();
+        payload.extend_from_slice(body);
+        payload.extend_from_slice(b"\xe0\x01crv_hdr_geom_ptr[0]\0\x0a\xe0\x01crv_hdr_geom_ptr[1]\0\x0b\xe0\x01next_crv_hdr_ptr[0]\0\x09\xe0\x01next_crv_hdr_ptr[1]\0\x09topol_ref_data\0");
+        payload
+    };
+    let records = two_chart_pcurve_samples(&make_payload(&body), Some(&BTreeSet::from([10, 11])));
+    assert_eq!(records.len(), 1);
+    assert_eq!(
+        records[0].samples,
+        [
+            [
+                [PI, f64::from_bits(0x3ca7_0000_0000_0000)],
+                [-PI, f64::from_bits(0x3ca6_0000_0000_0000)]
+            ],
+            [
+                [3. * FRAC_PI_2, f64::from_bits(0x3fef_ffff_ffff_ffd3)],
+                [-FRAC_PI_2, f64::from_bits(0x3ca4_5555_5555_5555)]
+            ],
+            [
+                [TAU, f64::from_bits((FRAC_PI_2.to_bits() & !0xff) | 0x1a)],
+                [PI, f64::from_bits(0xbca8_0000_0000_0000)]
+            ],
+        ]
+    );
+    let (_, angular_ids) = crate::decode::with_service_context(|ctx| {
+        crate::curve::two_chart_pcurve_samples_with_modes(
+            ctx,
+            &make_payload(&body),
+            Some(&BTreeSet::from([10, 11])),
+            &mut Vec::new(),
+        )
+    })
+    .expect("angular production tag");
+    assert_eq!(angular_ids, BTreeSet::from([9]));
+    let mut sample_losses = Vec::new();
+    let complete_samples = crate::decode::with_service_context(|ctx| {
+        decode_two_chart_pcurve_samples(
+            ctx,
+            &make_payload(&body),
+            Some(&BTreeSet::from([10, 11])),
+            &mut sample_losses,
+        )
+    })
+    .expect("complete named sample frame");
+    assert_eq!(complete_samples.len(), 1);
+    assert!(sample_losses.iter().any(|loss| loss.code
+        == crate::loss::CreoLossCode::PcurveSampleCoordinatesDropped.kind()
+        && loss.message.contains("Curve 9")
+        && loss.message.contains("3 paired boundary samples")));
+    body.push(0x18);
+    let mut losses = Vec::new();
+    let refused = crate::decode::with_service_context(|ctx| {
+        decode_two_chart_pcurve_samples(
+            ctx,
+            &make_payload(&body),
+            Some(&BTreeSet::from([10, 11])),
+            &mut losses,
+        )
+    })
+    .expect("bounded refusal");
+    assert!(refused.is_empty());
+    assert!(losses.iter().any(|loss| loss.code
+        == crate::loss::CreoLossCode::TwoChartScalarFrameUnresolved.kind()
+        && loss.message.contains("Curve 9")));
+}

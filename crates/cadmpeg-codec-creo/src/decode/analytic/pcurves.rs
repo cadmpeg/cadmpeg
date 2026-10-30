@@ -193,7 +193,7 @@ impl<T> NamedSurfaces<T> {
     }
 }
 
-fn unresolved_plane_chart_ids(scan: &ContainerScan) -> BTreeSet<u32> {
+pub(in crate::decode) fn unresolved_plane_chart_ids(scan: &ContainerScan) -> BTreeSet<u32> {
     scan.planes
         .local_systems
         .iter()
@@ -364,12 +364,27 @@ fn map_two_chart_endpoint_sets(
         [first[1], last[1]],
     );
     let endpoint_sets = std::array::from_fn(|index| mapped[index].then_some(canonical[index]));
-    let endpoint_sets = match endpoint_sets {
+    let mut endpoint_sets = match endpoint_sets {
         [Some(first), Some(second)] => Some(TwoChartEndpointSets::Both([first, second])),
         [Some(first), None] => Some(TwoChartEndpointSets::First(first)),
         [None, Some(second)] => Some(TwoChartEndpointSets::Second(second)),
         [None, None] => None,
     };
+    if scan
+        .curves
+        .angular_two_chart_curve_ids
+        .contains(&pcurve.curve_id)
+        && !crate::decode::sweep::surfaces::admit_angular_constraints(
+            ctx,
+            scan,
+            pcurve,
+            model_surfaces.surfaces,
+            source_carriers,
+            None,
+        )?
+    {
+        endpoint_sets = None;
+    }
     let surface_mismatch = mapped[0] && mapped[1] && mismatch;
     Ok(TwoChartMapping::Mapped {
         endpoint_sets,
@@ -1397,7 +1412,7 @@ fn signed_reference_frame(mut frame: OrthonormalFrame3, sign: f64) -> Orthonorma
     frame
 }
 
-fn linear_pcurve_carrier(
+pub(in crate::decode) fn linear_pcurve_carrier(
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     surface: &SurfaceGeometry,
     endpoints: [[f64; 2]; 2],
@@ -1705,6 +1720,22 @@ pub(in crate::decode) fn transfer_analytic_pcurve_carriers(
     losses: &mut Vec<cadmpeg_ir::report::loss::LossNote>,
     source_carriers: &mut crate::decode::source_carriers::SourceUnitCarriers,
 ) -> Result<BTreeSet<CurveId>, cadmpeg_core::CodecError> {
+    for pcurve in &scan.curves.two_chart_pcurves {
+        if scan
+            .curves
+            .angular_two_chart_curve_ids
+            .contains(&pcurve.curve_id)
+        {
+            crate::decode::sweep::surfaces::admit_angular_constraints(
+                ctx,
+                scan,
+                pcurve,
+                &ir.model.surfaces,
+                source_carriers,
+                Some(losses),
+            )?;
+        }
+    }
     let reconciled_endpoints = pcurve_edge_endpoints(ctx, scan, ir, source_carriers)?;
     let ignored_surface_ids = topology_ignored_surface_ids(scan);
     let mut candidates = BTreeMap::<u32, Vec<(CurveGeometry, usize)>>::new();
@@ -1946,7 +1977,7 @@ pub(in crate::decode) fn transfer_analytic_pcurve_carriers(
 
 type PcurveVertexConstraint = ([u32; 2], [[f64; 3]; 2]);
 
-pub(super) fn directed_pcurve_points(
+pub(in crate::decode) fn directed_pcurve_points(
     directions: [u8; 2],
     points: [[f64; 3]; 2],
 ) -> Option<[[f64; 3]; 2]> {
