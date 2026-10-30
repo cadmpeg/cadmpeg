@@ -101,6 +101,7 @@ fn face_operand_group(
                 opaque_scalar: 0.0,
                 opaque_scalar_offset: 862,
                 variant: false,
+                closing_flag: false,
             },
         )
         .unwrap(),
