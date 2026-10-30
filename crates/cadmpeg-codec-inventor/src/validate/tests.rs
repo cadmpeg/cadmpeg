@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 
+mod delete_face;
 mod tagging;
 
 use super::face_property_is_admitted;

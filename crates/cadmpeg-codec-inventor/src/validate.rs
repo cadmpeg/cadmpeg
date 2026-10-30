@@ -1678,6 +1678,21 @@ fn validate_features(
             }
             continue;
         }
+        if matches!(
+            feature.evaluation.definition(),
+            cadmpeg_ir::features::FeatureDefinition::Operation(
+                cadmpeg_ir::features::FeatureOperation::DeleteFace { .. }
+            )
+        ) {
+            if let Err(reason) = crate::feature::delete_face::admission(raw_feature) {
+                findings.push(finding(
+                    Check::NativeLinks,
+                    format!("Inventor neutral DeleteFace refused: {}.", reason.detail()),
+                    Some(feature.id.as_str().to_owned()),
+                ));
+            }
+            continue;
+        }
         if let cadmpeg_ir::features::FeatureDefinition::Operation(
             cadmpeg_ir::features::FeatureOperation::CosmeticThread {
                 face,

@@ -36,6 +36,7 @@ use crate::{design::DesignInventory, sketch::SketchInventory};
 pub(crate) mod base;
 pub(crate) mod body_selection;
 pub(crate) mod combine;
+pub(crate) mod delete_face;
 pub(crate) mod derived;
 pub(crate) mod edge_selection;
 pub(crate) mod extrusion;
@@ -1684,13 +1685,7 @@ const NATIVE_CLASSES: &[([u8; 16], &str)] = &[
         ],
         "RevolveSurface",
     ),
-    (
-        [
-            0x68, 0x6e, 0x16, 0xd3, 0x33, 0x4f, 0x63, 0x71, 0x61, 0xa6, 0xa1, 0x9b, 0xdd, 0x3d,
-            0x2b, 0xe8,
-        ],
-        "DeleteFace",
-    ),
+    (delete_face::CLASS_BYTES, "DeleteFace"),
     (
         [
             0x7f, 0x58, 0x80, 0x68, 0xb7, 0x43, 0x78, 0xa0, 0x55, 0x95, 0x15, 0x94, 0x6f, 0x7a,

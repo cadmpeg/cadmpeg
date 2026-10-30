@@ -803,7 +803,6 @@ This current-model join applies to every surface-body wrapper. A nonzero unquali
 
 A feature result collection lists persistent surface-body wrapper identities in member order. Each wrapper with a current-body join identifies the produced or modified current body. Combine retains its target wrapper in its result. Move, MoveBody, and Rotate retain the selected wrapper identities. Split names its result wrappers separately from its target wrapper. A selection has a complete current-body join only when each selected wrapper names one current body and those body identities are distinct.
 
-
 The derived stored-body form has feature-label class `eecb298e2c45650820104eb55d062c80`. In segment major version 19 its three property slots select the stored source-body wrapper, the result-body wrapper, and a source property of type `3cc048210042420ba62103b20b7f4891`, respectively. All three references are non-null and qualified. The label participant list is empty. The source-body wrapper has a non-null qualified body reference. The two body wrappers have the stored-source and current-result identity rules above. The source property in segment major version 19 contains the content header followed by one qualified component reference, then ends.
 
 In segment major version 19, a derived component has type `a034363fd31191b5c0000385e89c6b4f` and a state content header with no stamps. Its 32-byte body contains:
@@ -1063,6 +1062,19 @@ Type `5a4a6899d2117fec6000b0abc8433cb0` stores auxiliary selection controls. Aft
 A direct direction selection names a direction record of type `40df52ced011d0d20008ccbc0663dc09`. This record has entity flags 0, parameter 0, and an absent or zero extension in the fixed-spacing feature branch. A work-axis geometry reference in a cached selection uses the work-axis grammar above, including its versioned content-header stamps. The fixed-spacing work-axis form has zero entity flags and u32 values, an empty reference list, no `0x203` marker, state 0 or 1, and a nonzero span.
 
 Types `7b4544a2ab4d9e16850c48a21edf9e3a` and `aa7b97a57045795897b51396ffc5d631` store cached line selections. Their content headers have no stamps. The single-line branch has selection form 1 and curve form 23. The header is followed by `state:i32`, a reversal-Boolean reference, a geometry reference, `selection_form:u32`, u16 value 0, and `curve_form:u32`. Selection form 1 with curve form 23 stores three finite f64 triples: a line origin, a nonzero line span, and a selection point. A u8 value 1 follows. Type `7b4544a2ab4d9e16850c48a21edf9e3a` ends with two source references; type `aa7b97a57045795897b51396ffc5d631` ends with one. The fixed-spacing feature branch has state 1 or 2 for type `7b4544a2ab4d9e16850c48a21edf9e3a`, state −1 for type `aa7b97a57045795897b51396ffc5d631`, and non-null geometry and source references that resolve in the same segment. The span supplies the direction. A geometry reference to a work axis has the same normalized span as that work axis. The referenced reversal Boolean negates the direction before the spacing is applied.
+
+### 13.7 DeleteFace property vector
+
+Feature-label class `686e16d3334f637161a6a19bdd3d2be8` identifies DeleteFace. Its four-slot form stores a type-2 property-reference list with these slots:
+
+| Slot | Record type | Property |
+| ---: | --- | --- |
+| 0 | `f1b2bc24d01121dd0008d0bc0663dc09` | Face collection |
+| 1 | `284d8790d011f8d10008cabc0663dc09` | Boolean |
+| 2 | `284d8790d011f8d10008cabc0663dc09` | Boolean |
+| 3 | `83aadad54f4375dacd1003b260a8a422` | Ordered body selection |
+
+The face collection references face-item records of type `ccb59f50d1114f6b0008a1ba32a3dc09`. Each face item stores its type-2 u32 index-reference list with the grammar in section 13. The ordered body selection references surface-body wrappers of type `474d8790d011f8d10008cabc0663dc09`. Property references, face-collection member references, and body-selection member references select records in the feature's PmDc segment.
 
 ### 13.8 Tagging selections
 
