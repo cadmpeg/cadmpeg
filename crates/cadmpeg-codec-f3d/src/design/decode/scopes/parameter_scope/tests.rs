@@ -9,7 +9,10 @@ fn named_scope_tail(lane_value: u64) -> Vec<u8> {
 }
 
 fn named_scope_tail_with_class_word(lane_value: u64, class_word: u32) -> Vec<u8> {
-    let label = "Canvas";
+    named_scope_tail_with_label("Canvas", lane_value, class_word)
+}
+
+fn named_scope_tail_with_label(label: &str, lane_value: u64, class_word: u32) -> Vec<u8> {
     let label_code_units = label.encode_utf16().count();
     let marker = 19 + label_code_units * 2;
     let mut bytes = vec![0; marker + 59];
@@ -62,6 +65,24 @@ fn named_scope_tail_requires_one_repeated_byte_lane_value() {
         ),
         Some(false)
     );
+}
+
+#[test]
+fn empty_label_named_tail_keeps_the_binary_lane_and_class_252() {
+    for (lane_value, class_word, admitted) in [
+        (0, 0xfc, true),
+        (1, 0xfc, true),
+        (8, 0xfc, false),
+        (1, 0x101, false),
+        (8, 0x101, false),
+    ] {
+        let bytes = named_scope_tail_with_label("", lane_value, class_word);
+        assert_eq!(
+            named_parameter_scope_tail_is_valid(&bytes, 0, bytes.len(), bytes.len()),
+            Some(admitted),
+            "lane {lane_value} class {class_word}"
+        );
+    }
 }
 
 #[test]

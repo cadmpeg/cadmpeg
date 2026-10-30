@@ -1758,8 +1758,10 @@ fn exact_canvas_scope_tail(tail: &[u8], record_index: u32) -> bool {
         && tail.get(canvas_tail::ZERO_TAIL) == Some(&canvas_tail::ZERO_TAIL_VALUE)
 }
 
-/// Largest repeated lane value of a named-scope lane block: the high byte of the
-/// three descending 16-bit field targets.
+/// Largest repeated lane value of a named-scope lane block with a nonempty
+/// label: the high byte of the three descending 16-bit field targets. An empty
+/// label takes only the values zero and one with class word 252, because that
+/// tail is also the 78-byte fixed tail.
 const NAMED_LANE_VALUE_MAX: u64 = 0xff;
 /// Three-digit dynamic class numbers admitted for the two equal class words of
 /// a named-scope lane block.
@@ -1793,12 +1795,14 @@ fn named_parameter_scope_tail_is_valid(
             bytes.get(kind_end + 4..kind_end + 8)? == [0; 4]
                 && bytes.get(marker) == Some(&1)
                 && bytes.get(marker + 1).is_some_and(|field_id| *field_id != 0)
-                && first_lane_value <= NAMED_LANE_VALUE_MAX
+                && ((first_lane_value <= 1 && class_word == 0xfc)
+                    || (label_code_units > 0
+                        && first_lane_value <= NAMED_LANE_VALUE_MAX
+                        && NAMED_LANE_CLASS_WORDS.contains(&class_word)))
                 && second_lane_value == first_lane_value
                 && third_lane_value == first_lane_value
                 && bytes.get(marker + 10..marker + 12)? == [0; 2]
                 && View::u32_le_at(bytes, marker + 12)? > 0
-                && NAMED_LANE_CLASS_WORDS.contains(&class_word)
                 && View::f64_le_at(bytes, marker + 20)?.is_finite()
                 && View::u32_le_at(bytes, marker + 28)? == class_word
                 && bytes.get(marker + 32) == Some(&1)
