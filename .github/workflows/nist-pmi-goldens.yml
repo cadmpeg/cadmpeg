@@ -1,8 +1,8 @@
 name: NIST PMI producer-evidence goldens
 
-# Slow-cadence inspect and decode snapshots over corpus/nist-pmi. These files
-# are producer evidence, not default cargo-test goldens: the snapshots are
-# large and a full decode pass is minutes, not seconds. They do not gate pull
+# Slow-cadence inspect and decode of corpus/nist-pmi. These files are producer
+# evidence, not default cargo-test work: a full decode pass is tens of seconds
+# and must not bloat the tree with IR snapshots. They do not gate pull
 # requests. Dispatch this workflow on a branch to run them there.
 
 on:
@@ -27,7 +27,7 @@ env:
 
 jobs:
   nist-pmi-goldens:
-    name: inspect and decode goldens
+    name: inspect and decode
     runs-on: ubuntu-latest
     timeout-minutes: 45
     steps:
@@ -56,7 +56,7 @@ jobs:
         with:
           tool: cargo-nextest
 
-      - name: NIST PMI inspect and decode goldens
+      - name: NIST PMI inspect and decode
         run: |
           cargo nextest run --cargo-quiet --status-level fail --no-tests pass \
             -p cadmpeg --test nist_pmi_goldens \
