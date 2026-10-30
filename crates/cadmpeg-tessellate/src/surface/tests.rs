@@ -32,3 +32,32 @@ fn a_circular_cone_apex_has_no_finite_parallel_curvature() {
         None
     );
 }
+
+#[test]
+fn a_cone_apex_has_no_normal_even_when_its_parameter_rounds() {
+    use cadmpeg_core::decode::WorkBudget;
+    use cadmpeg_ir::geometry::analytic::ConeSurface;
+    use cadmpeg_ir::geometry::{SolvedSurfaceGeometry, SurfaceGeometry};
+    use cadmpeg_ir::index::ModelIndex;
+    use cadmpeg_ir::math::{Point3, Vector3};
+
+    let mut ir = cadmpeg_ir::examples::unit_cube().unwrap();
+    let surface = &mut ir.model.surfaces[0];
+    surface.geometry = SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cone(
+        ConeSurface::try_new(
+            Point3::new(0.0, 0.0, 0.0),
+            Vector3::new(0.0, 0.0, 1.0),
+            Vector3::new(1.0, 0.0, 0.0),
+            15.0,
+            1.0,
+            0.5_f64.atan(),
+        )
+        .unwrap(),
+    ));
+    let id = surface.id.clone();
+    let index = ModelIndex::new_model_only(&ir);
+    let work = WorkBudget::new(1000);
+    let carrier = super::Carrier::new(&index, &work, &id).unwrap();
+    assert!(carrier.normal([0.0, -30.0]).unwrap().is_none());
+    assert!(carrier.normal([0.0, -29.0]).unwrap().is_some());
+}

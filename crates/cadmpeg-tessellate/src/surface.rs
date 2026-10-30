@@ -236,6 +236,9 @@ impl<'t, 'ir> Carrier<'t, 'ir> {
 
     /// The unnormalized surface normal `∂S/∂u × ∂S/∂v` at `uv`.
     pub(crate) fn normal(&self, uv: Uv) -> Result<Option<cadmpeg_ir::math::Vector3>, Refusal> {
+        if self.apex.is_some_and(|apex| floats_agree(uv[1], apex)) {
+            return Ok(None);
+        }
         Ok(self
             .partials(uv)?
             .map(|partials| cross(partials.du, partials.dv)))
