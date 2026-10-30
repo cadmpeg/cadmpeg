@@ -624,7 +624,7 @@ fn distinguishes_absent_and_malformed_revolution_flags() {
         assert_eq!(result.report().losses.len(), 1);
         assert!(result.report().losses.iter().all(|loss| {
             loss.code.namespace() == "fcstd"
-                && loss.code.local_code() == "feature.native-kind-retained"
+                && loss.code.local_code() == "feature.revolution-not-transferred"
                 && loss.severity == cadmpeg_ir::report::Severity::Blocking
         }));
     };

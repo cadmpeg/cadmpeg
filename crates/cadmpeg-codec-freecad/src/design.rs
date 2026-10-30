@@ -4108,10 +4108,11 @@ fn revolution_axis(
     properties: &[&PropertyRecord],
 ) -> Result<Option<RevolutionAxis>, CodecError> {
     Ok(Some(RevolutionAxis {
-        origin: vector_property(ctx, properties, "Base")?
-            .map_or(cadmpeg_ir::features::FinitePoint3::ZERO, |vector| {
-                vector.as_point()
-            }),
+        origin: if property(properties, "Base").is_some() {
+            required!(vector_property(ctx, properties, "Base")?).as_point()
+        } else {
+            cadmpeg_ir::features::FinitePoint3::ZERO
+        },
         direction: required!(cadmpeg_ir::features::FeatureDirection3::new(
             required!(vector_property(ctx, properties, "Axis")?).get(),
         )),
@@ -4153,6 +4154,17 @@ fn revolution_definition(
     let Some(mode) = enumeration_selector(ctx, properties, "Type", 0)? else {
         return Ok(None);
     };
+    let midplane = if kind.starts_with("PartDesign::") {
+        let Some(midplane) = bool_selector(ctx, properties, "Midplane", false)? else {
+            return Ok(None);
+        };
+        if mode != 0 && midplane {
+            return Ok(None);
+        }
+        midplane
+    } else {
+        false
+    };
     let extent = if kind == "Part::Revolution" {
         let Some(angle) = angle()? else {
             return Ok(None);
@@ -4175,9 +4187,6 @@ fn revolution_definition(
                 let Some(angle) = angle()? else {
                     return Ok(None);
                 };
-                let Some(midplane) = bool_selector(ctx, properties, "Midplane", false)? else {
-                    return Ok(None);
-                };
                 if midplane {
                     RevolveExtent::Symmetric {
                         termination: AngularTermination::Angle { angle },
@@ -4189,7 +4198,11 @@ fn revolution_definition(
                 }
             }
             1 => RevolveExtent::OneSided {
-                termination: AngularTermination::ThroughAll {},
+                termination: if kind == "PartDesign::Groove" {
+                    AngularTermination::ThroughAll {}
+                } else {
+                    AngularTermination::ToLast {}
+                },
             },
             2 => RevolveExtent::OneSided {
                 termination: AngularTermination::ToFirst {},
@@ -4225,6 +4238,9 @@ fn revolution_definition(
             _ => return Ok(None),
         }
     };
+    if !extent.angles_within_turn() {
+        return Ok(None);
+    }
     let reversed = if kind.starts_with("PartDesign::") {
         let Some(reversed) = bool_selector(ctx, properties, "Reversed", false)? else {
             return Ok(None);

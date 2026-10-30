@@ -1354,6 +1354,14 @@ fn semantic_losses(
                 FreecadLossCode::FeatureCyclicHistory,
                 " is retained natively because neutral dependency ordering is cycle-affected",
             )
+        } else if matches!(
+            kind.as_str(),
+            "PartDesign::Revolution" | "PartDesign::Groove" | "Part::Revolution"
+        ) {
+            (
+                FreecadLossCode::FeatureRevolutionNotTransferred,
+                " has an unsupported revolution type, axis, selection, flag, or angular extent and remains native",
+            )
         } else {
             (
                 FreecadLossCode::FeatureNativeKindRetained,
