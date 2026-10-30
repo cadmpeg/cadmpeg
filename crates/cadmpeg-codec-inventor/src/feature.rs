@@ -186,6 +186,7 @@ pub(crate) struct FeatureProjection {
     pub(crate) extrusion_losses: Vec<cadmpeg_ir::report::loss::LossNote>,
     pub(crate) revolve_losses: Vec<cadmpeg_ir::report::loss::LossNote>,
     pub(crate) loft_losses: Vec<cadmpeg_ir::report::loss::LossNote>,
+    pub(crate) split_losses: Vec<cadmpeg_ir::report::loss::LossNote>,
     pub(crate) mirror_losses: Vec<cadmpeg_ir::report::loss::LossNote>,
     /// Closed loops that resolved extrusion profiles append to sketch
     /// profile tables, by sketch id, in table order.
@@ -2046,6 +2047,7 @@ pub(crate) fn project(
             extrusion_losses: Vec::new(),
             revolve_losses: Vec::new(),
             loft_losses: Vec::new(),
+            split_losses: Vec::new(),
             mirror_losses: mirror::native_losses(&inventory.pattern_features, &[]),
             added_profiles: HashMap::new(),
         });
@@ -2231,6 +2233,7 @@ pub(crate) fn project(
     let mut extrusion_losses = Vec::new();
     let mut revolve_losses = Vec::new();
     let mut loft_losses = Vec::new();
+    let mut split_losses = Vec::new();
     let mut neutral = 0_usize;
     for feature in &inventory.features {
         let label = label_of(feature.identity.record_ordinal);
@@ -2264,7 +2267,9 @@ pub(crate) fn project(
                 }
                 FeatureFamily::Motion => motion::project(ctx, feature, label, &index),
                 FeatureFamily::Combine => combine::project(ctx, feature, label, &index),
-                FeatureFamily::Split => split::project(ctx, feature, label, &index, &history),
+                FeatureFamily::Split => {
+                    split::project(ctx, feature, label, &index, &history, &mut split_losses)
+                }
             }
             .map(|result| result.map(|(feature, result)| (feature, Some(result))))
             .transpose()?,
@@ -2491,6 +2496,7 @@ pub(crate) fn project(
         extrusion_losses,
         revolve_losses,
         loft_losses,
+        split_losses,
         mirror_losses: mirror::native_losses(&inventory.pattern_features, &features),
         features,
         result_topologies,
