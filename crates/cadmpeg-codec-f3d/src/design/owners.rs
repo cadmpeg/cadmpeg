@@ -37,38 +37,6 @@ pub(crate) fn attach(
             .cloned()
             .flatten();
     }
-    for index in 0..model.parameters.len() {
-        let parameter = &model.parameters[index];
-        let inherited = parameter
-            .owner
-            .as_ref()
-            .and_then(|owner| model.features.iter().find(|row| &row.id == owner))
-            .map(|row| row.product_definition.clone());
-        let source = parameter
-            .native_ref
-            .as_deref()
-            .and_then(|id| native.design_parameters.iter().find(|row| row.id == id));
-        let owner = if let Some(inherited) = inherited {
-            inherited
-        } else if let Some(source) = source {
-            let record_index = source
-                .owner_record_index()
-                .and_then(|record| {
-                    native.design_parameter_owners.iter().find(|row| {
-                        native_stream(row.id()) == native_stream(&source.id)
-                            && row.record_index() == record
-                    })
-                })
-                .map_or(
-                    source.record_index,
-                    crate::records::parameters::DesignParameterOwner::scope_record_index,
-                );
-            resolve(native, model, losses, &source.id, record_index)
-        } else {
-            None
-        };
-        model.parameters[index].product_definition = owner;
-    }
     let member_root = crate::ids::archive_product_definition_id();
     let unowned = model
         .bodies
@@ -98,7 +66,25 @@ pub(crate) fn attach(
                 .filter(|body| owned_bodies.contains(body))
                 .cloned()
                 .collect::<Vec<_>>();
-            if retained.len() != outputs.len() {
+            // A feature can place its result bodies in another component than
+            // the one whose naming space holds its scope. When one product
+            // definition owns every output body, that definition owns the
+            // feature.
+            let output_owner = if retained.len() == outputs.len() || outputs.is_empty() {
+                None
+            } else {
+                let mut holders = model
+                    .product_definitions
+                    .iter()
+                    .filter(|row| outputs.iter().all(|body| row.bodies.contains(body)));
+                match (holders.next(), holders.next()) {
+                    (Some(holder), None) => Some(holder.id.clone()),
+                    _ => None,
+                }
+            };
+            if let Some(holder) = output_owner {
+                feature.product_definition = Some(holder);
+            } else if retained.len() != outputs.len() {
                 losses.push(F3dLossCode::ScopeOutputOwnerMismatch.note(format!(
                     "Feature {} has {} output body link(s) outside its product definition; those links remain native.",
                     feature.id, outputs.len() - retained.len()
@@ -140,6 +126,38 @@ pub(crate) fn attach(
                 }
             }
         }
+    }
+    for index in 0..model.parameters.len() {
+        let parameter = &model.parameters[index];
+        let inherited = parameter
+            .owner
+            .as_ref()
+            .and_then(|owner| model.features.iter().find(|row| &row.id == owner))
+            .map(|row| row.product_definition.clone());
+        let source = parameter
+            .native_ref
+            .as_deref()
+            .and_then(|id| native.design_parameters.iter().find(|row| row.id == id));
+        let owner = if let Some(inherited) = inherited {
+            inherited
+        } else if let Some(source) = source {
+            let record_index = source
+                .owner_record_index()
+                .and_then(|record| {
+                    native.design_parameter_owners.iter().find(|row| {
+                        native_stream(row.id()) == native_stream(&source.id)
+                            && row.record_index() == record
+                    })
+                })
+                .map_or(
+                    source.record_index,
+                    crate::records::parameters::DesignParameterOwner::scope_record_index,
+                );
+            resolve(native, model, losses, &source.id, record_index)
+        } else {
+            None
+        };
+        model.parameters[index].product_definition = owner;
     }
     Ok(())
 }

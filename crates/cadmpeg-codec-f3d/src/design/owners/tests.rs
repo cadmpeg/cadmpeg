@@ -273,6 +273,23 @@ fn product_history_owner_refuses_outputs_from_another_definition() {
 }
 
 #[test]
+fn product_history_owner_follows_the_one_definition_holding_every_output() {
+    let native = native();
+    let mut model = model(&native);
+    let body: cadmpeg_ir::ids::BodyId = "test:model:body#child".try_into().unwrap();
+    model.product_definitions[1].bodies = vec![body.clone()];
+    model.features[0]
+        .evaluation
+        .set_outputs(DistinctMembers::try_from(vec![body.clone()]).unwrap());
+    let holder = model.product_definitions[1].id.clone();
+    let mut losses = Vec::new();
+    attach(&native, &mut model, &mut losses).unwrap();
+    assert_eq!(model.features[0].product_definition, Some(holder));
+    assert_eq!(model.features[0].evaluation.outputs(), &[body]);
+    assert!(losses.is_empty(), "{losses:?}");
+}
+
+#[test]
 fn product_history_owner_keeps_conflicting_sketch_binding_native() {
     let native = native();
     let mut model = model(&native);
