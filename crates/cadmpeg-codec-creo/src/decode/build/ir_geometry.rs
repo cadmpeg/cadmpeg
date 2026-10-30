@@ -191,8 +191,14 @@ pub(super) fn transfer_and_record_scanned_geometry(
         annotations,
         source_carriers,
     )?;
-    let analytic_pcurve_carriers =
-        transfer_analytic_pcurve_carriers(ctx, scan, ir, annotations, source_carriers)?;
+    let analytic_pcurve_carriers = transfer_analytic_pcurve_carriers(
+        ctx,
+        scan,
+        ir,
+        annotations,
+        transfer_losses,
+        source_carriers,
+    )?;
     let analytic_pcurve_carrier_count = analytic_pcurve_carriers.len();
     let nurbs_boundary_curves = transfer_nurbs_boundary_curves(
         ctx,

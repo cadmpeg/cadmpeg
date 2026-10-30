@@ -3152,43 +3152,33 @@ fn validate_parameter_scopes(ctx: &Ctx, findings: &mut Vec<Finding>) -> Result<(
         let thread_link = match scope.thread_construction() {
             None => true,
             Some(construction) => {
-                let expected_groups: Vec<_> = match construction.form {
-                    records::feature::thread::DesignThreadForm::Standard
-                    | records::feature::thread::DesignThreadForm::StandardLegacy => scope
+                let expected_groups: Vec<_> = if construction.form.has_standard_reference_table() {
+                    scope
                         .reference_members()
                         .values()
                         .next()
                         .copied()
                         .into_iter()
-                        .collect::<Vec<_>>(),
-                    records::feature::thread::DesignThreadForm::Compact(_)
-                    | records::feature::thread::DesignThreadForm::CompactLegacy => scope
+                        .collect()
+                } else {
+                    scope
                         .reference_members()
                         .values()
                         .step_by(2)
                         .copied()
-                        .collect::<Vec<_>>(),
+                        .collect()
                 };
                 scope.reference_members().len() >= 2
                     && scope.reference_members().len().is_multiple_of(2)
-                    && match construction.form {
-                        records::feature::thread::DesignThreadForm::StandardLegacy => {
-                            scope.class_tag.as_str() == "334"
-                                && scope.paired_class_tag.as_str() == "262"
-                        }
-                        records::feature::thread::DesignThreadForm::CompactLegacy => {
-                            scope.class_tag.as_str() == "414"
-                                && scope.paired_class_tag.as_str() == "263"
-                        }
-                        records::feature::thread::DesignThreadForm::Standard
-                        | records::feature::thread::DesignThreadForm::Compact(_) => true,
-                    }
+                    && thread_class_pair_holds(
+                        construction.form,
+                        &scope.class_tag,
+                        &scope.paired_class_tag,
+                    )
                     && construction.face_group_record_indices == expected_groups
-                    && matches!(
-                        construction
-                            .designation_offset
-                            .checked_sub(scope.byte_offset()),
-                        Some(38 | 42)
+                    && thread_designation_offset_holds(
+                        construction.designation_offset,
+                        scope.byte_offset(),
                     )
                     && match construction.form {
                         records::feature::thread::DesignThreadForm::Compact(Some(reference)) => {
@@ -3200,6 +3190,7 @@ fn validate_parameter_scopes(ctx: &Ctx, findings: &mut Vec<Finding>) -> Result<(
                         records::feature::thread::DesignThreadForm::Compact(None)
                         | records::feature::thread::DesignThreadForm::Standard
                         | records::feature::thread::DesignThreadForm::StandardLegacy
+                        | records::feature::thread::DesignThreadForm::StandardCompact
                         | records::feature::thread::DesignThreadForm::CompactLegacy => true,
                     }
                     && construction
@@ -4189,6 +4180,17 @@ fn validate_parameter_scopes(ctx: &Ctx, findings: &mut Vec<Finding>) -> Result<(
             && copy_paste_link
             && rectangular_pattern_link
             && assembly_alignment_link
+            && scope.align_envelope().is_none_or(|envelope| {
+                design::decode::scopes::align::align_envelope_links_hold(scope, envelope)
+                    && envelope.construction.as_ref().is_none_or(|construction| {
+                        records_by_index
+                            .get(&(native_stream, construction.record_index))
+                            .is_some_and(|header| {
+                                header.byte_offset == construction.byte_offset
+                                    && header.class_tag == construction.class_tag
+                            })
+                    })
+            })
             && component_insert_link
             && copy_paste_component_link
             && scope.occurrence_transfer.as_ref().is_none_or(|operation| {
@@ -6791,6 +6793,8 @@ fn validate_extrude_selection_members(ctx: &Ctx, findings: &mut Vec<Finding>) {
                 == Some(member.record_index())
         }) && header.is_some_and(|header| {
             header.byte_offset == member.byte_offset() && header.class_tag == member.class_tag
+        }) && member.scope_tail.is_none_or(|tail| {
+            group.is_some_and(|group| tail.scope_record_index == group.scope_record_index)
         }) && selected_profile
             .is_none_or(|profile| profile.asset_id == member.asset_id)
             && member.resolved_geometry == expected_target
@@ -9320,6 +9324,31 @@ fn validate_history_graphs(ctx: &Ctx, findings: &mut Vec<Finding>) {
             );
         }
     }
+}
+
+/// Whether a Thread form admits the scope's class pair.
+fn thread_class_pair_holds(
+    form: records::feature::thread::DesignThreadForm,
+    class_tag: &records::references::DesignClassTag,
+    paired_class_tag: &records::references::DesignClassTag,
+) -> bool {
+    use records::feature::thread::DesignThreadForm;
+    match form {
+        DesignThreadForm::StandardLegacy => {
+            class_tag.as_str() == "334" && paired_class_tag.as_str() == "262"
+        }
+        DesignThreadForm::CompactLegacy => {
+            class_tag.as_str() == "414" && paired_class_tag.as_str() == "263"
+        }
+        DesignThreadForm::Standard
+        | DesignThreadForm::Compact(_)
+        | DesignThreadForm::StandardCompact => true,
+    }
+}
+
+/// Whether the designation sits at the direct (38) or owner-marked (42) offset.
+fn thread_designation_offset_holds(designation_offset: u64, scope_offset: u64) -> bool {
+    matches!(designation_offset.checked_sub(scope_offset), Some(38 | 42))
 }
 
 #[cfg(test)]

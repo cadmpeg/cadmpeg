@@ -505,7 +505,7 @@ pub(crate) fn decode_component_naming_spaces(
 pub(crate) fn metadata_for_bulk_stream(
     scan: &ContainerScan,
     bulk_entry_name: &str,
-) -> Result<Option<std::rc::Rc<crate::metastream::MetaStream>>, CodecError> {
+) -> Result<Option<std::sync::Arc<crate::metastream::MetaStream>>, CodecError> {
     let prefix = bulk_entry_name
         .strip_suffix("BulkStream.dat")
         .ok_or_else(|| CodecError::Malformed("Design stream has no BulkStream suffix".into()))?;

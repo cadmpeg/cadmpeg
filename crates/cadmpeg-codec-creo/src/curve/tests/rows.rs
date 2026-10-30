@@ -17,7 +17,7 @@ use crate::curve::topology_rows;
 use crate::curve::topology_rows_with_face_ids;
 use crate::curve::topology_suffix_candidates;
 use crate::curve::topology_suffix_with_face_ids;
-use crate::curve::two_chart_pcurve_samples;
+use crate::curve::two_chart_pcurve_samples as decode_two_chart_pcurve_samples;
 use crate::curve::CurveExpressionHelix;
 use crate::curve::CurveParameterOpaqueSpan;
 use crate::curve::CurveParameterRecord;
@@ -33,6 +33,16 @@ use crate::curve::TopologySuffixCandidate;
 use std::collections::BTreeSet;
 use std::num::NonZeroU32;
 
+fn two_chart_pcurve_samples(
+    payload: &[u8],
+    face_ids: Option<&BTreeSet<u32>>,
+) -> Vec<crate::curve::TwoChartPcurveSamples> {
+    crate::decode::with_service_context(|ctx| {
+        decode_two_chart_pcurve_samples(ctx, payload, face_ids, &mut Vec::new())
+    })
+    .expect("bounded sampled pcurves")
+}
+
 fn expression_helix(record: &crate::curve::CurveExpressionRecord) -> Option<CurveExpressionHelix> {
     crate::decode::with_service_context(|ctx| crate::curve::expression_helix(ctx, record))
         .expect("decode the expression helix")
@@ -47,16 +57,29 @@ fn one_prototype_pcurve_input() -> Vec<u8> {
 #[test]
 fn prototype_pcurve_endpoint_record_preserves_eight_slots() {
     let payload = one_prototype_pcurve_input();
-    let records = prototype_pcurve_endpoints(&payload);
+    let records = prototype_pcurve_endpoints(&payload, &mut Vec::new());
     assert_eq!(records.len(), 1);
     assert_eq!(records[0].curve_id, 7);
-    assert_eq!(records[0].face_0_endpoints, [[0.0; 2]; 2]);
-    assert_eq!(records[0].face_1_endpoints, [[0.0; 2]; 2]);
+    assert_eq!(
+        records[0].face_0_endpoints,
+        [[std::f64::consts::FRAC_PI_2; 2]; 2]
+    );
+    assert_eq!(
+        records[0].face_1_endpoints,
+        [[std::f64::consts::FRAC_PI_2; 2]; 2]
+    );
 }
 
-fn pcurve_zero_lane_input() -> (CurveParameterRecord, CurveTopologyRow) {
+fn pcurve_quarter_turn_lane_input() -> (CurveParameterRecord, CurveTopologyRow) {
     let mut record = parameter_record(7);
     record.body = vec![0x12; 8];
+    record.scalar_tokens = (0..8)
+        .map(|offset| CurveParameterScalar {
+            value: std::f64::consts::FRAC_PI_2,
+            raw: vec![0x12],
+            offset,
+        })
+        .collect();
     let topology = CurveTopologyRow {
         id: 7,
         type_byte: 0,
@@ -70,12 +93,18 @@ fn pcurve_zero_lane_input() -> (CurveParameterRecord, CurveTopologyRow) {
 }
 
 #[test]
-fn pcurve_endpoints_preserve_eight_zero_slots() {
-    let (record, topology) = pcurve_zero_lane_input();
-    let endpoints = pcurve_endpoints(&[record], &[topology]);
+fn pcurve_endpoints_preserve_eight_quarter_turn_slots() {
+    let (record, topology) = pcurve_quarter_turn_lane_input();
+    let endpoints = pcurve_endpoints(&[record], &[topology], &mut Vec::new());
     assert_eq!(endpoints.len(), 1);
-    assert_eq!(endpoints[0].face_0_endpoints, [[0.0, 0.0]; 2]);
-    assert_eq!(endpoints[0].face_1_endpoints, [[0.0, 0.0]; 2]);
+    assert_eq!(
+        endpoints[0].face_0_endpoints,
+        [[std::f64::consts::FRAC_PI_2; 2]; 2]
+    );
+    assert_eq!(
+        endpoints[0].face_1_endpoints,
+        [[std::f64::consts::FRAC_PI_2; 2]; 2]
+    );
 }
 
 fn parameter_record(curve_id: u32) -> CurveParameterRecord {
@@ -109,6 +138,24 @@ fn typed_parameter_rows_require_unique_identity() {
 }
 
 #[test]
+fn positional_pcurve_repeat_without_a_preceding_scalar_is_retained_with_a_loss() {
+    let (mut record, topology) = pcurve_quarter_turn_lane_input();
+    record.body[0] = 0xe4;
+    record.scalar_tokens[0] = CurveParameterScalar {
+        value: 1.0,
+        raw: vec![0xe4],
+        offset: 0,
+    };
+    let mut losses = Vec::new();
+    assert!(pcurve_endpoints(&[record], &[topology], &mut losses).is_empty());
+    assert_eq!(losses.len(), 1);
+    assert_eq!(
+        losses[0].code,
+        crate::loss::CreoLossCode::PcurveScalarFrameUnresolved.kind()
+    );
+}
+
+#[test]
 fn pcurve_endpoint_slots_must_be_finite() {
     let nan = [0xed, 0x7f, 0xf8, 0, 0, 0, 0, 0, 0];
     let mut record = parameter_record(7);
@@ -136,7 +183,7 @@ fn pcurve_endpoint_slots_must_be_finite() {
         offset: 1,
     };
 
-    assert!(pcurve_endpoints(&[record], &[topology]).is_empty());
+    assert!(pcurve_endpoints(&[record], &[topology], &mut Vec::new()).is_empty());
 }
 
 fn canonical_and_positional_two_chart_input() -> (Vec<u8>, BTreeSet<u32>) {
@@ -164,8 +211,8 @@ fn decodes_canonical_and_positional_two_chart_sample_rows() {
     assert_eq!(decoded[0].curve_id, 7);
     assert_eq!(decoded[0].faces, [10, 11]);
     assert_eq!(decoded[0].samples.len(), 3);
-    assert_eq!(decoded[0].samples[0], [[0.0, 1.0], [-1.0, 0.0]]);
-    assert_eq!(decoded[0].samples[2], [[-1.0, 0.0], [1.0, 0.0]]);
+    assert_eq!(decoded[0].samples[0], [[1.0, 1.0], [-1.0, 0.0]]);
+    assert_eq!(decoded[0].samples[2], [[-1.0, 0.0], [0.0, 1.0]]);
     assert_eq!(decoded[1].curve_id, 8);
     assert_eq!(decoded[1].samples, decoded[0].samples);
 }
@@ -986,4 +1033,80 @@ fn exact_helix_constructor_rejects_nonfinite_axial_coordinates() {
         .expect("finite signed coordinates");
     assert_eq!(helix.height.get(), -2.0);
     assert_eq!(helix.z_start.get(), 3.0);
+}
+
+#[test]
+fn named_pcurve_uses_the_complete_stateful_scalar_frame() {
+    let mut payload = b"crv_array\0crv_id\0\x07crv_pnt_arr\0\xf9\x02\x04".to_vec();
+    payload.extend_from_slice(&[0x2f, 0, 0, 0xe6, 0x18, 0x0f, 0x18, 0x0f]);
+    payload.extend_from_slice(b"\xe0\x01next_field\0\x01");
+    let records = prototype_pcurve_endpoints(&payload, &mut Vec::new());
+    assert_eq!(records.len(), 1);
+    assert_eq!(records[0].face_0_endpoints, [[2.0, 2.0], [0.0, 1.0]]);
+    assert_eq!(records[0].face_1_endpoints, [[2.0, 2.0], [0.0, 1.0]]);
+
+    let mut invalid = one_prototype_pcurve_input();
+    let array_start = invalid.len() - 8;
+    invalid[array_start] = 0xe4;
+    let mut losses = Vec::new();
+    assert!(prototype_pcurve_endpoints(&invalid, &mut losses).is_empty());
+    assert!(losses
+        .iter()
+        .any(|loss| loss.code == crate::loss::CreoLossCode::PcurveScalarFrameUnresolved.kind()));
+}
+
+#[test]
+fn counted_two_chart_stream_keeps_quarter_turns_and_bounded_repeats() {
+    let make_payload = |body: &[u8]| {
+        let mut payload = b"topol_ref_data\0".to_vec();
+        payload.extend_from_slice(&[7, 0, 4, 1, 0xf6, 0xfc, 2]);
+        payload.extend_from_slice(body);
+        payload.extend_from_slice(&[10, 11, 7, 7, 0, 0, 0xe3, 0xe1, 0xe3]);
+        payload
+    };
+    let payload = make_payload(&[0x12, 0x18, 0xe5, 0x0f, 0xe6]);
+    let records = two_chart_pcurve_samples(&payload, Some(&BTreeSet::from([10, 11])));
+    assert_eq!(records.len(), 1);
+    assert_eq!(
+        records[0].samples,
+        [
+            [[std::f64::consts::FRAC_PI_2, 0.0], [0.0, 0.0]],
+            [[1.0, 1.0], [1.0, 1.0]],
+        ]
+    );
+
+    let invalid = make_payload(&[0x18, 0xe7, 8]);
+    let mut losses = Vec::new();
+    let refused = crate::decode::with_service_context(|ctx| {
+        decode_two_chart_pcurve_samples(ctx, &invalid, Some(&BTreeSet::from([10, 11])), &mut losses)
+    })
+    .expect("bounded invalid sampled pcurve");
+    assert!(refused.is_empty());
+    assert!(losses
+        .iter()
+        .any(|loss| loss.code == crate::loss::CreoLossCode::TwoChartScalarFrameUnresolved.kind()));
+}
+
+#[test]
+fn positional_pcurve_variable_repeat_has_an_owned_positive_count() {
+    let mut record = parameter_record(7);
+    record.body = vec![0x18, 0xe7, 4, 0x2f, 0x10, 0, 0x18, 0x2f, 0x10, 0];
+    let (_, topology) = pcurve_quarter_turn_lane_input();
+    let endpoints = pcurve_endpoints(
+        std::slice::from_ref(&record),
+        std::slice::from_ref(&topology),
+        &mut Vec::new(),
+    );
+    assert_eq!(endpoints.len(), 1);
+    assert_eq!(endpoints[0].face_0_endpoints, [[0.0, 0.0], [0.0, 4.0]]);
+    assert_eq!(endpoints[0].face_1_endpoints, [[0.0, 0.0], [0.0, 4.0]]);
+    for count in [0, 8] {
+        record.body[2] = count;
+        assert!(pcurve_endpoints(
+            std::slice::from_ref(&record),
+            std::slice::from_ref(&topology),
+            &mut Vec::new()
+        )
+        .is_empty());
+    }
 }

@@ -183,9 +183,13 @@ fn scale_feature_operation(
 ) -> Result<(), cadmpeg_core::CodecError> {
     match definition {
         FeatureOperation::CosmeticThread {
-            diameter, extent, ..
+            diameter,
+            pitch,
+            extent,
+            ..
         } => {
             scale_optional_positive_length(diameter, scale)?;
+            scale_optional_positive_length(pitch, scale)?;
             if let Some(cadmpeg_ir::features::CosmeticThreadExtent::Blind { length }) = extent {
                 scale_positive_length(length, scale)?;
             }
@@ -1346,6 +1350,7 @@ mod tests {
                 ctx,
                 &mut ir,
                 Feature {
+                    product_definition: None,
                     id: cadmpeg_ir::features::FeatureId::mint("synthetic:test:id#feature")
                         .expect("identity grammar"),
                     ordinal: 0,
@@ -1402,6 +1407,7 @@ mod tests {
             carriers.admit_parameter(
                 &mut ir,
                 cadmpeg_ir::features::DesignParameter {
+                    product_definition: None,
                     id: cadmpeg_ir::features::ParameterId::mint("synthetic:test:id#length")
                         .expect("identity grammar"),
                     owner: None,

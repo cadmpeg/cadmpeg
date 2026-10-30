@@ -67,6 +67,10 @@ pub(super) fn project_cosmetic_thread(feature: &Feature) -> FeatureDefinition {
             .map_or(FaceSelection::Unresolved, FaceSelection::Native),
         diameter,
         extent,
+        standard: None,
+        designation: None,
+        pitch: None,
+        modeled: None,
     })
 }
 

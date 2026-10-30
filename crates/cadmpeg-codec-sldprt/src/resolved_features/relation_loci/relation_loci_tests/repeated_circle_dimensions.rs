@@ -55,6 +55,7 @@ fn repeated_circle_dimension_binds_generated_circles_by_parameter_identity() {
         }],
     };
     let parameter = DesignParameter {
+        product_definition: None,
         id: ParameterId::mint("synthetic:test:id#parameter").expect("identity grammar"),
         owner: None,
         ordinal: 0,
@@ -128,6 +129,7 @@ fn repeated_circle_dimension_binds_reference_display_run_by_radius() {
         }],
     };
     let mut parameter = DesignParameter {
+        product_definition: None,
         id: ParameterId::mint("synthetic:test:id#parameter").expect("identity grammar"),
         owner: None,
         ordinal: 0,
@@ -186,6 +188,7 @@ fn repeated_circle_dimension_is_inactive_when_any_radius_differs() {
         entity("synthetic:test:id#second", 2.5),
     ];
     let parameter = DesignParameter {
+        product_definition: None,
         id: ParameterId::mint("synthetic:test:id#parameter").expect("identity grammar"),
         owner: None,
         ordinal: 0,

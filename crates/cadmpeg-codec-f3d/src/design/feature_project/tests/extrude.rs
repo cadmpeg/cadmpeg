@@ -483,6 +483,7 @@ fn extrude_parameters_project_blind_two_sided_and_reversed_extents() {
         )
         .unwrap();
         let mut feature = Feature {
+            product_definition: None,
             id: FeatureId::mint("f3d:model:feature#extrude").expect("identity grammar"),
             ordinal: 0,
             name: Some("Extrude".into()),
@@ -1900,6 +1901,7 @@ fn sketch_inputs_bind_owner_dependencies_after_sketch_conversion() {
     use cadmpeg_ir::sketches::SpatialSketchId;
 
     let feature = |id: &str, ordinal, definition| Feature {
+        product_definition: None,
         id: FeatureId::mint(id).expect("identity grammar"),
         ordinal,
         name: None,

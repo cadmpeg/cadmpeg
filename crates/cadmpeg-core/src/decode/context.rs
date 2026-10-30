@@ -31,7 +31,7 @@ pub struct DecodeContext<'a> {
     pub(super) arena: &'a DecodeArena,
     depth: DecodeDepth,
     pub(super) budget: DecodeBudget,
-    derived_spaces: Cell<usize>,
+    pub(super) derived_spaces: Cell<usize>,
     pub(super) companions: Option<&'a dyn super::companion::Companions>,
 }
 
@@ -200,6 +200,7 @@ impl<'a> DecodeContext<'a> {
 
     pub(super) fn allocate_space(&self) -> Result<SpaceId, CodecError> {
         let used = self.derived_spaces.get();
+        self.budget.record(super::transaction::Event::Space(used));
         // Root owns zero; every other `usize` value identifies a derived space.
         let index = used.checked_add(1).ok_or_else(|| {
             CodecError::NotImplemented("decode address spaces are exhausted".into())
@@ -298,6 +299,36 @@ impl<'a> DecodeContext<'a> {
     /// Begins an expansion whose output is charged incrementally and becomes
     /// available only after successful finalization.
     pub fn begin_expand(&self, spec: ExpandSpec) -> Result<ExpandWriter<'_, 'a>, CodecError> {
+        self.budget.record(super::transaction::Event::Expand(spec));
+        self.admit_expand(spec)?;
+        let mut buffer: Vec<u8> = Vec::new();
+        let reserve = match spec {
+            // A declared size the address space cannot name is above the cap,
+            // so the cap is the reservation either way.
+            ExpandSpec::Exact(size) => match usize::try_from(size) {
+                Ok(size) => size.min(RESERVE_CLAMP),
+                Err(_) => RESERVE_CLAMP,
+            },
+            ExpandSpec::Unknown => 0,
+        };
+        if reserve > 0 {
+            buffer.try_reserve(reserve).map_err(|_| {
+                self.fuse(
+                    ResourceFailure::AllocationFailed,
+                    LimitScope::PerExpand,
+                    u64_from_index(reserve),
+                    "begin_expand",
+                )
+            })?;
+        }
+        Ok(ExpandWriter {
+            ctx: self,
+            spec,
+            buffer,
+        })
+    }
+
+    pub(super) fn admit_expand(&self, spec: ExpandSpec) -> Result<(), CodecError> {
         if let Some(limit) = self.budget.fused() {
             return Err(CodecError::ResourceLimit(limit));
         }
@@ -324,31 +355,7 @@ impl<'a> DecodeContext<'a> {
                 ));
             }
         }
-        let mut buffer: Vec<u8> = Vec::new();
-        let reserve = match spec {
-            // A declared size the address space cannot name is above the cap,
-            // so the cap is the reservation either way.
-            ExpandSpec::Exact(size) => match usize::try_from(size) {
-                Ok(size) => size.min(RESERVE_CLAMP),
-                Err(_) => RESERVE_CLAMP,
-            },
-            ExpandSpec::Unknown => 0,
-        };
-        if reserve > 0 {
-            buffer.try_reserve(reserve).map_err(|_| {
-                self.fuse(
-                    ResourceFailure::AllocationFailed,
-                    LimitScope::PerExpand,
-                    u64_from_index(reserve),
-                    "begin_expand",
-                )
-            })?;
-        }
-        Ok(ExpandWriter {
-            ctx: self,
-            spec,
-            buffer,
-        })
+        Ok(())
     }
 
     /// Copies several input extents into one derived view.

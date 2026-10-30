@@ -2,7 +2,11 @@
 
 use super::*;
 use crate::feature::loft_sweep::{LOFT_MODE_TYPE, SECTION_CONDITION_TYPE};
+use crate::feature::loft_sweep::{SWEEP_ORIENTATION_TYPE, SWEEP_SCALING_TYPE};
 use crate::feature::PmDcFeaturePropertyPayload;
+use crate::feature::{
+    PmDcFeatureEnumFamily, PmDcFeatureProperty, PmDcFeaturePropertyKind, PmDcFeatureReferenceFamily,
+};
 use crate::record_identity::{Located, RecordTypeId};
 use cadmpeg_ir::ids::IdentityKey;
 

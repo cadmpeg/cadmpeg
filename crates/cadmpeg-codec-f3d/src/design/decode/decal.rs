@@ -424,6 +424,7 @@ mod tests {
         )
         .unwrap();
         let feature = || Feature {
+            product_definition: None,
             id: crate::ids::neutral_feature_id(&scope),
             ordinal: 0,
             name: None,

@@ -496,11 +496,11 @@ pub(super) fn fixed_kind_path_operations(
             crate::records::feature::path_features::DesignSweepConstruction {
                 operation: DesignExtrudeOperation::NewBody,
                 operation_offset: u64_from_index(sweep_start + 25),
-                values: crate::test_support::reals(sweep_values),
-                record_indexes: [80, 81, 82, 83, 84, 85],
-                value_offsets: std::array::from_fn(|ordinal| {
-                    u64_from_index(sweep_scalar_start + ordinal * 111 + 40)
-                }),
+                values: crate::test_support::reals(sweep_values).to_vec(),
+                record_indexes: vec![80, 81, 82, 83, 84, 85],
+                value_offsets: (0..6)
+                    .map(|ordinal| u64_from_index(sweep_scalar_start + ordinal * 111 + 40))
+                    .collect(),
             }
         ))
     );
@@ -550,11 +550,11 @@ pub(super) fn fixed_kind_path_operations(
             crate::records::feature::path_features::DesignSweepConstruction {
                 operation: DesignExtrudeOperation::NewBody,
                 operation_offset: u64_from_index(sweep_start + 25),
-                values: crate::test_support::reals([0.0, 1.0, 0.0, 1.0, 0.0, 0.0]),
-                record_indexes: [80, 81, 82, 83, 84, 85],
-                value_offsets: std::array::from_fn(|ordinal| {
-                    u64_from_index(sweep_scalar_start + ordinal * 111 + 40)
-                }),
+                values: crate::test_support::reals([0.0, 1.0, 0.0, 1.0, 0.0, 0.0]).to_vec(),
+                record_indexes: vec![80, 81, 82, 83, 84, 85],
+                value_offsets: (0..6)
+                    .map(|ordinal| u64_from_index(sweep_scalar_start + ordinal * 111 + 40))
+                    .collect(),
             },
         ));
         sweep_scope
@@ -588,11 +588,11 @@ pub(super) fn fixed_kind_path_operations(
             crate::records::feature::path_features::DesignSweepConstruction {
                 operation: DesignExtrudeOperation::NewBody,
                 operation_offset: u64_from_index(sweep_start + 25),
-                values: crate::test_support::reals(complete_sweep_values),
-                record_indexes: [80, 81, 82, 83, 84, 85],
-                value_offsets: std::array::from_fn(|ordinal| {
-                    u64_from_index(sweep_scalar_start + ordinal * 111 + 40)
-                }),
+                values: crate::test_support::reals(complete_sweep_values).to_vec(),
+                record_indexes: vec![80, 81, 82, 83, 84, 85],
+                value_offsets: (0..6)
+                    .map(|ordinal| u64_from_index(sweep_scalar_start + ordinal * 111 + 40))
+                    .collect(),
             },
         ));
         sweep_scope
@@ -736,11 +736,11 @@ pub(super) fn fixed_kind_path_operations(
             crate::records::feature::path_features::DesignSweepConstruction {
                 operation: DesignExtrudeOperation::Cut,
                 operation_offset: u64_from_index(sweep_start + 25),
-                values: crate::test_support::reals(complete_sweep_values),
-                record_indexes: [80, 81, 82, 83, 84, 85],
-                value_offsets: std::array::from_fn(|ordinal| {
-                    u64_from_index(sweep_scalar_start + ordinal * 111 + 40)
-                }),
+                values: crate::test_support::reals(complete_sweep_values).to_vec(),
+                record_indexes: vec![80, 81, 82, 83, 84, 85],
+                value_offsets: (0..6)
+                    .map(|ordinal| u64_from_index(sweep_scalar_start + ordinal * 111 + 40))
+                    .collect(),
             },
         ));
         sweep_scope

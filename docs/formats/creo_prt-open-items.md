@@ -67,7 +67,7 @@ surface, or pcurve transition semantics apply.
 
 **Question.** What slot transition does each other stateful `crv_pnt_arr f9 02 04` token encode?
 
-**Known.** `creo_prt.md` §4.1 "A direct curve body consisting of exactly eight scalar slots and no references" defines the direct eight-slot pcurve body, its endpoint order, standalone zero slots, and the exact held-scalar wrapper.
+**Known.** `creo_prt.md` §4.1 "A direct curve body consisting of exactly eight scalar slots and no references" defines the direct and named prototype eight-slot pcurve bodies, their endpoint order, signed literals, the positive pi/2 literal, bounded fixed and positive compact-count repeats of the preceding scalar, standalone zero slots, and the separate direct held-scalar wrapper. The complete counted two-chart sample production and its uniquely scoped replay use the same stateful coordinate stream.
 
 **Need.** We must know the other transitions to decode all pcurve endpoint arrays.
 
@@ -91,7 +91,7 @@ surface, or pcurve transition semantics apply.
 
 **Question.** What scalar value does each undefined prefix in a positional plane envelope encode?
 
-**Known.** `creo_prt.md` §3.4 "Plane row bodies contain envelope/domain data" through `creo_prt.md` §3.4 "In the frame-bound held-coordinate outline form" define the standard, compact, held-coordinate, and planar-envelope plane forms.
+**Known.** `creo_prt.md` §3.4 "Plane row bodies contain envelope/domain data" through `creo_prt.md` §3.4 "In the frame-bound held-coordinate outline form" define the standard stateful envelope scalars, the complete literal fallback and four-unit domain compatibility production, the leading-compact and structural-prefix terminal scalar frames, the held-coordinate form, and the planar-envelope plane forms.
 
 **Need.** We must know the remaining prefixes to construct the plane envelope and domain.
 

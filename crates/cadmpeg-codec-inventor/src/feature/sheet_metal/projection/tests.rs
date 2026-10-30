@@ -31,6 +31,7 @@ fn attached(fixture: &Fixture) -> Feature {
     )
     .expect("attachment");
     Feature {
+        product_definition: None,
         id: crate::feature::history_feature_id(&fixture.plate.identity).expect("identity"),
         ordinal: 1,
         name: None,
