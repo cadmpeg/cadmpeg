@@ -268,7 +268,7 @@ the native feature when a fixed lane carries a symmetric distance.
 
 **Question.** What does the flag byte after the `variant` byte of a parameter owner store?
 
-**Known.** `f3d.md` §3.1 "Every dimension or feature-input parameter stores `owner_record_index`" gives the byte. It is zero in almost every owner. It is one only in scalar owners whose `variant` is one, and one design stores variant one with flag zero.
+**Known.** `f3d.md` §3.1 "A dimension or feature-input parameter without the null owner stores `owner_record_index`" gives the byte. It is zero in almost every owner. It is one only in scalar owners whose `variant` is one, and one design stores variant one with flag zero.
 
 **Need.** The flag can mark a driven or suppressed parameter. A design that toggles one dimension between driving and driven, saved in each state, fixes the meaning.
 
@@ -710,6 +710,18 @@ the native feature when a fixed lane carries a symmetric distance.
 **Conflict.** A referenced solved frame alone does not establish the motion applied to a selected body.
 
 **Note.** Keep the operation native until each operand role and motion direction has a byte-defined rule.
+
+### DR-144. Flag bytes of the discriminated parameter expression trailer
+
+**Question.** What do the first four of the five flag bytes in the nine-byte expression trailer of a discriminated parameter frame state?
+
+**Known.** The trailer is four zero bytes and five flag bytes, each `0` or `1`. The last flag byte is `1` exactly for a document parameter. Owned parameters set the first, second, or third flag byte, alone or the second and third together. Parameters with a null owner reference set the fourth flag byte, alone or with the first or third. Every frame with a set flag byte has the same remaining grammar as a frame with zero flag bytes.
+
+**Need.** Files that change one parameter property at a time, such as favorite state, comment, or the deletion of the owning dimension, and save the document after each change.
+
+**Conflict.** None.
+
+**Note.** The decoder admits the flag bytes and does not project them.
 
 ### DR-126. Move transform envelopes with leading references
 
