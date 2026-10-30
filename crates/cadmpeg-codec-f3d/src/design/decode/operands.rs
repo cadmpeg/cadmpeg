@@ -6262,6 +6262,7 @@ const TYPED_PROFILE_CHAIN_MARKER: [u8; 6] = [1, 1, 1, 0, 0, 0];
 /// operand groups: a selection prefix, a chain record naming the owning
 /// Sketch scope, and an identity record listing curve loops.
 pub(crate) fn decode_profile_curve_selections(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     scan: &ContainerScan,
     groups: &[DesignConstructionOperandGroup],
     headers: &[DesignRecordHeader],
@@ -6307,7 +6308,7 @@ pub(crate) fn decode_profile_curve_selections(
                 .entry(stream)
                 .or_insert_with(|| IndexedRecordOffsets::build(bytes));
             let Some(mut selection) =
-                parse_typed_profile_curve_selection(bytes, records, group, ordinal, header)
+                parse_typed_profile_curve_selection(ctx, bytes, records, group, ordinal, header)?
             else {
                 continue;
             };
@@ -6324,17 +6325,18 @@ pub(crate) fn decode_profile_curve_selections(
 }
 
 /// Parse one typed profile selection and its chain records.
-fn parse_typed_profile_curve_selection(
+fn parse_typed_profile_curve_selection_prefix(
     bytes: &[u8],
     records: &IndexedRecordOffsets,
     group: &DesignConstructionOperandGroup,
     group_member_ordinal: u32,
     header: &DesignRecordHeader,
-) -> Option<crate::records::topology::entity_selection::DesignProfileCurveSelection> {
+) -> Option<(
+    crate::records::topology::entity_selection::DesignProfileCurveSelection,
+    usize,
+)> {
     use crate::bytes::typed_local_reference_target as target;
-    use crate::records::topology::entity_selection::{
-        DesignProfileCurveEntry, DesignProfileCurveSelection,
-    };
+    use crate::records::topology::entity_selection::DesignProfileCurveSelection;
     let Ok(start) = usize::try_from(header.byte_offset) else {
         return None;
     };
@@ -6383,75 +6385,132 @@ fn parse_typed_profile_curve_selection(
     }
     let identity_end =
         next_indexed_record_offset(bytes, identity_at + typed_identity::ZERO_RUN_10)?;
-    let mut cursor = identity_at + typed_identity::FIRST_LOOP_COUNT;
-    let mut loop_lists: [Vec<Vec<DesignProfileCurveEntry>>; 2] = [Vec::new(), Vec::new()];
-    for (list, loops) in loop_lists.iter_mut().enumerate() {
-        let loop_count = View::u32_le_at(bytes, cursor).and_then(|n| usize::try_from(n).ok())?;
-        // The first list holds at least one loop; every loop and entry
-        // consumes bytes, so a count the frame cannot supply is corrupt.
-        let remaining = identity_end.checked_sub(cursor)?;
-        if (list == 0 && loop_count == 0) || loop_count > remaining / 49 {
-            return None;
-        }
-        cursor += 4;
-        for _ in 0..loop_count {
-            let entry_count = (View::u32_le_at(bytes, cursor) == Some(1))
-                .then(|| View::u32_le_at(bytes, cursor + 4))
-                .flatten()
-                .and_then(|n| usize::try_from(n).ok())?;
-            let remaining = identity_end.checked_sub(cursor)?;
-            if entry_count == 0 || entry_count > remaining / 40 {
-                return None;
+    Some((
+        DesignProfileCurveSelection {
+            id: String::new(),
+            scope_record_index: group.scope_record_index,
+            group_record_index: group.record_index,
+            group_member_ordinal,
+            record_index,
+            byte_offset: header.byte_offset,
+            owner_text_offset: cadmpeg_core::decode::u64_from_index(after_asset + 4),
+            owner_text,
+            sketch_scope_record_index,
+            sketch_scope_offset: cadmpeg_core::decode::u64_from_index(
+                scope_at + typed_chain::SKETCH_SCOPE_REFERENCE + 1,
+            ),
+            identity_record_offset: cadmpeg_core::decode::u64_from_index(identity_at),
+            identity_end_offset: cadmpeg_core::decode::u64_from_index(identity_end),
+            loop_lists: [Vec::new(), Vec::new()],
+        },
+        identity_end,
+    ))
+}
+
+fn parse_typed_profile_curve_selection(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    bytes: &[u8],
+    records: &IndexedRecordOffsets,
+    group: &DesignConstructionOperandGroup,
+    ordinal: u32,
+    header: &DesignRecordHeader,
+) -> Result<
+    Option<crate::records::topology::entity_selection::DesignProfileCurveSelection>,
+    CodecError,
+> {
+    let Some((mut selection, end)) =
+        parse_typed_profile_curve_selection_prefix(bytes, records, group, ordinal, header)
+    else {
+        return Ok(None);
+    };
+    let start = usize::try_from(selection.identity_record_offset)
+        .map_err(|_| CodecError::malformed("profile identity offset exceeds address space"))?;
+    let Some(lists) =
+        parse_profile_loop_lists(ctx, bytes, start + typed_identity::FIRST_REGION_COUNT, end)?
+    else {
+        return Ok(None);
+    };
+    selection.loop_lists = lists;
+    Ok(selection.valid_layout().then_some(selection))
+}
+
+fn parse_profile_loop_lists(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    bytes: &[u8],
+    start: usize,
+    end: usize,
+) -> Result<
+    Option<[Vec<Vec<crate::records::topology::entity_selection::DesignProfileCurveLoop>>; 2]>,
+    CodecError,
+> {
+    use crate::records::topology::entity_selection::{
+        DesignProfileCurveEntry, DesignProfileCurveLoop,
+    };
+    macro_rules! field {
+        ($value:expr) => {
+            match $value {
+                Some(value) => value,
+                None => return Ok(None),
             }
-            cursor += 8;
-            let mut entries = Vec::new();
-            for _ in 0..entry_count {
-                let (Some(2), Some(primary_id), Some(secondary_id)) = (
-                    View::u32_le_at(bytes, cursor),
-                    View::u64_le_at(bytes, cursor + 4),
-                    View::u64_le_at(bytes, cursor + 12),
-                ) else {
-                    return None;
-                };
-                if bytes.get(cursor + 32..cursor + 40) != Some(&[0; 8][..]) {
-                    return None;
+        };
+    }
+    let mut view = field!(View::over_retained(bytes).child(start, end));
+    let mut lists = [Vec::new(), Vec::new()];
+    for (list_index, regions) in lists.iter_mut().enumerate() {
+        let count = field!(view.u32_le());
+        let count = field!(view.counted(u64::from(count), 49)).get();
+        if list_index == 0 && count == 0 {
+            return Ok(None);
+        }
+        *regions = ctx.alloc_filled(count, Vec::new(), "F3D profile regions")?;
+        for loops in regions {
+            let count = field!(view.u32_le());
+            let count = field!(view.counted(u64::from(count), 45)).get();
+            if count == 0 {
+                return Ok(None);
+            }
+            *loops = ctx.alloc_filled(
+                count,
+                DesignProfileCurveLoop::default(),
+                "F3D profile loops",
+            )?;
+            for loop_ in loops {
+                let count = field!(view.u32_le());
+                let count = field!(view.counted(u64::from(count), 40)).get();
+                if count == 0 {
+                    return Ok(None);
                 }
-                entries.push(DesignProfileCurveEntry {
-                    primary_id,
-                    primary_id_offset: cadmpeg_core::decode::u64_from_index(cursor + 4),
-                    secondary_id,
-                    entry_fields: [
-                        View::u32_le_at(bytes, cursor + 20)?,
-                        View::u32_le_at(bytes, cursor + 24)?,
-                        View::u32_le_at(bytes, cursor + 28)?,
-                    ],
-                });
-                cursor += 40;
+                loop_.entries = ctx.alloc_filled(
+                    count,
+                    DesignProfileCurveEntry::default(),
+                    "F3D profile curve entries",
+                )?;
+                for entry in &mut loop_.entries {
+                    if view.u32_le() != Some(2) {
+                        return Ok(None);
+                    }
+                    let primary_id_offset = cadmpeg_core::decode::u64_from_index(view.position());
+                    *entry = DesignProfileCurveEntry {
+                        primary_id: field!(view.u64_le()),
+                        primary_id_offset,
+                        secondary_id: field!(view.u64_le()),
+                        entry_fields: [
+                            field!(view.u32_le()),
+                            field!(view.u32_le()),
+                            field!(view.u32_le()),
+                        ],
+                    };
+                    if view.take(8) != Some(&[0; 8][..]) {
+                        return Ok(None);
+                    }
+                }
+                loop_.outer = match view.u8() {
+                    Some(0) => false,
+                    Some(1) => true,
+                    _ => return Ok(None),
+                };
             }
-            if bytes.get(cursor) != Some(&1) {
-                return None;
-            }
-            cursor += 1;
-            loops.push(entries);
         }
     }
-    if cursor != identity_end {
-        return None;
-    }
-    Some(DesignProfileCurveSelection {
-        id: String::new(),
-        scope_record_index: group.scope_record_index,
-        group_record_index: group.record_index,
-        group_member_ordinal,
-        record_index,
-        byte_offset: header.byte_offset,
-        owner_text_offset: cadmpeg_core::decode::u64_from_index(after_asset + 4),
-        owner_text,
-        sketch_scope_record_index,
-        sketch_scope_offset: cadmpeg_core::decode::u64_from_index(
-            scope_at + typed_chain::SKETCH_SCOPE_REFERENCE + 1,
-        ),
-        identity_record_offset: cadmpeg_core::decode::u64_from_index(identity_at),
-        loop_lists,
-    })
+    Ok((view.remaining() == 0).then_some(lists))
 }

@@ -1051,6 +1051,9 @@ fn validate_loaded(
     );
     validate_extrude_selection_members(&ctx, &mut findings);
     validate_entity_selection_operands(&ctx, &mut findings);
+    for selection in &native.design_profile_curve_selections {
+        validate_profile_curve_selection(selection, &mut findings);
+    }
     validate_extrude_selection_group_members(&ctx, &mut findings);
     validate_edge_treatment_groups(
         &ctx,
@@ -9318,3 +9321,17 @@ fn validate_history_graphs(ctx: &Ctx, findings: &mut Vec<Finding>) {
 
 #[cfg(test)]
 mod tests;
+
+fn validate_profile_curve_selection(
+    selection: &records::topology::entity_selection::DesignProfileCurveSelection,
+    findings: &mut Vec<Finding>,
+) {
+    if !selection.valid_layout() {
+        push_constant_finding(
+            findings,
+            Check::NativeLinks,
+            "Fusion profile curve selection has an invalid region layout",
+            Some(selection.id.clone()),
+        );
+    }
+}

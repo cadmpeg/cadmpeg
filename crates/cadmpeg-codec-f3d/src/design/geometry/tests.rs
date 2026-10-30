@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 mod cast_limits;
+mod profile_program;
 
 use super::analytic_segment_intersections;
 use super::angle_strictly_inside_arc;

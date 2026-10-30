@@ -43,6 +43,7 @@ use cadmpeg_ir::sketches::{
 use std::collections::{HashMap, HashSet};
 
 mod spatial_transition;
+mod typed_regions;
 
 fn group() -> DesignConstructionOperandGroup {
     DesignConstructionOperandGroup::try_from(

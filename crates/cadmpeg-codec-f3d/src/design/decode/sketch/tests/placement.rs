@@ -1289,3 +1289,47 @@ fn member_run_sketch_scope_prefers_the_scope_bound_to_the_entity() {
     );
     assert_eq!(owner(&[member_run_test_scope(178, 1000, None)]), Some(178));
 }
+
+#[test]
+fn typed_profile_compact_sketch_head_supplies_identity_placement() {
+    let header = |bytes: &mut Vec<u8>, class: &[u8; 3], record: u32| {
+        bytes.extend_from_slice(&3u32.to_le_bytes());
+        bytes.extend_from_slice(class);
+        bytes.extend_from_slice(&record.to_le_bytes());
+    };
+    let mut bytes = Vec::new();
+    header(&mut bytes, b"280", 100);
+    bytes.resize(40, 0);
+    let paired = bytes.len();
+    header(&mut bytes, b"281", 100);
+    bytes.extend_from_slice(&[0; 8]);
+    typed_sketch_reference(&mut bytes, 200);
+    let head = bytes.len();
+    header(&mut bytes, b"282", 200);
+    bytes.extend_from_slice(&[0; 10]);
+    bytes.extend_from_slice(&[1, 0]);
+    typed_sketch_reference(&mut bytes, 7);
+    header(&mut bytes, b"283", 201);
+    let entity =
+        crate::records::identity::DesignEntityId::try_from("Sketch_100".to_owned()).unwrap();
+    let parse = |bytes: &[u8]| {
+        let records = crate::design::test_support::indexed_record_offsets_for_test(bytes);
+        crate::design::decode::sketch::parse_member_run_head_placement(bytes, 0, &entity, &records)
+    };
+    let placement = parse(&bytes).expect("typed compact head");
+    assert_eq!(placement.frame_length(), 74);
+    assert_eq!(placement.paired_byte_offset(), u64_from_index(paired));
+    assert_eq!(placement.byte_offset(), u64_from_index(head));
+    assert!(placement.member_run_head());
+    assert_eq!(placement.transform_offset(), None);
+    assert_eq!(
+        *placement.transform(),
+        crate::records::sketch_placement::SketchPlacementMatrix::IDENTITY.rows()
+    );
+    let mut invalid = bytes.clone();
+    invalid[head + crate::layout::sketch_typed_compact_member_head::FLAGS] = 0;
+    assert!(parse(&invalid).is_none());
+    let mut invalid = bytes.clone();
+    invalid.insert(head + 74, 0);
+    assert!(parse(&invalid).is_none());
+}
