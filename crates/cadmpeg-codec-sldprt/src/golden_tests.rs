@@ -576,6 +576,8 @@ fn complete_authored_golden_inputs_have_typed_geometry_and_active_configuration(
     );
 }
 
+/// The fixture is synthetic: it checks the decoder against the link layout
+/// the authored fixtures store.
 #[test]
 fn a_planar_face_loop_runs_counter_clockwise_about_its_normal() {
     let fixtures = harness().fixture_inputs();
