@@ -475,6 +475,16 @@ impl<'ir> Piece<'ir> {
                 .map(|(t, uv)| (*t, [uv[0] + self.shift[0], uv[1] + self.shift[1]]))
                 .collect(),
         };
+        if let [(t0, start), (t1, end)] = points[..] {
+            if t0 != t1 {
+                points = vec![(t0, start)];
+                for index in 1..CLOSED_PIECE_SEED_SAMPLES {
+                    let t = interpolate(t0, t1, index, CLOSED_PIECE_SEED_SAMPLES);
+                    points.push((t, self.uv(eval, chart, t)?));
+                }
+                points.push((t1, end));
+            }
+        }
         let mut index = 0;
         while index + 1 < points.len() {
             let (ta, a) = points[index];
@@ -504,6 +514,10 @@ fn principal_branch(geometry: &PcurveGeometry) -> bool {
         _ => false,
     }
 }
+
+/// Intervals a two-point polyline starts from: the ends of a closed piece
+/// coincide, and a polyline of them alone bounds no area.
+const CLOSED_PIECE_SEED_SAMPLES: usize = 4;
 
 /// `t0 + (t1 − t0)·index/count`, exact at both ends.
 fn interpolate(t0: f64, t1: f64, index: usize, count: usize) -> f64 {

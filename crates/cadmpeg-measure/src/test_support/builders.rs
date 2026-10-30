@@ -417,10 +417,24 @@ impl Builder {
         radius: f64,
         range: [f64; 2],
     ) {
+        self.circle_pcurve_on_axes(face, at, center, [1.0, 0.0], radius, range);
+    }
+
+    /// [`Builder::circle_pcurve`] with the first axis `x_axis`, the second
+    /// axis `(0, 1)`: `x_axis = (−1, 0)` makes the circle clockwise.
+    pub(crate) fn circle_pcurve_on_axes(
+        &mut self,
+        face: &FaceId,
+        at: [usize; 2],
+        center: [f64; 2],
+        x_axis: [f64; 2],
+        radius: f64,
+        range: [f64; 2],
+    ) {
         let geometry = PcurveGeometry::Circle(
             CirclePcurve::try_new(
                 Point2::new(center[0], center[1]),
-                Point2::new(1.0, 0.0),
+                Point2::new(x_axis[0], x_axis[1]),
                 Point2::new(0.0, 1.0),
                 radius,
             )
