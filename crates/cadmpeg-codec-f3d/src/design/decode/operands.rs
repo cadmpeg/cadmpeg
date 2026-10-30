@@ -3377,7 +3377,7 @@ fn parse_construction_tracking_path(
         || View::u32_le_at(bytes, carrier_at + 21)? != 1
         || View::u32_le_at(bytes, carrier_at + 25)? != 0
         || View::u32_le_at(bytes, carrier_at + 29)? != 1
-        || View::u32_le_at(bytes, carrier_at + 33)? != 2
+        || !matches!(View::u32_le_at(bytes, carrier_at + 33)?, 2 | 3)
         || View::u64_le_at(bytes, carrier_at + 45)? != 0
         || View::u32_le_at(bytes, carrier_at + 53)? != 1
         || View::u64_le_at(bytes, carrier_at + 65)? != 0

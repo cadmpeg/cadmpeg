@@ -26280,3 +26280,80 @@ value = "6CCF41D5-40BE-48ED-A834-18F3EAED6C57"
 offset = 487
 size = 4
 note = "The specification states no field in this range."
+
+[[record]]
+name = "entity_tracking_carrier_prefix"
+parsed_by = "crates/cadmpeg-codec-f3d/src/design/decode/operands.rs"
+kind = "byte"
+section = "3.1"
+anchor = "The carrier header is followed by ten zero bytes, u32 values `1, 0, 1`, a u32 lane with value `2` or `3`"
+size = 73
+note = "Offsets are relative to the carrier indexed header; the optional related identities follow at offset 73."
+
+[[record.gap]]
+offset = 0
+size = 11
+note = "The indexed header precedes this field run."
+
+[[record.field]]
+name = "zero_run_10"
+offset = 11
+type = "bytes[10]"
+source = "spec"
+anchor = "The carrier header is followed by ten zero bytes, u32 values `1, 0, 1`, a u32 lane with value `2` or `3`"
+
+[[record.field]]
+name = "lead_words"
+offset = 21
+type = "bytes[12]"
+source = "spec"
+anchor = "The carrier header is followed by ten zero bytes, u32 values `1, 0, 1`, a u32 lane with value `2` or `3`"
+
+[[record.field]]
+name = "lane"
+offset = 33
+type = "u32"
+source = "spec"
+anchor = "The carrier header is followed by ten zero bytes, u32 values `1, 0, 1`, a u32 lane with value `2` or `3`"
+
+[[record.field]]
+name = "primary_identity"
+offset = 37
+type = "u64"
+source = "spec"
+anchor = "The carrier header is followed by ten zero bytes, u32 values `1, 0, 1`, a u32 lane with value `2` or `3`"
+
+[[record.field]]
+name = "zero_run_8_first"
+offset = 45
+type = "u64"
+source = "spec"
+anchor = "The carrier header is followed by ten zero bytes, u32 values `1, 0, 1`, a u32 lane with value `2` or `3`"
+
+[[record.field]]
+name = "one"
+offset = 53
+type = "u32"
+source = "spec"
+anchor = "The carrier header is followed by ten zero bytes, u32 values `1, 0, 1`, a u32 lane with value `2` or `3`"
+
+[[record.field]]
+name = "selector"
+offset = 57
+type = "i32"
+source = "spec"
+anchor = "The carrier header is followed by ten zero bytes, u32 values `1, 0, 1`, a u32 lane with value `2` or `3`"
+
+[[record.field]]
+name = "kind"
+offset = 61
+type = "u32"
+source = "spec"
+anchor = "The carrier header is followed by ten zero bytes, u32 values `1, 0, 1`, a u32 lane with value `2` or `3`"
+
+[[record.field]]
+name = "zero_run_8_second"
+offset = 65
+type = "u64"
+source = "spec"
+anchor = "The carrier header is followed by ten zero bytes, u32 values `1, 0, 1`, a u32 lane with value `2` or `3`"

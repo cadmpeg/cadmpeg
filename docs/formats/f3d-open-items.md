@@ -738,3 +738,15 @@ the native feature when a fixed lane carries a symmetric distance.
 **Conflict.** None.
 
 **Note.** A scope outside the 1295-byte form, or with a nonzero offset owner, remains native with `feature.box-primitive-unresolved`.
+
+### DR-147. Region extent of a tracking-path Extrude selection
+
+**Question.** Which Sketch region does an Extrude selection select when its member follows a tracking path?
+
+**Known.** The path stores the primary curve, a one-based fragment ordinal, the fragment count, and the two curves bounding the fragment. The carrier lane is `2` or `3`. The selected fragment can border two bounded Sketch faces.
+
+**Need.** Controlled selections of one region, of two adjacent regions, and of a region with an enclosed island, each in a Sketch whose curves cross, to bind the path to the selected side and to the filled island. CAD Fixture Recipes F29a-F29d select each region of two crossing circles and the union of two of them.
+
+**Conflict.** None.
+
+**Note.** A path selection retains its native selection and loss. The selected region can be the union of several atomic arrangement faces, which no single face proves.
