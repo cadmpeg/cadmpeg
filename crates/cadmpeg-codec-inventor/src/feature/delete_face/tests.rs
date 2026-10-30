@@ -4,6 +4,37 @@ use crate::feature::tests::{test_feature, test_label};
 use crate::pmdc::{PmDcListMetadata, PmDcReferenceList};
 use crate::record_identity::Located;
 
+fn placed(sources: &[PmDcFeature]) -> Vec<cadmpeg_ir::features::Feature> {
+    use cadmpeg_ir::features::{
+        Feature, FeatureContent, FeatureDefinition, FeatureEvaluation, FeatureId, FeatureOperation,
+        NativeFeatureKind,
+    };
+    sources
+        .iter()
+        .map(|source| Feature {
+            id: FeatureId::compose(
+                &cadmpeg_ir::identity_namespace!("inventor", "design", "feature"),
+                cadmpeg_ir::identity_key!("generated"),
+            ),
+            ordinal: 0,
+            name: None,
+            suppressed: None,
+            dependencies: cadmpeg_ir::features::DistinctMembers::default(),
+            source_properties: std::collections::BTreeMap::default(),
+            source_tag: None,
+            source_text: None,
+            source_content: FeatureContent::default(),
+            evaluation: FeatureEvaluation::from_definition(FeatureDefinition::Operation(
+                FeatureOperation::Native {
+                    kind: NativeFeatureKind::DeleteFace,
+                    parameters: std::collections::BTreeMap::default(),
+                },
+            )),
+            native_ref: Some(source.id()),
+        })
+        .collect()
+}
+
 #[test]
 fn delete_face_refusals_emit_the_pinned_loss_and_first_check() {
     let source = test_feature(0, 4, &[]);
@@ -27,15 +58,17 @@ fn delete_face_refusals_emit_the_pinned_loss_and_first_check() {
             NativeReason::Slots,
             "four-slot form",
         ),
-        (source, NativeReason::Controls, "slot 1 Boolean"),
+        (source, NativeReason::Controls, "slots 1 and 2 Boolean"),
     ] {
         assert_eq!(admission(&source), Err(reason));
+        let features = placed(std::slice::from_ref(&source));
         let inventory = FeatureInventory {
             features: vec![source],
             labels: vec![test_label(0, 1, CLASS_ID, &[])],
             ..Default::default()
         };
-        let losses = native_losses(&inventory);
+        assert!(native_losses(&inventory, &[]).is_empty());
+        let losses = native_losses(&inventory, &features);
         assert_eq!(losses.len(), 1);
         assert_eq!(
             losses[0].code.local_code(),
@@ -51,14 +84,16 @@ fn delete_face_refusals_emit_the_pinned_loss_and_first_check() {
 
 #[test]
 fn delete_face_loss_uses_the_label_class_and_record_owner() {
+    let source = test_feature(0, 4, &[]);
+    let features = placed(std::slice::from_ref(&source));
     let mut inventory = FeatureInventory {
-        features: vec![test_feature(0, 4, &[])],
+        features: vec![source],
         labels: vec![test_label(1, 1, CLASS_ID, &[])],
         ..Default::default()
     };
-    assert!(native_losses(&inventory).is_empty());
+    assert!(native_losses(&inventory, &features).is_empty());
     inventory.labels = vec![test_label(0, 1, super::super::THREAD_CLASS_ID, &[])];
-    assert!(native_losses(&inventory).is_empty());
+    assert!(native_losses(&inventory, &features).is_empty());
     inventory.labels = vec![test_label(0, 1, CLASS_ID, &[])];
-    assert_eq!(native_losses(&inventory).len(), 1);
+    assert_eq!(native_losses(&inventory, &features).len(), 1);
 }
