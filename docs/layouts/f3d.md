@@ -7872,6 +7872,26 @@ Unstated regions:
 - `200..201` (1 B): Zero separator.
 - `210..212` (2 B): Zero trailing field of the repeated component-record reference.
 
+## `placement_v16_solved_prefix`
+
+Spec §3.1 · layout: byte offsets · size: 49 B
+
+Version-16 placement prefix. The mode value gates solved WorkPlane frame binding.
+
+Parsed by:
+- `crates/cadmpeg-codec-f3d/src/design/decode/placement_construction/fields.rs`
+- `crates/cadmpeg-codec-f3d/src/design/decode/placement_construction/work_planes.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 11 | `indexed_header` | `bytes[11]` | little | spec | An indexed Design record header is |
+| 11 | 10 | `zero_prefix` | `bytes[10]` | little | spec | The bytes from indexed-header offset 11 through 20 are zero |
+| 21 | 1 | `linear_offset_on_periodic_face` | `u8` | little | spec | LinearOffsetOnPeriodicFace |
+| 22 | 24 | `align_up_direction` | `f64[3]` | little | derived | Follows the one-byte linear-offset member. |
+| 46 | 1 | `periodic_face_mode` | `u8` | little | derived | Follows the three-f64 alignment vector. Zero admits solved frame binding. · value `0` |
+| 47 | 1 | `axis_flipped` | `u8` | little | derived | Follows the one-byte periodic-face mode. |
+| 48 | 1 | `use_u_direction` | `u8` | little | derived | Follows the one-byte axis control. |
+
 ## Not tabulated
 
 | Area | Spec | Reason |

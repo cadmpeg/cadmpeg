@@ -42,7 +42,7 @@ pub(crate) fn decode_frame(
     mut frame: View<'_>,
     version: u32,
 ) -> Result<Option<DesignPlacementConstruction>, CodecError> {
-    if !matches!(version, 4 | 5 | 6 | 8 | 9 | 12 | 14) {
+    if !crate::records::placement_construction::supported_version(version) {
         return Ok(None);
     }
     let byte_offset = u64_from_index(frame.start());

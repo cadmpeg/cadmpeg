@@ -27063,3 +27063,67 @@ offset = 212
 type = "u8"
 source = "spec"
 anchor = "An empty-attribute local component occurrence stores an empty attribute list after its path."
+
+
+[[record]]
+name = "placement_v16_solved_prefix"
+kind = "byte"
+section = "3.1"
+anchor = "The fixed prefix through `bUseUDirection`"
+size = 49
+parsed_by = ["crates/cadmpeg-codec-f3d/src/design/decode/placement_construction/fields.rs", "crates/cadmpeg-codec-f3d/src/design/decode/placement_construction/work_planes.rs"]
+note = "Version-16 placement prefix. The mode value gates solved WorkPlane frame binding."
+
+[[record.field]]
+name = "indexed_header"
+offset = 0
+type = "bytes[11]"
+source = "spec"
+anchor = "An indexed Design record header is"
+
+[[record.field]]
+name = "zero_prefix"
+offset = 11
+type = "bytes[10]"
+source = "spec"
+anchor = "The bytes from indexed-header offset 11 through 20 are zero"
+
+[[record.field]]
+name = "linear_offset_on_periodic_face"
+offset = 21
+type = "u8"
+source = "spec"
+anchor = "LinearOffsetOnPeriodicFace"
+
+[[record.field]]
+name = "align_up_direction"
+offset = 22
+type = "f64[3]"
+source = "derived"
+anchor = "alignUpDirection"
+note = "Follows the one-byte linear-offset member."
+
+[[record.field]]
+name = "periodic_face_mode"
+offset = 46
+type = "u8"
+source = "derived"
+anchor = "Version 16 requires `periodicFaceMode` zero"
+value = 0
+note = "Follows the three-f64 alignment vector. Zero admits solved frame binding."
+
+[[record.field]]
+name = "axis_flipped"
+offset = 47
+type = "u8"
+source = "derived"
+anchor = "axisFlipped"
+note = "Follows the one-byte periodic-face mode."
+
+[[record.field]]
+name = "use_u_direction"
+offset = 48
+type = "u8"
+source = "derived"
+anchor = "bUseUDirection"
+note = "Follows the one-byte axis control."
