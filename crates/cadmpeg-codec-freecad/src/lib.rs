@@ -1316,6 +1316,14 @@ fn semantic_losses(
                 FreecadLossCode::FeatureCyclicHistory,
                 " is retained natively because neutral dependency ordering is cycle-affected",
             )
+        } else if matches!(
+            kind.as_str(),
+            "PartDesign::Revolution" | "PartDesign::Groove" | "Part::Revolution"
+        ) {
+            (
+                FreecadLossCode::FeatureRevolutionNotTransferred,
+                " has an unsupported revolution type, axis, selection, flag, or angular extent and remains native",
+            )
         } else {
             (
                 FreecadLossCode::FeatureNativeKindRetained,
@@ -1337,7 +1345,14 @@ fn semantic_losses(
         };
         push_semantic_loss(
             &mut losses,
-            FreecadLossCode::SketchNativeGeometry,
+            if matches!(
+                native_kind.as_str(),
+                "Part::GeomBSplineCurve" | "BSplineCurve"
+            ) {
+                FreecadLossCode::SketchNurbsNative
+            } else {
+                FreecadLossCode::SketchNativeGeometry
+            },
             &[
                 "FCStd sketch geometry ",
                 native_kind.as_str(),

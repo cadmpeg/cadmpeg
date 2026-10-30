@@ -5864,7 +5864,7 @@ Unstated regions:
 
 Spec §3.1 · layout: byte offsets · size: 76 B
 
-Offsets are relative to the identity record indexed header; the two counted loop lists begin at offset 72.
+Offsets are relative to the identity record indexed header; the two counted region lists begin at offset 72.
 
 Parsed by:
 - `crates/cadmpeg-codec-f3d/src/design/decode/operands.rs`
@@ -5873,7 +5873,7 @@ Parsed by:
 | -----: | ---: | ----- | ---- | ------ | --- | ------- |
 | 11 | 10 | `zero_run_10` | `bytes[10]` | little | spec | The identity record at the record index plus three stores ten zero bytes |
 | 21 | 51 | `selection_reference` | `bytes[51]` | little | spec | The identity record at the record index plus three stores ten zero bytes |
-| 72 | 4 | `first_loop_count` | `u32` | little | spec | The identity record at the record index plus three stores ten zero bytes |
+| 72 | 4 | `first_region_count` | `u32` | little | spec | The identity record at the record index plus three stores ten zero bytes |
 
 Unstated regions:
 
@@ -6599,7 +6599,7 @@ Parsed by:
 
 Spec §3.1 · layout: byte offsets · size: 289 B
 
-The 349-byte identity frame has one zero separator before the repeated reference.
+The separated identity and matrix frames have one zero separator before the repeated reference.
 
 Parsed by:
 - `crates/cadmpeg-codec-f3d/src/design/decode/components.rs`
@@ -6618,7 +6618,7 @@ Parsed by:
 | 160 | 76 | `occurrence_guid` | `bytes[76]` | little | spec | Typed local component occurrences use local references with inline type GUIDs. |
 | 236 | 1 | `separator` | `u8` | little | spec | Typed local component occurrences use local references with inline type GUIDs. · value `0` |
 | 237 | 51 | `component_reference_repeat` | `bytes[51]` | little | spec | Typed local component occurrences use local references with inline type GUIDs. |
-| 288 | 1 | `identity_flag` | `u8` | little | spec | Typed local component occurrences use local references with inline type GUIDs. · value `1` |
+| 288 | 1 | `identity_flag` | `u8` | little | spec | Typed local component occurrences use local references with inline type GUIDs. |
 
 ## `local_component_occurrence_typed_compact_prefix`
 
@@ -6662,7 +6662,7 @@ Parsed by:
 
 Spec §3.1 · layout: byte offsets · size: 188 B
 
-Relative to the end of the typed compact prefix.
+Relative to the end of the typed prefix.
 
 Parsed by:
 - `crates/cadmpeg-codec-f3d/src/design/decode/components.rs`
@@ -7390,6 +7390,25 @@ Parsed by:
 | 280 | 1 | `repeated_owner_marker` | `u8` | little | spec | The indexed record named by the first Align prefix reference is its constructor · value `1` |
 | 281 | 4 | `repeated_owner_word` | `u32` | little | spec | The indexed record named by the first Align prefix reference is its constructor |
 | 285 | 8 | `repeated_owner_padding` | `bytes[8]` | little | spec | The indexed record named by the first Align prefix reference is its constructor · value `[0, 0, 0, 0, 0, 0, 0, 0]` |
+
+## `sketch_typed_compact_member_head`
+
+Spec §3.1 · layout: byte offsets · size: 74 B
+
+Offsets are relative to the indexed head-placement header.
+
+Parsed by:
+- `crates/cadmpeg-codec-f3d/src/design/decode/sketch.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 11 | 10 | `zero_run` | `bytes[10]` | little | spec | It stores ten zero bytes after the indexed header · value `[0, 0, 0, 0, 0, 0, 0, 0, 0, 0]` |
+| 21 | 2 | `flags` | `bytes[2]` | little | spec | `01 00` at offsets 21 and 22 · value `[1, 0]` |
+| 23 | 51 | `reference` | `bytes[51]` | little | spec | a 51-byte typed reference at offset 23 |
+
+Unstated regions:
+
+- `0..11` (11 B): The indexed header precedes the placement fields.
 
 ## Not tabulated
 

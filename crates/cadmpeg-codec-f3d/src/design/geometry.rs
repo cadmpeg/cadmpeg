@@ -189,6 +189,95 @@ pub(super) fn arrangement_region_containing_points(
     Ok(arrangement_face_region(geometric!(interior)))
 }
 
+pub(super) fn arrangement_region_matching_curve_program(
+    sketch: &cadmpeg_ir::sketches::Sketch,
+    entities: &[cadmpeg_ir::sketches::SketchEntity],
+    program: &[cadmpeg_ir::sketches::SketchEntityId],
+    tolerance: f64,
+    work: &ProfileGeometryWork,
+    ctx: &DecodeContext<'_>,
+) -> Result<Option<cadmpeg_ir::features::SketchProfileRegion>, CodecError> {
+    if program.is_empty() {
+        return Ok(None);
+    }
+    let segments = entities
+        .iter()
+        .filter(|entity| entity.sketch == sketch.id && !entity.construction)
+        .filter_map(|entity| {
+            if let cadmpeg_ir::sketches::SketchGeometryDefinition::Circle { center, radius } =
+                *entity.geometry.definition()
+            {
+                Some(ProfileBoundarySegment::Arc {
+                    center: center.get(),
+                    radius,
+                    start_angle: 0.0,
+                    end_angle: std::f64::consts::TAU,
+                })
+            } else {
+                profile_use_segment(entity, false)
+            }
+        })
+        .collect::<Vec<_>>();
+    let charged = segments
+        .len()
+        .checked_mul(segments.len())
+        .is_some_and(|count| work.arrangement.charge_by(count));
+    if !charged {
+        work.arrangement_skipped.set(true);
+        return Ok(None);
+    }
+    let mut nodes = Vec::new();
+    for (index, left) in segments.iter().enumerate() {
+        for right in segments.iter().skip(index + 1) {
+            if let Some(points) = analytic_segment_intersections(left, right) {
+                for point in points.into_iter().flatten() {
+                    arrangement_node(&mut nodes, point, tolerance);
+                }
+            }
+        }
+    }
+    let faces = geometric!(sketch_arrangement_faces_with_nodes(
+        sketch, entities, tolerance, work, ctx, nodes
+    )?);
+    let mut selected = None;
+    for face in &faces {
+        let mut boundary = Vec::new();
+        for use_ in &face.boundary {
+            if boundary.last().copied() != Some(&use_.entity) {
+                boundary.push(&use_.entity);
+            }
+        }
+        if boundary.len() > 1 && boundary.first() == boundary.last() {
+            boundary.pop();
+        }
+        if boundary.len() != program.len() {
+            continue;
+        }
+        let count = program.len();
+        let charged = count
+            .checked_mul(count)
+            .and_then(|count| count.checked_mul(2))
+            .is_some_and(|count| work.arrangement.charge_by(count));
+        if !charged {
+            work.arrangement_skipped.set(true);
+            return Ok(None);
+        }
+        let matches = (0..count).any(|start| {
+            (0..count).all(|index| *boundary[(start + index) % count] == program[index])
+                || (0..count)
+                    .all(|index| *boundary[(start + count - index) % count] == program[index])
+        });
+        if !matches {
+            continue;
+        }
+        if selected.is_some() {
+            return Ok(None);
+        }
+        selected = Some(face);
+    }
+    Ok(selected.and_then(arrangement_face_region))
+}
+
 /// The region `face` bounds, or `None` when an island inside it needs a hole
 /// ring the face walk does not give.
 fn arrangement_face_region(
@@ -209,10 +298,20 @@ fn sketch_arrangement_faces(
     work: &ProfileGeometryWork,
     ctx: &DecodeContext<'_>,
 ) -> Result<Option<Vec<SketchArrangementFace>>, CodecError> {
+    sketch_arrangement_faces_with_nodes(sketch, entities, tolerance, work, ctx, Vec::new())
+}
+
+fn sketch_arrangement_faces_with_nodes(
+    sketch: &cadmpeg_ir::sketches::Sketch,
+    entities: &[cadmpeg_ir::sketches::SketchEntity],
+    tolerance: f64,
+    work: &ProfileGeometryWork,
+    ctx: &DecodeContext<'_>,
+    mut nodes: Vec<Point2>,
+) -> Result<Option<Vec<SketchArrangementFace>>, CodecError> {
     use cadmpeg_ir::features::SketchProfileBoundaryUse;
     use cadmpeg_ir::sketches::{SketchEntityUse, SketchGeometryDefinition};
 
-    let mut nodes = Vec::<Point2>::new();
     let mut pending = Vec::<SketchProfileBoundaryUse>::new();
     let mut circles = Vec::new();
     let mut candidate_uses = Vec::new();

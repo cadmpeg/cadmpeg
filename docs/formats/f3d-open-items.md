@@ -702,3 +702,27 @@ the native feature when a fixed lane carries a symmetric distance.
 **Conflict.** None.
 
 **Note.** Keep this envelope native. Emit `feature.move-unprojected` when no admitted transform defines the Move feature.
+
+### DR-124. Trim operands in typed profile curve entries
+
+**Question.** How do the three u32 operands of a typed profile curve entry select a partial curve when one source loop repeats a curve identity?
+
+**Known.** The identity record stores two region lists. Each region has counted boundary loops with exterior flags. Each curve entry stores a primary identity, a secondary identity, and three u32 operands. A complete neutral loop match or a unique atomic arrangement boundary program resolves without a partial-curve interpretation.
+
+**Need.** Controlled selections of adjacent regions with one shared curve, and of intersecting curves with distinct selected regions, to bind each operand to curve orientation and trim bounds.
+
+**Conflict.** None.
+
+**Note.** A repeated identity within one source loop does not prove a complete neutral loop. A program without one unique atomic arrangement match retains its native identity and loss.
+
+### DR-125. Counted face-target recipe without a unique historical face
+
+**Question.** Which counted bounded-face recipe clauses select a termination face when persistent references retain several preceding support faces?
+
+**Known.** A termination group identifies the face operand. The operand retains its counted recipe nodes, ordered prefix references, and state-local support contexts. A unique preceding face or convergent support context supplies a historical selection.
+
+**Need.** Controlled face-target selections that vary the selected planar face while the body topology and other prefix references remain fixed.
+
+**Conflict.** None.
+
+**Note.** Candidate membership, planar support, and absence of changed faces do not by themselves identify a selected face.

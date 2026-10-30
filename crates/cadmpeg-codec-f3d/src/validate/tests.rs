@@ -1953,3 +1953,5 @@ fn loft_accepts_either_body_group_role() {
         ));
     }
 }
+
+mod profile_curves;
