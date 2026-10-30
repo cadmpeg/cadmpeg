@@ -176,6 +176,10 @@ pub(crate) enum F3dLossCode {
     HistoryDependencyAmbiguous,
     /// A historical face selection cannot bind uniquely to emitted input topology members.
     HistoricalFaceSelectionUnbound,
+    /// Historical edge midpoint geometry could not be resolved from feature selections.
+    HistoricalEdgeMidpointsUnresolved,
+    /// Historical body bounding geometry could not be computed from point carriers.
+    HistoricalBodyBoundsUnresolved,
     /// Sketch relations retain native operands; no unique neutral relation.
     SketchRelationNativeRetained,
     /// Sketch dimensions retain native operands; no unique neutral dimension.
@@ -445,6 +449,8 @@ impl F3dLossCode {
         Self::HistoryDependencyUnprojected,
         Self::HistoryDependencyAmbiguous,
         Self::HistoricalFaceSelectionUnbound,
+        Self::HistoricalEdgeMidpointsUnresolved,
+        Self::HistoricalBodyBoundsUnresolved,
         Self::SketchRelationNativeRetained,
         Self::SketchDimensionNativeRetained,
         Self::SketchPlacementUnprojected,
@@ -616,6 +622,8 @@ impl F3dLossCode {
             Self::ParameterExpressionUnbound => "parameter.expression-unbound",
             Self::HistoryDependencyUnprojected => "history.dependency-unprojected",
             Self::HistoricalFaceSelectionUnbound => "history.face-selection-unbound",
+            Self::HistoricalEdgeMidpointsUnresolved => "history.edge-midpoints-unresolved",
+            Self::HistoricalBodyBoundsUnresolved => "history.body-bounds-unresolved",
             Self::HistoryDependencyAmbiguous => "history.dependency-ambiguous",
             Self::SketchRelationNativeRetained => "sketch.relation-native",
             Self::SketchDimensionNativeRetained => "sketch.dimension-native",
@@ -817,6 +825,8 @@ impl F3dLossCode {
             | Self::HistoryDependencyUnprojected
             | Self::HistoryDependencyAmbiguous
             | Self::HistoricalFaceSelectionUnbound
+            | Self::HistoricalEdgeMidpointsUnresolved
+            | Self::HistoricalBodyBoundsUnresolved
             | Self::SketchRelationNativeRetained
             | Self::SketchDimensionNativeRetained
             | Self::SketchPlacementUnprojected
@@ -956,6 +966,8 @@ impl F3dLossCode {
             | Self::HistoryDependencyUnprojected
             | Self::HistoryDependencyAmbiguous
             | Self::HistoricalFaceSelectionUnbound
+            | Self::HistoricalEdgeMidpointsUnresolved
+            | Self::HistoricalBodyBoundsUnresolved
             | Self::SketchRelationNativeRetained
             | Self::SketchDimensionNativeRetained
             | Self::SketchPlacementUnprojected
@@ -1170,6 +1182,8 @@ mod tests {
                 "history.dependency-unprojected",
                 "history.dependency-ambiguous",
                 "history.face-selection-unbound",
+                "history.edge-midpoints-unresolved",
+                "history.body-bounds-unresolved",
                 "sketch.relation-native",
                 "sketch.dimension-native",
                 "sketch.placement-unprojected",
