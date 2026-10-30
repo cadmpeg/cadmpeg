@@ -2604,16 +2604,13 @@ fn design_body_selection(
     let expected_count = entity_suffixes.len();
     let mut bodies = Vec::new();
     for suffix in entity_suffixes {
-        let mut matches = body_bindings
-            .iter()
-            .filter(|binding| {
-                native_stream(binding.id()) == Some(stream) && binding.entity_suffix == suffix
-            })
-            .filter_map(|binding| binding.body.as_ref());
-        let Some(body) = matches.next() else {
+        let mut matches = body_bindings.iter().filter(|binding| {
+            native_stream(binding.id()) == Some(stream) && binding.entity_suffix == suffix
+        });
+        let Some(body) = matches.next().and_then(|binding| binding.body.as_ref()) else {
             return BodySelection::Native(scope.id.clone());
         };
-        if matches.any(|candidate| candidate != body) {
+        if matches.any(|candidate| candidate.body.as_ref() != Some(body)) {
             return BodySelection::Native(scope.id.clone());
         }
         bodies.push(body.clone());

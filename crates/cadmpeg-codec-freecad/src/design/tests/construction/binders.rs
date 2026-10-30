@@ -2,7 +2,7 @@
 
 use crate::design::tests::definition;
 use crate::test_support::test_archive::archive;
-use crate::FcstdCodec;
+use crate::{test_support::non_placement_losses, FcstdCodec};
 use cadmpeg_ir::features::{FeatureDefinition, FeatureOperation};
 use cadmpeg_ir::{Codec, DecodeOptions};
 use std::io::Cursor;
@@ -133,8 +133,8 @@ fn distinguishes_absent_and_malformed_shape_binder_carriers() {
             ),
             "{name} expected native {kind}, got {actual:?}"
         );
-        assert_eq!(result.report().losses.len(), 1);
-        assert!(result.report().losses.iter().all(|loss| {
+        assert_eq!(non_placement_losses(result.report()).len(), 1);
+        assert!(non_placement_losses(result.report()).iter().all(|loss| {
             loss.code.namespace() == "fcstd"
                 && loss.code.local_code() == "feature.native-kind-retained"
                 && loss.severity == cadmpeg_ir::report::Severity::Blocking
@@ -151,7 +151,7 @@ fn distinguishes_absent_and_malformed_shape_binder_carriers() {
             ..
         })
     ));
-    assert!(shape_absent.report().losses.is_empty());
+    assert!(non_placement_losses(shape_absent.report()).is_empty());
 
     for name in [
         "Fuse",
@@ -234,7 +234,7 @@ fn distinguishes_absent_and_malformed_shape_binder_carriers() {
             assert_eq!(offset.open_result, name != "OffsetOpenResult");
             assert_eq!(offset.intersection, name != "OffsetIntersection");
         }
-        assert!(result.report().losses.is_empty(), "{name}");
+        assert!(non_placement_losses(result.report()).is_empty(), "{name}");
     }
 
     let malformed_bools = [

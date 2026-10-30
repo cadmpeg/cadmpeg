@@ -1639,3 +1639,86 @@ fn typed_profile_ambiguous_selection_retains_profile_loss() {
         )
     ));
 }
+
+#[test]
+fn stored_body_scope_keeps_opaque_payload_loss_after_history_projection() {
+    use crate::records::feature::scope::DesignFeatureKind;
+    use cadmpeg_ir::features::{
+        BodySelection, Feature, FeatureDefinition, FeatureEvaluation, FeatureId, FeatureOperation,
+    };
+    let scope = DesignParameterScope::empty(
+        "f3d:Design/BulkStream.dat:design-parameter-scope#90",
+        DesignFeatureKind::BaseFeature,
+        90,
+    );
+    let mut ir = cadmpeg_ir::document::CadIr::empty();
+    ir.model.features.push(Feature {
+        id: FeatureId::mint("test:model:feature#90").unwrap(),
+        ordinal: 0,
+        name: None,
+        suppressed: None,
+        dependencies: Default::default(),
+        source_properties: Default::default(),
+        source_tag: Some("Base Feature".into()),
+        source_text: None,
+        source_content: Default::default(),
+        evaluation: FeatureEvaluation::from_definition(FeatureDefinition::Operation(
+            FeatureOperation::BaseFeature {
+                bodies: BodySelection::Resolved {
+                    bodies: Default::default(),
+                    native: scope.id.clone(),
+                },
+            },
+        )),
+        native_ref: Some(scope.id.clone()),
+    });
+    let box_scope = DesignParameterScope::empty(
+        "f3d:Design/BulkStream.dat:design-parameter-scope#91",
+        DesignFeatureKind::BoxPrimitive,
+        91,
+    );
+    let mut box_feature = ir.model.features[0].clone();
+    box_feature.id = FeatureId::mint("test:model:feature#91").unwrap();
+    box_feature.ordinal = 1;
+    box_feature.source_tag = Some("BoxPrimitive".into());
+    box_feature.native_ref = Some(box_scope.id.clone());
+    box_feature
+        .evaluation
+        .set_definition(FeatureDefinition::Operation(FeatureOperation::Native {
+            kind: "BoxPrimitive".into(),
+            parameters: Default::default(),
+        }));
+    ir.model.features.push(box_feature);
+    let mut native = F3dNative::default();
+    native.design_parameter_scopes.push(scope);
+    native.design_parameter_scopes.push(box_scope);
+    let mut report = cadmpeg_ir::codec::DecodeBody {
+        transfer: cadmpeg_ir::report::decode::DecodeTransfer::full(true),
+        coverage: Default::default(),
+        losses: Vec::new(),
+        notes: Vec::new(),
+        transfer_ledger: Default::default(),
+    };
+    report_design_projection_gaps(
+        &mut report,
+        &cadmpeg_test_support::service_decode_context(),
+        &ir,
+        &native,
+    )
+    .unwrap();
+    assert!(report
+        .losses
+        .iter()
+        .any(|loss| loss.code == F3dLossCode::FeatureScopePayloadUninterpreted.kind()));
+    assert!(report
+        .losses
+        .iter()
+        .any(|loss| loss.code == F3dLossCode::FeatureStoredBodiesEmpty.kind()));
+    assert!(report.losses.iter().any(|loss| loss.code
+        == F3dLossCode::FeatureDefinitionIncomplete.kind()
+        && loss.message.contains("BoxPrimitive=1")));
+    assert!(!report
+        .losses
+        .iter()
+        .any(|loss| loss.code == F3dLossCode::FeatureStoredBodiesRecipeAbsent.kind()));
+}
