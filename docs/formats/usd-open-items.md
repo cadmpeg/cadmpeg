@@ -34,7 +34,7 @@ This document uses ASD-STE100 Simplified Technical English. Attribute names and 
 
 **Question.** How does a curve of `BrepCurveUvNurbAPI` name the edgeuse that it trims?
 
-**Known.** `usd.md` §17.1 states that curve `i` is the trim curve of edgeuse `i` when the API holds one curve for each edgeuse. The schema gives the number of curves and no edgeuse index. The proposal text states that an edgeuse stores the index of its trim curve. The decoder reads no trim curves when the count differs from the edgeuse count.
+**Known.** `usd.md` §17.1 states that curve `i` is the trim curve of edgeuse `i` when the API holds one curve for each edgeuse. The schema gives the number of curves and no edgeuse index. The proposal text states that an edgeuse stores the index of its trim curve. When the API is absent, or its count differs from the edgeuse count, the decoder projects each edge curve onto the surface of each face that uses it.
 
 **Need.** We must read a prim whose trim curves cover some edgeuses only.
 

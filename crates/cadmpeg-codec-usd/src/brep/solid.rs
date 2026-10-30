@@ -930,6 +930,9 @@ pub(crate) fn decode(packed: &Packed) -> Result<Decoded, Refusal> {
                 }
             }
         }
+        if trims.is_none() {
+            super::convert::derive_pcurves(&mut brep);
+        }
         out.faces.push(faces_in_order);
         out.breps.push(brep);
     }

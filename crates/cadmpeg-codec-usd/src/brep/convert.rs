@@ -18,8 +18,11 @@ const MAX_ARC_SEGMENT: f64 = std::f64::consts::FRAC_PI_2;
 const BOX_MARGIN: f64 = 1e-6;
 /// Relative difference within which an arc sweep is a full turn.
 const FULL_TURN: f64 = 1e-5;
-/// Points at which a pcurve is checked against its edge curve.
+/// The fewest points at which a pcurve is checked against its edge curve.
 const ON_EDGE_SAMPLES: usize = 16;
+/// The position of each check point within its span of a pcurve, away from
+/// the span ends, where a polygon of points on the edge meets the edge.
+const ON_EDGE_OFFSET: f64 = 0.43;
 /// Gauss-Newton steps of a point projection onto a NURBS surface.
 const PROJECTION_STEPS: usize = 24;
 /// Step of a surface difference quotient, as a share of the domain.
@@ -1127,7 +1130,7 @@ fn basis(knots: &[f64], degree: usize, count: usize, t: f64) -> Option<(usize, V
 }
 
 /// The point at `(u, v)` of a NURBS surface record.
-fn surface_point(surface: &NurbsSurfaceRecord, [u, v]: [f64; 2]) -> Option<V3> {
+pub(crate) fn surface_point(surface: &NurbsSurfaceRecord, [u, v]: [f64; 2]) -> Option<V3> {
     let (p, q) = (
         surface.u_order.checked_sub(1)?,
         surface.v_order.checked_sub(1)?,
@@ -1228,9 +1231,11 @@ fn on_edge(
     ) else {
         return false;
     };
-    (0..=ON_EDGE_SAMPLES).all(|index| {
-        let fraction = cadmpeg_core::convert::f64_from_index(index).unwrap_or(0.0)
-            / cadmpeg_core::convert::f64_from_index(ON_EDGE_SAMPLES).unwrap_or(1.0);
+    let spans = pcurve.points.len().max(ON_EDGE_SAMPLES);
+    (0..spans).all(|index| {
+        let fraction = (cadmpeg_core::convert::f64_from_index(index).unwrap_or(0.0)
+            + ON_EDGE_OFFSET)
+            / cadmpeg_core::convert::f64_from_index(spans).unwrap_or(1.0);
         let Some(point) = evaluate(pcurve, low + (high - low) * fraction)
             .and_then(|uv| surface_point(surface, uv))
         else {
@@ -1270,6 +1275,186 @@ fn projected_nurbs_pcurve(
         project(surface, evaluate(curve, t)?, evaluate(guide, along)?)
     };
     traced(&image, 0.0, 1.0, tolerance)
+}
+
+/// Samples of an edge that a derived pcurve follows from one point to the
+/// next.
+const GUIDE_SAMPLES: usize = 32;
+/// Grid cells along each direction of a first nearest-point search.
+const SEARCH_CELLS: usize = 16;
+
+/// The parameters on `surface` of the grid point nearest `point`.
+fn grid_nearest(surface: &NurbsSurfaceRecord, point: V3) -> Option<[f64; 2]> {
+    let [u, v] = surface_domain(surface)?;
+    let cells = cadmpeg_core::convert::f64_from_index(SEARCH_CELLS)?;
+    let mut best: Option<(f64, [f64; 2])> = None;
+    for i in 0..=SEARCH_CELLS {
+        for j in 0..=SEARCH_CELLS {
+            let uv = [
+                u[0] + (u[1] - u[0]) * cadmpeg_core::convert::f64_from_index(i)? / cells,
+                v[0] + (v[1] - v[0]) * cadmpeg_core::convert::f64_from_index(j)? / cells,
+            ];
+            let gap = sub(surface_point(surface, uv)?, point);
+            let distance = dot(gap, gap);
+            if best.is_none_or(|(least, _)| distance < least) {
+                best = Some((distance, uv));
+            }
+        }
+    }
+    best.map(|(_, uv)| uv)
+}
+
+/// Whether `surface` closes along `axis`: its two boundary curves across
+/// that direction coincide within `tolerance`.
+fn closes(surface: &NurbsSurfaceRecord, axis: usize, tolerance: f64) -> bool {
+    let Some(domain) = surface_domain(surface) else {
+        return false;
+    };
+    let other = 1 - axis;
+    (0..=SEARCH_CELLS).all(|step| {
+        let along = domain[other][0]
+            + (domain[other][1] - domain[other][0])
+                * cadmpeg_core::convert::f64_from_index(step).unwrap_or(0.0)
+                / cadmpeg_core::convert::f64_from_index(SEARCH_CELLS).unwrap_or(1.0);
+        let mut low = [0.0; 2];
+        let mut high = [0.0; 2];
+        low[axis] = domain[axis][0];
+        high[axis] = domain[axis][1];
+        low[other] = along;
+        high[other] = along;
+        match (surface_point(surface, low), surface_point(surface, high)) {
+            (Some(a), Some(b)) => dot(sub(a, b), sub(a, b)).sqrt() <= tolerance,
+            _ => false,
+        }
+    })
+}
+
+/// The guide of a derived pcurve: the projections of samples along the
+/// oriented edge, each from the last. On a closed surface, a guide that
+/// runs along the seam takes the side that leaves the face to its left.
+fn derived_guide(
+    surface: &NurbsSurfaceRecord,
+    curve: &NurbsCurveRecord<3>,
+    range: [f64; 2],
+    forward: bool,
+    counterclockwise: bool,
+    tolerance: f64,
+) -> Option<NurbsCurveRecord<2>> {
+    let count = cadmpeg_core::convert::f64_from_index(GUIDE_SAMPLES)?;
+    let mut points: Vec<[f64; 2]> = Vec::new();
+    for index in 0..=GUIDE_SAMPLES {
+        let fraction = cadmpeg_core::convert::f64_from_index(index)? / count;
+        let t = if forward {
+            range[0] + (range[1] - range[0]) * fraction
+        } else {
+            range[1] - (range[1] - range[0]) * fraction
+        };
+        let point = evaluate(curve, t)?;
+        let start = match points.last() {
+            Some(previous) => *previous,
+            None => grid_nearest(surface, point)?,
+        };
+        points.push(project(surface, point, start)?);
+    }
+    let domain = surface_domain(surface)?;
+    for axis in 0..2 {
+        let other = 1 - axis;
+        let width = (domain[axis][1] - domain[axis][0]).abs();
+        let on_seam = points.iter().all(|point| {
+            (point[axis] - domain[axis][0]).abs() <= BOX_MARGIN * width
+                || (domain[axis][1] - point[axis]).abs() <= BOX_MARGIN * width
+        });
+        if !on_seam || !closes(surface, axis, tolerance) {
+            continue;
+        }
+        let rising = points.last()?[other] > points.first()?[other];
+        // Seen from the side toward N, a counterclockwise boundary runs up
+        // the high-u side and along the low-v side.
+        let high = if axis == 0 { rising } else { !rising };
+        let side = if high == counterclockwise {
+            domain[axis][1]
+        } else {
+            domain[axis][0]
+        };
+        for point in &mut points {
+            point[axis] = side;
+        }
+    }
+    let n = points.len();
+    let mut knots = vec![0.0, 0.0];
+    for index in 1..n - 1 {
+        knots.push(
+            cadmpeg_core::convert::f64_from_index(index)?
+                / cadmpeg_core::convert::f64_from_index(n - 1)?,
+        );
+    }
+    knots.extend([1.0, 1.0]);
+    Some(NurbsCurveRecord {
+        order: 2,
+        weights: vec![1.0; points.len()],
+        points,
+        knots,
+        form: Form::Open,
+    })
+}
+
+/// Adds a pcurve for each oriented edge of `brep`, a B-rep on NURBS
+/// carriers with no pcurves: the projection of its edge curve onto its
+/// face surface. Leaves `brep` as it is when a projection fails.
+pub(crate) fn derive_pcurves(brep: &mut Brep) {
+    let tolerance = trace_tolerance(brep);
+    let mut pcurves: Vec<(usize, NurbsCurveRecord<2>)> = Vec::new();
+    for face in &brep.faces {
+        let (Catalog::Nurbs, surface) = face.surface else {
+            return;
+        };
+        let Some(surface) = brep.nurbs_surfaces.get(surface) else {
+            return;
+        };
+        for (position, loop_index) in face.loops.iter().enumerate() {
+            let Some(loop_) = brep.loops.get(*loop_index) else {
+                return;
+            };
+            let counterclockwise = (position == 0) == face.same_sense;
+            for oriented_index in &loop_.oriented_edges {
+                let Some(oriented) = brep.oriented_edges.get(*oriented_index) else {
+                    return;
+                };
+                let Some(edge) = brep.edges.get(oriented.edge) else {
+                    return;
+                };
+                let Some((Catalog::Nurbs, curve)) = edge.curve else {
+                    return;
+                };
+                let Some(curve) = brep.nurbs_curves.get(curve) else {
+                    return;
+                };
+                let forward = oriented.orientation == edge.same_sense;
+                let traced = derived_guide(
+                    surface,
+                    curve,
+                    edge.range,
+                    forward,
+                    counterclockwise,
+                    brep.tolerance,
+                )
+                .and_then(|guide| {
+                    projected_nurbs_pcurve(surface, &guide, curve, edge.range, forward, tolerance)
+                });
+                let Some(traced) = traced else {
+                    return;
+                };
+                pcurves.push((*oriented_index, traced));
+            }
+        }
+    }
+    for (oriented, curve) in pcurves {
+        brep.nurbs_pcurves.push(curve);
+        let index = brep.nurbs_pcurves.len() - 1;
+        if let Some(record) = brep.oriented_edges.get_mut(oriented) {
+            record.pcurve = Some((Catalog::Nurbs, index));
+        }
+    }
 }
 
 /// The parameter-space deviation of a traced pcurve: the model tolerance,

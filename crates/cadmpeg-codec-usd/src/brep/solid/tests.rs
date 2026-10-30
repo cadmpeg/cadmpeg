@@ -125,3 +125,40 @@ fn a_face_between_two_solid_regions_is_refused() {
     let error = decode(&packed).expect_err("refused");
     assert!(error.contains("two solid regions"), "{error}");
 }
+
+#[test]
+fn a_b_rep_with_no_trim_curves_reads_with_derived_pcurves() {
+    let mut packed = Packed::default();
+    packed.push(&cube(), false).expect("encode");
+    assert!(packed.trim_curves.is_none());
+    let decoded = decode(&packed).expect("decode");
+    let brep = &decoded.breps[0];
+    assert!(brep
+        .oriented_edges
+        .iter()
+        .all(|oriented| oriented.pcurve.is_some()));
+    for (face, record) in brep.faces.iter().enumerate() {
+        let surface = &brep.nurbs_surfaces[face];
+        for oriented in record
+            .loops
+            .iter()
+            .flat_map(|loop_| &brep.loops[*loop_].oriented_edges)
+        {
+            let record = &brep.oriented_edges[*oriented];
+            let (_, pcurve) = record.pcurve.expect("pcurve");
+            let curve = &brep.nurbs_pcurves[pcurve];
+            let edge = &brep.edges[record.edge];
+            let end = if record.orientation {
+                edge.vertices[1]
+            } else {
+                edge.vertices[0]
+            };
+            let last = crate::brep::convert::evaluate(curve, curve.knots[curve.points.len()])
+                .expect("point");
+            let point = crate::brep::convert::surface_point(surface, last).expect("point");
+            for (value, expected) in point.iter().zip(brep.vertices[end]) {
+                assert!((value - expected).abs() < 1e-9, "{face}");
+            }
+        }
+    }
+}
