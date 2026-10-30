@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 use super::*;
 
+mod native;
+
 fn attribute(index: usize, owner: i64, family: &str, suffix: &[i64]) -> Record {
     let mut tokens = vec![
         Token::Ref(-1),

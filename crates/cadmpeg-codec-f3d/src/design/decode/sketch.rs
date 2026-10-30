@@ -8,6 +8,7 @@ use crate::records::sketch_placement::{
     DesignSketchFrame, DesignSketchFrameForm, SketchPlacementMatrix,
 };
 
+use crate::layout::sketch_typed_compact_member_head as typed_compact;
 use cadmpeg_core::container::ContainerRole;
 
 use crate::bytes::lp_ascii_filtered_view;
@@ -658,6 +659,22 @@ fn parse_member_run_head_placement(
         let head_end = next_indexed_record_offset(bytes, head_at + 11).unwrap_or(bytes.len());
         let frame_length = head_end.checked_sub(head_at)?;
         let form = match frame_length {
+            typed_compact::LEN
+                if bytes.get(head_at + typed_compact::ZERO_RUN..head_at + typed_compact::FLAGS)
+                    == Some(&typed_compact::ZERO_RUN_VALUE[..])
+                    && bytes.get(
+                        head_at + typed_compact::FLAGS..head_at + typed_compact::REFERENCE,
+                    ) == Some(&typed_compact::FLAGS_VALUE[..])
+                    && crate::bytes::typed_local_reference_target(
+                        bytes,
+                        head_at + typed_compact::REFERENCE,
+                    )
+                    .is_some() =>
+            {
+                DesignSketchFrameForm::MemberTypedCompact {
+                    paired_byte_offset: u64_from_index(paired_at),
+                }
+            }
             34 if bytes.get(head_at + 11..head_at + 21) == Some(&[0u8; 10][..])
                 && bytes.get(head_at + 21..head_at + 24) == Some(&[1, 0, 1][..])
                 && bytes.get(head_at + 28..head_at + 34) == Some(&[0u8; 6][..]) =>

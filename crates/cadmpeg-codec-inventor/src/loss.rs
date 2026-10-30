@@ -65,6 +65,8 @@ pub(crate) enum InventorLossCode {
     FeatureLabelNameReplaced,
     /// Typed feature records have an operation graph that is not closed.
     FeatureOperationGraphOpen,
+    /// An edge treatment retains an unresolved empty edge-item index list.
+    FeatureEdgeSelectionEmptyItemsNative,
     /// Extrusion construction operands remain native.
     FeatureExtrusionOperandsNative,
     /// An extrusion retains its exact profile selection without a neutral sketch graph.
@@ -97,6 +99,8 @@ pub(crate) enum InventorLossCode {
     FeatureRevolveOperandsNative,
     /// Mirror operands differ from the identity-frame, zero-option construction.
     FeatureMirrorOperandsNative,
+    /// Split construction operands or result topology remain native.
+    FeatureSplitOperandsNative,
     /// A history work plane's stored in-plane axes are not orthonormal.
     FeatureWorkPlaneFrameNative,
     /// Revolve extents retain unresolved angular termination operands.
@@ -203,6 +207,7 @@ impl InventorLossCode {
         Self::FeatureProfileBodyUndecoded,
         Self::FeatureLabelNameReplaced,
         Self::FeatureOperationGraphOpen,
+        Self::FeatureEdgeSelectionEmptyItemsNative,
         Self::FeatureExtrusionOperandsNative,
         Self::FeatureExtrusionProfileNative,
         Self::FeatureRectangularPatternOperandsNative,
@@ -219,6 +224,7 @@ impl InventorLossCode {
         Self::FeatureSheetMetalStyleFormsNative,
         Self::FeatureRevolveOperandsNative,
         Self::FeatureMirrorOperandsNative,
+        Self::FeatureSplitOperandsNative,
         Self::FeatureWorkPlaneFrameNative,
         Self::FeatureRevolveExtentNative,
         Self::FeatureRevolveDirectionNative,
@@ -290,6 +296,9 @@ impl InventorLossCode {
             Self::FeatureExtrusionOperandsNative => "feature.extrusion-operands-native",
             Self::FeatureExtrusionProfileNative => "feature.extrusion-profile-native",
             Self::FeatureOperationGraphOpen => "feature.operation-graph-open",
+            Self::FeatureEdgeSelectionEmptyItemsNative => {
+                "feature.edge-selection-empty-items-native"
+            }
             Self::FeatureThreadDefinitionPartial => "feature.thread-definition-partial",
             Self::FeatureThickenOperandsNative => "feature.thicken-operands-native",
             Self::FeatureShellDefinitionPartial => "feature.shell-definition-partial",
@@ -312,6 +321,7 @@ impl InventorLossCode {
             }
             Self::FeatureSheetMetalStyleFormsNative => "feature.sheet-metal-style-forms-native",
             Self::FeatureMirrorOperandsNative => "feature.mirror-operands-native",
+            Self::FeatureSplitOperandsNative => "feature.split-operands-native",
             Self::FeatureWorkPlaneFrameNative => "feature.work-plane-frame-native",
             Self::FeatureRevolveOperandsNative => "feature.revolve-operands-native",
             Self::FeatureRevolveExtentNative => "feature.revolve-extent-native",
@@ -393,6 +403,7 @@ impl InventorLossCode {
             }
             Self::KernelHeaderToleranceUnresolved => LossTaxonomy::GeometryNotTransferred,
             Self::FeatureOperationGraphOpen
+            | Self::FeatureEdgeSelectionEmptyItemsNative
             | Self::FeatureExtrusionOperandsNative
             | Self::FeatureExtrusionProfileNative
             | Self::FeatureRectangularPatternOperandsNative
@@ -408,6 +419,7 @@ impl InventorLossCode {
             | Self::FeatureSheetMetalBendControlsRetained
             | Self::FeatureSheetMetalStyleFormsNative
             | Self::FeatureMirrorOperandsNative
+            | Self::FeatureSplitOperandsNative
             | Self::FeatureWorkPlaneFrameNative
             | Self::FeatureRevolveOperandsNative
             | Self::FeatureRevolveExtentNative
@@ -502,6 +514,7 @@ mod tests {
                 "feature.profile-body-undecoded",
                 "feature.label-name-replaced",
                 "feature.operation-graph-open",
+                "feature.edge-selection-empty-items-native",
                 "feature.extrusion-operands-native",
                 "feature.extrusion-profile-native",
                 "feature.rectangular-pattern-operands-native",
@@ -518,6 +531,7 @@ mod tests {
                 "feature.sheet-metal-style-forms-native",
                 "feature.revolve-operands-native",
                 "feature.mirror-operands-native",
+                "feature.split-operands-native",
                 "feature.work-plane-frame-native",
                 "feature.revolve-extent-native",
                 "feature.revolve-direction-native",

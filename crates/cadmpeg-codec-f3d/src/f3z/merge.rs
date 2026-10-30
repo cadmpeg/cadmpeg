@@ -297,11 +297,13 @@ impl MergeSession<'_, '_> {
                     ClassifiedMember::Scanned(member_scan) => member_scan,
                     ClassifiedMember::Unreadable(_) => continue,
                 };
-                let component = match crate::decode::decode_archive_member(
-                    self.ctx,
-                    member_scan,
-                    &self.archive.layers,
-                ) {
+                let component = match super::observer::observed(&reference.relative_path, || {
+                    crate::decode::decode_archive_member(
+                        self.ctx,
+                        member_scan,
+                        &self.archive.layers,
+                    )
+                }) {
                     Ok(component) => {
                         for (key, pose) in &component.operation_poses {
                             let key = rescope(key, &occurrence).ok_or_else(|| {

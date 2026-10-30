@@ -214,6 +214,7 @@ report a loss; a caller may report a general failure for the same item.
 | `cadmpeg-measure`        | `src/boundary/piece.rs`                           | `MAX_SINGULAR_APPROACH_STEPS`            | `64`                                                   | 4    | Golden-section steps of the search for a carrier singular point between two unwrap samples whose parameter image jumps by a quarter period or more, run when the unwrap reaches its sample cap. A point within the allowance makes the face's bounded quantities `boundary.inversion-failed`; otherwise they are `evaluation.work-exhausted`; measurement continues. |
 | `cadmpeg-measure`        | `src/boundary/pcurve.rs`                          | `MAX_PCURVE_RECOVERY_STEPS`              | `32`                                                   | 4    | Newton steps of one pcurve endpoint recovery from one seed. Exhaustion tries the next seed; when no seed converges, no recovered interval qualifies and the face's bounded quantities are `boundary.inversion-failed`; measurement continues. |
 | `cadmpeg-measure`        | `src/canonical/surface.rs`                        | `MAX_INVERSION_REFINEMENT_STEPS`         | `16`                                                   | 4    | Gauss–Newton steps refining one point inverted onto a NURBS carrier. The last step enters the numeric error; a refined point that does not map within the allowance makes the face's bounded quantities `boundary.inversion-failed`; measurement continues. |
+| `cadmpeg-measure`        | `src/canonical/column.rs`                         | `MAX_COLUMN_DEGREE`                      | `15`                                                   | N    | Highest NURBS degree a column evaluates along its isoline with stack basis buffers. A higher degree is evaluated point by point; the output does not change. |
 | `cadmpeg-measure`        | `src/region/closed.rs`                            | `MAX_MEMBERSHIP_PATHS`                   | `8`                                                    | 4    | Reference points one region membership query tries on a sphere or torus. When none gives a region indicator of 0 or 1, the face's bounded quantities are `evaluation.work-exhausted`; measurement continues. |
 | `cadmpeg-measure`        | `src/region/lifts.rs`                             | `MAX_SPAN_LIFTS`                         | `1 << 16`                                              | 4    | Whole periods that one loop polyline segment may cover where a region membership path, a crossing count on a cylinder or cone, or a torus cut visits each lift of the segment. More make the face's bounded quantities `evaluation.work-exhausted`; measurement continues. |
 | `cadmpeg-measure`        | `src/eigen.rs`                                    | `MAX_JACOBI_SWEEPS`                      | `32`                                                   | 4    | Cyclic Jacobi sweeps of one principal-moment decomposition. At the cap the off-diagonal norm left enters the numeric error of the principal moments and axes; measurement continues. |
@@ -485,7 +486,7 @@ are the slice mechanisms themselves.
 
 ## Totals
 
-Production `MAX_*` constants: 270.
+Production `MAX_*` constants: 271.
 
 | Kind | Meaning                    | Count |
 | ---- | -------------------------- | ----- |
@@ -493,13 +494,13 @@ Production `MAX_*` constants: 270.
 | 2    | Per-input bound            | 71    |
 | 3    | Session ceiling            | 0     |
 | 4    | Local work cap             | 135   |
-| N    | Not a decode bound         | 29    |
-|      | Total                      | 270   |
+| N    | Not a decode bound         | 30    |
+|      | Total                      | 271   |
 
 The six `ResourceLimits` fields are the session ceilings and are not
 `MAX_*` constants. No `MAX_*` constant is kind 3.
 
-By crate: `cadmpeg-core` 3, `cadmpeg-ir` 17, `cadmpeg-measure` 20, `cadmpeg-asm` 4,
+By crate: `cadmpeg-core` 3, `cadmpeg-ir` 17, `cadmpeg-measure` 21, `cadmpeg-asm` 4,
 `cadmpeg-protein` 3, `cadmpeg` 2, `cadmpeg-codec-step` 8,
 `cadmpeg-codec-iges` 16, `cadmpeg-codec-inventor` 3,
 `cadmpeg-codec-freecad` 16, `cadmpeg-codec-rhino` 32, `cadmpeg-codec-f3d` 19,

@@ -734,22 +734,53 @@ fn split_validation_recomputes_operands_and_the_plane_feature() -> TestResult {
         &cadmpeg_ir::identity_namespace!("inventor", "design", "feature"),
         cadmpeg_ir::identity_key!("other"),
     );
-    for (tool, mismatches) in [
+    for (mode, tool, mismatches) in [
         (
+            3,
             cadmpeg_ir::features::SplitBodyTool::Plane {
                 plane: datum.id.clone(),
             },
             0,
         ),
         (
+            3,
             cadmpeg_ir::features::SplitBodyTool::Plane { plane: other },
             1,
         ),
         (
+            3,
             cadmpeg_ir::features::SplitBodyTool::Faces(FaceSelection::Native(properties[10].id())),
             1,
         ),
+        (
+            1,
+            cadmpeg_ir::features::SplitBodyTool::Plane {
+                plane: datum.id.clone(),
+            },
+            1,
+        ),
+        (
+            2,
+            cadmpeg_ir::features::SplitBodyTool::Plane {
+                plane: datum.id.clone(),
+            },
+            1,
+        ),
     ] {
+        let mut properties = properties.clone();
+        let source = &properties[0];
+        let mut payload = (**source).clone();
+        payload.kind = crate::feature::PmDcFeaturePropertyKind::Enumeration {
+            family: crate::feature::PmDcFeatureEnumFamily::Auxiliary,
+            type_value: 3,
+            value: mode,
+        };
+        properties[0] = crate::record_identity::Located::new(
+            payload,
+            source.identity.type_id.clone(),
+            source.identity.segment_token.clone(),
+            source.identity.record_ordinal,
+        );
         let mut data = empty_data();
         data.pm_dc_work_planes = vec![plane.clone()];
         data.pm_dc_features = vec![split.clone()];

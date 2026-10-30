@@ -36,7 +36,7 @@ use crate::{design::DesignInventory, sketch::SketchInventory};
 pub(crate) mod base;
 pub(crate) mod combine;
 pub(crate) mod derived;
-mod edge_selection;
+pub(crate) mod edge_selection;
 pub(crate) mod extrusion;
 pub(crate) mod history;
 mod hole;
@@ -146,6 +146,9 @@ const SURFACE_TYPE: [u8; 16] = [
 ];
 /// Surface-form value of a plane in a surface record.
 const PLANE_SURFACE_FORM: u32 = 25;
+/// First segment major version whose surface records store a u32 extension
+/// value after the three references.
+const SURFACE_EXTENSION_FIRST_MAJOR: u8 = 22;
 /// Work-plane value that precedes the explicit plane frame in its extended form.
 const WORK_PLANE_FRAME_MARKER: u32 = 0x203;
 const WORK_AXIS_TYPE: [u8; 16] = [
@@ -186,6 +189,7 @@ pub(crate) struct FeatureProjection {
     pub(crate) extrusion_losses: Vec<cadmpeg_ir::report::loss::LossNote>,
     pub(crate) revolve_losses: Vec<cadmpeg_ir::report::loss::LossNote>,
     pub(crate) loft_losses: Vec<cadmpeg_ir::report::loss::LossNote>,
+    pub(crate) split_losses: Vec<cadmpeg_ir::report::loss::LossNote>,
     pub(crate) mirror_losses: Vec<cadmpeg_ir::report::loss::LossNote>,
     /// Closed loops that resolved extrusion profiles append to sketch
     /// profile tables, by sketch id, in table order.
@@ -294,6 +298,14 @@ pub(crate) enum PmDcFeaturePropertyKind {
     },
     PlaneSurface {
         references: [crate::pmdc::PmDcReference; 3],
+        /// The u32 value that segment major versions above 21 store after the
+        /// references.
+        #[serde(
+            default,
+            skip_serializing_if = "Option::is_none",
+            deserialize_with = "deserialize_surface_extension"
+        )]
+        extension: Option<u32>,
         state: u8,
         surface_form: u32,
         value: u32,
@@ -379,6 +391,7 @@ pub(crate) struct PmDcLinkedHeader {
 }
 
 cadmpeg_core::named_optional_field!(deserialize_linked_flags_extension, u32, "flags_extension");
+cadmpeg_core::named_optional_field!(deserialize_surface_extension, u32, "extension");
 cadmpeg_core::named_optional_field!(
     deserialize_edge_set_option,
     crate::pmdc::PmDcReference,
@@ -1409,6 +1422,9 @@ fn parse_surface(
         cursor.reference("surface reference")?,
         cursor.reference("surface reference")?,
     ];
+    let extension = (version >= SURFACE_EXTENSION_FIRST_MAJOR)
+        .then(|| cursor.u32("surface extension"))
+        .transpose()?;
     let state = cursor.u8("surface state")?;
     let form = cursor.u32("surface form")?;
     if form != PLANE_SURFACE_FORM {
@@ -1424,6 +1440,7 @@ fn parse_surface(
         header,
         PmDcFeaturePropertyKind::PlaneSurface {
             references,
+            extension,
             state,
             surface_form: form,
             value,
@@ -2046,6 +2063,7 @@ pub(crate) fn project(
             extrusion_losses: Vec::new(),
             revolve_losses: Vec::new(),
             loft_losses: Vec::new(),
+            split_losses: Vec::new(),
             mirror_losses: mirror::native_losses(&inventory.pattern_features, &[]),
             added_profiles: HashMap::new(),
         });
@@ -2231,6 +2249,7 @@ pub(crate) fn project(
     let mut extrusion_losses = Vec::new();
     let mut revolve_losses = Vec::new();
     let mut loft_losses = Vec::new();
+    let mut split_losses = Vec::new();
     let mut neutral = 0_usize;
     for feature in &inventory.features {
         let label = label_of(feature.identity.record_ordinal);
@@ -2264,7 +2283,9 @@ pub(crate) fn project(
                 }
                 FeatureFamily::Motion => motion::project(ctx, feature, label, &index),
                 FeatureFamily::Combine => combine::project(ctx, feature, label, &index),
-                FeatureFamily::Split => split::project(ctx, feature, label, &index, &history),
+                FeatureFamily::Split => {
+                    split::project(ctx, feature, label, &index, &history, &mut split_losses)
+                }
             }
             .map(|result| result.map(|(feature, result)| (feature, Some(result))))
             .transpose()?,
@@ -2491,6 +2512,7 @@ pub(crate) fn project(
         extrusion_losses,
         revolve_losses,
         loft_losses,
+        split_losses,
         mirror_losses: mirror::native_losses(&inventory.pattern_features, &features),
         features,
         result_topologies,
@@ -3389,11 +3411,15 @@ fn extent_target_plane(
         origin,
         u_axis,
         v_axis,
+        extension,
         ..
     } = surface.kind
     else {
         return None;
     };
+    if extension.is_some_and(|value| value != 0) {
+        return None;
+    }
     target_plane(origin, u_axis, v_axis, surface.id())
 }
 
@@ -5300,11 +5326,46 @@ pub(crate) mod tests {
             vec![fillet_properties[8].id()]
         );
 
+        for members in [&[11][..], &[8, 11][..]] {
+            let mut properties = fillet_properties.clone();
+            properties[3] = test_property(
+                4,
+                PmDcFeaturePropertyKind::References {
+                    family: PmDcFeatureReferenceFamily::EdgeCollection,
+                    items: reference_list(members),
+                },
+            );
+            properties.push(test_property(
+                10,
+                PmDcFeaturePropertyKind::EdgeItem {
+                    index_references: PmDcU32List::new(2, None, Vec::new())
+                        .expect("empty index list"),
+                    index_reference_value: -1,
+                    value: 0,
+                },
+            ));
+            let index = test_projection_index(
+                &properties,
+                std::slice::from_ref(&raw_radius),
+                std::slice::from_ref(&neutral_radius),
+                &[],
+                &[],
+                &[],
+                &[],
+                &[],
+            );
+            for class in [FILLET_CLASS_ID, super::CORNER_ROUND_CLASS_ID] {
+                let label = test_label(100, 7, class, &[]);
+                assert!(project_fillet(&ctx, &fillet, &label, &index).is_none());
+            }
+        }
+
         for (type_value, value, continuity, admitted) in [
             (0x0002_0004, 0, Some(false), true),
             (0x0002_0004, 0, Some(true), false),
             (0x0002_0004, 0, None, false),
             (0x0002_0004, 1, Some(false), false),
+            (0x0001_0004, 0, Some(false), false),
             (4, 1, Some(false), false),
             (5, 0, Some(false), false),
         ] {

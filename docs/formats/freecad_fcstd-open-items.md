@@ -71,3 +71,30 @@ independently.
 **Need.** A source rule or a specimen with deep location chains near either cap must settle the reduction order and the truncation point. Until then the neutral occurrence set is an implementation-capped selection.
 
 **Note.** QA sweep locations: `crates/cadmpeg-codec-freecad/src/brep/location_identity.rs:57-90` and `crates/cadmpeg-codec-freecad/src/topology_transfer.rs:136-148`. This is the FreeCAD analogue of the unrecorded selection threshold in ASM GC-34.
+
+## REV-01. Midplane with a nonzero revolution Type
+
+**Question.** Which angular sides apply when a PartDesign Revolution or Groove has
+`Midplane=true` and `Type` is 1, 2, 3, or 4?
+
+**Known.** Type 0 uses `Angle` as the symmetric total angle when `Midplane=true`.
+Type 4 with `Midplane=false` uses independent `Angle` and `Angle2` magnitudes on opposite sides.
+
+**Need.** Saved public files with each nonzero Type and `Midplane=true`, together with stored
+shape end faces that identify the active sides.
+
+**Conflict.** None.
+
+**Note.** These combinations remain native and emit `fcstd/feature.revolution-not-transferred`.
+
+## EX-01. Concurrent index and name constraint bindings
+
+**Question.** How do concurrent index and name paths select the expression of one constraint?
+
+**Known.** `Constraints[i]` and `.Constraints.name` select a constraint by index and name.
+
+**Need.** A saved document with both target paths for one constraint and its evaluated value.
+
+**Conflict.** Both paths can identify the same constraint; their precedence is not established.
+
+**Note.** The neutral projection reports a conflict and retains both native records.

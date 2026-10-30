@@ -5617,6 +5617,72 @@ Relative to the first flag byte; excludes the preceding property and first paire
 | 53 | 8 | `unit_pair` | `f32[2]` | little | spec | f32 constants |
 | 61 | 5 | `marker` | `bytes[5]` | little | spec | marker |
 
+## `sketch_curve_tail_1_reference`
+
+Spec §3.1 · layout: byte offsets · size: 25 B
+
+N = 1. Offsets are relative to the end of the 96-byte analytic payload.
+
+Parsed by:
+- `crates/cadmpeg-codec-f3d/src/design/sketch_project.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 1 | `reference_marker` | `u8` | little | spec | `0x01` |
+| 1 | 4 | `reference_record_index` | `u32` | little | spec | u32 `record_index` |
+| 5 | 6 | `reference_zero_trailer` | `bytes[6]` | little | spec | six zero bytes |
+| 11 | 5 | `zero_pad` | `bytes[5]` | little | spec | `P = 5` when `N = 1` |
+| 16 | 4 | `opaque` | `bytes[4]` | little | spec | four opaque bytes |
+| 20 | 4 | `flag_guard` | `u32` | little | spec | u32 `1` |
+| 24 | 1 | `construction_flag` | `u8` | little | spec | u8 construction flag |
+
+## `sketch_curve_tail_2_references`
+
+Spec §3.1 · layout: byte offsets · size: 34 B
+
+N = 2. Offsets are relative to the end of the 96-byte analytic payload.
+
+Parsed by:
+- `crates/cadmpeg-codec-f3d/src/design/sketch_project.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 1 | `first_reference_marker` | `u8` | little | spec | `0x01` |
+| 1 | 4 | `first_reference_record_index` | `u32` | little | spec | u32 `record_index` |
+| 5 | 6 | `first_reference_zero_trailer` | `bytes[6]` | little | spec | six zero bytes |
+| 11 | 1 | `second_reference_marker` | `u8` | little | spec | `0x01` |
+| 12 | 4 | `second_reference_record_index` | `u32` | little | spec | u32 `record_index` |
+| 16 | 6 | `second_reference_zero_trailer` | `bytes[6]` | little | spec | six zero bytes |
+| 22 | 3 | `zero_pad` | `bytes[3]` | little | spec | `P = 3` when `N` is `2` or `3` |
+| 25 | 4 | `opaque` | `bytes[4]` | little | spec | four opaque bytes |
+| 29 | 4 | `flag_guard` | `u32` | little | spec | u32 `1` |
+| 33 | 1 | `construction_flag` | `u8` | little | spec | u8 construction flag |
+
+## `sketch_curve_tail_3_references`
+
+Spec §3.1 · layout: byte offsets · size: 45 B
+
+N = 3. Offsets are relative to the end of the 96-byte analytic payload.
+
+Parsed by:
+- `crates/cadmpeg-codec-f3d/src/design/sketch_project.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 1 | `first_reference_marker` | `u8` | little | spec | `0x01` |
+| 1 | 4 | `first_reference_record_index` | `u32` | little | spec | u32 `record_index` |
+| 5 | 6 | `first_reference_zero_trailer` | `bytes[6]` | little | spec | six zero bytes |
+| 11 | 1 | `second_reference_marker` | `u8` | little | spec | `0x01` |
+| 12 | 4 | `second_reference_record_index` | `u32` | little | spec | u32 `record_index` |
+| 16 | 6 | `second_reference_zero_trailer` | `bytes[6]` | little | spec | six zero bytes |
+| 22 | 1 | `third_reference_marker` | `u8` | little | spec | `0x01` |
+| 23 | 4 | `third_reference_record_index` | `u32` | little | spec | u32 `record_index` |
+| 27 | 6 | `third_reference_zero_trailer` | `bytes[6]` | little | spec | six zero bytes |
+| 33 | 3 | `zero_pad` | `bytes[3]` | little | spec | `P = 3` when `N` is `2` or `3` |
+| 36 | 4 | `opaque` | `bytes[4]` | little | spec | four opaque bytes |
+| 40 | 4 | `flag_guard` | `u32` | little | spec | u32 `1` |
+| 44 | 1 | `construction_flag` | `u8` | little | spec | u8 construction flag |
+
 ## `sheet_metal_region_carrier_prefix`
 
 Spec §3.1 · layout: byte offsets · size: 36 B
@@ -5864,7 +5930,7 @@ Unstated regions:
 
 Spec §3.1 · layout: byte offsets · size: 76 B
 
-Offsets are relative to the identity record indexed header; the two counted loop lists begin at offset 72.
+Offsets are relative to the identity record indexed header; the two counted region lists begin at offset 72.
 
 Parsed by:
 - `crates/cadmpeg-codec-f3d/src/design/decode/operands.rs`
@@ -5873,7 +5939,7 @@ Parsed by:
 | -----: | ---: | ----- | ---- | ------ | --- | ------- |
 | 11 | 10 | `zero_run_10` | `bytes[10]` | little | spec | The identity record at the record index plus three stores ten zero bytes |
 | 21 | 51 | `selection_reference` | `bytes[51]` | little | spec | The identity record at the record index plus three stores ten zero bytes |
-| 72 | 4 | `first_loop_count` | `u32` | little | spec | The identity record at the record index plus three stores ten zero bytes |
+| 72 | 4 | `first_region_count` | `u32` | little | spec | The identity record at the record index plus three stores ten zero bytes |
 
 Unstated regions:
 
@@ -6599,7 +6665,7 @@ Parsed by:
 
 Spec §3.1 · layout: byte offsets · size: 289 B
 
-The 349-byte identity frame has one zero separator before the repeated reference.
+The separated identity and matrix frames have one zero separator before the repeated reference.
 
 Parsed by:
 - `crates/cadmpeg-codec-f3d/src/design/decode/components.rs`
@@ -6618,7 +6684,7 @@ Parsed by:
 | 160 | 76 | `occurrence_guid` | `bytes[76]` | little | spec | Typed local component occurrences use local references with inline type GUIDs. |
 | 236 | 1 | `separator` | `u8` | little | spec | Typed local component occurrences use local references with inline type GUIDs. · value `0` |
 | 237 | 51 | `component_reference_repeat` | `bytes[51]` | little | spec | Typed local component occurrences use local references with inline type GUIDs. |
-| 288 | 1 | `identity_flag` | `u8` | little | spec | Typed local component occurrences use local references with inline type GUIDs. · value `1` |
+| 288 | 1 | `identity_flag` | `u8` | little | spec | Typed local component occurrences use local references with inline type GUIDs. |
 
 ## `local_component_occurrence_typed_compact_prefix`
 
@@ -6662,7 +6728,7 @@ Parsed by:
 
 Spec §3.1 · layout: byte offsets · size: 188 B
 
-Relative to the end of the typed compact prefix.
+Relative to the end of the typed prefix.
 
 Parsed by:
 - `crates/cadmpeg-codec-f3d/src/design/decode/components.rs`
@@ -7297,6 +7363,25 @@ Parsed by:
 | 79 | 72 | `null_guid` | `u16[36]` | little | spec | The `emboss_counted_suffix` layout starts immediately after the native pair run. |
 | 151 | 3 | `zero_separator` | `bytes[3]` | little | spec | The `emboss_counted_suffix` layout starts immediately after the native pair run. · value `[0, 0, 0]` |
 | 154 | 4 | `reference_count` | `u32` | little | spec | The `emboss_counted_suffix` layout starts immediately after the native pair run. |
+
+## `sketch_typed_compact_member_head`
+
+Spec §3.1 · layout: byte offsets · size: 74 B
+
+Offsets are relative to the indexed head-placement header.
+
+Parsed by:
+- `crates/cadmpeg-codec-f3d/src/design/decode/sketch.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 11 | 10 | `zero_run` | `bytes[10]` | little | spec | It stores ten zero bytes after the indexed header · value `[0, 0, 0, 0, 0, 0, 0, 0, 0, 0]` |
+| 21 | 2 | `flags` | `bytes[2]` | little | spec | `01 00` at offsets 21 and 22 · value `[1, 0]` |
+| 23 | 51 | `reference` | `bytes[51]` | little | spec | a 51-byte typed reference at offset 23 |
+
+Unstated regions:
+
+- `0..11` (11 B): The indexed header precedes the placement fields.
 
 ## Not tabulated
 

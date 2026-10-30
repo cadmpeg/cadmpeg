@@ -322,10 +322,15 @@ fn enum_property(ordinal: u32, family: PmDcFeatureEnumFamily, value: u16) -> PmD
 }
 
 fn plane_surface(ordinal: u32) -> PmDcFeatureProperty {
+    plane_surface_with(ordinal, None)
+}
+
+fn plane_surface_with(ordinal: u32, extension: Option<u32>) -> PmDcFeatureProperty {
     test_property(
         ordinal,
         PmDcFeaturePropertyKind::PlaneSurface {
             references: [reference(0); 3],
+            extension,
             state: 1,
             surface_form: PLANE_SURFACE_FORM,
             value: 0,
@@ -1088,4 +1093,74 @@ fn native_profile_validator_requires_the_patch_and_selection_record_types() {
         },
     )
     .expect("native profile fixture");
+}
+
+#[test]
+fn face_target_requires_a_zero_surface_extension() {
+    let face = |extension: Option<u32>| {
+        extent_extrusion(
+            7,
+            false,
+            &[(13, 20), (18, 21)],
+            vec![
+                test_property(20, PmDcFeaturePropertyKind::TerminationFlag { value: 1 }),
+                plane_surface_with(21, extension),
+            ],
+        )
+    };
+    assert!(face(None).is_some());
+    assert!(face(Some(0)).is_some());
+    assert!(face(Some(1)).is_none());
+}
+
+#[test]
+fn parses_plane_surface_extension_from_segment_version_22() {
+    let frame = [1.5, 1.2, 0.3, -1.0, 0.0, 0.0, 0.0, 0.0, 1.0];
+    for (version, stamps, extended) in [
+        (19, &[][..], false),
+        (23, &[-1][..], true),
+        (25, &[-1, -1][..], true),
+    ] {
+        let mut surface = crate::test_support::test_fixtures::content_at(11, version, stamps);
+        surface.extend_from_slice(&[0; 12]);
+        if extended {
+            surface.extend_from_slice(&0u32.to_le_bytes());
+        }
+        surface.push(1);
+        surface.extend_from_slice(&crate::feature::PLANE_SURFACE_FORM.to_le_bytes());
+        surface.extend_from_slice(&0u32.to_le_bytes());
+        push_f64s(&mut surface, &frame);
+        let parsed = parse(&surface, |_, source| {
+            crate::feature::parse_surface(source, version).expect("surface")
+        })
+        .expect("plane surface");
+        let PmDcFeaturePropertyKind::PlaneSurface {
+            extension,
+            surface_form,
+            origin,
+            ..
+        } = parsed.kind
+        else {
+            panic!("plane surface kind");
+        };
+        assert_eq!(extension, extended.then_some(0));
+        assert_eq!(surface_form, crate::feature::PLANE_SURFACE_FORM);
+        assert_eq!(origin[0].get(), 1.5);
+
+        // The same bytes read without the extension are not a plane.
+        let mut cylinder = crate::test_support::test_fixtures::content_at(12, version, stamps);
+        cylinder.extend_from_slice(&[0; 12]);
+        if extended {
+            cylinder.extend_from_slice(&0u32.to_le_bytes());
+        }
+        cylinder.push(1);
+        cylinder.extend_from_slice(&29u32.to_le_bytes());
+        cylinder.extend_from_slice(&1u32.to_le_bytes());
+        push_f64s(&mut cylinder, &frame);
+        assert!(parse(&cylinder, |_, source| crate::feature::parse_surface(
+            source, version
+        ))
+        .expect("surface form")
+        .is_none());
+    }
 }

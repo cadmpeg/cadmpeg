@@ -20936,6 +20936,26 @@
             "operation": {
               "definition": "primitive",
               "op": "join",
+              "placement": [
+                [
+                  1.0,
+                  0.0,
+                  0.0,
+                  0.0
+                ],
+                [
+                  0.0,
+                  1.0,
+                  0.0,
+                  0.0
+                ],
+                [
+                  0.0,
+                  0.0,
+                  1.0,
+                  0.0
+                ]
+              ],
               "solid": {
                 "height": 8.0,
                 "kind": "box",
