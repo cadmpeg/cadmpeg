@@ -21,6 +21,7 @@ mod physics;
 mod physx;
 mod records;
 mod shading;
+mod sketch;
 mod text;
 mod texture;
 
@@ -94,9 +95,9 @@ const COVERAGE: ArenaDispositions = {
         feature_result_topologies: Omitted,
         configurations: Omitted,
         parameters: Omitted,
-        sketches: Omitted,
-        sketch_entities: Omitted,
-        sketch_constraints: Omitted,
+        sketches: Written,
+        sketch_entities: Reported,
+        sketch_constraints: Reported,
         spatial_sketches: Omitted,
         spatial_sketch_entities: Omitted,
         spatial_sketch_constraints: Omitted,
@@ -171,6 +172,11 @@ pub(crate) fn plan(
 #[derive(Default)]
 struct Unwritten {
     tessellated_bodies: usize,
+    /// Sketch entities with no curve or point prim.
+    sketch_entities: usize,
+    /// Sketch constraints with no constraint type, or whose targets or
+    /// values are not written.
+    sketch_constraints: usize,
     /// Bodies with faces and no `BrepArray` prim, with the reason.
     breps: Vec<String>,
     /// Bodies whose `BrepArray` prim has no trim curves.
@@ -459,6 +465,9 @@ impl<'ir> Writer<'ir> {
                 if physics {
                     names.reserve(physics::PHYSICS);
                 }
+                if !self.ir.model.sketches.is_empty() {
+                    names.reserve(sketch::SKETCHES);
+                }
                 if !self.ir.model.appearances.is_empty() {
                     names.reserve(LOOKS);
                     self.looks(None);
@@ -479,6 +488,7 @@ impl<'ir> Writer<'ir> {
                 }
                 self.free_geometry(&mut names);
                 self.joints(&mut names);
+                self.sketches(&mut names, None);
                 names.first().map(str::to_owned)
             }
         };
@@ -669,6 +679,7 @@ impl<'ir> Writer<'ir> {
         child_names.reserve(LOOKS);
         if root.is_some() {
             child_names.reserve(physics::PHYSICS);
+            child_names.reserve(sketch::SKETCHES);
         }
         if shared {
             for body in definition
@@ -686,6 +697,7 @@ impl<'ir> Writer<'ir> {
         }
         if root.is_some() {
             self.joints(&mut child_names);
+            self.sketches(&mut child_names, Some(&occurrence.id));
         }
         self.out.close();
         self.stack.pop();
@@ -1547,6 +1559,46 @@ impl<'ir> Writer<'ir> {
         let unwritten = &self.unwritten;
         let model = &self.ir.model;
         let mut losses = Vec::new();
+        if unwritten.sketch_entities > 0 || unwritten.sketch_constraints > 0 {
+            losses.push(UsdLossCode::ExportSketchElementNotWritten.note(format!(
+                "{} sketch entities with no CadSketch curve or point type and {} sketch \
+                 constraints with no CadSketch constraint type, or whose targets or values \
+                 were not written, were not written",
+                unwritten.sketch_entities, unwritten.sketch_constraints
+            )));
+        }
+        let constrained = model
+            .sketch_constraints
+            .iter()
+            .filter_map(|constraint| match constraint.definition.kind() {
+                cadmpeg_ir::sketches::SketchConstraintDefinitionInput::Radius {
+                    parameter, ..
+                }
+                | cadmpeg_ir::sketches::SketchConstraintDefinitionInput::Diameter {
+                    parameter,
+                    ..
+                }
+                | cadmpeg_ir::sketches::SketchConstraintDefinitionInput::DistanceLoci {
+                    parameter,
+                    ..
+                }
+                | cadmpeg_ir::sketches::SketchConstraintDefinitionInput::Angle {
+                    parameter, ..
+                } => Some(parameter),
+                _ => None,
+            })
+            .collect::<BTreeSet<_>>();
+        let parameters = model
+            .parameters
+            .iter()
+            .filter(|parameter| !constrained.contains(&parameter.id))
+            .count();
+        if parameters > 0 {
+            losses.push(UsdLossCode::ExportSketchElementNotWritten.note(format!(
+                "{parameters} design parameters that no written sketch dimension states were \
+                 not written"
+            )));
+        }
         if unwritten.solver_properties > 0 {
             losses.push(UsdLossCode::ExportSolverPropertyNotWritten.note(format!(
                 "{} solver properties have no PhysX attribute, prim, or relationship target to \

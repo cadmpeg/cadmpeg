@@ -103,6 +103,12 @@ impl super::Builder<'_, '_, '_, '_> {
         let local = crate::schema::xform::local_transform(prim, &mut self.issues)
             .map_or(crate::schema::xform::IDENTITY, |local| local.matrix);
         let world = compose(world, &local);
+        if prim.type_name() == Some("CadSketch") {
+            if self.ctx.depth() == cadmpeg_core::decode::DecodeDepth::Full {
+                self.sketch(prim, &world)?;
+            }
+            return Ok(());
+        }
         for child in prim.children.clone() {
             self.collect_unplaced(child, &world)?;
         }

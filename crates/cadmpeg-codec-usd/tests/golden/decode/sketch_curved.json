@@ -1,0 +1,439 @@
+{
+  "ir": {
+    "decode_depth": "full",
+    "ir_version": "9",
+    "model": {
+      "appearance_bindings": [],
+      "appearances": [],
+      "assembly_joints": [],
+      "attributes": [],
+      "bodies": [],
+      "coedges": [],
+      "configurations": [],
+      "curves": [],
+      "drawings": [],
+      "edges": [],
+      "faces": [],
+      "features": [],
+      "loops": [],
+      "occurrences": [],
+      "parameters": [
+        {
+          "expression": "5",
+          "id": "usd:stage:parameter#/sketch/d_cap1",
+          "name": "d_cap1",
+          "ordinal": 0,
+          "value": {
+            "kind": "length",
+            "value": 50.0
+          }
+        },
+        {
+          "expression": "5",
+          "id": "usd:stage:parameter#/sketch/d_cap2",
+          "name": "d_cap2",
+          "ordinal": 1,
+          "value": {
+            "kind": "length",
+            "value": 50.0
+          }
+        },
+        {
+          "expression": "3",
+          "id": "usd:stage:parameter#/sketch/d_hole",
+          "name": "d_hole",
+          "ordinal": 2,
+          "value": {
+            "kind": "length",
+            "value": 30.0
+          }
+        },
+        {
+          "expression": "10",
+          "id": "usd:stage:parameter#/sketch/d_hole_pos",
+          "name": "d_hole_pos",
+          "ordinal": 3,
+          "value": {
+            "kind": "length",
+            "value": 100.0
+          }
+        },
+        {
+          "expression": "20",
+          "id": "usd:stage:parameter#/sketch/d_length",
+          "name": "d_length",
+          "ordinal": 4,
+          "value": {
+            "kind": "length",
+            "value": 200.0
+          }
+        }
+      ],
+      "pcurves": [],
+      "pmi": [],
+      "points": [],
+      "presentation_documents": [],
+      "presentation_layers": [],
+      "procedural_curves": [],
+      "procedural_surfaces": [],
+      "product_definitions": [],
+      "regions": [],
+      "semantic_annotations": [],
+      "shells": [],
+      "sketch_constraints": [
+        {
+          "definition": {
+            "entity": "usd:stage:sketch-entity#/sketch/a1",
+            "kind": "radius",
+            "parameter": "usd:stage:parameter#/sketch/d_cap1"
+          },
+          "id": "usd:stage:sketch-constraint#/sketch/d_cap1",
+          "name": "d_cap1",
+          "sketch": "usd:stage:sketch#/sketch"
+        },
+        {
+          "definition": {
+            "entity": "usd:stage:sketch-entity#/sketch/a2",
+            "kind": "radius",
+            "parameter": "usd:stage:parameter#/sketch/d_cap2"
+          },
+          "id": "usd:stage:sketch-constraint#/sketch/d_cap2",
+          "name": "d_cap2",
+          "sketch": "usd:stage:sketch#/sketch"
+        },
+        {
+          "definition": {
+            "entity": "usd:stage:sketch-entity#/sketch/hole",
+            "kind": "radius",
+            "parameter": "usd:stage:parameter#/sketch/d_hole"
+          },
+          "id": "usd:stage:sketch-constraint#/sketch/d_hole",
+          "name": "d_hole",
+          "sketch": "usd:stage:sketch#/sketch"
+        },
+        {
+          "definition": {
+            "first": {
+              "entity": "usd:stage:sketch-entity#/sketch/a1",
+              "kind": "center"
+            },
+            "kind": "distance_loci",
+            "parameter": "usd:stage:parameter#/sketch/d_hole_pos",
+            "second": {
+              "entity": "usd:stage:sketch-entity#/sketch/hole",
+              "kind": "center"
+            }
+          },
+          "id": "usd:stage:sketch-constraint#/sketch/d_hole_pos",
+          "name": "d_hole_pos",
+          "sketch": "usd:stage:sketch#/sketch"
+        },
+        {
+          "definition": {
+            "first": {
+              "entity": "usd:stage:sketch-entity#/sketch/a1",
+              "kind": "center"
+            },
+            "kind": "distance_loci",
+            "parameter": "usd:stage:parameter#/sketch/d_length",
+            "second": {
+              "entity": "usd:stage:sketch-entity#/sketch/a2",
+              "kind": "center"
+            }
+          },
+          "id": "usd:stage:sketch-constraint#/sketch/d_length",
+          "name": "d_length",
+          "sketch": "usd:stage:sketch#/sketch"
+        },
+        {
+          "definition": {
+            "kind": "point_coordinate_values",
+            "point": {
+              "entity": "usd:stage:sketch-entity#/sketch/a1",
+              "kind": "center"
+            },
+            "values": [
+              0.0,
+              0.0
+            ]
+          },
+          "id": "usd:stage:sketch-constraint#/sketch/g_c1",
+          "name": "g_c1",
+          "sketch": "usd:stage:sketch#/sketch"
+        },
+        {
+          "definition": {
+            "kind": "same_coordinate",
+            "relation": {
+              "axis": "v",
+              "first": {
+                "entity": "usd:stage:sketch-entity#/sketch/a1",
+                "kind": "center"
+              },
+              "second": {
+                "entity": "usd:stage:sketch-entity#/sketch/a2",
+                "kind": "center"
+              }
+            }
+          },
+          "id": "usd:stage:sketch-constraint#/sketch/h_axis",
+          "name": "h_axis",
+          "sketch": "usd:stage:sketch#/sketch"
+        },
+        {
+          "definition": {
+            "kind": "same_coordinate",
+            "relation": {
+              "axis": "v",
+              "first": {
+                "entity": "usd:stage:sketch-entity#/sketch/a1",
+                "kind": "center"
+              },
+              "second": {
+                "entity": "usd:stage:sketch-entity#/sketch/hole",
+                "kind": "center"
+              }
+            }
+          },
+          "id": "usd:stage:sketch-constraint#/sketch/h_hole",
+          "name": "h_hole",
+          "sketch": "usd:stage:sketch#/sketch"
+        },
+        {
+          "definition": {
+            "first": "usd:stage:sketch-entity#/sketch/l1",
+            "kind": "tangent",
+            "second": "usd:stage:sketch-entity#/sketch/a1"
+          },
+          "id": "usd:stage:sketch-constraint#/sketch/t_l1_a1",
+          "name": "t_l1_a1",
+          "sketch": "usd:stage:sketch#/sketch"
+        },
+        {
+          "definition": {
+            "first": "usd:stage:sketch-entity#/sketch/l1",
+            "kind": "tangent",
+            "second": "usd:stage:sketch-entity#/sketch/a2"
+          },
+          "id": "usd:stage:sketch-constraint#/sketch/t_l1_a2",
+          "name": "t_l1_a2",
+          "sketch": "usd:stage:sketch#/sketch"
+        },
+        {
+          "definition": {
+            "first": "usd:stage:sketch-entity#/sketch/l2",
+            "kind": "tangent",
+            "second": "usd:stage:sketch-entity#/sketch/a1"
+          },
+          "id": "usd:stage:sketch-constraint#/sketch/t_l2_a1",
+          "name": "t_l2_a1",
+          "sketch": "usd:stage:sketch#/sketch"
+        },
+        {
+          "definition": {
+            "first": "usd:stage:sketch-entity#/sketch/l2",
+            "kind": "tangent",
+            "second": "usd:stage:sketch-entity#/sketch/a2"
+          },
+          "id": "usd:stage:sketch-constraint#/sketch/t_l2_a2",
+          "name": "t_l2_a2",
+          "sketch": "usd:stage:sketch#/sketch"
+        }
+      ],
+      "sketch_entities": [
+        {
+          "construction": false,
+          "geometry": {
+            "center": {
+              "u": 0.0,
+              "v": 0.0
+            },
+            "end_angle": 4.71238898038469,
+            "kind": "arc",
+            "radius": 50.0,
+            "start_angle": 1.5707963267948966
+          },
+          "id": "usd:stage:sketch-entity#/sketch/a1",
+          "sketch": "usd:stage:sketch#/sketch"
+        },
+        {
+          "construction": false,
+          "geometry": {
+            "center": {
+              "u": 200.0,
+              "v": 0.0
+            },
+            "end_angle": 1.5707963267948966,
+            "kind": "arc",
+            "radius": 50.0,
+            "start_angle": -1.5707963267948966
+          },
+          "id": "usd:stage:sketch-entity#/sketch/a2",
+          "sketch": "usd:stage:sketch#/sketch"
+        },
+        {
+          "construction": false,
+          "geometry": {
+            "center": {
+              "u": 100.0,
+              "v": 0.0
+            },
+            "kind": "circle",
+            "radius": 30.0
+          },
+          "id": "usd:stage:sketch-entity#/sketch/hole",
+          "sketch": "usd:stage:sketch#/sketch"
+        },
+        {
+          "construction": false,
+          "geometry": {
+            "end": {
+              "u": 200.0,
+              "v": -50.0
+            },
+            "kind": "line",
+            "start": {
+              "u": 0.0,
+              "v": -50.0
+            }
+          },
+          "id": "usd:stage:sketch-entity#/sketch/l1",
+          "sketch": "usd:stage:sketch#/sketch"
+        },
+        {
+          "construction": false,
+          "geometry": {
+            "end": {
+              "u": 0.0,
+              "v": 50.0
+            },
+            "kind": "line",
+            "start": {
+              "u": 200.0,
+              "v": 50.0
+            }
+          },
+          "id": "usd:stage:sketch-entity#/sketch/l2",
+          "sketch": "usd:stage:sketch#/sketch"
+        }
+      ],
+      "sketches": [
+        {
+          "id": "usd:stage:sketch#/sketch",
+          "name": "sketch",
+          "placement": {
+            "frame": {
+              "normal": {
+                "x": 0.0,
+                "y": 0.0,
+                "z": 1.0
+              },
+              "origin": {
+                "x": 0.0,
+                "y": 0.0,
+                "z": 0.0
+              },
+              "u_axis": {
+                "x": 1.0,
+                "y": 0.0,
+                "z": 0.0
+              }
+            },
+            "kind": "resolved"
+          },
+          "profiles": [
+            [
+              {
+                "entity": "usd:stage:sketch-entity#/sketch/a1",
+                "reversed": false
+              },
+              {
+                "entity": "usd:stage:sketch-entity#/sketch/l1",
+                "reversed": false
+              },
+              {
+                "entity": "usd:stage:sketch-entity#/sketch/a2",
+                "reversed": false
+              },
+              {
+                "entity": "usd:stage:sketch-entity#/sketch/l2",
+                "reversed": false
+              }
+            ]
+          ]
+        }
+      ],
+      "spatial_sketch_entities": [],
+      "spatial_sketches": [],
+      "spreadsheets": [],
+      "subds": [],
+      "surfaces": [],
+      "tessellations": [],
+      "vertices": [],
+      "view_presentations": []
+    },
+    "native": {},
+    "source": {
+      "attributes": {
+        "default_prim": "sketch",
+        "meters_per_unit": "0.01",
+        "up_axis": "Z"
+      },
+      "identity": {
+        "classification": "classified",
+        "dialects": {
+          "extra": [],
+          "primary": {
+            "admission": "admitted",
+            "declared": {
+              "header": "#usda 1.0"
+            },
+            "dialect": "usd:usda-1.0"
+          }
+        }
+      }
+    },
+    "tolerances": {
+      "angular": 1e-10,
+      "linear": 1e-6
+    },
+    "units": {
+      "length": "millimeter"
+    }
+  },
+  "report": {
+    "identity": {
+      "classification": "classified",
+      "dialects": {
+        "extra": [],
+        "primary": {
+          "admission": "admitted",
+          "declared": {
+            "header": "#usda 1.0"
+          },
+          "dialect": "usd:usda-1.0"
+        }
+      }
+    },
+    "losses": [
+      {
+        "code": {
+          "code": "sketch.property-not-transferred",
+          "kind": "parametric_record_omitted",
+          "namespace": "usd",
+          "scope": "namespaced"
+        },
+        "message": "1 sketch properties were not transferred: /sketch: sketch:tolerance",
+        "severity": "info"
+      }
+    ],
+    "notes": [],
+    "transfer": {
+      "geometry_transferred": true,
+      "transfer": "full"
+    }
+  },
+  "source_fidelity": {
+    "annotations": {}
+  }
+}

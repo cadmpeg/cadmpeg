@@ -1,0 +1,48 @@
+#usda 1.0
+(
+    subLayers = [
+        @usd/schema.usda@
+    ]
+)
+
+# ============================================================================
+# cadBrep schema: CADIR extensions of the preliminary UsdSolid BrepArray.
+# Codeless; cadmpeg reads and writes it (docs/formats/usd.md §18).
+# ============================================================================
+
+over "GLOBAL" (
+    customData = {
+        string libraryName   = "cadBrep"
+        string libraryPath   = "./"
+        string libraryPrefix = ""
+        string tokensPrefix  = "Cad"
+        bool skipCodeGeneration = true
+    }
+) {
+}
+
+class "CadBrepIdentityAPI" (
+    inherits = </APISchemaBase>
+    doc = """The CADIR identity of each B-rep, face, edge, and vertex of a BrepArray.
+             Element i names the entity at position i of its BrepArray arrays. An empty
+             string is no identity. An identity has the CADIR grammar
+             <format>:<scope>:<kind>#<key> and occurs once in a stage."""
+    customData = {
+        token apiSchemaType = "singleApply"
+        token[] apiSchemaCanOnlyApplyTo = ["BrepArray"]
+    }
+)
+{
+    uniform string[] cad:brep:id (
+        doc = """One for each B-rep."""
+    )
+    uniform string[] cad:face:id (
+        doc = """One for each face."""
+    )
+    uniform string[] cad:edge:id (
+        doc = """One for each edge."""
+    )
+    uniform string[] cad:vertex:id (
+        doc = """One for each vertex."""
+    )
+}

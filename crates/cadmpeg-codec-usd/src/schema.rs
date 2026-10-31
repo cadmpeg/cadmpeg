@@ -12,6 +12,7 @@ pub(crate) mod patch;
 pub(crate) mod physics;
 pub(crate) mod physx;
 pub(crate) mod shading;
+pub(crate) mod sketch;
 pub(crate) mod texture;
 pub(crate) mod xform;
 

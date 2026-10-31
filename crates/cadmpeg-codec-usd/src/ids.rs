@@ -302,3 +302,42 @@ pub(crate) fn solver_settings(path: &str, schema: &str) -> cadmpeg_ir::ids::Solv
         key(&format!("{path}.{schema}")),
     )
 }
+
+/// The identities of the records of a sketch (spec §18.2).
+pub(crate) mod sketch {
+    use super::key;
+    use cadmpeg_ir::features::ParameterId;
+    use cadmpeg_ir::sketches::{SketchConstraintId, SketchEntityId, SketchId};
+
+    /// The sketch of the `CadSketch` prim at `path`.
+    pub(crate) fn sketch(path: &str) -> SketchId {
+        SketchId::compose(
+            &cadmpeg_ir::identity_namespace!("usd", "stage", "sketch"),
+            key(path),
+        )
+    }
+
+    /// The entity of the point or curve prim at `path`.
+    pub(crate) fn entity(path: &str) -> SketchEntityId {
+        SketchEntityId::compose(
+            &cadmpeg_ir::identity_namespace!("usd", "stage", "sketch-entity"),
+            key(path),
+        )
+    }
+
+    /// The constraint of the constraint prim at `path`.
+    pub(crate) fn constraint(path: &str) -> SketchConstraintId {
+        SketchConstraintId::compose(
+            &cadmpeg_ir::identity_namespace!("usd", "stage", "sketch-constraint"),
+            key(path),
+        )
+    }
+
+    /// The design parameter of the dimensional constraint prim at `path`.
+    pub(crate) fn parameter(path: &str) -> ParameterId {
+        ParameterId::compose(
+            &cadmpeg_ir::identity_namespace!("usd", "stage", "parameter"),
+            key(path),
+        )
+    }
+}

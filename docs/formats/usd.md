@@ -1334,3 +1334,40 @@ The `Cad*` schemas extend the registered schemas and `BrepArray` with CADIR data
 | `uniform string[] cad:vertex:id` | one for each vertex |
 
 Element `i` names the entity at position `i` of its arrays (§17.1). An empty string is no identity. An identity has the CADIR grammar `<format>:<scope>:<kind>#<key>`, and each identity occurs once in a stage.
+
+### 18.2 CadSketch
+
+The `CadSketch` type and its element types state a planar sketch. OpenUSD does not register the types. A `CadSketch` prim is boundable: its transform-op stack places the sketch plane, its local `x` and `y` axes are the sketch `u` and `v` axes, and its descendants of the element types are its elements. Lengths are in the sketch prim's local units. The placement is rigid; a reflected placement maps the sketch points as its transform states.
+
+#### Points and curves
+
+| Type | Properties |
+| --- | --- |
+| `CadSketchPoint` | `uniform double2 sketch:point:position`; `uniform bool sketch:point:construction` |
+| `CadSketchLine` | `rel sketch:line:startPoint`, `rel sketch:line:endPoint`; `uniform bool sketch:line:construction` |
+| `CadSketchArc` | `rel sketch:arc:startPoint`, `endPoint`, `centerPoint`; `uniform double sketch:arc:radius`; `uniform token sketch:arc:sweep` (`ccw`, `cw`); `uniform bool sketch:arc:construction` |
+| `CadSketchCircle` | `rel sketch:circle:centerPoint`; `uniform double sketch:circle:radius`; `uniform bool sketch:circle:construction` |
+| `CadSketchSpline` | `uniform token sketch:spline:form` (`open`, `closed`); `uniform int sketch:spline:degree`; `uniform double[] sketch:spline:knots`; `uniform int[] sketch:spline:multiplicities`; `uniform double2[] sketch:spline:poles`; `uniform token sketch:spline:fitRule`; `rel sketch:spline:controlPoints`, `rel sketch:spline:fitPoints`; `uniform bool sketch:spline:construction` |
+
+Each relationship of a curve has one target, a `CadSketchPoint`. Curves that share an endpoint share one point prim. `sketch:arc:sweep = ccw` is the arc from `startPoint` to `endPoint` in the direction of increasing `atan2(v − v_c, u − u_c)` about the center, and `cw` the other arc. `sketch:construction:role` (uniform token, unauthored value `none`) gives a datum role: `axis` is a construction line offered as an axis, directed from its start point to its end point.
+
+`sketch:spline:knots` holds the distinct knots, increasing, and `sketch:spline:multiplicities` the multiplicity of each. An `open` spline is clamped: the first and last multiplicities are `degree + 1`, and the multiplicities sum to `len(poles) + degree + 1`. A `closed` spline is periodic: every multiplicity is at most `degree`, the first and last multiplicities are equal, the multiplicities before the last sum to `len(poles)`, and the period is `knots[k] − knots[0]`. The span of a closed spline that starts at `knots[0]` uses poles `0` to `degree`, and each later span of the flat knot sequence, degenerate spans included, advances the pole window by one, with pole indices modulo `len(poles)`. `controlPoints` names one point prim per pole. With `fitRule` other than `none`, the poles are the rule's function of the `fitPoints` targets.
+
+#### Constraints
+
+A constraint type inherits `CadSketchConstraint` and names its geometry through `rel sketch:constraint:constrained` and `rel sketch:constraint:reference`. A dimensional constraint inherits `CadDimensionalConstraint` and adds `uniform double sketch:constraint:value` and `uniform bool sketch:constraint:driving` (unauthored value `true`); a driven constraint states a measurement.
+
+| Type | `constrained` | `reference` | Relation |
+| --- | --- | --- | --- |
+| `CadCoincidentConstraint` | 2 points | | the points coincide |
+| `CadHorizontalConstraint` | 1 line, or 2 points | | `Δv = 0` along the line, or between the points |
+| `CadVerticalConstraint` | 1 line, or 2 points | | `Δu = 0` |
+| `CadParallelConstraint`, `CadPerpendicularConstraint` | 2 lines | | the line directions are parallel, or perpendicular |
+| `CadFixedConstraint` | 1 point, or 1 line | | the geometry keeps its position |
+| `CadPointOnCurveConstraint` | 1 point | 1 line, arc, or circle | the point lies on the curve |
+| `CadSymmetricConstraint` | 2 points | 1 line, or 1 point | the points are symmetric about the reference |
+| `CadEqualConstraint` | 2 lines, or 2 arcs or circles | | equal lengths, or equal radii |
+| `CadTangentConstraint` | 2 curves, one an arc, circle, or spline | | the curves are tangent |
+| `CadRadiusConstraint` | 1 arc or circle | | the radius is `value` |
+| `CadDistanceConstraint` | 2 points, or 1 point | the second point, or 1 line | the distance is `value` |
+| `CadAngleConstraint` | 1 line | 1 line | the signed angle from the reference line to the constrained line is `value`, in degrees |

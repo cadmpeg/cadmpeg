@@ -59,6 +59,7 @@ use crate::text::syntax::{Layer, MetaValue, Value};
 mod brep;
 mod physics;
 mod physx;
+mod sketch;
 
 /// Millimetres per metre.
 const MILLIMETRES_PER_METRE: f64 = 1000.0;
@@ -193,6 +194,8 @@ struct Tallies {
     brep_elements: BTreeMap<String, usize>,
     /// Geometry subsets of `BrepArray` prims, by prim.
     brep_subsets: BTreeMap<String, usize>,
+    rejected_sketch_elements: Vec<String>,
+    sketch_properties: Vec<String>,
     xform: Vec<String>,
     subdivision: usize,
     rejected_faces: usize,
@@ -420,6 +423,17 @@ impl Builder<'_, '_, '_, '_> {
         let Some(prim) = stage.prims.get(index) else {
             return Ok(false);
         };
+        if prim.type_name() == Some("CadSketch") {
+            if self.ctx.depth() == cadmpeg_core::decode::DecodeDepth::Full {
+                let local =
+                    local_transform(prim, &mut self.issues).map_or(IDENTITY, |local| local.matrix);
+                self.sketch(prim, &compose(parent_world, &local))?;
+            }
+            return Ok(false);
+        }
+        if crate::schema::sketch::is_sketch_type(prim.type_name()) {
+            return Ok(false);
+        }
         if physx::is_scene_type(prim.type_name()) {
             self.scene(prim)?;
             return Ok(false);
@@ -1369,6 +1383,7 @@ fn holds_only_shading(stage: &Stage<'_>, prim: &Prim<'_>) -> bool {
                     .and_then(crate::schema::physics::JointType::of)
                     .is_some()
                     || physx::is_scene_type(child.type_name())
+                    || crate::schema::sketch::is_sketch_type(child.type_name())
                     || match role(child.type_name()) {
                         Role::Consumed => true,
                         Role::Group => holds_only_shading(stage, child),
@@ -1641,6 +1656,25 @@ fn tally_losses(tallies: &Tallies, issues: &Issues, metrics: &Metrics) -> Vec<Lo
              transferred: {}",
             tallies.rejected_breps.len(),
             joined(tallies.rejected_breps.iter().cloned())
+        ),
+    );
+    push(
+        UsdLossCode::SketchElementRejected,
+        !tallies.rejected_sketch_elements.is_empty(),
+        format!(
+            "{} sketch points, curves, or constraints do not satisfy their schema, or have \
+             no neutral form, and were not transferred: {}",
+            tallies.rejected_sketch_elements.len(),
+            joined(tallies.rejected_sketch_elements.iter().cloned())
+        ),
+    );
+    push(
+        UsdLossCode::SketchPropertyNotTransferred,
+        !tallies.sketch_properties.is_empty(),
+        format!(
+            "{} sketch properties were not transferred: {}",
+            tallies.sketch_properties.len(),
+            joined(tallies.sketch_properties.iter().cloned())
         ),
     );
     push(
