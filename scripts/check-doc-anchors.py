@@ -133,7 +133,7 @@ def check_schema(path: Path, lines: list[str]) -> list[str]:
 def check(path: Path) -> list[str]:
     failures: list[str] = []
     specs: dict[str, dict[str, list[str]]] = {}
-    lines = path.read_text().split("\n")
+    lines = path.read_text(encoding="utf-8").split("\n")
 
     for number, text in enumerate(lines, 1):
         for spec, line_number in LINE_REFERENCE.findall(text):
@@ -148,7 +148,7 @@ def check(path: Path) -> list[str]:
                 failures.append(f"{path.name}:{number}: no file {spec}")
                 continue
             if spec not in specs:
-                specs[spec] = section_bodies(target.read_text().split("\n"))
+                specs[spec] = section_bodies(target.read_text(encoding="utf-8").split("\n"))
             body = specs[spec].get(section)
             if body is None:
                 failures.append(f"{path.name}:{number}: {spec} has no section §{section}")

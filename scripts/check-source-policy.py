@@ -1570,7 +1570,7 @@ def scan_authoring_paths() -> list[Finding]:
                 for match in AUTHORING_PATH.finditer(line):
                     findings.append(Finding(
                         "authoring_path",
-                        str(path.relative_to(ROOT)),
+                        path.relative_to(ROOT).as_posix(),
                         number,
                         f"Checked-in absolute path {match.group(0)!r} names an authoring "
                         "machine; elide or digest the value instead.",
@@ -1626,7 +1626,7 @@ def scan_measurement_dependency() -> list[Finding]:
                 break
         findings.append(Finding(
             "measurement_dependency",
-            str(manifest.relative_to(ROOT)),
+            manifest.relative_to(ROOT).as_posix(),
             line,
             f"Only the cadmpeg CLI lists {MEASUREMENT_CRATE} outside [dev-dependencies]; "
             "a decoder or encoder never consumes measurement.",
@@ -1687,7 +1687,7 @@ def scan_script_tests() -> list[Finding]:
     """
     findings: list[Finding] = []
     for path in sorted(ROOT.glob("scripts/test_*.py")):
-        relative = str(path.relative_to(ROOT))
+        relative = path.relative_to(ROOT).as_posix()
         text = path.read_text(encoding="utf-8", errors="replace")
         try:
             tree = ast.parse(text)
