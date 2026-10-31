@@ -675,8 +675,9 @@ Named prototype fields describe the first surface instance. Within a complete
 counted `srf_array` frame, the immediately preceding row is the first instance
 when it has the prototype's family. When the immediately preceding row has a
 different family, or when the prototype occurs before the first row header, the
-following same-family row is the first instance. Positional row bodies carry
-the per-instance values for subsequent instances.
+following same-family row is the first instance. The first instance retains
+its named chart origin and signed basis through carrier reconstruction.
+Positional row bodies carry the per-instance values for subsequent instances.
 
 A later positional `geom_type = 0x28` row replays its `splsrf` prototype
 positionally. The row and prototype must be in one complete counted `srf_array`
@@ -710,9 +711,14 @@ lane and leaves the local system unresolved.
 A plane, cylinder, cone, or torus prototype can store a complete signed
 axis-permutation matrix inside its bounded `local_sys f9 04 03` field.
 This body uses the compact rotation production in §3.4. The following named
-field bounds the frame.
+field bounds the frame. A cylinder prototype also admits a complete general
+orthonormal rotation matrix in the pcurve and cylinder-rotation scalar stream.
+Its first nine slots are row-major direction values, its final three slots
+are the origin, and the columns are the radial reference, transverse direction,
+and signed axis. The complete field has twelve finite slots and an optional
+terminal `e1` null marker. Its unique positive `radius` completes the carrier.
 
-Within a named prototype `local_sys`, `e7 <count>` advances over `count`
+Within a sequential support-triple named prototype `local_sys`, `e7 <count>` advances over `count`
 inherited scalar slots. The count is a positive compact integer, must not cross
 the declared array extent, and does not assign values to those slots. Scalar
 decoding resumes at the first slot after the inherited interval.
@@ -844,6 +850,40 @@ defines the model-Z axis direction, the sign of the radial difference defines
 the model-X reference direction, and the absolute half-difference is the
 radius. The absolute signed length is the bounded axial length.
 
+A quarter-turn positional cylinder stores two scalar bounds, the angular
+upper-bound token `12`, and seven further scalars. The two leading values are
+angular lower bound zero and axial lower bound. The seven values are axial
+upper bound and two XYZ envelope corners. These values use the signed
+first-coordinate lane with stateful `e4` through `e6` repeats and explicit
+`18` zero slots. Compact literals `0e`, `0f`, and `10` encode positive one
+half, positive one, and negative one. Repeat state continues across `12`;
+a repeat must fit its bounded group. An optional `f7 <canonical-reference>` follows the corners,
+then `e3` closes the envelope.
+
+The next compound contains a complete compact rotation body as defined in
+§3.4, one positive finite radius in the inline surface-suffix scalar lane,
+and `e3`. Matrix columns zero and one are
+the radial parameter directions; column two is the directed cylinder axis.
+The origin is the axis point. The axial corner interval equals the interval
+obtained by mapping the two stored axial bounds through that frame. Each
+transverse corner interval spans one radius and has the axis point at one
+endpoint. Its other endpoint is the corresponding component of
+`origin + radius * (column_zero + column_one)`.
+Exactly one complete frame-and-radius boundary defines this form.
+The absolute axial-bound difference is the positive bounded length.
+`SMT_THICKNESS` is the model parameter for sheet thickness.
+
+For a first instance, the envelope ends at the following named prototype
+header. The prototype supplies the complete signed frame and radius, and the
+same envelope equalities apply. A coaxial circular boundary has constant
+axial parameter. Its endpoint angles lie in the stored angular interval;
+the arc between those angles inside that interval is its bounded circle
+interval. The interval runs from the edge's start vertex to its end vertex.
+Adjacent cylinder domains that qualify the same edge agree on that
+interval. Endpoint pairs on an adjacent plane constrain its circular
+pcurve at those endpoints. The complete circle projected through that
+plane's frame defines the pcurve between them.
+
 A signed axis-aligned positional cylinder begins `11`, one nonzero signed
 axial length, and `13`, followed by one auxiliary scalar and two XYZ corners.
 All seven fields after `13` use the positional surface-row scalar lane. The
@@ -939,6 +979,47 @@ origin and use the first tabulated-cylinder coordinate lane, including its
 signed `46` form. The terminal scalar is the radius. This body defines an
 unbounded carrier and no axial extent. Prefix bytes before the unique complete
 suffix do not contribute carrier geometry.
+
+A bounded rotation-matrix cylinder stores four parameter bounds in the order
+`u0`, `v0`, `u1`, `v1`, followed by two XYZ envelope corners. Both parameter
+intervals have increasing finite bounds. The ten scalars use the signed
+first-coordinate lane and the compact rotation scalar forms in §4.1.
+`18` is zero, and `e4`, `e5`, and `e6` repeat the preceding scalar one, two,
+and three times. Repetition carries across the four parameter bounds and
+across the six corner coordinates; each group must be complete.
+
+In the bounded cylinder-rotation stream, `19 <tail7>` reconstructs IEEE-754
+bytes `3c <tail7>`, and `32 <tail7>` reconstructs `bc <tail7>`. Each literal
+occupies one finite scalar slot and supplies the value used by following
+repeats. A bounded named cylinder placement pairs either literal with its
+complete ten-slot envelope. A named ten-slot envelope ends at its following
+`e0 00 srf_prim_ptr(cylinder) 00` named-prototype marker.
+
+An `e3` closes a positional envelope. Twelve finite scalar slots follow in
+row-major order: a right-handed orthonormal rotation matrix and three origin
+coordinates. The matrix columns are the radial reference, transverse
+direction, and signed axis. The direction and origin slots share the compact
+scalar stream; repetition carries across their boundary. One positive radius
+and `e3` complete the body.
+
+An active-datum first cylinder stores the envelope before its named cylinder
+prototype. The unique prototype between that row header and the next row
+header supplies the complete `local_sys f9 04 03` matrix and unique positive
+`radius`. The row and prototype belong to one complete counted surface array.
+Its named frame and a later positional frame use the same placement gate.
+
+Within that complete counted array, a later positional rotation-matrix body
+belongs to the unique preceding cylinder prototype with a complete named
+rotation field and positive radius. Its envelope and matrix use the same
+signed coordinate stream and corner constraints.
+
+The axis has one coordinate equal to `+1` or `-1` and two zero coordinates.
+Each radial corner coordinate lies between
+the stored origin coordinate minus and plus the radius. The axial corner
+pair equals the origin plus the signed axis times each axial parameter bound,
+in either order. The origin, axis, reference direction, radius, and axial
+span define the instance carrier. Complete scalar consumption and all corner
+conditions are required together.
 
 A referenced inline-cylinder envelope begins with one complete `32` model
 reference, followed by three first-directrix-coordinate scalars, six
@@ -1555,6 +1636,38 @@ The scalar has precedence over scalar candidates beginning inside its payload;
 the following close byte is not part of the scalar. The bounded body transfers
 the value and source offset as `cone_half_angle_override`.
 
+An ND visible class-917 envelope-only cylinder or ring-torus replay stores
+exactly ten angular stream scalars: `u0, v0, u1, v1`, followed by XYZ minima
+and XYZ maxima. The first-instance prototype and replay belong to one complete
+counted `srf_array`, have the same surface family and feature identifier, and
+occur in that order. Exactly one prototype association qualifies. Its complete
+first-instance carrier supplies the signed axis, reference direction, origin,
+and radii. Both directions are signed model basis vectors. A ring torus has
+major radius greater than the magnitude of its minor radius. The parameter
+bounds are ordered. Angular bounds lie in `[-2*pi, 2*pi]` and span at most one
+turn; the cylinder's second parameter is linear. The complete parameter
+rectangle's six model-space extrema equal the stored XYZ extrema. Endpoints and
+contained multiples of pi/2 supply those extrema for the signed-basis cylinder
+and ring torus. The replay retains the complete first-instance carrier when
+this equality holds.
+
+An analytic circular-sweep boundary production has a class-917 owner, one
+unique complete angular paired path with at least three samples, and a
+constant-coordinate cylinder or torus chart. The constant coordinate agrees
+through the complete sample sequence. This analytic chart defines the circle;
+both carriers are planes, cylinders, or tori, and the circle satisfies their
+complete analytic equations. A plane contains the circle center and has a
+parallel normal. A cylinder is coaxial with the circle and has the same radius.
+A torus contains a parallel ring whose radial and axial offsets satisfy the
+tube-radius equation, or a meridian whose center lies on the major circle and
+whose radius equals the tube radius. Every corresponding model-space sample
+lies on that circle, and both chart images agree. Qualifying charts define the
+same oriented circle. The ordered intermediate samples select exactly one
+circle-axis direction and one arc from the edge's start vertex to its end
+vertex, with a span of at most one turn. All intermediate angles increase
+strictly inside that interval. A plane chart for this boundary is the circle's
+exact projection into the plane frame, with the same parameter interval.
+
 ### 3.3 Torus and sphere representation
 
 A `srf_prim_ptr(torus)` prototype stores `e1[3], e2[3], e3[3], origin[3], radius1, radius2`. A sphere uses `radius1 = 0` and radius `radius2`; a torus uses nonzero `radius1`. Per-instance row-body overrides use a separate grammar.
@@ -1883,6 +1996,11 @@ A repeat requires a preceding scalar and must end within slot eleven. It can
 cross the matrix/origin boundary. The expanded body has exactly twelve finite
 slots and consumes its complete field boundary.
 
+In a compact rotation, a terminal direction-slot `e7 <count>` repeats the
+preceding zero through the remaining direction and origin slots. The count
+is a positive canonical reference integer. The run completes exactly twelve slots at the field boundary. This counted zero-run production precedes the sequential
+support-triple production's inherited-slot reading.
+
 Each matrix column is a signed model basis vector. Column zero is the first
 parameter direction, column one is the second parameter direction, and column
 two is the plane normal. The normal equals the cross product of the first two
@@ -1891,6 +2009,12 @@ scalars use the signed first-coordinate lane at all three positions, including
 positive `2d`, negative `46`, and the positive DICT exponent lattice.
 The repeat tokens keep their repeat meaning in the origin slots; `18` is an
 explicit zero there.
+
+A complete positional compact rotation frame can end with
+`e1 f7 <nonzero-canonical-reference>` before its compound close. The `e1`
+closes the frame. The following reference occupies the linkage field after
+that close. Its complete canonical identifier ends at the compound boundary.
+The scalar frame and linkage retain their separate byte extents.
 
 A generic direct-normal body stores a parameter
 direction, an exact zero-rank triple, and a stored plane normal. A generic zero-rank
@@ -2316,19 +2440,6 @@ array boundary or the next `e0` named-field boundary. An `e0` inside an explicit
 scalar payload is data. No partial slot or trailing scalar belongs to this
 array.
 
-The complete pcurve inventory contains 2,149 frames and 9,670 odd-coordinate
-slots. Of 810 values changed by the lane choice, paired samples give 232
-agreements unique to the signed first-coordinate reading, 78 agreements under
-both readings, 98 failures under both readings, and 402 unevaluable samples.
-The second-coordinate alternative has zero unique agreements.
-
-Standalone `12` occurs 285 times in 177 complete pcurve frames. The positive
-pi/2 reading gives 20 complete-record agreements, 29 disagreements, and 128
-unresolved records. The zero reading gives zero agreements, 49 disagreements,
-and 128 unresolved records. Affected samples give 43 agreements unique to
-positive pi/2, ten agreements under both readings, 18 failures under both
-readings, and 214 unevaluable samples.
-
 The exact wrapper `d7 e8 03 <scalar> 1e` selects the held-scalar production at
 a token boundary. It occupies one held scalar slot and retains the row-lane
 literal grammar; wrapper bytes are not parameter values. A payload byte sequence
@@ -2354,9 +2465,13 @@ topology fields make the prototype ambiguous.
 The named prototype's `crv_pnt_dir` array stores the two half-edge direction
 flags. A unique named prototype topology record supplies a rowless edge when a
 positional or prototype topology suffix references its `crv_id` as `E0` or
-`E1`. The decoder promotes that record to the half-edge graph only when the
-prototype, its topology record, its direction array, and both face references
-are unique in the enclosing model namespace. A named prototype that is not
+`E1`. That record forms a half-edge graph row when the prototype, its
+topology record, its direction array, and both face references are unique in
+the enclosing model namespace. The face-reference roster contains visible
+and non-visible surface-row identifiers and the `geom_id` values of complete
+active-datum cylinder rows with admitted carriers and unique identifiers.
+The active-datum row binds its identifier to its feature owner and signed
+carrier frame. A named prototype that is not
 referenced as a successor remains schema data.
 
 ### 4.1.1 Legacy ASCII curve topology and endpoints
@@ -2403,12 +2518,22 @@ pointwise-corresponding pcurve samples. A later row in the same `crv_array`
 namespace with the same nonzero `feat_id` and raw `type_byte` replays the unique
 canonical sample count without the `fc <count>` prefix. The canonical or
 replay body is complete only when exactly `4 * count` scalar slots consume its
-bounded parameter body. It has no trailing parameter-bound scalars. Multiple
-canonical counts for one feature and raw type
-make an unprefixed replay ambiguous.
+bounded parameter body. It has no trailing parameter-bound scalars. Exactly one canonical count for the feature and raw type must complete the
+unprefixed replay body.
 
 Each chart sample at one index describes the same spatial point. All sample
 indices belong to the stored curve.
+
+The pcurve and cylinder-rotation scalar streams define `11` as positive pi
+and `13` as positive two pi. The three-byte form `00 K B`, with
+`K` in `0e`, `0f`, `10`, `11`, `12`, or `13`, replaces the low IEEE-754 byte
+of the corresponding constant with `B`. Those constants are positive one
+half, positive one, negative one, positive pi, positive pi/2, and positive
+two pi. The three-byte scalar `1b X Y` reconstructs IEEE-754 bytes
+`3c X Y 00 00 00 00 00`; `34 X Y` reconstructs
+`bc X Y 00 00 00 00 00`. These forms occupy one scalar slot and replace
+the preceding value used by subsequent repeats. Cylinder-rotation repeats
+use `e4`, `e5`, and `e6`; pcurve streams also admit the counted `e7` form.
 
 The scalar stream uses the direct eight-slot pcurve literals and bounded
 repeats, including `12` positive pi/2 and `e7 <count>`. The first scalar is
@@ -2416,18 +2541,79 @@ a literal. In complete direct, replay, and counted pcurve bodies, explicit
 `2d` is positive and explicit `46` is negative in both chart-coordinate slots.
 The other explicit coordinates use the signed first-coordinate lane.
 A repeat carries across chart and sample boundaries but cannot exceed
-`4 * count` slots. In either chart's first-coordinate slot, `32 <tail7>`
-is an additional eight-byte positive sub-unit scalar that reconstructs
+`4 * count` slots. In the legacy two-chart production, either chart's first
+coordinate slot defines `32 <tail7>`
+as an additional eight-byte positive sub-unit scalar that reconstructs
 IEEE-754 bytes `3f <tail7>`. The `fc 05` circle production is separate and
 does not declare five sample rows. The chart pair
 for a spline face is the interpolation surface's `(u, v)` pair. A plane uses
 its stored affine `(u, v)` frame. An extrusion uses profile parameter followed
 by sweep coordinate. Other surface families use their stored surface chart.
 
+An angular two-chart scalar stream contains at least one standalone angle
+literal from `11 = pi`, `13 = 2*pi`, `14 = 3*pi/2`, `15 = -pi`, or `16 = -pi/2`
+at a token boundary. `12` retains its positive pi/2 value. The stream uses the
+bounded preceding-scalar repeats and signed first-coordinate explicit values.
+Its tiny forms reconstruct IEEE-754 bytes as follows: `19 <tail7>` gives `3c
+<tail7>`, `32 <tail7>` gives `bc <tail7>`, `1a B C` gives `3c B C C C C C C`,
+and `1b B C` gives `3c B C 00 00 00 00 00`. The seven-byte form
+`1d <tail6>` gives `3c <tail6> 00`; the eight-byte form `1e <tail7>` gives
+`3d <tail7>`. Each occupies one scalar slot. The form `00 <literal> <low>`
+replaces the literal's low IEEE byte with `low`; the literal is an angle or one
+of `04`, `0e`, `0f`, `10`, and `18`. For this replacement, `04` has IEEE image
+`3f ef ff ff ff ff ff ff`. The replacement supplies the value used by following
+repeats. A frame that completes the legacy two-chart production uses that
+production. The angular alternative requires complete scalar consumption, the
+exact declared sample extent, and an additional angle literal. These conditions
+select the scalar production for every sample in the frame.
+
+A curve with raw type `01` and owner class `911` Hole defines an axial
+boundary line from one complete direct eight-slot chart frame or a counted
+two-row chart frame. Both incident cylinders have the same owner, equal
+radii, parallel axes, and one axis line. Each owned source envelope passes
+the bounded rotation placement gate. Each angular interval is shorter than
+one turn. Both endpoint paths lie within their axial and angular bounds.
+Each path's full unwrapped angular travel stays within the angular
+agreement tolerance, and its arc travel stays within the positional
+agreement tolerance. The endpoints select one angular
+boundary in each cylinder. The two boundaries have opposing inward radial
+tangents and define the same generator line. Both chart paths align with the
+solved edge endpoints. The stored boundaries define the line carrier.
+
+A curve with raw type `00` and owner class `911` Hole defines a directed
+circular interval from one complete paired sample record with at least three
+samples.
+The record's incident face pair equals the curve row's incident pair. One
+face is a plane and the other is a cylinder. The cylinder has one same-owner
+bounded carrier in its selected visible or active-datum namespace. Each
+visible plane local system with either face identifier has a complete frame.
+Both chart images agree at every sample. The analytic circle lies on both
+surfaces and contains every mapped point. The first and last samples align
+with the solved edge endpoints. The interior samples advance strictly inside
+exactly one directed circular interval. That interval supplies the edge's
+oriented circle and parameter range. The cap pcurve is the circle's complete
+projection through the admitted plane chart.
+
+A type-two named `crv_pnt_arr f9 <count> 04` stores the angular stream in
+`count` four-scalar rows, with `count >= 2`. Its bounded body ends at the
+following type-one `crv_hdr_geom_ptr[0]` field. Its unique prototype topology
+supplies both face identifiers. The first and final rows give the endpoints;
+all intermediate rows retain their corresponding chart samples. The array
+count, both face references, complete field boundary, and angular scalar
+production must all be defined.
+
+The angular chart construction uses two independently defined, complete
+incident-face frames for its model-space constraints. Every corresponding model-space point is finite, and the two
+images agree through the complete path. The unique native curve-topology row
+binds the first and final points to the two half-edge start vertices. Direction
+bytes `01 f6` preserve endpoint order; `f6 01` reverse it. Each directed
+endpoint satisfies every admitted analytic carrier incident to its vertex
+orbit.
+
 Every available face chart is evaluated at every sample. When both face
-surfaces are available, corresponding model-space points must agree. A missing
-face surface does not erase a complete path in the available face chart; that
-path supplies one-sided, non-authoritative endpoint evidence. Two agreeing
+surfaces are available, corresponding model-space points must agree. In the legacy production, a missing face surface leaves a complete path
+in the available face chart; that path supplies one-sided, non-authoritative
+endpoint evidence. Two agreeing
 complete paths supply authoritative endpoint evidence. A nonperiodic spline
 sample marginally outside its stored parameter interval is evaluated with the
 polynomial of the adjacent boundary knot span. It is not clamped or rejected.
@@ -2577,6 +2763,16 @@ changes neither carrier equation and does not assign native parameter
 semantics.
 
 ## 5. Topology and section records
+
+A planar face can have one strictly convex polygon perimeter of typed line
+edges and disjoint two-edge circular hole loops. Each circle loop has two
+distinct circle carriers with one center, radius, and axis parallel to the
+plane normal. Its closed native pcurve paths have diametrically opposite
+endpoints. Every polygon edge places all other polygon vertices strictly on
+its interior side. Every circle center lies farther than its radius from each
+polygon edge, and every center pair is farther apart than the sum of their
+radii. These conditions establish the polygon as the outer loop and each
+circle as an inner loop.
 
 Build the B-rep half-edge graph from the `crv_array` suffixes. A single-loop face has an outer boundary by topology. A two-edge loop is admissible only when its distinct edge carriers have typed non-linear geometry, complete native pcurve endpoint paths close in traversal order, and the resulting boundary is otherwise ordered by the same face rules. For multiple two-edge circular loops on a plane, complete circle carriers with a common center and distinct radii provide the outer-to-inner order. Two-edge line-only loops and ambiguous circular loop sets remain native. Multi-loop faces otherwise require parameter-space containment to distinguish outer from inner loops. When no placed surface chart is available, complete solved boundary vertices must prove one common plane before the same containment rule is applied. Native body components follow connected components of nonzero face references. In a legacy ASCII layout, a component is eligible for neutral admission when it contains at least one face whose visible surface carrier, boundary loops, edge carriers, and solved vertices all pass the admission gates. Only those eligible faces and edges enter the neutral body; references in the same component that do not pass the gates remain native. A component with no eligible visible face remains native. Neutral shells follow connected components of admitted face topology through shared edges or vertices.
 

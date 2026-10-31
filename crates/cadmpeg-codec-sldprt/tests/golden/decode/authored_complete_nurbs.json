@@ -22,7 +22,7 @@
           "id": "sldprt:brep:coedge#30",
           "owner_loop": "sldprt:brep:loop#20",
           "radial_next": "sldprt:brep:coedge#30",
-          "sense": "forward"
+          "sense": "reversed"
         },
         {
           "edge": "sldprt:brep:edge#41",
@@ -102,15 +102,15 @@
         },
         {
           "carrier": {},
-          "end": "sldprt:brep:vertex#52",
+          "end": "sldprt:brep:vertex#51",
           "id": "sldprt:brep:edge#41",
-          "start": "sldprt:brep:vertex#51"
+          "start": "sldprt:brep:vertex#52"
         },
         {
           "carrier": {},
-          "end": "sldprt:brep:vertex#50",
+          "end": "sldprt:brep:vertex#52",
           "id": "sldprt:brep:edge#42",
-          "start": "sldprt:brep:vertex#52"
+          "start": "sldprt:brep:vertex#50"
         }
       ],
       "faces": [
@@ -133,8 +133,8 @@
           "boundary": {
             "coedges": [
               "sldprt:brep:coedge#30",
-              "sldprt:brep:coedge#31",
-              "sldprt:brep:coedge#32"
+              "sldprt:brep:coedge#32",
+              "sldprt:brep:coedge#31"
             ],
             "kind": "ring"
           },

@@ -5,6 +5,32 @@ It records implementation coverage and verification gates. Byte semantics
 belong in [creo_prt.md](creo_prt.md); unresolved byte meanings belong in
 [creo_prt-open-items.md](creo_prt-open-items.md).
 
+Quarter-turn positional cylinders use the shared compact rotation gate,
+stateful envelope scalars, a positive radius, and agreeing axial and radial
+envelope intervals. Closed compact plane frames admit a following canonical
+linkage reference. Coaxial circle boundaries use the stored cylinder domain
+to select their bounded intervals. Planar circle pcurves retain the complete
+arc, with native endpoint pairs as constraints. Native records retain the complete source compounds.
+Synthetic checks cover carrier admission, conflicting-radius refusal, neutral
+validation, complete linkage framing, domain-bound circle intervals, and attributed losses.
+
+Bounded cylinder instances admit full signed floating literals through the
+shared twelve-slot matrix, coordinate-axis, positive-radius, radial-envelope,
+and axial-bound gate. Complete ten-slot envelopes bound their following named cylinder
+prototypes. Complete angular sample fields admit the seven-byte `1d` and
+eight-byte `1e` scalar forms. Synthetic checks cover both geometry namespaces,
+sample-field completion, extent and radius conflicts, neutral validation,
+and attributed refusal losses. Explicit Hole owners use complete paired
+plane/cylinder samples to prove circular edge intervals and complete cap
+pcurves. The bounded-carrier, sample agreement, endpoint, and strict ordering
+predicates apply together. Refused hole intervals retain
+`geometry.hole-circle-interval-unresolved` with the source curve and offset.
+Hole generators use two owned partial cylinder domains, matching endpoints,
+a shared angular boundary, opposing domain interiors, and a bound on full
+chart travel. Their envelopes use the shared rotation placement gate.
+`geometry.hole-generator-unresolved` retains each recognized refusal.
+Other small scalar forms remain in SE-15.
+
 ## Envelope
 
 The implemented format band is `#UGC:2` PSB part documents using the legacy
@@ -936,6 +962,39 @@ source sample. A failed candidate emits
 native samples remain retained. Synthetic coverage admits a sampled line and
 refuses an endpoint chord with a displaced interior sample.
 
+## Angular sweep carriers
+
+Angular paths supply model-space constraints after both incident charts have
+independently resolved complete frames and every corresponding point agrees.
+The native directed endpoint binding must satisfy every admitted analytic
+carrier incident to each vertex orbit.
+Legacy paths supply the existing plane-frame branch witnesses. The scan keeps the
+scalar-production tag outside the IR. `geometry.angular-pcurve-pair-unresolved`
+identifies each path whose paired chart or directed endpoint construction is unavailable. Independent
+angular chart construction remains in GS-31. Legacy
+one-sided endpoint evidence retains its established admission.
+
+Complete angular two-chart arrays select one scalar production for every
+sample. Canonical, replayed, and named arrays share the exact slot-count gate;
+complete legacy frames retain their scalar production. Signed angles,
+tiny explicit coordinates, and constant low-byte replacements feed the same
+paired-chart and neutral boundary checks. A terminal counted zero run that begins inside a compact direction matrix
+completes the matrix and its three zero origin slots.
+
+A class-917 envelope-only cylinder or ring-torus replay binds to one preceding
+first-instance prototype of the same family and feature in a complete counted
+surface array. The signed basis and complete parameter rectangle must reproduce
+all six stored XYZ extrema. A conflict retains the native row with
+`geometry.sweep-envelope-replay-unresolved`, including its surface identifier
+and source byte position. `carrier.sweep-envelope-replays` counts transferred
+surfaces. Complete paired sweep samples constrain circular boundaries and
+their oriented intervals. Plane trims use the exact circle projection.
+`carrier.sampled-sweep-circles` counts transferred circular carriers.
+A named sample array records `geometry.pcurve-sample-coordinates-dropped`
+with its curve identifier, byte position, and decoded sample count because
+the individual array is omitted from the IR. Spatial fillet constructions remain in GS-30; extended scalar forms
+remain in SE-04.
+
 ## Plane-carrier and sampled-path reports
 
 The transferred-plane note counts admitted neutral plane rows through
@@ -1000,3 +1059,32 @@ nonzero direction opener is `71` or `b9`. The rotation production also owns
 the explicit `41`/`45` floating forms; other DICT components retain generic
 support-frame ownership. All five original generic support byte images and
 assertions remain covered.
+
+Compact-frame face components require a unique solved carrier for every
+boundary curve before neutral face admission. An unresolved boundary retains
+the complete component as native topology and emits
+`geometry.brep-compact-frame-boundary-unresolved` for each withheld face.
+
+Bounded cylinder rotation matrices share one complete gate for row framing,
+active-datum prototype placement, carrier transfer, and contour framing. Signed stored origins and axes must
+agree with every envelope corner. Compact angular constants, low-byte
+constant variants, and signed tiny short forms feed the stateful pcurve
+stream. Synthetic tests cover signed placement, bounded repeats, scalar
+values, decoder/validator agreement, and attributed surface refusal. Conflicting
+cylinder rotation frames emit `creo/geometry.cylinder-rotation-frame-unresolved`.
+
+Later positional rotation bodies bind to the unique preceding complete named
+cylinder prototype in their counted surface array. Synthetic coverage refuses
+both named and positional conflicts in that scope. Complete legacy inline
+cylinder productions retain their frame and envelope gate.
+
+Validated active-datum cylinder identities participate in named-edge topology
+admission. The same uniqueness and successor-reference gate closes their cap
+cycles. First-instance named cylinder matrices retain their chart origin and
+signed basis when positional envelope carriers transfer later.
+
+Planar caps with one strictly convex line perimeter and disjoint two-edge
+circle holes use analytic disk containment. Circle carriers, diametric native
+pcurve endpoints, strict perimeter containment, and pairwise disk separation
+remain required. Synthetic coverage admits separated holes and refuses
+boundary tangency and intersecting holes.

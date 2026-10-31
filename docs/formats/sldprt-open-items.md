@@ -44,9 +44,9 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 ### BC-10. FIN-link withholding
 
-**Question.** Which native field distinguishes a FIN backward link that names no reciprocal same-loop forward link from a valid ring closure?
+**Question.** Which native field distinguishes a FIN forward link that names no reciprocal same-loop backward link from a valid ring closure?
 
-**Known.** `decode.rs` withholds a ring through `TopologyFinLinkUnresolved` when a FIN backward link names no reciprocal same-loop forward link; the ring stays unwalked (#517).
+**Known.** `decode.rs` withholds a ring through `TopologyFinLinkUnresolved` when a FIN forward link names no reciprocal same-loop backward link; the ring stays unwalked (#517).
 
 **Need.** We must know the link grammar that walks such a ring.
 
@@ -57,14 +57,6 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 **Known.** `decode.rs` admits a vertexless ring edge only with reciprocal opposite FINs on the same unbounded circle carrier, a face-owned single-FIN loop, and at most one sheet dummy; every other vertexless ring edge stays native under `TopologyRingEdgeWithheld`, with vertices as stored (#517).
 
 **Need.** We must know the native admission record that places such an edge on its carrier.
-
-### BC-12. Stored face-sense against coedge parity
-
-**Question.** Which native field decides the face sense when the stored sense contradicts the shared-edge coedge parity?
-
-**Known.** The decoder keeps each face's stored sense and reports the disagreement through `TopologyFaceSenseConflict` (#504). `sldprt.md` §7.1 gives the three-reversal neutral sense composition and states that coedge markers do not constrain face senses. The native rule for the disagreement awaits a specimen.
-
-**Need.** We must know the native rule that resolves the disagreement.
 
 ## 2. Geometry carriers
 
@@ -126,7 +118,7 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 ### GC-11. Compact curve marker exceptions
 
-**Question.** Which field sets the edge direction when a compact circle with marker `0x2b` carries an edge whose stored direction runs along the curve parameter?
+**Question.** Which field sets the edge direction when a compact circle with marker `0x2b` carries an edge whose stored direction runs against the curve parameter?
 
 **Known.** `sldprt.md` §7.1 "The marker of a compact line, circle, or ellipse gives the direction" defines the marker rule. A circle edge between a cylinder face and a planar face can have marker `0x2b` while its display tessellation runs along the curve parameter. The specification defines no second field that overrides the marker.
 

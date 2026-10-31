@@ -785,13 +785,13 @@ fn validate_sketches(data: &NativeData, ir: &CadIr, findings: &mut Vec<Finding>)
     let native_entities = data
         .pm_dc_sketch_entities
         .iter()
-        .map(crate::record_identity::Located::id)
-        .collect::<HashSet<_>>();
+        .map(|entity| (entity.id(), entity))
+        .collect::<HashMap<_, _>>();
     let native_constraints = data
         .pm_dc_sketch_constraints
         .iter()
-        .map(crate::record_identity::Located::id)
-        .collect::<HashSet<_>>();
+        .map(|constraint| (constraint.id(), constraint))
+        .collect::<HashMap<_, _>>();
     for sketch in &ir.model.sketches {
         if sketch
             .native_ref
@@ -805,15 +805,33 @@ fn validate_sketches(data: &NativeData, ir: &CadIr, findings: &mut Vec<Finding>)
             ));
         }
     }
+    let spline_sources = if ir.model.sketch_entities.iter().any(|entity| {
+        matches!(
+            entity.geometry.definition(),
+            cadmpeg_ir::sketches::SketchGeometryDefinition::Nurbs { .. }
+        )
+    }) {
+        cadmpeg_core::decode::unique_index(data.pm_dc_sketch_entities.iter().map(|source| {
+            (
+                (
+                    source.identity.segment_token.as_str(),
+                    source.identity.record_ordinal,
+                ),
+                source,
+            )
+        }))
+    } else {
+        HashMap::new()
+    };
     for entity in &ir.model.sketch_entities {
         if entity
             .native_ref
             .as_deref()
-            .is_none_or(|reference| !native_entities.contains(reference))
+            .is_none_or(|reference| !native_entities.contains_key(reference))
             || entity
                 .endpoint_refs
                 .iter()
-                .any(|reference| !native_entities.contains(reference.as_str()))
+                .any(|reference| !native_entities.contains_key(reference.as_str()))
         {
             findings.push(finding(
                 Check::NativeLinks,
@@ -821,12 +839,57 @@ fn validate_sketches(data: &NativeData, ir: &CadIr, findings: &mut Vec<Finding>)
                 Some(entity.id().as_str().to_owned()),
             ));
         }
+        if matches!(
+            entity.geometry.definition(),
+            cadmpeg_ir::sketches::SketchGeometryDefinition::Ellipse { .. }
+        ) && !entity.native_ref.as_deref().is_some_and(|reference| {
+            native_entities
+                .get(reference)
+                .is_some_and(|source| crate::sketch::curve::closed_ellipse(source))
+        }) {
+            findings.push(finding(
+                Check::NativeLinks,
+                "Inventor neutral ellipse does not match its closed-ellipse source form".into(),
+                Some(entity.id().as_str().to_owned()),
+            ));
+        }
+        if matches!(
+            entity.geometry.definition(),
+            cadmpeg_ir::sketches::SketchGeometryDefinition::Nurbs { .. }
+        ) && !entity.native_ref.as_deref().is_some_and(|reference| {
+            native_entities.get(reference).is_some_and(|source| {
+                crate::sketch::project_geometry(source, &spline_sources).as_ref()
+                    == Some(&entity.geometry)
+                    && entity.endpoint_refs
+                        == crate::sketch::entity_endpoint_refs(source, &spline_sources)
+            })
+        }) {
+            findings.push(finding(
+                Check::NativeLinks,
+                "Inventor neutral spline does not match its admitted source curve form".into(),
+                Some(entity.id().as_str().to_owned()),
+            ));
+        }
     }
+    let midpoint_geometry = if ir.model.sketch_constraints.iter().any(|constraint| {
+        matches!(
+            constraint.definition.kind(),
+            cadmpeg_ir::sketches::SketchConstraintDefinitionInput::Midpoint { .. }
+        )
+    }) {
+        ir.model
+            .sketch_entities
+            .iter()
+            .map(|entity| (entity.id().as_str(), &entity.geometry))
+            .collect::<HashMap<_, _>>()
+    } else {
+        HashMap::new()
+    };
     for constraint in &ir.model.sketch_constraints {
         if constraint
             .native_ref
             .as_deref()
-            .is_none_or(|reference| !native_constraints.contains(reference))
+            .is_none_or(|reference| !native_constraints.contains_key(reference))
         {
             findings.push(finding(
                 Check::NativeLinks,
@@ -834,6 +897,28 @@ fn validate_sketches(data: &NativeData, ir: &CadIr, findings: &mut Vec<Finding>)
                     .into(),
                 Some(constraint.id.as_str().to_owned()),
             ));
+        }
+        if let cadmpeg_ir::sketches::SketchConstraintDefinitionInput::Midpoint { entity, .. } =
+            constraint.definition.kind()
+        {
+            if !midpoint_geometry
+                .get(entity.as_str())
+                .is_some_and(|geometry| {
+                    constraint
+                        .native_ref
+                        .as_deref()
+                        .and_then(|native| native_constraints.get(native))
+                        .is_some_and(|source| {
+                            crate::sketch::curve::midpoint_supported(source, geometry)
+                        })
+                })
+            {
+                findings.push(finding(
+                    Check::NativeLinks,
+                    "Inventor neutral midpoint requires a resolved line or circular arc".into(),
+                    Some(constraint.id.as_str().to_owned()),
+                ));
+            }
         }
     }
     for issue in &data.sketch_record_issues {
@@ -843,6 +928,15 @@ fn validate_sketches(data: &NativeData, ir: &CadIr, findings: &mut Vec<Finding>)
             Some(issue.id()),
         ));
     }
+}
+
+fn tagging_definition_matches(
+    feature: &cadmpeg_ir::features::Feature,
+    has_result: bool,
+    unique_label: bool,
+) -> bool {
+    feature.evaluation.definition() == &crate::feature::tagging::definition(unique_label)
+        && !has_result
 }
 
 fn validate_features(
@@ -1114,6 +1208,16 @@ fn validate_features(
             } => {
                 references.extend(surface.iter().map(|reference| reference.index()));
             }
+            PmDcFeaturePropertyKind::WorkPoint {
+                references: point, ..
+            } => {
+                references.extend(
+                    point
+                        .iter()
+                        .flat_map(crate::pmdc::PmDcReferenceList::references)
+                        .map(|reference| reference.index()),
+                );
+            }
         }
         if raw.get(&(
             property.identity.segment_token.as_str(),
@@ -1312,6 +1416,17 @@ fn validate_features(
             ));
         }
     }
+    let tagging_owners = data
+        .pm_dc_feature_labels
+        .iter()
+        .filter(|label| label.class_id() == crate::feature::tagging::CLASS_ID)
+        .filter_map(|label| {
+            Some((
+                label.identity.segment_token.as_str(),
+                label.header.owner.record_ordinal()?,
+            ))
+        })
+        .collect::<HashSet<_>>();
     let raw_features = data
         .pm_dc_features
         .iter()
@@ -1485,6 +1600,7 @@ fn validate_features(
             parameters: &data.pm_dc_parameters,
             sketches: &data.pm_dc_sketches,
             directions: &data.pm_dc_directions,
+            transforms: &data.pm_dc_transforms,
             planes: &data.pm_dc_work_planes,
             entity_links: &data.pm_dc_entity_style_links,
             kernel_links: &data.pm_dc_kernel_entity_links,
@@ -1641,6 +1757,38 @@ fn validate_features(
             ));
             continue;
         };
+        if tagging_owners.contains(&(
+            raw_feature.identity.segment_token.as_str(),
+            raw_feature.identity.record_ordinal,
+        )) {
+            if !tagging_definition_matches(
+                feature,
+                results.contains_key(&feature.id),
+                crate::feature::tagging::unique_owner(&data.pm_dc_feature_labels, raw_feature),
+            ) {
+                findings.push(finding(
+                    Check::NativeLinks,
+                    "Inventor Tagging selection effect requires its native definition".into(),
+                    Some(feature.id.as_str().to_owned()),
+                ));
+            }
+            continue;
+        }
+        if matches!(
+            feature.evaluation.definition(),
+            cadmpeg_ir::features::FeatureDefinition::Operation(
+                cadmpeg_ir::features::FeatureOperation::DeleteFace { .. }
+            )
+        ) {
+            if let Err(reason) = crate::feature::delete_face::admission(raw_feature) {
+                findings.push(finding(
+                    Check::NativeLinks,
+                    format!("Inventor neutral DeleteFace refused: {}.", reason.detail()),
+                    Some(feature.id.as_str().to_owned()),
+                ));
+            }
+            continue;
+        }
         if let cadmpeg_ir::features::FeatureDefinition::Operation(
             cadmpeg_ir::features::FeatureOperation::CosmeticThread {
                 face,
@@ -1730,6 +1878,72 @@ fn validate_features(
                 findings.push(finding(
                     Check::NativeLinks,
                     "Inventor neutral thicken operands do not match their PmDc slots".into(),
+                    Some(feature.id.as_str().to_owned()),
+                ));
+            }
+        }
+        if let cadmpeg_ir::features::FeatureDefinition::Operation(
+            operation @ (cadmpeg_ir::features::FeatureOperation::Fillet { .. }
+            | cadmpeg_ir::features::FeatureOperation::Chamfer { .. }),
+        ) = definition
+        {
+            let token = raw_feature.identity.segment_token.as_str();
+            let property = |reference: crate::pmdc::PmDcReference| {
+                feature_properties
+                    .get(&(token, reference.record_ordinal()?))?
+                    .as_ref()
+                    .copied()
+            };
+            let parameter = |reference: crate::pmdc::PmDcReference| {
+                let raw = feature_parameters
+                    .get(&(token, reference.record_ordinal()?))?
+                    .as_ref()?;
+                parameter_values
+                    .get(raw.id().as_str())?
+                    .as_ref()?
+                    .value
+                    .as_ref()
+            };
+            let length = |reference| match parameter(reference)? {
+                cadmpeg_ir::features::ParameterValue::Length(value) => Some(*value),
+                _ => None,
+            };
+            let admitted = match operation {
+                cadmpeg_ir::features::FeatureOperation::Fillet { groups } => {
+                    let corner = labels
+                        .get(&(token, raw_feature.identity.record_ordinal))
+                        .is_some_and(|label| {
+                            label.class_id() == crate::feature::CORNER_ROUND_CLASS_ID
+                        });
+                    crate::feature::fillet::operands(raw_feature, corner, property, length)
+                        .is_ok_and(|expected| crate::feature::fillet::matches(&expected, groups))
+                }
+                cadmpeg_ir::features::FeatureOperation::Chamfer {
+                    groups,
+                    flip_direction,
+                } => crate::feature::chamfer::operands(
+                    raw_feature,
+                    property,
+                    |slot| length(*raw_feature.properties.references().get(slot)?),
+                    |slot| match parameter(*raw_feature.properties.references().get(slot)?)? {
+                        cadmpeg_ir::features::ParameterValue::Angle(value) => Some(*value),
+                        _ => None,
+                    },
+                )
+                .is_ok_and(|expected| {
+                    crate::feature::chamfer::matches(
+                        &expected,
+                        raw_feature,
+                        groups,
+                        *flip_direction,
+                    )
+                }),
+                _ => false,
+            };
+            if !admitted {
+                findings.push(finding(
+                    Check::NativeLinks,
+                    "Inventor neutral edge treatment operands differ from their PmDc slots".into(),
                     Some(feature.id.as_str().to_owned()),
                 ));
             }

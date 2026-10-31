@@ -1243,7 +1243,7 @@ pub(crate) struct TabulatedCylinderCurveReplay {
 
 impl SurfaceParameterRecord {
     /// Declared surface family, retained even when no carrier is decoded.
-    fn kind(&self) -> SurfaceKind {
+    pub(crate) fn kind(&self) -> SurfaceKind {
         match self.carrier {
             SurfaceParameterCarrier::Unresolved(kind) => kind,
             SurfaceParameterCarrier::Resolved(carrier) => match carrier {
@@ -3594,13 +3594,22 @@ fn parsed_named_surface_value(
                 && slot_count == 12)
                 .then(|| scalar::decode_compact_plane_rotation(remaining, cache))
                 .flatten();
-            let values = if let Some(rotation) = compact_plane {
+            let cylinder_rotation = (matches!(family, SurfacePrototypeFamily::Cylinder)
+                && slot_count == 12)
+                .then(|| scalar::decode_cylinder_rotation_prefix(remaining, cache))
+                .flatten()
+                .filter(|(_, end)| {
+                    *end == remaining.len() || remaining.get(*end..) == Some(&[0xe1])
+                })
+                .map(|(values, _)| Ok(values));
+            let compact_rotation = compact_plane.or(cylinder_rotation);
+            let values = if let Some(rotation) = compact_rotation {
                 match rotation {
                     Ok(values) => {
                         let mut slots = match ctx.alloc_filled(
                             slot_count,
                             None,
-                            "creo compact plane local system",
+                            "creo compact surface local system",
                         ) {
                             Ok(slots) => slots,
                             Err(error) => return Some(Err(error)),
@@ -3852,9 +3861,34 @@ pub(crate) fn named_prototype_records(
     payload: &[u8],
     refusals: &mut crate::lane_refusal::LaneRefusals,
 ) -> Result<Vec<SurfacePrototypeRecord>, CodecError> {
+    named_prototype_records_for_family(ctx, payload, refusals, None)
+}
+
+pub(crate) fn named_cylinder_prototype_records(
+    ctx: &DecodeContext<'_>,
+    payload: &[u8],
+    refusals: &mut crate::lane_refusal::LaneRefusals,
+) -> Result<Vec<SurfacePrototypeRecord>, CodecError> {
+    named_prototype_records_for_family(
+        ctx,
+        payload,
+        refusals,
+        Some(&SurfacePrototypeFamily::Cylinder),
+    )
+}
+
+fn named_prototype_records_for_family(
+    ctx: &DecodeContext<'_>,
+    payload: &[u8],
+    refusals: &mut crate::lane_refusal::LaneRefusals,
+    family: Option<&SurfacePrototypeFamily>,
+) -> Result<Vec<SurfacePrototypeRecord>, CodecError> {
     let cache = scalar::ScalarCache::from_section_checked(payload);
     let mut records = Vec::new();
     for frame in named_prototype_frames(payload) {
+        if family.is_some_and(|family| *family != frame.family) {
+            continue;
+        }
         let mut parameters = Vec::new();
         for range in frame.parameters {
             let body = payload[range.value_offset..range.value_end].to_vec();
@@ -4271,6 +4305,16 @@ fn named_record_boundary(
     body: &[u8],
     cache: &scalar::ScalarCache,
 ) -> Option<usize> {
+    if kind == SurfaceKind::Cylinder {
+        if let Some((_, _, end)) = cylinder_frame_readers::bounded_rotation_envelope(body, cache) {
+            if body
+                .get(end..)?
+                .starts_with(b"\xe0\x00srf_prim_ptr(cylinder)\0")
+            {
+                return Some(end);
+            }
+        }
+    }
     let cone_half_angle = if kind == SurfaceKind::Cone {
         terminal_cone_half_angle_layout(body)
     } else {
@@ -4357,7 +4401,9 @@ pub(crate) enum InlineSurfaceCarrier {
 #[derive(Debug, Clone, Copy)]
 struct InlineSurfaceBody {
     terminal_close: usize,
+    matrix_frame: bool,
     carrier: Option<InlineSurfaceCarrier>,
+    rotation_cylinder: bool,
 }
 
 const EPS_INLINE_WITNESS: f64 = 1.0e-9;
@@ -4365,6 +4411,41 @@ const EPS_INLINE_FRAME: f64 = 1.0e-8;
 const MAX_INLINE_FRAME_CANDIDATES: usize = 24;
 
 fn inline_surface_body(
+    ctx: &DecodeContext<'_>,
+    kind: SurfaceKind,
+    body: &[u8],
+    cache: &scalar::ScalarCache,
+) -> Result<Option<InlineSurfaceBody>, CodecError> {
+    if kind == SurfaceKind::Cylinder {
+        if let Some((frame, terminal_close)) =
+            cylinder_frame_readers::decode_rotation_cylinder_body(body, cache)
+        {
+            return Ok(Some(InlineSurfaceBody {
+                terminal_close,
+                matrix_frame: false,
+                carrier: frame.map(|frame| InlineSurfaceCarrier::Cylinder {
+                    frame,
+                    split_bounds: None,
+                }),
+                rotation_cylinder: true,
+            }));
+        }
+    }
+    let matrix = (kind == SurfaceKind::Cylinder)
+        .then(|| cylinder_frame_readers::compact_rotation_cylinder_body(body, cache))
+        .flatten();
+    if matrix.is_some_and(|layout| layout.carrier.is_some()) {
+        return Ok(matrix);
+    }
+    let legacy = legacy_inline_surface_body(ctx, kind, body, cache)?;
+    Ok(if legacy.is_some_and(|layout| layout.carrier.is_some()) {
+        legacy
+    } else {
+        matrix.or(legacy)
+    })
+}
+
+fn legacy_inline_surface_body(
     ctx: &DecodeContext<'_>,
     kind: SurfaceKind,
     body: &[u8],
@@ -4385,7 +4466,9 @@ fn inline_surface_body(
         {
             return Ok(Some(InlineSurfaceBody {
                 terminal_close,
+                matrix_frame: false,
                 carrier: decode_positional_cone_frame(body, cache).map(InlineSurfaceCarrier::Cone),
+                rotation_cylinder: false,
             }));
         }
     }
@@ -4455,7 +4538,9 @@ fn inline_surface_body(
         };
         let layout = InlineSurfaceBody {
             terminal_close,
+            matrix_frame: false,
             carrier,
+            rotation_cylinder: false,
         };
         if sole_layout.replace(layout).is_some() {
             return Ok(None);
@@ -4560,7 +4645,9 @@ fn inline_surface_suffix_body(
             };
             let layout = InlineSurfaceBody {
                 terminal_close,
+                matrix_frame: false,
                 carrier,
+                rotation_cylinder: false,
             };
             if sole_layout.replace(layout).is_some() {
                 return Ok(None);
@@ -5354,6 +5441,16 @@ fn parameter_records_for_rows(
         }
         headers.push((row.clone(), body_start));
     }
+    let frame_bounds = complete_surface_array_bounds(payload);
+    let prototypes = if rows.iter().any(|row| row.kind == SurfaceKind::Cylinder) {
+        named_cylinder_prototype_records(
+            ctx,
+            payload,
+            &mut crate::lane_refusal::LaneRefusals::new(),
+        )?
+    } else {
+        Vec::new()
+    };
     let mut records = Vec::new();
     for (index, (row, body_start)) in headers.iter().enumerate() {
         let next_row = headers
@@ -5423,10 +5520,38 @@ fn parameter_records_for_rows(
             body_offset: *body_start,
         };
         let inline_carrier = inline.and_then(|layout| layout.carrier);
+        if inline.is_some_and(|layout| layout.rotation_cylinder && layout.carrier.is_none()) {
+            losses.push(crate::loss::CreoLossCode::CylinderRotationEnvelopeUnresolved.note(format!(
+                "Cylinder {} at byte {} has a complete signed frame and radius that conflict with its envelope; its compounds remain native",
+                row.id, row.offset
+            )));
+        }
         let carrier = match row.kind {
             SurfaceKind::Cylinder => {
-                let frame = match inline_carrier {
-                    Some(InlineSurfaceCarrier::Cylinder { frame, .. }) => Some(frame),
+                let named = cylinder_frame_readers::named_rotation_cylinder_frame(
+                    row,
+                    &record,
+                    rows,
+                    &prototypes,
+                    &frame_bounds,
+                    &cache,
+                );
+                if named.is_some_and(|frame| frame.frame().is_none())
+                    || inline.is_some_and(|layout| layout.matrix_frame && layout.carrier.is_none())
+                {
+                    losses.push(crate::loss::CreoLossCode::CylinderRotationFrameUnresolved.note(format!(
+                        "Cylinder {} at payload byte {} has a rotation frame that conflicts with its bounded envelope; its source remains native",
+                        row.id, row.offset,
+                    )));
+                }
+                let frame = match (named, inline_carrier) {
+                    (Some(frame), _) => frame.frame(),
+                    (_, Some(InlineSurfaceCarrier::Cylinder { frame, .. })) => Some(frame),
+                    _ if inline
+                        .is_some_and(|layout| layout.matrix_frame || layout.rotation_cylinder) =>
+                    {
+                        None
+                    }
                     _ => cylinder_frame_readers::decode_positional_cylinder_frame(
                         &record.body,
                         &cache,
@@ -7349,6 +7474,27 @@ pub(crate) fn complete_plane_local_system(
     )>,
     CodecError,
 > {
+    let mut linkage_view = cadmpeg_core::decode::View::over_retained(body);
+    for close in 0..body.len() {
+        if linkage_view.seek(close).is_none()
+            || linkage_view.u8() != Some(0xe1)
+            || linkage_view.u8() != Some(psb::token::ENTITY_REF)
+        {
+            continue;
+        }
+        let Ok((reference, end)) = psb::reference_id(body, close + 2) else {
+            continue;
+        };
+        if reference == 0 || end != body.len() {
+            continue;
+        }
+        if let Some(Ok(values)) = scalar::decode_compact_plane_rotation(&body[..close], cache) {
+            return Ok(Some((
+                values,
+                scalar::PlaneSupportFrameLayout::CompactRotation,
+            )));
+        }
+    }
     let compact_body = body.strip_suffix(&[0xe1]).unwrap_or(body);
     let rotation = scalar::decode_compact_plane_rotation(body, cache);
     let rotation = match rotation {

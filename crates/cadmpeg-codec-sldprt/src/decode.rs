@@ -2401,6 +2401,9 @@ fn merge_brep(target: &mut Brep, mut source: Brep) -> Result<(), CodecError> {
         .procedural_surfaces
         .append(&mut source.procedural_surfaces);
     target.curves.append(&mut source.curves);
+    target
+        .procedural_curves
+        .append(&mut source.procedural_curves);
     target.pcurves.append(&mut source.pcurves);
     target.unknowns.append(&mut source.unknowns);
     target.face_colors.append(&mut source.face_colors);
@@ -2417,6 +2420,7 @@ fn merge_brep(target: &mut Brep, mut source: Brep) -> Result<(), CodecError> {
     target.stats.unknown_procedural_supports += source.stats.unknown_procedural_supports;
     target.stats.unknown_curve_edges += source.stats.unknown_curve_edges;
     target.stats.ambiguous_pcurve_parameters += source.stats.ambiguous_pcurve_parameters;
+    target.stats.marker_conflict_edges += source.stats.marker_conflict_edges;
     target.stats.off_surface_nurbs_pcurves += source.stats.off_surface_nurbs_pcurves;
     target
         .stats
@@ -3087,6 +3091,9 @@ fn build_geometry_ir(
     ir.model.surfaces = brep.surfaces;
     ir.model.procedural_surfaces = brep.procedural_surfaces;
     ir.model.curves = brep.curves;
+    ir.model
+        .procedural_curves
+        .append(&mut brep.procedural_curves);
     ir.model.pcurves = brep.pcurves;
     *admitted_entities = brep_entities;
     let face_bridge_sequences = std::mem::take(&mut brep.face_bridge_sequences);
@@ -3939,7 +3946,7 @@ fn append_topology_record_losses(
     }
     if stats.withheld_fin_links > 0 {
         losses.push(SldprtLossCode::TopologyFinLinkUnresolved.note(format!(
-            "{} ring(s) were withheld because a FIN backward link names no reciprocal same-loop forward link; the ring is not walked on doubt.",
+            "{} ring(s) were withheld because a FIN forward link names no reciprocal same-loop backward link; the ring is not walked on doubt.",
             stats.withheld_fin_links,
         )));
     }
@@ -3990,6 +3997,13 @@ fn build_geometry_report(
                 s.unknown_curve_edges
             )),
         );
+    }
+    if s.marker_conflict_edges > 0 {
+        losses.push(SldprtLossCode::GeometryCurveMarkerConflict.note(format!(
+            "{} edge(s) have no parameter range because the compact curve records of their \
+             curve attribute disagree on orientation.",
+            s.marker_conflict_edges
+        )));
     }
     if s.ambiguous_pcurve_parameters > 0 {
         losses.push(SldprtLossCode::GeometryPcurveAmbiguous.note(format!(

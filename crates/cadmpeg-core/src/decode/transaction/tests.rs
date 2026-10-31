@@ -205,3 +205,117 @@ fn decode_trace_refused_task_releases_its_recording() {
     assert!(!ctx.accept_trace(&trace));
     assert!(ctx.resource_refusal().is_none());
 }
+
+#[test]
+fn decode_trace_rebinds_member_spaces_after_prior_expansion() {
+    use crate::decode::{ExpandSpec, View};
+    let arena = DecodeArena::new();
+    let ctx = DecodeContext::new(&arena, &DecodePolicy::default(), DecodeDepth::Full);
+    let task_arena = DecodeArena::new();
+    let task = ctx.checkpoint().resume(&task_arena);
+    let expand = |ctx: &DecodeContext<'_>| {
+        let mut stream = ctx.begin_expand(ExpandSpec::Exact(3)).unwrap();
+        stream.write(b"abc").unwrap();
+        stream.finalize().unwrap().space()
+    };
+    let mut first = expand(&task);
+    let mut second = expand(&task);
+    let mut inherited = View::over_retained(b"abc").space();
+    let trace = task.take_trace();
+    expand(&ctx);
+    assert!(!ctx.accept_trace(&trace));
+    assert!(ctx.accept_trace_rebinding(&trace, |spaces| {
+        assert!(!spaces.is_identity());
+        spaces.rebind(&mut first);
+        spaces.rebind(&mut second);
+        spaces.rebind(&mut inherited);
+        true
+    }));
+    assert_eq!(first.index(), 2);
+    assert_eq!(second.index(), 3);
+    assert_eq!(inherited.index(), 0);
+    assert_eq!(ctx.checkpoint().spaces, 3);
+    assert_eq!(ctx.checkpoint().state.decompressed, 9);
+}
+
+#[test]
+fn decode_trace_rebinding_refusal_preserves_counters_and_space_ids() {
+    use crate::decode::{ByteRange, View};
+    let arena = DecodeArena::new();
+    let ctx = DecodeContext::new(&arena, &DecodePolicy::default(), DecodeDepth::Full);
+    let task_arena = DecodeArena::new();
+    let task = ctx.checkpoint().resume(&task_arena);
+    task.charge_entities(5, "member entities").unwrap();
+    task.register_slice(View::over_retained(b"x"), ByteRange { start: 0, end: 1 })
+        .unwrap();
+    let trace = task.take_trace();
+    assert!(!ctx.accept_trace_rebinding(&trace, |_| false));
+    assert_eq!(ctx.checkpoint().spaces, 0);
+    assert_eq!(ctx.checkpoint().state.entities, 0);
+}
+
+#[test]
+fn decode_trace_rebinding_records_composed_space_ids_for_outer_transactions() {
+    use crate::decode::{ByteRange, View};
+    let arena = DecodeArena::new();
+    let ctx = DecodeContext::new(&arena, &DecodePolicy::default(), DecodeDepth::Full);
+    let outer_arena = DecodeArena::new();
+    let outer = ctx.checkpoint().resume(&outer_arena);
+    let member_arena = DecodeArena::new();
+    let member = outer.checkpoint().resume(&member_arena);
+    let root = View::over_retained(b"x");
+    let range = ByteRange { start: 0, end: 1 };
+    member.register_slice(root, range).unwrap();
+    let trace = member.take_trace();
+    outer.register_slice(root, range).unwrap();
+    assert!(outer.accept_trace_rebinding(&trace, |_| true));
+    assert!(ctx.accept_trace(&outer.take_trace()));
+    assert_eq!(ctx.checkpoint().spaces, 2);
+}
+
+#[test]
+fn decode_trace_available_observations_accept_equal_threshold_decisions() {
+    let policy = DecodePolicy {
+        limits: ResourceLimits {
+            max_retained_bytes: 100,
+            ..ResourceLimits::default()
+        },
+        ..DecodePolicy::default()
+    };
+    let arena = DecodeArena::new();
+    let ctx = DecodeContext::new(&arena, &policy, DecodeDepth::Full);
+    let task_arena = DecodeArena::new();
+    let task = ctx.checkpoint().resume(&task_arena);
+    let available = task.retained_bytes_available();
+    task.observe_retained_allowance(available, 40);
+    task.observe_retained_allowance(available - 40, 30);
+    let trace = task.take_trace();
+    ctx.retain_bytes(20, "earlier output").unwrap();
+    assert!(ctx.accept_trace(&trace));
+    ctx.retain_bytes(20, "more output").unwrap();
+    assert!(!ctx.accept_trace(&trace));
+    assert_eq!(ctx.retained_bytes_available(), 60);
+}
+
+#[test]
+fn decode_trace_rejects_a_refused_optional_decision_that_would_now_fit() {
+    let policy = DecodePolicy {
+        limits: ResourceLimits {
+            max_retained_bytes: 100,
+            ..ResourceLimits::default()
+        },
+        ..DecodePolicy::default()
+    };
+    let arena = DecodeArena::new();
+    let ctx = DecodeContext::new(&arena, &policy, DecodeDepth::Full);
+    let task_arena = DecodeArena::new();
+    let task = ctx.checkpoint().resume(&task_arena);
+    task.retain_bytes(80, "task prefix").unwrap();
+    let checkpoint = task.checkpoint();
+    let member_arena = DecodeArena::new();
+    let member = checkpoint.resume(&member_arena);
+    let available = member.retained_allowance();
+    member.observe_retained_allowance(available, 30);
+    assert!(!ctx.accept_trace(&member.take_trace()));
+    assert_eq!(ctx.retained_bytes_available(), 100);
+}

@@ -1492,3 +1492,53 @@ Offsets are relative to the end of the state content header.
 | 20 | 4 | `plate_reference` | `u32` | little | spec | The segment-major-19 plate-and-bend face suffix occupies |
 | 24 | 4 | `bend_reference` | `u32` | little | spec | The segment-major-19 plate-and-bend face suffix occupies |
 | 28 | 4 | `value` | `u32` | little | spec | The segment-major-19 plate-and-bend face suffix occupies · value `0` |
+
+## `pm_dc_work_point_fields`
+
+Spec §13 · layout: byte offsets · size: 36 B
+
+Offsets start after the segment-major-19 content header.
+
+Parsed by:
+- `crates/cadmpeg-codec-inventor/src/feature.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 4 | `entity_flags` | `u32` | little | spec | `entity_flags:u32` and two u32 values |
+| 4 | 8 | `values` | `u32[2]` | little | spec | segment major versions above 21 add one u32 value |
+| 12 | 24 | `origin` | `f64[3]` | little | spec | Three f64 values follow: the point in internal centimetres |
+
+## `pm_dc_open_cubic_curve_prefix`
+
+Spec §12 · layout: byte offsets · size: 28 B
+
+Offsets are relative to each curve array of the endpoint-bound open cubic form. The scalar lanes and fixed tail share the spline curve layout.
+
+Parsed by:
+- `crates/cadmpeg-codec-inventor/src/sketch/spline.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 4 | `form` | `u32` | little | spec | \| Array form and degree \| `0`, `3` \| · value `0` |
+| 4 | 4 | `degree` | `u32` | little | spec | \| Array form and degree \| `0`, `3` \| · value `3` |
+| 8 | 8 | `tolerance` | `f64` | little | spec | \| Array tolerance \| `1e-9` \| |
+| 16 | 4 | `knot_count` | `u32` | little | spec | The open cubic knot vector has `knot_count = pole_count + 4`. |
+| 20 | 4 | `knot_value` | `u32` | little | spec | \| Knot value \| `knot_count` \| |
+| 24 | 4 | `scalar_width` | `u32` | little | spec | scalar_width u32 = 8 · value `8` |
+
+## `pm_dc_open_cubic_pole_prefix`
+
+Spec §12 · layout: byte offsets · size: 24 B
+
+Offsets are relative to the byte after the counted knot lane of the endpoint-bound open cubic form.
+
+Parsed by:
+- `crates/cadmpeg-codec-inventor/src/sketch/spline.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 8 | `knot_values` | `u32[2]` | little | spec | \| Knot values \| `0, 0` \| |
+| 8 | 4 | `knot_scalar_width` | `u32` | little | spec | `scalar_width:u32 = 8` · value `8` |
+| 12 | 4 | `pole_count` | `u32` | little | spec | `pole_count:u32` |
+| 16 | 4 | `pole_value` | `u32` | little | spec | \| Pole value \| `8` \| · value `8` |
+| 20 | 4 | `pole_scalar_width` | `u32` | little | spec | `scalar_width:u32 = 8` · value `8` |

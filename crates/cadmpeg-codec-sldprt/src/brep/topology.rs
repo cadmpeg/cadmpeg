@@ -69,6 +69,9 @@ pub(super) struct EdgeUse {
     pub(super) attr: u16,
     pub(super) references: EdgeReferences,
     pub(super) sequence: u32,
+    /// The stored tolerance of a tolerant edge, metres (spec §7.6); `None`
+    /// for the null-real sentinel and the compact layout.
+    pub(super) tolerance_m: Option<f64>,
     pub(super) offset: usize,
 }
 
@@ -303,6 +306,7 @@ fn parse_edge_use_candidates(buf: &[u8], off: usize) -> Vec<(EdgeUse, usize)> {
                     references: EdgeReferences::Bare([
                         refs[0], refs[1], refs[2], refs[3], refs[4], refs[5],
                     ]),
+                    tolerance_m: None,
                     offset: off,
                 },
                 end,
@@ -318,6 +322,7 @@ fn parse_edge_use_candidates(buf: &[u8], off: usize) -> Vec<(EdgeUse, usize)> {
                         attr,
                         sequence,
                         references: EdgeReferences::Bare(refs),
+                        tolerance_m: None,
                         offset: off,
                     },
                     end,
@@ -358,6 +363,7 @@ fn parse_edge_use_candidates(buf: &[u8], off: usize) -> Vec<(EdgeUse, usize)> {
                         attr,
                         sequence,
                         references: EdgeReferences::Compact { curve: decoded[2] },
+                        tolerance_m: None,
                         offset: off,
                     },
                     at,
@@ -369,13 +375,93 @@ fn parse_edge_use_candidates(buf: &[u8], off: usize) -> Vec<(EdgeUse, usize)> {
     out
 }
 
+/// Tolerant edge-use readings at `off` (spec §7.6).
+fn parse_tolerant_edge_use_candidates(buf: &[u8], off: usize) -> Vec<EdgeUse> {
+    let Some(p) = body_start(buf, off, 0x10) else {
+        return Vec::new();
+    };
+    let (Some(attr), Some(sequence)) = (attr_at(buf, p), View::u32_be_at(buf, p + 2)) else {
+        return Vec::new();
+    };
+    let valued = |at: usize| {
+        View::f64_be_at(buf, at).filter(|value| {
+            value.is_finite()
+                && *value > 0.0
+                && buf.get(at..at + MAGIC.len()) != Some(MAGIC.as_slice())
+        })
+    };
+    let short = |refs: &[u16]| {
+        refs.iter()
+            .all(|reference| *reference <= MAX_SHORT_POINTER_INDEX)
+    };
+    let mut out = Vec::new();
+    if let (Some(tolerance), Some(refs)) = (
+        valued(p + edge_body::TOLERANCE),
+        refs_be::<6>(buf, p + edge_body::REFS),
+    ) {
+        if refs[3] == 1 && short(&refs) {
+            out.push(EdgeUse {
+                attr,
+                sequence,
+                references: EdgeReferences::Bare(refs),
+                tolerance_m: Some(tolerance),
+                offset: off,
+            });
+        }
+    }
+    if buf.get(p + edge_delta::TOLERANCE - 1) == Some(&1) {
+        if let (Some(tolerance), Some(refs)) = (
+            valued(p + edge_delta::TOLERANCE),
+            refs_tripled::<7>(buf, p + edge_delta::REFS),
+        ) {
+            if refs[3] == 1 && short(&refs) {
+                out.push(EdgeUse {
+                    attr,
+                    sequence,
+                    references: EdgeReferences::Bare([
+                        refs[0], refs[1], refs[2], refs[3], refs[4], refs[5],
+                    ]),
+                    tolerance_m: Some(tolerance),
+                    offset: off,
+                });
+            }
+        }
+    }
+    out.dedup();
+    out
+}
+
+/// Admit a tolerant reading when a selected fin names its edge and it is the
+/// only valid reading.
+fn admit_tolerant_edge_uses(t: &mut Tables, candidates: CandidateMap<EdgeUse>) {
+    for (attr, readings) in candidates {
+        if t.edge_uses.contains_key(&attr)
+            || !t.coedges.values().any(|coedge| coedge.refs[6] == attr)
+        {
+            continue;
+        }
+        let mut valid = readings.iter().filter(|reading| {
+            reading.references.canonical().is_none_or(|canonical| {
+                canonical <= 1
+                    || t.coedges
+                        .get(&canonical)
+                        .is_some_and(|coedge| coedge.refs[6] == attr)
+            })
+        });
+        if let (Some(reading), None) = (valid.next(), valid.next()) {
+            t.edge_uses.insert(attr, reading.clone());
+        }
+    }
+}
+
 /// Edge-use `00 10`: six-cell projection at body+16, magic at body+8.
 /// `refs[0]` = canonical forward coedge when the bare record stores one;
 /// `refs[3]` = support curve carrier. The compact layout has no canonical-coedge slot.
 ///
 /// Coedge `00 11`: 21-byte body, no magic, `refs[9]` at body+2, marker at
-/// body+20. `refs[1]` = owning loop, `refs[3]` = next coedge, `refs[4]` = start
-/// vertex-use, `refs[5]` = twin coedge, `refs[6]` = edge-use.
+/// body+20. `refs[1]` = owning loop, `refs[2]`/`refs[3]` = forward/backward
+/// coedge, `refs[4]` = forward (end) vertex-use, `refs[5]` = twin coedge,
+/// `refs[6]` = edge-use.
 fn parse_coedge_candidates(buf: &[u8], off: usize) -> Vec<(Coedge, usize)> {
     let Some(p) = body_start(buf, off, 0x11) else {
         return Vec::new();
@@ -639,6 +725,42 @@ fn topology_header_prefix_end(buf: &[u8], off: usize, tag: u8) -> Option<usize> 
     ends.into_iter().min()
 }
 
+/// The record tag of an intersection composite.
+const INTERSECTION_COMPOSITE_TAG: u8 = 0x26;
+
+/// The end of a complete `00 26` intersection composite whose body starts at
+/// `p`: a pointer `attr`, a sense marker, and six payload pointers (spec §7.3).
+fn intersection_composite_end(buf: &[u8], p: usize, tag: u8) -> Option<usize> {
+    use crate::layout::intersection_composite as isect;
+    if tag != INTERSECTION_COMPOSITE_TAG {
+        return None;
+    }
+    let attr = attr_at(buf, p)?;
+    if !(2..=MAX_SHORT_POINTER_INDEX).contains(&attr)
+        || !matches!(buf.get(p + isect::MARKER), Some(0x2b | 0x2d))
+    {
+        return None;
+    }
+    let payload = refs_be::<6>(buf, p + isect::PAYLOAD)?;
+    if payload
+        .iter()
+        .any(|reference| *reference > MAX_SHORT_POINTER_INDEX)
+    {
+        return None;
+    }
+    let end = p + isect::LEN;
+    (end <= buf.len()).then_some(end)
+}
+
+/// The end of an intersection composite written as the first record of its
+/// class, after the class's edited type header (spec §4.1): the record has
+/// no tag of its own and its body starts just past the header.
+fn edited_intersection_composite_end(buf: &[u8], off: usize) -> Option<usize> {
+    let (node_type, p) = super::typed::edited_header_end(buf, off)?;
+    (node_type == u16::from(INTERSECTION_COMPOSITE_TAG)).then_some(())?;
+    intersection_composite_end(buf, p, INTERSECTION_COMPOSITE_TAG)
+}
+
 pub(super) struct TopologyScopes {
     pub(super) payloads: Vec<std::ops::Range<usize>>,
     pub(super) excluded_starts: Vec<std::ops::Range<usize>>,
@@ -713,6 +835,12 @@ pub(super) fn topology_scopes(buf: &[u8], prefixed: bool) -> TopologyScopes {
         if let Some(end) = end.filter(|end| *end <= buf.len()) {
             scopes.payloads.push(off..end);
             scopes.excluded_starts.push(off..end);
+            off = end;
+        } else if let Some(end) = intersection_composite_end(buf, p, tag)
+            .or_else(|| edited_intersection_composite_end(buf, off))
+        {
+            // A complete intersection composite holds no topology header.
+            scopes.excluded_starts.push(off + 1..end);
             off = end;
         } else if let Some(end) = topology_header_prefix_end(buf, off, tag) {
             scopes.excluded_starts.push(off + 1..end);
@@ -1099,10 +1227,10 @@ impl Candidate for Point {
 #[derive(Clone, Copy)]
 struct CoedgeEvidence<'a> {
     owner: Option<&'a Loop>,
-    start: bool,
+    end: bool,
     edge: Option<&'a [EdgeUse]>,
-    next_owner: Option<bool>,
-    previous: bool,
+    backward_owner: Option<bool>,
+    forward: bool,
     loop_head: bool,
 }
 
@@ -1110,11 +1238,11 @@ impl CoedgeEvidence<'_> {
     fn flags(self) -> [bool; 7] {
         [
             self.owner.is_some(),
-            self.start,
+            self.end,
             self.edge.is_some(),
-            self.next_owner == Some(true),
-            self.next_owner.is_some(),
-            self.previous,
+            self.backward_owner == Some(true),
+            self.backward_owner.is_some(),
+            self.forward,
             self.loop_head,
         ]
     }
@@ -1172,27 +1300,27 @@ fn coedge_evidence<'a>(
     let owner_evidence = loops
         .iter()
         .find(|loop_| loop_.attr == owner && owner != 0 && loop_is_owned(loop_, bridges));
-    let start = candidate.refs[4];
-    let start_evidence = start > 1 && vertex_uses.contains(&start);
+    let end = candidate.refs[4];
+    let end_evidence = end > 1 && vertex_uses.contains(&end);
     let edge = candidate.refs[6];
     let edge_evidence = edge_candidates
         .get(&edge)
         .filter(|_| edge != 0)
         .map(Vec::as_slice);
-    let next = candidate.refs[3];
-    let next_owner_valid = coedge_candidates
-        .get(&next)
-        .filter(|_| next != 0)
+    let backward = candidate.refs[3];
+    let backward_owner_valid = coedge_candidates
+        .get(&backward)
+        .filter(|_| backward != 0)
         .map(|candidates| {
             candidates
                 .iter()
-                .any(|next_candidate| next_candidate.refs[1] == owner)
+                .any(|backward_candidate| backward_candidate.refs[1] == owner)
         });
-    let previous = candidate.refs[2];
-    let previous_valid = previous <= 1
-        || coedge_candidates.get(&previous).is_some_and(|candidates| {
-            candidates.iter().any(|previous_candidate| {
-                previous_candidate.refs[3] == candidate.attr && previous_candidate.refs[1] == owner
+    let forward = candidate.refs[2];
+    let forward_valid = forward <= 1
+        || coedge_candidates.get(&forward).is_some_and(|candidates| {
+            candidates.iter().any(|forward_candidate| {
+                forward_candidate.refs[3] == candidate.attr && forward_candidate.refs[1] == owner
             })
         });
     let loop_head_valid = loops.iter().rev().any(|loop_| {
@@ -1200,10 +1328,10 @@ fn coedge_evidence<'a>(
     });
     CoedgeEvidence {
         owner: owner_evidence,
-        start: start_evidence,
+        end: end_evidence,
         edge: edge_evidence,
-        next_owner: next_owner_valid,
-        previous: previous_valid,
+        backward_owner: backward_owner_valid,
+        forward: forward_valid,
         loop_head: loop_head_valid,
     }
 }
@@ -1509,6 +1637,7 @@ fn scan_records(
     let mut loop_candidates = Vec::new();
     let mut loop_frames = Vec::new();
     let mut edge_candidates = CandidateMap::new();
+    let mut tolerant_edge_candidates = CandidateMap::new();
     let mut coedge_candidates = CandidateMap::new();
     let mut coedge_occurrences = Vec::new();
     let mut vertex_occurrences = Vec::new();
@@ -1551,13 +1680,19 @@ fn scan_records(
                     loop_frames.push((record, end));
                 }
             }
-            0x10 => insert_candidates(
-                &mut edge_candidates,
-                parse_edge_use_candidates(body, i)
-                    .into_iter()
-                    .map(|(record, _)| record)
-                    .collect(),
-            ),
+            0x10 => {
+                let candidates = parse_edge_use_candidates(body, i);
+                if candidates.is_empty() {
+                    insert_candidates(
+                        &mut tolerant_edge_candidates,
+                        parse_tolerant_edge_use_candidates(body, i),
+                    );
+                }
+                insert_candidates(
+                    &mut edge_candidates,
+                    candidates.into_iter().map(|(record, _)| record).collect(),
+                );
+            }
             0x11 => {
                 let frames = parse_coedge_candidates(body, i);
                 for (record, _) in &frames {
@@ -1787,6 +1922,7 @@ fn scan_records(
             t.edge_uses.insert(record.attr, record);
         }
     }
+    admit_tolerant_edge_uses(&mut t, tolerant_edge_candidates);
     for (record, end) in loop_frames {
         let owner = record.refs[2];
         let first = record.refs[1];
@@ -2178,6 +2314,64 @@ mod tests {
         assert!(tables.loops.contains_key(&20));
     }
 
+    /// A bare edge use whose tolerance slot holds `tolerance` and whose
+    /// support-curve slot holds the null `1`: a tolerant edge (spec §7.6).
+    fn tolerant_edge_use(attr: u16, canonical: u16, tolerance: f64) -> Vec<u8> {
+        let mut bytes = vec![0, 0x10];
+        bytes.extend(attr.to_be_bytes());
+        bytes.extend(0_u32.to_be_bytes());
+        bytes.extend(0_u16.to_be_bytes());
+        bytes.extend(tolerance.to_be_bytes());
+        bytes.extend(
+            [canonical, 0, 0, 1, 0, 0, 900]
+                .into_iter()
+                .flat_map(u16::to_be_bytes),
+        );
+        bytes
+    }
+
+    /// One face whose fin 30 names edge `edge`, and the edge use `edge_use`.
+    fn tolerant_body(edge: u16, edge_use: &[u8]) -> Vec<u8> {
+        let mut body = Vec::new();
+        body.extend(topology_bridge(10, 20));
+        body.extend(topology_loop(20, 30, 10));
+        body.extend(topology_tripled_coedge(
+            30,
+            [0, 20, 0, 30, 50, 0, edge, 0, 0],
+        ));
+        body.extend(edge_use);
+        body.extend(topology_vertex_use(50, 0));
+        body.extend(crate::test_support::parasolid::fixture_vertex_owner_class(
+            900,
+        ));
+        body.extend(crate::test_support::parasolid::world_point(60, [0.0; 3]));
+        body
+    }
+
+    #[test]
+    fn a_tolerant_edge_use_is_admitted_only_when_a_selected_fin_names_it() {
+        let tables = scan(&tolerant_body(40, &tolerant_edge_use(40, 30, 5.0e-7)));
+        let edge = tables.edge_uses.get(&40).expect("the named tolerant edge");
+        assert_eq!(edge.tolerance_m, Some(5.0e-7));
+        assert_eq!(edge.references.curve(), 1);
+        assert_eq!(edge.references.canonical(), Some(30));
+        // No fin names it.
+        let tables = scan(&tolerant_body(41, &tolerant_edge_use(40, 30, 5.0e-7)));
+        assert!(!tables.edge_uses.contains_key(&40));
+        // Its canonical slot names a fin of no edge of it.
+        let tables = scan(&tolerant_body(40, &tolerant_edge_use(40, 31, 5.0e-7)));
+        assert!(!tables.edge_uses.contains_key(&40));
+        // A tolerance that is not positive frames no tolerant edge.
+        let tables = scan(&tolerant_body(40, &tolerant_edge_use(40, 30, 0.0)));
+        assert!(!tables.edge_uses.contains_key(&40));
+        // An ordinary edge use stores the null-real sentinel and no tolerance.
+        let tables = scan(&tolerant_body(40, &topology_edge_use(40, 0)));
+        assert_eq!(
+            tables.edge_uses.get(&40).map(|edge| edge.tolerance_m),
+            Some(None)
+        );
+    }
+
     #[test]
     fn edge_and_vertex_use_sequences_are_retained() {
         let mut body = Vec::new();
@@ -2316,7 +2510,7 @@ mod tests {
 
     fn partition_without_middle_fin() -> Vec<u8> {
         let mut bytes = crate::test_support::parasolid::triangle_body();
-        let original = crate::test_support::parasolid::coedge(31, 20, 32, 51, 0, 41, false);
+        let original = crate::test_support::parasolid::coedge(31, 20, 30, 52, 0, 41, false);
         let at = bytes
             .windows(original.len())
             .position(|window| window == original)
@@ -2382,7 +2576,7 @@ mod tests {
             candidate.refs[2] = null;
             let evidence =
                 super::coedge_evidence(&candidate, &[], &bridges, &vertices, &edges, &coedges);
-            assert!(evidence.previous);
+            assert!(evidence.forward);
         }
     }
 
@@ -2849,6 +3043,64 @@ mod tests {
             );
             assert!(!rejected.vertex_frames.contains_key(&211));
         }
+    }
+
+    #[test]
+    fn an_intersection_composite_is_skipped_whole() {
+        let mut bytes = vec![0x00, 0x26];
+        bytes.extend(300_u16.to_be_bytes());
+        bytes.extend(7_u32.to_be_bytes());
+        for reference in [1_u16, 3, 301, 302, 303] {
+            bytes.extend(reference.to_be_bytes());
+        }
+        bytes.push(0x2b);
+        for reference in [40_u16, 41, 42, 43, 44, 45] {
+            bytes.extend(reference.to_be_bytes());
+        }
+        assert_eq!(
+            super::intersection_composite_end(&bytes, 2, 0x26),
+            Some(2 + 29)
+        );
+        assert_eq!(super::intersection_composite_end(&bytes, 2, 0x12), None);
+        let mut unmarked = bytes.clone();
+        unmarked[2 + 16] = 0x00;
+        assert_eq!(super::intersection_composite_end(&unmarked, 2, 0x26), None);
+        let scopes = super::topology_scopes(&bytes, false);
+        assert_eq!(scopes.excluded_starts, vec![1..31]);
+    }
+
+    #[test]
+    fn an_intersection_composite_after_its_class_header_is_skipped_whole() {
+        // The first composite of a stream follows its class's edited type
+        // header (spec §4.1) with no tag of its own. Its sequence number
+        // `00 00 12 1a` holds a false `00 12` vertex header that would run
+        // over the tag of the point record that follows.
+        let mut bytes = vec![0x00, 0x26, 12];
+        bytes.extend([b'C'; 11]);
+        bytes.push(b'A');
+        bytes.push(17);
+        bytes.extend(b"intersection_data");
+        bytes.extend([0x00, 0xcc, 0x00, 0x01]);
+        bytes.push(b'Z');
+        let record = bytes.len();
+        bytes.extend(9_u16.to_be_bytes());
+        bytes.extend(0x121a_u32.to_be_bytes());
+        for reference in [1_u16, 3, 56, 1, 53] {
+            bytes.extend(reference.to_be_bytes());
+        }
+        bytes.push(0x2d);
+        for reference in [50_u16, 8, 54, 55, 58, 61] {
+            bytes.extend(reference.to_be_bytes());
+        }
+        let point = bytes.len();
+        assert_eq!(point, record + 29);
+        bytes.extend(crate::test_support::parasolid::world_point(
+            10,
+            [0.001, 0.002, 0.003],
+        ));
+        let scopes = super::topology_scopes(&bytes, false);
+        assert_eq!(scopes.excluded_starts.first(), Some(&(1..point)));
+        assert!(super::scan(&bytes).points().contains_key(&10));
     }
 
     #[test]

@@ -657,6 +657,7 @@ pub(super) fn fixed_kind_tail_operations(
                     opaque_scalar: 0.0,
                     opaque_scalar_offset: 22,
                     variant: false,
+                    closing_flag: false,
                 },
             )
             .unwrap(),

@@ -27,7 +27,7 @@
             }
           ],
           "radial_next": "sldprt:brep:coedge#30",
-          "sense": "forward"
+          "sense": "reversed"
         },
         {
           "edge": "sldprt:brep:edge#41",
@@ -39,7 +39,7 @@
             }
           ],
           "radial_next": "sldprt:brep:coedge#31",
-          "sense": "forward"
+          "sense": "reversed"
         },
         {
           "edge": "sldprt:brep:edge#42",
@@ -51,7 +51,7 @@
             }
           ],
           "radial_next": "sldprt:brep:coedge#32",
-          "sense": "forward"
+          "sense": "reversed"
         },
         {
           "edge": "sldprt:brep:edge#sphere-seam-face:0",
@@ -217,8 +217,8 @@
           "boundary": {
             "coedges": [
               "sldprt:brep:coedge#30",
-              "sldprt:brep:coedge#31",
               "sldprt:brep:coedge#32",
+              "sldprt:brep:coedge#31",
               "sldprt:brep:coedge#sphere-seam-face:0"
             ],
             "kind": "ring"

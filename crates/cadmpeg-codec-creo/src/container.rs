@@ -515,6 +515,7 @@ pub(crate) struct CurveScan {
     pub(crate) pcurves: Vec<PcurveEndpoints>,
     /// Ordered, pointwise-corresponding samples in both incident-face charts.
     pub(crate) two_chart_pcurves: Vec<TwoChartPcurveSamples>,
+    pub(crate) angular_two_chart_curve_ids: BTreeSet<u32>,
     /// Ordered world-coordinate lanes from FC-prefixed dense curve rows.
     pub(crate) fc_coordinates: Vec<FcCurveCoordinates>,
     /// FC05 records whose decoded points prove an exact circle.
@@ -536,6 +537,14 @@ pub(crate) struct CurveScan {
     pub(crate) nonvisible_topology_rows: Vec<CurveTopologyRow>,
     /// Complete one-sided curve rows from the DEPDB cross-section namespace.
     pub(crate) cross_section_rows: Vec<DepdbCurveRow>,
+}
+
+impl CurveScan {
+    pub(crate) fn legacy_two_chart_paths(&self) -> impl Iterator<Item = &TwoChartPcurveSamples> {
+        self.two_chart_pcurves
+            .iter()
+            .filter(|path| !self.angular_two_chart_curve_ids.contains(&path.curve_id))
+    }
 }
 
 /// Native half-edge adjacency graph resolved from curve topology rows.
@@ -1827,15 +1836,31 @@ fn curve_parameters(
     )
 }
 
+#[cfg(test)]
 fn two_chart_pcurves(
     ctx: &DecodeContext<'_>,
     sections: &[ScannedSection<'_>],
     face_ids: &BTreeSet<u32>,
     losses: &mut Vec<cadmpeg_ir::report::loss::LossNote>,
 ) -> Result<Vec<TwoChartPcurveSamples>, CodecError> {
+    two_chart_pcurves_with_modes(ctx, sections, face_ids, losses).map(|(samples, _)| samples)
+}
+
+fn two_chart_pcurves_with_modes(
+    ctx: &DecodeContext<'_>,
+    sections: &[ScannedSection<'_>],
+    face_ids: &BTreeSet<u32>,
+    losses: &mut Vec<cadmpeg_ir::report::loss::LossNote>,
+) -> Result<(Vec<TwoChartPcurveSamples>, BTreeSet<u32>), CodecError> {
+    let mut angular_ids = BTreeSet::new();
     let mut records = collect_section_records_result(
         sections.iter(),
-        |bytes| curve::two_chart_pcurve_samples(ctx, bytes, Some(face_ids), losses),
+        |bytes| {
+            let (records, angular) =
+                curve::two_chart_pcurve_samples_with_modes(ctx, bytes, Some(face_ids), losses)?;
+            angular_ids.extend(angular);
+            Ok(records)
+        },
         |record, base| record.offset += base,
         |record| record.offset,
     )?;
@@ -1848,7 +1873,8 @@ fn two_chart_pcurves(
         *count += 1;
     }
     records.retain(|record| counts.get(&record.curve_id) == Some(&1));
-    Ok(records)
+    angular_ids.retain(|id| counts.get(id) == Some(&1));
+    Ok((records, angular_ids))
 }
 
 fn prototype_pcurves(
@@ -2804,11 +2830,20 @@ pub(crate) fn scan_bytes<'a>(
             .as_ref()
             .and_then(|model| relation_model_name(&model.name)),
     )?;
+    let datum_cylinders = datum_cylinders(ctx, sections, &mut local_work_cap_losses)?;
+    let unique_datum_cylinders =
+        crate::decode::uniqueness::UniqueById::new(&datum_cylinders, |cylinder| cylinder.id);
     let topology_face_ids = topology_face_ids(
         nonvisible_surface_rows
             .iter()
             .chain(surface_rows.iter())
-            .map(|row| row.id),
+            .map(|row| row.id)
+            .chain(
+                datum_cylinders
+                    .iter()
+                    .filter(|cylinder| unique_datum_cylinders.get(cylinder.id).is_some())
+                    .map(|cylinder| cylinder.id),
+            ),
     );
     let nonvisible_curve_parameters =
         curve_parameters(ctx, &nonvisible_geometry_sections, &topology_face_ids)?;
@@ -2834,7 +2869,7 @@ pub(crate) fn scan_bytes<'a>(
         &curve_topology_rows,
         &mut local_work_cap_losses,
     );
-    let two_chart_pcurves = two_chart_pcurves(
+    let (two_chart_pcurves, angular_two_chart_curve_ids) = two_chart_pcurves_with_modes(
         ctx,
         &model_geometry_sections,
         &topology_face_ids,
@@ -2860,7 +2895,6 @@ pub(crate) fn scan_bytes<'a>(
     let vertex_orbits = topology::vertex_orbits(&half_edges)?;
     let face_components = topology::face_components(&curve_topology_rows)?;
     let datum_planes = datum_planes(sections)?;
-    let datum_cylinders = datum_cylinders(ctx, sections, &mut local_work_cap_losses)?;
     let feature_operation_states = feature_operation_states(sections)?;
     let feature_operations = feature_operations(sections)?;
     let feature_reference_names = feature_reference_names(sections);
@@ -3052,6 +3086,7 @@ pub(crate) fn scan_bytes<'a>(
             nonvisible_parameters: nonvisible_curve_parameters,
             pcurves,
             two_chart_pcurves,
+            angular_two_chart_curve_ids,
             fc_coordinates: fc_curve_coordinates,
             fc05_circles,
             fc05_cylinder_cap_pairs,

@@ -40,13 +40,16 @@ const EPS_BREP_VALID_CARRIER_SCALARS_E9: f64 = 1.0e-9;
 
 pub(crate) mod attrib;
 mod blend;
+mod blend_fit;
 mod blend_surface;
 pub(crate) mod entity;
 pub(crate) mod evaluation;
+mod fit;
 mod index;
 mod intersection;
 mod offset;
 pub(crate) mod read_ledger;
+mod sp_curve;
 pub(crate) mod spline;
 mod subset;
 mod sweep;
@@ -113,9 +116,9 @@ mod tag {
 const COMPACT_REF_COUNT: usize = 5;
 const DELTAS_REF_STRIDE: usize = 3;
 const DELTAS_MARKER_OFFSET: usize = analytic::REFS + COMPACT_REF_COUNT * DELTAS_REF_STRIDE;
-/// Orientation marker of a compact analytic curve whose stored edge direction
-/// runs against the curve parameter.
-const MARKER_AGAINST_EDGES: u8 = 0x2b;
+/// Orientation marker of a compact analytic record that runs against its
+/// curve parameter or natural surface normal.
+const MARKER_REVERSED: u8 = 0x2d;
 
 /// f64 count for each analytic tag; `None` if the tag is not an analytic carrier.
 fn analytic_value_count(tt: u8) -> Option<usize> {
@@ -254,8 +257,8 @@ fn parse_carrier_at_marker(
         return None;
     }
 
-    let runs_against_edges = body.get(marker_at) == Some(&MARKER_AGAINST_EDGES);
-    decode_carrier_values(tt, vals, attr, (off, end), runs_against_edges)
+    let reversed = body.get(marker_at) == Some(&MARKER_REVERSED);
+    decode_carrier_values(tt, vals, attr, (off, end), reversed)
 }
 
 /// Try to parse a compact analytic carrier whose tag byte pair `00 TT` begins at
@@ -321,7 +324,7 @@ fn decode_carrier_values(
     v: &[f64],
     attr: u16,
     (offset, end): (usize, usize),
-    runs_against_edges: bool,
+    reversed: bool,
 ) -> Option<Carrier> {
     let curve = |geometry| {
         Carrier::Curve(CurveCarrier {
@@ -330,7 +333,7 @@ fn decode_carrier_values(
             end,
             geometry,
             parameter_range: None,
-            runs_against_edges,
+            runs_against_edges: reversed,
         })
     };
     let surface = |geometry| {
@@ -339,7 +342,7 @@ fn decode_carrier_values(
             offset,
             end,
             geometry,
-            orientation_reversed: tt == tag::TORUS && v[6].is_sign_negative(),
+            orientation_reversed: (tt == tag::TORUS && v[6].is_sign_negative()) != reversed,
         })
     };
     let g = match tt {
@@ -749,6 +752,39 @@ mod tests {
         assert!((major_radius - 2.2).abs() < 1.0e-12);
         assert!((minor_radius - 4.4).abs() < 1.0e-12);
         assert!(carrier.orientation_reversed);
+    }
+
+    /// The compact marker sits after the attribute and the 14 reference bytes.
+    const COMPACT_MARKER_AT: usize = 18;
+
+    #[test]
+    fn a_reversed_surface_marker_reverses_the_face_sense() {
+        let mut bytes = compact_carrier(
+            tag::PLANE,
+            8,
+            &[0.0, 0.0, 0.0, 0.0, 0.0, 1.0, 1.0, 0.0, 0.0],
+        );
+        bytes[COMPACT_MARKER_AT] = 0x2d;
+        let Carrier::Surface(carrier) = parse_carrier(&bytes, 0).expect("reversed plane") else {
+            panic!("expected surface carrier");
+        };
+        assert!(carrier.orientation_reversed);
+    }
+
+    #[test]
+    fn a_reversed_marker_and_a_negative_torus_major_radius_cancel() {
+        let mut bytes = compact_carrier(
+            tag::TORUS,
+            8,
+            &[
+                0.0, 0.0, 0.0002, 0.0, 0.0, -1.0, -0.0022, 0.0044, -1.0, 0.0, 0.0,
+            ],
+        );
+        bytes[COMPACT_MARKER_AT] = 0x2d;
+        let Carrier::Surface(carrier) = parse_carrier(&bytes, 0).expect("reversed torus") else {
+            panic!("expected surface carrier");
+        };
+        assert!(!carrier.orientation_reversed);
     }
 
     #[test]

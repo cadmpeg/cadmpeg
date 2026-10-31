@@ -585,6 +585,54 @@ pub(super) fn resolve(
     EdgeSelection::generated(edges, collection.id()).unwrap_or_else(|_| fallback())
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum ItemReason {
+    Empty,
+    Unresolved,
+}
+
+pub(crate) fn check_items<'a>(
+    collection: &PmDcFeatureProperty,
+    property: &impl Fn(crate::pmdc::PmDcReference) -> Option<&'a PmDcFeatureProperty>,
+) -> Result<(), ItemReason> {
+    let PmDcFeaturePropertyKind::References {
+        family: super::PmDcFeatureReferenceFamily::EdgeCollection,
+        items,
+    } = &collection.kind
+    else {
+        return Err(ItemReason::Unresolved);
+    };
+    if items.references().is_empty() {
+        return Err(ItemReason::Unresolved);
+    }
+    for reference in items.references() {
+        let Some(PmDcFeaturePropertyKind::EdgeItem {
+            index_references, ..
+        }) = property(*reference).map(|p| &p.kind)
+        else {
+            return Err(ItemReason::Unresolved);
+        };
+        if index_references.values().is_empty() {
+            return Err(ItemReason::Empty);
+        }
+    }
+    Ok(())
+}
+
+pub(crate) fn matches_selection(
+    selection: &cadmpeg_ir::features::EdgeSelection,
+    native: &str,
+    direct: bool,
+) -> bool {
+    match selection {
+        cadmpeg_ir::features::EdgeSelection::Native(actual) => actual == native,
+        cadmpeg_ir::features::EdgeSelection::Generated { native: actual, .. } => {
+            direct && actual.as_str() == native
+        }
+        _ => false,
+    }
+}
+
 fn collection_has_empty_item<'a>(
     kind: &PmDcFeaturePropertyKind,
     property_at: &impl Fn(crate::pmdc::PmDcReference) -> Option<&'a PmDcFeaturePropertyKind>,

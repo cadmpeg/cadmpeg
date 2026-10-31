@@ -100,6 +100,9 @@ pub(crate) enum SldprtLossCode {
     GeometryEdgeSupportCurveUntyped,
     /// Referenced POINT records have conflicting complete frames.
     GeometryPointRecordAmbiguous,
+    /// Compact curve records of one attribute disagree on orientation, so an
+    /// edge on that curve has no range.
+    GeometryCurveMarkerConflict,
     /// A derived pcurve parameter has multiple geometric candidates.
     GeometryPcurveAmbiguous,
     /// A NURBS surface solver exhausted its local work cap; the derived pcurve is skipped.
@@ -123,9 +126,6 @@ pub(crate) enum SldprtLossCode {
     TessellationDisplayWithoutGeometry,
     /// No body record was available; a body hierarchy was derived.
     TopologyBodyHierarchyDerived,
-    /// Shared-edge coedge senses give an odd-parity face cycle, so some face
-    /// sense contradicts one of its edges.
-    TopologyFaceSenseConflict,
     /// A canonical face has no explicit body relation.
     TopologyFaceUnclaimed,
     /// Referenced FIN records have conflicting complete frames.
@@ -134,7 +134,7 @@ pub(crate) enum SldprtLossCode {
     /// reciprocal partner corroboration of both ring-order endpoints, or a
     /// mutual twin FIN contradicts the ring-order endpoint.
     TopologyFinPartnerUnresolved,
-    /// A FIN backward link names no reciprocal same-loop forward link, so
+    /// A FIN forward link names no reciprocal same-loop backward link, so
     /// its ring is withheld instead of walked on doubt.
     TopologyFinLinkUnresolved,
     /// Vertexless ring FINs fail strict reciprocal-circle single-loop
@@ -236,6 +236,7 @@ impl SldprtLossCode {
         Self::GeometryFaceSupportSurfaceUntyped,
         Self::GeometryEdgeSupportCurveUntyped,
         Self::GeometryPointRecordAmbiguous,
+        Self::GeometryCurveMarkerConflict,
         Self::GeometryPcurveAmbiguous,
         Self::GeometrySurfaceSolverWorkCapped,
         Self::GeometrySplineLanesUnpaired,
@@ -247,7 +248,6 @@ impl SldprtLossCode {
         Self::TessellationReusedTagAmbiguous,
         Self::TessellationDisplayWithoutGeometry,
         Self::TopologyBodyHierarchyDerived,
-        Self::TopologyFaceSenseConflict,
         Self::TopologyFaceUnclaimed,
         Self::TopologyFinRecordAmbiguous,
         Self::TopologyFinPartnerUnresolved,
@@ -317,6 +317,7 @@ impl SldprtLossCode {
             Self::GeometryFaceSupportSurfaceUntyped => "geometry.face-support-surface-untyped",
             Self::GeometryEdgeSupportCurveUntyped => "geometry.edge-support-curve-untyped",
             Self::GeometryPointRecordAmbiguous => "geometry.point-record-ambiguous",
+            Self::GeometryCurveMarkerConflict => "geometry.curve-marker-conflict",
             Self::GeometryPcurveAmbiguous => "geometry.pcurve-ambiguous",
             Self::GeometrySurfaceSolverWorkCapped => "geometry.surface-solver-work-capped",
             Self::GeometrySplineLanesUnpaired => "geometry.spline-lanes-unpaired",
@@ -328,7 +329,6 @@ impl SldprtLossCode {
             Self::TessellationReusedTagAmbiguous => "tessellation.reused-tag-ambiguous",
             Self::TessellationDisplayWithoutGeometry => "tessellation.display-without-geometry",
             Self::TopologyBodyHierarchyDerived => "topology.body-hierarchy-derived",
-            Self::TopologyFaceSenseConflict => "topology.face-sense-conflict",
             Self::TopologyFaceUnclaimed => "topology.face-unclaimed",
             Self::TopologyFinRecordAmbiguous => "topology.fin-record-ambiguous",
             Self::TopologyFinPartnerUnresolved => "topology.fin-partner-unresolved",
@@ -413,6 +413,7 @@ impl SldprtLossCode {
             | Self::GeometryFaceSupportSurfaceUntyped
             | Self::GeometryEdgeSupportCurveUntyped
             | Self::GeometryPointRecordAmbiguous
+            | Self::GeometryCurveMarkerConflict
             | Self::GeometryPcurveAmbiguous
             | Self::GeometrySurfaceSolverWorkCapped
             | Self::GeometrySplineLanesUnpaired
@@ -424,7 +425,6 @@ impl SldprtLossCode {
             | Self::TessellationReusedTagAmbiguous
             | Self::TessellationDisplayWithoutGeometry
             | Self::TopologyBodyHierarchyDerived
-            | Self::TopologyFaceSenseConflict
             | Self::TopologyFaceUnclaimed
             | Self::TopologyFinRecordAmbiguous
             | Self::TopologyFinPartnerUnresolved
@@ -461,9 +461,7 @@ impl SldprtLossCode {
             Self::DialectLayerCollision => LossTaxonomy::DecodeDiagnostic,
             Self::SourceDialectDisplaced => LossTaxonomy::SourceDialectDisplaced,
             Self::SourcePropertyKeyBlank => LossTaxonomy::AttributesNotTransferred,
-            Self::TopologyBodyHierarchyDerived | Self::TopologyFaceSenseConflict => {
-                LossTaxonomy::TopologyGaugeSubstituted
-            }
+            Self::TopologyBodyHierarchyDerived => LossTaxonomy::TopologyGaugeSubstituted,
             Self::TopologyFaceUnclaimed
             | Self::TopologyFinRecordAmbiguous
             | Self::TopologyFinPartnerUnresolved
@@ -476,6 +474,7 @@ impl SldprtLossCode {
             Self::GeometryFaceSupportSurfaceUntyped
             | Self::GeometryEdgeSupportCurveUntyped
             | Self::GeometryPointRecordAmbiguous
+            | Self::GeometryCurveMarkerConflict
             | Self::GeometrySplineLanesUnpaired
             | Self::GeometryParasolidNotTransferred
             | Self::ContainerParasolidProbeCapped => LossTaxonomy::GeometryNotTransferred,
@@ -700,6 +699,7 @@ mod tests {
                 "geometry.face-support-surface-untyped",
                 "geometry.edge-support-curve-untyped",
                 "geometry.point-record-ambiguous",
+                "geometry.curve-marker-conflict",
                 "geometry.pcurve-ambiguous",
                 "geometry.surface-solver-work-capped",
                 "geometry.spline-lanes-unpaired",
@@ -711,7 +711,6 @@ mod tests {
                 "tessellation.reused-tag-ambiguous",
                 "tessellation.display-without-geometry",
                 "topology.body-hierarchy-derived",
-                "topology.face-sense-conflict",
                 "topology.face-unclaimed",
                 "topology.fin-record-ambiguous",
                 "topology.fin-partner-unresolved",

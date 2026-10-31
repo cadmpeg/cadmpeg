@@ -1518,3 +1518,66 @@ fn stateful_plane_matrix_uses_columns_and_refuses_reflection_or_trailing_slots()
         .is_none());
     }
 }
+
+#[test]
+fn sweep_rotation_counted_repeat_crosses_the_origin_boundary() {
+    let body = [0x18, 0xe4, 0x10, 0x18, 0x0f, 0x18, 0x0f, 0x18, 0xe7, 4];
+    let cache = ScalarCache::default();
+    let slots = super::decode_compact_plane_rotation(&body, &cache)
+        .expect("complete rotation")
+        .expect("proper rotation")
+        .get();
+    assert_eq!(slots, [0., 0., 1., 0., 0., 0., 0., 1., 0., 0., 0., 0.]);
+    for count in [0, 3, 5, 12] {
+        let mut invalid = body;
+        invalid[9] = count;
+        assert!(super::decode_compact_plane_rotation(&invalid, &cache)
+            .and_then(Result::ok)
+            .is_none());
+    }
+    let mut trailing = body.to_vec();
+    trailing.push(0x18);
+    assert!(super::decode_compact_plane_rotation(&trailing, &cache)
+        .and_then(Result::ok)
+        .is_none());
+}
+
+#[test]
+fn compact_rotation_cylinder_scalars_keep_constant_low_bytes_and_tiny_signs() {
+    let cache = ScalarCache::default();
+    for (body, expected) in [
+        (vec![0x11], std::f64::consts::PI),
+        (vec![0x13], std::f64::consts::TAU),
+        (
+            vec![0x00, 0x0e, 0x02],
+            f64::from_bits(0.5_f64.to_bits() + 2),
+        ),
+        (
+            vec![0x00, 0x11, 0x17],
+            f64::from_bits(std::f64::consts::PI.to_bits() - 1),
+        ),
+        (vec![0x1b, 0xa0, 0], 2.0_f64.powi(-53)),
+        (vec![0x34, 0xa0, 0], -2.0_f64.powi(-53)),
+    ] {
+        assert_eq!(
+            super::decode_stateful_scalar_run(
+                &body,
+                0,
+                None,
+                &cache,
+                super::StatefulScalarKind::Pcurve,
+            ),
+            Some((expected, 1, body.len()))
+        );
+    }
+    for body in [vec![0x00, 0x0e], vec![0x00, 0xff, 0], vec![0x1b, 0xa0]] {
+        assert!(super::decode_stateful_scalar_run(
+            &body,
+            0,
+            None,
+            &cache,
+            super::StatefulScalarKind::Pcurve,
+        )
+        .is_none());
+    }
+}

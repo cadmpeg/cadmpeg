@@ -273,3 +273,45 @@ fn cache_that_misses_a_face_vertex_is_refused() {
     .unwrap();
     assert!(cache.is_none());
 }
+
+#[test]
+fn a_vertex_miss_is_the_largest_vertex_distance_from_the_cache() {
+    let arena = DecodeArena::new();
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service()).unwrap();
+    let floor = plane(Vector3::new(0.0, 0.0, 1.0), Vector3::new(1.0, 0.0, 0.0));
+    let wall = plane(Vector3::new(0.0, 1.0, 0.0), Vector3::new(1.0, 0.0, 0.0));
+    let spine = CurveGeometry::Solved(SolvedCurveGeometry::Line(
+        LineCurve::try_new(Point3::new(0.0, 2.0, 2.0), Vector3::new(1.0, 0.0, 0.0)).unwrap(),
+    ));
+    let boundary = [
+        Point3::new(0.0, 2.0, 0.0),
+        Point3::new(10.0, 2.0, 0.0),
+        Point3::new(0.0, 0.0, 2.0),
+        Point3::new(10.0, 0.0, 2.0),
+    ];
+    let cache = solve(
+        &ctx,
+        &BlendInputs {
+            spine: &spine,
+            supports: [&floor, &wall],
+            radius: 2.0,
+            boundary: &boundary,
+            vertices: &boundary,
+            tolerance: FIT_TOLERANCE,
+        },
+    )
+    .unwrap()
+    .expect("a quarter cylinder");
+    let miss = |vertices: &[Point3]| {
+        super::vertex_miss(&ctx, &cache, &spine, vertices)
+            .unwrap()
+            .unwrap()
+    };
+    assert!(miss(&boundary) <= FIT_TOLERANCE);
+    // A point 0.01 mm outside the quarter cylinder, half way round it.
+    let out = 2.0 + 0.01;
+    let half = std::f64::consts::FRAC_1_SQRT_2;
+    let mut vertices = boundary.to_vec();
+    vertices.push(Point3::new(5.0, 2.0 - out * half, 2.0 - out * half));
+    assert!((miss(&vertices) - 0.01).abs() <= 10.0 * FIT_TOLERANCE);
+}

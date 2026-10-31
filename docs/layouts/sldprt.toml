@@ -1794,6 +1794,94 @@ source = "spec"
 anchor = "terminal u16 BE refs"
 
 [[record]]
+name = "bspline_curve_descriptor"
+parsed_by = "crates/cadmpeg-codec-sldprt/src/brep/spline.rs"
+kind = "byte"
+section = "7.2"
+anchor = "**curve descriptor**"
+size = 25
+endianness = "big"
+note = "Body-relative after the `00 88` tag and optional `0xff` marker."
+
+[[record.field]]
+name = "attr"
+offset = 0
+type = "u16"
+source = "spec"
+anchor = "attr"
+
+[[record.field]]
+name = "degree"
+offset = 2
+type = "u16"
+source = "spec"
+anchor = "degree"
+
+[[record.field]]
+name = "control_count"
+offset = 4
+type = "u32"
+source = "spec"
+anchor = "control_count"
+
+[[record.field]]
+name = "dimension"
+offset = 8
+type = "u16"
+source = "spec"
+anchor = "dimension"
+
+[[record.field]]
+name = "periodic"
+offset = 15
+type = "u8"
+source = "spec"
+anchor = "body +15 is the `periodic` logical"
+
+[[record.field]]
+name = "rational"
+offset = 17
+type = "u8"
+source = "spec"
+anchor = "body +17 the `rational` logical"
+
+[[record.field]]
+name = "control_attr"
+offset = 19
+type = "u16"
+source = "spec"
+anchor = "control/multiplicity/knot array attrs"
+
+[[record.field]]
+name = "multiplicity_attr"
+offset = 21
+type = "u16"
+source = "spec"
+anchor = "control/multiplicity/knot array attrs"
+
+[[record.field]]
+name = "knot_attr"
+offset = 23
+type = "u16"
+source = "spec"
+anchor = "control/multiplicity/knot array attrs"
+
+[[record.gap]]
+offset = 10
+size = 5
+note = "`knot_count`, `subtype` and the flags before `periodic`; the reader takes no field here."
+
+[[record.gap]]
+offset = 16
+size = 1
+note = "A flag between `periodic` and `rational`; the reader takes no field here."
+
+[[record.gap]]
+offset = 18
+size = 1
+note = "The last flag; the reader takes no field here."
+
+[[record]]
 name = "bspline_array_header"
 kind = "byte"
 section = "7.2"

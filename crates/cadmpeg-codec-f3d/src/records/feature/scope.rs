@@ -577,6 +577,8 @@ design_feature_kinds! {
         SymetrieMiroir => "Symétrie miroir": Option<DesignMirrorConstruction>,
         Align => "Align": Option<DesignAlignEnvelope>,
         Move => "Move": Option<DesignMoveOperation>,
+        MoveFace => "MoveFace": Option<DesignMoveOperation>,
+        DeplacerFace => "DéplacerFace": Option<DesignMoveOperation>,
         OffsetFaces => "OffsetFaces": Option<DesignOffsetFacesOperation>,
         DecalerLesFaces => "DécalerLesFaces": Option<DesignOffsetFacesOperation>,
         Shell => "Shell": Option<DesignShellOperation>,
@@ -1733,6 +1735,10 @@ impl TryFrom<DesignParameterScopeSerde> for DesignParameterScope {
             }
             DesignFeatureKind::Align => DesignScopePayload::Align(wire.align_envelope.take()),
             DesignFeatureKind::Move => DesignScopePayload::Move(wire.move_operation.take()),
+            DesignFeatureKind::MoveFace => DesignScopePayload::MoveFace(wire.move_operation.take()),
+            DesignFeatureKind::DeplacerFace => {
+                DesignScopePayload::DeplacerFace(wire.move_operation.take())
+            }
             DesignFeatureKind::OffsetFaces => {
                 DesignScopePayload::OffsetFaces(match wire.direct_face_operation.take() {
                     None => None,
@@ -2213,7 +2219,11 @@ impl From<DesignParameterScope> for DesignParameterScopeSerde {
                 wire.direct_face_operation = value.map(DesignDirectFaceOperation::Thicken);
             }
             DesignScopePayload::Align(value) => wire.align_envelope = value,
-            DesignScopePayload::Move(value) => wire.move_operation = value,
+            DesignScopePayload::Move(value)
+            | DesignScopePayload::MoveFace(value)
+            | DesignScopePayload::DeplacerFace(value) => {
+                wire.move_operation = value;
+            }
             DesignScopePayload::Scale(value) | DesignScopePayload::Massstab(value) => {
                 wire.scale_operation = value;
             }
@@ -2683,7 +2693,9 @@ impl DesignParameterScope {
 
     pub(crate) fn move_operation(&self) -> Option<&DesignMoveOperation> {
         match &self.payload {
-            DesignScopePayload::Move(value) => value.as_ref(),
+            DesignScopePayload::Move(value)
+            | DesignScopePayload::MoveFace(value)
+            | DesignScopePayload::DeplacerFace(value) => value.as_ref(),
             _ => None,
         }
     }

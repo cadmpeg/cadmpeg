@@ -76,6 +76,7 @@ pub(crate) enum CreoLossCode {
     BrepTransferIncomplete,
     /// A compact-frame component has unresolved source faces.
     BrepCompactFrameComponentUnresolved,
+    BrepCompactFrameBoundaryUnresolved,
     /// A saved section spline cannot form a NURBS curve.
     SectionSplineUnresolved,
     /// A named surface-prototype field's bounded scalar body states no slots
@@ -83,6 +84,8 @@ pub(crate) enum CreoLossCode {
     SurfacePrototypeFieldRetained,
     /// A compact plane rotation has no complete finite origin.
     PlaneCompactFrameUnresolved,
+    /// A complete rotation cylinder conflicts with its stored envelope.
+    CylinderRotationEnvelopeUnresolved,
     /// A resolved extrusion body failed shell admission.
     ExtrusionBodyRejected,
     /// Remaining per-instance surfaces, curves, and vertices stay gated.
@@ -94,11 +97,18 @@ pub(crate) enum CreoLossCode {
     PlaneEnvelopeUnresolved,
     PlaneCarrierUnresolved,
     PrototypeLocalSystemUnresolved,
+    /// A cylinder rotation frame fails its bounded envelope gate.
+    CylinderRotationFrameUnresolved,
     TwoChartScalarFrameUnresolved,
     /// A positional pcurve has no complete bounded scalar frame.
     PcurveScalarFrameUnresolved,
     PcurveChartUnresolved,
     SampledPcurveCarrierUnresolved,
+    HoleCircleIntervalUnresolved,
+    HoleGeneratorUnresolved,
+    SweepEnvelopeReplayUnresolved,
+    PcurveSampleCoordinatesDropped,
+    AngularPcurvePairUnresolved,
     SampledPcurveEvaluationUnresolved,
     /// Unique `VisibGeom` curve-topology rows were not transferred as carriers.
     VisibGeomCurveUntransferred,
@@ -124,6 +134,8 @@ pub(crate) enum CreoLossCode {
     CarrierPairedEnvelopeSpheres,
     /// Exact positional torus carriers transferred.
     CarrierPositionalTori,
+    CarrierSweepEnvelopeReplays,
+    CarrierSampledSweepCircles,
     /// Exact positional cylinder carriers transferred.
     CarrierPositionalCylinders,
     /// Exact positional cone carriers transferred.
@@ -244,9 +256,18 @@ impl CreoLossCode {
             Self::BrepCompactFrameComponentUnresolved => {
                 "geometry.brep-compact-frame-component-unresolved"
             }
+            Self::BrepCompactFrameBoundaryUnresolved => {
+                "geometry.brep-compact-frame-boundary-unresolved"
+            }
             Self::SectionSplineUnresolved => "geometry.section-spline-unresolved",
             Self::SurfacePrototypeFieldRetained => "geometry.surface-prototype-field-retained",
+            Self::SweepEnvelopeReplayUnresolved => "geometry.sweep-envelope-replay-unresolved",
+            Self::PcurveSampleCoordinatesDropped => "geometry.pcurve-sample-coordinates-dropped",
+            Self::AngularPcurvePairUnresolved => "geometry.angular-pcurve-pair-unresolved",
             Self::PlaneCompactFrameUnresolved => "geometry.plane-compact-frame-unresolved",
+            Self::CylinderRotationEnvelopeUnresolved => {
+                "geometry.cylinder-rotation-envelope-unresolved"
+            }
             Self::ExtrusionBodyRejected => "topology.extrusion-body-rejected",
             Self::GeometryInstanceCarriersGated => "geometry.instance-carriers-gated",
             Self::VisibGeomSurfaceUntransferred => "geometry.visibgeom-surface-untransferred",
@@ -254,10 +275,13 @@ impl CreoLossCode {
             Self::PlaneEnvelopeUnresolved => "geometry.plane-envelope-unresolved",
             Self::PlaneCarrierUnresolved => "geometry.plane-carrier-unresolved",
             Self::PrototypeLocalSystemUnresolved => "geometry.prototype-local-system-unresolved",
+            Self::CylinderRotationFrameUnresolved => "geometry.cylinder-rotation-frame-unresolved",
             Self::TwoChartScalarFrameUnresolved => "geometry.two-chart-scalar-frame-unresolved",
             Self::PcurveScalarFrameUnresolved => "geometry.pcurve-scalar-frame-unresolved",
             Self::PcurveChartUnresolved => "geometry.pcurve-chart-unresolved",
             Self::SampledPcurveCarrierUnresolved => "geometry.sampled-pcurve-carrier-unresolved",
+            Self::HoleCircleIntervalUnresolved => "geometry.hole-circle-interval-unresolved",
+            Self::HoleGeneratorUnresolved => "geometry.hole-generator-unresolved",
             Self::SampledPcurveEvaluationUnresolved => {
                 "geometry.sampled-pcurve-evaluation-unresolved"
             }
@@ -271,6 +295,8 @@ impl CreoLossCode {
             Self::CarrierTopologyBoundPlanes => "carrier.topology-bound-planes",
             Self::CarrierFirstInstancePrototypes => "carrier.first-instance-prototypes",
             Self::CarrierPairedEnvelopeSpheres => "carrier.paired-envelope-spheres",
+            Self::CarrierSweepEnvelopeReplays => "carrier.sweep-envelope-replays",
+            Self::CarrierSampledSweepCircles => "carrier.sampled-sweep-circles",
             Self::CarrierPositionalTori => "carrier.positional-tori",
             Self::CarrierPositionalCylinders => "carrier.positional-cylinders",
             Self::CarrierPositionalCones => "carrier.positional-cones",
@@ -334,6 +360,8 @@ impl CreoLossCode {
             | Self::CarrierTopologyBoundPlanes
             | Self::CarrierFirstInstancePrototypes
             | Self::CarrierPairedEnvelopeSpheres
+            | Self::CarrierSweepEnvelopeReplays
+            | Self::CarrierSampledSweepCircles
             | Self::CarrierPositionalTori
             | Self::CarrierPositionalCylinders
             | Self::CarrierPositionalCones
@@ -352,6 +380,7 @@ impl CreoLossCode {
             | Self::CarrierTorusParameterRetention => Severity::Info,
             Self::BrepTransferIncomplete
             | Self::BrepCompactFrameComponentUnresolved
+            | Self::BrepCompactFrameBoundaryUnresolved
             | Self::GeometryInstanceCarriersGated
             | Self::TopologyIncompleteComponents
             | Self::TopologyVertexIdentifierUnstatable
@@ -359,7 +388,11 @@ impl CreoLossCode {
             Self::SectionSplineUnresolved
             | Self::CompressedSectionUnexpanded
             | Self::SurfacePrototypeFieldRetained
+            | Self::SweepEnvelopeReplayUnresolved
+            | Self::PcurveSampleCoordinatesDropped
+            | Self::AngularPcurvePairUnresolved
             | Self::PlaneCompactFrameUnresolved
+            | Self::CylinderRotationEnvelopeUnresolved
             | Self::SourceDialectUnverified
             | Self::LegacyRealValueUnresolved
             | Self::LegacyIntegerValueUnresolved
@@ -378,10 +411,13 @@ impl CreoLossCode {
             | Self::PlaneEnvelopeUnresolved
             | Self::PlaneCarrierUnresolved
             | Self::PrototypeLocalSystemUnresolved
+            | Self::CylinderRotationFrameUnresolved
             | Self::TwoChartScalarFrameUnresolved
             | Self::PcurveScalarFrameUnresolved
             | Self::PcurveChartUnresolved
             | Self::SampledPcurveCarrierUnresolved
+            | Self::HoleCircleIntervalUnresolved
+            | Self::HoleGeneratorUnresolved
             | Self::SampledPcurveEvaluationUnresolved
             | Self::VisibGeomCurveUntransferred
             | Self::LegacySurfaceCarrierUnresolved
@@ -427,6 +463,8 @@ impl CreoLossCode {
             | Self::CarrierTopologyBoundPlanes
             | Self::CarrierFirstInstancePrototypes
             | Self::CarrierPairedEnvelopeSpheres
+            | Self::CarrierSweepEnvelopeReplays
+            | Self::CarrierSampledSweepCircles
             | Self::CarrierPositionalTori
             | Self::CarrierPositionalCylinders
             | Self::CarrierPositionalCones
@@ -460,16 +498,20 @@ impl CreoLossCode {
             Self::TriangleStripRepresentationConflict
             | Self::BrepTransferIncomplete
             | Self::BrepCompactFrameComponentUnresolved
+            | Self::BrepCompactFrameBoundaryUnresolved
             | Self::GeometryInstanceCarriersGated
             | Self::VisibGeomSurfaceUntransferred
             | Self::PlaneLocalSystemUnresolved
             | Self::PlaneEnvelopeUnresolved
             | Self::PlaneCarrierUnresolved
             | Self::PrototypeLocalSystemUnresolved
+            | Self::CylinderRotationFrameUnresolved
             | Self::TwoChartScalarFrameUnresolved
             | Self::PcurveScalarFrameUnresolved
             | Self::PcurveChartUnresolved
             | Self::SampledPcurveCarrierUnresolved
+            | Self::HoleCircleIntervalUnresolved
+            | Self::HoleGeneratorUnresolved
             | Self::SampledPcurveEvaluationUnresolved
             | Self::VisibGeomCurveUntransferred
             | Self::LegacySurfaceCarrierUnresolved
@@ -479,7 +521,11 @@ impl CreoLossCode {
             | Self::SectionSegmentGeometryUnresolved
             | Self::SectionSplineUnresolved
             | Self::SurfacePrototypeFieldRetained
+            | Self::SweepEnvelopeReplayUnresolved
+            | Self::PcurveSampleCoordinatesDropped
+            | Self::AngularPcurvePairUnresolved
             | Self::PlaneCompactFrameUnresolved
+            | Self::CylinderRotationEnvelopeUnresolved
             | Self::PlaneSupportVariantsCapped => LossTaxonomy::GeometryNotTransferred,
             Self::TopologyIncompleteComponents
             | Self::TopologyVertexIdentifierUnstatable
@@ -568,9 +614,11 @@ mod tests {
                 "geometry.triangle-strip-conflict",
                 "geometry.brep-incomplete",
                 "geometry.brep-compact-frame-component-unresolved",
+                "geometry.brep-compact-frame-boundary-unresolved",
                 "geometry.section-spline-unresolved",
                 "geometry.surface-prototype-field-retained",
                 "geometry.plane-compact-frame-unresolved",
+                "geometry.cylinder-rotation-envelope-unresolved",
                 "topology.extrusion-body-rejected",
                 "geometry.instance-carriers-gated",
                 "geometry.visibgeom-surface-untransferred",
@@ -578,10 +626,16 @@ mod tests {
                 "geometry.plane-envelope-unresolved",
                 "geometry.plane-carrier-unresolved",
                 "geometry.prototype-local-system-unresolved",
+                "geometry.cylinder-rotation-frame-unresolved",
                 "geometry.two-chart-scalar-frame-unresolved",
                 "geometry.pcurve-scalar-frame-unresolved",
                 "geometry.pcurve-chart-unresolved",
                 "geometry.sampled-pcurve-carrier-unresolved",
+                "geometry.hole-circle-interval-unresolved",
+                "geometry.hole-generator-unresolved",
+                "geometry.sweep-envelope-replay-unresolved",
+                "geometry.pcurve-sample-coordinates-dropped",
+                "geometry.angular-pcurve-pair-unresolved",
                 "geometry.sampled-pcurve-evaluation-unresolved",
                 "geometry.visibgeom-curve-untransferred",
                 "geometry.legacy-surface-carrier-unresolved",
@@ -594,6 +648,8 @@ mod tests {
                 "carrier.first-instance-prototypes",
                 "carrier.paired-envelope-spheres",
                 "carrier.positional-tori",
+                "carrier.sweep-envelope-replays",
+                "carrier.sampled-sweep-circles",
                 "carrier.positional-cylinders",
                 "carrier.positional-cones",
                 "carrier.line-extrusion-planes",

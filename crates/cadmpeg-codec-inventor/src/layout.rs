@@ -177,6 +177,18 @@ pub(crate) mod kernel_entity_link {
     pub(crate) const ENTITY_ID: usize = 15;
 }
 
+/// Byte offsets for the `pm_dc_spline_curve_prefix` record.
+///
+/// Spec §12. Record length 28 B.
+///
+/// ```text
+/// Offsets are relative to each spline curve, after the spline record's variable lists.
+/// ```
+pub(crate) mod pm_dc_spline_curve_prefix {
+    /// Stated value of `scalar_width` (`u32`). Spec §12.
+    pub(crate) const SCALAR_WIDTH_VALUE: u32 = 0x0000_0008;
+}
+
 /// Byte offsets for the `pm_dc_sheet_metal_style_operand_prefix` record.
 ///
 /// Spec §13.5. Record length 90 B.
@@ -424,4 +436,42 @@ pub(crate) mod pm_dc_pattern_suppression_prefix {
 pub(crate) mod pm_dc_pattern_suppression_pair {
     /// Record length in bytes. Spec §13.6.
     pub(crate) const LEN: usize = 8;
+}
+
+/// Byte offsets for the `pm_dc_work_point_fields` record.
+///
+/// Spec §13. Record length 36 B.
+///
+/// ```text
+/// Offsets start after the segment-major-19 content header.
+/// ```
+pub(crate) mod pm_dc_work_point_fields {
+    /// Record length in bytes. Spec §13.
+    pub(crate) const LEN: usize = 36;
+}
+
+/// Byte offsets for the `pm_dc_open_cubic_curve_prefix` record.
+///
+/// Spec §12. Record length 28 B.
+///
+/// ```text
+/// Offsets are relative to each curve array of the endpoint-bound open cubic form. The scalar lanes and fixed tail share the spline curve layout.
+/// ```
+pub(crate) mod pm_dc_open_cubic_curve_prefix {
+    /// Stated value of `form` (`u32`). Spec §12.
+    pub(crate) const FORM_VALUE: u32 = 0x0000_0000;
+    /// Stated value of `degree` (`u32`). Spec §12.
+    pub(crate) const DEGREE_VALUE: u32 = 0x0000_0003;
+}
+
+/// Byte offsets for the `pm_dc_open_cubic_pole_prefix` record.
+///
+/// Spec §12. Record length 24 B.
+///
+/// ```text
+/// Offsets are relative to the byte after the counted knot lane of the endpoint-bound open cubic form.
+/// ```
+pub(crate) mod pm_dc_open_cubic_pole_prefix {
+    /// Stated value of `pole_value` (`u32`). Spec §12.
+    pub(crate) const POLE_VALUE_VALUE: u32 = 0x0000_0008;
 }

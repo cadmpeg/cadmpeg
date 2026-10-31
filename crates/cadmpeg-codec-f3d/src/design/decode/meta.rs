@@ -533,7 +533,7 @@ pub(in crate::design::decode) struct DesignPrimaryFrame<'a> {
     pub(super) design_type: &'a SegmentTypeData,
 }
 
-fn dynamic_type<'a>(
+pub(super) fn dynamic_type<'a>(
     meta: &'a crate::metastream::MetaStream,
     class_tag: &crate::records::references::DesignClassTag,
 ) -> Option<(usize, &'a SegmentTypeData)> {
@@ -541,7 +541,7 @@ fn dynamic_type<'a>(
     Some((ordinal, meta.types.get(ordinal)?))
 }
 
-fn record_header_class_tag(
+pub(super) fn record_header_class_tag(
     bytes: &[u8],
     at: usize,
     end: usize,
@@ -832,7 +832,7 @@ fn parse_feature_timeline_record(
         let item_count_offset = at;
         let count = usize::try_from(View::u32_le_at(bytes, at)?).ok()?;
         at = at.checked_add(4)?;
-        if count > end.checked_sub(at)? / 11 {
+        if count > end.checked_sub(at)? {
             return None;
         }
         Some((
@@ -846,9 +846,17 @@ fn parse_feature_timeline_record(
     })()?;
 
     let mut items = Vec::new();
+    let mut null_items = 0_usize;
     for _ in 0..count {
         let target_offset = at.checked_add(1)?;
         let reference = take_reference(bytes, &mut at)?;
+        if matches!(reference, Reference::Null) {
+            null_items += 1;
+            continue;
+        }
+        if null_items > 0 {
+            return None;
+        }
         let target = local_reference(&reference, type_guids_by_entity)?;
         let target_offset = u64::try_from(target_offset).ok()?;
         items.push(crate::records::identity::Located {

@@ -54,11 +54,11 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 ### DR-12. Placement `refType` values
 
-**Question.** What construction does each `refType` value of the placement class select, and how does a nonzero `extraOffset` alter that construction?
+**Question.** What construction does each `refType` value of the placement class select, how does a nonzero `extraOffset` alter that construction, and what does the version-16 `periodicFaceMode` select?
 
 **Known.** `f3d.md` §3.1 "A `Sketch` scope joined" gives the member order, the version gates, the identity-marked matrix, and the unmarked version-4 matrix. The independent `extraOffset` reference reaches a scalar owner linked to an `ExtraOffset` length parameter. `refType` is a u32 whose value does not change the member sequence. The scalar-role table defines the ordered `values` names and direct-reference shapes. Owner-scope references remain independent of the direct geometry slots, and the solved matrix does not select the construction rule. Code `15` has a `RotateAngle` scalar and two face-selection lineages; those operands do not distinguish the exact plane-construction subtype.
 
-**Need.** We must know which references a given `refType` requires to write a placement that Fusion re-solves rather than accepts as stored. A controlled nonzero `ExtraOffset` must establish its direction and effect for each supported construction. Nonzero axis-state and direction-control bytes also require a solved-frame orientation rule. An offset-plane definition also requires the scope operand role that selects its reference plane or planar face; a solved matrix and an `AlongDistance` parameter do not assign that role.
+**Need.** We must know which references a given `refType` requires to write a placement that Fusion re-solves rather than accepts as stored. A controlled nonzero `ExtraOffset` must establish its direction and effect for each supported construction. Nonzero axis-state bytes, version-15 and earlier direction controls, and version-16 periodic-face modes require a solved-frame orientation rule. An offset-plane definition also requires the scope operand role that selects its reference plane or planar face; a solved matrix and an `AlongDistance` parameter do not assign that role.
 
 ### DR-14. `SurfacePatch` boundary-side ordinal mapping
 
@@ -268,7 +268,7 @@ the native feature when a fixed lane carries a symmetric distance.
 
 **Question.** What does the flag byte after the `variant` byte of a parameter owner store?
 
-**Known.** `f3d.md` §3.1 "Every dimension or feature-input parameter stores `owner_record_index`" gives the byte. It is zero in almost every owner. It is one only in scalar owners whose `variant` is one, and one design stores variant one with flag zero.
+**Known.** `f3d.md` §3.1 "A dimension or feature-input parameter without the null owner stores `owner_record_index`" gives the byte. It is zero in almost every owner. It is one only in scalar owners whose `variant` is one, and one design stores variant one with flag zero.
 
 **Need.** The flag can mark a driven or suppressed parameter. A design that toggles one dimension between driving and driven, saved in each state, fixes the meaning.
 
@@ -342,7 +342,7 @@ the native feature when a fixed lane carries a symmetric distance.
 
 **Question.** What do the u32 and u64 fields in the fourteen-byte persistent selection tail select?
 
-**Known.** The 204-byte member retains the complete local, asset, and context identity and a present optional slot. Its extra bytes are `00`, u32 `2`, u64 `1`, and `00`. A following Design header or the stream-end boundary terminates the tail. The frame extent distinguishes this form from the 190-byte member without a new identity field.
+**Known.** The 204-byte member retains the complete local, asset, and context identity and a present optional slot. Its extra bytes are `00`, u32 `2`, u64 `1`, and `00`. A following Design header or the stream-end boundary terminates the tail. The frame extent distinguishes this form from the 190-byte member without a new identity field. A further member form follows the context identity with u32 `2`, eleven zero bytes, and a run of u32 `255` values up to the next Design header; its owning Extrude selection group then has no admitted member.
 
 **Need.** Independently varied tail fields and an unchanged selected entity must establish each field's meaning before the grammar admits other values.
 
@@ -383,6 +383,14 @@ the native feature when a fixed lane carries a symmetric distance.
 **Conflict.** An occurrence ordinal does not state a path-discriminator binding.
 
 **Note.** The fixed native occurrence record retains the discriminator value without a component-path binding.
+
+### DR-130. Construction-operand group closing flag
+
+**Question.** What does closing flag `1` in the tail flag block of a construction-operand group select?
+
+**Known.** `f3d.md` §3.1 "Every `Extrude`, `Extrusion`, `Fillet`" defines the group tail. The flag block ends with the closing flag after `variant`. The closing flag is `0` or `1`, and both values occur in the three-byte block `[1, 1, closing_flag]` of existing-body groups in Extrude scopes. The role, members, and references of the group are the same for both values.
+
+**Need.** A writer that generates a group must choose the closing flag, and a reader must know whether value `1` changes the group's operation semantics.
 
 ### DR-104. ACT component-link root selection
 
@@ -703,6 +711,18 @@ the native feature when a fixed lane carries a symmetric distance.
 
 **Note.** Keep the operation native until each operand role and motion direction has a byte-defined rule.
 
+### DR-144. Flag bytes of the discriminated parameter expression trailer
+
+**Question.** What do the first four of the five flag bytes in the nine-byte expression trailer of a discriminated parameter frame state?
+
+**Known.** The trailer is four zero bytes and five flag bytes, each `0` or `1`. The last flag byte is `1` exactly for a document parameter. Owned parameters set the first, second, or third flag byte, alone or the second and third together. Parameters with a null owner reference set the fourth flag byte, alone or with the first or third. Every frame with a set flag byte has the same remaining grammar as a frame with zero flag bytes.
+
+**Need.** Files that change one parameter property at a time, such as favorite state, comment, or the deletion of the owning dimension, and save the document after each change.
+
+**Conflict.** None.
+
+**Note.** The decoder admits the flag bytes and does not project them.
+
 ### DR-126. Move transform envelopes with leading references
 
 **Question.** In the Move envelope with leading references, is the matrix an absolute transform or a transform relative to a referenced frame?
@@ -803,10 +823,34 @@ the native feature when a fixed lane carries a symmetric distance.
 
 **Question.** Which stored field, or which result-topology change, marks a Thread as modeled geometry instead of an annotation?
 
-**Known.** The scope stores the designation, nominal-size text, profile name, and four physical scalars. No stored byte is proven to select the modeled state. In every Thread scope with a resolved result transition, the transition updates faces and inserts none.
+**Known.** The scope stores the designation, nominal-size text, profile name, and four physical scalars. The extended standard trailer links the length and offset owners. The extended compact trailer also links its owning Hole. Resolved Thread transitions replace existing face revisions.
 
-**Need.** One Thread saved with modeled geometry and the same Thread with it off, with the Design stream and the ASM history of both.
+**Need.** One Thread saved with modeled geometry and the same Thread with it off, with the Design stream and the ASM history of both. CAD Fixture Recipes F17a and F17b specify this pair.
 
 **Conflict.** None.
 
 **Note.** The neutral thread leaves `modeled` absent.
+
+### DR-148. Target references in populated configuration tables
+
+**Question.** How does an authored configuration table encode its driven parameter and feature targets, row identities, and cell values?
+
+**Known.** The table entries in seven public parametric hardware designs and 37 recipe uploads contain the JSON object `{}`. Each entry has zero rows and cells. The Design `BulkStream` contains the table serializer trigger and separate `DesignConfigurationRoot` records. The existing configuration decoder admits named JSON variant objects and joins parameter override names to unique neutral parameter identities. Design parameter records carry their own indexed identities in the Design `BulkStream`.
+
+**Need.** Legally available designs with at least two authored configurations, a changed parameter cell, and a changed feature state, with the corresponding table entries and Design records.
+
+**Conflict.** None.
+
+**Note.** Unassigned JSON members retain their native values and emit `configuration.member-unassigned`. The neutral configuration arena supports parameter overrides and evaluated feature states.
+
+### DR-149. Text-bearing document parameter prefix
+
+**Question.** What fields delimit the document parameter prefix that contains an additional text label before its source ordinal?
+
+**Known.** Two user-parameter frames in the public parametric standoff design store text labels before the ordinal, null owner, expression, source kind, unit, and name. Their tails reference the registered parameter-tail type. The fixed discriminated-prefix reader refuses the frames and reports `parameter.record-unparsed`.
+
+**Need.** Independent designs with labeled user parameters and controlled changes to the label, source name, and expression.
+
+**Conflict.** None.
+
+**Note.** The source archive retains the complete frames.

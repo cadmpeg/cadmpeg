@@ -42,6 +42,7 @@ use cadmpeg_ir::sketches::{
 };
 use std::collections::{HashMap, HashSet};
 
+mod resolution_rules;
 mod spatial_transition;
 mod typed_regions;
 
@@ -80,6 +81,7 @@ fn group() -> DesignConstructionOperandGroup {
                     opaque_scalar: 0.0,
                     opaque_scalar_offset: 22,
                     variant: false,
+                    closing_flag: false,
                 },
             )
             .unwrap(),
