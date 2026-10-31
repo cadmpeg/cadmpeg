@@ -280,6 +280,73 @@ mod axis_side {
         );
     }
 
+    /// One curve in the same plane as [`square`], as a one-entity profile loop.
+    fn single(geometry: &serde_json::Value) -> (Sketch, Vec<SketchEntity>) {
+        let entity = serde_json::from_value(json!({
+            "id": "inventor:test:entity#0",
+            "sketch": "inventor:test:sketch#1",
+            "construction": false,
+            "geometry": geometry,
+        }))
+        .expect("curve entity");
+        let sketch = serde_json::from_value(json!({
+            "id": "inventor:test:sketch#1",
+            "placement": {"kind": "resolved", "frame": {
+                "origin": {"x": 0.0, "y": 0.0, "z": 0.0},
+                "normal": {"x": 0.0, "y": 1.0, "z": 0.0},
+                "u_axis": {"x": -1.0, "y": 0.0, "z": 0.0},
+            }},
+            "profiles": [[{"entity": "inventor:test:entity#0", "reversed": false}]],
+        }))
+        .expect("sketch");
+        (sketch, vec![entity])
+    }
+
+    fn single_verdict(geometry: &serde_json::Value, axis: &RevolutionAxis) -> Option<bool> {
+        let (sketch, entities) = single(geometry);
+        profile_crosses_axis(
+            &profile(),
+            axis,
+            |_| Some(&sketch),
+            |id| entities.iter().find(|entity| entity.id() == id),
+        )
+    }
+
+    #[test]
+    fn a_circle_crosses_a_diagonal_axis_exactly_when_the_axis_is_within_one_radius() {
+        // In-plane direction (0.707, 0.707): side = 0.707 * (v - u).
+        let diagonal = axis([0.0; 3], [-1.0, 0.0, 1.0]);
+        let circle = |offset: f64| json!({"kind": "circle", "center": {"u": 0.0, "v": offset / std::f64::consts::FRAC_1_SQRT_2}, "radius": 1.0});
+        // The center is 0.8 radius from the axis: every cardinal point is on
+        // one side, but the circle crosses.
+        assert_eq!(single_verdict(&circle(0.8), &diagonal), Some(true));
+        assert_eq!(single_verdict(&circle(1.2), &diagonal), Some(false));
+        // Tangent to the axis: the touching point is on the axis.
+        assert_eq!(single_verdict(&circle(1.0), &diagonal), Some(false));
+    }
+
+    #[test]
+    fn an_arc_that_dips_across_the_axis_between_its_endpoints_crosses_it() {
+        // Axis along u: side = v.
+        let along_u = axis([0.0; 3], [-1.0, 0.0, 0.0]);
+        let arc = |start: f64, end: f64| {
+            json!({"kind": "arc", "center": {"u": 0.0, "v": 0.95}, "radius": 1.0,
+                "start_angle": start.to_radians(), "end_angle": end.to_radians()})
+        };
+        // Both endpoints are above the axis; the lowest point, at 270 degrees,
+        // lies 0.05 below it.
+        assert_eq!(single_verdict(&arc(250.0, 290.0), &along_u), Some(true));
+        assert_eq!(single_verdict(&arc(200.0, 340.0), &along_u), Some(true));
+        // A short arc around 270 degrees lies wholly below the axis.
+        assert_eq!(single_verdict(&arc(269.0, 271.0), &along_u), Some(false));
+        // The upper arc never reaches the axis.
+        assert_eq!(single_verdict(&arc(20.0, 160.0), &along_u), Some(false));
+        // Arcs that wrap through zero degrees and miss 270 degrees stay above.
+        assert_eq!(single_verdict(&arc(300.0, 240.0), &along_u), Some(false));
+        assert_eq!(single_verdict(&arc(290.0, 250.0), &along_u), Some(false));
+        assert_eq!(single_verdict(&arc(-10.0, 190.0), &along_u), Some(false));
+    }
+
     #[test]
     fn a_crossing_profile_keeps_a_pinned_native_loss() {
         let note = NativeReason::ProfileCrossesAxis.note();

@@ -347,8 +347,6 @@ pub(crate) const EPS_AXIS_SIDE: f64 = 1.0e-7;
 const EPS_AXIS_DIRECTION_NORMAL: f64 = 1.0e-9;
 /// Largest distance of the axis origin from the sketch plane, in sketch units.
 const EPS_AXIS_PLANE_OFFSET: f64 = 1.0e-6;
-/// Samples along one profile arc.
-const ARC_SAMPLES: u32 = 32;
 
 /// A revolve axis in the coordinates of its profile sketch.
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -390,17 +388,60 @@ impl SketchAxis {
         })
     }
 
-    /// Whether the points lie strictly on both sides of the axis. Points on
-    /// the axis, within [`EPS_AXIS_SIDE`], belong to neither side.
-    pub(crate) fn crossed_by(&self, points: &[[f64; 2]]) -> bool {
-        let (mut negative, mut positive) = (false, false);
-        for point in points {
-            let side = self.direction[0] * (point[1] - self.origin[1])
-                - self.direction[1] * (point[0] - self.origin[0]);
-            negative |= side < -EPS_AXIS_SIDE;
-            positive |= side > EPS_AXIS_SIDE;
+    /// Signed distance of a sketch point from the axis, scaled by the in-plane
+    /// length of the axis direction.
+    fn side(&self, point: [f64; 2]) -> f64 {
+        self.direction[0] * (point[1] - self.origin[1])
+            - self.direction[1] * (point[0] - self.origin[0])
+    }
+
+    /// The exact range of [`Self::side`] over one profile curve, or `None` for
+    /// a curve kind this predicate does not evaluate. The side is linear in the
+    /// point, so a circle spans `side(center) ± radius * |direction|`, and an
+    /// arc spans its endpoint values plus each extreme its sweep passes.
+    fn side_range(&self, geometry: &SketchGeometryDefinition) -> Option<(f64, f64)> {
+        let span =
+            (self.direction[0] * self.direction[0] + self.direction[1] * self.direction[1]).sqrt();
+        match geometry {
+            SketchGeometryDefinition::Line { start, end } => {
+                let (a, b) = (self.side([start.u, start.v]), self.side([end.u, end.v]));
+                Some((a.min(b), a.max(b)))
+            }
+            SketchGeometryDefinition::Circle { center, radius } => {
+                let middle = self.side([center.u, center.v]);
+                let reach = radius.get() * span;
+                Some((middle - reach, middle + reach))
+            }
+            SketchGeometryDefinition::Arc {
+                center,
+                radius,
+                start_angle,
+                end_angle,
+            } => {
+                let start = start_angle.get();
+                let mut sweep = end_angle.get() - start;
+                if sweep <= 0.0 {
+                    sweep += std::f64::consts::TAU;
+                }
+                let middle = self.side([center.u, center.v]);
+                let reach = radius.get() * span;
+                // side(center + r(cos t, sin t)) = middle + reach * sin(t - phase).
+                let phase = self.direction[1].atan2(self.direction[0]);
+                let at = |angle: f64| middle + reach * (angle - phase).sin();
+                let (a, b) = (at(start), at(start + sweep));
+                let (mut low, mut high) = (a.min(b), a.max(b));
+                let passes =
+                    |extreme: f64| (extreme - start).rem_euclid(std::f64::consts::TAU) <= sweep;
+                if passes(phase + std::f64::consts::FRAC_PI_2) {
+                    high = middle + reach;
+                }
+                if passes(phase - std::f64::consts::FRAC_PI_2) {
+                    low = middle - reach;
+                }
+                Some((low, high))
+            }
+            _ => None,
         }
-        negative && positive
     }
 }
 
@@ -428,7 +469,7 @@ pub(crate) fn profile_crosses_axis<'a>(
     };
     let sketch = sketch(id)?;
     let axis = SketchAxis::in_sketch(sketch, axis)?;
-    let mut points = Vec::new();
+    let (mut negative, mut positive) = (false, false);
     for region in regions.as_slice() {
         let SketchProfileRegion::Loops { loops } = region else {
             return None;
@@ -440,45 +481,13 @@ pub(crate) fn profile_crosses_axis<'a>(
                 .get(cadmpeg_core::decode::index_from_u32(index))?;
             for entity_use in chain {
                 let geometry = entity(&entity_use.entity)?;
-                curve_points(&geometry.geometry.definition().to_raw(), &mut points)?;
+                let (low, high) = axis.side_range(&geometry.geometry.definition().to_raw())?;
+                negative |= low < -EPS_AXIS_SIDE;
+                positive |= high > EPS_AXIS_SIDE;
             }
         }
     }
-    Some(axis.crossed_by(&points))
-}
-
-fn curve_points(geometry: &SketchGeometryDefinition, points: &mut Vec<[f64; 2]>) -> Option<()> {
-    match geometry {
-        SketchGeometryDefinition::Line { start, end } => {
-            points.extend([[start.u, start.v], [end.u, end.v]]);
-        }
-        SketchGeometryDefinition::Arc {
-            center,
-            radius,
-            start_angle,
-            end_angle,
-        } => {
-            let start = start_angle.get();
-            let mut sweep = end_angle.get() - start;
-            if sweep <= 0.0 {
-                sweep += std::f64::consts::TAU;
-            }
-            for step in 0..=ARC_SAMPLES {
-                let angle = start + sweep * f64::from(step) / f64::from(ARC_SAMPLES);
-                points.push([
-                    center.u + radius.get() * angle.cos(),
-                    center.v + radius.get() * angle.sin(),
-                ]);
-            }
-        }
-        SketchGeometryDefinition::Circle { center, radius } => {
-            for (du, dv) in [(1.0, 0.0), (0.0, 1.0), (-1.0, 0.0), (0.0, -1.0)] {
-                points.push([center.u + du * radius.get(), center.v + dv * radius.get()]);
-            }
-        }
-        _ => return None,
-    }
-    Some(())
+    Some(negative && positive)
 }
 
 pub(crate) fn matches(
