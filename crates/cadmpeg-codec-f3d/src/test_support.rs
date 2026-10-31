@@ -226,6 +226,7 @@ pub(crate) mod smbh_header_test;
 
 pub(crate) mod smbh_blocks_test;
 
+pub(crate) mod sketch_region_test;
 pub(crate) mod smbh_geometry_test;
 
 pub(crate) mod smbh_pcurves_test;
