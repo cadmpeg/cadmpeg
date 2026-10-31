@@ -658,8 +658,8 @@ struct WalkedFace {
     unresolved_loop: Option<u16>,
     unresolved_fins: Vec<u16>,
     withheld_forward_links: usize,
-    /// Loops whose FINs do not all carry a forward link.
-    backward_linked: HashSet<u16>,
+    /// Walked loops that are not forward linked.
+    unlinked_loops: HashSet<u16>,
 }
 
 /// Resolve a face whose `refs[4]` carrier is a swept/spun construction to a
@@ -1019,7 +1019,7 @@ fn walk_face(bridge: &topology::Bridge, t: &topology::Tables) -> WalkedFace {
     let mut unresolved_loop = None;
     let mut unresolved_fins = Vec::new();
     let mut withheld_forward_links = 0usize;
-    let mut backward_linked = HashSet::new();
+    let mut unlinked_loops = HashSet::new();
     let mut loop_guard = HashSet::new();
     while loop_ref != 0 {
         if !loop_guard.insert(loop_ref) {
@@ -1066,7 +1066,7 @@ fn walk_face(bridge: &topology::Bridge, t: &topology::Tables) -> WalkedFace {
                     rest.reverse();
                 }
             } else {
-                backward_linked.insert(loop_ref);
+                unlinked_loops.insert(loop_ref);
             }
             loops.push((loop_ref, ring));
         } else if ring_closed {
@@ -1082,7 +1082,7 @@ fn walk_face(bridge: &topology::Bridge, t: &topology::Tables) -> WalkedFace {
         unresolved_loop,
         unresolved_fins,
         withheld_forward_links,
-        backward_linked,
+        unlinked_loops,
     }
 }
 
@@ -1411,15 +1411,17 @@ fn canonical_coedge_attr(
 ///
 /// A FIN's `refs[4]` gives one end of its edge, and the adjacent FIN in the
 /// ring gives the other end (`ring_vuse`). A mutual twin corroborates it: the
-/// twin's `refs[4]` names the same vertex, since the twin runs the shared
-/// edge in the opposite direction. A mutual twin that names another vertex
+/// twin runs the shared edge in the opposite direction, so its `refs[4]`
+/// names the ring end when its loop is of the same kind, and the canonical
+/// FIN's own end otherwise. A mutual twin that names another vertex
 /// contradicts the ring order, so the edge is withheld (`None`). An absent,
 /// dangling, or non-mutual twin leaves the ring order authoritative.
 fn edge_ring_vuse(
-    canonical: u16,
-    ring_vuse: u16,
+    incidence: EdgeIncidence,
+    incidences: &[EdgeIncidence],
     coedges: &HashMap<u16, topology::Coedge>,
 ) -> Option<u16> {
+    let (canonical, ring_vuse) = (incidence.fin, incidence.ring_vuse);
     let twin = coedges.get(&canonical).map(|coedge| coedge.refs[5])?;
     if twin == canonical || twin <= 1 {
         return Some(ring_vuse);
@@ -1431,8 +1433,17 @@ fn edge_ring_vuse(
     if twin_record.refs[5] != canonical {
         return Some(ring_vuse);
     }
+    let twin_forward_linked = incidences
+        .iter()
+        .find(|other| other.fin == twin)
+        .map_or(incidence.forward_linked, |other| other.forward_linked);
+    let expected = if twin_forward_linked == incidence.forward_linked {
+        ring_vuse
+    } else {
+        incidence.own_vuse
+    };
     let twin_vuse = twin_record.refs[4];
-    if twin_vuse == ring_vuse || (twin_vuse <= 1 && ring_vuse <= 1) {
+    if twin_vuse == expected || (twin_vuse <= 1 && expected <= 1) {
         Some(ring_vuse)
     } else {
         None
@@ -2133,7 +2144,7 @@ fn decode_graph(
 
     for f in &faces {
         for (loop_attr, ring) in &f.loops {
-            let forward_linked = !f.backward_linked.contains(loop_attr);
+            let forward_linked = !f.unlinked_loops.contains(loop_attr);
             let k = ring.len();
             for (i, &ce_attr) in ring.iter().enumerate() {
                 let Some(ce) = t.coedges().get(&ce_attr) else {
@@ -2177,7 +2188,7 @@ fn decode_graph(
     // attr, walked FIN attr).
     let mut edge_ends: HashMap<u16, (u16, u16, u16, u16)> = HashMap::new();
     // Edges whose FIN lies in a loop that is not forward linked.
-    let mut backward_linked_edges: HashSet<u16> = HashSet::new();
+    let mut unlinked_edges: HashSet<u16> = HashSet::new();
 
     let mut unresolved_points = HashSet::new();
     for (edge_attr, incidences) in edge_incidence {
@@ -2194,7 +2205,7 @@ fn decode_graph(
             match recover_dummy_partner_edge(edge_attr, canonical, &incidences, t) {
                 DummyRecovery::Admitted(start_vuse, end_vuse, partner) => {
                     if !partner.forward_linked {
-                        backward_linked_edges.insert(edge_attr);
+                        unlinked_edges.insert(edge_attr);
                     }
                     insert_edge_ends(
                         t,
@@ -2217,12 +2228,12 @@ fn decode_graph(
             }
             continue;
         };
-        let Some(ring_vuse) = edge_ring_vuse(canonical, incidence.ring_vuse, t.coedges()) else {
+        let Some(ring_vuse) = edge_ring_vuse(incidence, &incidences, t.coedges()) else {
             out.stats.withheld_fin_partners += 1;
             continue;
         };
         if !incidence.forward_linked {
-            backward_linked_edges.insert(edge_attr);
+            unlinked_edges.insert(edge_attr);
         }
         let (start_vuse, end_vuse) = incidence.ends(incidence.own_vuse, ring_vuse);
         insert_edge_ends(
@@ -2366,7 +2377,7 @@ fn decode_graph(
                 .and_then(|vertex| vertex.tolerance_m)
                 .map(|tolerance| tolerance * LEN_TO_MM)
         };
-        let forward_linked = !backward_linked_edges.contains(&e);
+        let forward_linked = !unlinked_edges.contains(&e);
         let marker_conflict = carriers.marker_conflict(curve_attr);
         if marker_conflict {
             out.stats.marker_conflict_edges += 1;
@@ -2796,10 +2807,10 @@ fn decode_graph(
         let mut surface_orientation_reversed = false;
         match carriers.surface(f.surface_attr) {
             Some(c) => {
-                let forward_linked = f
-                    .loops
-                    .iter()
-                    .all(|(loop_attr, _)| !f.backward_linked.contains(loop_attr));
+                let forward_linked = !f.loops.is_empty()
+                    && f.loops
+                        .iter()
+                        .all(|(loop_attr, _)| !f.unlinked_loops.contains(loop_attr));
                 surface_orientation_reversed = c.orientation_reversed(forward_linked);
                 annotations.note(
                     id_surf(f.bridge_attr).as_str(),
@@ -8476,6 +8487,39 @@ mod tests {
         });
     }
 
+    /// One FIN carries a reciprocal `refs[2]` and the others carry none, so
+    /// the loop is not forward linked.
+    #[test]
+    fn a_ring_with_some_forward_links_is_listed_in_traversal_order() {
+        let mut body = crate::test_support::parasolid::triangle_body();
+        let at = body
+            .windows(4)
+            .position(|window| window == [0x00, 0x11, 0x00, 30])
+            .expect("synthetic triangle FIN");
+        body[at + 8..at + 10].copy_from_slice(&32u16.to_be_bytes());
+        with_test_context(|ctx| {
+            let decoded =
+                super::decode_body(ctx, &body, &cadmpeg_ir::stream_name!("partial-fin-ring"))
+                    .expect("partly linked triangle decodes");
+            let ring: Vec<_> = decoded.loops[0]
+                .coedges()
+                .iter()
+                .map(|id| id.as_str().to_owned())
+                .collect();
+            assert_eq!(ring.len(), 3);
+            assert!(ring[0].ends_with("#30"));
+            assert!(ring[1].ends_with("#31"));
+            assert!(ring[2].ends_with("#32"));
+            let edge = decoded
+                .edges
+                .iter()
+                .find(|edge| edge.id.as_str().ends_with("#40"))
+                .expect("first triangle edge");
+            assert!(edge.start.as_str().ends_with("#50"));
+            assert!(edge.end.as_str().ends_with("#51"));
+        });
+    }
+
     #[test]
     fn boundary_coedge_uses_ring_endpoint_but_reciprocal_twin_must_agree() {
         use std::collections::HashMap;
@@ -8486,15 +8530,69 @@ mod tests {
             sense: Sense::Forward,
             offset: 0,
         };
+        let incidence = |fin, ring_vuse, forward_linked| super::EdgeIncidence {
+            fin,
+            own_vuse: if fin == 10 { 101 } else { 102 },
+            ring_vuse,
+            forward_linked,
+        };
         let boundary = HashMap::from([(10, record(10, [0, 0, 0, 0, 101, 10, 7, 0, 0]))]);
-        assert_eq!(super::edge_ring_vuse(10, 102, &boundary), Some(102));
+        assert_eq!(
+            super::edge_ring_vuse(incidence(10, 102, true), &[], &boundary),
+            Some(102)
+        );
 
         let reciprocal = HashMap::from([
             (10, record(10, [0, 0, 0, 0, 101, 11, 7, 0, 0])),
             (11, record(11, [0, 0, 0, 0, 102, 10, 7, 0, 0])),
         ]);
-        assert_eq!(super::edge_ring_vuse(10, 102, &reciprocal), Some(102));
-        assert_eq!(super::edge_ring_vuse(10, 103, &reciprocal), None);
+        assert_eq!(
+            super::edge_ring_vuse(incidence(10, 102, true), &[], &reciprocal),
+            Some(102)
+        );
+        assert_eq!(
+            super::edge_ring_vuse(incidence(10, 103, true), &[], &reciprocal),
+            None
+        );
+    }
+
+    #[test]
+    fn a_twin_in_a_loop_of_the_other_kind_names_the_canonical_end() {
+        use std::collections::HashMap;
+
+        // Edge 7 runs from vertex-use 102 to 101. FIN 10 is in a forward-linked
+        // loop, so its `refs[4]` is the end. FIN 11 is in a loop that is not
+        // forward linked, so its `refs[4]` is its own start, the edge's end.
+        let record = |attr, refs| Coedge {
+            attr,
+            refs,
+            sense: Sense::Forward,
+            offset: 0,
+        };
+        let coedges = HashMap::from([
+            (10, record(10, [0, 0, 0, 0, 101, 11, 7, 0, 0])),
+            (11, record(11, [0, 0, 0, 0, 101, 10, 7, 0, 0])),
+        ]);
+        let canonical = super::EdgeIncidence {
+            fin: 10,
+            own_vuse: 101,
+            ring_vuse: 102,
+            forward_linked: true,
+        };
+        let twin = super::EdgeIncidence {
+            fin: 11,
+            own_vuse: 101,
+            ring_vuse: 102,
+            forward_linked: false,
+        };
+        assert_eq!(
+            super::edge_ring_vuse(canonical, &[canonical, twin], &coedges),
+            Some(102)
+        );
+        assert_eq!(
+            super::edge_ring_vuse(canonical, &[canonical], &coedges),
+            None
+        );
     }
 
     #[test]

@@ -118,7 +118,7 @@ const DELTAS_MARKER_OFFSET: usize = analytic::REFS + COMPACT_REF_COUNT * DELTAS_
 const MARKER_REVERSED: u8 = 0x2d;
 /// Orientation marker of a compact analytic record that runs against its
 /// curve parameter in topology that is not forward linked.
-const MARKER_AGAINST_BACKWARD_LINKED_EDGES: u8 = 0x2b;
+const MARKER_AGAINST_UNLINKED_EDGES: u8 = 0x2b;
 
 /// f64 count for each analytic tag; `None` if the tag is not an analytic carrier.
 fn analytic_value_count(tt: u8) -> Option<usize> {
@@ -277,7 +277,7 @@ fn parse_carrier_at_marker(
 
     let reversed = match body.get(marker_at) {
         Some(&MARKER_REVERSED) => Some(true),
-        Some(&MARKER_AGAINST_BACKWARD_LINKED_EDGES) => Some(false),
+        Some(&MARKER_AGAINST_UNLINKED_EDGES) => Some(false),
         _ => None,
     };
     decode_carrier_values(tt, vals, attr, (off, end), reversed)
