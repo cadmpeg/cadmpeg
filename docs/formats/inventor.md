@@ -351,7 +351,7 @@ PmDc references store a one-based record index in bits 0 through 30 and a qualif
 
 A type-8 reference array starts with u16 values `8, 0x3000` and a u32 count. A nonempty array then stores two u16 metadata values and the counted PmDc references. A type-2 reference list starts with u16 values `2, 0x3000` and a u32 count. A nonempty list then stores two u32 metadata values and the counted references.
 
-Planar sketch entities add `entity_flags:u32` and `sketch_reference:u32` after the content header. The sketch reference identifies the owning planar sketch. Entity-flag bits `0x40`, `0x1000`, `0x40000`, and `0x80000` do not mark construction geometry. Bit `0x4` of a spline entity does not mark construction geometry.
+Planar sketch entities add `entity_flags:u32` and `sketch_reference:u32` after the content header. The sketch reference identifies the owning planar sketch. Entity-flag bit `0x8000` of a line marks an axis line for distance dimensions. Entity-flag bits `0x40`, `0x1000`, `0x40000`, and `0x80000` do not mark construction geometry. Bit `0x4` of a spline entity does not mark construction geometry.
 
 The planar entity types are:
 
@@ -454,7 +454,7 @@ Types `00c0ac00d1115fe0800066b1e13554c7` and `40ff8336d1115fe0800066b1e13554c7` 
 
 Type `008c10e1d11102e680006db1e13554c7` binds a circular entity to its center-point entity. Type `d07d2c44d11189e680006fb1e13554c7` gives two circular entities equal radii. Type `e0c281c6d11110e680006eb1e13554c7` gives two lines equal lengths. Each stores its two ordered entity references after the constraint header.
 
-Type `58850511d211e39560000cb38932edb0` encodes a distance dimension. After the constraint header it stores `value:u32`, two entity references, and six f64 values. The constraint-header parameter drives the Euclidean distance between the two entities: between two points, from a point to a line's carrier, or between two parallel line carriers.
+Type `58850511d211e39560000cb38932edb0` encodes a distance dimension. After the constraint header it stores `value:u32`, two entity references, and six f64 values. The constraint-header parameter drives the Euclidean distance between the two entities: between two points, from a point to a line's carrier, or between two parallel line carriers. When an operand is a line whose entity flags include bit `0x8000`, the parameter value is twice that distance.
 
 Type `100a0d59d111cae680006fb1e13554c7` encodes an angle dimension between two lines. After the constraint header it stores `value:u32`, two line references, two f64 values, and `flags:u16`. The constraint-header parameter, in radians, is the angle between the two line directions or its supplement.
 
@@ -633,7 +633,7 @@ A revolve has 20 property slots. A one-sided closed-profile solid revolve has th
 | 16 | Boolean control of type `284d8790d011f8d10008cabc0663dc09`, with value 0 or 1 |
 | 17 | Result object collection |
 
-The feature label's sole participant identifies the owning planar sketch. The boundary patch selects its profile as for an extrusion. Slot 1 selects the stored profile when slot 11 is null. A non-null slot 11 repeats the same boundary-patch record, including every member of a multi-member patch. It supplies no additional profile selection. Extent value 1 is a fixed angular travel given by slot 4. With slot-5 value 0, the travel is positive rotation about the work-axis span. The angle is greater than zero. Extent value 3 is a full revolution. Its stored slot-4 angle is inactive. The slot-5 enumeration uses the versioned content header, followed by `type_value:i16` and `value:u16`, and ends there. A full revolution has slot-5 value 0 or 1. Both values specify a full turn.
+The feature label's sole participant identifies the owning planar sketch. The boundary patch selects its profile as for an extrusion. Slot 1 selects the stored profile when slot 11 is null. A non-null slot 11 repeats the same boundary-patch record, including every member of a multi-member patch. It supplies no additional profile selection. Extent value 1 is a fixed angular travel given by slot 4. With slot-5 value 0, the travel is positive rotation about the work-axis span. The angle is greater than zero. Extent value 3 is a full revolution. Its stored slot-4 angle is inactive. The profile lies on one side of the work axis; profile points on the axis belong to neither side. The slot-5 enumeration uses the versioned content header, followed by `type_value:i16` and `value:u16`, and ends there. A full revolution has slot-5 value 0 or 1. Both values specify a full turn.
 
 Type `b1377779d2116794a00049803603c8c9` is a feature parameter dimension. It starts with `header_value:u32`, `header_id:u16`, and a type-2 annotation list. The annotation list prefix contains `marker:u32 = 0x30000002` and `item_count:u32`. A nonzero count adds two u32 metadata words and annotation data bytes. A zero count has no metadata or data. The annotation data fills the record up to the nine-byte terminal tail. Its tail contains five annotation bytes and a parameter reference. The terminal parameter reference identifies the parameter that the dimension annotates. The dimension header has no content-header stamps or flags extension.
 

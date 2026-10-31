@@ -2057,6 +2057,7 @@ pub(crate) struct ProjectionIndex<'a> {
     sketches: HashMap<(&'a str, u32), Option<&'a crate::sketch::PmDcSketch>>,
     sketch_ids: HashMap<&'a str, cadmpeg_ir::sketches::SketchId>,
     sketches_by_id: HashMap<&'a str, &'a Sketch>,
+    neutral_entities: HashMap<&'a str, &'a cadmpeg_ir::sketches::SketchEntity>,
     directions: HashMap<(&'a str, u32), Option<&'a crate::sketch::PmDcDirection>>,
     transforms: HashMap<(&'a str, u32), Option<&'a crate::sketch::PmDcTransform>>,
     entity_style_links: HashSet<(&'a str, u32)>,
@@ -2242,6 +2243,10 @@ pub(crate) fn project(
             .iter()
             .map(|sketch| (sketch.id.as_str(), sketch))
             .collect(),
+        neutral_entities: sketch_entities
+            .iter()
+            .map(|entity| (entity.id().as_str(), entity))
+            .collect(),
         directions: unique_directions,
         transforms: unique_transforms,
         entity_style_links: {
@@ -2307,6 +2312,7 @@ pub(crate) fn project(
     let mut neutral = 0_usize;
     for feature in &inventory.features {
         let label = label_of(feature.identity.record_ordinal);
+        let revolve_loss_count = revolve_losses.len();
         let value = match label.and_then(|label| {
             FeatureFamily::from_class_id(label.class_id()).map(|family| (label, family))
         }) {
@@ -2376,7 +2382,9 @@ pub(crate) fn project(
                 });
             }
             None if history.placement(feature.identity.record_ordinal).is_some() => {
-                if label.is_some_and(|label| label.class_id() == REVOLVE_CLASS_ID) {
+                if label.is_some_and(|label| label.class_id() == REVOLVE_CLASS_ID)
+                    && revolve_losses.len() == revolve_loss_count
+                {
                     revolve_losses.push(
                         revolve::indexed_operands(feature, &index)
                             .err()
@@ -3163,6 +3171,16 @@ fn project_revolve(
         return Some(Err(error));
     }
     let profile = boundary.resolve(index)?;
+    if revolve::profile_crosses_axis(
+        &profile,
+        &axis,
+        |id| index.sketches_by_id.get(id.as_str()).copied(),
+        |id| index.neutral_entities.get(id.as_str()).copied(),
+    ) == Some(true)
+    {
+        losses.push(revolve::NativeReason::ProfileCrossesAxis.note());
+        return None;
+    }
     let feature = Feature {
         product_definition: None,
         id: feature_id,
@@ -5052,6 +5070,7 @@ pub(crate) mod tests {
                 .iter()
                 .map(|sketch| (sketch.id.as_str(), sketch))
                 .collect(),
+            neutral_entities: std::collections::HashMap::new(),
             directions: directions
                 .iter()
                 .map(|record| {

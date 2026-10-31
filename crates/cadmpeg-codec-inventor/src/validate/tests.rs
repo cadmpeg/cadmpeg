@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 
+mod axis_distance;
 mod delete_face;
+mod revolve_axis;
 mod tagging;
 
 use super::face_property_is_admitted;

@@ -921,6 +921,57 @@ fn validate_sketches(data: &NativeData, ir: &CadIr, findings: &mut Vec<Finding>)
             }
         }
     }
+    let raw_entities = data
+        .pm_dc_sketch_entities
+        .iter()
+        .map(|entity| {
+            (
+                (
+                    entity.identity.segment_token.as_str(),
+                    entity.identity.record_ordinal,
+                ),
+                entity,
+            )
+        })
+        .collect::<HashMap<_, _>>();
+    let raw_constraints = data
+        .pm_dc_sketch_constraints
+        .iter()
+        .map(|constraint| (constraint.id(), constraint))
+        .collect::<HashMap<_, _>>();
+    for constraint in &ir.model.sketch_constraints {
+        let Some(raw) = constraint
+            .native_ref
+            .as_deref()
+            .and_then(|native| raw_constraints.get(native))
+        else {
+            continue;
+        };
+        let PmDcSketchConstraintKind::Distance { first, second, .. } = raw.kind else {
+            continue;
+        };
+        let measures_axis = [first, second].iter().any(|operand| {
+            operand
+                .index()
+                .checked_sub(1)
+                .and_then(|ordinal| {
+                    raw_entities.get(&(raw.identity.segment_token.as_str(), ordinal))
+                })
+                .is_some_and(|entity| entity.is_axis_line())
+        });
+        if measures_axis
+            && matches!(
+                constraint.definition.kind(),
+                cadmpeg_ir::sketches::SketchConstraintDefinitionInput::DistanceLoci { .. }
+            )
+        {
+            findings.push(finding(
+                Check::NativeLinks,
+                "Inventor neutral distance dimension to an axis line states its parameter as the operand distance".into(),
+                Some(constraint.id.as_str().to_owned()),
+            ));
+        }
+    }
     for issue in &data.sketch_record_issues {
         findings.push(finding(
             Check::NativeLinks,
@@ -1678,6 +1729,18 @@ fn validate_features(
                 directions: &data.pm_dc_directions,
             })
         });
+    let revolve_sketches = ir
+        .model
+        .sketches
+        .iter()
+        .map(|sketch| (sketch.id.as_str(), sketch))
+        .collect::<HashMap<_, _>>();
+    let revolve_entities = ir
+        .model
+        .sketch_entities
+        .iter()
+        .map(|entity| (entity.id().as_str(), entity))
+        .collect::<HashMap<_, _>>();
     for feature in &ir.model.features {
         if crate::feature::pattern::is_linear_pattern(feature) {
             if feature
@@ -1992,6 +2055,12 @@ fn validate_features(
                     Some(feature.id.as_str().to_owned()),
                 ));
             }
+            findings.extend(revolve_axis_finding(
+                &feature.id,
+                construction,
+                &revolve_sketches,
+                &revolve_entities,
+            ));
         }
         if matches!(
             definition,
@@ -3461,6 +3530,33 @@ fn unique<T: Eq + std::hash::Hash>(
             ));
         }
     }
+}
+
+/// The finding for a neutral revolve whose resolved profile has points on both
+/// sides of its axis.
+fn revolve_axis_finding(
+    feature: &cadmpeg_ir::features::FeatureId,
+    construction: &cadmpeg_ir::features::RevolveConstruction,
+    sketches: &HashMap<&str, &cadmpeg_ir::sketches::Sketch>,
+    entities: &HashMap<&str, &cadmpeg_ir::sketches::SketchEntity>,
+) -> Option<Finding> {
+    let cadmpeg_ir::features::RevolveConstruction::Resolved { profile, axis, .. } = construction
+    else {
+        return None;
+    };
+    (crate::feature::revolve::profile_crosses_axis(
+        profile,
+        axis,
+        |id| sketches.get(id.as_str()).copied(),
+        |id| entities.get(id.as_str()).copied(),
+    ) == Some(true))
+    .then(|| {
+        finding(
+            Check::NativeLinks,
+            "Inventor neutral revolve profile has points on both sides of its axis".into(),
+            Some(feature.as_str().to_owned()),
+        )
+    })
 }
 
 fn finding(check: Check, message: String, entity: Option<String>) -> Finding {
