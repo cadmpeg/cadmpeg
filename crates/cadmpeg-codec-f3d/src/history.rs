@@ -21,6 +21,7 @@ pub(crate) mod compact_lineage;
 pub(crate) mod edge_flange;
 pub(crate) mod face_admission;
 mod loop_index;
+mod output_chain;
 mod recipe_index;
 pub(crate) mod selection;
 pub(crate) mod stored_bodies;
@@ -1014,14 +1015,37 @@ pub(crate) fn bind_feature_outputs(
     scopes: &[crate::records::feature::scope::DesignParameterScope],
     histories: &mut [AsmHistory],
     active_bodies: &[cadmpeg_ir::topology::Body],
+    scope_histories: &HashMap<String, String>,
 ) -> Result<Vec<cadmpeg_ir::report::loss::LossNote>, cadmpeg_core::CodecError> {
     use cadmpeg_ir::features::{EdgeSelection, FeatureDefinition, FeatureOperation};
 
     let mut losses = Vec::new();
+    let output_chains = features
+        .iter()
+        .map(|feature| {
+            let (current, previous) = feature_history_states(feature, scopes)?;
+            output_chain::OutputChain::resolve(
+                histories,
+                current,
+                previous,
+                feature
+                    .native_ref
+                    .as_deref()
+                    .and_then(|id| scope_histories.get(id))
+                    .map(String::as_str),
+            )
+        })
+        .collect::<Vec<_>>();
     let output_states = features
         .iter()
         .filter_map(|feature| feature_history_states(feature, scopes))
         .map(|(state_id, _)| state_id)
+        .chain(
+            output_chains
+                .iter()
+                .flatten()
+                .flat_map(|chain| chain.states.iter().copied()),
+        )
         .collect::<HashSet<_>>();
     let mut measured_states = output_states.clone();
     for feature in features.iter() {
@@ -1122,7 +1146,7 @@ pub(crate) fn bind_feature_outputs(
     let mut state_inserted_plane =
         HashMap::<i64, (cadmpeg_ir::math::Point3, cadmpeg_ir::math::Vector3)>::new();
     let mut state_solid_outputs = HashMap::<i64, Vec<i64>>::new();
-    let mut state_outputs = HashMap::<i64, Option<(usize, Vec<i64>)>>::new();
+    let mut state_outputs = HashMap::<(usize, i64), Option<Vec<i64>>>::new();
     for (history_index, history) in histories.iter_mut().enumerate() {
         let mut by_node = HashMap::new();
         for (index, state) in history.states().iter().enumerate() {
@@ -1338,9 +1362,9 @@ pub(crate) fn bind_feature_outputs(
                 state_solid_outputs.insert(state_id, solid_affected);
             }
             state_outputs
-                .entry(state_id)
+                .entry((history_index, state_id))
                 .and_modify(|outputs| *outputs = None)
-                .or_insert_with(|| Some((history_index, outputs)));
+                .or_insert_with(|| Some(outputs));
         }
     }
     let mut active = HashMap::new();
@@ -1571,70 +1595,45 @@ pub(crate) fn bind_feature_outputs(
             }
         }
         absorbed_bodies.extend(newly_absorbed);
-        let Some(Some((history_index, outputs))) = state_outputs.get(&state_id) else {
-            if is_split_body {
-                losses.push(
-                    crate::loss::F3dLossCode::HistoricalOutputTransitionUnresolved.note(format!(
-                        "Split feature {} has no unique bound output state.",
-                        feature.id
-                    )),
-                );
-            }
+        if state_id == previous_state_id {
+            continue;
+        }
+        let chain_outputs = output_chains
+            .get(idx)
+            .and_then(Option::as_ref)
+            .and_then(|chain| Some((chain.history, chain.outputs(&state_outputs)?)));
+        let Some((history_index, outputs)) = chain_outputs else {
+            losses.push(crate::loss::F3dLossCode::FeatureOutputStateChainUnbound.note(format!(
+                "{} has no complete unique output transition chain from state {previous_state_id} to state {state_id}.",
+                feature.id
+            )));
             continue;
         };
-        let mut matching_states = histories
-            .iter()
-            .flat_map(crate::history_records::AsmHistory::states)
-            .filter(|state| state.state_id == state_id);
-        let unique_state = matching_states
-            .next()
-            .filter(|_| matching_states.next().is_none());
-        let transition_matches = unique_state.is_some_and(|state| {
-            if is_split_body {
-                split_output_state_pair(&histories[*history_index], state_id, previous_state_id)
-            } else {
-                state
-                    .transition
-                    .as_ref()
-                    .and_then(|transition| transition.previous_state_id)
-                    == Some(previous_state_id)
+        let source = historical_brep_source(&histories[history_index].id);
+        let mut resolved = Vec::new();
+        for slot in &outputs {
+            if let Some(body) = stored_active.resolve(&[*slot], source) {
+                resolved.extend(body.iter().cloned());
             }
-        });
-        if is_split_body && !transition_matches {
-            losses.push(
-                crate::loss::F3dLossCode::HistoricalOutputTransitionUnresolved.note(format!(
-                    "Split feature {} has an incomplete or ambiguous output transition chain.",
-                    feature.id
-                )),
-            );
         }
-        if transition_matches {
-            let mut resolved = Vec::new();
-            for slot in outputs {
-                let Some(id) = active.get(slot) else {
-                    continue;
-                };
-                resolved.push(id.clone());
-            }
-            feature.evaluation.set_outputs(
-                cadmpeg_ir::features::DistinctMembers::try_from(resolved)
-                    .map_err(cadmpeg_core::CodecError::from)?,
-            );
-            if let Some(scope) = feature
-                .native_ref
-                .as_deref()
-                .and_then(|id| scopes.iter().find(|scope| scope.id == id))
+        if resolved.len() != outputs.len() {
+            losses.push(crate::loss::F3dLossCode::FeatureOutputBodyUnbound.note(format!(
+                "{} has {} affected body slot(s) without a unique active body in its BREP namespace.",
+                feature.id, outputs.len() - resolved.len()
+            )));
+        }
+        feature.evaluation.set_outputs(
+            cadmpeg_ir::features::DistinctMembers::try_from(resolved)
+                .map_err(cadmpeg_core::CodecError::from)?,
+        );
+        if let Some(scope) = feature
+            .native_ref
+            .as_deref()
+            .and_then(|id| scopes.iter().find(|scope| scope.id == id))
+        {
+            if stored_bodies::bind_history_outputs(feature, scope, &outputs, source, &stored_active)
             {
-                let source = historical_brep_source(&histories[*history_index].id);
-                if stored_bodies::bind_history_outputs(
-                    feature,
-                    scope,
-                    outputs,
-                    source,
-                    &stored_active,
-                ) {
-                    bind_base_feature_output_selection(feature)?;
-                }
+                bind_base_feature_output_selection(feature)?;
             }
         }
     }
@@ -1642,21 +1641,6 @@ pub(crate) fn bind_feature_outputs(
         stored_bodies::finalize_body_sets(feature);
     }
     Ok(losses)
-}
-
-fn split_output_state_pair(history: &AsmHistory, state_id: i64, previous_state_id: i64) -> bool {
-    state_id != previous_state_id
-        && state_pair_by(
-            history,
-            state_id,
-            previous_state_id,
-            false,
-            |history, state| {
-                state.transition.as_ref()?.previous_state_id?;
-                transition_or_header_previous_state_id(history, state)
-            },
-        )
-        .is_some()
 }
 
 /// The history state a feature's scope produces and the state it follows.
