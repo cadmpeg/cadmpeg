@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 //! PSB scalar forms with context-independent IEEE-754 mappings.
 
+pub(crate) mod sweep;
+
 use std::collections::{BTreeMap, HashSet};
 
 use cadmpeg_core::bytes::{assemble_f32_be, assemble_f64_be, find_from};
@@ -101,12 +103,24 @@ pub(crate) fn decode_compact_plane_rotation(
 ) -> Option<Result<FiniteVector<12>, &'static str>> {
     let mut values = [0.0; 12];
     let mut slot = 0usize;
-    let mut view = View::over_retained(body);
     let mut repeated = false;
+    let mut view = View::over_retained(body);
     while slot < 9 {
         match view.u8()? {
             token @ 0xe4..=0xe6 => {
                 repeat_scalar_slots(&mut values, &mut slot, token)?;
+                repeated = true;
+            }
+            0xe7 => {
+                let (count, end) = crate::psb::reference_id(body, view.read_len()).ok()?;
+                let count = usize::try_from(count).ok()?;
+                (count > 0).then_some(())?;
+                let previous = *values.get(slot.checked_sub(1)?)?;
+                let next = slot.checked_add(count)?;
+                (previous == 0.0 && next == values.len() && end == body.len()).then_some(())?;
+                values.get_mut(slot..next)?.fill(previous);
+                slot = next;
+                view.seek(end)?;
                 repeated = true;
             }
             token @ (0x18 | 0x0f | 0x10) => {
@@ -126,34 +140,30 @@ pub(crate) fn decode_compact_plane_rotation(
     if ![u, v, normal]
         .into_iter()
         .all(|axis| axis.into_iter().map(|value| value * value).sum::<f64>() == 1.0)
-        || crate::vecmath::cross(u, v) != normal
+        || crate::vecmath::dot(u, v) != 0.0
+        || crate::vecmath::dot(u, normal) != 0.0
+        || crate::vecmath::dot(v, normal) != 0.0
     {
         return None;
     }
+    if crate::vecmath::cross(u, v) != normal {
+        return Some(Err(
+            "compact plane rotation requires a right-handed signed basis",
+        ));
+    }
     let origin = (|| {
         while slot < values.len() {
-            let cursor = view.read_len();
-            match view.u8()? {
-                token @ 0xe4..=0xe6 => {
-                    repeat_scalar_slots(&mut values, &mut slot, token)?;
-                }
-                0x18 => {
-                    values[slot] = 0.0;
-                    slot += 1;
-                }
-                _ => {
-                    let (value, end) = decode_in_row_lane(body, cursor, cache).or_else(|| {
-                        if slot == 9 {
-                            decode_tabulated_cylinder_first_coordinate(body, cursor, cache)
-                        } else {
-                            decode_tabulated_cylinder_second_coordinate(body, cursor, cache)
-                        }
-                    })?;
-                    view.seek(end)?;
-                    values[slot] = value;
-                    slot += 1;
-                }
-            }
+            let (value, repeat, end) = decode_stateful_scalar_run(
+                body,
+                view.read_len(),
+                Some(values[slot - 1]),
+                cache,
+                StatefulScalarKind::Plane,
+            )?;
+            let next = slot.checked_add(repeat)?;
+            values.get_mut(slot..next)?.fill(value);
+            view.seek(end)?;
+            slot = next;
         }
         view.is_empty().then_some(())?;
         cadmpeg_ir::geometry::analytic::PlaneSurface::try_new(
@@ -684,23 +694,7 @@ pub(crate) fn decode_two_chart_first_coordinate(
     if data.get(offset) == Some(&0x32) {
         return ieee8(data, offset, 0x3f);
     }
-    decode_in_pcurve_lane(data, offset, cache)
-}
-
-/// Decode the second coordinate of one chart in a bounded two-chart curve body.
-///
-/// Positive-DICT prefixes below the general second-directrix floor use the
-/// same arithmetic lattice when the complete two-chart grammar owns the slot.
-pub(crate) fn decode_two_chart_second_coordinate(
-    data: &[u8],
-    offset: usize,
-    cache: &ScalarCache,
-) -> Option<(f64, usize)> {
-    let prefix = *data.get(offset)?;
-    if (0x4b..=0x5b).contains(&prefix) {
-        return ieee7_dict(data, offset, 0x3f75 + u16::from(prefix));
-    }
-    decode_tabulated_cylinder_second_coordinate(data, offset, cache)
+    decode_tabulated_cylinder_first_coordinate(data, offset, cache)
 }
 
 /// Decode a model-space coordinate in an `ActDatums` outline.
@@ -1328,6 +1322,7 @@ pub(crate) enum PlaneSupportFrameLayout {
     /// The generic form stores a 3x3 frame in row-major bytes, so its columns
     /// are the frame directions.
     MatrixColumns,
+    RotationColumns,
 }
 
 const EPS_PLANE_LAYOUT_NONZERO: f64 = 1.0e-6;
@@ -1403,31 +1398,66 @@ pub(crate) fn decode_plane_support_local_system(
     cache: &ScalarCache,
     losses: &mut Vec<cadmpeg_ir::report::loss::LossNote>,
 ) -> Result<Option<(FiniteVector<12>, PlaneSupportFrameLayout)>, CodecError> {
+    let mut incomplete_image = false;
     if let Some((values, cursor)) = decode_compact_y_plane_support(body, cache)
         .or_else(|| decode_diagonal_z_plane_support(body, cache))
     {
-        if cursor != body.len() {
+        if cursor == body.len() {
+            return Ok(Some((
+                match finite_local_system_slots(values) {
+                    Some(value) => value,
+                    None => return Ok(None),
+                },
+                PlaneSupportFrameLayout::DirectNormalTriples,
+            )));
+        }
+        incomplete_image = true;
+    }
+    if let Some((directions, cursor)) = rotation_plane_prefix(body, cache) {
+        let Some((origin, end)) = decode_plane_support_origin(
+            body,
+            cursor,
+            cache,
+            PlaneOriginLane::Rotation(directions[8]),
+        ) else {
+            return Ok(None);
+        };
+        let mut values = [0.0; 12];
+        values[..9].copy_from_slice(&directions);
+        values[9..].copy_from_slice(&origin);
+        if end != body.len() || rotation_plane_axes(&values).is_none() {
             return Ok(None);
         }
-        return Ok(Some((
-            match finite_local_system_slots(values) {
-                Some(value) => value,
-                None => return Ok(None),
-            },
-            PlaneSupportFrameLayout::DirectNormalTriples,
-        )));
+        return Ok(finite_local_system_slots(values)
+            .map(|slots| (slots, PlaneSupportFrameLayout::RotationColumns)));
     }
     if let Some((values, cursor)) = decode_plane_support_special_prefix(body, cache) {
-        if cursor != body.len() {
-            return Ok(None);
+        if cursor == body.len() {
+            return Ok(Some((
+                match finite_local_system_slots(values) {
+                    Some(value) => value,
+                    None => return Ok(None),
+                },
+                PlaneSupportFrameLayout::SupportTriples,
+            )));
         }
-        return Ok(Some((
-            match finite_local_system_slots(values) {
-                Some(value) => value,
-                None => return Ok(None),
-            },
-            PlaneSupportFrameLayout::SupportTriples,
-        )));
+        incomplete_image = true;
+    }
+    if let Some((frame, cursor)) =
+        decode_stateful_scalar_frame_prefix::<12>(body, cache, StatefulScalarKind::Plane)
+    {
+        if axis_unit_matrix_prefix(body, &frame)
+            && orthogonal_plane_columns(&frame.values).is_some()
+        {
+            if cursor != body.len() || rotation_plane_axes(&frame.values).is_none() {
+                return Ok(None);
+            }
+            return Ok(finite_local_system_slots(frame.values)
+                .map(|slots| (slots, PlaneSupportFrameLayout::RotationColumns)));
+        }
+    }
+    if incomplete_image {
+        return Ok(None);
     }
     let primary = decode_local_system_slot_prefix(body, cache, LocalSystemVariant::PlaneSupport)
         .map(|prefix| {
@@ -1950,6 +1980,12 @@ fn decode_plane_support_special_prefix(
     body: &[u8],
     cache: &ScalarCache,
 ) -> Option<([f64; 12], usize)> {
+    if body == [0x18, 0xe4, 0x0f, 0xe4, 0x18, 0xe5, 0x0f, 0x18, 0xe6] {
+        return Some((
+            [0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 0.0],
+            body.len(),
+        ));
+    }
     if let Some(frame) = decode_inline_plane_support_image(body, cache) {
         return Some(frame);
     }
@@ -1971,10 +2007,98 @@ fn decode_plane_support_special_prefix(
     if let Some(frame) = decode_trailing_rank_reflected_plane_support(body, cache) {
         return Some(frame);
     }
-    (body == [0x18, 0xe4, 0x0f, 0xe4, 0x18, 0xe5, 0x0f, 0x18, 0xe6]).then_some((
-        [0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 0.0],
-        body.len(),
-    ))
+    None
+}
+
+fn axis_unit_matrix_prefix(body: &[u8], frame: &StatefulScalarFrame<12>) -> bool {
+    let mut slots = 0usize;
+    let mut repeated = false;
+    for token in frame.tokens.iter().flatten() {
+        if !matches!(
+            body.get(token.offset),
+            Some(0x0f | 0x10 | 0x18 | 0xe4..=0xe6)
+        ) {
+            return false;
+        }
+        repeated |= matches!(body.get(token.offset), Some(0xe4..=0xe6));
+        let Some(next) = slots.checked_add(token.repeat) else {
+            return false;
+        };
+        slots = next;
+        if slots >= 9 {
+            return repeated;
+        }
+    }
+    false
+}
+
+pub(crate) fn axis_unit_matrix_body(body: &[u8], cache: &ScalarCache) -> bool {
+    decode_compact_plane_rotation(body.strip_suffix(&[0xe1]).unwrap_or(body), cache).is_some()
+}
+
+pub(crate) fn axis_unit_matrix_slots(body: &[u8], cache: &ScalarCache) -> Option<FiniteVector<12>> {
+    let slots = match decode_compact_plane_rotation(body, cache) {
+        Some(Ok(values)) => values,
+        _ => decode_compact_plane_rotation(body.strip_suffix(&[0xe1])?, cache)?.ok()?,
+    }
+    .get();
+    let u = [slots[0], slots[1], slots[2]];
+    let v = [slots[6], slots[7], slots[8]];
+    let n = crate::vecmath::cross(u, v);
+    FiniteVector::new([
+        u[0], v[0], n[0], u[1], v[1], n[1], u[2], v[2], n[2], slots[9], slots[10], slots[11],
+    ])
+}
+
+fn orthogonal_plane_columns(values: &[f64; 12]) -> Option<[[f64; 3]; 3]> {
+    let u = [values[0], values[3], values[6]];
+    let v = [values[1], values[4], values[7]];
+    let n = [values[2], values[5], values[8]];
+    values.iter().all(|value| value.is_finite()).then_some(())?;
+    for direction in [u, v, n] {
+        ((crate::vecmath::dot(direction, direction) - 1.0).abs() <= EPS_SUPPORT_FRAME_AGREEMENT)
+            .then_some(())?;
+    }
+    for (first, second) in [(u, v), (u, n), (v, n)] {
+        (crate::vecmath::dot(first, second).abs() <= EPS_SUPPORT_FRAME_AGREEMENT).then_some(())?;
+    }
+    Some([u, v, n])
+}
+
+pub(crate) fn rotation_plane_axes(values: &[f64; 12]) -> Option<([f64; 3], [f64; 3])> {
+    let [u, v, n] = orthogonal_plane_columns(values)?;
+    ((crate::vecmath::dot(crate::vecmath::cross(u, v), n) - 1.0).abs()
+        <= EPS_SUPPORT_FRAME_AGREEMENT)
+        .then_some(())?;
+    Some((crate::vecmath::normalize(u)?, crate::vecmath::normalize(n)?))
+}
+
+fn rotation_plane_prefix(body: &[u8], cache: &ScalarCache) -> Option<([f64; 9], usize)> {
+    let explicit_direction = |offset| matches!(body.get(offset), Some(0x41 | 0x45 | 0x71 | 0xb9));
+    explicit_direction(0).then_some(())?;
+    let (a, cursor) = decode_plane_support_coordinate(body, 0, 0, cache)?;
+    (body.get(cursor) == Some(&0x18)).then_some(())?;
+    explicit_direction(cursor + 1).then_some(())?;
+    let (b, cursor) = decode_plane_support_coordinate(body, cursor + 1, 2, cache)?;
+    let middle = match body.get(cursor..cursor + 3)? {
+        [0x18, 0x0f, 0x18] => 1.0,
+        [0x18, 0x10, 0x18] => -1.0,
+        _ => return None,
+    };
+    explicit_direction(cursor + 3).then_some(())?;
+    let (c, cursor) = decode_plane_support_coordinate(body, cursor + 3, 6, cache)?;
+    (body.get(cursor) == Some(&0x18)).then_some(())?;
+    explicit_direction(cursor + 1).then_some(())?;
+    let (d, cursor) = decode_plane_support_coordinate(body, cursor + 1, 8, cache)?;
+    [a, b, c, d]
+        .into_iter()
+        .all(|value| value != 0.0)
+        .then_some(())?;
+    let directions = [a, 0.0, b, 0.0, middle, 0.0, c, 0.0, d];
+    let mut values = [0.0; 12];
+    values[..9].copy_from_slice(&directions);
+    orthogonal_plane_columns(&values)?;
+    Some((directions, cursor))
 }
 
 fn decode_diagonal_z_plane_support(body: &[u8], cache: &ScalarCache) -> Option<([f64; 12], usize)> {
@@ -1987,9 +2111,11 @@ fn decode_diagonal_z_plane_support(body: &[u8], cache: &ScalarCache) -> Option<(
         return None;
     };
     let parameter_sign = sign(a)?;
-    sign(b)?;
+    let middle_sign = sign(b)?;
     let normal_sign = sign(c)?;
-    let (origin, cursor) = decode_plane_support_origin(body, 7, cache)?;
+    (middle_sign == parameter_sign * normal_sign).then_some(())?;
+    let (origin, cursor) =
+        decode_plane_support_origin(body, 7, cache, PlaneOriginLane::Compact(normal_sign))?;
     Some((
         [
             parameter_sign,
@@ -2022,7 +2148,8 @@ fn decode_inline_plane_support_image(
         _ => return None,
     };
     let prefix_end = 9;
-    let (origin, cursor) = decode_plane_support_origin(body, prefix_end, cache)?;
+    let (origin, cursor) =
+        decode_plane_support_origin(body, prefix_end, cache, PlaneOriginLane::Compact(0.0))?;
     Some((
         [
             0.0,
@@ -2110,7 +2237,8 @@ fn decode_compact_y_plane_support(body: &[u8], cache: &ScalarCache) -> Option<([
     let parameter = sign(a)?;
     let normal = sign(b)?;
     (normal == -parameter * sign(c)?).then_some(())?;
-    let (origin, cursor) = decode_plane_support_origin(body, 7, cache)?;
+    let (origin, cursor) =
+        decode_plane_support_origin(body, 7, cache, PlaneOriginLane::Compact(0.0))?;
     Some((
         [
             parameter, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, normal, 0.0, origin[0], origin[1], origin[2],
@@ -2130,7 +2258,8 @@ fn decode_compact_x_plane_support(body: &[u8], cache: &ScalarCache) -> Option<([
         (0x0f, 0x10, 0x10) => (-1.0, -1.0),
         _ => return None,
     };
-    let (origin, cursor) = decode_plane_support_origin(body, 8, cache)?;
+    let (origin, cursor) =
+        decode_plane_support_origin(body, 8, cache, PlaneOriginLane::Compact(0.0))?;
     Some((
         [
             0.0, first_y, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, second_z, origin[0], origin[1], origin[2],
@@ -2145,7 +2274,8 @@ fn decode_compact_axis_plane_support(
 ) -> Option<([f64; 12], usize)> {
     let prefix = [0x18, 0x0f, 0x18, 0xe5, 0x0f, 0xe4, 0x18, 0xe4];
     body.starts_with(&prefix).then_some(())?;
-    let (origin, cursor) = decode_plane_support_origin(body, prefix.len(), cache)?;
+    let (origin, cursor) =
+        decode_plane_support_origin(body, prefix.len(), cache, PlaneOriginLane::Support)?;
     Some((
         [
             1.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, -1.0, origin[0], origin[1], origin[2],
@@ -2191,7 +2321,8 @@ fn decode_prefixed_orthogonal_plane_support(
     ((stored_first_x_magnitude.abs() - first_x.abs()).abs() <= EPS_SUPPORT_FRAME_AGREEMENT * scale)
         .then_some(())?;
 
-    let (origin, cursor) = decode_plane_support_origin(body, cursor, cache)?;
+    let (origin, cursor) =
+        decode_plane_support_origin(body, cursor, cache, PlaneOriginLane::Support)?;
     Some((
         [
             first_x, 0.0, first_z, 0.0, 0.0, 0.0, first_z, 0.0, -first_x, origin[0], origin[1],
@@ -2238,7 +2369,8 @@ fn decode_trailing_rank_orthogonal_plane_support(
     ((stored_first_x_magnitude.abs() - first_x.abs()).abs() <= EPS_SUPPORT_FRAME_AGREEMENT * scale)
         .then_some(())?;
 
-    let (origin, cursor) = decode_plane_support_origin(body, cursor, cache)?;
+    let (origin, cursor) =
+        decode_plane_support_origin(body, cursor, cache, PlaneOriginLane::Support)?;
     Some((
         [
             first_x, 0.0, first_z, 0.0, 0.0, 0.0, first_z, 0.0, -first_x, origin[0], origin[1],
@@ -2284,7 +2416,8 @@ fn decode_reflected_component_plane_support(
     ((second_x - first_z).abs() <= EPS_SUPPORT_FRAME_AGREEMENT * scale).then_some(())?;
     ((stored_first_x - first_x).abs() <= EPS_SUPPORT_FRAME_AGREEMENT * scale).then_some(())?;
 
-    let (origin, cursor) = decode_plane_support_origin(body, cursor, cache)?;
+    let (origin, cursor) =
+        decode_plane_support_origin(body, cursor, cache, PlaneOriginLane::Support)?;
     Some((
         [
             first_x, 0.0, first_z, 0.0, 0.0, 0.0, first_z, 0.0, -first_x, origin[0], origin[1],
@@ -2332,7 +2465,8 @@ fn decode_trailing_rank_reflected_plane_support(
     (stored_second_y == first_z).then_some(())?;
     (stored_first_y == first_y).then_some(())?;
 
-    let (origin, cursor) = decode_plane_support_origin(body, cursor, cache)?;
+    let (origin, cursor) =
+        decode_plane_support_origin(body, cursor, cache, PlaneOriginLane::Support)?;
     Some((
         [
             0.0, first_y, first_z, 0.0, 0.0, 0.0, 0.0, first_z, -first_y, origin[0], origin[1],
@@ -2355,30 +2489,228 @@ fn decode_zero_or_plane_support_coordinate(
     }
 }
 
+pub(crate) const HELD_PCURVE_OPEN: &[u8] = &[0xd7, 0xe8, 0x03];
+
+#[derive(Debug, Clone, Copy)]
+pub(crate) struct StatefulScalarToken {
+    pub(crate) value: f64,
+    pub(crate) offset: usize,
+    pub(crate) end: usize,
+    pub(crate) repeat: usize,
+}
+
+pub(crate) struct StatefulScalarFrame<const N: usize> {
+    pub(crate) values: [f64; N],
+    pub(crate) tokens: [Option<StatefulScalarToken>; N],
+    pub(crate) token_count: usize,
+}
+
+pub(crate) type PcurveScalarFrame = StatefulScalarFrame<8>;
+
+pub(crate) fn decode_pcurve_scalar_frame(
+    body: &[u8],
+    cache: &ScalarCache,
+) -> Option<PcurveScalarFrame> {
+    let (frame, end) = decode_pcurve_scalar_frame_prefix(body, cache)?;
+    (end == body.len()).then_some(frame)
+}
+
+pub(crate) fn decode_pcurve_scalar_frame_prefix(
+    body: &[u8],
+    cache: &ScalarCache,
+) -> Option<(PcurveScalarFrame, usize)> {
+    let (frame, end) =
+        decode_stateful_scalar_frame_prefix::<8>(body, cache, StatefulScalarKind::Pcurve)?;
+    (!frame.tokens.iter().flatten().any(|token| {
+        body.get(token.offset..token.offset + HELD_PCURVE_OPEN.len()) == Some(HELD_PCURVE_OPEN)
+    }))
+    .then_some((frame, end))
+}
+
+fn decode_stateful_scalar_frame_prefix<const N: usize>(
+    body: &[u8],
+    cache: &ScalarCache,
+    kind: StatefulScalarKind,
+) -> Option<(StatefulScalarFrame<N>, usize)> {
+    let mut frame = StatefulScalarFrame {
+        values: [0.0; N],
+        tokens: [None; N],
+        token_count: 0,
+    };
+    let mut cursor = 0;
+    let mut count = 0usize;
+    let mut previous = None;
+    while cursor < body.len() && count < frame.values.len() {
+        let start = cursor;
+        let (value, repeat, next) =
+            decode_stateful_scalar_run(body, cursor, previous, cache, kind)?;
+        (value.is_finite() && next > cursor && next <= body.len()).then_some(())?;
+        let end = count.checked_add(repeat)?;
+        frame.values.get_mut(count..end)?.fill(value);
+        *frame.tokens.get_mut(frame.token_count)? = Some(StatefulScalarToken {
+            value,
+            offset: start,
+            end: next,
+            repeat,
+        });
+        frame.token_count += 1;
+        count = end;
+        cursor = next;
+        previous = Some(value);
+    }
+    (count == frame.values.len()).then_some((frame, cursor))
+}
+
+#[derive(Clone, Copy)]
+pub(crate) enum StatefulScalarKind {
+    CylinderRotation,
+    Plane,
+    Pcurve,
+}
+
+fn rotation_pcurve_literal(body: &[u8], cursor: usize) -> Option<(f64, usize)> {
+    let mut view = View::over_retained(body);
+    view.seek(cursor)?;
+    let constant = |tag| match tag {
+        0x0e => Some(0.5_f64),
+        0x0f => Some(1.0),
+        0x10 => Some(-1.0),
+        0x11 => Some(std::f64::consts::PI),
+        0x12 => Some(std::f64::consts::FRAC_PI_2),
+        0x13 => Some(std::f64::consts::TAU),
+        _ => None,
+    };
+    let value = match view.u8()? {
+        0x00 => {
+            let base = constant(view.u8()?)?;
+            let mut raw = base.to_be_bytes();
+            raw[7] = view.u8()?;
+            be_f64(raw)
+        }
+        tag @ (0x1b | 0x34) => be_f64([
+            if tag == 0x1b { 0x3c } else { 0xbc },
+            view.u8()?,
+            view.u8()?,
+            0,
+            0,
+            0,
+            0,
+            0,
+        ]),
+        tag @ (0x11 | 0x13) => constant(tag)?,
+        _ => return None,
+    };
+    Some((value, view.read_len()))
+}
+
+pub(crate) fn decode_cylinder_rotation_prefix(
+    body: &[u8],
+    cache: &ScalarCache,
+) -> Option<(FiniteVector<12>, usize)> {
+    let (frame, end) = decode_stateful_scalar_frame_prefix::<12>(
+        body,
+        cache,
+        StatefulScalarKind::CylinderRotation,
+    )?;
+    rotation_plane_axes(&frame.values)?;
+    let values = FiniteVector::new(frame.values)?;
+    Some((values, end))
+}
+
+pub(crate) fn decode_stateful_scalar_run(
+    body: &[u8],
+    cursor: usize,
+    previous: Option<f64>,
+    cache: &ScalarCache,
+    kind: StatefulScalarKind,
+) -> Option<(f64, usize, usize)> {
+    let token = *body.get(cursor)?;
+    if matches!(
+        kind,
+        StatefulScalarKind::Pcurve | StatefulScalarKind::CylinderRotation
+    ) {
+        if let Some((value, end)) = rotation_pcurve_literal(body, cursor) {
+            return Some((value, 1, end));
+        }
+    }
+    let run = match token {
+        0xe4..=0xe6 => (previous?, usize::from(token - 0xe3), cursor + 1),
+        0xe7 if matches!(kind, StatefulScalarKind::Pcurve) => {
+            let (count, end) = compact_int(body, cursor + 1);
+            (end > cursor + 1 && count > 0).then_some(())?;
+            (previous?, usize::try_from(count).ok()?, end)
+        }
+        0x18 => (0.0, 1, cursor + 1),
+        0x12 if matches!(kind, StatefulScalarKind::Pcurve) => {
+            (std::f64::consts::FRAC_PI_2, 1, cursor + 1)
+        }
+        0x0e => (0.5, 1, cursor + 1),
+        0x0f => (1.0, 1, cursor + 1),
+        0x10 => (-1.0, 1, cursor + 1),
+        _ => {
+            let (value, next) = decode_tabulated_cylinder_first_coordinate(body, cursor, cache)?;
+            (value, 1, next)
+        }
+    };
+    (run.0.is_finite() && run.2 > cursor && run.2 <= body.len()).then_some(run)
+}
+
+#[derive(Clone, Copy)]
+enum PlaneOriginLane {
+    Compact(f64),
+    Rotation(f64),
+    Support,
+}
+
 fn decode_plane_support_origin(
     body: &[u8],
     mut cursor: usize,
     cache: &ScalarCache,
+    lane: PlaneOriginLane,
 ) -> Option<([f64; 3], usize)> {
+    let (mut previous, stateful) = match lane {
+        PlaneOriginLane::Compact(previous) => (previous, true),
+        PlaneOriginLane::Rotation(previous) => (previous, true),
+        PlaneOriginLane::Support => (0.0, false),
+    };
     let mut origin = [0.0; 3];
-    for (index, value) in origin.iter_mut().enumerate() {
-        if body.get(cursor) == Some(&0x0e) {
-            *value = 0.5;
-            cursor += 1;
+    let mut index = 0;
+    while index < origin.len() {
+        if stateful {
+            let (value, repeat, next) = decode_stateful_scalar_run(
+                body,
+                cursor,
+                Some(previous),
+                cache,
+                StatefulScalarKind::Plane,
+            )?;
+            let end = index.checked_add(repeat)?;
+            origin.get_mut(index..end)?.fill(value);
+            previous = value;
+            index = end;
+            cursor = next;
             continue;
         }
-        if matches!(body.get(cursor), Some(0x0f | 0x10 | 0x18 | 0xe6)) {
-            cursor += 1;
-            continue;
-        }
-        let row = decode_in_row_lane(body, cursor, cache);
-        let (decoded, next) = if index == 0 {
-            row.or_else(|| decode_tabulated_cylinder_first_coordinate(body, cursor, cache))?
-        } else {
-            row.or_else(|| decode_tabulated_cylinder_second_coordinate(body, cursor, cache))?
+        let token = *body.get(cursor)?;
+        let (decoded, next) = match token {
+            0x18 => (0.0, cursor + 1),
+            0x0e => (0.5, cursor + 1),
+            0x0f | 0x10 | 0xe6 => (0.0, cursor + 1),
+            _ => {
+                let row = decode_in_row_lane(body, cursor, cache);
+                if index == 0 {
+                    row.or_else(|| decode_tabulated_cylinder_first_coordinate(body, cursor, cache))?
+                } else {
+                    row.or_else(|| {
+                        decode_tabulated_cylinder_second_coordinate(body, cursor, cache)
+                    })?
+                }
+            }
         };
         decoded.is_finite().then_some(())?;
-        *value = decoded;
+        origin[index] = decoded;
+        previous = decoded;
+        index += 1;
         cursor = next;
     }
     Some((origin, cursor))
@@ -2513,1928 +2845,4 @@ fn ieee7_dict(data: &[u8], offset: usize, high: u16) -> Option<(f64, usize)> {
 }
 
 #[cfg(test)]
-mod tests {
-    use super::{
-        admitted_scalar_body, compact_inline_frame, decode, decode_explicit_local_system_slots,
-        decode_feature_local_system_slots, decode_in_lane, decode_in_pcurve_lane,
-        decode_in_row_lane, decode_in_surface_row_lane, decode_in_torus_row_lane,
-        decode_inline_non_plane_local_system_prefix, decode_inline_surface_suffix_scalar,
-        decode_model_reference_coordinate, decode_named_local_system_coordinate,
-        decode_named_positive_dict_scalar, decode_plane_support_lane_variants,
-        decode_plane_support_local_system, decode_plane_support_local_system_slots,
-        decode_positional_cylinder_local_system_slots, decode_positional_plane_local_system_slots,
-        decode_positional_torus_local_system_prefix, decode_positive_dict,
-        decode_round_edge_coordinate, decode_saved_conic_local_system_prefix,
-        decode_tabulated_cylinder_first_coordinate,
-        decode_tabulated_cylinder_first_frame_coordinate,
-        decode_tabulated_cylinder_frame_coordinate, decode_tabulated_cylinder_second_coordinate,
-        decode_two_chart_first_coordinate, decode_two_chart_second_coordinate, double_xar_tables,
-        plane_support_layout, valid_equal_scale_orthogonal_directions, CompactFrameAxes,
-        DoubleXarSlot, InlineNonPlaneLocalSystemPrefix, PlaneSupportFrameLayout, ScalarCache,
-        POSITIONAL_SLOT_TABLE_WIDTH,
-    };
-    use cadmpeg_ir::units::FiniteVector;
-    use std::collections::BTreeMap;
-
-    const NORMAL_X_PLANE_SUPPORT_PREFIXES: [[u8; 8]; 4] = [
-        [0x18, 0xe4, 0x0f, 0xe4, 0x18, 0xe5, 0x0f, 0x18],
-        [0x18, 0xe4, 0x10, 0xe4, 0x18, 0xe5, 0x0f, 0x18],
-        [0x18, 0xe4, 0x10, 0x0f, 0x18, 0xe5, 0x10, 0x18],
-        [0x18, 0xe4, 0x0f, 0x10, 0x18, 0xe5, 0x10, 0x18],
-    ];
-
-    fn with_depth_limit<T>(
-        bytes: &[u8],
-        depth: u64,
-        f: impl FnOnce(&cadmpeg_core::decode::DecodeContext<'_>) -> Result<T, cadmpeg_core::CodecError>,
-    ) -> Result<T, cadmpeg_core::CodecError> {
-        use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
-        let arena = DecodeArena::new();
-        let mut policy = DecodePolicy::service();
-        policy.limits.max_recursion_depth = depth;
-        let (ctx, _) = DecodeContext::from_root_bytes(bytes, &arena, &policy)
-            .expect("recursive fixture fits the input limit");
-        f(&ctx)
-    }
-
-    #[test]
-    fn scalar_cache_deduplicates_equal_images() {
-        let images = [0x46, 0x08, 0, 0, 0, 0, 0, 0, 0x46, 0x08, 0, 0, 0, 0, 0, 0];
-        let cache = ScalarCache::from_section_checked(&images);
-        assert_eq!(cache.entries.len(), 1, "equal images remain deduplicated");
-    }
-
-    #[test]
-    fn double_xar_tables_parse_one_complete_table() {
-        let bytes = b"double_xar\0\xf8\x02\x10\xe0";
-        let tables = double_xar_tables(bytes);
-        assert_eq!(tables.len(), 1);
-    }
-
-    #[test]
-    fn inline_explicit_frame_refuses_recursive_depth_before_absent_candidate() {
-        use cadmpeg_core::decode::ResourceDimension;
-        let bytes = [0xe4];
-        let decode = |ctx: &cadmpeg_core::decode::DecodeContext<'_>| {
-            super::decode_inline_non_plane_local_system_prefix(ctx, &bytes, &ScalarCache::default())
-                .map(std::iter::Iterator::count)
-        };
-        assert_eq!(
-            with_depth_limit(&bytes, 2, decode).expect("two recursive steps admitted"),
-            0
-        );
-        assert_eq!(
-            with_context(&bytes, decode).expect("decode inline non plane local system prefix"),
-            0
-        );
-        let error = with_depth_limit(&bytes, 1, decode).expect_err("need minus one refuses");
-        let cadmpeg_core::CodecError::ResourceLimit(limit) = error else {
-            panic!("recursive resource refusal expected");
-        };
-        assert_eq!(limit.dimension, ResourceDimension::RecursionDepth);
-        assert_eq!(limit.operation, "creo inline explicit frame depth");
-        assert_eq!((limit.limit, limit.used, limit.additional), (1, 1, 1));
-    }
-
-    #[test]
-    fn inline_origin_refuses_recursive_depth_before_absent_candidate() {
-        use cadmpeg_core::decode::ResourceDimension;
-        let bytes = [0x18];
-        let decode = |ctx: &cadmpeg_core::decode::DecodeContext<'_>| {
-            super::decode_inline_non_plane_origin_prefix(ctx, &bytes, 0, &ScalarCache::default())
-                .map(std::iter::Iterator::count)
-        };
-        assert_eq!(
-            with_depth_limit(&bytes, 2, decode).expect("two recursive steps admitted"),
-            0
-        );
-        assert_eq!(
-            with_context(&bytes, decode).expect("decode inline non plane origin prefix"),
-            0
-        );
-        let error = with_depth_limit(&bytes, 1, decode).expect_err("need minus one refuses");
-        let cadmpeg_core::CodecError::ResourceLimit(limit) = error else {
-            panic!("recursive resource refusal expected");
-        };
-        assert_eq!(limit.dimension, ResourceDimension::RecursionDepth);
-        assert_eq!(limit.operation, "creo inline origin depth");
-        assert_eq!((limit.limit, limit.used, limit.additional), (1, 1, 1));
-    }
-
-    #[test]
-    fn plane_support_variants_refuses_recursive_depth_before_absent_candidate() {
-        use cadmpeg_core::decode::ResourceDimension;
-        let bytes = [0xe4];
-        let decode = |ctx: &cadmpeg_core::decode::DecodeContext<'_>| {
-            super::decode_plane_support_lane_variants(ctx, &bytes, &ScalarCache::default())
-                .map(|(frames, _)| frames.len())
-        };
-        assert_eq!(
-            with_depth_limit(&bytes, 2, decode).expect("two recursive steps admitted"),
-            0
-        );
-        assert_eq!(
-            with_context(&bytes, decode).expect("decode plane support lane variants"),
-            0
-        );
-        let error = with_depth_limit(&bytes, 1, decode).expect_err("need minus one refuses");
-        let cadmpeg_core::CodecError::ResourceLimit(limit) = error else {
-            panic!("recursive resource refusal expected");
-        };
-        assert_eq!(limit.dimension, ResourceDimension::RecursionDepth);
-        assert_eq!(limit.operation, "creo plane support variants depth");
-        assert_eq!((limit.limit, limit.used, limit.additional), (1, 1, 1));
-    }
-
-    #[test]
-    fn plane_support_lane_caps_report_their_bound() {
-        use super::{PlaneSupportLaneCap, PlaneSupportLaneSearch};
-
-        let mut full = PlaneSupportLaneSearch {
-            variants: super::MAX_PLANE_SUPPORT_LANE_VARIANTS,
-            ..PlaneSupportLaneSearch::default()
-        };
-        assert!(!super::admit_plane_support_lane_visit(
-            &mut full,
-            super::MAX_PLANE_SUPPORT_LANE_VARIANTS,
-        ));
-        assert_eq!(full.capped, Some(PlaneSupportLaneCap::Variants));
-        let mut spent = PlaneSupportLaneSearch {
-            visits: super::MAX_PLANE_SUPPORT_LANE_VISITS,
-            ..PlaneSupportLaneSearch::default()
-        };
-        assert!(!super::admit_plane_support_lane_visit(
-            &mut spent,
-            super::MAX_PLANE_SUPPORT_LANE_VARIANTS,
-        ));
-        assert_eq!(spent.capped, Some(PlaneSupportLaneCap::Visits));
-        for (cap, bound) in [
-            (
-                PlaneSupportLaneCap::Variants,
-                "MAX_PLANE_SUPPORT_LANE_VARIANTS (64)",
-            ),
-            (
-                PlaneSupportLaneCap::Visits,
-                "MAX_PLANE_SUPPORT_LANE_VISITS (4096)",
-            ),
-        ] {
-            let loss = super::plane_support_variants_capped_loss(cap);
-            assert_eq!(
-                loss.code,
-                crate::loss::CreoLossCode::PlaneSupportVariantsCapped.kind()
-            );
-            assert!(loss.message.contains(bound), "{}", loss.message);
-        }
-    }
-
-    #[test]
-    fn plane_support_lane_visit_cap_skips_the_frame_with_one_loss() {
-        use super::PlaneSupportLaneCap;
-
-        // The lead coordinate leaves the primary frame invalid, and each
-        // following 0x18 slot branches the lane search.
-        let mut body = vec![0x46, 0xe0, 0, 0, 0, 0, 0, 0];
-        body.extend([0x18; 11]);
-        let cache = ScalarCache::default();
-        let (variants, capped) = crate::decode::with_service_context(|ctx| {
-            decode_plane_support_lane_variants(ctx, &body, &cache)
-        })
-        .expect("the visit cap is not a decode failure");
-        assert!(variants.is_empty());
-        assert_eq!(capped, Some(PlaneSupportLaneCap::Visits));
-        let mut losses = Vec::new();
-        for _ in 0..2 {
-            let decoded = crate::decode::with_service_context(|ctx| {
-                decode_plane_support_local_system(ctx, &body, &cache, &mut losses)
-            })
-            .expect("the visit cap is not a decode failure");
-            assert!(decoded.is_none());
-        }
-        assert_eq!(
-            losses,
-            [super::plane_support_variants_capped_loss(
-                PlaneSupportLaneCap::Visits
-            )]
-        );
-    }
-
-    fn with_context<T>(
-        bytes: &[u8],
-        f: impl FnOnce(&cadmpeg_core::decode::DecodeContext<'_>) -> T,
-    ) -> T {
-        use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
-        let arena = DecodeArena::new();
-        let policy = DecodePolicy::service();
-        let (ctx, _) = DecodeContext::from_root_bytes(bytes, &arena, &policy)
-            .expect("the scalar fixture fits the root limit");
-        f(&ctx)
-    }
-
-    #[test]
-    fn scalar_cache_records_one_unique_image() {
-        let bytes = [0x46, 0x08, 1, 2, 3, 4, 5, 6];
-        let cache = ScalarCache::from_section_checked(&bytes);
-        assert_eq!(cache.entries.len(), 1);
-        assert_eq!(cache.paired_byte_1(&[1, 2, 3, 4, 5, 6]), Some(0x08));
-    }
-
-    #[test]
-    fn scalar_cache_checked_preserves_first_image_order_and_tail_conflicts() {
-        let bytes = [
-            0x46, 0x08, 1, 2, 3, 4, 5, 6, 0x46, 0x09, 1, 2, 3, 4, 5, 6, 0x46, 0x08, 1, 2, 3, 4, 5,
-            6,
-        ];
-        let checked = ScalarCache::from_section_checked(&bytes);
-        let original = ScalarCache::from_section(&bytes);
-        assert_eq!(checked.entries, original.entries);
-        assert_eq!(
-            checked.paired_byte_1_by_tail,
-            original.paired_byte_1_by_tail
-        );
-        assert_eq!(checked.entries.len(), 2);
-        assert_eq!(checked.paired_byte_1(&[1, 2, 3, 4, 5, 6]), None);
-    }
-    /// Every arm of the surface-row lane reads the bytes it reports: a decode
-    /// that states a value advances the cursor and stops inside the body. The
-    /// slot readers rest on that, so no caller tests the token for emptiness.
-    #[test]
-    fn a_surface_row_lane_decode_advances_inside_the_body() {
-        // The second byte selects several arms, so it varies over the bytes
-        // those arms name as well as over ordinary payload.
-        const SECOND: [u8; 12] = [
-            0x00, 0x01, 0x0e, 0x73, 0x92, 0xa0, 0xbb, 0xda, 0xe0, 0xe3, 0xf1, 0xf8,
-        ];
-        let cache = ScalarCache::from_section(&[
-            0x46, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x46, 0x11, 0x12, 0x13, 0x14, 0x15,
-            0x16, 0x17,
-        ]);
-        for opener in 0..=u8::MAX {
-            for second in SECOND {
-                for length in 1..12usize {
-                    let mut body = vec![opener];
-                    if length > 1 {
-                        body.push(second);
-                    }
-                    body.extend(
-                        (2..length)
-                            .map(|index| u8::try_from(index).expect("fixture value fits u8")),
-                    );
-                    for offset in 0..body.len() {
-                        for decode in [
-                            decode_in_surface_row_lane,
-                            decode_in_row_lane,
-                            decode_in_lane,
-                            decode_in_pcurve_lane,
-                            decode_in_torus_row_lane,
-                        ] {
-                            if let Some((_, next)) = decode(&body, offset, &cache) {
-                                assert!(
-                                    next > offset && next <= body.len(),
-                                    "opener {opener:#04x} second {second:#04x} \
-                                     offset {offset} states {next} over {body:?}"
-                                );
-                            }
-                        }
-                    }
-                }
-            }
-        }
-    }
-
-    fn positive_subunit_coordinate(value: f64) -> [u8; 8] {
-        let bytes = value.to_be_bytes();
-        assert_eq!(bytes[0], 0x3f);
-        [
-            0x41, bytes[1], bytes[2], bytes[3], bytes[4], bytes[5], bytes[6], bytes[7],
-        ]
-    }
-
-    #[test]
-    fn round_edge_positive_dict_uses_the_extended_prefix_lattice() {
-        let low = [0x4b, 0, 0, 0, 0, 0, 0];
-        let high = [0xa3, 0, 0, 0, 0, 0, 0];
-        let cache = ScalarCache::default();
-        let (low_value, low_end) = decode_round_edge_coordinate(&low, 0, &cache)
-            .expect("low extended positive-DICT prefix");
-        let (high_value, high_end) = decode_round_edge_coordinate(&high, 0, &cache)
-            .expect("high extended positive-DICT prefix");
-        assert_eq!(low_end, low.len());
-        assert_eq!(high_end, high.len());
-        assert_eq!(
-            low_value,
-            f64::from_be_bytes([0x3f, 0xc0, 0, 0, 0, 0, 0, 0])
-        );
-        assert_eq!(
-            high_value,
-            f64::from_be_bytes([0x40, 0x18, 0, 0, 0, 0, 0, 0])
-        );
-    }
-
-    #[test]
-    fn first_directrix_coordinate_uses_the_complete_positive_dict_lattice() {
-        let encoded = [0x51, 0x20, 0xbb, 0xca, 0xab, 0x7c, 0x66];
-
-        assert_eq!(
-            decode_tabulated_cylinder_first_coordinate(&encoded, 0, &ScalarCache::default()),
-            Some((
-                f64::from_be_bytes([0x3f, 0xc6, 0x20, 0xbb, 0xca, 0xab, 0x7c, 0x66]),
-                encoded.len()
-            ))
-        );
-    }
-
-    #[test]
-    fn two_chart_coordinates_use_their_bounded_lane_extensions() {
-        let first = [0x32, 0, 0, 0, 0, 0, 0, 0];
-        let second = [0x56, 0, 0, 0, 0, 0, 0];
-        let cache = ScalarCache::default();
-
-        let (first_value, first_end) =
-            decode_two_chart_first_coordinate(&first, 0, &cache).expect("first coordinate");
-        let (second_value, second_end) =
-            decode_two_chart_second_coordinate(&second, 0, &cache).expect("second coordinate");
-        assert_eq!(first_end, first.len());
-        assert_eq!(second_end, second.len());
-        assert!(
-            (first_value - f64::from_be_bytes([0x3f, 0, 0, 0, 0, 0, 0, 0])).abs() <= f64::EPSILON
-        );
-        assert!(
-            (second_value - f64::from_be_bytes([0x3f, 0xcb, 0, 0, 0, 0, 0, 0])).abs()
-                <= f64::EPSILON
-        );
-    }
-
-    #[test]
-    fn two_chart_first_coordinate_uses_the_pcurve_model_lane() {
-        let cache = ScalarCache::default();
-        let positive = [0x46, 0x28, 0x9c, 0x2c, 0x6a, 0x48, 0x72, 0xb4];
-        let negative = [0x2d, 0x28, 0x9c, 0xc2, 0x75, 0x62, 0x07, 0x2d];
-
-        for encoded in [positive, negative] {
-            assert_eq!(
-                decode_two_chart_first_coordinate(&encoded, 0, &cache),
-                decode_in_pcurve_lane(&encoded, 0, &cache)
-            );
-            assert_ne!(
-                decode_two_chart_first_coordinate(&encoded, 0, &cache),
-                decode_tabulated_cylinder_first_coordinate(&encoded, 0, &cache)
-            );
-        }
-    }
-
-    #[test]
-    fn positional_plane_origin_x_prefers_row_then_signed_first_coordinate_lanes() {
-        let cache = ScalarCache::from_section(&[0x46, 0x08, 0, 0, 0, 0, 0, 0]);
-        let body = [
-            0x10, 0x18, 0xe5, 0x10, 0x18, 0xe5, 0x0f, 0x4a, 0x08, 0, 0, 0, 0, 0, 0x18, 0x00, 0x0f,
-        ];
-
-        assert_eq!(
-            decode_positional_plane_local_system_slots(&body, &cache).map(FiniteVector::get),
-            Some([0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, -3.0, 3.0, 0.0])
-        );
-        assert!(decode_explicit_local_system_slots(&body, &cache).is_none());
-
-        let fixed = [
-            0x10, 0x18, 0xe5, 0x10, 0x18, 0xe5, 0x0f, 0x46, 0x08, 0, 0, 0, 0, 0, 0, 0x18, 0x00,
-            0x0f,
-        ];
-        assert_eq!(
-            decode_positional_plane_local_system_slots(&fixed, &cache).map(|slots| slots.get()[9]),
-            Some(3.0)
-        );
-
-        let dict_origin = [
-            0x18, 0xe4, 0x10, 0x18, 0x0f, 0x18, 0x0f, 0x18, 0xe4, 0x9f, 0x77, 0xa7, 0x70, 0x76,
-            0xc8, 0xb8, 0x2d, 0x1e, 0, 0, 0, 0, 0, 0x65, 0xb9, 0x11, 0x9e, 0xed, 0x48, 0x6f, 0x9e,
-        ];
-        assert_eq!(
-            decode_positional_plane_local_system_slots(&dict_origin, &cache).map(|slots| {
-                let slots = slots.get();
-                [slots[9], slots[10], slots[11]]
-            }),
-            Some([
-                f64::from_be_bytes([0x40, 0x14, 0x77, 0xa7, 0x70, 0x76, 0xc8, 0xb8]),
-                f64::from_be_bytes([0xc0, 0x1e, 0, 0, 0, 0, 0, 0x65]),
-                f64::from_be_bytes([0xbf, 0x11, 0x9e, 0xed, 0x48, 0x6f, 0x9e, 0]),
-            ])
-        );
-    }
-
-    #[test]
-    fn cache_zero_prefix_recognizes_every_short_float_opener() {
-        let cache = ScalarCache::default();
-        for token in [
-            [0x29, 0xe8, 0x00],
-            [0x2a, 0xfa, 0x00],
-            [0x2e, 0x00, 0x00],
-            [0x2f, 0x05, 0x00],
-            [0x42, 0xe8, 0x00],
-            [0x43, 0xfa, 0x00],
-            [0x47, 0x00, 0x00],
-            [0x48, 0x05, 0x00],
-        ] {
-            let body = [0x18, token[0], token[1], token[2]];
-            assert_eq!(decode_in_lane(&body, 0, &cache), Some((0.0, 1)));
-            assert_eq!(
-                decode_in_lane(&body, 1, &cache).map(|(_, end)| end),
-                Some(4)
-            );
-        }
-    }
-
-    #[test]
-    fn rank_two_image_is_shared_by_all_twelve_slot_local_system_lanes() {
-        let body = [0x18, 0xe4, 0x0f, 0xe4, 0x18, 0xe5, 0x0f, 0x18, 0xe6];
-        let expected = [0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 0.0];
-        let cache = ScalarCache::default();
-
-        assert_eq!(
-            decode_positional_plane_local_system_slots(&body, &cache).map(FiniteVector::get),
-            Some(expected)
-        );
-        assert_eq!(
-            decode_explicit_local_system_slots(&body, &cache).map(FiniteVector::get),
-            Some(expected)
-        );
-        assert_eq!(
-            decode_feature_local_system_slots(&body, &cache).map(FiniteVector::get),
-            Some(expected)
-        );
-        assert_eq!(
-            decode_positional_cylinder_local_system_slots(&body, &cache).map(FiniteVector::get),
-            Some(expected)
-        );
-        assert_eq!(
-            decode_plane_support_local_system_slots(&body, &cache),
-            Some(expected)
-        );
-    }
-
-    #[test]
-    fn inline_non_plane_compact_images_name_the_axis_coordinate() {
-        let cases = [
-            (
-                vec![0x0f, 0x18, 0xe5, 0x0f, 0x18, 0xe5, 0x0f],
-                2,
-                [1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0],
-            ),
-            (
-                vec![0x18, 0x10, 0x18, 0x10, 0x18, 0xe6, 0x10],
-                2,
-                [
-                    0.0, -1.0, 0.0, -1.0, 0.0, 0.0, 0.0, 0.0, -1.0, 0.0, 0.0, 0.0,
-                ],
-            ),
-            (
-                vec![0x0f, 0x18, 0xe6, 0x0f, 0x18, 0x10, 0x18],
-                1,
-                [1.0, 0.0, 0.0, 0.0, 0.0, -1.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0],
-            ),
-            (
-                vec![0x18, 0xe4, 0x0f, 0x18, 0x0f, 0x18, 0x10, 0x18, 0xe4],
-                0,
-                [0.0, 0.0, -1.0, 0.0, 1.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 0.0],
-            ),
-        ];
-        let cache = ScalarCache::default();
-        for (body, axis, expected) in cases {
-            let frame = crate::decode::with_service_context(|ctx| {
-                decode_inline_non_plane_local_system_prefix(ctx, &body, &cache)
-            })
-            .expect("decode the inline non-plane local system prefix")
-            .into_iter()
-            .find_map(|prefix| match prefix {
-                InlineNonPlaneLocalSystemPrefix::Compact(frame)
-                    if frame.values.get()[6 + axis] != 0.0 =>
-                {
-                    Some(frame)
-                }
-                _ => None,
-            })
-            .unwrap_or_else(|| panic!("compact inline local-system image {body:02x?}"));
-            assert_eq!(frame.cursor, body.len());
-            assert_eq!(frame.values, expected);
-        }
-    }
-
-    #[test]
-    fn every_compact_axis_pair_names_two_distinct_model_axes() {
-        let pairs = [
-            CompactFrameAxes::XY,
-            CompactFrameAxes::XZ,
-            CompactFrameAxes::YX,
-            CompactFrameAxes::YZ,
-            CompactFrameAxes::ZX,
-            CompactFrameAxes::ZY,
-        ];
-        for axes in pairs {
-            assert_ne!(axes.axis(), axes.reference(), "{axes:?}");
-        }
-        let mut seen = std::collections::BTreeSet::new();
-        for axes in pairs {
-            assert!(seen.insert((axes.axis().index(), axes.reference().index())));
-        }
-        assert_eq!(seen.len(), 6);
-    }
-
-    #[test]
-    fn compact_plane_rotation_expands_repeats_and_preserves_all_axis_signs() {
-        for u_axis in 0..3 {
-            for v_axis in 0..3 {
-                if u_axis == v_axis {
-                    continue;
-                }
-                for u_sign in [-1.0, 1.0] {
-                    for v_sign in [-1.0, 1.0] {
-                        let mut u = [0.0; 3];
-                        let mut v = [0.0; 3];
-                        u[u_axis] = u_sign;
-                        v[v_axis] = v_sign;
-                        let n = crate::vecmath::cross(u, v);
-                        let matrix: [f64; 9] = std::array::from_fn(|i| [u, v, n][i % 3][i / 3]);
-                        let mut body = Vec::new();
-                        let mut cursor = 0;
-                        while cursor < matrix.len() {
-                            let value = matrix[cursor];
-                            body.push(if value == 1.0 {
-                                0x0f
-                            } else if value == -1.0 {
-                                0x10
-                            } else {
-                                0x18
-                            });
-                            let repeats = matrix[cursor + 1..]
-                                .iter()
-                                .take(3)
-                                .take_while(|next| **next == value)
-                                .count();
-                            if repeats > 0 {
-                                body.push(
-                                    0xe3 + u8::try_from(repeats).expect("at most three repeats"),
-                                );
-                            }
-                            cursor += repeats + 1;
-                        }
-                        body.extend([0x2f, 0x00, 0x00, 0x2f, 0x10, 0x00, 0x2f, 0x20, 0x00]);
-                        let expected = [
-                            u[0], u[1], u[2], 0.0, 0.0, 0.0, v[0], v[1], v[2], 2.0, 4.0, 8.0,
-                        ];
-                        let decoded =
-                            super::decode_compact_plane_rotation(&body, &ScalarCache::default())
-                                .expect("compact rotation")
-                                .expect("complete finite origin");
-                        assert_eq!(decoded.get(), expected);
-                        body.pop();
-                        assert!(super::decode_compact_plane_rotation(
-                            &body,
-                            &ScalarCache::default()
-                        )
-                        .expect("compact rotation")
-                        .is_err());
-                    }
-                }
-            }
-        }
-    }
-
-    #[test]
-    fn compact_frames_carry_a_right_handed_orthonormal_basis() {
-        for axes in [
-            CompactFrameAxes::XY,
-            CompactFrameAxes::XZ,
-            CompactFrameAxes::YX,
-            CompactFrameAxes::YZ,
-            CompactFrameAxes::ZX,
-            CompactFrameAxes::ZY,
-        ] {
-            for reference_sign in [1.0, -1.0] {
-                for axis_sign in [1.0, -1.0] {
-                    let values = compact_inline_frame(axes, reference_sign, axis_sign);
-                    let axis = axes.axis().index();
-                    let reference = axes.reference().index();
-                    assert_eq!(values[reference], reference_sign);
-                    assert_eq!(values[6 + axis], axis_sign);
-                    let second: [f64; 3] = match values[3..6].try_into() {
-                        Ok(second) => second,
-                        Err(error) => panic!("compact frame has no second direction: {error}"),
-                    };
-                    assert_eq!(
-                        second.iter().map(|value| value * value).sum::<f64>(),
-                        1.0,
-                        "{axes:?} second direction is not a unit vector"
-                    );
-                    assert_eq!(second[axis], 0.0);
-                    assert_eq!(second[reference], 0.0);
-                    assert_eq!(values[9..12], [0.0; 3]);
-                }
-            }
-        }
-    }
-
-    #[test]
-    fn compact_x_plane_support_preserves_parameter_and_normal_signs() {
-        let mut body = vec![0x18, 0xe4, 0x0f, 0x18, 0x0f, 0x18, 0x10, 0x18, 0xe4];
-        body.extend([0x18, 0x18, 0x18]);
-
-        assert_eq!(
-            crate::decode::with_service_context(|ctx| decode_plane_support_local_system(
-                ctx,
-                &body,
-                &ScalarCache::default(),
-                &mut Vec::new(),
-            ))
-            .expect("decode the plane support local system")
-            .map(|(values, layout)| (values.get(), layout)),
-            Some((
-                [0.0, 0.0, -1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0],
-                PlaneSupportFrameLayout::SupportTriples,
-            ))
-        );
-
-        body[2] = 0x10;
-        body[6] = 0x0f;
-        assert_eq!(
-            decode_plane_support_local_system_slots(&body, &ScalarCache::default()),
-            Some([0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0])
-        );
-    }
-
-    #[test]
-    fn inline_non_plane_explicit_frames_expand_the_four_slot_fill() {
-        let body = [
-            0xe4, 0x0f, 0x0f, 0x0f, 0xe4, 0x18, 0xe5, 0x0f, 0x2f, 0x00, 0x00, 0x2f, 0x00, 0x00,
-            0x2f, 0x10, 0x00,
-        ];
-        let expected = [1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0, 2.0, 2.0, 4.0];
-        let cache = ScalarCache::default();
-
-        assert!(crate::decode::with_service_context(|ctx| {
-            decode_inline_non_plane_local_system_prefix(ctx, &body, &cache)
-        })
-        .expect("decode the inline non-plane local system prefix")
-        .into_iter()
-        .any(|prefix| matches!(
-            prefix,
-            InlineNonPlaneLocalSystemPrefix::Explicit(frame)
-                if frame.cursor == body.len() && frame.values == expected
-        )));
-    }
-
-    #[test]
-    fn inline_non_plane_explicit_frames_accept_the_reflected_four_slot_fill() {
-        let body = [
-            0xe4, 0x0f, 0x0f, 0x0f, 0xe4, 0x18, 0xe5, 0x10, 0x2f, 0x00, 0x00, 0x2f, 0x00, 0x00,
-            0x2f, 0x10, 0x00,
-        ];
-        let expected = [1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, -1.0, 2.0, 2.0, 4.0];
-        let cache = ScalarCache::default();
-
-        assert!(crate::decode::with_service_context(|ctx| {
-            decode_inline_non_plane_local_system_prefix(ctx, &body, &cache)
-        })
-        .expect("decode the inline non-plane local system prefix")
-        .into_iter()
-        .any(|prefix| matches!(
-            prefix,
-            InlineNonPlaneLocalSystemPrefix::Explicit(frame)
-                if frame.cursor == body.len() && frame.values == expected
-        )));
-    }
-
-    #[test]
-    fn inline_surface_suffix_uses_exact_zero_and_unit_tokens() {
-        let cache = ScalarCache::default();
-        assert_eq!(
-            decode_inline_surface_suffix_scalar(&[0x0e], 0, &cache),
-            Some((0.5, 1))
-        );
-        assert_eq!(
-            decode_inline_surface_suffix_scalar(&[0x0f], 0, &cache),
-            Some((1.0, 1))
-        );
-        assert_eq!(
-            decode_inline_surface_suffix_scalar(&[0x18], 0, &cache),
-            Some((0.0, 1))
-        );
-    }
-
-    #[test]
-    fn positive_dict_arithmetic_covers_unlisted_inline_prefixes() {
-        for prefix in [0x78_u8, 0x7a_u8] {
-            let bytes = [prefix, 0, 0, 0, 0, 0, 0];
-            let byte_1 = prefix.wrapping_add(0x75);
-            assert_eq!(
-                decode_positive_dict(&bytes, 0),
-                Some((f64::from_be_bytes([0x3f, byte_1, 0, 0, 0, 0, 0, 0]), 7))
-            );
-        }
-    }
-
-    #[test]
-    fn inline_non_plane_negative_lanes_follow_their_prefix_arithmetic() {
-        let cache = ScalarCache::default();
-        assert_eq!(
-            decode_tabulated_cylinder_first_coordinate(&[0xd5, 0, 0, 0, 0, 0, 0], 0, &cache),
-            Some((f64::from_be_bytes([0xc0, 0x03, 0, 0, 0, 0, 0, 0]), 7))
-        );
-        for (prefix, byte_1) in [(0xc0, 0xed), (0xc1, 0xee), (0xc2, 0xef)] {
-            assert_eq!(
-                decode_tabulated_cylinder_first_coordinate(&[prefix, 0, 0, 0, 0, 0, 0], 0, &cache,),
-                Some((f64::from_be_bytes([0xbf, byte_1, 0, 0, 0, 0, 0, 0]), 7))
-            );
-        }
-    }
-
-    #[test]
-    fn plane_support_layout_keeps_an_invalid_generic_frame_unresolved() {
-        let cache = ScalarCache::from_section(&[0x46, 0x08, 0, 0, 0, 0, 0, 0]);
-        let mut body = vec![0x46, 0x08, 0, 0, 0, 0, 0, 0];
-        body.extend([0x10; 10]);
-        body.push(0x18);
-
-        assert_eq!(
-            crate::decode::with_service_context(|ctx| decode_plane_support_local_system(
-                ctx,
-                &body,
-                &cache,
-                &mut Vec::new(),
-            ))
-            .expect("decode the plane support local system")
-            .map(|(_, layout)| layout),
-            Some(PlaneSupportFrameLayout::SupportTriples)
-        );
-        assert_eq!(
-            crate::decode::with_service_context(|ctx| decode_plane_support_local_system(
-                ctx,
-                &[0x10; 12],
-                &ScalarCache::default(),
-                &mut Vec::new(),
-            ))
-            .expect("decode the plane support local system")
-            .map(|(_, layout)| layout),
-            Some(PlaneSupportFrameLayout::SupportTriples)
-        );
-        assert_eq!(
-            plane_support_layout(
-                &[
-                    1.0, 0.0, 0.0, // first matrix row
-                    0.0, 0.0, 1.0, // second matrix row
-                    0.0, 0.0, 0.0, // third matrix row
-                    0.0, 0.0, 0.0,
-                ],
-                true,
-            ),
-            PlaneSupportFrameLayout::MatrixColumns
-        );
-        assert_eq!(
-            plane_support_layout(
-                &[
-                    0.6, 0.0, 0.8, // direct parameter direction
-                    0.0, 0.0, 0.0, // direct zero rank
-                    0.8, 0.0, -0.6, // direct plane normal
-                    0.0, 0.0, 0.0,
-                ],
-                true,
-            ),
-            PlaneSupportFrameLayout::DirectNormalTriples
-        );
-    }
-
-    #[test]
-    fn complete_local_system_rejects_a_nonfinite_slot() {
-        let cache = ScalarCache {
-            entries: vec![1.0, f64::NAN],
-            paired_byte_1_by_tail: BTreeMap::new(),
-        };
-        let mut body = Vec::new();
-        for _ in 0..9 {
-            body.extend_from_slice(&[0x18, 0x00]);
-        }
-        for _ in 0..3 {
-            body.extend_from_slice(&[0x18, 0x01]);
-        }
-
-        assert!(decode_feature_local_system_slots(&body, &cache).is_none());
-    }
-
-    #[test]
-    fn positional_torus_prefix_holds_the_admitted_finite_frame() {
-        let mut body = Vec::new();
-        for _ in 0..12 {
-            body.extend_from_slice(&[0x18, 0x00]);
-        }
-        let finite = ScalarCache {
-            entries: vec![1.0],
-            paired_byte_1_by_tail: BTreeMap::new(),
-        };
-        let (frame, cursor) = decode_positional_torus_local_system_prefix(&body, &finite)
-            .expect("the twelve finite coordinates are admitted");
-        assert_eq!(frame.get(), [1.0; 12]);
-        assert_eq!(cursor, body.len());
-
-        let nonfinite = ScalarCache {
-            entries: vec![f64::NAN],
-            paired_byte_1_by_tail: BTreeMap::new(),
-        };
-        assert!(decode_positional_torus_local_system_prefix(&body, &nonfinite).is_none());
-    }
-
-    #[test]
-    fn saved_conic_local_system_expands_its_planar_normal() {
-        let body = [
-            0xf9, 4, 3, 0xe4, 0x0f, 0x0f, 0x0f, 0xe4, 0x18, 0xe5, 0x0f, 0x0f, 0x0f, 0x0f,
-        ];
-
-        assert_eq!(
-            decode_saved_conic_local_system_prefix(&body, &ScalarCache::default()),
-            Some((
-                cadmpeg_ir::units::FiniteVector::new([
-                    1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0
-                ])
-                .expect("finite local system"),
-                body.len()
-            ))
-        );
-    }
-
-    #[test]
-    fn positional_plane_origin_yz_fall_back_to_the_second_coordinate_lane() {
-        let body = [
-            0x0f, 0x18, 0xe5, 0x0f, 0x18, 0xe5, 0x0f, 0x9f, 0x77, 0xa7, 0x70, 0x76, 0xc8, 0xb8,
-            0x2d, 0x1e, 0, 0, 0, 0, 0, 0x65, 0xad, 0x53, 0xd5, 0xa1, 0x38, 0xce, 0xd8,
-        ];
-
-        assert_eq!(
-            decode_positional_plane_local_system_slots(&body, &ScalarCache::default()).map(
-                |slots| {
-                    let slots = slots.get();
-                    [slots[9], slots[10], slots[11]]
-                }
-            ),
-            Some([
-                f64::from_be_bytes([0x40, 0x14, 0x77, 0xa7, 0x70, 0x76, 0xc8, 0xb8]),
-                f64::from_be_bytes([0xc0, 0x1e, 0, 0, 0, 0, 0, 0x65]),
-                f64::from_be_bytes([0xbf, 0xd9, 0x53, 0xd5, 0xa1, 0x38, 0xce, 0xd8]),
-            ])
-        );
-    }
-
-    #[test]
-    fn plane_support_origin_uses_positive_compact_half() {
-        let body = [
-            0x18, 0xe4, 0x0f, 0x18, 0x0f, 0x18, 0x10, 0x18, 0xe4, 0x0e, 0x18, 0xe4,
-        ];
-        let cache = ScalarCache::default();
-
-        assert_eq!(
-            decode_plane_support_local_system_slots(&body, &cache),
-            Some([0.0, 0.0, -1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.5, 0.0, 1.0])
-        );
-        assert_eq!(
-            decode_positional_plane_local_system_slots(&body, &cache).map(|slots| slots.get()[9]),
-            Some(-0.5)
-        );
-    }
-
-    #[test]
-    fn diagonal_compact_plane_support_names_the_z_normal() {
-        let body = [0x0f, 0x18, 0xe5, 0x10, 0x18, 0xe5, 0x10, 0x18, 0x18, 0x18];
-
-        let (slots, layout) = crate::decode::with_service_context(|ctx| {
-            decode_plane_support_local_system(ctx, &body, &ScalarCache::default(), &mut Vec::new())
-        })
-        .expect("decode the plane support local system")
-        .expect("complete diagonal support image");
-        assert_eq!(layout, PlaneSupportFrameLayout::DirectNormalTriples);
-        assert_eq!(
-            slots,
-            [1.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, -1.0, 0.0, 0.0, 0.0]
-        );
-    }
-
-    #[test]
-    fn plane_support_directions_use_component_coordinate_lanes() {
-        let body = [
-            0x4e, 0xf0, 0, 0, 0, 0, 0,    // first direction x = 1
-            0x18, // first direction y = 0
-            0x4c, 0xf0, 0, 0, 0, 0, 0, // first direction z = 1
-            0x10, 0x10, 0x10, // zero rank marker
-            0x10, 0x10, 0x4c, 0xf0, 0, 0, 0, 0, 0, // second direction
-            0x10, 0x10, 0x18, // origin
-        ];
-
-        assert_eq!(
-            decode_plane_support_local_system_slots(&body, &ScalarCache::default()),
-            Some([1.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0])
-        );
-        assert!(
-            decode_positional_plane_local_system_slots(&body, &ScalarCache::default()).is_none()
-        );
-    }
-
-    #[test]
-    fn plane_support_frame_selects_an_alternate_coordinate_lane_by_orthogonality() {
-        const EPS_PLANE_SUPPORT_LANE_TEST: f64 = 1e-12;
-
-        let cache = ScalarCache::default();
-        let alternate = f64::from_be_bytes([0xbf, 0xdd, 0, 0, 0, 0, 0, 0]);
-        let first_z = (1.0 - alternate * alternate).sqrt();
-        let mut body = Vec::new();
-        body.extend_from_slice(&positive_subunit_coordinate(first_z));
-        body.push(0x18);
-        body.extend_from_slice(&positive_subunit_coordinate(-alternate));
-        body.extend_from_slice(&[0x18, 0x0f, 0x18]);
-        body.extend_from_slice(&[
-            0xb1, 0, 0, 0, 0, 0, 0, // second-coordinate lane supplies `alternate`
-        ]);
-        body.push(0x18);
-        body.extend_from_slice(&positive_subunit_coordinate(first_z));
-        body.extend_from_slice(&[0x18, 0x18, 0x18]);
-
-        let (slots, layout) = crate::decode::with_service_context(|ctx| {
-            decode_plane_support_local_system(ctx, &body, &cache, &mut Vec::new())
-        })
-        .expect("decode the plane support local system")
-        .expect("lane-ambiguous frame has one valid orthogonal interpretation");
-        let slots = slots.get();
-        assert_eq!(layout, PlaneSupportFrameLayout::DirectNormalTriples);
-        assert!((slots[6] - alternate).abs() <= EPS_PLANE_SUPPORT_LANE_TEST);
-        assert!(valid_equal_scale_orthogonal_directions(
-            [slots[0], slots[1], slots[2]],
-            [slots[6], slots[7], slots[8]],
-        ));
-    }
-
-    #[test]
-    fn plane_support_frame_does_not_reinterpret_a_missing_primary_parse() {
-        let cache = ScalarCache::default();
-        let alternate =
-            decode_tabulated_cylinder_second_coordinate(&[0xa4, 0, 0, 0, 0, 0, 0], 0, &cache)
-                .expect("synthetic alternate-lane scalar")
-                .0;
-        let first = (1.0 - alternate * alternate).sqrt();
-        let mut body = Vec::new();
-        body.extend_from_slice(&positive_subunit_coordinate(first));
-        body.push(0x18);
-        body.extend_from_slice(&positive_subunit_coordinate(-alternate));
-        body.extend_from_slice(&[0x18, 0x0f, 0x18]);
-        body.extend_from_slice(&[0xa4, 0, 0, 0, 0, 0, 0]);
-        body.push(0x18);
-        body.extend_from_slice(&positive_subunit_coordinate(first));
-        body.extend_from_slice(&[0x18, 0x18, 0x18]);
-
-        assert_eq!(
-            crate::decode::with_service_context(|ctx| decode_plane_support_lane_variants(
-                ctx, &body, &cache,
-            ))
-            .expect("decode the plane support lane variants")
-            .0
-            .len(),
-            1
-        );
-        assert!(
-            crate::decode::with_service_context(|ctx| decode_plane_support_local_system(
-                ctx,
-                &body,
-                &cache,
-                &mut Vec::new(),
-            ))
-            .expect("decode the plane support local system")
-            .is_none()
-        );
-    }
-
-    #[test]
-    fn plane_support_prefix_constructs_orthogonal_directions() {
-        let body = [
-            0x18, 0x0f, 0x18, 0x18, 0x18, 0xe4, 0xe4, 0x18, 0x18, 0x18, 0x18, 0x18,
-        ];
-
-        assert_eq!(
-            decode_plane_support_local_system_slots(&body, &ScalarCache::default()),
-            Some([0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0, 0.0, -0.0, 0.0, 0.0, 0.0])
-        );
-
-        let other_axis = [
-            0x18, 0x0f, 0x18, 0xe4, 0x18, 0x18, 0xe4, 0x18, 0xe4, 0x18, 0x18, 0x18,
-        ];
-        let slots = decode_plane_support_local_system_slots(&other_axis, &ScalarCache::default())
-            .expect("complete orthogonal-copy frame");
-        assert_eq!(slots[0..3], [1.0, 0.0, 0.0]);
-        assert_eq!(slots[3..6], [0.0, 0.0, 0.0]);
-        assert_eq!(slots[6..9], [0.0, 0.0, -1.0]);
-    }
-
-    #[test]
-    fn compact_axis_plane_support_decodes_rank_and_origin() {
-        let body = [
-            0x18, 0x0f, 0x18, 0xe5, 0x0f, 0xe4, 0x18, 0xe4, 0x18, 0x18, 0x18,
-        ];
-
-        assert_eq!(
-            decode_plane_support_local_system_slots(&body, &ScalarCache::default()),
-            Some([1.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, -1.0, 0.0, 0.0, 0.0])
-        );
-    }
-
-    #[test]
-    fn normal_y_plane_support_has_a_signed_direct_parameter_normal_frame() {
-        for (a, b, c, parameter, normal) in [
-            (0x0f, 0x0f, 0x10, 1.0, 1.0),
-            (0x10, 0x0f, 0x0f, -1.0, 1.0),
-            (0x0f, 0x10, 0x0f, 1.0, -1.0),
-            (0x10, 0x10, 0x10, -1.0, -1.0),
-        ] {
-            let prefix = [a, 0x18, 0xe6, b, 0x18, c, 0x18];
-            let origin = [0x2f, 0x02, 0x00, 0x2a, 0xe8, 0x00, 0x2f, 0x26, 0x00];
-            let body = [prefix.as_slice(), &origin].concat();
-            crate::decode::with_service_context(|ctx| {
-                let (slots, layout) = decode_plane_support_local_system(
-                    ctx,
-                    &body,
-                    &ScalarCache::default(),
-                    &mut Vec::new(),
-                )?
-                .expect("complete frame");
-                assert_eq!(layout, PlaneSupportFrameLayout::DirectNormalTriples);
-                assert_eq!(
-                    slots.get(),
-                    [parameter, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, normal, 0.0, 2.25, 0.75, 11.0,]
-                );
-                for invalid in [
-                    &body[..body.len() - 1],
-                    &[body.as_slice(), &[0x18]].concat(),
-                ] {
-                    assert!(decode_plane_support_local_system(
-                        ctx,
-                        invalid,
-                        &ScalarCache::default(),
-                        &mut Vec::new(),
-                    )?
-                    .is_none());
-                }
-                Ok::<(), cadmpeg_core::CodecError>(())
-            })
-            .expect("bounded frame decode");
-        }
-    }
-
-    #[test]
-    fn compact_x_plane_support_preserves_both_support_signs() {
-        let origin = [0x2f, 0x02, 0x00, 0x2a, 0xe8, 0x00, 0x2f, 0x26, 0x00];
-        for (prefix, (first_y, second_z)) in NORMAL_X_PLANE_SUPPORT_PREFIXES.into_iter().zip([
-            (1.0, 1.0),
-            (-1.0, 1.0),
-            (1.0, -1.0),
-            (-1.0, -1.0),
-        ]) {
-            let body = [prefix.as_slice(), &origin].concat();
-            assert_eq!(
-                decode_plane_support_local_system_slots(&body, &ScalarCache::default()),
-                Some([0.0, first_y, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, second_z, 2.25, 0.75, 11.0])
-            );
-        }
-    }
-
-    #[test]
-    fn normal_x_plane_support_requires_a_complete_bounded_origin() {
-        for prefix in NORMAL_X_PLANE_SUPPORT_PREFIXES {
-            let mut truncated = prefix.to_vec();
-            truncated.extend([0x18, 0x18]);
-            assert!(
-                decode_plane_support_local_system_slots(&truncated, &ScalarCache::default())
-                    .is_none()
-            );
-
-            let mut trailing = prefix.to_vec();
-            trailing.extend([0x18, 0x18, 0x18, 0x18]);
-            assert!(
-                decode_plane_support_local_system_slots(&trailing, &ScalarCache::default())
-                    .is_none()
-            );
-        }
-    }
-
-    #[test]
-    fn trailing_rank_plane_support_constructs_orthogonal_directions() {
-        let body = [
-            0xe4, 0x18, 0x18, 0xe4, 0x18, 0xe4, 0x18, 0x0f, 0x18, 0x18, 0x18, 0x18,
-        ];
-
-        assert_eq!(
-            decode_plane_support_local_system_slots(&body, &ScalarCache::default()),
-            Some([1.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, -1.0, 0.0, 0.0, 0.0])
-        );
-    }
-
-    #[test]
-    fn reflected_plane_support_component_constructs_orthogonal_directions() {
-        let mut body = Vec::new();
-        body.extend_from_slice(&positive_subunit_coordinate(0.6));
-        body.push(0x18);
-        body.extend_from_slice(&positive_subunit_coordinate(0.8));
-        body.extend_from_slice(&[0x18, 0x0f, 0x18]);
-        body.extend_from_slice(&positive_subunit_coordinate(0.8));
-        body.push(0x18);
-        body.extend_from_slice(&positive_subunit_coordinate(0.6));
-        body.extend_from_slice(&[0x18, 0x18, 0x18]);
-
-        assert_eq!(
-            decode_plane_support_local_system_slots(&body, &ScalarCache::default()),
-            Some([0.6, 0.0, 0.8, 0.0, 0.0, 0.0, 0.8, 0.0, -0.6, 0.0, 0.0, 0.0])
-        );
-    }
-
-    #[test]
-    fn trailing_rank_reflected_plane_support_constructs_orthogonal_directions() {
-        let mut body = vec![0x18];
-        body.extend_from_slice(&positive_subunit_coordinate(0.6));
-        body.extend_from_slice(&positive_subunit_coordinate(0.8));
-        body.push(0x18);
-        body.extend_from_slice(&positive_subunit_coordinate(0.8));
-        body.extend_from_slice(&positive_subunit_coordinate(0.6));
-        body.extend_from_slice(&[0x18, 0x18, 0xe4, 0x18, 0x18, 0x18]);
-
-        assert_eq!(
-            decode_plane_support_local_system_slots(&body, &ScalarCache::default()),
-            Some([0.0, 0.6, 0.8, 0.0, 0.0, 0.0, 0.0, 0.8, -0.6, 0.0, 0.0, 0.0])
-        );
-    }
-
-    #[test]
-    fn plane_support_slot_eight_decodes_compact_negated_component() {
-        let first_x = f64::from_be_bytes([0x3f, 0xc2, 0, 0, 0, 0, 0, 0]);
-        let first_z = (1.0 - first_x * first_x).sqrt();
-        let first_x_bytes = positive_subunit_coordinate(first_x);
-        let mut body = Vec::new();
-        body.extend_from_slice(&first_x_bytes);
-        body.push(0x18);
-        body.extend_from_slice(&positive_subunit_coordinate(first_z));
-        body.extend_from_slice(&[0x18, 0x0f, 0x18]);
-        body.extend_from_slice(&positive_subunit_coordinate(first_z));
-        body.push(0x18);
-        body.push(0x50);
-        body.extend_from_slice(&first_x_bytes[2..]);
-        body.extend_from_slice(&[0x18, 0x18, 0x18]);
-
-        assert_eq!(
-            decode_plane_support_local_system_slots(&body, &ScalarCache::default()),
-            Some([first_x, 0.0, first_z, 0.0, 0.0, 0.0, first_z, 0.0, -first_x, 0.0, 0.0, 0.0])
-        );
-    }
-
-    #[test]
-    fn plane_support_slot_six_decodes_paired_positive_component() {
-        let first_x = 0.75;
-        let first_z = f64::from_be_bytes([0xbf, 0xcf, 0, 0, 0, 0, 0, 0]);
-        let second_x = -first_z;
-        let mut body = Vec::new();
-        body.extend_from_slice(&positive_subunit_coordinate(first_x));
-        body.push(0x18);
-        body.extend_from_slice(&[0xa4, 0, 0, 0, 0, 0, 0]);
-        body.extend_from_slice(&[0x18, 0x0f, 0x18]);
-        body.extend_from_slice(&[0x4e, 0, 0, 0, 0, 0, 0]);
-        body.push(0x18);
-        body.extend_from_slice(&positive_subunit_coordinate(first_x));
-        body.extend_from_slice(&[0x18, 0x18, 0x18]);
-
-        assert_eq!(
-            decode_plane_support_local_system_slots(&body, &ScalarCache::default()),
-            Some([first_x, 0.0, first_z, 0.0, 0.0, 0.0, second_x, 0.0, first_x, 0.0, 0.0, 0.0])
-        );
-    }
-
-    #[test]
-    fn decodes_model_reference_wrapped_ieee_coordinate() {
-        let data = [0xed, 0x3b, 0xbc, 0xea, 0x89, 0x1b, 0xc2, 0xbd, 0x60];
-        let cache = ScalarCache::default();
-        assert_eq!(
-            decode_model_reference_coordinate(&data, 0, &cache),
-            Some((
-                f64::from_be_bytes(data[1..].try_into().expect("required invariant")),
-                9
-            ))
-        );
-        assert_eq!(
-            decode_model_reference_coordinate(&data[..8], 0, &cache),
-            None
-        );
-    }
-
-    #[test]
-    fn decodes_model_reference_positive_ieee_coordinate() {
-        let data = [0x32, 0xb3, 0xa2, 0x70, 0xe5, 0xa0, 0x3f, 0xfa];
-        let cache = ScalarCache::default();
-        assert_eq!(
-            decode_model_reference_coordinate(&data, 0, &cache),
-            Some((
-                f64::from_be_bytes([0x3f, 0xb3, 0xa2, 0x70, 0xe5, 0xa0, 0x3f, 0xfa]),
-                8
-            ))
-        );
-        assert_eq!(
-            decode_model_reference_coordinate(&data[..7], 0, &cache),
-            None
-        );
-    }
-
-    #[test]
-    fn decodes_model_reference_low_positive_ieee_coordinate() {
-        let data = [0x19, 0xc3, 0xa2, 0x70, 0xe5, 0xa0, 0x3f, 0xfd];
-        let cache = ScalarCache::default();
-        assert_eq!(
-            decode_model_reference_coordinate(&data, 0, &cache),
-            Some((
-                f64::from_be_bytes([0x3f, 0xc3, 0xa2, 0x70, 0xe5, 0xa0, 0x3f, 0xfd]),
-                8
-            ))
-        );
-    }
-
-    #[test]
-    fn decodes_counted_double_xar_dictionary() {
-        let mut data = b"prefix double_xar\0".to_vec();
-        data.extend_from_slice(&[
-            0xf8, 0x07, 0x10, 0xe5, 0x07, 0x23, 0x11, 0x2e, 0x0b, 0xe8, 0x26, 0xd6, 0x95, 0x46,
-            0x08, 0, 0, 0, 0, 0, 0, 0x0b, 0xe0,
-        ]);
-        let tables = double_xar_tables(&data);
-        let [table] = tables.as_slice() else {
-            panic!("complete dictionary");
-        };
-        assert_eq!(table.entries.len(), 7);
-        assert_eq!(
-            table
-                .entries
-                .iter()
-                .flat_map(DoubleXarSlot::raw)
-                .copied()
-                .collect::<Vec<_>>(),
-            data[b"prefix double_xar\0".len() + 2..],
-        );
-        assert_eq!(table.entries[0].value(), Some(1.0));
-        assert_eq!(table.entries[1].kind(), "recursive_placeholder_1");
-        assert_eq!(table.entries[2].value(), Some(0.0));
-        assert_eq!(table.entries[3].kind(), "recursive_placeholder_3");
-        assert_eq!(table.entries[4].value(), Some(3.0));
-        assert_eq!(table.entries[5].value(), Some(0.0));
-        assert_eq!(table.entries[6].kind(), "terminal_null");
-    }
-
-    #[test]
-    fn withholds_incomplete_double_xar_dictionary() {
-        let first = b"double_xar\0\xf8\x02\x10";
-        assert!(double_xar_tables(first).is_empty());
-        let second = b"double_xar\0\xf8\x02\x10\x0b";
-        assert!(double_xar_tables(second).is_empty());
-    }
-
-    #[test]
-    fn decodes_defined_ieee_forms() {
-        assert_eq!(decode(&[0xe4], 0), Some((1.0, 1)));
-        assert_eq!(decode(&[0x0d], 0), Some((-1.0, 1)));
-        assert_eq!(decode(&[0x46, 0x08, 0, 0, 0, 0, 0, 0], 0), Some((3.0, 8)));
-        assert_eq!(decode(&[0x6a, 0x08, 0, 0, 0, 0, 0], 0), Some((3.0, 7)));
-        assert_eq!(
-            decode(&[0x5e, 0x33, 0x33, 0x33, 0x33, 0x33, 0x2c], 0),
-            Some((
-                f64::from_be_bytes([0x3f, 0xd3, 0x33, 0x33, 0x33, 0x33, 0x33, 0x2c]),
-                7
-            ))
-        );
-        assert_eq!(decode(&[0x2d, 0x08, 0, 0, 0, 0, 0, 0], 0), Some((-3.0, 8)));
-        assert_eq!(
-            decode(&[0xde, 0x5c, 0xfa, 0x99, 0x80, 0x36, 0x84], 0),
-            Some((
-                f64::from_be_bytes([0xbf, 0x5c, 0xfa, 0x99, 0x80, 0x36, 0x84, 0]),
-                7
-            ))
-        );
-    }
-
-    #[test]
-    fn torus_row_lane_decodes_seven_byte_negative_coordinates() {
-        let data = [0x2d, 0x1c, 0x00, 0x00, 0x00, 0x00, 0x00, 0xf6];
-        let cache = ScalarCache::default();
-
-        assert_eq!(decode_in_torus_row_lane(&data, 0, &cache), Some((-7.0, 7)));
-        assert_ne!(
-            decode_in_surface_row_lane(&data, 0, &cache),
-            Some((-7.0, 7))
-        );
-    }
-
-    #[test]
-    fn signed_directrix_lanes_keep_their_distinct_lower_boundary_and_generic_alias() {
-        let cache = ScalarCache::default();
-        let lower = [0xa4, 0x12, 0x34, 0x56, 0x78, 0x9a, 0xbc];
-        assert!(decode_tabulated_cylinder_first_coordinate(&lower, 0, &cache).is_none());
-        assert_eq!(
-            decode_tabulated_cylinder_second_coordinate(&lower, 0, &cache),
-            Some((
-                f64::from_be_bytes([0xbf, 0xcf, 0x12, 0x34, 0x56, 0x78, 0x9a, 0xbc]),
-                7
-            ))
-        );
-        let aliased = [0xb0, 0x12, 0x34, 0x56, 0x78, 0x9a, 0xbc];
-        assert_eq!(
-            super::decode(&aliased, 0),
-            Some((
-                f64::from_be_bytes([0xbf, 0x12, 0x34, 0x56, 0x78, 0x9a, 0xbc, 0]),
-                7
-            ))
-        );
-        assert_eq!(
-            decode_tabulated_cylinder_first_coordinate(&aliased, 0, &cache),
-            Some((
-                f64::from_be_bytes([0xbf, 0xdc, 0x12, 0x34, 0x56, 0x78, 0x9a, 0xbc]),
-                7
-            ))
-        );
-        for length in 1..7 {
-            assert!(
-                decode_tabulated_cylinder_second_coordinate(&lower[..length], 0, &cache).is_none()
-            );
-            assert!(
-                decode_tabulated_cylinder_first_coordinate(&aliased[..length], 0, &cache).is_none()
-            );
-        }
-    }
-
-    #[test]
-    fn tabulated_first_coordinate_preserves_the_negative_subunit_boundary() {
-        let cache = ScalarCache::default();
-        for (head, ieee_head) in [
-            (0xae, 0xbfda_u16),
-            (0xaf, 0xbfdb),
-            (0xb0, 0xbfdc),
-            (0xb1, 0xbfdd),
-            (0xb2, 0xbfdf),
-        ] {
-            let token = [head, 0x12, 0x34, 0x56, 0x78, 0x9a, 0xbc];
-            let [hi, lo] = ieee_head.to_be_bytes();
-            let expected = f64::from_be_bytes([hi, lo, 0x12, 0x34, 0x56, 0x78, 0x9a, 0xbc]);
-            assert_eq!(
-                decode_tabulated_cylinder_first_coordinate(&token, 0, &cache),
-                Some((expected, 7))
-            );
-            assert_eq!(
-                decode_tabulated_cylinder_first_frame_coordinate(&token, 0, &cache),
-                Some((expected, 7))
-            );
-        }
-    }
-
-    #[test]
-    fn tabulated_directrix_control_polygon_matches_its_independent_boundary() {
-        let cache = ScalarCache::default();
-        let bodies = [
-            [
-                0xb0, 0xdf, 0x28, 0x30, 0, 0, 0, 0x7d, 0x11, 0x39, 0x79, 0x13, 0x66, 0x08,
-            ],
-            [
-                0xb0, 0xdf, 0x28, 0x30, 0, 0, 0, 0x7b, 0xe4, 0xe8, 0x23, 0x13, 0x66, 0x08,
-            ],
-            [
-                0xb0, 0x7b, 0x0c, 0x30, 0, 0, 0, 0x7b, 0x1c, 0xb1, 0xeb, 0x13, 0x66, 0x08,
-            ],
-            [
-                0xaf, 0x9e, 0xf9, 0x4c, 0x0e, 0xbd, 0xf0, 0x7a, 0x76, 0x12, 0xf2, 0xe4, 0x6b, 0xbf,
-            ],
-        ];
-        let boundary = [
-            [-0.451_120_421_290_4, 1.129_205_201_103],
-            [-0.451_120_421_290_4, 1.055_885_445_609],
-            [-0.445_010_229_945_2, 1.007_005_613_58],
-            [-0.431_577_991_747_8, 0.983_163_332_366],
-        ];
-        for (body, expected) in bodies.iter().zip(boundary) {
-            let (x, next) = decode_tabulated_cylinder_first_coordinate(body, 0, &cache)
-                .expect("first pole coordinate");
-            let (z, end) = decode_tabulated_cylinder_second_coordinate(body, next, &cache)
-                .expect("second pole coordinate");
-            assert_eq!(end, body.len());
-            assert!((x - expected[0]).abs() < 1e-12);
-            assert!((z - expected[1]).abs() < 1e-12);
-        }
-    }
-
-    #[test]
-    fn decodes_tabulated_cylinder_coordinate_lanes() {
-        let cache = ScalarCache::default();
-        let first_eight = [0x46, 0x13, 0x77, 0x9f, 0x89, 0x00, 0x00, 0x00];
-        let first = [0x4a, 0x13, 0x21, 0xe3, 0xe3, 0x00, 0x00];
-        let first_positive_dict = [0x96, 0x02, 0xf4, 0x7a, 0, 0, 0];
-        let first_negative_dict = [0xd7, 0xd4, 0x8d, 0x46, 0, 0, 0];
-        let first_negative_subunit = [0xc8, 0xd6, 0xa3, 0x0c, 0, 0, 0];
-        let first_negative_large = [0xde, 0xbe, 0x21, 0xc3, 0, 0, 0];
-        let first_negative_reserved_gap = [0xdd, 0x9f, 0xe4, 0x46, 0, 0, 0];
-        let first_negative_subunit_gap = [0xa7, 0x6b, 0x7c, 0x32, 0x0d, 0x03, 0xd0];
-        let first_positive_seven = [0x54, 0xad, 0xf7, 0xa0, 0, 0, 0];
-        let first_positive_eight = [0x41, 0xb9, 0x9d, 0x5b, 0x81, 0x25, 0x62, 0xc0];
-        let first_negative_low = [0xb2, 0x05, 0xe8, 0xa6, 0, 0, 0];
-        let second = [0x7f, 0x24, 0x57, 0x89, 0x13, 0x66, 0x08];
-        let second_positive_low = [0x69, 0x91, 0x22, 0x33, 0x44, 0x55, 0x66];
-        let second_positive_lower_dict = [0x5c, 0x47, 0x59, 0x45, 0x2d, 0x97, 0x90];
-        let second_negative_fixed = [0x45, 0xa7, 0x21, 0x45, 0x78, 0x5e, 0x04];
-        let second_negative = [0xc7, 0x22, 0x33, 0x44, 0x55, 0x66, 0x77];
-        let second_negative_large = [0xdd, 0x22, 0x33, 0x44, 0x55, 0x66, 0x77];
-        assert_eq!(
-            decode_tabulated_cylinder_first_coordinate(&first_eight, 0, &cache),
-            Some((
-                f64::from_be_bytes([0xc0, 0x13, 0x77, 0x9f, 0x89, 0, 0, 0]),
-                8
-            ))
-        );
-        assert_eq!(
-            decode_tabulated_cylinder_first_coordinate(&first, 0, &cache),
-            Some((
-                f64::from_be_bytes([0xc0, 0x13, 0x21, 0xe3, 0xe3, 0x00, 0x00, 0]),
-                7
-            ))
-        );
-        assert_eq!(
-            decode_tabulated_cylinder_first_coordinate(&first_positive_dict, 0, &cache),
-            Some((
-                f64::from_be_bytes([0x40, 0x0b, 0x02, 0xf4, 0x7a, 0, 0, 0]),
-                7
-            ))
-        );
-        assert_eq!(
-            decode_tabulated_cylinder_first_coordinate(&first_negative_dict, 0, &cache),
-            Some((
-                f64::from_be_bytes([0xc0, 0x05, 0xd4, 0x8d, 0x46, 0, 0, 0]),
-                7
-            ))
-        );
-        assert_eq!(
-            decode_tabulated_cylinder_first_coordinate(&first_negative_subunit, 0, &cache),
-            Some((
-                f64::from_be_bytes([0xbf, 0xf5, 0xd6, 0xa3, 0x0c, 0, 0, 0]),
-                7
-            ))
-        );
-        assert_eq!(
-            decode_tabulated_cylinder_first_coordinate(&first_negative_large, 0, &cache),
-            Some((
-                f64::from_be_bytes([0xc0, 0x10, 0xbe, 0x21, 0xc3, 0, 0, 0]),
-                7
-            ))
-        );
-        assert_eq!(
-            decode_tabulated_cylinder_first_coordinate(&first_negative_reserved_gap, 0, &cache),
-            Some((
-                f64::from_be_bytes([0xc0, 0x0c, 0x9f, 0xe4, 0x46, 0, 0, 0]),
-                7
-            ))
-        );
-        assert_eq!(
-            decode_tabulated_cylinder_first_coordinate(&first_negative_subunit_gap, 0, &cache),
-            Some((
-                f64::from_be_bytes([0xbf, 0xd3, 0x6b, 0x7c, 0x32, 0x0d, 0x03, 0xd0]),
-                7
-            ))
-        );
-        assert_eq!(
-            decode_tabulated_cylinder_first_coordinate(&first_positive_seven, 0, &cache),
-            Some((f64::from_be_bytes([0x3f, 0xad, 0xf7, 0xa0, 0, 0, 0, 0]), 7))
-        );
-        assert_eq!(
-            decode_tabulated_cylinder_first_coordinate(&first_positive_eight, 0, &cache),
-            Some((
-                f64::from_be_bytes([0x3f, 0xb9, 0x9d, 0x5b, 0x81, 0x25, 0x62, 0xc0]),
-                8
-            ))
-        );
-        assert_eq!(
-            decode_tabulated_cylinder_first_coordinate(&first_negative_low, 0, &cache),
-            Some((
-                f64::from_be_bytes([0xbf, 0xdf, 0x05, 0xe8, 0xa6, 0, 0, 0]),
-                7
-            ))
-        );
-        assert_eq!(
-            decode_tabulated_cylinder_second_coordinate(&second, 0, &cache),
-            Some((
-                f64::from_be_bytes([0x3f, 0xf4, 0x24, 0x57, 0x89, 0x13, 0x66, 0x08]),
-                7
-            ))
-        );
-        assert_eq!(
-            decode_tabulated_cylinder_second_coordinate(&second_positive_low, 0, &cache),
-            Some((
-                f64::from_be_bytes([0x3f, 0xde, 0x91, 0x22, 0x33, 0x44, 0x55, 0x66]),
-                7
-            ))
-        );
-        assert_eq!(
-            decode_tabulated_cylinder_second_coordinate(&second_positive_lower_dict, 0, &cache),
-            Some((
-                f64::from_be_bytes([0x3f, 0xd1, 0x47, 0x59, 0x45, 0x2d, 0x97, 0x90]),
-                7
-            ))
-        );
-        assert_eq!(
-            decode_tabulated_cylinder_second_coordinate(&second_negative_fixed, 0, &cache),
-            Some((
-                f64::from_be_bytes([0xbf, 0xa7, 0x21, 0x45, 0x78, 0x5e, 0x04, 0]),
-                7
-            ))
-        );
-        assert_eq!(
-            decode_tabulated_cylinder_second_coordinate(&second_negative, 0, &cache),
-            Some((
-                f64::from_be_bytes([0xbf, 0xf4, 0x22, 0x33, 0x44, 0x55, 0x66, 0x77]),
-                7
-            ))
-        );
-        assert_eq!(
-            decode_tabulated_cylinder_second_coordinate(&second_negative_large, 0, &cache),
-            Some((
-                f64::from_be_bytes([0xc0, 0x0c, 0x22, 0x33, 0x44, 0x55, 0x66, 0x77]),
-                7
-            ))
-        );
-    }
-
-    #[test]
-    fn surface_row_lane_decodes_large_positive_dict_forms() {
-        let cache = ScalarCache::default();
-        assert_eq!(
-            decode_in_surface_row_lane(&[0xd1, 0xf1, 0x60, 0x5a, 0xa4, 0xd9, 0x00], 0, &cache),
-            Some((
-                f64::from_be_bytes([0x3f, 0xff, 0xf1, 0x60, 0x5a, 0xa4, 0xd9, 0x00]),
-                7
-            ))
-        );
-        assert_eq!(
-            decode_in_surface_row_lane(&[0xd3, 0x65, 0x1a, 0x84, 0x5c, 0xa9, 0xf0], 0, &cache),
-            Some((
-                f64::from_be_bytes([0x40, 0x01, 0x65, 0x1a, 0x84, 0x5c, 0xa9, 0xf0]),
-                7
-            ))
-        );
-        assert_eq!(
-            decode_in_surface_row_lane(&[0xde, 0xee, 0xa1, 0x55, 0x61, 0x88, 0x28], 0, &cache),
-            Some((
-                f64::from_be_bytes([0x40, 0x10, 0xee, 0xa1, 0x55, 0x61, 0x88, 0x28]),
-                7
-            ))
-        );
-        assert_eq!(
-            decode_in_surface_row_lane(&[0xdf, 0x19, 0x4c, 0x93, 0x0f, 0x96, 0xe8], 0, &cache),
-            Some((
-                f64::from_be_bytes([0x40, 0x11, 0x19, 0x4c, 0x93, 0x0f, 0x96, 0xe8]),
-                7
-            ))
-        );
-    }
-
-    #[test]
-    fn tabulated_cylinder_frame_decodes_positive_4a() {
-        let cache = ScalarCache::default();
-        assert_eq!(
-            decode_tabulated_cylinder_frame_coordinate(
-                &[0x4a, 0x13, 0x1f, 0x1c, 0x0b, 0, 0],
-                0,
-                &cache
-            ),
-            Some((
-                f64::from_be_bytes([0x40, 0x13, 0x1f, 0x1c, 0x0b, 0, 0, 0]),
-                7
-            ))
-        );
-    }
-
-    #[test]
-    fn tabulated_cylinder_first_frame_uses_the_first_coordinate_sign() {
-        let cache = ScalarCache::default();
-        let fixed = [0x46, 0x12, 0, 0, 0, 0, 0, 0];
-        assert_eq!(
-            decode_tabulated_cylinder_first_frame_coordinate(&fixed, 0, &cache),
-            Some((f64::from_be_bytes([0xc0, 0x12, 0, 0, 0, 0, 0, 0]), 8))
-        );
-        assert_eq!(
-            decode_tabulated_cylinder_first_frame_coordinate(
-                &[0x4a, 0x13, 0, 0, 0, 0, 0],
-                0,
-                &cache,
-            ),
-            Some((f64::from_be_bytes([0x40, 0x13, 0, 0, 0, 0, 0, 0]), 7))
-        );
-    }
-
-    #[test]
-    fn section_cache_uses_unique_raw_tokens_in_first_appearance_order() {
-        let first = [0x46, 0x08, 0, 0, 0, 0, 0, 0];
-        let second = [0x46, 0x10, 0, 0, 0, 0, 0, 0];
-        let mut section = vec![0xaa];
-        section.extend_from_slice(&first);
-        section.extend_from_slice(&first);
-        section.extend_from_slice(&second);
-        let cache = ScalarCache::from_section(&section);
-
-        assert_eq!(decode_in_lane(&[0x18, 0], 0, &cache), Some((3.0, 2)));
-        assert_eq!(decode_in_lane(&[0x18, 1], 0, &cache), Some((4.0, 2)));
-    }
-
-    #[test]
-    fn lane_zero_does_not_consume_the_following_scalar_opener() {
-        let cache = ScalarCache::default();
-        assert_eq!(decode_in_lane(&[0x18, 0xe4], 0, &cache), Some((0.0, 1)));
-        assert_eq!(decode_in_lane(&[0x18, 0xe4], 1, &cache), Some((1.0, 2)));
-        assert_eq!(decode_in_lane(&[0x18, 0x0d], 0, &cache), Some((0.0, 1)));
-        assert_eq!(
-            decode_in_lane(&[0x18, 0x67, 0, 0, 0, 0, 0, 0], 0, &cache),
-            Some((0.0, 1))
-        );
-        assert_eq!(
-            decode_in_lane(&[0x18, 0x67, 0, 0, 0, 0, 0, 0], 1, &cache),
-            Some((f64::from_be_bytes([0x3f, 0, 0, 0, 0, 0, 0, 0]), 8))
-        );
-        assert_eq!(decode_in_row_lane(&[0x18, 0x0e], 0, &cache), Some((0.0, 1)));
-        assert_eq!(decode_in_lane(&[0x18, 0x18, 0], 0, &cache), Some((0.0, 1)));
-    }
-
-    #[test]
-    fn cache_indices_use_only_the_enclosing_lane_opener_set() {
-        let mut section = Vec::new();
-        for index in 0..=116_u8 {
-            let encoded = if index < 0x46 { index } else { index + 1 };
-            section.extend_from_slice(&[0x46, 0x08, encoded, 0, 0, 0, 0, 0]);
-        }
-        let cache = ScalarCache::from_section(&section);
-
-        assert_eq!(
-            decode_in_lane(&[0x18, 0x74], 0, &cache),
-            Some((f64::from_be_bytes([0x40, 0x08, 0x75, 0, 0, 0, 0, 0]), 2))
-        );
-        assert_eq!(
-            decode_in_lane(&[0x18, 0x0e], 0, &cache),
-            Some((f64::from_be_bytes([0x40, 0x08, 0x0e, 0, 0, 0, 0, 0]), 2))
-        );
-        assert_eq!(decode_in_row_lane(&[0x18, 0x0e], 0, &cache), Some((0.0, 1)));
-    }
-
-    #[test]
-    fn lane_zero_does_not_consume_the_following_named_record() {
-        let cache = ScalarCache::default();
-        assert_eq!(decode_in_lane(&[0x18, 0xe0], 0, &cache), Some((0.0, 1)));
-    }
-
-    #[test]
-    fn paired_negative_lane_uses_matching_positive_cache_tail() {
-        let cache = ScalarCache::from_section(&[0x46, 0x08, 1, 2, 3, 4, 5, 6]);
-        let expected = f64::from_be_bytes([0xc0, 0x08, 1, 2, 3, 4, 5, 6]);
-        assert_eq!(
-            decode_in_lane(&[0xa3, 1, 2, 3, 4, 5, 6], 0, &cache),
-            Some((expected, 7))
-        );
-    }
-
-    #[test]
-    fn decodes_saved_spline_tangent_dict_forms() {
-        let cache = ScalarCache::default();
-        let negative = [0xb3, 0, 0, 0, 0, 0, 0];
-        let positive = [0x76, 0xb6, 0x7a, 0xe8, 0x58, 0x4c, 0x9a];
-
-        assert_eq!(decode_in_lane(&negative, 0, &cache), Some((-0.5, 7)));
-        let (value, end) = decode_in_lane(&positive, 0, &cache).expect("positive tangent");
-        assert_eq!(end, 7);
-        assert!((value - 3.0_f64.sqrt() / 2.0).abs() < 3e-15);
-    }
-
-    #[test]
-    fn paired_positive_lane_uses_matching_cache_exponent() {
-        let cache = ScalarCache::from_section(&[0x46, 0x13, 1, 2, 3, 4, 5, 6]);
-        let expected = f64::from_be_bytes([0x40, 0x13, 1, 2, 3, 4, 5, 6]);
-        assert_eq!(
-            decode_in_lane(&[0x9e, 1, 2, 3, 4, 5, 6], 0, &cache),
-            Some((expected, 7))
-        );
-        assert_eq!(
-            decode_in_lane(&[0x18, 0x9e, 1, 2, 3, 4, 5, 6], 0, &cache),
-            Some((0.0, 1))
-        );
-    }
-
-    #[test]
-    fn paired_cache_tail_collision_withholds_value() {
-        let cache = ScalarCache::from_section(&[
-            0x46, 0x08, 1, 2, 3, 4, 5, 6, 0x46, 0x13, 1, 2, 3, 4, 5, 6,
-        ]);
-        assert_eq!(decode_in_lane(&[0x9e, 1, 2, 3, 4, 5, 6], 0, &cache), None);
-        assert_eq!(decode_in_lane(&[0xa3, 1, 2, 3, 4, 5, 6], 0, &cache), None);
-    }
-
-    #[test]
-    fn row_lane_uses_seven_byte_0x71_without_consuming_the_next_scalar() {
-        let cache = ScalarCache::default();
-        let data = [0x71, 0xf0, 0, 0, 0, 0, 0, 0xe4];
-        assert_eq!(decode_in_row_lane(&data, 0, &cache), Some((1.0, 7)));
-        assert_eq!(decode_in_row_lane(&data, 7, &cache), Some((1.0, 8)));
-        assert_eq!(
-            decode_in_lane(&data, 0, &cache).map(|(_, end)| end),
-            Some(8)
-        );
-    }
-
-    #[test]
-    fn pcurve_lane_falls_back_to_positive_dict_after_generic_forms() {
-        let cache = ScalarCache::default();
-        let positive_dict = [0x98, 1, 2, 3, 4, 5, 6];
-        assert_eq!(
-            decode_in_pcurve_lane(&positive_dict, 0, &cache),
-            Some((f64::from_be_bytes([0x40, 0x0d, 1, 2, 3, 4, 5, 6]), 7))
-        );
-
-        let generic = [0x86, 1, 2, 3, 4, 5, 6];
-        assert_eq!(
-            decode_in_pcurve_lane(&generic, 0, &cache),
-            Some((f64::from_be_bytes([0x3f, 1, 2, 3, 4, 5, 6, 0]), 7))
-        );
-    }
-
-    #[test]
-    fn surface_row_lane_decodes_negative_a0_dict_form() {
-        let cache = ScalarCache::default();
-        let data = [0xa0, 0x5c, 0x28, 0xf5, 0xc2, 0x8f, 0x5c, 0xe4];
-        assert_eq!(
-            decode_in_surface_row_lane(&data, 0, &cache),
-            Some((
-                f64::from_be_bytes([0xc0, 0x15, 0x5c, 0x28, 0xf5, 0xc2, 0x8f, 0x5c]),
-                7
-            ))
-        );
-        assert_eq!(decode_in_surface_row_lane(&data, 7, &cache), Some((1.0, 8)));
-    }
-
-    #[test]
-    fn surface_row_lane_decodes_negative_a7_dict_form() {
-        let cache = ScalarCache::default();
-        let data = [0xa7, 0x33, 0x33, 0x33, 0x33, 0x33, 0x80, 0xe4];
-        assert_eq!(
-            decode_in_surface_row_lane(&data, 0, &cache),
-            Some((
-                f64::from_be_bytes([0xbf, 0xd3, 0x33, 0x33, 0x33, 0x33, 0x33, 0x80]),
-                7
-            ))
-        );
-        assert_eq!(decode_in_surface_row_lane(&data, 7, &cache), Some((1.0, 8)));
-    }
-
-    #[test]
-    fn named_local_system_decodes_negative_5d_dict_form() {
-        let cache = ScalarCache::default();
-        let data = [0x5d, 0x3c, 0xfc, 0xe9, 0x9e, 0x37, 0xb2, 0xe4];
-        assert_eq!(
-            decode_named_local_system_coordinate(&data, 0, 4, &cache),
-            Some((
-                f64::from_be_bytes([0xbf, 0xd2, 0x3c, 0xfc, 0xe9, 0x9e, 0x37, 0xb2]),
-                7
-            ))
-        );
-        assert_eq!(
-            decode_named_local_system_coordinate(&data, 7, 5, &cache),
-            Some((1.0, 8))
-        );
-    }
-
-    #[test]
-    fn surface_row_lane_decodes_signed_i48_form() {
-        let cache = ScalarCache::default();
-        assert_eq!(
-            decode_in_surface_row_lane(&[0x92, 0xff, 0xff, 0xff, 0xff, 0xff, 0xe8], 0, &cache),
-            Some((-24.0, 7))
-        );
-        assert_eq!(
-            decode_in_surface_row_lane(&[0x92, 0x00, 0x00, 0x00, 0x00, 0x01, 0x23], 0, &cache),
-            Some((291.0, 7))
-        );
-        assert_eq!(
-            decode_in_surface_row_lane(&[0xda, 0x00, 0x00, 0x00, 0x00, 0x00, 0x15], 0, &cache),
-            Some((21.0, 7))
-        );
-        assert_eq!(
-            decode_in_surface_row_lane(&[0x92, 0xff, 0xff], 0, &cache),
-            None
-        );
-    }
-
-    #[test]
-    fn surface_row_zero_does_not_consume_a_surface_only_opener() {
-        let cache = ScalarCache::default();
-
-        for opener in [0x73, 0x92, 0xa0, 0xbb, 0xda] {
-            assert_eq!(
-                decode_in_surface_row_lane(&[0x18, opener, 0, 0, 0, 0, 0, 0], 0, &cache),
-                Some((0.0, 1))
-            );
-        }
-    }
-
-    #[test]
-    fn positive_dict_lane_decodes_cone_half_angles() {
-        let forty_five_degrees = [0x74, 0x21, 0xfb, 0x54, 0x44, 0x2d, 0x23];
-        let eighty_degrees = [0x81, 0x57, 0x18, 0x4a, 0xe7, 0x44, 0x8d];
-        let other_angle = [0xb7, 0x5e, 0x8a, 0x1c, 0xf2, 0x17, 0x1e];
-
-        assert_eq!(
-            decode_positive_dict(&forty_five_degrees, 0),
-            Some((
-                f64::from_be_bytes([0x3f, 0xe9, 0x21, 0xfb, 0x54, 0x44, 0x2d, 0x23]),
-                7
-            ))
-        );
-        assert_eq!(
-            decode_positive_dict(&eighty_degrees, 0),
-            Some((
-                f64::from_be_bytes([0x3f, 0xf6, 0x57, 0x18, 0x4a, 0xe7, 0x44, 0x8d]),
-                7
-            ))
-        );
-        assert_eq!(
-            decode_positive_dict(&other_angle, 0),
-            Some((
-                f64::from_be_bytes([0x3f, 0xe4, 0x5e, 0x8a, 0x1c, 0xf2, 0x17, 0x1e]),
-                7
-            ))
-        );
-    }
-
-    #[test]
-    fn named_positive_dict_lane_precedes_generic_scalar_forms() {
-        let cache = ScalarCache::default();
-        let subunit = [0x71, 0, 0, 0, 0, 0, 0];
-        let named_dict = [0xa3, 0, 0, 0, 0, 0, 0];
-
-        assert_eq!(
-            decode_named_positive_dict_scalar(&subunit, 0, &cache),
-            Some((f64::from_be_bytes([0x3f, 0xe6, 0, 0, 0, 0, 0, 0]), 7))
-        );
-        assert_eq!(
-            decode_named_positive_dict_scalar(&named_dict, 0, &cache),
-            Some((f64::from_be_bytes([0x40, 0x18, 0, 0, 0, 0, 0, 0]), 7))
-        );
-    }
-
-    #[test]
-    fn row_lane_decodes_negative_half_literal() {
-        let cache = ScalarCache::default();
-
-        assert_eq!(
-            decode_in_row_lane(&[0x0e, 0x18], 0, &cache),
-            Some((-0.5, 1))
-        );
-    }
-
-    #[test]
-    fn a_scalar_body_whose_values_start_past_the_payload_is_refused() {
-        let payload = [0x8au8, 0x02, 0x03, 0x10, 0x11, 0x12];
-
-        // One byte past the payload states no bytes at all. The record is
-        // refused rather than read as "zero bytes remain".
-        assert_eq!(
-            admitted_scalar_body(&payload, 2, payload.len() + 1, 1),
-            None
-        );
-        assert_eq!(admitted_scalar_body(&payload, 2, usize::MAX, 1), None);
-
-        // The values start at the end of the payload: no bytes remain, and only
-        // a slot count the fixed positional table covers is admitted.
-        assert_eq!(
-            admitted_scalar_body(&payload, 2, payload.len(), 0),
-            Some(&payload[payload.len()..])
-        );
-        assert_eq!(
-            admitted_scalar_body(&payload, 2, payload.len(), POSITIONAL_SLOT_TABLE_WIDTH),
-            Some(&payload[payload.len()..])
-        );
-        assert_eq!(
-            admitted_scalar_body(&payload, 2, payload.len(), POSITIONAL_SLOT_TABLE_WIDTH + 1),
-            None
-        );
-    }
-
-    #[test]
-    fn a_scalar_body_admits_one_slot_per_remaining_byte() {
-        let payload = [0x8au8, 0x02, 0x03, 0x10, 0x11, 0x12];
-        let remaining = payload.len() - 3;
-
-        assert_eq!(
-            admitted_scalar_body(&payload, 2, 3, remaining),
-            Some(&payload[3..])
-        );
-        // Above the remaining byte count and above the fixed positional table:
-        // the record states more slots than its own bytes can carry.
-        assert_eq!(
-            admitted_scalar_body(&payload, 2, 3, POSITIONAL_SLOT_TABLE_WIDTH + 1),
-            None
-        );
-
-        // A shape neither compact integer stated is not a scalar body.
-        assert_eq!(admitted_scalar_body(&payload, 1, 3, 1), None);
-        assert_eq!(admitted_scalar_body(&payload, 2, 2, 1), None);
-    }
-}
+mod tests;

@@ -267,3 +267,97 @@ fn admitted_component_membership_wins_over_an_unregistered_owner() {
             || loss.code == F3dLossCode::ComponentBodyOwnerUnresolved.kind()));
     }
 }
+
+#[test]
+fn empty_attribute_local_children_place_identity_matrix_and_nested_occurrences() {
+    use cadmpeg_ir::products::OccurrenceParent;
+    let (bulk, meta) =
+        crate::test_support::empty_attribute_occurrences::empty_attribute_local_component_design(
+            &[300],
+        );
+    let bytes = f3d_with_breps_and_design(
+        &[(
+            "BREP.module.smbh",
+            &crate::test_support::smbh_geometry_test::synthetic_geometry_smbh(),
+        )],
+        &bulk,
+        &meta,
+    );
+    let result = super::decode(bytes);
+    super::assert_valid(&result);
+    let model = &result.ir().model;
+    assert_eq!(model.product_definitions.len(), 3);
+    assert_eq!(model.occurrences.len(), 7);
+    assert!(!result
+        .report()
+        .losses
+        .iter()
+        .any(|loss| loss.code == F3dLossCode::LocalOccurrenceUnplaced.kind()));
+    let root = model
+        .occurrences
+        .iter()
+        .find(|o| o.parent == OccurrenceParent::Root {})
+        .unwrap();
+    let children = model
+        .occurrences
+        .iter()
+        .filter(|o| {
+            o.parent
+                == OccurrenceParent::Occurrence {
+                    occurrence: root.id.clone(),
+                }
+        })
+        .collect::<Vec<_>>();
+    assert_eq!(children.len(), 2);
+    assert_eq!(
+        children
+            .iter()
+            .filter(|o| o.transform == Transform::identity())
+            .count(),
+        1
+    );
+    for child in children {
+        assert_eq!(
+            model
+                .occurrences
+                .iter()
+                .filter(|o| o.parent
+                    == OccurrenceParent::Occurrence {
+                        occurrence: child.id.clone()
+                    })
+                .count(),
+            2
+        );
+    }
+}
+
+#[test]
+fn later_fixed_identity_occurrence_reports_loss_and_stays_out_of_neutral_structure() {
+    let (bulk, meta) =
+        crate::test_support::empty_attribute_occurrences::later_identity_local_component_design();
+    let bytes = f3d_with_breps_and_design(
+        &[(
+            "BREP.module.smbh",
+            &crate::test_support::smbh_geometry_test::synthetic_geometry_smbh(),
+        )],
+        &bulk,
+        &meta,
+    );
+    let result = super::decode(bytes);
+    super::assert_valid(&result);
+    let losses = result
+        .report()
+        .losses
+        .iter()
+        .filter(|loss| loss.code == F3dLossCode::LocalOccurrenceIdentityOrdinalUnresolved.kind())
+        .collect::<Vec<_>>();
+    assert_eq!(losses.len(), 1);
+    assert!(losses[0].message.contains("ordinal 2"));
+    assert_eq!(result.ir().model.occurrences.len(), 4);
+    assert!(result
+        .ir()
+        .model
+        .occurrences
+        .iter()
+        .all(|o| !o.id.as_str().ends_with("000000000404")));
+}

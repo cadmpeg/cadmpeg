@@ -19,6 +19,7 @@ mod space;
 #[cfg(feature = "test-support")]
 #[doc(hidden)]
 pub mod test_support;
+mod transaction;
 pub mod tree;
 mod unique;
 mod utf16;
@@ -37,6 +38,7 @@ pub use error::{ResourceDimension, ResourceFailure, ResourceLimit, SourceLocatio
 pub use policy::{DecodeMode, DecodePolicy, InspectOptions, ResourceLimits};
 pub use probe::{ParseError, ParseErrorKind};
 pub use space::{ByteRange, SpaceId};
+pub use transaction::{DecodeCheckpoint, DecodeSpaceRebinding, DecodeTrace};
 pub use unique::unique_index;
 pub use view::{
     bounded_len, id_from_index, index_from_u32, index_from_u64, u64_from_index, BoundedCount, View,

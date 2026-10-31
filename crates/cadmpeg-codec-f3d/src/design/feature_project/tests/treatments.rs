@@ -117,6 +117,7 @@ fn draft_entity_neutral_selection_projects_a_unique_historical_face() {
                     opaque_scalar: 0.0,
                     opaque_scalar_offset: 22,
                     variant: false,
+                    closing_flag: false,
                 },
             )
             .unwrap(),
@@ -480,6 +481,7 @@ fn localized_fillet_group_with_role(
                 opaque_scalar: 0.5,
                 opaque_scalar_offset: 1132 + u64::from(ordinal) * 200,
                 variant: false,
+                closing_flag: false,
             },
         )
         .unwrap(),

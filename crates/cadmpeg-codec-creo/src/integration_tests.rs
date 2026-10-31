@@ -135,6 +135,108 @@ fn topology_pipeline_reconstructs_a_closed_plane_intersection_solid() {
 }
 
 #[test]
+fn rotation_plane_pipeline_shares_boundary_and_origin_admission() {
+    for trailing_scalar in [false, true] {
+        let mut payload = b"srf_array\0\xf8\x01".to_vec();
+        payload.extend_from_slice(&[7, 0x22, 4, 1, 0, 0]);
+        payload.extend_from_slice(&[0x0f; 10]);
+        payload.push(0xe3);
+        for (index, value) in [0.6_f64, 0.0, 0.8, 0.0, 0.0, 0.0, 0.8, 0.0, -0.6]
+            .into_iter()
+            .enumerate()
+        {
+            if value == 0.0 {
+                payload.push(if index == 4 { 0x10 } else { 0x18 });
+            } else {
+                let bytes = value.to_be_bytes();
+                payload.push(if value > 0.0 { 0x41 } else { 0x45 });
+                payload.extend_from_slice(&bytes[1..if value > 0.0 { 8 } else { 7 }]);
+            }
+        }
+        payload.extend_from_slice(&[0x2d, 0x10, 0, 0, 0, 0, 0, 0]);
+        payload.extend_from_slice(&[0x8b, 0, 0, 0, 0, 0, 0]);
+        payload.extend_from_slice(&[0x46, 0x20, 0, 0, 0, 0, 0, 0]);
+        if trailing_scalar {
+            payload.push(0x0f);
+        }
+        payload.push(0xe3);
+        payload.extend_from_slice(b"crv_array\0\xf3\xf8\0");
+        let result = decode(build_prt("integration", &[("VisibGeom", payload)]));
+        let plane = result
+            .ir()
+            .model
+            .surfaces
+            .iter()
+            .find_map(|surface| match &surface.geometry {
+                SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(plane)) => Some(plane),
+                _ => None,
+            });
+        if trailing_scalar {
+            assert!(plane.is_none());
+            assert!(result.report().losses.iter().any(|loss| {
+                loss.code == crate::loss::CreoLossCode::PlaneLocalSystemUnresolved.kind()
+            }));
+            assert!(result.report().losses.iter().any(|loss| {
+                loss.code == crate::loss::CreoLossCode::VisibGeomSurfaceUntransferred.kind()
+            }));
+        } else {
+            assert_eq!(
+                plane.expect("placed plane").origin().get(),
+                cadmpeg_ir::math::Point3::new(4.0, 2.0, -8.0)
+            );
+        }
+        assert_valid(&result);
+    }
+}
+
+#[test]
+fn plane_carrier_report_excludes_untransferred_rows() {
+    let fixture = include_bytes!("../tests/golden/fixtures/axis_aligned_plane.prt");
+    for compatible in [true, false] {
+        let mut input = fixture.to_vec();
+        if !compatible {
+            let prefix = [0x0f, 0x0f, 0x0f, 0x0f, 0x43];
+            let offset = input
+                .windows(prefix.len())
+                .position(|bytes| bytes == prefix)
+                .expect("literal envelope prefix");
+            input[offset + 12] = 0x43;
+            input[offset + 13] = 0xf0;
+            input[offset + 15] = 0x0f;
+        }
+        let result = decode(input);
+        let transferred = result
+            .ir()
+            .model
+            .surfaces
+            .iter()
+            .filter(|surface| {
+                matches!(
+                    surface.geometry.solved(),
+                    Some(SolvedSurfaceGeometry::Plane(_))
+                )
+            })
+            .count();
+        assert_eq!(transferred, usize::from(compatible));
+        let losses = &result.report().losses;
+        assert_eq!(
+            losses
+                .iter()
+                .any(|loss| loss.code == crate::loss::CreoLossCode::CarrierVisibGeomPlanes.kind()),
+            compatible
+        );
+        assert_eq!(
+            losses
+                .iter()
+                .any(|loss| loss.code == crate::loss::CreoLossCode::PlaneCarrierUnresolved.kind()),
+            !compatible
+        );
+        assert_eq!(result.report().geometry_transferred(), compatible);
+        assert_valid(&result);
+    }
+}
+
+#[test]
 fn datum_pipeline_merges_placed_geometry_with_ordered_feature_history() {
     let mut datum = b"srf_array\0\xf8\x01".to_vec();
     datum.extend([4, 0x22, 4, 1, 1, 0]);
@@ -272,3 +374,206 @@ fn container_only_pipeline_preserves_geometry_thumbnail_and_design_sections() {
 mod carrier_rejection;
 
 mod recovery;
+
+#[test]
+fn rotation_cylinder_pipeline_requires_the_stored_envelope_and_radius() {
+    fn payload(radius: f64) -> Vec<u8> {
+        fn scalar(bytes: &mut Vec<u8>, value: f64) {
+            let raw = value.to_be_bytes();
+            assert_eq!(raw[0], 0x40);
+            bytes.push(0x2d);
+            bytes.extend_from_slice(&raw[1..]);
+        }
+        let mut bytes = b"srf_array\0\xf8\x02".to_vec();
+        bytes.extend_from_slice(&[7, 0x24, 4, 1, 0, 0, 0x18, 0xe4, 0x12]);
+        for value in [4.0, 4.0, 6.0, 8.0, 6.0, 8.0, 12.0] {
+            scalar(&mut bytes, value);
+        }
+        bytes.extend_from_slice(&[0xf7, 0x25, 0xe3]);
+        bytes.extend_from_slice(&[0x0f, 0x18, 0xe5, 0x0f, 0x18, 0xe5, 0x0f]);
+        for value in [4.0, 6.0, 8.0] {
+            scalar(&mut bytes, value);
+        }
+        bytes.extend_from_slice(if radius == 2.0 {
+            &[0x2f, 0x00, 0x00]
+        } else {
+            &[0x2f, 0x08, 0x00]
+        });
+        bytes.push(0xe3);
+        bytes.extend_from_slice(&[8, 0x22, 4, 1, 0, 0]);
+        bytes.extend_from_slice(&[0x18; 10]);
+        bytes.extend_from_slice(&[
+            0xe3, 0x0f, 0x18, 0xe5, 0x0f, 0x18, 0xe5, 0x0f, 0x18, 0xe5, 0xe1, 0xf7, 0x25, 0xe3,
+        ]);
+        bytes.extend_from_slice(b"crv_array\0\xf3\xf8\0");
+        bytes
+    }
+    for radius in [2.0, 3.0] {
+        let result = decode(build_prt(
+            "integration",
+            &[("ND:0:VisibGeom:0", payload(radius))],
+        ));
+        let cylinders = result
+            .ir()
+            .model
+            .surfaces
+            .iter()
+            .filter_map(|surface| match &surface.geometry {
+                SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(cylinder)) => {
+                    Some(cylinder)
+                }
+                _ => None,
+            })
+            .collect::<Vec<_>>();
+        assert!(result.ir().model.surfaces.iter().any(|surface| {
+            surface.id.as_str() == "creo:visibgeom:surface#8"
+                && matches!(&surface.geometry, SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(plane))
+                    if plane.origin().get() == cadmpeg_ir::math::Point3::new(0.0, 0.0, 0.0))
+        }));
+        if radius == 2.0 {
+            assert_eq!(cylinders.len(), 1);
+            assert_eq!(cylinders[0].radius().get(), 2.0);
+            assert_eq!(cylinders[0].origin().get(), [4.0, 6.0, 8.0].into());
+            assert_eq!(
+                *cylinders[0].frame().axis().as_raw(),
+                [0.0, 0.0, 1.0].into()
+            );
+            assert_eq!(
+                *cylinders[0].frame().reference().as_raw(),
+                [1.0, 0.0, 0.0].into()
+            );
+        } else {
+            assert!(cylinders.is_empty());
+            assert!(result.report().losses.iter().any(|loss| {
+                loss.code == crate::loss::CreoLossCode::CylinderRotationEnvelopeUnresolved.kind()
+            }));
+        }
+        assert_valid(&result);
+    }
+}
+
+#[test]
+fn compact_rotation_cylinder_decode_and_validation_share_admission() {
+    let body = [
+        0x11, 0x18, 0x13, 0x2f, 0x10, 0, 0x2f, 0, 0, 0x18, 0x48, 0x10, 0, 0x2f, 0x18, 0, 0x2f,
+        0x10, 0, 0x18, 0xe3, 0x0f, 0x18, 0xe6, 0x10, 0x18, 0x0f, 0x18, 0x2f, 0x10, 0, 0xe4, 0x48,
+        0, 0, 0x2f, 0, 0, 0xe3,
+    ];
+    for section in ["ActDatums", "VisibGeom"] {
+        for agrees in [true, false] {
+            let mut body = body;
+            if !agrees {
+                body[10] = 0x2f;
+            }
+            let mut payload = b"srf_array\0\xf8\x02".to_vec();
+            payload.extend_from_slice(&[9, 0x24, 4, 0xf6, 0, 11]);
+            payload.extend_from_slice(&body[..20]);
+            payload.extend_from_slice(
+                b"\xe0\x00srf_prim_ptr(cylinder)\0\xe3\xe0\x02local_sys\0\xf9\x04\x03",
+            );
+            payload.extend_from_slice(&body[21..35]);
+            payload.extend_from_slice(b"\xe0\x02radius\0");
+            payload.extend_from_slice(&body[35..38]);
+            payload.extend_from_slice(b"\xf1\xf7\x0e\xe3");
+            payload.extend_from_slice(&[11, 0x24, 4, 0xf6, 0, 0]);
+            payload.extend_from_slice(&body);
+            let section_name = format!("ND:0:{section}:0");
+            let mut curves = b"crv_array\0\xf3\xf8\x02".to_vec();
+            curves.extend_from_slice(
+                b"crv_id\0\x15 type\0\x08 feat_id\0\x04 crv_pnt_dir\0\xf8\x02\x01\xf6",
+            );
+            curves.extend_from_slice(b"crv_hdr_geom_ptr[0]\0\x09 crv_hdr_geom_ptr[1]\0\x0b next_crv_hdr_ptr[0]\0\x16 next_crv_hdr_ptr[1]\0\x16 topol_ref_data\0\xe3");
+            push_generated_topology_row(&mut curves, 22, [9, 11], [21, 21]);
+            let result = decode(build_prt(
+                "c",
+                &[
+                    (section_name.as_str(), payload),
+                    ("ND:0:VisibGeom:1", curves),
+                ],
+            ));
+            let namespace = if section == "ActDatums" {
+                "actdatums"
+            } else {
+                "visibgeom"
+            };
+            assert_valid(&result);
+            let native = result
+                .ir()
+                .native
+                .namespace("creo")
+                .expect("retained native topology");
+            let promoted = native
+                .arenas()
+                .get("curve_topology_rows")
+                .into_iter()
+                .flatten()
+                .any(|row| {
+                    row.fields()
+                        .is_ok_and(|fields| fields.get("curve_id") == Some(&serde_json::json!(21)))
+                });
+            assert_eq!(promoted, agrees || section == "VisibGeom");
+            if agrees {
+                for id in [9, 11] {
+                    let cylinder = result
+                        .ir()
+                        .model
+                        .surfaces
+                        .iter()
+                        .find_map(|surface| {
+                            if surface.id.as_str() != format!("creo:{namespace}:surface#{id}") {
+                                return None;
+                            }
+                            match &surface.geometry {
+                                SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(
+                                    cylinder,
+                                )) => Some(cylinder),
+                                _ => None,
+                            }
+                        })
+                        .expect("admitted named or positional cylinder");
+                    assert_eq!(cylinder.origin().get(), [4.0, 4.0, -2.0].into());
+                    assert_eq!(*cylinder.frame().axis().as_raw(), [0.0, -1.0, 0.0].into());
+                }
+            } else {
+                assert!(result.report().losses.iter().any(|loss| {
+                    loss.code == crate::loss::CreoLossCode::CylinderRotationFrameUnresolved.kind()
+                }));
+                for id in [9, 11] {
+                    assert!(!result.ir().model.surfaces.iter().any(|surface| {
+                        surface.id.as_str() == format!("creo:{namespace}:surface#{id}")
+                            && matches!(
+                                surface.geometry,
+                                SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(_))
+                            )
+                    }));
+                }
+            }
+        }
+    }
+    let mut payload = b"srf_array\0\xf8\x01".to_vec();
+    payload.extend_from_slice(&[9, 0x24, 4, 0x01, 0, 0]);
+    payload.extend_from_slice(&[
+        0x11, 0x18, 0x13, 0x2f, 0x10, 0, 0x48, 0, 0, 0x18, 0x19, 0, 0, 0, 0, 0, 0, 0, 0x2f, 0, 0,
+        0x2f, 0x10, 0, 0x2f, 0, 0,
+    ]);
+    payload.extend_from_slice(b"\xe0\x00srf_prim_ptr(cylinder)\0\xe3\xe0\x02local_sys\0\xf9\x04\x03\x0f\x18\xe6\x0f\x18\x10\x18\xe6\xe0\x02radius\0\x2f\x00\x00\xf1\xf7\x0e");
+    let result = decode(build_prt("c", &[("ND:0:VisibGeom:0", payload)]));
+    assert_valid(&result);
+    let cylinder = result
+        .ir()
+        .model
+        .surfaces
+        .iter()
+        .find_map(|surface| {
+            if surface.id.as_str() == "creo:visibgeom:surface#9" {
+                if let SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(cylinder)) =
+                    &surface.geometry
+                {
+                    return Some(cylinder);
+                }
+            }
+            None
+        })
+        .expect("named first-instance cylinder");
+    assert_eq!(cylinder.origin().get(), [0.0, 0.0, 0.0].into());
+}

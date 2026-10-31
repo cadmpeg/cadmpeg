@@ -47,7 +47,13 @@ fn revolve_fixed_angles_have_positive_sign_and_one_turn_limit() {
             }))
             .is_err());
         }
-        for (angle, valid) in [(PI, true), (TAU, true), (TAU + PI, false)] {
+        for (angle, valid) in [
+            (PI, true),
+            (TAU, true),
+            (TAU + 1.0e-13, true),
+            (TAU + 1.0e-9, false),
+            (TAU + PI, false),
+        ] {
             let extent: RevolveExtent = serde_json::from_value(json!({
                 "kind": kind, "termination": {"kind": "angle", "angle": angle}
             }))
@@ -55,7 +61,12 @@ fn revolve_fixed_angles_have_positive_sign_and_one_turn_limit() {
             assert_eq!(extent.angles_within_turn(), valid);
         }
     }
-    for (first, second, valid) in [(PI, PI, true), (PI, PI / 2.0, true), (TAU, PI, false)] {
+    for (first, second, valid) in [
+        (PI, PI, true),
+        (PI, PI / 2.0, true),
+        (PI + 7.0e-15, PI + 7.0e-15, true),
+        (TAU, PI, false),
+    ] {
         let extent: RevolveExtent = serde_json::from_value(json!({
             "kind": "two_sided",
             "first": {"kind": "angle", "angle": first},

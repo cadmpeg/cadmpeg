@@ -27,12 +27,6 @@ const SOURCE_TYPE: [u8; 16] = [
 const COMPONENT_TYPE: [u8; 16] = [
     0xa0, 0x34, 0x36, 0x3f, 0xd3, 0x11, 0x91, 0xb5, 0xc0, 0x00, 0x03, 0x85, 0xe8, 0x9c, 0x6b, 0x4f,
 ];
-const TAGGING_CLASS: super::ClassId =
-    super::ClassId(cadmpeg_ir::native::bytes::NativeBytes::new([
-        0xe8, 0x99, 0xdb, 0xdf, 0xd3, 0x11, 0x65, 0xaf, 0xc0, 0x00, 0x01, 0x85, 0xe8, 0x9c, 0x6b,
-        0x4f,
-    ]));
-
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
 pub(crate) enum Property {
@@ -256,21 +250,6 @@ pub(crate) fn native_source_loss(
         .count();
     (count != 0).then(|| crate::loss::InventorLossCode::FeatureDerivedSourceNative.note(format!(
         "{count} derived component source construction(s), including external document selection and source placement, remain in native records. Stored result geometry supplies no replayable external construction."
-    )))
-}
-
-pub(crate) fn native_tagging_loss(
-    labels: &[super::PmDcFeatureLabel],
-) -> Option<cadmpeg_ir::report::loss::LossNote> {
-    if !labels.iter().any(|label| label.class_id() == CLASS_ID) {
-        return None;
-    }
-    let count = labels
-        .iter()
-        .filter(|label| label.class_id() == TAGGING_CLASS)
-        .count();
-    (count != 0).then(|| crate::loss::InventorLossCode::FeatureDerivedTaggingNative.note(format!(
-        "{count} derived-part tagging operation(s) retain native result selections without a neutral construction rule."
     )))
 }
 

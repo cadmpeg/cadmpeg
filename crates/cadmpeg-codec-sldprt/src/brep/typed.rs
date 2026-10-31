@@ -828,6 +828,12 @@ pub(super) fn schema_prefix_end(bytes: &[u8], offset: usize) -> Option<usize> {
     schema::edited_payload(bytes, offset).map(|(_, end)| end)
 }
 
+/// The node type of the edited type header at `offset` and the offset of
+/// the class's first record after it (spec §4.1).
+pub(super) fn edited_header_end(bytes: &[u8], offset: usize) -> Option<(u16, usize)> {
+    schema::edited_header(bytes, offset)
+}
+
 pub(super) fn tagged_owner_prefix_end(bytes: &[u8], offset: usize) -> Option<usize> {
     let tag = bytes.get(offset..offset.checked_add(2)?)?;
     if tag == BODY_TAG {

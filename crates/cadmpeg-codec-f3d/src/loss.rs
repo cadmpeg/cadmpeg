@@ -26,6 +26,12 @@ use cadmpeg_ir::report::{
 pub(crate) enum F3dLossCode {
     /// A direct operation-table pose is applied uniformly to its definition.
     OperationPoseApplied,
+    /// A scope namespace has no unique neutral product definition.
+    ScopeOwnerUnresolved,
+    /// A history output body belongs to another product definition.
+    ScopeOutputOwnerMismatch,
+    /// A bound sketch collection belongs to another product definition.
+    ScopeSketchOwnerMismatch,
     /// Component-path constraints prevent a uniform operation-table pose.
     OperationPoseDisagrees,
     /// An operation table has no unique admitted neutral placement.
@@ -81,6 +87,8 @@ pub(crate) enum F3dLossCode {
     RootInstanceDefinitionUnbound,
     /// Alternate occurrence frames without a unique primary-indexed selection.
     LocalOccurrenceEnvelopeSuperseded,
+    /// An identity carrier has an unresolved later ordinal.
+    LocalOccurrenceIdentityOrdinalUnresolved,
     /// Saved free-edge bodies without a product-definition owner.
     SavedFreeEdgeBodyUnowned,
     /// Design assembly joint scopes whose operands, frames, limits, or alignment values do not
@@ -145,6 +153,12 @@ pub(crate) enum F3dLossCode {
     MoveUnprojected,
     /// Hole extent controls do not define an admitted termination.
     HoleExtentUnproven,
+    /// Align operand roles and motion have no neutral binding.
+    AlignOperandsUnresolved,
+    /// Align has no admitted specialized prefix.
+    AlignEnvelopeUnparsed,
+    /// The referenced Align constructor has no admitted layout.
+    AlignConstructionUnparsed,
     /// A decoded native feature envelope has no interpreted specialized payload.
     FeatureScopePayloadUninterpreted,
     /// Emboss controls, native pairs, and selected contours have no neutral mapping.
@@ -180,6 +194,8 @@ pub(crate) enum F3dLossCode {
     HistoricalEdgeMidpointsUnresolved,
     /// Historical body bounding geometry could not be computed from point carriers.
     HistoricalBodyBoundsUnresolved,
+    /// A Split output transition chain is incomplete or ambiguous.
+    HistoricalOutputTransitionUnresolved,
     /// Sketch relations retain native operands; no unique neutral relation.
     SketchRelationNativeRetained,
     /// Sketch dimensions retain native operands; no unique neutral dimension.
@@ -381,6 +397,9 @@ impl F3dLossCode {
     #[cfg(test)]
     const ALL: &'static [F3dLossCode] = &[
         Self::OperationPoseApplied,
+        Self::ScopeOwnerUnresolved,
+        Self::ScopeOutputOwnerMismatch,
+        Self::ScopeSketchOwnerMismatch,
         Self::OperationPoseDisagrees,
         Self::OperationPoseNative,
         Self::DimensionCompanionUntyped,
@@ -407,6 +426,7 @@ impl F3dLossCode {
         Self::ComponentNamingSpaceUnbound,
         Self::RootInstanceDefinitionUnbound,
         Self::LocalOccurrenceEnvelopeSuperseded,
+        Self::LocalOccurrenceIdentityOrdinalUnresolved,
         Self::SavedFreeEdgeBodyUnowned,
         Self::AssemblyJointUnprojected,
         Self::AssemblyRigidGroupFrameUnparsed,
@@ -436,6 +456,9 @@ impl F3dLossCode {
         Self::FeatureScopeUnprojected,
         Self::MoveUnprojected,
         Self::HoleExtentUnproven,
+        Self::AlignOperandsUnresolved,
+        Self::AlignEnvelopeUnparsed,
+        Self::AlignConstructionUnparsed,
         Self::FeatureScopePayloadUninterpreted,
         Self::EmbossControlsNative,
         Self::EmbossPrefixUnparsed,
@@ -453,6 +476,7 @@ impl F3dLossCode {
         Self::HistoricalFaceSelectionUnbound,
         Self::HistoricalEdgeMidpointsUnresolved,
         Self::HistoricalBodyBoundsUnresolved,
+        Self::HistoricalOutputTransitionUnresolved,
         Self::SketchRelationNativeRetained,
         Self::SketchDimensionNativeRetained,
         Self::SketchPlacementUnprojected,
@@ -549,6 +573,9 @@ impl F3dLossCode {
     #[must_use]
     const fn code(self) -> &'static str {
         match self {
+            Self::ScopeOwnerUnresolved => "scope.owner-unresolved",
+            Self::ScopeOutputOwnerMismatch => "scope.output-owner-mismatch",
+            Self::ScopeSketchOwnerMismatch => "scope.sketch-owner-mismatch",
             Self::OperationPoseApplied => "assembly.operation-table-pose",
             Self::OperationPoseDisagrees => "assembly.operation-table-pose-disagrees",
             Self::OperationPoseNative => "assembly.operation-table-pose-native",
@@ -580,6 +607,9 @@ impl F3dLossCode {
             Self::ComponentNamingSpaceUnbound => "assembly.component-naming-space-unbound",
             Self::RootInstanceDefinitionUnbound => "assembly.root-instance-definition-unbound",
             Self::SavedFreeEdgeBodyUnowned => "assembly.saved-free-edge-body-unowned",
+            Self::LocalOccurrenceIdentityOrdinalUnresolved => {
+                "assembly.local-occurrence-identity-ordinal-unresolved"
+            }
             Self::LocalOccurrenceEnvelopeSuperseded => {
                 "assembly.local-occurrence-envelope-superseded"
             }
@@ -610,6 +640,9 @@ impl F3dLossCode {
             Self::SheetThicknessUnruled => "feature.sheet-thickness-unruled",
             Self::EmbossControlsNative => "feature.emboss-controls-native",
             Self::EmbossPrefixUnparsed => "feature.emboss-prefix-unparsed",
+            Self::AlignOperandsUnresolved => "feature.align-operands-unresolved",
+            Self::AlignEnvelopeUnparsed => "feature.align-envelope-unparsed",
+            Self::AlignConstructionUnparsed => "feature.align-construction-unparsed",
             Self::FeatureScopePayloadUninterpreted => "feature.scope-payload-uninterpreted",
             Self::FeatureScopeEnvelopeSuperseded => "feature.scope-envelope-superseded",
             Self::HoleExtentUnproven => "feature.hole-extent-unproven",
@@ -627,6 +660,7 @@ impl F3dLossCode {
             Self::HistoricalFaceSelectionUnbound => "history.face-selection-unbound",
             Self::HistoricalEdgeMidpointsUnresolved => "history.edge-midpoints-unresolved",
             Self::HistoricalBodyBoundsUnresolved => "history.body-bounds-unresolved",
+            Self::HistoricalOutputTransitionUnresolved => "history.output-transition-unresolved",
             Self::HistoryDependencyAmbiguous => "history.dependency-ambiguous",
             Self::SketchRelationNativeRetained => "sketch.relation-native",
             Self::SketchDimensionNativeRetained => "sketch.dimension-native",
@@ -733,8 +767,10 @@ impl F3dLossCode {
     #[must_use]
     const fn severity(self) -> Severity {
         match self {
+            Self::ScopeOutputOwnerMismatch | Self::ScopeSketchOwnerMismatch => Severity::Warning,
             Self::WriterAppearancePropertiesOmitted => Severity::Warning,
-            Self::OperationPoseApplied
+            Self::ScopeOwnerUnresolved
+            | Self::OperationPoseApplied
             | Self::OperationPoseNative
             | Self::BodylessDesignCarrier
             | Self::XrefPlacementMetadataNative
@@ -787,6 +823,7 @@ impl F3dLossCode {
             | Self::ComponentInsertUnplaced
             | Self::ComponentInsertOrderUnknown
             | Self::SavedFreeEdgeBodyUnowned
+            | Self::LocalOccurrenceIdentityOrdinalUnresolved
             | Self::LocalOccurrenceEnvelopeSuperseded
             | Self::RootInstanceDefinitionUnbound
             | Self::ComponentDefinitionRevised
@@ -815,6 +852,9 @@ impl F3dLossCode {
             | Self::FeatureScopeUnprojected
             | Self::EmbossControlsNative
             | Self::EmbossPrefixUnparsed
+            | Self::AlignOperandsUnresolved
+            | Self::AlignEnvelopeUnparsed
+            | Self::AlignConstructionUnparsed
             | Self::MoveUnprojected
             | Self::FeatureScopePayloadUninterpreted
             | Self::FeatureScopeEnvelopeSuperseded
@@ -831,6 +871,7 @@ impl F3dLossCode {
             | Self::HistoricalFaceSelectionUnbound
             | Self::HistoricalEdgeMidpointsUnresolved
             | Self::HistoricalBodyBoundsUnresolved
+            | Self::HistoricalOutputTransitionUnresolved
             | Self::SketchRelationNativeRetained
             | Self::SketchDimensionNativeRetained
             | Self::SketchPlacementUnprojected
@@ -902,6 +943,9 @@ impl F3dLossCode {
     /// The shared cross-codec category this loss reports under.
     const fn shared_taxonomy(self) -> LossTaxonomy {
         match self {
+            Self::ScopeOutputOwnerMismatch | Self::ScopeSketchOwnerMismatch => {
+                LossTaxonomy::FeatureHistoryRetained
+            }
             Self::WriterAppearancePropertiesOmitted => LossTaxonomy::AppearanceReduced,
             Self::DimensionCompanionUntyped
             | Self::BodyReferenceTailUntyped
@@ -913,7 +957,8 @@ impl F3dLossCode {
             | Self::SolvedRecordUntyped
             | Self::KernelCarrierUnparseable
             | Self::TsplineRecordUntyped => LossTaxonomy::RecordNotTyped,
-            Self::OperationPoseApplied
+            Self::ScopeOwnerUnresolved
+            | Self::OperationPoseApplied
             | Self::OperationPoseDisagrees
             | Self::OperationPoseNative
             | Self::ConfigurationMemberUnassigned
@@ -961,6 +1006,9 @@ impl F3dLossCode {
             | Self::FeatureScopeUnprojected
             | Self::EmbossControlsNative
             | Self::EmbossPrefixUnparsed
+            | Self::AlignOperandsUnresolved
+            | Self::AlignEnvelopeUnparsed
+            | Self::AlignConstructionUnparsed
             | Self::MoveUnprojected
             | Self::FeatureScopePayloadUninterpreted
             | Self::FeatureScopeEnvelopeSuperseded
@@ -973,6 +1021,7 @@ impl F3dLossCode {
             | Self::HistoricalFaceSelectionUnbound
             | Self::HistoricalEdgeMidpointsUnresolved
             | Self::HistoricalBodyBoundsUnresolved
+            | Self::HistoricalOutputTransitionUnresolved
             | Self::SketchRelationNativeRetained
             | Self::SketchDimensionNativeRetained
             | Self::SketchPlacementUnprojected
@@ -1020,6 +1069,7 @@ impl F3dLossCode {
             | Self::ComponentInsertUnplaced
             | Self::ComponentInsertOrderUnknown
             | Self::SavedFreeEdgeBodyUnowned
+            | Self::LocalOccurrenceIdentityOrdinalUnresolved
             | Self::LocalOccurrenceEnvelopeSuperseded
             | Self::RootInstanceDefinitionUnbound
             | Self::ComponentDefinitionRevised
@@ -1118,6 +1168,9 @@ mod tests {
             codes,
             [
                 "assembly.operation-table-pose",
+                "scope.owner-unresolved",
+                "scope.output-owner-mismatch",
+                "scope.sketch-owner-mismatch",
                 "assembly.operation-table-pose-disagrees",
                 "assembly.operation-table-pose-native",
                 "dimension.companion-untyped",
@@ -1144,6 +1197,7 @@ mod tests {
                 "assembly.component-naming-space-unbound",
                 "assembly.root-instance-definition-unbound",
                 "assembly.local-occurrence-envelope-superseded",
+                "assembly.local-occurrence-identity-ordinal-unresolved",
                 "assembly.saved-free-edge-body-unowned",
                 "assembly.joint-unprojected",
                 "assembly.rigid-group-frame-unparsed",
@@ -1173,6 +1227,9 @@ mod tests {
                 "feature.scope-unprojected",
                 "feature.move-unprojected",
                 "feature.hole-extent-unproven",
+                "feature.align-operands-unresolved",
+                "feature.align-envelope-unparsed",
+                "feature.align-construction-unparsed",
                 "feature.scope-payload-uninterpreted",
                 "feature.emboss-controls-native",
                 "feature.emboss-prefix-unparsed",
@@ -1190,6 +1247,7 @@ mod tests {
                 "history.face-selection-unbound",
                 "history.edge-midpoints-unresolved",
                 "history.body-bounds-unresolved",
+                "history.output-transition-unresolved",
                 "sketch.relation-native",
                 "sketch.dimension-native",
                 "sketch.placement-unprojected",

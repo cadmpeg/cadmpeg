@@ -99,6 +99,7 @@ fn surface_stitch_fixture() -> StitchFixture {
                         opaque_scalar: 0.0,
                         opaque_scalar_offset: 22,
                         variant: false,
+                        closing_flag: false,
                     },
                 )
                 .unwrap(),
@@ -192,6 +193,7 @@ fn surface_stitch_fixture() -> StitchFixture {
     );
     let feature_id = FeatureId::mint("f3d:model:feature#42").expect("identity grammar");
     let mut feature = Feature {
+        product_definition: None,
         id: feature_id.clone(),
         ordinal: 0,
         name: None,
