@@ -74,6 +74,79 @@ pub(crate) fn plane(
     Some(complete.ok_or("angular plane rotation requires exactly twelve finite slots and complete field consumption"))
 }
 
+/// The ten angular-stream scalars that open a plane envelope: the parameter
+/// rectangle `u0, v0, u1, v1`, then the XYZ minima and the XYZ maxima. Bytes
+/// after the tenth scalar (a linkage field) are not read.
+pub(crate) fn envelope(body: &[u8], cache: &ScalarCache) -> Option<[f64; 10]> {
+    let mut values = [0.0; 10];
+    let mut cursor = 0;
+    let mut slot = 0usize;
+    while slot < values.len() {
+        let (value, count, end) = sweep::run(
+            body,
+            cursor,
+            slot.checked_sub(1).map(|index| values[index]),
+            cache,
+        )?;
+        let next = slot.checked_add(count)?;
+        values.get_mut(slot..next)?.fill(value);
+        cursor = end;
+        slot = next;
+    }
+    values
+        .iter()
+        .all(|value| value.is_finite())
+        .then_some(values)
+}
+
+/// Whether the parameter rectangle of a plane envelope, mapped through the
+/// chart `origin + u * first + v * second`, has exactly the XYZ minima and
+/// maxima the envelope stores.
+pub(crate) fn chart_reproduces_envelope(
+    envelope: &[f64; 10],
+    origin: [f64; 3],
+    first: [f64; 3],
+    second: [f64; 3],
+) -> bool {
+    let [u0, v0, u1, v1, ..] = *envelope;
+    let corner = |u: f64, v: f64| -> [f64; 3] {
+        std::array::from_fn(|axis| origin[axis] + u * first[axis] + v * second[axis])
+    };
+    let corners = [
+        corner(u0, v0),
+        corner(u0, v1),
+        corner(u1, v0),
+        corner(u1, v1),
+    ];
+    (0..3).all(|axis| {
+        let low = corners
+            .iter()
+            .map(|point| point[axis])
+            .fold(f64::INFINITY, f64::min);
+        let high = corners
+            .iter()
+            .map(|point| point[axis])
+            .fold(f64::NEG_INFINITY, f64::max);
+        [(low, envelope[4 + axis]), (high, envelope[7 + axis])]
+            .into_iter()
+            .all(|(chart, stored)| {
+                (chart - stored).abs() <= EPS_SUPPORT_FRAME_AGREEMENT * stored.abs().max(1.0)
+            })
+    })
+}
+
+/// Whether a complete angular-stream rotation (nine row-major direction slots,
+/// three origin slots) has a chart whose columns reproduce the envelope.
+pub(crate) fn plane_reproduces_envelope(slots: &FiniteVector<12>, envelope: &[f64; 10]) -> bool {
+    let m = slots.as_raw();
+    chart_reproduces_envelope(
+        envelope,
+        [m[9], m[10], m[11]],
+        [m[0], m[3], m[6]],
+        [m[1], m[4], m[7]],
+    )
+}
+
 pub(crate) fn pcurve(
     body: &[u8],
     cache: &ScalarCache,

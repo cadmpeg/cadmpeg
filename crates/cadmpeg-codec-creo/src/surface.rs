@@ -7716,6 +7716,16 @@ pub(crate) fn plane_local_systems_for_rows(
             }
             let body = &payload[chunk_start..chunk_end];
             let decoded = complete_plane_local_system(ctx, body, &cache, losses)?;
+            let decoded = plane_frame_by_envelope(
+                decoded,
+                payload
+                    .get(envelope_start..envelope_close)
+                    .unwrap_or_default(),
+                body.strip_suffix(&[0xe1]).unwrap_or(body),
+                (row.id, chunk_start),
+                &cache,
+                losses,
+            );
             let slots = decoded
                 .as_ref()
                 .map_or([None; 12], |(slots, _)| slots.get().map(Some));
@@ -7785,6 +7795,112 @@ pub(crate) fn plane_local_systems_for_rows(
         }
     }
     Ok(systems)
+}
+
+type PlaneFrameReading = Option<(
+    cadmpeg_ir::units::FiniteVector<12>,
+    scalar::PlaneSupportFrameLayout,
+)>;
+
+/// Origin, first parameter direction, and plane normal of a decoded reading.
+fn plane_reading_chart(
+    slots: cadmpeg_ir::units::FiniteVector<12>,
+    layout: scalar::PlaneSupportFrameLayout,
+) -> Option<([f64; 3], [f64; 3], [f64; 3])> {
+    let frame = PlaneLocalSystem {
+        surface_id: 0,
+        body: Vec::new(),
+        slots: slots.get().map(Some),
+        layout: Some(layout),
+        classification: LocalSystemClassification::Unclassified,
+        row_offset: 0,
+        offset: 0,
+    }
+    .frame();
+    let direction = |value: UnitVector3| -> [f64; 3] { Vector3::from(value).into() };
+    Some((
+        frame.origin?,
+        direction(frame.u_axis?),
+        direction(frame.normal?),
+    ))
+}
+
+/// Whether the reading's chart maps the envelope rectangle onto the stored
+/// extrema; the second parameter direction is `normal x first`.
+fn plane_reading_reproduces_envelope(
+    chart: ([f64; 3], [f64; 3], [f64; 3]),
+    envelope: &[f64; 10],
+) -> bool {
+    let (origin, first, normal) = chart;
+    let second = [
+        normal[1] * first[2] - normal[2] * first[1],
+        normal[2] * first[0] - normal[0] * first[2],
+        normal[0] * first[1] - normal[1] * first[0],
+    ];
+    scalar::sheet_frames::chart_reproduces_envelope(envelope, origin, first, second)
+}
+
+/// Choose between a support-frame production and an angular-stream rotation
+/// that both admit the same local-system bytes.
+///
+/// The plane's own envelope stores the parameter rectangle and the XYZ extrema
+/// of its image. A reading whose chart reproduces those extrema owns the
+/// bytes. When the angular rotation reproduces them and the production's frame
+/// does not, the rotation replaces it. When both reproduce them with different
+/// frames, neither is chosen and the refusal is attributed.
+fn plane_frame_by_envelope(
+    decoded: PlaneFrameReading,
+    envelope: &[u8],
+    frame_body: &[u8],
+    (plane, offset): (u32, usize),
+    cache: &scalar::ScalarCache,
+    losses: &mut Vec<cadmpeg_ir::report::loss::LossNote>,
+) -> PlaneFrameReading {
+    let Some(Ok(angular)) = scalar::sheet_frames::plane(frame_body, cache) else {
+        return decoded;
+    };
+    let rotation = scalar::PlaneSupportFrameLayout::RotationColumns;
+    let Some(envelope) = scalar::sheet_frames::envelope(envelope, cache) else {
+        return decoded;
+    };
+    if !scalar::sheet_frames::plane_reproduces_envelope(&angular, &envelope) {
+        return decoded;
+    }
+    let Some((slots, layout)) = decoded else {
+        return Some((angular, rotation));
+    };
+    let Some(production) = plane_reading_chart(slots, layout) else {
+        return Some((angular, rotation));
+    };
+    let close = |left: [f64; 3], right: [f64; 3]| {
+        left.into_iter()
+            .zip(right)
+            .all(|(left, right)| (left - right).abs() <= EPS_SURFACE_AGREEMENT)
+    };
+    let angular_chart = plane_reading_chart(angular, rotation);
+    if !plane_reading_reproduces_envelope(production, &envelope) {
+        // The production misread the stream when the two origins differ (the
+        // rotation's origin is paired with the envelope). When the origins
+        // agree only the matrix orientation is disputed; that reading is kept
+        // and the disagreement is attributed.
+        if angular_chart.is_some_and(|chart| !close(chart.0, production.0)) {
+            return Some((angular, rotation));
+        }
+        losses.push(crate::loss::CreoLossCode::PlaneAngularFrameUnresolved.note(format!(
+            "Plane {plane} local system at payload byte {offset}: an angular rotation reproduces the envelope extrema, but the support-frame reading with the same origin was kept",
+        )));
+        return Some((slots, layout));
+    }
+    let same = angular_chart.is_some_and(|chart| {
+        close(chart.0, production.0) && close(chart.1, production.1) && close(chart.2, production.2)
+    });
+    if same {
+        return Some((slots, layout));
+    }
+    losses.push(crate::loss::CreoLossCode::PlaneAngularFrameUnresolved.note(format!(
+        "Plane {plane} local system at payload byte {offset}: an angular rotation and a support-frame production both reproduce the envelope extrema with different charts; neither is chosen and its bytes remain native",
+    )));
+    None
 }
 
 /// Decode plane positional envelope bodies into their two defined layouts.

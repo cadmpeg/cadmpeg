@@ -84,7 +84,9 @@ pub(crate) enum CreoLossCode {
     SurfacePrototypeFieldRetained,
     /// A compact plane rotation has no complete finite origin.
     PlaneCompactFrameUnresolved,
-    /// A selected angular wall chart fails complete scalar-field admission.
+    /// A selected angular wall chart fails complete scalar-field admission, or
+    /// it and a support-frame production both reproduce the plane envelope with
+    /// different charts.
     PlaneAngularFrameUnresolved,
     /// A bounded angular endpoint body has an unresolved signed literal.
     AngularEndpointLiteralUnresolved,

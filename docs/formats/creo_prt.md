@@ -2085,8 +2085,28 @@ each pairwise dot product has magnitude at most `1e-9`, and
 `(U × V) · N` differs from one by at most `1e-9`. Column zero defines the
 parameter reference direction, and column two defines the plane normal.
 The final three finite slots define the chart origin. The complete bounded
-field contains exactly twelve slots. The plane support-frame productions take precedence: an
-angular-stream rotation is read only when none of them admits the body.
+field contains exactly twelve slots.
+
+The plane's envelope arbitrates between this rotation and the plane
+support-frame productions. The envelope opens with ten angular-stream scalars
+`u0, v0, u1, v1`, XYZ minima, and XYZ maxima; later linkage bytes are not read.
+A reading reproduces the envelope when its four chart corners
+`origin + u * first + v * second`, for `u` in `{u0, u1}` and `v` in `{v0, v1}`,
+have exactly the stored XYZ minima and maxima, each within `1e-9` scaled by
+`max(1, |stored|)`. For this rotation `first` is column zero and `second` is
+column one; for a production, `first` is its first parameter direction and
+`second` is the plane normal crossed with `first`. When a production admits the
+body and the rotation reproduces the envelope while the production's chart does
+not, the rotation replaces the production's reading if the two origins differ
+by more than `1e-9` in any component. When the origins agree, only the matrix
+orientation is disputed: the production's reading is kept and the
+`geometry.plane-angular-frame-unresolved` loss is recorded. When both charts
+reproduce the envelope with different origin, first direction, or normal
+(components within `1e-9`), neither is chosen: the plane keeps no local-system
+frame and the same loss is recorded. When no production admits the body, a
+complete rotation is read without an envelope
+check. A body that no production admits and whose rotation fails the
+complete-field admission yields no frame, and the same loss attributes it.
 
 A complete positional compact rotation frame can end with
 `e1 f7 <nonzero-canonical-reference>` before its compound close. The `e1`

@@ -1412,8 +1412,10 @@ pub(crate) fn decode_plane_support_local_system(
     if let Some(frame) = decode_support_frame_productions(ctx, body, cache, losses)? {
         return Ok(Some(frame));
     }
-    // A complete angular-stream rotation is read only when no support-frame
-    // production admits the body; the caller attributes an incomplete one.
+    // A complete angular-stream rotation is read here only when no support-frame
+    // production admits the body. Where a production does admit it, the plane
+    // row's own envelope arbitrates (`surface::plane_local_systems_for_rows`);
+    // the caller attributes an incomplete rotation.
     Ok(match sheet_frames::plane(body, cache) {
         Some(Ok(slots)) => Some((slots, PlaneSupportFrameLayout::RotationColumns)),
         _ => None,
