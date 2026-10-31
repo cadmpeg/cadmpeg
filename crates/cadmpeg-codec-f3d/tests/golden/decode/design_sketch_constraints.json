@@ -2127,6 +2127,16 @@
         "code": {
           "scope": "namespaced",
           "namespace": "f3d",
+          "code": "feature.output-state-chain-unbound",
+          "kind": "feature_history_retained"
+        },
+        "severity": "warning",
+        "message": "f3d:model:feature#52:f3d%3AFusionAssetName[Active]/Design1/BulkStream.dat6:Sketch1:1100 has no complete unique output transition chain from state 16777215 to state 1."
+      },
+      {
+        "code": {
+          "scope": "namespaced",
+          "namespace": "f3d",
           "code": "sketch.curve-unprofiled",
           "kind": "feature_history_retained"
         },

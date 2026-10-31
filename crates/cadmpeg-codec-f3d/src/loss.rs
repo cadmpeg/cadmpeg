@@ -140,6 +140,10 @@ pub(crate) enum F3dLossCode {
     FeatureStoredBodiesRecipeAbsent,
     /// A Base Feature has no complete unique body binding.
     FeatureStoredBodiesUnbound,
+    /// A feature scope has no complete unique ASM output transition interval.
+    FeatureOutputStateChainUnbound,
+    /// An affected body slot has no unique active body in the selected BREP.
+    FeatureOutputBodyUnbound,
     /// A derived base scope stores a copy of a source and frame that the archive does not contain.
     FeatureDerivedBaseUnresolved,
     /// A box scope has no fully decoded dimensions and local frame.
@@ -194,8 +198,6 @@ pub(crate) enum F3dLossCode {
     HistoricalEdgeMidpointsUnresolved,
     /// Historical body bounding geometry could not be computed from point carriers.
     HistoricalBodyBoundsUnresolved,
-    /// A Split output transition chain is incomplete or ambiguous.
-    HistoricalOutputTransitionUnresolved,
     /// Sketch relations retain native operands; no unique neutral relation.
     SketchRelationNativeRetained,
     /// Sketch dimensions retain native operands; no unique neutral dimension.
@@ -459,6 +461,8 @@ impl F3dLossCode {
         Self::FeatureStoredBodiesEmpty,
         Self::FeatureStoredBodiesRecipeAbsent,
         Self::FeatureStoredBodiesUnbound,
+        Self::FeatureOutputStateChainUnbound,
+        Self::FeatureOutputBodyUnbound,
         Self::FeatureDerivedBaseUnresolved,
         Self::FeatureBoxPrimitiveUnresolved,
         Self::SheetThicknessUnruled,
@@ -485,7 +489,6 @@ impl F3dLossCode {
         Self::HistoricalFaceSelectionUnbound,
         Self::HistoricalEdgeMidpointsUnresolved,
         Self::HistoricalBodyBoundsUnresolved,
-        Self::HistoricalOutputTransitionUnresolved,
         Self::SketchRelationNativeRetained,
         Self::SketchDimensionNativeRetained,
         Self::SketchPlacementUnprojected,
@@ -646,6 +649,8 @@ impl F3dLossCode {
             Self::FeatureStoredBodiesEmpty => "feature.stored-bodies-empty",
             Self::FeatureStoredBodiesRecipeAbsent => "feature.stored-bodies-recipe-absent",
             Self::FeatureStoredBodiesUnbound => "feature.stored-bodies-unbound",
+            Self::FeatureOutputStateChainUnbound => "feature.output-state-chain-unbound",
+            Self::FeatureOutputBodyUnbound => "feature.output-body-unbound",
             Self::FeatureDerivedBaseUnresolved => "feature.derived-base-unresolved",
             Self::FeatureBoxPrimitiveUnresolved => "feature.box-primitive-unresolved",
             Self::FeatureDefinitionIncomplete => "feature.definition-incomplete",
@@ -672,7 +677,6 @@ impl F3dLossCode {
             Self::HistoricalFaceSelectionUnbound => "history.face-selection-unbound",
             Self::HistoricalEdgeMidpointsUnresolved => "history.edge-midpoints-unresolved",
             Self::HistoricalBodyBoundsUnresolved => "history.body-bounds-unresolved",
-            Self::HistoricalOutputTransitionUnresolved => "history.output-transition-unresolved",
             Self::HistoryDependencyAmbiguous => "history.dependency-ambiguous",
             Self::SketchRelationNativeRetained => "sketch.relation-native",
             Self::SketchDimensionNativeRetained => "sketch.dimension-native",
@@ -862,6 +866,8 @@ impl F3dLossCode {
             | Self::EdgeReferenceLostUnrepaired
             | Self::FeatureStoredBodiesEmpty
             | Self::FeatureStoredBodiesRecipeAbsent
+            | Self::FeatureOutputBodyUnbound
+            | Self::FeatureOutputStateChainUnbound
             | Self::FeatureStoredBodiesUnbound
             | Self::FeatureDerivedBaseUnresolved
             | Self::FeatureBoxPrimitiveUnresolved
@@ -890,7 +896,6 @@ impl F3dLossCode {
             | Self::HistoricalFaceSelectionUnbound
             | Self::HistoricalEdgeMidpointsUnresolved
             | Self::HistoricalBodyBoundsUnresolved
-            | Self::HistoricalOutputTransitionUnresolved
             | Self::SketchRelationNativeRetained
             | Self::SketchDimensionNativeRetained
             | Self::SketchPlacementUnprojected
@@ -1021,6 +1026,8 @@ impl F3dLossCode {
             | Self::ParameterOrderBudgetExceeded
             | Self::FeatureStoredBodiesEmpty
             | Self::FeatureStoredBodiesRecipeAbsent
+            | Self::FeatureOutputBodyUnbound
+            | Self::FeatureOutputStateChainUnbound
             | Self::FeatureStoredBodiesUnbound
             | Self::FeatureDerivedBaseUnresolved
             | Self::FeatureBoxPrimitiveUnresolved
@@ -1046,7 +1053,6 @@ impl F3dLossCode {
             | Self::HistoricalFaceSelectionUnbound
             | Self::HistoricalEdgeMidpointsUnresolved
             | Self::HistoricalBodyBoundsUnresolved
-            | Self::HistoricalOutputTransitionUnresolved
             | Self::SketchRelationNativeRetained
             | Self::SketchDimensionNativeRetained
             | Self::SketchPlacementUnprojected
@@ -1246,6 +1252,8 @@ mod tests {
                 "feature.stored-bodies-empty",
                 "feature.stored-bodies-recipe-absent",
                 "feature.stored-bodies-unbound",
+                "feature.output-state-chain-unbound",
+                "feature.output-body-unbound",
                 "feature.derived-base-unresolved",
                 "feature.box-primitive-unresolved",
                 "feature.sheet-thickness-unruled",
@@ -1272,7 +1280,6 @@ mod tests {
                 "history.face-selection-unbound",
                 "history.edge-midpoints-unresolved",
                 "history.body-bounds-unresolved",
-                "history.output-transition-unresolved",
                 "sketch.relation-native",
                 "sketch.dimension-native",
                 "sketch.placement-unprojected",
