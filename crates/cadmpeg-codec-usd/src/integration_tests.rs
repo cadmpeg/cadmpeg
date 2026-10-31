@@ -54,7 +54,8 @@ fn close(left: f64, right: f64) -> bool {
 }
 
 /// Whether `result` holds a body with faces and no tessellation that has a
-/// face off a NURBS surface: the writer writes such a body as a mesh.
+/// face with a loop or off a NURBS surface: the writer writes a mesh of such
+/// a body.
 fn meshed_on_write(result: &cadmpeg_ir::codec::DecodeResult) -> bool {
     let model = &result.ir().model;
     model.bodies.iter().any(|body| {
@@ -70,20 +71,22 @@ fn meshed_on_write(result: &cadmpeg_ir::codec::DecodeResult) -> bool {
                 .flat_map(|shell| shell.faces().iter())
                 .filter_map(|face| model.faces.iter().find(|candidate| &candidate.id == face))
                 .any(|face| {
-                    !model.surfaces.iter().any(|surface| {
-                        surface.id == face.surface
-                            && matches!(
-                                surface.geometry,
-                                cadmpeg_ir::geometry::SurfaceGeometry::Solved(
-                                    cadmpeg_ir::geometry::SolvedSurfaceGeometry::Nurbs(_)
+                    !face.loops.is_empty()
+                        || !model.surfaces.iter().any(|surface| {
+                            surface.id == face.surface
+                                && matches!(
+                                    surface.geometry,
+                                    cadmpeg_ir::geometry::SurfaceGeometry::Solved(
+                                        cadmpeg_ir::geometry::SolvedSurfaceGeometry::Nurbs(_)
+                                    )
                                 )
-                            )
-                    })
+                        })
                 })
     })
 }
 
-/// Every coordinate a model's tessellations and curve poles hold, in order.
+/// Every coordinate a model's tessellations and the poles of its curves that
+/// no edge uses hold, in order.
 fn coordinates(result: &cadmpeg_ir::codec::DecodeResult) -> Vec<f64> {
     let model = &result.ir().model;
     let mut out = Vec::new();
@@ -93,7 +96,12 @@ fn coordinates(result: &cadmpeg_ir::codec::DecodeResult) -> Vec<f64> {
             out.extend([point.x, point.y, point.z]);
         }
     }
-    for curve in &model.curves {
+    for curve in model.curves.iter().filter(|curve| {
+        !model
+            .edges
+            .iter()
+            .any(|edge| edge.carrier.curve() == Some(&curve.id))
+    }) {
         if let cadmpeg_ir::geometry::CurveGeometry::Solved(
             cadmpeg_ir::geometry::SolvedCurveGeometry::Nurbs(nurbs),
         ) = &curve.geometry
@@ -127,7 +135,16 @@ fn every_fixture_round_trips_its_geometry() {
                     .iter()
                     .map(cadmpeg_ir::tessellation::Tessellation::triangles)
                     .collect::<Vec<_>>(),
-                model.curves.len(),
+                model
+                    .curves
+                    .iter()
+                    .filter(|curve| {
+                        !model
+                            .edges
+                            .iter()
+                            .any(|edge| edge.carrier.curve() == Some(&curve.id))
+                    })
+                    .count(),
                 model.surfaces.len(),
                 model.occurrences.len(),
                 model.appearances.len(),
@@ -187,6 +204,47 @@ fn a_cylinder_with_no_tessellation_is_written_as_an_inscribed_mesh() {
     );
 }
 
+/// Significant digits within which a binary64 value survives the metre to
+/// millimetre scaling of a round trip.
+const ROUND_TRIP_DIGITS: usize = 12;
+
+/// `text` with each real literal rounded to [`ROUND_TRIP_DIGITS`]
+/// significant digits.
+fn rounded(text: &str) -> String {
+    use std::fmt::Write as _;
+    let mut out = String::with_capacity(text.len());
+    let mut token = String::new();
+    let flush = |token: &mut String, out: &mut String| {
+        let real = token.contains(['.', 'e']);
+        match token.parse::<f64>() {
+            Ok(value) if real => {
+                let value = if value == 0.0 { 0.0 } else { value };
+                write!(
+                    out,
+                    "{value:.precision$e}",
+                    precision = ROUND_TRIP_DIGITS - 1
+                )
+                .expect("write to a string");
+            }
+            _ => out.push_str(token),
+        }
+        token.clear();
+    };
+    for character in text.chars() {
+        let continues = character.is_ascii_digit()
+            || matches!(character, '.' | 'e')
+            || (matches!(character, '-' | '+') && (token.is_empty() || token.ends_with('e')));
+        if continues && !(character == 'e' && token.is_empty()) {
+            token.push(character);
+        } else {
+            flush(&mut token, &mut out);
+            out.push(character);
+        }
+    }
+    flush(&mut token, &mut out);
+    out
+}
+
 #[test]
 fn the_written_layer_is_stable_under_a_second_round_trip() {
     for (name, bytes) in fixtures() {
@@ -195,7 +253,7 @@ fn the_written_layer_is_stable_under_a_second_round_trip() {
         };
         let (once, _) = encode(decode(text).ir());
         let (twice, _) = encode(decode(&once).ir());
-        assert_eq!(once, twice, "{name}");
+        assert_eq!(rounded(&once), rounded(&twice), "{name}");
     }
 }
 

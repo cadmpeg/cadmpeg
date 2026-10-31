@@ -113,8 +113,8 @@ fn a_collider_of_a_brep_body_is_written_on_its_mesh_and_read_back() {
         native_ref: None,
     });
     let (written, _) = encode(&ir);
-    let mesh = written.split("def Mesh \"C\"").nth(1).expect("a mesh");
-    let mesh_head = mesh.split('{').next().unwrap_or_default();
+    let mesh = written.split("def Mesh \"Mesh\"").nth(1).expect("a mesh");
+    let mesh_head: String = mesh.lines().take_while(|line| line.trim() != "{").collect();
     assert!(mesh_head.contains("PhysicsCollisionAPI"), "{written}");
     assert!(mesh_head.contains("PhysicsMeshCollisionAPI"), "{written}");
     let again = decode(&written);

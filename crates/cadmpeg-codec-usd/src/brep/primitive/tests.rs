@@ -61,7 +61,7 @@ fn a_cone_ends_at_an_apex_vertex() {
         (2, 2, 2)
     );
     closed(&brep);
-    let cone = &brep.surfaces[1];
+    let cone = &brep.analytic_surfaces[1];
     assert_eq!(cone.params, [1.0, 0.5_f64.atan()]);
     assert_eq!(cone.frame.axis, [0.0, 0.0, -1.0]);
 }
@@ -91,7 +91,7 @@ fn a_sphere_is_one_face_and_a_plane_one_open_face() {
     assert_eq!((sheet.faces.len(), sheet.edges.len()), (1, 4));
     assert!(!sheet.shells[0].closed);
     assert!(sheet.solids.is_empty());
-    assert_eq!(sheet.surfaces[0].frame.axis, [0.0, 1.0, 0.0]);
+    assert_eq!(sheet.analytic_surfaces[0].frame.axis, [0.0, 1.0, 0.0]);
     // The length runs along z when the axis is y.
     assert!(sheet.vertices.iter().all(|vertex| vertex[2].abs() == 2.0));
 }
