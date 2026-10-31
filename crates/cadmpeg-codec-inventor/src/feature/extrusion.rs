@@ -3,14 +3,17 @@
 
 use std::collections::HashSet;
 
-use cadmpeg_ir::features::{BooleanOp, ExtrudeExtent, ExtrudeStart, PlanarProfileRef};
+use cadmpeg_ir::features::{
+    BooleanOp, ExtrudeExtent, ExtrudeStart, LinearTermination, PlanarProfileRef,
+};
 use cadmpeg_ir::units::UnitVector3;
 
 use super::{
-    boolean, enum16, extent_target_plane, extrusion_side, references, resolve_direction,
-    resolve_property, ExtrusionSideSlots, PmDcFeature, PmDcFeatureEnumFamily, PmDcFeatureLabel,
-    PmDcFeaturePropertyKind, PmDcFeatureReferenceFamily, ProjectionIndex, EXTENT_DISTANCE,
-    EXTENT_FROM_TO, EXTENT_SYMMETRIC_DISTANCE, EXTENT_THROUGH_ALL, EXTENT_THROUGH_NEXT,
+    boolean, enum16, extent_target_plane, extent_target_point, extrusion_side, references,
+    resolve_direction, resolve_property, ExtrusionSideSlots, PmDcFeature, PmDcFeatureEnumFamily,
+    PmDcFeatureLabel, PmDcFeaturePropertyKind, PmDcFeatureReferenceFamily, ProjectionIndex,
+    EXTENT_DISTANCE, EXTENT_FROM_TO, EXTENT_SYMMETRIC_DISTANCE, EXTENT_THROUGH_ALL,
+    EXTENT_THROUGH_NEXT,
 };
 use cadmpeg_ir::math::Vector3;
 
@@ -47,8 +50,64 @@ pub(super) struct Operands {
     pub(super) extent: ExtrudeExtent,
 }
 
+/// Largest departure of the travel direction from the profile-plane normal,
+/// as a cosine deficit, that still counts as perpendicular to the profile plane.
+const EPS_TRAVEL_NORMAL: f64 = 1e-9;
+/// Smallest distance in millimetres by which a work point lies ahead of the
+/// profile plane.
+const EPS_POINT_AHEAD: f64 = 1e-6;
+
+pub(super) fn work_point_plane(
+    source: &PmDcFeature,
+    label: &PmDcFeatureLabel,
+    index: &ProjectionIndex<'_>,
+    direction: &UnitVector3,
+) -> Option<LinearTermination> {
+    let point = extent_target_point(source, index, ExtrusionSideSlots::FIRST)?;
+    let direction_record = resolve_direction(source, 2, index)?;
+    if direction_record.entity_flags != 0
+        || direction_record.parameter.get() != 0.0
+        || direction_record.extension.is_some_and(|value| value != 0)
+    {
+        return None;
+    }
+    let [participant] = label.participants.references() else {
+        return None;
+    };
+    let token = source.identity.segment_token.as_str();
+    let sketch = index
+        .sketches
+        .get(&(token, participant.record_ordinal()?))?
+        .as_ref()?;
+    let (profile_origin, normal, u_axis) =
+        crate::sketch::project_placement(sketch, &index.transforms, &index.directions)?
+            .resolved()?;
+    let normal = normal.get();
+    let travel = *direction.as_raw();
+    let profile_origin = profile_origin.get();
+    let ahead = point.origin.vector_from(profile_origin).dot(travel);
+    if !(travel.dot(normal).abs() >= 1.0 - EPS_TRAVEL_NORMAL && ahead > EPS_POINT_AHEAD) {
+        return None;
+    }
+    let oriented_normal = if travel.dot(normal) < 0.0 {
+        normal.scale(-1.0)
+    } else {
+        normal
+    };
+    let plane = cadmpeg_ir::features::FeatureSupportPlaneFrame::new(
+        point.origin,
+        oriented_normal,
+        u_axis.get(),
+    )?;
+    Some(LinearTermination::ToPlane {
+        plane,
+        native: cadmpeg_core::text::NonBlankString::new(point.native)?,
+    })
+}
+
 pub(super) fn indexed_operands(
     source: &PmDcFeature,
+    label: &PmDcFeatureLabel,
     index: &ProjectionIndex<'_>,
 ) -> Option<Operands> {
     let operation = enum16(source, 0, PmDcFeatureEnumFamily::PartOperation, index)?;
@@ -75,7 +134,14 @@ pub(super) fn indexed_operands(
         .references()
         .get(29)
         .is_some_and(|reference| reference.index() != 0);
-    let first = extrusion_side(source, index, ExtrusionSideSlots::FIRST, extent_value)?;
+    let first = extrusion_side(
+        source,
+        index,
+        ExtrusionSideSlots::FIRST,
+        extent_value,
+        label,
+        &direction,
+    )?;
     let start = if extent_value == EXTENT_FROM_TO {
         let (plane, native) = extent_target_plane(source, index, 8, 10, 17)?;
         ExtrudeStart::FromPlane { plane, native }
@@ -99,7 +165,14 @@ pub(super) fn indexed_operands(
             }
             ExtrudeExtent::TwoSided {
                 first,
-                second: extrusion_side(source, index, ExtrusionSideSlots::SECOND, second_value)?,
+                second: extrusion_side(
+                    source,
+                    index,
+                    ExtrusionSideSlots::SECOND,
+                    second_value,
+                    label,
+                    &direction,
+                )?,
             }
         }
         (_, false, false) => ExtrudeExtent::OneSided { side: first },
@@ -213,6 +286,7 @@ pub(crate) struct ValidationRecords<'a> {
     pub(crate) parameters: &'a [crate::design::PmDcParameter],
     pub(crate) sketches: &'a [crate::sketch::PmDcSketch],
     pub(crate) directions: &'a [crate::sketch::PmDcDirection],
+    pub(crate) transforms: &'a [crate::sketch::PmDcTransform],
     pub(crate) planes: &'a [super::PmDcWorkPlane],
     pub(crate) entity_links: &'a [super::PmDcEntityStyleLink],
     pub(crate) kernel_links: &'a [super::PmDcKernelEntityLink],
@@ -238,6 +312,7 @@ impl<'a> ValidationIndex<'a> {
                     .filter_map(|r| Some((r.native_ref.as_deref()?, r))),
             ),
             directions: unique_index(records.directions.iter().map(|r| (key(&r.identity), r))),
+            transforms: unique_index(records.transforms.iter().map(|r| (key(&r.identity), r))),
             work_planes: unique_index(records.planes.iter().map(|r| (key(&r.identity), r))),
             sketches: unique_index(records.sketches.iter().map(|r| (key(&r.identity), r))),
             sketch_ids: records
@@ -290,7 +365,7 @@ pub(super) fn matches(
     else {
         return false;
     };
-    let Some(expected) = indexed_operands(source, index) else {
+    let Some(expected) = indexed_operands(source, label, index) else {
         return false;
     };
     let expected_direction = ExtrudeDirection::Explicit {

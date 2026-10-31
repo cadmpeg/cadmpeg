@@ -1492,3 +1492,18 @@ Offsets are relative to the end of the state content header.
 | 20 | 4 | `plate_reference` | `u32` | little | spec | The segment-major-19 plate-and-bend face suffix occupies |
 | 24 | 4 | `bend_reference` | `u32` | little | spec | The segment-major-19 plate-and-bend face suffix occupies |
 | 28 | 4 | `value` | `u32` | little | spec | The segment-major-19 plate-and-bend face suffix occupies · value `0` |
+
+## `pm_dc_work_point_fields`
+
+Spec §13 · layout: byte offsets · size: 36 B
+
+Offsets start after the segment-major-19 content header.
+
+Parsed by:
+- `crates/cadmpeg-codec-inventor/src/feature.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 4 | `entity_flags` | `u32` | little | spec | `entity_flags:u32` and two u32 values |
+| 4 | 8 | `values` | `u32[2]` | little | spec | segment major versions above 21 add one u32 value |
+| 12 | 24 | `origin` | `f64[3]` | little | spec | Three f64 values follow: the point in internal centimetres |
