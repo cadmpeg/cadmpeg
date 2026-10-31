@@ -44,6 +44,8 @@ pub(super) struct ProductPrereqs {
     pub(super) design_parameter_owners: Vec<DesignParameterOwner>,
     pub(super) design_component_occurrences: Vec<DesignComponentOccurrence>,
     pub(super) design_superseded_component_occurrences: usize,
+    /// Component-path carriers whose elements are all local records.
+    pub(super) design_component_paths: Vec<crate::records::component_path::DesignComponentPath>,
     /// Local occurrences that two or more component-path carriers name.
     pub(super) design_ambiguous_current_poses: usize,
     pub(super) design_component_occurrence_losses: Vec<cadmpeg_ir::report::loss::LossNote>,
@@ -106,6 +108,7 @@ impl ProductPrereqs {
             design_parameter_owners,
             design_component_occurrences,
             design_superseded_component_occurrences: _,
+            design_component_paths,
             design_ambiguous_current_poses: _,
             design_component_occurrence_losses: _,
             design_parameter_scopes,
@@ -131,6 +134,7 @@ impl ProductPrereqs {
             merged_record_headers(&design_record_headers, &design_owner_record_headers);
         native.design_parameter_owners = design_parameter_owners;
         native.design_component_occurrences = design_component_occurrences;
+        native.design_component_paths = design_component_paths;
         native.design_parameter_scopes = design_parameter_scopes;
         native.design_joint_motions = design_joint_motions;
         native.design_component_naming_spaces = design_component_naming_spaces;
@@ -187,6 +191,7 @@ pub(super) fn decode(
         superseded: design_superseded_component_occurrences,
         ambiguous_current_poses: design_ambiguous_current_poses,
         losses: design_component_occurrence_losses,
+        paths: design_component_paths,
     } = crate::design::decode::components::decode_component_occurrences(scan)?;
     let crate::design::decode::scopes::parameter_scope::DecodedParameterScopes {
         scopes: mut design_parameter_scopes,
@@ -244,6 +249,7 @@ pub(super) fn decode(
         design_parameter_owners,
         design_component_occurrences,
         design_superseded_component_occurrences,
+        design_component_paths,
         design_ambiguous_current_poses,
         design_component_occurrence_losses,
         design_parameter_scopes,

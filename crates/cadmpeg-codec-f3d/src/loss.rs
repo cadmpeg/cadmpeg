@@ -284,6 +284,15 @@ pub(crate) enum F3dLossCode {
     /// Two or more component-path carriers name one local occurrence; its
     /// stored placement stays in place.
     LocalOccurrenceCurrentPoseAmbiguous,
+    /// Nested local occurrences take the world pose of their component-path
+    /// carrier; the stored local placement is replaced.
+    LocalOccurrencePathPose,
+    /// Component-path carriers that name no unique expanded local occurrence
+    /// are not applied.
+    LocalOccurrencePathPoseUnresolved,
+    /// Two component-path carriers give one local occurrence different
+    /// poses; the stored placement stays in place.
+    LocalOccurrencePathPoseDisagrees,
     /// External occurrence instances take the pose their contained
     /// occurrences' component-path carriers store; the placement matrix stays
     /// native.
@@ -518,6 +527,9 @@ impl F3dLossCode {
         Self::LocalOccurrenceCurrentPose,
         Self::LocalOccurrenceCurrentPoseNative,
         Self::LocalOccurrenceCurrentPoseAmbiguous,
+        Self::LocalOccurrencePathPose,
+        Self::LocalOccurrencePathPoseUnresolved,
+        Self::LocalOccurrencePathPoseDisagrees,
         Self::XrefContainedPose,
         Self::XrefContainedPoseDisagrees,
         Self::XrefContainedPoseNative,
@@ -708,6 +720,13 @@ impl F3dLossCode {
             }
             Self::LocalOccurrenceCurrentPoseAmbiguous => {
                 "assembly.local-occurrence-current-pose-ambiguous"
+            }
+            Self::LocalOccurrencePathPose => "assembly.local-occurrence-path-pose",
+            Self::LocalOccurrencePathPoseUnresolved => {
+                "assembly.local-occurrence-path-pose-unresolved"
+            }
+            Self::LocalOccurrencePathPoseDisagrees => {
+                "assembly.local-occurrence-path-pose-disagrees"
             }
             Self::XrefContainedPose => "xref.contained-pose",
             Self::XrefContainedPoseDisagrees => "xref.contained-pose-disagrees",
@@ -907,6 +926,9 @@ impl F3dLossCode {
             | Self::XrefPlacementRoleUnbound
             | Self::XrefCurrentPoseAmbiguous
             | Self::LocalOccurrenceCurrentPoseAmbiguous
+            | Self::LocalOccurrencePathPose
+            | Self::LocalOccurrencePathPoseUnresolved
+            | Self::LocalOccurrencePathPoseDisagrees
             | Self::XrefContainedPoseDisagrees
             | Self::XrefOwnedPoseDisagrees
             | Self::XrefPlacementMetadataMissing
@@ -973,6 +995,9 @@ impl F3dLossCode {
             | Self::LocalOccurrenceCurrentPose
             | Self::LocalOccurrenceCurrentPoseNative
             | Self::LocalOccurrenceCurrentPoseAmbiguous
+            | Self::LocalOccurrencePathPose
+            | Self::LocalOccurrencePathPoseUnresolved
+            | Self::LocalOccurrencePathPoseDisagrees
             | Self::XrefContainedPose
             | Self::XrefContainedPoseDisagrees
             | Self::XrefContainedPoseNative
@@ -1289,6 +1314,9 @@ mod tests {
                 "assembly.local-occurrence-current-pose",
                 "assembly.local-occurrence-current-pose-native",
                 "assembly.local-occurrence-current-pose-ambiguous",
+                "assembly.local-occurrence-path-pose",
+                "assembly.local-occurrence-path-pose-unresolved",
+                "assembly.local-occurrence-path-pose-disagrees",
                 "xref.contained-pose",
                 "xref.contained-pose-disagrees",
                 "xref.contained-pose-native",
