@@ -47,6 +47,10 @@ const MAGIC: [u8; 8] = [0xc2, 0xbc, 0x92, 0x8f, 0x99, 0x6e, 0x00, 0x00];
 
 const MAX_SHORT_POINTER_INDEX: u16 = 0x7ffe;
 
+/// The lowest count whose high u16 is non-zero, which is how the null pointer
+/// after a pointer to node 82 reads as an `INT_VALUES` count (spec §5).
+const INT_VALUES_WIDE_COUNT_MIN: u32 = 0x1_0000;
+
 #[derive(Debug, Clone, PartialEq)]
 pub(super) struct Bridge {
     pub(super) attr: u16,
@@ -773,6 +777,9 @@ pub(super) fn topology_scopes(buf: &[u8], prefixed: bool) -> TopologyScopes {
         excluded_starts: Vec::new(),
     };
     let mut off = 0;
+    // Candidate starts ascend, so this forward-only position keeps the sentinel
+    // search linear however many wide candidates a stream holds.
+    let mut next_sentinel = 0;
     while off + 2 < buf.len() {
         let tag = buf[off + 1];
         let Some(p) = body_start(buf, off, tag).filter(|_| buf[off] == 0) else {
@@ -780,20 +787,32 @@ pub(super) fn topology_scopes(buf: &[u8], prefixed: bool) -> TopologyScopes {
             continue;
         };
         let end = match tag {
-            0x52 => View::u32_be_at(buf, p + int_values::COUNT).and_then(|count| {
+            0x52 => View::u32_be_at(buf, p + int_values::COUNT).and_then(|stated| {
                 let node = View::u16_be_at(buf, p + int_values::NODE_INDEX)?;
                 if !(2..=MAX_SHORT_POINTER_INDEX).contains(&node) {
                     return None;
                 }
                 let start = p.checked_add(int_values::LEN)?;
                 let available = buf.len().checked_sub(start)?;
-                let count = cadmpeg_core::decode::bounded_len(u64::from(count), 4, available)?;
+                let count = cadmpeg_core::decode::bounded_len(u64::from(stated), 4, available)?;
                 let end = start.checked_add(count.checked_mul(4)?)?;
                 // A node ends where the next node's tag begins. A `00 52` read
                 // inside another record's fields can state a count that fits the
                 // buffer; its extent then ends mid-record and would hide every
                 // real node it spans.
-                buf.get(end).is_none_or(|next| *next == 0).then_some(end)
+                buf.get(end).is_none_or(|next| *next == 0).then_some(())?;
+                if stated >= INT_VALUES_WIDE_COUNT_MIN {
+                    if next_sentinel < start {
+                        next_sentinel = buf[start..]
+                            .windows(MAGIC.len())
+                            .position(|window| window == MAGIC)
+                            .map_or(buf.len(), |at| start + at);
+                    }
+                    if next_sentinel + MAGIC.len() <= end {
+                        return None;
+                    }
+                }
+                Some(end)
             }),
             0x51 => (|| {
                 let flags = View::u32_be_at(buf, p + entity_hdr::FLAGS)?;
@@ -3337,6 +3356,58 @@ mod tests {
         );
         assert!(scan(&bytes).vertex_frames.is_empty());
     }
+
+    /// A pointer to node 82, the null pointer after it, then `body`, padded so
+    /// that the count the pair states ends on a zero byte.
+    fn node_82_pointer_before(body: &[u8]) -> Vec<u8> {
+        let count = super::INT_VALUES_WIDE_COUNT_MIN;
+        let mut bytes = vec![0, 0x52];
+        bytes.extend(count.to_be_bytes());
+        bytes.extend(710u16.to_be_bytes());
+        bytes.extend(body);
+        bytes.resize(8 + usize::try_from(count).unwrap() * 4 + 1, 0);
+        bytes
+    }
+
+    #[test]
+    fn node_82_pointer_does_not_hide_the_topology_after_it() {
+        let body = crate::test_support::parasolid::triangle_body();
+        assert!(body
+            .windows(super::MAGIC.len())
+            .any(|window| window == super::MAGIC));
+        let bytes = node_82_pointer_before(&body);
+        assert!(super::topology_payload_ranges(&bytes, false).is_empty());
+        let baseline = vertex_partition();
+        let tables = scan(&bytes);
+        assert_eq!(tables.vertex_uses.len(), baseline.vertex_uses.len());
+        assert_eq!(tables.coedges.len(), baseline.coedges.len());
+        assert_eq!(tables.loops.len(), baseline.loops.len());
+        assert_eq!(
+            super::super::typed::scan(&bytes).bodies.len(),
+            super::super::typed::scan(&body).bodies.len()
+        );
+    }
+
+    #[test]
+    fn wide_int_values_count_without_a_sentinel_is_a_payload() {
+        let bytes = node_82_pointer_before(&[]);
+        assert_eq!(
+            super::topology_payload_ranges(&bytes, false),
+            std::iter::once(0..bytes.len() - 1).collect::<Vec<_>>()
+        );
+    }
+
+    #[test]
+    fn sentinel_past_a_wide_extent_does_not_reject_it() {
+        let mut bytes = node_82_pointer_before(&[]);
+        let end = bytes.len() - 1;
+        bytes.extend(super::MAGIC);
+        assert_eq!(
+            super::topology_payload_ranges(&bytes, false),
+            std::iter::once(0..end).collect::<Vec<_>>()
+        );
+    }
+
     #[test]
     fn unproved_vertex_owner_retains_framing_but_cannot_emit_geometry() {
         let mut bytes = crate::test_support::parasolid::triangle_body();
@@ -3811,6 +3882,7 @@ mod tests {
         assert_eq!(node, 25_088);
         let false_end = false_integer + 8 + usize::try_from(count).unwrap() * 4;
         assert!(false_end > bytes.len());
+        let mut graph = bytes.clone();
         bytes.resize(false_end, 0);
         assert!(super::topology_payload_ranges(&bytes, false).is_empty());
         let tables = scan(&bytes);
@@ -3829,10 +3901,10 @@ mod tests {
             .any(|range| { range.start <= program_end && range.end >= world_end }));
 
         let mut enclosed = vec![0, 82];
-        bytes.resize(bytes.len().next_multiple_of(4), 0);
-        enclosed.extend(u32::try_from(bytes.len() / 4).unwrap().to_be_bytes());
+        graph.resize(graph.len().next_multiple_of(4), 0);
+        enclosed.extend(u32::try_from(graph.len() / 4).unwrap().to_be_bytes());
         enclosed.extend(710u16.to_be_bytes());
-        enclosed.extend(bytes);
+        enclosed.extend(graph);
         assert_eq!(
             super::topology_payload_ranges(&enclosed, false),
             std::iter::once(0..enclosed.len()).collect::<Vec<_>>()

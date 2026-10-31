@@ -2638,6 +2638,11 @@ the end of the stream or at the zero byte that begins the next node's tag. A
 `00 52` pair whose stated extent ends anywhere else lies inside another
 record's fields and frames no INT_VALUES node.
 
+A `00 52` pair can be a pointer to node 82 followed by a null pointer. The null
+pointer then reads as the high u16 of the count. A `00 52` pair whose count is
+`0x10000` or more and whose extent holds the null-real sentinel is this pointer
+pair and frames no INT_VALUES node.
+
 ## 6. Body records
 
 Body membership is the typed XT ownership graph. The `00 0c` BODY node
