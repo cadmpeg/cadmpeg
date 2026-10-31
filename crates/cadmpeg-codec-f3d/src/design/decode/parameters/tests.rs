@@ -1943,3 +1943,28 @@ fn intermediate_family_admits_discriminators_five_and_six() {
         assert_eq!(parse_design_parameter_record(&frame).is_some(), admitted);
     }
 }
+
+#[test]
+fn discriminated_thread_length_parameter_recovers_its_owner() {
+    let mut bytes = Vec::new();
+    crate::test_support::indexed_header(&mut bytes, *b"286", 944);
+    bytes.extend_from_slice(&[0; 11]);
+    bytes.extend_from_slice(&5u64.to_le_bytes());
+    bytes.push(0);
+    bytes.extend_from_slice(&18u32.to_le_bytes());
+    bytes.push(1);
+    bytes.extend_from_slice(&945u32.to_le_bytes());
+    bytes.extend_from_slice(&[0; 6]);
+    lp_utf16(&mut bytes, "10.00 mm");
+    bytes.extend_from_slice(&[0; 9]);
+    lp_utf16(&mut bytes, "ThreadLength");
+    bytes.extend_from_slice(&[0; 4]);
+    lp_utf16(&mut bytes, "mm");
+    lp_utf16(&mut bytes, "d18");
+    bytes.extend_from_slice(&1.0f64.to_le_bytes());
+    bytes.extend_from_slice(&[0, 1, 19, 0, 0, 0, 0, 0, 0, 0, 0, 0]);
+    let parameter = parse_design_parameter_record(&bytes).expect("thread length parameter");
+    assert_eq!(parameter.source_kind(), "ThreadLength");
+    assert_eq!(parameter.owner_record_index(), Some(945));
+    assert_eq!(parameter.evaluated_value().get(), 1.0);
+}

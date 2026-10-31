@@ -1,6 +1,9 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Thread constructions, forms, diameters and nominal sizes.
 
+use crate::layout::thread_extended_scope_prefix as extended_prefix;
+use crate::layout::thread_owner_marked_scope_prefix as owner_prefix;
+use crate::layout::thread_standard_scope_prefix as direct_prefix;
 use crate::records::identity::Located;
 use cadmpeg_ir::scalar::PositiveReal;
 use serde::{ser::SerializeStruct, Deserialize, Serialize, Serializer};
@@ -29,16 +32,95 @@ pub(crate) enum DesignThreadForm {
     CompactLegacy,
     /// Standard prefix with the compact construction marker and a reference trailer.
     StandardCompact,
+    /// Extended standard prefix with offset and length owner references.
+    StandardExtended,
+    /// Extended compact prefix with two owners before its face-selection pairs.
+    CompactExtended(Located<NonZeroU32>),
 }
 
 impl DesignThreadForm {
+    pub(crate) fn class_pair_holds(self, class: &str, paired: &str) -> bool {
+        match self {
+            Self::StandardLegacy => class == "334" && paired == "262",
+            Self::CompactLegacy => class == "414" && paired == "263",
+            Self::Standard
+            | Self::Compact(_)
+            | Self::CompactExtended(_)
+            | Self::StandardCompact
+            | Self::StandardExtended => true,
+        }
+    }
+
+    pub(crate) fn designation_offset_holds(self, designation: u64, scope: u64) -> bool {
+        let Some(delta) = designation
+            .checked_sub(scope)
+            .and_then(|delta| usize::try_from(delta).ok())
+        else {
+            return false;
+        };
+        match self {
+            Self::StandardExtended | Self::CompactExtended(_) => delta == extended_prefix::LEN,
+            _ => [direct_prefix::LEN, owner_prefix::LEN].contains(&delta),
+        }
+    }
+
+    pub(crate) fn reference_count_holds(self, count: usize) -> bool {
+        count.is_multiple_of(2)
+            && match self {
+                Self::StandardExtended => count == 4,
+                Self::CompactExtended(_) => count >= 4,
+                _ => count >= 2,
+            }
+    }
+
+    pub(crate) fn owners_hold(
+        self,
+        scope: &super::scope::DesignParameterScope,
+        owners: &[crate::records::parameters::DesignParameterOwner],
+    ) -> bool {
+        let (offset_ordinal, length_ordinal) = match self {
+            Self::StandardExtended => (2, 3),
+            Self::CompactExtended(_) => (0, 1),
+            _ => return true,
+        };
+        let owner_at = |ordinal| {
+            let index = scope.reference_members().values().nth(ordinal)?;
+            let mut matching = owners.iter().filter(|owner| {
+                crate::ids::native_stream(owner.id()) == crate::ids::native_stream(&scope.id)
+                    && owner.scope_record_index() == scope.record_index
+                    && owner.record_index() == *index
+            });
+            let owner = matching.next()?;
+            matching.next().is_none().then_some(owner)
+        };
+        match (owner_at(offset_ordinal), owner_at(length_ordinal)) {
+            (Some(offset), Some(length)) => {
+                offset.local_ordinal() == 0
+                    && offset.evaluated_value().get() == 0.0
+                    && length.local_ordinal() == 1
+                    && length.evaluated_value().get() > 0.0
+            }
+            _ => false,
+        }
+    }
+
+    pub(crate) const fn face_reference_start(self) -> usize {
+        match self {
+            Self::CompactExtended(_) => 2,
+            _ => 0,
+        }
+    }
+
     /// Whether the scope carries the standard one-group reference table.
     ///
     /// The other forms carry ordered `(face-selection group, sole member)` pairs.
     pub(crate) const fn has_standard_reference_table(&self) -> bool {
         match self {
-            Self::Standard | Self::StandardLegacy | Self::StandardCompact => true,
-            Self::Compact(_) | Self::CompactLegacy => false,
+            Self::Standard
+            | Self::StandardLegacy
+            | Self::StandardCompact
+            | Self::StandardExtended => true,
+            Self::Compact(_) | Self::CompactExtended(_) | Self::CompactLegacy => false,
         }
     }
 }
@@ -138,9 +220,13 @@ impl Serialize for DesignThreadConstruction {
             DesignThreadForm::Compact(reference) => {
                 (DesignThreadFormWire::Compact, reference.as_ref())
             }
+            DesignThreadForm::CompactExtended(reference) => {
+                (DesignThreadFormWire::CompactExtended, Some(reference))
+            }
             DesignThreadForm::StandardLegacy => (DesignThreadFormWire::StandardLegacy, None),
             DesignThreadForm::CompactLegacy => (DesignThreadFormWire::CompactLegacy, None),
             DesignThreadForm::StandardCompact => (DesignThreadFormWire::StandardCompact, None),
+            DesignThreadForm::StandardExtended => (DesignThreadFormWire::StandardExtended, None),
         };
         let mut fields = serializer.serialize_struct(
             "DesignThreadConstructionWire",
@@ -178,6 +264,8 @@ enum DesignThreadFormWire {
     CompactLegacy,
     /// Standard prefix with the compact construction marker and a reference trailer.
     StandardCompact,
+    StandardExtended,
+    CompactExtended,
 }
 
 #[derive(Serialize, Deserialize)]
@@ -249,10 +337,17 @@ impl TryFrom<DesignThreadConstructionWire> for DesignThreadConstruction {
         };
         let form = match (value.form, reference) {
             (DesignThreadFormWire::Compact, reference) => DesignThreadForm::Compact(reference),
+            (DesignThreadFormWire::CompactExtended, Some(reference)) => {
+                DesignThreadForm::CompactExtended(reference)
+            }
+            (DesignThreadFormWire::CompactExtended, None) => {
+                return Err("compact_extended requires a trailing Hole reference".into());
+            }
             (DesignThreadFormWire::Standard, None) => DesignThreadForm::Standard,
             (DesignThreadFormWire::StandardLegacy, None) => DesignThreadForm::StandardLegacy,
             (DesignThreadFormWire::CompactLegacy, None) => DesignThreadForm::CompactLegacy,
             (DesignThreadFormWire::StandardCompact, None) => DesignThreadForm::StandardCompact,
+            (DesignThreadFormWire::StandardExtended, None) => DesignThreadForm::StandardExtended,
             _ => {
                 return Err("trailing_reference_record_index is only valid for compact form".into())
             }

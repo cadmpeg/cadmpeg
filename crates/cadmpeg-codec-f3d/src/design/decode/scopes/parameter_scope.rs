@@ -457,7 +457,7 @@ pub(crate) fn decode_parameter_scopes(
                 }
             }
             {
-                let construction = exact_thread_construction(bytes, &scope);
+                let construction = exact_thread_construction(bytes, &scope, parameter_owners);
                 if let scope::DesignScopePayloadMut::Thread(slot) = scope.payload_mut() {
                     *slot = construction;
                 }

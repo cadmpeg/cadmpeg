@@ -7909,6 +7909,61 @@ Parsed by:
 | 47 | 1 | `axis_flipped` | `u8` | little | derived | Follows the one-byte periodic-face mode. |
 | 48 | 1 | `use_u_direction` | `u8` | little | derived | Follows the one-byte axis control. |
 
+## `thread_extended_scope_prefix`
+
+Spec §3.1 · layout: byte offsets · size: 46 B
+
+Offsets are relative to the primary Thread indexed header.
+
+Parsed by:
+- `crates/cadmpeg-codec-f3d/src/design/decode/scopes/thread.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 11 | 10 | `zero_run_10` | `bytes[10]` | little | spec | It stores ten zero bytes at offsets 11 through 20 and f64 `60.0` at offset 21. |
+| 21 | 8 | `fixed_scalar` | `f64` | little | spec | It stores ten zero bytes at offsets 11 through 20 and f64 `60.0` at offset 21. |
+| 29 | 1 | `standard_flag` | `u8` | little | spec | Offset 29 is `1` for the standard token and `0` for the compact token |
+| 30 | 4 | `zero_value` | `u32` | little | spec | offset 30 is u32 zero, offset 34 is u32 `2` · value `0` |
+| 34 | 4 | `form_marker` | `u32` | little | spec | offset 30 is u32 zero, offset 34 is u32 `2` · value `2` |
+| 38 | 4 | `form_token` | `bytes[4]` | little | spec | offset 38 stores the four-byte form token, and offset 42 is u32 zero |
+| 42 | 4 | `trailing_zero` | `u32` | little | spec | offset 38 stores the four-byte form token, and offset 42 is u32 zero · value `0` |
+
+Unstated regions:
+
+- `0..11` (11 B): Indexed header.
+
+## `thread_extended_standard_trailer`
+
+Spec §3.1 · layout: byte offsets · size: 24 B
+
+Offsets are relative to the construction marker plus 38.
+
+Parsed by:
+- `crates/cadmpeg-codec-f3d/src/design/decode/scopes/thread.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 1 | `zero_flag` | `u8` | little | spec | Its trailer stores a zero byte, a marked length-owner reference, a marked offset-owner reference, and byte `1` · value `0` |
+| 1 | 11 | `length_reference` | `bytes[11]` | little | spec | Its trailer stores a zero byte, a marked length-owner reference, a marked offset-owner reference, and byte `1` |
+| 12 | 11 | `offset_reference` | `bytes[11]` | little | spec | Its trailer stores a zero byte, a marked length-owner reference, a marked offset-owner reference, and byte `1` |
+| 23 | 1 | `end_flag` | `u8` | little | spec | Its trailer stores a zero byte, a marked length-owner reference, a marked offset-owner reference, and byte `1` · value `1` |
+
+## `thread_extended_compact_trailer`
+
+Spec §3.1 · layout: byte offsets · size: 34 B
+
+Offsets are relative to the construction marker plus 38.
+
+Parsed by:
+- `crates/cadmpeg-codec-f3d/src/design/decode/scopes/thread.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 11 | `hole_reference` | `bytes[11]` | little | spec | The extended compact trailer stores marked references to the Hole, length owner, and offset owner, followed by byte `1` |
+| 11 | 11 | `length_reference` | `bytes[11]` | little | spec | The extended compact trailer stores marked references to the Hole, length owner, and offset owner, followed by byte `1` |
+| 22 | 11 | `offset_reference` | `bytes[11]` | little | spec | The extended compact trailer stores marked references to the Hole, length owner, and offset owner, followed by byte `1` |
+| 33 | 1 | `end_flag` | `u8` | little | spec | The extended compact trailer stores marked references to the Hole, length owner, and offset owner, followed by byte `1` · value `1` |
+
 ## Not tabulated
 
 | Area | Spec | Reason |

@@ -406,3 +406,33 @@ fn product_history_owner_keeps_a_sketch_still_consumed_by_its_old_definition() {
         .unwrap();
     assert_eq!(kept.product_definition, Some(old));
 }
+
+fn attach(
+    native: &F3dNative,
+    model: &mut Model,
+    losses: &mut Vec<LossNote>,
+) -> Result<(), CodecError> {
+    super::attach_with_implicit_roots(native, model, losses, &BTreeSet::new())
+}
+
+#[test]
+fn product_history_implicit_root_uses_archive_owner_until_release() {
+    let mut native = native();
+    native.design_component_naming_spaces.truncate(1);
+    let mut model = model(&native);
+    let root = model.product_definitions.remove(0).id;
+    let mut losses = Vec::new();
+    super::attach_with_implicit_roots(&native, &mut model, &mut losses, &BTreeSet::from([root]))
+        .unwrap();
+    assert!(losses.is_empty());
+    assert!(model
+        .features
+        .iter()
+        .all(|feature| feature.product_definition
+            == Some(crate::ids::archive_product_definition_id())));
+    release_unbound(&mut model);
+    assert!(model
+        .features
+        .iter()
+        .all(|feature| feature.product_definition.is_none()));
+}

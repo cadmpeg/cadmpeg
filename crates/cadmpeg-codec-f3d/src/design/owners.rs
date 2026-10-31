@@ -13,9 +13,42 @@ use super::feature_project::{ComponentHistoryNamespace, ScopeHistoryGraph};
 use crate::{ids::native_stream, loss::F3dLossCode, native::F3dNative};
 
 pub(crate) fn attach(
+    scan: &crate::container::ContainerScan<'_>,
     native: &F3dNative,
     model: &mut Model,
     losses: &mut Vec<LossNote>,
+) -> Result<(), CodecError> {
+    if model.features.is_empty() && model.parameters.is_empty() {
+        return Ok(());
+    }
+    let components = super::decode::components::decode_local_components(
+        scan,
+        &native.design_component_naming_spaces,
+    )?;
+    let implicit_roots = components
+        .values()
+        .filter_map(|stream| {
+            stream
+                .root_component
+                .and_then(|root| stream.roots.get(&root))
+                .or_else(|| {
+                    if stream.roots.len() == 1 {
+                        stream.roots.values().next()
+                    } else {
+                        None
+                    }
+                })
+        })
+        .map(|root| crate::ids::neutral_component_id(&root.context_uuid))
+        .collect();
+    attach_with_implicit_roots(native, model, losses, &implicit_roots)
+}
+
+fn attach_with_implicit_roots(
+    native: &F3dNative,
+    model: &mut Model,
+    losses: &mut Vec<LossNote>,
+    implicit_roots: &BTreeSet<ProductDefinitionId>,
 ) -> Result<(), CodecError> {
     let mut owners = BTreeMap::new();
     for scope in &native.design_parameter_scopes {
@@ -26,7 +59,14 @@ pub(crate) fn attach(
         {
             continue;
         }
-        let owner = resolve(native, model, losses, &scope.id, scope.record_index);
+        let owner = resolve(
+            native,
+            model,
+            losses,
+            implicit_roots,
+            &scope.id,
+            scope.record_index,
+        );
         owners.insert(scope.id.as_str(), owner);
     }
     for feature in &mut model.features {
@@ -156,7 +196,14 @@ pub(crate) fn attach(
                     source.record_index,
                     crate::records::parameters::DesignParameterOwner::scope_record_index,
                 );
-            resolve(native, model, losses, &source.id, record_index)
+            resolve(
+                native,
+                model,
+                losses,
+                implicit_roots,
+                &source.id,
+                record_index,
+            )
         } else {
             None
         };
@@ -265,6 +312,7 @@ fn resolve(
     native: &F3dNative,
     model: &Model,
     losses: &mut Vec<LossNote>,
+    implicit_roots: &BTreeSet<ProductDefinitionId>,
     id: &str,
     record_index: u32,
 ) -> Option<ProductDefinitionId> {
@@ -281,10 +329,14 @@ fn resolve(
                     && native_stream(&space.id) == native_stream(id)
                 {
                     let id = crate::ids::neutral_component_id(&space.context_uuid);
-                    for definition in &model.product_definitions {
-                        if definition.id == id {
-                            candidates.insert(id.clone());
-                        }
+                    if model
+                        .product_definitions
+                        .iter()
+                        .any(|definition| definition.id == id)
+                    {
+                        candidates.insert(id);
+                    } else if implicit_roots.contains(&id) {
+                        candidates.insert(crate::ids::archive_product_definition_id());
                     }
                 }
             }
