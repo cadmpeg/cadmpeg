@@ -866,3 +866,15 @@ the native feature when a fixed lane carries a symmetric distance.
 **Conflict.** None.
 
 **Note.** None.
+
+### DR-153. Instance discriminator of a component path
+
+**Question.** How does the u32 instance discriminator of a local component path select one expanded instance when several instances of the target have the listed containing carriers?
+
+**Known.** No two component-path records of a Design stream share a record and a discriminator. A path that lists the full chain of containing carriers names one instance. A path that lists fewer carriers names every instance below those carriers. In one public assembly, 107 of 1241 local paths name two or more instances this way. For one target with 16 expanded instances and 16 records, the target discriminators are 0 to 15 once each, and the order of the target discriminators equals the order of the Component element discriminators. No tested order of the expanded instances reproduces the target discriminators: ordering by the records from the outermost carrier inward matches for 46 of 77 targets.
+
+**Need.** Designs with a repeated holder of known instance order, made by copy and by pattern, with the component-path records before and after reordering the instances.
+
+**Conflict.** None.
+
+**Note.** A path that names more than one instance is refused and reported as `assembly.local-occurrence-path-pose-unresolved`.
