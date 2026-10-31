@@ -7365,6 +7365,8 @@ pub enum RevolveExtent {
     },
 }
 
+const EPS_FEATURE_FULL_TURN: f64 = 1.0e-12;
+
 impl RevolveExtent {
     /// Whether each fixed angle and their combined travel fit within one turn.
     #[must_use]
@@ -7377,7 +7379,7 @@ impl RevolveExtent {
             Self::OneSided { termination } | Self::Symmetric { termination } => angle(termination),
             Self::TwoSided { first, second } => angle(first) + angle(second),
         };
-        total <= std::f64::consts::TAU
+        total <= std::f64::consts::TAU + EPS_FEATURE_FULL_TURN
     }
 }
 
