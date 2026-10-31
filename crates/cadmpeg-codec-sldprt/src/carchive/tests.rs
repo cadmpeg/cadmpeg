@@ -453,3 +453,185 @@ fn a_walk_reads_several_inline_class_families() {
         [NODE_NAME, "moCStringHandle_c", "sgLineHandle"]
     );
 }
+
+fn put_u32(bytes: &mut Vec<u8>, value: u32) {
+    bytes.extend_from_slice(&value.to_le_bytes());
+}
+
+fn put_f64s(bytes: &mut Vec<u8>, values: &[f64]) {
+    for value in values {
+        bytes.extend_from_slice(&value.to_le_bytes());
+    }
+}
+
+/// The tail of a sketch without groups after its marker: marker `3`, a
+/// flag byte, u32 `0`, no references, u32 `0`, u32 `100000`, u16 `0` and
+/// two null pointers.
+fn marked_sketch_tail() -> Vec<u8> {
+    let mut bytes = Vec::new();
+    put_u32(&mut bytes, 3);
+    bytes.push(1);
+    put_u32(&mut bytes, 0);
+    bytes.extend_from_slice(&0_u16.to_le_bytes());
+    put_u32(&mut bytes, 0);
+    put_u32(&mut bytes, 100_000);
+    bytes.extend_from_slice(&[0; 6]);
+    bytes
+}
+
+/// An inline `sgBlock` object with null pointers and an empty entity-handle
+/// table.
+fn block_object() -> Vec<u8> {
+    let mut bytes = inline_declaration("sgBlock");
+    put_u32(&mut bytes, 0);
+    put_u32(&mut bytes, 7);
+    bytes.extend_from_slice(&[0xff, 0xff, 0, 0, 0, 0xff, 0xff, 0xff, 0xff, 0, 0, 0, 0]);
+    bytes.extend_from_slice(&[0x00, 0x00, 0x80, 0xbf]);
+    put_u32(&mut bytes, 0);
+    bytes.extend_from_slice(&[0; 2 + 8]);
+    bytes.extend_from_slice(&[0x00, 0x00, 0x80, 0xbf]);
+    bytes.extend_from_slice(&[0; 2 + 2 + 9]);
+    put_f64s(&mut bytes, &[1.0]);
+    bytes.extend_from_slice(&[0; 8]);
+    put_f64s(&mut bytes, &[0.0; 9]);
+    put_u32(&mut bytes, 0);
+    put_u32(&mut bytes, 0);
+    put_f64s(&mut bytes, &[0.0; 4]);
+    bytes.extend_from_slice(&[0; 8]);
+    put_f64s(&mut bytes, &[0.0; 10]);
+    put_u32(&mut bytes, 0);
+    put_u32(&mut bytes, 0);
+    put_u32(&mut bytes, 0);
+    bytes.extend_from_slice(&[0, 0]);
+    bytes.extend(inline_declaration("sgEntHandleData_c"));
+    put_u32(&mut bytes, 0);
+    put_u32(&mut bytes, 0);
+    bytes.extend_from_slice(&[0, 0]);
+    put_u32(&mut bytes, 3);
+    put_u32(&mut bytes, 1);
+    bytes.extend_from_slice(&[0; 7 + 8]);
+    bytes.extend_from_slice(&[0; 4]);
+    bytes
+}
+
+#[test]
+fn a_sketch_tail_follows_an_empty_slot_map() {
+    let arena = DecodeArena::new();
+    let (ctx, _root) =
+        DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::desktop()).expect("context");
+    let mut bytes = vec![0; 18];
+    put_u32(&mut bytes, 5);
+    put_u32(&mut bytes, 0);
+    let tail = marked_sketch_tail();
+    bytes.extend_from_slice(&tail);
+    let mut reader = reader_over(&ctx, &bytes);
+    super::rules::sketch::sktail(&mut reader).expect("sketch tail after an empty slot map");
+    assert_eq!(reader.p, bytes.len());
+}
+
+#[test]
+fn a_sketch_tail_after_a_block_list_starts_with_its_references() {
+    let arena = DecodeArena::new();
+    let (ctx, _root) =
+        DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::desktop()).expect("context");
+    let mut bytes = Vec::new();
+    put_u32(&mut bytes, 1);
+    put_u32(&mut bytes, 2);
+    bytes.extend(block_object());
+    bytes.extend_from_slice(&1_u16.to_le_bytes());
+    bytes.extend_from_slice(&[5, 0]);
+    for value in [4, 16, 1, 1, 9, 0, 100_000] {
+        put_u32(&mut bytes, value);
+    }
+    bytes.extend_from_slice(&[0; 6]);
+    let mut reader = reader_over(&ctx, &bytes);
+    super::rules::sketch::sktail(&mut reader).expect("sketch tail after a block list");
+    assert_eq!(reader.p, bytes.len());
+}
+
+#[test]
+fn a_text_writes_a_normal_and_a_font_identifier_per_character() {
+    let arena = DecodeArena::new();
+    let (ctx, _root) =
+        DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::desktop()).expect("context");
+    let mut bytes = text_head(1);
+    put_f64s(&mut bytes, &[1.0, 2.0, 3.0]);
+    put_u32(&mut bytes, 1);
+    put_f64s(&mut bytes, &[-1.0, 0.0]);
+    bytes.extend_from_slice(&[1, 2, 3, 4, 5, 6, 7, 8]);
+    put_u32(&mut bytes, 1);
+    put_u32(&mut bytes, 0);
+    bytes.extend(text_after_characters());
+    bytes.extend_from_slice(&TEXT);
+    bytes.extend_from_slice(&[1, 0, 0, 0, 1, 0, 0, 0]);
+    let mut reader = reader_over(&ctx, &bytes);
+    super::rules::sketch::dimtext(&mut reader).expect("text with a vertical normal");
+    assert_eq!(reader.p, bytes.len());
+}
+
+#[test]
+fn a_text_on_a_path_finds_its_frame_after_a_line_reference_gap() {
+    use std::io::Write;
+    let mut encoder = flate2::write::ZlibEncoder::new(Vec::new(), flate2::Compression::default());
+    encoder.write_all(b"x").expect("encode");
+    let compressed = encoder.finish().expect("finish");
+    let b = 24_usize.checked_add(compressed.len()).expect("length");
+    let mut body = vec![0];
+    body.extend_from_slice(&u32::try_from(b + 5).expect("a fits u32").to_le_bytes());
+    body.push(0);
+    body.extend_from_slice(&u32::try_from(b).expect("b fits u32").to_le_bytes());
+    body.extend_from_slice(&[0; 16]);
+    put_u32(&mut body, 1);
+    put_u32(
+        &mut body,
+        u32::try_from(compressed.len()).expect("cl fits u32"),
+    );
+    body.extend_from_slice(&compressed);
+    for gap in [0, 4] {
+        let arena = DecodeArena::new();
+        let (ctx, _root) =
+            DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::desktop()).expect("context");
+        let mut bytes = text_head(0);
+        bytes.extend(text_after_characters());
+        bytes.extend_from_slice(&[5, 0]);
+        bytes.extend(std::iter::repeat_n(0, gap));
+        put_f64s(&mut bytes, &[1.0, 2.0, 3.0, 4.0, 5.0, 6.0]);
+        bytes.extend_from_slice(&[0; 9]);
+        bytes.extend_from_slice(&body);
+        bytes.extend_from_slice(&TEXT);
+        bytes.extend_from_slice(&[1, 0, 0, 0, 1, 0, 0, 0]);
+        let mut reader = reader_over(&ctx, &bytes);
+        super::rules::sketch::dimtext(&mut reader).expect("text on a path");
+        assert_eq!(reader.p, bytes.len(), "gap {gap}");
+    }
+}
+
+/// The text `A` as a Unicode `CString`.
+const TEXT: [u8; 6] = [0xff, 0xfe, 0xff, 0x01, b'A', 0];
+
+/// A `moDimText_c` up to its character data: the text, its position, u32
+/// `3`, a null format with empty outlines, two u32 and the character count.
+fn text_head(characters: u32) -> Vec<u8> {
+    let mut bytes = TEXT.to_vec();
+    put_f64s(&mut bytes, &[1.0, 2.0, 3.0]);
+    put_u32(&mut bytes, 3);
+    bytes.extend_from_slice(&[0, 0]);
+    put_u32(&mut bytes, 0);
+    put_f64s(&mut bytes, &[0.0; 4]);
+    put_u32(&mut bytes, 0);
+    put_u32(&mut bytes, 0);
+    put_u32(&mut bytes, 0);
+    put_u32(&mut bytes, characters);
+    bytes
+}
+
+/// A `moDimText_c` after its character data: two f64, 18 zero bytes, f64
+/// `1` and u32 `0`.
+fn text_after_characters() -> Vec<u8> {
+    let mut bytes = Vec::new();
+    put_f64s(&mut bytes, &[1e-6, 1e-6]);
+    bytes.extend_from_slice(&[0; 18]);
+    put_f64s(&mut bytes, &[1.0]);
+    put_u32(&mut bytes, 0);
+    bytes
+}
