@@ -6,11 +6,22 @@ use cadmpeg_ir::geometry::nurbs::{NurbsCurve, NurbsPoles3, NurbsSurface};
 use cadmpeg_ir::geometry::{CurveGeometry, SolvedCurveGeometry, SolvedSurfaceGeometry};
 use cadmpeg_ir::math::{Point3, Vector3};
 
-use super::{solve, BlendInputs};
+use super::{solve, BlendCache, BlendInputs};
 use crate::brep::evaluation::nurbs_surface_point;
+use cadmpeg_core::CodecError;
 
 const FIT_TOLERANCE: f64 = 1.0e-6;
 const STEP: f64 = 1.0e-4;
+
+/// The cache when every face vertex lies on it.
+fn solve_holding(
+    ctx: &DecodeContext<'_>,
+    inputs: &BlendInputs<'_>,
+) -> Result<Option<BlendCache>, CodecError> {
+    Ok(solve(ctx, inputs)?
+        .filter(|solved| solved.holds)
+        .map(|solved| solved.cache))
+}
 
 fn plane(normal: Vector3, u_axis: Vector3) -> SolvedSurfaceGeometry {
     SolvedSurfaceGeometry::Plane(
@@ -60,7 +71,7 @@ fn fillet_between_two_planes_is_a_quarter_cylinder_facing_its_spine() {
         Point3::new(0.0, 0.0, 2.0),
         Point3::new(10.0, 0.0, 2.0),
     ];
-    let cache = solve(
+    let cache = solve_holding(
         &ctx,
         &BlendInputs {
             spine: &spine,
@@ -116,7 +127,7 @@ fn ring_around_a_boss_covers_the_whole_spine_as_a_torus() {
         boundary.push(Point3::new(12.0 * angle.cos(), 12.0 * angle.sin(), 0.0));
         boundary.push(Point3::new(10.0 * angle.cos(), 10.0 * angle.sin(), 2.0));
     }
-    let cache = solve(
+    let cache = solve_holding(
         &ctx,
         &BlendInputs {
             spine: &spine,
@@ -183,7 +194,7 @@ fn chart_spine_is_moved_onto_the_ball_centres() {
         boundary.push(Point3::new(12.0 * angle.cos(), 12.0 * angle.sin(), 0.0));
         boundary.push(Point3::new(10.0 * angle.cos(), 10.0 * angle.sin(), 2.0));
     }
-    let cache = solve(
+    let cache = solve_holding(
         &ctx,
         &BlendInputs {
             spine: &spine,
@@ -225,7 +236,7 @@ fn supports_the_ball_cannot_touch_together_leave_no_cache() {
         LineCurve::try_new(Point3::new(0.0, 0.0, 5.0), Vector3::new(1.0, 0.0, 0.0)).unwrap(),
     ));
     let boundary = [Point3::new(0.0, 0.0, 0.0), Point3::new(10.0, 0.0, 10.0)];
-    let cache = solve(
+    let cache = solve_holding(
         &ctx,
         &BlendInputs {
             spine: &spine,
@@ -259,7 +270,7 @@ fn cache_that_misses_a_face_vertex_is_refused() {
     // blend lies.
     let mut vertices = boundary.to_vec();
     vertices.push(Point3::new(5.0, 2.0, 0.5));
-    let cache = solve(
+    let cache = solve_holding(
         &ctx,
         &BlendInputs {
             spine: &spine,
@@ -289,7 +300,7 @@ fn a_vertex_miss_is_the_largest_vertex_distance_from_the_cache() {
         Point3::new(0.0, 0.0, 2.0),
         Point3::new(10.0, 0.0, 2.0),
     ];
-    let cache = solve(
+    let cache = solve_holding(
         &ctx,
         &BlendInputs {
             spine: &spine,

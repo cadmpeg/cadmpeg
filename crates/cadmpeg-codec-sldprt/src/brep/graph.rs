@@ -8,6 +8,7 @@
 
 use cadmpeg_ir::features::FinitePoint3;
 use cadmpeg_ir::math::Point3;
+use std::borrow::Cow;
 use std::collections::{HashMap, HashSet};
 
 use cadmpeg_core::convert::f64_from_index;
@@ -700,6 +701,35 @@ struct SweepSurfaceResolution {
     offset: usize,
     tag: &'static str,
     exactness: Option<Exactness>,
+}
+
+/// The solved geometry of one blend support.
+///
+/// A support face later in the walk has not emitted its surface yet, so this
+/// reads what the support's own record states. A swept or spun support states
+/// its ruling extent through the face it carries. `None` when the record
+/// states no solved surface, or no face carries the sweep.
+fn blend_support_geometry<'a>(
+    ctx: &DecodeContext<'_>,
+    carriers: &'a CarrierIndex,
+    tables: &topology::Tables,
+    faces: &[WalkedFace],
+    emitted_face_surface_by_carrier: &HashMap<u16, u16>,
+    attr: u16,
+) -> Result<Option<Cow<'a, SolvedSurfaceGeometry>>, cadmpeg_core::CodecError> {
+    if let Some(carrier) = carriers.surface(attr) {
+        return Ok(carrier.geometry.solved().map(Cow::Borrowed));
+    }
+    let face = emitted_face_surface_by_carrier
+        .get(&attr)
+        .and_then(|bridge| faces.iter().find(|face| face.bridge_attr == *bridge));
+    let Some(face) = face else {
+        return Ok(None);
+    };
+    // The face that carries the sweep reports its own refusal when it emits.
+    let mut refusal = crate::lane_refusal::LaneRefusals::new();
+    let resolved = resolve_sweep_surface(ctx, carriers, tables, face, &mut refusal)?;
+    Ok(resolved.map(|sweep| Cow::Owned(sweep.geometry)))
 }
 
 fn resolve_sweep_surface(
@@ -3555,24 +3585,27 @@ fn decode_graph(
                         &edge_curve_spans,
                         &edge_endpoint_positions,
                     )?;
-                    // A support face later in the walk has not emitted its
-                    // surface yet; its carrier states the same geometry.
                     let support_geometry = |attr: u16| {
-                        carriers
-                            .surface(attr)
-                            .and_then(|carrier| carrier.geometry.solved())
+                        blend_support_geometry(
+                            ctx,
+                            carriers,
+                            t,
+                            &faces,
+                            &emitted_face_surface_by_carrier,
+                            attr,
+                        )
                     };
-                    let cache = match (
+                    let solved = match (
                         carriers.curve(blend.spine),
-                        support_geometry(support_attrs[0]),
-                        support_geometry(support_attrs[1]),
+                        support_geometry(support_attrs[0])?,
+                        support_geometry(support_attrs[1])?,
                     ) {
                         (Some(spine_carrier), Some(first_geometry), Some(second_geometry)) => {
                             blend_surface::solve(
                                 ctx,
                                 &blend_surface::BlendInputs {
                                     spine: &spine_carrier.carrier().geometry,
-                                    supports: [first_geometry, second_geometry],
+                                    supports: [first_geometry.as_ref(), second_geometry.as_ref()],
                                     radius: blend.signed_radius.abs(),
                                     boundary: &boundary,
                                     vertices: &vertices,
@@ -3583,6 +3616,11 @@ fn decode_graph(
                             )?
                         }
                         _ => None,
+                    };
+                    let (cache, off_vertex) = match solved {
+                        Some(solved) if solved.holds => (Some(solved.cache), None),
+                        Some(solved) => (None, Some(solved.cache)),
+                        None => (None, None),
                     };
                     // Fallback for blends `blend_surface::solve` leaves without a cache.
                     let cache = match (cache, carriers.curve(blend.spine)) {
@@ -3625,7 +3663,7 @@ fn decode_graph(
                             };
                             // The cache states its largest vertex miss; a miss of
                             // a sizeable share of the radius is another branch.
-                            match fitted {
+                            match fitted.or(off_vertex) {
                                 Some(mut cache) => match blend_surface::vertex_miss(
                                     ctx,
                                     &cache,
