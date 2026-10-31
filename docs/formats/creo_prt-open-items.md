@@ -361,11 +361,19 @@ spatial center curve, moving frame, and surface parameters of a swept tube?
 `params`, `ctr_spline`, `tan_spline`, and parameter-bound fields. Its paired
 positional rows retain angular envelopes and model-space outlines. The plane
 charts use oblique local systems. The decoder retains the native bodies and
-attributes missing carriers to their source faces.
+attributes missing carriers to their source faces. In two local files, the two
+end-cap plane frames stored beside such a tube are complete orthonormal
+rotations with every column oblique to every model axis. The stored bytes do
+not select which column is the plane normal. The
+decoder defines no analytic carrier for the tube and does not infer one from
+the end frames.
 
 **Need.** Establish each pointer and positional-body extent, the complete spline and
 moving-frame construction, the plane charts, the parameter reparametrization,
-and independent paired-boundary constraints.
+and independent paired-boundary constraints. The end-cap frames additionally
+use the three-byte tiny scalar `1b X Y` and the eight-byte `41` scalar inside a
+named or positional `local_sys`; no decoder lane admits them, and the sign of
+the `41` form is fixed only by requiring an orthonormal frame.
 
 
 ### GS-31. Independent angular chart construction
