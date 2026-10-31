@@ -1371,3 +1371,70 @@ A constraint type inherits `CadSketchConstraint` and names its geometry through 
 | `CadRadiusConstraint` | 1 arc or circle | | the radius is `value` |
 | `CadDistanceConstraint` | 2 points, or 1 point | the second point, or 1 line | the distance is `value` |
 | `CadAngleConstraint` | 1 line | 1 line | the signed angle from the reference line to the constrained line is `value`, in degrees |
+
+### 18.3 CadConnector and CadMate
+
+The `CadConnector`, `CadMate`, and `CadGroundMate` types state declared assembly joints between faces of `BrepArray` prims (§17). A mate states a relation that the composed placements of its bodies satisfy; it does not move them.
+
+#### Frames
+
+A frame is a row-vector matrix, as `xformOp:transform`: its rows are the `x`, `y`, and `z` axes and the origin. A connector's frame in the space of its `BrepArray` prim is `C = O · G`, with `G` the frame of the origin rule and `O` the rigid offset `cadConnector:offset` in `G`. A point `p` in connector coordinates is `p · O · G` in the space of the prim.
+
+#### Connectors
+
+| Property | Type | Unauthored value | Meaning |
+| --- | --- | --- | --- |
+| `cadConnector:body` | rel | | one target, the `BrepArray` prim of the face |
+| `cadConnector:faceId` | uniform int64 | `-1` | the face, as its position in the face arrays of the prim (§17.1); `-1` is no face |
+| `cadConnector:origin` | uniform token | `faceFrame` | the origin rule: `faceFrame`, `axis`, or `centre` |
+| `cadConnector:axisEnd` | uniform token | `low` | for `axis`: `low` or `high` |
+| `cadConnector:up` | uniform vector3d | `(0, 0, 1)` | the reference for the frame's `y` axis, in the space of the prim |
+| `cadConnector:direction` | uniform vector3d | `(0, 0, 1)` | for `axis`, the sense of `z`; for `centre`, `z` |
+| `cadConnector:tolerance` | uniform double | `0` | the length tolerance of the witness |
+| `cadConnector:offset` | uniform matrix4d | identity | the offset `O` |
+
+`proj(r, n)` is the unit vector `normalize(r − (r·n) n)` of a unit `r`. When `‖r − (r·n) n‖ ≤ √ε`, with `ε = 2⁻⁵²`, it is the same projection of the cyclic partner of `n`: the unit basis vector of index `(k + 2) mod 3`, signed as `n_k`, with `k` the index of the largest-magnitude component of `n` (the lowest such index on a tie). Each rule sets `y = proj(up, z)` and `x = y × z`.
+
+| Rule | Classes | `z` | Origin |
+| --- | --- | --- | --- |
+| `faceFrame` | `plane` | the outward normal of the face | the area centroid of the face region |
+| `axis` | `cylinder`, `cone`, `torus` | the carrier axis, signed so that `z · direction > 0` | `P + t·z`, with `t` the minimum (`low`) or maximum (`high`) of `(q − P)·z` over the face region |
+| `centre` | `sphere` | `normalize(direction)` | the carrier position `P` |
+
+The class of a face is the class of its exact carrier, which `cadConnector:witness:surfaceClass` states.
+
+#### Witness
+
+The witness properties state the frame the producer evaluated. A connector authors all of them.
+
+| Property | Type | Meaning |
+| --- | --- | --- |
+| `cadConnector:witness:surfaceClass` | uniform token | `plane`, `cylinder`, `cone`, `sphere`, `torus`, or `other` |
+| `cadConnector:witness:surfaceParams` | uniform `double[]` | cylinder and sphere `[radius]`; cone `[semiAngle]` in radians; torus `[majorRadius, minorRadius]`; plane and other `[]` |
+| `cadConnector:witness:point` | uniform point3d | a point on the face |
+| `cadConnector:witness:frame` | uniform matrix4d | `G`, before the offset |
+
+The `BrepArray` carrier of a face is the NURBS form of its exact carrier, so a reader takes `G` from `witness:frame`.
+
+#### Mates
+
+A mate type inherits `CadMate` and relates two connectors on different bodies through `rel cadMate:connector0` and `rel cadMate:connector1`.
+
+| Property | Type | Unauthored value | Meaning |
+| --- | --- | --- | --- |
+| `cadMate:flip` | uniform bool | `false` | negates the direction sign |
+| `cadMate:enabled` | uniform bool | `true` | the mate applies |
+| `cadMate:tolerance` | uniform double | `1e-6` | relative satisfaction tolerance |
+
+The direction sign `s` is `−1` when both connectors use `faceFrame`, and `+1` otherwise; `cadMate:flip = true` negates it. `F(s)` is the identity for `s = +1` and the half turn about `x` for `s = −1`. The mate holds when `C₁` coincides with `F(s) · C₀` up to the free motions of its type, in `C₀`:
+
+| Type | Free motions |
+| --- | --- |
+| `CadFastenedMate` | none |
+| `CadRevoluteMate` | rotation about `z` |
+| `CadSliderMate` | translation along `z` |
+| `CadCylindricalMate` | rotation about and translation along `z` |
+| `CadPlanarMate` | translation along `x` and `y`, rotation about `z` |
+| `CadBallMate` | rotation about `x`, `y`, and `z` |
+
+`CadGroundMate` fixes the composed placement of the one target of `rel cadMate:grounded`, with `cadMate:enabled`.

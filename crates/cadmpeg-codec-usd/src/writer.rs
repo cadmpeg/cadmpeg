@@ -17,6 +17,7 @@
 
 mod brep;
 mod brep_array;
+mod mates;
 mod physics;
 mod physx;
 mod records;
@@ -305,6 +306,13 @@ struct Writer<'ir> {
     package: Option<Vec<Member>>,
     /// The source of the files that external assets name.
     assets: Option<&'ir dyn cadmpeg_core::decode::Companions>,
+    /// The analytic B-rep records, in metres, and the IR face of each face
+    /// record, of each body written as a `BrepArray` prim.
+    exported: BTreeMap<BodyId, (crate::brep::Brep, Vec<cadmpeg_ir::ids::FaceId>)>,
+    /// The `BrepArray` prim path of each body written as one.
+    brep_paths: BTreeMap<BodyId, String>,
+    /// Connectors of the mates written so far, by prim name.
+    connector_queue: Vec<(String, mates::ConnectorPlan)>,
 }
 
 impl<'ir> Writer<'ir> {
@@ -394,6 +402,9 @@ impl<'ir> Writer<'ir> {
             ),
             above_parts,
             package: None,
+            exported: BTreeMap::new(),
+            brep_paths: BTreeMap::new(),
+            connector_queue: Vec::new(),
             assets: None,
         }
     }

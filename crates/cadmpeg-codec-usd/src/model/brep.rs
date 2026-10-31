@@ -893,6 +893,9 @@ pub(super) fn folded(
     .then_some(source)
 }
 
+/// A body and the IR face of each record face identity.
+type BodyFaces = (cadmpeg_ir::ids::BodyId, BTreeMap<i64, FaceId>);
+
 impl super::Builder<'_, '_, '_, '_> {
     /// Adds a body for each B-rep of the `BrepArray` prim `prim`, and the
     /// fallback meshes of `fallbacks` as tessellations of its first body.
@@ -920,6 +923,7 @@ impl super::Builder<'_, '_, '_, '_> {
         }
         let mut bodies = Vec::new();
         let mut keys: BTreeMap<usize, String> = BTreeMap::new();
+        let mut faces = BTreeMap::new();
         for (ordinal, records) in decoded.breps.iter().enumerate() {
             let body_key = if ordinal == 0 {
                 key.to_owned()
@@ -927,7 +931,8 @@ impl super::Builder<'_, '_, '_, '_> {
                 format!("{key}#brep{ordinal}")
             };
             match self.brep_body(prim, &body_key, records)? {
-                Ok(body) => {
+                Ok((body, face_ids)) => {
+                    faces.extend(face_ids);
                     self.body_material(prim, &body_key, &body)?;
                     bodies.push(body);
                     keys.insert(ordinal, body_key);
@@ -939,6 +944,13 @@ impl super::Builder<'_, '_, '_, '_> {
             }
         }
         self.brep_subsets(prim, key, &decoded.faces, &keys)?;
+        self.brep_entries.insert(
+            key.to_owned(),
+            super::BrepEntry {
+                faces,
+                body_transform: None,
+            },
+        );
         if let Some(body) = bodies.first() {
             for (ordinal, fallback) in fallbacks.iter().enumerate() {
                 let Some(fallback) = self.stage.prims.get(*fallback) else {
@@ -1106,14 +1118,15 @@ impl super::Builder<'_, '_, '_, '_> {
         self.admit("usd_mesh")
     }
 
-    /// Adds the body of B-rep records `records`, which `prim` defines, or
-    /// gives the reason that the records have no neutral form.
+    /// Adds the body of B-rep records `records`, which `prim` defines, and
+    /// gives it with the IR face of each record face identity, or gives the
+    /// reason that the records have no neutral form.
     pub(super) fn brep_body(
         &mut self,
         prim: &crate::stage::Prim<'_>,
         key: &str,
         records: &crate::brep::Brep,
-    ) -> Result<Result<cadmpeg_ir::ids::BodyId, String>, cadmpeg_core::CodecError> {
+    ) -> Result<Result<BodyFaces, String>, cadmpeg_core::CodecError> {
         let imported = match import(records, key, self.scale, &mut self.used_ids) {
             Ok(imported) => imported,
             Err(reason) => return Ok(Err(reason)),
@@ -1132,7 +1145,7 @@ impl super::Builder<'_, '_, '_, '_> {
             shells,
             regions,
             kind,
-            face_ids: _,
+            face_ids,
             body,
         } = imported;
         let model = &mut self.ir.model;
@@ -1164,6 +1177,6 @@ impl super::Builder<'_, '_, '_, '_> {
         self.body(prim, key, kind.unwrap_or(BodyKind::General), region_ids);
         self.transferred = true;
         self.admit("usd_brep")?;
-        Ok(Ok(body))
+        Ok(Ok((body, face_ids)))
     }
 }

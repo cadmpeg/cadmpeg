@@ -88,6 +88,8 @@ impl Writer<'_> {
             return None;
         }
         let records = exported.brep.divided(MILLIMETRES_PER_UNIT);
+        self.exported
+            .insert(body.id.clone(), (records.clone(), exported.faces.clone()));
         let converted = match crate::brep::convert::nurbs_only(&records) {
             Ok(converted) => converted,
             Err(reason) => {
@@ -141,6 +143,7 @@ impl Writer<'_> {
             &placement,
             binding.as_deref(),
         );
+        self.brep_paths.insert(body.id.clone(), self.out.path());
         if let Some([min, max]) = packed.bounds() {
             let low = min.map(|value| outward(value, false));
             let high = max.map(|value| outward(value, true));

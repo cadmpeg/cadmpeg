@@ -917,11 +917,16 @@ impl Writer<'_> {
             }
             self.out.close();
         }
+        children.reserve(super::mates::CONNECTORS);
+        let mut connectors = Names::default();
         for joint in &model.assembly_joints {
-            if !self.joint(joint, &mut children, None) {
+            if !self.mate(joint, &mut children, &mut connectors)
+                && !self.joint(joint, &mut children, None)
+            {
                 self.unwritten.joints += 1;
             }
         }
+        self.connectors();
         self.out.close();
     }
 }

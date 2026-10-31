@@ -3,6 +3,7 @@
 //! to the IR, and encoded as a `BrepArray` (spec §17).
 
 pub(crate) mod convert;
+pub(crate) mod frame;
 pub(crate) mod nurbs;
 pub(crate) mod primitive;
 mod scale;

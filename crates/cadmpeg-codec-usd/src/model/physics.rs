@@ -89,6 +89,10 @@ impl super::Builder<'_, '_, '_, '_> {
         let Some(prim) = stage.prims.get(index) else {
             return Ok(());
         };
+        if super::mates::is_mate_type(prim.type_name()) {
+            self.pending_mates.push(index);
+            return Ok(());
+        }
         if super::physx::is_scene_type(prim.type_name()) {
             return self.scene(prim);
         }

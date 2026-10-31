@@ -1,0 +1,212 @@
+#usda 1.0
+(
+    subLayers = [
+        @usd/schema.usda@
+    ]
+)
+
+# ============================================================================
+# Mates schema: part-owned connectors and declared joints.
+#
+# Codeless. Normative text: docs/formats/usd.md §18.3.
+#
+#   * CadConnector names one face of one BrepArray prim by relationship and
+#     face position, and an origin rule that derives a right-handed frame
+#     from the face. A connector is authored on the part that owns the body.
+#   * CadMate (abstract) relates two connectors. The prim type of a concrete
+#     subtype states the joint, as the UsdPhysics joint subtypes do.
+#   * CadGroundMate fixes the placement of one prim.
+#   * The composed placements of the bodies are authoritative. Mates are
+#     relations that the placements satisfy within cadMate:tolerance.
+#   * The witness properties (cadConnector:witness:*) state the frame the
+#     producer evaluated. A BrepArray carrier is NURBS, so a consumer reads
+#     the frame from the witness.
+#
+# Schema definition layer (usdGenSchema input).
+# ============================================================================
+
+over "GLOBAL" (
+    customData = {
+        string libraryName   = "cadMates"
+        string libraryPath   = "./"
+        string libraryPrefix = ""
+        string tokensPrefix  = "Cad"
+        bool skipCodeGeneration = true
+    }
+) {
+}
+
+# ----------------------------------------------------------------------------
+# CadConnector -> "CadConnector". A frame derived from one face of one body.
+# Typed, NOT Xformable: its frame is derived from the face, so
+# an authored xformOp would be a second, contradictable source of the same fact.
+# ----------------------------------------------------------------------------
+class CadConnector "CadConnector" (
+    inherits = </Typed>
+    doc = """A right-handed frame derived from one face of one BrepArray prim by an origin
+             rule, in the space of that prim. Mates relate two connectors. It is authored
+             under the part that owns the body, so that every reference to the part carries
+             it. A connector names a face: when the face moves, the connector moves with it."""
+)
+{
+    rel cadConnector:body (
+        doc = """Exactly one target: the BrepArray prim whose face this connector names.
+                 Resolved through composition: the composed target is a BrepArray prim."""
+    )
+    uniform int64 cadConnector:faceId = -1 (
+        doc = """The face, as its position in the face arrays of the BrepArray prim. -1 is
+                 unauthored, and a connector with -1 names no face."""
+    )
+    uniform token cadConnector:origin = "faceFrame" (
+        allowedTokens = ["faceFrame", "axis", "centre"]
+        doc = """The origin rule that derives the frame from the face:
+                 faceFrame — a planar face: z the outward normal, origin the area centroid;
+                 axis — a cylindrical, conical or toroidal face: z the carrier's axis line,
+                   SENSED by cadConnector:direction, origin the axis point at the face's
+                   cadConnector:axisEnd;
+                 centre — a spherical face: origin the centre, z = cadConnector:direction.
+                 Every rule takes y from cadConnector:up and x = y × z. The frame does not
+                 read the axis sense or reference direction of the carrier."""
+    )
+    uniform token cadConnector:axisEnd = "low" (
+        allowedTokens = ["low", "high"]
+        doc = """For origin = axis: which end of the face along z the origin sits at — the
+                 minimum ('low') or maximum ('high') of the face's projection onto the axis.
+                 Ignored for the other rules."""
+    )
+    uniform vector3d cadConnector:up = (0, 0, 1) (
+        doc = """The reference direction whose projection perpendicular to z is the frame's y,
+                 for every origin rule, in the space of the BrepArray prim. Finite and
+                 non-zero."""
+    )
+    uniform vector3d cadConnector:direction = (0, 0, 1) (
+        doc = """For origin = axis: which way along the carrier's axis line z points — the sense
+                 of z whose dot product with this vector is positive; it is not
+                 perpendicular to the axis. For origin = centre: z itself (normalised).
+                 Ignored for faceFrame."""
+    )
+    uniform double cadConnector:tolerance = 0 (
+        doc = """The length tolerance, in the units of the BrepArray prim, at which the
+                 producer evaluated the frame. 0 = evaluated exactly."""
+    )
+    uniform matrix4d cadConnector:offset = ( (1, 0, 0, 0), (0, 1, 0, 0), (0, 0, 1, 0), (0, 0, 0, 1) ) (
+        doc = """A rigid transform applied AFTER the origin rule, in the derived frame
+                 (row-vector convention, as xformOp:transform). Identity = no offset. It is
+                 rigid and orientation-preserving."""
+    )
+    uniform token cadConnector:witness:surfaceClass = "other" (
+        allowedTokens = ["plane", "cylinder", "cone", "sphere", "torus", "other"]
+        doc = """WITNESS: the class of the exact carrier of the face. A connector authors
+                 the four cadConnector:witness:* properties."""
+    )
+    uniform double[] cadConnector:witness:surfaceParams = [] (
+        doc = """WITNESS: intrinsic parameters of the class — cylinder [radius]; cone
+                 [semiAngle in radians]; sphere [radius]; torus [majorRadius, minorRadius];
+                 plane and other []. Intrinsic, so trimming the face does not change them."""
+    )
+    uniform point3d cadConnector:witness:point = (0, 0, 0) (
+        doc = """WITNESS: a point on the face, in the space of the BrepArray prim."""
+    )
+    uniform matrix4d cadConnector:witness:frame = ( (1, 0, 0, 0), (0, 1, 0, 0), (0, 0, 1, 0), (0, 0, 0, 1) ) (
+        doc = """WITNESS: the frame the origin rule produced, before cadConnector:offset, in
+                 the space of the BrepArray prim (row-vector convention)."""
+    )
+}
+
+# ----------------------------------------------------------------------------
+# CadMate -> ABSTRACT typed base. A concrete subtype's PRIM TYPE declares the joint.
+# ----------------------------------------------------------------------------
+class "CadMate" (
+    inherits = </Typed>
+    doc = """Abstract base for a declared joint between two connectors. The concrete type
+             fixes which relative motions remain free (docs/formats/usd.md §18.3)."""
+)
+{
+    rel cadMate:connector0 (
+        doc = """Exactly one target, a CadConnector. The reference end."""
+    )
+    rel cadMate:connector1 (
+        doc = """Exactly one target, a CadConnector on another body."""
+    )
+    uniform bool cadMate:flip = false (
+        doc = """Reverses the direction convention: two faceFrame
+                 connectors default to OPPOSED z (face against face); any other pair defaults
+                 to ALIGNED z. flip = true selects the other."""
+    )
+    uniform bool cadMate:enabled = true (
+        doc = """false = the mate is retained but asserts nothing, as UsdPhysics
+                 jointEnabled."""
+    )
+    uniform double cadMate:tolerance = 0.000001 (
+        doc = """SCALE-RELATIVE satisfaction tolerance (dimensionless). A length residual is
+                 satisfied at <= tolerance * l, where l is the mate's characteristic length;
+                 an angular residual at <= tolerance radians."""
+    )
+}
+
+# ---- Concrete mates: each adds no properties; the type is the semantics. ----
+
+class CadFastenedMate "CadFastenedMate" (
+    inherits = </CadMate>
+    doc = """No relative motion: the two connector frames coincide (under the direction
+             convention). Free motions: none. Cf. UsdPhysics FixedJoint."""
+)
+{
+}
+
+class CadRevoluteMate "CadRevoluteMate" (
+    inherits = </CadMate>
+    doc = """Rotation about the shared z axis only; origins coincide. Free: one rotation
+             about z. Cf. UsdPhysics RevoluteJoint."""
+)
+{
+}
+
+class CadSliderMate "CadSliderMate" (
+    inherits = </CadMate>
+    doc = """Translation along the shared z axis only; x axes aligned. Free: one translation
+             along z. Both connectors use origin = axis. Cf. UsdPhysics
+             PrismaticJoint."""
+)
+{
+}
+
+class CadCylindricalMate "CadCylindricalMate" (
+    inherits = </CadMate>
+    doc = """Rotation about and translation along the shared z axis. Free: two."""
+)
+{
+}
+
+class CadPlanarMate "CadPlanarMate" (
+    inherits = </CadMate>
+    doc = """The two xy planes coincide. Free: two translations in the plane and the rotation
+             about its normal."""
+)
+{
+}
+
+class CadBallMate "CadBallMate" (
+    inherits = </CadMate>
+    doc = """Origins coincide. Free: three rotations about the common origin. Cf. UsdPhysics
+             SphericalJoint without cone limits."""
+)
+{
+}
+
+# ----------------------------------------------------------------------------
+# CadGroundMate -> fixes one placement. Not a CadMate: it relates no connectors.
+# ----------------------------------------------------------------------------
+class CadGroundMate "CadGroundMate" (
+    inherits = </Typed>
+    doc = """Declares that a prim's composed placement is fixed: a producer or consumer
+             that solves leaves it unchanged."""
+)
+{
+    rel cadMate:grounded (
+        doc = """Exactly one target, an Xformable prim."""
+    )
+    uniform bool cadMate:enabled = true (
+        doc = """false = retained but not asserted."""
+    )
+}

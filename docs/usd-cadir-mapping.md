@@ -22,9 +22,9 @@ This document uses ASD-STE100 Simplified Technical English. Schema, attribute, a
 | `appearances`, `appearance_bindings` | materials; bindings to bodies, tessellations, triangle groups, `BrepArray` faces and B-reps | bindings to edges, vertices, free curves, free points, and native carriers | `GeomSubset` of `BrepArray` with `elementType = "edge"` and `"vertex"` |
 | `assets` | package members and asset paths | none for images; other asset kinds keep their path | none |
 | `product_definitions`, `occurrences` | `Xform` prims, references, instancing, `kind` | part number, label, description, BOM properties, source name | `assetInfo` (official) for identifier and version; `CadProductAPI` for part number and BOM properties |
-| `assembly_joints` | `UsdPhysics` joints, drives, PhysX gear and rack-and-pinion joints | joint families with no `UsdPhysics` type; connector semantics (plane and axis coincidence, sense, offset); driving parameter | `CadConnector` and `CadMate` types (`pr/usd`, rebased onto `BrepArray` faces) |
+| `assembly_joints` | `UsdPhysics` joints, drives, PhysX gear and rack-and-pinion joints; `CadConnector` and `CadMate` on `BrepArray` faces (`usd.md` §18.3) | joint families with no `UsdPhysics` or `CadMate` type; joint values and limits on a mate; driving parameter | `CadMate` types for the other CADIR joint kinds, and `cadMate:value` |
 | `physical_materials`, `mass_properties`, `rigid_bodies`, `colliders`, `articulations`, `physics_scenes`, `solver_settings` | `UsdPhysics` and PhysX schemas | none | none |
-| `sketches`, `sketch_entities`, `sketch_constraints` | none | planar sketches, entities, constraints | `CadSketch` types (`pr/usd`) |
+| `sketches`, `sketch_entities`, `sketch_constraints` | `CadSketch` types (`usd.md` §18.2) | entity and constraint kinds outside the `CadSketch` types | added `CadSketch` element and constraint types |
 | `spatial_sketches`, `spatial_sketch_entities`, `spatial_sketch_constraints` | none | spatial sketches | `CadSketch` types with a 3D placement and 3D points |
 | `parameters` | none | design parameters, units, expressions, owners | `CadParameter` prims, with `cad:parameter:expression` |
 | `configurations` | none | configurations and their feature evaluations | variant sets (official composition) over parameter values and feature suppression |
@@ -49,12 +49,12 @@ These are applied API schemas on a `BrepArray` prim. A reader that does not know
 
 ### 2.2 Assembly
 
-- `CadConnector`: a frame on a face of a `BrepArray` B-rep, named by prim, B-rep index, and face identity.
+- `CadConnector`: a frame on a face of a `BrepArray` prim, named by prim and face position (`usd.md` §18.3).
 - `CadMate` and its families: the CADIR joint kinds that `UsdPhysics` has no type for, and the connector semantics of those it has. A mate prim wraps or references its `UsdPhysics` joint.
 
 ### 2.3 Design
 
-- `CadSketch` and its entity and constraint types (`pr/usd` §19), extended for spatial sketches.
+- `CadSketch` and its entity and constraint types (`usd.md` §18.2), extended for spatial sketches.
 - `CadParameter`: name, value with unit, expression, owner.
 - `CadFeature`: one typed prim for each CADIR feature definition family, with relationships to its sketch, inputs, and outputs.
 

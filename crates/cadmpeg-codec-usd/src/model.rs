@@ -57,6 +57,7 @@ use crate::stage::{Prim, Stage};
 use crate::text::syntax::{Layer, MetaValue, Value};
 
 mod brep;
+mod mates;
 mod physics;
 mod physx;
 mod sketch;
@@ -266,6 +267,15 @@ const PRIM_KEYS_READ: &[&str] = &[
     "displayName",
 ];
 
+/// The faces of the `BrepArray` bodies of one definition, for the
+/// connectors that name them.
+struct BrepEntry {
+    /// The IR face of each array face.
+    faces: BTreeMap<i64, cadmpeg_ir::ids::FaceId>,
+    /// The placement of the `BrepArray` prim in its definition.
+    body_transform: Option<Transform>,
+}
+
 struct Builder<'s, 'l, 'c, 'a> {
     ctx: &'c DecodeContext<'a>,
     layers: &'s crate::layers::Layers<'a>,
@@ -293,6 +303,10 @@ struct Builder<'s, 'l, 'c, 'a> {
     bodied: BTreeSet<String>,
     /// Joint prims, resolved after every occurrence exists.
     pending_joints: Vec<physics::PendingJoint>,
+    /// Mate prims, resolved after every occurrence exists.
+    pending_mates: Vec<usize>,
+    /// The `BrepArray` faces of each definition key.
+    brep_entries: BTreeMap<String, BrepEntry>,
     pending_physx: Vec<physx::PendingSettings>,
     admitted: u64,
     transferred: bool,
@@ -327,6 +341,8 @@ pub(crate) fn build<'a>(
         physical_materials: BTreeSet::new(),
         bodied: BTreeSet::new(),
         pending_joints: Vec::new(),
+        pending_mates: Vec::new(),
+        brep_entries: BTreeMap::new(),
         pending_physx: Vec::new(),
         admitted,
         transferred: false,
@@ -339,6 +355,8 @@ pub(crate) fn build<'a>(
                 .ok_or_else(|| CodecError::malformed("root occurrence ordinal exceeds u32"))?;
         }
     }
+    let mates = std::mem::take(&mut builder.pending_mates);
+    builder.mates(mates)?;
     let pending = std::mem::take(&mut builder.pending_joints);
     builder.joints(pending)?;
     builder.finish_physx()?;
@@ -431,7 +449,13 @@ impl Builder<'_, '_, '_, '_> {
             }
             return Ok(false);
         }
-        if crate::schema::sketch::is_sketch_type(prim.type_name()) {
+        if crate::schema::sketch::is_sketch_type(prim.type_name())
+            || prim.type_name() == Some("CadConnector")
+        {
+            return Ok(false);
+        }
+        if mates::is_mate_type(prim.type_name()) {
+            self.pending_mates.push(index);
             return Ok(false);
         }
         if physx::is_scene_type(prim.type_name()) {
@@ -663,6 +687,9 @@ impl Builder<'_, '_, '_, '_> {
                             body.transform = local;
                             body.name = Some(prim.name.clone());
                         }
+                        if let Some(entry) = self.brep_entries.get_mut(key) {
+                            entry.body_transform = local;
+                        }
                         bodies
                     }
                     None => Vec::new(),
@@ -718,7 +745,7 @@ impl Builder<'_, '_, '_, '_> {
             Role::NurbsPatch => self.patch(prim, key)?,
             Role::Intrinsic => match crate::schema::intrinsic::records(prim, &mut self.issues) {
                 Ok(records) => match self.brep_body(prim, key, &records)? {
-                    Ok(body) => Some(body),
+                    Ok((body, _)) => Some(body),
                     Err(reason) => {
                         let name = format!("{}: {reason}", prim.path);
                         *self.tallies.intrinsic.entry(name).or_default() += 1;
@@ -1384,6 +1411,8 @@ fn holds_only_shading(stage: &Stage<'_>, prim: &Prim<'_>) -> bool {
                     .is_some()
                     || physx::is_scene_type(child.type_name())
                     || crate::schema::sketch::is_sketch_type(child.type_name())
+                    || mates::is_mate_type(child.type_name())
+                    || child.type_name() == Some("CadConnector")
                     || match role(child.type_name()) {
                         Role::Consumed => true,
                         Role::Group => holds_only_shading(stage, child),
