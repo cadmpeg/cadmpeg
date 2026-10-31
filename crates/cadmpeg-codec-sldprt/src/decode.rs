@@ -92,6 +92,12 @@ impl crate::SldprtCodec {
                 body,
             ));
         }
+        for (site, stream) in all_local_body_streams(&scan) {
+            let body = crate::brep::graph::header_body(stream.payload, stream.header)?;
+            ledgers.push(crate::exact_ledger::ExactReadLedger::collect_plain(
+                &site, body,
+            ));
+        }
         ctx.finish_session()?;
         Ok((result, ledgers))
     }
@@ -2206,6 +2212,112 @@ fn active_body_streams<'a>(scan: &'a ContainerScan<'_>) -> Vec<ActiveParasolidSi
     streams
 }
 
+/// Test whether a section holds the bodies of imported features (spec §3.3).
+fn is_local_bodies_section(name: &str) -> bool {
+    let name = name.replace('\\', "/");
+    let mut parts = name.rsplit('/');
+    parts
+        .next()
+        .is_some_and(|last| last.eq_ignore_ascii_case("LocalBodies"))
+        && parts
+            .next()
+            .is_some_and(|folder| contains_ascii_case_insensitive(folder, "FeatureBodies"))
+}
+
+/// The plain streams that hold the imported-feature bodies of
+/// `configuration`, each with its own site key (spec §3.3).
+fn local_body_streams<'a>(
+    scan: &'a ContainerScan<'_>,
+    configuration: usize,
+) -> Vec<(String, ActiveParasolidSite<'a>)> {
+    let mut streams = all_local_body_streams(scan);
+    streams.retain(|(_, stream)| {
+        configuration_index(stream.section.name().unwrap_or("")) == Some(configuration)
+    });
+    streams
+}
+
+/// The plain streams that hold imported-feature bodies in every
+/// configuration, each with its own site key (spec §3.3).
+fn all_local_body_streams<'a>(
+    scan: &'a ContainerScan<'_>,
+) -> Vec<(String, ActiveParasolidSite<'a>)> {
+    let mut streams = Vec::new();
+    for section in scan.sections() {
+        if !is_local_bodies_section(section.name().unwrap_or("")) {
+            continue;
+        }
+        for stream in section.ps_streams() {
+            if crate::parasolid::is_body_stream(&stream.header) {
+                continue;
+            }
+            streams.push((
+                format!("{}+{}", section.site_key(), stream.offset),
+                ActiveParasolidSite {
+                    section,
+                    payload: &stream.payload,
+                    header: &stream.header,
+                },
+            ));
+        }
+    }
+    streams
+}
+
+/// Add the imported-feature bodies of `configuration` to an empty
+/// partition/deltas model (spec §3.3). Each stream is its own site. Without
+/// a configuration, no bodies are added.
+fn merge_local_bodies(
+    ctx: &DecodeContext<'_>,
+    scan: &ContainerScan<'_>,
+    configuration: Option<usize>,
+    decoded: &mut Brep,
+) -> Result<(), CodecError> {
+    let Some(configuration) = configuration else {
+        return Ok(());
+    };
+    let streams = local_body_streams(scan, configuration);
+    if streams.is_empty() {
+        return Ok(());
+    }
+    ctx.charge_entities(
+        u64_from_index(streams.len()),
+        "admit SLDPRT imported body streams",
+    )?;
+    let mut unreadable = 0_usize;
+    for (site, stream) in &streams {
+        match decode_bodies(
+            ctx,
+            &[(stream.payload, stream.header)],
+            stream.source_stream(),
+        ) {
+            Ok(mut bodies) => {
+                bodies.qualify_ids(site)?;
+                bind_opaque_geometry(&mut bodies, &stream.section.native_id());
+                merge_brep(decoded, bodies)?;
+            }
+            Err(limit @ CodecError::ResourceLimit(_)) => return Err(limit),
+            Err(_) => unreadable += 1,
+        }
+    }
+    decoded
+        .losses
+        .extend(imported_bodies_loss(unreadable, streams.len()));
+    Ok(())
+}
+
+/// The loss for `unreadable` of `total` imported body streams.
+fn imported_bodies_loss(
+    unreadable: usize,
+    total: usize,
+) -> Option<cadmpeg_ir::report::loss::LossNote> {
+    (unreadable > 0).then(|| {
+        SldprtLossCode::GeometryImportedBodiesNotTransferred.note(format!(
+            "{unreadable} of {total} imported body stream(s) do not decode."
+        ))
+    })
+}
+
 /// Decode the available Parasolid body streams into one B-rep. Returns
 /// `Ok(None)` when the streams frame but yield neither geometry nor a valid
 /// empty partition/deltas model, so the caller falls back to metadata. A
@@ -2252,15 +2364,18 @@ fn try_decode_brep(
     let selected_has_geometry = !decoded_sites[selected_site].2.faces.is_empty()
         || !decoded_sites[selected_site].2.surfaces.is_empty()
         || !decoded_sites[selected_site].2.points.is_empty();
+    let any_site_has_geometry = decoded_sites.iter().any(|(_, _, decoded)| {
+        !decoded.faces.is_empty() || !decoded.surfaces.is_empty() || !decoded.points.is_empty()
+    });
+    // Imported bodies stand in for an empty partition/deltas model (spec §3.3).
+    let takes_local_bodies =
+        selected_is_empty_model && (resolved_active_site.is_some() || !any_site_has_geometry);
     if resolved_active_site.is_some() {
         if !selected_is_empty_model && !selected_has_geometry {
             append_topology_record_losses(&decoded_sites[selected_site].2.stats, fallback_losses);
             return Ok(None);
         }
     } else {
-        let any_site_has_geometry = decoded_sites.iter().any(|(_, _, decoded)| {
-            !decoded.faces.is_empty() || !decoded.surfaces.is_empty() || !decoded.points.is_empty()
-        });
         let any_empty_model = decoded_sites.iter().any(|(site, _, decoded)| {
             decoded.stats.source_entity_records == 0
                 && sites[site].iter().any(|index| {
@@ -2312,6 +2427,11 @@ fn try_decode_brep(
         decoded.qualify_ids(&selected_site_key)?;
     }
     bind_opaque_geometry(&mut decoded, &streams[selected].section.native_id());
+    if takes_local_bodies {
+        let configuration = configuration_index(streams[selected].source_stream().as_str())
+            .or_else(|| container::active_configuration_index(scan));
+        merge_local_bodies(ctx, scan, configuration, &mut decoded)?;
+    }
     let mut configuration_bodies = Vec::new();
     if let Some(index) = configuration_index(streams[selected].source_stream().as_str()) {
         configuration_bodies.push((index, copy_body_ids(&decoded.bodies)));

@@ -37,10 +37,11 @@ impl RawSpan {
 }
 
 /// Every exact-read span of one Parasolid stream body, ordered by offset.
-pub(crate) fn collect(stream_body: &[u8]) -> Vec<RawSpan> {
+/// `plain` reads a plain stream (spec §3.3).
+pub(crate) fn collect(stream_body: &[u8], plain: bool) -> Vec<RawSpan> {
     let mut spans = Vec::new();
     spans.extend(super::analytic_spans(stream_body));
-    spans.extend(super::topology::topology_spans(stream_body));
+    spans.extend(super::topology::topology_spans(stream_body, plain));
     spans.extend(super::spline::spline_spans(stream_body));
     spans.sort_by(|left, right| {
         (left.offset, left.length, left.tag, left.record).cmp(&(
