@@ -7547,3 +7547,41 @@ pub(crate) mod snapshot_body_map_plain_tail {
     /// Stated value of `reserved_zero` (`u8`). Spec §3.1.
     pub(crate) const RESERVED_ZERO_VALUE: u8 = 0;
 }
+
+/// Byte offsets for the `dimension_annotation_metadata_header` record.
+///
+/// Spec §3.1. Record length 5 B.
+///
+/// ```text
+/// Starts immediately after the annotation operand run. Count zero ends the metadata block.
+/// ```
+pub(crate) mod dimension_annotation_metadata_header {
+    /// Record length in bytes. Spec §3.1.
+    pub(crate) const LEN: usize = 5;
+    /// Offset of `present` (`u8`). Spec §3.1.
+    pub(crate) const PRESENT: usize = 0;
+    /// Stated value of `present` (`u8`). Spec §3.1.
+    pub(crate) const PRESENT_VALUE: u8 = 1;
+    /// Offset of `entry_count` (`u32`, little-endian). Spec §3.1.
+    pub(crate) const ENTRY_COUNT: usize = 1;
+}
+
+/// Byte offsets for the `dimension_annotation_genesis_metadata` record.
+///
+/// Spec §3.1. Record length 57 B.
+///
+/// ```text
+/// Starts immediately after the annotation operand run. The two LP-ASCII fields include their u32 lengths.
+/// ```
+pub(crate) mod dimension_annotation_genesis_metadata {
+    /// Record length in bytes. Spec §3.1.
+    pub(crate) const LEN: usize = 57;
+    /// Stated value of `entry_count` (`u32`). Spec §3.1.
+    pub(crate) const ENTRY_COUNT_VALUE: u32 = 0x0000_0001;
+    /// Stated value of `key` (`bytes[13]`). Spec §3.1.
+    pub(crate) const KEY_VALUE: [u8; 13] = *b"EntityGenesis";
+    /// Stated value of `meta_type` (`bytes[23]`). Spec §3.1.
+    pub(crate) const META_TYPE_VALUE: [u8; 23] = *b"IntrinsicMetaTypeuint64";
+    /// Offset of `entity_genesis` (`u64`, little-endian). Spec §3.1.
+    pub(crate) const ENTITY_GENESIS: usize = 49;
+}

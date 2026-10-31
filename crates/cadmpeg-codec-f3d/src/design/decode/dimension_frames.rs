@@ -11,6 +11,8 @@ use crate::design::decode::meta::{decode_types, stream_types_by_entity};
 use crate::design::decode::sketch::{indexed_record_offsets, next_indexed_record_offset};
 use crate::design::decode::text::design_record_id;
 use crate::ids::native_stream;
+use crate::layout::dimension_annotation_genesis_metadata as annotation_genesis;
+use crate::layout::dimension_annotation_metadata_header as annotation_metadata;
 use crate::layout::grouped_recipe_reference_prefix as grouped_recipe;
 use crate::records::{
     decal::DesignRecordHeader,
@@ -1424,18 +1426,36 @@ fn parse_dimension_annotation_frame(
         });
         position = position.checked_add(15)?;
     }
-    if bytes.get(position) != Some(&1) || View::u32_le_at(bytes, position + 1) != Some(1) {
+    if bytes.get(position + annotation_metadata::PRESENT)
+        != Some(&annotation_metadata::PRESENT_VALUE)
+    {
         return None;
     }
-    let (key, after_key) =
-        lp_ascii_filtered_view(bytes, position + 5, 0..=2000, u8::is_ascii_graphic)?;
-    let (meta_type, after_type) =
-        lp_ascii_filtered_view(bytes, after_key, 0..=2000, u8::is_ascii_graphic)?;
-    if key != "EntityGenesis" || meta_type != "IntrinsicMetaTypeuint64" {
-        return None;
-    }
-    let entity_genesis = View::u64_le_at(bytes, after_type)?;
-    let annotation_byte_offset = after_type.checked_add(8)?;
+    let (entity_genesis, annotation_byte_offset) =
+        match View::u32_le_at(bytes, position + annotation_metadata::ENTRY_COUNT)? {
+            0 => (None, position.checked_add(annotation_metadata::LEN)?),
+            annotation_genesis::ENTRY_COUNT_VALUE => {
+                let (key, after_key) = lp_ascii_filtered_view(
+                    bytes,
+                    position.checked_add(annotation_metadata::LEN)?,
+                    0..=2000,
+                    u8::is_ascii_graphic,
+                )?;
+                let (meta_type, after_type) =
+                    lp_ascii_filtered_view(bytes, after_key, 0..=2000, u8::is_ascii_graphic)?;
+                if key.as_bytes() != annotation_genesis::KEY_VALUE.as_slice()
+                    || meta_type.as_bytes() != annotation_genesis::META_TYPE_VALUE.as_slice()
+                    || after_type != position.checked_add(annotation_genesis::ENTITY_GENESIS)?
+                {
+                    return None;
+                }
+                (
+                    Some(View::u64_le_at(bytes, after_type)?),
+                    position.checked_add(annotation_genesis::LEN)?,
+                )
+            }
+            _ => return None,
+        };
     let mut paired_search = annotation_byte_offset;
     let (paired_byte_offset, paired_class_tag) = loop {
         let at = next_indexed_record_offset(bytes, paired_search)?;

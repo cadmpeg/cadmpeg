@@ -872,7 +872,7 @@ fn single_curve_annotation_projects_parameterized_offset() {
                     role_offset: 50,
                 },
             ],
-            entity_genesis: 0x80,
+            entity_genesis: Some(0x80),
             annotation_bytes: Vec::new(),
             annotation_byte_offset: 111,
             governing_owner_record_index: 13,

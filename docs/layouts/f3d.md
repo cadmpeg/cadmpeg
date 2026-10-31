@@ -8026,6 +8026,39 @@ Parsed by:
 | 11 | 1 | `reserved_zero` | `u8` | little | derived | The additional zero follows the eleven-byte local reference. · value `0` |
 | 12 | 4 | `name_length` | `u32` | little | spec | the basename character count follows at tail offset 12 |
 
+## `dimension_annotation_metadata_header`
+
+Spec §3.1 · layout: byte offsets · size: 5 B
+
+Starts immediately after the annotation operand run. Count zero ends the metadata block.
+
+Parsed by:
+- `crates/cadmpeg-codec-f3d/src/design/decode/dimension_frames.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 1 | `present` | `u8` | little | spec | The metadata header stores `u8 1` and a u32 entry count. · value `1` |
+| 1 | 4 | `entry_count` | `u32` | little | spec | The metadata header stores `u8 1` and a u32 entry count. |
+
+## `dimension_annotation_genesis_metadata`
+
+Spec §3.1 · layout: byte offsets · size: 57 B
+
+Starts immediately after the annotation operand run. The two LP-ASCII fields include their u32 lengths.
+
+Parsed by:
+- `crates/cadmpeg-codec-f3d/src/records/dimensions.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 1 | `present` | `u8` | little | spec | The metadata header stores `u8 1` and a u32 entry count. · value `1` |
+| 1 | 4 | `entry_count` | `u32` | little | spec | count `1`, LP-ASCII `EntityGenesis` · value `1` |
+| 5 | 4 | `key_length` | `u32` | little | derived | ASCII byte length of EntityGenesis. · value `13` |
+| 9 | 13 | `key` | `bytes[13]` | little | spec | LP-ASCII `EntityGenesis` · value `"EntityGenesis"` |
+| 22 | 4 | `type_length` | `u32` | little | derived | ASCII byte length of IntrinsicMetaTypeuint64. · value `23` |
+| 26 | 23 | `meta_type` | `bytes[23]` | little | spec | LP-ASCII `IntrinsicMetaTypeuint64` · value `"IntrinsicMetaTypeuint64"` |
+| 49 | 8 | `entity_genesis` | `u64` | little | spec | the u64 origin bitfield |
+
 ## Not tabulated
 
 | Area | Spec | Reason |
