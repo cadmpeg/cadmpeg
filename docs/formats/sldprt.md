@@ -2366,7 +2366,10 @@ byte:
 [attribute_chain, body, next_region, previous_region, shell_head]  type
 ```
 
-The type byte is `S` for a solid region or `V` for a void region. Each typed
+The type byte is `S` for a solid region or `V` for a void region. A void region
+that owns no face has its boundary in the shell of the neighbouring region, and
+transfers no neutral region when its body also has a solid region or a region
+that owns a face. Each typed
 ownership relation is accepted only when FACE → SHELL → REGION → BODY closes,
 the SHELL and REGION links agree, and each BODY region chain has reciprocal
 next/previous links terminating in a null-like value. The stored BODY

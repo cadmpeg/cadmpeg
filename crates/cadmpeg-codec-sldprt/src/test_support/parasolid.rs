@@ -1605,3 +1605,50 @@ pub(crate) fn nurbs_sketch_body(rational: bool) -> Vec<u8> {
     body.extend(edge_use(40, 70));
     body
 }
+
+/// Link a void region and a faceless solid region after the single region of
+/// an owned-triangle body.
+pub(crate) fn append_void_and_faceless_regions(
+    bytes: &mut Vec<u8>,
+    body_attr: u16,
+    region_attr: u16,
+    void_attr: u16,
+    faceless_attr: u16,
+) {
+    let mut head = vec![0x00, 0x13, 0xff];
+    be16(&mut head, region_attr);
+    be32(&mut head, 300_000 + u32::from(region_attr));
+    let at = bytes
+        .windows(head.len())
+        .position(|window| window == head)
+        .expect("owned triangle region node");
+    let next_region = at + head.len() + 4;
+    bytes.splice(next_region..next_region + 2, void_attr.to_be_bytes());
+
+    typed_prefix(
+        bytes,
+        [0x00, 0x13],
+        void_attr,
+        300_000 + u32::from(void_attr),
+    );
+    for value in [
+        1,
+        u32::from(body_attr),
+        u32::from(faceless_attr),
+        u32::from(region_attr),
+        1,
+    ] {
+        typed_ref(bytes, value);
+    }
+    bytes.push(b'V');
+    typed_prefix(
+        bytes,
+        [0x00, 0x13],
+        faceless_attr,
+        300_000 + u32::from(faceless_attr),
+    );
+    for value in [1, u32::from(body_attr), 1, u32::from(void_attr), 1] {
+        typed_ref(bytes, value);
+    }
+    bytes.push(b'S');
+}
