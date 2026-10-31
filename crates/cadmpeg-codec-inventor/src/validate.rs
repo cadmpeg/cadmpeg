@@ -1798,6 +1798,72 @@ fn validate_features(
             }
         }
         if let cadmpeg_ir::features::FeatureDefinition::Operation(
+            operation @ (cadmpeg_ir::features::FeatureOperation::Fillet { .. }
+            | cadmpeg_ir::features::FeatureOperation::Chamfer { .. }),
+        ) = definition
+        {
+            let token = raw_feature.identity.segment_token.as_str();
+            let property = |reference: crate::pmdc::PmDcReference| {
+                feature_properties
+                    .get(&(token, reference.record_ordinal()?))?
+                    .as_ref()
+                    .copied()
+            };
+            let parameter = |reference: crate::pmdc::PmDcReference| {
+                let raw = feature_parameters
+                    .get(&(token, reference.record_ordinal()?))?
+                    .as_ref()?;
+                parameter_values
+                    .get(raw.id().as_str())?
+                    .as_ref()?
+                    .value
+                    .as_ref()
+            };
+            let length = |reference| match parameter(reference)? {
+                cadmpeg_ir::features::ParameterValue::Length(value) => Some(*value),
+                _ => None,
+            };
+            let admitted = match operation {
+                cadmpeg_ir::features::FeatureOperation::Fillet { groups } => {
+                    let corner = labels
+                        .get(&(token, raw_feature.identity.record_ordinal))
+                        .is_some_and(|label| {
+                            label.class_id() == crate::feature::CORNER_ROUND_CLASS_ID
+                        });
+                    crate::feature::fillet::operands(raw_feature, corner, property, length)
+                        .is_ok_and(|expected| crate::feature::fillet::matches(&expected, groups))
+                }
+                cadmpeg_ir::features::FeatureOperation::Chamfer {
+                    groups,
+                    flip_direction,
+                } => crate::feature::chamfer::operands(
+                    raw_feature,
+                    property,
+                    |slot| length(*raw_feature.properties.references().get(slot)?),
+                    |slot| match parameter(*raw_feature.properties.references().get(slot)?)? {
+                        cadmpeg_ir::features::ParameterValue::Angle(value) => Some(*value),
+                        _ => None,
+                    },
+                )
+                .is_ok_and(|expected| {
+                    crate::feature::chamfer::matches(
+                        &expected,
+                        raw_feature,
+                        groups,
+                        *flip_direction,
+                    )
+                }),
+                _ => false,
+            };
+            if !admitted {
+                findings.push(finding(
+                    Check::NativeLinks,
+                    "Inventor neutral edge treatment operands differ from their PmDc slots".into(),
+                    Some(feature.id.as_str().to_owned()),
+                ));
+            }
+        }
+        if let cadmpeg_ir::features::FeatureDefinition::Operation(
             cadmpeg_ir::features::FeatureOperation::Revolve { construction, op },
         ) = definition
         {

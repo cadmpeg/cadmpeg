@@ -99,6 +99,10 @@ pub(crate) enum InventorLossCode {
     FeatureRevolveOperandsNative,
     /// `DeleteFace` Boolean construction roles remain unresolved.
     FeatureDeleteFaceOperandsNative,
+    /// Fillet construction operands remain native.
+    FeatureFilletOperandsNative,
+    /// Chamfer construction operands remain native.
+    FeatureChamferOperandsNative,
     /// Mirror operands differ from the identity-frame, zero-option construction.
     FeatureMirrorOperandsNative,
     /// Split construction operands or result topology remain native.
@@ -230,6 +234,8 @@ impl InventorLossCode {
         Self::FeatureSheetMetalStyleFormsNative,
         Self::FeatureRevolveOperandsNative,
         Self::FeatureDeleteFaceOperandsNative,
+        Self::FeatureFilletOperandsNative,
+        Self::FeatureChamferOperandsNative,
         Self::FeatureMirrorOperandsNative,
         Self::FeatureSplitOperandsNative,
         Self::FeatureBodySelectionNative,
@@ -333,6 +339,8 @@ impl InventorLossCode {
             Self::FeatureMirrorOperandsNative => "feature.mirror-operands-native",
             Self::FeatureSplitOperandsNative => "feature.split-operands-native",
             Self::FeatureWorkPlaneFrameNative => "feature.work-plane-frame-native",
+            Self::FeatureFilletOperandsNative => "feature.fillet-operands-native",
+            Self::FeatureChamferOperandsNative => "feature.chamfer-operands-native",
             Self::FeatureRevolveOperandsNative => "feature.revolve-operands-native",
             Self::FeatureDeleteFaceOperandsNative => "feature.delete-face-operands-native",
             Self::FeatureRevolveExtentNative => "feature.revolve-extent-native",
@@ -434,6 +442,8 @@ impl InventorLossCode {
             | Self::FeatureMirrorOperandsNative
             | Self::FeatureSplitOperandsNative
             | Self::FeatureWorkPlaneFrameNative
+            | Self::FeatureFilletOperandsNative
+            | Self::FeatureChamferOperandsNative
             | Self::FeatureRevolveOperandsNative
             | Self::FeatureDeleteFaceOperandsNative
             | Self::FeatureRevolveExtentNative
@@ -546,6 +556,8 @@ mod tests {
                 "feature.sheet-metal-style-forms-native",
                 "feature.revolve-operands-native",
                 "feature.delete-face-operands-native",
+                "feature.fillet-operands-native",
+                "feature.chamfer-operands-native",
                 "feature.mirror-operands-native",
                 "feature.split-operands-native",
                 "feature.body-selection-native",
