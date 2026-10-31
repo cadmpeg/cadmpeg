@@ -1572,20 +1572,42 @@ pub(crate) fn bind_feature_outputs(
         }
         absorbed_bodies.extend(newly_absorbed);
         let Some(Some((history_index, outputs))) = state_outputs.get(&state_id) else {
+            if is_split_body {
+                losses.push(
+                    crate::loss::F3dLossCode::HistoricalOutputTransitionUnresolved.note(format!(
+                        "Split feature {} has no unique bound output state.",
+                        feature.id
+                    )),
+                );
+            }
             continue;
         };
-        let transition_matches = histories
+        let mut matching_states = histories
             .iter()
             .flat_map(crate::history_records::AsmHistory::states)
-            .filter(|state| state.state_id == state_id)
-            .map(|state| {
+            .filter(|state| state.state_id == state_id);
+        let unique_state = matching_states
+            .next()
+            .filter(|_| matching_states.next().is_none());
+        let transition_matches = unique_state.is_some_and(|state| {
+            if is_split_body {
+                split_output_state_pair(&histories[*history_index], state_id, previous_state_id)
+            } else {
                 state
                     .transition
                     .as_ref()
                     .and_then(|transition| transition.previous_state_id)
                     == Some(previous_state_id)
-            })
-            .eq([true]);
+            }
+        });
+        if is_split_body && !transition_matches {
+            losses.push(
+                crate::loss::F3dLossCode::HistoricalOutputTransitionUnresolved.note(format!(
+                    "Split feature {} has an incomplete or ambiguous output transition chain.",
+                    feature.id
+                )),
+            );
+        }
         if transition_matches {
             let mut resolved = Vec::new();
             for slot in outputs {
@@ -1620,6 +1642,21 @@ pub(crate) fn bind_feature_outputs(
         stored_bodies::finalize_body_sets(feature);
     }
     Ok(losses)
+}
+
+fn split_output_state_pair(history: &AsmHistory, state_id: i64, previous_state_id: i64) -> bool {
+    state_id != previous_state_id
+        && state_pair_by(
+            history,
+            state_id,
+            previous_state_id,
+            false,
+            |history, state| {
+                state.transition.as_ref()?.previous_state_id?;
+                transition_or_header_previous_state_id(history, state)
+            },
+        )
+        .is_some()
 }
 
 /// The history state a feature's scope produces and the state it follows.
