@@ -1073,6 +1073,156 @@ fn ordered_two_edge_circle_loops<'a>(
     Some(ordered)
 }
 
+fn planar_circle_loop_parameters(
+    lp: &crate::topology::Loop,
+    polygon: &[[f64; 2]],
+    surface: &SurfaceGeometry,
+    evidence: NativeCurveEvidence<'_>,
+) -> Option<([f64; 2], f64)> {
+    let SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(plane)) = surface else {
+        return None;
+    };
+    let circle = native_circle_loop_geometry(lp, evidence.model_curves, evidence.source_carriers)?;
+    let normal = plane.frame().axis().as_raw();
+    let origin = plane.origin().get();
+    let center = circle.center.get();
+    let scale = circle
+        .radius
+        .max(1.0)
+        .max(center.x.abs())
+        .max(center.y.abs())
+        .max(center.z.abs());
+    (vectors_are_parallel(circle.axis, *normal)
+        && center.vector_from(origin).dot(*normal).abs() <= EPS_GEOMETRY_AGREE * scale)
+        .then_some(())?;
+    let center_uv = cadmpeg_ir::eval::analytic_surface_parameters(surface, center)?.get();
+    let center_uv = [center_uv.u, center_uv.v];
+    let [first, second] = polygon else {
+        return None;
+    };
+    let first = [first[0] - center_uv[0], first[1] - center_uv[1]];
+    let second = [second[0] - center_uv[0], second[1] - center_uv[1]];
+    let radius_squared = circle.radius * circle.radius;
+    (scalar_values_agree(
+        first[0].mul_add(first[0], first[1] * first[1]),
+        radius_squared,
+    ) && scalar_values_agree(
+        second[0].mul_add(second[0], second[1] * second[1]),
+        radius_squared,
+    ) && scalar_values_agree(
+        first[0].mul_add(second[0], first[1] * second[1]),
+        -radius_squared,
+    ))
+    .then_some((center_uv, circle.radius))
+}
+
+fn convex_polygon_contains_circles(polygon: &[[f64; 2]], circles: &[([f64; 2], f64)]) -> bool {
+    if polygon.len() < 3 || polygon.iter().flatten().any(|value| !value.is_finite()) {
+        return false;
+    }
+    let scale = polygon
+        .iter()
+        .flat_map(|point| {
+            [
+                (point[0] - polygon[0][0]).abs(),
+                (point[1] - polygon[0][1]).abs(),
+            ]
+        })
+        .chain(circles.iter().map(|(_, radius)| *radius))
+        .fold(1.0_f64, f64::max);
+    let tolerance = EPS_PARAMETER_AGREE * scale;
+    let cross = |first: [f64; 2], second: [f64; 2], point: [f64; 2]| {
+        (second[0] - first[0]).mul_add(
+            point[1] - first[1],
+            -(second[1] - first[1]) * (point[0] - first[0]),
+        )
+    };
+    let winding = cross(polygon[0], polygon[1], polygon[2]).signum();
+    if !winding.is_finite() || winding == 0.0 {
+        return false;
+    }
+    for (index, first) in polygon.iter().copied().enumerate() {
+        let next = (index + 1) % polygon.len();
+        let second = polygon[next];
+        let length = (second[0] - first[0]).hypot(second[1] - first[1]);
+        if !length.is_finite() || length <= tolerance {
+            return false;
+        }
+        if polygon.iter().copied().enumerate().any(|(vertex, point)| {
+            vertex != index
+                && vertex != next
+                && winding * cross(first, second, point) / length <= tolerance
+        }) || circles.iter().any(|(center, radius)| {
+            !radius.is_finite()
+                || *radius <= 0.0
+                || winding * cross(first, second, *center) / length <= *radius + tolerance
+        }) {
+            return false;
+        }
+    }
+    !circles
+        .iter()
+        .enumerate()
+        .any(|(index, (first, first_radius))| {
+            circles
+                .iter()
+                .skip(index + 1)
+                .any(|(second, second_radius)| {
+                    (first[0] - second[0]).hypot(first[1] - second[1])
+                        <= first_radius + second_radius + tolerance
+                })
+        })
+}
+
+fn ordered_polygon_circle_loops<'a>(
+    loops: &[&'a crate::topology::Loop],
+    polygons: &[Vec<[f64; 2]>],
+    surface: &SurfaceGeometry,
+    evidence: NativeCurveEvidence<'_>,
+) -> Option<Vec<&'a crate::topology::Loop>> {
+    (loops.len() >= 2 && loops.len() == polygons.len()).then_some(())?;
+    let outer = exactly_one(
+        polygons
+            .iter()
+            .enumerate()
+            .filter_map(|(index, polygon)| (polygon.len() >= 3).then_some(index)),
+    )?;
+    for half_edge in loops[outer].half_edges() {
+        let curve = exactly_one(evidence.model_curves.iter().filter(|curve| {
+            crate::identity::matches_numbered_identity(
+                curve.id.as_str(),
+                "creo:visibgeom:curve#",
+                half_edge.curve_id,
+            )
+        }))?;
+        matches!(
+            evidence.source_carriers.curve_geometry(curve),
+            CurveGeometry::Solved(SolvedCurveGeometry::Line(_))
+        )
+        .then_some(())?;
+    }
+    let mut circles = Vec::new();
+    for (index, lp) in loops.iter().enumerate() {
+        if index != outer {
+            circles.push(planar_circle_loop_parameters(
+                lp,
+                &polygons[index],
+                surface,
+                evidence,
+            )?);
+        }
+    }
+    convex_polygon_contains_circles(&polygons[outer], &circles).then_some(())?;
+    let mut ordered = vec![loops[outer]];
+    ordered.extend(
+        loops
+            .iter()
+            .enumerate()
+            .filter_map(|(index, lp)| (index != outer).then_some(*lp)),
+    );
+    Some(ordered)
+}
+
 fn native_parameter_loop_polygon(
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     lp: &crate::topology::Loop,
@@ -1175,7 +1325,8 @@ fn ordered_native_parameter_face_loops<'a>(
             surface,
             curve_evidence.model_curves,
             curve_evidence.source_carriers,
-        ))
+        )
+        .or_else(|| ordered_polygon_circle_loops(loops, &polygons, surface, curve_evidence)))
     }
 }
 

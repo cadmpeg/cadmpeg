@@ -172,6 +172,13 @@ pub(crate) fn cylinders(
 ) -> Result<Vec<DatumCylinder>, CodecError> {
     let rows = crate::surface::rows(payload);
     let parameters = crate::surface::parameter_records_with_losses(ctx, payload, losses)?;
+    let cache = scalar::ScalarCache::from_section_checked(payload);
+    let mut refusals = crate::lane_refusal::LaneRefusals::new();
+    let prototypes = crate::surface::named_cylinder_prototype_records(ctx, payload, &mut refusals)?;
+    for refusal in refusals.take_records() {
+        losses.push(crate::loss::CreoLossCode::SurfacePrototypeFieldRetained.note(refusal));
+    }
+    let frame_bounds = crate::surface::complete_surface_array_bounds(payload);
     let mut cylinders = Vec::new();
     for row in rows
         .iter()
@@ -183,10 +190,21 @@ pub(crate) fn cylinders(
         if parameter.offset != row.offset {
             continue;
         }
-        if let Some(frame) = parameter
-            .positional_cylinder_frame()
-            .or_else(|| active_cylinder_frame(row, parameter))
-        {
+        let named = crate::surface::cylinder_frame_readers::named_rotation_cylinder_frame(
+            row,
+            parameter,
+            &rows,
+            &prototypes,
+            &frame_bounds,
+            &cache,
+        );
+        let frame = match named {
+            Some(frame) => frame.frame(),
+            None => parameter
+                .positional_cylinder_frame()
+                .or_else(|| active_cylinder_frame(row, parameter)),
+        };
+        if let Some(frame) = frame {
             cylinders.push(DatumCylinder {
                 id: row.id,
                 feature_id: row.feature_id,
