@@ -147,7 +147,7 @@ impl crate::F3dCodec {
         ctx: &DecodeContext<'a>,
         root: View<'a>,
     ) -> Result<F3zSession<'a>, CodecError> {
-        F3zSession::open_scanned(ctx, crate::container::scan(ctx, root)?)
+        F3zSession::open_scanned(ctx, super::observer::scan(ctx, root)?)
     }
 }
 
@@ -161,63 +161,50 @@ impl<'a> F3zSession<'a> {
                 "archive session requires F3Z".into(),
             ));
         }
-        let (model_root, omitted_drawing_root) = archive::model_root(ctx, &scan)?;
-        let archive = archive::classify_members(ctx, &scan)?;
-        archive.member_checkpoint(&model_root)?;
-        let checkpoint = ctx.checkpoint();
-        let mut members = Vec::new();
-        for (entry, &bytes) in scan.entries.iter().zip(&scan.archive_member_sizes) {
-            let mut references = Vec::new();
-            let mut reference_error = None;
-            let kind = match archive.members.get(&entry.name) {
-                Some(ClassifiedMember::Scanned { .. }) => {
-                    let metadata = archive.with_member_scan(&scan, &entry.name, |member_scan| {
-                        let arena = DecodeArena::new();
-                        let metadata_ctx = checkpoint.resume(&arena);
-                        metadata_ctx.take_trace();
-                        let mut placement_only = false;
-                        let table = crate::xref::decode(&metadata_ctx, member_scan)?;
-                        if let Some(table) = table {
-                            references.extend(
-                                table
-                                    .references
-                                    .iter()
-                                    .map(|reference| reference.relative_path.as_str().to_owned()),
-                            );
-                            let selection =
-                                crate::design::decode::body::design_model_selection(member_scan)?;
-                            placement_only = crate::xref::is_assembly(
-                                &metadata_ctx,
-                                member_scan,
-                                Some(&table),
-                                selection.explicitly_empty,
-                            )?;
+        let (model_root, omitted_drawing_root, archive) =
+            super::observer::phase(super::observer::F3zPhase::Classify, || {
+                let (model_root, omitted_drawing_root) = archive::model_root(ctx, &scan)?;
+                let archive = archive::classify_members(ctx, &scan, true)?;
+                Ok((model_root, omitted_drawing_root, archive))
+            })?;
+        let (checkpoint, mut members) =
+            super::observer::phase(super::observer::F3zPhase::SessionOpen, || {
+                archive.member_checkpoint(&model_root)?;
+                let checkpoint = ctx.checkpoint();
+                let mut members = Vec::new();
+                for (entry, &bytes) in scan.entries.iter().zip(&scan.archive_member_sizes) {
+                    let mut references = Vec::new();
+                    let mut reference_error = None;
+                    let kind = match archive.members.get(&entry.name) {
+                        Some(ClassifiedMember::Scanned { metadata, .. }) => {
+                            let mut kind = F3zMemberKind::Design;
+                            if let Some(metadata) = metadata {
+                                references.extend(metadata.references.iter().cloned());
+                                reference_error = metadata.error.clone();
+                                if metadata.placement_only && metadata.error.is_none() {
+                                    kind = F3zMemberKind::PlacementOnly;
+                                }
+                            }
+                            kind
                         }
-                        Ok(placement_only)
+                        Some(ClassifiedMember::Unreadable(reason)) => {
+                            F3zMemberKind::Skipped(reason.clone())
+                        }
+                        None if entry.name.to_ascii_lowercase().ends_with(".f2d") => {
+                            F3zMemberKind::Drawing
+                        }
+                        None => F3zMemberKind::Skipped("not an F3D model document".into()),
+                    };
+                    members.push(F3zMember {
+                        id: entry.name.clone(),
+                        kind,
+                        bytes,
+                        references,
+                        reference_error,
                     });
-                    match metadata {
-                        Ok(true) => F3zMemberKind::PlacementOnly,
-                        Ok(false) => F3zMemberKind::Design,
-                        Err(error) => {
-                            reference_error = Some(error.to_string());
-                            F3zMemberKind::Design
-                        }
-                    }
                 }
-                Some(ClassifiedMember::Unreadable(reason)) => {
-                    F3zMemberKind::Skipped(reason.clone())
-                }
-                None if entry.name.to_ascii_lowercase().ends_with(".f2d") => F3zMemberKind::Drawing,
-                None => F3zMemberKind::Skipped("not an F3D model document".into()),
-            };
-            members.push(F3zMember {
-                id: entry.name.clone(),
-                kind,
-                bytes,
-                references,
-                reference_error,
-            });
-        }
+                Ok((checkpoint, members))
+            })?;
         members.sort_by(|a, b| (a.id != model_root, &a.id).cmp(&(b.id != model_root, &b.id)));
         Ok(Self {
             scan,

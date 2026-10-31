@@ -276,3 +276,5 @@ pub(crate) mod pipe;
 pub(crate) mod work_plane;
 
 pub(crate) mod component_body_test;
+
+pub(crate) mod scan_counts;

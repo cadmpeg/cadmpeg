@@ -3,7 +3,7 @@
 
 use std::collections::BTreeMap;
 
-use cadmpeg_core::decode::{DecodeArena, DecodeCheckpoint, DecodeContext};
+use cadmpeg_core::decode::{u64_from_index, DecodeArena, DecodeCheckpoint, DecodeContext};
 use cadmpeg_core::dialect::DialectLayers;
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::report::loss::LossNote;
@@ -62,10 +62,19 @@ pub(super) struct ArchiveSession {
     pub(super) losses: Vec<LossNote>,
 }
 
+/// Facts read from a member's container scan during classification.
+#[derive(Default)]
+pub(super) struct MemberMetadata {
+    pub(super) references: Vec<String>,
+    pub(super) placement_only: bool,
+    pub(super) error: Option<String>,
+}
+
 pub(super) enum ClassifiedMember {
     Scanned {
         checkpoint: DecodeCheckpoint,
         working_bytes: Option<u64>,
+        metadata: Option<MemberMetadata>,
     },
     Unreadable(String),
 }
@@ -119,10 +128,50 @@ pub(super) fn model_root(
     model_root_member(ctx, scan, &manifest.root)
 }
 
+/// Reads the member list facts from one nested scan.
+/// The work runs on a private context, so its charges stay out of the session.
+fn member_metadata(
+    checkpoint: &DecodeCheckpoint,
+    arena: &DecodeArena,
+    member_scan: &ContainerScan<'_>,
+) -> MemberMetadata {
+    let metadata_ctx = checkpoint.resume(arena);
+    metadata_ctx.take_trace();
+    let mut metadata = MemberMetadata::default();
+    let result = (|| {
+        let Some(table) = crate::xref::decode(&metadata_ctx, member_scan)? else {
+            return Ok(false);
+        };
+        metadata.references.extend(
+            table
+                .references
+                .iter()
+                .map(|reference| reference.relative_path.as_str().to_owned()),
+        );
+        let selection = crate::design::decode::body::design_model_selection(member_scan)?;
+        crate::xref::is_assembly(
+            &metadata_ctx,
+            member_scan,
+            Some(&table),
+            selection.explicitly_empty,
+        )
+    })();
+    match result {
+        Ok(placement_only) => metadata.placement_only = placement_only,
+        Err(error) => metadata.error = Some(error.to_string()),
+    }
+    metadata
+}
+
 /// Classifies all F3D members and attaches each nested layer to its archive path.
+///
+/// Each member is inflated and scanned once. With `with_metadata`, the same
+/// scan also yields the member references and placement role for the member
+/// list; the session keeps those owned facts and drops the scan.
 pub(super) fn classify_members<'a>(
     ctx: &DecodeContext<'a>,
     scan: &ContainerScan<'a>,
+    with_metadata: bool,
 ) -> Result<ArchiveSession, CodecError> {
     let mut members = BTreeMap::new();
     let primary = scan.kind.dialect().clone();
@@ -146,8 +195,18 @@ pub(super) fn classify_members<'a>(
         let classified = root.and_then(|view| {
             ctx.with_arena(&arena, |local| {
                 let member_scan = crate::container::scan(local, view)?;
-                Ok(crate::dialect::classify_layers(&member_scan)
-                    .map(|(layers, losses)| (layers, losses, member_scan.declared_working_bytes())))
+                Ok(
+                    crate::dialect::classify_layers(&member_scan).map(|(layers, losses)| {
+                        let metadata = with_metadata
+                            .then(|| member_metadata(&checkpoint, &arena, &member_scan));
+                        (
+                            layers,
+                            losses,
+                            member_scan.declared_working_bytes(),
+                            metadata,
+                        )
+                    }),
+                )
             })
         });
         let classified = match classified {
@@ -165,7 +224,11 @@ pub(super) fn classify_members<'a>(
                 continue;
             }
         };
-        let (member_layers, mut member_losses, working_bytes) = classified?;
+        let (member_layers, mut member_losses, working_bytes, metadata) = classified?;
+        if let Some(metadata) = &metadata {
+            let facts = u64_from_index(metadata.references.len() + 1);
+            ctx.charge_entities(facts, "cache F3Z member metadata")?;
+        }
         for loss in &mut member_losses {
             loss.message = format!("archive member {member_path}: {}", loss.message);
         }
@@ -181,6 +244,7 @@ pub(super) fn classify_members<'a>(
             ClassifiedMember::Scanned {
                 checkpoint,
                 working_bytes,
+                metadata,
             },
         );
     }

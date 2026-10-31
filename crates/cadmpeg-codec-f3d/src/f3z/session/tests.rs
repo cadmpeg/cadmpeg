@@ -81,6 +81,8 @@ fn archive_session_reference_error_keeps_the_member_decode_loss() {
 
 mod memory;
 
+mod preparation;
+
 #[test]
 fn archive_session_expanded_member_traces_avoid_reexecution() {
     let leaf = crate::test_support::zip_test::f3d_with_smbh_and_protein(
