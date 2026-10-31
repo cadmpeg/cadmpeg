@@ -6542,8 +6542,9 @@ fn plane_local_system_compound_close(
     cache: &scalar::ScalarCache,
     losses: &mut Vec<cadmpeg_ir::report::loss::LossNote>,
 ) -> Result<Option<usize>, CodecError> {
-    let structural_close = if let Some((_, consumed)) =
-        scalar::sheet_frames::plane_prefix(&payload[start..end], cache)
+    let structural_close = if let Some((_, consumed)) = payload
+        .get(start..end)
+        .and_then(|body| scalar::sheet_frames::plane_prefix(body, cache))
     {
         first_compound_close(payload, start + consumed, end)
     } else {

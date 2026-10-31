@@ -1409,6 +1409,23 @@ pub(crate) fn decode_plane_support_local_system(
     cache: &ScalarCache,
     losses: &mut Vec<cadmpeg_ir::report::loss::LossNote>,
 ) -> Result<Option<(FiniteVector<12>, PlaneSupportFrameLayout)>, CodecError> {
+    if let Some(frame) = decode_support_frame_productions(ctx, body, cache, losses)? {
+        return Ok(Some(frame));
+    }
+    // A complete angular-stream rotation is read only when no support-frame
+    // production admits the body; the caller attributes an incomplete one.
+    Ok(match sheet_frames::plane(body, cache) {
+        Some(Ok(slots)) => Some((slots, PlaneSupportFrameLayout::RotationColumns)),
+        _ => None,
+    })
+}
+
+fn decode_support_frame_productions(
+    ctx: &DecodeContext<'_>,
+    body: &[u8],
+    cache: &ScalarCache,
+    losses: &mut Vec<cadmpeg_ir::report::loss::LossNote>,
+) -> Result<Option<(FiniteVector<12>, PlaneSupportFrameLayout)>, CodecError> {
     let mut incomplete_image = false;
     if let Some((values, cursor)) = decode_compact_y_plane_support(body, cache)
         .or_else(|| decode_diagonal_z_plane_support(body, cache))
@@ -1453,12 +1470,6 @@ pub(crate) fn decode_plane_support_local_system(
             )));
         }
         incomplete_image = true;
-    }
-    // An incomplete angular rotation field falls through to the support-frame
-    // productions; the caller attributes its refusal when no production admits
-    // the body.
-    if let Some(Ok(slots)) = sheet_frames::plane(body, cache) {
-        return Ok(Some((slots, PlaneSupportFrameLayout::RotationColumns)));
     }
     if let Some((frame, cursor)) =
         decode_stateful_scalar_frame_prefix::<12>(body, cache, StatefulScalarKind::Plane)
