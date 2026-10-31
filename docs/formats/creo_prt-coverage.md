@@ -45,10 +45,11 @@ complete wall admission, the three envelope arbitration outcomes, trailing-byte 
 cylinders, conflicting-radius refusal, stored domains, and neutral validation.
 Complete angular endpoint bodies share one reader for native scalar tokens and
 endpoint tuples. A synthetic test checks the tiny literal, low-byte literal,
-exact field consumption, and truncated or trailing-byte refusal. A complete
-angular endpoint candidate with an unresolved full-width subunit literal emits
-`creo/geometry.angular-endpoint-literal-unresolved` with its curve and payload
-offset. The source body remains native.
+exact field consumption, and truncated or trailing-byte refusal. The
+full-width opener `41` reads as the negative subunit literal. A complete
+angular endpoint candidate whose `41` literal is not a finite value in (-1, 0)
+emits `creo/geometry.angular-endpoint-literal-unresolved` with its curve and
+payload offset. The source body remains native.
 
 ## Envelope
 

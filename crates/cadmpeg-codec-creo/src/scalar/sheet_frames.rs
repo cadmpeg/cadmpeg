@@ -169,18 +169,24 @@ pub(crate) fn pcurve(
         }
         view.seek(start)?;
         let tag = view.u8()?;
-        full_width |= tag == 0x41;
         extended_literal |= match tag {
             0x1a => true,
             0x00 => view.u8() == Some(0x04),
             _ => false,
         };
-        let (value, count, end) = sweep::run(
-            body,
-            cursor,
-            slot.checked_sub(1).map(|index| frame.values[index]),
-            cache,
-        )?;
+        let (value, count, end) = if tag == 0x41 {
+            // `41` mirrors `28`: the sign-flipped full-width literal.
+            let (value, end) = super::ieee8(body, cursor, 0xbf)?;
+            full_width |= !(value.is_finite() && value < 0.0 && value > -1.0);
+            (value, 1, end)
+        } else {
+            sweep::run(
+                body,
+                cursor,
+                slot.checked_sub(1).map(|index| frame.values[index]),
+                cache,
+            )?
+        };
         let next = slot.checked_add(count)?;
         frame.values.get_mut(slot..next)?.fill(value);
         *frame.tokens.get_mut(frame.token_count)? = Some(super::StatefulScalarToken {
@@ -195,7 +201,7 @@ pub(crate) fn pcurve(
     }
     (extended_literal && cursor == body.len()).then_some(())?;
     Some(if full_width {
-        Err("full-width subunit literal has unresolved signed ownership in the angular endpoint body")
+        Err("full-width literal `41` lies outside the negative subunit range in the angular endpoint body")
     } else {
         Ok(frame)
     })

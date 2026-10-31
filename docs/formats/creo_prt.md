@@ -2563,7 +2563,10 @@ A positional eight-slot endpoint body with a token-boundary `1a` literal or
 `00 04 <low>` replacement uses the angular scalar stream in §4.1.1. A
 complete standard stateful endpoint body has precedence. The angular body
 contains exactly eight finite slots and consumes its complete boundary.
-Its full-width literal openers are `19`, `28`, `2d`, `32`, and `46`.
+Its full-width literal openers are `19`, `28`, `2d`, `32`, `41`, and `46`.
+Opener `41` mirrors `28`: its seven payload bytes follow the high byte `bf`, so the
+literal is negative. The body is refused when the value is not finite or does not
+lie strictly between minus one and zero.
 The exact wrapper `d7 e8 03 <scalar> 1e` selects the held-scalar production at
 a token boundary. It occupies one held scalar slot and retains the row-lane
 literal grammar; wrapper bytes are not parameter values. A payload byte sequence

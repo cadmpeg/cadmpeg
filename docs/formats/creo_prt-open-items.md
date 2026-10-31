@@ -431,19 +431,18 @@ and exact field extent.
 **Need.** Establish the enclosing record selector, slot roles, and complete
 field boundary for additional angular chart productions.
 
-### GS-33. Low-byte endpoint literals in paired planar charts
+### GS-33. Full-width endpoint literals outside the negative subunit range
 
-**Question.** Which complete endpoint production owns the signed floating
-literals beside low-byte literal replacements in paired planar charts?
+**Question.** Which production owns a full-width `41` literal in an angular
+endpoint body when its value is not a finite number between minus one and zero?
 
-**Known.** The angular stream defines `00 <literal> <low>` replacements.
-Complete planar wall frames supply independent chart coordinates. Some
-endpoint bodies contain eight scalar candidates and a full-width `41`
-literal. The source retains the complete body and both chart references.
+**Known.** The angular stream defines `00 <literal> <low>` replacements and the
+sign-mirrored full-width openers. Opener `41` reads as the negative subunit
+literal. The source retains the complete body and both chart references of a
+refused body.
 
-**Need.** Establish the signed literal lane through independent paired bytes
-and complete chart images. Bind that lane to its bounded endpoint production
-before it supplies boundary geometry.
+**Need.** Establish the lane of a `41` literal outside that range through
+independent paired bytes and complete chart images.
 
 ## 3. Section solving and feature placement
 

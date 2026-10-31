@@ -1217,8 +1217,15 @@ fn angular_endpoint_frame_keeps_its_complete_boundary() {
     let mut trailing = body.to_vec();
     trailing.push(0x18);
     assert!(crate::scalar::sheet_frames::pcurve(&trailing, &cache).is_none());
+    let mut negative = vec![0x41];
+    negative.extend_from_slice(&0.25_f64.to_be_bytes()[1..]);
+    negative.extend_from_slice(&body[3..]);
+    let admitted = crate::scalar::sheet_frames::pcurve(&negative, &cache)
+        .expect("complete bounded endpoint body")
+        .expect("negative subunit literal");
+    assert_eq!(admitted.values[0], -0.25);
     let mut full_width = vec![0x41];
-    full_width.extend_from_slice(&0.25_f64.to_be_bytes()[1..]);
+    full_width.extend_from_slice(&1.5_f64.to_be_bytes()[1..]);
     full_width.extend_from_slice(&body[3..]);
     assert!(crate::scalar::sheet_frames::pcurve(&full_width, &cache)
         .expect("complete bounded endpoint body")
