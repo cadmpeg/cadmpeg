@@ -122,3 +122,33 @@ fn parameter_registered_tail_refuses_compact_owned_frame() {
         1
     );
 }
+
+/// A fixed tail whose family marker equals a registered record identity also
+/// reads as a plain reference to that record. A frame the registered grammar
+/// refuses is read with the fixed tail.
+#[test]
+fn parameter_fixed_tail_marker_that_equals_a_registered_target_reads_as_fixed() {
+    let mut frame = parameter_record(None, "3 mm", "User Parameter", Some("mm"), "Width", 0.3);
+    frame[22..30].copy_from_slice(&6u64.to_le_bytes());
+    let tail = frame.len() - 12;
+    frame[tail + 2] = 0x11;
+    let archive =
+        registered_tail_archive(frame.clone(), super::super::PARAMETER_TAIL_TYPE_GUID, 0x11);
+    let decoded = with_scan(&archive, decode_parameters).unwrap();
+    assert_eq!(decoded.parameters.len(), 1);
+    assert_eq!(decoded.parameters[0].name(), "Width");
+    assert!(decoded.unparsed.is_empty());
+
+    // A nonzero byte after the marker is no fixed tail and no plain
+    // reference to record 0x11 either.
+    let mut corrupt = frame.clone();
+    corrupt[tail + 5] = 1;
+    let archive = registered_tail_archive(corrupt, super::super::PARAMETER_TAIL_TYPE_GUID, 0x11);
+    let decoded = with_scan(&archive, decode_parameters).unwrap();
+    assert!(decoded.parameters.is_empty());
+
+    // The same frame without a registered record reads as fixed as well.
+    let archive = registered_tail_archive(frame, super::super::PARAMETER_TAIL_TYPE_GUID, 0x12);
+    let decoded = with_scan(&archive, decode_parameters).unwrap();
+    assert_eq!(decoded.parameters.len(), 1);
+}

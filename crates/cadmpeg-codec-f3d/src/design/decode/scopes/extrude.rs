@@ -1815,7 +1815,7 @@ fn exact_legacy_shifted_extrude_prologue(
                     )
                 }
                 252 | 262 | 263 | 692 => (106, 110),
-                272 | 283 => (
+                272 | 276 | 283 => (
                     offset_lane::FIRST_SIDE_EXTENT,
                     offset_lane::SECOND_SIDE_EXTENT,
                 ),
