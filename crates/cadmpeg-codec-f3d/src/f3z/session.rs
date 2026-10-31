@@ -180,7 +180,7 @@ impl<'a> F3zSession<'a> {
                             let mut kind = F3zMemberKind::Design;
                             if let Some(metadata) = metadata {
                                 references.extend(metadata.references.iter().cloned());
-                                reference_error = metadata.error.clone();
+                                reference_error.clone_from(&metadata.error);
                                 if metadata.placement_only && metadata.error.is_none() {
                                     kind = F3zMemberKind::PlacementOnly;
                                 }

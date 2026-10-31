@@ -74,7 +74,7 @@ pub(super) enum ClassifiedMember {
     Scanned {
         checkpoint: DecodeCheckpoint,
         working_bytes: Option<u64>,
-        metadata: Option<MemberMetadata>,
+        metadata: Option<Box<MemberMetadata>>,
     },
     Unreadable(String),
 }
@@ -198,7 +198,7 @@ pub(super) fn classify_members<'a>(
                 Ok(
                     crate::dialect::classify_layers(&member_scan).map(|(layers, losses)| {
                         let metadata = with_metadata
-                            .then(|| member_metadata(&checkpoint, &arena, &member_scan));
+                            .then(|| Box::new(member_metadata(&checkpoint, &arena, &member_scan)));
                         (
                             layers,
                             losses,
