@@ -105,3 +105,72 @@ fn validation_names_a_repeated_occurrence_guid() {
         ["Fusion Design component occurrence GUID repeats in its Design stream"]
     );
 }
+
+/// A placed occurrence matrix is orthonormal; a determinant of -1 places a
+/// mirrored occurrence, while scale or shear is not a placement.
+#[test]
+fn validation_admits_a_reflected_occurrence_placement() {
+    use crate::records::feature::assembly_features::{
+        DesignComponentOccurrence, DesignComponentOccurrenceDraft,
+        DesignComponentOccurrencePlacement,
+    };
+    use crate::records::sketch_placement::SketchPlacementMatrix;
+
+    let reflected = [
+        [-1.0, 0.0, 0.0, 0.0],
+        [0.0, 1.0, 0.0, 0.0],
+        [0.0, 0.0, 1.0, -16.4],
+        [0.0, 0.0, 0.0, 1.0],
+    ];
+    for refused in [
+        [
+            [-2.0, 0.0, 0.0, 0.0],
+            [0.0, 1.0, 0.0, 0.0],
+            [0.0, 0.0, 1.0, 0.0],
+            [0.0, 0.0, 0.0, 1.0],
+        ],
+        [
+            [-1.0, 0.5, 0.0, 0.0],
+            [0.0, 1.0, 0.0, 0.0],
+            [0.0, 0.0, 1.0, 0.0],
+            [0.0, 0.0, 0.0, 1.0],
+        ],
+    ] {
+        assert!(SketchPlacementMatrix::try_from(refused).is_err());
+    }
+    let occurrence = DesignComponentOccurrence::try_new(DesignComponentOccurrenceDraft {
+        id: "f3d:Design/BulkStream.dat:design-component-occurrence#100".to_owned(),
+        class_tag: crate::records::references::DesignClassTag::try_from("351".to_owned()).unwrap(),
+        record_index: 100,
+        byte_offset: 100_000,
+        component_record_index: 700,
+        component_guid: "11111111-2222-4333-8444-555555555555"
+            .to_owned()
+            .try_into()
+            .expect("GUID"),
+        occurrence_guid: "aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee"
+            .to_owned()
+            .try_into()
+            .expect("GUID"),
+        placement: DesignComponentOccurrencePlacement::Explicit {
+            ordinal: std::num::NonZeroU32::MIN,
+            transform: SketchPlacementMatrix::try_from(reflected).unwrap(),
+        },
+        owner_entity: 0,
+    })
+    .unwrap();
+    let id = occurrence.id.clone();
+    let mut ir = cadmpeg_ir::examples::unit_cube().expect("unit cube fixture is admitted");
+    f3d_native_mut(&mut ir)
+        .design_component_occurrences
+        .push(occurrence);
+    let findings = crate::test_support::with_decode_context(|ctx| {
+        crate::validate::validate_native(ctx, &ir).expect("validate the native namespace")
+    });
+    assert!(
+        findings
+            .iter()
+            .all(|finding| finding.entity.as_deref() != Some(id.as_str())),
+        "{findings:#?}"
+    );
+}

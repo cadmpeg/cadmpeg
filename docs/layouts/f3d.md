@@ -5340,7 +5340,7 @@ Parsed by:
 
 | Offset | Size | Field | Type | Endian | Src | Meaning |
 | -----: | ---: | ----- | ---- | ------ | --- | ------- |
-| 0 | 128 | `transform` | `f64[16]` | little | spec | a row-major rigid local-to-container transform at offset 209 |
+| 0 | 128 | `transform` | `f64[16]` | little | spec | a row-major orthonormal local-to-container transform at offset 209 |
 | 137 | 1 | `owner_marker` | `u8` | little | spec | Nine zero bytes and the marker `u8 1` follow the flag or the matrix. · value `1` |
 | 138 | 8 | `owner_entity` | `u64` | little | spec | offset 347 of the matrix frame |
 
