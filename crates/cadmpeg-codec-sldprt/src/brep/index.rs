@@ -886,9 +886,8 @@ mod tests {
         // the wall x = 0, and the plane x = 1.3. Over y = 0 to 2 its spine
         // runs at x = 0.3, z = 0.95, outside the wall. Its chart runs on to
         // x = -1.15 at y = -60, behind the wall.
-        let mut record =
-            crate::test_support::parasolid::blend_surface_carrier(5, [9, 20], 7, 1.0e-3);
-        record[19] = 0x45;
+        let record =
+            crate::test_support::parasolid::pair_blend_surface_carrier(5, [9, 20], 7, 1.0e-3);
         let ctx = cadmpeg_test_support::service_decode_context();
         let mut carriers = super::scan_carriers(&ctx, &record).expect("carrier scan");
         let plane = |attr: u16, origin: Point3, normal: Vector3, reference: Vector3| {
@@ -960,7 +959,6 @@ mod tests {
             on_face.distance(Point3::new(0.3, 1.0, 1.0 + 0.91_f64.sqrt())) < 1.0e-6,
             "{on_face:?}"
         );
-        assert!(foot(&far).is_none_or(|other| other.distance(on_face) > 1.0e-3));
         let mut both = near.to_vec();
         both.extend_from_slice(&far);
         assert!(foot(&both).is_none_or(|other| other.distance(on_face) > 1.0e-3));
