@@ -974,6 +974,24 @@ pub(super) fn parameter_scope_candidate_headers(
     Ok(headers)
 }
 
+/// Whether a reference table counted at `count_at`, holding `count` entries of
+/// `stride` bytes, ends exactly at `end`. The scan reads a count at every
+/// offset, so most counts are arbitrary bytes: one whose table would not fit
+/// the address space (on a 32-bit target `count * stride` overflows for any
+/// large value) is not this table, and must not end the whole scope parse.
+pub(super) fn reference_table_ends_at(
+    count_at: usize,
+    count: usize,
+    stride: usize,
+    end: usize,
+) -> bool {
+    count != 0
+        && count
+            .checked_mul(stride)
+            .and_then(|length| count_at.checked_add(4)?.checked_add(length))
+            == Some(end)
+}
+
 pub(crate) fn parameter_scope_tail_length_is_valid(
     kind: impl AsRef<str>,
     tail_length: usize,
@@ -1311,12 +1329,7 @@ pub(in crate::design::decode) fn parse_parameter_scope_with_type_guid(
         let mut reference_table = None;
         for count_at in start + 11..reference_table_end {
             let count = usize::try_from(View::u32_le_at(bytes, count_at)?).ok()?;
-            if count == 0
-                || count_at
-                    .checked_add(4)?
-                    .checked_add(count.checked_mul(stride)?)?
-                    != reference_table_end
-            {
+            if !reference_table_ends_at(count_at, count, stride, reference_table_end) {
                 continue;
             }
             let first = count_at.checked_add(4)?;
