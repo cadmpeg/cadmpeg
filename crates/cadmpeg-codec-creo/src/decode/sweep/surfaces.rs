@@ -1780,6 +1780,122 @@ pub(in crate::decode) fn sampled_sweep_circle_range(
     }
 }
 
+pub(in crate::decode) fn sampled_hole_circle_range(
+    ctx: &DecodeContext<'_>,
+    scan: &ContainerScan,
+    geometry: &mut CurveGeometry,
+    incidence: (u32, [u32; 2]),
+    surfaces: &[Surface],
+    endpoints: [[f64; 3]; 2],
+    source_carriers: &SourceUnitCarriers,
+) -> Result<SampledCircleRange, CodecError> {
+    let mut rows = scan
+        .curves
+        .topology_rows
+        .iter()
+        .filter(|row| row.id == incidence.0);
+    let (Some(row), None) = (rows.next(), rows.next()) else {
+        return Ok(SampledCircleRange::Unrelated);
+    };
+    let classes = crate::decode::sketch_transfer::recipe::FeatureSchemaClasses::new(scan);
+    if classes.get(row.feature_id) != Some(crate::feature::schema::SchemaClass::Hole)
+        || row.type_byte != 0
+        || !matches!(geometry.solved(), Some(SolvedCurveGeometry::Circle(_)))
+    {
+        return Ok(SampledCircleRange::Unrelated);
+    }
+    let mut records = scan
+        .curves
+        .two_chart_pcurves
+        .iter()
+        .filter(|record| record.curve_id == row.id);
+    let Some(record) = records.next() else {
+        return Ok(SampledCircleRange::Unrelated);
+    };
+    let candidate = (|| -> Result<Option<(CurveGeometry, [f64; 2])>, CodecError> {
+        let row_faces = row.faces.map(|face| face.map(std::num::NonZeroU32::get));
+        let face_pair = incidence.1.map(Some);
+        if records.next().is_some()
+            || (row_faces != face_pair && row_faces != [face_pair[1], face_pair[0]])
+            || record.samples.len() < 3
+            || (record.faces != incidence.1 && record.faces != [incidence.1[1], incidence.1[0]])
+        {
+            return Ok(None);
+        }
+        let index = ModelSurfaceIndex::new(surfaces);
+        let kinds = record.faces.map(|id| {
+            index
+                .unique(id)
+                .map(|surface| source_carriers.surface_geometry(surface))
+        });
+        let cylinder = match kinds {
+            [Some(SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(_))), Some(SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(_)))] => {
+                record.faces[0]
+            }
+            [Some(SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(_))), Some(SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(_)))] => {
+                record.faces[1]
+            }
+            _ => return Ok(None),
+        };
+        let Some(cylinder_surface) = index.unique(cylinder) else {
+            return Ok(None);
+        };
+        let bounded_owner = if cylinder_surface
+            .id
+            .as_str()
+            .starts_with("creo:visibgeom:surface#")
+        {
+            let mut owners = scan
+                .surfaces
+                .rows
+                .iter()
+                .filter(|surface| surface.id == cylinder);
+            let parameter =
+                crate::surface::unique_surface_parameter(&scan.surfaces.parameters, cylinder);
+            matches!((owners.next(), owners.next()), (Some(owner), None)
+                if owner.feature_id == row.feature_id && owner.kind == crate::surface::SurfaceKind::Cylinder)
+                && parameter
+                    .and_then(crate::surface::SurfaceParameterRecord::positional_cylinder_frame)
+                    .and_then(|frame| frame.length())
+                    .is_some()
+        } else if cylinder_surface
+            .id
+            .as_str()
+            .starts_with("creo:actdatums:surface#")
+        {
+            let mut owners = scan
+                .planes
+                .datum_cylinders
+                .iter()
+                .filter(|surface| surface.id == cylinder);
+            matches!((owners.next(), owners.next()), (Some(owner), None)
+                if owner.feature_id == row.feature_id && owner.frame.length().is_some())
+        } else {
+            false
+        };
+        let unresolved = unresolved_plane_chart_ids(scan);
+        if !bounded_owner
+            || record.faces.iter().any(|face| unresolved.contains(face))
+            || sampled_carrier(ctx, record, surfaces, source_carriers)?.is_none()
+        {
+            return Ok(None);
+        }
+        let Some(points) = paired_points(ctx, record, surfaces, source_carriers)? else {
+            return Ok(None);
+        };
+        Ok(orient_sampled_circle(geometry, &points, endpoints))
+    })()?;
+    match candidate {
+        Some((oriented, range)) => {
+            *geometry = oriented;
+            Ok(SampledCircleRange::Admitted(range))
+        }
+        None => Ok(SampledCircleRange::Refused(CreoLossCode::HoleCircleIntervalUnresolved.note(
+            format!("Hole curve {} at byte {} retains an unresolved owned plane/cylinder sample pair or ordered circle interval", record.curve_id, record.offset)
+        ))),
+    }
+}
+
 fn sampled_sweep_circle_range_impl(
     ctx: &DecodeContext<'_>,
     scan: &ContainerScan,
@@ -1844,6 +1960,304 @@ fn sampled_sweep_circle_range_impl(
     } else {
         Ok(None)
     }
+}
+
+const EPS_HOLE_GENERATOR_POSITION: f64 = 1.0e-9;
+const EPS_HOLE_GENERATOR_ANGLE: f64 = 1.0e-10;
+
+pub(in crate::decode) struct HoleGeneratorProof {
+    pub(in crate::decode) curve_id: u32,
+    pub(in crate::decode) offset: usize,
+    pub(in crate::decode) frames: [crate::surface::PositionalCylinderFrame; 2],
+    pub(in crate::decode) bounds: [[[f64; 2]; 2]; 2],
+    pub(in crate::decode) paths: [[[f64; 2]; 2]; 2],
+}
+
+impl HoleGeneratorProof {
+    pub(in crate::decode) fn geometry(
+        &self,
+        points: [[f64; 3]; 2],
+    ) -> Result<CurveGeometry, Box<cadmpeg_ir::report::loss::LossNote>> {
+        self.prove(points).ok_or_else(|| Box::new(CreoLossCode::HoleGeneratorUnresolved.note(format!(
+            "Hole curve {} at byte {} retains an unresolved shared cylinder-boundary generator or endpoint path", self.curve_id, self.offset
+        ))))
+    }
+
+    fn prove(&self, points: [[f64; 3]; 2]) -> Option<CurveGeometry> {
+        let radii = self.frames.each_ref().map(|frame| frame.radius().get());
+        let scale = radii
+            .into_iter()
+            .chain(
+                self.bounds
+                    .map(|bounds| (bounds[1][1] - bounds[1][0]).abs()),
+            )
+            .fold(1.0, f64::max);
+        let tolerance = EPS_HOLE_GENERATOR_POSITION * scale;
+        let agrees = |a: [f64; 3], b: [f64; 3]| {
+            a.into_iter()
+                .zip(b)
+                .all(|(a, b)| a.is_finite() && b.is_finite() && (a - b).abs() <= tolerance)
+        };
+        ((radii[0] - radii[1]).abs() <= tolerance).then_some(())?;
+        let axes = self.frames.each_ref().map(|frame| frame.frame().axis());
+        ((dot(axes[0], axes[1]).abs() - 1.0).abs() <= EPS_HOLE_GENERATOR_ANGLE).then_some(())?;
+        let origins = self.frames.each_ref().map(|frame| frame.frame().origin());
+        let relative = std::array::from_fn(|i| origins[1][i] - origins[0][i]);
+        let along = dot(relative, axes[0]);
+        agrees(relative, axes[0].map(|value| value * along)).then_some(())?;
+        let mut alignment = [true; 2];
+        let mut boundary_points = [[0.0; 3]; 2];
+        let mut inward = [[0.0; 3]; 2];
+        for index in 0..2 {
+            let [angular, axial] = self.bounds[index];
+            let span = angular[1] - angular[0];
+            (span > EPS_HOLE_GENERATOR_ANGLE
+                && span < std::f64::consts::TAU - EPS_HOLE_GENERATOR_ANGLE
+                && axial[1] > axial[0])
+                .then_some(())?;
+            let delta = (self.paths[index][1][0] - self.paths[index][0][0]).abs();
+            (delta <= EPS_HOLE_GENERATOR_ANGLE && radii[index] * delta <= tolerance)
+                .then_some(())?;
+            let u = self.frames[index].frame().ref_direction();
+            let v = cross(axes[index], u);
+            let radial = |angle: f64| {
+                std::array::from_fn::<_, 3, _>(|i| {
+                    radii[index] * (u[i] * angle.cos() + v[i] * angle.sin())
+                })
+            };
+            let at = |uv: [f64; 2]| {
+                let radial = radial(uv[0]);
+                std::array::from_fn::<_, 3, _>(|i| {
+                    origins[index][i] + radial[i] + axes[index][i] * uv[1]
+                })
+            };
+            for uv in self.paths[index] {
+                let angle = (uv[0] - angular[0]).rem_euclid(std::f64::consts::TAU);
+                (uv.into_iter().all(f64::is_finite)
+                    && (angle <= span + EPS_HOLE_GENERATOR_ANGLE
+                        || angle >= std::f64::consts::TAU - EPS_HOLE_GENERATOR_ANGLE)
+                    && uv[1] >= axial[0] - tolerance
+                    && uv[1] <= axial[1] + tolerance)
+                    .then_some(())?;
+            }
+            let mapped = self.paths[index].map(at);
+            alignment[0] &= agrees(mapped[0], points[0]) && agrees(mapped[1], points[1]);
+            alignment[1] &= agrees(mapped[0], points[1]) && agrees(mapped[1], points[0]);
+            let edge = crate::decode::uniqueness::exactly_one((0..2).filter(|edge| {
+                let radial = radial(angular[*edge]);
+                points.iter().all(|point| {
+                    let relative = std::array::from_fn(|i| point[i] - origins[index][i]);
+                    let height = dot(relative, axes[index]);
+                    agrees(
+                        relative,
+                        std::array::from_fn(|i| radial[i] + axes[index][i] * height),
+                    )
+                })
+            }))?;
+            let angle = angular[edge];
+            let radial = radial(angle);
+            boundary_points[index] = std::array::from_fn(|i| origins[index][i] + radial[i]);
+            inward[index] = std::array::from_fn(|i| {
+                (-u[i] * angle.sin() + v[i] * angle.cos()) * if edge == 0 { 1.0 } else { -1.0 }
+            });
+        }
+        matches!(alignment, [true, false] | [false, true]).then_some(())?;
+        (dot(inward[0], inward[1]) <= -1.0 + EPS_HOLE_GENERATOR_ANGLE).then_some(())?;
+        let line = cadmpeg_ir::geometry::analytic::LineCurve::try_new(
+            Point3::from(boundary_points[0]),
+            Vector3::from(axes[0]),
+        )
+        .ok()?;
+        let geometry = CurveGeometry::Solved(SolvedCurveGeometry::Line(line));
+        curve_contains_points(&geometry, points).then_some(geometry)
+    }
+}
+
+fn hole_generator_frame(
+    scan: &ContainerScan<'_>,
+    face: u32,
+    owner: u32,
+    surface: &Surface,
+    source: &SourceUnitCarriers,
+) -> Option<(crate::surface::PositionalCylinderFrame, [[f64; 2]; 2])> {
+    let (frame, bounds) = if surface.id.as_str().starts_with("creo:visibgeom:surface#") {
+        let row = crate::surface::unique_surface_row(&scan.surfaces.rows, face)?;
+        (row.feature_id == owner && row.kind == crate::surface::SurfaceKind::Cylinder)
+            .then_some(())?;
+        let parameter = crate::surface::unique_surface_parameter(&scan.surfaces.parameters, face)?;
+        let frame = parameter.positional_cylinder_frame()?;
+        let cache = scalar::ScalarCache::from_section_checked(&parameter.body);
+        let bounds = crate::surface::cylinder_frame_readers::bounded_rotation_parameter_bounds(
+            &parameter.body,
+            frame,
+            &cache,
+        )?;
+        (frame, bounds)
+    } else if surface.id.as_str().starts_with("creo:actdatums:surface#") {
+        let datum = crate::decode::uniqueness::exactly_one(
+            scan.planes
+                .datum_cylinders
+                .iter()
+                .filter(|datum| datum.id == face),
+        )?;
+        (datum.feature_id == owner).then_some(())?;
+        let section = crate::decode::uniqueness::exactly_one(scan.framing.sections.iter().filter(
+            |section| section.name() == "ActDatums" && section.contains(datum.offset_in_payload),
+        ))?;
+        let payload = crate::container::section_region(&scan.framing.data, section)?;
+        let offset = datum.offset_in_payload.checked_sub(section.offset())?;
+        let bounds = crate::surface::cylinder_frame_readers::counted_rotation_parameter_bounds(
+            payload,
+            (face, owner, offset),
+            datum.frame,
+        )?;
+        (datum.frame, bounds)
+    } else {
+        return None;
+    };
+    let SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(cylinder)) =
+        source.surface_geometry(surface)
+    else {
+        return None;
+    };
+    points_agree(frame.frame().origin(), cylinder.origin().get().into()).then_some(())?;
+    points_agree(
+        frame.frame().axis(),
+        <[f64; 3]>::from(*cylinder.frame().axis().as_raw()),
+    )
+    .then_some(())?;
+    points_agree(
+        frame.frame().ref_direction(),
+        <[f64; 3]>::from(*cylinder.frame().reference().as_raw()),
+    )
+    .then_some(())?;
+    ((frame.radius().get() - cylinder.radius().get()).abs()
+        <= EPS_HOLE_GENERATOR_POSITION * frame.radius().get().max(1.))
+    .then_some(())?;
+    Some((frame, bounds))
+}
+
+pub(in crate::decode) fn transfer_hole_generators(
+    ctx: &DecodeContext<'_>,
+    scan: &ContainerScan<'_>,
+    ir: &mut CadIr,
+    annotations: &mut AnnotationBuilder,
+    losses: &mut Vec<cadmpeg_ir::report::loss::LossNote>,
+    source: &mut SourceUnitCarriers,
+    points: &std::collections::BTreeMap<u32, [[f64; 3]; 2]>,
+) -> Result<BTreeSet<CurveId>, CodecError> {
+    let classes = crate::decode::sketch_transfer::recipe::FeatureSchemaClasses::new(scan);
+    let index = ModelSurfaceIndex::new(&ir.model.surfaces);
+    let rows = scan.curves.topology_rows.iter().filter(|row| {
+        row.type_byte == 1
+            && classes.get(row.feature_id) == Some(crate::feature::schema::SchemaClass::Hole)
+    });
+    let mut candidates =
+        ctx.alloc_filled(rows.clone().count(), None, "stage Creo hole generators")?;
+    for (row, candidate) in rows.zip(&mut candidates) {
+        if crate::decode::uniqueness::exactly_one(
+            scan.curves
+                .topology_rows
+                .iter()
+                .filter(|other| other.id == row.id),
+        )
+        .is_none()
+        {
+            continue;
+        }
+        let id =
+            crate::identity::compose_checked::<CurveId>(&crate::identity::VISIBGEOM_CURVE, row.id)?;
+        if ir.model.curves.iter().any(|curve| curve.id == id) {
+            continue;
+        }
+        let Some(points) = points.get(&row.id).copied() else {
+            continue;
+        };
+        let record = crate::decode::uniqueness::exactly_one(
+            scan.curves
+                .parameters
+                .iter()
+                .filter(|record| record.curve_id == row.id && record.type_byte == row.type_byte),
+        );
+        let Some(record) = record else {
+            continue;
+        };
+        let faces = row.faces.map(|face| face.map(std::num::NonZeroU32::get));
+        let [Some(first), Some(second)] = faces else {
+            continue;
+        };
+        let frames = [first, second].map(|face| {
+            hole_generator_frame(scan, face, row.feature_id, index.unique(face)?, source)
+        });
+        let [Some(first), Some(second)] = frames else {
+            continue;
+        };
+        let mut body = record.body.as_slice();
+        if body.first() == Some(&0xfc) {
+            let (count, start) = crate::psb::compact_int(body, 1);
+            if count != 2 || start <= 1 {
+                continue;
+            }
+            let Some(remainder) = body.get(start..) else {
+                continue;
+            };
+            body = remainder;
+        }
+        let Some(frame) = scalar::decode_pcurve_scalar_frame(body, &scalar::ScalarCache::default())
+        else {
+            continue;
+        };
+        let values = frame.values;
+        let proof = HoleGeneratorProof {
+            curve_id: row.id,
+            offset: record.offset,
+            frames: [first.0, second.0],
+            bounds: [first.1, second.1],
+            paths: [
+                [[values[0], values[1]], [values[4], values[5]]],
+                [[values[2], values[3]], [values[6], values[7]]],
+            ],
+        };
+        match proof.geometry(points) {
+            Ok(geometry) => *candidate = Some((id, row.id, record.offset, geometry)),
+            Err(loss) => losses.push(*loss),
+        }
+    }
+    let mut transferred = BTreeSet::new();
+    for (id, curve, offset, geometry) in candidates.into_iter().flatten() {
+        crate::decode::native::annotate(
+            annotations,
+            &id,
+            "VisibGeom",
+            cadmpeg_core::decode::u64_from_index(offset),
+            "bounded_hole_generator",
+            Exactness::Derived,
+        )?;
+        ctx.charge_entities(1, "admit Creo hole generators")?;
+        source.admit_curve(
+            ctx,
+            ir,
+            Curve {
+                id: id.clone(),
+                parameter_range: None,
+                geometry,
+                source_object: Some(SourceObjectAssociation {
+                    geometry_role: None,
+                    format: cadmpeg_ir::CodecFormat::Creo,
+                    object_id: crate::identity::source_object_id_checked(format_args!(
+                        "VisibGeom:{curve}"
+                    ))?,
+                    name: None,
+                    color: None,
+                    visible: None,
+                    layer: None,
+                    instance_path: Vec::new(),
+                }),
+            },
+        )?;
+        transferred.insert(id);
+    }
+    Ok(transferred)
 }
 
 #[cfg(test)]

@@ -988,6 +988,13 @@ first-coordinate lane and the compact rotation scalar forms in §4.1.
 and three times. Repetition carries across the four parameter bounds and
 across the six corner coordinates; each group must be complete.
 
+In the bounded cylinder-rotation stream, `19 <tail7>` reconstructs IEEE-754
+bytes `3c <tail7>`, and `32 <tail7>` reconstructs `bc <tail7>`. Each literal
+occupies one finite scalar slot and supplies the value used by following
+repeats. A bounded named cylinder placement pairs either literal with its
+complete ten-slot envelope. A named ten-slot envelope ends at its following
+`e0 00 srf_prim_ptr(cylinder) 00` named-prototype marker.
+
 An `e3` closes a positional envelope. Twelve finite scalar slots follow in
 row-major order: a right-handed orthonormal rotation matrix and three origin
 coordinates. The matrix columns are the radial reference, transverse
@@ -1006,7 +1013,8 @@ belongs to the unique preceding cylinder prototype with a complete named
 rotation field and positive radius. Its envelope and matrix use the same
 signed coordinate stream and corner constraints.
 
-The axis is a signed model axis. Each radial corner coordinate lies between
+The axis has one coordinate equal to `+1` or `-1` and two zero coordinates.
+Each radial corner coordinate lies between
 the stored origin coordinate minus and plus the radius. The axial corner
 pair equals the origin plus the signed axis times each axial parameter bound,
 in either order. The origin, axis, reference direction, radius, and axial
@@ -2548,7 +2556,9 @@ at a token boundary. `12` retains its positive pi/2 value. The stream uses the
 bounded preceding-scalar repeats and signed first-coordinate explicit values.
 Its tiny forms reconstruct IEEE-754 bytes as follows: `19 <tail7>` gives `3c
 <tail7>`, `32 <tail7>` gives `bc <tail7>`, `1a B C` gives `3c B C C C C C C`,
-and `1b B C` gives `3c B C 00 00 00 00 00`. The form `00 <literal> <low>`
+and `1b B C` gives `3c B C 00 00 00 00 00`. The seven-byte form
+`1d <tail6>` gives `3c <tail6> 00`; the eight-byte form `1e <tail7>` gives
+`3d <tail7>`. Each occupies one scalar slot. The form `00 <literal> <low>`
 replaces the literal's low IEEE byte with `low`; the literal is an angle or one
 of `04`, `0e`, `0f`, `10`, and `18`. For this replacement, `04` has IEEE image
 `3f ef ff ff ff ff ff ff`. The replacement supplies the value used by following
@@ -2556,6 +2566,33 @@ repeats. A frame that completes the legacy two-chart production uses that
 production. The angular alternative requires complete scalar consumption, the
 exact declared sample extent, and an additional angle literal. These conditions
 select the scalar production for every sample in the frame.
+
+A curve with raw type `01` and owner class `911` Hole defines an axial
+boundary line from one complete direct eight-slot chart frame or a counted
+two-row chart frame. Both incident cylinders have the same owner, equal
+radii, parallel axes, and one axis line. Each owned source envelope passes
+the bounded rotation placement gate. Each angular interval is shorter than
+one turn. Both endpoint paths lie within their axial and angular bounds.
+Each path's full unwrapped angular travel stays within the angular
+agreement tolerance, and its arc travel stays within the positional
+agreement tolerance. The endpoints select one angular
+boundary in each cylinder. The two boundaries have opposing inward radial
+tangents and define the same generator line. Both chart paths align with the
+solved edge endpoints. The stored boundaries define the line carrier.
+
+A curve with raw type `00` and owner class `911` Hole defines a directed
+circular interval from one complete paired sample record with at least three
+samples.
+The record's incident face pair equals the curve row's incident pair. One
+face is a plane and the other is a cylinder. The cylinder has one same-owner
+bounded carrier in its selected visible or active-datum namespace. Each
+visible plane local system with either face identifier has a complete frame.
+Both chart images agree at every sample. The analytic circle lies on both
+surfaces and contains every mapped point. The first and last samples align
+with the solved edge endpoints. The interior samples advance strictly inside
+exactly one directed circular interval. That interval supplies the edge's
+oriented circle and parameter range. The cap pcurve is the circle's complete
+projection through the admitted plane chart.
 
 A type-two named `crv_pnt_arr f9 <count> 04` stores the angular stream in
 `count` four-scalar rows, with `count >= 2`. Its bounded body ends at the

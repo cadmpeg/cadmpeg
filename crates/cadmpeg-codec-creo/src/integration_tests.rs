@@ -577,3 +577,152 @@ fn compact_rotation_cylinder_decode_and_validation_share_admission() {
         .expect("named first-instance cylinder");
     assert_eq!(cylinder.origin().get(), [0.0, 0.0, 0.0].into());
 }
+#[test]
+fn floating_sample_fields_decode_and_validate_with_exact_bounds() {
+    use std::collections::BTreeSet;
+    let mut body = vec![0x11, 0x1d, 0x92, 0xab, 0xcd, 0xef, 0x12, 0x34, 0x15, 0x1e];
+    body.extend_from_slice(&[0x15, 0x26, 0x37, 0x48, 0x59, 0x6a, 0x7b]);
+    body.extend_from_slice(&[0x13, 0x18, 0x11, 0x18, 0x11, 0x18, 0x13, 0x18]);
+    let make_payload = |body: &[u8], count: u8| {
+        let mut payload = b"crv_array\0\xe0\x01crv_id\0\x09\xe0\x02crv_pnt_arr\0\xf9".to_vec();
+        payload.extend_from_slice(&[count, 4]);
+        payload.extend_from_slice(body);
+        payload.extend_from_slice(b"\xe0\x01crv_hdr_geom_ptr[0]\0\x0a\xe0\x01crv_hdr_geom_ptr[1]\0\x0b\xe0\x01next_crv_hdr_ptr[0]\0\x09\xe0\x01next_crv_hdr_ptr[1]\0\x09topol_ref_data\0");
+        payload
+    };
+    let mut losses = Vec::new();
+    let records = crate::decode::with_service_context(|ctx| {
+        crate::curve::two_chart_pcurve_samples(
+            ctx,
+            &make_payload(&body, 3),
+            Some(&BTreeSet::from([10, 11])),
+            &mut losses,
+        )
+    })
+    .expect("bounded angular samples");
+    assert!(losses.iter().any(|loss| loss.code
+        == crate::loss::CreoLossCode::PcurveSampleCoordinatesDropped.kind()
+        && loss.message.contains("3 paired boundary samples")));
+    assert_eq!(records.len(), 1);
+    assert_eq!(
+        records[0].samples[0][0][1],
+        f64::from_bits(0x3c92_abcd_ef12_3400)
+    );
+    assert_eq!(
+        records[0].samples[0][1][1],
+        f64::from_bits(0x3d15_2637_4859_6a7b)
+    );
+    for (body, count) in [(&body[..7], 3), (&body[..16], 3), (&body[..], 4)] {
+        let mut losses = Vec::new();
+        let records = crate::decode::with_service_context(|ctx| {
+            crate::curve::two_chart_pcurve_samples(
+                ctx,
+                &make_payload(body, count),
+                Some(&BTreeSet::from([10, 11])),
+                &mut losses,
+            )
+        })
+        .expect("bounded sample refusal");
+        assert!(records.is_empty());
+        assert!(losses.iter().any(|loss| loss.code
+            == crate::loss::CreoLossCode::TwoChartScalarFrameUnresolved.kind()
+            && loss.message.contains("Curve 9")));
+    }
+    for (bytes, complete) in [(&body[..], true), (&body[..7], false), (&body[..16], false)] {
+        let result = decode(build_prt(
+            "samples",
+            &[("ND:0:VisibGeom:0", make_payload(bytes, 3))],
+        ));
+        assert_valid(&result);
+        let expected = if complete {
+            crate::loss::CreoLossCode::PcurveSampleCoordinatesDropped
+        } else {
+            crate::loss::CreoLossCode::TwoChartScalarFrameUnresolved
+        };
+        assert!(result
+            .report()
+            .losses
+            .iter()
+            .any(|loss| loss.code == expected.kind()));
+    }
+}
+#[test]
+fn floating_cylinder_instances_share_bounded_frame_admission() {
+    let envelope = [
+        0x18, 0x18, 0x13, 0x2f, 0x1c, 0, 0x2f, 0x10, 0, 0x18, 0x48, 0x24, 0, 0x2f, 0x28, 0, 0x2f,
+        0x1c, 0, 0x48, 0, 0,
+    ];
+    for section in ["ActDatums", "VisibGeom"] {
+        for refusal in 0..7 {
+            let mut envelope = envelope;
+            if refusal == 1 {
+                envelope[7] = 0x08;
+            } else if refusal == 2 {
+                envelope[17] = 0x18;
+            } else if refusal == 4 {
+                envelope[2] = 0x18;
+            }
+            let tiny = if section == "ActDatums" { 0x32 } else { 0x19 };
+            let mut matrix = vec![tiny, 0x90, 0, 0, 0, 0, 0, 0, 0x0f, 0x18, 0xe5, 0x10, 0x10];
+            matrix.extend_from_slice(&[tiny, 0x90, 0, 0, 0, 0, 0, 0, 0x18]);
+            if refusal == 5 {
+                matrix = vec![tiny, 0x90, 0, 0, 0, 0, 0, 0, 0x0f];
+                matrix.extend_from_slice(&[tiny, 0x90, 0, 0, 0, 0, 0, 0, 0x18, 0x18, 0x10, 0x10]);
+                matrix.extend_from_slice(&[tiny, 0x90, 0, 0, 0, 0, 0, 0, 0x18]);
+            }
+            if refusal == 6 {
+                // An off-axis component of the rotation axis refuses the carrier.
+                matrix.splice(9..10, [tiny, 0x90, 0, 0, 0, 0, 0, 0x01]);
+            }
+            matrix.extend_from_slice(&[0x2f, 0x20, 0, 0x2f, 0x1c, 0, 0x48, 0x18, 0]);
+            let radius = [0x2f, if refusal == 3 { 0x08 } else { 0x10 }, 0];
+            let mut payload = b"srf_array\0\xf8\x02".to_vec();
+            payload.extend_from_slice(&[9, 0x24, 4, 0xf6, 0, 11]);
+            payload.extend_from_slice(&envelope);
+            payload.extend_from_slice(
+                b"\xe0\x00srf_prim_ptr(cylinder)\0\xe3\xe0\x02local_sys\0\xf9\x04\x03",
+            );
+            payload.extend_from_slice(&matrix);
+            payload.extend_from_slice(b"\xe0\x02radius\0");
+            payload.extend_from_slice(&radius);
+            payload.extend_from_slice(b"\xf1\xf7\x0e\xe3");
+            payload.extend_from_slice(&[11, 0x24, 4, 0xf6, 0, 0]);
+            payload.extend_from_slice(&envelope);
+            payload.push(0xe3);
+            payload.extend_from_slice(&matrix);
+            payload.extend_from_slice(&radius);
+            payload.push(0xe3);
+            let name = format!("ND:0:{section}:0");
+            let result = decode(build_prt("c", &[(name.as_str(), payload)]));
+            assert_valid(&result);
+            let namespace = if section == "ActDatums" {
+                "actdatums"
+            } else {
+                "visibgeom"
+            };
+            for id in [9, 11] {
+                let cylinder = result.ir().model.surfaces.iter().find_map(|surface| {
+                    if surface.id.as_str() == format!("creo:{namespace}:surface#{id}") {
+                        if let SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(cylinder)) =
+                            &surface.geometry
+                        {
+                            return Some(cylinder);
+                        }
+                    }
+                    None
+                });
+                assert_eq!(cylinder.is_some(), refusal == 0);
+                if let Some(cylinder) = cylinder {
+                    assert_eq!(cylinder.origin().get(), [8.0, 7.0, -6.0].into());
+                    assert_eq!(*cylinder.frame().axis().as_raw(), [0.0, -1.0, 0.0].into());
+                    assert_eq!(cylinder.radius().get(), 4.0);
+                }
+            }
+            if refusal != 0 {
+                assert!(result.report().losses.iter().any(|loss| {
+                    loss.code == crate::loss::CreoLossCode::CylinderRotationFrameUnresolved.kind()
+                }));
+            }
+        }
+    }
+}

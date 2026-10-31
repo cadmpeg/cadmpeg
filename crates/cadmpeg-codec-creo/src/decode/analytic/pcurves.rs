@@ -1972,6 +1972,15 @@ pub(in crate::decode) fn transfer_analytic_pcurve_carriers(
         )?;
         transferred.insert(id);
     }
+    transferred.extend(crate::decode::sweep::surfaces::transfer_hole_generators(
+        ctx,
+        scan,
+        ir,
+        annotations,
+        losses,
+        source_carriers,
+        &reconciled_endpoints,
+    )?);
     Ok(transferred)
 }
 

@@ -75,7 +75,7 @@ pub(crate) fn bounded_rotation_cylinder_frame(
 ) -> Option<PositionalCylinderFrame> {
     let [.., origin] = local_system_lanes(slots.get());
     let (reference, axis) = scalar::rotation_plane_axes(slots.as_raw())?;
-    let axis_index = axis.iter().position(|value| value.abs() == 1.0)?;
+    let axis_index = exact_coordinate_axis(axis)?;
     for coordinate in 0..3 {
         let first = corners[coordinate];
         let second = corners[coordinate + 3];
@@ -99,6 +99,63 @@ pub(crate) fn bounded_rotation_cylinder_frame(
         }
     }
     PositionalCylinderFrame::new(origin, axis, reference, radius, Some(bounds[3] - bounds[1]))
+}
+
+/// Index of the coordinate axis when `axis` is exactly one `+-1` component and two zeros.
+fn exact_coordinate_axis(axis: [f64; 3]) -> Option<usize> {
+    let index = axis.iter().position(|value| value.abs() == 1.0)?;
+    axis.iter()
+        .enumerate()
+        .all(|(i, value)| i == index || *value == 0.0)
+        .then_some(index)
+}
+
+pub(crate) fn bounded_rotation_parameter_bounds(
+    body: &[u8],
+    frame: PositionalCylinderFrame,
+    cache: &scalar::ScalarCache,
+) -> Option<[[f64; 2]; 2]> {
+    let (bounds, corners, end) = bounded_rotation_envelope(body, cache)?;
+    (end == body.len()
+        || body.get(end) == Some(&psb::token::COMPOUND_CLOSE)
+        || body
+            .get(end..)?
+            .starts_with(b"\xe0\x00srf_prim_ptr(cylinder)\0"))
+    .then_some(())?;
+    let u = frame.frame().ref_direction();
+    let n = frame.frame().axis();
+    let v = crate::vecmath::cross(n, u);
+    let o = frame.frame().origin();
+    let slots = cadmpeg_ir::units::FiniteVector::new([
+        u[0], v[0], n[0], u[1], v[1], n[1], u[2], v[2], n[2], o[0], o[1], o[2],
+    ])?;
+    bounded_rotation_cylinder_frame(bounds, corners, slots, frame.radius().get())?;
+    Some([[bounds[0], bounds[2]], [bounds[1], bounds[3]]])
+}
+
+pub(crate) fn counted_rotation_parameter_bounds(
+    payload: &[u8],
+    identity: (u32, u32, usize),
+    frame: PositionalCylinderFrame,
+) -> Option<[[f64; 2]; 2]> {
+    let (id, owner, offset) = identity;
+    let rows = super::counted_row_bounds(payload);
+    let (row, frame_end) =
+        crate::decode::uniqueness::exactly_one(rows.iter().filter(|(row, _)| {
+            row.id == id
+                && row.feature_id == owner
+                && row.offset == offset
+                && row.kind == super::SurfaceKind::Cylinder
+        }))?;
+    let end = rows
+        .iter()
+        .filter(|(next, _)| next.offset > row.offset && next.offset < *frame_end)
+        .map(|(next, _)| next.offset)
+        .min()
+        .unwrap_or(*frame_end);
+    let start = super::positional_body_start(payload, row)?;
+    let cache = scalar::ScalarCache::from_section_checked(payload);
+    bounded_rotation_parameter_bounds(payload.get(start..end)?, frame, &cache)
 }
 
 fn rotation_cylinder_body_prefix(
@@ -179,7 +236,7 @@ pub(crate) fn named_rotation_cylinder_frame(
     });
     let prototype = candidates.next()?;
     candidates.next().is_none().then_some(())?;
-    let (_, complete) = named_rotation_cylinder_slots(prototype, cache)?;
+    let (_, complete, _) = named_rotation_cylinder_slots(prototype, cache)?;
     complete.then_some(())?;
     named_cylinder_radius(prototype)?;
     let (frame, end) = rotation_cylinder_body_prefix(&parameter.body, cache)?;
@@ -192,9 +249,12 @@ pub(crate) fn named_rotation_cylinder_parameter_frame(
     prototype: &super::SurfacePrototypeRecord,
     cache: &scalar::ScalarCache,
 ) -> Option<CylinderRotationFrame> {
-    let (bounds, corners, envelope_end) = bounded_rotation_envelope(&parameter.body, cache)?;
-    (envelope_end == parameter.body.len()).then_some(())?;
-    let (slots, complete) = named_rotation_cylinder_slots(prototype, cache)?;
+    let (slots, complete, floating) = named_rotation_cylinder_slots(prototype, cache)?;
+    let envelope = bounded_rotation_envelope(&parameter.body, cache)
+        .filter(|(_, _, end)| *end == parameter.body.len());
+    let Some((bounds, corners, _)) = envelope else {
+        return floating.then_some(CylinderRotationFrame::Unresolved);
+    };
     Some(CylinderRotationFrame::from_frame((|| {
         complete.then_some(())?;
         bounded_rotation_cylinder_frame(bounds, corners, slots, named_cylinder_radius(prototype)?)
@@ -204,11 +264,30 @@ pub(crate) fn named_rotation_cylinder_parameter_frame(
 fn named_rotation_cylinder_slots(
     prototype: &super::SurfacePrototypeRecord,
     cache: &scalar::ScalarCache,
-) -> Option<(cadmpeg_ir::units::FiniteVector<12>, bool)> {
+) -> Option<(cadmpeg_ir::units::FiniteVector<12>, bool, bool)> {
     let field = prototype.field("local_sys")?;
     let body = field.body.strip_prefix(&[psb::token::SCALAR_BODY, 4, 3])?;
     let (slots, end) = scalar::decode_cylinder_rotation_prefix(body, cache)?;
-    Some((slots, end == body.len() || body.get(end..) == Some(&[0xe1])))
+    let mut cursor = 0;
+    let mut previous = None;
+    let mut floating = false;
+    while cursor < end {
+        floating |= matches!(body.get(cursor), Some(0x19 | 0x32));
+        let (value, _, next) = scalar::decode_stateful_scalar_run(
+            body,
+            cursor,
+            previous,
+            cache,
+            scalar::StatefulScalarKind::CylinderRotation,
+        )?;
+        previous = Some(value);
+        cursor = next;
+    }
+    Some((
+        slots,
+        end == body.len() || body.get(end..) == Some(&[0xe1]),
+        floating,
+    ))
 }
 
 fn named_cylinder_radius(prototype: &super::SurfacePrototypeRecord) -> Option<f64> {

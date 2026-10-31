@@ -4305,6 +4305,16 @@ fn named_record_boundary(
     body: &[u8],
     cache: &scalar::ScalarCache,
 ) -> Option<usize> {
+    if kind == SurfaceKind::Cylinder {
+        if let Some((_, _, end)) = cylinder_frame_readers::bounded_rotation_envelope(body, cache) {
+            if body
+                .get(end..)?
+                .starts_with(b"\xe0\x00srf_prim_ptr(cylinder)\0")
+            {
+                return Some(end);
+            }
+        }
+    }
     let cone_half_angle = if kind == SurfaceKind::Cone {
         terminal_cone_half_angle_layout(body)
     } else {
