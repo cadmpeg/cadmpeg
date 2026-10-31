@@ -142,3 +142,26 @@ fn a_face_subset_of_a_brep_array_binds_its_faces() {
     );
     assert_eq!(faces(&crate::test_support::decode(&written)), 6);
 }
+
+/// The faces, edges, and vertices of a B-rep body keep their identities
+/// through a `BrepArray` round trip.
+#[test]
+fn a_brep_array_keeps_the_identities_of_its_entities() {
+    let ir = cadmpeg_ir::examples::unit_cube().expect("cube");
+    let (written, _) = crate::test_support::encode(&ir);
+    assert!(written.contains("CadBrepIdentityAPI"), "{written}");
+    let read = crate::test_support::decode(&written);
+    let ids = |model: &cadmpeg_ir::document::Model| {
+        let mut out: Vec<String> = model
+            .faces
+            .iter()
+            .map(|face| face.id.to_string())
+            .chain(model.edges.iter().map(|edge| edge.id.to_string()))
+            .chain(model.vertices.iter().map(|vertex| vertex.id.to_string()))
+            .chain(model.bodies.iter().map(|body| body.id.to_string()))
+            .collect();
+        out.sort();
+        out
+    };
+    assert_eq!(ids(&ir.model), ids(&read.ir().model));
+}

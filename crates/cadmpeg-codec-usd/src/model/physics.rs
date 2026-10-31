@@ -195,7 +195,7 @@ impl super::Builder<'_, '_, '_, '_> {
         } else {
             let target = if body {
                 SolverTarget::Body {
-                    body: crate::ids::body(key),
+                    body: self.body_id(key),
                 }
             } else {
                 SolverTarget::Occurrence {
@@ -254,7 +254,7 @@ impl super::Builder<'_, '_, '_, '_> {
             (
                 crate::ids::collider(key),
                 PhysicsTarget::Body {
-                    body: crate::ids::body(key),
+                    body: self.body_id(key),
                 },
             )
         } else {

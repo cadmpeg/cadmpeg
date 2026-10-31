@@ -277,6 +277,10 @@ struct Builder<'s, 'l, 'c, 'a> {
     /// Group prims folded into the B-rep of one `BrepArray` child, with the
     /// child, by path.
     folded: BTreeMap<String, usize>,
+    /// The body of each definition key whose body keeps its CADIR identity.
+    body_ids: BTreeMap<String, cadmpeg_ir::ids::BodyId>,
+    /// The entity identities taken from `CadBrepIdentityAPI` so far.
+    used_ids: BTreeSet<String>,
     /// Prototype ordinals by instance key.
     prototypes: BTreeMap<String, usize>,
     appearances: BTreeSet<String>,
@@ -313,6 +317,8 @@ pub(crate) fn build<'a>(
         tallies: Tallies::default(),
         definitions: BTreeSet::new(),
         folded: BTreeMap::new(),
+        body_ids: BTreeMap::new(),
+        used_ids: BTreeSet::new(),
         prototypes: BTreeMap::new(),
         appearances: BTreeSet::new(),
         physical_materials: BTreeSet::new(),
@@ -777,7 +783,7 @@ impl Builder<'_, '_, '_, '_> {
     ) {
         let color = self.display_color(prim);
         self.ir.model.bodies.push(Body {
-            id: crate::ids::body(key),
+            id: self.body_id(key),
             kind,
             regions,
             transform: None,
@@ -785,6 +791,14 @@ impl Builder<'_, '_, '_, '_> {
             color,
             visible: None,
         });
+    }
+
+    /// The body of definition key `key`.
+    fn body_id(&self, key: &str) -> cadmpeg_ir::ids::BodyId {
+        self.body_ids
+            .get(key)
+            .cloned()
+            .unwrap_or_else(|| crate::ids::body(key))
     }
 
     fn mesh(

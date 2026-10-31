@@ -1317,3 +1317,20 @@ A `GeomSubset` child of a `BrepArray` prim with `elementType = "face"` selects f
 ### 17.5 Fallback prims
 
 A geometry prim that states `customData = { string brepArray = "N" }` is a fallback of the sibling `BrepArray` prim named `N`: a `Mesh` is a tessellation of its B-reps, and a `NurbsPatch` is a face of them. A reader that reads the B-reps of `N` reads a fallback `Mesh` as their tessellation and does not read a fallback `NurbsPatch`.
+
+## 18. Cad schemas
+
+The `Cad*` schemas extend the registered schemas and `BrepArray` with CADIR data that they do not hold. OpenUSD does not register them. A reader that does not know a `Cad*` API schema reads the prim without it.
+
+### 18.1 CadBrepIdentityAPI
+
+`CadBrepIdentityAPI` is a single-apply API schema of a `BrepArray` prim. It gives the CADIR identity of each B-rep, face, edge, and vertex:
+
+| Attribute | Elements |
+| --- | --- |
+| `uniform string[] cad:brep:id` | one for each B-rep |
+| `uniform string[] cad:face:id` | one for each face |
+| `uniform string[] cad:edge:id` | one for each edge |
+| `uniform string[] cad:vertex:id` | one for each vertex |
+
+Element `i` names the entity at position `i` of its arrays (§17.1). An empty string is no identity. An identity has the CADIR grammar `<format>:<scope>:<kind>#<key>`, and each identity occurs once in a stage.

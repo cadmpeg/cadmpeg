@@ -122,6 +122,9 @@ impl Writer<'_> {
         if packed.trim_curves.is_some() {
             schemas.push(TRIM_CURVE_API);
         }
+        if packed.identities.any() {
+            schemas.push(crate::brep::solid::IDENTITY_API);
+        }
         let mut placement = placement.clone();
         placement.metadata.push(format!(
             "prepend apiSchemas = [{}]",
@@ -350,6 +353,20 @@ impl Writer<'_> {
         );
         if let Some(trims) = &packed.trim_curves {
             curves(out, "brep:curveUv:nurb", trims, "double2");
+        }
+        if packed.identities.any() {
+            let ids = &packed.identities;
+            let strings =
+                |values: &[String]| values.iter().map(|value| quoted(value)).collect::<Vec<_>>();
+            let out = &mut self.out;
+            out.array("uniform string[] cad:brep:id", &strings(&ids.breps), "");
+            out.array("uniform string[] cad:face:id", &strings(&ids.faces), "");
+            out.array("uniform string[] cad:edge:id", &strings(&ids.edges), "");
+            out.array(
+                "uniform string[] cad:vertex:id",
+                &strings(&ids.vertices),
+                "",
+            );
         }
         self.face_subsets(&brep.faces);
         self.out.close();

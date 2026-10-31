@@ -21,6 +21,8 @@ pub(crate) const EDGE_CURVE_API: &str = "BrepCurve3dNurbAPI:edge3dNurb";
 pub(crate) const SURFACE_API: &str = "BrepSurfaceNurbAPI";
 /// The trim-curve API.
 pub(crate) const TRIM_CURVE_API: &str = "BrepCurveUvNurbAPI";
+/// The identity API (spec §18.1).
+pub(crate) const IDENTITY_API: &str = "CadBrepIdentityAPI";
 /// The type token of a NURBS edge curve.
 const CURVE_TYPE: &str = "BrepCurve3dNurbAPI";
 /// The type token of a point.
@@ -143,6 +145,32 @@ pub(crate) struct Packed {
     pub(crate) edge_curves: Curves<3>,
     pub(crate) surfaces: Surfaces,
     pub(crate) trim_curves: Option<Curves<2>>,
+    /// The CADIR identity of each B-rep, face, edge, and vertex; an empty
+    /// string is no identity.
+    pub(crate) identities: PackedIdentities,
+}
+
+/// The `cad:` identity arrays of `CadBrepIdentityAPI` (spec §18.1).
+#[derive(Debug, Clone, PartialEq, Default)]
+pub(crate) struct PackedIdentities {
+    pub(crate) breps: Vec<String>,
+    pub(crate) faces: Vec<String>,
+    pub(crate) edges: Vec<String>,
+    pub(crate) vertices: Vec<String>,
+}
+
+impl PackedIdentities {
+    /// Whether any entity has an identity.
+    pub(crate) fn any(&self) -> bool {
+        [&self.breps, &self.faces, &self.edges, &self.vertices]
+            .iter()
+            .any(|values| values.iter().any(|value| !value.is_empty()))
+    }
+}
+
+/// `values`, padded with `None` to `count`, as packed strings.
+fn packed_ids(values: &[Option<String>], count: usize) -> impl Iterator<Item = String> + '_ {
+    (0..count).map(move |index| values.get(index).cloned().flatten().unwrap_or_default())
 }
 
 fn count(value: usize) -> Result<u32, Refusal> {
@@ -380,6 +408,19 @@ impl Packed {
             ]);
         }
         self.vertices.extend(brep.vertices.iter());
+        let ids = &brep.identities;
+        self.identities
+            .breps
+            .push(ids.body.clone().unwrap_or_default());
+        self.identities
+            .faces
+            .extend(packed_ids(&ids.faces, brep.faces.len()));
+        self.identities
+            .edges
+            .extend(packed_ids(&ids.edges, brep.edges.len()));
+        self.identities
+            .vertices
+            .extend(packed_ids(&ids.vertices, brep.vertices.len()));
 
         self.intersect_tol.push(brep.tolerance);
         let box_ = bounds(
@@ -621,6 +662,16 @@ pub(crate) fn read(prim: &Prim<'_>, issues: &mut Issues) -> Result<Packed, Refus
             weights: reals(prim, "brep:surface:nurb:weights", 1, issues).unwrap_or_default(),
         },
         trim_curves,
+        identities: if schemas.contains(IDENTITY_API) {
+            PackedIdentities {
+                breps: tokens(prim, "cad:brep:id", issues).unwrap_or_default(),
+                faces: tokens(prim, "cad:face:id", issues).unwrap_or_default(),
+                edges: tokens(prim, "cad:edge:id", issues).unwrap_or_default(),
+                vertices: tokens(prim, "cad:vertex:id", issues).unwrap_or_default(),
+            }
+        } else {
+            PackedIdentities::default()
+        },
     };
     if packed.edge_curves.len() != edge_curve_count
         || packed.edge_vertices.len() != edge_curve_count
@@ -932,6 +983,23 @@ pub(crate) fn decode(packed: &Packed) -> Result<Decoded, Refusal> {
         }
         if trims.is_none() {
             super::convert::derive_pcurves(&mut brep);
+        }
+        let named = |values: &[String], index: usize| {
+            values.get(index).filter(|value| !value.is_empty()).cloned()
+        };
+        let ids = &packed.identities;
+        brep.identities.body = named(&ids.breps, brep_index);
+        brep.identities.faces = faces_in_order
+            .iter()
+            .map(|face| named(&ids.faces, *face))
+            .collect();
+        brep.identities.edges = vec![None; brep.edges.len()];
+        for (global, record) in &edge_map {
+            brep.identities.edges[*record] = named(&ids.edges, *global);
+        }
+        brep.identities.vertices = vec![None; brep.vertices.len()];
+        for (global, record) in &vertex_map {
+            brep.identities.vertices[*record] = named(&ids.vertices, *global);
         }
         out.faces.push(faces_in_order);
         out.breps.push(brep);

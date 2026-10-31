@@ -1424,6 +1424,30 @@ pub(super) fn export<'ir>(
         tolerance = tolerance.max(mesh.deviation * DEVIATION_MARGIN);
     }
     exporter.brep.tolerance = tolerance;
+    let mut identities = crate::brep::Identities {
+        body: Some(body.id.to_string()),
+        faces: exporter
+            .faces
+            .iter()
+            .map(|face| Some(face.to_string()))
+            .collect(),
+        edges: vec![None; exporter.brep.edges.len()],
+        vertices: vec![None; exporter.brep.vertices.len()],
+    };
+    for (id, index) in &exporter.edges {
+        if let Some(slot) = identities.edges.get_mut(*index) {
+            *slot = Some(id.to_string());
+        }
+    }
+    for (id, index) in &exporter.vertices {
+        if let Some(slot) = identities.vertices.get_mut(*index) {
+            *slot = Some(id.to_string());
+        }
+    }
+    if identities.faces.len() != exporter.brep.faces.len() {
+        identities.faces = vec![None; exporter.brep.faces.len()];
+    }
+    exporter.brep.identities = identities;
     for edge in &mut exporter.brep.edges {
         edge.tolerance = edge.tolerance.filter(|value| *value > tolerance);
     }

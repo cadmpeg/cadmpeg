@@ -219,6 +219,17 @@ pub(crate) struct Brep {
     /// Radians per unit of an angular parameter.
     pub(crate) angle_scale: f64,
     pub(crate) valid: bool,
+    pub(crate) identities: Identities,
+}
+
+/// The CADIR identity of the body and of each face, edge, and vertex
+/// record, where one is known (spec §18.1).
+#[derive(Debug, Clone, PartialEq, Default)]
+pub(crate) struct Identities {
+    pub(crate) body: Option<String>,
+    pub(crate) faces: Vec<Option<String>>,
+    pub(crate) edges: Vec<Option<String>>,
+    pub(crate) vertices: Vec<Option<String>>,
 }
 
 /// `brep:tolerance` when it is not authored.

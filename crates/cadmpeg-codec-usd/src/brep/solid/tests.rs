@@ -162,3 +162,35 @@ fn a_b_rep_with_no_trim_curves_reads_with_derived_pcurves() {
         }
     }
 }
+
+#[test]
+fn identities_pack_and_decode_by_entity() {
+    let mut brep = cube();
+    brep.identities = crate::brep::Identities {
+        body: Some("test:model:body#cube".to_owned()),
+        faces: (0..brep.faces.len())
+            .map(|index| Some(format!("test:model:face#{index}")))
+            .collect(),
+        edges: (0..brep.edges.len())
+            .map(|index| (index % 2 == 0).then(|| format!("test:model:edge#{index}")))
+            .collect(),
+        vertices: Vec::new(),
+    };
+    let mut packed = Packed::default();
+    packed.push(&brep, true).expect("encode");
+    assert!(packed.identities.any());
+    assert_eq!(
+        packed.identities.vertices,
+        vec![String::new(); brep.vertices.len()]
+    );
+    let decoded = decode(&packed).expect("decode");
+    let read = &decoded.breps[0].identities;
+    assert_eq!(read.body.as_deref(), Some("test:model:body#cube"));
+    assert_eq!(read.faces, brep.identities.faces);
+    let mut edges: Vec<String> = read.edges.iter().flatten().cloned().collect();
+    edges.sort();
+    let mut expected: Vec<String> = brep.identities.edges.iter().flatten().cloned().collect();
+    expected.sort();
+    assert_eq!(edges, expected);
+    assert!(read.vertices.iter().all(Option::is_none));
+}
