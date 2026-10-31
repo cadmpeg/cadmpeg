@@ -25,20 +25,20 @@ fn source_meta(
     representation: Representation,
     primary: cadmpeg_core::dialect::DialectMatch,
 ) -> SourceMeta {
-    let mut attributes = BTreeMap::from([
-        (
-            cadmpeg_core::nonblank_const!("representation"),
-            representation.as_str().to_owned(),
-        ),
-        (
+    let mut attributes = BTreeMap::from([(
+        cadmpeg_core::nonblank_const!("representation"),
+        representation.as_str().to_owned(),
+    )]);
+    if !global.source_ended() {
+        attributes.insert(
             cadmpeg_core::nonblank_const!("parameter_delimiter"),
             char::from(global.parameter_delimiter).to_string(),
-        ),
-        (
+        );
+        attributes.insert(
             cadmpeg_core::nonblank_const!("record_delimiter"),
             char::from(global.record_delimiter).to_string(),
-        ),
-    ]);
+        );
+    }
     if let Some(value) = global.units_name() {
         attributes.insert(
             cadmpeg_core::nonblank_const!("native_units"),
@@ -264,7 +264,14 @@ struct PhysicalParse<'a> {
 impl<'a> PhysicalParse<'a> {
     fn run(bytes: &'a [u8], ctx: &DecodeContext<'_>) -> Result<Self, CodecError> {
         let scan = card::scan(bytes)?;
-        let (global, mut global_losses) = global::parse(&scan)?;
+        let (global, mut global_losses) = if scan.source_end.ends_before_directory() {
+            match global::parse_if_complete(&scan) {
+                Ok(resolved) => resolved,
+                Err(_) => (global::source_ended_before_record(), Vec::new()),
+            }
+        } else {
+            global::parse(&scan)?
+        };
         let (directory, quarantined_directory) =
             directory::parse(&scan, global.global_table(), ctx)?;
         global_losses.extend(directory::metadata_losses(&directory));

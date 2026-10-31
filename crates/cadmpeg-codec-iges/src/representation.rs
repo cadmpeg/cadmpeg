@@ -93,7 +93,15 @@ pub(crate) fn classify(reader: &mut dyn ReadSeek) -> Result<Option<Representatio
         }
     }
     reader.seek(SeekFrom::Start(position))?;
-    Ok(classify_prefix(&prefix[..count]))
+    let seen = &prefix[..count];
+    if let Some(representation) = classify_prefix(seen) {
+        return Ok(Some(representation));
+    }
+    // A short read reached end of file. A 512-byte read does not.
+    if count < DETECTION_PREFIX_BYTES && card::whole_file_fixed_ascii(seen) {
+        return Ok(Some(Representation::FixedAscii));
+    }
+    Ok(None)
 }
 
 #[cfg(test)]
