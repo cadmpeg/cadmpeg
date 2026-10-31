@@ -81,7 +81,7 @@ fn decode_marked_circle_edge(marker: u8) -> (String, String, Sense) {
 
 #[test]
 fn against_marker_trims_a_circle_edge_through_its_short_arc() {
-    let (start, end, sense) = decode_marked_circle_edge(0x2d);
+    let (start, end, sense) = decode_marked_circle_edge(0x2b);
     assert_eq!(sense, Sense::Reversed);
     let sweep = circle_sweep_degrees(&start, &end);
     assert!((sweep - SHORT_ARC_DEGREES).abs() < 1.0e-9, "{sweep}");
@@ -89,7 +89,7 @@ fn against_marker_trims_a_circle_edge_through_its_short_arc() {
 
 #[test]
 fn along_marker_trims_a_circle_edge_through_its_long_arc() {
-    let (start, end, sense) = decode_marked_circle_edge(0x2b);
+    let (start, end, sense) = decode_marked_circle_edge(0x2d);
     assert_eq!(sense, Sense::Forward);
     let sweep = circle_sweep_degrees(&start, &end);
     assert!(
@@ -100,7 +100,7 @@ fn along_marker_trims_a_circle_edge_through_its_long_arc() {
 
 #[test]
 fn along_marker_keeps_the_stored_edge_direction() {
-    let (start, end, sense) = decode_marked_line_edge(0x2b);
+    let (start, end, sense) = decode_marked_line_edge(0x2d);
     assert!(start.ends_with("#50"), "{start}");
     assert!(end.ends_with("#51"), "{end}");
     assert_eq!(sense, Sense::Forward);
@@ -108,7 +108,7 @@ fn along_marker_keeps_the_stored_edge_direction() {
 
 #[test]
 fn against_marker_reverses_the_stored_edge_direction() {
-    let (start, end, sense) = decode_marked_line_edge(0x2d);
+    let (start, end, sense) = decode_marked_line_edge(0x2b);
     assert!(start.ends_with("#51"), "{start}");
     assert!(end.ends_with("#50"), "{end}");
     assert_eq!(sense, Sense::Reversed);
@@ -177,7 +177,7 @@ fn polyline_carrier(points: &[[f64; 3]]) -> crate::brep::CurveCarrier {
         .map(|&[x, y, z]| Point3::new(x, y, z))
         .collect::<Vec<_>>();
     crate::brep::CurveCarrier {
-        runs_against_edges: false,
+        marker_reversed: None,
         attr: 1,
         offset: 0,
         end: 0,
@@ -307,7 +307,7 @@ fn a_stored_range_matches_a_tolerant_vertex_within_its_tolerance() {
     let circle = unit_circle();
     let endpoints = [Point3::new(1.0, 0.0, 0.0), Point3::new(0.0, 1.0, 0.002)];
     let carrier = crate::brep::CurveCarrier {
-        runs_against_edges: false,
+        marker_reversed: None,
         attr: 1,
         offset: 0,
         end: 0,
@@ -319,12 +319,20 @@ fn a_stored_range_matches_a_tolerant_vertex_within_its_tolerance() {
     };
     let ctx = cadmpeg_test_support::service_decode_context();
     assert_eq!(
-        super::edge_parameter_range(&ctx, &carrier, Some(endpoints), [None; 2], false).unwrap(),
+        super::edge_parameter_range(&ctx, &carrier, Some(endpoints), [None; 2], false, true)
+            .unwrap(),
         None
     );
     assert_eq!(
-        super::edge_parameter_range(&ctx, &carrier, Some(endpoints), [None, Some(0.0035)], false)
-            .unwrap(),
+        super::edge_parameter_range(
+            &ctx,
+            &carrier,
+            Some(endpoints),
+            [None, Some(0.0035)],
+            false,
+            true
+        )
+        .unwrap(),
         Some(([0.0, std::f64::consts::FRAC_PI_2], false))
     );
 }
@@ -363,7 +371,7 @@ fn a_stored_range_shorter_than_its_vertex_tolerances_takes_the_nearer_order() {
     // A 1e-3 rad arc inside 0.01 mm tolerances matches its vertices both ways;
     // its ends meet them exactly in the reversed order.
     let carrier = crate::brep::CurveCarrier {
-        runs_against_edges: false,
+        marker_reversed: None,
         attr: 1,
         offset: 0,
         end: 0,
@@ -378,8 +386,15 @@ fn a_stored_range_shorter_than_its_vertex_tolerances_takes_the_nearer_order() {
     ];
     let ctx = cadmpeg_test_support::service_decode_context();
     assert_eq!(
-        super::edge_parameter_range(&ctx, &carrier, Some(endpoints), [Some(0.01); 2], false)
-            .unwrap(),
+        super::edge_parameter_range(
+            &ctx,
+            &carrier,
+            Some(endpoints),
+            [Some(0.01); 2],
+            false,
+            true
+        )
+        .unwrap(),
         Some(([0.0, 1.0e-3], true))
     );
 }

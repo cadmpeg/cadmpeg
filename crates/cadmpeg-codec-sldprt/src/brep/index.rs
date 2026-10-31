@@ -63,7 +63,7 @@ impl CarrierIndex {
             Carrier::Curve(carrier) => {
                 if let Some(IndexedCurve::Exact(known)) = self.curves.get(&carrier.attr) {
                     if known.geometry == carrier.geometry
-                        && known.runs_against_edges != carrier.runs_against_edges
+                        && known.marker_reversed != carrier.marker_reversed
                     {
                         self.marker_conflicts.insert(carrier.attr);
                     }
@@ -469,6 +469,7 @@ mod tests {
                     PlaneSurface::try_new(origin, normal, reference).expect("plane fixture"),
                 )),
                 orientation_reversed: false,
+                marker_reversed: false,
             })
         };
         let x = Vector3::new(1.0, 0.0, 0.0);
@@ -489,7 +490,7 @@ mod tests {
             },
         );
         carriers.insert(Carrier::Curve(CurveCarrier {
-            runs_against_edges: false,
+            marker_reversed: None,
             attr: 7,
             offset: 0,
             end: 0,

@@ -274,6 +274,9 @@ fn sphere_carrier(attr: u16, center: [f64; 3], radius: f64) -> Vec<u8> {
     b
 }
 
+/// Offset of the orientation marker in a compact carrier from `circle_carrier`.
+const COMPACT_MARKER_AT: usize = 18;
+
 pub(crate) fn circle_carrier(attr: u16, center: [f64; 3], axis: [f64; 3], radius: f64) -> Vec<u8> {
     let mut b = vec![0x00, 0x1f];
     be16(&mut b, attr);
@@ -349,14 +352,21 @@ pub(crate) fn closed_cylinder_body() -> Vec<u8> {
 pub(crate) fn sphere_patch_body() -> Vec<u8> {
     let mut b = Vec::new();
     b.extend(sphere_carrier(100, [0.0, 0.0, 0.0], 1.0));
-    b.extend(circle_carrier(70, [0.0, 0.0, 0.0], [1.0, 0.0, 0.0], 1.0));
-    b.extend(circle_carrier(71, [0.0, 0.0, 0.0], [0.0, 1.0, 0.0], 1.0));
-    b.extend(circle_carrier(72, [0.0, 0.0, 0.0], [0.0, 0.0, 1.0], 1.0));
+    // Each circle runs along its edge in a loop without forward links.
+    for (attr, axis) in [
+        (70, [1.0, 0.0, 0.0]),
+        (71, [0.0, 1.0, 0.0]),
+        (72, [0.0, 0.0, 1.0]),
+    ] {
+        let mut circle = circle_carrier(attr, [0.0, 0.0, 0.0], axis, 1.0);
+        circle[COMPACT_MARKER_AT] = 0x2d;
+        b.extend(circle);
+    }
     b.extend(bridge(10, 20, 100));
     b.extend(loop_head(20, 30, 10));
-    b.extend(coedge(30, 20, 32, 51, 0, 40, false));
-    b.extend(coedge(31, 20, 30, 52, 0, 41, false));
-    b.extend(coedge(32, 20, 31, 50, 0, 42, false));
+    b.extend(coedge(30, 20, 31, 50, 0, 40, false));
+    b.extend(coedge(31, 20, 32, 51, 0, 41, false));
+    b.extend(coedge(32, 20, 30, 52, 0, 42, false));
     // Each edge is the great circle through its vertices.
     b.extend(edge_use(40, 72));
     b.extend(edge_use(41, 70));
@@ -379,10 +389,10 @@ pub(crate) fn sphere_existing_seam_body() -> Vec<u8> {
     b.extend(circle_carrier(72, [0.0, 0.0, 0.0], [0.0, 0.0, 1.0], 1.0));
     b.extend(bridge(10, 20, 100));
     b.extend(loop_head(20, 30, 10));
-    b.extend(coedge(30, 20, 33, 52, 0, 40, false));
-    b.extend(coedge(31, 20, 30, 53, 0, 41, false));
-    b.extend(coedge(32, 20, 31, 51, 0, 42, false));
-    b.extend(coedge(33, 20, 32, 51, 0, 43, false));
+    b.extend(coedge(30, 20, 31, 51, 0, 40, false));
+    b.extend(coedge(31, 20, 32, 52, 0, 41, false));
+    b.extend(coedge(32, 20, 33, 53, 0, 42, false));
+    b.extend(coedge(33, 20, 30, 51, 0, 43, false));
     b.extend(edge_use(40, 70));
     b.extend(edge_use(41, 71));
     b.extend(edge_use(42, 72));
@@ -896,23 +906,21 @@ pub(crate) fn framed_topology_loop(
     bytes
 }
 
-/// Coedge `00 11`: `refs[1]` owner loop, `refs[3]` backward link, `refs[4]` end
+/// Coedge `00 11`: `refs[1]` owner loop, `refs[3]` next, `refs[4]` start
 /// vertex-use, `refs[5]` twin, `refs[6]` edge-use; marker is the local sense.
 #[allow(clippy::too_many_arguments)]
 pub(crate) fn coedge(
     attr: u16,
     owner_loop: u16,
-    backward: u16,
-    end_vuse: u16,
+    next: u16,
+    start_vuse: u16,
     twin: u16,
     edge_use: u16,
     reversed: bool,
 ) -> Vec<u8> {
     let mut b = vec![0x00, 0x11];
     be16(&mut b, attr); // p+0
-    let refs = [
-        0u16, owner_loop, 0, backward, end_vuse, twin, edge_use, 0, 0,
-    ];
+    let refs = [0u16, owner_loop, 0, next, start_vuse, twin, edge_use, 0, 0];
     for r in refs {
         be16(&mut b, r); // p+2..20
     }
@@ -923,13 +931,13 @@ pub(crate) fn coedge(
 pub(crate) fn tripled_coedge(
     attr: u16,
     owner_loop: u16,
-    backward: u16,
-    end_vuse: u16,
+    next: u16,
+    start_vuse: u16,
     edge_use: u16,
 ) -> Vec<u8> {
     let mut b = vec![0x00, 0x11];
     be16(&mut b, attr);
-    for reference in [0, owner_loop, 0, backward, end_vuse, 0, edge_use, 0, 0] {
+    for reference in [0, owner_loop, 0, next, start_vuse, 0, edge_use, 0, 0] {
         be16(&mut b, reference);
         b.push(1);
     }
@@ -1254,9 +1262,9 @@ pub(crate) fn tripled_triangle_body() -> Vec<u8> {
     ));
     b.extend(bridge(10, 20, 100));
     b.extend(loop_head(20, 30, 10));
-    b.extend(tripled_coedge(30, 20, 32, 51, 40));
-    b.extend(tripled_coedge(31, 20, 30, 52, 41));
-    b.extend(tripled_coedge(32, 20, 31, 50, 42));
+    b.extend(tripled_coedge(30, 20, 31, 50, 40));
+    b.extend(tripled_coedge(31, 20, 32, 51, 41));
+    b.extend(tripled_coedge(32, 20, 30, 52, 42));
     b.extend(edge_use(40, 0));
     b.extend(edge_use(41, 0));
     b.extend(edge_use(42, 0));
@@ -1393,9 +1401,9 @@ pub(crate) fn triangle_body() -> Vec<u8> {
     ));
     b.extend(bridge(10, 20, 100));
     b.extend(loop_head(20, 30, 10));
-    b.extend(coedge(30, 20, 32, 51, 0, 40, false));
-    b.extend(coedge(31, 20, 30, 52, 0, 41, false));
-    b.extend(coedge(32, 20, 31, 50, 0, 42, false));
+    b.extend(coedge(30, 20, 31, 50, 0, 40, false));
+    b.extend(coedge(31, 20, 32, 51, 0, 41, false));
+    b.extend(coedge(32, 20, 30, 52, 0, 42, false));
     b.extend(edge_use(40, 0));
     b.extend(edge_use(41, 0));
     b.extend(edge_use(42, 0));
@@ -1432,9 +1440,9 @@ pub(crate) fn triangle_body_with_overlapping_point() -> Vec<u8> {
     face_bridge.splice(31..31, world_point(60, [0.0, 0.0, 0.0]));
     b.extend(face_bridge);
     b.extend(loop_head(20, 30, 10));
-    b.extend(coedge(30, 20, 32, 51, 0, 40, false));
-    b.extend(coedge(31, 20, 30, 52, 0, 41, false));
-    b.extend(coedge(32, 20, 31, 50, 0, 42, false));
+    b.extend(coedge(30, 20, 31, 50, 0, 40, false));
+    b.extend(coedge(31, 20, 32, 51, 0, 41, false));
+    b.extend(coedge(32, 20, 30, 52, 0, 42, false));
     b.extend(edge_use(40, 0));
     b.extend(edge_use(41, 0));
     b.extend(edge_use(42, 0));
@@ -1464,8 +1472,8 @@ pub(crate) fn owned_triangle_with_kind(base: u16, owner: u16, x: f64, body_type:
     b.extend(coedge(
         base + 30,
         base + 20,
-        base + 32,
-        base + 51,
+        base + 31,
+        base + 50,
         0,
         base + 40,
         false,
@@ -1473,8 +1481,8 @@ pub(crate) fn owned_triangle_with_kind(base: u16, owner: u16, x: f64, body_type:
     b.extend(coedge(
         base + 31,
         base + 20,
-        base + 30,
-        base + 52,
+        base + 32,
+        base + 51,
         0,
         base + 41,
         false,
@@ -1482,8 +1490,8 @@ pub(crate) fn owned_triangle_with_kind(base: u16, owner: u16, x: f64, body_type:
     b.extend(coedge(
         base + 32,
         base + 20,
-        base + 31,
-        base + 50,
+        base + 30,
+        base + 52,
         0,
         base + 42,
         false,
@@ -1513,9 +1521,9 @@ pub(crate) fn untyped_triangle(x: f64) -> Vec<u8> {
     let mut body = Vec::new();
     body.extend(bridge(10, 20, 999));
     body.extend(loop_head(20, 30, 10));
-    body.extend(coedge(30, 20, 32, 51, 0, 40, false));
-    body.extend(coedge(31, 20, 30, 52, 0, 41, false));
-    body.extend(coedge(32, 20, 31, 50, 0, 42, false));
+    body.extend(coedge(30, 20, 31, 50, 0, 40, false));
+    body.extend(coedge(31, 20, 32, 51, 0, 41, false));
+    body.extend(coedge(32, 20, 30, 52, 0, 42, false));
     body.extend(edge_use(40, 999));
     body.extend(edge_use(41, 0));
     body.extend(edge_use(42, 0));
@@ -1559,9 +1567,9 @@ pub(super) fn arc_sketch_body() -> Vec<u8> {
     body.extend(circle_carrier(70, [0.0, 0.0, 0.0], [0.0, 0.0, 1.0], 1.0));
     body.extend(bridge(10, 20, 100));
     body.extend(loop_head(20, 30, 10));
-    body.extend(coedge(30, 20, 32, 51, 0, 40, false));
-    body.extend(coedge(31, 20, 30, 52, 0, 41, false));
-    body.extend(coedge(32, 20, 31, 50, 0, 42, false));
+    body.extend(coedge(30, 20, 31, 50, 0, 40, false));
+    body.extend(coedge(31, 20, 32, 51, 0, 41, false));
+    body.extend(coedge(32, 20, 30, 52, 0, 42, false));
     body.extend(edge_use(40, 70));
     body.extend(edge_use(41, 0));
     body.extend(edge_use(42, 0));

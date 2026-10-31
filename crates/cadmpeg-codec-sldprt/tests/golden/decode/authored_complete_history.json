@@ -46,7 +46,7 @@
             "sldprt:brep:body#900"
           ],
           "feature_states": {
-            "sldprt:model:feature#348:0": {
+            "sldprt:model:feature#350:0": {
               "definition": {
                 "definition": "extrude",
                 "direction": {
@@ -64,7 +64,7 @@
                 "op": "join",
                 "profile": {
                   "kind": "unresolved",
-                  "value": "sldprt:history:feature#348:0"
+                  "value": "sldprt:history:feature#350:0"
                 },
                 "solid": true,
                 "start": {
@@ -75,7 +75,7 @@
                 "kind": "active"
               }
             },
-            "sldprt:model:feature#348:1": {
+            "sldprt:model:feature#350:1": {
               "definition": {
                 "definition": "native",
                 "kind": "EquationDrivenCurve"
@@ -85,13 +85,13 @@
               }
             }
           },
-          "id": "sldprt:model:configuration#348:0",
+          "id": "sldprt:model:configuration#350:0",
           "material": "Steel",
           "name": "Default",
-          "native_ref": "sldprt:history:configuration#348:0",
+          "native_ref": "sldprt:history:configuration#350:0",
           "ordinal": 0,
           "parameter_values": {
-            "sldprt:model:parameter#348:0:0": {
+            "sldprt:model:parameter#350:0:0": {
               "kind": "length",
               "value": 12.5
             }
@@ -107,21 +107,21 @@
       "edges": [
         {
           "carrier": {},
-          "end": "sldprt:brep:vertex#50",
-          "id": "sldprt:brep:edge#40",
-          "start": "sldprt:brep:vertex#51"
-        },
-        {
-          "carrier": {},
           "end": "sldprt:brep:vertex#51",
-          "id": "sldprt:brep:edge#41",
-          "start": "sldprt:brep:vertex#52"
+          "id": "sldprt:brep:edge#40",
+          "start": "sldprt:brep:vertex#50"
         },
         {
           "carrier": {},
           "end": "sldprt:brep:vertex#52",
+          "id": "sldprt:brep:edge#41",
+          "start": "sldprt:brep:vertex#51"
+        },
+        {
+          "carrier": {},
+          "end": "sldprt:brep:vertex#50",
           "id": "sldprt:brep:edge#42",
-          "start": "sldprt:brep:vertex#50"
+          "start": "sldprt:brep:vertex#52"
         }
       ],
       "faces": [
@@ -157,25 +157,25 @@
             "op": "join",
             "profile": {
               "kind": "unresolved",
-              "value": "sldprt:history:feature#348:0"
+              "value": "sldprt:history:feature#350:0"
             },
             "solid": true,
             "start": {
               "kind": "profile_plane"
             }
           },
-          "id": "sldprt:model:feature#348:0",
+          "id": "sldprt:model:feature#350:0",
           "name": "Boss",
-          "native_ref": "sldprt:history:feature#348:0",
+          "native_ref": "sldprt:history:feature#350:0",
           "ordinal": 0,
           "source_content": [
             {
               "kind": "parameter",
-              "value": "sldprt:model:parameter#348:0:0"
+              "value": "sldprt:model:parameter#350:0:0"
             },
             {
               "kind": "feature",
-              "value": "sldprt:model:feature#348:1"
+              "value": "sldprt:model:feature#350:1"
             }
           ],
           "source_properties": {
@@ -189,11 +189,11 @@
             "definition": "native",
             "kind": "EquationDrivenCurve"
           },
-          "id": "sldprt:model:feature#348:1",
+          "id": "sldprt:model:feature#350:1",
           "name": "Profile",
-          "native_ref": "sldprt:history:feature#348:1",
+          "native_ref": "sldprt:history:feature#350:1",
           "ordinal": 1,
-          "regeneration_parent": "sldprt:model:feature#348:0",
+          "regeneration_parent": "sldprt:model:feature#350:0",
           "source_tag": "EquationDrivenCurve",
           "suppressed": false
         }
@@ -203,8 +203,8 @@
           "boundary": {
             "coedges": [
               "sldprt:brep:coedge#30",
-              "sldprt:brep:coedge#32",
-              "sldprt:brep:coedge#31"
+              "sldprt:brep:coedge#31",
+              "sldprt:brep:coedge#32"
             ],
             "kind": "ring"
           },
@@ -216,10 +216,10 @@
       "parameters": [
         {
           "expression": "12.5mm",
-          "id": "sldprt:model:parameter#348:0:0",
+          "id": "sldprt:model:parameter#350:0:0",
           "name": "Depth",
           "ordinal": 0,
-          "owner": "sldprt:model:feature#348:0",
+          "owner": "sldprt:model:feature#350:0",
           "value": {
             "kind": "length",
             "value": 12.5
@@ -332,11 +332,11 @@
       "sldprt": {
         "configurations": [
           {
-            "id": "sldprt:history:configuration#348:0",
+            "id": "sldprt:history:configuration#350:0",
             "material": "Steel",
             "name": "Default",
             "ordinal": 0,
-            "parent": "sldprt:history:feature-history#348",
+            "parent": "sldprt:history:feature-history#350",
             "properties": {
               "DisplayState": "Shaded"
             },
@@ -349,15 +349,15 @@
             "content": [
               {
                 "kind": "configuration",
-                "value": "sldprt:history:configuration#348:0"
+                "value": "sldprt:history:configuration#350:0"
               },
               {
                 "kind": "feature",
-                "value": "sldprt:history:feature#348:0"
+                "value": "sldprt:history:feature#350:0"
               }
             ],
             "features": [],
-            "id": "sldprt:history:feature-history#348",
+            "id": "sldprt:history:feature-history#350",
             "part_name": "Bracket"
           }
         ],
@@ -381,17 +381,17 @@
               },
               {
                 "kind": "feature",
-                "value": "sldprt:history:feature#348:1"
+                "value": "sldprt:history:feature#350:1"
               }
             ],
-            "id": "sldprt:history:feature#348:0",
+            "id": "sldprt:history:feature#350:0",
             "kind": "BossExtrude",
             "name": "Boss",
             "ordinal": 0,
             "parameters": {
               "Depth": "12.5mm"
             },
-            "parent": "sldprt:history:feature-history#348",
+            "parent": "sldprt:history:feature-history#350",
             "properties": {
               "Scope": "Body1"
             },
@@ -400,17 +400,17 @@
             "xml_tag": "Extrusion"
           },
           {
-            "id": "sldprt:history:feature#348:1",
+            "id": "sldprt:history:feature#350:1",
             "kind": "EquationDrivenCurve",
             "name": "Profile",
             "ordinal": 1,
             "parameters": {},
-            "parent": "sldprt:history:feature-history#348",
+            "parent": "sldprt:history:feature-history#350",
             "parent_source_id": "7",
             "properties": {},
             "source_id": "8",
             "suppressed": false,
-            "tree_parent": "sldprt:history:feature#348:0",
+            "tree_parent": "sldprt:history:feature#350:0",
             "xml_tag": "EquationDrivenCurve"
           }
         ],
@@ -421,10 +421,10 @@
             "id": "sldprt:file:block#12"
           },
           {
-            "id": "sldprt:file:block#348"
+            "id": "sldprt:file:block#350"
           },
           {
-            "id": "sldprt:file:block#583"
+            "id": "sldprt:file:block#585"
           }
         ]
       }
@@ -443,10 +443,10 @@
         "png_preview_count": "0",
         "sldprt_configuration_feature_states_local_sha256": "<elided: digest over tolerantly compared geometry>",
         "sldprt_configuration_parameter_values_local_sha256": "<elided: digest over tolerantly compared geometry>",
-        "sldprt_configuration_snapshot_synthesized": "sldprt:model:configuration#348:0",
-        "sldprt_native_configuration_sha256": "c8c10b8dd9d280df10250d20f56f529450d7ebd28a5b83c2e52aa1f84eff18b8",
-        "sldprt_native_history_sha256": "2d9c55fb193495e5bc7b565f3cab01b71f034697be1becdea64a83f68bd14271",
-        "sldprt_native_parameter_sha256": "6ebf2685a526a916382a4add0143c479a74a4111a956a1d589882b9956b77182",
+        "sldprt_configuration_snapshot_synthesized": "sldprt:model:configuration#350:0",
+        "sldprt_native_configuration_sha256": "4a5837abcd6e9eadd7b2bb76b7ee5ca47a53b8edf90e311f0a431e1669a258c9",
+        "sldprt_native_history_sha256": "0f750c58d81b71d049d720e29b704fd495d3ee5d16f891fef06dd6ae9f00624f",
+        "sldprt_native_parameter_sha256": "c72a3bac0a380aa6aa518792f2750ccb929a89236eac484c15767dc82c36005b",
         "sldprt_native_sketch_sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
         "sldprt_neutral_configuration_local_sha256": "<elided: digest over tolerantly compared geometry>",
         "sldprt_neutral_feature_local_sha256": "<elided: digest over tolerantly compared geometry>",
@@ -653,13 +653,13 @@
           "stream": "Contents/Config-0-Partition",
           "tag": "parasolid"
         },
-        "sldprt:file:block#348": {
-          "offset": 348,
+        "sldprt:file:block#350": {
+          "offset": 350,
           "stream": "Contents/Keywords",
           "tag": "unknown"
         },
-        "sldprt:file:block#583": {
-          "offset": 583,
+        "sldprt:file:block#585": {
+          "offset": 585,
           "stream": "Contents/Features",
           "tag": "unknown"
         },
@@ -668,22 +668,22 @@
           "stream": "source",
           "tag": "source_image"
         },
-        "sldprt:history:configuration#348:0": {
+        "sldprt:history:configuration#350:0": {
           "offset": 25,
           "stream": "Contents/Keywords",
           "tag": "Configuration"
         },
-        "sldprt:history:feature#348:0": {
+        "sldprt:history:feature#350:0": {
           "offset": 111,
           "stream": "Contents/Keywords",
           "tag": "Extrusion"
         },
-        "sldprt:history:feature#348:1": {
+        "sldprt:history:feature#350:1": {
           "offset": 216,
           "stream": "Contents/Keywords",
           "tag": "EquationDrivenCurve"
         },
-        "sldprt:history:feature-history#348": {
+        "sldprt:history:feature-history#350": {
           "offset": 0,
           "stream": "Contents/Keywords",
           "tag": "Keywords"
@@ -693,13 +693,13 @@
     "retained_records": {
       "sldprt:file:block#12": {
         "bytes": {
-          "data": "UFMAAAAOcGFydGl0aW9uIGJvZHkAABJTQ0hfU1dfMzMxMDNfMTEwMDAAMgBkAAAAAAAAAAAAAAAAAAArAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAD/wAAAAAAAAP/AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA4ACgAAAAAAAMK8ko+ZbgAAAAAAAAAUAAAAZCsAAAAAAAAAAAAAAA8AFAAAAAAAAAAeAAoAAAARAB4AAAAUAAAAHwAyAAAAKAAAAAArABEAHwAAABQAAAAgADMAAAApAAAAACsAEQAgAAAAFAAAAB4ANAAAACoAAAAAKwAQACgAAAAAAADCvJKPmW4AAAAAAAAAAAAAAAAAAAOEABAAKQAAAAAAAMK8ko+ZbgAAAAAAAAAAAAAAAAAAA4QAEAAqAAAAAAAAwrySj5luAAAAAAAAAAAAAAAAAAADhAASADIAAAAAAAAAAAAAAAAAPMK8ko+ZbgAAA4QAEgAzAAAAAAAAAAAAAAAAAD3CvJKPmW4AAAOEABIANAAAAAAAAAAAAAAAAAA+wrySj5luAAADhAAdADwAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAHQA9AAAAAAAAAAAAAAAAP/AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAB0APgAAAAAAAAAAAAAAAAAAAAAAAAAAP/AAAAAAAAAAAAAAAAAAAAAM/wOEAAGKJAAFAAYAAQABAAEAAUCPQAAAAAAAPkV5juIwjDoAAQABAAEBAAIBAQOFAAEAAQABAAEAAQABA4YAAQABAAEADf8DhQADEMUAAQOEAAEAAQABAAEDhgABABP/A4YABJdmAAEDhAABAAEDhVMADv8ACgAGGooAAcK8ko+ZbgAAAAEAAQAAA4UAZCs=",
+          "data": "UFMAAAAOcGFydGl0aW9uIGJvZHkAABJTQ0hfU1dfMzMxMDNfMTEwMDAAMgBkAAAAAAAAAAAAAAAAAAArAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAD/wAAAAAAAAP/AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA4ACgAAAAAAAMK8ko+ZbgAAAAAAAAAUAAAAZCsAAAAAAAAAAAAAAA8AFAAAAAAAAAAeAAoAAAARAB4AAAAUAB8AIAAzAAAAKAAAAAArABEAHwAAABQAIAAeADQAAAApAAAAACsAEQAgAAAAFAAeAB8AMgAAACoAAAAAKwAQACgAAAAAAADCvJKPmW4AAAAAAAAAAAAAAAAAAAOEABAAKQAAAAAAAMK8ko+ZbgAAAAAAAAAAAAAAAAAAA4QAEAAqAAAAAAAAwrySj5luAAAAAAAAAAAAAAAAAAADhAASADIAAAAAAAAAAAAAAAAAPMK8ko+ZbgAAA4QAEgAzAAAAAAAAAAAAAAAAAD3CvJKPmW4AAAOEABIANAAAAAAAAAAAAAAAAAA+wrySj5luAAADhAAdADwAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAHQA9AAAAAAAAAAAAAAAAP/AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAB0APgAAAAAAAAAAAAAAAAAAAAAAAAAAP/AAAAAAAAAAAAAAAAAAAAAM/wOEAAGKJAAFAAYAAQABAAEAAUCPQAAAAAAAPkV5juIwjDoAAQABAAEBAAIBAQOFAAEAAQABAAEAAQABA4YAAQABAAEADf8DhQADEMUAAQOEAAEAAQABAAEDhgABABP/A4YABJdmAAEDhAABAAEDhVMADv8ACgAGGooAAcK8ko+ZbgAAAAEAAQAAA4UAZCs=",
           "retention": "inline"
         },
         "offset": 0,
         "stream": "Contents/Config-0-Partition"
       },
-      "sldprt:file:block#348": {
+      "sldprt:file:block#350": {
         "bytes": {
           "data": "PEtleXdvcmRzIE5hbWU9IkJyYWNrZXQiPjxDb25maWd1cmF0aW9uIE5hbWU9IkRlZmF1bHQiIFNvdXJjZUluZGV4PSIwIiBNYXRlcmlhbD0iU3RlZWwiIERpc3BsYXlTdGF0ZT0iU2hhZGVkIi8+PEV4dHJ1c2lvbiBOYW1lPSJCb3NzIiBUeXBlPSJCb3NzRXh0cnVkZSIgaWQ9IjciIFNjb3BlPSJCb2R5MSI+PERpbWVuc2lvbiBOYW1lPSJEZXB0aCI+MTIuNW1tPC9EaW1lbnNpb24+PEVxdWF0aW9uRHJpdmVuQ3VydmUgTmFtZT0iUHJvZmlsZSIgaWQ9IjgiLz48L0V4dHJ1c2lvbj48L0tleXdvcmRzPg==",
           "retention": "inline"
@@ -707,7 +707,7 @@
         "offset": 0,
         "stream": "Contents/Keywords"
       },
-      "sldprt:file:block#583": {
+      "sldprt:file:block#585": {
         "bytes": {
           "data": "PHN3U29saWRXb3JrcyB4bWxucz0iaHR0cDovL3d3dy5zb2xpZHdvcmtzLmNvbS9zdzIwMDMvc2NoZW1hIj48c3dNb2RlbCBpZD0ibW9kZWwtMCIgc3dDb25maWd1cmF0aW9uTmFtZT0iRGVmYXVsdCIvPjxzd0NvbmZpZ3VyYXRpb25MaXN0Pjxzd0NvbmZpZ3VyYXRpb24gc3dJRD0iMCIgc3dNb2RlbFJlZj0ibW9kZWwtMCIgc3dNb3N0UmVjZW50Q29uZmlndXJhdGlvbj0iWUVTIi8+PC9zd0NvbmZpZ3VyYXRpb25MaXN0Pjwvc3dTb2xpZFdvcmtzPg==",
           "retention": "inline"
@@ -717,7 +717,7 @@
       },
       "sldprt:file:source-image#0": {
         "bytes": {
-          "data": "AQAAAAAAAARa2ciHFAAGAAgAIAAAAGSNFHwXAQAAvQIAABsAAAA09uZHVuZHN/I09uZmlnbSA9IFFidHlkeW9uaNkb1KA0EUhc84mkJ0TaKVsHELC5M0s04qSWJABEthC8tFWYQ0iUia9IlFEAM24rtYCb6IT+AbrHf37iY7+T/Dzs/57t17mbn1AFhP98+9dq/d7TgP3aAPFL2rG9+787V2lfZdVymFcwQwVMWGuvwz1zlZ2OXN99f7+LOTuEf0BdkiB7EVqRQnFGjlsBPqDjjjrgp0ZNuBprmc2k5il1CjucJ2ntNmaieSA+LlNbyykhfj1qaqp3Ex0wZrGKxmsGaG2ahjE9loZI9L799Gc5E9F78XUnExOsUOchA8WuMW93fdf/tVrxfsCmwJIYdpUDTkS7LbDwnI/A9ZAwMehrRsfzymQA49WCE9de54BDG53ygB9Iug+g9a2ciHFAAGAAgAQgAAAObcHCe8AAAAGwEAABEAAAA09uZHVuZHN/K0Vpd39idGN02QQQ6CMBBFr9LMAURNjC6AheLCGI0JXqChgzSWFqctwu2tiOjuZ15m/svER+yfhoRlZ15jAlvixR0dpPHO6FLePHEnjR5phiX3ygHLjacCD1pgl8Ac2Ik7JMlVArlDVMAyaRvF+9wFEIYVFyggSuN958jb38WtsRbYtW/GPHCBwKRIYB2KCvNBol8EqUzWqO2/UOMqSBfL2aqu42jCoejhB/OMZIt656nFcedCppRqrNi8paLJKuTvQ9IXWtnIhxQABgAIAEMAAAB9tibjmQAAAP0AAAARAAAANPbmR1bmRzfyZFYWR1cnVjdtj7sOgkAQRX+FTC9LtDMsjViYiAUUxnIDi2zch2GGjJ+vS+VGu8mc3HtyS+QuWDNcw/zA7OWsRwkT0XMvBDPnGCFHmPfBCeRtUewE9pN2CqoSuQmDtpkZJLh4bQrIkA/Bj+a+zIpM8BfltIRaj2qxBCKGEn42SD/PT8mplrC2rYpWj4miCUit7rWnJCfhduyiRPy1iO+51RtFK34oAAAUAAYACAAgAAAAZI0UfBcBAAC9AgAAGwAAAAAAAAABAAAAAAAAAAAANPbmR1bmRzfyNPbmZpZ20gPSBRYnR5ZHlvbmRSt+KAAAFAAGAAgAQgAAAObcHCe8AAAAGwEAABEAAAAAAAAAAQAAAAAAUAEAADT25kdW5kc38rRWl3f2J0Y3RSt+KAAAFAAGAAgAQwAAAH22JuOZAAAA/QAAABEAAAAAAAAAAQAAAAAAOwIAADT25kdW5kc38mRWFkdXJ1Y3n4JeAgAAAAADAAMAxwAAAAMDAAAAAA==",
+          "data": "AQAAAAAAAARa2ciHFAAGAAgAIAAAAELkeVwZAQAAvQIAABsAAAA09uZHVuZHN/I09uZmlnbSA9IFFidHlkeW9uaNkb9KA0EQxr91NYXomUQr4eIVFiZp9rKpJIkBESyFKywP5RDSJCJp0icWQQzYiO9iJfgiPoFvcM7u3pnb/P+WY+a+38zOsnsTAHAe7576nX6n1/Xue9EAKAaX12FwG0rpCxn6vhACNUSwVMWGuvi145wc7Jrk6/Nt8tFN3CP6ouyQA20plXRDgaIqO4EHSdmZOVWBDGV7hOuUlVPb03aJcI2yirHzpm1mdiI+JF5ewysreVEPm6qR1mkmLda0WN1irQxz0cAmctHM/i69fxetRfZc/V5Mw9n4FDvIgZnVnrTN+a4Grz/i5dy4DFuM8VFapBZ/TrL9mADPf5M1tOBhTGH7/SEFfBTAiempc8djsP/7VQ2gLaLqH1rZyIcUAAYACABCAAAA5twcJ7wAAAAbAQAAEQAAADT25kdW5kc38rRWl3f2J0Y3TZBBDoIwEEWv0swBRE2MLoCF4sIYjQleoKGDNJYWpy3C7a2I6O5nXmb+y8RH7J+GhGVnXmMCW+LFHR2k8c7oUt48cSeNHmmGJffKAcuNpwIPWmCXwBzYiTskyVUCuUNUwDJpG8X73AUQhhUXKCBK433nyNvfxa2xFti1b8Y8cIHApEhgHYoK80GiXwSpTNao7b9Q4ypIF8vZqq7jaMKh6OEH84xki3rnqcVx50KmlGqs2Lyloskq5O9D0hda2ciHFAAGAAgAQwAAAH22JuOZAAAA/QAAABEAAAA09uZHVuZHN/JkVhZHVydWN22Puw6CQBBFf4VML0u0MyyNWJiIBRTGcgOLbNyHYYaMn69L5Ua7yZzce3JL5C5YM1zD/MDs5axHCRPRcy8EM+cYIUeY98EJ5G1R7AT2k3YKqhK5CYO2mRkkuHhtCsiQD8GP5r7MikzwF+W0hFqParEEIoYSfjZIP89PyamWsLatilaPiaIJSK3utackJ+F27KJE/LWI77nVG0UrfigAABQABgAIACAAAABC5HlcGQEAAL0CAAAbAAAAAAAAAAEAAAAAAAAAAAA09uZHVuZHN/I09uZmlnbSA9IFFidHlkeW9uZFK34oAAAUAAYACABCAAAA5twcJ7wAAAAbAQAAEQAAAAAAAAABAAAAAABSAQAANPbmR1bmRzfytFaXd/YnRjdFK34oAAAUAAYACABDAAAAfbYm45kAAAD9AAAAEQAAAAAAAAABAAAAAAA9AgAANPbmR1bmRzfyZFYWR1cnVjefgl4CAAAAAAMAAwDHAAAABQMAAAAA",
           "retention": "inline"
         },
         "offset": 0,
