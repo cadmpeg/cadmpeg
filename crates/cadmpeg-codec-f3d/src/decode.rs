@@ -3051,6 +3051,7 @@ impl<'a> F3dDecodeSession<'a> {
                         &mut self.report.losses,
                     )?;
                     crate::design::owners::attach(
+                        scan,
                         &self.native,
                         &mut self.ir.model,
                         &mut self.report.losses,
@@ -3079,6 +3080,7 @@ impl<'a> F3dDecodeSession<'a> {
                             &mut self.report.losses,
                         )?;
                         crate::design::owners::attach(
+                            scan,
                             &self.native,
                             &mut self.ir.model,
                             &mut self.report.losses,

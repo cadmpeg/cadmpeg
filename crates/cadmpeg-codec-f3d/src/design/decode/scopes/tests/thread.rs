@@ -84,7 +84,7 @@ fn thread_scope_decodes_standard_size_and_face_group() {
             draft.layout_fixture_tail();
         })
         .unwrap();
-    assert_thread_construction(exact_thread_construction(&bytes, &scope), &expected);
+    assert_thread_construction(exact_thread_construction(&bytes, &scope, &[]), &expected);
 
     let mut owner_marked = bytes;
     owner_marked.splice(20..20, [1, 0, 0, 0]);
@@ -100,13 +100,13 @@ fn thread_scope_decodes_standard_size_and_face_group() {
         })
         .unwrap();
     assert_thread_construction(
-        exact_thread_construction(&owner_marked, &scope),
+        exact_thread_construction(&owner_marked, &scope, &[]),
         &shifted_expected,
     );
     let mut invalid_owner_marker = owner_marked.clone();
     invalid_owner_marker[20..24].copy_from_slice(&2u32.to_le_bytes());
     assert_eq!(
-        exact_thread_construction(&invalid_owner_marker, &scope),
+        exact_thread_construction(&invalid_owner_marker, &scope, &[]),
         None
     );
     assert_eq!(
@@ -175,13 +175,13 @@ fn thread_scope_decodes_class_334_legacy_standard_tail() {
             draft.layout_fixture_tail();
         })
         .unwrap();
-    assert_thread_construction(exact_thread_construction(&bytes, &scope), &expected);
+    assert_thread_construction(exact_thread_construction(&bytes, &scope, &[]), &expected);
 
     scope.class_tag =
         crate::records::references::DesignClassTag::try_from("335".to_owned()).unwrap();
     scope.paired_class_tag =
         crate::records::references::DesignClassTag::try_from("258".to_owned()).unwrap();
-    assert_eq!(exact_thread_construction(&bytes, &scope), None);
+    assert_eq!(exact_thread_construction(&bytes, &scope, &[]), None);
 }
 
 /// Standard-prefix Thread bytes with the compact construction marker.
@@ -260,7 +260,7 @@ fn thread_scope_decodes_standard_prefix_compact_marker_form() {
         })
         .unwrap();
     assert_thread_construction(
-        exact_thread_construction(&owner_marked, &scope),
+        exact_thread_construction(&owner_marked, &scope, &[]),
         &expected(42),
     );
 }
@@ -409,7 +409,10 @@ fn thread_scope_decodes_compact_preamble_and_localized_profile() {
         crate::records::references::DesignClassTag::try_from("904".to_owned()).unwrap();
     let mut plural_expected = expected.clone();
     plural_expected.face_group_record_indices.push(992);
-    assert_thread_construction(exact_thread_construction(&bytes, &scope), &plural_expected);
+    assert_thread_construction(
+        exact_thread_construction(&bytes, &scope, &[]),
+        &plural_expected,
+    );
 
     let mut owner_marked = bytes;
     owner_marked.splice(20..20, [1, 0, 0, 0]);
@@ -422,13 +425,13 @@ fn thread_scope_decodes_compact_preamble_and_localized_profile() {
         })
         .unwrap();
     assert_thread_construction(
-        exact_thread_construction(&owner_marked, &scope),
+        exact_thread_construction(&owner_marked, &scope, &[]),
         &plural_expected,
     );
     let mut invalid_owner_separator = owner_marked.clone();
     invalid_owner_separator[24] = 1;
     assert_eq!(
-        exact_thread_construction(&invalid_owner_separator, &scope),
+        exact_thread_construction(&invalid_owner_separator, &scope, &[]),
         None
     );
 
@@ -445,7 +448,7 @@ fn thread_scope_decodes_compact_preamble_and_localized_profile() {
             draft.layout_fixture_tail();
         })
         .unwrap();
-    assert_eq!(exact_thread_construction(&owner_marked, &scope), None);
+    assert_eq!(exact_thread_construction(&owner_marked, &scope, &[]), None);
 }
 
 #[test]
@@ -508,13 +511,13 @@ fn thread_scope_decodes_class_414_legacy_compact_tail() {
             draft.layout_fixture_tail();
         })
         .unwrap();
-    assert_thread_construction(exact_thread_construction(&bytes, &scope), &expected);
+    assert_thread_construction(exact_thread_construction(&bytes, &scope, &[]), &expected);
 
     scope.class_tag =
         crate::records::references::DesignClassTag::try_from("334".to_owned()).unwrap();
     scope.paired_class_tag =
         crate::records::references::DesignClassTag::try_from("262".to_owned()).unwrap();
-    assert_eq!(exact_thread_construction(&bytes, &scope), None);
+    assert_eq!(exact_thread_construction(&bytes, &scope, &[]), None);
 }
 
 #[test]
@@ -615,4 +618,149 @@ fn scope_without_its_own_history_state_keeps_its_predecessor() {
     assert_eq!(scope.previous_history_state_id(), Some(9));
 
     assert!(parse(&frame(10, u32::MAX)).is_none());
+}
+
+#[test]
+fn extended_thread_prefix_checks_standard_owner_references_and_compact_tail() {
+    for standard in [false, true] {
+        let mut bytes = vec![0; 46];
+        bytes[21..29].copy_from_slice(&60.0f64.to_le_bytes());
+        bytes[29] = u8::from(standard);
+        bytes[34..38].copy_from_slice(&2u32.to_le_bytes());
+        bytes[38..42].copy_from_slice(if standard {
+            &[0x36, 0, 0x67, 0]
+        } else {
+            &[0x36, 0, 0x48, 0]
+        });
+        lp_utf16(&mut bytes, "M8x1");
+        lp_utf16(&mut bytes, "8.0");
+        lp_utf16(&mut bytes, "ISO Metric profile");
+        bytes.extend_from_slice(if standard {
+            &[1, 1, 0, 0, 0]
+        } else {
+            &[1, 2, 0, 0, 0]
+        });
+        bytes.extend_from_slice(&0.8f64.to_le_bytes());
+        bytes.extend_from_slice(&0.6f64.to_le_bytes());
+        bytes.push(0);
+        bytes.extend_from_slice(&0.1f64.to_le_bytes());
+        bytes.extend_from_slice(&0.7f64.to_le_bytes());
+        let trailer = bytes.len();
+        if standard {
+            bytes.push(0);
+            for reference in [112u32, 109] {
+                bytes.push(1);
+                bytes.extend_from_slice(&reference.to_le_bytes());
+                bytes.extend_from_slice(&[0; 6]);
+            }
+            bytes.push(1);
+        } else {
+            for reference in [90u32, 104, 101] {
+                bytes.push(1);
+                bytes.extend_from_slice(&reference.to_le_bytes());
+                bytes.extend_from_slice(&[0; 6]);
+            }
+            bytes.push(1);
+        }
+        let mut scope = DesignParameterScope::empty(
+            "f3d:test:extended-thread#100",
+            crate::records::feature::scope::DesignFeatureKind::Thread,
+            100,
+        );
+        scope
+            .try_edit(|draft| {
+                draft.frame_length = 500;
+                draft.paired_byte_offset = 500;
+                draft.reference_members =
+                    crate::records::identity::ReferenceRun::unlocated(vec![101, 104, 109, 112]);
+                draft.layout_fixture_references();
+                draft.layout_fixture_tail();
+            })
+            .unwrap();
+        let owner_indices = if standard { [109u32, 112] } else { [101, 104] };
+        let owners = owner_indices
+            .into_iter()
+            .enumerate()
+            .map(|(ordinal, index)| {
+                let owner = crate::design::decode::parameters::parse_parameter_owner(
+                    &crate::design::test_support::parameter_owner_frame(),
+                )
+                .unwrap()
+                .into_record("test", 1000 + u64_from_index(ordinal) * 200)
+                .unwrap();
+                let mut wire = crate::records::parameters::DesignParameterOwnerWire::from(owner);
+                wire.record_index = index;
+                wire.scope_record_index = 100;
+                wire.local_ordinal = u32::try_from(ordinal).unwrap();
+                wire.evaluated_value = f64::from(u32::try_from(ordinal).unwrap());
+                wire.parameter_record_index = index + 1;
+                wire.companion_record_index = index + 2;
+                crate::records::parameters::DesignParameterOwner::try_from(wire).unwrap()
+            })
+            .collect::<Vec<_>>();
+        let construction =
+            exact_thread_construction(&bytes, &scope, &owners).expect("extended thread prefix");
+        assert!(exact_thread_construction(&bytes, &scope, &[]).is_none());
+        let mut shifted = owners.clone();
+        let mut shifted_wire =
+            crate::records::parameters::DesignParameterOwnerWire::from(shifted[0].clone());
+        shifted_wire.evaluated_value = 0.25;
+        shifted[0] =
+            crate::records::parameters::DesignParameterOwner::try_from(shifted_wire).unwrap();
+        assert!(exact_thread_construction(&bytes, &scope, &shifted).is_none());
+        assert_eq!(construction.designation_offset, 46);
+        assert_eq!(
+            construction.form,
+            if standard {
+                DesignThreadForm::StandardExtended
+            } else {
+                DesignThreadForm::CompactExtended(crate::records::identity::Located {
+                    value: std::num::NonZeroU32::new(90).unwrap(),
+                    offset: u64_from_index(trailer + 1),
+                })
+            }
+        );
+        assert_eq!(
+            construction.face_group_record_indices,
+            if standard { vec![101] } else { vec![109] }
+        );
+        for offset in [30, 34, 38, 42] {
+            let mut mutated = bytes.clone();
+            mutated[offset] = 9;
+            assert!(exact_thread_construction(&mutated, &scope, &owners).is_none());
+        }
+        if !standard {
+            for offset in [
+                trailer,
+                trailer + 5,
+                trailer + 11,
+                trailer + 12,
+                trailer + 16,
+                trailer + 22,
+                trailer + 23,
+                trailer + 27,
+                trailer + 33,
+            ] {
+                let mut mutated = bytes.clone();
+                mutated[offset] = 9;
+                assert!(exact_thread_construction(&mutated, &scope, &owners).is_none());
+            }
+        }
+        if standard {
+            for offset in [
+                trailer,
+                trailer + 1,
+                trailer + 2,
+                trailer + 6,
+                trailer + 12,
+                trailer + 13,
+                trailer + 17,
+                trailer + 23,
+            ] {
+                let mut mutated = bytes.clone();
+                mutated[offset] = 9;
+                assert!(exact_thread_construction(&mutated, &scope, &owners).is_none());
+            }
+        }
+    }
 }

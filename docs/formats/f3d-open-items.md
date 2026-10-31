@@ -823,9 +823,9 @@ the native feature when a fixed lane carries a symmetric distance.
 
 **Question.** Which stored field, or which result-topology change, marks a Thread as modeled geometry instead of an annotation?
 
-**Known.** The scope stores the designation, nominal-size text, profile name, and four physical scalars. No stored byte is proven to select the modeled state. In every Thread scope with a resolved result transition, the transition updates faces and inserts none.
+**Known.** The scope stores the designation, nominal-size text, profile name, and four physical scalars. The extended standard trailer links the length and offset owners. The extended compact trailer also links its owning Hole. Resolved Thread transitions replace existing face revisions.
 
-**Need.** One Thread saved with modeled geometry and the same Thread with it off, with the Design stream and the ASM history of both.
+**Need.** One Thread saved with modeled geometry and the same Thread with it off, with the Design stream and the ASM history of both. CAD Fixture Recipes F17a and F17b specify this pair.
 
 **Conflict.** None.
 

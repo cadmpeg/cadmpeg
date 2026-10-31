@@ -7441,3 +7441,75 @@ pub(crate) mod local_component_occurrence_empty_attributes_prefix {
     /// Offset of `occurrence_guid` (`bytes[76]`). Spec §3.1.
     pub(crate) const OCCURRENCE_GUID: usize = 124;
 }
+
+/// Byte offsets for the `thread_extended_scope_prefix` record.
+///
+/// Spec §3.1. Record length 46 B.
+///
+/// ```text
+/// Offsets are relative to the primary Thread indexed header.
+/// ```
+pub(crate) mod thread_extended_scope_prefix {
+    /// Record length in bytes. Spec §3.1.
+    pub(crate) const LEN: usize = 46;
+    /// Offset of `zero_run_10` (`bytes[10]`). Spec §3.1.
+    pub(crate) const ZERO_RUN_10: usize = 11;
+    /// Offset of `fixed_scalar` (`f64`, little-endian). Spec §3.1.
+    pub(crate) const FIXED_SCALAR: usize = 21;
+    /// Offset of `standard_flag` (`u8`). Spec §3.1.
+    pub(crate) const STANDARD_FLAG: usize = 29;
+    /// Offset of `zero_value` (`u32`, little-endian). Spec §3.1.
+    pub(crate) const ZERO_VALUE: usize = 30;
+    /// Stated value of `zero_value` (`u32`). Spec §3.1.
+    pub(crate) const ZERO_VALUE_VALUE: u32 = 0x0000_0000;
+    /// Offset of `form_marker` (`u32`, little-endian). Spec §3.1.
+    pub(crate) const FORM_MARKER: usize = 34;
+    /// Stated value of `form_marker` (`u32`). Spec §3.1.
+    pub(crate) const FORM_MARKER_VALUE: u32 = 0x0000_0002;
+    /// Offset of `form_token` (`bytes[4]`). Spec §3.1.
+    pub(crate) const FORM_TOKEN: usize = 38;
+    /// Offset of `trailing_zero` (`u32`, little-endian). Spec §3.1.
+    pub(crate) const TRAILING_ZERO: usize = 42;
+    /// Stated value of `trailing_zero` (`u32`). Spec §3.1.
+    pub(crate) const TRAILING_ZERO_VALUE: u32 = 0x0000_0000;
+}
+
+/// Byte offsets for the `thread_extended_standard_trailer` record.
+///
+/// Spec §3.1. Record length 24 B.
+///
+/// ```text
+/// Offsets are relative to the construction marker plus 38.
+/// ```
+pub(crate) mod thread_extended_standard_trailer {
+    /// Offset of `zero_flag` (`u8`). Spec §3.1.
+    pub(crate) const ZERO_FLAG: usize = 0;
+    /// Stated value of `zero_flag` (`u8`). Spec §3.1.
+    pub(crate) const ZERO_FLAG_VALUE: u8 = 0;
+    /// Offset of `length_reference` (`bytes[11]`). Spec §3.1.
+    pub(crate) const LENGTH_REFERENCE: usize = 1;
+    /// Offset of `offset_reference` (`bytes[11]`). Spec §3.1.
+    pub(crate) const OFFSET_REFERENCE: usize = 12;
+    /// Offset of `end_flag` (`u8`). Spec §3.1.
+    pub(crate) const END_FLAG: usize = 23;
+    /// Stated value of `end_flag` (`u8`). Spec §3.1.
+    pub(crate) const END_FLAG_VALUE: u8 = 1;
+}
+
+/// Byte offsets for the `thread_extended_compact_trailer` record.
+///
+/// Spec §3.1. Record length 34 B.
+///
+/// ```text
+/// Offsets are relative to the construction marker plus 38.
+/// ```
+pub(crate) mod thread_extended_compact_trailer {
+    /// Offset of `length_reference` (`bytes[11]`). Spec §3.1.
+    pub(crate) const LENGTH_REFERENCE: usize = 11;
+    /// Offset of `offset_reference` (`bytes[11]`). Spec §3.1.
+    pub(crate) const OFFSET_REFERENCE: usize = 22;
+    /// Offset of `end_flag` (`u8`). Spec §3.1.
+    pub(crate) const END_FLAG: usize = 33;
+    /// Stated value of `end_flag` (`u8`). Spec §3.1.
+    pub(crate) const END_FLAG_VALUE: u8 = 1;
+}
