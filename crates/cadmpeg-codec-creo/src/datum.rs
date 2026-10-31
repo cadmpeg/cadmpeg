@@ -200,12 +200,12 @@ pub(crate) fn cylinders(
             &frame_bounds,
             &cache,
         );
-        let frame = match named {
-            Some(frame) => frame.frame(),
-            None => parameter
-                .positional_cylinder_frame()
-                .or_else(|| active_cylinder_frame(row, parameter)),
-        };
+        let frame = parameter
+            .positional_cylinder_frame()
+            .or_else(|| match named {
+                Some(frame) => frame.frame(),
+                None => active_cylinder_frame(row, parameter),
+            });
         if let Some(frame) = frame {
             cylinders.push(DatumCylinder {
                 id: row.id,

@@ -2834,7 +2834,7 @@ polygon edge, and every center pair is farther apart than the sum of their
 radii. These conditions establish the polygon as the outer loop and each
 circle as an inner loop.
 
-Build the B-rep half-edge graph from the `crv_array` suffixes. A single-loop face has an outer boundary by topology. A two-edge loop is admissible only when its distinct edge carriers have typed non-linear geometry, complete native pcurve endpoint paths close in traversal order, and the resulting boundary is otherwise ordered by the same face rules. For multiple two-edge circular loops on a plane, complete circle carriers with a common center and distinct radii provide the outer-to-inner order. Two-edge line-only loops and ambiguous circular loop sets remain native. Multi-loop faces otherwise require parameter-space containment to distinguish outer from inner loops. When no placed surface chart is available, complete solved boundary vertices must prove one common plane before the same containment rule is applied. Native body components follow connected components of nonzero face references. In a legacy ASCII layout, a component is eligible for neutral admission when it contains at least one face whose visible surface carrier, boundary loops, edge carriers, and solved vertices all pass the admission gates. Only those eligible faces and edges enter the neutral body; references in the same component that do not pass the gates remain native. A component with no eligible visible face remains native. Neutral shells follow connected components of admitted face topology through shared edges or vertices.
+Build the B-rep half-edge graph from the `crv_array` suffixes. A single-loop face has an outer boundary by topology. A two-edge loop is admissible only when its distinct edge carriers have typed non-linear geometry, complete native pcurve endpoint paths or proved planar-cap parameter paths close in traversal order, and the resulting boundary is otherwise ordered by the same face rules. For multiple two-edge circular loops on a plane, complete circle carriers with a common center and distinct radii provide the outer-to-inner order. Two-edge line-only loops and ambiguous circular loop sets remain native. Multi-loop faces otherwise require parameter-space containment to distinguish outer from inner loops. When no placed surface chart is available, complete solved boundary vertices must prove one common plane before the same containment rule is applied. Native body components follow connected components of nonzero face references. In a legacy ASCII layout, a component is eligible for neutral admission when it contains at least one face whose visible surface carrier, boundary loops, edge carriers, and solved vertices all pass the admission gates. Only those eligible faces and edges enter the neutral body; references in the same component that do not pass the gates remain native. A component with no eligible visible face remains native. Neutral shells follow connected components of admitted face topology through shared edges or vertices.
 
 Use the following order to select a body count:
 
@@ -4684,8 +4684,9 @@ direction. The oriented edge interval spans its two vertices.
 A complete plane chart maps solved boundary vertices to cap parameters.
 For a two-circle loop, these parameters match both proved circle intervals,
 the two segments meet in traversal order, and all vertices lie in the cap
-plane. Two antipodal endpoints, two half-turn intervals, and opposite arc
-midpoints define one complete circular boundary.
+plane. Each present native endpoint path agrees with the projected endpoint
+pair in either orientation. Two antipodal endpoints, two half-turn intervals,
+and opposite arc midpoints define one complete circular boundary.
 
 A planar cap with one strictly convex polygon and disjoint circular holes
 has one exterior loop. Its polygon edges have line carriers. Each circular

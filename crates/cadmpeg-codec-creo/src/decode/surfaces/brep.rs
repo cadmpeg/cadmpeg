@@ -1235,13 +1235,6 @@ fn projected_circle_loop_polygon(
     native_pcurves: &NativePcurveCandidates,
     evidence: NativeCurveEvidence<'_>,
 ) -> Option<Vec<[f64; 2]>> {
-    if lp
-        .half_edges()
-        .iter()
-        .any(|edge| native_pcurves.contains_key(&(edge.curve_id, face.0)))
-    {
-        return None;
-    }
     let polygon = crate::decode::sweep::revolution_cap::projected_loop_polygon(
         lp,
         face.1,
@@ -1249,6 +1242,21 @@ fn projected_circle_loop_polygon(
         solved_vertices,
     )?;
     bounded_planar_circle_loop_parameters(lp, &polygon, face.1, evidence)?;
+    for (index, edge) in lp.half_edges().iter().enumerate() {
+        if let Some(candidates) = native_pcurves.get(&(edge.curve_id, face.0)) {
+            let start = polygon[index];
+            let end = polygon[(index + 1) % polygon.len()];
+            candidates
+                .iter()
+                .any(|(endpoints, _)| {
+                    (parameter_points_agree(endpoints[0], start)
+                        && parameter_points_agree(endpoints[1], end))
+                        || (parameter_points_agree(endpoints[1], start)
+                            && parameter_points_agree(endpoints[0], end))
+                })
+                .then_some(())?;
+        }
+    }
     Some(polygon)
 }
 
@@ -2132,24 +2140,7 @@ pub(in super::super) fn transfer_native_brep(
             crate::decode::sweep::revolution_carriers::CircleInterval::Unresolved => {
                 refused_revolution_ranges.insert(row.id);
             }
-            crate::decode::sweep::revolution_carriers::CircleInterval::Unrelated => {
-                if matches!(geometry.solved(), Some(SolvedCurveGeometry::Circle(_))) {
-                    if let Some(range) = pcurve_backed_periodic_conic_parameter_range(
-                        ctx,
-                        &geometry,
-                        (row.id, [first.get(), second.get()]),
-                        &native_pcurves,
-                        &ir.model.surfaces,
-                        points,
-                        source_carriers,
-                    )?
-                    .and_then(cadmpeg_ir::topology::IncreasingParameterInterval::new)
-                    {
-                        candidate.parameter_range = Some(range);
-                        revolution_ranges.insert(row.id, range);
-                    }
-                }
-            }
+            crate::decode::sweep::revolution_carriers::CircleInterval::Unrelated => {}
         }
     }
     let BrepFaceCandidateIndexes {
@@ -2492,6 +2483,8 @@ pub(in super::super) fn transfer_native_brep(
                 && matches!(geometry.solved(), Some(SolvedCurveGeometry::Line(_)));
             let range = if derived_line {
                 orient_line_edge_carrier(&mut geometry, points)
+            } else if let Some(interval) = revolution_ranges.get(curve_id) {
+                Some(interval.endpoints())
             } else {
                 let mut range = orient_nonperiodic_nurbs_edge_carrier(ctx, &mut geometry, points)?;
                 if range.is_none() {
@@ -2548,9 +2541,6 @@ pub(in super::super) fn transfer_native_brep(
                             }
                         }
                     }
-                }
-                if let Some(interval) = revolution_ranges.get(curve_id) {
-                    range = Some(interval.endpoints());
                 }
                 let refused_bound_circle = refused_revolution_ranges.contains(curve_id);
                 if range.is_none() && !refused_bound_circle {
