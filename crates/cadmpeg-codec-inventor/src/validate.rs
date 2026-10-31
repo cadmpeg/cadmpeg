@@ -921,6 +921,57 @@ fn validate_sketches(data: &NativeData, ir: &CadIr, findings: &mut Vec<Finding>)
             }
         }
     }
+    let raw_entities = data
+        .pm_dc_sketch_entities
+        .iter()
+        .map(|entity| {
+            (
+                (
+                    entity.identity.segment_token.as_str(),
+                    entity.identity.record_ordinal,
+                ),
+                entity,
+            )
+        })
+        .collect::<HashMap<_, _>>();
+    let raw_constraints = data
+        .pm_dc_sketch_constraints
+        .iter()
+        .map(|constraint| (constraint.id(), constraint))
+        .collect::<HashMap<_, _>>();
+    for constraint in &ir.model.sketch_constraints {
+        let Some(raw) = constraint
+            .native_ref
+            .as_deref()
+            .and_then(|native| raw_constraints.get(native))
+        else {
+            continue;
+        };
+        let PmDcSketchConstraintKind::Distance { first, second, .. } = raw.kind else {
+            continue;
+        };
+        let measures_axis = [first, second].iter().any(|operand| {
+            operand
+                .index()
+                .checked_sub(1)
+                .and_then(|ordinal| {
+                    raw_entities.get(&(raw.identity.segment_token.as_str(), ordinal))
+                })
+                .is_some_and(|entity| entity.is_axis_line())
+        });
+        if measures_axis
+            && matches!(
+                constraint.definition.kind(),
+                cadmpeg_ir::sketches::SketchConstraintDefinitionInput::DistanceLoci { .. }
+            )
+        {
+            findings.push(finding(
+                Check::NativeLinks,
+                "Inventor neutral distance dimension to an axis line states its parameter as the operand distance".into(),
+                Some(constraint.id.as_str().to_owned()),
+            ));
+        }
+    }
     for issue in &data.sketch_record_issues {
         findings.push(finding(
             Check::NativeLinks,
@@ -1678,6 +1729,18 @@ fn validate_features(
                 directions: &data.pm_dc_directions,
             })
         });
+    let revolve_sketches = ir
+        .model
+        .sketches
+        .iter()
+        .map(|sketch| (sketch.id.as_str(), sketch))
+        .collect::<HashMap<_, _>>();
+    let revolve_entities = ir
+        .model
+        .sketch_entities
+        .iter()
+        .map(|entity| (entity.id().as_str(), entity))
+        .collect::<HashMap<_, _>>();
     for feature in &ir.model.features {
         if crate::feature::pattern::is_linear_pattern(feature) {
             if feature
@@ -1991,6 +2054,24 @@ fn validate_features(
                     "Inventor neutral revolve operands do not match their PmDc slots".into(),
                     Some(feature.id.as_str().to_owned()),
                 ));
+            }
+            if let cadmpeg_ir::features::RevolveConstruction::Resolved { profile, axis, .. } =
+                construction
+            {
+                if crate::feature::revolve::profile_crosses_axis(
+                    profile,
+                    axis,
+                    |id| revolve_sketches.get(id.as_str()).copied(),
+                    |id| revolve_entities.get(id.as_str()).copied(),
+                ) == Some(true)
+                {
+                    findings.push(finding(
+                        Check::NativeLinks,
+                        "Inventor neutral revolve profile has points on both sides of its axis"
+                            .into(),
+                        Some(feature.id.as_str().to_owned()),
+                    ));
+                }
             }
         }
         if matches!(

@@ -4,11 +4,13 @@
 use cadmpeg_core::decode::{bounded_len, DecodeContext, View};
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::features::{
-    AngularTermination, BooleanOp, RevolutionAxis, RevolveConstruction, RevolveExtent,
+    AngularTermination, BooleanOp, PlanarProfileRef, RevolutionAxis, RevolveConstruction,
+    RevolveExtent, SketchProfileRegion,
 };
 use cadmpeg_ir::math::{Point3, Vector3};
 use cadmpeg_ir::native::bytes::NativeBytes;
 use cadmpeg_ir::scalar::Angle;
+use cadmpeg_ir::sketches::{Sketch, SketchEntity, SketchEntityId, SketchGeometryDefinition};
 use serde::{Deserialize, Serialize};
 
 use super::{
@@ -132,6 +134,7 @@ pub(crate) enum NativeReason {
     Extent(u16),
     Direction(u16),
     ProfileOrResult,
+    ProfileCrossesAxis,
 }
 
 impl NativeReason {
@@ -153,6 +156,9 @@ impl NativeReason {
             Self::Extent(value) => format!("extent value {value} has unresolved angular operands"),
             Self::Direction(value) => format!("fixed-angle direction value {value} is unresolved"),
             Self::ProfileOrResult => "profile or result-body selection is unresolved".to_owned(),
+            Self::ProfileCrossesAxis => {
+                "the profile has points on both sides of the revolve axis".to_owned()
+            }
         };
         code.note(format!("Retained Inventor revolve natively: {reason}."))
     }
@@ -332,6 +338,147 @@ pub(crate) fn operands<'a>(
         op,
         unresolved_control,
     })
+}
+
+/// Distance from the axis, in sketch units, at or below which a profile
+/// point lies on the axis.
+pub(crate) const EPS_AXIS_SIDE: f64 = 1.0e-7;
+/// Largest component of the axis direction along the sketch normal.
+const EPS_AXIS_DIRECTION_NORMAL: f64 = 1.0e-9;
+/// Largest distance of the axis origin from the sketch plane, in sketch units.
+const EPS_AXIS_PLANE_OFFSET: f64 = 1.0e-6;
+/// Samples along one profile arc.
+const ARC_SAMPLES: u32 = 32;
+
+/// A revolve axis in the coordinates of its profile sketch.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub(crate) struct SketchAxis {
+    origin: [f64; 2],
+    direction: [f64; 2],
+}
+
+impl SketchAxis {
+    /// The axis in the sketch plane, or `None` when the axis does not lie in
+    /// that plane or the sketch is unplaced.
+    pub(crate) fn in_sketch(sketch: &Sketch, axis: &RevolutionAxis) -> Option<Self> {
+        let (frame_origin, normal, u_axis) = sketch.resolved_placement()?;
+        let (frame_origin, normal, u) = (frame_origin.get(), normal.get(), u_axis.get());
+        let normal = unit([normal.x, normal.y, normal.z])?;
+        let u = unit([u.x, u.y, u.z])?;
+        let v = [
+            normal[1] * u[2] - normal[2] * u[1],
+            normal[2] * u[0] - normal[0] * u[2],
+            normal[0] * u[1] - normal[1] * u[0],
+        ];
+        let dot = |a: [f64; 3], b: [f64; 3]| a[0] * b[0] + a[1] * b[1] + a[2] * b[2];
+        let direction = axis.direction.get();
+        let direction = unit([direction.x, direction.y, direction.z])?;
+        let origin = axis.origin.get();
+        let offset = [
+            origin.x - frame_origin.x,
+            origin.y - frame_origin.y,
+            origin.z - frame_origin.z,
+        ];
+        if dot(direction, normal).abs() > EPS_AXIS_DIRECTION_NORMAL
+            || dot(offset, normal).abs() > EPS_AXIS_PLANE_OFFSET
+        {
+            return None;
+        }
+        Some(Self {
+            origin: [dot(offset, u), dot(offset, v)],
+            direction: [dot(direction, u), dot(direction, v)],
+        })
+    }
+
+    /// Whether the points lie strictly on both sides of the axis. Points on
+    /// the axis, within [`EPS_AXIS_SIDE`], belong to neither side.
+    pub(crate) fn crossed_by(&self, points: &[[f64; 2]]) -> bool {
+        let (mut negative, mut positive) = (false, false);
+        for point in points {
+            let side = self.direction[0] * (point[1] - self.origin[1])
+                - self.direction[1] * (point[0] - self.origin[0]);
+            negative |= side < -EPS_AXIS_SIDE;
+            positive |= side > EPS_AXIS_SIDE;
+        }
+        negative && positive
+    }
+}
+
+fn unit(vector: [f64; 3]) -> Option<[f64; 3]> {
+    let norm = vector.iter().map(|c| c * c).sum::<f64>().sqrt();
+    (norm.is_finite() && norm > 0.0).then(|| vector.map(|c| c / norm))
+}
+
+/// Whether the revolve profile has points on both sides of its axis. `None`
+/// when the profile form, a profile curve, or the axis placement is outside
+/// what this predicate evaluates: whole-loop regions of lines, arcs, and
+/// circles about an axis in the sketch plane.
+pub(crate) fn profile_crosses_axis<'a>(
+    profile: &PlanarProfileRef,
+    axis: &RevolutionAxis,
+    sketch: impl Fn(&cadmpeg_ir::sketches::SketchId) -> Option<&'a Sketch>,
+    entity: impl Fn(&SketchEntityId) -> Option<&'a SketchEntity>,
+) -> Option<bool> {
+    let PlanarProfileRef::SketchRegions {
+        sketch: id,
+        regions,
+    } = profile
+    else {
+        return None;
+    };
+    let sketch = sketch(id)?;
+    let axis = SketchAxis::in_sketch(sketch, axis)?;
+    let mut points = Vec::new();
+    for region in regions.as_slice() {
+        let SketchProfileRegion::Loops { loops } = region else {
+            return None;
+        };
+        for index in std::iter::once(loops.outer()).chain(loops.holes().iter().copied()) {
+            let chain = sketch
+                .profiles
+                .as_slice()
+                .get(cadmpeg_core::decode::index_from_u32(index))?;
+            for entity_use in chain {
+                let geometry = entity(&entity_use.entity)?;
+                curve_points(&geometry.geometry.definition().to_raw(), &mut points)?;
+            }
+        }
+    }
+    Some(axis.crossed_by(&points))
+}
+
+fn curve_points(geometry: &SketchGeometryDefinition, points: &mut Vec<[f64; 2]>) -> Option<()> {
+    match geometry {
+        SketchGeometryDefinition::Line { start, end } => {
+            points.extend([[start.u, start.v], [end.u, end.v]]);
+        }
+        SketchGeometryDefinition::Arc {
+            center,
+            radius,
+            start_angle,
+            end_angle,
+        } => {
+            let start = start_angle.get();
+            let mut sweep = end_angle.get() - start;
+            if sweep <= 0.0 {
+                sweep += std::f64::consts::TAU;
+            }
+            for step in 0..=ARC_SAMPLES {
+                let angle = start + sweep * f64::from(step) / f64::from(ARC_SAMPLES);
+                points.push([
+                    center.u + radius.get() * angle.cos(),
+                    center.v + radius.get() * angle.sin(),
+                ]);
+            }
+        }
+        SketchGeometryDefinition::Circle { center, radius } => {
+            for (du, dv) in [(1.0, 0.0), (0.0, 1.0), (-1.0, 0.0), (0.0, -1.0)] {
+                points.push([center.u + du * radius.get(), center.v + dv * radius.get()]);
+            }
+        }
+        _ => return None,
+    }
+    Some(())
 }
 
 pub(crate) fn matches(

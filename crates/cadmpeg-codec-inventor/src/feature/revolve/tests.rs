@@ -174,3 +174,116 @@ fn dimension_annotation_data_precedes_the_parameter_tail() {
         assert_eq!(parsed.parameter.index(), 67);
     }
 }
+
+mod axis_side {
+    use super::*;
+    use serde_json::json;
+
+    /// A square loop in the plane whose u axis is -X and whose v axis is +Z,
+    /// with u in `[left, 4]` and v in `[0, 5]`.
+    fn square(left: f64) -> (Sketch, Vec<SketchEntity>) {
+        let corners = [[left, 0.0], [4.0, 0.0], [4.0, 5.0], [left, 5.0]];
+        let entities = (0..4)
+            .map(|index| {
+                let (start, end) = (corners[index], corners[(index + 1) % 4]);
+                serde_json::from_value(json!({
+                    "id": format!("inventor:test:entity#{index}"),
+                    "sketch": "inventor:test:sketch#1",
+                    "construction": false,
+                    "geometry": {
+                        "kind": "line",
+                        "start": {"u": start[0], "v": start[1]},
+                        "end": {"u": end[0], "v": end[1]},
+                    },
+                }))
+                .expect("line entity")
+            })
+            .collect();
+        let chain = (0..4)
+            .map(|index| json!({"entity": format!("inventor:test:entity#{index}"), "reversed": false}))
+            .collect::<Vec<_>>();
+        let sketch = serde_json::from_value(json!({
+            "id": "inventor:test:sketch#1",
+            "placement": {"kind": "resolved", "frame": {
+                "origin": {"x": 0.0, "y": 0.0, "z": 0.0},
+                "normal": {"x": 0.0, "y": 1.0, "z": 0.0},
+                "u_axis": {"x": -1.0, "y": 0.0, "z": 0.0},
+            }},
+            "profiles": [chain],
+        }))
+        .expect("sketch");
+        (sketch, entities)
+    }
+
+    fn axis(origin: [f64; 3], direction: [f64; 3]) -> RevolutionAxis {
+        serde_json::from_value(json!({
+            "origin": {"x": origin[0], "y": origin[1], "z": origin[2]},
+            "direction": {"x": direction[0], "y": direction[1], "z": direction[2]},
+        }))
+        .expect("axis")
+    }
+
+    fn profile() -> PlanarProfileRef {
+        serde_json::from_value(json!({
+            "kind": "sketch_regions",
+            "value": {
+                "sketch": "inventor:test:sketch#1",
+                "regions": [{"region": "loops", "outer": 0}],
+            },
+        }))
+        .expect("profile")
+    }
+
+    fn verdict(left: f64, axis: &RevolutionAxis) -> Option<bool> {
+        let (sketch, entities) = square(left);
+        profile_crosses_axis(
+            &profile(),
+            axis,
+            |_| Some(&sketch),
+            |id| entities.iter().find(|entity| entity.id() == id),
+        )
+    }
+
+    #[test]
+    fn a_profile_edge_on_the_axis_does_not_cross_it() {
+        let z = axis([0.0; 3], [0.0, 0.0, -1.0]);
+        assert_eq!(verdict(0.0, &z), Some(false));
+        assert_eq!(verdict(0.0, &axis([0.0; 3], [0.0, 0.0, 1.0])), Some(false));
+    }
+
+    #[test]
+    fn a_profile_on_both_sides_of_the_axis_crosses_it() {
+        assert_eq!(verdict(-1.0, &axis([0.0; 3], [0.0, 0.0, -1.0])), Some(true));
+        // Within the side tolerance the axis edge stays on the axis.
+        assert_eq!(
+            verdict(-EPS_AXIS_SIDE / 2.0, &axis([0.0; 3], [0.0, 0.0, 1.0])),
+            Some(false)
+        );
+    }
+
+    #[test]
+    fn an_axis_off_the_sketch_plane_has_no_verdict() {
+        assert_eq!(verdict(-1.0, &axis([0.0; 3], [0.0, 1.0, 0.0])), None);
+        assert_eq!(verdict(-1.0, &axis([0.0, 1.0, 0.0], [0.0, 0.0, 1.0])), None);
+    }
+
+    #[test]
+    fn an_unevaluated_profile_has_no_verdict() {
+        let (sketch, _) = square(-1.0);
+        let z = axis([0.0; 3], [0.0, 0.0, 1.0]);
+        let missing = profile_crosses_axis(&profile(), &z, |_| Some(&sketch), |_| None);
+        assert_eq!(missing, None);
+        let native = PlanarProfileRef::Native("native".into());
+        assert_eq!(
+            profile_crosses_axis(&native, &z, |_| Some(&sketch), |_| None),
+            None
+        );
+    }
+
+    #[test]
+    fn a_crossing_profile_keeps_a_pinned_native_loss() {
+        let note = NativeReason::ProfileCrossesAxis.note();
+        assert_eq!(note.code.local_code(), "feature.revolve-operands-native");
+        assert!(note.message.contains("both sides of the revolve axis"));
+    }
+}

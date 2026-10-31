@@ -245,9 +245,15 @@ fn spline_point_relation_retains_ordered_native_operands() {
     );
     let entities = HashMap::from([(("segment", 7), &spline), (("segment", 3), &point)]);
     with_view(&[], |ctx, _| {
-        let projected = project_constraint(ctx, &raw, &entities, &HashMap::new())
-            .expect("resolved relation operands")
-            .expect("relation projection");
+        let projected = project_constraint(
+            ctx,
+            &raw,
+            &entities,
+            &HashMap::new(),
+            &std::collections::HashSet::new(),
+        )
+        .expect("resolved relation operands")
+        .expect("relation projection");
         let SketchConstraintDefinitionInput::Native {
             entities,
             operands,
@@ -261,7 +267,14 @@ fn spline_point_relation_retains_ordered_native_operands() {
         assert_eq!(entities, &vec![spline.id().clone(), point.id().clone()]);
         assert_eq!(operands.len(), 2);
         let missing = HashMap::from([(("segment", 7), &spline)]);
-        assert!(project_constraint(ctx, &raw, &missing, &HashMap::new()).is_none());
+        assert!(project_constraint(
+            ctx,
+            &raw,
+            &missing,
+            &HashMap::new(),
+            &std::collections::HashSet::new()
+        )
+        .is_none());
     });
 }
 

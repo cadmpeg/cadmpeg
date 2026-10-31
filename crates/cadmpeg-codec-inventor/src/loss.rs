@@ -55,6 +55,9 @@ pub(crate) enum InventorLossCode {
     /// Sketch curves carry entity flags whose construction meaning is
     /// unresolved.
     SketchConstructionUnresolved,
+    /// A distance dimension measured to an axis line stores twice the distance
+    /// between its operands; the dimension stays native.
+    SketchAxisDistanceNative,
     /// A sketch-point paired association has no neutral relation semantics.
     SketchPairedAssociationUnprojected,
     /// A sketch entity retains unresolved curve construction operands.
@@ -225,6 +228,7 @@ impl InventorLossCode {
         Self::FeatureRecordMalformed,
         Self::FeatureLabelUnusable,
         Self::SketchConstructionUnresolved,
+        Self::SketchAxisDistanceNative,
         Self::SketchPairedAssociationUnprojected,
         Self::SketchCurveNative,
         Self::SketchMemberNative,
@@ -320,6 +324,7 @@ impl InventorLossCode {
             Self::FeatureRecordMalformed => "feature.record-malformed",
             Self::FeatureLabelUnusable => "feature.label-unusable",
             Self::SketchConstructionUnresolved => "sketch.construction-unresolved",
+            Self::SketchAxisDistanceNative => "sketch.axis-distance-native",
             Self::SketchPairedAssociationUnprojected => "sketch.paired-association-unprojected",
             Self::SketchCurveNative => "sketch.curve-native",
             Self::SketchMemberNative => "sketch.member-native",
@@ -481,6 +486,7 @@ impl InventorLossCode {
             | Self::FeatureSurfaceLoftSectionsNative
             | Self::FeatureProfileBodyUndecoded
             | Self::SketchConstructionUnresolved
+            | Self::SketchAxisDistanceNative
             | Self::SketchPairedAssociationUnprojected
             | Self::SketchCurveNative
             | Self::SketchMemberNative
@@ -565,6 +571,7 @@ mod tests {
                 "feature.record-malformed",
                 "feature.label-unusable",
                 "sketch.construction-unresolved",
+                "sketch.axis-distance-native",
                 "sketch.paired-association-unprojected",
                 "sketch.curve-native",
                 "sketch.member-native",

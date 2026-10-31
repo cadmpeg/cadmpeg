@@ -46,6 +46,9 @@ const MIDPOINT_VALUE_VERSION: u8 = 20;
 /// resolve.
 const PROFILE_CURVE_FLAGS: u32 = 0x40 | 0x1000 | 0x4_0000 | 0x8_0000;
 const SPLINE_PROFILE_CURVE_FLAGS: u32 = PROFILE_CURVE_FLAGS | 0x4;
+/// Entity-flag bit of a line that a distance dimension measures as an axis:
+/// the dimension parameter is twice the distance between the operands.
+const AXIS_LINE_FLAG: u32 = 0x8000;
 /// Largest departure of a block-instance placement from a rigid motion.
 const EPS_SKETCH_BLOCK_PLACEMENT_RIGID: f64 = 1.0e-9;
 const CIRCLE_STATE_ARC: u8 = 0;
@@ -311,6 +314,8 @@ pub(crate) struct SketchProjection {
     /// Projected curves whose construction state is unresolved; they stay out
     /// of the sketch profile tables.
     pub(crate) unresolved_construction: usize,
+    /// Distance dimensions measured to an axis line; they stay native.
+    pub(crate) native_axis_distances: usize,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -334,6 +339,14 @@ pub(crate) struct PmDcSketchEntityPayload {
     entity_flags: u32,
     pub(crate) sketch: PmDcReference,
     pub(crate) kind: PmDcSketchEntityKind,
+}
+
+impl PmDcSketchEntityPayload {
+    /// Whether this is a line that a distance dimension measures as an axis.
+    pub(crate) fn is_axis_line(&self) -> bool {
+        matches!(self.kind, PmDcSketchEntityKind::Line { .. })
+            && self.entity_flags & AXIS_LINE_FLAG != 0
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -989,7 +1002,7 @@ fn edge_prefix(
             _ => {
                 return Err(CodecError::malformed(format_args!(
                     "Inventor PmDc {field} list gate is {gate:?}"
-                )))
+                )));
             }
         }
         auxiliary.push(reference_list(
@@ -1651,6 +1664,13 @@ pub(crate) fn project(
             );
         }
     }
+    let axis_lines = inventory
+        .entities
+        .iter()
+        .filter(|entity| entity.is_axis_line())
+        .map(Located::id)
+        .collect::<HashSet<_>>();
+    let mut native_axis_distances = 0usize;
     let mut constraints = Vec::new();
     let mut projected_constraint_keys = HashSet::new();
     for constraint in &inventory.constraints {
@@ -1662,14 +1682,31 @@ pub(crate) fn project(
             .and_then(Option::as_ref)
             .is_some()
         {
-            if let Some(projected) =
-                project_constraint(ctx, constraint, &projected_entity_by_key, &parameter_index)
-                    .transpose()?
+            if let Some(projected) = project_constraint(
+                ctx,
+                constraint,
+                &projected_entity_by_key,
+                &parameter_index,
+                &axis_lines,
+            )
+            .transpose()?
             {
                 projected_constraint_keys.insert((
                     constraint.identity.segment_token.as_str(),
                     constraint.identity.record_ordinal,
                 ));
+                if let PmDcSketchConstraintKind::Distance { first, second, .. } = constraint.kind {
+                    let operands = [first, second].map(|operand| {
+                        let ordinal = operand.index().checked_sub(1)?;
+                        projected_entity_by_key
+                            .get(&(constraint.identity.segment_token.as_str(), ordinal))
+                            .copied()
+                    });
+                    if let [Some(first), Some(second)] = operands {
+                        native_axis_distances +=
+                            usize::from(measures_axis_line(&[first, second], &axis_lines));
+                    }
+                }
                 constraints.push(projected);
             }
         }
@@ -1783,6 +1820,28 @@ pub(crate) fn project(
         unresolved_entities,
         unresolved_constraints,
         unresolved_construction,
+        native_axis_distances,
+    })
+}
+
+/// The loss for distance dimensions that stay native because they are
+/// measured to an axis line.
+pub(crate) fn axis_distance_loss(count: usize) -> Option<cadmpeg_ir::report::loss::LossNote> {
+    (count != 0).then(|| {
+        crate::loss::InventorLossCode::SketchAxisDistanceNative.note(format!(
+            "Retained {count} Inventor sketch distance dimension(s) measured to an axis line natively: the parameter is twice the distance between the operands."
+        ))
+    })
+}
+
+/// Whether a distance dimension has an axis line as an operand. Its
+/// parameter is then twice the distance between the operands.
+fn measures_axis_line(members: &[&SketchEntity; 2], axis_lines: &HashSet<String>) -> bool {
+    members.iter().any(|member| {
+        member
+            .native_ref
+            .as_deref()
+            .is_some_and(|native| axis_lines.contains(native))
     })
 }
 
@@ -1799,6 +1858,7 @@ fn project_constraint(
     constraint: &PmDcSketchConstraint,
     entities: &HashMap<(&str, u32), &SketchEntity>,
     parameters: &HashMap<String, ParameterId>,
+    axis_lines: &HashSet<String>,
 ) -> Option<Result<SketchConstraint, CodecError>> {
     macro_rules! admit {
         ($result:expr) => {
@@ -2052,15 +2112,31 @@ fn project_constraint(
             let members = [resolve(first)?, resolve(second)?];
             let parameter =
                 resolve_parameter(constraint, constraint.header.parameter?, parameters)?;
-            (
+            let definition = if measures_axis_line(&members, axis_lines) {
+                SketchConstraintDefinitionInput::Native {
+                    native_kind: cadmpeg_core::nonblank_literal!("axis_distance_dimension"),
+                    native_state: Some(u64::from(constraint.header.state.cast_unsigned())),
+                    native_flags: Some(u64::from(constraint.header.content.flags)),
+                    native_properties: std::collections::BTreeMap::new(),
+                    entities: members.iter().map(|entity| entity.id().clone()).collect(),
+                    parameter: Some(parameter),
+                    operands: vec![
+                        native_operand(constraint, cadmpeg_core::nonblank_literal!("first"), first),
+                        native_operand(
+                            constraint,
+                            cadmpeg_core::nonblank_literal!("second"),
+                            second,
+                        ),
+                    ],
+                }
+            } else {
                 SketchConstraintDefinitionInput::DistanceLoci {
                     first: SketchLocus::Entity(members[0].id().clone()),
                     second: SketchLocus::Entity(members[1].id().clone()),
                     parameter,
-                },
-                None,
-                members,
-            )
+                }
+            };
+            (definition, None, members)
         }
         PmDcSketchConstraintKind::Angle {
             first,
@@ -3453,7 +3529,7 @@ mod tests {
         let (ctx, _) =
             DecodeContext::from_root_bytes(&[], &arena, &policy).expect("projection context");
         assert!(matches!(
-            super::project_constraint(&ctx, &constraint, &entities, &parameters),
+            super::project_constraint(&ctx, &constraint, &entities, &parameters, &std::collections::HashSet::new()),
             Some(Err(CodecError::ResourceLimit(limit)))
                 if limit.dimension == ResourceDimension::Entities
                     && limit.operation == "project Inventor sketch constraint"
@@ -3461,7 +3537,13 @@ mod tests {
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service())
             .expect("build the decode context");
         assert!(matches!(
-            super::project_constraint(&ctx, &constraint, &entities, &parameters),
+            super::project_constraint(
+                &ctx,
+                &constraint,
+                &entities,
+                &parameters,
+                &std::collections::HashSet::new()
+            ),
             Some(Ok(_))
         ));
     }
@@ -4755,6 +4837,7 @@ mod tests {
             constraint,
             &entities,
             &std::collections::HashMap::new(),
+            &std::collections::HashSet::new(),
         ) {
             Some(Ok(_)) => true,
             None => false,
@@ -5073,6 +5156,7 @@ mod tests {
         ));
     }
 
+    mod axis_distance;
     mod point_tail_projection;
     mod serialization;
 }
