@@ -424,6 +424,55 @@ fn rectangular_pattern_instances_advance_direction_one_first() {
 }
 
 #[test]
+fn rectangular_pattern_rows_group_a_non_square_grid_by_direction_one_index() {
+    // Grid position (i, j) sits 15 mm along direction one per step of i and
+    // 10 mm along direction two per step of j.
+    let entity = |i: u32, j: u32| {
+        grid_point_entity(
+            &format!("generated:test:point#{i}-{j}"),
+            2.0 + 15.0 * f64::from(i),
+            4.0 + 10.0 * f64::from(j),
+        )
+    };
+    let grid: Vec<Vec<_>> = (0..2)
+        .map(|i| (0..3).map(|j| entity(i, j)).collect())
+        .collect();
+    let stored: Vec<_> = (0..6usize).map(|p| &grid[p % 2][p / 2]).collect();
+    let relation = rectangular_grid_relation([2, 3], [1.5, 1.0]);
+    let parameters = rectangular_grid_parameters([2, 3], [1.5, 1.0]);
+    let Some(SketchConstraintDefinitionInput::RectangularPattern { pattern }) =
+        exact_rectangular_pattern(&relation, "native", &parameters, &stored).unwrap()
+    else {
+        panic!("non-square rectangular grid did not resolve");
+    };
+    let rows = pattern
+        .rows()
+        .iter()
+        .map(|row| {
+            row.iter()
+                .map(|instance| instance.entities.clone())
+                .collect::<Vec<_>>()
+        })
+        .collect::<Vec<_>>();
+    let expected = grid
+        .iter()
+        .map(|row| {
+            row.iter()
+                .map(|entity| vec![entity.id().clone()])
+                .collect::<Vec<_>>()
+        })
+        .collect::<Vec<_>>();
+    assert_eq!(rows, expected);
+
+    let direction_two_first: Vec<_> = (0..6usize).map(|p| &grid[p / 3][p % 3]).collect();
+    assert!(
+        exact_rectangular_pattern(&relation, "native", &parameters, &direction_two_first)
+            .unwrap()
+            .is_none()
+    );
+}
+
+#[test]
 fn rectangular_pattern_single_instance_direction_keeps_its_stored_distance() {
     let seed = grid_point_entity("generated:test:point#seed", 2.0, 4.0);
     let second = grid_point_entity("generated:test:point#second", 2.0, 14.0);
