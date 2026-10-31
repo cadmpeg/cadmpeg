@@ -9,4 +9,6 @@ pub(super) mod pcurves;
 pub(super) mod planes;
 pub(super) mod profiles;
 pub(super) mod revolution_brep;
+pub(super) mod revolution_cap;
+pub(super) mod revolution_carriers;
 pub(super) mod surfaces;

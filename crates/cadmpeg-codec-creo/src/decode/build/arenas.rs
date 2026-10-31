@@ -118,7 +118,14 @@ pub(super) fn emit_geometry_arenas(
     annotations: &mut AnnotationBuilder,
     brep_diagnostics: &BrepTransferDiagnostics,
 ) -> Result<(), CodecError> {
-    let surface_rows = surface_row_records(scan, &scan.surfaces.rows, "visibgeom");
+    let mut surface_rows = surface_row_records(scan, &scan.surfaces.rows, "visibgeom");
+    for plane in &scan.planes.datum_boundary_planes {
+        surface_rows.extend(surface_row_records(
+            scan,
+            std::slice::from_ref(&plane.row),
+            "actdatums",
+        ));
+    }
     emit_uniform(
         ctx,
         ir,
@@ -490,12 +497,20 @@ pub(super) fn emit_geometry_arenas(
         CreoArena::BrepFaceAdmissionRejections,
         &face_admission_rejections,
     )?;
-    let surface_parameters = surface_parameter_records(
+    let mut surface_parameters = surface_parameter_records(
         scan,
         &scan.surfaces.rows,
         &scan.surfaces.parameters,
         "visibgeom",
     );
+    for plane in &scan.planes.datum_boundary_planes {
+        surface_parameters.extend(surface_parameter_records(
+            scan,
+            std::slice::from_ref(&plane.row),
+            std::slice::from_ref(&plane.parameter),
+            "actdatums",
+        ));
+    }
     emit_uniform(
         ctx,
         ir,
@@ -550,11 +565,20 @@ pub(super) fn emit_geometry_arenas(
             exactness: Exactness::ByteExact,
         },
     )?;
-    let plane_local_systems = plane_local_system_records(
+    let mut plane_local_systems = plane_local_system_records(
         scan,
         &scan.planes.local_systems,
         "creo:surface:plane_local_system",
     );
+    for plane in &scan.planes.datum_boundary_planes {
+        if let Some(frame) = &plane.local_system {
+            plane_local_systems.extend(plane_local_system_records(
+                scan,
+                std::slice::from_ref(frame),
+                "creo:actdatums:plane_local_system",
+            ));
+        }
+    }
     store_arena(ctx, ir, CreoArena::PlaneLocalSystems, &plane_local_systems)?;
     let cross_section_plane_local_systems = plane_local_system_records(
         scan,

@@ -417,6 +417,20 @@ frames and face references establish the incident face graph.
 **Need.** Determine the scalar extent, profile carrier, direction binding, and
 both parameter senses from the owning row and prototype fields.
 
+### GS-27. Additional revolution chart productions
+
+**Question.** Which enclosing record and coordinate-slot roles select angular
+lanes outside the complete endpoint, legacy sampled, and angular sampled
+productions?
+
+**Known.** `creo_prt.md` §4.1 defines the complete eight-slot floating endpoint
+production, the legacy sampled first-coordinate `32` lane, and the complete
+angular sampled stream. Each selected production supplies its scalar mapping
+and exact field extent.
+
+**Need.** Establish the enclosing record selector, slot roles, and complete
+field boundary for additional angular chart productions.
+
 ## 3. Section solving and feature placement
 
 **Note.** The extended `order_table.rg_ref_id` form is defined only for its

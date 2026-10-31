@@ -190,6 +190,7 @@ pub(super) fn compact_rotation_cylinder_body(
     Some(super::InlineSurfaceBody {
         terminal_close,
         matrix_frame: true,
+        rotation_frame: false,
         carrier: frame
             .frame()
             .map(|frame| super::InlineSurfaceCarrier::Cylinder {

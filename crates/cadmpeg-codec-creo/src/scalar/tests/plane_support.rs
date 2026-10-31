@@ -572,3 +572,84 @@ fn plane_support_slot_six_decodes_paired_positive_component() {
         Some([first_x, 0.0, first_z, 0.0, 0.0, 0.0, second_x, 0.0, first_x, 0.0, 0.0, 0.0])
     );
 }
+
+#[test]
+fn subunit_rotation_keeps_literal_components_and_rejects_incomplete_origins() {
+    let mut body = vec![0x0f, 0x18, 0x19, 0x80, 0, 0, 0, 0, 0, 0, 0x18, 0x10, 0x18];
+    body.extend([0x19, 0x80, 0, 0, 0, 0, 0, 0, 0x18, 0x10]);
+    body.extend([0x32, 0x90, 0, 0, 0, 0, 0, 0, 0x2f, 0x14, 0, 0x48, 0x18, 0]);
+    let cache = ScalarCache::default();
+    let values = decode_compact_plane_rotation(&body, &cache)
+        .expect("subunit matrix production")
+        .expect("complete right-handed frame")
+        .get();
+    let epsilon = f64::from_bits(0x3c80_0000_0000_0000);
+    assert_eq!(
+        values,
+        [
+            1.0,
+            0.0,
+            epsilon,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            -1.0,
+            0.0,
+            -2.0 * epsilon,
+            5.0,
+            -6.0
+        ]
+    );
+    let mut losses = Vec::new();
+    for malformed in [
+        body[..body.len() - 1].to_vec(),
+        [body.as_slice(), &[0x18]].concat(),
+    ] {
+        assert!(crate::decode::with_service_context(|ctx| {
+            crate::surface::complete_plane_local_system(ctx, &malformed, &cache, &mut losses)
+        })
+        .expect("bounded frame")
+        .is_none());
+    }
+    assert!(losses
+        .iter()
+        .all(|loss| loss.code == crate::loss::CreoLossCode::PlaneCompactFrameUnresolved.kind()));
+    assert_eq!(losses.len(), 2);
+    let angular = decode_pcurve_scalar_frame(
+        &[0x15, 0x18, 0x11, 0x18, 0x00, 0x15, 0x20, 0x18, 0x11, 0x18],
+        &cache,
+    )
+    .expect("complete signed angular frame");
+    assert_eq!(angular.values[0], -std::f64::consts::PI);
+    assert_eq!(angular.values[2], std::f64::consts::PI);
+    assert_eq!(
+        angular.values[4].to_bits(),
+        (-std::f64::consts::PI).to_bits() & !0xff | 0x20
+    );
+    let tiny_endpoints = decode_pcurve_scalar_frame(
+        &[
+            0x18, 0xe4, 0x13, 0x18, 0x19, 0x80, 0, 0, 0, 0, 0, 0, 0x2f, 0x14, 0, 0x13, 0x2f, 0x14,
+            0,
+        ],
+        &cache,
+    )
+    .expect("complete endpoint frame with a tiny literal");
+    assert_eq!(
+        tiny_endpoints.values,
+        [
+            0.0,
+            0.0,
+            std::f64::consts::TAU,
+            0.0,
+            epsilon,
+            5.0,
+            std::f64::consts::TAU,
+            5.0
+        ]
+    );
+    body[11] = 0x0f;
+    assert!(decode_compact_plane_rotation(&body, &cache)
+        .expect("subunit matrix production")
+        .is_err());
+}

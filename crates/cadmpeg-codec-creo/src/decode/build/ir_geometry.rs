@@ -177,6 +177,14 @@ pub(super) fn transfer_and_record_scanned_geometry(
             annotations,
             source_carriers,
         )?;
+    super::super::sweep::revolution_carriers::transfer_active_boundary_planes(
+        ctx,
+        scan,
+        ir,
+        annotations,
+        transfer_losses,
+        source_carriers,
+    )?;
     let active_datum_cylinder_count =
         transfer_active_datum_cylinders(ctx, scan, ir, annotations, source_carriers)?;
     let circular_sweep_cylinder_count =
