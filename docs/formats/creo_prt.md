@@ -1021,6 +1021,17 @@ in either order. The origin, axis, reference direction, radius, and axial
 span define the instance carrier. Complete scalar consumption and all corner
 conditions are required together.
 
+A named or inline cylinder whose rotation matrix uses `19` or `32` tokens is
+read by two productions: the coordinate-axis production above and the
+complete-rotation production, which admits a rotation whose columns are
+exactly orthogonal and whose axis may tilt by a sub-unit amount, provided the
+angular parameter interval and the corners agree with the carrier. A frame
+either production admits is admitted, and the complete-rotation frame wins
+when both do. A frame neither admits is refused, and each production that
+recognized the body records its own loss. An inline body that the
+complete-rotation production refuses is still given to the coordinate-axis
+production.
+
 A referenced inline-cylinder envelope begins with one complete `32` model
 reference, followed by three first-directrix-coordinate scalars, six
 first-directrix-coordinate scalars forming two model-space outline corners, and a

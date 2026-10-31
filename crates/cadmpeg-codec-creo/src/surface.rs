@@ -4455,6 +4455,12 @@ fn inline_surface_body(
     }
     if kind == SurfaceKind::Cylinder {
         if let Some(layout) = revolution::inline_body(body, cache) {
+            if layout.carrier.is_none() {
+                let matrix = cylinder_frame_readers::compact_rotation_cylinder_body(body, cache);
+                if matrix.is_some_and(|matrix| matrix.carrier.is_some()) {
+                    return Ok(matrix);
+                }
+            }
             return Ok(Some(layout));
         }
         if revolution::has_inline_floating_rotation_prefix(body, cache) {
@@ -5583,26 +5589,27 @@ pub(crate) fn parameter_records_for_rows(
                 );
                 let revolution_named =
                     revolution::named_frame(row, &record, rows, &prototypes, &bounds, &cache);
-                // A named matrix frame recognized by the bounded floating
-                // reader keeps that reader's admission and refusal; the
-                // revolution production takes the frame when it admits it or
-                // when the matrix reader does not recognize the body.
-                let use_revolution = matrix_named.is_none()
-                    || revolution_named.is_some_and(|(admission, _)| admission.frame().is_some());
-                let named = if use_revolution {
-                    revolution_named.map(|(admission, _)| admission.frame())
-                } else {
-                    matrix_named.map(cylinder_frame_readers::CylinderRotationFrame::frame)
-                };
+                // Both productions read the same frame: the matrix reader
+                // (exact coordinate axis) and the revolution reader (complete
+                // rotation with an agreeing angular envelope). A frame either
+                // admits is admitted; a recognized frame neither admits is
+                // refused with the loss of each production that recognized it.
+                let matrix_recognized = matrix_named.is_some();
+                let matrix_frame =
+                    matrix_named.and_then(cylinder_frame_readers::CylinderRotationFrame::frame);
+                let revolution_frame =
+                    revolution_named.and_then(|(admission, _)| admission.frame());
+                let named = (matrix_recognized || revolution_named.is_some())
+                    .then_some(revolution_frame.or(matrix_frame));
                 let revolution_refused = refused_rotation_inline
-                    || (use_revolution
-                        && named.is_some_and(|frame| frame.is_none())
-                        && revolution_named
-                            .is_some_and(|(admission, _)| admission.frame().is_none()))
+                    || (revolution_named.is_some()
+                        && revolution_frame.is_none()
+                        && matrix_frame.is_none())
                     || inline
                         .is_some_and(|layout| layout.rotation_frame && layout.carrier.is_none());
-                let matrix_refused = (!use_revolution
-                    && named.is_some_and(|frame| frame.is_none()))
+                let matrix_refused = (matrix_recognized
+                    && matrix_frame.is_none()
+                    && revolution_frame.is_none())
                     || inline.is_some_and(|layout| layout.matrix_frame && layout.carrier.is_none());
                 let refused = revolution_refused || matrix_refused;
                 if matrix_refused {

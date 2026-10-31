@@ -83,6 +83,15 @@ fn bounded_frame(
 ) -> Option<PositionalCylinderFrame> {
     angular_interval_valid(envelope.bounds[0]).then_some(())?;
     let m = slots.get();
+    // A rotation stored in floating tokens is a rotation only when its
+    // columns are exactly orthogonal; a tilt that survives only the shared
+    // tolerance is refused.
+    let columns = [[m[0], m[3], m[6]], [m[1], m[4], m[7]], [m[2], m[5], m[8]]];
+    for (i, a) in columns.iter().enumerate() {
+        for b in columns.iter().skip(i + 1) {
+            (a[0] * b[0] + a[1] * b[1] + a[2] * b[2] == 0.0).then_some(())?;
+        }
+    }
     let origin = [m[9], m[10], m[11]];
     let axis = [m[2], m[5], m[8]];
     let reference = [m[0], m[3], m[6]];
