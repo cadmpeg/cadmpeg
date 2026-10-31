@@ -1,8 +1,9 @@
 # cadmpeg corpus manifest: annotated template
 #
-# Copy a [[file]] block per donated file. Every file in the public corpus must
-# be CC0-1.0 and authored by the donor. See corpus/README.md for the full
-# donation process and LEGAL.md for the clean-room rules this supports.
+# Copy a [[file]] block per corpus file. CC0 donations must be authored by the
+# donor (see corpus/README.md). The NIST MBE PMI track uses LicenseRef-NIST-PD
+# instead of CC0 and is maintainer-curated; see corpus/nist-pmi/README.md.
+# LEGAL.md still governs how decoder knowledge may be derived from these files.
 #
 # The first accepted donation creates corpus/manifest.toml alongside the donated
 # files. Verification is manual until tooling lands. This .example file is
@@ -33,7 +34,8 @@ authoring_app_version = "2.0.19426"
 source_url = "https://github.com/example/cadmpeg-corpus/pull/1"
 acquisition_date = "2026-07-14"
 
-# License dedication. Must be CC0-1.0 for the public corpus.
+# License. CC0-1.0 for author donations; LicenseRef-NIST-PD for the NIST
+# producer-evidence track (do not stamp NIST files CC0).
 license = "CC0-1.0"
 
 # SHA-256 of the exact bytes committed. Compute with:

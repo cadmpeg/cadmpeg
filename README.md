@@ -110,7 +110,7 @@ input file ──▶ container decoder ──▶ format decoder ──▶ IR ─
 
 ## Contributing
 
-Public test files are the current need. If you can dedicate a CAD file to the public domain under CC0, [donate it to the corpus](corpus/README.md).
+Public test files are the current need. If you can dedicate a CAD file to the public domain under CC0, [donate it to the corpus](corpus/README.md). A second track holds maintainer-curated NIST MBE PMI producer evidence under `LicenseRef-NIST-PD`; see [corpus/nist-pmi/README.md](corpus/nist-pmi/README.md).
 
 Other contributions:
 
