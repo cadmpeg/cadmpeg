@@ -24,7 +24,7 @@ impl<'a> ActiveBodies<'a> {
         Self { by_slot }
     }
 
-    fn resolve(
+    pub(super) fn resolve(
         &self,
         slots: &[i64],
         source: Option<&str>,
