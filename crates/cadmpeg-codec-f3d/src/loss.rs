@@ -1252,6 +1252,8 @@ mod tests {
                 "feature.stored-bodies-empty",
                 "feature.stored-bodies-recipe-absent",
                 "feature.stored-bodies-unbound",
+                "feature.output-state-chain-unbound",
+                "feature.output-body-unbound",
                 "feature.derived-base-unresolved",
                 "feature.box-primitive-unresolved",
                 "feature.sheet-thickness-unruled",
