@@ -3289,6 +3289,11 @@ mod tests {
             super::resolve_face_operand_support_candidate(&operand),
             Some(12)
         );
+        operand.recipe_references[0].candidate_faces.clear();
+        assert_eq!(
+            super::resolve_face_operand_support_candidate(&operand),
+            None
+        );
     }
 
     #[test]
