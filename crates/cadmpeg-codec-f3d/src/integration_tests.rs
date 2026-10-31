@@ -2,6 +2,7 @@
 //! End-to-end contracts over synthesized F3D and F3Z archives.
 
 mod act_links;
+mod align;
 mod archive_session;
 mod attribute_colors;
 mod body_reference_tails;
@@ -14,6 +15,7 @@ mod measured_geometry;
 mod optional_payloads;
 mod placement_history;
 mod procedural_support;
+mod product_owners;
 mod work_planes;
 
 use cadmpeg_test_support::{wire, EditableDecodeResult};

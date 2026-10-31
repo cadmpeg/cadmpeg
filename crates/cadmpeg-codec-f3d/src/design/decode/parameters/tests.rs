@@ -23,6 +23,8 @@ use crate::test_support::lp_utf16;
 use crate::test_support::manifest_test::write_synthetic_manifests;
 use crate::test_support::zip_test::with_scan;
 
+mod unparsed_frames;
+
 fn compact_owned_parameter_record(
     owner_record_index: u32,
     source_ordinal: u32,
@@ -275,7 +277,7 @@ fn parameter_variants_have_exact_string_and_scalar_boundaries() {
     assert_eq!(scale_factor.unit(), None);
     assert_eq!(scale_factor.evaluated_value().get(), 1.0);
 
-    for discriminator in [3u64, 4] {
+    for discriminator in [1u64, 2, 3, 4, 5] {
         let mut earlier_distance = parameter_record(
             Some(44),
             "Width / 2",
@@ -295,7 +297,7 @@ fn parameter_variants_have_exact_string_and_scalar_boundaries() {
     }
 
     let mut invalid_tangency = earlier_tangency;
-    invalid_tangency[22..30].copy_from_slice(&5u64.to_le_bytes());
+    invalid_tangency[22..30].copy_from_slice(&7u64.to_le_bytes());
     assert!(parse_design_parameter_record(&invalid_tangency).is_none());
 
     let mut revised_distance = parameter_record(
@@ -315,6 +317,16 @@ fn parameter_variants_have_exact_string_and_scalar_boundaries() {
             .family_discriminator()
             .map(|value| value.value.code()),
         Some(6)
+    );
+
+    let mut current_distance = revised_distance.clone();
+    current_distance[22..30].copy_from_slice(&5u64.to_le_bytes());
+    assert_eq!(
+        parse_design_parameter_record(&current_distance)
+            .expect("discriminator-five feature parameter")
+            .family_discriminator()
+            .map(|value| value.value.code()),
+        Some(5)
     );
 
     let mut invalid_distance = revised_distance.clone();
@@ -1609,31 +1621,6 @@ fn typed_compact_parameters_read_owned_and_document_forms() {
     assert!(parse_design_parameter_record(&other_tail).is_none());
 }
 
-#[test]
-fn decode_reports_typed_parameter_frames_that_match_no_grammar() {
-    let stream = "FusionAssetName[Active]/Design1/BulkStream.dat";
-    let mut bulk = typed_parameter_record(537, Some(536), "AlongDistance");
-    let mut rejected = typed_parameter_record(541, Some(540), "AlongDistance");
-    rejected[81 + 4 + 2 * "3 mm".len()] = 7;
-    bulk.extend_from_slice(&rejected);
-    let stored = crate::zip_write::file_options(CompressionMethod::Stored);
-    let mut zip = zip::ZipWriter::new(Cursor::new(Vec::new()));
-    write_synthetic_manifests(&mut zip, stored);
-    zip.start_file(stream, stored).unwrap();
-    zip.write_all(&bulk).unwrap();
-    let archive = zip.finish().unwrap().into_inner();
-    let decoded = with_scan(&archive, decode_parameters).unwrap();
-    let [parameter] = decoded.parameters.as_slice() else {
-        panic!("expected the one well-formed typed parameter");
-    };
-    assert_eq!(parameter.record_index, 537);
-    let [unparsed] = decoded.unparsed.as_slice() else {
-        panic!("expected one stream with unparsed typed parameter frames");
-    };
-    assert_eq!(unparsed.stream, stream);
-    assert_eq!(unparsed.count, 1);
-}
-
 /// A scalar owner frame whose five references all use the typed spelling.
 fn typed_owner_frame(repeated_scope_tail: &[u8]) -> Vec<u8> {
     let mut frame = Vec::new();
@@ -1804,8 +1791,11 @@ fn document_parameter_admits_the_ten_byte_expression_trailer() {
     assert_eq!(parameter.evaluated_value().get(), 2.0);
     assert!(parse_design_parameter_record(&frame(&[0, 0, 0, 0, 0, 0, 0, 0, 1])).is_some());
     assert!(parse_design_parameter_record(&frame(&[0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1])).is_none());
-    // The `01 00 01` document trailer belongs to the earlier family only.
-    assert!(parse_design_parameter_record(&frame(&[0, 0, 0, 0, 0, 0, 1, 0, 1])).is_none());
+    assert!(parse_design_parameter_record(&frame(&[0, 0, 0, 0, 0, 0, 1, 0, 1])).is_some());
+    assert!(parse_design_parameter_record(&frame(&[0, 0, 0, 0, 0, 0, 2, 0, 1])).is_none());
+    assert!(parse_design_parameter_record(&frame(&[0, 0, 0, 1, 0, 0, 0, 0, 1])).is_none());
+    // The last flag byte marks a document parameter.
+    assert!(parse_design_parameter_record(&frame(&[0, 0, 0, 0, 0, 0, 0, 1, 0])).is_none());
 }
 
 /// The earlier discriminated family stores a document parameter with
@@ -1882,4 +1872,74 @@ fn wide_owned_parameter_accepts_eleven_zero_bytes_after_expression() {
     let expression_end = 50 + 4 + 2;
     scale.splice(expression_end..expression_end, [0; 2]);
     assert!(parse_design_parameter_record(&scale).is_none());
+}
+
+/// A discriminated expression trailer is four zero bytes and five flag bytes;
+/// the last flag byte is set exactly for a document parameter.
+#[test]
+fn discriminated_expression_trailer_carries_flag_bytes() {
+    let with_trailer = |owner: Option<u32>, source_kind: &str, flags: [u8; 5]| {
+        let mut frame = parameter_record(owner, "4.00 mm", source_kind, Some("mm"), "d14", 0.4);
+        frame[22..30].copy_from_slice(&4u64.to_le_bytes());
+        let expression_at = if owner.is_some() { 46 } else { 36 };
+        let (_, expression_end) =
+            crate::bytes::lp_utf16_bounded(&frame, expression_at, 1..=256).expect("expression");
+        frame[expression_end + 4..expression_end + 9].copy_from_slice(&flags);
+        frame
+    };
+    for flags in [
+        [1, 0, 0, 0, 0],
+        [0, 1, 0, 0, 0],
+        [0, 0, 1, 0, 0],
+        [0, 1, 1, 0, 0],
+    ] {
+        let parameter =
+            parse_design_parameter_record(&with_trailer(Some(344), "Linear Dimension-10", flags))
+                .expect("owned parameter with trailer flags");
+        assert_eq!(parameter.owner_record_index(), Some(344));
+        assert_eq!(parameter.kind(), DesignParameterKind::Dimension);
+    }
+    for flags in [[0, 0, 0, 1, 0], [1, 0, 0, 1, 0], [0, 0, 1, 1, 0], [0; 5]] {
+        let parameter =
+            parse_design_parameter_record(&with_trailer(None, "Linear Dimension-12", flags))
+                .expect("owner-less dimension parameter with trailer flags");
+        assert_eq!(parameter.owner_record_index(), None);
+        assert_eq!(parameter.kind(), DesignParameterKind::Dimension);
+    }
+    assert!(parse_design_parameter_record(&with_trailer(
+        Some(344),
+        "AlongDistance",
+        [0, 2, 0, 0, 0]
+    ))
+    .is_none());
+    assert!(parse_design_parameter_record(&with_trailer(
+        Some(344),
+        "AlongDistance",
+        [0, 0, 0, 0, 1]
+    ))
+    .is_none());
+    assert!(parse_design_parameter_record(&with_trailer(None, "User Parameter", [0; 5])).is_none());
+    let user =
+        parse_design_parameter_record(&with_trailer(None, "User Parameter", [0, 0, 0, 1, 1]))
+            .expect("document parameter with trailer flags");
+    assert_eq!(user.kind(), DesignParameterKind::User);
+}
+
+/// The intermediate discriminated family stores discriminator 5 or 6.
+#[test]
+fn intermediate_family_admits_discriminators_five_and_six() {
+    for (discriminator, admitted) in [(5u64, true), (6, true), (4, false)] {
+        let mut frame = parameter_record(
+            Some(77),
+            "25.0 deg",
+            "Angle Threshold",
+            Some("deg"),
+            "d1",
+            0.436,
+        );
+        frame[22..30].copy_from_slice(&discriminator.to_le_bytes());
+        let tail = frame.len() - 12;
+        frame[tail + 2] = 17;
+        assert_eq!(parse_design_parameter_record(&frame).is_some(), admitted);
+    }
 }

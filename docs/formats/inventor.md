@@ -757,6 +757,10 @@ Sweep property slots are:
 | 10 | Sweep scaling enumeration | `e211b05c3e46583e928a0cbf3a085834` |
 | 15 | Result object collection | `ae70680ed14a1e86d76248b03c2a96e1` |
 
+The zero-control circular solid sweep form uses a type-2 property vector with at least 16 slots. Slots 5, 6, 11, 12, 13, and 14, and all slots after 15, are null. Slot 2 has enumeration type 5 and value 1, which selects a new solid body. Slot 4 has the versioned extent type from section 13 and value 3. Slots 8, 9, and 10 have type/value pairs `(3, 0)`, `(2, 0)`, and `(2, 0)`. Slot 3 is angular, with nominal and model values 0. A non-null slot 7 selects a feature-dimension list with one member; that member's parameter reference selects the slot-3 parameter record. Slot 15 contains one non-null result-body reference.
+
+Slot 0 contains one profile selection with value 0 and a non-null kernel-entity link. Its selected boundary is one complete circle in one consumed planar sketch. Slot 1 is a profile selection with value 0 and a non-null kernel-entity link. Its selected path is one complete ordered open wire. The complete result consists of two planar circular caps at the path endpoints and one cylindrical or toroidal side face for each named path span. Each cap circle, cylindrical radius, and toroidal minor radius equals the section radius. All these faces belong to the generating sweep and to one solid body.
+
 Schema-44 generated-face attributes use type `ATTRIB_CUSTOM-attrib`. Five common attribute fields precede a family string and the integers 1, 44, 1, `generator`, and −1. `generator` is the generating feature's content-header source index. The target of the attribute is the generated face.
 
 Family `INV_NMX_SWEEPGENERATED_TAG` then stores `section`, `span`, `role`, and seven zero integers. Role 20 identifies a side face; `section` and `span` identify the associative names of its section curve and path curve. Roles 4 and 12 identify the two terminal cap faces and have zero `section` and `span` values.
@@ -1059,6 +1063,16 @@ Type `5a4a6899d2117fec6000b0abc8433cb0` stores auxiliary selection controls. Aft
 A direct direction selection names a direction record of type `40df52ced011d0d20008ccbc0663dc09`. This record has entity flags 0, parameter 0, and an absent or zero extension in the fixed-spacing feature branch. A work-axis geometry reference in a cached selection uses the work-axis grammar above, including its versioned content-header stamps. The fixed-spacing work-axis form has zero entity flags and u32 values, an empty reference list, no `0x203` marker, state 0 or 1, and a nonzero span.
 
 Types `7b4544a2ab4d9e16850c48a21edf9e3a` and `aa7b97a57045795897b51396ffc5d631` store cached line selections. Their content headers have no stamps. The single-line branch has selection form 1 and curve form 23. The header is followed by `state:i32`, a reversal-Boolean reference, a geometry reference, `selection_form:u32`, u16 value 0, and `curve_form:u32`. Selection form 1 with curve form 23 stores three finite f64 triples: a line origin, a nonzero line span, and a selection point. A u8 value 1 follows. Type `7b4544a2ab4d9e16850c48a21edf9e3a` ends with two source references; type `aa7b97a57045795897b51396ffc5d631` ends with one. The fixed-spacing feature branch has state 1 or 2 for type `7b4544a2ab4d9e16850c48a21edf9e3a`, state −1 for type `aa7b97a57045795897b51396ffc5d631`, and non-null geometry and source references that resolve in the same segment. The span supplies the direction. A geometry reference to a work axis has the same normalized span as that work axis. The referenced reversal Boolean negates the direction before the spacing is applied.
+
+### 13.8 Tagging selections
+
+Feature-label class `e899dbdfd31165afc0000185e89c6b4f` identifies Tagging. In segment major versions 19, 23, and 31, its owner uses the generic feature grammar of section 13. The property vector uses the type-2 reference-list grammar of section 12 and has one slot:
+
+| Slot | Property |
+| --- | --- |
+| 0 | Non-null qualified reference to an object collection of type `ae70680ed14a1e86d76248b03c2a96e1` |
+
+The collection contains a type-2 reference list. Each member is a non-null qualified reference to a surface-body wrapper of type `474d8790d011f8d10008cabc0663dc09` in the same PmDc segment. Each wrapper has a non-null unqualified body reference, with the external-reference grammar of section 13.4. The Tagging label has an empty participant list.
 
 ## 14. Document kind
 

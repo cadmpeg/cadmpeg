@@ -4,6 +4,7 @@
 use std::collections::{BTreeMap, HashSet};
 
 use crate::assets::AssetId;
+use crate::ids::ProductDefinitionId;
 use crate::ids::{
     BodyId, CurveId, EdgeId, FaceId, FeatureInputTopologyId, FeatureResultTopologyId,
     HistoricalBodyId, HistoricalEdgeId, HistoricalFaceId, HistoricalVertexId, OccurrenceId, SubdId,
@@ -1321,6 +1322,13 @@ crate::ids::id_type!(
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(deny_unknown_fields)]
 pub struct DesignParameter {
+    /// Product definition whose frame contains this parameter.
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_product_definition"
+    )]
+    pub product_definition: Option<ProductDefinitionId>,
     /// Globally unique parameter id.
     pub id: ParameterId,
     /// Feature that consumes this parameter; absent for a document parameter.
@@ -1558,6 +1566,8 @@ impl FeatureEvaluation {
 /// no public [`Default`]: an empty id with an arbitrary definition is illegal.
 #[derive(Debug, Clone, PartialEq)]
 pub struct Feature {
+    /// Product definition whose frame contains this feature.
+    pub product_definition: Option<ProductDefinitionId>,
     /// Globally unique feature id.
     pub id: FeatureId,
     /// Stable construction order within the source history.
@@ -1584,6 +1594,8 @@ pub struct Feature {
 
 #[derive(Serialize)]
 pub(crate) struct FeatureWriteWire<'a> {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    product_definition: &'a Option<ProductDefinitionId>,
     id: &'a FeatureId,
     ordinal: u64,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -1612,6 +1624,7 @@ pub(crate) struct FeatureWriteWire<'a> {
 impl<'a> FeatureWriteWire<'a> {
     pub(crate) fn new(feature: &'a Feature, regeneration_parent: Option<&'a FeatureId>) -> Self {
         Self {
+            product_definition: &feature.product_definition,
             id: &feature.id,
             ordinal: feature.ordinal,
             name: &feature.name,
@@ -1644,6 +1657,8 @@ impl<'a> FeatureWriteWire<'a> {
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(deny_unknown_fields)]
 pub(crate) struct FeatureRowWire {
+    #[serde(default, deserialize_with = "deserialize_product_definition")]
+    product_definition: Option<ProductDefinitionId>,
     id: FeatureId,
     ordinal: u64,
     #[serde(default, deserialize_with = "deserialize_name")]
@@ -1675,6 +1690,7 @@ impl FeatureRowWire {
     pub(crate) fn into_parts(self) -> (Feature, Option<FeatureId>) {
         let regeneration_parent = self.regeneration_parent;
         let feature = FeatureReadWire {
+            product_definition: self.product_definition,
             id: self.id,
             ordinal: self.ordinal,
             name: self.name,
@@ -1702,6 +1718,8 @@ impl FeatureRowWire {
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(deny_unknown_fields)]
 struct FeatureReadWire {
+    #[serde(default, deserialize_with = "deserialize_product_definition")]
+    product_definition: Option<ProductDefinitionId>,
     id: FeatureId,
     ordinal: u64,
     #[serde(default, deserialize_with = "deserialize_name")]
@@ -1730,6 +1748,7 @@ struct FeatureReadWire {
 impl FeatureReadWire {
     fn into_feature(self) -> Feature {
         Feature {
+            product_definition: self.product_definition,
             id: self.id,
             ordinal: self.ordinal,
             name: self.name,
@@ -2692,10 +2711,31 @@ pub enum FeatureOperation {
         /// Ordered control cages committed by the session.
         cages: Vec<SubdId>,
     },
-    /// Non-geometric thread annotation attached to a cylindrical face.
+    /// Thread attached to a cylindrical face.
+    ///
+    /// The source may also model the helical form in the body geometry;
+    /// `modeled` states whether it does, and absent means unproven. A field
+    /// that the source encoding does not prove stays absent. F3D threads set
+    /// `standard`, `designation` and `pitch` and stay definition-incomplete
+    /// while `modeled` is absent (DR-143); the `nx`, `sldprt`, and `inventor` codecs do not
+    /// set the four new fields.
     CosmeticThread {
-        /// Cylindrical face carrying the annotation.
+        /// Cylindrical face carrying the thread.
         face: FaceSelection,
+        /// Thread standard family or profile name, as the source spells it.
+        #[serde(
+            default,
+            skip_serializing_if = "Option::is_none",
+            deserialize_with = "deserialize_thread_standard"
+        )]
+        standard: Option<NonBlankString>,
+        /// Size designation within the standard, as the source spells it.
+        #[serde(
+            default,
+            skip_serializing_if = "Option::is_none",
+            deserialize_with = "deserialize_thread_designation"
+        )]
+        designation: Option<NonBlankString>,
         /// Nominal thread diameter, when resolved.
         #[serde(
             default,
@@ -2703,7 +2743,21 @@ pub enum FeatureOperation {
             deserialize_with = "deserialize_diameter"
         )]
         diameter: Option<PositiveLength>,
-        /// Axial extent of the annotation, when resolved.
+        /// Thread pitch along the axis, when resolved.
+        #[serde(
+            default,
+            skip_serializing_if = "Option::is_none",
+            deserialize_with = "deserialize_thread_pitch"
+        )]
+        pitch: Option<PositiveLength>,
+        /// Whether the body geometry already contains the helical form.
+        #[serde(
+            default,
+            skip_serializing_if = "Option::is_none",
+            deserialize_with = "deserialize_thread_modeled"
+        )]
+        modeled: Option<bool>,
+        /// Axial extent of the thread, when resolved.
         #[serde(
             default,
             skip_serializing_if = "Option::is_none",
@@ -9276,6 +9330,14 @@ cadmpeg_core::named_optional_field!(deserialize_source_text, String, "source_tex
 cadmpeg_core::named_optional_field!(deserialize_active_child, FeatureId, "active_child");
 cadmpeg_core::named_optional_field!(deserialize_diameter, PositiveLength, "diameter");
 cadmpeg_core::named_optional_field!(deserialize_extent, CosmeticThreadExtent, "extent");
+cadmpeg_core::named_optional_field!(deserialize_thread_standard, NonBlankString, "standard");
+cadmpeg_core::named_optional_field!(
+    deserialize_thread_designation,
+    NonBlankString,
+    "designation"
+);
+cadmpeg_core::named_optional_field!(deserialize_thread_pitch, PositiveLength, "pitch");
+cadmpeg_core::named_optional_field!(deserialize_thread_modeled, bool, "modeled");
 cadmpeg_core::named_optional_field!(deserialize_opacity, Fraction, "opacity");
 cadmpeg_core::named_optional_field!(deserialize_reference, DatumPlaneReference, "reference");
 cadmpeg_core::named_optional_field!(
@@ -9451,3 +9513,9 @@ impl Feature {
 mod identity_rewrite;
 
 mod serialization;
+
+cadmpeg_core::named_optional_field!(
+    deserialize_product_definition,
+    ProductDefinitionId,
+    "product_definition"
+);

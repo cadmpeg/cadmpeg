@@ -816,7 +816,9 @@ pub(crate) fn decode_face_operands(
             scope.kind() == crate::records::feature::scope::DesignFeatureKind::SplitFace;
         let is_delete_face_operand = matches!(
             scope.kind(),
-            crate::records::feature::scope::DesignFeatureKind::DeleteFace
+            crate::records::feature::scope::DesignFeatureKind::MoveFace
+                | crate::records::feature::scope::DesignFeatureKind::DeplacerFace
+                | crate::records::feature::scope::DesignFeatureKind::DeleteFace
                 | crate::records::feature::scope::DesignFeatureKind::SurfaceDeleteFace
         );
         let is_emboss_face = scope.kind()
@@ -1739,6 +1741,8 @@ pub(crate) fn decode_construction_operand_groups(
             || design_feature_family(&scope.kind()) == Some(DesignFeatureFamily::Mirror)
             || scope.kind() == crate::records::feature::scope::DesignFeatureKind::RemoveBody
             || scope.kind() == crate::records::feature::scope::DesignFeatureKind::SurfaceStitch
+            || scope.kind() == crate::records::feature::scope::DesignFeatureKind::MoveFace
+            || scope.kind() == crate::records::feature::scope::DesignFeatureKind::DeplacerFace
             || scope.kind() == crate::records::feature::scope::DesignFeatureKind::DeleteFace
             || scope.kind() == crate::records::feature::scope::DesignFeatureKind::SurfaceDeleteFace
             || scope.kind() == crate::records::feature::scope::DesignFeatureKind::Decal
@@ -2580,12 +2584,17 @@ pub(super) fn parse_construction_operand_group(
             let Some(flags) = bytes.get(tail..tail + flag_bytes) else {
                 continue;
             };
-            if flags.last() != Some(&0) {
+            let closing_flags: &[u8] = if flag_bytes == 3 { &[0, 1] } else { &[0] };
+            if !flags
+                .last()
+                .is_some_and(|last| closing_flags.contains(last))
+            {
                 continue;
             }
             // The wider block prefixes the narrower one, so the variant flag is
             // always the byte before the terminating zero.
             let variant = flags[flag_bytes - 2] != 0;
+            let closing_flag = flags[flag_bytes - 1] != 0;
             let mut after = tail + flag_bytes;
             if take_record_reference(bytes, &mut after).map(|(index, _)| index)
                 != header.record_index.checked_add(1)
@@ -2610,21 +2619,24 @@ pub(super) fn parse_construction_operand_group(
                 continue;
             }
             if closed
-                .replace((variant, after, paired_class_tag.to_owned()))
+                .replace((variant, closing_flag, after, paired_class_tag.to_owned()))
                 .is_some()
             {
                 return Unclosed;
             }
         }
     }
-    if let Some(legacy_tail) =
+    if let Some((variant, paired_at, paired_class_tag)) =
         legacy_body_group_tail(bytes, scope, header, cursor, opaque_index.get())
     {
-        if closed.replace(legacy_tail).is_some() {
+        if closed
+            .replace((variant, false, paired_at, paired_class_tag))
+            .is_some()
+        {
             return Unclosed;
         }
     }
-    let Some((variant, paired_at, paired_class_tag)) = closed else {
+    let Some((variant, closing_flag, paired_at, paired_class_tag)) = closed else {
         return Unclosed;
     };
 
@@ -2689,6 +2701,7 @@ pub(super) fn parse_construction_operand_group(
             opaque_scalar,
             opaque_scalar_offset: opaque_index_offset + 4,
             variant,
+            closing_flag,
         },
     ) else {
         return Unclosed;

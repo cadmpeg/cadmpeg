@@ -16,6 +16,7 @@ fn base_feature() -> cadmpeg_ir::features::Feature {
     };
     use cadmpeg_ir::ids::BodyId;
     Feature {
+        product_definition: None,
         id: FeatureId::mint("test:model:feature#feature").unwrap(),
         ordinal: 0,
         name: None,
@@ -897,6 +898,7 @@ fn historical_partial_and_native_edge_selections_test() {
             DistinctMembers::try_from(vec![]).unwrap(),
         ),
         native_ref: Some("native:scope".into()),
+        product_definition: None,
     };
 
     let scope = scope_between(1, 0);
@@ -1072,6 +1074,63 @@ fn historical_body_bounds_unresolved_test() {
 }
 
 #[test]
+fn body_measurement_covers_only_the_states_feature_outputs_read() {
+    use crate::history_records::{AsmHistoricalRelation, AsmHistoricalTopology};
+    use crate::loss::F3dLossCode;
+
+    let relation = |owner_ref, member| AsmHistoricalRelation {
+        owner_ref,
+        member_refs: vec![member],
+    };
+    let solid_without_points = || AsmHistoricalTopology {
+        bodies: vec![1],
+        body_regions: vec![relation(1, 2)],
+        region_shells: vec![relation(2, 3)],
+        shell_faces: vec![relation(3, 4)],
+        ..AsmHistoricalTopology::default()
+    };
+    let history = crate::test_support::history::history(
+        "f3d:asm-history#1".into(),
+        0,
+        None,
+        false,
+        vec![
+            state(4, 4, Some(3), solid_without_points()),
+            state(3, 3, Some(2), solid_without_points()),
+            state(2, 2, Some(1), solid_without_points()),
+            state(1, 1, Some(0), solid_without_points()),
+            state(0, 0, None, solid_without_points()),
+        ],
+    );
+    let scope = scope_between(3, 1);
+    let mut feature = base_feature();
+    feature.native_ref = Some(scope.id.clone());
+
+    let losses = super::super::bind_feature_outputs(
+        std::slice::from_mut(&mut feature),
+        std::slice::from_ref(&scope),
+        &mut [history],
+        &[],
+    )
+    .unwrap();
+
+    let mut measured = losses
+        .iter()
+        .filter(|note| note.code == F3dLossCode::HistoricalBodyBoundsUnresolved.kind())
+        .map(|note| note.message.as_str())
+        .collect::<Vec<_>>();
+    measured.sort_unstable();
+    assert_eq!(
+        measured,
+        [
+            "historical solid body 1 has unresolved bounds in state 1",
+            "historical solid body 1 has unresolved bounds in state 2",
+            "historical solid body 1 has unresolved bounds in state 3",
+        ]
+    );
+}
+
+#[test]
 fn is_solid_historical_body_single_face_solid_and_sheet_closure() {
     use crate::history_records::{
         AsmHistoricalCoedge, AsmHistoricalRelation, AsmHistoricalTopology,
@@ -1081,7 +1140,7 @@ fn is_solid_historical_body_single_face_solid_and_sheet_closure() {
     // 1-face closed solid (e.g. sphere or torus with 1 face, shell closed, coedges on edge >= 2)
     let closed_solid =
         solid_box_topology(1, Point3::new(0.0, 0.0, 0.0), Point3::new(1.0, 1.0, 1.0));
-    assert!(super::super::is_solid_historical_body(&closed_solid, 1));
+    assert!(super::super::HistoricalBodyIndex::new(&closed_solid).is_solid(1));
 
     // 2-face open sheet (edge 8 only has 1 coedge incidence, coedge 7)
     let open_sheet = AsmHistoricalTopology {
@@ -1116,7 +1175,7 @@ fn is_solid_historical_body_single_face_solid_and_sheet_closure() {
         }],
         ..AsmHistoricalTopology::default()
     };
-    assert!(!super::super::is_solid_historical_body(&open_sheet, 1));
+    assert!(!super::super::HistoricalBodyIndex::new(&open_sheet).is_solid(1));
 }
 
 #[test]
@@ -1170,6 +1229,7 @@ fn stored_false_shell_retained_on_bbox_growth() {
             DistinctMembers::try_from(vec![]).unwrap(),
         ),
         native_ref: Some(scope.id.clone()),
+        product_definition: None,
     };
 
     // State 0 bbox width = 10.0; State 1 bbox width = 20.0 (grew > 1.0e-3)
@@ -1241,6 +1301,7 @@ fn combine_join_to_cut_deleting_vs_non_deleting() {
             DistinctMembers::try_from(vec![]).unwrap(),
         ),
         native_ref: Some("native:scope".into()),
+        product_definition: None,
     };
 
     let scope = scope_between(1, 0);
@@ -1366,6 +1427,7 @@ fn split_plane_only_emitted_for_split_body() {
             DistinctMembers::try_from(vec![]).unwrap(),
         ),
         native_ref: Some(scope.id.clone()),
+        product_definition: None,
     };
 
     super::super::bind_feature_outputs(
@@ -1417,6 +1479,7 @@ fn split_plane_only_emitted_for_split_body() {
             DistinctMembers::try_from(vec![]).unwrap(),
         ),
         native_ref: Some(scope.id.clone()),
+        product_definition: None,
     };
 
     super::super::bind_feature_outputs(

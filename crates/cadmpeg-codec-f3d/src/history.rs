@@ -874,176 +874,139 @@ pub(crate) fn projection_was_finalized(histories: &[AsmHistory]) -> bool {
         })
 }
 
-pub(crate) fn is_solid_historical_body(
-    topology: &crate::history_records::AsmHistoricalTopology,
-    body: i64,
-) -> bool {
-    let mut has_shell = false;
-    for br in topology
-        .body_regions
-        .iter()
-        .filter(|br| br.owner_ref == body)
-    {
-        for &region in &br.member_refs {
-            for rs in topology
-                .region_shells
-                .iter()
-                .filter(|rs| rs.owner_ref == region)
-            {
-                for &shell in &rs.member_refs {
-                    let has_wire_edges = topology
-                        .shell_wire_edges
-                        .iter()
-                        .any(|we| we.owner_ref == shell && !we.member_refs.is_empty());
-                    if has_wire_edges {
-                        return false;
-                    }
-                    let has_free_vertices = topology
-                        .shell_free_vertices
-                        .iter()
-                        .any(|fv| fv.owner_ref == shell && !fv.member_refs.is_empty());
-                    if has_free_vertices {
-                        return false;
-                    }
-                    let faces: Vec<i64> = topology
-                        .shell_faces
-                        .iter()
-                        .filter(|sf| sf.owner_ref == shell)
-                        .flat_map(|sf| sf.member_refs.iter().copied())
-                        .collect();
-                    if faces.is_empty() {
-                        return false;
-                    }
-                    let mut coedge_counts = HashMap::<i64, usize>::new();
-                    for &face in &faces {
-                        for fl in topology.face_loops.iter().filter(|fl| fl.owner_ref == face) {
-                            for &lp in &fl.member_refs {
-                                for lc in
-                                    topology.loop_coedges.iter().filter(|lc| lc.owner_ref == lp)
-                                {
-                                    for &ce_id in &lc.member_refs {
-                                        if let Some(ce) = topology
-                                            .coedge_topology
-                                            .iter()
-                                            .find(|c| c.coedge == ce_id)
-                                        {
-                                            *coedge_counts.entry(ce.edge).or_default() += 1;
-                                        }
-                                    }
-                                }
-                            }
-                        }
-                    }
-                    if coedge_counts.values().any(|&count| count < 2) {
-                        return false;
-                    }
-                    has_shell = true;
-                }
-            }
-        }
-    }
-    has_shell
+/// The keyed rows that decide the solidity and extent of one state's bodies.
+struct HistoricalBodyIndex<'a> {
+    body_regions: KeyedRows<'a, AsmHistoricalRelation>,
+    region_shells: KeyedRows<'a, AsmHistoricalRelation>,
+    shell_faces: KeyedRows<'a, AsmHistoricalRelation>,
+    shell_wire_edges: KeyedRows<'a, AsmHistoricalRelation>,
+    shell_free_vertices: KeyedRows<'a, AsmHistoricalRelation>,
+    face_loops: KeyedRows<'a, AsmHistoricalRelation>,
+    loop_coedges: KeyedRows<'a, AsmHistoricalRelation>,
+    coedges: KeyedRows<'a, AsmHistoricalCoedge>,
+    edges: KeyedRows<'a, AsmHistoricalEdge>,
+    vertex_points: KeyedRows<'a, AsmHistoricalCarrierBinding>,
+    point_positions: KeyedRows<'a, AsmHistoricalPoint>,
 }
 
-fn historical_body_bounds(
-    topology: &crate::history_records::AsmHistoricalTopology,
-    body: i64,
-) -> Option<(cadmpeg_ir::math::Point3, cadmpeg_ir::math::Point3)> {
-    let mut min_x = f64::INFINITY;
-    let mut min_y = f64::INFINITY;
-    let mut min_z = f64::INFINITY;
-    let mut max_x = f64::NEG_INFINITY;
-    let mut max_y = f64::NEG_INFINITY;
-    let mut max_z = f64::NEG_INFINITY;
-    let mut found = false;
-    for br in topology
-        .body_regions
-        .iter()
-        .filter(|br| br.owner_ref == body)
-    {
-        for &region in &br.member_refs {
-            for rs in topology
-                .region_shells
-                .iter()
-                .filter(|rs| rs.owner_ref == region)
-            {
-                for &shell in &rs.member_refs {
-                    for sf in topology
-                        .shell_faces
-                        .iter()
-                        .filter(|sf| sf.owner_ref == shell)
-                    {
-                        for &face in &sf.member_refs {
-                            for fl in topology.face_loops.iter().filter(|fl| fl.owner_ref == face) {
-                                for &lp in &fl.member_refs {
-                                    for lc in
-                                        topology.loop_coedges.iter().filter(|lc| lc.owner_ref == lp)
-                                    {
-                                        for &ce_id in &lc.member_refs {
-                                            if let Some(ce) = topology
-                                                .coedge_topology
-                                                .iter()
-                                                .find(|c| c.coedge == ce_id)
-                                            {
-                                                if let Some(ev) = topology
-                                                    .edge_vertices
-                                                    .iter()
-                                                    .find(|e| e.edge == ce.edge)
-                                                {
-                                                    for v_id in [ev.start_vertex, ev.end_vertex] {
-                                                        if let Some(vp) = topology
-                                                            .vertex_points
-                                                            .iter()
-                                                            .find(|v| v.entity == v_id)
-                                                        {
-                                                            if let Some(pp) = topology
-                                                                .point_positions
-                                                                .iter()
-                                                                .find(|p| p.point == vp.carrier)
-                                                            {
-                                                                let pos = pp.position;
-                                                                min_x = min_x.min(pos.x);
-                                                                min_y = min_y.min(pos.y);
-                                                                min_z = min_z.min(pos.z);
-                                                                max_x = max_x.max(pos.x);
-                                                                max_y = max_y.max(pos.y);
-                                                                max_z = max_z.max(pos.z);
-                                                                found = true;
-                                                            }
-                                                        }
-                                                    }
-                                                }
-                                            }
-                                        }
-                                    }
-                                }
-                            }
-                        }
-                    }
-                }
-            }
+impl<'a> HistoricalBodyIndex<'a> {
+    fn new(topology: &'a AsmHistoricalTopology) -> Self {
+        Self {
+            body_regions: KeyedRows::new(&topology.body_regions),
+            region_shells: KeyedRows::new(&topology.region_shells),
+            shell_faces: KeyedRows::new(&topology.shell_faces),
+            shell_wire_edges: KeyedRows::new(&topology.shell_wire_edges),
+            shell_free_vertices: KeyedRows::new(&topology.shell_free_vertices),
+            face_loops: KeyedRows::new(&topology.face_loops),
+            loop_coedges: KeyedRows::new(&topology.loop_coedges),
+            coedges: KeyedRows::new(&topology.coedge_topology),
+            edges: KeyedRows::new(&topology.edge_vertices),
+            vertex_points: KeyedRows::new(&topology.vertex_points),
+            point_positions: KeyedRows::new(&topology.point_positions),
         }
     }
-    if found {
-        Some((
-            cadmpeg_ir::math::Point3::new(min_x, min_y, min_z),
-            cadmpeg_ir::math::Point3::new(max_x, max_y, max_z),
-        ))
-    } else {
-        None
-    }
-}
 
-fn historical_body_center(
-    topology: &crate::history_records::AsmHistoricalTopology,
-    body: i64,
-) -> Option<cadmpeg_ir::math::Point3> {
-    let (min_pt, max_pt) = historical_body_bounds(topology, body)?;
-    Some(cadmpeg_ir::math::Point3::new(
-        (min_pt.x + max_pt.x) * 0.5,
-        (min_pt.y + max_pt.y) * 0.5,
-        (min_pt.z + max_pt.z) * 0.5,
-    ))
+    fn shells(&self, body: i64) -> impl Iterator<Item = i64> + '_ {
+        self.body_regions
+            .members(body)
+            .unwrap_or_default()
+            .iter()
+            .flat_map(move |&region| self.region_shells.members(region).unwrap_or_default())
+            .copied()
+    }
+
+    /// The edge of each coedge in the loops of `face`, once per coedge.
+    fn face_edges(&self, face: i64) -> impl Iterator<Item = i64> + '_ {
+        self.face_loops
+            .members(face)
+            .unwrap_or_default()
+            .iter()
+            .flat_map(move |&loop_| self.loop_coedges.members(loop_).unwrap_or_default())
+            .filter_map(move |&coedge| self.coedges.get(coedge))
+            .map(|coedge| coedge.edge)
+    }
+
+    /// The edges of a solid `body`, or `None` when the body has no shell or
+    /// has a shell that is not closed.
+    fn solid_edges(&self, body: i64) -> Option<Vec<i64>> {
+        let mut solid_edges = Vec::new();
+        let mut has_shell = false;
+        for shell in self.shells(body) {
+            let occupied = |rows: &KeyedRows<'_, AsmHistoricalRelation>| {
+                rows.members(shell)
+                    .is_some_and(|members| !members.is_empty())
+            };
+            if occupied(&self.shell_wire_edges) || occupied(&self.shell_free_vertices) {
+                return None;
+            }
+            let faces = self.shell_faces.members(shell).unwrap_or_default();
+            if faces.is_empty() {
+                return None;
+            }
+            let mut coedge_edges = faces
+                .iter()
+                .flat_map(|&face| self.face_edges(face))
+                .collect::<Vec<_>>();
+            coedge_edges.sort_unstable();
+            if coedge_edges
+                .chunk_by(|left, right| left == right)
+                .any(|uses| uses.len() < 2)
+            {
+                return None;
+            }
+            coedge_edges.dedup();
+            solid_edges.append(&mut coedge_edges);
+            has_shell = true;
+        }
+        has_shell.then_some(solid_edges)
+    }
+
+    fn is_solid(&self, body: i64) -> bool {
+        self.solid_edges(body).is_some()
+    }
+
+    fn edge_bounds(
+        &self,
+        edges: &[i64],
+    ) -> Option<(cadmpeg_ir::math::Point3, cadmpeg_ir::math::Point3)> {
+        let mut vertices = edges
+            .iter()
+            .filter_map(|&edge| self.edges.get(edge))
+            .flat_map(|edge| [edge.start_vertex, edge.end_vertex])
+            .collect::<Vec<_>>();
+        vertices.sort_unstable();
+        vertices.dedup();
+        let mut min_x = f64::INFINITY;
+        let mut min_y = f64::INFINITY;
+        let mut min_z = f64::INFINITY;
+        let mut max_x = f64::NEG_INFINITY;
+        let mut max_y = f64::NEG_INFINITY;
+        let mut max_z = f64::NEG_INFINITY;
+        let mut found = false;
+        for vertex in vertices {
+            let Some(point) = self
+                .vertex_points
+                .get(vertex)
+                .and_then(|binding| self.point_positions.get(binding.carrier))
+            else {
+                continue;
+            };
+            let pos = point.position;
+            min_x = min_x.min(pos.x);
+            min_y = min_y.min(pos.y);
+            min_z = min_z.min(pos.z);
+            max_x = max_x.max(pos.x);
+            max_y = max_y.max(pos.y);
+            max_z = max_z.max(pos.z);
+            found = true;
+        }
+        found.then(|| {
+            (
+                cadmpeg_ir::math::Point3::new(min_x, min_y, min_z),
+                cadmpeg_ir::math::Point3::new(max_x, max_y, max_z),
+            )
+        })
+    }
 }
 
 pub(crate) fn bind_feature_outputs(
@@ -1060,6 +1023,19 @@ pub(crate) fn bind_feature_outputs(
         .filter_map(|feature| feature_history_states(feature, scopes))
         .map(|(state_id, _)| state_id)
         .collect::<HashSet<_>>();
+    let mut measured_states = output_states.clone();
+    for feature in features.iter() {
+        if let Some((_, previous_state_id)) = feature_history_states(feature, scopes) {
+            measured_states.insert(previous_state_id);
+        }
+    }
+    measured_states.extend(
+        histories
+            .iter()
+            .flat_map(AsmHistory::states)
+            .filter(|state| output_states.contains(&state.state_id))
+            .filter_map(|state| state.transition.as_ref()?.previous_state_id),
+    );
     let mut treatment_states = HashMap::<i64, Vec<i64>>::new();
     for feature in features.iter() {
         let Some((state_id, _)) = feature_history_states(feature, scopes) else {
@@ -1170,11 +1146,10 @@ pub(crate) fn bind_feature_outputs(
                     state.transition.as_ref(),
                     history.topology(&history.states()[previous]),
                 ) {
+                    let edge_samples = KeyedRows::new(&prev_topology.edge_samples);
                     let mut midpoints = Vec::new();
                     for &slot in explicit_slots {
-                        if let Some(sample) =
-                            prev_topology.edge_samples.iter().find(|s| s.edge == slot)
-                        {
+                        if let Some(sample) = edge_samples.get(slot) {
                             midpoints.push(sample.interior);
                         } else {
                             losses.push(
@@ -1198,13 +1173,14 @@ pub(crate) fn bind_feature_outputs(
                         state.transition.as_ref(),
                         history.topology(&history.states()[previous]),
                     ) {
+                        let prev_index = HistoricalBodyIndex::new(prev_topology);
                         let whole_deleted: Vec<i64> = transition
                             .topology
                             .bodies
                             .deleted
                             .iter()
                             .copied()
-                            .filter(|&b| is_solid_historical_body(prev_topology, b))
+                            .filter(|&b| prev_index.is_solid(b))
                             .collect();
                         if !whole_deleted.is_empty() {
                             state_deleted_bodies.insert(state.state_id, whole_deleted);
@@ -1232,16 +1208,20 @@ pub(crate) fn bind_feature_outputs(
             };
             history.advance_topology(index);
             let cur_state_id = history.states()[index].state_id;
-            if let Some(topology) = history.topology(&history.states()[index]) {
-                let solid_bodies: BTreeSet<i64> = topology
+            let measured_topology = measured_states
+                .contains(&cur_state_id)
+                .then(|| history.topology(&history.states()[index]))
+                .flatten();
+            if let Some(topology) = measured_topology {
+                let body_index = HistoricalBodyIndex::new(topology);
+                let solid_edges: BTreeMap<i64, Vec<i64>> = topology
                     .bodies
                     .iter()
-                    .copied()
-                    .filter(|&b| is_solid_historical_body(topology, b))
+                    .filter_map(|&b| Some((b, body_index.solid_edges(b)?)))
                     .collect();
                 let mut bounds_list = Vec::new();
-                for &b in &solid_bodies {
-                    if let Some(bds) = historical_body_bounds(topology, b) {
+                for (&b, edges) in &solid_edges {
+                    if let Some(bds) = body_index.edge_bounds(edges) {
                         bounds_list.push((b, bds));
                     } else {
                         losses.push(
@@ -1253,16 +1233,18 @@ pub(crate) fn bind_feature_outputs(
                         );
                     }
                 }
-                if !bounds_list.is_empty() {
-                    state_body_bounds.insert(cur_state_id, bounds_list);
-                }
                 if output_states.contains(&cur_state_id) {
-                    let mut centers = Vec::new();
-                    for &b in &solid_bodies {
-                        if let Some(c) = historical_body_center(topology, b) {
-                            centers.push((b, c));
-                        }
-                    }
+                    let centers: Vec<(i64, cadmpeg_ir::math::Point3)> = bounds_list
+                        .iter()
+                        .map(|&(b, (min_pt, max_pt))| {
+                            let center = cadmpeg_ir::math::Point3::new(
+                                (min_pt.x + max_pt.x) * 0.5,
+                                (min_pt.y + max_pt.y) * 0.5,
+                                (min_pt.z + max_pt.z) * 0.5,
+                            );
+                            (b, center)
+                        })
+                        .collect();
                     if !centers.is_empty() {
                         state_body_centers.insert(cur_state_id, centers);
                     }
@@ -1284,7 +1266,10 @@ pub(crate) fn bind_feature_outputs(
                         }
                     }
                 }
-                state_solid_bodies.insert(cur_state_id, solid_bodies);
+                if !bounds_list.is_empty() {
+                    state_body_bounds.insert(cur_state_id, bounds_list);
+                }
+                state_solid_bodies.insert(cur_state_id, solid_edges.into_keys().collect());
             }
             let mut next_deletions = None;
             let outputs = (|| {
@@ -3691,6 +3676,9 @@ pub(crate) fn project_feature_input_topologies(
                 crate::design::feature_project::work_point_recipe_state_id(scope, edge_operands)
             })
             .or_else(|| crate::design::feature_project::work_plane_recipe_state_id(scope))
+            .or_else(|| {
+                crate::design::edge_resolve::edge_treatment_recipe_state_id(scope, edge_operands)
+            })
             .or_else(|| effective_scope_previous_history_state_id(scope, scoped_histories))
         else {
             continue;

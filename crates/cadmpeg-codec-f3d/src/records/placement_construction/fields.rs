@@ -90,8 +90,14 @@ pub(super) fn validate(
     optional(
         &mut position,
         value.arc_length_for_periodic_face.as_ref(),
-        version >= 11,
+        (11..16).contains(&version),
         8,
+    )?;
+    optional(
+        &mut position,
+        value.periodic_face_mode.as_ref(),
+        version >= 16,
+        1,
     )?;
     optional(&mut position, value.axis_flipped.as_ref(), version >= 8, 1)?;
     optional(

@@ -95,11 +95,12 @@ pub(crate) fn centroid3(a: Point3, b: Point3, c: Point3) -> Point3 {
 
 /// The angle between two vectors, in radians.
 pub(crate) fn angle(a: Vector3, b: Vector3) -> f64 {
-    let norms = length(a) * length(b);
-    if norms == 0.0 {
+    let sin = length(cross(a, b));
+    let cos = dot(a, b);
+    if sin == 0.0 && cos == 0.0 {
         return 0.0;
     }
-    (dot(a, b) / norms).clamp(-1.0, 1.0).acos()
+    sin.atan2(cos)
 }
 
 #[cfg(test)]

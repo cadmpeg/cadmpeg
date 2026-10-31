@@ -40,6 +40,7 @@ pub(super) fn merge_archive(
         decoded,
         stack,
         members: std::collections::BTreeMap::new(),
+        failed: std::collections::BTreeMap::new(),
         operation_poses,
         operation_protected: std::collections::BTreeSet::new(),
     }
@@ -176,6 +177,9 @@ struct MergeSession<'r, 'a> {
     decoded: &'r mut std::collections::BTreeMap<String, F3zDecodedMember>,
     stack: Vec<String>,
     members: std::collections::BTreeMap<String, MemberDefinition>,
+    /// Members whose decode failed, by path, with the failure text. A failed
+    /// member is decoded once; every later reference reports the same loss.
+    failed: std::collections::BTreeMap<String, String>,
     operation_poses: std::collections::BTreeMap<String, crate::xref::operation_pose::OperationPose>,
     operation_protected: std::collections::BTreeSet<cadmpeg_ir::ids::OccurrenceId>,
 }
@@ -268,6 +272,13 @@ impl MergeSession<'_, '_> {
             }
             let ctx = self.ctx;
             let _depth = ctx.enter_nested("f3z member reference")?;
+            if let Some(error) = self.failed.get(reference.relative_path.as_str()) {
+                super::push_loss(&mut parent_report.losses, F3dLossCode::XrefMemberUndecoded, format_args!(
+                    "xref {label}: member {} failed to decode ({error}); the occurrence was not resolved",
+                    reference.relative_path
+                ));
+                continue;
+            }
             let member = if let Some(member) = self.members.get(reference.relative_path.as_str()) {
                 self.ctx.charge_entities(
                     cadmpeg_core::decode::u64_from_index(
@@ -322,6 +333,10 @@ impl MergeSession<'_, '_> {
                             "xref {label}: member {} failed to decode ({error}); the occurrence was not resolved",
                             reference.relative_path
                         ));
+                        self.failed.insert(
+                            reference.relative_path.as_str().to_owned(),
+                            error.to_string(),
+                        );
                         continue;
                     }
                 };
@@ -941,8 +956,17 @@ fn define_member(
         .filter(|body| !owned.contains(&body.id))
         .map(|body| body.id.clone())
         .collect();
-    ctx.charge_entities(1, "F3Z member product definition")?;
     let id = crate::ids::archive_product_definition_id();
+    if let Some(definition) = model
+        .product_definitions
+        .iter_mut()
+        .find(|row| row.id == id)
+    {
+        definition.bodies.extend(bodies);
+        definition.label = (!label.trim().is_empty()).then(|| label.to_owned());
+        return Ok(id);
+    }
+    ctx.charge_entities(1, "F3Z member product definition")?;
     model.product_definitions.push(ProductDefinition {
         id: id.clone(),
         kind: ProductDefinitionKind::Part,
@@ -1012,12 +1036,22 @@ fn scope_document_parameters(ctx: &DecodeContext<'_>, model: &mut Model) -> Resu
             .and_then(|ordinal| ordinal.checked_add(1))
             .ok_or_else(|| CodecError::malformed("merged F3Z feature ordinal exceeds u64::MAX"))?;
     }
+    let mut product_owners = model
+        .parameters
+        .iter()
+        .filter(|row| row.owner.is_none())
+        .map(|row| row.product_definition.clone());
+    let product_definition = product_owners
+        .next()
+        .flatten()
+        .filter(|owner| product_owners.all(|other| other.as_ref() == Some(owner)));
     for parameter in &mut model.parameters {
         if parameter.owner.is_none() {
             parameter.owner = Some(owner.clone());
         }
     }
     model.features.push(Feature {
+        product_definition,
         id: owner,
         ordinal: 0,
         name: None,

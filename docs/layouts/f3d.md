@@ -4194,6 +4194,20 @@ Unstated regions:
 
 - `5..38` (33 B): The compact scalar lanes use the same offsets as the standard construction tail.
 
+## `thread_standard_compact_construction_tail`
+
+Spec §3.1 · layout: byte offsets · size: 38 B
+
+Offsets are relative to the first byte after the third LP-UTF16 string. The variable trailer starts at offset 38 and is stated in the specification.
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 5 | `construction_marker` | `bytes[5]` | little | spec | with the construction marker `01 02 00 00 00` |
+
+Unstated regions:
+
+- `5..38` (33 B): The scalar lanes use the same offsets as the compact tail.
+
 ## `thread_standard_legacy_construction_tail`
 
 Spec §3.1 · layout: byte offsets · size: 42 B
@@ -5714,6 +5728,23 @@ Relative to the first flag byte; excludes the preceding property and first paire
 | 52 | 8 | `unit_pair` | `f32[2]` | little | spec | f32 constants |
 | 60 | 5 | `marker` | `bytes[5]` | little | spec | marker |
 
+## `derived_sketch_point_base_prefix`
+
+Spec §3.1 · layout: byte offsets · size: 30 B
+
+Offsets are relative to the nested base-type frame of a derived sketch-point record. Six zero bytes complete the marked reference.
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 19 | 1 | `paired_reference_marker` | `u8` | little | spec | the marked `paired_reference` at offset 19 · value `1` |
+| 20 | 4 | `paired_reference` | `u32` | little | spec | its u32 record index at offset 20 |
+
+Unstated regions:
+
+- `0..11` (11 B): The nested indexed header repeats the record index of the primary frame.
+- `11..19` (8 B): The nested frame stores zero bytes at offsets 11 through 18.
+- `24..30` (6 B): The marked reference ends with six zero bytes.
+
 ## `sketch_point_v11_tail_prefix`
 
 Spec §3.1 · layout: byte offsets · size: 66 B
@@ -6640,7 +6671,7 @@ The reference starts at offset 36 relative to the Geometry-member indexed header
 | -----: | ---: | ----- | ---- | ------ | --- | ------- |
 | 0 | 1 | `marker` | `u8` | little | spec | byte 36 is `01` · value `1` |
 | 1 | 8 | `target` | `u64` | little | spec | its u64 target at member offset 37 names the ordinal collection |
-| 9 | 2 | `flags` | `bytes[2]` | little | spec | Byte 36 opens a same-segment marked reference; its u64 target at member offset 37 names the ordinal collection. |
+| 9 | 2 | `flags` | `bytes[2]` | little | spec | When it is `01`, its u64 target at member offset 37 names the ordinal collection. |
 
 ## `sketch_ordinal_collection_prefix`
 
@@ -7494,6 +7525,99 @@ Parsed by:
 | 151 | 3 | `zero_separator` | `bytes[3]` | little | spec | The `emboss_counted_suffix` layout starts immediately after the native pair run. · value `[0, 0, 0]` |
 | 154 | 4 | `reference_count` | `u32` | little | spec | The `emboss_counted_suffix` layout starts immediately after the native pair run. |
 
+## `align_scope_prefix`
+
+Spec §3.1 · layout: byte offsets · size: 126 B
+
+Parsed by:
+- `crates/cadmpeg-codec-f3d/src/design/decode/scopes/align.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 11 | `indexed_header` | `bytes[11]` | little | spec | An `Align` prefix precedes its ordered reference table |
+| 11 | 9 | `header_zero` | `bytes[9]` | little | spec | An `Align` prefix precedes its ordered reference table · value `[0, 0, 0, 0, 0, 0, 0, 0, 0]` |
+| 20 | 1 | `zero` | `u8` | little | spec | An `Align` prefix precedes its ordered reference table · value `0` |
+| 21 | 1 | `first_marker` | `u8` | little | spec | An `Align` prefix precedes its ordered reference table · value `1` |
+| 22 | 4 | `first_reference` | `u32` | little | spec | An `Align` prefix precedes its ordered reference table |
+| 26 | 6 | `first_padding` | `bytes[6]` | little | spec | An `Align` prefix precedes its ordered reference table · value `[0, 0, 0, 0, 0, 0]` |
+| 32 | 4 | `source_code` | `u32` | little | spec | An `Align` prefix precedes its ordered reference table |
+| 36 | 1 | `second_marker` | `u8` | little | spec | An `Align` prefix precedes its ordered reference table · value `1` |
+| 37 | 4 | `second_reference` | `u32` | little | spec | An `Align` prefix precedes its ordered reference table |
+| 41 | 6 | `second_padding` | `bytes[6]` | little | spec | An `Align` prefix precedes its ordered reference table · value `[0, 0, 0, 0, 0, 0]` |
+| 47 | 4 | `identity_length` | `u32` | little | spec | An `Align` prefix precedes its ordered reference table · value `36` |
+| 51 | 72 | `identity` | `bytes[72]` | little | spec | An `Align` prefix precedes its ordered reference table |
+| 123 | 3 | `tail_zero` | `bytes[3]` | little | spec | An `Align` prefix precedes its ordered reference table · value `[0, 0, 0]` |
+
+## `align_scope_extended_prefix`
+
+Spec §3.1 · layout: byte offsets · size: 130 B
+
+Parsed by:
+- `crates/cadmpeg-codec-f3d/src/design/decode/scopes/align.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 11 | `indexed_header` | `bytes[11]` | little | spec | An `Align` prefix precedes its ordered reference table |
+| 11 | 9 | `header_zero` | `bytes[9]` | little | spec | An `Align` prefix precedes its ordered reference table · value `[0, 0, 0, 0, 0, 0, 0, 0, 0]` |
+| 20 | 4 | `extra_code` | `u32` | little | spec | An `Align` prefix precedes its ordered reference table · value `1` |
+| 24 | 1 | `zero` | `u8` | little | spec | An `Align` prefix precedes its ordered reference table · value `0` |
+| 25 | 1 | `first_marker` | `u8` | little | spec | An `Align` prefix precedes its ordered reference table · value `1` |
+| 26 | 4 | `first_reference` | `u32` | little | spec | An `Align` prefix precedes its ordered reference table |
+| 30 | 6 | `first_padding` | `bytes[6]` | little | spec | An `Align` prefix precedes its ordered reference table · value `[0, 0, 0, 0, 0, 0]` |
+| 36 | 4 | `source_code` | `u32` | little | spec | An `Align` prefix precedes its ordered reference table |
+| 40 | 1 | `second_marker` | `u8` | little | spec | An `Align` prefix precedes its ordered reference table · value `1` |
+| 41 | 4 | `second_reference` | `u32` | little | spec | An `Align` prefix precedes its ordered reference table |
+| 45 | 6 | `second_padding` | `bytes[6]` | little | spec | An `Align` prefix precedes its ordered reference table · value `[0, 0, 0, 0, 0, 0]` |
+| 51 | 4 | `identity_length` | `u32` | little | spec | An `Align` prefix precedes its ordered reference table · value `36` |
+| 55 | 72 | `identity` | `bytes[72]` | little | spec | An `Align` prefix precedes its ordered reference table |
+| 127 | 3 | `tail_zero` | `bytes[3]` | little | spec | An `Align` prefix precedes its ordered reference table · value `[0, 0, 0]` |
+
+## `align_constructor`
+
+Spec §3.1 · layout: byte offsets · size: 293 B
+
+Parsed by:
+- `crates/cadmpeg-codec-f3d/src/design/decode/scopes/align/construction.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 11 | `indexed_header` | `bytes[11]` | little | spec | The indexed record named by the first Align prefix reference is its constructor |
+| 11 | 20 | `header_zero` | `bytes[20]` | little | spec | The indexed record named by the first Align prefix reference is its constructor · value `[0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]` |
+| 31 | 1 | `first_marker` | `u8` | little | spec | The indexed record named by the first Align prefix reference is its constructor · value `1` |
+| 32 | 4 | `first_word` | `u32` | little | spec | The indexed record named by the first Align prefix reference is its constructor |
+| 36 | 6 | `first_padding` | `bytes[6]` | little | spec | The indexed record named by the first Align prefix reference is its constructor · value `[0, 0, 0, 0, 0, 0]` |
+| 42 | 1 | `second_marker` | `u8` | little | spec | The indexed record named by the first Align prefix reference is its constructor · value `1` |
+| 43 | 4 | `second_word` | `u32` | little | spec | The indexed record named by the first Align prefix reference is its constructor |
+| 47 | 6 | `second_padding` | `bytes[6]` | little | spec | The indexed record named by the first Align prefix reference is its constructor · value `[0, 0, 0, 0, 0, 0]` |
+| 53 | 1 | `third_marker` | `u8` | little | spec | The indexed record named by the first Align prefix reference is its constructor · value `1` |
+| 54 | 4 | `third_word` | `u32` | little | spec | The indexed record named by the first Align prefix reference is its constructor |
+| 58 | 6 | `third_padding` | `bytes[6]` | little | spec | The indexed record named by the first Align prefix reference is its constructor · value `[0, 0, 0, 0, 0, 0]` |
+| 64 | 4 | `first_code` | `u32` | little | spec | The indexed record named by the first Align prefix reference is its constructor |
+| 68 | 1 | `fourth_marker` | `u8` | little | spec | The indexed record named by the first Align prefix reference is its constructor · value `1` |
+| 69 | 4 | `fourth_word` | `u32` | little | spec | The indexed record named by the first Align prefix reference is its constructor |
+| 73 | 10 | `fourth_padding` | `bytes[10]` | little | spec | The indexed record named by the first Align prefix reference is its constructor · value `[0, 0, 0, 0, 0, 0, 0, 0, 0, 0]` |
+| 83 | 4 | `second_code` | `u32` | little | spec | The indexed record named by the first Align prefix reference is its constructor |
+| 87 | 1 | `matrix_zero` | `bytes[1]` | little | spec | The indexed record named by the first Align prefix reference is its constructor · value `[0]` |
+| 88 | 128 | `matrix_scalars` | `f64[16]` | little | spec | The indexed record named by the first Align prefix reference is its constructor |
+| 216 | 2 | `matrix_tail_zero` | `bytes[2]` | little | spec | The indexed record named by the first Align prefix reference is its constructor · value `[0, 0]` |
+| 218 | 4 | `third_code` | `u32` | little | spec | The indexed record named by the first Align prefix reference is its constructor |
+| 222 | 1 | `owner_zero` | `bytes[1]` | little | spec | The indexed record named by the first Align prefix reference is its constructor · value `[0]` |
+| 223 | 1 | `owner_marker` | `u8` | little | spec | The indexed record named by the first Align prefix reference is its constructor · value `1` |
+| 224 | 4 | `owner_word` | `u32` | little | spec | The indexed record named by the first Align prefix reference is its constructor |
+| 228 | 13 | `owner_padding` | `bytes[13]` | little | spec | The indexed record named by the first Align prefix reference is its constructor · value `[0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]` |
+| 241 | 4 | `first_scalar_code` | `u32` | little | spec | The indexed record named by the first Align prefix reference is its constructor |
+| 245 | 8 | `scalar` | `f64` | little | spec | The indexed record named by the first Align prefix reference is its constructor |
+| 253 | 4 | `second_scalar_code` | `u32` | little | spec | The indexed record named by the first Align prefix reference is its constructor |
+| 257 | 1 | `first_companion_marker` | `u8` | little | spec | The indexed record named by the first Align prefix reference is its constructor · value `1` |
+| 258 | 4 | `first_companion_word` | `u32` | little | spec | The indexed record named by the first Align prefix reference is its constructor |
+| 262 | 7 | `first_companion_padding` | `bytes[7]` | little | spec | The indexed record named by the first Align prefix reference is its constructor · value `[0, 0, 0, 0, 0, 0, 0]` |
+| 269 | 1 | `second_companion_marker` | `u8` | little | spec | The indexed record named by the first Align prefix reference is its constructor · value `1` |
+| 270 | 4 | `second_companion_word` | `u32` | little | spec | The indexed record named by the first Align prefix reference is its constructor |
+| 274 | 6 | `second_companion_padding` | `bytes[6]` | little | spec | The indexed record named by the first Align prefix reference is its constructor · value `[0, 0, 0, 0, 0, 0]` |
+| 280 | 1 | `repeated_owner_marker` | `u8` | little | spec | The indexed record named by the first Align prefix reference is its constructor · value `1` |
+| 281 | 4 | `repeated_owner_word` | `u32` | little | spec | The indexed record named by the first Align prefix reference is its constructor |
+| 285 | 8 | `repeated_owner_padding` | `bytes[8]` | little | spec | The indexed record named by the first Align prefix reference is its constructor · value `[0, 0, 0, 0, 0, 0, 0, 0]` |
+
 ## `sketch_typed_compact_member_head`
 
 Spec §3.1 · layout: byte offsets · size: 74 B
@@ -7764,6 +7888,26 @@ Unstated regions:
 - `33..35` (2 B): Two zero trailing bytes of the local component reference.
 - `200..201` (1 B): Zero separator.
 - `210..212` (2 B): Zero trailing field of the repeated component-record reference.
+
+## `placement_v16_solved_prefix`
+
+Spec §3.1 · layout: byte offsets · size: 49 B
+
+Version-16 placement prefix. The mode value gates solved WorkPlane frame binding.
+
+Parsed by:
+- `crates/cadmpeg-codec-f3d/src/design/decode/placement_construction/fields.rs`
+- `crates/cadmpeg-codec-f3d/src/design/decode/placement_construction/work_planes.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 11 | `indexed_header` | `bytes[11]` | little | spec | An indexed Design record header is |
+| 11 | 10 | `zero_prefix` | `bytes[10]` | little | spec | The bytes from indexed-header offset 11 through 20 are zero |
+| 21 | 1 | `linear_offset_on_periodic_face` | `u8` | little | spec | LinearOffsetOnPeriodicFace |
+| 22 | 24 | `align_up_direction` | `f64[3]` | little | derived | Follows the one-byte linear-offset member. |
+| 46 | 1 | `periodic_face_mode` | `u8` | little | derived | Follows the three-f64 alignment vector. Zero admits solved frame binding. · value `0` |
+| 47 | 1 | `axis_flipped` | `u8` | little | derived | Follows the one-byte periodic-face mode. |
+| 48 | 1 | `use_u_direction` | `u8` | little | derived | Follows the one-byte axis control. |
 
 ## Not tabulated
 

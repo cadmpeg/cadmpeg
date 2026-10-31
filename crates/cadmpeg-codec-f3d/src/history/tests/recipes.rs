@@ -347,6 +347,7 @@ fn feature_input_topology_projects_historical_vertices() {
         })
         .unwrap();
     let feature = Feature {
+        product_definition: None,
         id: cadmpeg_ir::features::FeatureId::mint("f3d:model:feature#work-point")
             .expect("identity grammar"),
         ordinal: 0,
@@ -920,6 +921,7 @@ fn direct_body_recipe_selection_resolves_compact_coil_target() {
                     opaque_scalar: 0.0,
                     opaque_scalar_offset: 22,
                     variant: false,
+                    closing_flag: false,
                 },
             )
             .unwrap(),
@@ -1217,6 +1219,7 @@ fn direct_body_recipe_selection_resolves_compact_coil_target() {
         shells: std::slice::from_ref(&shell),
     };
     let mut feature = Feature {
+        product_definition: None,
         id: FeatureId::mint("f3d:test:feature#scale").expect("identity grammar"),
         ordinal: 0,
         name: None,
@@ -1273,6 +1276,7 @@ fn direct_body_recipe_selection_resolves_compact_coil_target() {
         shells: std::slice::from_ref(&shell),
     };
     let mut move_feature = Feature {
+        product_definition: None,
         id: FeatureId::mint("f3d:test:feature#move").expect("identity grammar"),
         ordinal: 0,
         name: None,
@@ -1318,6 +1322,7 @@ fn base_feature_body_selection_uses_active_transition_outputs() {
     use cadmpeg_ir::ids::BodyId;
 
     let mut feature = Feature {
+        product_definition: None,
         id: FeatureId::mint("test:model:feature#feature").expect("identity grammar"),
         ordinal: 0,
         name: None,

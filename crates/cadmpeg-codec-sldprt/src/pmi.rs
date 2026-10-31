@@ -473,6 +473,7 @@ pub(crate) fn apply_to_parameters(
             None => 0,
         };
         parameters.push(DesignParameter {
+            product_definition: None,
             id: ParameterId::compose(
                 &cadmpeg_ir::identity_namespace!("sldprt", "model", "parameter"),
                 cadmpeg_ir::identity_key!("pmi:").then(

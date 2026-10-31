@@ -13,6 +13,8 @@
     clippy::trivially_copy_pass_by_ref
 )]
 
+pub(crate) mod align;
+
 use std::io::Write;
 
 use cadmpeg_core::CodecError;

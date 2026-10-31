@@ -137,6 +137,7 @@ fn finalize_result(
     body: DecodeBody,
     source_fidelity: cadmpeg_ir::SourceFidelity,
 ) -> Result<Decoded, CodecError> {
+    crate::design::owners::release_unbound(&mut ir.model);
     ir.finalize();
     let hash = cadmpeg_ir::hash::document_local_sha256(
         ctx,

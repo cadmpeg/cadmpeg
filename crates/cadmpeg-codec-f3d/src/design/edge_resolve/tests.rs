@@ -1908,6 +1908,7 @@ fn edge_assignment_pairs_single_candidates() {
 
 mod assignment_recursion;
 mod group_candidates;
+mod recipe_state;
 
 #[test]
 fn sweep_recipe_edge_requires_incidence_and_two_reference_faces() {
