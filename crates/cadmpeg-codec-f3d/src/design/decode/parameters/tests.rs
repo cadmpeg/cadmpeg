@@ -23,7 +23,27 @@ use crate::test_support::lp_utf16;
 use crate::test_support::manifest_test::write_synthetic_manifests;
 use crate::test_support::zip_test::with_scan;
 
+mod registered_tail;
 mod unparsed_frames;
+
+#[test]
+fn discriminated_user_parameter_preserves_length_expression_and_unit() {
+    let mut frame = parameter_record(
+        None,
+        "1.65 mm",
+        "User Parameter",
+        Some("mm"),
+        "Head_Length",
+        0.165,
+    );
+    frame[4..7].copy_from_slice(b"286");
+    frame[22..30].copy_from_slice(&5u64.to_le_bytes());
+    let parameter = parse_design_parameter_record(&frame).expect("document length parameter");
+    assert_eq!(parameter.name(), "Head_Length");
+    assert_eq!(parameter.expression(), "1.65 mm");
+    assert_eq!(parameter.unit().unwrap().value, "mm");
+    assert_eq!(parameter.owner_record_index(), None);
+}
 
 fn compact_owned_parameter_record(
     owner_record_index: u32,

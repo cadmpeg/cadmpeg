@@ -6,6 +6,7 @@ mod align;
 mod archive_session;
 mod attribute_colors;
 mod body_reference_tails;
+mod configuration_parameters;
 mod design_containment;
 mod emboss_operands;
 mod history_deltas;
