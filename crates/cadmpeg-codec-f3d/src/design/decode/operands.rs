@@ -28,6 +28,7 @@ use crate::design::decode::text::design_record_id;
 use crate::design::decode::text::relaxed_guid_end;
 use crate::design::{design_feature_family, DesignFeatureFamily};
 use crate::ids::native_stream;
+use crate::layout::body_recipe_family_name_frame as body_recipe_end;
 use crate::layout::class_338_sketch_curve_identity as class_338_curve;
 use crate::layout::coil_compact_face_selection_prefix as coil_face_sel;
 use crate::layout::coil_compact_persistent_selection_prefix as coil_persist_sel;
@@ -4194,6 +4195,7 @@ pub(crate) fn decode_body_recipe_operands(
                 continue;
             };
             let Some(recipe) = unique_body_recipe_with_index(
+                bytes,
                 records,
                 header,
                 body_recipes_by_stream
@@ -4256,6 +4258,7 @@ pub(crate) fn decode_body_recipe_operands(
                 continue;
             };
             let Some(recipe) = unique_body_recipe_with_index(
+                bytes,
                 records,
                 header,
                 body_recipes_by_stream
@@ -4309,7 +4312,9 @@ fn push_body_recipe_operand(
 
 /// Select the sole body recipe in the structural interval after the `N+3`
 /// header and before the enclosing `N+4` header. The bounded Design stream,
-/// rather than an arbitrary byte distance, limits the interval.
+/// rather than an arbitrary byte distance, limits the interval. A stream with
+/// no `N+4` header after the prologue admits the first body recipe that
+/// `body_recipe_operand_end_with_index` closes.
 #[cfg(test)]
 fn unique_body_recipe<'a>(
     bytes: &[u8],
@@ -4317,21 +4322,35 @@ fn unique_body_recipe<'a>(
     recipes: &'a [&'a ConstructionRecipe],
 ) -> Option<&'a ConstructionRecipe> {
     let records = crate::design::test_support::indexed_record_offsets_for_test(bytes);
-    unique_body_recipe_with_index(&records, header, recipes)
+    unique_body_recipe_with_index(bytes, &records, header, recipes)
 }
 
 fn unique_body_recipe_with_index<'a>(
+    bytes: &[u8],
     records: &IndexedRecordOffsets,
     header: &DesignRecordHeader,
     recipes: &'a [&'a ConstructionRecipe],
 ) -> Option<&'a ConstructionRecipe> {
     let start = usize::try_from(header.byte_offset).ok()?;
     let prologue_end = body_recipe_prologue_end_with_index(records, start, header.record_index)?;
-    let next_at = records.first_at_or_after(prologue_end, header.record_index.checked_add(4)?)?;
     let lower = u64::try_from(prologue_end).ok()?;
+    let first = recipes.partition_point(|recipe| recipe.byte_offset < lower);
+    let Some(next_at) =
+        records.first_at_or_after(prologue_end, header.record_index.checked_add(4)?)
+    else {
+        let recipe = recipes.get(first)?;
+        let recipe_at = usize::try_from(recipe.byte_offset).ok()?;
+        body_recipe_operand_end_with_index(
+            bytes,
+            records,
+            prologue_end,
+            header.record_index,
+            recipe_at,
+        )?;
+        return Some(recipe);
+    };
     let upper = u64::try_from(next_at).ok()?;
-    let matching = &recipes[recipes.partition_point(|recipe| recipe.byte_offset < lower)
-        ..recipes.partition_point(|recipe| recipe.byte_offset < upper)];
+    let matching = &recipes[first..recipes.partition_point(|recipe| recipe.byte_offset < upper)];
     let [recipe] = matching else {
         return None;
     };
@@ -4368,30 +4387,48 @@ fn body_recipe_prologue_end_with_index(
     Some(search)
 }
 
-/// Offset of the record carrying `record_index + 4` that closes a body-recipe
+/// Record index and offset of the indexed header that closes a body-recipe
 /// operand whose recipe sits at `recipe_at`. The recipe must follow the
 /// prologue that ends at `prologue_end`.
+///
+/// The header is record `record_index + 4` when the stream stores that record
+/// after the prologue. Otherwise the recipe record is the only indexed record
+/// after the prologue, and its successor must start at the recipe's fixed end.
 #[cfg(test)]
 fn body_recipe_operand_end(
     bytes: &[u8],
     prologue_end: usize,
     record_index: u32,
     recipe_at: usize,
-) -> Option<usize> {
+) -> Option<(u32, usize)> {
     let records = crate::design::test_support::indexed_record_offsets_for_test(bytes);
-    body_recipe_operand_end_with_index(&records, prologue_end, record_index, recipe_at)
+    body_recipe_operand_end_with_index(bytes, &records, prologue_end, record_index, recipe_at)
 }
 
 fn body_recipe_operand_end_with_index(
+    bytes: &[u8],
     records: &IndexedRecordOffsets,
     prologue_end: usize,
     record_index: u32,
     recipe_at: usize,
-) -> Option<usize> {
+) -> Option<(u32, usize)> {
     if recipe_at < prologue_end {
         return None;
     }
-    records.first_at_or_after(recipe_at, record_index.checked_add(4)?)
+    let successor = record_index.checked_add(4)?;
+    if records.first_at_or_after(prologue_end, successor).is_some() {
+        return Some((successor, records.first_at_or_after(recipe_at, successor)?));
+    }
+    let recipe_record_at = next_indexed_record_offset(bytes, prologue_end)?;
+    let close_at =
+        next_indexed_record_offset(bytes, recipe_record_at.checked_add(indexed_header::LEN)?)?;
+    if recipe_record_at >= recipe_at || close_at != recipe_at.checked_add(body_recipe_end::LEN)? {
+        return None;
+    }
+    Some((
+        View::u32_le_at(bytes, close_at.checked_add(indexed_header::RECORD_INDEX)?)?,
+        close_at,
+    ))
 }
 
 #[cfg(test)]
@@ -4445,8 +4482,13 @@ fn parse_body_recipe_operand_frame_with_index(
     let start = usize::try_from(header.byte_offset).ok()?;
     let recipe_at = usize::try_from(recipe.byte_offset).ok()?;
     let prologue_end = body_recipe_prologue_end_with_index(records, start, header.record_index)?;
-    let next_at =
-        body_recipe_operand_end_with_index(records, prologue_end, header.record_index, recipe_at)?;
+    let (next_record_index, next_at) = body_recipe_operand_end_with_index(
+        bytes,
+        records,
+        prologue_end,
+        header.record_index,
+        recipe_at,
+    )?;
     let reference_count = usize::try_from(View::u32_le_at(bytes, start + 21)?).ok()?;
     // The legacy Combine form permits an empty persistent-reference table;
     // its marker then starts at the ordinary post-count cursor. The history
@@ -4530,7 +4572,7 @@ fn parse_body_recipe_operand_frame_with_index(
             resolved_body_state_id: None,
             resolved_body_slot: None,
             resolved_body_face_slots: Vec::new(),
-            next_record_index: header.record_index.checked_add(4)?,
+            next_record_index,
             next_byte_offset: u64::try_from(next_at).ok()?,
         },
     )
