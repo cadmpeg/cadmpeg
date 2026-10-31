@@ -224,7 +224,7 @@ pub(super) fn scan(
         }
         let copied_geometry = geometry.clone();
         out.push(Wrapper::Curve(CurveCarrier {
-            runs_against_edges: false,
+            marker_reversed: None,
             attr,
             offset: off,
             end: record_end,
@@ -321,7 +321,7 @@ mod tests {
     fn carriers() -> CarrierIndex {
         let mut carriers = CarrierIndex::default();
         carriers.insert(super::super::Carrier::Curve(CurveCarrier {
-            runs_against_edges: false,
+            marker_reversed: None,
             attr: 10,
             offset: 100,
             end: 120,
@@ -348,7 +348,7 @@ mod tests {
         .expect("valid NURBS fixture");
         let mut carriers = CarrierIndex::default();
         carriers.insert(super::super::Carrier::Curve(CurveCarrier {
-            runs_against_edges: false,
+            marker_reversed: None,
             attr: 10,
             offset: 100,
             end: 120,
@@ -396,7 +396,7 @@ mod tests {
         .expect("degree-16 version of the same line");
         let mut spline_carriers = CarrierIndex::default();
         spline_carriers.insert(super::super::Carrier::Curve(CurveCarrier {
-            runs_against_edges: false,
+            marker_reversed: None,
             attr: 10,
             offset: 100,
             end: 120,
@@ -548,7 +548,7 @@ mod tests {
         // Chart 10 runs from (0, 0, 0) to (10, 0, 0) to (10, 10, 0) mm.
         let chart = super::super::intersection::IntersectionCarrier {
             carrier: CurveCarrier {
-                runs_against_edges: false,
+                marker_reversed: None,
                 attr: 10,
                 offset: 100,
                 end: 120,

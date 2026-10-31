@@ -459,9 +459,10 @@ fn admit_tolerant_edge_uses(t: &mut Tables, candidates: CandidateMap<EdgeUse>) {
 /// `refs[3]` = support curve carrier. The compact layout has no canonical-coedge slot.
 ///
 /// Coedge `00 11`: 21-byte body, no magic, `refs[9]` at body+2, marker at
-/// body+20. `refs[1]` = owning loop, `refs[2]`/`refs[3]` = forward/backward
-/// coedge, `refs[4]` = forward (end) vertex-use, `refs[5]` = twin coedge,
-/// `refs[6]` = edge-use.
+/// body+20. `refs[1]` = owning loop, `refs[2]` = forward coedge, `refs[3]` =
+/// backward coedge in a forward-linked loop and next coedge in another loop,
+/// `refs[4]` = end vertex-use in a forward-linked loop and start vertex-use in
+/// another loop, `refs[5]` = twin coedge, `refs[6]` = edge-use.
 fn parse_coedge_candidates(buf: &[u8], off: usize) -> Vec<(Coedge, usize)> {
     let Some(p) = body_start(buf, off, 0x11) else {
         return Vec::new();
@@ -2510,7 +2511,7 @@ mod tests {
 
     fn partition_without_middle_fin() -> Vec<u8> {
         let mut bytes = crate::test_support::parasolid::triangle_body();
-        let original = crate::test_support::parasolid::coedge(31, 20, 30, 52, 0, 41, false);
+        let original = crate::test_support::parasolid::coedge(31, 20, 32, 51, 0, 41, false);
         let at = bytes
             .windows(original.len())
             .position(|window| window == original)

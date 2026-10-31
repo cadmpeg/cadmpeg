@@ -942,7 +942,7 @@ pub(crate) fn scan_curve_carriers(
             }
         };
         out.entry(attr).or_insert(CurveCarrier {
-            runs_against_edges: false,
+            marker_reversed: None,
             attr,
             offset: off,
             end: off + 2,
@@ -1289,6 +1289,7 @@ pub(crate) fn scan_surface_carriers(
             end: off + 2,
             geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(nurbs)),
             orientation_reversed: false,
+            marker_reversed: false,
         });
     }
     out

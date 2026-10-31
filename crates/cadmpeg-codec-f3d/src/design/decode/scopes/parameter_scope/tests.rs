@@ -2,6 +2,7 @@
 
 use super::first_marked_reference_offsets;
 use super::named_parameter_scope_tail_is_valid;
+use super::reference_table_ends_at;
 use crate::test_support::lp_utf16;
 
 fn named_scope_tail(lane_value: u64) -> Vec<u8> {
@@ -487,4 +488,19 @@ fn unassigned_extrude_extent_retains_scope_with_a_loss() {
         70,
     );
     assert!(super::extrude_extent_native_loss(&sketch).is_none());
+}
+
+#[test]
+fn a_scanned_count_whose_table_overflows_is_rejected_not_fatal() {
+    // An exact table: four count bytes, then two 11-byte entries.
+    assert!(reference_table_ends_at(100, 2, 11, 126));
+    assert!(!reference_table_ends_at(100, 3, 11, 126));
+    assert!(!reference_table_ends_at(100, 0, 11, 104));
+    // Arbitrary bytes read as a count overflow `count * stride` (on a 32-bit
+    // target, any u32 above `usize::MAX / stride`): that offset is not the
+    // table, so the scan goes on instead of abandoning the scope.
+    assert!(!reference_table_ends_at(100, usize::MAX, 11, 126));
+    assert!(!reference_table_ends_at(usize::MAX - 2, 1, 11, 126));
+    let wide = usize::MAX / 11 + 1;
+    assert!(!reference_table_ends_at(100, wide, 11, 126));
 }

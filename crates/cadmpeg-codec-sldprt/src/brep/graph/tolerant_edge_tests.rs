@@ -396,7 +396,7 @@ fn triangle_on_sp_curve(edge_40: &[u8], coedge_30: &[u8], from: [f64; 2], to: [f
     };
     let mut body = triangle_body();
     replace(&mut body, &edge_use(40, 0), edge_40);
-    replace(&mut body, &coedge(30, 20, 32, 51, 0, 40, false), coedge_30);
+    replace(&mut body, &coedge(30, 20, 31, 50, 0, 40, false), coedge_30);
     body.extend(planar_b_curve(from, to, false));
     body.extend(sp_curve_records(
         100,
@@ -418,7 +418,7 @@ fn decode_edge_40(body: &[u8]) -> (Brep, cadmpeg_ir::topology::Edge) {
 }
 
 fn plain_coedge_30() -> Vec<u8> {
-    crate::test_support::parasolid::coedge(30, 20, 32, 51, 0, 40, false)
+    crate::test_support::parasolid::coedge(30, 20, 31, 50, 0, 40, false)
 }
 
 #[test]

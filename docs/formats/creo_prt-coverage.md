@@ -1088,3 +1088,36 @@ circle holes use analytic disk containment. Circle carriers, diametric native
 pcurve endpoints, strict perimeter containment, and pairwise disk separation
 remain required. Synthetic coverage admits separated holes and refuses
 boundary tangency and intersecting holes.
+
+### Bounded rotation carriers and cap charts
+
+The reader shares the complete rotation-frame gate across named parameters,
+positional carriers, and plane-frame validation. Bounded cylinder admission
+also checks the stored parameter limits and extent witnesses. An active
+boundary plane uses one source-ownership predicate for namespace selection,
+frame transfer, orientation, and boundary joins. Conflicting carriers retain
+`geometry.revolution-carrier-unresolved`; incomplete active plane joins retain
+`geometry.active-boundary-plane-unresolved`.
+
+Partial cylinder domains and complete boundary charts can prove circular edge
+intervals. Planar cap projection retains the complete circle and its interval. A complete
+plane chart and proved circle intervals can supply cap endpoint paths when
+both native paths are absent. An existing native candidate keeps its endpoint
+authority.
+Paired partial cylinder domains can prove a shared generator from complete
+endpoint charts, one exactly constant angular path, matching domain boundaries,
+and agreeing full paths. Recognized conflicting generator charts retain the
+boundary-interval loss. Synthetic checks refuse full-turn travel and a missing
+constant path.
+A mixed cap requires a strictly convex line perimeter and disjoint complete
+circular holes. An unresolved stored-domain interval retains
+`geometry.revolution-boundary-interval-unresolved`, and its connected faces
+remain native. Synthetic checks cover
+frame completion, shared carrier refusal, directed circle intervals, bounded
+generator paths, and cap containment.
+
+A materialized native solid that contains a source-owned face represents that
+feature's material result. Procedural circular extrusion, linear extrusion,
+and revolution bodies defer to that native result. Feature ownership follows
+the unique surface row through its admitted face, shell, region, and body.
+Synthetic checks distinguish the owning feature, another feature, and a sheet.

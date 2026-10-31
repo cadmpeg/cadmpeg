@@ -132,7 +132,7 @@ impl IntersectionCarrier {
                 end: record.end,
                 geometry: CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(curve)),
                 parameter_range: Some(cadmpeg_ir::units::FiniteVector::new(range)?),
-                runs_against_edges: false,
+                marker_reversed: None,
             },
             support_data: IntersectionSupportData {
                 supports: self.support_data.supports,
@@ -707,7 +707,7 @@ pub(super) fn scan_intersection_carriers(
         );
         out.entry(attr).or_insert(IntersectionCarrier {
             carrier: CurveCarrier {
-                runs_against_edges: false,
+                marker_reversed: None,
                 attr,
                 offset,
                 end: body + isect::LEN,
@@ -1199,7 +1199,7 @@ mod tests {
             .collect::<Vec<_>>();
         super::IntersectionCarrier {
             carrier: super::CurveCarrier {
-                runs_against_edges: false,
+                marker_reversed: None,
                 attr: 9,
                 offset: 0,
                 end: 0,

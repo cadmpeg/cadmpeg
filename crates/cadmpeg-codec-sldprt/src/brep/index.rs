@@ -92,7 +92,7 @@ impl CarrierIndex {
             Carrier::Curve(carrier) => {
                 if let Some(IndexedCurve::Exact(known)) = self.curves.get(&carrier.attr) {
                     if known.geometry == carrier.geometry
-                        && known.runs_against_edges != carrier.runs_against_edges
+                        && known.marker_reversed != carrier.marker_reversed
                     {
                         self.marker_conflicts.insert(carrier.attr);
                     }
@@ -343,7 +343,7 @@ impl CarrierIndex {
                             cadmpeg_ir::geometry::SolvedCurveGeometry::Nurbs(refined.curve),
                         ),
                         parameter_range: None,
-                        runs_against_edges: false,
+                        marker_reversed: None,
                     },
                     support_data: intersection::IntersectionSupportData {
                         supports,
@@ -723,7 +723,7 @@ mod tests {
         knots.push(length);
         super::intersection::IntersectionCarrier {
             carrier: super::CurveCarrier {
-                runs_against_edges: false,
+                marker_reversed: None,
                 attr,
                 offset: 0,
                 end: 0,
@@ -884,6 +884,7 @@ mod tests {
                     PlaneSurface::try_new(origin, normal, reference).expect("plane fixture"),
                 )),
                 orientation_reversed: false,
+                marker_reversed: false,
             })
         };
         let x = Vector3::new(1.0, 0.0, 0.0);
@@ -904,7 +905,7 @@ mod tests {
             },
         );
         carriers.insert(Carrier::Curve(CurveCarrier {
-            runs_against_edges: false,
+            marker_reversed: None,
             attr: 7,
             offset: 0,
             end: 0,

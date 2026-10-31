@@ -726,3 +726,151 @@ fn floating_cylinder_instances_share_bounded_frame_admission() {
         }
     }
 }
+
+#[test]
+fn subunit_rotation_pipeline_uses_the_shared_frame_gate() {
+    let mut frame = vec![0x0f, 0x18, 0x19, 0x80, 0, 0, 0, 0, 0, 0, 0x18, 0x10, 0x18];
+    frame.extend([0x19, 0x80, 0, 0, 0, 0, 0, 0, 0x18, 0x10]);
+    frame.extend([0x18, 0x2f, 0x08, 0, 0x2f, 0x10, 0]);
+    let envelope = [
+        0x18, 0x2f, 0x10, 0, 0x11, 0x2f, 0x24, 0, 0x48, 0, 0, 0x0f, 0x48, 0x18, 0, 0x2f, 0, 0,
+        0x2f, 0x08, 0, 0x19, 0x80, 0, 0, 0, 0, 0, 0,
+    ];
+    for trailing in [false, true] {
+        let mut payload = b"srf_array\0\xf8\x01".to_vec();
+        payload.extend([7, 0x24, 4, 0x01, 0, 0]);
+        payload.extend(envelope);
+        payload.extend(b"\xe0\0srf_prim_ptr(cylinder)\0\xe0\x02local_sys\0\xf9\x04\x03");
+        payload.extend(&frame);
+        if trailing {
+            payload.push(0x18);
+        }
+        payload.extend(b"\xe0\x02radius\0\x2f\x00\x00\xe1crv_array\0\xf3\xf8\0");
+        let mut active = b"srf_array\0\xf8\x01".to_vec();
+        active.extend([9, 0x22, 4, 0xf6, 0, 7]);
+        active.extend([
+            0x18, 0x18, 0x2f, 0, 0, 0x2f, 0, 0, 0x18, 0x2f, 0x08, 0, 0x2f, 0x10, 0, 0x2f, 0, 0,
+            0x0f, 0x2f, 0x10, 0,
+        ]);
+        active.push(0xe3);
+        active.extend(&frame);
+        if trailing {
+            active.push(0x18);
+        }
+        active.extend([0xe3, 0xe1]);
+        let result = decode(build_prt(
+            "integration",
+            &[("ND:0:VisibGeom:0", payload), ("ND:0:ActDatums:0", active)],
+        ));
+        assert_valid(&result);
+        let native = result.ir().native.namespace("creo").expect("native Creo");
+        let parameter = native.arenas()["surface_parameters"]
+            .iter()
+            .find(|record| record.id() == "creo:visibgeom:surface_parameter#7")
+            .expect("named envelope");
+        assert_eq!(
+            crate::test_support::native_bytes(&parameter.fields().expect("fields")["body"]),
+            envelope
+        );
+        let active_plane = result
+            .ir()
+            .model
+            .surfaces
+            .iter()
+            .find(|surface| surface.id.as_str() == "creo:actdatums:surface#9");
+        if trailing {
+            assert!(active_plane.is_none());
+            assert!(result.report().losses.iter().any(|loss| loss.code
+                == crate::loss::CreoLossCode::ActiveBoundaryPlaneUnresolved.kind()
+                && loss.message.contains('9')));
+        } else {
+            let SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(plane)) =
+                active_plane.expect("source-owned boundary plane").geometry
+            else {
+                panic!("plane chart");
+            };
+            assert_eq!(<[f64; 3]>::from(plane.origin().get()), [0.0, 3.0, 4.0]);
+            assert!(plane.frame().axis().as_raw().z < -0.999_999_999);
+        }
+        let surface = result
+            .ir()
+            .model
+            .surfaces
+            .iter()
+            .find(|s| s.id.as_str() == "creo:visibgeom:surface#7");
+        if trailing {
+            assert!(surface.is_none_or(|surface| matches!(
+                surface.geometry,
+                SurfaceGeometry::Solved(SolvedSurfaceGeometry::Unknown { .. })
+            )));
+            assert!(result.report().losses.iter().any(|loss| loss.code
+                == crate::loss::CreoLossCode::RevolutionCarrierUnresolved.kind()
+                && loss.message.contains('7')));
+        } else {
+            let SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(cylinder)) =
+                surface.expect("named cylinder").geometry
+            else {
+                panic!("cylinder carrier");
+            };
+            assert_eq!(cylinder.radius().get(), 2.0);
+            assert_eq!(<[f64; 3]>::from(cylinder.origin().get()), [0.0, 3.0, 4.0]);
+        }
+    }
+    for trailing in [false, true] {
+        let mut payload = b"srf_array\0\xf8\x01".to_vec();
+        payload.extend([7, 0x24, 4, 0x01, 0, 0]);
+        payload.extend(envelope);
+        payload.push(0xe3);
+        payload.extend(&frame);
+        if trailing {
+            payload.push(0x18);
+        }
+        payload.extend([0x2f, 0, 0, 0xe3]);
+        payload.extend(b"crv_array\0\xf3\xf8\0");
+        let result = decode(build_prt("integration", &[("ND:0:VisibGeom:0", payload)]));
+        assert_valid(&result);
+        let surface = result
+            .ir()
+            .model
+            .surfaces
+            .iter()
+            .find(|s| s.id.as_str() == "creo:visibgeom:surface#7");
+        if trailing {
+            assert!(surface.is_none_or(|surface| matches!(
+                surface.geometry,
+                SurfaceGeometry::Solved(SolvedSurfaceGeometry::Unknown { .. })
+            )));
+            assert!(result.report().losses.iter().any(|loss| loss.code
+                == crate::loss::CreoLossCode::RevolutionCarrierUnresolved.kind()
+                && loss.message.contains('7')));
+        } else {
+            let SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(cylinder)) =
+                surface.expect("inline cylinder").geometry
+            else {
+                panic!("cylinder carrier");
+            };
+            assert_eq!(cylinder.radius().get(), 2.0);
+            assert_eq!(<[f64; 3]>::from(cylinder.origin().get()), [0.0, 3.0, 4.0]);
+        }
+    }
+    let mut sampled = b"topol_ref_data\0".to_vec();
+    sampled.extend([13, 0, 4, 1, 0xf6, 0xfc, 2]);
+    sampled.extend([
+        0x18, 0xe4, 0x13, 0x18, 0x19, 0x80, 0, 0, 0, 0, 0, 0, 0x2f, 0x14, 0, 0x13, 0x2f, 0x14, 0,
+    ]);
+    sampled.extend([11, 9, 13, 13, 0, 0, 0xe3, 0xe1, 0xe3]);
+    let samples = crate::decode::with_service_context(|ctx| {
+        crate::curve::two_chart_pcurve_samples(
+            ctx,
+            &sampled,
+            Some(&std::collections::BTreeSet::from([11, 9])),
+            &mut Vec::new(),
+        )
+    })
+    .expect("counted endpoint charts");
+    assert_eq!(samples.len(), 1);
+    assert_eq!(
+        samples[0].samples[1][0],
+        [f64::from_bits(0x3c80_0000_0000_0000), 5.0]
+    );
+}

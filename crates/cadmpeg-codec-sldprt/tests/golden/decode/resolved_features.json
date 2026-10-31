@@ -369,6 +369,17 @@
       },
       {
         "code": {
+          "code": "topology.face-withheld",
+          "kind": "topology_not_transferred",
+          "namespace": "sldprt",
+          "scope": "namespaced",
+          "strict_floor": "warning"
+        },
+        "message": "1 face(s) were withheld with their surface because no loop of the face decodes.",
+        "severity": "warning"
+      },
+      {
+        "code": {
           "code": "config.lane-identity-unresolved",
           "kind": "feature_history_retained",
           "namespace": "sldprt",

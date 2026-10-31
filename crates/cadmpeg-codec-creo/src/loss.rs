@@ -86,6 +86,9 @@ pub(crate) enum CreoLossCode {
     PlaneCompactFrameUnresolved,
     /// A complete rotation cylinder conflicts with its stored envelope.
     CylinderRotationEnvelopeUnresolved,
+    ActiveBoundaryPlaneUnresolved,
+    RevolutionCarrierUnresolved,
+    RevolutionBoundaryIntervalUnresolved,
     /// A resolved extrusion body failed shell admission.
     ExtrusionBodyRejected,
     /// Remaining per-instance surfaces, curves, and vertices stay gated.
@@ -268,6 +271,11 @@ impl CreoLossCode {
             Self::CylinderRotationEnvelopeUnresolved => {
                 "geometry.cylinder-rotation-envelope-unresolved"
             }
+            Self::ActiveBoundaryPlaneUnresolved => "geometry.active-boundary-plane-unresolved",
+            Self::RevolutionCarrierUnresolved => "geometry.revolution-carrier-unresolved",
+            Self::RevolutionBoundaryIntervalUnresolved => {
+                "geometry.revolution-boundary-interval-unresolved"
+            }
             Self::ExtrusionBodyRejected => "topology.extrusion-body-rejected",
             Self::GeometryInstanceCarriersGated => "geometry.instance-carriers-gated",
             Self::VisibGeomSurfaceUntransferred => "geometry.visibgeom-surface-untransferred",
@@ -393,6 +401,9 @@ impl CreoLossCode {
             | Self::AngularPcurvePairUnresolved
             | Self::PlaneCompactFrameUnresolved
             | Self::CylinderRotationEnvelopeUnresolved
+            | Self::ActiveBoundaryPlaneUnresolved
+            | Self::RevolutionCarrierUnresolved
+            | Self::RevolutionBoundaryIntervalUnresolved
             | Self::SourceDialectUnverified
             | Self::LegacyRealValueUnresolved
             | Self::LegacyIntegerValueUnresolved
@@ -526,6 +537,9 @@ impl CreoLossCode {
             | Self::AngularPcurvePairUnresolved
             | Self::PlaneCompactFrameUnresolved
             | Self::CylinderRotationEnvelopeUnresolved
+            | Self::ActiveBoundaryPlaneUnresolved
+            | Self::RevolutionCarrierUnresolved
+            | Self::RevolutionBoundaryIntervalUnresolved
             | Self::PlaneSupportVariantsCapped => LossTaxonomy::GeometryNotTransferred,
             Self::TopologyIncompleteComponents
             | Self::TopologyVertexIdentifierUnstatable
@@ -619,6 +633,9 @@ mod tests {
                 "geometry.surface-prototype-field-retained",
                 "geometry.plane-compact-frame-unresolved",
                 "geometry.cylinder-rotation-envelope-unresolved",
+                "geometry.active-boundary-plane-unresolved",
+                "geometry.revolution-carrier-unresolved",
+                "geometry.revolution-boundary-interval-unresolved",
                 "topology.extrusion-body-rejected",
                 "geometry.instance-carriers-gated",
                 "geometry.visibgeom-surface-untransferred",
