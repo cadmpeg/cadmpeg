@@ -44,6 +44,12 @@ include!("dialect/registry_ids.rs");
 /// Global therefore cannot enter the unverified message construction, and no
 /// independently supplied match can contradict the declaration being reported.
 pub(crate) fn dialect_loss(global: &ResolvedGlobal) -> Option<LossNote> {
+    if global.source_ended() {
+        let code = IgesLossCode::SourceDialectUnverified;
+        return Some(code.note(
+            "IGES file ends before a complete Global record and states no version, model scale, or length unit",
+        ));
+    }
     let DialectRecovery::Unverified(recovery) = global.dialect_recovery() else {
         return None;
     };
@@ -170,6 +176,18 @@ const fn nearest_verified_id(representation: Representation) -> DialectId {
 
 /// Classifies one document from its representation and resolved Global facts.
 pub(crate) fn classify(representation: Representation, global: &ResolvedGlobal) -> DialectMatch {
+    if global.source_ended() {
+        let mut declared = BTreeMap::new();
+        declared.insert(
+            cadmpeg_core::nonblank_const!(DECLARED_REPRESENTATION),
+            representation.as_str().into(),
+        );
+        return DialectMatch::unverified(
+            IGES_UNKNOWN,
+            Grammar::of(&nearest_verified_id(representation)),
+        )
+        .with_declared(declared);
+    }
     let dialect = dialect_id(representation, global.declared_version());
     let recovery = global.dialect_recovery();
     let mut declared = BTreeMap::new();
