@@ -207,6 +207,77 @@ const EPS_PATH_POSE_AGREE: f64 = 1.0e-6;
 const EPS_PATH_POSE_SHIFT_MM: f64 = 1.0e-4;
 const EPS_PATH_POSE_LINEAR: f64 = 1.0e-6;
 
+/// Relative tolerance between two definition-local poses: rotation entries
+/// absolutely, translation scaled to its magnitude (at least 1 mm).
+const EPS_PATH_POSE_LOCAL_REL: f64 = 1.0e-6;
+/// Search steps allowed when assigning carriers to instances.
+const MAX_PATH_ASSIGNMENT_STEPS: usize = 100_000;
+
+/// One unit of work for the component-path pose pass.
+enum PathJob {
+    Single([[f64; 4]; 4]),
+    Group(usize),
+}
+
+/// A candidate instance ordinal with the definition-local pose it gives.
+type LocalChoice = (usize, [[f64; 4]; 3]);
+
+/// Exhaustive search for the full assignments of carriers to distinct
+/// instances under which every definition-local pose agrees.
+struct AssignmentSearch<'s> {
+    options: &'s [Vec<LocalChoice>],
+    order: &'s [usize],
+    chosen: Vec<LocalChoice>,
+    steps: usize,
+    /// Instance ordinals per carrier, in `order`.
+    found: Vec<Vec<usize>>,
+}
+
+impl AssignmentSearch<'_> {
+    fn descend(&mut self) {
+        let depth = self.chosen.len();
+        if depth == self.order.len() {
+            self.found
+                .push(self.chosen.iter().map(|(o, _)| *o).collect());
+            return;
+        }
+        for &(ordinal, pose) in &self.options[self.order[depth]] {
+            self.steps += 1;
+            if self.steps > MAX_PATH_ASSIGNMENT_STEPS || self.found.len() > 1 {
+                return;
+            }
+            let fresh = self.chosen.iter().all(|(used, _)| *used != ordinal);
+            let agrees = self
+                .chosen
+                .first()
+                .is_none_or(|(_, reference)| local_poses_agree(reference, &pose));
+            if fresh && agrees {
+                self.chosen.push((ordinal, pose));
+                self.descend();
+                self.chosen.pop();
+            }
+        }
+    }
+}
+
+fn local_poses_agree(left: &[[f64; 4]; 3], right: &[[f64; 4]; 3]) -> bool {
+    let scale = (0..3)
+        .map(|row| left[row][3].powi(2))
+        .sum::<f64>()
+        .sqrt()
+        .max(1.0);
+    (0..3).all(|row| {
+        (0..4).all(|column| {
+            let limit = if column == 3 {
+                EPS_PATH_POSE_LOCAL_REL * scale
+            } else {
+                EPS_PATH_POSE_LOCAL_REL
+            };
+            (left[row][column] - right[row][column]).abs() <= limit
+        })
+    })
+}
+
 /// What the component-path pose pass did.
 #[derive(Default)]
 struct PathPoseOutcome {
@@ -218,6 +289,11 @@ struct PathPoseOutcome {
     changed: usize,
     /// Largest translation change, in millimetres.
     largest_shift_mm: f64,
+    /// Carriers, occurrences and targets placed by the unique consistent
+    /// assignment.
+    inferred_carriers: usize,
+    inferred_instances: usize,
+    inferred_groups: usize,
     /// Carriers of the occurrences that took a path pose.
     applied_carriers: BTreeSet<String>,
 }
@@ -804,6 +880,7 @@ impl<'a> Projector<'a> {
             });
         }
         let mut resolved = BTreeMap::<usize, Vec<&DesignComponentPath>>::new();
+        let mut ambiguous = Vec::<(&DesignComponentPath, Vec<usize>)>::new();
         for path in self.sources.paths {
             use crate::records::component_path::DesignComponentPathElementKind as Kind;
             let stream = crate::ids::native_stream(&path.id).unwrap_or_default();
@@ -874,69 +951,177 @@ impl<'a> Projector<'a> {
                 .map(|(ordinal, _)| ordinal)
                 .collect::<Vec<_>>();
             match matching.as_slice() {
+                [] => self.path_poses.unresolved += 1,
                 [ordinal] => resolved.entry(*ordinal).or_default().push(path),
-                _ => self.path_poses.unresolved += 1,
+                _ => ambiguous.push((path, matching)),
             }
         }
-        let mut order = Vec::new();
+        let claimed = resolved.keys().copied().collect::<BTreeSet<_>>();
+        let rows_of = |path: &DesignComponentPath| {
+            path.transform.map_or(
+                IDENTITY,
+                crate::records::component_path::ComponentPathTransform::rows,
+            )
+        };
+        let mut jobs = Vec::new();
         for (ordinal, paths) in resolved {
-            let rows = |path: &DesignComponentPath| {
-                path.transform.map_or(
-                    IDENTITY,
-                    crate::records::component_path::ComponentPathTransform::rows,
-                )
-            };
-            let first = rows(paths[0]);
+            let first = rows_of(paths[0]);
             let agree = paths.iter().all(|path| {
-                rows(path)
+                rows_of(path)
                     .iter()
                     .flatten()
                     .zip(first.iter().flatten())
                     .all(|(left, right)| (left - right).abs() <= EPS_PATH_POSE_AGREE)
             });
             if agree {
-                order.push((instances[ordinal].ancestors.len(), ordinal, first));
+                jobs.push((
+                    instances[ordinal].ancestors.len(),
+                    ordinal,
+                    PathJob::Single(first),
+                ));
             } else {
                 self.path_poses.disagreeing += 1;
             }
         }
-        order.sort_by_key(|(depth, ordinal, _)| (*depth, *ordinal));
-        for (_, ordinal, rows) in order {
-            let key = &instances[ordinal].key;
-            let Some((occurrence, carrier)) = self.occurrences.get(key) else {
+        // An assignment onto an instance that a single-instance carrier
+        // names is refused, so the group does not depend on that carrier.
+        let mut groups = BTreeMap::<(&str, u64), Vec<(&DesignComponentPath, Vec<usize>)>>::new();
+        for (path, candidates) in ambiguous {
+            let Some(&first) = candidates.first() else {
                 continue;
             };
-            let parent_world = match &occurrence.parent {
-                OccurrenceParent::Root {} => Some(cadmpeg_ir::transform::Transform::identity()),
-                OccurrenceParent::Occurrence { occurrence } => self.world_of(occurrence.as_str()),
-            };
-            let pose = neutral_transform(rows)?;
-            let Some(local) = parent_world
-                .and_then(|world| world.try_inverse_affine().ok())
-                .and_then(|inverse| inverse.compose(pose).ok())
-            else {
-                self.path_poses.unresolved += 1;
-                continue;
-            };
-            let (stored, new) = (occurrence.transform.affine_rows(), local.affine_rows());
-            let shift = (0..3)
-                .map(|row| (new[row][3] - stored[row][3]).powi(2))
-                .sum::<f64>()
-                .sqrt();
-            let linear = (0..3)
-                .flat_map(|row| (0..3).map(move |column| (row, column)))
-                .map(|(row, column)| (new[row][column] - stored[row][column]).abs())
-                .fold(0.0, f64::max);
-            if shift > EPS_PATH_POSE_SHIFT_MM || linear > EPS_PATH_POSE_LINEAR {
-                self.path_poses.changed += 1;
-                self.path_poses.largest_shift_mm = self.path_poses.largest_shift_mm.max(shift);
+            let target = &instances[first];
+            groups
+                .entry((target.stream.as_str(), target.record))
+                .or_default()
+                .push((path, candidates));
+        }
+        for (index, carriers) in groups.values().enumerate() {
+            // A candidate's world pose depends on every ancestor above it,
+            // so the group waits for the deepest candidate's ancestors.
+            let depth = carriers
+                .iter()
+                .flat_map(|(_, candidates)| candidates)
+                .map(|ordinal| instances[*ordinal].ancestors.len())
+                .max()
+                .unwrap_or_default();
+            jobs.push((depth, usize::MAX - index, PathJob::Group(index)));
+        }
+        let groups = groups.into_values().collect::<Vec<_>>();
+        jobs.sort_by_key(|(depth, ordinal, _)| (*depth, *ordinal));
+        for (_, ordinal, job) in jobs {
+            match job {
+                PathJob::Single(rows) => {
+                    let key = instances[ordinal].key.as_str();
+                    if let Some(local) = self.path_local_pose(key, rows)? {
+                        self.set_path_pose(key, local);
+                    } else {
+                        self.path_poses.unresolved += 1;
+                    }
+                }
+                PathJob::Group(index) => {
+                    self.infer_path_group(&instances, &groups[index], &claimed, &rows_of)?;
+                }
             }
-            if let Some(carrier) = carrier {
-                self.path_poses.applied_carriers.insert(carrier.id.clone());
+        }
+        Ok(())
+    }
+
+    /// `inverse(parent world) * pose` for the occurrence `key`, in
+    /// millimetres, with the parent's corrections already applied.
+    fn path_local_pose(
+        &self,
+        key: &str,
+        rows: [[f64; 4]; 4],
+    ) -> Result<Option<cadmpeg_ir::transform::Transform>, cadmpeg_core::CodecError> {
+        let Some((occurrence, _)) = self.occurrences.get(key) else {
+            return Ok(None);
+        };
+        let parent_world = match &occurrence.parent {
+            OccurrenceParent::Root {} => Some(cadmpeg_ir::transform::Transform::identity()),
+            OccurrenceParent::Occurrence { occurrence } => self.world_of(occurrence.as_str()),
+        };
+        let pose = neutral_transform(rows)?;
+        Ok(parent_world
+            .and_then(|world| world.try_inverse_affine().ok())
+            .and_then(|inverse| inverse.compose(pose).ok()))
+    }
+
+    /// Replace the placement of `key` by `local` and count the change.
+    fn set_path_pose(&mut self, key: &str, local: cadmpeg_ir::transform::Transform) {
+        let Some((occurrence, carrier)) = self.occurrences.get_mut(key) else {
+            return;
+        };
+        let (stored, new) = (occurrence.transform.affine_rows(), local.affine_rows());
+        let shift = (0..3)
+            .map(|row| (new[row][3] - stored[row][3]).powi(2))
+            .sum::<f64>()
+            .sqrt();
+        let linear = (0..3)
+            .flat_map(|row| (0..3).map(move |column| (row, column)))
+            .map(|(row, column)| (new[row][column] - stored[row][column]).abs())
+            .fold(0.0, f64::max);
+        if shift > EPS_PATH_POSE_SHIFT_MM || linear > EPS_PATH_POSE_LINEAR {
+            self.path_poses.changed += 1;
+            self.path_poses.largest_shift_mm = self.path_poses.largest_shift_mm.max(shift);
+        }
+        if let Some(carrier) = carrier {
+            self.path_poses.applied_carriers.insert(carrier.id.clone());
+        }
+        occurrence.transform = local;
+    }
+
+    /// Assign the carriers of one target to distinct instances. The
+    /// assignment applies only when exactly one full assignment gives every
+    /// carrier the same definition-local pose; the search stops past
+    /// [`MAX_PATH_ASSIGNMENT_STEPS`] steps.
+    fn infer_path_group(
+        &mut self,
+        instances: &[PathInstance],
+        carriers: &[(&DesignComponentPath, Vec<usize>)],
+        claimed: &BTreeSet<usize>,
+        rows_of: &dyn Fn(&DesignComponentPath) -> [[f64; 4]; 4],
+    ) -> Result<(), cadmpeg_core::CodecError> {
+        // Per carrier, the candidates with their definition-local poses.
+        let mut options = Vec::new();
+        for (path, candidates) in carriers {
+            let mut row = Vec::new();
+            for ordinal in candidates {
+                let key = instances[*ordinal].key.as_str();
+                if let Some(local) = self.path_local_pose(key, rows_of(path))? {
+                    row.push((*ordinal, local.affine_rows()));
+                }
             }
-            if let Some((occurrence, _)) = self.occurrences.get_mut(key) {
-                occurrence.transform = local;
+            options.push(row);
+        }
+        let mut order = (0..carriers.len()).collect::<Vec<_>>();
+        order.sort_by_key(|carrier| (options[*carrier].len(), *carrier));
+        let mut search = AssignmentSearch {
+            options: &options,
+            order: &order,
+            chosen: Vec::new(),
+            steps: 0,
+            found: Vec::new(),
+        };
+        search.descend();
+        match (
+            search.steps > MAX_PATH_ASSIGNMENT_STEPS,
+            search.found.as_slice(),
+        ) {
+            (false, [assignment])
+                if !assignment.iter().any(|ordinal| claimed.contains(ordinal)) =>
+            {
+                for (&carrier, &ordinal) in order.iter().zip(assignment) {
+                    let key = instances[ordinal].key.as_str();
+                    if let Some(local) = self.path_local_pose(key, rows_of(carriers[carrier].0))? {
+                        self.set_path_pose(key, local);
+                    }
+                }
+                self.path_poses.inferred_carriers += carriers.len();
+                self.path_poses.inferred_instances += assignment.len();
+                self.path_poses.inferred_groups += 1;
             }
+            _ => self.path_poses.unresolved += carriers.len(),
         }
         Ok(())
     }
@@ -1048,6 +1233,14 @@ impl<'a> Projector<'a> {
             losses.push(F3dLossCode::LocalOccurrencePathPose.note(format!(
                 "{} nested local occurrence(s) take the world pose of their component-path carrier in place of their stored placement; the largest translation change is {:.3} mm",
                 self.path_poses.changed, self.path_poses.largest_shift_mm
+            )));
+        }
+        if self.path_poses.inferred_carriers != 0 {
+            losses.push(F3dLossCode::LocalOccurrencePathPoseInferred.note(format!(
+                "{} component-path carrier(s) name several expanded local occurrences; {} occurrence(s) in {} target(s) take them by the one assignment to distinct occurrences that gives every definition-local pose the same value",
+                self.path_poses.inferred_carriers,
+                self.path_poses.inferred_instances,
+                self.path_poses.inferred_groups
             )));
         }
         if self.path_poses.unresolved != 0 {

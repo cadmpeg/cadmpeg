@@ -889,7 +889,7 @@ the native feature when a fixed lane carries a symmetric distance.
 
 **Conflict.** None.
 
-**Note.** A path that names more than one instance is refused and reported as `assembly.local-occurrence-path-pose-unresolved`.
+**Note.** A path that names more than one instance is placed only when the layout-consistency inference in `docs/format-support.md` selects exactly one assignment; it is then reported as `assembly.local-occurrence-path-pose-inferred`. Otherwise it is reported as `assembly.local-occurrence-path-pose-unresolved`.
 
 ### DR-150. History namespace of copied feature scopes
 
