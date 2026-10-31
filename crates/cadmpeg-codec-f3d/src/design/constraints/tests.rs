@@ -281,6 +281,165 @@ fn rectangular_parameters(count: u32, distance: f64) -> [DesignParameter; 4] {
     ]
 }
 
+fn grid_point_entity(id: &str, u: f64, v: f64) -> cadmpeg_ir::sketches::SketchEntity {
+    cadmpeg_ir::sketches::SketchEntity::new(
+        SketchEntityId::mint(id).unwrap(),
+        SketchId::mint("generated:test:sketch#0").unwrap(),
+        SketchGeometry::try_from(SketchGeometryDefinition::Point {
+            position: Point2::new(u, v),
+        })
+        .unwrap(),
+    )
+}
+
+/// An adjacent-spacing rectangular point pattern with both direction clauses.
+fn rectangular_grid_relation(counts: [u32; 2], distances: [f64; 2]) -> SketchRelation {
+    let direction = |count: u32, count_parameter, distance: f64, distance_parameter, axis| {
+        crate::records::sketch_relations::SketchPatternDirection {
+            count_parameter: Some(count_parameter),
+            distance_parameter: Some(distance_parameter),
+            evaluated_count: crate::records::sketch_relations::SketchPatternCount::try_from(count)
+                .unwrap(),
+            direction: axis,
+            evaluated_distance: cadmpeg_ir::scalar::FiniteReal::new(distance).unwrap(),
+        }
+    };
+    let members = (1..=counts[0] * counts[1]).collect::<Vec<_>>();
+    SketchRelation::try_new(crate::records::sketch_relations::SketchRelationDraft {
+        id: "f3d:native:sketch-relation#rectangular".into(),
+        record_index: 10,
+        class_tag: crate::records::references::DesignClassTag::try_from("300".to_owned()).unwrap(),
+        byte_offset: 0,
+        state_offset: 0,
+        owner_reference: 1,
+        owner_entity_id: Some(cadmpeg_core::text::NonBlankString::new("0_1").unwrap()),
+        auxiliary_references: crate::records::identity::ReferenceRun::located(
+            [20, 21, 22, 23]
+                .into_iter()
+                .map(|value| crate::records::identity::Located { value, offset: 0 })
+                .collect(),
+        ),
+        rectangular_counted_reference_count: Some(0),
+        members: (members
+            .iter()
+            .copied()
+            .map(SketchRelationMember::from_index)
+            .collect::<Vec<_>>())
+        .try_into()
+        .expect("uniform member resolution"),
+        owner_reference_offset: 0,
+        definition: crate::records::sketch_relations::SketchRelationDefinition::new(
+            0x2000_0000,
+            Some(SketchPatternDefinition::Rectangular {
+                directions: [
+                    direction(
+                        counts[0],
+                        20,
+                        distances[0],
+                        21,
+                        [1.0, 0.0, 0.0].try_into().unwrap(),
+                    ),
+                    direction(
+                        counts[1],
+                        22,
+                        distances[1],
+                        23,
+                        [0.0, 1.0, 0.0].try_into().unwrap(),
+                    ),
+                ],
+            }),
+        )
+        .expect("valid relation definition"),
+        entity_genesis: None,
+        return_members: (members
+            .iter()
+            .copied()
+            .map(SketchRelationReturnMember::from_index)
+            .collect::<Vec<_>>())
+        .try_into()
+        .expect("uniform member resolution"),
+        raw_bytes: crate::test_support::sketch_relations::rectangular_grid_pattern_record(
+            counts,
+            distances,
+            [0, 0, 0],
+            0,
+        ),
+    })
+    .unwrap()
+}
+
+fn rectangular_grid_parameters(counts: [u32; 2], distances: [f64; 2]) -> [DesignParameter; 4] {
+    [
+        rectangular_parameter(20, f64::from(counts[0])),
+        rectangular_parameter(21, distances[0]),
+        rectangular_parameter(22, f64::from(counts[1])),
+        rectangular_parameter(23, distances[1]),
+    ]
+}
+
+#[test]
+fn rectangular_pattern_instances_advance_direction_one_first() {
+    let seed = grid_point_entity("generated:test:point#seed", 2.0, 4.0);
+    let first = grid_point_entity("generated:test:point#first", 17.0, 4.0);
+    let second = grid_point_entity("generated:test:point#second", 2.0, 14.0);
+    let diagonal = grid_point_entity("generated:test:point#diagonal", 17.0, 14.0);
+    let relation = rectangular_grid_relation([2, 2], [1.5, 1.0]);
+    let parameters = rectangular_grid_parameters([2, 2], [1.5, 1.0]);
+    let Some(SketchConstraintDefinitionInput::RectangularPattern { pattern }) =
+        exact_rectangular_pattern(
+            &relation,
+            "native",
+            &parameters,
+            &[&seed, &first, &second, &diagonal],
+        )
+        .unwrap()
+    else {
+        panic!("rectangular grid did not resolve");
+    };
+    let rows = pattern
+        .rows()
+        .iter()
+        .map(|row| {
+            row.iter()
+                .map(|instance| instance.entities.clone())
+                .collect::<Vec<_>>()
+        })
+        .collect::<Vec<_>>();
+    assert_eq!(
+        rows,
+        [
+            [vec![seed.id().clone()], vec![second.id().clone()]],
+            [vec![first.id().clone()], vec![diagonal.id().clone()]],
+        ]
+    );
+
+    assert!(exact_rectangular_pattern(
+        &relation,
+        "native",
+        &parameters,
+        &[&seed, &second, &first, &diagonal],
+    )
+    .unwrap()
+    .is_none());
+}
+
+#[test]
+fn rectangular_pattern_single_instance_direction_keeps_its_stored_distance() {
+    let seed = grid_point_entity("generated:test:point#seed", 2.0, 4.0);
+    let second = grid_point_entity("generated:test:point#second", 2.0, 14.0);
+    let relation = rectangular_grid_relation([1, 2], [0.5, 1.0]);
+    let parameters = rectangular_grid_parameters([1, 2], [0.5, 1.0]);
+    let Some(SketchConstraintDefinitionInput::RectangularPattern { pattern }) =
+        exact_rectangular_pattern(&relation, "native", &parameters, &[&seed, &second]).unwrap()
+    else {
+        panic!("single-instance direction did not resolve");
+    };
+    assert_eq!(pattern.directions()[0].spacing().get(), 5.0);
+    assert_eq!(pattern.directions()[1].spacing().get(), 10.0);
+    assert_eq!(pattern.rows().len(), 1);
+    assert_eq!(pattern.rows()[0].len(), 2);
+}
+
 #[test]
 fn rectangular_pattern_projects_adjacent_spacing_and_parameter() {
     let seed = point_entity("generated:test:point#seed", 2.0);
