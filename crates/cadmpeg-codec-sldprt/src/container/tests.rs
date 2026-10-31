@@ -655,3 +655,13 @@ fn present_unknown_native_version_preserves_declared_value() {
     assert_eq!(scan.version, 0x1234_5678);
     assert!(scan.blocks.is_empty());
 }
+
+#[test]
+fn embedded_document_sections_are_the_imported_folder_and_document_extensions() {
+    use super::is_embedded_document;
+    assert!(is_embedded_document("ImportedComp/Pin"));
+    assert!(is_embedded_document("Box.SLDASM"));
+    assert!(is_embedded_document("folder/pin.sldprt"));
+    assert!(!is_embedded_document("Contents/Config-0"));
+    assert!(!is_embedded_document("prt"));
+}

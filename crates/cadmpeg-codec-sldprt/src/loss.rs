@@ -194,6 +194,29 @@ pub(crate) enum SldprtLossCode {
     /// A source record states a property whose key holds no non-whitespace
     /// character, so the property cannot be keyed and is not transferred.
     SourcePropertyKeyBlank,
+    /// An assembly document carries no readable component tree, so no
+    /// occurrence, placement, or component reference is transferred.
+    AssemblyStructureNotTransferred,
+    /// Assembly mate records are not transferred.
+    AssemblyMatesNotTransferred,
+    /// Assembly occurrences reference component documents that the decoder
+    /// does not open.
+    AssemblyComponentsExternal,
+    /// Virtual components are stored inside the assembly document and are not
+    /// transferred; their occurrences have an unresolved prototype.
+    AssemblyVirtualComponentsNotTransferred,
+    /// Suppressed component instances, and the instances below them, are
+    /// omitted from the occurrence tree.
+    AssemblySuppressedComponentsOmitted,
+    /// A component instance has no valid placement or names no component
+    /// model; the instance and the instances below it are omitted.
+    AssemblyPlacementUnresolved,
+    /// Assembly configurations other than the active one are not transferred.
+    AssemblyConfigurationsNotTransferred,
+    /// Component documents embedded in the assembly document are not decoded.
+    AssemblyEmbeddedDocumentsNotTransferred,
+    /// An occurrence's exclusion from the bill of materials is not transferred.
+    AssemblyBomExclusionNotTransferred,
 }
 
 impl SldprtLossCode {
@@ -275,6 +298,15 @@ impl SldprtLossCode {
         Self::WriterNativeEnvelopeAuxiliaryOmitted,
         Self::SourceDialectDisplaced,
         Self::SourcePropertyKeyBlank,
+        Self::AssemblyStructureNotTransferred,
+        Self::AssemblyMatesNotTransferred,
+        Self::AssemblyComponentsExternal,
+        Self::AssemblyVirtualComponentsNotTransferred,
+        Self::AssemblySuppressedComponentsOmitted,
+        Self::AssemblyPlacementUnresolved,
+        Self::AssemblyConfigurationsNotTransferred,
+        Self::AssemblyEmbeddedDocumentsNotTransferred,
+        Self::AssemblyBomExclusionNotTransferred,
     ];
 
     /// The stable string identifier. This is the gating contract.
@@ -358,6 +390,19 @@ impl SldprtLossCode {
             }
             Self::SourceDialectDisplaced => "target.source-dialect-displaced",
             Self::SourcePropertyKeyBlank => "source.property-key-blank",
+            Self::AssemblyStructureNotTransferred => "assembly.structure-not-transferred",
+            Self::AssemblyMatesNotTransferred => "assembly.mates-not-transferred",
+            Self::AssemblyComponentsExternal => "assembly.components-external",
+            Self::AssemblyVirtualComponentsNotTransferred => {
+                "assembly.virtual-components-not-transferred"
+            }
+            Self::AssemblySuppressedComponentsOmitted => "assembly.suppressed-components-omitted",
+            Self::AssemblyPlacementUnresolved => "assembly.placement-unresolved",
+            Self::AssemblyConfigurationsNotTransferred => "assembly.configurations-not-transferred",
+            Self::AssemblyEmbeddedDocumentsNotTransferred => {
+                "assembly.embedded-documents-not-transferred"
+            }
+            Self::AssemblyBomExclusionNotTransferred => "assembly.bom-exclusion-not-transferred",
         }
     }
 
@@ -440,6 +485,15 @@ impl SldprtLossCode {
             | Self::DialectLayerCollision
             | Self::SourceDialectDisplaced
             | Self::SourcePropertyKeyBlank => Severity::Warning,
+            Self::AssemblyMatesNotTransferred
+            | Self::AssemblyVirtualComponentsNotTransferred
+            | Self::AssemblyEmbeddedDocumentsNotTransferred => Severity::Warning,
+            Self::AssemblyStructureNotTransferred => Severity::Blocking,
+            Self::AssemblyPlacementUnresolved => Severity::Error,
+            Self::AssemblyComponentsExternal
+            | Self::AssemblySuppressedComponentsOmitted
+            | Self::AssemblyConfigurationsNotTransferred
+            | Self::AssemblyBomExclusionNotTransferred => Severity::Info,
         }
     }
 
@@ -461,6 +515,19 @@ impl SldprtLossCode {
             Self::DialectLayerCollision => LossTaxonomy::DecodeDiagnostic,
             Self::SourceDialectDisplaced => LossTaxonomy::SourceDialectDisplaced,
             Self::SourcePropertyKeyBlank => LossTaxonomy::AttributesNotTransferred,
+            Self::AssemblyComponentsExternal
+            | Self::AssemblyVirtualComponentsNotTransferred
+            | Self::AssemblyEmbeddedDocumentsNotTransferred => {
+                LossTaxonomy::AssemblyComponentsExternal
+            }
+            Self::AssemblyStructureNotTransferred
+            | Self::AssemblyMatesNotTransferred
+            | Self::AssemblySuppressedComponentsOmitted
+            | Self::AssemblyPlacementUnresolved
+            | Self::AssemblyConfigurationsNotTransferred
+            | Self::AssemblyBomExclusionNotTransferred => {
+                LossTaxonomy::AssemblyPlacementsNotTransferred
+            }
             Self::TopologyBodyHierarchyDerived => LossTaxonomy::TopologyGaugeSubstituted,
             Self::TopologyFaceUnclaimed
             | Self::TopologyFinRecordAmbiguous
@@ -738,6 +805,15 @@ mod tests {
                 "writer.native-envelope-auxiliary-omitted",
                 "target.source-dialect-displaced",
                 "source.property-key-blank",
+                "assembly.structure-not-transferred",
+                "assembly.mates-not-transferred",
+                "assembly.components-external",
+                "assembly.virtual-components-not-transferred",
+                "assembly.suppressed-components-omitted",
+                "assembly.placement-unresolved",
+                "assembly.configurations-not-transferred",
+                "assembly.embedded-documents-not-transferred",
+                "assembly.bom-exclusion-not-transferred",
             ]
         );
     }

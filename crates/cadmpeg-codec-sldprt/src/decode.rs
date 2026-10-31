@@ -124,13 +124,26 @@ fn native_feature_has_operation_evidence(state: &EvaluatedFeatureState<'_>) -> b
         || !state.feature.source_properties.is_empty())
 }
 
-/// Decode one seekable `.sldprt` stream into IR and diagnostics.
+/// Decode one seekable `.sldprt` or `.sldasm` stream into IR and diagnostics.
 ///
 /// The function reads and retains the complete source image. Container framing
 /// or I/O failures return [`CodecError`]; unsupported model records are reported
 /// through the decode body when a partial result can be represented.
 pub(crate) fn decode(ctx: &DecodeContext<'_>, root: View<'_>) -> Result<Decoded, CodecError> {
-    let mut scan = container::scan(ctx, root)?;
+    let scan = container::scan(ctx, root)?;
+    let assembly = crate::assembly::read(ctx, &scan)?;
+    let mut decoded = decode_scan(ctx, scan)?;
+    if let Some(assembly) = assembly {
+        assembly.apply(&mut decoded);
+    }
+    Ok(decoded)
+}
+
+/// Decode the part content of one scanned document.
+fn decode_scan(
+    ctx: &DecodeContext<'_>,
+    mut scan: container::ContainerScan<'_>,
+) -> Result<Decoded, CodecError> {
     let classification = crate::dialect::classify_layers(&scan)?;
     let form_padding = classification.host().form_code_padding();
     // Marker identities are admitted during scanning. Compound stream identities
@@ -2180,6 +2193,7 @@ fn active_body_streams<'a>(scan: &'a ContainerScan<'_>) -> Vec<ActiveParasolidSi
         let name = section.name().unwrap_or("");
         if contains_ascii_case_insensitive(name, "ghost")
             || contains_ascii_case_insensitive(name, "resolvedfeatures")
+            || crate::container::is_embedded_document(name)
         {
             continue;
         }

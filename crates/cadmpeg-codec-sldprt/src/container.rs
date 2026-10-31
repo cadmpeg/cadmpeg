@@ -1126,6 +1126,25 @@ pub(crate) fn active_configuration_name_ref<'a>(scan: &'a ContainerScan<'_>) -> 
         })
 }
 
+/// Section folder of embedded component documents.
+const EMBEDDED_PREFIX: &str = "ImportedComp/";
+/// Extensions that end the section name of an embedded document.
+const EMBEDDED_EXTENSIONS: [&str; 2] = [".sldprt", ".sldasm"];
+
+/// Whether a section is a complete embedded document (`sldprt.md` §11.4).
+pub(crate) fn is_embedded_document(name: &str) -> bool {
+    let ends_with = |suffix: &str| {
+        name.len()
+            .checked_sub(suffix.len())
+            .and_then(|start| name.get(start..))
+            .is_some_and(|tail| tail.eq_ignore_ascii_case(suffix))
+    };
+    name.starts_with(EMBEDDED_PREFIX)
+        || EMBEDDED_EXTENSIONS
+            .iter()
+            .any(|extension| ends_with(extension))
+}
+
 pub(crate) fn xml_text(bytes: &[u8]) -> Option<String> {
     let bytes = bytes.strip_prefix(&[0x86]).unwrap_or(bytes);
     if bytes.starts_with(&[0xff, 0xfe]) {

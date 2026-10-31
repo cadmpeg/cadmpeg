@@ -3024,11 +3024,11 @@ An `.sldasm` assembly document uses the container of §1. A document is an assem
 `swXmlContents/COMPINSTANCETREE` is a UTF-8 `swSolidWorks` XML document in the namespace `http://www.solidworks.com/sw2003/schema`. A compound-file assembly (§1, dialect `sw-version-pre-12000`) has no `swXmlContents` sections.
 
 - `swHeader/swFile` lists documents. `id` is the file identity, `swDocType` is `ASSEMBLY` or `PART`, and `swPath` is the absolute path that the saving system used. The first `swFile` is the assembly document itself.
-- `swModelList/swModel` is one model of one document in one configuration. `swFileRef` is the `swFile` identity and `swConfigurationName` is the configuration name. The `swName` of a sub-assembly model is the name of the top assembly, not of the sub-assembly; the document name comes from the `swFile` path.
-- The `swReference` children of an assembly model are its placed component instances. `swModelRef` is the model of the component. `swName` and `swReferenceNumber` make the instance name `<swName>-<swReferenceNumber>`. `swSuppressed`, `swHidden`, `swFlexible`, `swExcludeFromBOM`, and `swIsVirtualComponent` are `YES` or `NO`.
+- `swModelList/swModel` is one model of one document in one configuration. `id` is the model identity, `swFileRef` is the `swFile` identity and `swConfigurationName` is the configuration name. The `swName` of a sub-assembly model is the name of the top assembly, not of the sub-assembly; the document name comes from the `swFile` path.
+- The `swReference` children of an assembly model are its placed component instances. `id` is the instance identity and `swModelRef` is the model of the component. A component whose model's `swFile` has `swDocType` `ASSEMBLY` is a sub-assembly. `swName` and `swReferenceNumber` make the instance name `<swName>-<swReferenceNumber>`. `swSuppressed`, `swHidden`, `swFlexible`, `swExcludeFromBOM`, and `swIsVirtualComponent` are `YES` or `NO`.
 - `swConfigurationList/swConfiguration` lists the configurations of the assembly document. Exactly one has `swMostRecentConfiguration="YES"`; its `swModelRef` is the root model of the active configuration. Other configurations can have other root models, for example the generated `<name>-_flexible<n>` configuration of a flexible sub-assembly.
 
-Models form a directed acyclic graph: one sub-assembly model can have more than one `swReference`. The placed-instance tree has one occurrence for each path from the root model.
+The `id` values of `swModel` and `swReference` elements are decimal numbers, distinct within the document. Models form a directed acyclic graph: one sub-assembly model can have more than one `swReference`. The placed-instance tree has one occurrence for each path from the root model.
 
 ### 11.2 Instance placement
 
