@@ -508,3 +508,191 @@ fn sweep_carriers_require_complete_envelopes_and_ordered_arcs() {
     })
     .expect("finite envelope evaluation");
 }
+#[test]
+fn hole_circle_intervals_require_owned_paired_samples() {
+    use cadmpeg_ir::geometry::analytic::{CircleCurve, CylinderSurface, PlaneSurface};
+    use cadmpeg_ir::geometry::{
+        CurveGeometry, SolvedCurveGeometry, SolvedSurfaceGeometry, Surface, SurfaceGeometry,
+    };
+    use cadmpeg_ir::math::{Point3, Vector3};
+    let mut scan = crate::container::scan_bytes_ok(crate::test_support::build_prt("circle", &[]));
+    scan.features.rows.push(crate::feature::rows::FeatureRow {
+        feature_id: 3,
+        root_schema_class: Some(crate::feature::schema::SchemaClass::Hole),
+        stream_offset: 0,
+        body: vec![0; 2].try_into().expect("feature row"),
+        body_offset: 0,
+        offset: 0,
+    });
+    scan.curves
+        .topology_rows
+        .push(crate::curve::CurveTopologyRow {
+            id: 9,
+            type_byte: 0,
+            feature_id: 3,
+            directions: [1, 0xf6],
+            faces: [7, 8].map(std::num::NonZeroU32::new),
+            next_edges: [9, 9],
+            offset: 11,
+        });
+    scan.planes
+        .datum_cylinders
+        .push(crate::datum::DatumCylinder {
+            id: 7,
+            feature_id: 3,
+            reversed: false,
+            offset_in_payload: 0,
+            frame: crate::surface::PositionalCylinderFrame::new(
+                [1., -2., 0.],
+                [0., 0., 1.],
+                [1., 0., 0.],
+                4.,
+                Some(4.),
+            )
+            .expect("bounded cylinder frame"),
+        });
+    scan.curves
+        .two_chart_pcurves
+        .push(crate::curve::TwoChartPcurveSamples {
+            curve_id: 9,
+            faces: [7, 8],
+            offset: 13,
+            samples: vec![
+                [[0., 2.], [4., 0.]],
+                [[std::f64::consts::FRAC_PI_2, 2.], [0., 4.]],
+                [[std::f64::consts::PI, 2.], [-4., 0.]],
+            ],
+        });
+    let axis = Vector3::new(0., 0., 1.);
+    let reference = Vector3::new(1., 0., 0.);
+    let surfaces = [
+        Surface {
+            id: cadmpeg_ir::ids::SurfaceId::mint("creo:actdatums:surface#7").expect("cylinder id"),
+            geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(
+                CylinderSurface::try_new(Point3::new(1., -2., 0.), axis, reference, 4.)
+                    .expect("cylinder"),
+            )),
+            source_object: None,
+        },
+        Surface {
+            id: cadmpeg_ir::ids::SurfaceId::mint("creo:visibgeom:surface#8").expect("plane id"),
+            geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
+                PlaneSurface::try_new(Point3::new(1., -2., 2.), axis, reference)
+                    .expect("cap plane"),
+            )),
+            source_object: None,
+        },
+    ];
+    let circle = CurveGeometry::Solved(SolvedCurveGeometry::Circle(
+        CircleCurve::try_new(Point3::new(1., -2., 2.), axis, reference, 4.).expect("circle"),
+    ));
+    let endpoints = [[5., -2., 2.], [-3., -2., 2.]];
+    let source = crate::decode::source_carriers::SourceUnitCarriers::default();
+    crate::decode::with_service_context(|ctx| -> Result<(), cadmpeg_core::CodecError> {
+        for points in [endpoints, [endpoints[1], endpoints[0]]] {
+            let mut geometry = circle.clone();
+            let super::SampledCircleRange::Admitted(range) = super::sampled_hole_circle_range(
+                ctx,
+                &scan,
+                &mut geometry,
+                (9, [7, 8]),
+                &surfaces,
+                points,
+                &source,
+            )?
+            else {
+                panic!("ordered half-circle interval")
+            };
+            assert_eq!(range[0], 0.);
+            assert!((range[1] - std::f64::consts::PI).abs() < 1.0e-12);
+            for (parameter, expected) in range.into_iter().zip(points) {
+                let actual = cadmpeg_ir::eval::decode::outer_refusal(
+                    cadmpeg_ir::eval::decode::curve_point(ctx, &geometry, parameter),
+                )?
+                .expect("finite circle endpoint")
+                .get();
+                assert!(([actual.x, actual.y, actual.z].into_iter().zip(expected))
+                    .all(|(a, b)| (a - b).abs() < 1.0e-12));
+            }
+        }
+        scan.curves.two_chart_pcurves[0].samples[1][1][1] = 5.;
+        let mut geometry = circle.clone();
+        let super::SampledCircleRange::Refused(loss) = super::sampled_hole_circle_range(
+            ctx,
+            &scan,
+            &mut geometry,
+            (9, [7, 8]),
+            &surfaces,
+            endpoints,
+            &source,
+        )?
+        else {
+            panic!("conflicting sample refusal")
+        };
+        assert_eq!(
+            loss.code,
+            crate::loss::CreoLossCode::HoleCircleIntervalUnresolved.kind()
+        );
+        assert!(loss.message.contains("Hole curve 9 at byte 13"));
+        assert_eq!(geometry, circle);
+        scan.features.rows[0].root_schema_class =
+            Some(crate::feature::schema::SchemaClass::Protrusion);
+        assert!(matches!(
+            super::sampled_hole_circle_range(
+                ctx,
+                &scan,
+                &mut geometry,
+                (9, [7, 8]),
+                &surfaces,
+                endpoints,
+                &source,
+            )?,
+            super::SampledCircleRange::Unrelated
+        ));
+        let frame = scan.planes.datum_cylinders[0].frame;
+        let shifted_pi = f64::from_bits(std::f64::consts::PI.to_bits() + 2);
+        let mut generator = super::HoleGeneratorProof {
+            curve_id: 9,
+            offset: 13,
+            frames: [frame; 2],
+            bounds: [
+                [[0., std::f64::consts::PI], [0., 4.]],
+                [[std::f64::consts::PI, std::f64::consts::TAU], [0., 4.]],
+            ],
+            paths: [[[std::f64::consts::PI, 0.], [shifted_pi, 4.]]; 2],
+        };
+        let points = [[-3., -2., 0.], [-3., -2., 4.]];
+        let line = generator
+            .geometry(points)
+            .expect("shared boundary generator");
+        assert!(matches!(
+            line,
+            CurveGeometry::Solved(SolvedCurveGeometry::Line(_))
+        ));
+        for (parameter, expected) in [0., 4.].into_iter().zip(points) {
+            let actual = cadmpeg_ir::eval::decode::outer_refusal(
+                cadmpeg_ir::eval::decode::curve_point(ctx, &line, parameter),
+            )?
+            .expect("finite generator point")
+            .get();
+            assert!([actual.x, actual.y, actual.z]
+                .into_iter()
+                .zip(expected)
+                .all(|(a, b)| (a - b).abs() < 1.0e-12));
+        }
+        generator.bounds[1][0] = [0., std::f64::consts::TAU];
+        let loss = generator
+            .geometry(points)
+            .expect_err("full cylinder domain refusal");
+        assert_eq!(
+            loss.code,
+            crate::loss::CreoLossCode::HoleGeneratorUnresolved.kind()
+        );
+        assert!(loss.message.contains("Hole curve 9 at byte 13"));
+        generator.bounds[1][0] = [std::f64::consts::PI, std::f64::consts::TAU];
+        generator.paths[1][1][0] += std::f64::consts::TAU;
+        assert!(generator.geometry(points).is_err());
+        Ok(())
+    })
+    .expect("sampled hole interval proof");
+}

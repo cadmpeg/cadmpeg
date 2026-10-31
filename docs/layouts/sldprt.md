@@ -620,6 +620,33 @@ Body-relative after the two-byte tag and optional marker. Offsets are relative t
 | 30 | 2 | `vertex_dim` | `u16` | big | spec | vertex_dim |
 | 32 | 10 | `array_refs` | `u16[5]` | big | spec | terminal u16 BE refs |
 
+## `bspline_curve_descriptor`
+
+Spec §7.2 · layout: byte offsets · size: 25 B
+
+Body-relative after the `00 88` tag and optional `0xff` marker.
+
+Parsed by:
+- `crates/cadmpeg-codec-sldprt/src/brep/spline.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 2 | `attr` | `u16` | big | spec | attr |
+| 2 | 2 | `degree` | `u16` | big | spec | degree |
+| 4 | 4 | `control_count` | `u32` | big | spec | control_count |
+| 8 | 2 | `dimension` | `u16` | big | spec | dimension |
+| 15 | 1 | `periodic` | `u8` | big | spec | body +15 is the `periodic` logical |
+| 17 | 1 | `rational` | `u8` | big | spec | body +17 the `rational` logical |
+| 19 | 2 | `control_attr` | `u16` | big | spec | control/multiplicity/knot array attrs |
+| 21 | 2 | `multiplicity_attr` | `u16` | big | spec | control/multiplicity/knot array attrs |
+| 23 | 2 | `knot_attr` | `u16` | big | spec | control/multiplicity/knot array attrs |
+
+Unstated regions:
+
+- `10..15` (5 B): `knot_count`, `subtype` and the flags before `periodic`; the reader takes no field here.
+- `16..17` (1 B): A flag between `periodic` and `rational`; the reader takes no field here.
+- `18..19` (1 B): The last flag; the reader takes no field here.
+
 ## `bspline_array_header`
 
 Spec §7.2 · layout: byte offsets · size: 6 B

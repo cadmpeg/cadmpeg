@@ -51,6 +51,18 @@ pub(crate) fn run(
         image[1..].copy_from_slice(view.take(7)?);
         return Some((View::f64_be_at(&image, 0)?, 1, cursor + 8));
     }
+    if token == 0x1d {
+        let mut image = [0; 8];
+        image[0] = 0x3c;
+        image[1..7].copy_from_slice(view.take(6)?);
+        return Some((View::f64_be_at(&image, 0)?, 1, cursor + 7));
+    }
+    if token == 0x1e {
+        let mut image = [0; 8];
+        image[0] = 0x3d;
+        image[1..].copy_from_slice(view.take(7)?);
+        return Some((View::f64_be_at(&image, 0)?, 1, cursor + 8));
+    }
     if matches!(token, 0x1a | 0x1b) {
         let mut image = [0; 8];
         image[0] = 0x3c;

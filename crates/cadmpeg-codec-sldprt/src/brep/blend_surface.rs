@@ -150,6 +150,34 @@ pub(super) fn solve(
     Ok(None)
 }
 
+/// The largest distance of a vertex from `cache` over the stretch of
+/// `spine` the vertices project to, or `None` when one does not project.
+///
+/// # Errors
+///
+/// Propagates an evaluator's resource refusal.
+pub(super) fn vertex_miss(
+    ctx: &DecodeContext<'_>,
+    cache: &BlendCache,
+    spine: &CurveGeometry,
+    vertices: &[Point3],
+) -> Result<Option<f64>, CodecError> {
+    let Some(spine) = Spine::new(ctx, spine)? else {
+        return Ok(None);
+    };
+    let mut parameters = Vec::with_capacity(vertices.len());
+    for vertex in vertices {
+        let Some(parameter) = spine.project(ctx, to3(*vertex))? else {
+            return Ok(None);
+        };
+        parameters.push(parameter);
+    }
+    let Some(extent) = spine.extent(&parameters) else {
+        return Ok(None);
+    };
+    largest_miss(ctx, cache, &spine, extent, vertices).map(Some)
+}
+
 /// Whether every vertex lies on the cache within its fit tolerance and the
 /// linear resolution. Sections can agree with one another and still miss
 /// the face, as when a support search settles on another branch; the
@@ -161,7 +189,19 @@ fn passes_through(
     extent: [f64; 2],
     vertices: &[Point3],
 ) -> Result<bool, CodecError> {
-    let allowance = cache.fit_tolerance + VERTEX_ALLOWANCE;
+    let miss = largest_miss(ctx, cache, spine, extent, vertices)?;
+    Ok(miss <= cache.fit_tolerance + VERTEX_ALLOWANCE)
+}
+
+/// The largest distance of a vertex from `cache`.
+fn largest_miss(
+    ctx: &DecodeContext<'_>,
+    cache: &BlendCache,
+    spine: &Spine<'_>,
+    extent: [f64; 2],
+    vertices: &[Point3],
+) -> Result<f64, CodecError> {
+    let mut largest: f64 = 0.0;
     for vertex in vertices {
         let point = to3(*vertex);
         let along = spine
@@ -187,11 +227,9 @@ fn passes_through(
                 nearest = nearest.min(norm(sub(to3(foot.get()), point)));
             }
         }
-        if nearest > allowance {
-            return Ok(false);
-        }
+        largest = largest.max(nearest);
     }
-    Ok(true)
+    Ok(largest)
 }
 
 /// Fit the cache over one stretch of spine.

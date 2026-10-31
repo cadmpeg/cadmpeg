@@ -2401,6 +2401,9 @@ fn merge_brep(target: &mut Brep, mut source: Brep) -> Result<(), CodecError> {
         .procedural_surfaces
         .append(&mut source.procedural_surfaces);
     target.curves.append(&mut source.curves);
+    target
+        .procedural_curves
+        .append(&mut source.procedural_curves);
     target.pcurves.append(&mut source.pcurves);
     target.unknowns.append(&mut source.unknowns);
     target.face_colors.append(&mut source.face_colors);
@@ -3088,6 +3091,9 @@ fn build_geometry_ir(
     ir.model.surfaces = brep.surfaces;
     ir.model.procedural_surfaces = brep.procedural_surfaces;
     ir.model.curves = brep.curves;
+    ir.model
+        .procedural_curves
+        .append(&mut brep.procedural_curves);
     ir.model.pcurves = brep.pcurves;
     *admitted_entities = brep_entities;
     let face_bridge_sequences = std::mem::take(&mut brep.face_bridge_sequences);

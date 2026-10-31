@@ -4,11 +4,12 @@
 use std::collections::{HashMap, HashSet};
 
 use cadmpeg_ir::features::FinitePoint3;
+use cadmpeg_ir::geometry::pcurve::PcurveNurbs;
 use cadmpeg_ir::geometry::{
     nurbs::{NurbsCurve, NurbsPoleGrid, NurbsPoles3, NurbsSurface},
     CurveGeometry, SolvedCurveGeometry, SolvedSurfaceGeometry, SurfaceGeometry,
 };
-use cadmpeg_ir::math::Point3;
+use cadmpeg_ir::math::{Point2, Point3};
 use cadmpeg_ir::report::loss::LossNote;
 
 use cadmpeg_core::decode::{index_from_u32, View};
@@ -17,6 +18,7 @@ use super::{CurveCarrier, SurfaceCarrier, LEN_TO_MM};
 
 use crate::layout::bspline_array_header as arr_hdr;
 use crate::layout::bspline_compact_array_header as compact_arr;
+use crate::layout::bspline_curve_descriptor as curve_desc;
 use crate::layout::bspline_surface_descriptor as surf_desc;
 
 #[derive(Debug, Default)]
@@ -41,11 +43,30 @@ struct ArraySpan {
 #[derive(Debug)]
 struct CurveDescriptor {
     degree: u32,
+    /// The descriptor's `periodic` logical.
+    periodic: bool,
     control_count: usize,
     dimension: usize,
+    /// The descriptor's `rational` logical, which tells a rational
+    /// two-dimensional curve (`dimension` 3: `u·w v·w w`) from a polynomial
+    /// model-space one with the same `dimension`.
+    rational: bool,
     control_attr: u16,
     multiplicity_attr: u16,
     knot_attr: u16,
+}
+
+impl CurveDescriptor {
+    /// A model-space curve: `x y z`, or `x·w y·w z·w w`.
+    fn spatial(&self) -> bool {
+        self.dimension == 4 || (self.dimension == 3 && !self.rational)
+    }
+
+    /// A parameter-space curve, the `b_curve` of an `SP_CURVE` (spec §7.6):
+    /// `u v`, or `u·w v·w w`.
+    fn planar(&self) -> bool {
+        (self.dimension == 2 && !self.rational) || (self.dimension == 3 && self.rational)
+    }
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -327,7 +348,10 @@ fn exact_f64_array(bytes: &[u8], arrays: &Arrays, attr: u16, count: usize) -> Op
         .then_some(selected)
 }
 
-fn scan_curve_descriptors(bytes: &[u8]) -> HashMap<u16, CurveDescriptor> {
+fn scan_curve_descriptors(
+    bytes: &[u8],
+    kind: fn(&CurveDescriptor) -> bool,
+) -> HashMap<u16, CurveDescriptor> {
     let mut out = HashMap::new();
     for off in 0..bytes.len().checked_sub(29).map_or(0, |end| end) {
         if bytes.get(off..off + 2) != Some(&[0x00, 0x88]) {
@@ -337,38 +361,47 @@ fn scan_curve_descriptors(bytes: &[u8]) -> HashMap<u16, CurveDescriptor> {
         if bytes.get(p) == Some(&0xff) {
             p += 1;
         }
-        let Some(attr) = View::u16_be_at(bytes, p) else {
+        let Some(attr) = View::u16_be_at(bytes, p + curve_desc::ATTR) else {
             continue;
         };
-        let Some(degree) = View::u16_be_at(bytes, p + 2).map(u32::from) else {
+        let Some(degree) = View::u16_be_at(bytes, p + curve_desc::DEGREE).map(u32::from) else {
             continue;
         };
-        let Some(control_count) = View::u32_be_at(bytes, p + 4).map(index_from_u32) else {
+        let Some(control_count) =
+            View::u32_be_at(bytes, p + curve_desc::CONTROL_COUNT).map(index_from_u32)
+        else {
             continue;
         };
-        let Some(dimension) = View::u16_be_at(bytes, p + 8).map(usize::from) else {
+        let Some(dimension) = View::u16_be_at(bytes, p + curve_desc::DIMENSION).map(usize::from)
+        else {
             continue;
         };
-        let Some(control_attr) = View::u16_be_at(bytes, p + 19) else {
+        let Some(control_attr) = View::u16_be_at(bytes, p + curve_desc::CONTROL_ATTR) else {
             continue;
         };
-        let Some(multiplicity_attr) = View::u16_be_at(bytes, p + 21) else {
+        let Some(multiplicity_attr) = View::u16_be_at(bytes, p + curve_desc::MULTIPLICITY_ATTR)
+        else {
             continue;
         };
-        let Some(knot_attr) = View::u16_be_at(bytes, p + 23) else {
+        let Some(knot_attr) = View::u16_be_at(bytes, p + curve_desc::KNOT_ATTR) else {
             continue;
         };
-        if attr <= 1 || !(dimension == 3 || dimension == 4) || control_count == 0 {
+        if attr <= 1 || !(2..=4).contains(&dimension) || control_count == 0 {
             continue;
         }
-        out.entry(attr).or_insert(CurveDescriptor {
+        let descriptor = CurveDescriptor {
             degree,
+            periodic: bytes.get(p + curve_desc::PERIODIC) == Some(&1),
             control_count,
             dimension,
+            rational: bytes.get(p + curve_desc::RATIONAL) == Some(&1),
             control_attr,
             multiplicity_attr,
             knot_attr,
-        });
+        };
+        if kind(&descriptor) {
+            out.entry(attr).or_insert(descriptor);
+        }
     }
     out
 }
@@ -675,7 +708,7 @@ pub(crate) fn patch_nurbs_curve(
     if bytes.get(p) == Some(&0xff) {
         p += 1;
     }
-    let descriptors = scan_curve_descriptors(bytes);
+    let descriptors = scan_curve_descriptors(bytes, CurveDescriptor::spatial);
     let Some(descriptor) = curve_descriptor(bytes, p, &descriptors) else {
         return Ok(None);
     };
@@ -810,7 +843,7 @@ pub(crate) fn scan_curve_carriers(
     bytes: &[u8],
     refusals: &mut Vec<LossNote>,
 ) -> HashMap<u16, CurveCarrier> {
-    let descriptors = scan_curve_descriptors(bytes);
+    let descriptors = scan_curve_descriptors(bytes, CurveDescriptor::spatial);
     let referenced_attrs = descriptors
         .values()
         .flat_map(|descriptor| {
@@ -916,6 +949,86 @@ pub(crate) fn scan_curve_carriers(
             geometry: CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(nurbs)),
             parameter_range: None,
         });
+    }
+    out
+}
+
+/// Two-dimensional `00 86` B-curves by `attr`, in stored support parameters
+/// (spec §7.6).
+pub(super) fn scan_pcurve_carriers(bytes: &[u8]) -> HashMap<u16, PcurveNurbs> {
+    let mut out = HashMap::new();
+    let descriptors = scan_curve_descriptors(bytes, CurveDescriptor::planar);
+    if descriptors.is_empty() {
+        return out;
+    }
+    let referenced_attrs = descriptors
+        .values()
+        .flat_map(|descriptor| {
+            [
+                descriptor.control_attr,
+                descriptor.multiplicity_attr,
+                descriptor.knot_attr,
+            ]
+        })
+        .collect::<HashSet<_>>();
+    let arrays = scan_arrays(bytes, Some(&referenced_attrs), None);
+    for off in 0..bytes.len().checked_sub(6).map_or(0, |end| end) {
+        if bytes.get(off..off + 2) != Some(&[0x00, 0x86]) {
+            continue;
+        }
+        let mut p = off + 2;
+        if bytes.get(p) == Some(&0xff) {
+            p += 1;
+        }
+        let Some(attr) = View::u16_be_at(bytes, p) else {
+            continue;
+        };
+        let Some(descriptor) = curve_descriptor(bytes, p, &descriptors) else {
+            continue;
+        };
+        let (Some(control), Some(multiplicities), Some(unique_knots)) = (
+            arrays.f64s.get(&descriptor.control_attr),
+            arrays.u16s.get(&descriptor.multiplicity_attr),
+            arrays.f64s.get(&descriptor.knot_attr),
+        ) else {
+            continue;
+        };
+        if Some(control.len()) != descriptor.control_count.checked_mul(descriptor.dimension)
+            || !unique_knots.iter().all(|value| value.is_finite())
+            || !unique_knots.is_sorted()
+        {
+            continue;
+        }
+        let mut points = Vec::new();
+        let mut weights = descriptor.rational.then(Vec::new);
+        for pole in control.chunks_exact(descriptor.dimension) {
+            let weight = if descriptor.rational { pole[2] } else { 1.0 };
+            if pole.iter().any(|value| !value.is_finite()) || weight.abs() <= f64::EPSILON {
+                break;
+            }
+            points.push(Point2::new(pole[0] / weight, pole[1] / weight));
+            if let Some(values) = &mut weights {
+                values.push(weight);
+            }
+        }
+        if points.len() != descriptor.control_count {
+            continue;
+        }
+        let expected = points.len() + index_from_u32(descriptor.degree) + 1;
+        let Some(knots) = expanded_knots(unique_knots, multiplicities, expected)
+            .filter(|knots| knots.len() == expected)
+        else {
+            continue;
+        };
+        if let Ok(nurbs) = PcurveNurbs::from_lanes(
+            descriptor.degree,
+            knots,
+            points,
+            weights,
+            descriptor.periodic,
+        ) {
+            out.entry(attr).or_insert(nurbs);
+        }
     }
     out
 }
@@ -1451,7 +1564,7 @@ fn curve_spans(body: &[u8], spans: &mut Vec<super::read_ledger::RawSpan>) {
     if carriers.is_empty() {
         return;
     }
-    let descriptors = scan_curve_descriptors(body);
+    let descriptors = scan_curve_descriptors(body, CurveDescriptor::spatial);
     let desc_offsets = curve_descriptor_offsets(body);
     for (wrapper_attr, carrier) in &carriers {
         let off = carrier.offset;

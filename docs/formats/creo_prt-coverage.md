@@ -14,6 +14,23 @@ arc, with native endpoint pairs as constraints. Native records retain the comple
 Synthetic checks cover carrier admission, conflicting-radius refusal, neutral
 validation, complete linkage framing, domain-bound circle intervals, and attributed losses.
 
+Bounded cylinder instances admit full signed floating literals through the
+shared twelve-slot matrix, coordinate-axis, positive-radius, radial-envelope,
+and axial-bound gate. Complete ten-slot envelopes bound their following named cylinder
+prototypes. Complete angular sample fields admit the seven-byte `1d` and
+eight-byte `1e` scalar forms. Synthetic checks cover both geometry namespaces,
+sample-field completion, extent and radius conflicts, neutral validation,
+and attributed refusal losses. Explicit Hole owners use complete paired
+plane/cylinder samples to prove circular edge intervals and complete cap
+pcurves. The bounded-carrier, sample agreement, endpoint, and strict ordering
+predicates apply together. Refused hole intervals retain
+`geometry.hole-circle-interval-unresolved` with the source curve and offset.
+Hole generators use two owned partial cylinder domains, matching endpoints,
+a shared angular boundary, opposing domain interiors, and a bound on full
+chart travel. Their envelopes use the shared rotation placement gate.
+`geometry.hole-generator-unresolved` retains each recognized refusal.
+Other small scalar forms remain in SE-15.
+
 ## Envelope
 
 The implemented format band is `#UGC:2` PSB part documents using the legacy
