@@ -2807,10 +2807,10 @@ fn decode_graph(
         let mut surface_orientation_reversed = false;
         match carriers.surface(f.surface_attr) {
             Some(c) => {
-                let forward_linked = !f.loops.is_empty()
-                    && f.loops
-                        .iter()
-                        .all(|(loop_attr, _)| !f.unlinked_loops.contains(loop_attr));
+                let forward_linked = f
+                    .loops
+                    .iter()
+                    .all(|(loop_attr, _)| !f.unlinked_loops.contains(loop_attr));
                 surface_orientation_reversed = c.orientation_reversed(forward_linked);
                 annotations.note(
                     id_surf(f.bridge_attr).as_str(),
