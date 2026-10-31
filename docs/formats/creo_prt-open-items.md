@@ -322,23 +322,23 @@ witnesses; it does not by itself define the remaining carrier equation.
 
 **Need.** We must know the binding to add the generated faces to the body topology.
 
-### GS-24. Additional bend envelopes and oblique frames
+### GS-24. Additional bend and wall productions
 
-**Question.** Which scalar and frame productions place bend cylinders and
-their planar flanges when their angular envelopes or direction matrices
-extend the compact quarter-turn production?
+**Question.** Which bounded scalar and placement productions define bend
+carriers and wall charts outside the complete rotations and envelopes in
+`creo_prt.md` §3.2 and §3.4?
 
-**Known.** The quarter-turn cylinder production in `creo_prt.md` §3.2 uses a
-complete signed basis, a positive radius, and agreeing envelope intervals.
-The plane compact rotation production in §3.4 supplies complete flange
-charts. General positional cylinder, plane-envelope, and local-system
-records retain their bounded scalar tokens and opaque spans.
+**Known.** Signed-basis bend compounds define complete quarter-turn and
+positive-lower-bound envelopes. Complete angular-stream plane rotations
+supply row-major wall charts and finite signed origins. The frame, radius,
+parameter bounds, and XYZ extrema have separate stored fields. Other
+positional cylinder, plane-envelope, and local-system bodies retain their
+bounded scalar tokens and opaque spans.
 
-**Need.** Resolve the lower angular-bound scalar lane, the oblique direction
-matrix lane, and each origin coordinate through complete compounds and
-independent incident-carrier and pcurve witnesses. Establish the angular
-interval's relation to the stored radial directions before constructing the
-carrier or flange chart.
+**Need.** Establish complete field boundaries, direction and origin scalar
+productions, and independent paired chart witnesses for each additional
+carrier. Reconcile every stored parameter interval with its frame and XYZ
+extrema.
 
 ### GS-25. Post-frame linkage identity
 
@@ -430,6 +430,20 @@ and exact field extent.
 
 **Need.** Establish the enclosing record selector, slot roles, and complete
 field boundary for additional angular chart productions.
+
+### GS-33. Low-byte endpoint literals in paired planar charts
+
+**Question.** Which complete endpoint production owns the signed floating
+literals beside low-byte literal replacements in paired planar charts?
+
+**Known.** The angular stream defines `00 <literal> <low>` replacements.
+Complete planar wall frames supply independent chart coordinates. Some
+endpoint bodies contain eight scalar candidates and a full-width `41`
+literal. The source retains the complete body and both chart references.
+
+**Need.** Establish the signed literal lane through independent paired bytes
+and complete chart images. Bind that lane to its bounded endpoint production
+before it supplies boundary geometry.
 
 ## 3. Section solving and feature placement
 

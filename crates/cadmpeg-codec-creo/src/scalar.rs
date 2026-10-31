@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! PSB scalar forms with context-independent IEEE-754 mappings.
 
+pub(crate) mod sheet_frames;
 pub(crate) mod sweep;
 
 pub(crate) mod revolution_frames;
@@ -15,7 +16,7 @@ use cadmpeg_ir::units::FiniteVector;
 use crate::axis::Axis;
 use crate::psb::{compact_int, short_form_float};
 
-const EPS_SUPPORT_FRAME_AGREEMENT: f64 = 1.0e-9;
+pub(crate) const EPS_SUPPORT_FRAME_AGREEMENT: f64 = 1.0e-9;
 
 /// The widest fixed positional slot table the format defines: the twelve-slot
 /// positional `local_sys` of a surface prototype, whose slots 0 to 2 and 6 to 8
@@ -1403,6 +1404,25 @@ fn plane_support_variants_capped_loss(
 
 /// Decode a positional plane support frame and retain its storage layout.
 pub(crate) fn decode_plane_support_local_system(
+    ctx: &DecodeContext<'_>,
+    body: &[u8],
+    cache: &ScalarCache,
+    losses: &mut Vec<cadmpeg_ir::report::loss::LossNote>,
+) -> Result<Option<(FiniteVector<12>, PlaneSupportFrameLayout)>, CodecError> {
+    if let Some(frame) = decode_support_frame_productions(ctx, body, cache, losses)? {
+        return Ok(Some(frame));
+    }
+    // A complete angular-stream rotation is read here only when no support-frame
+    // production admits the body. Where a production does admit it, the plane
+    // row's own envelope arbitrates (`surface::plane_local_systems_for_rows`);
+    // the caller attributes an incomplete rotation.
+    Ok(match sheet_frames::plane(body, cache) {
+        Some(Ok(slots)) => Some((slots, PlaneSupportFrameLayout::RotationColumns)),
+        _ => None,
+    })
+}
+
+fn decode_support_frame_productions(
     ctx: &DecodeContext<'_>,
     body: &[u8],
     cache: &ScalarCache,

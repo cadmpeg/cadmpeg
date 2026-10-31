@@ -862,20 +862,21 @@ then `e3` closes the envelope.
 
 The next compound contains a complete compact rotation body as defined in
 §3.4, one positive finite radius in the inline surface-suffix scalar lane,
-and `e3`. Matrix columns zero and one are
-the radial parameter directions; column two is the directed cylinder axis.
-The origin is the axis point. The axial corner interval equals the interval
+and `e3`. Stored matrix rows zero and two are the radial parameter
+directions `U` and `V`. Their cross product `U × V` is the directed
+cylinder axis. The origin is the axis point. The axial corner interval equals the interval
 obtained by mapping the two stored axial bounds through that frame. Each
 transverse corner interval spans one radius and has the axis point at one
 endpoint. Its other endpoint is the corresponding component of
-`origin + radius * (column_zero + column_one)`.
+`origin + radius * (U + V)`.
 Exactly one complete frame-and-radius boundary defines this form.
 The absolute axial-bound difference is the positive bounded length.
 `SMT_THICKNESS` is the model parameter for sheet thickness.
 
 For a first instance, the envelope ends at the following named prototype
-header. The prototype supplies the complete signed frame and radius, and the
-same envelope equalities apply. A coaxial circular boundary has constant
+header. The prototype supplies the complete signed frame and radius. Its
+matrix column zero defines `U`, column two defines the directed axis, and
+`axis × U` defines `V`. The same envelope equalities apply. A coaxial circular boundary has constant
 axial parameter. Its endpoint angles lie in the stored angular interval;
 the arc between those angles inside that interval is its bounded circle
 interval. The interval runs from the edge's start vertex to its end vertex.
@@ -883,6 +884,28 @@ Adjacent cylinder domains that qualify the same edge agree on that
 interval. Endpoint pairs on an adjacent plane constrain its circular
 pcurve at those endpoints. The complete circle projected through that
 plane's frame defines the pcurve between them.
+
+A positive-lower-bound bend envelope stores two angular-stream scalars,
+then `12`, then seven angular-stream scalars. The first pair is angular lower
+bound `u0` and axial lower bound `v0`. The seven values are axial upper bound
+`v1` and two XYZ envelope corners. The angular stream is defined in §4.1.1.
+`0 < u0 < pi/2`, and `v0` differs from `v1`. Repeat state continues across
+`12`, and each repeat fits its two-slot or seven-slot group. One optional
+`f7 <canonical-reference>` follows the corners. The angular lower bound is an explicit literal; a leading `0f`, `10`, `12`,
+`18`, or `e4` to `e7` control token opens the standard cylinder envelope
+instead.
+
+The following compound supplies the complete compact rotation and positive
+radius through the quarter-turn compound grammar. A first-instance named
+cylinder prototype supplies its complete frame and radius fields. The inline
+and named basis mappings follow the quarter-turn production. Both radial
+vectors and the axial vector are signed model-basis vectors. The parameter rectangle is `[u0, pi/2] × [min(v0, v1), max(v0, v1)]`.
+Each stored XYZ coordinate interval agrees with the corresponding extremum
+interval of its four mapped corners within `1e-9 * scale`. The scale is the
+maximum of one, the radius, and the absolute origin and stored corner
+coordinates. The positive axial length is `abs(v1 - v0)`.
+This envelope also supplies the angular and axial bounds for a coaxial
+circular boundary.
 
 A signed axis-aligned positional cylinder begins `11`, one nonzero signed
 axial length, and `13`, followed by one auxiliary scalar and two XYZ corners.
@@ -2051,6 +2074,42 @@ positive `2d`, negative `46`, and the positive DICT exponent lattice.
 The repeat tokens keep their repeat meaning in the origin slots; `18` is an
 explicit zero there.
 
+An angular-stream plane rotation stores nine row-major direction slots and
+three origin slots through the angular stream defined in §4.1.1. At least one
+direction literal uses `00` or a scalar opener in `19..df`. A direction
+repeat ends within the nine direction slots. Origin repeats inherit the
+preceding direction or origin scalar. One matrix column agrees component by component
+with a signed model-X or model-Z basis vector within `1e-9`. For columns
+`U`, `V`, and `N`, each squared norm differs from one by at most `1e-9`,
+each pairwise dot product has magnitude at most `1e-9`, and
+`(U × V) · N` differs from one by at most `1e-9`. Column zero defines the
+parameter reference direction, and column two defines the plane normal.
+The final three finite slots define the chart origin. The complete bounded
+field contains exactly twelve slots.
+
+The plane's envelope arbitrates between this rotation and the plane
+support-frame productions. The envelope opens with ten angular-stream scalars
+`u0, v0, u1, v1`, XYZ minima, and XYZ maxima; later linkage bytes are not read.
+A reading reproduces the envelope when its four chart corners
+`origin + u * first + v * second`, for `u` in `{u0, u1}` and `v` in `{v0, v1}`,
+have exactly the stored XYZ minima and maxima, each within `1e-9` scaled by
+`max(1, |stored|)`. For this rotation `first` is column zero and `second` is
+column one; for a production, `first` is its first parameter direction and
+`second` is the plane normal crossed with `first`. When a production admits the
+body and the rotation reproduces the envelope while the production's chart does
+not, the rotation replaces the production's reading if the two origins differ
+by more than `1e-9` scaled by the larger of one and the two components'
+magnitudes. When the origins agree, only the matrix
+orientation is disputed: the production's reading is kept and the
+`geometry.plane-angular-frame-unresolved` loss is recorded. When both charts
+reproduce the envelope with different origin, first direction, or normal
+(components within the same scaled `1e-9`), neither is chosen: the plane keeps
+no local-system frame and one loss is recorded; the generic
+unresolved-local-system loss is not added for the same row and offset. When no
+production admits the body, a complete rotation is read without an envelope
+check. A body that no production admits and whose rotation fails the
+complete-field admission yields no frame, and one loss attributes it.
+
 A complete positional compact rotation frame can end with
 `e1 f7 <nonzero-canonical-reference>` before its compound close. The `e1`
 closes the frame. The following reference occupies the linkage field after
@@ -2500,6 +2559,11 @@ array boundary or the next `e0` named-field boundary. An `e0` inside an explicit
 scalar payload is data. No partial slot or trailing scalar belongs to this
 array.
 
+A positional eight-slot endpoint body with a token-boundary `1a` literal or
+`00 04 <low>` replacement uses the angular scalar stream in §4.1.1. A
+complete standard stateful endpoint body has precedence. The angular body
+contains exactly eight finite slots and consumes its complete boundary.
+Its full-width literal openers are `19`, `28`, `2d`, `32`, and `46`.
 The exact wrapper `d7 e8 03 <scalar> 1e` selects the held-scalar production at
 a token boundary. It occupies one held scalar slot and retains the row-lane
 literal grammar; wrapper bytes are not parameter values. A payload byte sequence

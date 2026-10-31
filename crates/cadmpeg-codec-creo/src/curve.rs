@@ -7159,7 +7159,9 @@ fn curve_scalar_lane(
     cache: &scalar::ScalarCache,
 ) -> Result<CurveScalarLane, cadmpeg_core::CodecError> {
     if matches!(type_byte, 0x00 | 0x01 | 0x06 | 0x08) {
-        if let Some(frame) = scalar::decode_pcurve_scalar_frame(body, cache) {
+        if let Some(frame) = scalar::decode_pcurve_scalar_frame(body, cache)
+            .or_else(|| scalar::sheet_frames::pcurve(body, cache).and_then(Result::ok))
+        {
             let mut scalar_tokens = ctx.alloc_filled(
                 frame.token_count,
                 CurveParameterScalar {
@@ -7379,6 +7381,10 @@ fn claimed_pcurve_values(record: &CurveParameterRecord, require_held: bool) -> O
 fn complete_pcurve_values(record: &CurveParameterRecord) -> Option<[f64; 8]> {
     record.references.is_empty().then_some(())?;
     scalar::decode_pcurve_scalar_frame(&record.body, &scalar::ScalarCache::default())
+        .or_else(|| {
+            scalar::sheet_frames::pcurve(&record.body, &scalar::ScalarCache::default())
+                .and_then(Result::ok)
+        })
         .map(|frame| frame.values)
         .or_else(|| claimed_pcurve_values(record, true))
 }
@@ -7395,6 +7401,17 @@ pub(crate) fn pcurve_endpoints(
             continue;
         }
         let Some(values) = complete_pcurve_values(record) else {
+            if let Some(Err(reason)) =
+                scalar::sheet_frames::pcurve(&record.body, &scalar::ScalarCache::default())
+            {
+                losses.push(
+                    crate::loss::CreoLossCode::AngularEndpointLiteralUnresolved.note(format!(
+                        "Curve {} at payload byte {}: {reason}; its endpoint body remains native",
+                        record.curve_id, record.offset,
+                    )),
+                );
+                continue;
+            }
             if claimed_pcurve_values(record, false).is_some() {
                 losses.push(crate::loss::CreoLossCode::PcurveScalarFrameUnresolved.note(format!(
                     "Curve {} at byte {} has no complete positional pcurve scalar frame; its bytes remain native",

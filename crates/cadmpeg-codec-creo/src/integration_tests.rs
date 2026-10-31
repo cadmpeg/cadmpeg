@@ -874,3 +874,318 @@ fn subunit_rotation_pipeline_uses_the_shared_frame_gate() {
         [f64::from_bits(0x3c80_0000_0000_0000), 5.0]
     );
 }
+#[test]
+fn angular_wall_chart_pipeline_requires_a_complete_rotation() {
+    fn scalar(bytes: &mut Vec<u8>, value: f64) {
+        let raw = value.to_be_bytes();
+        if value == 0.0 {
+            bytes.push(0x18);
+        } else if value == 1.0 {
+            bytes.push(0x0f);
+        } else if value == -0.6 {
+            assert_eq!(&raw[..2], &[0xbf, 0xe3]);
+            bytes.push(0xb6);
+            bytes.extend_from_slice(&raw[2..]);
+        } else {
+            bytes.push(if raw[0] == 0x3f { 0x41 } else { 0x2d });
+            bytes.extend_from_slice(&raw[1..]);
+        }
+    }
+    for complete in [true, false] {
+        let mut payload = b"srf_array\0\xf8\x01".to_vec();
+        payload.extend_from_slice(&[9, 0x22, 4, 1, 1, 0]);
+        for value in [0.0, 0.0, 4.0, 6.0, 7.0, 11.0, 13.0, 11.0, 15.8, 16.6] {
+            scalar(&mut payload, value);
+        }
+        payload.push(0xe3);
+        for value in [
+            1.0, 0.0, 0.0, 0.0, 0.8, -0.6, 0.0, 0.6, 0.8, 7.0, 11.0, 13.0,
+        ] {
+            scalar(&mut payload, value);
+        }
+        if !complete {
+            payload.push(0xff);
+        }
+        payload.extend_from_slice(b"\xe3crv_array\0\xf3\xf8\0");
+        let result = decode(build_prt("integration", &[("ND:0:VisibGeom:0", payload)]));
+        let plane = result.ir().model.surfaces.iter().find_map(|surface| {
+            if surface.id.as_str() != "creo:visibgeom:surface#9" {
+                return None;
+            }
+            match &surface.geometry {
+                SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(plane)) => Some(plane),
+                _ => None,
+            }
+        });
+        if complete {
+            let plane = plane.expect("complete wall rotation");
+            assert_eq!(plane.origin().get(), [7.0, 11.0, 13.0].into());
+            let normal = plane.frame().axis().as_raw();
+            assert!(normal.x.abs() < 1.0e-12);
+            assert!((normal.y + 0.6).abs() < 1.0e-12);
+            assert!((normal.z - 0.8).abs() < 1.0e-12);
+        } else {
+            assert!(plane.is_none());
+            assert!(result.report().losses.iter().any(|loss| {
+                loss.code == crate::loss::CreoLossCode::PlaneAngularFrameUnresolved.kind()
+                    && loss.message.contains('9')
+            }));
+        }
+        assert_valid(&result);
+    }
+}
+
+#[test]
+fn angular_wall_envelope_arbitrates_between_rotation_and_support_frame() {
+    fn scalar(bytes: &mut Vec<u8>, value: f64) {
+        let raw = value.to_be_bytes();
+        if value == 0.0 {
+            bytes.push(0x18);
+        } else if value == 1.0 {
+            bytes.push(0x0f);
+        } else if raw[0] == 0xbf && (0xdf..=0xfc).contains(&raw[1]) {
+            // Negative values between about -0.49 and -1.9 are dictionary
+            // tokens: the opener carries the second IEEE byte.
+            bytes.push(raw[1] - 0x2d);
+            bytes.extend_from_slice(&raw[2..]);
+        } else {
+            bytes.push(if raw[0] == 0x3f { 0x41 } else { 0x2d });
+            bytes.extend_from_slice(&raw[1..]);
+        }
+    }
+    // The envelope of the rectangle `rect` under the angular chart whose first
+    // two columns are `rotation`'s and whose origin is `origin`.
+    fn envelope(rotation: [f64; 9], origin: [f64; 3], rect: [f64; 4]) -> [f64; 10] {
+        let [u0, v0, u1, v1] = rect;
+        let corner = |u: f64, v: f64| -> [f64; 3] {
+            std::array::from_fn(|axis| {
+                origin[axis] + u * rotation[axis * 3] + v * rotation[axis * 3 + 1]
+            })
+        };
+        let corners = [
+            corner(u0, v0),
+            corner(u0, v1),
+            corner(u1, v0),
+            corner(u1, v1),
+        ];
+        let mut values = [0.0; 10];
+        values[..4].copy_from_slice(&rect);
+        for axis in 0..3 {
+            values[4 + axis] = corners
+                .iter()
+                .map(|point| point[axis])
+                .fold(f64::INFINITY, f64::min);
+            values[7 + axis] = corners
+                .iter()
+                .map(|point| point[axis])
+                .fold(f64::NEG_INFINITY, f64::max);
+        }
+        values
+    }
+    // Both readings below decode the same bytes: the support-frame production
+    // reads `wall`'s first row as zero and negates the origin, so its chart
+    // differs from the angular chart, which owns the stored envelope.
+    let wall = [1.0, 0.0, 0.0, 0.0, 0.8, -0.6, 0.0, 0.6, 0.8];
+    // A rotation about Z; the production's chart is the mirror of the angular
+    // chart, and over a rectangle centred on the origin both span one box.
+    let turn = [0.8, -0.6, 0.0, 0.6, 0.8, 0.0, 0.0, 0.0, 1.0];
+    let cases = [
+        // (rotation, origin, rectangle, outcome)
+        (wall, [7.0, 11.0, 13.0], [0.0, 0.0, 4.0, 6.0], "rotation"),
+        (wall, [0.0, 0.0, 0.0], [0.0, 0.0, 4.0, 6.0], "production"),
+        (turn, [0.0, 0.0, 0.0], [-1.0, -1.0, 1.0, 1.0], "refused"),
+    ];
+    for (rotation, origin, rect, outcome) in cases {
+        let mut payload = b"srf_array\0\xf8\x01".to_vec();
+        payload.extend_from_slice(&[9, 0x22, 4, 1, 1, 0]);
+        for value in envelope(rotation, origin, rect) {
+            scalar(&mut payload, value);
+        }
+        payload.push(0xe3);
+        for value in rotation.into_iter().chain(origin) {
+            scalar(&mut payload, value);
+        }
+        payload.extend_from_slice(b"\xe3crv_array\0\xf3\xf8\0");
+        let result = decode(build_prt("integration", &[("ND:0:VisibGeom:0", payload)]));
+        assert_valid(&result);
+        let plane = result.ir().model.surfaces.iter().find_map(|surface| {
+            if surface.id.as_str() != "creo:visibgeom:surface#9" {
+                return None;
+            }
+            match &surface.geometry {
+                SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(plane)) => Some(plane),
+                _ => None,
+            }
+        });
+        let losses = result
+            .report()
+            .losses
+            .iter()
+            .filter(|loss| loss.message.contains("Plane 9 local system"))
+            .collect::<Vec<_>>();
+        match outcome {
+            "rotation" => {
+                // The production's origin differs, so the rotation that
+                // reproduces the envelope replaces it, without a loss.
+                let plane = plane.expect("rotation kept");
+                assert_eq!(plane.origin().get(), origin.into());
+                let normal = plane.frame().axis().as_raw();
+                assert!(normal.x.abs() < 1.0e-12);
+                assert!((normal.y + 0.6).abs() < 1.0e-12);
+                assert!((normal.z - 0.8).abs() < 1.0e-12);
+                assert!(losses.is_empty());
+            }
+            "production" => {
+                // Same origin, disputed orientation: the production's frame
+                // (normal along X) is kept and the dispute is one loss.
+                let plane = plane.expect("production kept");
+                assert_eq!(plane.origin().get(), origin.into());
+                let normal = plane.frame().axis().as_raw();
+                assert!((normal.x - 1.0).abs() < 1.0e-12);
+                assert!(normal.y.abs() < 1.0e-12 && normal.z.abs() < 1.0e-12);
+                assert_eq!(losses.len(), 1);
+                assert_eq!(
+                    losses[0].code,
+                    crate::loss::CreoLossCode::PlaneAngularFrameUnresolved.kind()
+                );
+            }
+            _ => {
+                // Both reproduce the envelope with different charts: no
+                // carrier, the bytes stay native, and one attributed loss.
+                // The rotation and the production are both refused, so the
+                // frame bytes stay in the native parameter body. The flat
+                // envelope still yields its axis-aligned plane; neither
+                // chart's reference direction is used.
+                let native = result.ir().native.namespace("creo").expect("native Creo");
+                let local_system = native.arenas()["plane_local_systems"]
+                    .first()
+                    .expect("retained local system");
+                assert!(local_system.fields().expect("fields")["u_axis"].is_null());
+                let body = crate::test_support::native_bytes(
+                    &local_system.fields().expect("fields")["body"],
+                );
+                let mut frame = Vec::new();
+                for value in rotation.into_iter().chain(origin) {
+                    scalar(&mut frame, value);
+                }
+                assert!(body.ends_with(&frame));
+                let plane = plane.expect("envelope-only plane");
+                assert_eq!(plane.origin().get(), [0.0, 0.0, 0.0].into());
+                assert_eq!(losses.len(), 1);
+                assert_eq!(
+                    losses[0].code,
+                    crate::loss::CreoLossCode::PlaneAngularFrameUnresolved.kind()
+                );
+            }
+        }
+    }
+}
+
+#[test]
+fn positive_lower_bend_pipeline_reconciles_named_and_inline_carriers() {
+    fn scalar(bytes: &mut Vec<u8>, value: f64) {
+        if value == 0.0 {
+            bytes.push(0x18);
+            return;
+        }
+        let raw = value.to_be_bytes();
+        bytes.push(if raw[0] == 0x3f { 0x41 } else { 0x2d });
+        bytes.extend_from_slice(&raw[1..]);
+    }
+    let lower = 0.7_f64;
+    let radius = 4.0;
+    let mut envelope = Vec::new();
+    scalar(&mut envelope, lower);
+    scalar(&mut envelope, 0.0);
+    envelope.push(0x12);
+    for value in [
+        5.0,
+        7.0,
+        11.0 + radius * lower.sin(),
+        13.0,
+        7.0 + radius * lower.cos(),
+        11.0 + radius,
+        18.0,
+    ] {
+        scalar(&mut envelope, value);
+    }
+    let mut matrix = vec![0x0f, 0x18, 0xe5, 0x0f, 0x18, 0xe5, 0x0f];
+    for value in [7.0, 11.0, 13.0] {
+        scalar(&mut matrix, value);
+    }
+    for section in ["VisibGeom", "ActDatums"] {
+        for agrees in [true, false] {
+            let encoded_radius = if agrees {
+                [0x2f, 0x10, 0]
+            } else {
+                [0x2f, 0x14, 0]
+            };
+            let mut payload = b"srf_array\0\xf8\x02".to_vec();
+            payload.extend_from_slice(&[9, 0x24, 4, 0xf6, 1, 11]);
+            payload.extend_from_slice(&envelope);
+            payload.extend_from_slice(
+                b"\xe0\0srf_prim_ptr(cylinder)\0\xe3\xe0\x02local_sys\0\xf9\x04\x03",
+            );
+            payload.extend_from_slice(&matrix);
+            payload.extend_from_slice(b"\xe0\x02radius\0");
+            payload.extend_from_slice(&encoded_radius);
+            payload.extend_from_slice(b"\xf1\xf7\x0e\xe3");
+            payload.extend_from_slice(&[11, 0x24, 4, 0xf6, 1, 0]);
+            payload.extend_from_slice(&envelope);
+            payload.extend_from_slice(b"\xf7\x25\xe3");
+            payload.extend_from_slice(&matrix);
+            payload.extend_from_slice(&encoded_radius);
+            payload.extend_from_slice(b"\xe3crv_array\0\xf3\xf8\0");
+            let result = decode(build_prt(
+                "integration",
+                &[(&format!("ND:0:{section}:0"), payload)],
+            ));
+            let cylinders = result
+                .ir()
+                .model
+                .surfaces
+                .iter()
+                .filter_map(|surface| match &surface.geometry {
+                    SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(cylinder)) => {
+                        Some(cylinder)
+                    }
+                    _ => None,
+                })
+                .collect::<Vec<_>>();
+            if agrees {
+                assert_eq!(cylinders.len(), 2);
+                for cylinder in cylinders {
+                    assert_eq!(cylinder.origin().get(), [7.0, 11.0, 13.0].into());
+                    assert_eq!(cylinder.radius().get(), radius);
+                    assert_eq!(*cylinder.frame().axis().as_raw(), [0.0, 0.0, 1.0].into());
+                    assert_eq!(
+                        *cylinder.frame().reference().as_raw(),
+                        [1.0, 0.0, 0.0].into()
+                    );
+                    let frame = crate::surface::PositionalCylinderFrame::new(
+                        [7.0, 11.0, 13.0],
+                        [0.0, 0.0, 1.0],
+                        [1.0, 0.0, 0.0],
+                        radius,
+                        None,
+                    )
+                    .expect("signed cylinder");
+                    assert_eq!(
+                        crate::surface::cylinder_frame_readers::rotation_cylinder_parameter_bounds(
+                            &envelope, frame,
+                        ),
+                        Some([[lower, std::f64::consts::FRAC_PI_2], [0.0, 5.0]])
+                    );
+                }
+            } else {
+                assert!(cylinders.is_empty());
+                assert!(result.report().losses.iter().any(|loss| {
+                    loss.code
+                        == crate::loss::CreoLossCode::CylinderRotationEnvelopeUnresolved.kind()
+                        && loss.message.contains("11")
+                }));
+            }
+            assert_valid(&result);
+        }
+    }
+}
