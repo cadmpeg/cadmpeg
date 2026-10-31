@@ -677,7 +677,7 @@ fn dimension_annotation_frame_links_nullable_loci_to_governing_owner() {
     .expect("annotated dimension frame");
     assert_eq!(frame.companion_record_index, Some(383));
     assert_eq!(frame.governing_companion_record_index, 391);
-    assert_eq!(frame.entity_genesis, 0x202);
+    assert_eq!(frame.entity_genesis(), Some(0x202));
     assert_eq!(
         frame.annotation_byte_offset(),
         u64_from_index(annotation_byte_offset)
@@ -906,3 +906,5 @@ fn recipe_references_preserve_signed_design_keys_and_refuse_truncation() {
         assert!(super::decode_recipe_references(&prefix[..end], 0).is_empty());
     }
 }
+
+mod metadata;

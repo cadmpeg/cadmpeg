@@ -27512,3 +27512,93 @@ offset = 12
 type = "u32"
 source = "spec"
 anchor = "the basename character count follows at tail offset 12"
+
+[[record]]
+name = "dimension_annotation_metadata_header"
+kind = "byte"
+section = "3.1"
+anchor = "The metadata header stores `u8 1` and a u32 entry count."
+size = 5
+note = "Starts immediately after the annotation operand run. Count zero ends the metadata block."
+parsed_by = "crates/cadmpeg-codec-f3d/src/design/decode/dimension_frames.rs"
+
+[[record.field]]
+name = "present"
+offset = 0
+type = "u8"
+value = 1
+source = "spec"
+anchor = "The metadata header stores `u8 1` and a u32 entry count."
+
+[[record.field]]
+name = "entry_count"
+offset = 1
+type = "u32"
+source = "spec"
+anchor = "The metadata header stores `u8 1` and a u32 entry count."
+
+[[record]]
+name = "dimension_annotation_genesis_metadata"
+kind = "byte"
+section = "3.1"
+anchor = "A populated metadata block stores one `EntityGenesis` entry"
+size = 57
+note = "Starts immediately after the annotation operand run. The two LP-ASCII fields include their u32 lengths."
+parsed_by = "crates/cadmpeg-codec-f3d/src/records/dimensions.rs"
+
+[[record.field]]
+name = "present"
+offset = 0
+type = "u8"
+value = 1
+source = "spec"
+anchor = "The metadata header stores `u8 1` and a u32 entry count."
+
+[[record.field]]
+name = "entry_count"
+offset = 1
+type = "u32"
+value = 1
+source = "spec"
+anchor = "count `1`, LP-ASCII `EntityGenesis`"
+
+[[record.field]]
+name = "key_length"
+offset = 5
+type = "u32"
+value = 13
+source = "derived"
+note = "ASCII byte length of EntityGenesis."
+anchor = "LP-ASCII `EntityGenesis`"
+
+[[record.field]]
+name = "key"
+offset = 9
+type = "bytes[13]"
+value = "EntityGenesis"
+source = "spec"
+anchor = "LP-ASCII `EntityGenesis`"
+
+[[record.field]]
+name = "type_length"
+offset = 22
+type = "u32"
+value = 23
+source = "derived"
+note = "ASCII byte length of IntrinsicMetaTypeuint64."
+anchor = "LP-ASCII `IntrinsicMetaTypeuint64`"
+
+[[record.field]]
+name = "meta_type"
+offset = 26
+type = "bytes[23]"
+value = "IntrinsicMetaTypeuint64"
+source = "spec"
+anchor = "LP-ASCII `IntrinsicMetaTypeuint64`"
+
+[[record.field]]
+name = "entity_genesis"
+offset = 49
+type = "u64"
+source = "spec"
+anchor = "the u64 origin bitfield"
