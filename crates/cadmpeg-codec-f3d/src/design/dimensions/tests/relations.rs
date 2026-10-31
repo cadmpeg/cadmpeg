@@ -776,6 +776,43 @@ fn single_pair_offsets_require_the_offset_bit_and_a_shared_center() {
 }
 
 #[test]
+fn midpoint_relation_resolves_a_point_at_the_middle_angle_of_an_arc() {
+    use crate::design::dimensions::{midpoint_constraint, MidpointCarrier};
+
+    let arc = offset_test_entity(
+        "generated:test:arc#carrier",
+        SketchGeometryDefinition::Arc {
+            center: Point2::new(61.0, -15.0),
+            radius: Length::new(5.0).unwrap(),
+            start_angle: Angle::new(std::f64::consts::PI).unwrap(),
+            end_angle: Angle::new(2.0 * std::f64::consts::PI).unwrap(),
+        },
+    );
+    let point = |id: &str, u: f64, v: f64| {
+        offset_test_entity(
+            id,
+            SketchGeometryDefinition::Point {
+                position: Point2::new(u, v),
+            },
+        )
+    };
+    let middle = point("generated:test:point#middle", 61.0, -20.0);
+    let Some(SketchConstraintDefinitionInput::Midpoint {
+        point: locus,
+        entity,
+    }) = midpoint_constraint(&[&middle, &arc], MidpointCarrier::LineOrArc)
+    else {
+        panic!("expected an arc midpoint constraint")
+    };
+    assert_eq!(locus, SketchLocus::Entity(middle.id().clone()));
+    assert_eq!(entity, arc.id().clone());
+
+    let end = point("generated:test:point#end", 66.0, -15.0);
+    assert!(midpoint_constraint(&[&arc, &end], MidpointCarrier::LineOrArc).is_none());
+    assert!(midpoint_constraint(&[&arc, &middle], MidpointCarrier::Line).is_none());
+}
+
+#[test]
 fn single_curve_annotation_projects_parameterized_offset() {
     let stream = "f3d:Design/BulkStream.dat";
     let sketch = SketchId::mint("generated:test:sketch#offset").unwrap();
