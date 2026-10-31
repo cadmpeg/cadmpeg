@@ -3,6 +3,8 @@
 
 pub(crate) mod sweep;
 
+pub(crate) mod revolution_frames;
+
 use std::collections::{BTreeMap, HashSet};
 
 use cadmpeg_core::bytes::{assemble_f32_be, assemble_f64_be, find_from};
@@ -101,6 +103,14 @@ pub(crate) fn decode_compact_plane_rotation(
     body: &[u8],
     cache: &ScalarCache,
 ) -> Option<Result<FiniteVector<12>, &'static str>> {
+    if let Some(frame) = revolution_frames::prefix(body, cache) {
+        return Some(frame.and_then(|(values, end)| {
+            if end != body.len() {
+                return Err(COMPACT_PLANE_ORIGIN_REFUSAL);
+            }
+            revolution_frames::supports(values).ok_or(COMPACT_PLANE_ORIGIN_REFUSAL)
+        }));
+    }
     let mut values = [0.0; 12];
     let mut slot = 0usize;
     let mut repeated = false;
@@ -2520,7 +2530,21 @@ pub(crate) fn decode_pcurve_scalar_frame_prefix(
     cache: &ScalarCache,
 ) -> Option<(PcurveScalarFrame, usize)> {
     let (frame, end) =
-        decode_stateful_scalar_frame_prefix::<8>(body, cache, StatefulScalarKind::Pcurve)?;
+        decode_stateful_scalar_frame_prefix::<8>(body, cache, StatefulScalarKind::Pcurve).or_else(
+            || {
+                let (frame, end) = decode_stateful_scalar_frame_prefix::<8>(
+                    body,
+                    cache,
+                    StatefulScalarKind::RevolutionEndpoint,
+                )?;
+                frame
+                    .tokens
+                    .iter()
+                    .flatten()
+                    .any(|token| body.get(token.offset) == Some(&0x19))
+                    .then_some((frame, end))
+            },
+        )?;
     (!frame.tokens.iter().flatten().any(|token| {
         body.get(token.offset..token.offset + HELD_PCURVE_OPEN.len()) == Some(HELD_PCURVE_OPEN)
     }))
@@ -2566,6 +2590,8 @@ pub(crate) enum StatefulScalarKind {
     CylinderRotation,
     Plane,
     Pcurve,
+    LegacyTwoChart,
+    RevolutionEndpoint,
 }
 
 fn rotation_pcurve_literal(body: &[u8], cursor: usize) -> Option<(f64, usize)> {
@@ -2631,21 +2657,48 @@ pub(crate) fn decode_stateful_scalar_run(
     }
     if matches!(
         kind,
-        StatefulScalarKind::Pcurve | StatefulScalarKind::CylinderRotation
+        StatefulScalarKind::Pcurve
+            | StatefulScalarKind::LegacyTwoChart
+            | StatefulScalarKind::CylinderRotation
     ) {
         if let Some((value, end)) = rotation_pcurve_literal(body, cursor) {
             return Some((value, 1, end));
         }
     }
+    if matches!(
+        kind,
+        StatefulScalarKind::Pcurve | StatefulScalarKind::RevolutionEndpoint
+    ) {
+        if let Some((value, end)) = revolution_frames::parameter_literal(body, cursor) {
+            return Some((value, 1, end));
+        }
+    }
+    if matches!(kind, StatefulScalarKind::RevolutionEndpoint)
+        && matches!(token, 0x19 | 0x32 | 0x1b | 0x34)
+    {
+        return revolution_frames::run(body, cursor, previous, cache);
+    }
     let run = match token {
         0xe4..=0xe6 => (previous?, usize::from(token - 0xe3), cursor + 1),
-        0xe7 if matches!(kind, StatefulScalarKind::Pcurve) => {
+        0xe7 if matches!(
+            kind,
+            StatefulScalarKind::Pcurve
+                | StatefulScalarKind::LegacyTwoChart
+                | StatefulScalarKind::RevolutionEndpoint
+        ) =>
+        {
             let (count, end) = compact_int(body, cursor + 1);
             (end > cursor + 1 && count > 0).then_some(())?;
             (previous?, usize::try_from(count).ok()?, end)
         }
         0x18 => (0.0, 1, cursor + 1),
-        0x12 if matches!(kind, StatefulScalarKind::Pcurve) => {
+        0x12 if matches!(
+            kind,
+            StatefulScalarKind::Pcurve
+                | StatefulScalarKind::LegacyTwoChart
+                | StatefulScalarKind::RevolutionEndpoint
+        ) =>
+        {
             (std::f64::consts::FRAC_PI_2, 1, cursor + 1)
         }
         0x0e => (0.5, 1, cursor + 1),

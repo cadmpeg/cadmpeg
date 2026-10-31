@@ -7422,16 +7422,33 @@ pub(crate) fn pcurve_endpoints(
     result
 }
 
+#[derive(Clone, Copy)]
+enum TwoChartScalarMode {
+    Legacy,
+    Angular,
+    RevolutionEndpoint,
+}
+
 fn two_chart_scalar_run(
     body: &[u8],
     cursor: usize,
     slot: usize,
     previous: Option<f64>,
     cache: &scalar::ScalarCache,
-    angular: bool,
+    mode: TwoChartScalarMode,
 ) -> Option<(f64, usize, usize)> {
-    if angular {
-        return scalar::sweep::run(body, cursor, previous, cache);
+    match mode {
+        TwoChartScalarMode::Angular => return scalar::sweep::run(body, cursor, previous, cache),
+        TwoChartScalarMode::RevolutionEndpoint => {
+            return scalar::decode_stateful_scalar_run(
+                body,
+                cursor,
+                previous,
+                cache,
+                scalar::StatefulScalarKind::RevolutionEndpoint,
+            )
+        }
+        TwoChartScalarMode::Legacy => {}
     }
     if slot.is_multiple_of(2) && body.get(cursor) == Some(&0x32) {
         let (value, end) = scalar::decode_two_chart_first_coordinate(body, cursor, cache)?;
@@ -7442,7 +7459,7 @@ fn two_chart_scalar_run(
         cursor,
         previous,
         cache,
-        scalar::StatefulScalarKind::Pcurve,
+        scalar::StatefulScalarKind::LegacyTwoChart,
     )
 }
 
@@ -7451,26 +7468,54 @@ fn two_chart_sample_count(
     start: usize,
     count: u32,
     cache: &scalar::ScalarCache,
-) -> Option<(usize, usize, bool)> {
-    [false, true].into_iter().find_map(|angular| {
-        let mut cursor = start;
-        let mut previous = None;
-        let mut slots = 0usize;
-        let mut token_count = 0usize;
-        let mut angle = false;
-        while cursor < body.len() {
-            angle |= scalar::sweep::angle(*body.get(cursor)?).is_some_and(|_| body[cursor] != 0x12);
-            let (value, repeat, end) =
-                two_chart_scalar_run(body, cursor, slots, previous, cache, angular)?;
-            slots = slots.checked_add(repeat)?;
-            token_count = token_count.checked_add(1)?;
-            previous = Some(value);
-            cursor = end;
+) -> Option<(usize, usize, TwoChartScalarMode)> {
+    if count == 2 {
+        let endpoint_body = body.get(start..)?;
+        if let Some(frame) =
+            scalar::decode_pcurve_scalar_frame(endpoint_body, cache).filter(|frame| {
+                frame
+                    .tokens
+                    .iter()
+                    .flatten()
+                    .any(|token| endpoint_body.get(token.offset) == Some(&0x19))
+            })
+        {
+            return Some((2, frame.token_count, TwoChartScalarMode::RevolutionEndpoint));
         }
-        let sample_count = bounded_len(u64::from(count), 4, slots)?;
-        (sample_count >= 2 && sample_count.checked_mul(4)? == slots && (!angular || angle))
-            .then_some((sample_count, token_count, angular))
-    })
+    }
+    two_chart_angular_sample_count(body, start, count, cache)
+}
+
+fn two_chart_angular_sample_count(
+    body: &[u8],
+    start: usize,
+    count: u32,
+    cache: &scalar::ScalarCache,
+) -> Option<(usize, usize, TwoChartScalarMode)> {
+    [TwoChartScalarMode::Legacy, TwoChartScalarMode::Angular]
+        .into_iter()
+        .find_map(|mode| {
+            let mut cursor = start;
+            let mut previous = None;
+            let mut slots = 0usize;
+            let mut token_count = 0usize;
+            let mut angle = false;
+            while cursor < body.len() {
+                angle |=
+                    scalar::sweep::angle(*body.get(cursor)?).is_some_and(|_| body[cursor] != 0x12);
+                let (value, repeat, end) =
+                    two_chart_scalar_run(body, cursor, slots, previous, cache, mode)?;
+                slots = slots.checked_add(repeat)?;
+                token_count = token_count.checked_add(1)?;
+                previous = Some(value);
+                cursor = end;
+            }
+            let sample_count = bounded_len(u64::from(count), 4, slots)?;
+            (sample_count >= 2
+                && sample_count.checked_mul(4)? == slots
+                && (!matches!(mode, TwoChartScalarMode::Angular) || angle))
+                .then_some((sample_count, token_count, mode))
+        })
 }
 
 struct TwoChartScalarFrame<'a> {
@@ -7480,7 +7525,7 @@ struct TwoChartScalarFrame<'a> {
     start: usize,
     sample_count: usize,
     token_count: usize,
-    angular: bool,
+    mode: TwoChartScalarMode,
     offset: usize,
 }
 
@@ -7543,7 +7588,7 @@ fn two_chart_scalar_frames<'a>(
                 first.map(|count| (0, count))
             }
         };
-        let Some((start, (sample_count, token_count, angular))) = decoded else {
+        let Some((start, (sample_count, token_count, mode))) = decoded else {
             if body.first() == Some(&0xfc) {
                 losses.push(crate::loss::CreoLossCode::TwoChartScalarFrameUnresolved.note(format!(
                 "Curve {} sampled pcurve at byte {} has no unique complete scalar frame; its bytes remain native",
@@ -7559,7 +7604,7 @@ fn two_chart_scalar_frames<'a>(
             start,
             sample_count,
             token_count,
-            angular,
+            mode,
             offset: row.start,
         });
     }
@@ -7589,7 +7634,7 @@ fn two_chart_scalar_lane(
     let mut token_count = 0;
     while cursor < frame.body.len() {
         let Some((value, repeat, end)) =
-            two_chart_scalar_run(frame.body, cursor, slot, previous, cache, frame.angular)
+            two_chart_scalar_run(frame.body, cursor, slot, previous, cache, frame.mode)
         else {
             return Ok(None);
         };
@@ -7661,7 +7706,7 @@ pub(crate) fn two_chart_pcurve_samples_with_modes(
         {
             if repeated == 0 {
                 let Some((decoded, repeat, end)) =
-                    two_chart_scalar_run(frame.body, cursor, slot, previous, &cache, frame.angular)
+                    two_chart_scalar_run(frame.body, cursor, slot, previous, &cache, frame.mode)
                 else {
                     complete = false;
                     break;
@@ -7677,7 +7722,7 @@ pub(crate) fn two_chart_pcurve_samples_with_modes(
         if !complete || cursor != frame.body.len() || repeated != 0 {
             continue;
         }
-        if frame.angular {
+        if matches!(frame.mode, TwoChartScalarMode::Angular) {
             angular_ids.insert(frame.curve_id);
         }
         result.push(TwoChartPcurveSamples {
@@ -7741,8 +7786,8 @@ pub(crate) fn two_chart_pcurve_samples_with_modes(
         let Some(body) = payload.get(array_start..array_end) else {
             continue;
         };
-        let decoded = two_chart_sample_count(body, 0, count, &cache);
-        let Some((sample_count, token_count, true)) = decoded else {
+        let decoded = two_chart_angular_sample_count(body, 0, count, &cache);
+        let Some((sample_count, token_count, TwoChartScalarMode::Angular)) = decoded else {
             if decoded.is_none() && count != 2 {
                 losses.push(crate::loss::CreoLossCode::TwoChartScalarFrameUnresolved.note(format!("Curve {} named sampled pcurve at byte {points_label} has no complete angular scalar frame; its bytes remain native", topology.curve_id)));
             }
@@ -7755,7 +7800,7 @@ pub(crate) fn two_chart_pcurve_samples_with_modes(
             start: 0,
             sample_count,
             token_count,
-            angular: true,
+            mode: TwoChartScalarMode::Angular,
             offset: topology.offset,
         };
         let mut samples = ctx.alloc_filled(
@@ -7774,9 +7819,14 @@ pub(crate) fn two_chart_pcurve_samples_with_modes(
             .enumerate()
         {
             if remaining == 0 {
-                let Some((decoded, repeat, end)) =
-                    two_chart_scalar_run(frame.body, cursor, slot, previous, &cache, true)
-                else {
+                let Some((decoded, repeat, end)) = two_chart_scalar_run(
+                    frame.body,
+                    cursor,
+                    slot,
+                    previous,
+                    &cache,
+                    TwoChartScalarMode::Angular,
+                ) else {
                     complete = false;
                     break;
                 };

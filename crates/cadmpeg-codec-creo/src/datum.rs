@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Standard model-space datum planes stored in `ActDatums`.
 
+pub(crate) mod boundary_planes;
+
 use cadmpeg_core::bytes::find_from as find;
 use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_core::CodecError;
@@ -187,7 +189,7 @@ pub(crate) fn cylinders(
         let Some(parameter) = crate::surface::unique_surface_parameter(&parameters, row.id) else {
             continue;
         };
-        if parameter.offset != row.offset {
+        if parameter.offset != row.offset || parameter.rotation_cylinder_refused() {
             continue;
         }
         let named = crate::surface::cylinder_frame_readers::named_rotation_cylinder_frame(

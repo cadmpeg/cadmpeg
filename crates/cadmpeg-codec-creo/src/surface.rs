@@ -7,6 +7,7 @@
 
 pub(crate) mod arrays;
 pub(crate) mod cylinder_frame_readers;
+mod revolution;
 
 use cadmpeg_core::bytes::{find_from as find, find_in};
 use cadmpeg_core::decode::{bounded_len, DecodeContext};
@@ -394,6 +395,7 @@ pub(crate) struct SurfaceParameterRecord {
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub(crate) enum SurfaceParameterCarrier {
     Unresolved(SurfaceKind),
+    RotationCylinderRefused,
     Resolved(InlineSurfaceCarrier),
 }
 
@@ -824,6 +826,7 @@ impl PositionalFrame {
 /// Complete model-space carrier and optional axial extent from a positional cylinder row.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub(crate) struct PositionalCylinderFrame {
+    parameter_bounds: Option<[[f64; 2]; 2]>,
     frame: PositionalFrame,
     /// Cylinder radius.
     radius: PositiveLength,
@@ -863,6 +866,7 @@ impl PositionalCylinderFrame {
         length: Option<PositiveLength>,
     ) -> Option<Self> {
         Some(Self {
+            parameter_bounds: None,
             frame: PositionalFrame::new(origin, axis, ref_direction)?,
             radius,
             length,
@@ -871,6 +875,9 @@ impl PositionalCylinderFrame {
     /// Returns the frame.
     pub(crate) fn frame(&self) -> &PositionalFrame {
         &self.frame
+    }
+    pub(crate) fn parameter_bounds(&self) -> Option<[[f64; 2]; 2]> {
+        self.parameter_bounds
     }
     /// Returns the radius.
     pub(crate) fn radius(&self) -> PositiveLength {
@@ -1246,6 +1253,7 @@ impl SurfaceParameterRecord {
     pub(crate) fn kind(&self) -> SurfaceKind {
         match self.carrier {
             SurfaceParameterCarrier::Unresolved(kind) => kind,
+            SurfaceParameterCarrier::RotationCylinderRefused => SurfaceKind::Cylinder,
             SurfaceParameterCarrier::Resolved(carrier) => match carrier {
                 InlineSurfaceCarrier::Cylinder { .. } | InlineSurfaceCarrier::CylinderBounds(_) => {
                     SurfaceKind::Cylinder
@@ -1264,6 +1272,13 @@ impl SurfaceParameterRecord {
             .iter()
             .filter_map(|token| token.value)
             .collect()
+    }
+
+    pub(crate) fn rotation_cylinder_refused(&self) -> bool {
+        matches!(
+            self.carrier,
+            SurfaceParameterCarrier::RotationCylinderRefused
+        )
     }
 
     pub(crate) fn positional_cylinder_frame(&self) -> Option<PositionalCylinderFrame> {
@@ -4315,6 +4330,11 @@ fn named_record_boundary(
             }
         }
     }
+    if kind == SurfaceKind::Cylinder {
+        if let Some(end) = revolution::named_boundary(body, cache) {
+            return Some(end);
+        }
+    }
     let cone_half_angle = if kind == SurfaceKind::Cone {
         terminal_cone_half_angle_layout(body)
     } else {
@@ -4400,6 +4420,7 @@ pub(crate) enum InlineSurfaceCarrier {
 
 #[derive(Debug, Clone, Copy)]
 struct InlineSurfaceBody {
+    rotation_frame: bool,
     terminal_close: usize,
     matrix_frame: bool,
     carrier: Option<InlineSurfaceCarrier>,
@@ -4421,6 +4442,7 @@ fn inline_surface_body(
             cylinder_frame_readers::decode_rotation_cylinder_body(body, cache)
         {
             return Ok(Some(InlineSurfaceBody {
+                rotation_frame: false,
                 terminal_close,
                 matrix_frame: false,
                 carrier: frame.map(|frame| InlineSurfaceCarrier::Cylinder {
@@ -4429,6 +4451,14 @@ fn inline_surface_body(
                 }),
                 rotation_cylinder: true,
             }));
+        }
+    }
+    if kind == SurfaceKind::Cylinder {
+        if let Some(layout) = revolution::inline_body(body, cache) {
+            return Ok(Some(layout));
+        }
+        if revolution::has_inline_floating_rotation_prefix(body, cache) {
+            return Ok(None);
         }
     }
     let matrix = (kind == SurfaceKind::Cylinder)
@@ -4465,6 +4495,7 @@ fn legacy_inline_surface_body(
             terminal_close.filter(|close| body.get(*close) == Some(&psb::token::COMPOUND_CLOSE))
         {
             return Ok(Some(InlineSurfaceBody {
+                rotation_frame: false,
                 terminal_close,
                 matrix_frame: false,
                 carrier: decode_positional_cone_frame(body, cache).map(InlineSurfaceCarrier::Cone),
@@ -4537,6 +4568,7 @@ fn legacy_inline_surface_body(
             first_carrier
         };
         let layout = InlineSurfaceBody {
+            rotation_frame: false,
             terminal_close,
             matrix_frame: false,
             carrier,
@@ -4644,6 +4676,7 @@ fn inline_surface_suffix_body(
                 None => carrier,
             };
             let layout = InlineSurfaceBody {
+                rotation_frame: false,
                 terminal_close,
                 matrix_frame: false,
                 carrier,
@@ -5421,13 +5454,14 @@ fn inline_close(first: f64, second: f64) -> bool {
     (first - second).abs() <= EPS_INLINE_WITNESS * inline_scale(first, second)
 }
 
-fn parameter_records_for_rows(
+pub(crate) fn parameter_records_for_rows(
     ctx: &DecodeContext<'_>,
     payload: &[u8],
     rows: &[SurfaceRow],
     losses: &mut Vec<cadmpeg_ir::report::loss::LossNote>,
 ) -> Result<Vec<SurfaceParameterRecord>, CodecError> {
     let cache = scalar::ScalarCache::from_section_checked(payload);
+    let bounds = complete_surface_array_bounds(payload);
     let mut headers = Vec::<(SurfaceRow, usize)>::new();
     for row in rows {
         let Some(body_start) = positional_body_start(payload, row) else {
@@ -5441,7 +5475,6 @@ fn parameter_records_for_rows(
         }
         headers.push((row.clone(), body_start));
     }
-    let frame_bounds = complete_surface_array_bounds(payload);
     let prototypes = if rows.iter().any(|row| row.kind == SurfaceKind::Cylinder) {
         named_cylinder_prototype_records(
             ctx,
@@ -5480,6 +5513,18 @@ fn parameter_records_for_rows(
         } else {
             None
         };
+        let refused_rotation_inline = row.kind == SurfaceKind::Cylinder
+            && revolution::has_inline_rotation_prefix(&payload[*body_start..body_end], &cache)
+            && !inline.is_some_and(|layout| {
+                layout.rotation_cylinder
+                    || (matches!(layout.carrier, Some(InlineSurfaceCarrier::Cylinder { .. }))
+                        && (layout.rotation_frame
+                            || layout.matrix_frame
+                            || !revolution::has_invalid_inline_angular_domain(
+                                &payload[*body_start..body_end],
+                                &cache,
+                            )))
+            });
         if let Some(close) = positional_spline_close {
             body_end = close;
             boundary = SurfaceBodyBoundary::CompoundClose;
@@ -5528,25 +5573,50 @@ fn parameter_records_for_rows(
         }
         let carrier = match row.kind {
             SurfaceKind::Cylinder => {
-                let named = cylinder_frame_readers::named_rotation_cylinder_frame(
+                let matrix_named = cylinder_frame_readers::named_rotation_cylinder_frame(
                     row,
                     &record,
                     rows,
                     &prototypes,
-                    &frame_bounds,
+                    &bounds,
                     &cache,
                 );
-                if named.is_some_and(|frame| frame.frame().is_none())
-                    || inline.is_some_and(|layout| layout.matrix_frame && layout.carrier.is_none())
-                {
+                let revolution_named =
+                    revolution::named_frame(row, &record, rows, &prototypes, &bounds, &cache);
+                let use_revolution = matrix_named.is_none()
+                    || revolution_named.is_some_and(|(admission, floating)| {
+                        floating || admission.frame().is_some()
+                    });
+                let named = if use_revolution {
+                    revolution_named.map(|(admission, _)| admission.frame())
+                } else {
+                    matrix_named.map(cylinder_frame_readers::CylinderRotationFrame::frame)
+                };
+                let revolution_refused = refused_rotation_inline
+                    || (named.is_some_and(|frame| frame.is_none())
+                        && revolution_named
+                            .is_some_and(|(admission, _)| admission.frame().is_none()))
+                    || inline
+                        .is_some_and(|layout| layout.rotation_frame && layout.carrier.is_none());
+                let matrix_refused = (!use_revolution
+                    && named.is_some_and(|frame| frame.is_none()))
+                    || inline.is_some_and(|layout| layout.matrix_frame && layout.carrier.is_none());
+                let refused = revolution_refused || matrix_refused;
+                if matrix_refused {
                     losses.push(crate::loss::CreoLossCode::CylinderRotationFrameUnresolved.note(format!(
-                        "Cylinder {} at payload byte {} has a rotation frame that conflicts with its bounded envelope; its source remains native",
-                        row.id, row.offset,
+                        "Cylinder {} at payload byte {} has a rotation frame that conflicts with its bounded envelope; its source remains native", row.id, row.offset,
                     )));
                 }
-                let frame = match (named, inline_carrier) {
-                    (Some(frame), _) => frame.frame(),
-                    (_, Some(InlineSurfaceCarrier::Cylinder { frame, .. })) => Some(frame),
+                if refused {
+                    record.carrier = SurfaceParameterCarrier::RotationCylinderRefused;
+                }
+                if revolution_refused {
+                    losses.push(crate::loss::CreoLossCode::RevolutionCarrierUnresolved.note(format!("Cylinder {} at byte {} requires an agreeing complete rotation field, positive radius, and bounded envelope; its source remains native", row.id,row.offset)));
+                }
+                let frame = match (refused, named, inline_carrier) {
+                    (true, _, _) => None,
+                    (_, Some(frame), _) => frame,
+                    (_, _, Some(InlineSurfaceCarrier::Cylinder { frame, .. })) => Some(frame),
                     _ if inline
                         .is_some_and(|layout| layout.matrix_frame || layout.rotation_cylinder) =>
                     {
@@ -5558,8 +5628,11 @@ fn parameter_records_for_rows(
                     )
                     .or_else(|| record.type24_round_frame(&cache)),
                 };
-                let split_bounds =
-                    split_cylinder_outline_bounds(&record.body, &record.scalar_tokens);
+                let split_bounds = if refused {
+                    None
+                } else {
+                    split_cylinder_outline_bounds(&record.body, &record.scalar_tokens)
+                };
                 match (frame, split_bounds) {
                     (Some(frame), split_bounds) => Some(InlineSurfaceCarrier::Cylinder {
                         frame,
@@ -7554,7 +7627,7 @@ pub(crate) fn cross_section_plane_local_systems(
     plane_local_systems_for_rows(ctx, payload, &cross_section_rows(payload), losses)
 }
 
-fn plane_local_systems_for_rows(
+pub(crate) fn plane_local_systems_for_rows(
     ctx: &DecodeContext<'_>,
     payload: &[u8],
     rows: &[SurfaceRow],

@@ -460,6 +460,11 @@ pub(in super::super) fn transfer_first_instance_prototype_surfaces(
                 ))
             }
             SupportedPrototype::Cylinder(_) => {
+                if crate::surface::unique_surface_parameter(&scan.surfaces.parameters, row.id)
+                    .is_some_and(crate::surface::SurfaceParameterRecord::rotation_cylinder_refused)
+                {
+                    continue;
+                }
                 let named = crate::surface::unique_surface_parameter(
                     &scan.surfaces.parameters,
                     row.id,

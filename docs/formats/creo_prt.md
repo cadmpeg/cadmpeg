@@ -1740,6 +1740,36 @@ radius. The five-coordinate envelope independently satisfies the two-radius
 equation below. The local system and both radius scalars consume the remainder
 of the bounded body.
 
+A bounded type-24 rotation carrier starts with ten stateful scalars:
+`u0, v0, u1, v1, x0, y0, z0, x1, y1, z1`. The first four scalars are
+its two angular and two axial limits. The last six scalars are its two
+model-space extent corners. A terminal `f7 <reference_ci>` follows the ten
+slots when the envelope carries a reference. A positive angular span is at
+most one full turn, and the two axial limits differ.
+An explicit parameter literal in an angular slot retains its angular value
+when the complete inline rotation prefix is present.
+
+The inline form continues with `e3`, one complete rotation frame, one positive
+radius scalar, and `e3`. The named form places the same complete frame in
+`local_sys` and its positive scalar in `radius` in the unique cylinder
+prototype between this row and the next row of the complete counted surface
+array. The named prototype starts at `e0 00 srf_prim_ptr(cylinder) 00`
+after the complete envelope. A named `local_sys` field has the `f9 04 03` array prefix. Its exact
+trailer is empty or `e1`. The radius field's exact trailer is empty, `e1`, or
+`f1 f7 0e`. The signed control-only matrix form requires a direction repeat;
+the floating matrix form uses the grammar in §3.4. A floating inline frame's
+`19` or `32` direction token identifies its rotation production. A control-only
+inline image establishes this bounded rotation production when its complete
+frame, radius, parameter limits, and extent witnesses agree. Other
+control-only inline images use their support-frame productions.
+
+With frame columns `U`, `V`, and `N`, origin `O`, and radius `r`, the chart
+is `O + r * (U * cos(u) + V * sin(u)) + N * v`. Each stored extent interval
+lies inside the coordinate extrema of this chart over the stored limits.
+A coordinate parallel to `N` has the same stored and computed endpoints.
+The axial span supplies the carrier length. The source frame, radius,
+parameter limits, and extent witnesses form one complete carrier.
+
 A compact type-24 cylinder envelope has a model-space Y axis. Its direct form
 is `14 <y0> <scalar> <y1> <x-center> <y0> <z0> <x-edge> <y1> <z1>`.
 Its split form is `12 <y0> 14 <y1> <x-edge> <y0> <z0> <x-center> <y1>
@@ -2015,6 +2045,25 @@ A complete positional compact rotation frame can end with
 closes the frame. The following reference occupies the linkage field after
 that close. Its complete canonical identifier ends at the compound boundary.
 The scalar frame and linkage retain their separate byte extents.
+
+A floating rotation body has the same row-major matrix and three origin
+slots. Its nine direction slots contain at least one `19 <tail7>` or
+`32 <tail7>` scalar. These scalars reconstruct the big-endian IEEE-754 binary64
+images `3c <tail7>` and `bc <tail7>`, respectively. The other direction tokens
+are `0f`, `10`, `18`, and `e4..e6`. Direction repeats end within the ninth
+slot. The matrix columns are unit vectors, are mutually orthogonal, and have
+positive handedness. Each origin slot uses the signed first-coordinate lane,
+with `19` and `32` carrying the same floating meaning. The short origin forms
+`1b b1 b2` and `34 b1 b2` reconstruct `3c b1 b2 00 00 00 00 00` and
+`bc b1 b2 00 00 00 00 00`. The complete body consumes twelve finite slots
+at its field boundary. Column zero is the chart reference direction, column
+one is the second chart direction, and column two is its normal or axis.
+
+An `ActDatums` plane row with boundary type `00` and a nonzero
+`next_geom_ptr` belongs to the material surface chain. Its complete local
+system defines its own chart. The row and parameter body have unique source
+identities. Its successor is a unique visible surface with the same `feat_id`.
+The plane identifier remains in the `ActDatums` namespace.
 
 A generic direct-normal body stores a parameter
 direction, an exact zero-rank triple, and a stored plane normal. A generic zero-rank
@@ -2504,6 +2553,16 @@ same `F0`/`F1` faces as the topology row. A complete legacy curve namespace
 uses the same half-edge successor, vertex-orbit, face-loop, and carrier
 admission rules as the binary `crv_array` namespace.
 
+The angular literal tokens in an endpoint chart are `11` positive pi,
+`12` positive pi/2, `13` positive 2*pi, `14` positive 3*pi/2, `15` negative
+pi, and `16` negative pi/2. The form `00 <literal> <low-byte>` replaces the
+last byte of that literal's big-endian IEEE-754 image. Its literal selector
+also admits `0e` positive one half, `0f` positive one, and `10` negative one.
+A complete eight-slot endpoint body with a token-boundary `19 <tail7>`
+also admits the floating `19`, `32`, `1b`, and `34` coordinate forms in
+§3.4. The first scalar is explicit, and repeats remain bounded by eight slots.
+The same endpoint production occupies a complete counted two-row chart body.
+
 A binary canonical two-chart body opens `fc <count>`, where `<count>` is a
 compact integer of at least two. Exactly `count` sample rows follow. Each row
 contains four finite scalars in this order:
@@ -2562,8 +2621,9 @@ and `1b B C` gives `3c B C 00 00 00 00 00`. The seven-byte form
 replaces the literal's low IEEE byte with `low`; the literal is an angle or one
 of `04`, `0e`, `0f`, `10`, and `18`. For this replacement, `04` has IEEE image
 `3f ef ff ff ff ff ff ff`. The replacement supplies the value used by following
-repeats. A frame that completes the legacy two-chart production uses that
-production. The angular alternative requires complete scalar consumption, the
+repeats. A two-row counted or count-bound replay body that completes the floating
+eight-slot endpoint production uses that production. Other frames that complete
+the legacy two-chart production use that production. The angular alternative requires complete scalar consumption, the
 exact declared sample extent, and an additional angle literal. These conditions
 select the scalar production for every sample in the frame.
 
@@ -4600,6 +4660,43 @@ azimuthal tangent before handedness is applied. The pcurve retains the edge
 parameter interval. Off-axis centers, unequal local radii, apex or pole points,
 nonpositive cone ratios, ambiguous torus branches, and misaligned frames do not
 define this pcurve.
+
+A partial stored cylinder domain selects a circular edge interval when the
+circle has the same axis line and radius, both endpoint heights agree and
+lie inside the axial limits, both endpoint angles have unique lifts inside
+the angular limits, and the angular midpoint maps onto the circle. All
+incident partial domains select the same directed arc. A full-turn domain
+leaves arc selection to the boundary chart. The edge starts at angle zero
+in its oriented circle frame and ends at the selected positive angular span.
+An agreeing native endpoint pair witnesses the complete projected circle
+pcurve with that interval.
+
+Two partial cylinder domains define a shared straight generator when their
+axis lines and radii agree and exactly one angular boundary of each domain
+contains both edge vertices. A direct eight-slot endpoint chart or a counted
+two-row chart supplies two complete parameter paths. At least one path has
+exactly constant `u` and distinct axial endpoints. Each full path stays inside
+its stored domain, maps to the same ordered vertex pair, and has angular
+travel within the angular tolerance and radius-scaled positional tolerance.
+The constant-`u` path fixes the line origin and the cylinder axis fixes its
+direction. The oriented edge interval spans its two vertices.
+
+A complete plane chart maps solved boundary vertices to cap parameters.
+For a two-circle loop, these parameters match both proved circle intervals,
+the two segments meet in traversal order, and all vertices lie in the cap
+plane. Two antipodal endpoints, two half-turn intervals, and opposite arc
+midpoints define one complete circular boundary.
+
+A planar cap with one strictly convex polygon and disjoint circular holes
+has one exterior loop. Its polygon edges have line carriers. Each circular
+hole has two distinct circle edges with the same center, radius, and axis
+line. Their chart endpoints are antipodal. When either edge has a stored circle
+interval, both edges have complete intervals whose endpoints match the chart
+endpoints. Each interval spans pi, and their interval midpoints lie on opposite
+halves. A cap loop projected from solved vertices requires this complete
+interval proof. Each closed disk
+lies strictly inside every polygon edge, and each pair of disks is strictly
+separate. The polygon precedes its interior loops.
 
 When a native circular edge with no native pcurve candidate is a sphere or
 torus meridian, its plane contains the surface axis. A sphere meridian is a

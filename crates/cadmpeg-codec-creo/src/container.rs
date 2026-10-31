@@ -471,6 +471,7 @@ pub(crate) struct SurfaceScan {
 
 /// Plane support frames, envelopes, placed planes, and datum planes.
 pub(crate) struct PlaneScan {
+    pub(crate) datum_boundary_planes: Vec<crate::datum::boundary_planes::BoundaryPlane>,
     /// Inherited support frames following positional plane envelopes.
     pub(crate) local_systems: Vec<PlaneLocalSystem>,
     /// Plane support frames from the DEPDB cross-section namespace.
@@ -1952,6 +1953,21 @@ fn datum_planes(sections: &[ScannedSection<'_>]) -> Result<Vec<DatumPlaneRecord>
     )
 }
 
+fn datum_boundary_planes(
+    ctx: &DecodeContext<'_>,
+    sections: &[ScannedSection<'_>],
+    losses: &mut Vec<cadmpeg_ir::report::loss::LossNote>,
+) -> Result<Vec<crate::datum::boundary_planes::BoundaryPlane>, CodecError> {
+    collect_section_records_result(
+        sections
+            .iter()
+            .filter(|section| section.section.name() == "ActDatums"),
+        |bytes| crate::datum::boundary_planes::scan(ctx, bytes, losses),
+        crate::datum::boundary_planes::BoundaryPlane::shift_offsets,
+        |plane| plane.row.offset,
+    )
+}
+
 fn datum_cylinders(
     ctx: &DecodeContext<'_>,
     sections: &[ScannedSection<'_>],
@@ -2830,6 +2846,7 @@ pub(crate) fn scan_bytes<'a>(
             .as_ref()
             .and_then(|model| relation_model_name(&model.name)),
     )?;
+    let datum_boundary_planes = datum_boundary_planes(ctx, sections, &mut local_work_cap_losses)?;
     let datum_cylinders = datum_cylinders(ctx, sections, &mut local_work_cap_losses)?;
     let unique_datum_cylinders =
         crate::decode::uniqueness::UniqueById::new(&datum_cylinders, |cylinder| cylinder.id);
@@ -2839,10 +2856,23 @@ pub(crate) fn scan_bytes<'a>(
             .chain(surface_rows.iter())
             .map(|row| row.id)
             .chain(
-                datum_cylinders
+                datum_boundary_planes
                     .iter()
-                    .filter(|cylinder| unique_datum_cylinders.get(cylinder.id).is_some())
-                    .map(|cylinder| cylinder.id),
+                    .filter(|plane| {
+                        plane.admitted(
+                            &datum_boundary_planes,
+                            &surface_rows,
+                            &nonvisible_surface_rows,
+                            &datum_cylinders,
+                        )
+                    })
+                    .map(|plane| plane.row.id)
+                    .chain(
+                        datum_cylinders
+                            .iter()
+                            .filter(|cylinder| unique_datum_cylinders.get(cylinder.id).is_some())
+                            .map(|cylinder| cylinder.id),
+                    ),
             ),
     );
     let nonvisible_curve_parameters =
@@ -3066,6 +3096,7 @@ pub(crate) fn scan_bytes<'a>(
             legacy_carriers: legacy_geometry.carriers,
         },
         planes: PlaneScan {
+            datum_boundary_planes,
             local_systems: plane_local_systems,
             cross_section_local_systems: cross_section_plane_local_systems,
             envelopes: plane_envelopes,

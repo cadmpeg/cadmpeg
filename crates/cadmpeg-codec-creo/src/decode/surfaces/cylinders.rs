@@ -1042,6 +1042,9 @@ pub(in super::super) fn transfer_positional_cylinders(
         else {
             continue;
         };
+        if record.rotation_cylinder_refused() {
+            continue;
+        }
         let feature_class = schema_classes.get(row.feature_id);
         let inline_non_plane = record.has_inline_non_plane_envelope()
             || record.has_inline_non_plane_local_system_suffix(ctx)?;
@@ -1219,7 +1222,12 @@ pub(in super::super) fn transfer_positional_cylinders(
             Ok(reference_cap_bound_round_frame(envelope, &circles)
                 .map(|frame| (frame, CylinderFrameMechanism::RoundReferenceCap)))
         };
-        let (frame, mechanism) = if selector_corner_interval {
+        let bounded_rotation = record
+            .positional_cylinder_frame()
+            .filter(|frame| frame.parameter_bounds().is_some());
+        let (frame, mechanism) = if let Some(frame) = bounded_rotation {
+            (frame, CylinderFrameMechanism::InlinePositionalSurfaceRow)
+        } else if selector_corner_interval {
             let Some(frame) = record.positional_cylinder_frame() else {
                 continue;
             };
