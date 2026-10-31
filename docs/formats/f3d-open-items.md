@@ -575,11 +575,11 @@ the native feature when a fixed lane carries a symmetric distance.
 
 ### DR-116. Joint-placed identity occurrences of inserted designs
 
-**Question.** Which native relation binds a joint to each inserted-design occurrence that stores the identity, and in which frame does that joint define the solved pose?
+**Question.** Which native relation binds a joint to an inserted-design occurrence that stores the identity and has no component-path carrier that states its pose, and in which frame does that joint define the solved pose?
 
-**Known.** `f3d.md` §1.4 "The matrix is a proper rigid motion." defines stored identity placement and the component-path world-pose carriers. A joint names an occurrence directly through an occurrence container, or names an inserted design through an external operand container, leaving the neutral tie unresolved; each distinct external document then accounts for at most one unnamed identity occurrence. The decoder counts these occurrences, reports `assembly.joint-placed-occurrence-unsolved`, and places them at the identity with the joint unsolved.
+**Known.** `f3d.md` §1.4 "The matrix is a proper rigid motion." defines stored identity placement and the component-path world-pose carriers. A joint names an occurrence directly through an occurrence container, or names an inserted design through an external operand container, leaving the neutral tie unresolved; each distinct external document then accounts for at most one unnamed identity occurrence. The decoder counts these occurrences, reports `assembly.joint-placed-occurrence-unsolved`, and places them at the identity with the joint unsolved. In one public assembly archive, eight root occurrences have carriers of a nested design, three of them store the identity placement, and the decoder places all eight from the carriers and removes them from the count. The root `As-built` scopes with a root operand path name none of those eight occurrence identities. A fourth identity occurrence has no carrier; the occurrences inside it keep one world pose in its insertion scope and in every captured position.
 
-**Need.** An inserted design whose occurrence stores the identity and whose joint solution is known must name the binding relation (direct occurrence reference or external-document container) and the frame of the solved pose, before the decoder can place these occurrences from their joints.
+**Need.** An inserted design whose occurrence stores the identity, has no component-path carrier, and is placed by a joint, with the solved pose known, must name the binding relation (direct occurrence reference or external-document container) and the frame of the solved pose, before the decoder can place these occurrences from their joints.
 
 **Note.** DR-113 covers solved placement without a bound assembly operand generally; this joint-to-occurrence binding is a separate question.
 
@@ -914,3 +914,15 @@ the native feature when a fixed lane carries a symmetric distance.
 **Conflict.** None.
 
 **Note.** Result body links outside the scope's product definition remain native with `scope.output-owner-mismatch`.
+
+### DR-162. Component paths with two nested occurrence placements
+
+**Question.** What pose does a component-path record state when its path holds a root component, a cross-document occurrence placement of the same role, this document's occurrence placement, and a second cross-document occurrence placement of the external occurrence's role?
+
+**Known.** Such records store a rigid matrix after the path, like the records `f3d.md` §1.4 defines. The local element can state the occurrence-placement type inline. A public assembly archive stores 38 of them for two inserted designs. The decoder reads none of them.
+
+**Need.** Records of a design that nests a design two levels deep with one occurrence moved at each level, to find whether the matrix is the world pose of the innermost occurrence or of the middle one.
+
+**Conflict.** None.
+
+**Note.** None.
