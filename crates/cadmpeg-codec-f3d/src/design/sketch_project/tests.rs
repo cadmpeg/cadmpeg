@@ -463,9 +463,10 @@ fn placed_sketch_projects_signed_normal_and_nonclamped_curves() {
             100,
             crate::records::sketch_placement::DesignSketchFrameForm::ScopeExplicit(
                 crate::records::sketch_placement::SketchPlacementMatrix::try_from([
-                    [0.0, 0.0, 1.0, 10.0],
-                    [1.0, 0.0, 0.0, 20.0],
-                    [0.0, 1.0, 0.0, 30.0],
+                    // Centimetres: the frame's origin is 10, 20, 30 mm.
+                    [0.0, 0.0, 1.0, 1.0],
+                    [1.0, 0.0, 0.0, 2.0],
+                    [0.0, 1.0, 0.0, 3.0],
                     [0.0, 0.0, 0.0, 1.0],
                 ])
                 .unwrap(),
@@ -943,9 +944,10 @@ fn nonplanar_sketch_curves_project_in_model_space() {
             100,
             crate::records::sketch_placement::DesignSketchFrameForm::ScopeExplicit(
                 crate::records::sketch_placement::SketchPlacementMatrix::try_from([
-                    [0.0, 0.0, 1.0, 10.0],
-                    [1.0, 0.0, 0.0, 20.0],
-                    [0.0, 1.0, 0.0, 30.0],
+                    // Centimetres: the frame's origin is 10, 20, 30 mm.
+                    [0.0, 0.0, 1.0, 1.0],
+                    [1.0, 0.0, 0.0, 2.0],
+                    [0.0, 1.0, 0.0, 3.0],
                     [0.0, 0.0, 0.0, 1.0],
                 ])
                 .unwrap(),
