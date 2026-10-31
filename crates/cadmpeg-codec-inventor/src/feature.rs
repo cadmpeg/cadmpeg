@@ -33,6 +33,7 @@ use crate::record_identity::{push_record, Located, RecordPayload};
 use crate::record_issue::{RecordIssue, RecordIssueFamily};
 use crate::rse::{RecordFrameState, RseInventory, SegmentBulkState, SegmentKind};
 use crate::{design::DesignInventory, sketch::SketchInventory};
+use sheet_metal::refusal::PlateError;
 
 pub(crate) mod base;
 pub(crate) mod body_selection;
@@ -200,6 +201,7 @@ pub(crate) struct FeatureProjection {
     pub(crate) edge_treatment_losses: Vec<cadmpeg_ir::report::loss::LossNote>,
     pub(crate) loft_losses: Vec<cadmpeg_ir::report::loss::LossNote>,
     pub(crate) split_losses: Vec<cadmpeg_ir::report::loss::LossNote>,
+    pub(crate) plate_losses: Vec<cadmpeg_ir::report::loss::LossNote>,
     pub(crate) mirror_losses: Vec<cadmpeg_ir::report::loss::LossNote>,
     /// Closed loops that resolved extrusion profiles append to sketch
     /// profile tables, by sketch id, in table order.
@@ -1921,7 +1923,13 @@ impl FeatureFamily {
                 15
             }
             Self::Plate => 6,
-            Self::Bend => 9,
+            Self::Bend
+                if source.properties.references().len()
+                    == sheet_metal::operands::PlateForm::Body.bend_count() =>
+            {
+                sheet_metal::operands::PlateForm::Body.bend_result_slot()
+            }
+            Self::Bend => sheet_metal::operands::PlateForm::Collection.bend_result_slot(),
             Self::Thicken => 15,
             Self::Shell => 9,
             Self::Sweep => 15,
@@ -2117,6 +2125,7 @@ pub(crate) fn project(
             edge_treatment_losses: Vec::new(),
             loft_losses: Vec::new(),
             split_losses: Vec::new(),
+            plate_losses: Vec::new(),
             mirror_losses: mirror::native_losses(&inventory.pattern_features, &[]),
             added_profiles: HashMap::new(),
         });
@@ -2304,6 +2313,7 @@ pub(crate) fn project(
     let mut edge_treatment_losses = Vec::new();
     let mut loft_losses = Vec::new();
     let mut split_losses = Vec::new();
+    let mut plate_refusals = sheet_metal::projection::Refusals::default();
     let mut neutral = 0_usize;
     for feature in &inventory.features {
         let label = label_of(feature.identity.record_ordinal);
@@ -2319,7 +2329,18 @@ pub(crate) fn project(
                 FeatureFamily::Chamfer => project_chamfer(ctx, feature, label, &index),
                 FeatureFamily::Hole => project_hole(ctx, feature, label, &index),
                 FeatureFamily::Plate => project_plate(ctx, feature, label, &index).or_else(|| {
-                    sheet_metal::projection::project_plate(ctx, feature, label, &index, inventory)
+                    match sheet_metal::projection::project_plate(
+                        ctx, feature, label, &index, inventory,
+                    ) {
+                        Ok(value) => Some(Ok(value)),
+                        Err(PlateError::Codec(error)) => Some(Err(error)),
+                        Err(PlateError::Refused(refusal)) => {
+                            if is_bent_plate(feature) {
+                                plate_refusals.insert(feature.id(), refusal);
+                            }
+                            None
+                        }
+                    }
                 }),
                 FeatureFamily::Bend => None,
                 FeatureFamily::Thicken => project_thicken(ctx, feature, label, &index, inventory),
@@ -2563,16 +2584,25 @@ pub(crate) fn project(
         }
         keep
     });
-    neutral -= sheet_metal::projection::reject_unresolved_inputs(ctx, &mut projected, inventory)?;
+    neutral -= sheet_metal::projection::reject_unresolved_inputs(
+        ctx,
+        &mut projected,
+        inventory,
+        &mut plate_refusals,
+    )?;
     neutral += sheet_metal::projection::project_bends(ctx, &mut projected, &index, inventory)?;
     loop {
-        let rejected =
-            sheet_metal::projection::reject_incomplete_pairs(ctx, &mut projected, inventory)?
-                + sheet_metal::projection::reject_unresolved_inputs(
-                    ctx,
-                    &mut projected,
-                    inventory,
-                )?;
+        let rejected = sheet_metal::projection::reject_incomplete_pairs(
+            ctx,
+            &mut projected,
+            inventory,
+            &mut plate_refusals,
+        )? + sheet_metal::projection::reject_unresolved_inputs(
+            ctx,
+            &mut projected,
+            inventory,
+            &mut plate_refusals,
+        )?;
         neutral -= rejected;
         if rejected == 0 {
             break;
@@ -2616,6 +2646,7 @@ pub(crate) fn project(
         edge_treatment_losses,
         loft_losses,
         split_losses,
+        plate_losses: plate_refusals.losses(&features),
         mirror_losses: mirror::native_losses(&inventory.pattern_features, &features),
         features,
         result_topologies,
@@ -3245,6 +3276,18 @@ fn plate_sketches<'a>(
 
 /// Plate slots that hold a bend to an existing face or relief options.
 const PLATE_BEND_SLOTS: [usize; 6] = [4, 9, 10, 11, 12, 13];
+
+/// Whether a plate names a bend or relief option, so the attached-plate form
+/// owns it.
+fn is_bent_plate(source: &PmDcFeature) -> bool {
+    PLATE_BEND_SLOTS.iter().any(|slot| {
+        source
+            .properties
+            .references()
+            .get(*slot)
+            .is_some_and(|reference| reference.index() != 0)
+    })
+}
 
 /// A sheet-metal plate without a bend: the profile of its face sketch,
 /// thickened by the slot-3 parameter from the sketch plane along the sketch
