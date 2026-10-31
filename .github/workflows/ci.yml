@@ -141,6 +141,11 @@ jobs:
         # start. Catches a reference that names no paragraph or several.
         run: python3 scripts/check-doc-anchors.py
 
+      - name: Open-item IDs
+        # An ID repeated in one open-items document. This job checks out the
+        # merge commit, so the merge queue rejects two queued PRs that take one ID.
+        run: python3 scripts/preflight_open_items.py
+
       - name: Python tooling tests
         run: python3 -m unittest discover -q -s scripts -p 'test_*.py'
 
