@@ -1542,3 +1542,13 @@ Parsed by:
 | 12 | 4 | `pole_count` | `u32` | little | spec | `pole_count:u32` |
 | 16 | 4 | `pole_value` | `u32` | little | spec | \| Pole value \| `8` \| · value `8` |
 | 20 | 4 | `pole_scalar_width` | `u32` | little | spec | `scalar_width:u32 = 8` · value `8` |
+
+## `pm_dc_composite_body_set_prefix`
+
+Spec §13.9 · layout: byte offsets · size: 4 B
+
+Offsets start after the versioned content header and stamps.
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 4 | `value` | `u32` | little | spec | value u32 = 0 · value `0` |

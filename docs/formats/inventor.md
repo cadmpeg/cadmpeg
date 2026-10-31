@@ -547,7 +547,7 @@ entity_id u32
 entity_type u32
 ```
 
-The body reference selects a kernel-body record in the link's segment, of type `5c5945f6d5113313100060a6bba647b5`. The entity identifier selects one entity of that body. `selection_source` equals the content-header source index of the selection record that references the link. A PmBRep kernel-entity link uses the same payload grammar. Its body reference selects the active part kernel carrier. Its entity identifier is the nonnegative ASM body key of the selected body when a surface-body wrapper references the link. The kernel entity type is retained; its numeric value does not select the body.
+The body reference selects a kernel-body record in the link's segment, of type `5c5945f6d5113313100060a6bba647b5`. The entity identifier selects one entity of that body. In the state-0 scalar-selection form, `selection_source` equals the content-header source index of the selection record that references the link. A PmBRep kernel-entity link uses the same payload grammar. Its body reference selects the active part kernel carrier. Its entity identifier is the nonnegative ASM body key of the selected body when a surface-body wrapper references the link. The kernel entity type is retained; its numeric value does not select the body.
 
 A PmDc kernel-body record uses the record envelope and footer of the active part kernel carrier (§5). Its footer selected key is the record's own qualified reference. Its kernel bytes hold ASM profile bodies. A profile body contains wires or planar faces. The kernel-entity link of a profile selection selects the body whose ASM body key equals the link's entity identifier. Each closed wire or face boundary loop of that body is a profile boundary ring. An open wire is an edge chain with two distinct boundary vertices. Face loops store their edges through the ordered coedge references. Model-space lengths in these bodies use internal centimetres.
 
@@ -1111,6 +1111,28 @@ Feature-label class `e899dbdfd31165afc0000185e89c6b4f` identifies Tagging. In se
 | 0 | Non-null qualified reference to an object collection of type `ae70680ed14a1e86d76248b03c2a96e1` |
 
 The collection contains a type-2 reference list. Each member is a non-null qualified reference to a surface-body wrapper of type `474d8790d011f8d10008cabc0663dc09` in the same PmDc segment. Each wrapper has a non-null unqualified body reference, with the external-reference grammar of section 13.4. The Tagging label has an empty participant list.
+
+### 13.9 Stored-body composites
+
+Feature-label class `0843c7c2244c2dee62b95ab01118d108` identifies a stored-body composite. In segment major versions 19, 23, and 25, its owner uses the generic feature grammar of section 13. Its type-2 property vector has three non-null qualified references:
+
+| Slot | Record type | Role |
+| ---: | --- | --- |
+| 0 | `1f4102caa041e9f2ffd878825538b1fe` | Stored source-body set |
+| 1 | `1f4102caa041e9f2ffd878825538b1fe` | Result-body set |
+| 2 | `284d8790d011f8d10008cabc0663dc09` | Boolean control |
+
+The label participant list is empty. The Boolean has an empty name, `name_value = 0`, and a value of false or true.
+
+A body-set record of type `1f4102caa041e9f2ffd878825538b1fe` uses the versioned content header and stamps of section 12. Its zero-value form then contains this body-set prefix:
+
+```text
+value u32 = 0
+```
+
+A type-2 reference list follows the prefix and ends the record. The source-body set contains qualified references to kernel-entity links in the same PmDc segment. Each link has state 3 and selects a stored kernel carrier of type `5c5945f6d5113313100060a6bba647b5` in that segment. The result-body set contains unqualified external references with the metadata address spaces of section 13.4. A zero-extension entry selects the kernel-entity link by segment identity and header identifier. That link has state 3. A result link joins one current body when its qualified body reference selects the active PmBRep carrier and its entity identifier equals that body's carrier-scoped ASM body key.
+
+Within one composite, each body set has distinct kernel-link `selection_source` values. The source and result sets have the same ordered `selection_source` sequence. Equal values pair one stored source selection with its result selection. The result set gives the stored result bodies of the feature, in member order.
 
 ## 14. Document kind
 

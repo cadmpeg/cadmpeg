@@ -56,6 +56,8 @@ pub(crate) mod split;
 pub(crate) mod tagging;
 pub(crate) mod work_plane;
 
+pub(crate) mod composite;
+
 const EPS_FEATURE_PROJECT_HOLE_E10: f64 = 1.0e-10;
 
 const FEATURE_TYPE: [u8; 16] = [
@@ -93,6 +95,9 @@ const AUXILIARY_ENUM_TYPE: [u8; 16] = [
 ];
 pub(crate) const OBJECT_COLLECTION_TYPE: [u8; 16] = [
     0xae, 0x70, 0x68, 0x0e, 0xd1, 0x4a, 0x1e, 0x86, 0xd7, 0x62, 0x48, 0xb0, 0x3c, 0x2a, 0x96, 0xe1,
+];
+pub(crate) const BODY_SET_TYPE: [u8; 16] = [
+    0x1f, 0x41, 0x02, 0xca, 0xa0, 0x41, 0xe9, 0xf2, 0xff, 0xd8, 0x78, 0x82, 0x55, 0x38, 0xb1, 0xfe,
 ];
 pub(crate) const FACE_COLLECTION_TYPE: [u8; 16] = [
     0xf1, 0xb2, 0xbc, 0x24, 0xd0, 0x11, 0x21, 0xdd, 0x00, 0x08, 0xd0, 0xbc, 0x06, 0x63, 0xdc, 0x09,
@@ -241,6 +246,11 @@ pub(crate) enum PmDcFeaturePropertyKind {
     },
     References {
         family: PmDcFeatureReferenceFamily,
+        items: PmDcReferenceList,
+    },
+    /// A stored-body composite body set: the body-set prefix and its members.
+    BodySet {
+        value: u32,
         items: PmDcReferenceList,
     },
     RdxVariable {
@@ -1071,6 +1081,7 @@ fn feature_property_parser(type_id: [u8; 16]) -> Option<PropertyParser> {
         hole::CENTERS_TYPE => Some(parse_hole_centers),
         FEATURE_DIMENSIONS_TYPE => Some(parse_feature_dimensions),
         OBJECT_COLLECTION_TYPE => Some(parse_object_collection),
+        BODY_SET_TYPE => Some(parse_body_set),
         FILLET_EDGE_SETS_TYPE => Some(parse_fillet_edge_sets),
         RDX_VARIABLE_TYPE => Some(parse_rdx_variable),
         SURFACE_BODY_TYPE => Some(parse_surface_body),
@@ -1250,6 +1261,23 @@ reference_parser!(parse_object_collection, ObjectCollection);
 reference_parser!(parse_fillet_edge_sets, FilletEdgeSets);
 reference_parser!(parse_edge_collection, EdgeCollection);
 reference_parser!(parse_face_collection, FaceCollection);
+
+fn parse_body_set(
+    _: &DecodeContext<'_>,
+    source: View<'_>,
+    version: u8,
+) -> Result<PmDcFeaturePropertyPayload, CodecError> {
+    let mut cursor = Cursor::new(source);
+    let header = content_header(&mut cursor, version)?;
+    let value = cursor.u32("body-set value")?;
+    let items = reference_list(&mut cursor, 2, "body-set members")?;
+    cursor.finish("body set")?;
+    Ok(property(
+        version,
+        header,
+        PmDcFeaturePropertyKind::BodySet { value, items },
+    ))
+}
 
 fn parse_rdx_variable(
     ctx: &DecodeContext<'_>,
@@ -1705,6 +1733,13 @@ const SHELL_CLASS_ID: ClassId = ClassId(NativeBytes::new([
 
 /// Native family names of feature-label classes outside the neutral families.
 const NATIVE_CLASSES: &[([u8; 16], &str)] = &[
+    (
+        [
+            0x08, 0x43, 0xc7, 0xc2, 0x24, 0x4c, 0x2d, 0xee, 0x62, 0xb9, 0x5a, 0xb0, 0x11, 0x18,
+            0xd1, 0x08,
+        ],
+        "Composite",
+    ),
     (
         [
             0x06, 0x19, 0xaa, 0x28, 0xd4, 0x11, 0xc7, 0x7a, 0x60, 0x00, 0xc4, 0xa4, 0xca, 0xe1,
@@ -2769,7 +2804,14 @@ fn native_feature(
     native_id: String,
 ) -> Result<Feature, CodecError> {
     ctx.charge_entities(1, "project Inventor history feature")?;
-    let kind = native_kind(label.map(|label| label.class_id()));
+    let definition = if label.is_some_and(|label| label.class_id() == composite::CLASS_ID) {
+        composite::definition(true)
+    } else {
+        FeatureDefinition::Operation(FeatureOperation::Native {
+            kind: native_kind(label.map(|label| label.class_id())),
+            parameters: BTreeMap::new(),
+        })
+    };
     Ok(Feature {
         product_definition: None,
         id: history_feature_id(identity)?,
@@ -2781,12 +2823,7 @@ fn native_feature(
         source_tag: Some("native".into()),
         source_text: None,
         source_content: FeatureContent::default(),
-        evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
-            FeatureDefinition::Operation(FeatureOperation::Native {
-                kind,
-                parameters: BTreeMap::new(),
-            }),
-        ),
+        evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(definition),
         native_ref: Some(native_id),
     })
 }

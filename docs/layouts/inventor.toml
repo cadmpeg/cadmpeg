@@ -4375,3 +4375,19 @@ type = "u32"
 source = "spec"
 anchor = "`scalar_width:u32 = 8`"
 value = 8
+
+[[record]]
+name = "pm_dc_composite_body_set_prefix"
+kind = "byte"
+section = "13.9"
+anchor = "body-set prefix"
+size = 4
+note = "Offsets start after the versioned content header and stamps."
+
+[[record.field]]
+name = "value"
+offset = 0
+type = "u32"
+source = "spec"
+anchor = "value u32 = 0"
+value = 0
