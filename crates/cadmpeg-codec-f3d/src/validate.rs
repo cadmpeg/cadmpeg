@@ -7993,7 +7993,6 @@ fn validate_sketch_placements(ctx: &Ctx<'_, '_>, findings: &mut Vec<Finding>) {
     let mut placement_scopes = HashSet::new();
     let mut visibility_offsets = HashSet::new();
     let mut visibility_ordinals = HashSet::new();
-    let mut ordinals_by_namespace = BTreeMap::<(&str, u64), Vec<(u64, u32)>>::new();
     let collections = native
         .design_types
         .iter()
@@ -8043,13 +8042,6 @@ fn validate_sketch_placements(ctx: &Ctx<'_, '_>, findings: &mut Vec<Finding>) {
                             visibility.stream_ordinal.get(),
                         ))
                     {
-                        ordinals_by_namespace
-                            .entry((native_stream, collection))
-                            .or_default()
-                            .push((
-                                placement.entity_id.suffix(),
-                                visibility.stream_ordinal.get(),
-                            ));
                         visibility_offsets.insert((native_stream, visibility.visible_offset()))
                     } else {
                         false
@@ -8079,17 +8071,6 @@ fn validate_sketch_placements(ctx: &Ctx<'_, '_>, findings: &mut Vec<Finding>) {
                 Check::NativeLinks,
                 "Fusion Design sketch placement has an invalid frame or scope link",
                 Some(placement.id.clone()),
-            );
-        }
-    }
-    for ((stream, _), mut ordinals) in ordinals_by_namespace {
-        ordinals.sort_unstable();
-        if ordinals.windows(2).any(|pair| pair[0].1 >= pair[1].1) {
-            push_constant_finding(
-                findings,
-                Check::NativeLinks,
-                "Fusion Design sketch Geometry member ordinals do not increase with sketch entity order",
-                Some(stream.to_owned()),
             );
         }
     }
