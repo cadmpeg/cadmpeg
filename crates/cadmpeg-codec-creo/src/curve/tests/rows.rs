@@ -1185,6 +1185,145 @@ fn sweep_named_samples_keep_signed_angles_and_tiny_coordinates() {
         && loss.message.contains("Curve 9")));
 }
 
+/// Two planar face charts share one model-space edge. Endpoint records of two
+/// curves on that edge each carry one negative subunit coordinate as `41` plus
+/// the low seven bytes of the negative value. Only the negative reading makes
+/// both charts name one model-space point.
+#[test]
+fn angular_endpoint_41_agrees_across_both_face_charts_only_when_negative() {
+    type V = [f64; 3];
+    let dot = |a: V, b: V| a[0] * b[0] + a[1] * b[1] + a[2] * b[2];
+    let at = |o: V, u: V, v: V, c: [f64; 2]| -> V {
+        [
+            o[0] + u[0] * c[0] + v[0] * c[1],
+            o[1] + u[1] * c[0] + v[1] * c[1],
+            o[2] + u[2] * c[0] + v[2] * c[1],
+        ]
+    };
+    let sub = |a: V, b: V| -> V { [a[0] - b[0], a[1] - b[1], a[2] - b[2]] };
+    // The shared edge runs from `edge_origin` along `edge_dir`, a unit vector.
+    let edge_origin: V = [0.2, -0.1, 0.3];
+    let edge_dir: V = [0.6, 0.8, 0.0];
+    // Chart 0: the plane z = 0.3, with the edge as its first axis.
+    let (u0, v0): (V, V) = (edge_dir, [-0.8, 0.6, 0.0]);
+    // Chart 1: a plane tilted about the edge (second axis is unit and
+    // orthogonal to the edge).
+    let (u1, v1): (V, V) = (edge_dir, [-0.48, 0.36, 0.8]);
+    // The second coordinate of chart 0 along the edge is the value written
+    // with the `00 04 <low>` replacement that makes the body an angular one.
+    let near_one = f64::from_bits(0x3fef_ffff_ffff_ff40);
+    let o0 = at(edge_origin, edge_dir, v0, [-0.2, -near_one]);
+    let o1 = at(edge_origin, edge_dir, v1, [0.15, -0.3]);
+    let model = |t: f64| -> V { at(edge_origin, edge_dir, [0.0; 3], [t, 0.0]) };
+    let chart = |o: V, u: V, v: V, t: f64| -> [f64; 2] {
+        let d = sub(model(t), o);
+        [dot(d, u), dot(d, v)]
+    };
+    let slot = |value: f64, replacement: bool| -> Vec<u8> {
+        let bits = value.to_bits().to_be_bytes();
+        if replacement {
+            vec![0x00, 0x04, bits[7]]
+        } else if value < 0.0 {
+            assert_eq!(bits[0], 0xbf);
+            let mut bytes = vec![0x41];
+            bytes.extend_from_slice(&bits[1..]);
+            bytes
+        } else {
+            assert_eq!(bits[0], 0x3f);
+            let mut bytes = vec![0x28];
+            bytes.extend_from_slice(&bits[1..]);
+            bytes
+        }
+    };
+    let faces = BTreeSet::from([10, 11]);
+    let decode = |t: [f64; 2]| -> ([[f64; 2]; 2], [[f64; 2]; 2], [f64; 8]) {
+        let mut coordinates = Vec::new();
+        for parameter in t {
+            coordinates.push(chart(o0, u0, v0, parameter));
+            coordinates.push(chart(o1, u1, v1, parameter));
+        }
+        let mut body = Vec::new();
+        let mut written = [0.0; 8];
+        for (index, value) in [
+            coordinates[0][0],
+            near_one,
+            coordinates[1][0],
+            coordinates[1][1],
+            coordinates[2][0],
+            near_one,
+            coordinates[3][0],
+            coordinates[3][1],
+        ]
+        .into_iter()
+        .enumerate()
+        {
+            written[index] = value;
+            body.extend(slot(value, index == 1 || index == 5));
+        }
+        assert_eq!(
+            written.iter().filter(|value| **value < 0.0).count(),
+            1,
+            "exactly one negative subunit coordinate"
+        );
+        let mut payload = b"topol_ref_data\0".to_vec();
+        payload.extend_from_slice(&[7, 6, 4, 1, 0xf6]);
+        payload.extend_from_slice(&body);
+        payload.extend_from_slice(&[10, 11, 7, 7, 0, 0, 0xe3, 0xe1, 0xe3]);
+        let parameters = crate::decode::with_service_context(|ctx| {
+            parameter_records_with_face_ids(ctx, &payload, Some(&faces))
+        })
+        .expect("complete endpoint record");
+        let topology = topology_rows_with_face_ids(&payload, Some(&faces));
+        let endpoints = crate::curve::pcurve_endpoints(&parameters, &topology, &mut Vec::new());
+        assert_eq!(endpoints.len(), 1);
+        (
+            endpoints[0].face_0_endpoints,
+            endpoints[0].face_1_endpoints,
+            written,
+        )
+    };
+    let spread = |c0: [[f64; 2]; 2], c1: [[f64; 2]; 2]| -> f64 {
+        (0..2)
+            .map(|end| {
+                let p = at(o0, u0, v0, c0[end]);
+                let q = at(o1, u1, v1, c1[end]);
+                sub(p, q).iter().fold(0.0_f64, |m, d| m.max(d.abs()))
+            })
+            .fold(0.0, f64::max)
+    };
+    for t in [[0.1, 0.5], [0.3, 0.05]] {
+        let (c0, c1, written) = decode(t);
+        // The decoder returns the bytes' negative reading.
+        for end in 0..2 {
+            let expected = [chart(o0, u0, v0, t[end]), chart(o1, u1, v1, t[end])];
+            for axis in 0..2 {
+                assert!((c0[end][axis] - expected[0][axis]).abs() < 1e-15);
+                assert!((c1[end][axis] - expected[1][axis]).abs() < 1e-15);
+            }
+        }
+        assert!(spread(c0, c1) < 1e-12, "negative reading: charts agree");
+        // The same tail under a positive high byte: the charts miss.
+        let mut flipped = (c0, c1);
+        for (slot_index, value) in written.iter().enumerate() {
+            if *value < 0.0 {
+                let positive = f64::from_bits(value.to_bits() & !(0x80_u64 << 56));
+                match slot_index {
+                    0 => flipped.0[0][0] = positive,
+                    2 => flipped.1[0][0] = positive,
+                    3 => flipped.1[0][1] = positive,
+                    4 => flipped.0[1][0] = positive,
+                    6 => flipped.1[1][0] = positive,
+                    _ => flipped.1[1][1] = positive,
+                }
+            }
+        }
+        assert!(
+            spread(flipped.0, flipped.1) > 1e-3,
+            "positive reading: charts miss"
+        );
+    }
+}
+
 #[test]
 fn angular_endpoint_frame_keeps_its_complete_boundary() {
     let body = [
@@ -1224,6 +1363,21 @@ fn angular_endpoint_frame_keeps_its_complete_boundary() {
         .expect("complete bounded endpoint body")
         .expect("negative subunit literal");
     assert_eq!(admitted.values[0], -0.25);
+    for (literal, ok) in [
+        (-1.0_f64, true),
+        (f64::from_bits(0xbfef_ffff_ffff_ffff), true),
+        (f64::from_bits(0xbff0_0000_0000_0001), false),
+    ] {
+        let mut edge = vec![0x41];
+        edge.extend_from_slice(&literal.to_be_bytes()[1..]);
+        edge.extend_from_slice(&body[3..]);
+        let frame = crate::scalar::sheet_frames::pcurve(&edge, &cache)
+            .expect("complete bounded endpoint body");
+        assert_eq!(frame.is_ok(), ok);
+        if let Ok(frame) = frame {
+            assert_eq!(frame.values[0], literal);
+        }
+    }
     let mut full_width = vec![0x41];
     full_width.extend_from_slice(&1.5_f64.to_be_bytes()[1..]);
     full_width.extend_from_slice(&body[3..]);

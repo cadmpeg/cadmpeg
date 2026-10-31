@@ -2564,9 +2564,15 @@ A positional eight-slot endpoint body with a token-boundary `1a` literal or
 complete standard stateful endpoint body has precedence. The angular body
 contains exactly eight finite slots and consumes its complete boundary.
 Its full-width literal openers are `19`, `28`, `2d`, `32`, `41`, and `46`.
-Opener `41` mirrors `28`: its seven payload bytes follow the high byte `bf`, so the
-literal is negative. The body is refused when the value is not finite or does not
-lie strictly between minus one and zero.
+Opener `28` reads its seven payload bytes after the high byte `3f`, so its
+literal is positive. Opener `41` is its mirror: the seven payload bytes follow the
+high byte `bf`, so the literal is negative. The fixed high byte makes every value
+finite and below zero. The body is refused when the value is below minus one;
+minus one itself is admitted, as the `00 10 <low>` replacement also produces it.
+In one sheet-metal part, the paired endpoint records of two curves agree across
+both incident face charts to 3e-15 under the negative reading and miss by 0.46
+under the positive one; across a 53-file Creo set, one more file closes into a
+solid and no other result changes.
 The exact wrapper `d7 e8 03 <scalar> 1e` selects the held-scalar production at
 a token boundary. It occupies one held scalar slot and retains the row-lane
 literal grammar; wrapper bytes are not parameter values. A payload byte sequence

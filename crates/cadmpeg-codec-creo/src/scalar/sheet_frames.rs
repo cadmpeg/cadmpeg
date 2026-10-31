@@ -175,9 +175,12 @@ pub(crate) fn pcurve(
             _ => false,
         };
         let (value, count, end) = if tag == 0x41 {
-            // `41` mirrors `28`: the sign-flipped full-width literal.
+            // `41` mirrors `28`: the sign-flipped full-width literal. The fixed
+            // high byte `bf` makes the value finite and negative, so only the
+            // lower bound can fail; -1.0 is admissible, as the `00 10 <low>`
+            // replacement also produces it.
             let (value, end) = super::ieee8(body, cursor, 0xbf)?;
-            full_width |= !(value.is_finite() && value < 0.0 && value > -1.0);
+            full_width |= value < -1.0;
             (value, 1, end)
         } else {
             sweep::run(
@@ -201,7 +204,7 @@ pub(crate) fn pcurve(
     }
     (extended_literal && cursor == body.len()).then_some(())?;
     Some(if full_width {
-        Err("full-width literal `41` lies outside the negative subunit range in the angular endpoint body")
+        Err("full-width literal `41` lies below -1 in the angular endpoint body")
     } else {
         Ok(frame)
     })

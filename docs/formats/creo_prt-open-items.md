@@ -431,15 +431,17 @@ and exact field extent.
 **Need.** Establish the enclosing record selector, slot roles, and complete
 field boundary for additional angular chart productions.
 
-### GS-33. Full-width endpoint literals outside the negative subunit range
+### GS-33. Full-width endpoint literals below minus one
 
 **Question.** Which production owns a full-width `41` literal in an angular
-endpoint body when its value is not a finite number between minus one and zero?
+endpoint body when its value is below minus one?
 
 **Known.** The angular stream defines `00 <literal> <low>` replacements and the
 sign-mirrored full-width openers. Opener `41` reads as the negative subunit
 literal. The source retains the complete body and both chart references of a
-refused body.
+refused body. The earlier question of which production owns the low byte is
+answered by the `00 <literal> <low>` replacement in §4.1.1 and by the angular
+endpoint paragraph of §4.1 on the full-width openers.
 
 **Need.** Establish the lane of a `41` literal outside that range through
 independent paired bytes and complete chart images.
