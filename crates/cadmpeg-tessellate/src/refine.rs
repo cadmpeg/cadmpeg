@@ -7,6 +7,7 @@
 //! is worse or every edge is a face boundary. Boundary edges never split, so
 //! the faces on both sides of an edge keep the same boundary points.
 
+use cadmpeg_ir::math::portable::Portable;
 use std::collections::{BTreeMap, BTreeSet};
 
 use cadmpeg_ir::math::{Point3, Vector3};
@@ -448,7 +449,7 @@ impl Mesh {
                 let near = [a, b, c].into_iter().any(|corner| {
                     let du = (self.uv[corner][0] - uv[0]) / step[0];
                     let dv = (self.uv[corner][1] - uv[1]) / step[1];
-                    du.hypot(dv) < 0.5
+                    du.portable_hypot(dv) < 0.5
                 });
                 if !near {
                     self.split_centre(carrier, &mut edges, &mut queue, at, uv)?;

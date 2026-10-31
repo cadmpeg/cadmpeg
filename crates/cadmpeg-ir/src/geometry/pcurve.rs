@@ -6,6 +6,7 @@ use super::nurbs::{
 };
 use super::{FitTolerance, MAX_GEOMETRY_NESTING};
 use crate::ids::PcurveId;
+use crate::math::portable::Portable;
 use crate::math::{Point2, Point3};
 use crate::scalar::{FiniteReal, NonZeroReal, PositiveReal};
 use crate::topology::ParameterInterval;
@@ -23,7 +24,7 @@ mod scaling_admitted;
 
 fn finite_axis_is_nonzero(axis: FinitePoint2) -> bool {
     let axis = axis.get();
-    axis.u.hypot(axis.v) > 0.0
+    axis.u.portable_hypot(axis.v) > 0.0
 }
 
 /// One rational pole in parameter space: its position and its weight.
@@ -368,7 +369,9 @@ impl PolarHarmonicPcurve {
         axial_cos: f64,
         axial_sin: f64,
     ) -> Result<Self, &'static str> {
-        if !(radial_cos.u.hypot(radial_cos.v) > 0.0 || radial_sin.u.hypot(radial_sin.v) > 0.0) {
+        if !(radial_cos.u.portable_hypot(radial_cos.v) > 0.0
+            || radial_sin.u.portable_hypot(radial_sin.v) > 0.0)
+        {
             return Err("PolarHarmonicPcurve.radial_cos/radial_sin must not both be zero");
         }
         let radial_center = FinitePoint2::new(radial_center)
@@ -599,10 +602,10 @@ impl CirclePcurve {
         y_axis: Point2,
         radius: f64,
     ) -> Result<Self, &'static str> {
-        if x_axis.u.hypot(x_axis.v) <= 0.0 {
+        if x_axis.u.portable_hypot(x_axis.v) <= 0.0 {
             return Err("CirclePcurve.x_axis must be nonzero");
         }
-        if y_axis.u.hypot(y_axis.v) <= 0.0 {
+        if y_axis.u.portable_hypot(y_axis.v) <= 0.0 {
             return Err("CirclePcurve.y_axis must be nonzero");
         }
         let center = FinitePoint2::new(center).ok_or("CirclePcurve.center must be finite")?;
@@ -729,10 +732,10 @@ impl EllipsePcurve {
         major_radius: f64,
         minor_radius: f64,
     ) -> Result<Self, &'static str> {
-        if x_axis.u.hypot(x_axis.v) <= 0.0 {
+        if x_axis.u.portable_hypot(x_axis.v) <= 0.0 {
             return Err("EllipsePcurve.x_axis must be nonzero");
         }
-        if y_axis.u.hypot(y_axis.v) <= 0.0 {
+        if y_axis.u.portable_hypot(y_axis.v) <= 0.0 {
             return Err("EllipsePcurve.y_axis must be nonzero");
         }
         let center = FinitePoint2::new(center).ok_or("EllipsePcurve.center must be finite")?;
@@ -847,7 +850,7 @@ struct HarmonicPcurveWire {
 impl HarmonicPcurve {
     /// Admit finite parameters that satisfy the carrier's numeric contract.
     pub fn try_new(center: Point2, cosine: Point2, sine: Point2) -> Result<Self, &'static str> {
-        if !(cosine.u.hypot(cosine.v) > 0.0 || sine.u.hypot(sine.v) > 0.0) {
+        if !(cosine.u.portable_hypot(cosine.v) > 0.0 || sine.u.portable_hypot(sine.v) > 0.0) {
             return Err("HarmonicPcurve.cosine/sine must not both be zero");
         }
         let center = FinitePoint2::new(center).ok_or("HarmonicPcurve.center must be finite")?;
@@ -945,10 +948,10 @@ impl ParabolaPcurve {
         y_axis: Point2,
         focal_distance: f64,
     ) -> Result<Self, &'static str> {
-        if x_axis.u.hypot(x_axis.v) <= 0.0 {
+        if x_axis.u.portable_hypot(x_axis.v) <= 0.0 {
             return Err("ParabolaPcurve.x_axis must be nonzero");
         }
-        if y_axis.u.hypot(y_axis.v) <= 0.0 {
+        if y_axis.u.portable_hypot(y_axis.v) <= 0.0 {
             return Err("ParabolaPcurve.y_axis must be nonzero");
         }
         let vertex = FinitePoint2::new(vertex).ok_or("ParabolaPcurve.vertex must be finite")?;
@@ -1062,10 +1065,10 @@ impl HyperbolaPcurve {
         major_radius: f64,
         minor_radius: f64,
     ) -> Result<Self, &'static str> {
-        if x_axis.u.hypot(x_axis.v) <= 0.0 {
+        if x_axis.u.portable_hypot(x_axis.v) <= 0.0 {
             return Err("HyperbolaPcurve.x_axis must be nonzero");
         }
-        if y_axis.u.hypot(y_axis.v) <= 0.0 {
+        if y_axis.u.portable_hypot(y_axis.v) <= 0.0 {
             return Err("HyperbolaPcurve.y_axis must be nonzero");
         }
         let center = FinitePoint2::new(center).ok_or("HyperbolaPcurve.center must be finite")?;
@@ -1180,7 +1183,7 @@ struct HyperbolicPcurveWire {
 impl HyperbolicPcurve {
     /// Admit finite parameters that satisfy the carrier's numeric contract.
     pub fn try_new(center: Point2, cosine: Point2, sine: Point2) -> Result<Self, &'static str> {
-        if !(cosine.u.hypot(cosine.v) > 0.0 || sine.u.hypot(sine.v) > 0.0) {
+        if !(cosine.u.portable_hypot(cosine.v) > 0.0 || sine.u.portable_hypot(sine.v) > 0.0) {
             return Err("HyperbolicPcurve.cosine/sine must not both be zero");
         }
         let center = FinitePoint2::new(center).ok_or("HyperbolicPcurve.center must be finite")?;

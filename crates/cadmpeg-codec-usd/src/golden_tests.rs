@@ -28,7 +28,7 @@ fn layer_branches() -> [Branch; 3] {
     [
         Branch::named("inspect", inspect_snapshot),
         Branch::named("decode", decode_snapshot),
-        Branch::named("encode", encode_snapshot),
+        Branch::exact("encode", encode_snapshot),
     ]
 }
 
@@ -116,7 +116,7 @@ fn golden_snapshots_hold() {
 fn golden_example_encodes_hold() {
     harness().check_inputs(
         &example_inputs(),
-        &[Branch::named("encode_ir", ir_encode_snapshot)],
+        &[Branch::exact("encode_ir", ir_encode_snapshot)],
     );
 }
 
@@ -125,6 +125,6 @@ fn golden_output_is_deterministic() {
     harness().check_determinism_inputs(&layer_inputs(), &layer_branches());
     harness().check_determinism_inputs(
         &example_inputs(),
-        &[Branch::named("encode_ir", ir_encode_snapshot)],
+        &[Branch::exact("encode_ir", ir_encode_snapshot)],
     );
 }

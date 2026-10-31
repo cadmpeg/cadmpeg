@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Homogeneous Bezier control-polygon splitting, restriction, and chord bounds.
 
+use crate::math::portable::Portable;
 use crate::math::Point3;
 use cadmpeg_core::convert::f64_from_index;
 
@@ -158,7 +159,7 @@ pub(super) fn rational_curve_chord_bound(controls: &[[f64; 4]], chord: [Point3; 
             if !residual.is_finite() {
                 return None;
             }
-            residual_norm = residual_norm.hypot(residual);
+            residual_norm = residual_norm.portable_hypot(residual);
             coordinate_scale = coordinate_scale.max((coordinate / weight).abs());
         }
         bound = bound.max(residual_norm);

@@ -8,6 +8,7 @@
 //! profile point off the axis a circle edge, and each face that is not a disc
 //! has a seam at `θ = 0`.
 
+use cadmpeg_ir::math::portable::Portable;
 use std::collections::BTreeMap;
 
 use super::{
@@ -267,7 +268,7 @@ pub(crate) fn revolved(points: &[[f64; 2]], segments: &[Segment], axis: Axis) ->
                     } else {
                         [0.0, 0.0, -1.0]
                     };
-                    let semi_angle = ((rho_a - rho_b).abs() / (z_a - z_b).abs()).atan();
+                    let semi_angle = ((rho_a - rho_b).abs() / (z_a - z_b).abs()).portable_atan();
                     AnalyticSurface {
                         kind: SurfaceKind::Cone,
                         frame: frame([0.0, 0.0, z_wide], direction, X),
@@ -282,7 +283,7 @@ pub(crate) fn revolved(points: &[[f64; 2]], segments: &[Segment], axis: Axis) ->
                 let (from, to) = (sub(point(a), center), sub(point(b), center));
                 let radius = length(from);
                 let normal = unit(cross(from, to));
-                let sweep = dot(unit(from), unit(to)).clamp(-1.0, 1.0).acos();
+                let sweep = dot(unit(from), unit(to)).clamp(-1.0, 1.0).portable_acos();
                 let seam = records.edge(
                     [start, end],
                     AnalyticCurve {
