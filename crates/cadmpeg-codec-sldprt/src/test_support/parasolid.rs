@@ -1387,6 +1387,9 @@ fn typed_single_face_ownership(
         typed_ref(bytes, value);
     }
     bytes.push(0x2b);
+    for _ in 0..5 {
+        typed_ref(bytes, 1);
+    }
 }
 
 /// One triangular planar face: a plane carrier, a bridge, a loop, three coedges
