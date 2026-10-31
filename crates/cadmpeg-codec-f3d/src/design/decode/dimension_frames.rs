@@ -601,7 +601,7 @@ fn scan_recipe_reference_operand(
     };
     for reference_ordinal in 0..reference_count {
         let design_reference_at = references_at.checked_add(reference_ordinal.checked_mul(4)?)?;
-        View::u32_le_at(prefix, design_reference_at).filter(|value| *value != 0)?;
+        View::i32_le_at(prefix, design_reference_at).filter(|value| *value != 0)?;
     }
     Some(ScannedRecipeReferenceOperand {
         selector,
@@ -633,7 +633,7 @@ fn decode_recipe_reference_operand(
             .references_at
             .checked_add(reference_ordinal.checked_mul(4)?)?;
         let design_reference =
-            View::u32_le_at(prefix, design_reference_at).filter(|value| *value != 0)?;
+            View::i32_le_at(prefix, design_reference_at).filter(|value| *value != 0)?;
         let design_reference_offset =
             prefix_offset.checked_add(u64::try_from(design_reference_at).ok()?)?;
         let token_copy = scanned.token.to_owned();
