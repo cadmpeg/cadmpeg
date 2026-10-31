@@ -4,7 +4,7 @@
 use crate::records::FeatureHistory;
 use cadmpeg_ir::features::{
     FeatureDefinition, FeatureId, FeatureOperation, PathRef, PlanarProfileRef, ProfileRef,
-    SplitFaceTool,
+    SketchFeatureBinding, SplitFaceTool,
 };
 use cadmpeg_ir::ids::BodyId;
 use cadmpeg_ir::topology::Face;
@@ -185,6 +185,46 @@ fn sketch_alias_base_name(name: &str) -> Option<&str> {
         .then_some(base)
 }
 
+/// Make each sweep depend on the one sketch feature that owns a section of it.
+/// A sketch that several features own names no single owner.
+fn add_sweep_section_owner_dependencies(features: &mut [cadmpeg_ir::features::Feature]) {
+    let mut owners = HashMap::<cadmpeg_ir::sketches::SketchId, Option<FeatureId>>::new();
+    for feature in features.iter() {
+        if let FeatureDefinition::Operation(FeatureOperation::Sketch {
+            sketch: SketchFeatureBinding::Planar(Some(sketch)),
+        }) = feature.evaluation.definition()
+        {
+            owners
+                .entry(sketch.clone())
+                .and_modify(|owner| *owner = None)
+                .or_insert_with(|| Some(feature.id.clone()));
+        }
+    }
+    for feature in features.iter_mut() {
+        let FeatureDefinition::Operation(FeatureOperation::Sweep { shape, .. }) =
+            feature.evaluation.definition()
+        else {
+            continue;
+        };
+        let section_owners = shape
+            .referenced_profiles()
+            .filter_map(|profile| match profile {
+                PlanarProfileRef::Sketch(sketch)
+                | PlanarProfileRef::SketchProfiles { sketch, .. }
+                | PlanarProfileRef::SketchRegions { sketch, .. }
+                | PlanarProfileRef::SketchEntities { sketch, .. }
+                | PlanarProfileRef::SketchSelection { sketch, .. } => {
+                    owners.get(sketch).cloned().flatten()
+                }
+                _ => None,
+            })
+            .collect::<Vec<_>>();
+        for owner in section_owners {
+            feature.dependencies.insert(owner);
+        }
+    }
+}
+
 /// Assign stable neutral regeneration ordinals with every structural parent and
 /// explicit dependency before its consumer. Native history ordinals retain the
 /// independent Keywords serialization order.
@@ -192,6 +232,7 @@ pub(crate) fn order_features_for_regeneration(
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     features: &mut [cadmpeg_ir::features::Feature],
 ) -> Result<bool, cadmpeg_core::CodecError> {
+    add_sweep_section_owner_dependencies(features);
     let Some(order) = regeneration_order(ctx, features, None)? else {
         return Ok(false);
     };
