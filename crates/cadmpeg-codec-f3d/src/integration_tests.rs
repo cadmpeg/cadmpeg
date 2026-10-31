@@ -17,6 +17,7 @@ mod optional_payloads;
 mod placement_history;
 mod procedural_support;
 mod product_owners;
+mod sketch_regions;
 mod work_planes;
 
 use cadmpeg_test_support::{wire, EditableDecodeResult};
