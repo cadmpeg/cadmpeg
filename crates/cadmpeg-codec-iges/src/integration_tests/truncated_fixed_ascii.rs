@@ -723,7 +723,7 @@ fn a_file_that_ends_inside_global_publishes_no_global_value() {
     }
     let global_note = |note: &str| {
         matches!(
-            note.split_once('=').map(|(key, _)| key).unwrap_or(note),
+            note.split_once('=').map_or(note, |(key, _)| key),
             "iges_version"
                 | "iges_declared_version_flag"
                 | "iges_effective_version"
