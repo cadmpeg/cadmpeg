@@ -7513,3 +7513,37 @@ pub(crate) mod thread_extended_compact_trailer {
     /// Stated value of `end_flag` (`u8`). Spec §3.1.
     pub(crate) const END_FLAG_VALUE: u8 = 1;
 }
+
+/// Byte offsets for the `snapshot_body_map_plain_prefix` record.
+///
+/// Spec §3.1. Record length 36 B.
+///
+/// ```text
+/// Offsets are relative to the snapshot map's bare entity header. The companion reference has two trailing zeros.
+/// ```
+pub(crate) mod snapshot_body_map_plain_prefix {
+    /// Stated value of `tag_length` (`u32`). Spec §3.1.
+    pub(crate) const TAG_LENGTH_VALUE: u32 = 0x0000_0003;
+    /// Offset of `class_tag` (`bytes[3]`). Spec §3.1.
+    pub(crate) const CLASS_TAG: usize = 4;
+    /// Offset of `entity_id` (`u64`, little-endian). Spec §3.1.
+    pub(crate) const ENTITY_ID: usize = 7;
+    /// Offset of `reserved_zero_run` (`bytes[6]`). Spec §3.1.
+    pub(crate) const RESERVED_ZERO_RUN: usize = 15;
+    /// Stated value of `reserved_zero_run` (`bytes[6]`). Spec §3.1.
+    pub(crate) const RESERVED_ZERO_RUN_VALUE: [u8; 6] = [0x00, 0x00, 0x00, 0x00, 0x00, 0x00];
+    /// Offset of `companion_reference` (`bytes[11]`). Spec §3.1.
+    pub(crate) const COMPANION_REFERENCE: usize = 21;
+}
+
+/// Byte offsets for the `snapshot_body_map_plain_tail` record.
+///
+/// Spec §3.1. Record length 16 B.
+///
+/// ```text
+/// Offsets are relative to the end of the counted pair run. UTF-16LE basename code units follow the character count.
+/// ```
+pub(crate) mod snapshot_body_map_plain_tail {
+    /// Stated value of `reserved_zero` (`u8`). Spec §3.1.
+    pub(crate) const RESERVED_ZERO_VALUE: u8 = 0;
+}

@@ -27422,3 +27422,93 @@ type = "u32"
 source = "spec"
 anchor = "The `DesignConfigurationTableSerializerTrigger` record in the Design `BulkStream` names the table blob."
 value = 68
+
+[[record]]
+name = "snapshot_body_map_plain_prefix"
+kind = "byte"
+section = "3.1"
+anchor = "In the ordinary same-segment reference form with two trailing companion zeros, the entity header occupies 21 bytes"
+size = 36
+parsed_by = "crates/cadmpeg-codec-f3d/src/design/decode/body.rs"
+note = "Offsets are relative to the snapshot map's bare entity header. The companion reference has two trailing zeros."
+
+[[record.field]]
+name = "tag_length"
+offset = 0
+type = "u32"
+value = 3
+source = "spec"
+anchor = "bare entity header `u32 3`"
+
+[[record.field]]
+name = "class_tag"
+offset = 4
+type = "bytes[3]"
+source = "derived"
+anchor = "three-byte dynamic class tag"
+note = "The class tag follows the four-byte length."
+
+[[record.field]]
+name = "entity_id"
+offset = 7
+type = "u64"
+source = "derived"
+anchor = "u64 entity ID"
+note = "The identity follows the four-byte length and three-byte class tag."
+
+[[record.field]]
+name = "reserved_zero_run"
+offset = 15
+type = "bytes[6]"
+value = [0, 0, 0, 0, 0, 0]
+source = "derived"
+anchor = "and six zero bytes"
+note = "The reserved run follows the eight-byte identity at offset 7."
+
+[[record.field]]
+name = "companion_reference"
+offset = 21
+type = "bytes[11]"
+source = "derived"
+anchor = "the companion reference starts at offset 21"
+note = "The pair count at offset 32 follows the reference at offset 21. The reference occupies eleven bytes."
+
+[[record.field]]
+name = "pair_count"
+offset = 32
+type = "u32"
+source = "spec"
+anchor = "the pair count is at offset 32"
+
+[[record]]
+name = "snapshot_body_map_plain_tail"
+kind = "byte"
+section = "3.1"
+anchor = "The ordinary container reference and its additional zero occupy 12 bytes"
+size = 16
+parsed_by = "crates/cadmpeg-codec-f3d/src/design/decode/body.rs"
+note = "Offsets are relative to the end of the counted pair run. UTF-16LE basename code units follow the character count."
+
+[[record.field]]
+name = "container_reference"
+offset = 0
+type = "bytes[11]"
+source = "derived"
+anchor = "The ordinary container reference and its additional zero occupy 12 bytes"
+note = "The reference owns eleven bytes; the additional zero owns one byte."
+
+[[record.field]]
+name = "reserved_zero"
+offset = 11
+type = "u8"
+value = 0
+source = "derived"
+anchor = "The ordinary container reference and its additional zero occupy 12 bytes"
+note = "The additional zero follows the eleven-byte local reference."
+
+[[record.field]]
+name = "name_length"
+offset = 12
+type = "u32"
+source = "spec"
+anchor = "the basename character count follows at tail offset 12"
