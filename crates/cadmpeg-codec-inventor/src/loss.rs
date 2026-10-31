@@ -57,6 +57,18 @@ pub(crate) enum InventorLossCode {
     SketchConstructionUnresolved,
     /// A sketch-point paired association has no neutral relation semantics.
     SketchPairedAssociationUnprojected,
+    /// A sketch entity retains unresolved curve construction operands.
+    SketchCurveNative,
+    /// A listed sketch member has unresolved record and curve semantics.
+    SketchMemberNative,
+    /// A spline-point relation retains unresolved locus and parameter roles.
+    SketchSplinePointNative,
+    /// A spline entity retains its source curve pending exact operands.
+    SketchSplineCurveNative,
+    /// An ellipse retains its directed trim operands natively.
+    SketchEllipseCurveNative,
+    /// A midpoint relation retains unresolved curve locus semantics.
+    SketchMidpointCurveNative,
     /// Profile-body records do not decode, so the profiles that select them
     /// stay native.
     FeatureProfileBodyUndecoded,
@@ -99,6 +111,10 @@ pub(crate) enum InventorLossCode {
     FeatureRevolveOperandsNative,
     /// `DeleteFace` Boolean construction roles remain unresolved.
     FeatureDeleteFaceOperandsNative,
+    /// Fillet construction operands remain native.
+    FeatureFilletOperandsNative,
+    /// Chamfer construction operands remain native.
+    FeatureChamferOperandsNative,
     /// Mirror operands differ from the identity-frame, zero-option construction.
     FeatureMirrorOperandsNative,
     /// Split construction operands or result topology remain native.
@@ -210,6 +226,12 @@ impl InventorLossCode {
         Self::FeatureLabelUnusable,
         Self::SketchConstructionUnresolved,
         Self::SketchPairedAssociationUnprojected,
+        Self::SketchCurveNative,
+        Self::SketchMemberNative,
+        Self::SketchSplinePointNative,
+        Self::SketchSplineCurveNative,
+        Self::SketchEllipseCurveNative,
+        Self::SketchMidpointCurveNative,
         Self::FeatureProfileBodyUndecoded,
         Self::FeatureLabelNameReplaced,
         Self::FeatureOperationGraphOpen,
@@ -230,6 +252,8 @@ impl InventorLossCode {
         Self::FeatureSheetMetalStyleFormsNative,
         Self::FeatureRevolveOperandsNative,
         Self::FeatureDeleteFaceOperandsNative,
+        Self::FeatureFilletOperandsNative,
+        Self::FeatureChamferOperandsNative,
         Self::FeatureMirrorOperandsNative,
         Self::FeatureSplitOperandsNative,
         Self::FeatureBodySelectionNative,
@@ -297,6 +321,12 @@ impl InventorLossCode {
             Self::FeatureLabelUnusable => "feature.label-unusable",
             Self::SketchConstructionUnresolved => "sketch.construction-unresolved",
             Self::SketchPairedAssociationUnprojected => "sketch.paired-association-unprojected",
+            Self::SketchCurveNative => "sketch.curve-native",
+            Self::SketchMemberNative => "sketch.member-native",
+            Self::SketchSplinePointNative => "sketch.spline-point-native",
+            Self::SketchSplineCurveNative => "sketch.spline-curve-native",
+            Self::SketchEllipseCurveNative => "sketch.ellipse-curve-native",
+            Self::SketchMidpointCurveNative => "sketch.midpoint-curve-native",
             Self::FeatureProfileBodyUndecoded => "feature.profile-body-undecoded",
             Self::FeatureLabelNameReplaced => "feature.label-name-replaced",
             Self::FeatureRectangularPatternOperandsNative => {
@@ -333,6 +363,8 @@ impl InventorLossCode {
             Self::FeatureMirrorOperandsNative => "feature.mirror-operands-native",
             Self::FeatureSplitOperandsNative => "feature.split-operands-native",
             Self::FeatureWorkPlaneFrameNative => "feature.work-plane-frame-native",
+            Self::FeatureFilletOperandsNative => "feature.fillet-operands-native",
+            Self::FeatureChamferOperandsNative => "feature.chamfer-operands-native",
             Self::FeatureRevolveOperandsNative => "feature.revolve-operands-native",
             Self::FeatureDeleteFaceOperandsNative => "feature.delete-face-operands-native",
             Self::FeatureRevolveExtentNative => "feature.revolve-extent-native",
@@ -434,6 +466,8 @@ impl InventorLossCode {
             | Self::FeatureMirrorOperandsNative
             | Self::FeatureSplitOperandsNative
             | Self::FeatureWorkPlaneFrameNative
+            | Self::FeatureFilletOperandsNative
+            | Self::FeatureChamferOperandsNative
             | Self::FeatureRevolveOperandsNative
             | Self::FeatureDeleteFaceOperandsNative
             | Self::FeatureRevolveExtentNative
@@ -448,6 +482,12 @@ impl InventorLossCode {
             | Self::FeatureProfileBodyUndecoded
             | Self::SketchConstructionUnresolved
             | Self::SketchPairedAssociationUnprojected
+            | Self::SketchCurveNative
+            | Self::SketchMemberNative
+            | Self::SketchSplinePointNative
+            | Self::SketchSplineCurveNative
+            | Self::SketchEllipseCurveNative
+            | Self::SketchMidpointCurveNative
             | Self::FeatureStateUnresolved
             | Self::FeatureDerivedSourceNative
             | Self::FeatureDerivedTaggingNative
@@ -526,6 +566,12 @@ mod tests {
                 "feature.label-unusable",
                 "sketch.construction-unresolved",
                 "sketch.paired-association-unprojected",
+                "sketch.curve-native",
+                "sketch.member-native",
+                "sketch.spline-point-native",
+                "sketch.spline-curve-native",
+                "sketch.ellipse-curve-native",
+                "sketch.midpoint-curve-native",
                 "feature.profile-body-undecoded",
                 "feature.label-name-replaced",
                 "feature.operation-graph-open",
@@ -546,6 +592,8 @@ mod tests {
                 "feature.sheet-metal-style-forms-native",
                 "feature.revolve-operands-native",
                 "feature.delete-face-operands-native",
+                "feature.fillet-operands-native",
+                "feature.chamfer-operands-native",
                 "feature.mirror-operands-native",
                 "feature.split-operands-native",
                 "feature.body-selection-native",

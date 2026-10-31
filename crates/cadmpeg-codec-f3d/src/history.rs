@@ -5226,8 +5226,21 @@ fn bind_historical_face_operand<'a>(
     }))
     .cloned()
     .collect::<Vec<_>>();
+    let support_candidates = if feature_family == Some(crate::design::DesignFeatureFamily::Extrude)
+        && operand.recipe_kind == crate::records::recipes::ConstructionRecipeKind::BoundedFace
+    {
+        face_operand_support_candidates(
+            history_candidates,
+            operand.recipe_references.first(),
+            recipe_record_indices
+                .get(operand.recipe_id.as_str())
+                .copied(),
+        )
+    } else {
+        std::borrow::Cow::Borrowed(history_candidates)
+    };
     operand.historical_support_contexts = historical_face_support_contexts(
-        history_candidates,
+        &support_candidates,
         history,
         topology,
         &changed_faces,
@@ -6581,6 +6594,24 @@ fn edge_changes_across_state_chain<'a>(
         current = previous;
     }
     Some(EdgeChanges { deleted, updated })
+}
+
+fn face_operand_support_candidates<'a>(
+    candidates: &'a [cadmpeg_ir::ids::FaceId],
+    first_reference: Option<&crate::records::dimensions::DesignRecipeReference>,
+    recipe_reference: Option<i32>,
+) -> std::borrow::Cow<'a, [cadmpeg_ir::ids::FaceId]> {
+    let mut candidates = std::borrow::Cow::Borrowed(candidates);
+    for face in first_reference
+        .filter(|reference| Some(reference.design_reference) == recipe_reference.map(i64::from))
+        .into_iter()
+        .flat_map(effective_faces)
+    {
+        if !candidates.contains(face) {
+            candidates.to_mut().push(face.clone());
+        }
+    }
+    candidates
 }
 
 fn historical_face_support_contexts<'a>(

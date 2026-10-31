@@ -2228,6 +2228,7 @@ pub(in super::super) fn transfer_native_brep(
         ExactIdPositions::new(ir.model.surfaces.iter().map(|item| item.id.as_str()));
 
     let mut sampled_sweep_circles = BTreeSet::new();
+    let mut sampled_hole_circles = BTreeSet::new();
     for vertex_id in used_vertices {
         if vertex_ids.contains(vertex_id) {
             continue;
@@ -2326,6 +2327,22 @@ pub(in super::super) fn transfer_native_brep(
                                 points,
                                 source_carriers,
                             )?;
+                            match crate::decode::sweep::surfaces::sampled_hole_circle_range(
+                                ctx,
+                                scan,
+                                &mut geometry,
+                                (*curve_id, faces),
+                                &ir.model.surfaces,
+                                points,
+                                source_carriers,
+                            )? {
+                                SampledCircleRange::Admitted(hole_range) => {
+                                    range = Some(hole_range);
+                                    sampled_hole_circles.insert(*curve_id);
+                                }
+                                SampledCircleRange::Refused(loss) => losses.push(loss),
+                                SampledCircleRange::Unrelated => {}
+                            }
                         }
                     }
                 }
@@ -2787,7 +2804,8 @@ pub(in super::super) fn transfer_native_brep(
                                 tag,
                             ))
                         });
-                    let sampled_plane = sampled_sweep_circles.contains(&half_edge.curve_id)
+                    let sampled_plane = (sampled_sweep_circles.contains(&half_edge.curve_id)
+                        || sampled_hole_circles.contains(&half_edge.curve_id))
                         && face_surface.is_some_and(|position| {
                             matches!(
                                 source_carriers.surface_geometry(&ir.model.surfaces[position]),
@@ -2814,7 +2832,11 @@ pub(in super::super) fn transfer_native_brep(
                                 geometry,
                                 source_carriers.source_edge_parameter_range(edge),
                                 row_offsets.get(&half_edge.curve_id).copied().unwrap_or(0),
-                                "sampled_sweep_planar_pcurve",
+                                if sampled_hole_circles.contains(&half_edge.curve_id) {
+                                    "sampled_hole_planar_pcurve"
+                                } else {
+                                    "sampled_sweep_planar_pcurve"
+                                },
                             ))
                         })()
                     } else {
