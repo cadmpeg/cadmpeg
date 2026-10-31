@@ -3060,7 +3060,7 @@ impl<'a> BoundaryProfile<'a> {
             .sketches_by_id
             .get(self.sketch_id.as_str())
             .and_then(|neutral| {
-                index.profiles.regions(
+                index.profiles.material(
                     self.sketch.identity.segment_token.as_str(),
                     self.sketch.identity.record_ordinal,
                     neutral,
@@ -3332,7 +3332,7 @@ fn plate_profile(
     let neutral_sketch = index.sketches_by_id.get(sketch_id.as_str())?;
     let profile = index
         .profiles
-        .regions(token, sketch_ordinal, neutral_sketch, &[link])?;
+        .material(token, sketch_ordinal, neutral_sketch, &[link])?;
     let (_, normal, _) = neutral_sketch.resolved_placement()?;
     Some((profile, normal))
 }

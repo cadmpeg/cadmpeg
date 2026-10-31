@@ -226,11 +226,11 @@ Tagging slot 0 requires its input and result body revisions, its topology-naming
 
 ### DE-06. Profile-selection controls and geometry
 
-**Question.** What do these profile selections select: a selection with a nonzero `value`; a selection whose entity link is an entity-style link; a wire edge whose naming attribute has another integer layout; a wire edge whose associative identifier names no curve of the consumed sketch; a wire whose edges do not form one closed ring; and one ring selected twice in one boundary patch?
+**Question.** What do these profile selections select: a selection with a nonzero `value`; a selection whose entity link is an entity-style link; a wire edge whose naming attribute has another integer layout; a wire edge whose associative identifier names no curve of the consumed sketch; a wire whose edges do not form one closed ring; and one ring selected twice in one boundary patch? Does a sketch curve that no closed loop uses divide the region that the selected rings bound?
 
-**Known.** A closed selection whose wire body edges each run along a whole curve or a part of a curve of the consumed sketch is one closed ring of that sketch. Some wire bodies name associative identifiers that the consumed sketch gives to points. In some wire bodies an edge names one curve of the consumed sketch and lies on another curve of that sketch. Some naming attributes store three integers after the five leading fields.
+**Known.** A closed selection whose wire body edges each run along a whole curve or a part of a curve of the consumed sketch is one closed ring of that sketch. Some wire bodies name associative identifiers that the consumed sketch gives to points. In some wire bodies an edge names one curve of the consumed sketch and lies on another curve of that sketch. Some naming attributes store three integers after the five leading fields. A consumed sketch can hold line segments that no closed loop uses, and curves whose `entity_flags` hold bit `0x8000`, that lie in or on the region the selected rings bound. No ring of the boundary patch names these curves.
 
-**Need.** Each form requires its exact sketch curves or region rule before the extrusion profile can transfer.
+**Need.** Each form requires its exact sketch curves or region rule before the extrusion profile can transfer. A curve that no closed loop uses requires the rule that states whether it divides the selected region.
 
 ### DE-07. Other PmDc segment versions
 
