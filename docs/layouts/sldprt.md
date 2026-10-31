@@ -750,6 +750,21 @@ Cross-checked against code:
 
 - `crates/cadmpeg-codec-sldprt/src/brep/blend.rs` — The parser's selector value set; see the `selector` field note.
 
+## `blend_bound_00_3b`
+
+Spec §7.4 · layout: byte offsets · size: 21 B
+
+Body-relative, after the two-byte tag and the optional `ff`. The offsets are the narrow-pointer form: `attr` and every reference is a §4 pointer that takes four bytes past `0x7ffe`, moving each later field by two.
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 2 | `attr` | `u16` | big | spec | 00 3b [ff]? attr u16 BE ordinal u32 BE |
+| 2 | 4 | `ordinal` | `u32` | big | spec | ordinal u32 BE refs u16 BE[5] |
+| 6 | 10 | `refs` | `u16[5]` | big | spec | refs u16 BE[5] |
+| 16 | 1 | `marker` | `u8` | big | spec | marker u8 (0x2b\|0x2d) |
+| 17 | 2 | `side` | `u16` | big | spec | side u16 BE (0\|1) blend u16 BE |
+| 19 | 2 | `blend` | `u16` | big | spec | blend u16 BE |
+
 ## `offset_surface_00_3c`
 
 Spec §7.5 · layout: byte offsets · size: 29 B

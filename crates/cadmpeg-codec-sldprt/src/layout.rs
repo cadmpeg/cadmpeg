@@ -645,6 +645,24 @@ pub(crate) mod rolling_ball_blend_00_38 {
     pub(crate) const SIDE1: usize = 48;
 }
 
+/// Byte offsets for the `blend_bound_00_3b` record.
+///
+/// Spec §7.4. Record length 21 B.
+///
+/// ```text
+/// Body-relative, after the two-byte tag and the optional `ff`. The offsets are the narrow-pointer form: `attr` and every reference is a §4 pointer that takes four bytes past `0x7ffe`, moving each later field by two.
+/// ```
+pub(crate) mod blend_bound_00_3b {
+    /// Offset of `attr` (`u16`, big-endian). Spec §7.4.
+    pub(crate) const ATTR: usize = 0;
+    /// Offset of `marker` (`u8`). Spec §7.4.
+    pub(crate) const MARKER: usize = 16;
+    /// Offset of `side` (`u16`, big-endian). Spec §7.4.
+    pub(crate) const SIDE: usize = 17;
+    /// Offset of `blend` (`u16`, big-endian). Spec §7.4.
+    pub(crate) const BLEND: usize = 19;
+}
+
 /// Byte offsets for the `offset_surface_00_3c` record.
 ///
 /// Spec §7.5. Record length 29 B.
