@@ -63,7 +63,7 @@ impl TestEncode for F3dCodec {
         output: &mut dyn Write,
     ) -> Result<cadmpeg_ir::report::export::ExportReport, cadmpeg_core::CodecError> {
         self.plan(
-            cadmpeg_ir::codec::write::EncodeInput { ir, fidelity: None },
+            cadmpeg_ir::codec::write::EncodeInput::new(ir, None),
             TargetRequest::Inherit,
         )?
         .write_to(output)

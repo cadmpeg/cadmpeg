@@ -144,6 +144,7 @@ pub(crate) fn plan(
     let mut writer = Writer::new(input.ir, version);
     if packaged {
         writer.package = Some(Vec::new());
+        writer.assets = input.assets;
     }
     let text = writer.layer();
     let losses = writer.losses();
@@ -288,6 +289,8 @@ struct Writer<'ir> {
     /// The members a package holds beside the root layer, or `None` for a
     /// layer that no package holds.
     package: Option<Vec<Member>>,
+    /// The source of the files that external assets name.
+    assets: Option<&'ir dyn cadmpeg_core::decode::Companions>,
 }
 
 impl<'ir> Writer<'ir> {
@@ -376,6 +379,7 @@ impl<'ir> Writer<'ir> {
             ),
             above_parts,
             package: None,
+            assets: None,
         }
     }
 

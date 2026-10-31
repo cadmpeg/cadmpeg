@@ -193,6 +193,69 @@ fn a_package_embeds_the_images_of_its_textures() {
         .any(|loss| loss.code == UsdLossCode::ExportTextureExternal.kind()));
 }
 
+/// A package holds the images that the model names by path when the
+/// write is given their source, and reports the paths it cannot read.
+#[test]
+fn a_package_holds_the_images_that_its_asset_source_reads() {
+    use cadmpeg_ir::codec::write::{EncodeInput, Encoder};
+    use cadmpeg_ir::codec::Codec;
+    let first = decode_with(QUAD, &files());
+    assert!(first
+        .ir()
+        .model
+        .assets
+        .iter()
+        .all(|asset| matches!(asset.content, AssetContent::External { .. })));
+    let write = |assets: &Files| {
+        let plan = crate::UsdCodec
+            .plan(
+                EncodeInput::new(first.ir(), None).with_assets(assets),
+                TargetRequest::Explicit("usdz"),
+            )
+            .expect("plan the write");
+        let mut bytes = Vec::new();
+        let report = plan.write_to(&mut bytes).expect("write");
+        (bytes, report)
+    };
+    let (package, report) = write(&files());
+    assert!(!report
+        .losses
+        .iter()
+        .any(|loss| loss.code == UsdLossCode::ExportTextureExternal.kind()));
+    let second = crate::UsdCodec
+        .decode(
+            &mut std::io::Cursor::new(&package),
+            &cadmpeg_ir::codec::DecodeOptions::default(),
+        )
+        .expect("decode the package");
+    let mut held: Vec<Vec<u8>> = second
+        .ir()
+        .model
+        .assets
+        .iter()
+        .filter_map(|asset| match &asset.content {
+            AssetContent::Embedded { data } => Some(data.as_bytes().to_vec()),
+            AssetContent::External { .. } => None,
+        })
+        .collect();
+    held.sort();
+    held.dedup();
+    assert_eq!(held, [b"orm".to_vec(), b"wood".to_vec()]);
+
+    let (_, report) = write(&Files(vec![("wood.png", b"wood")]));
+    let missing: Vec<&str> = report
+        .losses
+        .iter()
+        .filter(|loss| loss.code == UsdLossCode::ExportTextureExternal.kind())
+        .map(|loss| loss.message.as_str())
+        .collect();
+    assert_eq!(missing.len(), 1, "{missing:?}");
+    assert!(
+        missing[0].contains("orm.png (orm.png: not found)"),
+        "{missing:?}"
+    );
+}
+
 #[test]
 fn a_texture_that_names_no_file_keeps_its_path() {
     let result = decode(QUAD);

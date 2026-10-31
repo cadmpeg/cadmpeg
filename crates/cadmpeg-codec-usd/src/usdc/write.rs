@@ -4,8 +4,8 @@
 //! Each statement becomes the spec and fields that §9.8 maps to it. Value
 //! bytes follow the bootstrap header in the order the specs need them; the
 //! structural sections and the table of contents follow the values.
-//! Structural sections are compressed buffers of literals; arrays are not
-//! compressed.
+//! Structural sections are compressed buffers. Scalar integer and real
+//! arrays of 16 or more elements are compressed (spec §9.7).
 
 mod encode;
 mod values;

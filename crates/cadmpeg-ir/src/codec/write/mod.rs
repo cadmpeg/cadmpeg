@@ -21,7 +21,7 @@ use crate::report::{
     Severity,
 };
 use crate::source_fidelity::SourceFidelity;
-use cadmpeg_core::decode::DecodeDepth;
+use cadmpeg_core::decode::{Companions, DecodeDepth};
 use cadmpeg_core::target::TargetCatalog;
 use cadmpeg_core::CodecError;
 
@@ -189,13 +189,27 @@ pub struct EncodeInput<'a> {
     pub ir: &'a CadIr,
     /// Decode-time fidelity state, when available.
     pub fidelity: Option<&'a SourceFidelity>,
+    /// The source of the files that external assets of the document name,
+    /// for an encoder that writes their content into its output.
+    pub assets: Option<&'a dyn Companions>,
 }
 
 impl<'a> EncodeInput<'a> {
     /// Borrows a document and its decode-time fidelity for one export.
     #[must_use]
     pub const fn new(ir: &'a CadIr, fidelity: Option<&'a SourceFidelity>) -> Self {
-        Self { ir, fidelity }
+        Self {
+            ir,
+            fidelity,
+            assets: None,
+        }
+    }
+
+    /// Attaches the source of the files that external assets name.
+    #[must_use]
+    pub const fn with_assets(mut self, assets: &'a dyn Companions) -> Self {
+        self.assets = Some(assets);
+        self
     }
 }
 

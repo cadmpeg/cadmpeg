@@ -22,7 +22,7 @@ const ARRAY_BIT: u64 = 1 << 63;
 /// Representation bit: the payload holds the value.
 const INLINED_BIT: u64 = 1 << 62;
 /// Representation bit: the array is compressed.
-const COMPRESSED_BIT: u64 = 1 << 61;
+pub(in crate::usdc) const COMPRESSED_BIT: u64 = 1 << 61;
 /// Representation bit: the value is an array edit.
 const ARRAY_EDIT_BIT: u64 = 1 << 60;
 /// Position of the type byte.
@@ -34,7 +34,7 @@ const UNUSED_BITS: u64 = 0xF << 56;
 /// The low 32 bits of a payload, which hold an inlined value.
 const INLINE_MASK: u64 = 0xFFFF_FFFF;
 /// Arrays shorter than this are stored uncompressed under the compressed bit.
-const MIN_COMPRESSED_ARRAY: usize = 16;
+pub(in crate::usdc) const MIN_COMPRESSED_ARRAY: usize = 16;
 /// Retained bytes charged for each materialized element.
 const ELEMENT_CHARGE: u64 = 8;
 /// The legacy `config` variability, read as `uniform`.
@@ -252,7 +252,7 @@ fn integer(value: i128) -> Value {
 }
 
 /// The binary16 value `bits` as binary64.
-fn half(bits: u16) -> f64 {
+pub(in crate::usdc) fn half(bits: u16) -> f64 {
     let sign = if bits & 0x8000 == 0 { 1.0 } else { -1.0 };
     let exponent = (bits >> 10) & 0x1F;
     let mantissa = f64::from(bits & 0x3FF);
