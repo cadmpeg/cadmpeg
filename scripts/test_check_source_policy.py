@@ -960,7 +960,7 @@ class WireMirrorPolicyScope(unittest.TestCase):
             dependencies = package.get("dependencies", {})
             if "schema" in features and "schemars" in dependencies:
                 self.assertIn("dep:schemars", features["schema"], manifest)
-                expected.add(str(manifest.parent.relative_to(SCRIPT.parent.parent)))
+                expected.add(manifest.parent.relative_to(SCRIPT.parent.parent).as_posix())
         self.assertEqual(set(policy.WIRE_MIRROR_DOC_ROOTS), expected)
 
 
