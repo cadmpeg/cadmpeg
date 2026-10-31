@@ -830,3 +830,27 @@ the native feature when a fixed lane carries a symmetric distance.
 **Conflict.** None.
 
 **Note.** The neutral thread leaves `modeled` absent.
+
+### DR-148. Target references in populated configuration tables
+
+**Question.** How does an authored configuration table encode its driven parameter and feature targets, row identities, and cell values?
+
+**Known.** The table entries in seven public parametric hardware designs and 37 recipe uploads contain the JSON object `{}`. Each entry has zero rows and cells. The Design `BulkStream` contains the table serializer trigger and separate `DesignConfigurationRoot` records. The existing configuration decoder admits named JSON variant objects and joins parameter override names to unique neutral parameter identities. Design parameter records carry their own indexed identities in the Design `BulkStream`.
+
+**Need.** Legally available designs with at least two authored configurations, a changed parameter cell, and a changed feature state, with the corresponding table entries and Design records.
+
+**Conflict.** None.
+
+**Note.** Unassigned JSON members retain their native values and emit `configuration.member-unassigned`. The neutral configuration arena supports parameter overrides and evaluated feature states.
+
+### DR-149. Text-bearing document parameter prefix
+
+**Question.** What fields delimit the document parameter prefix that contains an additional text label before its source ordinal?
+
+**Known.** Two user-parameter frames in the public parametric standoff design store text labels before the ordinal, null owner, expression, source kind, unit, and name. Their tails reference the registered parameter-tail type. The fixed discriminated-prefix reader refuses the frames and reports `parameter.record-unparsed`.
+
+**Need.** Independent designs with labeled user parameters and controlled changes to the label, source name, and expression.
+
+**Conflict.** None.
+
+**Note.** The source archive retains the complete frames.

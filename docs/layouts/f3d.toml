@@ -27308,3 +27308,117 @@ type = "u8"
 source = "spec"
 anchor = "The extended compact trailer stores marked references to the Hole, length owner, and offset owner, followed by byte `1`"
 value = 1
+
+[[not_applicable]]
+area = "Design configuration table and rule payloads"
+reason = "Complete JSON objects. Member names and JSON syntax delimit variable-length fields; an empty table object contains zero configurations, parameter columns, and cell values."
+section = "1.2"
+anchor = "An empty table object `{}` contains zero configurations, parameter columns, and cell values."
+
+[[record]]
+name = "design_parameter_plain_tail"
+kind = "byte"
+section = "3.1"
+anchor = "The plain parameter tail is `u8 0` followed by a local reference."
+size = 12
+parsed_by = "crates/cadmpeg-codec-f3d/src/design/decode/parameters.rs"
+
+[[record.field]]
+name = "reserved"
+offset = 0
+type = "u8"
+source = "spec"
+anchor = "The plain parameter tail is `u8 0` followed by a local reference."
+value = 0
+
+[[record.field]]
+name = "reference"
+offset = 1
+type = "u8"
+source = "spec"
+anchor = "The plain parameter tail is `u8 0` followed by a local reference."
+value = 1
+
+[[record.field]]
+name = "target"
+offset = 2
+type = "u64"
+source = "spec"
+anchor = "The reference stores its complete u64 target and two zero flag bytes."
+
+[[record.field]]
+name = "flags"
+offset = 10
+type = "bytes[2]"
+source = "spec"
+anchor = "The reference stores its complete u64 target and two zero flag bytes."
+value = [0, 0]
+
+[[record]]
+name = "design_configuration_table_serializer_prefix"
+kind = "byte"
+section = "1.2"
+anchor = "The `DesignConfigurationTableSerializerTrigger` record in the Design `BulkStream` names the table blob."
+size = 66
+
+[[record.field]]
+name = "class_tag_length"
+offset = 0
+type = "u32"
+source = "spec"
+anchor = "The `DesignConfigurationTableSerializerTrigger` record in the Design `BulkStream` names the table blob."
+value = 3
+
+[[record.field]]
+name = "class_tag"
+offset = 4
+type = "bytes[3]"
+source = "spec"
+anchor = "The `DesignConfigurationTableSerializerTrigger` record in the Design `BulkStream` names the table blob."
+
+[[record.field]]
+name = "record_index"
+offset = 7
+type = "u32"
+source = "spec"
+anchor = "The `DesignConfigurationTableSerializerTrigger` record in the Design `BulkStream` names the table blob."
+
+[[record.field]]
+name = "reserved"
+offset = 11
+type = "u32"
+source = "spec"
+anchor = "The `DesignConfigurationTableSerializerTrigger` record in the Design `BulkStream` names the table blob."
+value = 0
+
+[[record.field]]
+name = "key_length"
+offset = 15
+type = "u32"
+source = "spec"
+anchor = "The `DesignConfigurationTableSerializerTrigger` record in the Design `BulkStream` names the table blob."
+value = 41
+
+[[record.field]]
+name = "key"
+offset = 19
+type = "bytes[41]"
+source = "spec"
+anchor = "The `DesignConfigurationTableSerializerTrigger` record in the Design `BulkStream` names the table blob."
+value = "DesignConfigurationTableSerializerTrigger"
+
+[[record.field]]
+name = "separator"
+offset = 60
+type = "bytes[2]"
+source = "spec"
+anchor = "The `DesignConfigurationTableSerializerTrigger` record in the Design `BulkStream` names the table blob."
+value = [0, 0]
+
+[[record.field]]
+name = "basename_length"
+offset = 62
+type = "u32"
+source = "spec"
+anchor = "The `DesignConfigurationTableSerializerTrigger` record in the Design `BulkStream` names the table blob."
+value = 68

@@ -7964,8 +7964,38 @@ Parsed by:
 | 22 | 11 | `offset_reference` | `bytes[11]` | little | spec | The extended compact trailer stores marked references to the Hole, length owner, and offset owner, followed by byte `1` |
 | 33 | 1 | `end_flag` | `u8` | little | spec | The extended compact trailer stores marked references to the Hole, length owner, and offset owner, followed by byte `1` · value `1` |
 
+## `design_parameter_plain_tail`
+
+Spec §3.1 · layout: byte offsets · size: 12 B
+
+Parsed by:
+- `crates/cadmpeg-codec-f3d/src/design/decode/parameters.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 1 | `reserved` | `u8` | little | spec | The plain parameter tail is `u8 0` followed by a local reference. · value `0` |
+| 1 | 1 | `reference` | `u8` | little | spec | The plain parameter tail is `u8 0` followed by a local reference. · value `1` |
+| 2 | 8 | `target` | `u64` | little | spec | The reference stores its complete u64 target and two zero flag bytes. |
+| 10 | 2 | `flags` | `bytes[2]` | little | spec | The reference stores its complete u64 target and two zero flag bytes. · value `[0, 0]` |
+
+## `design_configuration_table_serializer_prefix`
+
+Spec §1.2 · layout: byte offsets · size: 66 B
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 4 | `class_tag_length` | `u32` | little | spec | The `DesignConfigurationTableSerializerTrigger` record in the Design `BulkStream` names the table blob. · value `3` |
+| 4 | 3 | `class_tag` | `bytes[3]` | little | spec | The `DesignConfigurationTableSerializerTrigger` record in the Design `BulkStream` names the table blob. |
+| 7 | 4 | `record_index` | `u32` | little | spec | The `DesignConfigurationTableSerializerTrigger` record in the Design `BulkStream` names the table blob. |
+| 11 | 4 | `reserved` | `u32` | little | spec | The `DesignConfigurationTableSerializerTrigger` record in the Design `BulkStream` names the table blob. · value `0` |
+| 15 | 4 | `key_length` | `u32` | little | spec | The `DesignConfigurationTableSerializerTrigger` record in the Design `BulkStream` names the table blob. · value `41` |
+| 19 | 41 | `key` | `bytes[41]` | little | spec | The `DesignConfigurationTableSerializerTrigger` record in the Design `BulkStream` names the table blob. · value `"DesignConfigurationTableSerializerTrigger"` |
+| 60 | 2 | `separator` | `bytes[2]` | little | spec | The `DesignConfigurationTableSerializerTrigger` record in the Design `BulkStream` names the table blob. · value `[0, 0]` |
+| 62 | 4 | `basename_length` | `u32` | little | spec | The `DesignConfigurationTableSerializerTrigger` record in the Design `BulkStream` names the table blob. · value `68` |
+
 ## Not tabulated
 
 | Area | Spec | Reason |
 | ---- | ---- | ------ |
 | Container, manifest, and stream-selection layers (§1, §2) | §1.3 | ZIP entries and `Manifest.dat` text grammar; no fixed byte-offset structure is stated. |
+| Design configuration table and rule payloads | §1.2 | Complete JSON objects. Member names and JSON syntax delimit variable-length fields; an empty table object contains zero configurations, parameter columns, and cell values. |
