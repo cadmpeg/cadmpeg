@@ -213,6 +213,18 @@ pub(crate) mod pm_dc_sheet_metal_style_operand_prefix_legacy {
     pub(crate) const THICKNESS: usize = 26;
 }
 
+/// Byte offsets for the `pm_dc_sheet_metal_style_operand_prefix_v19` record.
+///
+/// Spec §13.5. Record length 106 B.
+///
+/// ```text
+/// Prefix of the segment-major-19 sheet-metal style record; the record continues after this prefix.
+/// ```
+pub(crate) mod pm_dc_sheet_metal_style_operand_prefix_v19 {
+    /// Offset of `thickness` (`u32`, little-endian). Spec §13.5.
+    pub(crate) const THICKNESS: usize = 26;
+}
+
 /// Byte offsets for the `pm_dc_feature_dimension_tail` record.
 ///
 /// Spec §13. Record length 9 B.
