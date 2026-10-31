@@ -720,7 +720,7 @@ retain native geometry instead of selecting a same-valued datum or class ID.
 
 **Known.** `creo_prt.md` §6 "In a class-916 or class-917 positional feature row, feature form `2` selects a" defines `ea 44 00 00` as a complete 360-degree revolution. Linear sweep extents include one-sided, symmetric, and two-sided spans.
 
-**Need.** We must know the selector semantics to trim a one-sided, symmetric, or two-sided revolution.
+**Need.** We must know the selector semantics and the turn sense about the revolution axis to trim a one-sided, symmetric, or two-sided revolution.
 
 ### SP-38. Conflicting feature recipe candidates
 

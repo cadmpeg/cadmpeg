@@ -832,6 +832,18 @@ The face geometry after a `moFaceRefPlnData_c` in an in-context part has two obs
 
 **Need.** We must know their content to transfer it or to state that it is not model geometry. Without it, the document keeps the part losses that report an untransferred Parasolid model.
 
+### EV-25. Turn sense of a partial revolution
+
+**Question.** Which way does the travel of a partial `moRevolution_c` or `moRevCut_c` turn about the stored axis direction, and which stored field reverses it?
+
+**Known.** `sldprt.md` §2 "The revolution object interval may contain a declared or repeated" stores a point on the axis and a unit axis direction. `sldprt.md` §2 "An `moRevolution_c` or `moRevCut_c` history record" stores positive angles. Neither paragraph gives the turn sense.
+
+**Need.** A partial revolution with a stored solid whose end faces show the side of the travel, compared with the stored axis direction.
+
+**Conflict.** CADIR states a right-handed turn about `RevolutionAxis.direction`, and this codec writes the stored direction to that field unchanged. No partial revolution has shown that the two agree.
+
+**Note.** A full turn sweeps the same region in either sense, so it does not answer this question.
+
 ### EV-24. Bytes after the last top-level object
 
 **Question.** What owns the four zero bytes some `ResolvedFeatures` streams write after their last top-level object, and the two zero bytes an in-context part writes after a top-level `moProfileFeature_c` whose sketch plane is written in place?
