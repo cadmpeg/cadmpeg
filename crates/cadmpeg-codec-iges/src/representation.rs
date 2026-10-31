@@ -5,7 +5,7 @@ use crate::card;
 use crate::layout::binary_flag;
 use cadmpeg_core::{CodecError, ReadSeek};
 use cadmpeg_ir::codec::Confidence;
-use std::io::{ErrorKind, SeekFrom};
+use std::io::{Cursor, ErrorKind, SeekFrom};
 
 const DETECTION_PREFIX_BYTES: usize = 512;
 
@@ -93,15 +93,14 @@ pub(crate) fn classify(reader: &mut dyn ReadSeek) -> Result<Option<Representatio
         }
     }
     reader.seek(SeekFrom::Start(position))?;
-    let seen = &prefix[..count];
-    if let Some(representation) = classify_prefix(seen) {
+    Ok(classify_prefix(&prefix[..count]))
+}
+
+pub(crate) fn classify_whole(bytes: &[u8]) -> Result<Option<Representation>, CodecError> {
+    if let Some(representation) = classify(&mut Cursor::new(bytes))? {
         return Ok(Some(representation));
     }
-    // A short read reached end of file. A 512-byte read does not.
-    if count < DETECTION_PREFIX_BYTES && card::whole_file_fixed_ascii(seen) {
-        return Ok(Some(Representation::FixedAscii));
-    }
-    Ok(None)
+    Ok(card::whole_file_fixed_ascii(bytes).then_some(Representation::FixedAscii))
 }
 
 #[cfg(test)]

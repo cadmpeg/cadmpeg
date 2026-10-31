@@ -140,12 +140,13 @@ pub(crate) enum ScannedLine {
         line: PhysicalLine,
     },
     Trailing(PhysicalLine),
+    DroppedFinal(PhysicalLine),
 }
 
 impl ScannedLine {
     pub(crate) fn physical(&self) -> &PhysicalLine {
         match self {
-            Self::Card { line, .. } | Self::Trailing(line) => line,
+            Self::Card { line, .. } | Self::Trailing(line) | Self::DroppedFinal(line) => line,
         }
     }
 }
@@ -173,7 +174,6 @@ pub(crate) enum FramingDefect {
     ParameterOwner,
     UnclaimedParameterCard,
     TerminateCount,
-    AbsentTerminate,
 }
 
 impl FramingDefect {
@@ -184,13 +184,12 @@ impl FramingDefect {
             Self::ParameterOwner => "a Parameter Data card owner",
             Self::UnclaimedParameterCard => "an unclaimed Parameter Data card",
             Self::TerminateCount => "a declared Terminate count",
-            Self::AbsentTerminate => "an absent Terminate card",
         }
     }
 
     fn unit(self) -> &'static str {
         match self {
-            Self::TerminateCount | Self::AbsentTerminate => "declaration",
+            Self::TerminateCount => "declaration",
             Self::CardBoundary
             | Self::Sequence
             | Self::ParameterOwner
@@ -207,7 +206,6 @@ pub(crate) struct DroppedFinalCard {
 }
 
 /// The one framing record for a file that has no Terminate card.
-#[cfg(test)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) struct AbsentTerminate {
     pub(crate) section: OpenSection,
@@ -263,13 +261,14 @@ struct FramingRecovery {
     declared: String,
     used: String,
     count: usize,
-    file_end: Option<u64>,
-    dropped_final_card: Option<DroppedFinalCard>,
 }
 
 /// Recovered framing declarations, at most one per section and defect class.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
-pub(crate) struct FramingRecoveries(BTreeMap<(Section, FramingDefect), FramingRecovery>);
+pub(crate) struct FramingRecoveries {
+    records: BTreeMap<(Section, FramingDefect), FramingRecovery>,
+    absent_terminate: Option<AbsentTerminate>,
+}
 
 impl FramingRecoveries {
     pub(crate) fn record(
@@ -280,7 +279,7 @@ impl FramingRecoveries {
         declared: fmt::Arguments<'_>,
         used: fmt::Arguments<'_>,
     ) -> Result<(), CodecError> {
-        if let Some(recovery) = self.0.get_mut(&key) {
+        if let Some(recovery) = self.records.get_mut(&key) {
             recovery.count = recovery
                 .count
                 .checked_add(1)
@@ -289,7 +288,7 @@ impl FramingRecoveries {
         }
         let declared = declared.to_string();
         let used = used.to_string();
-        self.0.insert(
+        self.records.insert(
             key,
             FramingRecovery {
                 position,
@@ -297,70 +296,37 @@ impl FramingRecoveries {
                 declared,
                 used,
                 count: 1,
-                file_end: None,
-                dropped_final_card: None,
             },
         );
         Ok(())
     }
 
-    pub(crate) fn record_absent_terminate(
-        &mut self,
-        section: OpenSection,
-        file_end: u64,
-        dropped_final_card: Option<DroppedFinalCard>,
-    ) -> Result<(), CodecError> {
-        let key = (section.section(), FramingDefect::AbsentTerminate);
-        if let Some(recovery) = self.0.get_mut(&key) {
-            recovery.count = recovery
-                .count
-                .checked_add(1)
-                .ok_or_else(|| malformed("IGES framing recovery count overflows"))?;
-            return Ok(());
-        }
-        self.0.insert(
-            key,
-            FramingRecovery {
-                position: 1,
-                offset: file_end,
-                declared: String::new(),
-                used: String::new(),
-                count: 1,
-                file_end: Some(file_end),
-                dropped_final_card,
-            },
-        );
-        Ok(())
+    pub(crate) fn set_absent_terminate(&mut self, absent: AbsentTerminate) {
+        self.absent_terminate = Some(absent);
     }
 
     #[cfg(test)]
     pub(crate) fn absent_terminate(&self) -> Option<AbsentTerminate> {
-        let ((section, _), recovery) = self
-            .0
-            .iter()
-            .find(|((_, defect), _)| *defect == FramingDefect::AbsentTerminate)?;
-        Some(AbsentTerminate {
-            section: OpenSection::from_section(*section)?,
-            file_end: recovery.file_end.unwrap_or(recovery.offset),
-            dropped_final_card: recovery.dropped_final_card,
-        })
+        self.absent_terminate
     }
 
     pub(crate) fn merge(&mut self, other: Self) -> Result<(), CodecError> {
-        for (key, recovery) in other.0 {
-            match self.0.get_mut(&key) {
+        for (key, recovery) in other.records {
+            match self.records.get_mut(&key) {
                 Some(held) => {
-                    let count = held
+                    held.count = held
                         .count
                         .checked_add(recovery.count)
                         .ok_or_else(|| malformed("IGES framing recovery count overflows"))?;
                     if recovery.position < held.position {
-                        *held = recovery;
+                        held.position = recovery.position;
+                        held.offset = recovery.offset;
+                        held.declared = recovery.declared;
+                        held.used = recovery.used;
                     }
-                    held.count = count;
                 }
                 None => {
-                    self.0.insert(key, recovery);
+                    self.records.insert(key, recovery);
                 }
             }
         }
@@ -369,27 +335,20 @@ impl FramingRecoveries {
 
     pub(crate) fn notes(&self) -> Vec<LossNote> {
         let mut notes = Vec::new();
-        for ((section, defect), recovery) in &self.0 {
-            let message = match defect {
-                FramingDefect::AbsentTerminate => absent_terminate_message(*section, recovery),
-                FramingDefect::CardBoundary
-                | FramingDefect::Sequence
-                | FramingDefect::ParameterOwner
-                | FramingDefect::UnclaimedParameterCard
-                | FramingDefect::TerminateCount => format!(
-                    "IGES {} section recovered {} from the card census: the first offending \
-                     {} is at position {} in the section, which declared {}, and the decoder \
-                     used {}; {} {} in this section required the same recovery",
-                    section.name(),
-                    defect.description(),
-                    defect.unit(),
-                    recovery.position,
-                    recovery.declared,
-                    recovery.used,
-                    recovery.count,
-                    defect.unit()
-                ),
-            };
+        for ((section, defect), recovery) in &self.records {
+            let message = format!(
+                "IGES {} section recovered {} from the card census: the first offending \
+                 {} is at position {} in the section, which declared {}, and the decoder \
+                 used {}; {} {} in this section required the same recovery",
+                section.name(),
+                defect.description(),
+                defect.unit(),
+                recovery.position,
+                recovery.declared,
+                recovery.used,
+                recovery.count,
+                defect.unit()
+            );
             let tag = format!("{}:framing", section.name());
             let code = IgesLossCode::CardFramingRecovered;
 
@@ -404,17 +363,33 @@ impl FramingRecoveries {
                 ),
             );
         }
+        if let Some(absent) = self.absent_terminate {
+            let section = absent.section.section();
+            let message = absent_terminate_message(absent);
+            let tag = format!("{}:framing", section.name());
+            let code = IgesLossCode::CardFramingRecovered;
+            notes.push(
+                code.note(message).with_provenance(
+                    SourceProvenance::in_stream(
+                        "iges",
+                        cadmpeg_ir::stream_name!("iges"),
+                        absent.file_end,
+                    )
+                    .with_tag(tag),
+                ),
+            );
+        }
         notes
     }
 }
 
-fn absent_terminate_message(section: Section, recovery: &FramingRecovery) -> String {
-    let file_end = recovery.file_end.unwrap_or(recovery.offset);
+fn absent_terminate_message(absent: AbsentTerminate) -> String {
     let ended = format!(
-        "IGES Fixed ASCII file ends in the {} section at byte offset {file_end} and has no Terminate card",
-        section.name()
+        "IGES Fixed ASCII file ends in the {} section at byte offset {} and has no Terminate card",
+        absent.section.section().name(),
+        absent.file_end
     );
-    match recovery.dropped_final_card {
+    match absent.dropped_final_card {
         Some(dropped) => format!(
             "{ended}; the final physical line at byte offset {} has {} bytes",
             dropped.offset, dropped.byte_length
@@ -760,7 +735,7 @@ fn frame_sections(
     }
     let last = match scanned.last() {
         Some(ScannedLine::Card { section, .. }) => *section,
-        Some(ScannedLine::Trailing(_)) | None => {
+        Some(ScannedLine::Trailing(_) | ScannedLine::DroppedFinal(_)) | None => {
             return Err(CodecError::Malformed(
                 "IGES Fixed ASCII requires a Start section".into(),
             ));
@@ -769,9 +744,13 @@ fn frame_sections(
     let open = OpenSection::from_section(last)
         .ok_or_else(|| CodecError::Malformed("IGES Fixed ASCII requires a Start section".into()))?;
     let dropped_card = dropped.as_ref().map(dropped_final_card).transpose()?;
-    recoveries.record_absent_terminate(open, file_end, dropped_card)?;
+    recoveries.set_absent_terminate(AbsentTerminate {
+        section: open,
+        file_end,
+        dropped_final_card: dropped_card,
+    });
     if let Some(line) = dropped {
-        scanned.push(ScannedLine::Trailing(line.line));
+        scanned.push(ScannedLine::DroppedFinal(line.line));
     }
     Ok((scanned, SourceEnd::EndsIn(open)))
 }
@@ -958,7 +937,9 @@ impl CardScan<'_> {
                 sequence,
                 line,
             } if *current == section => Some((*sequence, line)),
-            ScannedLine::Card { .. } | ScannedLine::Trailing(_) => None,
+            ScannedLine::Card { .. } | ScannedLine::Trailing(_) | ScannedLine::DroppedFinal(_) => {
+                None
+            }
         })
     }
 

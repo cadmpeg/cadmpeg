@@ -131,6 +131,7 @@ struct RawGlobal {
     values: Vec<Value>,
     field_count: usize,
     unreadable_suffix: Option<(usize, CodecError)>,
+    suffix_open: bool,
 }
 
 /// The effective specification family selected by Global field 23.
@@ -242,7 +243,28 @@ pub(crate) struct ResolvedGlobal {
     length_factor_mm: Option<PositiveReal>,
     line_weight_scale: Option<LineWeightScale>,
     declaration: VersionDeclaration,
-    source_ended: bool,
+}
+
+#[derive(Debug)]
+pub(crate) enum GlobalRecord {
+    Resolved(Box<ResolvedGlobal>),
+    Unfinished,
+}
+
+impl GlobalRecord {
+    pub(crate) fn summary_notes(&self) -> Vec<String> {
+        match self {
+            Self::Resolved(global) => global.summary_notes(),
+            Self::Unfinished => Vec::new(),
+        }
+    }
+
+    pub(crate) fn length_context(&self) -> Option<ProjectedGlobal> {
+        match self {
+            Self::Resolved(global) => global.length_context(),
+            Self::Unfinished => None,
+        }
+    }
 }
 
 /// Length-valued Global view. It exists only when the millimetre factor resolved.
@@ -384,6 +406,20 @@ fn recovered_real_loss_note(index: usize, source: &str, value: f64) -> LossNote 
 
 fn malformed(message: impl Into<String>) -> CodecError {
     crate::error::malformed(format!("IGES Global: {}", message.into()))
+}
+
+#[derive(Debug)]
+enum GlobalFault {
+    Defect(CodecError),
+    Ended(CodecError),
+}
+
+fn defect(message: impl Into<String>) -> GlobalFault {
+    GlobalFault::Defect(malformed(message))
+}
+
+fn ended(message: impl Into<String>) -> GlobalFault {
+    GlobalFault::Ended(malformed(message))
 }
 
 fn layout_hollerith(bytes: &[u8], start: usize) -> Result<Option<(usize, usize)>, CodecError> {
@@ -534,7 +570,7 @@ fn source_span_crosses_card(start: usize, end: usize) -> bool {
     end > start && start / 72 != (end - 1) / 72
 }
 
-fn hollerith(bytes: &[u8], start: usize) -> Result<Option<(&[u8], usize)>, CodecError> {
+fn hollerith(bytes: &[u8], start: usize) -> Result<Option<(&[u8], usize)>, GlobalFault> {
     let mut cursor = start;
     while bytes.get(cursor).is_some_and(u8::is_ascii_digit) {
         cursor += 1;
@@ -543,22 +579,22 @@ fn hollerith(bytes: &[u8], start: usize) -> Result<Option<(&[u8], usize)>, Codec
         return Ok(None);
     }
     let count = std::str::from_utf8(&bytes[start..cursor])
-        .map_err(|_| malformed("Hollerith count is not ASCII"))?
+        .map_err(|_| defect("Hollerith count is not ASCII"))?
         .parse::<usize>()
-        .map_err(|_| malformed("Hollerith count is out of range"))?;
+        .map_err(|_| defect("Hollerith count is out of range"))?;
     let payload_start = cursor
         .checked_add(1)
-        .ok_or_else(|| malformed("Hollerith payload offset overflow"))?;
+        .ok_or_else(|| defect("Hollerith payload offset overflow"))?;
     let payload_end = payload_start
         .checked_add(count)
-        .ok_or_else(|| malformed("Hollerith payload length overflow"))?;
+        .ok_or_else(|| defect("Hollerith payload length overflow"))?;
     let payload = bytes
         .get(payload_start..payload_end)
-        .ok_or_else(|| malformed("Hollerith payload is truncated"))?;
+        .ok_or_else(|| ended("Hollerith payload is truncated"))?;
     Ok(Some((payload, payload_end)))
 }
 
-fn first_delimiter(bytes: &[u8]) -> Result<(u8, usize), CodecError> {
+fn first_delimiter(bytes: &[u8]) -> Result<(u8, usize), GlobalFault> {
     let start = bytes
         .iter()
         .position(|byte| *byte != b' ')
@@ -567,23 +603,36 @@ fn first_delimiter(bytes: &[u8]) -> Result<(u8, usize), CodecError> {
         return Ok((b',', start + 1));
     }
     let Some((payload, cursor)) = hollerith(bytes, start)? else {
-        return Err(malformed("parameter delimiter is not a Hollerith string"));
+        let mut digit_end = start;
+        while bytes.get(digit_end).is_some_and(u8::is_ascii_digit) {
+            digit_end += 1;
+        }
+        let file_ended =
+            bytes.get(start).is_none() || (digit_end != start && bytes.get(digit_end).is_none());
+        return Err(if file_ended {
+            ended("parameter delimiter is not a Hollerith string")
+        } else {
+            defect("parameter delimiter is not a Hollerith string")
+        });
     };
     if source_span_crosses_card(start, cursor - payload.len()) {
-        return Err(malformed(
+        return Err(defect(
             "parameter delimiter is not a valid one-card Hollerith string",
         ));
     }
     if payload.len() != 1 {
-        return Err(malformed("parameter delimiter must contain one byte"));
+        return Err(defect("parameter delimiter must contain one byte"));
     }
     let delimiter = payload[0];
-    if bytes.get(cursor) != Some(&delimiter) {
-        return Err(malformed(
+    match bytes.get(cursor) {
+        Some(byte) if *byte == delimiter => Ok((delimiter, cursor + 1)),
+        Some(_) => Err(defect(
             "parameter delimiter does not terminate its Global field",
-        ));
+        )),
+        None => Err(ended(
+            "parameter delimiter does not terminate its Global field",
+        )),
     }
-    Ok((delimiter, cursor + 1))
 }
 
 fn delimited_value(
@@ -592,11 +641,12 @@ fn delimited_value(
     parameter_delimiter: u8,
     record_delimiter: Option<u8>,
     retain: bool,
-) -> Result<(Value, usize, bool), CodecError> {
-    let remaining = bytes
-        .len()
-        .checked_sub(start)
-        .ok_or_else(|| CodecError::malformed("IGES Global value offset exceeds input"))?;
+) -> Result<(Value, usize, bool), GlobalFault> {
+    let remaining = bytes.len().checked_sub(start).ok_or_else(|| {
+        GlobalFault::Defect(CodecError::malformed(
+            "IGES Global value offset exceeds input",
+        ))
+    })?;
     let value_start = start
         + bytes[start..]
             .iter()
@@ -622,7 +672,7 @@ fn delimited_value(
                 .iter()
                 .position(|byte| *byte == parameter_delimiter || record_delimiter == Some(*byte))
                 .and_then(|relative| value_start.checked_add(relative))
-                .ok_or_else(|| malformed("record delimiter is missing"))?;
+                .ok_or_else(|| ended("record delimiter is missing"))?;
             let atom = &bytes[value_start..end];
             if !retain || atom.iter().all(|byte| *byte == b' ') {
                 (Value::Omitted, end, false)
@@ -633,10 +683,9 @@ fn delimited_value(
             }
         };
     let separator_start = if allow_padding_after {
-        let remaining = bytes
-            .len()
-            .checked_sub(end)
-            .ok_or_else(|| CodecError::malformed("IGES Global separator exceeds input"))?;
+        let remaining = bytes.len().checked_sub(end).ok_or_else(|| {
+            GlobalFault::Defect(CodecError::malformed("IGES Global separator exceeds input"))
+        })?;
         end + bytes[end..]
             .iter()
             .position(|byte| *byte != b' ')
@@ -651,7 +700,8 @@ fn delimited_value(
         Some(separator) if record_delimiter == Some(separator) => {
             Ok((value, separator_start + 1, true))
         }
-        _ => Err(malformed("value is not followed by a delimiter")),
+        Some(_) => Err(defect("value is not followed by a delimiter")),
+        None => Err(ended("value is not followed by a delimiter")),
     }
 }
 
@@ -663,22 +713,42 @@ fn global_bytes(scan: &CardScan<'_>) -> Vec<u8> {
     bytes
 }
 
-fn parse_raw(scan: &CardScan) -> Result<RawGlobal, CodecError> {
+enum RawOutcome {
+    Closed(RawGlobal),
+    Open(CodecError),
+}
+
+fn open_or_defect(fault: GlobalFault) -> Result<RawOutcome, CodecError> {
+    match fault {
+        GlobalFault::Ended(error) => Ok(RawOutcome::Open(error)),
+        GlobalFault::Defect(error) => Err(error),
+    }
+}
+
+fn parse_outcome(scan: &CardScan) -> Result<RawOutcome, CodecError> {
     let bytes = global_bytes(scan);
     if bytes.is_empty() {
-        return Err(malformed("section is missing"));
+        return Ok(RawOutcome::Open(malformed("section is missing")));
     }
     if bytes.iter().copied().filter(|byte| *byte != b' ').eq(*b";") {
-        return Ok(RawGlobal {
+        return Ok(RawOutcome::Closed(RawGlobal {
             parameter_delimiter: b',',
             record_delimiter: b';',
             values: vec![Value::Omitted; 26],
             field_count: 1,
             unreadable_suffix: None,
-        });
+            suffix_open: false,
+        }));
     }
-    let (parameter_delimiter, mut cursor) = first_delimiter(&bytes)?;
-    let (record_value, next, _) = delimited_value(&bytes, cursor, parameter_delimiter, None, true)?;
+    let (parameter_delimiter, mut cursor) = match first_delimiter(&bytes) {
+        Ok(parsed) => parsed,
+        Err(fault) => return open_or_defect(fault),
+    };
+    let (record_value, next, _) =
+        match delimited_value(&bytes, cursor, parameter_delimiter, None, true) {
+            Ok(parsed) => parsed,
+            Err(fault) => return open_or_defect(fault),
+        };
     cursor = next;
     let record_delimiter = match &record_value {
         Value::Omitted => b';',
@@ -709,6 +779,7 @@ fn parse_raw(scan: &CardScan) -> Result<RawGlobal, CodecError> {
     };
     let mut field_count = 2_usize;
     let mut unreadable_suffix = None;
+    let mut suffix_open = false;
     loop {
         let retain = field_count < values.len();
         let framed = delimited_value(
@@ -723,11 +794,16 @@ fn parse_raw(scan: &CardScan) -> Result<RawGlobal, CodecError> {
             // Every field after the version declaration is descriptive. The
             // Global cards bound their suffix independently of Directory and
             // Parameter cards; no later field boundary needs to be guessed.
-            Err(error @ CodecError::Malformed(_)) if field_count > FIELD_VERSION_FLAG => {
+            Err(fault) if field_count > FIELD_VERSION_FLAG => {
+                let (error, open) = match fault {
+                    GlobalFault::Ended(error) => (error, true),
+                    GlobalFault::Defect(error) => (error, false),
+                };
                 unreadable_suffix = Some((cursor, error));
+                suffix_open = open;
                 break;
             }
-            Err(error) => return Err(error),
+            Err(fault) => return open_or_defect(fault),
         };
         if retain {
             values[field_count] = value;
@@ -740,57 +816,42 @@ fn parse_raw(scan: &CardScan) -> Result<RawGlobal, CodecError> {
             break;
         }
     }
-    Ok(RawGlobal {
+    Ok(RawOutcome::Closed(RawGlobal {
         parameter_delimiter,
         record_delimiter,
         values,
         field_count,
         unreadable_suffix,
-    })
+        suffix_open,
+    }))
 }
 
 /// Recover the Global field boundaries, then resolve every field once.
 pub(crate) fn parse(scan: &CardScan) -> Result<(ResolvedGlobal, Vec<LossNote>), CodecError> {
-    Ok(resolve(parse_raw(scan)?))
-}
-
-/// Resolve the Global record when its record delimiter was read.
-pub(crate) fn parse_if_complete(
-    scan: &CardScan,
-) -> Result<(ResolvedGlobal, Vec<LossNote>), CodecError> {
-    let raw = parse_raw(scan)?;
-    if raw.unreadable_suffix.is_some() {
-        return Err(malformed("record delimiter is missing"));
+    match parse_outcome(scan)? {
+        RawOutcome::Closed(raw) => Ok(resolve(raw)),
+        RawOutcome::Open(error) => Err(error),
     }
-    Ok(resolve(raw))
 }
 
-/// Global facts for a file that ends before a complete Global record.
-///
-/// The file states no version, model scale, or length unit. The comma and
-/// semicolon stay inside the resolver and are not a published declaration.
-pub(crate) fn source_ended_before_record() -> ResolvedGlobal {
-    ResolvedGlobal {
-        parameter_delimiter: b',',
-        record_delimiter: b';',
-        sender_product: None,
-        receiver_product: None,
-        native_file_name: None,
-        units_name: None,
-        numeric: NumericDeclarations {
-            integer_bits: None,
-            single_magnitude: None,
-            double_magnitude: Supplied::Absent,
-            single_significance: None,
-            double_significance: Supplied::Absent,
-        },
-        minimum_resolution: NonNegativeReal::ZERO,
-        length_factor_mm: None,
-        line_weight_scale: None,
-        declaration: VersionDeclaration::Unreadable(
-            "file ends before a complete Global record".to_owned(),
-        ),
-        source_ended: true,
+/// The Global record when the file ends before the Directory Entry section.
+pub(crate) enum GlobalParse {
+    Resolved(Box<ResolvedGlobal>, Vec<LossNote>),
+    Unfinished,
+}
+
+/// Resolve a finished Global record. An unfinished record, whose record
+/// delimiter the file never reaches, is [`GlobalParse::Unfinished`].
+pub(crate) fn parse_if_complete(scan: &CardScan) -> Result<GlobalParse, CodecError> {
+    match parse_outcome(scan)? {
+        RawOutcome::Open(_)
+        | RawOutcome::Closed(RawGlobal {
+            suffix_open: true, ..
+        }) => Ok(GlobalParse::Unfinished),
+        RawOutcome::Closed(raw) => {
+            let (resolved, losses) = resolve(raw);
+            Ok(GlobalParse::Resolved(Box::new(resolved), losses))
+        }
     }
 }
 
@@ -1387,6 +1448,7 @@ fn resolve(raw: RawGlobal) -> (ResolvedGlobal, Vec<LossNote>) {
         values,
         field_count,
         unreadable_suffix,
+        suffix_open: _,
     } = raw;
     let mut resolution = Resolution {
         values,
@@ -1517,7 +1579,6 @@ fn resolve(raw: RawGlobal) -> (ResolvedGlobal, Vec<LossNote>) {
         length_factor_mm,
         line_weight_scale,
         declaration,
-        source_ended: false,
     };
     (resolved, resolution.losses)
 }
@@ -1592,10 +1653,6 @@ impl ResolvedGlobal {
         self.declaration.recovery()
     }
 
-    pub(crate) const fn source_ended(&self) -> bool {
-        self.source_ended
-    }
-
     pub(crate) fn version_name(&self) -> &'static str {
         self.declaration.effective_version().name()
     }
@@ -1642,9 +1699,6 @@ impl ResolvedGlobal {
     /// that case, retain the declared flag and label the effective version as
     /// recovery rather than presenting it as the document's verified version.
     pub(crate) fn summary_notes(&self) -> Vec<String> {
-        if self.source_ended {
-            return vec!["iges_version=unverified".to_owned()];
-        }
         let mut notes = Vec::new();
         notes.push(format!(
             "parameter_delimiter={}",
