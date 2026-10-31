@@ -1392,31 +1392,45 @@ pub(super) fn export<'ir>(
     // `brep:tolerance` bounds every vertex-on-face and edge-on-face
     // deviation, so it is the largest entity tolerance of the body.
     let model = &ir.model;
+    let faces: BTreeMap<&FaceId, &cadmpeg_ir::topology::Face> =
+        model.faces.iter().map(|face| (&face.id, face)).collect();
+    let face_records: Vec<Option<&cadmpeg_ir::topology::Face>> = exporter
+        .faces
+        .iter()
+        .map(|face| faces.get(face).copied())
+        .collect();
+    let mut tolerances = crate::brep::Tolerances {
+        faces: face_records
+            .iter()
+            .map(|face| {
+                face.and_then(|face| face.tolerance)
+                    .map(cadmpeg_ir::scalar::PositiveReal::get)
+            })
+            .collect(),
+        edges: vec![None; exporter.brep.edges.len()],
+        vertices: vec![None; exporter.brep.vertices.len()],
+    };
+    for edge in &model.edges {
+        if let (Some(index), Some(value)) = (exporter.edges.get(&edge.id), edge.tolerance) {
+            if let Some(slot) = tolerances.edges.get_mut(*index) {
+                *slot = Some(value.get());
+            }
+        }
+    }
+    for vertex in &model.vertices {
+        if let (Some(index), Some(value)) = (exporter.vertices.get(&vertex.id), vertex.tolerance) {
+            if let Some(slot) = tolerances.vertices.get_mut(*index) {
+                *slot = Some(value.get());
+            }
+        }
+    }
     let mut tolerance = exporter.brep.tolerance;
-    for face in &exporter.faces {
-        if let Some(value) = model
-            .faces
-            .iter()
-            .find(|candidate| &candidate.id == face)
-            .and_then(|face| face.tolerance)
-        {
-            tolerance = tolerance.max(value.get());
-        }
-    }
-    for vertex in exporter.vertices.keys() {
-        if let Some(value) = model
-            .vertices
-            .iter()
-            .find(|candidate| &candidate.id == vertex)
-            .and_then(|vertex| vertex.tolerance)
-        {
-            tolerance = tolerance.max(value.get());
-        }
-    }
-    for edge in &exporter.brep.edges {
-        if let Some(value) = edge.tolerance {
-            tolerance = tolerance.max(value);
-        }
+    for value in [&tolerances.faces, &tolerances.edges, &tolerances.vertices]
+        .into_iter()
+        .flatten()
+        .flatten()
+    {
+        tolerance = tolerance.max(*value);
     }
     // A source whose vertices and edges lie off their surfaces states that
     // distance as its tolerance.
@@ -1433,6 +1447,11 @@ pub(super) fn export<'ir>(
             .collect(),
         edges: vec![None; exporter.brep.edges.len()],
         vertices: vec![None; exporter.brep.vertices.len()],
+        body_name: body.name.clone(),
+        face_names: face_records
+            .iter()
+            .map(|face| face.and_then(|face| face.name.clone()))
+            .collect(),
     };
     for (id, index) in &exporter.edges {
         if let Some(slot) = identities.edges.get_mut(*index) {
@@ -1446,8 +1465,11 @@ pub(super) fn export<'ir>(
     }
     if identities.faces.len() != exporter.brep.faces.len() {
         identities.faces = vec![None; exporter.brep.faces.len()];
+        identities.face_names = vec![None; exporter.brep.faces.len()];
+        tolerances.faces = vec![None; exporter.brep.faces.len()];
     }
     exporter.brep.identities = identities;
+    exporter.brep.tolerances = tolerances;
     for edge in &mut exporter.brep.edges {
         edge.tolerance = edge.tolerance.filter(|value| *value > tolerance);
     }

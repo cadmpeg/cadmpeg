@@ -1324,16 +1324,18 @@ The `Cad*` schemas extend the registered schemas and `BrepArray` with CADIR data
 
 ### 18.1 CadBrepIdentityAPI
 
-`CadBrepIdentityAPI` is a single-apply API schema of a `BrepArray` prim. It gives the CADIR identity of each B-rep, face, edge, and vertex:
+`CadBrepIdentityAPI` is a single-apply API schema of a `BrepArray` prim. It gives the CADIR identity of each B-rep, face, edge, and vertex, and the name of each B-rep and face:
 
 | Attribute | Elements |
 | --- | --- |
-| `uniform string[] cad:brep:id` | one for each B-rep |
-| `uniform string[] cad:face:id` | one for each face |
-| `uniform string[] cad:edge:id` | one for each edge |
-| `uniform string[] cad:vertex:id` | one for each vertex |
+| `uniform string[] cad:brep:id` | the identity of each B-rep |
+| `uniform string[] cad:face:id` | the identity of each face |
+| `uniform string[] cad:edge:id` | the identity of each edge |
+| `uniform string[] cad:vertex:id` | the identity of each vertex |
+| `uniform string[] cad:brep:name` | the name of each B-rep |
+| `uniform string[] cad:face:name` | the name of each face |
 
-Element `i` names the entity at position `i` of its arrays (§17.1). An empty string is no identity. An identity has the CADIR grammar `<format>:<scope>:<kind>#<key>`, and each identity occurs once in a stage.
+Element `i` names the entity at position `i` of its arrays (§17.1). An empty string is no identity or no name. A B-rep name is the body name; it takes precedence over the prim name. An identity has the CADIR grammar `<format>:<scope>:<kind>#<key>`, and each identity occurs once in a stage.
 
 ### 18.2 CadSketch
 
@@ -1438,3 +1440,15 @@ The direction sign `s` is `−1` when both connectors use `faceFrame`, and `+1` 
 | `CadBallMate` | rotation about `x`, `y`, and `z` |
 
 `CadGroundMate` fixes the composed placement of the one target of `rel cadMate:grounded`, with `cadMate:enabled`.
+
+### 18.4 CadBrepToleranceAPI
+
+`CadBrepToleranceAPI` is a single-apply API schema of a `BrepArray` prim. It gives the tolerance of each face, edge, and vertex, in the length unit of the stage:
+
+| Attribute | Elements |
+| --- | --- |
+| `uniform double[] cad:face:tolerance` | one for each face |
+| `uniform double[] cad:edge:tolerance` | one for each edge |
+| `uniform double[] cad:vertex:tolerance` | one for each vertex |
+
+Element `i` is the tolerance of the entity at position `i` of its arrays (§17.1). `NaN` is the tolerance of its B-rep, `brep:intersectTol3d`. `brep:intersectTol3d` of a B-rep is at least each tolerance of its entities.

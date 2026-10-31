@@ -127,6 +127,9 @@ impl Writer<'_> {
         if packed.identities.any() {
             schemas.push(crate::brep::solid::IDENTITY_API);
         }
+        if packed.tolerances.any() {
+            schemas.push(crate::brep::solid::TOLERANCE_API);
+        }
         let mut placement = placement.clone();
         placement.metadata.push(format!(
             "prepend apiSchemas = [{}]",
@@ -368,6 +371,33 @@ impl Writer<'_> {
             out.array(
                 "uniform string[] cad:vertex:id",
                 &strings(&ids.vertices),
+                "",
+            );
+            for (name, values) in [
+                ("cad:brep:name", &ids.brep_names),
+                ("cad:face:name", &ids.face_names),
+            ] {
+                if values.iter().any(|value| !value.is_empty()) {
+                    out.array(&format!("uniform string[] {name}"), &strings(values), "");
+                }
+            }
+        }
+        if packed.tolerances.any() {
+            let tolerances = &packed.tolerances;
+            let out = &mut self.out;
+            out.array(
+                "uniform double[] cad:face:tolerance",
+                &reals(&tolerances.faces),
+                "",
+            );
+            out.array(
+                "uniform double[] cad:edge:tolerance",
+                &reals(&tolerances.edges),
+                "",
+            );
+            out.array(
+                "uniform double[] cad:vertex:tolerance",
+                &reals(&tolerances.vertices),
                 "",
             );
         }

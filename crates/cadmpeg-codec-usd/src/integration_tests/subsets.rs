@@ -165,3 +165,46 @@ fn a_brep_array_keeps_the_identities_of_its_entities() {
     };
     assert_eq!(ids(&ir.model), ids(&read.ir().model));
 }
+
+#[test]
+fn a_brep_array_keeps_the_names_and_tolerances_of_its_entities() {
+    let mut ir = cadmpeg_ir::examples::unit_cube().expect("cube");
+    let tolerance = |value: f64| cadmpeg_ir::scalar::PositiveReal::new(value);
+    let edited = &mut ir.model;
+    edited.bodies[0].name = Some("Unit cube".to_owned());
+    edited.faces[0].name = Some("Bottom".to_owned());
+    edited.faces[1].tolerance = tolerance(0.01);
+    edited.edges[0].tolerance = tolerance(0.02);
+    edited.vertices[0].tolerance = tolerance(0.03);
+    let (written, _) = crate::test_support::encode(&ir);
+    assert!(written.contains("CadBrepToleranceAPI"), "{written}");
+    let read = crate::test_support::decode(&written);
+    let (model, after) = (&ir.model, &read.ir().model);
+    let body = &after.bodies[0];
+    assert_eq!(body.name.as_deref(), Some("Unit cube"));
+    let face = |id: &cadmpeg_ir::ids::FaceId| {
+        after
+            .faces
+            .iter()
+            .find(|face| &face.id == id)
+            .expect("the face")
+    };
+    assert_eq!(face(&model.faces[0].id).name.as_deref(), Some("Bottom"));
+    assert!(face(&model.faces[0].id).tolerance.is_none());
+    let close = |found: Option<cadmpeg_ir::scalar::PositiveReal>, expected: f64| {
+        found.is_some_and(|found| (found.get() - expected).abs() <= expected * 1e-12)
+    };
+    assert!(close(face(&model.faces[1].id).tolerance, 0.01));
+    let edge = after
+        .edges
+        .iter()
+        .find(|edge| edge.id == model.edges[0].id)
+        .expect("the edge");
+    assert!(close(edge.tolerance, 0.02));
+    let vertex = after
+        .vertices
+        .iter()
+        .find(|vertex| vertex.id == model.vertices[0].id)
+        .expect("the vertex");
+    assert!(close(vertex.tolerance, 0.03));
+}

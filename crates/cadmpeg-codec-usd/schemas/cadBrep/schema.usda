@@ -23,10 +23,11 @@ over "GLOBAL" (
 
 class "CadBrepIdentityAPI" (
     inherits = </APISchemaBase>
-    doc = """The CADIR identity of each B-rep, face, edge, and vertex of a BrepArray.
-             Element i names the entity at position i of its BrepArray arrays. An empty
-             string is no identity. An identity has the CADIR grammar
-             <format>:<scope>:<kind>#<key> and occurs once in a stage."""
+    doc = """The CADIR identity of each B-rep, face, edge, and vertex of a BrepArray, and
+             the name of each B-rep and face. Element i names the entity at position i of
+             its BrepArray arrays. An empty string is no identity or no name. An identity
+             has the CADIR grammar <format>:<scope>:<kind>#<key> and occurs once in a
+             stage."""
     customData = {
         token apiSchemaType = "singleApply"
         token[] apiSchemaCanOnlyApplyTo = ["BrepArray"]
@@ -43,6 +44,35 @@ class "CadBrepIdentityAPI" (
         doc = """One for each edge."""
     )
     uniform string[] cad:vertex:id (
+        doc = """One for each vertex."""
+    )
+    uniform string[] cad:brep:name (
+        doc = """The name of each B-rep."""
+    )
+    uniform string[] cad:face:name (
+        doc = """The name of each face."""
+    )
+}
+
+class "CadBrepToleranceAPI" (
+    inherits = </APISchemaBase>
+    doc = """The tolerance of each face, edge, and vertex of a BrepArray, in the length
+             unit of the stage. Element i is the tolerance of the entity at position i of
+             its BrepArray arrays. NaN is the tolerance of its B-rep (brep:intersectTol3d).
+             brep:intersectTol3d is at least each tolerance of its entities."""
+    customData = {
+        token apiSchemaType = "singleApply"
+        token[] apiSchemaCanOnlyApplyTo = ["BrepArray"]
+    }
+)
+{
+    uniform double[] cad:face:tolerance (
+        doc = """One for each face."""
+    )
+    uniform double[] cad:edge:tolerance (
+        doc = """One for each edge."""
+    )
+    uniform double[] cad:vertex:tolerance (
         doc = """One for each vertex."""
     )
 }

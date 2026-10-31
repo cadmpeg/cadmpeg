@@ -175,6 +175,10 @@ fn identities_pack_and_decode_by_entity() {
             .map(|index| (index % 2 == 0).then(|| format!("test:model:edge#{index}")))
             .collect(),
         vertices: Vec::new(),
+        body_name: Some("Cube".to_owned()),
+        face_names: (0..brep.faces.len())
+            .map(|index| (index == 1).then(|| "Top".to_owned()))
+            .collect(),
     };
     let mut packed = Packed::default();
     packed.push(&brep, true).expect("encode");
@@ -193,4 +197,29 @@ fn identities_pack_and_decode_by_entity() {
     expected.sort();
     assert_eq!(edges, expected);
     assert!(read.vertices.iter().all(Option::is_none));
+    assert_eq!(read.body_name.as_deref(), Some("Cube"));
+    assert_eq!(read.face_names, brep.identities.face_names);
+}
+
+#[test]
+fn tolerances_pack_and_decode_by_entity() {
+    let mut brep = cube();
+    brep.tolerances = crate::brep::Tolerances {
+        faces: (0..brep.faces.len())
+            .map(|index| (index == 2).then_some(1e-4))
+            .collect(),
+        edges: Vec::new(),
+        vertices: (0..brep.vertices.len())
+            .map(|index| (index == 0).then_some(2e-4))
+            .collect(),
+    };
+    let mut packed = Packed::default();
+    packed.push(&brep, true).expect("encode");
+    assert!(packed.tolerances.any());
+    assert!(packed.tolerances.edges.iter().all(|value| value.is_nan()));
+    let decoded = decode(&packed).expect("decode");
+    let read = &decoded.breps[0].tolerances;
+    assert_eq!(read.faces, brep.tolerances.faces);
+    assert!(read.edges.iter().all(Option::is_none));
+    assert_eq!(read.vertices.iter().flatten().collect::<Vec<_>>(), [&2e-4]);
 }

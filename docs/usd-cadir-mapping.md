@@ -12,8 +12,8 @@ This document uses ASD-STE100 Simplified Technical English. Schema, attribute, a
 | --- | --- | --- | --- |
 | `units`, `tolerances` | `metersPerUnit`; `brep:intersectTol3d` per B-rep | the document tolerances and the angular tolerance | `customLayerData` keys `cad:tolerance:linear`, `cad:tolerance:angular` |
 | `source`, `decode_depth` | none | source format, dialects, and decode depth | `customLayerData` dictionary `cad:source` |
-| `bodies`, `regions`, `shells` | `BrepArray` B-reps, regions, and shells | a face that two solid regions share; body kind, name, color, and visibility on a B-rep in a multi-B-rep prim | IR change for shared faces; `CadBrepIdentityAPI` per-B-rep name and kind |
-| `faces`, `loops`, `coedges`, `edges`, `vertices`, `points` | `BrepArray` faces, loops, edgeuses, edges, vertices | entity IDs, face and edge names and colors, per-entity tolerances, wire edges, free vertices | `CadBrepIdentityAPI`, `CadBrepToleranceAPI`; read and write `wireEdge:*` and `BrepPointAPI:shellPoint` |
+| `bodies`, `regions`, `shells` | `BrepArray` B-reps, regions, and shells | a face that two solid regions share; body kind, color, and visibility on a B-rep in a multi-B-rep prim | IR change for shared faces; per-B-rep kind, color, and visibility arrays |
+| `faces`, `loops`, `coedges`, `edges`, `vertices`, `points` | `BrepArray` faces, loops, edgeuses, edges, vertices; `CadBrepIdentityAPI` identities and names; `CadBrepToleranceAPI` tolerances | face colors, wire edges, free vertices | face colors as `GeomSubset` display colors; read and write `wireEdge:*` and `BrepPointAPI:shellPoint` |
 | `surfaces`, `curves` | rational NURBS in `BrepSurfaceNurbAPI` and `BrepCurve3dNurbAPI` | analytic carrier types and their parameterizations; a carrier that two faces or edges share | `CadBrepAnalyticAPI`: analytic catalogs, each NURBS carrier's analytic source, and the parameter map |
 | `pcurves` | NURBS trim curves in `BrepCurveUvNurbAPI` | pcurve kinds (line, circle, ellipse, harmonic, and others) and their parameter ranges | `CadBrepAnalyticAPI` pcurve catalog, in analytic surface parameters |
 | `procedural_surfaces`, `procedural_curves` | none | extrusion, revolution, sum, sweep, offset, subset, ruled, blend; intersection, projection, offset, subset curves | `CadBrepProceduralAPI`: a construction for each carrier, beside its NURBS solved form |
@@ -44,8 +44,8 @@ These are applied API schemas on a `BrepArray` prim. A reader that does not know
 
 - `CadBrepAnalyticAPI`. The catalogs `cad:surface:analytic:*`, `cad:curve3d:analytic:*`, and `cad:pcurve:analytic:*` hold frames and parameters of the analytic carriers (the record model of `pr/usd`, §16 of its `usd.md`). `cad:face:analyticSurface` and `cad:edge:analyticCurve` give, for each face and edge, the analytic carrier index or `-1`. The NURBS carrier is the exact rational form of the analytic carrier; its parameter is the arc parameter whose knots are angles, which maps in closed form to the analytic parameter. Two faces with one analytic index share one carrier.
 - `CadBrepProceduralAPI`. A construction for each carrier that one names: kind, operand carriers, and scalar parameters, after CADIR `procedural_surfaces` and `procedural_curves`.
-- `CadBrepIdentityAPI`. `cad:brep:id`, `cad:face:id`, `cad:edge:id`, `cad:vertex:id` (string arrays) give the CADIR identity of each entity, so that features, mates, and PMI that reference topology resolve after a round trip. Optional name and color arrays.
-- `CadBrepToleranceAPI`. Per-face, per-edge, and per-vertex tolerances; `NaN` is the B-rep tolerance.
+- `CadBrepIdentityAPI` (`usd.md` §18.1). `cad:brep:id`, `cad:face:id`, `cad:edge:id`, `cad:vertex:id` give the CADIR identity of each entity, so that features, mates, and PMI that reference topology resolve after a round trip. `cad:brep:name` and `cad:face:name` give the body and face names.
+- `CadBrepToleranceAPI` (`usd.md` §18.4). Per-face, per-edge, and per-vertex tolerances; `NaN` is the B-rep tolerance.
 
 ### 2.2 Assembly
 

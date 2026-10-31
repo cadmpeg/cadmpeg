@@ -221,6 +221,7 @@
     "            uniform string[] cad:face:id = [\"usd:stage:face#/Plant/Roof\"]",
     "            uniform string[] cad:edge:id = [\"usd:stage:edge#usd%3Astage%3Aface%23/Plant/Roof:edge:0\", \"usd:stage:edge#usd%3Astage%3Aface%23/Plant/Roof:edge:1\", \"usd:stage:edge#usd%3Astage%3Aface%23/Plant/Roof:edge:2\", \"usd:stage:edge#usd%3Astage%3Aface%23/Plant/Roof:edge:3\"]",
     "            uniform string[] cad:vertex:id = [\"usd:stage:vertex#usd%3Astage%3Aface%23/Plant/Roof:vertex:0\", \"usd:stage:vertex#usd%3Astage%3Aface%23/Plant/Roof:vertex:1\", \"usd:stage:vertex#usd%3Astage%3Aface%23/Plant/Roof:vertex:2\", \"usd:stage:vertex#usd%3Astage%3Aface%23/Plant/Roof:vertex:3\"]",
+    "            uniform string[] cad:brep:name = [\"Roof\"]",
     "        }",
     "        def NurbsPatch \"Patch\" (",
     "            customData = { string brepArray = \"Brep\" }",

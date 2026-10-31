@@ -221,16 +221,29 @@ pub(crate) struct Brep {
     pub(crate) angle_scale: f64,
     pub(crate) valid: bool,
     pub(crate) identities: Identities,
+    pub(crate) tolerances: Tolerances,
 }
 
 /// The CADIR identity of the body and of each face, edge, and vertex
-/// record, where one is known (spec §18.1).
+/// record, and the name of the body and of each face, where one is known
+/// (spec §18.1).
 #[derive(Debug, Clone, PartialEq, Default)]
 pub(crate) struct Identities {
     pub(crate) body: Option<String>,
     pub(crate) faces: Vec<Option<String>>,
     pub(crate) edges: Vec<Option<String>>,
     pub(crate) vertices: Vec<Option<String>>,
+    pub(crate) body_name: Option<String>,
+    pub(crate) face_names: Vec<Option<String>>,
+}
+
+/// The tolerance of each face, edge, and vertex record, where the entity
+/// has its own (spec §18.4).
+#[derive(Debug, Clone, PartialEq, Default)]
+pub(crate) struct Tolerances {
+    pub(crate) faces: Vec<Option<f64>>,
+    pub(crate) edges: Vec<Option<f64>>,
+    pub(crate) vertices: Vec<Option<f64>>,
 }
 
 /// `brep:tolerance` when it is not authored.

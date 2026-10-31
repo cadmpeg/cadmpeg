@@ -1508,6 +1508,7 @@ pub(crate) fn nurbs_only(brep: &Brep) -> Result<Converted, String> {
         angle_scale: 1.0,
         valid: brep.valid,
         identities: brep.identities.clone(),
+        tolerances: brep.tolerances.clone(),
         ..Brep::default()
     };
     for (index, edge) in brep.edges.iter().enumerate() {

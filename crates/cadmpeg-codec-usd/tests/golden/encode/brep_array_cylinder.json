@@ -384,6 +384,7 @@
     "        uniform string[] cad:face:id = [\"usd:stage:face#/Occurrence:face:0\", \"usd:stage:face#/Occurrence:face:1\", \"usd:stage:face#/Occurrence:face:2\"]",
     "        uniform string[] cad:edge:id = [\"usd:stage:edge#/Occurrence:edge:0\", \"usd:stage:edge#/Occurrence:edge:1\", \"usd:stage:edge#/Occurrence:edge:2\"]",
     "        uniform string[] cad:vertex:id = [\"usd:stage:vertex#/Occurrence:vertex:0\", \"usd:stage:vertex#/Occurrence:vertex:1\"]",
+    "        uniform string[] cad:brep:name = [\"Occurrence\"]",
     "    }",
     "    def Mesh \"Mesh\" (",
     "        customData = { string brepArray = \"Brep\" }",

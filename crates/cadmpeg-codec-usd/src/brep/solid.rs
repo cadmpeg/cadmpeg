@@ -23,6 +23,8 @@ pub(crate) const SURFACE_API: &str = "BrepSurfaceNurbAPI";
 pub(crate) const TRIM_CURVE_API: &str = "BrepCurveUvNurbAPI";
 /// The identity API (spec §18.1).
 pub(crate) const IDENTITY_API: &str = "CadBrepIdentityAPI";
+/// The tolerance API (spec §18.4).
+pub(crate) const TOLERANCE_API: &str = "CadBrepToleranceAPI";
 /// The type token of a NURBS edge curve.
 const CURVE_TYPE: &str = "BrepCurve3dNurbAPI";
 /// The type token of a point.
@@ -148,24 +150,58 @@ pub(crate) struct Packed {
     /// The CADIR identity of each B-rep, face, edge, and vertex; an empty
     /// string is no identity.
     pub(crate) identities: PackedIdentities,
+    /// The tolerance of each face, edge, and vertex; `NaN` is the B-rep
+    /// tolerance.
+    pub(crate) tolerances: PackedTolerances,
 }
 
-/// The `cad:` identity arrays of `CadBrepIdentityAPI` (spec §18.1).
+/// The `cad:` arrays of `CadBrepIdentityAPI` (spec §18.1).
 #[derive(Debug, Clone, PartialEq, Default)]
 pub(crate) struct PackedIdentities {
     pub(crate) breps: Vec<String>,
     pub(crate) faces: Vec<String>,
     pub(crate) edges: Vec<String>,
     pub(crate) vertices: Vec<String>,
+    pub(crate) brep_names: Vec<String>,
+    pub(crate) face_names: Vec<String>,
 }
 
 impl PackedIdentities {
-    /// Whether any entity has an identity.
+    /// Whether any entity has an identity or a name.
     pub(crate) fn any(&self) -> bool {
-        [&self.breps, &self.faces, &self.edges, &self.vertices]
-            .iter()
-            .any(|values| values.iter().any(|value| !value.is_empty()))
+        [
+            &self.breps,
+            &self.faces,
+            &self.edges,
+            &self.vertices,
+            &self.brep_names,
+            &self.face_names,
+        ]
+        .iter()
+        .any(|values| values.iter().any(|value| !value.is_empty()))
     }
+}
+
+/// The `cad:` arrays of `CadBrepToleranceAPI` (spec §18.4).
+#[derive(Debug, Clone, PartialEq, Default)]
+pub(crate) struct PackedTolerances {
+    pub(crate) faces: Vec<f64>,
+    pub(crate) edges: Vec<f64>,
+    pub(crate) vertices: Vec<f64>,
+}
+
+impl PackedTolerances {
+    /// Whether any entity has its own tolerance.
+    pub(crate) fn any(&self) -> bool {
+        [&self.faces, &self.edges, &self.vertices]
+            .iter()
+            .any(|values| values.iter().any(|value| !value.is_nan()))
+    }
+}
+
+/// `values`, padded with `None` to `count`, as packed tolerances.
+fn packed_tolerances(values: &[Option<f64>], count: usize) -> impl Iterator<Item = f64> + '_ {
+    (0..count).map(move |index| values.get(index).copied().flatten().unwrap_or(f64::NAN))
 }
 
 /// `values`, padded with `None` to `count`, as packed strings.
@@ -421,6 +457,22 @@ impl Packed {
         self.identities
             .vertices
             .extend(packed_ids(&ids.vertices, brep.vertices.len()));
+        self.identities
+            .brep_names
+            .push(ids.body_name.clone().unwrap_or_default());
+        self.identities
+            .face_names
+            .extend(packed_ids(&ids.face_names, brep.faces.len()));
+        let tolerances = &brep.tolerances;
+        self.tolerances
+            .faces
+            .extend(packed_tolerances(&tolerances.faces, brep.faces.len()));
+        self.tolerances
+            .edges
+            .extend(packed_tolerances(&tolerances.edges, brep.edges.len()));
+        self.tolerances
+            .vertices
+            .extend(packed_tolerances(&tolerances.vertices, brep.vertices.len()));
 
         self.intersect_tol.push(brep.tolerance);
         let box_ = bounds(
@@ -668,9 +720,20 @@ pub(crate) fn read(prim: &Prim<'_>, issues: &mut Issues) -> Result<Packed, Refus
                 faces: tokens(prim, "cad:face:id", issues).unwrap_or_default(),
                 edges: tokens(prim, "cad:edge:id", issues).unwrap_or_default(),
                 vertices: tokens(prim, "cad:vertex:id", issues).unwrap_or_default(),
+                brep_names: tokens(prim, "cad:brep:name", issues).unwrap_or_default(),
+                face_names: tokens(prim, "cad:face:name", issues).unwrap_or_default(),
             }
         } else {
             PackedIdentities::default()
+        },
+        tolerances: if schemas.contains(TOLERANCE_API) {
+            PackedTolerances {
+                faces: reals(prim, "cad:face:tolerance", 1, issues).unwrap_or_default(),
+                edges: reals(prim, "cad:edge:tolerance", 1, issues).unwrap_or_default(),
+                vertices: reals(prim, "cad:vertex:tolerance", 1, issues).unwrap_or_default(),
+            }
+        } else {
+            PackedTolerances::default()
         },
     };
     if packed.edge_curves.len() != edge_curve_count
@@ -1000,6 +1063,30 @@ pub(crate) fn decode(packed: &Packed) -> Result<Decoded, Refusal> {
         brep.identities.vertices = vec![None; brep.vertices.len()];
         for (global, record) in &vertex_map {
             brep.identities.vertices[*record] = named(&ids.vertices, *global);
+        }
+        brep.identities.body_name = named(&ids.brep_names, brep_index);
+        brep.identities.face_names = faces_in_order
+            .iter()
+            .map(|face| named(&ids.face_names, *face))
+            .collect();
+        let own = |values: &[f64], index: usize| {
+            values
+                .get(index)
+                .copied()
+                .filter(|value| value.is_finite() && *value > 0.0)
+        };
+        let tolerances = &packed.tolerances;
+        brep.tolerances.faces = faces_in_order
+            .iter()
+            .map(|face| own(&tolerances.faces, *face))
+            .collect();
+        brep.tolerances.edges = vec![None; brep.edges.len()];
+        for (global, record) in &edge_map {
+            brep.tolerances.edges[*record] = own(&tolerances.edges, *global);
+        }
+        brep.tolerances.vertices = vec![None; brep.vertices.len()];
+        for (global, record) in &vertex_map {
+            brep.tolerances.vertices[*record] = own(&tolerances.vertices, *global);
         }
         out.faces.push(faces_in_order);
         out.breps.push(brep);

@@ -257,6 +257,7 @@
     "                \"usd:stage:edge#/Scene/Box:edge:8\", \"usd:stage:edge#/Scene/Box:edge:9\", \"usd:stage:edge#/Scene/Box:edge:10\", \"usd:stage:edge#/Scene/Box:edge:11\"",
     "            ]",
     "            uniform string[] cad:vertex:id = [\"usd:stage:vertex#/Scene/Box:vertex:0\", \"usd:stage:vertex#/Scene/Box:vertex:4\", \"usd:stage:vertex#/Scene/Box:vertex:6\", \"usd:stage:vertex#/Scene/Box:vertex:2\", \"usd:stage:vertex#/Scene/Box:vertex:1\", \"usd:stage:vertex#/Scene/Box:vertex:3\", \"usd:stage:vertex#/Scene/Box:vertex:7\", \"usd:stage:vertex#/Scene/Box:vertex:5\"]",
+    "            uniform string[] cad:brep:name = [\"Box\"]",
     "        }",
     "        def Mesh \"Mesh\" (",
     "            customData = { string brepArray = \"Brep\" }",

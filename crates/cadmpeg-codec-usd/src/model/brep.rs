@@ -60,6 +60,17 @@ pub(crate) struct Imported {
     pub(crate) face_ids: BTreeMap<i64, FaceId>,
     /// The body, when its identity is the B-rep's CADIR identity.
     pub(crate) body: Option<cadmpeg_ir::ids::BodyId>,
+    /// The body name from `cad:brep:name`.
+    pub(crate) name: Option<String>,
+}
+
+/// The tolerance of record `index` of `values`, in millimetres.
+fn own_tolerance(values: &[Option<f64>], index: usize, scale: f64) -> Option<PositiveReal> {
+    values
+        .get(index)
+        .copied()
+        .flatten()
+        .and_then(|tolerance| PositiveReal::new(tolerance * scale))
 }
 
 /// The IR identity of the body and of each face, edge, and vertex record:
@@ -493,6 +504,7 @@ pub(super) fn import(
     let ids = Ids::new(brep, key, used);
     let mut out = Imported {
         body: (ids.body != crate::ids::body(key)).then(|| ids.body.clone()),
+        name: brep.identities.body_name.clone(),
         ..Imported::default()
     };
 
@@ -642,7 +654,7 @@ pub(super) fn import(
         out.vertices.push(Vertex {
             id: ids.vertices[*vertex].clone(),
             point,
-            tolerance: None,
+            tolerance: own_tolerance(&brep.tolerances.vertices, *vertex, scale),
         });
     }
 
@@ -684,10 +696,12 @@ pub(super) fn import(
             }
             None => EdgeCarrier::unbounded(None),
         };
-        let tolerance = record
-            .tolerance
-            .filter(|tolerance| *tolerance > brep.tolerance)
-            .and_then(|tolerance| PositiveReal::new(tolerance * scale));
+        let tolerance = own_tolerance(&brep.tolerances.edges, *edge, scale).or_else(|| {
+            record
+                .tolerance
+                .filter(|tolerance| *tolerance > brep.tolerance)
+                .and_then(|tolerance| PositiveReal::new(tolerance * scale))
+        });
         out.edges.push(Edge {
             id: edge_id.clone(),
             carrier,
@@ -801,9 +815,9 @@ pub(super) fn import(
                 Sense::Reversed
             },
             loops,
-            name: None,
+            name: brep.identities.face_names.get(face).cloned().flatten(),
             color: None,
-            tolerance: None,
+            tolerance: own_tolerance(&brep.tolerances.faces, face, scale),
         });
         out.face_ids.insert(record.id, face_id);
     }
@@ -1147,6 +1161,7 @@ impl super::Builder<'_, '_, '_, '_> {
             kind,
             face_ids,
             body,
+            name,
         } = imported;
         let model = &mut self.ir.model;
         let region_ids = regions.iter().map(|region| region.id.clone()).collect();
@@ -1175,6 +1190,9 @@ impl super::Builder<'_, '_, '_, '_> {
         }
         let body = self.body_id(key);
         self.body(prim, key, kind.unwrap_or(BodyKind::General), region_ids);
+        if let (Some(name), Some(record)) = (name, self.ir.model.bodies.last_mut()) {
+            record.name = Some(name);
+        }
         self.transferred = true;
         self.admit("usd_brep")?;
         Ok(Ok((body, face_ids)))

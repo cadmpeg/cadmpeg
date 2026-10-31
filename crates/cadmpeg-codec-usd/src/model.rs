@@ -685,7 +685,11 @@ impl Builder<'_, '_, '_, '_> {
                             .filter(|body| bodies.contains(&body.id))
                         {
                             body.transform = local;
-                            body.name = Some(prim.name.clone());
+                            // A `cad:brep:name` name stays; the prim name
+                            // of the `BrepArray` gives way to the group's.
+                            if body.name.as_deref() == Some(source_prim.name.as_str()) {
+                                body.name = Some(prim.name.clone());
+                            }
                         }
                         if let Some(entry) = self.brep_entries.get_mut(key) {
                             entry.body_transform = local;

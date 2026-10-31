@@ -275,6 +275,7 @@
     "            \"usd:stage:edge#/Occurrence:edge:9\", \"usd:stage:edge#/Occurrence:edge:8\", \"usd:stage:edge#/Occurrence:edge:10\", \"usd:stage:edge#/Occurrence:edge:11\"",
     "        ]",
     "        uniform string[] cad:vertex:id = [\"usd:stage:vertex#/Occurrence:vertex:3\", \"usd:stage:vertex#/Occurrence:vertex:0\", \"usd:stage:vertex#/Occurrence:vertex:2\", \"usd:stage:vertex#/Occurrence:vertex:1\", \"usd:stage:vertex#/Occurrence:vertex:4\", \"usd:stage:vertex#/Occurrence:vertex:5\", \"usd:stage:vertex#/Occurrence:vertex:6\", \"usd:stage:vertex#/Occurrence:vertex:7\"]",
+    "        uniform string[] cad:brep:name = [\"Occurrence\"]",
     "        def GeomSubset \"Box_face_1_material\" (",
     "            prepend apiSchemas = [\"MaterialBindingAPI\"]",
     "        )",

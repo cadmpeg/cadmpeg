@@ -255,6 +255,8 @@
     "            \"synthetic:cube:edge#9\", \"synthetic:cube:edge#8\", \"synthetic:cube:edge#10\", \"synthetic:cube:edge#11\"",
     "        ]",
     "        uniform string[] cad:vertex:id = [\"synthetic:cube:vertex#0\", \"synthetic:cube:vertex#1\", \"synthetic:cube:vertex#3\", \"synthetic:cube:vertex#2\", \"synthetic:cube:vertex#7\", \"synthetic:cube:vertex#4\", \"synthetic:cube:vertex#5\", \"synthetic:cube:vertex#6\"]",
+    "        uniform string[] cad:brep:name = [\"unit cube\"]",
+    "        uniform string[] cad:face:name = [\"bottom face\", \"top face\", \"front face\", \"right face\", \"back face\", \"left face\"]",
     "    }",
     "    def Mesh \"Mesh\" (",
     "        customData = { string brepArray = \"Brep\" }",
