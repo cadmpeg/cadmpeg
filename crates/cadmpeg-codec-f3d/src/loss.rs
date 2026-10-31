@@ -343,6 +343,8 @@ pub(crate) enum F3dLossCode {
     SurfaceShapeNotDecoded,
     /// Faces use zero-payload `mesh_surface` sentinels; exact surfaces are absent.
     MeshSurfaceSentinel,
+    /// Sketch-region body records of a keyless BREP blob are not model bodies.
+    SketchRegionBodyOmitted,
     /// Edges reference a procedural 3D curve with no decodable B-spline cache.
     ProceduralCurveUndecoded,
     /// Vertex tolerance is widened to cover exact cache endpoints.
@@ -553,6 +555,7 @@ impl F3dLossCode {
         Self::BodylessDesignCarrier,
         Self::AssemblyComponentsExternal,
         Self::NurbsSurfaceCarrier,
+        Self::SketchRegionBodyOmitted,
         Self::NurbsCurveCarrier,
         Self::FaceSurfaceReferenceDangling,
         Self::SurfaceShapeNotDecoded,
@@ -753,6 +756,7 @@ impl F3dLossCode {
             Self::BodylessDesignCarrier => "design.bodyless-carrier",
             Self::AssemblyComponentsExternal => "assembly.components-external",
             Self::NurbsSurfaceCarrier => "geometry.nurbs-surface-carrier",
+            Self::SketchRegionBodyOmitted => "geometry.sketch-region-body-omitted",
             Self::NurbsCurveCarrier => "geometry.nurbs-curve-carrier",
             Self::FaceSurfaceReferenceDangling => "geometry.face-surface-dangling",
             Self::SurfaceShapeNotDecoded => "geometry.surface-shape-not-decoded",
@@ -815,7 +819,8 @@ impl F3dLossCode {
             | Self::AssemblyComponentsExternal
             | Self::NurbsSurfaceCarrier
             | Self::NurbsCurveCarrier
-            | Self::MeshSurfaceSentinel => Severity::Info,
+            | Self::MeshSurfaceSentinel
+            | Self::SketchRegionBodyOmitted => Severity::Info,
             Self::HistoryBindingBudgetExceeded
             | Self::HistoryBindingWorkExceeded
             | Self::RecipeSideSearchBudgetExceeded
@@ -1138,7 +1143,9 @@ impl F3dLossCode {
             | Self::NurbsSurfaceCarrier
             | Self::NurbsCurveCarrier
             | Self::MeshSurfaceSentinel => LossTaxonomy::CarrierSummary,
-            Self::VertexToleranceWidened => LossTaxonomy::DecodeDiagnostic,
+            Self::VertexToleranceWidened | Self::SketchRegionBodyOmitted => {
+                LossTaxonomy::DecodeDiagnostic
+            }
             Self::ProceduralCurveUndecoded
             | Self::ProceduralSupportChartUnresolved
             | Self::SpringSupportPcurveUnresolved
@@ -1348,6 +1355,7 @@ mod tests {
                 "design.bodyless-carrier",
                 "assembly.components-external",
                 "geometry.nurbs-surface-carrier",
+                "geometry.sketch-region-body-omitted",
                 "geometry.nurbs-curve-carrier",
                 "geometry.face-surface-dangling",
                 "geometry.surface-shape-not-decoded",
