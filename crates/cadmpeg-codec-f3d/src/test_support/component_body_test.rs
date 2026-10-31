@@ -78,29 +78,53 @@ pub(crate) fn history_only_design(
     hidden: Option<bool>,
     container: HistoryOnlyContainer<'_>,
 ) -> (Vec<u8>, Vec<u8>) {
+    history_only_pairs_design(blob, &[(0, 350, hidden)], container)
+}
+
+/// Design with one body map naming `blob` and holding one pair per
+/// `(selector, entity, hidden flag)` row. A row with no flag has no browser node.
+pub(crate) fn history_only_pairs_design(
+    blob: &str,
+    pairs: &[(u64, u64, Option<bool>)],
+    container: HistoryOnlyContainer<'_>,
+) -> (Vec<u8>, Vec<u8>) {
     const COMPONENT: u64 = 40;
     let mut bulk = Vec::new();
     let mut records = Vec::new();
     records.push((900, u64_from_index(bulk.len())));
     indexed_header(&mut bulk, *b"256", 900);
     bulk.extend_from_slice(&[0; 10]);
-    bulk.extend_from_slice(&1_u32.to_le_bytes());
-    bulk.extend_from_slice(&0_u64.to_le_bytes());
-    bulk.extend_from_slice(&350_u64.to_le_bytes());
+    bulk.extend_from_slice(&u32::try_from(pairs.len()).unwrap().to_le_bytes());
+    for (selector, entity, _) in pairs {
+        bulk.extend_from_slice(&selector.to_le_bytes());
+        bulk.extend_from_slice(&entity.to_le_bytes());
+    }
     bulk.extend_from_slice(&1793_u64.to_le_bytes());
     bulk.extend_from_slice(&0_u32.to_le_bytes());
     super::lp_utf16(&mut bulk, blob);
-    if let Some(hidden) = hidden {
-        records.push((100, u64_from_index(bulk.len())));
-        indexed_header(&mut bulk, *b"257", 100);
+    let mut nodes = Vec::new();
+    for (ordinal, (_, entity, hidden)) in (0_u32..).zip(pairs) {
+        let Some(hidden) = hidden else {
+            continue;
+        };
+        let record = 100 + ordinal;
+        nodes.push(u64::from(record));
+        records.push((u64::from(record), u64_from_index(bulk.len())));
+        indexed_header(&mut bulk, *b"257", record);
         bulk.extend_from_slice(&[0; 10]);
-        super::lp_utf16(&mut bulk, "11111111-2222-8333-A444-555555555555");
-        bulk.push(u8::from(hidden));
+        super::lp_utf16(&mut bulk, &format!("11111111-2222-8333-A444-{record:012}"));
+        bulk.push(u8::from(*hidden));
         bulk.extend_from_slice(&[1, 1]);
-        bulk.extend_from_slice(&350_u64.to_le_bytes());
+        bulk.extend_from_slice(&entity.to_le_bytes());
     }
-    records.push((350, u64_from_index(bulk.len())));
-    indexed_header(&mut bulk, *b"258", 350);
+    let entities = pairs
+        .iter()
+        .map(|(_, entity, _)| *entity)
+        .collect::<Vec<_>>();
+    for entity in &entities {
+        records.push((*entity, u64_from_index(bulk.len())));
+        indexed_header(&mut bulk, *b"258", u32::try_from(*entity).unwrap());
+    }
     let mut frame = |bulk: &mut Vec<u8>, class_tag: [u8; 3], record: u32, tail: Option<&[u64]>| {
         records.push((u64::from(record), u64_from_index(bulk.len())));
         indexed_header(bulk, class_tag, record);
@@ -160,13 +184,15 @@ pub(crate) fn history_only_design(
             crate::design::presentation::BROWSER_NODE_BASE_TYPE_GUID,
             crate::design::presentation::BROWSER_NODE_TYPE_VERSION,
             "Fusion",
-            if hidden.is_some() {
-                &[100][..]
-            } else {
-                &[][..]
-            },
+            &nodes,
         ),
-        body_type(),
+        (
+            body_type().0,
+            body_type().1,
+            body_type().2,
+            body_type().3,
+            &entities,
+        ),
         (
             crate::records::body_ownership::COMPONENT_GUID,
             crate::records::body_ownership::CONTAINER_BASE_GUID,

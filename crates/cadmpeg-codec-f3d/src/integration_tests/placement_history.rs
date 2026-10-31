@@ -277,6 +277,111 @@ fn history_only_body_map_pair_leaves_the_current_model_and_reports_its_loss() {
 }
 
 #[test]
+fn consumed_pair_beside_a_listed_survivor_keeps_exactly_the_survivor() {
+    use crate::test_support::component_body_test::{
+        history_only_pairs_design, HistoryOnlyContainer as Container,
+    };
+    const BLOB: &str = "BREP.module.smbh";
+    for (keys, survivor_key, consumed_key) in [([10, 20], 10, 20), ([10, 20], 20, 10)] {
+        let (bulk, meta) = history_only_pairs_design(
+            BLOB,
+            &[
+                (survivor_key, 350, Some(false)),
+                (consumed_key, 351, Some(true)),
+            ],
+            Container::Lists(&[350]),
+        );
+        let bytes = f3d_with_breps_and_design(
+            &[(
+                BLOB,
+                &crate::test_support::smbh_geometry_test::synthetic_two_body_smbh(keys),
+            )],
+            &bulk,
+            &meta,
+        );
+        let result = super::decode(bytes);
+        assert_eq!(result.ir().model.bodies.len(), 1, "{survivor_key}");
+        assert_eq!(result.ir().model.faces.len(), 1, "{survivor_key}");
+        let native = crate::test_support::native_test::f3d_native(result.ir());
+        let native_keys = native
+            .body_native_keys
+            .iter()
+            .map(|key| key.asm_body_key)
+            .collect::<Vec<_>>();
+        assert_eq!(native_keys, [Some(survivor_key)]);
+        let mut pairs = native
+            .design_body_bindings
+            .iter()
+            .map(|binding| {
+                (
+                    binding.entity_suffix,
+                    binding.history_only,
+                    binding.body.is_some(),
+                    binding.component_owner.is_some(),
+                )
+            })
+            .collect::<Vec<_>>();
+        pairs.sort_unstable();
+        assert_eq!(pairs, [(350, false, true, true), (351, true, false, false)]);
+        let codes = result
+            .report()
+            .losses
+            .iter()
+            .map(|loss| loss.code.clone())
+            .collect::<Vec<_>>();
+        assert!(codes.contains(&F3dLossCode::HistoryOnlyBodyOmitted.kind()));
+        assert!(!codes.contains(&F3dLossCode::DesignBodyBindingUnresolved.kind()));
+    }
+}
+
+#[test]
+fn no_physical_model_requires_every_body_map_pair_to_be_history_only() {
+    use crate::test_support::component_body_test::{
+        history_only_pairs_design, HistoryOnlyContainer as Container,
+    };
+    const BLOB: &str = "BREP.module.smbh";
+    const NO_PHYSICAL_MODEL: &str = "No physical model BREP was selected";
+    const EMPTY_SELECTION: &str = "the selected model has no surfaces";
+    // A live selector that names no body leaves the blob empty, so the reported
+    // outcome depends on the pair predicate alone.
+    for (pairs, listed, expected, absent) in [
+        (
+            &[(99, 350, Some(false)), (42, 351, Some(true))][..],
+            &[350][..],
+            EMPTY_SELECTION,
+            NO_PHYSICAL_MODEL,
+        ),
+        (
+            &[(42, 350, Some(true)), (43, 351, Some(true))][..],
+            &[][..],
+            NO_PHYSICAL_MODEL,
+            EMPTY_SELECTION,
+        ),
+    ] {
+        let (bulk, meta) = history_only_pairs_design(BLOB, pairs, Container::Lists(listed));
+        let bytes = f3d_with_breps_and_design(
+            &[(
+                BLOB,
+                &crate::test_support::smbh_geometry_test::synthetic_geometry_smbh(),
+            )],
+            &bulk,
+            &meta,
+        );
+        let result = super::decode(bytes);
+        assert!(result.ir().model.bodies.is_empty(), "{expected}");
+        let has = |text: &str| {
+            result
+                .report()
+                .losses
+                .iter()
+                .any(|loss| loss.message.contains(text))
+        };
+        assert!(has(expected), "{expected}");
+        assert!(!has(absent), "{expected}");
+    }
+}
+
+#[test]
 fn admitted_component_membership_wins_over_an_unregistered_owner() {
     for owners in [&[999, 300][..], &[300, 999][..]] {
         let (bulk, meta) = crate::test_support::streams_test::nested_local_component_design(owners);
