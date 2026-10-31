@@ -48,9 +48,6 @@ fn offset_faces_distance_marker(
     {
         return Some(25);
     }
-    if !matches!(references, 3 | 4) {
-        return None;
-    }
     let count_offset = usize::try_from(scope.reference_count_offset())
         .ok()?
         .checked_sub(start)?;
@@ -65,6 +62,14 @@ fn offset_faces_distance_marker(
     (View::u32_le_at(bytes, start + distance_marker + 11) == Some(1)
         && marked_record_reference(bytes, start + distance_marker + 15) == Some(*first_reference))
     .then_some(distance_marker)
+}
+
+pub(crate) fn offset_faces_distance_reference_matches(
+    scope: &DesignParameterScope,
+    distance_record_index: u32,
+) -> bool {
+    scope.reference_members().len() >= 3
+        && scope.reference_members().values().next_back() == Some(&distance_record_index)
 }
 
 pub(super) fn exact_direct_face_operation(
@@ -82,8 +87,8 @@ pub(super) fn exact_direct_face_operation(
     match design_feature_family(&scope.kind())? {
         DesignFeatureFamily::OffsetFaces => {
             let distance_marker = offset_faces_distance_marker(bytes, scope, start)?;
-            let distance_record_index = View::u32_le_at(bytes, start + distance_marker + 1)?;
-            if scope.reference_members().values().next_back() != Some(&distance_record_index) {
+            let distance_record_index = marked_record_reference(bytes, start + distance_marker)?;
+            if !offset_faces_distance_reference_matches(scope, distance_record_index) {
                 return None;
             }
             let scalar = exact_fixed_scalar(bytes, records, distance_record_index)?;
