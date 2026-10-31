@@ -55,7 +55,7 @@ fn dimension_annotation_empty_metadata_binds_explicit_owner_and_operands() {
     assert_eq!(frame.governing_owner_record_index, 390);
     assert_eq!(frame.governing_companion_record_index, 391);
     assert_eq!(frame.annotation_byte_offset(), 74);
-    assert_eq!(frame.paired_byte_offset(), paired as u64);
+    assert_eq!(frame.paired_byte_offset(), u64::try_from(paired).unwrap());
     let draft = frame.into_draft();
     assert_eq!(draft.annotation_bytes, [0xaa, 0xbb, 0xcc]);
     assert_eq!(
