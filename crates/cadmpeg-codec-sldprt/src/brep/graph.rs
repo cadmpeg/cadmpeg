@@ -1036,6 +1036,22 @@ fn ensure_surface_support(
     result
 }
 
+/// Whether `face` stores no loop and lies on a sphere. A sphere is a closed
+/// surface without boundary, so the face covers the whole surface (spec §7.1).
+fn covers_whole_sphere(face: &WalkedFace, t: &topology::Tables, carriers: &CarrierIndex) -> bool {
+    face.loops.is_empty()
+        && t.bridges()
+            .get(&face.bridge_attr)
+            .is_some_and(|bridge| bridge.refs[2] <= 1)
+        && !t.loops().values().any(|lp| lp.refs[2] == face.bridge_attr)
+        && carriers.surface(face.surface_attr).is_some_and(|carrier| {
+            matches!(
+                carrier.geometry,
+                SurfaceGeometry::Solved(SolvedSurfaceGeometry::Sphere(_))
+            )
+        })
+}
+
 /// Follow the sibling loop-head chain of a bridge and each loop's coedge ring,
 /// returning the ordered structure with cycles guarded. A ring is walked
 /// along each coedge's `refs[3]` link. A ring whose FINs all carry a forward
@@ -3344,7 +3360,7 @@ fn decode_graph(
                 loops.push(id_loop(*loop_attr));
             }
         }
-        if loops.is_empty() {
+        if loops.is_empty() && !covers_whole_sphere(f, t, carriers) {
             out.stats.withheld_faces += 1;
             continue;
         }
@@ -3353,10 +3369,10 @@ fn decode_graph(
         let mut surface_orientation_reversed = false;
         match carriers.surface(f.surface_attr) {
             Some(c) => {
-                let forward_linked = f
-                    .loops
-                    .iter()
-                    .all(|(loop_attr, _)| !f.unlinked_loops.contains(loop_attr));
+                let forward_linked = f.loops.is_empty()
+                    || f.loops
+                        .iter()
+                        .all(|(loop_attr, _)| !f.unlinked_loops.contains(loop_attr));
                 surface_orientation_reversed = c.orientation_reversed(forward_linked);
                 annotations.note(
                     id_surf(f.bridge_attr).as_str(),
