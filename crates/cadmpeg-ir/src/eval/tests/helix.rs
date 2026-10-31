@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 
+use crate::math::portable::Portable;
 use crate::math::Point3;
 use crate::math::Vector3;
 use crate::CadIr;
@@ -186,15 +187,15 @@ fn helix_angle_range_can_span_both_large_finite_signs() {
     let result = super::super::helix_differential(helix_of(&definition), parameter).unwrap();
     assert_eq!(
         result.point,
-        Point3::new(parameter.cos(), parameter.sin(), 0.0)
+        Point3::new(parameter.portable_cos(), parameter.portable_sin(), 0.0)
     );
     assert_eq!(
         result.tangent.unwrap().get(),
-        Vector3::new(-parameter.sin(), parameter.cos(), 0.0)
+        Vector3::new(-parameter.portable_sin(), parameter.portable_cos(), 0.0)
     );
     assert_eq!(
         result.acceleration.unwrap().get(),
-        Vector3::new(-parameter.cos(), -parameter.sin(), 0.0)
+        Vector3::new(-parameter.portable_cos(), -parameter.portable_sin(), 0.0)
     );
 }
 
