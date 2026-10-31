@@ -658,6 +658,42 @@ fn decode_container<'a>(
                 CodecError::malformed("Inventor Base projection exceeds unresolved feature count")
             })?;
     }
+    let composite_links = if delivered == DecodeDepth::Full {
+        crate::feature::composite::links(
+            ctx,
+            &container.rse,
+            &feature_inventory,
+            &design_inventory,
+        )?
+    } else {
+        Vec::new()
+    };
+    let composite = crate::feature::composite::project(
+        ctx,
+        &feature_inventory,
+        &composite_links,
+        &active_carrier,
+        &crate::feature::body_selection::Scope {
+            metadata: &segment_meta,
+            roots: &design_inventory.model_roots,
+        },
+        &body_keys,
+        &mut ir.model,
+    )?;
+    unresolved.features = unresolved
+        .features
+        .checked_sub(composite.transferred)
+        .ok_or_else(|| {
+            CodecError::malformed("Inventor Composite projection exceeds unresolved feature count")
+        })?;
+    let composite_losses = composite.losses;
+    if !composite_links.is_empty() {
+        ir.native.namespace_mut("inventor").set_arena(
+            ctx,
+            "composite_member_links",
+            &composite_links,
+        )?;
+    }
     if delivered == DecodeDepth::Full {
         let links = crate::feature::body_selection::links(
             ctx,
@@ -665,7 +701,7 @@ fn decode_container<'a>(
             &feature_inventory,
             &design_inventory,
         )?;
-        let joined = crate::feature::body_selection::body_map(
+        let mut joined = crate::feature::body_selection::body_map(
             &feature_inventory.properties,
             &feature_inventory.kernel_entity_links,
             &links,
@@ -677,6 +713,7 @@ fn decode_container<'a>(
                 roots: &design_inventory.model_roots,
             },
         );
+        joined.extend(composite.bodies);
         crate::feature::body_selection::project(&mut ir.model, &joined, &feature_inventory);
         if !links.is_empty() {
             ir.native
@@ -875,6 +912,7 @@ fn decode_container<'a>(
             &feature_inventory.labels,
         ));
         losses.extend(crate::feature::tagging::native_losses(&feature_inventory));
+        losses.extend(composite_losses);
         losses.extend(crate::feature::sheet_metal::native_kind_losses(
             &feature_inventory,
             &ir.model.features,

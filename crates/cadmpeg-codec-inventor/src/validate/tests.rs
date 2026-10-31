@@ -5,6 +5,8 @@ mod delete_face;
 mod revolve_axis;
 mod tagging;
 
+mod composite;
+
 use super::face_property_is_admitted;
 use crate::feature::{
     PmDcFeatureProperty, PmDcFeaturePropertyKind, PmDcFeatureReferenceFamily, FACE_COLLECTION_TYPE,
@@ -207,6 +209,7 @@ fn empty_data() -> super::NativeData {
         face_native_keys: Vec::new(),
         body_native_keys: Vec::new(),
         body_wrapper_links: Vec::new(),
+        composite_member_links: Vec::new(),
         presentation_record_issues: Vec::new(),
         pm_dc_parameters: Vec::new(),
         pm_dc_expressions: Vec::new(),

@@ -6,6 +6,7 @@ mod mirror;
 use std::collections::{BTreeMap, HashMap, HashSet};
 
 mod base;
+mod composite;
 mod sheet_metal;
 
 use cadmpeg_asm::brep::records::{BodyNativeKey, FaceNativeKey};
@@ -125,6 +126,7 @@ const ARENAS: &[&str] = &[
 
 const OPTIONAL_ARENAS: &[&str] = &[
     "body_wrapper_links",
+    "composite_member_links",
     "pm_dc_sheet_metal_styles",
     "pm_dc_sheet_metal_flanges",
     "drawing_records",
@@ -1198,6 +1200,15 @@ fn validate_features(
             PmDcFeaturePropertyKind::References { items, .. } => {
                 references.extend(items.references().iter().map(|reference| reference.index()));
             }
+            PmDcFeaturePropertyKind::BodySet { items, .. } => {
+                references.extend(
+                    items
+                        .references()
+                        .iter()
+                        .filter(|reference| reference.qualified())
+                        .map(|reference| reference.index()),
+                );
+            }
             PmDcFeaturePropertyKind::SurfaceBody { body } => {
                 if body.qualified() {
                     references.push(body.index());
@@ -1478,6 +1489,17 @@ fn validate_features(
             ))
         })
         .collect::<HashSet<_>>();
+    let composite_owners = data
+        .pm_dc_feature_labels
+        .iter()
+        .filter(|label| label.class_id() == crate::feature::composite::CLASS_ID)
+        .filter_map(|label| {
+            Some((
+                label.identity.segment_token.as_str(),
+                label.header.owner.record_ordinal()?,
+            ))
+        })
+        .collect::<HashSet<_>>();
     let raw_features = data
         .pm_dc_features
         .iter()
@@ -1531,7 +1553,7 @@ fn validate_features(
             )
         })
         .collect::<HashMap<_, _>>();
-    let body_joins = crate::feature::body_selection::body_map(
+    let mut body_joins = crate::feature::body_selection::body_map(
         &data.pm_dc_feature_properties,
         &data.pm_dc_kernel_entity_links,
         &data.body_wrapper_links,
@@ -1543,6 +1565,16 @@ fn validate_features(
             roots: &data.pm_dc_model_roots,
         },
     );
+    for raw_feature in &data.pm_dc_features {
+        if composite_owners.contains(&(
+            raw_feature.identity.segment_token.as_str(),
+            raw_feature.identity.record_ordinal,
+        )) {
+            if let Ok((_, bodies)) = composite::evaluate(ir, data, raw_feature) {
+                body_joins.extend(bodies);
+            }
+        }
+    }
     for feature in &ir.model.features {
         if !crate::feature::body_selection::outputs_match(
             feature,
@@ -1820,6 +1852,20 @@ fn validate_features(
             ));
             continue;
         };
+        if composite_owners.contains(&(
+            raw_feature.identity.segment_token.as_str(),
+            raw_feature.identity.record_ordinal,
+        )) {
+            if !composite::valid(ir, data, feature, raw_feature) {
+                findings.push(finding(
+                    Check::NativeLinks,
+                    "Inventor Composite does not match its stored source and current result bodies"
+                        .into(),
+                    Some(feature.id.as_str().to_owned()),
+                ));
+            }
+            continue;
+        }
         if tagging_owners.contains(&(
             raw_feature.identity.segment_token.as_str(),
             raw_feature.identity.record_ordinal,
@@ -2713,6 +2759,7 @@ struct NativeData {
     face_native_keys: Vec<FaceNativeKey>,
     body_native_keys: Vec<BodyNativeKey>,
     body_wrapper_links: Vec<crate::feature::body_selection::WrapperLink>,
+    composite_member_links: Vec<crate::feature::composite::MemberLink>,
     presentation_record_issues: Vec<RecordIssue>,
     pm_dc_parameters: Vec<PmDcParameter>,
     pm_dc_expressions: Vec<PmDcExpression>,
@@ -2790,6 +2837,7 @@ impl NativeData {
             face_native_keys: namespace.arena_as_for_decode(ctx, "face_native_keys")?,
             body_native_keys: namespace.arena_as_for_decode(ctx, "body_native_keys")?,
             body_wrapper_links: namespace.arena_as_for_decode(ctx, "body_wrapper_links")?,
+            composite_member_links: namespace.arena_as_for_decode(ctx, "composite_member_links")?,
             presentation_record_issues: namespace
                 .arena_as_for_decode(ctx, "presentation_record_issues")?,
             pm_dc_parameters: namespace.arena_as_for_decode(ctx, "pm_dc_parameters")?,
