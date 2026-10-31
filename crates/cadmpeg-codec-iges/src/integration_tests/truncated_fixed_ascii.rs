@@ -325,16 +325,52 @@ fn assert_dialect(decoded: &DecodeResult, global_complete: bool) {
     }
 }
 
+fn open_section(section: Section) -> Option<crate::card::OpenSection> {
+    match section {
+        Section::Start => Some(crate::card::OpenSection::Start),
+        Section::Global => Some(crate::card::OpenSection::Global),
+        Section::Directory => Some(crate::card::OpenSection::Directory),
+        Section::Parameter => Some(crate::card::OpenSection::Parameter),
+        Section::Terminate => None,
+    }
+}
+
+fn assert_absent_terminate(bytes: &[u8], file: &Synthetic, included: usize) {
+    let scan = crate::card::scan(bytes).unwrap_or_else(|error| panic!("scan: {error}"));
+    let recovery = scan
+        .recoveries
+        .absent_terminate()
+        .expect("absent Terminate card");
+    let ended = file.cards[included - 1].section;
+    assert_eq!(Some(recovery.section), open_section(ended));
+    assert_eq!(
+        scan.source_end,
+        crate::card::SourceEnd::EndsIn(recovery.section)
+    );
+    let stride = u64::try_from(file.cards[0].bytes.len()).unwrap();
+    let complete_end = u64::try_from(included).unwrap() * stride;
+    let file_end = u64::try_from(bytes.len()).unwrap();
+    assert!(file_end >= complete_end);
+    assert_eq!(recovery.file_end, file_end);
+    let dropped = (file_end > complete_end).then_some(crate::card::DroppedFinalCard {
+        offset: complete_end,
+        byte_length: file_end - complete_end,
+    });
+    assert_eq!(recovery.dropped_final_card, dropped);
+}
+
 fn assert_truncated(label: &str, bytes: &[u8], file: &Synthetic, included: usize) -> Outcome {
     let decoded = decode(bytes).unwrap_or_else(|error| panic!("{label} decodes: {error}"));
     let outcome = outcome_of(&decoded);
     let global_complete = global_is_complete(file, included);
     let ended = file.cards[included - 1].section;
-    assert_eq!(
-        matches!(ended, Section::Start | Section::Global),
-        !global_complete,
-        "{label} ends in {ended:?}"
-    );
+    if !global_complete {
+        assert!(
+            matches!(ended, Section::Start | Section::Global),
+            "{label} ends in {ended:?}"
+        );
+    }
+    assert_absent_terminate(bytes, file, included);
     assert_eq!(
         outcome.directory,
         directory_records(file, included),
@@ -408,6 +444,10 @@ fn complete_synthetic_file_decodes_without_framing_or_dialect_loss() {
         "{:#?}",
         decoded.report().losses
     );
+    let complete_bytes = file.bytes();
+    let scan = crate::card::scan(&complete_bytes).expect("the complete file scans");
+    assert_eq!(scan.recoveries.absent_terminate(), None);
+    assert_eq!(scan.source_end, crate::card::SourceEnd::Terminated);
     assert_dialect(&decoded, true);
 }
 
@@ -505,6 +545,18 @@ fn one_start_card_decodes_to_an_empty_unverified_model() {
         assert_eq!(outcome.framing, 1);
         assert_eq!(outcome.dialect_unverified, 1);
         assert_dialect(&decoded, false);
+        let scan = crate::card::scan(&bytes).expect("one Start card scans");
+        let recovery = scan
+            .recoveries
+            .absent_terminate()
+            .expect("absent Terminate card");
+        assert_eq!(recovery.section, crate::card::OpenSection::Start);
+        assert_eq!(recovery.file_end, u64::try_from(bytes.len()).unwrap());
+        assert_eq!(recovery.dropped_final_card, None);
+        assert_eq!(
+            scan.source_end,
+            crate::card::SourceEnd::EndsIn(crate::card::OpenSection::Start)
+        );
         let summary = IgesCodec
             .inspect(
                 &mut Cursor::new(bytes),
