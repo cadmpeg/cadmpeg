@@ -31,6 +31,10 @@ fn envelope(body: &[u8], cache: &scalar::ScalarCache) -> Option<Envelope> {
         }
         Some(result)
     }
+    // The angular lower bound is an explicit literal. A leading control token
+    // reads as zero in the standard cylinder envelope, so it does not open a
+    // bend envelope.
+    (!matches!(body.first(), Some(0x0f | 0x10 | 0x12 | 0x18 | 0xe4..=0xe7))).then_some(())?;
     let mut cursor = 0;
     let mut previous = None;
     let [lower, axial_lower] = values::<2>(body, &mut cursor, &mut previous, cache)?;

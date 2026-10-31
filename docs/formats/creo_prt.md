@@ -891,7 +891,9 @@ bound `u0` and axial lower bound `v0`. The seven values are axial upper bound
 `v1` and two XYZ envelope corners. The angular stream is defined in §4.1.1.
 `0 < u0 < pi/2`, and `v0` differs from `v1`. Repeat state continues across
 `12`, and each repeat fits its two-slot or seven-slot group. One optional
-`f7 <canonical-reference>` follows the corners.
+`f7 <canonical-reference>` follows the corners. The angular lower bound is an explicit literal; a leading `0f`, `10`, `12`,
+`18`, or `e4` to `e7` control token opens the standard cylinder envelope
+instead.
 
 The following compound supplies the complete compact rotation and positive
 radius through the quarter-turn compound grammar. A first-instance named
