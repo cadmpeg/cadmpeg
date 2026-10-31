@@ -150,24 +150,28 @@ pub(crate) mod design_parameter_typed_compact_owned_prefix {
     pub(crate) const EXPRESSION_LENGTH: usize = 81;
 }
 
-/// Byte offsets for the `design_parameter_legacy_287_tail` record.
+/// Byte offsets for the `design_parameter_tail` record.
 ///
 /// Spec §3.1. Record length 12 B.
 ///
 /// ```text
 /// This tail is relative to the end of the variable LP-UTF16 name and evaluated scalar.
 /// ```
-pub(crate) mod design_parameter_legacy_287_tail {
+pub(crate) mod design_parameter_tail {
     /// Record length in bytes. Spec §3.1.
     pub(crate) const LEN: usize = 12;
-    /// Stated value of `tail_prefix` (`bytes[2]`). Spec §3.1.
-    pub(crate) const TAIL_PREFIX_VALUE: [u8; 2] = [0x00, 0x01];
-    /// Offset of `family_marker` (`u8`). Spec §3.1.
-    pub(crate) const FAMILY_MARKER: usize = 2;
-    /// Stated value of `family_marker` (`u8`). Spec §3.1.
-    pub(crate) const FAMILY_MARKER_VALUE: u8 = 175;
-    /// Offset of `zero_run_9` (`bytes[9]`). Spec §3.1.
-    pub(crate) const ZERO_RUN_9: usize = 3;
+    /// Offset of `separator` (`u8`). Spec §3.1.
+    pub(crate) const SEPARATOR: usize = 0;
+    /// Stated value of `separator` (`u8`). Spec §3.1.
+    pub(crate) const SEPARATOR_VALUE: u8 = 0;
+    /// Offset of `collection_marker` (`u8`). Spec §3.1.
+    pub(crate) const COLLECTION_MARKER: usize = 1;
+    /// Stated value of `collection_marker` (`u8`). Spec §3.1.
+    pub(crate) const COLLECTION_MARKER_VALUE: u8 = 1;
+    /// Offset of `collection_record_index` (`u32`, little-endian). Spec §3.1.
+    pub(crate) const COLLECTION_RECORD_INDEX: usize = 2;
+    /// Offset of `zero_run_6` (`bytes[6]`). Spec §3.1.
+    pub(crate) const ZERO_RUN_6: usize = 6;
 }
 
 /// Byte offsets for the `design_parameter_owner_prefix` record.

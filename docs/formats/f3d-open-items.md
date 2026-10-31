@@ -222,21 +222,21 @@ the native feature when a fixed lane carries a symmetric distance.
 
 **Need.** The loop roles and entry fields can distinguish outer and inner boundaries and curve orientation, and the other member form keeps those Extrude profiles native.
 
-### DR-80. Typed parameter tail reference target
+### DR-80. Parameter collection fields
 
-**Question.** What record does the typed parameter tail reference name?
+**Question.** What do the u32 before the marked reference, that marked reference, the final marked reference, and the type-version-4 prefix of a parameter collection store?
 
-**Known.** Its target type GUID is `B0556F58-EE09-46A7-B18F-E296F48E5B13`, and its target record index varies between documents. The twelve-byte tail of the other forms is the same reference without an inline type GUID.
+**Known.** `f3d.md` §3.1 "The twelve-byte parameter tail is" defines the collection and its counted parameter run. The u32 can equal the parameter count, can exceed it, and can be zero. The first marked reference names the record with the next index. Type version 4 also registers 61-byte records that no parameter tail names.
 
-**Need.** A writer must emit this reference to build a typed compact parameter.
+**Need.** A writer must emit these fields to build a parameter collection for a new Design stream.
 
 ### DR-81. Other typed compact parameter trailers
 
 **Question.** What do the typed compact parameter frames with other expression trailers or a null owner on a feature input encode?
 
-**Known.** `f3d.md` §3.1 "The typed compact parameter form is the compact parameter form" gives the owned and document forms. Some typed frames store the null owner reference with a feature-input or dimension `source_kind` (for example `HoleDepth` or `TaperAngle`) and the expression trailer `00 00 00 01 00`. Some owned frames store the expression trailer `00 01 00 00 00`. The decoder reports these frames as `parameter.record-unparsed` and does not decode them.
+**Known.** `f3d.md` §3.1 "The typed compact parameter form is the compact parameter form" gives the owned and document forms. Some typed frames store the null owner reference with a feature-input or dimension `source_kind` (for example `HoleDepth` or `TaperAngle`) and the expression trailer `00 00 00 01 00`. Some owned frames store the expression trailer `00 01 00 00 00`. A null owner also occurs in the wide discriminator-`0` form with the document trailer and `source_kind` `Paramètre utilisateur`. The decoder reports these frames as `parameter.record-unparsed` and does not decode them.
 
-**Need.** An ownerless feature input has no owner binding in the current parameter model, and the meaning of the set trailer bytes is unknown.
+**Need.** An ownerless feature input has no owner binding in the current parameter model, and the meaning of the set trailer bytes is unknown. A rule must bind the document trailer to a localized `User Parameter` source kind before such a frame forms a document parameter.
 
 ### DR-85. Flagged empty mesh-collection word
 
@@ -629,7 +629,7 @@ the native feature when a fixed lane carries a symmetric distance.
 
 **Need.** A producer-generated radial TSM must retain a deleted domain slot at `p` and map a live element with raw slot `q > p`. The raw-slot prediction is `q`; the compact-index prediction after one deletion is `q-1`. Saving must preserve the deleted slot to separate these predictions. A controlled radial export with a nondefault sweep must establish the sweep-to-angle rule.
 
-### DR-109. EdgeFlange corner controls
+### DR-151. EdgeFlange corner controls
 
 **Question.** Which fields select corner relief, miter, and the corner gap for adjacent flange edges?
 
@@ -641,7 +641,7 @@ the native feature when a fixed lane carries a symmetric distance.
 
 **Note.** The fixed edge list does not identify an independent corner-control field.
 
-### DR-110. EdgeFlange scope radius control
+### DR-153. EdgeFlange scope radius control
 
 **Question.** What physical quantity does the positive f64 scope radius control represent?
 
@@ -845,11 +845,11 @@ the native feature when a fixed lane carries a symmetric distance.
 
 ### DR-149. Text-bearing document parameter prefix
 
-**Question.** What fields delimit the document parameter prefix that contains an additional text label before its source ordinal?
+**Question.** What fields delimit the document parameter prefix that contains an additional text label before its source ordinal, and where is its discriminator?
 
-**Known.** Two user-parameter frames in the public parametric standoff design store text labels before the ordinal, null owner, expression, source kind, unit, and name. Their tails reference the registered parameter-tail type. The fixed discriminated-prefix reader refuses the frames and reports `parameter.record-unparsed`.
+**Known.** Two user-parameter frames in the public parametric standoff design store text labels before the ordinal, null owner, expression, source kind, unit, and name. Three document parameters named `He`, `Le`, and `Wi` store `Height`, `Lenght`, and `Width` in an LP-UTF16 field at offset 31 of the wide form, after zero bytes at offsets 11 through 30. Their tails name the parameter collection. The decoder reports these frames as `parameter.record-unparsed`.
 
-**Need.** Independent designs with labeled user parameters and controlled changes to the label, source name, and expression.
+**Need.** Independent designs with labeled user parameters and controlled changes to the label, source name, and expression, including one parameter saved with a comment and saved without it.
 
 **Conflict.** None.
 

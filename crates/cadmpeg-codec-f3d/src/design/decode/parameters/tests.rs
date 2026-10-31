@@ -24,6 +24,7 @@ use crate::test_support::manifest_test::write_synthetic_manifests;
 use crate::test_support::zip_test::with_scan;
 
 mod registered_tail;
+mod tail_forms;
 mod unparsed_frames;
 
 #[test]
@@ -106,7 +107,7 @@ fn class_287_parameter_record_with_expression_trailer(
 }
 
 #[test]
-fn class_287_parameter_accepts_the_compact_prefix_with_af_tail() {
+fn class_287_parameter_accepts_the_compact_prefix_with_the_parameter_tail() {
     let parameter = parse_design_parameter_record(&class_287_parameter_record("HoleDepth", "d20"))
         .expect("class-287 parameter");
     assert_eq!(parameter.class_tag.as_str(), "287");
@@ -153,7 +154,7 @@ fn class_287_parameter_requires_its_marker_and_tail() {
 
     let mut frame = class_287_parameter_record("HoleDepth", "d20");
     let tail = frame.len() - 12;
-    frame[tail + 2] = 174;
+    frame[tail + 1] = 0;
     assert!(parse_design_parameter_record(&frame).is_none());
 }
 
@@ -353,9 +354,6 @@ fn parameter_variants_have_exact_string_and_scalar_boundaries() {
     invalid_distance[22..30].copy_from_slice(&7u64.to_le_bytes());
     assert!(parse_design_parameter_record(&invalid_distance).is_none());
 
-    revised_distance[tail + 2] = 19;
-    assert!(parse_design_parameter_record(&revised_distance).is_none());
-
     let mut sheet_metal =
         parameter_record(Some(301), "50.00 mm", "FlangeHeight", Some("mm"), "d2", 5.0);
     sheet_metal[22..30].copy_from_slice(&6u64.to_le_bytes());
@@ -383,72 +381,6 @@ fn parameter_record_rejects_noncanonical_tail() {
     );
     *record.last_mut().unwrap() = 1;
     assert!(parse_design_parameter_record(&record).is_none());
-}
-
-#[test]
-fn parameter_family_18_tail_pins_admitted_discriminators() {
-    for discriminator in [0u64, 3, 4] {
-        let mut distance = parameter_record(
-            Some(44),
-            "Width / 2",
-            "AlongDistance",
-            Some("mm"),
-            "d12",
-            3.0,
-        );
-        let tail = distance.len() - 12;
-        distance[tail + 2] = 18;
-        distance[22..30].copy_from_slice(&discriminator.to_le_bytes());
-        assert_eq!(
-            parse_design_parameter_record(&distance)
-                .expect("family-18 parameter with discriminator 0/3/4")
-                .family_discriminator()
-                .map(|value| value.value.code()),
-            Some(discriminator)
-        );
-    }
-
-    let mut tangency = parameter_record(Some(24409), "1", "TangencyWeight", Some(""), "d81", 1.0);
-    let tail = tangency.len() - 12;
-    tangency[tail + 2] = 18;
-    tangency[22..30].copy_from_slice(&6u64.to_le_bytes());
-    assert_eq!(
-        parse_design_parameter_record(&tangency)
-            .expect("family-18 tangency weight parameter with discriminator 6")
-            .family_discriminator()
-            .map(|value| value.value.code()),
-        Some(6)
-    );
-
-    let mut rejected_discriminator_5 = parameter_record(
-        Some(44),
-        "Width / 2",
-        "AlongDistance",
-        Some("mm"),
-        "d12",
-        3.0,
-    );
-    let tail = rejected_discriminator_5.len() - 12;
-    rejected_discriminator_5[tail + 2] = 18;
-    rejected_discriminator_5[22..30].copy_from_slice(&5u64.to_le_bytes());
-    assert!(parse_design_parameter_record(&rejected_discriminator_5).is_none());
-
-    let mut rejected_tangency_5 = tangency.clone();
-    rejected_tangency_5[22..30].copy_from_slice(&5u64.to_le_bytes());
-    assert!(parse_design_parameter_record(&rejected_tangency_5).is_none());
-
-    let mut rejected_discriminator_6 = parameter_record(
-        Some(44),
-        "Width / 2",
-        "AlongDistance",
-        Some("mm"),
-        "d12",
-        3.0,
-    );
-    let tail = rejected_discriminator_6.len() - 12;
-    rejected_discriminator_6[tail + 2] = 18;
-    rejected_discriminator_6[22..30].copy_from_slice(&6u64.to_le_bytes());
-    assert!(parse_design_parameter_record(&rejected_discriminator_6).is_none());
 }
 
 #[test]
@@ -1530,9 +1462,7 @@ fn frame_relative_offsets_refuse_to_saturate_at_the_end_of_the_address_space() {
     let parsed = super::parse_design_parameter(&payload)
         .unwrap()
         .expect("parsed parameter");
-    let error = super::locate_design_parameter(parsed, stream, usize::MAX)
-        .expect_err("a frame at the end of the address space cannot be located");
-    assert!(matches!(error, cadmpeg_core::CodecError::Malformed(_)));
+    assert!(super::locate_design_parameter(parsed, stream, usize::MAX).is_none());
 }
 
 #[test]
@@ -1696,7 +1626,6 @@ fn typed_owner_frame_widens_every_reference_and_keeps_the_scalar_envelope() {
 
 #[test]
 fn wide_discriminated_parameter_stores_four_zero_bytes_before_its_discriminator() {
-    // The current discriminated family: discriminator 6 and the `00 01 10` tail.
     let mut narrow = parameter_record(Some(305), "10 mm", "AlongDistance", Some("mm"), "d3", 1.0);
     narrow[22..30].copy_from_slice(&6u64.to_le_bytes());
     let tail = narrow.len() - 10;
@@ -1721,34 +1650,6 @@ fn wide_discriminated_parameter_stores_four_zero_bytes_before_its_discriminator(
     let mut nonzero = wide.clone();
     nonzero[24] = 1;
     assert!(parse_design_parameter_record(&nonzero).is_none());
-}
-
-#[test]
-fn discriminated_parameter_with_the_00_01_11_tail_has_discriminator_6() {
-    let mut frame = parameter_record(
-        Some(2553),
-        "-65.0 deg",
-        "alignAngle",
-        Some("deg"),
-        "d1",
-        -1.134,
-    );
-    frame[22..30].copy_from_slice(&6u64.to_le_bytes());
-    let tail = frame.len() - 10;
-    frame[tail] = 0x11;
-    let parameter = parse_design_parameter_record(&frame).expect("tail 0x11 parameter");
-    assert_eq!(parameter.name(), "d1");
-    assert_eq!(parameter.evaluated_value().get(), -1.134);
-    assert_eq!(
-        parameter
-            .family_discriminator()
-            .map(|field| field.value.code()),
-        Some(6)
-    );
-
-    // The 00 01 11 tail belongs to discriminator 6 only.
-    frame[22..30].copy_from_slice(&0u64.to_le_bytes());
-    assert!(parse_design_parameter_record(&frame).is_none());
 }
 
 #[test]
@@ -1818,11 +1719,10 @@ fn document_parameter_admits_the_ten_byte_expression_trailer() {
     assert!(parse_design_parameter_record(&frame(&[0, 0, 0, 0, 0, 0, 0, 1, 0])).is_none());
 }
 
-/// The earlier discriminated family stores a document parameter with
-/// discriminator 4, the expression trailer six zero bytes and `01 00 01`, and
-/// the `00 01 13` tail.
+/// A document parameter with discriminator 4 can store the expression trailer
+/// six zero bytes and `01 00 01`.
 #[test]
-fn earlier_family_document_parameter_admits_its_trailer() {
+fn discriminator_4_document_parameter_admits_its_trailer() {
     let mut frame = Vec::new();
     frame.extend_from_slice(&3u32.to_le_bytes());
     frame.extend_from_slice(b"282");
@@ -1840,8 +1740,7 @@ fn earlier_family_document_parameter_admits_its_trailer() {
     lp_utf16(&mut frame, "ClipAngle");
     frame.extend_from_slice(&std::f64::consts::FRAC_PI_4.to_le_bytes());
     frame.extend_from_slice(&[0, 1, 0x13, 0, 0, 0, 0, 0, 0, 0, 0, 0]);
-    let parameter =
-        parse_design_parameter_record(&frame).expect("earlier-family document parameter");
+    let parameter = parse_design_parameter_record(&frame).expect("document parameter");
     assert_eq!(parameter.kind(), DesignParameterKind::User);
     assert_eq!(parameter.owner_record_index(), None);
     assert_eq!(parameter.name(), "ClipAngle");
@@ -1875,11 +1774,6 @@ fn wide_owned_parameter_accepts_eleven_zero_bytes_after_expression() {
     let mut longer = frame.clone();
     longer.insert(expression_end, 0);
     assert!(parse_design_parameter_record(&longer).is_none());
-
-    let mut intermediate = frame.clone();
-    let tail_at = intermediate.len() - 10;
-    intermediate[tail_at] = 17;
-    assert!(parse_design_parameter_record(&intermediate).is_none());
 
     let mut narrow = frame.clone();
     narrow.drain(22..26);
@@ -1943,25 +1837,6 @@ fn discriminated_expression_trailer_carries_flag_bytes() {
         parse_design_parameter_record(&with_trailer(None, "User Parameter", [0, 0, 0, 1, 1]))
             .expect("document parameter with trailer flags");
     assert_eq!(user.kind(), DesignParameterKind::User);
-}
-
-/// The intermediate discriminated family stores discriminator 5 or 6.
-#[test]
-fn intermediate_family_admits_discriminators_five_and_six() {
-    for (discriminator, admitted) in [(5u64, true), (6, true), (4, false)] {
-        let mut frame = parameter_record(
-            Some(77),
-            "25.0 deg",
-            "Angle Threshold",
-            Some("deg"),
-            "d1",
-            0.436,
-        );
-        frame[22..30].copy_from_slice(&discriminator.to_le_bytes());
-        let tail = frame.len() - 12;
-        frame[tail + 2] = 17;
-        assert_eq!(parse_design_parameter_record(&frame).is_some(), admitted);
-    }
 }
 
 #[test]
