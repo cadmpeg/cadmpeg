@@ -1238,3 +1238,82 @@ The unit of an attribute of a joint can depend on the degree of freedom it acts 
 `physxMimicJoint:*:gearing` is the unit of the mimic joint's degree of freedom over the unit of the degree of freedom that `physxMimicJoint:*:referenceJointAxis` names. `physxMaterial:compliantContactStiffness` is force / length and `physxMaterial:compliantContactDamping` is force · s / length; when `physxMaterial:compliantContactAccelerationSpring` is `true`, both are accelerations per unit of penetration and have no mass or length unit. `physxForce:force` is a force and `physxForce:torque` a torque when `physxForce:mode` is `force`; otherwise they are a linear acceleration and an angular acceleration in degrees per squared second.
 
 A relationship of a PhysX schema, such as `physxMimicJoint:*:referenceJoint`, targets a joint or a rigid body.
+
+## 17. BrepArray
+
+A `BrepArray` prim holds one or more boundary representations (B-reps) in packed arrays. It is the preliminary `UsdSolid` schema: library `prelimUsdSolid`, class prefix `PrelimUsdSolid`. OpenUSD does not register the type. The type inherits `Gprim`, so a `BrepArray` prim has `extent`, `visibility`, and transform ops. A reader that does not know the type composes the prim and ignores it.
+
+Each B-rep partitions space into regions. Regions are bounded by shells, shells by faceuses, faces by loops, loops by edgeuses, and edges by vertices. Each face has two faceuses, one for each side.
+
+All lengths are in stage units (§10.1). All `BrepArray` attributes are uniform.
+
+These API schemas add the geometry:
+
+| API schema | Attributes | Geometry of |
+| --- | --- | --- |
+| `BrepPointAPI:vertexPoint` | `brep:vertexPoint:point:position` (`point3d[]`) | vertices |
+| `BrepPointAPI:shellPoint` | `brep:shellPoint:point:position` (`point3d[]`) | point shells |
+| `BrepCurve3dNurbAPI:edge3dNurb` | `brep:edge3dNurb:curve3d:nurb:*` | edges |
+| `BrepCurve3dNurbAPI:wireEdge3dNurb` | `brep:wireEdge3dNurb:curve3d:nurb:*` | wire edges |
+| `BrepSurfaceNurbAPI` | `brep:surface:nurb:*` | faces |
+| `BrepCurveUvNurbAPI` | `brep:curveUv:nurb:*` | edgeuses (trim curves) |
+
+### 17.1 Arrays
+
+| Attribute | Type | Elements |
+| --- | --- | --- |
+| `brep:intersectTol3d` | `double[]` | one for each B-rep: the largest distance at which two objects intersect, and the smallest distance at which two points are different |
+| `brep:extent` | `double3[]` | two for each B-rep: the minimum and maximum corners of its bounds |
+| `brep:regionCount` | `uint[]` | one for each B-rep |
+| `region:shellCount` | `uint[]` | one for each region |
+| `region:type` | `token[]` | one for each region: `solidRegion` or `voidRegion` |
+| `shell:faceuseCount`, `shell:wireEdgeCount` | `uint[]` | one for each shell |
+| `shell:pointType` | `token[]` | one for each shell: `BrepPointAPI` or `none` |
+| `faceuse:faceIndex` | `uint[]` | one for each faceuse |
+| `faceuse:orientationType` | `token[]` | one for each faceuse: `same` or `opposite` |
+| `face:loopCount` | `uint[]` | one for each face |
+| `face:surfaceType` | `token[]` | one for each face: `BrepSurfaceNurbAPI` |
+| `face:trimType` | `token[]` | one for each face: `rectangular` or `general` |
+| `face:range` | `double2[]` | two for each face: the minimum and maximum `(u, v)` corners |
+| `loop:edgeuseCount`, `loop:vertexIndex` | `uint[]` | one for each loop |
+| `edgeuse:edgeIndex`, `edgeuse:nextRadialEUIndex` | `uint[]` | one for each edgeuse |
+| `edgeuse:orientationType` | `token[]` | one for each edgeuse: `same` or `opposite` |
+| `edgeuse:thisRadialEntryType` | `token[]` | one for each edgeuse: `topEntry` or `bottomEntry` |
+| `edge:curveType`, `wireEdge:curveType` | `token[]` | one for each edge or wire edge: `BrepCurve3dNurbAPI` |
+| `edge:range`, `wireEdge:range` | `double[]` | two for each edge or wire edge: `t0` and `t1` |
+| `edge:vertexIndices`, `wireEdge:vertexIndices` | `int2[]` | one for each edge or wire edge: the start and end vertex |
+| `vertex:pointType` | `token[]` | one for each vertex: `BrepPointAPI` |
+
+A count array partitions the next level into consecutive runs. The regions of B-rep `i` are the `brep:regionCount[i]` regions that follow the regions of the B-reps before it. In the same way, `region:shellCount` gives the shells of each region, `shell:faceuseCount` the faceuses and `shell:wireEdgeCount` the wire edges of each shell, `face:loopCount` the loops of each face, and `loop:edgeuseCount` the edgeuses of each loop.
+
+The first shell of a region is its outer shell; the other shells bound cavities. The first loop of a face is its outer loop. `faceuse:faceIndex`, `edgeuse:edgeIndex`, `edgeuse:nextRadialEUIndex`, `loop:vertexIndex`, and the vertex indices of edges are positions in their arrays over all B-reps of the prim.
+
+The geometry of face `i` is surface `k` of `BrepSurfaceNurbAPI`, where `k` is the number of faces before `i` with the same `face:surfaceType`. The curve of an edge, the curve of a wire edge, and the position of a vertex use the same rule with `edge:curveType` and `brep:edge3dNurb`, `wireEdge:curveType` and `brep:wireEdge3dNurb`, and `vertex:pointType` and `brep:vertexPoint`. The position of point shell `k`, the `k`-th shell with `shell:pointType = BrepPointAPI`, is `brep:shellPoint:point:position[k]`. A shell with faceuses or wire edges has no point; its `shell:pointType` is `none`.
+
+When `BrepCurveUvNurbAPI` holds one curve for each edgeuse, curve `i` is the trim curve of edgeuse `i`.
+
+### 17.2 Topology
+
+The surface normal of a face is `N = ∂S/∂u × ∂S/∂v`. The faceuse with `faceuse:orientationType = same` is the side of the face toward `N`; the faceuse with `opposite` is the other side. A `solidRegion` is in the B-rep; a `voidRegion` is outside it. A face that bounds a solid region and a void region has its outward normal toward the void region. A face whose two faceuses are in void regions is a sheet face.
+
+The edgeuses of a loop are head to tail. An edgeuse with `edgeuse:orientationType = same` goes from the start vertex of its edge to the end vertex; one with `opposite` goes from the end vertex to the start vertex. Seen from the side toward `N`, the outer loop of a face goes counterclockwise and each inner loop clockwise: the face is to the left of each loop. A seam edge, which a face uses on two sides, has two edgeuses in the loop. A loop with no edgeuses is a vertex loop, at the vertex `loop:vertexIndex`, such as a pole or an apex. The `loop:vertexIndex` of a loop with edgeuses has no meaning.
+
+`edgeuse:nextRadialEUIndex` is the next edgeuse in a right-hand traversal about the direction of the edge. An edgeuse of an edge that bounds one face once is its own next edgeuse. `edgeuse:thisRadialEntryType = topEntry` states that the traversal enters the face of the edgeuse from its `same` side, and `bottomEntry` from its `opposite` side.
+
+`face:range` is in the parameter domain of the face surface. `face:trimType = rectangular` states that the outer loop is the four boundary isoparameter lines of the range.
+
+The range `[t0, t1]` of an edge has `t0 < t1` and is in the parameter domain of its curve. The curve goes from the start vertex at `t0` to the end vertex at `t1`. The trim curve of an edgeuse is in the parameter space of the surface of its face, and goes in the direction of the edgeuse.
+
+### 17.3 NURBS geometry
+
+A curve of a curve API has `order` (`uint[]`, one for each curve), `vertexCount` (`uint[]`, one for each curve), `controlVertices` (`point3d[]`, or `double2[]` for `BrepCurveUvNurbAPI`), `weights` (`double[]`, one for each control vertex), and `knots` (`double[]`, `vertexCount + order` for each curve). The arrays of each curve follow the arrays of the curves before it. A curve with order `p + 1`, control vertices `P`, weights `w`, and knots `k` is `C(t) = Σ N_{i,p}(t) w_i P_i / Σ N_{i,p}(t) w_i` on `t ∈ [k[p], k[n]]`, where `n` is `vertexCount`. The control vertices are not multiplied by their weights. Each weight is positive.
+
+A surface of `BrepSurfaceNurbAPI` has `uOrder`, `vOrder`, `uVertexCount`, and `vVertexCount` (`uint[]`, one for each surface), `controlVertices` (`point3d[]`) and `weights` (`double[]`), `uVertexCount · vVertexCount` for each surface, and `uKnots` and `vKnots` (`double[]`), `uVertexCount + uOrder` and `vVertexCount + vOrder` for each surface. The control net is U-major: `P_ij = controlVertices[i · vVertexCount + j]`, with `i` the U index. A surface is the rational tensor product of its two directions.
+
+### 17.4 Geometry subsets
+
+A `GeomSubset` child of a `BrepArray` prim with `elementType = "face"` selects faces by their position in the face arrays; one with `elementType = "brep"` selects B-reps by their position. A subset that applies `MaterialBindingAPI` binds its material to the elements it selects.
+
+### 17.5 Fallback prims
+
+A geometry prim that states `customData = { string brepArray = "N" }` is a fallback of the sibling `BrepArray` prim named `N`: a `Mesh` is a tessellation of its B-reps, and a `NurbsPatch` is a face of them. A reader that reads the B-reps of `N` reads a fallback `Mesh` as their tessellation and does not read a fallback `NurbsPatch`.

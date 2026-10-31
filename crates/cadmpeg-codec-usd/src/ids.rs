@@ -9,7 +9,8 @@
 
 use cadmpeg_ir::ids::{
     AppearanceBindingId, AppearanceId, BodyId, CoedgeId, CurveId, EdgeId, FaceId, IdentityKey,
-    LoopId, OccurrenceId, PointId, ProductDefinitionId, RegionId, ShellId, SurfaceId, VertexId,
+    LoopId, OccurrenceId, PcurveId, PointId, ProceduralSurfaceId, ProductDefinitionId, RegionId,
+    ShellId, SurfaceId, VertexId,
 };
 use cadmpeg_ir::tessellation::TessellationId;
 
@@ -149,11 +150,11 @@ fn brep_key(definition: &str, group: &str, ordinal: usize) -> IdentityKey {
     key(definition).colon(key(group)).colon(ordinal)
 }
 
-/// The identity of each record kind of a primitive's B-rep (spec §11.5).
+/// The identity of each record kind of a B-rep (spec §11.5, §17).
 pub(crate) mod brep {
     use super::{
-        brep_key, CoedgeId, CurveId, EdgeId, FaceId, LoopId, PointId, RegionId, ShellId, SurfaceId,
-        VertexId,
+        brep_key, CoedgeId, CurveId, EdgeId, FaceId, LoopId, PcurveId, PointId,
+        ProceduralSurfaceId, RegionId, ShellId, SurfaceId, VertexId,
     };
 
     pub(crate) fn point(definition: &str, vertex: usize) -> PointId {
@@ -189,6 +190,20 @@ pub(crate) mod brep {
         SurfaceId::compose(
             &cadmpeg_ir::identity_namespace!("usd", "stage", "surface"),
             brep_key(definition, &format!("surface-{catalog}"), surface),
+        )
+    }
+
+    pub(crate) fn pcurve(definition: &str, catalog: &str, pcurve: usize) -> PcurveId {
+        PcurveId::compose(
+            &cadmpeg_ir::identity_namespace!("usd", "stage", "pcurve"),
+            brep_key(definition, &format!("pcurve-{catalog}"), pcurve),
+        )
+    }
+
+    pub(crate) fn construction(definition: &str, surface: usize) -> ProceduralSurfaceId {
+        ProceduralSurfaceId::compose(
+            &cadmpeg_ir::identity_namespace!("usd", "stage", "construction"),
+            brep_key(definition, "surface-analytic", surface),
         )
     }
 

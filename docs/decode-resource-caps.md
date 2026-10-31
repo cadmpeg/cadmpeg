@@ -245,6 +245,8 @@ report a loss; a caller may report a general failure for the same item.
 | `cadmpeg-codec-usd`      | `src/usdc/write/encode.rs`                         | `MAX_OFFSET`                              | `0xFFFF`                                               | N    | Encoder: the farthest match offset of a written LZ4 block, the width of the offset field (spec §9.3). Not a decode path. |
 | `cadmpeg-codec-usd`      | `src/usdc/write/values.rs`                         | `MAX_REAL_TABLE`                          | `1024`                                                 | N    | Encoder: the most distinct values of a real array written as a table (spec §9.7); a larger array is written uncompressed. Not a decode path. |
 | `cadmpeg-codec-usd`      | `src/usdz.rs`                                      | `MAX_MEMBER`                              | `0xFFFF_FFFF`                                          | N    | Encoder: the most bytes of a written USDZ member, which has no ZIP64 records; a larger external asset is not packaged. Not a decode path. |
+| `cadmpeg-codec-usd`      | `src/brep/convert.rs`                              | `MAX_ARC_SEGMENT`                         | `π / 2`                                                | N    | Encoder: the largest sweep of one rational quadratic arc segment of a written NURBS carrier. Not a decode path. |
+| `cadmpeg-codec-usd`      | `src/brep/convert.rs`                              | `MAX_TRACE_DEPTH`                         | `12`                                                   | N    | Encoder: the deepest bisection of a traced trim curve; a span at this depth is written as it is. Not a decode path. |
 | `cadmpeg-codec-usd`      | `src/usdc/compression.rs`                          | `MAX_CHUNK_OUTPUT`                        | `0x7E00_0000`                                         | 1    | Bytes one chunk of the USDC compressed-buffer framing expands to (spec §9.3). A chunk that yields more is refused as malformed. |
 | `cadmpeg-codec-usd`      | `src/usdc/compression.rs`                          | `MAX_RATIO`                               | `255`                                                 | 1    | Output bytes one input byte of an LZ4 block yields at most. A buffer of unknown expanded size is charged against the expansion allowance at this ratio before it is decoded. |
 | `cadmpeg-tessellate`     | `src/boundary.rs`                                  | `MAX_SEEDS`                               | `256`                                                   | N    | Seed segments of one edge when the export tessellator samples a face boundary. A larger count is clamped to the bound. |
@@ -512,7 +514,7 @@ are the slice mechanisms themselves.
 
 ## Totals
 
-Production `MAX_*` constants: 297.
+Production `MAX_*` constants: 299.
 
 | Kind | Meaning                    | Count |
 | ---- | -------------------------- | ----- |
@@ -520,8 +522,8 @@ Production `MAX_*` constants: 297.
 | 2    | Per-input bound            | 71    |
 | 3    | Session ceiling            | 0     |
 | 4    | Local work cap             | 150   |
-| N    | Not a decode bound         | 38    |
-|      | Total                      | 297   |
+| N    | Not a decode bound         | 40    |
+|      | Total                      | 299   |
 
 The six `ResourceLimits` fields are the session ceilings and are not
 `MAX_*` constants. No `MAX_*` constant is kind 3.
@@ -531,7 +533,7 @@ By crate: `cadmpeg-core` 3, `cadmpeg-ir` 17, `cadmpeg-measure` 21, `cadmpeg-asm`
 `cadmpeg-codec-iges` 16, `cadmpeg-codec-inventor` 3,
 `cadmpeg-codec-freecad` 16, `cadmpeg-codec-rhino` 32, `cadmpeg-codec-f3d` 19,
 `cadmpeg-codec-nx` 28, `cadmpeg-codec-creo` 20, `cadmpeg-codec-sldprt` 32,
-`cadmpeg-codec-catia` 57, `cadmpeg-codec-pvz` 3, `cadmpeg-codec-usd` 9, and
+`cadmpeg-codec-catia` 57, `cadmpeg-codec-pvz` 3, `cadmpeg-codec-usd` 11, and
 `cadmpeg-tessellate` 4.
 
 ## Routing

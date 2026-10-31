@@ -1,0 +1,2805 @@
+{
+  "ir": {
+    "decode_depth": "full",
+    "ir_version": "9",
+    "model": {
+      "appearance_bindings": [
+        {
+          "appearance": "usd:stage:appearance#/Looks/Box_face_1_material",
+          "id": "usd:stage:subset-binding#/Occurrence:/Occurrence/Brep/Box_face_1_material%230",
+          "source_entity_id": "/Looks/Box_face_1_material",
+          "target": {
+            "id": "usd:stage:face#/Occurrence:face:0",
+            "kind": "face"
+          }
+        },
+        {
+          "appearance": "usd:stage:appearance#/Looks/Box_face_1_material",
+          "id": "usd:stage:subset-binding#/Occurrence:/Occurrence/Brep/Box_face_1_material%231",
+          "source_entity_id": "/Looks/Box_face_1_material",
+          "target": {
+            "id": "usd:stage:face#/Occurrence:face:1",
+            "kind": "face"
+          }
+        },
+        {
+          "appearance": "usd:stage:appearance#/Looks/Box_face_1_material",
+          "id": "usd:stage:subset-binding#/Occurrence:/Occurrence/Brep/Box_face_1_material%232",
+          "source_entity_id": "/Looks/Box_face_1_material",
+          "target": {
+            "id": "usd:stage:face#/Occurrence:face:2",
+            "kind": "face"
+          }
+        },
+        {
+          "appearance": "usd:stage:appearance#/Looks/Box_face_1_material",
+          "id": "usd:stage:subset-binding#/Occurrence:/Occurrence/Brep/Box_face_1_material%233",
+          "source_entity_id": "/Looks/Box_face_1_material",
+          "target": {
+            "id": "usd:stage:face#/Occurrence:face:3",
+            "kind": "face"
+          }
+        },
+        {
+          "appearance": "usd:stage:appearance#/Looks/Box_face_1_material",
+          "id": "usd:stage:subset-binding#/Occurrence:/Occurrence/Brep/Box_face_1_material%234",
+          "source_entity_id": "/Looks/Box_face_1_material",
+          "target": {
+            "id": "usd:stage:face#/Occurrence:face:4",
+            "kind": "face"
+          }
+        },
+        {
+          "appearance": "usd:stage:appearance#/Looks/Box_face_1_material",
+          "id": "usd:stage:subset-binding#/Occurrence:/Occurrence/Brep/Box_face_1_material%235",
+          "source_entity_id": "/Looks/Box_face_1_material",
+          "target": {
+            "id": "usd:stage:face#/Occurrence:face:5",
+            "kind": "face"
+          }
+        }
+      ],
+      "appearances": [
+        {
+          "base_color": {
+            "a": 1.0,
+            "b": 0.6000000238418579,
+            "g": 0.4000000059604645,
+            "r": 0.20000000298023224
+          },
+          "id": "usd:stage:appearance#/Looks/Box_face_1_material",
+          "name": "Box_face_1_material",
+          "properties": {
+            "UsdPreviewSurface/diffuseColor.b": 0.6000000238418579,
+            "UsdPreviewSurface/diffuseColor.g": 0.4000000059604645,
+            "UsdPreviewSurface/diffuseColor.r": 0.20000000298023224,
+            "base_color.b": 0.6000000238418579,
+            "base_color.g": 0.4000000059604645,
+            "base_color.r": 0.20000000298023224
+          },
+          "schema": "ND_open_pbr_surface_surfaceshader"
+        }
+      ],
+      "assembly_joints": [],
+      "attributes": [],
+      "bodies": [
+        {
+          "id": "usd:stage:body#/Occurrence",
+          "kind": "solid",
+          "name": "Occurrence",
+          "regions": [
+            "usd:stage:region#/Occurrence:region:0"
+          ]
+        }
+      ],
+      "coedges": [
+        {
+          "edge": "usd:stage:edge#/Occurrence:edge:0",
+          "id": "usd:stage:coedge#/Occurrence:orientedEdge:0",
+          "owner_loop": "usd:stage:loop#/Occurrence:loop:0",
+          "pcurves": [
+            {
+              "parameter_range": [
+                0.0,
+                1.0
+              ],
+              "pcurve": "usd:stage:pcurve#/Occurrence:pcurve-nurbs:0"
+            }
+          ],
+          "radial_next": "usd:stage:coedge#/Occurrence:orientedEdge:13",
+          "sense": "reversed"
+        },
+        {
+          "edge": "usd:stage:edge#/Occurrence:edge:1",
+          "id": "usd:stage:coedge#/Occurrence:orientedEdge:1",
+          "owner_loop": "usd:stage:loop#/Occurrence:loop:0",
+          "pcurves": [
+            {
+              "parameter_range": [
+                0.0,
+                1.0
+              ],
+              "pcurve": "usd:stage:pcurve#/Occurrence:pcurve-nurbs:1"
+            }
+          ],
+          "radial_next": "usd:stage:coedge#/Occurrence:orientedEdge:20",
+          "sense": "forward"
+        },
+        {
+          "edge": "usd:stage:edge#/Occurrence:edge:9",
+          "id": "usd:stage:coedge#/Occurrence:orientedEdge:10",
+          "owner_loop": "usd:stage:loop#/Occurrence:loop:2",
+          "pcurves": [
+            {
+              "parameter_range": [
+                0.0,
+                1.0
+              ],
+              "pcurve": "usd:stage:pcurve#/Occurrence:pcurve-nurbs:10"
+            }
+          ],
+          "radial_next": "usd:stage:coedge#/Occurrence:orientedEdge:19",
+          "sense": "forward"
+        },
+        {
+          "edge": "usd:stage:edge#/Occurrence:edge:2",
+          "id": "usd:stage:coedge#/Occurrence:orientedEdge:11",
+          "owner_loop": "usd:stage:loop#/Occurrence:loop:2",
+          "pcurves": [
+            {
+              "parameter_range": [
+                0.0,
+                1.0
+              ],
+              "pcurve": "usd:stage:pcurve#/Occurrence:pcurve-nurbs:11"
+            }
+          ],
+          "radial_next": "usd:stage:coedge#/Occurrence:orientedEdge:2",
+          "sense": "reversed"
+        },
+        {
+          "edge": "usd:stage:edge#/Occurrence:edge:10",
+          "id": "usd:stage:coedge#/Occurrence:orientedEdge:12",
+          "owner_loop": "usd:stage:loop#/Occurrence:loop:3",
+          "pcurves": [
+            {
+              "parameter_range": [
+                0.0,
+                1.0
+              ],
+              "pcurve": "usd:stage:pcurve#/Occurrence:pcurve-nurbs:12"
+            }
+          ],
+          "radial_next": "usd:stage:coedge#/Occurrence:orientedEdge:17",
+          "sense": "reversed"
+        },
+        {
+          "edge": "usd:stage:edge#/Occurrence:edge:0",
+          "id": "usd:stage:coedge#/Occurrence:orientedEdge:13",
+          "owner_loop": "usd:stage:loop#/Occurrence:loop:3",
+          "pcurves": [
+            {
+              "parameter_range": [
+                0.0,
+                1.0
+              ],
+              "pcurve": "usd:stage:pcurve#/Occurrence:pcurve-nurbs:13"
+            }
+          ],
+          "radial_next": "usd:stage:coedge#/Occurrence:orientedEdge:0",
+          "sense": "forward"
+        },
+        {
+          "edge": "usd:stage:edge#/Occurrence:edge:11",
+          "id": "usd:stage:coedge#/Occurrence:orientedEdge:14",
+          "owner_loop": "usd:stage:loop#/Occurrence:loop:3",
+          "pcurves": [
+            {
+              "parameter_range": [
+                0.0,
+                1.0
+              ],
+              "pcurve": "usd:stage:pcurve#/Occurrence:pcurve-nurbs:14"
+            }
+          ],
+          "radial_next": "usd:stage:coedge#/Occurrence:orientedEdge:23",
+          "sense": "forward"
+        },
+        {
+          "edge": "usd:stage:edge#/Occurrence:edge:6",
+          "id": "usd:stage:coedge#/Occurrence:orientedEdge:15",
+          "owner_loop": "usd:stage:loop#/Occurrence:loop:3",
+          "pcurves": [
+            {
+              "parameter_range": [
+                0.0,
+                1.0
+              ],
+              "pcurve": "usd:stage:pcurve#/Occurrence:pcurve-nurbs:15"
+            }
+          ],
+          "radial_next": "usd:stage:coedge#/Occurrence:orientedEdge:6",
+          "sense": "reversed"
+        },
+        {
+          "edge": "usd:stage:edge#/Occurrence:edge:5",
+          "id": "usd:stage:coedge#/Occurrence:orientedEdge:16",
+          "owner_loop": "usd:stage:loop#/Occurrence:loop:4",
+          "pcurves": [
+            {
+              "parameter_range": [
+                0.0,
+                1.0
+              ],
+              "pcurve": "usd:stage:pcurve#/Occurrence:pcurve-nurbs:16"
+            }
+          ],
+          "radial_next": "usd:stage:coedge#/Occurrence:orientedEdge:5",
+          "sense": "reversed"
+        },
+        {
+          "edge": "usd:stage:edge#/Occurrence:edge:10",
+          "id": "usd:stage:coedge#/Occurrence:orientedEdge:17",
+          "owner_loop": "usd:stage:loop#/Occurrence:loop:4",
+          "pcurves": [
+            {
+              "parameter_range": [
+                0.0,
+                1.0
+              ],
+              "pcurve": "usd:stage:pcurve#/Occurrence:pcurve-nurbs:17"
+            }
+          ],
+          "radial_next": "usd:stage:coedge#/Occurrence:orientedEdge:12",
+          "sense": "forward"
+        },
+        {
+          "edge": "usd:stage:edge#/Occurrence:edge:3",
+          "id": "usd:stage:coedge#/Occurrence:orientedEdge:18",
+          "owner_loop": "usd:stage:loop#/Occurrence:loop:4",
+          "pcurves": [
+            {
+              "parameter_range": [
+                0.0,
+                1.0
+              ],
+              "pcurve": "usd:stage:pcurve#/Occurrence:pcurve-nurbs:18"
+            }
+          ],
+          "radial_next": "usd:stage:coedge#/Occurrence:orientedEdge:3",
+          "sense": "forward"
+        },
+        {
+          "edge": "usd:stage:edge#/Occurrence:edge:9",
+          "id": "usd:stage:coedge#/Occurrence:orientedEdge:19",
+          "owner_loop": "usd:stage:loop#/Occurrence:loop:4",
+          "pcurves": [
+            {
+              "parameter_range": [
+                0.0,
+                1.0
+              ],
+              "pcurve": "usd:stage:pcurve#/Occurrence:pcurve-nurbs:19"
+            }
+          ],
+          "radial_next": "usd:stage:coedge#/Occurrence:orientedEdge:10",
+          "sense": "reversed"
+        },
+        {
+          "edge": "usd:stage:edge#/Occurrence:edge:2",
+          "id": "usd:stage:coedge#/Occurrence:orientedEdge:2",
+          "owner_loop": "usd:stage:loop#/Occurrence:loop:0",
+          "pcurves": [
+            {
+              "parameter_range": [
+                0.0,
+                1.0
+              ],
+              "pcurve": "usd:stage:pcurve#/Occurrence:pcurve-nurbs:2"
+            }
+          ],
+          "radial_next": "usd:stage:coedge#/Occurrence:orientedEdge:11",
+          "sense": "forward"
+        },
+        {
+          "edge": "usd:stage:edge#/Occurrence:edge:1",
+          "id": "usd:stage:coedge#/Occurrence:orientedEdge:20",
+          "owner_loop": "usd:stage:loop#/Occurrence:loop:5",
+          "pcurves": [
+            {
+              "parameter_range": [
+                0.0,
+                1.0
+              ],
+              "pcurve": "usd:stage:pcurve#/Occurrence:pcurve-nurbs:20"
+            }
+          ],
+          "radial_next": "usd:stage:coedge#/Occurrence:orientedEdge:1",
+          "sense": "reversed"
+        },
+        {
+          "edge": "usd:stage:edge#/Occurrence:edge:8",
+          "id": "usd:stage:coedge#/Occurrence:orientedEdge:21",
+          "owner_loop": "usd:stage:loop#/Occurrence:loop:5",
+          "pcurves": [
+            {
+              "parameter_range": [
+                0.0,
+                1.0
+              ],
+              "pcurve": "usd:stage:pcurve#/Occurrence:pcurve-nurbs:21"
+            }
+          ],
+          "radial_next": "usd:stage:coedge#/Occurrence:orientedEdge:8",
+          "sense": "forward"
+        },
+        {
+          "edge": "usd:stage:edge#/Occurrence:edge:7",
+          "id": "usd:stage:coedge#/Occurrence:orientedEdge:22",
+          "owner_loop": "usd:stage:loop#/Occurrence:loop:5",
+          "pcurves": [
+            {
+              "parameter_range": [
+                0.0,
+                1.0
+              ],
+              "pcurve": "usd:stage:pcurve#/Occurrence:pcurve-nurbs:22"
+            }
+          ],
+          "radial_next": "usd:stage:coedge#/Occurrence:orientedEdge:7",
+          "sense": "forward"
+        },
+        {
+          "edge": "usd:stage:edge#/Occurrence:edge:11",
+          "id": "usd:stage:coedge#/Occurrence:orientedEdge:23",
+          "owner_loop": "usd:stage:loop#/Occurrence:loop:5",
+          "pcurves": [
+            {
+              "parameter_range": [
+                0.0,
+                1.0
+              ],
+              "pcurve": "usd:stage:pcurve#/Occurrence:pcurve-nurbs:23"
+            }
+          ],
+          "radial_next": "usd:stage:coedge#/Occurrence:orientedEdge:14",
+          "sense": "reversed"
+        },
+        {
+          "edge": "usd:stage:edge#/Occurrence:edge:3",
+          "id": "usd:stage:coedge#/Occurrence:orientedEdge:3",
+          "owner_loop": "usd:stage:loop#/Occurrence:loop:0",
+          "pcurves": [
+            {
+              "parameter_range": [
+                0.0,
+                1.0
+              ],
+              "pcurve": "usd:stage:pcurve#/Occurrence:pcurve-nurbs:3"
+            }
+          ],
+          "radial_next": "usd:stage:coedge#/Occurrence:orientedEdge:18",
+          "sense": "reversed"
+        },
+        {
+          "edge": "usd:stage:edge#/Occurrence:edge:4",
+          "id": "usd:stage:coedge#/Occurrence:orientedEdge:4",
+          "owner_loop": "usd:stage:loop#/Occurrence:loop:1",
+          "pcurves": [
+            {
+              "parameter_range": [
+                0.0,
+                1.0
+              ],
+              "pcurve": "usd:stage:pcurve#/Occurrence:pcurve-nurbs:4"
+            }
+          ],
+          "radial_next": "usd:stage:coedge#/Occurrence:orientedEdge:9",
+          "sense": "reversed"
+        },
+        {
+          "edge": "usd:stage:edge#/Occurrence:edge:5",
+          "id": "usd:stage:coedge#/Occurrence:orientedEdge:5",
+          "owner_loop": "usd:stage:loop#/Occurrence:loop:1",
+          "pcurves": [
+            {
+              "parameter_range": [
+                0.0,
+                1.0
+              ],
+              "pcurve": "usd:stage:pcurve#/Occurrence:pcurve-nurbs:5"
+            }
+          ],
+          "radial_next": "usd:stage:coedge#/Occurrence:orientedEdge:16",
+          "sense": "forward"
+        },
+        {
+          "edge": "usd:stage:edge#/Occurrence:edge:6",
+          "id": "usd:stage:coedge#/Occurrence:orientedEdge:6",
+          "owner_loop": "usd:stage:loop#/Occurrence:loop:1",
+          "pcurves": [
+            {
+              "parameter_range": [
+                0.0,
+                1.0
+              ],
+              "pcurve": "usd:stage:pcurve#/Occurrence:pcurve-nurbs:6"
+            }
+          ],
+          "radial_next": "usd:stage:coedge#/Occurrence:orientedEdge:15",
+          "sense": "forward"
+        },
+        {
+          "edge": "usd:stage:edge#/Occurrence:edge:7",
+          "id": "usd:stage:coedge#/Occurrence:orientedEdge:7",
+          "owner_loop": "usd:stage:loop#/Occurrence:loop:1",
+          "pcurves": [
+            {
+              "parameter_range": [
+                0.0,
+                1.0
+              ],
+              "pcurve": "usd:stage:pcurve#/Occurrence:pcurve-nurbs:7"
+            }
+          ],
+          "radial_next": "usd:stage:coedge#/Occurrence:orientedEdge:22",
+          "sense": "reversed"
+        },
+        {
+          "edge": "usd:stage:edge#/Occurrence:edge:8",
+          "id": "usd:stage:coedge#/Occurrence:orientedEdge:8",
+          "owner_loop": "usd:stage:loop#/Occurrence:loop:2",
+          "pcurves": [
+            {
+              "parameter_range": [
+                0.0,
+                1.0
+              ],
+              "pcurve": "usd:stage:pcurve#/Occurrence:pcurve-nurbs:8"
+            }
+          ],
+          "radial_next": "usd:stage:coedge#/Occurrence:orientedEdge:21",
+          "sense": "reversed"
+        },
+        {
+          "edge": "usd:stage:edge#/Occurrence:edge:4",
+          "id": "usd:stage:coedge#/Occurrence:orientedEdge:9",
+          "owner_loop": "usd:stage:loop#/Occurrence:loop:2",
+          "pcurves": [
+            {
+              "parameter_range": [
+                0.0,
+                1.0
+              ],
+              "pcurve": "usd:stage:pcurve#/Occurrence:pcurve-nurbs:9"
+            }
+          ],
+          "radial_next": "usd:stage:coedge#/Occurrence:orientedEdge:4",
+          "sense": "forward"
+        }
+      ],
+      "configurations": [],
+      "curves": [
+        {
+          "geometry": {
+            "degree": 1,
+            "kind": "nurbs",
+            "knots": [
+              0.0,
+              0.0,
+              0.03,
+              0.03
+            ],
+            "periodic": false,
+            "poles": {
+              "form": "polynomial",
+              "points": [
+                {
+                  "x": 0.0,
+                  "y": 20.0,
+                  "z": 0.0
+                },
+                {
+                  "x": 0.0,
+                  "y": 20.0,
+                  "z": 30.0
+                }
+              ]
+            }
+          },
+          "id": "usd:stage:curve#/Occurrence:curve3d-nurbs:0"
+        },
+        {
+          "geometry": {
+            "degree": 1,
+            "kind": "nurbs",
+            "knots": [
+              0.0,
+              0.0,
+              0.02,
+              0.02
+            ],
+            "periodic": false,
+            "poles": {
+              "form": "polynomial",
+              "points": [
+                {
+                  "x": 0.0,
+                  "y": 0.0,
+                  "z": 30.0
+                },
+                {
+                  "x": 0.0,
+                  "y": 20.0,
+                  "z": 30.0
+                }
+              ]
+            }
+          },
+          "id": "usd:stage:curve#/Occurrence:curve3d-nurbs:1"
+        },
+        {
+          "geometry": {
+            "degree": 1,
+            "kind": "nurbs",
+            "knots": [
+              0.0,
+              0.0,
+              0.01,
+              0.01
+            ],
+            "periodic": false,
+            "poles": {
+              "form": "polynomial",
+              "points": [
+                {
+                  "x": 0.0,
+                  "y": 20.0,
+                  "z": 0.0
+                },
+                {
+                  "x": 10.0,
+                  "y": 20.0,
+                  "z": 0.0
+                }
+              ]
+            }
+          },
+          "id": "usd:stage:curve#/Occurrence:curve3d-nurbs:10"
+        },
+        {
+          "geometry": {
+            "degree": 1,
+            "kind": "nurbs",
+            "knots": [
+              0.0,
+              0.0,
+              0.01,
+              0.01
+            ],
+            "periodic": false,
+            "poles": {
+              "form": "polynomial",
+              "points": [
+                {
+                  "x": 0.0,
+                  "y": 20.0,
+                  "z": 30.0
+                },
+                {
+                  "x": 10.0,
+                  "y": 20.0,
+                  "z": 30.0
+                }
+              ]
+            }
+          },
+          "id": "usd:stage:curve#/Occurrence:curve3d-nurbs:11"
+        },
+        {
+          "geometry": {
+            "degree": 1,
+            "kind": "nurbs",
+            "knots": [
+              0.0,
+              0.0,
+              0.03,
+              0.03
+            ],
+            "periodic": false,
+            "poles": {
+              "form": "polynomial",
+              "points": [
+                {
+                  "x": 0.0,
+                  "y": 0.0,
+                  "z": 0.0
+                },
+                {
+                  "x": 0.0,
+                  "y": 0.0,
+                  "z": 30.0
+                }
+              ]
+            }
+          },
+          "id": "usd:stage:curve#/Occurrence:curve3d-nurbs:2"
+        },
+        {
+          "geometry": {
+            "degree": 1,
+            "kind": "nurbs",
+            "knots": [
+              0.0,
+              0.0,
+              0.02,
+              0.02
+            ],
+            "periodic": false,
+            "poles": {
+              "form": "polynomial",
+              "points": [
+                {
+                  "x": 0.0,
+                  "y": 0.0,
+                  "z": 0.0
+                },
+                {
+                  "x": 0.0,
+                  "y": 20.0,
+                  "z": 0.0
+                }
+              ]
+            }
+          },
+          "id": "usd:stage:curve#/Occurrence:curve3d-nurbs:3"
+        },
+        {
+          "geometry": {
+            "degree": 1,
+            "kind": "nurbs",
+            "knots": [
+              0.0,
+              0.0,
+              0.03,
+              0.03
+            ],
+            "periodic": false,
+            "poles": {
+              "form": "polynomial",
+              "points": [
+                {
+                  "x": 10.0,
+                  "y": 0.0,
+                  "z": 0.0
+                },
+                {
+                  "x": 10.0,
+                  "y": 0.0,
+                  "z": 30.0
+                }
+              ]
+            }
+          },
+          "id": "usd:stage:curve#/Occurrence:curve3d-nurbs:4"
+        },
+        {
+          "geometry": {
+            "degree": 1,
+            "kind": "nurbs",
+            "knots": [
+              0.0,
+              0.0,
+              0.02,
+              0.02
+            ],
+            "periodic": false,
+            "poles": {
+              "form": "polynomial",
+              "points": [
+                {
+                  "x": 10.0,
+                  "y": 0.0,
+                  "z": 0.0
+                },
+                {
+                  "x": 10.0,
+                  "y": 20.0,
+                  "z": 0.0
+                }
+              ]
+            }
+          },
+          "id": "usd:stage:curve#/Occurrence:curve3d-nurbs:5"
+        },
+        {
+          "geometry": {
+            "degree": 1,
+            "kind": "nurbs",
+            "knots": [
+              0.0,
+              0.0,
+              0.03,
+              0.03
+            ],
+            "periodic": false,
+            "poles": {
+              "form": "polynomial",
+              "points": [
+                {
+                  "x": 10.0,
+                  "y": 20.0,
+                  "z": 0.0
+                },
+                {
+                  "x": 10.0,
+                  "y": 20.0,
+                  "z": 30.0
+                }
+              ]
+            }
+          },
+          "id": "usd:stage:curve#/Occurrence:curve3d-nurbs:6"
+        },
+        {
+          "geometry": {
+            "degree": 1,
+            "kind": "nurbs",
+            "knots": [
+              0.0,
+              0.0,
+              0.02,
+              0.02
+            ],
+            "periodic": false,
+            "poles": {
+              "form": "polynomial",
+              "points": [
+                {
+                  "x": 10.0,
+                  "y": 0.0,
+                  "z": 30.0
+                },
+                {
+                  "x": 10.0,
+                  "y": 20.0,
+                  "z": 30.0
+                }
+              ]
+            }
+          },
+          "id": "usd:stage:curve#/Occurrence:curve3d-nurbs:7"
+        },
+        {
+          "geometry": {
+            "degree": 1,
+            "kind": "nurbs",
+            "knots": [
+              0.0,
+              0.0,
+              0.01,
+              0.01
+            ],
+            "periodic": false,
+            "poles": {
+              "form": "polynomial",
+              "points": [
+                {
+                  "x": 0.0,
+                  "y": 0.0,
+                  "z": 30.0
+                },
+                {
+                  "x": 10.0,
+                  "y": 0.0,
+                  "z": 30.0
+                }
+              ]
+            }
+          },
+          "id": "usd:stage:curve#/Occurrence:curve3d-nurbs:8"
+        },
+        {
+          "geometry": {
+            "degree": 1,
+            "kind": "nurbs",
+            "knots": [
+              0.0,
+              0.0,
+              0.01,
+              0.01
+            ],
+            "periodic": false,
+            "poles": {
+              "form": "polynomial",
+              "points": [
+                {
+                  "x": 0.0,
+                  "y": 0.0,
+                  "z": 0.0
+                },
+                {
+                  "x": 10.0,
+                  "y": 0.0,
+                  "z": 0.0
+                }
+              ]
+            }
+          },
+          "id": "usd:stage:curve#/Occurrence:curve3d-nurbs:9"
+        }
+      ],
+      "drawings": [],
+      "edges": [
+        {
+          "carrier": {
+            "curve": "usd:stage:curve#/Occurrence:curve3d-nurbs:0",
+            "param_range": [
+              0.0,
+              0.03
+            ]
+          },
+          "end": "usd:stage:vertex#/Occurrence:vertex:1",
+          "id": "usd:stage:edge#/Occurrence:edge:0",
+          "start": "usd:stage:vertex#/Occurrence:vertex:0"
+        },
+        {
+          "carrier": {
+            "curve": "usd:stage:curve#/Occurrence:curve3d-nurbs:1",
+            "param_range": [
+              0.0,
+              0.02
+            ]
+          },
+          "end": "usd:stage:vertex#/Occurrence:vertex:1",
+          "id": "usd:stage:edge#/Occurrence:edge:1",
+          "start": "usd:stage:vertex#/Occurrence:vertex:2"
+        },
+        {
+          "carrier": {
+            "curve": "usd:stage:curve#/Occurrence:curve3d-nurbs:10",
+            "param_range": [
+              0.0,
+              0.01
+            ]
+          },
+          "end": "usd:stage:vertex#/Occurrence:vertex:6",
+          "id": "usd:stage:edge#/Occurrence:edge:10",
+          "start": "usd:stage:vertex#/Occurrence:vertex:0"
+        },
+        {
+          "carrier": {
+            "curve": "usd:stage:curve#/Occurrence:curve3d-nurbs:11",
+            "param_range": [
+              0.0,
+              0.01
+            ]
+          },
+          "end": "usd:stage:vertex#/Occurrence:vertex:7",
+          "id": "usd:stage:edge#/Occurrence:edge:11",
+          "start": "usd:stage:vertex#/Occurrence:vertex:1"
+        },
+        {
+          "carrier": {
+            "curve": "usd:stage:curve#/Occurrence:curve3d-nurbs:2",
+            "param_range": [
+              0.0,
+              0.03
+            ]
+          },
+          "end": "usd:stage:vertex#/Occurrence:vertex:2",
+          "id": "usd:stage:edge#/Occurrence:edge:2",
+          "start": "usd:stage:vertex#/Occurrence:vertex:3"
+        },
+        {
+          "carrier": {
+            "curve": "usd:stage:curve#/Occurrence:curve3d-nurbs:3",
+            "param_range": [
+              0.0,
+              0.02
+            ]
+          },
+          "end": "usd:stage:vertex#/Occurrence:vertex:0",
+          "id": "usd:stage:edge#/Occurrence:edge:3",
+          "start": "usd:stage:vertex#/Occurrence:vertex:3"
+        },
+        {
+          "carrier": {
+            "curve": "usd:stage:curve#/Occurrence:curve3d-nurbs:4",
+            "param_range": [
+              0.0,
+              0.03
+            ]
+          },
+          "end": "usd:stage:vertex#/Occurrence:vertex:5",
+          "id": "usd:stage:edge#/Occurrence:edge:4",
+          "start": "usd:stage:vertex#/Occurrence:vertex:4"
+        },
+        {
+          "carrier": {
+            "curve": "usd:stage:curve#/Occurrence:curve3d-nurbs:5",
+            "param_range": [
+              0.0,
+              0.02
+            ]
+          },
+          "end": "usd:stage:vertex#/Occurrence:vertex:6",
+          "id": "usd:stage:edge#/Occurrence:edge:5",
+          "start": "usd:stage:vertex#/Occurrence:vertex:4"
+        },
+        {
+          "carrier": {
+            "curve": "usd:stage:curve#/Occurrence:curve3d-nurbs:6",
+            "param_range": [
+              0.0,
+              0.03
+            ]
+          },
+          "end": "usd:stage:vertex#/Occurrence:vertex:7",
+          "id": "usd:stage:edge#/Occurrence:edge:6",
+          "start": "usd:stage:vertex#/Occurrence:vertex:6"
+        },
+        {
+          "carrier": {
+            "curve": "usd:stage:curve#/Occurrence:curve3d-nurbs:7",
+            "param_range": [
+              0.0,
+              0.02
+            ]
+          },
+          "end": "usd:stage:vertex#/Occurrence:vertex:7",
+          "id": "usd:stage:edge#/Occurrence:edge:7",
+          "start": "usd:stage:vertex#/Occurrence:vertex:5"
+        },
+        {
+          "carrier": {
+            "curve": "usd:stage:curve#/Occurrence:curve3d-nurbs:8",
+            "param_range": [
+              0.0,
+              0.01
+            ]
+          },
+          "end": "usd:stage:vertex#/Occurrence:vertex:5",
+          "id": "usd:stage:edge#/Occurrence:edge:8",
+          "start": "usd:stage:vertex#/Occurrence:vertex:2"
+        },
+        {
+          "carrier": {
+            "curve": "usd:stage:curve#/Occurrence:curve3d-nurbs:9",
+            "param_range": [
+              0.0,
+              0.01
+            ]
+          },
+          "end": "usd:stage:vertex#/Occurrence:vertex:4",
+          "id": "usd:stage:edge#/Occurrence:edge:9",
+          "start": "usd:stage:vertex#/Occurrence:vertex:3"
+        }
+      ],
+      "faces": [
+        {
+          "id": "usd:stage:face#/Occurrence:face:0",
+          "loops": {
+            "classification": "classified",
+            "inner": [],
+            "outer": "usd:stage:loop#/Occurrence:loop:0"
+          },
+          "sense": "reversed",
+          "shell": "usd:stage:shell#/Occurrence:shell:0",
+          "surface": "usd:stage:surface#/Occurrence:surface-nurbs:0"
+        },
+        {
+          "id": "usd:stage:face#/Occurrence:face:1",
+          "loops": {
+            "classification": "classified",
+            "inner": [],
+            "outer": "usd:stage:loop#/Occurrence:loop:1"
+          },
+          "sense": "forward",
+          "shell": "usd:stage:shell#/Occurrence:shell:0",
+          "surface": "usd:stage:surface#/Occurrence:surface-nurbs:1"
+        },
+        {
+          "id": "usd:stage:face#/Occurrence:face:2",
+          "loops": {
+            "classification": "classified",
+            "inner": [],
+            "outer": "usd:stage:loop#/Occurrence:loop:2"
+          },
+          "sense": "reversed",
+          "shell": "usd:stage:shell#/Occurrence:shell:0",
+          "surface": "usd:stage:surface#/Occurrence:surface-nurbs:2"
+        },
+        {
+          "id": "usd:stage:face#/Occurrence:face:3",
+          "loops": {
+            "classification": "classified",
+            "inner": [],
+            "outer": "usd:stage:loop#/Occurrence:loop:3"
+          },
+          "sense": "forward",
+          "shell": "usd:stage:shell#/Occurrence:shell:0",
+          "surface": "usd:stage:surface#/Occurrence:surface-nurbs:3"
+        },
+        {
+          "id": "usd:stage:face#/Occurrence:face:4",
+          "loops": {
+            "classification": "classified",
+            "inner": [],
+            "outer": "usd:stage:loop#/Occurrence:loop:4"
+          },
+          "sense": "reversed",
+          "shell": "usd:stage:shell#/Occurrence:shell:0",
+          "surface": "usd:stage:surface#/Occurrence:surface-nurbs:4"
+        },
+        {
+          "id": "usd:stage:face#/Occurrence:face:5",
+          "loops": {
+            "classification": "classified",
+            "inner": [],
+            "outer": "usd:stage:loop#/Occurrence:loop:5"
+          },
+          "sense": "forward",
+          "shell": "usd:stage:shell#/Occurrence:shell:0",
+          "surface": "usd:stage:surface#/Occurrence:surface-nurbs:5"
+        }
+      ],
+      "features": [],
+      "loops": [
+        {
+          "boundary": {
+            "coedges": [
+              "usd:stage:coedge#/Occurrence:orientedEdge:3",
+              "usd:stage:coedge#/Occurrence:orientedEdge:2",
+              "usd:stage:coedge#/Occurrence:orientedEdge:1",
+              "usd:stage:coedge#/Occurrence:orientedEdge:0"
+            ],
+            "kind": "ring"
+          },
+          "face": "usd:stage:face#/Occurrence:face:0",
+          "id": "usd:stage:loop#/Occurrence:loop:0"
+        },
+        {
+          "boundary": {
+            "coedges": [
+              "usd:stage:coedge#/Occurrence:orientedEdge:4",
+              "usd:stage:coedge#/Occurrence:orientedEdge:5",
+              "usd:stage:coedge#/Occurrence:orientedEdge:6",
+              "usd:stage:coedge#/Occurrence:orientedEdge:7"
+            ],
+            "kind": "ring"
+          },
+          "face": "usd:stage:face#/Occurrence:face:1",
+          "id": "usd:stage:loop#/Occurrence:loop:1"
+        },
+        {
+          "boundary": {
+            "coedges": [
+              "usd:stage:coedge#/Occurrence:orientedEdge:11",
+              "usd:stage:coedge#/Occurrence:orientedEdge:10",
+              "usd:stage:coedge#/Occurrence:orientedEdge:9",
+              "usd:stage:coedge#/Occurrence:orientedEdge:8"
+            ],
+            "kind": "ring"
+          },
+          "face": "usd:stage:face#/Occurrence:face:2",
+          "id": "usd:stage:loop#/Occurrence:loop:2"
+        },
+        {
+          "boundary": {
+            "coedges": [
+              "usd:stage:coedge#/Occurrence:orientedEdge:12",
+              "usd:stage:coedge#/Occurrence:orientedEdge:13",
+              "usd:stage:coedge#/Occurrence:orientedEdge:14",
+              "usd:stage:coedge#/Occurrence:orientedEdge:15"
+            ],
+            "kind": "ring"
+          },
+          "face": "usd:stage:face#/Occurrence:face:3",
+          "id": "usd:stage:loop#/Occurrence:loop:3"
+        },
+        {
+          "boundary": {
+            "coedges": [
+              "usd:stage:coedge#/Occurrence:orientedEdge:19",
+              "usd:stage:coedge#/Occurrence:orientedEdge:18",
+              "usd:stage:coedge#/Occurrence:orientedEdge:17",
+              "usd:stage:coedge#/Occurrence:orientedEdge:16"
+            ],
+            "kind": "ring"
+          },
+          "face": "usd:stage:face#/Occurrence:face:4",
+          "id": "usd:stage:loop#/Occurrence:loop:4"
+        },
+        {
+          "boundary": {
+            "coedges": [
+              "usd:stage:coedge#/Occurrence:orientedEdge:20",
+              "usd:stage:coedge#/Occurrence:orientedEdge:21",
+              "usd:stage:coedge#/Occurrence:orientedEdge:22",
+              "usd:stage:coedge#/Occurrence:orientedEdge:23"
+            ],
+            "kind": "ring"
+          },
+          "face": "usd:stage:face#/Occurrence:face:5",
+          "id": "usd:stage:loop#/Occurrence:loop:5"
+        }
+      ],
+      "occurrences": [
+        {
+          "id": "usd:stage:occurrence#/Occurrence",
+          "name": "Occurrence",
+          "native_ref": "/Occurrence",
+          "ordinal": 0,
+          "parent": {
+            "kind": "root"
+          },
+          "prototype": {
+            "definition": "usd:stage:definition#/Occurrence",
+            "scope": "local"
+          },
+          "scale": [
+            1.0,
+            1.0,
+            1.0
+          ],
+          "transform": [
+            [
+              1.0,
+              0.0,
+              0.0,
+              0.0
+            ],
+            [
+              0.0,
+              1.0,
+              0.0,
+              0.0
+            ],
+            [
+              0.0,
+              0.0,
+              1.0,
+              0.0
+            ]
+          ]
+        }
+      ],
+      "parameters": [],
+      "pcurves": [
+        {
+          "geometry": {
+            "degree": 1,
+            "kind": "nurbs",
+            "knots": [
+              0.0,
+              0.0,
+              1.0,
+              1.0
+            ],
+            "periodic": false,
+            "poles": {
+              "form": "polynomial",
+              "points": [
+                {
+                  "u": 0.03,
+                  "v": -0.02
+                },
+                {
+                  "u": 0.0,
+                  "v": -0.02
+                }
+              ]
+            }
+          },
+          "id": "usd:stage:pcurve#/Occurrence:pcurve-nurbs:0",
+          "metadata": {
+            "form": {},
+            "source": "general"
+          }
+        },
+        {
+          "geometry": {
+            "degree": 1,
+            "kind": "nurbs",
+            "knots": [
+              0.0,
+              0.0,
+              1.0,
+              1.0
+            ],
+            "periodic": false,
+            "poles": {
+              "form": "polynomial",
+              "points": [
+                {
+                  "u": 0.03,
+                  "v": 0.0
+                },
+                {
+                  "u": 0.03,
+                  "v": -0.02
+                }
+              ]
+            }
+          },
+          "id": "usd:stage:pcurve#/Occurrence:pcurve-nurbs:1",
+          "metadata": {
+            "form": {},
+            "source": "general"
+          }
+        },
+        {
+          "geometry": {
+            "degree": 1,
+            "kind": "nurbs",
+            "knots": [
+              0.0,
+              0.0,
+              1.0,
+              1.0
+            ],
+            "periodic": false,
+            "poles": {
+              "form": "polynomial",
+              "points": [
+                {
+                  "u": 0.0,
+                  "v": 0.0
+                },
+                {
+                  "u": 0.0,
+                  "v": 0.01
+                }
+              ]
+            }
+          },
+          "id": "usd:stage:pcurve#/Occurrence:pcurve-nurbs:10",
+          "metadata": {
+            "form": {},
+            "source": "general"
+          }
+        },
+        {
+          "geometry": {
+            "degree": 1,
+            "kind": "nurbs",
+            "knots": [
+              0.0,
+              0.0,
+              1.0,
+              1.0
+            ],
+            "periodic": false,
+            "poles": {
+              "form": "polynomial",
+              "points": [
+                {
+                  "u": 0.03,
+                  "v": 0.0
+                },
+                {
+                  "u": 0.0,
+                  "v": 0.0
+                }
+              ]
+            }
+          },
+          "id": "usd:stage:pcurve#/Occurrence:pcurve-nurbs:11",
+          "metadata": {
+            "form": {},
+            "source": "general"
+          }
+        },
+        {
+          "geometry": {
+            "degree": 1,
+            "kind": "nurbs",
+            "knots": [
+              0.0,
+              0.0,
+              1.0,
+              1.0
+            ],
+            "periodic": false,
+            "poles": {
+              "form": "polynomial",
+              "points": [
+                {
+                  "u": 0.0,
+                  "v": 0.01
+                },
+                {
+                  "u": 0.0,
+                  "v": 0.0
+                }
+              ]
+            }
+          },
+          "id": "usd:stage:pcurve#/Occurrence:pcurve-nurbs:12",
+          "metadata": {
+            "form": {},
+            "source": "general"
+          }
+        },
+        {
+          "geometry": {
+            "degree": 1,
+            "kind": "nurbs",
+            "knots": [
+              0.0,
+              0.0,
+              1.0,
+              1.0
+            ],
+            "periodic": false,
+            "poles": {
+              "form": "polynomial",
+              "points": [
+                {
+                  "u": 0.0,
+                  "v": 0.0
+                },
+                {
+                  "u": 0.03,
+                  "v": 0.0
+                }
+              ]
+            }
+          },
+          "id": "usd:stage:pcurve#/Occurrence:pcurve-nurbs:13",
+          "metadata": {
+            "form": {},
+            "source": "general"
+          }
+        },
+        {
+          "geometry": {
+            "degree": 1,
+            "kind": "nurbs",
+            "knots": [
+              0.0,
+              0.0,
+              1.0,
+              1.0
+            ],
+            "periodic": false,
+            "poles": {
+              "form": "polynomial",
+              "points": [
+                {
+                  "u": 0.03,
+                  "v": 0.0
+                },
+                {
+                  "u": 0.03,
+                  "v": 0.01
+                }
+              ]
+            }
+          },
+          "id": "usd:stage:pcurve#/Occurrence:pcurve-nurbs:14",
+          "metadata": {
+            "form": {},
+            "source": "general"
+          }
+        },
+        {
+          "geometry": {
+            "degree": 1,
+            "kind": "nurbs",
+            "knots": [
+              0.0,
+              0.0,
+              1.0,
+              1.0
+            ],
+            "periodic": false,
+            "poles": {
+              "form": "polynomial",
+              "points": [
+                {
+                  "u": 0.03,
+                  "v": 0.01
+                },
+                {
+                  "u": 0.0,
+                  "v": 0.01
+                }
+              ]
+            }
+          },
+          "id": "usd:stage:pcurve#/Occurrence:pcurve-nurbs:15",
+          "metadata": {
+            "form": {},
+            "source": "general"
+          }
+        },
+        {
+          "geometry": {
+            "degree": 1,
+            "kind": "nurbs",
+            "knots": [
+              0.0,
+              0.0,
+              1.0,
+              1.0
+            ],
+            "periodic": false,
+            "poles": {
+              "form": "polynomial",
+              "points": [
+                {
+                  "u": 0.01,
+                  "v": 0.02
+                },
+                {
+                  "u": 0.01,
+                  "v": 0.0
+                }
+              ]
+            }
+          },
+          "id": "usd:stage:pcurve#/Occurrence:pcurve-nurbs:16",
+          "metadata": {
+            "form": {},
+            "source": "general"
+          }
+        },
+        {
+          "geometry": {
+            "degree": 1,
+            "kind": "nurbs",
+            "knots": [
+              0.0,
+              0.0,
+              1.0,
+              1.0
+            ],
+            "periodic": false,
+            "poles": {
+              "form": "polynomial",
+              "points": [
+                {
+                  "u": 0.0,
+                  "v": 0.02
+                },
+                {
+                  "u": 0.01,
+                  "v": 0.02
+                }
+              ]
+            }
+          },
+          "id": "usd:stage:pcurve#/Occurrence:pcurve-nurbs:17",
+          "metadata": {
+            "form": {},
+            "source": "general"
+          }
+        },
+        {
+          "geometry": {
+            "degree": 1,
+            "kind": "nurbs",
+            "knots": [
+              0.0,
+              0.0,
+              1.0,
+              1.0
+            ],
+            "periodic": false,
+            "poles": {
+              "form": "polynomial",
+              "points": [
+                {
+                  "u": 0.0,
+                  "v": 0.0
+                },
+                {
+                  "u": 0.0,
+                  "v": 0.02
+                }
+              ]
+            }
+          },
+          "id": "usd:stage:pcurve#/Occurrence:pcurve-nurbs:18",
+          "metadata": {
+            "form": {},
+            "source": "general"
+          }
+        },
+        {
+          "geometry": {
+            "degree": 1,
+            "kind": "nurbs",
+            "knots": [
+              0.0,
+              0.0,
+              1.0,
+              1.0
+            ],
+            "periodic": false,
+            "poles": {
+              "form": "polynomial",
+              "points": [
+                {
+                  "u": 0.01,
+                  "v": 0.0
+                },
+                {
+                  "u": 0.0,
+                  "v": 0.0
+                }
+              ]
+            }
+          },
+          "id": "usd:stage:pcurve#/Occurrence:pcurve-nurbs:19",
+          "metadata": {
+            "form": {},
+            "source": "general"
+          }
+        },
+        {
+          "geometry": {
+            "degree": 1,
+            "kind": "nurbs",
+            "knots": [
+              0.0,
+              0.0,
+              1.0,
+              1.0
+            ],
+            "periodic": false,
+            "poles": {
+              "form": "polynomial",
+              "points": [
+                {
+                  "u": 0.0,
+                  "v": 0.0
+                },
+                {
+                  "u": 0.03,
+                  "v": 0.0
+                }
+              ]
+            }
+          },
+          "id": "usd:stage:pcurve#/Occurrence:pcurve-nurbs:2",
+          "metadata": {
+            "form": {},
+            "source": "general"
+          }
+        },
+        {
+          "geometry": {
+            "degree": 1,
+            "kind": "nurbs",
+            "knots": [
+              0.0,
+              0.0,
+              1.0,
+              1.0
+            ],
+            "periodic": false,
+            "poles": {
+              "form": "polynomial",
+              "points": [
+                {
+                  "u": 0.0,
+                  "v": 0.02
+                },
+                {
+                  "u": 0.0,
+                  "v": 0.0
+                }
+              ]
+            }
+          },
+          "id": "usd:stage:pcurve#/Occurrence:pcurve-nurbs:20",
+          "metadata": {
+            "form": {},
+            "source": "general"
+          }
+        },
+        {
+          "geometry": {
+            "degree": 1,
+            "kind": "nurbs",
+            "knots": [
+              0.0,
+              0.0,
+              1.0,
+              1.0
+            ],
+            "periodic": false,
+            "poles": {
+              "form": "polynomial",
+              "points": [
+                {
+                  "u": 0.0,
+                  "v": 0.0
+                },
+                {
+                  "u": 0.01,
+                  "v": 0.0
+                }
+              ]
+            }
+          },
+          "id": "usd:stage:pcurve#/Occurrence:pcurve-nurbs:21",
+          "metadata": {
+            "form": {},
+            "source": "general"
+          }
+        },
+        {
+          "geometry": {
+            "degree": 1,
+            "kind": "nurbs",
+            "knots": [
+              0.0,
+              0.0,
+              1.0,
+              1.0
+            ],
+            "periodic": false,
+            "poles": {
+              "form": "polynomial",
+              "points": [
+                {
+                  "u": 0.01,
+                  "v": 0.0
+                },
+                {
+                  "u": 0.01,
+                  "v": 0.02
+                }
+              ]
+            }
+          },
+          "id": "usd:stage:pcurve#/Occurrence:pcurve-nurbs:22",
+          "metadata": {
+            "form": {},
+            "source": "general"
+          }
+        },
+        {
+          "geometry": {
+            "degree": 1,
+            "kind": "nurbs",
+            "knots": [
+              0.0,
+              0.0,
+              1.0,
+              1.0
+            ],
+            "periodic": false,
+            "poles": {
+              "form": "polynomial",
+              "points": [
+                {
+                  "u": 0.01,
+                  "v": 0.02
+                },
+                {
+                  "u": 0.0,
+                  "v": 0.02
+                }
+              ]
+            }
+          },
+          "id": "usd:stage:pcurve#/Occurrence:pcurve-nurbs:23",
+          "metadata": {
+            "form": {},
+            "source": "general"
+          }
+        },
+        {
+          "geometry": {
+            "degree": 1,
+            "kind": "nurbs",
+            "knots": [
+              0.0,
+              0.0,
+              1.0,
+              1.0
+            ],
+            "periodic": false,
+            "poles": {
+              "form": "polynomial",
+              "points": [
+                {
+                  "u": 0.0,
+                  "v": -0.02
+                },
+                {
+                  "u": 0.0,
+                  "v": 0.0
+                }
+              ]
+            }
+          },
+          "id": "usd:stage:pcurve#/Occurrence:pcurve-nurbs:3",
+          "metadata": {
+            "form": {},
+            "source": "general"
+          }
+        },
+        {
+          "geometry": {
+            "degree": 1,
+            "kind": "nurbs",
+            "knots": [
+              0.0,
+              0.0,
+              1.0,
+              1.0
+            ],
+            "periodic": false,
+            "poles": {
+              "form": "polynomial",
+              "points": [
+                {
+                  "u": 0.03,
+                  "v": 0.0
+                },
+                {
+                  "u": 0.0,
+                  "v": 0.0
+                }
+              ]
+            }
+          },
+          "id": "usd:stage:pcurve#/Occurrence:pcurve-nurbs:4",
+          "metadata": {
+            "form": {},
+            "source": "general"
+          }
+        },
+        {
+          "geometry": {
+            "degree": 1,
+            "kind": "nurbs",
+            "knots": [
+              0.0,
+              0.0,
+              1.0,
+              1.0
+            ],
+            "periodic": false,
+            "poles": {
+              "form": "polynomial",
+              "points": [
+                {
+                  "u": 0.0,
+                  "v": 0.0
+                },
+                {
+                  "u": 0.0,
+                  "v": -0.02
+                }
+              ]
+            }
+          },
+          "id": "usd:stage:pcurve#/Occurrence:pcurve-nurbs:5",
+          "metadata": {
+            "form": {},
+            "source": "general"
+          }
+        },
+        {
+          "geometry": {
+            "degree": 1,
+            "kind": "nurbs",
+            "knots": [
+              0.0,
+              0.0,
+              1.0,
+              1.0
+            ],
+            "periodic": false,
+            "poles": {
+              "form": "polynomial",
+              "points": [
+                {
+                  "u": 0.0,
+                  "v": -0.02
+                },
+                {
+                  "u": 0.03,
+                  "v": -0.02
+                }
+              ]
+            }
+          },
+          "id": "usd:stage:pcurve#/Occurrence:pcurve-nurbs:6",
+          "metadata": {
+            "form": {},
+            "source": "general"
+          }
+        },
+        {
+          "geometry": {
+            "degree": 1,
+            "kind": "nurbs",
+            "knots": [
+              0.0,
+              0.0,
+              1.0,
+              1.0
+            ],
+            "periodic": false,
+            "poles": {
+              "form": "polynomial",
+              "points": [
+                {
+                  "u": 0.03,
+                  "v": -0.02
+                },
+                {
+                  "u": 0.03,
+                  "v": 0.0
+                }
+              ]
+            }
+          },
+          "id": "usd:stage:pcurve#/Occurrence:pcurve-nurbs:7",
+          "metadata": {
+            "form": {},
+            "source": "general"
+          }
+        },
+        {
+          "geometry": {
+            "degree": 1,
+            "kind": "nurbs",
+            "knots": [
+              0.0,
+              0.0,
+              1.0,
+              1.0
+            ],
+            "periodic": false,
+            "poles": {
+              "form": "polynomial",
+              "points": [
+                {
+                  "u": 0.03,
+                  "v": 0.01
+                },
+                {
+                  "u": 0.03,
+                  "v": 0.0
+                }
+              ]
+            }
+          },
+          "id": "usd:stage:pcurve#/Occurrence:pcurve-nurbs:8",
+          "metadata": {
+            "form": {},
+            "source": "general"
+          }
+        },
+        {
+          "geometry": {
+            "degree": 1,
+            "kind": "nurbs",
+            "knots": [
+              0.0,
+              0.0,
+              1.0,
+              1.0
+            ],
+            "periodic": false,
+            "poles": {
+              "form": "polynomial",
+              "points": [
+                {
+                  "u": 0.0,
+                  "v": 0.01
+                },
+                {
+                  "u": 0.03,
+                  "v": 0.01
+                }
+              ]
+            }
+          },
+          "id": "usd:stage:pcurve#/Occurrence:pcurve-nurbs:9",
+          "metadata": {
+            "form": {},
+            "source": "general"
+          }
+        }
+      ],
+      "pmi": [],
+      "points": [
+        {
+          "id": "usd:stage:point#/Occurrence:vertex:0",
+          "position": {
+            "x": 0.0,
+            "y": 20.0,
+            "z": 0.0
+          }
+        },
+        {
+          "id": "usd:stage:point#/Occurrence:vertex:1",
+          "position": {
+            "x": 0.0,
+            "y": 20.0,
+            "z": 30.0
+          }
+        },
+        {
+          "id": "usd:stage:point#/Occurrence:vertex:2",
+          "position": {
+            "x": 0.0,
+            "y": 0.0,
+            "z": 30.0
+          }
+        },
+        {
+          "id": "usd:stage:point#/Occurrence:vertex:3",
+          "position": {
+            "x": 0.0,
+            "y": 0.0,
+            "z": 0.0
+          }
+        },
+        {
+          "id": "usd:stage:point#/Occurrence:vertex:4",
+          "position": {
+            "x": 10.0,
+            "y": 0.0,
+            "z": 0.0
+          }
+        },
+        {
+          "id": "usd:stage:point#/Occurrence:vertex:5",
+          "position": {
+            "x": 10.0,
+            "y": 0.0,
+            "z": 30.0
+          }
+        },
+        {
+          "id": "usd:stage:point#/Occurrence:vertex:6",
+          "position": {
+            "x": 10.0,
+            "y": 20.0,
+            "z": 0.0
+          }
+        },
+        {
+          "id": "usd:stage:point#/Occurrence:vertex:7",
+          "position": {
+            "x": 10.0,
+            "y": 20.0,
+            "z": 30.0
+          }
+        }
+      ],
+      "presentation_documents": [],
+      "presentation_layers": [],
+      "procedural_curves": [],
+      "procedural_surfaces": [],
+      "product_definitions": [
+        {
+          "bodies": [
+            "usd:stage:body#/Occurrence"
+          ],
+          "id": "usd:stage:definition#/Occurrence",
+          "kind": "group",
+          "native_ref": "/Occurrence",
+          "source_name": "Occurrence"
+        }
+      ],
+      "regions": [
+        {
+          "body": "usd:stage:body#/Occurrence",
+          "id": "usd:stage:region#/Occurrence:region:0",
+          "shells": [
+            "usd:stage:shell#/Occurrence:shell:0"
+          ]
+        }
+      ],
+      "semantic_annotations": [],
+      "shells": [
+        {
+          "id": "usd:stage:shell#/Occurrence:shell:0",
+          "members": [
+            {
+              "id": "usd:stage:face#/Occurrence:face:0",
+              "kind": "face"
+            },
+            {
+              "id": "usd:stage:face#/Occurrence:face:1",
+              "kind": "face"
+            },
+            {
+              "id": "usd:stage:face#/Occurrence:face:2",
+              "kind": "face"
+            },
+            {
+              "id": "usd:stage:face#/Occurrence:face:3",
+              "kind": "face"
+            },
+            {
+              "id": "usd:stage:face#/Occurrence:face:4",
+              "kind": "face"
+            },
+            {
+              "id": "usd:stage:face#/Occurrence:face:5",
+              "kind": "face"
+            }
+          ],
+          "region": "usd:stage:region#/Occurrence:region:0"
+        }
+      ],
+      "sketch_constraints": [],
+      "sketch_entities": [],
+      "sketches": [],
+      "spatial_sketch_entities": [],
+      "spatial_sketches": [],
+      "spreadsheets": [],
+      "subds": [],
+      "surfaces": [
+        {
+          "geometry": {
+            "kind": "nurbs",
+            "poles": {
+              "form": "polynomial",
+              "rows": [
+                [
+                  {
+                    "x": 0.0,
+                    "y": 20.001,
+                    "z": -0.001
+                  },
+                  {
+                    "x": 0.0,
+                    "y": -0.001,
+                    "z": -0.001
+                  }
+                ],
+                [
+                  {
+                    "x": 0.0,
+                    "y": 20.001,
+                    "z": 30.001
+                  },
+                  {
+                    "x": 0.0,
+                    "y": -0.001,
+                    "z": 30.001
+                  }
+                ]
+              ]
+            },
+            "u_degree": 1,
+            "u_knots": [
+              -1e-6,
+              -1e-6,
+              0.030001,
+              0.030001
+            ],
+            "u_periodic": false,
+            "v_degree": 1,
+            "v_knots": [
+              -0.020001,
+              -0.020001,
+              1e-6,
+              1e-6
+            ],
+            "v_periodic": false
+          },
+          "id": "usd:stage:surface#/Occurrence:surface-nurbs:0"
+        },
+        {
+          "geometry": {
+            "kind": "nurbs",
+            "poles": {
+              "form": "polynomial",
+              "rows": [
+                [
+                  {
+                    "x": 10.0,
+                    "y": 20.001,
+                    "z": -0.001
+                  },
+                  {
+                    "x": 10.0,
+                    "y": -0.001,
+                    "z": -0.001
+                  }
+                ],
+                [
+                  {
+                    "x": 10.0,
+                    "y": 20.001,
+                    "z": 30.001
+                  },
+                  {
+                    "x": 10.0,
+                    "y": -0.001,
+                    "z": 30.001
+                  }
+                ]
+              ]
+            },
+            "u_degree": 1,
+            "u_knots": [
+              -1e-6,
+              -1e-6,
+              0.030001,
+              0.030001
+            ],
+            "u_periodic": false,
+            "v_degree": 1,
+            "v_knots": [
+              -0.020001,
+              -0.020001,
+              1e-6,
+              1e-6
+            ],
+            "v_periodic": false
+          },
+          "id": "usd:stage:surface#/Occurrence:surface-nurbs:1"
+        },
+        {
+          "geometry": {
+            "kind": "nurbs",
+            "poles": {
+              "form": "polynomial",
+              "rows": [
+                [
+                  {
+                    "x": -0.001,
+                    "y": 0.0,
+                    "z": -0.001
+                  },
+                  {
+                    "x": 10.001,
+                    "y": 0.0,
+                    "z": -0.001
+                  }
+                ],
+                [
+                  {
+                    "x": -0.001,
+                    "y": 0.0,
+                    "z": 30.001
+                  },
+                  {
+                    "x": 10.001,
+                    "y": 0.0,
+                    "z": 30.001
+                  }
+                ]
+              ]
+            },
+            "u_degree": 1,
+            "u_knots": [
+              -1e-6,
+              -1e-6,
+              0.030001,
+              0.030001
+            ],
+            "u_periodic": false,
+            "v_degree": 1,
+            "v_knots": [
+              -1e-6,
+              -1e-6,
+              0.010001,
+              0.010001
+            ],
+            "v_periodic": false
+          },
+          "id": "usd:stage:surface#/Occurrence:surface-nurbs:2"
+        },
+        {
+          "geometry": {
+            "kind": "nurbs",
+            "poles": {
+              "form": "polynomial",
+              "rows": [
+                [
+                  {
+                    "x": -0.001,
+                    "y": 20.0,
+                    "z": -0.001
+                  },
+                  {
+                    "x": 10.001,
+                    "y": 20.0,
+                    "z": -0.001
+                  }
+                ],
+                [
+                  {
+                    "x": -0.001,
+                    "y": 20.0,
+                    "z": 30.001
+                  },
+                  {
+                    "x": 10.001,
+                    "y": 20.0,
+                    "z": 30.001
+                  }
+                ]
+              ]
+            },
+            "u_degree": 1,
+            "u_knots": [
+              -1e-6,
+              -1e-6,
+              0.030001,
+              0.030001
+            ],
+            "u_periodic": false,
+            "v_degree": 1,
+            "v_knots": [
+              -1e-6,
+              -1e-6,
+              0.010001,
+              0.010001
+            ],
+            "v_periodic": false
+          },
+          "id": "usd:stage:surface#/Occurrence:surface-nurbs:3"
+        },
+        {
+          "geometry": {
+            "kind": "nurbs",
+            "poles": {
+              "form": "polynomial",
+              "rows": [
+                [
+                  {
+                    "x": -0.001,
+                    "y": -0.001,
+                    "z": 0.0
+                  },
+                  {
+                    "x": -0.001,
+                    "y": 20.001,
+                    "z": 0.0
+                  }
+                ],
+                [
+                  {
+                    "x": 10.001,
+                    "y": -0.001,
+                    "z": 0.0
+                  },
+                  {
+                    "x": 10.001,
+                    "y": 20.001,
+                    "z": 0.0
+                  }
+                ]
+              ]
+            },
+            "u_degree": 1,
+            "u_knots": [
+              -1e-6,
+              -1e-6,
+              0.010001,
+              0.010001
+            ],
+            "u_periodic": false,
+            "v_degree": 1,
+            "v_knots": [
+              -1e-6,
+              -1e-6,
+              0.020001,
+              0.020001
+            ],
+            "v_periodic": false
+          },
+          "id": "usd:stage:surface#/Occurrence:surface-nurbs:4"
+        },
+        {
+          "geometry": {
+            "kind": "nurbs",
+            "poles": {
+              "form": "polynomial",
+              "rows": [
+                [
+                  {
+                    "x": -0.001,
+                    "y": -0.001,
+                    "z": 30.0
+                  },
+                  {
+                    "x": -0.001,
+                    "y": 20.001,
+                    "z": 30.0
+                  }
+                ],
+                [
+                  {
+                    "x": 10.001,
+                    "y": -0.001,
+                    "z": 30.0
+                  },
+                  {
+                    "x": 10.001,
+                    "y": 20.001,
+                    "z": 30.0
+                  }
+                ]
+              ]
+            },
+            "u_degree": 1,
+            "u_knots": [
+              -1e-6,
+              -1e-6,
+              0.010001,
+              0.010001
+            ],
+            "u_periodic": false,
+            "v_degree": 1,
+            "v_knots": [
+              -1e-6,
+              -1e-6,
+              0.020001,
+              0.020001
+            ],
+            "v_periodic": false
+          },
+          "id": "usd:stage:surface#/Occurrence:surface-nurbs:5"
+        }
+      ],
+      "tessellations": [
+        {
+          "body": "usd:stage:body#/Occurrence",
+          "channels": [],
+          "id": "usd:stage:tessellation#/Occurrence",
+          "mesh": {
+            "kind": "shaded_list",
+            "triangles": [
+              [
+                0,
+                1,
+                2
+              ],
+              [
+                2,
+                3,
+                0
+              ],
+              [
+                4,
+                5,
+                6
+              ],
+              [
+                5,
+                4,
+                7
+              ],
+              [
+                8,
+                9,
+                10
+              ],
+              [
+                10,
+                11,
+                8
+              ],
+              [
+                12,
+                13,
+                14
+              ],
+              [
+                13,
+                12,
+                15
+              ],
+              [
+                16,
+                17,
+                18
+              ],
+              [
+                18,
+                19,
+                16
+              ],
+              [
+                20,
+                21,
+                22
+              ],
+              [
+                21,
+                20,
+                23
+              ]
+            ],
+            "vertices": [
+              {
+                "normal": {
+                  "x": 1.0,
+                  "y": 0.0,
+                  "z": -0.0
+                },
+                "position": {
+                  "x": 9.999999776482582,
+                  "y": 19.999999552965164,
+                  "z": 29.999999329447746
+                }
+              },
+              {
+                "normal": {
+                  "x": 1.0,
+                  "y": 0.0,
+                  "z": -0.0
+                },
+                "position": {
+                  "x": 9.999999776482582,
+                  "y": 0.0,
+                  "z": 29.999999329447746
+                }
+              },
+              {
+                "normal": {
+                  "x": 1.0,
+                  "y": 0.0,
+                  "z": -0.0
+                },
+                "position": {
+                  "x": 9.999999776482582,
+                  "y": 0.0,
+                  "z": 0.0
+                }
+              },
+              {
+                "normal": {
+                  "x": 1.0,
+                  "y": 0.0,
+                  "z": -0.0
+                },
+                "position": {
+                  "x": 9.999999776482582,
+                  "y": 19.999999552965164,
+                  "z": 0.0
+                }
+              },
+              {
+                "normal": {
+                  "x": -0.0,
+                  "y": -1.0,
+                  "z": -0.0
+                },
+                "position": {
+                  "x": 0.0,
+                  "y": 0.0,
+                  "z": 29.999999329447746
+                }
+              },
+              {
+                "normal": {
+                  "x": -0.0,
+                  "y": -1.0,
+                  "z": -0.0
+                },
+                "position": {
+                  "x": 9.999999776482582,
+                  "y": 0.0,
+                  "z": 0.0
+                }
+              },
+              {
+                "normal": {
+                  "x": -0.0,
+                  "y": -1.0,
+                  "z": -0.0
+                },
+                "position": {
+                  "x": 9.999999776482582,
+                  "y": 0.0,
+                  "z": 29.999999329447746
+                }
+              },
+              {
+                "normal": {
+                  "x": -0.0,
+                  "y": -1.0,
+                  "z": -0.0
+                },
+                "position": {
+                  "x": 0.0,
+                  "y": 0.0,
+                  "z": 0.0
+                }
+              },
+              {
+                "normal": {
+                  "x": 0.0,
+                  "y": 1.0,
+                  "z": 0.0
+                },
+                "position": {
+                  "x": 9.999999776482582,
+                  "y": 19.999999552965164,
+                  "z": 29.999999329447746
+                }
+              },
+              {
+                "normal": {
+                  "x": 0.0,
+                  "y": 1.0,
+                  "z": 0.0
+                },
+                "position": {
+                  "x": 9.999999776482582,
+                  "y": 19.999999552965164,
+                  "z": 0.0
+                }
+              },
+              {
+                "normal": {
+                  "x": 0.0,
+                  "y": 1.0,
+                  "z": 0.0
+                },
+                "position": {
+                  "x": 0.0,
+                  "y": 19.999999552965164,
+                  "z": 0.0
+                }
+              },
+              {
+                "normal": {
+                  "x": 0.0,
+                  "y": 1.0,
+                  "z": 0.0
+                },
+                "position": {
+                  "x": 0.0,
+                  "y": 19.999999552965164,
+                  "z": 29.999999329447746
+                }
+              },
+              {
+                "normal": {
+                  "x": -0.0,
+                  "y": 0.0,
+                  "z": -1.0
+                },
+                "position": {
+                  "x": 9.999999776482582,
+                  "y": 0.0,
+                  "z": 0.0
+                }
+              },
+              {
+                "normal": {
+                  "x": -0.0,
+                  "y": 0.0,
+                  "z": -1.0
+                },
+                "position": {
+                  "x": 0.0,
+                  "y": 19.999999552965164,
+                  "z": 0.0
+                }
+              },
+              {
+                "normal": {
+                  "x": -0.0,
+                  "y": 0.0,
+                  "z": -1.0
+                },
+                "position": {
+                  "x": 9.999999776482582,
+                  "y": 19.999999552965164,
+                  "z": 0.0
+                }
+              },
+              {
+                "normal": {
+                  "x": -0.0,
+                  "y": 0.0,
+                  "z": -1.0
+                },
+                "position": {
+                  "x": 0.0,
+                  "y": 0.0,
+                  "z": 0.0
+                }
+              },
+              {
+                "normal": {
+                  "x": 0.0,
+                  "y": -0.0,
+                  "z": 1.0
+                },
+                "position": {
+                  "x": 9.999999776482582,
+                  "y": 19.999999552965164,
+                  "z": 29.999999329447746
+                }
+              },
+              {
+                "normal": {
+                  "x": 0.0,
+                  "y": -0.0,
+                  "z": 1.0
+                },
+                "position": {
+                  "x": 0.0,
+                  "y": 19.999999552965164,
+                  "z": 29.999999329447746
+                }
+              },
+              {
+                "normal": {
+                  "x": 0.0,
+                  "y": -0.0,
+                  "z": 1.0
+                },
+                "position": {
+                  "x": 0.0,
+                  "y": 0.0,
+                  "z": 29.999999329447746
+                }
+              },
+              {
+                "normal": {
+                  "x": 0.0,
+                  "y": -0.0,
+                  "z": 1.0
+                },
+                "position": {
+                  "x": 9.999999776482582,
+                  "y": 0.0,
+                  "z": 29.999999329447746
+                }
+              },
+              {
+                "normal": {
+                  "x": -1.0,
+                  "y": -0.0,
+                  "z": 0.0
+                },
+                "position": {
+                  "x": 0.0,
+                  "y": 19.999999552965164,
+                  "z": 0.0
+                }
+              },
+              {
+                "normal": {
+                  "x": -1.0,
+                  "y": -0.0,
+                  "z": 0.0
+                },
+                "position": {
+                  "x": 0.0,
+                  "y": 0.0,
+                  "z": 29.999999329447746
+                }
+              },
+              {
+                "normal": {
+                  "x": -1.0,
+                  "y": -0.0,
+                  "z": 0.0
+                },
+                "position": {
+                  "x": 0.0,
+                  "y": 19.999999552965164,
+                  "z": 29.999999329447746
+                }
+              },
+              {
+                "normal": {
+                  "x": -1.0,
+                  "y": -0.0,
+                  "z": 0.0
+                },
+                "position": {
+                  "x": 0.0,
+                  "y": 0.0,
+                  "z": 0.0
+                }
+              }
+            ]
+          }
+        }
+      ],
+      "vertices": [
+        {
+          "id": "usd:stage:vertex#/Occurrence:vertex:0",
+          "point": "usd:stage:point#/Occurrence:vertex:0"
+        },
+        {
+          "id": "usd:stage:vertex#/Occurrence:vertex:1",
+          "point": "usd:stage:point#/Occurrence:vertex:1"
+        },
+        {
+          "id": "usd:stage:vertex#/Occurrence:vertex:2",
+          "point": "usd:stage:point#/Occurrence:vertex:2"
+        },
+        {
+          "id": "usd:stage:vertex#/Occurrence:vertex:3",
+          "point": "usd:stage:point#/Occurrence:vertex:3"
+        },
+        {
+          "id": "usd:stage:vertex#/Occurrence:vertex:4",
+          "point": "usd:stage:point#/Occurrence:vertex:4"
+        },
+        {
+          "id": "usd:stage:vertex#/Occurrence:vertex:5",
+          "point": "usd:stage:point#/Occurrence:vertex:5"
+        },
+        {
+          "id": "usd:stage:vertex#/Occurrence:vertex:6",
+          "point": "usd:stage:point#/Occurrence:vertex:6"
+        },
+        {
+          "id": "usd:stage:vertex#/Occurrence:vertex:7",
+          "point": "usd:stage:point#/Occurrence:vertex:7"
+        }
+      ],
+      "view_presentations": []
+    },
+    "native": {},
+    "source": {
+      "attributes": {
+        "default_prim": "Occurrence",
+        "meters_per_unit": "1",
+        "up_axis": "Z"
+      },
+      "identity": {
+        "classification": "classified",
+        "dialects": {
+          "extra": [],
+          "primary": {
+            "admission": "admitted",
+            "declared": {
+              "header": "#usda 1.0"
+            },
+            "dialect": "usd:usda-1.0"
+          }
+        }
+      }
+    },
+    "tolerances": {
+      "angular": 1e-10,
+      "linear": 1e-6
+    },
+    "units": {
+      "length": "millimeter"
+    }
+  },
+  "report": {
+    "identity": {
+      "classification": "classified",
+      "dialects": {
+        "extra": [],
+        "primary": {
+          "admission": "admitted",
+          "declared": {
+            "header": "#usda 1.0"
+          },
+          "dialect": "usd:usda-1.0"
+        }
+      }
+    },
+    "losses": [],
+    "notes": [],
+    "transfer": {
+      "geometry_transferred": true,
+      "transfer": "full"
+    }
+  },
+  "source_fidelity": {
+    "annotations": {}
+  }
+}
