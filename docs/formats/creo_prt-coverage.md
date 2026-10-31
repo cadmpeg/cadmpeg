@@ -38,10 +38,10 @@ boundary interval selection. Angular-stream wall frames use their row-major
 columns and complete signed origins. Boundary validation and carrier transfer
 share the complete frame reader. A plane envelope that the rotation reproduces
 selects it over a production that does not; two differing reproductions are refused.
-An incomplete or extended angular wall field, or that refusal, emits
+An incomplete or extended angular wall field, or that refusal, emits one
 `creo/geometry.plane-angular-frame-unresolved`, attributed to its source row
 and payload offset. Synthetic pipeline tests cover both section namespaces,
-complete wall admission, trailing-byte refusal, matching named and inline
+complete wall admission, the three envelope arbitration outcomes, trailing-byte refusal, matching named and inline
 cylinders, conflicting-radius refusal, stored domains, and neutral validation.
 Complete angular endpoint bodies share one reader for native scalar tokens and
 endpoint tuples. A synthetic test checks the tiny literal, low-byte literal,

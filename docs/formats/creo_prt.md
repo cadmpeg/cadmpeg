@@ -2098,15 +2098,17 @@ column one; for a production, `first` is its first parameter direction and
 `second` is the plane normal crossed with `first`. When a production admits the
 body and the rotation reproduces the envelope while the production's chart does
 not, the rotation replaces the production's reading if the two origins differ
-by more than `1e-9` in any component. When the origins agree, only the matrix
+by more than `1e-9` scaled by the larger of one and the two components'
+magnitudes. When the origins agree, only the matrix
 orientation is disputed: the production's reading is kept and the
 `geometry.plane-angular-frame-unresolved` loss is recorded. When both charts
 reproduce the envelope with different origin, first direction, or normal
-(components within `1e-9`), neither is chosen: the plane keeps no local-system
-frame and the same loss is recorded. When no production admits the body, a
-complete rotation is read without an envelope
+(components within the same scaled `1e-9`), neither is chosen: the plane keeps
+no local-system frame and one loss is recorded; the generic
+unresolved-local-system loss is not added for the same row and offset. When no
+production admits the body, a complete rotation is read without an envelope
 check. A body that no production admits and whose rotation fails the
-complete-field admission yields no frame, and the same loss attributes it.
+complete-field admission yields no frame, and one loss attributes it.
 
 A complete positional compact rotation frame can end with
 `e1 f7 <nonzero-canonical-reference>` before its compound close. The `e1`

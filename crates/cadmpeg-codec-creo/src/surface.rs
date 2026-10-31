@@ -7665,6 +7665,14 @@ pub(crate) fn plane_local_systems_for_rows(
         layout: Option<scalar::PlaneSupportFrameLayout>,
         simple: bool,
         offset: usize,
+        angular_loss: AngularLoss,
+    }
+
+    /// Whether an angular-frame loss already attributes this local system.
+    #[derive(PartialEq)]
+    enum AngularLoss {
+        Recorded,
+        None,
     }
 
     let cache = scalar::ScalarCache::from_section_checked(payload);
@@ -7716,6 +7724,7 @@ pub(crate) fn plane_local_systems_for_rows(
             }
             let body = &payload[chunk_start..chunk_end];
             let decoded = complete_plane_local_system(ctx, body, &cache, losses)?;
+            let losses_before_arbitration = losses.len();
             let decoded = plane_frame_by_envelope(
                 decoded,
                 payload
@@ -7726,6 +7735,11 @@ pub(crate) fn plane_local_systems_for_rows(
                 &cache,
                 losses,
             );
+            let mut angular_loss = if losses.len() > losses_before_arbitration {
+                AngularLoss::Recorded
+            } else {
+                AngularLoss::None
+            };
             let slots = decoded
                 .as_ref()
                 .map_or([None; 12], |(slots, _)| slots.get().map(Some));
@@ -7735,6 +7749,7 @@ pub(crate) fn plane_local_systems_for_rows(
                 && scalar::sheet_frames::plane(frame_body, &cache)
                     .is_some_and(|frame| frame.is_err())
             {
+                angular_loss = AngularLoss::Recorded;
                 losses.push(crate::loss::CreoLossCode::PlaneAngularFrameUnresolved.note(format!(
                     "Plane {} local system at payload byte {} fails complete angular rotation-field admission; its bytes remain native",
                     row.id, chunk_start,
@@ -7753,6 +7768,7 @@ pub(crate) fn plane_local_systems_for_rows(
                 layout,
                 simple,
                 offset: chunk_start,
+                angular_loss,
             });
         }
         let has_complete = row_systems
@@ -7770,7 +7786,7 @@ pub(crate) fn plane_local_systems_for_rows(
                 candidate.fallback_owned
             };
             if selected {
-                if candidate.layout.is_none() {
+                if candidate.layout.is_none() && candidate.angular_loss == AngularLoss::None {
                     losses.push(crate::loss::CreoLossCode::PlaneLocalSystemUnresolved.note(format!(
                         "Plane {} local system at byte {} has no complete admitted scalar frame; its bytes remain native",
                         row.id, candidate.offset
@@ -7872,10 +7888,13 @@ fn plane_frame_by_envelope(
     let Some(production) = plane_reading_chart(slots, layout) else {
         return Some((angular, rotation));
     };
+    // The same scaled tolerance as the envelope corner comparison, so charts
+    // far from the model origin are not told apart by rounding alone.
     let close = |left: [f64; 3], right: [f64; 3]| {
-        left.into_iter()
-            .zip(right)
-            .all(|(left, right)| (left - right).abs() <= EPS_SURFACE_AGREEMENT)
+        left.into_iter().zip(right).all(|(left, right)| {
+            (left - right).abs()
+                <= scalar::EPS_SUPPORT_FRAME_AGREEMENT * left.abs().max(right.abs()).max(1.0)
+        })
     };
     let angular_chart = plane_reading_chart(angular, rotation);
     if !plane_reading_reproduces_envelope(production, &envelope) {

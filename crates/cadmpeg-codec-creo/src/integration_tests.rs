@@ -936,6 +936,152 @@ fn angular_wall_chart_pipeline_requires_a_complete_rotation() {
 }
 
 #[test]
+fn angular_wall_envelope_arbitrates_between_rotation_and_support_frame() {
+    fn scalar(bytes: &mut Vec<u8>, value: f64) {
+        let raw = value.to_be_bytes();
+        if value == 0.0 {
+            bytes.push(0x18);
+        } else if value == 1.0 {
+            bytes.push(0x0f);
+        } else if raw[0] == 0xbf && (0xdf..=0xfc).contains(&raw[1]) {
+            // Negative values between about -0.49 and -1.9 are dictionary
+            // tokens: the opener carries the second IEEE byte.
+            bytes.push(raw[1] - 0x2d);
+            bytes.extend_from_slice(&raw[2..]);
+        } else {
+            bytes.push(if raw[0] == 0x3f { 0x41 } else { 0x2d });
+            bytes.extend_from_slice(&raw[1..]);
+        }
+    }
+    // The envelope of the rectangle `rect` under the angular chart whose first
+    // two columns are `rotation`'s and whose origin is `origin`.
+    fn envelope(rotation: [f64; 9], origin: [f64; 3], rect: [f64; 4]) -> [f64; 10] {
+        let [u0, v0, u1, v1] = rect;
+        let corner = |u: f64, v: f64| -> [f64; 3] {
+            std::array::from_fn(|axis| {
+                origin[axis] + u * rotation[axis * 3] + v * rotation[axis * 3 + 1]
+            })
+        };
+        let corners = [
+            corner(u0, v0),
+            corner(u0, v1),
+            corner(u1, v0),
+            corner(u1, v1),
+        ];
+        let mut values = [0.0; 10];
+        values[..4].copy_from_slice(&rect);
+        for axis in 0..3 {
+            values[4 + axis] = corners
+                .iter()
+                .map(|point| point[axis])
+                .fold(f64::INFINITY, f64::min);
+            values[7 + axis] = corners
+                .iter()
+                .map(|point| point[axis])
+                .fold(f64::NEG_INFINITY, f64::max);
+        }
+        values
+    }
+    // Both readings below decode the same bytes: the support-frame production
+    // reads `wall`'s first row as zero and negates the origin, so its chart
+    // differs from the angular chart, which owns the stored envelope.
+    let wall = [1.0, 0.0, 0.0, 0.0, 0.8, -0.6, 0.0, 0.6, 0.8];
+    // A rotation about Z; the production's chart is the mirror of the angular
+    // chart, and over a rectangle centred on the origin both span one box.
+    let turn = [0.8, -0.6, 0.0, 0.6, 0.8, 0.0, 0.0, 0.0, 1.0];
+    let cases = [
+        // (rotation, origin, rectangle, outcome)
+        (wall, [7.0, 11.0, 13.0], [0.0, 0.0, 4.0, 6.0], "rotation"),
+        (wall, [0.0, 0.0, 0.0], [0.0, 0.0, 4.0, 6.0], "production"),
+        (turn, [0.0, 0.0, 0.0], [-1.0, -1.0, 1.0, 1.0], "refused"),
+    ];
+    for (rotation, origin, rect, outcome) in cases {
+        let mut payload = b"srf_array\0\xf8\x01".to_vec();
+        payload.extend_from_slice(&[9, 0x22, 4, 1, 1, 0]);
+        for value in envelope(rotation, origin, rect) {
+            scalar(&mut payload, value);
+        }
+        payload.push(0xe3);
+        for value in rotation.into_iter().chain(origin) {
+            scalar(&mut payload, value);
+        }
+        payload.extend_from_slice(b"\xe3crv_array\0\xf3\xf8\0");
+        let result = decode(build_prt("integration", &[("ND:0:VisibGeom:0", payload)]));
+        assert_valid(&result);
+        let plane = result.ir().model.surfaces.iter().find_map(|surface| {
+            if surface.id.as_str() != "creo:visibgeom:surface#9" {
+                return None;
+            }
+            match &surface.geometry {
+                SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(plane)) => Some(plane),
+                _ => None,
+            }
+        });
+        let losses = result
+            .report()
+            .losses
+            .iter()
+            .filter(|loss| loss.message.contains("Plane 9 local system"))
+            .collect::<Vec<_>>();
+        match outcome {
+            "rotation" => {
+                // The production's origin differs, so the rotation that
+                // reproduces the envelope replaces it, without a loss.
+                let plane = plane.expect("rotation kept");
+                assert_eq!(plane.origin().get(), origin.into());
+                let normal = plane.frame().axis().as_raw();
+                assert!(normal.x.abs() < 1.0e-12);
+                assert!((normal.y + 0.6).abs() < 1.0e-12);
+                assert!((normal.z - 0.8).abs() < 1.0e-12);
+                assert!(losses.is_empty());
+            }
+            "production" => {
+                // Same origin, disputed orientation: the production's frame
+                // (normal along X) is kept and the dispute is one loss.
+                let plane = plane.expect("production kept");
+                assert_eq!(plane.origin().get(), origin.into());
+                let normal = plane.frame().axis().as_raw();
+                assert!((normal.x - 1.0).abs() < 1.0e-12);
+                assert!(normal.y.abs() < 1.0e-12 && normal.z.abs() < 1.0e-12);
+                assert_eq!(losses.len(), 1);
+                assert_eq!(
+                    losses[0].code,
+                    crate::loss::CreoLossCode::PlaneAngularFrameUnresolved.kind()
+                );
+            }
+            _ => {
+                // Both reproduce the envelope with different charts: no
+                // carrier, the bytes stay native, and one attributed loss.
+                // The rotation and the production are both refused, so the
+                // frame bytes stay in the native parameter body. The flat
+                // envelope still yields its axis-aligned plane; neither
+                // chart's reference direction is used.
+                let native = result.ir().native.namespace("creo").expect("native Creo");
+                let local_system = native.arenas()["plane_local_systems"]
+                    .first()
+                    .expect("retained local system");
+                assert!(local_system.fields().expect("fields")["u_axis"].is_null());
+                let body = crate::test_support::native_bytes(
+                    &local_system.fields().expect("fields")["body"],
+                );
+                let mut frame = Vec::new();
+                for value in rotation.into_iter().chain(origin) {
+                    scalar(&mut frame, value);
+                }
+                assert!(body.ends_with(&frame));
+                let plane = plane.expect("envelope-only plane");
+                assert_eq!(plane.origin().get(), [0.0, 0.0, 0.0].into());
+                assert_eq!(losses.len(), 1);
+                assert_eq!(
+                    losses[0].code,
+                    crate::loss::CreoLossCode::PlaneAngularFrameUnresolved.kind()
+                );
+            }
+        }
+    }
+}
+
+#[test]
 fn positive_lower_bend_pipeline_reconciles_named_and_inline_carriers() {
     fn scalar(bytes: &mut Vec<u8>, value: f64) {
         if value == 0.0 {

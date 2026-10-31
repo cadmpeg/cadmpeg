@@ -16,7 +16,7 @@ use cadmpeg_ir::units::FiniteVector;
 use crate::axis::Axis;
 use crate::psb::{compact_int, short_form_float};
 
-const EPS_SUPPORT_FRAME_AGREEMENT: f64 = 1.0e-9;
+pub(crate) const EPS_SUPPORT_FRAME_AGREEMENT: f64 = 1.0e-9;
 
 /// The widest fixed positional slot table the format defines: the twelve-slot
 /// positional `local_sys` of a surface prototype, whose slots 0 to 2 and 6 to 8
