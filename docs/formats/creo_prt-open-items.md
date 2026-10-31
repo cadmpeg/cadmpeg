@@ -143,7 +143,7 @@ length unit.
 ### SE-15. Additional small scalar forms in cylinder charts
 
 **Question.** Which sign, exponent, and fill rules define `37` in bounded
-cylinder envelopes and `33` in angular sample fields?
+cylinder envelopes and `33` in angular bounds and sample fields?
 
 **Known.** `37` occupies one eight-byte slot in a ten-slot cylinder envelope.
 `33` occupies one three-byte slot in a complete four-column sample frame.
@@ -151,7 +151,16 @@ The complete matrix and positive radius remain separate carrier operands.
 The angular `1d` and `1e` productions are defined in §4.1.
 
 **Need.** Obtain independent scalar aliases or corresponding complete chart
-samples that distinguish the remaining sign, exponent, and fill readings.
+samples that distinguish the remaining sign, exponent, and fill readings at
+scalar precision. Propagate rounding in the independent frame, radius, angle,
+and origin operands through the chart reconstruction. Pin each selected reading
+with a decoder-level positive control and a conflicting-reading refusal.
+
+**Note.** The use of `33` for an envelope angular bound remains a hypothesis.
+Model-space agreement can admit several tiny scalar images when
+coordinate rounding exceeds their separation. An envelope containment check or
+a rounded endpoint equality then leaves the scalar reading open. Cylinder
+placements and sample frames depend on these operands.
 
 ## 2. Curves and surfaces
 
@@ -720,7 +729,7 @@ retain native geometry instead of selecting a same-valued datum or class ID.
 
 **Known.** `creo_prt.md` §6 "In a class-916 or class-917 positional feature row, feature form `2` selects a" defines `ea 44 00 00` as a complete 360-degree revolution. Linear sweep extents include one-sided, symmetric, and two-sided spans.
 
-**Need.** We must know the selector semantics to trim a one-sided, symmetric, or two-sided revolution.
+**Need.** We must know the selector semantics and the turn sense about the revolution axis to trim a one-sided, symmetric, or two-sided revolution.
 
 ### SP-38. Conflicting feature recipe candidates
 

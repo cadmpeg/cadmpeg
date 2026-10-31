@@ -81,6 +81,8 @@ thiserror = "2"
 sha2 = "0.11"
 sha1 = "0.11"
 memchr = "2"
+# Elementary functions in Rust, so that a result does not depend on the C library.
+libm = "0.2"
 # XID_Start and XID_Continue classes for USDA identifiers.
 unicode-ident = "1"
 base64 = "0.23"

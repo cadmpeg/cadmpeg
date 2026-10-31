@@ -57,16 +57,12 @@
         "dialects": {
           "extra": [],
           "primary": {
-            "admission": {
-              "unverified": {
-                "using": "ap242-e3"
-              }
-            },
+            "admission": "admitted",
             "declared": {
               "file_schema_identifier": "AUTOMOTIVE_DESIGN_CC2",
               "implementation_level": "2;1"
             },
-            "dialect": "step:unknown"
+            "dialect": "step:ap214"
           }
         }
       }
@@ -85,31 +81,16 @@
       "dialects": {
         "extra": [],
         "primary": {
-          "admission": {
-            "unverified": {
-              "using": "ap242-e3"
-            }
-          },
+          "admission": "admitted",
           "declared": {
             "file_schema_identifier": "AUTOMOTIVE_DESIGN_CC2",
             "implementation_level": "2;1"
           },
-          "dialect": "step:unknown"
+          "dialect": "step:ap214"
         }
       }
     },
     "losses": [
-      {
-        "code": {
-          "code": "source.dialect-unverified",
-          "kind": "source_dialect_unverified",
-          "namespace": "step",
-          "scope": "namespaced",
-          "strict_floor": "warning"
-        },
-        "message": "FILE_SCHEMA identifier AUTOMOTIVE_DESIGN_CC2; it satisfies no declared STEP dialect, so this decode read the exchange with the entity vocabulary verified for step:ap242-e3",
-        "severity": "warning"
-      },
       {
         "code": {
           "code": "parse.noncanonical-syntax",

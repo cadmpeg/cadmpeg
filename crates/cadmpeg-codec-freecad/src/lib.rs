@@ -1285,12 +1285,18 @@ impl CodecBackend for FcstdCodec {
         losses.extend(scan.losses);
         let dialect_losses = dialect::FcstdDialect::dialect_loss(dialects.primary());
         losses.extend(dialect_losses);
-        let document_digest = writer::target::document_local_sha256(ctx, &ir)?;
-        if let Some(source) = &mut ir.source {
-            source.attributes.insert(
-                cadmpeg_core::nonblank_const!(cadmpeg_ir::hash::DOCUMENT_LOCAL_DIGEST_ATTRIBUTE),
-                document_digest,
-            );
+        // Only the FCStd writer reads this digest, and it admits only a `Full`
+        // document. The serialization and hash are too costly to pay below that.
+        if ctx.depth() == DecodeDepth::Full {
+            let document_digest = writer::target::document_local_sha256(ctx, &ir)?;
+            if let Some(source) = &mut ir.source {
+                source.attributes.insert(
+                    cadmpeg_core::nonblank_const!(
+                        cadmpeg_ir::hash::DOCUMENT_LOCAL_DIGEST_ATTRIBUTE
+                    ),
+                    document_digest,
+                );
+            }
         }
         ctx.admit_entities(
             cadmpeg_core::decode::u64_from_index(ir.model.entity_count()),

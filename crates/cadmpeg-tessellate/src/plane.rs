@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Vector arithmetic in the parameter plane and in model space.
 
+use cadmpeg_ir::math::portable::Portable;
 use cadmpeg_ir::math::{Point3, Vector3};
 
 /// A parameter-plane point `(u, v)`.
@@ -100,7 +101,7 @@ pub(crate) fn angle(a: Vector3, b: Vector3) -> f64 {
     if sin == 0.0 && cos == 0.0 {
         return 0.0;
     }
-    sin.atan2(cos)
+    sin.portable_atan2(cos)
 }
 
 #[cfg(test)]
