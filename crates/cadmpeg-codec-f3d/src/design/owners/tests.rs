@@ -331,7 +331,10 @@ fn product_history_owner_follows_the_collection_definition_of_a_sketch() {
     attach(&native, &mut model, &mut losses).unwrap();
     assert!(losses.is_empty(), "{losses:?}");
     assert!(model.product_definitions[0].sketches.is_empty());
-    assert_eq!(model.product_definitions[1].sketches, [sketch_id.clone()]);
+    assert_eq!(
+        model.product_definitions[1].sketches,
+        std::slice::from_ref(&sketch_id)
+    );
     assert_eq!(model.features[0].product_definition, Some(holder));
     assert!(matches!(
         model.features[0].evaluation.definition(),

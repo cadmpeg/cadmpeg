@@ -14,6 +14,13 @@ use cadmpeg_ir::{
 use super::feature_project::{ComponentHistoryNamespace, ScopeHistoryGraph};
 use crate::{ids::native_stream, loss::F3dLossCode, native::F3dNative};
 
+/// Loss reason when a sketch collection names another product definition.
+const COLLECTION_CONFLICT: &str = "its sketch collection names a different product definition";
+/// Loss reason when two Sketch scopes in different definitions bind one
+/// unlisted sketch.
+const CLUSTER_CONFLICT: &str =
+    "another Sketch scope in a different product definition binds the same unlisted sketch";
+
 pub(crate) fn attach(
     scan: &crate::container::ContainerScan<'_>,
     native: &F3dNative,
@@ -167,10 +174,6 @@ fn attach_with_implicit_roots(
             // explicit reference; the entity-id cluster of the Sketch scope
             // is positional. A sketch listed by one definition belongs to the
             // Sketch feature that binds it, whichever cluster holds the scope.
-            const COLLECTION_CONFLICT: &str =
-                "its sketch collection names a different product definition";
-            const CLUSTER_CONFLICT: &str =
-                "another Sketch scope in a different product definition binds the same unlisted sketch";
             let owner = match (holders.next(), holders.next()) {
                 (None, _) => {
                     // No collection lists the sketch: its scope cluster
