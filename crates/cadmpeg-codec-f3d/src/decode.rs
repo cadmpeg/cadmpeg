@@ -318,6 +318,7 @@ fn report_untyped_material_distances(report: &mut DecodeBody, count: usize) {
 #[derive(Debug, Default, PartialEq, Eq)]
 struct DesignProjectionGaps {
     unresolved_body_bindings: usize,
+    history_only_body_bindings: usize,
     incomplete_features: usize,
     native_reference_images: usize,
     native_decals: usize,
@@ -1316,7 +1317,12 @@ fn design_projection_gaps(
         unresolved_body_bindings: native
             .design_body_bindings
             .iter()
-            .filter(|binding| binding.body.is_none())
+            .filter(|binding| binding.body.is_none() && !binding.history_only)
+            .count(),
+        history_only_body_bindings: native
+            .design_body_bindings
+            .iter()
+            .filter(|binding| binding.history_only)
             .count(),
         unprojected_history_dependencies,
         ambiguous_history_dependencies,
@@ -1977,6 +1983,16 @@ fn report_design_projection_gaps(
             format_args!(
                 "{} Design body-map pair(s) do not resolve to a body in the named BREP blob.",
                 gaps.unresolved_body_bindings
+            ),
+        );
+    }
+    if gaps.history_only_body_bindings != 0 {
+        push_loss_vec(
+            &mut report.losses,
+            F3dLossCode::HistoryOnlyBodyOmitted,
+            format_args!(
+                "{} Design body-map pair(s) name a body outside the current model: every Body container omits its entity and its browser node is hidden. The body stays in the named BREP blob and in the native body map, and does not reach `model.bodies`.",
+                gaps.history_only_body_bindings
             ),
         );
     }
@@ -3334,6 +3350,10 @@ fn decode_scanned_document<'a>(
     let unbound_body_bindings =
         crate::design::decode::body::decode_design_body_bindings(ctx, scan, None, &[])?;
     let model_breps = model_brep_candidates(scan, &model_selection.blob_names)?;
+    let only_history_bodies = !unbound_body_bindings.is_empty()
+        && unbound_body_bindings
+            .iter()
+            .all(|binding| binding.history_only);
     let mut brep_outcome = if model_selection.explicitly_empty {
         ModelBrepOutcome::NoPhysicalModel
     } else {
@@ -3353,6 +3373,12 @@ fn decode_scanned_document<'a>(
         let mut selected_body_keys =
             std::collections::HashMap::<String, std::collections::HashSet<u64>>::new();
         for binding in &unbound_body_bindings {
+            if binding.history_only {
+                selected_body_keys
+                    .entry(binding.blob_name().to_owned())
+                    .or_default();
+                continue;
+            }
             index_selected_body_key(
                 &mut selected_body_keys,
                 binding.blob_name(),
@@ -3381,7 +3407,9 @@ fn decode_scanned_document<'a>(
                 }
                 continue;
             }
-            if !matches!(brep_outcome, ModelBrepOutcome::Failed { .. }) {
+            if only_history_bodies && !matches!(brep_outcome, ModelBrepOutcome::Failed { .. }) {
+                brep_outcome = ModelBrepOutcome::NoPhysicalModel;
+            } else if !matches!(brep_outcome, ModelBrepOutcome::Failed { .. }) {
                 brep_outcome = ModelBrepOutcome::Empty {
                     stream: candidate.name.clone(),
                 };
@@ -5075,8 +5103,8 @@ fn container_losses(
 
     let (geometry, topology) = match outcome {
         ModelBrepOutcome::NoPhysicalModel => (
-            "No physical model BREP was selected: the modern model-body maps are explicitly empty. Snapshot streams contain no selected physical model bodies.".to_owned(),
-            "No physical B-rep topology was selected by the empty model-body maps.".to_owned(),
+            "No physical model BREP was selected: the modern model-body maps are explicitly empty or name only bodies outside the current model. Snapshot streams contain no selected physical model bodies.".to_owned(),
+            "No physical B-rep topology was selected by the model-body maps.".to_owned(),
         ),
         ModelBrepOutcome::Empty { stream } => (
             format!("The selected model BREP stream `{stream}` decoded successfully; the selected model has no surfaces, faces, or points."),

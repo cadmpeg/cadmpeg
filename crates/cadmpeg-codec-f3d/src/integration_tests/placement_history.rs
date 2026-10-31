@@ -240,6 +240,43 @@ fn only_absent_membership_uses_the_component_cluster() {
 }
 
 #[test]
+fn history_only_body_map_pair_leaves_the_current_model_and_reports_its_loss() {
+    use crate::test_support::component_body_test::{
+        history_only_design, HistoryOnlyContainer as Container,
+    };
+    for (hidden, container, bodies) in [
+        (true, Container::Lists(&[]), 0),
+        (false, Container::Lists(&[]), 1),
+        (true, Container::Lists(&[350]), 1),
+        (true, Container::Malformed, 1),
+    ] {
+        let (bulk, meta) = history_only_design("BREP.module.smbh", Some(hidden), container);
+        let bytes = f3d_with_breps_and_design(
+            &[(
+                "BREP.module.smbh",
+                &crate::test_support::smbh_geometry_test::synthetic_geometry_smbh(),
+            )],
+            &bulk,
+            &meta,
+        );
+        let result = super::decode(bytes);
+        assert_eq!(result.ir().model.bodies.len(), bodies, "{hidden}");
+        assert_eq!(
+            result
+                .report()
+                .losses
+                .iter()
+                .any(|loss| loss.code == F3dLossCode::HistoryOnlyBodyOmitted.kind()),
+            bodies == 0,
+            "{hidden}"
+        );
+        assert!(!result.report().losses.iter().any(
+            |loss| bodies == 0 && loss.code == F3dLossCode::DesignBodyBindingUnresolved.kind()
+        ));
+    }
+}
+
+#[test]
 fn admitted_component_membership_wins_over_an_unregistered_owner() {
     for owners in [&[999, 300][..], &[300, 999][..]] {
         let (bulk, meta) = crate::test_support::streams_test::nested_local_component_design(owners);
