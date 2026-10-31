@@ -707,21 +707,6 @@ mod tests {
         assert!(!scan(&[circle(1.0, 0x2b), circle(2.0, 0x2d)]).marker_conflict(70));
     }
 
-    /// A `00 38` rolling-ball record between two direct supports.
-    fn blend_record(attr: u16, supports: [u16; 2], spine: u16, radius_m: f64) -> Vec<u8> {
-        let mut bytes = vec![0x00, 0x38];
-        bytes.extend_from_slice(&attr.to_be_bytes());
-        bytes.extend_from_slice(&[0; 14]);
-        bytes.extend_from_slice(&[0x2b, 0x45]);
-        for reference in [supports[0], supports[1], spine] {
-            bytes.extend_from_slice(&reference.to_be_bytes());
-        }
-        for value in [radius_m, radius_m, 1.0, 1.0] {
-            bytes.extend_from_slice(&value.to_be_bytes());
-        }
-        bytes
-    }
-
     /// A degree-one chart on supports 2 and 3 through `poles` in millimetres
     /// at chord-length parameters.
     fn chart(
@@ -781,7 +766,7 @@ mod tests {
             &[
                 plane_carrier(2, [0.0; 3], [0.0, 0.0, 1.0], [1.0, 0.0, 0.0]),
                 cylinder_carrier(3, [0.0; 3], [0.0, 0.0, 1.0], 0.01),
-                blend_record(8, [2, 3], 11, 0.001),
+                crate::test_support::parasolid::pair_blend_surface_carrier(8, [2, 3], 11, 0.001),
             ]
             .concat(),
         )
@@ -830,7 +815,7 @@ mod tests {
                 plane_carrier(2, [0.0; 3], [0.0, 0.0, 1.0], [1.0, 0.0, 0.0]),
                 plane_carrier(3, [0.0; 3], [1.0, 0.0, 0.0], [0.0, 0.0, 1.0]),
                 line_carrier(5, [0.001, 0.0, 0.001], [0.0, 1.0, 0.0]),
-                blend_record(8, [2, 3], 5, 0.001),
+                crate::test_support::parasolid::pair_blend_surface_carrier(8, [2, 3], 5, 0.001),
                 bound,
             ]
             .concat(),
