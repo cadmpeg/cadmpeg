@@ -200,6 +200,8 @@ Datum planes retain their operation family when placement is unresolved and carr
 
 Linear pattern counts define grid positions, including the seed at `(0, 0)`. An absent second direction has one position. `omitted_instances` is an optional array of zero-based `[first, second]` grid coordinates. Each coordinate is in bounds and distinct, and `(0, 0)` is excluded. An absent or empty array omits no position. The retained instance count is the product of the direction counts minus the number of omitted coordinates. Length conversion preserves these coordinates.
 
+A revolution turns about `axis`, the line through `axis.origin` along `axis.direction`. A positive angle turns right-handed about that direction: counter-clockwise when viewed from the tip of the direction back toward its origin. A profile point on the +x side of an axis along +z therefore moves toward +y. The profile is at angle zero. `one_sided` travel runs from zero to its positive angle. `two_sided` travel runs from zero to `first` in the positive sense and from zero to `second` in the opposite sense, so `first` is the side that a positive turn reaches. `symmetric` travel runs from minus half of its angle to plus half of its angle.
+
 An extrusion starts on its profile plane, on a plane at a signed offset from the profile plane, on a selected face, or on a plane that has no face identity. A to-plane termination and a from-plane start each carry the model-space frame of that plane: an origin in millimeters, a normal, and a `u_axis` in the plane. The normal and `u_axis` are orthogonal and need not have unit length. Each also names the native record that stores the plane. This extrusion starts on the plane z = 40 mm and ends on the plane z = 100 mm:
 
 ```json
