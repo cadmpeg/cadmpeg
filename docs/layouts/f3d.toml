@@ -17584,7 +17584,7 @@ name = "local_component_occurrence_matrix_tail"
 parsed_by = "crates/cadmpeg-codec-f3d/src/design/decode/components.rs"
 kind = "byte"
 section = "3.1"
-anchor = "The matrix frame has flag `0` and a row-major rigid local-to-container transform at offset 209."
+anchor = "The matrix frame has flag `0` and a row-major orthonormal local-to-container transform at offset 209."
 size = 148
 note = "Offsets are relative to the end of the 209-byte prefix; the matrix frame is 357 bytes."
 
@@ -17593,7 +17593,7 @@ name = "transform"
 offset = 0
 type = "f64[16]"
 source = "spec"
-anchor = "a row-major rigid local-to-container transform at offset 209"
+anchor = "a row-major orthonormal local-to-container transform at offset 209"
 
 [[record.gap]]
 offset = 128
