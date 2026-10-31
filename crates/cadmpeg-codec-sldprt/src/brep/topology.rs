@@ -2359,7 +2359,7 @@ mod tests {
 
     fn partition_without_middle_fin() -> Vec<u8> {
         let mut bytes = crate::test_support::parasolid::triangle_body();
-        let original = crate::test_support::parasolid::coedge(31, 20, 30, 52, 0, 41, false);
+        let original = crate::test_support::parasolid::coedge(31, 20, 32, 51, 0, 41, false);
         let at = bytes
             .windows(original.len())
             .position(|window| window == original)

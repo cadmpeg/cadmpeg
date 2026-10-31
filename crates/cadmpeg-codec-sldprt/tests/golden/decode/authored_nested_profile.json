@@ -57,21 +57,21 @@
       "edges": [
         {
           "carrier": {},
-          "end": "sldprt:brep:vertex#50",
-          "id": "sldprt:brep:edge#40",
-          "start": "sldprt:brep:vertex#51"
-        },
-        {
-          "carrier": {},
           "end": "sldprt:brep:vertex#51",
-          "id": "sldprt:brep:edge#41",
-          "start": "sldprt:brep:vertex#52"
+          "id": "sldprt:brep:edge#40",
+          "start": "sldprt:brep:vertex#50"
         },
         {
           "carrier": {},
           "end": "sldprt:brep:vertex#52",
+          "id": "sldprt:brep:edge#41",
+          "start": "sldprt:brep:vertex#51"
+        },
+        {
+          "carrier": {},
+          "end": "sldprt:brep:vertex#50",
           "id": "sldprt:brep:edge#42",
-          "start": "sldprt:brep:vertex#50"
+          "start": "sldprt:brep:vertex#52"
         }
       ],
       "faces": [
@@ -94,8 +94,8 @@
           "boundary": {
             "coedges": [
               "sldprt:brep:coedge#30",
-              "sldprt:brep:coedge#32",
-              "sldprt:brep:coedge#31"
+              "sldprt:brep:coedge#31",
+              "sldprt:brep:coedge#32"
             ],
             "kind": "ring"
           },
@@ -167,11 +167,11 @@
             "loci": [
               {
                 "entity": "sldprt:model:sketch-entity#348:0:0:0",
-                "kind": "end"
+                "kind": "start"
               },
               {
-                "entity": "sldprt:model:sketch-entity#348:0:0:1",
-                "kind": "start"
+                "entity": "sldprt:model:sketch-entity#348:0:0:2",
+                "kind": "end"
               }
             ]
           },
@@ -184,11 +184,11 @@
             "loci": [
               {
                 "entity": "sldprt:model:sketch-entity#348:0:0:0",
-                "kind": "start"
+                "kind": "end"
               },
               {
-                "entity": "sldprt:model:sketch-entity#348:0:0:2",
-                "kind": "end"
+                "entity": "sldprt:model:sketch-entity#348:0:0:1",
+                "kind": "start"
               }
             ]
           },
@@ -217,49 +217,7 @@
         {
           "construction": false,
           "endpoint_refs": [
-            "0:sldprt:brep:point#61",
-            "0:sldprt:brep:point#60"
-          ],
-          "geometry": {
-            "end": {
-              "u": 0.0,
-              "v": 0.0
-            },
-            "kind": "line",
-            "start": {
-              "u": 1000.0,
-              "v": 0.0
-            }
-          },
-          "id": "sldprt:model:sketch-entity#348:0:0:0",
-          "native_ref": "0:sldprt:brep:edge#40",
-          "sketch": "sldprt:model:sketch#348:0:0"
-        },
-        {
-          "construction": false,
-          "endpoint_refs": [
             "0:sldprt:brep:point#60",
-            "0:sldprt:brep:point#62"
-          ],
-          "geometry": {
-            "end": {
-              "u": 0.0,
-              "v": 1000.0
-            },
-            "kind": "line",
-            "start": {
-              "u": 0.0,
-              "v": 0.0
-            }
-          },
-          "id": "sldprt:model:sketch-entity#348:0:0:1",
-          "native_ref": "0:sldprt:brep:edge#42",
-          "sketch": "sldprt:model:sketch#348:0:0"
-        },
-        {
-          "construction": false,
-          "endpoint_refs": [
-            "0:sldprt:brep:point#62",
             "0:sldprt:brep:point#61"
           ],
           "geometry": {
@@ -270,11 +228,53 @@
             "kind": "line",
             "start": {
               "u": 0.0,
+              "v": 0.0
+            }
+          },
+          "id": "sldprt:model:sketch-entity#348:0:0:0",
+          "native_ref": "0:sldprt:brep:edge#40",
+          "sketch": "sldprt:model:sketch#348:0:0"
+        },
+        {
+          "construction": false,
+          "endpoint_refs": [
+            "0:sldprt:brep:point#61",
+            "0:sldprt:brep:point#62"
+          ],
+          "geometry": {
+            "end": {
+              "u": 0.0,
+              "v": 1000.0
+            },
+            "kind": "line",
+            "start": {
+              "u": 1000.0,
+              "v": 0.0
+            }
+          },
+          "id": "sldprt:model:sketch-entity#348:0:0:1",
+          "native_ref": "0:sldprt:brep:edge#41",
+          "sketch": "sldprt:model:sketch#348:0:0"
+        },
+        {
+          "construction": false,
+          "endpoint_refs": [
+            "0:sldprt:brep:point#62",
+            "0:sldprt:brep:point#60"
+          ],
+          "geometry": {
+            "end": {
+              "u": 0.0,
+              "v": 0.0
+            },
+            "kind": "line",
+            "start": {
+              "u": 0.0,
               "v": 1000.0
             }
           },
           "id": "sldprt:model:sketch-entity#348:0:0:2",
-          "native_ref": "0:sldprt:brep:edge#41",
+          "native_ref": "0:sldprt:brep:edge#42",
           "sketch": "sldprt:model:sketch#348:0:0"
         }
       ],

@@ -27,7 +27,7 @@
             }
           ],
           "radial_next": "sldprt:brep:coedge#30",
-          "sense": "reversed"
+          "sense": "forward"
         },
         {
           "edge": "sldprt:brep:edge#41",
@@ -39,7 +39,7 @@
             }
           ],
           "radial_next": "sldprt:brep:coedge#31",
-          "sense": "reversed"
+          "sense": "forward"
         },
         {
           "edge": "sldprt:brep:edge#seam:10",

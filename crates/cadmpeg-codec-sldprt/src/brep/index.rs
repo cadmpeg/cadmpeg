@@ -50,7 +50,7 @@ impl CarrierIndex {
             Carrier::Curve(carrier) => {
                 if let Some(IndexedCurve::Exact(known)) = self.curves.get(&carrier.attr) {
                     if known.geometry == carrier.geometry
-                        && known.runs_against_edges != carrier.runs_against_edges
+                        && known.marker_reversed != carrier.marker_reversed
                     {
                         self.marker_conflicts.insert(carrier.attr);
                     }
