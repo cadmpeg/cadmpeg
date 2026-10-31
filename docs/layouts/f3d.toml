@@ -9283,6 +9283,28 @@ anchor = "a final paired marker"
 value = 1
 
 [[record]]
+name = "body_recipe_family_name_frame"
+kind = "byte"
+section = "3.1"
+anchor = "A stream can store no record `N+4` after `N+3`."
+size = 24
+note = "Offsets are relative to the `body_recipe_data` family name. The indexed header that closes the whole-body member starts at the end of this frame."
+
+[[record.field]]
+name = "family_name"
+offset = 0
+type = "bytes[16]"
+source = "spec"
+anchor = "The 16-byte family name"
+
+[[record.field]]
+name = "trailing_bytes"
+offset = 16
+type = "bytes[8]"
+source = "spec"
+anchor = "eight trailing bytes"
+
+[[record]]
 name = "extrude_selection_member_fixed_frame"
 kind = "byte"
 section = "3.1"

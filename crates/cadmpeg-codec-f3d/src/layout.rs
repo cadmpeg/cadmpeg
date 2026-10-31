@@ -2782,6 +2782,18 @@ pub(crate) mod form_class_350_member_owner_tail {
     pub(crate) const PAIRED_MARKER_VALUE: u8 = 1;
 }
 
+/// Byte offsets for the `body_recipe_family_name_frame` record.
+///
+/// Spec §3.1. Record length 24 B.
+///
+/// ```text
+/// Offsets are relative to the `body_recipe_data` family name. The indexed header that closes the whole-body member starts at the end of this frame.
+/// ```
+pub(crate) mod body_recipe_family_name_frame {
+    /// Record length in bytes. Spec §3.1.
+    pub(crate) const LEN: usize = 24;
+}
+
 /// Byte offsets for the `extrude_selection_member_fixed_frame` record.
 ///
 /// Spec §3.1. Record length 190 B.

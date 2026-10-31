@@ -2796,6 +2796,17 @@ Offsets are relative to the class-351 paired header's preceding tail. The backli
 | 9 | 3 | `zero_run_3` | `bytes[3]` | little | spec | three zero bytes before the paired header |
 | 12 | 1 | `paired_marker` | `u8` | little | spec | a final paired marker · value `1` |
 
+## `body_recipe_family_name_frame`
+
+Spec §3.1 · layout: byte offsets · size: 24 B
+
+Offsets are relative to the `body_recipe_data` family name. The indexed header that closes the whole-body member starts at the end of this frame.
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 16 | `family_name` | `bytes[16]` | little | spec | The 16-byte family name |
+| 16 | 8 | `trailing_bytes` | `bytes[8]` | little | spec | eight trailing bytes |
+
 ## `extrude_selection_member_fixed_frame`
 
 Spec §3.1 · layout: byte offsets · size: 190 B
