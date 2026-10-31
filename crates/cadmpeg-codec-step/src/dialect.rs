@@ -161,6 +161,10 @@ impl Part21Dialect {
 /// defaults follow, so it names the strategy used.
 const NEAREST_STRATEGY: Part21Dialect = Part21Dialect::Schema(StepSchema::Ap242Edition3);
 
+/// The schema name of the AP214 committee draft, a second name of the
+/// `step:ap214` row. The writer does not declare it.
+const AP214_COMMITTEE_DRAFT_SCHEMA_NAME: &str = "AUTOMOTIVE_DESIGN_CC2";
+
 impl StepDialect {
     /// Every dialect identity this enum can name.
     #[cfg(test)]
@@ -187,7 +191,7 @@ impl StepDialect {
     /// registry declares no such row.
     ///
     /// The schema name is the first discriminant of every Part 21 row, and the
-    /// three single-row names need nothing else: their arcs, present or absent,
+    /// single-row names need nothing else: their arcs, present or absent,
     /// separate no two rows. This matches the reader's own bare-or-arc-bearing
     /// name comparison (`crate::parse::schema_identifier_matches`).
     ///
@@ -213,6 +217,9 @@ impl StepDialect {
                 return Self::Part21(Part21Dialect::Ap242);
             }
             return Self::ap242_edition(object_identifier).map_or(Self::Unknown, Self::Part21);
+        }
+        if name.eq_ignore_ascii_case(AP214_COMMITTEE_DRAFT_SCHEMA_NAME) {
+            return Self::Part21(Part21Dialect::Schema(StepSchema::Ap214));
         }
         [
             Part21Dialect::Schema(StepSchema::Ap203Edition1),
