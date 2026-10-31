@@ -3225,7 +3225,7 @@ fn brep_identity_namespace(entry: &str) -> Option<&str> {
 
 /// Decode an F3D or F3Z reader.
 pub(crate) fn decode<'a>(ctx: &DecodeContext<'a>, root: View<'a>) -> Result<Decoded, CodecError> {
-    let scan = container::scan(ctx, root)?;
+    let scan = crate::f3z::observer::scan(ctx, root)?;
     match &scan.kind {
         container::F3dContainerKind::MultiDocument { .. } => crate::f3z::decode(ctx, &scan),
         container::F3dContainerKind::Document { .. } => {

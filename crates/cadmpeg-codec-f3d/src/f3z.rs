@@ -17,10 +17,10 @@ use cadmpeg_ir::report::loss::LossNote;
 
 mod archive;
 mod merge;
-mod observer;
+pub(crate) mod observer;
 mod session;
 
-pub use observer::{observe_f3z_members, F3zMemberObserver};
+pub use observer::{observe_f3z_members, F3zMemberObserver, F3zPhase};
 pub use session::{F3zDecodedMember, F3zMember, F3zMemberKind, F3zSession};
 
 fn push_loss(losses: &mut Vec<LossNote>, code: F3dLossCode, args: std::fmt::Arguments<'_>) {
@@ -38,7 +38,7 @@ pub(crate) fn inspect<'a>(
             "f3z root member {model_root} is not present in the archive"
         ))
     })?;
-    let classified = archive::classify_members(ctx, scan)?;
+    let classified = archive::classify_members(ctx, scan, false)?;
     let member_count = scan
         .entries
         .iter()

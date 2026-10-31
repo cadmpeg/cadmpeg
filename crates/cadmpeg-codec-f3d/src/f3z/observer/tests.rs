@@ -91,3 +91,44 @@ fn observer_is_scoped_to_its_call() {
         .unwrap();
     assert!(events.0.borrow().is_empty());
 }
+
+#[derive(Default)]
+struct PhaseEvents(RefCell<Vec<String>>);
+
+impl F3zMemberObserver for PhaseEvents {
+    fn phase_started(&self, phase: F3zPhase) {
+        self.0.borrow_mut().push(format!("start {phase:?}"));
+    }
+    fn phase_finished(&self, phase: F3zPhase, outcome: Result<(), &CodecError>) {
+        self.0
+            .borrow_mut()
+            .push(format!("finish {phase:?} {}", outcome.is_ok()));
+    }
+    fn member_started(&self, _path: &str) {}
+    fn member_finished(&self, _path: &str, _outcome: Result<(), &CodecError>) {}
+}
+
+#[test]
+fn observer_pairs_preparation_phases_including_refusal() {
+    let events = Rc::new(PhaseEvents::default());
+    observe_f3z_members(events.clone(), || {
+        phase(F3zPhase::Scan, || Ok(())).unwrap();
+        phase::<()>(F3zPhase::Classify, || {
+            Err(CodecError::malformed("invalid member"))
+        })
+        .unwrap_err();
+        phase(F3zPhase::SessionOpen, || Ok(())).unwrap();
+    });
+    phase(F3zPhase::Scan, || Ok(())).unwrap();
+    assert_eq!(
+        *events.0.borrow(),
+        [
+            "start Scan",
+            "finish Scan true",
+            "start Classify",
+            "finish Classify false",
+            "start SessionOpen",
+            "finish SessionOpen true",
+        ]
+    );
+}
