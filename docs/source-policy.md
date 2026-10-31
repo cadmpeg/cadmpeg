@@ -5,6 +5,9 @@ The check needs no Git history, baseline, ledger, or update step. Exit status
 is 0 for clean source and 1 for violations. Text and `--json` output identify
 each violation by rule, file, line, and explanation.
 Use repeatable `--crate NAME` arguments to restrict reported findings to named crates.
+The scan uses one worker process for each CPU that the process may run on: the
+CPU affinity mask, capped by `PYTHON_CPU_COUNT` when it is set. Set
+`CADMPEG_JOBS` to a positive integer to set the worker count directly.
 
 ## Rules
 

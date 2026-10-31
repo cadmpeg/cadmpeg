@@ -1641,5 +1641,38 @@ impl Serialize for Manual {
         findings = policy.scan_native_byte_fields({path: path.read_text()})
         self.assertEqual([item.rule for item in findings], ["native_byte_array"])
 
+
+class WorkerCountTests(unittest.TestCase):
+    def test_jobs_override_sets_the_count(self) -> None:
+        with patch.dict(policy.os.environ, {policy.JOBS_ENV: "3"}):
+            self.assertEqual(policy.worker_count(), 3)
+
+    def test_invalid_jobs_override_fails(self) -> None:
+        for value in ("0", "-2", "four"):
+            with self.subTest(value=value), patch.dict(policy.os.environ, {policy.JOBS_ENV: value}):
+                with self.assertRaises(SystemExit):
+                    policy.worker_count()
+
+    def test_allowed_cpus_set_the_count_without_override(self) -> None:
+        with patch.dict(policy.os.environ, {policy.JOBS_ENV: ""}), \
+                patch.object(policy.os, "process_cpu_count", return_value=2, create=True), \
+                patch.object(policy.os, "cpu_count", return_value=64):
+            self.assertEqual(policy.worker_count(), 2)
+
+    def test_affinity_sets_the_count_before_python_3_13(self) -> None:
+        with patch.dict(policy.os.environ, {policy.JOBS_ENV: ""}), \
+                patch.object(policy.os, "process_cpu_count", None, create=True), \
+                patch.object(policy.os, "sched_getaffinity", return_value={0, 1, 2, 3}, create=True), \
+                patch.object(policy.os, "cpu_count", return_value=64):
+            self.assertEqual(policy.worker_count(), 4)
+
+    def test_cpu_count_is_the_last_fallback(self) -> None:
+        with patch.dict(policy.os.environ, {policy.JOBS_ENV: ""}), \
+                patch.object(policy.os, "process_cpu_count", None, create=True), \
+                patch.object(policy.os, "sched_getaffinity", None, create=True), \
+                patch.object(policy.os, "cpu_count", return_value=None):
+            self.assertEqual(policy.worker_count(), 1)
+
+
 if __name__ == "__main__":
     unittest.main()
