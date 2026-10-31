@@ -119,6 +119,62 @@ fn blend_surface_carrier(attr: u16, supports: [u16; 2], spine: u16, signed_radiu
     bytes
 }
 
+/// A compact type-67 surface swept along a unit direction.
+fn swept_surface_carrier(attr: u16, profile: u16, direction: [f64; 3]) -> Vec<u8> {
+    let mut bytes = vec![0x00, 0x43];
+    be16(&mut bytes, attr);
+    be32(&mut bytes, 0);
+    for _ in 0..5 {
+        be16(&mut bytes, 0);
+    }
+    bytes.push(0x2b);
+    be16(&mut bytes, profile);
+    for value in direction {
+        bef64(&mut bytes, value);
+    }
+    bytes
+}
+
+/// A face on a rolling-ball blend of radius 0.1 m between the floor `z = 0` and
+/// a wall `x = 0` that a line swept along `y` states, with the wall's own face
+/// when `wall_face` is set. `vertex_miss` lifts one face vertex off the blend,
+/// in metres.
+pub(crate) fn blend_on_swept_wall_body(wall_face: bool, vertex_miss: f64) -> Vec<u8> {
+    let (floor, wall, wall_profile, spine, blend) = (181, 190, 191, 183, 180);
+    let mut body = owned_triangle_on(
+        0,
+        500,
+        [[0.1, 0.0, 0.0], [0.0, 0.0, 0.1], [0.1, 1.0, -vertex_miss]],
+        blend,
+        1,
+    );
+    if wall_face {
+        body.extend(owned_triangle_on(
+            300,
+            700,
+            [[0.0, 0.0, 0.0], [0.0, 1.0, 0.0], [0.0, 0.0, 1.0]],
+            wall,
+            1,
+        ));
+    }
+    body.extend(blend_surface_carrier(blend, [floor, wall], spine, 0.1));
+    body.extend(plane_carrier(
+        floor,
+        [0.0, 0.0, 0.0],
+        [0.0, 0.0, 1.0],
+        [1.0, 0.0, 0.0],
+    ));
+    body.extend(swept_surface_carrier(wall, wall_profile, [0.0, 1.0, 0.0]));
+    body.extend(linear_nurbs_curve_carrier_through(
+        wall_profile,
+        200,
+        [0.0, 0.0, 0.0],
+        [0.0, 0.0, 1.0],
+    ));
+    body.extend(line_carrier(spine, [0.1, 0.0, 0.1], [0.0, 1.0, 0.0]));
+    body
+}
+
 /// A rolling-ball blend whose first support is a support pair.
 pub(crate) fn pair_blend_surface_carrier(
     attr: u16,
@@ -1460,14 +1516,27 @@ pub(crate) fn owned_triangle(base: u16, owner: u16, x: f64) -> Vec<u8> {
 }
 
 pub(crate) fn owned_triangle_with_kind(base: u16, owner: u16, x: f64, body_type: u8) -> Vec<u8> {
-    let mut b = Vec::new();
-    b.extend(plane_carrier(
+    let mut b = plane_carrier(base + 100, [x, 0.0, 0.0], [0.0, 0.0, 1.0], [1.0, 0.0, 0.0]);
+    b.extend(owned_triangle_on(
+        base,
+        owner,
+        [[x, 0.0, 0.0], [x + 1.0, 0.0, 0.0], [x, 1.0, 0.0]],
         base + 100,
-        [x, 0.0, 0.0],
-        [0.0, 0.0, 1.0],
-        [1.0, 0.0, 0.0],
+        body_type,
     ));
-    b.extend(bridge_owned(base + 10, base + 20, base + 100, owner));
+    b
+}
+
+/// One triangular face on the surface carrier `surface`, in a typed body of
+/// its own. The carrier is the caller's.
+pub(crate) fn owned_triangle_on(
+    base: u16,
+    owner: u16,
+    points: [[f64; 3]; 3],
+    surface: u16,
+    body_type: u8,
+) -> Vec<u8> {
+    let mut b = bridge_owned(base + 10, base + 20, surface, owner);
     b.extend(loop_head(base + 20, base + 30, base + 10));
     b.extend(coedge(
         base + 30,
@@ -1502,16 +1571,16 @@ pub(crate) fn owned_triangle_with_kind(base: u16, owner: u16, x: f64, body_type:
     b.extend(vertex_use(base + 50, base + 60));
     b.extend(vertex_use(base + 51, base + 61));
     b.extend(vertex_use(base + 52, base + 62));
-    b.extend(world_point(base + 60, [x, 0.0, 0.0]));
-    b.extend(world_point(base + 61, [x + 1.0, 0.0, 0.0]));
-    b.extend(world_point(base + 62, [x, 1.0, 0.0]));
+    b.extend(world_point(base + 60, points[0]));
+    b.extend(world_point(base + 61, points[1]));
+    b.extend(world_point(base + 62, points[2]));
     typed_single_face_ownership(
         &mut b,
         owner,
         base + 70,
         base + 80,
         base + 10,
-        base + 100,
+        surface,
         body_type,
     );
     b
