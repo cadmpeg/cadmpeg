@@ -144,7 +144,7 @@ fn partition_missing_loop() -> Vec<u8> {
 
 fn partition_missing_middle_fin() -> Vec<u8> {
     let mut partition = triangle_body();
-    let original = crate::test_support::parasolid::coedge(31, 20, 32, 51, 0, 41, false);
+    let original = crate::test_support::parasolid::coedge(31, 20, 30, 52, 0, 41, false);
     let at = partition
         .windows(original.len())
         .position(|window| window == original)
@@ -155,7 +155,7 @@ fn partition_missing_middle_fin() -> Vec<u8> {
 
 fn partition_missing_first_fin() -> Vec<u8> {
     let mut partition = triangle_body();
-    let original = crate::test_support::parasolid::coedge(30, 20, 31, 50, 0, 40, false);
+    let original = crate::test_support::parasolid::coedge(30, 20, 32, 51, 0, 40, false);
     let at = partition
         .windows(original.len())
         .position(|window| window == original)
@@ -166,7 +166,7 @@ fn partition_missing_first_fin() -> Vec<u8> {
 
 #[test]
 fn first_delta_fin_recovers_the_partition_face_head_loop() {
-    let fin = framed_topology_fin(30, [0, 20, 0, 31, 50, 0, 40, 0, 0], true, true, false);
+    let fin = framed_topology_fin(30, [0, 20, 0, 32, 51, 0, 40, 0, 0], true, true, false);
     let result = SldprtCodec
         .decode(
             &mut Cursor::new(sldprt_with_partition_and_deltas(
@@ -188,7 +188,7 @@ fn first_delta_fin_recovers_the_partition_face_head_loop() {
 
 #[test]
 fn conflicting_first_delta_fin_remains_referenced_on_both_decode_paths() {
-    let refs = [0, 20, 0, 31, 50, 0, 40, 0, 0];
+    let refs = [0, 20, 0, 32, 51, 0, 40, 0, 0];
     let first = framed_topology_fin(30, refs, true, false, false);
     let second = framed_topology_fin(30, refs, true, true, false);
     for metadata_fallback in [false, true] {
@@ -226,7 +226,7 @@ fn conflicting_first_delta_fin_remains_referenced_on_both_decode_paths() {
 
 #[test]
 fn missing_fin_closes_through_partition_loop_and_ring_context() {
-    let fin = framed_topology_fin(31, [0, 20, 0, 32, 51, 0, 41, 0, 0], true, true, false);
+    let fin = framed_topology_fin(31, [0, 20, 0, 30, 52, 0, 41, 0, 0], true, true, false);
     let result = SldprtCodec
         .decode(
             &mut Cursor::new(sldprt_with_partition_and_deltas(
@@ -248,7 +248,7 @@ fn missing_fin_closes_through_partition_loop_and_ring_context() {
 
 #[test]
 fn conflicting_fin_framing_keeps_one_loss_through_empty_and_metadata_paths() {
-    let refs = [0, 20, 0, 32, 51, 0, 41, 0, 0];
+    let refs = [0, 20, 0, 30, 52, 0, 41, 0, 0];
     let first = framed_topology_fin(31, refs, true, false, false);
     let second = framed_topology_fin(31, refs, true, true, false);
     for metadata_fallback in [false, true] {
@@ -289,7 +289,7 @@ fn conflicting_first_partition_fin_retains_loop_reference_for_loss() {
     let mut partition = triangle_body();
     partition.extend(framed_topology_fin(
         30,
-        [0, 20, 0, 31, 50, 0, 40, 0, 0],
+        [0, 20, 0, 32, 51, 0, 40, 0, 0],
         false,
         true,
         false,
@@ -338,7 +338,7 @@ fn unused_history_fin_conflict_has_no_topology_loss() {
 #[test]
 fn missing_loop_closes_against_partition_face_and_fin_before_history() {
     let mut deltas = framed_topology_loop(20, 811, [0, 30, 10, 0], true, false);
-    deltas.extend(tripled_coedge(30, 77, 31, 50, 40));
+    deltas.extend(tripled_coedge(30, 77, 32, 51, 40));
     let result = SldprtCodec
         .decode(
             &mut Cursor::new(sldprt_with_partition_and_deltas(

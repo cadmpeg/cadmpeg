@@ -100,6 +100,9 @@ pub(crate) enum SldprtLossCode {
     GeometryEdgeSupportCurveUntyped,
     /// Referenced POINT records have conflicting complete frames.
     GeometryPointRecordAmbiguous,
+    /// Compact curve records of one attribute disagree on orientation, so an
+    /// edge on that curve has no range.
+    GeometryCurveMarkerConflict,
     /// A derived pcurve parameter has multiple geometric candidates.
     GeometryPcurveAmbiguous,
     /// A NURBS surface solver exhausted its local work cap; the derived pcurve is skipped.
@@ -131,7 +134,7 @@ pub(crate) enum SldprtLossCode {
     /// reciprocal partner corroboration of both ring-order endpoints, or a
     /// mutual twin FIN contradicts the ring-order endpoint.
     TopologyFinPartnerUnresolved,
-    /// A FIN backward link names no reciprocal same-loop forward link, so
+    /// A FIN forward link names no reciprocal same-loop backward link, so
     /// its ring is withheld instead of walked on doubt.
     TopologyFinLinkUnresolved,
     /// Vertexless ring FINs fail strict reciprocal-circle single-loop
@@ -233,6 +236,7 @@ impl SldprtLossCode {
         Self::GeometryFaceSupportSurfaceUntyped,
         Self::GeometryEdgeSupportCurveUntyped,
         Self::GeometryPointRecordAmbiguous,
+        Self::GeometryCurveMarkerConflict,
         Self::GeometryPcurveAmbiguous,
         Self::GeometrySurfaceSolverWorkCapped,
         Self::GeometrySplineLanesUnpaired,
@@ -313,6 +317,7 @@ impl SldprtLossCode {
             Self::GeometryFaceSupportSurfaceUntyped => "geometry.face-support-surface-untyped",
             Self::GeometryEdgeSupportCurveUntyped => "geometry.edge-support-curve-untyped",
             Self::GeometryPointRecordAmbiguous => "geometry.point-record-ambiguous",
+            Self::GeometryCurveMarkerConflict => "geometry.curve-marker-conflict",
             Self::GeometryPcurveAmbiguous => "geometry.pcurve-ambiguous",
             Self::GeometrySurfaceSolverWorkCapped => "geometry.surface-solver-work-capped",
             Self::GeometrySplineLanesUnpaired => "geometry.spline-lanes-unpaired",
@@ -408,6 +413,7 @@ impl SldprtLossCode {
             | Self::GeometryFaceSupportSurfaceUntyped
             | Self::GeometryEdgeSupportCurveUntyped
             | Self::GeometryPointRecordAmbiguous
+            | Self::GeometryCurveMarkerConflict
             | Self::GeometryPcurveAmbiguous
             | Self::GeometrySurfaceSolverWorkCapped
             | Self::GeometrySplineLanesUnpaired
@@ -468,6 +474,7 @@ impl SldprtLossCode {
             Self::GeometryFaceSupportSurfaceUntyped
             | Self::GeometryEdgeSupportCurveUntyped
             | Self::GeometryPointRecordAmbiguous
+            | Self::GeometryCurveMarkerConflict
             | Self::GeometrySplineLanesUnpaired
             | Self::GeometryParasolidNotTransferred
             | Self::ContainerParasolidProbeCapped => LossTaxonomy::GeometryNotTransferred,
@@ -692,6 +699,7 @@ mod tests {
                 "geometry.face-support-surface-untyped",
                 "geometry.edge-support-curve-untyped",
                 "geometry.point-record-ambiguous",
+                "geometry.curve-marker-conflict",
                 "geometry.pcurve-ambiguous",
                 "geometry.surface-solver-work-capped",
                 "geometry.spline-lanes-unpaired",

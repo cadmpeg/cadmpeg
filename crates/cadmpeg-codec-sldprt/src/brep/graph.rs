@@ -483,7 +483,7 @@ pub(crate) struct Stats {
     pub(crate) withheld_fin_partners: usize,
     /// Vertexless ring edges withheld by the strict admission gate.
     pub(crate) withheld_ring_edges: usize,
-    /// Rings withheld because a FIN backward link is not reciprocal.
+    /// Rings withheld because a FIN forward link is not reciprocal.
     pub(crate) withheld_fin_links: usize,
     /// Canonical faces that no explicit body record claims.
     pub(crate) unclaimed_faces: usize,
@@ -496,6 +496,9 @@ pub(crate) struct Stats {
     pub(crate) unknown_curve_edges: usize,
     /// Pcurves withheld because geometric inverse selection was ambiguous.
     pub(crate) ambiguous_pcurve_parameters: usize,
+    /// Edges left without a range because their curve's records disagree on
+    /// orientation.
+    pub(crate) marker_conflict_edges: usize,
     /// NURBS edge carriers whose vertex range is off their bound surface.
     pub(crate) off_surface_nurbs_pcurves: usize,
     /// Coedges whose derived pcurve stopped at `SURFACE_SOLVER_LOCAL_WORK`.
@@ -654,11 +657,9 @@ struct WalkedFace {
     loops: Vec<(u16, Vec<u16>)>,
     unresolved_loop: Option<u16>,
     unresolved_fins: Vec<u16>,
-    withheld_backward_links: usize,
+    withheld_forward_links: usize,
 }
 
-/// Follow the sibling loop-head chain of a bridge and each loop's coedge ring,
-/// returning the ordered structure with cycles guarded.
 /// Resolve a face whose `refs[4]` carrier is a swept/spun construction to a
 /// solved NURBS patch. Returns `(geometry, record offset, annotation tag,
 /// derived exactness)`. A spun surface is exact for an exact profile; a swept
@@ -1005,13 +1006,16 @@ fn ensure_surface_support(
     result
 }
 
+/// Follow the sibling loop-head chain of a bridge and each loop's coedge ring,
+/// returning the ordered structure with cycles guarded. A ring is walked
+/// along each coedge's backward link and listed in traversal order.
 fn walk_face(bridge: &topology::Bridge, t: &topology::Tables) -> WalkedFace {
     let surface_attr = bridge.refs[4];
     let mut loops = Vec::new();
     let mut loop_ref = bridge.refs[2];
     let mut unresolved_loop = None;
     let mut unresolved_fins = Vec::new();
-    let mut withheld_backward_links = 0usize;
+    let mut withheld_forward_links = 0usize;
     let mut loop_guard = HashSet::new();
     while loop_ref != 0 {
         if !loop_guard.insert(loop_ref) {
@@ -1052,10 +1056,13 @@ fn walk_face(bridge: &topology::Bridge, t: &topology::Tables) -> WalkedFace {
                 break;
             }
         }
-        if ring_closed && ring_backward_reciprocal(&ring, loop_ref, t) {
+        if ring_closed && ring_forward_reciprocal(&ring, loop_ref, t) {
+            if let Some(rest) = ring.get_mut(1..) {
+                rest.reverse();
+            }
             loops.push((loop_ref, ring));
         } else if ring_closed {
-            withheld_backward_links += 1;
+            withheld_forward_links += 1;
         }
         loop_ref = lp.refs[3];
     }
@@ -1066,26 +1073,120 @@ fn walk_face(bridge: &topology::Bridge, t: &topology::Tables) -> WalkedFace {
         loops,
         unresolved_loop,
         unresolved_fins,
-        withheld_backward_links,
+        withheld_forward_links,
     }
 }
 
-/// Whether every walked FIN's backward link is reciprocal when present.
+/// The start point and parameter range of a closed edge whose vertex uses
+/// are sentinels: a circle from its reference direction through one turn.
+fn closed_edge_start(curve: Option<&IndexedCurve>) -> Option<(cadmpeg_ir::math::Point3, [f64; 2])> {
+    match &curve?.carrier().geometry {
+        CurveGeometry::Solved(SolvedCurveGeometry::Circle(circle_curve)) => {
+            let center = circle_curve.center().get();
+            let ref_direction = circle_curve.frame().reference().as_raw();
+            let radius = circle_curve.radius().get();
+            Some((
+                center.translated(*ref_direction, radius),
+                [0.0, std::f64::consts::TAU],
+            ))
+        }
+        _ => None,
+    }
+}
+
+/// The angle of `point` on a circle or ellipse carrier in `[0, 2π)`, when
+/// `point` lies within `allowance` of the carrier.
+fn carrier_angle(
+    geometry: &CurveGeometry,
+    point: cadmpeg_ir::math::Point3,
+    allowance: f64,
+) -> Option<f64> {
+    let (center, frame, major, minor) = match geometry {
+        CurveGeometry::Solved(SolvedCurveGeometry::Circle(circle)) => (
+            circle.center().get(),
+            circle.frame(),
+            circle.radius().get(),
+            circle.radius().get(),
+        ),
+        CurveGeometry::Solved(SolvedCurveGeometry::Ellipse(ellipse)) => (
+            ellipse.center().get(),
+            ellipse.frame(),
+            ellipse.major_radius().get(),
+            ellipse.minor_radius().get(),
+        ),
+        _ => return None,
+    };
+    let reference = *frame.reference().as_raw();
+    let binormal = *frame.binormal().as_raw();
+    let offset = point.vector_from(center);
+    let x = offset.dot(reference) / major;
+    let y = offset.dot(binormal) / minor;
+    let radius = x.hypot(y);
+    if radius.is_nan() || radius <= 0.0 {
+        return None;
+    }
+    let nearest = center
+        .translated(reference, major * x / radius)
+        .translated(binormal, minor * y / radius);
+    (point.distance(nearest) <= allowance).then(|| periodic_phase([y.atan2(x); 2])[0])
+}
+
+/// The range of a compact circle or ellipse edge from its vertex angles and
+/// marker (spec §7.2), and whether the marker reverses it. `allowances` bound
+/// how far each vertex may lie off the carrier.
+fn conic_edge_range(
+    geometry: &CurveGeometry,
+    marker_reversed: bool,
+    [start, end]: [cadmpeg_ir::math::Point3; 2],
+    allowances: [f64; 2],
+    closed: bool,
+) -> Option<([f64; 2], bool)> {
+    let tau = std::f64::consts::TAU;
+    let (start_angle, end_angle) = (
+        carrier_angle(geometry, start, allowances[0])?,
+        carrier_angle(geometry, end, allowances[1])?,
+    );
+    if closed {
+        return Some(([start_angle, start_angle + tau], marker_reversed));
+    }
+    if start.distance(end) <= LINEAR_RESOLUTION_MM {
+        return None;
+    }
+    Some(if marker_reversed {
+        (
+            [
+                end_angle,
+                end_angle + (start_angle - end_angle).rem_euclid(tau),
+            ],
+            true,
+        )
+    } else {
+        (
+            [
+                start_angle,
+                start_angle + (end_angle - start_angle).rem_euclid(tau),
+            ],
+            false,
+        )
+    })
+}
+
+/// Whether every walked FIN's forward link is reciprocal when present.
 ///
-/// A null backward link carries no claim. A present one must name a FIN of
-/// the same loop whose forward link returns. A contradiction drops the ring
+/// A null forward link carries no claim. A present one must name a FIN of
+/// the same loop whose backward link returns. A contradiction drops the ring
 /// on the existing unclosed-ring path.
-fn ring_backward_reciprocal(ring: &[u16], loop_ref: u16, t: &topology::Tables) -> bool {
+fn ring_forward_reciprocal(ring: &[u16], loop_ref: u16, t: &topology::Tables) -> bool {
     ring.iter().all(|ce_attr| {
-        let Some(backward) = t.coedges().get(ce_attr).map(|ce| ce.refs[2]) else {
+        let Some(forward) = t.coedges().get(ce_attr).map(|ce| ce.refs[2]) else {
             return false;
         };
-        if backward <= 1 {
+        if forward <= 1 {
             return true;
         }
         t.coedges()
-            .get(&backward)
-            .is_some_and(|prev| prev.refs[1] == loop_ref && prev.refs[3] == *ce_attr)
+            .get(&forward)
+            .is_some_and(|next| next.refs[1] == loop_ref && next.refs[3] == *ce_attr)
     })
 }
 
@@ -1093,11 +1194,26 @@ fn edge_parameter_range(
     ctx: &DecodeContext<'_>,
     carrier: &CurveCarrier,
     endpoints: Option<[cadmpeg_ir::math::Point3; 2]>,
+    vertex_tolerances: [Option<f64>; 2],
+    closed: bool,
 ) -> Result<Option<([f64; 2], bool)>, cadmpeg_core::CodecError> {
     const TOLERANCE_MM: f64 = 1.0e-7;
 
+    let allowances = |exact: f64| {
+        vertex_tolerances.map(|tolerance| {
+            tolerance.map_or(exact, |tolerance| looser_tolerance(exact, tolerance))
+        })
+    };
     let Some(range) = carrier.parameter_range else {
-        return Ok(None);
+        return Ok(endpoints.and_then(|endpoints| {
+            conic_edge_range(
+                &carrier.geometry,
+                carrier.runs_against_edges,
+                endpoints,
+                allowances(LINEAR_RESOLUTION_MM),
+                closed,
+            )
+        }));
     };
     let range = range.get();
     let range = match &carrier.geometry {
@@ -1131,15 +1247,22 @@ fn edge_parameter_range(
             .hypot(left.y - right.y)
             .hypot(left.z - right.z)
     };
-    if distance(first.get(), endpoints[0]).max(distance(second.get(), endpoints[1])) <= TOLERANCE_MM
-    {
-        Ok(Some((range, false)))
-    } else if distance(first.get(), endpoints[1]).max(distance(second.get(), endpoints[0]))
-        <= TOLERANCE_MM
-    {
-        Ok(Some((range, true)))
-    } else {
-        Ok(None)
+    let [start_allowance, end_allowance] = allowances(TOLERANCE_MM);
+    let forward = [
+        distance(first.get(), endpoints[0]),
+        distance(second.get(), endpoints[1]),
+    ];
+    let backward = [
+        distance(second.get(), endpoints[0]),
+        distance(first.get(), endpoints[1]),
+    ];
+    let fits = |[start, end]: [f64; 2]| start <= start_allowance && end <= end_allowance;
+    let worse = |[start, end]: [f64; 2]| start.max(end);
+    match (fits(forward), fits(backward)) {
+        (true, true) if worse(backward) < worse(forward) => Ok(Some((range, true))),
+        (true, _) => Ok(Some((range, false))),
+        (false, true) => Ok(Some((range, true))),
+        (false, false) => Ok(None),
     }
 }
 
@@ -1267,33 +1390,33 @@ fn canonical_coedge_attr(
     candidates.next().is_none().then_some(attr)
 }
 
-/// Resolve the edge end vertex-use for one canonical coedge.
+/// Resolve the edge start vertex-use for one canonical coedge.
 ///
-/// The ring order supplies the end: the next FIN's start. A mutual twin
-/// corroborates it: the twin's start names the same vertex, since the twin
+/// The ring order supplies the start: the previous FIN's end. A mutual twin
+/// corroborates it: the twin's end names the same vertex, since the twin
 /// runs the shared edge in the opposite direction. A mutual twin that names
 /// another vertex contradicts the ring order, so the edge is withheld
 /// (`None`). An absent, dangling, or non-mutual twin leaves the ring order
 /// authoritative.
-fn edge_end_vuse(
+fn edge_start_vuse(
     canonical: u16,
-    ring_end: u16,
+    ring_start: u16,
     coedges: &HashMap<u16, topology::Coedge>,
 ) -> Option<u16> {
     let twin = coedges.get(&canonical).map(|coedge| coedge.refs[5])?;
     if twin == canonical || twin <= 1 {
-        return Some(ring_end);
+        return Some(ring_start);
     }
     let twin_record = coedges.get(&twin);
     let Some(twin_record) = twin_record else {
-        return Some(ring_end);
+        return Some(ring_start);
     };
     if twin_record.refs[5] != canonical {
-        return Some(ring_end);
+        return Some(ring_start);
     }
-    let twin_start = twin_record.refs[4];
-    if twin_start == ring_end || (twin_start <= 1 && ring_end <= 1) {
-        Some(ring_end)
+    let twin_end = twin_record.refs[4];
+    if twin_end == ring_start || (twin_end <= 1 && ring_start <= 1) {
+        Some(ring_start)
     } else {
         None
     }
@@ -1322,8 +1445,8 @@ enum DummyRecovery {
 ///
 /// Admission needs a boundary dummy canonical whose reciprocal partner is
 /// walked and corroborates both endpoints in ring order: the dummy's
-/// non-null start vertex-use matches the partner ring's end, and the
-/// partner's own non-null start supplies the edge end. The dummy stays out
+/// non-null end vertex-use matches the partner ring's start, and the
+/// partner's own non-null end supplies the edge start. The dummy stays out
 /// of public face loops; only the edge endpoints are recovered. Any doubt
 /// withholds the edge.
 fn recover_dummy_partner_edge(
@@ -1348,16 +1471,16 @@ fn recover_dummy_partner_edge(
     if partner.refs[5] != canonical || partner.refs[6] != edge_attr {
         return DummyRecovery::Absent;
     }
-    let Some((_, _, ring_end)) = incidences
+    let Some((_, _, ring_start)) = incidences
         .iter()
         .find(|(coedge_attr, _, _)| *coedge_attr == partner_attr)
     else {
         return DummyRecovery::Absent;
     };
-    if fin.refs[4] <= 1 || partner.refs[4] <= 1 || fin.refs[4] != *ring_end {
+    if fin.refs[4] <= 1 || partner.refs[4] <= 1 || fin.refs[4] != *ring_start {
         return DummyRecovery::Withheld;
     }
-    DummyRecovery::Admitted(fin.refs[4], partner.refs[4], partner_attr)
+    DummyRecovery::Admitted(partner.refs[4], fin.refs[4], partner_attr)
 }
 
 /// Strict admission for one vertexless ring edge.
@@ -1956,11 +2079,11 @@ fn decode_graph(
         .flat_map(|face| face.unresolved_fins.iter().copied())
         .collect::<HashSet<_>>()
         .len();
-    out.stats.withheld_fin_links = faces.iter().map(|face| face.withheld_backward_links).sum();
+    out.stats.withheld_fin_links = faces.iter().map(|face| face.withheld_forward_links).sum();
 
-    // Edge attr -> [(coedge attr, start vuse, next coedge's start vuse)] from
-    // the ring walk. The ring order supplies a boundary edge's second endpoint;
-    // a reciprocal twin supplies it for a two-sided edge.
+    // Edge attr -> [(coedge attr, end vuse, previous coedge's end vuse)] from
+    // the ring walk. The ring order supplies a boundary edge's start; a
+    // reciprocal twin corroborates it for a two-sided edge.
     let mut edge_incidence: HashMap<u16, Vec<(u16, u16, u16)>> = HashMap::new();
     let mut unresolved_vertices = HashSet::new();
 
@@ -1971,18 +2094,22 @@ fn decode_graph(
                 let Some(ce) = t.coedges().get(&ce_attr) else {
                     continue;
                 };
-                let next_attr = ring[(i + 1) % k];
-                let start_vuse = ce.refs[4];
-                if t.vertex_is_unresolved(start_vuse) {
-                    unresolved_vertices.insert(start_vuse);
+                let previous_attr = ring[(i + k - 1) % k];
+                let end_vuse = ce.refs[4];
+                if t.vertex_is_unresolved(end_vuse) {
+                    unresolved_vertices.insert(end_vuse);
                 }
-                let next_vuse = t.coedges().get(&next_attr).map_or(0, |next| next.refs[4]);
+                let previous_vuse = t
+                    .coedges()
+                    .get(&previous_attr)
+                    .map_or(0, |previous| previous.refs[4]);
                 let edge_attr = ce.refs[6];
                 if edge_attr != 0 {
-                    edge_incidence
-                        .entry(edge_attr)
-                        .or_default()
-                        .push((ce_attr, start_vuse, next_vuse));
+                    edge_incidence.entry(edge_attr).or_default().push((
+                        ce_attr,
+                        end_vuse,
+                        previous_vuse,
+                    ));
                 }
             }
         }
@@ -2004,7 +2131,7 @@ fn decode_graph(
         let Some(canonical) = canonical else {
             continue;
         };
-        let Some((_, start_vuse, ring_end_vuse)) = incidences
+        let Some((_, end_vuse, ring_start_vuse)) = incidences
             .iter()
             .find(|(coedge_attr, _, _)| *coedge_attr == canonical)
         else {
@@ -2031,7 +2158,7 @@ fn decode_graph(
             }
             continue;
         };
-        let Some(end_vuse) = edge_end_vuse(canonical, *ring_end_vuse, t.coedges()) else {
+        let Some(start_vuse) = edge_start_vuse(canonical, *ring_start_vuse, t.coedges()) else {
             out.stats.withheld_fin_partners += 1;
             continue;
         };
@@ -2044,8 +2171,8 @@ fn decode_graph(
                 unresolved_points: &mut unresolved_points,
             },
             edge_attr,
-            *start_vuse,
-            end_vuse,
+            start_vuse,
+            *end_vuse,
             canonical,
         );
     }
@@ -2113,30 +2240,17 @@ fn decode_graph(
         let (start_v, end_v, curve_attr, fin_attr) = edge_ends[&e];
         let resolved_endpoints = kept_vertices.contains(&start_v) && kept_vertices.contains(&end_v);
         let vertexless = !resolved_endpoints && start_v <= 1 && end_v <= 1;
+        let closed_point = vertexless
+            .then(|| closed_edge_start(carriers.curve(curve_attr)))
+            .flatten();
         if vertexless && !admit_vertexless_ring_edge(e, fin_attr, &faces, t, carriers) {
             out.stats.withheld_ring_edges += 1;
             continue;
         }
-        let closed_circle_point = vertexless
-            .then(|| carriers.curve(curve_attr))
-            .flatten()
-            .and_then(|carrier| match &carrier.carrier().geometry {
-                CurveGeometry::Solved(SolvedCurveGeometry::Circle(circle_curve)) => {
-                    let center = circle_curve.center().get();
-                    let ref_direction = circle_curve.frame().reference().as_raw();
-                    let radius = circle_curve.radius().get();
-                    Some(cadmpeg_ir::math::Point3::new(
-                        center.x + ref_direction.x * radius,
-                        center.y + ref_direction.y * radius,
-                        center.z + ref_direction.z * radius,
-                    ))
-                }
-                _ => None,
-            });
-        if !resolved_endpoints && closed_circle_point.is_none() {
+        if !resolved_endpoints && closed_point.is_none() {
             continue;
         }
-        let (mut start_id, mut end_id) = if let Some(position) = closed_circle_point {
+        let (mut start_id, mut end_id) = if let Some((position, _)) = closed_point {
             let point_id = id_closed_point(e);
             let vertex_id = id_closed_vertex(e);
             annotations.note(
@@ -2183,13 +2297,26 @@ fn decode_graph(
                 edge_endpoint_positions.insert(e, [start, end]);
             }
         }
+        let vertex_tolerance = |vertex_use: u16| {
+            t.vertex_uses()
+                .get(&vertex_use)
+                .and_then(|vertex| vertex.tolerance_m)
+                .map(|tolerance| tolerance * LEN_TO_MM)
+        };
+        let marker_conflict = carriers.marker_conflict(curve_attr);
+        if marker_conflict {
+            out.stats.marker_conflict_edges += 1;
+        }
         let parameter_range = carriers
             .curve(curve_attr)
+            .filter(|_| !marker_conflict)
             .map(|carrier| {
                 edge_parameter_range(
                     ctx,
                     carrier.carrier(),
                     edge_endpoint_positions.get(&e).copied(),
+                    [start_v, end_v].map(vertex_tolerance),
+                    start_v == end_v,
                 )
             })
             .transpose()?
@@ -2203,12 +2330,9 @@ fn decode_graph(
             None => {
                 let carrier = carriers.curve(curve_attr).map(IndexedCurve::carrier);
                 let vertex_bound = |vertex_use: u16| {
-                    t.vertex_uses()
-                        .get(&vertex_use)
-                        .and_then(|record| record.tolerance_m)
-                        .map_or(LINEAR_RESOLUTION_MM, |tolerance| {
-                            looser_tolerance(tolerance * LEN_TO_MM, LINEAR_RESOLUTION_MM)
-                        })
+                    vertex_tolerance(vertex_use).map_or(LINEAR_RESOLUTION_MM, |tolerance| {
+                        looser_tolerance(tolerance, LINEAR_RESOLUTION_MM)
+                    })
                 };
                 let domain_reversed = carrier
                     .map(|carrier| {
@@ -2292,12 +2416,24 @@ fn decode_graph(
             }
             _ => None,
         };
+        let stored_range = carriers
+            .curve(curve_attr)
+            .is_some_and(|carrier| carrier.carrier().parameter_range.is_some());
+        if (parameter_range.is_some() && !stored_range)
+            || (closed_point.is_some() && !marker_conflict)
+        {
+            annotations
+                .derived(id_edge(e).as_str(), "carrier.param_range")
+                .map_err(cadmpeg_core::CodecError::malformed)?;
+        }
         admit_brep_entity(ctx)?;
         out.edges.push(Edge {
             id: id_edge(e),
             carrier: cadmpeg_ir::topology::EdgeCarrier::new(
                 curve,
-                parameter_range.map(|(range, _)| range),
+                parameter_range.map(|(range, _)| range).or(closed_point
+                    .filter(|_| !marker_conflict)
+                    .map(|(_, range)| range)),
             )
             .map_err(cadmpeg_core::CodecError::malformed)?,
             start: start_id,
@@ -2964,6 +3100,7 @@ fn decode_graph(
     }
     synthesize_cylinder_seams(ctx, &mut out, &mut annotations, &source_stream)?;
     synthesize_sphere_seams(ctx, &mut out, &mut annotations, &source_stream)?;
+    phase_full_turn_edge_ranges(&mut out, &mut annotations)?;
     derive_planar_pcurves(ctx, &mut out, &mut annotations, &source_stream)?;
     derive_cylindrical_pcurves(ctx, &mut out, &mut annotations, &source_stream)?;
     derive_revolved_circle_pcurves(ctx, &mut out, &mut annotations, &source_stream)?;
@@ -3224,6 +3361,78 @@ fn decode_graph(
     annotations.retain_exactness(keep);
     out.annotations = annotations.build();
     Ok(out)
+}
+
+/// Tolerance in radians for a circle or ellipse edge range that spans a full turn.
+const PERIODIC_FULL_TURN_TOLERANCE: f64 = 1.0e-9;
+
+/// Start each full-turn circle or ellipse edge range at its vertex (spec
+/// §7.2), once the seam passes have placed the derived vertex of a sentinel
+/// closed circle. A moved range is derived.
+fn phase_full_turn_edge_ranges(
+    out: &mut Brep,
+    annotations: &mut AnnotationBuilder,
+) -> Result<(), cadmpeg_core::CodecError> {
+    let tau = std::f64::consts::TAU;
+    let vertex_points = out
+        .vertices
+        .iter()
+        .map(|vertex| {
+            let bound = vertex.tolerance.map_or(LINEAR_RESOLUTION_MM, |tolerance| {
+                looser_tolerance(tolerance.get(), LINEAR_RESOLUTION_MM)
+            });
+            (&vertex.id, (&vertex.point, bound))
+        })
+        .collect::<HashMap<_, _>>();
+    let points = out
+        .points
+        .iter()
+        .map(|point| (&point.id, point.position().get()))
+        .collect::<HashMap<_, _>>();
+    let curves = out
+        .curves
+        .iter()
+        .map(|curve| (&curve.id, &curve.geometry))
+        .collect::<HashMap<_, _>>();
+    for edge in &mut out.edges {
+        if edge.start != edge.end {
+            continue;
+        }
+        let Some([start, end]) = edge.param_range().map(cadmpeg_ir::units::FiniteVector::get)
+        else {
+            continue;
+        };
+        if ((end - start).abs() - tau).abs() > PERIODIC_FULL_TURN_TOLERANCE {
+            continue;
+        }
+        let Some(curve_id) = edge.curve() else {
+            continue;
+        };
+        let (Some(geometry), Some(&(point, bound))) =
+            (curves.get(curve_id), vertex_points.get(&edge.start))
+        else {
+            continue;
+        };
+        let Some(phase) = points
+            .get(point)
+            .and_then(|point| carrier_angle(geometry, *point, bound))
+        else {
+            continue;
+        };
+        if (phase - start.min(end)).abs() <= PERIODIC_FULL_TURN_TOLERANCE {
+            continue;
+        }
+        if let Ok(carrier) = cadmpeg_ir::topology::EdgeCarrier::new(
+            Some(curve_id.clone()),
+            Some([phase, phase + tau]),
+        ) {
+            edge.carrier = carrier;
+            annotations
+                .derived(edge.id.as_str(), "carrier.param_range")
+                .map_err(cadmpeg_core::CodecError::malformed)?;
+        }
+    }
+    Ok(())
 }
 
 fn prune_rejected_topology(out: &mut Brep) {
@@ -4532,6 +4741,14 @@ fn derive_spherical_pcurves(
         .iter()
         .map(|curve| (&curve.id, curve))
         .collect::<std::collections::HashMap<_, _>>();
+    let vertex_points = out
+        .vertices
+        .iter()
+        .filter_map(|vertex| {
+            let point = out.points.iter().find(|point| point.id == vertex.point)?;
+            Some((&vertex.id, point.position().get()))
+        })
+        .collect::<std::collections::HashMap<_, _>>();
     let mut derived = Vec::new();
     for coedge in &out.coedges {
         if !coedge.pcurves.is_empty() {
@@ -4612,10 +4829,42 @@ fn derive_spherical_pcurves(
             };
             let longitude = equator.dot(tangent).atan2(equator.dot(u_reference));
             let phase = reference.dot(v_reference).atan2(reference.dot(equator));
-            (
-                cadmpeg_ir::math::Point2::new(longitude, phase),
-                cadmpeg_ir::math::Point2::new(0.0, 1.0),
-            )
+            // Shift the line by whole turns so the middle of the range is within
+            // half a turn of the equator. Beyond a pole, use the opposite
+            // meridian, where latitude falls.
+            let middle = edge
+                .param_range()
+                .map(|range| {
+                    let [start, end] = range.get();
+                    start.midpoint(end)
+                })
+                .or_else(|| {
+                    let circle = CurveGeometry::Solved(SolvedCurveGeometry::Circle(*circle_curve));
+                    let angle = |vertex: &VertexId| {
+                        carrier_angle(&circle, *vertex_points.get(vertex)?, f64::INFINITY)
+                    };
+                    let start = angle(&edge.start)?;
+                    let sweep = (angle(&edge.end)? - start).rem_euclid(std::f64::consts::TAU);
+                    Some(start + 0.5 * sweep)
+                });
+            let pi = std::f64::consts::PI;
+            let phase = middle.map_or(phase, |middle| {
+                let tau = std::f64::consts::TAU;
+                phase - ((phase + middle) / tau).round() * tau
+            });
+            match middle.map(|middle| phase + middle) {
+                Some(latitude) if latitude.abs() > std::f64::consts::FRAC_PI_2 => (
+                    cadmpeg_ir::math::Point2::new(
+                        longitude - pi.copysign(longitude),
+                        pi.copysign(latitude) - phase,
+                    ),
+                    cadmpeg_ir::math::Point2::new(0.0, -1.0),
+                ),
+                _ => (
+                    cadmpeg_ir::math::Point2::new(longitude, phase),
+                    cadmpeg_ir::math::Point2::new(0.0, 1.0),
+                ),
+            }
         } else {
             continue;
         };
@@ -7375,7 +7624,9 @@ mod tests {
             super::edge_parameter_range(
                 &cadmpeg_test_support::service_decode_context(),
                 &carrier,
-                Some(endpoints)
+                Some(endpoints),
+                [None; 2],
+                false,
             )
             .unwrap(),
             Some(([-14.0, 16.5], true))
@@ -7412,6 +7663,8 @@ mod tests {
             &cadmpeg_test_support::service_decode_context(),
             &carrier,
             Some(endpoints),
+            [None; 2],
+            false,
         )
         .unwrap()
         .expect("the arc's ends are its vertices");
@@ -8028,16 +8281,14 @@ mod tests {
         );
     }
 
-    /// The FIN slot proof: `refs[3]` carries the forward chain and `refs[4]`
-    /// the edge start. The triangle below carries both links on every FIN,
-    /// so the backward chain closes too, but only the forward walk runs the
-    /// face-on-left ring. The plane faces +z and the bridge is forward, so
-    /// the walked ring must run counter-clockwise with each edge starting at
-    /// its own vertex-use. A slot swap reverses the ring or shifts every
-    /// edge by one.
+    /// The FIN slot proof: `refs[2]` is the forward link and `refs[4]` the
+    /// coedge's end. Every FIN carries both links. The plane faces +z and the
+    /// bridge is forward, so the ring runs counter-clockwise and each edge
+    /// ends at its own vertex-use. A slot swap reverses the ring or shifts
+    /// every edge by one.
     fn doubly_linked_triangle_body() -> Vec<u8> {
         let mut body = crate::test_support::parasolid::triangle_body();
-        for (attr, backward) in [(30u16, 32u16), (31, 30), (32, 31)] {
+        for (attr, forward, backward) in [(30u16, 31u16, 32u16), (31, 32, 30), (32, 30, 31)] {
             let id = attr.to_be_bytes();
             let at = body
                 .windows(4)
@@ -8048,7 +8299,8 @@ mod tests {
                         && window[3] == id[1]
                 })
                 .expect("synthetic triangle FIN");
-            body[at + 8..at + 10].copy_from_slice(&backward.to_be_bytes());
+            body[at + 8..at + 10].copy_from_slice(&forward.to_be_bytes());
+            body[at + 10..at + 12].copy_from_slice(&backward.to_be_bytes());
         }
         body
     }
@@ -8113,14 +8365,14 @@ mod tests {
             offset: 0,
         };
         let boundary = HashMap::from([(10, record(10, [0, 0, 0, 0, 101, 10, 7, 0, 0]))]);
-        assert_eq!(super::edge_end_vuse(10, 102, &boundary), Some(102));
+        assert_eq!(super::edge_start_vuse(10, 102, &boundary), Some(102));
 
         let reciprocal = HashMap::from([
             (10, record(10, [0, 0, 0, 0, 101, 11, 7, 0, 0])),
             (11, record(11, [0, 0, 0, 0, 102, 10, 7, 0, 0])),
         ]);
-        assert_eq!(super::edge_end_vuse(10, 102, &reciprocal), Some(102));
-        assert_eq!(super::edge_end_vuse(10, 103, &reciprocal), None);
+        assert_eq!(super::edge_start_vuse(10, 102, &reciprocal), Some(102));
+        assert_eq!(super::edge_start_vuse(10, 103, &reciprocal), None);
     }
 
     #[test]

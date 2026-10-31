@@ -36,6 +36,9 @@ pub(super) struct CarrierIndex {
     offsets: HashMap<u16, offset::OffsetCarrier>,
     /// Zero-offset surface pairs referenced by rolling-ball constructions.
     blend_support_pairs: HashMap<u16, blend::SupportPairCarrier>,
+    /// Compact curves whose records share one attribute and geometry but not
+    /// one orientation marker (spec §7.2).
+    marker_conflicts: HashSet<u16>,
     /// Spline carriers whose pole and weight lanes do not pair, each a loss
     /// naming its attribute id and the pairing's own refusal.
     pub(super) lane_refusals: Vec<LossNote>,
@@ -45,6 +48,13 @@ impl CarrierIndex {
     pub(super) fn insert(&mut self, carrier: Carrier) {
         match carrier {
             Carrier::Curve(carrier) => {
+                if let Some(IndexedCurve::Exact(known)) = self.curves.get(&carrier.attr) {
+                    if known.geometry == carrier.geometry
+                        && known.runs_against_edges != carrier.runs_against_edges
+                    {
+                        self.marker_conflicts.insert(carrier.attr);
+                    }
+                }
                 self.curves
                     .insert(carrier.attr, IndexedCurve::Exact(carrier));
             }
@@ -56,6 +66,11 @@ impl CarrierIndex {
 
     pub(super) fn curve(&self, attr: u16) -> Option<&IndexedCurve> {
         self.curves.get(&attr)
+    }
+
+    /// Whether compact records of `attr` disagree on their marker (spec §7.2).
+    pub(super) fn marker_conflict(&self, attr: u16) -> bool {
+        self.marker_conflicts.contains(&attr)
     }
 
     pub(super) fn curve_attrs(&self) -> HashSet<u16> {
@@ -98,6 +113,11 @@ impl CarrierIndex {
     }
 
     pub(super) fn merge_missing(&mut self, other: Self) {
+        for attr in other.marker_conflicts {
+            if !self.curves.contains_key(&attr) {
+                self.marker_conflicts.insert(attr);
+            }
+        }
         merge_missing_map(&mut self.curves, other.curves);
         merge_missing_map(&mut self.surfaces, other.surfaces);
         merge_missing_map(&mut self.sweeps, other.sweeps);
@@ -178,5 +198,26 @@ mod tests {
         let pair = base.blend_support_pair(9).expect("support pair");
         assert_eq!(pair.supports, [11, 12]);
         assert_eq!(pair.intersection, 13);
+    }
+
+    #[test]
+    fn compact_records_of_one_curve_with_different_markers_conflict() {
+        use crate::test_support::parasolid::circle_carrier;
+
+        let circle = |radius: f64, marker: u8| {
+            let mut bytes = circle_carrier(70, [0.0; 3], [0.0, 0.0, 1.0], radius);
+            bytes[18] = marker;
+            bytes
+        };
+        let scan = |records: &[Vec<u8>]| {
+            super::scan_carriers(
+                &cadmpeg_test_support::service_decode_context(),
+                &records.concat(),
+            )
+            .expect("carrier scan")
+        };
+        assert!(scan(&[circle(1.0, 0x2b), circle(1.0, 0x2d)]).marker_conflict(70));
+        assert!(!scan(&[circle(1.0, 0x2b), circle(1.0, 0x2b)]).marker_conflict(70));
+        assert!(!scan(&[circle(1.0, 0x2b), circle(2.0, 0x2d)]).marker_conflict(70));
     }
 }

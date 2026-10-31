@@ -455,9 +455,9 @@ fn strict_rejects_topology_decode_resting_on_untyped_surface() {
     let mut body = Vec::new();
     body.extend(bridge(10, 20, 999));
     body.extend(loop_head(20, 30, 10));
-    body.extend(coedge(30, 20, 31, 50, 0, 40, false));
-    body.extend(coedge(31, 20, 32, 51, 0, 41, false));
-    body.extend(coedge(32, 20, 30, 52, 0, 42, false));
+    body.extend(coedge(30, 20, 32, 51, 0, 40, false));
+    body.extend(coedge(31, 20, 30, 52, 0, 41, false));
+    body.extend(coedge(32, 20, 31, 50, 0, 42, false));
     body.extend(edge_use(40, 0));
     body.extend(edge_use(41, 0));
     body.extend(edge_use(42, 0));
@@ -539,7 +539,7 @@ fn compact_carrier_shapes_decode() {
     }
     match parse_carrier(&circ, 0).unwrap() {
         Carrier::Curve(CurveCarrier {
-            runs_against_edges: false,
+            runs_against_edges: true,
             geometry: CurveGeometry::Solved(SolvedCurveGeometry::Circle(circle_curve)),
             ..
         }) => {

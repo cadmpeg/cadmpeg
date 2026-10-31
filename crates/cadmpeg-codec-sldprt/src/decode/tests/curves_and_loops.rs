@@ -36,9 +36,9 @@ fn edge_uses_decoded_line_curve() {
     body.extend(line_carrier(70, [0.0, 0.0, 0.0], [1.0, 0.0, 0.0]));
     body.extend(bridge(10, 20, 100));
     body.extend(loop_head(20, 30, 10));
-    body.extend(coedge(30, 20, 31, 50, 0, 40, false));
-    body.extend(coedge(31, 20, 32, 51, 0, 41, false));
-    body.extend(coedge(32, 20, 30, 52, 0, 42, false));
+    body.extend(coedge(30, 20, 32, 51, 0, 40, false));
+    body.extend(coedge(31, 20, 30, 52, 0, 41, false));
+    body.extend(coedge(32, 20, 31, 50, 0, 42, false));
     body.extend(edge_use(40, 70)); // curve = line carrier 70
     body.extend(edge_use(41, 0));
     body.extend(edge_use(42, 0));
@@ -225,9 +225,9 @@ fn decode_removes_edges_and_vertices_from_a_rejected_loop() {
     ));
     body.extend(bridge(110, 120, 200));
     body.extend(loop_head(120, 130, 110));
-    body.extend(coedge(130, 120, 131, 150, 0, 140, false));
-    body.extend(coedge(131, 120, 132, 151, 0, 141, false));
-    body.extend(coedge(132, 120, 130, 152, 0, 142, false));
+    body.extend(coedge(130, 120, 132, 151, 0, 140, false));
+    body.extend(coedge(131, 120, 130, 152, 0, 141, false));
+    body.extend(coedge(132, 120, 131, 150, 0, 142, false));
     body.extend(edge_use(140, 0));
     body.extend(edge_use(141, 0));
     body.extend(edge_use(142, 0));
@@ -282,12 +282,12 @@ fn patch_edge_use_canonical(body: &mut [u8], attr: u16, canonical: u16) {
 }
 
 /// A boundary dummy FIN: loop and sibling links are null sentinels, the
-/// start vertex-use names the sheet edge start, and `other` names the
-/// walked reciprocal partner.
-fn boundary_dummy_fin(attr: u16, start_vuse: u16, partner: u16, edge: u16) -> Vec<u8> {
+/// end vertex-use names the sheet edge end, and `other` names the walked
+/// reciprocal partner.
+fn boundary_dummy_fin(attr: u16, end_vuse: u16, partner: u16, edge: u16) -> Vec<u8> {
     framed_topology_fin(
         attr,
-        [0, 0, 0, 0, start_vuse, partner, edge, 0, 0],
+        [0, 0, 0, 0, end_vuse, partner, edge, 0, 0],
         false,
         false,
         false,
@@ -299,7 +299,7 @@ fn dummy_partner_recovers_sheet_boundary_edge() {
     let mut body = triangle_body();
     patch_fin_ref(&mut body, 30, 5, 33);
     patch_edge_use_canonical(&mut body, 40, 33);
-    body.extend(boundary_dummy_fin(33, 51, 30, 40));
+    body.extend(boundary_dummy_fin(33, 50, 30, 40));
     let result = SldprtCodec
         .decode(
             &mut Cursor::new(sldprt_with_body(&body)),
@@ -326,7 +326,7 @@ fn dummy_partner_mismatch_withholds_the_edge() {
     let mut body = triangle_body();
     patch_fin_ref(&mut body, 30, 5, 33);
     patch_edge_use_canonical(&mut body, 40, 33);
-    body.extend(boundary_dummy_fin(33, 50, 30, 40));
+    body.extend(boundary_dummy_fin(33, 51, 30, 40));
     let result = SldprtCodec
         .decode(
             &mut Cursor::new(sldprt_with_body(&body)),
@@ -372,9 +372,9 @@ fn dummy_partner_null_nose_withholds_the_edge() {
 }
 
 #[test]
-fn nonreciprocal_backward_link_withholds_the_ring() {
+fn nonreciprocal_forward_link_withholds_the_ring() {
     let mut body = triangle_body();
-    patch_fin_ref(&mut body, 30, 2, 31);
+    patch_fin_ref(&mut body, 30, 2, 32);
     let result = SldprtCodec
         .decode(
             &mut Cursor::new(sldprt_with_body(&body)),

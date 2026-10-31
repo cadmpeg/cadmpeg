@@ -27,7 +27,7 @@
             }
           ],
           "radial_next": "sldprt:brep:coedge#30",
-          "sense": "forward"
+          "sense": "reversed"
         },
         {
           "edge": "sldprt:brep:edge#41",
@@ -39,7 +39,7 @@
             }
           ],
           "radial_next": "sldprt:brep:coedge#31",
-          "sense": "forward"
+          "sense": "reversed"
         },
         {
           "edge": "sldprt:brep:edge#seam:10",
@@ -145,7 +145,11 @@
       "edges": [
         {
           "carrier": {
-            "curve": "sldprt:brep:curve#70"
+            "curve": "sldprt:brep:curve#70",
+            "param_range": [
+              3.141592653589793,
+              9.42477796076938
+            ]
           },
           "end": "sldprt:brep:vertex#50",
           "id": "sldprt:brep:edge#40",
@@ -153,7 +157,11 @@
         },
         {
           "carrier": {
-            "curve": "sldprt:brep:curve#71"
+            "curve": "sldprt:brep:curve#71",
+            "param_range": [
+              3.141592653589793,
+              9.42477796076938
+            ]
           },
           "end": "sldprt:brep:vertex#51",
           "id": "sldprt:brep:edge#41",
@@ -532,6 +540,18 @@
         "sldprt:brep:curve#seam:10": {
           "entity": "derived",
           "scope": "entity"
+        },
+        "sldprt:brep:edge#40": {
+          "fields": {
+            "carrier.param_range": "derived"
+          },
+          "scope": "fields"
+        },
+        "sldprt:brep:edge#41": {
+          "fields": {
+            "carrier.param_range": "derived"
+          },
+          "scope": "fields"
         },
         "sldprt:brep:edge#seam:10": {
           "entity": "derived",
