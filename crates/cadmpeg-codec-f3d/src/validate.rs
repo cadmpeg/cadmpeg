@@ -4966,13 +4966,18 @@ fn validate_construction_operand_groups(ctx: &Ctx, findings: &mut Vec<Finding>) 
                     ) && group.extrude_role().is_none()
                 }
                 Some(design::DesignFeatureFamily::Revolve) => {
-                    matches!(
+                    (matches!(
                         group.role(),
                         DesignOperandRole::BODIES_A
                             | DesignOperandRole::BODIES_B
                             | DesignOperandRole::ROLE_0X21
                             | DesignOperandRole::PROFILE
-                    ) && group.extrude_role().is_none()
+                    ) || (group.role() == DesignOperandRole::ROLE_0X5
+                        && matches!(
+                            scope.payload(),
+                            records::feature::scope::DesignScopePayload::Revolve(None)
+                        )))
+                        && group.extrude_role().is_none()
                 }
                 Some(design::DesignFeatureFamily::Shell) => {
                     matches!(

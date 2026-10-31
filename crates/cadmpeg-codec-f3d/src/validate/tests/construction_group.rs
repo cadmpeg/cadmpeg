@@ -314,3 +314,69 @@ fn thread_face_group_does_not_require_a_specialized_thread_payload() {
         assert_eq!(findings.len(), 1);
     });
 }
+
+#[test]
+fn revolve_target_group_requires_a_scope_without_an_angle_construction() {
+    use crate::records::{
+        feature::{
+            extrude::DesignExtrudeOperation,
+            path_features::{DesignPathFeatureConstruction, DesignRevolveConstruction},
+            scope::{DesignFeatureKind, DesignParameterScope},
+        },
+        identity::ReferenceRun,
+        topology::{
+            construction::DesignConstructionOperandRole, extrude_selection::DesignOperandRole,
+        },
+    };
+    let scope = |angle: bool| {
+        let mut scope = DesignParameterScope::empty(
+            "f3d:Design/BulkStream.dat:design-parameter-scope#10",
+            DesignFeatureKind::Revolve,
+            10,
+        );
+        scope
+            .try_edit(|draft| {
+                if angle {
+                    draft.payload =
+                        DesignPathFeatureConstruction::Revolve(DesignRevolveConstruction {
+                            operation: DesignExtrudeOperation::NewBody,
+                            operation_offset: 0,
+                            angle: cadmpeg_ir::scalar::PositiveAngle::new(1.0).unwrap(),
+                            angle_record_index: 300,
+                            angle_offset: 0,
+                            second_side: None,
+                            opposite_angle: None,
+                        })
+                        .into();
+                }
+                draft.reference_members = ReferenceRun::unlocated(vec![100, 101]);
+                draft.layout_fixture_references();
+                draft.paired_byte_offset = draft.paired_byte_offset.max(draft.kind_offset + 96);
+                draft.frame_length = draft.paired_byte_offset - draft.byte_offset;
+                draft.layout_fixture_tail();
+            })
+            .unwrap();
+        scope
+    };
+    crate::test_support::with_decode_context(|decode| {
+        let ir = cadmpeg_ir::CadIr::empty();
+        for (angle, role, finding_count) in [
+            (false, DesignOperandRole::ROLE_0X5, 0),
+            (true, DesignOperandRole::ROLE_0X5, 1),
+            (false, DesignOperandRole::ROLE_0X10, 1),
+        ] {
+            let mut native = native(true, false);
+            native.design_parameter_scopes = vec![scope(angle)];
+            native.design_construction_operand_groups[0].operand_role =
+                DesignConstructionOperandRole::Other(role);
+            let ctx = super::super::Ctx::new(&ir, &native, decode);
+            let mut findings = Vec::new();
+            super::super::validate_construction_operand_groups(&ctx, &mut findings);
+            assert_eq!(
+                findings.len(),
+                finding_count,
+                "{angle} {role:?}: {findings:?}"
+            );
+        }
+    });
+}
