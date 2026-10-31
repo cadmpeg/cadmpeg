@@ -16,5 +16,6 @@ mod typed_profile;
 mod work_point;
 
 mod body_recipes;
+mod body_target_groups;
 
 mod construction_paths;

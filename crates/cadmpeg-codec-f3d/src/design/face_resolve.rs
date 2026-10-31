@@ -45,7 +45,13 @@ pub(crate) fn extrude_omits_zero_side_one_offset(
             && scope.frame_length() == 476)
             || (scope.class_tag.as_str() == "375"
                 && scope.paired_class_tag.as_str() == "260"
-                && matches!(scope.frame_length(), 477 | 481)))
+                && matches!(scope.frame_length(), 477 | 481))
+            || (scope.class_tag.as_str() == "335"
+                && scope.paired_class_tag.as_str() == "266"
+                && scope.frame_length() == 513)
+            || (scope.class_tag.as_str() == "404"
+                && scope.paired_class_tag.as_str() == "262"
+                && scope.frame_length() == 535))
         && matches!(
             prologue,
             DesignExtrudePrologue::ReferenceAware {
