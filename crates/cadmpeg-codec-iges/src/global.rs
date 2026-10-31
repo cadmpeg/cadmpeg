@@ -242,6 +242,7 @@ pub(crate) struct ResolvedGlobal {
     length_factor_mm: Option<PositiveReal>,
     line_weight_scale: Option<LineWeightScale>,
     declaration: VersionDeclaration,
+    source_ended: bool,
 }
 
 /// Length-valued Global view. It exists only when the millimetre factor resolved.
@@ -751,6 +752,46 @@ fn parse_raw(scan: &CardScan) -> Result<RawGlobal, CodecError> {
 /// Recover the Global field boundaries, then resolve every field once.
 pub(crate) fn parse(scan: &CardScan) -> Result<(ResolvedGlobal, Vec<LossNote>), CodecError> {
     Ok(resolve(parse_raw(scan)?))
+}
+
+/// Resolve the Global record when its record delimiter was read.
+pub(crate) fn parse_if_complete(
+    scan: &CardScan,
+) -> Result<(ResolvedGlobal, Vec<LossNote>), CodecError> {
+    let raw = parse_raw(scan)?;
+    if raw.unreadable_suffix.is_some() {
+        return Err(malformed("record delimiter is missing"));
+    }
+    Ok(resolve(raw))
+}
+
+/// Global facts for a file that ends before a complete Global record.
+///
+/// The file states no version, model scale, or length unit. The comma and
+/// semicolon stay inside the resolver and are not a published declaration.
+pub(crate) fn source_ended_before_record() -> ResolvedGlobal {
+    ResolvedGlobal {
+        parameter_delimiter: b',',
+        record_delimiter: b';',
+        sender_product: None,
+        receiver_product: None,
+        native_file_name: None,
+        units_name: None,
+        numeric: NumericDeclarations {
+            integer_bits: None,
+            single_magnitude: None,
+            double_magnitude: Supplied::Absent,
+            single_significance: None,
+            double_significance: Supplied::Absent,
+        },
+        minimum_resolution: NonNegativeReal::ZERO,
+        length_factor_mm: None,
+        line_weight_scale: None,
+        declaration: VersionDeclaration::Unreadable(
+            "file ends before a complete Global record".to_owned(),
+        ),
+        source_ended: true,
+    }
 }
 
 fn date_value_is_valid(bytes: &[u8], accepts_four_digit_date: bool) -> bool {
@@ -1476,6 +1517,7 @@ fn resolve(raw: RawGlobal) -> (ResolvedGlobal, Vec<LossNote>) {
         length_factor_mm,
         line_weight_scale,
         declaration,
+        source_ended: false,
     };
     (resolved, resolution.losses)
 }
@@ -1550,6 +1592,10 @@ impl ResolvedGlobal {
         self.declaration.recovery()
     }
 
+    pub(crate) const fn source_ended(&self) -> bool {
+        self.source_ended
+    }
+
     pub(crate) fn version_name(&self) -> &'static str {
         self.declaration.effective_version().name()
     }
@@ -1596,6 +1642,9 @@ impl ResolvedGlobal {
     /// that case, retain the declared flag and label the effective version as
     /// recovery rather than presenting it as the document's verified version.
     pub(crate) fn summary_notes(&self) -> Vec<String> {
+        if self.source_ended {
+            return vec!["iges_version=unverified".to_owned()];
+        }
         let mut notes = Vec::new();
         notes.push(format!(
             "parameter_delimiter={}",
