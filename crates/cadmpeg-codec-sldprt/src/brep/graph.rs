@@ -2240,8 +2240,15 @@ pub(crate) fn decode_bodies(
                 &tables,
                 &owner_attrs,
             )
-        } else {
+        } else if crate::parasolid::is_body_stream(header) {
             topology::scan_with_owner_attrs(body, &curve_attrs, &typed_face_offsets, &owner_attrs)
+        } else {
+            topology::scan_plain_with_owner_attrs(
+                body,
+                &curve_attrs,
+                &typed_face_offsets,
+                &owner_attrs,
+            )
         };
         let mut scanned_facts = entity::scan_metadata(body, is_deltas);
         for color in &mut scanned_facts.face_colors {

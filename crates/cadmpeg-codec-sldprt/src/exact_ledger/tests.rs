@@ -236,3 +236,21 @@ fn decode_with_exact_read_ledger_matches_plain_decode() {
         assert!(!ledger.spans.is_empty());
     }
 }
+
+#[test]
+fn a_plain_stream_face_framed_on_a_stored_tolerance_has_a_span() {
+    let mut body = syn::triangle_body();
+    let sentinel = [0xc2, 0xbc, 0x92, 0x8f, 0x99, 0x6e, 0x00, 0x00];
+    let at = (0..body.len() - 18)
+        .find(|&at| body[at..at + 2] == [0x00, 0x0e] && body[at + 10..at + 18] == sentinel)
+        .unwrap();
+    body[at + 10..at + 18].copy_from_slice(&1.0e-8f64.to_be_bytes());
+
+    let plain = ExactReadLedger::collect_plain("", &body);
+    assert_ledger_sound(&body, &plain);
+    assert!(plain
+        .spans
+        .iter()
+        .any(|span| span.tag == 0x0e && span.offset == at));
+    assert!(!collect(&body).spans.iter().any(|span| span.tag == 0x0e));
+}

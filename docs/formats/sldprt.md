@@ -2179,6 +2179,9 @@ A plain stream frames its records on the null-real sentinel, on `0.0`, or on a v
 
 Partition and deltas streams frame records only on the sentinel.
 
+In every stream, a FACE or EDGE header frames only on a tolerance slot that holds the sentinel,
+`0.0`, or a value in that range.
+
 ---
 
 ## 4. Typed topology records

@@ -63,8 +63,18 @@ impl ExactReadLedger {
     /// body. The body is read-only input: collection admits the same records
     /// the decoder admits and changes no decode state.
     pub fn collect(stream: &str, body: &[u8]) -> Self {
+        Self::collect_stream(stream, body, false)
+    }
+
+    /// Collect the exact-read spans of one decompressed plain stream body
+    /// (spec §3.3), as [`Self::collect`] does for a partition or deltas body.
+    pub fn collect_plain(stream: &str, body: &[u8]) -> Self {
+        Self::collect_stream(stream, body, true)
+    }
+
+    fn collect_stream(stream: &str, body: &[u8], plain: bool) -> Self {
         let mut spans = Vec::new();
-        for raw in crate::brep::read_ledger::collect(body) {
+        for raw in crate::brep::read_ledger::collect(body, plain) {
             let Some(end) = raw.offset.checked_add(raw.length) else {
                 continue;
             };
