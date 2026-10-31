@@ -4,6 +4,7 @@
 use super::record_finding;
 use crate::document::CadIr;
 use crate::index::identities::BorrowedIdentities;
+use crate::math::portable::Portable;
 use crate::report::check::{Check, Finding};
 use crate::sketches::{
     SketchConstraintDefinitionInput as Constraint, SketchDistancePair, SketchEntityKindRestriction,
@@ -58,13 +59,16 @@ fn spatial_oriented_endpoints(
                 crate::math::Point3::new(
                     center.x
                         + radius.get()
-                            * (reference_direction.x * angle.cos() + transverse.x * angle.sin()),
+                            * (reference_direction.x * angle.portable_cos()
+                                + transverse.x * angle.portable_sin()),
                     center.y
                         + radius.get()
-                            * (reference_direction.y * angle.cos() + transverse.y * angle.sin()),
+                            * (reference_direction.y * angle.portable_cos()
+                                + transverse.y * angle.portable_sin()),
                     center.z
                         + radius.get()
-                            * (reference_direction.z * angle.cos() + transverse.z * angle.sin()),
+                            * (reference_direction.z * angle.portable_cos()
+                                + transverse.z * angle.portable_sin()),
                 )
             };
             (at(start_angle.get()), at(end_angle.get()))
@@ -287,8 +291,8 @@ fn sketch_curve_offset_matches(
     let source_dv = source_end.v - source_start.v;
     let result_du = result_end.u - result_start.u;
     let result_dv = result_end.v - result_start.v;
-    let source_length = source_du.hypot(source_dv);
-    let result_length = result_du.hypot(result_dv);
+    let source_length = source_du.portable_hypot(source_dv);
+    let result_length = result_du.portable_hypot(result_dv);
     if source_length <= EPS_SKETCHES_SKETCH_CURVE_OFFSET_MATCHES_E12
         || result_length <= EPS_SKETCHES_SKETCH_CURVE_OFFSET_MATCHES_E12
     {
@@ -385,7 +389,7 @@ fn spatial_line_length(geometry: &SpatialSketchGeometry) -> Option<f64> {
     let SpatialSketchGeometryDefinition::Line { start, end } = geometry.definition() else {
         return None;
     };
-    Some((end.x - start.x).hypot((end.y - start.y).hypot(end.z - start.z)))
+    Some((end.x - start.x).portable_hypot((end.y - start.y).portable_hypot(end.z - start.z)))
 }
 
 fn spatial_point_line_distance(
@@ -579,8 +583,8 @@ pub(super) fn check_sketches(
                     let endpoints = left_endpoints.zip(right_endpoints);
                     if endpoints.is_some_and(|(left, right)| {
                         (left.1.x - right.0.x)
-                            .hypot(left.1.y - right.0.y)
-                            .hypot(left.1.z - right.0.z)
+                            .portable_hypot(left.1.y - right.0.y)
+                            .portable_hypot(left.1.z - right.0.z)
                             > ir.tolerances.linear.get()
                     }) {
                         record_finding(
@@ -1311,7 +1315,7 @@ pub(super) fn check_sketches(
                 });
                 let angle_matches = angle.as_ref().is_none_or(|angle| {
                     measured_points.as_ref().is_none_or(|(first, second)| {
-                        let measured = (second.v - first.v).atan2(second.u - first.u);
+                        let measured = (second.v - first.v).portable_atan2(second.u - first.u);
                         let difference = (angle.get() - measured).rem_euclid(std::f64::consts::TAU);
                         difference.min(std::f64::consts::TAU - difference) <= EPS_POLAR_ANGLE
                     })
@@ -1342,7 +1346,7 @@ pub(super) fn check_sketches(
                             .map(|geometry| geometry.definition())
                         {
                             Some(SketchGeometryDefinition::Line { start, end }) => {
-                                Some((end.u - start.u).hypot(end.v - start.v))
+                                Some((end.u - start.u).portable_hypot(end.v - start.v))
                             }
                             _ => None,
                         }
@@ -1677,7 +1681,7 @@ fn constraint_entity_kind_refusal(
 }
 
 fn distance2(left: crate::math::Point2, right: crate::math::Point2) -> f64 {
-    (left.u - right.u).hypot(left.v - right.v)
+    (left.u - right.u).portable_hypot(left.v - right.v)
 }
 
 struct PlanarParallelLines {
@@ -1714,8 +1718,8 @@ fn planar_parallel_lines(
         crate::math::Point2::new(first_end.u - first_start.u, first_end.v - first_start.v);
     let second_direction =
         crate::math::Point2::new(second_end.u - second_start.u, second_end.v - second_start.v);
-    let first_length = first_direction.u.hypot(first_direction.v);
-    let second_length = second_direction.u.hypot(second_direction.v);
+    let first_length = first_direction.u.portable_hypot(first_direction.v);
+    let second_length = second_direction.u.portable_hypot(second_direction.v);
     if first_length <= EPS_SKETCHES_PLANAR_PARALLEL_LINE_DISTANCE_E12
         || second_length <= EPS_SKETCHES_PLANAR_PARALLEL_LINE_DISTANCE_E12
     {
@@ -1842,8 +1846,8 @@ fn oriented_endpoints(
 
 fn circular_point(center: crate::math::Point2, radius: f64, angle: f64) -> crate::math::Point2 {
     crate::math::Point2::new(
-        center.u + radius * angle.cos(),
-        center.v + radius * angle.sin(),
+        center.u + radius * angle.portable_cos(),
+        center.v + radius * angle.portable_sin(),
     )
 }
 
@@ -1855,8 +1859,11 @@ fn ellipse_point(
     parameter: f64,
 ) -> crate::math::Point2 {
     crate::math::Point2::new(
-        center.u + angle.cos() * major * parameter.cos() - angle.sin() * minor * parameter.sin(),
-        center.v + angle.sin() * major * parameter.cos() + angle.cos() * minor * parameter.sin(),
+        center.u + angle.portable_cos() * major * parameter.portable_cos()
+            - angle.portable_sin() * minor * parameter.portable_sin(),
+        center.v
+            + angle.portable_sin() * major * parameter.portable_cos()
+            + angle.portable_cos() * minor * parameter.portable_sin(),
     )
 }
 

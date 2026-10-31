@@ -11,6 +11,7 @@ use super::{
     AnalyticCurve, AnalyticPcurve, AnalyticSurface, Brep, Catalog, CurveKind, Form,
     NurbsCurveRecord, NurbsSurfaceRecord, PcurveKind, Reference, SurfaceKind,
 };
+use cadmpeg_ir::math::portable::Portable;
 
 /// The largest angle one rational quadratic arc segment spans.
 const MAX_ARC_SEGMENT: f64 = std::f64::consts::FRAC_PI_2;
@@ -91,8 +92,8 @@ impl ParamMap {
                     return t;
                 }
                 let half = (end - start) / 2.0;
-                let tau = ((t - start) / 2.0).tan();
-                let local = tau / (half.sin() + tau * (1.0 - half.cos()));
+                let tau = ((t - start) / 2.0).portable_tan();
+                let local = tau / (half.portable_sin() + tau * (1.0 - half.portable_cos()));
                 within(start + (end - start) * local, start, end, t)
             }
             Self::Hyperbolic { start, end } => {
@@ -100,8 +101,8 @@ impl ParamMap {
                     return t;
                 }
                 let half = (end - start) / 2.0;
-                let tau = ((t - start) / 2.0).tanh();
-                let local = tau / (half.sinh() - tau * (half.cosh() - 1.0));
+                let tau = ((t - start) / 2.0).portable_tanh();
+                let local = tau / (half.portable_sinh() - tau * (half.portable_cosh() - 1.0));
                 within(start + (end - start) * local, *start, *end, t)
             }
         }
@@ -163,15 +164,16 @@ fn elliptic_arc<const N: usize>(
     let breaks = arc_knots(start, end);
     let at = |theta: f64, factor: f64| -> [f64; N] {
         std::array::from_fn(|axis| {
-            center[axis] + factor * (theta.cos() * ex[axis] + theta.sin() * ey[axis])
+            center[axis]
+                + factor * (theta.portable_cos() * ex[axis] + theta.portable_sin() * ey[axis])
         })
     };
     let mut points = vec![at(start, 1.0)];
     let mut weights = vec![1.0];
     for pair in breaks.windows(2) {
         let half = (pair[1] - pair[0]) / 2.0;
-        points.push(at(pair[0] + half, 1.0 / half.cos()));
-        weights.push(half.cos());
+        points.push(at(pair[0] + half, 1.0 / half.portable_cos()));
+        weights.push(half.portable_cos());
         points.push(at(pair[1], 1.0));
         weights.push(1.0);
     }
@@ -203,7 +205,10 @@ fn hyperbolic_arc(
     let at = |t: f64, factor: f64| {
         add(
             center,
-            scaled(add(scaled(ex, t.cosh()), scaled(ey, t.sinh())), factor),
+            scaled(
+                add(scaled(ex, t.portable_cosh()), scaled(ey, t.portable_sinh())),
+                factor,
+            ),
         )
     };
     let half = (end - start) / 2.0;
@@ -212,10 +217,10 @@ fn hyperbolic_arc(
             order: 3,
             points: vec![
                 at(start, 1.0),
-                at(start + half, 1.0 / half.cosh()),
+                at(start + half, 1.0 / half.portable_cosh()),
                 at(end, 1.0),
             ],
-            weights: vec![1.0, half.cosh(), 1.0],
+            weights: vec![1.0, half.portable_cosh(), 1.0],
             knots: vec![start, start, start, end, end, end],
             form: Form::Open,
         },
@@ -546,7 +551,7 @@ fn revolved(
     let mut angles = vec![(start, 1.0)];
     for pair in breaks.windows(2) {
         let half = (pair[1] - pair[0]) / 2.0;
-        angles.push((pair[0] + half, half.cos()));
+        angles.push((pair[0] + half, half.portable_cos()));
         angles.push((pair[1], 1.0));
     }
     let mut points = Vec::new();
@@ -558,7 +563,10 @@ fn revolved(
             let height = dot(offset, axis);
             let radial = sub(offset, scaled(axis, height));
             let normal = cross(axis, radial);
-            let rotated = add(scaled(radial, angle.cos()), scaled(normal, angle.sin()));
+            let rotated = add(
+                scaled(radial, angle.portable_cos()),
+                scaled(normal, angle.portable_sin()),
+            );
             points.push(add(
                 add(origin, scaled(axis, height)),
                 scaled(rotated, factor),
@@ -768,7 +776,7 @@ fn analytic_surface(
         SurfaceKind::Cylinder | SurfaceKind::Cone => {
             let radius = param(0)?;
             let slope = if surface.kind == SurfaceKind::Cone {
-                param(1)?.tan()
+                param(1)?.portable_tan()
             } else {
                 0.0
             };
@@ -925,8 +933,8 @@ fn trace_span(
         let fitted = bezier(&points, fraction);
         let tangent = bezier_tangent(&points, fraction);
         let offset = [exact[0] - fitted[0], exact[1] - fitted[1]];
-        let speed = tangent[0].hypot(tangent[1]);
-        let distance = offset[0].hypot(offset[1]);
+        let speed = tangent[0].portable_hypot(tangent[1]);
+        let distance = offset[0].portable_hypot(offset[1]);
         let across = if speed > 0.0 {
             (offset[0] * tangent[1] - offset[1] * tangent[0]).abs() / speed
         } else {
@@ -1042,7 +1050,7 @@ fn inverse(surface: &AnalyticSurface, point: V3, guide: [f64; 2]) -> Option<[f64
     let (origin, x_axis, y_axis, z_axis) = axes(&surface.frame);
     let d = sub(point, origin);
     let (dx, dy, dz) = (dot(d, x_axis), dot(d, y_axis), dot(d, z_axis));
-    let radial = dx.hypot(dy);
+    let radial = dx.portable_hypot(dy);
     let branch = |angle: f64, near: f64| {
         let turns = ((near - angle) / std::f64::consts::TAU).round();
         angle + turns * std::f64::consts::TAU
@@ -1052,14 +1060,14 @@ fn inverse(surface: &AnalyticSurface, point: V3, guide: [f64; 2]) -> Option<[f64
     let u = if on_axis {
         guide[0]
     } else {
-        branch(dy.atan2(dx), guide[0])
+        branch(dy.portable_atan2(dx), guide[0])
     };
     Some(match surface.kind {
         SurfaceKind::Cylinder | SurfaceKind::Cone => [u, dz],
-        SurfaceKind::Sphere => [u, dz.atan2(radial)],
+        SurfaceKind::Sphere => [u, dz.portable_atan2(radial)],
         SurfaceKind::Torus => {
             let major = *surface.params.first()?;
-            [u, branch(dz.atan2(radial - major), guide[1])]
+            [u, branch(dz.portable_atan2(radial - major), guide[1])]
         }
         SurfaceKind::Plane | SurfaceKind::Extrusion | SurfaceKind::Revolution => return None,
     })
@@ -1852,7 +1860,7 @@ fn winding(brep: &Brep, loop_: &super::LoopRecord) -> Option<f64> {
         .flat_map(|point| point.iter())
         .fold(0.0_f64, |most, value| most.max(value.abs()))
         .max(1.0);
-    if (first[0] - last[0]).hypot(first[1] - last[1]) > BOX_MARGIN * extent {
+    if (first[0] - last[0]).portable_hypot(first[1] - last[1]) > BOX_MARGIN * extent {
         return None;
     }
     Some(

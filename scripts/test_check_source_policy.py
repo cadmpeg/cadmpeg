@@ -1384,6 +1384,35 @@ fn f() { count.checked_sub(1); }
         self.assertEqual(self.findings("wrapping_exception"), [])
 
 
+class PlatformLibm(TempSourceCase):
+    def test_method_and_path_forms_fail_in_a_portable_crate(self) -> None:
+        self.write("crates/cadmpeg-tessellate/src/lib.rs", """fn f(x: f64) -> f64 {
+    let a = x.sin();
+    let b = x
+        .hypot(a);
+    [a, b].into_iter().fold(0.0, f64::hypot)
+}
+""")
+        self.assertEqual([f.line for f in self.findings("platform_libm")], [2, 4, 5])
+
+    def test_portable_exact_and_associated_calls_pass(self) -> None:
+        self.write("crates/cadmpeg-ir/src/lib.rs", """fn f(x: f64, y: FiniteReal) -> f64 {
+    let a = x.portable_sin() + x.sqrt() + x.abs();
+    let b = FiniteReal::atan2(y, y);
+    libm::cos(a)
+}
+""")
+        self.assertEqual(self.findings("platform_libm"), [])
+
+    def test_other_crates_and_test_code_are_exempt(self) -> None:
+        self.write("crates/cadmpeg-codec-step/src/lib.rs", "fn f(x: f64) -> f64 { x.sin() }\n")
+        self.write("crates/cadmpeg-codec-usd/src/lib.rs", """#[cfg(test)] mod tests {
+    fn f(x: f64) -> f64 { x.sin() }
+}
+""")
+        self.assertEqual(self.findings("platform_libm"), [])
+
+
 class IntegerLimitDefaults(TempSourceCase):
     def test_combinators_qualified_types_and_closure_bindings(self) -> None:
         expressions = [
