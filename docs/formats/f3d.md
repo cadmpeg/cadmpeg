@@ -372,7 +372,9 @@ The last edge-recipe member of a counted construction-operand group ends at the 
 
 A body-map entity suffix between a history-bearing parameter scope and the next parameter scope is the result body of the first scope. Its BREP basename selects that scope's ASM history when the scope's state pair occurs in multiple histories. A whole-body recipe whose solved candidate faces name exactly one candidate BREP supplies the same history selection.
 
-History-state identities are local to one ASM history. A construction recipe state resolves by Design stream, bound ASM history, and state identity; the same numeric state identity in another history does not name the recipe's topology state or its producing feature.
+History-state identities and body slots are local to one ASM history. A construction recipe state resolves by Design stream, bound ASM history, and state identity; the same numeric state identity in another history does not name the recipe's topology state or its producing feature.
+
+A scope's preceding and current history-state identities delimit its ASM transition interval. The interval follows the current state's `next` links back to the preceding state and can contain intermediate states. Each link names one state in the same history. The bound transition predecessor equals that linked state's identity. The interval contains every transition after the preceding state through the current state. Its affected body slots are the union of the bodies touched by those transitions, including bodies touched through topology incidence. An empty transition contributes an empty set. Repeated body slots contribute one identity. A complete interval requires unique endpoint and intermediate identities, consistent links, and complete body incidence for every transition. The scope-to-history binding selects the interval namespace. An affected slot joins an active body in that history's BREP basename. A slot with several active identities remains unresolved.
 
 `MetaStream.dat` is a segment header, a type table, two record indexes, and an optional property block. It is not a sequence of independent object records.
 

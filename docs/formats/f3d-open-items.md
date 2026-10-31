@@ -890,3 +890,27 @@ the native feature when a fixed lane carries a symmetric distance.
 **Conflict.** None.
 
 **Note.** A path that names more than one instance is refused and reported as `assembly.local-occurrence-path-pose-unresolved`.
+
+### DR-150. History namespace of copied feature scopes
+
+**Question.** Which native relation binds a parameter scope to its ASM history when several histories contain the same endpoint pair and the scope has no unique body-map or whole-body recipe binding?
+
+**Known.** Current and preceding state identities are local to one ASM history. Independent history graphs can contain the same endpoint pair and complete predecessor chain. A result body-map carrier or whole-body recipe candidate faces can bind a scope to one BREP basename. Copied feature groups can retain the same endpoint pairs in separate histories.
+
+**Need.** The native reference chain from each copied scope to its history or BREP basename. Files that change the copied scope's source component while they retain its endpoint pair.
+
+**Conflict.** None.
+
+**Note.** An ambiguous interval retains its native scope, ordered references, state identities, and candidate histories with `feature.output-state-chain-unbound`.
+
+### DR-151. Result ownership of copied feature scopes
+
+**Question.** How does a copied feature scope relate its construction component to the product definition of its result bodies?
+
+**Known.** A scope has a component owner. Its ASM transition interval identifies affected body slots in one BREP namespace. An affected active body can belong to a different product definition from the scope's component owner.
+
+**Need.** A native relation that assigns the result bodies to the construction scope across the component boundary. Files that change the copied feature's component and preserve its construction references.
+
+**Conflict.** None.
+
+**Note.** Result body links outside the scope's product definition remain native with `scope.output-owner-mismatch`.
