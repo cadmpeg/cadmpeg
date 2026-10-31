@@ -45,6 +45,26 @@ use crate::layout::world_point_tripled as world_pt_delta;
 /// The magic anchoring magic-bearing topology records ([spec §5](https://github.com/cadmpeg/cadmpeg/blob/main/docs/formats/sldprt.md#4-typed-topology-records)).
 const MAGIC: [u8; 8] = [0xc2, 0xbc, 0x92, 0x8f, 0x99, 0x6e, 0x00, 0x00];
 
+/// The least nonzero tolerance, metres, on which a plain stream frames a
+/// record (spec §3.3).
+const PLAIN_TOLERANCE_MIN_M: f64 = 1.0e-12;
+
+/// The greatest tolerance, metres, on which a plain stream frames a record
+/// (spec §3.3).
+const PLAIN_TOLERANCE_MAX_M: f64 = 1.0e-2;
+
+/// Whether the tolerance slot at `at` frames a record: the null-real
+/// sentinel, and with `stored` also `0.0` or a stored tolerance (spec §3.3).
+fn frames_on_tolerance(buf: &[u8], at: usize, stored: bool) -> bool {
+    if buf.get(at..at + MAGIC.len()) == Some(MAGIC.as_slice()) {
+        return true;
+    }
+    stored
+        && View::f64_be_at(buf, at).is_some_and(|value| {
+            value == 0.0 || (PLAIN_TOLERANCE_MIN_M..=PLAIN_TOLERANCE_MAX_M).contains(&value)
+        })
+}
+
 const MAX_SHORT_POINTER_INDEX: u16 = 0x7ffe;
 
 #[derive(Debug, Clone, PartialEq)]
@@ -194,11 +214,12 @@ fn attr_at(buf: &[u8], p: usize) -> Option<u16> {
     }
 }
 
-/// Bridge `00 0e`: 37-byte body, magic at body+8, `refs[5]` at body+16,
-/// marker at body+26. `refs[4]` = surface carrier, `refs[2]` = loop head.
+/// Bridge `00 0e`: 37-byte body, tolerance slot at body+8, `refs[5]` at
+/// body+16, marker at body+26. `refs[4]` = surface carrier, `refs[2]` = loop
+/// head. `plain` admits the tolerance slot of a plain stream.
 /// The deltas form stores the attribute-chain head as a `[hi][lo][01]` triple, so the magic
 /// sits at body+9 and the five refs follow as triples with the marker after.
-fn parse_bridge(buf: &[u8], off: usize) -> Option<Bridge> {
+fn parse_bridge(buf: &[u8], off: usize, plain: bool) -> Option<Bridge> {
     let p = body_start(buf, off, 0x0e)?;
     if buf.get(p + 8) == Some(&1) && buf.get(p + 9..p + 17) == Some(MAGIC.as_slice()) {
         let attr = attr_at(buf, p)?;
@@ -215,7 +236,7 @@ fn parse_bridge(buf: &[u8], off: usize) -> Option<Bridge> {
             offset: off,
         });
     }
-    if p + 37 > buf.len() || buf.get(p + 8..p + 16)? != MAGIC {
+    if p + 37 > buf.len() || !frames_on_tolerance(buf, p + 8, plain) {
         return None;
     }
     let attr = attr_at(buf, p)?;
@@ -650,7 +671,7 @@ fn topology_header_prefix_end(buf: &[u8], off: usize, tag: u8) -> Option<usize> 
                     View::u16_be_at(buf, p + head)
                 };
                 if head.is_none_or(|head| head > MAX_SHORT_POINTER_INDEX)
-                    || View::f64_be_at(buf, p + tolerance).is_none_or(|value| !value.is_finite())
+                    || !frames_on_tolerance(buf, p + tolerance, true)
                 {
                     continue;
                 }
@@ -1445,7 +1466,7 @@ pub(crate) fn patch_point_values(
 
 /// Replace one world-point record while preserving its framing.
 pub(crate) fn patch_point(buf: &mut [u8], attr: u16, xyz_m: [f64; 3]) -> bool {
-    let mut tables = scan_records(buf, false, None, None, None, None);
+    let mut tables = scan_records(buf, false, false, None, None, None, None);
     let Some(record) = tables.points.remove(&attr) else {
         return false;
     };
@@ -1454,11 +1475,23 @@ pub(crate) fn patch_point(buf: &mut [u8], attr: u16, xyz_m: [f64; 3]) -> bool {
 
 /// Scan stream-local topology records.
 pub(crate) fn scan(body: &[u8]) -> Tables {
+    scan_stream(body, false)
+}
+
+/// Scan the stream-local topology records of a plain stream (spec §3.3).
+pub(crate) fn scan_plain(body: &[u8]) -> Tables {
+    scan_stream(body, true)
+}
+
+/// Scan stream-local topology records; `plain` reads a plain stream
+/// (spec §3.3).
+fn scan_stream(body: &[u8], plain: bool) -> Tables {
     let owner_facts = super::typed::scan(body);
     let owners = super::typed::topology_owner_attrs_for_streams([(&owner_facts, body, false)]);
     scan_records(
         body,
         false,
+        plain,
         None,
         None,
         None,
@@ -1480,6 +1513,26 @@ pub(super) fn scan_with_owner_attrs(
     scan_records(
         body,
         false,
+        false,
+        Some(curve_attrs),
+        Some(excluded_bridge_offsets),
+        None,
+        (!owner_attrs.is_empty()).then_some(owner_attrs),
+    )
+}
+
+/// Scan a plain stream (spec §3.3) with the typed FACE/compact-bridge
+/// overlap rule.
+pub(super) fn scan_plain_with_owner_attrs(
+    body: &[u8],
+    curve_attrs: &HashSet<u16>,
+    excluded_bridge_offsets: &HashSet<usize>,
+    owner_attrs: &HashSet<u16>,
+) -> Tables {
+    scan_records(
+        body,
+        false,
+        true,
         Some(curve_attrs),
         Some(excluded_bridge_offsets),
         None,
@@ -1498,6 +1551,7 @@ pub(super) fn scan_deltas_with_owner_attrs(
     scan_records(
         body,
         true,
+        false,
         Some(curve_attrs),
         Some(excluded_bridge_offsets),
         Some(base),
@@ -1511,12 +1565,13 @@ pub(super) fn scan_deltas_with_owner_attrs(
 /// an admitted record implies an unambiguous frame, so the span is the record
 /// offset plus the frame length. Ambiguous frames carry no record and no span.
 /// Bridges and edge uses carry no frames; their spans re-derive the framing
-/// the admission predicates matched, in match order.
-pub(super) fn topology_spans(body: &[u8]) -> Vec<super::read_ledger::RawSpan> {
-    let tables = scan(body);
+/// the admission predicates matched, in match order. `plain` reads a plain
+/// stream (spec §3.3).
+pub(super) fn topology_spans(body: &[u8], plain: bool) -> Vec<super::read_ledger::RawSpan> {
+    let tables = scan_stream(body, plain);
     let mut spans = Vec::new();
     for record in tables.bridges.values() {
-        if let Some(end) = bridge_end(body, record.offset) {
+        if let Some(end) = bridge_end(body, record.offset, plain) {
             push_span(&mut spans, record.offset, end, 0x0e, record.attr);
         }
     }
@@ -1567,7 +1622,7 @@ fn framed_spans<T: Candidate>(
 
 /// The body-relative end of the bridge framing [`parse_bridge`] admits at
 /// `off`, following its shapes in match order.
-fn bridge_end(buf: &[u8], off: usize) -> Option<usize> {
+fn bridge_end(buf: &[u8], off: usize, plain: bool) -> Option<usize> {
     let p = body_start(buf, off, 0x0e)?;
     if buf.get(p + 8) == Some(&1) && buf.get(p + 9..p + 17) == Some(MAGIC.as_slice()) {
         attr_at(buf, p)?;
@@ -1575,7 +1630,7 @@ fn bridge_end(buf: &[u8], off: usize) -> Option<usize> {
         parse_sense(*buf.get(p + 32)?)?;
         return p.checked_add(33);
     }
-    if p + 37 > buf.len() || buf.get(p + 8..p + 16)? != MAGIC {
+    if p + 37 > buf.len() || !frames_on_tolerance(buf, p + 8, plain) {
         return None;
     }
     attr_at(buf, p)?;
@@ -1627,6 +1682,7 @@ fn scan_deltas_with_curve_attrs_excluding(
 fn scan_records(
     body: &[u8],
     deltas: bool,
+    plain: bool,
     curve_attrs: Option<&HashSet<u16>>,
     excluded_bridge_offsets: Option<&HashSet<usize>>,
     base: Option<&Tables>,
@@ -1666,7 +1722,7 @@ fn scan_records(
         }
         match body[i + 1] {
             0x0e => {
-                if let Some(record) = parse_bridge(body, i) {
+                if let Some(record) = parse_bridge(body, i, plain) {
                     let excluded =
                         excluded_bridge_offsets.is_some_and(|offsets| offsets.contains(&i));
                     let carries_loop = record.refs[2] > 1;
@@ -2186,7 +2242,7 @@ mod tests {
         bytes.push(0x2b);
         bytes.resize(48, 0);
 
-        let bridge = parse_bridge(&bytes, 0).expect("deltas-form bridge");
+        let bridge = parse_bridge(&bytes, 0, false).expect("deltas-form bridge");
         assert_eq!(bridge.attr, 0x1234);
         assert_eq!(bridge.sequence, 7);
         assert_eq!(bridge.attributes_head, Some(0x4321));
@@ -2199,7 +2255,7 @@ mod tests {
         let expected = vec![0x101, 0x202, 0x303, 0x404, 0x505];
         for tripled in [false, true] {
             let bytes = bridge_with_refs(&expected, tripled);
-            let bridge = parse_bridge(&bytes, 0)
+            let bridge = parse_bridge(&bytes, 0, false)
                 .unwrap_or_else(|| panic!("bridge tripled={tripled} bytes={bytes:02x?}"));
             assert_eq!(bridge.attr, 0x1234);
             assert_eq!(bridge.sequence, 7);
@@ -3357,7 +3413,7 @@ mod tests {
             false,
             false,
         ));
-        let tables = super::scan_records(&bytes, false, None, None, None, None);
+        let tables = super::scan_records(&bytes, false, false, None, None, None, None);
         assert!(tables.vertex_is_unresolved(211));
         assert!(tables.vertex_classes.contains_key(&211));
         assert_eq!(
@@ -3495,10 +3551,51 @@ mod tests {
         assert!(tables.coedges.is_empty());
     }
     #[test]
+    fn a_record_tail_read_as_an_edge_header_does_not_hide_the_next_loop() {
+        // `00 10` in a record tail reads as an EDGE header whose tolerance
+        // slot holds the loop's bytes: a finite value below 1e-12 m.
+        let mut bytes = crate::test_support::parasolid::triangle_body();
+        let head = crate::test_support::parasolid::loop_head(20, 30, 10);
+        let at = bytes
+            .windows(head.len())
+            .position(|window| window == head.as_slice())
+            .unwrap();
+        bytes.splice(at..at, [0x00, 0x10, 0x00, 0x52]);
+        assert!(super::topology_header_prefix_end(&bytes, at, 0x10).is_none());
+        assert!(scan(&bytes).loops.contains_key(&20));
+    }
+
+    #[test]
     fn face_transmit_index_does_not_create_an_integer_values_enclosure() {
         let bytes = crate::test_support::parasolid::bridge_owned(82, 20, 100, 88);
         assert!(super::topology_payload_ranges(&bytes, false).is_empty());
-        assert_eq!(parse_bridge(&bytes, 0).unwrap().attr, 82);
+        assert_eq!(parse_bridge(&bytes, 0, false).unwrap().attr, 82);
+    }
+
+    #[test]
+    fn a_plain_stream_frames_a_face_on_its_stored_tolerance() {
+        let face = |slot: f64| {
+            let mut bytes = crate::test_support::parasolid::bridge(82, 20, 100);
+            bytes[10..18].copy_from_slice(&slot.to_be_bytes());
+            bytes
+        };
+        for tolerance in [0.0, 1.0e-8, 1.0e-12, 1.0e-2] {
+            assert_eq!(parse_bridge(&face(tolerance), 0, true).unwrap().attr, 82);
+            assert!(parse_bridge(&face(tolerance), 0, false).is_none());
+        }
+        for tolerance in [1.0e-302, 2.0e-2, -1.0e-8, f64::NAN] {
+            assert!(parse_bridge(&face(tolerance), 0, true).is_none());
+        }
+        assert_eq!(
+            parse_bridge(
+                &crate::test_support::parasolid::bridge(82, 20, 100),
+                0,
+                true
+            )
+            .unwrap()
+            .attr,
+            82
+        );
     }
 
     #[test]

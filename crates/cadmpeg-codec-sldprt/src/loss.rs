@@ -150,6 +150,8 @@ pub(crate) enum SldprtLossCode {
     TopologyPcurveCarrierOffSurface,
     /// Parasolid B-rep geometry was not transferred (no resolved stream).
     GeometryParasolidNotTransferred,
+    /// Imported-feature body streams that do not decode.
+    GeometryImportedBodiesNotTransferred,
     /// B-rep topology graph was not built for this file.
     TopologyGraphNotTransferred,
     /// Materials, tessellation, and metadata were not transferred.
@@ -260,6 +262,7 @@ impl SldprtLossCode {
         Self::TopologyVertexRecordUnresolved,
         Self::TopologyPcurveCarrierOffSurface,
         Self::GeometryParasolidNotTransferred,
+        Self::GeometryImportedBodiesNotTransferred,
         Self::TopologyGraphNotTransferred,
         Self::MaterialMetadataNotTransferred,
         Self::ContainerNoParasolidStream,
@@ -342,6 +345,9 @@ impl SldprtLossCode {
             Self::TopologyVertexRecordUnresolved => "topology.vertex-record-unresolved",
             Self::TopologyPcurveCarrierOffSurface => "topology.pcurve-carrier-off-surface",
             Self::GeometryParasolidNotTransferred => "geometry.parasolid-not-transferred",
+            Self::GeometryImportedBodiesNotTransferred => {
+                "geometry.imported-bodies-not-transferred"
+            }
             Self::TopologyGraphNotTransferred => "topology.graph-not-transferred",
             Self::MaterialMetadataNotTransferred => "material.metadata-not-transferred",
             Self::ContainerNoParasolidStream => "container.no-parasolid-stream",
@@ -380,7 +386,9 @@ impl SldprtLossCode {
             Self::GeometryParasolidNotTransferred
             | Self::TopologyGraphNotTransferred
             | Self::SourcePreservedImageUnavailable => Severity::Blocking,
-            Self::ContainerNoParasolidStream => Severity::Error,
+            Self::ContainerNoParasolidStream | Self::GeometryImportedBodiesNotTransferred => {
+                Severity::Error
+            }
             Self::ConfigActiveIdentityUnresolved
             | Self::ConfigActivePartitionMismatch
             | Self::ConfigInferredWithoutNative
@@ -483,6 +491,7 @@ impl SldprtLossCode {
             | Self::GeometryCurveMarkerConflict
             | Self::GeometrySplineLanesUnpaired
             | Self::GeometryParasolidNotTransferred
+            | Self::GeometryImportedBodiesNotTransferred
             | Self::ContainerParasolidProbeCapped => LossTaxonomy::GeometryNotTransferred,
             Self::GeometryPcurveAmbiguous | Self::GeometrySurfaceSolverWorkCapped => {
                 LossTaxonomy::PcurveOmitted
@@ -727,6 +736,7 @@ mod tests {
                 "topology.vertex-record-unresolved",
                 "topology.pcurve-carrier-off-surface",
                 "geometry.parasolid-not-transferred",
+                "geometry.imported-bodies-not-transferred",
                 "topology.graph-not-transferred",
                 "material.metadata-not-transferred",
                 "container.no-parasolid-stream",
