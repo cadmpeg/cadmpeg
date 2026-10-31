@@ -7,7 +7,9 @@ use cadmpeg_core::CodecError;
 use cadmpeg_ir::features::{
     DistinctMembers, FeatureDefinition, FeatureOperation, SketchFeatureBinding,
 };
-use cadmpeg_ir::{document::Model, ids::ProductDefinitionId, report::loss::LossNote};
+use cadmpeg_ir::{
+    document::Model, ids::ProductDefinitionId, report::loss::LossNote, sketches::SketchId,
+};
 
 use super::feature_project::{ComponentHistoryNamespace, ScopeHistoryGraph};
 use crate::{ids::native_stream, loss::F3dLossCode, native::F3dNative};
@@ -91,6 +93,18 @@ fn attach_with_implicit_roots(
         })
         .cloned()
         .collect::<BTreeSet<_>>();
+    // Sketch collection listings as decoded, before scope ownership adds
+    // unlisted sketches; the explicit collection reference outranks every
+    // later ownership move.
+    let mut listed = BTreeMap::<SketchId, BTreeSet<ProductDefinitionId>>::new();
+    for definition in &model.product_definitions {
+        for sketch in &definition.sketches {
+            listed
+                .entry(sketch.clone())
+                .or_default()
+                .insert(definition.id.clone());
+        }
+    }
     let mut bound_by_scope = BTreeMap::new();
     for feature in &mut model.features {
         let owned_bodies = feature.product_definition.as_ref().and_then(|owner| {
@@ -153,26 +167,31 @@ fn attach_with_implicit_roots(
             // explicit reference; the entity-id cluster of the Sketch scope
             // is positional. A sketch listed by one definition belongs to the
             // Sketch feature that binds it, whichever cluster holds the scope.
+            const COLLECTION_CONFLICT: &str =
+                "its sketch collection names a different product definition";
+            const CLUSTER_CONFLICT: &str =
+                "another Sketch scope in a different product definition binds the same unlisted sketch";
             let owner = match (holders.next(), holders.next()) {
                 (None, _) => {
                     // No collection lists the sketch: its scope cluster
                     // places it, and a second cluster claiming it conflicts.
+                    // The first claim in model order keeps the sketch.
                     match bound_by_scope.insert(sketch.clone(), cluster_owner.clone()) {
-                        Some(earlier) if earlier != cluster_owner => None,
-                        _ => Some(cluster_owner),
+                        Some(earlier) if earlier != cluster_owner => Err(CLUSTER_CONFLICT),
+                        _ => Ok(cluster_owner),
                     }
                 }
                 (Some(holder), None) => match bound_by_scope.get(&sketch) {
-                    Some(earlier) if earlier != &cluster_owner => None,
-                    _ => Some(holder.id.clone()),
+                    Some(earlier) if earlier != &cluster_owner => Err(COLLECTION_CONFLICT),
+                    _ => Ok(holder.id.clone()),
                 },
-                (Some(_), Some(_)) => None,
+                (Some(_), Some(_)) => Err(COLLECTION_CONFLICT),
             };
             let owner = match owner {
-                Some(owner) => owner,
-                None => {
+                Ok(owner) => owner,
+                Err(reason) => {
                     losses.push(F3dLossCode::ScopeSketchOwnerMismatch.note(format!(
-                        "Feature {} and its sketch collection name different product definitions; the sketch binding remains native.", feature.id
+                        "Feature {} cannot own its sketch: {reason}; the sketch binding remains native.", feature.id
                     )));
                     feature
                         .evaluation
@@ -194,7 +213,7 @@ fn attach_with_implicit_roots(
             }
         }
     }
-    follow_consumed_inputs(model, moved)?;
+    follow_consumed_inputs(model, moved, &listed)?;
     for index in 0..model.parameters.len() {
         let parameter = &model.parameters[index];
         let inherited = parameter
@@ -243,10 +262,13 @@ fn attach_with_implicit_roots(
 /// A consumed input is a dependency feature, or the sketch feature whose
 /// sketch the definition names. An input moves only when it produces no body
 /// and every feature that consumes it already belongs to the new definition;
-/// a moved sketch feature carries its planar sketch along.
+/// a moved sketch feature carries its planar sketch along. A sketch feature
+/// whose sketch a collection of another definition lists stays with that
+/// definition: the explicit collection reference outranks consumption.
 fn follow_consumed_inputs(
     model: &mut Model,
     mut moved: Vec<(cadmpeg_ir::features::FeatureId, ProductDefinitionId)>,
+    listed: &BTreeMap<SketchId, BTreeSet<ProductDefinitionId>>,
 ) -> Result<(), CodecError> {
     if moved.is_empty() {
         return Ok(());
@@ -301,6 +323,17 @@ fn follow_consumed_inputs(
             });
             if !all_consumers_moved {
                 continue;
+            }
+            if let FeatureDefinition::Operation(FeatureOperation::Sketch {
+                sketch: SketchFeatureBinding::Planar(Some(sketch)),
+            }) = model.features[input].evaluation.definition()
+            {
+                if listed
+                    .get(sketch)
+                    .is_some_and(|holders| !holders.contains(&owner))
+                {
+                    continue;
+                }
             }
             let previous = model.features[input]
                 .product_definition

@@ -302,7 +302,7 @@ fn sketch_model(native: &F3dNative, sketch_id: &str) -> (Model, cadmpeg_ir::sket
 }
 
 fn bind_sketch(model: &mut Model, feature: usize, sketch: &cadmpeg_ir::sketches::SketchId) {
-    model.features[feature].evaluation = FeatureEvaluation::from_definition(
+    model.features[feature].evaluation = cadmpeg_ir::features::FeatureEvaluation::from_definition(
         FeatureDefinition::Operation(FeatureOperation::Sketch {
             sketch: SketchFeatureBinding::Planar(Some(sketch.clone())),
         }),
@@ -426,6 +426,37 @@ fn product_history_owner_moves_a_consumed_sketch_with_its_feature() {
         ["test:model:sketch#profile".try_into().unwrap()]
     );
     assert!(model.product_definitions[0].sketches.is_empty());
+}
+
+#[test]
+fn product_history_owner_keeps_a_collection_listed_sketch_when_its_consumer_moves() {
+    let native = native();
+    let mut model = model(&native);
+    let body: cadmpeg_ir::ids::BodyId = "test:model:body#child".try_into().unwrap();
+    model.product_definitions[1].bodies = vec![body.clone()];
+    let sketch = sketch_feature(&native, "listed");
+    let sketch_id = sketch.id.clone();
+    let listed: cadmpeg_ir::sketches::SketchId = "test:model:sketch#listed".try_into().unwrap();
+    model.product_definitions[0].sketches = vec![listed.clone()];
+    model.features.push(sketch);
+    model.features[0]
+        .evaluation
+        .set_outputs(DistinctMembers::try_from(vec![body]).unwrap());
+    model.features[0].dependencies = DistinctMembers::try_from(vec![sketch_id.clone()]).unwrap();
+    let listing = model.product_definitions[0].id.clone();
+    let consumer = model.product_definitions[1].id.clone();
+    let mut losses = Vec::new();
+    attach(&native, &mut model, &mut losses).unwrap();
+    assert_eq!(model.features[0].product_definition, Some(consumer));
+    let kept = model
+        .features
+        .iter()
+        .find(|row| row.id == sketch_id)
+        .unwrap();
+    assert_eq!(kept.product_definition, Some(listing));
+    assert_eq!(model.product_definitions[0].sketches, [listed]);
+    assert!(model.product_definitions[1].sketches.is_empty());
+    assert!(losses.is_empty(), "{losses:?}");
 }
 
 #[test]
