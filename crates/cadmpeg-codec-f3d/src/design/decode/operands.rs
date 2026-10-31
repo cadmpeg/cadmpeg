@@ -2036,6 +2036,41 @@ pub(in crate::design) fn assign_extrude_face_roles(
     }
 }
 
+/// Return the Extrude groups that select bodies to their source role.
+///
+/// A start-from-face Extrude reads every `0x5` group after the first as a
+/// termination face run. A `0x5` group whose members are all body recipe
+/// operands selects bodies, not faces, so it is not a face run.
+pub(crate) fn release_extrude_body_target_groups(
+    groups: &mut [DesignConstructionOperandGroup],
+    operands: &[DesignBodyRecipeOperand],
+) {
+    for group in groups.iter_mut() {
+        let DesignConstructionOperandRole::ExtrudeFaces {
+            encoding: DesignExtrudeFaceEncoding::SelectedStart,
+            usage: DesignExtrudeFaceRole::Termination,
+        } = group.operand_role
+        else {
+            continue;
+        };
+        let stream = native_stream(&group.id);
+        let selects_bodies = !group.members().is_empty()
+            && group.members().iter().enumerate().all(|(ordinal, member)| {
+                u32::try_from(ordinal).is_ok_and(|ordinal| {
+                    operands.iter().any(|operand| {
+                        native_stream(&operand.id) == stream
+                            && operand.scope_record_index == group.scope_record_index
+                            && operand.owner.group() == Some((group.record_index, ordinal))
+                            && operand.record_index() == member.value
+                    })
+                })
+            });
+        if selects_bodies {
+            group.operand_role = DesignConstructionOperandRole::Other(DesignOperandRole::ROLE_0X5);
+        }
+    }
+}
+
 /// Pair Fillet construction-operand groups with their radius inputs.
 fn push_fillet_radius_group(
     out: &mut Vec<DesignFilletRadiusGroup>,

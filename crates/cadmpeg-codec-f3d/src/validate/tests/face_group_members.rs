@@ -37,7 +37,7 @@ fn identity_of_another_scope_does_not_resolve_the_member() {
 }
 
 #[test]
-fn split_direct_face_admits_the_reference_zero_tool_face() {
+fn split_direct_face_admits_the_reference_zero_and_two_tool_faces() {
     use crate::records::recipes::ConstructionRecipeKind;
     assert!(super::super::split_direct_face_admitted(
         1,
@@ -51,8 +51,16 @@ fn split_direct_face_admits_the_reference_zero_tool_face() {
         0,
         ConstructionRecipeKind::BoundedFace
     ));
+    assert!(super::super::split_direct_face_admitted(
+        2,
+        ConstructionRecipeKind::Face
+    ));
     assert!(!super::super::split_direct_face_admitted(
         2,
+        ConstructionRecipeKind::BoundedFace
+    ));
+    assert!(!super::super::split_direct_face_admitted(
+        3,
         ConstructionRecipeKind::Face
     ));
 }

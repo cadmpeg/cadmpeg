@@ -26,6 +26,7 @@ use crate::test_support::smbh_geometry_test::synthetic_geometry_smbh;
 use crate::test_support::zip_test::f3d_with_smbh_and_protein;
 use crate::F3dCodec;
 
+mod act_document_root;
 mod arithmetic;
 mod body_ownership;
 mod component_insert;
@@ -40,6 +41,8 @@ mod extrude_extent;
 mod extrude_group;
 mod extrude_member;
 mod extrude_operation_state;
+mod extrude_omitted_offset;
+mod extrude_prologue_offsets;
 mod face_boundary;
 mod face_group;
 mod face_group_members;

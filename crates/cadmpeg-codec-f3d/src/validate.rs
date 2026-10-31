@@ -1222,7 +1222,11 @@ fn validate_act(ctx: &Ctx<'_, '_>, findings: &mut Vec<Finding>) -> Result<(), Co
         root_counts
             .entry(stream)
             .or_insert((root.id().as_str(), 0))
-            .1 += usize::from(root.references.tracked_entity == 3);
+            .1 += usize::from(act_link_is_document_root(
+            native,
+            stream,
+            root.references.tracked_entity,
+        ));
         let unique_record_index = record_indices.insert((stream, root.record_index));
         if !unique_record_index {
             push_constant_finding(
@@ -3515,11 +3519,13 @@ fn validate_parameter_scopes(ctx: &Ctx, findings: &mut Vec<Finding>) -> Result<(
                 start_offset,
                 ..
             }) => {
+                let typed_references = scope_has_typed_references(scope);
                 let prefix_valid = reference.map_or(
-                    scope
-                        .byte_offset()
-                        .checked_add(28)
-                        .is_some_and(|expected_offset| operation_offset == expected_offset),
+                    direct_extrude_operation_valid(
+                        scope.byte_offset(),
+                        typed_references,
+                        operation_offset,
+                    ),
                     |reference| {
                         let padding_end =
                             reference
@@ -3656,7 +3662,7 @@ fn validate_parameter_scopes(ctx: &Ctx, findings: &mut Vec<Finding>) -> Result<(
                     .and_then(|offset| offset.checked_add(target_prefix_length))
                     .and_then(|offset| side_extent_discriminator_offsets[0].checked_sub(offset))
                     .is_some_and(|slot_expansion| {
-                        slot_expansion <= 70 && slot_expansion.is_multiple_of(10)
+                        extent_slot_expansion_valid(typed_references, slot_expansion)
                     });
                 let second_side_offset_valid = (if side_extent_discriminators == [2, 2] {
                     side_extent_discriminator_offsets[0].checked_add(u64_from_index(
@@ -4267,6 +4273,81 @@ fn validate_parameter_scopes(ctx: &Ctx, findings: &mut Vec<Finding>) -> Result<(
         }
     }
     Ok(())
+}
+
+/// Entity of the document-root component in a Design that numbers it 3.
+const STANDARD_ROOT_COMPONENT_ENTITY: u32 = 3;
+/// Type GUID of the Design component entities.
+const COMPONENT_TYPE_GUID: &str = "E03784ED-5E19-4E14-B9F2-3B07017018CD";
+
+/// Whether an ACT component link tracks the document-root component. The
+/// root is entity 3 of the component type. A Design whose component type has
+/// no entity 3 (a component saved as its own document) has its root link name
+/// another entity of that type.
+fn act_link_is_document_root(
+    native: &crate::native::F3dNative,
+    stream: &str,
+    tracked: u32,
+) -> bool {
+    if tracked == STANDARD_ROOT_COMPONENT_ENTITY {
+        return true;
+    }
+    let folder = stream.split('/').next();
+    let component_entities = |entity: u32| {
+        native.design_types.iter().any(|kind| {
+            kind.type_guid
+                .as_str()
+                .eq_ignore_ascii_case(COMPONENT_TYPE_GUID)
+                && ids::native_stream(kind.id()).and_then(|design| design.split('/').next())
+                    == folder
+                && kind
+                    .entities
+                    .values()
+                    .any(|value| *value == u64::from(entity))
+        })
+    };
+    !component_entities(STANDARD_ROOT_COMPONENT_ENTITY) && component_entities(tracked)
+}
+
+/// Whether a scope stores 51-byte typed reference-table entries: the last
+/// entry's target is followed by the 7-byte entry tail and the kind string.
+fn scope_has_typed_references(scope: &records::feature::scope::DesignParameterScope) -> bool {
+    scope
+        .reference_members()
+        .offsets()
+        .last()
+        .and_then(|last| scope.kind_offset().checked_sub(*last))
+        == Some(u64_from_index(crate::bytes::TYPED_LOCAL_REFERENCE_LEN) + 7)
+}
+
+/// Whether a reference-aware Extrude scope without a prologue reference
+/// starts its operation fields at an admitted offset. The plain form starts
+/// them at offset 28; a typed-reference scope starts them at offset 22 or 26.
+fn direct_extrude_operation_valid(
+    scope_offset: u64,
+    typed_references: bool,
+    operation_offset: u64,
+) -> bool {
+    let admitted: &[usize] = if typed_references {
+        &[
+            crate::layout::typed_reference_extrude_prologue::OPERATION,
+            crate::layout::shifted_typed_reference_extrude_prologue::OPERATION,
+        ]
+    } else {
+        &[28]
+    };
+    admitted
+        .iter()
+        .any(|delta| scope_offset.checked_add(u64_from_index(*delta)) == Some(operation_offset))
+}
+
+/// Whether the span between the empty-slot end of the operation fields and
+/// the first side extent holds whole present extent slots. A present slot
+/// replaces its one-byte absent marker with a reference, which widens the
+/// span by 10 bytes (plain) or 50 bytes (typed) for each of the seven slots.
+fn extent_slot_expansion_valid(typed_references: bool, slot_expansion: u64) -> bool {
+    let unit = if typed_references { 50 } else { 10 };
+    slot_expansion <= 7 * unit && slot_expansion.is_multiple_of(unit)
 }
 
 fn valid_work_point_construction(
@@ -4951,12 +5032,7 @@ fn validate_construction_operand_groups(ctx: &Ctx, findings: &mut Vec<Finding>) 
                     ) && group.extrude_role().is_none()
                 }
                 Some(design::DesignFeatureFamily::Mirror) => {
-                    matches!(
-                        group.role(),
-                        DesignOperandRole::BODIES_A
-                            | DesignOperandRole::ROLE_0X5
-                            | DesignOperandRole::BODIES_B
-                    ) && group.extrude_role().is_none()
+                    mirror_group_role_admitted(group.role()) && group.extrude_role().is_none()
                 }
                 Some(design::DesignFeatureFamily::SurfacePatch) => {
                     matches!(
@@ -5967,6 +6043,57 @@ fn validate_fillet_radius_groups<'a>(
     fillet_radius_group_records
 }
 
+/// Whether a Mirror scope owns an operand group of this role: faces or
+/// bodies to mirror, the mirror plane, or the `0x10` selection run.
+fn mirror_group_role_admitted(role: DesignOperandRole) -> bool {
+    matches!(
+        role,
+        DesignOperandRole::BODIES_A
+            | DesignOperandRole::ROLE_0X5
+            | DesignOperandRole::BODIES_B
+            | DesignOperandRole::ROLE_0X10
+    )
+}
+
+/// Whether a Mirror face operand uses an admitted recipe kind for its group
+/// role: a whole-face recipe in a body run, or a face or bounded-face recipe
+/// in the mirror-plane run.
+fn mirror_operand_recipe_admitted(
+    role: DesignOperandRole,
+    kind: records::recipes::ConstructionRecipeKind,
+) -> bool {
+    match role {
+        DesignOperandRole::BODIES_B => kind == records::recipes::ConstructionRecipeKind::Face,
+        DesignOperandRole::ROLE_0X5 => matches!(
+            kind,
+            records::recipes::ConstructionRecipeKind::Face
+                | records::recipes::ConstructionRecipeKind::BoundedFace
+        ),
+        _ => false,
+    }
+}
+
+/// Whether a Revolve axis operand uses an admitted face-recipe spelling. The
+/// axis face is selected either by its whole-face recipe or by a bounded-face
+/// recipe.
+fn revolve_axis_recipe_kind_admitted(kind: records::recipes::ConstructionRecipeKind) -> bool {
+    matches!(
+        kind,
+        records::recipes::ConstructionRecipeKind::Face
+            | records::recipes::ConstructionRecipeKind::BoundedFace
+    )
+}
+
+/// Whether a full-round face operand selects a face. The selection is
+/// resolved to face slots when the input state names a unique face; otherwise
+/// the operand keeps the faces its recipe is bound against, which are the
+/// preceding-state or changed faces it was read with.
+fn full_round_face_is_selected(operand: &records::topology::face::DesignFaceOperand) -> bool {
+    !operand.resolved_face_slots.is_empty()
+        || !operand.preceding_candidate_faces.is_empty()
+        || !operand.changed_candidate_faces.is_empty()
+}
+
 /// Report Fillet operand groups that carry no radius assignment.
 fn validate_fillet_operand_groups<'a>(
     ctx: &Ctx<'a, '_>,
@@ -6078,7 +6205,7 @@ fn validate_fillet_operand_groups<'a>(
                     && operand.group_record_index() == Some(group.record_index)
                     && operand.group_member_ordinal() == Some(0)
                     && operand.record_index() == group.members()[0].value
-                    && !operand.resolved_face_slots.is_empty()
+                    && full_round_face_is_selected(operand)
             });
         if full_round_group_shape {
             if !valid_full_round_group {
@@ -7613,8 +7740,7 @@ fn validate_face_operands<'a>(
                             Some(design::DesignFeatureFamily::Revolve) => {
                                 group.is_some_and(|group| {
                                     group.role() == DesignOperandRole::ROLE_0X21
-                                }) && operand.recipe_kind
-                                    == records::recipes::ConstructionRecipeKind::Face
+                                }) && revolve_axis_recipe_kind_admitted(operand.recipe_kind)
                             }
                             Some(design::DesignFeatureFamily::CircularPattern) => {
                                 group.is_some_and(|group| {
@@ -7624,9 +7750,8 @@ fn validate_face_operands<'a>(
                             }
                             Some(design::DesignFeatureFamily::Mirror) => {
                                 group.is_some_and(|group| {
-                                    group.role() == DesignOperandRole::BODIES_B
-                                }) && operand.recipe_kind
-                                    == records::recipes::ConstructionRecipeKind::Face
+                                    mirror_operand_recipe_admitted(group.role(), operand.recipe_kind)
+                                })
                             }
                             Some(design::DesignFeatureFamily::Thread) => {
                                 group.is_some_and(|group| {
@@ -7784,14 +7909,14 @@ fn validate_face_operands<'a>(
     Ok(face_operand_records)
 }
 
-/// A `Split` direct face operand is the reference-one member, or the
-/// reference-zero tool face with a `face_recipe_data` recipe.
+/// A `Split` direct face operand is the reference-one member, or a
+/// reference-zero or reference-two tool face with a `face_recipe_data` recipe.
 fn split_direct_face_admitted(
     scope_reference_ordinal: u32,
     recipe_kind: records::recipes::ConstructionRecipeKind,
 ) -> bool {
     scope_reference_ordinal == 1
-        || (scope_reference_ordinal == 0
+        || (matches!(scope_reference_ordinal, 0 | 2)
             && recipe_kind == records::recipes::ConstructionRecipeKind::Face)
 }
 

@@ -1389,6 +1389,10 @@ fn extend_related_design_records(
             &design.design_record_headers,
             &prereqs.construction_recipes,
         )?;
+    crate::design::decode::operands::release_extrude_body_target_groups(
+        &mut design.design_construction_operand_groups,
+        &design.design_body_recipe_operands,
+    );
     crate::design::decode::operands::bind_body_recipe_operand_candidates(
         &mut design.design_body_recipe_operands,
         &prereqs.construction_recipes,
