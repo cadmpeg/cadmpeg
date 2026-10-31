@@ -6,6 +6,7 @@
 //! positional instance.
 
 pub(crate) mod arrays;
+mod bends;
 pub(crate) mod cylinder_frame_readers;
 mod revolution;
 
@@ -4335,6 +4336,11 @@ fn named_record_boundary(
             return Some(end);
         }
     }
+    if kind == SurfaceKind::Cylinder {
+        if let Some(end) = bends::named_boundary(body, cache) {
+            return Some(end);
+        }
+    }
     let cone_half_angle = if kind == SurfaceKind::Cone {
         terminal_cone_half_angle_layout(body)
     } else {
@@ -4440,6 +4446,7 @@ fn inline_surface_body(
     if kind == SurfaceKind::Cylinder {
         if let Some((frame, terminal_close)) =
             cylinder_frame_readers::decode_rotation_cylinder_body(body, cache)
+                .or_else(|| bends::inline_body(body, cache))
         {
             return Ok(Some(InlineSurfaceBody {
                 rotation_frame: false,
@@ -6535,7 +6542,13 @@ fn plane_local_system_compound_close(
     cache: &scalar::ScalarCache,
     losses: &mut Vec<cadmpeg_ir::report::loss::LossNote>,
 ) -> Result<Option<usize>, CodecError> {
-    let structural_close = first_compound_close(payload, start, end);
+    let structural_close = if let Some((_, consumed)) =
+        scalar::sheet_frames::plane_prefix(&payload[start..end], cache)
+    {
+        first_compound_close(payload, start + consumed, end)
+    } else {
+        first_compound_close(payload, start, end)
+    };
     for close in start..end {
         if payload.get(close) == Some(&psb::token::COMPOUND_CLOSE)
             && complete_plane_local_system(ctx, &payload[start..close], cache, losses)?.is_some()
@@ -7707,6 +7720,15 @@ pub(crate) fn plane_local_systems_for_rows(
                 .map_or([None; 12], |(slots, _)| slots.get().map(Some));
             let layout = decoded.as_ref().map(|(_, layout)| *layout);
             let frame_body = body.strip_suffix(&[0xe1]).unwrap_or(body);
+            if decoded.is_none()
+                && scalar::sheet_frames::plane(frame_body, &cache)
+                    .is_some_and(|frame| frame.is_err())
+            {
+                losses.push(crate::loss::CreoLossCode::PlaneAngularFrameUnresolved.note(format!(
+                    "Plane {} local system at payload byte {} fails complete angular rotation-field admission; its bytes remain native",
+                    row.id, chunk_start,
+                )));
+            }
             let simple = matches!(frame_body.first(), Some(0x0f | 0x10 | 0x18))
                 && frame_body.len() <= 24
                 && !frame_body

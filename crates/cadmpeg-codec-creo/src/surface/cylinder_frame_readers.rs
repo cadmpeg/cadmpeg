@@ -19,7 +19,7 @@ pub(crate) enum CylinderRotationFrame {
 }
 
 impl CylinderRotationFrame {
-    fn from_frame(frame: Option<PositionalCylinderFrame>) -> Self {
+    pub(super) fn from_frame(frame: Option<PositionalCylinderFrame>) -> Self {
         frame.map_or(Self::Unresolved, Self::Admitted)
     }
 
@@ -251,6 +251,13 @@ pub(crate) fn named_rotation_cylinder_parameter_frame(
     cache: &scalar::ScalarCache,
 ) -> Option<CylinderRotationFrame> {
     let (slots, complete, floating) = named_rotation_cylinder_slots(prototype, cache)?;
+    if complete {
+        if let Some(frame) =
+            super::bends::named_frame(parameter, slots, named_cylinder_radius(prototype), cache)
+        {
+            return Some(frame);
+        }
+    }
     let envelope = bounded_rotation_envelope(&parameter.body, cache)
         .filter(|(_, _, end)| *end == parameter.body.len());
     let Some((bounds, corners, _)) = envelope else {
@@ -2065,9 +2072,11 @@ pub(crate) fn rotation_cylinder_parameter_bounds(
     body: &[u8],
     frame: PositionalCylinderFrame,
 ) -> Option<[[f64; 2]; 2]> {
-    let envelope = rotation_cylinder_envelope(body, &scalar::ScalarCache::default())?;
-    rotation_cylinder_envelope_agrees(&envelope, frame)?;
-    Some([[0.0, std::f64::consts::FRAC_PI_2], envelope.axial])
+    if let Some(envelope) = rotation_cylinder_envelope(body, &scalar::ScalarCache::default()) {
+        rotation_cylinder_envelope_agrees(&envelope, frame)?;
+        return Some([[0.0, std::f64::consts::FRAC_PI_2], envelope.axial]);
+    }
+    super::bends::parameter_bounds(body, frame)
 }
 
 pub(super) fn decode_rotation_cylinder_body(

@@ -84,6 +84,10 @@ pub(crate) enum CreoLossCode {
     SurfacePrototypeFieldRetained,
     /// A compact plane rotation has no complete finite origin.
     PlaneCompactFrameUnresolved,
+    /// A selected angular wall chart fails complete scalar-field admission.
+    PlaneAngularFrameUnresolved,
+    /// A bounded angular endpoint body has an unresolved signed literal.
+    AngularEndpointLiteralUnresolved,
     /// A complete rotation cylinder conflicts with its stored envelope.
     CylinderRotationEnvelopeUnresolved,
     ActiveBoundaryPlaneUnresolved,
@@ -268,6 +272,10 @@ impl CreoLossCode {
             Self::PcurveSampleCoordinatesDropped => "geometry.pcurve-sample-coordinates-dropped",
             Self::AngularPcurvePairUnresolved => "geometry.angular-pcurve-pair-unresolved",
             Self::PlaneCompactFrameUnresolved => "geometry.plane-compact-frame-unresolved",
+            Self::PlaneAngularFrameUnresolved => "geometry.plane-angular-frame-unresolved",
+            Self::AngularEndpointLiteralUnresolved => {
+                "geometry.angular-endpoint-literal-unresolved"
+            }
             Self::CylinderRotationEnvelopeUnresolved => {
                 "geometry.cylinder-rotation-envelope-unresolved"
             }
@@ -400,6 +408,8 @@ impl CreoLossCode {
             | Self::PcurveSampleCoordinatesDropped
             | Self::AngularPcurvePairUnresolved
             | Self::PlaneCompactFrameUnresolved
+            | Self::PlaneAngularFrameUnresolved
+            | Self::AngularEndpointLiteralUnresolved
             | Self::CylinderRotationEnvelopeUnresolved
             | Self::ActiveBoundaryPlaneUnresolved
             | Self::RevolutionCarrierUnresolved
@@ -536,6 +546,8 @@ impl CreoLossCode {
             | Self::PcurveSampleCoordinatesDropped
             | Self::AngularPcurvePairUnresolved
             | Self::PlaneCompactFrameUnresolved
+            | Self::PlaneAngularFrameUnresolved
+            | Self::AngularEndpointLiteralUnresolved
             | Self::CylinderRotationEnvelopeUnresolved
             | Self::ActiveBoundaryPlaneUnresolved
             | Self::RevolutionCarrierUnresolved
@@ -632,6 +644,8 @@ mod tests {
                 "geometry.section-spline-unresolved",
                 "geometry.surface-prototype-field-retained",
                 "geometry.plane-compact-frame-unresolved",
+                "geometry.plane-angular-frame-unresolved",
+                "geometry.angular-endpoint-literal-unresolved",
                 "geometry.cylinder-rotation-envelope-unresolved",
                 "geometry.active-boundary-plane-unresolved",
                 "geometry.revolution-carrier-unresolved",

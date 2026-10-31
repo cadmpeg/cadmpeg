@@ -31,6 +31,23 @@ chart travel. Their envelopes use the shared rotation placement gate.
 `geometry.hole-generator-unresolved` retains each recognized refusal.
 Other small scalar forms remain in SE-15.
 
+Positive-lower-bound bend compounds use their complete stored signed matrix
+and radius. Their angular and axial rectangle must reproduce every XYZ
+extremum. Named and inline instances share this predicate with circular
+boundary interval selection. Angular-stream wall frames use their row-major
+columns and complete signed origins. Boundary validation and carrier transfer
+share the complete frame reader. An incomplete or extended angular wall field emits
+`creo/geometry.plane-angular-frame-unresolved`, attributed to its source row
+and payload offset. Synthetic pipeline tests cover both section namespaces,
+complete wall admission, trailing-byte refusal, matching named and inline
+cylinders, conflicting-radius refusal, stored domains, and neutral validation.
+Complete angular endpoint bodies share one reader for native scalar tokens and
+endpoint tuples. A synthetic test checks the tiny literal, low-byte literal,
+exact field consumption, and truncated or trailing-byte refusal. A complete
+angular endpoint candidate with an unresolved full-width subunit literal emits
+`creo/geometry.angular-endpoint-literal-unresolved` with its curve and payload
+offset. The source body remains native.
+
 ## Envelope
 
 The implemented format band is `#UGC:2` PSB part documents using the legacy

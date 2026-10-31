@@ -1184,3 +1184,57 @@ fn sweep_named_samples_keep_signed_angles_and_tiny_coordinates() {
         == crate::loss::CreoLossCode::TwoChartScalarFrameUnresolved.kind()
         && loss.message.contains("Curve 9")));
 }
+
+#[test]
+fn angular_endpoint_frame_keeps_its_complete_boundary() {
+    let body = [
+        0x1a, 0x70, 0x22, 0x18, 0x0f, 0x18, 0x00, 0x04, 0xb3, 0x0f, 0x0f, 0x0f,
+    ];
+    let mut payload = b"topol_ref_data\0".to_vec();
+    payload.extend_from_slice(&[7, 6, 4, 1, 0xf6]);
+    payload.extend_from_slice(&body);
+    payload.extend_from_slice(&[10, 11, 7, 7, 0, 0, 0xe3, 0xe1, 0xe3]);
+    let faces = BTreeSet::from([10, 11]);
+    let parameters = crate::decode::with_service_context(|ctx| {
+        parameter_records_with_face_ids(ctx, &payload, Some(&faces))
+    })
+    .expect("complete parameter frame");
+    assert_eq!(parameters.len(), 1);
+    assert!(parameters[0].opaque_spans.is_empty());
+    let topology = topology_rows_with_face_ids(&payload, Some(&faces));
+    let endpoints = crate::curve::pcurve_endpoints(&parameters, &topology, &mut Vec::new());
+    assert_eq!(endpoints.len(), 1);
+    assert_eq!(
+        endpoints[0].face_0_endpoints,
+        [
+            [f64::from_bits(0x3c70_2222_2222_2222), 0.0],
+            [f64::from_bits(0x3fef_ffff_ffff_ffb3), 1.0],
+        ]
+    );
+    assert_eq!(endpoints[0].face_1_endpoints, [[1.0, 0.0], [1.0, 1.0]]);
+    let cache = crate::scalar::ScalarCache::default();
+    assert!(crate::scalar::sheet_frames::pcurve(&body[..body.len() - 1], &cache).is_none());
+    let mut trailing = body.to_vec();
+    trailing.push(0x18);
+    assert!(crate::scalar::sheet_frames::pcurve(&trailing, &cache).is_none());
+    let mut full_width = vec![0x41];
+    full_width.extend_from_slice(&0.25_f64.to_be_bytes()[1..]);
+    full_width.extend_from_slice(&body[3..]);
+    assert!(crate::scalar::sheet_frames::pcurve(&full_width, &cache)
+        .expect("complete bounded endpoint body")
+        .is_err());
+    let mut refused = b"topol_ref_data\0".to_vec();
+    refused.extend_from_slice(&[7, 6, 4, 1, 0xf6]);
+    refused.extend_from_slice(&full_width);
+    refused.extend_from_slice(&[10, 11, 7, 7, 0, 0, 0xe3, 0xe1, 0xe3]);
+    let records = crate::decode::with_service_context(|ctx| {
+        parameter_records_with_face_ids(ctx, &refused, Some(&faces))
+    })
+    .expect("retain unresolved literal body");
+    let rows = topology_rows_with_face_ids(&refused, Some(&faces));
+    let mut losses = Vec::new();
+    assert!(crate::curve::pcurve_endpoints(&records, &rows, &mut losses).is_empty());
+    assert!(losses.iter().any(|loss| loss.code
+        == crate::loss::CreoLossCode::AngularEndpointLiteralUnresolved.kind()
+        && loss.message.contains("Curve 7")));
+}
