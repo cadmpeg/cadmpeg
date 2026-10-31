@@ -2083,7 +2083,9 @@ each pairwise dot product has magnitude at most `1e-9`, and
 `(U × V) · N` differs from one by at most `1e-9`. Column zero defines the
 parameter reference direction, and column two defines the plane normal.
 The final three finite slots define the chart origin. The complete bounded
-field contains exactly twelve slots.
+field contains exactly twelve slots. A body whose angular direction slots complete but whose
+origin or field consumption does not is read by the support-frame productions
+that follow.
 
 A complete positional compact rotation frame can end with
 `e1 f7 <nonzero-canonical-reference>` before its compound close. The `e1`

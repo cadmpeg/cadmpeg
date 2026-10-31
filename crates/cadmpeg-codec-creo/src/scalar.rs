@@ -1454,10 +1454,11 @@ pub(crate) fn decode_plane_support_local_system(
         }
         incomplete_image = true;
     }
-    if let Some(frame) = sheet_frames::plane(body, cache) {
-        return Ok(frame
-            .ok()
-            .map(|slots| (slots, PlaneSupportFrameLayout::RotationColumns)));
+    // An incomplete angular rotation field falls through to the support-frame
+    // productions; the caller attributes its refusal when no production admits
+    // the body.
+    if let Some(Ok(slots)) = sheet_frames::plane(body, cache) {
+        return Ok(Some((slots, PlaneSupportFrameLayout::RotationColumns)));
     }
     if let Some((frame, cursor)) =
         decode_stateful_scalar_frame_prefix::<12>(body, cache, StatefulScalarKind::Plane)
