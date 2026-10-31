@@ -402,6 +402,24 @@ pub(crate) fn bind_surface_trim_sketch_selections(
     }
 }
 
+pub(crate) fn has_to_termination(extent: &cadmpeg_ir::features::ExtrudeExtent) -> bool {
+    let check_side = |side: &cadmpeg_ir::features::ExtrudeSide| {
+        matches!(
+            side.termination,
+            cadmpeg_ir::features::LinearTermination::ToFace { .. }
+                | cadmpeg_ir::features::LinearTermination::ToShape { .. }
+                | cadmpeg_ir::features::LinearTermination::ThroughNext { .. }
+        )
+    };
+    match extent {
+        cadmpeg_ir::features::ExtrudeExtent::OneSided { side } => check_side(side),
+        cadmpeg_ir::features::ExtrudeExtent::TwoSided { first, second } => {
+            check_side(first) || check_side(second)
+        }
+        cadmpeg_ir::features::ExtrudeExtent::Symmetric { side } => check_side(side),
+    }
+}
+
 pub(crate) fn bind_extrude_profile_selections(
     features: &mut [cadmpeg_ir::features::Feature],
     scopes: &[DesignParameterScope],
@@ -415,6 +433,9 @@ pub(crate) fn bind_extrude_profile_selections(
 
     for feature in features {
         let mut edit_result = Ok(());
+        let mut to_distance_info = None;
+        let mut historical_face_sketch_info: Option<(String, String)> = None;
+        let mut historical_face_offset_info: Option<f64> = None;
         feature.evaluation.edit(|definition, _| {
             edit_result = (|| -> Result<(), CodecError> {
                 'feature_edit: {
@@ -446,11 +467,15 @@ pub(crate) fn bind_extrude_profile_selections(
                         left.scope_reference_ordinal
                             .cmp(&right.scope_reference_ordinal)
                     });
-                    let FeatureDefinition::Operation(FeatureOperation::Extrude { profile, .. }) =
-                        definition
+                    let FeatureDefinition::Operation(FeatureOperation::Extrude {
+                        profile,
+                        extent,
+                        ..
+                    }) = definition
                     else {
                         break 'feature_edit;
                     };
+                    let is_to_termination = has_to_termination(extent);
                     if let ProfileRef::Planar(PlanarProfileRef::Native(native)) = profile {
                         let mut entity_groups = curve_resolution.groups.iter().filter(|group| {
                             group.id == *native
@@ -463,6 +488,38 @@ pub(crate) fn bind_extrude_profile_selections(
                                 &curve_resolution.path_resolution(),
                             ) {
                                 *profile = selection;
+                                if is_to_termination {
+                                    if let (
+                                        Some(state_id),
+                                        Some(prev_state_id),
+                                        ProfileRef::Planar(
+                                            PlanarProfileRef::Sketch(sk_id)
+                                            | PlanarProfileRef::SketchProfiles {
+                                                sketch: sk_id, ..
+                                            }
+                                            | PlanarProfileRef::SketchRegions {
+                                                sketch: sk_id, ..
+                                            }
+                                            | PlanarProfileRef::SketchSelection {
+                                                sketch: sk_id, ..
+                                            },
+                                        ),
+                                    ) = (
+                                        scope.history_state_id(),
+                                        effective_previous_history_state_id,
+                                        &*profile,
+                                    ) {
+                                        if let Some(sk) = sketches.iter().find(|s| &s.id == sk_id) {
+                                            to_distance_info = historical_extrude_to_distance(
+                                                sk,
+                                                0.0,
+                                                scoped_histories,
+                                                state_id,
+                                                prev_state_id,
+                                            );
+                                        }
+                                    }
+                                }
                                 break 'feature_edit;
                             }
                             if let Some(selection) = resolve_profile_curve_arrangement_regions(
@@ -482,6 +539,31 @@ pub(crate) fn bind_extrude_profile_selections(
                             scoped_histories,
                         )? {
                             *profile = ProfileRef::Planar(selection);
+                        }
+                    }
+                    if let ProfileRef::Planar(PlanarProfileRef::HistoricalFaces { faces, .. }) =
+                        profile
+                    {
+                        if let (Some(state_id), Some(prev_state_id)) = (
+                            scope.history_state_id(),
+                            effective_previous_history_state_id,
+                        ) {
+                            if let Some((sk_id, prof_indices, face_off, dist)) =
+                                resolve_historical_faces_to_sketch(
+                                    faces.as_slice(),
+                                    sketches,
+                                    scoped_resolution,
+                                    scoped_histories,
+                                    state_id,
+                                    prev_state_id,
+                                )
+                            {
+                                historical_face_sketch_info = Some((sk_id, prof_indices));
+                                historical_face_offset_info = face_off;
+                                if dist.is_some() {
+                                    to_distance_info = dist;
+                                }
+                            }
                         }
                         break 'feature_edit;
                     }
@@ -563,64 +645,126 @@ pub(crate) fn bind_extrude_profile_selections(
                         *profile = ProfileRef::Planar(PlanarProfileRef::Native(id.to_owned()));
                         break 'feature_edit;
                     };
-                    if let (Some(profile_operand), Some(stream)) =
-                        (scope.extrude_profile(), native_stream(&scope.id))
-                    {
-                        if let Some(profiles) = resolved_sketch_profile_regions(
-                            stream,
-                            profile_operand,
-                            sketch,
-                            curve_resolution.curve_identities,
-                            curve_resolution.sketch_entities,
-                        ) {
-                            let sketch_id = sketch_id.clone();
-                            *profile = ProfileRef::Planar(match PlanarProfileRef::sketch_profiles(
-                                sketch_id, profiles,
-                            ) {
+                    if let (Some(state_id), Some(prev_state_id)) = (
+                        scope.history_state_id(),
+                        effective_previous_history_state_id,
+                    ) {
+                        let is_to_termination = has_to_termination(extent);
+                        if is_to_termination {
+                            to_distance_info = historical_extrude_to_distance(
+                                sketch,
+                                0.0,
+                                scoped_histories,
+                                state_id,
+                                prev_state_id,
+                            );
+                        }
+                    }
+                    let explicit_profiles = scope
+                        .extrude_profile()
+                        .zip(native_stream(&scope.id))
+                        .and_then(|(profile_operand, stream)| {
+                            resolved_sketch_profile_regions(
+                                stream,
+                                profile_operand,
+                                sketch,
+                                curve_resolution.curve_identities,
+                                curve_resolution.sketch_entities,
+                            )
+                        });
+                    if !matching_groups.is_empty() {
+                        let mut selections = Vec::new();
+                        for group in &matching_groups {
+                            let selection = resolved_extrude_profile_selection(
+                                sketch_id,
+                                group,
+                                members,
+                                sketch,
+                                scoped_resolution,
+                                scope.history_state_id(),
+                                effective_previous_history_state_id,
+                            )?;
+                            selections.push(selection);
+                        }
+                        if let Some(merged) =
+                            merge_resolved_profile_selections(sketch_id, &selections)
+                        {
+                            let use_merged = match (&explicit_profiles, &merged) {
+                                (None, _) => true,
+                                (
+                                    Some(exp),
+                                    ProfileRef::Planar(PlanarProfileRef::SketchRegions {
+                                        regions,
+                                        ..
+                                    }),
+                                ) => regions.as_slice().iter().all(|reg| match reg {
+                                    cadmpeg_ir::features::SketchProfileRegion::Loops { loops } => {
+                                        exp.contains(&loops.outer())
+                                    }
+                                    cadmpeg_ir::features::SketchProfileRegion::Trimmed {
+                                        ..
+                                    } => false,
+                                }),
+                                _ => false,
+                            };
+                            if use_merged {
+                                *profile = merged;
+                                break 'feature_edit;
+                            }
+                        }
+                    }
+                    if let Some(profiles) = explicit_profiles {
+                        let sketch_id = sketch_id.clone();
+                        *profile = ProfileRef::Planar(
+                            match PlanarProfileRef::sketch_profiles(sketch_id, profiles) {
                                 Ok(profile) => profile,
                                 Err(_) => PlanarProfileRef::Native(scope.id.clone()),
-                            });
-                            break 'feature_edit;
-                        }
+                            },
+                        );
+                        break 'feature_edit;
                     }
                     if matching_groups.is_empty() {
                         break 'feature_edit;
                     }
-                    let mut selections = Vec::new();
-                    for group in &matching_groups {
-                        let selection = resolved_extrude_profile_selection(
-                            sketch_id,
-                            group,
-                            members,
-                            sketch,
-                            scoped_resolution,
-                            scope.history_state_id(),
-                            effective_previous_history_state_id,
-                        )?;
-                        selections.push(selection);
-                    }
-                    *profile = if let Some(merged) =
-                        merge_resolved_profile_selections(sketch_id, &selections)
-                    {
-                        merged
-                    } else {
-                        let group_ids: Vec<_> = matching_groups
-                            .iter()
-                            .map(|group| group.id.clone())
-                            .collect();
-                        let sketch_id = sketch_id.clone();
-                        let fallback =
-                            match PlanarProfileRef::sketch_selection(sketch_id, group_ids) {
-                                Ok(profile) => profile,
-                                Err(_) => PlanarProfileRef::Native(scope.id.clone()),
-                            };
-                        ProfileRef::Planar(fallback)
+                    let group_ids: Vec<_> = matching_groups
+                        .iter()
+                        .map(|group| group.id.clone())
+                        .collect();
+                    let sketch_id = sketch_id.clone();
+                    let fallback = match PlanarProfileRef::sketch_selection(sketch_id, group_ids) {
+                        Ok(profile) => profile,
+                        Err(_) => PlanarProfileRef::Native(scope.id.clone()),
                     };
+                    *profile = ProfileRef::Planar(fallback);
                 }
                 Ok(())
             })();
         });
         edit_result?;
+        if let Some((sk_id, prof_indices)) = historical_face_sketch_info {
+            feature
+                .source_properties
+                .entry(cadmpeg_core::nonblank_literal!("historical_face_sketch"))
+                .or_insert(sk_id);
+            feature
+                .source_properties
+                .entry(cadmpeg_core::nonblank_literal!("historical_face_profiles"))
+                .or_insert(prof_indices);
+        }
+        if let Some(face_off) = historical_face_offset_info {
+            if face_off.abs() > 1.0e-4 {
+                feature
+                    .source_properties
+                    .entry(cadmpeg_core::nonblank_literal!("historical_face_offset"))
+                    .or_insert_with(|| face_off.to_string());
+            }
+        }
+        if let Some(dist) = to_distance_info {
+            feature
+                .source_properties
+                .entry(cadmpeg_core::nonblank_literal!("extrude_to_distance"))
+                .or_insert_with(|| dist.to_string());
+        }
         resolution.profile_work.finish_selection();
     }
     Ok(())
@@ -974,7 +1118,7 @@ fn historical_profile_face_candidates(
 }
 
 #[derive(Debug, Clone, PartialEq)]
-enum ResolvedProfileSelection {
+pub(in crate::design) enum ResolvedProfileSelection {
     Loops(Vec<u32>),
     Regions(Vec<cadmpeg_ir::features::SketchProfileRegion>),
 }
@@ -1041,7 +1185,10 @@ fn copy_bound_planar_profile(
     use cadmpeg_ir::features::PlanarProfileRef;
 
     match profile {
-        PlanarProfileRef::Sketch(_) | PlanarProfileRef::Native(_) => Ok(profile.clone()),
+        PlanarProfileRef::Sketch(_)
+        | PlanarProfileRef::SketchProfiles { .. }
+        | PlanarProfileRef::SketchRegions { .. }
+        | PlanarProfileRef::Native(_) => Ok(profile.clone()),
         _ => Err(CodecError::malformed(
             "bound planar profile has unsupported resolved form",
         )),
@@ -1104,19 +1251,19 @@ pub(super) fn resolved_extrude_profile_selection(
                 break;
             };
             let entity = crate::ids::neutral_sketch_curve_id(sketch_id, *primary_id, *secondary_id);
-            let mut matches = sketch
+            let matches: Vec<_> = sketch
                 .profiles
                 .iter()
                 .enumerate()
-                .filter(|(_, profile)| profile.iter().any(|use_| use_.entity == entity));
-            let Some((index, _)) = matches.next() else {
-                complete = false;
-                break;
+                .filter(|(_, profile)| profile.iter().any(|use_| use_.entity == entity))
+                .collect();
+            let index = match matches.as_slice() {
+                [(idx, _)] => *idx,
+                _ => {
+                    complete = false;
+                    break;
+                }
             };
-            if matches.next().is_some() {
-                complete = false;
-                break;
-            }
             let Ok(profile_index) = u32::try_from(index) else {
                 complete = false;
                 break;
@@ -1148,6 +1295,42 @@ pub(super) fn resolved_extrude_profile_selection(
                 transition_profile_selection(sketch, resolution, state_id, previous_state_id)?;
         }
     }
+    if resolved_profiles.is_none() && exact_member_run {
+        let mut selected = Vec::new();
+        let mut complete = true;
+        for member in &selection_members {
+            let Some(SketchRelationOperand::Curve {
+                primary_id,
+                secondary_id,
+                ..
+            }) = member.resolved_geometry.as_ref()
+            else {
+                complete = false;
+                break;
+            };
+            let entity = crate::ids::neutral_sketch_curve_id(sketch_id, *primary_id, *secondary_id);
+            let matches: Vec<_> = sketch
+                .profiles
+                .iter()
+                .enumerate()
+                .filter(|(_, profile)| profile.iter().any(|use_| use_.entity == entity))
+                .collect();
+            let Some((idx, _)) = matches.iter().min_by_key(|(_, profile)| profile.len()) else {
+                complete = false;
+                break;
+            };
+            let Ok(profile_index) = u32::try_from(*idx) else {
+                complete = false;
+                break;
+            };
+            if !selected.contains(&profile_index) {
+                selected.push(profile_index);
+            }
+        }
+        if complete && !selected.is_empty() {
+            resolved_profiles = Some(ResolvedProfileSelection::Loops(selected));
+        }
+    }
     if resolved_profiles.is_none() && sketch.profiles.len() == 1 {
         resolved_profiles = Some(ResolvedProfileSelection::Loops(vec![0]));
     }
@@ -1176,10 +1359,570 @@ pub(super) fn resolved_extrude_profile_selection(
     Ok(ProfileRef::Planar(profile))
 }
 
-fn transition_profile_selection(
+pub(in crate::design) fn resolve_historical_faces_to_sketch(
+    faces: &[cadmpeg_ir::ids::HistoricalFaceId],
+    sketches: &[cadmpeg_ir::sketches::Sketch],
+    resolution: ScopedExtrudeProfileResolution<'_>,
+    histories: &[crate::history_records::AsmHistory],
+    state_id: i64,
+    previous_state_id: i64,
+) -> Option<(String, String, Option<f64>, Option<f64>)> {
+    let mut prev_states = histories
+        .iter()
+        .flat_map(|history| history.states().iter().map(move |state| (history, state)))
+        .filter(|(_, state)| state.state_id == previous_state_id);
+    let (prev_history, prev_state) = prev_states.next()?;
+    if prev_states.next().is_some() {
+        return None;
+    }
+    let prev_topology = prev_history.topology(prev_state)?;
+    let face_ids: Vec<i64> = faces
+        .iter()
+        .filter_map(|f| f.as_str().rsplit(':').next()?.parse::<i64>().ok())
+        .collect();
+    if face_ids.is_empty() {
+        return None;
+    }
+    let first_face = face_ids[0];
+    let face_surface = prev_topology
+        .face_surfaces
+        .iter()
+        .find(|fs| fs.entity == first_face)
+        .map(|fs| fs.carrier)
+        .or_else(|| {
+            prev_history
+                .states()
+                .iter()
+                .filter_map(|s| prev_history.topology(s))
+                .find_map(|t| {
+                    t.face_surfaces
+                        .iter()
+                        .find(|fs| fs.entity == first_face)
+                        .map(|fs| fs.carrier)
+                })
+        });
+    let face_plane = face_surface.and_then(|s| {
+        prev_topology
+            .surface_planes
+            .iter()
+            .find(|sp| sp.surface == s)
+            .or_else(|| {
+                prev_history
+                    .states()
+                    .iter()
+                    .filter_map(|st| prev_history.topology(st))
+                    .find_map(|t| t.surface_planes.iter().find(|sp| sp.surface == s))
+            })
+    });
+    let mut face_verts = Vec::new();
+    for &fid in &face_ids {
+        for pt in historical_face_all_points(fid, prev_topology) {
+            if !face_verts.contains(&pt) {
+                face_verts.push(pt);
+            }
+        }
+    }
+
+    // Collect edges of selected faces and adjacent faces in prev_topology
+    let mut face_edges = HashSet::new();
+    for &fid in &face_ids {
+        for fl in prev_topology
+            .face_loops
+            .iter()
+            .filter(|fl| fl.owner_ref == fid)
+        {
+            for &loop_id in &fl.member_refs {
+                for lc in prev_topology
+                    .loop_coedges
+                    .iter()
+                    .filter(|lc| lc.owner_ref == loop_id)
+                {
+                    for &coedge_id in &lc.member_refs {
+                        if let Some(ce) = prev_topology
+                            .coedge_topology
+                            .iter()
+                            .find(|c| c.coedge == coedge_id)
+                        {
+                            face_edges.insert(ce.edge);
+                        }
+                    }
+                }
+            }
+        }
+    }
+    let mut adjacent_faces = Vec::new();
+    for ce in &prev_topology.coedge_topology {
+        if face_edges.contains(&ce.edge) {
+            for lc in prev_topology
+                .loop_coedges
+                .iter()
+                .filter(|lc| lc.member_refs.contains(&ce.coedge))
+            {
+                for fl in prev_topology
+                    .face_loops
+                    .iter()
+                    .filter(|fl| fl.member_refs.contains(&lc.owner_ref))
+                {
+                    if !face_ids.contains(&fl.owner_ref) && !adjacent_faces.contains(&fl.owner_ref)
+                    {
+                        adjacent_faces.push(fl.owner_ref);
+                    }
+                }
+            }
+        }
+    }
+    let mut circle_axes = Vec::new();
+    for &fid in &face_ids {
+        for fl in prev_topology
+            .face_loops
+            .iter()
+            .filter(|fl| fl.owner_ref == fid)
+        {
+            for &loop_id in &fl.member_refs {
+                for lc in prev_topology
+                    .loop_coedges
+                    .iter()
+                    .filter(|lc| lc.owner_ref == loop_id)
+                {
+                    if lc.member_refs.len() == 1 {
+                        let coedge_id = lc.member_refs[0];
+                        if let Some(ce) = prev_topology
+                            .coedge_topology
+                            .iter()
+                            .find(|c| c.coedge == coedge_id)
+                        {
+                            if let Some(ec) = prev_topology
+                                .edge_curves
+                                .iter()
+                                .find(|ec| ec.entity == ce.edge)
+                            {
+                                if let Some(ca) = prev_topology
+                                    .curve_axes
+                                    .iter()
+                                    .find(|ca| Some(ca.curve) == ec.carrier)
+                                {
+                                    if !circle_axes.contains(&(ca.origin, ca.direction)) {
+                                        circle_axes.push((ca.origin, ca.direction));
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    let mut best_match: Option<(f64, Option<f64>, &cadmpeg_ir::sketches::Sketch, Vec<u32>)> = None;
+    for candidate_sketch in sketches.iter().rev() {
+        let Some((sk_origin, sk_normal, sk_u)) = candidate_sketch.resolved_placement() else {
+            continue;
+        };
+        if let Some(fp) = face_plane {
+            let align =
+                fp.normal.x * sk_normal.x + fp.normal.y * sk_normal.y + fp.normal.z * sk_normal.z;
+            if align.abs() < 0.98 {
+                continue;
+            }
+        } else if let Some((_, axis_dir)) = circle_axes.first() {
+            let align =
+                axis_dir.x * sk_normal.x + axis_dir.y * sk_normal.y + axis_dir.z * sk_normal.z;
+            if align.abs() < 0.98 {
+                continue;
+            }
+        } else if let Some(first_pt) = face_verts.first() {
+            let all_coplanar_with_sketch = face_verts.iter().all(|pt| {
+                let d = pt.vector_from(*first_pt).dot(*sk_normal.as_raw());
+                d.abs() <= resolution.linear_tolerance * 10.0
+            });
+            if !all_coplanar_with_sketch {
+                continue;
+            }
+        }
+        let signed_plane_offset = face_verts
+            .first()
+            .or_else(|| circle_axes.first().map(|(c, _)| c))
+            .or_else(|| face_plane.map(|fp| &fp.origin))
+            .map(|pt| pt.vector_from(*sk_origin).dot(*sk_normal.as_raw()));
+        let Some(dist) = historical_extrude_to_distance(
+            candidate_sketch,
+            signed_plane_offset.unwrap_or(0.0),
+            histories,
+            state_id,
+            previous_state_id,
+        ) else {
+            continue;
+        };
+        if dist.abs() <= resolution.linear_tolerance {
+            continue;
+        }
+        let sk_v = sk_normal.cross(sk_u.get());
+        let mut matched_loops = Vec::new();
+        if !circle_axes.is_empty() {
+            for &(c_origin, _) in &circle_axes {
+                let offset = c_origin.vector_from(*sk_origin);
+                let p2 = Point2::new(offset.dot(sk_u.get()), offset.dot(sk_v));
+                for (idx, prof) in candidate_sketch.profiles.iter().enumerate() {
+                    if prof.len() != circle_axes.len() {
+                        continue;
+                    }
+                    let Ok(idx_u32) = u32::try_from(idx) else {
+                        continue;
+                    };
+                    let on_circle_center = prof.iter().any(|use_| {
+                        resolution
+                            .entities
+                            .iter()
+                            .find(|e| e.sketch == candidate_sketch.id && e.id() == &use_.entity)
+                            .is_some_and(|e| match e.geometry.definition() {
+                                cadmpeg_ir::sketches::SketchGeometryDefinition::Circle {
+                                    center,
+                                    ..
+                                } => {
+                                    let du = p2.u - center.u;
+                                    let dv = p2.v - center.v;
+                                    du.hypot(dv) <= resolution.linear_tolerance * 10.0
+                                }
+                                _ => false,
+                            })
+                    });
+                    if on_circle_center && !matched_loops.contains(&idx_u32) {
+                        matched_loops.push(idx_u32);
+                    }
+                }
+            }
+        }
+        if matched_loops.is_empty() && !face_verts.is_empty() {
+            let mut all_verts_matched = true;
+            for &pt in &face_verts {
+                let offset = pt.vector_from(*sk_origin);
+                let p2 = Point2::new(offset.dot(sk_u.get()), offset.dot(sk_v));
+                let mut vert_loops = Vec::new();
+                for (idx, prof) in candidate_sketch.profiles.iter().enumerate() {
+                    let Ok(idx_u32) = u32::try_from(idx) else {
+                        continue;
+                    };
+                    let on_prof = prof.iter().any(|use_| {
+                        resolution
+                            .entities
+                            .iter()
+                            .find(|e| e.sketch == candidate_sketch.id && e.id() == &use_.entity)
+                            .is_some_and(|e| {
+                                let is_circle_or_arc = matches!(
+                                    e.geometry.definition(),
+                                    cadmpeg_ir::sketches::SketchGeometryDefinition::Circle { .. }
+                                        | cadmpeg_ir::sketches::SketchGeometryDefinition::Arc { .. }
+                                );
+                                (is_circle_or_arc || face_verts.len() >= 3)
+                                    && point_on_sketch_entity(p2, e, resolution.linear_tolerance)
+                            })
+                    });
+                    if on_prof {
+                        vert_loops.push(idx_u32);
+                    }
+                }
+                if vert_loops.is_empty() {
+                    all_verts_matched = false;
+                    break;
+                }
+                for l in vert_loops {
+                    if !matched_loops.contains(&l) {
+                        matched_loops.push(l);
+                    }
+                }
+            }
+            if !all_verts_matched {
+                matched_loops.clear();
+            }
+        }
+        if matched_loops.is_empty() {
+            for &adj_face in &adjacent_faces {
+                let cyl = inserted_cylindrical_profile_selection(
+                    candidate_sketch,
+                    resolution.entities,
+                    prev_topology,
+                    adj_face,
+                    resolution.linear_tolerance,
+                    resolution.angular_tolerance,
+                );
+                if let Some(ResolvedProfileSelection::Loops(loops)) = cyl {
+                    for l in loops {
+                        if !matched_loops.contains(&l) {
+                            matched_loops.push(l);
+                        }
+                    }
+                }
+            }
+        }
+        if matched_loops.is_empty() {
+            if let Ok(Some(ResolvedProfileSelection::Loops(loops))) = transition_profile_selection(
+                candidate_sketch,
+                resolution,
+                state_id,
+                previous_state_id,
+            ) {
+                matched_loops = loops;
+            }
+        }
+        if !matched_loops.is_empty() {
+            matched_loops.sort_unstable();
+            let plane_dist = signed_plane_offset.map_or(f64::INFINITY, f64::abs);
+            if best_match
+                .as_ref()
+                .is_none_or(|(best_d, _, _, _)| plane_dist < *best_d)
+            {
+                best_match = Some((
+                    plane_dist,
+                    signed_plane_offset,
+                    candidate_sketch,
+                    matched_loops,
+                ));
+            }
+        }
+    }
+    if let Some((_, signed_plane_offset, candidate_sketch, matched_loops)) = best_match {
+        let prof_str = matched_loops
+            .iter()
+            .map(u32::to_string)
+            .collect::<Vec<_>>()
+            .join(",");
+        let dist = historical_extrude_to_distance(
+            candidate_sketch,
+            signed_plane_offset.unwrap_or(0.0),
+            histories,
+            state_id,
+            previous_state_id,
+        );
+        return Some((
+            candidate_sketch.id.as_str().to_string(),
+            prof_str,
+            signed_plane_offset,
+            dist,
+        ));
+    }
+    None
+}
+
+pub(crate) fn historical_extrude_to_distance(
+    sketch: &cadmpeg_ir::sketches::Sketch,
+    start_offset: f64,
+    histories: &[crate::history_records::AsmHistory],
+    state_id: i64,
+    previous_state_id: i64,
+) -> Option<f64> {
+    let (sketch_origin, sketch_normal, _) = sketch.resolved_placement()?;
+    let mut states = histories
+        .iter()
+        .flat_map(|history| history.states().iter().map(move |state| (history, state)))
+        .filter(|(_, state)| state.state_id == state_id);
+    let (history, end_state) = states.next()?;
+    if states.next().is_some() {
+        return None;
+    }
+    let end_topology = history.topology(end_state)?;
+    let mut chain = Vec::new();
+    let mut cur = end_state;
+    while cur.state_id != previous_state_id && chain.len() < 8 {
+        let prev_id = cur.transition.as_ref()?.previous_state_id?;
+        chain.push(cur);
+        if prev_id == previous_state_id {
+            break;
+        }
+        cur = history.states().iter().find(|s| s.state_id == prev_id)?;
+    }
+    let signed_dist = |p: Point3| -> f64 {
+        ((p.x - sketch_origin.x) * sketch_normal.x
+            + (p.y - sketch_origin.y) * sketch_normal.y
+            + (p.z - sketch_origin.z) * sketch_normal.z)
+            - start_offset
+    };
+    let mut best: f64 = 0.0;
+    let update_best = |best: &mut f64, d: f64| {
+        if d.abs() > 0.1 && (*best == 0.0 || d.abs() < best.abs()) {
+            *best = d;
+        }
+    };
+    for step_state in &chain {
+        let Some(transition) = step_state.transition.as_ref() else {
+            continue;
+        };
+        let Some(topology) = history.topology(step_state) else {
+            continue;
+        };
+        for &pt_id in &transition.topology.points.inserted {
+            if !end_topology.points.contains(&pt_id) {
+                continue;
+            }
+            if let Some(p) = topology
+                .point_positions
+                .iter()
+                .find(|p| p.point == pt_id)
+                .map(|p| p.position)
+            {
+                update_best(&mut best, signed_dist(p));
+            }
+        }
+        for &curve_id in &transition.topology.curves.inserted {
+            if !end_topology.curves.contains(&curve_id) {
+                continue;
+            }
+            if let Some(ca) = topology.curve_axes.iter().find(|c| c.curve == curve_id) {
+                let align = ca.direction.x * sketch_normal.x
+                    + ca.direction.y * sketch_normal.y
+                    + ca.direction.z * sketch_normal.z;
+                if align.abs() > 0.98 {
+                    update_best(&mut best, signed_dist(ca.origin));
+                }
+            }
+        }
+        for &surf_id in &transition.topology.surfaces.inserted {
+            if !end_topology.surfaces.contains(&surf_id) {
+                continue;
+            }
+            if let Some(sp) = topology
+                .surface_planes
+                .iter()
+                .find(|s| s.surface == surf_id)
+            {
+                let align = sp.normal.x * sketch_normal.x
+                    + sp.normal.y * sketch_normal.y
+                    + sp.normal.z * sketch_normal.z;
+                if align.abs() > 0.98 {
+                    update_best(&mut best, signed_dist(sp.origin));
+                }
+            }
+        }
+    }
+    if best.abs() <= 1.0e-4 {
+        for step_state in &chain {
+            let Some(transition) = step_state.transition.as_ref() else {
+                continue;
+            };
+            let Some(topology) = history.topology(step_state) else {
+                continue;
+            };
+            let max_cyl_r = transition
+                .topology
+                .surfaces
+                .inserted
+                .iter()
+                .filter_map(|&sid| {
+                    topology
+                        .surface_cylinders
+                        .iter()
+                        .find(|c| c.surface == sid)
+                        .map(|c| c.radius)
+                })
+                .fold(0.0_f64, f64::max);
+            for &curve_id in &transition.topology.curves.inserted {
+                if !end_topology.curves.contains(&curve_id) {
+                    continue;
+                }
+                if let Some(ca) = topology.curve_axes.iter().find(|c| c.curve == curve_id) {
+                    let align = ca.direction.x * sketch_normal.x
+                        + ca.direction.y * sketch_normal.y
+                        + ca.direction.z * sketch_normal.z;
+                    if align.abs() > 0.35 {
+                        let d = signed_dist(ca.origin);
+                        if d.abs() > 0.1 {
+                            let tan_theta = (1.0 - align * align).max(0.0).sqrt() / align.abs();
+                            let d_adj = d + d.signum() * max_cyl_r * tan_theta;
+                            update_best(&mut best, d_adj);
+                        }
+                    }
+                }
+            }
+            for &surf_id in &transition.topology.surfaces.inserted {
+                if !end_topology.surfaces.contains(&surf_id) {
+                    continue;
+                }
+                if let Some(sp) = topology
+                    .surface_planes
+                    .iter()
+                    .find(|s| s.surface == surf_id)
+                {
+                    let align = sp.normal.x * sketch_normal.x
+                        + sp.normal.y * sketch_normal.y
+                        + sp.normal.z * sketch_normal.z;
+                    if align.abs() > 0.35 {
+                        update_best(&mut best, signed_dist(sp.origin));
+                    }
+                }
+            }
+        }
+    }
+    if best.abs() > 1.0e-4 {
+        return Some(best);
+    }
+    None
+}
+
+pub(in crate::design) fn transition_profile_selection(
     sketch: &cadmpeg_ir::sketches::Sketch,
     resolution: ScopedExtrudeProfileResolution<'_>,
     state_id: i64,
+    previous_state_id: i64,
+) -> Result<Option<ResolvedProfileSelection>, CodecError> {
+    let mut states = resolution
+        .histories
+        .iter()
+        .flat_map(|history| history.states().iter().map(move |state| (history, state)))
+        .filter(|(_, state)| state.state_id == state_id);
+    let Some((history, end_state)) = states.next() else {
+        return Ok(None);
+    };
+    if states.next().is_some() {
+        return Ok(None);
+    }
+    let mut chain = Vec::new();
+    let mut cur = end_state;
+    while cur.state_id != previous_state_id && chain.len() < 8 {
+        let Some(prev_id) = cur.transition.as_ref().and_then(|t| t.previous_state_id) else {
+            return Ok(None);
+        };
+        chain.push((cur, prev_id));
+        if prev_id == previous_state_id {
+            break;
+        }
+        let Some(prev_state) = history.states().iter().find(|s| s.state_id == prev_id) else {
+            return Ok(None);
+        };
+        cur = prev_state;
+    }
+    if chain.last().map(|(_, p)| *p) != Some(previous_state_id) {
+        return Ok(None);
+    }
+    for (i, (step_state, step_prev_id)) in chain.iter().enumerate() {
+        if let Some(sel) = transition_profile_selection_step(
+            sketch,
+            resolution,
+            history,
+            step_state,
+            *step_prev_id,
+        )? {
+            let intermediates_empty = chain.iter().enumerate().all(|(j, (s, _))| {
+                if j == i {
+                    true
+                } else if let Some(t) = s.transition.as_ref() {
+                    t.rows == crate::history_records::AsmHistoricalRowsDelta::default()
+                        && topology_delta_keeps_entities(&t.topology)
+                } else {
+                    false
+                }
+            });
+            if intermediates_empty {
+                return Ok(Some(sel));
+            }
+        }
+    }
+    Ok(None)
+}
+
+fn transition_profile_selection_step(
+    sketch: &cadmpeg_ir::sketches::Sketch,
+    resolution: ScopedExtrudeProfileResolution<'_>,
+    history: &crate::history_records::AsmHistory,
+    state: &crate::history_records::AsmDeltaState,
     previous_state_id: i64,
 ) -> Result<Option<ResolvedProfileSelection>, CodecError> {
     macro_rules! geometric {
@@ -1192,22 +1935,100 @@ fn transition_profile_selection(
     }
     let entities = resolution.entities;
     let profile_work = resolution.profile_work;
-    let (history, state) = geometric!(linked_transition_state(
-        resolution.histories,
-        state_id,
-        previous_state_id
-    ));
     let topology = geometric!(history.topology(state));
     let inserted_faces = &geometric!(state.transition.as_ref())
         .topology
         .faces
         .inserted;
+    let prev_topology_opt = history
+        .states()
+        .iter()
+        .find(|s| s.state_id == previous_state_id)
+        .and_then(|s| history.topology(s));
     // The document linear tolerance is admitted at or above the analytic floor
     // when the kernel header is read, so it drives the comparisons unchanged.
     let tolerance = resolution.linear_tolerance;
+    let mut cylindrical_selections = Vec::new();
+    let mut cyl_counts: HashMap<u32, usize> = HashMap::new();
+    for face in inserted_faces {
+        let selection = inserted_cylindrical_profile_selection(
+            sketch,
+            entities,
+            topology,
+            *face,
+            tolerance,
+            resolution.angular_tolerance,
+        );
+        if let Some(ResolvedProfileSelection::Loops(ref loops)) = selection {
+            for &l in loops {
+                *cyl_counts.entry(l).or_insert(0) += 1;
+            }
+        }
+        cylindrical_selections.push(selection);
+    }
+    let mut prev_cyl_counts: HashMap<u32, usize> = HashMap::new();
+    if cyl_counts.len() > 1 {
+        if let Some(prev_topo) = prev_topology_opt {
+            for fl in &prev_topo.face_loops {
+                if let Some(ResolvedProfileSelection::Loops(loops)) =
+                    inserted_cylindrical_profile_selection(
+                        sketch,
+                        entities,
+                        prev_topo,
+                        fl.owner_ref,
+                        tolerance,
+                        resolution.angular_tolerance,
+                    )
+                {
+                    for l in loops {
+                        *prev_cyl_counts.entry(l).or_insert(0) += 1;
+                    }
+                }
+            }
+        }
+    }
+    let mut cyl_loops = Vec::new();
+    for selection in cylindrical_selections.iter().flatten() {
+        let ResolvedProfileSelection::Loops(selected) = selection else {
+            continue;
+        };
+        for &profile in selected {
+            let cur_count = cyl_counts.get(&profile).copied().unwrap_or(0);
+            let prev_count = prev_cyl_counts.get(&profile).copied().unwrap_or(0);
+            if cur_count > prev_count && !cyl_loops.contains(&profile) {
+                cyl_loops.push(profile);
+            }
+        }
+    }
+    let placement_opt = sketch.resolved_placement();
+    let face_has_off_plane_point = |face: i64| -> bool {
+        let Some((sk_origin, sk_normal, _)) = placement_opt else {
+            return true;
+        };
+        historical_face_all_points(face, topology)
+            .into_iter()
+            .any(|pt| pt.vector_from(*sk_origin).dot(*sk_normal.as_raw()).abs() > tolerance)
+    };
+    let has_prior_faces = prev_topology_opt.is_some_and(|pt| !pt.faces.is_empty());
+    let any_off_plane_face = inserted_faces.iter().any(|&f| face_has_off_plane_point(f));
+    let only_circular_faces = !cyl_loops.is_empty()
+        && inserted_faces
+            .iter()
+            .zip(&cylindrical_selections)
+            .all(|(face, cyl_sel)| {
+                cyl_sel.is_some()
+                    || (has_prior_faces && any_off_plane_face && !face_has_off_plane_point(*face))
+                    || historical_face_points(*face, topology).is_none_or(|pts| pts.len() <= 2)
+            });
+    if only_circular_faces {
+        return Ok(Some(ResolvedProfileSelection::Loops(cyl_loops)));
+    }
     let mut inserted_selections = Vec::new();
     let mut cap_selections = Vec::new();
     for face in inserted_faces {
+        if has_prior_faces && any_off_plane_face && !face_has_off_plane_point(*face) {
+            continue;
+        }
         let points = historical_face_points(*face, topology);
         let selection = match points.as_deref() {
             Some(points) => selection_containing_points(
@@ -1236,31 +2057,96 @@ fn transition_profile_selection(
         profile_work,
         resolution.ctx,
     )?;
-    if inserted.is_some() {
-        return Ok(inserted);
+    if let Some(sel) = inserted {
+        if let ResolvedProfileSelection::Loops(ref loops) = sel {
+            if loops.len() == 1
+                && !cyl_loops.is_empty()
+                && !cyl_loops.contains(&loops[0])
+                && usize::try_from(loops[0])
+                    .ok()
+                    .and_then(|idx| sketch.profiles.get(idx))
+                    .is_some_and(|p| p.len() > 1)
+            {
+                if let Ok(region) =
+                    cadmpeg_ir::features::SketchProfileRegion::loops(loops[0], cyl_loops.clone())
+                {
+                    return Ok(Some(ResolvedProfileSelection::Regions(vec![region])));
+                }
+            }
+        }
+        return Ok(Some(sel));
     }
     // A cap lies in one plane parallel to the Sketch and repeats the profile.
     // Side faces that a Boolean merges with existing faces can select other
     // loops, so agreeing caps prove the selection over differing side faces.
     if !cap_selections.is_empty() && cap_selections.iter().all(Option::is_some) {
         if let Some(selection) = unique_resolved_selection(cap_selections) {
+            if let ResolvedProfileSelection::Loops(ref loops) = selection {
+                if loops.len() == 1
+                    && !cyl_loops.is_empty()
+                    && !cyl_loops.contains(&loops[0])
+                    && usize::try_from(loops[0])
+                        .ok()
+                        .and_then(|idx| sketch.profiles.get(idx))
+                        .is_some_and(|p| p.len() > 1)
+                {
+                    if let Ok(region) = cadmpeg_ir::features::SketchProfileRegion::loops(
+                        loops[0],
+                        cyl_loops.clone(),
+                    ) {
+                        return Ok(Some(ResolvedProfileSelection::Regions(vec![region])));
+                    }
+                }
+            }
             return Ok(Some(selection));
         }
     }
-    let mut cylindrical_selections = Vec::new();
-    for face in inserted_faces {
-        let selection = inserted_cylindrical_profile_selection(
-            sketch,
-            entities,
-            topology,
-            *face,
-            tolerance,
-            resolution.angular_tolerance,
-        );
-        cylindrical_selections.push(selection);
-    }
     if let Some(selection) = unique_resolved_selection(cylindrical_selections) {
         return Ok(Some(selection));
+    }
+    if !cyl_loops.is_empty() {
+        return Ok(Some(ResolvedProfileSelection::Loops(cyl_loops)));
+    }
+    if let Some((sk_origin, sk_normal, _)) = sketch.resolved_placement() {
+        let mut inserted_plane_pts = Vec::new();
+        for face in inserted_faces {
+            for pt in historical_face_all_points(*face, topology) {
+                let d = pt.vector_from(*sk_origin).dot(*sk_normal.as_raw()).abs();
+                if d <= tolerance * 10.0 {
+                    if let Some(p2) = project_to_sketch(sketch, pt) {
+                        inserted_plane_pts.push(p2);
+                    }
+                }
+            }
+        }
+        if !inserted_plane_pts.is_empty() {
+            let mut circle_loops = Vec::new();
+            for (idx, prof) in sketch.profiles.iter().enumerate() {
+                let Ok(idx_u32) = u32::try_from(idx) else {
+                    continue;
+                };
+                let is_matched_circle = prof.len() == 1
+                    && prof.iter().all(|use_| {
+                        entities
+                            .iter()
+                            .find(|e| e.id() == &use_.entity)
+                            .is_some_and(|e| {
+                                matches!(
+                                    e.geometry.definition(),
+                                    cadmpeg_ir::sketches::SketchGeometryDefinition::Circle { .. }
+                                ) && inserted_plane_pts
+                                    .iter()
+                                    .any(|&p2| point_on_sketch_entity(p2, e, tolerance))
+                            })
+                    });
+                if is_matched_circle {
+                    circle_loops.push(idx_u32);
+                }
+            }
+            if circle_loops.len() == 1 {
+                return Ok(Some(ResolvedProfileSelection::Loops(circle_loops)));
+            }
+        }
     }
     // Deleted faces exist in the state immediately before the transition.
     let immediate_previous_state_id = geometric!(state
@@ -1283,8 +2169,17 @@ fn transition_profile_selection(
         previous_topology
     ));
     let mut selections = Vec::new();
+    let mut combined_deleted_points = Vec::new();
     for face in faces {
-        let selection = match historical_face_points(face, previous_topology) {
+        let pts = historical_face_points(face, previous_topology);
+        if let Some(ref points) = pts {
+            for &p in points {
+                if !combined_deleted_points.contains(&p) {
+                    combined_deleted_points.push(p);
+                }
+            }
+        }
+        let selection = match pts {
             Some(points) => selection_containing_points(
                 sketch,
                 entities,
@@ -1296,6 +2191,42 @@ fn transition_profile_selection(
             None => None,
         };
         selections.push(selection);
+    }
+    if !combined_deleted_points.is_empty() {
+        let mut proj_pts = Vec::new();
+        for &pt in &combined_deleted_points {
+            if let Some(p2) = project_to_sketch(sketch, pt) {
+                proj_pts.push(p2);
+            }
+        }
+        let mut circle_loops = Vec::new();
+        for (idx, prof) in sketch.profiles.iter().enumerate() {
+            let Ok(idx_u32) = u32::try_from(idx) else {
+                continue;
+            };
+            let is_matched_circle = prof.len() == 1
+                && prof.iter().all(|use_| {
+                    entities
+                        .iter()
+                        .find(|e| e.id() == &use_.entity)
+                        .is_some_and(|e| {
+                            matches!(
+                                e.geometry.definition(),
+                                cadmpeg_ir::sketches::SketchGeometryDefinition::Circle { .. }
+                            ) && proj_pts
+                                .iter()
+                                .filter(|&&p2| point_on_sketch_entity(p2, e, tolerance))
+                                .count()
+                                >= 2
+                        })
+                });
+            if is_matched_circle {
+                circle_loops.push(idx_u32);
+            }
+        }
+        if !circle_loops.is_empty() {
+            return Ok(Some(ResolvedProfileSelection::Loops(circle_loops)));
+        }
     }
     Ok(ordered_unique_profile_selections(selections))
 }
@@ -1723,7 +2654,7 @@ fn unique_resolved_selection<T: PartialEq>(
         .then_some(first)
 }
 
-fn transition_inserted_profile_selection(
+pub(in crate::design) fn transition_inserted_profile_selection(
     sketch: &cadmpeg_ir::sketches::Sketch,
     entities: &[cadmpeg_ir::sketches::SketchEntity],
     tolerance: f64,
@@ -1761,25 +2692,49 @@ fn transition_inserted_profile_selection(
         matches!(selection, ResolvedProfileSelection::Loops(loops) if !loops.is_empty())
     }) {
         let mut loops = Vec::new();
+        let mut loop_counts: HashMap<u32, usize> = HashMap::new();
         for selection in selections.iter().flatten() {
             let ResolvedProfileSelection::Loops(selected) = selection else { continue; };
             for profile in selected.iter().copied() {
+                *loop_counts.entry(profile).or_insert(0) += 1;
                 if !loops.contains(&profile) {
                     loops.push(profile);
                 }
             }
         }
-        if !loops.is_empty()
-            && profile_loops_are_independent(
+        if !loops.is_empty() {
+            if profile_loops_are_independent(
                 sketch,
                 entities,
                 &loops,
                 tolerance,
                 profile_work,
                 ctx,
-            )?
-        {
-            return Ok(Some(ResolvedProfileSelection::Loops(loops)));
+            )? {
+                return Ok(Some(ResolvedProfileSelection::Loops(loops)));
+            }
+            let multi_face_loops: Vec<u32> = loops
+                .iter()
+                .copied()
+                .filter(|p| loop_counts.get(p).copied().unwrap_or(0) >= 2)
+                .collect();
+            if !multi_face_loops.is_empty()
+                && multi_face_loops.len() < loops.len()
+                && profile_loops_are_independent(
+                    sketch,
+                    entities,
+                    &multi_face_loops,
+                    tolerance,
+                    profile_work,
+                    ctx,
+                )?
+            {
+                return Ok(Some(ResolvedProfileSelection::Loops(multi_face_loops)));
+            }
+            if loops.len() == sketch.profiles.len() {
+                loops.sort_unstable();
+                return Ok(Some(ResolvedProfileSelection::Loops(loops)));
+            }
         }
     }
     let mut regions = selections
@@ -1831,6 +2786,67 @@ fn transition_inserted_profile_selection(
     };
     let output = vec![region];
     Ok(Some(ResolvedProfileSelection::Regions(output)))
+}
+
+fn historical_face_all_points(
+    face: i64,
+    topology: &crate::history_records::AsmHistoricalTopology,
+) -> Vec<Point3> {
+    let Some(loops) = topology
+        .face_loops
+        .iter()
+        .find(|relation| relation.owner_ref == face)
+    else {
+        return Vec::new();
+    };
+    let mut positions = Vec::new();
+    for loop_ref in &loops.member_refs {
+        let Some(coedges) = topology
+            .loop_coedges
+            .iter()
+            .find(|relation| relation.owner_ref == *loop_ref)
+        else {
+            continue;
+        };
+        for coedge_ref in &coedges.member_refs {
+            let Some(coedge) = topology
+                .coedge_topology
+                .iter()
+                .find(|coedge| coedge.coedge == *coedge_ref)
+            else {
+                continue;
+            };
+            let Some(edge) = topology
+                .edge_vertices
+                .iter()
+                .find(|edge| edge.edge == coedge.edge)
+            else {
+                continue;
+            };
+            for vertex_ref in [edge.start_vertex, edge.end_vertex] {
+                let Some(point_ref) = topology
+                    .vertex_points
+                    .iter()
+                    .find(|binding| binding.entity == vertex_ref)
+                    .map(|binding| binding.carrier)
+                else {
+                    continue;
+                };
+                let Some(position) = topology
+                    .point_positions
+                    .iter()
+                    .find(|point| point.point == point_ref)
+                    .map(|point| point.position)
+                else {
+                    continue;
+                };
+                if !positions.contains(&position) {
+                    positions.push(position);
+                }
+            }
+        }
+    }
+    positions
 }
 
 pub(super) fn historical_face_points(
@@ -2014,20 +3030,21 @@ fn historical_selection_regions(
     }
     let mut selections = Vec::new();
     for member in members {
-        let selection = if let Some(point) =
-            resolved_selection_member_point(member, sketch, entities)
-        {
-            selection_containing_points(
-                sketch,
-                entities,
-                std::slice::from_ref(&point),
-                tolerance,
-                profile_work,
-                ctx,
-            )?
-        } else {
-            resolved_selection_member_profiles(member, sketch).map(ResolvedProfileSelection::Loops)
-        };
+        let selection =
+            if let Some(point) = resolved_selection_member_point(member, sketch, entities) {
+                selection_containing_points(
+                    sketch,
+                    entities,
+                    std::slice::from_ref(&point),
+                    tolerance,
+                    profile_work,
+                    ctx,
+                )?
+            } else {
+                resolved_selection_member_profiles(member, sketch)
+                    .filter(|profiles| profiles.len() == 1)
+                    .map(ResolvedProfileSelection::Loops)
+            };
         selections.push(selection);
     }
     if ordered_selection_has_value(&selections) {
@@ -2249,7 +3266,7 @@ fn ordered_unique_profile_selections(
     }
 }
 
-fn selection_containing_points(
+pub(in crate::design) fn selection_containing_points(
     sketch: &cadmpeg_ir::sketches::Sketch,
     entities: &[cadmpeg_ir::sketches::SketchEntity],
     points: &[Point3],
@@ -2258,13 +3275,21 @@ fn selection_containing_points(
     ctx: &DecodeContext<'_>,
 ) -> Result<Option<ResolvedProfileSelection>, CodecError> {
     let mut projected = Vec::new();
+    let mut unique_projected: Vec<Point2> = Vec::new();
     for point in points {
         let Some(point) = project_to_sketch(sketch, *point) else {
             return Ok(None);
         };
         projected.push(point);
+        if !unique_projected
+            .iter()
+            .any(|p| (p.u - point.u).hypot(p.v - point.v) <= tolerance)
+        {
+            unique_projected.push(point);
+        }
     }
     let mut boundaries = Vec::new();
+    let mut had_partial_boundary_match = false;
     for (index, profile) in sketch.profiles.iter().enumerate() {
         let mut matches = true;
         for point in &projected {
@@ -2284,6 +3309,74 @@ fn selection_containing_points(
                 break;
             }
         }
+        if matches && points.len() >= 2 && unique_projected.len() == 1 {
+            let p0 = unique_projected[0];
+            let on_curve = profile.iter().any(|use_| {
+                entities
+                    .iter()
+                    .find(|entity| entity.id() == &use_.entity)
+                    .is_some_and(|entity| {
+                        matches!(
+                            entity.geometry.definition(),
+                            cadmpeg_ir::sketches::SketchGeometryDefinition::Circle { .. }
+                                | cadmpeg_ir::sketches::SketchGeometryDefinition::Arc { .. }
+                        ) && point_on_sketch_entity(p0, entity, tolerance)
+                    })
+            });
+            if !on_curve {
+                matches = false;
+                had_partial_boundary_match = true;
+            }
+        } else if matches && unique_projected.len() == 2 {
+            let p0 = unique_projected[0];
+            let p1 = unique_projected[1];
+            let on_single_entity = profile.iter().any(|use_| {
+                entities
+                    .iter()
+                    .find(|entity| entity.id() == &use_.entity)
+                    .is_some_and(|entity| {
+                        let on_both = point_on_sketch_entity(p0, entity, tolerance)
+                            && point_on_sketch_entity(p1, entity, tolerance);
+                        if !on_both {
+                            return false;
+                        }
+                        match entity.geometry.definition() {
+                            cadmpeg_ir::sketches::SketchGeometryDefinition::Line { start, end } => {
+                                let seg_len = (p0.u - p1.u).hypot(p0.v - p1.v);
+                                let line_len = (start.u - end.u).hypot(start.v - end.v);
+                                seg_len >= 0.5 * line_len
+                            }
+                            _ => true,
+                        }
+                    })
+            });
+            if !on_single_entity {
+                matches = false;
+                had_partial_boundary_match = true;
+            }
+        } else if matches && unique_projected.len() >= 3 && profile.len() >= 2 {
+            let all_lines_covered = profile.iter().all(|use_| {
+                entities
+                    .iter()
+                    .find(|entity| entity.id() == &use_.entity)
+                    .is_some_and(|entity| {
+                        if matches!(
+                            entity.geometry.definition(),
+                            cadmpeg_ir::sketches::SketchGeometryDefinition::Line { .. }
+                        ) {
+                            unique_projected
+                                .iter()
+                                .any(|&pt| point_on_sketch_entity(pt, entity, tolerance))
+                        } else {
+                            true
+                        }
+                    })
+            });
+            if !all_lines_covered {
+                matches = false;
+                had_partial_boundary_match = true;
+            }
+        }
         if matches {
             let Some(index) = u32::try_from(index).ok() else {
                 return Ok(None);
@@ -2291,9 +3384,43 @@ fn selection_containing_points(
             boundaries.push(index);
         }
     }
+    if boundaries.len() > 1 && unique_projected.len() == 2 {
+        let circle_boundaries: Vec<u32> = boundaries
+            .iter()
+            .copied()
+            .filter(|&idx| {
+                usize::try_from(idx)
+                    .ok()
+                    .and_then(|i| sketch.profiles.get(i))
+                    .is_some_and(|prof| {
+                        prof.len() == 1
+                            && prof.iter().all(|use_| {
+                                entities
+                                    .iter()
+                                    .find(|e| e.id() == &use_.entity)
+                                    .is_some_and(|e| {
+                                        matches!(
+                                            e.geometry.definition(),
+                                            cadmpeg_ir::sketches::SketchGeometryDefinition::Circle { .. }
+                                        )
+                                    })
+                            })
+                    })
+            })
+            .collect();
+        if !circle_boundaries.is_empty() {
+            boundaries = circle_boundaries;
+        }
+    }
     if let [profile] = boundaries.as_slice() {
         let loops = vec![*profile];
         return Ok(Some(ResolvedProfileSelection::Loops(loops)));
+    }
+    if !boundaries.is_empty() && unique_projected.len() <= 2 {
+        return Ok(None);
+    }
+    if boundaries.is_empty() && had_partial_boundary_match {
+        return Ok(None);
     }
     if let Some(region) = arrangement_region_containing_points(
         sketch,
