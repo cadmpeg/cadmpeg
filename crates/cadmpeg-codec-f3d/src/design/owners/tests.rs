@@ -289,35 +289,84 @@ fn product_history_owner_follows_the_one_definition_holding_every_output() {
     assert!(losses.is_empty(), "{losses:?}");
 }
 
-#[test]
-fn product_history_owner_keeps_conflicting_sketch_binding_native() {
-    let native = native();
-    let mut model = model(&native);
+fn sketch_model(native: &F3dNative, sketch_id: &str) -> (Model, cadmpeg_ir::sketches::SketchId) {
+    let mut model = model(native);
     let sketch: cadmpeg_ir::sketches::Sketch = serde_json::from_value(serde_json::json!({
-        "id": "test:model:sketch#profile",
+        "id": sketch_id,
         "placement": {"kind": "unresolved"}
     }))
     .unwrap();
-    model.product_definitions[1]
-        .sketches
-        .push(sketch.id.clone());
-    model.features[0].evaluation = cadmpeg_ir::features::FeatureEvaluation::from_definition(
+    let id = sketch.id.clone();
+    model.sketches.push(sketch);
+    (model, id)
+}
+
+fn bind_sketch(model: &mut Model, feature: usize, sketch: &cadmpeg_ir::sketches::SketchId) {
+    model.features[feature].evaluation = FeatureEvaluation::from_definition(
         FeatureDefinition::Operation(FeatureOperation::Sketch {
-            sketch: SketchFeatureBinding::Planar(Some(sketch.id.clone())),
+            sketch: SketchFeatureBinding::Planar(Some(sketch.clone())),
         }),
     );
-    let sketch_id = sketch.id.clone();
-    model.sketches.push(sketch);
-    let mut losses = Vec::new();
-    attach(&native, &mut model, &mut losses).unwrap();
-    assert!(model.product_definitions[0].sketches.is_empty());
-    assert_eq!(model.product_definitions[1].sketches, [sketch_id]);
-    assert!(matches!(
-        model.features[0].evaluation.definition(),
+}
+
+fn is_unbound_sketch(model: &Model, feature: usize) -> bool {
+    matches!(
+        model.features[feature].evaluation.definition(),
         FeatureDefinition::Operation(FeatureOperation::Sketch {
             sketch: SketchFeatureBinding::Planar(None),
         })
+    )
+}
+
+#[test]
+fn product_history_owner_follows_the_collection_definition_of_a_sketch() {
+    let native = native();
+    let (mut model, sketch_id) = sketch_model(&native, "test:model:sketch#profile");
+    model.product_definitions[1]
+        .sketches
+        .push(sketch_id.clone());
+    bind_sketch(&mut model, 0, &sketch_id);
+    let holder = model.product_definitions[1].id.clone();
+    let mut losses = Vec::new();
+    attach(&native, &mut model, &mut losses).unwrap();
+    assert!(losses.is_empty(), "{losses:?}");
+    assert!(model.product_definitions[0].sketches.is_empty());
+    assert_eq!(model.product_definitions[1].sketches, [sketch_id.clone()]);
+    assert_eq!(model.features[0].product_definition, Some(holder));
+    assert!(matches!(
+        model.features[0].evaluation.definition(),
+        FeatureDefinition::Operation(FeatureOperation::Sketch {
+            sketch: SketchFeatureBinding::Planar(Some(bound)),
+        }) if *bound == sketch_id
     ));
+}
+
+#[test]
+fn product_history_owner_keeps_sketch_native_when_two_definitions_list_it() {
+    let native = native();
+    let (mut model, sketch_id) = sketch_model(&native, "test:model:sketch#profile");
+    for definition in &mut model.product_definitions {
+        definition.sketches.push(sketch_id.clone());
+    }
+    bind_sketch(&mut model, 0, &sketch_id);
+    let mut losses = Vec::new();
+    attach(&native, &mut model, &mut losses).unwrap();
+    assert!(is_unbound_sketch(&model, 0));
+    assert_eq!(losses.len(), 1);
+    assert_eq!(losses[0].code, F3dLossCode::ScopeSketchOwnerMismatch.kind());
+}
+
+#[test]
+fn product_history_owner_keeps_sketch_native_when_two_clusters_claim_it() {
+    let native = native();
+    let (mut model, sketch_id) = sketch_model(&native, "test:model:sketch#profile");
+    bind_sketch(&mut model, 0, &sketch_id);
+    bind_sketch(&mut model, 1, &sketch_id);
+    let mut losses = Vec::new();
+    attach(&native, &mut model, &mut losses).unwrap();
+    assert!(!is_unbound_sketch(&model, 0));
+    assert!(is_unbound_sketch(&model, 1));
+    assert_eq!(model.product_definitions[0].sketches, [sketch_id]);
     assert_eq!(losses.len(), 1);
     assert_eq!(losses[0].code, F3dLossCode::ScopeSketchOwnerMismatch.kind());
 }

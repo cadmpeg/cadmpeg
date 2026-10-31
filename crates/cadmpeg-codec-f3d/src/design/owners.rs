@@ -91,6 +91,7 @@ fn attach_with_implicit_roots(
         })
         .cloned()
         .collect::<BTreeSet<_>>();
+    let mut bound_by_scope = BTreeMap::new();
     for feature in &mut model.features {
         let owned_bodies = feature.product_definition.as_ref().and_then(|owner| {
             model
@@ -136,35 +137,59 @@ fn attach_with_implicit_roots(
                     .set_outputs(DistinctMembers::try_from(retained).map_err(CodecError::from)?);
             }
         }
-        if let (
-            Some(owner),
-            FeatureDefinition::Operation(FeatureOperation::Sketch {
-                sketch: SketchFeatureBinding::Planar(Some(sketch)),
-            }),
-        ) = (&feature.product_definition, feature.evaluation.definition())
+        if let FeatureDefinition::Operation(FeatureOperation::Sketch {
+            sketch: SketchFeatureBinding::Planar(Some(sketch)),
+        }) = feature.evaluation.definition()
         {
-            if model
+            let Some(cluster_owner) = feature.product_definition.clone() else {
+                continue;
+            };
+            let sketch = sketch.clone();
+            let mut holders = model
                 .product_definitions
                 .iter()
-                .any(|row| &row.id != owner && row.sketches.contains(sketch))
-            {
-                losses.push(F3dLossCode::ScopeSketchOwnerMismatch.note(format!(
-                    "Feature {} and its sketch collection name different product definitions; the sketch binding remains native.", feature.id
-                )));
-                feature
-                    .evaluation
-                    .set_definition(FeatureDefinition::Operation(FeatureOperation::Sketch {
-                        sketch: SketchFeatureBinding::Planar(None),
-                    }));
-                continue;
-            }
+                .filter(|row| row.sketches.contains(&sketch));
+            // The sketch collection links a sketch to its component by an
+            // explicit reference; the entity-id cluster of the Sketch scope
+            // is positional. A sketch listed by one definition belongs to the
+            // Sketch feature that binds it, whichever cluster holds the scope.
+            let owner = match (holders.next(), holders.next()) {
+                (None, _) => {
+                    // No collection lists the sketch: its scope cluster
+                    // places it, and a second cluster claiming it conflicts.
+                    match bound_by_scope.insert(sketch.clone(), cluster_owner.clone()) {
+                        Some(earlier) if earlier != cluster_owner => None,
+                        _ => Some(cluster_owner),
+                    }
+                }
+                (Some(holder), None) => match bound_by_scope.get(&sketch) {
+                    Some(earlier) if earlier != &cluster_owner => None,
+                    _ => Some(holder.id.clone()),
+                },
+                (Some(_), Some(_)) => None,
+            };
+            let owner = match owner {
+                Some(owner) => owner,
+                None => {
+                    losses.push(F3dLossCode::ScopeSketchOwnerMismatch.note(format!(
+                        "Feature {} and its sketch collection name different product definitions; the sketch binding remains native.", feature.id
+                    )));
+                    feature
+                        .evaluation
+                        .set_definition(FeatureDefinition::Operation(FeatureOperation::Sketch {
+                            sketch: SketchFeatureBinding::Planar(None),
+                        }));
+                    continue;
+                }
+            };
+            feature.product_definition = Some(owner.clone());
             if let Some(definition) = model
                 .product_definitions
                 .iter_mut()
-                .find(|row| &row.id == owner)
+                .find(|row| row.id == owner)
             {
-                if !definition.sketches.contains(sketch) {
-                    definition.sketches.push(sketch.clone());
+                if !definition.sketches.contains(&sketch) {
+                    definition.sketches.push(sketch);
                 }
             }
         }
