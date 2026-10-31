@@ -2306,6 +2306,29 @@ def scan_native_byte_fields(sources: dict[Path, str]) -> list[Finding]:
     return findings
 
 
+JOBS_ENV = "CADMPEG_JOBS"
+
+
+def worker_count() -> int:
+    """Return the scan worker count: ``CADMPEG_JOBS`` when set, else the CPUs this process may run on.
+
+    ``os.process_cpu_count`` honours the CPU affinity mask and ``PYTHON_CPU_COUNT``; the affinity
+    fallback serves interpreters older than Python 3.13.
+    """
+    configured = os.environ.get(JOBS_ENV, "").strip()
+    if configured:
+        if not configured.isdigit() or int(configured) < 1:
+            raise SystemExit(f"{JOBS_ENV} must be a positive integer, not {configured!r}")
+        return int(configured)
+    process_cpu_count = getattr(os, "process_cpu_count", None)
+    if process_cpu_count is not None:
+        return process_cpu_count() or 1
+    sched_getaffinity = getattr(os, "sched_getaffinity", None)
+    if sched_getaffinity is not None:
+        return max(1, len(sched_getaffinity(0)))
+    return os.cpu_count() or 1
+
+
 @analysis_session
 def check_source() -> list[Finding]:
     sources = {
@@ -2313,7 +2336,7 @@ def check_source() -> list[Finding]:
         for path in sorted(ROOT.glob("crates/**/*.rs"))
     }
     production = [path for path in sources if is_production_rs(path)]
-    workers = os.cpu_count() or 1
+    workers = worker_count()
     tasks = [("patterns", tuple(production[index::workers * 2])) for index in range(workers * 2)]
     tasks += [(name, ()) for name in SOURCE_SCANS]
     global _TASK_SOURCES
