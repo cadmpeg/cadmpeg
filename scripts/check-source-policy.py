@@ -728,6 +728,20 @@ def scan_wrapping_arithmetic(path: Path, source: str, code: str) -> list[Finding
     return findings
 
 
+PORTABLE_MATH_ROOTS = (
+    "crates/cadmpeg-codec-usd/src/",
+    "crates/cadmpeg-ir/src/",
+    "crates/cadmpeg-tessellate/src/",
+)
+PLATFORM_LIBM_NAMES = (
+    r"(?:sin|cos|sin_cos|tan|asin|acos|atan|atan2|sinh|cosh|tanh|asinh|acosh|atanh"
+    r"|exp|exp2|exp_m1|ln|ln_1p|log|log2|log10|powf|hypot|cbrt)"
+)
+PLATFORM_LIBM_CALL = re.compile(
+    r"\.\s*" + PLATFORM_LIBM_NAMES + r"\s*\(|\bf64\s*::\s*" + PLATFORM_LIBM_NAMES + r"\b"
+)
+
+
 def scan_patterns(path: Path, source: str) -> list[Finding]:
     """Inspect each source pattern once and report its location."""
     code, size = production_source(source)
@@ -738,6 +752,11 @@ def scan_patterns(path: Path, source: str) -> list[Finding]:
 
     def report(rule: str, line: int, message: str) -> None:
         findings.append(Finding(rule, relative_path(path), line, message))
+
+    if relative_path(path).startswith(PORTABLE_MATH_ROOTS):
+        for match in PLATFORM_LIBM_CALL.finditer(code):
+            report("platform_libm", code.count("\n", 0, match.start()) + 1,
+                   "Call the cadmpeg_ir::math::portable::Portable method; the platform's libm gives another result on another target.")
 
     codec = re.match(r"crates/(cadmpeg-codec-[^/]+)/src/", relative_path(path))
     if codec is not None:

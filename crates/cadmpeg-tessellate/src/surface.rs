@@ -2,6 +2,7 @@
 //! The carrier surface of a face: evaluation, inversion, periods, and the
 //! parameter domain of a face that has no edge boundary.
 
+use cadmpeg_ir::math::portable::Portable;
 use std::f64::consts::{FRAC_PI_2, TAU};
 
 use cadmpeg_core::decode::WorkBudget;
@@ -98,7 +99,7 @@ impl<'t, 'ir> Carrier<'t, 'ir> {
             Some(SolvedSurfaceGeometry::Cone(cone)) => {
                 carrier.periods = [Some(TAU), None];
                 carrier.size = cone.radius().get().max(1.0);
-                let slope = cone.half_angle().get().tan();
+                let slope = cone.half_angle().get().portable_tan();
                 if slope != 0.0 && slope.is_finite() {
                     carrier.apex = Some(-cone.radius().get() / slope);
                 }
@@ -440,11 +441,11 @@ fn circular_cone_normal_curvature(
     if axis != 0 {
         return Some(0.0);
     }
-    let rho = radius + v * half_angle.tan();
+    let rho = radius + v * half_angle.portable_tan();
     if !rho.is_finite() || rho == 0.0 {
         return None;
     }
-    Some(half_angle.cos().abs() / rho.abs())
+    Some(half_angle.portable_cos().abs() / rho.abs())
 }
 
 #[cfg(test)]

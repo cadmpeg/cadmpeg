@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! NURBS curve operations the B-rep writer needs: reversal, extraction of a
 //! parameter segment, and the exact rational form of a harmonic arc.
+use cadmpeg_ir::math::portable::Portable;
 
 /// Ternary-search steps that refine a nearest-point parameter.
 const NEAREST_ITERATIONS: usize = 80;
@@ -245,12 +246,13 @@ pub(crate) fn harmonic_arc<const N: usize>(
     let at = |angle: f64, scale: f64| {
         let mut point = center;
         for axis in 0..N {
-            point[axis] += scale * (angle.cos() * a[axis] + angle.sin() * b[axis]);
+            point[axis] +=
+                scale * (angle.portable_cos() * a[axis] + angle.portable_sin() * b[axis]);
         }
         point
     };
     let half = step / 2.0;
-    let middle_weight = half.cos();
+    let middle_weight = half.portable_cos();
     let mut points = vec![at(start, 1.0)];
     let mut weights = vec![1.0];
     let mut knots = vec![0.0, 0.0, 0.0];
