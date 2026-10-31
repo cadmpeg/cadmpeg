@@ -7185,6 +7185,98 @@ fn nurbs_curve_surface_deviation(
     Ok(maximum.is_finite().then_some(maximum))
 }
 
+/// `parameter` moved by whole periods to the value nearest `seed`, on a
+/// periodic axis.
+fn parameter_nearest_seed(
+    parameter: f64,
+    seed: f64,
+    knots: &[f64],
+    degree: u32,
+    count: usize,
+    periodic: bool,
+) -> f64 {
+    let bounds = usize::try_from(degree)
+        .ok()
+        .and_then(|degree| knots.get(degree))
+        .zip(knots.get(count));
+    match bounds {
+        Some((start, end)) if periodic && start < end => {
+            let period = end - start;
+            parameter + ((seed - parameter) / period).round() * period
+        }
+        _ => parameter,
+    }
+}
+
+/// The surface parameters of one pole of a degree-one curve, on the branch of
+/// the preceding pole.
+///
+/// A seeded inverse stops at a parameter bound, so a pole past a periodic seam
+/// stays at the seam. The unseeded inverse reaches that pole, and the period
+/// nearest the seed continues the branch across the seam.
+fn nurbs_pole_parameters(
+    ctx: &DecodeContext<'_>,
+    surface: &cadmpeg_ir::geometry::nurbs::NurbsSurface,
+    point: cadmpeg_ir::math::Point3,
+    seed: Option<cadmpeg_ir::math::Point2>,
+) -> Result<Option<cadmpeg_ir::math::Point2>, cadmpeg_core::CodecError> {
+    let unseeded = |ctx| {
+        super::evaluation::nurbs_surface_parameter_near_point(ctx, surface, point, None)
+            .map(|parameters| parameters.map(cadmpeg_ir::units::FinitePoint2::get))
+    };
+    let Some(seed) = seed else {
+        return unseeded(ctx);
+    };
+    let miss = |parameters: cadmpeg_ir::math::Point2| {
+        super::evaluation::nurbs_surface_point(ctx, surface, parameters.u, parameters.v)
+            .map(|mapped| mapped.map(|mapped| Point3::distance(point, mapped.get())))
+    };
+    let tolerance = looser_tolerance(
+        inverse_coordinate_tolerance(
+            admitted_surface_poles(surface)
+                .map(FinitePoint3::get)
+                .chain([point]),
+        ),
+        NURBS_ENDPOINT_TOLERANCE_MM,
+    );
+    let seeded =
+        super::evaluation::nurbs_surface_parameter_near_point(ctx, surface, point, Some(seed))?
+            .map(cadmpeg_ir::units::FinitePoint2::get);
+    let seeded_miss = match seeded {
+        Some(parameters) => miss(parameters)?,
+        None => None,
+    };
+    if seeded_miss.is_some_and(|miss| miss <= tolerance) {
+        return Ok(seeded);
+    }
+    let Some(found) = unseeded(ctx)? else {
+        return Ok(seeded);
+    };
+    match (seeded_miss, miss(found)?) {
+        (Some(seeded_miss), Some(found_miss)) if seeded_miss <= found_miss => return Ok(seeded),
+        (Some(_), None) => return Ok(seeded),
+        _ => {}
+    }
+    Ok(Some(cadmpeg_ir::math::Point2::new(
+        parameter_nearest_seed(
+            found.u,
+            seed.u,
+            surface.u_knots(),
+            surface.u_degree(),
+            surface.u_count(),
+            surface.u_periodic(),
+        ),
+        parameter_nearest_seed(
+            found.v,
+            seed.v,
+            surface.v_knots(),
+            surface.v_degree(),
+            surface.v_count(),
+            surface.v_periodic(),
+        ),
+    )))
+}
+
 /// The degree-one pcurve lanes a cached projection states, and the fit
 /// tolerance they reach. `None` when the curve is not a degree-one cache
 /// candidate or a projection does not land on the surface.
@@ -7203,26 +7295,9 @@ fn nurbs_degree_one_cache_lanes(
         let Some(point) = curve.pole_rows().point_at(index) else {
             return Ok(None);
         };
-        let point = point.get();
-        let projected = match seed {
-            Some(seed) => super::evaluation::nurbs_surface_parameter_near_point(
-                ctx,
-                surface,
-                point,
-                Some(seed),
-            )?,
-            None => None,
-        };
-        let parameters = match projected {
-            Some(parameters) => Some(parameters),
-            None => {
-                super::evaluation::nurbs_surface_parameter_near_point(ctx, surface, point, None)?
-            }
-        };
-        let Some(parameters) = parameters else {
+        let Some(parameters) = nurbs_pole_parameters(ctx, surface, point.get(), seed)? else {
             return Ok(None);
         };
-        let parameters = parameters.get();
         seed = Some(parameters);
         control_points.push(parameters);
     }
@@ -10134,5 +10209,7 @@ mod nurbs_subset_evaluation_tests;
 #[cfg(test)]
 mod partition_framing_tests;
 
+#[cfg(test)]
+mod periodic_seam_tests;
 #[cfg(test)]
 mod tolerant_edge_tests;
