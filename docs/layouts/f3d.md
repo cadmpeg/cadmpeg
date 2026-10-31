@@ -7993,6 +7993,39 @@ Spec §1.2 · layout: byte offsets · size: 66 B
 | 60 | 2 | `separator` | `bytes[2]` | little | spec | The `DesignConfigurationTableSerializerTrigger` record in the Design `BulkStream` names the table blob. · value `[0, 0]` |
 | 62 | 4 | `basename_length` | `u32` | little | spec | The `DesignConfigurationTableSerializerTrigger` record in the Design `BulkStream` names the table blob. · value `68` |
 
+## `snapshot_body_map_plain_prefix`
+
+Spec §3.1 · layout: byte offsets · size: 36 B
+
+Offsets are relative to the snapshot map's bare entity header. The companion reference has two trailing zeros.
+
+Parsed by:
+- `crates/cadmpeg-codec-f3d/src/design/decode/body.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 4 | `tag_length` | `u32` | little | spec | bare entity header `u32 3` · value `3` |
+| 4 | 3 | `class_tag` | `bytes[3]` | little | derived | The class tag follows the four-byte length. |
+| 7 | 8 | `entity_id` | `u64` | little | derived | The identity follows the four-byte length and three-byte class tag. |
+| 15 | 6 | `reserved_zero_run` | `bytes[6]` | little | derived | The reserved run follows the eight-byte identity at offset 7. · value `[0, 0, 0, 0, 0, 0]` |
+| 21 | 11 | `companion_reference` | `bytes[11]` | little | derived | The pair count at offset 32 follows the reference at offset 21. The reference occupies eleven bytes. |
+| 32 | 4 | `pair_count` | `u32` | little | spec | the pair count is at offset 32 |
+
+## `snapshot_body_map_plain_tail`
+
+Spec §3.1 · layout: byte offsets · size: 16 B
+
+Offsets are relative to the end of the counted pair run. UTF-16LE basename code units follow the character count.
+
+Parsed by:
+- `crates/cadmpeg-codec-f3d/src/design/decode/body.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 11 | `container_reference` | `bytes[11]` | little | derived | The reference owns eleven bytes; the additional zero owns one byte. |
+| 11 | 1 | `reserved_zero` | `u8` | little | derived | The additional zero follows the eleven-byte local reference. · value `0` |
+| 12 | 4 | `name_length` | `u32` | little | spec | the basename character count follows at tail offset 12 |
+
 ## Not tabulated
 
 | Area | Spec | Reason |
