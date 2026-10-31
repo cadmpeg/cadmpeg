@@ -2298,6 +2298,21 @@ fn project_fillet_arm(
         }
     }
     assignments.sort_by_key(|left| left.group_ordinal);
+    // A face group that no assignment covers selects faces whose radius set is
+    // not stored, so the feature keeps its native form.
+    if !assignments.is_empty()
+        && inputs.construction_groups.iter().any(|group| {
+            native_stream(&group.id) == Some(native_scope)
+                && group.scope_record_index == scope.record_index
+                && group.role() == DesignOperandRole::ROLE_0X10
+                && !group.members().is_empty()
+                && assignments
+                    .iter()
+                    .all(|assignment| assignment.group_record_index != group.record_index)
+        })
+    {
+        return native_scope_definition(scope, parameters);
+    }
     if !assignments.is_empty() {
         let Some(assignments) = resolved_fillet_assignments(&assignments, parameters) else {
             return native_scope_definition(scope, parameters);

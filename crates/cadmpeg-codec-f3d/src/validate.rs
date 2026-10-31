@@ -2301,6 +2301,9 @@ fn validate_parameter_scopes(ctx: &Ctx, findings: &mut Vec<Finding>) -> Result<(
                             native.design_body_bindings.iter().any(|binding| {
                                 design_stream(binding.id()) == native_stream
                                     && binding.entity_suffix == u64::from(suffix)
+                            }) || native.design_body_members.iter().any(|member| {
+                                design_stream(member.id()) == native_stream
+                                    && member.entity_suffix == u64::from(suffix)
                             })
                         })
                     && operation
@@ -5500,7 +5503,7 @@ fn validate_extrude_parameter_operands(ctx: &Ctx, findings: &mut Vec<Finding>) {
                     records::feature::extrude::DesignExtrudeOperation::Join
                     | records::feature::extrude::DesignExtrudeOperation::Cut
                     | records::feature::extrude::DesignExtrudeOperation::Intersect,
-                ) => has_body_operands,
+                ) => has_body_operands || scope.history_state_id().is_none(),
                 None => true,
             };
             if ctx.holds_design_intent() && !operation_matches_operands {

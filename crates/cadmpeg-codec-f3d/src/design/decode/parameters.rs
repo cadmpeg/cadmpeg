@@ -102,7 +102,15 @@ pub(crate) fn decode_parameters(scan: &ContainerScan) -> Result<DecodedParameter
                 == Some(&[0; 11])
                 && plain_parameter_tail_target(frame)
                     .is_some_and(|target| tail_targets.contains(&target));
-            if let Some(parsed) = parse_design_parameter_with_tail(frame, registered_tail)? {
+            // A fixed tail `00 01 xx` followed by nine zero bytes also reads as a
+            // plain reference to record `xx`. When that record is registered
+            // under the parameter-tail type the registered grammar applies
+            // first; a frame it refuses is read again with the fixed tail.
+            let mut parsed = parse_design_parameter_with_tail(frame, registered_tail)?;
+            if parsed.is_none() && registered_tail {
+                parsed = parse_design_parameter_with_tail(frame, false)?;
+            }
+            if let Some(parsed) = parsed {
                 // The Design primary index exposes one live header for each
                 // logical record index. Keep the first serialized parameter
                 // frame so stale copies cannot create duplicate owner

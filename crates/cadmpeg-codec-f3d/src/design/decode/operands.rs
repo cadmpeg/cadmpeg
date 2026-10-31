@@ -2151,6 +2151,42 @@ pub(crate) fn decode_fillet_radius_groups(
             }
             continue;
         }
+        // Several edge sets with face selections: the edge groups pair with
+        // the radii in scope-reference order. A face group states no radius
+        // of its own and receives no assignment.
+        let edge_groups = scope_groups
+            .iter()
+            .copied()
+            .filter(|group| group.role() == DesignOperandRole::BODIES_B)
+            .collect::<Vec<_>>();
+        let face_group_count = scope_groups
+            .iter()
+            .filter(|group| group.role() == DesignOperandRole::ROLE_0X10)
+            .count();
+        if edge_groups.len() > 1
+            && face_group_count > 0
+            && edge_groups.len() + face_group_count == scope_groups.len()
+            && owned_parameters.len() == radii.len() + weights.len()
+            && edge_groups.len() == radii.len()
+            && (weights.is_empty() || weights.len() == edge_groups.len())
+        {
+            for (ordinal, (group, radius)) in edge_groups.into_iter().zip(radii).enumerate() {
+                let Ok(group_ordinal) = u32::try_from(ordinal) else {
+                    continue;
+                };
+                push_fillet_radius_group(
+                    &mut out,
+                    stream,
+                    group_ordinal,
+                    group,
+                    DesignFilletRadiusLaw::Constant {
+                        radius_parameter_record_index: radius.record_index,
+                    },
+                    weights.get(ordinal).map(|parameter| parameter.record_index),
+                );
+            }
+            continue;
+        }
         if let (Some(pair), [radius]) =
             (fillet_edge_and_face_groups(&scope_groups), radii.as_slice())
         {
@@ -4952,9 +4988,25 @@ pub(in crate::design) fn parse_sketch_profile(
         lp_ascii_filtered_view(bytes, paired_at, 0..=2000, u8::is_ascii_graphic)?;
     let tail_length = paired_at.checked_sub(after_entity_suffix)?;
     if View::u32_le_at(bytes, after_paired_tag)? != header.record_index
-        || !matches!(tail_length, 89 | 93 | 94)
+        || !matches!(tail_length, 83 | 89 | 93 | 94)
     {
         return None;
+    }
+    if tail_length == 83 {
+        // The 83-byte tail omits the marked reference that follows the third
+        // u32 of the 94-byte tail, which is then zero.
+        let tail = after_entity_suffix;
+        if View::u32_le_at(bytes, tail)? != 1
+            || View::u32_le_at(bytes, tail + 4)? != 1
+            || bytes.get(tail + 8..tail + 16)? != [0; 8]
+            || View::u32_le_at(bytes, tail + 16)? != 0x41
+            || marked_record_reference(bytes, tail + 46) != header.record_index.checked_add(2)
+            || marked_record_reference(bytes, tail + 60) != header.record_index.checked_add(1)
+            || bytes.get(tail + 71) != Some(&0)
+            || marked_record_reference(bytes, tail + 72).is_none()
+        {
+            return None;
+        }
     }
     if matches!(tail_length, 89 | 93) {
         let tail = after_entity_suffix;

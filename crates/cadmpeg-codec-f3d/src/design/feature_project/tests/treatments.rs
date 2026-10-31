@@ -622,6 +622,124 @@ fn fillet_edge_and_face_groups_share_the_scope_radius() {
     }
 }
 
+fn named_fillet_parameter(
+    owner_index: u32,
+    record_index: u32,
+    source_kind: &str,
+    unit: Option<&str>,
+    value: f64,
+) -> DesignParameter {
+    let mut parameter = parse_design_parameter_record(&parameter_record(
+        Some(owner_index),
+        "value",
+        source_kind,
+        unit,
+        &format!("d{record_index}"),
+        value,
+    ))
+    .expect("canonical localized Fillet parameter");
+    parameter.id = format!("f3d:native/BulkStream.dat:parameter#{record_index}");
+    parameter.record_index = record_index;
+    parameter
+}
+
+#[test]
+fn fillet_edge_sets_pair_with_radii_and_leave_the_face_group_unassigned() {
+    let scope = localized_fillet_scope();
+    let operand_groups = [
+        localized_fillet_group(100, 0, vec![200, 201]),
+        localized_fillet_group_with_role(101, 1, vec![202], DesignOperandRole::ROLE_0X10),
+        localized_fillet_group(102, 2, vec![203]),
+    ];
+    let parameters = [
+        named_fillet_parameter(10, 11, "TangencyWeight", None, 1.0),
+        named_fillet_parameter(20, 21, "Radius", Some("mm"), 0.3),
+        named_fillet_parameter(30, 31, "TangencyWeight", None, 1.0),
+        named_fillet_parameter(40, 41, "Radius", Some("mm"), 0.5),
+    ];
+    let owners = [
+        localized_fillet_owner(10, 11, 0),
+        localized_fillet_owner(20, 21, 1),
+        localized_fillet_owner(30, 31, 2),
+        localized_fillet_owner(40, 41, 3),
+    ];
+    let assignments = decode_fillet_radius_groups(
+        std::slice::from_ref(&scope),
+        &operand_groups,
+        &owners,
+        &parameters,
+    );
+    assert_eq!(
+        assignments
+            .iter()
+            .map(|assignment| (
+                assignment.group_ordinal,
+                assignment.group_record_index,
+                &assignment.law,
+                assignment.tangency_weight_parameter_record_index,
+            ))
+            .collect::<Vec<_>>(),
+        [
+            (
+                0,
+                100,
+                &DesignFilletRadiusLaw::Constant {
+                    radius_parameter_record_index: 21,
+                },
+                Some(11)
+            ),
+            (
+                1,
+                102,
+                &DesignFilletRadiusLaw::Constant {
+                    radius_parameter_record_index: 41,
+                },
+                Some(31)
+            ),
+        ]
+    );
+    // The face group has no stated radius set, so the feature stays native.
+    let crate::design::feature_project::ProjectedParameterDesign { features, .. } =
+        crate::test_support::with_decode_context(|ctx| {
+            let scopes = std::slice::from_ref(&scope);
+            let timelines = crate::design::test_support::synthetic_feature_timelines(scopes);
+            crate::design::feature_project::project_parameter_design_with_edge_identities(
+                ctx,
+                &crate::design::feature_project::ProjectInputs {
+                    native: &parameters,
+                    owners: &owners,
+                    scopes,
+                    construction_groups: &operand_groups,
+                    fillet_radius_groups: &assignments,
+                    timelines: &timelines,
+                    ..Default::default()
+                },
+            )
+            .expect("test projection has a synthetic exact timeline")
+        });
+    assert!(matches!(
+        features[0].evaluation.definition(),
+        FeatureDefinition::Operation(FeatureOperation::Native { .. })
+    ));
+
+    // A radius count that differs from the edge-set count assigns nothing.
+    assert!(decode_fillet_radius_groups(
+        std::slice::from_ref(&scope),
+        &operand_groups,
+        &owners[..2],
+        &parameters[..2],
+    )
+    .is_empty());
+    // A weight count that differs from the edge-set count assigns nothing.
+    assert!(decode_fillet_radius_groups(
+        std::slice::from_ref(&scope),
+        &operand_groups,
+        &owners[..3],
+        &parameters[..3],
+    )
+    .is_empty());
+}
+
 #[test]
 fn detached_fillet_owner_supplies_no_radius() {
     let scope = localized_fillet_scope();
