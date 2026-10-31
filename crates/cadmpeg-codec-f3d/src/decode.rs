@@ -2941,6 +2941,7 @@ impl<'a> F3dDecodeSession<'a> {
         let local_sources = crate::design::components::LocalComponentSources {
             scopes: &prereqs.design_parameter_scopes,
             occurrences: &prereqs.design_component_occurrences,
+            paths: &prereqs.design_component_paths,
             components: &local_components,
             hidden_bodies: Some(&hidden_bodies),
             body_bindings: &prereqs.design_body_bindings,
