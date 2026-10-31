@@ -121,3 +121,41 @@ fn configuration_parameter_refusal_reports_unparsed_record() {
         .any(|loss| loss.code == crate::loss::F3dLossCode::ParameterRecordUnparsed.kind()));
     assert_configuration_valid(&decoded);
 }
+
+/// A frame whose plain tail names a registered parameter-tail record but
+/// whose prefix matches no parameter grammar reports the unparsed-record
+/// loss through the full decode.
+#[test]
+fn configuration_registered_tail_refusal_reports_unparsed_record() {
+    const TAIL_TYPE_GUID: &str = "B0556F58-EE09-46A7-B18F-E296F48E5B13";
+    let target = 181u64;
+    let mut frame = parameter_record(None, "3 mm", "User Parameter", Some("mm"), "Width", 0.3);
+    frame[22..30].copy_from_slice(&9u64.to_le_bytes());
+    let tail = frame.len() - 12;
+    frame[tail + 2..tail + 10].copy_from_slice(&target.to_le_bytes());
+    let metadata = crate::test_support::streams_test::design_metastream_with_records(
+        &[(
+            TAIL_TYPE_GUID,
+            "A7AEA631-985B-4DD1-8CE2-DE2C-14B54081",
+            3,
+            "CommonData",
+            &[target],
+        )],
+        &[],
+    );
+    let mut zip = zip::ZipWriter::new(Cursor::new(Vec::new()));
+    let stored = crate::zip_write::file_options(zip::CompressionMethod::Stored);
+    write_synthetic_manifests(&mut zip, stored);
+    for (name, payload) in [("BulkStream.dat", frame), ("MetaStream.dat", metadata)] {
+        zip.start_file(format!("FusionAssetName[Active]/Design1/{name}"), stored)
+            .unwrap();
+        zip.write_all(&payload).unwrap();
+    }
+    let decoded = decode(zip.finish().unwrap().into_inner());
+    assert!(decoded.ir().model.parameters.is_empty());
+    assert!(decoded
+        .report()
+        .losses
+        .iter()
+        .any(|loss| loss.code == crate::loss::F3dLossCode::ParameterRecordUnparsed.kind()));
+}

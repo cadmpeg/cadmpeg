@@ -414,10 +414,16 @@ fn parse_design_parameter_with_tail(
         if tail.len() != legacy_287_tail::LEN
             || tail[0..2] != [0, 1]
             || (!registered_tail && tail[3..].iter().any(|byte| *byte != 0))
-            || (source_kind_at == expression_end + 11 && tail[2] != 16)
-            || !(valid_design_parameter_family(family_discriminator, &source_kind, tail[2])
-                || registered_tail
-                    && valid_design_parameter_family(family_discriminator, &source_kind, 19))
+            // A registered plain tail stores the target record identity
+            // where the fixed tail stores its family marker; it selects the
+            // `00 01 13` family of the discriminated form only.
+            || (source_kind_at == expression_end + 11 && (registered_tail || tail[2] != 16))
+            || !(if registered_tail {
+                family_discriminator.is_some()
+                    && valid_design_parameter_family(family_discriminator, &source_kind, 19)
+            } else {
+                valid_design_parameter_family(family_discriminator, &source_kind, tail[2])
+            })
             || source_kind.is_empty()
         {
             return None;
