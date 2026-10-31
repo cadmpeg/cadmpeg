@@ -9,13 +9,19 @@ use cadmpeg_core::{
 };
 use cadmpeg_ir::features::{
     DistinctMembers, EdgeSelection, Feature, FeatureContent, FeatureDefinition, FeatureEvaluation,
-    FeatureOperation, FeatureResultTopology,
+    FeatureId, FeatureOperation, FeatureResultTopology,
 };
 
-use super::{flange::Flange, operands, style::Style};
+use super::{
+    flange::Flange,
+    operands,
+    refusal::{require, PlateError, PlateRefusal, Refuse},
+    style::Style,
+};
 use crate::feature::{
-    feature_result, length_reference, resolve_property, FeatureInventory, HistoryItem, PmDcFeature,
-    PmDcFeatureLabel, PmDcFeaturePropertyKind, PmDcFeatureReferenceFamily, ProjectionIndex,
+    body_result, feature_result, length_reference, resolve_property, FeatureInventory, HistoryItem,
+    PmDcFeature, PmDcFeatureLabel, PmDcFeaturePropertyKind, PmDcFeatureReferenceFamily,
+    ProjectionIndex,
 };
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -115,25 +121,31 @@ pub(crate) fn style<'a>(styles: &'a [Style], token: &str) -> Option<&'a Style> {
     candidates.next().is_none().then_some(first)
 }
 
-fn attachment(source: &PmDcFeature, index: &ProjectionIndex<'_>) -> Option<EdgeSelection> {
+fn attachment(
+    source: &PmDcFeature,
+    index: &ProjectionIndex<'_>,
+) -> Result<EdgeSelection, PlateRefusal> {
     let token = source.identity.segment_token.as_str();
-    let selection = crate::feature::slot_property(source, 12, index)?;
+    let selection =
+        crate::feature::slot_property(source, 12, index).refuse(PlateRefusal::SelectionList)?;
     let PmDcFeaturePropertyKind::References {
         family: PmDcFeatureReferenceFamily::SheetMetalAttachmentSelections,
         items,
     } = &selection.kind
     else {
-        return None;
+        return Err(PlateRefusal::SelectionList);
     };
     let mut edges = Vec::new();
     for reference in items.references() {
-        let wrapper = resolve_property(token, reference.index(), index)?;
-        let super::SheetMetalProperty::EdgeSelection { edges: collection } =
-            operands::sheet(wrapper)?
+        let wrapper = resolve_property(token, reference.index(), index)
+            .refuse(PlateRefusal::SelectionList)?;
+        let Some(super::SheetMetalProperty::EdgeSelection { edges: collection }) =
+            operands::sheet(wrapper)
         else {
-            return None;
+            return Err(PlateRefusal::SelectionList);
         };
-        let collection = resolve_property(token, collection.index(), index)?;
+        let collection = resolve_property(token, collection.index(), index)
+            .refuse(PlateRefusal::SelectionList)?;
         if !matches!(
             collection.kind,
             PmDcFeaturePropertyKind::References {
@@ -141,22 +153,22 @@ fn attachment(source: &PmDcFeature, index: &ProjectionIndex<'_>) -> Option<EdgeS
                 ..
             }
         ) {
-            return None;
+            return Err(PlateRefusal::SelectionList);
         }
         let EdgeSelection::Generated {
             edges: resolved, ..
         } = crate::feature::edge_selection::resolve(collection, index)
         else {
-            return None;
+            return Err(PlateRefusal::EdgeName);
         };
         for edge in resolved {
             if edges.contains(&edge) {
-                return None;
+                return Err(PlateRefusal::EdgeName);
             }
             edges.push(edge);
         }
     }
-    EdgeSelection::generated(edges, selection.id()).ok()
+    EdgeSelection::generated(edges, selection.id()).map_err(|_| PlateRefusal::EdgeName)
 }
 
 pub(in crate::feature) fn project_plate(
@@ -165,37 +177,47 @@ pub(in crate::feature) fn project_plate(
     label: &PmDcFeatureLabel,
     index: &ProjectionIndex<'_>,
     inventory: &FeatureInventory,
-) -> Option<Result<(Feature, FeatureResultTopology), CodecError>> {
+) -> Result<(Feature, FeatureResultTopology), PlateError> {
     let token = source.identity.segment_token.as_str();
     let attachment = attachment(source, index)?;
     let inputs = operands::selection_sources(source, |reference| {
         resolve_property(token, reference.index(), index)
-    })?;
-    if inputs.iter().any(|source| {
-        !inventory
-            .edge_inputs
-            .geometry
-            .contains_key(&(token.to_owned(), *source))
-    }) {
-        return None;
-    }
+    })
+    .refuse(PlateRefusal::SelectionList)?;
+    require(
+        inputs.iter().all(|source| {
+            inventory
+                .edge_inputs
+                .geometry
+                .contains_key(&(token.to_owned(), *source))
+        }),
+        PlateRefusal::InputGeometry,
+    )?;
     let sketch_ordinal = *index
         .plate_sketches
-        .get(&(token, source.identity.record_ordinal))?;
-    let sketch = index.sketches.get(&(token, sketch_ordinal))?.as_ref()?;
-    let sketch_id = index.sketch_ids.get(sketch.id().as_str())?;
-    let sketch = index.sketches_by_id.get(sketch_id.as_str())?;
-    let profile = index.profiles.whole_sketch(token, sketch_ordinal, sketch)?;
-    let (_, normal, u_axis) = sketch.resolved_placement()?;
+        .get(&(token, source.identity.record_ordinal))
+        .refuse(PlateRefusal::ProfileSketch)?;
+    let sketch = index
+        .sketches
+        .get(&(token, sketch_ordinal))
+        .and_then(Option::as_ref)
+        .refuse(PlateRefusal::ProfileSketch)?;
+    let sketch = index
+        .sketch_ids
+        .get(sketch.id().as_str())
+        .and_then(|id| index.sketches_by_id.get(id.as_str()))
+        .refuse(PlateRefusal::ProfileSketch)?;
+    let profile = index
+        .profiles
+        .whole_sketch(token, sketch_ordinal, sketch)
+        .refuse(PlateRefusal::Profile)?;
+    let (_, normal, u_axis) = sketch.resolved_placement().refuse(PlateRefusal::Profile)?;
     let values = plate_values(source, normal, u_axis, index, inventory)?;
-    let (id, result) = match feature_result(ctx, source, 15, index)? {
-        Ok(value) => value,
-        Err(error) => return Some(Err(error)),
-    };
-    if let Err(error) = ctx.charge_entities(1, "project Inventor attached plate") {
-        return Some(Err(error));
-    }
-    Some(Ok((
+    let (id, result) = plate_result(ctx, source, index)
+        .refuse(PlateRefusal::Result)?
+        .map_err(PlateError::Codec)?;
+    ctx.charge_entities(1, "project Inventor attached plate")?;
+    Ok((
         Feature {
             product_definition: None,
             id,
@@ -218,7 +240,34 @@ pub(in crate::feature) fn project_plate(
             native_ref: Some(source.id()),
         },
         result,
-    )))
+    ))
+}
+
+/// The result of a plate or its paired bend, from the slot its form assigns.
+fn form_result(
+    ctx: &DecodeContext<'_>,
+    source: &PmDcFeature,
+    form: operands::PlateForm,
+    bend: bool,
+    index: &ProjectionIndex<'_>,
+) -> Option<Result<(FeatureId, FeatureResultTopology), CodecError>> {
+    let slot = if bend {
+        form.bend_result_slot()
+    } else {
+        form.result_slot()
+    };
+    match form {
+        operands::PlateForm::Body => body_result(ctx, source, slot, index),
+        operands::PlateForm::Collection => feature_result(ctx, source, slot, index),
+    }
+}
+
+fn plate_result(
+    ctx: &DecodeContext<'_>,
+    source: &PmDcFeature,
+    index: &ProjectionIndex<'_>,
+) -> Option<Result<(FeatureId, FeatureResultTopology), CodecError>> {
+    form_result(ctx, source, operands::PlateForm::of(source)?, false, index)
 }
 
 fn plate_values(
@@ -227,11 +276,11 @@ fn plate_values(
     u_axis: cadmpeg_ir::features::FiniteVector3,
     index: &ProjectionIndex<'_>,
     inventory: &FeatureInventory,
-) -> Option<operands::PlateOperands> {
+) -> Result<operands::PlateOperands, PlateRefusal> {
     let token = source.identity.segment_token.as_str();
     operands::plate(
         source,
-        style(&inventory.sheet_metal_styles, token)?,
+        style(&inventory.sheet_metal_styles, token),
         |reference| resolve_property(token, reference.index(), index),
         |reference| length_reference(token, reference.index(), index),
         |reference| {
@@ -245,8 +294,10 @@ fn plate_values(
                 record.direction[2].get(),
             ))
         },
-        cadmpeg_ir::units::UnitVector3::normalized(*normal.as_raw())?,
-        cadmpeg_ir::units::UnitVector3::normalized(*u_axis.as_raw())?,
+        cadmpeg_ir::units::UnitVector3::normalized(*normal.as_raw())
+            .refuse(PlateRefusal::Profile)?,
+        cadmpeg_ir::units::UnitVector3::normalized(*u_axis.as_raw())
+            .refuse(PlateRefusal::Profile)?,
     )
 }
 
@@ -283,6 +334,7 @@ pub(in crate::feature) fn reject_unresolved_inputs(
     ctx: &DecodeContext<'_>,
     projected: &mut [HistoryItem<'_>],
     inventory: &FeatureInventory,
+    refusals: &mut Refusals,
 ) -> Result<usize, CodecError> {
     let producers: HashMap<_, _> = projected
         .iter()
@@ -302,10 +354,61 @@ pub(in crate::feature) fn reject_unresolved_inputs(
         if complete {
             continue;
         }
+        refusals.record(&item.feature, PlateRefusal::InputProducer);
         retain_native(ctx, item, inventory)?;
         rejected += 1;
     }
     Ok(rejected)
+}
+
+/// The first refused check of each attached plate that stays native, by
+/// source record id.
+#[derive(Debug, Default)]
+pub(in crate::feature) struct Refusals(BTreeMap<String, PlateRefusal>);
+
+impl Refusals {
+    /// Keep the first refusal of a plate record.
+    pub(in crate::feature) fn insert(&mut self, source: String, refusal: PlateRefusal) {
+        self.0.entry(source).or_insert(refusal);
+    }
+
+    /// Record a refusal for a projected attached plate. Other operations have
+    /// no plate refusal.
+    fn record(&mut self, feature: &Feature, refusal: PlateRefusal) {
+        if let (
+            FeatureDefinition::Operation(FeatureOperation::SheetMetalAttachedPlate { .. }),
+            Some(source),
+        ) = (feature.evaluation.definition(), &feature.native_ref)
+        {
+            self.insert(source.clone(), refusal);
+        }
+    }
+
+    /// One loss note for each plate that stays native in the final features.
+    pub(in crate::feature) fn losses(
+        &self,
+        features: &[Feature],
+    ) -> Vec<cadmpeg_ir::report::loss::LossNote> {
+        features
+            .iter()
+            .filter(|feature| {
+                matches!(
+                    feature.evaluation.definition(),
+                    FeatureDefinition::Operation(FeatureOperation::Native { .. })
+                )
+            })
+            .filter_map(|feature| {
+                let refusal = self.0.get(feature.native_ref.as_deref()?)?;
+                Some(
+                    crate::loss::InventorLossCode::FeatureSheetMetalPlateRefused.note(format!(
+                        "Retained {} as native: the first refused attached-plate check is {}.",
+                        feature.id,
+                        refusal.detail()
+                    )),
+                )
+            })
+            .collect()
+    }
 }
 
 fn retain_native(
@@ -336,6 +439,7 @@ pub(in crate::feature) fn reject_incomplete_pairs(
     ctx: &DecodeContext<'_>,
     projected: &mut [HistoryItem<'_>],
     inventory: &FeatureInventory,
+    refusals: &mut Refusals,
 ) -> Result<usize, CodecError> {
     let pairs: HashSet<_> = projected.iter().filter_map(|plate| {
         if !plate.neutral || !matches!(plate.feature.evaluation.definition(),
@@ -361,6 +465,7 @@ pub(in crate::feature) fn reject_incomplete_pairs(
             _ => continue,
         };
         if !complete {
+            refusals.record(&item.feature, PlateRefusal::BendPair);
             retain_native(ctx, item, inventory)?;
             rejected += 1;
         }
@@ -426,7 +531,7 @@ pub(in crate::feature) fn project_bends(
         else {
             continue;
         };
-        let Some(values) = plate_values(plate_source, normal, u_axis, index, inventory) else {
+        let Ok(values) = plate_values(plate_source, normal, u_axis, index, inventory) else {
             continue;
         };
         let Some(definition) = bend_definition(
@@ -438,7 +543,10 @@ pub(in crate::feature) fn project_bends(
         ) else {
             continue;
         };
-        let Some(result) = feature_result(ctx, bend_source, 9, index) else {
+        let Some(form) = operands::PlateForm::of(plate_source) else {
+            continue;
+        };
+        let Some(result) = form_result(ctx, bend_source, form, true, index) else {
             continue;
         };
         let (id, result) = result?;

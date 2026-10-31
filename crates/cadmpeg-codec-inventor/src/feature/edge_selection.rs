@@ -105,6 +105,25 @@ fn generated_candidate(record: &Record) -> bool {
             .any(|token| matches!(token, Token::SubIdent(name) if name == "NMx_Brep_Name_tag"))
 }
 
+/// The leading class of an `NMx` naming attribute in a schema-38, 40, or 42
+/// carrier, for an active record or an `End-of-ASM-History-Section` snapshot.
+fn legacy_family(record: &Record) -> Option<&str> {
+    if record.name == "End-of-ASM-History-Section" {
+        match record.tokens.first()? {
+            Token::SubIdent(family) => Some(family.as_str()),
+            _ => None,
+        }
+    } else {
+        record.name.split('-').next()
+    }
+}
+
+/// Whether an ASM carrier schema stores the `NMx` naming attributes in the
+/// class-chain form instead of the `ATTRIB_CUSTOM` form.
+pub(super) const fn legacy_schema(schema: u32) -> bool {
+    matches!(schema, 38 | 40 | 42)
+}
+
 fn source_names(record: &Record, fields: &[&Token], schema: u32) -> Option<(i64, HashSet<u32>)> {
     let [Token::Ref(_), Token::Long(_), Token::Ref(_), Token::Ref(_), Token::Ref(owner), rest @ ..] =
         fields
@@ -132,14 +151,7 @@ fn source_names(record: &Record, fields: &[&Token], schema: u32) -> Option<(i64,
         }
         return Some((*owner, HashSet::from([u32::try_from(*source).ok()?])));
     }
-    let family = if record.name == "End-of-ASM-History-Section" {
-        match record.tokens.first()? {
-            Token::SubIdent(family) => family.as_str(),
-            _ => return None,
-        }
-    } else {
-        record.name.split('-').next()?
-    };
+    let family = legacy_family(record)?;
     let tail_len = match family {
         "NMx_Generated_Brep_tag" => 3,
         "NMx_Sweep_Generated_Brep_tag" => 10,
@@ -181,6 +193,15 @@ struct Selector {
     key: u32,
 }
 
+/// Whether the direct edge selector of a `PmDc` segment major version stores
+/// the qualifier word between its topology and naming-form words.
+const fn selector_has_qualifier(version: u8) -> bool {
+    version != SELECTOR_WITHOUT_QUALIFIER
+}
+
+/// The `PmDc` segment major version whose direct edge selector has no qualifier word.
+const SELECTOR_WITHOUT_QUALIFIER: u8 = 19;
+
 fn selector(payload: View<'_>, version: u8) -> Result<Option<Selector>, CodecError> {
     let mut cursor = Cursor::new(payload);
     let header = state_content_header(&mut cursor, version)?;
@@ -192,7 +213,7 @@ fn selector(payload: View<'_>, version: u8) -> Result<Option<Selector>, CodecErr
     }
     cursor.reference("edge selector body")?;
     if cursor.u32("edge selector topology")? != 2
-        || cursor.u32("edge selector qualifier")? != 0
+        || (selector_has_qualifier(version) && cursor.u32("edge selector qualifier")? != 0)
         || cursor.u32("edge selector naming form")? != 2
     {
         return Ok(None);
@@ -238,17 +259,36 @@ fn custom(record: &Record) -> bool {
                 if family == "ATTRIB_CUSTOM" && base == "attrib"))
 }
 
-fn matched(record: &Record) -> Option<(u32, u32, i64)> {
-    if !custom(record) {
-        return None;
-    }
+fn matched(record: &Record, schema: u32) -> Option<(u32, u32, i64)> {
     let fields = values(record);
-    let [Token::Ref(_), Token::Long(_), Token::Ref(_), Token::Ref(_), Token::Ref(owner), Token::Str(family), Token::Long(1), Token::Long(44), Token::Long(1), Token::Long(source), Token::Long(-1), Token::Long(key), Token::Long(0)] =
-        fields.as_slice()
-    else {
-        return None;
+    let (owner, source, key) = if legacy_schema(schema) {
+        if legacy_family(record)? != "NMx_Matched_Entity" {
+            return None;
+        }
+        let [Token::Ref(_), Token::Long(_), Token::Ref(_), Token::Ref(_), Token::Ref(owner), Token::Long(stored_schema), Token::Long(1), Token::Long(source), Token::Long(-1), Token::Long(key), Token::Long(0)] =
+            fields.as_slice()
+        else {
+            return None;
+        };
+        if *stored_schema != i64::from(schema) {
+            return None;
+        }
+        (owner, source, key)
+    } else {
+        if !custom(record) {
+            return None;
+        }
+        let [Token::Ref(_), Token::Long(_), Token::Ref(_), Token::Ref(_), Token::Ref(owner), Token::Str(family), Token::Long(1), Token::Long(44), Token::Long(1), Token::Long(source), Token::Long(-1), Token::Long(key), Token::Long(0)] =
+            fields.as_slice()
+        else {
+            return None;
+        };
+        if family != "INV_NMX_MATCHED_ATTRIB" {
+            return None;
+        }
+        (owner, source, key)
     };
-    if family != "INV_NMX_MATCHED_ATTRIB" || *owner < 0 {
+    if *owner < 0 {
         return None;
     }
     Some((
@@ -258,7 +298,10 @@ fn matched(record: &Record) -> Option<(u32, u32, i64)> {
     ))
 }
 
-fn generated(record: &Record) -> Option<(i64, EdgeName)> {
+fn generated(record: &Record, schema: u32) -> Option<(i64, EdgeName)> {
+    if legacy_schema(schema) {
+        return legacy_generated(record, schema);
+    }
     if !custom(record) {
         return None;
     }
@@ -293,13 +336,54 @@ fn generated(record: &Record) -> Option<(i64, EdgeName)> {
     ))
 }
 
+/// A generated edge name of a schema-38, 40, or 42 carrier. A name with one
+/// source pair carries the same generator, associative identifier, and role
+/// as the `ATTRIB_CUSTOM` name of a schema-44 carrier.
+fn legacy_generated(record: &Record, schema: u32) -> Option<(i64, EdgeName)> {
+    let family = legacy_family(record)?;
+    let fields = values(record);
+    let [Token::Ref(_), Token::Long(_), Token::Ref(_), Token::Ref(_), Token::Ref(owner), Token::Long(stored_schema), Token::Long(1), Token::Long(generator), Token::Long(-1), Token::Long(associative_id), Token::Long(0), Token::Long(role), tail @ ..] =
+        fields.as_slice()
+    else {
+        return None;
+    };
+    if *owner < 0 || *associative_id < 0 || *stored_schema != i64::from(schema) {
+        return None;
+    }
+    let admitted = match family {
+        "NMx_Generated_Brep_tag" => tail.is_empty() && matches!(role, 2 | 10 | 18),
+        "NMx_Sweep_Generated_Brep_tag" => {
+            tail.len() == 7
+                && tail.iter().all(|token| matches!(token, Token::Long(0)))
+                && matches!(role, 10 | 18)
+        }
+        _ => false,
+    };
+    if !admitted {
+        return None;
+    }
+    Some((
+        *owner,
+        EdgeName {
+            generator: u32::try_from(*generator).ok()?,
+            family: family.to_owned(),
+            associative_id: *associative_id,
+            role: *role,
+        },
+    ))
+}
+
 fn is_edge(record: &Record) -> bool {
     matches!(record.head(), "edge" | "tedge")
         || (record.name == "End-of-ASM-History-Section"
             && matches!(record.tokens.first(), Some(Token::Ident(name)) if name == "edge"))
 }
 
-fn names(records: &[Record], selectors: &[Selector]) -> HashMap<u32, Option<EdgeName>> {
+fn names(
+    records: &[Record],
+    selectors: &[Selector],
+    schema: u32,
+) -> HashMap<u32, Option<EdgeName>> {
     let edges: HashSet<_> = records
         .iter()
         .filter(|record| is_edge(record))
@@ -308,12 +392,12 @@ fn names(records: &[Record], selectors: &[Selector]) -> HashMap<u32, Option<Edge
     let mut matches: HashMap<(u32, u32), HashSet<i64>> = HashMap::new();
     let mut generated_names: HashMap<i64, HashSet<EdgeName>> = HashMap::new();
     for record in records {
-        if let Some((source, key, owner)) = matched(record) {
+        if let Some((source, key, owner)) = matched(record, schema) {
             if edges.contains(&owner) {
                 matches.entry((source, key)).or_default().insert(owner);
             }
         }
-        if let Some((owner, name)) = generated(record) {
+        if let Some((owner, name)) = generated(record, schema) {
             generated_names.entry(owner).or_default().insert(name);
         }
     }
@@ -332,6 +416,13 @@ fn names(records: &[Record], selectors: &[Selector]) -> HashMap<u32, Option<Edge
         (name.generator == selector.generator && candidates.next().is_none())
             .then_some((selector.source, name))
     }))
+}
+
+/// Whether the selector-to-name join runs for a carrier schema. A schema-44
+/// carrier joins in every document; a schema-38, 40, or 42 carrier joins in a
+/// document with a sheet-metal flange.
+const fn names_joined(schema: u32, has_flange: bool) -> bool {
+    schema == 44 || (legacy_schema(schema) && has_flange)
 }
 
 pub(super) fn inventory(
@@ -378,7 +469,9 @@ pub(super) fn inventory(
         return Ok(EdgeInventory::default());
     };
     let name_corners = has_flange && matches!(carrier.schema, 38 | 40 | 42 | 44);
-    if tokens.len() != 1 || ((selectors.is_empty() || carrier.schema != 44) && !name_corners) {
+    if tokens.len() != 1
+        || ((selectors.is_empty() || !names_joined(carrier.schema, has_flange)) && !name_corners)
+    {
         return Ok(EdgeInventory::default());
     }
     let (records, archive_complete) = match archive::records(ctx, carrier) {
@@ -395,16 +488,16 @@ pub(super) fn inventory(
     } else {
         (None, false)
     };
-    if selectors.is_empty() || carrier.schema != 44 {
+    if selectors.is_empty() || !names_joined(carrier.schema, has_flange) {
         return Ok(EdgeInventory {
             generated_sources,
             generated_sources_complete,
             ..EdgeInventory::default()
         });
     }
-    let names = names(&records, &selectors);
+    let names = names(&records, &selectors, carrier.schema);
     let geometry = if sample_geometry {
-        geometry::selected(&records, &selectors, &names)
+        geometry::selected(&records, &selectors, &names, carrier.schema)
             .into_iter()
             .map(|(source, geometry)| ((token.clone(), source), geometry))
             .collect()

@@ -8,6 +8,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::layout::pm_dc_sheet_metal_style_operand_prefix as wide;
 use crate::layout::pm_dc_sheet_metal_style_operand_prefix_legacy as legacy;
+use crate::layout::pm_dc_sheet_metal_style_operand_prefix_v19 as v19;
 use crate::pmdc::{Cursor, PmDcReference};
 use crate::record_identity::{Located, RecordPayload};
 
@@ -31,7 +32,7 @@ pub(crate) struct StylePayload {
     pub(crate) seam_gap: PmDcReference,
     pub(crate) minimum_remnant: PmDcReference,
     pub(crate) option: PmDcReference,
-    values: [u32; 3],
+    values: Vec<u32>,
     pub(crate) transition_form: PmDcReference,
     pub(crate) transition_radius: PmDcReference,
     suffix: NativeBytes<Vec<u8>>,
@@ -41,8 +42,17 @@ impl RecordPayload for StylePayload {
     const KIND: &'static str = "sheet-metal-style";
 }
 
+/// The count of raw words between the option and the transition form.
+const fn values_len(version: u8) -> usize {
+    match version {
+        19 => 8,
+        _ => 3,
+    }
+}
+
 pub(crate) fn prefix_len(version: u8) -> Option<usize> {
     match version {
+        19 => Some(v19::THICKNESS),
         20 | 23 => Some(legacy::THICKNESS),
         29 | 31 => Some(wide::THICKNESS),
         _ => None,
@@ -81,7 +91,10 @@ pub(crate) fn parse(
     let seam_gap = cursor.reference("style seam gap")?;
     let minimum_remnant = cursor.reference("style minimum remnant")?;
     let option = cursor.reference("style option")?;
-    let values = cursor.u32_array::<3>("style values")?;
+    let values = match values_len(version) {
+        8 => cursor.u32_array::<8>("style values")?.to_vec(),
+        _ => cursor.u32_array::<3>("style values")?.to_vec(),
+    };
     let transition_form = cursor.reference("style transition form")?;
     let transition_radius = cursor.reference("style transition radius")?;
     let mut tail = cursor.into_view();

@@ -596,7 +596,7 @@ A constant-radius edge fillet has form value 0 in slot 11, null slots 1 and 10, 
 
 Type `534d8790d011f8d10008cabc0663dc09` stores an edge naming selector. An edge item's index-reference values name selector `source_index` values in the same PmDc segment. They are not record ordinals or ASM entity indexes.
 
-The fixed selector prefix after the content header contains `state:i32`, `enabled:u8`, `form:u8`, a body reference, `topology:u32`, `qualifier:u32`, and `naming_form:u32`. The direct edge form stores −1, 1, 5, a surface-body reference, 2, 0, and 2. A type-8 integer array follows. Its sole value is the generating feature's content-header `source_index`. The next type-8 integer array is empty. A zero byte, an edge-item reference, a context reference, and `key:u32` end the selector.
+The fixed selector prefix after the content header contains `state:i32`, `enabled:u8`, `form:u8`, a body reference, `topology:u32`, `qualifier:u32`, and `naming_form:u32`. The direct edge form stores −1, 1, 5, a surface-body reference, 2, 0, and 2. In PmDc segment major version 19 the selector has no `qualifier` word: the direct edge form stores −1, 1, 5, a surface-body reference, 2, and 2. A type-8 integer array follows. Its sole value is the generating feature's content-header `source_index`. The next type-8 integer array is empty. A zero byte, an edge-item reference, a context reference, and `key:u32` end the selector.
 
 The selector's edge-item reference selects its owning edge-item record in the same PmDc segment. An edge item with an empty index-reference list can be the target of this reference.
 
@@ -606,9 +606,11 @@ In a schema-44 carrier, generated naming families `INV_NMX_GEN_TAG`, `INV_NMX_SW
 
 Family `INV_NMX_DUP` stores the integers 1 and 44, then four opaque integer key values. It has no feature-source field. Its owner also has a separate generated-name attribute, which supplies the feature source. The four key values form an ordered opaque tuple, separate from that source name.
 
-In schema-38, schema-40, and schema-42 carriers, the class chains `NMx_Generated_Brep_tag`, `NMx_Sweep_Generated_Brep_tag`, `NMx_flange_tag`, `NMx_blend_tag`, `NMx_bend_tag`, and `NMx_Hole_Brep_tag` continue with `NMx_Brep_Name_tag-NMx_Brep_tag-NamingMatching-attrib`. After the five common attribute fields they store the carrier schema, a positive source-name count, that many ordered `(feature_source_index, name_value)` integer pairs, and a family-specific integer tail. The tail lengths are 3, 10, 7, 7, 8, and 2 respectively, in the class order stated above. A source index in any pair names a feature in that generated entity name. `name_value` is a signed naming value. Its value can be −1. The source-name count bounds the pair vector; the tail is not part of that vector.
+In schema-38, schema-40, and schema-42 carriers, class `NMx_Matched_Entity-NamingMatching-attrib` has five common attribute fields followed by the integers `schema`, 1, `selector_source_index`, −1, `key`, and `qualifier`, where `schema` is the carrier schema. It joins the direct edge selector as family `INV_NMX_MATCHED_ATTRIB` does in a schema-44 carrier. In schema-38, schema-40, and schema-42 carriers, the class chains `NMx_Generated_Brep_tag`, `NMx_Sweep_Generated_Brep_tag`, `NMx_flange_tag`, `NMx_blend_tag`, `NMx_bend_tag`, and `NMx_Hole_Brep_tag` continue with `NMx_Brep_Name_tag-NMx_Brep_tag-NamingMatching-attrib`. After the five common attribute fields they store the carrier schema, a positive source-name count, that many ordered `(feature_source_index, name_value)` integer pairs, and a family-specific integer tail. The tail lengths are 3, 10, 7, 7, 8, and 2 respectively, in the class order stated above. A source index in any pair names a feature in that generated entity name. `name_value` is a signed naming value. Its value can be −1. The source-name count bounds the pair vector; the tail is not part of that vector.
 
 A generated name on that same owning edge identifies the edge in the generating feature's result. Family `INV_NMX_GEN_TAG` stores 1, 44, 1, `feature_source_index`, −1, `associative_id`, 0, and `role`. Edge roles are 2, 10, and 18. Family `INV_NMX_SWEEPGENERATED_TAG` stores the same first seven integers followed by `role` and seven zero integers. Edge roles 10 and 18 are distinct names. `feature_source_index` equals the generator value in the selector. The associative identifier names an entity-style link in the sketch consumed by that feature. Role 18 uses a point link; roles 2 and 10 use a curve link. The family, associative identifier, qualifier, and role together form a feature-local persistent name. The name is scoped to the generating feature's result. The matching attribute selects the stored owning edge revision. Its start and end vertex references select the stored point revisions; its curve reference and parameter endpoints select its carrier interval. A straight carrier uses its stored origin and direction, with the edge sense applied to the parameters. The midpoint of the interval supplies an interior point, and the signed carrier direction supplies its unit tangent. These references identify geometry at the selected history input independently of the active body's edge records. The construction-history record framing and entity-revision namespace follow [asm.md §3.2](asm.md#32-delta_state-records).
+
+In a schema-38, schema-40, or schema-42 carrier, an `NMx_Generated_Brep_tag` or `NMx_Sweep_Generated_Brep_tag` edge name with source-name count 1 and name value −1 stores `associative_id`, 0, and `role` as its first three tail integers, as `INV_NMX_GEN_TAG` does; the sweep tail continues with seven zero integers, as `INV_NMX_SWEEPGENERATED_TAG` does. The `feature_source_index` of that name is the generator of the selector.
 
 An equal-distance edge chamfer uses slot 0 for its edge collection, slot 2 for its length, slot 4 for the chamfer form, slot 5 for direction reversal, and slot 11 for the result object collection. The slot-5 direction Boolean is true. Chamfer values 0, 1, and 2 mean equal distance, distance and angle, and two distances. The equal-distance branch does not consume an oriented support face.
 
@@ -866,12 +868,15 @@ The 17-property attached-plate form has these slots:
 | 15 | Result object collection |
 | 16 | Part operation; value 3 joins the existing body |
 
+The 15-property attached-plate form has the operands of slots 0 through 14 above, except that slot 6 holds a surface-body property. That body is the result of the plate. The form has no slot 15 and no slot 16.
+
 One flange control form has the following values and reference relations. Direction comparisons use normalized vectors. Parallel directions have dot product at least `1 - 1e-10`; antiparallel directions have dot product at most `-1 + 1e-10`; perpendicular directions have absolute dot product at most `1e-10`.
 
 | Operand | Value or relation |
 | --- | --- |
-| Plate property count | 17 |
-| Plate slots 5, 6, 14 | Null |
+| Plate property count | 17, or 15 with a surface-body property in slot 6 |
+| Plate slots 5, 14 | Null |
+| Plate slot 6 | Null in the 17-property form; surface-body property in the 15-property form |
 | Plate slot 0 | Type `473f20fcd11101cf000835bd0663dc09`, profile selection, value 0 |
 | Plate slot 1 | Antiparallel to the first attachment direction |
 | Plate slot 2 | Boolean false or enumeration `(2, 0)` places thickness along the consumed sketch normal |
@@ -880,7 +885,7 @@ One flange control form has the following values and reference relations. Direct
 | Plate slot 8 | Feature-dimension reference list |
 | Plate slot 9 | Corner control with the fields below |
 | Plate slot 13 | Scalar 0 |
-| Plate slot 16 | Part-operation enumeration `(5, 3)` |
+| Plate slot 16 | Part-operation enumeration `(5, 3)` in the 17-property form |
 | Attachment control, first option, second option | Boolean false |
 | Attachment first mode, second mode | Enumeration `(9, 1)` |
 | Attachment states | `[1, 1, 1]` |
@@ -900,12 +905,13 @@ One flange control form has the following values and reference relations. Direct
 | Corner relief, corner, and secondary forms | Enumerations |
 | Corner raw value | 0 |
 | Corner gap, size, Jacobi radius | Nonnegative lengths |
-| Bend property count | 11 |
-| Bend slot 5 | Null |
+| Bend property count | 11 with the 17-property plate; 9 with the 15-property plate |
+| Bend slot 5 | Null in the 11-property form; same reference as plate slot 6 in the 9-property form |
 | Bend slot 6 | Feature-dimension reference list |
-| Bend slot 8 | Scalar 6, state 1 |
-| Bend slot 10 | Boolean true |
-| Bend slots 0, 2, 3, 4, 7, 9 | Same references as plate slots 7, 3, 4, 10, 11, 15 respectively |
+| Bend slot 8 | Scalar 6, state 1 in the 11-property form; scalar 0 without a state in the 9-property form |
+| Bend slot 10 | Boolean true in the 11-property form |
+| Bend slots 0, 2, 3, 4, 7 | Same references as plate slots 7, 3, 4, 10, 11 respectively |
+| Bend slot 9 | Same reference as plate slot 15 in the 11-property form |
 | Bend slot 1 | Same positive radius-length reference as the attachment radius |
 | Document style | Same segment and save-version major as the plate |
 
@@ -928,6 +934,8 @@ Feature-label class `f258f74cd3114f24600047a99dccefb0` identifies a bend. Its 11
 | 8 | Bend scalar control `3441b690d511d8026000a28d4aa6fbb0` |
 | 9 | Result object collection shared with plate slot 15 |
 | 10 | Boolean control |
+
+The 9-property bend form has slots 0 through 8 of that table. Its slot 5 holds the surface-body property shared with plate slot 6, and it has no slot 9 and no slot 10.
 
 Type `08dcddc3d311d0976000a7a99dccefb0` stores the flange parent. It contains the state content header without stamps, `state:i32`, a type-2 reference list, and `value:u32`, then ends. The reference list selects the plate, bend, and corner generic-feature records in that order. The parent's feature label has four ordered participants: the consumed planar sketch, that plate, that bend, and that corner. The consumed sketch defines the plate's planar profile. The attached-plate slot-0 kernel selection stores its construction wire; that wire is not the closed boundary of the consumed sketch.
 
@@ -1055,7 +1063,7 @@ transition_form u32
 transition_radius u32
 ```
 
-For PmDc segment major versions 20 and 23, the same operand sequence has `prefix bytes[26]` in place of `prefix bytes[30]`. The operand prefix ends after `transition_radius`; the record continues with a suffix.
+For PmDc segment major versions 20 and 23, the same operand sequence has `prefix bytes[26]` in place of `prefix bytes[30]`. For PmDc segment major version 19, the same operand sequence has `prefix bytes[26]` in place of `prefix bytes[30]` and `values u32[8]` in place of `values u32[3]`. The operand prefix ends after `transition_radius`; the record continues with a suffix.
 
 The length operands reference the parameters `Thickness`, `BendRadius`, `BendReliefWidth`, `BendReliefDepth`, `CornerReliefSize`, `SeamGap`, `MinimumRemnant`, and `TransitionRadius`. The relief-form references select type `720c3e2bd311976060007aa99dccefb0`. The transition-form reference selects type `07a66130d4118895600053aa9dccefb0`. The option references a Boolean. Enumeration identity includes both `type_value` and `value`; equal values in distinct types do not identify equal forms. A length formula that consists of a parameter-reference expression to the style operand uses that style parameter. A literal expression is an explicit length operand, including when its evaluated value equals the style parameter.
 

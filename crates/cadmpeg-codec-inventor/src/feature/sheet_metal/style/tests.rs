@@ -2,21 +2,36 @@
 use super::*;
 use crate::test_support::test_fixtures::parse as with_view;
 
-fn fixture(prefix: usize) -> Vec<u8> {
+/// Raw words between the option and the transition form.
+fn raw_words(count: u32) -> Vec<u32> {
+    (0..count).map(|word| 71 + 10 * word).collect()
+}
+
+fn fixture_with(prefix: usize, values: &[u32]) -> Vec<u8> {
     let mut bytes = vec![0xab; prefix];
     for value in 1_u32..=10 {
         bytes.extend_from_slice(&(value | 0x8000_0000).to_le_bytes());
     }
-    for value in [71_u32, 81, 91, 14, 0x8000_000f] {
+    for value in values.iter().copied().chain([14, 0x8000_000f]) {
         bytes.extend_from_slice(&value.to_le_bytes());
     }
     bytes
 }
 
+fn fixture(prefix: usize) -> Vec<u8> {
+    fixture_with(prefix, &raw_words(3))
+}
+
 #[test]
 fn style_prefix_versions_preserve_operands_qualifiers_and_opaque_fields() {
-    for (version, prefix) in [(20, 26), (23, 26), (29, 30), (31, 30)] {
-        let mut bytes = fixture(prefix);
+    for (version, prefix, words) in [
+        (19, 26, 8),
+        (20, 26, 3),
+        (23, 26, 3),
+        (29, 30, 3),
+        (31, 30, 3),
+    ] {
+        let mut bytes = fixture_with(prefix, &raw_words(words));
         let required = bytes.len();
         bytes.extend_from_slice(&[0x4f, 0x63]);
         let value = with_view(&bytes, |ctx, view| parse(ctx, view, version)).expect("style");
@@ -34,7 +49,7 @@ fn style_prefix_versions_preserve_operands_qualifiers_and_opaque_fields() {
         assert_eq!(value.seam_gap.index(), 8);
         assert_eq!(value.minimum_remnant.index(), 9);
         assert_eq!(value.option.index(), 10);
-        assert_eq!(value.values, [71, 81, 91]);
+        assert_eq!(value.values, raw_words(words));
         assert_eq!(value.transition_form.index(), 14);
         assert!(!value.transition_form.qualified());
         assert_eq!(value.transition_radius.index(), 15);
@@ -52,10 +67,23 @@ fn style_prefix_versions_preserve_operands_qualifiers_and_opaque_fields() {
 
 #[test]
 fn style_prefix_rejects_other_version_grammars() {
-    for version in [15, 19, 21, 22, 25, 28, 30, 32] {
+    for version in [15, 21, 22, 25, 28, 30, 32] {
         assert!(prefix_len(version).is_none());
         assert!(with_view(&fixture(30), |ctx, view| parse(ctx, view, version)).is_err());
     }
+}
+
+#[test]
+fn version_19_style_reads_eight_raw_words_before_the_transition_form() {
+    let short = fixture(26);
+    assert!(with_view(&short, |ctx, view| parse(ctx, view, 19)).is_err());
+    let long = fixture_with(26, &raw_words(8));
+    let legacy = with_view(&long, |ctx, view| parse(ctx, view, 20)).expect("legacy");
+    assert_ne!(legacy.transition_form.index(), 14);
+    let wide = with_view(&long, |ctx, view| parse(ctx, view, 19)).expect("style");
+    assert_eq!(wide.transition_form.index(), 14);
+    assert_eq!(wide.transition_radius.index(), 15);
+    assert_eq!(prefix_len(19), Some(26));
 }
 
 #[test]

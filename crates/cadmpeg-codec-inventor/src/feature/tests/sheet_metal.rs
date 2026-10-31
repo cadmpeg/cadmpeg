@@ -298,3 +298,10 @@ fn unresolved_controls_count_native_attached_plates_and_separate_bends() {
         (0, 1, 0)
     );
 }
+
+#[test]
+fn bend_result_slot_follows_the_bend_property_count() {
+    let family = FeatureFamily::Bend;
+    assert_eq!(family.output_slot(&test_feature(200, 9, &[])), 5);
+    assert_eq!(family.output_slot(&test_feature(200, 11, &[])), 9);
+}
