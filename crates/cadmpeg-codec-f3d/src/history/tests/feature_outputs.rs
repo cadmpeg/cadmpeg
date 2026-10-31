@@ -128,6 +128,131 @@ fn output_binding_inputs() -> (
 }
 
 #[test]
+fn split_outputs_bind_across_complete_transition_chains() {
+    use cadmpeg_ir::features::{
+        BodySelection, FaceSelection, FeatureDefinition, FeatureOperation, SplitBodyTool,
+    };
+    let mut feature = base_feature();
+    feature
+        .evaluation
+        .set_definition(FeatureDefinition::Operation(FeatureOperation::SplitBody {
+            targets: BodySelection::Unresolved,
+            tool: SplitBodyTool::Faces(FaceSelection::Unresolved),
+        }));
+    feature.evaluation.set_outputs(Default::default());
+    let mut scope = scope_between(3, 0);
+    scope
+        .try_edit(|draft| {
+            draft.payload = crate::records::feature::scope::DesignFeatureKind::Split
+                .try_into()
+                .unwrap();
+        })
+        .unwrap();
+    feature.native_ref = Some(scope.id.clone());
+    let history = crate::test_support::history::history(
+        "f3d:asm-history#1".into(),
+        0,
+        None,
+        false,
+        vec![
+            state(3, 3, Some(2), bodies_topology(&[1])),
+            state(2, 2, Some(1), bodies_topology(&[])),
+            state(1, 1, Some(0), bodies_topology(&[])),
+            state(0, 0, None, bodies_topology(&[])),
+        ],
+    );
+    let body = active_body();
+    let mut complete = feature.clone();
+    let losses = super::super::bind_feature_outputs(
+        std::slice::from_mut(&mut complete),
+        std::slice::from_ref(&scope),
+        &mut [history.clone()],
+        std::slice::from_ref(&body),
+    )
+    .unwrap();
+    assert_eq!(complete.evaluation.outputs(), &[body.id.clone()]);
+    assert!(!losses
+        .iter()
+        .any(|loss| loss.code
+            == crate::loss::F3dLossCode::HistoricalOutputTransitionUnresolved.kind()));
+    let mut incomplete = history.clone();
+    incomplete.states_mut()[1].transition = None;
+    let losses = super::super::bind_feature_outputs(
+        std::slice::from_mut(&mut feature),
+        std::slice::from_ref(&scope),
+        &mut [incomplete],
+        std::slice::from_ref(&body),
+    )
+    .unwrap();
+    assert!(feature.evaluation.outputs().is_empty());
+    assert!(losses
+        .iter()
+        .any(|loss| loss.code
+            == crate::loss::F3dLossCode::HistoricalOutputTransitionUnresolved.kind()));
+    let losses = super::super::bind_feature_outputs(
+        std::slice::from_mut(&mut feature),
+        &[scope],
+        &mut [history.clone(), history],
+        &[body],
+    )
+    .unwrap();
+    assert!(feature.evaluation.outputs().is_empty());
+    assert!(losses
+        .iter()
+        .any(|loss| loss.code
+            == crate::loss::F3dLossCode::HistoricalOutputTransitionUnresolved.kind()));
+}
+
+#[test]
+fn split_output_chains_require_unique_bound_acyclic_states() {
+    let history = crate::test_support::history::history(
+        "f3d:asm-history#1".into(),
+        0,
+        None,
+        false,
+        vec![
+            state(3, 3, Some(2), bodies_topology(&[1])),
+            state(2, 2, Some(1), bodies_topology(&[])),
+            state(1, 1, Some(0), bodies_topology(&[])),
+            state(0, 0, None, bodies_topology(&[])),
+        ],
+    );
+    assert!(super::super::split_output_state_pair(&history, 3, 0));
+    assert!(!super::super::split_output_state_pair(&history, 3, 3));
+    for mutation in 0..5 {
+        let mut changed = history.clone();
+        match mutation {
+            0 => {
+                changed.states_mut().remove(1);
+            }
+            1 => {
+                let duplicate = changed.states()[1].clone();
+                changed.states_mut().push(duplicate);
+            }
+            2 => {
+                changed.states_mut()[1].transition = None;
+            }
+            3 => {
+                changed.states_mut()[1].next_ref = Some(3);
+                changed.states_mut()[1]
+                    .transition
+                    .as_mut()
+                    .unwrap()
+                    .previous_state_id = Some(3);
+            }
+            4 => {
+                changed.states_mut()[1].next_ref = Some(0);
+            }
+            _ => unreachable!(),
+        }
+        assert!(
+            !super::super::split_output_state_pair(&changed, 3, 0),
+            "{mutation}"
+        );
+    }
+}
+
+#[test]
 fn feature_outputs_name_the_bodies_a_state_deletes_from_its_previous_state() {
     use crate::history_records::AsmHistoricalTopology;
     let history = |states| {

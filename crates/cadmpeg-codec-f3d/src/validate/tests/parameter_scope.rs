@@ -29,6 +29,79 @@ fn invalid_parameter_scope_preserves_finding() {
 }
 
 #[test]
+fn offset_faces_counted_member_runs_validate() {
+    use crate::records::{
+        decal::DesignRecordHeader,
+        feature::scope::{DesignFeatureKind, DesignParameterScope},
+        identity::ReferenceRun,
+    };
+    for count in [2, 8, 10] {
+        for count_offset in [126, 130] {
+            let mut scope = DesignParameterScope::empty(
+                "f3d:Design/BulkStream.dat:design-parameter-scope#17",
+                DesignFeatureKind::OffsetFaces,
+                17,
+            );
+            scope
+                .try_edit(|draft| {
+                    draft.reference_members = ReferenceRun::unlocated((301..301 + count).collect());
+                    draft.reference_count_offset = count_offset;
+                    draft.layout_fixture_references();
+                    draft.paired_byte_offset = draft.kind_offset + 22 + 78;
+                    draft.frame_length = draft.paired_byte_offset;
+                    draft.feature_ordinal_offset = draft.kind_offset + 22;
+                })
+                .unwrap();
+            if let crate::records::feature::scope::DesignScopePayloadMut::OffsetFaces(slot) =
+                scope.payload_mut()
+            {
+                *slot = Some(
+                    crate::records::feature::direct_face::DesignOffsetFacesOperation {
+                        distance: cadmpeg_ir::scalar::FiniteReal::new(0.5).unwrap(),
+                        distance_record_index: 300 + count,
+                        distance_offset: u64::from(340 + count),
+                    },
+                );
+            }
+            let mut native = crate::native::F3dNative::default();
+            for record_index in std::iter::once(17).chain(301..301 + count) {
+                native.design_record_headers.push(DesignRecordHeader {
+                    id: format!("f3d:Design/BulkStream.dat:design-record-header#{record_index}"),
+                    record_index,
+                    class_tag: "256".to_owned().try_into().unwrap(),
+                    byte_offset: u64::from(record_index),
+                });
+            }
+            native.design_parameter_scopes.push(scope);
+            let findings = |native: &crate::native::F3dNative| {
+                crate::test_support::with_decode_context(|service_ctx| {
+                    let ir = cadmpeg_ir::examples::unit_cube().unwrap();
+                    let ctx = super::super::Ctx::new(&ir, native, service_ctx);
+                    let mut findings = Vec::new();
+                    super::super::validate_parameter_scopes(&ctx, &mut findings).unwrap();
+                    findings
+                })
+            };
+            if count < 3 {
+                assert_eq!(findings(&native).len(), 1);
+                continue;
+            }
+            assert!(findings(&native).is_empty(), "{count} {count_offset}");
+            let mut changed = native.clone();
+            if let crate::records::feature::scope::DesignScopePayloadMut::OffsetFaces(Some(
+                operation,
+            )) = changed.design_parameter_scopes[0].payload_mut()
+            {
+                operation.distance_record_index = 301;
+            }
+            assert_eq!(findings(&changed).len(), 1);
+            native.design_record_headers.pop();
+            assert_eq!(findings(&native).len(), 1);
+        }
+    }
+}
+
+#[test]
 fn placement_ordered_owner_count_and_references_match_the_frame() {
     use crate::records::feature::{
         assembly::{DesignAssemblyAlignment, DesignAssemblyOwnerRun},

@@ -24,6 +24,7 @@ mod legacy_work_planes;
 mod move_transform;
 mod named_empty_label;
 mod named_variable_tail;
+mod offset_faces;
 mod remove_body_named_tail;
 mod scale;
 mod surfaces;

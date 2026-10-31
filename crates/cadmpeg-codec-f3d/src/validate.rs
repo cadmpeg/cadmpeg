@@ -2124,6 +2124,16 @@ fn validate_parameter_scopes(ctx: &Ctx, findings: &mut Vec<Finding>) -> Result<(
                     .copied()
             }),
         );
+        let offset_faces_link = match scope.payload() {
+            records::feature::scope::DesignScopePayload::OffsetFaces(Some(operation))
+            | records::feature::scope::DesignScopePayload::DecalerLesFaces(Some(operation)) => {
+                design::decode::scopes::direct_face::offset_faces_distance_reference_matches(
+                    scope,
+                    operation.distance_record_index,
+                )
+            }
+            _ => true,
+        };
         let base_flange_link = match scope.base_flange_operation() {
             None => true,
             Some(operation) => {
@@ -4190,6 +4200,7 @@ fn validate_parameter_scopes(ctx: &Ctx, findings: &mut Vec<Finding>) -> Result<(
             && base_flange_profile_link
             && emboss_profile_link
             && move_link
+            && offset_faces_link
             && base_flange_link
             && edge_flange_link
             && hem_link
