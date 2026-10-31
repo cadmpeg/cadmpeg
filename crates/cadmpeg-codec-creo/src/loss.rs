@@ -104,6 +104,8 @@ pub(crate) enum CreoLossCode {
     PcurveScalarFrameUnresolved,
     PcurveChartUnresolved,
     SampledPcurveCarrierUnresolved,
+    HoleCircleIntervalUnresolved,
+    HoleGeneratorUnresolved,
     SweepEnvelopeReplayUnresolved,
     PcurveSampleCoordinatesDropped,
     AngularPcurvePairUnresolved,
@@ -278,6 +280,8 @@ impl CreoLossCode {
             Self::PcurveScalarFrameUnresolved => "geometry.pcurve-scalar-frame-unresolved",
             Self::PcurveChartUnresolved => "geometry.pcurve-chart-unresolved",
             Self::SampledPcurveCarrierUnresolved => "geometry.sampled-pcurve-carrier-unresolved",
+            Self::HoleCircleIntervalUnresolved => "geometry.hole-circle-interval-unresolved",
+            Self::HoleGeneratorUnresolved => "geometry.hole-generator-unresolved",
             Self::SampledPcurveEvaluationUnresolved => {
                 "geometry.sampled-pcurve-evaluation-unresolved"
             }
@@ -412,6 +416,8 @@ impl CreoLossCode {
             | Self::PcurveScalarFrameUnresolved
             | Self::PcurveChartUnresolved
             | Self::SampledPcurveCarrierUnresolved
+            | Self::HoleCircleIntervalUnresolved
+            | Self::HoleGeneratorUnresolved
             | Self::SampledPcurveEvaluationUnresolved
             | Self::VisibGeomCurveUntransferred
             | Self::LegacySurfaceCarrierUnresolved
@@ -504,6 +510,8 @@ impl CreoLossCode {
             | Self::PcurveScalarFrameUnresolved
             | Self::PcurveChartUnresolved
             | Self::SampledPcurveCarrierUnresolved
+            | Self::HoleCircleIntervalUnresolved
+            | Self::HoleGeneratorUnresolved
             | Self::SampledPcurveEvaluationUnresolved
             | Self::VisibGeomCurveUntransferred
             | Self::LegacySurfaceCarrierUnresolved
@@ -623,6 +631,8 @@ mod tests {
                 "geometry.pcurve-scalar-frame-unresolved",
                 "geometry.pcurve-chart-unresolved",
                 "geometry.sampled-pcurve-carrier-unresolved",
+                "geometry.hole-circle-interval-unresolved",
+                "geometry.hole-generator-unresolved",
                 "geometry.sweep-envelope-replay-unresolved",
                 "geometry.pcurve-sample-coordinates-dropped",
                 "geometry.angular-pcurve-pair-unresolved",

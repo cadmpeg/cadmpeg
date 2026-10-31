@@ -2625,6 +2625,10 @@ pub(crate) fn decode_stateful_scalar_run(
     kind: StatefulScalarKind,
 ) -> Option<(f64, usize, usize)> {
     let token = *body.get(cursor)?;
+    if matches!(kind, StatefulScalarKind::CylinderRotation) && matches!(token, 0x19 | 0x32) {
+        let (value, end) = ieee8(body, cursor, if token == 0x19 { 0x3c } else { 0xbc })?;
+        return value.is_finite().then_some((value, 1, end));
+    }
     if matches!(
         kind,
         StatefulScalarKind::Pcurve | StatefulScalarKind::CylinderRotation
