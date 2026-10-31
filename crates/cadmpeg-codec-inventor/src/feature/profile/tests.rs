@@ -993,3 +993,5 @@ fn a_named_closed_spline_binds_one_profile_and_rejects_other_selections() {
             .is_none());
     }
 }
+
+mod native_curves;

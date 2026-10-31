@@ -28,6 +28,7 @@ use crate::record_identity::{push_record, Located, RecordPayload};
 use crate::record_issue::{RecordIssue, RecordIssueFamily};
 use crate::rse::{RecordFrameState, RseInventory, SegmentBulkState, SegmentKind};
 
+pub(crate) mod curve;
 pub(crate) mod point_tail;
 
 use point_tail::PointPairedAssociation;
@@ -50,7 +51,7 @@ const EPS_SKETCH_BLOCK_PLACEMENT_RIGID: f64 = 1.0e-9;
 const CIRCLE_STATE_ARC: u8 = 0;
 const CIRCLE_STATE_FULL: u8 = 1;
 
-mod spline;
+pub(crate) mod spline;
 
 const SKETCH_TYPE: [u8; 16] = inventor_id(0x9087_4d11);
 pub(crate) const TRANSFORM_TYPE: [u8; 16] = inventor_id(0x9087_4d18);
@@ -1785,6 +1786,14 @@ pub(crate) fn project(
     })
 }
 
+pub(crate) fn constraint_maps_supported(constraint: &PmDcSketchConstraint) -> bool {
+    (constraint.header.scalar_map.metadata().is_none()
+        && constraint.header.scalar_map.entries().is_empty()
+        && constraint.header.reference_map.metadata().is_none()
+        && constraint.header.reference_map.entries().is_empty())
+        || solver_hint(constraint)
+}
+
 fn project_constraint(
     ctx: &DecodeContext<'_>,
     constraint: &PmDcSketchConstraint,
@@ -1799,11 +1808,7 @@ fn project_constraint(
         };
     }
 
-    let maps_are_empty = constraint.header.scalar_map.metadata().is_none()
-        && constraint.header.scalar_map.entries().is_empty()
-        && constraint.header.reference_map.metadata().is_none()
-        && constraint.header.reference_map.entries().is_empty();
-    if !maps_are_empty && !solver_hint(constraint) {
+    if !constraint_maps_supported(constraint) {
         return None;
     }
     let resolve = |reference: PmDcReference| {
@@ -2091,10 +2096,7 @@ fn project_constraint(
         PmDcSketchConstraintKind::Midpoint { entity, point, .. } => {
             let members = [resolve(point)?, resolve(entity)?];
             (
-                SketchConstraintDefinitionInput::Midpoint {
-                    point: SketchLocus::Entity(members[0].id().clone()),
-                    entity: members[1].id().clone(),
-                },
+                curve::midpoint_definition(constraint, entity, point, members[0], members[1]),
                 None,
                 members,
             )
@@ -2370,7 +2372,7 @@ fn native_operand(
     }
 }
 
-fn project_geometry(
+pub(crate) fn project_geometry(
     entity: &PmDcSketchEntity,
     entities: &HashMap<(&str, u32), Option<&PmDcSketchEntity>>,
 ) -> Option<SketchGeometry> {
@@ -2386,8 +2388,12 @@ fn project_placed_geometry(
     let resolve_point =
         |token: &str, reference: u32| placement.point(resolve_point(token, reference, entities)?);
     match &entity.kind {
-        PmDcSketchEntityKind::Spline { data } => {
-            let mut curve = data.closed_curve()?;
+        PmDcSketchEntityKind::Spline { .. } => {
+            let Some(mut curve) = spline::resolved_curve(entity, entities) else {
+                return Some(SketchGeometry::native(cadmpeg_core::nonblank_literal!(
+                    "spline"
+                )));
+            };
             curve
                 .try_map_control_points(|_, point| {
                     let point = point.get();
@@ -2480,15 +2486,16 @@ fn project_placed_geometry(
             SketchGeometry::try_from(definition).ok()
         }
         PmDcSketchEntityKind::Ellipse {
-            points,
             center,
             major_direction,
             major_radius,
             minor_radius,
             ..
         } => {
-            if curve_ends(points)? != CurveEnds::Closed {
-                return None;
+            if !curve::closed_ellipse(entity) {
+                return Some(SketchGeometry::native(cadmpeg_core::nonblank_literal!(
+                    "ellipse"
+                )));
             }
             let center = resolve_point(entity.identity.segment_token.as_str(), center.index())?;
             let major_direction = placement.direction(*major_direction)?;
@@ -2643,7 +2650,7 @@ fn neutral_point(value: [FiniteReal; 2]) -> Point2 {
     Point2::new(value[0].get() * 10.0, value[1].get() * 10.0)
 }
 
-fn entity_endpoint_refs(
+pub(crate) fn entity_endpoint_refs(
     entity: &PmDcSketchEntity,
     entities: &HashMap<(&str, u32), Option<&PmDcSketchEntity>>,
 ) -> Vec<String> {
@@ -2657,6 +2664,11 @@ fn placed_endpoint_refs(
     placement: &BlockPlacement,
 ) -> Vec<String> {
     let ends = match &entity.kind {
+        PmDcSketchEntityKind::Spline { data }
+            if spline::resolved_curve(entity, entities).is_some_and(|curve| !curve.periodic()) =>
+        {
+            data.points.references()
+        }
         PmDcSketchEntityKind::Line { points, .. } => points.references().get(..2).unwrap_or(&[]),
         PmDcSketchEntityKind::Circle { points, .. } => match curve_ends(points) {
             Some(CurveEnds::Bounded(..)) => &points.references()[..2],
@@ -4194,6 +4206,70 @@ mod tests {
         assert_eq!(projected.unresolved_construction, 1);
         assert_eq!(projected.entities.len(), 8);
         assert!(projected.sketches[0].profiles.is_empty());
+    }
+
+    #[test]
+    fn open_cubic_projection_requires_a_closed_owning_graph() {
+        for pole_count in [4, 5, 8] {
+            for incompatible_arc in [false, true] {
+                let (mut inventory, mut sketch) = closed_square_inventory();
+                inventory.entities =
+                    crate::test_support::sketch_curves::open_cubic_entities_with(pole_count, 2.0)
+                        .into_iter()
+                        .map(|entity| {
+                            located(
+                                PmDcSketchEntityPayload::clone(&entity),
+                                entity.kind.record_type_id(),
+                                entity.identity.record_ordinal,
+                            )
+                        })
+                        .collect();
+                let mut references = vec![4, 5, 8];
+                if incompatible_arc {
+                    let arc = parse(&circle_bytes(8, 3, [4, 5], 4, 0), |_, source| {
+                        parse_entity(SketchEntityTag::Circle, source, 22).expect("arc")
+                    });
+                    inventory.entities.push(located(arc, CIRCLE_TYPE, 8));
+                    references.push(9);
+                }
+                let (marker, metadata, _) = sketch.entities.clone().into_parts();
+                sketch.entities = PmDcReferenceList::new(
+                    marker,
+                    metadata,
+                    references
+                        .into_iter()
+                        .map(PmDcReference::from_packed)
+                        .collect(),
+                )
+                .expect("cubic member list");
+                inventory.sketches[0] = Located::new(
+                    sketch,
+                    crate::record_identity::RecordTypeId::from_bytes(SKETCH_TYPE),
+                    cadmpeg_ir::identity_key!("segment"),
+                    2,
+                );
+                let arena = DecodeArena::new();
+                let (ctx, _) =
+                    DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service())
+                        .expect("projection context");
+                let projected = project(&ctx, &inventory, &[]).expect("cubic projection");
+                if incompatible_arc {
+                    assert_eq!(projected.unresolved_sketches, 1);
+                    assert_eq!(projected.unresolved_entities, 4);
+                    assert!(projected.sketches.is_empty());
+                    assert!(projected.entities.is_empty());
+                } else {
+                    assert_eq!(projected.unresolved_sketches, 0);
+                    assert_eq!(projected.unresolved_entities, 0);
+                    assert_eq!(projected.sketches.len(), 1);
+                    assert_eq!(projected.entities.len(), 3);
+                    assert!(matches!(
+                        projected.entities[2].geometry.definition(),
+                        cadmpeg_ir::sketches::SketchGeometryDefinition::Nurbs { .. }
+                    ));
+                }
+            }
+        }
     }
 
     #[test]

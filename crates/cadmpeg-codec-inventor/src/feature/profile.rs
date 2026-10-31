@@ -432,8 +432,14 @@ impl<'a> ProfileIndex<'a> {
                 _ => {}
             }
         }
-        let neutral_ids = entities
+        let resolved_ids = entities
             .iter()
+            .filter(|entity| {
+                !matches!(
+                    entity.geometry.definition(),
+                    SketchGeometryDefinition::Native { .. }
+                )
+            })
             .map(SketchEntity::id)
             .collect::<std::collections::HashSet<_>>();
         let incomplete_sketches = raw_entities
@@ -448,7 +454,7 @@ impl<'a> ProfileIndex<'a> {
                 )
             })
             .filter(|entity| {
-                crate::sketch::entity_id(entity).is_none_or(|id| !neutral_ids.contains(&id))
+                crate::sketch::entity_id(entity).is_none_or(|id| !resolved_ids.contains(&id))
             })
             .filter_map(|entity| {
                 Some((

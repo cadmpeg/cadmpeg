@@ -1,5 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
-//! Stored planar spline arrays and their closed polynomial branch.
+//! Stored planar spline arrays and exact polynomial curve forms.
+
+use std::collections::HashMap;
 
 use cadmpeg_core::decode::{DecodeContext, View};
 use cadmpeg_core::CodecError;
@@ -9,11 +11,18 @@ use cadmpeg_ir::scalar::FiniteReal;
 use cadmpeg_ir::sketches::{SketchEntity, SketchGeometryDefinition};
 use serde::{Deserialize, Serialize};
 
-use super::{PmDcSketchEntityKind, PmDcSketchEntityPayload};
-use crate::pmdc::{
-    content_header, reference_list_with_context, u32_list_with_context, Cursor, PmDcReferenceList,
-    PmDcU32List,
+use super::{PmDcSketchEntity, PmDcSketchEntityKind, PmDcSketchEntityPayload};
+use crate::layout::{
+    pm_dc_open_cubic_curve_prefix as open_prefix, pm_dc_open_cubic_pole_prefix as open_poles,
+    pm_dc_spline_curve_prefix as curve_prefix,
 };
+use crate::pmdc::{
+    content_header, reference_list_with_context, u32_list_with_context, Cursor, PmDcListMetadata,
+    PmDcReferenceList, PmDcU32List,
+};
+
+const OPEN_ARRAY_TOLERANCE: f64 = 1.0e-9;
+const OPEN_POLE_TOLERANCE: f64 = 1.0e-12;
 
 pub(super) const TYPE: [u8; 16] = [
     0xd4, 0x2f, 0x37, 0xf9, 0xd1, 0x11, 0x15, 0xd3, 0x00, 0x08, 0x47, 0xb0, 0x05, 0x24, 0xdc, 0x09,
@@ -75,7 +84,7 @@ fn reals(
 }
 
 fn width(cursor: &mut Cursor<'_>) -> Result<(), CodecError> {
-    if cursor.u32("spline scalar width")? != 8 {
+    if cursor.u32("spline scalar width")? != curve_prefix::SCALAR_WIDTH_VALUE {
         return Err(CodecError::NotImplemented(
             "Inventor spline scalar width is not 8".into(),
         ));
@@ -136,7 +145,7 @@ fn curve(ctx: &DecodeContext<'_>, cursor: &mut Cursor<'_>) -> Result<SplineCurve
     })
 }
 
-pub(super) fn parse(
+pub(crate) fn parse(
     ctx: &DecodeContext<'_>,
     source: View<'_>,
     version: u8,
@@ -176,6 +185,49 @@ pub(super) fn parse(
 }
 
 impl SplineRecord {
+    fn open_curve(&self) -> Option<PcurveNurbs> {
+        let curve = &self.primary;
+        if self.state != 0
+            || self.values != [0x3000_0002, 0, 0, 0, 0, 0, 0, 0, 0]
+            || self.curve_state != 2
+            || self.secondary_present != 1
+            || self.secondary_prefix != 0
+            || self.secondary_state != 0
+            || self.auxiliary_values != [0; 3]
+            || self.terminal_values != [2, 0, 0, 0, 0, 0, 0, 0, 0]
+            || self.points.marker() != 2
+            || self.points.metadata() != Some(&PmDcListMetadata::U32([2, 0]))
+            || self.points.references().len() != 2
+            || self.point_values.marker() != 2
+            || self.point_values.metadata() != Some(&PmDcListMetadata::U32([2, 0]))
+            || self.point_values.values() != [0, 1]
+            || self
+                .auxiliary
+                .iter()
+                .any(|list| list.marker() != 2 || !list.references().is_empty())
+            || curve != &self.secondary
+            || curve.form != open_prefix::FORM_VALUE
+            || curve.degree != open_prefix::DEGREE_VALUE
+            || curve.tolerance.get() != OPEN_ARRAY_TOLERANCE
+            || curve.pole_tolerance.get() != OPEN_POLE_TOLERANCE
+            || curve.values != [1, 1]
+            || curve.knot_values != [0, 0]
+            || usize::try_from(curve.knot_value).ok()? != curve.knots.len()
+            || curve.pole_value != open_poles::POLE_VALUE_VALUE
+            || curve.terminal_value != FiniteReal::ZERO
+            || curve.poles.first()? == curve.poles.last()?
+        {
+            return None;
+        }
+        let next_knot = usize::try_from(curve.degree.checked_add(1)?).ok()?;
+        if curve.knots.get(next_knot)? <= curve.knots.first()?
+            || curve.knots.get(curve.poles.len().checked_sub(1)?)? >= curve.knots.last()?
+        {
+            return None;
+        }
+        curve.clamped_curve(false)
+    }
+
     pub(super) fn closed_curve(&self) -> Option<PcurveNurbs> {
         let curve = &self.primary;
         if self.curve_state != 2
@@ -197,6 +249,13 @@ impl SplineRecord {
         {
             return None;
         }
+        curve.clamped_curve(true)
+    }
+}
+
+impl SplineCurve {
+    fn clamped_curve(&self, periodic: bool) -> Option<PcurveNurbs> {
+        let curve = self;
         let degree = usize::try_from(curve.degree).ok()?;
         if curve.interval
             != [
@@ -231,10 +290,120 @@ impl SplineRecord {
                 .map(|p| Point2::new(p[0].get(), p[1].get()))
                 .collect(),
             None,
-            true,
+            periodic,
         )
         .ok()
     }
+}
+
+#[derive(Debug, Clone, Copy)]
+enum CurveRefusal {
+    SourceType,
+    Envelope,
+    UnequalArrays,
+    Controls,
+    EndpointJoin,
+    EndpointPosition,
+}
+
+impl CurveRefusal {
+    fn message(self) -> &'static str {
+        match self {
+            Self::SourceType => "spline source type remains unresolved",
+            Self::Envelope => "spline envelope or construction flags require another curve form",
+            Self::UnequalArrays => "spline primary and secondary arrays differ",
+            Self::Controls => "spline control values or array structure require another curve form",
+            Self::EndpointJoin => {
+                "spline endpoint references require exact point records in the owning sketch"
+            }
+            Self::EndpointPosition => "spline endpoint positions differ from the ordered end poles",
+        }
+    }
+}
+
+fn checked_curve(
+    entity: &PmDcSketchEntity,
+    entities: &HashMap<(&str, u32), Option<&PmDcSketchEntity>>,
+) -> Result<PcurveNurbs, CurveRefusal> {
+    if entity.identity.type_id != crate::record_identity::RecordTypeId::from_bytes(TYPE) {
+        return Err(CurveRefusal::SourceType);
+    }
+    let PmDcSketchEntityKind::Spline { data } = &entity.kind else {
+        return Err(CurveRefusal::SourceType);
+    };
+    if let Some(curve) = data.closed_curve() {
+        return Ok(curve);
+    }
+    if entity.save_version_major != 23 || entity.entity_flags != 0x40 {
+        return Err(CurveRefusal::Envelope);
+    }
+    if entity.sketch.index() == 0 {
+        return Err(CurveRefusal::EndpointJoin);
+    }
+    if data.primary != data.secondary {
+        return Err(CurveRefusal::UnequalArrays);
+    }
+    let curve = data.open_curve().ok_or(CurveRefusal::Controls)?;
+    let poles = [
+        data.primary.poles.first().ok_or(CurveRefusal::Controls)?,
+        data.primary.poles.last().ok_or(CurveRefusal::Controls)?,
+    ];
+    for (reference, pole) in data.points.references().iter().zip(poles) {
+        let ordinal = reference
+            .record_ordinal()
+            .ok_or(CurveRefusal::EndpointJoin)?;
+        let endpoint = entities
+            .get(&(entity.identity.segment_token.as_str(), ordinal))
+            .and_then(Option::as_ref)
+            .ok_or(CurveRefusal::EndpointJoin)?;
+        if endpoint.identity.type_id
+            != crate::record_identity::RecordTypeId::from_bytes(super::POINT_TYPE)
+            || endpoint.sketch.index() != entity.sketch.index()
+            || endpoint.save_version_major != entity.save_version_major
+        {
+            return Err(CurveRefusal::EndpointJoin);
+        }
+        let PmDcSketchEntityKind::Point { position, .. } = &endpoint.kind else {
+            return Err(CurveRefusal::EndpointJoin);
+        };
+        if position != pole {
+            return Err(CurveRefusal::EndpointPosition);
+        }
+    }
+    Ok(curve)
+}
+
+pub(crate) fn resolved_curve(
+    entity: &PmDcSketchEntity,
+    entities: &HashMap<(&str, u32), Option<&PmDcSketchEntity>>,
+) -> Option<PcurveNurbs> {
+    checked_curve(entity, entities).ok()
+}
+
+pub(super) fn native_reason(
+    entity: &PmDcSketchEntity,
+    entities: &HashMap<(&str, u32), Option<&PmDcSketchEntity>>,
+) -> Option<&'static str> {
+    checked_curve(entity, entities)
+        .err()
+        .map(CurveRefusal::message)
+}
+
+pub(crate) fn point_relation_loss(
+    constraints: &[super::PmDcSketchConstraint],
+) -> Option<cadmpeg_ir::report::loss::LossNote> {
+    let count = constraints
+        .iter()
+        .filter(|constraint| {
+            matches!(
+                constraint.kind,
+                super::PmDcSketchConstraintKind::SplinePoint { .. }
+            )
+        })
+        .count();
+    (count != 0).then(|| crate::loss::InventorLossCode::SketchSplinePointNative.note(format!(
+        "Retained {count} Inventor spline-point relation(s): spline locus and parameter roles remain unresolved."
+    )))
 }
 
 pub(super) fn is_closed(entity: &SketchEntity) -> bool {

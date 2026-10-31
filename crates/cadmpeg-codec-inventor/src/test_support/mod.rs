@@ -12,3 +12,5 @@ pub(crate) mod sheet_metal;
 pub(crate) mod mirror;
 
 pub(crate) mod surface_extrusion;
+
+pub(crate) mod sketch_curves;
