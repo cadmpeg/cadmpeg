@@ -21,6 +21,7 @@ use super::component_constructions::exact_copy_paste_component_operation;
 use super::component_constructions::exact_derived_instance_construction;
 use super::copy_paste_bodies::exact_copy_paste_bodies_operation;
 use super::direct_face::exact_direct_face_operation;
+use super::direct_face::exact_move_face_operation;
 use super::direct_face::exact_move_operation;
 use super::direct_face::exact_scale_operation;
 use super::draft::exact_draft_operation_with_owners;
@@ -339,9 +340,28 @@ pub(crate) fn decode_parameter_scopes(
                     _ => {}
                 }
             }
+            if scope.kind() == scope::DesignFeatureKind::Align {
+                let mut envelope = super::align::decode_align_envelope(bytes, &scope);
+                if let Some(envelope) = envelope.as_mut() {
+                    envelope.construction = super::align::construction::decode_align_construction(
+                        bytes, &records, &scope, envelope,
+                    );
+                }
+                if let scope::DesignScopePayloadMut::Align(slot) = scope.payload_mut() {
+                    *slot = envelope;
+                }
+            }
             {
                 let construction = exact_move_operation(bytes, &records, &scope);
                 if let scope::DesignScopePayloadMut::Move(slot) = scope.payload_mut() {
+                    *slot = construction;
+                }
+            }
+            {
+                let construction = exact_move_face_operation(bytes, &records, &scope);
+                if let scope::DesignScopePayloadMut::MoveFace(slot)
+                | scope::DesignScopePayloadMut::DeplacerFace(slot) = scope.payload_mut()
+                {
                     *slot = construction;
                 }
             }
@@ -384,7 +404,13 @@ pub(crate) fn decode_parameter_scopes(
                 }
             }
             {
-                let construction = exact_fixed_fillet_parameters(bytes, &records, &scope);
+                let construction = exact_fixed_fillet_parameters(
+                    bytes,
+                    &records,
+                    &scope,
+                    parameters,
+                    parameter_owners,
+                );
                 if let scope::DesignScopePayloadMut::Fillet(slot)
                 | scope::DesignScopePayloadMut::Conge(slot)
                 | scope::DesignScopePayloadMut::Abrundung(slot)
@@ -431,7 +457,7 @@ pub(crate) fn decode_parameter_scopes(
                 }
             }
             {
-                let construction = exact_thread_construction(bytes, &scope);
+                let construction = exact_thread_construction(bytes, &scope, parameter_owners);
                 if let scope::DesignScopePayloadMut::Thread(slot) = scope.payload_mut() {
                     *slot = construction;
                 }
@@ -575,6 +601,15 @@ pub(crate) fn decode_parameter_scopes(
     }
     out.sort_by(|a, b| a.id.cmp(&b.id));
     out.dedup_by(|a, b| a.id == b.id);
+    for scope in out
+        .iter()
+        .filter(|scope| scope.kind() == scope::DesignFeatureKind::Align)
+    {
+        losses.push(super::align::align_native_loss(
+            scope,
+            scope.align_envelope(),
+        ));
+    }
     Ok(DecodedParameterScopes {
         scopes: out,
         losses,
@@ -1723,6 +1758,15 @@ fn exact_canvas_scope_tail(tail: &[u8], record_index: u32) -> bool {
         && tail.get(canvas_tail::ZERO_TAIL) == Some(&canvas_tail::ZERO_TAIL_VALUE)
 }
 
+/// Largest repeated lane value of a named-scope lane block with a nonempty
+/// label: the high byte of the three descending 16-bit field targets. An empty
+/// label takes only the values zero and one with class word 252, because that
+/// tail is also the 78-byte fixed tail.
+const NAMED_LANE_VALUE_MAX: u64 = 0xff;
+/// Three-digit dynamic class numbers admitted for the two equal class words of
+/// a named-scope lane block.
+const NAMED_LANE_CLASS_WORDS: std::ops::RangeInclusive<u32> = 100..=999;
+
 fn named_parameter_scope_tail_is_valid(
     bytes: &[u8],
     kind_end: usize,
@@ -1746,18 +1790,21 @@ fn named_parameter_scope_tail_is_valid(
         let first_lane_value = View::u64_le_at(bytes, marker + 2)?;
         let second_lane_value = View::u64_le_at(bytes, marker + 34)?;
         let third_lane_value = View::u64_le_at(bytes, marker + 48)?;
+        let class_word = View::u32_le_at(bytes, marker + 16)?;
         Some(
             bytes.get(kind_end + 4..kind_end + 8)? == [0; 4]
                 && bytes.get(marker) == Some(&1)
                 && bytes.get(marker + 1).is_some_and(|field_id| *field_id != 0)
-                && matches!(first_lane_value, 0 | 1)
+                && ((first_lane_value <= 1 && class_word == 0xfc)
+                    || (label_code_units > 0
+                        && first_lane_value <= NAMED_LANE_VALUE_MAX
+                        && NAMED_LANE_CLASS_WORDS.contains(&class_word)))
                 && second_lane_value == first_lane_value
                 && third_lane_value == first_lane_value
                 && bytes.get(marker + 10..marker + 12)? == [0; 2]
                 && View::u32_le_at(bytes, marker + 12)? > 0
-                && View::u32_le_at(bytes, marker + 16)? == 0xfc
                 && View::f64_le_at(bytes, marker + 20)?.is_finite()
-                && View::u32_le_at(bytes, marker + 28)? == 0xfc
+                && View::u32_le_at(bytes, marker + 28)? == class_word
                 && bytes.get(marker + 32) == Some(&1)
                 && bytes
                     .get(marker + 33)

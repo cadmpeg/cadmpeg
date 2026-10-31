@@ -13,7 +13,7 @@ use crate::records::{
     sketch_placement::DesignSketchPlacement,
     sketch_relations::{SketchConstraintKind, SketchRelation},
 };
-use cadmpeg_core::decode::{index_from_u32, DecodeContext};
+use cadmpeg_core::decode::{index_from_u32, DecodeContext, View};
 use cadmpeg_ir::math::{Point2, Point3, Vector3};
 use std::collections::{HashMap, HashSet};
 
@@ -37,6 +37,96 @@ fn record_spline_segment<'a>(
             }
         })
         .or_insert(Some(points));
+}
+
+pub(crate) fn scan_construction_curve_identities(
+    scan: &crate::container::ContainerScan<'_>,
+    curves: &[SketchCurveIdentity],
+    spatial_owners: &HashSet<(&str, u32)>,
+    text_frame_curves: &HashSet<(&str, u32)>,
+) -> HashSet<String> {
+    let mut construction_ids = HashSet::new();
+    for curve in curves {
+        let Some(owner) = curve.owner_reference else {
+            continue;
+        };
+        let Some(scope) = native_stream(&curve.id) else {
+            continue;
+        };
+        if spatial_owners.contains(&(scope, owner)) {
+            continue;
+        }
+        if text_frame_curves.contains(&(scope, curve.record_index)) {
+            continue;
+        }
+        let Some(geometry) = curve.geometry.as_ref() else {
+            continue;
+        };
+        match geometry {
+            SketchCurveGeometry::Line { .. } | SketchCurveGeometry::Arc { .. } => {}
+            SketchCurveGeometry::Nurbs { .. } => continue,
+        }
+        let Some(entry) = scan.design_stream_entry_for_scope(
+            cadmpeg_core::container::ContainerRole::Bulkstream,
+            scope,
+        ) else {
+            continue;
+        };
+        let Ok(bytes) = scan.entry_bytes(&entry.name) else {
+            continue;
+        };
+        let Some(g_off) = usize::try_from(curve.byte_offset).ok().and_then(|b| {
+            usize::try_from(curve.geometry_offset)
+                .ok()
+                .and_then(|g| b.checked_add(g))
+        }) else {
+            continue;
+        };
+        let is_analytic_shape = match geometry {
+            SketchCurveGeometry::Arc { .. } => true,
+            SketchCurveGeometry::Line { .. } => View::f64_le_at(bytes, g_off + 72)
+                .zip(View::f64_le_at(bytes, g_off + 80))
+                .zip(View::f64_le_at(bytes, g_off + 88))
+                .is_some_and(|((nx, ny), nz)| {
+                    cadmpeg_ir::units::UnitVector3::new(cadmpeg_ir::math::Vector3::new(nx, ny, nz))
+                        .is_some()
+                }),
+            SketchCurveGeometry::Nurbs { .. } => false,
+        };
+        if !is_analytic_shape {
+            continue;
+        }
+        let Some(tail_start) = g_off.checked_add(96) else {
+            continue;
+        };
+        let Some(tail_end) = tail_start.checked_add(80).map(|e| e.min(bytes.len())) else {
+            continue;
+        };
+        let Some(tail) = bytes.get(tail_start..tail_end) else {
+            continue;
+        };
+        let mut n_refs = 0usize;
+        let mut cur = 0usize;
+        while cur + 11 <= tail.len() && tail[cur] == 1 && tail[cur + 5..cur + 11] == [0; 6] {
+            n_refs += 1;
+            cur += 11;
+        }
+        if !(1..=3).contains(&n_refs) {
+            continue;
+        }
+        let pad = if n_refs == 1 { 5 } else { 3 };
+        let flag_off = cur + pad + 4;
+        if tail
+            .get(cur..cur + pad)
+            .is_some_and(|s| s.iter().all(|&b| b == 0))
+            && flag_off + 5 <= tail.len()
+            && View::u32_le_at(tail, flag_off) == Some(1)
+            && tail[flag_off + 4] == 1
+        {
+            construction_ids.insert(curve.id.clone());
+        }
+    }
+    construction_ids
 }
 
 fn distinct_return_member_indices(
@@ -192,24 +282,56 @@ fn text_frame_curve_records<'a>(
     frame_curves
 }
 
+/// Borrowed inputs for projecting planar Design sketches and their entities.
+#[derive(Clone, Copy)]
+pub(crate) struct SketchProjectInputs<'a, 's, 'c> {
+    pub(crate) scan: Option<&'s crate::container::ContainerScan<'c>>,
+    pub(crate) placements: &'a [DesignSketchPlacement],
+    pub(crate) points: &'a [SketchPoint],
+    pub(crate) curves: &'a [SketchCurveIdentity],
+    pub(crate) relations: &'a [SketchRelation],
+    pub(crate) texts: &'a [SketchText],
+}
+
+impl<'a, 's, 'c> SketchProjectInputs<'a, 's, 'c> {
+    pub(crate) fn new(
+        placements: &'a [DesignSketchPlacement],
+        points: &'a [SketchPoint],
+        curves: &'a [SketchCurveIdentity],
+        relations: &'a [SketchRelation],
+        texts: &'a [SketchText],
+    ) -> Self {
+        Self {
+            scan: None,
+            placements,
+            points,
+            curves,
+            relations,
+            texts,
+        }
+    }
+
+    pub(crate) fn with_scan(mut self, scan: &'s crate::container::ContainerScan<'c>) -> Self {
+        self.scan = Some(scan);
+        self
+    }
+}
+
 /// Project placed Design sketches and their exact planar point/curve records.
 pub(crate) fn project_sketch_design(
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
-    placements: &[DesignSketchPlacement],
-    points: &[SketchPoint],
-    curves: &[SketchCurveIdentity],
-    relations: &[SketchRelation],
-    texts: &[SketchText],
+    inputs: &SketchProjectInputs<'_, '_, '_>,
     linear_tolerance: f64,
-) -> Result<
-    (
-        Vec<cadmpeg_ir::sketches::Sketch>,
-        Vec<cadmpeg_ir::sketches::SketchEntity>,
-    ),
-    cadmpeg_core::CodecError,
-> {
+) -> Result<SketchDesign, cadmpeg_core::CodecError> {
     use cadmpeg_ir::scalar::{Angle, Length};
     use cadmpeg_ir::sketches::{Sketch, SketchEntity, SketchGeometry, SketchGeometryDefinition};
+
+    let placements = inputs.placements;
+    let points = inputs.points;
+    let curves = inputs.curves;
+    let relations = inputs.relations;
+    let texts = inputs.texts;
+    let scan = inputs.scan;
 
     let text_frame_curves = text_frame_curve_records(relations, curves, texts);
     let mut placements_by_suffix = HashMap::new();
@@ -223,6 +345,9 @@ pub(crate) fn project_sketch_design(
         placements_by_suffix.insert((scope, owner), placement);
     }
     let spatial_owners = spatial_geometry_owners(points, curves);
+    let tail_construction_curves = scan.map_or_else(HashSet::new, |scan| {
+        scan_construction_curve_identities(scan, curves, &spatial_owners, &text_frame_curves)
+    });
     let mut sketches = Vec::new();
     for placement in placements {
         if u32::try_from(placement.entity_id.suffix()).is_ok_and(|owner| {
@@ -417,9 +542,11 @@ pub(crate) fn project_sketch_design(
         } else {
             crate::ids::neutral_sketch_curve_id(&sketch, curve.primary_id.get(), curve.secondary_id)
         };
+        let is_construction = text_frame_curves.contains(&(scope, curve.record_index))
+            || tail_construction_curves.contains(curve.id.as_str());
         entities.push(
             SketchEntity::new(entity_id, sketch, geometry)
-                .with_construction(text_frame_curves.contains(&(scope, curve.record_index)))
+                .with_construction(is_construction)
                 .with_native_ref(Some(native_ref)),
         );
     }
@@ -430,6 +557,10 @@ pub(crate) fn project_sketch_design(
         let Some(scope) = native_stream(&text.id) else {
             continue;
         };
+        // A model-space sketch has no planar sketch to own a text entity.
+        if spatial_owners.contains(&(scope, text.owner_reference)) {
+            continue;
+        }
         let Some(placement) = placements_by_suffix.get(&(scope, text.owner_reference)) else {
             continue;
         };
@@ -476,14 +607,40 @@ pub(crate) fn project_sketch_design(
         );
     }
     entities.sort_by(|a, b| a.id().cmp(b.id()));
+    let mut losses = Vec::new();
     for sketch in &mut sketches {
-        let inferred = closed_sketch_profiles(ctx, &sketch.id, &entities, linear_tolerance)?;
-        let Ok(profiles) = cadmpeg_ir::sketches::SketchProfiles::try_from(inferred) else {
+        let closed = closed_sketch_profiles(ctx, &sketch.id, &entities, linear_tolerance)?;
+        losses.extend(closed.losses);
+        let Ok(profiles) = cadmpeg_ir::sketches::SketchProfiles::try_from(closed.profiles) else {
             continue;
         };
         sketch.profiles = profiles;
     }
-    Ok((sketches, entities))
+    Ok(SketchDesign {
+        sketches,
+        entities,
+        losses,
+    })
+}
+
+/// Model-space planar sketches projected from one Design.
+pub(crate) struct SketchDesign {
+    pub(crate) sketches: Vec<cadmpeg_ir::sketches::Sketch>,
+    pub(crate) entities: Vec<cadmpeg_ir::sketches::SketchEntity>,
+    /// Losses of the projection, such as unprofiled curves.
+    pub(crate) losses: Vec<cadmpeg_ir::report::loss::LossNote>,
+}
+
+#[cfg(test)]
+impl SketchDesign {
+    pub(crate) fn into_tuple(
+        self,
+    ) -> (
+        Vec<cadmpeg_ir::sketches::Sketch>,
+        Vec<cadmpeg_ir::sketches::SketchEntity>,
+    ) {
+        (self.sketches, self.entities)
+    }
 }
 
 /// Model-space spatial sketches projected from one Design.

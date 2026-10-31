@@ -52,6 +52,7 @@ pub(super) fn native(valid: bool, duplicate: bool) -> crate::native::F3dNative {
                 opaque_scalar: 0.0,
                 opaque_scalar_offset: 1_062,
                 variant: false,
+                closing_flag: false,
             },
         )
         .unwrap(),
@@ -125,6 +126,7 @@ fn reference_findings(
                 opaque_scalar: 0.0,
                 opaque_scalar_offset: 1_052 + reference_span,
                 variant: false,
+                closing_flag: false,
             },
         )
         .unwrap();
@@ -226,6 +228,49 @@ fn hole_construction_group_accepts_its_retained_auxiliary_role() {
         let ctx = super::super::Ctx::new(&ir, &native, decode);
         super::super::validate_construction_operand_groups(&ctx, &mut findings);
         assert_eq!(findings.len(), 1);
+    });
+}
+
+#[test]
+fn move_face_group_requires_the_selected_face_role() {
+    use crate::records::{
+        feature::scope::{DesignFeatureKind, DesignParameterScope},
+        identity::ReferenceRun,
+        topology::{
+            construction::DesignConstructionOperandRole, extrude_selection::DesignOperandRole,
+        },
+    };
+    crate::test_support::with_decode_context(|decode| {
+        let ir = cadmpeg_ir::CadIr::empty();
+        for kind in [DesignFeatureKind::MoveFace, DesignFeatureKind::DeplacerFace] {
+            let mut native = native(true, false);
+            let mut scope = DesignParameterScope::empty(
+                "f3d:Design/BulkStream.dat:design-parameter-scope#10",
+                kind,
+                10,
+            );
+            scope
+                .try_edit(|draft| {
+                    draft.reference_members = ReferenceRun::unlocated(vec![100, 101, 300]);
+                    draft.layout_fixture_references();
+                    draft.paired_byte_offset = draft.paired_byte_offset.max(draft.kind_offset + 96);
+                    draft.frame_length = draft.paired_byte_offset - draft.byte_offset;
+                    draft.layout_fixture_tail();
+                })
+                .unwrap();
+            native.design_parameter_scopes = vec![scope];
+            native.design_construction_operand_groups[0].operand_role =
+                DesignConstructionOperandRole::Other(DesignOperandRole::ROLE_0X10);
+            let ctx = super::super::Ctx::new(&ir, &native, decode);
+            let mut findings = Vec::new();
+            super::super::validate_construction_operand_groups(&ctx, &mut findings);
+            assert!(findings.is_empty(), "{findings:?}");
+            native.design_construction_operand_groups[0].operand_role =
+                DesignConstructionOperandRole::Other(DesignOperandRole::BODIES_A);
+            let ctx = super::super::Ctx::new(&ir, &native, decode);
+            super::super::validate_construction_operand_groups(&ctx, &mut findings);
+            assert_eq!(findings.len(), 1);
+        }
     });
 }
 

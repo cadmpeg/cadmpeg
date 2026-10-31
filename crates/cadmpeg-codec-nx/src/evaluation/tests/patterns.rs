@@ -72,6 +72,7 @@ fn body_pattern_adds_one_copy_per_non_original_occurrence() {
 fn output_free_unresolved_pattern_is_body_census_neutral() {
     let mut ir = complete_block_ir();
     ir.model.features.push(Feature {
+        product_definition: None,
         id: FeatureId::mint("synthetic:test:id#pattern".to_string()).expect("identity grammar"),
         ordinal: 1,
         name: None,

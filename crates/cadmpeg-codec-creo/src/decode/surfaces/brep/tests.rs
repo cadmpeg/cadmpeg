@@ -1148,3 +1148,89 @@ fn native_brep_rejects_ambiguous_model_carriers() {
     assert_eq!(ir.model.shells.len(), 1);
     assert_eq!(ir.model.shells[0].wire_edges().len(), 3);
 }
+
+#[test]
+fn compact_rotation_cylinder_caps_order_disjoint_circular_holes() {
+    let face = std::num::NonZeroU32::new(5);
+    let make_loop = |ids: &[u32]| {
+        crate::test_support::closed_loop(
+            face,
+            ids.iter()
+                .map(|id| crate::topology::HalfEdgeId {
+                    curve_id: *id,
+                    side: crate::topology::Side::Zero,
+                })
+                .collect(),
+        )
+    };
+    let outer = make_loop(&[1, 2, 3, 4]);
+    let first_hole = make_loop(&[5, 6]);
+    let second_hole = make_loop(&[7, 8]);
+    let surface = SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
+        cadmpeg_ir::geometry::analytic::PlaneSurface::try_new(
+            Point3::new(0.0, 0.0, 0.0),
+            Vector3::new(0.0, 0.0, 1.0),
+            Vector3::new(1.0, 0.0, 0.0),
+        )
+        .expect("plane"),
+    ));
+    let outer_points: Vec<[f64; 2]> = vec![[-5.0, -3.0], [5.0, -3.0], [5.0, 3.0], [-5.0, 3.0]];
+    for (second_center, admitted) in [(2.0, true), (4.0, false), (-1.0, false)] {
+        let mut curves = Vec::new();
+        for (index, start) in outer_points.iter().enumerate() {
+            let end = outer_points[(index + 1) % outer_points.len()];
+            let length = (end[0] - start[0]).hypot(end[1] - start[1]);
+            curves.push(Curve {
+                id: CurveId::mint(format!("creo:visibgeom:curve#{}", index + 1)).expect("id"),
+                parameter_range: None,
+                source_object: None,
+                geometry: CurveGeometry::Solved(SolvedCurveGeometry::Line(
+                    cadmpeg_ir::geometry::analytic::LineCurve::try_new(
+                        Point3::new(start[0], start[1], 0.0),
+                        Vector3::new(
+                            (end[0] - start[0]) / length,
+                            (end[1] - start[1]) / length,
+                            0.0,
+                        ),
+                    )
+                    .expect("line"),
+                )),
+            });
+        }
+        for (id, center) in [(5, -2.0), (6, -2.0), (7, second_center), (8, second_center)] {
+            curves.push(Curve {
+                id: CurveId::mint(format!("creo:visibgeom:curve#{id}")).expect("id"),
+                parameter_range: None,
+                source_object: None,
+                geometry: CurveGeometry::Solved(SolvedCurveGeometry::Circle(
+                    cadmpeg_ir::geometry::analytic::CircleCurve::try_new(
+                        Point3::new(center, 0.0, 0.0),
+                        Vector3::new(0.0, 0.0, 1.0),
+                        Vector3::new(1.0, 0.0, 0.0),
+                        1.0,
+                    )
+                    .expect("circle"),
+                )),
+            });
+        }
+        let polygons = [
+            vec![[second_center - 1.0, 0.0], [second_center + 1.0, 0.0]],
+            outer_points.clone(),
+            vec![[-3.0, 0.0], [-1.0, 0.0]],
+        ];
+        let ordered = super::ordered_polygon_circle_loops(
+            &[&second_hole, &outer, &first_hole],
+            &polygons,
+            &surface,
+            NativeCurveEvidence {
+                model_curves: &curves,
+                typed_nonlinear_curve_ids: &BTreeSet::from([5, 6, 7, 8]),
+                source_carriers: &crate::decode::source_carriers::SourceUnitCarriers::default(),
+            },
+        );
+        assert_eq!(ordered.is_some(), admitted);
+        if let Some(ordered) = ordered {
+            assert_eq!(ordered[0].half_edges()[0].curve_id, 1);
+        }
+    }
+}

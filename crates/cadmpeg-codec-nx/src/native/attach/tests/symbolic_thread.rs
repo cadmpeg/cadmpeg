@@ -11,6 +11,10 @@ fn nx_symbolic_thread_retains_cosmetic_family_without_roles() {
         face: FaceSelection::Unresolved,
         diameter: None,
         extent: None,
+        standard: None,
+        designation: None,
+        pitch: None,
+        modeled: None,
     });
     assert_eq!(definition, expected);
     assert_eq!(symbolic_thread_feature_definition(), definition);

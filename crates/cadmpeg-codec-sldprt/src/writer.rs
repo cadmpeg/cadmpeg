@@ -460,6 +460,13 @@ fn semantic_coverage(patched: bool, retained_brep: bool) -> ArenaDispositions {
         attributes: Reported,
         pmi: if patched { Written } else { Omitted },
         presentation_layers: Omitted,
+        physical_materials: Omitted,
+        mass_properties: Omitted,
+        rigid_bodies: Omitted,
+        colliders: Omitted,
+        articulations: Omitted,
+        physics_scenes: Omitted,
+        solver_settings: Omitted,
     }
 }
 
@@ -791,7 +798,11 @@ fn check_semantic_support(ir: &CadIr, annotations: &Annotations) -> Result<(), C
             && annotations
                 .exactness()
                 .get(edge.id.as_str())
-                .is_none_or(|note| note.entity() != cadmpeg_ir::Exactness::Derived)
+                .is_none_or(|note| {
+                    note.entity() != cadmpeg_ir::Exactness::Derived
+                        && note.fields().get("carrier.param_range")
+                            != Some(&cadmpeg_ir::Exactness::Derived)
+                })
     }) {
         return Err(CodecError::NotImplemented(
             "SLDPRT semantic writer does not encode explicit edge parameter ranges".into(),

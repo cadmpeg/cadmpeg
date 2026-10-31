@@ -1,5 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 
+mod delete_face;
+mod tagging;
+
 use super::face_property_is_admitted;
 use crate::feature::{
     PmDcFeatureProperty, PmDcFeaturePropertyKind, PmDcFeatureReferenceFamily, FACE_COLLECTION_TYPE,
@@ -15,6 +18,7 @@ type TestResult<T = ()> = Result<T, Box<dyn std::error::Error>>;
 
 fn annotation(native: String) -> Feature {
     Feature {
+        product_definition: None,
         id: FeatureId::compose(
             &cadmpeg_ir::identity_namespace!("inventor", "design", "feature"),
             cadmpeg_ir::identity_key!("generated"),
@@ -32,6 +36,10 @@ fn annotation(native: String) -> Feature {
                 face: FaceSelection::Native("inventor:pmdc:feature-property#generated-0".into()),
                 diameter: None,
                 extent: None,
+                standard: None,
+                designation: None,
+                pitch: None,
+                modeled: None,
             },
         )),
         native_ref: Some(native),
@@ -196,6 +204,7 @@ fn empty_data() -> super::NativeData {
         pm_graphics_primary_color_styles: Vec::new(),
         face_native_keys: Vec::new(),
         body_native_keys: Vec::new(),
+        body_wrapper_links: Vec::new(),
         presentation_record_issues: Vec::new(),
         pm_dc_parameters: Vec::new(),
         pm_dc_expressions: Vec::new(),
@@ -734,22 +743,53 @@ fn split_validation_recomputes_operands_and_the_plane_feature() -> TestResult {
         &cadmpeg_ir::identity_namespace!("inventor", "design", "feature"),
         cadmpeg_ir::identity_key!("other"),
     );
-    for (tool, mismatches) in [
+    for (mode, tool, mismatches) in [
         (
+            3,
             cadmpeg_ir::features::SplitBodyTool::Plane {
                 plane: datum.id.clone(),
             },
             0,
         ),
         (
+            3,
             cadmpeg_ir::features::SplitBodyTool::Plane { plane: other },
             1,
         ),
         (
+            3,
             cadmpeg_ir::features::SplitBodyTool::Faces(FaceSelection::Native(properties[10].id())),
             1,
         ),
+        (
+            1,
+            cadmpeg_ir::features::SplitBodyTool::Plane {
+                plane: datum.id.clone(),
+            },
+            1,
+        ),
+        (
+            2,
+            cadmpeg_ir::features::SplitBodyTool::Plane {
+                plane: datum.id.clone(),
+            },
+            1,
+        ),
     ] {
+        let mut properties = properties.clone();
+        let source = &properties[0];
+        let mut payload = (**source).clone();
+        payload.kind = crate::feature::PmDcFeaturePropertyKind::Enumeration {
+            family: crate::feature::PmDcFeatureEnumFamily::Auxiliary,
+            type_value: 3,
+            value: mode,
+        };
+        properties[0] = crate::record_identity::Located::new(
+            payload,
+            source.identity.type_id.clone(),
+            source.identity.segment_token.clone(),
+            source.identity.record_ordinal,
+        );
         let mut data = empty_data();
         data.pm_dc_work_planes = vec![plane.clone()];
         data.pm_dc_features = vec![split.clone()];
@@ -780,5 +820,65 @@ fn split_validation_recomputes_operands_and_the_plane_feature() -> TestResult {
             .count();
         assert_eq!(count, mismatches, "{found:?}");
     }
+    Ok(())
+}
+
+#[test]
+fn neutral_sweep_validation_runs_the_shared_operand_gate() -> TestResult {
+    use cadmpeg_ir::features::{
+        PathRef, PlanarProfileRef, SolidSweepOperation, SweepSection, SweepShape,
+    };
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+        &[],
+        &arena,
+        &cadmpeg_core::decode::DecodePolicy::service(),
+    )?;
+    let source = crate::feature::tests::test_feature(30, 16, &[]);
+    let mut feature = annotation(source.id());
+    feature.id = crate::feature::history_feature_id(&source.identity)?;
+    feature.evaluation =
+        FeatureEvaluation::from_definition(FeatureDefinition::Operation(FeatureOperation::Sweep {
+            shape: SweepShape::Solid {
+                op: SolidSweepOperation::NewBody,
+                section: SweepSection::Profile(PlanarProfileRef::native(
+                    "synthetic:profile#p".into(),
+                )),
+                sections: Vec::new(),
+            },
+            path: Some(PathRef::Native("synthetic:path#p".into())),
+            orientation: None,
+            transition: None,
+            transformation: None,
+            path_tangent: false,
+            linearize: false,
+            twist: None,
+            path_extent: None,
+            guide_rail: None,
+            taper: None,
+            scale: None,
+            allow_multi_profile_faces: None,
+        }));
+    let mut data = empty_data();
+    data.pm_dc_features.push(source);
+    data.pm_dc_feature_labels
+        .push(crate::feature::tests::test_label(
+            30,
+            0,
+            crate::feature::loft_sweep::slots::SWEEP_CLASS,
+            &[],
+        ));
+    let mut ir = cadmpeg_ir::CadIr::empty();
+    ir.model.features.push(feature);
+    let mut found = Vec::new();
+    super::validate_features(&ctx, &ir, &data, &mut found)?;
+    assert_eq!(
+        found
+            .iter()
+            .filter(|finding| finding.message
+                == "Inventor neutral sweep operands do not match their PmDc slots")
+            .count(),
+        1
+    );
     Ok(())
 }

@@ -65,11 +65,46 @@ fn extent_extrusion(
     configured_extent_extrusion(extent, symmetric, slots, extra, |_| {}, |_, _, _, _| {})
 }
 
+const IDENTITY_MATRIX: [[f64; 4]; 4] = [
+    [1.0, 0.0, 0.0, 0.0],
+    [0.0, 1.0, 0.0, 0.0],
+    [0.0, 0.0, 1.0, 0.0],
+    [0.0, 0.0, 0.0, 1.0],
+];
+
 fn configured_extent_extrusion(
     extent: u16,
     symmetric: bool,
     slots: &[(usize, u32)],
     extra: Vec<PmDcFeatureProperty>,
+    configure: impl FnOnce(&mut crate::feature::ProjectionIndex<'_>),
+    check: impl FnOnce(
+        &PmDcFeature,
+        &PmDcFeatureLabel,
+        &crate::feature::ProjectionIndex<'_>,
+        Option<&Feature>,
+    ),
+) -> Option<Feature> {
+    placed_extent_extrusion(
+        extent,
+        symmetric,
+        slots,
+        extra,
+        IDENTITY_MATRIX,
+        configure,
+        check,
+    )
+}
+
+/// An extent fixture whose consumed sketch is placed by `matrix`, in
+/// centimetres. The sketch direction record and the feature direction record
+/// are the same +z direction unless the slots say otherwise.
+fn placed_extent_extrusion(
+    extent: u16,
+    symmetric: bool,
+    slots: &[(usize, u32)],
+    extra: Vec<PmDcFeatureProperty>,
+    matrix: [[f64; 4]; 4],
     configure: impl FnOnce(&mut crate::feature::ProjectionIndex<'_>),
     check: impl FnOnce(
         &PmDcFeature,
@@ -119,8 +154,8 @@ fn configured_extent_extrusion(
             state: 0,
             count_value: 0,
             entities: PmDcReferenceList::new(8, None, Vec::new()).expect("empty entity list"),
-            transform: reference(0),
-            direction: reference(0),
+            transform: reference(91),
+            direction: reference(61),
             values: [0; 2],
             auxiliary: None,
         },
@@ -165,6 +200,61 @@ fn configured_extent_extrusion(
         .expect("test GUID"),
         segment(),
         60,
+    );
+    let sideways = Located::new(
+        crate::sketch::PmDcDirectionPayload {
+            save_version_major: 19,
+            header: test_header(),
+            entity_flags: 0,
+            parameter: cadmpeg_ir::scalar::FiniteReal::ZERO,
+            extension: None,
+            direction: [
+                cadmpeg_ir::scalar::FiniteReal::ONE,
+                cadmpeg_ir::scalar::FiniteReal::ZERO,
+                cadmpeg_ir::scalar::FiniteReal::ZERO,
+            ],
+        },
+        crate::record_identity::RecordTypeId::try_from(
+            "40df52ced011d0d20008ccbc0663dc09".to_owned(),
+        )
+        .expect("test GUID"),
+        segment(),
+        62,
+    );
+    let mut directions = vec![direction, sideways];
+    for (ordinal, flags, parameter, extension, vector) in [
+        (63, 1, 0.0, None, [0.0, 0.0, 1.0]),
+        (64, 0, 1.0, None, [0.0, 0.0, 1.0]),
+        (65, 0, 0.0, Some(1), [0.0, 0.0, 1.0]),
+        (66, 0, 0.0, Some(0), [0.0, 0.0, 1.0]),
+        (67, 0, 0.0, None, [1.0, 0.0, 1.0]),
+    ] {
+        let mut payload = (*directions[0]).clone();
+        payload.entity_flags = flags;
+        payload.parameter = cadmpeg_ir::scalar::FiniteReal::new(parameter).expect("finite");
+        payload.extension = extension;
+        payload.direction = reals(vector);
+        directions.push(Located::new(
+            payload,
+            directions[0].identity.type_id.clone(),
+            segment(),
+            ordinal,
+        ));
+    }
+    let transform = Located::new(
+        crate::sketch::PmDcTransformPayload {
+            save_version_major: 19,
+            header: test_header(),
+            prefix_present: false,
+            matrix: crate::compact_matrix::CompactMatrix::try_from_rows(0, 0, matrix)
+                .expect("finite test matrix"),
+        },
+        crate::record_identity::RecordTypeId::try_from(
+            "184d8790d011f8d10008cabc0663dc09".to_owned(),
+        )
+        .expect("test GUID"),
+        segment(),
+        90,
     );
     let mut properties = vec![
         test_property(
@@ -265,8 +355,8 @@ fn configured_extent_extrusion(
         &neutral_parameters,
         std::slice::from_ref(&raw_sketch),
         std::slice::from_ref(&neutral_sketch),
-        std::slice::from_ref(&direction),
-        &[],
+        &directions,
+        std::slice::from_ref(&transform),
         &[],
     );
     index.entity_style_links.insert(("generated", 51));
@@ -297,6 +387,27 @@ fn configured_extent_extrusion(
     } else {
         assert!(losses.is_empty());
     }
+    if let Some(projected) = projected.as_ref().filter(|feature| {
+        !crate::feature::extrusion::has_native_profile(feature.evaluation.definition())
+    }) {
+        let mut model = cadmpeg_ir::document::Model::default();
+        model.parameters.extend(neutral_parameters.iter().cloned());
+        model.sketches.push(neutral_sketch.clone());
+        let validation = crate::feature::extrusion::ValidationIndex::new(
+            &crate::feature::extrusion::ValidationRecords {
+                properties: &properties,
+                parameters: &raw_parameters,
+                sketches: std::slice::from_ref(&raw_sketch),
+                directions: &directions,
+                transforms: std::slice::from_ref(&transform),
+                planes: &planes,
+                entity_links: &[],
+                kernel_links: &[],
+                model: &model,
+            },
+        );
+        assert!(validation.matches(&feature, &label, projected.evaluation.definition()));
+    }
     check(&feature, &label, &index, projected.as_ref());
     projected
 }
@@ -322,10 +433,15 @@ fn enum_property(ordinal: u32, family: PmDcFeatureEnumFamily, value: u16) -> PmD
 }
 
 fn plane_surface(ordinal: u32) -> PmDcFeatureProperty {
+    plane_surface_with(ordinal, None)
+}
+
+fn plane_surface_with(ordinal: u32, extension: Option<u32>) -> PmDcFeatureProperty {
     test_property(
         ordinal,
         PmDcFeaturePropertyKind::PlaneSurface {
             references: [reference(0); 3],
+            extension,
             state: 1,
             surface_form: PLANE_SURFACE_FORM,
             value: 0,
@@ -1088,4 +1204,724 @@ fn native_profile_validator_requires_the_patch_and_selection_record_types() {
         },
     )
     .expect("native profile fixture");
+}
+
+#[test]
+fn face_target_requires_a_zero_surface_extension() {
+    let face = |extension: Option<u32>| {
+        extent_extrusion(
+            7,
+            false,
+            &[(13, 20), (18, 21)],
+            vec![
+                test_property(20, PmDcFeaturePropertyKind::TerminationFlag { value: 1 }),
+                plane_surface_with(21, extension),
+            ],
+        )
+    };
+    assert!(face(None).is_some());
+    assert!(face(Some(0)).is_some());
+    assert!(face(Some(1)).is_none());
+}
+
+#[test]
+fn parses_plane_surface_extension_from_segment_version_22() {
+    let frame = [1.5, 1.2, 0.3, -1.0, 0.0, 0.0, 0.0, 0.0, 1.0];
+    for (version, stamps, extended) in [
+        (19, &[][..], false),
+        (23, &[-1][..], true),
+        (25, &[-1, -1][..], true),
+    ] {
+        let mut surface = crate::test_support::test_fixtures::content_at(11, version, stamps);
+        surface.extend_from_slice(&[0; 12]);
+        if extended {
+            surface.extend_from_slice(&0u32.to_le_bytes());
+        }
+        surface.push(1);
+        surface.extend_from_slice(&crate::feature::PLANE_SURFACE_FORM.to_le_bytes());
+        surface.extend_from_slice(&0u32.to_le_bytes());
+        push_f64s(&mut surface, &frame);
+        let parsed = parse(&surface, |_, source| {
+            crate::feature::parse_surface(source, version).expect("surface")
+        })
+        .expect("plane surface");
+        let PmDcFeaturePropertyKind::PlaneSurface {
+            extension,
+            surface_form,
+            origin,
+            ..
+        } = parsed.kind
+        else {
+            panic!("plane surface kind");
+        };
+        assert_eq!(extension, extended.then_some(0));
+        assert_eq!(surface_form, crate::feature::PLANE_SURFACE_FORM);
+        assert_eq!(origin[0].get(), 1.5);
+
+        // The same bytes read without the extension are not a plane.
+        let mut cylinder = crate::test_support::test_fixtures::content_at(12, version, stamps);
+        cylinder.extend_from_slice(&[0; 12]);
+        if extended {
+            cylinder.extend_from_slice(&0u32.to_le_bytes());
+        }
+        cylinder.push(1);
+        cylinder.extend_from_slice(&29u32.to_le_bytes());
+        cylinder.extend_from_slice(&1u32.to_le_bytes());
+        push_f64s(&mut cylinder, &frame);
+        assert!(parse(&cylinder, |_, source| crate::feature::parse_surface(
+            source, version
+        ))
+        .expect("surface form")
+        .is_none());
+    }
+}
+
+fn work_point(ordinal: u32, origin: [f64; 3]) -> PmDcFeatureProperty {
+    work_point_with(ordinal, 0, vec![0, 0], origin, [&[], &[]])
+}
+
+fn work_point_with(
+    ordinal: u32,
+    entity_flags: u32,
+    values: Vec<u32>,
+    origin: [f64; 3],
+    lists: [&[u32]; 2],
+) -> PmDcFeatureProperty {
+    let mut point = test_property(
+        ordinal,
+        PmDcFeaturePropertyKind::WorkPoint {
+            entity_flags,
+            values,
+            origin: reals(origin),
+            references: lists.map(reference_list),
+        },
+    );
+    point.identity.type_id =
+        crate::record_identity::RecordTypeId::from_bytes(crate::feature::WORK_POINT_TYPE);
+    point
+}
+
+/// The slot of a work point in the point fixtures: record 24.
+const POINT_SLOTS: [(usize, u32); 1] = [(25, 24)];
+
+fn point_extrusion(point: PmDcFeatureProperty, slots: &[(usize, u32)]) -> Option<Feature> {
+    let mut all = POINT_SLOTS.to_vec();
+    all.extend_from_slice(slots);
+    let expected = extent_extrusion(
+        7,
+        false,
+        &POINT_SLOTS,
+        vec![work_point(24, [0.0, 0.0, 2.5])],
+    )
+    .expect("canonical point extrusion");
+    configured_extent_extrusion(
+        7,
+        false,
+        &all,
+        vec![point],
+        |_| {},
+        |source, label, index, projected| {
+            if projected.is_none() {
+                assert!(!crate::feature::extrusion::matches(
+                    index,
+                    source,
+                    label,
+                    expected.evaluation.definition()
+                ));
+            }
+        },
+    )
+}
+
+#[test]
+fn work_point_extent_ends_at_a_resolved_plane() {
+    // The point lies 2.5 cm ahead of the profile plane along +z.
+    let point = work_point(24, [0.0, 0.0, 2.5]);
+    let native = point.id();
+    let feature = configured_extent_extrusion(
+        7,
+        false,
+        &POINT_SLOTS,
+        vec![point],
+        |_| {},
+        |source, label, index, projected| {
+            let definition = projected.expect("projected").evaluation.definition();
+            assert!(crate::feature::extrusion::matches(
+                index, source, label, definition
+            ));
+            let mut changed = definition.clone();
+            let FeatureDefinition::Operation(FeatureOperation::Extrude { extent, .. }) =
+                &mut changed
+            else {
+                panic!("extrusion fixture");
+            };
+            *extent = ExtrudeExtent::OneSided {
+                side: ExtrudeSide {
+                    termination: LinearTermination::ThroughAll {},
+                    draft: None,
+                },
+            };
+            assert!(!crate::feature::extrusion::matches(
+                index, source, label, &changed
+            ));
+            let FeatureDefinition::Operation(FeatureOperation::Extrude { extent, .. }) =
+                &mut changed
+            else {
+                panic!("extrusion fixture");
+            };
+            *extent = ExtrudeExtent::OneSided {
+                side: ExtrudeSide {
+                    termination: LinearTermination::ToVertex {
+                        vertex: cadmpeg_ir::features::VertexSelection::Native(
+                            cadmpeg_ir::features::SelectionReference::new(native.clone())
+                                .expect("native point reference"),
+                        ),
+                    },
+                    draft: None,
+                },
+            };
+            assert!(!crate::feature::extrusion::matches(
+                index, source, label, &changed
+            ));
+        },
+    )
+    .expect("to work point");
+    let ExtrudeExtent::OneSided { side } = extrude_definition(&feature).0 else {
+        panic!("to-point extrusion is one-sided");
+    };
+    let LinearTermination::ToPlane {
+        plane,
+        native: actual,
+    } = &side.termination
+    else {
+        panic!("resolved plane termination");
+    };
+    assert_eq!(actual.as_str(), native);
+    assert_eq!(plane.origin().get(), Point3::new(0.0, 0.0, 25.0));
+    assert_eq!(plane.normal().get(), Vector3::new(0.0, 0.0, 1.0));
+    assert_eq!(plane.u_axis().get(), Vector3::new(1.0, 0.0, 0.0));
+    assert!(matches!(
+        extrude_definition(&feature).1,
+        cadmpeg_ir::features::ExtrudeStart::ProfilePlane {}
+    ));
+}
+
+#[test]
+fn work_point_extent_requires_a_point_ahead_of_the_profile_plane() {
+    assert!(point_extrusion(work_point(24, [0.0, 0.0, 2.5]), &[]).is_some());
+    // On the profile plane and behind it.
+    assert!(point_extrusion(work_point(24, [1.0, 2.0, 0.0]), &[]).is_none());
+    assert!(point_extrusion(work_point(24, [0.0, 0.0, -2.5]), &[]).is_none());
+    // A true reverse Boolean turns the travel direction toward -z.
+    let reverse = || {
+        vec![test_property(
+            20,
+            PmDcFeaturePropertyKind::Boolean {
+                name: String::new(),
+                name_value: 0,
+                value: true,
+            },
+        )]
+    };
+    for (z, projects) in [(2.5, false), (-2.5, true)] {
+        let mut extra = reverse();
+        extra.push(work_point(24, [0.0, 0.0, z]));
+        assert_eq!(
+            extent_extrusion(7, false, &[(25, 24), (3, 20)], extra).is_some(),
+            projects,
+            "reverse travel and point z {z}"
+        );
+    }
+    // A travel direction that is not perpendicular to the profile plane.
+    assert!(point_extrusion(work_point(24, [2.5, 0.0, 0.0]), &[(2, 62)]).is_none());
+    // A sketch placed with a normal that disagrees with its direction record.
+    assert!(placed_extent_extrusion(
+        7,
+        false,
+        &POINT_SLOTS,
+        vec![work_point(24, [0.0, 0.0, 2.5])],
+        [
+            [0.0, 0.0, 1.0, 0.0],
+            [1.0, 0.0, 0.0, 0.0],
+            [0.0, 1.0, 0.0, 0.0],
+            [0.0, 0.0, 0.0, 1.0],
+        ],
+        |_| {},
+        |_, _, _, _| {},
+    )
+    .is_none());
+    // The profile plane sits at z 1 cm, so the point at z 0.5 cm is behind it.
+    let raised = |z: f64| {
+        placed_extent_extrusion(
+            7,
+            false,
+            &POINT_SLOTS,
+            vec![work_point(24, [0.0, 0.0, z])],
+            [
+                [1.0, 0.0, 0.0, 0.0],
+                [0.0, 1.0, 0.0, 0.0],
+                [0.0, 0.0, 1.0, 1.0],
+                [0.0, 0.0, 0.0, 1.0],
+            ],
+            |_| {},
+            |_, _, _, _| {},
+        )
+    };
+    assert!(raised(0.5).is_none());
+    assert!(raised(1.5).is_some());
+}
+
+#[test]
+fn work_point_extent_pins_every_slot_it_reads() {
+    // Exactly one target form is present.
+    for slot in [11, 13, 18] {
+        assert!(point_extrusion(work_point(24, [0.0, 0.0, 2.5]), &[(slot, 40)]).is_none());
+    }
+    assert!(extent_extrusion(
+        7,
+        false,
+        &[(25, 24), (13, 20), (18, 21)],
+        vec![
+            work_point(24, [0.0, 0.0, 2.5]),
+            test_property(20, PmDcFeaturePropertyKind::TerminationFlag { value: 1 }),
+            plane_surface(21),
+        ],
+    )
+    .is_none());
+    // A plane or face target with a point slot is the mixed form.
+    assert!(extent_extrusion(
+        7,
+        false,
+        &[(25, 24), (11, 40)],
+        vec![work_point(24, [0.0, 0.0, 2.5])]
+    )
+    .is_none());
+    // The point record: zero flags, zero values, empty lists, plain record type.
+    assert!(point_extrusion(
+        work_point_with(24, 8192, vec![0, 0], [0.0, 0.0, 2.5], [&[], &[]]),
+        &[]
+    )
+    .is_none());
+    assert!(point_extrusion(
+        work_point_with(24, 0, vec![0, 1], [0.0, 0.0, 2.5], [&[], &[]]),
+        &[]
+    )
+    .is_none());
+    assert!(point_extrusion(
+        work_point_with(24, 0, vec![0, 0], [0.0, 0.0, 2.5], [&[7], &[]]),
+        &[]
+    )
+    .is_none());
+    assert!(point_extrusion(
+        work_point_with(24, 0, vec![0, 0], [0.0, 0.0, 2.5], [&[], &[7]]),
+        &[]
+    )
+    .is_none());
+    assert!(point_extrusion(plane_surface(24), &[]).is_none());
+    // A null point slot with a point record present is a missing target.
+    assert!(extent_extrusion(7, false, &[], vec![work_point(24, [0.0, 0.0, 2.5])]).is_none());
+    // The from-to extent has no point form.
+    assert!(extent_extrusion(
+        6,
+        false,
+        &[(25, 24), (8, 41)],
+        vec![work_point(24, [0.0, 0.0, 2.5])]
+    )
+    .is_none());
+}
+
+#[test]
+fn parses_work_point_across_header_and_value_count_forms() {
+    let point = [0.5, -0.25, 1.75];
+    let empty_list = [2u8, 0, 0, 0x30, 0, 0, 0, 0];
+    for (version, stamps, extended) in [
+        (19, &[][..], false),
+        (21, &[][..], false),
+        (22, &[][..], true),
+        (23, &[-1][..], true),
+        (25, &[-1, -1][..], true),
+        (29, &[-1, -1][..], true),
+    ] {
+        let mut record = crate::test_support::test_fixtures::content_at(13, version, stamps);
+        record.extend_from_slice(&0u32.to_le_bytes());
+        record.extend_from_slice(&[0; 8]);
+        if extended {
+            record.extend_from_slice(&0u32.to_le_bytes());
+        }
+        push_f64s(&mut record, &point);
+        record.extend_from_slice(&empty_list);
+        record.extend_from_slice(&empty_list);
+        let header_len = crate::test_support::test_fixtures::content_at(13, version, stamps).len();
+        let parsed = parse(&record, |ctx, source| {
+            crate::feature::parse_work_point(ctx, source, version).expect("work point")
+        });
+        let PmDcFeaturePropertyKind::WorkPoint {
+            entity_flags,
+            values,
+            origin,
+            references,
+        } = parsed.kind
+        else {
+            panic!("work point kind");
+        };
+        assert_eq!(entity_flags, 0);
+        assert_eq!(values.len(), if extended { 3 } else { 2 });
+        assert_eq!(origin.map(cadmpeg_ir::scalar::FiniteReal::get), point);
+        assert!(references.iter().all(|list| list.references().is_empty()));
+        assert_eq!(
+            record.len() - header_len,
+            crate::layout::pm_dc_work_point_fields::LEN
+                + if extended { 4 } else { 0 }
+                + 2 * empty_list.len()
+        );
+
+        // A list that holds one reference parses and keeps it; the extrusion
+        // target refuses it.
+        let list = [
+            2u8, 0, 0, 0x30, 1, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 5, 0, 0, 0x80,
+        ];
+        let mut listed = record[..record.len() - 2 * empty_list.len()].to_vec();
+        listed.extend_from_slice(&list);
+        listed.extend_from_slice(&empty_list);
+        let parsed = parse(&listed, |ctx, source| {
+            crate::feature::parse_work_point(ctx, source, version).expect("work point with a list")
+        });
+        let PmDcFeaturePropertyKind::WorkPoint { references, .. } = parsed.kind else {
+            panic!("work point kind");
+        };
+        assert_eq!(references[0].references().len(), 1);
+        assert_eq!(references[0].references()[0].index(), 5);
+        assert!(references[0].references()[0].qualified());
+        assert!(references[1].references().is_empty());
+
+        // A byte more or fewer is not a work point.
+        for variant in [
+            record[..record.len() - 1].to_vec(),
+            [record.clone(), vec![0]].concat(),
+        ] {
+            assert!(parse(&variant, |ctx, source| {
+                crate::feature::parse_work_point(ctx, source, version)
+            })
+            .is_err());
+        }
+    }
+}
+
+#[test]
+fn work_point_plane_follows_the_placed_profile_and_reversed_travel() {
+    for reverse in [false, true] {
+        let z = if reverse { -2.0 } else { 3.0 };
+        let feature = placed_extent_extrusion(
+            7,
+            false,
+            &[(25, 24), (3, 20)],
+            vec![
+                work_point(24, [4.0, 5.0, z]),
+                test_property(
+                    20,
+                    PmDcFeaturePropertyKind::Boolean {
+                        name: String::new(),
+                        name_value: 0,
+                        value: reverse,
+                    },
+                ),
+            ],
+            [
+                [0.0, -1.0, 0.0, 1.0],
+                [1.0, 0.0, 0.0, 2.0],
+                [0.0, 0.0, 1.0, 1.0],
+                [0.0, 0.0, 0.0, 1.0],
+            ],
+            |_| {},
+            |source, label, index, projected| {
+                let mut definition = projected
+                    .expect("projected")
+                    .evaluation
+                    .definition()
+                    .clone();
+                let FeatureDefinition::Operation(FeatureOperation::Extrude {
+                    extent: ExtrudeExtent::OneSided { side },
+                    ..
+                }) = &mut definition
+                else {
+                    panic!("extrusion");
+                };
+                let LinearTermination::ToPlane { plane, native } = &mut side.termination else {
+                    panic!("plane");
+                };
+                assert_eq!(plane.origin().get(), Point3::new(40.0, 50.0, z * 10.0));
+                assert_eq!(
+                    plane.normal().get(),
+                    Vector3::new(0.0, 0.0, if reverse { -1.0 } else { 1.0 })
+                );
+                assert_eq!(plane.u_axis().get(), Vector3::new(0.0, 1.0, 0.0));
+                *native = cadmpeg_core::text::NonBlankString::new("wrong-point").expect("native");
+                assert!(!crate::feature::extrusion::matches(
+                    index,
+                    source,
+                    label,
+                    &definition
+                ));
+            },
+        );
+        assert!(feature.is_some());
+    }
+}
+
+#[test]
+fn work_point_validator_refuses_changed_operands() {
+    for slot in [2, 11, 13, 18, 25] {
+        configured_extent_extrusion(
+            7,
+            false,
+            &POINT_SLOTS,
+            vec![work_point(24, [0.0, 0.0, 2.5])],
+            |_| {},
+            |source, label, index, projected| {
+                let mut source = source.clone();
+                let mut slots = source.properties.references().to_vec();
+                slots[slot] = reference(if slot == 2 { 62 } else { 40 });
+                let mut payload = (*source).clone();
+                payload.properties = PmDcReferenceList::new(
+                    2,
+                    Some(crate::pmdc::PmDcListMetadata::U32([30, 0])),
+                    slots,
+                )
+                .expect("slots");
+                source = Located::new(
+                    payload,
+                    source.identity.type_id.clone(),
+                    source.identity.segment_token.clone(),
+                    source.identity.record_ordinal,
+                );
+                assert!(!crate::feature::extrusion::matches(
+                    index,
+                    &source,
+                    label,
+                    projected.expect("projected").evaluation.definition()
+                ));
+            },
+        );
+    }
+}
+
+#[test]
+fn work_point_extent_and_validator_accept_each_value_count() {
+    for version in [19, 21, 22, 23, 25, 29] {
+        let record = work_point_with(
+            24,
+            0,
+            if version > 21 {
+                vec![0, 0, 0]
+            } else {
+                vec![0, 0]
+            },
+            [0.0, 0.0, 2.5],
+            [&[], &[]],
+        );
+        let mut payload = (*record).clone();
+        payload.save_version_major = version;
+        let point = Located::new(payload, record.identity.type_id.clone(), segment(), 24);
+        let feature = extent_extrusion(7, false, &POINT_SLOTS, vec![point]).expect("point extent");
+        let ExtrudeExtent::OneSided { side } = extrude_definition(&feature).0 else {
+            panic!("one-sided");
+        };
+        assert_to_plane(
+            &side.termination,
+            [0.0, 0.0, 25.0],
+            [0.0, 0.0, 1.0],
+            [1.0, 0.0, 0.0],
+            &work_point(24, [0.0, 0.0, 2.5]).id(),
+        );
+    }
+    for values in [vec![1, 0], vec![], vec![0], vec![0, 0, 0]] {
+        assert!(point_extrusion(
+            work_point_with(24, 0, values, [0.0, 0.0, 2.5], [&[], &[]]),
+            &[]
+        )
+        .is_none());
+    }
+}
+
+#[test]
+fn work_point_validator_checks_direction_controls_and_plane_frame() {
+    configured_extent_extrusion(
+        7,
+        false,
+        &POINT_SLOTS,
+        vec![work_point(24, [0.0, 0.0, 2.5])],
+        |_| {},
+        |source, label, index, projected| {
+            let definition = projected.expect("projected").evaluation.definition();
+            for (flags, parameter, extension) in [(1, 0.0, None), (0, 1.0, None), (0, 0.0, Some(1))]
+            {
+                let record = index.directions[&("generated", 60)].expect("direction");
+                let mut payload = (**record).clone();
+                payload.entity_flags = flags;
+                payload.parameter = cadmpeg_ir::scalar::FiniteReal::new(parameter).expect("finite");
+                payload.extension = extension;
+                let direction =
+                    Located::new(payload, record.identity.type_id.clone(), segment(), 60);
+                let mut changed = crate::feature::ProjectionIndex {
+                    properties: index.properties.clone(),
+                    sketches: index.sketches.clone(),
+                    transforms: index.transforms.clone(),
+                    directions: index.directions.clone(),
+                    ..crate::feature::ProjectionIndex::default()
+                };
+                changed
+                    .directions
+                    .insert(("generated", 60), Some(&direction));
+                assert!(crate::feature::extrusion::work_point_plane(
+                    source,
+                    label,
+                    &changed,
+                    &cadmpeg_ir::units::UnitVector3::Z_AXIS
+                )
+                .is_none());
+                assert!(!crate::feature::extrusion::matches(
+                    &changed, source, label, definition
+                ));
+            }
+            for (origin, normal, u_axis) in [
+                (
+                    Point3::new(0.0, 0.0, 26.0),
+                    Vector3::new(0.0, 0.0, 1.0),
+                    Vector3::new(1.0, 0.0, 0.0),
+                ),
+                (
+                    Point3::new(0.0, 0.0, 25.0),
+                    Vector3::new(0.0, 0.0, -1.0),
+                    Vector3::new(1.0, 0.0, 0.0),
+                ),
+                (
+                    Point3::new(0.0, 0.0, 25.0),
+                    Vector3::new(0.0, 0.0, 1.0),
+                    Vector3::new(0.0, 1.0, 0.0),
+                ),
+            ] {
+                let mut changed = definition.clone();
+                let FeatureDefinition::Operation(FeatureOperation::Extrude {
+                    extent: ExtrudeExtent::OneSided { side },
+                    ..
+                }) = &mut changed
+                else {
+                    panic!("extrusion");
+                };
+                let LinearTermination::ToPlane { plane, .. } = &mut side.termination else {
+                    panic!("plane");
+                };
+                *plane =
+                    cadmpeg_ir::features::FeatureSupportPlaneFrame::new(origin, normal, u_axis)
+                        .expect("plane");
+                assert!(!crate::feature::extrusion::matches(
+                    index, source, label, &changed
+                ));
+            }
+        },
+    );
+}
+
+#[test]
+fn work_point_extent_pins_direction_controls_and_oblique_travel() {
+    for ordinal in [63, 64, 65, 67] {
+        assert!(point_extrusion(work_point(24, [0.0, 0.0, 2.5]), &[(2, ordinal)]).is_none());
+    }
+    assert!(point_extrusion(work_point(24, [0.0, 0.0, 2.5]), &[(2, 66)]).is_some());
+}
+
+#[test]
+fn work_point_extent_and_validator_require_type_two_lists() {
+    for list in 0..2 {
+        let record = work_point(24, [0.0, 0.0, 2.5]);
+        let mut payload = (*record).clone();
+        let PmDcFeaturePropertyKind::WorkPoint { references, .. } = &mut payload.kind else {
+            panic!("point");
+        };
+        references[list] = PmDcReferenceList::new(8, None, Vec::new()).expect("empty list");
+        let point = Located::new(payload, record.identity.type_id.clone(), segment(), 24);
+        assert!(point_extrusion(point, &[]).is_none());
+    }
+}
+
+#[test]
+fn work_point_extent_and_validator_keep_the_opposite_side() {
+    let feature = extent_extrusion(
+        7,
+        false,
+        &[(25, 24), (27, 72), (28, 71), (29, 22)],
+        vec![
+            work_point(24, [0.0, 0.0, 2.5]),
+            enum_property(22, PmDcFeatureEnumFamily::Extent, 1),
+        ],
+    )
+    .expect("two-sided point extent");
+    let ExtrudeExtent::TwoSided { first, second } = extrude_definition(&feature).0 else {
+        panic!("two-sided");
+    };
+    assert_to_plane(
+        &first.termination,
+        [0.0, 0.0, 25.0],
+        [0.0, 0.0, 1.0],
+        [1.0, 0.0, 0.0],
+        &work_point(24, [0.0, 0.0, 2.5]).id(),
+    );
+    assert!(
+        matches!(second.termination, LinearTermination::Blind { length } if length.get() == 3.0)
+    );
+}
+
+#[test]
+fn work_point_extent_and_validator_keep_a_native_profile_selection() {
+    configured_extent_extrusion(
+        7,
+        false,
+        &POINT_SLOTS,
+        vec![work_point(24, [0.0, 0.0, 2.5])],
+        |index| index.sketch_ids.clear(),
+        assert_native_profile_validator,
+    )
+    .expect("native profile point extent");
+}
+
+#[test]
+fn work_point_extent_and_validator_require_the_work_point_record_type() {
+    let mut point = work_point(24, [0.0, 0.0, 2.5]);
+    point.identity.type_id =
+        crate::record_identity::RecordTypeId::from_bytes(crate::feature::BOOLEAN_TYPE);
+    assert!(point_extrusion(point, &[]).is_none());
+}
+
+#[test]
+fn work_point_extent_and_validator_refuse_an_indeterminate_travel_distance() {
+    let expected = extent_extrusion(
+        7,
+        false,
+        &POINT_SLOTS,
+        vec![work_point(24, [0.0, 0.0, 2.5])],
+    )
+    .expect("canonical extent");
+    assert!(placed_extent_extrusion(
+        7,
+        false,
+        &POINT_SLOTS,
+        vec![work_point(24, [1.0e307, 0.0, -1.0])],
+        [
+            [1.0, 0.0, 0.0, -1.0e307],
+            [0.0, 1.0, 0.0, 0.0],
+            [0.0, 0.0, 1.0, 0.0],
+            [0.0, 0.0, 0.0, 1.0],
+        ],
+        |_| {},
+        |source, label, index, projected| {
+            assert!(projected.is_none());
+            assert!(!crate::feature::extrusion::matches(
+                index,
+                source,
+                label,
+                expected.evaluation.definition()
+            ));
+        }
+    )
+    .is_none());
 }

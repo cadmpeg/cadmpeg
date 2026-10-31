@@ -1,12 +1,12 @@
 // SPDX-License-Identifier: Apache-2.0
 
 #![allow(clippy::cloned_ref_to_slice_refs)]
-use super::project_sketch_design;
 use super::project_spatial_sketch_constraints;
 use super::project_spatial_sketch_design;
 use super::sketch_text_horizontal_alignment;
 use super::sketch_text_vertical_alignment;
 use super::SpatialSketchDesign;
+use super::{project_sketch_design, SketchProjectInputs};
 use crate::design::constraints::project_sketch_constraints;
 use crate::design::dimensions::exact_atomic_constraint;
 use crate::design::dimensions::point_lies_on_sketch_geometry;
@@ -59,21 +59,77 @@ fn fixture_text_styles_project_only_representable_states() {
         let (_, entities) = crate::test_support::with_decode_context(|ctx| {
             project_sketch_design(
                 ctx,
-                &[placement],
-                &[],
-                &[],
-                &[],
-                &[text],
+                &SketchProjectInputs::new(&[placement], &[], &[], &[], &[text]),
                 EPS_POINT_PROJECTION,
             )
         })
-        .unwrap();
+        .unwrap()
+        .into_tuple();
         assert_eq!(
             entities.len(),
             usize::from(case.neutral_state),
             "{}",
             case.label
         );
+    }
+}
+
+#[test]
+fn text_of_a_model_space_sketch_has_no_planar_sketch_to_reference() {
+    for (depth, planar) in [(5.0, false), (0.0, true)] {
+        let text = crate::test_support::sketch_text::neutral_text_record();
+        let owner = text.owner_reference;
+        let placement = DesignSketchPlacement {
+            frame: crate::records::sketch_placement::DesignSketchFrame::new(
+                0,
+                crate::records::sketch_placement::DesignSketchFrameForm::ScopeCompact,
+            )
+            .unwrap(),
+            id: "f3d:Design/BulkStream.dat:placement#0".into(),
+            scope_record_index: None,
+            entity_id: format!("Sketch_{owner}").try_into().unwrap(),
+            visibility: None,
+            class_tag: "256".to_owned().try_into().unwrap(),
+            record_index: 1,
+            paired_class_tag: "257".to_owned().try_into().unwrap(),
+        };
+        let point = SketchPoint::try_from(crate::records::sketch_geometry::SketchPointDraft {
+            id: "f3d:Design/BulkStream.dat:point#14".into(),
+            record_index: 14,
+            owner_reference: Some(owner),
+            class_tag: crate::records::references::DesignClassTag::try_from("413".to_owned())
+                .unwrap(),
+            byte_offset: 14,
+            coordinate_offset: 0,
+            companion: crate::records::sketch_geometry::SketchPointCompanion {
+                incident_curves: Vec::new(),
+            },
+            record_form: crate::records::sketch_geometry::SketchPointRecordForm::version11(
+                14,
+                crate::records::sketch_geometry::SketchPointClosure::Selector4State0,
+                None,
+                depth,
+            ),
+            paired_reference: 15,
+            coordinates: Point2::new(0.0, 0.0),
+        })
+        .unwrap();
+        let design = crate::test_support::with_decode_context(|ctx| {
+            project_sketch_design(
+                ctx,
+                &SketchProjectInputs::new(&[placement], &[point], &[], &[], &[text]),
+                EPS_POINT_PROJECTION,
+            )
+        })
+        .unwrap();
+        let (sketches, entities) = design.into_tuple();
+        assert_eq!(!sketches.is_empty(), planar);
+        for entity in &entities {
+            assert!(sketches.iter().any(|sketch| sketch.id == entity.sketch));
+        }
+        if !planar {
+            assert!(entities.is_empty());
+        }
     }
 }
 
@@ -139,9 +195,14 @@ fn sketch_container_visibility_projects_to_the_neutral_sketch() {
     };
 
     let (sketches, entities) = crate::test_support::with_decode_context(|decode_ctx| {
-        project_sketch_design(decode_ctx, &[placement], &[], &[], &[], &[], 1.0e-6)
+        project_sketch_design(
+            decode_ctx,
+            &SketchProjectInputs::new(&[placement], &[], &[], &[], &[]),
+            1.0e-6,
+        )
     })
-    .expect("sketch lanes pair");
+    .expect("sketch lanes pair")
+    .into_tuple();
     assert!(entities.is_empty());
     assert_eq!(sketches.len(), 1);
     assert_eq!(sketches[0].visible, Some(false));
@@ -270,15 +331,12 @@ fn text_frame_curves_are_construction_geometry_not_profiles() {
     let (sketches, entities) = crate::test_support::with_decode_context(|decode_ctx| {
         project_sketch_design(
             decode_ctx,
-            &[placement],
-            &[point],
-            &curves,
-            &[relation],
-            &[text],
+            &SketchProjectInputs::new(&[placement], &[point], &curves, &[relation], &[text]),
             EPS_POINT_PROJECTION,
         )
     })
-    .expect("sketch lanes pair");
+    .expect("sketch lanes pair")
+    .into_tuple();
     assert_eq!(sketches.len(), 1);
     assert!(sketches[0].profiles.is_empty());
     assert_eq!(entities.len(), 6);
@@ -386,15 +444,12 @@ fn point_closure_does_not_mark_construction_geometry() {
     let (sketches, entities) = crate::test_support::with_decode_context(|decode_ctx| {
         project_sketch_design(
             decode_ctx,
-            &[placement],
-            &[point, standalone_point],
-            &[curve],
-            &[],
-            &[],
+            &SketchProjectInputs::new(&[placement], &[point, standalone_point], &[curve], &[], &[]),
             EPS_POINT_PROJECTION,
         )
     })
-    .expect("sketch lanes pair");
+    .expect("sketch lanes pair")
+    .into_tuple();
     assert_eq!(sketches.len(), 1);
     assert!(sketches[0].profiles.is_empty());
     assert_eq!(entities.len(), 3);
@@ -534,9 +589,14 @@ fn placed_sketch_projects_signed_normal_and_nonclamped_curves() {
     let points = vec![point];
     let curves = vec![line, nonclamped_nurbs, clockwise_arc];
     let (sketches, entities) = crate::test_support::with_decode_context(|decode_ctx| {
-        project_sketch_design(decode_ctx, &placements, &points, &curves, &[], &[], 1.0e-6)
+        project_sketch_design(
+            decode_ctx,
+            &SketchProjectInputs::new(&placements, &points, &curves, &[], &[]),
+            1.0e-6,
+        )
     })
-    .expect("sketch lanes pair");
+    .expect("sketch lanes pair")
+    .into_tuple();
     assert_eq!(sketches.len(), 1);
     assert_eq!(
         sketches[0]
@@ -1197,15 +1257,12 @@ fn nonplanar_sketch_curves_project_in_model_space() {
         crate::test_support::with_decode_context(|decode_ctx| {
             project_sketch_design(
                 decode_ctx,
-                &[placement.clone()],
-                &points,
-                &curves,
-                &[],
-                &[],
+                &SketchProjectInputs::new(&[placement.clone()], &points, &curves, &[], &[]),
                 1.0e-6,
             )
         })
-        .expect("sketch lanes pair");
+        .expect("sketch lanes pair")
+        .into_tuple();
     assert!(planar_sketches.is_empty());
     assert!(planar_entities.is_empty());
     let surfaces = [surface];
@@ -1346,15 +1403,12 @@ fn surface_only_owner_preserves_planar_and_spatial_projection_policies() {
     let (planar, planar_entities) = crate::test_support::with_decode_context(|decode_ctx| {
         project_sketch_design(
             decode_ctx,
-            &placements,
-            &[],
-            &[],
-            &[],
-            &[],
+            &SketchProjectInputs::new(&placements, &[], &[], &[], &[]),
             EPS_POINT_PROJECTION,
         )
     })
-    .expect("sketch lanes pair");
+    .expect("sketch lanes pair")
+    .into_tuple();
     let SpatialSketchDesign {
         sketches: spatial,
         entities: spatial_entities,
@@ -1456,15 +1510,12 @@ fn shared_curve_identity_pairs_project_distinct_entities() {
     let (sketches, entities) = crate::test_support::with_decode_context(|decode_ctx| {
         project_sketch_design(
             decode_ctx,
-            &[placement.clone()],
-            &[],
-            &planar_curves,
-            &[],
-            &[],
+            &SketchProjectInputs::new(&[placement.clone()], &[], &planar_curves, &[], &[]),
             EPS_POINT_PROJECTION,
         )
     })
-    .expect("planar sketch projects");
+    .expect("planar sketch projects")
+    .into_tuple();
     assert_eq!(sketches.len(), 1);
     assert_eq!(entities.len(), 3);
     let planar_ids = entities
@@ -1615,4 +1666,308 @@ fn capped_spatial_profile_search_reports_a_loss() {
         loss.message,
         "1 spatial sketch(es) have no closed profiles because their profile search exceeded the local work cap SPATIAL_PROFILE_SEARCH_WORK (16777216)."
     );
+}
+
+#[test]
+fn sketch_curve_tail_construction_flags_and_profile_exclusion() {
+    let stream_name = "FusionAssetName[Active]/Design1/BulkStream.dat";
+    let scope_key = crate::ids::native_scope(stream_name);
+
+    let make_line_record = |normal: [f64; 3], is_construction: u8| -> Vec<u8> {
+        let mut bytes = vec![0u8; 72];
+        for comp in normal {
+            bytes.extend_from_slice(&comp.to_le_bytes());
+        }
+        bytes.push(0x01);
+        bytes.extend_from_slice(&10u32.to_le_bytes());
+        bytes.extend_from_slice(&[0u8; 6]);
+        bytes.extend_from_slice(&[0u8; 5]);
+        bytes.extend_from_slice(&[0u8; 4]);
+        bytes.extend_from_slice(&1u32.to_le_bytes());
+        bytes.push(is_construction);
+        bytes
+    };
+
+    let make_arc_record = |is_construction: u8| -> Vec<u8> {
+        let mut bytes = vec![0u8; 96];
+        bytes.push(0x01);
+        bytes.extend_from_slice(&10u32.to_le_bytes());
+        bytes.extend_from_slice(&[0u8; 6]);
+        bytes.extend_from_slice(&[0u8; 5]);
+        bytes.extend_from_slice(&[0u8; 4]);
+        bytes.extend_from_slice(&1u32.to_le_bytes());
+        bytes.push(is_construction);
+        bytes
+    };
+
+    let make_nurbs_record = |is_construction: u8| -> Vec<u8> {
+        let mut bytes = vec![0u8; 96];
+        bytes.push(0x01);
+        bytes.extend_from_slice(&10u32.to_le_bytes());
+        bytes.extend_from_slice(&[0u8; 6]);
+        bytes.extend_from_slice(&[0u8; 5]);
+        bytes.extend_from_slice(&[0u8; 4]);
+        bytes.extend_from_slice(&1u32.to_le_bytes());
+        bytes.push(is_construction);
+        bytes
+    };
+
+    let line_const = make_line_record([0.0, 0.0, 1.0], 1);
+    let line_non_const = make_line_record([0.0, 0.0, 1.0], 0);
+    let line_compact = make_line_record([0.0, 0.0, 0.0], 1);
+    let arc_const = make_arc_record(1);
+    let arc_non_const = make_arc_record(0);
+    let nurbs_record = make_nurbs_record(1);
+
+    let mut bulk = Vec::new();
+    let off_line_const = bulk.len();
+    bulk.extend_from_slice(&line_const);
+    let off_line_non_const = bulk.len();
+    bulk.extend_from_slice(&line_non_const);
+    let off_line_compact = bulk.len();
+    bulk.extend_from_slice(&line_compact);
+    let off_arc_const = bulk.len();
+    bulk.extend_from_slice(&arc_const);
+    let off_arc_non_const = bulk.len();
+    bulk.extend_from_slice(&arc_non_const);
+    let off_nurbs = bulk.len();
+    bulk.extend_from_slice(&nurbs_record);
+
+    let zip_bytes = crate::test_support::body_reference_tail_test::archive(
+        &bulk,
+        &crate::test_support::streams_test::design_metastream(&[]),
+    );
+
+    let placement = DesignSketchPlacement {
+        frame: crate::records::sketch_placement::DesignSketchFrame::new(
+            0,
+            crate::records::sketch_placement::DesignSketchFrameForm::ScopeCompact,
+        )
+        .unwrap(),
+        id: format!("{scope_key}:placement#0"),
+        scope_record_index: None,
+        entity_id: crate::records::identity::DesignEntityId::try_from("Sketch_42".to_owned())
+            .unwrap(),
+        visibility: None,
+        class_tag: crate::records::references::DesignClassTag::try_from("256".to_owned()).unwrap(),
+        record_index: 1,
+        paired_class_tag: crate::records::references::DesignClassTag::try_from("257".to_owned())
+            .unwrap(),
+    };
+
+    let curve_id = |rec: u32| format!("{scope_key}:curve#{rec}");
+
+    let line_geom = |start: (f64, f64), end: (f64, f64)| {
+        SketchCurveGeometry::line(
+            Point3::new(start.0, start.1, 0.0),
+            Point3::new(end.0, end.1, 0.0),
+            Vector3::new(end.0 - start.0, end.1 - start.1, 0.0)
+                .unit()
+                .unwrap(),
+            Vector3::new(0.0, 0.0, 1.0),
+        )
+        .unwrap()
+    };
+
+    let arc_geom = SketchCurveGeometry::arc(
+        Point3::new(0.0, 0.0, 0.0),
+        Vector3::new(0.0, 0.0, 1.0),
+        Vector3::new(1.0, 0.0, 0.0),
+        2.0,
+        0.0,
+        std::f64::consts::FRAC_PI_2,
+    )
+    .unwrap();
+
+    let nurbs_geom = SketchCurveGeometry::nurbs_from_parts(
+        None,
+        crate::records::references::DesignClassTag::try_from("304".to_owned()).unwrap(),
+        219,
+        crate::records::sketch_geometry::SketchNurbsGeometry::from_parts(
+            2,
+            1.0e-6,
+            8,
+            vec![0.0, 1.0, 2.0, 3.0, 4.0, 5.0, 6.0],
+            crate::records::sketch_geometry::SketchNurbsPoles::from_wire(
+                vec![
+                    Point3::new(0.0, 0.0, 0.0),
+                    Point3::new(2.0, 0.0, 0.0),
+                    Point3::new(2.0, 2.0, 0.0),
+                    Point3::new(4.0, 2.0, 0.0),
+                ],
+                vec![],
+            )
+            .unwrap(),
+        )
+        .unwrap(),
+    );
+
+    let mk_curve = |rec: u32, off: usize, geom: SketchCurveGeometry| SketchCurveIdentity {
+        id: curve_id(rec),
+        record_index: rec,
+        owner_reference: Some(42),
+        class_tag: crate::records::references::DesignClassTag::try_from("375".to_owned()).unwrap(),
+        byte_offset: cadmpeg_core::decode::u64_from_index(off),
+        geometry_offset: 0,
+        entity_genesis: None,
+        primary_id: std::num::NonZeroU64::new(u64::from(rec)).unwrap(),
+        secondary_id: 0,
+        geometry: Some(geom),
+        planar_z_noise: None,
+    };
+
+    let c_line_const = mk_curve(10, off_line_const, line_geom((0.0, 0.0), (10.0, 0.0)));
+    let c_line_non_const = mk_curve(11, off_line_non_const, line_geom((10.0, 0.0), (10.0, 10.0)));
+    let c_line_compact = mk_curve(12, off_line_compact, line_geom((10.0, 10.0), (0.0, 10.0)));
+    let c_arc_const = mk_curve(13, off_arc_const, arc_geom.clone());
+    let c_arc_non_const = mk_curve(14, off_arc_non_const, arc_geom);
+    let c_nurbs = mk_curve(15, off_nurbs, nurbs_geom);
+
+    let curves = vec![
+        c_line_const,
+        c_line_non_const,
+        c_line_compact,
+        c_arc_const,
+        c_arc_non_const,
+        c_nurbs,
+    ];
+
+    crate::test_support::with_decode_context(|decode_ctx| {
+        crate::test_support::zip_test::with_scan(&zip_bytes, |scan| {
+            let (sketches, entities) = project_sketch_design(
+                decode_ctx,
+                &SketchProjectInputs::new(&[placement.clone()], &[], &curves, &[], &[])
+                    .with_scan(scan),
+                EPS_POINT_PROJECTION,
+            )
+            .expect("sketch projection succeeds")
+            .into_tuple();
+
+            assert_eq!(sketches.len(), 1);
+            let ent_by_rec = |rec: u32| {
+                let id = curve_id(rec);
+                entities
+                    .iter()
+                    .find(|e| e.native_ref.as_deref() == Some(id.as_str()))
+                    .unwrap()
+            };
+
+            assert!(
+                ent_by_rec(10).construction,
+                "Analytic line with flag 1 must be construction"
+            );
+            assert!(
+                !ent_by_rec(11).construction,
+                "Analytic line with flag 0 must NOT be construction"
+            );
+            assert!(
+                !ent_by_rec(12).construction,
+                "Compact line must NOT be marked by tail scan"
+            );
+            assert!(
+                ent_by_rec(13).construction,
+                "Analytic arc with flag 1 must be construction"
+            );
+            assert!(
+                !ent_by_rec(14).construction,
+                "Analytic arc with flag 0 must NOT be construction"
+            );
+            assert!(
+                !ent_by_rec(15).construction,
+                "NURBS curve must NOT be marked by tail scan"
+            );
+        });
+    });
+
+    let square_bulk = [
+        make_line_record([0.0, 0.0, 1.0], 0),
+        make_line_record([0.0, 0.0, 1.0], 0),
+        make_line_record([0.0, 0.0, 1.0], 0),
+        make_line_record([0.0, 0.0, 1.0], 0),
+    ]
+    .concat();
+    let square_zip = crate::test_support::body_reference_tail_test::archive(
+        &square_bulk,
+        &crate::test_support::streams_test::design_metastream(&[]),
+    );
+
+    let square_curves = vec![
+        mk_curve(20, 0, line_geom((0.0, 0.0), (10.0, 0.0))),
+        mk_curve(
+            21,
+            line_non_const.len(),
+            line_geom((10.0, 0.0), (10.0, 10.0)),
+        ),
+        mk_curve(
+            22,
+            line_non_const.len() * 2,
+            line_geom((10.0, 10.0), (0.0, 10.0)),
+        ),
+        mk_curve(
+            23,
+            line_non_const.len() * 3,
+            line_geom((0.0, 10.0), (0.0, 0.0)),
+        ),
+    ];
+
+    crate::test_support::with_decode_context(|decode_ctx| {
+        crate::test_support::zip_test::with_scan(&square_zip, |scan| {
+            let (sketches, _) = project_sketch_design(
+                decode_ctx,
+                &SketchProjectInputs::new(&[placement.clone()], &[], &square_curves, &[], &[])
+                    .with_scan(scan),
+                EPS_POINT_PROJECTION,
+            )
+            .expect("square projection succeeds")
+            .into_tuple();
+
+            assert_eq!(sketches.len(), 1);
+            assert_eq!(
+                sketches[0].profiles.len(),
+                1,
+                "All non-construction edges form 1 profile"
+            );
+        });
+    });
+
+    let square_bulk_with_const = [
+        make_line_record([0.0, 0.0, 1.0], 1),
+        make_line_record([0.0, 0.0, 1.0], 0),
+        make_line_record([0.0, 0.0, 1.0], 0),
+        make_line_record([0.0, 0.0, 1.0], 0),
+    ]
+    .concat();
+    let square_zip_with_const = crate::test_support::body_reference_tail_test::archive(
+        &square_bulk_with_const,
+        &crate::test_support::streams_test::design_metastream(&[]),
+    );
+
+    crate::test_support::with_decode_context(|decode_ctx| {
+        crate::test_support::zip_test::with_scan(&square_zip_with_const, |scan| {
+            let (sketches, entities) = project_sketch_design(
+                decode_ctx,
+                &SketchProjectInputs::new(&[placement], &[], &square_curves, &[], &[])
+                    .with_scan(scan),
+                EPS_POINT_PROJECTION,
+            )
+            .expect("square projection succeeds")
+            .into_tuple();
+
+            assert_eq!(sketches.len(), 1);
+            assert!(
+                sketches[0].profiles.is_empty(),
+                "Construction edge must be excluded from closed profiles, so no profiles formed"
+            );
+            let ent20 = entities
+                .iter()
+                .find(|e| e.native_ref.as_deref() == Some(curve_id(20).as_str()))
+                .unwrap();
+            let ent21 = entities
+                .iter()
+                .find(|e| e.native_ref.as_deref() == Some(curve_id(21).as_str()))
+                .unwrap();
+            assert!(ent20.construction, "Line 20 must be construction");
+            assert!(!ent21.construction, "Line 21 must not be construction");
+        });
+    });
 }

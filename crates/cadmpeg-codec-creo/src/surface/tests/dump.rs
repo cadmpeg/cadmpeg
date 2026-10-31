@@ -703,7 +703,7 @@ fn decode_transfers_axis_aligned_plane_from_outline() {
 }
 
 #[test]
-fn decode_transfers_plane_from_shared_rank_two_local_system_image() {
+fn decode_transfers_plane_from_complete_compact_rotation() {
     let mut payload = visibgeom_payload(1, 0);
     payload.extend_from_slice(&[7, 0x22, 4, 0x01, 0, 0]);
     payload.extend_from_slice(&[0x0f; 10]);
@@ -725,7 +725,7 @@ fn decode_transfers_plane_from_shared_rank_two_local_system_image() {
         cadmpeg_ir::geometry::SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
             cadmpeg_ir::geometry::analytic::PlaneSurface::try_new(
                 cadmpeg_ir::math::Point3::new(0.0, 0.0, 0.0),
-                cadmpeg_ir::math::Vector3::new(0.0, 0.0, -1.0),
+                cadmpeg_ir::math::Vector3::new(1.0, 0.0, 0.0),
                 cadmpeg_ir::math::Vector3::new(0.0, 1.0, 0.0)
             )
             .unwrap()

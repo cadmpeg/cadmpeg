@@ -28,6 +28,7 @@ pub(crate) mod evaluation_cycles;
 pub mod geometry_consistency;
 mod geometry_payloads;
 mod identity_order;
+mod physics;
 mod pmi;
 mod presentation;
 mod products;
@@ -141,6 +142,7 @@ fn validate_model_with_index<'ir>(
     check_sketches(ctx, ir, &mut findings)?;
     check_spreadsheets(ir, &mut findings);
     check_products(ctx, ir, &mut findings)?;
+    physics::check_physics(ir, &mut findings);
     check_presentation(ids, &mut findings);
     check_drawings(ir, ids, &mut findings);
     check_semantic_annotations(ir, ids, &mut findings);
@@ -324,6 +326,7 @@ mod tests {
         let feature_id = FeatureId::mint("test:model:feature#sketch").expect("identity grammar");
         let sketch_id = SketchId::mint("test:model:sketch#sketch").unwrap();
         ir.model.features.push(Feature {
+            product_definition: None,
             id: feature_id.clone(),
             ordinal: 0,
             name: None,
@@ -393,6 +396,7 @@ mod tests {
                        ordinal,
                        dependencies: Vec<FeatureId>,
                        definition: FeatureDefinition| Feature {
+            product_definition: None,
             id,
             ordinal,
             name: None,
@@ -450,6 +454,7 @@ mod tests {
                        ordinal,
                        dependencies: Vec<FeatureId>,
                        definition: FeatureDefinition| Feature {
+            product_definition: None,
             id,
             ordinal,
             name: None,

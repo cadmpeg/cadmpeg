@@ -65,11 +65,16 @@ surface, or pcurve transition semantics apply.
 
 ### SE-04. Other pcurve array transitions
 
-**Question.** What slot transition does each other stateful `crv_pnt_arr f9 02 04` token encode?
+**Question.** What slot transitions and count bindings define the remaining
+stateful `crv_pnt_arr f9 02 04` and named `crv_pnt_arr f9 07 04` productions?
 
-**Known.** `creo_prt.md` §4.1 "A direct curve body consisting of exactly eight scalar slots and no references" defines the direct eight-slot pcurve body, its endpoint order, standalone zero slots, and the exact held-scalar wrapper.
+**Known.** `creo_prt.md` §4.1 "A direct curve body consisting of exactly eight scalar slots and no references" defines the direct and named prototype eight-slot pcurve bodies, their endpoint order, signed literals, the positive pi, pi/2, and two-pi literals, low-byte constant variants, tiny signed short forms, bounded fixed and positive compact-count repeats of the preceding scalar, standalone zero slots, and the separate direct held-scalar wrapper. Complete counted two-chart bodies and uniquely count-bound replays use the legacy or angular scalar stream in §4.1. Named angular four-column arrays require their complete field boundary and unique prototype topology. Angular model-space constraints require both admitted chart images and complete pointwise agreement.
 
-**Need.** We must know the other transitions to decode all pcurve endpoint arrays.
+**Need.** Determine the remaining scalar widths, sign and exponent mappings,
+and chart-coordinate roles in complete counted and replayed pcurve arrays.
+Bind each prefix to its pcurve slot before applying another record grammar's
+scalar mapping. Establish the named array's count extent and chart-coordinate
+group boundaries before using its endpoint pairs.
 
 ### SE-07. Other `double_xar` slots
 
@@ -91,7 +96,7 @@ surface, or pcurve transition semantics apply.
 
 **Question.** What scalar value does each undefined prefix in a positional plane envelope encode?
 
-**Known.** `creo_prt.md` §3.4 "Plane row bodies contain envelope/domain data" through `creo_prt.md` §3.4 "In the frame-bound held-coordinate outline form" define the standard, compact, held-coordinate, and planar-envelope plane forms.
+**Known.** `creo_prt.md` §3.4 "Plane row bodies contain envelope/domain data" through `creo_prt.md` §3.4 "In the frame-bound held-coordinate outline form" define the standard stateful envelope scalars, the complete literal fallback and four-unit domain compatibility production, the leading-compact and structural-prefix terminal scalar frames, the held-coordinate form, and the planar-envelope plane forms.
 
 **Need.** We must know the remaining prefixes to construct the plane envelope and domain.
 
@@ -303,6 +308,101 @@ witnesses; it does not by itself define the remaining carrier equation.
 **Known.** `creo_prt.md` §6 "Classes 913" through `creo_prt.md` §6 "For a class-913 cylindrical slot fillet, the first two `geoms_affected`" define the generated-surface arrays and the rowless-cylinder special case.
 
 **Need.** We must know the binding to add the generated faces to the body topology.
+
+### GS-24. Additional bend envelopes and oblique frames
+
+**Question.** Which scalar and frame productions place bend cylinders and
+their planar flanges when their angular envelopes or direction matrices
+extend the compact quarter-turn production?
+
+**Known.** The quarter-turn cylinder production in `creo_prt.md` §3.2 uses a
+complete signed basis, a positive radius, and agreeing envelope intervals.
+The plane compact rotation production in §3.4 supplies complete flange
+charts. General positional cylinder, plane-envelope, and local-system
+records retain their bounded scalar tokens and opaque spans.
+
+**Need.** Resolve the lower angular-bound scalar lane, the oblique direction
+matrix lane, and each origin coordinate through complete compounds and
+independent incident-carrier and pcurve witnesses. Establish the angular
+interval's relation to the stored radial directions before constructing the
+carrier or flange chart.
+
+### GS-25. Post-frame linkage identity
+
+**Question.** Which namespace and owner does the canonical reference after a
+closed positional compact plane frame identify?
+
+**Known.** `creo_prt.md` §3.4 defines the complete frame followed by
+`e1 f7 <nonzero-canonical-reference>`. The frame and reference have separate
+byte extents. The native body retains both extents.
+
+**Need.** Establish the referenced namespace and an owner-qualified target
+before this linkage supplies a semantic identity join.
+
+### GS-26. Curve carriers between coplanar face charts
+
+**Question.** Which complete curve-body and chart productions place a
+boundary shared by coplanar faces when its saved curve remains opaque?
+
+**Known.** The topology binds the curve to both face identities and to its
+endpoint vertices. Each plane carrier supplies a model-space plane.
+The native record retains the complete curve body and both chart references.
+
+**Need.** Resolve the complete saved curve and its chart coordinates through
+independent interior witnesses. Prove the model-space boundary between the
+stored endpoints before assigning its curve carrier or pcurves.
+
+### GS-30. Spatial circular-sweep fillet construction
+
+**Question.** Which bounded nested `fillet_srf` spline records define the circular section,
+spatial center curve, moving frame, and surface parameters of a swept tube?
+
+**Known.** The named body retains `type`, `flip`, `tan_cond`, `i_pnts`,
+`params`, `ctr_spline`, `tan_spline`, and parameter-bound fields. Its paired
+positional rows retain angular envelopes and model-space outlines. The plane
+charts use oblique local systems. The decoder retains the native bodies and
+attributes missing carriers to their source faces. In two local files, the two
+end-cap plane frames stored beside such a tube are complete orthonormal
+rotations with every column oblique to every model axis. The stored bytes do
+not select which column is the plane normal. The
+decoder defines no analytic carrier for the tube and does not infer one from
+the end frames.
+
+**Need.** Establish each pointer and positional-body extent, the complete spline and
+moving-frame construction, the plane charts, the parameter reparametrization,
+and independent paired-boundary constraints. The end-cap frames additionally
+use the three-byte tiny scalar `1b X Y` and the eight-byte `41` scalar inside a
+named or positional `local_sys`; no decoder lane admits them, and the sign of
+the `41` form is fixed only by requiring an orthonormal frame.
+
+
+### GS-31. Independent angular chart construction
+
+**Question.** Which bounded fields establish an angular path's model-space
+chart independently of its companion chart?
+
+**Known.** Complete angular arrays define finite coordinate pairs in two
+incident-face charts. Their model-space constraints require complete chart
+frames, pointwise agreement, and directed endpoint bindings consistent with
+every admitted incident analytic carrier. A geometric support carrier can exist while
+its source parameter frame remains unresolved. The decoder attributes each
+unadmitted angular pair to its curve and byte position.
+
+**Need.** Establish the chart origin, scale, orientation, and parameter map
+from bounded source fields and independent carrier or vertex constraints.
+
+### GS-32. Other extrusion-family side-row carriers
+
+**Question.** Which complete profile, direction, and chart production defines a
+`0x2a` side row outside the admitted `tab_cyl` forms?
+
+**Known.** The surface row retains its family discriminator, feature owner,
+successor, and bounded positional body. Incident curve headers connect the
+side-face uses to placed planar caps and adjacent side-face uses. The cap
+frames and face references establish the incident face graph.
+
+**Need.** Determine the scalar extent, profile carrier, direction binding, and
+both parameter senses from the owning row and prototype fields.
 
 ## 3. Section solving and feature placement
 
@@ -694,21 +794,16 @@ B-rep orbit. The defined suffix grammar does not establish a direct stored
 vertex-coordinate fallback in another record family.
 
 **Need.** We must know any additional owner-qualified coordinate selector to
-place an orbit whose existing evidence does not select one point. For compact
-plane frames, we must distinguish the stored carrier point from the native
-parameter origin when mapped pcurve endpoints do not agree with adjacent
+place an orbit whose existing evidence does not select one point. For plane
+frames outside the compact signed-basis rotation production in §3.4, establish
+the chart-origin join when mapped endpoints do not agree with adjacent
 carriers.
-
-**Conflict.** `placed_plane_surfaces` uses the complete local-system origin
-as the plane chart origin. Agreement of its normal coordinate establishes the
-carrier plane but does not establish the tangential parameter origin. The
-compact frame productions do not define a separate parameter-origin selector.
 
 ### TP-05. General rowless face-use binding
 
 **Question.** Which fields bind a rowless face-use reference to its face, loop, edge, and orientation outside the round-feature rowless-cylinder table?
 
-**Known.** `creo_prt.md` §6 "Classes 913" through `creo_prt.md` §6 "For a class-913 cylindrical slot fillet, the first two `geoms_affected`" define the round-feature rowless-cylinder special case.
+**Known.** `creo_prt.md` §6 "Classes 913" through `creo_prt.md` §6 "For a class-913 cylindrical slot fillet, the first two `geoms_affected`" define the round-feature rowless-cylinder special case. The face-reference roster in §4.1 also includes complete active-datum cylinder identities and their signed carriers.
 
 **Need.** We must know the general binding to construct those face uses.
 
@@ -843,6 +938,22 @@ seed half-edge curve and side.
 
 **Need.** We must know the identifier width rule and the intended vertex to
 restore incidence with stored vertices.
+
+### TP-21. Additional curve-row framing for successor targets
+
+**Question.** Which bounded curve-row productions establish successor targets
+that remain absent from the typed `crv_array` graph?
+
+**Known.** `crv_array` stores face and successor references independently for
+each side. A complete same-face successor cycle establishes a loop. The
+parameter-body boundary and six-reference suffix share one framing gate.
+The complete body production selects its curve carrier. Incomplete cycles
+retain their source references.
+
+**Need.** Establish the complete prefix, parameter-body boundary, and topology
+suffix of each missing successor target in its owning namespace. Join those
+rows by their stored identities and prove complete same-face cycles before
+admitting the face.
 
 ## 5. Packed persistence data
 

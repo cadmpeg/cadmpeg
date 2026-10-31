@@ -124,6 +124,7 @@ const ARENAS: &[&str] = &[
 ];
 
 const OPTIONAL_ARENAS: &[&str] = &[
+    "body_wrapper_links",
     "pm_dc_sheet_metal_styles",
     "pm_dc_sheet_metal_flanges",
     "drawing_records",
@@ -844,6 +845,15 @@ fn validate_sketches(data: &NativeData, ir: &CadIr, findings: &mut Vec<Finding>)
     }
 }
 
+fn tagging_definition_matches(
+    feature: &cadmpeg_ir::features::Feature,
+    has_result: bool,
+    unique_label: bool,
+) -> bool {
+    feature.evaluation.definition() == &crate::feature::tagging::definition(unique_label)
+        && !has_result
+}
+
 fn validate_features(
     ctx: &DecodeContext<'_>,
     ir: &CadIr,
@@ -1113,6 +1123,16 @@ fn validate_features(
             } => {
                 references.extend(surface.iter().map(|reference| reference.index()));
             }
+            PmDcFeaturePropertyKind::WorkPoint {
+                references: point, ..
+            } => {
+                references.extend(
+                    point
+                        .iter()
+                        .flat_map(crate::pmdc::PmDcReferenceList::references)
+                        .map(|reference| reference.index()),
+                );
+            }
         }
         if raw.get(&(
             property.identity.segment_token.as_str(),
@@ -1311,6 +1331,17 @@ fn validate_features(
             ));
         }
     }
+    let tagging_owners = data
+        .pm_dc_feature_labels
+        .iter()
+        .filter(|label| label.class_id() == crate::feature::tagging::CLASS_ID)
+        .filter_map(|label| {
+            Some((
+                label.identity.segment_token.as_str(),
+                label.header.owner.record_ordinal()?,
+            ))
+        })
+        .collect::<HashSet<_>>();
     let raw_features = data
         .pm_dc_features
         .iter()
@@ -1364,6 +1395,31 @@ fn validate_features(
             )
         })
         .collect::<HashMap<_, _>>();
+    let body_joins = crate::feature::body_selection::body_map(
+        &data.pm_dc_feature_properties,
+        &data.pm_dc_kernel_entity_links,
+        &data.body_wrapper_links,
+        &data.active_carrier,
+        &data.body_native_keys,
+        &ir.model,
+        &crate::feature::body_selection::Scope {
+            metadata: &data.metadata,
+            roots: &data.pm_dc_model_roots,
+        },
+    );
+    for feature in &ir.model.features {
+        if !crate::feature::body_selection::outputs_match(
+            feature,
+            &ir.model.feature_result_topologies,
+            &body_joins,
+        ) {
+            findings.push(finding(
+                Check::NativeLinks,
+                "Inventor feature outputs differ from its result body wrapper joins".into(),
+                Some(feature.id.as_str().to_owned()),
+            ));
+        }
+    }
     let results = ir
         .model
         .feature_result_topologies
@@ -1459,6 +1515,7 @@ fn validate_features(
             parameters: &data.pm_dc_parameters,
             sketches: &data.pm_dc_sketches,
             directions: &data.pm_dc_directions,
+            transforms: &data.pm_dc_transforms,
             planes: &data.pm_dc_work_planes,
             entity_links: &data.pm_dc_entity_style_links,
             kernel_links: &data.pm_dc_kernel_entity_links,
@@ -1615,11 +1672,44 @@ fn validate_features(
             ));
             continue;
         };
+        if tagging_owners.contains(&(
+            raw_feature.identity.segment_token.as_str(),
+            raw_feature.identity.record_ordinal,
+        )) {
+            if !tagging_definition_matches(
+                feature,
+                results.contains_key(&feature.id),
+                crate::feature::tagging::unique_owner(&data.pm_dc_feature_labels, raw_feature),
+            ) {
+                findings.push(finding(
+                    Check::NativeLinks,
+                    "Inventor Tagging selection effect requires its native definition".into(),
+                    Some(feature.id.as_str().to_owned()),
+                ));
+            }
+            continue;
+        }
+        if matches!(
+            feature.evaluation.definition(),
+            cadmpeg_ir::features::FeatureDefinition::Operation(
+                cadmpeg_ir::features::FeatureOperation::DeleteFace { .. }
+            )
+        ) {
+            if let Err(reason) = crate::feature::delete_face::admission(raw_feature) {
+                findings.push(finding(
+                    Check::NativeLinks,
+                    format!("Inventor neutral DeleteFace refused: {}.", reason.detail()),
+                    Some(feature.id.as_str().to_owned()),
+                ));
+            }
+            continue;
+        }
         if let cadmpeg_ir::features::FeatureDefinition::Operation(
             cadmpeg_ir::features::FeatureOperation::CosmeticThread {
                 face,
                 diameter,
                 extent,
+                ..
             },
         ) = feature.evaluation.definition()
         {
@@ -1752,6 +1842,47 @@ fn validate_features(
                 ));
             }
         }
+        if matches!(
+            definition,
+            cadmpeg_ir::features::FeatureDefinition::Operation(
+                cadmpeg_ir::features::FeatureOperation::Sweep { .. }
+            )
+        ) {
+            let token = raw_feature.identity.segment_token.as_str();
+            if !crate::feature::loft_sweep::sweep::validates(
+                raw_feature,
+                definition,
+                |reference| {
+                    feature_properties
+                        .get(&(token, reference.record_ordinal()?))?
+                        .as_ref()
+                        .copied()
+                },
+                |reference| {
+                    let raw = feature_parameters
+                        .get(&(token, reference.record_ordinal()?))?
+                        .as_ref()?;
+                    let value = parameter_values
+                        .get(raw.id().as_str())?
+                        .as_ref()?
+                        .value
+                        .as_ref()?;
+                    Some((*raw, value))
+                },
+                |reference| {
+                    revolve_dimensions
+                        .get(&(token, reference.record_ordinal()?))?
+                        .as_ref()
+                        .copied()
+                },
+            ) {
+                findings.push(finding(
+                    Check::NativeLinks,
+                    "Inventor neutral sweep operands do not match their PmDc slots".into(),
+                    Some(feature.id.as_str().to_owned()),
+                ));
+            }
+        }
         // The label class selects the record layout; the neutral operation
         // must be the one that layout projects.
         let Some(family) = labels
@@ -1853,7 +1984,7 @@ fn validate_features(
             continue;
         }
         if matches!(family, crate::feature::FeatureFamily::Motion)
-            && !motion_index.matches(raw_feature, definition)
+            && !motion_index.matches(raw_feature, definition, &body_joins)
         {
             findings.push(finding(
                 Check::NativeLinks,
@@ -1868,8 +1999,18 @@ fn validate_features(
                     .get(&(raw_feature.identity.segment_token.as_str(), ordinal))
                     .copied()
             })
-            .as_ref()
-                != Some(definition)
+            .is_none_or(|expected| {
+                !crate::feature::body_selection::matches(
+                    expected,
+                    definition,
+                    &body_joins,
+                    crate::feature::body_selection::tools_group(
+                        raw_feature,
+                        &data.pm_dc_feature_properties,
+                    )
+                    .as_deref(),
+                )
+            })
         {
             findings.push(finding(
                 Check::NativeLinks,
@@ -1893,7 +2034,9 @@ fn validate_features(
                         .map(|id| (*id).clone())
                 },
             );
-            if expected.as_ref() != Some(definition) {
+            if expected.ok().is_none_or(|expected| {
+                !crate::feature::body_selection::matches(expected, definition, &body_joins, None)
+            }) {
                 findings.push(finding(
                     Check::NativeLinks,
                     "Inventor neutral split does not match its PmDc operands".into(),
@@ -2349,6 +2492,7 @@ struct NativeData {
     pm_graphics_primary_color_styles: Vec<PmGraphicsPrimaryColorStyleRecord>,
     face_native_keys: Vec<FaceNativeKey>,
     body_native_keys: Vec<BodyNativeKey>,
+    body_wrapper_links: Vec<crate::feature::body_selection::WrapperLink>,
     presentation_record_issues: Vec<RecordIssue>,
     pm_dc_parameters: Vec<PmDcParameter>,
     pm_dc_expressions: Vec<PmDcExpression>,
@@ -2425,6 +2569,7 @@ impl NativeData {
                 .arena_as_for_decode(ctx, "pm_graphics_primary_color_styles")?,
             face_native_keys: namespace.arena_as_for_decode(ctx, "face_native_keys")?,
             body_native_keys: namespace.arena_as_for_decode(ctx, "body_native_keys")?,
+            body_wrapper_links: namespace.arena_as_for_decode(ctx, "body_wrapper_links")?,
             presentation_record_issues: namespace
                 .arena_as_for_decode(ctx, "presentation_record_issues")?,
             pm_dc_parameters: namespace.arena_as_for_decode(ctx, "pm_dc_parameters")?,

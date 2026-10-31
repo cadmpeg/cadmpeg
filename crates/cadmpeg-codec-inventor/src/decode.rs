@@ -611,12 +611,7 @@ fn decode_container<'a>(
         _ => None,
     };
     let kernel_brep = kernel_brep.unwrap_or_else(AsmBrep::default);
-    let body_keys = if delivered == DecodeDepth::Full
-        && feature_inventory.labels.iter().any(|label| {
-            crate::feature::FeatureFamily::Base
-                .class_ids()
-                .contains(&label.class_id())
-        }) {
+    let body_keys = if delivered == DecodeDepth::Full {
         kernel_brep.body_native_keys.clone()
     } else {
         Vec::new()
@@ -662,6 +657,35 @@ fn decode_container<'a>(
             .ok_or_else(|| {
                 CodecError::malformed("Inventor Base projection exceeds unresolved feature count")
             })?;
+    }
+    if delivered == DecodeDepth::Full {
+        let links = crate::feature::body_selection::links(
+            ctx,
+            &container.rse,
+            &feature_inventory,
+            &design_inventory,
+        )?;
+        let joined = crate::feature::body_selection::body_map(
+            &feature_inventory.properties,
+            &feature_inventory.kernel_entity_links,
+            &links,
+            &active_carrier,
+            &body_keys,
+            &ir.model,
+            &crate::feature::body_selection::Scope {
+                metadata: &segment_meta,
+                roots: &design_inventory.model_roots,
+            },
+        );
+        crate::feature::body_selection::project(&mut ir.model, &joined, &feature_inventory);
+        if !links.is_empty() {
+            ir.native
+                .namespace_mut("inventor")
+                .set_arena(ctx, "body_wrapper_links", &links)?;
+        }
+        losses.extend(crate::feature::body_selection::native_losses(
+            &ir.model, &joined,
+        ));
     }
     ir.set_native_unknowns(ctx, "inventor", &[])?;
     let geometry_transferred =
@@ -850,10 +874,12 @@ fn decode_container<'a>(
         losses.extend(crate::feature::derived::native_source_loss(
             &feature_inventory.labels,
         ));
-        losses.extend(crate::feature::derived::native_tagging_loss(
-            &feature_inventory.labels,
-        ));
+        losses.extend(crate::feature::tagging::native_losses(&feature_inventory));
         losses.extend(crate::feature::sheet_metal::native_kind_losses(
+            &feature_inventory,
+            &ir.model.features,
+        ));
+        losses.extend(crate::feature::edge_selection::native_losses(
             &feature_inventory,
             &ir.model.features,
         ));
@@ -862,7 +888,12 @@ fn decode_container<'a>(
         ));
         losses.extend(unresolved.extrusion_losses);
         losses.extend(unresolved.revolve_losses);
+        losses.extend(crate::feature::delete_face::native_losses(
+            &feature_inventory,
+            &ir.model.features,
+        ));
         losses.extend(unresolved.loft_losses);
+        losses.extend(unresolved.split_losses);
         losses.extend(unresolved.mirror_losses);
         losses.extend(crate::feature::work_plane::native_losses(
             &feature_inventory.work_planes,
@@ -1377,6 +1408,7 @@ struct UnresolvedDesign {
     extrusion_losses: Vec<cadmpeg_ir::report::loss::LossNote>,
     revolve_losses: Vec<cadmpeg_ir::report::loss::LossNote>,
     loft_losses: Vec<cadmpeg_ir::report::loss::LossNote>,
+    split_losses: Vec<cadmpeg_ir::report::loss::LossNote>,
     mirror_losses: Vec<cadmpeg_ir::report::loss::LossNote>,
 }
 
@@ -1454,6 +1486,7 @@ fn project_design(
         extrusion_losses: features.extrusion_losses,
         revolve_losses: features.revolve_losses,
         loft_losses: features.loft_losses,
+        split_losses: features.split_losses,
         mirror_losses: features.mirror_losses,
     })
 }

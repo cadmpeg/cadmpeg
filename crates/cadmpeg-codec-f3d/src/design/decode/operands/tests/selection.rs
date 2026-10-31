@@ -275,6 +275,7 @@ fn extrude_operand_identity_walks_shared_wrapper_grammar_to_a_fixed_leaf() {
                     opaque_scalar: 0.125,
                     opaque_scalar_offset: 1075,
                     variant: false,
+                    closing_flag: false,
                 },
             )
             .unwrap(),
@@ -410,7 +411,7 @@ fn extrude_operand_identity_walks_shared_wrapper_grammar_to_a_fixed_leaf() {
     };
     assert!(parse_construction_operand_identity(&gapped, &group, &gapped_header, None).is_none());
     let registry =
-        super::super::tracking_registration::Registry::new(std::rc::Rc::new(meta.clone()));
+        super::super::tracking_registration::Registry::new(std::sync::Arc::new(meta.clone()));
     let gapped_identity =
         parse_construction_operand_identity(&gapped, &group, &gapped_header, Some(&registry))
             .expect("registered transform starts an identity chain");
@@ -427,7 +428,7 @@ fn extrude_operand_identity_walks_shared_wrapper_grammar_to_a_fixed_leaf() {
             _ => unreachable!(),
         }
         let registry =
-            super::super::tracking_registration::Registry::new(std::rc::Rc::new(invalid));
+            super::super::tracking_registration::Registry::new(std::sync::Arc::new(invalid));
         assert!(parse_construction_operand_identity(
             &gapped,
             &group,
@@ -536,6 +537,7 @@ fn nested_entity_selection_member_retains_compact_and_expanded_identities() {
                     opaque_scalar: 0.0,
                     opaque_scalar_offset: 975,
                     variant: false,
+                    closing_flag: false,
                 },
             )
             .unwrap(),
@@ -786,6 +788,9 @@ fn sketch_profile_region_selection_requires_every_delimiter() {
             None
         );
     }
+    let mut flag_1_terminator = bytes;
+    flag_1_terminator[terminator] = 1;
+    assert!(parse_sketch_profile_region_selection(&flag_1_terminator, 100, 0).is_some());
 }
 
 #[test]

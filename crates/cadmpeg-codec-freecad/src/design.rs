@@ -46,6 +46,7 @@ use cadmpeg_ir::{
 use crate::brep::ShapePayloadRecord;
 use crate::native::{malformed, EntryRecord, ObjectRecord, PropertyRecord};
 
+pub(crate) mod primitive_placement;
 mod sketch_cache;
 
 const MAX_SKETCH_RECORDS: usize = 1_000_000;
@@ -209,8 +210,37 @@ pub(crate) fn transfer(
             part_construction_geometry_definition(ctx, &object.type_name, &owned, entries)?
                 .map_or_else(|| native_definition(ctx, &object.type_name, &owned), Ok)?
         } else if is_primitive(&object.type_name) {
-            primitive_definition(ctx, &object.type_name, &owned)?
-                .map_or_else(|| native_definition(ctx, &object.type_name, &owned), Ok)?
+            match primitive_definition(ctx, &object.type_name, &owned)? {
+                Some(mut definition) => {
+                    match primitive_placement::resolve(object, objects, &properties_by_owner)? {
+                        Some(frame) => {
+                            if let FeatureDefinition::Operation(FeatureOperation::Primitive {
+                                placement,
+                                ..
+                            }) = &mut definition
+                            {
+                                *placement = Some(frame);
+                            }
+                            definition
+                        }
+                        None => {
+                            losses.push(
+                                crate::loss::FreecadLossCode::FeaturePrimitivePlacementUnresolved
+                                    .note(format!(
+                                        "{} has no resolved primitive frame",
+                                        object.id()
+                                    )),
+                            );
+                            if primitive_placement::carries_frame(&owned) {
+                                native_definition(ctx, &object.type_name, &owned)?
+                            } else {
+                                definition
+                            }
+                        }
+                    }
+                }
+                None => native_definition(ctx, &object.type_name, &owned)?,
+            }
         } else if is_boolean(&object.type_name) {
             boolean_definition(ctx, &object.type_name, &owned)?
                 .or_else(|| {
@@ -428,6 +458,7 @@ pub(crate) fn transfer(
         let mut dependency_members = DistinctMembers::default();
         dependency_members.extend(dependencies);
         ir.model.features.push(Feature {
+            product_definition: None,
             id,
             ordinal: feature_ordinals[object.id().as_str()],
             name: Some(object.name().to_owned()),
@@ -455,6 +486,7 @@ pub(crate) fn transfer(
     let parameter_cycle_features = bind_parameter_dependencies(
         &mut ir.model.parameters,
         objects,
+        properties,
         &initial_cycle_affected_features,
     )?;
     for object in objects {
@@ -1118,6 +1150,7 @@ fn append_spreadsheet(
             }
         }
         parameters.push(DesignParameter {
+            product_definition: None,
             id,
             owner: Some(feature_id(object)?),
             ordinal: u32::try_from(index).map_err(|_| {
@@ -1389,6 +1422,7 @@ fn append_operation_parameters(
             },
         };
         parameters.push(DesignParameter {
+            product_definition: None,
             id: ParameterId::mint(design_identity_text(
                 "parameter",
                 object,
@@ -1905,7 +1939,8 @@ fn parse_sketch(
             .with_native_ref(Some(object.id().to_owned())),
         );
     }
-    let (constraints, parameters) = parse_constraints(ctx, object, properties, &id, &entities)?;
+    let (constraints, parameters) =
+        parse_constraints(ctx, object, properties, &id, &entities, losses)?;
     let profiles = build_profiles(&entities, &constraints, profile_work).unwrap_or_else(|| {
         losses.push(
             crate::loss::FreecadLossCode::SketchProfileMatchingBounded.note(format!(
@@ -1981,27 +2016,92 @@ fn builtin_reference_usage(
 /// Lanes of a sketch B-spline record, as the source states them.
 struct SketchNurbsLanes {
     degree: u32,
-    knots: KnotVector,
+    knots: Vec<FiniteReal>,
     control_points: Vec<FinitePoint2>,
     weights: Option<Vec<NonZeroReal>>,
     periodic: bool,
 }
 
-/// Read a sketch B-spline record. `Ok(None)` states the record is not a
-/// B-spline; `Err` states a B-spline record whose lanes the carrier refuses.
 fn sketch_nurbs(
     kind: &str,
     node: roxmltree::Node<'_, '_>,
 ) -> Result<Option<SketchGeometry>, CodecError> {
+    if matches!(kind, "Part::GeomBSplineCurve" | "BSplineCurve")
+        || node.has_tag_name("BSplineCurve")
+    {
+        for (attribute, tag) in [("PolesCount", "Pole"), ("KnotsCount", "Knot")] {
+            if let Some(raw_count) = node.attribute(attribute) {
+                let count = raw_count.parse::<usize>().map_err(|_| {
+                    CodecError::malformed(format_args!(
+                        "sketch B-spline {attribute} is not a count"
+                    ))
+                })?;
+                if count == 0
+                    || count
+                        != node
+                            .children()
+                            .filter(|child| child.has_tag_name(tag))
+                            .count()
+                {
+                    return Err(CodecError::malformed(format_args!(
+                        "sketch B-spline {attribute} disagrees with {tag} records"
+                    )));
+                }
+            }
+        }
+        for knot in node.children().filter(|child| child.has_tag_name("Knot")) {
+            if knot
+                .attribute("Mult")
+                .and_then(|value| value.parse::<usize>().ok())
+                == Some(0)
+            {
+                return Err(CodecError::malformed(
+                    "sketch B-spline knot multiplicity is zero",
+                ));
+            }
+        }
+    }
     let Some(lanes) = sketch_nurbs_lanes(kind, node) else {
         return Ok(None);
     };
+    let degree = usize::try_from(lanes.degree)
+        .map_err(|_| CodecError::malformed("sketch B-spline degree exceeds usize"))?;
+    let padding = if lanes.periodic {
+        crate::brep::periodic_knot_padding(&lanes.knots, lanes.degree)?
+    } else {
+        0
+    };
+    let expected = lanes
+        .control_points
+        .len()
+        .checked_add(degree + 1 - padding)
+        .ok_or_else(|| CodecError::malformed("sketch B-spline knot count overflow"))?;
+    if lanes.knots.len() != expected {
+        return Err(CodecError::malformed(format_args!(
+            "sketch B-spline multiplicities must sum to {expected}, found {}",
+            lanes.knots.len()
+        )));
+    }
+    let knots = if lanes.periodic {
+        let Some(knots) = crate::brep::extend_periodic_knots(&lanes.knots, padding) else {
+            return Ok(None);
+        };
+        knots
+    } else {
+        lanes.knots
+    };
+    let mut control_points = lanes.control_points;
+    control_points.extend_from_within(..padding);
+    let mut weights = lanes.weights;
+    if let Some(weights) = &mut weights {
+        weights.extend_from_within(..padding);
+    }
     Ok(Some(SketchGeometry::nurbs(
         cadmpeg_ir::geometry::pcurve::PcurveNurbs::from_checked_lanes(
             lanes.degree,
-            lanes.knots,
-            lanes.control_points,
-            lanes.weights,
+            KnotVector::from_finite_lanes(knots)?,
+            control_points,
+            weights,
             lanes.periodic,
         )?,
     )))
@@ -2014,7 +2114,11 @@ fn sketch_nurbs_lanes(kind: &str, node: roxmltree::Node<'_, '_>) -> Option<Sketc
         return None;
     }
     let degree = node.attribute("Degree")?.parse::<u32>().ok()?;
-    let periodic = matches!(node.attribute("IsPeriodic")?, "1" | "true" | "True");
+    let periodic = match node.attribute("IsPeriodic")? {
+        "1" | "true" | "True" => true,
+        "0" | "false" | "False" => false,
+        _ => return None,
+    };
     let pole_count = node.attribute("PolesCount")?.parse::<usize>().ok()?;
     let knot_count = node.attribute("KnotsCount")?.parse::<usize>().ok()?;
     if pole_count == 0
@@ -2039,7 +2143,7 @@ fn sketch_nurbs_lanes(kind: &str, node: roxmltree::Node<'_, '_>) -> Option<Sketc
             pole.attribute("Y")?.parse().ok()?,
         ))?;
         let z = FiniteReal::new(pole.attribute("Z")?.parse::<f64>().ok()?)?;
-        if z.get().abs() > f64::EPSILON {
+        if z.get() != 0.0 {
             return None;
         }
         let weight = PositiveReal::new(pole.attribute("Weight")?.parse::<f64>().ok()?)?;
@@ -2081,15 +2185,6 @@ fn sketch_nurbs_lanes(kind: &str, node: roxmltree::Node<'_, '_>) -> Option<Sketc
     if expanded_count > MAX_SKETCH_RECORDS {
         return None;
     }
-    if !periodic {
-        let expected = usize::try_from(degree)
-            .ok()
-            .and_then(|degree| pole_count.checked_add(degree))
-            .and_then(|count| count.checked_add(1))?;
-        if expanded_count != expected {
-            return None;
-        }
-    }
     let mut full_knots = Vec::new();
     full_knots.extend(
         knots.iter().flat_map(|(value, multiplicity)| {
@@ -2100,20 +2195,16 @@ fn sketch_nurbs_lanes(kind: &str, node: roxmltree::Node<'_, '_>) -> Option<Sketc
     control_points.extend(poles.iter().map(|(point, _)| *point));
     let mut weights = Vec::new();
     weights.extend(poles.iter().map(|(_, weight)| *weight));
-    let weights = if weights
-        .iter()
-        .any(|weight| (weight.get() - 1.0).abs() > f64::EPSILON)
-    {
+    let weights = if weights.iter().any(|weight| weight.get() != 1.0) {
         let mut converted = Vec::new();
         converted.extend(weights.into_iter().map(NonZeroReal::from));
         Some(converted)
     } else {
         None
     };
-    let knots = KnotVector::from_finite_lanes(full_knots).ok()?;
     Some(SketchNurbsLanes {
         degree,
-        knots,
+        knots: full_knots,
         control_points,
         weights,
         periodic,
@@ -2361,6 +2452,7 @@ fn parse_constraints(
     properties: &[&PropertyRecord],
     sketch: &SketchId,
     entities: &[SketchEntity],
+    losses: &mut Vec<cadmpeg_ir::report::loss::LossNote>,
 ) -> Result<(Vec<SketchConstraint>, Vec<DesignParameter>), CodecError> {
     let Some(property) = property(properties, "Constraints") else {
         return Ok((Vec::new(), Vec::new()));
@@ -2383,6 +2475,22 @@ fn parse_constraints(
             ))
         })?;
     let records = direct_counted_records(&xml, "ConstraintList", "Constrain", &property.id)?;
+    let mut name_counts = BTreeMap::<&str, usize>::new();
+    for node in &records {
+        if let Some(name) = node.attribute("Name").filter(|name| !name.is_empty()) {
+            *name_counts.entry(name).or_default() += 1;
+        }
+    }
+    for (name, count) in &name_counts {
+        if *count > 1 {
+            losses.push(
+                crate::loss::FreecadLossCode::SketchConstraintNameAmbiguous.note(format!(
+                    "{} has {count} constraints named {name}",
+                    property.id
+                )),
+            );
+        }
+    }
     let mut constraints = Vec::new();
     let mut parameters = Vec::new();
     for (index, node) in records.into_iter().enumerate() {
@@ -2452,7 +2560,27 @@ fn parse_constraints(
                         })?),
                     };
                     let path = format!("Constraints[{index}]");
-                    let expression = expression_binding(properties, &path);
+                    let indexed = expression_binding(properties, &path);
+                    let named = node
+                        .attribute("Name")
+                        .filter(|name| name_counts.get(name) == Some(&1))
+                        .and_then(|name| {
+                            expression_binding(properties, &format!(".Constraints.{name}"))
+                        });
+                    let expression = match (indexed, named) {
+                        (Some(_), Some(_)) => {
+                            losses.push(
+                                crate::loss::FreecadLossCode::SketchConstraintBindingConflict.note(
+                                    format!(
+                                        "{} constraint {index} has index and name bindings",
+                                        property.id
+                                    ),
+                                ),
+                            );
+                            None
+                        }
+                        (indexed, named) => indexed.or(named),
+                    };
                     let mut parameter_properties = BTreeMap::new();
                     parameter_properties.insert(
                         cadmpeg_core::nonblank_literal!("is_driving"),
@@ -2490,6 +2618,7 @@ fn parse_constraints(
                         properties: parameter_properties,
                         pmi: None,
                         native_ref: Some(property.id.clone()),
+                        product_definition: None,
                     });
                     Ok::<_, CodecError>(id)
                 })
@@ -2823,22 +2952,48 @@ fn expression_binding(properties: &[&PropertyRecord], path: &str) -> Option<(Str
 fn bind_parameter_dependencies(
     parameters: &mut Vec<DesignParameter>,
     objects: &[ObjectRecord],
+    properties: &[PropertyRecord],
     cycle_affected_features: &BTreeSet<FeatureId>,
 ) -> Result<BTreeSet<FeatureId>, CodecError> {
     let mut object_names = HashMap::new();
     for object in objects {
         object_names.insert(feature_id(object)?, object.name().as_str());
     }
+    let mut constraint_names = HashMap::new();
+    for property in properties
+        .iter()
+        .filter(|property| property.type_name == "Sketcher::PropertyConstraintList")
+    {
+        let mut counts = HashMap::<&str, usize>::new();
+        for value in property
+            .values()
+            .iter()
+            .filter(|value| value.tag == "Constrain")
+        {
+            if let Some(name) = value.attributes.get("Name").filter(|name| !name.is_empty()) {
+                *counts.entry(name).or_default() += 1;
+            }
+        }
+        constraint_names.insert(property.id.as_str(), counts);
+    }
     let mut candidates = Vec::new();
     for parameter in parameters.iter() {
-        let source_name = parameter
-            .properties
-            .get("source_name")
-            .filter(|source_name| *source_name != &parameter.name);
+        let source_name = parameter.properties.get("source_name");
         let mut names = Vec::new();
         names.push(parameter.name.clone());
         if let Some(source_name) = source_name {
-            names.push(source_name.to_owned());
+            let constraint = parameter
+                .native_ref
+                .as_deref()
+                .and_then(|id| constraint_names.get(id));
+            if constraint.is_none_or(|counts| counts.get(source_name.as_str()) == Some(&1)) {
+                if source_name != &parameter.name {
+                    names.push(source_name.to_owned());
+                }
+                if constraint.is_some() {
+                    names.push(format!("Constraints.{source_name}"));
+                }
+            }
         }
         candidates.push((parameter.id.clone(), parameter.owner.clone(), names));
     }
@@ -4022,10 +4177,11 @@ fn revolution_axis(
     properties: &[&PropertyRecord],
 ) -> Result<Option<RevolutionAxis>, CodecError> {
     Ok(Some(RevolutionAxis {
-        origin: vector_property(ctx, properties, "Base")?
-            .map_or(cadmpeg_ir::features::FinitePoint3::ZERO, |vector| {
-                vector.as_point()
-            }),
+        origin: if property(properties, "Base").is_some() {
+            required!(vector_property(ctx, properties, "Base")?).as_point()
+        } else {
+            cadmpeg_ir::features::FinitePoint3::ZERO
+        },
         direction: required!(cadmpeg_ir::features::FeatureDirection3::new(
             required!(vector_property(ctx, properties, "Axis")?).get(),
         )),
@@ -4067,6 +4223,17 @@ fn revolution_definition(
     let Some(mode) = enumeration_selector(ctx, properties, "Type", 0)? else {
         return Ok(None);
     };
+    let midplane = if kind.starts_with("PartDesign::") {
+        let Some(midplane) = bool_selector(ctx, properties, "Midplane", false)? else {
+            return Ok(None);
+        };
+        if mode != 0 && midplane {
+            return Ok(None);
+        }
+        midplane
+    } else {
+        false
+    };
     let extent = if kind == "Part::Revolution" {
         let Some(angle) = angle()? else {
             return Ok(None);
@@ -4089,9 +4256,6 @@ fn revolution_definition(
                 let Some(angle) = angle()? else {
                     return Ok(None);
                 };
-                let Some(midplane) = bool_selector(ctx, properties, "Midplane", false)? else {
-                    return Ok(None);
-                };
                 if midplane {
                     RevolveExtent::Symmetric {
                         termination: AngularTermination::Angle { angle },
@@ -4103,7 +4267,11 @@ fn revolution_definition(
                 }
             }
             1 => RevolveExtent::OneSided {
-                termination: AngularTermination::ThroughAll {},
+                termination: if kind == "PartDesign::Groove" {
+                    AngularTermination::ThroughAll {}
+                } else {
+                    AngularTermination::ToLast {}
+                },
             },
             2 => RevolveExtent::OneSided {
                 termination: AngularTermination::ToFirst {},
@@ -4139,6 +4307,9 @@ fn revolution_definition(
             _ => return Ok(None),
         }
     };
+    if !extent.angles_within_turn() {
+        return Ok(None);
+    }
     let reversed = if kind.starts_with("PartDesign::") {
         let Some(reversed) = bool_selector(ctx, properties, "Reversed", false)? else {
             return Ok(None);
@@ -8138,7 +8309,7 @@ fn is_revolution(kind: &str) -> bool {
         "PartDesign::Revolution" | "PartDesign::Groove" | "Part::Revolution"
     )
 }
-fn is_primitive(kind: &str) -> bool {
+pub(crate) fn is_primitive(kind: &str) -> bool {
     matches!(
         kind,
         "Part::Box"

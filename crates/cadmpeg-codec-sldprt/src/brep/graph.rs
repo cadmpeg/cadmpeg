@@ -496,6 +496,9 @@ pub(crate) struct Stats {
     pub(crate) unknown_curve_edges: usize,
     /// Pcurves withheld because geometric inverse selection was ambiguous.
     pub(crate) ambiguous_pcurve_parameters: usize,
+    /// Edges left without a range because their curve's records disagree on
+    /// orientation.
+    pub(crate) marker_conflict_edges: usize,
     /// NURBS edge carriers whose vertex range is off their bound surface.
     pub(crate) off_surface_nurbs_pcurves: usize,
     /// Coedges whose derived pcurve stopped at `SURFACE_SOLVER_LOCAL_WORK`.
@@ -1074,6 +1077,100 @@ fn walk_face(bridge: &topology::Bridge, t: &topology::Tables) -> WalkedFace {
     }
 }
 
+/// The start point and parameter range of a closed edge whose vertex uses
+/// are sentinels: a circle from its reference direction through one turn.
+fn closed_edge_start(curve: Option<&IndexedCurve>) -> Option<(cadmpeg_ir::math::Point3, [f64; 2])> {
+    match &curve?.carrier().geometry {
+        CurveGeometry::Solved(SolvedCurveGeometry::Circle(circle_curve)) => {
+            let center = circle_curve.center().get();
+            let ref_direction = circle_curve.frame().reference().as_raw();
+            let radius = circle_curve.radius().get();
+            Some((
+                center.translated(*ref_direction, radius),
+                [0.0, std::f64::consts::TAU],
+            ))
+        }
+        _ => None,
+    }
+}
+
+/// The angle of `point` on a circle or ellipse carrier in `[0, 2π)`, when
+/// `point` lies within `allowance` of the carrier.
+fn carrier_angle(
+    geometry: &CurveGeometry,
+    point: cadmpeg_ir::math::Point3,
+    allowance: f64,
+) -> Option<f64> {
+    let (center, frame, major, minor) = match geometry {
+        CurveGeometry::Solved(SolvedCurveGeometry::Circle(circle)) => (
+            circle.center().get(),
+            circle.frame(),
+            circle.radius().get(),
+            circle.radius().get(),
+        ),
+        CurveGeometry::Solved(SolvedCurveGeometry::Ellipse(ellipse)) => (
+            ellipse.center().get(),
+            ellipse.frame(),
+            ellipse.major_radius().get(),
+            ellipse.minor_radius().get(),
+        ),
+        _ => return None,
+    };
+    let reference = *frame.reference().as_raw();
+    let binormal = *frame.binormal().as_raw();
+    let offset = point.vector_from(center);
+    let x = offset.dot(reference) / major;
+    let y = offset.dot(binormal) / minor;
+    let radius = x.hypot(y);
+    if radius.is_nan() || radius <= 0.0 {
+        return None;
+    }
+    let nearest = center
+        .translated(reference, major * x / radius)
+        .translated(binormal, minor * y / radius);
+    (point.distance(nearest) <= allowance).then(|| periodic_phase([y.atan2(x); 2])[0])
+}
+
+/// The range of a compact circle or ellipse edge from its vertex angles and
+/// marker (spec §7.2), and whether the marker reverses it. `allowances` bound
+/// how far each vertex may lie off the carrier.
+fn conic_edge_range(
+    geometry: &CurveGeometry,
+    marker_reversed: bool,
+    [start, end]: [cadmpeg_ir::math::Point3; 2],
+    allowances: [f64; 2],
+    closed: bool,
+) -> Option<([f64; 2], bool)> {
+    let tau = std::f64::consts::TAU;
+    let (start_angle, end_angle) = (
+        carrier_angle(geometry, start, allowances[0])?,
+        carrier_angle(geometry, end, allowances[1])?,
+    );
+    if closed {
+        return Some(([start_angle, start_angle + tau], marker_reversed));
+    }
+    if start.distance(end) <= LINEAR_RESOLUTION_MM {
+        return None;
+    }
+    Some(if marker_reversed {
+        (
+            [
+                end_angle,
+                end_angle + (start_angle - end_angle).rem_euclid(tau),
+            ],
+            true,
+        )
+    } else {
+        (
+            [
+                start_angle,
+                start_angle + (end_angle - start_angle).rem_euclid(tau),
+            ],
+            false,
+        )
+    })
+}
+
 /// Whether every walked FIN's forward link is reciprocal when present.
 ///
 /// A null forward link carries no claim. A present one must name a FIN of
@@ -1097,11 +1194,26 @@ fn edge_parameter_range(
     ctx: &DecodeContext<'_>,
     carrier: &CurveCarrier,
     endpoints: Option<[cadmpeg_ir::math::Point3; 2]>,
+    vertex_tolerances: [Option<f64>; 2],
+    closed: bool,
 ) -> Result<Option<([f64; 2], bool)>, cadmpeg_core::CodecError> {
     const TOLERANCE_MM: f64 = 1.0e-7;
 
+    let allowances = |exact: f64| {
+        vertex_tolerances.map(|tolerance| {
+            tolerance.map_or(exact, |tolerance| looser_tolerance(exact, tolerance))
+        })
+    };
     let Some(range) = carrier.parameter_range else {
-        return Ok(None);
+        return Ok(endpoints.and_then(|endpoints| {
+            conic_edge_range(
+                &carrier.geometry,
+                carrier.runs_against_edges,
+                endpoints,
+                allowances(LINEAR_RESOLUTION_MM),
+                closed,
+            )
+        }));
     };
     let range = range.get();
     let range = match &carrier.geometry {
@@ -1135,15 +1247,22 @@ fn edge_parameter_range(
             .hypot(left.y - right.y)
             .hypot(left.z - right.z)
     };
-    if distance(first.get(), endpoints[0]).max(distance(second.get(), endpoints[1])) <= TOLERANCE_MM
-    {
-        Ok(Some((range, false)))
-    } else if distance(first.get(), endpoints[1]).max(distance(second.get(), endpoints[0]))
-        <= TOLERANCE_MM
-    {
-        Ok(Some((range, true)))
-    } else {
-        Ok(None)
+    let [start_allowance, end_allowance] = allowances(TOLERANCE_MM);
+    let forward = [
+        distance(first.get(), endpoints[0]),
+        distance(second.get(), endpoints[1]),
+    ];
+    let backward = [
+        distance(second.get(), endpoints[0]),
+        distance(first.get(), endpoints[1]),
+    ];
+    let fits = |[start, end]: [f64; 2]| start <= start_allowance && end <= end_allowance;
+    let worse = |[start, end]: [f64; 2]| start.max(end);
+    match (fits(forward), fits(backward)) {
+        (true, true) if worse(backward) < worse(forward) => Ok(Some((range, true))),
+        (true, _) => Ok(Some((range, false))),
+        (false, true) => Ok(Some((range, true))),
+        (false, false) => Ok(None),
     }
 }
 
@@ -2121,30 +2240,17 @@ fn decode_graph(
         let (start_v, end_v, curve_attr, fin_attr) = edge_ends[&e];
         let resolved_endpoints = kept_vertices.contains(&start_v) && kept_vertices.contains(&end_v);
         let vertexless = !resolved_endpoints && start_v <= 1 && end_v <= 1;
+        let closed_point = vertexless
+            .then(|| closed_edge_start(carriers.curve(curve_attr)))
+            .flatten();
         if vertexless && !admit_vertexless_ring_edge(e, fin_attr, &faces, t, carriers) {
             out.stats.withheld_ring_edges += 1;
             continue;
         }
-        let closed_circle_point = vertexless
-            .then(|| carriers.curve(curve_attr))
-            .flatten()
-            .and_then(|carrier| match &carrier.carrier().geometry {
-                CurveGeometry::Solved(SolvedCurveGeometry::Circle(circle_curve)) => {
-                    let center = circle_curve.center().get();
-                    let ref_direction = circle_curve.frame().reference().as_raw();
-                    let radius = circle_curve.radius().get();
-                    Some(cadmpeg_ir::math::Point3::new(
-                        center.x + ref_direction.x * radius,
-                        center.y + ref_direction.y * radius,
-                        center.z + ref_direction.z * radius,
-                    ))
-                }
-                _ => None,
-            });
-        if !resolved_endpoints && closed_circle_point.is_none() {
+        if !resolved_endpoints && closed_point.is_none() {
             continue;
         }
-        let (mut start_id, mut end_id) = if let Some(position) = closed_circle_point {
+        let (mut start_id, mut end_id) = if let Some((position, _)) = closed_point {
             let point_id = id_closed_point(e);
             let vertex_id = id_closed_vertex(e);
             annotations.note(
@@ -2191,13 +2297,26 @@ fn decode_graph(
                 edge_endpoint_positions.insert(e, [start, end]);
             }
         }
+        let vertex_tolerance = |vertex_use: u16| {
+            t.vertex_uses()
+                .get(&vertex_use)
+                .and_then(|vertex| vertex.tolerance_m)
+                .map(|tolerance| tolerance * LEN_TO_MM)
+        };
+        let marker_conflict = carriers.marker_conflict(curve_attr);
+        if marker_conflict {
+            out.stats.marker_conflict_edges += 1;
+        }
         let parameter_range = carriers
             .curve(curve_attr)
+            .filter(|_| !marker_conflict)
             .map(|carrier| {
                 edge_parameter_range(
                     ctx,
                     carrier.carrier(),
                     edge_endpoint_positions.get(&e).copied(),
+                    [start_v, end_v].map(vertex_tolerance),
+                    start_v == end_v,
                 )
             })
             .transpose()?
@@ -2211,12 +2330,9 @@ fn decode_graph(
             None => {
                 let carrier = carriers.curve(curve_attr).map(IndexedCurve::carrier);
                 let vertex_bound = |vertex_use: u16| {
-                    t.vertex_uses()
-                        .get(&vertex_use)
-                        .and_then(|record| record.tolerance_m)
-                        .map_or(LINEAR_RESOLUTION_MM, |tolerance| {
-                            looser_tolerance(tolerance * LEN_TO_MM, LINEAR_RESOLUTION_MM)
-                        })
+                    vertex_tolerance(vertex_use).map_or(LINEAR_RESOLUTION_MM, |tolerance| {
+                        looser_tolerance(tolerance, LINEAR_RESOLUTION_MM)
+                    })
                 };
                 let domain_reversed = carrier
                     .map(|carrier| {
@@ -2300,12 +2416,24 @@ fn decode_graph(
             }
             _ => None,
         };
+        let stored_range = carriers
+            .curve(curve_attr)
+            .is_some_and(|carrier| carrier.carrier().parameter_range.is_some());
+        if (parameter_range.is_some() && !stored_range)
+            || (closed_point.is_some() && !marker_conflict)
+        {
+            annotations
+                .derived(id_edge(e).as_str(), "carrier.param_range")
+                .map_err(cadmpeg_core::CodecError::malformed)?;
+        }
         admit_brep_entity(ctx)?;
         out.edges.push(Edge {
             id: id_edge(e),
             carrier: cadmpeg_ir::topology::EdgeCarrier::new(
                 curve,
-                parameter_range.map(|(range, _)| range),
+                parameter_range.map(|(range, _)| range).or(closed_point
+                    .filter(|_| !marker_conflict)
+                    .map(|(_, range)| range)),
             )
             .map_err(cadmpeg_core::CodecError::malformed)?,
             start: start_id,
@@ -2970,9 +3098,9 @@ fn decode_graph(
             });
         }
     }
-    solve_face_orientation(&mut out);
     synthesize_cylinder_seams(ctx, &mut out, &mut annotations, &source_stream)?;
     synthesize_sphere_seams(ctx, &mut out, &mut annotations, &source_stream)?;
+    phase_full_turn_edge_ranges(&mut out, &mut annotations)?;
     derive_planar_pcurves(ctx, &mut out, &mut annotations, &source_stream)?;
     derive_cylindrical_pcurves(ctx, &mut out, &mut annotations, &source_stream)?;
     derive_revolved_circle_pcurves(ctx, &mut out, &mut annotations, &source_stream)?;
@@ -3233,6 +3361,78 @@ fn decode_graph(
     annotations.retain_exactness(keep);
     out.annotations = annotations.build();
     Ok(out)
+}
+
+/// Tolerance in radians for a circle or ellipse edge range that spans a full turn.
+const PERIODIC_FULL_TURN_TOLERANCE: f64 = 1.0e-9;
+
+/// Start each full-turn circle or ellipse edge range at its vertex (spec
+/// §7.2), once the seam passes have placed the derived vertex of a sentinel
+/// closed circle. A moved range is derived.
+fn phase_full_turn_edge_ranges(
+    out: &mut Brep,
+    annotations: &mut AnnotationBuilder,
+) -> Result<(), cadmpeg_core::CodecError> {
+    let tau = std::f64::consts::TAU;
+    let vertex_points = out
+        .vertices
+        .iter()
+        .map(|vertex| {
+            let bound = vertex.tolerance.map_or(LINEAR_RESOLUTION_MM, |tolerance| {
+                looser_tolerance(tolerance.get(), LINEAR_RESOLUTION_MM)
+            });
+            (&vertex.id, (&vertex.point, bound))
+        })
+        .collect::<HashMap<_, _>>();
+    let points = out
+        .points
+        .iter()
+        .map(|point| (&point.id, point.position().get()))
+        .collect::<HashMap<_, _>>();
+    let curves = out
+        .curves
+        .iter()
+        .map(|curve| (&curve.id, &curve.geometry))
+        .collect::<HashMap<_, _>>();
+    for edge in &mut out.edges {
+        if edge.start != edge.end {
+            continue;
+        }
+        let Some([start, end]) = edge.param_range().map(cadmpeg_ir::units::FiniteVector::get)
+        else {
+            continue;
+        };
+        if ((end - start).abs() - tau).abs() > PERIODIC_FULL_TURN_TOLERANCE {
+            continue;
+        }
+        let Some(curve_id) = edge.curve() else {
+            continue;
+        };
+        let (Some(geometry), Some(&(point, bound))) =
+            (curves.get(curve_id), vertex_points.get(&edge.start))
+        else {
+            continue;
+        };
+        let Some(phase) = points
+            .get(point)
+            .and_then(|point| carrier_angle(geometry, *point, bound))
+        else {
+            continue;
+        };
+        if (phase - start.min(end)).abs() <= PERIODIC_FULL_TURN_TOLERANCE {
+            continue;
+        }
+        if let Ok(carrier) = cadmpeg_ir::topology::EdgeCarrier::new(
+            Some(curve_id.clone()),
+            Some([phase, phase + tau]),
+        ) {
+            edge.carrier = carrier;
+            annotations
+                .derived(edge.id.as_str(), "carrier.param_range")
+                .map_err(cadmpeg_core::CodecError::malformed)?;
+        }
+    }
+    Ok(())
 }
 
 fn prune_rejected_topology(out: &mut Brep) {
@@ -4541,6 +4741,14 @@ fn derive_spherical_pcurves(
         .iter()
         .map(|curve| (&curve.id, curve))
         .collect::<std::collections::HashMap<_, _>>();
+    let vertex_points = out
+        .vertices
+        .iter()
+        .filter_map(|vertex| {
+            let point = out.points.iter().find(|point| point.id == vertex.point)?;
+            Some((&vertex.id, point.position().get()))
+        })
+        .collect::<std::collections::HashMap<_, _>>();
     let mut derived = Vec::new();
     for coedge in &out.coedges {
         if !coedge.pcurves.is_empty() {
@@ -4621,10 +4829,42 @@ fn derive_spherical_pcurves(
             };
             let longitude = equator.dot(tangent).atan2(equator.dot(u_reference));
             let phase = reference.dot(v_reference).atan2(reference.dot(equator));
-            (
-                cadmpeg_ir::math::Point2::new(longitude, phase),
-                cadmpeg_ir::math::Point2::new(0.0, 1.0),
-            )
+            // Shift the line by whole turns so the middle of the range is within
+            // half a turn of the equator. Beyond a pole, use the opposite
+            // meridian, where latitude falls.
+            let middle = edge
+                .param_range()
+                .map(|range| {
+                    let [start, end] = range.get();
+                    start.midpoint(end)
+                })
+                .or_else(|| {
+                    let circle = CurveGeometry::Solved(SolvedCurveGeometry::Circle(*circle_curve));
+                    let angle = |vertex: &VertexId| {
+                        carrier_angle(&circle, *vertex_points.get(vertex)?, f64::INFINITY)
+                    };
+                    let start = angle(&edge.start)?;
+                    let sweep = (angle(&edge.end)? - start).rem_euclid(std::f64::consts::TAU);
+                    Some(start + 0.5 * sweep)
+                });
+            let pi = std::f64::consts::PI;
+            let phase = middle.map_or(phase, |middle| {
+                let tau = std::f64::consts::TAU;
+                phase - ((phase + middle) / tau).round() * tau
+            });
+            match middle.map(|middle| phase + middle) {
+                Some(latitude) if latitude.abs() > std::f64::consts::FRAC_PI_2 => (
+                    cadmpeg_ir::math::Point2::new(
+                        longitude - pi.copysign(longitude),
+                        pi.copysign(latitude) - phase,
+                    ),
+                    cadmpeg_ir::math::Point2::new(0.0, -1.0),
+                ),
+                _ => (
+                    cadmpeg_ir::math::Point2::new(longitude, phase),
+                    cadmpeg_ir::math::Point2::new(0.0, 1.0),
+                ),
+            }
         } else {
             continue;
         };
@@ -5863,7 +6103,7 @@ fn clamp_nurbs_curve_to_domain_lanes(
     Some((segment_knots, control_points, weights))
 }
 
-fn clamp_nurbs_curve_to_domain(
+pub(crate) fn clamp_nurbs_curve_to_domain(
     curve: &cadmpeg_ir::geometry::nurbs::NurbsCurve,
     domain: [f64; 2],
 ) -> Result<Option<cadmpeg_ir::geometry::nurbs::NurbsCurve>, cadmpeg_ir::geometry::nurbs::NurbsError>
@@ -6516,55 +6756,6 @@ fn ruled_surface_line_pcurve(
             },
         ),
     }))
-}
-
-fn solve_face_orientation(out: &mut Brep) {
-    let mut loop_faces = HashMap::new();
-    for lp in &out.loops {
-        loop_faces.insert(lp.id.clone(), lp.face.clone());
-    }
-    let mut edge_slots: HashMap<&EdgeId, usize> = HashMap::new();
-    let mut uses: Vec<(&EdgeId, Vec<(FaceId, bool)>)> = Vec::new();
-    for coedge in &out.coedges {
-        if let Some(face) = loop_faces.get(&coedge.owner_loop) {
-            let slot = *edge_slots.entry(&coedge.edge).or_insert_with(|| {
-                uses.push((&coedge.edge, Vec::new()));
-                uses.len() - 1
-            });
-            uses[slot]
-                .1
-                .push((face.clone(), coedge.sense == Sense::Reversed));
-        }
-    }
-    let shared_edges = uses
-        .into_iter()
-        .filter(|(_, uses)| uses.len() == 2)
-        .map(|(edge, uses)| {
-            let (a, a_reversed) = &uses[0];
-            let (b, b_reversed) = &uses[1];
-            (edge, a.clone(), b.clone(), *a_reversed == *b_reversed)
-        })
-        .collect::<Vec<_>>();
-    let mut native = HashMap::new();
-    for face in &out.faces {
-        native.insert(face.id.clone(), face.sense == Sense::Reversed);
-    }
-    let mut conflicts = crate::loss::NamedCount::default();
-    for (edge, a, b, parity) in &shared_edges {
-        if native.get(a).map(|sense| sense ^ parity) != native.get(b).copied() {
-            conflicts.push(edge.as_str());
-        }
-    }
-    if !conflicts.is_empty() {
-        out.losses.push(
-            crate::loss::SldprtLossCode::TopologyFaceSenseConflict.note(format!(
-                "coedge senses disagree with the stored face senses; each face keeps its stored \
-                 sense, which contradicts shared edges {conflicts} \
-                 ({} in total).",
-                conflicts.count()
-            )),
-        );
-    }
 }
 
 fn synthesize_cylinder_seams(
@@ -7450,7 +7641,9 @@ mod tests {
             super::edge_parameter_range(
                 &cadmpeg_test_support::service_decode_context(),
                 &carrier,
-                Some(endpoints)
+                Some(endpoints),
+                [None; 2],
+                false,
             )
             .unwrap(),
             Some(([-14.0, 16.5], true))
@@ -7487,6 +7680,8 @@ mod tests {
             &cadmpeg_test_support::service_decode_context(),
             &carrier,
             Some(endpoints),
+            [None; 2],
+            false,
         )
         .unwrap()
         .expect("the arc's ends are its vertices");
@@ -8208,154 +8403,6 @@ mod tests {
         );
         assert_eq!(super::surface_sense(Sense::Forward, true), Sense::Reversed);
         assert_eq!(super::surface_sense(Sense::Reversed, true), Sense::Forward);
-    }
-
-    #[test]
-    fn stored_face_senses_survive_coedge_parity_disagreement() {
-        use cadmpeg_ir::ids::{CoedgeId, EdgeId, FaceId, LoopId, ShellId, SurfaceId};
-        use cadmpeg_ir::topology::{Coedge, Face, Loop, Sense};
-
-        let face = |id: &str, lp: &str| Face {
-            id: FaceId::mint(format!("test:model:entity#{id}")).expect("identity grammar"),
-            shell: ShellId::mint("test:model:entity#shell").expect("identity grammar"),
-            surface: SurfaceId::mint(format!("test:model:entity#surface-{id}"))
-                .expect("identity grammar"),
-            sense: Sense::Forward,
-            loops: cadmpeg_ir::topology::FaceLoops::unspecified(vec![LoopId::mint(format!(
-                "test:model:entity#{lp}"
-            ))
-            .expect("identity grammar")]),
-            name: None,
-            color: None,
-            tolerance: None,
-        };
-        let lp = |id: &str, face: &str, coedge: &str| Loop {
-            id: LoopId::mint(format!("test:model:entity#{id}")).expect("identity grammar"),
-            face: FaceId::mint(format!("test:model:entity#{face}")).expect("identity grammar"),
-            boundary: cadmpeg_ir::topology::LoopBoundary::Ring(
-                cadmpeg_ir::topology::LoopRing::new(
-                    vec![CoedgeId::mint(format!("test:model:entity#{coedge}"))
-                        .expect("identity grammar")],
-                    Vec::new(),
-                )
-                .expect("valid loop ring"),
-            ),
-        };
-        let coedge = |id: &str, lp: &str, radial: &str, sense| Coedge {
-            id: CoedgeId::mint(format!("test:model:entity#{id}")).expect("identity grammar"),
-            owner_loop: LoopId::mint(format!("test:model:entity#{lp}")).expect("identity grammar"),
-            edge: EdgeId::mint("test:model:entity#edge").expect("identity grammar"),
-            radial_next: CoedgeId::mint(format!("test:model:entity#{radial}"))
-                .expect("identity grammar"),
-            sense,
-            use_curve: None,
-            pcurves: Vec::new(),
-        };
-        let mut brep = super::Brep {
-            faces: vec![face("face-a", "loop-a"), face("face-b", "loop-b")],
-            loops: vec![
-                lp("loop-a", "face-a", "coedge-a"),
-                lp("loop-b", "face-b", "coedge-b"),
-            ],
-            coedges: vec![
-                coedge("coedge-a", "loop-a", "coedge-b", Sense::Forward),
-                coedge("coedge-b", "loop-b", "coedge-a", Sense::Forward),
-            ],
-            ..Default::default()
-        };
-
-        (super::solve_face_orientation(&mut brep));
-        assert_eq!(brep.faces[0].sense, Sense::Forward);
-        assert_eq!(brep.faces[1].sense, Sense::Forward);
-        assert_eq!(brep.losses.len(), 1);
-        assert_eq!(
-            brep.losses[0].code.local_code(),
-            "topology.face-sense-conflict"
-        );
-
-        brep.faces[1].sense = Sense::Reversed;
-        brep.coedges[1].sense = Sense::Reversed;
-        (super::solve_face_orientation(&mut brep));
-        assert_eq!(brep.faces[0].sense, Sense::Forward);
-        assert_eq!(brep.faces[1].sense, Sense::Reversed);
-        assert_eq!(brep.losses.len(), 2);
-        assert_eq!(
-            brep.losses[1].code.local_code(),
-            "topology.face-sense-conflict"
-        );
-    }
-
-    #[test]
-    fn coedge_parity_disagreement_keeps_stored_senses_and_reports_every_edge() {
-        use cadmpeg_ir::ids::{CoedgeId, EdgeId, FaceId, LoopId, ShellId, SurfaceId};
-        use cadmpeg_ir::topology::{Coedge, Face, Loop, Sense};
-
-        let mint = |id: &str| format!("test:model:entity#{id}");
-        let face = |id: &str| Face {
-            id: FaceId::mint(mint(id)).expect("identity grammar"),
-            shell: ShellId::mint(mint("shell")).expect("identity grammar"),
-            surface: SurfaceId::mint(mint(&format!("surface-{id}"))).expect("identity grammar"),
-            sense: Sense::Forward,
-            loops: cadmpeg_ir::topology::FaceLoops::unspecified(vec![LoopId::mint(mint(
-                &format!("loop-{id}"),
-            ))
-            .expect("identity grammar")]),
-            name: None,
-            color: None,
-            tolerance: None,
-        };
-        let lp = |face: &str| Loop {
-            id: LoopId::mint(mint(&format!("loop-{face}"))).expect("identity grammar"),
-            face: FaceId::mint(mint(face)).expect("identity grammar"),
-            boundary: cadmpeg_ir::topology::LoopBoundary::Ring(
-                cadmpeg_ir::topology::LoopRing::new(
-                    vec![CoedgeId::mint(mint(&format!("coedge-{face}-0")))
-                        .expect("identity grammar")],
-                    Vec::new(),
-                )
-                .expect("valid loop ring"),
-            ),
-        };
-        let coedge = |face: &str, index: usize, edge: &str| Coedge {
-            id: CoedgeId::mint(mint(&format!("coedge-{face}-{index}"))).expect("identity grammar"),
-            owner_loop: LoopId::mint(mint(&format!("loop-{face}"))).expect("identity grammar"),
-            edge: EdgeId::mint(mint(edge)).expect("identity grammar"),
-            radial_next: CoedgeId::mint(mint(&format!("coedge-{face}-{index}")))
-                .expect("identity grammar"),
-            sense: Sense::Forward,
-            use_curve: None,
-            pcurves: Vec::new(),
-        };
-        let mut brep = super::Brep {
-            faces: vec![face("a"), face("b"), face("c")],
-            loops: vec![lp("a"), lp("b"), lp("c")],
-            coedges: vec![
-                coedge("a", 0, "edge-ab"),
-                coedge("b", 0, "edge-ab"),
-                coedge("b", 1, "edge-bc"),
-                coedge("c", 0, "edge-bc"),
-                coedge("c", 1, "edge-ca"),
-                coedge("a", 1, "edge-ca"),
-            ],
-            ..Default::default()
-        };
-
-        (super::solve_face_orientation(&mut brep));
-        assert_eq!(
-            brep.faces.iter().map(|face| face.sense).collect::<Vec<_>>(),
-            [Sense::Forward, Sense::Forward, Sense::Forward]
-        );
-        assert_eq!(brep.losses.len(), 1);
-        assert_eq!(
-            brep.losses[0].code.local_code(),
-            "topology.face-sense-conflict"
-        );
-        assert!(brep.losses[0].message.ends_with(&format!(
-            "shared edges {a}, {b}, {c} (3 in total).",
-            a = mint("edge-ab"),
-            b = mint("edge-bc"),
-            c = mint("edge-ca")
-        )));
     }
 
     #[test]

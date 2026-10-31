@@ -1292,6 +1292,7 @@ fn append_design_losses(
                     face,
                     diameter,
                     extent,
+                    ..
                 } => incomplete_face_selection(face) || diameter.is_none() || extent.is_none(),
                 FeatureOperation::SketchBlockDefinition { sketch } => sketch.is_none(),
                 FeatureOperation::SketchBlockInstance { block, placement } => {
@@ -2416,6 +2417,7 @@ fn merge_brep(target: &mut Brep, mut source: Brep) -> Result<(), CodecError> {
     target.stats.unknown_procedural_supports += source.stats.unknown_procedural_supports;
     target.stats.unknown_curve_edges += source.stats.unknown_curve_edges;
     target.stats.ambiguous_pcurve_parameters += source.stats.ambiguous_pcurve_parameters;
+    target.stats.marker_conflict_edges += source.stats.marker_conflict_edges;
     target.stats.off_surface_nurbs_pcurves += source.stats.off_surface_nurbs_pcurves;
     target
         .stats
@@ -3990,6 +3992,13 @@ fn build_geometry_report(
             )),
         );
     }
+    if s.marker_conflict_edges > 0 {
+        losses.push(SldprtLossCode::GeometryCurveMarkerConflict.note(format!(
+            "{} edge(s) have no parameter range because the compact curve records of their \
+             curve attribute disagree on orientation.",
+            s.marker_conflict_edges
+        )));
+    }
     if s.ambiguous_pcurve_parameters > 0 {
         losses.push(SldprtLossCode::GeometryPcurveAmbiguous.note(format!(
             "{} pcurve(s) were withheld because more than one geometric parameter satisfies the \
@@ -4912,6 +4921,7 @@ fn sync_active_configuration_resolutions(ir: &mut CadIr) -> Result<(), cadmpeg_c
                 face: resolved_face,
                 diameter: resolved_diameter,
                 extent: resolved_extent,
+                ..
             },
         ) = feature.evaluation.definition()
         else {
@@ -4935,6 +4945,7 @@ fn sync_active_configuration_resolutions(ir: &mut CadIr) -> Result<(), cadmpeg_c
                 face,
                 diameter,
                 extent,
+                ..
             },
         ) = &mut state.definition
         else {

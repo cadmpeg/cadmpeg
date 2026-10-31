@@ -12,12 +12,16 @@ use cadmpeg_ir::codec::{DecodeBody, Decoded};
 use cadmpeg_ir::ContainerSummary;
 
 use crate::container::ContainerScan;
-use crate::decode::AuthoredDecoded;
 use crate::loss::F3dLossCode;
 use cadmpeg_ir::report::loss::LossNote;
 
 mod archive;
 mod merge;
+mod observer;
+mod session;
+
+pub use observer::{observe_f3z_members, F3zMemberObserver};
+pub use session::{F3zDecodedMember, F3zMember, F3zMemberKind, F3zSession};
 
 fn push_loss(losses: &mut Vec<LossNote>, code: F3dLossCode, args: std::fmt::Arguments<'_>) {
     losses.push(code.note(args.to_string()));
@@ -29,7 +33,7 @@ pub(crate) fn inspect<'a>(
     scan: &ContainerScan<'a>,
 ) -> Result<ContainerSummary, CodecError> {
     let (model_root, _) = archive::model_root(ctx, scan)?;
-    scan.entry_view(&model_root).ok_or_else(|| {
+    scan.has_entry(&model_root).then_some(()).ok_or_else(|| {
         CodecError::malformed(format_args!(
             "f3z root member {model_root} is not present in the archive"
         ))
@@ -58,16 +62,34 @@ pub(crate) fn decode<'a>(
     ctx: &DecodeContext<'a>,
     scan: &ContainerScan<'a>,
 ) -> Result<Decoded, CodecError> {
-    let (model_root, omitted_drawing_root) = archive::model_root(ctx, scan)?;
-    let mut outer = archive::classify_members(ctx, scan)?;
-    let root_scan = outer.member_scan(&model_root)?;
-    let mut root = crate::decode::decode_archive_member(ctx, root_scan, &outer.layers)?;
-    root.source_fidelity
-        .remove_retained_record(crate::ids::FILE_SOURCE_IMAGE_ID);
-    root.source_fidelity
-        .retain_unknown_records("f3d", [crate::decode::preserve_source_image(scan)])?;
-    if let Some(drawing_root) = omitted_drawing_root {
-        push_loss(&mut root.body.losses, F3dLossCode::DrawingDocumentOmitted, format_args!(
+    let session = F3zSession::open_scanned(ctx, scan.fork())?;
+    compose(ctx, &session, &mut std::collections::BTreeMap::new())
+}
+
+fn compose(
+    ctx: &DecodeContext<'_>,
+    session: &F3zSession<'_>,
+    members: &mut std::collections::BTreeMap<String, F3zDecodedMember>,
+) -> Result<Decoded, CodecError> {
+    let scan = &session.scan;
+    let model_root = session.model_root.clone();
+    let mut outer_losses = session.archive.losses.clone();
+    let (
+        Decoded {
+            mut ir,
+            body: mut report,
+            source_fidelity: mut fidelity,
+        },
+        operation_poses,
+    ) = session.take_member(ctx, &model_root, members)?;
+    let source = ir
+        .source
+        .take()
+        .ok_or_else(|| CodecError::malformed("F3Z root has no source metadata"))?;
+    fidelity.remove_retained_record(crate::ids::FILE_SOURCE_IMAGE_ID);
+    fidelity.retain_unknown_records("f3d", [crate::decode::preserve_source_image(scan)])?;
+    if let Some(drawing_root) = &session.omitted_drawing_root {
+        push_loss(&mut report.losses, F3dLossCode::DrawingDocumentOmitted, format_args!(
             "drawing root {drawing_root} is omitted; decoded its unambiguous derived model {model_root}"
         ));
     }
@@ -76,21 +98,24 @@ pub(crate) fn decode<'a>(
         .iter()
         .filter(|entry| crate::container::is_f3d_name(&entry.name))
         .count();
-    root.body.notes.push(format!(
+    report.notes.push(format!(
         "f3z archive: {member_count} document member(s); root {model_root}"
     ));
     if ctx.container_only() {
-        root.body.losses.append(&mut outer.losses);
-        return finalize_result(ctx, root.ir, root.source, root.body, root.source_fidelity);
+        members.clear();
+        report.losses.append(&mut outer_losses);
+        return finalize_result(ctx, ir, source, report, fidelity);
     }
-    let merged = merge::merge_archive(ctx, scan, &outer, model_root, &mut root)?;
-    let AuthoredDecoded {
-        mut ir,
-        source,
-        body: mut report,
-        source_fidelity: mut fidelity,
-        ..
-    } = root;
+
+    let merged = merge::merge_archive(
+        ctx,
+        session,
+        members,
+        operation_poses,
+        &mut ir,
+        &mut report,
+        &mut fidelity,
+    )?;
     if merged > 0 {
         fidelity.remove_retained_record(crate::ids::FILE_SOURCE_IMAGE_ID);
         report.notes.push(format!(
@@ -101,7 +126,7 @@ pub(crate) fn decode<'a>(
         "merged {merged} external occurrence(s) from the f3z archive"
     ));
     merge::make_sibling_ordinals_unique(&mut ir.model.occurrences)?;
-    report.losses.append(&mut outer.losses);
+    report.losses.append(&mut outer_losses);
     finalize_result(ctx, ir, source, report, fidelity)
 }
 
@@ -112,6 +137,7 @@ fn finalize_result(
     body: DecodeBody,
     source_fidelity: cadmpeg_ir::SourceFidelity,
 ) -> Result<Decoded, CodecError> {
+    crate::design::owners::release_unbound(&mut ir.model);
     ir.finalize();
     let hash = cadmpeg_ir::hash::document_local_sha256(
         ctx,

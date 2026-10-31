@@ -1397,6 +1397,8 @@ fn construction_operand_groups_have_exact_counted_and_direct_frames() {
         ));
     }
 
+    // Class tags vary between files and do not select the legacy frame, so a
+    // pair that no file pairs this way still decodes.
     delete_scope.class_tag =
         crate::records::references::DesignClassTag::try_from("264".to_owned()).unwrap();
     delete_scope.paired_class_tag =
@@ -1418,10 +1420,7 @@ fn construction_operand_groups_have_exact_counted_and_direct_frames() {
         });
     assert!(matches!(
         features[0].evaluation.definition(),
-        FeatureDefinition::Operation(FeatureOperation::Native {
-            kind: cadmpeg_ir::features::NativeFeatureKind::DeleteFace,
-            ..
-        })
+        FeatureDefinition::Operation(FeatureOperation::DeleteFace { heal: true, .. })
     ));
 
     let mut remove_scope = scope.clone();
@@ -1623,6 +1622,121 @@ fn legacy_move_body_groups_accept_the_unterminated_true_flag_pair() {
         assert_eq!(group.frame.variant, flag_pair == [1, 1]);
         assert_eq!(group.paired_byte_offset, u64_from_index(paired_at));
     }
+}
+
+mod closing_flag;
+/// A class-306/260 `RemoveBody` group frame: the three-byte discriminant
+/// `01 00 00` precedes the reference to `N+1`.
+fn remove_body_group_bytes(
+    group_record_index: u32,
+    scope_record_index: u32,
+    member_count: u32,
+    role: u64,
+) -> Vec<u8> {
+    let mut bytes = Vec::new();
+    indexed_header(&mut bytes, *b"306", group_record_index);
+    bytes.extend_from_slice(&[0; 10]);
+    bytes.extend_from_slice(&member_count.to_le_bytes());
+    for ordinal in 0..member_count {
+        push_marked_reference(&mut bytes, group_record_index + 3 + ordinal);
+    }
+    bytes.extend_from_slice(&[0; 2]);
+    bytes.extend_from_slice(&1u32.to_le_bytes());
+    push_marked_reference(&mut bytes, 5561);
+    bytes.extend_from_slice(&role.to_le_bytes());
+    bytes.extend_from_slice(&[0; 10]);
+    bytes.extend_from_slice(&257u32.to_le_bytes());
+    bytes.extend_from_slice(&0.125f64.to_le_bytes());
+    bytes.extend_from_slice(&257u32.to_le_bytes());
+    push_marked_reference(&mut bytes, group_record_index + 2);
+    bytes.extend_from_slice(&[1, 0, 0]);
+    push_marked_reference(&mut bytes, group_record_index + 1);
+    bytes.push(0);
+    push_marked_reference(&mut bytes, scope_record_index);
+    indexed_header(&mut bytes, *b"260", group_record_index);
+    bytes
+}
+
+fn remove_body_group_fixture(
+    bytes: &[u8],
+    group_record_index: u32,
+    scope_record_index: u32,
+) -> Option<(
+    DesignParameterScope,
+    crate::records::topology::construction::DesignConstructionOperandGroup,
+)> {
+    let mut scope = DesignParameterScope::empty(
+        &format!("f3d:test:remove-body#{scope_record_index}"),
+        crate::records::feature::scope::DesignFeatureKind::RemoveBody,
+        scope_record_index,
+    );
+    scope
+        .try_edit(|draft| {
+            draft.reference_members =
+                crate::records::identity::ReferenceRun::unlocated(vec![group_record_index]);
+            draft.layout_fixture_references();
+            draft.paired_byte_offset = draft.paired_byte_offset.max(draft.kind_offset + 96);
+            draft.frame_length = draft.paired_byte_offset - draft.byte_offset;
+            draft.layout_fixture_tail();
+        })
+        .unwrap();
+    let record = DesignRecordHeader {
+        id: format!("f3d:test:remove-body-record#{group_record_index}"),
+        byte_offset: 0,
+        class_tag: crate::records::references::DesignClassTag::try_from("306".to_owned()).unwrap(),
+        record_index: group_record_index,
+    };
+    let mut group = parse_construction_operand_group(bytes, &scope, 0, &RecordFrame::from(&record))
+        .complete()?;
+    group.id = format!("f3d:test:remove-body-group#{group_record_index}");
+    Some((scope, group))
+}
+
+#[test]
+fn remove_body_group_with_a_three_byte_discriminant_names_its_bodies() {
+    let bytes = remove_body_group_bytes(2181, 2180, 1, 0x0000_0004_0000_0000);
+    let (scope, group) = remove_body_group_fixture(&bytes, 2181, 2180).expect("group admits");
+    assert_eq!(group.role(), DesignOperandRole::BODIES_A);
+    assert_eq!(
+        group
+            .members()
+            .iter()
+            .map(|member| member.value)
+            .collect::<Vec<_>>(),
+        [2184]
+    );
+    assert_eq!(group.paired_byte_offset, u64_from_index(bytes.len() - 11));
+    assert!(crate::design::feature_project::project_remove_body(
+        &scope,
+        std::slice::from_ref(&group)
+    )
+    .is_some());
+}
+
+#[test]
+fn remove_body_group_refuses_empty_groups_wrong_roles_and_truncation() {
+    let empty = remove_body_group_bytes(2181, 2180, 0, 0x0000_0004_0000_0000);
+    if let Some((scope, group)) = remove_body_group_fixture(&empty, 2181, 2180) {
+        assert!(crate::design::feature_project::project_remove_body(
+            &scope,
+            std::slice::from_ref(&group)
+        )
+        .is_none());
+    }
+
+    let wrong_role = remove_body_group_bytes(2181, 2180, 1, 0x0000_0005_0000_0000);
+    let (scope, group) = remove_body_group_fixture(&wrong_role, 2181, 2180).expect("parses");
+    assert!(crate::design::feature_project::project_remove_body(
+        &scope,
+        std::slice::from_ref(&group)
+    )
+    .is_none());
+
+    let complete = remove_body_group_bytes(2181, 2180, 1, 0x0000_0004_0000_0000);
+    let mut truncated = complete[..complete.len() - 12].to_vec();
+    truncated.push(0);
+    assert!(remove_body_group_fixture(&truncated, 2181, 2180).is_none());
+    assert!(remove_body_group_fixture(&complete[..complete.len() - 11], 2181, 2180).is_none());
 }
 
 mod roles;

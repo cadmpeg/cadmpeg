@@ -111,7 +111,7 @@ fn owned_faces(model: &Model, generator: u32) -> Option<Vec<NamedFace<'_>>> {
     Some(selected)
 }
 
-pub(super) fn sweep(
+pub(in crate::feature::loft_sweep) fn sweep(
     model: &Model,
     generator: u32,
     radius: f64,
@@ -254,14 +254,15 @@ pub(in crate::feature::loft_sweep) fn loft(
                     return None;
                 }
             }
-            (
-                "INV_NMX_ORDERED_GEN_TAG",
-                [2, curve, first, 258, 0, 0, last_curve, last, 258, 4, member],
-            ) if *first == i64::from(sections[0])
-                && *last == i64::from(sections[1])
-                && curve_member(0, *curve)
-                && curve_member(1, *last_curve) =>
+            ("INV_NMX_ORDERED_GEN_TAG", values)
+                if side_tag(values).is_some_and(|tag| {
+                    tag.first_section == i64::from(sections[0])
+                        && tag.last_section == i64::from(sections[1])
+                        && curve_member(0, tag.first_curve)
+                        && curve_member(1, tag.last_curve)
+                }) =>
             {
+                let member = side_tag(values)?.member;
                 let construction = surface.geometry.procedural_construction()?;
                 let procedural = model
                     .procedural_surfaces
@@ -275,7 +276,7 @@ pub(in crate::feature::loft_sweep) fn loft(
                 {
                     return None;
                 }
-                if !sides.insert(usize::try_from(*member).ok()?) {
+                if !sides.insert(usize::try_from(member).ok()?) {
                     return None;
                 }
             }
@@ -287,6 +288,37 @@ pub(in crate::feature::loft_sweep) fn loft(
         && !sides.is_empty()
         && (1..=sides.len()).all(|member| sides.contains(&member)))
     .then_some(())
+}
+
+/// The section groups and member index of a loft side-face tag.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct SideTag {
+    first_curve: i64,
+    first_section: i64,
+    last_curve: i64,
+    last_section: i64,
+    member: i64,
+}
+
+/// Reads a loft side-face tag. The tag holds two groups
+/// `curve, section, 258, tail_0, tail_1` in loft-section order. One group has
+/// tail `0, 0`, and the other group has tail `4, member`.
+fn side_tag(values: &[i64]) -> Option<SideTag> {
+    let [2, first_curve, first_section, 258, a_0, a_1, last_curve, last_section, 258, b_0, b_1] =
+        *values
+    else {
+        return None;
+    };
+    let (([0, 0], [4, member]) | ([4, member], [0, 0])) = ([a_0, a_1], [b_0, b_1]) else {
+        return None;
+    };
+    Some(SideTag {
+        first_curve,
+        first_section,
+        last_curve,
+        last_section,
+        member,
+    })
 }
 
 fn unconstrained_loft(

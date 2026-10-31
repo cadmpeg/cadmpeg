@@ -14,6 +14,10 @@ use crate::records::feature::fixed_parameters::{
 };
 use crate::records::feature::path_features::DesignPathFeatureConstruction;
 use crate::records::feature::scope::DesignParameterScope;
+use crate::records::parameters::{
+    DesignParameter, DesignParameterDraft, DesignParameterOwner, DesignParameterOwnerWire,
+    DesignParameterSource,
+};
 use crate::records::recipes::ConstructionRecipeKind;
 use crate::records::sketch_geometry::{SketchCurveGeometry, SketchCurveIdentity};
 use crate::records::sketch_placement::DesignSketchPlacement;
@@ -200,7 +204,13 @@ fn fixed_kind_edge_and_revolve_operations(
         })
         .unwrap();
     assert_eq!(
-        exact_fixed_fillet_parameters(&bytes, &crate::design::test_support::indexed_record_offsets_for_test(&bytes), &fillet_scope),
+        exact_fixed_fillet_parameters(
+            &bytes,
+            &crate::design::test_support::indexed_record_offsets_for_test(&bytes),
+            &fillet_scope,
+            &[],
+            &[],
+        ),
         Some(DesignFixedFilletParameters {
             groups: vec![crate::records::feature::fixed_parameters::DesignFixedFilletGroup::try_new(
                 Some(crate::records::feature::fixed_parameters::DesignFixedFilletScalar {
@@ -250,7 +260,9 @@ fn fixed_kind_edge_and_revolve_operations(
         exact_fixed_fillet_parameters(
             &bytes,
             &crate::design::test_support::indexed_record_offsets_for_test(&bytes),
-            &fillet_scope
+            &fillet_scope,
+            &[],
+            &[],
         ),
         Some(DesignFixedFilletParameters {
             groups: vec![
@@ -303,7 +315,9 @@ fn fixed_kind_edge_and_revolve_operations(
         exact_fixed_fillet_parameters(
             &bytes,
             &crate::design::test_support::indexed_record_offsets_for_test(&bytes),
-            &fillet_scope
+            &fillet_scope,
+            &[],
+            &[],
         ),
         Some(DesignFixedFilletParameters {
             groups: vec![
@@ -325,9 +339,9 @@ fn fixed_kind_edge_and_revolve_operations(
     let second_group_at = bytes.len();
     for (record_index, ordinal, value) in [
         (92u32, 0u8, 1.0f64),
-        (93, 1, 0.5),
-        (94, 2, 0.75),
-        (95, 3, 0.25),
+        (95, 1, 0.5),
+        (98, 2, 0.75),
+        (101, 3, 0.25),
     ] {
         let mut scalar = vec![0; 104];
         scalar[0..4].copy_from_slice(&3u32.to_le_bytes());
@@ -345,7 +359,7 @@ fn fixed_kind_edge_and_revolve_operations(
     fillet_scope
         .try_edit(|draft| {
             draft.reference_members =
-                crate::records::identity::ReferenceRun::unlocated(vec![92, 93, 94, 95]);
+                crate::records::identity::ReferenceRun::unlocated(vec![92, 95, 98, 101]);
             draft.layout_fixture_references();
             draft.paired_byte_offset = draft.paired_byte_offset.max(draft.kind_offset + 96);
             draft.frame_length = draft.paired_byte_offset - draft.byte_offset;
@@ -356,6 +370,8 @@ fn fixed_kind_edge_and_revolve_operations(
         &bytes,
         &crate::design::test_support::indexed_record_offsets_for_test(&bytes),
         &fillet_scope,
+        &[],
+        &[],
     )
     .expect("two constant-radius Fillet scalar groups");
     assert_eq!(fixed.groups.len(), 2);
@@ -381,6 +397,137 @@ fn fixed_kind_edge_and_revolve_operations(
             .map(|weight| (weight.value.get(), weight.value_offset)),
         Some((0.75, u64_from_index(second_group_at + 2 * 115 + 40)))
     );
+
+    fillet_scope.id = "f3d:Design/BulkStream.dat:scope#12".into();
+    let (p92, o92) = make_linked_param(&fillet_scope, 92, "Radius", 1.0);
+    let (p95, o95) = make_linked_param(&fillet_scope, 95, "TangencyWeight", 0.5);
+    let (p98, o98) = make_linked_param(&fillet_scope, 98, "Radius", 0.75);
+    let (p101, o101) = make_linked_param(&fillet_scope, 101, "TangencyWeight", 0.25);
+    let swapped_fixed = exact_fixed_fillet_parameters(
+        &bytes,
+        &crate::design::test_support::indexed_record_offsets_for_test(&bytes),
+        &fillet_scope,
+        &[p92.clone(), p95.clone(), p98.clone(), p101.clone()],
+        &[o92.clone(), o95.clone(), o98.clone(), o101.clone()],
+    )
+    .expect("swapped constant-radius Fillet scalar groups");
+    assert_eq!(swapped_fixed.groups.len(), 2);
+    assert_eq!(
+        swapped_fixed.groups[0]
+            .law()
+            .radii()
+            .map(|scalar| scalar.value.get())
+            .collect::<Vec<_>>(),
+        [1.0]
+    );
+    assert_eq!(
+        swapped_fixed.groups[0]
+            .tangency_weight()
+            .map(|weight| weight.value.get()),
+        Some(0.5)
+    );
+    assert_eq!(
+        swapped_fixed.groups[1]
+            .law()
+            .radii()
+            .map(|scalar| scalar.value.get())
+            .collect::<Vec<_>>(),
+        [0.75]
+    );
+    assert_eq!(
+        swapped_fixed.groups[1]
+            .tangency_weight()
+            .map(|weight| weight.value.get()),
+        Some(0.25)
+    );
+
+    let (p92_def, o92_def) = make_linked_param(&fillet_scope, 92, "TangencyWeight", 1.0);
+    let (p95_def, o95_def) = make_linked_param(&fillet_scope, 95, "Radius", 0.5);
+    let default_fixed = exact_fixed_fillet_parameters(
+        &bytes,
+        &crate::design::test_support::indexed_record_offsets_for_test(&bytes),
+        &fillet_scope,
+        &[p92_def, p95_def, p98.clone(), p101.clone()],
+        &[o92_def, o95_def, o98.clone(), o101.clone()],
+    )
+    .expect("group 0 default-ordered, group 1 swapped");
+    assert_eq!(
+        default_fixed.groups[0]
+            .law()
+            .radii()
+            .map(|scalar| scalar.value.get())
+            .collect::<Vec<_>>(),
+        [0.5]
+    );
+    assert_eq!(
+        default_fixed.groups[0]
+            .tangency_weight()
+            .map(|weight| weight.value.get()),
+        Some(1.0)
+    );
+
+    // Partial linkage: only lane 92 linked, lane 95 unlinked
+    assert!(exact_fixed_fillet_parameters(
+        &bytes,
+        &crate::design::test_support::indexed_record_offsets_for_test(&bytes),
+        &fillet_scope,
+        &[p92.clone(), p98.clone(), p101.clone()],
+        &[o92.clone(), o98.clone(), o101.clone()],
+    )
+    .is_none());
+
+    // Partial linkage: only lane 95 linked, lane 92 unlinked
+    assert!(exact_fixed_fillet_parameters(
+        &bytes,
+        &crate::design::test_support::indexed_record_offsets_for_test(&bytes),
+        &fillet_scope,
+        &[p95.clone(), p98.clone(), p101.clone()],
+        &[o95.clone(), o98.clone(), o101.clone()],
+    )
+    .is_none());
+
+    // Contradictory linkage: both lanes linked to Radius
+    let (p95_rad, o95_rad) = make_linked_param(&fillet_scope, 95, "Radius", 0.5);
+    assert!(exact_fixed_fillet_parameters(
+        &bytes,
+        &crate::design::test_support::indexed_record_offsets_for_test(&bytes),
+        &fillet_scope,
+        &[p92.clone(), p95_rad, p98.clone(), p101.clone()],
+        &[o92.clone(), o95_rad, o98.clone(), o101.clone()],
+    )
+    .is_none());
+
+    // Contradictory linkage: both lanes linked to TangencyWeight
+    let (p92_tw, o92_tw) = make_linked_param(&fillet_scope, 92, "TangencyWeight", 1.0);
+    assert!(exact_fixed_fillet_parameters(
+        &bytes,
+        &crate::design::test_support::indexed_record_offsets_for_test(&bytes),
+        &fillet_scope,
+        &[p92_tw, p95.clone(), p98.clone(), p101.clone()],
+        &[o92_tw, o95.clone(), o98.clone(), o101.clone()],
+    )
+    .is_none());
+
+    // Contradictory linkage: unexpected source kind (ChordLen)
+    let (p92_chord, o92_chord) = make_linked_param(&fillet_scope, 92, "ChordLen", 1.0);
+    assert!(exact_fixed_fillet_parameters(
+        &bytes,
+        &crate::design::test_support::indexed_record_offsets_for_test(&bytes),
+        &fillet_scope,
+        &[p92_chord, p95.clone(), p98.clone(), p101.clone()],
+        &[o92_chord, o95.clone(), o98.clone(), o101.clone()],
+    )
+    .is_none());
+
+    // Contradictory linkage: owner exists but parameter record missing
+    assert!(exact_fixed_fillet_parameters(
+        &bytes,
+        &crate::design::test_support::indexed_record_offsets_for_test(&bytes),
+        &fillet_scope,
+        &[p98.clone(), p101.clone()],
+        &[o92.clone(), o95.clone(), o98.clone(), o101.clone()],
+    )
+    .is_none());
 
     let chamfer_scalar_start = bytes.len();
     let mut chamfer_scalar = vec![0; 104];
@@ -1305,6 +1452,7 @@ fn fixed_kind_edge_and_revolve_operations(
         }) if construction.axis().is_none()
     ));
     let mut feature = cadmpeg_ir::features::Feature {
+        product_definition: None,
         id: crate::ids::neutral_feature_id(&indexed_revolve_scope),
         ordinal: 0,
         name: None,
@@ -1540,4 +1688,50 @@ fn fixed_kind_edge_and_revolve_operations(
     ));
 
     (bytes, scope)
+}
+
+fn make_linked_param(
+    scope: &DesignParameterScope,
+    lane_record_index: u32,
+    source_kind: &str,
+    value: f64,
+) -> (DesignParameter, DesignParameterOwner) {
+    let param_record_index = lane_record_index + 1;
+    let stream = crate::ids::native_stream(&scope.id).unwrap_or("f3d:Design/BulkStream.dat");
+    let base = u64::from(param_record_index) * 200 + 100;
+    let parameter = DesignParameter::try_from(DesignParameterDraft {
+        id: format!("{stream}:design-parameter#{param_record_index}"),
+        byte_offset: base,
+        class_tag: "305".to_owned().try_into().unwrap(),
+        record_index: param_record_index,
+        source_ordinal: 0,
+        source: DesignParameterSource::new(source_kind.to_owned(), Some(lane_record_index), None)
+            .unwrap(),
+        expression: format!("{value}"),
+        expression_offset: base + 20,
+        source_kind_offset: base + 40,
+        unit: None,
+        name: source_kind.into(),
+        name_offset: base + 60,
+        evaluated_value: value,
+        evaluated_value_offset: base + 80,
+    })
+    .unwrap();
+    let owner = DesignParameterOwner::try_from(DesignParameterOwnerWire {
+        id: format!("{stream}:design-parameter-owner#{lane_record_index}"),
+        byte_offset: base.saturating_sub(99),
+        frame_length: 99,
+        class_tag: "268".to_owned().try_into().unwrap(),
+        record_index: lane_record_index,
+        scope_record_index: scope.record_index,
+        local_ordinal: 0,
+        evaluated_value: value,
+        evaluated_value_offset: base.saturating_sub(59),
+        parameter_record_index: param_record_index,
+        owned_ordinal: 0,
+        variant: None,
+        companion_record_index: param_record_index + 1,
+    })
+    .unwrap();
+    (parameter, owner)
 }

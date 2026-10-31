@@ -425,3 +425,15 @@ pub(crate) mod pm_dc_pattern_suppression_pair {
     /// Record length in bytes. Spec §13.6.
     pub(crate) const LEN: usize = 8;
 }
+
+/// Byte offsets for the `pm_dc_work_point_fields` record.
+///
+/// Spec §13. Record length 36 B.
+///
+/// ```text
+/// Offsets start after the segment-major-19 content header.
+/// ```
+pub(crate) mod pm_dc_work_point_fields {
+    /// Record length in bytes. Spec §13.
+    pub(crate) const LEN: usize = 36;
+}
