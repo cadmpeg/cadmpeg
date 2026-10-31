@@ -3,7 +3,7 @@
 
 use super::{
     DecodeArena, DecodeContext, DecodeDepth, DecodePolicy, ExpandSpec, ResourceDimension,
-    ResourceLimit,
+    ResourceLimit, SpaceId,
 };
 
 #[derive(Debug, Clone)]
@@ -137,6 +137,30 @@ pub struct DecodeTrace {
     refused: bool,
 }
 
+/// Rebinds a task's derived address spaces at its composition position.
+#[derive(Debug, Clone, Copy)]
+pub struct DecodeSpaceRebinding {
+    old_start: usize,
+    new_start: usize,
+    count: usize,
+}
+
+impl DecodeSpaceRebinding {
+    /// Whether every address-space identifier retains its value.
+    pub fn is_identity(&self) -> bool {
+        self.count == 0 || self.old_start == self.new_start
+    }
+
+    /// Rebinds a task-owned space. Spaces from before the task retain their IDs.
+    pub fn rebind(&self, space: &mut SpaceId) {
+        if let Some(relative) = space.index().checked_sub(self.old_start) {
+            if relative < self.count {
+                *space = SpaceId::from_index(self.new_start + relative);
+            }
+        }
+    }
+}
+
 impl DecodeTrace {
     /// Storage estimate: event count times the event type size, excluding allocator overhead.
     pub fn retained_bytes_estimate(&self) -> u64 {
@@ -182,6 +206,8 @@ impl DecodeContext<'_> {
     }
 
     /// Records a threshold decision against a previously read allowance.
+    /// Each optional-output decision must be recorded. This also marks the
+    /// preceding `retained_bytes_available` read as a threshold observation.
     pub fn observe_retained_allowance(&self, remaining: u64, requested: u64) {
         self.budget
             .record(Event::AllowanceUse(remaining, requested));
@@ -214,6 +240,20 @@ impl DecodeContext<'_> {
     /// The caller must then execute the task against this context. This also
     /// preserves budget-dependent optional output and the exact refusal site.
     pub fn accept_trace(&self, trace: &DecodeTrace) -> bool {
+        self.accept_trace_rebinding(trace, DecodeSpaceRebinding::is_identity)
+    }
+
+    /// Applies a task's operations and rebinds its owned address-space IDs.
+    ///
+    /// `rebind` runs after all resource checks pass. It must rebind each escaped
+    /// task-owned space and return true, or return false with the output unchanged.
+    /// A false result leaves this context unchanged. A resource refusal requires
+    /// the caller to execute the task at its composition position.
+    pub fn accept_trace_rebinding(
+        &self,
+        trace: &DecodeTrace,
+        rebind: impl FnOnce(&DecodeSpaceRebinding) -> bool,
+    ) -> bool {
         if trace.refused || self.resource_refusal().is_some() {
             return false;
         }
@@ -221,6 +261,12 @@ impl DecodeContext<'_> {
         let candidate = self.checkpoint().resume(&arena);
         *candidate.budget.trace.borrow_mut() = None;
         let mut allowance_delta = 0_i128;
+        let mut exact_observation = false;
+        let mut spaces = DecodeSpaceRebinding {
+            old_start: 0,
+            new_start: 0,
+            count: 0,
+        };
         for event in &trace.events {
             let accepted = match *event {
                 Event::Batch(batch) => batch.replay(&candidate),
@@ -232,34 +278,57 @@ impl DecodeContext<'_> {
                     candidate.budget.leave();
                     true
                 }
-                Event::Available(available) => candidate.retained_bytes_available() == available,
-                Event::Allowance(available) => {
+                Event::Available(available) | Event::Allowance(available) => {
+                    if exact_observation {
+                        return false;
+                    }
                     allowance_delta =
-                        i128::from(candidate.retained_bytes_available()) - i128::from(available);
+                        i128::from(candidate.budget.retained_available()) - i128::from(available);
+                    exact_observation =
+                        matches!(event, Event::Available(_)) && allowance_delta != 0;
                     true
                 }
                 Event::AllowanceUse(remaining, requested) => {
+                    exact_observation = false;
                     let adjusted = i128::from(remaining) + allowance_delta;
                     (adjusted >= i128::from(requested)) == (remaining >= requested)
                 }
                 Event::Expand(spec) => candidate.admit_expand(spec).is_ok(),
                 Event::Space(expected) => {
-                    if candidate.derived_spaces.get() != expected {
-                        false
-                    } else if let Some(next) = expected.checked_add(1) {
-                        candidate.derived_spaces.set(next);
-                        true
-                    } else {
-                        false
+                    let Some(old_next) = expected.checked_add(1) else {
+                        return false;
+                    };
+                    let Some(new_next) = candidate.derived_spaces.get().checked_add(1) else {
+                        return false;
+                    };
+                    if spaces.count == 0 {
+                        spaces.old_start = old_next;
+                        spaces.new_start = new_next;
                     }
+                    if old_next.checked_sub(spaces.old_start) != Some(spaces.count) {
+                        return false;
+                    }
+                    spaces.count += 1;
+                    candidate.derived_spaces.set(new_next);
+                    true
                 }
             };
             if !accepted {
                 return false;
             }
         }
+        if exact_observation || !rebind(&spaces) {
+            return false;
+        }
         if let Some(events) = self.budget.trace.borrow_mut().as_mut() {
-            events.extend_from_slice(&trace.events);
+            events.extend(trace.events.iter().map(|event| match *event {
+                Event::Space(expected) => {
+                    let mut space = SpaceId::from_index(expected + 1);
+                    spaces.rebind(&mut space);
+                    Event::Space(space.index() - 1)
+                }
+                event => event,
+            }));
         }
         self.budget.restore(&candidate.budget.state());
         self.derived_spaces.set(candidate.derived_spaces.get());

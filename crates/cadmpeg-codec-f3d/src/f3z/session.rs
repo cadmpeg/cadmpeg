@@ -114,10 +114,13 @@ impl F3zDecodedMember {
 /// failure again. Arrival order does not affect
 /// composition.
 ///
-/// Member traces are speculative until composition. If a trace would refuse,
-/// change an optional-enrichment decision, or require address-space rebinding,
-/// composition executes that member with its current counters through the same
-/// member decoder. This preserves the cumulative budget and exact refusal site.
+/// Member traces are accepted when their charges fit the cumulative counters
+/// and each observed optional-enrichment threshold has the same result.
+/// Composition rebinds member-local derived spaces to fresh IDs in traversal
+/// order. A member with a formatted address-space diagnostic is executed again
+/// when its spaces move. A refused trace or changed decision also executes the
+/// member decoder at its traversal position. This preserves the cumulative
+/// budget and exact refusal site.
 /// Unreachable and skipped entries add no member-decode charges.
 ///
 /// The input and expansion arena must outlive this session. The session is
@@ -130,6 +133,10 @@ pub struct F3zSession<'a> {
     checkpoint: DecodeCheckpoint,
     members: Vec<F3zMember>,
     origin: Arc<()>,
+    #[cfg(test)]
+    reexecutions: std::sync::atomic::AtomicUsize,
+    #[cfg(test)]
+    require_original_spaces: std::sync::atomic::AtomicBool,
 }
 
 impl crate::F3dCodec {
@@ -220,6 +227,10 @@ impl<'a> F3zSession<'a> {
             checkpoint,
             members,
             origin: Arc::new(()),
+            #[cfg(test)]
+            reexecutions: std::sync::atomic::AtomicUsize::new(0),
+            #[cfg(test)]
+            require_original_spaces: std::sync::atomic::AtomicBool::new(false),
         })
     }
 
@@ -325,12 +336,24 @@ impl<'a> F3zSession<'a> {
         results: &mut BTreeMap<String, F3zDecodedMember>,
     ) -> Result<(Decoded, OperationPoses), CodecError> {
         if let Some(result) = results.remove(id) {
-            if let Some(decoded) = result.decoded {
-                if ctx.accept_trace(&result.trace) {
+            if let Some(mut decoded) = result.decoded {
+                if ctx.accept_trace_rebinding(&result.trace, |spaces| {
+                    #[cfg(test)]
+                    if self
+                        .require_original_spaces
+                        .load(std::sync::atomic::Ordering::Relaxed)
+                    {
+                        return spaces.is_identity();
+                    }
+                    rebinding::rebind_member(&mut decoded, spaces)
+                }) {
                     return decoded.map(|decoded| (decoded, result.operation_poses));
                 }
             }
         }
+        #[cfg(test)]
+        self.reexecutions
+            .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
         self.decode_in_context(ctx, id)
     }
 
@@ -363,6 +386,16 @@ impl<'a> F3zSession<'a> {
 
 #[cfg(test)]
 impl F3zSession<'_> {
+    pub(crate) fn require_original_spaces_for_test(&self, required: bool) {
+        self.require_original_spaces
+            .store(required, std::sync::atomic::Ordering::Relaxed);
+    }
+
+    /// Total member decodes executed by composition calls on this archive.
+    pub(crate) fn composition_reexecutions(&self) -> usize {
+        self.reexecutions.load(std::sync::atomic::Ordering::Relaxed)
+    }
+
     pub(crate) fn compose_in_traversal_for_test(
         &self,
         ctx: &DecodeContext<'_>,
@@ -375,3 +408,5 @@ impl F3zSession<'_> {
 mod tests;
 
 mod memory;
+
+mod rebinding;
