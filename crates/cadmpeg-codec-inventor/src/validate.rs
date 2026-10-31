@@ -2055,24 +2055,12 @@ fn validate_features(
                     Some(feature.id.as_str().to_owned()),
                 ));
             }
-            if let cadmpeg_ir::features::RevolveConstruction::Resolved { profile, axis, .. } =
-                construction
-            {
-                if crate::feature::revolve::profile_crosses_axis(
-                    profile,
-                    axis,
-                    |id| revolve_sketches.get(id.as_str()).copied(),
-                    |id| revolve_entities.get(id.as_str()).copied(),
-                ) == Some(true)
-                {
-                    findings.push(finding(
-                        Check::NativeLinks,
-                        "Inventor neutral revolve profile has points on both sides of its axis"
-                            .into(),
-                        Some(feature.id.as_str().to_owned()),
-                    ));
-                }
-            }
+            findings.extend(revolve_axis_finding(
+                &feature.id,
+                construction,
+                &revolve_sketches,
+                &revolve_entities,
+            ));
         }
         if matches!(
             definition,
@@ -3542,6 +3530,33 @@ fn unique<T: Eq + std::hash::Hash>(
             ));
         }
     }
+}
+
+/// The finding for a neutral revolve whose resolved profile has points on both
+/// sides of its axis.
+fn revolve_axis_finding(
+    feature: &cadmpeg_ir::features::FeatureId,
+    construction: &cadmpeg_ir::features::RevolveConstruction,
+    sketches: &HashMap<&str, &cadmpeg_ir::sketches::Sketch>,
+    entities: &HashMap<&str, &cadmpeg_ir::sketches::SketchEntity>,
+) -> Option<Finding> {
+    let cadmpeg_ir::features::RevolveConstruction::Resolved { profile, axis, .. } = construction
+    else {
+        return None;
+    };
+    (crate::feature::revolve::profile_crosses_axis(
+        profile,
+        axis,
+        |id| sketches.get(id.as_str()).copied(),
+        |id| entities.get(id.as_str()).copied(),
+    ) == Some(true))
+    .then(|| {
+        finding(
+            Check::NativeLinks,
+            "Inventor neutral revolve profile has points on both sides of its axis".into(),
+            Some(feature.as_str().to_owned()),
+        )
+    })
 }
 
 fn finding(check: Check, message: String, entity: Option<String>) -> Finding {
