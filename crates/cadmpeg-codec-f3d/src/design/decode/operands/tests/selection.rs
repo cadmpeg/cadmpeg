@@ -21,6 +21,9 @@ use crate::records::topology::extrude_selection::DesignOperandRole;
 use crate::test_support::indexed_header;
 use crate::test_support::lp_utf16;
 
+/// One mutation of a sketch-profile tail.
+type TailEdit<'a> = &'a dyn Fn(&mut Vec<u8>);
+
 #[test]
 fn sketch_profile_frame_resolves_its_decimal_entity_suffix() {
     let mut bytes = Vec::new();
@@ -214,7 +217,7 @@ fn sketch_profile_with_an_83_byte_tail_omits_the_third_reference() {
     let profile = parse(&build(&|_| {})).expect("83-byte sketch-profile operand");
     assert_eq!(profile.entity_id.suffix(), 172);
     // Each fixed field of the tail is required.
-    let edits: [&dyn Fn(&mut Vec<u8>); 7] = [
+    let edits: [TailEdit<'_>; 7] = [
         &|tail| tail[0] = 2,
         &|tail| tail[4] = 0,
         &|tail| tail[9] = 1,
