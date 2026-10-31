@@ -40,13 +40,16 @@ const EPS_BREP_VALID_CARRIER_SCALARS_E9: f64 = 1.0e-9;
 
 pub(crate) mod attrib;
 mod blend;
+mod blend_fit;
 mod blend_surface;
 pub(crate) mod entity;
 pub(crate) mod evaluation;
+mod fit;
 mod index;
 mod intersection;
 mod offset;
 pub(crate) mod read_ledger;
+mod sp_curve;
 pub(crate) mod spline;
 mod subset;
 mod sweep;

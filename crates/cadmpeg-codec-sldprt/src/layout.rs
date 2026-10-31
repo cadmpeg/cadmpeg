@@ -519,6 +519,34 @@ pub(crate) mod bspline_surface_descriptor {
     pub(crate) const ARRAY_REFS: usize = 32;
 }
 
+/// Byte offsets for the `bspline_curve_descriptor` record.
+///
+/// Spec §7.2. Record length 25 B.
+///
+/// ```text
+/// Body-relative after the `00 88` tag and optional `0xff` marker.
+/// ```
+pub(crate) mod bspline_curve_descriptor {
+    /// Offset of `attr` (`u16`, big-endian). Spec §7.2.
+    pub(crate) const ATTR: usize = 0;
+    /// Offset of `degree` (`u16`, big-endian). Spec §7.2.
+    pub(crate) const DEGREE: usize = 2;
+    /// Offset of `control_count` (`u32`, big-endian). Spec §7.2.
+    pub(crate) const CONTROL_COUNT: usize = 4;
+    /// Offset of `dimension` (`u16`, big-endian). Spec §7.2.
+    pub(crate) const DIMENSION: usize = 8;
+    /// Offset of `periodic` (`u8`). Spec §7.2.
+    pub(crate) const PERIODIC: usize = 15;
+    /// Offset of `rational` (`u8`). Spec §7.2.
+    pub(crate) const RATIONAL: usize = 17;
+    /// Offset of `control_attr` (`u16`, big-endian). Spec §7.2.
+    pub(crate) const CONTROL_ATTR: usize = 19;
+    /// Offset of `multiplicity_attr` (`u16`, big-endian). Spec §7.2.
+    pub(crate) const MULTIPLICITY_ATTR: usize = 21;
+    /// Offset of `knot_attr` (`u16`, big-endian). Spec §7.2.
+    pub(crate) const KNOT_ATTR: usize = 23;
+}
+
 /// Byte offsets for the `bspline_array_header` record.
 ///
 /// Spec §7.2. Record length 6 B.
