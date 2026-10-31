@@ -566,3 +566,53 @@ fn a_closed_chart_starts_a_ring_edge_at_its_seam() {
     let open = crate::brep::index::IndexedCurve::Derived(chart(&SQUARE, &[0.0, 10.0, 20.0, 30.0]));
     assert_eq!(super::closed_edge_start(Some(&open)), None);
 }
+
+/// The boundary a blend face on one ring edge sees, with the closed edge's
+/// `span` and `start`.
+fn ring_edge_boundary(span: Option<[f64; 2]>, start: Option<Point3>) -> (Vec<Point3>, Vec<Point3>) {
+    const COEDGE: u16 = 70;
+    const EDGE: u16 = 71;
+    let mut ring = SQUARE.to_vec();
+    ring.push(SQUARE[0]);
+    let closed = chart(&ring, &[0.0, 10.0, 20.0, 30.0, 40.0]);
+    let curve = closed.carrier.attr;
+    let mut carriers = crate::brep::index::CarrierIndex::default();
+    carriers.insert_intersection(closed);
+    let mut tables = crate::brep::topology::Tables::default();
+    let mut refs = [0; 9];
+    refs[6] = EDGE;
+    tables.insert_coedge(crate::brep::topology::Coedge {
+        attr: COEDGE,
+        refs,
+        sense: Sense::Forward,
+        offset: 0,
+    });
+    let policy = DecodePolicy::service();
+    let arena = DecodeArena::new();
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    super::blend_boundary(
+        &ctx,
+        &tables,
+        &[(1, vec![COEDGE])],
+        &carriers,
+        &std::collections::HashMap::from([(EDGE, (curve, span))]),
+        &std::collections::HashMap::new(),
+        &start.into_iter().map(|start| (EDGE, start)).collect(),
+    )
+    .unwrap()
+}
+
+#[test]
+fn a_closed_ring_edge_bounds_a_blend_over_its_whole_domain_from_its_seam() {
+    let seam = Point3::new(0.0, 0.0, 0.0);
+    let (vertices, points) = ring_edge_boundary(Some([0.0, 40.0]), Some(seam));
+    assert_eq!(vertices, [seam]);
+    let far_side = Point3::new(10.0, 10.0, 0.0);
+    assert!(points.iter().any(|point| point.distance(far_side) < 1.0e-9));
+    assert!(points.len() > 1);
+}
+
+#[test]
+fn an_edge_with_no_range_and_no_closure_gives_a_blend_no_boundary() {
+    assert_eq!(ring_edge_boundary(None, None), (Vec::new(), Vec::new()));
+}

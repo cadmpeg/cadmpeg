@@ -1773,6 +1773,7 @@ fn blend_boundary(
     carriers: &CarrierIndex,
     edge_curve_spans: &HashMap<u16, (u16, Option<[f64; 2]>)>,
     edge_endpoint_positions: &HashMap<u16, [Point3; 2]>,
+    closed_edge_starts: &HashMap<u16, Point3>,
 ) -> Result<(Vec<Point3>, Vec<Point3>), cadmpeg_core::CodecError> {
     let mut vertices = Vec::new();
     let mut points = Vec::new();
@@ -1783,6 +1784,10 @@ fn blend_boundary(
         if let Some(ends) = edge_endpoint_positions.get(&edge) {
             vertices.extend(ends);
             points.extend(ends);
+        }
+        if let Some(start) = closed_edge_starts.get(&edge) {
+            vertices.push(*start);
+            points.push(*start);
         }
         let span = edge_curve_spans.get(&edge).and_then(|(curve_attr, range)| {
             carriers
@@ -2813,6 +2818,7 @@ fn decode_graph(
     let mut edge_set: HashSet<u16> = HashSet::new();
     let mut edge_endpoint_positions = HashMap::<u16, [cadmpeg_ir::math::Point3; 2]>::new();
     let mut edge_curve_spans = HashMap::<u16, (u16, Option<[f64; 2]>)>::new();
+    let mut closed_edge_starts = HashMap::<u16, cadmpeg_ir::math::Point3>::new();
     let mut reversed_edge_orientation = HashSet::<u16>::new();
     let edge_attrs = sorted_graph_attrs(edge_ends.keys().copied());
     for e in edge_attrs {
@@ -2931,7 +2937,19 @@ fn decode_graph(
             )?,
             None => None,
         };
-        edge_curve_spans.insert(e, (curve_attr, parameter_range.map(|(range, _)| range)));
+        if let Some((start, _)) = closed_point {
+            closed_edge_starts.insert(e, start);
+        }
+        // A closed edge spans its carrier's whole domain (spec §7.3).
+        edge_curve_spans.insert(
+            e,
+            (
+                curve_attr,
+                parameter_range
+                    .map(|(range, _)| range)
+                    .or(closed_point.map(|(_, domain)| domain)),
+            ),
+        );
         // An edge without a resolved range takes its direction from the ends of
         // its curve's domain, and else from a compact analytic curve's
         // orientation marker.
@@ -3554,6 +3572,7 @@ fn decode_graph(
                         carriers,
                         &edge_curve_spans,
                         &edge_endpoint_positions,
+                        &closed_edge_starts,
                     )?;
                     // A support face later in the walk has not emitted its
                     // surface yet; its carrier states the same geometry.
