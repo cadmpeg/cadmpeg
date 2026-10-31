@@ -785,13 +785,13 @@ fn validate_sketches(data: &NativeData, ir: &CadIr, findings: &mut Vec<Finding>)
     let native_entities = data
         .pm_dc_sketch_entities
         .iter()
-        .map(crate::record_identity::Located::id)
-        .collect::<HashSet<_>>();
+        .map(|entity| (entity.id(), entity))
+        .collect::<HashMap<_, _>>();
     let native_constraints = data
         .pm_dc_sketch_constraints
         .iter()
-        .map(crate::record_identity::Located::id)
-        .collect::<HashSet<_>>();
+        .map(|constraint| (constraint.id(), constraint))
+        .collect::<HashMap<_, _>>();
     for sketch in &ir.model.sketches {
         if sketch
             .native_ref
@@ -805,15 +805,33 @@ fn validate_sketches(data: &NativeData, ir: &CadIr, findings: &mut Vec<Finding>)
             ));
         }
     }
+    let spline_sources = if ir.model.sketch_entities.iter().any(|entity| {
+        matches!(
+            entity.geometry.definition(),
+            cadmpeg_ir::sketches::SketchGeometryDefinition::Nurbs { .. }
+        )
+    }) {
+        cadmpeg_core::decode::unique_index(data.pm_dc_sketch_entities.iter().map(|source| {
+            (
+                (
+                    source.identity.segment_token.as_str(),
+                    source.identity.record_ordinal,
+                ),
+                source,
+            )
+        }))
+    } else {
+        HashMap::new()
+    };
     for entity in &ir.model.sketch_entities {
         if entity
             .native_ref
             .as_deref()
-            .is_none_or(|reference| !native_entities.contains(reference))
+            .is_none_or(|reference| !native_entities.contains_key(reference))
             || entity
                 .endpoint_refs
                 .iter()
-                .any(|reference| !native_entities.contains(reference.as_str()))
+                .any(|reference| !native_entities.contains_key(reference.as_str()))
         {
             findings.push(finding(
                 Check::NativeLinks,
@@ -821,12 +839,57 @@ fn validate_sketches(data: &NativeData, ir: &CadIr, findings: &mut Vec<Finding>)
                 Some(entity.id().as_str().to_owned()),
             ));
         }
+        if matches!(
+            entity.geometry.definition(),
+            cadmpeg_ir::sketches::SketchGeometryDefinition::Ellipse { .. }
+        ) && !entity.native_ref.as_deref().is_some_and(|reference| {
+            native_entities
+                .get(reference)
+                .is_some_and(|source| crate::sketch::curve::closed_ellipse(source))
+        }) {
+            findings.push(finding(
+                Check::NativeLinks,
+                "Inventor neutral ellipse does not match its closed-ellipse source form".into(),
+                Some(entity.id().as_str().to_owned()),
+            ));
+        }
+        if matches!(
+            entity.geometry.definition(),
+            cadmpeg_ir::sketches::SketchGeometryDefinition::Nurbs { .. }
+        ) && !entity.native_ref.as_deref().is_some_and(|reference| {
+            native_entities.get(reference).is_some_and(|source| {
+                crate::sketch::project_geometry(source, &spline_sources).as_ref()
+                    == Some(&entity.geometry)
+                    && entity.endpoint_refs
+                        == crate::sketch::entity_endpoint_refs(source, &spline_sources)
+            })
+        }) {
+            findings.push(finding(
+                Check::NativeLinks,
+                "Inventor neutral spline does not match its admitted source curve form".into(),
+                Some(entity.id().as_str().to_owned()),
+            ));
+        }
     }
+    let midpoint_geometry = if ir.model.sketch_constraints.iter().any(|constraint| {
+        matches!(
+            constraint.definition.kind(),
+            cadmpeg_ir::sketches::SketchConstraintDefinitionInput::Midpoint { .. }
+        )
+    }) {
+        ir.model
+            .sketch_entities
+            .iter()
+            .map(|entity| (entity.id().as_str(), &entity.geometry))
+            .collect::<HashMap<_, _>>()
+    } else {
+        HashMap::new()
+    };
     for constraint in &ir.model.sketch_constraints {
         if constraint
             .native_ref
             .as_deref()
-            .is_none_or(|reference| !native_constraints.contains(reference))
+            .is_none_or(|reference| !native_constraints.contains_key(reference))
         {
             findings.push(finding(
                 Check::NativeLinks,
@@ -834,6 +897,28 @@ fn validate_sketches(data: &NativeData, ir: &CadIr, findings: &mut Vec<Finding>)
                     .into(),
                 Some(constraint.id.as_str().to_owned()),
             ));
+        }
+        if let cadmpeg_ir::sketches::SketchConstraintDefinitionInput::Midpoint { entity, .. } =
+            constraint.definition.kind()
+        {
+            if !midpoint_geometry
+                .get(entity.as_str())
+                .is_some_and(|geometry| {
+                    constraint
+                        .native_ref
+                        .as_deref()
+                        .and_then(|native| native_constraints.get(native))
+                        .is_some_and(|source| {
+                            crate::sketch::curve::midpoint_supported(source, geometry)
+                        })
+                })
+            {
+                findings.push(finding(
+                    Check::NativeLinks,
+                    "Inventor neutral midpoint requires a resolved line or circular arc".into(),
+                    Some(constraint.id.as_str().to_owned()),
+                ));
+            }
         }
     }
     for issue in &data.sketch_record_issues {

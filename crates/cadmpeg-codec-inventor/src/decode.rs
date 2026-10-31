@@ -992,6 +992,17 @@ fn decode_container<'a>(
         losses.extend(crate::sketch::point_tail::paired_association_loss(
             &sketch_inventory,
         ));
+        losses.extend(crate::sketch::curve::native_losses(
+            &sketch_inventory.entities,
+        ));
+        losses.extend(crate::sketch::curve::relation_loss(&sketch_inventory));
+        losses.extend(crate::sketch::curve::member_losses(
+            &sketch_inventory,
+            &container.rse,
+        ));
+        losses.extend(crate::sketch::spline::point_relation_loss(
+            &sketch_inventory.constraints,
+        ));
         if !container.rse.unpaired_metadata.is_empty() || !container.rse.unpaired_bulk.is_empty() {
             losses.push(InventorLossCode::RseStreamUnpaired.note(format!(
                 "RSe contains {} unpaired metadata stream(s) and {} unpaired bulk stream(s).",

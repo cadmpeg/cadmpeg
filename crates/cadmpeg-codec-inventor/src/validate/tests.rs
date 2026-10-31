@@ -1015,3 +1015,5 @@ fn edge_treatment_validation_recomputes_all_admitted_dimension_forms() -> TestRe
     }
     Ok(())
 }
+
+mod sketch_curves;

@@ -385,7 +385,7 @@ The auxiliary lists of a line, circle, or ellipse are one type-2 list, or a u32 
 
 Sketch coordinates and radii use internal centimetres. Neutral planar coordinates and lengths multiply these values by 10 to obtain millimetres. The first two members of a line's endpoint list are its start and end point references and define its bounded direction. In a line, circle, or ellipse point list, each member after the second is a point record that lies on the curve.
 
-The point list of a circle or ellipse starts with two members. Two null references mark a closed curve. Two point references mark a bounded curve: the first is its start point and the second its end point. A circle with state 1 is a full circle and has two null leading members. A circle with state 0 is an arc and has two leading point references. An arc runs counterclockwise about the sketch normal from its start point to its end point, on the circle of the stored center and radius. Its end points lie on that circle within the kernel linear tolerance, `1e-6` internal centimetres.
+The point list of a circle or ellipse starts with two members. Two null references mark a closed curve. Two point references mark a bounded curve: the first is its start point and the second its end point. A circle with state 1 is a full circle and has two null leading members. A circle with state 0 is an arc and has two leading point references. A closed ellipse has state 1 and two leading point references whose packed values are zero. An arc runs counterclockwise about the sketch normal from its start point to its end point, on the circle of the stored center and radius. Its end points lie on that circle within the kernel linear tolerance, `1e-6` internal centimetres.
 
 A full circle, a closed ellipse, or a closed periodic polynomial spline forms a closed profile by itself. Line and arc records form a profile loop when every endpoint in their connected component has degree two and the ordered traversal closes.
 
@@ -414,6 +414,30 @@ scalar_width u32 = 8
 
 The poles use internal centimetres. The degree is positive. The knot vector is the full nondecreasing vector, with `knot_count = pole_count + degree + 1`. `curve_state = 2`, curve values `1, 1`, equal primary and secondary curves, equal first and last poles, and clamped endpoint knots define a closed periodic polynomial spline. Each endpoint knot has multiplicity `degree + 1`. Its interval is the knot domain from knot `degree` through knot `pole_count`, with a lower first value than last value. The listed points are not the spline's control polygon or its two boundary endpoints. In this closed branch, the initial nine values, the three auxiliary values, both secondary one-byte values, the spline state, the two knot values, and the curve terminal value are zero. The nine terminal u32 values are `2, 0, 0, 0, 0, 0, 0, 0, 0`; `pole_value` equals `pole_count`.
 
+The endpoint-bound open cubic form has segment major version 23 and `entity_flags = 0x40`. Its two point references select distinct point records in the owning sketch. The point list and the u32 point-value list have type 2 and metadata `2, 0`. The point-value list is `0, 1`. The first point position equals the first primary pole, and the second point position equals the last primary pole. The first and last poles differ. Increasing knot parameter runs from the first point to the second.
+
+This open form has equal primary and secondary arrays. It uses the spline curve prefix, knot lane, pole lane, and tail above with these controls:
+
+| Field | Value |
+| --- | --- |
+| Initial nine u32 values | `0x30000002, 0, 0, 0, 0, 0, 0, 0, 0` |
+| Spline state | `0` |
+| Curve state | `2` |
+| Auxiliary lists | Two empty type-2 lists |
+| Auxiliary values | `0, 0, 0` |
+| Secondary prefix, presence, and state | `0`, `1`, `0` |
+| Nine terminal values | `2, 0, 0, 0, 0, 0, 0, 0, 0` |
+| Array form and degree | `0`, `3` |
+| Array tolerance | `1e-9` |
+| Knot value | `knot_count` |
+| Knot values | `0, 0` |
+| Pole value | `8` |
+| Pole tolerance | `1e-12` |
+| Curve values | `1, 1` |
+| Curve terminal value | `0` |
+
+The open cubic knot vector has `knot_count = pole_count + 4`. Each endpoint knot has multiplicity four. Its interval is the full nonempty knot domain from knot 3 through knot `pole_count`. The curve is polynomial and nonperiodic.
+
 Type `9e146d7cd1115bd5000847b00524dc09` stores a spline-point relation. After the constraint header it stores a spline reference and a point reference, in that order.
 
 Type `184d8790d011f8d10008cabc0663dc09` stores a compressed 4-by-4 sketch transform after the content header. An optional u32 value `0x203` precedes two u16 masks. For matrix element bit `b`, a clear zero-mask bit and clear value-mask bit select one following f64. A clear zero-mask bit and set value-mask bit select positive one. A set zero-mask bit and clear value-mask bit select zero. Both bits set select negative one. Explicit values occur in row-major order. Translation values use internal centimetres.
@@ -436,7 +460,7 @@ Type `100a0d59d111cae680006fb1e13554c7` encodes an angle dimension between two l
 
 Types `bf70e821d011d0d20008ccbc0663dc09`, `b07b170fd11196e680006fb1e13554c7`, `c0a3558fd1115ee0800066b1e13554c7`, `5052da64d1115ee0800066b1e13554c7`, `e07b9a5ad1115de0800066b1e13554c7`, and `107cdd0dd1119ce680006fb1e13554c7` encode midpoint, fix, horizontal-alignment, vertical-alignment, collinear, and symmetric relations. Their constraint-header parameter is null. After the constraint header:
 
-- midpoint stores a line or arc reference and a point reference, followed from save version 20 by `value:u32`; the point is the midpoint of the curve;
+- midpoint stores a line or arc reference and a point reference, followed from save version 20 by `value:u32`; in the neutral midpoint form the value is 0 and the point is the midpoint of the curve;
 - fix stores one entity reference;
 - horizontal alignment stores two point references; the points have the same v coordinate;
 - vertical alignment stores two point references; the points have the same u coordinate;
