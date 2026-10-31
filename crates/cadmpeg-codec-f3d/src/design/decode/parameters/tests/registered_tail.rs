@@ -71,7 +71,7 @@ fn parameter_registered_tail_resolves_full_record_identity_and_refuses_wrong_typ
 
 /// A registered target's low byte sits where the fixed tail stores its
 /// family marker; `0x10` or `0x11` there must not admit discriminator `6`
-/// for a source kind other than `TangencyWeight`.
+/// for a document parameter.
 #[test]
 fn parameter_registered_tail_target_byte_is_not_a_family_marker() {
     for target in [0x110u64, 0x111] {
@@ -151,4 +151,50 @@ fn parameter_fixed_tail_marker_that_equals_a_registered_target_reads_as_fixed() 
     let archive = registered_tail_archive(frame, super::super::PARAMETER_TAIL_TYPE_GUID, 0x12);
     let decoded = with_scan(&archive, decode_parameters).unwrap();
     assert_eq!(decoded.parameters.len(), 1);
+}
+
+/// A feature input or dimension with discriminator `6` and a registered plain
+/// tail is a parameter; a document parameter, a stray flag byte after the
+/// target, and a truncated tail are not.
+#[test]
+fn parameter_registered_tail_admits_discriminator_six_feature_inputs() {
+    let radius = |owner: Option<u32>, kind: &str, unit: Option<&str>| {
+        let mut frame = parameter_record(owner, "0.6 mm", kind, unit, "d302", 0.06);
+        frame[22..30].copy_from_slice(&6u64.to_le_bytes());
+        frame
+    };
+    for target in [181u64, 513, 0x110] {
+        for (kind, unit) in [("Radius", Some("mm")), ("Linear Dimension-9", Some("mm"))] {
+            let frame = with_registered_tail(radius(Some(40), kind, unit), target);
+            let archive =
+                registered_tail_archive(frame, super::super::PARAMETER_TAIL_TYPE_GUID, target);
+            let decoded = with_scan(&archive, decode_parameters).unwrap();
+            assert_eq!(decoded.parameters.len(), 1, "{kind} {target:#x}");
+            assert_eq!(decoded.parameters[0].source_kind(), kind);
+            assert_eq!(decoded.parameters[0].name(), "d302");
+            assert!(decoded.unparsed.is_empty());
+        }
+    }
+    let target = 181u64;
+    let good = with_registered_tail(radius(Some(40), "Radius", Some("mm")), target);
+    let refused = |frame: Vec<u8>| {
+        let archive =
+            registered_tail_archive(frame, super::super::PARAMETER_TAIL_TYPE_GUID, target);
+        let decoded = with_scan(&archive, decode_parameters).unwrap();
+        assert!(decoded.parameters.is_empty());
+    };
+    let tail = good.len() - 12;
+    let mut flagged = good.clone();
+    flagged[tail + 11] = 1;
+    refused(flagged);
+    let mut truncated = good.clone();
+    truncated.truncate(good.len() - 1);
+    refused(truncated);
+    let mut other_discriminator = good.clone();
+    other_discriminator[22..30].copy_from_slice(&7u64.to_le_bytes());
+    refused(other_discriminator);
+    refused(with_registered_tail(
+        radius(None, "User Parameter", Some("mm")),
+        target,
+    ));
 }

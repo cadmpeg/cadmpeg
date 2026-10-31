@@ -428,7 +428,9 @@ fn parse_design_parameter_with_tail(
             || (source_kind_at == expression_end + 11 && (registered_tail || tail[2] != 16))
             || !(if registered_tail {
                 family_discriminator.is_some()
-                    && valid_design_parameter_family(family_discriminator, &source_kind, 19)
+                    && (valid_design_parameter_family(family_discriminator, &source_kind, 19)
+                        || (family_discriminator.is_some_and(|value| value.code() == 6)
+                            && source_kind != TYPED_DOCUMENT_SOURCE_KIND))
             } else {
                 valid_design_parameter_family(family_discriminator, &source_kind, tail[2])
             })
