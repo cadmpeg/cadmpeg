@@ -126,9 +126,6 @@ pub(crate) enum SldprtLossCode {
     TessellationDisplayWithoutGeometry,
     /// No body record was available; a body hierarchy was derived.
     TopologyBodyHierarchyDerived,
-    /// Shared-edge coedge senses give an odd-parity face cycle, so some face
-    /// sense contradicts one of its edges.
-    TopologyFaceSenseConflict,
     /// A canonical face has no explicit body relation.
     TopologyFaceUnclaimed,
     /// Referenced FIN records have conflicting complete frames.
@@ -251,7 +248,6 @@ impl SldprtLossCode {
         Self::TessellationReusedTagAmbiguous,
         Self::TessellationDisplayWithoutGeometry,
         Self::TopologyBodyHierarchyDerived,
-        Self::TopologyFaceSenseConflict,
         Self::TopologyFaceUnclaimed,
         Self::TopologyFinRecordAmbiguous,
         Self::TopologyFinPartnerUnresolved,
@@ -333,7 +329,6 @@ impl SldprtLossCode {
             Self::TessellationReusedTagAmbiguous => "tessellation.reused-tag-ambiguous",
             Self::TessellationDisplayWithoutGeometry => "tessellation.display-without-geometry",
             Self::TopologyBodyHierarchyDerived => "topology.body-hierarchy-derived",
-            Self::TopologyFaceSenseConflict => "topology.face-sense-conflict",
             Self::TopologyFaceUnclaimed => "topology.face-unclaimed",
             Self::TopologyFinRecordAmbiguous => "topology.fin-record-ambiguous",
             Self::TopologyFinPartnerUnresolved => "topology.fin-partner-unresolved",
@@ -430,7 +425,6 @@ impl SldprtLossCode {
             | Self::TessellationReusedTagAmbiguous
             | Self::TessellationDisplayWithoutGeometry
             | Self::TopologyBodyHierarchyDerived
-            | Self::TopologyFaceSenseConflict
             | Self::TopologyFaceUnclaimed
             | Self::TopologyFinRecordAmbiguous
             | Self::TopologyFinPartnerUnresolved
@@ -467,9 +461,7 @@ impl SldprtLossCode {
             Self::DialectLayerCollision => LossTaxonomy::DecodeDiagnostic,
             Self::SourceDialectDisplaced => LossTaxonomy::SourceDialectDisplaced,
             Self::SourcePropertyKeyBlank => LossTaxonomy::AttributesNotTransferred,
-            Self::TopologyBodyHierarchyDerived | Self::TopologyFaceSenseConflict => {
-                LossTaxonomy::TopologyGaugeSubstituted
-            }
+            Self::TopologyBodyHierarchyDerived => LossTaxonomy::TopologyGaugeSubstituted,
             Self::TopologyFaceUnclaimed
             | Self::TopologyFinRecordAmbiguous
             | Self::TopologyFinPartnerUnresolved
@@ -719,7 +711,6 @@ mod tests {
                 "tessellation.reused-tag-ambiguous",
                 "tessellation.display-without-geometry",
                 "topology.body-hierarchy-derived",
-                "topology.face-sense-conflict",
                 "topology.face-unclaimed",
                 "topology.fin-record-ambiguous",
                 "topology.fin-partner-unresolved",

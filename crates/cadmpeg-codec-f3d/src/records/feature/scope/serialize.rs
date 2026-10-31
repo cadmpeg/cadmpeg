@@ -174,6 +174,7 @@ impl Serialize for DesignParameterScope {
             _ => {}
         }
 
+        emit_opt!("align_envelope", self.align_envelope());
         emit_opt!("move_operation", self.move_operation());
         emit_opt!("scale_operation", self.scale_operation());
         emit_opt!("surface_stitch_operation", self.surface_stitch_operation());

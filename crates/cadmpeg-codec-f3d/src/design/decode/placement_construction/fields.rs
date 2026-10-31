@@ -104,8 +104,13 @@ pub(super) fn scan(
     }) {
         return None;
     }
-    let arc_length_for_periodic_face = if version >= 11 {
+    let arc_length_for_periodic_face = if (11..16).contains(&version) {
         Some(real(&mut view)?)
+    } else {
+        None
+    };
+    let periodic_face_mode = if version >= 16 {
+        Some(byte(&mut view)?)
     } else {
         None
     };
@@ -197,6 +202,7 @@ pub(super) fn scan(
             linear_offset_on_periodic_face,
             align_up_direction,
             arc_length_for_periodic_face,
+            periodic_face_mode,
             axis_flipped,
             use_u_direction,
             definer_creator,
@@ -284,6 +290,7 @@ pub(super) fn retain(
         linear_offset_on_periodic_face: value.linear_offset_on_periodic_face,
         align_up_direction: value.align_up_direction,
         arc_length_for_periodic_face: value.arc_length_for_periodic_face,
+        periodic_face_mode: value.periodic_face_mode,
         axis_flipped: value.axis_flipped,
         use_u_direction: value.use_u_direction,
         definer_creator: retain_optional(ctx, value.definer_creator)?,

@@ -20,6 +20,9 @@ use cadmpeg_ir::features::FeatureOperation;
 use cadmpeg_ir::math::Point3;
 use cadmpeg_ir::math::Vector3;
 
+/// Tolerance for the millimetre pitch of a projected Thread.
+const EPS_THREAD_PITCH: f64 = 1.0e-9;
+
 #[test]
 fn dispatcher_projects_datum_feature_scopes() {
     let mut transform = crate::records::sketch_placement::SketchPlacementMatrix::IDENTITY.rows();
@@ -647,6 +650,7 @@ fn dispatcher_projects_remaining_operand_feature_scopes() {
                         opaque_scalar: 0.0,
                         opaque_scalar_offset: 22,
                         variant: false,
+                        closing_flag: false,
                     },
                 )
                 .unwrap(),
@@ -1045,13 +1049,38 @@ fn dispatcher_projects_remaining_operand_feature_scopes() {
             bodies: BodySelection::Native(scopes[5].id.clone()),
         })
     );
+    let FeatureDefinition::Operation(FeatureOperation::CosmeticThread {
+        face,
+        standard,
+        designation,
+        diameter,
+        pitch,
+        modeled,
+        extent,
+    }) = definition("Thread")
+    else {
+        panic!("Thread scope projects to a neutral Thread");
+    };
+    assert_eq!(face, FaceSelection::Native(groups[3].id.clone()));
     assert_eq!(
-        definition("Thread"),
-        FeatureDefinition::Operation(FeatureOperation::CosmeticThread {
-            face: FaceSelection::Native(groups[3].id.clone()),
-            diameter: Some(cadmpeg_ir::scalar::PositiveLength::new(3.5).unwrap()),
-            extent: Some(cadmpeg_ir::features::CosmeticThreadExtent::Through {}),
-        })
+        standard
+            .as_ref()
+            .map(cadmpeg_core::text::NonBlankString::as_str),
+        Some("GB Metric profile")
+    );
+    assert_eq!(
+        designation
+            .as_ref()
+            .map(cadmpeg_core::text::NonBlankString::as_str),
+        Some("M3.5x0.6")
+    );
+    assert_eq!(diameter, cadmpeg_ir::scalar::PositiveLength::new(3.5));
+    let pitch = pitch.expect("pitch").get();
+    assert!((pitch - 0.6).abs() < EPS_THREAD_PITCH, "pitch {pitch} mm");
+    assert_eq!(modeled, None);
+    assert_eq!(
+        extent,
+        Some(cadmpeg_ir::features::CosmeticThreadExtent::Through {})
     );
 }
 
@@ -1141,6 +1170,7 @@ fn form_dispatcher_retains_a_result_owner_without_a_cage_identity_join() {
         .unwrap();
     let feature_id = crate::ids::neutral_feature_id(&scope);
     let mut features = vec![cadmpeg_ir::features::Feature {
+        product_definition: None,
         id: feature_id,
         ordinal: 0,
         name: None,
@@ -1283,6 +1313,7 @@ fn form_dispatcher_retains_a_group_without_a_cage_identity_join() {
             .unwrap();
         let feature_id = crate::ids::neutral_feature_id(&scope);
         let mut features = vec![cadmpeg_ir::features::Feature {
+            product_definition: None,
             id: feature_id,
             ordinal: 0,
             name: None,

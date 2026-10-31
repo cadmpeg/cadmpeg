@@ -97,6 +97,8 @@ pub(crate) enum InventorLossCode {
     FeatureSheetMetalStyleFormsNative,
     /// Revolve operands differ from the admitted construction forms.
     FeatureRevolveOperandsNative,
+    /// `DeleteFace` Boolean construction roles remain unresolved.
+    FeatureDeleteFaceOperandsNative,
     /// Mirror operands differ from the identity-frame, zero-option construction.
     FeatureMirrorOperandsNative,
     /// Split construction operands or result topology remain native.
@@ -129,6 +131,8 @@ pub(crate) enum InventorLossCode {
     FeatureDerivedSourceNative,
     /// Derived-part tagging has no neutral construction rule.
     FeatureDerivedTaggingNative,
+    /// Tagging selection effects remain native.
+    FeatureTaggingNative,
     /// Parameter records have a unit or expression graph that is not closed.
     ParameterGraphOpen,
     /// Parameter records have an expression whose text passes the local cap.
@@ -225,6 +229,7 @@ impl InventorLossCode {
         Self::FeatureSheetMetalBendControlsRetained,
         Self::FeatureSheetMetalStyleFormsNative,
         Self::FeatureRevolveOperandsNative,
+        Self::FeatureDeleteFaceOperandsNative,
         Self::FeatureMirrorOperandsNative,
         Self::FeatureSplitOperandsNative,
         Self::FeatureBodySelectionNative,
@@ -241,6 +246,7 @@ impl InventorLossCode {
         Self::FeatureStateUnresolved,
         Self::FeatureDerivedSourceNative,
         Self::FeatureDerivedTaggingNative,
+        Self::FeatureTaggingNative,
         Self::ParameterGraphOpen,
         Self::ParameterExpressionBounded,
         Self::ParameterScopeUnresolved,
@@ -328,6 +334,7 @@ impl InventorLossCode {
             Self::FeatureSplitOperandsNative => "feature.split-operands-native",
             Self::FeatureWorkPlaneFrameNative => "feature.work-plane-frame-native",
             Self::FeatureRevolveOperandsNative => "feature.revolve-operands-native",
+            Self::FeatureDeleteFaceOperandsNative => "feature.delete-face-operands-native",
             Self::FeatureRevolveExtentNative => "feature.revolve-extent-native",
             Self::FeatureRevolveDirectionNative => "feature.revolve-direction-native",
             Self::FeatureRevolveControlUnresolved => "feature.revolve-control-unresolved",
@@ -340,6 +347,7 @@ impl InventorLossCode {
             Self::FeatureStateUnresolved => "feature.state-unresolved",
             Self::FeatureDerivedSourceNative => "feature.derived-source-native",
             Self::FeatureDerivedTaggingNative => "feature.derived-tagging-native",
+            Self::FeatureTaggingNative => "feature.tagging-native",
             Self::ParameterGraphOpen => "parameter.graph-open",
             Self::ParameterExpressionBounded => "parameter.expression-bounded",
             Self::ParameterScopeUnresolved => "parameter.scope-unresolved",
@@ -427,6 +435,7 @@ impl InventorLossCode {
             | Self::FeatureSplitOperandsNative
             | Self::FeatureWorkPlaneFrameNative
             | Self::FeatureRevolveOperandsNative
+            | Self::FeatureDeleteFaceOperandsNative
             | Self::FeatureRevolveExtentNative
             | Self::FeatureRevolveDirectionNative
             | Self::FeatureRevolveControlUnresolved
@@ -442,6 +451,7 @@ impl InventorLossCode {
             | Self::FeatureStateUnresolved
             | Self::FeatureDerivedSourceNative
             | Self::FeatureDerivedTaggingNative
+            | Self::FeatureTaggingNative
             | Self::SketchGraphOpen => LossTaxonomy::FeatureHistoryRetained,
             Self::ParameterGraphOpen
             | Self::ParameterExpressionBounded
@@ -535,6 +545,7 @@ mod tests {
                 "feature.sheet-metal-bend-controls-retained",
                 "feature.sheet-metal-style-forms-native",
                 "feature.revolve-operands-native",
+                "feature.delete-face-operands-native",
                 "feature.mirror-operands-native",
                 "feature.split-operands-native",
                 "feature.body-selection-native",
@@ -551,6 +562,7 @@ mod tests {
                 "feature.state-unresolved",
                 "feature.derived-source-native",
                 "feature.derived-tagging-native",
+                "feature.tagging-native",
                 "parameter.graph-open",
                 "parameter.expression-bounded",
                 "parameter.scope-unresolved",

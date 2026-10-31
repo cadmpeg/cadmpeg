@@ -493,6 +493,7 @@ fn nx_boolean_retains_disjoint_current_and_input_local_bodies() {
         })
     );
     let feature = Feature {
+        product_definition: None,
         id: FeatureId::mint("synthetic:test:id#feature".to_string()).expect("identity grammar"),
         ordinal: 0,
         name: None,

@@ -932,6 +932,7 @@ pub(in super::super) fn transfer_sketches(
                     }),
                 ),
                 native_ref: Some(sketch_native_ref(&sketch_id)),
+                product_definition: None,
             };
             source_carriers.admit_feature(ctx, ir, feature)?;
         }

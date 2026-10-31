@@ -45,7 +45,8 @@ struct TracedWrapper {
     ends: [cadmpeg_ir::math::Point3; 2],
 }
 
-/// Rolling balls already resolved, keyed by blend attribute and nesting depth.
+/// Rolling balls already resolved for one face, keyed by blend attribute and
+/// nesting depth.
 pub(super) type BlendMemo<'a, 'ctx> =
     RefCell<HashMap<(u16, usize), Option<std::rc::Rc<super::blend_fit::BlendGeometry<'a, 'ctx>>>>>;
 
@@ -69,8 +70,6 @@ pub(super) struct CarrierIndex {
     marker_conflicts: HashSet<u16>,
     /// Blend-boundary records naming one side of a rolling-ball construction.
     blend_bounds: HashMap<u16, blend::BlendBoundCarrier>,
-    /// The vertex positions of the faces on each blend surface carrier.
-    blend_face_vertices: HashMap<u16, Vec<cadmpeg_ir::math::Point3>>,
     /// Intersection records whose chart is absent, with their supports.
     chartless_intersections: HashMap<u16, [u16; 2]>,
     /// Bounded wrappers of chartless intersections, traced at refinement.
@@ -204,17 +203,6 @@ impl CarrierIndex {
         self.blend_support_pairs.get(&attr)
     }
 
-    /// Record the vertex positions of a face on the blend surface carrier
-    /// `blend`.
-    pub(super) fn note_blend_face(&mut self, blend: u16, vertices: &[cadmpeg_ir::math::Point3]) {
-        if self.blends.contains_key(&blend) {
-            self.blend_face_vertices
-                .entry(blend)
-                .or_default()
-                .extend_from_slice(vertices);
-        }
-    }
-
     /// The wedge of the support pair at `attr` about `spine` over the face
     /// with `vertices`, when both its members are surface carriers.
     ///
@@ -252,9 +240,8 @@ impl CarrierIndex {
         let mut refined_curves = Vec::new();
         let mut traced_curves = Vec::new();
         {
-            let memo: BlendMemo<'_, '_> = RefCell::new(HashMap::new());
             let spines: HashSet<u16> = self.blends.values().map(|blend| blend.spine).collect();
-            // Attribute order makes the shared blend memo deterministic.
+            // Attribute order makes the first refusal deterministic.
             let mut charts = self.curves.iter().collect::<Vec<_>>();
             charts.sort_unstable_by_key(|(attr, _)| **attr);
             for (attr, curve) in charts {
@@ -266,9 +253,17 @@ impl CarrierIndex {
                     continue;
                 }
                 let [first, second] = intersection.support_data.supports;
+                let ends = match &intersection.carrier.geometry {
+                    cadmpeg_ir::geometry::CurveGeometry::Solved(
+                        cadmpeg_ir::geometry::SolvedCurveGeometry::Nurbs(stored),
+                    ) => nurbs_ends(stored),
+                    _ => None,
+                };
+                let ends = ends.as_ref().map_or(&[][..], |ends| &ends[..]);
+                let memo: BlendMemo<'_, '_> = RefCell::new(HashMap::new());
                 let blends = [
-                    self.blend_geometry(ctx, first, &memo)?,
-                    self.blend_geometry(ctx, second, &memo)?,
+                    self.blend_geometry(ctx, first, ends, &memo)?,
+                    self.blend_geometry(ctx, second, ends, &memo)?,
                 ];
                 for blend in memo.borrow().values().flatten() {
                     blend.reset_seed();
@@ -303,9 +298,10 @@ impl CarrierIndex {
             }
             for traced in &self.traced {
                 let [first, second] = traced.supports;
+                let memo: BlendMemo<'_, '_> = RefCell::new(HashMap::new());
                 let blends = [
-                    self.blend_geometry(ctx, first, &memo)?,
-                    self.blend_geometry(ctx, second, &memo)?,
+                    self.blend_geometry(ctx, first, &traced.ends, &memo)?,
+                    self.blend_geometry(ctx, second, &traced.ends, &memo)?,
                 ];
                 for blend in memo.borrow().values().flatten() {
                     blend.reset_seed();
@@ -385,7 +381,8 @@ impl CarrierIndex {
     }
 
     /// The rolling ball of the blend carried by `attr`, or of the blend a
-    /// blend-boundary record at `attr` names.
+    /// blend-boundary record at `attr` names, over the stretch of its spine
+    /// that `vertices` span.
     ///
     /// # Errors
     ///
@@ -394,18 +391,20 @@ impl CarrierIndex {
         &'a self,
         ctx: &'a DecodeContext<'ctx>,
         attr: u16,
+        vertices: &[cadmpeg_ir::math::Point3],
         memo: &BlendMemo<'a, 'ctx>,
     ) -> Result<
         Option<std::rc::Rc<super::blend_fit::BlendGeometry<'a, 'ctx>>>,
         cadmpeg_core::CodecError,
     > {
-        self.nested_blend_geometry(ctx, attr, 0, memo)
+        self.nested_blend_geometry(ctx, attr, 0, vertices, memo)
     }
 
     /// The rolling ball of the blend carried by `attr`, `depth` supports
     /// below the blend asked for, when its spine resolves and each support is
-    /// analytic or itself such a blend. `memo` shares each blend's rolling
-    /// ball between callers.
+    /// analytic or itself such a blend. A support pair takes its wedge over
+    /// the face with `vertices`. `memo` shares each blend's rolling ball
+    /// between the supports of that face.
     ///
     /// # Errors
     ///
@@ -415,6 +414,7 @@ impl CarrierIndex {
         ctx: &'a DecodeContext<'ctx>,
         attr: u16,
         depth: usize,
+        vertices: &[cadmpeg_ir::math::Point3],
         memo: &BlendMemo<'a, 'ctx>,
     ) -> Result<
         Option<std::rc::Rc<super::blend_fit::BlendGeometry<'a, 'ctx>>>,
@@ -430,7 +430,7 @@ impl CarrierIndex {
         if let Some(known) = memo.borrow().get(&(attr, depth)) {
             return Ok(known.clone());
         }
-        let geometry = self.solve_blend_geometry(ctx, attr, depth, memo)?;
+        let geometry = self.solve_blend_geometry(ctx, attr, depth, vertices, memo)?;
         memo.borrow_mut().insert((attr, depth), geometry.clone());
         Ok(geometry)
     }
@@ -440,6 +440,7 @@ impl CarrierIndex {
         ctx: &'a DecodeContext<'ctx>,
         attr: u16,
         depth: usize,
+        vertices: &[cadmpeg_ir::math::Point3],
         memo: &BlendMemo<'a, 'ctx>,
     ) -> Result<
         Option<std::rc::Rc<super::blend_fit::BlendGeometry<'a, 'ctx>>>,
@@ -463,9 +464,7 @@ impl CarrierIndex {
                             ctx,
                             spine,
                             [&first.geometry, &second.geometry],
-                            self.blend_face_vertices
-                                .get(&attr)
-                                .map_or(&[][..], Vec::as_slice),
+                            vertices,
                         )?
                         else {
                             return Ok(None);
@@ -478,7 +477,7 @@ impl CarrierIndex {
                 None => vec![reference],
             };
             for member in members {
-                let Some(side) = self.nested_blend_side(ctx, member, depth, memo)? else {
+                let Some(side) = self.nested_blend_side(ctx, member, depth, vertices, memo)? else {
                     return Ok(None);
                 };
                 sides[slot].push(side);
@@ -490,8 +489,8 @@ impl CarrierIndex {
         )
     }
 
-    /// The support at `attr` as a blend side: its surface carrier, or the
-    /// rolling ball of the blend it carries.
+    /// The support at `attr` as a blend side of the face with `vertices`: its
+    /// surface carrier, or the rolling ball of the blend it carries.
     ///
     /// # Errors
     ///
@@ -500,12 +499,13 @@ impl CarrierIndex {
         &'a self,
         ctx: &'a DecodeContext<'ctx>,
         attr: u16,
+        vertices: &[cadmpeg_ir::math::Point3],
         memo: &BlendMemo<'a, 'ctx>,
     ) -> Result<Option<super::blend_fit::Side<'a, 'ctx>>, cadmpeg_core::CodecError> {
         for blend in memo.borrow().values().flatten() {
             blend.reset_seed();
         }
-        self.nested_blend_side(ctx, attr, 0, memo)
+        self.nested_blend_side(ctx, attr, 0, vertices, memo)
     }
 
     fn nested_blend_side<'a, 'ctx>(
@@ -513,12 +513,13 @@ impl CarrierIndex {
         ctx: &'a DecodeContext<'ctx>,
         attr: u16,
         depth: usize,
+        vertices: &[cadmpeg_ir::math::Point3],
         memo: &BlendMemo<'a, 'ctx>,
     ) -> Result<Option<super::blend_fit::Side<'a, 'ctx>>, cadmpeg_core::CodecError> {
         match self.surfaces.get(&attr) {
             Some(surface) => Ok(Some(super::blend_fit::Side::Surface(&surface.geometry))),
             None => Ok(self
-                .nested_blend_geometry(ctx, attr, depth + 1, memo)?
+                .nested_blend_geometry(ctx, attr, depth + 1, vertices, memo)?
                 .map(super::blend_fit::Side::Blend)),
         }
     }
@@ -837,9 +838,15 @@ mod tests {
         .unwrap();
         let memo: super::BlendMemo<'_, '_> =
             std::cell::RefCell::new(std::collections::HashMap::new());
-        assert!(index.blend_geometry(&ctx, 21, &memo).unwrap().is_some());
+        assert!(index
+            .blend_geometry(&ctx, 21, &[], &memo)
+            .unwrap()
+            .is_some());
         assert!(memo.borrow().contains_key(&(8, 0)));
-        assert!(index.blend_geometry(&ctx, 22, &memo).unwrap().is_none());
+        assert!(index
+            .blend_geometry(&ctx, 22, &[], &memo)
+            .unwrap()
+            .is_none());
     }
 
     #[test]
@@ -865,5 +872,97 @@ mod tests {
                 .collect::<Vec<_>>(),
             [(9, 0), (10, 200)]
         );
+    }
+
+    #[test]
+    fn a_nested_wedge_takes_its_outside_over_the_face_being_fitted() {
+        use crate::brep::{Carrier, CurveCarrier, SurfaceCarrier};
+        use cadmpeg_ir::geometry::analytic::PlaneSurface;
+        use cadmpeg_ir::geometry::{CurveGeometry, SolvedCurveGeometry};
+        use cadmpeg_ir::geometry::{SolvedSurfaceGeometry, SurfaceGeometry};
+        use cadmpeg_ir::math::{Point3, Vector3};
+
+        // Blend 5 rolls a unit ball between the wedge of the floor z = 0 and
+        // the wall x = 0, and the plane x = 1.3. Over y = 0 to 2 its spine
+        // runs at x = 0.3, z = 0.95, outside the wall. Its chart runs on to
+        // x = -1.15 at y = -60, behind the wall.
+        let mut record =
+            crate::test_support::parasolid::blend_surface_carrier(5, [9, 20], 7, 1.0e-3);
+        record[19] = 0x45;
+        let ctx = cadmpeg_test_support::service_decode_context();
+        let mut carriers = super::scan_carriers(&ctx, &record).expect("carrier scan");
+        let plane = |attr: u16, origin: Point3, normal: Vector3, reference: Vector3| {
+            Carrier::Surface(SurfaceCarrier {
+                attr,
+                offset: 0,
+                end: 0,
+                geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
+                    PlaneSurface::try_new(origin, normal, reference).expect("plane fixture"),
+                )),
+                orientation_reversed: false,
+            })
+        };
+        let x = Vector3::new(1.0, 0.0, 0.0);
+        let z = Vector3::new(0.0, 0.0, 1.0);
+        carriers.insert(plane(11, Point3::new(0.0, 0.0, 0.0), z, x));
+        carriers.insert(plane(12, Point3::new(0.0, 0.0, 0.0), x, z));
+        carriers.insert(plane(
+            20,
+            Point3::new(1.3, 0.0, 0.0),
+            Vector3::new(-1.0, 0.0, 0.0),
+            z,
+        ));
+        carriers.insert_blend_support_pair(
+            9,
+            blend::SupportPairCarrier {
+                supports: [11, 12],
+                intersection: 13,
+            },
+        );
+        carriers.insert(Carrier::Curve(CurveCarrier {
+            runs_against_edges: false,
+            attr: 7,
+            offset: 0,
+            end: 0,
+            geometry: CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(
+                cadmpeg_ir::geometry::nurbs::NurbsCurve::new(
+                    1,
+                    vec![0.0, 0.0, 0.06, 0.063, 0.063],
+                    cadmpeg_ir::geometry::nurbs::NurbsPoles3::Polynomial {
+                        points: vec![
+                            Point3::new(-1.15, -60.0, 0.95),
+                            Point3::new(0.3, 0.0, 0.95),
+                            Point3::new(0.3, 3.0, 0.95),
+                        ],
+                    },
+                    false,
+                )
+                .expect("polyline fixture"),
+            )),
+            parameter_range: None,
+        }));
+        let foot = |vertices: &[Point3]| {
+            let memo = std::cell::RefCell::new(std::collections::HashMap::new());
+            match carriers
+                .blend_side(&ctx, 5, vertices, &memo)
+                .expect("blend side")
+            {
+                Some(super::super::blend_fit::Side::Blend(ball)) => ball
+                    .pipe_foot(Point3::new(0.3, 1.0, 3.0))
+                    .map(|(foot, _)| foot),
+                _ => None,
+            }
+        };
+        let near = [Point3::new(0.0, 0.0, 0.0), Point3::new(0.0, 2.0, 0.0)];
+        let far = [Point3::new(-1.0, -58.0, 0.0), Point3::new(-1.1, -59.0, 0.0)];
+        let on_face = foot(&near).expect("ball over the near face");
+        assert!(
+            on_face.distance(Point3::new(0.3, 1.0, 1.0 + 0.91_f64.sqrt())) < 1.0e-6,
+            "{on_face:?}"
+        );
+        assert!(foot(&far).is_none_or(|other| other.distance(on_face) > 1.0e-3));
+        let mut both = near.to_vec();
+        both.extend_from_slice(&far);
+        assert!(foot(&both).is_none_or(|other| other.distance(on_face) > 1.0e-3));
     }
 }

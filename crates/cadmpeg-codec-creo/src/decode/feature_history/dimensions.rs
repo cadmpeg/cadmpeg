@@ -399,6 +399,7 @@ pub(in super::super) fn transfer_feature_dimensions(
         source_carriers.admit_parameter(
             ir,
             DesignParameter {
+                product_definition: None,
                 id: id.clone(),
                 owner: Some(owner_id.clone()),
                 ordinal,

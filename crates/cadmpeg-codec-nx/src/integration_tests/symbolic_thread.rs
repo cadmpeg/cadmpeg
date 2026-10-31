@@ -45,6 +45,7 @@ fn symbolic_thread_pipeline_checks_witness_without_inventing_faces_or_extent() {
         face,
         diameter,
         extent,
+        ..
     }) = result.ir().model.features[0].evaluation.definition()
     else {
         panic!("cosmetic thread")

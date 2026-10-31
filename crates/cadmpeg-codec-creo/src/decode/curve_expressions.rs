@@ -687,6 +687,7 @@ pub(super) fn transfer_curve_expression_features(
             source_carriers.admit_parameter(
                 ir,
                 DesignParameter {
+                    product_definition: None,
                     id: crate::identity::copy_checked_id(parameter_id.as_str())?,
                     owner: Some(crate::identity::copy_checked_id(feature_id.as_str())?),
                     ordinal,
@@ -821,6 +822,7 @@ pub(super) fn transfer_curve_expression_features(
             ctx,
             ir,
             Feature {
+                product_definition: None,
                 id: feature_id,
                 ordinal,
                 name: Some(name),

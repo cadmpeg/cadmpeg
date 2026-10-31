@@ -299,8 +299,8 @@ fn scan_decodes_pcurve_endpoints_in_both_face_frames() {
     let pcurve = &scan.curves.pcurves[0];
     assert_eq!(pcurve.curve_id, 7);
     assert_eq!(pcurve.stored_face_ids(), [10, 11]);
-    assert_eq!(pcurve.face_0_endpoints, [[0.0, 1.0], [1.0, 0.0]]);
-    assert_eq!(pcurve.face_1_endpoints, [[3.0, 0.0], [3.0, 1.0]]);
+    assert_eq!(pcurve.face_0_endpoints, [[1.0; 2]; 2]);
+    assert_eq!(pcurve.face_1_endpoints, [[-3.0, 1.0], [-3.0, -3.0]]);
 
     let result = CreoCodec
         .decode(&mut Cursor::new(data), &DecodeOptions::default())
@@ -314,9 +314,12 @@ fn scan_decodes_pcurve_endpoints_in_both_face_frames() {
 
     let mut mismatched_topology = scan.curves.topology_rows.clone();
     mismatched_topology[0].type_byte = 1;
-    assert!(
-        crate::curve::pcurve_endpoints(&scan.curves.parameters, &mismatched_topology).is_empty()
-    );
+    assert!(crate::curve::pcurve_endpoints(
+        &scan.curves.parameters,
+        &mismatched_topology,
+        &mut Vec::new()
+    )
+    .is_empty());
 }
 
 #[test]
@@ -336,22 +339,22 @@ fn scan_decodes_positive_dict_pcurve_slots() {
     assert_eq!(scan.curves.parameters.len(), 1);
     assert_eq!(
         scan.curves.parameters[0].scalar_values(),
-        vec![0.0, 1.0, expected, 0.0, 1.0, 38.0, expected, 38.0]
+        vec![1.0, 1.0, expected, 1.0, 1.0, 38.0, expected, 38.0]
     );
     assert_eq!(scan.curves.parameters[0].opaque_spans, Vec::new());
     assert_eq!(scan.curves.pcurves.len(), 1);
     assert_eq!(
         scan.curves.pcurves[0].face_0_endpoints,
-        [[0.0, 1.0], [1.0, 38.0]]
+        [[1.0, 1.0], [1.0, 38.0]]
     );
     assert_eq!(
         scan.curves.pcurves[0].face_1_endpoints,
-        [[expected, 0.0], [expected, 38.0]]
+        [[expected, 1.0], [expected, 38.0]]
     );
 }
 
 #[test]
-fn scan_decodes_standalone_zero_slots_in_pcurve_endpoint_frames() {
+fn scan_decodes_standalone_quarter_turn_slots_in_pcurve_endpoint_frames() {
     let mut payload = visibgeom_payload(0, 1);
     payload.extend_from_slice(b"topol_ref_data\0\x07\x08\x04\x01\xf6");
     payload.extend_from_slice(&[0x12, 0xe4]);
@@ -363,20 +366,16 @@ fn scan_decodes_standalone_zero_slots_in_pcurve_endpoint_frames() {
     let scan = container::scan_bytes_ok(build_prt("c", &[("VisibGeom", payload)]));
 
     assert_eq!(scan.curves.parameters.len(), 1);
-    assert_eq!(scan.curves.parameters[0].scalar_tokens.len(), 5);
-    assert_eq!(scan.curves.parameters[0].opaque_spans.len(), 3);
-    assert!(scan.curves.parameters[0]
-        .opaque_spans
-        .iter()
-        .all(|span| span.raw == [0x12]));
+    assert_eq!(scan.curves.parameters[0].scalar_tokens.len(), 8);
+    assert_eq!(scan.curves.parameters[0].opaque_spans.len(), 0);
     assert_eq!(scan.curves.pcurves.len(), 1);
     assert_eq!(
         scan.curves.pcurves[0].face_0_endpoints,
-        [[0.0, 1.0], [1.0, 0.0]]
+        [[std::f64::consts::FRAC_PI_2; 2]; 2]
     );
     assert_eq!(
         scan.curves.pcurves[0].face_1_endpoints,
-        [[3.0, 0.0], [3.0, 1.0]]
+        [[-3.0, std::f64::consts::FRAC_PI_2], [-3.0, -3.0]]
     );
 }
 
@@ -557,8 +556,14 @@ fn scan_decodes_labeled_prototype_pcurve_uvs() {
     assert_eq!(scan.curves.prototype_pcurves.len(), 1);
     let prototype = &scan.curves.prototype_pcurves[0];
     assert_eq!(prototype.curve_id, 44);
-    assert_eq!(prototype.face_0_endpoints, [[0.0, 1.0], [1.0, 0.0]]);
-    assert_eq!(prototype.face_1_endpoints, [[3.0, 0.0], [3.0, 1.0]]);
+    assert_eq!(
+        prototype.face_0_endpoints,
+        [[std::f64::consts::FRAC_PI_2; 2]; 2]
+    );
+    assert_eq!(
+        prototype.face_1_endpoints,
+        [[-3.0, std::f64::consts::FRAC_PI_2], [-3.0, -3.0]]
+    );
 }
 
 #[test]
@@ -640,7 +645,7 @@ fn scan_decodes_and_binds_labeled_prototype_topology() {
     );
     assert_eq!(
         scan.curves.bound_prototype_pcurves[0].face_0_endpoints,
-        [[0.0, 1.0], [1.0, 0.0]]
+        [[1.0; 2]; 2]
     );
     let result = CreoCodec
         .decode(&mut Cursor::new(data), &DecodeOptions::default())

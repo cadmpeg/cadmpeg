@@ -5,8 +5,6 @@ use cadmpeg_test_support::EditableDecodeResult;
 use crate::test_support::assembly_test::{f3d_without_brep, f3z_archive, XREF_ROLE};
 use crate::test_support::smbh_geometry_test::synthetic_mixed_smbh;
 use crate::test_support::zip_test::f3d_with_smbh;
-use crate::F3dCodec;
-use cadmpeg_ir::codec::Codec;
 use cadmpeg_ir::codec::DecodeOptions;
 use std::io::Cursor;
 
@@ -14,21 +12,22 @@ use std::io::Cursor;
 fn merged_archive_keeps_each_component_unknown_record_image_and_owner() {
     let component = f3d_with_smbh(&synthetic_mixed_smbh());
     let original = EditableDecodeResult::from(
-        F3dCodec
-            .decode(
-                &mut Cursor::new(component.clone()),
-                &DecodeOptions::default(),
-            )
-            .unwrap(),
+        crate::test_support::archive_session::decode(
+            &mut Cursor::new(component.clone()),
+            &DecodeOptions::default(),
+        )
+        .unwrap(),
     );
     let unknowns = original.ir().native_unknowns("f3d").unwrap();
     assert!(!unknowns.is_empty());
     let root = f3d_without_brep("assembly-design", "root.f3d", &[("comp.f3d", XREF_ROLE)]);
     let archive = f3z_archive("root.f3d", &[("root.f3d", &root), ("comp.f3d", &component)]);
     let decoded = EditableDecodeResult::from(
-        F3dCodec
-            .decode(&mut Cursor::new(archive), &DecodeOptions::default())
-            .unwrap(),
+        crate::test_support::archive_session::decode(
+            &mut Cursor::new(archive),
+            &DecodeOptions::default(),
+        )
+        .unwrap(),
     );
     for unknown in unknowns {
         let source_id = unknown.id.as_str();

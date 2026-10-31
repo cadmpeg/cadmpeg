@@ -4244,3 +4244,33 @@ type = "u32"
 source = "spec"
 anchor = "The segment-major-19 plate-and-bend face suffix occupies"
 value = 0
+
+[[record]]
+name = "pm_dc_work_point_fields"
+kind = "byte"
+section = "13"
+anchor = "In segment major version 19, the work-point body before its two reference lists occupies 36 bytes"
+size = 36
+note = "Offsets start after the segment-major-19 content header."
+parsed_by = "crates/cadmpeg-codec-inventor/src/feature.rs"
+
+[[record.field]]
+name = "entity_flags"
+offset = 0
+type = "u32"
+source = "spec"
+anchor = "`entity_flags:u32` and two u32 values"
+
+[[record.field]]
+name = "values"
+offset = 4
+type = "u32[2]"
+source = "spec"
+anchor = "segment major versions above 21 add one u32 value"
+
+[[record.field]]
+name = "origin"
+offset = 12
+type = "f64[3]"
+source = "spec"
+anchor = "Three f64 values follow: the point in internal centimetres"

@@ -58,6 +58,8 @@ use std::hash::Hash;
 
 pub(crate) mod form_cages;
 
+/// Millimetres per Design length unit (the Design stream stores centimetres).
+const DESIGN_LENGTH_TO_MILLIMETRE: f64 = 10.0;
 const EPS_FEATURE_PROJECT_PROJECT_OFFSET_FACES_E9: f64 = 1.0e-9;
 const EPS_FEATURE_PROJECT_MATRIX_AXIS_ANGLE_E12: f64 = 1.0e-12;
 const EPS_FEATURE_PROJECT_MATRIX_AXIS_ANGLE_E8: f64 = 1.0e-8;
@@ -354,7 +356,7 @@ pub(crate) enum ScopeHistoryPredecessor<'a> {
 }
 
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
-enum ComponentHistoryNamespace {
+pub(crate) enum ComponentHistoryNamespace {
     Aggregate,
     Component(u64),
 }
@@ -431,11 +433,19 @@ impl<'a> ScopeHistoryGraph<'a> {
         }
     }
 
-    fn component_namespace(
+    pub(crate) fn component_namespace(
         scope: &DesignParameterScope,
         component_naming_spaces: &[crate::records::recipes::DesignComponentNamingSpace],
     ) -> Option<ComponentHistoryNamespace> {
-        let stream = native_stream(&scope.id)?;
+        Self::component_namespace_at(&scope.id, scope.record_index, component_naming_spaces)
+    }
+
+    pub(crate) fn component_namespace_at(
+        id: &str,
+        record_index: u32,
+        component_naming_spaces: &[crate::records::recipes::DesignComponentNamingSpace],
+    ) -> Option<ComponentHistoryNamespace> {
+        let stream = native_stream(id)?;
         let mut stream_spaces = component_naming_spaces
             .iter()
             .filter(|space| native_stream(&space.id) == Some(stream))
@@ -444,7 +454,7 @@ impl<'a> ScopeHistoryGraph<'a> {
             return Some(ComponentHistoryNamespace::Aggregate);
         }
         stream_spaces
-            .filter(|space| space.component_record_index <= u64::from(scope.record_index))
+            .filter(|space| space.component_record_index <= u64::from(record_index))
             .max_by_key(|space| space.component_record_index)
             .map(|space| ComponentHistoryNamespace::Component(space.component_record_index))
     }
@@ -1071,7 +1081,13 @@ pub(crate) fn project_parameter_design_with_edge_identities(
                             Ok(FeatureDefinition::Operation(
                                 FeatureOperation::CosmeticThread {
                                     face,
+                                    standard: Some(construction.profile.clone()),
+                                    designation: Some(construction.designation.clone()),
                                     diameter: Some(nominal_size),
+                                    pitch: cadmpeg_ir::scalar::PositiveLength::new(
+                                        construction.pitch.get() * DESIGN_LENGTH_TO_MILLIMETRE,
+                                    ),
+                                    modeled: None,
                                     extent,
                                 },
                             ))
@@ -1227,6 +1243,18 @@ pub(crate) fn project_parameter_design_with_edge_identities(
                         })
                     } else if matches!(
                         scope.kind(),
+                        crate::records::feature::scope::DesignFeatureKind::MoveFace
+                            | crate::records::feature::scope::DesignFeatureKind::DeplacerFace
+                    ) {
+                        project_move_face(scope, construction_groups, face_operands)?
+                            .unwrap_or_else(|| {
+                                FeatureDefinition::Operation(FeatureOperation::Native {
+                                    kind: scope.kind_name().into(),
+                                    parameters: BTreeMap::new(),
+                                })
+                            })
+                    } else if matches!(
+                        scope.kind(),
                         crate::records::feature::scope::DesignFeatureKind::DeleteFace
                             | crate::records::feature::scope::DesignFeatureKind::SurfaceDeleteFace
                     ) {
@@ -1308,6 +1336,7 @@ pub(crate) fn project_parameter_design_with_edge_identities(
             };
             let outputs = inserted_bodies;
             Ok(Feature {
+                product_definition: None,
                 id: scope_ids[&(native_scope, scope.record_index)].clone(),
                 ordinal: source_ordinals[&(native_scope, scope.record_index)],
                 name: Some(format!(
@@ -1557,6 +1586,7 @@ pub(crate) fn project_parameter_design_with_edge_identities(
                 }
             };
             NeutralParameter {
+                product_definition: None,
                 id: crate::ids::neutral_parameter_id(parameter),
                 owner: owner.cloned(),
                 ordinal: owner
@@ -7934,6 +7964,68 @@ fn project_split_face(
                 target_selection
             },
             tool,
+        },
+    )))
+}
+
+/// A `MoveFace` scope projects when its transform is a pure translation.
+fn project_move_face(
+    scope: &DesignParameterScope,
+    construction_groups: &[DesignConstructionOperandGroup],
+    face_operands: &[DesignFaceOperand],
+) -> Result<Option<cadmpeg_ir::features::FeatureDefinition>, CodecError> {
+    use cadmpeg_ir::features::{
+        FaceMotion, FaceSelection, FeatureDefinition, FeatureDirection3, FeatureOperation,
+    };
+
+    let operation = or_none!(scope.move_operation());
+    if !operation.preserves_orientation()
+        || matrix_axis_angle(operation.transform.as_ref()).is_some()
+    {
+        return Ok(None);
+    }
+    let group = or_none!(single_operand_group(
+        construction_groups,
+        scope,
+        DesignOperandRole::ROLE_0X10
+    ));
+    let member_count = or_none!(scope.reference_members().len().checked_sub(2));
+    if group.scope_reference_ordinal != 0
+        || group.record_index != *or_none!(scope.reference_members().values().next())
+        || !group.members().iter().map(|member| member.value).eq(scope
+            .reference_members()
+            .values()
+            .skip(1)
+            .take(member_count)
+            .copied())
+    {
+        return Ok(None);
+    }
+    let translation = Vector3::new(
+        operation.transform[0][3] * 10.0,
+        operation.transform[1][3] * 10.0,
+        operation.transform[2][3] * 10.0,
+    );
+    let direction = or_none!(cadmpeg_ir::units::UnitVector3::normalized(translation));
+    let distance = or_none!(cadmpeg_ir::scalar::Length::new(translation.norm()));
+    let faces = resolved_historical_face_group(
+        scope,
+        scope.previous_history_state_id(),
+        group,
+        face_operands,
+    )
+    .map_or_else(
+        || resolved_face_group(group, face_operands),
+        |face| Ok(Some(face)),
+    )?
+    .unwrap_or_else(|| FaceSelection::Native(group.id.clone()));
+    Ok(Some(FeatureDefinition::Operation(
+        FeatureOperation::MoveFace {
+            faces,
+            motion: FaceMotion::Translate {
+                direction: FeatureDirection3::from(direction),
+                distance,
+            },
         },
     )))
 }

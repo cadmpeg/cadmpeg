@@ -29,6 +29,7 @@ fn native(valid: bool) -> crate::native::F3dNative {
             opaque_scalar: 0.0,
             opaque_scalar_offset: 1_062,
             variant: false,
+            closing_flag: false,
         })
         .unwrap();
     if valid {
