@@ -97,6 +97,8 @@ pub(crate) enum InventorLossCode {
     FeatureSheetMetalStyleFormsNative,
     /// Revolve operands differ from the admitted construction forms.
     FeatureRevolveOperandsNative,
+    /// `DeleteFace` Boolean construction roles remain unresolved.
+    FeatureDeleteFaceOperandsNative,
     /// Mirror operands differ from the identity-frame, zero-option construction.
     FeatureMirrorOperandsNative,
     /// Split construction operands or result topology remain native.
@@ -227,6 +229,7 @@ impl InventorLossCode {
         Self::FeatureSheetMetalBendControlsRetained,
         Self::FeatureSheetMetalStyleFormsNative,
         Self::FeatureRevolveOperandsNative,
+        Self::FeatureDeleteFaceOperandsNative,
         Self::FeatureMirrorOperandsNative,
         Self::FeatureSplitOperandsNative,
         Self::FeatureBodySelectionNative,
@@ -331,6 +334,7 @@ impl InventorLossCode {
             Self::FeatureSplitOperandsNative => "feature.split-operands-native",
             Self::FeatureWorkPlaneFrameNative => "feature.work-plane-frame-native",
             Self::FeatureRevolveOperandsNative => "feature.revolve-operands-native",
+            Self::FeatureDeleteFaceOperandsNative => "feature.delete-face-operands-native",
             Self::FeatureRevolveExtentNative => "feature.revolve-extent-native",
             Self::FeatureRevolveDirectionNative => "feature.revolve-direction-native",
             Self::FeatureRevolveControlUnresolved => "feature.revolve-control-unresolved",
@@ -431,6 +435,7 @@ impl InventorLossCode {
             | Self::FeatureSplitOperandsNative
             | Self::FeatureWorkPlaneFrameNative
             | Self::FeatureRevolveOperandsNative
+            | Self::FeatureDeleteFaceOperandsNative
             | Self::FeatureRevolveExtentNative
             | Self::FeatureRevolveDirectionNative
             | Self::FeatureRevolveControlUnresolved
@@ -540,6 +545,7 @@ mod tests {
                 "feature.sheet-metal-bend-controls-retained",
                 "feature.sheet-metal-style-forms-native",
                 "feature.revolve-operands-native",
+                "feature.delete-face-operands-native",
                 "feature.mirror-operands-native",
                 "feature.split-operands-native",
                 "feature.body-selection-native",

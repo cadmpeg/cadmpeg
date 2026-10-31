@@ -888,6 +888,10 @@ fn decode_container<'a>(
         ));
         losses.extend(unresolved.extrusion_losses);
         losses.extend(unresolved.revolve_losses);
+        losses.extend(crate::feature::delete_face::native_losses(
+            &feature_inventory,
+            &ir.model.features,
+        ));
         losses.extend(unresolved.loft_losses);
         losses.extend(unresolved.split_losses);
         losses.extend(unresolved.mirror_losses);
