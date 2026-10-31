@@ -101,7 +101,12 @@ pub(crate) fn offset_surface_carrier(attr: u16, support: u16, distance: f64) -> 
 }
 
 /// A compact type-56 constant-radius rolling-ball blend.
-fn blend_surface_carrier(attr: u16, supports: [u16; 2], spine: u16, signed_radius: f64) -> Vec<u8> {
+pub(crate) fn blend_surface_carrier(
+    attr: u16,
+    supports: [u16; 2],
+    spine: u16,
+    signed_radius: f64,
+) -> Vec<u8> {
     let mut bytes = vec![0x00, 0x38];
     be16(&mut bytes, attr);
     be32(&mut bytes, 0);

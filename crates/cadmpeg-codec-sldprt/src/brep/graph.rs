@@ -2351,13 +2351,8 @@ fn decode_graph(
     typed_facts: &typed::Facts,
     stream: &cadmpeg_ir::StreamName,
 ) -> Result<Brep, cadmpeg_core::CodecError> {
-    for bridge in t.bridges().values() {
-        let face = walk_face(bridge, t);
-        carriers.note_blend_face(face.surface_attr, &face_vertex_positions(t, &face));
-    }
     let lane_refusals = std::mem::take(&mut carriers.lane_refusals);
     let carriers: &CarrierIndex = carriers;
-    let blend_memo: super::index::BlendMemo<'_, '_> = std::cell::RefCell::new(HashMap::new());
     let typed_records = typed_body_records(typed_facts, t);
     let body_records = typed_records.unwrap_or_default();
     let body_modifiers = unique_body_modifiers(entity_facts.body_modifiers);
@@ -3352,6 +3347,8 @@ fn decode_graph(
                     let cache = match (cache, carriers.curve(blend.spine)) {
                         (Some(cache), _) => Some(cache),
                         (None, Some(spine)) => {
+                            let blend_memo: super::index::BlendMemo<'_, '_> =
+                                std::cell::RefCell::new(HashMap::new());
                             let mut sides = [None, None];
                             for (slot, resolved) in support_attrs.into_iter().enumerate() {
                                 let (BlendSupportRef::Surface(reference)
@@ -3363,7 +3360,12 @@ fn decode_graph(
                                     &vertices,
                                 )? {
                                     Some(wedge) => Some(super::blend_fit::Side::Wedge(wedge)),
-                                    None => carriers.blend_side(ctx, resolved, &blend_memo)?,
+                                    None => carriers.blend_side(
+                                        ctx,
+                                        resolved,
+                                        &vertices,
+                                        &blend_memo,
+                                    )?,
                                 };
                             }
                             let fitted = match sides {
