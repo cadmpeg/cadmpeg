@@ -5583,17 +5583,20 @@ pub(crate) fn parameter_records_for_rows(
                 );
                 let revolution_named =
                     revolution::named_frame(row, &record, rows, &prototypes, &bounds, &cache);
+                // A named matrix frame recognized by the bounded floating
+                // reader keeps that reader's admission and refusal; the
+                // revolution production takes the frame when it admits it or
+                // when the matrix reader does not recognize the body.
                 let use_revolution = matrix_named.is_none()
-                    || revolution_named.is_some_and(|(admission, floating)| {
-                        floating || admission.frame().is_some()
-                    });
+                    || revolution_named.is_some_and(|(admission, _)| admission.frame().is_some());
                 let named = if use_revolution {
                     revolution_named.map(|(admission, _)| admission.frame())
                 } else {
                     matrix_named.map(cylinder_frame_readers::CylinderRotationFrame::frame)
                 };
                 let revolution_refused = refused_rotation_inline
-                    || (named.is_some_and(|frame| frame.is_none())
+                    || (use_revolution
+                        && named.is_some_and(|frame| frame.is_none())
                         && revolution_named
                             .is_some_and(|(admission, _)| admission.frame().is_none()))
                     || inline
