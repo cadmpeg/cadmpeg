@@ -5,6 +5,7 @@
 //! validation pass is responsible for sanity checks such as "a direction is
 //! non-degenerate" where the IR is expected to hold geometry.
 
+use crate::math::portable::Portable;
 use crate::scalar::FiniteReal;
 #[cfg(feature = "schema")]
 use schemars::JsonSchema;
@@ -12,6 +13,7 @@ use serde::{Deserialize, Serialize};
 
 /// Scaled planar intersections and exact orientation signs.
 pub mod planar;
+pub mod portable;
 
 /// Scaled least-squares solvers.
 pub mod solve;
@@ -56,8 +58,8 @@ impl Point3 {
     /// Euclidean distance to another point.
     pub fn distance(self, other: Point3) -> f64 {
         (self.x - other.x)
-            .hypot(self.y - other.y)
-            .hypot(self.z - other.z)
+            .portable_hypot(self.y - other.y)
+            .portable_hypot(self.z - other.z)
     }
 
     /// Squared Euclidean distance to another point (no square root).
@@ -124,7 +126,7 @@ impl Vector3 {
 
     /// Euclidean length.
     pub fn norm(&self) -> f64 {
-        self.x.hypot(self.y).hypot(self.z)
+        self.x.portable_hypot(self.y).portable_hypot(self.z)
     }
 
     /// Dot product with another vector.
@@ -316,15 +318,15 @@ pub fn scaled_sinh_cosh(
     let parameter = parameter.get();
     let plain = || {
         (
-            scale.get() * parameter.sinh(),
-            scale.get() * parameter.cosh(),
+            scale.get() * parameter.portable_sinh(),
+            scale.get() * parameter.portable_cosh(),
         )
     };
     if scale == FiniteReal::ZERO {
         return Ok((FiniteReal::ZERO, FiniteReal::ZERO));
     }
-    let sinh = parameter.sinh();
-    if let Some(cosh) = FiniteReal::new(parameter.cosh()) {
+    let sinh = parameter.portable_sinh();
+    if let Some(cosh) = FiniteReal::new(parameter.portable_cosh()) {
         // The sinh magnitude stays below cosh, but each is its own rounded
         // library result, so the sinh is admitted where it is read.
         let products = FiniteReal::new(sinh).and_then(|sinh| {
@@ -336,8 +338,8 @@ pub fn scaled_sinh_cosh(
         return products.ok_or_else(plain);
     }
     let third = parameter.abs() / 3.0;
-    let exponential = third.exp();
-    let tail = (parameter.abs() - third - third).exp();
+    let exponential = third.portable_exp();
+    let tail = (parameter.abs() - third - third).portable_exp();
     let magnitude =
         product_quotient([scale.get(), exponential, exponential, tail], [2.0]).ok_or_else(plain)?;
     // At this parameter magnitude, the omitted exp(-abs(parameter)) term

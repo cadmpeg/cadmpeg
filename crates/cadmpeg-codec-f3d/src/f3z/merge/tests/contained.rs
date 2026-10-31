@@ -269,6 +269,16 @@ fn place(poses: Vec<XrefContainedPose>) -> (Transform, Vec<cadmpeg_ir::report::l
 fn place_reference(
     reference: XrefReference,
 ) -> (Transform, Vec<cadmpeg_ir::report::loss::LossKind>) {
+    let (transform, losses, _) = place_reference_stored_at(reference, 10.0);
+    (transform, losses)
+}
+
+/// [`place_reference`] with the instance stored at `stored_x` millimetres, and
+/// the number of instances that left the identity.
+fn place_reference_stored_at(
+    reference: XrefReference,
+    stored_x: f64,
+) -> (Transform, Vec<cadmpeg_ir::report::loss::LossKind>, usize) {
     const OWNER: &str = "f3d:Design/BulkStream.dat:design-component-occurrence#9222";
     const OUTER: &str = "f3d:Design/BulkStream.dat:design-component-occurrence#9300";
     const PART: &str =
@@ -292,7 +302,7 @@ fn place_reference(
             "f3d:model:occurrence#owner:xref-0-0",
             Some("f3d:model:occurrence#owner"),
             Some("f3d:xref:reference#0-occurrence-0"),
-            10.0,
+            stored_x,
         ),
         occurrence(
             "f3d:xref/role/occurrence-0/model:occurrence#member-root",
@@ -327,7 +337,7 @@ fn place_reference(
         ..Default::default()
     };
     let mut losses = Vec::new();
-    super::super::place_contained_poses(
+    let left_identity = super::super::place_contained_poses(
         &cadmpeg_test_support::service_decode_context(),
         &mut ir,
         &table,
@@ -341,7 +351,11 @@ fn place_reference(
         .find(|occurrence| occurrence.id.as_str() == "f3d:model:occurrence#owner:xref-0-0")
         .unwrap()
         .transform;
-    (instance, losses.into_iter().map(|loss| loss.code).collect())
+    (
+        instance,
+        losses.into_iter().map(|loss| loss.code).collect(),
+        left_identity,
+    )
 }
 
 #[test]
@@ -487,4 +501,211 @@ fn an_owned_external_occurrence_takes_its_own_pose_unless_a_contained_pose_place
             F3dLossCode::XrefOwnedPoseNative.kind()
         ]
     );
+}
+
+const NESTED_ROLE: &str = "ccccdddd-eeee-ffff-0000-111122223333";
+
+/// An inline-typed cross-document element, as the nested generation stores it.
+fn inline_cross_document(target: u64, type_guid: &str, link_name: &str) -> Vec<u8> {
+    use crate::test_support::{lp_ascii, lp_utf16};
+    let mut bytes = vec![1];
+    bytes.extend_from_slice(&target.to_le_bytes());
+    lp_ascii(&mut bytes, type_guid);
+    bytes.push(1);
+    bytes.extend_from_slice(&0_u32.to_le_bytes());
+    lp_utf16(&mut bytes, "11111111-2222-3333-4444-555555555555");
+    bytes.push(0);
+    lp_utf16(&mut bytes, link_name);
+    bytes.push(0);
+    bytes
+}
+
+/// A same-document element that carries its inline type.
+fn inline_local(target: u64, type_guid: &str) -> Vec<u8> {
+    use crate::test_support::lp_ascii;
+    let mut bytes = vec![1];
+    bytes.extend_from_slice(&target.to_le_bytes());
+    lp_ascii(&mut bytes, type_guid);
+    bytes.extend_from_slice(&[0, 0]);
+    bytes
+}
+
+/// A nested-design component-path carrier: the root component of the design
+/// that the referenced design places, this document's placement 8506 and that
+/// nested occurrence's placement `contained` in the referenced design. The
+/// document placement follows the root component unless `placement_first`.
+fn nested_carrier(
+    entity_id: u64,
+    placement_first: bool,
+    contained: u64,
+    transform: [[f64; 4]; 4],
+) -> Vec<u8> {
+    let mut bytes = Vec::new();
+    bytes.extend_from_slice(&3_u32.to_le_bytes());
+    bytes.extend_from_slice(b"284");
+    bytes.extend_from_slice(&entity_id.to_le_bytes());
+    bytes.extend_from_slice(&0_u32.to_le_bytes());
+    bytes.push(1);
+    bytes.extend_from_slice(&3_u32.to_le_bytes());
+    let root = inline_cross_document(152, ROOT_COMPONENT, NESTED_ROLE);
+    let placement = inline_local(8506, PLACEMENT);
+    let (first, second) = if placement_first {
+        (placement, root)
+    } else {
+        (root, placement)
+    };
+    bytes.extend(first);
+    bytes.extend_from_slice(&48_u32.to_le_bytes());
+    bytes.extend(second);
+    bytes.extend_from_slice(&0_u32.to_le_bytes());
+    bytes.extend(inline_cross_document(contained, PLACEMENT, ROLE));
+    bytes.extend_from_slice(&2_u32.to_le_bytes());
+    bytes.push(0);
+    bytes.push(0);
+    for value in transform.into_iter().flatten() {
+        bytes.extend_from_slice(&value.to_le_bytes());
+    }
+    bytes.extend_from_slice(&2_u32.to_le_bytes());
+    bytes.extend(inline_local(8506, PLACEMENT));
+    bytes.extend(inline_cross_document(contained, PLACEMENT, ROLE));
+    bytes.extend(inline_cross_document(152, ROOT_COMPONENT, NESTED_ROLE));
+    bytes.extend(local_reference(3));
+    bytes
+}
+
+fn nested_retained(entity_id: u64, contained: u64, world: [[f64; 4]; 4]) -> XrefContainedPose {
+    let magic: Option<u32> = None;
+    let bytes = nested_carrier(entity_id, false, contained, world);
+    let pose = crate::xref::contained_component_path_pose(&bytes, magic).unwrap();
+    XrefContainedPose {
+        carrier_record_index: pose.carrier_record_index,
+        frame_bytes: bytes.into(),
+        contained_record_index: pose.contained_record_index,
+        owner_record_indices: pose.owner_record_indices,
+        transform: pose.transform.map(|rows| rows.try_into().unwrap()),
+    }
+}
+
+#[test]
+fn a_nested_design_carrier_names_its_placement_and_the_nested_occurrence() {
+    let magic: Option<u32> = None;
+    let world = translation(20.0, 0.3, 5.0);
+    for placement_first in [false, true] {
+        let bytes = nested_carrier(11, placement_first, 166, world);
+        let pose = crate::xref::contained_component_path_pose(&bytes, magic).unwrap();
+        assert_eq!(
+            (
+                pose.carrier_record_index,
+                pose.component_record_index,
+                pose.contained_record_index,
+                pose.placement_record_index,
+                pose.owner_record_indices.as_slice(),
+                pose.role.as_str(),
+            ),
+            (11, 152, 166, 8506, &[][..], ROLE)
+        );
+        assert_eq!(pose.transform, Some(world));
+        // The carrier is not the external occurrence's own pose.
+        assert!(crate::xref::component_path_pose(&bytes, magic).is_none());
+        assert!(crate::xref::owned_component_path_pose(&bytes, magic).is_none());
+
+        // Every proper prefix and a trailing byte leave no carrier.
+        for length in 0..bytes.len() {
+            assert!(
+                crate::xref::contained_component_path_pose(&bytes[..length], magic).is_none(),
+                "prefix of {length} bytes"
+            );
+        }
+        let mut longer = bytes.clone();
+        longer.push(0);
+        assert!(crate::xref::contained_component_path_pose(&longer, magic).is_none());
+    }
+}
+
+#[test]
+fn a_nested_design_carrier_refuses_elements_of_the_wrong_kind() {
+    let magic: Option<u32> = None;
+    let world = translation(20.0, 0.3, 5.0);
+    let good = nested_carrier(11, false, 166, world);
+    assert!(crate::xref::contained_component_path_pose(&good, magic).is_some());
+    let replace = |from: &[u8], to: &[u8]| {
+        let at = good
+            .windows(from.len())
+            .position(|window| window == from)
+            .unwrap();
+        let mut changed = good.clone();
+        changed.splice(at..at + from.len(), to.iter().copied());
+        changed
+    };
+    // The root component and the placement carry one role: that is not a nested design.
+    let same_role = replace(
+        &NESTED_ROLE
+            .encode_utf16()
+            .flat_map(u16::to_le_bytes)
+            .collect::<Vec<_>>(),
+        &ROLE
+            .encode_utf16()
+            .flat_map(u16::to_le_bytes)
+            .collect::<Vec<_>>(),
+    );
+    assert!(crate::xref::contained_component_path_pose(&same_role, magic).is_none());
+    // The component element is not a root component.
+    let not_root = replace(ROOT_COMPONENT.as_bytes(), PLACEMENT.as_bytes());
+    assert!(crate::xref::contained_component_path_pose(&not_root, magic).is_none());
+    // The document element is neither an untyped nor a placement-typed reference.
+    let mut other_local = nested_carrier(11, false, 166, world);
+    let at = other_local
+        .windows(PLACEMENT.len())
+        .position(|window| window == PLACEMENT.as_bytes())
+        .unwrap();
+    other_local[at..at + ROOT_COMPONENT.len()].copy_from_slice(ROOT_COMPONENT.as_bytes());
+    assert!(crate::xref::contained_component_path_pose(&other_local, magic).is_none());
+    // A zero placement target names no record.
+    let zero_target = nested_carrier(11, false, 0, world);
+    assert!(crate::xref::contained_component_path_pose(&zero_target, magic).is_none());
+    // A matrix that is not a rigid motion is no pose.
+    let mut scaled = world;
+    scaled[0][0] = 2.0;
+    assert!(crate::xref::contained_component_path_pose(
+        &nested_carrier(11, false, 166, scaled),
+        magic
+    )
+    .is_none());
+}
+
+#[test]
+fn nested_design_carriers_place_an_external_occurrence_off_the_identity() {
+    let poses = || {
+        vec![
+            nested_retained(11, 496, translation(23.0, 4.0, 0.0)),
+            nested_retained(12, 497, translation(17.0, 4.0, 0.0)),
+        ]
+    };
+    assert!(crate::xref::contained_poses_match(&reference(poses())));
+    // The parts' world poses put the instance at 200 mm, 40 mm: 195 mm below the owner at 5 mm.
+    let (transform, losses, left_identity) = place_reference_stored_at(reference(poses()), 0.0);
+    let rows = transform.rows();
+    assert!(
+        (rows[0][3] - 195.0).abs() < 1e-9 && (rows[1][3] - 40.0).abs() < 1e-9,
+        "{rows:?}"
+    );
+    assert_eq!(losses, [F3dLossCode::XrefContainedPose.kind()]);
+    assert_eq!(left_identity, 1);
+
+    // An instance stored away from the identity is not counted as having left it.
+    let (_, _, left_identity) = place_reference_stored_at(reference(poses()), 10.0);
+    assert_eq!(left_identity, 0);
+
+    // Carriers that give two poses leave the stored placement.
+    let mut disagreeing = poses();
+    disagreeing[1] = nested_retained(12, 497, translation(18.0, 4.0, 0.0));
+    let (transform, losses, left_identity) = place_reference_stored_at(reference(disagreeing), 0.0);
+    assert!(transform.rows()[0][3].abs() < 1e-9);
+    assert_eq!(losses, [F3dLossCode::XrefContainedPoseDisagrees.kind()]);
+    assert_eq!(left_identity, 0);
+
+    // A moved matrix no longer matches its retained carrier bytes.
+    let mut moved = reference(poses());
+    moved.contained_poses[0].transform = Some(translation(24.0, 4.0, 0.0).try_into().unwrap());
+    assert!(!crate::xref::contained_poses_match(&moved));
 }

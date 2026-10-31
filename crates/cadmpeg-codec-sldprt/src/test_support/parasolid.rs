@@ -257,7 +257,7 @@ pub(crate) fn torus_carrier(
     b
 }
 
-fn sphere_carrier(attr: u16, center: [f64; 3], radius: f64) -> Vec<u8> {
+pub(crate) fn sphere_carrier(attr: u16, center: [f64; 3], radius: f64) -> Vec<u8> {
     let mut b = vec![0x00, 0x35];
     be16(&mut b, attr);
     be32(&mut b, 0);
