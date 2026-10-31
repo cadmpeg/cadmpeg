@@ -1039,7 +1039,8 @@ pub(super) fn scope_related_indices(
             scope
                 .thread_construction()
                 .and_then(|construction| match &construction.form {
-                    crate::records::feature::thread::DesignThreadForm::Compact(Some(reference)) => {
+                    crate::records::feature::thread::DesignThreadForm::Compact(Some(reference))
+                    | crate::records::feature::thread::DesignThreadForm::CompactExtended(reference) => {
                         Some(reference.value.get())
                     }
                     _ => None,

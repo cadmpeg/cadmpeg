@@ -513,7 +513,7 @@ fn positional_cylinder_carrier(
     })))
 }
 
-fn surface_carrier(geometry: &SurfaceGeometry) -> Option<CarrierEquation> {
+pub(in crate::decode) fn surface_carrier(geometry: &SurfaceGeometry) -> Option<CarrierEquation> {
     match geometry {
         SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(plane_surface)) => {
             let origin = plane_surface.origin().get();

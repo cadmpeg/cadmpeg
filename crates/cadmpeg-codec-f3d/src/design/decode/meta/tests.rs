@@ -123,7 +123,7 @@ fn bulk_metadata_reuses_the_parsed_type_table() {
     with_scan(&bytes, |scan| {
         let first = super::metadata_for_bulk_stream(scan, bulk_name)?.unwrap();
         let second = super::metadata_for_bulk_stream(scan, bulk_name)?.unwrap();
-        assert!(std::rc::Rc::ptr_eq(&first, &second));
+        assert!(std::sync::Arc::ptr_eq(&first, &second));
         assert_eq!(first.types.len(), 1);
         assert_eq!(
             first.types[0]
@@ -277,6 +277,68 @@ fn feature_timeline_items_follow_the_counted_vector() {
             .map(|item| item.value)
             .collect::<Vec<_>>(),
         [101, 102]
+    );
+}
+
+/// A timeline record whose item run is `items`, where `None` is a null item.
+fn timeline_with_items(items: &[Option<u64>]) -> Vec<u8> {
+    let mut bulk = Vec::new();
+    lp_ascii(&mut bulk, "256");
+    bulk.extend_from_slice(&35_u64.to_le_bytes());
+    lp_ascii(&mut bulk, "Timeline");
+    bulk.extend_from_slice(&[0, 0, 1]);
+    bulk.extend_from_slice(&17_u64.to_le_bytes());
+    bulk.extend_from_slice(&[0, 0]);
+    bulk.extend_from_slice(&u32::try_from(items.len()).unwrap().to_le_bytes());
+    for item in items {
+        match item {
+            Some(target) => {
+                bulk.push(1);
+                bulk.extend_from_slice(&target.to_le_bytes());
+                bulk.extend_from_slice(&[0, 0]);
+            }
+            None => bulk.push(0),
+        }
+    }
+    bulk
+}
+
+fn timeline_item_values(bulk: &[u8]) -> Option<Vec<u64>> {
+    super::parse_feature_timeline_record(
+        bulk,
+        "Design/BulkStream.dat",
+        0..bulk.len(),
+        ("256", 35),
+        0,
+        &std::collections::HashMap::new(),
+    )
+    .map(|timeline| {
+        timeline
+            .frame()
+            .items()
+            .iter()
+            .map(|item| item.value)
+            .collect()
+    })
+}
+
+#[test]
+fn feature_timeline_trailing_null_items_take_no_position() {
+    assert_eq!(
+        timeline_item_values(&timeline_with_items(&[Some(101), Some(102), None])),
+        Some(vec![101, 102])
+    );
+    assert_eq!(
+        timeline_item_values(&timeline_with_items(&[Some(101), None, None])),
+        Some(vec![101])
+    );
+}
+
+#[test]
+fn feature_timeline_rejects_a_reference_after_a_null_item() {
+    assert_eq!(
+        timeline_item_values(&timeline_with_items(&[Some(101), None, Some(102)])),
+        None
     );
 }
 

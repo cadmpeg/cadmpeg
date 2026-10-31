@@ -286,7 +286,7 @@ pub(crate) fn source_less_cube() -> cadmpeg_ir::CadIr {
 pub(crate) fn encode_decode_result(ir: &cadmpeg_ir::CadIr) -> cadmpeg_ir::codec::DecodeResult {
     let mut encoded = Vec::new();
     crate::test_support::plan_fixture_with_native_envelope(
-        cadmpeg_ir::codec::write::EncodeInput { ir, fidelity: None },
+        cadmpeg_ir::codec::write::EncodeInput::new(ir, None),
         TargetRequest::Inherit,
     )
     .and_then(|plan| plan.write_to(&mut encoded))

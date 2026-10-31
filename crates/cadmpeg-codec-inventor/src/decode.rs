@@ -874,9 +874,7 @@ fn decode_container<'a>(
         losses.extend(crate::feature::derived::native_source_loss(
             &feature_inventory.labels,
         ));
-        losses.extend(crate::feature::derived::native_tagging_loss(
-            &feature_inventory.labels,
-        ));
+        losses.extend(crate::feature::tagging::native_losses(&feature_inventory));
         losses.extend(crate::feature::sheet_metal::native_kind_losses(
             &feature_inventory,
             &ir.model.features,
@@ -890,6 +888,10 @@ fn decode_container<'a>(
         ));
         losses.extend(unresolved.extrusion_losses);
         losses.extend(unresolved.revolve_losses);
+        losses.extend(crate::feature::delete_face::native_losses(
+            &feature_inventory,
+            &ir.model.features,
+        ));
         losses.extend(unresolved.loft_losses);
         losses.extend(unresolved.split_losses);
         losses.extend(unresolved.mirror_losses);

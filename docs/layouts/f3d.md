@@ -4194,6 +4194,20 @@ Unstated regions:
 
 - `5..38` (33 B): The compact scalar lanes use the same offsets as the standard construction tail.
 
+## `thread_standard_compact_construction_tail`
+
+Spec §3.1 · layout: byte offsets · size: 38 B
+
+Offsets are relative to the first byte after the third LP-UTF16 string. The variable trailer starts at offset 38 and is stated in the specification.
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 5 | `construction_marker` | `bytes[5]` | little | spec | with the construction marker `01 02 00 00 00` |
+
+Unstated regions:
+
+- `5..38` (33 B): The scalar lanes use the same offsets as the compact tail.
+
 ## `thread_standard_legacy_construction_tail`
 
 Spec §3.1 · layout: byte offsets · size: 42 B
@@ -5326,7 +5340,7 @@ Parsed by:
 
 | Offset | Size | Field | Type | Endian | Src | Meaning |
 | -----: | ---: | ----- | ---- | ------ | --- | ------- |
-| 0 | 128 | `transform` | `f64[16]` | little | spec | a row-major rigid local-to-container transform at offset 209 |
+| 0 | 128 | `transform` | `f64[16]` | little | spec | a row-major orthonormal local-to-container transform at offset 209 |
 | 137 | 1 | `owner_marker` | `u8` | little | spec | Nine zero bytes and the marker `u8 1` follow the flag or the matrix. · value `1` |
 | 138 | 8 | `owner_entity` | `u64` | little | spec | offset 347 of the matrix frame |
 
@@ -5713,6 +5727,23 @@ Relative to the first flag byte; excludes the preceding property and first paire
 | 40 | 12 | `zero_lane` | `bytes[12]` | little | spec | zero lane |
 | 52 | 8 | `unit_pair` | `f32[2]` | little | spec | f32 constants |
 | 60 | 5 | `marker` | `bytes[5]` | little | spec | marker |
+
+## `derived_sketch_point_base_prefix`
+
+Spec §3.1 · layout: byte offsets · size: 30 B
+
+Offsets are relative to the nested base-type frame of a derived sketch-point record. Six zero bytes complete the marked reference.
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 19 | 1 | `paired_reference_marker` | `u8` | little | spec | the marked `paired_reference` at offset 19 · value `1` |
+| 20 | 4 | `paired_reference` | `u32` | little | spec | its u32 record index at offset 20 |
+
+Unstated regions:
+
+- `0..11` (11 B): The nested indexed header repeats the record index of the primary frame.
+- `11..19` (8 B): The nested frame stores zero bytes at offsets 11 through 18.
+- `24..30` (6 B): The marked reference ends with six zero bytes.
 
 ## `sketch_point_v11_tail_prefix`
 
@@ -6324,6 +6355,23 @@ Offsets are relative to the end of the 190-byte selection-member frame.
 | 5 | 8 | `value` | `u64` | little | spec | byte `00`, u32 `2`, u64 `1`, and byte `00` · value `1` |
 | 13 | 1 | `trailing_zero` | `u8` | little | spec | byte `00`, u32 `2`, u64 `1`, and byte `00` · value `0` |
 
+## `extrude_selection_member_scope_tail`
+
+Spec §3.1 · layout: byte offsets · size: 50 B
+
+Offsets are relative to the end of the 190-byte selection-member frame.
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 1 | `leading_zero` | `u8` | little | spec | A selection member whose optional slot is absent can instead be a 240-byte indexed record · value `0` |
+| 1 | 8 | `opaque_scalar` | `f64` | little | spec | A selection member whose optional slot is absent can instead be a 240-byte indexed record |
+| 9 | 4 | `opaque_word` | `u32` | little | spec | A selection member whose optional slot is absent can instead be a 240-byte indexed record · value `260` |
+| 13 | 11 | `chain_reference_first` | `bytes[11]` | little | spec | A selection member whose optional slot is absent can instead be a 240-byte indexed record |
+| 24 | 3 | `separator` | `bytes[3]` | little | spec | A selection member whose optional slot is absent can instead be a 240-byte indexed record |
+| 27 | 11 | `chain_reference_second` | `bytes[11]` | little | spec | A selection member whose optional slot is absent can instead be a 240-byte indexed record |
+| 38 | 1 | `second_separator` | `u8` | little | spec | A selection member whose optional slot is absent can instead be a 240-byte indexed record · value `0` |
+| 39 | 11 | `scope_reference` | `bytes[11]` | little | spec | A selection member whose optional slot is absent can instead be a 240-byte indexed record |
+
 ## `cut_paste_prefix`
 
 Spec §3.1 · layout: byte offsets · size: 72 B
@@ -6623,7 +6671,7 @@ The reference starts at offset 36 relative to the Geometry-member indexed header
 | -----: | ---: | ----- | ---- | ------ | --- | ------- |
 | 0 | 1 | `marker` | `u8` | little | spec | byte 36 is `01` · value `1` |
 | 1 | 8 | `target` | `u64` | little | spec | its u64 target at member offset 37 names the ordinal collection |
-| 9 | 2 | `flags` | `bytes[2]` | little | spec | Byte 36 opens a same-segment marked reference; its u64 target at member offset 37 names the ordinal collection. |
+| 9 | 2 | `flags` | `bytes[2]` | little | spec | When it is `01`, its u64 target at member offset 37 names the ordinal collection. |
 
 ## `sketch_ordinal_collection_prefix`
 
@@ -7477,6 +7525,99 @@ Parsed by:
 | 151 | 3 | `zero_separator` | `bytes[3]` | little | spec | The `emboss_counted_suffix` layout starts immediately after the native pair run. · value `[0, 0, 0]` |
 | 154 | 4 | `reference_count` | `u32` | little | spec | The `emboss_counted_suffix` layout starts immediately after the native pair run. |
 
+## `align_scope_prefix`
+
+Spec §3.1 · layout: byte offsets · size: 126 B
+
+Parsed by:
+- `crates/cadmpeg-codec-f3d/src/design/decode/scopes/align.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 11 | `indexed_header` | `bytes[11]` | little | spec | An `Align` prefix precedes its ordered reference table |
+| 11 | 9 | `header_zero` | `bytes[9]` | little | spec | An `Align` prefix precedes its ordered reference table · value `[0, 0, 0, 0, 0, 0, 0, 0, 0]` |
+| 20 | 1 | `zero` | `u8` | little | spec | An `Align` prefix precedes its ordered reference table · value `0` |
+| 21 | 1 | `first_marker` | `u8` | little | spec | An `Align` prefix precedes its ordered reference table · value `1` |
+| 22 | 4 | `first_reference` | `u32` | little | spec | An `Align` prefix precedes its ordered reference table |
+| 26 | 6 | `first_padding` | `bytes[6]` | little | spec | An `Align` prefix precedes its ordered reference table · value `[0, 0, 0, 0, 0, 0]` |
+| 32 | 4 | `source_code` | `u32` | little | spec | An `Align` prefix precedes its ordered reference table |
+| 36 | 1 | `second_marker` | `u8` | little | spec | An `Align` prefix precedes its ordered reference table · value `1` |
+| 37 | 4 | `second_reference` | `u32` | little | spec | An `Align` prefix precedes its ordered reference table |
+| 41 | 6 | `second_padding` | `bytes[6]` | little | spec | An `Align` prefix precedes its ordered reference table · value `[0, 0, 0, 0, 0, 0]` |
+| 47 | 4 | `identity_length` | `u32` | little | spec | An `Align` prefix precedes its ordered reference table · value `36` |
+| 51 | 72 | `identity` | `bytes[72]` | little | spec | An `Align` prefix precedes its ordered reference table |
+| 123 | 3 | `tail_zero` | `bytes[3]` | little | spec | An `Align` prefix precedes its ordered reference table · value `[0, 0, 0]` |
+
+## `align_scope_extended_prefix`
+
+Spec §3.1 · layout: byte offsets · size: 130 B
+
+Parsed by:
+- `crates/cadmpeg-codec-f3d/src/design/decode/scopes/align.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 11 | `indexed_header` | `bytes[11]` | little | spec | An `Align` prefix precedes its ordered reference table |
+| 11 | 9 | `header_zero` | `bytes[9]` | little | spec | An `Align` prefix precedes its ordered reference table · value `[0, 0, 0, 0, 0, 0, 0, 0, 0]` |
+| 20 | 4 | `extra_code` | `u32` | little | spec | An `Align` prefix precedes its ordered reference table · value `1` |
+| 24 | 1 | `zero` | `u8` | little | spec | An `Align` prefix precedes its ordered reference table · value `0` |
+| 25 | 1 | `first_marker` | `u8` | little | spec | An `Align` prefix precedes its ordered reference table · value `1` |
+| 26 | 4 | `first_reference` | `u32` | little | spec | An `Align` prefix precedes its ordered reference table |
+| 30 | 6 | `first_padding` | `bytes[6]` | little | spec | An `Align` prefix precedes its ordered reference table · value `[0, 0, 0, 0, 0, 0]` |
+| 36 | 4 | `source_code` | `u32` | little | spec | An `Align` prefix precedes its ordered reference table |
+| 40 | 1 | `second_marker` | `u8` | little | spec | An `Align` prefix precedes its ordered reference table · value `1` |
+| 41 | 4 | `second_reference` | `u32` | little | spec | An `Align` prefix precedes its ordered reference table |
+| 45 | 6 | `second_padding` | `bytes[6]` | little | spec | An `Align` prefix precedes its ordered reference table · value `[0, 0, 0, 0, 0, 0]` |
+| 51 | 4 | `identity_length` | `u32` | little | spec | An `Align` prefix precedes its ordered reference table · value `36` |
+| 55 | 72 | `identity` | `bytes[72]` | little | spec | An `Align` prefix precedes its ordered reference table |
+| 127 | 3 | `tail_zero` | `bytes[3]` | little | spec | An `Align` prefix precedes its ordered reference table · value `[0, 0, 0]` |
+
+## `align_constructor`
+
+Spec §3.1 · layout: byte offsets · size: 293 B
+
+Parsed by:
+- `crates/cadmpeg-codec-f3d/src/design/decode/scopes/align/construction.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 11 | `indexed_header` | `bytes[11]` | little | spec | The indexed record named by the first Align prefix reference is its constructor |
+| 11 | 20 | `header_zero` | `bytes[20]` | little | spec | The indexed record named by the first Align prefix reference is its constructor · value `[0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]` |
+| 31 | 1 | `first_marker` | `u8` | little | spec | The indexed record named by the first Align prefix reference is its constructor · value `1` |
+| 32 | 4 | `first_word` | `u32` | little | spec | The indexed record named by the first Align prefix reference is its constructor |
+| 36 | 6 | `first_padding` | `bytes[6]` | little | spec | The indexed record named by the first Align prefix reference is its constructor · value `[0, 0, 0, 0, 0, 0]` |
+| 42 | 1 | `second_marker` | `u8` | little | spec | The indexed record named by the first Align prefix reference is its constructor · value `1` |
+| 43 | 4 | `second_word` | `u32` | little | spec | The indexed record named by the first Align prefix reference is its constructor |
+| 47 | 6 | `second_padding` | `bytes[6]` | little | spec | The indexed record named by the first Align prefix reference is its constructor · value `[0, 0, 0, 0, 0, 0]` |
+| 53 | 1 | `third_marker` | `u8` | little | spec | The indexed record named by the first Align prefix reference is its constructor · value `1` |
+| 54 | 4 | `third_word` | `u32` | little | spec | The indexed record named by the first Align prefix reference is its constructor |
+| 58 | 6 | `third_padding` | `bytes[6]` | little | spec | The indexed record named by the first Align prefix reference is its constructor · value `[0, 0, 0, 0, 0, 0]` |
+| 64 | 4 | `first_code` | `u32` | little | spec | The indexed record named by the first Align prefix reference is its constructor |
+| 68 | 1 | `fourth_marker` | `u8` | little | spec | The indexed record named by the first Align prefix reference is its constructor · value `1` |
+| 69 | 4 | `fourth_word` | `u32` | little | spec | The indexed record named by the first Align prefix reference is its constructor |
+| 73 | 10 | `fourth_padding` | `bytes[10]` | little | spec | The indexed record named by the first Align prefix reference is its constructor · value `[0, 0, 0, 0, 0, 0, 0, 0, 0, 0]` |
+| 83 | 4 | `second_code` | `u32` | little | spec | The indexed record named by the first Align prefix reference is its constructor |
+| 87 | 1 | `matrix_zero` | `bytes[1]` | little | spec | The indexed record named by the first Align prefix reference is its constructor · value `[0]` |
+| 88 | 128 | `matrix_scalars` | `f64[16]` | little | spec | The indexed record named by the first Align prefix reference is its constructor |
+| 216 | 2 | `matrix_tail_zero` | `bytes[2]` | little | spec | The indexed record named by the first Align prefix reference is its constructor · value `[0, 0]` |
+| 218 | 4 | `third_code` | `u32` | little | spec | The indexed record named by the first Align prefix reference is its constructor |
+| 222 | 1 | `owner_zero` | `bytes[1]` | little | spec | The indexed record named by the first Align prefix reference is its constructor · value `[0]` |
+| 223 | 1 | `owner_marker` | `u8` | little | spec | The indexed record named by the first Align prefix reference is its constructor · value `1` |
+| 224 | 4 | `owner_word` | `u32` | little | spec | The indexed record named by the first Align prefix reference is its constructor |
+| 228 | 13 | `owner_padding` | `bytes[13]` | little | spec | The indexed record named by the first Align prefix reference is its constructor · value `[0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]` |
+| 241 | 4 | `first_scalar_code` | `u32` | little | spec | The indexed record named by the first Align prefix reference is its constructor |
+| 245 | 8 | `scalar` | `f64` | little | spec | The indexed record named by the first Align prefix reference is its constructor |
+| 253 | 4 | `second_scalar_code` | `u32` | little | spec | The indexed record named by the first Align prefix reference is its constructor |
+| 257 | 1 | `first_companion_marker` | `u8` | little | spec | The indexed record named by the first Align prefix reference is its constructor · value `1` |
+| 258 | 4 | `first_companion_word` | `u32` | little | spec | The indexed record named by the first Align prefix reference is its constructor |
+| 262 | 7 | `first_companion_padding` | `bytes[7]` | little | spec | The indexed record named by the first Align prefix reference is its constructor · value `[0, 0, 0, 0, 0, 0, 0]` |
+| 269 | 1 | `second_companion_marker` | `u8` | little | spec | The indexed record named by the first Align prefix reference is its constructor · value `1` |
+| 270 | 4 | `second_companion_word` | `u32` | little | spec | The indexed record named by the first Align prefix reference is its constructor |
+| 274 | 6 | `second_companion_padding` | `bytes[6]` | little | spec | The indexed record named by the first Align prefix reference is its constructor · value `[0, 0, 0, 0, 0, 0]` |
+| 280 | 1 | `repeated_owner_marker` | `u8` | little | spec | The indexed record named by the first Align prefix reference is its constructor · value `1` |
+| 281 | 4 | `repeated_owner_word` | `u32` | little | spec | The indexed record named by the first Align prefix reference is its constructor |
+| 285 | 8 | `repeated_owner_padding` | `bytes[8]` | little | spec | The indexed record named by the first Align prefix reference is its constructor · value `[0, 0, 0, 0, 0, 0, 0, 0]` |
+
 ## `sketch_typed_compact_member_head`
 
 Spec §3.1 · layout: byte offsets · size: 74 B
@@ -7692,8 +7833,202 @@ Unstated regions:
 - `434..438` (4 B): The specification states no field in this range.
 - `487..491` (4 B): The specification states no field in this range.
 
+## `entity_tracking_carrier_prefix`
+
+Spec §3.1 · layout: byte offsets · size: 73 B
+
+Offsets are relative to the carrier indexed header; the optional related identities follow at offset 73.
+
+Parsed by:
+- `crates/cadmpeg-codec-f3d/src/design/decode/operands.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 11 | 10 | `zero_run_10` | `bytes[10]` | little | spec | The carrier header is followed by ten zero bytes, u32 values `1, 0, 1`, a u32 lane with value `2` or `3` |
+| 21 | 12 | `lead_words` | `bytes[12]` | little | spec | The carrier header is followed by ten zero bytes, u32 values `1, 0, 1`, a u32 lane with value `2` or `3` |
+| 33 | 4 | `lane` | `u32` | little | spec | The carrier header is followed by ten zero bytes, u32 values `1, 0, 1`, a u32 lane with value `2` or `3` |
+| 37 | 8 | `primary_identity` | `u64` | little | spec | The carrier header is followed by ten zero bytes, u32 values `1, 0, 1`, a u32 lane with value `2` or `3` |
+| 45 | 8 | `zero_run_8_first` | `u64` | little | spec | The carrier header is followed by ten zero bytes, u32 values `1, 0, 1`, a u32 lane with value `2` or `3` |
+| 53 | 4 | `one` | `u32` | little | spec | The carrier header is followed by ten zero bytes, u32 values `1, 0, 1`, a u32 lane with value `2` or `3` |
+| 57 | 4 | `selector` | `i32` | little | spec | The carrier header is followed by ten zero bytes, u32 values `1, 0, 1`, a u32 lane with value `2` or `3` |
+| 61 | 4 | `kind` | `u32` | little | spec | The carrier header is followed by ten zero bytes, u32 values `1, 0, 1`, a u32 lane with value `2` or `3` |
+| 65 | 8 | `zero_run_8_second` | `u64` | little | spec | The carrier header is followed by ten zero bytes, u32 values `1, 0, 1`, a u32 lane with value `2` or `3` |
+
+Unstated regions:
+
+- `0..11` (11 B): The indexed header precedes this field run.
+
+## `local_component_occurrence_empty_attributes_prefix`
+
+Spec §3.1 · layout: byte offsets · size: 213 B
+
+Offsets are relative to the indexed header. The identity or matrix tail follows at offset 213.
+
+Parsed by:
+- `crates/cadmpeg-codec-f3d/src/design/decode/components.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 11 | 8 | `empty_instance_name` | `bytes[8]` | little | spec | An empty-attribute local component occurrence stores an empty attribute list after its path. |
+| 19 | 1 | `path_marker` | `u8` | little | spec | An empty-attribute local component occurrence stores an empty attribute list after its path. · value `1` |
+| 20 | 4 | `path_count` | `u32` | little | spec | An empty-attribute local component occurrence stores an empty attribute list after its path. · value `1` |
+| 24 | 9 | `component_reference` | `bytes[9]` | little | spec | An empty-attribute local component occurrence stores an empty attribute list after its path. |
+| 35 | 4 | `path_discriminator` | `u32` | little | spec | An empty-attribute local component occurrence stores an empty attribute list after its path. |
+| 39 | 1 | `attributes_marker` | `u8` | little | spec | An empty-attribute local component occurrence stores an empty attribute list after its path. · value `1` |
+| 40 | 4 | `attribute_count` | `u32` | little | spec | An empty-attribute local component occurrence stores an empty attribute list after its path. · value `0` |
+| 44 | 4 | `occurrence_ordinal` | `u32` | little | spec | An empty-attribute local component occurrence stores an empty attribute list after its path. |
+| 48 | 76 | `carrier_guid` | `bytes[76]` | little | spec | An empty-attribute local component occurrence stores an empty attribute list after its path. |
+| 124 | 76 | `occurrence_guid` | `bytes[76]` | little | spec | An empty-attribute local component occurrence stores an empty attribute list after its path. |
+| 201 | 9 | `component_reference_repeat` | `bytes[9]` | little | spec | An empty-attribute local component occurrence stores an empty attribute list after its path. |
+| 212 | 1 | `identity_flag` | `u8` | little | spec | An empty-attribute local component occurrence stores an empty attribute list after its path. |
+
+Unstated regions:
+
+- `0..11` (11 B): Indexed header.
+- `33..35` (2 B): Two zero trailing bytes of the local component reference.
+- `200..201` (1 B): Zero separator.
+- `210..212` (2 B): Zero trailing field of the repeated component-record reference.
+
+## `placement_v16_solved_prefix`
+
+Spec §3.1 · layout: byte offsets · size: 49 B
+
+Version-16 placement prefix. The mode value gates solved WorkPlane frame binding.
+
+Parsed by:
+- `crates/cadmpeg-codec-f3d/src/design/decode/placement_construction/fields.rs`
+- `crates/cadmpeg-codec-f3d/src/design/decode/placement_construction/work_planes.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 11 | `indexed_header` | `bytes[11]` | little | spec | An indexed Design record header is |
+| 11 | 10 | `zero_prefix` | `bytes[10]` | little | spec | The bytes from indexed-header offset 11 through 20 are zero |
+| 21 | 1 | `linear_offset_on_periodic_face` | `u8` | little | spec | LinearOffsetOnPeriodicFace |
+| 22 | 24 | `align_up_direction` | `f64[3]` | little | derived | Follows the one-byte linear-offset member. |
+| 46 | 1 | `periodic_face_mode` | `u8` | little | derived | Follows the three-f64 alignment vector. Zero admits solved frame binding. · value `0` |
+| 47 | 1 | `axis_flipped` | `u8` | little | derived | Follows the one-byte periodic-face mode. |
+| 48 | 1 | `use_u_direction` | `u8` | little | derived | Follows the one-byte axis control. |
+
+## `thread_extended_scope_prefix`
+
+Spec §3.1 · layout: byte offsets · size: 46 B
+
+Offsets are relative to the primary Thread indexed header.
+
+Parsed by:
+- `crates/cadmpeg-codec-f3d/src/design/decode/scopes/thread.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 11 | 10 | `zero_run_10` | `bytes[10]` | little | spec | It stores ten zero bytes at offsets 11 through 20 and f64 `60.0` at offset 21. |
+| 21 | 8 | `fixed_scalar` | `f64` | little | spec | It stores ten zero bytes at offsets 11 through 20 and f64 `60.0` at offset 21. |
+| 29 | 1 | `standard_flag` | `u8` | little | spec | Offset 29 is `1` for the standard token and `0` for the compact token |
+| 30 | 4 | `zero_value` | `u32` | little | spec | offset 30 is u32 zero, offset 34 is u32 `2` · value `0` |
+| 34 | 4 | `form_marker` | `u32` | little | spec | offset 30 is u32 zero, offset 34 is u32 `2` · value `2` |
+| 38 | 4 | `form_token` | `bytes[4]` | little | spec | offset 38 stores the four-byte form token, and offset 42 is u32 zero |
+| 42 | 4 | `trailing_zero` | `u32` | little | spec | offset 38 stores the four-byte form token, and offset 42 is u32 zero · value `0` |
+
+Unstated regions:
+
+- `0..11` (11 B): Indexed header.
+
+## `thread_extended_standard_trailer`
+
+Spec §3.1 · layout: byte offsets · size: 24 B
+
+Offsets are relative to the construction marker plus 38.
+
+Parsed by:
+- `crates/cadmpeg-codec-f3d/src/design/decode/scopes/thread.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 1 | `zero_flag` | `u8` | little | spec | Its trailer stores a zero byte, a marked length-owner reference, a marked offset-owner reference, and byte `1` · value `0` |
+| 1 | 11 | `length_reference` | `bytes[11]` | little | spec | Its trailer stores a zero byte, a marked length-owner reference, a marked offset-owner reference, and byte `1` |
+| 12 | 11 | `offset_reference` | `bytes[11]` | little | spec | Its trailer stores a zero byte, a marked length-owner reference, a marked offset-owner reference, and byte `1` |
+| 23 | 1 | `end_flag` | `u8` | little | spec | Its trailer stores a zero byte, a marked length-owner reference, a marked offset-owner reference, and byte `1` · value `1` |
+
+## `thread_extended_compact_trailer`
+
+Spec §3.1 · layout: byte offsets · size: 34 B
+
+Offsets are relative to the construction marker plus 38.
+
+Parsed by:
+- `crates/cadmpeg-codec-f3d/src/design/decode/scopes/thread.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 11 | `hole_reference` | `bytes[11]` | little | spec | The extended compact trailer stores marked references to the Hole, length owner, and offset owner, followed by byte `1` |
+| 11 | 11 | `length_reference` | `bytes[11]` | little | spec | The extended compact trailer stores marked references to the Hole, length owner, and offset owner, followed by byte `1` |
+| 22 | 11 | `offset_reference` | `bytes[11]` | little | spec | The extended compact trailer stores marked references to the Hole, length owner, and offset owner, followed by byte `1` |
+| 33 | 1 | `end_flag` | `u8` | little | spec | The extended compact trailer stores marked references to the Hole, length owner, and offset owner, followed by byte `1` · value `1` |
+
+## `design_parameter_plain_tail`
+
+Spec §3.1 · layout: byte offsets · size: 12 B
+
+Parsed by:
+- `crates/cadmpeg-codec-f3d/src/design/decode/parameters.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 1 | `reserved` | `u8` | little | spec | The plain parameter tail is `u8 0` followed by a local reference. · value `0` |
+| 1 | 1 | `reference` | `u8` | little | spec | The plain parameter tail is `u8 0` followed by a local reference. · value `1` |
+| 2 | 8 | `target` | `u64` | little | spec | The reference stores its complete u64 target and two zero flag bytes. |
+| 10 | 2 | `flags` | `bytes[2]` | little | spec | The reference stores its complete u64 target and two zero flag bytes. · value `[0, 0]` |
+
+## `design_configuration_table_serializer_prefix`
+
+Spec §1.2 · layout: byte offsets · size: 66 B
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 4 | `class_tag_length` | `u32` | little | spec | The `DesignConfigurationTableSerializerTrigger` record in the Design `BulkStream` names the table blob. · value `3` |
+| 4 | 3 | `class_tag` | `bytes[3]` | little | spec | The `DesignConfigurationTableSerializerTrigger` record in the Design `BulkStream` names the table blob. |
+| 7 | 4 | `record_index` | `u32` | little | spec | The `DesignConfigurationTableSerializerTrigger` record in the Design `BulkStream` names the table blob. |
+| 11 | 4 | `reserved` | `u32` | little | spec | The `DesignConfigurationTableSerializerTrigger` record in the Design `BulkStream` names the table blob. · value `0` |
+| 15 | 4 | `key_length` | `u32` | little | spec | The `DesignConfigurationTableSerializerTrigger` record in the Design `BulkStream` names the table blob. · value `41` |
+| 19 | 41 | `key` | `bytes[41]` | little | spec | The `DesignConfigurationTableSerializerTrigger` record in the Design `BulkStream` names the table blob. · value `"DesignConfigurationTableSerializerTrigger"` |
+| 60 | 2 | `separator` | `bytes[2]` | little | spec | The `DesignConfigurationTableSerializerTrigger` record in the Design `BulkStream` names the table blob. · value `[0, 0]` |
+| 62 | 4 | `basename_length` | `u32` | little | spec | The `DesignConfigurationTableSerializerTrigger` record in the Design `BulkStream` names the table blob. · value `68` |
+
+## `snapshot_body_map_plain_prefix`
+
+Spec §3.1 · layout: byte offsets · size: 36 B
+
+Offsets are relative to the snapshot map's bare entity header. The companion reference has two trailing zeros.
+
+Parsed by:
+- `crates/cadmpeg-codec-f3d/src/design/decode/body.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 4 | `tag_length` | `u32` | little | spec | bare entity header `u32 3` · value `3` |
+| 4 | 3 | `class_tag` | `bytes[3]` | little | derived | The class tag follows the four-byte length. |
+| 7 | 8 | `entity_id` | `u64` | little | derived | The identity follows the four-byte length and three-byte class tag. |
+| 15 | 6 | `reserved_zero_run` | `bytes[6]` | little | derived | The reserved run follows the eight-byte identity at offset 7. · value `[0, 0, 0, 0, 0, 0]` |
+| 21 | 11 | `companion_reference` | `bytes[11]` | little | derived | The pair count at offset 32 follows the reference at offset 21. The reference occupies eleven bytes. |
+| 32 | 4 | `pair_count` | `u32` | little | spec | the pair count is at offset 32 |
+
+## `snapshot_body_map_plain_tail`
+
+Spec §3.1 · layout: byte offsets · size: 16 B
+
+Offsets are relative to the end of the counted pair run. UTF-16LE basename code units follow the character count.
+
+Parsed by:
+- `crates/cadmpeg-codec-f3d/src/design/decode/body.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 11 | `container_reference` | `bytes[11]` | little | derived | The reference owns eleven bytes; the additional zero owns one byte. |
+| 11 | 1 | `reserved_zero` | `u8` | little | derived | The additional zero follows the eleven-byte local reference. · value `0` |
+| 12 | 4 | `name_length` | `u32` | little | spec | the basename character count follows at tail offset 12 |
+
 ## Not tabulated
 
 | Area | Spec | Reason |
 | ---- | ---- | ------ |
 | Container, manifest, and stream-selection layers (§1, §2) | §1.3 | ZIP entries and `Manifest.dat` text grammar; no fixed byte-offset structure is stated. |
+| Design configuration table and rule payloads | §1.2 | Complete JSON objects. Member names and JSON syntax delimit variable-length fields; an empty table object contains zero configurations, parameter columns, and cell values. |
