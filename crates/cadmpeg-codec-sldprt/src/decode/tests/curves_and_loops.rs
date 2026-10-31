@@ -426,3 +426,30 @@ fn vertexless_ring_edge_without_reciprocal_partner_is_withheld() {
         1
     );
 }
+
+#[test]
+fn a_face_without_a_decoded_loop_is_reported_as_withheld() {
+    let mut body = triangle_body();
+    let at = body
+        .windows(4)
+        .position(|window| window == [0x00, 0x11, 0x00, 30])
+        .unwrap();
+    body[at + 8..at + 10].copy_from_slice(&31u16.to_be_bytes());
+    let result = SldprtCodec
+        .decode(
+            &mut Cursor::new(sldprt_with_body(&body)),
+            &DecodeOptions::default(),
+        )
+        .unwrap();
+
+    assert_eq!(result.ir().model.faces.len(), 0);
+    assert_eq!(
+        result
+            .report()
+            .losses
+            .iter()
+            .filter(|loss| loss.code == crate::loss::SldprtLossCode::TopologyFaceWithheld.kind())
+            .count(),
+        1
+    );
+}

@@ -511,6 +511,8 @@ pub(crate) struct Stats {
     pub(crate) withheld_ring_edges: usize,
     /// Rings withheld because a FIN forward link is not reciprocal.
     pub(crate) withheld_fin_links: usize,
+    /// Faces withheld with their surface because no loop of the face decodes.
+    pub(crate) withheld_faces: usize,
     /// Canonical faces that no explicit body record claims.
     pub(crate) unclaimed_faces: usize,
     /// Faces on a support surface this codec does not type; emitted with an
@@ -3202,6 +3204,7 @@ fn decode_graph(
             }
         }
         if loops.is_empty() {
+            out.stats.withheld_faces += 1;
             continue;
         }
         // Support surface: a decoded surface carrier, else an opaque carrier.
@@ -9042,6 +9045,28 @@ mod tests {
                 .expect("first triangle edge");
             assert!(edge.start.as_str().ends_with("#50"));
             assert!(edge.end.as_str().ends_with("#51"));
+        });
+    }
+
+    /// FIN 30 names FIN 31 as its forward link, and FIN 31 does not name it
+    /// back, so the only loop of the face is withheld.
+    #[test]
+    fn a_face_without_a_decoded_loop_is_withheld_with_its_surface() {
+        let mut body = crate::test_support::parasolid::triangle_body();
+        let at = body
+            .windows(4)
+            .position(|window| window == [0x00, 0x11, 0x00, 30])
+            .expect("synthetic triangle FIN");
+        body[at + 8..at + 10].copy_from_slice(&31u16.to_be_bytes());
+        with_test_context(|ctx| {
+            let decoded =
+                super::decode_body(ctx, &body, &cadmpeg_ir::stream_name!("withheld-face"))
+                    .expect("triangle decodes");
+            assert!(decoded.loops.is_empty());
+            assert!(decoded.faces.is_empty());
+            assert!(decoded.surfaces.is_empty());
+            assert_eq!(decoded.stats.withheld_fin_links, 1);
+            assert_eq!(decoded.stats.withheld_faces, 1);
         });
     }
 
