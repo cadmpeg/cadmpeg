@@ -629,7 +629,7 @@ the native feature when a fixed lane carries a symmetric distance.
 
 **Need.** A producer-generated radial TSM must retain a deleted domain slot at `p` and map a live element with raw slot `q > p`. The raw-slot prediction is `q`; the compact-index prediction after one deletion is `q-1`. Saving must preserve the deleted slot to separate these predictions. A controlled radial export with a nondefault sweep must establish the sweep-to-angle rule.
 
-### DR-109. EdgeFlange corner controls
+### DR-160. EdgeFlange corner controls
 
 **Question.** Which fields select corner relief, miter, and the corner gap for adjacent flange edges?
 
@@ -641,7 +641,7 @@ the native feature when a fixed lane carries a symmetric distance.
 
 **Note.** The fixed edge list does not identify an independent corner-control field.
 
-### DR-110. EdgeFlange scope radius control
+### DR-161. EdgeFlange scope radius control
 
 **Question.** What physical quantity does the positive f64 scope radius control represent?
 
