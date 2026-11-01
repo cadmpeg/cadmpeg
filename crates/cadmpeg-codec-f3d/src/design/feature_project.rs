@@ -596,7 +596,7 @@ pub(crate) struct ProjectedParameterDesign {
     /// `BaseFlange` scopes projected with their stored thickness copy because
     /// their sheet-metal rule states no thickness.
     pub(crate) unruled_flange_thicknesses: usize,
-    pub(crate) hole_extent_losses: Vec<cadmpeg_ir::report::loss::LossNote>,
+    pub(crate) hole_losses: Vec<cadmpeg_ir::report::loss::LossNote>,
 }
 
 impl ProjectedParameterDesign {
@@ -647,7 +647,7 @@ pub(crate) fn project_parameter_design_with_edge_identities(
         sheet_metal_settings,
         ..
     } = inputs;
-    let mut hole_extent_losses = Vec::new();
+    let mut hole_losses = Vec::new();
     let unruled_flange_thicknesses = std::cell::Cell::new(0_usize);
 
     let source_ordinals = authored_scope_ordinals(scopes, timelines)?;
@@ -891,7 +891,7 @@ pub(crate) fn project_parameter_design_with_edge_identities(
                     })
                 }
                 Some(DesignFeatureFamily::Hole) => {
-                    project_hole(scope, &parameters, face_operands, &mut hole_extent_losses)?
+                    project_hole(scope, &parameters, face_operands, &mut hole_losses)?
                         .map_or_else(|| native_scope_definition(scope, &parameters), Ok)?
                 }
                 Some(DesignFeatureFamily::Split) => {
@@ -1763,7 +1763,7 @@ pub(crate) fn project_parameter_design_with_edge_identities(
         parameters,
         unordered_parameter_scopes,
         unruled_flange_thicknesses: unruled_flange_thicknesses.get(),
-        hole_extent_losses,
+        hole_losses,
     })
 }
 
@@ -7420,18 +7420,18 @@ fn hole_termination(
 /// Whether the face operands of a Hole scope name at most its start face: no
 /// operand (a sketch-point Hole), or a direct `face` or `bounded_face` recipe
 /// followed by a `bounded_face` recipe, each bound to its scope reference entry.
-/// A further face operand or a direct persistent face selection can name an
-/// extent face, so it refuses the form.
+/// A further face operand, or a direct persistent face selection on a carrier
+/// that sketch points do not place, can name an extent face, so it refuses the
+/// form.
 fn hole_start_faces_only(
     scope: &DesignParameterScope,
     face_operands: &[DesignFaceOperand],
 ) -> Option<bool> {
     use crate::records::recipes::ConstructionRecipeKind;
     let stream = native_stream(&scope.id)?;
-    if scope
-        .hole_construction()
-        .is_some_and(|construction| construction.face_selection.is_some())
-    {
+    if scope.hole_construction().is_some_and(|construction| {
+        construction.face_selection.is_some() && !construction.placed_by_sketch_points()
+    }) {
         return Some(false);
     }
     let mut faces: Vec<_> = face_operands
@@ -7462,6 +7462,30 @@ fn hole_start_faces_only(
             && bound(first)
             && bound(second),
     )
+}
+
+/// One directed placement per Hole entry point, in model millimetres.
+fn hole_placements(
+    scope: &DesignParameterScope,
+) -> Option<Vec<cadmpeg_ir::features::holes::HolePlacement>> {
+    let construction = scope.hole_construction()?;
+    let control = scope.hole_extent()?.direction_control.as_ref()?.value;
+    let [x, y, z] = construction.drilling_direction(control)?;
+    let direction = cadmpeg_ir::features::FeatureDirection3::new(Vector3::new(x, y, z))?;
+    construction
+        .entry_points()?
+        .into_iter()
+        .map(|point| {
+            Some(cadmpeg_ir::features::holes::HolePlacement::Directed {
+                position: cadmpeg_ir::features::FinitePoint3::new(Point3::new(
+                    point[0].get() * 10.0,
+                    point[1].get() * 10.0,
+                    point[2].get() * 10.0,
+                ))?,
+                direction,
+            })
+        })
+        .collect()
 }
 
 fn project_hole(
@@ -7551,22 +7575,12 @@ fn project_hole(
         Some(face) => face,
         None => FaceSelection::Native(scope.id.clone()),
     };
-    let placements = if let Some(construction) = scope.hole_construction() {
-        Some(vec![cadmpeg_ir::features::holes::HolePlacement::Directed {
-            position: or_none!(cadmpeg_ir::features::FinitePoint3::new(Point3::new(
-                construction.position[0].get() * 10.0,
-                construction.position[1].get() * 10.0,
-                construction.position[2].get() * 10.0,
-            ))),
-            direction: or_none!(cadmpeg_ir::features::FeatureDirection3::new(Vector3::new(
-                construction.direction[0].get(),
-                construction.direction[1].get(),
-                construction.direction[2].get(),
-            ))),
-        }])
-    } else {
-        None
-    };
+    let placements = hole_placements(scope);
+    if placements.is_none() {
+        losses.push(crate::loss::F3dLossCode::HolePlacementUnproven.note(format!(
+            "Hole {} retains its native placement because its carrier and point-data records do not define an admitted placement.", scope.id
+        )));
+    }
     Ok(Some(FeatureDefinition::Operation(FeatureOperation::Hole {
         profile: None,
         profile_filter: None,

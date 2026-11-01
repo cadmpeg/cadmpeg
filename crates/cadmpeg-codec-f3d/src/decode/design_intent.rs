@@ -587,7 +587,7 @@ pub(super) fn decode(inputs: &DesignInputs<'_>) -> Result<DesignOutputs, CodecEr
         },
     )?;
     losses.extend(projected.unruled_flange_thickness_loss());
-    losses.extend(projected.hole_extent_losses);
+    losses.extend(projected.hole_losses);
     model.features = projected.features;
     model.parameters = projected.parameters;
     if projected.unordered_parameter_scopes != 0 {

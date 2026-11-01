@@ -16,7 +16,7 @@ use std::ops::RangeInclusive;
 
 /// Type GUID of the point-data class a `WorkPoint` scope references. Every
 /// record of this class carries the `point3d` member sequence below.
-const POINT_DATA_TYPE_GUID: &str = "69EE2FA7-BCC7-449E-9CA9-976CEFDFED44";
+pub(super) const POINT_DATA_TYPE_GUID: &str = "69EE2FA7-BCC7-449E-9CA9-976CEFDFED44";
 
 fn graphic_ascii_end(bytes: &[u8], at: usize, bounds: RangeInclusive<usize>) -> Option<usize> {
     let length = usize::try_from(View::u32_le_at(bytes, at)?).ok()?;

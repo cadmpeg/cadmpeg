@@ -161,6 +161,8 @@ pub(crate) enum F3dLossCode {
     MoveUnprojected,
     /// Hole extent controls do not define an admitted termination.
     HoleExtentUnproven,
+    /// A Hole carrier and its point-data records do not define an admitted placement.
+    HolePlacementUnproven,
     /// Align operand roles and motion have no neutral binding.
     AlignOperandsUnresolved,
     /// Align has no admitted specialized prefix.
@@ -484,6 +486,7 @@ impl F3dLossCode {
         Self::FeatureScopeUnprojected,
         Self::MoveUnprojected,
         Self::HoleExtentUnproven,
+        Self::HolePlacementUnproven,
         Self::AlignOperandsUnresolved,
         Self::AlignEnvelopeUnparsed,
         Self::AlignConstructionUnparsed,
@@ -683,6 +686,7 @@ impl F3dLossCode {
             Self::FeatureScopePayloadUninterpreted => "feature.scope-payload-uninterpreted",
             Self::FeatureScopeEnvelopeSuperseded => "feature.scope-envelope-superseded",
             Self::HoleExtentUnproven => "feature.hole-extent-unproven",
+            Self::HolePlacementUnproven => "feature.hole-placement-unproven",
             Self::FeatureScopeUnprojected => "feature.scope-unprojected",
             Self::MoveUnprojected => "feature.move-unprojected",
             Self::ParameterUnprojected => "parameter.unprojected",
@@ -900,6 +904,7 @@ impl F3dLossCode {
             | Self::FeatureDefinitionIncomplete
             | Self::SheetThicknessUnruled
             | Self::HoleExtentUnproven
+            | Self::HolePlacementUnproven
             | Self::FeatureScopeUnprojected
             | Self::EmbossControlsNative
             | Self::EmbossPrefixUnparsed
@@ -1065,6 +1070,7 @@ impl F3dLossCode {
             | Self::WorkPlaneFrameUnbound
             | Self::CylinderPlacementUnbound
             | Self::HoleExtentUnproven
+            | Self::HolePlacementUnproven
             | Self::FeatureScopeUnprojected
             | Self::EmbossControlsNative
             | Self::EmbossPrefixUnparsed
@@ -1296,6 +1302,7 @@ mod tests {
                 "feature.scope-unprojected",
                 "feature.move-unprojected",
                 "feature.hole-extent-unproven",
+                "feature.hole-placement-unproven",
                 "feature.align-operands-unresolved",
                 "feature.align-envelope-unparsed",
                 "feature.align-construction-unparsed",

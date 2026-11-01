@@ -558,6 +558,7 @@ fn hole_extent_without_point_carrier_round_trips_and_checks_kind() {
                 leading_word: None,
                 extent_control: Some(control),
                 saved_non_distance_depth: None,
+                direction_control: None,
             });
         }
         let wire = serde_json::to_value(&scope).unwrap();

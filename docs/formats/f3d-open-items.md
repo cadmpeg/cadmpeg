@@ -44,6 +44,18 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 **Note.** The decoder records the word on the native Hole extent and does not use it for projection.
 
+### DR-220. Hole carrier placement forms
+
+**Question.** Which placement does a Hole carrier state when its `refType` is not `13` or `19`?
+
+**Known.** `f3d.md` §3.1 "The carrier `refType` states how" defines the two admitted forms. The point-data record `refType` values `5`, `6`, and `17` occur on carrier `refType` `19` and do not change its placement. A Hole placed by a point on a construction plane has carrier `refType` `14`, a zero carrier position, and one point-data record with `refType` `12`.
+
+**Need.** Independent selections that vary the construction plane and the point of carrier `refType` `14`, and a file with a Hole carrier of any further `refType`.
+
+**Conflict.** None.
+
+**Note.** Such a Hole retains its native placement and reports `feature.hole-placement-unproven`.
+
 ### DR-09A. Sheet-metal settings compatibility and override encoding
 
 **Question.** What is the Hem Tangent bend-position code, what do the compatibility values `1` and `4` encode, what does the version-3 rule-reference suffix encode, and how do the settings mask bits, optional slots, and override bundle tails map to independent rule controls?

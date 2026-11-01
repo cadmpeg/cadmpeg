@@ -3395,8 +3395,10 @@ fn bind_hole_face_selection(
     let [candidate] = face_selection.historical_face_candidates.as_slice() else {
         return;
     };
-    let local = candidate.history_id == operation_history_id
-        && candidate.historical.state_ids.contains(&previous_state_id);
+    let local = candidate.history_id == operation_history_id;
+    if local && !candidate.historical.state_ids.contains(&previous_state_id) {
+        return;
+    }
     let Some(source) = historical_brep_source(&candidate.history_id) else {
         return;
     };

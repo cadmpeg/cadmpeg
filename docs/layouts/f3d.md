@@ -672,6 +672,23 @@ Parsed by:
 | 2 | 1 | `extent_control` | `u8` | little | spec | The extent control `X` is `0` for Distance and `1` for a non-distance extent |
 | 3 | 1 | `suffix` | `u8` | little | spec | Type version `4` stores the extent controls `01 01 X 00` directly |
 
+## `design_hole_direction_control`
+
+Spec §3.1 · layout: byte offsets · size: 29 B
+
+Offsets are relative to the start of the Hole extent controls of type versions 5 and 7.
+
+Parsed by:
+- `crates/cadmpeg-codec-f3d/src/design/decode/scopes/hole.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 28 | 1 | `control` | `u8` | little | spec | Type versions `5` and `7` store a direction control |
+
+Unstated regions:
+
+- `0..28` (28 B): The extent controls and the fields that follow them are not part of this record.
+
 ## `design_hole_point_data_v1_prefix`
 
 Spec §3.1 · layout: byte offsets · size: 97 B
