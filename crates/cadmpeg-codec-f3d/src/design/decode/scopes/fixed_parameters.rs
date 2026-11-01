@@ -99,6 +99,18 @@ fn exact_ordered_fixed_extrude_lanes(
     let mut against_distance = None;
     let mut side_two_taper_angle = None;
     let mut seen_fixed_ordinals = [false; 4];
+    let ordinal_zero = fixed_lanes
+        .iter()
+        .flatten()
+        .find(|(_, lane)| lane.ordinal == 0);
+    let ordinal_one = fixed_lanes
+        .iter()
+        .flatten()
+        .find(|(_, lane)| lane.ordinal == 1);
+    let swapped_two_lane = lane_count == 2
+        && embedded_distance.is_none()
+        && ordinal_zero.is_some_and(|(_, lane)| lane.value.get() == 0.0)
+        && ordinal_one.is_some_and(|(_, lane)| lane.value.get() != 0.0);
     for (record_index, lane) in fixed_lanes.into_iter().flatten() {
         let ordinal = usize::from(lane.ordinal);
         if ordinal >= lane_count || seen_fixed_ordinals[ordinal] {
@@ -135,6 +147,10 @@ fn exact_ordered_fixed_extrude_lanes(
         };
         let lane_kind = match source_kind {
             Some(kind) => kind.as_str(),
+            None if swapped_two_lane => match lane.ordinal {
+                0 => "TaperAngle",
+                _ => "AlongDistance",
+            },
             None => match lane.ordinal {
                 0 => "AlongDistance",
                 1 => "TaperAngle",
@@ -440,6 +456,8 @@ pub(super) fn exact_fixed_fillet_parameters(
     bytes: &[u8],
     records: &IndexedRecordOffsets,
     scope: &DesignParameterScope,
+    parameters: &[DesignParameter],
+    parameter_owners: &[DesignParameterOwner],
 ) -> Option<DesignFixedFilletParameters> {
     use crate::records::feature::fixed_parameters::{
         DesignFixedFilletIntermediate, DesignFixedFilletLaw, DesignFixedFilletScalar,
@@ -477,10 +495,42 @@ pub(super) fn exact_fixed_fillet_parameters(
         let value = group(None, DesignFixedFilletLaw::Constant(scalar(&lanes[0])))?;
         groups.push(value);
     } else if lanes.len() % 2 == 0 {
+        let scope_stream = native_stream(&scope.id);
+        let lane_kind = |lane: u32| -> Option<Option<&str>> {
+            let mut matching_owners = parameter_owners.iter().filter(|owner| {
+                (scope_stream.is_none() || native_stream(owner.id()) == scope_stream)
+                    && owner.scope_record_index() == Some(scope.record_index)
+                    && owner.record_index() == lane
+            });
+            let owner = matching_owners.next();
+            if matching_owners.next().is_some() {
+                return None;
+            }
+            let Some(owner) = owner else {
+                return Some(None);
+            };
+            let mut matching_parameters = parameters.iter().filter(|parameter| {
+                (scope_stream.is_none() || native_stream(&parameter.id) == scope_stream)
+                    && parameter.record_index == owner.parameter_record_index()
+                    && parameter.owner_record_index() == Some(owner.record_index())
+            });
+            let parameter = matching_parameters.next()?;
+            if matching_parameters.next().is_some() {
+                return None;
+            }
+            Some(Some(parameter.source_kind_str()))
+        };
         for pair in lanes.chunks_exact(2) {
+            let first_kind = lane_kind(pair[0].0)?;
+            let second_kind = lane_kind(pair[1].0)?;
+            let (tangency_lane, radius_lane) = match (first_kind, second_kind) {
+                (None, None) | (Some("TangencyWeight"), Some("Radius")) => (&pair[0], &pair[1]),
+                (Some("Radius"), Some("TangencyWeight")) => (&pair[1], &pair[0]),
+                _ => return None,
+            };
             let value = group(
-                Some(&pair[0]),
-                DesignFixedFilletLaw::Constant(scalar(&pair[1])),
+                Some(tangency_lane),
+                DesignFixedFilletLaw::Constant(scalar(radius_lane)),
             )?;
             groups.push(value);
         }
@@ -551,10 +601,13 @@ pub(super) fn exact_fixed_chamfer_parameters(
     })
 }
 
+/// The one positive angle owner of a `Revolve` scope at `local_ordinal`: zero
+/// for travel in the revolution direction, one for the opposite side.
 pub(super) fn unique_revolve_angle_owner<'a>(
     scope: &DesignParameterScope,
     parameter_owners: &'a [DesignParameterOwner],
     record_index: Option<u32>,
+    local_ordinal: u32,
 ) -> Option<&'a DesignParameterOwner> {
     let mut candidates = parameter_owners.iter().filter(|owner| {
         native_stream(owner.id()) == native_stream(&scope.id)
@@ -564,7 +617,7 @@ pub(super) fn unique_revolve_angle_owner<'a>(
                 .values()
                 .any(|value| value == &owner.record_index())
             && record_index.is_none_or(|index| owner.record_index() == index)
-            && owner.local_ordinal() == Some(0)
+            && owner.local_ordinal() == Some(local_ordinal)
             && owner.evaluated_value().get() > 0.0
     });
     let angle = candidates.next()?;

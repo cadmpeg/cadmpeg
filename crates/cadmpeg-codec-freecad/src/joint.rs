@@ -361,11 +361,15 @@ fn joint_kind(
         "rackpinion" | "rack_pinion" => PairedJointKind::RackPinion {
             distance,
             distance2,
+            ratio: None,
+            coupled_joints: Vec::new(),
         },
         "screw" => PairedJointKind::Screw { distance },
         "gears" => PairedJointKind::Gears {
             distance,
             distance2,
+            ratio: None,
+            coupled_joints: Vec::new(),
         },
         "belt" => PairedJointKind::Belt {
             distance,

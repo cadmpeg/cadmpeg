@@ -178,6 +178,9 @@ pub enum LossTaxonomy {
     AppearanceReduced,
     /// Preserved source bytes required for a byte-exact write were unavailable.
     PreservedSourceUnavailable,
+    /// Physical materials, mass properties, rigid bodies, colliders, or joint
+    /// drives were not transferred.
+    PhysicsNotTransferred,
 }
 
 impl LossTaxonomy {
@@ -227,6 +230,7 @@ impl LossTaxonomy {
             Self::ParametricRecordOmitted => "parametric_record_omitted",
             Self::AppearanceReduced => "appearance_reduced",
             Self::PreservedSourceUnavailable => "preserved_source_unavailable",
+            Self::PhysicsNotTransferred => "physics_not_transferred",
         }
     }
 
@@ -245,9 +249,9 @@ impl LossTaxonomy {
             Self::FeatureHistoryRetained | Self::ParametricRecordOmitted => {
                 LossCategory::DesignIntent
             }
-            Self::AssemblyComponentsExternal | Self::AssemblyPlacementsNotTransferred => {
-                LossCategory::Product
-            }
+            Self::AssemblyComponentsExternal
+            | Self::AssemblyPlacementsNotTransferred
+            | Self::PhysicsNotTransferred => LossCategory::Product,
             Self::RecordNotTyped
             | Self::DecodeDiagnostic
             | Self::IntegrityFailure
@@ -564,6 +568,11 @@ pub struct LossNote {
         deserialize_with = "deserialize_provenance"
     )]
     pub provenance: Option<SourceProvenance>,
+    /// Sorted ids of records dropped with the loss's part, when a part
+    /// give-up names them. The message carries the same ids as text; this
+    /// field carries them without parsing.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub dropped: Vec<String>,
 }
 
 impl LossNote {
@@ -575,6 +584,7 @@ impl LossNote {
             code,
             message: message.into(),
             provenance: None,
+            dropped: Vec::new(),
         }
     }
 

@@ -89,7 +89,20 @@ fn failed_parameter_record_has_one_exact_shared_home_and_preserves_successful_pe
     assert_eq!(actual.records[0].directory_sequence, 3);
     assert!(actual.quarantined.is_empty());
     let (_, native, fidelity, losses) = output.into_parts();
-    assert!(native.namespace("iges").is_none());
+    // #215 rule 1: the given-up part keeps one unknowns home.
+    let namespace = native.namespace("iges").expect("one unknowns home");
+    assert_eq!(namespace.arenas().len(), 1);
+    let unknowns = &namespace.arenas()["unknowns"];
+    assert_eq!(unknowns.len(), 1);
+    assert_eq!(
+        unknowns[0].id(),
+        fidelity
+            .retained_records()
+            .keys()
+            .next()
+            .expect("one retained part")
+            .as_str()
+    );
     let first = scan
         .section(Section::Parameter)
         .next()
@@ -286,7 +299,23 @@ fn distinct_conflicted_source_parts_keep_one_home_each_and_a_successful_peer() {
     assert_eq!(actual.records[0].integer(1), Some(7));
     assert!(actual.quarantined.is_empty());
     let (_, native, fidelity, losses) = output.into_parts();
-    assert!(native.namespace("iges").is_none());
+    // #215 rule 1: each given-up part keeps one unknowns home.
+    let namespace = native.namespace("iges").expect("one unknowns home");
+    assert_eq!(namespace.arenas().len(), 1);
+    let unknowns = &namespace.arenas()["unknowns"];
+    assert_eq!(unknowns.len(), 2);
+    let mut stubbed: Vec<_> = unknowns
+        .iter()
+        .map(cadmpeg_ir::native::NativeRecord::id)
+        .collect();
+    stubbed.sort_unstable();
+    let mut retained: Vec<_> = fidelity
+        .retained_records()
+        .keys()
+        .map(cadmpeg_ir::ids::UnknownId::as_str)
+        .collect();
+    retained.sort_unstable();
+    assert_eq!(stubbed, retained);
     let mut parts = crate::test_support::given_up_parts(&fidelity);
     parts.sort_unstable_by_key(|part| part.offset());
     assert_eq!(parts.len(), 2);
@@ -339,7 +368,20 @@ fn unreadable_point_coordinates_give_up_the_actual_part_and_keep_the_semantic_pe
         cadmpeg_ir::math::Point3::new(4.0, 5.0, 6.0)
     );
     assert_eq!(model.vertices[0].point, model.points[0].id);
-    assert!(native.namespace("iges").is_none());
+    // #215 rule 1: the given-up part keeps one unknowns home.
+    let namespace = native.namespace("iges").expect("one unknowns home");
+    assert_eq!(namespace.arenas().len(), 1);
+    let unknowns = &namespace.arenas()["unknowns"];
+    assert_eq!(unknowns.len(), 1);
+    assert_eq!(
+        unknowns[0].id(),
+        fidelity
+            .retained_records()
+            .keys()
+            .next()
+            .expect("one retained part")
+            .as_str()
+    );
     let parts = crate::test_support::given_up_parts(&fidelity);
     assert_eq!(parts.len(), 1);
     let part = parts[0];

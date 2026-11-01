@@ -8,12 +8,12 @@ use crate::test_support::assembly_test::{
 };
 use crate::test_support::smbh_geometry_test::{synthetic_geometry_smbh, synthetic_mixed_smbh};
 use crate::test_support::zip_test::f3d_with_smbh;
+use cadmpeg_ir::Codec;
 use crate::F3dCodec;
 use crate::F3dLossCode;
 use cadmpeg_ir::codec::write::target::TargetRequest;
 use cadmpeg_ir::codec::write::EncodeInput;
 use cadmpeg_ir::codec::write::Encoder;
-use cadmpeg_ir::codec::Codec;
 use cadmpeg_ir::codec::Confidence;
 use cadmpeg_ir::codec::DecodeOptions;
 use std::io::Cursor;
@@ -50,12 +50,11 @@ fn f3z_description_json_refuses_recursion_limit() {
 fn f3z_archive_merges_identity_occurrences() {
     let component = f3d_with_smbh(&synthetic_geometry_smbh());
     let component_alone = EditableDecodeResult::from(
-        F3dCodec
-            .decode(
-                &mut Cursor::new(component.clone()),
-                &DecodeOptions::default(),
-            )
-            .unwrap(),
+        crate::test_support::archive_session::decode(
+            &mut Cursor::new(component.clone()),
+            &DecodeOptions::default(),
+        )
+        .unwrap(),
     );
     let root = f3d_without_brep("assembly-design", "root.f3d", &[("comp.f3d", XREF_ROLE)]);
     let archive = f3z_archive(
@@ -66,9 +65,11 @@ fn f3z_archive_merges_identity_occurrences() {
         ],
     );
     let decoded = EditableDecodeResult::from(
-        F3dCodec
-            .decode(&mut Cursor::new(archive), &DecodeOptions::default())
-            .unwrap(),
+        crate::test_support::archive_session::decode(
+            &mut Cursor::new(archive),
+            &DecodeOptions::default(),
+        )
+        .unwrap(),
     );
     assert!(decoded.report().geometry_transferred());
     assert!(
@@ -261,9 +262,11 @@ fn duplicate_role_references_keep_archive_occurrences_disjoint() {
     );
 
     let decoded = EditableDecodeResult::from(
-        F3dCodec
-            .decode(&mut Cursor::new(archive), &DecodeOptions::default())
-            .expect("admitted duplicate-role references remain independently mergeable"),
+        crate::test_support::archive_session::decode(
+            &mut Cursor::new(archive),
+            &DecodeOptions::default(),
+        )
+        .expect("admitted duplicate-role references remain independently mergeable"),
     );
     assert_eq!(decoded.ir().model.bodies.len(), 2);
     let first = decoded.ir().model.bodies[0].id.as_str();
@@ -297,9 +300,11 @@ fn f3z_drawing_root_decodes_its_unambiguous_derived_model() {
         description,
     );
 
-    let decoded = F3dCodec
-        .decode(&mut Cursor::new(archive), &DecodeOptions::default())
-        .unwrap();
+    let decoded = crate::test_support::archive_session::decode(
+        &mut Cursor::new(archive),
+        &DecodeOptions::default(),
+    )
+    .unwrap();
 
     assert!(decoded.report().geometry_transferred());
     assert!(decoded
@@ -323,7 +328,10 @@ fn f3z_drawing_root_rejects_ambiguous_derived_models() {
         description,
     );
 
-    let result = F3dCodec.decode(&mut Cursor::new(archive), &DecodeOptions::default());
+    let result = crate::test_support::archive_session::decode(
+        &mut Cursor::new(archive),
+        &DecodeOptions::default(),
+    );
 
     assert!(matches!(
         result,
@@ -336,12 +344,11 @@ fn f3z_drawing_root_rejects_ambiguous_derived_models() {
 #[test]
 fn f3z_archive_merges_occurrence_scoped_unknown_carriers() {
     let component = f3d_with_smbh(&synthetic_mixed_smbh());
-    let component_alone = F3dCodec
-        .decode(
-            &mut Cursor::new(component.clone()),
-            &DecodeOptions::default(),
-        )
-        .unwrap();
+    let component_alone = crate::test_support::archive_session::decode(
+        &mut Cursor::new(component.clone()),
+        &DecodeOptions::default(),
+    )
+    .unwrap();
     let component_unknowns = component_alone.ir().native_unknowns("f3d").unwrap();
     assert!(!component_unknowns.is_empty());
 
@@ -353,9 +360,11 @@ fn f3z_archive_merges_occurrence_scoped_unknown_carriers() {
             ("comp.f3d", component.as_slice()),
         ],
     );
-    let decoded = F3dCodec
-        .decode(&mut Cursor::new(archive), &DecodeOptions::default())
-        .unwrap();
+    let decoded = crate::test_support::archive_session::decode(
+        &mut Cursor::new(archive),
+        &DecodeOptions::default(),
+    )
+    .unwrap();
 
     let prefix = format!("f3d:xref/role-{XREF_ROLE}/reference-0/occurrence-0/");
     let merged_unknowns = decoded.ir().native_unknowns("f3d").unwrap();
@@ -378,12 +387,11 @@ fn f3z_archive_without_merged_components_preserves_root_replay() {
     let root = f3d_with_smbh(&synthetic_geometry_smbh());
     let archive = f3z_archive("root.f3d", &[("root.f3d", root.as_slice())]);
     let decoded = EditableDecodeResult::from(
-        F3dCodec
-            .decode(
-                &mut Cursor::new(archive.as_slice()),
-                &DecodeOptions::default(),
-            )
-            .unwrap(),
+        crate::test_support::archive_session::decode(
+            &mut Cursor::new(archive.as_slice()),
+            &DecodeOptions::default(),
+        )
+        .unwrap(),
     );
 
     assert!(decoded
@@ -407,9 +415,11 @@ fn f3z_archive_without_merged_components_preserves_root_replay() {
     plan.write_to(&mut replayed).unwrap();
     assert_eq!(replayed, archive);
 
-    let redecode = F3dCodec
-        .decode(&mut Cursor::new(replayed), &DecodeOptions::default())
-        .unwrap();
+    let redecode = crate::test_support::archive_session::decode(
+        &mut Cursor::new(replayed),
+        &DecodeOptions::default(),
+    )
+    .unwrap();
     let primary = redecode
         .report()
         .dialects()
@@ -422,15 +432,14 @@ fn f3z_archive_without_merged_components_preserves_root_replay() {
 fn f3z_container_only_stamps_the_outer_document_digest() {
     let root = f3d_with_smbh(&synthetic_geometry_smbh());
     let archive = f3z_archive("root.f3d", &[("root.f3d", root.as_slice())]);
-    let decoded = F3dCodec
-        .decode(
-            &mut Cursor::new(archive),
-            &DecodeOptions {
-                depth: cadmpeg_core::decode::DecodeDepth::Container,
-                ..DecodeOptions::default()
-            },
-        )
-        .unwrap();
+    let decoded = crate::test_support::archive_session::decode(
+        &mut Cursor::new(archive),
+        &DecodeOptions {
+            depth: cadmpeg_core::decode::DecodeDepth::Container,
+            ..DecodeOptions::default()
+        },
+    )
+    .unwrap();
 
     let expected = crate::decode::document_local_sha256(decoded.ir()).unwrap();
     assert_eq!(
@@ -446,12 +455,11 @@ fn f3z_container_only_stamps_the_outer_document_digest() {
 fn f3z_archive_recursively_merges_nested_occurrences() {
     const CHILD_ROLE: &str = "11112222-3333-4444-5555-666677778888";
     let component = f3d_with_smbh(&synthetic_geometry_smbh());
-    let component_alone = F3dCodec
-        .decode(
-            &mut Cursor::new(component.clone()),
-            &DecodeOptions::default(),
-        )
-        .unwrap();
+    let component_alone = crate::test_support::archive_session::decode(
+        &mut Cursor::new(component.clone()),
+        &DecodeOptions::default(),
+    )
+    .unwrap();
     let middle = f3d_without_brep(
         "assembly-design",
         "middle.f3d",
@@ -467,9 +475,11 @@ fn f3z_archive_recursively_merges_nested_occurrences() {
         ],
     );
 
-    let decoded = F3dCodec
-        .decode(&mut Cursor::new(archive), &DecodeOptions::default())
-        .unwrap();
+    let decoded = crate::test_support::archive_session::decode(
+        &mut Cursor::new(archive),
+        &DecodeOptions::default(),
+    )
+    .unwrap();
 
     assert_eq!(
         decoded.ir().model.bodies.len(),
@@ -509,9 +519,9 @@ fn f3z_nested_member_reference_obeys_session_depth_limit() {
     let mut options = DecodeOptions::default();
     // The session ceiling includes member frames and decoded entity reconstruction.
     options.policy.limits.max_recursion_depth = 6;
-    let error = F3dCodec
-        .decode(&mut Cursor::new(archive.clone()), &options)
-        .expect_err("nested member redirections exceed the selected depth");
+    let error =
+        crate::test_support::archive_session::decode(&mut Cursor::new(archive.clone()), &options)
+            .expect_err("nested member redirections exceed the selected depth");
     assert!(matches!(
         error,
         cadmpeg_ir::DecodeFailure::Codec(cadmpeg_core::CodecError::ResourceLimit(limit))
@@ -519,9 +529,11 @@ fn f3z_nested_member_reference_obeys_session_depth_limit() {
                 && limit.limit == 6 && limit.used == 6 && limit.additional == 1
                 && limit.reason == cadmpeg_core::decode::ResourceFailure::BudgetExceeded
     ));
-    F3dCodec
-        .decode(&mut Cursor::new(archive), &DecodeOptions::default())
-        .expect("the nested member graph fits the complete session policy");
+    crate::test_support::archive_session::decode(
+        &mut Cursor::new(archive),
+        &DecodeOptions::default(),
+    )
+    .expect("the nested member graph fits the complete session policy");
 }
 
 #[test]
@@ -563,9 +575,11 @@ fn f3z_archive_composes_nonidentity_nested_occurrence_placements() {
         ],
     );
 
-    let decoded = F3dCodec
-        .decode(&mut Cursor::new(archive), &DecodeOptions::default())
-        .expect("nonidentity nested placements decode");
+    let decoded = crate::test_support::archive_session::decode(
+        &mut Cursor::new(archive),
+        &DecodeOptions::default(),
+    )
+    .expect("nonidentity nested placements decode");
     let outer_id = cadmpeg_ir::ids::OccurrenceId::mint("f3d:model:occurrence#xref-0-0")
         .expect("outer occurrence identity");
     let child = decoded
@@ -670,9 +684,11 @@ fn f3z_archive_preserves_noncommuting_parent_and_child_placements() {
             ("component.f3d", component.as_slice()),
         ],
     );
-    let decoded = F3dCodec
-        .decode(&mut Cursor::new(&archive), &DecodeOptions::default())
-        .expect("noncommuting nested placements");
+    let decoded = crate::test_support::archive_session::decode(
+        &mut Cursor::new(&archive),
+        &DecodeOptions::default(),
+    )
+    .expect("noncommuting nested placements");
     assert!(
         decoded.report().losses.iter().all(|loss| loss.code
             != F3dLossCode::XrefPlacementUndecoded.kind()
@@ -745,9 +761,11 @@ fn f3z_archive_reports_reference_cycles_without_recursing() {
         ],
     );
 
-    let decoded = F3dCodec
-        .decode(&mut Cursor::new(archive), &DecodeOptions::default())
-        .unwrap();
+    let decoded = crate::test_support::archive_session::decode(
+        &mut Cursor::new(archive),
+        &DecodeOptions::default(),
+    )
+    .unwrap();
 
     assert!(decoded.report().losses.iter().any(|loss| {
         loss.severity == cadmpeg_ir::report::Severity::Error

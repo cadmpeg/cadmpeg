@@ -43,7 +43,20 @@ fn real_record_callback_keeps_later_typed_parameters_and_one_exact_failed_statem
             && diagnostic.kind == ParseDiagnosticKind::RecordOmitted));
     let (model, native, fidelity, losses) = parts.into_parts();
     assert_eq!(model.entity_count(), 0);
-    assert!(native.namespace("step").is_none());
+    // #215 rule 1: the given-up part keeps one unknowns home.
+    let namespace = native.namespace("step").expect("one unknowns home");
+    assert_eq!(namespace.arenas().len(), 1);
+    let unknowns = &namespace.arenas()["unknowns"];
+    assert_eq!(unknowns.len(), 1);
+    assert_eq!(
+        unknowns[0].id(),
+        fidelity
+            .retained_records()
+            .keys()
+            .next()
+            .expect("one helper source home")
+            .as_str()
+    );
     assert_eq!(fidelity.retained_records().len(), 1);
     let (_, retained) = fidelity
         .retained_records()
@@ -155,7 +168,20 @@ fn cut_short_entities_use_real_parent_or_eof_without_synthesized_framing() {
             closing.is_empty()
         );
         let (_, native, fidelity, losses) = parts.into_parts();
-        assert!(native.namespace("step").is_none());
+        // #215 rule 1: the given-up part keeps one unknowns home.
+        let namespace = native.namespace("step").expect("one unknowns home");
+        assert_eq!(namespace.arenas().len(), 1);
+        let unknowns = &namespace.arenas()["unknowns"];
+        assert_eq!(unknowns.len(), 1);
+        assert_eq!(
+            unknowns[0].id(),
+            fidelity
+                .retained_records()
+                .keys()
+                .next()
+                .expect("one cut-short source home")
+                .as_str()
+        );
         assert_eq!(fidelity.retained_records().len(), 1);
         let (_, retained) = fidelity
             .retained_records()

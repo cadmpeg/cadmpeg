@@ -22,6 +22,20 @@ pub(crate) enum DesignThreadForm {
     StandardLegacy,
     /// Compact prefix with the legacy scalar and no-reference trailer lanes.
     CompactLegacy,
+    /// Standard prefix with the compact construction marker and a reference trailer.
+    StandardCompact,
+}
+
+impl DesignThreadForm {
+    /// Whether the scope carries the standard one-group reference table.
+    ///
+    /// The other forms carry ordered `(face-selection group, sole member)` pairs.
+    pub(crate) const fn has_standard_reference_table(&self) -> bool {
+        match self {
+            Self::Standard | Self::StandardLegacy | Self::StandardCompact => true,
+            Self::Compact(_) | Self::CompactLegacy => false,
+        }
+    }
 }
 
 /// Exact form and size construction carried by a `Thread` scope.
@@ -121,6 +135,7 @@ impl Serialize for DesignThreadConstruction {
             }
             DesignThreadForm::StandardLegacy => (DesignThreadFormWire::StandardLegacy, None),
             DesignThreadForm::CompactLegacy => (DesignThreadFormWire::CompactLegacy, None),
+            DesignThreadForm::StandardCompact => (DesignThreadFormWire::StandardCompact, None),
         };
         let mut fields = serializer.serialize_struct(
             "DesignThreadConstructionWire",
@@ -154,6 +169,8 @@ enum DesignThreadFormWire {
     StandardLegacy,
     /// Compact prefix with the legacy scalar and no-reference trailer lanes.
     CompactLegacy,
+    /// Standard prefix with the compact construction marker and a reference trailer.
+    StandardCompact,
 }
 
 #[derive(Serialize, Deserialize)]
@@ -212,6 +229,7 @@ impl TryFrom<DesignThreadConstructionWire> for DesignThreadConstruction {
             (DesignThreadFormWire::Standard, None) => DesignThreadForm::Standard,
             (DesignThreadFormWire::StandardLegacy, None) => DesignThreadForm::StandardLegacy,
             (DesignThreadFormWire::CompactLegacy, None) => DesignThreadForm::CompactLegacy,
+            (DesignThreadFormWire::StandardCompact, None) => DesignThreadForm::StandardCompact,
             _ => {
                 return Err("trailing_reference_record_index is only valid for compact form".into())
             }

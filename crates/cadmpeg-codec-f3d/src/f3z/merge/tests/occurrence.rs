@@ -135,7 +135,8 @@ fn saved_edge_loss_counts_final_archive_ownership_once() {
     let policy = DecodePolicy::default();
     let (ctx, bytes) = DecodeContext::from_root_bytes(&bytes, &arena, &policy).unwrap();
     let scan = crate::container::scan(&ctx, bytes).unwrap();
-    let archive = crate::f3z::archive::classify_members(&ctx, &scan).unwrap();
+    let session = crate::F3zSession::open_scanned(&ctx, scan.fork()).unwrap();
+    let archive = &session.archive;
     for (has_definitions, owned_after_composition) in [(true, true), (true, false), (false, false)]
     {
         let mut member = Model::default();
@@ -178,10 +179,13 @@ fn saved_edge_loss_counts_final_archive_ownership_once() {
         crate::f3z::merge::MergeSession {
             ctx: &ctx,
             scan: &scan,
-            archive: &archive,
+            archive,
+            session: &session,
+            decoded: &mut std::collections::BTreeMap::new(),
             stack: vec!["root.f3d".to_owned()],
             untyped: cadmpeg_ir::ArenaClasses::default(),
             members: std::collections::BTreeMap::new(),
+            failed: std::collections::BTreeMap::new(),
             operation_poses: std::collections::BTreeMap::new(),
             operation_protected: std::collections::BTreeSet::new(),
         }
@@ -826,7 +830,8 @@ fn repeated_local_owners_merge_each_external_child_tree_in_its_composed_frame() 
     let policy = DecodePolicy::default();
     let (ctx, bytes) = DecodeContext::from_root_bytes(&archive, &arena, &policy).unwrap();
     let scan = crate::container::scan(&ctx, bytes).unwrap();
-    let archive = crate::f3z::archive::classify_members(&ctx, &scan).unwrap();
+    let session = crate::F3zSession::open_scanned(&ctx, scan.fork()).unwrap();
+    let archive = &session.archive;
     let reference = XrefReference {
         current_pose: None,
         operation_pose: None,
@@ -914,10 +919,13 @@ fn repeated_local_owners_merge_each_external_child_tree_in_its_composed_frame() 
     let merged = crate::f3z::merge::MergeSession {
         ctx: &ctx,
         scan: &scan,
-        archive: &archive,
+        archive,
+        session: &session,
+        decoded: &mut std::collections::BTreeMap::new(),
         stack: vec!["root.f3d".to_owned()],
         untyped: cadmpeg_ir::ArenaClasses::default(),
         members: std::collections::BTreeMap::new(),
+        failed: std::collections::BTreeMap::new(),
         operation_poses: std::collections::BTreeMap::new(),
         operation_protected: std::collections::BTreeSet::new(),
     }
@@ -1043,7 +1051,7 @@ fn imported_definition_bodies_keep_their_definition_frame() {
 #[test]
 fn shared_members_check_cycles_for_each_instance_path() {
     use crate::test_support::assembly_test::{f3d_without_brep, f3z_archive};
-    use cadmpeg_ir::codec::{Codec, DecodeOptions};
+    use cadmpeg_ir::codec::DecodeOptions;
     use cadmpeg_ir::products::PrototypeReference;
     use std::io::Cursor;
 
@@ -1070,9 +1078,11 @@ fn shared_members_check_cycles_for_each_instance_path() {
             ("second.f3d", &second),
         ],
     );
-    let decoded = crate::F3dCodec
-        .decode(&mut Cursor::new(archive), &DecodeOptions::default())
-        .unwrap();
+    let decoded = crate::test_support::archive_session::decode(
+        &mut Cursor::new(archive),
+        &DecodeOptions::default(),
+    )
+    .unwrap();
     assert_eq!(decoded.ir().model.product_definitions.len(), 2);
     assert_eq!(decoded.ir().model.occurrences.len(), 6);
     assert_eq!(
@@ -1221,7 +1231,8 @@ fn merged_joint_descent_selects_unique_member_children_and_retains_ambiguous_pat
     let policy = DecodePolicy::default();
     let (ctx, bytes) = DecodeContext::from_root_bytes(&bytes, &arena, &policy).unwrap();
     let scan = crate::container::scan(&ctx, bytes).unwrap();
-    let archive = crate::f3z::archive::classify_members(&ctx, &scan).unwrap();
+    let session = crate::F3zSession::open_scanned(&ctx, scan.fork()).unwrap();
+    let archive = &session.archive;
     let reference: XrefReference = serde_json::from_value(serde_json::json!({
         "id":"f3d:xref:reference#0", "ordinal":0, "from":"root.f3d",
         "relative_path":"member.f3d", "neutron_role":"member", "neutron_data":""
@@ -1408,10 +1419,13 @@ fn merged_joint_descent_selects_unique_member_children_and_retains_ambiguous_pat
             MergeSession {
                 ctx: &ctx,
                 scan: &scan,
-                archive: &archive,
+                archive,
+                session: &session,
+                decoded: &mut std::collections::BTreeMap::new(),
                 stack: vec!["root.f3d".into()],
                 untyped: cadmpeg_ir::ArenaClasses::default(),
                 members: std::collections::BTreeMap::from([("member.f3d".into(), member)]),
+                failed: std::collections::BTreeMap::new(),
                 operation_poses: std::collections::BTreeMap::new(),
                 operation_protected: std::collections::BTreeSet::new(),
             }

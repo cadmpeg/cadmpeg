@@ -99,7 +99,21 @@ fn damaged_occurrence_body_has_one_home_and_its_readable_peer_is_exact() {
     );
     assert_eq!(wrappers[0].id, failed_wrapper);
     assert_eq!(wrappers[1].id, good_wrapper);
-    assert!(!namespace.arenas().contains_key("unknowns"));
+    // #215 rule 1: the given-up part keeps one unknowns home.
+    let unknowns = namespace
+        .arenas()
+        .get("unknowns")
+        .expect("one unknowns home");
+    assert_eq!(unknowns.len(), 1);
+    assert_eq!(
+        unknowns[0].id(),
+        fidelity
+            .retained_records()
+            .keys()
+            .next()
+            .expect("one retained part")
+            .as_str()
+    );
     let given_up = given_up_records(&fidelity);
     assert_eq!(given_up.len(), 1);
     assert_eq!(given_up[0].data(), Some(failed_bytes.as_slice()));
@@ -258,7 +272,24 @@ fn placement_parse_and_conversion_failures_share_the_helper_and_keep_the_exact_p
         .iter()
         .any(|loss| loss.message.contains("suffix_len")));
     assert!(losses.iter().any(|loss| loss.message.contains("finite")));
-    assert!(!namespace.arenas().contains_key("unknowns"));
+    // #215 rule 1: each given-up part keeps one unknowns home.
+    let unknowns = namespace
+        .arenas()
+        .get("unknowns")
+        .expect("one unknowns home");
+    assert_eq!(unknowns.len(), 2);
+    let mut stubbed: Vec<_> = unknowns
+        .iter()
+        .map(cadmpeg_ir::native::NativeRecord::id)
+        .collect();
+    stubbed.sort_unstable();
+    let mut retained: Vec<_> = fidelity
+        .retained_records()
+        .keys()
+        .map(cadmpeg_ir::ids::UnknownId::as_str)
+        .collect();
+    retained.sort_unstable();
+    assert_eq!(stubbed, retained);
     let retained = given_up_records(&fidelity)
         .iter()
         .map(|record| {

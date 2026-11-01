@@ -91,6 +91,9 @@ mod decode;
 mod design;
 mod dialect;
 mod f3z;
+pub use f3z::{
+    observe_f3z_members, F3zDecodedMember, F3zMember, F3zMemberKind, F3zMemberObserver, F3zSession,
+};
 mod history;
 mod history_records;
 mod ids;

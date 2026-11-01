@@ -243,7 +243,7 @@ impl AttachmentRecord {
         self.offset
     }
 
-    /// Effective frame used for neutral geometry.
+    /// Frame summary for the native attachment record.
     pub(crate) fn effective_frame(&self) -> [[f64; 4]; 4] {
         crate::attachment::effective_frame(
             self.placement().map(FiniteFrame::rows),

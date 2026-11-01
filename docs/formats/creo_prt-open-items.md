@@ -177,6 +177,8 @@ length unit.
 
 **Need.** Resolve each remaining body through complete scalar ownership and chart roles before it supplies curve or endpoint geometry.
 
+**Note.** UPDATE. The body counts predate #425, which binds the source circle of a two-cap circular sweep table. Re-verify the 72 counted, two short, and 68 opaque counts against the current decoder before using them as coverage evidence.
+
 ### GS-09. Other `fc 05` variants
 
 **Question.** What grammar does an `fc 05` body use when it does not satisfy the defined cap-circle production?
@@ -692,15 +694,10 @@ B-rep orbit. The defined suffix grammar does not establish a direct stored
 vertex-coordinate fallback in another record family.
 
 **Need.** We must know any additional owner-qualified coordinate selector to
-place an orbit whose existing evidence does not select one point. For compact
-plane frames, we must distinguish the stored carrier point from the native
-parameter origin when mapped pcurve endpoints do not agree with adjacent
+place an orbit whose existing evidence does not select one point. For plane
+frames outside the compact signed-basis rotation production in §3.4, establish
+the chart-origin join when mapped endpoints do not agree with adjacent
 carriers.
-
-**Conflict.** `placed_plane_surfaces` uses the complete local-system origin
-as the plane chart origin. Agreement of its normal coordinate establishes the
-carrier plane but does not establish the tangential parameter origin. The
-compact frame productions do not define a separate parameter-origin selector.
 
 ### TP-05. General rowless face-use binding
 
@@ -828,6 +825,19 @@ face meaning.
 
 **Need.** We must know the joins before `lo_array` rows can contribute to
 neutral loop ownership or face admission.
+
+### TP-20. Unstatable topological vertex identifiers
+
+**Question.** Which half-edge orbits lie past the one-based topological vertex
+identifier width, and what vertex must each such orbit state?
+
+**Known.** `loss.rs` defines `TopologyVertexIdentifierUnstatable`, and
+`decode/build/report_losses.rs` leaves such orbits vertexless: their
+half-edges carry no incidence. The first dropped orbit is identified by its
+seed half-edge curve and side.
+
+**Need.** We must know the identifier width rule and the intended vertex to
+restore incidence with stored vertices.
 
 ## 5. Packed persistence data
 

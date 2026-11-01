@@ -21,6 +21,7 @@ mod history_admission;
 mod legacy_class_397;
 mod legacy_frames;
 mod legacy_work_planes;
+mod move_transform;
 mod named_empty_label;
 mod named_variable_tail;
 mod scale;

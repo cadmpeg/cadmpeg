@@ -16,7 +16,7 @@ use crate::canonical::surface::Chart;
 use crate::canonical::{Carrier, Sources};
 use crate::context::{Eval, Work};
 use crate::edges::EdgeGeometry;
-use crate::extent::{angular_sweep, axial_range, parameter_ranges, sphere_extent};
+use crate::extent::{angular_sweep, axial_range, parameter_ranges, sphere_extent, torus_sweep};
 use crate::failure::{settle, Measure, Missing, Outcome};
 use crate::flux::{
     plane_orientation_flux, Flux, FluxFrame, MEASURE_COMPONENTS, ORIENTATION_COMPONENTS,
@@ -35,7 +35,7 @@ use crate::select::SurfaceKind;
 use crate::tolerance::{allowance, model_tolerance};
 use crate::value::{
     measured, BoundaryBox, BoxKind, BoxValue, Errors, Method, Point, Quantity, Range, Scalar,
-    Sweep, Unit,
+    Sweep, Unavailable, Unit,
 };
 pub(crate) use readings::Verdict;
 use readings::{face_area, AreaInput, Readings};
@@ -68,9 +68,48 @@ pub(crate) struct FaceResult<'ir> {
     pub(crate) tau_b: f64,
     /// The non-seam boundary length.
     pub(crate) boundary_length: f64,
+    /// The tolerance of the face's surface: the document's linear
+    /// tolerance, the face's own and the carrier's fit tolerance.
+    pub(crate) surface_tau: f64,
+    /// The face's trimming edges, or `None` when one has no length or box.
+    pub(crate) trims: Option<Vec<Trim>>,
+}
+
+/// One trimming edge of a face: its length, its tolerance with its
+/// measured deviation, and its box.
+#[derive(Debug, Clone, Copy)]
+pub(crate) struct Trim {
+    pub(crate) length: f64,
+    pub(crate) tau: f64,
+    pub(crate) aabb: Aabb,
 }
 
 impl FaceResult<'_> {
+    /// The face's boxes under its reported reading and under the declared
+    /// and the complement reading, where measured.
+    pub(crate) fn reading_boxes(&self) -> impl Iterator<Item = &Aabb> {
+        self.aabb.iter().chain(self.aabbs.iter().flatten())
+    }
+
+    /// The face's largest measured area over its readings, or why it has
+    /// none.
+    pub(crate) fn area_bound(&self) -> Result<f64, &Unavailable<Scalar>> {
+        let complement = self
+            .readings
+            .area
+            .complement
+            .as_ref()
+            .and_then(Quantity::measured)
+            .map(|area| area.value().value.get());
+        match &self.readings.area.declared {
+            Quantity::Measured(area) => {
+                let declared = area.value().value.get();
+                Ok(complement.map_or(declared, |complement| complement.max(declared)))
+            }
+            Quantity::Unavailable(unavailable) => complement.ok_or(unavailable),
+        }
+    }
+
     /// The face's area under its declared reading, or under its complement
     /// reading when `complement` is set. A face whose region does not rest
     /// on its orientation has one area.
@@ -332,6 +371,36 @@ impl<'ir> FaceInput<'_, 'ir> {
         }
         let fit = carrier.as_ref().map_or(0.0, |carrier| carrier.fit);
         let tau_b = tau.max(fit).max(max_gap).max(off_surface);
+        let surface_tau = model_tolerance(
+            linear,
+            face.tolerance.map(cadmpeg_ir::scalar::PositiveReal::get),
+        )
+        .max(fit);
+        let deviation = |edge: &str| {
+            boundary
+                .iter()
+                .flat_map(|boundary| &boundary.resolved.loops)
+                .filter_map(|resolution| resolution.outcome.as_ref().ok())
+                .flat_map(|resolved| &resolved.deviations)
+                .filter(|(id, _)| *id == edge)
+                .map(|(_, amount)| *amount)
+                .fold(0.0, f64::max)
+        };
+        let trims = match &boundary {
+            Ok(_) => coedges
+                .iter()
+                .map(|coedge| {
+                    let id = coedge.edge.as_str();
+                    let edge = self.edges.get(id)?;
+                    Some(Trim {
+                        length: edge.length.as_ref().ok()?.value,
+                        tau: edge.tau.max(deviation(id)),
+                        aabb: edge.bbox.as_ref().ok()?.aabb,
+                    })
+                })
+                .collect::<Option<Vec<_>>>(),
+            Err(_) => None,
+        };
         let hull = match &chart {
             Ok(Chart::Nurbs(nurbs)) => Some(nurbs.control_hull()),
             _ => None,
@@ -550,10 +619,16 @@ impl<'ir> FaceInput<'_, 'ir> {
                     .iter()
                     .map(|resolution| resolution.outcome.as_ref().ok())
                     .collect();
+                let reach = match &hull {
+                    Some(Ok(hull)) => Some(*hull),
+                    _ => chart.critical_box(),
+                }
+                .map_or(scale, |aabb| aabb.reach_from(origin));
                 let frame = FluxFrame {
                     chart,
                     origin,
                     scale,
+                    reach,
                     active: match self.work {
                         Work::Row => MEASURE_COMPONENTS,
                         Work::Orientation => ORIENTATION_COMPONENTS,
@@ -582,6 +657,8 @@ impl<'ir> FaceInput<'_, 'ir> {
             natural,
             tau_b,
             boundary_length: lengths.boundary,
+            surface_tau,
+            trims,
         };
         let witness = matches!(verdict, Verdict::Confirmed | Verdict::Conflict).then(|| Witness {
             kind: WitnessKind::EmptyReading,
@@ -1175,12 +1252,16 @@ fn extent_quantities(
             extents.latitude_range = Some(latitude);
             extents.angular_sweep = Some(sweep);
         }
-        Chart::Torus(_) => {
-            extents.angular_sweep = Some(Readings::single(unavailable(
-                UnavailableReason::SweepUnsupportedCarrier,
-                id,
-                "the angular sweep of a torus face is not computed",
-            )));
+        Chart::Torus(torus) => {
+            extents.angular_sweep = Some(if torus.major > torus.minor.abs() {
+                torus_readings(eval, input, chart, torus.major, torus.minor.abs())?
+            } else {
+                Readings::single(unavailable(
+                    UnavailableReason::SweepUnsupportedCarrier,
+                    id,
+                    "the angular sweep of a torus face that is not a ring about its axis is not computed",
+                ))
+            });
         }
         Chart::Cylinder(_) | Chart::Cone(_) => {
             let Some(axis) = chart.axis() else {
@@ -1392,6 +1473,66 @@ fn sphere_readings(
             complement: sweep_complement,
         },
     ))
+}
+
+/// The angular sweep of a face on a ring torus of radii `major` and
+/// `minor`, under its region and, for a region resting on its declared
+/// orientation, under the complement.
+fn torus_readings(
+    eval: &Eval<'_, '_>,
+    input: &ExtentInput<'_, '_>,
+    chart: &Chart<'_>,
+    major: f64,
+    minor: f64,
+) -> Result<Readings<Sweep>, ResourceLimit> {
+    let id = input.id;
+    let (boundary, region) = match (input.boundary, input.region) {
+        (Ok(boundary), Ok(region)) => (boundary, region),
+        (Err(missing), _) | (_, Err(missing)) => return Ok(Readings::single(missing.quantity())),
+    };
+    let Some(closed) = &region.closed else {
+        return Ok(Readings::single(unavailable(
+            UnavailableReason::RegionDomainUnsupported,
+            id,
+            "the region has no closed-domain membership",
+        )));
+    };
+    let tolerance = input.angular.max(input.alpha / (major + minor));
+    let model = input.tau_b / (major - minor);
+    let reading = |complement: bool| -> Result<Quantity<Sweep>, ResourceLimit> {
+        Ok(
+            match settle(
+                torus_sweep(
+                    eval,
+                    chart,
+                    &boundary.resolved,
+                    &closed.membership,
+                    complement,
+                    tolerance,
+                )
+                .map_err(|failure| failure.at(id)),
+            )? {
+                Ok(sweep) => measured(
+                    Sweep::new(sweep.value, sweep.full, &sweep.intervals),
+                    Unit::Radian,
+                    Method::BoundaryExtremum,
+                    Errors::new(sweep.numeric_error, model),
+                    id,
+                ),
+                Err(missing) => missing.quantity(),
+            },
+        )
+    };
+    let declared = reading(false)?;
+    let complement = if region.rule == RegionRule::DeclaredOrientation {
+        Some(reading(true)?)
+    } else {
+        None
+    };
+    Ok(Readings {
+        declared,
+        complement,
+    })
 }
 
 /// Boundary and seam length sums of one face.

@@ -72,7 +72,7 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 **Need.** We must establish the lead-`54` result incidence independently of its current class predicate before transferring a separator-form result.
 
-**Note.** The 79-file byte census has nine lead-`12` frames whose `h` selects entity 272, class `paramout`, and three lead-`54` frames whose `d` selects entities 60, 52, and 100, class `Volume`. No other incidence in those frames selects `paramout`. The existing positive lead-`54` fixture is synthetic; the real frames establish its trailing incidence and rejection of `Volume`, but not a positive result assignment.
+**Note.** The 79-file byte census has nine lead-`12` frames whose `h` selects entity 272, class `paramout`, and three lead-`54` frames whose `d` selects entities 60, 52, and 100, class `Volume`. All other incidences in those frames select other roles. The existing positive lead-`54` fixture is synthetic; the real frames establish its trailing incidence and rejection of `Volume`. A positive result assignment awaits a real witness. The code decides what the specification leaves open: `native.rs:2689` `output_entity` applies the same `paramout` predicate to the lead-`54` trailing slot as to lead-`12` `ref(h)`, and `formula.rs:374` and `decode.rs:1148,1154,1161` consume that slot as a bound formula output and counted result.
 
 ### DI-08. Legacy relation `body` selector
 
@@ -151,6 +151,14 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 **Known.** `catia.md` §7.3 "All `7C09` records in one graph carrying the same `owner_ref`" defines each incidence independently. Paired entity tables admit opaque childless object records and preserve their complete bodies, but do not assign roles inside those bodies. A complete two-definition value chain with a supported second role transfers one typed parameter, but it does not assign that parameter to an operation role. Operation-named field records can share one class identity across several structural owner groups. A `Hole` class cohort contains one empty self-classified record plus list, atom-vector, mixed, or empty records under other owners. The shared class identity does not establish whether the cohort is a schema object, one feature instance, or a field program reused by multiple instances. An operation-named field class or field vocabulary does not assign feature identity, operands, outputs, or replay order. An exact separator-form owner declaration for `GSMPlaneAngle` or `GSMPlaneOffset`, with matching class entry, owner entity, and structural owner, establishes an unresolved constructed-reference-plane family node; support, angle, signed offset, normal, in-plane frame, and construction dependencies remain unresolved. A separator-form owner declaration gives structural ownership and class identity. `Prism_EndLimit_Length`, `Prism_ThickThin1`, `Prism_ThickThin2`, `Revol_ThickThin1`, `Sweep_ThickThin1`, `EdgeFillet`, and `CircPattern_RadialNumber` can label schema groups; the class and complete structural incidence do not establish an operation instance. Definition-bound values, ranges, and field relations remain native records. A typed parameter retains its value without an operation role or an owner inferred from these labels. An exact payload reference from a transferred feature object's field to a different transferred feature, or to a target whose complete owner-design-object chain reaches that feature, with an earlier feature ordinal transfers one deduplicated structural dependency in relation order. Storage selectors, unresolved targets, incomplete or cyclic owner chains, self-links, and forward targets do not. This structural edge does not identify an operation-specific input role.
 
 **Need.** We must identify the native operation-instance production, its exact profile or geometric operands, typed values, result identities, and operation-specific dependencies. Each family requires an independently calibrated source instance and regeneration order.
+
+### DI-24. PMI dimension quantity and suffix framing
+
+**Question.** Which field gives the physical quantity of a `Range`/`CstAttr_Dimension` nominal and its deviations, and what do the `B8`, `C1`, `DC`, and `DF` suffix framings select?
+
+**Known.** `catia.md` §7.3 defines the interval, nominal, constraint, suffix-framing, and owner-incidence productions. `B8` and `C1` retain a constraint evaluation without a Range nominal; `DC`/`81 DB` and `DF`/`81 92` also supply the Range nominal production. The same scalar and deviation program can use either latter framing. Length, angle, and ratio semantics stay unassigned. A source-closed sketch incidence can retain an opaque constraint; the scalar and deviations remain untyped native values. Emission from this production stays native. `attributes.dimension-quantity-unresolved` reports each finite scalar withheld for this reason. Range-only `DiameterThread` and `FeatureRSUR` productions are separate source-closed size dimensions whose definitions establish length semantics. `DI-18` retains the separate feature-local `GSMProject` millimetre-diameter incidence and the remaining Range ownership questions.
+
+**Need.** We must identify the serialized quantity source and its join to the constraint-range entity before transferring the scalar and deviations as length, angle, or ratio values.
 
 ### DI-27. Feature parameter membership and order
 
@@ -324,14 +332,6 @@ terminal meaning remain unresolved. Exact framing does not supply those roles.
 
 **Note.** Existing native retention passes full model checking for 5,214 copied control frames and 19,277 copied owner frames. Both existing typed boundary cycles match independently reconstructed source endpoints. Unassigned meanings remain open; no cross-source geometry binding follows from these structural results.
 
-### DI-24. PMI dimension quantity and suffix framing
-
-**Question.** Which field gives the physical quantity of a `Range`/`CstAttr_Dimension` nominal and its deviations, and what do the `B8`, `C1`, `DC`, and `DF` suffix framings select?
-
-**Known.** `catia.md` §7.3 defines the interval, nominal, constraint, suffix-framing, and owner-incidence productions. `B8` and `C1` retain a constraint evaluation without a Range nominal; `DC`/`81 DB` and `DF`/`81 92` also supply the Range nominal production. The same scalar and deviation program can use either latter framing. None assigns length, angle, or ratio semantics. A source-closed sketch incidence can retain an opaque constraint; the scalar and deviations remain untyped native values. No neutral PMI dimension or sketch parameter is emitted from this production. `attributes.dimension-quantity-unresolved` reports each finite scalar withheld for this reason. Range-only `DiameterThread` and `FeatureRSUR` productions are separate source-closed size dimensions whose definitions establish length semantics. `DI-18` retains the separate feature-local `GSMProject` millimetre-diameter incidence and the remaining Range ownership questions.
-
-**Need.** We must identify the serialized quantity source and its join to the constraint-range entity before transferring the scalar and deviations as length, angle, or ratio values.
-
 ## 4. Object stream
 
 ### OS-02. Class-`0x5f` terminal controls
@@ -403,6 +403,24 @@ terminal meaning remain unresolved. Exact framing does not supply those roles.
 **Known.** `catia.md` §9 "The E5 `0xaa` current-limit program" defines the limit and affine fields. Class `0xaa` has one extrapolation control. The E7 surface program has three flags, eight continuation scalars and six suffix controls. Zero controls disable extrapolation.
 
 **Need.** We must identify an active branch before interpreting its continuation fields.
+
+## 7. Container and route selection
+
+### CN-01. CATProduct, CATShape, and CGR decode path
+
+**Question.** Which detection and variant productions admit `.CATProduct`, `.CATShape`, and `.cgr` documents, and which production transfers their assembly or tessellated structure?
+
+**Known.** `container.rs:1090` `looks_like_catia` admits any `V5_CFV2` prefix regardless of the document kind, and `lib.rs:112` scores that admission `High`. `variant.rs` names only `CATPart` storage families; any other layout scores `Unknown`. `container.rs:370` retains `.catpart`, `.catproduct`, `.catshape`, and `.cgr` targets only as external-document reference strings with their containing segment identity. `docs/format-support.md` records CATIA product structure as `None`.
+
+**Need.** A CATProduct, CATShape, or CGR specimen and an explicit admission decision must establish whether those kinds decode, which variant each selects, and whether occurrences, placements, or tessellation transfer. A shared container magic leaves product structure undecoded.
+
+### CN-02. FBB-only and E5 coexistence route golden
+
+**Question.** Which frozen fixture pins route selection when a partial FBB-only spine coexists with a coherent E5 walk?
+
+**Known.** `catia.md` §1 and `container.rs:1696` (`identify_variant`) state the precedence: a coherent E5 walk supersedes a partial FBB-only spine but not a complete standard spine. Every dialect-registry witness fixture selects one variant at a time: `fbb_only_fallthrough.catpart` witnesses `catia:fbb-only` and `e5_circle.catpart` witnesses `catia:e5-stream`. A fixture with both a partial spine and a coherent walk is still missing.
+
+**Need.** A frozen coexistence fixture must pin the E5 route selection and its golden snapshots before the precedence rule counts as covered. The documented precedence and the single-variant witnesses leave the coexistence branch uncovered.
 
 ## 8. Appearance
 

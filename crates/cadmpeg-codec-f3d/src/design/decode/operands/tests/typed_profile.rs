@@ -132,7 +132,17 @@ fn parse(
         class_tag: DesignClassTag::try_from("264".to_owned()).unwrap(),
         byte_offset: Some(0),
     };
-    super::super::parse_typed_profile_curve_selection(bytes, &records, &group(), 0, &header)
+    crate::test_support::with_decode_context(|ctx| {
+        super::super::parse_typed_profile_curve_selection(
+            ctx,
+            bytes,
+            &records,
+            &group(),
+            0,
+            &header,
+        )
+    })
+    .unwrap()
 }
 
 #[test]
@@ -146,7 +156,13 @@ fn typed_profile_selection_reads_owner_scope_and_curve_loops() {
         .map(|loops| {
             loops
                 .iter()
-                .map(|entries| entries.iter().map(|entry| entry.primary_id).collect())
+                .map(|region| {
+                    region
+                        .iter()
+                        .flat_map(|loop_| &loop_.entries)
+                        .map(|entry| entry.primary_id)
+                        .collect()
+                })
                 .collect()
         })
         .collect();
@@ -156,6 +172,7 @@ fn typed_profile_selection_reads_owner_scope_and_curve_loops() {
         .iter()
         .flatten()
         .flatten()
+        .flat_map(|loop_| &loop_.entries)
         .all(|entry| entry.secondary_id == 0 && entry.entry_fields == [0, 1, 1]));
     let outer = parse(&chain(false)).expect("single-loop selection");
     assert_eq!(outer.loop_lists[0].len(), 1);
@@ -181,5 +198,71 @@ fn typed_profile_selection_rejects_a_chain_without_the_scope_record_or_exact_end
         .rposition(|window| window == b"\x03\x00\x00\x00275")
         .unwrap();
     bytes.insert(paired, 0);
+    assert!(parse(&bytes).is_none());
+}
+
+fn region_chain() -> Vec<u8> {
+    let mut bytes = chain(false);
+    let identity = bytes
+        .windows(7)
+        .position(|window| window == b"\x03\x00\x00\x00297")
+        .unwrap();
+    let paired = bytes
+        .windows(7)
+        .rposition(|window| window == b"\x03\x00\x00\x00275")
+        .unwrap();
+    let mut lists = Vec::new();
+    lists.extend_from_slice(&1u32.to_le_bytes());
+    lists.extend_from_slice(&2u32.to_le_bytes());
+    lists.extend_from_slice(&1u32.to_le_bytes());
+    entry(&mut lists, 14);
+    lists.push(0);
+    lists.extend_from_slice(&3u32.to_le_bytes());
+    for id in [11, 12, 13] {
+        entry(&mut lists, id);
+    }
+    lists.push(1);
+    lists.extend_from_slice(&0u32.to_le_bytes());
+    bytes.splice(
+        identity + crate::layout::typed_reference_profile_identity_record::FIRST_REGION_COUNT
+            ..paired,
+        lists,
+    );
+    bytes
+}
+
+#[test]
+fn typed_profile_selection_reads_region_holes_before_exterior() {
+    let selection = parse(&region_chain()).unwrap();
+    assert!(selection.valid_layout());
+    let region = &selection.loop_lists[0][0];
+    assert_eq!(region.len(), 2);
+    assert!(!region[0].outer);
+    assert!(region[1].outer);
+    assert_eq!(region[0].entries[0].primary_id, 14);
+    assert_eq!(
+        region[1]
+            .entries
+            .iter()
+            .map(|entry| entry.primary_id)
+            .collect::<Vec<_>>(),
+        [11, 12, 13]
+    );
+}
+
+#[test]
+fn typed_profile_selection_refuses_missing_exterior_and_invalid_counts() {
+    let mut bytes = region_chain();
+    let parsed = parse(&bytes).unwrap();
+    let exterior_flag = usize::try_from(parsed.identity_end_offset).unwrap() - 5;
+    bytes[exterior_flag] = 0;
+    assert!(parse(&bytes).is_none());
+    bytes[exterior_flag] = 2;
+    assert!(parse(&bytes).is_none());
+    let mut bytes = region_chain();
+    let count = usize::try_from(parsed.identity_record_offset).unwrap()
+        + crate::layout::typed_reference_profile_identity_record::FIRST_REGION_COUNT
+        + 8;
+    bytes[count..count + 4].copy_from_slice(&u32::MAX.to_le_bytes());
     assert!(parse(&bytes).is_none());
 }

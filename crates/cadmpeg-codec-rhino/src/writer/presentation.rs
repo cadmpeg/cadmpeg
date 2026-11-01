@@ -59,6 +59,9 @@ pub(super) fn object_name<'a>(ir: &'a CadIr, target: &AppearanceTarget) -> Optio
         AppearanceTarget::Edge(id) => AttributeTarget::Edge(id.clone()),
         AppearanceTarget::Vertex(id) => AttributeTarget::Vertex(id.clone()),
         AppearanceTarget::Tessellation(id) => AttributeTarget::Tessellation(id.clone()),
+        AppearanceTarget::TriangleGroup { tessellation, .. } => {
+            AttributeTarget::Tessellation(tessellation.clone())
+        }
         AppearanceTarget::Record { arena, id } => AttributeTarget::Record {
             arena: *arena,
             id: id.clone(),

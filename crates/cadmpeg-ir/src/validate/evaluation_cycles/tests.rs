@@ -2,14 +2,28 @@
 
 use cadmpeg_core::CodecError;
 
-use super::{admit_evaluation_cycles, CarrierConstructions};
+use super::{give_up_evaluation_cycles, CarrierConstructions};
 use crate::report::check::Check;
 use crate::test_support::evaluation_cycles::cyclic_model;
 use crate::validate::{admit, validate_neutral};
 
+fn give_up(
+    ir: &mut crate::CadIr,
+    losses: &mut Vec<crate::report::loss::LossNote>,
+    fidelity: &mut crate::SourceFidelity,
+) -> Result<(), CodecError> {
+    give_up_evaluation_cycles(
+        &cadmpeg_test_support::service_decode_context(),
+        ir,
+        losses,
+        fidelity,
+        "test",
+    )
+}
+
 #[test]
-fn model_admission_refuses_a_malformed_curve_surface_reference_cycle() {
-    let (ir, curve, surface) = cyclic_model();
+fn model_admission_gives_up_a_malformed_curve_surface_reference_cycle() {
+    let (mut ir, curve, surface) = cyclic_model();
     let expected =
         format!("malformed curve/surface reference cycle: {curve} -> {surface} -> {curve}");
     let report = validate_neutral(&ir, Vec::new()).expect("validate the neutral model");
@@ -24,22 +38,135 @@ fn model_admission_refuses_a_malformed_curve_surface_reference_cycle() {
     )
     .expect("admit the model")
     .is_ok());
-    assert!(matches!(
-        admit_evaluation_cycles(&cadmpeg_test_support::service_decode_context(), &ir),
-        Err(CodecError::Malformed(message)) if message == expected
-    ));
+    let mut losses = Vec::new();
+    let mut fidelity = crate::SourceFidelity::default();
+    give_up(&mut ir, &mut losses, &mut fidelity).expect("a cycle gives up its carrier");
+    assert!(ir.model.curves.iter().all(|carrier| carrier.id != curve));
+    assert!(ir
+        .model
+        .surfaces
+        .iter()
+        .all(|carrier| carrier.id != surface));
+    assert!(ir.model.procedural_curves.is_empty());
+    assert!(ir.model.procedural_surfaces.is_empty());
+    assert_eq!(ir.model.surfaces.len(), 1);
+    assert!(ir.model.curves.is_empty());
+    assert_eq!(losses.len(), 1);
+    assert_eq!(losses[0].code.local_code(), "record.unreadable");
+    assert_eq!(losses[0].severity, crate::report::Severity::Error);
+    assert!(
+        losses[0].message.contains(curve.as_str()),
+        "{}",
+        losses[0].message
+    );
+    assert!(
+        losses[0].message.contains(&expected),
+        "{}",
+        losses[0].message
+    );
+    let (_, retained) = fidelity
+        .retained_records()
+        .iter()
+        .next()
+        .expect("one retained part");
+    assert!(retained.data().expect("retained bytes").is_empty());
+    let unknowns = ir
+        .native
+        .namespace("test")
+        .expect("test namespace")
+        .arenas()
+        .get("unknowns")
+        .expect("one unknowns arena");
+    assert_eq!(unknowns.len(), 1);
+    assert!(unknowns[0].id().starts_with("test:source:part#"));
+    assert_eq!(
+        unknowns[0].id(),
+        fidelity.retained_records().keys().next().unwrap().as_str()
+    );
+}
+
+#[test]
+fn cycle_give_up_drops_required_dependents_and_prunes_lists() {
+    use crate::ids::{FaceId, RegionId, ShellId};
+    use crate::topology::{Face, FaceLoops, Sense, Shell};
+    let (mut ir, _, surface) = cyclic_model();
+    let survivor = ir
+        .model
+        .surfaces
+        .iter()
+        .find(|carrier| carrier.id != surface)
+        .expect("one solved surface")
+        .id
+        .clone();
+    let region = RegionId::mint("test:model:region#cycle").expect("region identity");
+    let face = FaceId::mint("test:model:face#cycle").expect("face identity");
+    let shell = ShellId::mint("test:model:shell#cycle").expect("shell identity");
+    let face_kept = FaceId::mint("test:model:face#kept").expect("face identity");
+    let shell_kept = ShellId::mint("test:model:shell#kept").expect("shell identity");
+    for (face, shell, surface) in [
+        (&face, &shell, &surface),
+        (&face_kept, &shell_kept, &survivor),
+    ] {
+        ir.model.faces.push(Face {
+            native_ref: None,
+            id: face.clone(),
+            shell: shell.clone(),
+            surface: surface.clone(),
+            sense: Sense::Forward,
+            loops: FaceLoops::Unspecified { loops: Vec::new() },
+            name: None,
+            color: None,
+            tolerance: None,
+        });
+        ir.model.shells.push(
+            Shell::new(
+                shell.clone(),
+                region.clone(),
+                vec![face.clone()],
+                Vec::new(),
+                Vec::new(),
+            )
+            .expect("one-face shell"),
+        );
+    }
+    let mut losses = Vec::new();
+    let mut fidelity = crate::SourceFidelity::default();
+    give_up(&mut ir, &mut losses, &mut fidelity).expect("a cycle gives up its carrier");
+    assert!(ir.model.faces.iter().all(|record| record.id != face));
+    assert!(ir.model.faces.iter().any(|record| record.id == face_kept));
+    let pruned = ir
+        .model
+        .shells
+        .iter()
+        .find(|record| record.id == shell)
+        .expect("a listing shell survives");
+    assert!(pruned.faces().is_empty());
+    let kept = ir
+        .model
+        .shells
+        .iter()
+        .find(|record| record.id == shell_kept)
+        .expect("an unaffected shell survives");
+    assert_eq!(kept.faces(), std::slice::from_ref(&face_kept));
+    assert_eq!(losses.len(), 1);
+    assert!(losses[0].dropped.contains(&face.as_str().to_owned()));
+    assert!(!losses[0].dropped.contains(&shell.as_str().to_owned()));
 }
 
 #[test]
 fn cycle_admission_preserves_zero_depth_session_refusal() {
     use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
-    let (ir, _, _) = cyclic_model();
+    let (mut ir, _, _) = cyclic_model();
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
     policy.limits.max_recursion_depth = 0;
     let (ctx, _) =
         DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root is admitted");
-    let Err(CodecError::ResourceLimit(limit)) = admit_evaluation_cycles(&ctx, &ir) else {
+    let mut losses = Vec::new();
+    let mut fidelity = crate::SourceFidelity::default();
+    let Err(CodecError::ResourceLimit(limit)) =
+        give_up_evaluation_cycles(&ctx, &mut ir, &mut losses, &mut fidelity, "test")
+    else {
         panic!("traversal frame must be refused");
     };
     assert_eq!(limit.dimension, ResourceDimension::RecursionDepth);
@@ -77,12 +204,16 @@ fn cycle_admission_admits_solved_carriers_among_many_points() {
     let arena = DecodeArena::new();
     let policy = DecodePolicy::service();
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty input");
-    admit_evaluation_cycles(&ctx, &ir).expect("solved carriers have no cycle index slots");
+    let mut losses = Vec::new();
+    let mut fidelity = crate::SourceFidelity::default();
+    give_up_evaluation_cycles(&ctx, &mut ir, &mut losses, &mut fidelity, "test")
+        .expect("solved carriers have no cycle index slots");
+    assert!(losses.is_empty());
     ctx.finish_session().expect("unfused session");
 }
 
 #[test]
-fn cycle_admission_finds_cycles_among_many_unrelated_points() {
+fn cycle_admission_gives_up_cycles_among_many_unrelated_points() {
     use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
     let (mut ir, curve, surface) = cyclic_model();
     let cube = crate::examples::unit_cube().expect("cube fixture");
@@ -92,12 +223,31 @@ fn cycle_admission_finds_cycles_among_many_unrelated_points() {
     let arena = DecodeArena::new();
     let policy = DecodePolicy::service();
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty input");
+    let mut losses = Vec::new();
+    let mut fidelity = crate::SourceFidelity::default();
+    give_up_evaluation_cycles(&ctx, &mut ir, &mut losses, &mut fidelity, "test")
+        .expect("a cycle gives up its carrier");
+    assert_eq!(losses.len(), 1);
+    assert_eq!(losses[0].code.local_code(), "record.unreadable");
     assert!(
-        matches!(admit_evaluation_cycles(&ctx, &ir), Err(CodecError::Malformed(message))
-        if message == format!("malformed curve/surface reference cycle: {curve} -> {surface} -> {curve}"))
+        losses[0].message.contains(curve.as_str()),
+        "{}",
+        losses[0].message
     );
+    assert!(
+        losses[0].message.contains(surface.as_str()),
+        "{}",
+        losses[0].message
+    );
+    assert!(ir.model.curves.iter().all(|carrier| carrier.id != curve));
+    assert!(ir
+        .model
+        .surfaces
+        .iter()
+        .all(|carrier| carrier.id != surface));
+    assert_eq!(ir.model.points.len(), 1_024);
     ctx.finish_session()
-        .expect("semantic refusal does not fuse resources");
+        .expect("a give-up does not fuse resources");
 }
 
 #[test]

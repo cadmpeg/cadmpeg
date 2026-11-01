@@ -5289,14 +5289,10 @@ fn parse_knots(
     Ok(knots)
 }
 
-fn normalize_periodic_knots(
-    knots: Vec<FiniteReal>,
+pub(super) fn periodic_knot_padding(
+    knots: &[FiniteReal],
     degree: u32,
-    periodic: bool,
-) -> Result<(Vec<FiniteReal>, usize), CodecError> {
-    if !periodic {
-        return Ok((knots, 0));
-    }
+) -> Result<usize, CodecError> {
     let degree = usize::try_from(degree)
         .map_err(|_| CodecError::Malformed("periodic B-spline degree exceeds usize".into()))?;
     let Some(&first) = knots.first() else {
@@ -5320,32 +5316,44 @@ fn normalize_periodic_knots(
             "periodic B-spline endpoint knots are invalid".into(),
         ));
     }
-    let padding = degree + 1 - first_multiplicity;
-    let before_last = knots.len().checked_sub(last_multiplicity).ok_or_else(|| {
-        CodecError::Malformed("periodic B-spline knot cardinality underflow".into())
+    Ok(degree + 1 - first_multiplicity)
+}
+
+fn normalize_periodic_knots(
+    knots: Vec<FiniteReal>,
+    degree: u32,
+    periodic: bool,
+) -> Result<(Vec<FiniteReal>, usize), CodecError> {
+    if !periodic {
+        return Ok((knots, 0));
+    }
+    let padding = periodic_knot_padding(&knots, degree)?;
+    let normalized = extend_periodic_knots(&knots, padding).ok_or_else(|| {
+        CodecError::malformed("periodic B-spline extension has no finite knot vector")
     })?;
-    if before_last < padding || knots.len() - first_multiplicity < padding {
-        return Err(CodecError::Malformed(
-            "periodic B-spline has insufficient interior knots".into(),
-        ));
-    }
-    knots
-        .len()
-        .checked_add(2 * padding)
-        .ok_or_else(|| CodecError::Malformed("periodic B-spline knot limit exceeded".into()))?;
-    let mut normalized = Vec::new();
-    let overflow =
-        || CodecError::Malformed("periodic B-spline extension exceeds finite knot range".into());
-    for knot in &knots[before_last - padding..before_last] {
-        normalized
-            .push(FiniteReal::new(first.get() - (last.get() - knot.get())).ok_or_else(overflow)?);
-    }
-    normalized.extend_from_slice(&knots);
-    for knot in &knots[first_multiplicity..first_multiplicity + padding] {
-        normalized
-            .push(FiniteReal::new(last.get() + (knot.get() - first.get())).ok_or_else(overflow)?);
-    }
     Ok((normalized, padding))
+}
+
+pub(super) fn extend_periodic_knots(
+    knots: &[FiniteReal],
+    padding: usize,
+) -> Option<Vec<FiniteReal>> {
+    let first = *knots.first()?;
+    let last = *knots.last()?;
+    let multiplicity = knots.iter().take_while(|knot| **knot == first).count();
+    let before_last = knots.len().checked_sub(multiplicity)?;
+    let before = knots.get(before_last.checked_sub(padding)?..before_last)?;
+    let after = knots.get(multiplicity..multiplicity.checked_add(padding)?)?;
+    knots.len().checked_add(padding.checked_mul(2)?)?;
+    let mut normalized = Vec::new();
+    for knot in before {
+        normalized.push(FiniteReal::new(first.get() - (last.get() - knot.get()))?);
+    }
+    normalized.extend_from_slice(knots);
+    for knot in after {
+        normalized.push(FiniteReal::new(last.get() + (knot.get() - first.get()))?);
+    }
+    Some(normalized)
 }
 
 fn append_periodic_curve_poles<T: Clone>(

@@ -231,7 +231,21 @@ fn over_limit_type_section_is_given_up_before_guid_dispatch_and_keeps_the_exact_
     // descriptors are not formed and are not given up on their own.
     let given_up = given_up_records(&fidelity);
     assert_eq!(given_up.len(), 1);
-    assert!(!namespace.arenas().contains_key("unknowns"));
+    // #215 rule 1: the given-up part keeps one unknowns home.
+    let unknowns = namespace
+        .arenas()
+        .get("unknowns")
+        .expect("one unknowns home");
+    assert_eq!(unknowns.len(), 1);
+    assert_eq!(
+        unknowns[0].id(),
+        fidelity
+            .retained_records()
+            .keys()
+            .next()
+            .expect("one retained part")
+            .as_str()
+    );
     let mut expected = 300_u32.to_le_bytes().to_vec();
     for _ in 0..300 {
         expected.extend([0x11; 16]);

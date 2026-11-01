@@ -1,0 +1,166 @@
+{
+  "entries": [
+    {
+      "name": "Document.xml",
+      "payload_len": 32255,
+      "payload_sha256": "5f9e9a0720822198707beb1e16499df4715b5b77f64a375c5547225a1296c973"
+    },
+    {
+      "name": "PartShape.brp",
+      "payload_len": 7114,
+      "payload_sha256": "82b413ee30b6186579711fcc78053f7c20e8ba729ec222127bbb5e117ad0954a"
+    },
+    {
+      "name": "PartShape1.brp",
+      "payload_len": 1671,
+      "payload_sha256": "5205dbc940c53f2677ad9eaaf53dcdacc69fa55d5f0900a70bd7ef88cc75dbec"
+    },
+    {
+      "name": "PartShape2.brp",
+      "payload_len": 4994,
+      "payload_sha256": "5c55f936471ea534850cad98778a903a39488e56a6e459aa2544986412640ac1"
+    },
+    {
+      "name": "PartShape3.brp",
+      "payload_len": 5217,
+      "payload_sha256": "6f00822e745b1e6c186b52e2fe079d38698abc3e4c8b92ca25d9718a8410fba0"
+    },
+    {
+      "name": "GuiDocument.xml",
+      "payload_len": 31168,
+      "payload_sha256": "37ab666b467cb66d9335530f7668250eebfd45e34e226ef5e3b17cbd846864b2"
+    },
+    {
+      "name": "DiffuseColor",
+      "payload_len": 8,
+      "payload_sha256": "e9241470db3d3b729483edecc100e63465c19b3bdb7c4770bd3a058f918c2369"
+    },
+    {
+      "name": "LineColorArray",
+      "payload_len": 8,
+      "payload_sha256": "db2f49478b1bd09745c18c18c3ec0b9b2911b331946c721e394d448f3e81cd3a"
+    },
+    {
+      "name": "PointColorArray",
+      "payload_len": 8,
+      "payload_sha256": "db2f49478b1bd09745c18c18c3ec0b9b2911b331946c721e394d448f3e81cd3a"
+    },
+    {
+      "name": "DiffuseColor1",
+      "payload_len": 8,
+      "payload_sha256": "e9241470db3d3b729483edecc100e63465c19b3bdb7c4770bd3a058f918c2369"
+    },
+    {
+      "name": "LineColorArray1",
+      "payload_len": 8,
+      "payload_sha256": "a0959ba3748c0a3fe93c11405dab5779cc29b507c17f426bc12f3916ebcb95f0"
+    },
+    {
+      "name": "PointColorArray1",
+      "payload_len": 8,
+      "payload_sha256": "a0959ba3748c0a3fe93c11405dab5779cc29b507c17f426bc12f3916ebcb95f0"
+    },
+    {
+      "name": "DiffuseColor2",
+      "payload_len": 8,
+      "payload_sha256": "e9241470db3d3b729483edecc100e63465c19b3bdb7c4770bd3a058f918c2369"
+    },
+    {
+      "name": "LineColorArray2",
+      "payload_len": 8,
+      "payload_sha256": "db2f49478b1bd09745c18c18c3ec0b9b2911b331946c721e394d448f3e81cd3a"
+    },
+    {
+      "name": "PointColorArray2",
+      "payload_len": 8,
+      "payload_sha256": "db2f49478b1bd09745c18c18c3ec0b9b2911b331946c721e394d448f3e81cd3a"
+    }
+  ],
+  "report": {
+    "census": {
+      "basis": "ir_arenas",
+      "counts": {
+        "appearance_bindings": 63,
+        "appearances": 23,
+        "articulations": 0,
+        "assembly_joints": 0,
+        "assets": 0,
+        "attributes": 0,
+        "bodies": 4,
+        "coedges": 72,
+        "colliders": 0,
+        "configurations": 0,
+        "curves": 44,
+        "drawings": 0,
+        "edges": 40,
+        "faces": 18,
+        "feature_input_topologies": 0,
+        "feature_result_topologies": 0,
+        "features": 4,
+        "loops": 18,
+        "mass_properties": 0,
+        "native.fcstd.applications": 11,
+        "native.fcstd.attachments": 9,
+        "native.fcstd.byte_coverage": 1,
+        "native.fcstd.carrier_census": 4,
+        "native.fcstd.design_census": 4,
+        "native.fcstd.document": 1,
+        "native.fcstd.entries": 15,
+        "native.fcstd.extensions": 3,
+        "native.fcstd.gui_documents": 1,
+        "native.fcstd.gui_properties": 161,
+        "native.fcstd.gui_view_providers": 11,
+        "native.fcstd.logical_ledger": 581,
+        "native.fcstd.objects": 11,
+        "native.fcstd.physical_ledger": 106,
+        "native.fcstd.properties": 120,
+        "native.fcstd.shape_payloads": 4,
+        "occurrences": 0,
+        "parameters": 6,
+        "pcurves": 0,
+        "physical_materials": 0,
+        "physics_scenes": 0,
+        "pmi": 0,
+        "points": 28,
+        "presentation_documents": 1,
+        "presentation_layers": 0,
+        "procedural_curves": 0,
+        "procedural_surfaces": 0,
+        "product_definitions": 0,
+        "regions": 4,
+        "rigid_bodies": 0,
+        "semantic_annotations": 0,
+        "shells": 4,
+        "sketch_constraints": 11,
+        "sketch_entities": 5,
+        "sketches": 1,
+        "solver_settings": 0,
+        "spatial_sketch_constraints": 0,
+        "spatial_sketch_entities": 0,
+        "spatial_sketches": 0,
+        "spreadsheets": 1,
+        "subds": 0,
+        "surfaces": 19,
+        "surfaces_unknown_geometry": 0,
+        "tessellations": 0,
+        "vertices": 28,
+        "view_presentations": 11
+      }
+    },
+    "identity": {
+      "payload": "native",
+      "target": "fcstd:schema-4"
+    },
+    "losses": [],
+    "notes": [
+      "semantic FCStd archive written for fcstd:schema-4 (SchemaVersion=4 FileVersion=1)",
+      "unsupported retained entries and unedited XML records were preserved"
+    ],
+    "write_path": {
+      "fidelity": {
+        "status": "not_consumed"
+      },
+      "path": "patched"
+    }
+  }
+}

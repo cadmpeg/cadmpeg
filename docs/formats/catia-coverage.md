@@ -313,7 +313,7 @@ current levels require those matrices and representative fixtures.
   to one child design object containing exactly one complete `2DPoint` field
   with its paired entity record. The entity keeps the source field identity and
   class as native geometry. Coordinates, placement, construction state,
-  profiles, and constraints remain unresolved under DI-15 through DI-22.
+  profiles, and constraints remain unresolved under DI-17, DI-18, DI-19, DI-20, and DI-22.
 - An exact source-closed relation from an admitted `2DPoint` field to a
   complete `ConstraintDYS` field transfers one unresolved native sketch
   constraint when both fields are selected by the same transferred `Sketch`
@@ -913,7 +913,7 @@ from that relation. Raw tail controls retain their source polarity.
 
 The frozen `standard_a5_rolling_ball` input lacks a tail and remains a rejection
 witness. `standard_a5_rolling_ball_complete_tail` adds the complete 79-byte
-production. CATIA has 23 frozen inputs and 69 golden files. The golden-file floor is 69.
+production. CATIA has 26 frozen inputs and 52 golden files. The golden-file floor is 78.
 
 ## Consolidated edge header integers
 
@@ -1454,9 +1454,9 @@ support binding requires an independent unique endpoint-lift witness.
 Consolidated revolution profiles require one exact interval match. Their
 nonzero reference value remains distinct from circle and revolution object identities.
 
-OS-11 independently verifies all three contextual offset charts against their
+Independent verification covers all three contextual offset charts against their
 source knots, exact auxiliary limits, and class-`30` construction fields across
-79 inputs. OS-12 resolves all 677 fillet constructions in 18 inputs and verifies
+79 inputs. The decoder resolves all 677 fillet constructions in 18 inputs and verifies
 all result selectors, control domains, analytic radii, and sphere closures.
 Independent support lifts verify 783 contact lanes at 2,349 points and 348
 contact-bound orders; the maximum center residual is 5.97e−12 mm. The 571

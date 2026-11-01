@@ -79,7 +79,7 @@ pub(crate) fn plan(
 /// every arena or record the graph does not carry. Arenas charged as a whole
 /// are `Dropped`.
 fn coverage(schema: StepSchema, losses: &[LossNote]) -> ArenaDispositions {
-    use ArenaDisposition::{Dropped, Reported, Written};
+    use ArenaDisposition::{Dropped, Omitted, Reported, Written};
     let ap242 = |supported: bool| if supported { Written } else { Reported };
     let mut coverage = ArenaDispositions {
         bodies: Written,
@@ -123,6 +123,13 @@ fn coverage(schema: StepSchema, losses: &[LossNote]) -> ArenaDispositions {
         attributes: Dropped,
         pmi: ap242(schema.supports_semantic_pmi()),
         presentation_layers: Written,
+        physical_materials: Omitted,
+        mass_properties: Omitted,
+        rigid_bodies: Omitted,
+        colliders: Omitted,
+        articulations: Omitted,
+        physics_scenes: Omitted,
+        solver_settings: Omitted,
     };
     report_reductions(&mut coverage, losses);
     coverage
