@@ -2195,22 +2195,49 @@ the datum target basis; the writer emits the relationship for each shape-aspect
 basis target. A relationship without a resolvable datum target remains
 source-native. Geometric-item usages whose identified item is a Cartesian point
 transfer that point as a typed PMI target.
-Geometric validation properties read area, volume, and centroid values through
-inherited `REPRESENTATION`, `MEASURE_REPRESENTATION_ITEM`, and
-`MEASURE_WITH_UNIT` partials. Direct `AREA_UNIT` and `VOLUME_UNIT` subtypes and
-their inherited `DERIVED_UNIT_ELEMENT` factors are typed. ISO 10303-43 defines
-`representation.items` as `SET[1:?]`; a geometric-validation representation
-is not limited to one item. CAx-IF Recommended Practices for Geometric and
-Assembly Validation Properties permit one representation to combine validation
-properties when they have the same `PROPERTY_DEFINITION.name` and definition.
-The combined representation has an empty name, and each property is
-instantiated at most once for the model element. A solid may therefore carry
-one volume, one surface-area, and one centroid item in one combined
-representation. Every referenced area, volume, or centroid item is evaluated;
-derived-unit factors scale area and volume by their dimensions. CADIR decision:
-a repeated reference to one item is evaluated once, and an unsupported item
-produces a warning without suppressing supported siblings. Item order does not
-select a validation value.
+A geometric validation property is a `PROPERTY_DEFINITION` named
+`geometric validation property`, linked to a representation by
+`PROPERTY_DEFINITION_REPRESENTATION`. Its definition is either a
+`PRODUCT_DEFINITION_SHAPE` for a part or a `SHAPE_ASPECT` for geometric items.
+At part level the scope contains visible solid bodies for solid properties and
+visible independent sheet bodies for surface properties. Geometry-level scope
+uses the items associated with the shape aspect by
+`SHAPE_DEFINITION_REPRESENTATION` through a property definition, or by
+`GEOMETRIC_ITEM_SPECIFIC_USAGE` or `ITEM_IDENTIFIED_REPRESENTATION_USAGE`.
+A placement item does not add geometry to that scope. A face or shell scope is
+not interchangeable with the whole body that contains it.
+
+The measure item names distinguish the quantities:
+
+| Item name | Value | Geometry class |
+| --- | --- | --- |
+| `volume measure` | `VOLUME_MEASURE` | Solid volume |
+| `surface area measure` | `AREA_MEASURE` | Solid area, including void faces |
+| `wetted area measure` | `AREA_MEASURE` | Solid area, excluding void faces |
+| `centre point` | `CARTESIAN_POINT` | Volume centroid of solids |
+| `independent surface area measure` | `AREA_MEASURE` | Independent surface area |
+| `surface centre point` | `CARTESIAN_POINT` | Area centroid of independent surfaces |
+
+Names are case-insensitive. Area and volume values use their explicit measure
+units; point coordinates use the representation context's length unit. Derived
+unit factors have total length exponents two for area and three for volume.
+Simple instances list inherited attributes in schema order. Complex
+instances place each attribute in its declaring partial. `REPRESENTATION`
+carries items and context; `REPRESENTATION_ITEM` carries the item name;
+`MEASURE_WITH_UNIT` carries the value and unit; `CARTESIAN_POINT` carries only
+its coordinate list. In a complex `GEOMETRIC_ITEM_SPECIFIC_USAGE`,
+`ITEM_IDENTIFIED_REPRESENTATION_USAGE` carries the definition, used
+representation, and identified items. In a complex
+`SHAPE_DEFINITION_REPRESENTATION`, `PROPERTY_DEFINITION_REPRESENTATION`
+carries the definition and used representation.
+
+`representation.items` is a `SET[1:?]`. One representation can combine
+validation properties with the same property name and definition. Its name is
+empty, and each quantity occurs at most once for a model element. A repeated
+reference to one item is one set member. Item order does not select a value.
+A validation point belongs to the property; it is also model geometry only
+when another geometric record references it.
+
 ISO 10303-47 §6.2 defines the first compartment of a tolerance frame with one
 specific characteristic entity: `ANGULARITY_TOLERANCE`,
 `CIRCULAR_RUNOUT_TOLERANCE`, `COAXIALITY_TOLERANCE`,

@@ -37,6 +37,7 @@ mod budget;
 mod canonical;
 pub mod compare;
 mod context;
+mod declared;
 mod edges;
 mod eigen;
 mod extent;
@@ -66,6 +67,7 @@ pub use budget::{
     WorkProfile, MAX_MEASURE_PASS_WORK_PER_ITEM, MAX_MEASURE_PASS_WORK_PER_ITEM_SERVICE,
     MEASURE_PASS_WORK_FLOOR,
 };
+pub use declared::declared_findings;
 pub use select::{FaceFilter, RadiusRange, Selection, SurfaceKind};
 pub use session::{findings, Density, MeasureError, MeasureInput, MeasureOptions, Measurer};
 

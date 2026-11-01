@@ -112,6 +112,10 @@ pub enum Check {
     /// checked every face, edge and closed body for [`Self::RingOrder`],
     /// [`Self::PcurveOrder`] and [`Self::Orientation`].
     MeasurementIncomplete,
+    /// A quantity that the source declares for its bodies differs from the
+    /// quantity measured on the decoded geometry by more than the
+    /// measurement's error terms, cannot be measured, or names no bodies.
+    DeclaredMeasure,
 }
 
 impl fmt::Display for Check {
@@ -138,6 +142,7 @@ impl fmt::Display for Check {
             Self::PcurveOrder => "pcurve_order",
             Self::Orientation => "orientation",
             Self::MeasurementIncomplete => "measurement_incomplete",
+            Self::DeclaredMeasure => "declared_measure",
         })
     }
 }
@@ -233,6 +238,7 @@ mod tests {
             (Check::PcurveOrder, "pcurve_order"),
             (Check::Orientation, "orientation"),
             (Check::MeasurementIncomplete, "measurement_incomplete"),
+            (Check::DeclaredMeasure, "declared_measure"),
         ] {
             assert_eq!(serde_json::to_value(check)?, name);
             assert_eq!(check.to_string(), name);

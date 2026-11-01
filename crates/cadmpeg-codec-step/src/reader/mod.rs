@@ -445,8 +445,14 @@ fn decode_exchange_mode(
         session.ctx,
     )?;
     session.charge_pending_ir_entities("step_validation_decode")?;
-    let mut validation =
-        validation::decode(exchange, &geometry.value, &mut session.ir, session.ctx)?;
+    let mut validation = validation::decode(
+        exchange,
+        &geometry.value,
+        &topology.value,
+        &product.value.product_definition_ids_by_shape,
+        &mut session.ir,
+        session.ctx,
+    )?;
     if !session.ir.model.points.is_empty()
         || !session.ir.model.curves.is_empty()
         || !session.ir.model.surfaces.is_empty()

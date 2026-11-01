@@ -2,8 +2,9 @@
 //! Native validation and measurement findings over a decoded document.
 //!
 //! Codec-owned validators run over a decoded document's native namespaces,
-//! and measurement adds its ring-order and orientation warnings, and an info
-//! finding when its allowance runs out before every item is checked. Unlike
+//! and measurement adds its ring-order and orientation warnings, an info
+//! finding when its allowance runs out before every item is checked, and
+//! the comparison of each declared measure with its measured quantity. Unlike
 //! the codec registry, this is an application concern: it belongs to
 //! `cadmpeg check`, not to the four questions an embedder asks of a file,
 //! and no decoder admission route reads it.
@@ -52,13 +53,17 @@ pub(crate) fn validate_loaded(
             &document.ir,
             document.fidelity(),
         )?);
-        report.findings.extend(cadmpeg_measure::findings(
+        let options = MeasureOptions {
+            work,
+            density: None,
+        };
+        report
+            .findings
+            .extend(cadmpeg_measure::findings(&ctx, &document.ir, options)?);
+        report.findings.extend(cadmpeg_measure::declared_findings(
             &ctx,
             &document.ir,
-            MeasureOptions {
-                work,
-                density: None,
-            },
+            options,
         )?);
         ctx.finish_session()?;
         Ok::<_, CodecError>(report)

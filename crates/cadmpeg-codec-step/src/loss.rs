@@ -157,6 +157,8 @@ pub(crate) enum StepLossCode {
     TessellationPlacementAmbiguous,
     /// A geometric validation measure unit scale did not resolve.
     ValidationMeasureUnitUnresolved,
+    /// A geometric validation item states no quantity that a declared measure carries.
+    ValidationItemUnsupported,
     /// The IR document has bodies but no exportable solids.
     NoExportableSolids,
     /// A layer item has no writable STEP carrier.
@@ -454,6 +456,7 @@ impl StepLossCode {
         Self::TessellationPlacementUnresolved,
         Self::TessellationPlacementAmbiguous,
         Self::ValidationMeasureUnitUnresolved,
+        Self::ValidationItemUnsupported,
         Self::NoExportableSolids,
         Self::LayerItemWithoutCarrier,
         Self::AssemblyGraphInvalid,
@@ -642,6 +645,7 @@ impl StepLossCode {
             Self::TessellationPlacementUnresolved => "tessellation.placement-unresolved",
             Self::TessellationPlacementAmbiguous => "tessellation.placement-ambiguous",
             Self::ValidationMeasureUnitUnresolved => "validation.measure-unit-unresolved",
+            Self::ValidationItemUnsupported => "validation.item-unsupported",
             Self::NoExportableSolids => "export.no-exportable-solids",
             Self::LayerItemWithoutCarrier => "layer.item-without-carrier",
             Self::AssemblyGraphInvalid => "assembly.graph-invalid",
@@ -866,7 +870,8 @@ impl StepLossCode {
             | Self::ProductNonPartKind
             | Self::ProductBomPropertyOmitted
             | Self::OccurrenceNoWritableProduct
-            | Self::OccurrenceMetadataOmitted => LossTaxonomy::MetadataNotTransferred,
+            | Self::OccurrenceMetadataOmitted
+            | Self::ValidationItemUnsupported => LossTaxonomy::MetadataNotTransferred,
             Self::AttributeStringInvalid
             | Self::LayerItemWithoutCarrier
             | Self::HiddenBodyVisibilityUnsupported
@@ -1099,6 +1104,7 @@ mod tests {
                 "tessellation.placement-unresolved",
                 "tessellation.placement-ambiguous",
                 "validation.measure-unit-unresolved",
+                "validation.item-unsupported",
                 "export.no-exportable-solids",
                 "layer.item-without-carrier",
                 "assembly.graph-invalid",
