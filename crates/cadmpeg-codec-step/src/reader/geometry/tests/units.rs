@@ -267,10 +267,16 @@ pub(crate) fn decode_transfers_placed_analytic_geometry_in_millimetres() {
         .model
         .appearance_bindings
         .iter()
-        .any(|binding| matches!(
-            &binding.target,
-            cadmpeg_ir::appearance::AppearanceTarget::Source { source_id } if source_id == "#6"
+        .all(|binding| !matches!(
+            binding.target,
+            cadmpeg_ir::appearance::AppearanceTarget::Source { .. }
         )));
+    assert!(!result
+        .ir()
+        .model
+        .appearance_bindings
+        .iter()
+        .any(|binding| binding.source_entity_id.as_deref() == Some("#6")));
     assert!(result.ir().model.curves.iter().any(|curve| matches!(
         &curve.geometry,
         CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(nurbs))

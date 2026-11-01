@@ -523,7 +523,6 @@ fn decode_exchange_mode(
     };
     let mut counts = BTreeMap::<String, usize>::new();
     let mut opaque_ids = BTreeMap::new();
-    let mut source_targets = BTreeMap::new();
     let mut opaque_sources = Vec::new();
     let mut source_fidelity = SourceFidelity::default();
     if matches!(mode, DecodeMode::Decode(_)) {
@@ -578,14 +577,6 @@ fn decode_exchange_mode(
                 links,
             });
         }
-        let mut target_ids = BTreeSet::new();
-        for id in opaque_sources
-            .iter()
-            .flat_map(|source| source.links.iter().copied())
-        {
-            target_ids.insert(id);
-        }
-        source_targets = record_targets(&session.ir, |record_id| target_ids.contains(&record_id));
     } else {
         for (&id, record) in exchange.records() {
             if session.typed_records.contains(id) {
@@ -656,11 +647,6 @@ fn decode_exchange_mode(
             for id in source.links {
                 if let Some(unknown_id) = opaque_ids.get(&id) {
                     links.push(unknown_id.as_str().to_string());
-                }
-                if let Some(targets) = source_targets.get(&id) {
-                    for target in targets {
-                        links.push(target.clone());
-                    }
                 }
             }
             opaque.push(UnknownRecord::retained(
@@ -1106,6 +1092,9 @@ fn referenced_record_ids(
     };
     for (&id, record) in exchange.records() {
         let typed_source = typed_records.contains(id);
+        if !typed_source {
+            continue;
+        }
         for parameter in record
             .partials
             .iter()

@@ -341,7 +341,7 @@ fn decode_user_defined_entities_as_named_opaque_records() {
 }
 
 #[test]
-fn opaque_links_retain_typed_step_targets() {
+fn opaque_links_hold_no_neutral_back_link_for_typed_step_targets() {
     let result = decode_inline(
         "#1=EXAMPLE_RECORD('',#2);
         #2=LINE('typed target',#3,#5);
@@ -354,18 +354,11 @@ fn opaque_links_retain_typed_step_targets() {
         .native_unknowns("step")
         .expect("STEP unknown records");
     assert_eq!(unknowns.len(), 1);
-    assert_eq!(
-        unknowns[0]
-            .links
-            .iter()
-            .map(cadmpeg_ir::ids::Identity::as_str)
-            .collect::<Vec<_>>(),
-        vec!["step:data:curve#2".to_string()]
-    );
+    assert!(unknowns[0].links.is_empty());
 }
 
 #[test]
-fn opaque_links_retain_fallback_carrier_targets() {
+fn opaque_links_hold_no_neutral_back_link_for_fallback_carriers() {
     let result = decode_inline(
         "#1=TRIMMED_CURVE('',#99,(0.),(1.),.T.,.PARAMETER.);
          #2=EXAMPLE_RECORD('',#1);
@@ -386,10 +379,14 @@ fn opaque_links_retain_fallback_carrier_targets() {
         .iter()
         .find(|record| record.id.as_str() == "step:data:example_record#2")
         .expect("opaque record referencing fallback carrier");
-    assert!(example
-        .links
-        .iter()
-        .any(|link| link.as_str() == "step:data:curve#1"));
+    assert_eq!(
+        example
+            .links
+            .iter()
+            .map(cadmpeg_ir::ids::Identity::as_str)
+            .collect::<Vec<_>>(),
+        vec!["step:data:trimmed_curve#1".to_string()]
+    );
 
     let validation = cadmpeg_ir::validate_neutral(result.ir(), result.report().losses.clone())
         .expect("validate the neutral model");
@@ -658,8 +655,15 @@ fn retention_reports_every_deleted_carrier_category() {
         .find(|loss| loss.message.contains("unowned STEP carrier retention"))
         .map(|loss| loss.message.as_str())
         .expect("carrier retention report");
-    for category in ["deleted pcurves=1", "points=1", "curves=1", "surfaces=1"] {
+    for category in ["deleted pcurves=1", "points=0", "curves=0", "surfaces=1"] {
         assert!(message.contains(category), "missing {category}: {message}");
+    }
+    for id in ["step:data:curve#83", "step:data:point#74"] {
+        assert!(
+            decoded.ir().model.curves.iter().any(|curve| curve.id.as_str() == id)
+                || decoded.ir().model.points.iter().any(|point| point.id.as_str() == id),
+            "unowned direct carrier {id} survives its opaque referrer"
+        );
     }
     assert!(decoded
         .ir()
@@ -670,21 +674,9 @@ fn retention_reports_every_deleted_carrier_category() {
     assert!(decoded
         .ir()
         .model
-        .curves
-        .iter()
-        .all(|curve| curve.id.as_str() != "step:data:curve#83"));
-    assert!(decoded
-        .ir()
-        .model
         .surfaces
         .iter()
         .all(|surface| surface.id.as_str() != "step:data:surface#78"));
-    assert!(decoded
-        .ir()
-        .model
-        .points
-        .iter()
-        .all(|point| point.id.as_str() != "step:data:point#74"));
 }
 
 #[test]
