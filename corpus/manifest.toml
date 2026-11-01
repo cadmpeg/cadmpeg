@@ -1,6 +1,6 @@
 # SPDX-License-Identifier: CC0-1.0
-# Public corpus files: CC0 author donations and LicenseRef-NIST-PD producer
-# evidence. See corpus/README.md and corpus/nist-pmi/README.md.
+# Public corpus specimens: CC0 author donations and LicenseRef-NIST-PD NIST
+# files. See corpus/README.md and corpus/nist-pmi/README.md.
 #
 # The donor of a CC0 file, or the maintainer who curated a NIST file, writes
 # every field except `dialect`. That one is derived: the
@@ -611,7 +611,7 @@ license = "CC0-1.0"
 sha256 = "215d76c07e95dd13f791b404eeacd6f625a0bbefa603e3653b007a73a853184c"
 notes = "Public CAD Fixture Recipes N10a: named sketch constraint expression dependency."
 
-# NIST MBE PMI producer evidence, authored by NIST and tagged
+# NIST MBE PMI specimens, authored by NIST and tagged
 # LicenseRef-NIST-PD. corpus/nist-pmi/README.md records the spreadsheets under
 # nist-pmi/definitions/.
 
