@@ -2992,7 +2992,7 @@ fn build_geometry_ir(
     let mut annotations = std::mem::take(&mut brep.annotations);
     let mut pmi_losses = Vec::new();
     let mut histories = crate::history::histories(ctx, scan, &mut annotations, &mut pmi_losses)?;
-    let mut lanes =
+    let (mut lanes, exact_profiles) =
         crate::resolved_features::assembly::lanes(ctx, scan, &mut annotations, &mut pmi_losses)?;
     let mut supplemental_config_lanes =
         crate::resolved_features::assembly::supplemental_config_lanes(ctx, scan, &mut annotations)?;
@@ -3067,6 +3067,7 @@ fn build_geometry_ir(
         &ir.model.parameters,
         &histories,
         &lanes,
+        &exact_profiles,
     );
     crate::resolved_features::bindings::bind_unresolved_detached_sketch_objects(
         ctx,
@@ -3398,6 +3399,7 @@ fn build_geometry_ir(
         &mut ir,
         &histories,
         &all_lanes,
+        &exact_profiles,
         &mut annotations,
     )?;
     pmi_losses.extend(configuration_losses);
@@ -4224,7 +4226,7 @@ fn build_metadata_ir(
     let mut annotations = Annotations::default();
     let mut pmi_losses = Vec::new();
     let mut histories = crate::history::histories(ctx, scan, &mut annotations, &mut pmi_losses)?;
-    let mut lanes =
+    let (mut lanes, exact_profiles) =
         crate::resolved_features::assembly::lanes(ctx, scan, &mut annotations, &mut pmi_losses)?;
     let mut supplemental_config_lanes =
         crate::resolved_features::assembly::supplemental_config_lanes(ctx, scan, &mut annotations)?;
@@ -4353,6 +4355,7 @@ fn build_metadata_ir(
         &ir.model.parameters,
         &histories,
         &lanes,
+        &exact_profiles,
     );
     crate::resolved_features::bindings::bind_unresolved_detached_sketch_objects(
         ctx,
@@ -4587,6 +4590,7 @@ fn build_metadata_ir(
         &mut ir,
         &histories,
         lanes,
+        &exact_profiles,
         &mut annotations,
     )?;
     pmi_losses.extend(configuration_losses);

@@ -24,13 +24,14 @@ pub(crate) fn lanes(
     scan: &ContainerScan,
     annotations: &mut Annotations,
     losses: &mut Vec<LossNote>,
-) -> Result<Vec<FeatureInputLane>, cadmpeg_core::CodecError> {
+) -> Result<(Vec<FeatureInputLane>, super::profiles::ExactProfiles), cadmpeg_core::CodecError> {
     let has_explicit_lanes = scan.sections().any(|source| {
         source
             .name()
             .is_some_and(|name| contains_ascii_case_insensitive(name, "resolvedfeatures"))
     });
     let mut result = Vec::new();
+    let mut exact = super::profiles::ExactProfiles::default();
     for source in scan.sections() {
         let Some(section) = source.name() else {
             continue;
@@ -44,11 +45,19 @@ pub(crate) fn lanes(
         }
         let mut lane = feature_input_lane(ctx, source, section, "resolved-features", annotations)?;
         if has_explicit_lanes {
-            type_scalars_from_archive(ctx, scan, section, source.payload(), &mut lane, losses)?;
+            type_scalars_from_archive(
+                ctx,
+                scan,
+                section,
+                source.payload(),
+                &mut lane,
+                &mut exact,
+                losses,
+            )?;
         }
         result.push(lane);
     }
-    Ok(result)
+    Ok((result, exact))
 }
 
 /// Give each scalar of a `Config-N-ResolvedFeatures` lane the class of the
@@ -60,6 +69,7 @@ fn type_scalars_from_archive(
     section: &str,
     resolved: &[u8],
     lane: &mut FeatureInputLane,
+    exact: &mut super::profiles::ExactProfiles,
     losses: &mut Vec<LossNote>,
 ) -> Result<(), cadmpeg_core::CodecError> {
     let Some(config_name) = configuration_name(section) else {
@@ -78,10 +88,13 @@ fn type_scalars_from_archive(
     else {
         return Ok(());
     };
-    let Some(walk) = crate::carchive::walk_configuration(ctx, config, resolved, Some(version))?
+    let Some(mut walk) = crate::carchive::walk_configuration(ctx, config, resolved, Some(version))?
     else {
         return Ok(());
     };
+    if walk.status == crate::carchive::Status::End {
+        exact.insert(&lane.id, std::mem::take(&mut walk.sketch_profiles));
+    }
     if let crate::carchive::Status::Stop(_) = walk.status {
         losses.push(SldprtLossCode::FeatureInputArchiveWalkStopped.note(format!(
             "the archive walk of {config_name} stopped before the end of the stream, so its \
@@ -253,3 +266,33 @@ fn legacy_sketch_object_stream(payload: &[u8]) -> Result<bool, cadmpeg_core::Cod
 
 #[cfg(test)]
 mod assembly_tests;
+
+/// The profile bodies a decode of the source image `image` binds, for each
+/// lane of `lanes` whose bytes the image holds unchanged.
+///
+/// # Errors
+///
+/// Propagates a decode refusal of the image.
+pub(crate) fn source_image_profiles(
+    image: &[u8],
+    lanes: &[FeatureInputLane],
+) -> Result<super::profiles::ExactProfiles, cadmpeg_core::CodecError> {
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let (ctx, root) = DecodeContext::from_root_bytes(
+        image,
+        &arena,
+        &cadmpeg_core::decode::DecodePolicy::desktop(),
+    )?;
+    let scan = crate::container::scan(&ctx, root)?;
+    let (source_lanes, mut exact) =
+        self::lanes(&ctx, &scan, &mut Annotations::default(), &mut Vec::new())?;
+    exact.retain(|id| {
+        let payload = |of: &[FeatureInputLane]| {
+            of.iter()
+                .find(|lane| lane.id == id)
+                .map(|lane| lane.native_payload.clone())
+        };
+        payload(&source_lanes).is_some_and(|source| Some(source) == payload(lanes))
+    });
+    Ok(exact)
+}
