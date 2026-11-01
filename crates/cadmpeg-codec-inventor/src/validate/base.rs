@@ -215,5 +215,5 @@ pub(super) fn valid(
     ir.model
         .bodies
         .iter()
-        .any(|candidate| candidate.id == body.body)
+        .any(|candidate| body.owns_native_ref(candidate.native_ref.as_deref()))
 }
