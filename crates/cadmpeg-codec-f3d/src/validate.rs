@@ -4336,7 +4336,8 @@ fn scope_has_typed_references(scope: &records::feature::scope::DesignParameterSc
 
 /// Whether a reference-aware Extrude scope without a prologue reference
 /// starts its operation fields at an admitted offset. The plain form starts
-/// them at offset 28; a typed-reference scope starts them at offset 22 or 26.
+/// them at offset 24 or 28; a typed-reference scope starts them at offset 22
+/// or 26.
 fn direct_extrude_operation_valid(
     scope_offset: u64,
     typed_references: bool,
@@ -4348,7 +4349,7 @@ fn direct_extrude_operation_valid(
             crate::layout::shifted_typed_reference_extrude_prologue::OPERATION,
         ]
     } else {
-        &[28]
+        &[crate::layout::offset_24_extrude_prologue::OPERATION, 28]
     };
     admitted
         .iter()
