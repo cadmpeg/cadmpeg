@@ -2901,12 +2901,11 @@ fn build_geometry_ir(
         retention.source(cadmpeg_ir::document::ArenaClass::Model);
     }
     let appearance_definitions = crate::appearance::definitions(ctx, scan)?;
-    let (display_sections, display_summary) = collect_display_sections(ctx, scan)?;
+    let (display_sections, _) = collect_display_sections(ctx, scan)?;
     let mut ir = CadIr::decoded(source_meta(
         scan,
         classification,
         metadata_header.as_ref(),
-        display_summary,
     )?);
     let mut annotations = std::mem::take(&mut brep.annotations);
     previews::project(ctx, scan, &mut ir, &mut annotations)?;
@@ -3393,6 +3392,7 @@ fn build_geometry_ir(
         feature_input_lanes: all_lanes,
         pmi_dimensions,
         document_metadata: Vec::new(),
+        decode_baselines: Vec::new(),
     };
     assign_native_configuration_indices(&ir, &mut native);
 
@@ -3779,49 +3779,12 @@ fn source_meta(
     scan: &ContainerScan,
     classification: &crate::dialect::LayerClassification,
     header: Option<&StreamHeader>,
-    display: crate::tessellation::Summary,
 ) -> Result<SourceMeta, CodecError> {
     let mut attributes = BTreeMap::new();
     attributes.insert(
         cadmpeg_core::nonblank_literal!("outer_version"),
         format!("0x{:08x}", scan.version),
     );
-    if display.vertices > 0 {
-        attributes.insert(
-            cadmpeg_core::nonblank_literal!("displaylist_vertices"),
-            display.vertices.to_string(),
-        );
-        attributes.insert(
-            cadmpeg_core::nonblank_literal!("displaylist_triangles"),
-            display.triangles.to_string(),
-        );
-    }
-    for (name, count) in [
-        (
-            cadmpeg_core::nonblank_literal!("displaylist_form_00201296"),
-            display.extended_forms[0],
-        ),
-        (
-            cadmpeg_core::nonblank_literal!("displaylist_form_00201a96"),
-            display.extended_forms[1],
-        ),
-        (
-            cadmpeg_core::nonblank_literal!("displaylist_form_00201b96"),
-            display.extended_forms[2],
-        ),
-        (
-            cadmpeg_core::nonblank_literal!("displaylist_form_00201e96"),
-            display.extended_forms[3],
-        ),
-        (
-            cadmpeg_core::nonblank_literal!("displaylist_opaque_extended_tables"),
-            display.opaque_extended_tables,
-        ),
-    ] {
-        if count != 0 {
-            attributes.insert(name, count.to_string());
-        }
-    }
     if let Some(site) = container::select_active_parasolid_site(scan) {
         attributes.insert(
             cadmpeg_core::nonblank_literal!("active_parasolid_block"),
@@ -4518,6 +4481,7 @@ fn build_metadata_ir(
         feature_input_lanes: all_lanes,
         pmi_dimensions,
         document_metadata: Vec::new(),
+        decode_baselines: Vec::new(),
     };
     ctx.admit_entities(
         u64_from_index(ir.model.entity_count()),
@@ -4887,70 +4851,44 @@ fn stamp_local_digests(
     fidelity: &mut cadmpeg_ir::SourceFidelity,
 ) -> Result<(), CodecError> {
     ir.finalize();
-    let source = ir.source.as_mut();
-    if let Some(source) = source {
-        let keys = source
-            .attributes
-            .keys()
-            .filter(|key| {
-                key.as_str().ends_with("sha256")
-                    || matches!(
-                        key.as_str(),
-                        "outer_version"
-                            | "block_count"
-                            | "compound_stream_count"
-                            | "active_parasolid_block"
-                    )
-            })
-            .cloned()
-            .collect::<Vec<_>>();
-        for key in keys {
-            if let Some(value) = source.attributes.remove(key.as_str()) {
-                fidelity.metadata.insert(key.to_string(), value);
-            }
+    if let Some(source) = ir.source.as_mut() {
+        for key in ["block_count", "compound_stream_count"] {
+            source.attributes.remove(key);
         }
     }
-    fidelity.metadata.insert(
-        "brep_local_sha256".into(),
-        brep_local_sha256_in_place(ctx, ir)?,
-    );
-    let swobjects = (|| -> Result<_, CodecError> {
+    let brep = brep_local_sha256_in_place(ctx, ir)?;
+    let (swobjects, material, identities) = match (|| -> Result<_, CodecError> {
         Ok((
             crate::writer::swobjects_local_sha256(ctx, ir)?,
             crate::writer::swobjects_material_local_sha256(ctx, ir)?,
             crate::writer::swobjects_metadata_identity_local_sha256(ctx, ir)?,
         ))
-    })();
-    match swobjects {
-        Ok((objects, material, identities)) => {
-            fidelity.metadata.insert(
-                crate::writer::SWOBJECTS_LOCAL_DIGEST_ATTRIBUTE.into(),
-                objects,
-            );
-            fidelity.metadata.insert(
-                crate::writer::SWOBJECTS_MATERIAL_LOCAL_DIGEST_ATTRIBUTE.into(),
-                material,
-            );
-            fidelity.metadata.insert(
-                crate::writer::SWOBJECTS_METADATA_IDENTITY_LOCAL_DIGEST_ATTRIBUTE.into(),
-                identities,
-            );
-        }
+    })() {
+        Ok((objects, material, identities)) => (
+            Some(objects),
+            Some(material),
+            Some(identities),
+        ),
         Err(error @ CodecError::ResourceLimit(_)) => return Err(error),
         // A source-layout optimization is optional when a current attribute
         // cannot be serialized by the source's metadata grammar.
-        Err(_) => {}
-    }
-    if !ir.model.pmi.is_empty() {
-        if let Ok(hash) = crate::writer::pmi_local_sha256(ir) {
-            fidelity
-                .metadata
-                .insert(crate::writer::PMI_LOCAL_DIGEST_ATTRIBUTE.into(), hash);
-        }
-    }
-    fidelity
-        .metadata
-        .insert("document_local_sha256".into(), document_local_sha256(ir)?);
+        Err(_) => (None, None, None),
+    };
+    ir.native.namespace_mut("sldprt").set_arena(
+        ctx,
+        "decode_baselines",
+        &[crate::native::DecodeBaselines {
+            id: cadmpeg_core::nonblank_literal!("sldprt:metadata:decode-baselines#0"),
+            brep,
+            swobjects,
+            swobjects_material: material,
+            swobjects_metadata_identity: identities,
+        }],
+    )?;
+    fidelity.decode_digest = Some(
+        cadmpeg_ir::hash::digest::Sha256Digest::try_from(document_local_sha256(ir)?)
+            .map_err(CodecError::malformed)?,
+    );
     Ok(())
 }
 
