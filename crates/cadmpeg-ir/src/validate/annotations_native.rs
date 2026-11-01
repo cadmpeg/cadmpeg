@@ -246,15 +246,28 @@ fn field_path_resolves(mut value: &Value, path: &str) -> bool {
     true
 }
 
+/// Whether native link `target` resolves: `owns` holds it, or the document
+/// holds no native namespace of its format, so the link is provenance of a
+/// source whose native records the document does not carry.
+pub(super) fn native_link_resolves(ir: &CadIr, owns: impl Fn(&str) -> bool, target: &str) -> bool {
+    owns(target)
+        || target
+            .split_once(':')
+            .is_none_or(|(format, _)| ir.native.namespace(format).is_none())
+}
+
 pub(super) fn check_native_links(
     view: NativeView<'_>,
     all_ids: &crate::index::ModelIndex<'_>,
     findings: &mut Vec<Finding>,
 ) {
     let ir = view.ir;
+    let resolves = |target: &str| {
+        native_link_resolves(ir, |target| all_ids.native_record_owns(target), target)
+    };
     for feature in &ir.model.features {
         if let Some(target) = &feature.native_ref {
-            if !all_ids.native_record_owns(target.as_str()) {
+            if !resolves(target.as_str()) {
                 super::record_finding(
                     findings,
                     Check::NativeLinks,
@@ -271,7 +284,7 @@ pub(super) fn check_native_links(
             },
         ) = feature.evaluation.definition()
         {
-            if !all_ids.native_record_owns(target.as_str()) {
+            if !resolves(target.as_str()) {
                 super::record_finding(
                     findings,
                     Check::NativeLinks,
@@ -284,7 +297,7 @@ pub(super) fn check_native_links(
     }
     for parameter in &ir.model.parameters {
         if let Some(target) = &parameter.native_ref {
-            if !all_ids.native_record_owns(target.as_str()) {
+            if !resolves(target.as_str()) {
                 super::record_finding(
                     findings,
                     Check::NativeLinks,
@@ -295,7 +308,7 @@ pub(super) fn check_native_links(
             }
         }
         if let Some(semantic) = &parameter.pmi {
-            if !all_ids.native_record_owns(semantic.native_ref.as_str()) {
+            if !resolves(semantic.native_ref.as_str()) {
                 super::record_finding(
                     findings,
                     Check::NativeLinks,
@@ -308,7 +321,7 @@ pub(super) fn check_native_links(
     }
     for configuration in &ir.model.configurations {
         if let Some(target) = &configuration.native_ref {
-            if !all_ids.native_record_owns(target.as_str()) {
+            if !resolves(target.as_str()) {
                 super::record_finding(
                     findings,
                     Check::NativeLinks,
@@ -321,7 +334,7 @@ pub(super) fn check_native_links(
     }
     for sketch in &ir.model.sketches {
         if let Some(target) = &sketch.native_ref {
-            if !all_ids.native_record_owns(target.as_str()) {
+            if !resolves(target.as_str()) {
                 super::record_finding(
                     findings,
                     Check::NativeLinks,
@@ -334,7 +347,7 @@ pub(super) fn check_native_links(
     }
     for sketch in &ir.model.spatial_sketches {
         if let Some(target) = &sketch.native_ref {
-            if !all_ids.native_record_owns(target.as_str()) {
+            if !resolves(target.as_str()) {
                 super::record_finding(
                     findings,
                     Check::NativeLinks,
@@ -347,7 +360,7 @@ pub(super) fn check_native_links(
     }
     for constraint in &ir.model.sketch_constraints {
         if let Some(target) = &constraint.native_ref {
-            if !all_ids.native_record_owns(target.as_str()) {
+            if !resolves(target.as_str()) {
                 super::record_finding(
                     findings,
                     Check::NativeLinks,
@@ -362,7 +375,7 @@ pub(super) fn check_native_links(
         {
             for operand in operands {
                 if let Some(target) = &operand.native_ref {
-                    if !all_ids.native_record_owns(target.as_str()) {
+                    if !resolves(target.as_str()) {
                         super::record_finding(
                             findings,
                             Check::NativeLinks,
@@ -377,7 +390,7 @@ pub(super) fn check_native_links(
     }
     for constraint in &ir.model.spatial_sketch_constraints {
         if let Some(target) = &constraint.native_ref {
-            if !all_ids.native_record_owns(target.as_str()) {
+            if !resolves(target.as_str()) {
                 super::record_finding(
                     findings,
                     Check::NativeLinks,
@@ -393,7 +406,7 @@ pub(super) fn check_native_links(
         {
             for operand in operands {
                 if let Some(target) = &operand.native_ref {
-                    if !all_ids.native_record_owns(target.as_str()) {
+                    if !resolves(target.as_str()) {
                         super::record_finding(
                             findings,
                             Check::NativeLinks,
