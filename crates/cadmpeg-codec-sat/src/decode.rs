@@ -528,6 +528,7 @@ fn build_result(
             stats.invalid_use_curve_intervals()
         )));
     }
+    losses.extend(unmapped_support_chart_losses(&ir));
     let mut coverage = cadmpeg_ir::report::decode::Coverage::default();
     coverage.record(crate::coverage::UNKNOWN_RECORDS, unknowns.len());
     coverage.record(
@@ -565,6 +566,31 @@ fn build_result(
         body,
         source_fidelity,
     })
+}
+
+fn unmapped_support_chart_losses(ir: &CadIr) -> Vec<cadmpeg_ir::report::loss::LossNote> {
+    use cadmpeg_ir::geometry::ProceduralCurveDefinition;
+
+    let mut losses = Vec::new();
+    for curve in &ir.model.procedural_curves {
+        let context = match curve.definition() {
+            ProceduralCurveDefinition::Intersection { context, .. } => context,
+            ProceduralCurveDefinition::SurfaceCurve { family } => family.context(),
+            ProceduralCurveDefinition::SurfaceOffset(offset) => offset.context(),
+            ProceduralCurveDefinition::Deformable(deformable) => deformable.context(),
+            ProceduralCurveDefinition::Spring(spring) => spring.support_context(),
+            _ => continue,
+        };
+        for (side, support) in context.sides().iter().enumerate() {
+            if support.surface.is_none() && support.pcurve.is_some() {
+                losses.push(SatLossCode::GeometrySupportChartUnresolved.note(format!(
+                    "Curve {} support side {side} retains its native pcurve without a neutral surface chart",
+                    curve.id
+                )));
+            }
+        }
+    }
+    losses
 }
 
 #[cfg(test)]

@@ -263,3 +263,68 @@ fn an_unowned_vertex_has_no_body_bound() {
         assert!(!geometry_is_valid(ctx, &ir));
     });
 }
+
+#[test]
+fn conic_extrusion_unbound_support_has_one_loss_per_native_pcurve() {
+    use cadmpeg_ir::geometry::{
+        pcurve::PcurveNurbs, IntcurveSupportContext, IntcurveSupportSide, PcurveGeometry,
+        ProceduralCurve, ProceduralCurveDefinition, SupportPcurve,
+    };
+    use cadmpeg_ir::ids::{ProceduralCurveId, SurfaceId};
+    use cadmpeg_ir::math::Point2;
+    use cadmpeg_ir::CadIr;
+
+    let pcurve = SupportPcurve::from(PcurveGeometry::Nurbs(
+        PcurveNurbs::from_lanes(
+            1,
+            vec![0.0, 0.0, 1.0, 1.0],
+            vec![Point2::new(0.0, 0.0), Point2::new(1.0, 1.0)],
+            None,
+            false,
+        )
+        .unwrap(),
+    ));
+    for surface_present in [false, true] {
+        for pcurve_present in [false, true] {
+            let context = IntcurveSupportContext::try_new(
+                [
+                    IntcurveSupportSide {
+                        surface: surface_present
+                            .then(|| SurfaceId::mint("test:surface#0").unwrap()),
+                        pcurve: pcurve_present.then(|| pcurve.clone()),
+                    },
+                    IntcurveSupportSide {
+                        surface: None,
+                        pcurve: None,
+                    },
+                ],
+                [0.0, 1.0],
+                std::array::from_fn(|_| Vec::new()),
+            )
+            .unwrap();
+            let mut ir = CadIr::empty();
+            ir.model.procedural_curves.push(ProceduralCurve::new(
+                ProceduralCurveId::mint("test:construction#0").unwrap(),
+                ProceduralCurveDefinition::Intersection {
+                    context,
+                    discontinuity_flag: false,
+                    cache: None,
+                },
+            ));
+            let mut losses = Vec::new();
+            let ctx = cadmpeg_test_support::service_decode_context();
+            admit(&ctx, &mut ir, &mut losses, &mut []).unwrap();
+            assert_eq!(
+                losses.len(),
+                usize::from(pcurve_present && !surface_present)
+            );
+            if let Some(loss) = losses.first() {
+                assert_eq!(
+                    loss.code,
+                    crate::loss::F3dLossCode::ProceduralSupportChartUnresolved.kind()
+                );
+                assert!(loss.message.contains("support side 0"));
+            }
+        }
+    }
+}
