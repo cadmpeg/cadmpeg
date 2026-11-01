@@ -17,11 +17,13 @@ pub(super) fn check_semantic_annotations(
 ) {
     let mut orders = std::collections::BTreeSet::new();
     for annotation in &ir.model.semantic_annotations {
-        let mut refs_valid =
-            all_ids.contains(&annotation.object) && all_ids.contains(&annotation.native_ref);
+        let native = |target: &str| {
+            super::annotations_native::native_link_resolves(ir, |id| all_ids.contains(id), target)
+        };
+        let mut refs_valid = native(&annotation.object) && native(&annotation.native_ref);
         if refs_valid {
             for id in &annotation.assets {
-                if !all_ids.contains(id) {
+                if !native(id) {
                     refs_valid = false;
                     break;
                 }
@@ -84,6 +86,21 @@ mod tests {
             );
         }
         ir
+    }
+
+    #[test]
+    fn a_native_link_of_a_format_the_document_does_not_hold_is_provenance() {
+        let mut ir = fixture();
+        ir.model.semantic_annotations.truncate(1);
+        let empty = crate::index::identities::BorrowedIdentities::build(|add| {
+            add("test:model:unrelated#record", ());
+        });
+        let mut findings = Vec::new();
+        check_semantic_annotations(&ir, &empty, &mut findings);
+        assert!(findings.is_empty(), "{findings:?}");
+        ir.native.namespace_mut("test");
+        check_semantic_annotations(&ir, &empty, &mut findings);
+        assert_eq!(findings.len(), 1);
     }
 
     #[test]

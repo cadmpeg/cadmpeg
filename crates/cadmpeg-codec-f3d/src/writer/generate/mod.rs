@@ -225,6 +225,7 @@ fn coverage(has_native: bool) -> ArenaDispositions {
         presentation_documents: Omitted,
         view_presentations: Omitted,
         tessellations: Dropped,
+        point_clouds: Omitted,
         appearances: Written,
         appearance_bindings: Omitted,
         attributes: Omitted,
