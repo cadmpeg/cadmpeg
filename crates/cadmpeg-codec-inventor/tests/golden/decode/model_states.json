@@ -690,6 +690,7 @@
   },
   "source_fidelity": {
     "annotations": {},
+    "decode_digest": "23c44276252ec9fb67f87d6542db592a60c5cc1e48fd7923934448944da13665",
     "retained_records": {
       "inventor:kernel:carrier#seg-0": {
         "bytes": {

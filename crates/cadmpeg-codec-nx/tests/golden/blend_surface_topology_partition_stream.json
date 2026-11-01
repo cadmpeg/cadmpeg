@@ -467,6 +467,7 @@
           }
         }
       },
+      "decode_digest": "a4fa858b0ea60577f2381478b7a84b06710bbbb6165158d9c9b205f305ab5a33",
       "retained_records": {
         "nx:container:parasolid#0": {
           "bytes": {

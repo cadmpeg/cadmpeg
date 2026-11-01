@@ -1583,7 +1583,7 @@
   },
   "source_fidelity": {
     "annotations": {},
-    "decode_digest": "9c455d16bf262ef25514f91e2f7b30172943151e13ebd0bbf1799ddd7302126d",
+    "decode_digest": "517b5fd0c7ea35aea9d43a22dea1ffd0a50200c54c2c61aea856a0ca5d5b9751",
     "retained_records": {
       "fcstd:source:image#archive": {
         "bytes": {

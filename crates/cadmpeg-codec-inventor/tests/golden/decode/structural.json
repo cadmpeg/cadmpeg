@@ -321,6 +321,7 @@
   },
   "source_fidelity": {
     "annotations": {},
+    "decode_digest": "41556a60229e345e81f4ea0992ff6594edba01e4010a3c3463218d5b7fbe371d",
     "retained_records": {
       "inventor:source:image#whole": {
         "bytes": {

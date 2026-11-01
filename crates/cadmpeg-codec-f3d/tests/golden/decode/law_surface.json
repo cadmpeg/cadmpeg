@@ -894,7 +894,7 @@
         }
       }
     },
-    "decode_digest": "4853fd4b1b2e39994339003a45a3d70036d275019d6be7d9173afc1d5daa49a8",
+    "decode_digest": "64cf651b70c970e5d5674f957303db034b7a311b100eff735fcdc453809dafb4",
     "retained_records": {
       "f3d:file:source-image#0": {
         "stream": "f3d",

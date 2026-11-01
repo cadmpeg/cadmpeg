@@ -380,6 +380,7 @@
           }
         }
       },
+      "decode_digest": "d46176051afd1c39f6df97502836becc751475876beace12c7a6c070cde3ef04",
       "retained_records": {
         "nx:om-section-0:block#0": {
           "bytes": {
