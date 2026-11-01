@@ -45,6 +45,28 @@ fn sketch_visibility_member_decodes_both_boolean_values() {
 }
 
 #[test]
+fn sketch_visibility_member_admits_a_null_ordinal_collection() {
+    let mut bytes = member(1, 0);
+    bytes.truncate(36);
+    bytes.push(0);
+    let visibility =
+        decode_sketch_visibility_member(&bytes, 0, ENTITY_SUFFIX).expect("collection-less member");
+    assert_eq!(visibility.ordinal_collection, None);
+    assert!(!visibility.visible);
+
+    let collected = decode_sketch_visibility_member(&member(1, 0), 0, ENTITY_SUFFIX)
+        .expect("collection member");
+    assert_eq!(
+        collected.ordinal_collection.map(std::num::NonZeroU64::get),
+        Some(300)
+    );
+
+    let mut invalid_marker = member(1, 0);
+    invalid_marker[36] = 2;
+    assert!(decode_sketch_visibility_member(&invalid_marker, 0, ENTITY_SUFFIX).is_none());
+}
+
+#[test]
 fn sketch_visibility_member_rejects_invalid_ordinal_or_owner() {
     assert!(decode_sketch_visibility_member(&member(1, 2), 0, ENTITY_SUFFIX).is_none());
     assert!(decode_sketch_visibility_member(&member(0, 1), 0, ENTITY_SUFFIX).is_none());

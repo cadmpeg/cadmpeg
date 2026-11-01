@@ -191,7 +191,7 @@ pub(super) fn definitions(ir: &cadmpeg_ir::CadIr, data: &NativeData, findings: &
             return None;
         }
         let (_, normal, u_axis) = neutral_sketch.resolved_placement()?;
-        let style = projection::style(&data.pm_dc_sheet_metal_styles, token)?;
+        let style = projection::style(&data.pm_dc_sheet_metal_styles, token);
         let expected = operands::plate(
             source,
             style,
@@ -214,7 +214,8 @@ pub(super) fn definitions(ir: &cadmpeg_ir::CadIr, data: &NativeData, findings: &
             },
             cadmpeg_ir::units::UnitVector3::normalized(*normal.as_raw())?,
             cadmpeg_ir::units::UnitVector3::normalized(*u_axis.as_raw())?,
-        )?;
+        )
+        .ok()?;
         if expected.thickness != *thickness || expected.side != *side {
             return None;
         }

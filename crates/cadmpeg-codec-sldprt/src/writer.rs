@@ -798,7 +798,11 @@ fn check_semantic_support(ir: &CadIr, annotations: &Annotations) -> Result<(), C
             && annotations
                 .exactness()
                 .get(edge.id.as_str())
-                .is_none_or(|note| note.entity() != cadmpeg_ir::Exactness::Derived)
+                .is_none_or(|note| {
+                    note.entity() != cadmpeg_ir::Exactness::Derived
+                        && note.fields().get("carrier.param_range")
+                            != Some(&cadmpeg_ir::Exactness::Derived)
+                })
     }) {
         return Err(CodecError::NotImplemented(
             "SLDPRT semantic writer does not encode explicit edge parameter ranges".into(),
@@ -3128,10 +3132,10 @@ pub(crate) fn brep_body(
             .iter()
             .find(|edge| edge.id == coedge.edge)
             .ok_or_else(|| CodecError::Malformed("coedge references missing edge".into()))?;
-        let start = if coedge.sense == Sense::Forward {
-            &edge.start
-        } else {
+        let forward_vertex = if coedge.sense == Sense::Forward {
             &edge.end
+        } else {
+            &edge.start
         };
         let (next, previous) = cadmpeg_ir::topology::coedge_ring_neighbors(&ir.model.loops, coedge)
             .ok_or_else(|| {
@@ -3143,9 +3147,9 @@ pub(crate) fn brep_body(
         for value in [
             0,
             loops[&coedge.owner_loop],
-            coedges[&previous],
             coedges[&next],
-            vertices[start],
+            coedges[&previous],
+            vertices[forward_vertex],
             coedges[&coedge.radial_next],
             edges[&coedge.edge],
             0,
@@ -4381,11 +4385,11 @@ const SURFACE_MARKER: u8 = 0x2b;
 
 /// Orientation marker of a written compact curve whose stored edges run along
 /// its parameter.
-const CURVE_ALONG_EDGES_MARKER: u8 = 0x2d;
+const CURVE_ALONG_EDGES_MARKER: u8 = 0x2b;
 
 /// Orientation marker of a written compact curve whose stored edges run against
 /// its parameter.
-const CURVE_AGAINST_EDGES_MARKER: u8 = 0x2b;
+const CURVE_AGAINST_EDGES_MARKER: u8 = 0x2d;
 
 fn compact(out: &mut Vec<u8>, kind: u8, attr: u16, marker: u8, values: &[f64]) {
     tag(out, kind);

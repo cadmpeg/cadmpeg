@@ -291,7 +291,8 @@ fn entity_genesis_placement_origin_scales_to_neutral_units() {
             1.0e-6,
         )
     })
-    .expect("sketch lanes pair");
+    .expect("sketch lanes pair")
+    .into_tuple();
     assert_eq!(sketches.len(), 1);
     assert_eq!(
         sketches[0]
@@ -312,7 +313,7 @@ fn entity_genesis_placement_origin_scales_to_neutral_units() {
         crate::ids::neutral_sketch_record_id(&sketches[0].id, 21)
     );
 
-    // The settled explicit frame keeps its stored origin unscaled.
+    // The explicit scope frame stores its origin in centimetres too.
     let (sketches, _) = crate::test_support::with_decode_context(|decode_ctx| {
         project_sketch_design(
             decode_ctx,
@@ -328,12 +329,13 @@ fn entity_genesis_placement_origin_scales_to_neutral_units() {
             1.0e-6,
         )
     })
-    .expect("sketch lanes pair");
+    .expect("sketch lanes pair")
+    .into_tuple();
     assert_eq!(
         sketches[0]
             .resolved_placement()
             .map(|(origin, _, _)| origin.get()),
-        Some(Point3::new(26.0, 0.0, 0.0))
+        Some(Point3::new(260.0, 0.0, 0.0))
     );
 }
 

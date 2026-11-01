@@ -6,6 +6,7 @@ mod mirror;
 use std::collections::{BTreeMap, HashMap, HashSet};
 
 mod base;
+mod composite;
 mod sheet_metal;
 
 use cadmpeg_asm::brep::records::{BodyNativeKey, FaceNativeKey};
@@ -125,6 +126,7 @@ const ARENAS: &[&str] = &[
 
 const OPTIONAL_ARENAS: &[&str] = &[
     "body_wrapper_links",
+    "composite_member_links",
     "pm_dc_sheet_metal_styles",
     "pm_dc_sheet_metal_flanges",
     "drawing_records",
@@ -785,13 +787,13 @@ fn validate_sketches(data: &NativeData, ir: &CadIr, findings: &mut Vec<Finding>)
     let native_entities = data
         .pm_dc_sketch_entities
         .iter()
-        .map(crate::record_identity::Located::id)
-        .collect::<HashSet<_>>();
+        .map(|entity| (entity.id(), entity))
+        .collect::<HashMap<_, _>>();
     let native_constraints = data
         .pm_dc_sketch_constraints
         .iter()
-        .map(crate::record_identity::Located::id)
-        .collect::<HashSet<_>>();
+        .map(|constraint| (constraint.id(), constraint))
+        .collect::<HashMap<_, _>>();
     for sketch in &ir.model.sketches {
         if sketch
             .native_ref
@@ -805,15 +807,33 @@ fn validate_sketches(data: &NativeData, ir: &CadIr, findings: &mut Vec<Finding>)
             ));
         }
     }
+    let spline_sources = if ir.model.sketch_entities.iter().any(|entity| {
+        matches!(
+            entity.geometry.definition(),
+            cadmpeg_ir::sketches::SketchGeometryDefinition::Nurbs { .. }
+        )
+    }) {
+        cadmpeg_core::decode::unique_index(data.pm_dc_sketch_entities.iter().map(|source| {
+            (
+                (
+                    source.identity.segment_token.as_str(),
+                    source.identity.record_ordinal,
+                ),
+                source,
+            )
+        }))
+    } else {
+        HashMap::new()
+    };
     for entity in &ir.model.sketch_entities {
         if entity
             .native_ref
             .as_deref()
-            .is_none_or(|reference| !native_entities.contains(reference))
+            .is_none_or(|reference| !native_entities.contains_key(reference))
             || entity
                 .endpoint_refs
                 .iter()
-                .any(|reference| !native_entities.contains(reference.as_str()))
+                .any(|reference| !native_entities.contains_key(reference.as_str()))
         {
             findings.push(finding(
                 Check::NativeLinks,
@@ -821,17 +841,147 @@ fn validate_sketches(data: &NativeData, ir: &CadIr, findings: &mut Vec<Finding>)
                 Some(entity.id().as_str().to_owned()),
             ));
         }
+        if entity.native_ref.as_deref().is_some_and(|reference| {
+            native_entities.get(reference).is_some_and(|source| {
+                crate::sketch::marks_construction(source) != entity.construction
+            })
+        }) {
+            findings.push(finding(
+                Check::NativeLinks,
+                "Inventor neutral sketch entity construction state does not match its entity flags"
+                    .into(),
+                Some(entity.id().as_str().to_owned()),
+            ));
+        }
+        if matches!(
+            entity.geometry.definition(),
+            cadmpeg_ir::sketches::SketchGeometryDefinition::Ellipse { .. }
+        ) && !entity.native_ref.as_deref().is_some_and(|reference| {
+            native_entities
+                .get(reference)
+                .is_some_and(|source| crate::sketch::curve::closed_ellipse(source))
+        }) {
+            findings.push(finding(
+                Check::NativeLinks,
+                "Inventor neutral ellipse does not match its closed-ellipse source form".into(),
+                Some(entity.id().as_str().to_owned()),
+            ));
+        }
+        if matches!(
+            entity.geometry.definition(),
+            cadmpeg_ir::sketches::SketchGeometryDefinition::Nurbs { .. }
+        ) && !entity.native_ref.as_deref().is_some_and(|reference| {
+            native_entities.get(reference).is_some_and(|source| {
+                crate::sketch::project_geometry(source, &spline_sources).as_ref()
+                    == Some(&entity.geometry)
+                    && entity.endpoint_refs
+                        == crate::sketch::entity_endpoint_refs(source, &spline_sources)
+            })
+        }) {
+            findings.push(finding(
+                Check::NativeLinks,
+                "Inventor neutral spline does not match its admitted source curve form".into(),
+                Some(entity.id().as_str().to_owned()),
+            ));
+        }
     }
+    let midpoint_geometry = if ir.model.sketch_constraints.iter().any(|constraint| {
+        matches!(
+            constraint.definition.kind(),
+            cadmpeg_ir::sketches::SketchConstraintDefinitionInput::Midpoint { .. }
+        )
+    }) {
+        ir.model
+            .sketch_entities
+            .iter()
+            .map(|entity| (entity.id().as_str(), &entity.geometry))
+            .collect::<HashMap<_, _>>()
+    } else {
+        HashMap::new()
+    };
     for constraint in &ir.model.sketch_constraints {
         if constraint
             .native_ref
             .as_deref()
-            .is_none_or(|reference| !native_constraints.contains(reference))
+            .is_none_or(|reference| !native_constraints.contains_key(reference))
         {
             findings.push(finding(
                 Check::NativeLinks,
                 "Inventor neutral sketch constraint does not resolve to its PmDc source record"
                     .into(),
+                Some(constraint.id.as_str().to_owned()),
+            ));
+        }
+        if let cadmpeg_ir::sketches::SketchConstraintDefinitionInput::Midpoint { entity, .. } =
+            constraint.definition.kind()
+        {
+            if !midpoint_geometry
+                .get(entity.as_str())
+                .is_some_and(|geometry| {
+                    constraint
+                        .native_ref
+                        .as_deref()
+                        .and_then(|native| native_constraints.get(native))
+                        .is_some_and(|source| {
+                            crate::sketch::curve::midpoint_supported(source, geometry)
+                        })
+                })
+            {
+                findings.push(finding(
+                    Check::NativeLinks,
+                    "Inventor neutral midpoint requires a resolved line or circular arc".into(),
+                    Some(constraint.id.as_str().to_owned()),
+                ));
+            }
+        }
+    }
+    let raw_entities = data
+        .pm_dc_sketch_entities
+        .iter()
+        .map(|entity| {
+            (
+                (
+                    entity.identity.segment_token.as_str(),
+                    entity.identity.record_ordinal,
+                ),
+                entity,
+            )
+        })
+        .collect::<HashMap<_, _>>();
+    let raw_constraints = data
+        .pm_dc_sketch_constraints
+        .iter()
+        .map(|constraint| (constraint.id(), constraint))
+        .collect::<HashMap<_, _>>();
+    for constraint in &ir.model.sketch_constraints {
+        let Some(raw) = constraint
+            .native_ref
+            .as_deref()
+            .and_then(|native| raw_constraints.get(native))
+        else {
+            continue;
+        };
+        let PmDcSketchConstraintKind::Distance { first, second, .. } = raw.kind else {
+            continue;
+        };
+        let measures_axis = [first, second].iter().any(|operand| {
+            operand
+                .index()
+                .checked_sub(1)
+                .and_then(|ordinal| {
+                    raw_entities.get(&(raw.identity.segment_token.as_str(), ordinal))
+                })
+                .is_some_and(|entity| entity.is_axis_line())
+        });
+        if measures_axis
+            && matches!(
+                constraint.definition.kind(),
+                cadmpeg_ir::sketches::SketchConstraintDefinitionInput::DistanceLoci { .. }
+            )
+        {
+            findings.push(finding(
+                Check::NativeLinks,
+                "Inventor neutral distance dimension to an axis line states its parameter as the operand distance".into(),
                 Some(constraint.id.as_str().to_owned()),
             ));
         }
@@ -843,6 +993,15 @@ fn validate_sketches(data: &NativeData, ir: &CadIr, findings: &mut Vec<Finding>)
             Some(issue.id()),
         ));
     }
+}
+
+fn tagging_definition_matches(
+    feature: &cadmpeg_ir::features::Feature,
+    has_result: bool,
+    unique_label: bool,
+) -> bool {
+    feature.evaluation.definition() == &crate::feature::tagging::definition(unique_label)
+        && !has_result
 }
 
 fn validate_features(
@@ -1053,10 +1212,22 @@ fn validate_features(
             PmDcFeaturePropertyKind::References { items, .. } => {
                 references.extend(items.references().iter().map(|reference| reference.index()));
             }
+            PmDcFeaturePropertyKind::BodySet { items, .. } => {
+                references.extend(
+                    items
+                        .references()
+                        .iter()
+                        .filter(|reference| reference.qualified())
+                        .map(|reference| reference.index()),
+                );
+            }
             PmDcFeaturePropertyKind::SurfaceBody { body } => {
                 if body.qualified() {
                     references.push(body.index());
                 }
+            }
+            PmDcFeaturePropertyKind::ThickenSelection { faces, parameter } => {
+                references.extend([faces.index(), parameter.index()]);
             }
             PmDcFeaturePropertyKind::ProfileSelection { entity_link, .. } => {
                 references.push(entity_link.index());
@@ -1114,11 +1285,25 @@ fn validate_features(
             } => {
                 references.extend(surface.iter().map(|reference| reference.index()));
             }
+            PmDcFeaturePropertyKind::WorkPoint {
+                references: point, ..
+            } => {
+                references.extend(
+                    point
+                        .iter()
+                        .flat_map(crate::pmdc::PmDcReferenceList::references)
+                        .map(|reference| reference.index()),
+                );
+            }
         }
         if raw.get(&(
             property.identity.segment_token.as_str(),
             property.identity.record_ordinal,
         )) != Some(&property.identity.type_id.as_str())
+            || !crate::feature::thicken::property_kind_matches_class(
+                property.identity.type_id.as_str(),
+                &property.kind,
+            )
             || !crate::feature::motion::property_is_valid(property, |reference| {
                 raw.get(&(
                     property.identity.segment_token.as_str(),
@@ -1312,6 +1497,28 @@ fn validate_features(
             ));
         }
     }
+    let tagging_owners = data
+        .pm_dc_feature_labels
+        .iter()
+        .filter(|label| label.class_id() == crate::feature::tagging::CLASS_ID)
+        .filter_map(|label| {
+            Some((
+                label.identity.segment_token.as_str(),
+                label.header.owner.record_ordinal()?,
+            ))
+        })
+        .collect::<HashSet<_>>();
+    let composite_owners = data
+        .pm_dc_feature_labels
+        .iter()
+        .filter(|label| label.class_id() == crate::feature::composite::CLASS_ID)
+        .filter_map(|label| {
+            Some((
+                label.identity.segment_token.as_str(),
+                label.header.owner.record_ordinal()?,
+            ))
+        })
+        .collect::<HashSet<_>>();
     let raw_features = data
         .pm_dc_features
         .iter()
@@ -1365,7 +1572,7 @@ fn validate_features(
             )
         })
         .collect::<HashMap<_, _>>();
-    let body_joins = crate::feature::body_selection::body_map(
+    let mut body_joins = crate::feature::body_selection::body_map(
         &data.pm_dc_feature_properties,
         &data.pm_dc_kernel_entity_links,
         &data.body_wrapper_links,
@@ -1377,6 +1584,16 @@ fn validate_features(
             roots: &data.pm_dc_model_roots,
         },
     );
+    for raw_feature in &data.pm_dc_features {
+        if composite_owners.contains(&(
+            raw_feature.identity.segment_token.as_str(),
+            raw_feature.identity.record_ordinal,
+        )) {
+            if let Ok((_, bodies)) = composite::evaluate(ir, data, raw_feature) {
+                body_joins.extend(bodies);
+            }
+        }
+    }
     for feature in &ir.model.features {
         if !crate::feature::body_selection::outputs_match(
             feature,
@@ -1485,6 +1702,7 @@ fn validate_features(
             parameters: &data.pm_dc_parameters,
             sketches: &data.pm_dc_sketches,
             directions: &data.pm_dc_directions,
+            transforms: &data.pm_dc_transforms,
             planes: &data.pm_dc_work_planes,
             entity_links: &data.pm_dc_entity_style_links,
             kernel_links: &data.pm_dc_kernel_entity_links,
@@ -1562,6 +1780,18 @@ fn validate_features(
                 directions: &data.pm_dc_directions,
             })
         });
+    let revolve_sketches = ir
+        .model
+        .sketches
+        .iter()
+        .map(|sketch| (sketch.id.as_str(), sketch))
+        .collect::<HashMap<_, _>>();
+    let revolve_entities = ir
+        .model
+        .sketch_entities
+        .iter()
+        .map(|entity| (entity.id().as_str(), entity))
+        .collect::<HashMap<_, _>>();
     for feature in &ir.model.features {
         if crate::feature::pattern::is_linear_pattern(feature) {
             if feature
@@ -1641,11 +1871,58 @@ fn validate_features(
             ));
             continue;
         };
+        if composite_owners.contains(&(
+            raw_feature.identity.segment_token.as_str(),
+            raw_feature.identity.record_ordinal,
+        )) {
+            if !composite::valid(ir, data, feature, raw_feature) {
+                findings.push(finding(
+                    Check::NativeLinks,
+                    "Inventor Composite does not match its stored source and current result bodies"
+                        .into(),
+                    Some(feature.id.as_str().to_owned()),
+                ));
+            }
+            continue;
+        }
+        if tagging_owners.contains(&(
+            raw_feature.identity.segment_token.as_str(),
+            raw_feature.identity.record_ordinal,
+        )) {
+            if !tagging_definition_matches(
+                feature,
+                results.contains_key(&feature.id),
+                crate::feature::tagging::unique_owner(&data.pm_dc_feature_labels, raw_feature),
+            ) {
+                findings.push(finding(
+                    Check::NativeLinks,
+                    "Inventor Tagging selection effect requires its native definition".into(),
+                    Some(feature.id.as_str().to_owned()),
+                ));
+            }
+            continue;
+        }
+        if matches!(
+            feature.evaluation.definition(),
+            cadmpeg_ir::features::FeatureDefinition::Operation(
+                cadmpeg_ir::features::FeatureOperation::DeleteFace { .. }
+            )
+        ) {
+            if let Err(reason) = crate::feature::delete_face::admission(raw_feature) {
+                findings.push(finding(
+                    Check::NativeLinks,
+                    format!("Inventor neutral DeleteFace refused: {}.", reason.detail()),
+                    Some(feature.id.as_str().to_owned()),
+                ));
+            }
+            continue;
+        }
         if let cadmpeg_ir::features::FeatureDefinition::Operation(
             cadmpeg_ir::features::FeatureOperation::CosmeticThread {
                 face,
                 diameter,
                 extent,
+                ..
             },
         ) = feature.evaluation.definition()
         {
@@ -1685,30 +1962,30 @@ fn validate_features(
             continue;
         }
         let definition = feature.evaluation.definition();
-        if crate::feature::FeatureFamily::from_definition(definition).is_none() {
-            continue;
-        }
-        if let cadmpeg_ir::features::FeatureDefinition::Operation(
-            actual @ cadmpeg_ir::features::FeatureOperation::Thicken { .. },
-        ) = feature.evaluation.definition()
-        {
+        if let (cadmpeg_ir::features::FeatureDefinition::Operation(actual), true) = (
+            feature.evaluation.definition(),
+            labels
+                .get(&(
+                    raw_feature.identity.segment_token.as_str(),
+                    raw_feature.identity.record_ordinal,
+                ))
+                .is_some_and(|label| label.class_id() == crate::feature::THICKEN_CLASS_ID)
+                && !matches!(
+                    definition,
+                    cadmpeg_ir::features::FeatureDefinition::Operation(
+                        cadmpeg_ir::features::FeatureOperation::Native { .. }
+                    )
+                ),
+        ) {
             let token = raw_feature.identity.segment_token.as_str();
-            let expected = crate::feature::thicken_operation(
+            let expected = crate::feature::thicken::operation(
                 raw_feature,
-                |slot| {
-                    let ordinal = raw_feature
-                        .properties
-                        .references()
-                        .get(slot)?
-                        .record_ordinal()?;
+                |reference| {
+                    let ordinal = reference.record_ordinal()?;
                     feature_properties.get(&(token, ordinal))?.as_ref().copied()
                 },
-                |slot| {
-                    let ordinal = raw_feature
-                        .properties
-                        .references()
-                        .get(slot)?
-                        .record_ordinal()?;
+                |reference| {
+                    let ordinal = reference.record_ordinal()?;
                     let parameter = feature_parameters.get(&(token, ordinal))?.as_ref()?;
                     let native = parameter.id();
                     let value = parameter_values
@@ -1718,6 +1995,12 @@ fn validate_features(
                         .as_ref()?;
                     Some((*parameter, value))
                 },
+                |reference| {
+                    revolve_dimensions
+                        .get(&(token, reference.record_ordinal()?))?
+                        .as_ref()
+                        .copied()
+                },
                 |ordinal| {
                     thicken_record_types
                         .get(&(token, ordinal))?
@@ -1725,10 +2008,79 @@ fn validate_features(
                         .copied()
                 },
             );
-            if expected.as_ref() != Some(actual) {
+            if expected.as_ref().ok() != Some(actual) {
                 findings.push(finding(
                     Check::NativeLinks,
                     "Inventor neutral thicken operands do not match their PmDc slots".into(),
+                    Some(feature.id.as_str().to_owned()),
+                ));
+            }
+        }
+        if crate::feature::FeatureFamily::from_definition(definition).is_none() {
+            continue;
+        }
+        if let cadmpeg_ir::features::FeatureDefinition::Operation(
+            operation @ (cadmpeg_ir::features::FeatureOperation::Fillet { .. }
+            | cadmpeg_ir::features::FeatureOperation::Chamfer { .. }),
+        ) = definition
+        {
+            let token = raw_feature.identity.segment_token.as_str();
+            let property = |reference: crate::pmdc::PmDcReference| {
+                feature_properties
+                    .get(&(token, reference.record_ordinal()?))?
+                    .as_ref()
+                    .copied()
+            };
+            let parameter = |reference: crate::pmdc::PmDcReference| {
+                let raw = feature_parameters
+                    .get(&(token, reference.record_ordinal()?))?
+                    .as_ref()?;
+                parameter_values
+                    .get(raw.id().as_str())?
+                    .as_ref()?
+                    .value
+                    .as_ref()
+            };
+            let length = |reference| match parameter(reference)? {
+                cadmpeg_ir::features::ParameterValue::Length(value) => Some(*value),
+                _ => None,
+            };
+            let admitted = match operation {
+                cadmpeg_ir::features::FeatureOperation::Fillet { groups } => {
+                    let corner = labels
+                        .get(&(token, raw_feature.identity.record_ordinal))
+                        .is_some_and(|label| {
+                            label.class_id() == crate::feature::CORNER_ROUND_CLASS_ID
+                        });
+                    crate::feature::fillet::operands(raw_feature, corner, property, length)
+                        .is_ok_and(|expected| crate::feature::fillet::matches(&expected, groups))
+                }
+                cadmpeg_ir::features::FeatureOperation::Chamfer {
+                    groups,
+                    flip_direction,
+                } => crate::feature::chamfer::operands(
+                    raw_feature,
+                    property,
+                    |slot| length(*raw_feature.properties.references().get(slot)?),
+                    |slot| match parameter(*raw_feature.properties.references().get(slot)?)? {
+                        cadmpeg_ir::features::ParameterValue::Angle(value) => Some(*value),
+                        _ => None,
+                    },
+                )
+                .is_ok_and(|expected| {
+                    crate::feature::chamfer::matches(
+                        &expected,
+                        raw_feature,
+                        groups,
+                        *flip_direction,
+                    )
+                }),
+                _ => false,
+            };
+            if !admitted {
+                findings.push(finding(
+                    Check::NativeLinks,
+                    "Inventor neutral edge treatment operands differ from their PmDc slots".into(),
                     Some(feature.id.as_str().to_owned()),
                 ));
             }
@@ -1774,6 +2126,53 @@ fn validate_features(
                 findings.push(finding(
                     Check::NativeLinks,
                     "Inventor neutral revolve operands do not match their PmDc slots".into(),
+                    Some(feature.id.as_str().to_owned()),
+                ));
+            }
+            findings.extend(revolve_axis_finding(
+                &feature.id,
+                construction,
+                &revolve_sketches,
+                &revolve_entities,
+            ));
+        }
+        if matches!(
+            definition,
+            cadmpeg_ir::features::FeatureDefinition::Operation(
+                cadmpeg_ir::features::FeatureOperation::Sweep { .. }
+            )
+        ) {
+            let token = raw_feature.identity.segment_token.as_str();
+            if !crate::feature::loft_sweep::sweep::validates(
+                raw_feature,
+                definition,
+                |reference| {
+                    feature_properties
+                        .get(&(token, reference.record_ordinal()?))?
+                        .as_ref()
+                        .copied()
+                },
+                |reference| {
+                    let raw = feature_parameters
+                        .get(&(token, reference.record_ordinal()?))?
+                        .as_ref()?;
+                    let value = parameter_values
+                        .get(raw.id().as_str())?
+                        .as_ref()?
+                        .value
+                        .as_ref()?;
+                    Some((*raw, value))
+                },
+                |reference| {
+                    revolve_dimensions
+                        .get(&(token, reference.record_ordinal()?))?
+                        .as_ref()
+                        .copied()
+                },
+            ) {
+                findings.push(finding(
+                    Check::NativeLinks,
+                    "Inventor neutral sweep operands do not match their PmDc slots".into(),
                     Some(feature.id.as_str().to_owned()),
                 ));
             }
@@ -1939,7 +2338,11 @@ fn validate_features(
                 ));
             }
         }
-        let output_slot = family.output_slot(raw_feature);
+        let output_slot = if matches!(family, crate::feature::FeatureFamily::Split) {
+            crate::feature::split::output_slot(definition)
+        } else {
+            family.output_slot(raw_feature)
+        };
         let expected_collection = raw_feature
             .properties
             .references()
@@ -2388,6 +2791,7 @@ struct NativeData {
     face_native_keys: Vec<FaceNativeKey>,
     body_native_keys: Vec<BodyNativeKey>,
     body_wrapper_links: Vec<crate::feature::body_selection::WrapperLink>,
+    composite_member_links: Vec<crate::feature::composite::MemberLink>,
     presentation_record_issues: Vec<RecordIssue>,
     pm_dc_parameters: Vec<PmDcParameter>,
     pm_dc_expressions: Vec<PmDcExpression>,
@@ -2465,6 +2869,7 @@ impl NativeData {
             face_native_keys: namespace.arena_as_for_decode(ctx, "face_native_keys")?,
             body_native_keys: namespace.arena_as_for_decode(ctx, "body_native_keys")?,
             body_wrapper_links: namespace.arena_as_for_decode(ctx, "body_wrapper_links")?,
+            composite_member_links: namespace.arena_as_for_decode(ctx, "composite_member_links")?,
             presentation_record_issues: namespace
                 .arena_as_for_decode(ctx, "presentation_record_issues")?,
             pm_dc_parameters: namespace.arena_as_for_decode(ctx, "pm_dc_parameters")?,
@@ -3205,6 +3610,33 @@ fn unique<T: Eq + std::hash::Hash>(
             ));
         }
     }
+}
+
+/// The finding for a neutral revolve whose resolved profile has points on both
+/// sides of its axis.
+fn revolve_axis_finding(
+    feature: &cadmpeg_ir::features::FeatureId,
+    construction: &cadmpeg_ir::features::RevolveConstruction,
+    sketches: &HashMap<&str, &cadmpeg_ir::sketches::Sketch>,
+    entities: &HashMap<&str, &cadmpeg_ir::sketches::SketchEntity>,
+) -> Option<Finding> {
+    let cadmpeg_ir::features::RevolveConstruction::Resolved { profile, axis, .. } = construction
+    else {
+        return None;
+    };
+    (crate::feature::revolve::profile_crosses_axis(
+        profile,
+        axis,
+        |id| sketches.get(id.as_str()).copied(),
+        |id| entities.get(id.as_str()).copied(),
+    ) == Some(true))
+    .then(|| {
+        finding(
+            Check::NativeLinks,
+            "Inventor neutral revolve profile has points on both sides of its axis".into(),
+            Some(feature.as_str().to_owned()),
+        )
+    })
 }
 
 fn finding(check: Check, message: String, entity: Option<String>) -> Finding {

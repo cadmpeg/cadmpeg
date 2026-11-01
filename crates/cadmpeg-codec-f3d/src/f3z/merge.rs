@@ -11,7 +11,8 @@ use cadmpeg_ir::{Native, NativeRecord};
 use serde::de::DeserializeOwned;
 use serde_json::{Map, Value};
 
-use super::archive::{ArchiveSession, ClassifiedMember};
+use super::archive::ClassifiedMember;
+use super::{F3zDecodedMember, F3zSession};
 use crate::container::ContainerScan;
 use crate::loss::F3dLossCode;
 use crate::records::xref::XrefReference;
@@ -20,29 +21,30 @@ use crate::xref::{self, XrefTable};
 /// Merges the root document's recursively reachable members in archive scope.
 pub(super) fn merge_archive(
     ctx: &DecodeContext<'_>,
-    scan: &ContainerScan<'_>,
-    archive: &ArchiveSession<'_>,
-    model_root: String,
-    root: &mut crate::decode::AuthoredDecoded,
+    session: &F3zSession<'_>,
+    decoded: &mut std::collections::BTreeMap<String, F3zDecodedMember>,
+    operation_poses: super::session::OperationPoses,
+    ir: &mut cadmpeg_ir::CadIr,
+    report: &mut cadmpeg_ir::codec::DecodeBody,
+    fidelity: &mut cadmpeg_ir::SourceFidelity,
 ) -> Result<usize, CodecError> {
-    let table = xref_table_from_ir(ctx, &root.ir)?;
+    let scan = &session.scan;
+    let table = xref_table_from_ir(ctx, ir)?;
 
-    let stack = vec![model_root];
+    let stack = vec![session.model_root.clone()];
     MergeSession {
         ctx,
         scan,
-        archive,
+        archive: &session.archive,
+        session,
+        decoded,
         stack,
         members: std::collections::BTreeMap::new(),
-        operation_poses: std::mem::take(&mut root.operation_poses),
+        failed: std::collections::BTreeMap::new(),
+        operation_poses,
         operation_protected: std::collections::BTreeSet::new(),
     }
-    .merge(
-        &mut root.ir,
-        &mut root.body,
-        &mut root.source_fidelity,
-        &table,
-    )
+    .merge(ir, report, fidelity, &table)
 }
 
 /// Reassigns only repeated sibling ordinals after independent document graphs
@@ -170,9 +172,14 @@ struct MemberDefinition {
 struct MergeSession<'r, 'a> {
     ctx: &'r DecodeContext<'a>,
     scan: &'r ContainerScan<'a>,
-    archive: &'r ArchiveSession<'a>,
+    archive: &'r super::archive::ArchiveSession,
+    session: &'r F3zSession<'a>,
+    decoded: &'r mut std::collections::BTreeMap<String, F3zDecodedMember>,
     stack: Vec<String>,
     members: std::collections::BTreeMap<String, MemberDefinition>,
+    /// Members whose decode failed, by path, with the failure text. A failed
+    /// member is decoded once; every later reference reports the same loss.
+    failed: std::collections::BTreeMap<String, String>,
     operation_poses: std::collections::BTreeMap<String, crate::xref::operation_pose::OperationPose>,
     operation_protected: std::collections::BTreeSet<cadmpeg_ir::ids::OccurrenceId>,
 }
@@ -195,18 +202,21 @@ impl MergeSession<'_, '_> {
             placements,
             &mut member_roots,
         )?;
+        self.members.clear();
+        self.decoded.clear();
         rebind_joint_descent(
             self.ctx,
             parent_ir,
             &member_roots,
             &mut parent_report.losses,
         )?;
-        place_contained_poses_with_protected(
+        let mut left_identity = place_contained_poses_with_protected(
             self.ctx,
             parent_ir,
             table,
             &mut parent_report.losses,
             &mut self.operation_protected,
+            ContainedPass::Ordered,
         )?;
         crate::xref::operation_pose::project(
             self.ctx,
@@ -215,6 +225,15 @@ impl MergeSession<'_, '_> {
             &self.operation_protected,
             &mut parent_report.losses,
         )?;
+        left_identity += place_contained_poses_with_protected(
+            self.ctx,
+            parent_ir,
+            table,
+            &mut parent_report.losses,
+            &mut std::collections::BTreeSet::new(),
+            ContainedPass::Nested,
+        )?;
+        crate::design::assembly::release_joint_placed(&mut parent_report.losses, left_identity);
         parent_report
             .losses
             .retain(|loss| loss.code != F3dLossCode::SavedFreeEdgeBodyUnowned.kind());
@@ -263,6 +282,13 @@ impl MergeSession<'_, '_> {
             }
             let ctx = self.ctx;
             let _depth = ctx.enter_nested("f3z member reference")?;
+            if let Some(error) = self.failed.get(reference.relative_path.as_str()) {
+                super::push_loss(&mut parent_report.losses, F3dLossCode::XrefMemberUndecoded, format_args!(
+                    "xref {label}: member {} failed to decode ({error}); the occurrence was not resolved",
+                    reference.relative_path
+                ));
+                continue;
+            }
             let member = if let Some(member) = self.members.get(reference.relative_path.as_str()) {
                 self.ctx.charge_entities(
                     cadmpeg_core::decode::u64_from_index(
@@ -280,7 +306,7 @@ impl MergeSession<'_, '_> {
             } else {
                 let Some(member) = self.archive.members.get(reference.relative_path.as_str())
                 else {
-                    if self.scan.entry_view(&reference.relative_path).is_some() {
+                    if self.scan.has_entry(&reference.relative_path) {
                         super::push_loss(&mut parent_report.losses, F3dLossCode::XrefMemberUndecoded, format_args!(
                             "xref {label}: member {} is not an F3D document member; the occurrence was not resolved",
                             reference.relative_path
@@ -293,25 +319,23 @@ impl MergeSession<'_, '_> {
                     }
                     continue;
                 };
-                let member_scan = match member {
-                    ClassifiedMember::Scanned(member_scan) => member_scan,
+                match member {
+                    ClassifiedMember::Scanned { .. } => {}
                     ClassifiedMember::Unreadable(_) => continue,
-                };
-                let component = match super::observer::observed(&reference.relative_path, || {
-                    crate::decode::decode_archive_member(
-                        self.ctx,
-                        member_scan,
-                        &self.archive.layers,
-                    )
-                }) {
-                    Ok(component) => {
-                        for (key, pose) in &component.operation_poses {
+                }
+                let component = match self.session.take_member(
+                    self.ctx,
+                    reference.relative_path.as_str(),
+                    self.decoded,
+                ) {
+                    Ok((component, component_poses)) => {
+                        for (key, pose) in &component_poses {
                             let key = rescope(key, &occurrence).ok_or_else(|| {
                                 CodecError::malformed("invalid F3Z operation-pose identity")
                             })?;
                             self.operation_poses.insert(key, pose.clone());
                         }
-                        component.into_decoded()
+                        component
                     }
                     Err(error @ CodecError::ResourceLimit(_)) => return Err(error),
                     Err(error) => {
@@ -319,6 +343,10 @@ impl MergeSession<'_, '_> {
                             "xref {label}: member {} failed to decode ({error}); the occurrence was not resolved",
                             reference.relative_path
                         ));
+                        self.failed.insert(
+                            reference.relative_path.as_str().to_owned(),
+                            error.to_string(),
+                        );
                         continue;
                     }
                 };
@@ -552,14 +580,77 @@ fn place_contained_poses(
     ir: &mut cadmpeg_ir::CadIr,
     table: &XrefTable,
     losses: &mut Vec<cadmpeg_ir::report::loss::LossNote>,
-) -> Result<(), CodecError> {
-    place_contained_poses_with_protected(
+) -> Result<usize, CodecError> {
+    let ordered = place_contained_poses_with_protected(
         ctx,
         ir,
         table,
         losses,
         &mut std::collections::BTreeSet::new(),
-    )
+        ContainedPass::Ordered,
+    )?;
+    let nested = place_contained_poses_with_protected(
+        ctx,
+        ir,
+        table,
+        losses,
+        &mut std::collections::BTreeSet::new(),
+        ContainedPass::Nested,
+    )?;
+    Ok(ordered + nested)
+}
+
+/// The carrier forms that one placement pass reads. Carriers of a nested
+/// design state the nested occurrence's pose against its final placement below
+/// the external occurrence, so they place after the operation tables have
+/// posed the occurrences inside it; all other carriers place before.
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum ContainedPass {
+    Ordered,
+    Nested,
+}
+
+impl ContainedPass {
+    /// Whether this pass reads one contained carrier of a reference.
+    fn reads(
+        self,
+        reference: &XrefReference,
+        pose: &crate::records::xref::XrefContainedPose,
+    ) -> bool {
+        match self {
+            Self::Ordered => !xref::contained_pose_is_nested(pose),
+            Self::Nested => nested_contained_only(reference),
+        }
+    }
+
+    /// Whether this pass answers for one contained carrier of a reference,
+    /// which stays native when the pass does not bind it.
+    fn owns(self, reference: &XrefReference) -> bool {
+        (self == Self::Nested) == nested_contained_only(reference)
+    }
+
+    /// Whether this pass places the reference's instances.
+    fn places(self, reference: &XrefReference) -> bool {
+        match self {
+            Self::Ordered => {
+                !reference.owned_poses.is_empty()
+                    || reference
+                        .contained_poses
+                        .iter()
+                        .any(|pose| self.reads(reference, pose))
+            }
+            Self::Nested => nested_contained_only(reference) && reference.owned_poses.is_empty(),
+        }
+    }
+}
+
+/// Whether every contained carrier of the reference is of a nested design.
+fn nested_contained_only(reference: &XrefReference) -> bool {
+    !reference.contained_poses.is_empty()
+        && reference
+            .contained_poses
+            .iter()
+            .all(xref::contained_pose_is_nested)
 }
 
 fn place_contained_poses_with_protected(
@@ -568,21 +659,22 @@ fn place_contained_poses_with_protected(
     table: &XrefTable,
     losses: &mut Vec<cadmpeg_ir::report::loss::LossNote>,
     protected: &mut std::collections::BTreeSet<cadmpeg_ir::ids::OccurrenceId>,
-) -> Result<(), CodecError> {
+    pass: ContainedPass,
+) -> Result<usize, CodecError> {
     use crate::records::feature::assembly_features::DesignComponentOccurrence;
     use cadmpeg_ir::products::OccurrenceParent;
     use cadmpeg_ir::transform::Transform;
     use std::collections::{BTreeMap, BTreeSet};
 
-    if table
+    if !table
         .references
         .iter()
-        .all(|reference| reference.contained_poses.is_empty() && reference.owned_poses.is_empty())
+        .any(|reference| pass.places(reference))
     {
-        return Ok(());
+        return Ok(0);
     }
     let Some(namespace) = ir.native.namespace("f3d") else {
-        return Ok(());
+        return Ok(0);
     };
     // The record index of each local carrier, and of each placed external
     // reference, by native identity. Members' records are scoped below their
@@ -647,7 +739,7 @@ fn place_contained_poses_with_protected(
     for reference in table
         .references
         .iter()
-        .filter(|r| !r.contained_poses.is_empty() || !r.owned_poses.is_empty())
+        .filter(|reference| pass.places(reference))
     {
         let instances = ir
             .model
@@ -709,7 +801,7 @@ fn place_contained_poses_with_protected(
             for (ordinal, pose) in reference.contained_poses.iter().enumerate() {
                 // A carrier lists the instance's owners from the innermost out, as
                 // far as it goes.
-                if !owners.starts_with(&pose.owner_record_indices) {
+                if !pass.reads(reference, pose) || !owners.starts_with(&pose.owner_record_indices) {
                     continue;
                 }
                 let Some([(target, below)]) =
@@ -811,22 +903,33 @@ fn place_contained_poses_with_protected(
         .references
         .iter()
         .flat_map(|reference| {
-            (0..reference.contained_poses.len())
-                .map(move |ordinal| (reference.id.as_str(), ordinal))
+            reference
+                .contained_poses
+                .iter()
+                .enumerate()
+                .filter(move |_| pass.owns(reference))
+                .map(move |(ordinal, _)| (reference.id.as_str(), ordinal))
         })
         .filter(|key| !bound.contains(key))
         .count();
     let owned_unbound = table
         .references
         .iter()
+        .filter(|reference| pass == ContainedPass::Ordered && pass.places(reference))
         .flat_map(|reference| {
             (0..reference.owned_poses.len()).map(move |ordinal| (reference.id.as_str(), ordinal))
         })
         .filter(|key| !bound_owned.contains(key))
         .count();
     let count = placed.len() - owned_placed;
+    let mut left_identity = 0usize;
     for (position, local) in placed {
         if let Some(occurrence) = ir.model.occurrences.get_mut(position) {
+            if occurrence.transform.rows() == Transform::identity().rows()
+                && local.rows() != Transform::identity().rows()
+            {
+                left_identity += 1;
+            }
             occurrence.transform = local;
         }
     }
@@ -860,7 +963,7 @@ fn place_contained_poses_with_protected(
             "{unbound} component-path carrier(s) of occurrences inside external occurrences name no merged instance with their owner chain; they stay native"
         )));
     }
-    Ok(())
+    Ok(left_identity)
 }
 
 impl MemberDefinition {
@@ -938,8 +1041,29 @@ fn define_member(
         .filter(|body| !owned.contains(&body.id))
         .map(|body| body.id.clone())
         .collect();
-    ctx.charge_entities(1, "F3Z member product definition")?;
+    let owned_sketches = model
+        .product_definitions
+        .iter()
+        .flat_map(|definition| &definition.sketches)
+        .collect::<std::collections::BTreeSet<_>>();
+    let sketches = model
+        .sketches
+        .iter()
+        .filter(|sketch| !owned_sketches.contains(&sketch.id))
+        .map(|sketch| sketch.id.clone())
+        .collect();
     let id = crate::ids::archive_product_definition_id();
+    if let Some(definition) = model
+        .product_definitions
+        .iter_mut()
+        .find(|row| row.id == id)
+    {
+        definition.bodies.extend(bodies);
+        definition.sketches.extend(sketches);
+        definition.label = (!label.trim().is_empty()).then(|| label.to_owned());
+        return Ok(id);
+    }
+    ctx.charge_entities(1, "F3Z member product definition")?;
     model.product_definitions.push(ProductDefinition {
         id: id.clone(),
         kind: ProductDefinitionKind::Part,
@@ -949,7 +1073,7 @@ fn define_member(
         part_number: None,
         bom_properties: std::collections::BTreeMap::new(),
         bodies,
-        sketches: Vec::new(),
+        sketches,
         native_ref: None,
     });
     Ok(id)
@@ -1009,12 +1133,22 @@ fn scope_document_parameters(ctx: &DecodeContext<'_>, model: &mut Model) -> Resu
             .and_then(|ordinal| ordinal.checked_add(1))
             .ok_or_else(|| CodecError::malformed("merged F3Z feature ordinal exceeds u64::MAX"))?;
     }
+    let mut product_owners = model
+        .parameters
+        .iter()
+        .filter(|row| row.owner.is_none())
+        .map(|row| row.product_definition.clone());
+    let product_definition = product_owners
+        .next()
+        .flatten()
+        .filter(|owner| product_owners.all(|other| other.as_ref() == Some(owner)));
     for parameter in &mut model.parameters {
         if parameter.owner.is_none() {
             parameter.owner = Some(owner.clone());
         }
     }
     model.features.push(Feature {
+        product_definition,
         id: owner,
         ordinal: 0,
         name: None,
@@ -1437,6 +1571,7 @@ mod tests {
     mod contained;
     mod fidelity;
     mod occurrence;
+    mod sketches;
 
     use super::define_member;
 

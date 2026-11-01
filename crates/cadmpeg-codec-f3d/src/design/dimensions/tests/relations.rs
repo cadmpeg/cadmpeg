@@ -544,6 +544,274 @@ fn aggregate_offset_relation_projects_ordered_oriented_pairs() {
     assert!(exact_offset_constraint(&repeated_pair, "native", &projected).is_none());
 }
 
+/// A stored offset relation with `state` whose member and return runs both
+/// list `pairs` as consecutive `(source, result)` curve records.
+fn stored_offset_relation(state: u64, pairs: &[(u32, u32)]) -> SketchRelation {
+    let records = pairs
+        .iter()
+        .flat_map(|(source, result)| [*source, *result])
+        .collect::<Vec<_>>();
+    SketchRelation::try_new(crate::records::sketch_relations::SketchRelationDraft {
+        id: "f3d:native:sketch-relation#0".into(),
+        record_index: 10,
+        class_tag: crate::records::references::DesignClassTag::try_from("402".to_owned()).unwrap(),
+        byte_offset: 0,
+        state_offset: 100,
+        owner_reference: 1,
+        owner_entity_id: Some(cadmpeg_core::text::NonBlankString::new("0_1").unwrap()),
+        auxiliary_references: crate::records::identity::ReferenceRun::located(Vec::new()),
+        rectangular_counted_reference_count: None,
+        members: (records
+            .iter()
+            .zip((25..).step_by(15))
+            .map(
+                |(record_index, offset)| crate::records::sketch_relations::SketchRelationMember {
+                    reference: crate::records::sketch_relations::SketchRelationReference::Index(
+                        *record_index,
+                    ),
+                    offset,
+                    relation_ordinal: Some(0),
+                },
+            )
+            .collect::<Vec<_>>())
+        .try_into()
+        .expect("uniform member resolution"),
+        owner_reference_offset: 90,
+        definition: crate::records::sketch_relations::SketchRelationDefinition::new(state, None)
+            .expect("valid relation definition"),
+        entity_genesis: None,
+        return_members: (records
+            .iter()
+            .zip((120..).step_by(11))
+            .map(|(record_index, offset)| {
+                crate::records::sketch_relations::SketchRelationReturnMember {
+                    reference: crate::records::sketch_relations::SketchRelationReference::Resolved(
+                        SketchRelationOperand::Curve {
+                            record_index: *record_index,
+                            primary_id: u64::from(*record_index),
+                            secondary_id: u64::from(*record_index) * 10,
+                        },
+                    ),
+                    offset,
+                }
+            })
+            .collect::<Vec<_>>())
+        .try_into()
+        .expect("uniform member resolution"),
+        raw_bytes: vec![0; 160],
+    })
+    .unwrap()
+}
+
+fn offset_test_entity(id: &str, definition: SketchGeometryDefinition) -> SketchEntity {
+    SketchEntity::new(
+        SketchEntityId::mint(id).unwrap(),
+        SketchId::mint("generated:test:sketch#0").unwrap(),
+        SketchGeometry::try_from(definition).unwrap(),
+    )
+}
+
+#[test]
+fn stored_offset_relation_projects_one_concentric_circle_pair() {
+    let source = offset_test_entity(
+        "generated:test:circle#source",
+        SketchGeometryDefinition::Circle {
+            center: Point2::new(4.0, -1.0),
+            radius: Length::new(5.0).unwrap(),
+        },
+    );
+    let result = offset_test_entity(
+        "generated:test:circle#result",
+        SketchGeometryDefinition::Circle {
+            center: Point2::new(4.0, -1.0),
+            radius: Length::new(3.5).unwrap(),
+        },
+    );
+    let projected = HashMap::from([(("native", 1), &source), (("native", 2), &result)]);
+    let relation = stored_offset_relation(0x20_0000_0000, &[(1, 2)]);
+
+    let Some(SketchConstraintDefinitionInput::Offset {
+        pairs,
+        distance,
+        parameter,
+    }) = exact_offset_constraint(&relation, "native", &projected)
+    else {
+        panic!("expected neutral offset constraint")
+    };
+    assert_eq!(pairs.len(), 1);
+    assert_eq!(pairs[0].source, source.id().clone());
+    assert_eq!(pairs[0].result, result.id().clone());
+    assert!(!pairs[0].source_reversed);
+    assert!((distance.get() - 1.5).abs() <= 1.0e-9);
+    assert_eq!(parameter, None);
+
+    let outward = offset_test_entity(
+        "generated:test:circle#outward",
+        SketchGeometryDefinition::Circle {
+            center: Point2::new(4.0, -1.0),
+            radius: Length::new(6.5).unwrap(),
+        },
+    );
+    let projected = HashMap::from([(("native", 1), &source), (("native", 2), &outward)]);
+    let Some(SketchConstraintDefinitionInput::Offset {
+        pairs, distance, ..
+    }) = exact_offset_constraint(&relation, "native", &projected)
+    else {
+        panic!("expected neutral offset constraint")
+    };
+    assert!(pairs[0].source_reversed);
+    assert!((distance.get() - 1.5).abs() <= 1.0e-9);
+}
+
+#[test]
+fn stored_offset_relation_projects_a_mixed_line_and_arc_chain() {
+    let source_line = offset_test_entity(
+        "generated:test:line#source",
+        SketchGeometryDefinition::Line {
+            start: Point2::new(0.0, 0.0),
+            end: Point2::new(10.0, 0.0),
+        },
+    );
+    let result_line = offset_test_entity(
+        "generated:test:line#result",
+        SketchGeometryDefinition::Line {
+            start: Point2::new(0.0, 2.0),
+            end: Point2::new(10.0, 2.0),
+        },
+    );
+    let source_arc = offset_test_entity(
+        "generated:test:arc#source",
+        SketchGeometryDefinition::Arc {
+            center: Point2::new(10.0, 5.0),
+            radius: Length::new(5.0).unwrap(),
+            start_angle: Angle::new(-std::f64::consts::FRAC_PI_2).unwrap(),
+            end_angle: Angle::new(0.0).unwrap(),
+        },
+    );
+    let result_arc = offset_test_entity(
+        "generated:test:arc#result",
+        SketchGeometryDefinition::Arc {
+            center: Point2::new(10.0, 5.0),
+            radius: Length::new(3.0).unwrap(),
+            start_angle: Angle::new(-std::f64::consts::FRAC_PI_2).unwrap(),
+            end_angle: Angle::new(0.0).unwrap(),
+        },
+    );
+    let projected = HashMap::from([
+        (("native", 1), &source_line),
+        (("native", 2), &result_line),
+        (("native", 3), &source_arc),
+        (("native", 4), &result_arc),
+    ]);
+    let relation = stored_offset_relation(0x20_0000_0000, &[(1, 2), (3, 4)]);
+
+    let Some(SketchConstraintDefinitionInput::Offset {
+        pairs, distance, ..
+    }) = exact_offset_constraint(&relation, "native", &projected)
+    else {
+        panic!("expected neutral offset constraint")
+    };
+    assert_eq!(pairs.len(), 2);
+    assert_eq!(pairs[1].source, source_arc.id().clone());
+    assert_eq!(pairs[1].result, result_arc.id().clone());
+    assert!(!pairs[0].source_reversed);
+    assert!(!pairs[1].source_reversed);
+    assert!((distance.get() - 2.0).abs() <= 1.0e-9);
+
+    let far_arc = offset_test_entity(
+        "generated:test:arc#far",
+        SketchGeometryDefinition::Arc {
+            center: Point2::new(10.0, 5.0),
+            radius: Length::new(2.0).unwrap(),
+            start_angle: Angle::new(-std::f64::consts::FRAC_PI_2).unwrap(),
+            end_angle: Angle::new(0.0).unwrap(),
+        },
+    );
+    let projected = HashMap::from([
+        (("native", 1), &source_line),
+        (("native", 2), &result_line),
+        (("native", 3), &source_arc),
+        (("native", 4), &far_arc),
+    ]);
+    assert!(exact_offset_constraint(&relation, "native", &projected).is_none());
+}
+
+#[test]
+fn single_pair_offsets_require_the_offset_bit_and_a_shared_center() {
+    let source = offset_test_entity(
+        "generated:test:circle#source",
+        SketchGeometryDefinition::Circle {
+            center: Point2::new(0.0, 0.0),
+            radius: Length::new(5.0).unwrap(),
+        },
+    );
+    let displaced = offset_test_entity(
+        "generated:test:circle#displaced",
+        SketchGeometryDefinition::Circle {
+            center: Point2::new(0.5, 0.0),
+            radius: Length::new(3.0).unwrap(),
+        },
+    );
+    let projected = HashMap::from([(("native", 1), &source), (("native", 2), &displaced)]);
+    let relation = stored_offset_relation(0x20_0000_0000, &[(1, 2)]);
+    assert!(exact_offset_constraint(&relation, "native", &projected).is_none());
+
+    let source_line = offset_test_entity(
+        "generated:test:line#source",
+        SketchGeometryDefinition::Line {
+            start: Point2::new(0.0, 0.0),
+            end: Point2::new(10.0, 0.0),
+        },
+    );
+    let result_line = offset_test_entity(
+        "generated:test:line#result",
+        SketchGeometryDefinition::Line {
+            start: Point2::new(0.0, 2.0),
+            end: Point2::new(10.0, 2.0),
+        },
+    );
+    let projected = HashMap::from([(("native", 1), &source_line), (("native", 2), &result_line)]);
+    let perpendicular = stored_offset_relation(0x20, &[(1, 2)]);
+    assert!(exact_offset_constraint(&perpendicular, "native", &projected).is_none());
+}
+
+#[test]
+fn midpoint_relation_resolves_a_point_at_the_middle_angle_of_an_arc() {
+    use crate::design::dimensions::{midpoint_constraint, MidpointCarrier};
+
+    let arc = offset_test_entity(
+        "generated:test:arc#carrier",
+        SketchGeometryDefinition::Arc {
+            center: Point2::new(61.0, -15.0),
+            radius: Length::new(5.0).unwrap(),
+            start_angle: Angle::new(std::f64::consts::PI).unwrap(),
+            end_angle: Angle::new(2.0 * std::f64::consts::PI).unwrap(),
+        },
+    );
+    let point = |id: &str, u: f64, v: f64| {
+        offset_test_entity(
+            id,
+            SketchGeometryDefinition::Point {
+                position: Point2::new(u, v),
+            },
+        )
+    };
+    let middle = point("generated:test:point#middle", 61.0, -20.0);
+    let Some(SketchConstraintDefinitionInput::Midpoint {
+        point: locus,
+        entity,
+    }) = midpoint_constraint(&[&middle, &arc], MidpointCarrier::LineOrArc)
+    else {
+        panic!("expected an arc midpoint constraint")
+    };
+    assert_eq!(locus, SketchLocus::Entity(middle.id().clone()));
+    assert_eq!(entity, arc.id().clone());
+
+    let end = point("generated:test:point#end", 66.0, -15.0);
+    assert!(midpoint_constraint(&[&arc, &end], MidpointCarrier::LineOrArc).is_none());
+    assert!(midpoint_constraint(&[&arc, &middle], MidpointCarrier::Line).is_none());
+}
+
 #[test]
 fn single_curve_annotation_projects_parameterized_offset() {
     let stream = "f3d:Design/BulkStream.dat";
@@ -641,7 +909,7 @@ fn single_curve_annotation_projects_parameterized_offset() {
                     role_offset: 50,
                 },
             ],
-            entity_genesis: 0x80,
+            entity_genesis: Some(0x80),
             annotation_bytes: Vec::new(),
             annotation_byte_offset: 111,
             governing_owner_record_index: 13,

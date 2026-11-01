@@ -1,11 +1,12 @@
 // SPDX-License-Identifier: Apache-2.0
-//! Split feature property grammars and the solid-split projection.
+//! Split feature property grammars and projection.
 
 use cadmpeg_core::decode::{DecodeContext, View};
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::features::{
     BodySelection, DistinctMembers, FaceSelection, Feature, FeatureContent, FeatureDefinition,
     FeatureEvaluation, FeatureId, FeatureOperation, FeatureResultTopology, SplitBodyTool,
+    SplitFaceTool,
 };
 use cadmpeg_ir::native::bytes::NativeBytes;
 
@@ -16,6 +17,9 @@ use super::{
     PmDcFeatureProperty, PmDcFeaturePropertyKind, PmDcFeaturePropertyPayload,
     PmDcFeatureReferenceFamily, ProjectionIndex, PropertyParser,
 };
+
+pub(crate) mod face;
+pub(crate) mod trim;
 
 pub(crate) const CLASS_ID: ClassId = ClassId(NativeBytes::new([
     0xba, 0xa8, 0x71, 0x83, 0xd3, 0x11, 0x34, 0x7b, 0xc0, 0x00, 0xe3, 0x95, 0x45, 0xdf, 0x72, 0x4f,
@@ -30,17 +34,17 @@ const TOOL_SURFACE: u16 = 3;
 /// Slot of the two-body result collection.
 const RESULT_SLOT: usize = 9;
 
-const SPLIT_ENUM_TYPE: [u8; 16] = [
+pub(crate) const SPLIT_ENUM_TYPE: [u8; 16] = [
     0x19, 0x90, 0xe1, 0xb8, 0xd3, 0x11, 0x46, 0x7b, 0xc0, 0x00, 0xe3, 0x95, 0x45, 0xdf, 0x72, 0x4f,
 ];
-const TOOL_ENUM_TYPE: [u8; 16] = [
+pub(crate) const TOOL_ENUM_TYPE: [u8; 16] = [
     0x17, 0x90, 0xe1, 0xb8, 0xd3, 0x11, 0x46, 0x7b, 0xc0, 0x00, 0xe3, 0x95, 0x45, 0xdf, 0x72, 0x4f,
 ];
-const SPLIT_BOOLEAN_TYPE: [u8; 16] = [
+pub(crate) const SPLIT_BOOLEAN_TYPE: [u8; 16] = [
     0x9f, 0x8f, 0x2a, 0x40, 0xd2, 0x11, 0x20, 0xe6, 0x60, 0x00, 0xaa, 0xab, 0xc8, 0x43, 0x3c, 0xb0,
 ];
 
-pub(super) fn property_parser(type_id: [u8; 16]) -> Option<PropertyParser> {
+pub(crate) fn property_parser(type_id: [u8; 16]) -> Option<PropertyParser> {
     match type_id {
         SPLIT_ENUM_TYPE => Some(parse_split_enum),
         TOOL_ENUM_TYPE => Some(parse_tool_enum),
@@ -71,12 +75,16 @@ impl NativeReason {
             Self::Tool => "tool identity, frame, or history position is unresolved".to_owned(),
             Self::Result => "result-body topology is unresolved".to_owned(),
         };
-        crate::loss::InventorLossCode::FeatureSplitOperandsNative
-            .note(format!("Retained Inventor Split natively: {reason}."))
+        let code = match self {
+            Self::Mode(1) => crate::loss::InventorLossCode::FeatureSplitModeOneNative,
+            Self::Mode(2) => crate::loss::InventorLossCode::FeatureSplitModeTwoNative,
+            _ => crate::loss::InventorLossCode::FeatureSplitOperandsNative,
+        };
+        code.note(format!("Retained Inventor Split natively: {reason}."))
     }
 }
 
-/// Checks the complete solid-split operand form for projection and validation.
+/// Checks the split operand forms for projection and validation.
 pub(crate) fn definition<'a>(
     source: &PmDcFeature,
     resolve: impl Fn(u32) -> Option<&'a PmDcFeatureProperty>,
@@ -100,6 +108,12 @@ pub(crate) fn definition<'a>(
             _ => None,
         };
     let mode = enumeration(mode, 3).ok_or(NativeReason::Control(0))?;
+    if mode == 1 {
+        return trim::definition(source, &resolve).ok_or(NativeReason::Mode(1));
+    }
+    if mode == 2 {
+        return face::definition(source, &resolve, &plane).ok_or(NativeReason::Mode(2));
+    }
     if mode != SPLIT_SOLID {
         return Err(NativeReason::Mode(mode));
     }
@@ -184,6 +198,19 @@ pub(crate) fn definition<'a>(
     }))
 }
 
+pub(crate) fn output_slot(definition: &FeatureDefinition) -> usize {
+    if matches!(
+        definition,
+        FeatureDefinition::Operation(
+            FeatureOperation::SplitFace { .. } | FeatureOperation::TrimBodies { .. }
+        )
+    ) {
+        7
+    } else {
+        RESULT_SLOT
+    }
+}
+
 /// The datum-plane feature of a work plane whose frame admits and whose
 /// history position precedes the split at `split`.
 fn plane_feature(
@@ -233,14 +260,35 @@ pub(super) fn project(
         }
     };
     let mut dependencies = DistinctMembers::default();
-    if let FeatureDefinition::Operation(FeatureOperation::SplitBody {
-        tool: SplitBodyTool::Plane { plane },
-        ..
-    }) = &definition
+    if let FeatureDefinition::Operation(
+        FeatureOperation::SplitBody {
+            tool: SplitBodyTool::Plane { plane },
+            ..
+        }
+        | FeatureOperation::SplitFace {
+            tool: SplitFaceTool::Plane { plane },
+            ..
+        },
+    ) = &definition
     {
         dependencies.insert(plane.clone());
     }
-    let Some(result) = super::feature_result(ctx, source, RESULT_SLOT, index) else {
+    let slot = output_slot(&definition);
+    let result = if slot == 7 {
+        super::slot_property(source, slot, index).and_then(|collection| {
+            let PmDcFeaturePropertyKind::References {
+                family: PmDcFeatureReferenceFamily::BodySelection,
+                items,
+            } = &collection.kind
+            else {
+                return None;
+            };
+            super::feature_result_members(ctx, &source.identity, collection, items, index)
+        })
+    } else {
+        super::feature_result(ctx, source, slot, index)
+    };
+    let Some(result) = result else {
         losses.push(NativeReason::Result.note());
         return None;
     };
@@ -251,15 +299,44 @@ pub(super) fn project(
     if let Err(error) = ctx.charge_entities(1, "project Inventor feature") {
         return Some(Err(error));
     }
+    if matches!(
+        &definition,
+        FeatureDefinition::Operation(FeatureOperation::SplitFace { .. })
+    ) {
+        losses.push(crate::loss::InventorLossCode::FeatureSplitFaceSelectionNative.note(
+            "Retained Split target faces as a native collection with historical face selectors.",
+        ));
+    }
+    if matches!(
+        &definition,
+        FeatureDefinition::Operation(FeatureOperation::TrimBodies { .. })
+    ) {
+        losses.push(
+            crate::loss::InventorLossCode::FeatureSplitTrimSideNative
+                .note("Retained the Split surface-trim kept side natively."),
+        );
+    }
     Some(Ok((
         Feature {
+            product_definition: None,
             id,
             ordinal: u64::from(label.index),
             name: label.name().map(str::to_owned),
             suppressed: None,
             dependencies,
             source_properties: super::boolean_properties(source, &[6], index),
-            source_tag: Some("split_body".into()),
+            source_tag: Some(
+                match &definition {
+                    FeatureDefinition::Operation(FeatureOperation::SplitFace { .. }) => {
+                        "split_face"
+                    }
+                    FeatureDefinition::Operation(FeatureOperation::TrimBodies { .. }) => {
+                        "trim_bodies"
+                    }
+                    _ => "split_body",
+                }
+                .into(),
+            ),
             source_text: None,
             source_content: FeatureContent::default(),
             evaluation: FeatureEvaluation::from_definition(definition),
@@ -791,7 +868,18 @@ pub(crate) mod tests {
                 &cadmpeg_core::decode::DecodePolicy::service(),
             )
             .expect("decode context");
-            for mode in [1, 2] {
+            for (mode, expected_code, expected_loss) in [
+                (
+                    1,
+                    "feature.split-mode-one-native",
+                    crate::loss::InventorLossCode::FeatureSplitModeOneNative,
+                ),
+                (
+                    2,
+                    "feature.split-mode-two-native",
+                    crate::loss::InventorLossCode::FeatureSplitModeTwoNative,
+                ),
+            ] {
                 for first in [false, true] {
                     for second in [false, true] {
                         let mut properties = properties(2);
@@ -830,14 +918,9 @@ pub(crate) mod tests {
                         )
                         .is_none());
                         assert_eq!(losses.len(), 1);
-                        assert_eq!(
-                            losses[0].code,
-                            crate::loss::InventorLossCode::FeatureSplitOperandsNative
-                                .note("test")
-                                .code
-                        );
+                        assert_eq!(losses[0].code, expected_loss.note("test").code);
                         assert_eq!(losses[0].code.namespace(), "inventor");
-                        assert_eq!(losses[0].code.local_code(), "feature.split-operands-native");
+                        assert_eq!(losses[0].code.local_code(), expected_code);
                         assert!(losses[0]
                             .message
                             .contains(&format!("operation mode {mode}")));
@@ -907,14 +990,67 @@ pub(crate) mod tests {
                 ),
                 (7, boolean(true)),
             ] {
+                let expected_code = match (position, &kind) {
+                    (
+                        0,
+                        PmDcFeaturePropertyKind::Enumeration {
+                            type_value: 3,
+                            value: 1,
+                            ..
+                        },
+                    ) => "feature.split-mode-one-native",
+                    (
+                        0,
+                        PmDcFeaturePropertyKind::Enumeration {
+                            type_value: 3,
+                            value: 2,
+                            ..
+                        },
+                    ) => "feature.split-mode-two-native",
+                    _ => "feature.split-operands-native",
+                };
                 let mut properties = properties(2);
                 let ordinal = properties[position].identity.record_ordinal;
                 properties[position] = test_property(ordinal, kind);
                 let reason = admit(&plane_split(), &properties).expect_err("unsupported operand");
+                assert_eq!(reason.note().code.local_code(), expected_code, "{position}");
+            }
+        }
+
+        #[test]
+        fn surface_trim_emits_the_mode_one_loss_for_both_boolean_values() {
+            let arena = cadmpeg_core::decode::DecodeArena::new();
+            let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+                &[],
+                &arena,
+                &cadmpeg_core::decode::DecodePolicy::service(),
+            )
+            .expect("decode context");
+            for side in [false, true] {
+                let mut properties = properties(3);
+                properties[0] = test_property(1, enumeration(3, 1));
+                properties[4] = test_property(5, boolean(side));
+                let source = test_feature(
+                    0,
+                    10,
+                    &[(0, 1), (1, 2), (3, 3), (4, 4), (6, 5), (7, 6), (8, 11)],
+                );
+                let mut losses = Vec::new();
+                assert!(crate::feature::split::project(
+                    &ctx,
+                    &source,
+                    &crate::feature::tests::test_label(0, 1, crate::feature::split::CLASS_ID, &[]),
+                    &projection_index(&properties),
+                    &crate::feature::history::History::default(),
+                    &mut losses,
+                )
+                .is_none());
+                assert_eq!(losses.len(), 1);
                 assert_eq!(
-                    reason.note().code.local_code(),
-                    "feature.split-operands-native",
-                    "{position}"
+                    losses[0].code,
+                    crate::loss::InventorLossCode::FeatureSplitModeOneNative
+                        .note("test")
+                        .code
                 );
             }
         }

@@ -741,7 +741,8 @@ pub(super) enum PcurveEdit {
         periodic: Option<bool>,
         wrapper_reversed: Option<bool>,
         native_tail_flags: Option<[bool; 4]>,
-        parameter_range: Option<[f64; 2]>,
+        uv_offset: Option<[f64; 2]>,
+        stored_uv_offset: [f64; 2],
         fit_tolerance: Option<f64>,
     },
     Ref {
@@ -749,7 +750,8 @@ pub(super) enum PcurveEdit {
         support: String,
         native_geometry: PcurveNurbs,
         periodic: Option<bool>,
-        parameter_range: Option<[f64; 2]>,
+        uv_offset: Option<[f64; 2]>,
+        stored_uv_offset: [f64; 2],
     },
 }
 
@@ -758,6 +760,17 @@ impl PcurveEdit {
     pub(super) fn support(&self) -> &str {
         match self {
             Self::Inline { support, .. } | Self::Ref { support, .. } => support,
+        }
+    }
+
+    pub(super) fn stored_uv_offset(&self) -> [f64; 2] {
+        match self {
+            Self::Inline {
+                stored_uv_offset, ..
+            }
+            | Self::Ref {
+                stored_uv_offset, ..
+            } => *stored_uv_offset,
         }
     }
 
@@ -3150,11 +3163,9 @@ pub(super) fn validate_pcurve_edits(
         let contract_valid = before.wrapper_reversed().is_some()
             == after.wrapper_reversed().is_some()
             && before.native_tail_flags().is_some() == after.native_tail_flags().is_some()
-            && before.parameter_range().is_some() == after.parameter_range().is_some()
-            && before.fit_tolerance().is_some() == after.fit_tolerance().is_some()
-            && after
-                .parameter_range()
-                .is_none_or(|range| range[0] <= range[1]);
+            && before.uv_offset().is_some() == after.uv_offset().is_some()
+            && before.parameter_range() == after.parameter_range()
+            && before.fit_tolerance().is_some() == after.fit_tolerance().is_some();
         if !valid || !contract_valid {
             return Err(CodecError::NotImplemented(format!(
                 "F3D pcurve edit changes fixed cache structure: {id}"
@@ -3162,8 +3173,8 @@ pub(super) fn validate_pcurve_edits(
         }
         let periodic =
             (before_nurbs.periodic() != after_nurbs.periodic()).then_some(after_nurbs.periodic());
-        let parameter_range = (before.parameter_range() != after.parameter_range())
-            .then_some(after.parameter_range())
+        let uv_offset = (before.uv_offset() != after.uv_offset())
+            .then_some(after.uv_offset())
             .flatten();
         let support = pcurve_support_surface(target_model, &after.id)?
             .as_str()
@@ -3176,7 +3187,10 @@ pub(super) fn validate_pcurve_edits(
                     support,
                     native_geometry: after_native,
                     periodic,
-                    parameter_range: parameter_range.map(cadmpeg_ir::units::FiniteVector::get),
+                    uv_offset: uv_offset.map(cadmpeg_ir::units::FiniteVector::get),
+                    stored_uv_offset: after
+                        .uv_offset()
+                        .map_or([0.0, 0.0], cadmpeg_ir::units::FiniteVector::get),
                 }
             }
             cadmpeg_ir::geometry::pcurve::PcurveMetadata::AsmInline { .. }
@@ -3190,7 +3204,10 @@ pub(super) fn validate_pcurve_edits(
                 native_tail_flags: (before.native_tail_flags() != after.native_tail_flags())
                     .then_some(after.native_tail_flags())
                     .flatten(),
-                parameter_range: parameter_range.map(cadmpeg_ir::units::FiniteVector::get),
+                uv_offset: uv_offset.map(cadmpeg_ir::units::FiniteVector::get),
+                stored_uv_offset: after
+                    .uv_offset()
+                    .map_or([0.0, 0.0], cadmpeg_ir::units::FiniteVector::get),
                 fit_tolerance: (before.fit_tolerance() != after.fit_tolerance())
                     .then_some(after.fit_tolerance())
                     .flatten()

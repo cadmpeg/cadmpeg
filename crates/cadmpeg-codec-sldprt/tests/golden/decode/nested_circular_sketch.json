@@ -1,7 +1,7 @@
 {
   "ir": {
     "decode_depth": "full",
-    "ir_version": "9",
+    "ir_version": "10",
     "model": {
       "appearance_bindings": [],
       "appearances": [],
@@ -351,6 +351,17 @@
           "strict_floor": "warning"
         },
         "message": "3 referenced VERTEX record(s) lack a uniquely framed record with a verified owner class and IR-supported tolerance.",
+        "severity": "warning"
+      },
+      {
+        "code": {
+          "code": "topology.face-withheld",
+          "kind": "topology_not_transferred",
+          "namespace": "sldprt",
+          "scope": "namespaced",
+          "strict_floor": "warning"
+        },
+        "message": "1 face(s) were withheld with their surface because no loop of the face decodes.",
         "severity": "warning"
       },
       {

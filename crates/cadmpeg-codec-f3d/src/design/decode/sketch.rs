@@ -473,11 +473,11 @@ fn decode_sketch_visibilities_in_stream(
         }
     }
     for (entity, visibility) in &out {
-        if !visibility
-            .ordinal_collection
-            .is_some_and(|collection| collections.contains(&collection.get()))
-            || !listed.contains(entity)
-        {
+        let collection_valid = match visibility.ordinal_collection {
+            Some(collection) => collections.contains(&collection.get()) && listed.contains(entity),
+            None => !listed.contains(entity),
+        };
+        if !collection_valid {
             return Err(crate::design::text::malformed_design(format_args!(
                 "F3D sketch container {entity} has an invalid ordinal collection"
             )));
@@ -558,9 +558,6 @@ fn decode_sketch_visibility_member(
         Some(1) => true,
         _ => return None,
     };
-    if bytes.get(member_at + visibility_member::TAIL_MARKER) != Some(&1) {
-        return None;
-    }
     let mut visibility = DesignSketchVisibility::new(
         stream_ordinal,
         u64_from_index(stream_ordinal_offset),
@@ -569,6 +566,9 @@ fn decode_sketch_visibility_member(
     .ok()?;
     let mut collection_at = member_at + visibility_member::TAIL_MARKER;
     let reference = take_reference(bytes, &mut collection_at)?;
+    if matches!(reference, Reference::Null) {
+        return Some(visibility);
+    }
     let (target, None) = reference.local()? else {
         return None;
     };
@@ -1967,26 +1967,32 @@ fn decode_sketch_points_from_stream(
     }
     let mut out = Vec::new();
     for frame in &frames {
-        if !frame
-            .design_type
-            .type_guid
-            .as_str()
-            .eq_ignore_ascii_case(SKETCH_POINT_TYPE_GUID)
-            || frame.design_type.module != CURRENT_SKETCH_POINT_TYPE.2
-            || ![0, 8, 10, CURRENT_SKETCH_POINT_TYPE.1].contains(&frame.design_type.version)
+        let derived = is_derived_sketch_point_type(frame.design_type);
+        if !derived
+            && (!frame
+                .design_type
+                .type_guid
+                .as_str()
+                .eq_ignore_ascii_case(SKETCH_POINT_TYPE_GUID)
+                || frame.design_type.module != CURRENT_SKETCH_POINT_TYPE.2
+                || ![0, 8, 10, CURRENT_SKETCH_POINT_TYPE.1].contains(&frame.design_type.version))
         {
             continue;
         }
         let payload = &bytes[frame.start..frame.end];
         let record_index = u32::try_from(frame.entity_id)
             .map_err(|_| CodecError::Malformed("F3D sketch-point entity ID exceeds u32".into()))?;
-        let decoded =
-            decode_sketch_point_record(payload, frame.design_type.version).ok_or_else(|| {
-                crate::design::text::malformed_design(format_args!(
-                    "F3D sketch point {record_index} has an invalid version-{} member sequence",
-                    frame.design_type.version
-                ))
-            })?;
+        let decoded = if derived {
+            decode_derived_sketch_point_record(bytes, meta, frame)
+        } else {
+            decode_sketch_point_record(payload, frame.design_type.version)
+        }
+        .ok_or_else(|| {
+            crate::design::text::malformed_design(format_args!(
+                "F3D sketch point {record_index} has an invalid version-{} member sequence",
+                frame.design_type.version
+            ))
+        })?;
         let (u, v) = (decoded.coordinates[0] * 10.0, decoded.coordinates[1] * 10.0);
         if !point_target_has_guid(
             &types_by_entity,
@@ -2288,26 +2294,34 @@ fn read_sketch_text_color(payload: &[u8], cursor: &mut usize) -> Option<Color> {
     Color::new(r, g, b, a)
 }
 
+/// Placement a frame-text record's 4×4 transform describes.
+enum FrameTextPlacement {
+    /// A planar rigid placement: an anchor in millimetres and a rotation.
+    Planar(TextPlacement<FinitePoint2>),
+    /// The sketch plane turned over: the text is mirrored in the sketch.
+    Mirrored,
+}
+
 /// Read the row-major 4×4 f64 placement transform a frame-text record stores,
-/// advancing `cursor` past it, and reduce it to the anchor point in millimetres
-/// and the rotation about that point in radians.
+/// advancing `cursor` past it.
 ///
-/// The transform is a planar rigid placement: its third row and column are the
-/// identity's, its bottom row is `(0, 0, 0, 1)`, its translation lives in the
-/// last column, and its 2×2 basis is a rotation of unit determinant carrying no
-/// scale or shear. A run failing any of that is not a placement, so the record
-/// is misframed.
-fn read_text_placement(payload: &[u8], cursor: &mut usize) -> Option<TextPlacement<FinitePoint2>> {
+/// The transform is a rigid placement with the bottom row `(0, 0, 0, 1)` and
+/// its translation in the last column. Its third row is `(0, 0, 1, 0)` with a
+/// 2×2 rotation basis of determinant `+1`, or `(0, 0, -1, 0)` with a 2×2
+/// reflection basis of determinant `-1`. A run failing that is not a
+/// placement, so the record is misframed.
+fn read_text_placement(payload: &[u8], cursor: &mut usize) -> Option<FrameTextPlacement> {
     let elements = f64s_at::<16>(payload, *cursor)?;
     *cursor = cursor.checked_add(128)?;
     let at = |row: usize, column: usize| elements[row * 4 + column];
     let constant = |value: f64, expected: f64| (value - expected).abs() <= TEXT_PLACEMENT_TOLERANCE;
+    let normal = at(2, 2);
+    let mirrored = constant(normal, -1.0);
     let planar = [
         (0, 2, 0.0),
         (1, 2, 0.0),
         (2, 0, 0.0),
         (2, 1, 0.0),
-        (2, 2, 1.0),
         (2, 3, 0.0),
         (3, 0, 0.0),
         (3, 1, 0.0),
@@ -2317,13 +2331,17 @@ fn read_text_placement(payload: &[u8], cursor: &mut usize) -> Option<TextPlaceme
     .into_iter()
     .all(|(row, column, expected)| constant(at(row, column), expected));
     let determinant = at(0, 0) * at(1, 1) - at(0, 1) * at(1, 0);
-    (planar && constant(determinant, 1.0)).then_some(())?;
+    (planar && (mirrored || constant(normal, 1.0)) && constant(determinant, normal))
+        .then_some(())?;
+    if mirrored {
+        return Some(FrameTextPlacement::Mirrored);
+    }
     let anchor = Point2::new(at(0, 3) * 10.0, at(1, 3) * 10.0);
     let anchor = FinitePoint2::new(anchor)?;
-    Some(TextPlacement {
+    Some(FrameTextPlacement::Planar(TextPlacement {
         anchor,
         rotation: Angle::new(at(1, 0).atan2(at(0, 0)))?,
-    })
+    }))
 }
 
 /// The record index a reference names, absent when the reference is null.
@@ -2550,9 +2568,12 @@ fn decode_sketch_text_tail(
         let text_type = View::u32_le_at(payload, cursor)?;
         (u32::from(*payload.get(cursor.checked_add(4)?)?) == text_type).then_some(())?;
         cursor = cursor.checked_add(5)?;
-        let placement = match text_type {
-            0 => Some(read_text_placement(payload, &mut cursor)?),
-            1 => None,
+        let (placement, mirrored) = match text_type {
+            0 => match read_text_placement(payload, &mut cursor)? {
+                FrameTextPlacement::Planar(placement) => (Some(placement), false),
+                FrameTextPlacement::Mirrored => (None, true),
+            },
+            1 => (None, false),
             _ => return None,
         };
         cursor = cursor.checked_add(SKETCH_TEXT_TRAILING_RUN)?;
@@ -2572,7 +2593,7 @@ fn decode_sketch_text_tail(
             text,
             font_weight,
             owner_reference: reference_index(&owner)?,
-            neutral_orientation: horizontal_neutral && vertical_neutral,
+            neutral_orientation: horizontal_neutral && vertical_neutral && !mirrored,
         }))
     })()
     .transpose()
@@ -2991,19 +3012,99 @@ fn decode_version_zero_sketch_point(
     })
 }
 
+/// Whether a Design type is the derived sketch-point type: its primary frame
+/// carries the point property block, and its nested base-type frame carries the
+/// version-11 point record.
+fn is_derived_sketch_point_type(
+    design_type: &crate::records::entity_header::SegmentTypeData,
+) -> bool {
+    design_type
+        .type_guid
+        .as_str()
+        .eq_ignore_ascii_case(DERIVED_SKETCH_POINT_TYPE.0)
+        && design_type.version == DERIVED_SKETCH_POINT_TYPE.1
+        && design_type.module == DERIVED_SKETCH_POINT_TYPE.2
+        && design_type
+            .base_type_guid
+            .value()
+            .is_some_and(|base| base.as_str().eq_ignore_ascii_case(SKETCH_POINT_TYPE_GUID))
+}
+
+fn decode_derived_sketch_point_record(
+    bytes: &[u8],
+    meta: &crate::metastream::MetaStream,
+    frame: &super::meta::DesignPrimaryFrame<'_>,
+) -> Option<DecodedSketchPoint> {
+    let primary = &bytes[frame.start..frame.end];
+    let (_, after_class_tag) = lp_ascii_filtered_view(primary, 0, 3..=3, u8::is_ascii_digit)?;
+    let mut cursor = after_class_tag.checked_add(4)?;
+    if primary.get(cursor..cursor.checked_add(9)?) != Some(&[0; 9][..]) {
+        return None;
+    }
+    cursor = cursor.checked_add(9)?;
+    let properties = read_property_block(primary, &mut cursor)?;
+    let nested_at = frame.start.checked_add(cursor)?;
+    if properties.count == 0
+        || nested_at >= frame.end
+        || (frame.member_end != frame.end && frame.member_end != nested_at)
+    {
+        return None;
+    }
+    let nested_class_tag =
+        super::meta::record_header_class_tag(bytes, nested_at, frame.end, frame.entity_id)?;
+    let (_, base_type) = super::meta::dynamic_type(meta, &nested_class_tag)?;
+    if !base_type
+        .type_guid
+        .as_str()
+        .eq_ignore_ascii_case(SKETCH_POINT_TYPE_GUID)
+        || base_type.version != CURRENT_SKETCH_POINT_TYPE.1
+        || base_type.module != CURRENT_SKETCH_POINT_TYPE.2
+    {
+        return None;
+    }
+    let mut decoded = decode_sketch_point_members(
+        &bytes[nested_at..frame.end],
+        CURRENT_SKETCH_POINT_TYPE.1,
+        Some(properties),
+    )?;
+    let SketchPointRecordForm::Version11 { derived_type, .. } = &mut decoded.record_form else {
+        return None;
+    };
+    *derived_type = true;
+    decoded.coordinate_offset = decoded
+        .coordinate_offset
+        .checked_add(u32::try_from(cursor).ok()?)?;
+    Some(decoded)
+}
+
 fn decode_sketch_point_record(payload: &[u8], class_version: u32) -> Option<DecodedSketchPoint> {
+    decode_sketch_point_members(payload, class_version, None)
+}
+
+/// Decode one sketch-point member sequence. `inherited` is the property block
+/// of a derived point's primary frame; the member sequence then stores eight
+/// zero bytes and no property block.
+fn decode_sketch_point_members(
+    payload: &[u8],
+    class_version: u32,
+    inherited: Option<SketchProperties<'_>>,
+) -> Option<DecodedSketchPoint> {
     let (_, after_class_tag) = lp_ascii_filtered_view(payload, 0, 3..=3, u8::is_ascii_digit)?;
     let header_end = after_class_tag.checked_add(4)?;
     if class_version == 0 {
         return decode_version_zero_sketch_point(payload, header_end);
     }
+    let zero_run = if inherited.is_some() { 8 } else { 9 };
     if !matches!(class_version, 8 | 10 | 11)
-        || payload.get(header_end..header_end.checked_add(9)?) != Some(&[0; 9][..])
+        || payload.get(header_end..header_end.checked_add(zero_run)?) != Some(&[0; 9][..zero_run])
     {
         return None;
     }
-    let mut cursor = header_end.checked_add(9)?;
-    let properties = read_property_block(payload, &mut cursor)?;
+    let mut cursor = header_end.checked_add(zero_run)?;
+    let properties = match inherited {
+        Some(inherited) => inherited,
+        None => read_property_block(payload, &mut cursor)?,
+    };
     let (entity_genesis, persistent_id) = match properties.first_two()? {
         (
             SketchProperty {
@@ -3167,6 +3268,7 @@ fn decode_sketch_point_record(payload: &[u8], class_version: u32) -> Option<Deco
                     depth,
                     entity_genesis,
                     padded_paired_reference,
+                    derived_type: false,
                     companion_prefix_present_zero: false,
                     persistent_id,
                     flags: flags.map(|flag| flag == 1),
@@ -3265,6 +3367,8 @@ fn decode_sketch_point_companion(
 const SKETCH_POINT_TYPE_GUID: &str = "C2CEDAE7-1716-47C1-B7B1-07B70081D0FB";
 pub(crate) const CURRENT_SKETCH_POINT_TYPE: (&str, u32, &str) =
     (SKETCH_POINT_TYPE_GUID, 11, "Geometry");
+const DERIVED_SKETCH_POINT_TYPE: (&str, u32, &str) =
+    ("00D157C2-2332-4BD5-BB53-048C4081D1C3", 0, "MSketch");
 pub(crate) const SKETCH_POINT_COMPANION_TYPE: (&str, u32, &str) =
     ("362B7EC3-0F09-47C8-A3BE-DC066715CDAE", 0, "Geometry");
 pub(crate) const SKETCH_CONTAINER_TYPE_GUID: &str = "44A64366-4BD3-4B24-881A-F94C206E8F2D";

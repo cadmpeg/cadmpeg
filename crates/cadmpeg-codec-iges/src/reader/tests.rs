@@ -415,6 +415,7 @@ fn source_metadata_names_the_representation() {
     let bytes = point_file();
     let scan = crate::card::scan(&bytes).unwrap();
     let (global, _) = crate::global::parse(&scan).unwrap();
+    let global = crate::global::GlobalRecord::Resolved(Box::new(global));
     let representation = crate::representation::Representation::FixedAscii;
     let meta = super::source_meta(
         &global,

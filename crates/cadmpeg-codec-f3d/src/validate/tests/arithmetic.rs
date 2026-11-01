@@ -274,6 +274,14 @@ fn annotation_interval_findings(
     payload_length: u64,
     prefix: bool,
 ) -> Vec<cadmpeg_ir::report::check::Finding> {
+    annotation_metadata_interval_findings(payload_length, prefix, Some(0))
+}
+
+fn annotation_metadata_interval_findings(
+    payload_length: u64,
+    prefix: bool,
+    entity_genesis: Option<u64>,
+) -> Vec<cadmpeg_ir::report::check::Finding> {
     crate::test_support::with_decode_context(|decode| {
         use crate::records::entity_header::{
             DesignEntityHeader, DesignEntityRegistration, DESIGN_MODULE_SKETCH,
@@ -355,32 +363,43 @@ fn annotation_interval_findings(
                 class_tag: "256".to_owned().try_into().unwrap(),
                 record_index: 9,
                 frame_length: 300,
-                operands: [0, 10, 11, 10]
-                    .into_iter()
-                    .enumerate()
-                    .map(|(ordinal, index)| {
-                        crate::records::dimensions::DesignDimensionAnnotationOperand {
-                            geometry_record_index: std::num::NonZeroU32::new(index),
-                            geometry_reference_offset: 125
-                                + cadmpeg_core::decode::u64_from_index(ordinal) * 15,
-                            role: 1,
-                            role_offset: 135 + cadmpeg_core::decode::u64_from_index(ordinal) * 15,
-                        }
-                    })
-                    .collect(),
-                entity_genesis: 0,
+                operands: (if entity_genesis.is_some() {
+                    &[0, 10, 11, 10][..]
+                } else {
+                    &[0, 10, 11][..]
+                })
+                .iter()
+                .copied()
+                .enumerate()
+                .map(|(ordinal, index)| {
+                    crate::records::dimensions::DesignDimensionAnnotationOperand {
+                        geometry_record_index: std::num::NonZeroU32::new(index),
+                        geometry_reference_offset: 125
+                            + cadmpeg_core::decode::u64_from_index(ordinal) * 15,
+                        role: 1,
+                        role_offset: 135 + cadmpeg_core::decode::u64_from_index(ordinal) * 15,
+                    }
+                })
+                .collect(),
+                entity_genesis,
                 annotation_bytes: vec![7, 8],
-                annotation_byte_offset: 241,
+                annotation_byte_offset: if entity_genesis.is_some() { 241 } else { 174 },
                 governing_owner_record_index: 6,
-                governing_owner_reference_offset: 244,
-                return_members: [10, 10, 11]
-                    .into_iter()
-                    .enumerate()
-                    .map(|(ordinal, index)| Located {
-                        value: std::num::NonZeroU32::new(index).unwrap(),
-                        offset: 259 + cadmpeg_core::decode::u64_from_index(ordinal) * 11,
-                    })
-                    .collect(),
+                governing_owner_reference_offset: if entity_genesis.is_some() { 244 } else { 177 },
+                return_members: (if entity_genesis.is_some() {
+                    &[10, 10, 11][..]
+                } else {
+                    &[10, 11][..]
+                })
+                .iter()
+                .copied()
+                .enumerate()
+                .map(|(ordinal, index)| Located {
+                    value: std::num::NonZeroU32::new(index).unwrap(),
+                    offset: (if entity_genesis.is_some() { 259 } else { 192 })
+                        + cadmpeg_core::decode::u64_from_index(ordinal) * 11,
+                })
+                .collect(),
                 paired_class_tag: "259".to_owned().try_into().unwrap(),
                 paired_byte_offset: 400,
                 owner_reference: 4,
@@ -430,4 +449,16 @@ fn annotation_accepts_representable_companion_extent() {
 #[test]
 fn annotation_prefix_can_follow_an_earlier_parameter_companion() {
     assert!(annotation_interval_findings(500, true).is_empty());
+}
+
+#[test]
+fn dimension_annotation_metadata_forms_validate_companion_and_scope_intervals() {
+    for entity_genesis in [None, Some(0)] {
+        for prefix in [false, true] {
+            assert!(annotation_metadata_interval_findings(500, prefix, entity_genesis).is_empty());
+        }
+        assert!(
+            !annotation_metadata_interval_findings(u64::MAX - 57, false, entity_genesis).is_empty()
+        );
+    }
 }

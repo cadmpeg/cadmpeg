@@ -90,6 +90,7 @@ fn parameter_native_ref_must_resolve() {
     let id = crate::features::ParameterId::mint("synthetic:test:parameter#native-ref")
         .expect("identity grammar");
     ir.model.parameters.push(crate::features::DesignParameter {
+        product_definition: None,
         id: id.clone(),
         owner: Some(
             crate::features::FeatureId::mint("synthetic:test:feature#missing")

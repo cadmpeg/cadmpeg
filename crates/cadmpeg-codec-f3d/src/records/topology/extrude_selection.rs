@@ -15,6 +15,9 @@ use serde::Deserialize;
 use serde::Serialize;
 use std::num::NonZeroU32;
 
+/// Longest tail of an extended selection member, in bytes.
+const EXTENDED_TAIL_MAX: u64 = 1024;
+
 /// Counted selection group owned by an Extrude or Emboss parameter scope.
 #[derive(Debug, PartialEq, Deserialize)]
 #[serde(try_from = "DesignExtrudeSelectionGroupWire")]
@@ -476,6 +479,9 @@ pub(crate) struct DesignExtrudeSelectionMember {
     /// Byte offset of the optional-slot marker.
     #[serde(default)]
     pub(crate) tail_slot_offset: u64,
+    /// Fifty-byte scope tail that follows the 190-byte frame, when present.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub(crate) scope_tail: Option<DesignExtrudeSelectionScopeTail>,
     /// Sketch geometry carrying `local_id`, when it resolves uniquely in
     /// the selected Sketch.
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -513,6 +519,7 @@ impl Clone for DesignExtrudeSelectionMember {
             context_id_offset: self.context_id_offset,
             tail_slot_present: self.tail_slot_present,
             tail_slot_offset: self.tail_slot_offset,
+            scope_tail: self.scope_tail,
             resolved_geometry: self.resolved_geometry.clone(),
             operand_identity_ids: self.operand_identity_ids.clone(),
             historical: self.historical.clone(),
@@ -540,6 +547,8 @@ impl Serialize for DesignExtrudeSelectionMember {
             tail_slot_present: bool,
             tail_slot_offset: u64,
             #[serde(skip_serializing_if = "Option::is_none")]
+            scope_tail: Option<&'a DesignExtrudeSelectionScopeTail>,
+            #[serde(skip_serializing_if = "Option::is_none")]
             resolved_geometry: Option<&'a SketchRelationOperand>,
             #[serde(skip_serializing_if = "<[String]>::is_empty")]
             operand_identity_ids: &'a [String],
@@ -563,6 +572,7 @@ impl Serialize for DesignExtrudeSelectionMember {
             context_id_offset: self.context_id_offset,
             tail_slot_present: self.tail_slot_present,
             tail_slot_offset: self.tail_slot_offset,
+            scope_tail: self.scope_tail.as_ref(),
             resolved_geometry: self.resolved_geometry.as_ref(),
             operand_identity_ids: &self.operand_identity_ids,
             historical: self.historical.as_ref(),
@@ -582,7 +592,12 @@ impl DesignExtrudeSelectionMember {
             .next_byte_offset
             .checked_sub(draft.byte_offset)
             .ok_or("next_byte_offset precedes member")?;
-        if frame_length != 190 && !(frame_length == 204 && draft.tail_slot_present) {
+        let frame_length_valid = match draft.scope_tail {
+            Some(_) => frame_length == 240 && !draft.tail_slot_present,
+            None if frame_length == 204 => draft.tail_slot_present,
+            None => (190..=190 + EXTENDED_TAIL_MAX).contains(&frame_length) && frame_length != 240,
+        };
+        if !frame_length_valid {
             return Err("selection member has an invalid frame length".into());
         }
         let frame = crate::records::frame_chain::RecordFrameChain::try_new(
@@ -604,6 +619,7 @@ impl DesignExtrudeSelectionMember {
             context_id_offset: draft.context_id_offset,
             tail_slot_present: draft.tail_slot_present,
             tail_slot_offset: draft.tail_slot_offset,
+            scope_tail: draft.scope_tail,
             resolved_geometry: draft.resolved_geometry,
             operand_identity_ids: draft.operand_identity_ids,
             historical: draft.historical,
@@ -642,6 +658,7 @@ impl DesignExtrudeSelectionMember {
             context_id_offset: self.context_id_offset,
             tail_slot_present: self.tail_slot_present,
             tail_slot_offset: self.tail_slot_offset,
+            scope_tail: self.scope_tail,
             resolved_geometry: self.resolved_geometry,
             operand_identity_ids: self.operand_identity_ids,
             historical: self.historical,
@@ -664,6 +681,21 @@ impl DesignExtrudeSelectionMember {
     pub(crate) fn next_byte_offset(&self) -> u64 {
         self.frame.offset(self.frame_length)
     }
+}
+
+/// Fifty-byte tail of an Extrude selection member whose optional slot is
+/// absent. The scalar, the word and the chain references are retained as
+/// encoded; the closing reference names the owning Extrude scope.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub(crate) struct DesignExtrudeSelectionScopeTail {
+    /// Raw bits of the little-endian f64 at tail offset 1.
+    pub(crate) opaque_scalar_bits: u64,
+    /// The u32 at tail offset 9.
+    pub(crate) opaque_word: u32,
+    /// Record indices of the two marked chain references, in stored order.
+    pub(crate) chain_references: [u32; 2],
+    /// Record index named by the closing marked scope reference.
+    pub(crate) scope_record_index: u32,
 }
 
 /// Unadmitted `DesignExtrudeSelectionMember` fields.
@@ -699,6 +731,13 @@ pub(crate) struct DesignExtrudeSelectionMemberDraft {
     /// Byte offset of the optional-slot marker.
     #[serde(default)]
     pub(crate) tail_slot_offset: u64,
+    /// Fifty-byte scope tail that follows the 190-byte frame, when present.
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_scope_tail"
+    )]
+    pub(crate) scope_tail: Option<DesignExtrudeSelectionScopeTail>,
     /// Sketch geometry carrying `local_id`, when it resolves uniquely in
     /// the selected Sketch.
     #[serde(
@@ -746,6 +785,7 @@ impl From<DesignExtrudeSelectionMember> for DesignExtrudeSelectionMemberDraft {
             context_id_offset: value.context_id_offset,
             tail_slot_present: value.tail_slot_present,
             tail_slot_offset: value.tail_slot_offset,
+            scope_tail: value.scope_tail,
             resolved_geometry: value.resolved_geometry,
             operand_identity_ids: value.operand_identity_ids,
             historical: value.historical,
@@ -755,6 +795,11 @@ impl From<DesignExtrudeSelectionMember> for DesignExtrudeSelectionMemberDraft {
     }
 }
 
+cadmpeg_core::named_optional_field!(
+    deserialize_scope_tail,
+    DesignExtrudeSelectionScopeTail,
+    "scope_tail"
+);
 cadmpeg_core::named_optional_field!(
     deserialize_resolved_geometry,
     SketchRelationOperand,

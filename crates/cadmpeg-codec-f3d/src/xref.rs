@@ -270,6 +270,19 @@ fn parse_component_reference_data(
     Ok(value)
 }
 
+fn reference_data(
+    ctx: &DecodeContext<'_>,
+    scan: &ContainerScan<'_>,
+) -> Result<Option<XrefTable>, CodecError> {
+    validate_component_reference_data(ctx, scan)?;
+    let bytes = match scan.entry_bytes(REDIRECTIONS_ENTRY) {
+        Ok(bytes) => bytes,
+        Err(error @ CodecError::ResourceLimit(_)) => return Err(error),
+        Err(_) => return Ok(None),
+    };
+    parse(ctx, bytes).map(Some)
+}
+
 /// Parse the top-level `RedirectionsStream.dat` table, if present.
 pub(crate) fn decode(
     ctx: &DecodeContext<'_>,
@@ -285,16 +298,9 @@ pub(crate) fn decode_with_scopes(
     scan: &ContainerScan,
     scopes: &[DesignParameterScope],
 ) -> Result<Option<XrefTable>, CodecError> {
-    // Validate the extension document independently of whether a redirections
-    // table is present. Its members are application-defined and retained by
-    // source fidelity, so no field-level semantics are guessed here.
-    validate_component_reference_data(ctx, scan)?;
-    let bytes = match scan.entry_bytes(REDIRECTIONS_ENTRY) {
-        Ok(bytes) => bytes,
-        Err(error @ CodecError::ResourceLimit(_)) => return Err(error),
-        Err(_) => return Ok(None),
+    let Some(mut table) = reference_data(ctx, scan)? else {
+        return Ok(None);
     };
-    let mut table = parse(ctx, bytes)?;
     bind_occurrences(scan, &mut table, scopes)?;
     Ok(Some(table))
 }
@@ -2013,6 +2019,19 @@ fn placement_matrix_and_tail(
     at: usize,
     serializer_magic: Option<u32>,
 ) -> Option<ClosedPlacement> {
+    placement_matrix_and_tail_with(body, at, serializer_magic, decode_rigid_matrix)
+}
+
+/// Reads a 4x4 matrix at an offset and admits or refuses its linear block.
+type MatrixDecoder = fn(&[u8], usize) -> Option<[[f64; 4]; 4]>;
+
+/// [`placement_matrix_and_tail`] with the matrix admission chosen by the caller.
+fn placement_matrix_and_tail_with(
+    body: &[u8],
+    at: usize,
+    serializer_magic: Option<u32>,
+    decode_matrix: MatrixDecoder,
+) -> Option<ClosedPlacement> {
     // The identity marker is absent in the oldest container generation, which
     // always stores the matrix. Both readings start with a zero byte when the
     // marker is present and the matrix follows, so the record end decides.
@@ -2023,7 +2042,7 @@ fn placement_matrix_and_tail(
             match body.get(cursor) {
                 Some(1) => cursor += 1,
                 Some(0) => {
-                    let Some(matrix) = decode_rigid_matrix(body, cursor + 1) else {
+                    let Some(matrix) = decode_matrix(body, cursor + 1) else {
                         continue;
                     };
                     transform = Some(matrix);
@@ -2032,7 +2051,7 @@ fn placement_matrix_and_tail(
                 _ => continue,
             }
         } else {
-            let Some(matrix) = decode_rigid_matrix(body, cursor) else {
+            let Some(matrix) = decode_matrix(body, cursor) else {
                 continue;
             };
             transform = Some(matrix);
@@ -2104,9 +2123,9 @@ const ROOT_COMPONENT_TYPE_GUID: &str = "E03784ED-5E19-4E14-B9F2-3B07017018CD";
 pub(crate) struct ContainedPathPose {
     /// The carrier's own indexed record.
     pub(crate) carrier_record_index: u64,
-    /// The occurrence role of both cross-document elements.
+    /// The occurrence role of the contained occurrence's placement.
     pub(crate) role: String,
-    /// The referenced design's component record that holds the contained occurrence.
+    /// The root component record of the design that the contained occurrence places.
     pub(crate) component_record_index: u64,
     /// The contained occurrence's placement record in the referenced design.
     pub(crate) contained_record_index: u64,
@@ -2120,14 +2139,55 @@ pub(crate) struct ContainedPathPose {
     pub(crate) frame_bytes: Vec<u8>,
 }
 
-/// Parse a component-path carrier whose path is two cross-document elements of
-/// one role (a root component, then an occurrence placement in the referenced
-/// design), this document's occurrence placement, and its local owners.
+/// Parse a component-path carrier of an occurrence inside an external occurrence.
+/// The path is either two cross-document elements of one role (a root
+/// component, then an occurrence placement in the referenced design), this
+/// document's occurrence placement, and its local owners; or the root
+/// component of a design that the referenced design places, this document's
+/// occurrence placement, and that nested occurrence's placement in the
+/// referenced design, with the document placement before or after the root
+/// component.
 pub(crate) fn contained_component_path_pose(
     body: &[u8],
     serializer_magic: Option<u32>,
 ) -> Option<ContainedPathPose> {
     let (members, at) = occurrence_path_members(body)?;
+    let elements =
+        ordered_contained_elements(&members).or_else(|| nested_contained_elements(&members))?;
+    if body.get(at) != Some(&0) {
+        return None;
+    }
+    let ClosedPlacement { transform } = placement_matrix_and_tail(body, at + 1, serializer_magic)?;
+    Some(ContainedPathPose {
+        carrier_record_index: View::u64_le_at(body, 7)?,
+        role: elements.role.to_owned(),
+        component_record_index: elements.component_record_index,
+        contained_record_index: elements.contained_record_index,
+        placement_record_index: elements.placement_record_index,
+        owner_record_indices: elements.owner_record_indices,
+        transform,
+        frame_bytes: body.to_vec(),
+    })
+}
+
+/// Whether a retained contained pose is a carrier of a nested design.
+pub(crate) fn contained_pose_is_nested(pose: &crate::records::xref::XrefContainedPose) -> bool {
+    occurrence_path_members(&pose.frame_bytes)
+        .is_some_and(|(members, _)| nested_contained_elements(&members).is_some())
+}
+
+/// The elements of a contained-occurrence component path.
+struct ContainedElements<'a> {
+    role: &'a str,
+    component_record_index: u64,
+    contained_record_index: u64,
+    placement_record_index: u64,
+    owner_record_indices: Vec<u64>,
+}
+
+/// The path of one role: root component, contained placement, this document's
+/// placement, then its local owners, innermost first.
+fn ordered_contained_elements(members: &PathMembers) -> Option<ContainedElements<'_>> {
     let [(component, _), (contained, _), (placement, _), owners @ ..] = members.as_slice() else {
         return None;
     };
@@ -2138,7 +2198,7 @@ pub(crate) fn contained_component_path_pose(
     let (placement_record_index, None) = placement.local()? else {
         return None;
     };
-    if contained_role != role || placement_record_index == 0 || body.get(at) != Some(&0) {
+    if contained_role != role || placement_record_index == 0 {
         return None;
     }
     let owner_record_indices = owners
@@ -2148,17 +2208,58 @@ pub(crate) fn contained_component_path_pose(
             _ => None,
         })
         .collect::<Option<Vec<_>>>()?;
-    let ClosedPlacement { transform } = placement_matrix_and_tail(body, at + 1, serializer_magic)?;
-    Some(ContainedPathPose {
-        carrier_record_index: View::u64_le_at(body, 7)?,
-        role: role.to_owned(),
+    Some(ContainedElements {
+        role,
         component_record_index,
         contained_record_index,
         placement_record_index,
         owner_record_indices,
-        transform,
-        frame_bytes: body.to_vec(),
     })
+}
+
+/// The path of a nested design: the occurrence placement in the referenced
+/// design comes last, and this document's placement and the root component of
+/// the design it places precede it in either order. The root component and
+/// the placement carry different roles.
+fn nested_contained_elements(members: &PathMembers) -> Option<ContainedElements<'_>> {
+    let [(first, _), (second, _), (contained, _)] = members.as_slice() else {
+        return None;
+    };
+    let (contained_record_index, role) =
+        cross_document_target(contained, OCCURRENCE_PLACEMENT_TYPE_GUID)?;
+    let (component, placement) =
+        [(first, second), (second, first)]
+            .into_iter()
+            .find_map(|(component, placement)| {
+                let component = cross_document_target(component, ROOT_COMPONENT_TYPE_GUID)?;
+                let placement = typed_local_placement(placement)?;
+                Some((component, placement))
+            })?;
+    let (component_record_index, component_role) = component;
+    if component_role == role {
+        return None;
+    }
+    Some(ContainedElements {
+        role,
+        component_record_index,
+        contained_record_index,
+        placement_record_index: placement,
+        owner_record_indices: Vec::new(),
+    })
+}
+
+/// The target of a same-document occurrence-placement element, with or
+/// without its inline type.
+fn typed_local_placement(reference: &Reference<String, String>) -> Option<u64> {
+    match reference.local()? {
+        (target, None) if target != 0 => Some(target),
+        (target, Some(guid))
+            if target != 0 && guid.eq_ignore_ascii_case(OCCURRENCE_PLACEMENT_TYPE_GUID) =>
+        {
+            Some(target)
+        }
+        _ => None,
+    }
 }
 
 /// The target and link name of a cross-document element of one target type.
@@ -2169,11 +2270,16 @@ fn cross_document_target<'a>(
     match reference {
         Reference::CrossDocument {
             target,
-            inline_type_guid: None,
+            inline_type_guid,
             target_type_guid,
             link_name,
             ..
-        } if *target != 0 && target_type_guid.eq_ignore_ascii_case(type_guid) => {
+        } if *target != 0
+            && target_type_guid.eq_ignore_ascii_case(type_guid)
+            && inline_type_guid
+                .as_deref()
+                .is_none_or(|inline| inline.eq_ignore_ascii_case(target_type_guid)) =>
+        {
             Some((*target, link_name.as_str()))
         }
         _ => None,
@@ -2347,6 +2453,89 @@ pub(crate) fn local_component_path_poses(
             .filter_map(|body| local_component_path_pose(body, serializer_magic))
             .collect(),
     )
+}
+
+/// A component-path carrier whose path elements are all local records.
+#[derive(Debug, Clone, PartialEq)]
+pub(crate) struct ComponentPathCarrier {
+    /// The carrier's own indexed record.
+    pub(crate) carrier_record_index: u64,
+    /// Record index and instance discriminator of each element, in path order.
+    pub(crate) elements: Vec<(u64, u32)>,
+    /// `None` is the stored identity form.
+    pub(crate) transform: Option<[[f64; 4]; 4]>,
+    /// The complete carrier record, header included.
+    pub(crate) frame_bytes: Vec<u8>,
+}
+
+/// Parse a component-path carrier of any length whose elements are local
+/// records without an inline type. The matrix is orthonormal; determinant
+/// `-1` states a mirrored placement.
+pub(crate) fn component_path_carrier(
+    body: &[u8],
+    serializer_magic: Option<u32>,
+) -> Option<ComponentPathCarrier> {
+    let (members, at) = occurrence_path_members(body)?;
+    let mut elements = Vec::with_capacity(members.len());
+    for (element, discriminator) in &members {
+        let (record_index, None) = element.local()? else {
+            return None;
+        };
+        if record_index == 0 {
+            return None;
+        }
+        elements.push((record_index, *discriminator));
+    }
+    if body.get(at) != Some(&0) {
+        return None;
+    }
+    let ClosedPlacement { transform } =
+        placement_matrix_and_tail_with(body, at + 1, serializer_magic, decode_orthonormal_matrix)?;
+    Some(ComponentPathCarrier {
+        carrier_record_index: View::u64_le_at(body, 7)?,
+        elements,
+        transform,
+        frame_bytes: body.to_vec(),
+    })
+}
+
+/// The component-path carriers of one Design stream, from the records its
+/// type table registers as component paths.
+pub(crate) fn component_path_carriers(
+    bytes: &[u8],
+    meta: &crate::metastream::MetaStream,
+    serializer_magic: Option<u32>,
+) -> Result<Vec<ComponentPathCarrier>, CodecError> {
+    Ok(
+        typed_records(bytes, meta, "CommonData", COMPONENT_PATH_TYPE_GUID)?
+            .iter()
+            .filter_map(|record| bytes.get(record.offset..record.end))
+            .filter_map(|body| component_path_carrier(body, serializer_magic))
+            .collect(),
+    )
+}
+
+/// Re-read a retained component-path record through the carrier parser and
+/// require it to state the retained path and matrix.
+pub(crate) fn component_path_matches(
+    path: &crate::records::component_path::DesignComponentPath,
+) -> bool {
+    [None, Some(crate::metastream::MODERN_SERIALIZER_MAGIC)]
+        .into_iter()
+        .filter_map(|magic| component_path_carrier(&path.frame_bytes, magic))
+        .any(|carrier| {
+            carrier.carrier_record_index == path.carrier_record_index
+                && carrier.elements.len() == path.elements.len()
+                && carrier.elements.iter().zip(&path.elements).all(
+                    |((record, discriminator), element)| {
+                        *record == element.record_index && *discriminator == element.discriminator
+                    },
+                )
+                && carrier.transform
+                    == path
+                        .transform
+                        .map(crate::records::component_path::ComponentPathTransform::rows)
+        })
 }
 
 /// Re-read a local occurrence's retained current pose through the carrier
@@ -2653,6 +2842,21 @@ fn placement_tail(body: &[u8], mut at: usize, serializer_magic: Option<u32>) -> 
     take_reference(body, &mut at)?;
     take_reference(body, &mut at)?;
     (at == body.len()).then_some(())
+}
+
+/// A matrix whose linear block is orthonormal with determinant `1` or `-1`.
+fn decode_orthonormal_matrix(bytes: &[u8], at: usize) -> Option<[[f64; 4]; 4]> {
+    let mut view = View::over_retained(bytes);
+    view.seek(at)?;
+    let mut rows = [[0.0; 4]; 4];
+    for row in &mut rows {
+        for value in row {
+            *value = view.f64_le()?;
+        }
+    }
+    crate::records::component_path::ComponentPathTransform::try_from(rows)
+        .ok()
+        .map(crate::records::component_path::ComponentPathTransform::rows)
 }
 
 fn decode_rigid_matrix(bytes: &[u8], at: usize) -> Option<[[f64; 4]; 4]> {

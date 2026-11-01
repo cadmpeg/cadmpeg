@@ -113,3 +113,32 @@ fn a_partial_subset_keeps_its_mesh_and_binds_its_material() {
     let second = decode(&written);
     assert_eq!(group_bindings(&second), group_bindings(&first), "{written}");
 }
+
+/// A `face` subset of a `BrepArray` binds its material to the faces it
+/// selects, and the faces keep the material through a round trip.
+#[test]
+fn a_face_subset_of_a_brep_array_binds_its_faces() {
+    use cadmpeg_ir::appearance::AppearanceTarget;
+    let text = std::fs::read_to_string(format!(
+        "{}/tests/golden/fixtures/brep_array_box.usda",
+        env!("CARGO_MANIFEST_DIR")
+    ))
+    .expect("fixture");
+    let first = crate::test_support::decode(&text);
+    let faces = |result: &cadmpeg_ir::codec::DecodeResult| {
+        result
+            .ir()
+            .model
+            .appearance_bindings
+            .iter()
+            .filter(|binding| matches!(binding.target, AppearanceTarget::Face(_)))
+            .count()
+    };
+    assert_eq!(faces(&first), 6);
+    let (written, _) = crate::test_support::encode(first.ir());
+    assert!(
+        written.contains("uniform token elementType = \"face\""),
+        "{written}"
+    );
+    assert_eq!(faces(&crate::test_support::decode(&written)), 6);
+}

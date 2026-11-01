@@ -22,6 +22,7 @@ pub mod golden;
 pub mod native_serialization;
 pub mod polyhedron;
 pub mod refusal;
+pub mod revolve;
 pub mod roundtrip;
 pub mod solids;
 pub mod unknown_keys;

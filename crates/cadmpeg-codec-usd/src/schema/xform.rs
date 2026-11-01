@@ -7,6 +7,7 @@
 
 use crate::schema::{attribute, tokens, Issues};
 use crate::stage::Prim;
+use cadmpeg_ir::math::portable::Portable;
 
 /// An affine map as three rows `[a, b, c, t]` acting on column vectors.
 pub(crate) type Affine = [[f64; 4]; 3];
@@ -102,7 +103,7 @@ fn scaling([x, y, z]: [f64; 3]) -> Affine {
 
 /// Rotation by `degrees` about axis `axis` (0, 1, 2 for X, Y, Z).
 fn rotation(axis: usize, degrees: f64) -> Affine {
-    let (sin, cos) = degrees.to_radians().sin_cos();
+    let (sin, cos) = degrees.to_radians().portable_sin_cos();
     match axis {
         0 => [
             [1.0, 0.0, 0.0, 0.0],

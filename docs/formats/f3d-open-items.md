@@ -54,11 +54,11 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 ### DR-12. Placement `refType` values
 
-**Question.** What construction does each `refType` value of the placement class select, and how does a nonzero `extraOffset` alter that construction?
+**Question.** What construction does each `refType` value of the placement class select, how does a nonzero `extraOffset` alter that construction, and what does the version-16 `periodicFaceMode` select?
 
 **Known.** `f3d.md` §3.1 "A `Sketch` scope joined" gives the member order, the version gates, the identity-marked matrix, and the unmarked version-4 matrix. The independent `extraOffset` reference reaches a scalar owner linked to an `ExtraOffset` length parameter. `refType` is a u32 whose value does not change the member sequence. The scalar-role table defines the ordered `values` names and direct-reference shapes. Owner-scope references remain independent of the direct geometry slots, and the solved matrix does not select the construction rule. Code `15` has a `RotateAngle` scalar and two face-selection lineages; those operands do not distinguish the exact plane-construction subtype.
 
-**Need.** We must know which references a given `refType` requires to write a placement that Fusion re-solves rather than accepts as stored. A controlled nonzero `ExtraOffset` must establish its direction and effect for each supported construction. Nonzero axis-state and direction-control bytes also require a solved-frame orientation rule. An offset-plane definition also requires the scope operand role that selects its reference plane or planar face; a solved matrix and an `AlongDistance` parameter do not assign that role.
+**Need.** We must know which references a given `refType` requires to write a placement that Fusion re-solves rather than accepts as stored. A controlled nonzero `ExtraOffset` must establish its direction and effect for each supported construction. Nonzero axis-state bytes, version-15 and earlier direction controls, and version-16 periodic-face modes require a solved-frame orientation rule. An offset-plane definition also requires the scope operand role that selects its reference plane or planar face; a solved matrix and an `AlongDistance` parameter do not assign that role.
 
 ### DR-14. `SurfacePatch` boundary-side ordinal mapping
 
@@ -268,7 +268,7 @@ the native feature when a fixed lane carries a symmetric distance.
 
 **Question.** What does the flag byte after the `variant` byte of a parameter owner store?
 
-**Known.** `f3d.md` §3.1 "Every dimension or feature-input parameter stores `owner_record_index`" gives the byte. It is zero in almost every owner. It is one only in scalar owners whose `variant` is one, and one design stores variant one with flag zero.
+**Known.** `f3d.md` §3.1 "A dimension or feature-input parameter without the null owner stores `owner_record_index`" gives the byte. It is zero in almost every owner. It is one only in scalar owners whose `variant` is one, and one design stores variant one with flag zero.
 
 **Need.** The flag can mark a driven or suppressed parameter. A design that toggles one dimension between driving and driven, saved in each state, fixes the meaning.
 
@@ -342,7 +342,7 @@ the native feature when a fixed lane carries a symmetric distance.
 
 **Question.** What do the u32 and u64 fields in the fourteen-byte persistent selection tail select?
 
-**Known.** The 204-byte member retains the complete local, asset, and context identity and a present optional slot. Its extra bytes are `00`, u32 `2`, u64 `1`, and `00`. A following Design header or the stream-end boundary terminates the tail. The frame extent distinguishes this form from the 190-byte member without a new identity field.
+**Known.** The 204-byte member retains the complete local, asset, and context identity and a present optional slot. Its extra bytes are `00`, u32 `2`, u64 `1`, and `00`. A following Design header or the stream-end boundary terminates the tail. The frame extent distinguishes this form from the 190-byte member without a new identity field. A further member form follows the context identity with u32 `2`, eleven zero bytes, and a run of u32 `255` values up to the next Design header; its owning Extrude selection group then has no admitted member.
 
 **Need.** Independently varied tail fields and an unchanged selected entity must establish each field's meaning before the grammar admits other values.
 
@@ -360,7 +360,7 @@ the native feature when a fixed lane carries a symmetric distance.
 
 **Question.** Which radius set does a role-`0x0000001000000000` face group use when a Fillet scope has more than one radius set?
 
-**Known.** `f3d.md` §3.1 "A Fillet selection set can store its face selections" defines the face group and its radius when the scope has one edge group, one face group, and one constant radius. With one radius per group, `f3d.md` §3.1 "Within a scope of the Fillet family" pairs groups and radii in scope-reference order, and that pairing gives the face group the radius at its position. Groups and parameters store no assignment cross-reference.
+**Known.** `f3d.md` §3.1 "A Fillet selection set can store its face selections" defines the face group and its radius when the scope has one edge group, one face group, and one constant radius. With one radius per group, `f3d.md` §3.1 "Within a scope of the Fillet family" pairs groups and radii in scope-reference order, and that pairing gives the face group the radius at its position. Groups and parameters store no assignment cross-reference. A scope with several role-`0x0000000800000000` edge groups, one or more role-`0x0000001000000000` face groups, and one radius and tangency weight per edge group pairs the edge groups with the radii in scope order; a face group then has no pairing, because the groups outnumber the radii.
 
 **Need.** The scope-order pairing must be confirmed or replaced for face groups before a Fillet with several selection sets and face selections transfers its radii as authored.
 
@@ -384,15 +384,59 @@ the native feature when a fixed lane carries a symmetric distance.
 
 **Note.** The fixed native occurrence record retains the discriminator value without a component-path binding.
 
+### DR-130. Construction-operand group closing flag
+
+**Question.** What does closing flag `1` in the tail flag block of a construction-operand group select?
+
+**Known.** `f3d.md` §3.1 "Every `Extrude`, `Extrusion`, `Fillet`" defines the group tail. The flag block ends with the closing flag after `variant`. The closing flag is `0` or `1`, and both values occur in the three-byte block `[1, 1, closing_flag]` of existing-body groups in Extrude scopes. The role, members, and references of the group are the same for both values.
+
+**Need.** A writer that generates a group must choose the closing flag, and a reader must know whether value `1` changes the group's operation semantics.
+
 ### DR-104. ACT component-link root selection
 
 **Question.** Can an ACT segment contain only non-root component links, or does another reference identify its document-root link?
 
-**Known.** `f3d.md` §3.1 "An **ACT component link** payload" defines the complete component-link frame. The tracked-entity field is a record reference. A link can close under this frame without its tracked-entity reference having value `3`. Exact frame closure does not establish the link's document-root role.
+**Known.** `f3d.md` §3.1 "An **ACT component link** payload" defines the complete component-link frame. The tracked-entity field is a record reference. A link can close under this frame without its tracked-entity reference having value `3`. Exact frame closure does not establish the link's document-root role. An ACT stream can hold one link that tracks a component-type entity other than `3` while the Design component type has many entities and no entity `3`.
 
-**Need.** A join between the ACT references and the Design root component must distinguish an absent root link from a root link selected by another reference. The join must establish whether the tracked-entity record value is a root selector or only a target identity.
+**Need.** A join between the ACT references and the Design root component must name the root among several component-type entities when a stream holds more than one link and the component type has no entity `3`.
 
 **Conflict.** No complete root-selection rule is defined.
+
+### DR-145. Extrude selection member scope tail
+
+**Question.** What do the f64, the u32 with value `0x104`, and the two chain references in the 50-byte scope tail of an Extrude selection member mean?
+
+**Known.** The tail follows the 190-byte member frame when the optional slot is absent. The u32 has value `0x104`. The two chain references name indexed records of the same segment that follow the member. The closing marked reference names the owning Extrude scope.
+
+**Need.** Files that vary the Extrude options and the selected profile, to find which option writes the tail and what the chain records carry.
+
+**Conflict.** None.
+
+**Note.** None.
+
+### DR-154. Extended Extrude selection member tail
+
+**Question.** What do the bytes between the 190-byte frame of an Extrude selection member and the next indexed record header carry when the tail is neither the fourteen-byte nor the fifty-byte form?
+
+**Known.** The tail is 1 to 1024 bytes long. Stored tails include five zero bytes; a UTF-16 fragment of a UUID followed by fourteen bytes; zero bytes followed by u32 values and marked references of the same segment; a second length-prefixed UUID; an unlengthed indexed record; and a run of zero bytes to the stream end. The member ends at the next indexed record header in every form.
+
+**Need.** Files that vary the Extrude options and selected profile, to find which option writes each tail and what its fields name.
+
+**Conflict.** None.
+
+**Note.** None.
+
+### DR-165. Composition of multiple Sketch-profile operands
+
+**Question.** How does one Extrude profile group combine Sketch-profile operands from different Sketches when their nested selections use region and bounded-face forms?
+
+**Known.** Each member uses the Sketch-profile frame in `f3d.md` §3.1. Each frame stores an asset UUID and a decimal Sketch entity suffix. Its nested selection can carry counted profile regions or a bounded-face recipe. The construction group preserves member order.
+
+**Need.** A rule that combines the member selections and their Sketch frames into the complete extrusion profile.
+
+**Conflict.** None.
+
+**Note.** The decoder retains each profile operand in the native scope and emits `feature.extrude-profile-group-native` for each scope with multiple Sketch-profile operands.
 
 ## 2. External references
 
@@ -543,11 +587,11 @@ the native feature when a fixed lane carries a symmetric distance.
 
 ### DR-116. Joint-placed identity occurrences of inserted designs
 
-**Question.** Which native relation binds a joint to each inserted-design occurrence that stores the identity, and in which frame does that joint define the solved pose?
+**Question.** Which native relation binds a joint to an inserted-design occurrence that stores the identity and has no component-path carrier that states its pose, and in which frame does that joint define the solved pose?
 
-**Known.** `f3d.md` §1.4 "The matrix is a proper rigid motion." defines stored identity placement and the component-path world-pose carriers. A joint names an occurrence directly through an occurrence container, or names an inserted design through an external operand container, leaving the neutral tie unresolved; each distinct external document then accounts for at most one unnamed identity occurrence. The decoder counts these occurrences, reports `assembly.joint-placed-occurrence-unsolved`, and places them at the identity with the joint unsolved.
+**Known.** `f3d.md` §1.4 "The matrix is a proper rigid motion." defines stored identity placement and the component-path world-pose carriers. A joint names an occurrence directly through an occurrence container, or names an inserted design through an external operand container, leaving the neutral tie unresolved; each distinct external document then accounts for at most one unnamed identity occurrence. The decoder counts these occurrences, reports `assembly.joint-placed-occurrence-unsolved`, and places them at the identity with the joint unsolved. In one public assembly archive, eight root occurrences have carriers of a nested design, three of them store the identity placement, and the decoder places all eight from the carriers and removes them from the count. The root `As-built` scopes with a root operand path name none of those eight occurrence identities. A fourth identity occurrence has no carrier; the occurrences inside it keep one world pose in its insertion scope and in every captured position.
 
-**Need.** An inserted design whose occurrence stores the identity and whose joint solution is known must name the binding relation (direct occurrence reference or external-document container) and the frame of the solved pose, before the decoder can place these occurrences from their joints.
+**Need.** An inserted design whose occurrence stores the identity, has no component-path carrier, and is placed by a joint, with the solved pose known, must name the binding relation (direct occurrence reference or external-document container) and the frame of the solved pose, before the decoder can place these occurrences from their joints.
 
 **Note.** DR-113 covers solved placement without a bound assembly operand generally; this joint-to-occurrence binding is a separate question.
 
@@ -609,7 +653,7 @@ the native feature when a fixed lane carries a symmetric distance.
 
 **Need.** A producer-generated radial TSM must retain a deleted domain slot at `p` and map a live element with raw slot `q > p`. The raw-slot prediction is `q`; the compact-index prediction after one deletion is `q-1`. Saving must preserve the deleted slot to separate these predictions. A controlled radial export with a nondefault sweep must establish the sweep-to-angle rule.
 
-### DR-109. EdgeFlange corner controls
+### DR-160. EdgeFlange corner controls
 
 **Question.** Which fields select corner relief, miter, and the corner gap for adjacent flange edges?
 
@@ -621,7 +665,7 @@ the native feature when a fixed lane carries a symmetric distance.
 
 **Note.** The fixed edge list does not identify an independent corner-control field.
 
-### DR-110. EdgeFlange scope radius control
+### DR-161. EdgeFlange scope radius control
 
 **Question.** What physical quantity does the positive f64 scope radius control represent?
 
@@ -678,6 +722,30 @@ the native feature when a fixed lane carries a symmetric distance.
 **Conflict.** None.
 
 **Note.** Keep controls and extended selections native. A neutral Wrap requires a proven effect, selected profile, target face, and placement. The existing Wrap operation has no independent horizontal, vertical, or rotation controls.
+
+### DR-120. Align operand roles and motion
+
+**Question.** Which referenced constructions identify the moved objects, the source and target frames, and the direction of the resulting motion? What do the prefix codes and the constructor codes and marked words control? What do the matrix block and separate scalar represent, and which units apply?
+
+**Known.** The Align prefix contains two references, an unsigned code, and a zero GUID. The references join to the ordered scope table. The compact and extended forms differ by one u32 word of value 1. The role of this word is not defined. The constructor contains eight marked words, five codes, sixteen matrix scalars, and one separate scalar. Its two scope back-references identify its owner, but do not assign a moved body or a motion relation.
+
+**Need.** Controlled Align exports that change object selection, source and target frames, reversal, and angle independently. F22b supplies a body-alignment recipe.
+
+**Conflict.** A referenced solved frame alone does not establish the motion applied to a selected body.
+
+**Note.** Keep the operation native until each operand role and motion direction has a byte-defined rule.
+
+### DR-144. Flag bytes of the discriminated parameter expression trailer
+
+**Question.** What do the first four of the five flag bytes in the nine-byte expression trailer of a discriminated parameter frame state?
+
+**Known.** The trailer is four zero bytes and five flag bytes, each `0` or `1`. The last flag byte is `1` exactly for a document parameter. Owned parameters set the first, second, or third flag byte, alone or the second and third together. Parameters with a null owner reference set the fourth flag byte, alone or with the first or third. Every frame with a set flag byte has the same remaining grammar as a frame with zero flag bytes.
+
+**Need.** Files that change one parameter property at a time, such as favorite state, comment, or the deletion of the owning dimension, and save the document after each change.
+
+**Conflict.** None.
+
+**Note.** The decoder admits the flag bytes and does not project them.
 
 ### DR-126. Move transform envelopes with leading references
 
@@ -738,3 +806,147 @@ the native feature when a fixed lane carries a symmetric distance.
 **Conflict.** None.
 
 **Note.** A scope outside the 1295-byte form, or with a nonzero offset owner, remains native with `feature.box-primitive-unresolved`.
+
+### DR-147. Region extent of a tracking-path Extrude selection
+
+**Question.** Which Sketch region does an Extrude selection select when its member follows a tracking path?
+
+**Known.** The path stores the primary curve, a one-based fragment ordinal, the fragment count, and the two curves bounding the fragment. The carrier lane is `2` or `3`. The selected fragment can border two bounded Sketch faces.
+
+**Need.** Controlled selections of one region, of two adjacent regions, and of a region with an enclosed island, each in a Sketch whose curves cross, to bind the path to the selected side and to the filled island. CAD Fixture Recipes F29a-F29d select each region of two crossing circles and the union of two of them.
+
+**Conflict.** None.
+
+**Note.** A path selection retains its native selection and loss. The selected region can be the union of several atomic arrangement faces, which no single face proves.
+
+### DR-146. Later ordinal in a fixed identity occurrence
+
+**Question.** What placement does a fixed untyped occurrence with identity flag `1` and ordinal greater than one select?
+
+**Known.** Two standard 229-byte frames store ordinal `2` and identity flag `1`. Attributed identity frames retain later ordinals.
+
+**Need.** Independent files that vary the occurrence ordinal and placement separately.
+
+**Conflict.** None.
+
+**Note.** Emit `assembly.local-occurrence-identity-ordinal-unresolved` and keep the occurrence out of neutral product structure.
+
+### DR-142. Thread construction option bytes
+
+**Question.** What do the first and second bytes of the Thread construction marker, the pitch marker, and the zero bytes before the trailer `01` select?
+
+**Known.** The construction marker first byte is `0` or `1` and its second byte is `1` or `2`. The pitch marker is `0` or `1`. The admitted forms fix each combination they accept. In the standard-prefix compact-marker form, the run before the trailer `01` is two or three zero bytes. Every byte in that run is zero in each Thread scope that carries it.
+
+**Need.** Thread scopes saved with one dialog option changed at a time, and Thread scopes whose marker combinations no admitted form accepts.
+
+**Conflict.** None.
+
+**Note.** A scope whose marker combination no admitted form accepts stays an unresolved Thread operation.
+
+### DR-143. Thread modeled state
+
+**Question.** Which stored field, or which result-topology change, marks a Thread as modeled geometry instead of an annotation?
+
+**Known.** The scope stores the designation, nominal-size text, profile name, and four physical scalars. The extended standard trailer links the length and offset owners. The extended compact trailer also links its owning Hole. Resolved Thread transitions replace existing face revisions.
+
+**Need.** One Thread saved with modeled geometry and the same Thread with it off, with the Design stream and the ASM history of both. CAD Fixture Recipes F17a and F17b specify this pair.
+
+**Conflict.** None.
+
+**Note.** The neutral thread leaves `modeled` absent.
+
+### DR-148. Target references in populated configuration tables
+
+**Question.** How does an authored configuration table encode its driven parameter and feature targets, row identities, and cell values?
+
+**Known.** The table entries in seven public parametric hardware designs and 37 recipe uploads contain the JSON object `{}`. Each entry has zero rows and cells. The Design `BulkStream` contains the table serializer trigger and separate `DesignConfigurationRoot` records. The existing configuration decoder admits named JSON variant objects and joins parameter override names to unique neutral parameter identities. Design parameter records carry their own indexed identities in the Design `BulkStream`.
+
+**Need.** Legally available designs with at least two authored configurations, a changed parameter cell, and a changed feature state, with the corresponding table entries and Design records.
+
+**Conflict.** None.
+
+**Note.** Unassigned JSON members retain their native values and emit `configuration.member-unassigned`. The neutral configuration arena supports parameter overrides and evaluated feature states.
+
+### DR-149. Text-bearing document parameter prefix
+
+**Question.** What fields delimit the document parameter prefix that contains an additional text label before its source ordinal?
+
+**Known.** Two user-parameter frames in the public parametric standoff design store text labels before the ordinal, null owner, expression, source kind, unit, and name. Their tails reference the registered parameter-tail type. The fixed discriminated-prefix reader refuses the frames and reports `parameter.record-unparsed`.
+
+**Need.** Independent designs with labeled user parameters and controlled changes to the label, source name, and expression.
+
+**Conflict.** None.
+
+**Note.** The source archive retains the complete frames.
+
+### DR-152. Mirror selection run with role 0x10
+
+**Question.** What do the members of a Mirror scope's role-`0x10` group select?
+
+**Known.** `f3d.md` §3.1 "A Design Mirror scope" lists the seed and plane groups. Mirror scopes in the public native-assembly drive-unit design also store a counted role-`0x10` group whose members are class-256 persistent selection records. The same scopes store a role-`0x5` plane group with one bounded-face recipe member. These scopes do not decode a mirror construction.
+
+**Need.** Mirror features with controlled changes to the selected objects, to find which seed kind the group carries and how it relates to the seed group.
+
+**Conflict.** None.
+
+**Note.** None.
+
+### DR-153. Instance discriminator of a component path
+
+**Question.** How does the u32 instance discriminator of a local component path select one expanded instance when several instances of the target have the listed containing carriers?
+
+**Known.** No two component-path records of a Design stream share a record and a discriminator. A path that lists the full chain of containing carriers names one instance. A path that lists fewer carriers names every instance below those carriers. In one public assembly, 107 of 1241 local paths name two or more instances this way. For one target with 16 expanded instances and 16 records, the target discriminators are 0 to 15 once each, and the order of the target discriminators equals the order of the Component element discriminators. No tested order of the expanded instances reproduces the target discriminators: ordering by the records from the outermost carrier inward matches for 46 of 77 targets.
+
+**Need.** Designs with a repeated holder of known instance order, made by copy and by pattern, with the component-path records before and after reordering the instances.
+
+**Conflict.** None.
+
+**Note.** A path that names more than one instance is placed only when the layout-consistency inference in `docs/format-support.md` selects exactly one assignment; it is then reported as `assembly.local-occurrence-path-pose-inferred`. Otherwise it is reported as `assembly.local-occurrence-path-pose-unresolved`.
+
+### DR-150. History namespace of copied feature scopes
+
+**Question.** Which native relation binds a parameter scope to its ASM history when several histories contain the same endpoint pair and the scope has no unique body-map or whole-body recipe binding?
+
+**Known.** Current and preceding state identities are local to one ASM history. Independent history graphs can contain the same endpoint pair and complete predecessor chain. A result body-map carrier or whole-body recipe candidate faces can bind a scope to one BREP basename. Copied feature groups can retain the same endpoint pairs in separate histories.
+
+**Need.** The native reference chain from each copied scope to its history or BREP basename. Files that change the copied scope's source component while they retain its endpoint pair.
+
+**Conflict.** None.
+
+**Note.** An ambiguous interval retains its native scope, ordered references, state identities, and candidate histories with `feature.output-state-chain-unbound`.
+
+### DR-151. Result ownership of copied feature scopes
+
+**Question.** How does a copied feature scope relate its construction component to the product definition of its result bodies?
+
+**Known.** A scope has a component owner. Its ASM transition interval identifies affected body slots in one BREP namespace. An affected active body can belong to a different product definition from the scope's component owner.
+
+**Need.** A native relation that assigns the result bodies to the construction scope across the component boundary. Files that change the copied feature's component and preserve its construction references.
+
+**Conflict.** None.
+
+**Note.** Result body links outside the scope's product definition remain native with `scope.output-owner-mismatch`.
+
+### DR-162. Component paths with two nested occurrence placements
+
+**Question.** What pose does a component-path record state when its path holds a root component, a cross-document occurrence placement of the same role, this document's occurrence placement, and a second cross-document occurrence placement of the external occurrence's role?
+
+**Known.** Such records store a rigid matrix after the path, like the records `f3d.md` §1.4 defines. The local element can state the occurrence-placement type inline. A public assembly archive stores 38 of them for two inserted designs. The decoder reads none of them.
+
+**Need.** Records of a design that nests a design two levels deep with one occurrence moved at each level, to find whether the matrix is the world pose of the innermost occurrence or of the middle one.
+
+**Conflict.** None.
+
+**Note.** None.
+
+### DR-164. Primary edge-recipe references with several face fragments
+
+**Question.** How does a standard edge recipe select among several persistent face fragments for one primary-side reference?
+
+**Known.** The first side carries one-based prefix-reference ordinals. A prefix reference can bind to several preceding faces through persistent token and Design-reference tags. Each face has an ordered loop and coedge boundary. The common-boundary rule admits references that each bind to one face and whose boundaries share exactly one live edge.
+
+**Need.** The selector rule that distinguishes face fragments and selects an edge when the referenced boundaries share several edges. Controlled recipe changes that preserve the prefix references and vary the selected fragment.
+
+**Conflict.** None.
+
+**Note.** A non-unique or incomplete reference proof retains its native operand identity and reports `history.edge-midpoints-unresolved` when the feature requires edge samples.

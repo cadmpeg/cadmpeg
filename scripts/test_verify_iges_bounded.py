@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import importlib.util
 import json
+import os
 import stat
 import sys
 import tempfile
@@ -36,9 +37,14 @@ class DecodeRefusalReportTests(unittest.TestCase):
         executable = Path(self.directory.name) / "fake-cadmpeg"
         executable.write_text("#!/usr/bin/env python3\n" + source, encoding="utf-8")
         executable.chmod(stat.S_IRUSR | stat.S_IWUSR | stat.S_IXUSR)
-        return executable
+        if os.name != "nt":
+            return executable
+        # Windows starts no program from a shebang line.
+        launcher = executable.with_suffix(".cmd")
+        launcher.write_text(f'@"{sys.executable}" "{executable}" %*\n', encoding="utf-8")
+        return launcher
 
-    def test_accepts_v11_decode_refusal(self) -> None:
+    def test_accepts_current_decode_refusal(self) -> None:
         refusal = {
             "stage": "decode",
             "code": "decode_failed",
@@ -46,7 +52,7 @@ class DecodeRefusalReportTests(unittest.TestCase):
         }
         self.write(
             {
-                "ir_version": "9",
+                "ir_version": "10",
                 "command": "dump",
                 "status": "refused",
                 "refusal": refusal,
@@ -61,7 +67,7 @@ class DecodeRefusalReportTests(unittest.TestCase):
     def test_rejects_success_report_as_refusal(self) -> None:
         self.write(
             {
-                "ir_version": "9",
+                "ir_version": "10",
                 "command": "dump",
                 "status": "ok",
                 "refusal": None,
@@ -74,7 +80,7 @@ class DecodeRefusalReportTests(unittest.TestCase):
         self.assertEqual(error, "decode refusal report status is not refused")
 
     def test_rejects_unsupported_refusal_version(self) -> None:
-        for version in ("5", "8", "10", "11", "37"):
+        for version in ("5", "8", "9", "11", "37"):
             with self.subTest(version=version):
                 self.write(
                     {
@@ -92,7 +98,7 @@ class DecodeRefusalReportTests(unittest.TestCase):
                 actual, error = MODULE.load_decode_refusal(self.path)
 
                 self.assertIsNone(actual)
-                self.assertEqual(error, 'decode refusal report does not use ir_version "9"')
+                self.assertEqual(error, 'decode refusal report does not use ir_version "10"')
 
     def test_gate_rejects_unclassified_decode_exit(self) -> None:
         input_path = Path(self.directory.name) / "input.igs"
@@ -123,7 +129,7 @@ import sys
 report = pathlib.Path(sys.argv[sys.argv.index('--report') + 1])
 assert sys.argv[1] == 'dump'
 report.write_text(json.dumps({
-    'ir_version': '9',
+    'ir_version': '10',
     'command': 'dump',
     'status': 'refused',
     'refusal': {

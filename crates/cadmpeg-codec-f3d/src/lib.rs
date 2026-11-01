@@ -51,10 +51,10 @@
 //! // Edit supported fields in `ir`.
 //! let mut output = File::create("part-edited.f3d")?;
 //! F3dCodec
-//!     .plan(cadmpeg_ir::codec::write::EncodeInput {
-//!         ir: &ir,
-//!         fidelity: Some(&fidelity),
-//!     }, TargetRequest::Inherit)?
+//!     .plan(
+//!         cadmpeg_ir::codec::write::EncodeInput::new(&ir, Some(&fidelity)),
+//!         TargetRequest::Inherit,
+//!     )?
 //!     .write_to(&mut output)?;
 //! # Ok(())
 //! # }
@@ -93,6 +93,10 @@ mod decode;
 mod design;
 mod dialect;
 mod f3z;
+pub use f3z::{
+    observe_f3z_members, F3zDecodedMember, F3zMember, F3zMemberKind, F3zMemberObserver, F3zPhase,
+    F3zSession,
+};
 mod history;
 mod history_records;
 mod ids;
@@ -111,8 +115,6 @@ mod validate;
 mod writer;
 mod xref;
 mod zip_write;
-
-pub use f3z::{observe_f3z_members, F3zMemberObserver};
 
 use cadmpeg_core::bytes::contains;
 use cadmpeg_core::decode::{DecodeContext, DecodeDepth, View};

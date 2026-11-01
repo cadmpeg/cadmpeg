@@ -17,6 +17,7 @@ use crate::records::feature::assembly_features::{
 };
 
 use crate::layout::local_component_occurrence_attributed_prefix as attributed_prefix;
+use crate::layout::local_component_occurrence_empty_attributes_prefix as empty_prefix;
 use crate::layout::local_component_occurrence_identity_tail as identity_tail;
 use crate::layout::local_component_occurrence_matrix_tail as matrix_tail;
 use crate::layout::local_component_occurrence_prefix as prefix;
@@ -42,8 +43,11 @@ const MARKED_U64: usize = 9;
 pub(crate) struct DecodedComponentOccurrences {
     pub(crate) occurrences: Vec<DesignComponentOccurrence>,
     pub(crate) superseded: usize,
+    pub(crate) losses: Vec<cadmpeg_ir::report::loss::LossNote>,
     /// Occurrences that two or more component-path carriers name.
     pub(crate) ambiguous_current_poses: usize,
+    /// Component-path carriers whose elements are all local records.
+    pub(crate) paths: Vec<crate::records::component_path::DesignComponentPath>,
 }
 
 /// Decode exact local component-occurrence records from every Design bulk stream.
@@ -52,7 +56,9 @@ pub(crate) fn decode_component_occurrences(
 ) -> Result<DecodedComponentOccurrences, CodecError> {
     let mut occurrences = Vec::new();
     let mut superseded = 0;
+    let mut losses = Vec::new();
     let mut ambiguous_current_poses = 0;
+    let mut paths = Vec::new();
     for entry in scan
         .entries
         .iter()
@@ -60,7 +66,7 @@ pub(crate) fn decode_component_occurrences(
     {
         let bytes = scan.entry_bytes(&entry.name)?;
         let scope = crate::ids::native_scope(&entry.name);
-        let (frames, typed_frames, poses) =
+        let (frames, typed_frames, poses, path_carriers) =
             if let Some(meta) = super::meta::metadata_for_bulk_stream(scan, &entry.name)? {
                 let meta_name = format!(
                     "{}MetaStream.dat",
@@ -75,9 +81,10 @@ pub(crate) fn decode_component_occurrences(
                     crate::metastream::primary_record_frames(&meta, bytes.len())?,
                     occurrence_frames(bytes, &meta)?,
                     crate::xref::local_component_path_poses(bytes, &meta, Some(magic))?,
+                    crate::xref::component_path_carriers(bytes, &meta, Some(magic))?,
                 )
             } else {
-                (Vec::new(), Vec::new(), Vec::new())
+                (Vec::new(), Vec::new(), Vec::new(), Vec::new())
             };
         let typed_primary = typed_frames
             .iter()
@@ -112,7 +119,11 @@ pub(crate) fn decode_component_occurrences(
                 .and_then(|end| exact_component_occurrence_frame(bytes, start, end, &scope))
                 .or_else(|| attributed_component_occurrence(bytes, start, &scope))
             {
-                stream_occurrences.push(occurrence);
+                if let Some(loss) = unproven_identity_loss(&occurrence) {
+                    losses.push(loss);
+                } else {
+                    stream_occurrences.push(occurrence);
+                }
             }
             let Some(next_at) = start.checked_add(1) else {
                 break;
@@ -121,6 +132,7 @@ pub(crate) fn decode_component_occurrences(
         }
         superseded += admit_occurrence_envelopes(&mut stream_occurrences, &primary, &typed_primary);
         ambiguous_current_poses += bind_current_poses(&mut stream_occurrences, &poses);
+        paths.extend(component_paths(&scope, &stream_occurrences, path_carriers));
         occurrences.extend(stream_occurrences);
     }
     occurrences.sort_by(|a, b| a.id.cmp(&b.id));
@@ -128,8 +140,75 @@ pub(crate) fn decode_component_occurrences(
     Ok(DecodedComponentOccurrences {
         occurrences,
         superseded,
+        losses,
         ambiguous_current_poses,
+        paths,
     })
+}
+
+/// The native component paths of one Design stream. An element is an
+/// occurrence when a decoded carrier has its record index, a component when a
+/// decoded carrier names it as its definition, and otherwise unclassified.
+fn component_paths(
+    scope: &str,
+    occurrences: &[DesignComponentOccurrence],
+    carriers: Vec<crate::xref::ComponentPathCarrier>,
+) -> Vec<crate::records::component_path::DesignComponentPath> {
+    use crate::records::component_path::{
+        ComponentPathTransform, DesignComponentPath, DesignComponentPathElement,
+        DesignComponentPathElementKind as Kind,
+    };
+    let occurrence_records = occurrences
+        .iter()
+        .map(|occurrence| u64::from(occurrence.record_index))
+        .collect::<std::collections::BTreeSet<_>>();
+    let component_records = occurrences
+        .iter()
+        .map(|occurrence| occurrence.component_record_index)
+        .collect::<std::collections::BTreeSet<_>>();
+    carriers
+        .into_iter()
+        .filter_map(|carrier| {
+            let transform = carrier
+                .transform
+                .map(ComponentPathTransform::try_from)
+                .transpose()
+                .ok()?;
+            Some(DesignComponentPath {
+                id: format!(
+                    "{scope}:design-component-path#{}",
+                    carrier.carrier_record_index
+                ),
+                carrier_record_index: carrier.carrier_record_index,
+                elements: carrier
+                    .elements
+                    .into_iter()
+                    .map(|(record_index, discriminator)| DesignComponentPathElement {
+                        record_index,
+                        kind: if occurrence_records.contains(&record_index) {
+                            Kind::Occurrence
+                        } else if component_records.contains(&record_index) {
+                            Kind::Component
+                        } else {
+                            Kind::Other
+                        },
+                        discriminator,
+                    })
+                    .collect(),
+                transform,
+                frame_bytes: carrier.frame_bytes.into(),
+            })
+        })
+        .collect()
+}
+
+fn unproven_identity_loss(
+    occurrence: &DesignComponentOccurrence,
+) -> Option<cadmpeg_ir::report::loss::LossNote> {
+    occurrence.has_unresolved_identity_ordinal()
+        .then(|| crate::loss::F3dLossCode::LocalOccurrenceIdentityOrdinalUnresolved.note(format!(
+            "local component occurrence {} has identity flag 1 and ordinal {}; its placement remains unresolved (DR-146)", occurrence.id, occurrence.occurrence_ordinal()
+        )))
 }
 
 /// Give each occurrence the pose of the one component-path carrier in its
@@ -177,7 +256,7 @@ pub(crate) fn ambiguous_current_poses_loss(
     count: usize,
 ) -> Option<cadmpeg_ir::report::loss::LossNote> {
     (count != 0).then(|| crate::loss::F3dLossCode::LocalOccurrenceCurrentPoseAmbiguous.note(format!(
-        "{count} local component occurrence(s) are named by two or more component-path carriers; they keep their stored placement"
+        "{count} local component occurrence(s) are named by two or more component-path carriers; they keep their stored placement unless a component-path pose resolves them to one expanded occurrence"
     )))
 }
 
@@ -413,6 +492,12 @@ fn attributed_component_occurrence(
     Some(occurrence)
 }
 
+fn has_empty_attributes(frame: &[u8]) -> bool {
+    frame.get(empty_prefix::ATTRIBUTES_MARKER) == Some(&empty_prefix::ATTRIBUTES_MARKER_VALUE)
+        && View::u32_le_at(frame, empty_prefix::ATTRIBUTE_COUNT)
+            == Some(empty_prefix::ATTRIBUTE_COUNT_VALUE)
+}
+
 fn exact_component_occurrence_frame(
     bytes: &[u8],
     start: usize,
@@ -422,7 +507,23 @@ fn exact_component_occurrence_frame(
     const SUFFIX: &str = ":design-component-occurrence#";
 
     let frame = bytes.get(start..end)?;
-    if !matches!(frame.len(), BASE_FRAME_LENGTH | PLACED_FRAME_LENGTH) {
+    let empty_attributes = has_empty_attributes(frame);
+    let shift = if empty_attributes {
+        empty_prefix::LEN - prefix::LEN
+    } else {
+        0
+    };
+    let offset = |at: usize| {
+        if at >= prefix::OCCURRENCE_ORDINAL {
+            at + shift
+        } else {
+            at
+        }
+    };
+    if !matches!(
+        frame.len().checked_sub(shift)?,
+        BASE_FRAME_LENGTH | PLACED_FRAME_LENGTH
+    ) {
         return typed_component_occurrence(frame, start, stream);
     }
     let parsed = (|| {
@@ -432,13 +533,14 @@ fn exact_component_occurrence_frame(
             return None;
         }
         let record_index = View::u32_le_at(bytes, after_tag)?;
-        let frame_length = end.checked_sub(start)?;
-        let at = |offset: usize| start + offset;
+        let frame_length = end.checked_sub(start)?.checked_sub(shift)?;
+        let at = |relative: usize| start + offset(relative);
         if !matches!(frame_length, BASE_FRAME_LENGTH | PLACED_FRAME_LENGTH)
             || bytes.get(at(prefix::EMPTY_INSTANCE_NAME)..at(prefix::PATH_MARKER))? != [0; 8]
             || bytes.get(at(prefix::PATH_MARKER)) != Some(&prefix::PATH_MARKER_VALUE)
             || View::u32_le_at(bytes, at(prefix::PATH_COUNT))? != prefix::PATH_COUNT_VALUE
-            || bytes.get(at(prefix::PATH_TERMINATOR)) != Some(&prefix::PATH_TERMINATOR_VALUE)
+            || (!empty_attributes
+                && bytes.get(at(prefix::PATH_TERMINATOR)) != Some(&prefix::PATH_TERMINATOR_VALUE))
             || bytes.get(at(prefix::COMPONENT_REFERENCE)) != Some(&1)
             || bytes.get(at(prefix::COMPONENT_REFERENCE_REPEAT) - 1) != Some(&0)
             || bytes.get(at(prefix::COMPONENT_REFERENCE_REPEAT)) != Some(&1)
@@ -470,8 +572,7 @@ fn exact_component_occurrence_frame(
         let tail = at(prefix::LEN);
         let (placement, owner_entity) = match frame_length {
             BASE_FRAME_LENGTH => {
-                if occurrence_ordinal.get() != 1
-                    || bytes.get(at(prefix::IDENTITY_FLAG)) != Some(&1)
+                if bytes.get(at(prefix::IDENTITY_FLAG)) != Some(&1)
                     || bytes.get(tail..tail + identity_tail::OWNER_MARKER)? != [0; 9]
                     || bytes.get(tail + identity_tail::OWNER_MARKER)
                         != Some(&identity_tail::OWNER_MARKER_VALUE)
@@ -481,7 +582,11 @@ fn exact_component_occurrence_frame(
                     return None;
                 }
                 (
-                    crate::records::feature::assembly_features::DesignComponentOccurrencePlacement::Base,
+                    if occurrence_ordinal.get() == 1 {
+                        crate::records::feature::assembly_features::DesignComponentOccurrencePlacement::Base
+                    } else {
+                        crate::records::feature::assembly_features::DesignComponentOccurrencePlacement::Identity { ordinal: occurrence_ordinal }
+                    },
                     View::u64_le_at(bytes, tail + identity_tail::OWNER_ENTITY)?,
                 )
             }
@@ -521,11 +626,11 @@ fn exact_component_occurrence_frame(
     let (class_tag, record_index, byte_offset, component_record_index, placement, owner_entity) =
         parsed?;
     let (component_guid, after_component) =
-        lp_utf16_bounded(bytes, start + prefix::CARRIER_GUID, 36..=36)?;
+        lp_utf16_bounded(bytes, start + offset(prefix::CARRIER_GUID), 36..=36)?;
     let (occurrence_guid, after_occurrence) =
-        lp_utf16_bounded(bytes, start + prefix::OCCURRENCE_GUID, 36..=36)?;
-    if after_component != start + prefix::OCCURRENCE_GUID
-        || after_occurrence != start + prefix::COMPONENT_REFERENCE_REPEAT - 1
+        lp_utf16_bounded(bytes, start + offset(prefix::OCCURRENCE_GUID), 36..=36)?;
+    if after_component != start + offset(prefix::OCCURRENCE_GUID)
+        || after_occurrence != start + offset(prefix::COMPONENT_REFERENCE_REPEAT) - 1
     {
         return None;
     }
@@ -553,6 +658,9 @@ fn exact_component_occurrence_frame(
         },
     )
     .ok()?;
+    if empty_attributes {
+        occurrence = occurrence.with_empty_attributes().ok()?;
+    }
     occurrence.path_discriminator =
         std::num::NonZeroU32::new(View::u32_le_at(bytes, start + prefix::PATH_DISCRIMINATOR)?);
     Some(occurrence)
@@ -943,6 +1051,7 @@ fn root_instance_component(bytes: &[u8], start: usize, end: usize) -> Option<u64
 mod tests {
     #![allow(clippy::trivially_copy_pass_by_ref)]
 
+    mod component_path;
     mod current_pose;
     mod original;
 
@@ -982,6 +1091,106 @@ mod tests {
         bytes[197] = 1;
         bytes[198..206].copy_from_slice(&10_u64.to_le_bytes());
         bytes
+    }
+
+    fn empty_attribute_frame(matrix: bool) -> Vec<u8> {
+        let mut frame = common(if matrix { 357 } else { 229 }, if matrix { 2 } else { 1 });
+        if matrix {
+            for (i, value) in [
+                1.0_f64, 0.0, 0.0, 2.0, 0.0, 1.0, 0.0, 3.0, 0.0, 0.0, 1.0, 4.0, 0.0, 0.0, 0.0, 1.0,
+            ]
+            .into_iter()
+            .enumerate()
+            {
+                frame[209 + i * 8..217 + i * 8].copy_from_slice(&value.to_le_bytes());
+            }
+            frame[346] = 1;
+        } else {
+            frame[208] = 1;
+            frame[218] = 1;
+        }
+        frame[39] = 1;
+        frame.splice(40..40, [0; 4]);
+        indexed_header(&mut frame, *b"333", 21);
+        frame
+    }
+
+    #[test]
+    fn empty_attribute_occurrence_forms_validate_offsets_and_refuse_missing_bytes() {
+        for matrix in [false, true] {
+            let frame = empty_attribute_frame(matrix);
+            let record =
+                exact_component_occurrence(&frame, 0, "f3d:Design/BulkStream.dat").unwrap();
+            assert_eq!(record.component_guid.as_str(), COMPONENT);
+            assert_eq!(record.occurrence_guid.as_str(), OCCURRENCE);
+            assert_eq!(record.occurrence_ordinal(), if matrix { 2 } else { 1 });
+            assert_eq!(record.transform().map(|v| v.offset), matrix.then_some(213));
+            if let Some(transform) = record.transform() {
+                let expected: crate::records::sketch_placement::SketchPlacementMatrix = [
+                    [1.0, 0.0, 0.0, 2.0],
+                    [0.0, 1.0, 0.0, 3.0],
+                    [0.0, 0.0, 1.0, 4.0],
+                    [0.0, 0.0, 0.0, 1.0],
+                ]
+                .try_into()
+                .unwrap();
+                assert_eq!(transform.value, expected);
+            }
+            let wire = serde_json::to_value(&record).unwrap();
+            assert_eq!(wire["component_guid_offset"], 52);
+            assert_eq!(wire["occurrence_guid_offset"], 128);
+            assert_eq!(wire["owner_entity_offset"], if matrix { 351 } else { 223 });
+            let decoded: super::DesignComponentOccurrence =
+                serde_json::from_value(wire.clone()).unwrap();
+            assert_eq!(decoded, record);
+            for field in [
+                "component_guid_offset",
+                "occurrence_guid_offset",
+                "owner_entity_offset",
+            ] {
+                let mut changed = wire.clone();
+                changed[field] = serde_json::json!(wire[field].as_u64().unwrap() + 1);
+                assert!(
+                    serde_json::from_value::<super::DesignComponentOccurrence>(changed).is_err()
+                );
+            }
+            if matrix {
+                let mut changed = wire.clone();
+                changed["transform_offset"] = serde_json::json!(214);
+                assert!(
+                    serde_json::from_value::<super::DesignComponentOccurrence>(changed).is_err()
+                );
+            }
+            let mut nonzero = frame.clone();
+            nonzero[40..44].copy_from_slice(&1_u32.to_le_bytes());
+            assert!(exact_component_occurrence(&nonzero, 0, "f3d:Design/BulkStream.dat").is_none());
+            assert!(
+                attributed_component_occurrence(&nonzero, 0, "f3d:Design/BulkStream.dat").is_none()
+            );
+            let mut truncated = frame;
+            truncated.remove(truncated.len() - 12);
+            assert!(
+                exact_component_occurrence(&truncated, 0, "f3d:Design/BulkStream.dat").is_none()
+            );
+        }
+    }
+
+    #[test]
+    fn fixed_identity_later_ordinal_has_an_exact_loss() {
+        let mut frame = common(229, 2);
+        frame[208] = 1;
+        frame[218] = 1;
+        indexed_header(&mut frame, *b"333", 21);
+        let record = exact_component_occurrence(&frame, 0, "f3d:Design/BulkStream.dat").unwrap();
+        let loss = super::unproven_identity_loss(&record).unwrap();
+        assert_eq!(
+            loss.code,
+            crate::loss::F3dLossCode::LocalOccurrenceIdentityOrdinalUnresolved.kind()
+        );
+        assert!(loss.message.contains("ordinal 2"));
+        assert!(loss.message.contains(&record.id));
+        let wire = serde_json::to_value(&record).unwrap();
+        assert!(serde_json::from_value::<super::DesignComponentOccurrence>(wire).is_err());
     }
 
     #[test]
@@ -1115,6 +1324,13 @@ mod tests {
         record.extend_from_slice(&[0; 7]);
         assert_eq!(root_instance_component(&record, 0, record.len()), Some(276));
 
+        let mut empty_attributes = record.clone();
+        *empty_attributes.last_mut().unwrap() = 1;
+        empty_attributes.extend_from_slice(&0_u32.to_le_bytes());
+        assert_eq!(
+            root_instance_component(&empty_attributes, 0, empty_attributes.len()),
+            Some(276)
+        );
         let mut renamed = record.clone();
         renamed[19..31].copy_from_slice(b"rootInstancf");
         assert_eq!(root_instance_component(&renamed, 0, renamed.len()), None);

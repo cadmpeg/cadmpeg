@@ -322,13 +322,7 @@ pub(crate) fn project_sketch_design(
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     inputs: &SketchProjectInputs<'_, '_, '_>,
     linear_tolerance: f64,
-) -> Result<
-    (
-        Vec<cadmpeg_ir::sketches::Sketch>,
-        Vec<cadmpeg_ir::sketches::SketchEntity>,
-    ),
-    cadmpeg_core::CodecError,
-> {
+) -> Result<SketchDesign, cadmpeg_core::CodecError> {
     use cadmpeg_ir::scalar::{Angle, Length};
     use cadmpeg_ir::sketches::{Sketch, SketchEntity, SketchGeometry, SketchGeometryDefinition};
 
@@ -563,6 +557,10 @@ pub(crate) fn project_sketch_design(
         let Some(scope) = native_stream(&text.id) else {
             continue;
         };
+        // A model-space sketch has no planar sketch to own a text entity.
+        if spatial_owners.contains(&(scope, text.owner_reference)) {
+            continue;
+        }
         let Some(placement) = placements_by_suffix.get(&(scope, text.owner_reference)) else {
             continue;
         };
@@ -609,14 +607,40 @@ pub(crate) fn project_sketch_design(
         );
     }
     entities.sort_by(|a, b| a.id().cmp(b.id()));
+    let mut losses = Vec::new();
     for sketch in &mut sketches {
-        let inferred = closed_sketch_profiles(ctx, &sketch.id, &entities, linear_tolerance)?;
-        let Ok(profiles) = cadmpeg_ir::sketches::SketchProfiles::try_from(inferred) else {
+        let closed = closed_sketch_profiles(ctx, &sketch.id, &entities, linear_tolerance)?;
+        losses.extend(closed.losses);
+        let Ok(profiles) = cadmpeg_ir::sketches::SketchProfiles::try_from(closed.profiles) else {
             continue;
         };
         sketch.profiles = profiles;
     }
-    Ok((sketches, entities))
+    Ok(SketchDesign {
+        sketches,
+        entities,
+        losses,
+    })
+}
+
+/// Model-space planar sketches projected from one Design.
+pub(crate) struct SketchDesign {
+    pub(crate) sketches: Vec<cadmpeg_ir::sketches::Sketch>,
+    pub(crate) entities: Vec<cadmpeg_ir::sketches::SketchEntity>,
+    /// Losses of the projection, such as unprofiled curves.
+    pub(crate) losses: Vec<cadmpeg_ir::report::loss::LossNote>,
+}
+
+#[cfg(test)]
+impl SketchDesign {
+    pub(crate) fn into_tuple(
+        self,
+    ) -> (
+        Vec<cadmpeg_ir::sketches::Sketch>,
+        Vec<cadmpeg_ir::sketches::SketchEntity>,
+    ) {
+        (self.sketches, self.entities)
+    }
 }
 
 /// Model-space spatial sketches projected from one Design.

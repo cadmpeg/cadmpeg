@@ -26,6 +26,7 @@ use super::super::expanded::half_edge_ref;
 use super::super::native::annotate;
 use super::super::records::CreoFaceAdmissionRejectionRecord;
 use super::super::sweep::profiles::line_pcurve;
+use super::super::sweep::surfaces::{sampled_sweep_circle_range, SampledCircleRange};
 use super::super::uniqueness::{exactly_one, ExactIdPositions, NumberedIdentityPositions};
 use crate::decode::analytic::carriers::{
     geometry_section_record, native_face_orientations, ordered_face_loops,
@@ -41,8 +42,9 @@ use crate::decode::analytic::pcurve_geometry::{
     meridian_circle_pcurve, ruled_generator_line_pcurve, surface_of_revolution_parallel_pcurve,
 };
 use crate::decode::analytic::pcurves::{
-    canonicalized_pcurve_endpoints, pcurve_backed_periodic_conic_parameter_range,
-    planar_curve_pcurve, unique_oriented_native_pcurve, NamedSurfaces, NativePcurveCandidates,
+    bounded_cylinder_circle_parameter_range, canonicalized_pcurve_endpoints,
+    pcurve_backed_periodic_conic_parameter_range, planar_curve_pcurve,
+    unique_oriented_native_pcurve, NamedSurfaces, NativePcurveCandidates,
 };
 use crate::decode::analytic::vertices::{
     solve_topological_vertices, TopologicalVertexSolveDiagnostics,
@@ -623,6 +625,60 @@ fn retain_complete_compact_frame_components(
     }
 }
 
+fn retain_complete_compact_frame_boundary_components(
+    scan: &ContainerScan,
+    eligible_faces: &mut BTreeMap<u32, Vec<&crate::topology::Loop>>,
+    ir: &CadIr,
+    source_carriers: &crate::decode::source_carriers::SourceUnitCarriers,
+    losses: &mut Vec<cadmpeg_ir::report::loss::LossNote>,
+) {
+    for component in &scan.topology.face_components {
+        let has_compact_frame = scan.planes.local_systems.iter().any(|frame| {
+            frame.layout == Some(crate::scalar::PlaneSupportFrameLayout::CompactRotation)
+                && component.face_ids().contains(&frame.surface_id)
+        });
+        if !has_compact_frame {
+            continue;
+        }
+        let unresolved_curves: BTreeSet<_> = component
+            .face_ids()
+            .iter()
+            .filter_map(|face| eligible_faces.get(face))
+            .flatten()
+            .flat_map(|lp| lp.half_edges())
+            .map(|edge| edge.curve_id)
+            .filter(|curve_id| {
+                let curve = crate::decode::uniqueness::exactly_one(ir.model.curves.iter().filter(
+                    |curve| {
+                        crate::identity::matches_numbered_identity(
+                            curve.id.as_str(),
+                            "creo:visibgeom:curve#",
+                            *curve_id,
+                        )
+                    },
+                ));
+                !curve.is_some_and(|curve| {
+                    source_carriers
+                        .curve_geometry(curve)
+                        .solved()
+                        .is_some_and(|geometry| {
+                            !matches!(geometry, SolvedCurveGeometry::Unknown { .. })
+                        })
+                })
+            })
+            .collect();
+        if !unresolved_curves.is_empty() {
+            for face in component.face_ids() {
+                if eligible_faces.remove(face).is_some() {
+                    losses.push(crate::loss::CreoLossCode::BrepCompactFrameBoundaryUnresolved.note(
+                        format!("source face {face} retained as native: compact-frame component boundary curves {unresolved_curves:?} require unique solved carriers"),
+                    ));
+                }
+            }
+        }
+    }
+}
+
 fn admitted_face_components<'a>(
     scan: &'a ContainerScan,
     eligible_face_ids: &BTreeSet<u32>,
@@ -1017,6 +1073,193 @@ fn ordered_two_edge_circle_loops<'a>(
     Some(ordered)
 }
 
+fn planar_circle_loop_parameters(
+    lp: &crate::topology::Loop,
+    polygon: &[[f64; 2]],
+    surface: &SurfaceGeometry,
+    evidence: NativeCurveEvidence<'_>,
+) -> Option<([f64; 2], f64)> {
+    let SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(plane)) = surface else {
+        return None;
+    };
+    let circle = native_circle_loop_geometry(lp, evidence.model_curves, evidence.source_carriers)?;
+    let normal = plane.frame().axis().as_raw();
+    let origin = plane.origin().get();
+    let center = circle.center.get();
+    let scale = circle
+        .radius
+        .max(1.0)
+        .max(center.x.abs())
+        .max(center.y.abs())
+        .max(center.z.abs());
+    (vectors_are_parallel(circle.axis, *normal)
+        && center.vector_from(origin).dot(*normal).abs() <= EPS_GEOMETRY_AGREE * scale)
+        .then_some(())?;
+    let center_uv = cadmpeg_ir::eval::analytic_surface_parameters(surface, center)?.get();
+    let center_uv = [center_uv.u, center_uv.v];
+    let [first, second] = polygon else {
+        return None;
+    };
+    let first = [first[0] - center_uv[0], first[1] - center_uv[1]];
+    let second = [second[0] - center_uv[0], second[1] - center_uv[1]];
+    let radius_squared = circle.radius * circle.radius;
+    (scalar_values_agree(
+        first[0].mul_add(first[0], first[1] * first[1]),
+        radius_squared,
+    ) && scalar_values_agree(
+        second[0].mul_add(second[0], second[1] * second[1]),
+        radius_squared,
+    ) && scalar_values_agree(
+        first[0].mul_add(second[0], first[1] * second[1]),
+        -radius_squared,
+    ))
+    .then_some((center_uv, circle.radius))
+}
+
+fn ordered_polygon_circle_loops<'a>(
+    loops: &[&'a crate::topology::Loop],
+    polygons: &[Vec<[f64; 2]>],
+    surface: &SurfaceGeometry,
+    evidence: NativeCurveEvidence<'_>,
+) -> Option<Vec<&'a crate::topology::Loop>> {
+    (loops.len() >= 2 && loops.len() == polygons.len()).then_some(())?;
+    let outer = exactly_one(
+        polygons
+            .iter()
+            .enumerate()
+            .filter_map(|(index, polygon)| (polygon.len() >= 3).then_some(index)),
+    )?;
+    for half_edge in loops[outer].half_edges() {
+        let curve = exactly_one(evidence.model_curves.iter().filter(|curve| {
+            crate::identity::matches_numbered_identity(
+                curve.id.as_str(),
+                "creo:visibgeom:curve#",
+                half_edge.curve_id,
+            )
+        }))?;
+        matches!(
+            evidence.source_carriers.curve_geometry(curve),
+            CurveGeometry::Solved(SolvedCurveGeometry::Line(_))
+        )
+        .then_some(())?;
+    }
+    let mut circles = Vec::new();
+    for (index, lp) in loops.iter().enumerate() {
+        if index != outer {
+            let bounded = lp.half_edges().iter().any(|edge| {
+                evidence.model_curves.iter().any(|curve| {
+                    crate::identity::matches_numbered_identity(
+                        curve.id.as_str(),
+                        "creo:visibgeom:curve#",
+                        edge.curve_id,
+                    ) && curve.parameter_range.is_some()
+                })
+            });
+            let circle = if bounded {
+                bounded_planar_circle_loop_parameters(lp, &polygons[index], surface, evidence)
+            } else {
+                planar_circle_loop_parameters(lp, &polygons[index], surface, evidence)
+            }?;
+            circles.push(circle);
+        }
+    }
+    crate::decode::sweep::revolution_cap::convex_polygon_contains_circles(
+        &polygons[outer],
+        &circles,
+    )
+    .then_some(())?;
+    let mut ordered = vec![loops[outer]];
+    ordered.extend(
+        loops
+            .iter()
+            .enumerate()
+            .filter_map(|(index, lp)| (index != outer).then_some(*lp)),
+    );
+    Some(ordered)
+}
+
+fn bounded_planar_circle_loop_parameters(
+    lp: &crate::topology::Loop,
+    polygon: &[[f64; 2]],
+    surface: &SurfaceGeometry,
+    evidence: NativeCurveEvidence<'_>,
+) -> Option<([f64; 2], f64)> {
+    let [first_endpoint, second_endpoint] = polygon else {
+        return None;
+    };
+    let mut midpoints = [Vector3::new(0.0, 0.0, 0.0); 2];
+    for (midpoint, half_edge) in midpoints.iter_mut().zip(lp.half_edges()) {
+        let curve = exactly_one(evidence.model_curves.iter().filter(|curve| {
+            crate::identity::matches_numbered_identity(
+                curve.id.as_str(),
+                "creo:visibgeom:curve#",
+                half_edge.curve_id,
+            )
+        }))?;
+        let [start, end] = curve.parameter_range?.endpoints();
+        scalar_values_agree((end - start).abs(), std::f64::consts::PI).then_some(())?;
+        let CurveGeometry::Solved(SolvedCurveGeometry::Circle(carrier)) =
+            evidence.source_carriers.curve_geometry(curve)
+        else {
+            return None;
+        };
+        let reference = carrier.frame().reference().as_raw();
+        let second = carrier.frame().axis().as_raw().cross(*reference);
+        let radial = |angle: f64| reference.scale(angle.cos()) + second.scale(angle.sin());
+        let [Some(first), Some(last)] = [start, end].map(|angle| {
+            let point = carrier
+                .center()
+                .get()
+                .translated(radial(angle), carrier.radius().get());
+            let uv = cadmpeg_ir::eval::analytic_surface_parameters(surface, point)?.get();
+            Some([uv.u, uv.v])
+        }) else {
+            return None;
+        };
+        ((parameter_points_agree(first, *first_endpoint)
+            && parameter_points_agree(last, *second_endpoint))
+            || (parameter_points_agree(first, *second_endpoint)
+                && parameter_points_agree(last, *first_endpoint)))
+        .then_some(())?;
+        *midpoint = radial(start.midpoint(end));
+    }
+    scalar_values_agree(midpoints[0].dot(midpoints[1]), -1.0).then_some(())?;
+    planar_circle_loop_parameters(lp, polygon, surface, evidence)
+}
+
+fn projected_circle_loop_polygon(
+    lp: &crate::topology::Loop,
+    face: (u32, &SurfaceGeometry),
+    incidence: &BTreeMap<HalfEdgeId, &crate::topology::HalfEdgeVertexIncidence>,
+    solved_vertices: &BTreeMap<u32, [f64; 3]>,
+    native_pcurves: &NativePcurveCandidates,
+    evidence: NativeCurveEvidence<'_>,
+) -> Option<Vec<[f64; 2]>> {
+    let polygon = crate::decode::sweep::revolution_cap::projected_loop_polygon(
+        lp,
+        face.1,
+        incidence,
+        solved_vertices,
+    )?;
+    bounded_planar_circle_loop_parameters(lp, &polygon, face.1, evidence)?;
+    for (index, edge) in lp.half_edges().iter().enumerate() {
+        if let Some(candidates) = native_pcurves.get(&(edge.curve_id, face.0)) {
+            let start = polygon[index];
+            let end = polygon[(index + 1) % polygon.len()];
+            candidates
+                .iter()
+                .any(|(endpoints, _)| {
+                    (parameter_points_agree(endpoints[0], start)
+                        && parameter_points_agree(endpoints[1], end))
+                        || (parameter_points_agree(endpoints[1], start)
+                            && parameter_points_agree(endpoints[0], end))
+                })
+                .then_some(())?;
+        }
+    }
+    Some(polygon)
+}
+
 fn native_parameter_loop_polygon(
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     lp: &crate::topology::Loop,
@@ -1103,7 +1346,16 @@ fn ordered_native_parameter_face_loops<'a>(
             native_pcurves,
             curve_evidence.typed_nonlinear_curve_ids,
         )?
-        else {
+        .or_else(|| {
+            projected_circle_loop_polygon(
+                lp,
+                (face_id, surface),
+                incidence,
+                solved_vertices,
+                native_pcurves,
+                curve_evidence,
+            )
+        }) else {
             return Ok(None);
         };
         polygons.push(polygon);
@@ -1119,7 +1371,8 @@ fn ordered_native_parameter_face_loops<'a>(
             surface,
             curve_evidence.model_curves,
             curve_evidence.source_carriers,
-        ))
+        )
+        .or_else(|| ordered_polygon_circle_loops(loops, &polygons, surface, curve_evidence)))
     }
 }
 
@@ -1753,7 +2006,7 @@ pub(in super::super) fn transfer_native_brep(
         crate::topology::edge_vertex_pairs(&scan.topology.half_edge_vertex_incidence);
     let BrepEdgeIndexes {
         edge_vertices,
-        model_curve_counts,
+        mut model_curve_counts,
         admitted_edge_curves,
     } = BrepEdgeIndexes::from_rows(
         &scan.curves.topology_rows,
@@ -1763,6 +2016,133 @@ pub(in super::super) fn transfer_native_brep(
     );
     let mut surface_positions = model_surfaces.into_positions();
     let namespaces = NativeSurfaceNamespaces::new(scan);
+    let mut revolution_ranges = BTreeMap::new();
+    let mut refused_revolution_ranges = BTreeSet::new();
+    let mut proved_generators = BTreeSet::new();
+    for row in crate::identity::uniquely_identified_rows(&scan.curves.topology_rows, |row| row.id) {
+        let (Some(vertices), [Some(first), Some(second)]) = (edge_vertices.get(&row.id), row.faces)
+        else {
+            continue;
+        };
+        let position = exactly_one(ir.model.curves.iter().enumerate().filter_map(
+            |(position, curve)| {
+                crate::identity::matches_numbered_identity(
+                    curve.id.as_str(),
+                    "creo:visibgeom:curve#",
+                    row.id,
+                )
+                .then_some(position)
+            },
+        ));
+        let points = vertices.map(|vertex| solved_vertices[&vertex]);
+        let unresolved = position.map_or(model_curve_counts[&row.id] == 0, |position| {
+            matches!(
+                source_carriers
+                    .curve_geometry(&ir.model.curves[position])
+                    .solved(),
+                Some(SolvedCurveGeometry::Unknown { .. })
+            )
+        });
+        if unresolved
+            && [first, second].into_iter().all(|face| {
+                surface_positions
+                    .named(namespaces.prefix(face.get()), face.get())
+                    .and_then(NamedSurfaces::unique)
+                    .is_some_and(|position| {
+                        matches!(
+                            source_carriers.surface_geometry(&ir.model.surfaces[position]),
+                            SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(_))
+                        )
+                    })
+            })
+        {
+            match crate::decode::sweep::revolution_carriers::generator_carrier(scan, row, points) {
+                Some(Ok(generator)) => {
+                    let id = crate::identity::compose_checked::<CurveId>(
+                        &crate::identity::VISIBGEOM_CURVE,
+                        row.id,
+                    )?;
+                    if let Some(position) = position {
+                        source_carriers.replace_curve_geometry(
+                            ctx,
+                            &mut ir.model.curves[position],
+                            generator,
+                        )?;
+                    } else {
+                        ctx.charge_entities(1, "admit Creo model curves")?;
+                        source_carriers.admit_curve(
+                            ctx,
+                            ir,
+                            Curve {
+                                id: id.clone(),
+                                geometry: generator,
+                                parameter_range: None,
+                                source_object: Some(SourceObjectAssociation {
+                                    geometry_role: None,
+                                    format: cadmpeg_ir::CodecFormat::Creo,
+                                    object_id: crate::identity::source_object_id_checked(
+                                        format_args!("VisibGeom:{}", row.id),
+                                    )?,
+                                    name: None,
+                                    color: None,
+                                    visible: None,
+                                    layer: None,
+                                    instance_path: Vec::new(),
+                                }),
+                            },
+                        )?;
+                    }
+                    annotate(
+                        annotations,
+                        &id,
+                        "VisibGeom",
+                        cadmpeg_core::decode::u64_from_index(row.offset),
+                        "stored_revolution_generator",
+                        Exactness::Derived,
+                    )?;
+                    model_curve_counts.insert(row.id, 1);
+                    proved_generators.insert(row.id);
+                    continue;
+                }
+                Some(Err(reason)) => {
+                    losses.push(
+                        crate::loss::CreoLossCode::RevolutionBoundaryIntervalUnresolved.note(
+                            format!(
+                                "Curve {} at byte {} on faces {} and {} remains native: {reason}",
+                                row.id, row.offset, first, second
+                            ),
+                        ),
+                    );
+                    refused_revolution_ranges.insert(row.id);
+                    continue;
+                }
+                None => {}
+            }
+        }
+        let Some(position) = position else {
+            continue;
+        };
+        let candidate = &mut ir.model.curves[position];
+        let mut geometry = source_carriers.curve_geometry(candidate).clone();
+        match crate::decode::sweep::revolution_carriers::circle_parameter_range(
+            scan,
+            &mut geometry,
+            [first.get(), second.get()],
+            points,
+            row.id,
+            losses,
+        ) {
+            crate::decode::sweep::revolution_carriers::CircleInterval::Admitted(range) => {
+                source_carriers.replace_curve_geometry(ctx, candidate, geometry)?;
+                candidate.parameter_range = Some(range);
+                revolution_ranges.insert(row.id, range);
+            }
+            crate::decode::sweep::revolution_carriers::CircleInterval::Unresolved => {
+                refused_revolution_ranges.insert(row.id);
+            }
+            crate::decode::sweep::revolution_carriers::CircleInterval::Unrelated => {}
+        }
+    }
     let BrepFaceCandidateIndexes {
         loops_by_face,
         candidate_face_ids,
@@ -1850,6 +2230,20 @@ pub(in super::super) fn transfer_native_brep(
                 &native_pcurves,
                 &typed_nonlinear_curve_ids,
             )?
+            .or_else(|| {
+                projected_circle_loop_polygon(
+                    lp,
+                    (face_id, source_carriers.surface_geometry(surface)),
+                    &incidence,
+                    solved_vertices,
+                    &native_pcurves,
+                    NativeCurveEvidence {
+                        typed_nonlinear_curve_ids: &typed_nonlinear_curve_ids,
+                        model_curves: &ir.model.curves,
+                        source_carriers,
+                    },
+                )
+            })
             .is_none()
             {
                 two_edge_loops_are_proven = false;
@@ -1889,6 +2283,19 @@ pub(in super::super) fn transfer_native_brep(
         };
         eligible_faces.insert(face_id, ordered);
     }
+    retain_complete_compact_frame_boundary_components(
+        scan,
+        &mut eligible_faces,
+        ir,
+        source_carriers,
+        losses,
+    );
+    crate::decode::sweep::revolution_carriers::retain_proved_boundaries(
+        scan,
+        &mut eligible_faces,
+        &refused_revolution_ranges,
+        losses,
+    );
     retain_complete_compact_frame_components(scan, &mut eligible_faces, losses);
     diagnostics.admitted_face_count = eligible_faces.len();
     let BrepEligibleFaceIndexes {
@@ -2013,6 +2420,8 @@ pub(in super::super) fn transfer_native_brep(
     let mut exact_surfaces =
         ExactIdPositions::new(ir.model.surfaces.iter().map(|item| item.id.as_str()));
 
+    let mut sampled_sweep_circles = BTreeSet::new();
+    let mut sampled_hole_circles = BTreeSet::new();
     for vertex_id in used_vertices {
         if vertex_ids.contains(vertex_id) {
             continue;
@@ -2048,6 +2457,7 @@ pub(in super::super) fn transfer_native_brep(
             vertex_position,
         );
     }
+    let mut bounded_circle_curves: BTreeSet<_> = revolution_ranges.keys().copied().collect();
     for curve_id in &neutral_edge_curves {
         let [start, end] = edge_vertices[curve_id];
         let curve = crate::identity::compose_checked::<CurveId>(
@@ -2068,10 +2478,13 @@ pub(in super::super) fn transfer_native_brep(
         } else if let Some(position) = exact_curves.unique(curve.as_str()) {
             let candidate = &mut ir.model.curves[position];
             let mut geometry = source_carriers.curve_geometry(candidate).clone();
-            let derived_line = curve_evidence.derived_intersections.contains(&curve)
+            let derived_line = (curve_evidence.derived_intersections.contains(&curve)
+                || proved_generators.contains(curve_id))
                 && matches!(geometry.solved(), Some(SolvedCurveGeometry::Line(_)));
             let range = if derived_line {
                 orient_line_edge_carrier(&mut geometry, points)
+            } else if let Some(interval) = revolution_ranges.get(curve_id) {
+                Some(interval.endpoints())
             } else {
                 let mut range = orient_nonperiodic_nurbs_edge_carrier(ctx, &mut geometry, points)?;
                 if range.is_none() {
@@ -2082,18 +2495,71 @@ pub(in super::super) fn transfer_native_brep(
                 }
                 if range.is_none() {
                     if let Some(faces) = curve_faces.get(curve_id).copied() {
-                        range = pcurve_backed_periodic_conic_parameter_range(
+                        let sampled_range = sampled_sweep_circle_range(
                             ctx,
-                            &geometry,
+                            scan,
+                            &mut geometry,
                             (*curve_id, faces),
-                            &native_pcurves,
                             &ir.model.surfaces,
                             points,
                             source_carriers,
                         )?;
+                        let unrelated = matches!(sampled_range, SampledCircleRange::Unrelated);
+                        match sampled_range {
+                            SampledCircleRange::Admitted(sampled_range) => {
+                                range = Some(sampled_range);
+                                sampled_sweep_circles.insert(*curve_id);
+                            }
+                            SampledCircleRange::Refused(loss) => losses.push(loss),
+                            SampledCircleRange::Unrelated => {}
+                        }
+                        if unrelated {
+                            range = pcurve_backed_periodic_conic_parameter_range(
+                                ctx,
+                                &geometry,
+                                (*curve_id, faces),
+                                &native_pcurves,
+                                &ir.model.surfaces,
+                                points,
+                                source_carriers,
+                            )?;
+                            match crate::decode::sweep::surfaces::sampled_hole_circle_range(
+                                ctx,
+                                scan,
+                                &mut geometry,
+                                (*curve_id, faces),
+                                &ir.model.surfaces,
+                                points,
+                                source_carriers,
+                            )? {
+                                SampledCircleRange::Admitted(hole_range) => {
+                                    range = Some(hole_range);
+                                    sampled_hole_circles.insert(*curve_id);
+                                }
+                                SampledCircleRange::Refused(loss) => losses.push(loss),
+                                SampledCircleRange::Unrelated => {}
+                            }
+                        }
                     }
                 }
-                if range.is_none() && unbacked_closed_edge {
+                let refused_bound_circle = refused_revolution_ranges.contains(curve_id);
+                if range.is_none() && !refused_bound_circle {
+                    if let Some(faces) = curve_faces.get(curve_id).copied() {
+                        range = bounded_cylinder_circle_parameter_range(
+                            ctx,
+                            scan,
+                            &mut geometry,
+                            faces,
+                            &ir.model.surfaces,
+                            points,
+                            source_carriers,
+                        )?;
+                        if range.is_some() {
+                            bounded_circle_curves.insert(*curve_id);
+                        }
+                    }
+                }
+                if range.is_none() && unbacked_closed_edge && !refused_bound_circle {
                     range = full_periodic_conic_edge_parameter_range(&geometry, points[0]);
                 }
                 if range.is_none() && unbacked_closed_edge {
@@ -2318,15 +2784,18 @@ pub(in super::super) fn transfer_native_brep(
             )?;
             let visible_row = namespaces.unique_visible_row(*face_id);
             let active_datum = namespaces.active_datum(*face_id);
+            let active_plane = namespaces.active_plane(*face_id);
             let face_offset = visible_row
                 .map(|row| row.offset)
                 .or_else(|| active_datum.map(|datum| datum.offset_in_payload))
+                .or_else(|| active_plane.map(|plane| plane.row.offset))
                 .unwrap_or(0);
-            let face_source_namespace = if visible_row.is_none() && active_datum.is_some() {
-                "ActDatums"
-            } else {
-                "VisibGeom"
-            };
+            let face_source_namespace =
+                if visible_row.is_none() && (active_datum.is_some() || active_plane.is_some()) {
+                    "ActDatums"
+                } else {
+                    "VisibGeom"
+                };
             let surface = namespaces.surface_id(*face_id)?;
             let surface_prefix = namespaces.prefix(*face_id);
             if surface_positions.named(surface_prefix, *face_id).is_none() {
@@ -2470,7 +2939,10 @@ pub(in super::super) fn transfer_native_brep(
                     } else {
                         None
                     };
+                    let bounded_circle = bounded_circle_curves.contains(&half_edge.curve_id);
+                    let native_witness = native_selection.is_some();
                     let pcurve_geometry = native_selection
+                        .filter(|_| !bounded_circle)
                         .and_then(
                             |crate::decode::analytic::pcurves::OrientedNativePcurve {
                                  endpoints,
@@ -2485,7 +2957,8 @@ pub(in super::super) fn transfer_native_brep(
                             },
                         )
                         .or_else(|| {
-                            native_candidates.is_none().then_some(())?;
+                            (native_candidates.is_none() || (bounded_circle && native_witness))
+                                .then_some(())?;
                             let surface = &ir.model.surfaces[face_surface?];
                             let curve = numbered_curves
                                 .unique(half_edge.curve_id)
@@ -2531,6 +3004,53 @@ pub(in super::super) fn transfer_native_brep(
                                 tag,
                             ))
                         });
+                    let sampled_plane = (sampled_sweep_circles.contains(&half_edge.curve_id)
+                        || sampled_hole_circles.contains(&half_edge.curve_id))
+                        && face_surface.is_some_and(|position| {
+                            matches!(
+                                source_carriers.surface_geometry(&ir.model.surfaces[position]),
+                                SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(_))
+                            )
+                        });
+                    let pcurve_geometry = if sampled_plane {
+                        (|| {
+                            let surface = &ir.model.surfaces[face_surface?];
+                            let curve =
+                                &ir.model.curves[numbered_curves.unique(half_edge.curve_id)?];
+                            let edge =
+                                &ir.model.edges[numbered_edges.unique(half_edge.curve_id)?];
+                            let geometry = planar_curve_pcurve(
+                                source_carriers.surface_geometry(surface),
+                                source_carriers.curve_geometry(curve),
+                                &format_args!(
+                                    "Sampled sweep curve {} on face {face_id}",
+                                    half_edge.curve_id
+                                ),
+                                refusal_cell,
+                            )?;
+                            Some((
+                                geometry,
+                                source_carriers.source_edge_parameter_range(edge),
+                                row_offsets.get(&half_edge.curve_id).copied().unwrap_or(0),
+                                if sampled_hole_circles.contains(&half_edge.curve_id) {
+                                    "sampled_hole_planar_pcurve"
+                                } else {
+                                    "sampled_sweep_planar_pcurve"
+                                },
+                            ))
+                        })()
+                    } else {
+                        pcurve_geometry
+                    };
+                    if sampled_plane && pcurve_geometry.is_none() {
+                        refusal_cell.note(
+                            format_args!(
+                                "Sampled sweep curve {} on face {face_id}",
+                                half_edge.curve_id
+                            ),
+                            &"the complete circular boundary has no admitted plane projection",
+                        );
+                    }
                     let refused = refusal.take_records();
                     if pcurve_geometry.is_none() {
                         for record in refused {

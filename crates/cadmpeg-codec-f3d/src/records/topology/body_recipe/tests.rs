@@ -100,9 +100,18 @@ fn body_recipe_reference_count_fixes_nested_frame_offsets() {
             "nested_record_index",
             "nested_record_index_offset",
             "asset_id_offset",
-            "next_record_index",
         ],
     );
+    for (next_record_index, admitted) in [(1, true), (2, false), (5, false), (6, true), (900, true)]
+    {
+        let mut candidate = wire.clone();
+        candidate["next_record_index"] = next_record_index.into();
+        assert_eq!(
+            serde_json::from_value::<DesignBodyRecipeOperand>(candidate).is_ok(),
+            admitted,
+            "{next_record_index}"
+        );
+    }
     let mut admitted = serde_json::from_value::<DesignBodyRecipeOperand>(wire.clone())
         .unwrap()
         .into_draft();

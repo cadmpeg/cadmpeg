@@ -63,13 +63,73 @@ fn fixture_text_styles_project_only_representable_states() {
                 EPS_POINT_PROJECTION,
             )
         })
-        .unwrap();
+        .unwrap()
+        .into_tuple();
         assert_eq!(
             entities.len(),
             usize::from(case.neutral_state),
             "{}",
             case.label
         );
+    }
+}
+
+#[test]
+fn text_of_a_model_space_sketch_has_no_planar_sketch_to_reference() {
+    for (depth, planar) in [(5.0, false), (0.0, true)] {
+        let text = crate::test_support::sketch_text::neutral_text_record();
+        let owner = text.owner_reference;
+        let placement = DesignSketchPlacement {
+            frame: crate::records::sketch_placement::DesignSketchFrame::new(
+                0,
+                crate::records::sketch_placement::DesignSketchFrameForm::ScopeCompact,
+            )
+            .unwrap(),
+            id: "f3d:Design/BulkStream.dat:placement#0".into(),
+            scope_record_index: None,
+            entity_id: format!("Sketch_{owner}").try_into().unwrap(),
+            visibility: None,
+            class_tag: "256".to_owned().try_into().unwrap(),
+            record_index: 1,
+            paired_class_tag: "257".to_owned().try_into().unwrap(),
+        };
+        let point = SketchPoint::try_from(crate::records::sketch_geometry::SketchPointDraft {
+            id: "f3d:Design/BulkStream.dat:point#14".into(),
+            record_index: 14,
+            owner_reference: Some(owner),
+            class_tag: crate::records::references::DesignClassTag::try_from("413".to_owned())
+                .unwrap(),
+            byte_offset: 14,
+            coordinate_offset: 0,
+            companion: crate::records::sketch_geometry::SketchPointCompanion {
+                incident_curves: Vec::new(),
+            },
+            record_form: crate::records::sketch_geometry::SketchPointRecordForm::version11(
+                14,
+                crate::records::sketch_geometry::SketchPointClosure::Selector4State0,
+                None,
+                depth,
+            ),
+            paired_reference: 15,
+            coordinates: Point2::new(0.0, 0.0),
+        })
+        .unwrap();
+        let design = crate::test_support::with_decode_context(|ctx| {
+            project_sketch_design(
+                ctx,
+                &SketchProjectInputs::new(&[placement], &[point], &[], &[], &[text]),
+                EPS_POINT_PROJECTION,
+            )
+        })
+        .unwrap();
+        let (sketches, entities) = design.into_tuple();
+        assert_eq!(!sketches.is_empty(), planar);
+        for entity in &entities {
+            assert!(sketches.iter().any(|sketch| sketch.id == entity.sketch));
+        }
+        if !planar {
+            assert!(entities.is_empty());
+        }
     }
 }
 
@@ -141,7 +201,8 @@ fn sketch_container_visibility_projects_to_the_neutral_sketch() {
             1.0e-6,
         )
     })
-    .expect("sketch lanes pair");
+    .expect("sketch lanes pair")
+    .into_tuple();
     assert!(entities.is_empty());
     assert_eq!(sketches.len(), 1);
     assert_eq!(sketches[0].visible, Some(false));
@@ -274,7 +335,8 @@ fn text_frame_curves_are_construction_geometry_not_profiles() {
             EPS_POINT_PROJECTION,
         )
     })
-    .expect("sketch lanes pair");
+    .expect("sketch lanes pair")
+    .into_tuple();
     assert_eq!(sketches.len(), 1);
     assert!(sketches[0].profiles.is_empty());
     assert_eq!(entities.len(), 6);
@@ -386,7 +448,8 @@ fn point_closure_does_not_mark_construction_geometry() {
             EPS_POINT_PROJECTION,
         )
     })
-    .expect("sketch lanes pair");
+    .expect("sketch lanes pair")
+    .into_tuple();
     assert_eq!(sketches.len(), 1);
     assert!(sketches[0].profiles.is_empty());
     assert_eq!(entities.len(), 3);
@@ -400,9 +463,10 @@ fn placed_sketch_projects_signed_normal_and_nonclamped_curves() {
             100,
             crate::records::sketch_placement::DesignSketchFrameForm::ScopeExplicit(
                 crate::records::sketch_placement::SketchPlacementMatrix::try_from([
-                    [0.0, 0.0, 1.0, 10.0],
-                    [1.0, 0.0, 0.0, 20.0],
-                    [0.0, 1.0, 0.0, 30.0],
+                    // Centimetres: the frame's origin is 10, 20, 30 mm.
+                    [0.0, 0.0, 1.0, 1.0],
+                    [1.0, 0.0, 0.0, 2.0],
+                    [0.0, 1.0, 0.0, 3.0],
                     [0.0, 0.0, 0.0, 1.0],
                 ])
                 .unwrap(),
@@ -532,7 +596,8 @@ fn placed_sketch_projects_signed_normal_and_nonclamped_curves() {
             1.0e-6,
         )
     })
-    .expect("sketch lanes pair");
+    .expect("sketch lanes pair")
+    .into_tuple();
     assert_eq!(sketches.len(), 1);
     assert_eq!(
         sketches[0]
@@ -879,9 +944,10 @@ fn nonplanar_sketch_curves_project_in_model_space() {
             100,
             crate::records::sketch_placement::DesignSketchFrameForm::ScopeExplicit(
                 crate::records::sketch_placement::SketchPlacementMatrix::try_from([
-                    [0.0, 0.0, 1.0, 10.0],
-                    [1.0, 0.0, 0.0, 20.0],
-                    [0.0, 1.0, 0.0, 30.0],
+                    // Centimetres: the frame's origin is 10, 20, 30 mm.
+                    [0.0, 0.0, 1.0, 1.0],
+                    [1.0, 0.0, 0.0, 2.0],
+                    [0.0, 1.0, 0.0, 3.0],
                     [0.0, 0.0, 0.0, 1.0],
                 ])
                 .unwrap(),
@@ -1197,7 +1263,8 @@ fn nonplanar_sketch_curves_project_in_model_space() {
                 1.0e-6,
             )
         })
-        .expect("sketch lanes pair");
+        .expect("sketch lanes pair")
+        .into_tuple();
     assert!(planar_sketches.is_empty());
     assert!(planar_entities.is_empty());
     let surfaces = [surface];
@@ -1342,7 +1409,8 @@ fn surface_only_owner_preserves_planar_and_spatial_projection_policies() {
             EPS_POINT_PROJECTION,
         )
     })
-    .expect("sketch lanes pair");
+    .expect("sketch lanes pair")
+    .into_tuple();
     let SpatialSketchDesign {
         sketches: spatial,
         entities: spatial_entities,
@@ -1448,7 +1516,8 @@ fn shared_curve_identity_pairs_project_distinct_entities() {
             EPS_POINT_PROJECTION,
         )
     })
-    .expect("planar sketch projects");
+    .expect("planar sketch projects")
+    .into_tuple();
     assert_eq!(sketches.len(), 1);
     assert_eq!(entities.len(), 3);
     let planar_ids = entities
@@ -1773,7 +1842,8 @@ fn sketch_curve_tail_construction_flags_and_profile_exclusion() {
                     .with_scan(scan),
                 EPS_POINT_PROJECTION,
             )
-            .expect("sketch projection succeeds");
+            .expect("sketch projection succeeds")
+            .into_tuple();
 
             assert_eq!(sketches.len(), 1);
             let ent_by_rec = |rec: u32| {
@@ -1850,7 +1920,8 @@ fn sketch_curve_tail_construction_flags_and_profile_exclusion() {
                     .with_scan(scan),
                 EPS_POINT_PROJECTION,
             )
-            .expect("square projection succeeds");
+            .expect("square projection succeeds")
+            .into_tuple();
 
             assert_eq!(sketches.len(), 1);
             assert_eq!(
@@ -1881,7 +1952,8 @@ fn sketch_curve_tail_construction_flags_and_profile_exclusion() {
                     .with_scan(scan),
                 EPS_POINT_PROJECTION,
             )
-            .expect("square projection succeeds");
+            .expect("square projection succeeds")
+            .into_tuple();
 
             assert_eq!(sketches.len(), 1);
             assert!(

@@ -28,6 +28,7 @@ use crate::design::decode::text::design_record_id;
 use crate::design::decode::text::relaxed_guid_end;
 use crate::design::{design_feature_family, DesignFeatureFamily};
 use crate::ids::native_stream;
+use crate::layout::body_recipe_family_name_frame as body_recipe_end;
 use crate::layout::class_338_sketch_curve_identity as class_338_curve;
 use crate::layout::coil_compact_face_selection_prefix as coil_face_sel;
 use crate::layout::coil_compact_persistent_selection_prefix as coil_persist_sel;
@@ -80,7 +81,8 @@ use crate::records::{
         entity_selection::DesignLoftLegacyBodyCarrier, extrude_selection::DesignExtrudeFaceRole,
         extrude_selection::DesignExtrudeOperandRole,
         extrude_selection::DesignExtrudeSelectionGroup,
-        extrude_selection::DesignExtrudeSelectionMember, extrude_selection::DesignOperandRole,
+        extrude_selection::DesignExtrudeSelectionMember,
+        extrude_selection::DesignExtrudeSelectionScopeTail, extrude_selection::DesignOperandRole,
         face::DesignFaceOperand, face::DesignFaceSourceGroup, face::DesignFaceSourceMember,
         fillet::DesignFilletRadiusGroup, fillet::DesignFilletRadiusLaw,
         sketch_profile::DesignSketchProfileOperand, sketch_profile::DesignSketchProfileRegion,
@@ -815,7 +817,9 @@ pub(crate) fn decode_face_operands(
             scope.kind() == crate::records::feature::scope::DesignFeatureKind::SplitFace;
         let is_delete_face_operand = matches!(
             scope.kind(),
-            crate::records::feature::scope::DesignFeatureKind::DeleteFace
+            crate::records::feature::scope::DesignFeatureKind::MoveFace
+                | crate::records::feature::scope::DesignFeatureKind::DeplacerFace
+                | crate::records::feature::scope::DesignFeatureKind::DeleteFace
                 | crate::records::feature::scope::DesignFeatureKind::SurfaceDeleteFace
         );
         let is_emboss_face = scope.kind()
@@ -1122,7 +1126,7 @@ pub(crate) fn decode_face_source_groups(
                         lp_ascii_filtered_view(bytes, source_byte_offset, 3..=3, u8::is_ascii_digit) else { return Ok(None); };
                     let source_class = source_class_tag;
                     if !face_source_record_is_registered(types, &scope.id, source_record_index, source_class, FaceSourceType::Identity) { return Ok(None); }
-                    let Some(member) = parse_extrude_identity_member(bytes, source_byte_offset) else { return Ok(None); };
+                    let Some(member) = parse_extrude_identity_member(bytes, source_byte_offset, None) else { return Ok(None); };
                     let Ok(source_byte_offset_u64) = u64::try_from(source_byte_offset) else { return Ok(None); };
                     let Ok(offset) = u64::try_from(offset) else { return Ok(None); };
                     let Ok(class_tag) = crate::design::decode::text::class_tag_from_view(source_class_tag) else { return Ok(None); };
@@ -1578,8 +1582,9 @@ pub(crate) fn bind_sketch_profiles(
     scopes: &mut [DesignParameterScope],
     headers: &[DesignRecordHeader],
     entities: &[DesignEntityHeader],
-) -> Result<(), CodecError> {
+) -> Result<Vec<cadmpeg_ir::report::loss::LossNote>, CodecError> {
     let headers = indexed_operand_headers(headers);
+    let mut losses = Vec::new();
     for scope in scopes.iter_mut().filter(|scope| {
         design_feature_family(&scope.kind()) == Some(DesignFeatureFamily::Extrude)
             || design_feature_family(&scope.kind()) == Some(DesignFeatureFamily::Sweep)
@@ -1594,8 +1599,7 @@ pub(crate) fn bind_sketch_profiles(
             continue;
         };
         let bytes = scan.entry_bytes(&entry.name)?;
-        let mut unique = None;
-        let mut multiple = false;
+        let mut profiles = Vec::new();
         for (ordinal, record_index) in scope.reference_members().values().copied().enumerate() {
             if scope.emboss_operand_construction().is_some() && ordinal != 1 {
                 continue;
@@ -1609,13 +1613,23 @@ pub(crate) fn bind_sketch_profiles(
             else {
                 continue;
             };
-            if unique.is_some() {
-                multiple = true;
-            } else {
-                unique = Some(profile);
-            }
+            profiles.push(profile);
         }
-        let Some(profile) = unique.filter(|_| !multiple) else {
+        if profiles.len() > 1 {
+            if let crate::records::feature::scope::DesignScopePayloadMut::Extrude(slot)
+            | crate::records::feature::scope::DesignScopePayloadMut::Extrusion(slot)
+            | crate::records::feature::scope::DesignScopePayloadMut::Extrusao(slot) =
+                scope.payload_mut()
+            {
+                losses.push(crate::loss::F3dLossCode::FeatureExtrudeProfileGroupNative.note(
+                    format!("{} Sketch-profile operands remain native because their group composition is unresolved.", profiles.len()),
+                ));
+                slot.get_or_insert_with(Default::default)
+                    .extrude_native_profiles = Some(profiles);
+            }
+            continue;
+        }
+        let Some(profile) = profiles.pop() else {
             continue;
         };
         if scope.kind() == crate::records::feature::scope::DesignFeatureKind::BaseFlange {
@@ -1648,7 +1662,7 @@ pub(crate) fn bind_sketch_profiles(
             slot.get_or_insert_with(Default::default).extrude_profile = Some(profile);
         }
     }
-    Ok(())
+    Ok(losses)
 }
 
 /// Decode compact counted selections in Extrude and Emboss scopes.
@@ -1738,6 +1752,8 @@ pub(crate) fn decode_construction_operand_groups(
             || design_feature_family(&scope.kind()) == Some(DesignFeatureFamily::Mirror)
             || scope.kind() == crate::records::feature::scope::DesignFeatureKind::RemoveBody
             || scope.kind() == crate::records::feature::scope::DesignFeatureKind::SurfaceStitch
+            || scope.kind() == crate::records::feature::scope::DesignFeatureKind::MoveFace
+            || scope.kind() == crate::records::feature::scope::DesignFeatureKind::DeplacerFace
             || scope.kind() == crate::records::feature::scope::DesignFeatureKind::DeleteFace
             || scope.kind() == crate::records::feature::scope::DesignFeatureKind::SurfaceDeleteFace
             || scope.kind() == crate::records::feature::scope::DesignFeatureKind::Decal
@@ -2031,6 +2047,41 @@ pub(in crate::design) fn assign_extrude_face_roles(
     }
 }
 
+/// Return the Extrude groups that select bodies to their source role.
+///
+/// A start-from-face Extrude reads every `0x5` group after the first as a
+/// termination face run. A `0x5` group whose members are all body recipe
+/// operands selects bodies, not faces, so it is not a face run.
+pub(crate) fn release_extrude_body_target_groups(
+    groups: &mut [DesignConstructionOperandGroup],
+    operands: &[DesignBodyRecipeOperand],
+) {
+    for group in groups.iter_mut() {
+        let DesignConstructionOperandRole::ExtrudeFaces {
+            encoding: DesignExtrudeFaceEncoding::SelectedStart,
+            usage: DesignExtrudeFaceRole::Termination,
+        } = group.operand_role
+        else {
+            continue;
+        };
+        let stream = native_stream(&group.id);
+        let selects_bodies = !group.members().is_empty()
+            && group.members().iter().enumerate().all(|(ordinal, member)| {
+                u32::try_from(ordinal).is_ok_and(|ordinal| {
+                    operands.iter().any(|operand| {
+                        native_stream(&operand.id) == stream
+                            && operand.scope_record_index == group.scope_record_index
+                            && operand.owner.group() == Some((group.record_index, ordinal))
+                            && operand.record_index() == member.value
+                    })
+                })
+            });
+        if selects_bodies {
+            group.operand_role = DesignConstructionOperandRole::Other(DesignOperandRole::ROLE_0X5);
+        }
+    }
+}
+
 /// Pair Fillet construction-operand groups with their radius inputs.
 fn push_fillet_radius_group(
     out: &mut Vec<DesignFilletRadiusGroup>,
@@ -2130,6 +2181,42 @@ pub(crate) fn decode_fillet_radius_groups(
             && (weights.is_empty() || weights.len() == scope_groups.len())
         {
             for (ordinal, (group, radius)) in scope_groups.into_iter().zip(radii).enumerate() {
+                let Ok(group_ordinal) = u32::try_from(ordinal) else {
+                    continue;
+                };
+                push_fillet_radius_group(
+                    &mut out,
+                    stream,
+                    group_ordinal,
+                    group,
+                    DesignFilletRadiusLaw::Constant {
+                        radius_parameter_record_index: radius.record_index,
+                    },
+                    weights.get(ordinal).map(|parameter| parameter.record_index),
+                );
+            }
+            continue;
+        }
+        // Several edge sets with face selections: the edge groups pair with
+        // the radii in scope-reference order. A face group states no radius
+        // of its own and receives no assignment.
+        let edge_groups = scope_groups
+            .iter()
+            .copied()
+            .filter(|group| group.role() == DesignOperandRole::BODIES_B)
+            .collect::<Vec<_>>();
+        let face_group_count = scope_groups
+            .iter()
+            .filter(|group| group.role() == DesignOperandRole::ROLE_0X10)
+            .count();
+        if edge_groups.len() > 1
+            && face_group_count > 0
+            && edge_groups.len() + face_group_count == scope_groups.len()
+            && owned_parameters.len() == radii.len() + weights.len()
+            && edge_groups.len() == radii.len()
+            && (weights.is_empty() || weights.len() == edge_groups.len())
+        {
+            for (ordinal, (group, radius)) in edge_groups.into_iter().zip(radii).enumerate() {
                 let Ok(group_ordinal) = u32::try_from(ordinal) else {
                     continue;
                 };
@@ -2579,12 +2666,17 @@ pub(super) fn parse_construction_operand_group(
             let Some(flags) = bytes.get(tail..tail + flag_bytes) else {
                 continue;
             };
-            if flags.last() != Some(&0) {
+            let closing_flags: &[u8] = if flag_bytes == 3 { &[0, 1] } else { &[0] };
+            if !flags
+                .last()
+                .is_some_and(|last| closing_flags.contains(last))
+            {
                 continue;
             }
             // The wider block prefixes the narrower one, so the variant flag is
             // always the byte before the terminating zero.
             let variant = flags[flag_bytes - 2] != 0;
+            let closing_flag = flags[flag_bytes - 1] != 0;
             let mut after = tail + flag_bytes;
             if take_record_reference(bytes, &mut after).map(|(index, _)| index)
                 != header.record_index.checked_add(1)
@@ -2609,21 +2701,24 @@ pub(super) fn parse_construction_operand_group(
                 continue;
             }
             if closed
-                .replace((variant, after, paired_class_tag.to_owned()))
+                .replace((variant, closing_flag, after, paired_class_tag.to_owned()))
                 .is_some()
             {
                 return Unclosed;
             }
         }
     }
-    if let Some(legacy_tail) =
+    if let Some((variant, paired_at, paired_class_tag)) =
         legacy_body_group_tail(bytes, scope, header, cursor, opaque_index.get())
     {
-        if closed.replace(legacy_tail).is_some() {
+        if closed
+            .replace((variant, false, paired_at, paired_class_tag))
+            .is_some()
+        {
             return Unclosed;
         }
     }
-    let Some((variant, paired_at, paired_class_tag)) = closed else {
+    let Some((variant, closing_flag, paired_at, paired_class_tag)) = closed else {
         return Unclosed;
     };
 
@@ -2688,6 +2783,7 @@ pub(super) fn parse_construction_operand_group(
             opaque_scalar,
             opaque_scalar_offset: opaque_index_offset + 4,
             variant,
+            closing_flag,
         },
     ) else {
         return Unclosed;
@@ -3321,7 +3417,7 @@ fn parse_construction_operand_identity(
     if !chain_started {
         return None;
     }
-    let persistent_identity = match parse_extrude_identity_member(bytes, current_at) {
+    let persistent_identity = match parse_extrude_identity_member(bytes, current_at, None) {
         Some(member) => DesignConstructionPersistentIdentity::try_new(
             crate::records::topology::construction::DesignConstructionPersistentIdentityDraft {
                 local_id: member.local_id,
@@ -3377,7 +3473,7 @@ fn parse_construction_tracking_path(
         || View::u32_le_at(bytes, carrier_at + 21)? != 1
         || View::u32_le_at(bytes, carrier_at + 25)? != 0
         || View::u32_le_at(bytes, carrier_at + 29)? != 1
-        || View::u32_le_at(bytes, carrier_at + 33)? != 2
+        || !matches!(View::u32_le_at(bytes, carrier_at + 33)?, 2 | 3)
         || View::u64_le_at(bytes, carrier_at + 45)? != 0
         || View::u32_le_at(bytes, carrier_at + 53)? != 1
         || View::u64_le_at(bytes, carrier_at + 65)? != 0
@@ -4109,6 +4205,7 @@ pub(crate) fn decode_body_recipe_operands(
                 continue;
             };
             let Some(recipe) = unique_body_recipe_with_index(
+                bytes,
                 records,
                 header,
                 body_recipes_by_stream
@@ -4171,6 +4268,7 @@ pub(crate) fn decode_body_recipe_operands(
                 continue;
             };
             let Some(recipe) = unique_body_recipe_with_index(
+                bytes,
                 records,
                 header,
                 body_recipes_by_stream
@@ -4224,7 +4322,9 @@ fn push_body_recipe_operand(
 
 /// Select the sole body recipe in the structural interval after the `N+3`
 /// header and before the enclosing `N+4` header. The bounded Design stream,
-/// rather than an arbitrary byte distance, limits the interval.
+/// rather than an arbitrary byte distance, limits the interval. A stream with
+/// no `N+4` header after the prologue admits the first body recipe that
+/// `body_recipe_operand_end_with_index` closes.
 #[cfg(test)]
 fn unique_body_recipe<'a>(
     bytes: &[u8],
@@ -4232,21 +4332,35 @@ fn unique_body_recipe<'a>(
     recipes: &'a [&'a ConstructionRecipe],
 ) -> Option<&'a ConstructionRecipe> {
     let records = crate::design::test_support::indexed_record_offsets_for_test(bytes);
-    unique_body_recipe_with_index(&records, header, recipes)
+    unique_body_recipe_with_index(bytes, &records, header, recipes)
 }
 
 fn unique_body_recipe_with_index<'a>(
+    bytes: &[u8],
     records: &IndexedRecordOffsets,
     header: &DesignRecordHeader,
     recipes: &'a [&'a ConstructionRecipe],
 ) -> Option<&'a ConstructionRecipe> {
     let start = usize::try_from(header.byte_offset).ok()?;
     let prologue_end = body_recipe_prologue_end_with_index(records, start, header.record_index)?;
-    let next_at = records.first_at_or_after(prologue_end, header.record_index.checked_add(4)?)?;
     let lower = u64::try_from(prologue_end).ok()?;
+    let first = recipes.partition_point(|recipe| recipe.byte_offset < lower);
+    let Some(next_at) =
+        records.first_at_or_after(prologue_end, header.record_index.checked_add(4)?)
+    else {
+        let recipe = recipes.get(first)?;
+        let recipe_at = usize::try_from(recipe.byte_offset).ok()?;
+        body_recipe_operand_end_with_index(
+            bytes,
+            records,
+            prologue_end,
+            header.record_index,
+            recipe_at,
+        )?;
+        return Some(recipe);
+    };
     let upper = u64::try_from(next_at).ok()?;
-    let matching = &recipes[recipes.partition_point(|recipe| recipe.byte_offset < lower)
-        ..recipes.partition_point(|recipe| recipe.byte_offset < upper)];
+    let matching = &recipes[first..recipes.partition_point(|recipe| recipe.byte_offset < upper)];
     let [recipe] = matching else {
         return None;
     };
@@ -4283,30 +4397,48 @@ fn body_recipe_prologue_end_with_index(
     Some(search)
 }
 
-/// Offset of the record carrying `record_index + 4` that closes a body-recipe
+/// Record index and offset of the indexed header that closes a body-recipe
 /// operand whose recipe sits at `recipe_at`. The recipe must follow the
 /// prologue that ends at `prologue_end`.
+///
+/// The header is record `record_index + 4` when the stream stores that record
+/// after the prologue. Otherwise the recipe record is the only indexed record
+/// after the prologue, and its successor must start at the recipe's fixed end.
 #[cfg(test)]
 fn body_recipe_operand_end(
     bytes: &[u8],
     prologue_end: usize,
     record_index: u32,
     recipe_at: usize,
-) -> Option<usize> {
+) -> Option<(u32, usize)> {
     let records = crate::design::test_support::indexed_record_offsets_for_test(bytes);
-    body_recipe_operand_end_with_index(&records, prologue_end, record_index, recipe_at)
+    body_recipe_operand_end_with_index(bytes, &records, prologue_end, record_index, recipe_at)
 }
 
 fn body_recipe_operand_end_with_index(
+    bytes: &[u8],
     records: &IndexedRecordOffsets,
     prologue_end: usize,
     record_index: u32,
     recipe_at: usize,
-) -> Option<usize> {
+) -> Option<(u32, usize)> {
     if recipe_at < prologue_end {
         return None;
     }
-    records.first_at_or_after(recipe_at, record_index.checked_add(4)?)
+    let successor = record_index.checked_add(4)?;
+    if records.first_at_or_after(prologue_end, successor).is_some() {
+        return Some((successor, records.first_at_or_after(recipe_at, successor)?));
+    }
+    let recipe_record_at = next_indexed_record_offset(bytes, prologue_end)?;
+    let close_at =
+        next_indexed_record_offset(bytes, recipe_record_at.checked_add(indexed_header::LEN)?)?;
+    if recipe_record_at >= recipe_at || close_at != recipe_at.checked_add(body_recipe_end::LEN)? {
+        return None;
+    }
+    Some((
+        View::u32_le_at(bytes, close_at.checked_add(indexed_header::RECORD_INDEX)?)?,
+        close_at,
+    ))
 }
 
 #[cfg(test)]
@@ -4360,8 +4492,13 @@ fn parse_body_recipe_operand_frame_with_index(
     let start = usize::try_from(header.byte_offset).ok()?;
     let recipe_at = usize::try_from(recipe.byte_offset).ok()?;
     let prologue_end = body_recipe_prologue_end_with_index(records, start, header.record_index)?;
-    let next_at =
-        body_recipe_operand_end_with_index(records, prologue_end, header.record_index, recipe_at)?;
+    let (next_record_index, next_at) = body_recipe_operand_end_with_index(
+        bytes,
+        records,
+        prologue_end,
+        header.record_index,
+        recipe_at,
+    )?;
     let reference_count = usize::try_from(View::u32_le_at(bytes, start + 21)?).ok()?;
     // The legacy Combine form permits an empty persistent-reference table;
     // its marker then starts at the ordinary post-count cursor. The history
@@ -4445,7 +4582,7 @@ fn parse_body_recipe_operand_frame_with_index(
             resolved_body_state_id: None,
             resolved_body_slot: None,
             resolved_body_face_slots: Vec::new(),
-            next_record_index: header.record_index.checked_add(4)?,
+            next_record_index,
             next_byte_offset: u64::try_from(next_at).ok()?,
         },
     )
@@ -4625,7 +4762,7 @@ fn parse_extrude_selection_member(
     header: &DesignRecordHeader,
 ) -> Option<DesignExtrudeSelectionMember> {
     let start = usize::try_from(header.byte_offset).ok()?;
-    let member = parse_extrude_identity_member(bytes, start)?;
+    let member = parse_extrude_identity_member(bytes, start, Some(group.scope_record_index))?;
     DesignExtrudeSelectionMember::try_new(
         crate::records::topology::extrude_selection::DesignExtrudeSelectionMemberDraft {
             id: String::new(),
@@ -4642,6 +4779,7 @@ fn parse_extrude_selection_member(
             context_id_offset: member.context_id_offset,
             tail_slot_present: member.tail_slot_present,
             tail_slot_offset: member.tail_slot_offset,
+            scope_tail: member.scope_tail,
             resolved_geometry: None,
             operand_identity_ids: Vec::new(),
             historical: None,
@@ -4652,6 +4790,11 @@ fn parse_extrude_selection_member(
     .ok()
 }
 
+/// Width of a same-segment marked reference.
+const MARKED_REFERENCE_LEN: usize = 11;
+/// Bytes between the two chain references of a selection-member scope tail.
+const EXTRUDE_SCOPE_TAIL_SEPARATOR: [u8; 3] = [1, 0, 0];
+
 struct ParsedExtrudeIdentityMember {
     local_id: u64,
     local_id_offset: u64,
@@ -4661,14 +4804,70 @@ struct ParsedExtrudeIdentityMember {
     context_id_offset: u64,
     tail_slot_present: bool,
     tail_slot_offset: u64,
+    scope_tail: Option<DesignExtrudeSelectionScopeTail>,
     next_record_index: u32,
     next_byte_offset: u64,
 }
 
-fn parse_extrude_identity_member(
+/// Parse the fifty-byte scope tail that follows a 190-byte member frame.
+///
+/// Returns the tail and the offset where the tail ends. The closing marked
+/// reference has to name `scope_record_index`.
+fn parse_extrude_selection_scope_tail(
     bytes: &[u8],
-    start: usize,
-) -> Option<ParsedExtrudeIdentityMember> {
+    tail_start: usize,
+    scope_record_index: u32,
+) -> Option<(DesignExtrudeSelectionScopeTail, usize)> {
+    use crate::layout::extrude_selection_member_scope_tail as tail;
+    let tail_end = tail_start.checked_add(tail::LEN)?;
+    bytes.get(tail_start..tail_end)?;
+    let marked_reference = |offset: usize| -> Option<u32> {
+        let mut cursor = tail_start.checked_add(offset)?;
+        let (record_index, _) = take_record_reference(bytes, &mut cursor)?;
+        (cursor
+            == tail_start
+                .checked_add(offset)?
+                .checked_add(MARKED_REFERENCE_LEN)?)
+        .then_some(record_index)
+    };
+    if bytes.get(tail_start + tail::LEADING_ZERO) != Some(&tail::LEADING_ZERO_VALUE)
+        || View::u32_le_at(bytes, tail_start + tail::OPAQUE_WORD)? != tail::OPAQUE_WORD_VALUE
+        || bytes.get(tail_start + tail::SEPARATOR..tail_start + tail::CHAIN_REFERENCE_SECOND)?
+            != EXTRUDE_SCOPE_TAIL_SEPARATOR
+        || bytes.get(tail_start + tail::SECOND_SEPARATOR) != Some(&tail::SECOND_SEPARATOR_VALUE)
+    {
+        return None;
+    }
+    let first = marked_reference(tail::CHAIN_REFERENCE_FIRST)?;
+    let second = marked_reference(tail::CHAIN_REFERENCE_SECOND)?;
+    let scope = marked_reference(tail::SCOPE_REFERENCE)?;
+    if scope != scope_record_index {
+        return None;
+    }
+    Some((
+        DesignExtrudeSelectionScopeTail {
+            opaque_scalar_bits: View::u64_le_at(bytes, tail_start + tail::OPAQUE_SCALAR)?,
+            opaque_word: tail::OPAQUE_WORD_VALUE,
+            chain_references: [first, second],
+            scope_record_index: scope,
+        },
+        tail_end,
+    ))
+}
+
+/// Fields shared by every selection-member tail form: the identity run up to
+/// and including the optional-slot marker.
+struct ExtrudeIdentityFrame {
+    local_id: u64,
+    asset_id: String,
+    after_asset_id: usize,
+    context_id: String,
+    after_context_id: usize,
+    tail_slot_offset: usize,
+    tail_slot_present: bool,
+}
+
+fn parse_extrude_identity_frame(bytes: &[u8], start: usize) -> Option<ExtrudeIdentityFrame> {
     if bytes.get(start + extrude_member::ZERO_RUN_10..start + extrude_member::LOCAL_IDENTITY)?
         != [0; 10]
     {
@@ -4690,7 +4889,133 @@ fn parse_extrude_identity_member(
     {
         return None;
     }
+    Some(ExtrudeIdentityFrame {
+        local_id,
+        asset_id,
+        after_asset_id,
+        context_id,
+        after_context_id,
+        tail_slot_offset,
+        tail_slot_present,
+    })
+}
+
+/// Longest tail of an extended selection member.
+const EXTRUDE_EXTENDED_TAIL_MAX: usize = 1024;
+
+/// End of an extended selection-member tail that starts at `tail_start`.
+///
+/// The tail runs to the next indexed record header: u32 `3`, three ASCII
+/// digits and a u32 record index. When no header follows, the
+/// tail runs to the end of the stream and the record index is zero. Returns
+/// the record index and the end offset. The fourteen-byte and fifty-byte
+/// lengths belong to the typed tail forms and are not extended.
+fn extended_extrude_tail_end(bytes: &[u8], tail_start: usize) -> Option<(u32, usize)> {
+    let limit = tail_start
+        .checked_add(EXTRUDE_EXTENDED_TAIL_MAX)?
+        .min(bytes.len());
+    let is_header = |at: usize| -> Option<u32> {
+        let header = bytes.get(at..at.checked_add(11)?)?;
+        (header[..4] == 3u32.to_le_bytes() && header[4..7].iter().all(u8::is_ascii_digit))
+            .then(|| View::u32_le_at(bytes, at + 7))?
+    };
+    let typed_length = |end: usize| matches!(end - tail_start, 14 | 50);
+    for at in tail_start.checked_add(1)?..=limit {
+        if let Some(index) = is_header(at) {
+            return (!typed_length(at)).then_some((index, at));
+        }
+    }
+    let rest = bytes.len().checked_sub(tail_start)?;
+    ((1..=EXTRUDE_EXTENDED_TAIL_MAX).contains(&rest) && !typed_length(bytes.len()))
+        .then_some((0, bytes.len()))
+}
+
+/// Parse a selection-member identity frame.
+///
+/// `scope_record_index` names the scope that owns the selection group; the
+/// scope-tail and extended-tail forms are admitted only when it is given.
+fn parse_extrude_identity_member(
+    bytes: &[u8],
+    start: usize,
+    scope_record_index: Option<u32>,
+) -> Option<ParsedExtrudeIdentityMember> {
+    parse_extrude_identity_member_exact(bytes, start, scope_record_index).or_else(|| {
+        scope_record_index?;
+        let frame = parse_extrude_identity_frame(bytes, start)?;
+        let fixed_end = start.checked_add(extrude_member::LEN)?;
+        if View::u32_le_at(bytes, frame.tail_slot_offset + 1) != Some(0)
+            || frame.after_context_id.checked_add(9)? != fixed_end
+        {
+            return None;
+        }
+        let (next_record_index, tail_end) = extended_extrude_tail_end(bytes, fixed_end)?;
+        Some(ParsedExtrudeIdentityMember {
+            local_id: frame.local_id,
+            local_id_offset: u64::try_from(start + extrude_member::LOCAL_IDENTITY).ok()?,
+            asset_id: frame.asset_id,
+            asset_id_offset: u64::try_from(start + extrude_member::ASSET_UUID_UTF16).ok()?,
+            context_id: frame.context_id,
+            context_id_offset: u64::try_from(frame.after_asset_id + 4).ok()?,
+            tail_slot_present: frame.tail_slot_present,
+            tail_slot_offset: u64::try_from(frame.tail_slot_offset).ok()?,
+            scope_tail: None,
+            next_record_index,
+            next_byte_offset: u64::try_from(tail_end).ok()?,
+        })
+    })
+}
+
+fn parse_extrude_identity_member_exact(
+    bytes: &[u8],
+    start: usize,
+    scope_record_index: Option<u32>,
+) -> Option<ParsedExtrudeIdentityMember> {
+    let ExtrudeIdentityFrame {
+        local_id,
+        asset_id,
+        after_asset_id,
+        context_id,
+        after_context_id,
+        tail_slot_offset,
+        tail_slot_present,
+    } = parse_extrude_identity_frame(bytes, start)?;
     let fixed_end = start.checked_add(extrude_member::LEN)?;
+    if let Some(scope_record_index) = scope_record_index {
+        if !tail_slot_present
+            && View::u32_le_at(bytes, tail_slot_offset + 1) == Some(0)
+            && after_context_id.checked_add(9)? == fixed_end
+            && bytes.get(fixed_end) == Some(&0)
+        {
+            if let Some((scope_tail, tail_end)) =
+                parse_extrude_selection_scope_tail(bytes, fixed_end, scope_record_index)
+            {
+                let (next_record_index, next_byte_offset) = if tail_end == bytes.len() {
+                    (0, u64::try_from(tail_end).ok()?)
+                } else {
+                    let (_, after_next_tag) =
+                        lp_ascii_filtered_view(bytes, tail_end, 1..=2000, u8::is_ascii_graphic)?;
+                    (
+                        View::u32_le_at(bytes, after_next_tag)?,
+                        u64::try_from(tail_end).ok()?,
+                    )
+                };
+                return Some(ParsedExtrudeIdentityMember {
+                    local_id,
+                    local_id_offset: u64::try_from(start + extrude_member::LOCAL_IDENTITY).ok()?,
+                    asset_id,
+                    asset_id_offset: u64::try_from(start + extrude_member::ASSET_UUID_UTF16)
+                        .ok()?,
+                    context_id,
+                    context_id_offset: u64::try_from(after_asset_id + 4).ok()?,
+                    tail_slot_present,
+                    tail_slot_offset: u64::try_from(tail_slot_offset).ok()?,
+                    scope_tail: Some(scope_tail),
+                    next_record_index,
+                    next_byte_offset,
+                });
+            }
+        }
+    }
     let fixed_end = if tail_slot_present
         && View::u32_le_at(bytes, tail_slot_offset + 1) == Some(0)
         && after_context_id.checked_add(9)? == fixed_end
@@ -4716,7 +5041,7 @@ fn parse_extrude_identity_member(
             (0, u64::try_from(fixed_end).ok()?)
         } else {
             let (_, after_next_tag) =
-                lp_ascii_filtered_view(bytes, fixed_end, 0..=2000, u8::is_ascii_graphic)?;
+                lp_ascii_filtered_view(bytes, fixed_end, 1..=2000, u8::is_ascii_graphic)?;
             (
                 View::u32_le_at(bytes, after_next_tag)?,
                 u64::try_from(fixed_end).ok()?,
@@ -4727,7 +5052,7 @@ fn parse_extrude_identity_member(
         let (next_record_index, _) = take_record_reference(bytes, &mut cursor)?;
         let next_at = cursor;
         let (_, after_next_tag) =
-            lp_ascii_filtered_view(bytes, next_at, 0..=2000, u8::is_ascii_graphic)?;
+            lp_ascii_filtered_view(bytes, next_at, 1..=2000, u8::is_ascii_graphic)?;
         if View::u32_le_at(bytes, after_next_tag)? != next_record_index {
             return None;
         }
@@ -4744,6 +5069,7 @@ fn parse_extrude_identity_member(
         context_id_offset: u64::try_from(after_asset_id + 4).ok()?,
         tail_slot_present,
         tail_slot_offset: u64::try_from(tail_slot_offset).ok()?,
+        scope_tail: None,
         next_record_index,
         next_byte_offset,
     })
@@ -4843,9 +5169,25 @@ pub(in crate::design) fn parse_sketch_profile(
         lp_ascii_filtered_view(bytes, paired_at, 0..=2000, u8::is_ascii_graphic)?;
     let tail_length = paired_at.checked_sub(after_entity_suffix)?;
     if View::u32_le_at(bytes, after_paired_tag)? != header.record_index
-        || !matches!(tail_length, 89 | 93 | 94)
+        || !matches!(tail_length, 83 | 89 | 93 | 94)
     {
         return None;
+    }
+    if tail_length == 83 {
+        // The 83-byte tail omits the marked reference that follows the third
+        // u32 of the 94-byte tail, which is then zero.
+        let tail = after_entity_suffix;
+        if View::u32_le_at(bytes, tail)? != 1
+            || View::u32_le_at(bytes, tail + 4)? != 1
+            || bytes.get(tail + 8..tail + 16)? != [0; 8]
+            || View::u32_le_at(bytes, tail + 16)? != 0x41
+            || marked_record_reference(bytes, tail + 46) != header.record_index.checked_add(2)
+            || marked_record_reference(bytes, tail + 60) != header.record_index.checked_add(1)
+            || bytes.get(tail + 71) != Some(&0)
+            || marked_record_reference(bytes, tail + 72).is_none()
+        {
+            return None;
+        }
     }
     if matches!(tail_length, 89 | 93) {
         let tail = after_entity_suffix;

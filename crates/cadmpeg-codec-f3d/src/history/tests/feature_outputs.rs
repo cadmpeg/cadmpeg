@@ -16,6 +16,7 @@ fn base_feature() -> cadmpeg_ir::features::Feature {
     };
     use cadmpeg_ir::ids::BodyId;
     Feature {
+        product_definition: None,
         id: FeatureId::mint("test:model:feature#feature").unwrap(),
         ordinal: 0,
         name: None,
@@ -127,6 +128,137 @@ fn output_binding_inputs() -> (
 }
 
 #[test]
+fn split_outputs_bind_across_complete_transition_chains() {
+    use cadmpeg_ir::features::{
+        BodySelection, FaceSelection, FeatureDefinition, FeatureOperation, SplitBodyTool,
+    };
+    let mut feature = base_feature();
+    feature
+        .evaluation
+        .set_definition(FeatureDefinition::Operation(FeatureOperation::SplitBody {
+            targets: BodySelection::Unresolved,
+            tool: SplitBodyTool::Faces(FaceSelection::Unresolved),
+        }));
+    feature.evaluation.set_outputs(Default::default());
+    let mut scope = scope_between(3, 0);
+    scope
+        .try_edit(|draft| {
+            draft.payload = crate::records::feature::scope::DesignFeatureKind::Split
+                .try_into()
+                .unwrap();
+        })
+        .unwrap();
+    feature.native_ref = Some(scope.id.clone());
+    let history = crate::test_support::history::history(
+        "f3d:asm-history#1".into(),
+        0,
+        None,
+        false,
+        vec![
+            state(3, 3, Some(2), bodies_topology(&[1])),
+            state(2, 2, Some(1), bodies_topology(&[])),
+            state(1, 1, Some(0), bodies_topology(&[])),
+            state(0, 0, None, bodies_topology(&[])),
+        ],
+    );
+    let body = active_body();
+    let mut complete = feature.clone();
+    let losses = super::super::bind_feature_outputs(
+        std::slice::from_mut(&mut complete),
+        std::slice::from_ref(&scope),
+        &mut [history.clone()],
+        std::slice::from_ref(&body),
+        &Default::default(),
+    )
+    .unwrap();
+    assert_eq!(complete.evaluation.outputs(), &[body.id.clone()]);
+    assert!(!losses
+        .iter()
+        .any(|loss| loss.code == crate::loss::F3dLossCode::FeatureOutputStateChainUnbound.kind()));
+    let mut incomplete = history.clone();
+    incomplete.states_mut()[1].transition = None;
+    let losses = super::super::bind_feature_outputs(
+        std::slice::from_mut(&mut feature),
+        std::slice::from_ref(&scope),
+        &mut [incomplete],
+        std::slice::from_ref(&body),
+        &Default::default(),
+    )
+    .unwrap();
+    assert!(feature.evaluation.outputs().is_empty());
+    assert!(losses
+        .iter()
+        .any(|loss| loss.code == crate::loss::F3dLossCode::FeatureOutputStateChainUnbound.kind()));
+    let losses = super::super::bind_feature_outputs(
+        std::slice::from_mut(&mut feature),
+        &[scope],
+        &mut [history.clone(), history],
+        &[body],
+        &Default::default(),
+    )
+    .unwrap();
+    assert!(feature.evaluation.outputs().is_empty());
+    assert!(losses
+        .iter()
+        .any(|loss| loss.code == crate::loss::F3dLossCode::FeatureOutputStateChainUnbound.kind()));
+}
+
+#[test]
+fn split_output_chains_require_unique_bound_acyclic_states() {
+    let resolves = |history: &crate::history_records::AsmHistory, current, previous| {
+        super::super::output_chain::OutputChain::resolve(
+            std::slice::from_ref(history),
+            current,
+            previous,
+            None,
+        )
+        .is_some()
+    };
+    let history = crate::test_support::history::history(
+        "f3d:asm-history#1".into(),
+        0,
+        None,
+        false,
+        vec![
+            state(3, 3, Some(2), bodies_topology(&[1])),
+            state(2, 2, Some(1), bodies_topology(&[])),
+            state(1, 1, Some(0), bodies_topology(&[])),
+            state(0, 0, None, bodies_topology(&[])),
+        ],
+    );
+    assert!(resolves(&history, 3, 0));
+    assert!(!resolves(&history, 3, 3));
+    for mutation in 0..5 {
+        let mut changed = history.clone();
+        match mutation {
+            0 => {
+                changed.states_mut().remove(1);
+            }
+            1 => {
+                let duplicate = changed.states()[1].clone();
+                changed.states_mut().push(duplicate);
+            }
+            2 => {
+                changed.states_mut()[1].transition = None;
+            }
+            3 => {
+                changed.states_mut()[1].next_ref = Some(3);
+                changed.states_mut()[1]
+                    .transition
+                    .as_mut()
+                    .unwrap()
+                    .previous_state_id = Some(3);
+            }
+            4 => {
+                changed.states_mut()[1].next_ref = Some(0);
+            }
+            _ => unreachable!(),
+        }
+        assert!(!resolves(&changed, 3, 0), "{mutation}");
+    }
+}
+
+#[test]
 fn feature_outputs_name_the_bodies_a_state_deletes_from_its_previous_state() {
     use crate::history_records::AsmHistoricalTopology;
     let history = |states| {
@@ -174,6 +306,7 @@ fn feature_outputs_name_the_bodies_a_state_deletes_from_its_previous_state() {
             &[scope],
             &mut [chain()],
             &bodies,
+            &Default::default(),
         )
         .unwrap();
         check(&feature, case);
@@ -182,7 +315,14 @@ fn feature_outputs_name_the_bodies_a_state_deletes_from_its_previous_state() {
         .iter()
         .map(|(state_id, _)| feature_scope(*state_id))
         .unzip();
-    super::super::bind_feature_outputs(&mut features, &scopes, &mut [chain()], &bodies).unwrap();
+    super::super::bind_feature_outputs(
+        &mut features,
+        &scopes,
+        &mut [chain()],
+        &bodies,
+        &Default::default(),
+    )
+    .unwrap();
     for (feature, case) in features.iter().zip(&expected) {
         check(feature, case);
     }
@@ -197,6 +337,7 @@ fn feature_output_binding_preserves_base_feature_selection() {
         &[scope],
         &mut [history],
         std::slice::from_ref(&body),
+        &Default::default(),
     )
     .unwrap();
     assert_eq!(feature.evaluation.outputs().len(), 1);
@@ -235,6 +376,7 @@ fn stored_body_scope_uses_unique_complete_history_outputs() {
         std::slice::from_ref(&scope),
         &mut [history],
         std::slice::from_ref(&body),
+        &Default::default(),
     )
     .unwrap();
     assert!(matches!(feature.evaluation.definition(),
@@ -272,6 +414,7 @@ fn stored_body_scope_refuses_missing_bodies_and_ambiguous_states() {
             std::slice::from_ref(&scope),
             &mut histories,
             &bodies,
+            &Default::default(),
         )
         .unwrap();
         assert!(matches!(
@@ -307,6 +450,7 @@ fn stored_body_scope_keeps_proven_empty_history_as_no_op() {
         std::slice::from_ref(&scope),
         &mut [history],
         &[],
+        &Default::default(),
     )
     .unwrap();
     assert!(matches!(feature.evaluation.definition(),
@@ -364,6 +508,7 @@ fn stored_body_scope_reports_recipe_absence_from_snapshot_kind() {
         std::slice::from_ref(&scope),
         &mut [history],
         &[body],
+        &Default::default(),
     )
     .unwrap();
     let losses = super::super::stored_bodies::losses(
@@ -404,8 +549,14 @@ fn stored_body_scope_without_any_proof_keeps_native_definition() {
     use cadmpeg_ir::features::{FeatureDefinition, FeatureOperation};
     let (mut feature, scope, _, _) = output_binding_inputs();
     feature.evaluation.set_outputs(Default::default());
-    super::super::bind_feature_outputs(std::slice::from_mut(&mut feature), &[scope], &mut [], &[])
-        .unwrap();
+    super::super::bind_feature_outputs(
+        std::slice::from_mut(&mut feature),
+        &[scope],
+        &mut [],
+        &[],
+        &Default::default(),
+    )
+    .unwrap();
     assert!(matches!(feature.evaluation.definition(),
         FeatureDefinition::Operation(FeatureOperation::Native { kind, .. })
         if kind.as_str() == "Base Feature"));
@@ -443,6 +594,7 @@ fn stored_body_scope_qualifies_body_slots_by_history_blob() {
                 std::slice::from_ref(&scope),
                 &mut [history_in_source(source, &[1])],
                 &bodies,
+                &Default::default(),
             )
             .unwrap();
             assert_eq!(feature.evaluation.outputs(), &[expected.id.clone()]);
@@ -465,6 +617,7 @@ fn stored_body_scope_refuses_a_body_from_another_history_blob() {
         std::slice::from_ref(&scope),
         &mut [history_in_source("selected.smbh", &[1])],
         &[body],
+        &Default::default(),
     )
     .unwrap();
     assert!(matches!(
@@ -504,6 +657,7 @@ fn stored_body_scope_refuses_a_declared_body_count_mismatch() {
         std::slice::from_ref(&scope),
         &mut [history_in_source("selected.smbh", &[])],
         &[],
+        &Default::default(),
     )
     .unwrap();
     assert!(matches!(
@@ -539,6 +693,7 @@ fn stored_body_scope_binds_explicit_body_members_without_history() {
         &[scope],
         &mut [],
         std::slice::from_ref(&body),
+        &Default::default(),
     )
     .unwrap();
     assert_eq!(feature.evaluation.outputs(), &[body.id]);
@@ -602,6 +757,7 @@ fn derived_base_scope_with_proven_bodies_is_a_stored_snapshot() {
             std::slice::from_ref(&scope),
             &mut [history],
             std::slice::from_ref(&body),
+            &Default::default(),
         )
         .unwrap();
         assert!(
@@ -657,6 +813,7 @@ fn derived_base_scope_without_proven_bodies_stays_native() {
                 std::slice::from_ref(&scope),
                 &mut histories,
                 &bodies,
+                &Default::default(),
             )
             .unwrap();
             assert!(
@@ -700,6 +857,7 @@ fn derived_base_scope_with_proven_empty_transition_is_a_typed_no_op() {
             std::slice::from_ref(&scope),
             &mut [history],
             &[],
+            &Default::default(),
         )
         .unwrap();
         assert!(
@@ -897,6 +1055,7 @@ fn historical_partial_and_native_edge_selections_test() {
             DistinctMembers::try_from(vec![]).unwrap(),
         ),
         native_ref: Some("native:scope".into()),
+        product_definition: None,
     };
 
     let scope = scope_between(1, 0);
@@ -904,8 +1063,11 @@ fn historical_partial_and_native_edge_selections_test() {
     // 1. HistoricalPartial: 1 proven edge (#10) and 1 unresolved string ("unresolved_edge")
     let mut feature_partial = make_fillet(
         EdgeSelection::historical_partial(
-            cadmpeg_ir::ids::FeatureInputTopologyId::mint("test:model:feature-input#0").unwrap(),
-            vec![HistoricalEdgeId::mint("f3d:history-input:edge#10").unwrap()],
+            crate::ids::feature_input_topology_id(
+                &FeatureId::mint("test:model:feature#fillet").unwrap(),
+                0,
+            ),
+            vec![HistoricalEdgeId::mint("f3d:history-input:edge#6:fillet:0:10").unwrap()],
             vec!["unresolved_edge".into()],
             "native:ref".into(),
         )
@@ -913,7 +1075,10 @@ fn historical_partial_and_native_edge_selections_test() {
     );
     feature_partial.native_ref = Some(scope.id.clone());
 
-    let mut state0_topo = AsmHistoricalTopology::default();
+    let mut state0_topo = AsmHistoricalTopology {
+        edges: vec![10],
+        ..Default::default()
+    };
     state0_topo.edge_samples.push(AsmHistoricalEdgeSample {
         edge: 10,
         interior: Point3::new(1.0, 0.0, 0.0),
@@ -936,6 +1101,7 @@ fn historical_partial_and_native_edge_selections_test() {
         std::slice::from_ref(&scope),
         &mut [history.clone()],
         &[],
+        &Default::default(),
     )
     .unwrap();
 
@@ -960,6 +1126,7 @@ fn historical_partial_and_native_edge_selections_test() {
         std::slice::from_ref(&scope),
         &mut [history],
         &[],
+        &Default::default(),
     )
     .unwrap();
 
@@ -1063,12 +1230,71 @@ fn historical_body_bounds_unresolved_test() {
         std::slice::from_ref(&scope),
         &mut [history],
         &[],
+        &Default::default(),
     )
     .unwrap();
 
     assert!(losses
         .iter()
         .any(|note| note.code == F3dLossCode::HistoricalBodyBoundsUnresolved.kind()));
+}
+
+#[test]
+fn body_measurement_covers_only_the_states_feature_outputs_read() {
+    use crate::history_records::{AsmHistoricalRelation, AsmHistoricalTopology};
+    use crate::loss::F3dLossCode;
+
+    let relation = |owner_ref, member| AsmHistoricalRelation {
+        owner_ref,
+        member_refs: vec![member],
+    };
+    let solid_without_points = || AsmHistoricalTopology {
+        bodies: vec![1],
+        body_regions: vec![relation(1, 2)],
+        region_shells: vec![relation(2, 3)],
+        shell_faces: vec![relation(3, 4)],
+        ..AsmHistoricalTopology::default()
+    };
+    let history = crate::test_support::history::history(
+        "f3d:asm-history#1".into(),
+        0,
+        None,
+        false,
+        vec![
+            state(4, 4, Some(3), solid_without_points()),
+            state(3, 3, Some(2), solid_without_points()),
+            state(2, 2, Some(1), solid_without_points()),
+            state(1, 1, Some(0), solid_without_points()),
+            state(0, 0, None, solid_without_points()),
+        ],
+    );
+    let scope = scope_between(3, 1);
+    let mut feature = base_feature();
+    feature.native_ref = Some(scope.id.clone());
+
+    let losses = super::super::bind_feature_outputs(
+        std::slice::from_mut(&mut feature),
+        std::slice::from_ref(&scope),
+        &mut [history],
+        &[],
+        &Default::default(),
+    )
+    .unwrap();
+
+    let mut measured = losses
+        .iter()
+        .filter(|note| note.code == F3dLossCode::HistoricalBodyBoundsUnresolved.kind())
+        .map(|note| note.message.as_str())
+        .collect::<Vec<_>>();
+    measured.sort_unstable();
+    assert_eq!(
+        measured,
+        [
+            "historical solid body 1 has unresolved bounds in state 1",
+            "historical solid body 1 has unresolved bounds in state 2",
+            "historical solid body 1 has unresolved bounds in state 3",
+        ]
+    );
 }
 
 #[test]
@@ -1081,7 +1307,7 @@ fn is_solid_historical_body_single_face_solid_and_sheet_closure() {
     // 1-face closed solid (e.g. sphere or torus with 1 face, shell closed, coedges on edge >= 2)
     let closed_solid =
         solid_box_topology(1, Point3::new(0.0, 0.0, 0.0), Point3::new(1.0, 1.0, 1.0));
-    assert!(super::super::is_solid_historical_body(&closed_solid, 1));
+    assert!(super::super::HistoricalBodyIndex::new(&closed_solid).is_solid(1));
 
     // 2-face open sheet (edge 8 only has 1 coedge incidence, coedge 7)
     let open_sheet = AsmHistoricalTopology {
@@ -1116,7 +1342,7 @@ fn is_solid_historical_body_single_face_solid_and_sheet_closure() {
         }],
         ..AsmHistoricalTopology::default()
     };
-    assert!(!super::super::is_solid_historical_body(&open_sheet, 1));
+    assert!(!super::super::HistoricalBodyIndex::new(&open_sheet).is_solid(1));
 }
 
 #[test]
@@ -1170,6 +1396,7 @@ fn stored_false_shell_retained_on_bbox_growth() {
             DistinctMembers::try_from(vec![]).unwrap(),
         ),
         native_ref: Some(scope.id.clone()),
+        product_definition: None,
     };
 
     // State 0 bbox width = 10.0; State 1 bbox width = 20.0 (grew > 1.0e-3)
@@ -1199,6 +1426,7 @@ fn stored_false_shell_retained_on_bbox_growth() {
         std::slice::from_ref(&scope),
         &mut [history],
         &[],
+        &Default::default(),
     )
     .unwrap();
 
@@ -1241,6 +1469,7 @@ fn combine_join_to_cut_deleting_vs_non_deleting() {
             DistinctMembers::try_from(vec![]).unwrap(),
         ),
         native_ref: Some("native:scope".into()),
+        product_definition: None,
     };
 
     let scope = scope_between(1, 0);
@@ -1266,6 +1495,7 @@ fn combine_join_to_cut_deleting_vs_non_deleting() {
         std::slice::from_ref(&scope),
         &mut [history_non_deleting],
         &[],
+        &Default::default(),
     )
     .unwrap();
 
@@ -1297,6 +1527,7 @@ fn combine_join_to_cut_deleting_vs_non_deleting() {
         std::slice::from_ref(&scope),
         &mut [history_deleting],
         &[],
+        &Default::default(),
     )
     .unwrap();
 
@@ -1366,6 +1597,7 @@ fn split_plane_only_emitted_for_split_body() {
             DistinctMembers::try_from(vec![]).unwrap(),
         ),
         native_ref: Some(scope.id.clone()),
+        product_definition: None,
     };
 
     super::super::bind_feature_outputs(
@@ -1373,6 +1605,7 @@ fn split_plane_only_emitted_for_split_body() {
         std::slice::from_ref(&scope),
         &mut [history.clone()],
         &[],
+        &Default::default(),
     )
     .unwrap();
 
@@ -1417,6 +1650,7 @@ fn split_plane_only_emitted_for_split_body() {
             DistinctMembers::try_from(vec![]).unwrap(),
         ),
         native_ref: Some(scope.id.clone()),
+        product_definition: None,
     };
 
     super::super::bind_feature_outputs(
@@ -1424,6 +1658,7 @@ fn split_plane_only_emitted_for_split_body() {
         std::slice::from_ref(&scope),
         &mut [history],
         &[],
+        &Default::default(),
     )
     .unwrap();
 
@@ -1434,3 +1669,188 @@ fn split_plane_only_emitted_for_split_body() {
         None
     );
 }
+
+#[test]
+fn feature_outputs_include_bodies_changed_before_the_terminal_scope_state() {
+    use crate::history_records::AsmHistoricalTopology;
+    let (mut feature, _, _, body) = native_base_feature();
+    let scope = scope_between(2, 0);
+    feature.native_ref = Some(scope.id.clone());
+    let mut histories = [crate::test_support::history::history(
+        "f3d:asm-history#1".into(),
+        0,
+        None,
+        false,
+        vec![
+            state(2, 2, Some(1), bodies_topology(&[1])),
+            state(1, 1, Some(0), bodies_topology(&[1])),
+            state(0, 0, None, AsmHistoricalTopology::default()),
+        ],
+    )];
+    let losses = super::super::bind_feature_outputs(
+        std::slice::from_mut(&mut feature),
+        &[scope],
+        &mut histories,
+        std::slice::from_ref(&body),
+        &Default::default(),
+    )
+    .unwrap();
+    assert_eq!(feature.evaluation.outputs().as_slice(), [body.id]);
+    assert!(!losses.iter().any(|loss| {
+        loss.code == crate::loss::F3dLossCode::FeatureOutputStateChainUnbound.kind()
+    }));
+}
+
+#[test]
+fn feature_output_interval_refusal_has_a_loss() {
+    for refusal in ["truncated", "ambiguous", "link mutation"] {
+        let (mut feature, scope, mut history, body) = native_base_feature();
+        let mut histories = match refusal {
+            "truncated" => {
+                history.states_mut().truncate(1);
+                vec![history]
+            }
+            "ambiguous" => vec![history.clone(), history],
+            _ => {
+                history.states_mut()[0].next_ref = Some(1);
+                vec![history]
+            }
+        };
+        let losses = super::super::bind_feature_outputs(
+            std::slice::from_mut(&mut feature),
+            &[scope],
+            &mut histories,
+            &[body],
+            &Default::default(),
+        )
+        .unwrap();
+        assert!(feature.evaluation.outputs().is_empty());
+        assert!(losses.iter().any(|loss| {
+            loss.code == crate::loss::F3dLossCode::FeatureOutputStateChainUnbound.kind()
+        }));
+    }
+}
+
+#[test]
+fn feature_outputs_follow_bound_history_when_numeric_states_repeat() {
+    use std::collections::HashMap;
+    let mut first = active_body();
+    first.id = cadmpeg_ir::ids::BodyId::mint("f3d:brep/first.smbh/brep:entity#1").unwrap();
+    let mut second = active_body();
+    second.id = cadmpeg_ir::ids::BodyId::mint("f3d:brep/second.smbh/brep:entity#1").unwrap();
+    for (source, expected) in [("first.smbh", &first), ("second.smbh", &second)] {
+        for reversed in [false, true] {
+            let (mut feature, scope, _, _) = native_base_feature();
+            feature
+                .evaluation
+                .set_definition(cadmpeg_ir::features::FeatureDefinition::Operation(
+                    cadmpeg_ir::features::FeatureOperation::MoveFace {
+                        faces: cadmpeg_ir::features::FaceSelection::Unresolved,
+                        motion: cadmpeg_ir::features::FaceMotion::Offset {
+                            distance: cadmpeg_ir::scalar::Length::new(5.0).unwrap(),
+                        },
+                    },
+                ));
+            let selected = history_in_source(source, &[1]).id;
+            let bindings = HashMap::from([(scope.id.clone(), selected)]);
+            let mut histories = vec![
+                history_in_source("first.smbh", &[1]),
+                history_in_source("second.smbh", &[1]),
+            ];
+            let mut bodies = vec![first.clone(), second.clone()];
+            if reversed {
+                histories.reverse();
+                bodies.reverse();
+            }
+            let losses = super::super::bind_feature_outputs(
+                std::slice::from_mut(&mut feature),
+                &[scope],
+                &mut histories,
+                &bodies,
+                &bindings,
+            )
+            .unwrap();
+            assert_eq!(feature.evaluation.outputs(), &[expected.id.clone()]);
+            assert!(!losses.iter().any(|loss| {
+                loss.code == crate::loss::F3dLossCode::FeatureOutputStateChainUnbound.kind()
+                    || loss.code == crate::loss::F3dLossCode::FeatureOutputBodyUnbound.kind()
+            }));
+        }
+    }
+}
+
+#[test]
+fn feature_output_body_namespace_refusal_has_a_loss() {
+    let (mut feature, scope, _, mut body) = native_base_feature();
+    body.id = cadmpeg_ir::ids::BodyId::mint("f3d:brep/other.smbh/brep:entity#1").unwrap();
+    let losses = super::super::bind_feature_outputs(
+        std::slice::from_mut(&mut feature),
+        &[scope],
+        &mut [history_in_source("selected.smbh", &[1])],
+        &[body],
+        &Default::default(),
+    )
+    .unwrap();
+    assert!(feature.evaluation.outputs().is_empty());
+    assert!(losses
+        .iter()
+        .any(|loss| { loss.code == crate::loss::F3dLossCode::FeatureOutputBodyUnbound.kind() }));
+}
+
+#[test]
+fn stored_body_scope_keeps_equal_state_without_a_stored_body_proof_native() {
+    use cadmpeg_ir::features::{FeatureDefinition, FeatureOperation};
+    let (mut feature, _, _, _) = native_base_feature();
+    let scope = scope_between(0, 0);
+    feature.native_ref = Some(scope.id.clone());
+    let history = crate::test_support::history::history(
+        "f3d:asm-history#1".into(),
+        0,
+        None,
+        false,
+        vec![state(0, 0, None, bodies_topology(&[]))],
+    );
+    super::super::bind_feature_outputs(
+        std::slice::from_mut(&mut feature),
+        &[scope],
+        &mut [history],
+        &[],
+        &Default::default(),
+    )
+    .unwrap();
+    assert!(feature.evaluation.outputs().is_empty());
+    assert!(matches!(
+        feature.evaluation.definition(),
+        FeatureDefinition::Operation(FeatureOperation::Native { .. })
+    ));
+}
+
+#[test]
+fn feature_output_equal_endpoints_preserve_an_existing_output_proof() {
+    use cadmpeg_ir::features::{FaceMotion, FaceSelection, FeatureDefinition, FeatureOperation};
+    let (mut feature, _, history, body) = output_binding_inputs();
+    let scope = scope_between(1, 1);
+    feature.native_ref = Some(scope.id.clone());
+    feature
+        .evaluation
+        .set_definition(FeatureDefinition::Operation(FeatureOperation::MoveFace {
+            faces: FaceSelection::Unresolved,
+            motion: FaceMotion::Offset {
+                distance: cadmpeg_ir::scalar::Length::new(1.0).unwrap(),
+            },
+        }));
+    feature
+        .evaluation
+        .set_outputs(vec![body.id.clone()].try_into().unwrap());
+    super::super::bind_feature_outputs(
+        std::slice::from_mut(&mut feature),
+        &[scope],
+        &mut [history],
+        std::slice::from_ref(&body),
+        &Default::default(),
+    )
+    .unwrap();
+    assert_eq!(feature.evaluation.outputs(), &[body.id]);
+}
+
+mod edge_midpoints;

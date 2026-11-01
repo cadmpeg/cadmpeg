@@ -46,7 +46,7 @@ fn paired_inputs_select_their_own_complete_independent_rows() {
     ]);
     let values = operands::plate(
         &fixture.plate,
-        &fixture.style,
+        Some(&fixture.style),
         |r| fixture.property(r),
         Fixture::length,
         Fixture::direction,
@@ -67,6 +67,7 @@ fn paired_inputs_select_their_own_complete_independent_rows() {
     let plate_id = crate::feature::history_feature_id(&fixture.plate.identity).expect("plate");
     let bend_id = crate::feature::history_feature_id(&fixture.bend.identity).expect("bend");
     let make_feature = |id, ordinal, native_ref, operation| Feature {
+        product_definition: None,
         id,
         ordinal,
         native_ref: Some(native_ref),

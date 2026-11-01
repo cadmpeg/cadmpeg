@@ -1,6 +1,6 @@
 {
   "ir": {
-    "ir_version": "9",
+    "ir_version": "10",
     "decode_depth": "full",
     "source": {
       "identity": {
@@ -792,6 +792,7 @@
         "design_canvas_images": [],
         "design_component_naming_spaces": [],
         "design_component_occurrences": [],
+        "design_component_paths": [],
         "design_configurations": [],
         "design_construction_operand_groups": [],
         "design_construction_operand_identities": [],
@@ -2122,6 +2123,26 @@
       "geometry_transferred": true
     },
     "losses": [
+      {
+        "code": {
+          "scope": "namespaced",
+          "namespace": "f3d",
+          "code": "feature.output-state-chain-unbound",
+          "kind": "feature_history_retained"
+        },
+        "severity": "warning",
+        "message": "f3d:model:feature#52:f3d%3AFusionAssetName[Active]/Design1/BulkStream.dat6:Sketch1:1100 has no complete unique output transition chain from state 16777215 to state 1."
+      },
+      {
+        "code": {
+          "scope": "namespaced",
+          "namespace": "f3d",
+          "code": "sketch.curve-unprofiled",
+          "kind": "feature_history_retained"
+        },
+        "severity": "warning",
+        "message": "sketch entity f3d:model:sketch-entity#81:f3d%3Amodel%3Asketch%23f3d%253AFusionAssetName[Active]/Design1/BulkStream.dat@277c440:0: curve is not part of any closed profile loop"
+      },
       {
         "code": {
           "scope": "namespaced",

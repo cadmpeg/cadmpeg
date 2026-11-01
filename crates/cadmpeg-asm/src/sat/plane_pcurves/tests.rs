@@ -127,3 +127,25 @@ fn many_blocks_of_one_owner_convert_with_one_copy() {
         .collect::<Vec<_>>();
     assert_eq!(&records[owner].tokens[..], &expected[..]);
 }
+
+#[test]
+fn pcurve_offset_conversion_leaves_dangling_and_other_record_references_for_topology() {
+    for target in [4, 1 << 30] {
+        let mut records = vec![
+            record(0, "face", refs(&[-1, -1, -1, -1, 2, -1, -1, 1])),
+            record(1, "plane", Vec::new()),
+            record(2, "loop", refs(&[-1, -1, -1, -1, 3, 0])),
+        ];
+        records.extend(ring(3, 1, 2, target));
+        records.push(record(
+            4,
+            "edge",
+            vec![Token::Double(2.0), Token::Double(3.0)],
+        ));
+        convert(&mut records, &[(0, 25.4)]).expect("topology resolves the pcurve reference");
+        assert_eq!(
+            &*records[4].tokens,
+            &[Token::Double(2.0), Token::Double(3.0)]
+        );
+    }
+}

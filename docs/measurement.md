@@ -246,8 +246,10 @@ around the axis:
 | 1 | On a cone, the part between the loop and the apex. The apex is a member of the region. |
 | 0 | The planar rule, with the winding numbers taken over lifts of each loop by whole turns. |
 
-Other configurations are `boundary.nesting-invalid`. A loop that meets the
-cone apex has a synthesized segment along the apex. When the loop has one
+Other configurations are `boundary.nesting-invalid`. A ring whose coedges are
+all degenerate at the cone apex bounds no area and is a vertex loop at the apex.
+It is valid only with `m` = 1, and the edge has length 0. A loop that meets the cone apex has a synthesized
+segment along the apex. When the loop has one
 such segment and the segment can close the loop without a full turn, the
 segment takes that length and the loop is contractible.
 
@@ -808,6 +810,13 @@ with `k` set by `--limits`. Each face and each edge draws a capped slice from
 it. A slice that runs out makes the item's remaining quantities
 `evaluation.work-exhausted`; the measurement continues. `document.work`
 states the allowance, the units used, and whether the pass ran out.
+
+Faces draw in ascending order of the curve poles of the coedges they invert
+onto a NURBS surface, and then in identity order. A coedge with a pcurve use
+and a face on an analytic carrier invert none. So a face whose boundary costs
+the most cannot take the allowance of a face whose boundary costs less. An
+inversion that its slice stops is `evaluation.work-exhausted`, not
+`boundary.inversion-failed`.
 
 ## Reader duties
 

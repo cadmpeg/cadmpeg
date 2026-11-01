@@ -99,3 +99,36 @@ fn work_plane_projects_three_point_vertex_recipes() {
     });
     assert_eq!(*points, expected);
 }
+
+#[test]
+fn work_plane_modern_solved_frames_project_without_a_construction_inference() {
+    use cadmpeg_ir::features::{FeatureDefinition, FeatureOperation};
+    use cadmpeg_ir::math::{Point3, Vector3};
+    for placement in crate::test_support::placement_construction::modern_placements() {
+        let mut scope = crate::test_support::work_plane::scope(&placement);
+        assert!(
+            crate::design::decode::placement_construction::work_planes::bind(
+                std::slice::from_mut(&mut scope),
+                std::slice::from_ref(&placement)
+            )
+            .is_empty()
+        );
+        let FeatureDefinition::Operation(FeatureOperation::DatumPlane { frame }) =
+            super::super::project_work_plane(&scope, scope.work_plane_transform().unwrap().rows())
+        else {
+            panic!("expected solved datum plane");
+        };
+        let origin = if placement.fields.identity.as_ref().unwrap().value {
+            Point3::new(0.0, 0.0, 0.0)
+        } else {
+            Point3::new(20.0, 30.0, 40.0)
+        };
+        let expected = cadmpeg_ir::features::FeatureDatumPlaneFrame::new(
+            origin,
+            Vector3::new(0.0, 0.0, 1.0),
+            Vector3::new(1.0, 0.0, 0.0),
+        )
+        .unwrap();
+        assert_eq!(frame, expected);
+    }
+}

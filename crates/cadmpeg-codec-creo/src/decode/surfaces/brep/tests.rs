@@ -1148,3 +1148,471 @@ fn native_brep_rejects_ambiguous_model_carriers() {
     assert_eq!(ir.model.shells.len(), 1);
     assert_eq!(ir.model.shells[0].wire_edges().len(), 3);
 }
+
+#[test]
+fn compact_rotation_cylinder_caps_order_disjoint_circular_holes() {
+    let face = std::num::NonZeroU32::new(5);
+    let make_loop = |ids: &[u32]| {
+        crate::test_support::closed_loop(
+            face,
+            ids.iter()
+                .map(|id| crate::topology::HalfEdgeId {
+                    curve_id: *id,
+                    side: crate::topology::Side::Zero,
+                })
+                .collect(),
+        )
+    };
+    let outer = make_loop(&[1, 2, 3, 4]);
+    let first_hole = make_loop(&[5, 6]);
+    let second_hole = make_loop(&[7, 8]);
+    let surface = SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
+        cadmpeg_ir::geometry::analytic::PlaneSurface::try_new(
+            Point3::new(0.0, 0.0, 0.0),
+            Vector3::new(0.0, 0.0, 1.0),
+            Vector3::new(1.0, 0.0, 0.0),
+        )
+        .expect("plane"),
+    ));
+    let outer_points: Vec<[f64; 2]> = vec![[-5.0, -3.0], [5.0, -3.0], [5.0, 3.0], [-5.0, 3.0]];
+    for (second_center, admitted) in [(2.0, true), (4.0, false), (-1.0, false)] {
+        let mut curves = Vec::new();
+        for (index, start) in outer_points.iter().enumerate() {
+            let end = outer_points[(index + 1) % outer_points.len()];
+            let length = (end[0] - start[0]).hypot(end[1] - start[1]);
+            curves.push(Curve {
+                id: CurveId::mint(format!("creo:visibgeom:curve#{}", index + 1)).expect("id"),
+                parameter_range: None,
+                source_object: None,
+                geometry: CurveGeometry::Solved(SolvedCurveGeometry::Line(
+                    cadmpeg_ir::geometry::analytic::LineCurve::try_new(
+                        Point3::new(start[0], start[1], 0.0),
+                        Vector3::new(
+                            (end[0] - start[0]) / length,
+                            (end[1] - start[1]) / length,
+                            0.0,
+                        ),
+                    )
+                    .expect("line"),
+                )),
+            });
+        }
+        for (id, center) in [(5, -2.0), (6, -2.0), (7, second_center), (8, second_center)] {
+            curves.push(Curve {
+                id: CurveId::mint(format!("creo:visibgeom:curve#{id}")).expect("id"),
+                parameter_range: None,
+                source_object: None,
+                geometry: CurveGeometry::Solved(SolvedCurveGeometry::Circle(
+                    cadmpeg_ir::geometry::analytic::CircleCurve::try_new(
+                        Point3::new(center, 0.0, 0.0),
+                        Vector3::new(0.0, 0.0, 1.0),
+                        Vector3::new(1.0, 0.0, 0.0),
+                        1.0,
+                    )
+                    .expect("circle"),
+                )),
+            });
+        }
+        let polygons = [
+            vec![[second_center - 1.0, 0.0], [second_center + 1.0, 0.0]],
+            outer_points.clone(),
+            vec![[-3.0, 0.0], [-1.0, 0.0]],
+        ];
+        let ordered = super::ordered_polygon_circle_loops(
+            &[&second_hole, &outer, &first_hole],
+            &polygons,
+            &surface,
+            NativeCurveEvidence {
+                model_curves: &curves,
+                typed_nonlinear_curve_ids: &BTreeSet::from([5, 6, 7, 8]),
+                source_carriers: &crate::decode::source_carriers::SourceUnitCarriers::default(),
+            },
+        );
+        assert_eq!(ordered.is_some(), admitted);
+        if let Some(ordered) = ordered {
+            assert_eq!(ordered[0].half_edges()[0].curve_id, 1);
+        }
+    }
+}
+
+#[test]
+fn bounded_circle_arcs_prove_disjoint_cap_holes() {
+    let mut native = CadIr::empty();
+    native.model.bodies.push(
+        serde_json::from_value(serde_json::json!({
+            "id": "creo:visibgeom:body#2", "kind": "solid", "regions": ["creo:visibgeom:region#3"]
+        }))
+        .expect("native body"),
+    );
+    native.model.regions.push(
+        serde_json::from_value(serde_json::json!({
+            "id": "creo:visibgeom:region#3", "body": "creo:visibgeom:body#2", "shells": ["creo:visibgeom:shell#6"]
+        }))
+        .expect("native region"),
+    );
+    native.model.shells.push(
+        serde_json::from_value(serde_json::json!({
+            "id": "creo:visibgeom:shell#6", "region": "creo:visibgeom:region#3", "members": [
+                {"kind": "face", "id": "creo:visibgeom:face#1"}
+            ]
+        }))
+        .expect("native shell"),
+    );
+    native.model.faces.push(
+        serde_json::from_value(serde_json::json!({
+            "id": "creo:visibgeom:face#1", "shell": "creo:visibgeom:shell#6", "surface": "creo:visibgeom:surface#1",
+            "sense": "forward", "loops": {"classification": "unspecified", "loops": ["creo:visibgeom:loop#1"]}
+        }))
+        .expect("native face"),
+    );
+    let mut source = crate::test_support::empty_container_scan();
+    source.surfaces.rows.push(crate::surface::SurfaceRow {
+        id: 1,
+        kind: crate::surface::SurfaceKind::Plane,
+        feature_id: 4,
+        reversed: false,
+        boundary_type: crate::surface::BoundaryType::Code00,
+        next_surface: 0,
+        offset: 0,
+    });
+    assert!(
+        crate::decode::sweep::revolution_carriers::native_solid_contains_feature(
+            &source, &native, 4
+        )
+    );
+    assert!(
+        !crate::decode::sweep::revolution_carriers::native_solid_contains_feature(
+            &source, &native, 5
+        )
+    );
+    native.model.bodies[0].kind = cadmpeg_ir::topology::BodyKind::Sheet;
+    assert!(
+        !crate::decode::sweep::revolution_carriers::native_solid_contains_feature(
+            &source, &native, 4
+        )
+    );
+
+    let face = std::num::NonZeroU32::new(5);
+    let make_loop = |ids: &[u32]| {
+        crate::test_support::closed_loop(
+            face,
+            ids.iter()
+                .map(|id| crate::topology::HalfEdgeId {
+                    curve_id: *id,
+                    side: crate::topology::Side::Zero,
+                })
+                .collect(),
+        )
+    };
+    let outer = make_loop(&[1, 2, 3, 4]);
+    let first_hole = make_loop(&[5, 6]);
+    let second_hole = make_loop(&[7, 8]);
+    let surface = SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
+        cadmpeg_ir::geometry::analytic::PlaneSurface::try_new(
+            Point3::new(0.0, 0.0, 0.0),
+            Vector3::new(0.0, 0.0, 1.0),
+            Vector3::new(1.0, 0.0, 0.0),
+        )
+        .expect("plane"),
+    ));
+    let outer_points: Vec<[f64; 2]> = vec![[-5.0, -3.0], [5.0, -3.0], [5.0, 3.0], [-5.0, 3.0]];
+    for (second_center, half_turn, complementary, shifted, admitted) in [
+        (2.0, true, true, false, true),
+        (4.0, true, true, false, false),
+        (-1.0, true, true, false, false),
+        (2.0, false, true, false, false),
+        (2.0, true, false, false, false),
+        (2.0, true, true, true, false),
+    ] {
+        let mut curves = Vec::new();
+        for (index, start) in outer_points.iter().enumerate() {
+            let end = outer_points[(index + 1) % outer_points.len()];
+            let length = (end[0] - start[0]).hypot(end[1] - start[1]);
+            curves.push(Curve {
+                id: CurveId::mint(format!("creo:visibgeom:curve#{}", index + 1)).expect("id"),
+                parameter_range: None,
+                source_object: None,
+                geometry: CurveGeometry::Solved(SolvedCurveGeometry::Line(
+                    cadmpeg_ir::geometry::analytic::LineCurve::try_new(
+                        Point3::new(start[0], start[1], 0.0),
+                        Vector3::new(
+                            (end[0] - start[0]) / length,
+                            (end[1] - start[1]) / length,
+                            0.0,
+                        ),
+                    )
+                    .expect("line"),
+                )),
+            });
+        }
+        for (id, center) in [(5, -2.0), (6, -2.0), (7, second_center), (8, second_center)] {
+            curves.push(Curve {
+                id: CurveId::mint(format!("creo:visibgeom:curve#{id}")).expect("id"),
+                parameter_range: Some(
+                    cadmpeg_ir::topology::IncreasingParameterInterval::new([
+                        0.0,
+                        if half_turn {
+                            std::f64::consts::PI
+                        } else {
+                            std::f64::consts::FRAC_PI_2
+                        },
+                    ])
+                    .expect("increasing arc"),
+                ),
+                source_object: None,
+                geometry: CurveGeometry::Solved(SolvedCurveGeometry::Circle(
+                    cadmpeg_ir::geometry::analytic::CircleCurve::try_new(
+                        Point3::new(center, 0.0, 0.0),
+                        Vector3::new(0.0, 0.0, 1.0),
+                        if shifted {
+                            Vector3::new(0.0, if id % 2 == 0 { -1.0 } else { 1.0 }, 0.0)
+                        } else {
+                            Vector3::new(
+                                if id % 2 == 0 && complementary {
+                                    -1.0
+                                } else {
+                                    1.0
+                                },
+                                0.0,
+                                0.0,
+                            )
+                        },
+                        1.0,
+                    )
+                    .expect("circle"),
+                )),
+            });
+        }
+        let polygons = [
+            vec![[second_center - 1.0, 0.0], [second_center + 1.0, 0.0]],
+            outer_points.clone(),
+            vec![[-3.0, 0.0], [-1.0, 0.0]],
+        ];
+        let ordered = super::ordered_polygon_circle_loops(
+            &[&second_hole, &outer, &first_hole],
+            &polygons,
+            &surface,
+            NativeCurveEvidence {
+                model_curves: &curves,
+                typed_nonlinear_curve_ids: &BTreeSet::from([5, 6, 7, 8]),
+                source_carriers: &crate::decode::source_carriers::SourceUnitCarriers::default(),
+            },
+        );
+        assert_eq!(ordered.is_some(), admitted);
+        if let Some(ordered) = ordered {
+            assert_eq!(ordered[0].half_edges()[0].curve_id, 1);
+            let bindings = [(5, 1, 2), (6, 2, 1)].map(|(curve_id, start, end)| {
+                crate::topology::HalfEdgeVertexIncidence {
+                    half_edge: crate::topology::HalfEdgeId {
+                        curve_id,
+                        side: crate::topology::Side::Zero,
+                    },
+                    start_vertex_id: std::num::NonZeroU32::new(start).expect("vertex"),
+                    end_vertex_id: std::num::NonZeroU32::new(end),
+                }
+            });
+            let incidence = bindings
+                .iter()
+                .map(|binding| (binding.half_edge, binding))
+                .collect();
+            let mut points = BTreeMap::from([(1, [-1.0, 0.0, 0.0]), (2, [-3.0, 0.0, 0.0])]);
+            let carriers = crate::decode::source_carriers::SourceUnitCarriers::default();
+            let evidence = NativeCurveEvidence {
+                model_curves: &curves,
+                typed_nonlinear_curve_ids: &BTreeSet::from([5, 6, 7, 8]),
+                source_carriers: &carriers,
+            };
+            assert_eq!(
+                super::projected_circle_loop_polygon(
+                    &first_hole,
+                    (5, &surface),
+                    &incidence,
+                    &points,
+                    &BTreeMap::new(),
+                    evidence
+                ),
+                Some(vec![[-1.0, 0.0], [-3.0, 0.0]])
+            );
+            points.insert(1, [-1.0, 0.0, 1.0]);
+            assert!(super::projected_circle_loop_polygon(
+                &first_hole,
+                (5, &surface),
+                &incidence,
+                &points,
+                &BTreeMap::new(),
+                evidence
+            )
+            .is_none());
+            points.insert(1, [-1.0, 0.0, 0.0]);
+            let native = BTreeMap::from([((5, 5), vec![([[99.0, 99.0], [99.0, 99.0]], 0)])]);
+            assert!(super::projected_circle_loop_polygon(
+                &first_hole,
+                (5, &surface),
+                &incidence,
+                &points,
+                &native,
+                evidence
+            )
+            .is_none());
+        }
+    }
+    let frame = [
+        0x0f, 0x18, 0xe5, 0x10, 0x18, 0xe5, 0x10, 0x18, 0x2f, 0x08, 0, 0x2f, 0x10, 0,
+    ];
+    for (conflicting_box, reflected, descending) in [
+        (false, false, false),
+        (true, false, false),
+        (false, true, false),
+        (false, false, true),
+    ] {
+        let mut envelope = vec![
+            0x18, 0x18, 0x11, 0x2f, 0x18, 0, 0x48, 0, 0, 0x0f, 0x48, 0, 0, 0x2f, 0, 0, 0x2f, 0x08,
+            0, 0x2f, 0x10, 0,
+        ];
+        if conflicting_box {
+            envelope[9] = 0x18;
+        }
+        if descending {
+            envelope[2] = 0x15;
+        }
+        let mut matrix = frame;
+        if reflected {
+            matrix[6] = 0x0f;
+        }
+        let mut payload = b"srf_array\0\xf8\x01".to_vec();
+        payload.extend([11, 0x24, 4, 1, 0, 0]);
+        payload.extend(envelope);
+        payload.push(0xe3);
+        payload.extend(matrix);
+        payload.extend([0x2f, 0, 0, 0xe3]);
+        payload.extend(b"crv_array\0\xf3\xf8\0");
+        let mut losses = Vec::new();
+        let parameters = crate::decode::with_service_context(|ctx| {
+            crate::surface::parameter_records_with_losses(ctx, &payload, &mut losses)
+        })
+        .expect("bounded parameter records");
+        assert_eq!(parameters.len(), 1);
+        let mut scan = crate::test_support::empty_container_scan();
+        scan.surfaces.rows = crate::surface::rows(&payload);
+        scan.surfaces.parameters = parameters;
+        assert_eq!(
+            scan.surfaces.parameters[0]
+                .positional_cylinder_frame()
+                .is_some(),
+            !(conflicting_box || reflected || descending)
+        );
+        if conflicting_box || reflected || descending {
+            assert!(scan.surfaces.parameters[0]
+                .positional_cylinder_frame()
+                .is_none());
+            assert!(losses.iter().any(|loss| loss.code
+                == crate::loss::CreoLossCode::RevolutionCarrierUnresolved.kind()
+                && loss.message.contains("11")));
+            continue;
+        }
+        let cylinder = scan.surfaces.parameters[0]
+            .positional_cylinder_frame()
+            .expect("bounded cylinder");
+        assert_eq!(
+            cylinder.parameter_bounds(),
+            Some([[0.0, std::f64::consts::PI], [0.0, 6.0]])
+        );
+        let mut companion = b"srf_array\0\xf8\x01".to_vec();
+        companion.extend([12, 0x24, 4, 1, 0, 0]);
+        companion.extend([
+            0x15, 0x18, 0x18, 0x2f, 0x18, 0, 0x48, 0, 0, 0x2f, 0x08, 0, 0x48, 0, 0, 0x2f, 0, 0,
+            0x2f, 0x14, 0, 0x2f, 0x10, 0,
+        ]);
+        companion.push(0xe3);
+        companion.extend(frame);
+        companion.extend([0x2f, 0, 0, 0xe3]);
+        companion.extend(b"crv_array\0\xf3\xf8\0");
+        let companion = crate::decode::with_service_context(|ctx| {
+            crate::surface::parameter_records_with_losses(ctx, &companion, &mut losses)
+        })
+        .expect("companion cylinder");
+        let companion = companion[0]
+            .positional_cylinder_frame()
+            .expect("complementary angular bounds");
+        let points = [[2.0, 3.0, 4.0], [2.0, 3.0, -2.0]];
+        let residual = f64::from_bits(0x3c80_0000_0000_0000);
+        let paths = [[[0.0, 0.0], [residual, 6.0]], [[0.0, 0.0], [0.0, 6.0]]];
+        assert!(matches!(
+            crate::decode::sweep::revolution_carriers::bounded_generator(
+                &[cylinder, companion],
+                points,
+                paths
+            ),
+            Some(CurveGeometry::Solved(SolvedCurveGeometry::Line(_)))
+        ));
+        let mut full_turn = paths;
+        full_turn[0][1][0] = std::f64::consts::TAU;
+        assert!(
+            crate::decode::sweep::revolution_carriers::bounded_generator(
+                &[cylinder, companion],
+                points,
+                full_turn
+            )
+            .is_none()
+        );
+        let mut without_constant_path = paths;
+        without_constant_path[1][1][0] = residual;
+        assert!(
+            crate::decode::sweep::revolution_carriers::bounded_generator(
+                &[cylinder, companion],
+                points,
+                without_constant_path
+            )
+            .is_none()
+        );
+        let circle = CurveGeometry::Solved(SolvedCurveGeometry::Circle(
+            cadmpeg_ir::geometry::analytic::CircleCurve::try_new(
+                Point3::new(0.0, 3.0, 4.0),
+                Vector3::new(0.0, 0.0, 1.0),
+                Vector3::new(1.0, 0.0, 0.0),
+                2.0,
+            )
+            .expect("circle"),
+        ));
+        for reversed in [false, true] {
+            let mut geometry = circle.clone();
+            let mut points = [[2.0, 3.0, 4.0], [-2.0, 3.0, 4.0]];
+            if reversed {
+                points.reverse();
+            }
+            let interval = crate::decode::sweep::revolution_carriers::circle_parameter_range(
+                &scan,
+                &mut geometry,
+                [11, 9],
+                points,
+                13,
+                &mut losses,
+            );
+            assert!(
+                matches!(interval, crate::decode::sweep::revolution_carriers::CircleInterval::Admitted(interval) if interval.lower() == 0.0 && (interval.upper() - std::f64::consts::PI).abs() < 1.0e-12)
+            );
+            let Some(SolvedCurveGeometry::Circle(circle)) = geometry.solved() else {
+                panic!("circle");
+            };
+            assert_eq!(
+                circle.frame().axis().as_raw().z,
+                if reversed { 1.0 } else { -1.0 }
+            );
+        }
+        let mut geometry = circle;
+        assert!(matches!(
+            crate::decode::sweep::revolution_carriers::circle_parameter_range(
+                &scan,
+                &mut geometry,
+                [11, 9],
+                [[0.0, 5.0, 4.0], [-2.0, 3.0, 4.0]],
+                13,
+                &mut losses,
+            ),
+            crate::decode::sweep::revolution_carriers::CircleInterval::Unresolved
+        ));
+        assert!(losses.iter().any(|loss| loss.code
+            == crate::loss::CreoLossCode::RevolutionBoundaryIntervalUnresolved.kind()
+            && loss.message.contains("13")));
+    }
+}

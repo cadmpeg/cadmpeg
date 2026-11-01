@@ -1126,6 +1126,41 @@ pub(crate) fn active_configuration_name_ref<'a>(scan: &'a ContainerScan<'_>) -> 
         })
 }
 
+/// Section folder of embedded component documents.
+const EMBEDDED_PREFIX: &str = "ImportedComp/";
+/// Extensions that end the section name of an embedded document.
+const EMBEDDED_EXTENSIONS: [&str; 2] = [".sldprt", ".sldasm"];
+
+/// Whether a section is a complete embedded document (`sldprt.md` §11.4).
+/// The name suffix of a compound stream in the nested payload wrapper (spec §1).
+const WRAPPED_NAME_SUFFIX: &str = "__ZLB";
+
+/// A section name without one trailing wrapper suffix.
+pub(crate) fn unwrapped_name(name: &str) -> &str {
+    name.len()
+        .checked_sub(WRAPPED_NAME_SUFFIX.len())
+        .filter(|&at| {
+            name.get(at..)
+                .is_some_and(|tail| tail.eq_ignore_ascii_case(WRAPPED_NAME_SUFFIX))
+        })
+        .and_then(|at| name.get(..at))
+        .unwrap_or(name)
+}
+
+pub(crate) fn is_embedded_document(name: &str) -> bool {
+    let name = unwrapped_name(name);
+    let ends_with = |suffix: &str| {
+        name.len()
+            .checked_sub(suffix.len())
+            .and_then(|start| name.get(start..))
+            .is_some_and(|tail| tail.eq_ignore_ascii_case(suffix))
+    };
+    name.starts_with(EMBEDDED_PREFIX)
+        || EMBEDDED_EXTENSIONS
+            .iter()
+            .any(|extension| ends_with(extension))
+}
+
 pub(crate) fn xml_text(bytes: &[u8]) -> Option<String> {
     let bytes = bytes.strip_prefix(&[0x86]).unwrap_or(bytes);
     if bytes.starts_with(&[0xff, 0xfe]) {

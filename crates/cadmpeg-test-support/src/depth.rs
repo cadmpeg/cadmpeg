@@ -318,6 +318,7 @@ mod tests {
     fn cube_with_parameter() -> CadIr {
         let mut ir = cube();
         ir.model.parameters.push(DesignParameter {
+            product_definition: None,
             id: ParameterId::mint("synthetic:test:parameter#depth").expect("valid parameter id"),
             owner: None,
             ordinal: 0,

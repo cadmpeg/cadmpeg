@@ -169,18 +169,26 @@ fn rounded_coordinates_are_reported() {
 }
 
 #[test]
-fn a_solid_with_no_tessellation_is_written_as_a_mesh() {
+fn a_solid_with_no_tessellation_is_written_as_a_brep_array_and_a_mesh() {
     let ir = cadmpeg_ir::examples::unit_cube().unwrap();
     let (text, report) = encode(&ir);
+    assert!(text.contains("def BrepArray \"Brep\""), "{text}");
     assert!(text.contains("def Mesh"), "{text}");
-    assert!(has_loss(&report, UsdLossCode::ExportTopologyTessellated));
+    assert!(
+        text.contains("customData = { string brepArray = \"Brep\" }"),
+        "{text}"
+    );
+    assert!(!has_loss(&report, UsdLossCode::ExportTopologyTessellated));
+    assert!(!has_loss(&report, UsdLossCode::ExportBrepNotWritten));
     let round = decode(&text);
     let model = &round.ir().model;
-    assert!(model.faces.is_empty());
+    assert_eq!(model.faces.len(), 6);
+    assert_eq!(model.bodies.len(), 1);
     let [mesh] = model.tessellations.as_slice() else {
         panic!("one mesh\n{text}");
     };
     assert_eq!(mesh.triangles().len(), 12);
+    assert_eq!(mesh.body.as_ref(), Some(&model.bodies[0].id));
 }
 
 #[test]

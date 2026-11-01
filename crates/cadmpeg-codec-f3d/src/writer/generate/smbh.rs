@@ -3,6 +3,7 @@
 //! generation.
 
 use cadmpeg_asm::brep::records::{EndpointSlot, EvaluatedToleranceSlot};
+use std::borrow::Cow;
 use std::collections::{BTreeMap, BTreeSet, HashMap};
 
 use crate::native::F3dNative;
@@ -109,24 +110,29 @@ impl<'a> NativeRecordPlan<'a> {
         let mut pcurves = Vec::new();
         for pcurve in &model.pcurves {
             let form = match &pcurve.metadata {
-                PcurveMetadata::AsmInline { form } => NativePcurveForm::Inline(form),
+                PcurveMetadata::AsmInline { form } => NativePcurveForm::Inline(Cow::Borrowed(form)),
+                PcurveMetadata::General { form }
+                    if form.wrapper_reversed.is_some() || form.fit_tolerance().is_some() =>
+                {
+                    NativePcurveForm::Inline(Cow::Owned(
+                        cadmpeg_ir::geometry::pcurve::PcurveInlineForm::new(
+                            form.wrapper_reversed.unwrap_or(false),
+                            [false; 4],
+                            form.uv_offset
+                                .unwrap_or(cadmpeg_ir::units::FinitePoint2::ZERO.into()),
+                            form.fit_tolerance()
+                                .unwrap_or(cadmpeg_ir::geometry::FitTolerance::ZERO),
+                        ),
+                    ))
+                }
                 PcurveMetadata::General { form } => {
-                    if form.wrapper_reversed.is_some() || form.fit_tolerance().is_some() {
-                        return Err(CodecError::malformed(format_args!(
-                            "pcurve {} has non-ASM wrapper or tolerance metadata",
-                            pcurve.id
-                        )));
-                    }
-                    let range = form.parameter_range().ok_or_else(|| {
-                        CodecError::malformed(format_args!(
-                            "ref-form pcurve {} has no parameter range",
-                            pcurve.id
-                        ))
-                    })?;
+                    let offset = form
+                        .uv_offset
+                        .map_or([0.0, 0.0], cadmpeg_ir::units::FiniteVector::get);
                     let companion_ref = native_record_index(ref_pcurve_start, ref_pcurve_count)?;
                     ref_pcurve_count += 1;
                     NativePcurveForm::Reference {
-                        range: range.get(),
+                        uv_offset: offset,
                         companion_ref,
                     }
                 }
@@ -1228,8 +1234,8 @@ fn encode_face_topology_smbh(
         records.push(0x11);
     }
     for pcurve in &pcurves {
-        if let NativePcurveForm::Reference { range, .. } = pcurve.form {
-            native_ref_pcurve_companion(&mut records, pcurve.geometry, range, pcurve.support)?;
+        if let NativePcurveForm::Reference { uv_offset, .. } = pcurve.form {
+            native_ref_pcurve_companion(&mut records, pcurve.geometry, uv_offset, pcurve.support)?;
             records.push(0x11);
         }
     }

@@ -211,6 +211,7 @@ fn mirror_plane_binds_through_one_persistent_face_identity() {
         sketch_entities: Vec::new(),
     };
     let mut feature = Feature {
+        product_definition: None,
         id: FeatureId::mint("synthetic:test:id#mirror").expect("identity grammar"),
         ordinal: 0,
         name: None,
@@ -477,6 +478,7 @@ fn circular_pattern_seed_binds_from_generated_identity_path() {
     };
     let mut features = vec![
         Feature {
+            product_definition: None,
             id: FeatureId::mint("synthetic:test:id#pattern").expect("identity grammar"),
             ordinal: 0,
             name: Some("CirPattern1".into()),
@@ -495,6 +497,7 @@ fn circular_pattern_seed_binds_from_generated_identity_path() {
             native_ref: Some("pattern-native".into()),
         },
         Feature {
+            product_definition: None,
             id: FeatureId::mint("synthetic:test:id#seed").expect("identity grammar"),
             ordinal: 1,
             name: Some("HoleWizard1".into()),
@@ -627,6 +630,7 @@ fn circular_pattern_axis_binds_from_unique_temporary_axis() {
         sketch_entities: Vec::new(),
     };
     let mut features = vec![Feature {
+        product_definition: None,
         id: FeatureId::mint("synthetic:test:id#pattern").expect("identity grammar"),
         ordinal: 0,
         name: Some("CirPattern1".into()),

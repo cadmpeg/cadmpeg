@@ -948,6 +948,31 @@ pub(in super::super) fn transfer_positional_cylinders(
     annotations: &mut AnnotationBuilder,
     source_carriers: &mut crate::decode::source_carriers::SourceUnitCarriers,
 ) -> Result<PositionalCylinderTransferSummary, cadmpeg_core::CodecError> {
+    let mut named_matrix_cylinders = BTreeSet::new();
+    for (prototype, row, _) in super::prototypes::unique_surface_prototype_associations(scan)? {
+        let super::prototypes::SupportedPrototype::Cylinder(record) = prototype else {
+            continue;
+        };
+        let Some(body) = record.field("local_sys").and_then(|field| {
+            field
+                .body
+                .strip_prefix(&[crate::psb::token::SCALAR_BODY, 4, 3])
+        }) else {
+            continue;
+        };
+        let Some((_, end)) = crate::scalar::decode_cylinder_rotation_prefix(
+            body,
+            &crate::scalar::ScalarCache::default(),
+        ) else {
+            continue;
+        };
+        if (end == body.len() || body.get(end..) == Some(&[0xe1]))
+            && super::prototypes::prototype_scalar(record, "radius")
+                .is_some_and(|radius| radius > 0.0 && radius.is_finite())
+        {
+            named_matrix_cylinders.insert(row.id);
+        }
+    }
     let schema_classes = FeatureSchemaClasses::new(scan);
     let parameters = UniqueById::new(&scan.surfaces.parameters, |record| record.surface_id);
     let rows = UniqueById::new(&scan.surfaces.rows, |row| row.id);
@@ -1017,6 +1042,9 @@ pub(in super::super) fn transfer_positional_cylinders(
         else {
             continue;
         };
+        if record.rotation_cylinder_refused() {
+            continue;
+        }
         let feature_class = schema_classes.get(row.feature_id);
         let inline_non_plane = record.has_inline_non_plane_envelope()
             || record.has_inline_non_plane_local_system_suffix(ctx)?;
@@ -1194,7 +1222,12 @@ pub(in super::super) fn transfer_positional_cylinders(
             Ok(reference_cap_bound_round_frame(envelope, &circles)
                 .map(|frame| (frame, CylinderFrameMechanism::RoundReferenceCap)))
         };
-        let (frame, mechanism) = if selector_corner_interval {
+        let bounded_rotation = record
+            .positional_cylinder_frame()
+            .filter(|frame| frame.parameter_bounds().is_some());
+        let (frame, mechanism) = if let Some(frame) = bounded_rotation {
+            (frame, CylinderFrameMechanism::InlinePositionalSurfaceRow)
+        } else if selector_corner_interval {
             let Some(frame) = record.positional_cylinder_frame() else {
                 continue;
             };
@@ -1245,6 +1278,18 @@ pub(in super::super) fn transfer_positional_cylinders(
             record.surface_id,
         )?;
         if ir.model.surfaces.iter().any(|surface| surface.id == id) {
+            if named_matrix_cylinders.contains(&record.surface_id)
+                && ir.model.surfaces.iter().any(|surface| {
+                    surface.id == id
+                        && matches!(
+                            surface.geometry,
+                            SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(_))
+                        )
+                })
+            {
+                continue;
+            }
+
             if row_local_frame_selected
                 && ir
                     .model

@@ -1534,6 +1534,7 @@ fn numerical_0922b_wide_segment_incidence() {
 }
 
 mod arrangement_routes;
+mod branched_profiles;
 mod certified_boundaries;
 mod circular_regions;
 mod exact_arc_containment;

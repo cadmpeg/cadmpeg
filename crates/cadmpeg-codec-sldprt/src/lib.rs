@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 #![cfg_attr(test, allow(clippy::unwrap_used))]
-//! Read and write `SolidWorks` `.sldprt` part documents.
+//! Read and write `SolidWorks` `.sldprt` part documents, and read the
+//! component structure of `.sldasm` assembly documents.
 //!
 //! [`SldprtCodec`] decodes B-rep topology, analytic and NURBS geometry,
 //! tessellation, appearances, selected document attributes, feature history,
@@ -70,10 +71,10 @@
 //! let (ir, _report, fidelity) = decoded.into_parts();
 //! let mut output = File::create("part-edited.sldprt")?;
 //! SldprtCodec
-//!     .plan(cadmpeg_ir::codec::write::EncodeInput {
-//!         ir: &ir,
-//!         fidelity: Some(&fidelity),
-//!     }, TargetRequest::Inherit)?
+//!     .plan(
+//!         cadmpeg_ir::codec::write::EncodeInput::new(&ir, Some(&fidelity)),
+//!         TargetRequest::Inherit,
+//!     )?
 //!     .write_to(&mut output)?;
 //! # Ok(())
 //! # }
@@ -103,6 +104,7 @@
 mod annotations;
 mod appearance;
 mod archive;
+mod assembly;
 mod brep;
 mod carchive;
 mod classification;

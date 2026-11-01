@@ -51,6 +51,7 @@ fn body_recipe_operand_decodes_counted_and_empty_reference_tables() {
                     opaque_scalar: 0.0,
                     opaque_scalar_offset: 975,
                     variant: false,
+                    closing_flag: false,
                 },
             )
             .unwrap(),
@@ -374,6 +375,7 @@ fn class_367_body_recipe_operand_decodes_scale_member_frame() {
                     opaque_scalar: 0.0,
                     opaque_scalar_offset: 22,
                     variant: false,
+                    closing_flag: false,
                 },
             )
             .unwrap(),
@@ -497,8 +499,157 @@ fn body_recipe_envelope_uses_its_structural_record_boundary() {
     );
     assert_eq!(
         body_recipe_operand_end(&bytes, prologue_end, RECORD_INDEX, EARLY_RECIPE_AT),
-        Some(NEXT_AT)
+        Some((RECORD_INDEX + 4, NEXT_AT))
     );
     assert_eq!(unique_body_recipe(&bytes, &header, &[&early]), Some(&early));
     assert_eq!(unique_body_recipe(&bytes, &header, &[&early, &late]), None);
+}
+
+/// A whole-body member `100` through `103` with no record `104`, its recipe
+/// record, and the indexed header `next_index` that follows `gap` bytes after
+/// the family name. Returns the bytes, the family-name offset, and the header
+/// offset.
+fn member_without_successor(
+    recipe_records: &[([u8; 3], u32)],
+    gap: usize,
+    next_index: u32,
+) -> (Vec<u8>, usize, usize) {
+    let mut bytes = Vec::new();
+    indexed_header(&mut bytes, *b"387", 100);
+    bytes.extend_from_slice(&[0; 10]);
+    bytes.extend_from_slice(&1u32.to_le_bytes());
+    bytes.extend_from_slice(&361u64.to_le_bytes());
+    bytes.extend_from_slice(&33u32.to_le_bytes());
+    bytes.push(1);
+    bytes.extend_from_slice(&103u64.to_le_bytes());
+    bytes.extend_from_slice(&[0; 2]);
+    bytes.extend_from_slice(&1u32.to_le_bytes());
+    lp_utf16(&mut bytes, "53aa8ab4-194a-434b-bd52-8c6d761dc147");
+    lp_utf16(&mut bytes, "8e685642-4d68-4909-96d0-0dd4437491b6");
+    bytes.extend_from_slice(&2u32.to_le_bytes());
+    bytes.extend_from_slice(&0u32.to_le_bytes());
+    indexed_header(&mut bytes, *b"258", 100);
+    indexed_header(&mut bytes, *b"288", 101);
+    indexed_header(&mut bytes, *b"421", 102);
+    indexed_header(&mut bytes, *b"409", 103);
+    for (class_tag, record_index) in recipe_records {
+        indexed_header(&mut bytes, *class_tag, *record_index);
+    }
+    let recipe_at = bytes.len();
+    bytes.extend_from_slice(b"body_recipe_data");
+    bytes.resize(bytes.len() + gap, 0);
+    let next_at = bytes.len();
+    indexed_header(&mut bytes, *b"397", next_index);
+    (bytes, recipe_at, next_at)
+}
+
+fn member_group() -> DesignConstructionOperandGroup {
+    DesignConstructionOperandGroup::try_from(
+        crate::records::topology::construction::DesignConstructionOperandGroupDraft {
+            id: "f3d:Design/BulkStream.dat:operand-group#90".into(),
+            scope_record_index: 80,
+            scope_reference_ordinal: 1,
+            record_index: 90,
+            byte_offset: 0,
+            class_tag: crate::records::references::DesignClassTag::try_from("274".to_owned())
+                .unwrap(),
+            members: vec![crate::records::identity::Located {
+                value: 100,
+                offset: 21,
+            }],
+            lost_edge_references: Vec::new(),
+            frame: DesignConstructionOperandGroupFrame::try_from(
+                crate::records::topology::construction::DesignConstructionOperandGroupFrameDraft {
+                    member_count_offset: 0,
+                    auxiliary_records: Vec::new(),
+                    auxiliary_paths: Vec::new(),
+                    trailing_records: Vec::new(),
+                    trailing_transforms: Vec::new(),
+                    trailing_dual_transforms: Vec::new(),
+                    trailing_flags: Vec::new(),
+                    opaque_index: 1,
+                    opaque_index_offset: 18,
+                    opaque_scalar: 0.0,
+                    opaque_scalar_offset: 22,
+                    variant: false,
+                    closing_flag: false,
+                },
+            )
+            .unwrap(),
+            operand_role:
+                crate::records::topology::construction::DesignConstructionOperandRole::Other(
+                    DesignOperandRole::BODIES_A,
+                ),
+            role_offset: 0,
+            paired_class_tag: crate::records::references::DesignClassTag::try_from(
+                "258".to_owned(),
+            )
+            .unwrap(),
+            paired_byte_offset: 0,
+        },
+    )
+    .unwrap()
+}
+
+fn member_header() -> DesignRecordHeader {
+    DesignRecordHeader {
+        id: "f3d:Design/BulkStream.dat:record#100".into(),
+        byte_offset: 0,
+        class_tag: crate::records::references::DesignClassTag::try_from("387".to_owned()).unwrap(),
+        record_index: 100,
+    }
+}
+
+fn member_recipe(recipe_at: usize) -> ConstructionRecipe {
+    ConstructionRecipe {
+        id: format!("f3d:Design/BulkStream.dat:construction-recipe#{recipe_at}"),
+        byte_offset: u64_from_index(recipe_at),
+        kind: ConstructionRecipeKind::Body,
+        design: None,
+        recipe_index: 0,
+        record_index: Some(crate::records::identity::RecordedValue {
+            value: 0,
+            offset: 0,
+        }),
+    }
+}
+
+#[test]
+fn body_recipe_operand_without_a_successor_record_closes_at_the_recipe_end() {
+    let (bytes, recipe_at, next_at) = member_without_successor(&[(*b"361", 7)], 8, 1739);
+    let recipe = member_recipe(recipe_at);
+    let header = member_header();
+
+    assert_eq!(
+        unique_body_recipe(&bytes, &header, &[&recipe]),
+        Some(&recipe)
+    );
+    let operand = parse_body_recipe_operand(&bytes, &member_group(), 0, &header, &recipe)
+        .expect("body recipe operand without a successor record");
+    assert_eq!(operand.next_record_index(), 1739);
+    assert_eq!(operand.next_byte_offset(), u64_from_index(next_at));
+    assert_eq!(operand.nested_record_index(), 103);
+
+    let mut draft = operand.into_draft();
+    draft.next_record_index = 103;
+    assert!(
+        crate::records::topology::body_recipe::DesignBodyRecipeOperand::try_new(draft).is_err()
+    );
+}
+
+#[test]
+fn body_recipe_operand_without_a_successor_record_refuses_another_frame() {
+    let header = member_header();
+
+    let (bytes, recipe_at, _) = member_without_successor(&[(*b"361", 7)], 12, 1739);
+    let recipe = member_recipe(recipe_at);
+    assert_eq!(unique_body_recipe(&bytes, &header, &[&recipe]), None);
+
+    let (bytes, recipe_at, _) = member_without_successor(&[(*b"290", 900), (*b"361", 7)], 8, 1739);
+    let recipe = member_recipe(recipe_at);
+    assert_eq!(unique_body_recipe(&bytes, &header, &[&recipe]), None);
+
+    let (bytes, recipe_at, _) = member_without_successor(&[], 8, 1739);
+    let recipe = member_recipe(recipe_at);
+    assert_eq!(unique_body_recipe(&bytes, &header, &[&recipe]), None);
 }

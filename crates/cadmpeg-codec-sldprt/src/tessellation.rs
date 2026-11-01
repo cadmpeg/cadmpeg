@@ -616,24 +616,37 @@ pub(crate) fn auxiliary_channels_are_consistent(
     {
         return false;
     }
+    auxiliary_lanes_are_consistent(
+        strips,
+        [
+            (usize::try_from(b.count()).ok(), b.data()),
+            (usize::try_from(c.count()).ok(), c.data()),
+            (usize::try_from(d.count()).ok(), d.data()),
+        ],
+    )
+}
+
+/// Whether the three auxiliary lanes, each a count and its data, agree with the
+/// strip lengths.
+fn auxiliary_lanes_are_consistent(
+    strips: &[usize],
+    [b, c, d]: [(Option<usize>, &[u8]); 3],
+) -> bool {
     let Some(endpoint_count) = strips.iter().try_fold(0usize, |total, length| {
         total.checked_add(length.checked_mul(2)?.checked_sub(2)?)
     }) else {
         return false;
     };
-    let stored_list_c_matches = c.data().chunks_exact(4).len() == strips.len()
-        && c.data().chunks_exact(4).zip(strips).all(|(bytes, length)| {
+    let stored_list_c_matches = c.1.chunks_exact(4).len() == strips.len()
+        && c.1.chunks_exact(4).zip(strips).all(|(bytes, length)| {
             length.checked_mul(2).and_then(|count| count.checked_sub(2))
                 == View::u32_le_at(bytes, 0).and_then(|count| usize::try_from(count).ok())
         });
-    let counts = (
-        usize::try_from(b.count()).ok(),
-        usize::try_from(d.count()).ok(),
-    );
+    let counts = (b.0, d.0);
     (counts == (Some(0), Some(0)) || counts == (Some(endpoint_count), Some(endpoint_count)))
-        && usize::try_from(c.count()).ok() == Some(strips.len())
+        && c.0 == Some(strips.len())
         && stored_list_c_matches
-        && b.data()
+        && b.1
             .chunks_exact(4)
             .all(|bytes| View::f32_le_at(bytes, 0).is_some_and(f32::is_finite))
 }
@@ -646,10 +659,23 @@ struct ProbedTable {
     channels: Vec<TessellationChannel>,
 }
 
+/// The `(item_size, kind, flags)` of the six descriptors of a display-list
+/// table, in order (`sldprt.md` §8).
+const TABLE_DESCRIPTORS: [(usize, u32, u32); 6] = [
+    (4, 8, 2),
+    (12, 100, 2),
+    (12, 100, 2),
+    (4, 8, 2),
+    (4, 8, 2),
+    (1, 8, 2),
+];
+
 /// Read the six descriptors at `at` as display-list lanes.
 ///
 /// `None` is a probe miss: the descriptors at this byte position do not state
-/// the display-list grammar.
+/// the display-list grammar. Channel bytes are charged only after the six
+/// descriptors match, the strip and position lanes are not empty and the
+/// auxiliary lanes agree with the strips.
 fn probe_table(
     ctx: &DecodeContext<'_>,
     bytes: &[u8],
@@ -658,8 +684,10 @@ fn probe_table(
     let mut strips = Vec::new();
     let mut vertices = Vec::new();
     let mut normals = Vec::new();
-    let mut channels = Vec::new();
-    for index in 0..6 {
+    let mut ranges = [(0_usize, 0_usize, 0_u32, 0_usize); 6];
+    for (index, &(expected_size, expected_kind, expected_flags)) in
+        TABLE_DESCRIPTORS.iter().enumerate()
+    {
         let Some(item_size_field) = View::u32_le_at(bytes, at) else {
             return Ok(None);
         };
@@ -670,6 +698,9 @@ fn probe_table(
         let Some(flags) = View::u32_le_at(bytes, at + 8) else {
             return Ok(None);
         };
+        if (item_size, kind, flags) != (expected_size, expected_kind, expected_flags) {
+            return Ok(None);
+        }
         let Some(count) = View::u32_le_at(bytes, at + 12).map(cadmpeg_core::decode::index_from_u32)
         else {
             return Ok(None);
@@ -684,28 +715,15 @@ fn probe_table(
         if end > bytes.len() {
             return Ok(None);
         }
-        ctx.retain_bytes(
-            cadmpeg_core::decode::u64_from_index(end - data),
-            "copy display-list channel bytes",
-        )?;
-        let Ok(channel) = TessellationChannel::new(
-            cadmpeg_ir::tessellation::ChannelAddressing::Vertex {},
-            item_size_field,
-            kind,
-            flags,
-            bytes[data..end].to_vec(),
-        ) else {
-            return Ok(None);
-        };
-        channels.push(channel);
-        if index == 0 && item_size == 4 && kind == 8 {
+        ranges[index] = (data, end, item_size_field, count);
+        if index == 0 {
             for i in 0..count {
                 let Some(length) = View::u32_le_at(bytes, data + i * 4) else {
                     return Ok(None);
                 };
                 strips.push(cadmpeg_core::decode::index_from_u32(length));
             }
-        } else if index == 1 && item_size == 12 && kind == 100 {
+        } else if index == 1 {
             for i in 0..count {
                 let p = data + i * 12;
                 let read = |at| {
@@ -718,7 +736,7 @@ fn probe_table(
                 };
                 vertices.push(Point3::new(x * 1000.0, y * 1000.0, z * 1000.0));
             }
-        } else if index == 2 && item_size == 12 && kind == 100 {
+        } else if index == 2 {
             for i in 0..count {
                 let p = data + i * 12;
                 let read = |at| {
@@ -734,18 +752,42 @@ fn probe_table(
         }
         at = end;
     }
-    if !matches!(channels.as_slice(), [a, positions, normals, ..]
-        if (a.item_size(), a.kind(), a.flags()) == (4, 8, 2)
-            && (positions.item_size(), positions.kind(), positions.flags()) == (12, 100, 2)
-            && (normals.item_size(), normals.kind(), normals.flags()) == (12, 100, 2))
-    {
+    if strips.is_empty() || vertices.is_empty() {
         return Ok(None);
     }
-    if strips.is_empty()
-        || vertices.is_empty()
-        || !auxiliary_channels_are_consistent(&strips, &channels[3..])
-    {
+    let lane = |index: usize| {
+        let (data, end, _, count) = ranges[index];
+        (Some(count), &bytes[data..end])
+    };
+    if !auxiliary_lanes_are_consistent(&strips, [lane(3), lane(4), lane(5)]) {
         return Ok(None);
+    }
+    let Some(channel_bytes) = ranges
+        .iter()
+        .try_fold(0_usize, |total, &(data, end, _, _)| {
+            total.checked_add(end - data)
+        })
+    else {
+        return Ok(None);
+    };
+    ctx.retain_bytes(
+        cadmpeg_core::decode::u64_from_index(channel_bytes),
+        "copy display-list channel bytes",
+    )?;
+    let mut channels = Vec::with_capacity(TABLE_DESCRIPTORS.len());
+    for (&(data, end, item_size_field, _), &(_, kind, flags)) in
+        ranges.iter().zip(&TABLE_DESCRIPTORS)
+    {
+        let Ok(channel) = TessellationChannel::new(
+            cadmpeg_ir::tessellation::ChannelAddressing::Vertex {},
+            item_size_field,
+            kind,
+            flags,
+            bytes[data..end].to_vec(),
+        ) else {
+            return Ok(None);
+        };
+        channels.push(channel);
     }
     Ok(Some((
         ProbedTable {

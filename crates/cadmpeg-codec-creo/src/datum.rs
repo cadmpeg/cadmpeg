@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Standard model-space datum planes stored in `ActDatums`.
 
+pub(crate) mod boundary_planes;
+
 use cadmpeg_core::bytes::find_from as find;
 use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_core::CodecError;
@@ -172,6 +174,13 @@ pub(crate) fn cylinders(
 ) -> Result<Vec<DatumCylinder>, CodecError> {
     let rows = crate::surface::rows(payload);
     let parameters = crate::surface::parameter_records_with_losses(ctx, payload, losses)?;
+    let cache = scalar::ScalarCache::from_section_checked(payload);
+    let mut refusals = crate::lane_refusal::LaneRefusals::new();
+    let prototypes = crate::surface::named_cylinder_prototype_records(ctx, payload, &mut refusals)?;
+    for refusal in refusals.take_records() {
+        losses.push(crate::loss::CreoLossCode::SurfacePrototypeFieldRetained.note(refusal));
+    }
+    let frame_bounds = crate::surface::complete_surface_array_bounds(payload);
     let mut cylinders = Vec::new();
     for row in rows
         .iter()
@@ -180,13 +189,24 @@ pub(crate) fn cylinders(
         let Some(parameter) = crate::surface::unique_surface_parameter(&parameters, row.id) else {
             continue;
         };
-        if parameter.offset != row.offset {
+        if parameter.offset != row.offset || parameter.rotation_cylinder_refused() {
             continue;
         }
-        if let Some(frame) = parameter
+        let named = crate::surface::cylinder_frame_readers::named_rotation_cylinder_frame(
+            row,
+            parameter,
+            &rows,
+            &prototypes,
+            &frame_bounds,
+            &cache,
+        );
+        let frame = parameter
             .positional_cylinder_frame()
-            .or_else(|| active_cylinder_frame(row, parameter))
-        {
+            .or_else(|| match named {
+                Some(frame) => frame.frame(),
+                None => active_cylinder_frame(row, parameter),
+            });
+        if let Some(frame) = frame {
             cylinders.push(DatumCylinder {
                 id: row.id,
                 feature_id: row.feature_id,

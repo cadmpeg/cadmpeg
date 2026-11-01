@@ -247,6 +247,7 @@ fn feature_parent_wire_is_derived_from_its_single_owner() {
     let parent_id = FeatureId::mint("test:model:feature#parent").expect("identity grammar");
     let child_id = FeatureId::mint("test:model:feature#child").expect("identity grammar");
     let parent = Feature {
+        product_definition: None,
         id: parent_id.clone(),
         ordinal: 0,
         name: None,
@@ -269,6 +270,7 @@ fn feature_parent_wire_is_derived_from_its_single_owner() {
         native_ref: None,
     };
     let child = Feature {
+        product_definition: None,
         id: child_id.clone(),
         ordinal: 1,
         name: None,
@@ -301,6 +303,7 @@ fn feature_parent_wire_is_derived_from_its_single_owner() {
     let mut regeneration = Model {
         features: vec![
             Feature {
+                product_definition: None,
                 id: parent_id.clone(),
                 ordinal: 0,
                 name: None,
@@ -316,6 +319,7 @@ fn feature_parent_wire_is_derived_from_its_single_owner() {
                 native_ref: None,
             },
             Feature {
+                product_definition: None,
                 id: child_id.clone(),
                 ordinal: 1,
                 name: None,
@@ -390,6 +394,7 @@ fn feature_parent_wire_rejects_disagreement_with_tree_children() {
     let model = Model {
         features: vec![
             Feature {
+                product_definition: None,
                 id: first_id,
                 ordinal: 0,
                 name: None,
@@ -409,6 +414,7 @@ fn feature_parent_wire_rejects_disagreement_with_tree_children() {
                 native_ref: None,
             },
             Feature {
+                product_definition: None,
                 id: second_id.clone(),
                 ordinal: 1,
                 name: None,
@@ -424,6 +430,7 @@ fn feature_parent_wire_rejects_disagreement_with_tree_children() {
                 native_ref: None,
             },
             Feature {
+                product_definition: None,
                 id: child_id,
                 ordinal: 2,
                 name: None,
@@ -687,7 +694,7 @@ fn parser_rejects_unsupported_missing_and_non_string_versions() {
     for (version, found) in [
         (Some(serde_json::Value::String("7".into())), "Some(\"7\")"),
         (Some(serde_json::Value::String("8".into())), "Some(\"8\")"),
-        (Some(serde_json::Value::String("10".into())), "Some(\"10\")"),
+        (Some(serde_json::Value::String("9".into())), "Some(\"9\")"),
         (Some(serde_json::Value::String("11".into())), "Some(\"11\")"),
         (Some(serde_json::Value::String("37".into())), "Some(\"37\")"),
         (Some(serde_json::Value::String("36".into())), "Some(\"36\")"),
@@ -750,6 +757,7 @@ fn current_document_excludes_source_byte_accounting() {
 
 fn parameter(id: &str) -> crate::features::DesignParameter {
     crate::features::DesignParameter {
+        product_definition: None,
         id: crate::features::ParameterId::mint(id).unwrap(),
         owner: None,
         ordinal: 0,
@@ -940,6 +948,7 @@ fn parent_only_wire_preserves_regeneration_without_tree_membership() {
     let mut model = Model {
         features: vec![
             Feature {
+                product_definition: None,
                 id: parent_id.clone(),
                 ordinal: 0,
                 name: None,
@@ -958,6 +967,7 @@ fn parent_only_wire_preserves_regeneration_without_tree_membership() {
                 native_ref: None,
             },
             Feature {
+                product_definition: None,
                 id: child_id.clone(),
                 ordinal: 1,
                 name: None,
@@ -1017,6 +1027,7 @@ fn a_stated_null_is_refused_on_every_feature_key_written_by_omission() {
 
     let mut ir = unit_cube().expect("valid unit cube fixture");
     ir.model.features.push(Feature {
+        product_definition: None,
         id: FeatureId::mint("test:model:feature#0").expect("identity grammar"),
         ordinal: 0,
         name: None,

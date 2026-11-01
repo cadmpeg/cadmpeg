@@ -196,6 +196,80 @@ fn extrude_selection_group_and_members_have_exact_counted_frames() {
             parse_extrude_selection_member(&long_member_bytes, &group, 0, &member_record).is_none()
         );
 
+        // Extended tails run from the 190-byte frame to the next indexed header.
+        let extended = |slot: u8, tail: &[u8]| {
+            let mut bytes = member_bytes[..190].to_vec();
+            bytes[185] = slot;
+            bytes.extend_from_slice(tail);
+            indexed_header(&mut bytes, *b"307", 321);
+            bytes
+        };
+        for (slot, tail) in [
+            (0u8, vec![0u8; 5]),
+            (
+                0,
+                [&[0x2d, 0][..], &[7u8; 21][..], &[1, 0, 0, 0][..]].concat(),
+            ),
+            (
+                1,
+                [
+                    &[0u8; 4][..],
+                    &1u32.to_le_bytes(),
+                    &3u32.to_le_bytes(),
+                    &[9u8; 20],
+                ]
+                .concat(),
+            ),
+            (1, vec![0x55; 196]),
+            (1, vec![0; 1024]),
+        ] {
+            let bytes = extended(slot, &tail);
+            let member = parse_extrude_selection_member(&bytes, &group, 0, &member_record)
+                .expect("selection member with an extended tail");
+            assert_eq!(member.local_id, 586);
+            assert_eq!(member.next_byte_offset(), u64_from_index(190 + tail.len()));
+            assert_eq!(member.next_record_index, 321);
+            assert_eq!(member.tail_slot_present, slot == 1);
+            assert!(member.scope_tail.is_none());
+            // An incomplete header is not a boundary: the tail then runs to
+            // the end of the stream, or is refused when that exceeds the bound.
+            let header_at = 190 + tail.len();
+            let mut incomplete = Vec::new();
+            let mut broken = bytes.clone();
+            broken[header_at + 4] = b'x';
+            incomplete.push(broken);
+            incomplete.push(bytes[..bytes.len() - 1].to_vec());
+            for broken in incomplete {
+                match parse_extrude_selection_member(&broken, &group, 0, &member_record) {
+                    Some(ended) => {
+                        assert_eq!(ended.next_record_index, 0);
+                        assert_eq!(ended.next_byte_offset(), u64_from_index(broken.len()));
+                    }
+                    None => assert!(broken.len() - 190 > 1024),
+                }
+            }
+        }
+        // A tail past the length bound, and the typed tail lengths, are not extended.
+        for tail_len in [1025usize, 14, 50] {
+            let bytes = extended(0, &vec![0x55; tail_len]);
+            assert!(
+                parse_extrude_selection_member(&bytes, &group, 0, &member_record).is_none(),
+                "tail length {tail_len}"
+            );
+        }
+        // A tail with no following header runs to the end of the stream.
+        let mut terminal_tail = member_bytes[..190].to_vec();
+        terminal_tail.extend_from_slice(&[0x55; 130]);
+        let terminal_extended =
+            parse_extrude_selection_member(&terminal_tail, &group, 0, &member_record)
+                .expect("selection member with an extended tail at the stream end");
+        assert_eq!(terminal_extended.next_byte_offset(), 320);
+        assert_eq!(terminal_extended.next_record_index, 0);
+        terminal_tail.extend_from_slice(&vec![0x55; 1024]);
+        assert!(
+            parse_extrude_selection_member(&terminal_tail, &group, 0, &member_record).is_none()
+        );
+
         let mut edge_identity_bytes = Vec::new();
         indexed_header(&mut edge_identity_bytes, *b"278", 5887);
         edge_identity_bytes.extend_from_slice(&[0; 12]);
@@ -663,4 +737,87 @@ fn extrude_selection_group_and_members_have_exact_counted_frames() {
             }) if actual_sketch == &sketch_id && profiles.as_slice() == [0]
         ));
     });
+}
+
+/// Build a 240-byte selection member with synthetic values.
+fn scope_tail_member_bytes(scope: u32) -> Vec<u8> {
+    let mut bytes = Vec::new();
+    indexed_header(&mut bytes, *b"290", 200);
+    bytes.extend_from_slice(&[0; 10]);
+    bytes.extend_from_slice(&586u64.to_le_bytes());
+    lp_utf16(&mut bytes, "df9087bd-02a6-4a3f-a132-7e69990f323c");
+    lp_utf16(&mut bytes, "0b2382d1-caaf-4eb9-b40d-a6322a7ed829");
+    bytes.extend_from_slice(&2u32.to_le_bytes());
+    bytes.extend_from_slice(&[0; 5]);
+    assert_eq!(bytes.len(), 190);
+    bytes.push(0);
+    bytes.extend_from_slice(&0.1f64.to_le_bytes());
+    bytes.extend_from_slice(&0x104u32.to_le_bytes());
+    for (reference, separator) in [(31u32, &[1u8, 0, 0][..]), (32, &[0][..]), (scope, &[][..])] {
+        bytes.push(1);
+        bytes.extend_from_slice(&u64::from(reference).to_le_bytes());
+        bytes.extend_from_slice(&[0; 2]);
+        bytes.extend_from_slice(separator);
+    }
+    assert_eq!(bytes.len(), 240);
+    indexed_header(&mut bytes, *b"290", 201);
+    bytes
+}
+
+#[test]
+fn extrude_selection_scope_tail_member_has_exact_240_byte_frame() {
+    use crate::design::decode::operands::parse_extrude_identity_member;
+    let bytes = scope_tail_member_bytes(12);
+    let member =
+        parse_extrude_identity_member(&bytes, 0, Some(12)).expect("scope-tail selection member");
+    assert_eq!(member.next_byte_offset, 240);
+    assert_eq!(member.next_record_index, 201);
+    assert!(!member.tail_slot_present);
+    let tail = member.scope_tail.expect("scope tail");
+    assert_eq!(f64::from_bits(tail.opaque_scalar_bits), 0.1);
+    assert_eq!(tail.opaque_word, 0x104);
+    assert_eq!(tail.chain_references, [31, 32]);
+    assert_eq!(tail.scope_record_index, 12);
+    // Terminal form.
+    let terminal = parse_extrude_identity_member(&bytes[..240], 0, Some(12))
+        .expect("terminal scope-tail member");
+    assert_eq!(terminal.next_record_index, 0);
+    assert_eq!(terminal.next_byte_offset, 240);
+    // Callers that supply no scope refuse the form.
+    assert!(parse_extrude_identity_member(&bytes, 0, None).is_none());
+    // The closing reference has to name the group scope.
+    assert!(parse_extrude_identity_member(&bytes, 0, Some(13)).is_none());
+    assert!(parse_extrude_identity_member(&scope_tail_member_bytes(13), 0, Some(12)).is_none());
+}
+
+#[test]
+fn extrude_selection_scope_tail_member_refuses_each_broken_condition() {
+    use crate::design::decode::operands::parse_extrude_identity_member;
+    let bytes = scope_tail_member_bytes(12);
+    // Every fixed byte of the tail: leading zero, word, separators, reference
+    // markers and padding.
+    for at in [
+        190, 199, 200, 201, 202, 203, 213, 214, 215, 216, 217, 227, 228, 229, 239,
+    ] {
+        let mut broken = bytes.clone();
+        broken[at] ^= 0x40;
+        assert!(
+            parse_extrude_identity_member(&broken, 0, Some(12)).is_none(),
+            "byte {at}"
+        );
+    }
+    // A truncated tail is not the scope-tail form; it can only be an
+    // extended tail that runs to the end of the stream.
+    for len in [191, 205, 239] {
+        let truncated = parse_extrude_identity_member(&bytes[..len], 0, Some(12))
+            .expect("extended tail at the stream end");
+        assert!(truncated.scope_tail.is_none());
+        assert_eq!(truncated.next_byte_offset, u64_from_index(len));
+    }
+    // The typed lengths are not extended tails.
+    assert!(parse_extrude_identity_member(&bytes[..240], 0, Some(13)).is_none());
+    // A present optional slot does not admit the form.
+    let mut slot = bytes.clone();
+    slot[185] = 1;
+    assert!(parse_extrude_identity_member(&slot, 0, Some(12)).is_none());
 }

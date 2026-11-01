@@ -45,7 +45,31 @@ use crate::layout::world_point_tripled as world_pt_delta;
 /// The magic anchoring magic-bearing topology records ([spec §5](https://github.com/cadmpeg/cadmpeg/blob/main/docs/formats/sldprt.md#4-typed-topology-records)).
 const MAGIC: [u8; 8] = [0xc2, 0xbc, 0x92, 0x8f, 0x99, 0x6e, 0x00, 0x00];
 
+/// The least nonzero tolerance, metres, on which a plain stream frames a
+/// record (spec §3.3).
+const PLAIN_TOLERANCE_MIN_M: f64 = 1.0e-12;
+
+/// The greatest tolerance, metres, on which a plain stream frames a record
+/// (spec §3.3).
+const PLAIN_TOLERANCE_MAX_M: f64 = 1.0e-2;
+
+/// Whether the tolerance slot at `at` frames a record: the null-real
+/// sentinel, and with `stored` also `0.0` or a stored tolerance (spec §3.3).
+fn frames_on_tolerance(buf: &[u8], at: usize, stored: bool) -> bool {
+    if buf.get(at..at + MAGIC.len()) == Some(MAGIC.as_slice()) {
+        return true;
+    }
+    stored
+        && View::f64_be_at(buf, at).is_some_and(|value| {
+            value == 0.0 || (PLAIN_TOLERANCE_MIN_M..=PLAIN_TOLERANCE_MAX_M).contains(&value)
+        })
+}
+
 const MAX_SHORT_POINTER_INDEX: u16 = 0x7ffe;
+
+/// The lowest count whose high u16 is non-zero, which is how the null pointer
+/// after a pointer to node 82 reads as an `INT_VALUES` count (spec §5).
+const INT_VALUES_WIDE_COUNT_MIN: u32 = 0x1_0000;
 
 #[derive(Debug, Clone, PartialEq)]
 pub(super) struct Bridge {
@@ -69,6 +93,9 @@ pub(super) struct EdgeUse {
     pub(super) attr: u16,
     pub(super) references: EdgeReferences,
     pub(super) sequence: u32,
+    /// The stored tolerance of a tolerant edge, metres (spec §7.6); `None`
+    /// for the null-real sentinel and the compact layout.
+    pub(super) tolerance_m: Option<f64>,
     pub(super) offset: usize,
 }
 
@@ -191,11 +218,12 @@ fn attr_at(buf: &[u8], p: usize) -> Option<u16> {
     }
 }
 
-/// Bridge `00 0e`: 37-byte body, magic at body+8, `refs[5]` at body+16,
-/// marker at body+26. `refs[4]` = surface carrier, `refs[2]` = loop head.
+/// Bridge `00 0e`: 37-byte body, tolerance slot at body+8, `refs[5]` at
+/// body+16, marker at body+26. `refs[4]` = surface carrier, `refs[2]` = loop
+/// head. `plain` admits the tolerance slot of a plain stream.
 /// The deltas form stores the attribute-chain head as a `[hi][lo][01]` triple, so the magic
 /// sits at body+9 and the five refs follow as triples with the marker after.
-fn parse_bridge(buf: &[u8], off: usize) -> Option<Bridge> {
+fn parse_bridge(buf: &[u8], off: usize, plain: bool) -> Option<Bridge> {
     let p = body_start(buf, off, 0x0e)?;
     if buf.get(p + 8) == Some(&1) && buf.get(p + 9..p + 17) == Some(MAGIC.as_slice()) {
         let attr = attr_at(buf, p)?;
@@ -212,7 +240,7 @@ fn parse_bridge(buf: &[u8], off: usize) -> Option<Bridge> {
             offset: off,
         });
     }
-    if p + 37 > buf.len() || buf.get(p + 8..p + 16)? != MAGIC {
+    if p + 37 > buf.len() || !frames_on_tolerance(buf, p + 8, plain) {
         return None;
     }
     let attr = attr_at(buf, p)?;
@@ -303,6 +331,7 @@ fn parse_edge_use_candidates(buf: &[u8], off: usize) -> Vec<(EdgeUse, usize)> {
                     references: EdgeReferences::Bare([
                         refs[0], refs[1], refs[2], refs[3], refs[4], refs[5],
                     ]),
+                    tolerance_m: None,
                     offset: off,
                 },
                 end,
@@ -318,6 +347,7 @@ fn parse_edge_use_candidates(buf: &[u8], off: usize) -> Vec<(EdgeUse, usize)> {
                         attr,
                         sequence,
                         references: EdgeReferences::Bare(refs),
+                        tolerance_m: None,
                         offset: off,
                     },
                     end,
@@ -358,6 +388,7 @@ fn parse_edge_use_candidates(buf: &[u8], off: usize) -> Vec<(EdgeUse, usize)> {
                         attr,
                         sequence,
                         references: EdgeReferences::Compact { curve: decoded[2] },
+                        tolerance_m: None,
                         offset: off,
                     },
                     at,
@@ -369,13 +400,94 @@ fn parse_edge_use_candidates(buf: &[u8], off: usize) -> Vec<(EdgeUse, usize)> {
     out
 }
 
+/// Tolerant edge-use readings at `off` (spec §7.6).
+fn parse_tolerant_edge_use_candidates(buf: &[u8], off: usize) -> Vec<EdgeUse> {
+    let Some(p) = body_start(buf, off, 0x10) else {
+        return Vec::new();
+    };
+    let (Some(attr), Some(sequence)) = (attr_at(buf, p), View::u32_be_at(buf, p + 2)) else {
+        return Vec::new();
+    };
+    let valued = |at: usize| {
+        View::f64_be_at(buf, at).filter(|value| {
+            value.is_finite()
+                && *value > 0.0
+                && buf.get(at..at + MAGIC.len()) != Some(MAGIC.as_slice())
+        })
+    };
+    let short = |refs: &[u16]| {
+        refs.iter()
+            .all(|reference| *reference <= MAX_SHORT_POINTER_INDEX)
+    };
+    let mut out = Vec::new();
+    if let (Some(tolerance), Some(refs)) = (
+        valued(p + edge_body::TOLERANCE),
+        refs_be::<6>(buf, p + edge_body::REFS),
+    ) {
+        if refs[3] == 1 && short(&refs) {
+            out.push(EdgeUse {
+                attr,
+                sequence,
+                references: EdgeReferences::Bare(refs),
+                tolerance_m: Some(tolerance),
+                offset: off,
+            });
+        }
+    }
+    if buf.get(p + edge_delta::TOLERANCE - 1) == Some(&1) {
+        if let (Some(tolerance), Some(refs)) = (
+            valued(p + edge_delta::TOLERANCE),
+            refs_tripled::<7>(buf, p + edge_delta::REFS),
+        ) {
+            if refs[3] == 1 && short(&refs) {
+                out.push(EdgeUse {
+                    attr,
+                    sequence,
+                    references: EdgeReferences::Bare([
+                        refs[0], refs[1], refs[2], refs[3], refs[4], refs[5],
+                    ]),
+                    tolerance_m: Some(tolerance),
+                    offset: off,
+                });
+            }
+        }
+    }
+    out.dedup();
+    out
+}
+
+/// Admit a tolerant reading when a selected fin names its edge and it is the
+/// only valid reading.
+fn admit_tolerant_edge_uses(t: &mut Tables, candidates: CandidateMap<EdgeUse>) {
+    for (attr, readings) in candidates {
+        if t.edge_uses.contains_key(&attr)
+            || !t.coedges.values().any(|coedge| coedge.refs[6] == attr)
+        {
+            continue;
+        }
+        let mut valid = readings.iter().filter(|reading| {
+            reading.references.canonical().is_none_or(|canonical| {
+                canonical <= 1
+                    || t.coedges
+                        .get(&canonical)
+                        .is_some_and(|coedge| coedge.refs[6] == attr)
+            })
+        });
+        if let (Some(reading), None) = (valid.next(), valid.next()) {
+            t.edge_uses.insert(attr, reading.clone());
+        }
+    }
+}
+
 /// Edge-use `00 10`: six-cell projection at body+16, magic at body+8.
 /// `refs[0]` = canonical forward coedge when the bare record stores one;
 /// `refs[3]` = support curve carrier. The compact layout has no canonical-coedge slot.
 ///
 /// Coedge `00 11`: 21-byte body, no magic, `refs[9]` at body+2, marker at
-/// body+20. `refs[1]` = owning loop, `refs[3]` = next coedge, `refs[4]` = start
-/// vertex-use, `refs[5]` = twin coedge, `refs[6]` = edge-use.
+/// body+20. `refs[1]` = owning loop, `refs[2]` = forward coedge, `refs[3]` =
+/// backward coedge in a forward-linked loop and next coedge in another loop,
+/// `refs[4]` = end vertex-use in a forward-linked loop and start vertex-use in
+/// another loop, `refs[5]` = twin coedge, `refs[6]` = edge-use.
 fn parse_coedge_candidates(buf: &[u8], off: usize) -> Vec<(Coedge, usize)> {
     let Some(p) = body_start(buf, off, 0x11) else {
         return Vec::new();
@@ -563,7 +675,7 @@ fn topology_header_prefix_end(buf: &[u8], off: usize, tag: u8) -> Option<usize> 
                     View::u16_be_at(buf, p + head)
                 };
                 if head.is_none_or(|head| head > MAX_SHORT_POINTER_INDEX)
-                    || View::f64_be_at(buf, p + tolerance).is_none_or(|value| !value.is_finite())
+                    || !frames_on_tolerance(buf, p + tolerance, true)
                 {
                     continue;
                 }
@@ -639,6 +751,58 @@ fn topology_header_prefix_end(buf: &[u8], off: usize, tag: u8) -> Option<usize> 
     ends.into_iter().min()
 }
 
+/// The end of the surface front refs of a FACE at `off` whose header prefix
+/// ends at `sense_end` (spec §4).
+fn face_front_refs_end(buf: &[u8], off: usize, sense_end: usize) -> Option<usize> {
+    let p = body_start(buf, off, 0x0e)?;
+    let (len, refs) = if sense_end == p + face_body::SURFACE_FRONT_REFS {
+        (face_body::LEN, refs_be::<5>(buf, sense_end)?)
+    } else if sense_end == p + face_delta::SURFACE_FRONT_REFS {
+        (face_delta::LEN, refs_tripled::<5>(buf, sense_end)?)
+    } else {
+        return None;
+    };
+    refs.iter()
+        .all(|reference| *reference <= MAX_SHORT_POINTER_INDEX)
+        .then_some(p + len)
+}
+
+/// The record tag of an intersection composite.
+const INTERSECTION_COMPOSITE_TAG: u8 = 0x26;
+
+/// The end of a complete `00 26` intersection composite whose body starts at
+/// `p`: a pointer `attr`, a sense marker, and six payload pointers (spec §7.3).
+fn intersection_composite_end(buf: &[u8], p: usize, tag: u8) -> Option<usize> {
+    use crate::layout::intersection_composite as isect;
+    if tag != INTERSECTION_COMPOSITE_TAG {
+        return None;
+    }
+    let attr = attr_at(buf, p)?;
+    if !(2..=MAX_SHORT_POINTER_INDEX).contains(&attr)
+        || !matches!(buf.get(p + isect::MARKER), Some(0x2b | 0x2d))
+    {
+        return None;
+    }
+    let payload = refs_be::<6>(buf, p + isect::PAYLOAD)?;
+    if payload
+        .iter()
+        .any(|reference| *reference > MAX_SHORT_POINTER_INDEX)
+    {
+        return None;
+    }
+    let end = p + isect::LEN;
+    (end <= buf.len()).then_some(end)
+}
+
+/// The end of an intersection composite written as the first record of its
+/// class, after the class's edited type header (spec §4.1): the record has
+/// no tag of its own and its body starts just past the header.
+fn edited_intersection_composite_end(buf: &[u8], off: usize) -> Option<usize> {
+    let (node_type, p) = super::typed::edited_header_end(buf, off)?;
+    (node_type == u16::from(INTERSECTION_COMPOSITE_TAG)).then_some(())?;
+    intersection_composite_end(buf, p, INTERSECTION_COMPOSITE_TAG)
+}
+
 pub(super) struct TopologyScopes {
     pub(super) payloads: Vec<std::ops::Range<usize>>,
     pub(super) excluded_starts: Vec<std::ops::Range<usize>>,
@@ -650,6 +814,9 @@ pub(super) fn topology_scopes(buf: &[u8], prefixed: bool) -> TopologyScopes {
         excluded_starts: Vec::new(),
     };
     let mut off = 0;
+    // Candidate starts ascend, so this forward-only position keeps the sentinel
+    // search linear however many wide candidates a stream holds.
+    let mut next_sentinel = 0;
     while off + 2 < buf.len() {
         let tag = buf[off + 1];
         let Some(p) = body_start(buf, off, tag).filter(|_| buf[off] == 0) else {
@@ -657,20 +824,32 @@ pub(super) fn topology_scopes(buf: &[u8], prefixed: bool) -> TopologyScopes {
             continue;
         };
         let end = match tag {
-            0x52 => View::u32_be_at(buf, p + int_values::COUNT).and_then(|count| {
+            0x52 => View::u32_be_at(buf, p + int_values::COUNT).and_then(|stated| {
                 let node = View::u16_be_at(buf, p + int_values::NODE_INDEX)?;
                 if !(2..=MAX_SHORT_POINTER_INDEX).contains(&node) {
                     return None;
                 }
                 let start = p.checked_add(int_values::LEN)?;
                 let available = buf.len().checked_sub(start)?;
-                let count = cadmpeg_core::decode::bounded_len(u64::from(count), 4, available)?;
+                let count = cadmpeg_core::decode::bounded_len(u64::from(stated), 4, available)?;
                 let end = start.checked_add(count.checked_mul(4)?)?;
                 // A node ends where the next node's tag begins. A `00 52` read
                 // inside another record's fields can state a count that fits the
                 // buffer; its extent then ends mid-record and would hide every
                 // real node it spans.
-                buf.get(end).is_none_or(|next| *next == 0).then_some(end)
+                buf.get(end).is_none_or(|next| *next == 0).then_some(())?;
+                if stated >= INT_VALUES_WIDE_COUNT_MIN {
+                    if next_sentinel < start {
+                        next_sentinel = buf[start..]
+                            .windows(MAGIC.len())
+                            .position(|window| window == MAGIC)
+                            .map_or(buf.len(), |at| start + at);
+                    }
+                    if next_sentinel + MAGIC.len() <= end {
+                        return None;
+                    }
+                }
+                Some(end)
             }),
             0x51 => (|| {
                 let flags = View::u32_be_at(buf, p + entity_hdr::FLAGS)?;
@@ -714,9 +893,16 @@ pub(super) fn topology_scopes(buf: &[u8], prefixed: bool) -> TopologyScopes {
             scopes.payloads.push(off..end);
             scopes.excluded_starts.push(off..end);
             off = end;
-        } else if let Some(end) = topology_header_prefix_end(buf, off, tag) {
+        } else if let Some(end) = intersection_composite_end(buf, p, tag)
+            .or_else(|| edited_intersection_composite_end(buf, off))
+        {
+            // A complete intersection composite holds no topology header.
             scopes.excluded_starts.push(off + 1..end);
             off = end;
+        } else if let Some(end) = topology_header_prefix_end(buf, off, tag) {
+            scopes.excluded_starts.push(off + 1..end);
+            // A FACE's surface front refs hold no record header.
+            off = face_front_refs_end(buf, off, end).unwrap_or(end);
         } else {
             off += 1;
         }
@@ -1099,10 +1285,10 @@ impl Candidate for Point {
 #[derive(Clone, Copy)]
 struct CoedgeEvidence<'a> {
     owner: Option<&'a Loop>,
-    start: bool,
+    end: bool,
     edge: Option<&'a [EdgeUse]>,
-    next_owner: Option<bool>,
-    previous: bool,
+    backward_owner: Option<bool>,
+    forward: bool,
     loop_head: bool,
 }
 
@@ -1110,11 +1296,11 @@ impl CoedgeEvidence<'_> {
     fn flags(self) -> [bool; 7] {
         [
             self.owner.is_some(),
-            self.start,
+            self.end,
             self.edge.is_some(),
-            self.next_owner == Some(true),
-            self.next_owner.is_some(),
-            self.previous,
+            self.backward_owner == Some(true),
+            self.backward_owner.is_some(),
+            self.forward,
             self.loop_head,
         ]
     }
@@ -1172,27 +1358,27 @@ fn coedge_evidence<'a>(
     let owner_evidence = loops
         .iter()
         .find(|loop_| loop_.attr == owner && owner != 0 && loop_is_owned(loop_, bridges));
-    let start = candidate.refs[4];
-    let start_evidence = start > 1 && vertex_uses.contains(&start);
+    let end = candidate.refs[4];
+    let end_evidence = end > 1 && vertex_uses.contains(&end);
     let edge = candidate.refs[6];
     let edge_evidence = edge_candidates
         .get(&edge)
         .filter(|_| edge != 0)
         .map(Vec::as_slice);
-    let next = candidate.refs[3];
-    let next_owner_valid = coedge_candidates
-        .get(&next)
-        .filter(|_| next != 0)
+    let backward = candidate.refs[3];
+    let backward_owner_valid = coedge_candidates
+        .get(&backward)
+        .filter(|_| backward != 0)
         .map(|candidates| {
             candidates
                 .iter()
-                .any(|next_candidate| next_candidate.refs[1] == owner)
+                .any(|backward_candidate| backward_candidate.refs[1] == owner)
         });
-    let previous = candidate.refs[2];
-    let previous_valid = previous <= 1
-        || coedge_candidates.get(&previous).is_some_and(|candidates| {
-            candidates.iter().any(|previous_candidate| {
-                previous_candidate.refs[3] == candidate.attr && previous_candidate.refs[1] == owner
+    let forward = candidate.refs[2];
+    let forward_valid = forward <= 1
+        || coedge_candidates.get(&forward).is_some_and(|candidates| {
+            candidates.iter().any(|forward_candidate| {
+                forward_candidate.refs[3] == candidate.attr && forward_candidate.refs[1] == owner
             })
         });
     let loop_head_valid = loops.iter().rev().any(|loop_| {
@@ -1200,10 +1386,10 @@ fn coedge_evidence<'a>(
     });
     CoedgeEvidence {
         owner: owner_evidence,
-        start: start_evidence,
+        end: end_evidence,
         edge: edge_evidence,
-        next_owner: next_owner_valid,
-        previous: previous_valid,
+        backward_owner: backward_owner_valid,
+        forward: forward_valid,
         loop_head: loop_head_valid,
     }
 }
@@ -1316,7 +1502,7 @@ pub(crate) fn patch_point_values(
 
 /// Replace one world-point record while preserving its framing.
 pub(crate) fn patch_point(buf: &mut [u8], attr: u16, xyz_m: [f64; 3]) -> bool {
-    let mut tables = scan_records(buf, false, None, None, None, None);
+    let mut tables = scan_records(buf, false, false, None, None, None, None);
     let Some(record) = tables.points.remove(&attr) else {
         return false;
     };
@@ -1325,11 +1511,23 @@ pub(crate) fn patch_point(buf: &mut [u8], attr: u16, xyz_m: [f64; 3]) -> bool {
 
 /// Scan stream-local topology records.
 pub(crate) fn scan(body: &[u8]) -> Tables {
+    scan_stream(body, false)
+}
+
+/// Scan the stream-local topology records of a plain stream (spec §3.3).
+pub(crate) fn scan_plain(body: &[u8]) -> Tables {
+    scan_stream(body, true)
+}
+
+/// Scan stream-local topology records; `plain` reads a plain stream
+/// (spec §3.3).
+fn scan_stream(body: &[u8], plain: bool) -> Tables {
     let owner_facts = super::typed::scan(body);
     let owners = super::typed::topology_owner_attrs_for_streams([(&owner_facts, body, false)]);
     scan_records(
         body,
         false,
+        plain,
         None,
         None,
         None,
@@ -1351,6 +1549,26 @@ pub(super) fn scan_with_owner_attrs(
     scan_records(
         body,
         false,
+        false,
+        Some(curve_attrs),
+        Some(excluded_bridge_offsets),
+        None,
+        (!owner_attrs.is_empty()).then_some(owner_attrs),
+    )
+}
+
+/// Scan a plain stream (spec §3.3) with the typed FACE/compact-bridge
+/// overlap rule.
+pub(super) fn scan_plain_with_owner_attrs(
+    body: &[u8],
+    curve_attrs: &HashSet<u16>,
+    excluded_bridge_offsets: &HashSet<usize>,
+    owner_attrs: &HashSet<u16>,
+) -> Tables {
+    scan_records(
+        body,
+        false,
+        true,
         Some(curve_attrs),
         Some(excluded_bridge_offsets),
         None,
@@ -1369,6 +1587,7 @@ pub(super) fn scan_deltas_with_owner_attrs(
     scan_records(
         body,
         true,
+        false,
         Some(curve_attrs),
         Some(excluded_bridge_offsets),
         Some(base),
@@ -1382,12 +1601,13 @@ pub(super) fn scan_deltas_with_owner_attrs(
 /// an admitted record implies an unambiguous frame, so the span is the record
 /// offset plus the frame length. Ambiguous frames carry no record and no span.
 /// Bridges and edge uses carry no frames; their spans re-derive the framing
-/// the admission predicates matched, in match order.
-pub(super) fn topology_spans(body: &[u8]) -> Vec<super::read_ledger::RawSpan> {
-    let tables = scan(body);
+/// the admission predicates matched, in match order. `plain` reads a plain
+/// stream (spec §3.3).
+pub(super) fn topology_spans(body: &[u8], plain: bool) -> Vec<super::read_ledger::RawSpan> {
+    let tables = scan_stream(body, plain);
     let mut spans = Vec::new();
     for record in tables.bridges.values() {
-        if let Some(end) = bridge_end(body, record.offset) {
+        if let Some(end) = bridge_end(body, record.offset, plain) {
             push_span(&mut spans, record.offset, end, 0x0e, record.attr);
         }
     }
@@ -1438,7 +1658,7 @@ fn framed_spans<T: Candidate>(
 
 /// The body-relative end of the bridge framing [`parse_bridge`] admits at
 /// `off`, following its shapes in match order.
-fn bridge_end(buf: &[u8], off: usize) -> Option<usize> {
+fn bridge_end(buf: &[u8], off: usize, plain: bool) -> Option<usize> {
     let p = body_start(buf, off, 0x0e)?;
     if buf.get(p + 8) == Some(&1) && buf.get(p + 9..p + 17) == Some(MAGIC.as_slice()) {
         attr_at(buf, p)?;
@@ -1446,7 +1666,7 @@ fn bridge_end(buf: &[u8], off: usize) -> Option<usize> {
         parse_sense(*buf.get(p + 32)?)?;
         return p.checked_add(33);
     }
-    if p + 37 > buf.len() || buf.get(p + 8..p + 16)? != MAGIC {
+    if p + 37 > buf.len() || !frames_on_tolerance(buf, p + 8, plain) {
         return None;
     }
     attr_at(buf, p)?;
@@ -1498,6 +1718,7 @@ fn scan_deltas_with_curve_attrs_excluding(
 fn scan_records(
     body: &[u8],
     deltas: bool,
+    plain: bool,
     curve_attrs: Option<&HashSet<u16>>,
     excluded_bridge_offsets: Option<&HashSet<usize>>,
     base: Option<&Tables>,
@@ -1509,6 +1730,7 @@ fn scan_records(
     let mut loop_candidates = Vec::new();
     let mut loop_frames = Vec::new();
     let mut edge_candidates = CandidateMap::new();
+    let mut tolerant_edge_candidates = CandidateMap::new();
     let mut coedge_candidates = CandidateMap::new();
     let mut coedge_occurrences = Vec::new();
     let mut vertex_occurrences = Vec::new();
@@ -1536,7 +1758,7 @@ fn scan_records(
         }
         match body[i + 1] {
             0x0e => {
-                if let Some(record) = parse_bridge(body, i) {
+                if let Some(record) = parse_bridge(body, i, plain) {
                     let excluded =
                         excluded_bridge_offsets.is_some_and(|offsets| offsets.contains(&i));
                     let carries_loop = record.refs[2] > 1;
@@ -1551,13 +1773,19 @@ fn scan_records(
                     loop_frames.push((record, end));
                 }
             }
-            0x10 => insert_candidates(
-                &mut edge_candidates,
-                parse_edge_use_candidates(body, i)
-                    .into_iter()
-                    .map(|(record, _)| record)
-                    .collect(),
-            ),
+            0x10 => {
+                let candidates = parse_edge_use_candidates(body, i);
+                if candidates.is_empty() {
+                    insert_candidates(
+                        &mut tolerant_edge_candidates,
+                        parse_tolerant_edge_use_candidates(body, i),
+                    );
+                }
+                insert_candidates(
+                    &mut edge_candidates,
+                    candidates.into_iter().map(|(record, _)| record).collect(),
+                );
+            }
             0x11 => {
                 let frames = parse_coedge_candidates(body, i);
                 for (record, _) in &frames {
@@ -1787,6 +2015,7 @@ fn scan_records(
             t.edge_uses.insert(record.attr, record);
         }
     }
+    admit_tolerant_edge_uses(&mut t, tolerant_edge_candidates);
     for (record, end) in loop_frames {
         let owner = record.refs[2];
         let first = record.refs[1];
@@ -1823,6 +2052,9 @@ fn scan_records(
     }
     t
 }
+
+#[cfg(test)]
+mod scope_tests;
 
 #[cfg(test)]
 mod tests {
@@ -2049,7 +2281,7 @@ mod tests {
         bytes.push(0x2b);
         bytes.resize(48, 0);
 
-        let bridge = parse_bridge(&bytes, 0).expect("deltas-form bridge");
+        let bridge = parse_bridge(&bytes, 0, false).expect("deltas-form bridge");
         assert_eq!(bridge.attr, 0x1234);
         assert_eq!(bridge.sequence, 7);
         assert_eq!(bridge.attributes_head, Some(0x4321));
@@ -2062,7 +2294,7 @@ mod tests {
         let expected = vec![0x101, 0x202, 0x303, 0x404, 0x505];
         for tripled in [false, true] {
             let bytes = bridge_with_refs(&expected, tripled);
-            let bridge = parse_bridge(&bytes, 0)
+            let bridge = parse_bridge(&bytes, 0, false)
                 .unwrap_or_else(|| panic!("bridge tripled={tripled} bytes={bytes:02x?}"));
             assert_eq!(bridge.attr, 0x1234);
             assert_eq!(bridge.sequence, 7);
@@ -2176,6 +2408,64 @@ mod tests {
         assert_eq!(coedge.refs[4], 50);
         assert_eq!(coedge.refs[6], 0x2b40);
         assert!(tables.loops.contains_key(&20));
+    }
+
+    /// A bare edge use whose tolerance slot holds `tolerance` and whose
+    /// support-curve slot holds the null `1`: a tolerant edge (spec §7.6).
+    fn tolerant_edge_use(attr: u16, canonical: u16, tolerance: f64) -> Vec<u8> {
+        let mut bytes = vec![0, 0x10];
+        bytes.extend(attr.to_be_bytes());
+        bytes.extend(0_u32.to_be_bytes());
+        bytes.extend(0_u16.to_be_bytes());
+        bytes.extend(tolerance.to_be_bytes());
+        bytes.extend(
+            [canonical, 0, 0, 1, 0, 0, 900]
+                .into_iter()
+                .flat_map(u16::to_be_bytes),
+        );
+        bytes
+    }
+
+    /// One face whose fin 30 names edge `edge`, and the edge use `edge_use`.
+    fn tolerant_body(edge: u16, edge_use: &[u8]) -> Vec<u8> {
+        let mut body = Vec::new();
+        body.extend(topology_bridge(10, 20));
+        body.extend(topology_loop(20, 30, 10));
+        body.extend(topology_tripled_coedge(
+            30,
+            [0, 20, 0, 30, 50, 0, edge, 0, 0],
+        ));
+        body.extend(edge_use);
+        body.extend(topology_vertex_use(50, 0));
+        body.extend(crate::test_support::parasolid::fixture_vertex_owner_class(
+            900,
+        ));
+        body.extend(crate::test_support::parasolid::world_point(60, [0.0; 3]));
+        body
+    }
+
+    #[test]
+    fn a_tolerant_edge_use_is_admitted_only_when_a_selected_fin_names_it() {
+        let tables = scan(&tolerant_body(40, &tolerant_edge_use(40, 30, 5.0e-7)));
+        let edge = tables.edge_uses.get(&40).expect("the named tolerant edge");
+        assert_eq!(edge.tolerance_m, Some(5.0e-7));
+        assert_eq!(edge.references.curve(), 1);
+        assert_eq!(edge.references.canonical(), Some(30));
+        // No fin names it.
+        let tables = scan(&tolerant_body(41, &tolerant_edge_use(40, 30, 5.0e-7)));
+        assert!(!tables.edge_uses.contains_key(&40));
+        // Its canonical slot names a fin of no edge of it.
+        let tables = scan(&tolerant_body(40, &tolerant_edge_use(40, 31, 5.0e-7)));
+        assert!(!tables.edge_uses.contains_key(&40));
+        // A tolerance that is not positive frames no tolerant edge.
+        let tables = scan(&tolerant_body(40, &tolerant_edge_use(40, 30, 0.0)));
+        assert!(!tables.edge_uses.contains_key(&40));
+        // An ordinary edge use stores the null-real sentinel and no tolerance.
+        let tables = scan(&tolerant_body(40, &topology_edge_use(40, 0)));
+        assert_eq!(
+            tables.edge_uses.get(&40).map(|edge| edge.tolerance_m),
+            Some(None)
+        );
     }
 
     #[test]
@@ -2382,7 +2672,7 @@ mod tests {
             candidate.refs[2] = null;
             let evidence =
                 super::coedge_evidence(&candidate, &[], &bridges, &vertices, &edges, &coedges);
-            assert!(evidence.previous);
+            assert!(evidence.forward);
         }
     }
 
@@ -2852,6 +3142,64 @@ mod tests {
     }
 
     #[test]
+    fn an_intersection_composite_is_skipped_whole() {
+        let mut bytes = vec![0x00, 0x26];
+        bytes.extend(300_u16.to_be_bytes());
+        bytes.extend(7_u32.to_be_bytes());
+        for reference in [1_u16, 3, 301, 302, 303] {
+            bytes.extend(reference.to_be_bytes());
+        }
+        bytes.push(0x2b);
+        for reference in [40_u16, 41, 42, 43, 44, 45] {
+            bytes.extend(reference.to_be_bytes());
+        }
+        assert_eq!(
+            super::intersection_composite_end(&bytes, 2, 0x26),
+            Some(2 + 29)
+        );
+        assert_eq!(super::intersection_composite_end(&bytes, 2, 0x12), None);
+        let mut unmarked = bytes.clone();
+        unmarked[2 + 16] = 0x00;
+        assert_eq!(super::intersection_composite_end(&unmarked, 2, 0x26), None);
+        let scopes = super::topology_scopes(&bytes, false);
+        assert_eq!(scopes.excluded_starts, vec![1..31]);
+    }
+
+    #[test]
+    fn an_intersection_composite_after_its_class_header_is_skipped_whole() {
+        // The first composite of a stream follows its class's edited type
+        // header (spec §4.1) with no tag of its own. Its sequence number
+        // `00 00 12 1a` holds a false `00 12` vertex header that would run
+        // over the tag of the point record that follows.
+        let mut bytes = vec![0x00, 0x26, 12];
+        bytes.extend([b'C'; 11]);
+        bytes.push(b'A');
+        bytes.push(17);
+        bytes.extend(b"intersection_data");
+        bytes.extend([0x00, 0xcc, 0x00, 0x01]);
+        bytes.push(b'Z');
+        let record = bytes.len();
+        bytes.extend(9_u16.to_be_bytes());
+        bytes.extend(0x121a_u32.to_be_bytes());
+        for reference in [1_u16, 3, 56, 1, 53] {
+            bytes.extend(reference.to_be_bytes());
+        }
+        bytes.push(0x2d);
+        for reference in [50_u16, 8, 54, 55, 58, 61] {
+            bytes.extend(reference.to_be_bytes());
+        }
+        let point = bytes.len();
+        assert_eq!(point, record + 29);
+        bytes.extend(crate::test_support::parasolid::world_point(
+            10,
+            [0.001, 0.002, 0.003],
+        ));
+        let scopes = super::topology_scopes(&bytes, false);
+        assert_eq!(scopes.excluded_starts.first(), Some(&(1..point)));
+        assert!(super::scan(&bytes).points().contains_key(&10));
+    }
+
+    #[test]
     fn complete_vertex_tolerances_reject_nonfinite_and_withhold_nonpositive_geometry() {
         for (tolerance, admitted, projected) in [
             (None, true, true),
@@ -3084,6 +3432,58 @@ mod tests {
         );
         assert!(scan(&bytes).vertex_frames.is_empty());
     }
+
+    /// A pointer to node 82, the null pointer after it, then `body`, padded so
+    /// that the count the pair states ends on a zero byte.
+    fn node_82_pointer_before(body: &[u8]) -> Vec<u8> {
+        let count = super::INT_VALUES_WIDE_COUNT_MIN;
+        let mut bytes = vec![0, 0x52];
+        bytes.extend(count.to_be_bytes());
+        bytes.extend(710u16.to_be_bytes());
+        bytes.extend(body);
+        bytes.resize(8 + usize::try_from(count).unwrap() * 4 + 1, 0);
+        bytes
+    }
+
+    #[test]
+    fn node_82_pointer_does_not_hide_the_topology_after_it() {
+        let body = crate::test_support::parasolid::triangle_body();
+        assert!(body
+            .windows(super::MAGIC.len())
+            .any(|window| window == super::MAGIC));
+        let bytes = node_82_pointer_before(&body);
+        assert!(super::topology_payload_ranges(&bytes, false).is_empty());
+        let baseline = vertex_partition();
+        let tables = scan(&bytes);
+        assert_eq!(tables.vertex_uses.len(), baseline.vertex_uses.len());
+        assert_eq!(tables.coedges.len(), baseline.coedges.len());
+        assert_eq!(tables.loops.len(), baseline.loops.len());
+        assert_eq!(
+            super::super::typed::scan(&bytes).bodies.len(),
+            super::super::typed::scan(&body).bodies.len()
+        );
+    }
+
+    #[test]
+    fn wide_int_values_count_without_a_sentinel_is_a_payload() {
+        let bytes = node_82_pointer_before(&[]);
+        assert_eq!(
+            super::topology_payload_ranges(&bytes, false),
+            std::iter::once(0..bytes.len() - 1).collect::<Vec<_>>()
+        );
+    }
+
+    #[test]
+    fn sentinel_past_a_wide_extent_does_not_reject_it() {
+        let mut bytes = node_82_pointer_before(&[]);
+        let end = bytes.len() - 1;
+        bytes.extend(super::MAGIC);
+        assert_eq!(
+            super::topology_payload_ranges(&bytes, false),
+            std::iter::once(0..end).collect::<Vec<_>>()
+        );
+    }
+
     #[test]
     fn unproved_vertex_owner_retains_framing_but_cannot_emit_geometry() {
         let mut bytes = crate::test_support::parasolid::triangle_body();
@@ -3104,7 +3504,7 @@ mod tests {
             false,
             false,
         ));
-        let tables = super::scan_records(&bytes, false, None, None, None, None);
+        let tables = super::scan_records(&bytes, false, false, None, None, None, None);
         assert!(tables.vertex_is_unresolved(211));
         assert!(tables.vertex_classes.contains_key(&211));
         assert_eq!(
@@ -3242,10 +3642,51 @@ mod tests {
         assert!(tables.coedges.is_empty());
     }
     #[test]
+    fn a_record_tail_read_as_an_edge_header_does_not_hide_the_next_loop() {
+        // `00 10` in a record tail reads as an EDGE header whose tolerance
+        // slot holds the loop's bytes: a finite value below 1e-12 m.
+        let mut bytes = crate::test_support::parasolid::triangle_body();
+        let head = crate::test_support::parasolid::loop_head(20, 30, 10);
+        let at = bytes
+            .windows(head.len())
+            .position(|window| window == head.as_slice())
+            .unwrap();
+        bytes.splice(at..at, [0x00, 0x10, 0x00, 0x52]);
+        assert!(super::topology_header_prefix_end(&bytes, at, 0x10).is_none());
+        assert!(scan(&bytes).loops.contains_key(&20));
+    }
+
+    #[test]
     fn face_transmit_index_does_not_create_an_integer_values_enclosure() {
         let bytes = crate::test_support::parasolid::bridge_owned(82, 20, 100, 88);
         assert!(super::topology_payload_ranges(&bytes, false).is_empty());
-        assert_eq!(parse_bridge(&bytes, 0).unwrap().attr, 82);
+        assert_eq!(parse_bridge(&bytes, 0, false).unwrap().attr, 82);
+    }
+
+    #[test]
+    fn a_plain_stream_frames_a_face_on_its_stored_tolerance() {
+        let face = |slot: f64| {
+            let mut bytes = crate::test_support::parasolid::bridge(82, 20, 100);
+            bytes[10..18].copy_from_slice(&slot.to_be_bytes());
+            bytes
+        };
+        for tolerance in [0.0, 1.0e-8, 1.0e-12, 1.0e-2] {
+            assert_eq!(parse_bridge(&face(tolerance), 0, true).unwrap().attr, 82);
+            assert!(parse_bridge(&face(tolerance), 0, false).is_none());
+        }
+        for tolerance in [1.0e-302, 2.0e-2, -1.0e-8, f64::NAN] {
+            assert!(parse_bridge(&face(tolerance), 0, true).is_none());
+        }
+        assert_eq!(
+            parse_bridge(
+                &crate::test_support::parasolid::bridge(82, 20, 100),
+                0,
+                true
+            )
+            .unwrap()
+            .attr,
+            82
+        );
     }
 
     #[test]
@@ -3558,6 +3999,7 @@ mod tests {
         assert_eq!(node, 25_088);
         let false_end = false_integer + 8 + usize::try_from(count).unwrap() * 4;
         assert!(false_end > bytes.len());
+        let mut graph = bytes.clone();
         bytes.resize(false_end, 0);
         assert!(super::topology_payload_ranges(&bytes, false).is_empty());
         let tables = scan(&bytes);
@@ -3576,10 +4018,10 @@ mod tests {
             .any(|range| { range.start <= program_end && range.end >= world_end }));
 
         let mut enclosed = vec![0, 82];
-        bytes.resize(bytes.len().next_multiple_of(4), 0);
-        enclosed.extend(u32::try_from(bytes.len() / 4).unwrap().to_be_bytes());
+        graph.resize(graph.len().next_multiple_of(4), 0);
+        enclosed.extend(u32::try_from(graph.len() / 4).unwrap().to_be_bytes());
         enclosed.extend(710u16.to_be_bytes());
-        enclosed.extend(bytes);
+        enclosed.extend(graph);
         assert_eq!(
             super::topology_payload_ranges(&enclosed, false),
             std::iter::once(0..enclosed.len()).collect::<Vec<_>>()
