@@ -183,6 +183,7 @@ fn saved_edge_loss_counts_final_archive_ownership_once() {
             failed: std::collections::BTreeMap::new(),
             operation_poses: std::collections::BTreeMap::new(),
             operation_protected: std::collections::BTreeSet::new(),
+            component_path_tables: Vec::new(),
         }
         .merge(
             &mut ir,
@@ -901,6 +902,7 @@ fn repeated_local_owners_merge_each_external_child_tree_in_its_composed_frame() 
         failed: std::collections::BTreeMap::new(),
         operation_poses: std::collections::BTreeMap::new(),
         operation_protected: std::collections::BTreeSet::new(),
+        component_path_tables: Vec::new(),
     }
     .merge(&mut ir, &mut report, &mut fidelity, &table)
     .unwrap();
@@ -1394,6 +1396,7 @@ fn merged_joint_descent_selects_unique_member_children_and_retains_ambiguous_pat
                 failed: std::collections::BTreeMap::new(),
                 operation_poses: std::collections::BTreeMap::new(),
                 operation_protected: std::collections::BTreeSet::new(),
+                component_path_tables: Vec::new(),
             }
             .merge(
                 &mut ir,
