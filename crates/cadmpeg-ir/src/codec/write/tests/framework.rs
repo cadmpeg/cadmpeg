@@ -63,7 +63,10 @@ fn probe<const REUSES: bool>(
 #[test]
 fn fidelity_filter_preserves_caller_limits_and_only_reusing_backends_stamp_a_cause() {
     let ir = CadIr::empty();
-    let mut fidelity = SourceFidelity::default();
+    let mut fidelity = SourceFidelity::with_annotations(
+        crate::Annotations::default(),
+        crate::hash::digest::Sha256Digest::digest(b"test source"),
+    );
     let classes = crate::ArenaClasses::from([crate::ArenaClass::Model, crate::ArenaClass::Design]);
     fidelity
         .insert_retained_record(
@@ -85,7 +88,10 @@ fn fidelity_filter_preserves_caller_limits_and_only_reusing_backends_stamp_a_cau
 #[test]
 fn represented_fidelity_remains_visible_without_a_source_unrepresented_cause() {
     let ir = CadIr::empty();
-    let fidelity = SourceFidelity::default();
+    let fidelity = SourceFidelity::with_annotations(
+        crate::Annotations::default(),
+        crate::hash::digest::Sha256Digest::digest(b"test source"),
+    );
     for plan in [
         probe::<true>(&ir, &fidelity, true),
         probe::<false>(&ir, &fidelity, true),
@@ -155,7 +161,10 @@ fn source_reuse_paths() -> [crate::codec::write::WritePath; 2] {
 #[test]
 fn source_reuse_with_supplied_fidelity_keeps_the_computed_path_and_payload() {
     let ir = CadIr::empty();
-    let fidelity = SourceFidelity::default();
+    let fidelity = SourceFidelity::with_annotations(
+        crate::Annotations::default(),
+        crate::hash::digest::Sha256Digest::digest(b"test source"),
+    );
     for write_path in source_reuse_paths() {
         let expected = write_path.clone().into_report(true);
         let plan = SourceReuseProbe { write_path }

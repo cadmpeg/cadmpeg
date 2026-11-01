@@ -1262,7 +1262,7 @@ mod tests {
             DecodeContext::from_root_bytes(&bytes, &arena, &policy).expect("input view");
         let container =
             InventorContainer::open(&ctx, source).expect("actual presentation envelope");
-        let mut output = PartOutput::new(cadmpeg_ir::CodecFormat::Inventor);
+        let mut output = PartOutput::new(cadmpeg_ir::CodecFormat::Inventor, &ctx);
         let result = inventory(&ctx, &container.rse, &mut output)?;
         let (_, _, _, losses) = output.into_parts();
         Ok((

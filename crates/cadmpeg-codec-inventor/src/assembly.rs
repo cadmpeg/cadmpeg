@@ -1046,7 +1046,7 @@ mod tests {
         let mut container = InventorContainer::open(&ctx, source)?;
         let parts = std::mem::replace(
             &mut container.rse.source_parts,
-            super::PartOutput::new(cadmpeg_ir::CodecFormat::Inventor),
+            super::PartOutput::new(cadmpeg_ir::CodecFormat::Inventor, &ctx),
         );
         let result = inventory(&ctx, &container.rse, parts)?;
         let staged = |arena: &str| {

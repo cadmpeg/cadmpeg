@@ -230,7 +230,10 @@ fn fidelity_resolution_is_not_provided_whenever_the_input_carries_none() {
 #[test]
 fn fidelity_resolution_follows_the_backend_consumption_when_provided() {
     let ir = CadIr::empty();
-    let fidelity = SourceFidelity::default();
+    let fidelity = SourceFidelity::with_annotations(
+        crate::Annotations::default(),
+        crate::hash::digest::Sha256Digest::digest(b"test source"),
+    );
     let plan = CatalogEncoder
         .plan(
             EncodeInput::new(&ir, Some(&fidelity)),
@@ -524,7 +527,10 @@ impl EncoderBackend for PathEncoder {
 #[test]
 fn the_sealed_wrapper_synthesizes_instead_of_exposing_untyped_source_bytes() {
     let ir = CadIr::empty();
-    let mut fidelity = SourceFidelity::default();
+    let mut fidelity = SourceFidelity::with_annotations(
+        crate::Annotations::default(),
+        crate::hash::digest::Sha256Digest::digest(b"test source"),
+    );
     fidelity
         .insert_retained_record(
             crate::ids::UnknownId::mint("test:source:record#image").unwrap(),

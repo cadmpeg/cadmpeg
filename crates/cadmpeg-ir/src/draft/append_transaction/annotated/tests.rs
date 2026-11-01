@@ -43,7 +43,7 @@ fn a_failed_child_loses_its_admitted_exactness_while_the_parent_and_peer_survive
         .commit(point_draft(prefix, Exactness::Inferred), &mut annotations)
         .expect("prefix admission")
         .expect("valid prefix");
-    let mut parts = PartOutput::new(CodecFormat::Fcstd);
+    let mut parts = PartOutput::new(CodecFormat::Fcstd, &ctx);
     let first = root.child(0, 1).expect("first child");
     let second = root.child(1, 2).expect("second child");
     let result = session

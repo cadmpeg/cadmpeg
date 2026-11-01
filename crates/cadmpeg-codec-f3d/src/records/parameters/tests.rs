@@ -185,7 +185,9 @@ fn authored_parameter_has_semantic_content_without_source_layout() {
         design_parameters: vec![parameter],
         ..Default::default()
     };
-    let fidelity = native.retained_fidelity().unwrap();
+    let fidelity = native
+        .retained_fidelity(&cadmpeg_test_support::service_decode_context())
+        .unwrap();
     assert!(fidelity.retained_records().is_empty());
 }
 

@@ -902,6 +902,7 @@
         }
       }
     },
+    "decode_digest": "a6205fa139f9206ae55d8dbb70327b2f23e12d4e69398f3d0c0a21c518d0f22b",
     "retained_records": {
       "creo:source:image#whole": {
         "bytes": {

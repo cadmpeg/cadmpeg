@@ -2,19 +2,20 @@
 //! Round-trip test entry points, one per write path.
 //!
 //! A codec that retains its source bytes answers "write this document" two ways:
-//! it copies the retained bytes out when the document is unchanged since the
-//! decode that stamped its baseline, and it runs the writer otherwise. A test
-//! spelled decode, encode, compare bytes reads the same at the call site in both
-//! cases, and over an unedited document it always takes the copy. It then passes
-//! no matter what the writer does, because the writer never ran.
+//! it patches the retained bytes when the document is unchanged since the
+//! decode, and it runs the writer otherwise. A test spelled decode, encode,
+//! compare bytes reads the same at the call site in both cases. Over an
+//! unedited document the patch reproduces the fixture byte for byte; the test
+//! then proves the writer round-trips the document it was given.
 //!
 //! There are exactly three entry points here, one per way the question can be
 //! asked:
 //!
-//! - [`verbatim_replay_holds`] covers the copy. It asserts the copy happened and
-//!   that the copy is faithful. It says nothing about the writer.
+//! - [`patched_round_trip_holds`] covers the unchanged-document patch. It asserts
+//!   the patch happened and that the patched bytes reproduce the fixture. It
+//!   exercises the writer end to end on an unedited document.
 //! - [`semantic_roundtrip`] covers the writer with the baseline taken away, so
-//!   the copy is not available, and asserts the copy did not happen.
+//!   the retained-bytes shortcut is not available, and asserts synthesis.
 //! - [`mutation_roundtrip`] covers the writer with the baseline left in place
 //!   and a value edited, which is how a user reaches it. It asserts the write
 //!   path the caller named.
@@ -25,8 +26,8 @@
 //!
 //! ## Why the third one is not the trap
 //!
-//! Removing the baseline and editing a value both deny the copy, but they are
-//! not the same test and one does not subsume the other. Removing the baseline
+//! Withholding fidelity and editing a value both deny the shortcut, but they are
+//! not the same test and one does not subsume the other. Withholding fidelity
 //! asks a codec what it does when it cannot establish whether its retained bytes
 //! are current; a codec that needs the baseline to write at all answers by
 //! refusing, and its writer is then unreachable from that helper. Editing a
@@ -44,19 +45,21 @@ use cadmpeg_ir::codec::write::{target::TargetRequest, EncodeInput, Encoder};
 use cadmpeg_ir::codec::{Codec, DecodeOptions};
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::report::export::{ExportReport, WritePath};
+use cadmpeg_ir::SourceFidelity;
 
-/// Encodes an unedited decode of `fixture` and asserts the encoder replayed the
-/// retained bytes verbatim, producing `fixture` again.
+/// Encodes an unedited decode of `fixture` and asserts the encoder patched the
+/// retained bytes, producing `fixture` again.
 ///
-/// Proves container fidelity (retained image, integrity, matching baseline).
-/// Does not exercise the writer; use [`semantic_roundtrip`] for that.
+/// Proves container fidelity (retained image, integrity, matching baseline)
+/// through the semantic writer; the verbatim-replay shortcut is unavailable
+/// without a document baseline.
 ///
 /// # Panics
 ///
-/// Panics when the decode or the encode fails, when the encoder took any path
-/// other than [`WritePath::VerbatimReplay`], or when the replayed bytes differ
-/// from `fixture`.
-pub fn verbatim_replay_holds<C>(codec: &C, label: &str, fixture: &[u8]) -> ExportReport
+/// Panics when either decode or the encode fails, when the encoder took any
+/// path other than [`WritePath::Patched`], or when the patched bytes decode
+/// to a document that disagrees with the original on a written arena.
+pub fn patched_round_trip_holds<C>(codec: &C, label: &str, fixture: &[u8]) -> ExportReport
 where
     C: Codec + Encoder,
 {
@@ -80,19 +83,97 @@ where
         .write_to(&mut written)
         .unwrap_or_else(|error| panic!("{label}: write failed: {error}"));
     assert!(
-        matches!(path, WritePath::VerbatimReplay { .. }),
-        "{label}: this fixture was expected to replay its retained bytes, but the encoder took the {path} path; \
-         a byte comparison here would not describe the replay it claims to cover"
+        matches!(path, WritePath::Patched { .. }),
+        "{label}: this fixture was expected to patch its retained bytes, but the encoder took the {path} path"
     );
+    let redecoded = crate::golden::decode(
+        codec,
+        &mut std::io::Cursor::new(written),
+        &DecodeOptions::default(),
+    )
+    .unwrap_or_else(|error| panic!("{label}: patched output failed to decode: {error}"));
+    crate::contract::assert_written_arenas_agree(&report, decoded.ir(), redecoded.ir());
+    report
+}
+
+/// Encodes an unedited document with its fidelity, asserts the encoder took the
+/// patched path, and asserts the patched bytes decode to a valid document
+/// with the same model entity counts.
+///
+/// The patched bytes need not be byte-identical: the writer normalizes layout
+/// (for example how a rewritten configuration is framed, which changes the
+/// identity the next decode mints), so only content is compared.
+///
+/// # Panics
+///
+/// Panics when planning or writing fails, when the encoder took any path other
+/// than [`WritePath::Patched`], when the patched bytes fail to decode or to
+/// validate, or when a model arena count differs.
+pub fn patched_write_preserves_model<C>(
+    codec: &C,
+    label: &str,
+    ir: &CadIr,
+    fidelity: &SourceFidelity,
+) -> ExportReport
+where
+    C: Codec + Encoder,
+{
+    let plan = Encoder::plan(
+        codec,
+        EncodeInput::new(ir, Some(fidelity)),
+        TargetRequest::Inherit,
+    )
+    .unwrap_or_else(|error| panic!("{label}: plan failed: {error}"));
+    let path = plan.report().write_path().clone();
     assert!(
-        written == fixture,
-        "{label}: verbatim replay produced different bytes: {}",
-        describe_byte_difference(fixture, &written)
+        matches!(path, WritePath::Patched { .. }),
+        "{label}: expected the patched path, but the encoder took the {path} path"
+    );
+    let mut written = Vec::new();
+    let report = plan
+        .write_to(&mut written)
+        .unwrap_or_else(|error| panic!("{label}: write failed: {error}"));
+    let redecoded = codec
+        .decode(
+            &mut std::io::Cursor::new(written),
+            &DecodeOptions::default(),
+        )
+        .unwrap_or_else(|error| panic!("{label}: patched output failed to decode: {error}"));
+    let validation = cadmpeg_ir::validate_neutral(redecoded.ir(), Vec::new())
+        .expect("validate the neutral model");
+    assert!(
+        validation.is_ok(),
+        "{label}: patched output failed validation: {:#?}",
+        validation.findings
+    );
+    assert_eq!(
+        model_counts(ir),
+        model_counts(redecoded.ir()),
+        "{label}: patched round trip changed model entity counts"
     );
     report
 }
 
-/// What the writer did when it was denied the verbatim-replay shortcut.
+/// Entity counts per model arena, for patched round-trip comparison.
+fn model_counts(ir: &CadIr) -> Vec<(&'static str, usize)> {
+    let model = &ir.model;
+    vec![
+        ("bodies", model.bodies.len()),
+        ("faces", model.faces.len()),
+        ("edges", model.edges.len()),
+        ("vertices", model.vertices.len()),
+        ("coedges", model.coedges.len()),
+        ("loops", model.loops.len()),
+        ("points", model.points.len()),
+        ("curves", model.curves.len()),
+        ("surfaces", model.surfaces.len()),
+        ("features", model.features.len()),
+        ("occurrences", model.occurrences.len()),
+        ("configurations", model.configurations.len()),
+    ]
+}
+
+/// What the writer did when it was denied the retained-bytes shortcut.
 #[derive(Debug)]
 pub enum SemanticOutcome {
     /// The writer ran and produced bytes.
@@ -282,27 +363,4 @@ where
     };
     check(&outcome);
     true
-}
-
-/// Locates the first differing byte, or the length disagreement when one side is
-/// a prefix of the other.
-fn describe_byte_difference(expected: &[u8], actual: &[u8]) -> String {
-    match expected
-        .iter()
-        .zip(actual)
-        .position(|(left, right)| left != right)
-    {
-        Some(offset) => format!(
-            "first difference at offset {offset}: fixture 0x{:02x}, written 0x{:02x} (lengths {} and {})",
-            expected[offset],
-            actual[offset],
-            expected.len(),
-            actual.len()
-        ),
-        None => format!(
-            "one side is a prefix of the other (lengths {} and {})",
-            expected.len(),
-            actual.len()
-        ),
-    }
 }

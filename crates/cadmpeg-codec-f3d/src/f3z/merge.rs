@@ -47,10 +47,7 @@ pub(super) fn merge_archive(
     };
     let merged = merge_session.merge(ir, report, fidelity, &table)?;
     if !merge_session.untyped.is_empty() {
-        fidelity.mark_untyped(
-            crate::ids::FILE_SOURCE_IMAGE_ID,
-            merge_session.untyped,
-        )?;
+        fidelity.mark_untyped(crate::ids::FILE_SOURCE_IMAGE_ID, merge_session.untyped)?;
     }
     Ok(merged)
 }
@@ -1141,7 +1138,7 @@ fn rescope_fidelity(
     source: SourceFidelity,
     occurrence: &str,
 ) -> Result<SourceFidelity, CodecError> {
-    let (mut annotations, records) = source.into_parts();
+    let (mut annotations, records, decode_digest) = source.into_parts();
     annotations
         .map_ids(|id| match rescope(id, occurrence) {
             Some(id) => Ok(id),
@@ -1158,7 +1155,7 @@ fn rescope_fidelity(
         let stream = StreamHandle::new(stream);
         builder.note(&id, &stream, provenance.offset, provenance.tag.as_deref());
     }
-    let mut rescoped = SourceFidelity::with_annotations(builder.build());
+    let mut rescoped = SourceFidelity::with_annotations(builder.build(), decode_digest);
     for (id, record) in records {
         let id_text = match rescope(id.as_str(), occurrence) {
             Some(id) => id,

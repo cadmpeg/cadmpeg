@@ -115,7 +115,7 @@ fn encode_does_not_attempt_replay_when_the_source_records_no_dialect() {
 }
 
 #[test]
-fn a_replayed_export_states_the_preserved_dialect_as_its_target() {
+fn a_synthesized_export_states_the_synthesis_target_for_a_preserved_source() {
     let decoded = EditableDecodeResult::from(
         IgesCodec
             .decode(&mut Cursor::new(point_file()), &DecodeOptions::default())
@@ -129,24 +129,31 @@ fn a_replayed_export_states_the_preserved_dialect_as_its_target() {
         .expect("explicit target plans");
     assert!(matches!(
         plan.report().write_path(),
-        WritePath::VerbatimReplay { .. }
+        WritePath::Synthesized { .. }
     ));
 
     let mut written = Vec::new();
-    let report = plan.write_to(&mut written).expect("replay writes");
+    let report = plan.write_to(&mut written).expect("synthesis writes");
+    let claimed = wire::field_or_default::<Option<cadmpeg_core::dialect::DialectId>>(
+        &(report),
+        "identity/target",
+    )
+    .as_ref()
+    .map(cadmpeg_core::dialect::DialectId::as_str)
+    .expect("a synthesized export names its target")
+    .to_owned();
+    let redecoded = IgesCodec
+        .decode(&mut Cursor::new(written), &DecodeOptions::default())
+        .expect("synthesized output decodes");
     assert_eq!(
-        wire::field_or_default::<Option<cadmpeg_core::dialect::DialectId>>(
-            &(report),
-            "identity/target"
-        )
-        .as_ref(),
-        decoded
-            .ir()
-            .source
-            .as_ref()
-            .expect("decoded source exists")
+        claimed,
+        redecoded
+            .report()
+            .dialects()
+            .expect("synthesized output classifies a host dialect")
+            .primary()
             .dialect()
-            .map(cadmpeg_core::dialect::DialectMatch::dialect)
+            .as_str(),
     );
 }
 

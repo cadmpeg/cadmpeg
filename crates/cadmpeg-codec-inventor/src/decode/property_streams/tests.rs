@@ -62,7 +62,7 @@ fn untrusted_header_count_gives_up_only_its_actual_stream_and_keeps_the_peer() {
         descriptors[0].state,
         PropertySetState::Malformed(_)
     ));
-    let mut output = PartOutput::new(CodecFormat::Inventor);
+    let mut output = PartOutput::new(CodecFormat::Inventor, &ctx);
     let mut ordinal = 0;
     assert!(
         super::stage(&ctx, &mut output, &descriptors[0], &mut ordinal)
@@ -117,7 +117,7 @@ fn unreadable_bounded_value_keeps_its_section_and_exact_property_peer() {
         descriptors[0].state,
         PropertySetState::Malformed(_)
     ));
-    let mut output = PartOutput::new(CodecFormat::Inventor);
+    let mut output = PartOutput::new(CodecFormat::Inventor, &ctx);
     let formed = super::stage(&ctx, &mut output, &descriptors[0], &mut 0)
         .expect("the stream stage succeeds")
         .expect("the stream is formed");
@@ -157,7 +157,7 @@ fn cached_failure_does_not_override_actual_readable_source() {
     let mut descriptors = crate::property_set::inventory(&ctx, &snapshot)
         .expect("the property set inventory succeeds");
     descriptors[0].state = PropertySetState::Malformed("cached cue".into());
-    let mut output = PartOutput::new(CodecFormat::Inventor);
+    let mut output = PartOutput::new(CodecFormat::Inventor, &ctx);
     let formed = super::stage(&ctx, &mut output, &descriptors[0], &mut 0)
         .expect("the stream stage succeeds")
         .expect("the stream is formed");

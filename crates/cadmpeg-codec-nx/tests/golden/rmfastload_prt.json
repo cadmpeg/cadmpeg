@@ -638,6 +638,7 @@
     },
     "source_fidelity": {
       "annotations": {},
+      "decode_digest": "6eacfee0d80fbf06779bed4ee159abeaf2adff8bd840a7e042ef8ce6ba0f7da1",
       "retained_records": {
         "nx:source:image#whole": {
           "bytes": {

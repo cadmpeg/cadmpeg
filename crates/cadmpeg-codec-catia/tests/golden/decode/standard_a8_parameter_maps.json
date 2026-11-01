@@ -1205,6 +1205,7 @@
         }
       }
     },
+    "decode_digest": "bb380af7f693b8efa272968dfce05b014a5c7196882a4889dcaf617d514e7648",
     "retained_records": {
       "catia:payload:unknown#container": {
         "bytes": {

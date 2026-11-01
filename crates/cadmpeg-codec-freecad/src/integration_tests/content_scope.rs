@@ -5,10 +5,10 @@ use crate::native::{ObjectRecord, PropertyRecord};
 use crate::test_support::test_archive::archive;
 use crate::FcstdCodec;
 use cadmpeg_core::decode::DecodeDepth;
+use cadmpeg_ir::codec::write::Encoder;
 use cadmpeg_ir::document::{ArenaClass, ArenaClasses, ContentScope};
 use cadmpeg_ir::report::{loss::LossTaxonomy, Severity};
 use cadmpeg_ir::{Codec, DecodeOptions};
-use cadmpeg_ir::codec::write::Encoder;
 use std::io::Cursor;
 
 const TYPED_EXTENSION: &str = r#"<Document SchemaVersion="4" FileVersion="1">
@@ -29,8 +29,17 @@ fn decode(document: &str, depth: DecodeDepth) -> cadmpeg_ir::codec::DecodeResult
 }
 
 #[test]
-fn geometry_projection_declares_scope_before_its_content_digest() {
-    let decoded = decode(TYPED_EXTENSION, DecodeDepth::Geometry);
+fn geometry_projection_declares_scope_before_its_source_digest() {
+    let bytes = archive(TYPED_EXTENSION);
+    let decoded = FcstdCodec
+        .decode(
+            &mut Cursor::new(bytes.clone()),
+            &DecodeOptions {
+                depth: DecodeDepth::Geometry,
+                ..DecodeOptions::default()
+            },
+        )
+        .unwrap();
     assert_eq!(decoded.ir().scope, ContentScope::geometry());
     assert_eq!(decoded.report().scope(), ContentScope::geometry());
     assert!(decoded.ir().model.features.is_empty());
@@ -45,14 +54,14 @@ fn geometry_projection_declares_scope_before_its_content_digest() {
     );
     let (ir, _, fidelity) = decoded.into_parts();
     assert!(fidelity.unrepresented().is_empty());
-    let ctx = cadmpeg_test_support::service_decode_context();
-    let recorded = fidelity.decode_digest.clone().expect("decode digest");
     assert_eq!(
-        recorded.as_str(),
-        crate::writer::target::document_local_sha256(&ctx, &ir).unwrap()
+        fidelity.decode_digest,
+        cadmpeg_ir::hash::digest::Sha256Digest::digest(&bytes),
+        "a decode carries the digest of the bytes it read"
     );
     let mut full_scope = ir.clone();
     full_scope.set_scope(ContentScope::full()).unwrap();
+    let ctx = cadmpeg_test_support::service_decode_context();
     assert_ne!(
         cadmpeg_ir::hash::document_local_sha256(
             &ctx,
@@ -228,9 +237,7 @@ fn dynamic_numeric_application_extras_keep_model_ownership_at_geometry_depth() {
     assert!(full.ir().model.attributes.is_empty());
     for (name, expected) in [("AngleMax", "90"), ("AngleMin", "-90")] {
         let namespace = full.ir().native.namespace("fcstd").unwrap();
-        let properties = namespace
-            .arena_as::<PropertyRecord>("properties")
-            .unwrap();
+        let properties = namespace.arena_as::<PropertyRecord>("properties").unwrap();
         let property = properties
             .iter()
             .find(|property| property.name == name)
@@ -262,9 +269,7 @@ fn dynamic_numeric_application_extras_keep_model_ownership_at_geometry_depth() {
     assert!(output.ir().model.attributes.is_empty());
     for (name, expected) in [("AngleMax", "90"), ("AngleMin", "-90")] {
         let namespace = output.ir().native.namespace("fcstd").unwrap();
-        let properties = namespace
-            .arena_as::<PropertyRecord>("properties")
-            .unwrap();
+        let properties = namespace.arena_as::<PropertyRecord>("properties").unwrap();
         let property = properties
             .iter()
             .find(|property| property.name == name)

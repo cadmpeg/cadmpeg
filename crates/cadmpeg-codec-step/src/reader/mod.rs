@@ -339,7 +339,7 @@ fn decode_exchange_mode(
 ) -> Result<AnalyzedExchange, CodecError> {
     let mut session = StepDecodeSession::new(exchange, diagnostics, ctx, mode);
     if ctx.container_only() {
-        let mut fidelity = SourceFidelity::default();
+        let mut fidelity = SourceFidelity::for_decode(ctx, cadmpeg_ir::Annotations::default());
         if matches!(mode, DecodeMode::Decode(_)) && !exchange.records().is_empty() {
             let bytes = retained_source_copy(ctx, input, "step_container_source")?;
             fidelity.insert_retained_record(
@@ -524,7 +524,7 @@ fn decode_exchange_mode(
     let mut counts = BTreeMap::<String, usize>::new();
     let mut opaque_ids = BTreeMap::new();
     let mut opaque_sources = Vec::new();
-    let mut source_fidelity = SourceFidelity::default();
+    let mut source_fidelity = SourceFidelity::for_decode(ctx, cadmpeg_ir::Annotations::default());
     if matches!(mode, DecodeMode::Decode(_)) {
         let metadata_offsets = diagnostics
             .iter()

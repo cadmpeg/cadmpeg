@@ -2086,7 +2086,7 @@ impl<'a> DecodeContext<'a> {
                     .insert(cadmpeg_ir::ArenaClass::Model);
             }
         }
-        let mut source_fidelity = cadmpeg_ir::SourceFidelity::with_annotations(self.annotations);
+        let mut source_fidelity = cadmpeg_ir::SourceFidelity::for_decode(ctx, self.annotations);
         let (mut ir, unknowns) = self.session.into_parts();
         source_fidelity.attach_native_unknown_records(&mut ir, "rhino", unknowns, ctx)?;
         losses.extend(crate::product::project(ctx, self.scan, &mut ir)?);
@@ -3189,7 +3189,6 @@ fn duplicate_userdata_count(userdata: &[UserdataDescriptor], class: crate::wire:
         .filter(|value| value.class_uuid == class)
         .count()
 }
-
 
 struct ValidationFindings<'a>([Option<&'a cadmpeg_ir::report::check::Finding>; 3]);
 

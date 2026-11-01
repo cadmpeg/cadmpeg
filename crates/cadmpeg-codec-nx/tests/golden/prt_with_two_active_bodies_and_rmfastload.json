@@ -7506,6 +7506,7 @@
           }
         }
       },
+      "decode_digest": "c1830243944317a442fde25f4852af1b6d609fd67846db4468ccdb4e12ac2ed4",
       "retained_records": {
         "nx:container:parasolid#0": {
           "bytes": {

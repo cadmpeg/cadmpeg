@@ -566,6 +566,7 @@
         }
       }
     },
+    "decode_digest": "138a1e3e093627c1cf84e3c4ba3cad2d194d889527280e546aa202f0ddfb9d0e",
     "retained_records": {
       "creo:NovisGeom:section#143": {
         "bytes": {

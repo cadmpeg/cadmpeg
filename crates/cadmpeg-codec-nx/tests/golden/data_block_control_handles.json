@@ -399,6 +399,7 @@
           }
         }
       },
+      "decode_digest": "6250a4293ef810bf7ab7026fab678a50dd68be101a47e55377b8077f08b77c1f",
       "retained_records": {
         "nx:om-section-0:block#0": {
           "bytes": {

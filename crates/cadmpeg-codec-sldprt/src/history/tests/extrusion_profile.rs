@@ -595,8 +595,6 @@ fn decode_binds_generic_extrusion_to_its_dissectable_sketch_child() {
         "Contents/Keywords",
         br#"<Keywords><Extrusion Name="Extrude1" Type="Extrusion" id="8" DissectableChildren="3"><Dimension Name="D1">25</Dimension></Extrusion><Sketch Name="Sketch1" Type="Sketch" id="3"/></Keywords>"#,
     ));
-    let original = source.clone();
-
     let decoded = SldprtCodec
         .decode(&mut Cursor::new(source), &DecodeOptions::default())
         .unwrap();
@@ -623,10 +621,11 @@ fn decode_binds_generic_extrusion_to_its_dissectable_sketch_child() {
             ..
         }) if profile == &sketch.id
     ));
-    cadmpeg_test_support::roundtrip::verbatim_replay_holds(
+    cadmpeg_test_support::roundtrip::patched_write_preserves_model(
         &SldprtCodec,
         "decode_projects_sketch_feature_dependencies",
-        &original,
+        decoded.ir(),
+        decoded.source_fidelity(),
     );
 }
 

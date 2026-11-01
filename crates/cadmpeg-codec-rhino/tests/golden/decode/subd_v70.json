@@ -334,6 +334,7 @@
   },
   "source_fidelity": {
     "annotations": {},
+    "decode_digest": "cdcf90b5e739e3a4a0c5ffa417e06218c751dc9133da3502d6d98bdb38ea9132",
     "retained_records": {
       "rhino:object:record#000000": {
         "bytes": {
