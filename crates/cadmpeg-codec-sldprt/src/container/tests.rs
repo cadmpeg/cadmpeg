@@ -664,4 +664,20 @@ fn embedded_document_sections_are_the_imported_folder_and_document_extensions() 
     assert!(is_embedded_document("folder/pin.sldprt"));
     assert!(!is_embedded_document("Contents/Config-0"));
     assert!(!is_embedded_document("prt"));
+    assert!(is_embedded_document("Box.SLDASM__ZLB"));
+    assert!(is_embedded_document("folder/pin.sldprt__zlb"));
+    assert!(!is_embedded_document("Contents/Config-0__ZLB"));
+}
+
+#[test]
+fn a_wrapped_section_name_is_its_name_without_the_suffix() {
+    use super::unwrapped_name;
+    assert_eq!(
+        unwrapped_name("swXmlContents/COMPINSTANCETREE__ZLB"),
+        "swXmlContents/COMPINSTANCETREE"
+    );
+    assert_eq!(unwrapped_name("Box.SLDASM__zlb"), "Box.SLDASM");
+    assert_eq!(unwrapped_name("Contents/Config-0"), "Contents/Config-0");
+    assert_eq!(unwrapped_name("__ZLB__ZLB"), "__ZLB");
+    assert_eq!(unwrapped_name("ZLB"), "ZLB");
 }

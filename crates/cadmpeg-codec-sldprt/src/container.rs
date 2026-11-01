@@ -1132,7 +1132,23 @@ const EMBEDDED_PREFIX: &str = "ImportedComp/";
 const EMBEDDED_EXTENSIONS: [&str; 2] = [".sldprt", ".sldasm"];
 
 /// Whether a section is a complete embedded document (`sldprt.md` §11.4).
+/// The name suffix of a compound stream in the nested payload wrapper (spec §1).
+const WRAPPED_NAME_SUFFIX: &str = "__ZLB";
+
+/// A section name without one trailing wrapper suffix.
+pub(crate) fn unwrapped_name(name: &str) -> &str {
+    name.len()
+        .checked_sub(WRAPPED_NAME_SUFFIX.len())
+        .filter(|&at| {
+            name.get(at..)
+                .is_some_and(|tail| tail.eq_ignore_ascii_case(WRAPPED_NAME_SUFFIX))
+        })
+        .and_then(|at| name.get(..at))
+        .unwrap_or(name)
+}
+
 pub(crate) fn is_embedded_document(name: &str) -> bool {
+    let name = unwrapped_name(name);
     let ends_with = |suffix: &str| {
         name.len()
             .checked_sub(suffix.len())

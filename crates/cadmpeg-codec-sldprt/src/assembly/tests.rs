@@ -833,3 +833,92 @@ fn a_mate_list_without_a_mate_class_makes_an_assembly_without_a_mates_loss() {
             .to_string()
     ));
 }
+
+#[test]
+fn wrapped_section_names_are_the_tree_a_mate_list_and_an_embedded_document() {
+    let scan = synthetic_scan(
+        vec![
+            named_block("swXmlContents/COMPINSTANCETREE__ZLB", tree().into_bytes()),
+            named_block("Box.SLDASM__ZLB", vec![0]),
+            named_block(
+                "Contents/Config-0-MatesList__ZLB",
+                b"\0\0\0\0\0\0moMateCoincident".to_vec(),
+            ),
+        ],
+        Vec::new(),
+    );
+    let projection = super::read(&ctx(), &scan)
+        .expect("read")
+        .expect("an assembly document");
+    assert_eq!(projection.occurrences().len(), 6);
+    let codes = codes(&projection);
+    for code in [
+        SldprtLossCode::AssemblyEmbeddedDocumentsNotTransferred,
+        SldprtLossCode::AssemblyMatesNotTransferred,
+    ] {
+        assert!(codes.contains(&code.kind().local_code().to_string()));
+    }
+}
+
+#[test]
+fn a_document_with_different_trees_states_the_exact_structure_loss() {
+    let scan = synthetic_scan(
+        vec![
+            named_block(super::TREE_SECTION, tree().into_bytes()),
+            named_block(
+                "swXmlContents/COMPINSTANCETREE__ZLB",
+                tree_with("", "").into_bytes(),
+            ),
+        ],
+        Vec::new(),
+    );
+    let projection = super::read(&ctx(), &scan)
+        .expect("read")
+        .expect("an assembly document");
+    assert_structure_loss(
+        &projection,
+        "The document holds different `swXmlContents/COMPINSTANCETREE` sections. No occurrence \
+         is transferred.",
+    );
+}
+
+#[test]
+fn a_repeated_model_identity_states_the_exact_structure_loss() {
+    let models = r#"<swModel id="8" swFileRef="9"/>"#;
+    let projection =
+        project(&ctx(), &tree_with(&reference("4", "8", IDENTITY), models)).expect("project");
+    assert_structure_loss(
+        &projection,
+        "The component tree repeats the `swModel` id `8`. No occurrence is transferred.",
+    );
+}
+
+#[test]
+fn a_model_without_a_document_type_that_places_instances_is_a_sub_assembly() {
+    let models = format!(
+        r#"<swModel id="5">{}</swModel>"#,
+        reference("7", "8", IDENTITY)
+    );
+    let projection =
+        project(&ctx(), &tree_with(&reference("4", "5", IDENTITY), &models)).expect("project");
+    assert!(matches!(
+        occurrence(&projection, "sldprt:assembly:occurrence#4").prototype,
+        PrototypeReference::Local { .. }
+    ));
+}
+
+#[test]
+fn a_mirrored_placement_is_omitted_and_reported_as_mirrored() {
+    let mirrored = "-1 0 0 0 0 1 0 0 0 0 1 0 0 0 0 1";
+    let projection =
+        project(&ctx(), &tree_with(&reference("4", "8", mirrored), "")).expect("project");
+    assert!(projection
+        .occurrences()
+        .iter()
+        .all(|occurrence| occurrence.id.as_str() != "sldprt:assembly:occurrence#4"));
+    assert!(projection.losses().iter().any(|loss| loss.code
+        == SldprtLossCode::AssemblyPlacementUnresolved.kind()
+        && loss
+            .message
+            .contains("1 component instance(s) have a mirrored placement")));
+}

@@ -26,7 +26,7 @@ use cadmpeg_ir::transform::Transform;
 
 use cadmpeg_core::bytes::contains;
 
-use crate::container::{is_embedded_document, xml_text, ContainerScan};
+use crate::container::{is_embedded_document, unwrapped_name, xml_text, ContainerScan};
 use crate::loss::SldprtLossCode;
 
 use self::native::{NativeAssembly, NativeDefinition, NativePlacement, NativePrototype};
@@ -121,6 +121,7 @@ pub(crate) fn read(
     let mut is_assembly = false;
     let mut carries_parasolid = false;
     let mut embedded = Vec::new();
+    let mut trees_differ = false;
     for section in scan.sections() {
         let parasolid = !section.ps_streams().is_empty() || section.ps_probe_capped();
         let Some(name) = section.name() else {
@@ -132,12 +133,15 @@ pub(crate) fn read(
             continue;
         }
         carries_parasolid |= parasolid;
-        if name == TREE_SECTION {
+        let unwrapped = unwrapped_name(name);
+        if unwrapped == TREE_SECTION {
             is_assembly = true;
-            if tree.is_none() {
-                tree = Some(section.payload());
+            match tree {
+                None => tree = Some(section.payload()),
+                Some(first) if first != section.payload() => trees_differ = true,
+                Some(_) => {}
             }
-        } else if is_mate_list(name) {
+        } else if is_mate_list(unwrapped) {
             is_assembly = true;
             if contains(section.payload(), MATE_CLASS_TOKEN) {
                 mate_lists.push(name.to_string());
@@ -148,6 +152,9 @@ pub(crate) fn read(
         return Ok(None);
     }
     let mut native = match tree.and_then(xml_text) {
+        Some(_) if trees_differ => NativeAssembly::structure_lost(format!(
+            "The document holds different `{TREE_SECTION}` sections. No occurrence is transferred."
+        )),
         Some(text) => native_project(ctx, &text)?,
         None => NativeAssembly::structure_lost(format!(
             "The assembly document has no readable `{TREE_SECTION}` section. No occurrence, \
@@ -177,7 +184,7 @@ pub(crate) fn read(
 
 /// Whether a section name is a `Contents/Config-N-MatesList` section.
 fn is_mate_list(name: &str) -> bool {
-    let name = name.replace('\\', "/").to_ascii_lowercase();
+    let name = unwrapped_name(name).replace('\\', "/").to_ascii_lowercase();
     name.strip_prefix(MATES_PREFIX)
         .and_then(|rest| rest.strip_suffix(MATES_SUFFIX))
         .is_some_and(|index| !index.is_empty() && index.bytes().all(|byte| byte.is_ascii_digit()))
@@ -224,18 +231,19 @@ fn native_project(ctx: &DecodeContext<'_>, text: &str) -> Result<NativeAssembly,
     }
     let mut files = BTreeMap::new();
     let mut models = BTreeMap::new();
+    let mut repeated = None;
     let mut configurations = Vec::new();
     for node in root.descendants().filter(roxmltree::Node::is_element) {
         match node.tag_name().name() {
             "swFile" => {
                 if let Some(id) = node.attribute("id") {
-                    files.insert(
-                        id,
-                        File {
-                            path: node.attribute("swPath"),
-                            doc_type: node.attribute("swDocType"),
-                        },
-                    );
+                    let file = File {
+                        path: node.attribute("swPath"),
+                        doc_type: node.attribute("swDocType"),
+                    };
+                    if files.insert(id, file).is_some() {
+                        repeated.get_or_insert(("swFile", id));
+                    }
                 }
             }
             "swModel" => {
@@ -244,14 +252,14 @@ fn native_project(ctx: &DecodeContext<'_>, text: &str) -> Result<NativeAssembly,
                         .children()
                         .filter(|child| child.tag_name().name() == "swReference")
                         .collect();
-                    models.insert(
-                        id,
-                        Model {
-                            file: node.attribute("swFileRef"),
-                            configuration: node.attribute("swConfigurationName"),
-                            references,
-                        },
-                    );
+                    let model = Model {
+                        file: node.attribute("swFileRef"),
+                        configuration: node.attribute("swConfigurationName"),
+                        references,
+                    };
+                    if models.insert(id, model).is_some() {
+                        repeated.get_or_insert(("swModel", id));
+                    }
                 }
             }
             "swConfiguration" => configurations.push(node),
@@ -262,6 +270,11 @@ fn native_project(ctx: &DecodeContext<'_>, text: &str) -> Result<NativeAssembly,
         cadmpeg_core::decode::u64_from_index(files.len() + models.len()),
         "admit SolidWorks component tree models",
     )?;
+    if let Some((element, id)) = repeated {
+        return Ok(NativeAssembly::structure_lost(format!(
+            "The component tree repeats the `{element}` id `{id}`. No occurrence is transferred."
+        )));
+    }
 
     let active = configurations
         .iter()
@@ -340,6 +353,7 @@ struct Tally {
     virtual_components: Vec<String>,
     suppressed: Vec<String>,
     unresolved: Vec<String>,
+    mirrored: Vec<String>,
     excluded_from_bom: Vec<String>,
 }
 
@@ -375,6 +389,14 @@ impl Tally {
                  model and are omitted with the instances below them: {}.",
                 self.unresolved.len(),
                 named(&self.unresolved)
+            )));
+        }
+        if !self.mirrored.is_empty() {
+            native.push_loss(SldprtLossCode::AssemblyPlacementUnresolved.note(format!(
+                "{} component instance(s) have a mirrored placement and are omitted with the \
+                 instances below them: {}.",
+                self.mirrored.len(),
+                named(&self.mirrored)
             )));
         }
         if !self.excluded_from_bom.is_empty() {
@@ -486,8 +508,13 @@ impl<'a> Walk<'_, 'a> {
                 self.tally.unresolved.push(name);
                 continue;
             };
-            let Some(transform) = reference.attribute("swTransform").and_then(placement) else {
-                self.tally.unresolved.push(name);
+            let text = reference.attribute("swTransform");
+            let Some(transform) = text.and_then(placement) else {
+                if text.is_some_and(is_mirrored) {
+                    self.tally.mirrored.push(name);
+                } else {
+                    self.tally.unresolved.push(name);
+                }
                 continue;
             };
             if path.contains(child) {
@@ -558,6 +585,22 @@ fn instance_name(reference: roxmltree::Node<'_, '_>) -> String {
 /// `M` with a zero fourth column, and row 3 holds the translation and `1`. The
 /// neutral transform is the column-vector form, so the rotation is transposed.
 pub(crate) fn placement(text: &str) -> Option<Transform> {
+    Transform::affine(placement_rows(text)?).filter(Transform::is_proper_rigid)
+}
+
+/// Whether an `swTransform` value is a rigid motion with a reflection: one
+/// rotation row negated gives a proper rigid motion.
+fn is_mirrored(text: &str) -> bool {
+    placement_rows(text).is_some_and(|mut rows| {
+        for cell in rows[0].iter_mut().take(3) {
+            *cell = -*cell;
+        }
+        Transform::affine(rows).is_some_and(|transform| transform.is_proper_rigid())
+    })
+}
+
+/// The affine rows of an `swTransform` value, in millimetres.
+fn placement_rows(text: &str) -> Option<[[f64; 4]; 3]> {
     let mut values = [0.0_f64; 16];
     let mut count = 0;
     for token in text.split_ascii_whitespace() {
@@ -584,7 +627,7 @@ pub(crate) fn placement(text: &str) -> Option<Transform> {
         }
         row[3] = values[12 + i] * METRES_TO_MILLIMETRES;
     }
-    Transform::affine(rows).filter(Transform::is_proper_rigid)
+    Some(rows)
 }
 
 #[cfg(test)]
