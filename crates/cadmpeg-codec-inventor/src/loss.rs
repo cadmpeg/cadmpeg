@@ -82,6 +82,8 @@ pub(crate) enum InventorLossCode {
     FeatureOperationGraphOpen,
     /// An edge treatment retains an unresolved empty edge-item index list.
     FeatureEdgeSelectionEmptyItemsNative,
+    /// An edge treatment retains an unresolved input-edge selection.
+    FeatureEdgeSelectionNative,
     /// Extrusion construction operands remain native.
     FeatureExtrusionOperandsNative,
     /// An extrusion retains its exact profile selection without a neutral sketch graph.
@@ -254,6 +256,7 @@ impl InventorLossCode {
         Self::FeatureLabelNameReplaced,
         Self::FeatureOperationGraphOpen,
         Self::FeatureEdgeSelectionEmptyItemsNative,
+        Self::FeatureEdgeSelectionNative,
         Self::FeatureExtrusionOperandsNative,
         Self::FeatureExtrusionProfileNative,
         Self::FeatureRectangularPatternOperandsNative,
@@ -364,6 +367,7 @@ impl InventorLossCode {
             Self::FeatureEdgeSelectionEmptyItemsNative => {
                 "feature.edge-selection-empty-items-native"
             }
+            Self::FeatureEdgeSelectionNative => "feature.edge-selection-native",
             Self::FeatureThreadDefinitionPartial => "feature.thread-definition-partial",
             Self::FeatureThickenOperandsNative => "feature.thicken-operands-native",
             Self::FeatureThickenConstructionNative => "feature.thicken-construction-native",
@@ -481,6 +485,7 @@ impl InventorLossCode {
             Self::KernelHeaderToleranceUnresolved => LossTaxonomy::GeometryNotTransferred,
             Self::FeatureOperationGraphOpen
             | Self::FeatureEdgeSelectionEmptyItemsNative
+            | Self::FeatureEdgeSelectionNative
             | Self::FeatureExtrusionOperandsNative
             | Self::FeatureExtrusionProfileNative
             | Self::FeatureRectangularPatternOperandsNative
@@ -618,6 +623,7 @@ mod tests {
                 "feature.label-name-replaced",
                 "feature.operation-graph-open",
                 "feature.edge-selection-empty-items-native",
+                "feature.edge-selection-native",
                 "feature.extrusion-operands-native",
                 "feature.extrusion-profile-native",
                 "feature.rectangular-pattern-operands-native",

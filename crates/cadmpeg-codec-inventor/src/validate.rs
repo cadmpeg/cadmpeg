@@ -2077,7 +2077,25 @@ fn validate_features(
                 }),
                 _ => false,
             };
-            if !admitted {
+            let historical_valid = crate::feature::edge_selection::historical::valid(
+                feature,
+                raw_feature,
+                &ir.model.feature_input_topologies,
+                &data.active_carrier,
+                labels
+                    .get(&(token, raw_feature.identity.record_ordinal))
+                    .is_some_and(|label| label.class_id() == crate::feature::CORNER_ROUND_CLASS_ID),
+                |id| {
+                    let mut candidates = data
+                        .pm_dc_feature_properties
+                        .iter()
+                        .filter(|p| p.id() == id);
+                    let property = candidates.next()?;
+                    candidates.next().is_none().then_some(property)
+                },
+                property,
+            );
+            if !admitted || !historical_valid {
                 findings.push(finding(
                     Check::NativeLinks,
                     "Inventor neutral edge treatment operands differ from their PmDc slots".into(),

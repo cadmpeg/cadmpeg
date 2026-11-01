@@ -2693,7 +2693,12 @@ pub(crate) fn project(
         }
     }
     edge_selection::bind_generated(&mut features, &mut result_topologies)?;
-    let input_topologies = sheet_metal::inputs::project(ctx, &mut features, inventory)?;
+    let mut input_topologies = sheet_metal::inputs::project(ctx, &mut features, inventory)?;
+    input_topologies.extend(edge_selection::historical::project(
+        ctx,
+        &mut features,
+        inventory,
+    )?);
     let unresolved_chamfers = features
         .iter()
         .filter(|feature| {
