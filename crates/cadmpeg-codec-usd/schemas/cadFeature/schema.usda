@@ -75,6 +75,41 @@ class CadFeature "CadFeature" (
     )
 }
 
+class CadExtrudeFeature "CadExtrudeFeature" (
+    inherits = </CadFeature>
+    doc = """An extrude feature; typed leaves under cad:extrude (docs/formats/usd.md §18.7)."""
+)
+{
+}
+
+class CadRevolveFeature "CadRevolveFeature" (
+    inherits = </CadFeature>
+    doc = """A revolve feature; typed leaves under cad:revolve."""
+)
+{
+}
+
+class CadFilletFeature "CadFilletFeature" (
+    inherits = </CadFeature>
+    doc = """A fillet feature; typed leaves under cad:fillet, one array element per group."""
+)
+{
+}
+
+class CadChamferFeature "CadChamferFeature" (
+    inherits = </CadFeature>
+    doc = """A chamfer feature; typed leaves under cad:chamfer, one array element per group."""
+)
+{
+}
+
+class CadPatternFeature "CadPatternFeature" (
+    inherits = </CadFeature>
+    doc = """A pattern feature; typed leaves under cad:pattern."""
+)
+{
+}
+
 class CadConfiguration "CadConfiguration" (
     inherits = </Typed>
     doc = """One design configuration: a named variant of the parametric model

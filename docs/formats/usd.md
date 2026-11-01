@@ -1607,7 +1607,17 @@ A `CadFeature` prim states one construction feature. A writer puts the features 
 
 The payload holds `definition`, and, when the source states them, `source_tag`, `source_text`, and `source_content`, in the wire form of the CADIR version of the writer. Identities in the payload are CADIR identities, which `cad:id` and `CadBrepIdentityAPI` (§18.1) keep through a stage.
 
-A reader gives a feature the typed properties over the payload. A reader does not add a feature whose payload does not deserialize, or that names a feature that it does not add: a dependency, the regeneration predecessor, or an identity in the payload. A `CadParameter` names the feature that owns it with `rel cad:parameter:owner` (§18.6).
+A feature of a typed family has the prim type of the family, which inherits `CadFeature`, and states the leaves of its definition in the table below as attributes instead of in the payload. The attribute name is the namespace of the family and the path of the leaf in the CADIR wire form of the definition, each segment in camel case: the leaf `extent.side.termination.length` of an extrude is `cad:extrude:extent:side:termination:length`. A token or text leaf is a `token` or `string`; a length is a `double` in the length unit of the stage; an angle is a `double` in degrees; a count is a `uint64`; a flag is a `bool`; a direction is a `vector3d`, and a position a `point3d` in the length unit of the stage. A leaf in each element of an array, such as the radius of each fillet group, is an array attribute with one element for each array element: an empty token or `NaN` where the element has no such leaf. For a post-processed operation, the paths are in the operation. A leaf that does not have the form of its row stays in the payload.
+
+| Prim type | Namespace | Definition tag | Typed leaves |
+| --- | --- | --- | --- |
+| `CadExtrudeFeature` | `cad:extrude` | `extrude` | `op`; `direction.kind`, `direction.vector`, `direction.source.kind`; `start.kind`, `start.offset`; `extent.kind`; for `side`, `first`, and `second`: `termination.kind`, `termination.length`, `draft`; `profile.kind`, `profile.value`; `solid`, `inner_wire_taper`, `length_along_profile_normal`, `allow_multi_profile_faces` |
+| `CadRevolveFeature` | `cad:revolve` | `revolve` | `op`; `construction.state`; `construction.axis.origin`, `construction.axis.direction`; `construction.extent.kind`; for `termination`, `first`, and `second`: `kind`, `angle`; `construction.profile.kind`, `construction.profile.value`; `construction.solid`, `construction.allow_multi_profile_faces` |
+| `CadFilletFeature` | `cad:fillet` | `fillet` | for each group: `radius.kind`, `radius.radius`, `radius.chord_length` |
+| `CadChamferFeature` | `cad:chamfer` | `chamfer` | `flip_direction`; for each group: `spec.kind`, `spec.distance`, `spec.first`, `spec.second`, `spec.angle` |
+| `CadPatternFeature` | `cad:pattern` | `pattern` | `pattern.kind`, `pattern.count`, `pattern.spacing`, `pattern.direction`, `pattern.axis_origin`, `pattern.axis_dir`, `pattern.angle` |
+
+A reader gives a feature the typed properties over the payload, and sets each typed leaf into the definition before it reads it. A reader does not add a feature whose payload does not deserialize, or that names a feature that it does not add: a dependency, the regeneration predecessor, or an identity in the payload. A `CadParameter` names the feature that owns it with `rel cad:parameter:owner` (§18.6).
 
 ### 18.8 CadConfiguration
 

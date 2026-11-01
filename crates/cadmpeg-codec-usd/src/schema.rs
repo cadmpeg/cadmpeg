@@ -6,6 +6,7 @@
 //! readers could not read, for the loss notes.
 
 pub(crate) mod curves;
+pub(crate) mod feature;
 pub(crate) mod intrinsic;
 pub(crate) mod mesh;
 pub(crate) mod patch;

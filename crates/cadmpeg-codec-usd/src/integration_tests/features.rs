@@ -159,3 +159,75 @@ fn a_feature_that_names_a_rejected_feature_is_not_transferred() {
     // node names it, so neither is transferred.
     assert!(read.ir().model.features.is_empty());
 }
+
+/// Agreement of a typed feature value after a write, per unit of its
+/// magnitude.
+const VALUE_TOLERANCE: f64 = 1e-12;
+
+/// Whether `left` and `right` agree, each number within `VALUE_TOLERANCE`
+/// per unit of its magnitude.
+fn agree(left: &serde_json::Value, right: &serde_json::Value) -> bool {
+    match (left, right) {
+        (serde_json::Value::Number(a), serde_json::Value::Number(b)) => {
+            let (a, b) = (
+                a.as_f64().unwrap_or(f64::NAN),
+                b.as_f64().unwrap_or(f64::NAN),
+            );
+            (a - b).abs() <= VALUE_TOLERANCE * a.abs().max(1.0)
+        }
+        (serde_json::Value::Array(a), serde_json::Value::Array(b)) => {
+            a.len() == b.len() && a.iter().zip(b).all(|(a, b)| agree(a, b))
+        }
+        (serde_json::Value::Object(a), serde_json::Value::Object(b)) => {
+            a.len() == b.len()
+                && a.iter()
+                    .all(|(key, a)| b.get(key).is_some_and(|b| agree(a, b)))
+        }
+        (a, b) => a == b,
+    }
+}
+
+#[test]
+fn typed_feature_families_survive_a_write() {
+    let mut ir = model();
+    let definitions = [
+        serde_json::json!({"definition": "extrude", "direction": {"kind": "explicit", "source": {"kind": "custom"}, "vector": {"x": 0.0, "y": 0.0, "z": 1.0}}, "extent": {"kind": "symmetric", "side": {"draft": std::f64::consts::PI / 60.0, "termination": {"kind": "blind", "length": 12.0}}}, "inner_wire_taper": "inverted", "op": "new_body", "profile": {"kind": "native", "value": "test:native:property#Profile"}, "solid": true, "start": {"kind": "profile_plane"}}),
+        serde_json::json!({"definition": "extrude", "direction": {"kind": "profile_normal"}, "extent": {"kind": "two_sided", "first": {"termination": {"kind": "blind", "length": 5.0}}, "second": {"termination": {"kind": "through_all"}}}, "op": "cut", "profile": {"kind": "unresolved", "value": "test:model:feature#8053"}, "start": {"kind": "profile_plane"}}),
+        serde_json::json!({"definition": "post_process", "refine": true, "fuzzy_tolerance": {"kind": "kernel_default"}, "operation": {"definition": "extrude", "allow_multi_profile_faces": true, "length_along_profile_normal": true, "direction": {"kind": "explicit", "source": {"kind": "profile_normal"}, "vector": {"x": 0.0, "y": 0.0, "z": 1.0}}, "extent": {"kind": "one_sided", "side": {"termination": {"kind": "blind", "length": 3.5}}}, "op": "join", "profile": {"kind": "unresolved", "value": "x"}, "start": {"kind": "profile_plane"}}}),
+        serde_json::json!({"construction": {"axis": {"direction": {"x": 0.0, "y": 1.0, "z": 0.0}, "origin": {"x": 1.0, "y": 2.0, "z": 3.0}}, "extent": {"kind": "symmetric", "termination": {"angle": 1.25 * std::f64::consts::PI, "kind": "angle"}}, "face_maker_class": "Part::FaceMakerBullseye", "profile": {"kind": "unresolved", "value": "test:model:sketch#R"}, "solid": false, "state": "resolved"}, "definition": "revolve", "op": "new_body"}),
+        serde_json::json!({"definition": "fillet", "groups": [{"edges": {"kind": "unresolved"}, "radius": {"kind": "constant", "radius": 2.0}}, {"edges": {"kind": "unresolved"}, "radius": {"kind": "unresolved"}}]}),
+        serde_json::json!({"definition": "chamfer", "flip_direction": false, "groups": [{"edges": {"kind": "native", "value": "test:native:property#Base"}, "spec": {"first": 1.5, "kind": "two_distances", "second": 2.5}}]}),
+        serde_json::json!({"definition": "pattern", "pattern": {"count": 4, "direction": {"x": -0.0, "y": -0.0, "z": -1.0}, "kind": "linear", "spacing": 8.0}, "seeds": [{"kind": "feature", "value": "test:design:feature#Plane"}]}),
+    ];
+    for (index, definition) in definitions.into_iter().enumerate() {
+        let ordinal = u64::try_from(index).expect("an ordinal") + 3;
+        let parsed: Result<Feature, _> = serde_json::from_value(serde_json::json!({
+            "id": format!("test:design:feature#typed{index}"),
+            "ordinal": ordinal,
+            "suppressed": null,
+            "definition": definition,
+        }));
+        match parsed {
+            Ok(feature) => ir.model.features.push(feature),
+            Err(error) => panic!("definition {index}: {error}"),
+        }
+    }
+    let (text, _) = encode(&ir);
+    for prim_type in [
+        "def CadExtrudeFeature",
+        "def CadRevolveFeature",
+        "def CadFilletFeature",
+        "def CadChamferFeature",
+        "def CadPatternFeature",
+    ] {
+        assert!(text.contains(prim_type), "{prim_type}\n{text}");
+    }
+    assert!(
+        text.contains("cad:extrude:extent:side:termination:length = 0.012"),
+        "{text}"
+    );
+    let read = decode(&text);
+    let wire = |features: &[Feature]| serde_json::to_value(features).expect("features");
+    let (before, after) = (wire(&ir.model.features), wire(&read.ir().model.features));
+    assert!(agree(&before, &after), "{before:#}\n{after:#}\n{text}");
+}

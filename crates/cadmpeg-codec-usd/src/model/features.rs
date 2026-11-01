@@ -14,6 +14,13 @@ use crate::stage::Prim;
 /// The type of a `CadFeature` prim.
 pub(super) const FEATURE_TYPE: &str = "CadFeature";
 
+/// Whether a prim type is `CadFeature` or one of its subtypes (spec §18.7).
+pub(super) fn is_feature_type(type_name: Option<&str>) -> bool {
+    type_name.is_some_and(|name| {
+        name == FEATURE_TYPE || crate::schema::feature::family_of_type(name).is_some()
+    })
+}
+
 /// A feature read from its prim, with its topology records and the
 /// features it names.
 struct Read {
@@ -46,7 +53,7 @@ impl super::Builder<'_, '_, '_, '_> {
         for prim in stage
             .prims
             .iter()
-            .filter(|prim| prim.type_name() == Some(FEATURE_TYPE))
+            .filter(|prim| is_feature_type(prim.type_name()))
         {
             let id = self
                 .cad_id(&prim.path, |text| FeatureId::mint(text).ok())
@@ -63,7 +70,7 @@ impl super::Builder<'_, '_, '_, '_> {
         for prim in stage
             .prims
             .iter()
-            .filter(|prim| prim.type_name() == Some(FEATURE_TYPE))
+            .filter(|prim| is_feature_type(prim.type_name()))
         {
             match self.feature(prim) {
                 Ok(read) => reads.push((prim.path.clone(), read)),
@@ -125,6 +132,26 @@ impl super::Builder<'_, '_, '_, '_> {
         else {
             return Err("cad:feature:payload is not a JSON object".to_owned());
         };
+        if let Some(family) = prim
+            .type_name()
+            .and_then(crate::schema::feature::family_of_type)
+        {
+            let definition = wire
+                .entry("definition")
+                .or_insert_with(|| serde_json::Value::Object(serde_json::Map::new()));
+            let node = if definition
+                .get("definition")
+                .and_then(serde_json::Value::as_str)
+                == Some("post_process")
+            {
+                definition
+                    .get_mut("operation")
+                    .ok_or("a post-processed feature has no operation")?
+            } else {
+                definition
+            };
+            crate::schema::feature::restore(family, prim, node, self.scale, &mut self.issues);
+        }
         let feature_targets = |builder: &Self, name: &str| -> Result<Vec<FeatureId>, String> {
             prim.relationship_targets(name)
                 .iter()

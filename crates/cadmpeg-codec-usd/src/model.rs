@@ -558,12 +558,12 @@ impl Builder<'_, '_, '_, '_> {
             return Ok(false);
         }
         if crate::schema::sketch::is_sketch_type(prim.type_name())
+            || features::is_feature_type(prim.type_name())
             || matches!(
                 prim.type_name(),
                 Some(
                     "CadConnector"
                         | parameters::PARAMETER_TYPE
-                        | features::FEATURE_TYPE
                         | configurations::CONFIGURATION_TYPE
                         | pmi::PMI_TYPE
                         | presentation::LAYER_TYPE
@@ -1645,12 +1645,12 @@ fn holds_only_shading(stage: &Stage<'_>, prim: &Prim<'_>) -> bool {
                     || physx::is_scene_type(child.type_name())
                     || crate::schema::sketch::is_sketch_type(child.type_name())
                     || mates::is_mate_type(child.type_name())
+                    || features::is_feature_type(child.type_name())
                     || matches!(
                         child.type_name(),
                         Some(
                             "CadConnector"
                                 | parameters::PARAMETER_TYPE
-                                | features::FEATURE_TYPE
                                 | configurations::CONFIGURATION_TYPE
                                 | pmi::PMI_TYPE
                                 | presentation::LAYER_TYPE
