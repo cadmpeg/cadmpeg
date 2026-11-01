@@ -132,15 +132,16 @@ pub(crate) fn plan(
     target: &ResolvedWrite<'_>,
     packaged: bool,
 ) -> Result<(ExportBody, Vec<Member>), CodecError> {
-    let Some(version) = target
+    let version = target
         .index()
         .and_then(|index| crate::TARGET_VERSIONS.get(index).copied())
-    else {
-        return Err(target.unavailable(
-            "the source text version is one this writer cannot synthesize, and a USD layer \
-             has no byte-replay path",
-        ));
-    };
+        .map(Ok)
+        .unwrap_or_else(|| {
+            // A preserved off-catalog source has no replay path; synthesize the default.
+            target
+                .for_synthesis()
+                .map(|synthesis| crate::TARGET_VERSIONS[synthesis.index()])
+        })?;
     let mut writer = Writer::new(input.ir, version);
     if packaged {
         writer.package = Some(Vec::new());
@@ -158,6 +159,8 @@ pub(crate) fn plan(
             consumption: Consumption::NotConsumed,
         },
         coverage: ArenaCoverage::Declared(COVERAGE),
+        native_dispositions: cadmpeg_ir::codec::write::NativeDispositions::default(),
+        synthesis_cause: None,
         losses,
         notes: vec![format!("USDA {version} text layer, metre units")],
     };
@@ -551,8 +554,8 @@ impl<'ir> Writer<'ir> {
             .insert(occurrence.id.clone(), format!("/{}", self.stack.join("/")));
         let (schemas, properties) = self.physics.occurrence(&occurrence.id);
         let mut placement = Placement {
-            transform: Some(&occurrence.transform),
-            scale: occurrence.scale.map(cadmpeg_ir::scalar::FiniteReal::get),
+            transform: occurrence.transform.as_ref(),
+            scale: [1.0; 3],
             hidden: occurrence.visible == Some(false),
             metadata: schemas,
             properties,
@@ -719,8 +722,9 @@ impl<'ir> Writer<'ir> {
         else {
             return None;
         };
-        let placed = child.transform.affine_rows() != Transform::identity().affine_rows()
-            || child.scale.iter().any(|scale| scale.get() != 1.0)
+        let placed = child
+            .transform
+            .is_some_and(|transform| transform.affine_rows() != Transform::identity().affine_rows())
             || child.visible.is_some();
         if placed || !self.children(child).is_empty() {
             return None;

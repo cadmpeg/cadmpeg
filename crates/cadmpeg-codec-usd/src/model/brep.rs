@@ -202,6 +202,7 @@ pub(super) fn import(brep: &Brep, key: &str, scale: f64) -> Result<Imported, Ref
     for index in curve_refs {
         let curve_id = id::curve(key, CATALOG, index);
         out.curves.push(Curve {
+            native_ref: None,
             id: curve_id.clone(),
             geometry: CurveGeometry::Solved(curve_geometry(brep, index, scale)?),
             parameter_range: None,
@@ -213,6 +214,7 @@ pub(super) fn import(brep: &Brep, key: &str, scale: f64) -> Result<Imported, Ref
     for index in surface_refs {
         let surface_id = id::surface(key, CATALOG, index);
         out.surfaces.push(Surface {
+            native_ref: None,
             id: surface_id.clone(),
             geometry: SurfaceGeometry::Solved(surface_geometry(brep, index, scale)?),
             source_object: None,
@@ -233,6 +235,7 @@ pub(super) fn import(brep: &Brep, key: &str, scale: f64) -> Result<Imported, Ref
             None,
         ));
         out.vertices.push(Vertex {
+            native_ref: None,
             id: id::vertex(key, *vertex),
             point,
             tolerance: None,
@@ -262,6 +265,7 @@ pub(super) fn import(brep: &Brep, key: &str, scale: f64) -> Result<Imported, Ref
             .map_err(|error| format!("edge {edge}: {error}"))?;
         let [start, end] = record.vertices;
         out.edges.push(Edge {
+            native_ref: None,
             id: edge_id.clone(),
             carrier,
             start: id::vertex(key, start),
@@ -286,6 +290,7 @@ pub(super) fn import(brep: &Brep, key: &str, scale: f64) -> Result<Imported, Ref
             let coedge_id = id::coedge(key, *oriented);
             radial.entry(use_.edge).or_default().push(out.coedges.len());
             out.coedges.push(Coedge {
+                native_ref: None,
                 id: coedge_id.clone(),
                 owner_loop: loop_id.clone(),
                 edge: id::edge(key, use_.edge),
@@ -303,6 +308,7 @@ pub(super) fn import(brep: &Brep, key: &str, scale: f64) -> Result<Imported, Ref
         let ring = LoopRing::new(coedge_ids, Vec::new())
             .map_err(|error| format!("loop {loop_}: {error}"))?;
         out.loops.push(Loop {
+            native_ref: None,
             id: loop_id,
             face: id::face(key, face),
             boundary: LoopBoundary::Ring(ring),
@@ -332,6 +338,7 @@ pub(super) fn import(brep: &Brep, key: &str, scale: f64) -> Result<Imported, Ref
         };
         let shell = face_shell[face].unwrap_or_default();
         out.faces.push(Face {
+            native_ref: None,
             id: id::face(key, face),
             shell: id::shell(key, shell),
             surface: surface_ids[&record.surface].clone(),
@@ -361,6 +368,7 @@ pub(super) fn import(brep: &Brep, key: &str, scale: f64) -> Result<Imported, Ref
     }
     for (region, shells) in regions.iter().enumerate() {
         out.regions.push(Region {
+            native_ref: None,
             id: id::region(key, region),
             body: crate::ids::body(key),
             shells: shells.iter().map(|shell| id::shell(key, *shell)).collect(),

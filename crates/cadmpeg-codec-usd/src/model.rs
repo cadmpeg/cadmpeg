@@ -502,9 +502,8 @@ impl Builder<'_, '_, '_, '_> {
                 },
             },
             ordinal,
-            transform,
+            transform: Some(transform),
             linked_prototype: None,
-            scale: [FiniteReal::ONE; 3],
             name: Some(display_name(prim).to_owned()),
             visible,
             link: None,
@@ -529,9 +528,8 @@ impl Builder<'_, '_, '_, '_> {
                     occurrence: crate::ids::occurrence(&prim.path),
                 },
                 ordinal: child_ordinal,
-                transform: Transform::identity(),
+                transform: Some(Transform::identity()),
                 linked_prototype: None,
-                scale: [FiniteReal::ONE; 3],
                 name: Some(external.asset.clone()),
                 visible: None,
                 link: None,
@@ -696,6 +694,7 @@ impl Builder<'_, '_, '_, '_> {
     ) {
         let color = self.display_color(prim);
         self.ir.model.bodies.push(Body {
+            native_ref: None,
             id: crate::ids::body(key),
             kind,
             regions,
@@ -878,6 +877,7 @@ impl Builder<'_, '_, '_, '_> {
         };
         let appearance = self.appearance(&surface)?;
         self.ir.model.appearance_bindings.push(AppearanceBinding {
+            native_ref: None,
             id: crate::ids::appearance_binding(key),
             target: AppearanceTarget::Tessellation(crate::ids::tessellation(key).to_string()),
             appearance,
@@ -929,6 +929,7 @@ impl Builder<'_, '_, '_, '_> {
         };
         let appearance = self.appearance(&surface)?;
         self.ir.model.appearance_bindings.push(AppearanceBinding {
+            native_ref: None,
             id: crate::ids::subset_binding(key, path),
             target: AppearanceTarget::TriangleGroup {
                 tessellation: crate::ids::tessellation(key).to_string(),
@@ -1099,6 +1100,7 @@ impl Builder<'_, '_, '_, '_> {
                 .range
                 .and_then(cadmpeg_ir::topology::IncreasingParameterInterval::new);
             self.ir.model.curves.push(Curve {
+                native_ref: None,
                 id: curve_id,
                 geometry: CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(nurbs)),
                 parameter_range,
@@ -1122,6 +1124,7 @@ impl Builder<'_, '_, '_, '_> {
                     .points
                     .push(Point::new(point.clone(), position, None));
                 self.ir.model.vertices.push(Vertex {
+                    native_ref: None,
                     id: vertex,
                     point,
                     tolerance: None,
@@ -1129,6 +1132,7 @@ impl Builder<'_, '_, '_, '_> {
             }
             let edge = crate::ids::edge(key, ordinal);
             self.ir.model.edges.push(Edge {
+                native_ref: None,
                 id: edge.clone(),
                 carrier,
                 start: start_vertex,
@@ -1152,6 +1156,7 @@ impl Builder<'_, '_, '_, '_> {
         .map_err(|_| CodecError::malformed("a curve shell holds no edge"))?;
         self.ir.model.shells.push(shell);
         self.ir.model.regions.push(Region {
+            native_ref: None,
             id: region.clone(),
             body: crate::ids::body(key),
             shells: vec![crate::ids::shell(key)],
@@ -1183,6 +1188,7 @@ impl Builder<'_, '_, '_, '_> {
         };
         let surface_id = crate::ids::surface(key);
         self.ir.model.surfaces.push(Surface {
+            native_ref: None,
             id: surface_id.clone(),
             geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(surface)),
             source_object: None,
@@ -1191,6 +1197,7 @@ impl Builder<'_, '_, '_, '_> {
         let region = crate::ids::region(key);
         let shell = crate::ids::shell(key);
         self.ir.model.faces.push(Face {
+            native_ref: None,
             id: face.clone(),
             shell: shell.clone(),
             surface: surface_id,
@@ -1214,6 +1221,7 @@ impl Builder<'_, '_, '_, '_> {
         .map_err(|_| CodecError::malformed("a patch shell holds no face"))?;
         self.ir.model.shells.push(shell_record);
         self.ir.model.regions.push(Region {
+            native_ref: None,
             id: region.clone(),
             body: crate::ids::body(key),
             shells: vec![shell],
@@ -1380,6 +1388,7 @@ fn surface_appearance(surface: &SurfaceShader) -> Appearance {
         }
     }
     Appearance {
+        native_ref: None,
         id: crate::ids::appearance(&surface.material),
         name: Some(surface.name.clone()),
         asset_guid: None,

@@ -493,9 +493,14 @@ impl Writer<'_> {
                 .occurrences
                 .iter()
                 .find(|candidate| &candidate.id == parent)?;
-            transform = current.transform.compose(transform).ok()?;
+            if let Some(parent_transform) = current.transform {
+                transform = Some(match transform {
+                    Some(child) => parent_transform.compose(child).ok()?,
+                    None => parent_transform,
+                });
+            }
         }
-        Some(transform)
+        transform
     }
 
     fn frame_lines(&mut self, side: usize, frame: &Transform) {
