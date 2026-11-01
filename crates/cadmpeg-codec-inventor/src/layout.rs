@@ -382,6 +382,110 @@ pub(crate) mod pm_dc_mirror_options_tail {
         [0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00];
 }
 
+/// Byte offsets for the `pm_dc_mirror_instance_map_single_tail_v19` record.
+///
+/// Spec §13. Record length 56 B.
+///
+/// ```text
+/// Offsets start after the segment-major-19 content header.
+/// ```
+pub(crate) mod pm_dc_mirror_instance_map_single_tail_v19 {
+    /// Record length in bytes. Spec §13.
+    pub(crate) const LEN: usize = 56;
+    /// Offset of `state` (`i32`, little-endian). Spec §13.
+    #[cfg(test)]
+    pub(crate) const STATE: usize = 0;
+    /// Stated value of `state` (`i32`). Spec §13.
+    pub(crate) const STATE_VALUE: i32 = -1;
+    /// Offset of `map_marker` (`u16`, little-endian). Spec §13.
+    #[cfg(test)]
+    pub(crate) const MAP_MARKER: usize = 4;
+    /// Stated value of `map_marker` (`u16`). Spec §13.
+    pub(crate) const MAP_MARKER_VALUE: u16 = 0x0006;
+    /// Offset of `map_signature` (`u16`, little-endian). Spec §13.
+    #[cfg(test)]
+    pub(crate) const MAP_SIGNATURE: usize = 6;
+    /// Stated value of `map_signature` (`u16`). Spec §13.
+    pub(crate) const MAP_SIGNATURE_VALUE: u16 = 0x3000;
+    /// Offset of `map_count` (`u32`, little-endian). Spec §13.
+    #[cfg(test)]
+    pub(crate) const MAP_COUNT: usize = 8;
+    /// Stated value of `map_count` (`u32`). Spec §13.
+    pub(crate) const MAP_COUNT_VALUE: u32 = 0x0000_0001;
+    /// Offset of `map_value` (`u32`, little-endian). Spec §13.
+    #[cfg(test)]
+    pub(crate) const MAP_VALUE: usize = 12;
+    /// Stated value of `map_value` (`u32`). Spec §13.
+    pub(crate) const MAP_VALUE_VALUE: u32 = 0x0000_0000;
+    /// Offset of `source_tag` (`u32`, little-endian). Spec §13.
+    #[cfg(test)]
+    pub(crate) const SOURCE_TAG: usize = 16;
+    /// Stated value of `source_tag` (`u32`). Spec §13.
+    pub(crate) const SOURCE_TAG_VALUE: u32 = 0x3000_0002;
+    /// Offset of `source` (`u32`, little-endian). Spec §13.
+    #[cfg(test)]
+    pub(crate) const SOURCE: usize = 20;
+    /// Offset of `result_marker` (`u16`, little-endian). Spec §13.
+    #[cfg(test)]
+    pub(crate) const RESULT_MARKER: usize = 24;
+    /// Stated value of `result_marker` (`u16`). Spec §13.
+    pub(crate) const RESULT_MARKER_VALUE: u16 = 0x0002;
+    /// Offset of `result_signature` (`u16`, little-endian). Spec §13.
+    #[cfg(test)]
+    pub(crate) const RESULT_SIGNATURE: usize = 26;
+    /// Stated value of `result_signature` (`u16`). Spec §13.
+    pub(crate) const RESULT_SIGNATURE_VALUE: u16 = 0x3000;
+    /// Offset of `result_count` (`u32`, little-endian). Spec §13.
+    #[cfg(test)]
+    pub(crate) const RESULT_COUNT: usize = 28;
+    /// Stated value of `result_count` (`u32`). Spec §13.
+    pub(crate) const RESULT_COUNT_VALUE: u32 = 0x0000_0001;
+    /// Offset of `result_metadata0` (`u32`, little-endian). Spec §13.
+    #[cfg(test)]
+    pub(crate) const RESULT_METADATA0: usize = 32;
+    /// Stated value of `result_metadata0` (`u32`). Spec §13.
+    pub(crate) const RESULT_METADATA0_VALUE: u32 = 0x0000_0001;
+    /// Offset of `result_metadata1` (`u32`, little-endian). Spec §13.
+    #[cfg(test)]
+    pub(crate) const RESULT_METADATA1: usize = 36;
+    /// Stated value of `result_metadata1` (`u32`). Spec §13.
+    pub(crate) const RESULT_METADATA1_VALUE: u32 = 0x0000_0000;
+    /// Offset of `result` (`u32`, little-endian). Spec §13.
+    #[cfg(test)]
+    pub(crate) const RESULT: usize = 40;
+    /// Offset of `terminal_value` (`u32`, little-endian). Spec §13.
+    #[cfg(test)]
+    pub(crate) const TERMINAL_VALUE: usize = 44;
+    /// Stated value of `terminal_value` (`u32`). Spec §13.
+    pub(crate) const TERMINAL_VALUE_VALUE: u32 = 0x0000_0002;
+    /// Offset of `owner_count` (`u32`, little-endian). Spec §13.
+    #[cfg(test)]
+    pub(crate) const OWNER_COUNT: usize = 48;
+    /// Stated value of `owner_count` (`u32`). Spec §13.
+    pub(crate) const OWNER_COUNT_VALUE: u32 = 0x0000_0001;
+    /// Offset of `owner` (`u32`, little-endian). Spec §13.
+    #[cfg(test)]
+    pub(crate) const OWNER: usize = 52;
+}
+
+/// Byte offsets for the `pm_dc_mirror_generated_body_feature_v19` record.
+///
+/// Spec §13. Record length 66 B.
+pub(crate) mod pm_dc_mirror_generated_body_feature_v19 {
+    /// Record length in bytes. Spec §13.
+    pub(crate) const LEN: usize = 66;
+    /// Stated value of `flags` (`u32`). Spec §13.
+    pub(crate) const FLAGS_VALUE: u32 = 0x0000_6200;
+    /// Stated value of `marker` (`u16`). Spec §13.
+    pub(crate) const MARKER_VALUE: u16 = 0x0002;
+    /// Stated value of `metadata0` (`u32`). Spec §13.
+    pub(crate) const METADATA0_VALUE: u32 = 0x0000_0004;
+    /// Stated value of `metadata1` (`u32`). Spec §13.
+    pub(crate) const METADATA1_VALUE: u32 = 0x0000_0000;
+    /// Stated value of `value` (`u32`). Spec §13.
+    pub(crate) const VALUE_VALUE: u32 = 0x0000_0000;
+}
+
 /// Byte offsets for the `pm_dc_pattern_selection_control_body` record.
 ///
 /// Spec §13.6. Record length 9 B.

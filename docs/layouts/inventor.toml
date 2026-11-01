@@ -3828,6 +3828,313 @@ value = [0, 0, 0, 0, 0, 0, 0, 0, 0]
 anchor = "Mirror auxiliary payloads follow the versioned content header and stamps."
 
 [[record]]
+name = "pm_dc_mirror_instance_map_single_tail_v19"
+kind = "byte"
+section = "13"
+anchor = "the single-entry Mirror instance map has type"
+size = 56
+note = "Offsets start after the segment-major-19 content header."
+parsed_by = "crates/cadmpeg-codec-inventor/src/feature/mirror/instance_map.rs"
+
+[[record.field]]
+name = "state"
+offset = 0
+type = "i32"
+source = "spec"
+anchor = "the single-entry Mirror instance map has type"
+value = -1
+
+[[record.field]]
+name = "map_marker"
+offset = 4
+type = "u16"
+source = "spec"
+anchor = "the single-entry Mirror instance map has type"
+value = 6
+
+[[record.field]]
+name = "map_signature"
+offset = 6
+type = "u16"
+source = "spec"
+anchor = "the single-entry Mirror instance map has type"
+value = 12288
+
+[[record.field]]
+name = "map_count"
+offset = 8
+type = "u32"
+source = "spec"
+anchor = "the single-entry Mirror instance map has type"
+value = 1
+
+[[record.field]]
+name = "map_value"
+offset = 12
+type = "u32"
+source = "spec"
+anchor = "the single-entry Mirror instance map has type"
+value = 0
+
+[[record.field]]
+name = "source_tag"
+offset = 16
+type = "u32"
+source = "spec"
+anchor = "the single-entry Mirror instance map has type"
+value = 805306370
+
+[[record.field]]
+name = "source"
+offset = 20
+type = "u32"
+source = "spec"
+anchor = "the single-entry Mirror instance map has type"
+
+[[record.field]]
+name = "result_marker"
+offset = 24
+type = "u16"
+source = "spec"
+anchor = "the single-entry Mirror instance map has type"
+value = 2
+
+[[record.field]]
+name = "result_signature"
+offset = 26
+type = "u16"
+source = "spec"
+anchor = "the single-entry Mirror instance map has type"
+value = 12288
+
+[[record.field]]
+name = "result_count"
+offset = 28
+type = "u32"
+source = "spec"
+anchor = "the single-entry Mirror instance map has type"
+value = 1
+
+[[record.field]]
+name = "result_metadata0"
+offset = 32
+type = "u32"
+source = "spec"
+anchor = "the single-entry Mirror instance map has type"
+value = 1
+
+[[record.field]]
+name = "result_metadata1"
+offset = 36
+type = "u32"
+source = "spec"
+anchor = "the single-entry Mirror instance map has type"
+value = 0
+
+[[record.field]]
+name = "result"
+offset = 40
+type = "u32"
+source = "spec"
+anchor = "the single-entry Mirror instance map has type"
+
+[[record.field]]
+name = "terminal_value"
+offset = 44
+type = "u32"
+source = "spec"
+anchor = "the single-entry Mirror instance map has type"
+value = 2
+
+[[record.field]]
+name = "owner_count"
+offset = 48
+type = "u32"
+source = "spec"
+anchor = "the single-entry Mirror instance map has type"
+value = 1
+
+[[record.field]]
+name = "owner"
+offset = 52
+type = "u32"
+source = "spec"
+anchor = "the single-entry Mirror instance map has type"
+
+[[record]]
+name = "pm_dc_mirror_generated_body_feature_v19"
+kind = "byte"
+section = "13"
+anchor = "The generated body node has label class"
+size = 66
+parsed_by = "crates/cadmpeg-codec-inventor/src/feature/mirror/body_result.rs"
+
+[[record.field]]
+name = "header_value"
+offset = 0
+type = "u32"
+source = "spec"
+anchor = "The generated body node has label class"
+
+[[record.field]]
+name = "header_id"
+offset = 4
+type = "u16"
+source = "spec"
+anchor = "The generated body node has label class"
+
+[[record.field]]
+name = "next"
+offset = 6
+type = "u32"
+source = "spec"
+anchor = "The generated body node has label class"
+
+[[record.field]]
+name = "flags"
+offset = 10
+type = "u32"
+source = "spec"
+anchor = "The generated body node has label class"
+value = 25088
+
+[[record.field]]
+name = "context"
+offset = 14
+type = "u32"
+source = "spec"
+anchor = "The generated body node has label class"
+
+[[record.field]]
+name = "source_index"
+offset = 18
+type = "u32"
+source = "spec"
+anchor = "The generated body node has label class"
+
+[[record.field]]
+name = "state"
+offset = 22
+type = "i32"
+source = "spec"
+anchor = "The generated body node has label class"
+
+[[record.field]]
+name = "outline_value"
+offset = 26
+type = "u32"
+source = "spec"
+anchor = "The generated body node has label class"
+
+[[record.field]]
+name = "marker"
+offset = 30
+type = "u16"
+source = "spec"
+anchor = "The generated body node has label class"
+value = 2
+
+[[record.field]]
+name = "signature"
+offset = 32
+type = "u16"
+source = "spec"
+anchor = "The generated body node has label class"
+value = 12288
+
+[[record.field]]
+name = "count"
+offset = 34
+type = "u32"
+source = "spec"
+anchor = "The generated body node has label class"
+value = 4
+
+[[record.field]]
+name = "metadata0"
+offset = 38
+type = "u32"
+source = "spec"
+anchor = "The generated body node has label class"
+value = 4
+
+[[record.field]]
+name = "metadata1"
+offset = 42
+type = "u32"
+source = "spec"
+anchor = "The generated body node has label class"
+value = 0
+
+[[record.field]]
+name = "mode"
+offset = 46
+type = "u32"
+source = "spec"
+anchor = "The generated body node has label class"
+
+[[record.field]]
+name = "input_index"
+offset = 50
+type = "u32"
+source = "spec"
+anchor = "The generated body node has label class"
+
+[[record.field]]
+name = "owner_index"
+offset = 54
+type = "u32"
+source = "spec"
+anchor = "The generated body node has label class"
+
+[[record.field]]
+name = "result_body"
+offset = 58
+type = "u32"
+source = "spec"
+anchor = "The generated body node has label class"
+
+[[record.field]]
+name = "value"
+offset = 62
+type = "u32"
+source = "spec"
+anchor = "The generated body node has label class"
+value = 0
+
+[[record]]
+name = "pm_dc_mirror_generated_body_properties"
+kind = "slot"
+section = "13"
+anchor = "The generated body node has label class"
+size = 16
+parsed_by = "crates/cadmpeg-codec-inventor/src/feature/mirror/body_result.rs"
+
+[[record.field]]
+name = "mode"
+type = "u32"
+source = "spec"
+anchor = "Slot 0 has nominal and model values 2."
+
+[[record.field]]
+name = "source_index"
+type = "u32"
+source = "spec"
+anchor = "Slot 1 has nominal and model values equal to the source wrapper's"
+
+[[record.field]]
+name = "owner_index"
+type = "u32"
+source = "spec"
+anchor = "Slot 2 has nominal and model values equal to the owning Mirror's"
+
+[[record.field]]
+name = "result_body"
+type = "u32"
+source = "spec"
+anchor = "Slot 3 selects the result surface-body wrapper."
+
+[[record]]
 name = "pm_dc_body_motion_properties"
 kind = "slot"
 section = "13"

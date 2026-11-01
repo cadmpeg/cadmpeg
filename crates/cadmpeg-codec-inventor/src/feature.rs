@@ -62,7 +62,7 @@ pub(crate) mod composite;
 
 const EPS_FEATURE_PROJECT_HOLE_E10: f64 = 1.0e-10;
 
-const FEATURE_TYPE: [u8; 16] = [
+pub(crate) const FEATURE_TYPE: [u8; 16] = [
     0x91, 0x4d, 0x87, 0x90, 0xd0, 0x11, 0xf8, 0xd1, 0x00, 0x08, 0xca, 0xbc, 0x06, 0x63, 0xdc, 0x09,
 ];
 const END_OF_FEATURES_TYPE: [u8; 16] = [
@@ -2186,7 +2186,7 @@ pub(crate) fn project(
             split_losses: Vec::new(),
             thicken_losses: Vec::new(),
             plate_losses: Vec::new(),
-            mirror_losses: mirror::native_losses(&inventory.pattern_features, &[]),
+            mirror_losses: mirror::native_losses(&inventory.pattern_features, &[], &[]),
             added_profiles: HashMap::new(),
         });
     }
@@ -2540,7 +2540,8 @@ pub(crate) fn project(
                 &inventory.properties,
                 &sketch.transforms,
                 &inventory.work_planes,
-            );
+            )
+            .with_generated_nodes(&inventory.features, &inventory.labels);
             let seeds = unique_index(
                 inventory
                     .features
@@ -2556,7 +2557,16 @@ pub(crate) fn project(
             );
             (index, seeds)
         });
-    for pattern in &inventory.pattern_features {
+    let mut mirror_refusals = if mirrors.is_some() {
+        ctx.alloc_filled(
+            inventory.pattern_features.len(),
+            None,
+            "track Inventor mirror Boolean refusals",
+        )?
+    } else {
+        Vec::new()
+    };
+    for (pattern_index, pattern) in inventory.pattern_features.iter().enumerate() {
         if history.placement(pattern.identity.record_ordinal).is_none() {
             continue;
         }
@@ -2564,10 +2574,16 @@ pub(crate) fn project(
         let value = match pattern.family {
             PmDcPatternFamily::Mirror => label.and_then(|label| {
                 let (mirror_index, seed_records) = mirrors.as_ref()?;
-                mirror_index.project(ctx, pattern, label, |ordinal| {
-                    let seed = seed_records.get(&ordinal)?.as_ref()?;
-                    mirror::seed_feature_id(&history, pattern.identity.record_ordinal, seed)
-                })
+                mirror_index.project(
+                    ctx,
+                    pattern,
+                    label,
+                    |ordinal| {
+                        let seed = seed_records.get(&ordinal)?.as_ref()?;
+                        mirror::seed_feature_id(&history, pattern.identity.record_ordinal, seed)
+                    },
+                    |refusal| mirror_refusals[pattern_index] = Some(refusal),
+                )
             }),
             PmDcPatternFamily::Rectangular => pattern::project(
                 ctx,
@@ -2722,7 +2738,11 @@ pub(crate) fn project(
         split_losses,
         thicken_losses,
         plate_losses: plate_refusals.losses(&features),
-        mirror_losses: mirror::native_losses(&inventory.pattern_features, &features),
+        mirror_losses: mirror::native_losses(
+            &inventory.pattern_features,
+            &features,
+            &mirror_refusals,
+        ),
         features,
         result_topologies,
         input_topologies,
