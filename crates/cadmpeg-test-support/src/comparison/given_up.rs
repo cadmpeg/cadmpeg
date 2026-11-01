@@ -15,8 +15,24 @@ use serde_json::Value;
 
 use super::{export::required_references, graph::Document, Allowances};
 
-/// The loss code the shared part helper charges for one given-up part.
+/// The loss code the shared part helper charges for one given-up part, in
+/// display form. On the wire a loss carries its code as an object whose
+/// `code` field holds the local code; some callers pin the display form.
 const UNREADABLE: &str = "decode/record.unreadable";
+
+/// The wire form of the part give-up code.
+const UNREADABLE_WIRE: &str = "record.unreadable";
+
+/// Whether a loss JSON charges the one part give-up the helper reports.
+fn is_unreadable(loss: &Value) -> bool {
+    match loss.get("code") {
+        Some(Value::String(code)) => code == UNREADABLE,
+        Some(Value::Object(code)) => {
+            code.get("code").and_then(Value::as_str) == Some(UNREADABLE_WIRE)
+        }
+        _ => false,
+    }
+}
 
 impl Allowances {
     /// Build the §4.5 allowances from a damaged decode's losses.
@@ -37,7 +53,7 @@ impl Allowances {
         };
         let mut dropped = BTreeSet::new();
         for loss in losses {
-            if loss.get("code").and_then(Value::as_str) != Some(UNREADABLE) {
+            if !is_unreadable(loss) {
                 continue;
             }
             let span = loss.get("provenance");
@@ -48,14 +64,13 @@ impl Allowances {
                 continue;
             };
             let Some(entries) = entries.as_array() else {
-                return Err("a record.unreadable loss names its dropped records outside an array"
-                    .into());
+                return Err(
+                    "a record.unreadable loss names its dropped records outside an array".into(),
+                );
             };
             for entry in entries {
                 let Some(id) = entry.as_str() else {
-                    return Err(
-                        "a record.unreadable loss names a non-string dropped record".into()
-                    );
+                    return Err("a record.unreadable loss names a non-string dropped record".into());
                 };
                 dropped.insert(id.to_owned());
             }
@@ -109,6 +124,27 @@ mod tests {
 
     fn spanned() -> serde_json::Value {
         json!({"format": "step", "offset": 3, "byte_len": 14})
+    }
+
+    fn wired(provenance: serde_json::Value, dropped: serde_json::Value) -> serde_json::Value {
+        let mut code = serde_json::Map::new();
+        code.insert("code".to_owned(), json!("record.unreadable"));
+        code.insert("kind".to_owned(), json!("decode_diagnostic"));
+        code.insert("namespace".to_owned(), json!("decode"));
+        code.insert("scope".to_owned(), json!("namespaced"));
+        code.insert("severity".to_owned(), json!("error"));
+        let mut loss = serde_json::Map::new();
+        loss.insert("code".to_owned(), serde_json::Value::Object(code));
+        loss.insert("severity".to_owned(), json!("error"));
+        loss.insert(
+            "message".to_owned(),
+            json!("part step.simple_entity_instance stream=\"\" offset=3 length=14: test"),
+        );
+        loss.insert("provenance".to_owned(), provenance);
+        if !dropped.is_null() {
+            loss.insert("dropped".to_owned(), dropped);
+        }
+        serde_json::Value::Object(loss)
     }
 
     #[test]
@@ -205,5 +241,34 @@ mod tests {
             {"code": "decode/depth.not-delivered", "severity": "error", "message": "test"},
         ]});
         assert!(Allowances::given_up(&before(), &report).is_ok());
+    }
+
+    #[test]
+    fn a_wire_shaped_loss_names_its_dropped_records() {
+        let report = json!({"losses": [wired(spanned(), json!(["p"]))]});
+        let allowances = Allowances::given_up(&before(), &report).expect("named drop");
+        assert!(allowances.removed.contains("p"));
+        super::super::assert_decodes_agree(
+            &before(),
+            &json!({"model": {"points": []}, "native": {}}),
+            &allowances,
+            super::super::Mode::Same,
+        );
+    }
+
+    #[test]
+    fn a_wire_shaped_loss_without_dropped_ids_builds_empty_allowances() {
+        let report = json!({"losses": [wired(spanned(), serde_json::Value::Null)]});
+        let allowances = Allowances::given_up(&before(), &report).expect("structured losses");
+        assert!(allowances.removed.is_empty());
+    }
+
+    #[test]
+    fn a_wire_shaped_loss_of_another_code_contributes_nothing() {
+        let mut loss = wired(spanned(), serde_json::Value::Null);
+        loss["code"]["code"] = json!("parse.record-omitted");
+        let report = json!({"losses": [loss]});
+        let allowances = Allowances::given_up(&before(), &report).expect("other code");
+        assert!(allowances.removed.is_empty());
     }
 }
