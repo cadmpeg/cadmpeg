@@ -1338,6 +1338,8 @@ The prim that defines a product definition also states its product data:
 
 A `CadSketch` names the product definition that owns it with `rel sketch:definition`, whose one target is a prim of that definition.
 
+The `customLayerData` of the root layer holds the document tolerances in its dictionary `cad`: `double linearTolerance`, in the length unit of the stage, and `double angularTolerance`, in degrees.
+
 ### 18.1 CadBrepIdentityAPI
 
 `CadBrepIdentityAPI` is a single-apply API schema of a `BrepArray` prim. It gives the CADIR identity of each B-rep, face, edge, and vertex, and the name of each B-rep and face:

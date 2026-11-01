@@ -55,7 +55,9 @@ fn a_definition_keeps_its_product_data_and_sketches_through_a_write() {
     let model = &sketches.ir().model;
     ir.model.sketches.clone_from(&model.sketches);
     ir.model.sketch_entities.clone_from(&model.sketch_entities);
-    ir.model.sketch_constraints.clone_from(&model.sketch_constraints);
+    ir.model
+        .sketch_constraints
+        .clone_from(&model.sketch_constraints);
     ir.model.parameters.clone_from(&model.parameters);
     let sketch = ir.model.sketches[0].id.clone();
     let definition = &mut ir.model.product_definitions[0];
@@ -83,4 +85,24 @@ fn a_definition_keeps_its_product_data_and_sketches_through_a_write() {
     assert_eq!(found.bom_properties, expected.bom_properties);
     assert_eq!(found.source_name, expected.source_name);
     assert_eq!(found.sketches, expected.sketches);
+}
+
+#[test]
+fn the_document_tolerances_survive_a_write() {
+    let mut ir = cadmpeg_ir::examples::unit_cube().expect("cube");
+    ir.tolerances = cadmpeg_ir::units::Tolerances::new(0.025, 0.002).expect("tolerances");
+    let (written, _) = encode(&ir);
+    let read = decode(&written);
+    let tolerances = &read.ir().tolerances;
+    let close = |found: f64, expected: f64| (found - expected).abs() <= expected * 1e-12;
+    assert!(
+        close(tolerances.linear.get(), 0.025),
+        "{tolerances:?}\n{written}"
+    );
+    assert!(close(tolerances.angular.get(), 0.002), "{tolerances:?}");
+    assert!(read
+        .report()
+        .losses
+        .iter()
+        .all(|loss| !loss.message.contains("customLayerData")));
 }

@@ -10,7 +10,7 @@ This document uses ASD-STE100 Simplified Technical English. Schema, attribute, a
 
 | Arena or field | OpenUSD form now | Gap to 1:1 | Proposed form |
 | --- | --- | --- | --- |
-| `units`, `tolerances` | `metersPerUnit`; `brep:intersectTol3d` per B-rep | the document tolerances and the angular tolerance | `customLayerData` keys `cad:tolerance:linear`, `cad:tolerance:angular` |
+| `units`, `tolerances` | `metersPerUnit`; `brep:intersectTol3d` per B-rep; `customLayerData` dictionary `cad` with the document tolerances (`usd.md` §18) | none | none |
 | `source`, `decode_depth` | none | source format, dialects, and decode depth | `customLayerData` dictionary `cad:source` |
 | `bodies`, `regions`, `shells` | `BrepArray` B-reps, regions, and shells | a face that two solid regions share; body kind, color, and visibility on a B-rep in a multi-B-rep prim | IR change for shared faces; per-B-rep kind, color, and visibility arrays |
 | `faces`, `loops`, `coedges`, `edges`, `vertices`, `points` | `BrepArray` faces, loops, edgeuses, edges, vertices; `CadBrepIdentityAPI` identities and names; `CadBrepToleranceAPI` tolerances | face colors, wire edges, free vertices | face colors as `GeomSubset` display colors; read and write `wireEdge:*` and `BrepPointAPI:shellPoint` |

@@ -568,6 +568,19 @@ impl<'ir> Writer<'ir> {
             header.line("    kilogramsPerUnit = 1");
         }
         header.line(&format!("    upAxis = {}", quoted(&self.up_axis())));
+        let tolerances = &self.ir.tolerances;
+        header.line("    customLayerData = {");
+        header.line("        dictionary cad = {");
+        header.line(&format!(
+            "            double angularTolerance = {}",
+            real(tolerances.angular.get().to_degrees())
+        ));
+        header.line(&format!(
+            "            double linearTolerance = {}",
+            real(tolerances.linear.get() / MILLIMETRES_PER_UNIT)
+        ));
+        header.line("        }");
+        header.line("    }");
         header.line(")");
         header.blank();
         header.finish() + &prims

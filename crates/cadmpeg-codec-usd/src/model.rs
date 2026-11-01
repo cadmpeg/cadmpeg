@@ -54,7 +54,7 @@ use crate::schema::texture::SlotKind;
 use crate::schema::xform::{compose, invert, local_transform, Affine, IDENTITY};
 use crate::schema::Issues;
 use crate::stage::{Prim, Stage};
-use crate::text::syntax::{Layer, MetaValue, Value};
+use crate::text::syntax::{Dictionary, DictionaryValue, Layer, MetaValue, Value};
 
 mod brep;
 mod configurations;
@@ -97,6 +97,47 @@ pub(crate) struct Metrics {
     pub(crate) malformed_mass_units: bool,
     /// `upAxis` is authored and is not the token `Y` or `Z`.
     pub(crate) malformed_up_axis: bool,
+    /// The document tolerances of `customLayerData`: linear, in scene
+    /// units, and angular, in degrees (spec §18).
+    pub(crate) tolerances: Option<[f64; 2]>,
+}
+
+/// The `cad` dictionary of the `customLayerData` of `layer`.
+fn cad_layer_data(layer: &Layer) -> Option<&Dictionary> {
+    layer
+        .metadata
+        .iter()
+        .rev()
+        .find_map(|item| match &item.value {
+            MetaValue::Dictionary(data) if item.key == "customLayerData" => {
+                data.entries.iter().find_map(|entry| match &entry.value {
+                    DictionaryValue::Dictionary(cad) if entry.key == "cad" => Some(cad),
+                    _ => None,
+                })
+            }
+            _ => None,
+        })
+}
+
+/// The number that entry `key` of `data` states.
+fn dictionary_number(data: &Dictionary, key: &str) -> Option<f64> {
+    data.entries.iter().find_map(|entry| match &entry.value {
+        DictionaryValue::Typed {
+            value: Value::Number(number),
+            ..
+        } if entry.key == key => Some(number.float),
+        _ => None,
+    })
+}
+
+/// Whether `customLayerData` holds entries other than `cad`.
+fn foreign_layer_data(layer: &Layer) -> bool {
+    layer.metadata.iter().any(|item| match &item.value {
+        MetaValue::Dictionary(data) if item.key == "customLayerData" => {
+            data.entries.iter().any(|entry| entry.key != "cad")
+        }
+        _ => false,
+    })
 }
 
 fn layer_value<'l>(layer: &'l Layer, key: &str) -> Option<&'l Value> {
@@ -147,6 +188,12 @@ pub(crate) fn metrics(layer: &Layer) -> Metrics {
         malformed_units,
         malformed_mass_units,
         malformed_up_axis,
+        tolerances: cad_layer_data(layer).and_then(|cad| {
+            Some([
+                dictionary_number(cad, "linearTolerance")?,
+                dictionary_number(cad, "angularTolerance")?,
+            ])
+        }),
     }
 }
 
@@ -344,6 +391,11 @@ pub(crate) fn build<'a>(
     losses: &mut Vec<LossNote>,
 ) -> Result<bool, CodecError> {
     let stage = crate::stage::compose(ctx, layers)?;
+    if let Some(tolerances) = metrics.tolerances.and_then(|[linear, angular]| {
+        cadmpeg_ir::units::Tolerances::new(linear * metrics.scale, angular.to_radians()).ok()
+    }) {
+        ir.tolerances = tolerances;
+    }
     let admitted = u64_from_index(ir.model.entity_count());
     let mut builder = Builder {
         ctx,
@@ -405,6 +457,7 @@ pub(crate) fn build<'a>(
         .iter()
         .map(|item| item.key.as_str())
         .filter(|key| !LAYER_KEYS_READ.contains(key))
+        .filter(|key| *key != "customLayerData" || foreign_layer_data(layers.root()))
         .collect();
     if !layer_keys.is_empty() {
         losses.push(UsdLossCode::MetadataNotTransferred.note(format!(
