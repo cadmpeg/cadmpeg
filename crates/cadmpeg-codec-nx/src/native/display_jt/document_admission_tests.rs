@@ -31,7 +31,6 @@ pub(super) fn one_document() -> Container<'static> {
     let data_len = cadmpeg_core::decode::u64_from_index(data.len());
     Container {
         data: data.into(),
-        physical_size: data_len,
         layout: crate::container::test_modern_layout(6),
         entries: vec![DirEntry {
             name: "/Root/UG_PART/DisplayJT".to_string(),

@@ -63,6 +63,7 @@ fn historical_vertex_selection_requires_input_state_membership() {
             native_ref: None,
         });
     ir.model.features.push(Feature {
+        product_definition: None,
         id: feature_id.clone(),
         ordinal: 0,
         name: None,
@@ -203,6 +204,7 @@ fn neutral_features_resolve_sketch_profile_and_path_operands() {
 
     let mut ir = unit_cube().expect("valid unit cube fixture");
     ir.model.features.push(Feature {
+        product_definition: None,
         id: FeatureId::mint("synthetic:test:feature#sketch-ref").expect("identity grammar"),
         ordinal: 0,
         name: None,
@@ -243,6 +245,7 @@ fn feature_history_preserves_cycles_and_rejects_dangling_records() {
     let mut ir = unit_cube().expect("valid unit cube fixture");
     let feature_id = FeatureId::mint("synthetic:test:feature#invalid").expect("identity grammar");
     ir.model.features.push(Feature {
+        product_definition: None,
         id: feature_id.clone(),
         ordinal: 0,
         name: None,
@@ -298,6 +301,7 @@ fn feature_history_preserves_cycles_and_rejects_dangling_records() {
         native_ref: None,
     });
     ir.model.features.push(Feature {
+        product_definition: None,
         id: FeatureId::mint("synthetic:test:feature#duplicate-order").expect("identity grammar"),
         ordinal: 0,
         name: None,
@@ -349,6 +353,7 @@ fn feature_parameters_require_unique_names_and_ordinals() {
     let mut ir = unit_cube().expect("valid unit cube fixture");
     let owner = FeatureId::mint("synthetic:test:feature#parameters").expect("identity grammar");
     ir.model.features.push(Feature {
+        product_definition: None,
         id: owner.clone(),
         ordinal: 0,
         name: None,
@@ -371,6 +376,7 @@ fn feature_parameters_require_unique_names_and_ordinals() {
     });
     for (index, name) in ["Width", "Width"].into_iter().enumerate() {
         ir.model.parameters.push(DesignParameter {
+            product_definition: None,
             id: ParameterId::mint(format!("synthetic:test:parameter#{index}"))
                 .expect("identity grammar"),
             owner: Some(owner.clone()),
@@ -408,6 +414,7 @@ fn parameter_token_dependencies_must_resolve_and_preserve_forward_references() {
     let owner =
         FeatureId::mint("synthetic:test:feature#dependency-owner").expect("identity grammar");
     ir.model.features.push(Feature {
+        product_definition: None,
         id: owner.clone(),
         ordinal: 0,
         name: None,
@@ -439,6 +446,7 @@ fn parameter_token_dependencies_must_resolve_and_preserve_forward_references() {
         ),
     ] {
         ir.model.parameters.push(DesignParameter {
+            product_definition: None,
             id,
             owner: Some(owner.clone()),
             ordinal,
@@ -498,6 +506,7 @@ fn document_parameters_can_feed_feature_parameters() {
     let mut ir = unit_cube().expect("valid unit cube fixture");
     let owner = FeatureId::mint("synthetic:test:feature#consumer").expect("identity grammar");
     ir.model.features.push(Feature {
+        product_definition: None,
         id: owner.clone(),
         ordinal: 0,
         name: None,
@@ -521,6 +530,7 @@ fn document_parameters_can_feed_feature_parameters() {
     let document =
         ParameterId::mint("synthetic:test:parameter#document").expect("identity grammar");
     ir.model.parameters.push(DesignParameter {
+        product_definition: None,
         id: document.clone(),
         owner: None,
         ordinal: 0,
@@ -534,6 +544,7 @@ fn document_parameters_can_feed_feature_parameters() {
         native_ref: None,
     });
     ir.model.parameters.push(DesignParameter {
+        product_definition: None,
         id: ParameterId::mint("synthetic:test:parameter#owned").expect("identity grammar"),
         owner: Some(owner),
         ordinal: 0,
@@ -570,6 +581,7 @@ fn offset_plane_references_form_an_acyclic_graph_independent_of_list_order() {
     let mut ir = unit_cube().expect("valid unit cube fixture");
     let principal = FeatureId::mint("synthetic:test:feature#principal").expect("identity grammar");
     let feature = |id: &str, ordinal: u64, definition: FeatureDefinition| Feature {
+        product_definition: None,
         needs_recompute: false,
         id: FeatureId::mint(id).expect("identity grammar"),
         ordinal,
@@ -668,6 +680,7 @@ fn generated_termination_vertices_require_declared_feature_dependencies() {
     let source =
         FeatureId::mint("synthetic:test:feature#0-vertex-source").expect("identity grammar");
     ir.model.features.push(Feature {
+        product_definition: None,
         id: source.clone(),
         ordinal: 0,
         name: None,
@@ -689,6 +702,7 @@ fn generated_termination_vertices_require_declared_feature_dependencies() {
         native_ref: None,
     });
     ir.model.features.push(Feature {
+        product_definition: None,
         id: FeatureId::mint("synthetic:test:feature#1-extrude").expect("identity grammar"),
         ordinal: 1,
         name: None,
@@ -785,6 +799,7 @@ fn pattern_feature_seeds_must_be_declared_dependencies() {
     let mut ir = unit_cube().expect("valid unit cube fixture");
     let seed = FeatureId::mint("synthetic:test:feature#pattern-seed").expect("identity grammar");
     ir.model.features.push(Feature {
+        product_definition: None,
         id: seed.clone(),
         ordinal: 0,
         name: None,
@@ -806,6 +821,7 @@ fn pattern_feature_seeds_must_be_declared_dependencies() {
         native_ref: None,
     });
     ir.model.features.push(Feature {
+        product_definition: None,
         id: FeatureId::mint("synthetic:test:feature#pattern").expect("identity grammar"),
         ordinal: 1,
         name: None,
@@ -876,6 +892,7 @@ fn definition_references_must_be_declared_dependencies_in_every_configuration() 
     let profile =
         FeatureId::mint("synthetic:test:feature#6-profile-consumer").expect("identity grammar");
     let feature = |id, ordinal, definition| Feature {
+        product_definition: None,
         needs_recompute: false,
         id,
         ordinal,
@@ -1062,6 +1079,7 @@ fn generated_body_selection_must_name_a_declared_producer_result() {
     let mut ir = CadIr::empty();
     let producer = FeatureId::mint("synthetic:test:feature#0-producer").expect("identity grammar");
     ir.model.features.push(Feature {
+        product_definition: None,
         id: producer.clone(),
         ordinal: 0,
         name: None,
@@ -1101,6 +1119,7 @@ fn generated_body_selection_must_name_a_declared_producer_result() {
         .unwrap(),
     );
     ir.model.features.push(Feature {
+        product_definition: None,
         id: FeatureId::mint("synthetic:test:feature#1-consumer").expect("identity grammar"),
         ordinal: 1,
         name: None,
@@ -1173,6 +1192,7 @@ fn reference_images_require_valid_assets_and_plane_placements() {
         .expect("valid asset"),
     );
     ir.model.features.push(Feature {
+        product_definition: None,
         id: feature_id.clone(),
         ordinal: 0,
         name: None,
@@ -1250,6 +1270,7 @@ fn decals_require_valid_assets_faces_and_opacity() {
         .expect("valid asset"),
     );
     ir.model.features.push(Feature {
+        product_definition: None,
         id: feature_id.clone(),
         ordinal: 0,
         name: None,
@@ -1313,6 +1334,7 @@ fn input_edge_geometry_names_its_own_state_members_once() {
             native_ref: None,
         });
     ir.model.features.push(Feature {
+        product_definition: None,
         needs_recompute: false,
         id: feature_id,
         ordinal: 0,
@@ -1351,4 +1373,100 @@ fn input_edge_geometry_names_its_own_state_members_once() {
         "test:model:historical-face#missing",
     )];
     assert_eq!(state_findings(&ir), 2);
+}
+
+#[test]
+fn revolve_validator_limits_fixed_angles_and_two_side_sum() {
+    use crate::features::{
+        AngularTermination, BooleanOp, Feature, FeatureDefinition, FeatureEvaluation, FeatureId,
+        FeatureOperation, PartialRevolveConstruction, RevolveConstruction, RevolveExtent,
+    };
+    use crate::scalar::PositiveAngle;
+    use std::f64::consts::{PI, TAU};
+
+    let angle = |value| AngularTermination::Angle {
+        angle: crate::features::Dimension::Literal(PositiveAngle::new(value).unwrap()),
+    };
+    for (extent, valid) in [
+        (
+            RevolveExtent::OneSided {
+                termination: angle(TAU),
+            },
+            true,
+        ),
+        (
+            RevolveExtent::OneSided {
+                termination: angle(TAU + PI),
+            },
+            false,
+        ),
+        (
+            RevolveExtent::Symmetric {
+                termination: angle(TAU),
+            },
+            true,
+        ),
+        (
+            RevolveExtent::Symmetric {
+                termination: angle(TAU + PI),
+            },
+            false,
+        ),
+        (
+            RevolveExtent::TwoSided {
+                first: angle(PI),
+                second: angle(PI),
+            },
+            true,
+        ),
+        (
+            RevolveExtent::TwoSided {
+                first: angle(TAU),
+                second: angle(PI),
+            },
+            false,
+        ),
+    ] {
+        let mut ir = CadIr::empty();
+        let mut construction: RevolveConstruction = serde_json::from_value(serde_json::json!({
+            "state": "unresolved", "missing": "profile"
+        }))
+        .unwrap();
+        if let RevolveConstruction::Unresolved(PartialRevolveConstruction::Profile {
+            extent: target,
+            ..
+        }) = &mut construction
+        {
+            *target = Some(extent);
+        } else {
+            panic!("default revolution must lack its profile");
+        }
+        ir.model.features.push(Feature {
+            id: FeatureId::mint("test:model:feature#revolve").unwrap(),
+            ordinal: 0,
+            name: None,
+            suppressed: None,
+            needs_recompute: false,
+            dependencies: crate::features::DistinctMembers::default(),
+            source_properties: BTreeMap::new(),
+            source_tag: None,
+            source_text: None,
+            source_content: crate::features::FeatureContent::default(),
+            evaluation: FeatureEvaluation::from_definition(FeatureDefinition::Operation(
+                FeatureOperation::Revolve {
+                    construction,
+                    op: BooleanOp::NewBody,
+                },
+            )),
+            native_ref: None,
+            product_definition: None,
+        });
+        let report = validate_neutral(&ir, Vec::new()).unwrap();
+        assert_eq!(
+            report.findings.iter().any(|finding| finding
+                .message
+                .contains("revolution angular travel must not exceed one turn")),
+            !valid
+        );
+    }
 }

@@ -586,11 +586,7 @@ fn companion_timestamp_preserves_wire_and_rejects_zero() {
         design_parameter_companions: vec![source.clone()],
         ..Default::default()
     };
-    assert!(native
-        .retained_fidelity()
-        .expect("source fidelity")
-        .metadata
-        .is_empty());
+    native.retained_fidelity().expect("source fidelity");
     let legacy = wire.replace("timestamp_micros", "opaque_value");
     assert!(serde_json::from_str::<DesignParameterCompanion>(&legacy).is_err());
     for (invalid, field) in [
@@ -1459,11 +1455,6 @@ fn empty_reference_runs_have_one_representation() {
     assert!(header.content_eq(
         &serde_json::from_str::<crate::records::entity_header::DesignEntityHeader>(wire).unwrap()
     ));
-    let mut fidelity = cadmpeg_ir::SourceFidelity::default();
-    header.retain_source(&mut fidelity);
-    assert_eq!(fidelity.metadata["header.byte_offset"], "10");
-    assert_eq!(fidelity.metadata["header.optional_slot_present"], "false");
-    assert_eq!(fidelity.metadata["header.record_reference_offset"], "20");
 }
 
 #[test]

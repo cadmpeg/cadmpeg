@@ -222,7 +222,6 @@ mod tests {
     fn container() -> Container<'static> {
         Container {
             data: TIFF.into(),
-            physical_size: cadmpeg_core::decode::u64_from_index(TIFF.len()),
             layout: crate::container::test_modern_layout(6),
             entries: vec![DirEntry {
                 name: "/Root/materialsTif/Steel".to_owned(),

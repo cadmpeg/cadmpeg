@@ -224,6 +224,14 @@ impl CadIr {
                 .find(|record| record.id.as_str() == id)
                 .and_then(|record| record.body.as_ref());
         }
+        if let AppearanceTarget::TriangleGroup { tessellation, .. } = target {
+            return self
+                .model
+                .tessellations
+                .iter()
+                .find(|record| record.id.as_str() == tessellation)
+                .and_then(|record| record.body.as_ref());
+        }
         let shell = match target {
             AppearanceTarget::Face(id) => self
                 .model
@@ -339,6 +347,19 @@ impl CadIr {
                     .tessellations
                     .iter()
                     .find(|record| record.id.as_str() == id)
+                    .and_then(|record| record.source_object.as_ref())
+                {
+                    ids.insert(source.object_id.as_str());
+                }
+            }
+            AppearanceTarget::TriangleGroup { tessellation, group } => {
+                ids.insert(tessellation.as_str());
+                ids.insert(group.as_str());
+                if let Some(source) = self
+                    .model
+                    .tessellations
+                    .iter()
+                    .find(|record| record.id.as_str() == tessellation)
                     .and_then(|record| record.source_object.as_ref())
                 {
                     ids.insert(source.object_id.as_str());

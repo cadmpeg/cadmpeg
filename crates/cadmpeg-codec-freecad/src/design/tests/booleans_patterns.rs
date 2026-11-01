@@ -4,7 +4,7 @@
 use crate::design::tests::definition;
 use crate::native::{PropertyBody, PropertyFamily, PropertyRecord};
 use crate::test_support::test_archive::{archive, archive_entries, assert_valid_document};
-use crate::FcstdCodec;
+use crate::{test_support::non_placement_losses, FcstdCodec};
 use cadmpeg_core::decode::DecodePolicy;
 use cadmpeg_ir::features::{FeatureDefinition, FeatureOperation};
 use cadmpeg_ir::{Codec, DecodeOptions};
@@ -136,7 +136,7 @@ fn transfers_ordered_part_boolean_operands_and_infers_dependencies() {
         tools,
         cadmpeg_ir::features::BodySelection::Native(value) if value.ends_with(":links:1..2")
     ));
-    assert!(result.report().losses.is_empty());
+    assert!(non_placement_losses(result.report()).is_empty());
 }
 
 #[test]
@@ -185,7 +185,7 @@ pub(crate) fn transfers_partdesign_boolean_base_and_group_rules() {
             op: cadmpeg_ir::features::BooleanKind::Cut,
             keep_tools: false,
         }) if matches!((operands.target(), operands.tools(),), (cadmpeg_ir::features::BodySelection::Native(target), cadmpeg_ir::features::BodySelection::Native(tools),) if target.ends_with(":BaseFeature") && tools.ends_with(":Group"))));
-    assert!(result.report().losses.is_empty());
+    assert!(non_placement_losses(result.report()).is_empty());
 }
 
 #[test]
@@ -1221,7 +1221,7 @@ fn resolves_datum_references_for_polar_and_mirror_patterns() {
                 plane: cadmpeg_ir::features::FaceSelection::Native(plane),
             } if plane.ends_with(":MirrorPlane"))
     ));
-    assert!(result.report().losses.is_empty());
+    assert!(non_placement_losses(result.report()).is_empty());
 }
 
 #[test]
@@ -1291,8 +1291,8 @@ fn rejects_ambiguous_axis_and_plane_reference_carriers() {
                 plane: cadmpeg_ir::features::FaceSelection::Native(plane),
             } if plane.ends_with(":MirrorPlane"))
     ));
-    assert_eq!(result.report().losses.len(), 2);
-    assert!(result.report().losses.iter().all(|loss| {
+    assert_eq!(non_placement_losses(result.report()).len(), 2);
+    assert!(non_placement_losses(result.report()).iter().all(|loss| {
         loss.code.namespace() == "fcstd"
             && loss.code.local_code() == "feature.native-kind-retained"
             && loss.severity == cadmpeg_ir::report::Severity::Blocking
@@ -1377,7 +1377,7 @@ fn transfers_progressive_scale_and_ordered_multi_transform_stages() {
         stages[1].pattern.definition(),
         cadmpeg_ir::features::patterns::PatternTransform::Scale { count: count_value, .. } if result.ir().dimension_value(count_value) == Some(3)
     ));
-    assert!(result.report().losses.is_empty());
+    assert!(non_placement_losses(result.report()).is_empty());
 }
 
 #[test]

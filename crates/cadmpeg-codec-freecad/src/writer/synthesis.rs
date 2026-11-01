@@ -167,6 +167,9 @@ pub(super) fn write(
         if crate::attributes::projection_held(ir)
             && !crate::attributes::consumed(ir, property, &native_objects)
             && crate::attributes::values(property).is_some()
+            && ir.model.attributes.iter().any(|attribute| {
+                attribute.native_ref.as_deref() == Some(property.id.as_str())
+            })
         {
             // Canonical attributes own these values and their deletion.
             continue;
@@ -385,6 +388,14 @@ pub(super) fn write(
     design::spreadsheets(ir, &mut objects, &mut names)?;
     super::parameters::write(ir, &mut objects, &names, &mut losses)?;
     super::products::write(ctx, ir, &mut objects, &mut names, &body_names, &mut losses)?;
+    super::attributes::write_products(
+        ir,
+        &names,
+        &mut objects,
+        &mut document_properties,
+        &mut losses,
+        &native_properties,
+    )?;
     // Product and feature labels are independent neutral fields even when
     // FreeCAD stores both on the same object. Preserve the product label in a
     // dynamic property while the visible object Label follows the feature.

@@ -111,6 +111,12 @@ pub(super) fn project(
                 _ => None,
             };
             if let Some(value) = value {
+                let Some(target) = cadmpeg_ir::attributes::AttributeTarget::record_for(
+                    &ir.model,
+                    block.id.as_str(),
+                ) else {
+                    continue;
+                };
                 ir.model
                     .attributes
                     .push(cadmpeg_ir::attributes::SourceAttribute::new(
@@ -122,9 +128,7 @@ pub(super) fn project(
                                 .dash(field_ordinal),
                         ),
                         Some(block.id.clone()),
-                        cadmpeg_ir::attributes::AttributeTarget::Source {
-                            source_id: block.id.clone(),
-                        },
+                        target,
                         format!("value.{field_ordinal}"),
                         vec![value],
                     )?);

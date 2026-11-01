@@ -289,14 +289,6 @@ fn caller_composition_binds_annex_j_style_target_after_resource_checks() {
         .points
         .iter()
         .any(|point| point.id.as_str() == "step:data:point#12"));
-    assert_eq!(
-        root_result.source_fidelity().metadata["entity_instances"],
-        "6"
-    );
-    assert_eq!(
-        target_result.source_fidelity().metadata["entity_instances"],
-        "6"
-    );
 
     let mismatched_units = String::from_utf8(target_bytes.to_vec())
         .unwrap()

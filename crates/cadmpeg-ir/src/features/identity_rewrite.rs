@@ -49,7 +49,7 @@ rewrite_scalar!(CurveProjectionDirection);
 rewrite_scalar!(CurveProjectionDirectionState);
 rewrite_scalar!(DecalMapping);
 rewrite_record!(DesignConfiguration, []; {id, ordinal, active, source_index, name, material, properties, parameter_overrides, bodies, parameter_values, feature_states, native_ref});
-rewrite_record!(DesignParameter, []; {id, owner, ordinal, name, expression, driving, display, value, properties, pmi, native_ref});
+rewrite_record!(DesignParameter, []; {id, product_definition, owner, ordinal, name, expression, driving, display, value, properties, pmi, native_ref});
 rewrite_scalar!(DimensionDisplay);
 rewrite_record!(FeatureCircularArc, []; {center, normal, radius, angles});
 rewrite_scalar!(FeatureCoordinateFrame);

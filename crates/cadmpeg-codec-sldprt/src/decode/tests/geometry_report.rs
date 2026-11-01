@@ -89,6 +89,7 @@ fn native_planar_and_spatial_sketch_geometry_is_reported() {
         &cadmpeg_test_support::service_decode_context(),
         &ir,
         &mut report,
+        None,
     )
     .unwrap();
 
@@ -102,6 +103,7 @@ fn native_planar_and_spatial_sketch_geometry_is_reported() {
 fn only_sketch_owned_relation_records_without_constraints_are_counted() {
     let mut ir = CadIr::empty();
     ir.model.features.push(Feature {
+        product_definition: None,
         id: FeatureId::mint("synthetic:test:id#sketch-feature").expect("identity grammar"),
         ordinal: 0,
         name: None,
@@ -427,6 +429,7 @@ fn authored_other_pmi_does_not_record_a_historical_decode_failure() {
     let mut ir = CadIr::empty();
     let owner = FeatureId::mint("synthetic:test:id#owner").expect("identity grammar");
     ir.model.features.push(Feature {
+        product_definition: None,
         id: owner.clone(),
         ordinal: 0,
         name: Some("Feature".into()),
@@ -446,6 +449,7 @@ fn authored_other_pmi_does_not_record_a_historical_decode_failure() {
         native_ref: None,
     });
     ir.model.parameters.push(DesignParameter {
+        product_definition: None,
         driving: true,
         id: ParameterId::mint("synthetic:test:id#parameter").expect("identity grammar"),
         owner: Some(owner),
@@ -481,6 +485,7 @@ fn authored_other_pmi_does_not_record_a_historical_decode_failure() {
         &cadmpeg_test_support::service_decode_context(),
         &ir,
         &mut report,
+        None,
     )
     .unwrap();
 

@@ -84,6 +84,7 @@ pub(crate) fn project_parameters(
                     source_aliases.insert(id.clone(), alias);
                 }
                 let parameter = DesignParameter {
+                    product_definition: None,
                     id,
                     owner: Some(neutral_feature_id(&feature.id)?),
                     ordinal: ordinal_u32,

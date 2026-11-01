@@ -18,6 +18,7 @@ use crate::records::{
 
 pub(crate) const SLDPRT_ARENA_NAMES: &[&str] = &[
     "configurations",
+    "decode_baselines",
     "document_metadata",
     "feature_histories",
     "feature_input_body_selections",
@@ -128,6 +129,16 @@ const SLDPRT_FAMILIES: &[SldprtFamilyRow] = &[
             namespace.set_arena(ctx, row.arena, &model.document_metadata)
         },
         len: |model| model.document_metadata.len(),
+        counts_toward_emptiness: true,
+    },
+    SldprtFamilyRow {
+        arena: "decode_baselines",
+        exactness: (),
+        phase: Phase::ArenaOnly,
+        emit: |ctx, model, row, namespace| {
+            namespace.set_arena(ctx, row.arena, &model.decode_baselines)
+        },
+        len: |model| model.decode_baselines.len(),
         counts_toward_emptiness: true,
     },
     SldprtFamilyRow {
@@ -317,6 +328,22 @@ pub(crate) struct SldprtNative {
     pub(crate) pmi_dimensions: Vec<PmiDimension>,
     /// Typed document metadata retained when the neutral model is not delivered.
     pub(crate) document_metadata: Vec<DocumentMetadata>,
+    /// Decode-time partition digests the writer's replay gates compare against.
+    pub(crate) decode_baselines: Vec<DecodeBaselines>,
+}
+
+/// Decode-time document-partition digests for the writer's replay gates.
+///
+/// These record document state at decode time so the writer can tell an
+/// untouched partition from an edited one. They are never document content.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub(crate) struct DecodeBaselines {
+    pub(crate) id: cadmpeg_core::text::NonBlankString,
+    pub(crate) brep: String,
+    pub(crate) swobjects: Option<String>,
+    pub(crate) swobjects_material: Option<String>,
+    pub(crate) swobjects_metadata_identity: Option<String>,
 }
 
 /// Model metadata remains queryable without claiming a delivered neutral model.
@@ -363,6 +390,7 @@ impl SldprtNative {
                 .collect::<Result<Vec<_>, _>>()?,
             pmi_dimensions: read_arena!("pmi_dimensions"),
             document_metadata: read_arena!("document_metadata"),
+            decode_baselines: read_arena!("decode_baselines"),
         };
         let configurations: Vec<crate::records::Configuration> = read_arena!("configurations");
         let features: Vec<crate::records::Feature> = read_arena!("features");

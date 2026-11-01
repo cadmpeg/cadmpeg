@@ -347,6 +347,7 @@ pub(super) fn project(
         if let Some(operation) = operation {
             ctx.charge_entities(1, "iges_primitive_features")?;
             ir.model.features.push(cadmpeg_ir::features::Feature {
+                product_definition: None,
                 id: crate::ids::feature(&crate::ids::Stem::directory(entry.sequence)),
                 ordinal: u64::from(entry.sequence),
                 name: std::str::from_utf8(&entry.label)

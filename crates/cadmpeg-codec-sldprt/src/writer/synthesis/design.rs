@@ -238,6 +238,7 @@ fn append_feature(
         })?;
     };
     ir.model.features.push(Feature {
+        product_definition: None,
         id: id.clone(),
         ordinal,
         name: Some(name.into()),

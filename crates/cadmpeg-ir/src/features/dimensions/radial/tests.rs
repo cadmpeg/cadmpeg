@@ -8,6 +8,7 @@ use crate::CadIr;
 fn parameter(id: ParameterId) -> DesignParameter {
     let value = ParameterValue::Length(Length::new(12.0).unwrap());
     DesignParameter {
+        product_definition: None,
         id,
         owner: None,
         ordinal: 0,

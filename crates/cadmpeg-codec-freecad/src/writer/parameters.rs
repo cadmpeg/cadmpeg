@@ -9,8 +9,21 @@ use super::xml::{self, Object};
 use crate::loss::FreecadLossCode;
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::sketches::SketchConstraintDefinitionInput as Constraint;
-use cadmpeg_ir::{document::CadIr, features::ParameterValue, report::loss::LossNote};
+use cadmpeg_ir::{
+    document::CadIr,
+    features::{Expression, ParameterValue},
+    report::loss::LossNote,
+};
 use std::collections::HashMap;
+
+/// A binding that restates the value lane carries no formula the value
+/// lane does not already hold. Omitting it keeps the re-decode from gaining
+/// an engine binding the source never stated.
+fn is_literal_binding(parameter: &cadmpeg_ir::features::DesignParameter) -> bool {
+    parameter.value.as_ref().is_some_and(|value| {
+        parameter.expression == Expression::literal(value)
+    })
+}
 
 pub(in crate::writer) fn parameter_reference(
     ir: &CadIr,
@@ -184,14 +197,16 @@ pub(super) fn write(
             continue;
         }
         if let Some((sketch, path)) = constraints.get(parameter.id.as_str()) {
-            if let Some(name) = names.get(*sketch) {
-                expressions
-                    .entry(name.clone())
-                    .or_default()
-                    .push(xml::element(
-                        "Expression",
-                        &[("path", path.clone()), ("expression", expression.clone())],
-                    ));
+            if !is_literal_binding(parameter) {
+                if let Some(name) = names.get(*sketch) {
+                    expressions
+                        .entry(name.clone())
+                        .or_default()
+                        .push(xml::element(
+                            "Expression",
+                            &[("path", path.clone()), ("expression", expression.clone())],
+                        ));
+                }
             }
             continue;
         }
@@ -249,17 +264,19 @@ pub(super) fn write(
             .find(|object| object.name == name)
             .ok_or_else(|| CodecError::malformed("parameter owner is absent"))?;
         // Dynamic metadata distinguishes authored scalar parameters from
-        // application controls. Every expression has an explicit binding,
-        // including a literal expression whose evaluated value differs.
+        // application controls. A literal restates its value lane, so only a
+        // formula needs an explicit binding.
         let property = property.replacen("<Property ", "<Property group=\"Parameters\" ", 1);
         object.set(property_name, property);
-        expressions.entry(name).or_default().push(xml::element(
-            "Expression",
-            &[
-                ("path", property_name.to_owned()),
-                ("expression", expression),
-            ],
-        ));
+        if !is_literal_binding(parameter) {
+            expressions.entry(name).or_default().push(xml::element(
+                "Expression",
+                &[
+                    ("path", property_name.to_owned()),
+                    ("expression", expression),
+                ],
+            ));
+        }
     }
     controls::write(ir, objects, names, &mut expressions, losses)?;
     names::write(ir, objects, names)?;

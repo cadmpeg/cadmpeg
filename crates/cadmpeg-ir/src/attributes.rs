@@ -104,6 +104,19 @@ pub enum AttributeTarget {
     },
 }
 
+impl AttributeTarget {
+    /// Record target for the first neutral record linked to a native owner.
+    ///
+    /// Returns `None` when no neutral record's `native_ref` names the owner;
+    /// the attribute then has no neutral home and is not projected.
+    pub fn record_for(model: &crate::document::Model, owner: &str) -> Option<Self> {
+        crate::schema::native_links::linking_record(model, owner).map(|(arena, id)| Self::Record {
+            arena,
+            id,
+        })
+    }
+}
+
 /// One ordered typed value from a source attribute record.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]

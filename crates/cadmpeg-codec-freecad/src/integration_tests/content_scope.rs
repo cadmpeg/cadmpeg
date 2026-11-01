@@ -8,6 +8,7 @@ use cadmpeg_core::decode::DecodeDepth;
 use cadmpeg_ir::document::{ArenaClass, ArenaClasses, ContentScope};
 use cadmpeg_ir::report::{loss::LossTaxonomy, Severity};
 use cadmpeg_ir::{Codec, DecodeOptions};
+use cadmpeg_ir::codec::write::Encoder;
 use std::io::Cursor;
 
 const TYPED_EXTENSION: &str = r#"<Document SchemaVersion="4" FileVersion="1">
@@ -45,12 +46,9 @@ fn geometry_projection_declares_scope_before_its_content_digest() {
     let (ir, _, fidelity) = decoded.into_parts();
     assert!(fidelity.unrepresented().is_empty());
     let ctx = cadmpeg_test_support::service_decode_context();
-    let recorded = fidelity
-        .metadata
-        .get(cadmpeg_ir::hash::DOCUMENT_FINGERPRINT_METADATA_KEY)
-        .unwrap();
+    let recorded = fidelity.decode_digest.clone().expect("decode digest");
     assert_eq!(
-        *recorded,
+        recorded.as_str(),
         crate::writer::target::document_local_sha256(&ctx, &ir).unwrap()
     );
     let mut full_scope = ir.clone();
@@ -225,19 +223,60 @@ fn dynamic_numeric_application_extras_keep_model_ownership_at_geometry_depth() {
     assert!(geometry.ir().model.parameters.is_empty());
     assert_eq!(geometry.ir().model.attributes, full.ir().model.attributes);
     assert_eq!(geometry.report().losses, full.report().losses);
-    for (name, expected) in [("AngleMax", 90.0), ("AngleMin", -90.0)] {
-        let attribute = full
-            .ir()
-            .model
-            .attributes
+    // The Application object has no neutral home, so its properties stay
+    // native-only: no attribute names them.
+    assert!(full.ir().model.attributes.is_empty());
+    for (name, expected) in [("AngleMax", "90"), ("AngleMin", "-90")] {
+        let namespace = full.ir().native.namespace("fcstd").unwrap();
+        let properties = namespace
+            .arena_as::<PropertyRecord>("properties")
+            .unwrap();
+        let property = properties
             .iter()
-            .find(|attribute| attribute.name == name)
+            .find(|property| property.name == name)
             .unwrap();
         assert_eq!(
-            attribute.values,
-            vec![Some(
-                cadmpeg_ir::attributes::AttributeValue::float(expected).unwrap()
-            )]
+            property
+                .values()
+                .iter()
+                .find(|value| value.tag == "Float")
+                .and_then(|value| value.attributes.get("value"))
+                .map(String::as_str),
+            Some(expected)
+        );
+    }
+    let plan = FcstdCodec
+        .plan(
+            cadmpeg_ir::codec::write::EncodeInput::new(full.ir(), None),
+            cadmpeg_ir::codec::write::target::TargetRequest::Inherit,
+        )
+        .unwrap();
+    let mut bytes = Vec::new();
+    plan.write_to(&mut bytes).unwrap();
+    let output = FcstdCodec
+        .decode(
+            &mut Cursor::new(bytes.as_slice()),
+            &DecodeOptions::default(),
+        )
+        .unwrap();
+    assert!(output.ir().model.attributes.is_empty());
+    for (name, expected) in [("AngleMax", "90"), ("AngleMin", "-90")] {
+        let namespace = output.ir().native.namespace("fcstd").unwrap();
+        let properties = namespace
+            .arena_as::<PropertyRecord>("properties")
+            .unwrap();
+        let property = properties
+            .iter()
+            .find(|property| property.name == name)
+            .expect("kept native property");
+        assert_eq!(
+            property
+                .values()
+                .iter()
+                .find(|value| value.tag == "Float")
+                .and_then(|value| value.attributes.get("value"))
+                .map(String::as_str),
+            Some(expected)
         );
     }
 }

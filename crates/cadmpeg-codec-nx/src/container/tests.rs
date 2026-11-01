@@ -80,7 +80,6 @@ fn container_bounded_entry_tail_stops_at_the_next_stream() {
     let payload = [1, 2, 3, 4, 5, 6];
     let container = Container {
         data: payload.as_slice().into(),
-        physical_size: cadmpeg_core::decode::u64_from_index(payload.len()),
         layout: ContainerLayout::LegacyCfb { version: 0 },
         entries: vec![
             DirEntry {
@@ -111,7 +110,6 @@ fn container_cached_operation_labels_preserve_section_materialization() {
     let payload = size_framed_om_section_with_repeated_operations(2);
     let container = Container {
         data: payload.as_slice().into(),
-        physical_size: cadmpeg_core::decode::u64_from_index(payload.len()),
         layout: test_modern_layout(0),
         entries: vec![DirEntry {
             name: "/Root/om".into(),
@@ -152,10 +150,8 @@ fn container_caches_owned_section_layouts() {
     let payload_len = cadmpeg_core::decode::u64_from_index(payload.len());
     let mut file = vec![0xaa; 17];
     file.extend_from_slice(&payload);
-    let physical_size = cadmpeg_core::decode::u64_from_index(file.len());
     let container = Container {
         data: file.into(),
-        physical_size,
         layout: test_modern_layout(0),
         entries: vec![DirEntry {
             name: "/Root/om".into(),

@@ -648,6 +648,7 @@ pub(crate) fn project_parameters(
         let id = parameter_id(parameter)?;
         let (expression, _) = renderer.emit(token, parameter.formula.index(), expression_length)?;
         projected.push(DesignParameter {
+            product_definition: None,
             id,
             owner,
             ordinal: parameter.header.source_index,
@@ -2319,6 +2320,7 @@ mod tests {
     #[test]
     fn retains_parameter_cycles_and_their_dependents() {
         let make = |name: &str, dependencies: Vec<ParameterId>| DesignParameter {
+            product_definition: None,
             id: ParameterId::mint(format!("synthetic:test:id#{name}")).expect("identity grammar"),
             owner: None,
             ordinal: 0,
@@ -2378,6 +2380,7 @@ mod tests {
             ParameterId::mint(format!("synthetic:test:id#{name}")).expect("identity grammar")
         };
         let make = |name: &str, dependency: Option<&str>| DesignParameter {
+            product_definition: None,
             id: id(name),
             owner: None,
             ordinal: 0,
@@ -2419,6 +2422,7 @@ mod tests {
             .expect("identity grammar");
         let make =
             |name: &str, ordinal: u32, dependency: Option<&str>, owned: bool| DesignParameter {
+                product_definition: None,
                 id: id(name),
                 owner: owned.then(|| owner.clone()),
                 ordinal,

@@ -351,6 +351,11 @@ fn insert_source_binding(
     packet: &SourcedPacket,
     appearance: &AppearanceId,
 ) -> Result<(), cadmpeg_core::CodecError> {
+    let Some(target) =
+        cadmpeg_ir::appearance::AppearanceTarget::record_for(&ir.model, &packet.source_id)
+    else {
+        return Ok(());
+    };
     // Hex encoding preserves the source token while excluding key delimiters.
     let key = appearance
         .as_str()
@@ -361,15 +366,7 @@ fn insert_source_binding(
         LowerHex(packet.source_id.as_bytes())
     );
     let id = AppearanceBindingId::mint(id).map_err(cadmpeg_core::CodecError::malformed)?;
-    insert_binding_record(
-        ctx,
-        ir,
-        appearance,
-        AppearanceTarget::Source {
-            source_id: packet.source_id.clone(),
-        },
-        id,
-    )
+    insert_binding_record(ctx, ir, appearance, target, id)
 }
 
 fn insert_binding_record(
@@ -433,7 +430,7 @@ mod tests {
 
     #[test]
     fn appearance_binding_entity_limit_refuses_before_binding() {
-        let mut ir = model(0);
+        let mut ir = model(1);
         let native = native(vec![inline(&[0x01, 1, 2, 3])]);
         let arena = cadmpeg_core::decode::DecodeArena::new();
         let mut policy = cadmpeg_core::decode::DecodePolicy::service();
@@ -729,28 +726,20 @@ mod tests {
                 result.emitted_assets,
                 result.emitted_bindings
             ),
-            (2, 1, 1, 2, 7)
+            (2, 1, 1, 2, 6)
         );
         assert!(ir
             .model
             .appearances
             .iter()
             .any(|asset| asset.id.as_str().contains("143de0ff")));
-        assert_eq!(
-            ir.model
-                .appearance_bindings
-                .iter()
-                .filter(|binding| matches!(binding.target, AppearanceTarget::Source { .. }))
-                .count(),
-            1
-        );
-        assert!(ir.model.appearance_bindings.iter().any(|binding| {
-            binding.appearance.as_str().contains("143de0ff")
-                && matches!(
-                    &binding.target,
-                    AppearanceTarget::Source { source_id }
-                        if source_id == "values:field#0000000007:000001"
-                )
+        assert!(ir
+            .model
+            .appearance_bindings
+            .iter()
+            .all(|binding| !matches!(binding.target, AppearanceTarget::Source { .. })));
+        assert!(ir.model.appearance_bindings.iter().all(|binding| {
+            !binding.appearance.as_str().contains("143de0ff")
         }));
         assert!(ir
             .model
@@ -767,6 +756,17 @@ mod tests {
             source_id: "catia:outer:value-block#0001:field#0002".into(),
         };
         let mut ir = model(0);
+        ir.model.faces.push(cadmpeg_ir::topology::Face {
+            native_ref: Some(packet.source_id.clone()),
+            id: FaceId::mint("catia:test:face#face").expect("identity grammar"),
+            shell: ShellId::mint("catia:test:shell#shell").expect("identity grammar"),
+            surface: SurfaceId::mint("catia:test:surface#surface").expect("identity grammar"),
+            sense: Sense::Forward,
+            loops: cadmpeg_ir::topology::FaceLoops::unspecified(Vec::new()),
+            name: None,
+            color: None,
+            tolerance: None,
+        });
         crate::test_support::with_service_context(|ctx| {
             let appearance = super::admit_color(
                 ctx,
@@ -789,10 +789,17 @@ mod tests {
             .id
             .as_str()
             .starts_with("catia:appearance:source-binding#source-"));
-        assert!(matches!(
-            &binding.target,
-            AppearanceTarget::Source { source_id } if source_id == &packet.source_id
-        ));
+        let AppearanceTarget::Record { arena, id } = &binding.target else {
+            panic!("linked source binding names its neutral record");
+        };
+        assert_eq!(arena.as_str(), "faces");
+        let face = ir
+            .model
+            .faces
+            .iter()
+            .find(|face| face.id.as_str() == id)
+            .expect("bound face");
+        assert_eq!(face.native_ref.as_deref(), Some(packet.source_id.as_str()));
     }
 
     #[test]
@@ -852,7 +859,7 @@ mod tests {
                 result.unresolved_packets,
                 result.emitted_bindings
             ),
-            (6, 0, 6, 12)
+            (6, 0, 6, 6)
         );
         assert_eq!(
             ir.model
@@ -860,7 +867,7 @@ mod tests {
                 .iter()
                 .filter(|binding| matches!(binding.target, AppearanceTarget::Source { .. }))
                 .count(),
-            6
+            0
         );
         assert!(ir
             .model
@@ -894,13 +901,9 @@ mod tests {
                 result.unresolved_packets,
                 result.emitted_bindings,
             ),
-            (6, 0, 6, 6)
+            (6, 0, 6, 0)
         );
-        assert!(ir
-            .model
-            .appearance_bindings
-            .iter()
-            .all(|binding| matches!(binding.target, AppearanceTarget::Source { .. })));
+        assert!(ir.model.appearance_bindings.is_empty());
     }
 
     #[test]
@@ -979,7 +982,7 @@ mod tests {
                 result.unresolved_packets,
                 result.emitted_bindings
             ),
-            (7, 0, 7, 13)
+            (7, 0, 7, 6)
         );
         assert_eq!(
             ir.model
@@ -987,7 +990,7 @@ mod tests {
                 .iter()
                 .filter(|binding| matches!(binding.target, AppearanceTarget::Source { .. }))
                 .count(),
-            7
+            0
         );
         assert!(ir
             .model
@@ -1111,7 +1114,7 @@ mod tests {
                 result.unresolved_packets,
                 result.emitted_bindings
             ),
-            (0, 6, 12)
+            (0, 6, 6)
         );
         for (index, binding) in ir
             .model
@@ -1135,7 +1138,7 @@ mod tests {
                 .iter()
                 .filter(|binding| matches!(binding.target, AppearanceTarget::Source { .. }))
                 .count(),
-            6
+            0
         );
     }
 
@@ -1175,7 +1178,7 @@ mod tests {
         .expect("inline colors transfer without a refusal");
         assert_eq!(result.decoded_packets(), 2);
         assert_eq!(result.emitted_assets, 2);
-        assert_eq!(result.emitted_bindings, 2);
+        assert_eq!(result.emitted_bindings, 0);
         assert_eq!(result.source_colors.len(), 2);
         assert_ne!(result.source_colors[0].id, result.source_colors[1].id);
         assert_ne!(
@@ -1195,18 +1198,7 @@ mod tests {
             let wire = serde_json::to_value(source).expect("the source color serializes");
             assert!(wire.get("appearance").is_none());
         }
-        for (binding, appearance) in ir
-            .model
-            .appearance_bindings
-            .iter()
-            .zip(&ir.model.appearances)
-        {
-            assert_eq!(binding.appearance, appearance.id);
-        }
-        assert_ne!(
-            ir.model.appearance_bindings[0].id,
-            ir.model.appearance_bindings[1].id
-        );
+        assert!(ir.model.appearance_bindings.is_empty());
         assert_eq!(ir.model.bodies[0].color, None);
     }
 

@@ -35,6 +35,7 @@ fn complete_block_ir() -> CadIr {
     let body = BodyId::mint("test:model:entity#body".to_string()).expect("identity grammar");
     ir.model.bodies.push(model_body(body.as_str()));
     ir.model.features.push(Feature {
+        product_definition: None,
         needs_recompute: false,
         id: FeatureId::mint("synthetic:test:id#block".to_string()).expect("identity grammar"),
         ordinal: 0,
@@ -93,6 +94,7 @@ fn attach_complete_active_configuration(ir: &mut CadIr) {
 
 fn complete_hole(body: BodyId) -> Feature {
     Feature {
+        product_definition: None,
         needs_recompute: false,
         id: FeatureId::mint("synthetic:test:id#hole".to_string()).expect("identity grammar"),
         ordinal: 1,
@@ -145,6 +147,7 @@ fn body_preserving_feature(
     definition: FeatureDefinition,
 ) -> Feature {
     Feature {
+        product_definition: None,
         needs_recompute: false,
         id: FeatureId::mint(format!("synthetic:test:id#{id}")).expect("identity grammar"),
         ordinal,
@@ -166,6 +169,7 @@ fn body_preserving_feature(
 
 fn body_neutral_feature(id: &str, ordinal: u64, definition: FeatureDefinition) -> Feature {
     Feature {
+        product_definition: None,
         needs_recompute: false,
         id: FeatureId::mint(format!("synthetic:test:id#{id}")).expect("identity grammar"),
         ordinal,

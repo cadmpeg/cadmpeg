@@ -1742,160 +1742,21 @@ impl F3dNative {
         &self,
     ) -> Result<cadmpeg_ir::SourceFidelity, cadmpeg_core::CodecError> {
         let mut fidelity = cadmpeg_ir::SourceFidelity::default();
-        for header in &self.design_record_headers {
-            if let Some(offset) = header.byte_offset {
-                fidelity
-                    .metadata
-                    .insert(format!("{}.byte_offset", header.id), offset.to_string());
-            }
-        }
-        for root in &self.act_component_links {
-            root.retain_source(&mut fidelity);
-        }
-        for guid in &self.act_guids {
-            for (field, offset) in [
-                ("byte_offset", guid.byte_offset()),
-                ("guid_offset", guid.guid_offset()),
-            ] {
-                if let Some(offset) = offset {
-                    fidelity
-                        .metadata
-                        .insert(format!("{}.{}", guid.id(), field), offset.to_string());
-                }
-            }
-        }
-        for reference in &self.act_table_references {
-            for (field, offset) in [
-                ("byte_offset", reference.byte_offset()),
-                ("target_record_offset", reference.target_record_offset()),
-            ] {
-                if let Some(offset) = offset {
-                    fidelity
-                        .metadata
-                        .insert(format!("{}.{}", reference.id(), field), offset.to_string());
-                }
-            }
-        }
-        for channel in &self.act_registry_channels {
-            for (field, offset) in [
-                ("byte_offset", channel.byte_offset()),
-                ("name_offset", channel.name_offset()),
-                ("guid_offset", channel.guid_offset()),
-            ] {
-                if let Some(offset) = offset {
-                    fidelity
-                        .metadata
-                        .insert(format!("{}.{}", channel.id(), field), offset.to_string());
-                }
-            }
-        }
         for frame in &self.design_dimension_presentation_frames {
             frame.retain_source(&mut fidelity)?;
         }
-        for group in &self.design_dimension_locus_groups {
-            group.retain_source(&mut fidelity);
-        }
         for frame in &self.design_dimension_annotation_frames {
             frame.retain_source(&mut fidelity)?;
-        }
-        for pair in self
-            .design_dimension_locus_pairs
-            .iter()
-            .chain(self.design_dimension_null_locus_pairs.iter())
-        {
-            pair.retain_source(&mut fidelity);
-        }
-        for placement in &self.design_sketch_placements {
-            placement.retain_source(&mut fidelity);
-        }
-        for member in &self.design_body_members {
-            member.retain_source(&mut fidelity);
-        }
-        for bounds in &self.design_body_bounds {
-            bounds.retain_source(&mut fidelity);
-        }
-        for binding in &self.design_body_bindings {
-            binding.retain_source(&mut fidelity);
-        }
-        for visibility in &self.body_visibilities {
-            visibility.retain_source(&mut fidelity);
-        }
-        for group in &self.design_construction_operand_groups {
-            group.retain_source(&mut fidelity);
-        }
-        for identity in &self.design_construction_operand_identities {
-            identity.retain_source(&mut fidelity);
-        }
-        for operand in &self.design_edge_identity_operands {
-            operand.retain_source(&mut fidelity);
         }
         for operand in &self.design_body_recipe_operands {
             operand.retain_source(&mut fidelity)?;
         }
 
-        for recipe in &self.construction_recipes {
-            recipe.retain_source(&mut fidelity);
-        }
-        for naming in &self.design_component_naming_spaces {
-            naming.retain_source(&mut fidelity);
-        }
         for relation in &self.sketch_relations {
             relation.retain_source(&mut fidelity)?;
         }
-        for header in &self.design_entity_headers {
-            header.retain_source(&mut fidelity);
-        }
-        for timeline in &self.design_feature_timelines {
-            timeline.retain_source(&mut fidelity);
-        }
-        for record in self.act_types.iter().chain(&self.design_types) {
-            record.retain_source(&mut fidelity);
-        }
         for entity in &self.act_entities {
             entity.retain_source(&mut fidelity)?;
-        }
-        for history in &self.asm_histories {
-            for (field, value) in [
-                (
-                    "byte_offset",
-                    history.byte_offset.map(|value| value.to_string()),
-                ),
-                (
-                    "stream_size",
-                    history.stream_size().map(|value| value.to_string()),
-                ),
-                (
-                    "history_entry_count",
-                    history.history_entry_count().map(|value| value.to_string()),
-                ),
-            ] {
-                if let Some(value) = value {
-                    fidelity
-                        .metadata
-                        .insert(format!("{}.{}", history.id, field), value);
-                }
-            }
-            for state in history.states() {
-                if let Some(offset) = state.byte_offset {
-                    fidelity
-                        .metadata
-                        .insert(format!("{}.byte_offset", state.id), offset.to_string());
-                }
-                for board in &state.bulletin_boards {
-                    if let Some(offset) = board.byte_offset {
-                        fidelity
-                            .metadata
-                            .insert(format!("{}.byte_offset", board.id), offset.to_string());
-                    }
-                    for change in &board.changes {
-                        if let Some(offset) = change.byte_offset {
-                            fidelity
-                                .metadata
-                                .insert(format!("{}.byte_offset", change.id), offset.to_string());
-                        }
-                    }
-                }
-            }
         }
         for record in self
             .asm_histories
@@ -1903,11 +1764,6 @@ impl F3dNative {
             .flat_map(AsmHistory::states)
             .flat_map(|state| &state.records)
         {
-            if let Some(offset) = record.byte_offset {
-                fidelity
-                    .metadata
-                    .insert(format!("{}.byte_offset", record.id), offset.to_string());
-            }
             record.raw_bytes.retain(
                 &mut fidelity,
                 &record.id,
@@ -1926,24 +1782,7 @@ impl F3dNative {
                 },
             )?;
         }
-        for curve in &self.sketch_curve_identities {
-            if let Some(offset) = curve.byte_offset {
-                fidelity
-                    .metadata
-                    .insert(format!("{}.byte_offset", curve.id), offset.to_string());
-            }
-            if let Some(offset) = curve.geometry_offset {
-                fidelity
-                    .metadata
-                    .insert(format!("{}.geometry_offset", curve.id), offset.to_string());
-            }
-        }
         for text in &self.sketch_texts {
-            if let Some(offset) = text.byte_offset {
-                fidelity
-                    .metadata
-                    .insert(format!("{}.byte_offset", text.id), offset.to_string());
-            }
             text.raw_bytes.retain(
                 &mut fidelity,
                 &text.id,
@@ -1959,32 +1798,6 @@ impl F3dNative {
             )?;
         }
         for record in &self.design_dimension_recipe_records {
-            for (name, offset) in [
-                ("byte_offset", record.byte_offset),
-                ("frame_length", record.frame_length),
-                ("prefix_offset", record.prefix_offset),
-                ("program_offset", record.program_offset),
-            ] {
-                if let Some(offset) = offset {
-                    fidelity
-                        .metadata
-                        .insert(format!("{}.{}", record.id, name), offset.to_string());
-                }
-            }
-            for (index, reference) in record.references.iter().enumerate() {
-                for (name, offset) in [
-                    ("selector_offset", reference.selector_offset),
-                    ("token_offset", reference.token_offset),
-                    ("design_reference_offset", reference.design_reference_offset),
-                ] {
-                    if let Some(offset) = offset {
-                        fidelity.metadata.insert(
-                            format!("{}.references.{index}.{name}", record.id),
-                            offset.to_string(),
-                        );
-                    }
-                }
-            }
             record.prefix_bytes.retain(
                 &mut fidelity,
                 &format!("{}:prefix", record.id),

@@ -138,6 +138,15 @@ pub(crate) fn transfer(
         };
         let support = sole_named_property("attachment", owned, "AttachmentSupport")?;
         let mode = sole_named_property("attachment", owned, "MapMode")?;
+        let legacy_support = if crate::design::is_primitive(&object.type_name) && mode.is_some() {
+            sole_named_property("attachment", owned, "Support")?
+        } else {
+            None
+        };
+        let support = match (support, legacy_support) {
+            (Some(_), Some(_)) => continue,
+            (support, legacy_support) => support.or(legacy_support),
+        };
         let placement = placement_matrix(sole_named_property("attachment", owned, "Placement")?)?;
         let offset = placement_matrix(sole_named_property(
             "attachment",

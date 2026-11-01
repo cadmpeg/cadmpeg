@@ -4,6 +4,11 @@
 use cadmpeg_core::decode::u64_from_index;
 
 use crate::design::decode::parameters::design_parameter_discriminator;
+use crate::records::feature::extrude::DesignExtrudeExtent;
+use crate::records::feature::extrude::DesignExtrudeOperation;
+use crate::records::feature::extrude::DesignExtrudePrologue;
+use crate::records::feature::extrude::DesignExtrudeStart;
+use crate::records::feature::scope::DesignParameterScope;
 use crate::test_support::lp_utf16;
 use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
 
@@ -276,4 +281,124 @@ pub(crate) fn name_scope_references(
             draft.layout_fixture_tail();
         })
         .expect("the scope fixture admits its extended reference table");
+}
+
+pub(crate) fn set_extrude_operation(
+    scope: &mut DesignParameterScope,
+    operation: DesignExtrudeOperation,
+) {
+    let Some(
+        DesignExtrudePrologue::LegacyDistance {
+            operation: value, ..
+        }
+        | DesignExtrudePrologue::ReferenceAware {
+            operation: value, ..
+        }
+        | DesignExtrudePrologue::ShiftedReferenceAware {
+            operation: value, ..
+        }
+        | DesignExtrudePrologue::LegacyShifted {
+            operation: value, ..
+        },
+    ) = scope.extrude_prologue_mut()
+    else {
+        panic!("test scope must carry an Extrude prologue");
+    };
+    *value = operation;
+}
+
+pub(crate) fn set_extrude_extent(scope: &mut DesignParameterScope, extent: DesignExtrudeExtent) {
+    let Some(prologue) = scope.extrude_prologue_mut() else {
+        panic!("test scope must carry an Extrude prologue");
+    };
+    match prologue {
+        DesignExtrudePrologue::LegacyDistance { .. } => {
+            assert_eq!(extent, DesignExtrudeExtent::OneSidedDistance);
+        }
+        DesignExtrudePrologue::ReferenceAware {
+            extent: value,
+            direction_face_extend_values,
+            side_extent_discriminators,
+            first_side_target_ordinal,
+            ..
+        } => {
+            *value = extent;
+            (direction_face_extend_values[0], *side_extent_discriminators) = match extent {
+                DesignExtrudeExtent::OneSidedDistance => (1, [1, 0]),
+                DesignExtrudeExtent::OneSidedToFace => (1, [2, 0]),
+                DesignExtrudeExtent::OneSidedThroughNext => (1, [3, 0]),
+                DesignExtrudeExtent::OneSidedThroughAll => (1, [4, 0]),
+                DesignExtrudeExtent::TwoSidedToFaces => (2, [2, 0]),
+                DesignExtrudeExtent::TwoSidedDistance => (2, [1, 1]),
+                DesignExtrudeExtent::TwoSidedDistanceToFace => (2, [1, 2]),
+                DesignExtrudeExtent::SymmetricDistance => (3, [1, 0]),
+                DesignExtrudeExtent::SymmetricThroughAll => (3, [4, 4]),
+            };
+            if extent != DesignExtrudeExtent::OneSidedToFace {
+                *first_side_target_ordinal = None;
+            }
+        }
+        DesignExtrudePrologue::LegacyShifted {
+            extent: value,
+            direction_face_extend_values,
+            side_extent_discriminators,
+            ..
+        } => {
+            *value = Some(extent);
+            (*direction_face_extend_values, *side_extent_discriminators) = match extent {
+                DesignExtrudeExtent::OneSidedDistance => ([1, 0], [1, 0]),
+                DesignExtrudeExtent::OneSidedToFace => ([1, 0], [2, 0]),
+                DesignExtrudeExtent::OneSidedThroughNext => ([1, 0], [3, 0]),
+                DesignExtrudeExtent::OneSidedThroughAll => ([1, 0], [4, 0]),
+                DesignExtrudeExtent::TwoSidedToFaces => ([2, 0], [2, 0]),
+                DesignExtrudeExtent::TwoSidedDistance => ([2, 0], [1, 1]),
+                DesignExtrudeExtent::TwoSidedDistanceToFace => ([2, 0], [1, 2]),
+                DesignExtrudeExtent::SymmetricDistance => ([3, 0], [1, 0]),
+                DesignExtrudeExtent::SymmetricThroughAll => ([3, 0], [4, 4]),
+            };
+        }
+        DesignExtrudePrologue::ShiftedReferenceAware {
+            extent: value,
+            direction_face_extend_values,
+            side_extent_discriminators,
+            ..
+        } => {
+            assert_eq!(extent, DesignExtrudeExtent::TwoSidedToFaces);
+            *value = extent;
+            (*direction_face_extend_values, *side_extent_discriminators) = ([2, 1], [2, 0]);
+        }
+    }
+}
+
+pub(crate) fn set_extrude_direction_reversed(scope: &mut DesignParameterScope, reversed: bool) {
+    let Some(
+        DesignExtrudePrologue::LegacyDistance {
+            direction_reversed, ..
+        }
+        | DesignExtrudePrologue::ReferenceAware {
+            direction_reversed, ..
+        }
+        | DesignExtrudePrologue::ShiftedReferenceAware {
+            direction_reversed, ..
+        }
+        | DesignExtrudePrologue::LegacyShifted {
+            direction_reversed, ..
+        },
+    ) = scope.extrude_prologue_mut()
+    else {
+        panic!("test scope must carry an Extrude prologue");
+    };
+    *direction_reversed = reversed;
+}
+
+pub(crate) fn set_extrude_start(scope: &mut DesignParameterScope, start: DesignExtrudeStart) {
+    let Some(
+        DesignExtrudePrologue::ReferenceAware { start: value, .. }
+        | DesignExtrudePrologue::ShiftedReferenceAware { start: value, .. }
+        | DesignExtrudePrologue::LegacyShifted { start: value, .. },
+    ) = scope.extrude_prologue_mut()
+    else {
+        panic!("test scope must carry an Extrude prologue");
+    };
+    *value = start;
 }

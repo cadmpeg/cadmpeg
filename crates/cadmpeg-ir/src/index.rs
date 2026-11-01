@@ -476,6 +476,7 @@ mod tests {
         ir.native.0.insert("test".into(), namespace);
         let model_id = "test:fixture:model#0";
         ir.model.parameters.push(crate::features::DesignParameter {
+            product_definition: None,
             id: crate::features::ParameterId::mint(model_id).expect("identity grammar"),
             owner: None,
             ordinal: 0,
@@ -553,6 +554,7 @@ mod tests {
             crate::features::ParameterId::mint("test:test:parameter#0").expect("identity grammar");
         for (ordinal, expression) in [(0, "first"), (1, "last")] {
             ir.model.parameters.push(crate::features::DesignParameter {
+                product_definition: None,
                 id: parameter_id.clone(),
                 owner: None,
                 ordinal,

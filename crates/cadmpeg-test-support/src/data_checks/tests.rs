@@ -6,6 +6,7 @@ use serde_json::json;
 use super::{
     equation_identities, expression_text_findings, feature_ordinal_findings,
     freecad_stale_findings, never_stale_findings, solidworks_stale_findings,
+    source_attributes_findings,
 };
 
 #[test]
@@ -101,4 +102,63 @@ fn solidworks_staleness_follows_the_active_configuration() {
                   "features": [{"id": "f", "needs_recompute": true}]},
     });
     assert_eq!(solidworks_stale_findings(&fresh).len(), 1);
+}
+
+#[test]
+fn clean_source_attributes_pass() {
+    let document = json!({"source": {"attributes": {
+        "product_family": "Acme",
+        "save_date": "today",
+        "modeling_length_unit": "mm",
+        "outer_version": "0x1",
+        "archive_version": "5",
+        "container_kind": "3dm-chunks",
+        "schema": "AP242",
+        "scale": "1.0",
+        "author": "me",
+        "sw_configuration_name": "Default",
+        "external_reference_0": "part.stp",
+        "preview_0_width": "10",
+        "section_count": "0",
+    }}});
+    // `section_count` ends in a forbidden token; everything else is clean.
+    let findings = source_attributes_findings(&document);
+    assert_eq!(findings.len(), 1, "{findings:?}");
+    assert!(findings[0].contains("section_count"), "{findings:?}");
+}
+
+#[test]
+fn forbidden_source_attribute_keys_fail() {
+    for key in [
+        "document_local_sha256",
+        "brep_local_sha256",
+        "active_brep",
+        "thumbnail_bytes",
+        "sldprt_active_partition_unresolved",
+        "file_size",
+        "zip_entry_count",
+        "solved_record_len",
+        "history_partition_offset",
+        "footer_fingerprint",
+        "active_brep_sha256",
+        "section.0.name",
+        "section.0.offset",
+        "section.0.raw_name",
+        "layer.0.name",
+        "deltas.0.bytes_decoded",
+        "active_parasolid_block",
+    ] {
+        let document = json!({"source": {"attributes": {key: "0"}}});
+        assert_eq!(
+            source_attributes_findings(&document).len(),
+            1,
+            "{key} must fail check 2"
+        );
+    }
+}
+
+#[test]
+fn source_attributes_without_a_source_map_pass() {
+    assert!(source_attributes_findings(&json!({})).is_empty());
+    assert!(source_attributes_findings(&json!({"source": {}})).is_empty());
 }

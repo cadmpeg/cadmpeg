@@ -36,9 +36,9 @@ use cadmpeg_ir::Exactness;
 use std::collections::{BTreeMap, HashMap, HashSet};
 
 use crate::assemble::{
-    annotate, circle_parameter_range_from_surface_branch, insert_unresolved_carrier_loss,
-    link_payload_carriers, neutral_model_is_admissible, ordered_range, preserve_raw_payload,
-    quintic_jet_pcurve, rational_pcurve_arc,
+    annotate, cgm_source, cgm_source_key, circle_parameter_range_from_surface_branch,
+    insert_unresolved_carrier_loss, neutral_model_is_admissible, ordered_range,
+    preserve_raw_payload, quintic_jet_pcurve, rational_pcurve_arc,
 };
 use crate::container::ContainerScan;
 use crate::families::{FamilyEntityAdmission, FamilyOutput};
@@ -157,7 +157,7 @@ pub(in crate::families) fn try_decode_e5(
         let mut admission = FamilyEntityAdmission::new(ctx);
         let mut annotations = AnnotationBuilder::new();
         let mut unknowns = Vec::new();
-        let payload_index = match preserve_raw_payload(
+        let _payload_index = match preserve_raw_payload(
             ctx,
             &mut unknowns,
             &mut annotations,
@@ -198,7 +198,7 @@ pub(in crate::families) fn try_decode_e5(
 parameter_range: None,
                 id,
                 geometry: circle.geometry.clone(),
-                source_object: None,
+                source_object: Some(admitted!(cgm_source_key("e5-circle", circle.pos))),
             });
         }
         for (index, surface) in surfaces.iter().enumerate() {
@@ -217,7 +217,10 @@ parameter_range: None,
             ir.model.surfaces.push(Surface { native_ref: None,
                 id,
                 geometry: surface.geometry.clone(),
-                source_object: None,
+                source_object: Some(admitted!(cgm_source(
+                    "e5-surface",
+                    surface.record_id
+                ))),
             });
         }
         for (index, jet) in rolling_ball_jets.iter().enumerate() {
@@ -323,9 +326,6 @@ refusal,
             losses.push((CatiaLossCode::TopologyE5GraphUnclosed).note("E5 carriers were decoded, but the reference graph could not be transferred with a closed surface/pcurve/vertex binding.".to_string()));
         }
         insert_unresolved_carrier_loss(&ir, &mut losses);
-        if let Err(error) = link_payload_carriers(&ir, &mut unknowns[payload_index], &mut annotations) {
-            return Some(Err(error));
-        }
         let annotations = annotations.build();
         Some(Ok(FamilyOutput {
             ir,

@@ -11279,11 +11279,7 @@
   },
   "source_fidelity": {
     "annotations": {},
-    "metadata": {
-      "document_local_sha256": "8c5be16eae05ff663b69c232a3059dcda3bd93f638061e430815af7e6b98e54f",
-      "fcstd.archive_entry_count": "12",
-      "fcstd.object_count": "17"
-    },
+    "decode_digest": "8c5be16eae05ff663b69c232a3059dcda3bd93f638061e430815af7e6b98e54f",
     "retained_records": {
       "fcstd:source:image#archive": {
         "bytes": {

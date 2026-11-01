@@ -600,9 +600,7 @@
   },
   "source_fidelity": {
     "annotations": {},
-    "metadata": {
-      "document_local_sha256": "de6b606cae4370375fa42dc27c1de6bc053c080cdac31dc9118ff46d8fa25afc"
-    },
+    "decode_digest": "de6b606cae4370375fa42dc27c1de6bc053c080cdac31dc9118ff46d8fa25afc",
     "retained_records": {
       "iges:file:source-image#0": {
         "bytes": {

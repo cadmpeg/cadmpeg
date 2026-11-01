@@ -312,6 +312,44 @@ fn validate_native(ctx: &DecodeContext<'_>, ir: &CadIr) -> Result<Vec<Finding>, 
         )),
         _ => {}
     }
+    let mut primitive_properties =
+        std::collections::HashMap::<&str, Vec<&native::PropertyRecord>>::new();
+    for property in &properties {
+        primitive_properties
+            .entry(property.owner.as_str())
+            .or_default()
+            .push(property);
+    }
+    for feature in &ir.model.features {
+        let operation = match feature.evaluation.definition() {
+            cadmpeg_ir::features::FeatureDefinition::Operation(operation)
+            | cadmpeg_ir::features::FeatureDefinition::PostProcess { operation, .. } => operation,
+        };
+        let cadmpeg_ir::features::FeatureOperation::Primitive { placement, .. } = operation else {
+            continue;
+        };
+        let Some(object) = objects
+            .iter()
+            .find(|object| feature.native_ref.as_deref() == Some(object.id().as_str()))
+        else {
+            continue;
+        };
+        match design::primitive_placement::resolve(object, &objects, &primitive_properties) {
+            Ok(expected)
+                if expected == *placement
+                    && (expected.is_some()
+                        || !design::primitive_placement::carries_frame(
+                            primitive_properties
+                                .get(object.id().as_str())
+                                .map_or(&[][..], Vec::as_slice),
+                        )) => {}
+            _ => findings.push(finding(
+                Check::NativeLinks,
+                "FCStd primitive placement does not match its resolved object and container frames",
+                Some(object.id().to_owned()),
+            )),
+        }
+    }
     let gui_provider_ids = gui_providers
         .iter()
         .map(|provider| provider.id.as_str())
@@ -779,7 +817,7 @@ impl CodecBackend for FcstdCodec {
                 .transpose()?
         };
         let mut admitted_entities = 0_u64;
-        let mut attributes = container::source_attributes(&scan)?;
+        let attributes = container::source_attributes(&scan)?;
         let summary_notes = container::summary_notes(&scan);
         let thumbnail = scan
             .data
@@ -790,20 +828,7 @@ impl CodecBackend for FcstdCodec {
                     .get("Thumbnail.png")
                     .map(|view| ("Thumbnail.png", *view))
             });
-        if let Some((_, thumbnail)) = thumbnail {
-            attributes.insert(
-                cadmpeg_core::nonblank_literal!("thumbnail_bytes"),
-                thumbnail.window().len().to_string(),
-            );
-        }
         let mut source_fidelity = cadmpeg_ir::SourceFidelity::default();
-        for key in ["object_count", "archive_entry_count", "thumbnail_bytes"] {
-            if let Some(value) = attributes.remove(key) {
-                source_fidelity
-                    .metadata
-                    .insert(format!("fcstd.{key}"), value);
-            }
-        }
         ctx.retain_bytes(
             cadmpeg_core::decode::u64_from_index(root.window().len()),
             "retain FCStd source image",
@@ -1244,9 +1269,9 @@ impl CodecBackend for FcstdCodec {
         )?);
         fidelity::mark_unreadable(&ir, &mut source_fidelity)?;
         let document_digest = writer::target::document_local_sha256(ctx, &ir)?;
-        source_fidelity.metadata.insert(
-            cadmpeg_ir::hash::DOCUMENT_FINGERPRINT_METADATA_KEY.into(),
-            document_digest,
+        source_fidelity.decode_digest = Some(
+            cadmpeg_ir::hash::digest::Sha256Digest::try_from(document_digest)
+                .map_err(CodecError::malformed)?,
         );
         ctx.admit_entities(
             cadmpeg_core::decode::u64_from_index(ir.model.entity_count()),
@@ -1309,8 +1334,20 @@ fn semantic_losses(
         let cadmpeg_ir::features::FeatureOperation::Native { kind, .. } = definition else {
             continue;
         };
-        let code = FreecadLossCode::FeatureNativeKindRetained;
-        let suffix = " is retained natively but has no neutral semantics";
+        let (code, suffix) = if matches!(
+            kind.as_str(),
+            "PartDesign::Revolution" | "PartDesign::Groove" | "Part::Revolution"
+        ) {
+            (
+                FreecadLossCode::FeatureRevolutionNotTransferred,
+                " has an unsupported revolution type, axis, selection, flag, or angular extent and remains native",
+            )
+        } else {
+            (
+                FreecadLossCode::FeatureNativeKindRetained,
+                " is retained natively but has no neutral semantics",
+            )
+        };
         push_semantic_loss(
             &mut losses,
             code,
@@ -1326,7 +1363,14 @@ fn semantic_losses(
         };
         push_semantic_loss(
             &mut losses,
-            FreecadLossCode::SketchNativeGeometry,
+            if matches!(
+                native_kind.as_str(),
+                "Part::GeomBSplineCurve" | "BSplineCurve"
+            ) {
+                FreecadLossCode::SketchNurbsNative
+            } else {
+                FreecadLossCode::SketchNativeGeometry
+            },
             &[
                 "FCStd sketch geometry ",
                 native_kind.as_str(),

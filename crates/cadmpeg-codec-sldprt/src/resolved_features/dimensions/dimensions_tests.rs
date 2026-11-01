@@ -1546,6 +1546,7 @@ fn native_radial_role_propagates_omitted_circle_construction_state() {
 #[test]
 fn radial_dimensions_normalize_radius_and_diameter_displays() {
     let parameter = |display, value| DesignParameter {
+        product_definition: None,
         driving: true,
         id: ParameterId::mint("synthetic:test:id#radial").expect("identity grammar"),
         owner: Some(FeatureId::mint("synthetic:test:id#sketch").expect("identity grammar")),
@@ -1631,6 +1632,7 @@ fn point_dimension_projects_only_from_one_same_sketch_center_witness() {
         }],
     };
     let feature = Feature {
+        product_definition: None,
         id: feature_id.clone(),
         ordinal: 0,
         name: None,
@@ -1649,6 +1651,7 @@ fn point_dimension_projects_only_from_one_same_sketch_center_witness() {
         native_ref: Some(feature_ref.into()),
     };
     let parameter = DesignParameter {
+        product_definition: None,
         driving: true,
         id: ParameterId::mint("synthetic:test:id#parameter").expect("identity grammar"),
         owner: Some(feature_id),

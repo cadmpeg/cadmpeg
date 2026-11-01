@@ -188,6 +188,8 @@ fn a_band_between_two_parallels_and_its_complement() {
     };
     let high = box_candidate.value().max.get();
     assert!((high.x - MAJOR).abs() <= TEST_ABSOLUTE_FLOOR * 12.0);
+    let (angle, full, _) = sweep(measures);
+    assert!(full && angle == TAU, "{angle}");
 }
 
 /// The elbow `u ∈ [0, 1]` of the torus, bounded by its meridians at `u = 0`
@@ -325,4 +327,49 @@ fn a_strip_beyond_the_lift_bounds_is_unavailable_and_checks_without_findings() {
         ctx.finish_session().expect("session stays unrefused");
         assert_eq!(found, Vec::new(), "{}", reason.code());
     }
+}
+
+/// A face's measured angular sweep about the axis: its angle and whether
+/// it is full, with its candidates' angles.
+fn sweep(measures: &crate::report::FaceQuantities) -> (f64, bool, Vec<f64>) {
+    let sweep = measures
+        .angular_sweep()
+        .as_ref()
+        .and_then(Quantity::measured)
+        .expect("sweep");
+    (
+        sweep.value().value.get(),
+        sweep.value().full,
+        sweep
+            .candidates()
+            .iter()
+            .map(|candidate| candidate.value().value.get())
+            .collect(),
+    )
+}
+
+/// The sweep about the axis of a ring torus face is the angle its `u`
+/// covers: the elbow between the meridians `u = 0` and `u = 1` covers 1 and
+/// its complement `2π − 1`; the strip `u ∈ [0, 1]` covers 1; a torus without
+/// loops covers the whole circle.
+#[test]
+fn a_torus_face_sweeps_the_angle_its_meridians_bound() {
+    let report = measure(&elbow([0.0, FRAC_PI_2]), &faces());
+    let (angle, full, candidates) = sweep(only_face(&report).measures());
+    assert!((angle - 1.0).abs() <= 1.0e-12 && !full, "{angle}");
+    let [complement] = candidates.as_slice() else {
+        panic!("the complement candidate");
+    };
+    assert!((complement - (TAU - 1.0)).abs() <= 1.0e-12, "{complement}");
+
+    let report = measure(&strip(0.0, 1.0), &faces());
+    let (angle, full, _) = sweep(only_face(&report).measures());
+    assert!((angle - 1.0).abs() <= 1.0e-12 && !full, "{angle}");
+
+    let mut builder = Builder::new();
+    let torus = builder.torus(Frame::z_up([0.0; 3]), MAJOR, MINOR);
+    builder.face(&torus, Sense::Forward, &[], false);
+    let report = measure(&builder.finish(BodyKind::Solid), &faces());
+    let (angle, full, _) = sweep(only_face(&report).measures());
+    assert!(full && angle == TAU, "{angle}");
 }

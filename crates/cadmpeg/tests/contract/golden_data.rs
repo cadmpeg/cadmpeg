@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-//! Data checks 5, 6 and 7 (#246 IV.2) over every committed decode golden.
+//! Data checks 2, 5, 6 and 7 (#246 IV.2) over every committed decode golden.
 //!
 //! `FreeCAD` decode goldens pin native arenas by digest, so its checks
 //! decode the corpus fixtures those goldens snapshot.
@@ -8,6 +8,7 @@ use cadmpeg_test_support::data_checks::properties::property_map_findings;
 use cadmpeg_test_support::data_checks::{
     decode_goldens, equation_identities, expression_text_findings, feature_ordinal_findings,
     freecad_stale_findings, never_stale_findings, solidworks_stale_findings, DecodeGolden,
+    source_attributes_findings,
 };
 use serde_json::Value;
 
@@ -88,6 +89,17 @@ macro_rules! never_stale {
     };
 }
 
+macro_rules! source_byte_free {
+    ($($module:ident => $crate_name:literal, $test:ident),* $(,)?) => {
+        $(mod $module {
+            #[test]
+            fn $test() {
+                super::assert_clean($crate_name, super::source_attributes_findings);
+            }
+        })*
+    };
+}
+
 golden_data_checks! {
     sat => "cadmpeg-codec-sat", "sat", sat_property_maps_hold_no_native_fact, sat_feature_ordinals_are_dense, sat_expression_text_names_no_parameter,
     step => "cadmpeg-codec-step", "step", step_property_maps_hold_no_native_fact, step_feature_ordinals_are_dense, step_expression_text_names_no_parameter,
@@ -118,6 +130,20 @@ mod sldprt_rule_e {
     fn sldprt_needs_recompute_follows_the_active_configuration() {
         super::assert_clean("cadmpeg-codec-sldprt", super::solidworks_stale_findings);
     }
+}
+
+source_byte_free! {
+    sat_rule_b => "cadmpeg-codec-sat", sat_source_attributes_hold_no_source_byte_fact,
+    step_rule_b => "cadmpeg-codec-step", step_source_attributes_hold_no_source_byte_fact,
+    iges_rule_b => "cadmpeg-codec-iges", iges_source_attributes_hold_no_source_byte_fact,
+    rhino_rule_b => "cadmpeg-codec-rhino", rhino_source_attributes_hold_no_source_byte_fact,
+    freecad_rule_b => "cadmpeg-codec-freecad", freecad_source_attributes_hold_no_source_byte_fact,
+    f3d_rule_b => "cadmpeg-codec-f3d", f3d_source_attributes_hold_no_source_byte_fact,
+    sldprt_rule_b => "cadmpeg-codec-sldprt", sldprt_source_attributes_hold_no_source_byte_fact,
+    inventor_rule_b => "cadmpeg-codec-inventor", inventor_source_attributes_hold_no_source_byte_fact,
+    catia_rule_b => "cadmpeg-codec-catia", catia_source_attributes_hold_no_source_byte_fact,
+    creo_rule_b => "cadmpeg-codec-creo", creo_source_attributes_hold_no_source_byte_fact,
+    nx_rule_b => "cadmpeg-codec-nx", nx_source_attributes_hold_no_source_byte_fact,
 }
 
 #[cfg(feature = "fcstd")]

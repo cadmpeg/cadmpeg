@@ -598,9 +598,21 @@ fn feature_definition_is_incomplete_with_parameters(
         }
         FeatureDefinition::Operation(FeatureOperation::CosmeticThread {
             face,
+            standard,
+            designation,
             diameter,
-            extent,
-        }) => !face_selection_is_resolved(face) || diameter.is_none() || extent.is_none(),
+            pitch,
+            modeled,
+            extent
+        }) => {
+            !face_selection_is_resolved(face)
+                || standard.is_none()
+                || designation.is_none()
+                || diameter.is_none()
+                || pitch.is_none()
+                || modeled.is_none()
+                || extent.is_none()
+        }
         FeatureDefinition::Operation(FeatureOperation::Unresolved { .. }) => true,
         FeatureDefinition::Operation(FeatureOperation::DatumPlane { frame }) => {
             !datum_plane_frame_is_resolved(*frame)
@@ -1837,6 +1849,37 @@ fn report_design_projection_gaps(
     ir: &CadIr,
     native: &F3dNative,
 ) -> Result<(), CodecError> {
+    let projected_moves: std::collections::HashSet<&str> = ir
+        .model
+        .features
+        .iter()
+        .filter(|feature| {
+            matches!(
+                feature.evaluation.definition(),
+                cadmpeg_ir::features::FeatureDefinition::Operation(
+                    cadmpeg_ir::features::FeatureOperation::MoveBody { .. }
+                )
+            )
+        })
+        .filter_map(|feature| feature.native_ref.as_deref())
+        .collect();
+    for scope in &native.design_parameter_scopes {
+        if scope.kind() == crate::records::feature::scope::DesignFeatureKind::Move
+            && !projected_moves.contains(scope.id.as_str())
+        {
+            let reason = match scope.move_operation() {
+                None => "no unique admitted rigid-transform record",
+                Some(operation) if !operation.preserves_orientation() => {
+                    "stored basis reverses orientation"
+                }
+                Some(_) => "no neutral MoveBody feature for its body selection",
+            };
+            report.losses.push(
+                F3dLossCode::MoveUnprojected
+                    .note(format!("Move {} remains native: {reason}.", scope.id)),
+            );
+        }
+    }
     let gaps = design_projection_gaps(ir, native)?;
     for record in native
         .design_dimension_recipe_records
@@ -1867,6 +1910,10 @@ fn report_design_projection_gaps(
     } else {
         projection_records::missing_feature_scopes(ir, native)?
     };
+    report.losses.extend(crate::history::stored_bodies::losses(
+        &ir.model.features,
+        &native.design_parameter_scopes,
+    ));
     let incomplete_families = incomplete_feature_families(ir);
     let history_budget_skips = native
         .asm_histories
@@ -1948,6 +1995,23 @@ fn report_design_projection_gaps(
             "{} source parametric edge reference(s) were marked EDGE_REFERENCE_LOST and have no independent complete selection proof.",
             gaps.unrepaired_lost_edge_references
         ),);
+    }
+    for scope in &native.design_parameter_scopes {
+        if scope.kind() != crate::records::feature::scope::DesignFeatureKind::Emboss {
+            continue;
+        }
+        let (code, reason) = if scope.emboss_construction().is_some() {
+            (F3dLossCode::EmbossControlsNative,
+             "control words, native pairs, scalar-owner links, selection links, contour membership, and placement have no neutral Wrap mapping")
+        } else {
+            (
+                F3dLossCode::EmbossPrefixUnparsed,
+                "the operation prefix does not match an admitted native Emboss form",
+            )
+        };
+        report
+            .losses
+            .push(code.note(format!("{}: {reason}.", scope.id)));
     }
     let mut push = |code: F3dLossCode,
                     count: usize,
@@ -2685,6 +2749,9 @@ impl<'a> F3dDecodeSession<'a> {
                 ),
             );
         }
+        self.report
+            .losses
+            .extend(prereqs.design_component_occurrence_losses.iter().cloned());
         self.report.losses.extend(
             crate::design::decode::components::superseded_occurrences_loss(
                 prereqs.design_superseded_component_occurrences,
@@ -2927,6 +2994,8 @@ impl<'a> F3dDecodeSession<'a> {
                 self.ir.model.appearance_bindings = materials.bindings;
                 let face_losses =
                     resolve_face_appearance_bindings(&mut self.ir, &materials.face_assignments)?;
+                apply_appearance_base_colors(&mut self.ir);
+                apply_body_presentation_names(&mut self.ir, scan, &prereqs.design_body_bindings)?;
                 self.ir
                     .model
                     .appearance_bindings
@@ -3133,6 +3202,11 @@ impl<'a> F3dDecodeSession<'a> {
                         &mut self.ir.model,
                         &mut self.report.losses,
                     )?;
+                    crate::design::owners::attach(
+                        &self.native,
+                        &mut self.ir.model,
+                        &mut self.report.losses,
+                    )?;
                     report_design_projection_gaps(&mut self.report, ctx, &self.ir, &self.native)?;
                 }
                 index
@@ -3152,6 +3226,11 @@ impl<'a> F3dDecodeSession<'a> {
                         crate::design::decode::sketch_owners::attach(
                             ctx,
                             scan,
+                            &self.native,
+                            &mut self.ir.model,
+                            &mut self.report.losses,
+                        )?;
+                        crate::design::owners::attach(
                             &self.native,
                             &mut self.ir.model,
                             &mut self.report.losses,
@@ -3224,6 +3303,7 @@ impl<'a> F3dDecodeSession<'a> {
                         annotations,
                         parameter_state_fidelity,
                         native_layout: Some(self.native),
+                        primary_model_brep_name: None,
                         untyped: self.untyped,
                         unknowns: self.unknowns,
                         source_image,
@@ -3264,6 +3344,7 @@ impl<'a> F3dDecodeSession<'a> {
                 annotations,
                 parameter_state_fidelity,
                 native_layout: Some(self.native),
+                primary_model_brep_name: Some(geometry.primary_model_brep_name.clone()),
                 untyped: self.untyped,
                 unknowns: self.unknowns,
                 source_image,
@@ -3323,6 +3404,7 @@ pub(crate) fn decode<'a>(ctx: &DecodeContext<'a>, root: View<'a>) -> Result<Deco
                 &std::collections::BTreeSet::new(),
                 &mut decoded.body.losses,
             )?;
+            crate::design::owners::release_unbound(&mut decoded.ir.model);
             decoded.ir.finalize();
             let hash = cadmpeg_ir::hash::document_local_sha256(
                 ctx,
@@ -3331,9 +3413,9 @@ pub(crate) fn decode<'a>(ctx: &DecodeContext<'a>, root: View<'a>) -> Result<Deco
                 "f3d",
                 crate::ids::FILE_SOURCE_IMAGE_ID,
             )?;
-            decoded.source_fidelity.metadata.insert(
-                cadmpeg_ir::hash::DOCUMENT_FINGERPRINT_METADATA_KEY.into(),
-                hash,
+            decoded.source_fidelity.decode_digest = Some(
+                cadmpeg_ir::hash::digest::Sha256Digest::try_from(hash)
+                    .map_err(CodecError::malformed)?,
             );
             Ok(decoded.into_decoded())
         }
@@ -3433,6 +3515,8 @@ fn decode_scanned_document<'a>(
                 native_fidelity: cadmpeg_ir::SourceFidelity::default(),
                 parameter_state_fidelity: cadmpeg_ir::SourceFidelity::default(),
                 native_layout: None,
+                primary_model_brep_name: container::select_fallback_brep(scan)
+                    .map(|brep| brep.name.clone()),
                 untyped,
                 unknowns,
                 source_image,
@@ -4372,6 +4456,8 @@ impl std::fmt::Display for XrefPropertyNote<'_> {
 pub(crate) struct AuthoredDecoded {
     /// Transient parser locations, never serialized into the document.
     pub(crate) native_layout: Option<F3dNative>,
+    /// Primary model BREP entry name for the patch path, never serialized.
+    pub(crate) primary_model_brep_name: Option<String>,
     pub(crate) operation_poses:
         std::collections::BTreeMap<String, crate::xref::operation_pose::OperationPose>,
     pub(crate) ir: CadIr,
@@ -4393,6 +4479,7 @@ impl AuthoredDecoded {
 
 struct RetainedArtifacts {
     native_layout: Option<F3dNative>,
+    primary_model_brep_name: Option<String>,
     annotations: cadmpeg_ir::Annotations,
     native_fidelity: cadmpeg_ir::SourceFidelity,
     parameter_state_fidelity: cadmpeg_ir::SourceFidelity,
@@ -4424,7 +4511,7 @@ fn decode_result(
     source_fidelity.append(retained.parameter_state_fidelity)?;
     source_fidelity.attach_native_unknown_records(&mut ir, "f3d", retained.unknowns, ctx)?;
     source_fidelity.retain_unknown_records("f3d", [retained.source_image])?;
-    let mut source = crate::report::classify_document(
+    let source = crate::report::classify_document(
         scan,
         report_scope,
         retained.source_attributes,
@@ -4492,11 +4579,6 @@ fn decode_result(
         crate::ids::FILE_SOURCE_IMAGE_ID,
         untyped,
     )?;
-    for key in ["active_brep", "active_brep_sha256"] {
-        if let Some(value) = source.attributes.remove(key) {
-            source_fidelity.metadata.insert(key.to_owned(), value);
-        }
-    }
     // Stamped on the finalized, classified document, so the write path
     // compares against the exact document the sealed wrapper returns.
     ir.finalize();
@@ -4507,12 +4589,13 @@ fn decode_result(
         "f3d",
         crate::ids::FILE_SOURCE_IMAGE_ID,
     )?;
-    source_fidelity.metadata.insert(
-        cadmpeg_ir::hash::DOCUMENT_FINGERPRINT_METADATA_KEY.into(),
-        hash,
+    source_fidelity.decode_digest = Some(
+        cadmpeg_ir::hash::digest::Sha256Digest::try_from(hash)
+            .map_err(CodecError::malformed)?,
     );
     Ok(AuthoredDecoded {
         native_layout: retained.native_layout,
+        primary_model_brep_name: retained.primary_model_brep_name,
         operation_poses: std::collections::BTreeMap::new(),
         ir,
         source,
@@ -5010,28 +5093,11 @@ fn source_attributes_and_tolerances(
             attributes.insert("asset_folder".to_owned(), copy);
         }
     }
-    attributes.insert("zip_entry_count".to_owned(), scan.entries.len().to_string());
-    {
-        let copy = primary_model_brep.name.clone();
-        attributes.insert("active_brep".to_owned(), copy);
-    }
-    {
-        let copy = primary_model_brep.sha256.as_str().to_owned();
-        attributes.insert("active_brep_sha256".to_owned(), copy);
-    }
-    if let Some(off) = primary_model_brep
-        .kernel
-        .as_ref()
-        .and_then(crate::container::KernelFraming::solved_record_limit)
-    {
-        attributes.insert("solved_record_len".to_owned(), off.to_string());
-    }
     if let Some(unit) = crate::design::decode::units::decode_document_length_unit(scan) {
         attributes.insert("modeling_length_unit".to_owned(), unit);
     }
 
-    let mut tolerances = Tolerances::default();
-    if let Some(h) = primary_model_brep
+    let mut tolerances = Tolerances::default();    if let Some(h) = primary_model_brep
         .kernel
         .as_ref()
         .and_then(crate::container::KernelFraming::model_metadata)
@@ -5223,27 +5289,11 @@ fn build_metadata_ir(scan: &ContainerScan) -> Result<MetadataIr, CodecError> {
             attributes.insert("asset_folder".to_owned(), copy);
         }
     }
-    attributes.insert("zip_entry_count".to_owned(), scan.entries.len().to_string());
     if let Some(unit) = crate::design::decode::units::decode_document_length_unit(scan) {
         attributes.insert("modeling_length_unit".to_owned(), unit);
     }
 
     if let Some(brep) = container::select_fallback_brep(scan) {
-        {
-            let copy = brep.name.clone();
-            attributes.insert("active_brep".to_owned(), copy);
-        }
-        {
-            let copy = brep.sha256.as_str().to_owned();
-            attributes.insert("active_brep_sha256".to_owned(), copy);
-        }
-        if let Some(off) = brep
-            .kernel
-            .as_ref()
-            .and_then(crate::container::KernelFraming::solved_record_limit)
-        {
-            attributes.insert("solved_record_len".to_owned(), off.to_string());
-        }
         if let Some(h) = brep
             .kernel
             .as_ref()
@@ -5602,6 +5652,103 @@ pub(crate) fn resolve_face_appearance_bindings(
     drop(bound_faces);
     ir.model.appearance_bindings.extend(new_bindings);
     Ok(losses)
+}
+
+/// Fill absent explicit topology colors from uniquely bound appearance assets.
+/// Native RGB/truecolor attributes remain authoritative on the same target.
+fn insert_appearance_color<'a, K: Eq + std::hash::Hash>(
+    colors: &mut std::collections::HashMap<&'a K, Option<cadmpeg_ir::topology::Color>>,
+    id: &'a K,
+    color: cadmpeg_ir::topology::Color,
+) {
+    if let Some(existing) = colors.get_mut(id) {
+        *existing = None;
+    } else {
+        colors.insert(id, Some(color));
+    }
+}
+
+fn apply_appearance_base_colors(ir: &mut CadIr) {
+    use cadmpeg_ir::appearance::AppearanceTarget;
+
+    let colors = ir
+        .model
+        .appearances
+        .iter()
+        .filter_map(|appearance| Some((&appearance.id, appearance.base_color?)))
+        .collect::<std::collections::HashMap<_, _>>();
+    let mut body_colors = std::collections::HashMap::new();
+    let mut face_colors = std::collections::HashMap::new();
+    for binding in &ir.model.appearance_bindings {
+        let Some(color) = colors.get(&binding.appearance).copied() else {
+            continue;
+        };
+        match &binding.target {
+            AppearanceTarget::Body(id) => insert_appearance_color(&mut body_colors, id, color),
+            AppearanceTarget::Face(id) => insert_appearance_color(&mut face_colors, id, color),
+            _ => {}
+        }
+    }
+    for body in &mut ir.model.bodies {
+        if body.color.is_none() {
+            body.color = body_colors.get(&body.id).copied().flatten();
+        }
+    }
+    for face in &mut ir.model.faces {
+        if face.color.is_none() {
+            face.color = face_colors.get(&face.id).copied().flatten();
+        }
+    }
+}
+
+pub(crate) fn is_default_body_name(name: &str) -> bool {
+    name == "Body"
+        || name
+            .strip_prefix("Body")
+            .is_some_and(|rest| !rest.is_empty() && rest.chars().all(|c| c.is_ascii_digit()))
+}
+
+pub(crate) fn apply_body_presentation_names(
+    ir: &mut CadIr,
+    scan: &ContainerScan,
+    body_bindings: &[crate::records::bodies::DesignBodyBinding],
+) -> Result<(), CodecError> {
+    for entry in scan
+        .entries
+        .iter()
+        .filter(|entry| scan.is_design_stream(entry, ContainerRole::Bulkstream))
+    {
+        let bytes = scan.entry_bytes(&entry.name)?;
+        let Some(metadata) =
+            crate::design::decode::meta::metadata_for_bulk_stream(scan, &entry.name)?
+        else {
+            continue;
+        };
+        let presentations =
+            crate::design::decode::presentation::body_presentations(bytes, &metadata)?;
+        for presentation in presentations {
+            let Some(name) = presentation.name.as_deref() else {
+                continue;
+            };
+            if is_default_body_name(name) {
+                continue;
+            }
+            let mut matching = body_bindings.iter().filter(|b| {
+                b.stream() == entry.name && b.entity_suffix == presentation.entity_suffix
+            });
+            let (Some(binding), None) = (matching.next(), matching.next()) else {
+                continue;
+            };
+            if let Some(body_id) = &binding.body {
+                if let Some(body) = ir.model.bodies.iter_mut().find(|b| b.id == *body_id) {
+                    if body.name.is_none() {
+                        body.name = Some(name.to_string());
+                    }
+                }
+            }
+        }
+    }
+    Ok(())
 }
 
 pub(crate) mod design_intent;

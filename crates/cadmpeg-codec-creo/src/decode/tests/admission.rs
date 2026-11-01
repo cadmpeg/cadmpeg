@@ -16,8 +16,6 @@ use crate::test_support::unix_compress_literals;
 use crate::test_support::visibgeom_payload;
 use cadmpeg_ir::geometry::SolvedSurfaceGeometry;
 
-use cadmpeg_core::container::ContainerRole;
-
 use std::io::Cursor;
 
 use cadmpeg_ir::codec::{Codec, DecodeOptions};
@@ -189,19 +187,7 @@ fn decode_extracts_jpeg_thumbnail_as_native_asset() {
         Exactness::ByteExact,
     );
     let source = result.ir().source.as_ref().expect("source metadata");
-    assert_eq!(source.attributes["section_count"], "1");
-    assert_eq!(source.attributes["section.0.name"], "THMB_IMG_MAIN");
-    assert_eq!(source.attributes["section.0.raw_name"], "THMB_IMG_MAIN");
-    assert_eq!(
-        source.attributes["section.0.role"],
-        ContainerRole::Thumbnail.as_str()
-    );
-    assert!(source.attributes["section.0.offset"]
-        .parse::<usize>()
-        .is_ok());
-    assert!(source.attributes["section.0.length"]
-        .parse::<usize>()
-        .is_ok());
+    assert!(source.attributes.contains_key("version_line"));
 }
 
 #[test]
@@ -541,15 +527,6 @@ fn decode_retains_mdlstatus_states_and_projects_only_agreement() {
         feature_40[1].fields().unwrap()["display_state_conflict"],
         true
     );
-    assert_eq!(
-        result
-            .ir()
-            .source
-            .as_ref()
-            .expect("source metadata")
-            .attributes["unresolved_feature_state_selection_count"],
-        "1"
-    );
     assert_eq!(result.ir().model.features.len(), 5);
     assert!(result
         .ir()
@@ -685,16 +662,8 @@ fn decode_is_honest_geometryless_with_preserved_sections() {
     assert!(result.ir().model.surfaces.is_empty());
     assert!(result.ir().model.points.is_empty());
     assert!(result.ir().model.faces.is_empty());
-    // Source attributes carry the census.
+    // Source attributes carry the unit.
     let source = result.ir().source.as_ref().expect("source");
-    assert_eq!(
-        source.attributes.get("srf_array_count").map(String::as_str),
-        Some("5")
-    );
-    assert_eq!(
-        source.attributes.get("crv_array_count").map(String::as_str),
-        Some("12")
-    );
     assert_eq!(
         source.attributes.get("principal_unit").map(String::as_str),
         Some("mmNs")

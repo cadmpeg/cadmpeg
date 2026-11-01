@@ -55,11 +55,7 @@ fn represented_layout_admission_uses_the_actual_source_free_encode_context() {
     // The eligibility helper receives only its fingerprint fact, with no retained
     // records, parts, source layouts or archive bytes available in this fidelity.
     let mut fidelity = SourceFidelity::default();
-    let key = cadmpeg_ir::hash::DOCUMENT_FINGERPRINT_METADATA_KEY;
-    fidelity.metadata.insert(
-        key.into(),
-        decoded.source_fidelity().metadata.get(key).unwrap().clone(),
-    );
+    fidelity.decode_digest = decoded.source_fidelity().decode_digest.clone();
     let before_ir = serde_json::to_value(decoded.ir()).unwrap();
     let before_fidelity = serde_json::to_value(&fidelity).unwrap();
     let arena = DecodeArena::new();

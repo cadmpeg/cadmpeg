@@ -1,0 +1,376 @@
+{
+  "ir": {
+    "decode_depth": "full",
+    "ir_version": "9",
+    "model": {
+      "appearance_bindings": [
+        {
+          "appearance": "usd:stage:appearance#/Root/Looks/Painted",
+          "id": "usd:stage:appearance-binding#/Root/Cover",
+          "source_entity_id": "/Root/Looks/Painted",
+          "target": {
+            "id": "usd:stage:tessellation#/Root/Cover",
+            "kind": "tessellation"
+          }
+        },
+        {
+          "appearance": "usd:stage:appearance#/Root/Looks/Brushed",
+          "id": "usd:stage:appearance-binding#/Root/Plate",
+          "source_entity_id": "/Root/Looks/Brushed",
+          "target": {
+            "id": "usd:stage:tessellation#/Root/Plate",
+            "kind": "tessellation"
+          }
+        }
+      ],
+      "appearances": [
+        {
+          "base_color": {
+            "a": 1.0,
+            "b": 0.5849999785423279,
+            "g": 0.5400000214576721,
+            "r": 0.5400000214576721
+          },
+          "id": "usd:stage:appearance#/Root/Looks/Brushed",
+          "name": "Brushed",
+          "properties": {
+            "base": 0.8999999761581421,
+            "base_color.b": 0.6499999761581421,
+            "base_color.g": 0.6000000238418579,
+            "base_color.r": 0.6000000238418579,
+            "metalness": 1.0,
+            "specular_roughness": 0.3499999940395355
+          },
+          "schema": "ND_standard_surface_surfaceshader"
+        },
+        {
+          "base_color": {
+            "a": 0.5,
+            "b": 0.800000011920929,
+            "g": 0.30000001192092896,
+            "r": 0.10000000149011612
+          },
+          "id": "usd:stage:appearance#/Root/Looks/Painted",
+          "library_id": "OmniPBR.mdl",
+          "name": "Painted",
+          "properties": {
+            "diffuse_color_constant.b": 0.800000011920929,
+            "diffuse_color_constant.g": 0.30000001192092896,
+            "diffuse_color_constant.r": 0.10000000149011612,
+            "enable_opacity": 1.0,
+            "opacity_constant": 0.5,
+            "reflection_roughness_constant": 0.4000000059604645
+          },
+          "schema": "OmniPBR"
+        }
+      ],
+      "assembly_joints": [],
+      "attributes": [],
+      "bodies": [
+        {
+          "id": "usd:stage:body#/Root/Cover",
+          "kind": "general",
+          "name": "Cover",
+          "regions": []
+        },
+        {
+          "id": "usd:stage:body#/Root/Plate",
+          "kind": "general",
+          "name": "Plate",
+          "regions": []
+        }
+      ],
+      "coedges": [],
+      "configurations": [],
+      "curves": [],
+      "drawings": [],
+      "edges": [],
+      "faces": [],
+      "features": [],
+      "loops": [],
+      "occurrences": [
+        {
+          "id": "usd:stage:occurrence#/Root",
+          "name": "Root",
+          "native_ref": "/Root",
+          "ordinal": 0,
+          "parent": {
+            "kind": "root"
+          },
+          "prototype": {
+            "definition": "usd:stage:definition#/Root",
+            "scope": "local"
+          },
+          "scale": [
+            1.0,
+            1.0,
+            1.0
+          ],
+          "transform": [
+            [
+              1.0,
+              0.0,
+              0.0,
+              0.0
+            ],
+            [
+              0.0,
+              1.0,
+              0.0,
+              0.0
+            ],
+            [
+              0.0,
+              0.0,
+              1.0,
+              0.0
+            ]
+          ]
+        },
+        {
+          "id": "usd:stage:occurrence#/Root/Cover",
+          "name": "Cover",
+          "native_ref": "/Root/Cover",
+          "ordinal": 1,
+          "parent": {
+            "kind": "occurrence",
+            "occurrence": "usd:stage:occurrence#/Root"
+          },
+          "prototype": {
+            "definition": "usd:stage:definition#/Root/Cover",
+            "scope": "local"
+          },
+          "scale": [
+            1.0,
+            1.0,
+            1.0
+          ],
+          "transform": [
+            [
+              1.0,
+              0.0,
+              0.0,
+              0.0
+            ],
+            [
+              0.0,
+              1.0,
+              0.0,
+              0.0
+            ],
+            [
+              0.0,
+              0.0,
+              1.0,
+              0.0
+            ]
+          ]
+        },
+        {
+          "id": "usd:stage:occurrence#/Root/Plate",
+          "name": "Plate",
+          "native_ref": "/Root/Plate",
+          "ordinal": 0,
+          "parent": {
+            "kind": "occurrence",
+            "occurrence": "usd:stage:occurrence#/Root"
+          },
+          "prototype": {
+            "definition": "usd:stage:definition#/Root/Plate",
+            "scope": "local"
+          },
+          "scale": [
+            1.0,
+            1.0,
+            1.0
+          ],
+          "transform": [
+            [
+              1.0,
+              0.0,
+              0.0,
+              0.0
+            ],
+            [
+              0.0,
+              1.0,
+              0.0,
+              0.0
+            ],
+            [
+              0.0,
+              0.0,
+              1.0,
+              0.0
+            ]
+          ]
+        }
+      ],
+      "parameters": [],
+      "pcurves": [],
+      "pmi": [],
+      "points": [],
+      "presentation_documents": [],
+      "presentation_layers": [],
+      "procedural_curves": [],
+      "procedural_surfaces": [],
+      "product_definitions": [
+        {
+          "id": "usd:stage:definition#/Root",
+          "kind": "group",
+          "native_ref": "/Root",
+          "source_name": "Root"
+        },
+        {
+          "bodies": [
+            "usd:stage:body#/Root/Cover"
+          ],
+          "id": "usd:stage:definition#/Root/Cover",
+          "kind": "object",
+          "native_ref": "/Root/Cover",
+          "source_name": "Cover"
+        },
+        {
+          "bodies": [
+            "usd:stage:body#/Root/Plate"
+          ],
+          "id": "usd:stage:definition#/Root/Plate",
+          "kind": "object",
+          "native_ref": "/Root/Plate",
+          "source_name": "Plate"
+        }
+      ],
+      "regions": [],
+      "semantic_annotations": [],
+      "shells": [],
+      "sketch_constraints": [],
+      "sketch_entities": [],
+      "sketches": [],
+      "spatial_sketch_entities": [],
+      "spatial_sketches": [],
+      "spreadsheets": [],
+      "subds": [],
+      "surfaces": [],
+      "tessellations": [
+        {
+          "body": "usd:stage:body#/Root/Cover",
+          "channels": [],
+          "id": "usd:stage:tessellation#/Root/Cover",
+          "mesh": {
+            "kind": "list",
+            "triangles": [
+              [
+                0,
+                1,
+                2
+              ]
+            ],
+            "vertices": [
+              {
+                "x": 0.0,
+                "y": 0.0,
+                "z": 10.0
+              },
+              {
+                "x": 10.0,
+                "y": 0.0,
+                "z": 10.0
+              },
+              {
+                "x": 0.0,
+                "y": 10.0,
+                "z": 10.0
+              }
+            ]
+          }
+        },
+        {
+          "body": "usd:stage:body#/Root/Plate",
+          "channels": [],
+          "id": "usd:stage:tessellation#/Root/Plate",
+          "mesh": {
+            "kind": "list",
+            "triangles": [
+              [
+                0,
+                1,
+                2
+              ]
+            ],
+            "vertices": [
+              {
+                "x": 0.0,
+                "y": 0.0,
+                "z": 0.0
+              },
+              {
+                "x": 10.0,
+                "y": 0.0,
+                "z": 0.0
+              },
+              {
+                "x": 0.0,
+                "y": 10.0,
+                "z": 0.0
+              }
+            ]
+          }
+        }
+      ],
+      "vertices": [],
+      "view_presentations": []
+    },
+    "native": {},
+    "source": {
+      "attributes": {
+        "default_prim": "Root",
+        "meters_per_unit": "0.01",
+        "up_axis": "Z"
+      },
+      "identity": {
+        "classification": "classified",
+        "dialects": {
+          "extra": [],
+          "primary": {
+            "admission": "admitted",
+            "declared": {
+              "header": "#usda 1.0"
+            },
+            "dialect": "usd:usda-1.0"
+          }
+        }
+      }
+    },
+    "tolerances": {
+      "angular": 1e-10,
+      "linear": 1e-6
+    },
+    "units": {
+      "length": "millimeter"
+    }
+  },
+  "report": {
+    "identity": {
+      "classification": "classified",
+      "dialects": {
+        "extra": [],
+        "primary": {
+          "admission": "admitted",
+          "declared": {
+            "header": "#usda 1.0"
+          },
+          "dialect": "usd:usda-1.0"
+        }
+      }
+    },
+    "losses": [],
+    "notes": [],
+    "transfer": {
+      "geometry_transferred": true,
+      "transfer": "full"
+    }
+  },
+  "source_fidelity": {
+    "annotations": {}
+  }
+}

@@ -1997,9 +1997,7 @@
   },
   "source_fidelity": {
     "annotations": {},
-    "metadata": {
-      "document_local_sha256": "3b6f20316286d4b4c1a149b796039111f5d500eabebbb95b6105750ef276d92b"
-    },
+    "decode_digest": "3b6f20316286d4b4c1a149b796039111f5d500eabebbb95b6105750ef276d92b",
     "retained_records": {
       "iges:file:source-image#0": {
         "bytes": {

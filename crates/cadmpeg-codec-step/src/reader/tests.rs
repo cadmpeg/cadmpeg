@@ -38,7 +38,6 @@ fn malformed_face_names_preserve_geometry_and_report_source_only_metadata() {
             .losses
             .iter()
             .any(|loss| loss.code == StepLossCode::MetadataStringInvalid.kind()));
-        assert_eq!(result.source_fidelity().metadata["bytes_unclassified"], "0");
         assert!(cadmpeg_ir::validate_neutral(result.ir(), Vec::new())
             .unwrap()
             .is_ok());
@@ -52,10 +51,6 @@ fn byte_census_keeps_metadata_admission_after_an_omitted_record() {
         .decode(&mut Cursor::new(source), &DecodeOptions::default())
         .expect("bounded defect and unreadable metadata remain recoverable");
     assert_eq!(decoded.ir().model.points.len(), 2);
-    assert_eq!(
-        decoded.source_fidelity().metadata["bytes_unclassified"],
-        "0"
-    );
 }
 
 #[test]
@@ -346,7 +341,7 @@ fn decode_user_defined_entities_as_named_opaque_records() {
 }
 
 #[test]
-fn opaque_links_retain_typed_step_targets() {
+fn opaque_links_hold_no_neutral_back_link_for_typed_step_targets() {
     let result = decode_inline(
         "#1=EXAMPLE_RECORD('',#2);
         #2=LINE('typed target',#3,#5);
@@ -359,18 +354,11 @@ fn opaque_links_retain_typed_step_targets() {
         .native_unknowns("step")
         .expect("STEP unknown records");
     assert_eq!(unknowns.len(), 1);
-    assert_eq!(
-        unknowns[0]
-            .links
-            .iter()
-            .map(cadmpeg_ir::ids::Identity::as_str)
-            .collect::<Vec<_>>(),
-        vec!["step:data:curve#2".to_string()]
-    );
+    assert!(unknowns[0].links.is_empty());
 }
 
 #[test]
-fn opaque_links_retain_fallback_carrier_targets() {
+fn opaque_links_hold_no_neutral_back_link_for_fallback_carriers() {
     let result = decode_inline(
         "#1=TRIMMED_CURVE('',#99,(0.),(1.),.T.,.PARAMETER.);
          #2=EXAMPLE_RECORD('',#1);
@@ -391,10 +379,14 @@ fn opaque_links_retain_fallback_carrier_targets() {
         .iter()
         .find(|record| record.id.as_str() == "step:data:example_record#2")
         .expect("opaque record referencing fallback carrier");
-    assert!(example
-        .links
-        .iter()
-        .any(|link| link.as_str() == "step:data:curve#1"));
+    assert_eq!(
+        example
+            .links
+            .iter()
+            .map(cadmpeg_ir::ids::Identity::as_str)
+            .collect::<Vec<_>>(),
+        vec!["step:data:trimmed_curve#1".to_string()]
+    );
 
     let validation = cadmpeg_ir::validate_neutral(result.ir(), result.report().losses.clone())
         .expect("validate the neutral model");
@@ -410,20 +402,29 @@ pub(crate) fn decode_accounts_for_every_part21_byte() {
     let result = StepCodec::default()
         .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
         .expect("decode byte-accounting fixture");
-    let attributes = &result.source_fidelity().metadata;
-    let count = |name: &str| attributes[name].parse::<usize>().unwrap();
+    let (structural, typed, opaque, unclassified) = byte_accounting_note(&result);
+    assert!(structural > 0);
+    assert!(typed > 0);
+    assert_eq!(opaque, 0);
+    assert_eq!(unclassified, 0);
+    assert_eq!(structural + typed + opaque + unclassified, bytes.len());
+}
 
-    assert!(count("bytes_structural") > 0);
-    assert!(count("bytes_typed") > 0);
-    assert_eq!(count("bytes_named_opaque"), 0);
-    assert_eq!(count("bytes_unclassified"), 0);
-    assert_eq!(
-        count("bytes_structural")
-            + count("bytes_typed")
-            + count("bytes_named_opaque")
-            + count("bytes_unclassified"),
-        bytes.len()
-    );
+/// Reads the decode's byte-accounting note into its four class tallies.
+fn byte_accounting_note(result: &cadmpeg_ir::codec::DecodeResult) -> (usize, usize, usize, usize) {
+    let note = result
+        .report()
+        .notes
+        .iter()
+        .find(|note| note.starts_with("byte accounting: "))
+        .expect("the decode reports its byte accounting");
+    let numbers: Vec<usize> = note
+        .split(|c: char| !c.is_ascii_digit())
+        .filter(|part| !part.is_empty())
+        .map(|part| part.parse().expect("accounting tallies are numbers"))
+        .collect();
+    assert_eq!(numbers.len(), 4, "{note}");
+    (numbers[0], numbers[1], numbers[2], numbers[3])
 }
 
 #[test]
@@ -502,14 +503,10 @@ fn every_repository_step_fixture_has_complete_byte_accounting() {
         let result = StepCodec::default()
             .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
             .unwrap_or_else(|error| panic!("{name}: {error}"));
-        let attributes = &result.source_fidelity().metadata;
-        let count = |key: &str| attributes[key].parse::<usize>().unwrap();
-        assert_eq!(count("bytes_unclassified"), 0, "{name}");
+        let (structural, typed, opaque, unclassified) = byte_accounting_note(&result);
+        assert_eq!(unclassified, 0, "{name}");
         assert_eq!(
-            count("bytes_structural")
-                + count("bytes_typed")
-                + count("bytes_named_opaque")
-                + count("bytes_unclassified"),
+            structural + typed + opaque + unclassified,
             bytes.len(),
             "{name}"
         );
@@ -658,8 +655,15 @@ fn retention_reports_every_deleted_carrier_category() {
         .find(|loss| loss.message.contains("unowned STEP carrier retention"))
         .map(|loss| loss.message.as_str())
         .expect("carrier retention report");
-    for category in ["deleted pcurves=1", "points=1", "curves=1", "surfaces=1"] {
+    for category in ["deleted pcurves=1", "points=0", "curves=0", "surfaces=1"] {
         assert!(message.contains(category), "missing {category}: {message}");
+    }
+    for id in ["step:data:curve#83", "step:data:point#74"] {
+        assert!(
+            decoded.ir().model.curves.iter().any(|curve| curve.id.as_str() == id)
+                || decoded.ir().model.points.iter().any(|point| point.id.as_str() == id),
+            "unowned direct carrier {id} survives its opaque referrer"
+        );
     }
     assert!(decoded
         .ir()
@@ -670,21 +674,9 @@ fn retention_reports_every_deleted_carrier_category() {
     assert!(decoded
         .ir()
         .model
-        .curves
-        .iter()
-        .all(|curve| curve.id.as_str() != "step:data:curve#83"));
-    assert!(decoded
-        .ir()
-        .model
         .surfaces
         .iter()
         .all(|surface| surface.id.as_str() != "step:data:surface#78"));
-    assert!(decoded
-        .ir()
-        .model
-        .points
-        .iter()
-        .all(|point| point.id.as_str() != "step:data:point#74"));
 }
 
 #[test]
@@ -714,7 +706,7 @@ fn decode_charges_one_loss_for_an_out_of_range_schema_object_identifier() {
     );
     assert_eq!(provenance.tag.as_deref(), Some("schema_identifier"));
     assert_eq!(
-        result.source_fidelity().metadata["schema"],
+        result.ir().source.as_ref().expect("source").attributes["schema"],
         "AUTOMOTIVE_DESIGN_CC2 { 1 2 10303 214 -1 1 5 4 }"
     );
 }
@@ -806,7 +798,6 @@ fn decode_salvages_noncanonical_complex_partial_order_with_provenance() {
     );
     assert_eq!(provenance.tag.as_deref(), Some("complex_entity"));
     assert_eq!(result.ir().native_unknowns("step").unwrap().len(), 0);
-    assert_eq!(result.source_fidelity().metadata["bytes_named_opaque"], "0");
 }
 
 #[test]

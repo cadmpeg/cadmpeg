@@ -1,0 +1,519 @@
+{
+  "ir": {
+    "decode_depth": "full",
+    "ir_version": "9",
+    "model": {
+      "appearance_bindings": [
+        {
+          "appearance": "usd:stage:appearance#/Root/Looks/Red",
+          "id": "usd:stage:appearance-binding#/Root/Panel",
+          "source_entity_id": "/Root/Looks/Red",
+          "target": {
+            "id": "usd:stage:tessellation#/Root/Panel",
+            "kind": "tessellation"
+          }
+        },
+        {
+          "appearance": "usd:stage:appearance#/Root/Looks/Textured",
+          "id": "usd:stage:subset-binding#/Root/Panel:/Root/Panel/Left",
+          "source_entity_id": "/Root/Looks/Textured",
+          "target": {
+            "id": {
+              "group": "/Root/Panel/Left",
+              "tessellation": "usd:stage:tessellation#/Root/Panel"
+            },
+            "kind": "triangle_group"
+          }
+        }
+      ],
+      "appearances": [
+        {
+          "base_color": {
+            "a": 1.0,
+            "b": 0.10000000149011612,
+            "g": 0.10000000149011612,
+            "r": 0.8999999761581421
+          },
+          "id": "usd:stage:appearance#/Root/Looks/Red",
+          "name": "Red",
+          "properties": {
+            "diffuseColor.b": 0.10000000149011612,
+            "diffuseColor.g": 0.10000000149011612,
+            "diffuseColor.r": 0.8999999761581421,
+            "metallic": 0.5,
+            "roughness": 0.25
+          },
+          "schema": "UsdPreviewSurface"
+        },
+        {
+          "base_color": {
+            "a": 0.5,
+            "b": 0.18000000715255737,
+            "g": 0.18000000715255737,
+            "r": 0.18000000715255737
+          },
+          "id": "usd:stage:appearance#/Root/Looks/Textured",
+          "name": "Textured",
+          "properties": {
+            "opacity": 0.5
+          },
+          "schema": "UsdPreviewSurface",
+          "textures": [
+            {
+              "asset_guid": "usd:stage:asset#./wood.png",
+              "mapping": {
+                "map_channel": 0,
+                "real_world_offset_x": 0.0,
+                "real_world_offset_y": 0.0,
+                "real_world_scale_x": 0.0,
+                "real_world_scale_y": 0.0,
+                "repeat_u": true,
+                "repeat_v": true,
+                "rotation": 0.0,
+                "u_offset": 0.0,
+                "u_scale": 1.0,
+                "uvw_source": 0,
+                "v_offset": 0.0,
+                "v_scale": 1.0
+              },
+              "paths": [
+                "./wood.png"
+              ],
+              "schema": "UsdUVTexture",
+              "slot": "diffuseColor"
+            }
+          ]
+        }
+      ],
+      "assembly_joints": [],
+      "assets": [
+        {
+          "content": {
+            "kind": "external",
+            "uri": "./wood.png"
+          },
+          "id": "usd:stage:asset#./wood.png",
+          "media_type": "image/png",
+          "name": "wood.png",
+          "native_ref": "./wood.png"
+        }
+      ],
+      "attributes": [],
+      "bodies": [
+        {
+          "id": "usd:stage:body#/Root/Cage",
+          "kind": "general",
+          "name": "Cage",
+          "regions": []
+        },
+        {
+          "id": "usd:stage:body#/Root/Panel",
+          "kind": "general",
+          "name": "Panel",
+          "regions": []
+        }
+      ],
+      "coedges": [],
+      "configurations": [],
+      "curves": [],
+      "drawings": [],
+      "edges": [],
+      "faces": [],
+      "features": [],
+      "loops": [],
+      "occurrences": [
+        {
+          "id": "usd:stage:occurrence#/Root",
+          "name": "Root",
+          "native_ref": "/Root",
+          "ordinal": 0,
+          "parent": {
+            "kind": "root"
+          },
+          "prototype": {
+            "definition": "usd:stage:definition#/Root",
+            "scope": "local"
+          },
+          "scale": [
+            1.0,
+            1.0,
+            1.0
+          ],
+          "transform": [
+            [
+              1.0,
+              0.0,
+              0.0,
+              0.0
+            ],
+            [
+              0.0,
+              1.0,
+              0.0,
+              0.0
+            ],
+            [
+              0.0,
+              0.0,
+              1.0,
+              0.0
+            ]
+          ]
+        },
+        {
+          "id": "usd:stage:occurrence#/Root/Cage",
+          "name": "Cage",
+          "native_ref": "/Root/Cage",
+          "ordinal": 1,
+          "parent": {
+            "kind": "occurrence",
+            "occurrence": "usd:stage:occurrence#/Root"
+          },
+          "prototype": {
+            "definition": "usd:stage:definition#/Root/Cage",
+            "scope": "local"
+          },
+          "scale": [
+            1.0,
+            1.0,
+            1.0
+          ],
+          "transform": [
+            [
+              1.0,
+              0.0,
+              0.0,
+              0.0
+            ],
+            [
+              0.0,
+              1.0,
+              0.0,
+              0.0
+            ],
+            [
+              0.0,
+              0.0,
+              1.0,
+              0.0
+            ]
+          ],
+          "visible": false
+        },
+        {
+          "id": "usd:stage:occurrence#/Root/Panel",
+          "name": "Panel",
+          "native_ref": "/Root/Panel",
+          "ordinal": 0,
+          "parent": {
+            "kind": "occurrence",
+            "occurrence": "usd:stage:occurrence#/Root"
+          },
+          "prototype": {
+            "definition": "usd:stage:definition#/Root/Panel",
+            "scope": "local"
+          },
+          "scale": [
+            1.0,
+            1.0,
+            1.0
+          ],
+          "transform": [
+            [
+              1.0,
+              0.0,
+              0.0,
+              0.0
+            ],
+            [
+              0.0,
+              1.0,
+              0.0,
+              0.0
+            ],
+            [
+              0.0,
+              0.0,
+              1.0,
+              0.0
+            ]
+          ]
+        }
+      ],
+      "parameters": [],
+      "pcurves": [],
+      "pmi": [],
+      "points": [],
+      "presentation_documents": [],
+      "presentation_layers": [],
+      "procedural_curves": [],
+      "procedural_surfaces": [],
+      "product_definitions": [
+        {
+          "id": "usd:stage:definition#/Root",
+          "kind": "group",
+          "native_ref": "/Root",
+          "source_name": "Root"
+        },
+        {
+          "bodies": [
+            "usd:stage:body#/Root/Cage"
+          ],
+          "id": "usd:stage:definition#/Root/Cage",
+          "kind": "object",
+          "native_ref": "/Root/Cage",
+          "source_name": "Cage"
+        },
+        {
+          "bodies": [
+            "usd:stage:body#/Root/Panel"
+          ],
+          "id": "usd:stage:definition#/Root/Panel",
+          "kind": "object",
+          "native_ref": "/Root/Panel",
+          "source_name": "Panel"
+        }
+      ],
+      "regions": [],
+      "semantic_annotations": [],
+      "shells": [],
+      "sketch_constraints": [],
+      "sketch_entities": [],
+      "sketches": [],
+      "spatial_sketch_entities": [],
+      "spatial_sketches": [],
+      "spreadsheets": [],
+      "subds": [],
+      "surfaces": [],
+      "tessellations": [
+        {
+          "body": "usd:stage:body#/Root/Cage",
+          "channels": [],
+          "id": "usd:stage:tessellation#/Root/Cage",
+          "mesh": {
+            "kind": "list",
+            "triangles": [
+              [
+                0,
+                1,
+                2
+              ],
+              [
+                0,
+                2,
+                3
+              ]
+            ],
+            "vertices": [
+              {
+                "x": 0.0,
+                "y": 0.0,
+                "z": 30.0
+              },
+              {
+                "x": 10.0,
+                "y": 0.0,
+                "z": 30.0
+              },
+              {
+                "x": 10.0,
+                "y": 10.0,
+                "z": 30.0
+              },
+              {
+                "x": 0.0,
+                "y": 10.0,
+                "z": 30.0
+              }
+            ]
+          }
+        },
+        {
+          "body": "usd:stage:body#/Root/Panel",
+          "channels": [],
+          "id": "usd:stage:tessellation#/Root/Panel",
+          "mesh": {
+            "kind": "shaded_list",
+            "triangles": [
+              [
+                0,
+                1,
+                4
+              ],
+              [
+                1,
+                2,
+                4
+              ],
+              [
+                2,
+                3,
+                4
+              ],
+              [
+                3,
+                0,
+                4
+              ]
+            ],
+            "vertices": [
+              {
+                "normal": {
+                  "x": 0.0,
+                  "y": 0.0,
+                  "z": 1.0
+                },
+                "position": {
+                  "x": 0.0,
+                  "y": 0.0,
+                  "z": 0.0
+                }
+              },
+              {
+                "normal": {
+                  "x": 0.0,
+                  "y": 0.0,
+                  "z": 1.0
+                },
+                "position": {
+                  "x": 20.0,
+                  "y": 0.0,
+                  "z": 0.0
+                }
+              },
+              {
+                "normal": {
+                  "x": 0.0,
+                  "y": 0.0,
+                  "z": 1.0
+                },
+                "position": {
+                  "x": 20.0,
+                  "y": 20.0,
+                  "z": 0.0
+                }
+              },
+              {
+                "normal": {
+                  "x": 0.0,
+                  "y": 0.0,
+                  "z": 1.0
+                },
+                "position": {
+                  "x": 0.0,
+                  "y": 20.0,
+                  "z": 0.0
+                }
+              },
+              {
+                "normal": {
+                  "x": 0.0,
+                  "y": 0.0,
+                  "z": 1.0
+                },
+                "position": {
+                  "x": 10.0,
+                  "y": 10.0,
+                  "z": 10.0
+                }
+              }
+            ]
+          },
+          "triangle_groups": [
+            {
+              "source_id": "/Root/Panel/Left",
+              "triangles": [
+                0,
+                1
+              ]
+            },
+            {
+              "source_id": "/Root/Panel/Right",
+              "triangles": [
+                2,
+                3
+              ]
+            }
+          ]
+        }
+      ],
+      "vertices": [],
+      "view_presentations": []
+    },
+    "native": {},
+    "source": {
+      "attributes": {
+        "default_prim": "Root",
+        "meters_per_unit": "0.01",
+        "up_axis": "Y"
+      },
+      "identity": {
+        "classification": "classified",
+        "dialects": {
+          "extra": [],
+          "primary": {
+            "admission": "admitted",
+            "declared": {
+              "version": "0.8.0"
+            },
+            "dialect": "usd:usdc-0.8.0"
+          }
+        }
+      }
+    },
+    "tolerances": {
+      "angular": 1e-10,
+      "linear": 1e-6
+    },
+    "units": {
+      "length": "millimeter"
+    }
+  },
+  "report": {
+    "identity": {
+      "classification": "classified",
+      "dialects": {
+        "extra": [],
+        "primary": {
+          "admission": "admitted",
+          "declared": {
+            "version": "0.8.0"
+          },
+          "dialect": "usd:usdc-0.8.0"
+        }
+      }
+    },
+    "losses": [
+      {
+        "code": {
+          "code": "mesh.subdivision-not-applied",
+          "kind": "subd_omitted",
+          "namespace": "usd",
+          "scope": "namespaced",
+          "strict_floor": "warning"
+        },
+        "message": "1 subdivision meshes were transferred as their control cages",
+        "severity": "info"
+      },
+      {
+        "code": {
+          "code": "appearance.texture-unlocated",
+          "kind": "reference_graph_not_closed",
+          "namespace": "usd",
+          "scope": "namespaced",
+          "strict_floor": "warning"
+        },
+        "message": "1 texture paths name no package member or file and were kept as written: ./wood.png",
+        "severity": "info"
+      }
+    ],
+    "notes": [],
+    "transfer": {
+      "geometry_transferred": true,
+      "transfer": "full"
+    }
+  },
+  "source_fidelity": {
+    "annotations": {}
+  }
+}

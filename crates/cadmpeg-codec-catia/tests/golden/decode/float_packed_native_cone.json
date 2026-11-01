@@ -840,18 +840,7 @@
       "model": true
     },
     "source": {
-      "attributes": {
-        "brep_stream_len": "1027",
-        "brep_stream_sha256": "c2e21baa8239e4940935f263583912c451f645a6ad769db3f7f6f4a2405b69fd",
-        "external_reference_count": "0",
-        "fbb_face_rows": "0",
-        "fbb_runs": "0",
-        "file_size": "1290",
-        "finjpl_segment_count": "0",
-        "preview_count": "0",
-        "stream_count": "2",
-        "vertex_records": "0"
-      },
+      "attributes": {},
       "identity": {
         "classification": "classified",
         "dialects": {

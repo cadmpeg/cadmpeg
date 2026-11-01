@@ -43,6 +43,15 @@
     "native": {
       "sldprt": {
         "configurations": [],
+        "decode_baselines": [
+          {
+            "brep": "887f8427f935ae19a9d4f6884ea91064eec57c60abae9e3bcdc4054c4807e910",
+            "id": "sldprt:metadata:decode-baselines#0",
+            "swobjects": "586ffb909b0bba2aacc4d34937062d2b3c9cb6c81d2f794c686ad550b192d8dc",
+            "swobjects_material": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+            "swobjects_metadata_identity": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945"
+          }
+        ],
         "document_metadata": [],
         "feature_histories": [],
         "feature_input_body_selections": [],
@@ -72,6 +81,7 @@
     },
     "source": {
       "attributes": {
+        "outer_version": "0x00000004",
         "parasolid_schema": "SCH_SW_33103_11000"
       },
       "identity": {
@@ -223,15 +233,7 @@
         }
       }
     },
-    "metadata": {
-      "active_parasolid_block": "Contents/Config-0-Partition",
-      "brep_local_sha256": "887f8427f935ae19a9d4f6884ea91064eec57c60abae9e3bcdc4054c4807e910",
-      "document_local_sha256": "d709ddac2c68cdeb0555a2113628d659fd53141a5265fc91dc8054dbcc8fc8b7",
-      "outer_version": "0x00000004",
-      "sldprt_swobjects_local_sha256": "586ffb909b0bba2aacc4d34937062d2b3c9cb6c81d2f794c686ad550b192d8dc",
-      "sldprt_swobjects_material_local_sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
-      "sldprt_swobjects_metadata_identity_local_sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945"
-    },
+    "decode_digest": "22fa346545c5bd7b056c1086a3d9af17e523e1fb083c5cf5fbee620e2d347217",
     "retained_records": {
       "sldprt:file:block#8": {
         "bytes": {

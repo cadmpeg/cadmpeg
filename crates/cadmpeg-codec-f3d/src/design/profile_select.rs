@@ -465,6 +465,14 @@ pub(crate) fn bind_extrude_profile_selections(
                                 *profile = selection;
                                 break 'feature_edit;
                             }
+                            if let Some(selection) = resolve_profile_curve_arrangement_regions(
+                                group,
+                                &curve_resolution.path_resolution(),
+                                scoped_resolution,
+                            )? {
+                                *profile = selection;
+                                break 'feature_edit;
+                            }
                         }
                         if let Some(selection) = historical_face_profile_selection(
                             &matching_groups,
@@ -626,6 +634,13 @@ fn resolve_entity_selection_profile(
 
     if group.role() != DesignOperandRole::PROFILE {
         return None;
+    }
+    if resolution.profile_curves.iter().any(|selection| {
+        native_stream(&selection.id) == native_stream(&group.id)
+            && selection.group_record_index == group.record_index
+            && selection.scope_record_index == group.scope_record_index
+    }) {
+        return resolve_profile_curve_regions(group, resolution);
     }
     let path = resolve_entity_selection_path(group, resolution)?;
     match path {
@@ -2333,19 +2348,182 @@ impl<'a> SketchProfileResolution<'a> {
     }
 }
 
-/// Resolve a group whose members are typed-reference profile selections.
-///
-/// Every member has exactly one selection. All selections name one Sketch
-/// scope through their chain record; exactly one Sketch placement carries
-/// that scope, and its entity suffix equals every selection's owner text.
-/// Every listed curve then resolves to exactly one curve identity of that
-/// Sketch. Any other outcome keeps the selection native.
+fn resolve_profile_curve_regions(
+    group: &DesignConstructionOperandGroup,
+    resolution: &EntitySelectionPathResolution<'_>,
+) -> Option<cadmpeg_ir::features::ProfileRef> {
+    use cadmpeg_ir::features::{PlanarProfileRef, ProfileRef, SketchProfileRegion};
+    let stream = native_stream(&group.id)?;
+    let (sketch, curves) = profile_curve_selection_curves(group, stream, resolution)?;
+    let source = resolution
+        .sketches
+        .iter()
+        .find(|source| source.id == sketch)?;
+    let mut regions = Vec::new();
+    let mut curve_cursor = 0usize;
+    for (ordinal, record_index) in group.members().iter().enumerate() {
+        let selection = resolution.profile_curves.iter().find(|selection| {
+            native_stream(&selection.id) == Some(stream)
+                && selection.scope_record_index == group.scope_record_index
+                && selection.group_record_index == group.record_index
+                && usize::try_from(selection.group_member_ordinal).ok() == Some(ordinal)
+                && selection.record_index == record_index.value
+        })?;
+        if !selection.valid_layout() {
+            return None;
+        }
+        for loops in selection.loop_lists.iter().flatten() {
+            let mut outer = None;
+            let mut holes = Vec::new();
+            let mut used = HashSet::new();
+            for loop_ in loops {
+                let end = curve_cursor.checked_add(loop_.entries.len())?;
+                let selected = curves.get(curve_cursor..end)?;
+                curve_cursor = end;
+                let mut distinct = HashSet::new();
+                if selected.iter().any(|curve| !distinct.insert(curve)) {
+                    return None;
+                }
+                let mut matches = source.profiles.iter().enumerate().filter(|(_, profile)| {
+                    profile.len() == selected.len()
+                        && profile.iter().all(|use_| selected.contains(&use_.entity))
+                });
+                let (index, _) = matches.next()?;
+                if matches.next().is_some() {
+                    return None;
+                }
+                let index = u32::try_from(index).ok()?;
+                if !used.insert(index) {
+                    return None;
+                }
+                if loop_.outer {
+                    if outer.replace(index).is_some() {
+                        return None;
+                    }
+                } else {
+                    holes.push(index);
+                }
+            }
+            let region = SketchProfileRegion::loops(outer?, holes).ok()?;
+            if !regions.contains(&region) {
+                regions.push(region);
+            }
+        }
+    }
+    if curve_cursor != curves.len() {
+        return None;
+    }
+    PlanarProfileRef::sketch_regions(sketch, regions)
+        .ok()
+        .map(ProfileRef::Planar)
+}
+
+fn resolve_profile_curve_arrangement_regions(
+    group: &DesignConstructionOperandGroup,
+    resolution: &EntitySelectionPathResolution<'_>,
+    scoped: ScopedExtrudeProfileResolution<'_>,
+) -> Result<Option<cadmpeg_ir::features::ProfileRef>, CodecError> {
+    use cadmpeg_ir::features::{PlanarProfileRef, ProfileRef};
+    let Some(stream) = native_stream(&group.id) else {
+        return Ok(None);
+    };
+    let Some((sketch, curves)) = profile_curve_selection_curves(group, stream, resolution) else {
+        return Ok(None);
+    };
+    let Some(source) = resolution
+        .sketches
+        .iter()
+        .find(|source| source.id == sketch)
+    else {
+        return Ok(None);
+    };
+    let mut regions = Vec::new();
+    let mut cursor = 0usize;
+    for (ordinal, member) in group.members().iter().enumerate() {
+        let Some(selection) = resolution.profile_curves.iter().find(|selection| {
+            native_stream(&selection.id) == Some(stream)
+                && selection.scope_record_index == group.scope_record_index
+                && selection.group_record_index == group.record_index
+                && usize::try_from(selection.group_member_ordinal).ok() == Some(ordinal)
+                && selection.record_index == member.value
+        }) else {
+            return Ok(None);
+        };
+        if !selection.valid_layout() {
+            return Ok(None);
+        }
+        for loops in selection.loop_lists.iter().flatten() {
+            let [loop_] = loops.as_slice() else {
+                return Ok(None);
+            };
+            if !loop_.outer {
+                return Ok(None);
+            }
+            let Some(end) = cursor.checked_add(loop_.entries.len()) else {
+                return Ok(None);
+            };
+            let Some(program) = curves.get(cursor..end) else {
+                return Ok(None);
+            };
+            cursor = end;
+            let Some(region) = crate::design::geometry::arrangement_region_matching_curve_program(
+                source,
+                resolution.sketch_entities,
+                program,
+                scoped.linear_tolerance,
+                scoped.profile_work,
+                scoped.ctx,
+            )?
+            else {
+                return Ok(None);
+            };
+            if !regions.contains(&region) {
+                regions.push(region);
+            }
+        }
+    }
+    if cursor != curves.len() {
+        return Ok(None);
+    }
+    Ok(PlanarProfileRef::sketch_regions(sketch, regions)
+        .ok()
+        .map(ProfileRef::Planar))
+}
+
 fn resolve_profile_curve_path(
     group: &DesignConstructionOperandGroup,
     stream: &str,
     resolution: &EntitySelectionPathResolution<'_>,
 ) -> Option<cadmpeg_ir::features::PathRef> {
-    use cadmpeg_ir::features::PathRef;
+    if resolution
+        .profile_curves
+        .iter()
+        .filter(|selection| {
+            native_stream(&selection.id) == Some(stream)
+                && selection.scope_record_index == group.scope_record_index
+                && selection.group_record_index == group.record_index
+        })
+        .flat_map(|selection| selection.loop_lists.iter().flatten())
+        .any(|loops| !matches!(loops.as_slice(), [loop_] if loop_.outer))
+    {
+        return None;
+    }
+    let (sketch, curves) = profile_curve_selection_curves(group, stream, resolution)?;
+    let mut seen = HashSet::new();
+    if curves.iter().any(|curve| !seen.insert(curve)) {
+        return None;
+    }
+    cadmpeg_ir::features::PathRef::sketch_curves(sketch, curves).ok()
+}
+
+fn profile_curve_selection_curves(
+    group: &DesignConstructionOperandGroup,
+    stream: &str,
+    resolution: &EntitySelectionPathResolution<'_>,
+) -> Option<(
+    cadmpeg_ir::sketches::SketchId,
+    Vec<cadmpeg_ir::sketches::SketchEntityId>,
+)> {
     use cadmpeg_ir::sketches::SketchGeometryDefinition;
 
     macro_rules! available {
@@ -2374,7 +2552,8 @@ fn resolve_profile_curve_path(
                 && selection.record_index == record_index
         });
         let selection = available!(matches.next());
-        if matches.next().is_some()
+        if !selection.valid_layout()
+            || matches.next().is_some()
             || sketch_scope.is_some_and(|scope| scope != selection.sketch_scope_record_index)
             || owner_text.is_some_and(|text: &str| text != selection.owner_text)
         {
@@ -2404,12 +2583,15 @@ fn resolve_profile_curve_path(
     {
         return None;
     }
-    let mut seen = HashSet::new();
     let mut curves = Vec::new();
-    for entry in selections
-        .iter()
-        .flat_map(|selection| selection.loop_lists.iter().flatten().flatten())
-    {
+    for entry in selections.iter().flat_map(|selection| {
+        selection
+            .loop_lists
+            .iter()
+            .flatten()
+            .flatten()
+            .flat_map(|loop_| &loop_.entries)
+    }) {
         let mut matches = resolution.curve_identities.iter().filter(|curve| {
             native_stream(&curve.id) == Some(stream)
                 && curve.owner_reference == Some(owner_reference)
@@ -2421,9 +2603,6 @@ fn resolve_profile_curve_path(
             return None;
         }
         let identity = (curve.primary_id.get(), curve.secondary_id);
-        if !seen.insert(identity) {
-            return None;
-        }
         curves.push(crate::ids::neutral_sketch_curve_id(
             &sketch, identity.0, identity.1,
         ));
@@ -2440,7 +2619,7 @@ fn resolve_profile_curve_path(
     }) {
         return None;
     }
-    PathRef::sketch_curves(sketch, curves).ok()
+    Some((sketch, curves))
 }
 
 /// Resolve one complete ordered entity-selection group to a neutral Sketch

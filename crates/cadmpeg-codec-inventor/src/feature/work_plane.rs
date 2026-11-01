@@ -63,6 +63,7 @@ pub(super) fn project(
         ),
     };
     Ok(Feature {
+        product_definition: None,
         id: history_feature_id(&record.identity)?,
         ordinal: label.map_or(0, |label| u64::from(label.index)),
         name: label.and_then(|label| label.name()).map(str::to_owned),

@@ -71,16 +71,20 @@ fn a_joint_family_refuses_a_scalar_outside_it_by_name() {
             PairedJointKind::RackPinion {
                 distance: None,
                 distance2: None,
+                ratio: None,
+                coupled_joints: Vec::new(),
             },
-            &["distance", "distance2"],
+            &["distance", "distance2", "ratio", "coupled_joints"],
         ),
         (PairedJointKind::Screw { distance: None }, &["distance"]),
         (
             PairedJointKind::Gears {
                 distance: None,
                 distance2: None,
+                ratio: None,
+                coupled_joints: Vec::new(),
             },
-            &["distance", "distance2"],
+            &["distance", "distance2", "ratio", "coupled_joints"],
         ),
         (
             PairedJointKind::Belt {
@@ -140,6 +144,8 @@ fn a_joint_family_refuses_a_scalar_outside_it_by_name() {
         ("distance", serde_json::json!(2.0)),
         ("distance2", serde_json::json!(3.0)),
         ("offset", serde_json::json!(1.5)),
+        ("ratio", serde_json::json!(0.5)),
+        ("coupled_joints", serde_json::json!(["test:model:joint#1"])),
         (
             "angular_limits",
             serde_json::json!({"bounds": "range", "minimum": 0.0, "maximum": 1.0}),

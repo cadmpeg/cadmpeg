@@ -128,6 +128,7 @@ fn marker_circle_inputs_match_the_parameter_and_lane_scans() {
             .collect::<Vec<_>>();
         let parameters = (0..12)
             .map(|ordinal| DesignParameter {
+                product_definition: None,
                 driving: true,
                 id: ParameterId::mint(format!("synthetic:test:id#parameter-{ordinal}")).unwrap(),
                 owner: (next(5) != 0)

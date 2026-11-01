@@ -40,6 +40,7 @@ pub(super) fn project(
     occurrences: &[NativeProductOccurrence],
     subfigures: &[NativeSubfigureDefinition],
     networks: &[NativeNetworkDefinition],
+    sequences: &crate::entities::geometry::SourceSequences,
     ctx: &DecodeContext<'_>,
 ) -> Result<Vec<LossNote>, CodecError> {
     let mut losses = Vec::new();
@@ -82,12 +83,26 @@ pub(super) fn project(
         let Some(definition) = definitions.get_mut(&record.definition) else {
             continue;
         };
-        for link in &record.neutral_links {
-            if let Some(body) = ir.model.bodies.iter().find(|body| body.id.as_str() == link) {
-                if !definition.bodies.contains(&body.id) {
-                    definition.bodies.push(body.id.clone());
+        for link in &record.native_links {
+            let sequence = match source_sequence(link) {
+                Ok(sequence) => sequence,
+                Err(_) => {
+                    losses.push(IgesLossCode::NeutralProjectionUnavailable.note(format!(
+                        "{} member {member}: product membership of carrier {link} has no directory sequence", record.id
+                    )));
+                    continue;
                 }
-            } else {
+            };
+            let mut matched = false;
+            for body in &ir.model.bodies {
+                if sequences.body_neutral_form(&body.id) == Some(sequence) {
+                    if !definition.bodies.contains(&body.id) {
+                        definition.bodies.push(body.id.clone());
+                    }
+                    matched = true;
+                }
+            }
+            if !matched {
                 losses.push(IgesLossCode::NeutralProjectionUnavailable.note(format!(
                     "{} member {member}: product membership of carrier {link} has no neutral body owner", record.id
                 )));

@@ -838,24 +838,10 @@ fn primary_brep_metadata_skips_invalid_and_empty_candidates() {
         zip.start_file(contributing_name, stored).unwrap();
         zip.write_all(&synthetic_geometry_smbh()).unwrap();
         let bytes = zip.finish().unwrap().into_inner();
-        let expected_digest = with_scan(&bytes, |scan| {
-            scan.breps
-                .iter()
-                .find(|facts| facts.name == contributing_name)
-                .unwrap()
-                .sha256
-                .to_string()
-        });
         let result = F3dCodec
             .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
             .unwrap();
         assert!(!result.ir().model.faces.is_empty());
-        let attributes = &result.source_fidelity().metadata;
-        assert_eq!(
-            attributes.get("active_brep").map(String::as_str),
-            Some(contributing_name)
-        );
-        assert_eq!(attributes.get("active_brep_sha256"), Some(&expected_digest));
         assert!(
             (result.ir().tolerances.linear.get() - EXPECTED_HEADER_LINEAR_TOLERANCE).abs()
                 <= EPS_HEADER_LINEAR_TOLERANCE

@@ -34,9 +34,7 @@
         "asset_folder": "FusionAssetName[Active]",
         "product_family": "Autodesk Neutron",
         "product_version": "ASM 231.6.3.65535 OSX",
-        "save_date": "Tue Mar 31 16:16:19 2026",
-        "solved_record_len": "1597",
-        "zip_entry_count": "3"
+        "save_date": "Tue Mar 31 16:16:19 2026"
       }
     },
     "units": {
@@ -699,20 +697,7 @@
         }
       }
     },
-    "metadata": {
-      "active_brep": "FusionAssetName[Active]/Breps.BlobParts/Body1.smbh",
-      "active_brep_sha256": "06392ed0764d5875f6b190f837c13eafdff9d9c6639df14bd12ff4f50f18b870",
-      "document_local_sha256": "407c20d9cda74f643502f5639176a0facb8e62f88e015aef2e320d75c3ba5f09",
-      "f3d:FusionAssetName[Active]/Breps.BlobParts/Body1.smbh:asm-bulletin-board#0000001716:000000.byte_offset": "1803",
-      "f3d:FusionAssetName[Active]/Breps.BlobParts/Body1.smbh:asm-delta-state#0000001716.byte_offset": "1716",
-      "f3d:FusionAssetName[Active]/Breps.BlobParts/Body1.smbh:asm-delta-state#0000001947.byte_offset": "1947",
-      "f3d:FusionAssetName[Active]/Breps.BlobParts/Body1.smbh:asm-entity-change#0000001716:000000:000000.byte_offset": "1830",
-      "f3d:FusionAssetName[Active]/Breps.BlobParts/Body1.smbh:asm-entity-change#0000001716:000000:000001.byte_offset": "1857",
-      "f3d:FusionAssetName[Active]/Breps.BlobParts/Body1.smbh:asm-history#0000001628.byte_offset": "1628",
-      "f3d:FusionAssetName[Active]/Breps.BlobParts/Body1.smbh:asm-history#0000001628.history_entry_count": "99",
-      "f3d:FusionAssetName[Active]/Breps.BlobParts/Body1.smbh:asm-history#0000001628.stream_size": "2",
-      "f3d:FusionAssetName[Active]/Breps.BlobParts/Body1.smbh:asm-history-record#0000001903.byte_offset": "1903"
-    },
+    "decode_digest": "fd1aaba03a4cf627de9ebd96815c6b40873a578a6d3713d3be35dc4353159616",
     "retained_records": {
       "f3d:FusionAssetName[Active]/Breps.BlobParts/Body1.smbh:asm-history-record#0000001903": {
         "stream": "FusionAssetName[Active]/Breps.BlobParts/Body1.smbh",
