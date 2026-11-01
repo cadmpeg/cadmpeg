@@ -17,6 +17,7 @@ fn model() -> CadIr {
         name: None,
         color: None,
         visible: None,
+        native_ref: None,
     });
     ir.model.product_definitions.push(
         serde_json::from_value(serde_json::json!({
@@ -37,6 +38,7 @@ fn model() -> CadIr {
         ordinal: 0,
         name: None,
         suppressed: None,
+        needs_recompute: false,
         dependencies: DistinctMembers::default(),
         source_properties: std::collections::BTreeMap::default(),
         source_tag: None,
@@ -108,9 +110,9 @@ fn product_history_owner_validates_parameter_definition() {
         ordinal: 0,
         name: "distance".into(),
         expression: "2".into(),
+        driving: true,
         display: None,
         value: None,
-        dependencies: crate::features::DistinctMembers::default(),
         properties: std::collections::BTreeMap::default(),
         pmi: None,
         native_ref: None,

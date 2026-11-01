@@ -89,6 +89,7 @@ fn cache_is_not_used_as_its_own_construction_witness() {
 fn stale_producing_feature_permits_its_surface_cache_to_disagree() {
     let mut ir = swept_plane(1.0);
     ir.model.features.push(Feature {
+        product_definition: None,
         id: "test:model:feature#stale-sweep".try_into().unwrap(),
         ordinal: 0,
         name: None,

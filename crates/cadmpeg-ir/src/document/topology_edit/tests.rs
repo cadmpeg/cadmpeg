@@ -10,6 +10,7 @@ use crate::topology::Shell;
 
 fn feature(id: &str, ordinal: u64, dependencies: Vec<FeatureId>, outputs: Vec<BodyId>) -> Feature {
     Feature {
+        product_definition: None,
         id: FeatureId::mint(id).unwrap(),
         ordinal,
         name: None,
