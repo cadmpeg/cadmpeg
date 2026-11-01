@@ -88,14 +88,16 @@ fn every_write_target_names_a_fixed_ascii_row() {
 /// The physical representation does not reach the Global resolver: Compressed
 /// ASCII and Binary are normalized to fixed cards before this point, so one
 /// resolved Global serves every representation in the matrix below.
-fn resolved_global(version_flag: &str) -> crate::global::ResolvedGlobal {
+fn resolved_global(version_flag: &str) -> crate::global::GlobalRecord {
     let bytes = fixed_ascii_with_global(&global_with_version_flag(version_flag));
     let scan = crate::card::scan(&bytes).unwrap();
-    crate::test_support::parse_global(&scan).unwrap().0
+    crate::global::GlobalRecord::Resolved(Box::new(
+        crate::test_support::parse_global(&scan).unwrap().0,
+    ))
 }
 
 /// Whether `global` charges [`IgesLossCode::SourceDialectUnverified`].
-fn global_charges_dialect_unverified(global: &crate::global::ResolvedGlobal) -> bool {
+fn global_charges_dialect_unverified(global: &crate::global::GlobalRecord) -> bool {
     let expected = IgesLossCode::SourceDialectUnverified
         .note(String::new())
         .code;
