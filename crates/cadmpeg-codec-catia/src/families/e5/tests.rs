@@ -462,10 +462,8 @@ fn decode_e5_stream_transfers_circle_carrier() {
         result.ir().model.curves[0].geometry,
         cadmpeg_ir::geometry::CurveGeometry::Solved(SolvedCurveGeometry::Circle(_))
     ));
-    assert!(result.ir().native_unknowns("catia").unwrap()[0]
-        .links
-        .iter()
-        .any(|link| link.as_str() == "catia:e5:surf#0"));
+    let unknowns = result.ir().native_unknowns("catia").unwrap();
+    assert!(unknowns[0].links.is_empty());
     let validation = cadmpeg_ir::validate::validate_neutral(result.ir(), Vec::new())
         .expect("validate the neutral model");
     assert!(validation.is_ok(), "findings: {:?}", validation.findings);

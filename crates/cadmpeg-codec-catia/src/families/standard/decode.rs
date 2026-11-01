@@ -55,7 +55,7 @@ use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 use crate::assemble::cgm_source;
 use crate::assemble::{
     annotate, build_geometry_report, circle_parameter_range_from_surface_branch,
-    link_payload_carriers, neutral_model_is_admissible, ordered_range, preserve_raw_payload,
+    neutral_model_is_admissible, ordered_range, preserve_raw_payload,
     rational_pcurve_arc, unwrap_angle, TypedCounts,
 };
 use crate::container::{self, ContainerScan};
@@ -2175,7 +2175,7 @@ fn try_decode_standard_population(
     let mut ir = CadIr::empty();
     let mut annotations = AnnotationBuilder::new();
     let mut unknowns = Vec::new();
-    let payload_index = match preserve_raw_payload(
+    let _payload_index = match preserve_raw_payload(
         ctx,
         &mut unknowns,
         &mut annotations,
@@ -2695,9 +2695,6 @@ fn try_decode_standard_population(
         Err(error @ cadmpeg_core::CodecError::ResourceLimit(_)) => return Some(Err(error)),
         Err(_) => return None,
     };
-    if let Err(error) = link_payload_carriers(&ir, &mut unknowns[payload_index], &mut annotations) {
-        return Some(Err(error));
-    }
     let annotations = annotations.build();
 
     let (Some(face_local_freeform), Some(unbound_revolution), Some(withheld_face_rows)) = (
