@@ -4925,7 +4925,7 @@ fn parse_extrude_identity_frame(bytes: &[u8], start: usize) -> Option<ExtrudeIde
     })
 }
 
-/// Longest tail of an extended selection member.
+/// Longest extended selection-member tail that a following record header ends.
 const EXTRUDE_EXTENDED_TAIL_MAX: usize = 1024;
 
 /// End of an extended selection-member tail that starts at `tail_start`.
@@ -4936,23 +4936,19 @@ const EXTRUDE_EXTENDED_TAIL_MAX: usize = 1024;
 /// the record index and the end offset. The fourteen-byte and fifty-byte
 /// lengths belong to the typed tail forms and are not extended.
 fn extended_extrude_tail_end(bytes: &[u8], tail_start: usize) -> Option<(u32, usize)> {
-    let limit = tail_start
-        .checked_add(EXTRUDE_EXTENDED_TAIL_MAX)?
-        .min(bytes.len());
     let is_header = |at: usize| -> Option<u32> {
         let header = bytes.get(at..at.checked_add(11)?)?;
         (header[..4] == 3u32.to_le_bytes() && header[4..7].iter().all(u8::is_ascii_digit))
             .then(|| View::u32_le_at(bytes, at + 7))?
     };
     let typed_length = |end: usize| matches!(end - tail_start, 14 | 50);
-    for at in tail_start.checked_add(1)?..=limit {
+    for at in tail_start.checked_add(1)?..bytes.len() {
         if let Some(index) = is_header(at) {
-            return (!typed_length(at)).then_some((index, at));
+            return (at - tail_start <= EXTRUDE_EXTENDED_TAIL_MAX && !typed_length(at))
+                .then_some((index, at));
         }
     }
-    let rest = bytes.len().checked_sub(tail_start)?;
-    ((1..=EXTRUDE_EXTENDED_TAIL_MAX).contains(&rest) && !typed_length(bytes.len()))
-        .then_some((0, bytes.len()))
+    (bytes.len() > tail_start && !typed_length(bytes.len())).then_some((0, bytes.len()))
 }
 
 /// Parse a selection-member identity frame.
