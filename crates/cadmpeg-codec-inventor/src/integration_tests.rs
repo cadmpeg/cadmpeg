@@ -18,6 +18,7 @@ use crate::test_support::test_fixtures::{
 use crate::InventorCodec;
 
 mod combine;
+mod sketch_graph;
 mod surface_extrusion;
 mod thicken;
 

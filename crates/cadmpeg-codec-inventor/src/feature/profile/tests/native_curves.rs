@@ -28,7 +28,7 @@ fn source_native_curves_keep_the_whole_sketch_profile_incomplete() {
         .with_native_ref(Some(raw[2].id()))];
         let index = ProfileIndex::new(&[], &[], &[], &raw, &projected);
         assert_eq!(
-            index.incomplete_sketches.contains(&("generated", 2)),
+            index.incomplete_sketches.contains_key(&("generated", 2)),
             native
         );
     }

@@ -25,7 +25,7 @@ impl ProfileIndex<'_> {
         ordinal: u32,
         sketch: &Sketch,
     ) -> Option<PlanarProfileRef> {
-        if self.incomplete_sketches.contains(&(token, ordinal)) {
+        if self.incomplete_sketches.contains_key(&(token, ordinal)) {
             return None;
         }
         SketchFrame::new(sketch)?;
