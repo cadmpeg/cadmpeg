@@ -38,7 +38,7 @@ fn actual_cfb_header_native_values_and_reads_share_one_part_stage() {
     let PropertySetState::Parsed(parsed) = &descriptor.state else {
         panic!("actual valid property set");
     };
-    let mut output = PartOutput::new(CodecFormat::Inventor);
+    let mut output = PartOutput::new(CodecFormat::Inventor, &ctx);
     assert!(stage_header(&ctx, &mut output, descriptor, parsed).expect("source-owned header"));
     let (_, native, fidelity, losses) = output.into_parts();
     assert!(losses.is_empty());
@@ -73,7 +73,7 @@ fn changed_held_header_never_manufactures_source_reads_for_changed_native_values
     let PropertySetState::Parsed(parsed) = &descriptor.state else {
         unreachable!()
     };
-    let mut output = PartOutput::new(CodecFormat::Inventor);
+    let mut output = PartOutput::new(CodecFormat::Inventor, &ctx);
     assert!(!stage_header(&ctx, &mut output, &descriptor, parsed).expect("bounded give-up"));
     let (_, native, fidelity, losses) = output.into_parts();
     assert!(native
@@ -98,7 +98,7 @@ fn held_header_forms_native_content_without_fabricated_source_layout() {
     let PropertySetState::Parsed(parsed) = &descriptor.state else {
         panic!("valid syntax")
     };
-    let mut output = PartOutput::new(CodecFormat::Inventor);
+    let mut output = PartOutput::new(CodecFormat::Inventor, &ctx);
     assert!(stage_header(&ctx, &mut output, &descriptor, parsed).expect("held content"));
     let (_, native, fidelity, losses) = output.into_parts();
     assert_eq!(

@@ -57,7 +57,7 @@ fn damaged_occurrence_body_has_one_home_and_its_readable_peer_is_exact() {
         .collect::<Vec<_>>();
     let parts = std::mem::replace(
         &mut container.rse.source_parts,
-        PartOutput::new(cadmpeg_ir::CodecFormat::Inventor),
+        PartOutput::new(cadmpeg_ir::CodecFormat::Inventor, &ctx),
     );
     let inventory = inventory(&ctx, &container.rse, parts).expect("the assembly inventory decodes");
     assert!(!inventory
@@ -215,7 +215,7 @@ fn placement_parse_and_conversion_failures_share_the_helper_and_keep_the_exact_p
         .collect::<Vec<_>>();
     let parts = std::mem::replace(
         &mut container.rse.source_parts,
-        PartOutput::new(cadmpeg_ir::CodecFormat::Inventor),
+        PartOutput::new(cadmpeg_ir::CodecFormat::Inventor, &ctx),
     );
     let inventory = inventory(&ctx, &container.rse, parts).expect("the assembly inventory decodes");
     assert!(inventory.occurrences.is_empty());

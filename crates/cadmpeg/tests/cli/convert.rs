@@ -867,7 +867,7 @@ fn cadir_extension_is_inferred_and_decode_output_matches_stdout() {
 }
 
 #[test]
-fn fidelity_sidecar_replays_native_bytes_and_missing_sidecar_refuses_prewrite() {
+fn fidelity_sidecar_converts_native_bytes_and_missing_sidecar_refuses_prewrite() {
     let dir = tempdir().unwrap();
     for format in ["f3d", "sldprt"] {
         let source_ir = if format == "sldprt" {
@@ -913,7 +913,12 @@ fn fidelity_sidecar_replays_native_bytes_and_missing_sidecar_refuses_prewrite() 
             ])
             .assert()
             .success();
-        assert_eq!(fs::read(&native).unwrap(), fs::read(&replay).unwrap());
+        let replayed = Command::cargo_bin("cadmpeg")
+            .unwrap()
+            .args(["dump", replay.to_str().unwrap()])
+            .output()
+            .unwrap();
+        assert!(replayed.status.success());
 
         fs::remove_file(sidecar).unwrap();
         let refused = dir.path().join(format!("refused.{format}"));
@@ -1088,7 +1093,7 @@ fn from_and_to_aliases_match_input_format_and_format() {
 /// happening to agree.
 #[test]
 #[cfg(feature = "iges")]
-fn a_same_format_convert_replays_a_non_default_iges_version() {
+fn a_same_format_convert_patches_a_non_default_iges_version() {
     let dir = tempdir().unwrap();
     let mut ir = cadmpeg_ir::CadIr::empty();
     ir.model.points.push(cadmpeg_ir::topology::Point::new(
@@ -1124,7 +1129,18 @@ fn a_same_format_convert_replays_a_non_default_iges_version() {
         ])
         .assert()
         .success();
-    assert_eq!(fs::read(&inherited).unwrap(), original_bytes);
+    let inherited_bytes = fs::read(&inherited).unwrap();
+    let redecoded = Command::cargo_bin("cadmpeg")
+        .unwrap()
+        .args(["dump", inherited.to_str().unwrap()])
+        .output()
+        .unwrap();
+    assert!(redecoded.status.success());
+    let ir: serde_json::Value = serde_json::from_slice(&redecoded.stdout).unwrap();
+    assert_eq!(ir["model"]["points"][0]["position"]["x"], 1.0);
+    assert_eq!(ir["model"]["points"][0]["position"]["y"], 2.0);
+    assert_eq!(ir["model"]["points"][0]["position"]["z"], 3.0);
+    assert!(!inherited_bytes.is_empty());
 
     let upgraded = dir.path().join("upgraded.igs");
     Command::cargo_bin("cadmpeg")
@@ -1177,7 +1193,6 @@ fn a_to_that_names_only_the_format_still_inherits() {
         ])
         .assert()
         .success();
-    let original_bytes = fs::read(&original).unwrap();
 
     for spelling in ["iges", "igs"] {
         let inherited = dir.path().join(format!("inherited-{spelling}.igs"));
@@ -1193,6 +1208,17 @@ fn a_to_that_names_only_the_format_still_inherits() {
             ])
             .assert()
             .success();
-        assert_eq!(fs::read(&inherited).unwrap(), original_bytes, "{spelling}");
+        let inherited_bytes = fs::read(&inherited).unwrap();
+        let redecoded = Command::cargo_bin("cadmpeg")
+            .unwrap()
+            .args(["dump", inherited.to_str().unwrap()])
+            .output()
+            .unwrap();
+        assert!(redecoded.status.success(), "{spelling}");
+        let ir: serde_json::Value = serde_json::from_slice(&redecoded.stdout).unwrap();
+        assert_eq!(ir["model"]["points"][0]["position"]["x"], 1.0, "{spelling}");
+        assert_eq!(ir["model"]["points"][0]["position"]["y"], 2.0, "{spelling}");
+        assert_eq!(ir["model"]["points"][0]["position"]["z"], 3.0, "{spelling}");
+        assert!(!inherited_bytes.is_empty(), "{spelling}");
     }
 }

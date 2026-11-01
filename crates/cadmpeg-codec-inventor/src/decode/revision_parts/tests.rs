@@ -52,7 +52,7 @@ fn actual_revision_records_keep_exact_native_fields_and_source_read_ranges() {
         .rse
         .revision_source
         .expect("the container holds a revision source");
-    let mut output = PartOutput::new(CodecFormat::Inventor);
+    let mut output = PartOutput::new(CodecFormat::Inventor, &ctx);
     assert_eq!(
         super::stage(&ctx, &mut output, source).expect("the revision stage succeeds"),
         2
@@ -94,7 +94,7 @@ fn decoded_revisions(bytes: &[u8]) -> Vec<RevisionRecord> {
         .expect("the fixture fits the service policy");
     let container =
         InventorContainer::open(&ctx, root).expect("the fixture opens as an inventor container");
-    let mut output = PartOutput::new(CodecFormat::Inventor);
+    let mut output = PartOutput::new(CodecFormat::Inventor, &ctx);
     super::stage(
         &ctx,
         &mut output,
@@ -154,7 +154,7 @@ fn late_revision_stream_failure_discards_formed_records_and_keeps_exact_database
         .rse
         .revision_source
         .expect("the container holds a revision source");
-    let mut output = PartOutput::new(CodecFormat::Inventor);
+    let mut output = PartOutput::new(CodecFormat::Inventor, &ctx);
     assert!(
         super::super::database_parts::stage(&ctx, &mut output, &container.rse.databases[0])
             .expect("the database stage succeeds")
@@ -211,7 +211,7 @@ fn actual_revision_native_entity_refusal_stays_a_fatal_resource_limit() {
         .expect("the fixture fits the one entity policy");
     let container = InventorContainer::open(&ctx, root)
         .expect("the fixture opens within the one entity policy");
-    let mut output = PartOutput::new(CodecFormat::Inventor);
+    let mut output = PartOutput::new(CodecFormat::Inventor, &ctx);
     let result = super::stage(
         &ctx,
         &mut output,

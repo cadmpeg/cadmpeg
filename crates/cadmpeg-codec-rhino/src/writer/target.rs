@@ -277,12 +277,17 @@ pub(crate) fn plan(
              so no other target avoids it",
         ));
     }
+    // Re-admit the written bytes for the verification decode so the
+    // re-decode carries the digest of the bytes it reads.
+    let (verify_ctx, verify_root) =
+        cadmpeg_core::decode::DecodeContext::from_root_bytes(bytes.as_bytes(), &arena, &policy)?;
     let coverage = ArenaCoverage::Declared(coverage::verified(
-        &ctx,
+        &verify_ctx,
         input.ir,
-        bytes.as_bytes(),
+        verify_root.window(),
         outcome.subds,
     ));
+    verify_ctx.finish_session()?;
     ctx.finish_session()?;
     session.finish()?;
     Ok(ExportBody {

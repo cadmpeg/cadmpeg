@@ -21,7 +21,7 @@ pub(crate) fn parse(
     input: View<'_>,
     ctx: &DecodeContext<'_>,
 ) -> Result<(Exchange, Vec<ParseDiagnostic>, PartOutput), CodecError> {
-    let mut parts = PartOutput::new(cadmpeg_ir::CodecFormat::Step);
+    let mut parts = PartOutput::new(cadmpeg_ir::CodecFormat::Step, ctx);
     let mut parser = Parser {
         current: None,
         lexer: Lexer::new(input.window(), ctx),

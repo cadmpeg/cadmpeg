@@ -177,7 +177,8 @@ mod tests {
         let arena = DecodeArena::new();
         let policy = DecodePolicy::service();
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-        let fidelity = cadmpeg_ir::SourceFidelity::default();
+        let fidelity =
+            cadmpeg_ir::SourceFidelity::for_decode(&ctx, cadmpeg_ir::Annotations::default());
         let with_source = validate_native(&ctx, &inputs, &ir, Some(&fidelity)).unwrap();
         assert_eq!(with_source, findings);
     }

@@ -207,7 +207,7 @@ fn decoded(
         admitted_entities,
         "admit NX entities",
     )?;
-    let mut source_fidelity = cadmpeg_ir::SourceFidelity::with_annotations(annotations);
+    let mut source_fidelity = cadmpeg_ir::SourceFidelity::for_decode(ctx, annotations);
     source_fidelity.attach_native_unknown_records(&mut ir, "nx", unknowns, ctx)?;
     if ctx.container_only() && (!scan.container.entries.is_empty() || !scan.streams.is_empty()) {
         scan.mark_untyped(cadmpeg_ir::ArenaClass::Model);

@@ -3054,7 +3054,8 @@ pub(crate) fn decode_v1(ctx: &DecodeContext<'_>, data: &[u8]) -> Result<Decoded,
     }
     let scope = crate::container::scope_from_parts(&ir, model_part_seen, false);
     ir.scope = scope;
-    let mut source_fidelity = cadmpeg_ir::SourceFidelity::default();
+    let mut source_fidelity =
+        cadmpeg_ir::SourceFidelity::for_decode(ctx, cadmpeg_ir::Annotations::default());
     let untyped_ids = opaque_records
         .iter()
         .map(|record| record.id().clone())
@@ -3111,7 +3112,8 @@ fn container_result(
         }
         offset = chunk.next_offset();
     }
-    let mut source_fidelity = cadmpeg_ir::SourceFidelity::default();
+    let mut source_fidelity =
+        cadmpeg_ir::SourceFidelity::for_decode(ctx, cadmpeg_ir::Annotations::default());
     source_fidelity.retain_unknown_records("rhino", records)?;
     for id in untyped_ids {
         source_fidelity.mark_untyped(id.as_str(), [cadmpeg_ir::ArenaClass::Model])?;

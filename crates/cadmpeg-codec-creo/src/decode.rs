@@ -105,7 +105,7 @@ pub(crate) fn decode(ctx: &DecodeContext<'_>, root: View<'_>) -> Result<Decoded,
     if !ctx.container_only() {
         document_projection::project(ctx, &scan, &mut ir, &mut body.losses)?;
     }
-    let mut source_fidelity = cadmpeg_ir::SourceFidelity::with_annotations(annotations);
+    let mut source_fidelity = cadmpeg_ir::SourceFidelity::for_decode(ctx, annotations);
     source_fidelity.attach_native_unknown_records(&mut ir, "creo", unknowns, ctx)?;
     if ctx.container_only() {
         // Container mode retains expanded section bytes, not the typed modern

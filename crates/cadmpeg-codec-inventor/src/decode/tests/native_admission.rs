@@ -124,6 +124,9 @@ fn selected_active_carrier_projects_its_native_record() {
 
 #[test]
 fn assembly_occurrence_native_record_refuses_entity_limit_before_creation() {
+    let arena = DecodeArena::new();
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service())
+        .expect("build the decode context");
     let inventory = AssemblyInventory {
         occurrences: vec![AssemblyOccurrence {
             segment_token: "segment".into(),
@@ -143,12 +146,10 @@ fn assembly_occurrence_native_record_refuses_entity_limit_before_creation() {
         placements: Vec::new(),
         parts: cadmpeg_ir::source_fidelity::parts::PartOutput::new(
             cadmpeg_ir::CodecFormat::Inventor,
+            &ctx,
         ),
     };
-    let arena = DecodeArena::new();
-    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service())
-        .expect("build the decode context");
-    cadmpeg_ir::source_fidelity::parts::PartOutput::new(cadmpeg_ir::CodecFormat::Inventor)
+    cadmpeg_ir::source_fidelity::parts::PartOutput::new(cadmpeg_ir::CodecFormat::Inventor, &ctx)
         .insert_native(
             &ctx,
             "assembly_occurrences",
@@ -159,7 +160,7 @@ fn assembly_occurrence_native_record_refuses_entity_limit_before_creation() {
     policy.limits.max_entities = 0;
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("limited context");
     assert!(matches!(
-        cadmpeg_ir::source_fidelity::parts::PartOutput::new(cadmpeg_ir::CodecFormat::Inventor).insert_native(&ctx, "assembly_occurrences", AssemblyOccurrenceRecord::from_parsed_occurrence(&inventory.occurrences[0])),
+        cadmpeg_ir::source_fidelity::parts::PartOutput::new(cadmpeg_ir::CodecFormat::Inventor, &ctx).insert_native(&ctx, "assembly_occurrences", AssemblyOccurrenceRecord::from_parsed_occurrence(&inventory.occurrences[0])),
         Err(CodecError::ResourceLimit(limit))
             if limit.dimension == ResourceDimension::Entities
                 && limit.scope == LimitScope::Session
@@ -171,13 +172,18 @@ fn stage_placement(
     wire: AssemblyPlacementRecordWire,
 ) -> Result<(), CodecError> {
     let record = AssemblyPlacementRecord::try_from(wire).map_err(CodecError::malformed)?;
-    cadmpeg_ir::source_fidelity::parts::PartOutput::new(cadmpeg_ir::CodecFormat::Inventor)
+    cadmpeg_ir::source_fidelity::parts::PartOutput::new(cadmpeg_ir::CodecFormat::Inventor, ctx)
         .insert_native(ctx, "assembly_placements", record)
 }
 
 #[test]
 fn assembly_placement_native_record_refuses_entity_limit_before_creation() {
     let suffix = [1_u8];
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_entities = 0;
+    let (limited, _) =
+        DecodeContext::from_root_bytes(&[], &arena, &policy).expect("limited context");
     let inventory = AssemblyInventory {
         occurrences: Vec::new(),
         placements: vec![AssemblyPlacement {
@@ -199,13 +205,9 @@ fn assembly_placement_native_record_refuses_entity_limit_before_creation() {
         }],
         parts: cadmpeg_ir::source_fidelity::parts::PartOutput::new(
             cadmpeg_ir::CodecFormat::Inventor,
+            &limited,
         ),
     };
-    let arena = DecodeArena::new();
-    let mut policy = DecodePolicy::service();
-    policy.limits.max_entities = 0;
-    let (limited, _) =
-        DecodeContext::from_root_bytes(&[], &arena, &policy).expect("limited context");
     let wire = AssemblyPlacementRecordWire::from_placement(&inventory.placements[0]);
     assert!(matches!(
         stage_placement(&limited, wire),
