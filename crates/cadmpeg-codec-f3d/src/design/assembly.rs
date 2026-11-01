@@ -1758,6 +1758,7 @@ mod tests {
 
     fn feature(native_ref: &str, definition: FeatureDefinition) -> Feature {
         Feature {
+            product_definition: None,
             needs_recompute: false,
             id: FeatureId::mint(format!(
                 "test:model:feature#{}",

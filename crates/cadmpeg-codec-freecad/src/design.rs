@@ -475,6 +475,7 @@ pub(crate) fn transfer(
         let mut dependency_members = DistinctMembers::default();
         dependency_members.extend(dependencies);
         ir.model.features.push(Feature {
+            product_definition: None,
             id,
             ordinal: feature_ordinals[object.id().as_str()],
             name: property(&owned, "Label")
@@ -1158,6 +1159,7 @@ fn append_spreadsheet(
             )
         };
         parameters.push(DesignParameter {
+            product_definition: None,
             id,
             owner: Some(feature_id(object)?),
             ordinal: u32::try_from(index).map_err(|_| {
@@ -1435,6 +1437,7 @@ fn append_custom_parameters(
             |(_, expression)| expression.into(),
         );
         parameters.push(DesignParameter {
+            product_definition: None,
             id: ParameterId::mint(design_identity_text(
                 "parameter",
                 object,
@@ -1609,6 +1612,7 @@ fn append_operation_parameters(
             None => cadmpeg_ir::features::Expression::literal(&value),
         };
         parameters.push(DesignParameter {
+            product_definition: None,
             id: ParameterId::mint(design_identity_text(
                 "parameter",
                 object,
@@ -2754,6 +2758,7 @@ fn parse_constraints(
                         properties: parameter_properties,
                         pmi: None,
                         native_ref: Some(property.id.clone()),
+                        product_definition: None,
                     });
                     Ok::<_, CodecError>(id)
                 })

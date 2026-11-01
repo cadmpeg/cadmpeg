@@ -64,6 +64,7 @@ fn relation_point_materializes_under_one_proven_marker_transform() {
     .unwrap();
     let sketch = SketchId::mint("synthetic:test:id#sketch").unwrap();
     let feature = Feature {
+        product_definition: None,
         id: FeatureId::mint("synthetic:test:id#feature").expect("identity grammar"),
         ordinal: 0,
         name: None,
@@ -512,6 +513,7 @@ fn relation_point_coexists_with_nonpoint_native_carrier() {
     .unwrap();
     let sketch = SketchId::mint("synthetic:test:id#sketch").unwrap();
     let feature = Feature {
+        product_definition: None,
         id: FeatureId::mint("synthetic:test:id#feature").expect("identity grammar"),
         ordinal: 0,
         name: None,
@@ -691,6 +693,7 @@ fn relation_point_coexists_with_nonpoint_native_carrier() {
 fn relation_point_uses_resolved_sketch_frame_when_marker_transform_is_ambiguous() {
     let sketch = SketchId::mint("synthetic:test:id#sketch").unwrap();
     let feature = Feature {
+        product_definition: None,
         id: FeatureId::mint("synthetic:test:id#feature").expect("identity grammar"),
         ordinal: 0,
         name: None,
@@ -946,6 +949,7 @@ fn circular_profile_binds_by_unique_diameter_signature() {
     let sketch_id = SketchId::mint("synthetic:test:id#circle-profile").unwrap();
     let entity_id = SketchEntityId::mint("synthetic:test:id#circle").unwrap();
     let feature = |id: &str, name: &str, sketch| Feature {
+        product_definition: None,
         id: FeatureId::mint(id).expect("identity grammar"),
         ordinal: 0,
         name: Some(name.into()),
@@ -972,6 +976,7 @@ fn circular_profile_binds_by_unique_diameter_signature() {
         ),
     ];
     let parameter = |id: &str, owner: &str, diameter: f64| DesignParameter {
+        product_definition: None,
         driving: true,
         id: ParameterId::mint(id).expect("identity grammar"),
         owner: Some(FeatureId::mint(owner).expect("identity grammar")),

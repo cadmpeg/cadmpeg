@@ -458,6 +458,7 @@ fn knit_completeness_resolves_the_canonical_bound_gap_tolerance() {
     for value in [0.0, 0.1] {
         let value = ParameterValue::Length(cadmpeg_ir::scalar::Length::new(value).unwrap());
         let parameter = DesignParameter {
+            product_definition: None,
             id: parameter_id.clone(),
             owner: None,
             ordinal: 0,
@@ -479,6 +480,7 @@ fn knit_completeness_resolves_the_canonical_bound_gap_tolerance() {
         let mut ir = cadmpeg_ir::CadIr::empty();
         ir.model.parameters.push(parameter);
         ir.model.features.push(Feature {
+            product_definition: None,
             id: "test:model:feature#knit".try_into().unwrap(),
             ordinal: 0,
             name: None,

@@ -179,6 +179,7 @@ fn captured_feature_compares_its_actual_serialized_regeneration_parent_only() {
     };
     fn feature(key: &str, ordinal: u64) -> Feature {
         Feature {
+            product_definition: None,
             id: FeatureId::mint(format!("test:model:feature#{key}")).unwrap(),
             ordinal,
             name: None,

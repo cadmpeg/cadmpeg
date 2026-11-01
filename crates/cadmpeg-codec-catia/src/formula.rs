@@ -1855,6 +1855,7 @@ fn project_parameter_tokens(
     let expression = cadmpeg_ir::features::Expression::from_spans(&parameter.expression, spans)
         .map_err(|error| cadmpeg_core::CodecError::malformed(error.to_string()))?;
     Ok(cadmpeg_ir::features::DesignParameter {
+        product_definition: None,
         id: parameter.id,
         owner: parameter.owner,
         ordinal: parameter.ordinal,

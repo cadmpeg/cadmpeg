@@ -48,6 +48,7 @@ fn source_less_spatial_line(start: Point3, end: Point3) -> cadmpeg_ir::CadIr {
                 .unwrap(),
         ));
     ir.model.features.push(Feature {
+        product_definition: None,
         id: FeatureId::mint("synthetic:test:feature#spatial-path").expect("identity grammar"),
         ordinal: 0,
         name: Some("Spatial path".into()),

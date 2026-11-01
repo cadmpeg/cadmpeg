@@ -12,6 +12,7 @@ fn document() -> CadIr {
     let consumer = ParameterId::mint("test:model:parameter#consumer").unwrap();
     let mut ir = CadIr::empty();
     let parameter = |id, expression| DesignParameter {
+        product_definition: None,
         id,
         owner: None,
         ordinal: 0,

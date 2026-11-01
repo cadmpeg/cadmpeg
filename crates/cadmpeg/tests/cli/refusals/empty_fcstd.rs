@@ -235,6 +235,7 @@ fn an_emitted_group_without_geometry_is_empty_but_its_late_brep_attachment_is_no
         }))
         .unwrap();
         ir.model.features.push(Feature {
+            product_definition: None,
             id: FeatureId::mint("test:feature:grouping#0").unwrap(),
             ordinal: 0,
             name: Some("Grouping".into()),

@@ -14,6 +14,7 @@ use cadmpeg_ir::math::{Point3, Vector3};
 
 fn feature() -> Feature {
     Feature {
+        product_definition: None,
         id: FeatureId::compose(
             &cadmpeg_ir::identity_namespace!("inventor", "design", "feature"),
             cadmpeg_ir::ids::IdentityKey::try_new("test-1").expect("feature key"),

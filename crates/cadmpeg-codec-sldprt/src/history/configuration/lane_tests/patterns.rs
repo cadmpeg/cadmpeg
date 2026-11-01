@@ -28,6 +28,7 @@ fn document(definition: FeatureDefinition) -> cadmpeg_ir::CadIr {
     let mut ir = cadmpeg_ir::CadIr::empty();
     let id = FeatureId::mint("test:model:feature#mirror").unwrap();
     ir.model.features.push(Feature {
+        product_definition: None,
         id: id.clone(),
         ordinal: 0,
         name: None,

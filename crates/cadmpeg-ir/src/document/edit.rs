@@ -216,6 +216,7 @@ impl CadIr {
                     self.model
                         .parameters
                         .push(crate::features::DesignParameter {
+                            product_definition: None,
                             id: probe,
                             owner: None,
                             ordinal: 0,

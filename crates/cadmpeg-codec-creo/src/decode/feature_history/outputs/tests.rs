@@ -163,6 +163,7 @@ fn generated_face_outputs_follow_producer_history_after_feature_insertion() {
         visible: None,
     });
     ir.model.features.push(Feature {
+        product_definition: None,
         needs_recompute: false,
         id: cadmpeg_ir::features::FeatureId::mint("creo:model:feature#10")
             .expect("identity grammar"),
@@ -272,6 +273,7 @@ fn generated_result_faces_are_outputs_alongside_generated_input_bodies() {
         tolerance: None,
     });
     ir.model.features.push(Feature {
+        product_definition: None,
         needs_recompute: false,
         id: cadmpeg_ir::features::FeatureId::mint("creo:model:feature#10")
             .expect("identity grammar"),
