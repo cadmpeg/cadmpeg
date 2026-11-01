@@ -128,7 +128,10 @@ impl EntryFixture {
 }
 
 pub(crate) fn entry_layout_fixture(entry: &EntryFixture) -> cadmpeg_ir::SourceFidelity {
-    let mut fidelity = cadmpeg_ir::SourceFidelity::default();
+    let mut fidelity = cadmpeg_ir::SourceFidelity::with_annotations(
+        cadmpeg_ir::Annotations::default(),
+        cadmpeg_ir::hash::digest::Sha256Digest::digest(&entry.source),
+    );
     crate::fidelity::retain(
         &mut fidelity,
         entry.id(),

@@ -13,7 +13,10 @@ use std::io::Cursor;
 #[test]
 fn inherited_caller_refusal_precedes_retained_layout_and_projection_shortcuts() {
     let ir = CadIr::empty();
-    let fidelity = SourceFidelity::default();
+    let fidelity = SourceFidelity::with_annotations(
+        cadmpeg_ir::Annotations::default(),
+        cadmpeg_ir::hash::digest::Sha256Digest::digest(b"freecad refusal test"),
+    );
     let before_ir = serde_json::to_value(&ir).unwrap();
     let before_fidelity = serde_json::to_value(&fidelity).unwrap();
     let arena = DecodeArena::new();
@@ -54,8 +57,10 @@ fn represented_layout_admission_uses_the_actual_source_free_encode_context() {
     assert!(!decoded.ir().model.occurrences.is_empty());
     // The eligibility helper receives only its fingerprint fact, with no retained
     // records, parts, source layouts or archive bytes available in this fidelity.
-    let mut fidelity = SourceFidelity::default();
-    fidelity.decode_digest = decoded.source_fidelity().decode_digest.clone();
+    let fidelity = SourceFidelity::with_annotations(
+        cadmpeg_ir::Annotations::default(),
+        decoded.source_fidelity().decode_digest.clone(),
+    );
     let before_ir = serde_json::to_value(decoded.ir()).unwrap();
     let before_fidelity = serde_json::to_value(&fidelity).unwrap();
     let arena = DecodeArena::new();
