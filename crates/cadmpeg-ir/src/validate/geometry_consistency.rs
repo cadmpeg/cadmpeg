@@ -202,8 +202,9 @@ pub(super) fn check_procedural_support_consistency(
             let Some(solved_curve) = curves.get(owner.as_str()) else {
                 continue;
             };
-            let parameters = support_contract_parameters(index, owner.as_str(), context);
-            let solved = parameters.map(|parameter| {
+            let (solved_parameters, parameters) =
+                support_contract_parameters(index, owner.as_str(), context);
+            let solved = solved_parameters.map(|parameter| {
                 measured_point(crate::eval::decode::curve_point(
                     ctx,
                     solved_curve,
@@ -334,8 +335,9 @@ pub(super) fn check_procedural_support_consistency(
         let Some(curve) = curves.get(owner.as_str()) else {
             continue;
         };
-        let parameters = support_contract_parameters(index, owner.as_str(), &context);
-        let solved = parameters.map(|parameter| {
+        let (solved_parameters, parameters) =
+            support_contract_parameters(index, owner.as_str(), &context);
+        let solved = solved_parameters.map(|parameter| {
             measured_point(crate::eval::decode::curve_point(ctx, curve, parameter))
         });
         let [Some(solved_start), Some(solved_end)] = [solved[0]?, solved[1]?] else {
@@ -414,8 +416,9 @@ pub fn cache_support_endpoint_failures(
     context: &crate::geometry::IntcurveSupportContext,
     cache_fit_tolerance: Option<f64>,
 ) -> Result<Vec<usize>, CodecError> {
-    let parameters = support_contract_parameters(index, curve.id.as_str(), context);
-    let solved = parameters.map(|parameter| {
+    let (solved_parameters, parameters) =
+        support_contract_parameters(index, curve.id.as_str(), context);
+    let solved = solved_parameters.map(|parameter| {
         measured_point(crate::eval::decode::curve_point(
             ctx,
             &curve.geometry,
@@ -524,14 +527,39 @@ fn visit_support_failures(
     Ok(())
 }
 
+/// Relative slack for a used parameter lying on the construction interval.
+const EPS_USE_IN_CONSTRUCTION: f64 = 1.0e-9;
+
+/// The endpoints of a support contract as solved-curve parameters and as
+/// construction parameters. Edge and coedge ranges are on the solved curve. A
+/// reversed curve is the negation of its construction parameter, so its use
+/// hull lies on the negated construction interval. A hull on neither interval
+/// leaves the full construction interval.
 fn support_contract_parameters(
     index: &crate::index::ModelIndex<'_>,
     owner: &str,
     context: &crate::geometry::IntcurveSupportContext,
-) -> [f64; 2] {
-    index
-        .curve_use_hull(owner)
-        .unwrap_or_else(|| context.parameter_range().endpoints())
+) -> ([f64; 2], [f64; 2]) {
+    let construction = context.parameter_range().endpoints();
+    let Some(hull) = index.curve_use_hull(owner) else {
+        return (construction, construction);
+    };
+    let [start, end] = construction;
+    let (low, high) = (start.min(end), start.max(end));
+    let slack = EPS_USE_IN_CONSTRUCTION * (high - low).max(1.0);
+    let on_construction = |range: [f64; 2]| {
+        range
+            .iter()
+            .all(|t| (low - slack..=high + slack).contains(t))
+    };
+    if on_construction(hull) {
+        return (hull, hull);
+    }
+    let negated = hull.map(|parameter| -parameter);
+    if on_construction(negated) {
+        return (hull, negated);
+    }
+    (construction, construction)
 }
 
 fn curve_owners(ir: &CadIr) -> BorrowedIdentities<'_, &crate::ids::CurveId> {
