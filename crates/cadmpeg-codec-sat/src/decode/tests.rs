@@ -1035,8 +1035,8 @@ fn conic_extrusion_unbound_support_has_one_loss_per_native_pcurve() {
     use cadmpeg_ir::math::Point2;
     use cadmpeg_ir::CadIr;
 
-    let pcurve = SupportPcurve::from(PcurveGeometry::Nurbs(
-        PcurveNurbs::from_lanes(
+    let pcurve = SupportPcurve::from(PcurveGeometry::Nurbs {
+        nurbs: PcurveNurbs::from_lanes(
             1,
             vec![0.0, 0.0, 1.0, 1.0],
             vec![Point2::new(0.0, 0.0), Point2::new(1.0, 1.0)],
@@ -1044,7 +1044,7 @@ fn conic_extrusion_unbound_support_has_one_loss_per_native_pcurve() {
             false,
         )
         .unwrap(),
-    ));
+    });
     for surface_present in [false, true] {
         for pcurve_present in [false, true] {
             let context = IntcurveSupportContext::try_new(
