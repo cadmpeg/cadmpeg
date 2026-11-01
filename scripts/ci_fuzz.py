@@ -16,15 +16,20 @@ MANIFEST = FUZZ / 'Cargo.toml'
 
 
 def target_sources(path: Path, seen: set[Path] | None = None) -> str:
+    root = seen is None
     seen = set() if seen is None else seen
     if path in seen:
         return ''
     seen.add(path)
     source = path.read_text()
-    if re.search(r'#\s*\[\s*path\s*=|\binclude\s*!\s*\(', source):
+    if re.search(r'#\s*\[[^]]*\bpath\s*=|\binclude\s*!\s*\(', source):
         raise ValueError(f'unsupported Rust module path in {path}')
-    for module in re.findall(r'^\s*mod\s+(\w+)\s*;', source, re.MULTILINE):
-        directory = path.parent if path.parent.name in {'fuzz_targets', 'bin'} or path.name == 'mod.rs' else path.with_suffix('')
+    module_pattern = r'^\s*(?:pub(?:\([^)]*\))?\s+)?mod\s+(\w+)\s*;'
+    modules = re.findall(module_pattern, source, re.MULTILINE)
+    if modules and re.search(r'^\s*(?:pub(?:\([^)]*\))?\s+)?mod\s+\w+\s*\{', source, re.MULTILINE):
+        raise ValueError(f'unsupported inline module in {path}')
+    for module in modules:
+        directory = path.parent if root or path.name == 'mod.rs' else path.with_suffix('')
         candidates = [directory / f'{module}.rs', directory / module / 'mod.rs']
         child = next((candidate for candidate in candidates if candidate.is_file()), None)
         if child is None:

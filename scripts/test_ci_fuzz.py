@@ -3,9 +3,11 @@
 """Check the fuzz gate selects the harnesses and generators that use a codec."""
 
 import unittest
+from pathlib import Path
+from tempfile import TemporaryDirectory
 from unittest.mock import patch
 
-from scripts.ci_fuzz import command
+from scripts.ci_fuzz import command, target_sources
 
 
 class FuzzGateTests(unittest.TestCase):
@@ -24,6 +26,22 @@ class FuzzGateTests(unittest.TestCase):
 
     def test_codec_references_in_harness_modules_are_selected(self):
         self.assertIn('fcstd_xml', command('check', ['freecad']))
+
+    def test_harness_follows_nested_module_directories(self):
+        with TemporaryDirectory() as folder:
+            root = Path(folder) / 'fuzz_targets'
+            (root / 'helper').mkdir(parents=True)
+            (root / 'harness.rs').write_text('mod helper;\n')
+            (root / 'helper.rs').write_text('pub(crate) mod child;\n')
+            (root / 'helper' / 'child.rs').write_text('use cadmpeg_codec_iges::IgesCodec;\n')
+            self.assertIn('cadmpeg_codec_iges', target_sources(root / 'harness.rs'))
+
+    def test_inline_module_with_external_children_falls_back(self):
+        with TemporaryDirectory() as folder:
+            source = Path(folder) / 'harness.rs'
+            source.write_text('mod outer {\n    mod child;\n}\n')
+            with self.assertRaises(ValueError):
+                target_sources(source)
 
     def test_rejects_unknown_feature(self):
         with self.assertRaises(ValueError):
