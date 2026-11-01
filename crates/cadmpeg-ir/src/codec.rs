@@ -486,7 +486,14 @@ impl<C: CodecBackend + ?Sized> Codec for C {
         ctx: &DecodeContext<'_>,
         root: View<'_>,
     ) -> Result<DecodeResult, DecodeFailure> {
-        let decoded = self.decode_impl(ctx, root)?;
+        let mut decoded = self.decode_impl(ctx, root)?;
+        crate::validate::evaluation_cycles::give_up_evaluation_cycles(
+            ctx,
+            &mut decoded.ir,
+            &mut decoded.body.losses,
+            &mut decoded.source_fidelity,
+            C::FORMAT.as_str(),
+        )?;
         let result = DecodeResult::new(decoded, C::FORMAT, ctx.depth())?;
         if result.report().format() != C::FORMAT.as_str() {
             return Err(CodecError::WrongFormat(format!(
@@ -496,7 +503,6 @@ impl<C: CodecBackend + ?Sized> Codec for C {
             ))
             .into());
         }
-        crate::validate::evaluation_cycles::admit_evaluation_cycles(ctx, result.ir())?;
         let strict_loss_index = if ctx.policy().mode == DecodeMode::Strict && !ctx.container_only()
         {
             result

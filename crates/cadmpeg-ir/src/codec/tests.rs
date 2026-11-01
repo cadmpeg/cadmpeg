@@ -293,21 +293,62 @@ fn sealed_decode_rejects_a_document_authored_for_another_format() {
 }
 
 #[test]
-fn sealed_decode_refuses_a_cyclic_model_as_malformed() {
+fn sealed_decode_gives_up_a_cyclic_model_carrier_as_one_part() {
     let (_, curve, surface) = crate::test_support::evaluation_cycles::cyclic_model();
-    let error = CyclicModelCodec
+    let result = CyclicModelCodec
         .decode(
             &mut Cursor::new(vec![1u8, 2, 3, 4]),
             &DecodeOptions::default(),
         )
-        .expect_err("a cyclic model cannot leave the codec");
-    let DecodeFailure::Codec(CodecError::Malformed(message)) = error else {
-        panic!("expected a malformed cycle refusal, got {error:?}")
-    };
-    assert_eq!(
-        message,
-        format!("malformed curve/surface reference cycle: {curve} -> {surface} -> {curve}")
+        .expect("a cyclic model decodes with its cycle given up");
+    assert!(result
+        .ir()
+        .model
+        .curves
+        .iter()
+        .all(|carrier| carrier.id != curve));
+    assert!(result
+        .ir()
+        .model
+        .surfaces
+        .iter()
+        .all(|carrier| carrier.id != surface));
+    assert!(result.ir().model.procedural_curves.is_empty());
+    assert!(result.ir().model.procedural_surfaces.is_empty());
+    let unreadable: Vec<_> = result
+        .report()
+        .losses
+        .iter()
+        .filter(|loss| loss.code.local_code() == "record.unreadable")
+        .collect();
+    assert_eq!(unreadable.len(), 1);
+    assert_eq!(unreadable[0].severity, crate::report::Severity::Error);
+    assert!(
+        unreadable[0].message.contains(curve.as_str()),
+        "{}",
+        unreadable[0].message
     );
+    let dropped = &unreadable[0].dropped;
+    assert!(dropped.contains(&curve.as_str().to_owned()), "{dropped:?}");
+    assert!(
+        dropped.contains(&surface.as_str().to_owned()),
+        "{dropped:?}"
+    );
+    let mut sorted = dropped.clone();
+    sorted.sort();
+    assert_eq!(*dropped, sorted);
+    let (_, _, fidelity) = result.into_parts();
+    assert_eq!(fidelity.retained_records().len(), 1);
+    let error = CyclicModelCodec
+        .decode(
+            &mut Cursor::new(vec![1u8, 2, 3, 4]),
+            &strict_options(DecodeDepth::Full),
+        )
+        .expect_err("strict mode rejects a completed decode with a mandatory loss");
+    let DecodeFailure::StrictRejected { rejection } = error else {
+        panic!("expected a strict refusal, got {error:?}");
+    };
+    assert_eq!(rejection.loss().code.local_code(), "record.unreadable");
 }
 
 fn strict_options(depth: DecodeDepth) -> DecodeOptions {
