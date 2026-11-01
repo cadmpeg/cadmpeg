@@ -48,9 +48,6 @@ fn placement_document_preserves_transform_without_implied_source_layout() {
         assert!(record.transform_offset().is_none());
         assert_eq!(record.member_run_head(), member);
         assert_eq!(serde_json::to_value(&record).unwrap(), wire);
-        let mut fidelity = cadmpeg_ir::SourceFidelity::default();
-        record.retain_source(&mut fidelity);
-        assert!(fidelity.metadata.is_empty());
         for field in [
             "byte_offset",
             "frame_length",

@@ -433,9 +433,8 @@ pub(crate) fn write_semantic(
     }
 
     let active_brep = baseline
-        .source_fidelity
-        .metadata
-        .get("active_brep")
+        .primary_model_brep_name
+        .as_deref()
         .ok_or_else(|| CodecError::Malformed("F3D baseline has no active BREP".into()))?;
     let positions = target
         .model
@@ -667,7 +666,7 @@ pub(crate) fn write_semantic(
         if let Some(configuration) = configuration_edits.get(&name) {
             bytes.clone_from(configuration);
         }
-        if name == *active_brep {
+        if name.as_str() == active_brep {
             patch_geometry(
                 &mut bytes,
                 &geometry::GeometryEdits {

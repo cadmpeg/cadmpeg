@@ -1459,11 +1459,6 @@ fn empty_reference_runs_have_one_representation() {
     assert!(header.content_eq(
         &serde_json::from_str::<crate::records::entity_header::DesignEntityHeader>(wire).unwrap()
     ));
-    let mut fidelity = cadmpeg_ir::SourceFidelity::default();
-    header.retain_source(&mut fidelity);
-    assert_eq!(fidelity.metadata["header.byte_offset"], "10");
-    assert_eq!(fidelity.metadata["header.optional_slot_present"], "false");
-    assert_eq!(fidelity.metadata["header.record_reference_offset"], "20");
 }
 
 #[test]

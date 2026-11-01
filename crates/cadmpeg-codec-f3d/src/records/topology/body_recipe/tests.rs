@@ -136,14 +136,6 @@ fn body_recipe_untyped_selector_tail_is_retained_outside_the_document() {
     let record = source_record();
     let mut fidelity = cadmpeg_ir::SourceFidelity::default();
     record.retain_source(&mut fidelity).unwrap();
-    assert_eq!(
-        fidelity.metadata["f3d:Design:body-recipe#0.context_id_offset"],
-        "150"
-    );
-    assert_eq!(
-        fidelity.metadata["f3d:Design:body-recipe#0.references.0.form_offset"],
-        "33"
-    );
     let retained = fidelity
         .retained_record("f3d:Design:body-recipe#0:selector-tail")
         .unwrap();

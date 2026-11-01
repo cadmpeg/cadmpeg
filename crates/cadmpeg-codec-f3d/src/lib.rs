@@ -144,11 +144,11 @@ impl F3dCodec {
     fn write_preserved_bytes(
         ir: &CadIr,
         data: &[u8],
-        expected: &str,
+        expected: &cadmpeg_ir::hash::digest::Sha256Digest,
         writer: &mut dyn Write,
         notes: &mut Vec<String>,
     ) -> Result<PreservedWritePath, CodecError> {
-        if decode::document_local_sha256(ir)? != expected {
+        if decode::document_local_sha256(ir)?.as_str() != expected.as_str() {
             writer::patch::write_semantic(ir, data, writer, notes)?;
             return Ok(PreservedWritePath::Patched);
         }

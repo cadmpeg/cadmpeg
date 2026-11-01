@@ -669,6 +669,7 @@ impl DesignBodyBinding {
     pub(crate) fn blob_name(&self) -> &str {
         &self.blob_name
     }
+    #[cfg(test)]
     pub(crate) fn blob_name_offset(&self) -> Option<u64> {
         self.blob_name_offset
     }
@@ -818,67 +819,6 @@ impl From<BodyVisibility> for BodyVisibilityContent {
             asm_body_key: value.asm_body_key,
             entity_suffix: value.entity_suffix,
             visible: value.visible,
-        }
-    }
-}
-
-impl DesignBodyMember {
-    pub(crate) fn retain_source(&self, fidelity: &mut cadmpeg_ir::SourceFidelity) {
-        if let Some(offset) = self.byte_offset {
-            fidelity
-                .metadata
-                .insert(format!("{}.byte_offset", self.id()), offset.to_string());
-        }
-    }
-}
-impl DesignBodyBounds {
-    pub(crate) fn retain_source(&self, fidelity: &mut cadmpeg_ir::SourceFidelity) {
-        if let Some(offset) = self.entity_byte_offset {
-            fidelity.metadata.insert(
-                format!("{}.entity_byte_offset", self.id()),
-                offset.to_string(),
-            );
-        }
-        for (field, offsets) in [
-            ("record_byte_offsets", self.record_byte_offsets),
-            ("value_byte_offsets", self.value_byte_offsets),
-        ] {
-            if let Some(offsets) = offsets {
-                for (index, offset) in offsets.into_iter().enumerate() {
-                    fidelity
-                        .metadata
-                        .insert(format!("{}.{field}.{index}", self.id()), offset.to_string());
-                }
-            }
-        }
-    }
-}
-impl DesignBodyBinding {
-    pub(crate) fn retain_source(&self, fidelity: &mut cadmpeg_ir::SourceFidelity) {
-        for (field, offset) in [
-            ("asm_body_key_offset", self.asm_body_key_offset()),
-            ("entity_suffix_offset", self.entity_suffix_offset()),
-            ("blob_name_offset", self.blob_name_offset()),
-        ] {
-            if let Some(offset) = offset {
-                fidelity
-                    .metadata
-                    .insert(format!("{}.{field}", self.id()), offset.to_string());
-            }
-        }
-    }
-}
-impl BodyVisibility {
-    pub(crate) fn retain_source(&self, fidelity: &mut cadmpeg_ir::SourceFidelity) {
-        for (field, offset) in [
-            ("byte_offset", self.byte_offset),
-            ("asm_body_key_offset", self.asm_body_key_offset),
-        ] {
-            if let Some(offset) = offset {
-                fidelity
-                    .metadata
-                    .insert(format!("{}.{field}", self.id()), offset.to_string());
-            }
         }
     }
 }
@@ -1135,12 +1075,6 @@ mod tests {
         };
         let source = super::DesignBodyMember::try_from(scanner).unwrap();
         assert_eq!(source.byte_offset(), Some(10));
-        let mut fidelity = cadmpeg_ir::SourceFidelity::default();
-        source.retain_source(&mut fidelity);
-        assert_eq!(
-            fidelity.metadata["f3d:Design/BulkStream.dat:design-body-member#10.byte_offset"],
-            "10"
-        );
         let mut wire = serde_json::to_value(&source).unwrap();
         wire["id"] = "f3d:Design/BulkStream.dat:design-body-member#authored".into();
         let document: super::DesignBodyMember = serde_json::from_value(wire.clone()).unwrap();

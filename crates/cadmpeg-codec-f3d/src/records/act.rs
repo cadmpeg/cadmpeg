@@ -356,39 +356,7 @@ impl ActEntity {
         &self,
         fidelity: &mut cadmpeg_ir::SourceFidelity,
     ) -> Result<(), cadmpeg_core::CodecError> {
-        for (name, offset) in [
-            (
-                "table_record_index_offset",
-                self.table_record_index_offset(),
-            ),
-            ("table_entity_id_offset", self.table_entity_id_offset()),
-            (
-                "channel_record_index_offset",
-                self.channel_record_index_offset(),
-            ),
-            ("channel_entity_id_offset", self.channel_entity_id_offset()),
-        ] {
-            if let Some(offset) = offset {
-                fidelity
-                    .metadata
-                    .insert(format!("{}.{name}", self.id()), offset.to_string());
-            }
-        }
-        for (name, guid) in &self.channel_group.channels {
-            if let Some(offset) = guid.offset {
-                fidelity.metadata.insert(
-                    format!("{}.channel_guid_offsets.{name}", self.id()),
-                    offset.to_string(),
-                );
-            }
-        }
         if let Some(tail) = &self.channel_group.class_tail {
-            if let Some(offset) = tail.offset() {
-                fidelity.metadata.insert(
-                    format!("{}.channel_class_tail_offset", self.id()),
-                    offset.to_string(),
-                );
-            }
             tail.frame.retain(
                 fidelity,
                 &format!("{}:class-tail", self.id()),
@@ -745,6 +713,7 @@ impl ActTableReference {
         self.byte_offset
     }
 
+    #[cfg(test)]
     pub(crate) fn target_record_offset(&self) -> Option<u64> {
         self.byte_offset.and_then(|offset| offset.checked_add(1))
     }
@@ -879,6 +848,7 @@ impl ActRegistryChannel {
     pub(crate) fn name(&self) -> &str {
         &self.name
     }
+    #[cfg(test)]
     pub(crate) fn name_offset(&self) -> Option<u64> {
         self.byte_offset.and_then(|offset| offset.checked_add(4))
     }
@@ -1215,6 +1185,7 @@ impl ActComponentLayout {
     pub(crate) fn display_name(&self) -> &str {
         &self.display_name
     }
+    #[cfg(test)]
     fn record_index_offset(&self) -> Option<u64> {
         self.byte_offset()?.checked_add(7)
     }
@@ -1251,35 +1222,6 @@ impl ActComponentLink {
             && self.registry_flag == other.registry_flag
             && self.layout.entity_id == other.layout.entity_id
             && self.layout.display_name == other.layout.display_name
-    }
-    pub(crate) fn retain_source(&self, fidelity: &mut cadmpeg_ir::SourceFidelity) {
-        let layout = &self.layout;
-        for (name, value) in [
-            ("byte_offset", layout.byte_offset()),
-            ("record_index_offset", layout.record_index_offset()),
-            (
-                "instance_root_record_offset",
-                layout.instance_root_record_offset(),
-            ),
-            (
-                "tracked_entity_record_offset",
-                layout.tracked_entity_record_offset(),
-            ),
-            (
-                "components_root_record_offset",
-                layout.components_root_record_offset(),
-            ),
-            ("registry_flag_offset", layout.registry_flag_offset()),
-            ("entity_id_offset", layout.entity_id_offset()),
-            ("display_name_offset", layout.display_name_offset()),
-            ("padding", layout.source.map(|source| source.padding)),
-        ] {
-            if let Some(value) = value {
-                fidelity
-                    .metadata
-                    .insert(format!("{}.{name}", self.id()), value.to_string());
-            }
-        }
     }
 }
 

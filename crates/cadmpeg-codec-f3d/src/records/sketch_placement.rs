@@ -324,6 +324,7 @@ impl DesignSketchFrame {
             } => &matrix.0,
         }
     }
+    #[cfg(test)]
     fn transform_offset(&self) -> Option<u64> {
         let relative = match self.form {
             DesignSketchFrameForm::Authored { .. } => return None,
@@ -339,6 +340,7 @@ impl DesignSketchFrame {
         };
         self.byte_offset?.checked_add(relative)
     }
+    #[cfg(test)]
     pub(super) fn paired_byte_offset(&self) -> Option<u64> {
         match self.form {
             DesignSketchFrameForm::MemberCompact { paired_byte_offset }
@@ -354,15 +356,18 @@ impl DesignSketchPlacement {
     pub(crate) fn byte_offset(&self) -> Option<u64> {
         self.frame.byte_offset
     }
+    #[cfg(test)]
     pub(crate) fn frame_length(&self) -> Option<u64> {
         self.frame.frame_length()
     }
     pub(crate) fn transform(&self) -> &[[f64; 4]; 4] {
         self.frame.transform()
     }
+    #[cfg(test)]
     pub(crate) fn transform_offset(&self) -> Option<u64> {
         self.frame.transform_offset()
     }
+    #[cfg(test)]
     pub(crate) fn paired_byte_offset(&self) -> Option<u64> {
         self.frame.paired_byte_offset()
     }
@@ -374,29 +379,6 @@ impl DesignSketchPlacement {
             DesignSketchFrameForm::MemberCompact { .. }
             | DesignSketchFrameForm::MemberExplicit { .. } => true,
             _ => false,
-        }
-    }
-    pub(crate) fn retain_source(&self, fidelity: &mut cadmpeg_ir::SourceFidelity) {
-        for (name, offset) in [
-            ("byte_offset", self.byte_offset()),
-            ("frame_length", self.frame_length()),
-            ("transform_offset", self.transform_offset()),
-            ("paired_byte_offset", self.paired_byte_offset()),
-            (
-                "visibility.stream_ordinal_offset",
-                self.visibility
-                    .and_then(|value| value.stream_ordinal_offset()),
-            ),
-            (
-                "visibility.visible_offset",
-                self.visibility.and_then(|value| value.visible_offset()),
-            ),
-        ] {
-            if let Some(offset) = offset {
-                fidelity
-                    .metadata
-                    .insert(format!("{}.{}", self.id, name), offset.to_string());
-            }
         }
     }
 }
