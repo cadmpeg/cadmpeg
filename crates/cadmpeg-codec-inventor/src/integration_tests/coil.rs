@@ -23,7 +23,10 @@ fn coil_decode_retains_both_boolean_polarities_and_four_selector_candidates() {
                 let losses = report
                     .losses
                     .iter()
-                    .filter(|loss| loss.code.local_code() == "feature.coil-operands-native")
+                    .filter(|loss| {
+                        loss.code.local_code()
+                            == crate::loss::InventorLossCode::FeatureCoilOperandsNative.code()
+                    })
                     .collect::<Vec<_>>();
                 assert_eq!(losses.len(), 1);
                 assert_eq!(losses[0].message, "Retained Inventor Coil natively: slot 3 Boolean construction role and polarity are unresolved.");
