@@ -165,7 +165,8 @@ class ScopeTests(unittest.TestCase):
             with self.subTest(path=path):
                 scope = select(ROOT, [path])
                 self.assertFalse(scope['full'])
-                self.assertEqual(scope['packages'], ['cadmpeg'])
+                self.assertEqual(scope['packages'], [])
+                self.assertTrue(scope['layout'])
 
     def test_embedded_document_selects_its_reader(self):
         scope = select(ROOT, ['docs/dialect-id-conformance.toml'])
@@ -254,10 +255,17 @@ class ScopeTests(unittest.TestCase):
 
     def test_specification_edit_runs_only_the_layout_table_test(self):
         scope = select(ROOT, ['docs/formats/f3d.md'])
-        self.assertEqual(scope['packages'], ['cadmpeg'])
+        self.assertEqual(scope['packages'], [])
+        self.assertTrue(scope['layout'])
         for output in ('fuzz', 'sldprt_cli', 'step_cli', 'iges', 'schema'):
             with self.subTest(output=output):
                 self.assertFalse(scope[output])
+
+    def test_specification_with_rust_runs_layout_in_the_regular_suite(self):
+        scope = select(ROOT, ['docs/formats/f3d.md', 'crates/cadmpeg-codec-f3d/src/lib.rs'])
+        self.assertTrue(scope['rust'])
+        self.assertFalse(scope['layout'])
+        self.assertIn('cadmpeg', scope['packages'])
 
     def test_fuzz_follows_the_fuzz_crate_dependencies(self):
         self.assertTrue(select(ROOT, ['crates/cadmpeg-codec-f3d/src/lib.rs'])['fuzz'])

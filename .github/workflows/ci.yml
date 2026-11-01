@@ -55,6 +55,7 @@ jobs:
       step_cli: ${{ steps.scope.outputs.step_cli }}
       schema: ${{ steps.scope.outputs.schema }}
       iges: ${{ steps.scope.outputs.iges }}
+      layout: ${{ steps.scope.outputs.layout }}
       static: ${{ steps.scope.outputs.static }}
       audit: ${{ steps.scope.outputs.audit }}
     steps:
@@ -328,6 +329,22 @@ jobs:
         # would pay for the whole workspace again.
         run: python3 scripts/ci_cargo.py test --doc
 
+  layout:
+    needs: changes
+    if: ${{ needs.changes.outputs.layout == 'true' && github.event.pull_request.draft != true }}
+    name: layout tables
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v7.0.1
+      - uses: ./.github/actions/pinned-rust
+      - uses: ./.github/actions/cargo-job-count
+      - uses: Swatinem/rust-cache@v2
+        with:
+          shared-key: layout
+          save-if: ${{ github.ref == 'refs/heads/main' }}
+      - run: cargo test -q -p cadmpeg --no-default-features --features sldprt --test layout_tables
+
   features:
     needs: changes
     if: ${{ always() && needs.changes.result != 'cancelled' && (needs.changes.result != 'success' || ((needs.changes.outputs.schema == 'true' || needs.changes.outputs.sldprt_cli == 'true' || needs.changes.outputs.step_cli == 'true') && github.event.pull_request.draft != true)) }}
@@ -543,7 +560,7 @@ jobs:
   # merge tree. The merge queue skips a commit with the same base and tree.
   # A full gate also runs macOS and Windows, which PR runs never do.
   tested:
-    needs: [changes, static, lint, test, features, fuzz, msrv, audit]
+    needs: [changes, static, lint, test, layout, features, fuzz, msrv, audit]
     if: ${{ github.event_name == 'pull_request' && github.event.pull_request.draft != true && !failure() && !cancelled() && needs.changes.outputs.full == 'false' }}
     name: record tested tree
     runs-on: ubuntu-latest
@@ -569,7 +586,7 @@ jobs:
           retention-days: 7
 
   schedule-alert:
-    needs: [changes, static, lint, test, features, fuzz, msrv, cross-platform, audit]
+    needs: [changes, static, lint, test, layout, features, fuzz, msrv, cross-platform, audit]
     if: ${{ always() && github.event_name == 'schedule' }}
     name: report scheduled result
     runs-on: ubuntu-latest

@@ -132,9 +132,9 @@ def select(root: Path, paths: list[str], *, full: bool = False,
     elif tested:
         return {'packages': [], 'rust': False, 'fuzz': False,
                 **dict.fromkeys(SINGLE_CODEC_GATES, False), 'schema': False,
-                'iges': False, 'full': False, 'static': False, 'audit': False}
+                'iges': False, 'layout': False, 'full': False, 'static': False, 'audit': False}
     affected = set()
-    tested_only = set()
+    layout = False
     fuzz = False
     audit = full
     for path in paths:
@@ -159,7 +159,7 @@ def select(root: Path, paths: list[str], *, full: bool = False,
         elif path in EMBEDDED_BY:
             affected.add(EMBEDDED_BY[path])
         elif path.startswith(LAYOUT_TABLE_INPUTS):
-            tested_only.add('cadmpeg')
+            layout = True
         elif path in {'scripts/inventor-evidence.py', 'scripts/test_inventor_evidence.py'}:
             affected.add('cadmpeg-codec-inventor')
         elif path == 'scripts/verify-iges-bounded.py':
@@ -183,7 +183,6 @@ def select(root: Path, paths: list[str], *, full: bool = False,
         affected = names.copy()
         fuzz = True
     changed = set(affected)
-    affected |= tested_only
     cli_changed = bool(changed & {'cadmpeg', 'cadmpeg-registry'})
     pending = list(affected)
     while pending:
@@ -208,6 +207,7 @@ def select(root: Path, paths: list[str], *, full: bool = False,
         **gates,
         'schema': full or bool(affected & {'cadmpeg-core', 'cadmpeg-ir', 'cadmpeg-asm'}),
         'iges': full or 'cadmpeg-codec-iges' in affected or cli_changed,
+        'layout': layout and not (full or affected),
         'full': full,
         'static': True,
         'audit': audit or full,
