@@ -44,7 +44,9 @@ usd = ["dep:cadmpeg-codec-usd"]
 [dependencies]
 cadmpeg-core.workspace = true
 cadmpeg-container.workspace = true
-cadmpeg-ir.workspace = true
+cadmpeg-ir = { workspace = true, features = ["schema"] }
+cadmpeg-measure.workspace = true
+serde_json.workspace = true
 cadmpeg-codec-f3d = { workspace = true, optional = true }
 cadmpeg-codec-inventor = { workspace = true, optional = true }
 cadmpeg-codec-freecad = { workspace = true, optional = true }
@@ -65,12 +67,12 @@ thiserror.workspace = true
 toml.workspace = true
 
 [dev-dependencies]
+cadmpeg-ir = { workspace = true, features = ["examples"] }
 # Test-only byte-fixture writers shared with the codec crates.
 cadmpeg-test-support = { workspace = true }
 cadmpeg-codec-nx.workspace = true
 cadmpeg-codec-sldprt.workspace = true
 cadmpeg-parasolid.workspace = true
-serde_json.workspace = true
 zip.workspace = true
 
 [lints]

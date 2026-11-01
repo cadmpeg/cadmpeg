@@ -187,3 +187,8 @@ mod integration_tests;
 
 #[cfg(test)]
 mod test_support;
+
+/// Reference edges used by graph queries.
+pub mod reference_walk;
+/// Reproducible document fragments and stable finding signatures.
+pub mod repro;

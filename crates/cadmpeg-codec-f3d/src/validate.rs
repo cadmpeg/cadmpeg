@@ -1239,6 +1239,14 @@ fn validate_act(ctx: &Ctx<'_, '_>, findings: &mut Vec<Finding>) -> Result<(), Co
         }
     }
 
+    if ctx.ir.fragment {
+        findings.push(Finding {
+            check: Check::FragmentSkipped, severity: Severity::Info, entity: None,
+            related: Vec::new(),
+            message: "skipped f3d.act_document_root and f3d.act_ordinal_coverage: complete ACT stream required".into(),
+        });
+        return Ok(());
+    }
     for (witness, count) in root_counts.into_values() {
         if count != 1 {
             push_constant_finding(
