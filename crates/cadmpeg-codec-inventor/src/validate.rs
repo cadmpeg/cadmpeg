@@ -125,6 +125,7 @@ const ARENAS: &[&str] = &[
 ];
 
 const OPTIONAL_ARENAS: &[&str] = &[
+    "pm_dc_thread_definitions",
     "body_wrapper_links",
     "composite_member_links",
     "pm_dc_sheet_metal_styles",
@@ -1446,6 +1447,35 @@ fn validate_features(
             ));
         }
     }
+    unique(
+        findings,
+        data.pm_dc_thread_definitions.iter().map(|record| {
+            (
+                record.identity.segment_token.as_str(),
+                record.identity.record_ordinal,
+            )
+        }),
+        "Inventor PmDc thread definition",
+    );
+    for definition in &data.pm_dc_thread_definitions {
+        let token = definition.identity.segment_token.as_str();
+        if raw.get(&(token, definition.identity.record_ordinal))
+            != Some(&definition.identity.type_id.as_str())
+            || [
+                definition.header.owner,
+                definition.header.parent,
+                definition.header.next,
+            ]
+            .iter()
+            .any(|reference| !resolves(token, reference.index()))
+        {
+            findings.push(finding(
+                Check::NativeLinks,
+                "Inventor PmDc thread-definition record or reference does not resolve".into(),
+                Some(definition.id()),
+            ));
+        }
+    }
     for label in &data.pm_dc_feature_labels {
         let references = [
             label.header.owner.index(),
@@ -1951,7 +1981,10 @@ fn validate_features(
                 face,
                 diameter,
                 extent,
-                ..
+                standard,
+                designation,
+                pitch,
+                modeled,
             },
         ) = feature.evaluation.definition()
         {
@@ -1976,9 +2009,22 @@ fn validate_features(
                 matches!(face, cadmpeg_ir::features::FaceSelection::Native(native)
                     if *native == collection.id())
             });
+            let thread_fields = labels
+                .get(&(token, raw_feature.identity.record_ordinal))
+                .map_or_else(crate::feature::thread::Fields::default, |label| {
+                    crate::feature::thread::fields(
+                        raw_feature,
+                        label,
+                        &data.pm_dc_thread_definitions,
+                    )
+                });
             if !label_matches
                 || !selection_matches
-                || diameter.is_some()
+                || *diameter != thread_fields.diameter
+                || *pitch != thread_fields.pitch
+                || *standard != thread_fields.standard
+                || *designation != thread_fields.designation
+                || modeled.is_some()
                 || extent.is_some()
                 || results.contains_key(&feature.id)
             {
@@ -2843,6 +2889,7 @@ struct NativeData {
     pm_dc_sheet_metal_flanges: Vec<crate::feature::sheet_metal::flange::Flange>,
     pm_dc_feature_dimensions: Vec<crate::feature::revolve::Dimension>,
     pm_dc_feature_labels: Vec<PmDcFeatureLabel>,
+    pm_dc_thread_definitions: Vec<crate::feature::thread::Definition>,
     pm_dc_entity_style_links: Vec<PmDcEntityStyleLink>,
     pm_dc_kernel_entity_links: Vec<PmDcKernelEntityLink>,
     pm_dc_work_planes: Vec<PmDcWorkPlane>,
@@ -2928,6 +2975,8 @@ impl NativeData {
             pm_dc_feature_dimensions: namespace
                 .arena_as_for_decode(ctx, "pm_dc_feature_dimensions")?,
             pm_dc_feature_labels: namespace.arena_as_for_decode(ctx, "pm_dc_feature_labels")?,
+            pm_dc_thread_definitions: namespace
+                .arena_as_for_decode(ctx, "pm_dc_thread_definitions")?,
             pm_dc_entity_style_links: namespace
                 .arena_as_for_decode(ctx, "pm_dc_entity_style_links")?,
             pm_dc_kernel_entity_links: namespace
