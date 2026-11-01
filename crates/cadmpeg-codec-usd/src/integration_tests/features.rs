@@ -198,6 +198,15 @@ fn typed_feature_families_survive_a_write() {
         serde_json::json!({"definition": "fillet", "groups": [{"edges": {"kind": "unresolved"}, "radius": {"kind": "constant", "radius": 2.0}}, {"edges": {"kind": "unresolved"}, "radius": {"kind": "unresolved"}}]}),
         serde_json::json!({"definition": "chamfer", "flip_direction": false, "groups": [{"edges": {"kind": "native", "value": "test:native:property#Base"}, "spec": {"first": 1.5, "kind": "two_distances", "second": 2.5}}]}),
         serde_json::json!({"definition": "pattern", "pattern": {"count": 4, "direction": {"x": -0.0, "y": -0.0, "z": -1.0}, "kind": "linear", "spacing": 8.0}, "seeds": [{"kind": "feature", "value": "test:design:feature#Plane"}]}),
+        serde_json::json!({"allow_multi_profile_faces": true, "bottom": {"depth_to_tip": false, "included_angle": 2.0, "kind": "angled"}, "definition": "hole", "direction": {"x": -0.0, "y": -0.0, "z": -1.0}, "extent": {"kind": "blind", "length": 7.0}, "profile": {"kind": "unresolved", "value": "test:model:sketch#HoleProfile"}, "profile_filter": "all", "shape": {"construction": {"construction": "form", "kind": {"angle": 1.5, "diameter": 10.0, "kind": "countersink"}}, "diameter": 6.0}}),
+        serde_json::json!({"allow_self_intersections": false, "definition": "shell", "join": "arc", "mode": "skin", "outward": true, "removed_faces": {"kind": "resolved", "value": {"faces": ["test:model:face#32"], "native": "test:native:property#Faces"}}, "resolve_intersections": true, "thickness": 1.25}),
+        serde_json::json!({"anchor": {"kind": "neutral_plane", "plane": {"kind": "native", "value": "test:native:property#NeutralPlane"}, "pull": {"direction": {"x": 0.0, "y": 0.0, "z": 1.0}}}, "angle": -0.25, "definition": "draft", "faces": {"kind": "resolved", "value": {"faces": ["test:model:face#10", "test:model:face#20"], "native": "test:native:property#Base"}}, "outward": true}),
+        serde_json::json!({"definition": "mirror_shape", "plane_normal": {"x": 1.0, "y": 0.0, "z": 0.0}, "plane_origin": {"x": 0.0, "y": 0.0, "z": 0.0}, "source": {"kind": "native", "value": "test:native:property#Source"}}),
+        serde_json::json!({"definition": "combine", "op": "cut", "operands": {"target": {"kind": "native", "value": "test:native:property#Base"}, "tools": {"kind": "native", "value": "test:native:property#Tool"}}}),
+        serde_json::json!({"definition": "primitive", "op": "new_body", "placement": [[1.0, 0.0, 0.0, 0.0], [0.0, 1.0, 0.0, 0.0], [0.0, 0.0, 1.0, 0.0]], "solid": {"height": 8.0, "kind": "box", "length": 25.0, "width": 15.0}}),
+        serde_json::json!({"definition": "datum_axis", "direction": {"x": 0.0, "y": 0.0, "z": 1.0}, "origin": {"x": 2.0, "y": 3.0, "z": 0.0}}),
+        serde_json::json!({"definition": "datum_coordinate_system", "frame": {"origin": {"x": 7.0, "y": 8.0, "z": 9.0}, "x_axis": {"x": 1.0, "y": 0.0, "z": 0.0}, "y_axis": {"x": 0.0, "y": 1.0, "z": 0.0}, "z_axis": {"x": 0.0, "y": 0.0, "z": 1.0}}}),
+        serde_json::json!({"definition": "datum_point", "position": {"x": 5.0, "y": -7.0, "z": 3.0}}),
     ];
     for (index, definition) in definitions.into_iter().enumerate() {
         let ordinal = u64::try_from(index).expect("an ordinal") + 3;
@@ -219,6 +228,16 @@ fn typed_feature_families_survive_a_write() {
         "def CadFilletFeature",
         "def CadChamferFeature",
         "def CadPatternFeature",
+        "def CadHoleFeature",
+        "def CadShellFeature",
+        "def CadDraftFeature",
+        "def CadMirrorFeature",
+        "def CadCombineFeature",
+        "def CadPrimitiveFeature",
+        "def CadDatumAxisFeature",
+        "def CadDatumFrameFeature",
+        "def CadDatumPointFeature",
+        "def CadDatumPlaneFeature",
     ] {
         assert!(text.contains(prim_type), "{prim_type}\n{text}");
     }
@@ -227,7 +246,11 @@ fn typed_feature_families_survive_a_write() {
         "{text}"
     );
     let read = decode(&text);
-    let wire = |features: &[Feature]| serde_json::to_value(features).expect("features");
+    let wire = |features: &[Feature]| {
+        let mut sorted: Vec<&Feature> = features.iter().collect();
+        sorted.sort_by(|left, right| left.id.as_str().cmp(right.id.as_str()));
+        serde_json::to_value(sorted).expect("features")
+    };
     let (before, after) = (wire(&ir.model.features), wire(&read.ir().model.features));
     assert!(agree(&before, &after), "{before:#}\n{after:#}\n{text}");
 }

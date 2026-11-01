@@ -24,6 +24,8 @@ pub(crate) enum Leaf {
     Vector,
     /// A position `{x, y, z}`, in millimetres in the IR.
     Point,
+    /// A list of CADIR identities.
+    Identities,
 }
 
 /// One typed leaf: its path in the definition, `*` for each element of an
@@ -144,6 +146,96 @@ const PATTERN: &[Field] = &[
     field(&["pattern", "angle"], Leaf::Angle),
 ];
 
+const HOLE: &[Field] = &[
+    field(&["profile", "kind"], Leaf::Token),
+    field(&["profile", "value"], Leaf::Text),
+    field(&["profile_filter"], Leaf::Token),
+    field(&["direction"], Leaf::Vector),
+    field(&["extent", "kind"], Leaf::Token),
+    field(&["extent", "length"], Leaf::Length),
+    field(&["bottom", "kind"], Leaf::Token),
+    field(&["bottom", "included_angle"], Leaf::Angle),
+    field(&["bottom", "depth_to_tip"], Leaf::Flag),
+    field(&["shape", "diameter"], Leaf::Length),
+    field(&["shape", "construction", "construction"], Leaf::Token),
+    field(&["shape", "construction", "kind", "kind"], Leaf::Token),
+    field(&["shape", "construction", "kind", "angle"], Leaf::Angle),
+    field(&["shape", "construction", "kind", "diameter"], Leaf::Length),
+    field(&["shape", "construction", "kind", "depth"], Leaf::Length),
+    field(&["allow_multi_profile_faces"], Leaf::Flag),
+];
+
+const SHELL: &[Field] = &[
+    field(&["thickness"], Leaf::Length),
+    field(&["join"], Leaf::Token),
+    field(&["mode"], Leaf::Token),
+    field(&["outward"], Leaf::Flag),
+    field(&["allow_self_intersections"], Leaf::Flag),
+    field(&["resolve_intersections"], Leaf::Flag),
+    field(&["removed_faces", "kind"], Leaf::Token),
+    field(&["removed_faces", "value", "faces"], Leaf::Identities),
+    field(&["removed_faces", "value", "native"], Leaf::Text),
+];
+
+const DRAFT: &[Field] = &[
+    field(&["angle"], Leaf::Angle),
+    field(&["outward"], Leaf::Flag),
+    field(&["faces", "kind"], Leaf::Token),
+    field(&["faces", "value", "faces"], Leaf::Identities),
+    field(&["faces", "value", "native"], Leaf::Text),
+    field(&["anchor", "kind"], Leaf::Token),
+    field(&["anchor", "pull", "direction"], Leaf::Vector),
+    field(&["anchor", "plane", "kind"], Leaf::Token),
+    field(&["anchor", "plane", "value"], Leaf::Text),
+];
+
+const MIRROR: &[Field] = &[
+    field(&["plane_normal"], Leaf::Vector),
+    field(&["plane_origin"], Leaf::Point),
+    field(&["source", "kind"], Leaf::Token),
+    field(&["source", "value"], Leaf::Text),
+];
+
+const COMBINE: &[Field] = &[
+    field(&["op"], Leaf::Token),
+    field(&["operands", "target", "kind"], Leaf::Token),
+    field(&["operands", "target", "value"], Leaf::Text),
+    field(&["operands", "tools", "kind"], Leaf::Token),
+    field(&["operands", "tools", "value"], Leaf::Text),
+];
+
+const PRIMITIVE: &[Field] = &[
+    field(&["op"], Leaf::Token),
+    field(&["solid", "kind"], Leaf::Token),
+    field(&["solid", "length"], Leaf::Length),
+    field(&["solid", "width"], Leaf::Length),
+    field(&["solid", "height"], Leaf::Length),
+    field(&["solid", "radius"], Leaf::Length),
+    field(&["solid", "radius1"], Leaf::Length),
+    field(&["solid", "radius2"], Leaf::Length),
+    field(&["solid", "angle"], Leaf::Angle),
+];
+
+const DATUM_PLANE: &[Field] = &[
+    field(&["frame", "origin"], Leaf::Point),
+    field(&["frame", "normal"], Leaf::Vector),
+    field(&["frame", "u_axis"], Leaf::Vector),
+];
+
+const DATUM_AXIS: &[Field] = &[
+    field(&["origin"], Leaf::Point),
+    field(&["direction"], Leaf::Vector),
+];
+
+const DATUM_POINT: &[Field] = &[field(&["position"], Leaf::Point)];
+
+const DATUM_FRAME: &[Field] = &[
+    field(&["frame", "origin"], Leaf::Point),
+    field(&["frame", "x_axis"], Leaf::Vector),
+    field(&["frame", "y_axis"], Leaf::Vector),
+    field(&["frame", "z_axis"], Leaf::Vector),
+];
+
 /// The `CadFeature` subtypes (spec §18.7).
 pub(crate) const FAMILIES: &[Family] = &[
     Family {
@@ -175,6 +267,66 @@ pub(crate) const FAMILIES: &[Family] = &[
         prim_type: "CadPatternFeature",
         namespace: "cad:pattern",
         fields: PATTERN,
+    },
+    Family {
+        tag: "hole",
+        prim_type: "CadHoleFeature",
+        namespace: "cad:hole",
+        fields: HOLE,
+    },
+    Family {
+        tag: "shell",
+        prim_type: "CadShellFeature",
+        namespace: "cad:shell",
+        fields: SHELL,
+    },
+    Family {
+        tag: "draft",
+        prim_type: "CadDraftFeature",
+        namespace: "cad:draft",
+        fields: DRAFT,
+    },
+    Family {
+        tag: "mirror_shape",
+        prim_type: "CadMirrorFeature",
+        namespace: "cad:mirror",
+        fields: MIRROR,
+    },
+    Family {
+        tag: "combine",
+        prim_type: "CadCombineFeature",
+        namespace: "cad:combine",
+        fields: COMBINE,
+    },
+    Family {
+        tag: "primitive",
+        prim_type: "CadPrimitiveFeature",
+        namespace: "cad:primitive",
+        fields: PRIMITIVE,
+    },
+    Family {
+        tag: "datum_plane",
+        prim_type: "CadDatumPlaneFeature",
+        namespace: "cad:datumPlane",
+        fields: DATUM_PLANE,
+    },
+    Family {
+        tag: "datum_axis",
+        prim_type: "CadDatumAxisFeature",
+        namespace: "cad:datumAxis",
+        fields: DATUM_AXIS,
+    },
+    Family {
+        tag: "datum_point",
+        prim_type: "CadDatumPointFeature",
+        namespace: "cad:datumPoint",
+        fields: DATUM_POINT,
+    },
+    Family {
+        tag: "datum_coordinate_system",
+        prim_type: "CadDatumFrameFeature",
+        namespace: "cad:datumFrame",
+        fields: DATUM_FRAME,
     },
 ];
 
@@ -241,7 +393,9 @@ pub(crate) fn restore(
                             .flatten()
                     })
                     .collect(),
-                Leaf::Count | Leaf::Flag | Leaf::Vector | Leaf::Point => Vec::new(),
+                Leaf::Count | Leaf::Flag | Leaf::Vector | Leaf::Point | Leaf::Identities => {
+                    Vec::new()
+                }
             };
             for (index, value) in values.into_iter().enumerate() {
                 if let Some(value) = value {
@@ -252,6 +406,7 @@ pub(crate) fn restore(
         }
         let value = match field.leaf {
             Leaf::Token | Leaf::Text => token(prim, &name, issues).map(Into::into),
+            Leaf::Identities => tokens(prim, &name, issues).map(Into::into),
             Leaf::Length | Leaf::Angle => vector(prim, &name, 1, issues)
                 .and_then(|values| values.first().copied())
                 .and_then(|value| number(convert_in(field.leaf, value, scale))),

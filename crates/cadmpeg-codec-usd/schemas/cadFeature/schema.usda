@@ -110,6 +110,76 @@ class CadPatternFeature "CadPatternFeature" (
 {
 }
 
+class CadHoleFeature "CadHoleFeature" (
+    inherits = </CadFeature>
+    doc = """Typed leaves under cad:hole (docs/formats/usd.md §18.7)."""
+)
+{
+}
+
+class CadShellFeature "CadShellFeature" (
+    inherits = </CadFeature>
+    doc = """Typed leaves under cad:shell (docs/formats/usd.md §18.7)."""
+)
+{
+}
+
+class CadDraftFeature "CadDraftFeature" (
+    inherits = </CadFeature>
+    doc = """Typed leaves under cad:draft (docs/formats/usd.md §18.7)."""
+)
+{
+}
+
+class CadMirrorFeature "CadMirrorFeature" (
+    inherits = </CadFeature>
+    doc = """Typed leaves under cad:mirror (docs/formats/usd.md §18.7)."""
+)
+{
+}
+
+class CadCombineFeature "CadCombineFeature" (
+    inherits = </CadFeature>
+    doc = """Typed leaves under cad:combine (docs/formats/usd.md §18.7)."""
+)
+{
+}
+
+class CadPrimitiveFeature "CadPrimitiveFeature" (
+    inherits = </CadFeature>
+    doc = """Typed leaves under cad:primitive (docs/formats/usd.md §18.7)."""
+)
+{
+}
+
+class CadDatumPlaneFeature "CadDatumPlaneFeature" (
+    inherits = </CadFeature>
+    doc = """Typed leaves under cad:datumPlane (docs/formats/usd.md §18.7)."""
+)
+{
+}
+
+class CadDatumAxisFeature "CadDatumAxisFeature" (
+    inherits = </CadFeature>
+    doc = """Typed leaves under cad:datumAxis (docs/formats/usd.md §18.7)."""
+)
+{
+}
+
+class CadDatumPointFeature "CadDatumPointFeature" (
+    inherits = </CadFeature>
+    doc = """Typed leaves under cad:datumPoint (docs/formats/usd.md §18.7)."""
+)
+{
+}
+
+class CadDatumFrameFeature "CadDatumFrameFeature" (
+    inherits = </CadFeature>
+    doc = """Typed leaves under cad:datumFrame (docs/formats/usd.md §18.7)."""
+)
+{
+}
+
 class CadConfiguration "CadConfiguration" (
     inherits = </Typed>
     doc = """One design configuration: a named variant of the parametric model

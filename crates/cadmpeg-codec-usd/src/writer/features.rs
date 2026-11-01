@@ -243,6 +243,7 @@ const fn usd_type(leaf: Leaf) -> &'static str {
         Leaf::Flag => "bool",
         Leaf::Vector => "vector3d",
         Leaf::Point => "point3d",
+        Leaf::Identities => "string[]",
     }
 }
 
@@ -255,6 +256,14 @@ fn leaf_text(value: &serde_json::Value, leaf: Leaf) -> Option<String> {
         Leaf::Angle => value.as_f64().map(|value| real(value.to_degrees())),
         Leaf::Count => value.as_u64().map(|value| value.to_string()),
         Leaf::Flag => value.as_bool().map(|flag| u8::from(flag).to_string()),
+        Leaf::Identities => {
+            let items = value
+                .as_array()?
+                .iter()
+                .map(|item| item.as_str().filter(|text| !text.is_empty()).map(quoted))
+                .collect::<Option<Vec<_>>>()?;
+            Some(format!("[{}]", items.join(", ")))
+        }
         Leaf::Vector | Leaf::Point => {
             let map = value.as_object().filter(|map| map.len() == 3)?;
             let unit = if leaf == Leaf::Point { scale } else { 1.0 };
