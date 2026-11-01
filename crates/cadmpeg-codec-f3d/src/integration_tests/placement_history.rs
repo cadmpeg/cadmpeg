@@ -503,3 +503,81 @@ fn later_fixed_identity_occurrence_reports_loss_and_stays_out_of_neutral_structu
         .iter()
         .all(|o| !o.id.as_str().ends_with("000000000404")));
 }
+
+#[test]
+fn history_only_hidden_uncontained_body_with_a_bound_cluster_stays_in_model() {
+    use crate::test_support::component_body_test::{
+        history_only_pairs_with_cluster, HistoryOnlyContainer as Container,
+    };
+    let (bulk, meta) = history_only_pairs_with_cluster(
+        "BREP.module.smbh",
+        &[(0, 350, Some(true))],
+        Container::Lists(&[]),
+        true,
+    );
+    let bytes = f3d_with_breps_and_design(
+        &[(
+            "BREP.module.smbh",
+            &crate::test_support::smbh_geometry_test::synthetic_geometry_smbh(),
+        )],
+        &bulk,
+        &meta,
+    );
+    let result = super::decode(bytes);
+    assert_eq!(result.ir().model.bodies.len(), 1);
+    let native = crate::test_support::native_test::f3d_native(result.ir());
+    assert!(!native.design_body_bindings[0].history_only);
+    assert!(native.design_body_bindings[0].body.is_some());
+    assert!(result
+        .report()
+        .losses
+        .iter()
+        .any(|loss| loss.code == F3dLossCode::ComponentBodyOwnerFallback.kind()));
+    super::assert_valid(&result);
+}
+
+#[test]
+fn history_only_consumed_member_keeps_the_inserted_design_body() {
+    use crate::test_support::assembly_test::{f3d_without_brep, f3z_archive, XREF_ROLE};
+    use crate::test_support::component_body_test::{
+        history_only_pairs_with_cluster, HistoryOnlyContainer as Container,
+    };
+    let geometry = crate::test_support::smbh_geometry_test::synthetic_geometry_smbh();
+    let document = |bound_cluster| {
+        let (bulk, meta) = history_only_pairs_with_cluster(
+            "BREP.module.smbh",
+            &[(0, 350, Some(true))],
+            Container::Lists(&[]),
+            bound_cluster,
+        );
+        f3d_with_breps_and_design(&[("BREP.module.smbh", &geometry)], &bulk, &meta)
+    };
+    let consumed = document(false);
+    let inserted = document(true);
+    let root = f3d_without_brep(
+        "assembly",
+        "root.f3d",
+        &[("consumed.f3d", XREF_ROLE), ("inserted.f3d", XREF_ROLE)],
+    );
+    let archive = f3z_archive(
+        "root.f3d",
+        &[
+            ("root.f3d", &root),
+            ("consumed.f3d", &consumed),
+            ("inserted.f3d", &inserted),
+        ],
+    );
+    let result = super::decode(archive);
+    assert_eq!(result.ir().model.bodies.len(), 1);
+    assert!(result
+        .report()
+        .losses
+        .iter()
+        .any(|loss| loss.code == F3dLossCode::HistoryOnlyBodyOmitted.kind()));
+    assert!(result
+        .report()
+        .losses
+        .iter()
+        .any(|loss| loss.code == F3dLossCode::ComponentBodyOwnerFallback.kind()));
+    super::assert_valid(&result);
+}

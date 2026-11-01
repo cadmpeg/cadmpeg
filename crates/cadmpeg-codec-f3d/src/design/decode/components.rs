@@ -824,6 +824,17 @@ pub(crate) struct StreamComponents {
 }
 
 impl StreamComponents {
+    pub(crate) fn cluster_owner(&self, entity: u64) -> Option<&ComponentDefinition> {
+        let start = self
+            .root_entities
+            .iter()
+            .copied()
+            .chain(self.roots.values().map(|root| root.root_entity))
+            .filter(|start| *start <= entity)
+            .max()?;
+        self.roots.values().find(|root| root.root_entity == start)
+    }
+
     fn bind_roots(&mut self, bytes: &[u8], frames: impl IntoIterator<Item = (usize, usize)>) {
         let mut roots = std::collections::BTreeSet::new();
         for (start, end) in frames {
