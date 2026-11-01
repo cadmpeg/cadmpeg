@@ -1000,7 +1000,8 @@ pub(crate) fn select_active_parasolid_site<'a>(
             && !contains_ascii_case_insensitive(name, "resolvedfeatures");
         let section_is_admissible = !contains_ascii_case_insensitive(name, "ghost")
             && !contains_ascii_case_insensitive(name, "deltas")
-            && !contains_ascii_case_insensitive(name, "resolvedfeatures");
+            && !contains_ascii_case_insensitive(name, "resolvedfeatures")
+            && virtual_component_key(name).is_none();
         let sole_body_stream = section
             .ps_streams()
             .iter()
@@ -1159,6 +1160,24 @@ pub(crate) fn is_embedded_document(name: &str) -> bool {
         || EMBEDDED_EXTENSIONS
             .iter()
             .any(|extension| ends_with(extension))
+}
+
+/// Folder of the sections that hold virtual component documents (`sldprt.md`
+/// §11.5).
+const VIRTUAL_PREFIX: &str = "VirtualComp/";
+/// Suffix that ends the section name of a virtual component document.
+const VIRTUAL_SUFFIX: &str = "-sldprt";
+
+/// The key of a virtual component section, its name after `VirtualComp/` in
+/// ASCII lower case, or `None` for another section (`sldprt.md` §11.5).
+pub(crate) fn virtual_component_key(name: &str) -> Option<String> {
+    let name = unwrapped_name(name).replace('\\', "/");
+    let prefix = name.get(..VIRTUAL_PREFIX.len())?;
+    if !prefix.eq_ignore_ascii_case(VIRTUAL_PREFIX) {
+        return None;
+    }
+    let key = name.get(VIRTUAL_PREFIX.len()..)?.to_ascii_lowercase();
+    (key.len() > VIRTUAL_SUFFIX.len() && key.ends_with(VIRTUAL_SUFFIX)).then_some(key)
 }
 
 pub(crate) fn xml_text(bytes: &[u8]) -> Option<String> {
