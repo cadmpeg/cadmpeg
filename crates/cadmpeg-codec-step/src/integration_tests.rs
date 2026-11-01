@@ -70,6 +70,7 @@ use crate::writer::tests::round_trips::{
 use crate::{StepCodec, StepSchema, StepWriteOptions};
 
 mod measured_geometry;
+mod nist_pmi_conformance;
 
 fn assert_valid(result: &EditableDecodeResult) {
     let validation = cadmpeg_ir::validate_neutral(result.ir(), result.report().losses.clone())
@@ -260,3 +261,5 @@ fn writer_pipeline_round_trips_the_full_cube_across_schemas_and_refuses_lossy_st
         }
     }
 }
+
+mod dimension_limits;

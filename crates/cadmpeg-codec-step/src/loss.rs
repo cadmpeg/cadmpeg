@@ -119,6 +119,8 @@ pub(crate) enum StepLossCode {
     PmiAngleUnitUnresolved,
     /// A datum system has inconsistent precedence compartments.
     PmiDatumSystemInvalid,
+    /// Dimensional limit measures do not form one lower and one upper limit.
+    DimensionalLimitsOmitted,
     /// Independent styled items assign conflicting scalar colors.
     ConflictingScalarColors,
     /// A surface style usage has an invalid `surface_side` enumeration value.
@@ -435,6 +437,7 @@ impl StepLossCode {
         Self::PmiLengthUnitUnresolved,
         Self::PmiAngleUnitUnresolved,
         Self::PmiDatumSystemInvalid,
+        Self::DimensionalLimitsOmitted,
         Self::ConflictingScalarColors,
         Self::SurfaceSideInvalid,
         Self::SurfaceTransparencyConflict,
@@ -619,6 +622,7 @@ impl StepLossCode {
             Self::PmiLengthUnitUnresolved => "pmi.length-unit-unresolved",
             Self::PmiAngleUnitUnresolved => "pmi.angle-unit-unresolved",
             Self::PmiDatumSystemInvalid => "pmi.datum-system-invalid",
+            Self::DimensionalLimitsOmitted => "pmi.dimensional-limits-omitted",
             Self::ConflictingScalarColors => "presentation.conflicting-scalar-colors",
             Self::SurfaceSideInvalid => "presentation.surface-side-invalid",
             Self::SurfaceTransparencyConflict => "presentation.surface-transparency-conflict",
@@ -992,7 +996,8 @@ impl StepLossCode {
             }
             Self::SemanticAnnotationOmitted
             | Self::PmiAnnotationNotWritten
-            | Self::PmiDatumSystemInvalid => LossTaxonomy::PmiOmitted,
+            | Self::PmiDatumSystemInvalid
+            | Self::DimensionalLimitsOmitted => LossTaxonomy::PmiOmitted,
             Self::DocumentAssetOmitted => LossTaxonomy::AssetNotTransferred,
             Self::OccurrenceExternalProduct => LossTaxonomy::AssemblyComponentsExternal,
             Self::SourceAssociationOmitted => LossTaxonomy::SourceAssociationOmitted,
@@ -1080,6 +1085,7 @@ mod tests {
                 "pmi.length-unit-unresolved",
                 "pmi.angle-unit-unresolved",
                 "pmi.datum-system-invalid",
+                "pmi.dimensional-limits-omitted",
                 "presentation.conflicting-scalar-colors",
                 "presentation.surface-side-invalid",
                 "presentation.surface-transparency-conflict",

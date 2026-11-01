@@ -2146,9 +2146,12 @@ geometry arena retains its carrier identity as the style target. Semantic PMI
 retains every supported STEP `SHAPE_ASPECT` subtype as a shape-aspect target,
 including a simple leaf subtype and a shape-aspect partial in a complex datum
 feature. ISO 10303-47 defines `DATUM` as a `SHAPE_ASPECT` subtype with the
-explicit `identification` attribute. In external mapping, the `DATUM` partial
-supplies `identification`; the inherited `SHAPE_ASPECT` partial supplies
-`name`, `description`, `of_shape`, and `product_definitional`. A datum requires
+explicit `identification` attribute. A simple `DATUM` instance lists the
+inherited `name`, `description`, `of_shape`, and `product_definitional`
+attributes and then `identification` as its fifth attribute. In external
+mapping, the `DATUM` partial supplies `identification`; the inherited
+`SHAPE_ASPECT` partial supplies `name`, `description`, `of_shape`, and
+`product_definitional`. A datum requires
 an empty `name` and `product_definitional = .F.`. CADIR reads these fields by
 partial name, retains the source datum identity as a shape-aspect target, and
 does not use the first complex partial as an attribute source. A complex datum
@@ -2167,15 +2170,16 @@ Practices 4.1 §5.2.1 identifies a nominal value by a
 `nominal value`, and requires that value even when no range is present. For a
 value range, §5.2.4 identifies the items by `nominal value`, `upper limit`, and
 `lower limit`.
-CADIR decision: the reader traverses the complete item graph and compares the
-specified names case-insensitively. One named nominal item supplies the
-nominal. Multiple named nominal items are ambiguous and produce
-`pmi.dimensional-nominal-ambiguous`. If no named nominal item exists, exactly
-one reachable measure is accepted as malformed-source salvage; multiple
-measures are ambiguous and produce
-`pmi.dimensional-unnamed-measure-ambiguous`. Neither aggregate order nor
-entity identity selects a value. Complex measure records referenced by a
-characteristic representation remain typed measure carriers.
+The item names are case-insensitive. One item named `nominal value` supplies
+an explicit nominal. One `lower limit` item and one `upper limit` item supply
+absolute lower and upper limits, in compatible measure units. The lower limit
+is at most the upper limit. Limit values are not signed deviations from a
+nominal. The bounds are independent of the nominal. Multiple items with the
+same role are ambiguous. An incomplete pair does not define limits. An unnamed
+measure supplies a nominal only when it is the sole measure outside the limit
+items. Aggregate order and entity identity do not assign measure roles.
+Complex measure records referenced by a characteristic representation are
+typed measure carriers.
 `GEOMETRIC_ITEM_SPECIFIC_USAGE` resolves a shape-aspect definition, including a
 definition reached through a `SHAPE_ASPECT_RELATIONSHIP`, to its identified
 geometric or topology item. A resolved face, edge, vertex, body, point, or curve
@@ -2245,7 +2249,14 @@ characteristic leaf partial supplies the kind. CAx-IF AP242 PMI Recommended
 Practices 4.1 §6.9.3 shows the same complex form with
 `GEOMETRIC_TOLERANCE_WITH_MODIFIERS` and `POSITION_TOLERANCE` partials.
 `GEOMETRIC_TOLERANCE_WITH_DATUM_REFERENCE` supplies the datum-system link and
-does not add a shape-aspect target. The defined-unit and defined-area-unit
+does not add a shape-aspect target. Its subtypes are `ANGULARITY_TOLERANCE`,
+`CIRCULAR_RUNOUT_TOLERANCE`, `COAXIALITY_TOLERANCE`,
+`CONCENTRICITY_TOLERANCE`, `PARALLELISM_TOLERANCE`,
+`PERPENDICULARITY_TOLERANCE`, `SYMMETRY_TOLERANCE`, and
+`TOTAL_RUNOUT_TOLERANCE`. A simple instance of one of these subtypes lists the
+four inherited `GEOMETRIC_TOLERANCE` attributes and then `datum_system` as its
+fifth attribute. Another tolerance kind references a datum system only through
+a `GEOMETRIC_TOLERANCE_WITH_DATUM_REFERENCE` partial in a complex instance. The defined-unit and defined-area-unit
 partials retain their unit sizes and area shape; modifier aggregates retain
 their enumeration values.
 CADIR decision: the reader recognizes only the exact characteristic leaf
