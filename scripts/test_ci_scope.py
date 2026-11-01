@@ -3,6 +3,7 @@
 """Check that CI selection retains dependents and conservatively handles inputs."""
 
 from pathlib import Path
+import re
 import unittest
 import tempfile
 from unittest.mock import patch
@@ -14,6 +15,20 @@ ROOT = Path(__file__).resolve().parent.parent
 
 
 class ScopeTests(unittest.TestCase):
+    def test_rust_gates_cancel_with_the_workflow_and_fail_closed(self):
+        workflow = (ROOT / '.github/workflows/ci.yml').read_text()
+        for job in ('static', 'lint', 'test', 'features', 'fuzz', 'msrv', 'cross-platform', 'audit'):
+            with self.subTest(job=job):
+                match = re.search(rf'^  {re.escape(job)}:\n(?P<body>.*?)(?=^  [a-z][a-z-]*:\n|\Z)',
+                                  workflow, re.MULTILINE | re.DOTALL)
+                self.assertIsNotNone(match)
+                body = match.group('body')
+                condition = re.search(r'^    if: (.*)$', body, re.MULTILINE).group(1)
+                self.assertIn('!cancelled()', condition)
+                self.assertNotIn('always()', condition)
+                self.assertIn("needs.changes.result != 'success'", condition)
+                self.assertIn('test "${{ needs.changes.result }}" = success', body)
+
     def test_cargo_command_preserves_arguments(self):
         self.assertEqual(command(['test', '--doc'], ['cadmpeg-core', 'cadmpeg-ir']),
                          ['cargo', 'test', '-q', '-p', 'cadmpeg-core',

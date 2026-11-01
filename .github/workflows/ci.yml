@@ -178,7 +178,7 @@ jobs:
   # Python policy checks need no Rust build and run beside clippy.
   static:
     needs: changes
-    if: ${{ always() && needs.changes.result != 'cancelled' && (needs.changes.result != 'success' || needs.changes.outputs.static == 'true') }}
+    if: ${{ !cancelled() && needs.changes.result != 'cancelled' && (needs.changes.result != 'success' || needs.changes.outputs.static == 'true') }}
     name: static checks
     runs-on: ubuntu-latest
     timeout-minutes: 15
@@ -260,7 +260,7 @@ jobs:
   # job instead of the sum of every step.
   lint:
     needs: changes
-    if: ${{ always() && needs.changes.result != 'cancelled' && (needs.changes.result != 'success' || needs.changes.outputs.rust == 'true') }}
+    if: ${{ !cancelled() && needs.changes.result != 'cancelled' && (needs.changes.result != 'success' || needs.changes.outputs.rust == 'true') }}
     name: fmt / clippy (stable)
     env:
       CI_PACKAGES: ${{ needs.changes.outputs.packages }}
@@ -308,7 +308,7 @@ jobs:
 
   test:
     needs: changes
-    if: ${{ always() && needs.changes.result != 'cancelled' && (needs.changes.result != 'success' || (needs.changes.outputs.rust == 'true' && github.event.pull_request.draft != true)) }}
+    if: ${{ !cancelled() && needs.changes.result != 'cancelled' && (needs.changes.result != 'success' || (needs.changes.outputs.rust == 'true' && github.event.pull_request.draft != true)) }}
     name: test (stable)
     env:
       CI_PACKAGES: ${{ needs.changes.outputs.packages }}
@@ -449,7 +449,7 @@ jobs:
 
   features:
     needs: changes
-    if: ${{ always() && needs.changes.result != 'cancelled' && (needs.changes.result != 'success' || ((needs.changes.outputs.schema == 'true' || needs.changes.outputs.sldprt_cli == 'true' || needs.changes.outputs.step_cli == 'true') && github.event.pull_request.draft != true)) }}
+    if: ${{ !cancelled() && needs.changes.result != 'cancelled' && (needs.changes.result != 'success' || ((needs.changes.outputs.schema == 'true' || needs.changes.outputs.sldprt_cli == 'true' || needs.changes.outputs.step_cli == 'true') && github.event.pull_request.draft != true)) }}
     name: schema / feature gates (stable)
     runs-on: ubuntu-latest
     timeout-minutes: 40
@@ -499,7 +499,7 @@ jobs:
 
   fuzz:
     needs: changes
-    if: ${{ always() && needs.changes.result != 'cancelled' && (needs.changes.result != 'success' || (needs.changes.outputs.fuzz == 'true' && github.event.pull_request.draft != true)) }}
+    if: ${{ !cancelled() && needs.changes.result != 'cancelled' && (needs.changes.result != 'success' || (needs.changes.outputs.fuzz == 'true' && github.event.pull_request.draft != true)) }}
     name: fuzz crate (stable)
     env:
       CI_FUZZ_CODECS: ${{ needs.changes.outputs.codec_scope }}
@@ -536,7 +536,7 @@ jobs:
   # overrides the repo's rust-toolchain.toml pin so the floor is actually tested.
   msrv:
     needs: changes
-    if: ${{ always() && needs.changes.result != 'cancelled' && (needs.changes.result != 'success' || (needs.changes.outputs.rust == 'true' && github.event.pull_request.draft != true)) }}
+    if: ${{ !cancelled() && needs.changes.result != 'cancelled' && (needs.changes.result != 'success' || (needs.changes.outputs.rust == 'true' && github.event.pull_request.draft != true)) }}
     name: MSRV check (1.88)
     runs-on: ubuntu-latest
     timeout-minutes: 20
@@ -584,7 +584,7 @@ jobs:
   # Cargo.toml, so every release passes them.
   cross-platform:
     needs: changes
-    if: ${{ github.event_name != 'pull_request' && always() && needs.changes.result != 'cancelled' && (needs.changes.result != 'success' || needs.changes.outputs.full == 'true') }}
+    if: ${{ github.event_name != 'pull_request' && !cancelled() && needs.changes.result != 'cancelled' && (needs.changes.result != 'success' || needs.changes.outputs.full == 'true') }}
     name: build / test (${{ matrix.os }})
     env:
       CI_PACKAGES: ${{ needs.changes.outputs.packages }}
@@ -629,7 +629,7 @@ jobs:
   # RustSec advisory scan of a changed dependency tree; audit.yml scans daily.
   audit:
     needs: changes
-    if: ${{ always() && needs.changes.result != 'cancelled' && (needs.changes.result != 'success' || needs.changes.outputs.audit == 'true') }}
+    if: ${{ !cancelled() && needs.changes.result != 'cancelled' && (needs.changes.result != 'success' || needs.changes.outputs.audit == 'true') }}
     name: cargo audit
     runs-on: ubuntu-latest
     timeout-minutes: 10
