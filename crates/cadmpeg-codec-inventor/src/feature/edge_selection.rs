@@ -528,9 +528,9 @@ pub(super) fn inventory(
     };
     if selectors.is_empty() || !names_joined(carrier.schema, has_flange) {
         return Ok(EdgeInventory {
-            historical,
             generated_sources,
             generated_sources_complete,
+            historical,
             ..EdgeInventory::default()
         });
     }

@@ -455,7 +455,7 @@ fn historical_projection_is_atomic_and_pins_each_unresolved_selection_loss() {
                         .values_mut()
                         .next()
                         .expect("sample")
-                        .item = 100
+                        .item = 100;
                 }
                 3 => {
                     let item = &mut inventory.properties[if chamfer { 1 } else { 6 }];
