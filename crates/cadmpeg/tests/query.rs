@@ -16,7 +16,7 @@ use crate::query_support::write;
 use crate::support::cadmpeg;
 
 const CHECK_REPORT: &str = r#"{
-  "ir_version": "10",
+  "ir_version": "11",
   "command": "check",
   "status": "ok",
   "refusal": null,
@@ -42,13 +42,13 @@ const CHECK_REPORT: &str = r#"{
 }"#;
 
 const CADIR_DOC: &str = r#"{
-  "ir_version": "10",
+  "ir_version": "11",
   "model": {"faces": [{"id": "f1"}, {"id": "f2"}], "edges": []},
   "native": {"fcstd": {"objects": [1, 2, 3]}}
 }"#;
 
 const SIDECAR: &str = r#"{
-  "ir_version": "10",
+  "ir_version": "11",
   "ir_sha256": "abc123",
   "report": {
     "format": "f3d",
@@ -109,7 +109,7 @@ fn query_requires_the_current_version_for_every_artifact_and_writes_it() {
             Some(serde_json::json!(0)),
             Some(serde_json::json!(false)),
             Some(serde_json::json!("unsupported")),
-            Some(serde_json::json!("11")),
+            Some(serde_json::json!("10")),
             Some(serde_json::json!("13")),
             Some(serde_json::json!("14")),
             Some(serde_json::json!("18")),
@@ -150,7 +150,7 @@ fn summary_exposes_document_and_decode_dialect_identity() {
         dir.path(),
         "classified.cadir.json",
         r#"{
-          "ir_version": "10",
+          "ir_version": "11",
           "source": {
             "identity": {
               "classification": "classified",
@@ -189,7 +189,7 @@ fn summary_exposes_document_and_decode_dialect_identity() {
         dir.path(),
         "classified.fidelity.json",
         r#"{
-          "ir_version": "10",
+          "ir_version": "11",
           "ir_sha256": "abc123",
           "report": {
             "format": "f3d",
@@ -235,7 +235,7 @@ fn summary_exposes_inspect_export_and_refusal_identity_without_positional_layers
         dir.path(),
         "identity.report.json",
         r#"{
-          "ir_version": "10",
+          "ir_version": "11",
           "command": "convert",
           "status": "refused",
           "refusal": {
@@ -329,7 +329,7 @@ fn summary_projects_structured_target_refusals() {
         dir.path(),
         "target-refusal.json",
         r#"{
-          "ir_version": "10",
+          "ir_version": "11",
           "command": "convert",
           "status": "refused",
           "refusal": {
@@ -725,7 +725,7 @@ fn a_measure_report_states_its_work_or_leaves_it_out() {
     let dir = tempdir().unwrap();
     let report = |work: &str| {
         format!(
-            r#"{{"ir_version": "10", "command": "measure", "status": "ok", "refusal": null,
+            r#"{{"ir_version": "11", "command": "measure", "status": "ok", "refusal": null,
                "decode_report": null, "measure": {{"bodies": [{{}}], "faces": [],
                "edges": [], "surfaces": [], "document": {{"unavailable": {{}}{work}}}}}}}"#
         )
@@ -755,7 +755,7 @@ fn a_measure_report_states_its_work_or_leaves_it_out() {
 // --- query item -------------------------------------------------------------
 
 const ITEM_DOC: &str = r#"{
-  "ir_version": "10",
+  "ir_version": "11",
   "model": {
     "sketch_entities": [
       {
@@ -1480,7 +1480,7 @@ fn schema_sidecar_and_json_envelope() {
 }
 
 const FIDELITY_SIDECAR: &str = r#"{
-  "ir_version": "10",
+  "ir_version": "11",
   "ir_sha256": "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad",
   "report": {"identity": {"classification": "unclassified", "format": "f3d"},
              "transfer": {"transfer": "full", "geometry_transferred": true},
