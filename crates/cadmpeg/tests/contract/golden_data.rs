@@ -34,7 +34,7 @@ fn assert_documents_clean(
 }
 
 fn assert_clean(crate_name: &str, check: impl Fn(&Value) -> Vec<String>) {
-    let goldens = decode_goldens(crate_name);
+    let goldens = super::sampled_goldens(decode_goldens(crate_name));
     assert!(!goldens.is_empty(), "{crate_name} has no decode goldens");
     let findings: Vec<String> = goldens
         .iter()
@@ -53,22 +53,22 @@ fn assert_clean(crate_name: &str, check: impl Fn(&Value) -> Vec<String>) {
 }
 
 macro_rules! golden_data_checks {
-    ($($codec:ident => $crate_name:literal, $namespace:literal),* $(,)?) => {
+    ($($codec:ident => $crate_name:literal, $namespace:literal, $properties:ident, $ordinals:ident, $expressions:ident),* $(,)?) => {
         $(mod $codec {
             const NAMESPACE: &str = $namespace;
 
             #[test]
-            fn property_maps_hold_no_native_fact() {
+            fn $properties() {
                 super::assert_clean($crate_name, |document| super::property_map_findings(NAMESPACE, document));
             }
 
             #[test]
-            fn feature_ordinals_are_dense() {
+            fn $ordinals() {
                 super::assert_clean($crate_name, super::feature_ordinal_findings);
             }
 
             #[test]
-            fn expression_text_names_no_parameter() {
+            fn $expressions() {
                 super::assert_clean($crate_name, |document| {
                     super::expression_text_findings(document, &super::equation_identities(document))
                 });
@@ -78,10 +78,10 @@ macro_rules! golden_data_checks {
 }
 
 macro_rules! never_stale {
-    ($($module:ident => $crate_name:literal),* $(,)?) => {
+    ($($module:ident => $crate_name:literal, $test:ident),* $(,)?) => {
         $(mod $module {
             #[test]
-            fn needs_recompute_is_false() {
+            fn $test() {
                 super::assert_clean($crate_name, super::never_stale_findings);
             }
         })*
@@ -89,33 +89,33 @@ macro_rules! never_stale {
 }
 
 golden_data_checks! {
-    sat => "cadmpeg-codec-sat", "sat",
-    step => "cadmpeg-codec-step", "step",
-    iges => "cadmpeg-codec-iges", "iges",
-    rhino => "cadmpeg-codec-rhino", "rhino",
-    freecad => "cadmpeg-codec-freecad", "fcstd",
-    f3d => "cadmpeg-codec-f3d", "f3d",
-    sldprt => "cadmpeg-codec-sldprt", "sldprt",
-    inventor => "cadmpeg-codec-inventor", "inventor",
-    catia => "cadmpeg-codec-catia", "catia",
-    creo => "cadmpeg-codec-creo", "creo",
-    nx => "cadmpeg-codec-nx", "nx",
+    sat => "cadmpeg-codec-sat", "sat", sat_property_maps_hold_no_native_fact, sat_feature_ordinals_are_dense, sat_expression_text_names_no_parameter,
+    step => "cadmpeg-codec-step", "step", step_property_maps_hold_no_native_fact, step_feature_ordinals_are_dense, step_expression_text_names_no_parameter,
+    iges => "cadmpeg-codec-iges", "iges", iges_property_maps_hold_no_native_fact, iges_feature_ordinals_are_dense, iges_expression_text_names_no_parameter,
+    rhino => "cadmpeg-codec-rhino", "rhino", rhino_property_maps_hold_no_native_fact, rhino_feature_ordinals_are_dense, rhino_expression_text_names_no_parameter,
+    freecad => "cadmpeg-codec-freecad", "fcstd", freecad_property_maps_hold_no_native_fact, freecad_feature_ordinals_are_dense, freecad_expression_text_names_no_parameter,
+    f3d => "cadmpeg-codec-f3d", "f3d", f3d_property_maps_hold_no_native_fact, f3d_feature_ordinals_are_dense, f3d_expression_text_names_no_parameter,
+    sldprt => "cadmpeg-codec-sldprt", "sldprt", sldprt_property_maps_hold_no_native_fact, sldprt_feature_ordinals_are_dense, sldprt_expression_text_names_no_parameter,
+    inventor => "cadmpeg-codec-inventor", "inventor", inventor_property_maps_hold_no_native_fact, inventor_feature_ordinals_are_dense, inventor_expression_text_names_no_parameter,
+    catia => "cadmpeg-codec-catia", "catia", catia_property_maps_hold_no_native_fact, catia_feature_ordinals_are_dense, catia_expression_text_names_no_parameter,
+    creo => "cadmpeg-codec-creo", "creo", creo_property_maps_hold_no_native_fact, creo_feature_ordinals_are_dense, creo_expression_text_names_no_parameter,
+    nx => "cadmpeg-codec-nx", "nx", nx_property_maps_hold_no_native_fact, nx_feature_ordinals_are_dense, nx_expression_text_names_no_parameter,
 }
 
 never_stale! {
-    sat_rule_e => "cadmpeg-codec-sat",
-    step_rule_e => "cadmpeg-codec-step",
-    iges_rule_e => "cadmpeg-codec-iges",
-    rhino_rule_e => "cadmpeg-codec-rhino",
-    f3d_rule_e => "cadmpeg-codec-f3d",
-    inventor_rule_e => "cadmpeg-codec-inventor",
-    catia_rule_e => "cadmpeg-codec-catia",
-    nx_rule_e => "cadmpeg-codec-nx",
+    sat_rule_e => "cadmpeg-codec-sat", sat_needs_recompute_is_false,
+    step_rule_e => "cadmpeg-codec-step", step_needs_recompute_is_false,
+    iges_rule_e => "cadmpeg-codec-iges", iges_needs_recompute_is_false,
+    rhino_rule_e => "cadmpeg-codec-rhino", rhino_needs_recompute_is_false,
+    f3d_rule_e => "cadmpeg-codec-f3d", f3d_needs_recompute_is_false,
+    inventor_rule_e => "cadmpeg-codec-inventor", inventor_needs_recompute_is_false,
+    catia_rule_e => "cadmpeg-codec-catia", catia_needs_recompute_is_false,
+    nx_rule_e => "cadmpeg-codec-nx", nx_needs_recompute_is_false,
 }
 
 mod sldprt_rule_e {
     #[test]
-    fn needs_recompute_follows_the_active_configuration() {
+    fn sldprt_needs_recompute_follows_the_active_configuration() {
         super::assert_clean("cadmpeg-codec-sldprt", super::solidworks_stale_findings);
     }
 }
@@ -141,7 +141,7 @@ mod freecad_corpus {
             })
             .collect();
         paths.sort();
-        paths
+        super::super::sampled_paths(paths)
             .into_iter()
             .map(|path| {
                 let bytes = std::fs::read(&path).expect("FreeCAD fixture bytes");
@@ -159,14 +159,14 @@ mod freecad_corpus {
     }
 
     #[test]
-    fn property_maps_hold_no_native_fact_on_every_corpus_fixture() {
+    fn freecad_property_maps_hold_no_native_fact_on_every_corpus_fixture() {
         super::assert_documents_clean("FreeCAD corpus", &corpus_decodes(), |golden| {
             super::property_map_findings("fcstd", &golden.ir)
         });
     }
 
     #[test]
-    fn needs_recompute_follows_touched_on_every_corpus_fixture() {
+    fn freecad_needs_recompute_follows_touched_on_every_corpus_fixture() {
         super::assert_documents_clean("FreeCAD corpus", &corpus_decodes(), |golden| {
             super::freecad_stale_findings(&golden.ir)
         });

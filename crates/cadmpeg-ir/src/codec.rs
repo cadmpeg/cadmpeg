@@ -524,8 +524,41 @@ impl<C: CodecBackend + ?Sized> Codec for C {
         ctx: &DecodeContext<'_>,
         root: View<'_>,
     ) -> Result<DecodeResult, DecodeFailure> {
-        let decoded = self.decode_impl(ctx, root)?;
-        DecodeResult::from_decoded(ctx, decoded, C::FORMAT)
+        let mut decoded = self.decode_impl(ctx, root)?;
+        crate::validate::evaluation_cycles::give_up_evaluation_cycles(
+            ctx,
+            &mut decoded.ir,
+            &mut decoded.body.losses,
+            &mut decoded.source_fidelity,
+            C::FORMAT.as_str(),
+        )?;
+        let result = DecodeResult::new(decoded, C::FORMAT, ctx.depth())?;
+        if result.report().format() != C::FORMAT.as_str() {
+            return Err(CodecError::WrongFormat(format!(
+                "codec {:?} decoded a {:?} document",
+                C::FORMAT.as_str(),
+                result.report().format()
+            ))
+            .into());
+        }
+        let strict_loss_index = if ctx.policy().mode == DecodeMode::Strict && !ctx.container_only()
+        {
+            result
+                .report()
+                .losses
+                .iter()
+                .position(|loss| loss.strict_consequence() == StrictConsequence::Reject)
+                .map(RejectingLossIndex)
+        } else {
+            None
+        };
+        if let Some(loss_index) = strict_loss_index {
+            let (_, report, _) = result.into_parts();
+
+            let rejection = StrictDecodeRejection::new(report, loss_index);
+            return Err(DecodeFailure::StrictRejected { rejection });
+        }
+        Ok(result)
     }
 }
 

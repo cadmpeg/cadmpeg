@@ -178,7 +178,18 @@ fn late_revision_stream_failure_discards_formed_records_and_keeps_exact_database
     assert_eq!(peer[0].id, "inventor:rse:database#v1");
     assert_eq!(peer[0].schema, 31);
     assert_eq!(peer[0].note, "synthetic primary document");
-    assert!(!ns.arenas().contains_key("unknowns"));
+    // #215 rule 1: the given-up part keeps one unknowns home.
+    let unknowns = ns.arenas().get("unknowns").expect("one unknowns home");
+    assert_eq!(unknowns.len(), 1);
+    assert_eq!(
+        unknowns[0].id(),
+        fidelity
+            .retained_records()
+            .keys()
+            .next()
+            .expect("one retained part")
+            .as_str()
+    );
     let given_up = given_up_records(&fidelity);
     assert_eq!(given_up.len(), 1);
     assert_eq!(given_up[0].data(), Some(table.as_slice()));

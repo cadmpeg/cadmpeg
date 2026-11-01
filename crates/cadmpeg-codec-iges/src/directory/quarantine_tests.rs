@@ -231,10 +231,9 @@ fn a_pointer_into_a_given_up_record_does_not_resolve() {
         .unwrap_err();
     match error {
         cadmpeg_ir::codec::DecodeFailure::StrictRejected { rejection } => {
-            assert_eq!(
-                rejection.loss().code.to_string(),
-                IgesLossCode::PointerUnresolved.kind().to_string()
-            );
+            // #215 §4.5: `record.unreadable` carries a strict floor, so the
+            // caller's strict rejection names the given-up part first.
+            assert_eq!(rejection.loss().code.local_code(), "record.unreadable");
         }
         other => panic!("expected a strict refusal, got {other:?}"),
     }

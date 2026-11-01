@@ -72,6 +72,15 @@ pub(crate) struct FeatureRegenerationParents(
     BTreeMap<crate::features::FeatureId, crate::features::FeatureId>,
 );
 
+impl FeatureRegenerationParents {
+    /// Drop the regeneration edges that touch a removed record.
+    pub(crate) fn drop_dead(&mut self, dead: &std::collections::BTreeSet<String>) {
+        self.0.retain(|child, parent| {
+            !dead.contains(child.as_str()) && !dead.contains(parent.as_str())
+        });
+    }
+}
+
 /// Every model arena with its [`ArenaClass`] token (`model` or `design`).
 ///
 /// Consumers that need the class match `$class:ident` after the type; every

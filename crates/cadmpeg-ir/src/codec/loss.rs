@@ -60,7 +60,8 @@ impl DecodeLossCode {
         let kind = NamespacedLossKind::new(NAMESPACE, self.code(), self.shared_taxonomy());
         match self {
             Self::DepthNotDelivered { .. } => kind.with_strict_floor(Some(Severity::Warning)),
-            Self::SidecarStale | Self::RecordUnreadable => kind,
+            Self::RecordUnreadable => kind.with_strict_floor(Some(Severity::Error)),
+            Self::SidecarStale => kind,
         }
         .into()
     }

@@ -568,6 +568,11 @@ pub struct LossNote {
         deserialize_with = "deserialize_provenance"
     )]
     pub provenance: Option<SourceProvenance>,
+    /// Sorted ids of records dropped with the loss's part, when a part
+    /// give-up names them. The message carries the same ids as text; this
+    /// field carries them without parsing.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub dropped: Vec<String>,
 }
 
 impl LossNote {
@@ -579,6 +584,7 @@ impl LossNote {
             code,
             message: message.into(),
             provenance: None,
+            dropped: Vec::new(),
         }
     }
 
