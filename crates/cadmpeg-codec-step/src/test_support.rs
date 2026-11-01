@@ -6,6 +6,7 @@
 pub(crate) mod box_brep;
 pub(crate) mod curve_bounded;
 pub(crate) mod exchange;
+pub(crate) mod revolved_wedge;
 pub(crate) mod validated_part;
 
 use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};

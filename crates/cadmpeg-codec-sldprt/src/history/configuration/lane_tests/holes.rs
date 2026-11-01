@@ -292,6 +292,7 @@ fn configuration_lane_does_not_inherit_shared_hole_semantics() {
         &mut ir,
         &[],
         &[feature_input_lane("lane", Some("0"))],
+        &crate::resolved_features::profiles::ExactProfiles::default(),
         &mut annotations,
     )
     .unwrap();

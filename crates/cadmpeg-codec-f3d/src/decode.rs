@@ -3629,7 +3629,11 @@ fn mesh_texture_asset(
             data: cadmpeg_ir::assets::AssetData::new(bytes.to_vec())
                 .ok_or_else(|| CodecError::Malformed("asset data must not be empty".into()))?,
         },
-        Some(crate::ids::native_scope(file.archive_entry_name())),
+        Some(crate::ids::native_scoped_id(
+            file.archive_entry_name(),
+            "mesh-texture",
+            0,
+        )),
     )
     .map_err(CodecError::Malformed)
 }

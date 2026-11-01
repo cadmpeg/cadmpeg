@@ -12253,7 +12253,7 @@ anchor = "four-f32 LE tuple at `M+0x70`"
 
 [[record]]
 name = "parasolid_b_curve_short"
-parsed_by = "crates/cadmpeg-codec-sldprt/src/parasolid/control_vertices.rs"
+parsed_by = ["crates/cadmpeg-codec-sldprt/src/brep/spline.rs", "crates/cadmpeg-codec-sldprt/src/parasolid/control_vertices.rs"]
 kind = "byte"
 section = "2"
 anchor = "With short XMT and pointer fields, the B_CURVE payload is 21 bytes"

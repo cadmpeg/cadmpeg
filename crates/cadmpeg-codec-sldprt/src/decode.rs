@@ -138,17 +138,23 @@ fn native_feature_has_operation_evidence(state: &EvaluatedFeatureState<'_>) -> b
 pub(crate) fn decode(ctx: &DecodeContext<'_>, root: View<'_>) -> Result<Decoded, CodecError> {
     let scan = container::scan(ctx, root)?;
     let assembly = crate::assembly::read(ctx, &scan)?;
-    let mut decoded = decode_scan(ctx, scan)?;
+    let placed_virtual = assembly
+        .as_ref()
+        .map(crate::assembly::AssemblyProjection::virtual_site_keys)
+        .unwrap_or_default();
+    let mut decoded = decode_scan(ctx, scan, &placed_virtual)?;
     if let Some(assembly) = assembly {
         assembly.apply(&mut decoded);
     }
     Ok(decoded)
 }
 
-/// Decode the part content of one scanned document.
+/// Decode the part content of one scanned document. `placed_virtual` holds
+/// the site keys of the virtual component sections the assembly places.
 fn decode_scan(
     ctx: &DecodeContext<'_>,
     mut scan: container::ContainerScan<'_>,
+    placed_virtual: &BTreeSet<String>,
 ) -> Result<Decoded, CodecError> {
     let classification = crate::dialect::classify_layers(&scan)?;
     let form_padding = classification.host().form_code_padding();
@@ -176,12 +182,13 @@ fn decode_scan(
 
     let streams = active_body_streams(&scan);
     let mut brep_fallback_losses = Vec::new();
-    if !streams.is_empty() {
+    if !streams.is_empty() || !placed_virtual.is_empty() {
         ctx.charge_entities(u64_from_index(streams.len()), "admit SLDPRT body streams")?;
         if let Some((decoded, mut report)) = try_decode_brep(
             ctx,
             &scan,
             &streams,
+            placed_virtual,
             &classification,
             &mut brep_fallback_losses,
         )? {
@@ -2200,6 +2207,7 @@ fn active_body_streams<'a>(scan: &'a ContainerScan<'_>) -> Vec<ActiveParasolidSi
         if contains_ascii_case_insensitive(name, "ghost")
             || contains_ascii_case_insensitive(name, "resolvedfeatures")
             || crate::container::is_embedded_document(name)
+            || crate::container::virtual_component_key(name).is_some()
         {
             continue;
         }
@@ -2341,6 +2349,7 @@ fn try_decode_brep(
     ctx: &DecodeContext<'_>,
     scan: &ContainerScan,
     streams: &[ActiveParasolidSite<'_>],
+    placed_virtual: &BTreeSet<String>,
     classification: &crate::dialect::LayerClassification,
     fallback_losses: &mut Vec<cadmpeg_ir::report::loss::LossNote>,
 ) -> Result<Option<(DecodedBrep, DecodeBody)>, CodecError> {
@@ -2359,7 +2368,26 @@ fn try_decode_brep(
         decoded_sites.push((site.clone(), first, decoded));
     }
     if decoded_sites.is_empty() {
-        return Ok(None);
+        let mut decoded = Brep::default();
+        merge_virtual_component_bodies(ctx, scan, placed_virtual, &mut decoded)?;
+        if decoded.bodies.is_empty() {
+            return Ok(None);
+        }
+        let report = build_geometry_report(
+            ctx,
+            scan,
+            &mut decoded,
+            classification,
+            container::notes(scan),
+        )?;
+        return Ok(Some((
+            DecodedBrep {
+                metadata_header: None,
+                brep: decoded,
+                configuration_bodies: Vec::new(),
+            },
+            report,
+        )));
     }
     let active_site = container::select_active_parasolid_site(scan).map(|site| site.site_key());
     let resolved_active_site = active_site
@@ -2461,6 +2489,7 @@ fn try_decode_brep(
         // active SWIFT CadIdentifier lane.
         merge_brep(&mut decoded, alternate)?;
     }
+    merge_virtual_component_bodies(ctx, scan, placed_virtual, &mut decoded)?;
     let report = build_geometry_report(
         ctx,
         scan,
@@ -2476,6 +2505,63 @@ fn try_decode_brep(
         },
         report,
     )))
+}
+
+/// Add the bodies of each placed virtual component document (spec §11.5).
+/// Each document is scanned as a container of its own; the bodies of its
+/// active partition site are qualified by the site key of its section. A
+/// document that does not decode adds no body, and the assembly reports it
+/// as a virtual component without a decoded body.
+fn merge_virtual_component_bodies(
+    ctx: &DecodeContext<'_>,
+    scan: &ContainerScan<'_>,
+    placed_virtual: &BTreeSet<String>,
+    decoded: &mut Brep,
+) -> Result<(), CodecError> {
+    for section in scan.sections() {
+        let Some(name) = section.name() else {
+            continue;
+        };
+        if container::virtual_component_key(name).is_none()
+            || !placed_virtual.contains(&section.site_key())
+        {
+            continue;
+        }
+        let _depth = ctx.enter_nested("decode SolidWorks virtual component document")?;
+        let nested = match container::scan(ctx, View::over_retained(section.payload())) {
+            Ok(nested) => nested,
+            Err(limit @ CodecError::ResourceLimit(_)) => return Err(limit),
+            Err(_) => continue,
+        };
+        let streams = active_body_streams(&nested);
+        let site = container::select_active_parasolid_site(&nested)
+            .map(|site| site.site_key())
+            .or_else(|| {
+                let first = streams.first()?.site_key();
+                streams
+                    .iter()
+                    .all(|stream| stream.site_key() == first)
+                    .then_some(first)
+            });
+        let Some(site) = site else {
+            continue;
+        };
+        let bodies = streams
+            .iter()
+            .filter(|stream| stream.site_key() == site)
+            .map(|stream| (stream.payload, stream.header))
+            .collect::<Vec<_>>();
+        match decode_bodies(ctx, &bodies, section.source_stream()) {
+            Ok(mut brep) => {
+                brep.qualify_ids(&section.site_key())?;
+                bind_opaque_geometry(&mut brep, &section.native_id());
+                merge_brep(decoded, brep)?;
+            }
+            Err(limit @ CodecError::ResourceLimit(_)) => return Err(limit),
+            Err(_) => {}
+        }
+    }
+    Ok(())
 }
 
 fn copy_body_ids(bodies: &[cadmpeg_ir::topology::Body]) -> Vec<cadmpeg_ir::ids::BodyId> {
@@ -2992,7 +3078,7 @@ fn build_geometry_ir(
     let mut annotations = std::mem::take(&mut brep.annotations);
     let mut pmi_losses = Vec::new();
     let mut histories = crate::history::histories(ctx, scan, &mut annotations, &mut pmi_losses)?;
-    let mut lanes =
+    let (mut lanes, exact_profiles) =
         crate::resolved_features::assembly::lanes(ctx, scan, &mut annotations, &mut pmi_losses)?;
     let mut supplemental_config_lanes =
         crate::resolved_features::assembly::supplemental_config_lanes(ctx, scan, &mut annotations)?;
@@ -3067,6 +3153,7 @@ fn build_geometry_ir(
         &ir.model.parameters,
         &histories,
         &lanes,
+        &exact_profiles,
     );
     crate::resolved_features::bindings::bind_unresolved_detached_sketch_objects(
         ctx,
@@ -3398,6 +3485,7 @@ fn build_geometry_ir(
         &mut ir,
         &histories,
         &all_lanes,
+        &exact_profiles,
         &mut annotations,
     )?;
     pmi_losses.extend(configuration_losses);
@@ -4224,7 +4312,7 @@ fn build_metadata_ir(
     let mut annotations = Annotations::default();
     let mut pmi_losses = Vec::new();
     let mut histories = crate::history::histories(ctx, scan, &mut annotations, &mut pmi_losses)?;
-    let mut lanes =
+    let (mut lanes, exact_profiles) =
         crate::resolved_features::assembly::lanes(ctx, scan, &mut annotations, &mut pmi_losses)?;
     let mut supplemental_config_lanes =
         crate::resolved_features::assembly::supplemental_config_lanes(ctx, scan, &mut annotations)?;
@@ -4353,6 +4441,7 @@ fn build_metadata_ir(
         &ir.model.parameters,
         &histories,
         &lanes,
+        &exact_profiles,
     );
     crate::resolved_features::bindings::bind_unresolved_detached_sketch_objects(
         ctx,
@@ -4587,6 +4676,7 @@ fn build_metadata_ir(
         &mut ir,
         &histories,
         lanes,
+        &exact_profiles,
         &mut annotations,
     )?;
     pmi_losses.extend(configuration_losses);

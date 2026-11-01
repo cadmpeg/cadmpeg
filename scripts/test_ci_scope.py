@@ -3,6 +3,7 @@
 """Check that CI selection retains dependents and conservatively handles inputs."""
 
 from pathlib import Path
+import re
 import unittest
 import tempfile
 from unittest.mock import patch
@@ -14,6 +15,20 @@ ROOT = Path(__file__).resolve().parent.parent
 
 
 class ScopeTests(unittest.TestCase):
+    def test_rust_gates_cancel_with_the_workflow_and_fail_closed(self):
+        workflow = (ROOT / '.github/workflows/ci.yml').read_text()
+        for job in ('static', 'lint', 'test', 'features', 'fuzz', 'msrv', 'cross-platform', 'audit'):
+            with self.subTest(job=job):
+                match = re.search(rf'^  {re.escape(job)}:\n(?P<body>.*?)(?=^  [a-z][a-z-]*:\n|\Z)',
+                                  workflow, re.MULTILINE | re.DOTALL)
+                self.assertIsNotNone(match)
+                body = match.group('body')
+                condition = re.search(r'^    if: (.*)$', body, re.MULTILINE).group(1)
+                self.assertIn('!cancelled()', condition)
+                self.assertNotIn('always()', condition)
+                self.assertIn("needs.changes.result != 'success'", condition)
+                self.assertIn('test "${{ needs.changes.result }}" = success', body)
+
     def test_cargo_command_preserves_arguments(self):
         self.assertEqual(command(['test', '--doc'], ['cadmpeg-core', 'cadmpeg-ir']),
                          ['cargo', 'test', '-q', '-p', 'cadmpeg-core',
@@ -45,6 +60,38 @@ class ScopeTests(unittest.TestCase):
     def test_full_gate_uses_cargo_workspace_membership(self):
         self.assertEqual(command(['test', '--bins', '--tests'], [], full=True),
                          ['cargo', 'test', '-q', '--workspace', '--bins', '--tests'])
+
+    def test_codec_features_use_registry_feature_names(self):
+        result = command(['check'], ['cadmpeg', 'cadmpeg-registry'], codecs=['freecad', 'inventor'])
+        self.assertIn('--no-default-features', result)
+        self.assertIn('cadmpeg/fcstd,cadmpeg/inventor', result)
+
+    def test_documentation_source_scan_requires_only_prose(self):
+        self.assertTrue(select(ROOT, ['docs/formats/f3d.md'])['prose_only'])
+        self.assertFalse(select(ROOT, ['docs/formats/f3d.md', 'crates/cadmpeg-core/src/lib.rs'])['prose_only'])
+        self.assertFalse(select(ROOT, ['docs/decode-resource-caps.md'])['prose_only'])
+
+    def test_codec_only_fuzz_scope_widens_for_shared_inputs(self):
+        self.assertEqual(select(ROOT, ['crates/cadmpeg-codec-inventor/src/lib.rs'])['codec_scope'], ['inventor'])
+        self.assertEqual(select(ROOT, ['crates/cadmpeg-core/src/lib.rs'])['codec_scope'], [])
+        self.assertEqual(select(ROOT, ['crates/cadmpeg-codec-step/src/lib.rs'])['codec_scope'],
+                         ['f3d', 'freecad', 'step'])
+
+    def test_codec_scope_widens_for_noncodec_fuzz_dependents(self):
+        with tempfile.TemporaryDirectory() as folder:
+            root = Path(folder)
+            (root / 'Cargo.toml').write_text('[workspace]\nmembers=["crates/codec", "crates/shared"]\n')
+            for directory, manifest in {
+                'codec': '[package]\nname="cadmpeg-codec-example"\n',
+                'shared': '[package]\nname="shared"\n[dependencies]\ncadmpeg-codec-example={path="../codec"}\n',
+                'cadmpeg-fuzz': '[dependencies]\nrenamed={package="shared",path="../shared"}\n',
+            }.items():
+                package = root / 'crates' / directory
+                package.mkdir(parents=True)
+                (package / 'Cargo.toml').write_text(manifest)
+            scope = select(root, ['crates/codec/src/lib.rs'])
+            self.assertTrue(scope['fuzz'])
+            self.assertEqual(scope['codec_scope'], [])
 
     def test_package_manifest_changes_keep_feature_unification_coverage(self):
         self.assertTrue(select(ROOT, ['crates/cadmpeg-codec-rhino/Cargo.toml'])['full'])
@@ -86,6 +133,14 @@ class ScopeTests(unittest.TestCase):
             self.assertIn('cadmpeg', scope['packages'])
             self.assertTrue(scope['rust'])
             self.assertFalse(scope['iges'])
+            self.assertTrue(scope['inventor_cli'])
+
+    def test_inventor_cli_evidence_follows_its_dependencies(self):
+        self.assertTrue(select(ROOT, ['crates/cadmpeg-codec-inventor/src/lib.rs'])['inventor_cli'])
+        self.assertTrue(select(ROOT, ['crates/cadmpeg-core/src/lib.rs'])['inventor_cli'])
+        self.assertTrue(select(ROOT, ['crates/cadmpeg/src/main.rs'])['inventor_cli'])
+        self.assertFalse(select(ROOT, ['crates/cadmpeg-codec-rhino/src/lib.rs'])['inventor_cli'])
+        self.assertFalse(select(ROOT, ['corpus/manifest.toml'])['inventor_cli'])
 
     def test_python_only_skips_rust(self):
         scope = select(ROOT, ['scripts/check-deny-census.py'])
@@ -165,7 +220,8 @@ class ScopeTests(unittest.TestCase):
             with self.subTest(path=path):
                 scope = select(ROOT, [path])
                 self.assertFalse(scope['full'])
-                self.assertEqual(scope['packages'], ['cadmpeg'])
+                self.assertEqual(scope['packages'], [])
+                self.assertTrue(scope['layout'])
 
     def test_embedded_document_selects_its_reader(self):
         scope = select(ROOT, ['docs/dialect-id-conformance.toml'])
@@ -180,7 +236,7 @@ class ScopeTests(unittest.TestCase):
 
     def test_prose_and_static_tables_skip_rust(self):
         for path in ('docs/architecture.md', 'README.md', 'docs/codec-facade.toml',
-                     '.github/dependabot.yml'):
+                     '.github/dependabot.yml', 'crates/cadmpeg-codec-inventor/README.md'):
             with self.subTest(path=path):
                 scope = select(ROOT, [path])
                 self.assertFalse(scope['rust'])
@@ -188,9 +244,19 @@ class ScopeTests(unittest.TestCase):
                 self.assertTrue(scope['static'])
 
     def test_workflows_outside_the_gate_skip_rust(self):
-        for name in ('release.yml', 'cut-release.yml', 'audit.yml', 'codeql.yml', 'dco.yml'):
+        for name in ('release.yml', 'cut-release.yml', 'audit.yml', 'codeql.yml', 'dco.yml',
+                     'new-workflow.yml'):
             with self.subTest(name=name):
                 self.assertFalse(select(ROOT, [f'.github/workflows/{name}'])['rust'])
+
+    def test_workflow_called_by_ci_uses_full_gate(self):
+        with tempfile.TemporaryDirectory() as folder:
+            root = Path(folder)
+            (root / 'Cargo.toml').write_text('[workspace]\nmembers=[]\n')
+            workflow = root / '.github/workflows/ci.yml'
+            workflow.parent.mkdir(parents=True)
+            workflow.write_text('jobs:\n  build:\n    uses: ./.github/workflows/build.yml\n')
+            self.assertTrue(select(root, ['.github/workflows/build.yml'])['full'])
 
     def test_lock_dependents_follow_the_resolved_graph(self):
         old = (
@@ -237,6 +303,7 @@ class ScopeTests(unittest.TestCase):
         self.assertFalse(scope['fuzz'])
         self.assertFalse(scope['static'])
         self.assertFalse(scope['audit'])
+        self.assertFalse(scope['inventor_cli'])
         self.assertTrue(select(ROOT, ['Cargo.toml'], tested=True)['full'])
 
     def test_single_codec_gates_follow_their_build_inputs(self):
@@ -254,10 +321,37 @@ class ScopeTests(unittest.TestCase):
 
     def test_specification_edit_runs_only_the_layout_table_test(self):
         scope = select(ROOT, ['docs/formats/f3d.md'])
-        self.assertEqual(scope['packages'], ['cadmpeg'])
+        self.assertEqual(scope['packages'], [])
+        self.assertTrue(scope['layout'])
         for output in ('fuzz', 'sldprt_cli', 'step_cli', 'iges', 'schema'):
             with self.subTest(output=output):
                 self.assertFalse(scope[output])
+
+    def test_specification_with_rust_runs_layout_in_the_regular_suite(self):
+        scope = select(ROOT, ['docs/formats/f3d.md', 'crates/cadmpeg-codec-f3d/src/lib.rs'])
+        self.assertTrue(scope['rust'])
+        self.assertFalse(scope['layout'])
+        self.assertIn('cadmpeg', scope['packages'])
+
+    def test_corpus_manifest_selects_its_cli_test_without_full_gate(self):
+        scope = select(ROOT, ['corpus/manifest.toml'])
+        self.assertEqual(scope['packages'], ['cadmpeg'])
+        self.assertFalse(scope['full'])
+        self.assertFalse(scope['fuzz'])
+        self.assertFalse(scope['schema'])
+        self.assertFalse(scope['step_cli'])
+        self.assertFalse(scope['sldprt_cli'])
+
+    def test_specification_with_unrelated_package_keeps_layout_gate(self):
+        with tempfile.TemporaryDirectory() as folder:
+            root = Path(folder)
+            (root / 'Cargo.toml').write_text('[workspace]\nmembers=["crates/*"]\n')
+            package = root / 'crates' / 'independent'
+            package.mkdir(parents=True)
+            (package / 'Cargo.toml').write_text('[package]\nname="independent"\n')
+            scope = select(root, ['docs/formats/f3d.md', 'crates/independent/src/lib.rs'])
+            self.assertTrue(scope['rust'])
+            self.assertTrue(scope['layout'])
 
     def test_fuzz_follows_the_fuzz_crate_dependencies(self):
         self.assertTrue(select(ROOT, ['crates/cadmpeg-codec-f3d/src/lib.rs'])['fuzz'])
