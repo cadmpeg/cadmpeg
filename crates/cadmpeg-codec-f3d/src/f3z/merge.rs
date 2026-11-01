@@ -991,7 +991,7 @@ fn place_contained_poses_with_protected(
         let mut chain = Vec::new();
         let mut at = match &ir.model.occurrences[position].parent {
             OccurrenceParent::Occurrence { occurrence } => index.get(occurrence).copied(),
-            _ => None,
+            OccurrenceParent::Root { .. } => None,
         };
         while let Some(parent) = at {
             chain.push(parent);
@@ -1000,7 +1000,7 @@ fn place_contained_poses_with_protected(
             }
             at = match &ir.model.occurrences[parent].parent {
                 OccurrenceParent::Occurrence { occurrence } => index.get(occurrence).copied(),
-                _ => None,
+                OccurrenceParent::Root { .. } => None,
             };
         }
         let parent_world = chain
