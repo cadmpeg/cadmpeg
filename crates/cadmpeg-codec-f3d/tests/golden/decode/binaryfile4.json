@@ -34,9 +34,7 @@
         "asset_folder": "FusionAssetName[Active]",
         "product_family": "Autodesk Neutron",
         "product_version": "ASM 227.5.0.65535 NT",
-        "save_date": "Mon Aug  8 02:39:24 2022",
-        "solved_record_len": "1234",
-        "zip_entry_count": "3"
+        "save_date": "Mon Aug  8 02:39:24 2022"
       }
     },
     "units": {
@@ -626,11 +624,7 @@
         }
       }
     },
-    "metadata": {
-      "active_brep": "FusionAssetName[Active]/Breps.BlobParts/Body1.smbh",
-      "active_brep_sha256": "d6ea22a11c31cf82205a5e2c458cbf15dd7577ef39c7c26c03292c33b3caf079",
-      "document_local_sha256": "5036b4de127945527c12aac58426e7a98f5ee03027a298500b2595cc4a68ec17"
-    },
+    "decode_digest": "62aed5b5433d9ec9e1a4445b7db25349162ade97a11e89fad0656074ac920d93",
     "retained_records": {
       "f3d:file:source-image#0": {
         "stream": "f3d",

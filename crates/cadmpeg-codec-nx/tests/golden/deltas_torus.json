@@ -220,22 +220,9 @@
       },
       "source": {
         "attributes": {
-          "deltas.0.bytes_decoded": "0",
           "deltas.0.grammar": "sequential_owned_records",
-          "deltas.0.instances": "0",
-          "deltas.0.schemas": "0",
           "deltas.0.selection": "unresolved",
-          "deltas.0.stop_offset": "0",
-          "deltas.0.stop_reason": "UnsupportedBase",
-          "deltas_streams": "1",
-          "directory_entries": "1",
-          "file_size": "539",
-          "footer_entry_count": "0",
-          "footer_fingerprint": "00000000",
-          "header_entry_count": "1",
-          "jpeg_preview_count": "0",
-          "partition_streams": "1",
-          "plain_streams": "0"
+          "deltas.0.stop_reason": "UnsupportedBase"
         },
         "identity": {
           "classification": "classified",

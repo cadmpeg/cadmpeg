@@ -398,7 +398,6 @@
     },
     "source": {
       "attributes": {
-        "geometry_member_count": "2",
         "structure_member": "model.pvs"
       },
       "identity": {

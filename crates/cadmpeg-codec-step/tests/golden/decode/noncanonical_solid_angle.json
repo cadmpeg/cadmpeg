@@ -46,7 +46,9 @@
       "model": true
     },
     "source": {
-      "attributes": {},
+      "attributes": {
+        "schema": "AUTOMOTIVE_DESIGN_CC2"
+      },
       "identity": {
         "classification": "classified",
         "dialects": {
@@ -157,15 +159,6 @@
   },
   "source_fidelity": {
     "annotations": {},
-    "metadata": {
-      "bytes_named_opaque": "0",
-      "bytes_structural": "217",
-      "bytes_typed": "59",
-      "bytes_unclassified": "0",
-      "data_sections": "1",
-      "entity_instances": "1",
-      "schema": "AUTOMOTIVE_DESIGN_CC2"
-    },
     "unrepresented": []
   }
 }
