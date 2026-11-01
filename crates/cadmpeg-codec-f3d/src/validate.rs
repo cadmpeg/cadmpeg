@@ -1920,6 +1920,12 @@ fn validate_body_bindings(
                 Err(error @ CodecError::ResourceLimit(_)) => return Err(error),
                 Ok(None) | Err(_) => false,
             }
+        } else if binding.history_only {
+            !native.body_native_keys.iter().any(|key| {
+                ids::same_native_occurrence(key.source_namespace.as_str(), binding.id())
+                    && key.source_brep.as_deref() == Some(binding.blob_name())
+                    && key.asm_body_key == Some(binding.asm_body_key)
+            })
         } else {
             true
         };
@@ -2332,7 +2338,7 @@ fn validate_parameter_scopes(ctx: &Ctx, findings: &mut Vec<Finding>) -> Result<(
                             native.design_body_bindings.iter().any(|binding| {
                                 design_stream(binding.id()) == native_stream
                                     && binding.entity_suffix == u64::from(suffix)
-                                    && binding.body.is_some()
+                                    && (binding.body.is_some() || binding.history_only)
                             })
                         })
             }
