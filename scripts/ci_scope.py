@@ -126,8 +126,10 @@ def select(root: Path, paths: list[str], *, full: bool = False,
                         if not optional:
                             required[package['package']['name']].add(name)
     fuzz_manifest = root / 'crates/cadmpeg-fuzz/Cargo.toml'
-    fuzz_inputs = (set(tomllib.loads(fuzz_manifest.read_text()).get('dependencies', {})) & names
-                   if fuzz_manifest.exists() else set())
+    fuzz_dependencies = (tomllib.loads(fuzz_manifest.read_text()).get('dependencies', {})
+                         if fuzz_manifest.exists() else {})
+    fuzz_inputs = {dependency.get('package', alias) if isinstance(dependency, dict) else alias
+                   for alias, dependency in fuzz_dependencies.items()} & names
     if (cache_writer or tested) and any(is_cache_key_input(path) for path in paths):
         full = True
     elif tested:
@@ -213,7 +215,9 @@ def select(root: Path, paths: list[str], *, full: bool = False,
         'fuzz': fuzz or bool(affected & fuzz_inputs),
         'codec_scope': sorted(name.removeprefix('cadmpeg-codec-') for name in affected
                               if name.startswith('cadmpeg-codec-'))
-        if changed and not full and not fuzz and all(name.startswith('cadmpeg-codec-') for name in changed) else [],
+        if (changed and not full and not fuzz
+            and all(name.startswith('cadmpeg-codec-') for name in changed)
+            and all(name.startswith('cadmpeg-codec-') for name in affected & fuzz_inputs)) else [],
         **gates,
         'schema': full or bool(affected & {'cadmpeg-core', 'cadmpeg-ir', 'cadmpeg-asm'}),
         'iges': full or 'cadmpeg-codec-iges' in affected or cli_changed,

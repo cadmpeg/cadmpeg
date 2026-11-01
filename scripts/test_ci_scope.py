@@ -77,6 +77,22 @@ class ScopeTests(unittest.TestCase):
         self.assertEqual(select(ROOT, ['crates/cadmpeg-codec-step/src/lib.rs'])['codec_scope'],
                          ['f3d', 'freecad', 'step'])
 
+    def test_codec_scope_widens_for_noncodec_fuzz_dependents(self):
+        with tempfile.TemporaryDirectory() as folder:
+            root = Path(folder)
+            (root / 'Cargo.toml').write_text('[workspace]\nmembers=["crates/codec", "crates/shared"]\n')
+            for directory, manifest in {
+                'codec': '[package]\nname="cadmpeg-codec-example"\n',
+                'shared': '[package]\nname="shared"\n[dependencies]\ncadmpeg-codec-example={path="../codec"}\n',
+                'cadmpeg-fuzz': '[dependencies]\nrenamed={package="shared",path="../shared"}\n',
+            }.items():
+                package = root / 'crates' / directory
+                package.mkdir(parents=True)
+                (package / 'Cargo.toml').write_text(manifest)
+            scope = select(root, ['crates/codec/src/lib.rs'])
+            self.assertTrue(scope['fuzz'])
+            self.assertEqual(scope['codec_scope'], [])
+
     def test_package_manifest_changes_keep_feature_unification_coverage(self):
         self.assertTrue(select(ROOT, ['crates/cadmpeg-codec-rhino/Cargo.toml'])['full'])
         scope = select(ROOT, ['crates/cadmpeg-fuzz/Cargo.toml'])
