@@ -170,16 +170,13 @@ fn admit_unedited(
         }
     }
 
-    let expected = fidelity
-        .metadata
-        .get(cadmpeg_ir::hash::DOCUMENT_FINGERPRINT_METADATA_KEY)
-        .ok_or_else(|| {
-            CodecError::UnsupportedContent(
-                "the retained typed-layout fingerprint is unavailable".into(),
-            )
-        })?;
+    let expected = fidelity.decode_digest.as_ref().ok_or_else(|| {
+        CodecError::UnsupportedContent(
+            "the retained typed-layout fingerprint is unavailable".into(),
+        )
+    })?;
     let current = document_local_sha256(ctx, ir)?;
-    if current != *expected {
+    if current.as_str() != expected.as_str() {
         return Err(CodecError::UnsupportedContent(
             "current uncarried typed records require FCStd graph regeneration".into(),
         ));
