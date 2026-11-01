@@ -198,6 +198,49 @@ pub(super) fn arrangement_region_matching_curve_program(
     work: &ProfileGeometryWork,
     ctx: &DecodeContext<'_>,
 ) -> Result<Option<cadmpeg_ir::features::SketchProfileRegion>, CodecError> {
+    arrangement_region_matching_curves(
+        sketch,
+        entities,
+        CurveProgram::Ordered(program),
+        tolerance,
+        work,
+        ctx,
+    )
+}
+
+pub(super) fn arrangement_region_matching_curve_members(
+    sketch: &cadmpeg_ir::sketches::Sketch,
+    entities: &[cadmpeg_ir::sketches::SketchEntity],
+    program: &[cadmpeg_ir::sketches::SketchEntityId],
+    tolerance: f64,
+    work: &ProfileGeometryWork,
+    ctx: &DecodeContext<'_>,
+) -> Result<Option<cadmpeg_ir::features::SketchProfileRegion>, CodecError> {
+    arrangement_region_matching_curves(
+        sketch,
+        entities,
+        CurveProgram::Members(program),
+        tolerance,
+        work,
+        ctx,
+    )
+}
+
+#[derive(Clone, Copy)]
+enum CurveProgram<'a> {
+    Ordered(&'a [cadmpeg_ir::sketches::SketchEntityId]),
+    Members(&'a [cadmpeg_ir::sketches::SketchEntityId]),
+}
+
+fn arrangement_region_matching_curves(
+    sketch: &cadmpeg_ir::sketches::Sketch,
+    entities: &[cadmpeg_ir::sketches::SketchEntity],
+    selection: CurveProgram<'_>,
+    tolerance: f64,
+    work: &ProfileGeometryWork,
+    ctx: &DecodeContext<'_>,
+) -> Result<Option<cadmpeg_ir::features::SketchProfileRegion>, CodecError> {
+    let (CurveProgram::Ordered(program) | CurveProgram::Members(program)) = selection;
     if program.is_empty() {
         return Ok(None);
     }
@@ -263,11 +306,19 @@ pub(super) fn arrangement_region_matching_curve_program(
             work.arrangement_skipped.set(true);
             return Ok(None);
         }
-        let matches = (0..count).any(|start| {
-            (0..count).all(|index| *boundary[(start + index) % count] == program[index])
-                || (0..count)
-                    .all(|index| *boundary[(start + count - index) % count] == program[index])
-        });
+        let matches = match selection {
+            CurveProgram::Ordered(_) => (0..count).any(|start| {
+                (0..count).all(|index| *boundary[(start + index) % count] == program[index])
+                    || (0..count)
+                        .all(|index| *boundary[(start + count - index) % count] == program[index])
+            }),
+            CurveProgram::Members(_) => {
+                boundary.sort_unstable();
+                let mut members = program.iter().collect::<Vec<_>>();
+                members.sort_unstable();
+                boundary == members
+            }
+        };
         if !matches {
             continue;
         }
@@ -678,6 +729,20 @@ fn arrangement_edges_meet_only_at_nodes(
         tolerance,
     ) {
         return true;
+    }
+    if left.boundary.entity == right.boundary.entity
+        && entities.iter().any(|entity| {
+            entity.id() == &left.boundary.entity
+                && matches!(
+                    entity.geometry.definition(),
+                    cadmpeg_ir::sketches::SketchGeometryDefinition::Line { .. }
+                )
+        })
+    {
+        let left = left.boundary.parameter_range.endpoints();
+        let right = right.boundary.parameter_range.endpoints();
+        return left[0].max(left[1]) <= right[0].min(right[1])
+            || right[0].max(right[1]) <= left[0].min(left[1]);
     }
     let Some(left_segment) = arrangement_analytic_segment(left, entities) else {
         return false;
