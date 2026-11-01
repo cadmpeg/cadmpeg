@@ -3,7 +3,7 @@
 //!
 //! Inputs are the `LicenseRef-NIST-PD` files in `corpus/manifest.toml`.
 //! `#[ignore]` keeps the test out of `cargo test-fast`. The scheduled
-//! workflow `.github/workflows/nist-pmi-hallmarks.yml` runs it.
+//! workflow `.github/workflows/nist-pmi-specimens.yml` runs it.
 
 #![allow(clippy::unwrap_used)]
 
@@ -60,7 +60,7 @@ fn codec_for<'a>(catalog: &'a InputCatalog, format: &str) -> &'a dyn Codec {
 
 /// Every NIST producer-evidence CAD file inspects and decodes.
 #[test]
-#[ignore = "producer-evidence inspect/decode; run via .github/workflows/nist-pmi-hallmarks.yml"]
+#[ignore = "producer-evidence inspect/decode; run via .github/workflows/nist-pmi-specimens.yml"]
 fn nist_pmi_files_inspect_and_decode() {
     let catalog = InputCatalog::with_builtins();
     let mut failures = Vec::new();

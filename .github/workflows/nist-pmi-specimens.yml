@@ -1,4 +1,4 @@
-name: NIST PMI producer-evidence hallmarks
+name: NIST PMI producer-evidence specimens
 
 # Daily inspect and decode of every CAD file in corpus/nist-pmi. The test is
 # #[ignore] in cargo test-fast. This workflow does not gate pull requests;
@@ -25,7 +25,7 @@ env:
   CARGO_PROFILE_TEST_DEBUG: 0
 
 jobs:
-  nist-pmi-hallmarks:
+  nist-pmi-specimens:
     name: inspect and decode
     runs-on: ubuntu-latest
     timeout-minutes: 45
@@ -58,11 +58,11 @@ jobs:
       - name: NIST PMI inspect and decode
         run: |
           cargo nextest run --cargo-quiet --status-level fail --no-tests pass \
-            -p cadmpeg --test nist_pmi_hallmarks \
+            -p cadmpeg --test nist_pmi_specimens \
             --run-ignored ignored-only --no-fail-fast
 
   schedule-alert:
-    needs: [nist-pmi-hallmarks]
+    needs: [nist-pmi-specimens]
     if: ${{ always() && github.event_name == 'schedule' }}
     name: report scheduled result
     runs-on: ubuntu-latest
