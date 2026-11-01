@@ -16,8 +16,6 @@ use crate::test_support::unix_compress_literals;
 use crate::test_support::visibgeom_payload;
 use cadmpeg_ir::geometry::SolvedSurfaceGeometry;
 
-use cadmpeg_core::container::ContainerRole;
-
 use std::io::Cursor;
 
 use cadmpeg_ir::codec::{Codec, DecodeOptions};
@@ -189,11 +187,7 @@ fn decode_extracts_jpeg_thumbnail_as_native_asset() {
         Exactness::ByteExact,
     );
     let source = result.ir().source.as_ref().expect("source metadata");
-    assert_eq!(source.attributes["section.0.name"], "THMB_IMG_MAIN");
-    assert_eq!(
-        source.attributes["section.0.role"],
-        ContainerRole::Thumbnail.as_str()
-    );
+    assert!(source.attributes.contains_key("version_line"));
 }
 
 #[test]

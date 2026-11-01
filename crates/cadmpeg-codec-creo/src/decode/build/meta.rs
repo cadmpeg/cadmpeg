@@ -50,18 +50,6 @@ pub(super) fn source_meta(
             insert_source_attribute(&mut attributes, "legacy_ascii_product_release", release);
         }
     }
-    for (index, section) in scan.framing.sections.iter().enumerate() {
-        insert_source_attribute(
-            &mut attributes,
-            format_args!("section.{index}.name"),
-            section.name(),
-        );
-        insert_source_attribute(
-            &mut attributes,
-            format_args!("section.{index}.role"),
-            cadmpeg_core::container::ContainerRole::from(section.role()),
-        );
-    }
     if let Some(unit) = &scan.framing.principal_unit {
         insert_source_attribute(&mut attributes, "principal_unit", unit);
         if let Some(scale) = unit.length_scale_mm().filter(|scale| scale.get() != 1.0) {
@@ -1015,12 +1003,8 @@ mod tests {
     fn source_attribute_map_keeps_rendered_key_value_and_order() {
         let mut attributes = BTreeMap::new();
         insert_source_attribute(&mut attributes, "version_line", "Creo 10");
-        insert_source_attribute(
-            &mut attributes,
-            format_args!("section.{}.name", 0),
-            "MdlStatus",
-        );
+        insert_source_attribute(&mut attributes, "model_name", "MdlStatus");
         assert_eq!(attributes["version_line"], "Creo 10");
-        assert_eq!(attributes["section.0.name"], "MdlStatus");
+        assert_eq!(attributes["model_name"], "MdlStatus");
     }
 }
