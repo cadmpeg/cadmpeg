@@ -2,6 +2,7 @@
 //! Component-path world poses applied to expanded nested occurrences.
 
 use std::collections::{BTreeMap, BTreeSet};
+use std::mem::size_of;
 
 use cadmpeg_ir::ids::OccurrenceId;
 
@@ -34,19 +35,17 @@ fn pose(rows: [[f64; 3]; 3], translation: [f64; 3]) -> [[f64; 4]; 4] {
 const EYE: [[f64; 3]; 3] = [[1.0, 0.0, 0.0], [0.0, 1.0, 0.0], [0.0, 0.0, 1.0]];
 
 fn path(carrier: u64, elements: &[(u64, Kind)], rows: [[f64; 4]; 4]) -> DesignComponentPath {
+    let discriminator = u32::try_from(carrier).unwrap();
     DesignComponentPath {
         id: format!("{STREAM}:design-component-path#{carrier}"),
         carrier_record_index: carrier,
         elements: elements
             .iter()
-            .zip(0_u32..)
-            .map(
-                |((record_index, kind), discriminator)| DesignComponentPathElement {
-                    record_index: *record_index,
-                    kind: *kind,
-                    discriminator,
-                },
-            )
+            .map(|(record_index, kind)| DesignComponentPathElement {
+                record_index: *record_index,
+                kind: *kind,
+                discriminator,
+            })
             .collect(),
         transform: Some(ComponentPathTransform::try_from(rows).unwrap()),
         frame_bytes: Vec::new().into(),
@@ -296,9 +295,16 @@ fn contained_records_decide_between_instances_of_one_definition() {
         millimetres(pose(EYE, [4.0, 0.0, 0.0])),
     );
     let other = instance(&carriers, &[100, 200]);
-    assert_close(local(&projection, &other), local(&unplaced, &other));
+    assert_close(
+        world(&projection, &other),
+        millimetres(pose(EYE, [1.0, 2.0, 3.0])),
+    );
     assert!(has(&projection, F3dLossCode::LocalOccurrencePathPose));
     assert!(has(
+        &projection,
+        F3dLossCode::LocalOccurrencePathPoseInferred
+    ));
+    assert!(!has(
         &projection,
         F3dLossCode::LocalOccurrencePathPoseUnresolved
     ));
@@ -528,15 +534,38 @@ fn a_unique_consistent_assignment_places_carriers_with_the_inferred_loss() {
     );
 }
 
+fn symmetric_fixture() -> (
+    Vec<DesignComponentOccurrence>,
+    BTreeMap<String, StreamComponents>,
+) {
+    let (mut carriers, components) = fixture(1);
+    let mut second_module = carrier(
+        400,
+        "00000000-0000-4000-8000-000000000004",
+        placed(
+            1,
+            pose(
+                [[0.0, 1.0, 0.0], [-1.0, 0.0, 0.0], [0.0, 0.0, 1.0]],
+                [3.0, 5.0, 0.0],
+            ),
+        ),
+        super::DOCUMENT_ROOT,
+    );
+    second_module.component_record_index = 100;
+    carriers.push(second_module);
+    (carriers, components)
+}
+
 #[test]
 fn two_consistent_assignments_are_refused() {
-    let (mut carriers, components) = fixture(2);
-    // Two modules at one placement: either assignment gives equal poses.
-    carriers.retain(|carrier| carrier.record_index != 400);
-    carriers.push(module_at_first(400, 4));
+    let (carriers, components) = symmetric_fixture();
     let unplaced = project(&carriers, &components, &[]);
-    let rows = pose_in(&unplaced, &carriers, &[100], leaf_local());
-    let paths = [bare(900, 200, rows), bare(901, 200, rows)];
+    let first = pose_in(&unplaced, &carriers, &[100], leaf_local());
+    let second = pose_in(&unplaced, &carriers, &[400], leaf_local());
+    let mut paths = [bare(900, 200, first), bare(901, 200, second)];
+    for (path, discriminator) in paths.iter_mut().zip([7, 2]) {
+        path.elements[1].discriminator = discriminator;
+    }
     let projection = project(&carriers, &components, &paths);
     assert!(has(
         &projection,
@@ -547,10 +576,140 @@ fn two_consistent_assignments_are_refused() {
         F3dLossCode::LocalOccurrencePathPoseInferred
     ));
     assert!(!has(&projection, F3dLossCode::LocalOccurrencePathPose));
+    assert!(
+        message(&projection, F3dLossCode::LocalOccurrencePathPoseUnresolved)
+            .starts_with("2 component-path carrier(s)")
+    );
     for module in [100, 400] {
         let id = instance(&carriers, &[module, 200]);
         assert_close(local(&projection, &id), local(&unplaced, &id));
     }
+    paths[1].elements.push(DesignComponentPathElement {
+        record_index: 400,
+        kind: Kind::Occurrence,
+        discriminator: 0,
+    });
+    let projection = project(&carriers, &components, &paths);
+    for (module, expected) in [(100, first), (400, second)] {
+        assert_close(
+            world(&projection, &instance(&carriers, &[module, 200])),
+            millimetres(expected),
+        );
+    }
+    assert!(has(
+        &projection,
+        F3dLossCode::LocalOccurrencePathPoseInferred
+    ));
+    assert!(!has(
+        &projection,
+        F3dLossCode::LocalOccurrencePathPoseUnresolved
+    ));
+}
+
+#[test]
+fn owner_qualified_carriers_leave_one_instance_for_a_short_path() {
+    for qualified_count in [1_u32, 3] {
+        let (mut carriers, components) = fixture(1);
+        for ordinal in 0..qualified_count {
+            carriers.push(module_at_first(700 + u64::from(ordinal), 900 + ordinal));
+        }
+        let unplaced = project(&carriers, &components, &[]);
+        let rows = pose_in(&unplaced, &carriers, &[100], leaf_local());
+        let mut paths = vec![bare(900, 200, rows)];
+        for ordinal in 0..qualified_count {
+            paths.push(path(
+                901 + u64::from(ordinal),
+                &[
+                    (159, Kind::Component),
+                    (200, Kind::Occurrence),
+                    (700 + u64::from(ordinal), Kind::Occurrence),
+                ],
+                rows,
+            ));
+        }
+        for _ in 0..paths.len() {
+            paths.rotate_left(1);
+            let projection = project(&carriers, &components, &paths);
+            for module in std::iter::once(100).chain(700..700 + qualified_count) {
+                assert_close(
+                    world(&projection, &instance(&carriers, &[module, 200])),
+                    millimetres(rows),
+                );
+            }
+            assert!(
+                message(&projection, F3dLossCode::LocalOccurrencePathPoseInferred)
+                    .starts_with("1 component-path carrier(s)")
+            );
+            assert!(!has(
+                &projection,
+                F3dLossCode::LocalOccurrencePathPoseUnresolved
+            ));
+        }
+    }
+}
+
+#[test]
+fn short_paths_with_every_instance_claimed_keep_the_qualified_poses() {
+    let (carriers, components) = fixture(2);
+    let rows = pose(EYE, [2.0, 3.0, 4.0]);
+    let mut paths = vec![bare(900, 200, rows)];
+    for (record, module) in [(901, 100), (902, 400)] {
+        paths.push(path(
+            record,
+            &[
+                (159, Kind::Component),
+                (200, Kind::Occurrence),
+                (module, Kind::Occurrence),
+            ],
+            rows,
+        ));
+    }
+    let projection = project(&carriers, &components, &paths);
+    for module in [100, 400] {
+        assert_close(
+            world(&projection, &instance(&carriers, &[module, 200])),
+            millimetres(rows),
+        );
+    }
+    assert!(
+        message(&projection, F3dLossCode::LocalOccurrencePathPoseUnresolved)
+            .starts_with("1 component-path carrier(s)")
+    );
+    assert!(!has(
+        &projection,
+        F3dLossCode::LocalOccurrencePathPoseInferred
+    ));
+}
+
+#[test]
+fn two_short_paths_cannot_share_the_remaining_instance() {
+    let (carriers, components) = fixture(2);
+    let unplaced = project(&carriers, &components, &[]);
+    let rows = pose_in(&unplaced, &carriers, &[100], leaf_local());
+    let paths = [
+        bare(900, 200, rows),
+        bare(901, 200, rows),
+        path(
+            902,
+            &[
+                (159, Kind::Component),
+                (200, Kind::Occurrence),
+                (400, Kind::Occurrence),
+            ],
+            rows,
+        ),
+    ];
+    let projection = project(&carriers, &components, &paths);
+    let id = instance(&carriers, &[100, 200]);
+    assert_close(local(&projection, &id), local(&unplaced, &id));
+    assert!(
+        message(&projection, F3dLossCode::LocalOccurrencePathPoseUnresolved)
+            .starts_with("2 component-path carrier(s)")
+    );
+    assert!(!has(
+        &projection,
+        F3dLossCode::LocalOccurrencePathPoseInferred
+    ));
 }
 
 #[test]
@@ -642,4 +801,181 @@ fn a_stale_holder_is_corrected_before_its_leaf_carriers_are_matched() {
         &projection,
         F3dLossCode::LocalOccurrencePathPoseInferred
     ));
+}
+
+fn closing_frame(mut path: DesignComponentPath, owners: &[u64]) -> (DesignComponentPath, usize) {
+    let mut frame = Vec::new();
+    frame.extend_from_slice(&3_u32.to_le_bytes());
+    frame.extend_from_slice(b"900");
+    frame.extend_from_slice(&path.carrier_record_index.to_le_bytes());
+    frame.extend_from_slice(&0_u32.to_le_bytes());
+    frame.push(1);
+    frame.extend_from_slice(&u32::try_from(path.elements.len()).unwrap().to_le_bytes());
+    let reference = |frame: &mut Vec<u8>, record: u64| {
+        frame.push(1);
+        frame.extend_from_slice(&record.to_le_bytes());
+        frame.extend_from_slice(&[0, 0]);
+    };
+    for element in &path.elements {
+        reference(&mut frame, element.record_index);
+        frame.extend_from_slice(&element.discriminator.to_le_bytes());
+    }
+    frame.push(0);
+    if let Some(transform) = path.transform {
+        frame.push(0);
+        for value in transform.rows().iter().flatten() {
+            frame.extend_from_slice(&value.to_le_bytes());
+        }
+    } else {
+        frame.push(1);
+    }
+    let count_at = frame.len();
+    frame.extend_from_slice(&u32::try_from(owners.len()).unwrap().to_le_bytes());
+    for owner in owners {
+        reference(&mut frame, *owner);
+    }
+    reference(&mut frame, 276);
+    reference(&mut frame, 1);
+    assert!(crate::xref::component_path_carrier(&frame, None).is_some());
+    path.frame_bytes = frame.into();
+    (path, count_at)
+}
+
+#[test]
+fn closing_paths_select_symmetric_instances_with_distinct_discriminators() {
+    let (carriers, components) = symmetric_fixture();
+    let unplaced = project(&carriers, &components, &[]);
+    let first = pose_in(&unplaced, &carriers, &[100], leaf_local());
+    let second = pose_in(&unplaced, &carriers, &[400], leaf_local());
+    let mut paths = [bare(900, 200, first), bare(901, 200, second)];
+    for (path, discriminator) in paths.iter_mut().zip([7, 2]) {
+        path.elements[1].discriminator = discriminator;
+    }
+    let paths = [
+        closing_frame(paths[0].clone(), &[100, 200]).0,
+        closing_frame(paths[1].clone(), &[400, 200]).0,
+    ];
+    let projection = project(&carriers, &components, &paths);
+    for (module, expected) in [(100, first), (400, second)] {
+        assert_close(
+            world(&projection, &instance(&carriers, &[module, 200])),
+            millimetres(expected),
+        );
+    }
+    assert!(!has(
+        &projection,
+        F3dLossCode::LocalOccurrencePathPoseInferred
+    ));
+    assert!(!has(
+        &projection,
+        F3dLossCode::LocalOccurrencePathPoseUnresolved
+    ));
+}
+
+#[test]
+fn closing_paths_select_the_outer_instance_of_a_shared_holder() {
+    let (carriers, components) = fixture(2);
+    let first = pose(EYE, [2.0, 3.0, 4.0]);
+    let second = pose(
+        [[0.0, 1.0, 0.0], [-1.0, 0.0, 0.0], [0.0, 0.0, 1.0]],
+        [5.0, 6.0, 7.0],
+    );
+    let make = |record, module, rows| {
+        closing_frame(
+            path(
+                record,
+                &[
+                    (159, Kind::Component),
+                    (SUB_MODULE, Kind::Occurrence),
+                    (LEAF, Kind::Occurrence),
+                ],
+                rows,
+            ),
+            &[module, SUB_MODULE, LEAF],
+        )
+        .0
+    };
+    let projection = project(
+        &carriers,
+        &components,
+        &[make(900, 100, first), make(901, 400, second)],
+    );
+    for (module, expected) in [(100, first), (400, second)] {
+        assert_close(
+            world(&projection, &instance(&carriers, &[module, 500, 600])),
+            millimetres(expected),
+        );
+    }
+    assert!(!has(
+        &projection,
+        F3dLossCode::LocalOccurrencePathPoseInferred
+    ));
+    assert!(!has(
+        &projection,
+        F3dLossCode::LocalOccurrencePathPoseUnresolved
+    ));
+}
+
+#[test]
+fn closing_paths_must_agree_with_the_listed_owner() {
+    let (carriers, components) = fixture(2);
+    let unplaced = project(&carriers, &components, &[]);
+    let path = closing_frame(
+        path(
+            900,
+            &[
+                (100, Kind::Occurrence),
+                (159, Kind::Component),
+                (200, Kind::Occurrence),
+            ],
+            pose(EYE, [2.0, 3.0, 4.0]),
+        ),
+        &[400, 200],
+    )
+    .0;
+    let projection = project(&carriers, &components, &[path]);
+    for module in [100, 400] {
+        let id = instance(&carriers, &[module, 200]);
+        assert_close(local(&projection, &id), local(&unplaced, &id));
+    }
+    assert!(
+        message(&projection, F3dLossCode::LocalOccurrencePathPoseUnresolved)
+            .starts_with("1 component-path carrier(s)")
+    );
+}
+
+#[test]
+fn closing_paths_support_the_identity_placement() {
+    let (carriers, components) = fixture(2);
+    let unplaced = project(&carriers, &components, &[]);
+    let mut path = bare(900, 200, pose(EYE, [0.0, 0.0, 0.0]));
+    path.transform = None;
+    let projection = project(
+        &carriers,
+        &components,
+        &[closing_frame(path, &[400, 200]).0],
+    );
+    assert_close(
+        world(&projection, &instance(&carriers, &[400, 200])),
+        super::super::IDENTITY,
+    );
+    let first = instance(&carriers, &[100, 200]);
+    assert_close(local(&projection, &first), local(&unplaced, &first));
+}
+
+#[test]
+fn closing_paths_bound_counts_and_require_local_references() {
+    let (path, count_at) = closing_frame(bare(900, 200, pose(EYE, [2.0, 3.0, 4.0])), &[100, 200]);
+    assert!(super::super::closing_occurrence_path(&path).is_some());
+    let mut excessive = path.clone();
+    let mut bytes = excessive.frame_bytes.as_ref().to_vec();
+    bytes[count_at..count_at + size_of::<u32>()].copy_from_slice(&u32::MAX.to_le_bytes());
+    excessive.frame_bytes = bytes.into();
+    assert!(super::super::closing_occurrence_path(&excessive).is_none());
+    let mut foreign = path;
+    let mut bytes = foreign.frame_bytes.as_ref().to_vec();
+    let flags = count_at + size_of::<u32>() + size_of::<u8>() + size_of::<u64>();
+    bytes[flags] = 1;
+    foreign.frame_bytes = bytes.into();
+    assert!(super::super::closing_occurrence_path(&foreign).is_none());
 }

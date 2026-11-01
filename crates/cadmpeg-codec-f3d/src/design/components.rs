@@ -307,6 +307,95 @@ struct PathInstance {
     ancestors: Vec<u64>,
 }
 
+struct ClosingOccurrencePath<'a> {
+    references: cadmpeg_core::decode::View<'a>,
+    count: usize,
+}
+
+fn local_path_reference(view: &mut cadmpeg_core::decode::View<'_>) -> Option<u64> {
+    if view.u8()? != 1 {
+        return None;
+    }
+    let record = view.u64_le()?;
+    (view.u16_le()? == 0 && record != 0).then_some(record)
+}
+
+fn closing_occurrence_path(path: &DesignComponentPath) -> Option<ClosingOccurrencePath<'_>> {
+    use crate::layout::indexed_design_record_header as header;
+    use crate::layout::local_component_occurrence_prefix as occurrence;
+    use cadmpeg_core::decode::View;
+    use std::mem::{size_of, size_of_val};
+
+    const LOCAL_REFERENCE_BYTES: usize =
+        occurrence::PATH_DISCRIMINATOR - occurrence::COMPONENT_REFERENCE;
+    let mut frame = View::over_retained(path.frame_bytes.as_ref());
+    let length = frame.u32_le()?;
+    let length = frame.counted(u64::from(length), 1)?.get();
+    if length != header::RECORD_INDEX - header::CLASS_TAG
+        || !frame.take(length)?.iter().all(u8::is_ascii_digit)
+        || frame.u64_le()? != path.carrier_record_index
+    {
+        return None;
+    }
+    let length = frame.u32_le()?;
+    let length = frame.counted(u64::from(length), 1)?.get();
+    frame.skip(length)?;
+    if frame.u8()? != 1 {
+        return None;
+    }
+    let count = frame.u32_le()?;
+    let count = frame
+        .counted(u64::from(count), LOCAL_REFERENCE_BYTES + size_of::<u32>())?
+        .get();
+    if count != path.elements.len() {
+        return None;
+    }
+    for element in &path.elements {
+        if local_path_reference(&mut frame)? != element.record_index
+            || frame.u32_le()? != element.discriminator
+        {
+            return None;
+        }
+    }
+    if frame.u8()? != 0 {
+        return None;
+    }
+    match (frame.u8()?, path.transform) {
+        (0, Some(_)) => frame.skip(size_of_val(&IDENTITY))?,
+        (1, None) => {}
+        _ => return None,
+    }
+    let count = frame.u32_le()?;
+    let count = frame
+        .counted(u64::from(count), LOCAL_REFERENCE_BYTES)?
+        .get();
+    let end = frame
+        .position()
+        .checked_add(count.checked_mul(LOCAL_REFERENCE_BYTES)?)?;
+    let references = frame.child(frame.position(), end)?;
+    let mut check = references;
+    for _ in 0..count {
+        local_path_reference(&mut check)?;
+    }
+    Some(ClosingOccurrencePath { references, count })
+}
+
+impl ClosingOccurrencePath<'_> {
+    fn names(&self, instance: &PathInstance) -> bool {
+        if instance.ancestors.len().checked_add(1) != Some(self.count) {
+            return false;
+        }
+        let mut references = self.references;
+        instance
+            .ancestors
+            .iter()
+            .rev()
+            .copied()
+            .chain(std::iter::once(instance.record))
+            .all(|record| local_path_reference(&mut references) == Some(record))
+    }
+}
+
 impl<'a> Projector<'a> {
     fn new(sources: &'a LocalComponentSources<'a>) -> Self {
         let mut native_by_guid = BTreeMap::new();
@@ -935,12 +1024,22 @@ impl<'a> Projector<'a> {
                 .copied()
                 .filter(|record| record != target)
                 .collect::<BTreeSet<_>>();
+            let closing = closing_occurrence_path(path).filter(|closing| {
+                instances.iter().any(|instance| {
+                    instance.stream == stream
+                        && instance.record == *target
+                        && closing.names(instance)
+                })
+            });
             let matching = instances
                 .iter()
                 .enumerate()
                 .filter(|(_, instance)| {
                     instance.stream == stream
                         && instance.record == *target
+                        && closing
+                            .as_ref()
+                            .is_none_or(|closing| closing.names(instance))
                         && instance.ancestors.len() >= named.len()
                         && instance.ancestors[..named.len()]
                             .iter()
@@ -983,8 +1082,6 @@ impl<'a> Projector<'a> {
                 self.path_poses.disagreeing += 1;
             }
         }
-        // An assignment onto an instance that a single-instance carrier
-        // names is refused, so the group does not depend on that carrier.
         let mut groups = BTreeMap::<(&str, u64), Vec<(&DesignComponentPath, Vec<usize>)>>::new();
         for (path, candidates) in ambiguous {
             let Some(&first) = candidates.first() else {
@@ -1087,6 +1184,9 @@ impl<'a> Projector<'a> {
         for (path, candidates) in carriers {
             let mut row = Vec::new();
             for ordinal in candidates {
+                if claimed.contains(ordinal) {
+                    continue;
+                }
                 let key = instances[*ordinal].key.as_str();
                 if let Some(local) = self.path_local_pose(key, rows_of(path))? {
                     row.push((*ordinal, local.affine_rows()));
@@ -1108,9 +1208,7 @@ impl<'a> Projector<'a> {
             search.steps > MAX_PATH_ASSIGNMENT_STEPS,
             search.found.as_slice(),
         ) {
-            (false, [assignment])
-                if !assignment.iter().any(|ordinal| claimed.contains(ordinal)) =>
-            {
+            (false, [assignment]) => {
                 for (&carrier, &ordinal) in order.iter().zip(assignment) {
                     let key = instances[ordinal].key.as_str();
                     if let Some(local) = self.path_local_pose(key, rows_of(carriers[carrier].0))? {
