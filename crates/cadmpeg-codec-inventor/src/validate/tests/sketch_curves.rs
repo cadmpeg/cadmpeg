@@ -304,3 +304,93 @@ fn spline_midpoint_validation_requires_native_locus_semantics() -> TestResult {
     }
     Ok(())
 }
+
+#[test]
+fn neutral_construction_state_recomputes_from_the_entity_flags() -> TestResult {
+    for (line, flags, construction, accepted) in [
+        (true, 0_u32, false, true),
+        (true, 0x40, false, true),
+        (true, 0x20_0000, true, true),
+        (true, 0x20_0000 | 0x40, true, true),
+        (true, 0x20_0000, false, false),
+        (true, 0x8_0000, true, true),
+        (true, 0x8_0000 | 0x8000, true, true),
+        (true, 0x8_0000, false, false),
+        (false, 0x8_0000, false, true),
+        (false, 0x8_0000, true, false),
+        (true, 0, true, false),
+        (false, 0x20_0000, false, true),
+        (false, 0x20_0000, true, false),
+    ] {
+        let mut data = empty_data();
+        let mut source = sketch_point(
+            22,
+            0,
+            serde_json::json!({"state": null, "associations": null}),
+        )?;
+        crate::test_support::sketch_curves::edit_entity(&mut source, |payload| {
+            payload.kind = if line {
+                PmDcSketchEntityKind::Line {
+                    points: PmDcReferenceList::new(
+                        2,
+                        Some(PmDcListMetadata::U32([2, 0])),
+                        vec![PmDcReference::from_packed(2), PmDcReference::from_packed(2)],
+                    )
+                    .expect("line endpoints"),
+                    auxiliary: Vec::new(),
+                    origin: [FiniteReal::ZERO; 2],
+                    direction: [FiniteReal::ONE, FiniteReal::ZERO],
+                }
+            } else {
+                PmDcSketchEntityKind::Ellipse {
+                    points: PmDcReferenceList::new(
+                        2,
+                        Some(PmDcListMetadata::U32([2, 0])),
+                        [0, 0].map(PmDcReference::from_packed).to_vec(),
+                    )
+                    .expect("ellipse ends"),
+                    auxiliary: Vec::new(),
+                    center: PmDcReference::from_packed(2),
+                    major_direction: [FiniteReal::ONE, FiniteReal::ZERO],
+                    major_radius: PositiveReal::new(3.0).expect("major radius"),
+                    minor_radius: PositiveReal::new(2.0).expect("minor radius"),
+                    state: 1,
+                }
+            };
+        });
+        source.identity.type_id =
+            crate::record_identity::RecordTypeId::from_bytes(source.kind.record_type_id());
+        let mut wire = serde_json::to_value(&source)?;
+        wire["entity_flags"] = serde_json::json!(flags);
+        let source: crate::sketch::PmDcSketchEntity = serde_json::from_value(wire)?;
+        let native = source.id();
+        data.pm_dc_sketch_entities.push(source);
+        data.pm_dc_sketch_entities.push(sketch_point(
+            22,
+            1,
+            serde_json::json!({"state": null, "associations": null}),
+        )?);
+        sketch_records(&mut data)?;
+        let mut ir = cadmpeg_ir::CadIr::empty();
+        ir.model.sketch_entities.push(
+            SketchEntity::new(
+                SketchEntityId::mint("inventor:design:sketch-entity#generated-0")?,
+                SketchId::mint("inventor:design:sketch#generated-3")?,
+                SketchGeometry::native(cadmpeg_core::nonblank_literal!("curve")),
+            )
+            .with_construction(construction)
+            .with_native_ref(Some(native)),
+        );
+        let mut findings = Vec::new();
+        super::super::validate_sketches(&data, &ir, &mut findings);
+        assert_eq!(
+            findings.is_empty(),
+            accepted,
+            "line {line} flags {flags:#x} construction {construction}: {findings:?}"
+        );
+        for finding in &findings {
+            assert!(finding.message.contains("construction state"));
+        }
+    }
+    Ok(())
+}
