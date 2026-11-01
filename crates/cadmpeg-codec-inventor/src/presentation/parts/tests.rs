@@ -72,7 +72,7 @@ fn all_presentation_grammars_form_native_records_and_actual_source_captures() {
         .expect("the fixture fits the service policy");
     let container =
         InventorContainer::open(&ctx, root).expect("the fixture opens as an inventor container");
-    let mut output = PartOutput::new(CodecFormat::Inventor);
+    let mut output = PartOutput::new(CodecFormat::Inventor, &ctx);
     let inventory = super::super::inventory(&ctx, &container.rse, &mut output)
         .expect("the presentation inventory decodes");
     assert_eq!(
@@ -164,7 +164,7 @@ fn malformed_presentation_body_keeps_its_framing_and_exact_readable_peer() {
     let token = segment.pair.token.as_str();
     let bad_id = format!("inventor:presentation:default-style#{token}-0");
     let good_id = format!("inventor:presentation:default-style#{token}-1");
-    let mut output = PartOutput::new(CodecFormat::Inventor);
+    let mut output = PartOutput::new(CodecFormat::Inventor, &ctx);
     let inventory = super::super::inventory(&ctx, &container.rse, &mut output)
         .expect("the presentation inventory decodes");
     assert_eq!(inventory.default_styles.len(), 1);
@@ -215,7 +215,7 @@ fn held_binding_projection_moves_actual_entities_through_the_final_stage() {
         .expect("the empty source fits the service policy");
     let expected = super::super::project_bindings(&ctx, &inventory, &[], &[], &keys, None)
         .expect("the unstaged binding projection succeeds");
-    let mut output = PartOutput::new(CodecFormat::Inventor);
+    let mut output = PartOutput::new(CodecFormat::Inventor, &ctx);
     let staged =
         super::super::project_bindings(&ctx, &inventory, &[], &[], &keys, Some(&mut output))
             .expect("the staged binding projection succeeds");

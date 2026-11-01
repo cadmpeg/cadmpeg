@@ -80,7 +80,7 @@ pub(crate) fn decode<'a>(ctx: &DecodeContext<'a>, root: View<'a>) -> Result<Deco
             })
         },
         ir,
-        source_fidelity: SourceFidelity::with_annotations(annotations),
+        source_fidelity: SourceFidelity::for_decode(ctx, annotations),
     })
 }
 

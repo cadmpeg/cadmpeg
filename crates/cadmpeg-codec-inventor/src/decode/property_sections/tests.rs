@@ -130,7 +130,7 @@ fn identity_failure_drops_its_real_records_and_asset_and_keeps_the_exact_peer() 
         panic!("valid bounded property syntax")
     };
     assert_eq!(parsed.sections.len(), 2);
-    let mut output = PartOutput::new(CodecFormat::Inventor);
+    let mut output = PartOutput::new(CodecFormat::Inventor, &ctx);
     assert!(crate::property_set::source_admission::stage_header(
         &ctx,
         &mut output,

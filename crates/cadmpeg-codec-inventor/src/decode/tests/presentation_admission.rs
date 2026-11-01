@@ -220,7 +220,7 @@ fn project(
     ctx: &DecodeContext<'_>,
     inventory: &PresentationInventory<'_>,
 ) -> Result<PartOutput, CodecError> {
-    let mut output = PartOutput::new(cadmpeg_ir::CodecFormat::Inventor);
+    let mut output = PartOutput::new(cadmpeg_ir::CodecFormat::Inventor, &ctx);
     for value in &inventory.default_styles {
         output.insert_native(ctx, "pm_app_default_styles", native::default_style(value))?;
     }

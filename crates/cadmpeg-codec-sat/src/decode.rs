@@ -490,7 +490,10 @@ fn build_result(
                     geometry_transferred: false,
                 })
             },
-            source_fidelity: cadmpeg_ir::SourceFidelity::default(),
+            source_fidelity: cadmpeg_ir::SourceFidelity::for_decode(
+                ctx,
+                cadmpeg_ir::Annotations::default(),
+            ),
         });
     };
 
@@ -589,7 +592,7 @@ fn build_result(
                 .map_err(cadmpeg_core::CodecError::from)?;
         }
     }
-    let mut source_fidelity = cadmpeg_ir::SourceFidelity::with_annotations(annotations.build());
+    let mut source_fidelity = cadmpeg_ir::SourceFidelity::for_decode(ctx, annotations.build());
     let untyped = unknowns
         .iter()
         .filter(|record| {
