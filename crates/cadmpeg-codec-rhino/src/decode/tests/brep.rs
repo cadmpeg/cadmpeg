@@ -2,7 +2,7 @@
 
 use super::super::decode_pcurves;
 use super::{
-    append_record_links, brep_free_vertex_indices, face_components, line_nurbs,
+    brep_free_vertex_indices, face_components, line_nurbs,
     region_shell_groups_without_records, source_shaped_plane_brep, stage_brep, with_expand_bytes,
     ArchiveVersion, Body, BodyKind, BrepDraft, BrepTransferInput, BrepTransferKind, CadIr, Curve,
     CurveGeometry, MillimeterScale, NativeUnknownRecord, PcurveGeometry, SolvedCurveGeometry,
@@ -173,9 +173,13 @@ fn fallback_candidate_links_free_carrier_before_full_ir_validation() {
         parameter_range: None,
         id: curve_id.clone(),
         geometry: CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(line_nurbs(0.0, 1.0, false))),
-        source_object: None,
+        source_object: Some(cadmpeg_ir::SourceObjectAssociation {
+            geometry_role: None,
+            format: cadmpeg_ir::CodecFormat::Rhino,
+            object_id: cadmpeg_core::nonblank_literal!("fallback-carrier"),
+            instance_path: Vec::new(),
+        }),
     });
-    let links = staged.links.clone();
     staged
         .draft
         .commit(
@@ -185,17 +189,11 @@ fn fallback_candidate_links_free_carrier_before_full_ir_validation() {
         )
         .unwrap()
         .expect("commit fallback carrier");
-    append_record_links(&mut candidate, &unknown, &links);
-    assert_eq!(
-        candidate
-            .native_unknowns("rhino")
-            .expect("required invariant")[0]
-            .links
-            .iter()
-            .map(cadmpeg_ir::ids::Identity::as_str)
-            .collect::<Vec<_>>(),
-        vec![curve_id.to_string()]
-    );
+    assert!(candidate
+        .native_unknowns("rhino")
+        .expect("required invariant")[0]
+        .links
+        .is_empty());
     let report = cadmpeg_ir::validate::validate_neutral(&candidate, Vec::new())
         .expect("validate the neutral model");
     assert!(report.is_ok(), "{report:?}");
@@ -309,7 +307,6 @@ fn source_shaped_plane_brep_stages_complete_scaled_valid_ir() {
     // scales with the document (inches -> millimeters).
     assert_eq!(nurbs.control_points()[1].u, 25.4);
     assert_eq!(model.coedges[0].radial_next, model.coedges[0].id);
-    let links = staged.links.clone();
     let mut candidate = CadIr::empty();
     candidate
         .set_native_unknowns(
@@ -330,7 +327,6 @@ fn source_shaped_plane_brep_stages_complete_scaled_valid_ir() {
         )
         .unwrap()
         .expect("commit staged plane B-rep");
-    append_record_links(&mut candidate, &unknown, &links);
     let report = cadmpeg_ir::validate::validate_neutral(&candidate, Vec::new())
         .expect("validate the neutral model");
     assert!(report.is_ok(), "{report:?}");
