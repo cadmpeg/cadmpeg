@@ -2,17 +2,19 @@
 //! Convert: destination rules, format selection, and write-back fidelity.
 
 use std::fs;
-#[cfg(any(feature = "sldprt", feature = "rhino"))]
+#[cfg(feature = "rhino")]
 use std::io::Cursor;
 
 use assert_cmd::Command;
-#[cfg(any(feature = "sldprt", feature = "rhino"))]
+#[cfg(feature = "rhino")]
 use cadmpeg_ir::codec::{Codec, DecodeOptions};
 use cadmpeg_ir::examples::unit_cube;
 use predicates::prelude::{predicate, PredicateBooleanExt};
 use tempfile::tempdir;
 
-use crate::support::{fixture, geometryless_creo, sldprt_cube};
+#[cfg(feature = "sldprt")]
+use crate::support::sldprt_cube;
+use crate::support::{fixture, geometryless_creo};
 
 #[cfg(feature = "fcstd")]
 #[test]
