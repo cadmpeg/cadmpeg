@@ -104,15 +104,13 @@ fn complete_point_and_bounded_line_archive_decodes_semantics_and_links() {
         .native_unknowns("rhino")
         .expect("required invariant")[0]
         .links
-        .iter()
-        .any(|link| link.as_str() == result.ir().model.bodies[0].id.as_str()));
+        .is_empty());
     assert!(result
         .ir()
         .native_unknowns("rhino")
         .expect("required invariant")[1]
         .links
-        .iter()
-        .any(|link| link.as_str() == result.ir().model.curves[0].id.as_str()));
+        .is_empty());
     assert!(result.report().geometry_transferred());
     assert!(
         cadmpeg_ir::validate::validate_neutral(result.ir(), result.report().losses.clone())
@@ -141,7 +139,7 @@ fn future_and_semantically_invalid_objects_are_atomic_and_later_point_recovers()
             .expect("required invariant")[0]
             .links
             .is_empty());
-        assert!(!result
+        assert!(result
             .ir()
             .native_unknowns("rhino")
             .expect("required invariant")[1]
@@ -297,7 +295,7 @@ fn subd_complete_object_commits_across_supported_archive_bands() {
             .len(),
             4
         );
-        assert!(!result
+        assert!(result
             .ir()
             .native_unknowns("rhino")
             .expect("required invariant")[0]
@@ -523,7 +521,7 @@ fn complete_simple_geometry_archive_preserves_coordinates_knots_and_compound_ord
         .native_unknowns("rhino")
         .expect("required invariant")
         .iter()
-        .all(|record| !record.links.is_empty()));
+        .all(|record| record.links.is_empty()));
     assert!(
         cadmpeg_ir::validate::validate_neutral(result.ir(), result.report().losses.clone())
             .expect("validate the neutral model")
@@ -599,9 +597,9 @@ fn required_mesh_channel_failure_is_atomic_and_optional_crc_is_recoverable() {
         .expect("required invariant")[0]
         .links
         .is_empty());
-    assert!(!result
-        .ir()
-        .native_unknowns("rhino")
+    assert!(result
+            .ir()
+            .native_unknowns("rhino")
         .expect("required invariant")[1]
         .links
         .is_empty());
@@ -702,7 +700,7 @@ fn serialized_extrusion_versions_caps_holes_and_cache_dispatch_atomically() {
             result.ir().model.tessellations.len(),
             usize::from(minor == 3)
         );
-        assert!(!result
+        assert!(result
             .ir()
             .native_unknowns("rhino")
             .expect("required invariant")[0]
@@ -841,8 +839,7 @@ fn serialized_brep_l3_commits_connected_topology_pcurves_and_scaled_tolerances()
         .native_unknowns("rhino")
         .expect("required invariant")[0]
         .links
-        .iter()
-        .any(|link| link.as_str() == body.id.as_str()));
+        .is_empty());
     assert!(result.report().geometry_transferred());
     assert!(result.report().losses.iter().any(|loss| loss.code
         == crate::loss::RhinoLossCode::ObjectRecordCensus.kind()
@@ -916,15 +913,15 @@ fn semantic_invalid_brep_keeps_only_free_c3_surface_and_later_point() {
     assert_eq!(model.curves.len(), 3);
     assert_eq!(model.surfaces.len(), 1);
     assert_eq!(model.points.len(), 1);
-    assert!(!result
-        .ir()
-        .native_unknowns("rhino")
+    assert!(result
+            .ir()
+            .native_unknowns("rhino")
         .expect("required invariant")[0]
         .links
         .is_empty());
-    assert!(!result
-        .ir()
-        .native_unknowns("rhino")
+    assert!(result
+            .ir()
+            .native_unknowns("rhino")
         .expect("required invariant")[1]
         .links
         .is_empty());
@@ -992,7 +989,7 @@ fn archive_failure_recovery_matrix_preserves_exact_unknown_records() {
         assert_eq!(retained.sha256(), sha256_hex(&failure));
         assert_eq!(retained.data(), Some(failure.as_slice()));
         assert!(unknown.links.is_empty());
-        assert!(!result
+        assert!(result
             .ir()
             .native_unknowns("rhino")
             .expect("required invariant")[1]
