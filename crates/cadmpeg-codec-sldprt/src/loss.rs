@@ -206,8 +206,9 @@ pub(crate) enum SldprtLossCode {
     /// Assembly occurrences reference component documents that the decoder
     /// does not open.
     AssemblyComponentsExternal,
-    /// Virtual components are stored inside the assembly document and are not
-    /// transferred; their occurrences have an unresolved prototype.
+    /// Virtual components stored inside the assembly document whose bodies are
+    /// not transferred: the document is absent, its section gives no decoded
+    /// body, or its section shares a name with another.
     AssemblyVirtualComponentsNotTransferred,
     /// Suppressed component instances, and the instances below them, are
     /// omitted from the occurrence tree.
