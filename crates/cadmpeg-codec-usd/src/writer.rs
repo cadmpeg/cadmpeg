@@ -1091,22 +1091,15 @@ impl<'ir> Writer<'ir> {
         out
     }
 
-    /// `records` in model arena order, without repeats.
+    /// `records` in model arena order, without repeats. Each record is one
+    /// of the arena, so each has a position.
     fn ordered<T>(
         &self,
         records: impl Iterator<Item = &'ir T>,
         id: impl Fn(&T) -> &str,
     ) -> Vec<&'ir T> {
         let mut out: Vec<(usize, &'ir T)> = records
-            .map(|record| {
-                (
-                    self.positions
-                        .get(id(record))
-                        .copied()
-                        .unwrap_or(usize::MAX),
-                    record,
-                )
-            })
+            .filter_map(|record| Some((*self.positions.get(id(record))?, record)))
             .collect();
         out.sort_by_key(|(position, _)| *position);
         out.dedup_by_key(|(position, _)| *position);
