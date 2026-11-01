@@ -16,6 +16,7 @@ fn document() -> (CadIr, ParameterId) {
     let pmi = PmiId::mint("test:model:pmi#length").unwrap();
     let value = ParameterValue::Length(Length::new(25.0).unwrap());
     ir.model.parameters.push(DesignParameter {
+        product_definition: None,
         id: parameter.clone(),
         owner: None,
         ordinal: 0,
