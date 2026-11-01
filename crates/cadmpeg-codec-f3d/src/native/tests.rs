@@ -1511,3 +1511,27 @@ fn nested_protein_decode_honors_operator_per_expand_ceiling() {
         "{error:?}"
     );
 }
+
+#[test]
+fn fragment_history_join_lists_absent_owners_and_retains_local_children() {
+    let owners = std::collections::HashMap::from([("parent".into(), 0)]);
+    let children = vec![("local", "parent"), ("external", "absent")];
+    assert!(
+        super::group_by_owner(children.clone(), &owners, 1, |row| row.0, |row| row.1, None)
+            .is_err()
+    );
+    let mut skipped = Vec::new();
+    let grouped = super::group_by_owner(
+        children,
+        &owners,
+        1,
+        |row| row.0,
+        |row| row.1,
+        Some(&mut skipped),
+    )
+    .unwrap();
+    assert_eq!(grouped, vec![vec![("local", "parent")]]);
+    assert_eq!(skipped.len(), 1);
+    assert!(skipped[0].contains("external"));
+    assert!(skipped[0].contains("absent"));
+}

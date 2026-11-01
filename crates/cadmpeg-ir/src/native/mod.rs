@@ -16,6 +16,8 @@ mod canon;
 pub mod catalogue;
 mod compare;
 mod copy;
+/// Native enum classification for privacy projection.
+pub mod privacy;
 mod replay;
 pub(crate) mod view;
 
@@ -479,12 +481,14 @@ impl NativeRecord {
         // limit is lifted.
         let mut deserializer = serde_json::Deserializer::from_str(&self.json);
         deserializer.disable_recursion_limit();
-        T::deserialize(&mut deserializer)
+        let value = T::deserialize(&mut deserializer)
             .and_then(|value| deserializer.end().map(|()| value))
             .map_err(|source| NativeConvertError::ReadRecord {
                 id: self.id.clone(),
                 source: without_position(source),
-            })
+            })?;
+        privacy::observe::<T>(self.id(), &self.json);
+        Ok(value)
     }
 
     /// Compare a typed serialization against this record's stored text

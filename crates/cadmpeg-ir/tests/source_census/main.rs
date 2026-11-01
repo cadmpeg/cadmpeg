@@ -57,6 +57,7 @@ const HAND_IMPLS: &[(&str, &str, &str)] = &[
         "keyless",
     ),
     ("crates/cadmpeg-ir/src/document.rs", "CadIr", "wire"),
+    ("crates/cadmpeg-ir/src/repro.rs", "Bundle", "wire"),
     ("crates/cadmpeg-ir/src/document.rs", "CensusKey", "keyless"),
     (
         "crates/cadmpeg-ir/src/document.rs",
@@ -482,6 +483,18 @@ const HAND_IMPL_NULL_REFUSALS: &[(&str, &str, &str, &str)] = &[
         "ProceduralSurfaceDefinition",
         "cache",
         "ProceduralSurfaceDefinitionWire::Unknown",
+    ),
+    (
+        "crates/cadmpeg-ir/src/document.rs",
+        "CadIr",
+        "repro",
+        "CadIrReadWire",
+    ),
+    (
+        "crates/cadmpeg-ir/src/repro.rs",
+        "Bundle",
+        "incomplete_reason",
+        "BundleMetadata",
     ),
     (
         "crates/cadmpeg-ir/src/document.rs",
