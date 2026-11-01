@@ -5043,12 +5043,13 @@ fn validate_construction_operand_groups(ctx: &Ctx, findings: &mut Vec<Finding>) 
                     design::DesignFeatureFamily::CircularPattern
                     | design::DesignFeatureFamily::RectangularPattern,
                 ) => {
-                    matches!(
+                    (matches!(
                         group.role(),
                         DesignOperandRole::BODIES_A
                             | DesignOperandRole::BODIES_B
                             | DesignOperandRole::ROLE_0X10
-                    ) && group.extrude_role().is_none()
+                    ) || is_path_seed_group(group))
+                        && group.extrude_role().is_none()
                 }
                 Some(design::DesignFeatureFamily::Mirror) => {
                     mirror_group_role_admitted(group.role()) && group.extrude_role().is_none()
@@ -5225,7 +5226,16 @@ fn validate_construction_operand_groups(ctx: &Ctx, findings: &mut Vec<Finding>) 
         }) && header.is_some_and(|header| {
             header.byte_offset == group.byte_offset && header.class_tag == group.class_tag
         }) && frame_valid
-            && !group.members().is_empty()
+            && (!group.members().is_empty()
+                || scope.is_some_and(|scope| {
+                    matches!(
+                        design::design_feature_family(&scope.kind()),
+                        Some(
+                            design::DesignFeatureFamily::CircularPattern
+                                | design::DesignFeatureFamily::RectangularPattern
+                        )
+                    )
+                }) && is_path_seed_group(group))
             && {
                 let mut seen = HashSet::new();
                 for member in group.members() {
@@ -5248,6 +5258,16 @@ fn validate_construction_operand_groups(ctx: &Ctx, findings: &mut Vec<Finding>) 
             );
         }
     }
+}
+
+fn is_path_seed_group(
+    group: &records::topology::construction::DesignConstructionOperandGroup,
+) -> bool {
+    group.role() == DesignOperandRole::PATH_SEED
+        && group.members().is_empty()
+        && group.frame.auxiliary_records.len() == 2
+        && group.frame.trailing_records().len() == 1
+        && !group.frame.variant
 }
 
 /// Validate path-feature operand roles against the scope construction.
