@@ -127,7 +127,6 @@ fn body_recipe_document_keeps_semantic_chain_and_evidence_without_layout_or_byte
     assert_eq!(serde_json::to_value(&restored).unwrap(), wire);
     let mut fidelity = cadmpeg_ir::SourceFidelity::default();
     restored.retain_source(&mut fidelity).unwrap();
-    assert!(fidelity.metadata.is_empty());
     assert!(fidelity.retained_records().is_empty());
 }
 

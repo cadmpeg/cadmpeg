@@ -371,8 +371,6 @@ impl RetainedSourceRecord {
 pub struct SourceFidelity {
     /// Sparse source locations and conversion exactness.
     pub annotations: Annotations,
-    /// Source layout and fingerprint facts, never document content or payload bytes.
-    pub metadata: BTreeMap<String, String>,
     /// Decode-time document digest baseline for byte reuse, when recorded.
     pub decode_digest: Option<Sha256Digest>,
     /// Native records retained for recovery or replay, keyed by record id.
@@ -389,9 +387,6 @@ struct SourceFidelityWire {
     /// Sparse source locations and conversion exactness.
     #[serde(default)]
     annotations: Annotations,
-    /// Facts about source layout and fingerprints.
-    #[serde(default, deserialize_with = "cadmpeg_core::distinct_keys::btree_map")]
-    metadata: BTreeMap<String, String>,
     /// Decode-time document digest baseline for byte reuse, when recorded.
     #[serde(default, deserialize_with = "deserialize_decode_digest")]
     decode_digest: Option<Sha256Digest>,
@@ -406,7 +401,6 @@ impl TryFrom<SourceFidelityWire> for SourceFidelity {
     fn try_from(wire: SourceFidelityWire) -> Result<Self, Self::Error> {
         let value = Self {
             annotations: wire.annotations,
-            metadata: wire.metadata,
             decode_digest: wire.decode_digest,
             retained_records: wire.retained_records,
         };
@@ -427,8 +421,6 @@ impl TryFrom<SourceFidelityWire> for SourceFidelity {
 struct SourceFidelityWriteWire<'a> {
     unrepresented: crate::document::ArenaClasses,
     annotations: &'a Annotations,
-    #[serde(skip_serializing_if = "BTreeMap::is_empty")]
-    metadata: &'a BTreeMap<String, String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     decode_digest: &'a Option<Sha256Digest>,
     #[serde(skip_serializing_if = "BTreeMap::is_empty")]
@@ -440,7 +432,6 @@ impl Serialize for SourceFidelity {
         SourceFidelityWriteWire {
             unrepresented: self.unrepresented(),
             annotations: &self.annotations,
-            metadata: &self.metadata,
             decode_digest: &self.decode_digest,
             retained_records: &self.retained_records,
         }
@@ -453,21 +444,19 @@ impl SourceFidelity {
     pub fn with_annotations(annotations: Annotations) -> Self {
         Self {
             annotations,
-            metadata: BTreeMap::new(),
             decode_digest: None,
             retained_records: BTreeMap::new(),
         }
     }
 
-    /// Consume the source metadata without copying its retained bytes.
+    /// Consume the annotations and retained records without copying their bytes.
     pub fn into_parts(
         self,
     ) -> (
         Annotations,
         BTreeMap<UnknownId, RetainedSourceRecord>,
-        BTreeMap<String, String>,
     ) {
-        (self.annotations, self.retained_records, self.metadata)
+        (self.annotations, self.retained_records)
     }
 
     /// Classes whose source content survives in no typed document record:
@@ -492,16 +481,9 @@ impl SourceFidelity {
         Ok(())
     }
 
-    /// Append source metadata after checking all tables for identity collisions.
-    /// Failure leaves this source metadata unchanged.
+    /// Append source fidelity after checking all tables for identity collisions.
+    /// Failure leaves this source fidelity unchanged.
     pub fn append(&mut self, mut other: Self) -> Result<(), cadmpeg_core::CodecError> {
-        for key in other.metadata.keys() {
-            if self.metadata.contains_key(key) {
-                return Err(CodecError::malformed(format_args!(
-                    "duplicate source fidelity metadata key {key}"
-                )));
-            }
-        }
         for id in other.retained_records.keys() {
             if self.retained_records.contains_key(id) {
                 return Err(cadmpeg_core::CodecError::malformed(format_args!(
@@ -522,7 +504,6 @@ impl SourceFidelity {
         }
         self.annotations.append(other.annotations)?;
         self.retained_records.append(&mut other.retained_records);
-        self.metadata.append(&mut other.metadata);
         Ok(())
     }
 
@@ -715,9 +696,6 @@ mod tests {
                 record(b"unread design").with_untyped(ArenaClasses::from([ArenaClass::Design])),
             )
             .unwrap();
-        fidelity
-            .metadata
-            .insert("source_layout".into(), "partition-a".into());
         let bytes = b"saved document";
         let sidecar =
             DecodeSidecar::bind_sha256(Sha256Digest::digest(bytes), report(), fidelity.clone());
@@ -777,15 +755,12 @@ mod tests {
     }
 
     #[test]
-    fn source_metadata_collisions_leave_both_record_tables_unchanged() {
+    fn conflicting_decode_digests_leave_both_record_tables_unchanged() {
         let mut left = SourceFidelity::default();
-        left.metadata
-            .insert("document_digest".into(), "left".into());
+        left.decode_digest = Some(Sha256Digest::digest(b"left baseline"));
         let original = left.clone();
         let mut right = SourceFidelity::default();
-        right
-            .metadata
-            .insert("document_digest".into(), "right".into());
+        right.decode_digest = Some(Sha256Digest::digest(b"right baseline"));
         right
             .insert_retained_record(id("right"), record(b"right"))
             .unwrap();

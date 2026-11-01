@@ -586,11 +586,7 @@ fn companion_timestamp_preserves_wire_and_rejects_zero() {
         design_parameter_companions: vec![source.clone()],
         ..Default::default()
     };
-    assert!(native
-        .retained_fidelity()
-        .expect("source fidelity")
-        .metadata
-        .is_empty());
+    native.retained_fidelity().expect("source fidelity");
     let legacy = wire.replace("timestamp_micros", "opaque_value");
     assert!(serde_json::from_str::<DesignParameterCompanion>(&legacy).is_err());
     for (invalid, field) in [
