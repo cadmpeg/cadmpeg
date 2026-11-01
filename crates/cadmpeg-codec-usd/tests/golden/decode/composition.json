@@ -1,0 +1,1364 @@
+{
+  "ir": {
+    "decode_depth": "full",
+    "ir_version": "9",
+    "model": {
+      "appearance_bindings": [],
+      "appearances": [],
+      "assembly_joints": [],
+      "attributes": [],
+      "bodies": [
+        {
+          "id": "usd:stage:body#/Scene/Box",
+          "kind": "solid",
+          "name": "Box",
+          "regions": [
+            "usd:stage:region#/Scene/Box:region:0"
+          ]
+        }
+      ],
+      "coedges": [
+        {
+          "edge": "usd:stage:edge#/Scene/Box:edge:0",
+          "id": "usd:stage:coedge#/Scene/Box:orientedEdge:0",
+          "owner_loop": "usd:stage:loop#/Scene/Box:loop:0",
+          "radial_next": "usd:stage:coedge#/Scene/Box:orientedEdge:11",
+          "sense": "forward"
+        },
+        {
+          "edge": "usd:stage:edge#/Scene/Box:edge:1",
+          "id": "usd:stage:coedge#/Scene/Box:orientedEdge:1",
+          "owner_loop": "usd:stage:loop#/Scene/Box:loop:0",
+          "radial_next": "usd:stage:coedge#/Scene/Box:orientedEdge:23",
+          "sense": "forward"
+        },
+        {
+          "edge": "usd:stage:edge#/Scene/Box:edge:9",
+          "id": "usd:stage:coedge#/Scene/Box:orientedEdge:10",
+          "owner_loop": "usd:stage:loop#/Scene/Box:loop:2",
+          "radial_next": "usd:stage:coedge#/Scene/Box:orientedEdge:20",
+          "sense": "reversed"
+        },
+        {
+          "edge": "usd:stage:edge#/Scene/Box:edge:0",
+          "id": "usd:stage:coedge#/Scene/Box:orientedEdge:11",
+          "owner_loop": "usd:stage:loop#/Scene/Box:loop:2",
+          "radial_next": "usd:stage:coedge#/Scene/Box:orientedEdge:0",
+          "sense": "reversed"
+        },
+        {
+          "edge": "usd:stage:edge#/Scene/Box:edge:2",
+          "id": "usd:stage:coedge#/Scene/Box:orientedEdge:12",
+          "owner_loop": "usd:stage:loop#/Scene/Box:loop:3",
+          "radial_next": "usd:stage:coedge#/Scene/Box:orientedEdge:2",
+          "sense": "forward"
+        },
+        {
+          "edge": "usd:stage:edge#/Scene/Box:edge:10",
+          "id": "usd:stage:coedge#/Scene/Box:orientedEdge:13",
+          "owner_loop": "usd:stage:loop#/Scene/Box:loop:3",
+          "radial_next": "usd:stage:coedge#/Scene/Box:orientedEdge:22",
+          "sense": "forward"
+        },
+        {
+          "edge": "usd:stage:edge#/Scene/Box:edge:5",
+          "id": "usd:stage:coedge#/Scene/Box:orientedEdge:14",
+          "owner_loop": "usd:stage:loop#/Scene/Box:loop:3",
+          "radial_next": "usd:stage:coedge#/Scene/Box:orientedEdge:5",
+          "sense": "reversed"
+        },
+        {
+          "edge": "usd:stage:edge#/Scene/Box:edge:11",
+          "id": "usd:stage:coedge#/Scene/Box:orientedEdge:15",
+          "owner_loop": "usd:stage:loop#/Scene/Box:loop:3",
+          "radial_next": "usd:stage:coedge#/Scene/Box:orientedEdge:17",
+          "sense": "reversed"
+        },
+        {
+          "edge": "usd:stage:edge#/Scene/Box:edge:3",
+          "id": "usd:stage:coedge#/Scene/Box:orientedEdge:16",
+          "owner_loop": "usd:stage:loop#/Scene/Box:loop:4",
+          "radial_next": "usd:stage:coedge#/Scene/Box:orientedEdge:3",
+          "sense": "forward"
+        },
+        {
+          "edge": "usd:stage:edge#/Scene/Box:edge:11",
+          "id": "usd:stage:coedge#/Scene/Box:orientedEdge:17",
+          "owner_loop": "usd:stage:loop#/Scene/Box:loop:4",
+          "radial_next": "usd:stage:coedge#/Scene/Box:orientedEdge:15",
+          "sense": "forward"
+        },
+        {
+          "edge": "usd:stage:edge#/Scene/Box:edge:4",
+          "id": "usd:stage:coedge#/Scene/Box:orientedEdge:18",
+          "owner_loop": "usd:stage:loop#/Scene/Box:loop:4",
+          "radial_next": "usd:stage:coedge#/Scene/Box:orientedEdge:4",
+          "sense": "reversed"
+        },
+        {
+          "edge": "usd:stage:edge#/Scene/Box:edge:8",
+          "id": "usd:stage:coedge#/Scene/Box:orientedEdge:19",
+          "owner_loop": "usd:stage:loop#/Scene/Box:loop:4",
+          "radial_next": "usd:stage:coedge#/Scene/Box:orientedEdge:8",
+          "sense": "reversed"
+        },
+        {
+          "edge": "usd:stage:edge#/Scene/Box:edge:2",
+          "id": "usd:stage:coedge#/Scene/Box:orientedEdge:2",
+          "owner_loop": "usd:stage:loop#/Scene/Box:loop:0",
+          "radial_next": "usd:stage:coedge#/Scene/Box:orientedEdge:12",
+          "sense": "reversed"
+        },
+        {
+          "edge": "usd:stage:edge#/Scene/Box:edge:9",
+          "id": "usd:stage:coedge#/Scene/Box:orientedEdge:20",
+          "owner_loop": "usd:stage:loop#/Scene/Box:loop:5",
+          "radial_next": "usd:stage:coedge#/Scene/Box:orientedEdge:10",
+          "sense": "forward"
+        },
+        {
+          "edge": "usd:stage:edge#/Scene/Box:edge:6",
+          "id": "usd:stage:coedge#/Scene/Box:orientedEdge:21",
+          "owner_loop": "usd:stage:loop#/Scene/Box:loop:5",
+          "radial_next": "usd:stage:coedge#/Scene/Box:orientedEdge:6",
+          "sense": "forward"
+        },
+        {
+          "edge": "usd:stage:edge#/Scene/Box:edge:10",
+          "id": "usd:stage:coedge#/Scene/Box:orientedEdge:22",
+          "owner_loop": "usd:stage:loop#/Scene/Box:loop:5",
+          "radial_next": "usd:stage:coedge#/Scene/Box:orientedEdge:13",
+          "sense": "reversed"
+        },
+        {
+          "edge": "usd:stage:edge#/Scene/Box:edge:1",
+          "id": "usd:stage:coedge#/Scene/Box:orientedEdge:23",
+          "owner_loop": "usd:stage:loop#/Scene/Box:loop:5",
+          "radial_next": "usd:stage:coedge#/Scene/Box:orientedEdge:1",
+          "sense": "reversed"
+        },
+        {
+          "edge": "usd:stage:edge#/Scene/Box:edge:3",
+          "id": "usd:stage:coedge#/Scene/Box:orientedEdge:3",
+          "owner_loop": "usd:stage:loop#/Scene/Box:loop:0",
+          "radial_next": "usd:stage:coedge#/Scene/Box:orientedEdge:16",
+          "sense": "reversed"
+        },
+        {
+          "edge": "usd:stage:edge#/Scene/Box:edge:4",
+          "id": "usd:stage:coedge#/Scene/Box:orientedEdge:4",
+          "owner_loop": "usd:stage:loop#/Scene/Box:loop:1",
+          "radial_next": "usd:stage:coedge#/Scene/Box:orientedEdge:18",
+          "sense": "forward"
+        },
+        {
+          "edge": "usd:stage:edge#/Scene/Box:edge:5",
+          "id": "usd:stage:coedge#/Scene/Box:orientedEdge:5",
+          "owner_loop": "usd:stage:loop#/Scene/Box:loop:1",
+          "radial_next": "usd:stage:coedge#/Scene/Box:orientedEdge:14",
+          "sense": "forward"
+        },
+        {
+          "edge": "usd:stage:edge#/Scene/Box:edge:6",
+          "id": "usd:stage:coedge#/Scene/Box:orientedEdge:6",
+          "owner_loop": "usd:stage:loop#/Scene/Box:loop:1",
+          "radial_next": "usd:stage:coedge#/Scene/Box:orientedEdge:21",
+          "sense": "reversed"
+        },
+        {
+          "edge": "usd:stage:edge#/Scene/Box:edge:7",
+          "id": "usd:stage:coedge#/Scene/Box:orientedEdge:7",
+          "owner_loop": "usd:stage:loop#/Scene/Box:loop:1",
+          "radial_next": "usd:stage:coedge#/Scene/Box:orientedEdge:9",
+          "sense": "reversed"
+        },
+        {
+          "edge": "usd:stage:edge#/Scene/Box:edge:8",
+          "id": "usd:stage:coedge#/Scene/Box:orientedEdge:8",
+          "owner_loop": "usd:stage:loop#/Scene/Box:loop:2",
+          "radial_next": "usd:stage:coedge#/Scene/Box:orientedEdge:19",
+          "sense": "forward"
+        },
+        {
+          "edge": "usd:stage:edge#/Scene/Box:edge:7",
+          "id": "usd:stage:coedge#/Scene/Box:orientedEdge:9",
+          "owner_loop": "usd:stage:loop#/Scene/Box:loop:2",
+          "radial_next": "usd:stage:coedge#/Scene/Box:orientedEdge:7",
+          "sense": "forward"
+        }
+      ],
+      "configurations": [],
+      "curves": [
+        {
+          "geometry": {
+            "direction": {
+              "x": 0.0,
+              "y": 0.0,
+              "z": 1.0
+            },
+            "kind": "line",
+            "origin": {
+              "x": -20.0,
+              "y": -20.0,
+              "z": -20.0
+            }
+          },
+          "id": "usd:stage:curve#/Scene/Box:curve3d-analytic:0"
+        },
+        {
+          "geometry": {
+            "direction": {
+              "x": 0.0,
+              "y": 1.0,
+              "z": 0.0
+            },
+            "kind": "line",
+            "origin": {
+              "x": -20.0,
+              "y": -20.0,
+              "z": 20.0
+            }
+          },
+          "id": "usd:stage:curve#/Scene/Box:curve3d-analytic:1"
+        },
+        {
+          "geometry": {
+            "direction": {
+              "x": 1.0,
+              "y": 0.0,
+              "z": 0.0
+            },
+            "kind": "line",
+            "origin": {
+              "x": -20.0,
+              "y": 20.0,
+              "z": 20.0
+            }
+          },
+          "id": "usd:stage:curve#/Scene/Box:curve3d-analytic:10"
+        },
+        {
+          "geometry": {
+            "direction": {
+              "x": 1.0,
+              "y": 0.0,
+              "z": 0.0
+            },
+            "kind": "line",
+            "origin": {
+              "x": -20.0,
+              "y": 20.0,
+              "z": -20.0
+            }
+          },
+          "id": "usd:stage:curve#/Scene/Box:curve3d-analytic:11"
+        },
+        {
+          "geometry": {
+            "direction": {
+              "x": 0.0,
+              "y": 0.0,
+              "z": 1.0
+            },
+            "kind": "line",
+            "origin": {
+              "x": -20.0,
+              "y": 20.0,
+              "z": -20.0
+            }
+          },
+          "id": "usd:stage:curve#/Scene/Box:curve3d-analytic:2"
+        },
+        {
+          "geometry": {
+            "direction": {
+              "x": 0.0,
+              "y": 1.0,
+              "z": 0.0
+            },
+            "kind": "line",
+            "origin": {
+              "x": -20.0,
+              "y": -20.0,
+              "z": -20.0
+            }
+          },
+          "id": "usd:stage:curve#/Scene/Box:curve3d-analytic:3"
+        },
+        {
+          "geometry": {
+            "direction": {
+              "x": 0.0,
+              "y": 1.0,
+              "z": 0.0
+            },
+            "kind": "line",
+            "origin": {
+              "x": 20.0,
+              "y": -20.0,
+              "z": -20.0
+            }
+          },
+          "id": "usd:stage:curve#/Scene/Box:curve3d-analytic:4"
+        },
+        {
+          "geometry": {
+            "direction": {
+              "x": 0.0,
+              "y": 0.0,
+              "z": 1.0
+            },
+            "kind": "line",
+            "origin": {
+              "x": 20.0,
+              "y": 20.0,
+              "z": -20.0
+            }
+          },
+          "id": "usd:stage:curve#/Scene/Box:curve3d-analytic:5"
+        },
+        {
+          "geometry": {
+            "direction": {
+              "x": 0.0,
+              "y": 1.0,
+              "z": 0.0
+            },
+            "kind": "line",
+            "origin": {
+              "x": 20.0,
+              "y": -20.0,
+              "z": 20.0
+            }
+          },
+          "id": "usd:stage:curve#/Scene/Box:curve3d-analytic:6"
+        },
+        {
+          "geometry": {
+            "direction": {
+              "x": 0.0,
+              "y": 0.0,
+              "z": 1.0
+            },
+            "kind": "line",
+            "origin": {
+              "x": 20.0,
+              "y": -20.0,
+              "z": -20.0
+            }
+          },
+          "id": "usd:stage:curve#/Scene/Box:curve3d-analytic:7"
+        },
+        {
+          "geometry": {
+            "direction": {
+              "x": 1.0,
+              "y": 0.0,
+              "z": 0.0
+            },
+            "kind": "line",
+            "origin": {
+              "x": -20.0,
+              "y": -20.0,
+              "z": -20.0
+            }
+          },
+          "id": "usd:stage:curve#/Scene/Box:curve3d-analytic:8"
+        },
+        {
+          "geometry": {
+            "direction": {
+              "x": 1.0,
+              "y": 0.0,
+              "z": 0.0
+            },
+            "kind": "line",
+            "origin": {
+              "x": -20.0,
+              "y": -20.0,
+              "z": 20.0
+            }
+          },
+          "id": "usd:stage:curve#/Scene/Box:curve3d-analytic:9"
+        }
+      ],
+      "drawings": [],
+      "edges": [
+        {
+          "carrier": {
+            "curve": "usd:stage:curve#/Scene/Box:curve3d-analytic:0",
+            "param_range": [
+              0.0,
+              40.0
+            ]
+          },
+          "end": "usd:stage:vertex#/Scene/Box:vertex:4",
+          "id": "usd:stage:edge#/Scene/Box:edge:0",
+          "start": "usd:stage:vertex#/Scene/Box:vertex:0"
+        },
+        {
+          "carrier": {
+            "curve": "usd:stage:curve#/Scene/Box:curve3d-analytic:1",
+            "param_range": [
+              0.0,
+              40.0
+            ]
+          },
+          "end": "usd:stage:vertex#/Scene/Box:vertex:6",
+          "id": "usd:stage:edge#/Scene/Box:edge:1",
+          "start": "usd:stage:vertex#/Scene/Box:vertex:4"
+        },
+        {
+          "carrier": {
+            "curve": "usd:stage:curve#/Scene/Box:curve3d-analytic:10",
+            "param_range": [
+              0.0,
+              40.0
+            ]
+          },
+          "end": "usd:stage:vertex#/Scene/Box:vertex:7",
+          "id": "usd:stage:edge#/Scene/Box:edge:10",
+          "start": "usd:stage:vertex#/Scene/Box:vertex:6"
+        },
+        {
+          "carrier": {
+            "curve": "usd:stage:curve#/Scene/Box:curve3d-analytic:11",
+            "param_range": [
+              0.0,
+              40.0
+            ]
+          },
+          "end": "usd:stage:vertex#/Scene/Box:vertex:3",
+          "id": "usd:stage:edge#/Scene/Box:edge:11",
+          "start": "usd:stage:vertex#/Scene/Box:vertex:2"
+        },
+        {
+          "carrier": {
+            "curve": "usd:stage:curve#/Scene/Box:curve3d-analytic:2",
+            "param_range": [
+              0.0,
+              40.0
+            ]
+          },
+          "end": "usd:stage:vertex#/Scene/Box:vertex:6",
+          "id": "usd:stage:edge#/Scene/Box:edge:2",
+          "start": "usd:stage:vertex#/Scene/Box:vertex:2"
+        },
+        {
+          "carrier": {
+            "curve": "usd:stage:curve#/Scene/Box:curve3d-analytic:3",
+            "param_range": [
+              0.0,
+              40.0
+            ]
+          },
+          "end": "usd:stage:vertex#/Scene/Box:vertex:2",
+          "id": "usd:stage:edge#/Scene/Box:edge:3",
+          "start": "usd:stage:vertex#/Scene/Box:vertex:0"
+        },
+        {
+          "carrier": {
+            "curve": "usd:stage:curve#/Scene/Box:curve3d-analytic:4",
+            "param_range": [
+              0.0,
+              40.0
+            ]
+          },
+          "end": "usd:stage:vertex#/Scene/Box:vertex:3",
+          "id": "usd:stage:edge#/Scene/Box:edge:4",
+          "start": "usd:stage:vertex#/Scene/Box:vertex:1"
+        },
+        {
+          "carrier": {
+            "curve": "usd:stage:curve#/Scene/Box:curve3d-analytic:5",
+            "param_range": [
+              0.0,
+              40.0
+            ]
+          },
+          "end": "usd:stage:vertex#/Scene/Box:vertex:7",
+          "id": "usd:stage:edge#/Scene/Box:edge:5",
+          "start": "usd:stage:vertex#/Scene/Box:vertex:3"
+        },
+        {
+          "carrier": {
+            "curve": "usd:stage:curve#/Scene/Box:curve3d-analytic:6",
+            "param_range": [
+              0.0,
+              40.0
+            ]
+          },
+          "end": "usd:stage:vertex#/Scene/Box:vertex:7",
+          "id": "usd:stage:edge#/Scene/Box:edge:6",
+          "start": "usd:stage:vertex#/Scene/Box:vertex:5"
+        },
+        {
+          "carrier": {
+            "curve": "usd:stage:curve#/Scene/Box:curve3d-analytic:7",
+            "param_range": [
+              0.0,
+              40.0
+            ]
+          },
+          "end": "usd:stage:vertex#/Scene/Box:vertex:5",
+          "id": "usd:stage:edge#/Scene/Box:edge:7",
+          "start": "usd:stage:vertex#/Scene/Box:vertex:1"
+        },
+        {
+          "carrier": {
+            "curve": "usd:stage:curve#/Scene/Box:curve3d-analytic:8",
+            "param_range": [
+              0.0,
+              40.0
+            ]
+          },
+          "end": "usd:stage:vertex#/Scene/Box:vertex:1",
+          "id": "usd:stage:edge#/Scene/Box:edge:8",
+          "start": "usd:stage:vertex#/Scene/Box:vertex:0"
+        },
+        {
+          "carrier": {
+            "curve": "usd:stage:curve#/Scene/Box:curve3d-analytic:9",
+            "param_range": [
+              0.0,
+              40.0
+            ]
+          },
+          "end": "usd:stage:vertex#/Scene/Box:vertex:5",
+          "id": "usd:stage:edge#/Scene/Box:edge:9",
+          "start": "usd:stage:vertex#/Scene/Box:vertex:4"
+        }
+      ],
+      "faces": [
+        {
+          "id": "usd:stage:face#/Scene/Box:face:0",
+          "loops": {
+            "classification": "classified",
+            "inner": [],
+            "outer": "usd:stage:loop#/Scene/Box:loop:0"
+          },
+          "sense": "forward",
+          "shell": "usd:stage:shell#/Scene/Box:shell:0",
+          "surface": "usd:stage:surface#/Scene/Box:surface-analytic:0"
+        },
+        {
+          "id": "usd:stage:face#/Scene/Box:face:1",
+          "loops": {
+            "classification": "classified",
+            "inner": [],
+            "outer": "usd:stage:loop#/Scene/Box:loop:1"
+          },
+          "sense": "forward",
+          "shell": "usd:stage:shell#/Scene/Box:shell:0",
+          "surface": "usd:stage:surface#/Scene/Box:surface-analytic:1"
+        },
+        {
+          "id": "usd:stage:face#/Scene/Box:face:2",
+          "loops": {
+            "classification": "classified",
+            "inner": [],
+            "outer": "usd:stage:loop#/Scene/Box:loop:2"
+          },
+          "sense": "forward",
+          "shell": "usd:stage:shell#/Scene/Box:shell:0",
+          "surface": "usd:stage:surface#/Scene/Box:surface-analytic:2"
+        },
+        {
+          "id": "usd:stage:face#/Scene/Box:face:3",
+          "loops": {
+            "classification": "classified",
+            "inner": [],
+            "outer": "usd:stage:loop#/Scene/Box:loop:3"
+          },
+          "sense": "forward",
+          "shell": "usd:stage:shell#/Scene/Box:shell:0",
+          "surface": "usd:stage:surface#/Scene/Box:surface-analytic:3"
+        },
+        {
+          "id": "usd:stage:face#/Scene/Box:face:4",
+          "loops": {
+            "classification": "classified",
+            "inner": [],
+            "outer": "usd:stage:loop#/Scene/Box:loop:4"
+          },
+          "sense": "forward",
+          "shell": "usd:stage:shell#/Scene/Box:shell:0",
+          "surface": "usd:stage:surface#/Scene/Box:surface-analytic:4"
+        },
+        {
+          "id": "usd:stage:face#/Scene/Box:face:5",
+          "loops": {
+            "classification": "classified",
+            "inner": [],
+            "outer": "usd:stage:loop#/Scene/Box:loop:5"
+          },
+          "sense": "forward",
+          "shell": "usd:stage:shell#/Scene/Box:shell:0",
+          "surface": "usd:stage:surface#/Scene/Box:surface-analytic:5"
+        }
+      ],
+      "features": [],
+      "loops": [
+        {
+          "boundary": {
+            "coedges": [
+              "usd:stage:coedge#/Scene/Box:orientedEdge:0",
+              "usd:stage:coedge#/Scene/Box:orientedEdge:1",
+              "usd:stage:coedge#/Scene/Box:orientedEdge:2",
+              "usd:stage:coedge#/Scene/Box:orientedEdge:3"
+            ],
+            "kind": "ring"
+          },
+          "face": "usd:stage:face#/Scene/Box:face:0",
+          "id": "usd:stage:loop#/Scene/Box:loop:0"
+        },
+        {
+          "boundary": {
+            "coedges": [
+              "usd:stage:coedge#/Scene/Box:orientedEdge:4",
+              "usd:stage:coedge#/Scene/Box:orientedEdge:5",
+              "usd:stage:coedge#/Scene/Box:orientedEdge:6",
+              "usd:stage:coedge#/Scene/Box:orientedEdge:7"
+            ],
+            "kind": "ring"
+          },
+          "face": "usd:stage:face#/Scene/Box:face:1",
+          "id": "usd:stage:loop#/Scene/Box:loop:1"
+        },
+        {
+          "boundary": {
+            "coedges": [
+              "usd:stage:coedge#/Scene/Box:orientedEdge:8",
+              "usd:stage:coedge#/Scene/Box:orientedEdge:9",
+              "usd:stage:coedge#/Scene/Box:orientedEdge:10",
+              "usd:stage:coedge#/Scene/Box:orientedEdge:11"
+            ],
+            "kind": "ring"
+          },
+          "face": "usd:stage:face#/Scene/Box:face:2",
+          "id": "usd:stage:loop#/Scene/Box:loop:2"
+        },
+        {
+          "boundary": {
+            "coedges": [
+              "usd:stage:coedge#/Scene/Box:orientedEdge:12",
+              "usd:stage:coedge#/Scene/Box:orientedEdge:13",
+              "usd:stage:coedge#/Scene/Box:orientedEdge:14",
+              "usd:stage:coedge#/Scene/Box:orientedEdge:15"
+            ],
+            "kind": "ring"
+          },
+          "face": "usd:stage:face#/Scene/Box:face:3",
+          "id": "usd:stage:loop#/Scene/Box:loop:3"
+        },
+        {
+          "boundary": {
+            "coedges": [
+              "usd:stage:coedge#/Scene/Box:orientedEdge:16",
+              "usd:stage:coedge#/Scene/Box:orientedEdge:17",
+              "usd:stage:coedge#/Scene/Box:orientedEdge:18",
+              "usd:stage:coedge#/Scene/Box:orientedEdge:19"
+            ],
+            "kind": "ring"
+          },
+          "face": "usd:stage:face#/Scene/Box:face:4",
+          "id": "usd:stage:loop#/Scene/Box:loop:4"
+        },
+        {
+          "boundary": {
+            "coedges": [
+              "usd:stage:coedge#/Scene/Box:orientedEdge:20",
+              "usd:stage:coedge#/Scene/Box:orientedEdge:21",
+              "usd:stage:coedge#/Scene/Box:orientedEdge:22",
+              "usd:stage:coedge#/Scene/Box:orientedEdge:23"
+            ],
+            "kind": "ring"
+          },
+          "face": "usd:stage:face#/Scene/Box:face:5",
+          "id": "usd:stage:loop#/Scene/Box:loop:5"
+        }
+      ],
+      "occurrences": [
+        {
+          "id": "usd:stage:occurrence#/Scene",
+          "name": "Scene",
+          "native_ref": "/Scene",
+          "ordinal": 0,
+          "parent": {
+            "kind": "root"
+          },
+          "prototype": {
+            "definition": "usd:stage:definition#/Scene",
+            "scope": "local"
+          },
+          "scale": [
+            1.0,
+            1.0,
+            1.0
+          ],
+          "transform": [
+            [
+              1.0,
+              0.0,
+              0.0,
+              0.0
+            ],
+            [
+              0.0,
+              1.0,
+              0.0,
+              0.0
+            ],
+            [
+              0.0,
+              0.0,
+              1.0,
+              0.0
+            ]
+          ]
+        },
+        {
+          "id": "usd:stage:occurrence#/Scene/Box",
+          "name": "Box",
+          "native_ref": "/Scene/Box",
+          "ordinal": 2,
+          "parent": {
+            "kind": "occurrence",
+            "occurrence": "usd:stage:occurrence#/Scene"
+          },
+          "prototype": {
+            "definition": "usd:stage:definition#/Scene/Box",
+            "scope": "local"
+          },
+          "scale": [
+            1.0,
+            1.0,
+            1.0
+          ],
+          "transform": [
+            [
+              1.0,
+              0.0,
+              0.0,
+              0.0
+            ],
+            [
+              0.0,
+              1.0,
+              0.0,
+              0.0
+            ],
+            [
+              0.0,
+              0.0,
+              1.0,
+              0.0
+            ]
+          ]
+        },
+        {
+          "id": "usd:stage:occurrence#/Scene/Robot",
+          "name": "Robot",
+          "native_ref": "/Scene/Robot",
+          "ordinal": 0,
+          "parent": {
+            "kind": "occurrence",
+            "occurrence": "usd:stage:occurrence#/Scene"
+          },
+          "prototype": {
+            "definition": "usd:stage:definition#/Scene/Robot",
+            "scope": "local"
+          },
+          "scale": [
+            1.0,
+            1.0,
+            1.0
+          ],
+          "transform": [
+            [
+              1.0,
+              0.0,
+              0.0,
+              0.0
+            ],
+            [
+              0.0,
+              1.0,
+              0.0,
+              0.0
+            ],
+            [
+              0.0,
+              0.0,
+              1.0,
+              0.0
+            ]
+          ]
+        },
+        {
+          "id": "usd:stage:occurrence#/Scene/Robot:arc0",
+          "name": "./robot/payload.usd",
+          "native_ref": "/Scene/Robot payload @./robot/payload.usd@",
+          "ordinal": 0,
+          "parent": {
+            "kind": "occurrence",
+            "occurrence": "usd:stage:occurrence#/Scene/Robot"
+          },
+          "prototype": {
+            "document": {
+              "path": "./robot/payload.usd",
+              "resolution": "path"
+            },
+            "object": "/Robot",
+            "scope": "external"
+          },
+          "scale": [
+            1.0,
+            1.0,
+            1.0
+          ],
+          "transform": [
+            [
+              1.0,
+              0.0,
+              0.0,
+              0.0
+            ],
+            [
+              0.0,
+              1.0,
+              0.0,
+              0.0
+            ],
+            [
+              0.0,
+              0.0,
+              1.0,
+              0.0
+            ]
+          ]
+        },
+        {
+          "id": "usd:stage:occurrence#/Scene/Shelf",
+          "name": "Shelf",
+          "native_ref": "/Scene/Shelf",
+          "ordinal": 1,
+          "parent": {
+            "kind": "occurrence",
+            "occurrence": "usd:stage:occurrence#/Scene"
+          },
+          "prototype": {
+            "definition": "usd:stage:definition#/Scene/Shelf",
+            "scope": "local"
+          },
+          "scale": [
+            1.0,
+            1.0,
+            1.0
+          ],
+          "transform": [
+            [
+              1.0,
+              0.0,
+              0.0,
+              0.0
+            ],
+            [
+              0.0,
+              1.0,
+              0.0,
+              0.0
+            ],
+            [
+              0.0,
+              0.0,
+              1.0,
+              0.0
+            ]
+          ]
+        },
+        {
+          "id": "usd:stage:occurrence#/Scene/Shelf:arc0",
+          "name": "shelf.usda",
+          "native_ref": "/Scene/Shelf reference @shelf.usda@",
+          "ordinal": 0,
+          "parent": {
+            "kind": "occurrence",
+            "occurrence": "usd:stage:occurrence#/Scene/Shelf"
+          },
+          "prototype": {
+            "document": {
+              "path": "shelf.usda",
+              "resolution": "path"
+            },
+            "scope": "external"
+          },
+          "scale": [
+            1.0,
+            1.0,
+            1.0
+          ],
+          "transform": [
+            [
+              1.0,
+              0.0,
+              0.0,
+              0.0
+            ],
+            [
+              0.0,
+              1.0,
+              0.0,
+              0.0
+            ],
+            [
+              0.0,
+              0.0,
+              1.0,
+              0.0
+            ]
+          ]
+        }
+      ],
+      "parameters": [],
+      "pcurves": [],
+      "pmi": [],
+      "points": [
+        {
+          "id": "usd:stage:point#/Scene/Box:vertex:0",
+          "position": {
+            "x": -20.0,
+            "y": -20.0,
+            "z": -20.0
+          }
+        },
+        {
+          "id": "usd:stage:point#/Scene/Box:vertex:1",
+          "position": {
+            "x": 20.0,
+            "y": -20.0,
+            "z": -20.0
+          }
+        },
+        {
+          "id": "usd:stage:point#/Scene/Box:vertex:2",
+          "position": {
+            "x": -20.0,
+            "y": 20.0,
+            "z": -20.0
+          }
+        },
+        {
+          "id": "usd:stage:point#/Scene/Box:vertex:3",
+          "position": {
+            "x": 20.0,
+            "y": 20.0,
+            "z": -20.0
+          }
+        },
+        {
+          "id": "usd:stage:point#/Scene/Box:vertex:4",
+          "position": {
+            "x": -20.0,
+            "y": -20.0,
+            "z": 20.0
+          }
+        },
+        {
+          "id": "usd:stage:point#/Scene/Box:vertex:5",
+          "position": {
+            "x": 20.0,
+            "y": -20.0,
+            "z": 20.0
+          }
+        },
+        {
+          "id": "usd:stage:point#/Scene/Box:vertex:6",
+          "position": {
+            "x": -20.0,
+            "y": 20.0,
+            "z": 20.0
+          }
+        },
+        {
+          "id": "usd:stage:point#/Scene/Box:vertex:7",
+          "position": {
+            "x": 20.0,
+            "y": 20.0,
+            "z": 20.0
+          }
+        }
+      ],
+      "presentation_documents": [],
+      "presentation_layers": [],
+      "procedural_curves": [],
+      "procedural_surfaces": [],
+      "product_definitions": [
+        {
+          "id": "usd:stage:definition#/Scene",
+          "kind": "group",
+          "native_ref": "/Scene",
+          "source_name": "Scene"
+        },
+        {
+          "bodies": [
+            "usd:stage:body#/Scene/Box"
+          ],
+          "id": "usd:stage:definition#/Scene/Box",
+          "kind": "group",
+          "native_ref": "/Scene/Box",
+          "source_name": "Box"
+        },
+        {
+          "id": "usd:stage:definition#/Scene/Robot",
+          "kind": "group",
+          "native_ref": "/Scene/Robot",
+          "source_name": "Robot"
+        },
+        {
+          "id": "usd:stage:definition#/Scene/Shelf",
+          "kind": "group",
+          "native_ref": "/Scene/Shelf",
+          "source_name": "Shelf"
+        }
+      ],
+      "regions": [
+        {
+          "body": "usd:stage:body#/Scene/Box",
+          "id": "usd:stage:region#/Scene/Box:region:0",
+          "shells": [
+            "usd:stage:shell#/Scene/Box:shell:0"
+          ]
+        }
+      ],
+      "semantic_annotations": [],
+      "shells": [
+        {
+          "id": "usd:stage:shell#/Scene/Box:shell:0",
+          "members": [
+            {
+              "id": "usd:stage:face#/Scene/Box:face:0",
+              "kind": "face"
+            },
+            {
+              "id": "usd:stage:face#/Scene/Box:face:1",
+              "kind": "face"
+            },
+            {
+              "id": "usd:stage:face#/Scene/Box:face:2",
+              "kind": "face"
+            },
+            {
+              "id": "usd:stage:face#/Scene/Box:face:3",
+              "kind": "face"
+            },
+            {
+              "id": "usd:stage:face#/Scene/Box:face:4",
+              "kind": "face"
+            },
+            {
+              "id": "usd:stage:face#/Scene/Box:face:5",
+              "kind": "face"
+            }
+          ],
+          "region": "usd:stage:region#/Scene/Box:region:0"
+        }
+      ],
+      "sketch_constraints": [],
+      "sketch_entities": [],
+      "sketches": [],
+      "spatial_sketch_entities": [],
+      "spatial_sketches": [],
+      "spreadsheets": [],
+      "subds": [],
+      "surfaces": [
+        {
+          "geometry": {
+            "kind": "plane",
+            "normal": {
+              "x": -1.0,
+              "y": 0.0,
+              "z": 0.0
+            },
+            "origin": {
+              "x": -20.0,
+              "y": 0.0,
+              "z": 0.0
+            },
+            "u_axis": {
+              "x": 0.0,
+              "y": 0.0,
+              "z": 1.0
+            }
+          },
+          "id": "usd:stage:surface#/Scene/Box:surface-analytic:0"
+        },
+        {
+          "geometry": {
+            "kind": "plane",
+            "normal": {
+              "x": 1.0,
+              "y": 0.0,
+              "z": 0.0
+            },
+            "origin": {
+              "x": 20.0,
+              "y": 0.0,
+              "z": 0.0
+            },
+            "u_axis": {
+              "x": 0.0,
+              "y": 1.0,
+              "z": 0.0
+            }
+          },
+          "id": "usd:stage:surface#/Scene/Box:surface-analytic:1"
+        },
+        {
+          "geometry": {
+            "kind": "plane",
+            "normal": {
+              "x": 0.0,
+              "y": -1.0,
+              "z": 0.0
+            },
+            "origin": {
+              "x": 0.0,
+              "y": -20.0,
+              "z": 0.0
+            },
+            "u_axis": {
+              "x": 1.0,
+              "y": 0.0,
+              "z": 0.0
+            }
+          },
+          "id": "usd:stage:surface#/Scene/Box:surface-analytic:2"
+        },
+        {
+          "geometry": {
+            "kind": "plane",
+            "normal": {
+              "x": 0.0,
+              "y": 1.0,
+              "z": 0.0
+            },
+            "origin": {
+              "x": 0.0,
+              "y": 20.0,
+              "z": 0.0
+            },
+            "u_axis": {
+              "x": 0.0,
+              "y": 0.0,
+              "z": 1.0
+            }
+          },
+          "id": "usd:stage:surface#/Scene/Box:surface-analytic:3"
+        },
+        {
+          "geometry": {
+            "kind": "plane",
+            "normal": {
+              "x": 0.0,
+              "y": 0.0,
+              "z": -1.0
+            },
+            "origin": {
+              "x": 0.0,
+              "y": 0.0,
+              "z": -20.0
+            },
+            "u_axis": {
+              "x": 0.0,
+              "y": 1.0,
+              "z": 0.0
+            }
+          },
+          "id": "usd:stage:surface#/Scene/Box:surface-analytic:4"
+        },
+        {
+          "geometry": {
+            "kind": "plane",
+            "normal": {
+              "x": 0.0,
+              "y": 0.0,
+              "z": 1.0
+            },
+            "origin": {
+              "x": 0.0,
+              "y": 0.0,
+              "z": 20.0
+            },
+            "u_axis": {
+              "x": 1.0,
+              "y": 0.0,
+              "z": 0.0
+            }
+          },
+          "id": "usd:stage:surface#/Scene/Box:surface-analytic:5"
+        }
+      ],
+      "tessellations": [],
+      "vertices": [
+        {
+          "id": "usd:stage:vertex#/Scene/Box:vertex:0",
+          "point": "usd:stage:point#/Scene/Box:vertex:0"
+        },
+        {
+          "id": "usd:stage:vertex#/Scene/Box:vertex:1",
+          "point": "usd:stage:point#/Scene/Box:vertex:1"
+        },
+        {
+          "id": "usd:stage:vertex#/Scene/Box:vertex:2",
+          "point": "usd:stage:point#/Scene/Box:vertex:2"
+        },
+        {
+          "id": "usd:stage:vertex#/Scene/Box:vertex:3",
+          "point": "usd:stage:point#/Scene/Box:vertex:3"
+        },
+        {
+          "id": "usd:stage:vertex#/Scene/Box:vertex:4",
+          "point": "usd:stage:point#/Scene/Box:vertex:4"
+        },
+        {
+          "id": "usd:stage:vertex#/Scene/Box:vertex:5",
+          "point": "usd:stage:point#/Scene/Box:vertex:5"
+        },
+        {
+          "id": "usd:stage:vertex#/Scene/Box:vertex:6",
+          "point": "usd:stage:point#/Scene/Box:vertex:6"
+        },
+        {
+          "id": "usd:stage:vertex#/Scene/Box:vertex:7",
+          "point": "usd:stage:point#/Scene/Box:vertex:7"
+        }
+      ],
+      "view_presentations": []
+    },
+    "native": {},
+    "source": {
+      "attributes": {
+        "default_prim": "Scene",
+        "meters_per_unit": "0.01",
+        "up_axis": "Y"
+      },
+      "identity": {
+        "classification": "classified",
+        "dialects": {
+          "extra": [],
+          "primary": {
+            "admission": "admitted",
+            "declared": {
+              "header": "#usda 1.0"
+            },
+            "dialect": "usd:usda-1.0"
+          }
+        }
+      }
+    },
+    "tolerances": {
+      "angular": 1e-10,
+      "linear": 9.999999999999999e-6
+    },
+    "units": {
+      "length": "millimeter"
+    }
+  },
+  "report": {
+    "identity": {
+      "classification": "classified",
+      "dialects": {
+        "extra": [],
+        "primary": {
+          "admission": "admitted",
+          "declared": {
+            "header": "#usda 1.0"
+          },
+          "dialect": "usd:usda-1.0"
+        }
+      }
+    },
+    "losses": [
+      {
+        "code": {
+          "code": "metadata.not-transferred",
+          "kind": "metadata_not_transferred",
+          "namespace": "usd",
+          "scope": "namespaced"
+        },
+        "message": "layer metadata was not transferred: customLayerData, documentation, endTimeCode, startTimeCode",
+        "severity": "info"
+      },
+      {
+        "code": {
+          "code": "composition.layer-unavailable",
+          "kind": "assembly_components_external",
+          "namespace": "usd",
+          "scope": "namespaced"
+        },
+        "message": "3 named layers did not open: ./lighting.usda (the decode has no companion file source), ./robot/payload.usd (the decode has no companion file source), shelf.usda (the decode has no companion file source)",
+        "severity": "warning"
+      },
+      {
+        "code": {
+          "code": "composition.sublayers-not-composed",
+          "kind": "assembly_components_external",
+          "namespace": "usd",
+          "scope": "namespaced"
+        },
+        "message": "1 sublayers were not composed: ./lighting.usda",
+        "severity": "warning"
+      },
+      {
+        "code": {
+          "code": "composition.over-undefined",
+          "kind": "reference_graph_not_closed",
+          "namespace": "usd",
+          "scope": "namespaced",
+          "strict_floor": "warning"
+        },
+        "message": "1 prims have only `over` specifications in this layer and were not composed: /Unrelated",
+        "severity": "warning"
+      },
+      {
+        "code": {
+          "code": "composition.external-arc",
+          "kind": "assembly_components_external",
+          "namespace": "usd",
+          "scope": "namespaced"
+        },
+        "message": "2 references and payloads to other layers were kept as external prototypes; their content was not loaded",
+        "severity": "info"
+      },
+      {
+        "code": {
+          "code": "prim.type-not-transferred",
+          "kind": "unsupported_object_family",
+          "namespace": "usd",
+          "scope": "namespaced"
+        },
+        "message": "prims of these types and their descendants were not transferred: Camera 1, DistantLight 1",
+        "severity": "info"
+      },
+      {
+        "code": {
+          "code": "attribute.animation-not-transferred",
+          "kind": "attributes_not_transferred",
+          "namespace": "usd",
+          "scope": "namespaced"
+        },
+        "message": "1 attributes have time samples or splines; each was read at its default value, or its first sample: /Scene/Robot.xformOp:translate",
+        "severity": "info"
+      }
+    ],
+    "notes": [],
+    "transfer": {
+      "geometry_transferred": true,
+      "transfer": "full"
+    }
+  },
+  "source_fidelity": {
+    "annotations": {}
+  }
+}

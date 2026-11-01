@@ -11,6 +11,8 @@ use crate::ids::{BodyId, FaceId};
 use crate::math::{Point3, Vector3};
 use crate::provenance::SourceObjectAssociation;
 use crate::scalar::NonNegativeReal;
+use crate::units::FinitePoint2;
+use cadmpeg_core::text::NonBlankString;
 
 crate::ids::id_type!(
     /// Stable tessellation identity.
@@ -880,6 +882,9 @@ struct TessellationWire {
     /// Source texture resources assigned to disjoint sets of triangle ordinals.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     texture_assignments: Vec<TessellationTextureAssignment>,
+    /// Named texture-coordinate sets.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    texture_coordinates: Vec<TextureCoordinates>,
     /// Additional per-vertex or per-facet data channels.
     #[serde(default)]
     channels: Vec<TessellationChannel>,
@@ -931,6 +936,8 @@ pub struct Tessellation {
     triangle_groups: Vec<TessellationTriangleGroup>,
     /// Source texture resources assigned to disjoint sets of triangle ordinals.
     texture_assignments: Vec<TessellationTextureAssignment>,
+    /// Named texture-coordinate sets.
+    texture_coordinates: Vec<TextureCoordinates>,
     channels: Vec<TessellationChannel>,
 }
 
@@ -966,6 +973,31 @@ pub struct TessellationTextureAssignment {
     pub texture: AssetId,
     /// Strictly increasing triangle ordinals receiving the texture.
     pub triangles: Vec<u32>,
+}
+
+/// The mesh element that each value of a texture-coordinate set belongs to.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(rename_all = "snake_case")]
+pub enum TextureCoordinateAddressing {
+    /// One value per vertex, in vertex order.
+    Vertex,
+    /// One value per triangle corner, in triangle order.
+    Corner,
+}
+
+/// One named set of `(u, v)` texture coordinates of a tessellation.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(deny_unknown_fields)]
+pub struct TextureCoordinates {
+    /// Set name, unique in the tessellation, such as a source primvar or
+    /// map-channel name.
+    pub name: NonBlankString,
+    /// The mesh element of each value.
+    pub addressing: TextureCoordinateAddressing,
+    /// The values: one per vertex or one per triangle corner.
+    pub values: Vec<FinitePoint2>,
 }
 
 /// One descriptor from the source tessellation table.
@@ -1036,6 +1068,29 @@ fn require_feature_edges(
         return Err(tessellation_error(
             "contains an invalid tessellation feature edge",
         ));
+    }
+    Ok(())
+}
+
+fn require_texture_coordinates(
+    vertex_count: usize,
+    triangle_count: usize,
+    sets: &[TextureCoordinates],
+) -> Result<(), TessellationError> {
+    let corner_count = triangle_count
+        .checked_mul(3)
+        .ok_or_else(|| tessellation_error("tessellation corner count overflows usize"))?;
+    let mut names = std::collections::BTreeSet::new();
+    for set in sets {
+        let expected = match set.addressing {
+            TextureCoordinateAddressing::Vertex => vertex_count,
+            TextureCoordinateAddressing::Corner => corner_count,
+        };
+        if set.values.len() != expected || !names.insert(set.name.as_str()) {
+            return Err(tessellation_error(
+                "contains an invalid tessellation texture-coordinate set",
+            ));
+        }
     }
     Ok(())
 }
@@ -1174,6 +1229,7 @@ impl Tessellation {
             feature_edges: Vec::new(),
             triangle_groups: Vec::new(),
             texture_assignments: Vec::new(),
+            texture_coordinates: Vec::new(),
             channels,
         })
     }
@@ -1194,6 +1250,11 @@ impl Tessellation {
         require_feature_edges(mesh.vertex_count(), &self.feature_edges)?;
         require_triangle_groups(triangles.len(), &self.triangle_groups)?;
         require_texture_assignments(triangles.len(), &self.texture_assignments)?;
+        require_texture_coordinates(
+            mesh.vertex_count(),
+            triangles.len(),
+            &self.texture_coordinates,
+        )?;
         Ok(Self {
             mesh,
             channels,
@@ -1407,6 +1468,26 @@ impl Tessellation {
         Ok(self)
     }
 
+    /// Set the texture-coordinate sets.
+    pub fn with_texture_coordinates(
+        mut self,
+        texture_coordinates: Vec<TextureCoordinates>,
+    ) -> Result<Self, TessellationError> {
+        require_texture_coordinates(
+            self.mesh.vertex_count(),
+            self.mesh.triangle_count(),
+            &texture_coordinates,
+        )?;
+        self.texture_coordinates = texture_coordinates;
+        Ok(self)
+    }
+
+    /// The texture-coordinate sets.
+    #[must_use]
+    pub fn texture_coordinates(&self) -> &[TextureCoordinates] {
+        &self.texture_coordinates
+    }
+
     /// Set the texture assignments.
     pub fn with_texture_assignments(
         mut self,
@@ -1524,6 +1605,7 @@ impl From<Tessellation> for TessellationWire {
             feature_edges: tessellation.feature_edges,
             triangle_groups: tessellation.triangle_groups,
             texture_assignments: tessellation.texture_assignments,
+            texture_coordinates: tessellation.texture_coordinates,
             channels: tessellation.channels,
         }
     }
@@ -1543,6 +1625,7 @@ impl TryFrom<TessellationWire> for Tessellation {
         mesh.set_chordal_deflection(wire.chordal_deflection)?;
         mesh = mesh.with_feature_edges(wire.feature_edges)?;
         mesh = mesh.with_triangle_groups(wire.triangle_groups)?;
+        mesh = mesh.with_texture_coordinates(wire.texture_coordinates)?;
         mesh.with_texture_assignments(wire.texture_assignments)
     }
 }

@@ -1551,3 +1551,21 @@ fn numerical_seventh_periodic_knots_keep_finite_exterior_knots() {
     )
     .is_err());
 }
+
+#[test]
+fn sketch_bspline_brep_periodic_count_relation() {
+    let curve = "7 0 1 2 4 5 -10 -10 0 10 -10 0 10 10 0 -10 10 0 0 1 1 1 2 1 3 1 4 1";
+    let input = text_brep(curve, 1, "", 0);
+    let facts = test_parse_text(input.as_bytes()).unwrap().0;
+    let TextCurve::Nurbs(curve) = &facts.curves[0] else {
+        panic!("periodic B-spline curve");
+    };
+    assert_eq!(curve.degree(), 2);
+    assert!(curve.periodic());
+    assert_eq!(curve.control_points().len(), 6);
+    assert_eq!(
+        curve.knots().as_slice(),
+        [-2.0, -1.0, 0.0, 1.0, 2.0, 3.0, 4.0, 5.0, 6.0]
+    );
+    assert!(test_parse_text(input.replace("2 1 3 1 4 1", "2 2 3 1 4 1").as_bytes()).is_err());
+}

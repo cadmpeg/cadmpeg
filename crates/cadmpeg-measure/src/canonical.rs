@@ -2,6 +2,7 @@
 //! Canonical carriers: the face's surface with its placement chain and the
 //! body placement composed, the canonical kind, and the reported parameters.
 
+pub(crate) mod column;
 pub(crate) mod curve;
 mod domain;
 pub(crate) mod placement;

@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 mod cast_limits;
+mod profile_program;
 
 use super::analytic_segment_intersections;
 use super::angle_strictly_inside_arc;
@@ -1533,6 +1534,7 @@ fn numerical_0922b_wide_segment_incidence() {
 }
 
 mod arrangement_routes;
+mod branched_profiles;
 mod certified_boundaries;
 mod circular_regions;
 mod exact_arc_containment;

@@ -24,6 +24,10 @@ use crate::value::{
     Unavailable, Unit,
 };
 
+/// The divergence-theorem factors of a boundary move for the volume, the
+/// first and the second moments.
+const TRIM_FACTORS: [f64; 3] = [1.0 / 3.0, 1.0 / 4.0, 1.0 / 5.0];
+
 /// Cubic millimetres in one cubic metre.
 const CUBIC_MILLIMETRES_PER_CUBIC_METRE: f64 = 1.0e9;
 
@@ -147,9 +151,9 @@ pub(super) struct VolumeInput<'a> {
     pub(super) origin: Point3,
     /// `−1` under a reflecting body placement.
     pub(super) handedness: f64,
-    /// The body's area, its largest boundary tolerance and box diagonal.
-    pub(super) area: f64,
-    pub(super) diagonal: f64,
+    /// The body's box diagonal, the lever of a face without a box and of
+    /// the area centroid, or why it is unavailable.
+    pub(super) diagonal: Result<f64, Unavailable<()>>,
     /// The placement term of a value of dimension `d`.
     pub(super) placement: &'a dyn Fn(u8, f64) -> f64,
     /// The material density of mass and inertia.
@@ -231,31 +235,93 @@ impl VolumeInput<'_> {
         Ok(sum)
     }
 
-    /// The volume change when the boundary moves by the largest `τ_b`: the
-    /// body area times that tolerance.
-    fn boundary_term(&self) -> f64 {
-        let tau = self
-            .members
-            .iter()
-            .map(|member| member.result.tau_b)
-            .fold(0.0, f64::max);
-        self.area * tau
+    /// The centroid the fluxes give, `P_ref + m / V`.
+    fn center(&self, flux: &Flux) -> Point3 {
+        let volume = flux.volume();
+        let moment = flux.moment();
+        Point3::new(
+            self.origin.x + moment[0] / volume,
+            self.origin.y + moment[1] / volume,
+            self.origin.z + moment[2] / volume,
+        )
     }
 
-    fn volume_errors(&self, flux: &Flux, value: f64) -> Errors {
-        Errors::new(
+    /// The farthest a face's points lie from `center`, or the body's box
+    /// diagonal for a face without a box.
+    fn lever(&self, member: &Member<'_>, center: Point3) -> Result<f64, Unavailable<()>> {
+        match member
+            .result
+            .reading_boxes()
+            .map(|aabb| aabb.reach_from(center))
+            .reduce(f64::max)
+        {
+            Some(lever) => Ok(lever),
+            None => self.diagonal.clone(),
+        }
+    }
+
+    /// The first-order changes of the volume, the first moments and the
+    /// second moments about `center` when each face's surface moves by its
+    /// tolerance and its trimming edges by theirs, with the largest lever.
+    /// A face without trims moves as a whole by `τ_b`.
+    fn model_terms(&self, center: Point3) -> Result<([f64; 3], f64), Unavailable<()>> {
+        let mut terms = [0.0; 3];
+        let mut largest: f64 = 0.0;
+        let add = |terms: &mut [f64; 3], weight: f64, lever: f64, factors: [f64; 3]| {
+            terms[0] += factors[0] * weight;
+            terms[1] += factors[1] * weight * lever;
+            terms[2] += factors[2] * weight * lever * lever;
+        };
+        for member in &self.members {
+            let area = match member.result.area_bound() {
+                Ok(area) => area,
+                Err(unavailable) => {
+                    return Err(Unavailable::aggregate(
+                        unavailable.category(),
+                        member.id,
+                        format!(
+                            "member {} area, which bounds the body's model uncertainty, is unavailable: {}",
+                            member.id,
+                            unavailable.message()
+                        ),
+                    ))
+                }
+            };
+            let lever = self.lever(member, center)?;
+            largest = largest.max(lever);
+            let result = member.result;
+            match &result.trims {
+                Some(trims) => {
+                    add(&mut terms, area * result.surface_tau, lever, [1.0; 3]);
+                    for trim in trims {
+                        let reach = trim.aabb.reach_from(center);
+                        add(
+                            &mut terms,
+                            trim.length * trim.tau * reach,
+                            reach,
+                            TRIM_FACTORS,
+                        );
+                    }
+                }
+                None => add(&mut terms, area * result.tau_b, lever, [1.0; 3]),
+            }
+        }
+        Ok((terms, largest))
+    }
+
+    fn volume_errors(&self, flux: &Flux, value: f64) -> Result<Errors, Unavailable<()>> {
+        let ([volume, _, _], _) = self.model_terms(self.center(flux))?;
+        Ok(Errors::new(
             flux.volume_error(),
-            self.boundary_term() + (self.placement)(3, value),
-        )
+            volume + (self.placement)(3, value),
+        ))
     }
 
     /// The second moments of volume about the centroid, `M = S − m mᵀ / V`
     /// from the second moments `S` and first moments `m` about `P_ref`.
     /// The numeric error is the first-order propagation of the flux
-    /// estimates. The model uncertainty is the change when the boundary
-    /// moves by `τ_b`, the volume term times the squared body box diagonal,
-    /// plus the placement term; the centroid's own move changes `M` only at
-    /// second order.
+    /// estimates. The model uncertainty is the second-moment term of
+    /// [`Self::model_terms`] plus the placement term.
     fn mass_facts(&self, sum: &Sum) -> MassFacts {
         let volume = sum.flux.volume();
         let moment = sum.flux.moment();
@@ -278,18 +344,28 @@ impl VolumeInput<'_> {
         let largest = central
             .iter()
             .fold(0.0_f64, |most, entry| most.max(entry.abs()));
-        let model =
-            self.boundary_term() * self.diagonal * self.diagonal + (self.placement)(5, largest);
-        let errors = Errors::new(numeric, model);
-        let second_moments = measured(
-            Tensor::new(central),
-            Unit::MillimeterToTheFifth,
-            Method::DivergenceQuadrature,
-            errors,
-            self.id,
-        );
+        let center = self.center(&sum.flux);
+        let model = self
+            .model_terms(center)
+            .map(|([_, _, second], _)| second + (self.placement)(5, largest));
+        let second_moments = match &model {
+            Ok(model) => measured(
+                Tensor::new(central),
+                Unit::MillimeterToTheFifth,
+                Method::DivergenceQuadrature,
+                Errors::new(numeric, *model),
+                self.id,
+            ),
+            Err(unavailable) => Quantity::Unavailable(unavailable.recast()),
+        };
         let (principal_moments, principal_axes) = match &second_moments {
-            Quantity::Measured(tensor) => self.principal(&tensor.value().rows(), errors),
+            Quantity::Measured(tensor) => self.principal(
+                &tensor.value().rows(),
+                Errors::new(
+                    tensor.numeric_error().get(),
+                    tensor.model_uncertainty().get(),
+                ),
+            ),
             Quantity::Unavailable(unavailable) => (
                 std::array::from_fn(|_| Quantity::Unavailable(unavailable.recast())),
                 std::array::from_fn(|_| Quantity::Unavailable(unavailable.recast())),
@@ -298,31 +374,36 @@ impl VolumeInput<'_> {
         let (mass, inertia) = match self.density {
             Some(density) => {
                 let per_cubic_millimetre = density.get() / CUBIC_MILLIMETRES_PER_CUBIC_METRE;
-                let volume_errors = self.volume_errors(&sum.flux, volume);
-                let mass = measured(
-                    Scalar::new(per_cubic_millimetre * volume),
-                    Unit::Kilogram,
-                    Method::DivergenceQuadrature,
-                    Errors::new(
-                        per_cubic_millimetre * volume_errors.numeric,
-                        per_cubic_millimetre * volume_errors.model,
+                let mass = match self.volume_errors(&sum.flux, volume) {
+                    Ok(volume_errors) => measured(
+                        Scalar::new(per_cubic_millimetre * volume),
+                        Unit::Kilogram,
+                        Method::DivergenceQuadrature,
+                        Errors::new(
+                            per_cubic_millimetre * volume_errors.numeric,
+                            per_cubic_millimetre * volume_errors.model,
+                        ),
+                        self.id,
                     ),
-                    self.id,
-                );
+                    Err(unavailable) => Quantity::Unavailable(unavailable.recast()),
+                };
                 let [xx, yy, zz, xy, yz, zx] = central;
-                let inertia = measured(
-                    Tensor::new(
-                        [yy + zz, zz + xx, xx + yy, -xy, -yz, -zx]
-                            .map(|entry| per_cubic_millimetre * entry),
+                let inertia = match &model {
+                    Ok(model) => measured(
+                        Tensor::new(
+                            [yy + zz, zz + xx, xx + yy, -xy, -yz, -zx]
+                                .map(|entry| per_cubic_millimetre * entry),
+                        ),
+                        Unit::KilogramSquareMillimeter,
+                        Method::DivergenceQuadrature,
+                        Errors::new(
+                            2.0 * per_cubic_millimetre * numeric,
+                            2.0 * per_cubic_millimetre * model,
+                        ),
+                        self.id,
                     ),
-                    Unit::KilogramSquareMillimeter,
-                    Method::DivergenceQuadrature,
-                    Errors::new(
-                        2.0 * per_cubic_millimetre * numeric,
-                        2.0 * per_cubic_millimetre * model,
-                    ),
-                    self.id,
-                );
+                    Err(unavailable) => Quantity::Unavailable(unavailable.recast()),
+                };
                 (Some(mass), Some(inertia))
             }
             None => (None, None),
@@ -419,24 +500,27 @@ impl VolumeInput<'_> {
 
     fn volume_quantity(&self, sum: &Sum) -> Quantity<Scalar> {
         let value = sum.flux.volume();
-        measured(
-            Scalar::new(value),
-            Unit::CubicMillimeter,
-            Method::DivergenceQuadrature,
-            self.volume_errors(&sum.flux, value),
-            self.id,
-        )
+        match self.volume_errors(&sum.flux, value) {
+            Ok(errors) => measured(
+                Scalar::new(value),
+                Unit::CubicMillimeter,
+                Method::DivergenceQuadrature,
+                errors,
+                self.id,
+            ),
+            Err(unavailable) => Quantity::Unavailable(unavailable.recast()),
+        }
     }
 
+    /// The centroid `P_ref + m / V`.
     fn centroid_quantity(&self, sum: &Sum) -> Quantity<Point> {
         let volume = sum.flux.volume();
         let moment = sum.flux.moment();
-        let errors = self.volume_errors(&sum.flux, volume);
-        let point = Point3::new(
-            self.origin.x + moment[0] / volume,
-            self.origin.y + moment[1] / volume,
-            self.origin.z + moment[2] / volume,
-        );
+        let point = self.center(&sum.flux);
+        let ([_, first, _], largest) = match self.model_terms(point) {
+            Ok(terms) => terms,
+            Err(unavailable) => return Quantity::Unavailable(unavailable.recast()),
+        };
         let moment_error = sum.flux.moment_error();
         let lever = moment.iter().fold(0.0_f64, |most, m| most.max(m.abs()));
         measured(
@@ -444,8 +528,8 @@ impl VolumeInput<'_> {
             Unit::Millimeter,
             Method::DivergenceQuadrature,
             Errors::new(
-                moment_error / volume.abs() + lever * errors.numeric / (volume * volume),
-                errors.model * self.diagonal / volume.abs(),
+                moment_error / volume.abs() + lever * sum.flux.volume_error() / (volume * volume),
+                (first + (self.placement)(3, volume) * largest) / volume.abs(),
             ),
             self.id,
         )
@@ -631,13 +715,16 @@ impl VolumeInput<'_> {
                     .shells
                     .iter()
                     .map(|volume| {
-                        Some(measured(
-                            Scalar::new(*volume),
-                            Unit::CubicMillimeter,
-                            Method::DivergenceQuadrature,
-                            self.volume_errors(&sum.flux, *volume),
-                            self.id,
-                        ))
+                        Some(match self.volume_errors(&sum.flux, *volume) {
+                            Ok(errors) => measured(
+                                Scalar::new(*volume),
+                                Unit::CubicMillimeter,
+                                Method::DivergenceQuadrature,
+                                errors,
+                                self.id,
+                            ),
+                            Err(unavailable) => Quantity::Unavailable(unavailable.recast()),
+                        })
                     })
                     .collect();
                 VolumeFacts {
@@ -743,6 +830,10 @@ impl VolumeInput<'_> {
                 "the body has no area",
             );
         }
+        let diagonal = match &self.diagonal {
+            Ok(diagonal) => *diagonal,
+            Err(unavailable) => return Quantity::Unavailable(unavailable.recast()),
+        };
         let moment = flux.area_moment();
         let point = Point3::new(
             self.origin.x + moment[0] / area,
@@ -762,7 +853,7 @@ impl VolumeInput<'_> {
             Method::DivergenceQuadrature,
             Errors::new(
                 moment_error / area + lever * area_error / (area * area),
-                (boundary + (self.placement)(2, area)) * self.diagonal / area,
+                (boundary + (self.placement)(2, area)) * diagonal / area,
             ),
             self.id,
         )

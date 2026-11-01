@@ -354,6 +354,72 @@ fn parameter_record_rejects_noncanonical_tail() {
 }
 
 #[test]
+fn parameter_family_18_tail_pins_admitted_discriminators() {
+    for discriminator in [0u64, 3, 4] {
+        let mut distance = parameter_record(
+            Some(44),
+            "Width / 2",
+            "AlongDistance",
+            Some("mm"),
+            "d12",
+            3.0,
+        );
+        let tail = distance.len() - 12;
+        distance[tail + 2] = 18;
+        distance[22..30].copy_from_slice(&discriminator.to_le_bytes());
+        assert_eq!(
+            parse_design_parameter_record(&distance)
+                .expect("family-18 parameter with discriminator 0/3/4")
+                .family_discriminator()
+                .map(|value| value.value.code()),
+            Some(discriminator)
+        );
+    }
+
+    let mut tangency = parameter_record(Some(24409), "1", "TangencyWeight", Some(""), "d81", 1.0);
+    let tail = tangency.len() - 12;
+    tangency[tail + 2] = 18;
+    tangency[22..30].copy_from_slice(&6u64.to_le_bytes());
+    assert_eq!(
+        parse_design_parameter_record(&tangency)
+            .expect("family-18 tangency weight parameter with discriminator 6")
+            .family_discriminator()
+            .map(|value| value.value.code()),
+        Some(6)
+    );
+
+    let mut rejected_discriminator_5 = parameter_record(
+        Some(44),
+        "Width / 2",
+        "AlongDistance",
+        Some("mm"),
+        "d12",
+        3.0,
+    );
+    let tail = rejected_discriminator_5.len() - 12;
+    rejected_discriminator_5[tail + 2] = 18;
+    rejected_discriminator_5[22..30].copy_from_slice(&5u64.to_le_bytes());
+    assert!(parse_design_parameter_record(&rejected_discriminator_5).is_none());
+
+    let mut rejected_tangency_5 = tangency.clone();
+    rejected_tangency_5[22..30].copy_from_slice(&5u64.to_le_bytes());
+    assert!(parse_design_parameter_record(&rejected_tangency_5).is_none());
+
+    let mut rejected_discriminator_6 = parameter_record(
+        Some(44),
+        "Width / 2",
+        "AlongDistance",
+        Some("mm"),
+        "d12",
+        3.0,
+    );
+    let tail = rejected_discriminator_6.len() - 12;
+    rejected_discriminator_6[tail + 2] = 18;
+    rejected_discriminator_6[22..30].copy_from_slice(&6u64.to_le_bytes());
+    assert!(parse_design_parameter_record(&rejected_discriminator_6).is_none());
+}
+
+#[test]
 fn duplicate_parameter_index_keeps_the_first_serialized_frame() {
     let stream = "FusionAssetName[Active]/Design1/BulkStream.dat";
     let stored = crate::zip_write::file_options(CompressionMethod::Stored);

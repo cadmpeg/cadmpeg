@@ -3,6 +3,7 @@
 
 use super::identity::{DesignAffineTransform, DesignEntityId, IDENTITY_MATRIX};
 use super::references::DesignClassTag;
+use crate::layout::sketch_typed_compact_member_head as typed_compact;
 use serde::{Deserialize, Serialize};
 use std::num::NonZeroU32;
 
@@ -230,6 +231,9 @@ pub(crate) enum DesignSketchFrameForm {
     MemberCompact {
         paired_byte_offset: u64,
     },
+    MemberTypedCompact {
+        paired_byte_offset: u64,
+    },
     MemberExplicit {
         paired_byte_offset: u64,
         transform: SketchPlacementMatrix,
@@ -296,6 +300,9 @@ impl DesignSketchFrame {
             DesignSketchFrameForm::ScopeExplicit(_) => 329,
             DesignSketchFrameForm::ScopeGenesisExplicit(_) => 341,
             DesignSketchFrameForm::MemberCompact { .. } => 34,
+            DesignSketchFrameForm::MemberTypedCompact { .. } => {
+                cadmpeg_core::decode::u64_from_index(typed_compact::LEN)
+            }
             DesignSketchFrameForm::MemberExplicit {
                 typed_reference, ..
             } => {
@@ -311,7 +318,8 @@ impl DesignSketchFrame {
         match &self.form {
             DesignSketchFrameForm::ScopeCompact
             | DesignSketchFrameForm::ScopeGenesisCompact
-            | DesignSketchFrameForm::MemberCompact { .. } => &IDENTITY_MATRIX,
+            | DesignSketchFrameForm::MemberCompact { .. }
+            | DesignSketchFrameForm::MemberTypedCompact { .. } => &IDENTITY_MATRIX,
             DesignSketchFrameForm::Authored {
                 transform: matrix, ..
             }
@@ -329,7 +337,8 @@ impl DesignSketchFrame {
             DesignSketchFrameForm::Authored { .. } => return None,
             DesignSketchFrameForm::ScopeCompact
             | DesignSketchFrameForm::ScopeGenesisCompact
-            | DesignSketchFrameForm::MemberCompact { .. } => return None,
+            | DesignSketchFrameForm::MemberCompact { .. }
+            | DesignSketchFrameForm::MemberTypedCompact { .. } => return None,
             DesignSketchFrameForm::ScopeLegacy305(_) | DesignSketchFrameForm::ScopeLegacy325(_) => {
                 48
             }
@@ -342,6 +351,7 @@ impl DesignSketchFrame {
     pub(super) fn paired_byte_offset(&self) -> Option<u64> {
         match self.form {
             DesignSketchFrameForm::MemberCompact { paired_byte_offset }
+            | DesignSketchFrameForm::MemberTypedCompact { paired_byte_offset }
             | DesignSketchFrameForm::MemberExplicit {
                 paired_byte_offset, ..
             } => Some(paired_byte_offset),
@@ -372,6 +382,7 @@ impl DesignSketchPlacement {
                 member_run_head, ..
             } => member_run_head,
             DesignSketchFrameForm::MemberCompact { .. }
+            | DesignSketchFrameForm::MemberTypedCompact { .. }
             | DesignSketchFrameForm::MemberExplicit { .. } => true,
             _ => false,
         }

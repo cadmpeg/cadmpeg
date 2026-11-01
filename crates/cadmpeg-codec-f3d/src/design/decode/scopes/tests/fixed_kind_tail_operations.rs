@@ -426,6 +426,65 @@ pub(super) fn fixed_kind_tail_operations(
         )) if distance.get() == 0.254
     ));
 
+    // Prologue forms whose scope tail does not give the 253- or 264-byte
+    // length: marker zero with the reference count at 126, and marker one
+    // with it at 130. Both name scalar 73 and the face group, reference 1.
+    for (marker_one, count_offset) in [(false, 126), (true, 130)] {
+        let distance_marker = if marker_one { 25 } else { 21 };
+        let prologue_at = bytes.len();
+        let mut prologue = vec![0; 300];
+        prologue[20] = u8::from(marker_one);
+        prologue[distance_marker] = 1;
+        prologue[distance_marker + 1..distance_marker + 5].copy_from_slice(&73u32.to_le_bytes());
+        prologue[distance_marker + 11..distance_marker + 15].copy_from_slice(&1u32.to_le_bytes());
+        prologue[distance_marker + 15] = 1;
+        prologue[distance_marker + 16..distance_marker + 20].copy_from_slice(&1u32.to_le_bytes());
+        bytes.extend_from_slice(&prologue);
+        let mut prologue_scope = offset_scope.clone();
+        prologue_scope
+            .try_edit(|draft| {
+                draft.byte_offset = u64_from_index(prologue_at);
+                draft.reference_members =
+                    crate::records::identity::ReferenceRun::unlocated(vec![1, 2, 73]);
+                draft.reference_count_offset = draft.byte_offset + count_offset;
+                draft.layout_fixture_references();
+                // The kind follows the reference table; the fixture tail follows the kind.
+                draft.paired_byte_offset = draft.kind_offset + 22 + 72;
+                draft.frame_length = draft.paired_byte_offset - draft.byte_offset;
+                draft.layout_fixture_tail();
+            })
+            .unwrap();
+        let operation =
+            |bytes: &[u8], scope: &crate::records::feature::scope::DesignParameterScope| {
+                exact_direct_face_operation(
+                    bytes,
+                    &crate::design::test_support::indexed_record_offsets_for_test(bytes),
+                    scope,
+                )
+            };
+        assert!(matches!(
+            operation(&bytes, &prologue_scope),
+            Some(DesignDirectFaceOperation::OffsetFaces(
+                crate::records::feature::direct_face::DesignOffsetFacesOperation {
+                    distance,
+                    distance_record_index: 73,
+                    ..
+                }
+            )) if distance.get() == -0.5
+        ));
+        // The u32 one and the face-group reference are part of the form.
+        bytes[prologue_at + distance_marker + 11] = 2;
+        assert!(operation(&bytes, &prologue_scope).is_none());
+        bytes[prologue_at + distance_marker + 11] = 1;
+        bytes[prologue_at + distance_marker + 16] = 2;
+        assert!(operation(&bytes, &prologue_scope).is_none());
+        bytes[prologue_at + distance_marker + 16] = 1;
+        // The marker byte must agree with the reference-count offset.
+        bytes[prologue_at + 20] = u8::from(!marker_one);
+        assert!(operation(&bytes, &prologue_scope).is_none());
+        bytes[prologue_at + 20] = u8::from(marker_one);
+    }
+
     let thicken_at = bytes.len();
     let mut thicken = vec![0; 301];
     thicken[47] = 1;
@@ -819,6 +878,123 @@ pub(super) fn fixed_kind_tail_operations(
             ..
         })) if thickness.get() == 0.25 && outward_offset == Some(u64_from_index(shifted_shell_at + 21))
     ));
+    let thickness_first_shell_at = bytes.len();
+    let mut thickness_first_shell = vec![0; 278];
+    thickness_first_shell[20] = 1;
+    thickness_first_shell[21] = 1;
+    thickness_first_shell[25..29].copy_from_slice(&[1, 0, 0, 1]);
+    thickness_first_shell[29..33].copy_from_slice(&9_000u32.to_le_bytes());
+    thickness_first_shell[51..55].copy_from_slice(&1u32.to_le_bytes());
+    thickness_first_shell[55] = 1;
+    thickness_first_shell[56..60].copy_from_slice(&200u32.to_le_bytes());
+    bytes.extend_from_slice(&thickness_first_shell);
+    let thickness_first_shell_scope = DesignParameterScope::try_new(
+        crate::records::feature::scope::DesignParameterScopeDraft {
+            byte_offset: u64_from_index(thickness_first_shell_at),
+            reference_count_offset: u64_from_index(thickness_first_shell_at + 9),
+            frame_length: 278,
+            reference_members: crate::records::identity::ReferenceRun::unlocated(vec![
+                9_000, 200, 201,
+            ]),
+            ..shell_scope.clone().into_draft()
+        }
+        .with_fixture_layout(),
+    )
+    .unwrap();
+    assert!(matches!(
+        exact_direct_face_operation(
+            &bytes,
+            &crate::design::test_support::indexed_record_offsets_for_test(&bytes),
+            &thickness_first_shell_scope,
+        ),
+        Some(DesignDirectFaceOperation::Shell(crate::records::feature::direct_face::DesignShellOperation {
+            thickness,
+            thickness_record_index: 9_000,
+            outward: true,
+            outward_offset,
+            ..
+        })) if thickness.get() == 0.25 && outward_offset == u64_from_index(thickness_first_shell_at + 21)
+    ));
+
+    // Negative rejection tests for the 268-byte thickness-first Shell scope:
+    // 1. byte 27 = 1 rejects because the [1, 0, 0, 1] marker at 25..29 requires byte 27 == 0.
+    let neg_byte_27_at = bytes.len();
+    let mut neg_byte_27 = thickness_first_shell.clone();
+    neg_byte_27[27] = 1;
+    bytes.extend_from_slice(&neg_byte_27);
+    let neg_byte_27_scope = DesignParameterScope::try_new(
+        crate::records::feature::scope::DesignParameterScopeDraft {
+            byte_offset: u64_from_index(neg_byte_27_at),
+            reference_count_offset: u64_from_index(neg_byte_27_at + 9),
+            frame_length: 278,
+            reference_members: crate::records::identity::ReferenceRun::unlocated(vec![
+                9_000, 200, 201,
+            ]),
+            ..shell_scope.clone().into_draft()
+        }
+        .with_fixture_layout(),
+    )
+    .unwrap();
+    assert_eq!(
+        exact_direct_face_operation(
+            &bytes,
+            &crate::design::test_support::indexed_record_offsets_for_test(&bytes),
+            &neg_byte_27_scope,
+        ),
+        None
+    );
+
+    // 2. outward = 2 rejects because outward admits only 0 or 1.
+    let neg_outward_at = bytes.len();
+    let mut neg_outward = thickness_first_shell.clone();
+    neg_outward[21] = 2;
+    bytes.extend_from_slice(&neg_outward);
+    let neg_outward_scope = DesignParameterScope::try_new(
+        crate::records::feature::scope::DesignParameterScopeDraft {
+            byte_offset: u64_from_index(neg_outward_at),
+            reference_count_offset: u64_from_index(neg_outward_at + 9),
+            frame_length: 278,
+            reference_members: crate::records::identity::ReferenceRun::unlocated(vec![
+                9_000, 200, 201,
+            ]),
+            ..shell_scope.clone().into_draft()
+        }
+        .with_fixture_layout(),
+    )
+    .unwrap();
+    assert_eq!(
+        exact_direct_face_operation(
+            &bytes,
+            &crate::design::test_support::indexed_record_offsets_for_test(&bytes),
+            &neg_outward_scope,
+        ),
+        None
+    );
+
+    // 3. thickness/first-reference mismatch rejects when the u32 at offset 29 disagrees with the first member.
+    let neg_mismatch_at = bytes.len();
+    bytes.extend_from_slice(&thickness_first_shell);
+    let neg_mismatch_scope = DesignParameterScope::try_new(
+        crate::records::feature::scope::DesignParameterScopeDraft {
+            byte_offset: u64_from_index(neg_mismatch_at),
+            reference_count_offset: u64_from_index(neg_mismatch_at + 9),
+            frame_length: 278,
+            reference_members: crate::records::identity::ReferenceRun::unlocated(vec![
+                9_001, 200, 201,
+            ]),
+            ..shell_scope.clone().into_draft()
+        }
+        .with_fixture_layout(),
+    )
+    .unwrap();
+    assert_eq!(
+        exact_direct_face_operation(
+            &bytes,
+            &crate::design::test_support::indexed_record_offsets_for_test(&bytes),
+            &neg_mismatch_scope,
+        ),
+        None
+    );
     {
         let construction = exact_direct_face_operation(
             &bytes,
@@ -1440,6 +1616,38 @@ pub(super) fn fixed_kind_tail_operations(
             ..Default::default()
         })
     );
+    bytes[embedded_default_at + 115 + 40..embedded_default_at + 115 + 48]
+        .copy_from_slice(&0.1f64.to_le_bytes());
+    assert_eq!(
+        exact_fixed_extrude_parameters(
+            &bytes,
+            &crate::design::test_support::indexed_record_offsets_for_test(&bytes),
+            &extrude_scope,
+            &[],
+            &[],
+        ),
+        Some(DesignFixedExtrudeParameters {
+            along_distance: Some(DesignFixedExtrudeDistance::DistanceConstruction(
+                DesignFixedExtrudeScalar {
+                    value: cadmpeg_ir::scalar::PositiveReal::new(0.25).unwrap(),
+                    record_index: embedded_distance_record_index,
+                    value_offset: u64_from_index(embedded_distance_at + 51),
+                },
+            )),
+            taper_angle: Some(DesignFixedExtrudeScalar {
+                value: crate::test_support::real(0.1),
+                record_index: 274,
+                value_offset: u64_from_index(embedded_default_at + 115 + 40),
+            }),
+            against_distance: None,
+            side_two_taper_angle: None,
+            profile_offset: None,
+            side_one_offset: None,
+            ..Default::default()
+        })
+    );
+    bytes[embedded_default_at + 115 + 40..embedded_default_at + 115 + 48]
+        .copy_from_slice(&0.0f64.to_le_bytes());
     extrude_scope
         .try_edit(|draft| {
             draft.reference_members = {
@@ -1462,6 +1670,178 @@ pub(super) fn fixed_kind_tail_operations(
             &[],
         ),
         None
+    );
+
+    bytes[embedded_default_at + 115 + 40..embedded_default_at + 115 + 48]
+        .copy_from_slice(&1.5f64.to_le_bytes());
+    extrude_scope
+        .try_edit(|draft| {
+            draft.reference_members =
+                crate::records::identity::ReferenceRun::unlocated(vec![50, 273, 274, 51]);
+            draft.layout_fixture_references();
+            draft.paired_byte_offset = draft.paired_byte_offset.max(draft.kind_offset + 96);
+            draft.frame_length = draft.paired_byte_offset - draft.byte_offset;
+            draft.layout_fixture_tail();
+        })
+        .unwrap();
+    assert_eq!(
+        exact_fixed_extrude_parameters(
+            &bytes,
+            &crate::design::test_support::indexed_record_offsets_for_test(&bytes),
+            &extrude_scope,
+            &[],
+            &[],
+        ),
+        Some(DesignFixedExtrudeParameters {
+            along_distance: Some(DesignFixedExtrudeDistance::FixedScalar(
+                DesignFixedExtrudeScalar {
+                    value: cadmpeg_ir::scalar::NonZeroReal::new(1.5).unwrap(),
+                    record_index: 274,
+                    value_offset: u64_from_index(embedded_default_at + 115 + 40),
+                },
+            )),
+            taper_angle: Some(DesignFixedExtrudeScalar {
+                value: crate::test_support::real(0.0),
+                record_index: 273,
+                value_offset: u64_from_index(embedded_default_at + 40),
+            }),
+            against_distance: None,
+            side_two_taper_angle: None,
+            profile_offset: None,
+            side_one_offset: None,
+            ..Default::default()
+        })
+    );
+    extrude_scope
+        .try_edit(|draft| {
+            draft.reference_members =
+                crate::records::identity::ReferenceRun::unlocated(vec![50, 274, 273, 51]);
+            draft.layout_fixture_references();
+            draft.paired_byte_offset = draft.paired_byte_offset.max(draft.kind_offset + 96);
+            draft.frame_length = draft.paired_byte_offset - draft.byte_offset;
+            draft.layout_fixture_tail();
+        })
+        .unwrap();
+    assert_eq!(
+        exact_fixed_extrude_parameters(
+            &bytes,
+            &crate::design::test_support::indexed_record_offsets_for_test(&bytes),
+            &extrude_scope,
+            &[],
+            &[],
+        ),
+        Some(DesignFixedExtrudeParameters {
+            along_distance: Some(DesignFixedExtrudeDistance::FixedScalar(
+                DesignFixedExtrudeScalar {
+                    value: cadmpeg_ir::scalar::NonZeroReal::new(1.5).unwrap(),
+                    record_index: 274,
+                    value_offset: u64_from_index(embedded_default_at + 115 + 40),
+                },
+            )),
+            taper_angle: Some(DesignFixedExtrudeScalar {
+                value: crate::test_support::real(0.0),
+                record_index: 273,
+                value_offset: u64_from_index(embedded_default_at + 40),
+            }),
+            against_distance: None,
+            side_two_taper_angle: None,
+            profile_offset: None,
+            side_one_offset: None,
+            ..Default::default()
+        })
+    );
+    bytes[embedded_default_at + 115 + 40..embedded_default_at + 115 + 48]
+        .copy_from_slice(&0.0f64.to_le_bytes());
+
+    let mut offset_24_bytes = vec![0; 120];
+    offset_24_bytes[0..4].copy_from_slice(&3u32.to_le_bytes());
+    offset_24_bytes[4..7].copy_from_slice(b"375");
+    offset_24_bytes[7..11].copy_from_slice(&1u32.to_le_bytes());
+    offset_24_bytes[24..28].copy_from_slice(&4u32.to_le_bytes());
+    offset_24_bytes[28..32].copy_from_slice(&1u32.to_le_bytes());
+    offset_24_bytes[32..36].copy_from_slice(&2u32.to_le_bytes());
+    offset_24_bytes[36] = 0;
+    offset_24_bytes[37] = 1;
+    offset_24_bytes[38] = 0;
+    offset_24_bytes[42..50].copy_from_slice(&1.0f64.to_le_bytes());
+    offset_24_bytes[73..77].copy_from_slice(&1u32.to_le_bytes());
+    let decoded_offset_24 = crate::design::decode::scopes::extrude::exact_extrude_prologue(
+        &offset_24_bytes,
+        0,
+        120,
+        "375",
+        "260",
+        100,
+        &[],
+    );
+    assert!(matches!(
+        decoded_offset_24,
+        Some(DesignExtrudePrologue::ReferenceAware {
+            operation: DesignExtrudeOperation::NewBody,
+            operation_offset: 24,
+            extent: DesignExtrudeExtent::OneSidedDistance,
+            ..
+        })
+    ));
+
+    let mut scope_375 = extrude_scope.clone();
+    scope_375.class_tag =
+        crate::records::references::DesignClassTag::try_from("375".to_owned()).unwrap();
+    scope_375.paired_class_tag =
+        crate::records::references::DesignClassTag::try_from("260".to_owned()).unwrap();
+    let to_face_prologue = DesignExtrudePrologue::ReferenceAware {
+        reference: None,
+        operation: DesignExtrudeOperation::Join,
+        operation_offset: 28,
+        direction_face_extend_values: [1, 2],
+        side_extent_discriminators: [2, 0],
+        side_extent_discriminator_offsets: [77, 90],
+        first_side_target_ordinal: None,
+        extent: DesignExtrudeExtent::OneSidedToFace,
+        direction_face_extend_offsets: [32, 36],
+        direction_reversed: false,
+        direction_reversed_offset: 40,
+        solid_operation: true,
+        solid_operation_offset: 41,
+        start: DesignExtrudeStart::ProfilePlane,
+        start_offset: 42,
+    };
+    for length in [477, 481] {
+        scope_375
+            .try_edit(|draft| {
+                draft.frame_length = length;
+                draft.paired_byte_offset = draft.byte_offset + draft.frame_length;
+                draft.layout_fixture_tail();
+            })
+            .unwrap();
+        assert!(
+            crate::design::face_resolve::extrude_omits_zero_side_one_offset(
+                &scope_375,
+                &to_face_prologue,
+                0
+            )
+        );
+        assert!(
+            !crate::design::face_resolve::extrude_omits_zero_side_one_offset(
+                &scope_375,
+                &to_face_prologue,
+                1
+            )
+        );
+    }
+    scope_375
+        .try_edit(|draft| {
+            draft.frame_length = 478;
+            draft.paired_byte_offset = draft.byte_offset + draft.frame_length;
+            draft.layout_fixture_tail();
+        })
+        .unwrap();
+    assert!(
+        !crate::design::face_resolve::extrude_omits_zero_side_one_offset(
+            &scope_375,
+            &to_face_prologue,
+            0
+        )
     );
 
     super::fixed_kind_operations::continue_fixed_kind_operations(bytes, scope, &thicken_group);

@@ -2020,6 +2020,41 @@ Unstated regions:
 - `429..456` (27 B): Scope-tail bytes between the feature ordinal and previous history state.
 - `460..502` (42 B): Scope-tail bytes before the paired indexed header.
 
+## `typed_reference_box_primitive_1295_frame`
+
+Spec §3.1 · layout: byte offsets · size: 1295 B
+
+Offsets are relative to the primary indexed scope header. The generic scope reference table begins at offset 655; the paired header follows the complete scope frame.
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 11 | `indexed_header` | `bytes[11]` | little | spec | Its bytes 11 through 20 are zero, byte 21 is `0x01`, the result-operation u32 is at offset 22 with the four values of the named form |
+| 11 | 10 | `zero_run_10` | `bytes[10]` | little | spec | Its bytes 11 through 20 are zero, byte 21 is `0x01`, the result-operation u32 is at offset 22 with the four values of the named form |
+| 21 | 1 | `form_marker` | `u8` | little | spec | byte 21 is `0x01`, the result-operation u32 is at offset 22 with the four values of the named form · value `1` |
+| 22 | 4 | `operation` | `u32` | little | spec | byte 21 is `0x01`, the result-operation u32 is at offset 22 with the four values of the named form |
+| 26 | 1 | `nested_marker` | `u8` | little | spec | byte 26 is `0x01` · value `1` |
+| 27 | 357 | `typed_references` | `bytes[357]` | little | spec | Seven typed local references begin at offsets 27, 78, 129, 180, 231, 282, and 333 |
+| 384 | 1 | `zero_before_matrix` | `u8` | little | spec | Byte 384 is zero |
+| 385 | 128 | `matrix` | `f64[16]` | little | spec | A row-major rigid right-handed 4x4 f64 frame starts at offset 385 |
+| 513 | 4 | `one_count` | `u32` | little | spec | The u32 `1` at offset 513 precedes one typed local reference at offset 517 · value `1` |
+| 517 | 51 | `tail_reference` | `bytes[51]` | little | spec | one typed local reference at offset 517 |
+| 568 | 8 | `zero_run_8` | `bytes[8]` | little | spec | Eight zero bytes at offsets 568 through 575 |
+| 576 | 4 | `guid_code_unit_count` | `u32` | little | spec | 36-code-unit LP-UTF16 null GUID at offset 576 · value `36` |
+| 580 | 72 | `guid` | `bytes[72]` | little | spec | 36-code-unit LP-UTF16 null GUID at offset 576 |
+| 652 | 3 | `zero_run_3_after_guid` | `bytes[3]` | little | spec | Bytes 652 through 654 are zero |
+| 655 | 4 | `reference_count` | `u32` | little | spec | the reference count at offset 655 · value `8` |
+| 659 | 408 | `references` | `bytes[408]` | little | spec | the ordered 51-byte typed reference run at offset 659 |
+| 1067 | 4 | `history_state_id` | `u32` | little | spec | the current history state at offset 1067 |
+| 1071 | 4 | `kind_code_unit_count` | `u32` | little | spec | the 12-code-unit `BoxPrimitive` kind at offset 1071 · value `12` |
+| 1075 | 24 | `kind` | `bytes[24]` | little | spec | the 12-code-unit `BoxPrimitive` kind at offset 1071 |
+| 1099 | 4 | `feature_ordinal` | `u32` | little | spec | the feature ordinal at offset 1099 |
+| 1169 | 4 | `previous_history_state_id` | `u32` | little | spec | the previous history state at offset 1169 |
+
+Unstated regions:
+
+- `1103..1169` (66 B): Scope-tail bytes between the feature ordinal and previous history state.
+- `1173..1295` (122 B): Scope-tail bytes before the paired indexed header.
+
 ## `compact_loft_operation_prefix`
 
 Spec §3.1 · layout: byte offsets · size: 45 B
@@ -3192,6 +3227,66 @@ Unstated regions:
 - `11..49` (38 B): The class-400 placement prefix is zero.
 - `177..345` (168 B): The class-400 construction-reference tail is retained as a named opaque carrier.
 
+## `work_plane_direct_352_matrix_frame`
+
+Spec §3.1 · layout: byte offsets · size: 352 B
+
+Offsets are relative to the primary indexed placement header (class 293 paired with class 261, or class 316 paired with class 260). The two-byte lane at offset 62 is opaque.
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 55 | 1 | `marker` | `u8` | little | spec | store `0x01` at offset 55 · value `1` |
+| 56 | 6 | `zero_run` | `bytes[6]` | little | spec | six zero bytes at offsets 56 through 61 |
+| 62 | 2 | `opaque_u16` | `u16` | little | spec | an opaque little-endian u16 at offset 62 |
+| 64 | 2 | `zero_pair` | `bytes[2]` | little | spec | two zero bytes at offsets 64 and 65 |
+| 66 | 128 | `matrix` | `f64[16]` | little | spec | the matrix at offset 66 |
+
+Unstated regions:
+
+- `0..11` (11 B): The indexed placement header occupies the first eleven bytes.
+- `11..55` (44 B): Bytes 11 through 54 are zero.
+- `194..352` (158 B): The placement carrier tail is retained as a named opaque carrier.
+
+## `work_plane_direct_363_matrix_frame`
+
+Spec §3.1 · layout: byte offsets · size: 363 B
+
+Offsets are relative to the class-289 primary indexed placement header paired with class 258. The two-byte lane at offset 62 is opaque.
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 55 | 1 | `marker` | `u8` | little | spec | store `0x01` at offset 55 · value `1` |
+| 56 | 6 | `zero_run` | `bytes[6]` | little | spec | six zero bytes at offsets 56 through 61 |
+| 62 | 2 | `opaque_u16` | `u16` | little | spec | an opaque little-endian u16 at offset 62 |
+| 64 | 2 | `zero_pair` | `bytes[2]` | little | spec | two zero bytes at offsets 64 and 65 |
+| 66 | 128 | `matrix` | `f64[16]` | little | spec | the matrix at offset 66 |
+
+Unstated regions:
+
+- `0..11` (11 B): The indexed placement header occupies the first eleven bytes.
+- `11..55` (44 B): Bytes 11 through 54 are zero.
+- `194..363` (169 B): The placement carrier tail is retained as a named opaque carrier.
+
+## `work_plane_direct_374_matrix_frame`
+
+Spec §3.1 · layout: byte offsets · size: 374 B
+
+Offsets are relative to the class-267 primary indexed placement header paired with class 258. The two-byte lane at offset 62 is opaque.
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 55 | 1 | `marker` | `u8` | little | spec | store `0x01` at offset 55 · value `1` |
+| 56 | 6 | `zero_run` | `bytes[6]` | little | spec | six zero bytes at offsets 56 through 61 |
+| 62 | 2 | `opaque_u16` | `u16` | little | spec | an opaque little-endian u16 at offset 62 |
+| 64 | 2 | `zero_pair` | `bytes[2]` | little | spec | two zero bytes at offsets 64 and 65 |
+| 66 | 128 | `matrix` | `f64[16]` | little | spec | the matrix at offset 66 |
+
+Unstated regions:
+
+- `0..11` (11 B): The indexed placement header occupies the first eleven bytes.
+- `11..55` (44 B): Bytes 11 through 54 are zero.
+- `194..374` (180 B): The placement carrier tail is retained as a named opaque carrier.
+
 ## `work_axis_direct_carrier_class_297`
 
 Spec §3.1 · layout: byte offsets · size: 215 B
@@ -3302,6 +3397,24 @@ Offsets are relative to the Revolve primary indexed header. Every marker-one cla
 Unstated regions:
 
 - `0..20` (20 B): The indexed header and the preceding marker-one Revolve envelope are outside this field run.
+
+## `offset_24_extrude_prologue`
+
+Spec §3.1 · layout: byte offsets · size: 28 B
+
+Offsets are relative to the Extrude primary indexed header.
+
+Parsed by:
+- `crates/cadmpeg-codec-f3d/src/design/decode/scopes/extrude.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 11 | 13 | `zero_run_13` | `bytes[13]` | little | spec | at primary-header offset 24 after thirteen zero bytes |
+| 24 | 4 | `operation` | `u32` | little | spec | at primary-header offset 24 after thirteen zero bytes |
+
+Unstated regions:
+
+- `0..11` (11 B): The indexed header precedes this field run.
 
 ## `current_extrude_operation_fields`
 
@@ -4081,6 +4194,20 @@ Unstated regions:
 
 - `5..38` (33 B): The compact scalar lanes use the same offsets as the standard construction tail.
 
+## `thread_standard_compact_construction_tail`
+
+Spec §3.1 · layout: byte offsets · size: 38 B
+
+Offsets are relative to the first byte after the third LP-UTF16 string. The variable trailer starts at offset 38 and is stated in the specification.
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 5 | `construction_marker` | `bytes[5]` | little | spec | with the construction marker `01 02 00 00 00` |
+
+Unstated regions:
+
+- `5..38` (33 B): The scalar lanes use the same offsets as the compact tail.
+
 ## `thread_standard_legacy_construction_tail`
 
 Spec §3.1 · layout: byte offsets · size: 42 B
@@ -4506,7 +4633,7 @@ Unstated regions:
 
 Spec §3.1 · layout: byte offsets · size: 253 B
 
-Offsets are relative to the transform record's primary indexed header. The class tags are the admission discriminator; the class-447 form uses paired class 263; the same-index paired header follows at offset 253.
+Offsets are relative to the transform record's primary indexed header. The class tags are the admission discriminator; the class-447 form uses paired class 263, the class-456 form uses paired class 258, and the class-452 form uses paired class 262 and form word 5; the same-index paired header follows at offset 253.
 
 | Offset | Size | Field | Type | Endian | Src | Meaning |
 | -----: | ---: | ----- | ---- | ------ | --- | ------- |
@@ -4519,6 +4646,60 @@ Unstated regions:
 
 - `11..43` (32 B): Offsets 11 through 42 are zero.
 - `176..253` (77 B): The transform record's native tail precedes the same-index paired header at offset 253.
+
+## `move_transform_frame_254`
+
+Spec §3.1 · layout: byte offsets · size: 254 B
+
+Offsets are relative to the transform record's primary indexed header.
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 11 | `indexed_header` | `bytes[11]` | little | spec | class `368` transform records are 254 bytes |
+| 43 | 4 | `form` | `u32` | little | spec | offset 43 stores u32 form `1` or `5` |
+| 47 | 1 | `reserved_zero` | `u8` | little | spec | offset 47 is zero |
+| 48 | 128 | `transform` | `f64[16]` | little | spec | sixteen row-major f64 values begin at offset 48 |
+
+Unstated regions:
+
+- `11..43` (32 B): Offsets 11 through 42 are zero.
+- `176..254` (78 B): The transform record's tail precedes the same-index paired header at offset 254.
+
+## `move_transform_frame_273`
+
+Spec §3.1 · layout: byte offsets · size: 273 B
+
+Offsets are relative to the transform record's primary indexed header.
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 11 | `indexed_header` | `bytes[11]` | little | spec | transform records are 273 bytes |
+| 43 | 4 | `form` | `u32` | little | spec | The 273-byte frames use form word `1` · value `1` |
+| 47 | 1 | `reserved_zero` | `u8` | little | spec | offset 47 is zero |
+| 48 | 128 | `transform` | `f64[16]` | little | spec | sixteen row-major f64 values begin at offset 48 |
+
+Unstated regions:
+
+- `11..43` (32 B): Offsets 11 through 42 are zero.
+- `176..273` (97 B): The transform record's tail precedes the same-index paired header at offset 273.
+
+## `move_transform_frame_274`
+
+Spec §3.1 · layout: byte offsets · size: 274 B
+
+Offsets are relative to the transform record's primary indexed header.
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 11 | `indexed_header` | `bytes[11]` | little | spec | Class `349` transform records are 254 or 274 bytes |
+| 43 | 4 | `form` | `u32` | little | spec | offset 43 stores u32 form `1` or `5` |
+| 47 | 1 | `reserved_zero` | `u8` | little | spec | offset 47 is zero |
+| 48 | 128 | `transform` | `f64[16]` | little | spec | sixteen row-major f64 values begin at offset 48 |
+
+Unstated regions:
+
+- `11..43` (32 B): Offsets 11 through 42 are zero.
+- `176..274` (98 B): The transform record's tail precedes the same-index paired header at offset 274.
 
 ## `legacy_body_group_frame_123`
 
@@ -5600,6 +5781,72 @@ Relative to the first flag byte; excludes the preceding property and first paire
 | 53 | 8 | `unit_pair` | `f32[2]` | little | spec | f32 constants |
 | 61 | 5 | `marker` | `bytes[5]` | little | spec | marker |
 
+## `sketch_curve_tail_1_reference`
+
+Spec §3.1 · layout: byte offsets · size: 25 B
+
+N = 1. Offsets are relative to the end of the 96-byte analytic payload.
+
+Parsed by:
+- `crates/cadmpeg-codec-f3d/src/design/sketch_project.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 1 | `reference_marker` | `u8` | little | spec | `0x01` |
+| 1 | 4 | `reference_record_index` | `u32` | little | spec | u32 `record_index` |
+| 5 | 6 | `reference_zero_trailer` | `bytes[6]` | little | spec | six zero bytes |
+| 11 | 5 | `zero_pad` | `bytes[5]` | little | spec | `P = 5` when `N = 1` |
+| 16 | 4 | `opaque` | `bytes[4]` | little | spec | four opaque bytes |
+| 20 | 4 | `flag_guard` | `u32` | little | spec | u32 `1` |
+| 24 | 1 | `construction_flag` | `u8` | little | spec | u8 construction flag |
+
+## `sketch_curve_tail_2_references`
+
+Spec §3.1 · layout: byte offsets · size: 34 B
+
+N = 2. Offsets are relative to the end of the 96-byte analytic payload.
+
+Parsed by:
+- `crates/cadmpeg-codec-f3d/src/design/sketch_project.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 1 | `first_reference_marker` | `u8` | little | spec | `0x01` |
+| 1 | 4 | `first_reference_record_index` | `u32` | little | spec | u32 `record_index` |
+| 5 | 6 | `first_reference_zero_trailer` | `bytes[6]` | little | spec | six zero bytes |
+| 11 | 1 | `second_reference_marker` | `u8` | little | spec | `0x01` |
+| 12 | 4 | `second_reference_record_index` | `u32` | little | spec | u32 `record_index` |
+| 16 | 6 | `second_reference_zero_trailer` | `bytes[6]` | little | spec | six zero bytes |
+| 22 | 3 | `zero_pad` | `bytes[3]` | little | spec | `P = 3` when `N` is `2` or `3` |
+| 25 | 4 | `opaque` | `bytes[4]` | little | spec | four opaque bytes |
+| 29 | 4 | `flag_guard` | `u32` | little | spec | u32 `1` |
+| 33 | 1 | `construction_flag` | `u8` | little | spec | u8 construction flag |
+
+## `sketch_curve_tail_3_references`
+
+Spec §3.1 · layout: byte offsets · size: 45 B
+
+N = 3. Offsets are relative to the end of the 96-byte analytic payload.
+
+Parsed by:
+- `crates/cadmpeg-codec-f3d/src/design/sketch_project.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 1 | `first_reference_marker` | `u8` | little | spec | `0x01` |
+| 1 | 4 | `first_reference_record_index` | `u32` | little | spec | u32 `record_index` |
+| 5 | 6 | `first_reference_zero_trailer` | `bytes[6]` | little | spec | six zero bytes |
+| 11 | 1 | `second_reference_marker` | `u8` | little | spec | `0x01` |
+| 12 | 4 | `second_reference_record_index` | `u32` | little | spec | u32 `record_index` |
+| 16 | 6 | `second_reference_zero_trailer` | `bytes[6]` | little | spec | six zero bytes |
+| 22 | 1 | `third_reference_marker` | `u8` | little | spec | `0x01` |
+| 23 | 4 | `third_reference_record_index` | `u32` | little | spec | u32 `record_index` |
+| 27 | 6 | `third_reference_zero_trailer` | `bytes[6]` | little | spec | six zero bytes |
+| 33 | 3 | `zero_pad` | `bytes[3]` | little | spec | `P = 3` when `N` is `2` or `3` |
+| 36 | 4 | `opaque` | `bytes[4]` | little | spec | four opaque bytes |
+| 40 | 4 | `flag_guard` | `u32` | little | spec | u32 `1` |
+| 44 | 1 | `construction_flag` | `u8` | little | spec | u8 construction flag |
+
 ## `sheet_metal_region_carrier_prefix`
 
 Spec §3.1 · layout: byte offsets · size: 36 B
@@ -5687,14 +5934,43 @@ Parsed by:
 | 25 | 4 | `operation` | `u32` | little | spec | It uses the marker-one prologue through offset 33 |
 | 29 | 4 | `extent_kind` | `u32` | little | spec | It uses the marker-one prologue through offset 33 |
 | 33 | 1 | `direction_kind` | `u8` | little | spec | It uses the marker-one prologue through offset 33 |
-| 34 | 1 | `flag` | `u8` | little | spec | Offset 34 is marker `1` |
-| 35 | 4 | `structural_constant` | `u32` | little | spec | offset 35 stores u32 one |
+| 34 | 1 | `project_axis` | `u8` | little | spec | Offset 34 stores the Project Axis flag |
+| 35 | 4 | `structural_constant` | `u32` | little | spec | Offset 35 stores u32 one |
 | 39 | 1 | `angle_reference_marker` | `u8` | little | spec | The marked angle-owner reference starts at offset 39 |
 
 Unstated regions:
 
 - `0..20` (20 B): The indexed header and the preceding Revolve envelope are outside this field run.
 - `40..50` (10 B): The marked reference stores the u32 angle-owner record index followed by six zero bytes.
+
+## `two_sided_revolve_prologue`
+
+Spec §3.1 · layout: byte offsets · size: 60 B
+
+Offsets are relative to the Revolve primary indexed header. The marked opposite-angle reference occupies offsets 38 through 48 and the marked angle-owner reference occupies offsets 49 through 59.
+
+Parsed by:
+- `crates/cadmpeg-codec-f3d/src/design/decode/scopes/path_feature.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 20 | 1 | `marker` | `u8` | little | spec | It uses the marker-one prologue through offset 33, and offset 34 |
+| 21 | 4 | `zero_value` | `u32` | little | spec | It uses the marker-one prologue through offset 33, and offset 34 |
+| 25 | 4 | `operation` | `u32` | little | spec | It uses the marker-one prologue through offset 33, and offset 34 |
+| 29 | 4 | `extent_kind` | `u32` | little | spec | It uses the marker-one prologue through offset 33, and offset 34 |
+| 33 | 1 | `direction_kind` | `u8` | little | spec | It uses the marker-one prologue through offset 33, and offset 34 |
+| 34 | 1 | `project_axis` | `u8` | little | spec | and offset 34 stores the Project Axis flag |
+| 35 | 1 | `solid` | `u8` | little | spec | Offset 35 stores the solid flag `1` |
+| 36 | 1 | `symmetric` | `u8` | little | spec | Offset 36 stores the Symmetric flag |
+| 37 | 1 | `two_sides` | `u8` | little | spec | offset 37 stores the Two Sides flag |
+| 38 | 1 | `opposite_angle_reference_marker` | `u8` | little | spec | The marked opposite-angle reference starts at offset 38 |
+| 49 | 1 | `angle_reference_marker` | `u8` | little | spec | The marked angle-owner reference starts at offset 49 |
+
+Unstated regions:
+
+- `0..20` (20 B): The indexed header and the preceding Revolve envelope are outside this field run.
+- `39..49` (10 B): The marked reference stores the u32 opposite-angle owner record index followed by six zero bytes.
+- `50..60` (10 B): The marked reference stores the u32 angle-owner record index followed by six zero bytes.
 
 ## `typed_reference_parameter_scope_tail`
 
@@ -5818,7 +6094,7 @@ Unstated regions:
 
 Spec §3.1 · layout: byte offsets · size: 76 B
 
-Offsets are relative to the identity record indexed header; the two counted loop lists begin at offset 72.
+Offsets are relative to the identity record indexed header; the two counted region lists begin at offset 72.
 
 Parsed by:
 - `crates/cadmpeg-codec-f3d/src/design/decode/operands.rs`
@@ -5827,7 +6103,7 @@ Parsed by:
 | -----: | ---: | ----- | ---- | ------ | --- | ------- |
 | 11 | 10 | `zero_run_10` | `bytes[10]` | little | spec | The identity record at the record index plus three stores ten zero bytes |
 | 21 | 51 | `selection_reference` | `bytes[51]` | little | spec | The identity record at the record index plus three stores ten zero bytes |
-| 72 | 4 | `first_loop_count` | `u32` | little | spec | The identity record at the record index plus three stores ten zero bytes |
+| 72 | 4 | `first_region_count` | `u32` | little | spec | The identity record at the record index plus three stores ten zero bytes |
 
 Unstated regions:
 
@@ -6099,6 +6375,23 @@ Offsets are relative to the end of the 190-byte selection-member frame.
 | 5 | 8 | `value` | `u64` | little | spec | byte `00`, u32 `2`, u64 `1`, and byte `00` · value `1` |
 | 13 | 1 | `trailing_zero` | `u8` | little | spec | byte `00`, u32 `2`, u64 `1`, and byte `00` · value `0` |
 
+## `extrude_selection_member_scope_tail`
+
+Spec §3.1 · layout: byte offsets · size: 50 B
+
+Offsets are relative to the end of the 190-byte selection-member frame.
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 1 | `leading_zero` | `u8` | little | spec | A selection member whose optional slot is absent can instead be a 240-byte indexed record · value `0` |
+| 1 | 8 | `opaque_scalar` | `f64` | little | spec | A selection member whose optional slot is absent can instead be a 240-byte indexed record |
+| 9 | 4 | `opaque_word` | `u32` | little | spec | A selection member whose optional slot is absent can instead be a 240-byte indexed record · value `260` |
+| 13 | 11 | `chain_reference_first` | `bytes[11]` | little | spec | A selection member whose optional slot is absent can instead be a 240-byte indexed record |
+| 24 | 3 | `separator` | `bytes[3]` | little | spec | A selection member whose optional slot is absent can instead be a 240-byte indexed record |
+| 27 | 11 | `chain_reference_second` | `bytes[11]` | little | spec | A selection member whose optional slot is absent can instead be a 240-byte indexed record |
+| 38 | 1 | `second_separator` | `u8` | little | spec | A selection member whose optional slot is absent can instead be a 240-byte indexed record · value `0` |
+| 39 | 11 | `scope_reference` | `bytes[11]` | little | spec | A selection member whose optional slot is absent can instead be a 240-byte indexed record |
+
 ## `cut_paste_prefix`
 
 Spec §3.1 · layout: byte offsets · size: 72 B
@@ -6292,13 +6585,7 @@ Parsed by:
 
 Cross-checked against code:
 
-- `crates/cadmpeg-codec-f3d/src/records/feature/emboss.rs` — The value offset is one byte after the reference marker; the middle value is its ordered-table ordinal.
-- `crates/cadmpeg-codec-f3d/src/records/feature/emboss.rs` — The value offset is one byte after the reference marker; the middle value is its ordered-table ordinal.
-- `crates/cadmpeg-codec-f3d/src/records/feature/emboss.rs` — The value offset is one byte after the reference marker; the middle value is its ordered-table ordinal.
-- `crates/cadmpeg-codec-f3d/src/records/feature/emboss.rs` — The value offset is one byte after the reference marker; the middle value is its ordered-table ordinal.
-- `crates/cadmpeg-codec-f3d/src/records/feature/emboss.rs` — The value offset is one byte after the reference marker; the middle value is its ordered-table ordinal.
-- `crates/cadmpeg-codec-f3d/src/records/feature/emboss.rs` — The value offset is one byte after the reference marker; the middle value is its ordered-table ordinal.
-- `crates/cadmpeg-codec-f3d/src/records/feature/emboss.rs` — The value offset is one byte after the reference marker; the middle value is its ordered-table ordinal.
+- `crates/cadmpeg-codec-f3d/src/records/feature/emboss.rs` — Prefix-field order is Depth, auxiliary group, Horizontal Distance, Rotation Angle, target-face group, Vertical Distance, profile group. This table order selects the sole-member operand grammar.
 
 ## `emboss_scope_reference_table_prefix`
 
@@ -6317,10 +6604,6 @@ Parsed by:
 | 160 | 72 | `null_guid` | `u16[36]` | little | spec | A 36-code-unit LP-UTF16 null GUID and three zero bytes separate the prefix |
 | 232 | 3 | `zero_separator` | `bytes[3]` | little | spec | A 36-code-unit LP-UTF16 null GUID and three zero bytes separate the prefix · value `[0, 0, 0]` |
 | 235 | 4 | `reference_count` | `u32` | little | spec | The `Emboss` fixed-prefix form has nine ordered references. · value `9` |
-
-Cross-checked against code:
-
-- `crates/cadmpeg-codec-f3d/src/records/feature/emboss.rs` — The common reference count follows the complete null-GUID separator.
 
 ## `rectangular_pattern_spacing_direction_record`
 
@@ -6563,7 +6846,7 @@ Parsed by:
 
 Spec §3.1 · layout: byte offsets · size: 289 B
 
-The 349-byte identity frame has one zero separator before the repeated reference.
+The separated identity and matrix frames have one zero separator before the repeated reference.
 
 Parsed by:
 - `crates/cadmpeg-codec-f3d/src/design/decode/components.rs`
@@ -6582,7 +6865,7 @@ Parsed by:
 | 160 | 76 | `occurrence_guid` | `bytes[76]` | little | spec | Typed local component occurrences use local references with inline type GUIDs. |
 | 236 | 1 | `separator` | `u8` | little | spec | Typed local component occurrences use local references with inline type GUIDs. · value `0` |
 | 237 | 51 | `component_reference_repeat` | `bytes[51]` | little | spec | Typed local component occurrences use local references with inline type GUIDs. |
-| 288 | 1 | `identity_flag` | `u8` | little | spec | Typed local component occurrences use local references with inline type GUIDs. · value `1` |
+| 288 | 1 | `identity_flag` | `u8` | little | spec | Typed local component occurrences use local references with inline type GUIDs. |
 
 ## `local_component_occurrence_typed_compact_prefix`
 
@@ -6626,7 +6909,7 @@ Parsed by:
 
 Spec §3.1 · layout: byte offsets · size: 188 B
 
-Relative to the end of the typed compact prefix.
+Relative to the end of the typed prefix.
 
 Parsed by:
 - `crates/cadmpeg-codec-f3d/src/design/decode/components.rs`
@@ -7190,6 +7473,441 @@ Unstated regions:
 - `15..19` (4 B): Target padding.
 - `27..28` (1 B): Target separator.
 - `39..43` (4 B): Target padding.
+
+## `emboss_single_control_head`
+
+Spec §3.1 · layout: byte offsets · size: 61 B
+
+Parsed by:
+- `crates/cadmpeg-codec-f3d/src/design/decode/scopes/emboss.rs`
+- `crates/cadmpeg-codec-f3d/src/records/feature/emboss.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 11 | `indexed_header` | `bytes[11]` | little | spec | Both heads contain the indexed header, nine zero bytes, the control lane |
+| 11 | 9 | `zero_run` | `bytes[9]` | little | spec | Both heads contain the indexed header, nine zero bytes, the control lane · value `[0, 0, 0, 0, 0, 0, 0, 0, 0]` |
+| 20 | 4 | `control_words` | `u32` | little | spec | Both heads contain the indexed header, nine zero bytes, the control lane |
+| 24 | 11 | `depth_owner_reference` | `bytes[11]` | little | spec | Both heads contain the indexed header, nine zero bytes, the control lane |
+| 35 | 11 | `auxiliary_group_reference` | `bytes[11]` | little | spec | Both heads contain the indexed header, nine zero bytes, the control lane |
+| 46 | 11 | `horizontal_owner_reference` | `bytes[11]` | little | spec | Both heads contain the indexed header, nine zero bytes, the control lane |
+| 57 | 4 | `native_pair_count` | `u32` | little | spec | Both heads contain the indexed header, nine zero bytes, the control lane |
+
+## `emboss_two_control_head`
+
+Spec §3.1 · layout: byte offsets · size: 65 B
+
+Parsed by:
+- `crates/cadmpeg-codec-f3d/src/design/decode/scopes/emboss.rs`
+- `crates/cadmpeg-codec-f3d/src/records/feature/emboss.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 11 | `indexed_header` | `bytes[11]` | little | spec | Both heads contain the indexed header, nine zero bytes, the control lane |
+| 11 | 9 | `zero_run` | `bytes[9]` | little | spec | Both heads contain the indexed header, nine zero bytes, the control lane · value `[0, 0, 0, 0, 0, 0, 0, 0, 0]` |
+| 20 | 8 | `control_words` | `u32[2]` | little | spec | Both heads contain the indexed header, nine zero bytes, the control lane |
+| 28 | 11 | `depth_owner_reference` | `bytes[11]` | little | spec | Both heads contain the indexed header, nine zero bytes, the control lane |
+| 39 | 11 | `auxiliary_group_reference` | `bytes[11]` | little | spec | Both heads contain the indexed header, nine zero bytes, the control lane |
+| 50 | 11 | `horizontal_owner_reference` | `bytes[11]` | little | spec | Both heads contain the indexed header, nine zero bytes, the control lane |
+| 61 | 4 | `native_pair_count` | `u32` | little | spec | Both heads contain the indexed header, nine zero bytes, the control lane |
+
+## `emboss_native_pair`
+
+Spec §3.1 · layout: byte offsets · size: 16 B
+
+Parsed by:
+- `crates/cadmpeg-codec-f3d/src/design/decode/scopes/emboss.rs`
+- `crates/cadmpeg-codec-f3d/src/records/feature/emboss.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 16 | `values` | `u64[2]` | little | spec | An `Emboss` native pair contains two u64 values. |
+
+## `emboss_counted_suffix`
+
+Spec §3.1 · layout: byte offsets · size: 158 B
+
+Parsed by:
+- `crates/cadmpeg-codec-f3d/src/design/decode/scopes/emboss.rs`
+- `crates/cadmpeg-codec-f3d/src/records/feature/emboss.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 11 | `rotation_owner_reference` | `bytes[11]` | little | spec | The `emboss_counted_suffix` layout starts immediately after the native pair run. |
+| 11 | 11 | `face_group_reference` | `bytes[11]` | little | spec | The `emboss_counted_suffix` layout starts immediately after the native pair run. |
+| 22 | 11 | `vertical_owner_reference` | `bytes[11]` | little | spec | The `emboss_counted_suffix` layout starts immediately after the native pair run. |
+| 33 | 4 | `profile_group_count` | `u32` | little | spec | The `emboss_counted_suffix` layout starts immediately after the native pair run. · value `1` |
+| 37 | 11 | `profile_group_reference` | `bytes[11]` | little | spec | The `emboss_counted_suffix` layout starts immediately after the native pair run. |
+| 48 | 12 | `zero_tail` | `bytes[12]` | little | spec | The `emboss_counted_suffix` layout starts immediately after the native pair run. · value `[0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]` |
+| 60 | 4 | `face_group_count` | `u32` | little | spec | The `emboss_counted_suffix` layout starts immediately after the native pair run. · value `1` |
+| 64 | 11 | `repeated_face_group_reference` | `bytes[11]` | little | spec | The `emboss_counted_suffix` layout starts immediately after the native pair run. |
+| 75 | 4 | `null_guid_count` | `u32` | little | spec | The `emboss_counted_suffix` layout starts immediately after the native pair run. · value `36` |
+| 79 | 72 | `null_guid` | `u16[36]` | little | spec | The `emboss_counted_suffix` layout starts immediately after the native pair run. |
+| 151 | 3 | `zero_separator` | `bytes[3]` | little | spec | The `emboss_counted_suffix` layout starts immediately after the native pair run. · value `[0, 0, 0]` |
+| 154 | 4 | `reference_count` | `u32` | little | spec | The `emboss_counted_suffix` layout starts immediately after the native pair run. |
+
+## `align_scope_prefix`
+
+Spec §3.1 · layout: byte offsets · size: 126 B
+
+Parsed by:
+- `crates/cadmpeg-codec-f3d/src/design/decode/scopes/align.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 11 | `indexed_header` | `bytes[11]` | little | spec | An `Align` prefix precedes its ordered reference table |
+| 11 | 9 | `header_zero` | `bytes[9]` | little | spec | An `Align` prefix precedes its ordered reference table · value `[0, 0, 0, 0, 0, 0, 0, 0, 0]` |
+| 20 | 1 | `zero` | `u8` | little | spec | An `Align` prefix precedes its ordered reference table · value `0` |
+| 21 | 1 | `first_marker` | `u8` | little | spec | An `Align` prefix precedes its ordered reference table · value `1` |
+| 22 | 4 | `first_reference` | `u32` | little | spec | An `Align` prefix precedes its ordered reference table |
+| 26 | 6 | `first_padding` | `bytes[6]` | little | spec | An `Align` prefix precedes its ordered reference table · value `[0, 0, 0, 0, 0, 0]` |
+| 32 | 4 | `source_code` | `u32` | little | spec | An `Align` prefix precedes its ordered reference table |
+| 36 | 1 | `second_marker` | `u8` | little | spec | An `Align` prefix precedes its ordered reference table · value `1` |
+| 37 | 4 | `second_reference` | `u32` | little | spec | An `Align` prefix precedes its ordered reference table |
+| 41 | 6 | `second_padding` | `bytes[6]` | little | spec | An `Align` prefix precedes its ordered reference table · value `[0, 0, 0, 0, 0, 0]` |
+| 47 | 4 | `identity_length` | `u32` | little | spec | An `Align` prefix precedes its ordered reference table · value `36` |
+| 51 | 72 | `identity` | `bytes[72]` | little | spec | An `Align` prefix precedes its ordered reference table |
+| 123 | 3 | `tail_zero` | `bytes[3]` | little | spec | An `Align` prefix precedes its ordered reference table · value `[0, 0, 0]` |
+
+## `align_scope_extended_prefix`
+
+Spec §3.1 · layout: byte offsets · size: 130 B
+
+Parsed by:
+- `crates/cadmpeg-codec-f3d/src/design/decode/scopes/align.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 11 | `indexed_header` | `bytes[11]` | little | spec | An `Align` prefix precedes its ordered reference table |
+| 11 | 9 | `header_zero` | `bytes[9]` | little | spec | An `Align` prefix precedes its ordered reference table · value `[0, 0, 0, 0, 0, 0, 0, 0, 0]` |
+| 20 | 4 | `extra_code` | `u32` | little | spec | An `Align` prefix precedes its ordered reference table · value `1` |
+| 24 | 1 | `zero` | `u8` | little | spec | An `Align` prefix precedes its ordered reference table · value `0` |
+| 25 | 1 | `first_marker` | `u8` | little | spec | An `Align` prefix precedes its ordered reference table · value `1` |
+| 26 | 4 | `first_reference` | `u32` | little | spec | An `Align` prefix precedes its ordered reference table |
+| 30 | 6 | `first_padding` | `bytes[6]` | little | spec | An `Align` prefix precedes its ordered reference table · value `[0, 0, 0, 0, 0, 0]` |
+| 36 | 4 | `source_code` | `u32` | little | spec | An `Align` prefix precedes its ordered reference table |
+| 40 | 1 | `second_marker` | `u8` | little | spec | An `Align` prefix precedes its ordered reference table · value `1` |
+| 41 | 4 | `second_reference` | `u32` | little | spec | An `Align` prefix precedes its ordered reference table |
+| 45 | 6 | `second_padding` | `bytes[6]` | little | spec | An `Align` prefix precedes its ordered reference table · value `[0, 0, 0, 0, 0, 0]` |
+| 51 | 4 | `identity_length` | `u32` | little | spec | An `Align` prefix precedes its ordered reference table · value `36` |
+| 55 | 72 | `identity` | `bytes[72]` | little | spec | An `Align` prefix precedes its ordered reference table |
+| 127 | 3 | `tail_zero` | `bytes[3]` | little | spec | An `Align` prefix precedes its ordered reference table · value `[0, 0, 0]` |
+
+## `align_constructor`
+
+Spec §3.1 · layout: byte offsets · size: 293 B
+
+Parsed by:
+- `crates/cadmpeg-codec-f3d/src/design/decode/scopes/align/construction.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 11 | `indexed_header` | `bytes[11]` | little | spec | The indexed record named by the first Align prefix reference is its constructor |
+| 11 | 20 | `header_zero` | `bytes[20]` | little | spec | The indexed record named by the first Align prefix reference is its constructor · value `[0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]` |
+| 31 | 1 | `first_marker` | `u8` | little | spec | The indexed record named by the first Align prefix reference is its constructor · value `1` |
+| 32 | 4 | `first_word` | `u32` | little | spec | The indexed record named by the first Align prefix reference is its constructor |
+| 36 | 6 | `first_padding` | `bytes[6]` | little | spec | The indexed record named by the first Align prefix reference is its constructor · value `[0, 0, 0, 0, 0, 0]` |
+| 42 | 1 | `second_marker` | `u8` | little | spec | The indexed record named by the first Align prefix reference is its constructor · value `1` |
+| 43 | 4 | `second_word` | `u32` | little | spec | The indexed record named by the first Align prefix reference is its constructor |
+| 47 | 6 | `second_padding` | `bytes[6]` | little | spec | The indexed record named by the first Align prefix reference is its constructor · value `[0, 0, 0, 0, 0, 0]` |
+| 53 | 1 | `third_marker` | `u8` | little | spec | The indexed record named by the first Align prefix reference is its constructor · value `1` |
+| 54 | 4 | `third_word` | `u32` | little | spec | The indexed record named by the first Align prefix reference is its constructor |
+| 58 | 6 | `third_padding` | `bytes[6]` | little | spec | The indexed record named by the first Align prefix reference is its constructor · value `[0, 0, 0, 0, 0, 0]` |
+| 64 | 4 | `first_code` | `u32` | little | spec | The indexed record named by the first Align prefix reference is its constructor |
+| 68 | 1 | `fourth_marker` | `u8` | little | spec | The indexed record named by the first Align prefix reference is its constructor · value `1` |
+| 69 | 4 | `fourth_word` | `u32` | little | spec | The indexed record named by the first Align prefix reference is its constructor |
+| 73 | 10 | `fourth_padding` | `bytes[10]` | little | spec | The indexed record named by the first Align prefix reference is its constructor · value `[0, 0, 0, 0, 0, 0, 0, 0, 0, 0]` |
+| 83 | 4 | `second_code` | `u32` | little | spec | The indexed record named by the first Align prefix reference is its constructor |
+| 87 | 1 | `matrix_zero` | `bytes[1]` | little | spec | The indexed record named by the first Align prefix reference is its constructor · value `[0]` |
+| 88 | 128 | `matrix_scalars` | `f64[16]` | little | spec | The indexed record named by the first Align prefix reference is its constructor |
+| 216 | 2 | `matrix_tail_zero` | `bytes[2]` | little | spec | The indexed record named by the first Align prefix reference is its constructor · value `[0, 0]` |
+| 218 | 4 | `third_code` | `u32` | little | spec | The indexed record named by the first Align prefix reference is its constructor |
+| 222 | 1 | `owner_zero` | `bytes[1]` | little | spec | The indexed record named by the first Align prefix reference is its constructor · value `[0]` |
+| 223 | 1 | `owner_marker` | `u8` | little | spec | The indexed record named by the first Align prefix reference is its constructor · value `1` |
+| 224 | 4 | `owner_word` | `u32` | little | spec | The indexed record named by the first Align prefix reference is its constructor |
+| 228 | 13 | `owner_padding` | `bytes[13]` | little | spec | The indexed record named by the first Align prefix reference is its constructor · value `[0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]` |
+| 241 | 4 | `first_scalar_code` | `u32` | little | spec | The indexed record named by the first Align prefix reference is its constructor |
+| 245 | 8 | `scalar` | `f64` | little | spec | The indexed record named by the first Align prefix reference is its constructor |
+| 253 | 4 | `second_scalar_code` | `u32` | little | spec | The indexed record named by the first Align prefix reference is its constructor |
+| 257 | 1 | `first_companion_marker` | `u8` | little | spec | The indexed record named by the first Align prefix reference is its constructor · value `1` |
+| 258 | 4 | `first_companion_word` | `u32` | little | spec | The indexed record named by the first Align prefix reference is its constructor |
+| 262 | 7 | `first_companion_padding` | `bytes[7]` | little | spec | The indexed record named by the first Align prefix reference is its constructor · value `[0, 0, 0, 0, 0, 0, 0]` |
+| 269 | 1 | `second_companion_marker` | `u8` | little | spec | The indexed record named by the first Align prefix reference is its constructor · value `1` |
+| 270 | 4 | `second_companion_word` | `u32` | little | spec | The indexed record named by the first Align prefix reference is its constructor |
+| 274 | 6 | `second_companion_padding` | `bytes[6]` | little | spec | The indexed record named by the first Align prefix reference is its constructor · value `[0, 0, 0, 0, 0, 0]` |
+| 280 | 1 | `repeated_owner_marker` | `u8` | little | spec | The indexed record named by the first Align prefix reference is its constructor · value `1` |
+| 281 | 4 | `repeated_owner_word` | `u32` | little | spec | The indexed record named by the first Align prefix reference is its constructor |
+| 285 | 8 | `repeated_owner_padding` | `bytes[8]` | little | spec | The indexed record named by the first Align prefix reference is its constructor · value `[0, 0, 0, 0, 0, 0, 0, 0]` |
+
+## `sketch_typed_compact_member_head`
+
+Spec §3.1 · layout: byte offsets · size: 74 B
+
+Offsets are relative to the indexed head-placement header.
+
+Parsed by:
+- `crates/cadmpeg-codec-f3d/src/design/decode/sketch.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 11 | 10 | `zero_run` | `bytes[10]` | little | spec | It stores ten zero bytes after the indexed header · value `[0, 0, 0, 0, 0, 0, 0, 0, 0, 0]` |
+| 21 | 2 | `flags` | `bytes[2]` | little | spec | `01 00` at offsets 21 and 22 · value `[1, 0]` |
+| 23 | 51 | `reference` | `bytes[51]` | little | spec | a 51-byte typed reference at offset 23 |
+
+Unstated regions:
+
+- `0..11` (11 B): The indexed header precedes the placement fields.
+
+## `derived_base_feature_scope_711`
+
+Spec §3.1 · layout: byte offsets · size: 711 B
+
+Offsets are relative to the primary indexed header of a `Derived Base Feature` scope with one result body. Element tails are not tabulated; the trailing member fields of the scope reference and parameter elements are listed.
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 19 | 1 | `body_marker` | `u8` | little | spec | The u32 at offset 20 of a derived base frame with result bodies is twice the body count · value `1` |
+| 20 | 4 | `body_count_twice` | `u32` | little | spec | The u32 at offset 20 of a derived base frame with result bodies is twice the body count · value `2` |
+| 24 | 1 | `body_first_marker` | `u8` | little | spec | A typed-reference element of a derived base frame is `u8 1`, a u64 Design record index, u32 36, and a 36-byte uppercase ASCII role GUID · value `1` |
+| 25 | 8 | `body_first_record` | `u64` | little | spec | In the 711-byte form the second body element stores the Design body entity suffix |
+| 33 | 4 | `body_first_role_length` | `u32` | little | spec | A typed-reference element of a derived base frame is `u8 1`, a u64 Design record index, u32 36, and a 36-byte uppercase ASCII role GUID · value `36` |
+| 37 | 36 | `body_first_role` | `bytes[36]` | little | spec | Equal roles have equal GUIDs in different documents · value `"D3937028-C20C-4E65-B010-94AD418A5C20"` |
+| 79 | 1 | `body_entity_marker` | `u8` | little | spec | A typed-reference element of a derived base frame is `u8 1`, a u64 Design record index, u32 36, and a 36-byte uppercase ASCII role GUID · value `1` |
+| 80 | 8 | `body_entity_record` | `u64` | little | spec | In the 711-byte form the second body element stores the Design body entity suffix |
+| 88 | 4 | `body_entity_role_length` | `u32` | little | spec | A typed-reference element of a derived base frame is `u8 1`, a u64 Design record index, u32 36, and a 36-byte uppercase ASCII role GUID · value `36` |
+| 92 | 36 | `body_entity_role` | `bytes[36]` | little | spec | Equal roles have equal GUIDs in different documents · value `"D3937028-C20C-4E65-B010-94AD418A5C20"` |
+| 167 | 1 | `body_first_repeat_marker` | `u8` | little | spec | A typed-reference element of a derived base frame is `u8 1`, a u64 Design record index, u32 36, and a 36-byte uppercase ASCII role GUID · value `1` |
+| 168 | 8 | `body_first_repeat_record` | `u64` | little | spec | In the 711-byte form the second body element stores the Design body entity suffix |
+| 176 | 4 | `body_first_repeat_role_length` | `u32` | little | spec | A typed-reference element of a derived base frame is `u8 1`, a u64 Design record index, u32 36, and a 36-byte uppercase ASCII role GUID · value `36` |
+| 180 | 36 | `body_first_repeat_role` | `bytes[36]` | little | spec | Equal roles have equal GUIDs in different documents · value `"D3937028-C20C-4E65-B010-94AD418A5C20"` |
+| 219 | 1 | `scope_ref_marker` | `u8` | little | spec | A typed-reference element of a derived base frame is `u8 1`, a u64 Design record index, u32 36, and a 36-byte uppercase ASCII role GUID · value `1` |
+| 220 | 8 | `scope_ref_record` | `u64` | little | spec | The scope reference elements store the primary record index plus 4 |
+| 228 | 4 | `scope_ref_role_length` | `u32` | little | spec | A typed-reference element of a derived base frame is `u8 1`, a u64 Design record index, u32 36, and a 36-byte uppercase ASCII role GUID · value `36` |
+| 232 | 36 | `scope_ref_role` | `bytes[36]` | little | spec | Equal roles have equal GUIDs in different documents · value `"493A89BA-E146-498D-9033-2783FE727AF4"` |
+| 274 | 1 | `other_ref_marker` | `u8` | little | spec | A typed-reference element of a derived base frame is `u8 1`, a u64 Design record index, u32 36, and a 36-byte uppercase ASCII role GUID · value `1` |
+| 275 | 8 | `other_ref_record` | `u64` | little | spec | A typed-reference element of a derived base frame is `u8 1`, a u64 Design record index, u32 36, and a 36-byte uppercase ASCII role GUID |
+| 283 | 4 | `other_ref_role_length` | `u32` | little | spec | A typed-reference element of a derived base frame is `u8 1`, a u64 Design record index, u32 36, and a 36-byte uppercase ASCII role GUID · value `36` |
+| 287 | 36 | `other_ref_role` | `bytes[36]` | little | spec | Equal roles have equal GUIDs in different documents · value `"D26351F0-5940-4D23-AA20-2C35475A6D9E"` |
+| 333 | 4 | `zero_role_length` | `u32` | little | spec | A 36-code-unit LP-UTF16 GUID of zeros precedes the second scope reference element · value `36` |
+| 337 | 72 | `zero_role` | `bytes[72]` | little | spec | A 36-code-unit LP-UTF16 GUID of zeros precedes the second scope reference element |
+| 416 | 1 | `scope_ref_repeat_marker` | `u8` | little | spec | A typed-reference element of a derived base frame is `u8 1`, a u64 Design record index, u32 36, and a 36-byte uppercase ASCII role GUID · value `1` |
+| 417 | 8 | `scope_ref_repeat_record` | `u64` | little | spec | The scope reference elements store the primary record index plus 4 |
+| 425 | 4 | `scope_ref_repeat_role_length` | `u32` | little | spec | A typed-reference element of a derived base frame is `u8 1`, a u64 Design record index, u32 36, and a 36-byte uppercase ASCII role GUID · value `36` |
+| 429 | 36 | `scope_ref_repeat_role` | `bytes[36]` | little | spec | Equal roles have equal GUIDs in different documents · value `"493A89BA-E146-498D-9033-2783FE727AF4"` |
+| 467 | 4 | `current_history_state_id` | `u32` | little | spec | The trailing member of the second scope reference element is the current history-state identity |
+| 471 | 4 | `kind_length` | `u32` | little | spec | The kind is length-prefixed UTF-16, followed by the feature ordinal · value `20` |
+| 475 | 40 | `kind` | `bytes[40]` | little | spec | The kind is length-prefixed UTF-16, followed by the feature ordinal |
+| 515 | 4 | `feature_ordinal` | `u32` | little | spec | The kind is length-prefixed UTF-16, followed by the feature ordinal |
+| 534 | 1 | `param_3_marker` | `u8` | little | spec | A typed-reference element of a derived base frame is `u8 1`, a u64 Design record index, u32 36, and a 36-byte uppercase ASCII role GUID · value `1` |
+| 535 | 8 | `param_3_record` | `u64` | little | spec | The three trailing parameter elements store the primary record index plus 3, 2, and 1 |
+| 543 | 4 | `param_3_role_length` | `u32` | little | spec | A typed-reference element of a derived base frame is `u8 1`, a u64 Design record index, u32 36, and a 36-byte uppercase ASCII role GUID · value `36` |
+| 547 | 36 | `param_3_role` | `bytes[36]` | little | spec | Equal roles have equal GUIDs in different documents · value `"B7F34D7B-DAC4-41A5-B67D-D672537C3BFA"` |
+| 585 | 4 | `previous_history_state_id` | `u32` | little | spec | The trailing member of the first trailing parameter element is the previous history-state identity |
+| 589 | 4 | `scalar_head` | `u32` | little | spec | An f64 between two equal u32 values follows the previous history-state identity · value `76` |
+| 593 | 8 | `scalar` | `f64` | little | spec | An f64 between two equal u32 values follows the previous history-state identity |
+| 601 | 4 | `scalar_tail` | `u32` | little | spec | An f64 between two equal u32 values follows the previous history-state identity · value `76` |
+| 605 | 1 | `param_2_marker` | `u8` | little | spec | A typed-reference element of a derived base frame is `u8 1`, a u64 Design record index, u32 36, and a 36-byte uppercase ASCII role GUID · value `1` |
+| 606 | 8 | `param_2_record` | `u64` | little | spec | The three trailing parameter elements store the primary record index plus 3, 2, and 1 |
+| 614 | 4 | `param_2_role_length` | `u32` | little | spec | A typed-reference element of a derived base frame is `u8 1`, a u64 Design record index, u32 36, and a 36-byte uppercase ASCII role GUID · value `36` |
+| 618 | 36 | `param_2_role` | `bytes[36]` | little | spec | Equal roles have equal GUIDs in different documents · value `"5FBE538E-139B-46D4-BCAF-CC796D1E1F78"` |
+| 658 | 1 | `param_1_marker` | `u8` | little | spec | A typed-reference element of a derived base frame is `u8 1`, a u64 Design record index, u32 36, and a 36-byte uppercase ASCII role GUID · value `1` |
+| 659 | 8 | `param_1_record` | `u64` | little | spec | The three trailing parameter elements store the primary record index plus 3, 2, and 1 |
+| 667 | 4 | `param_1_role_length` | `u32` | little | spec | A typed-reference element of a derived base frame is `u8 1`, a u64 Design record index, u32 36, and a 36-byte uppercase ASCII role GUID · value `36` |
+| 671 | 36 | `param_1_role` | `bytes[36]` | little | spec | Equal roles have equal GUIDs in different documents · value `"6CCF41D5-40BE-48ED-A834-18F3EAED6C57"` |
+
+Unstated regions:
+
+- `0..19` (19 B): The specification states no field in this range.
+- `73..79` (6 B): The specification states no field in this range.
+- `128..167` (39 B): The specification states no field in this range.
+- `216..219` (3 B): The specification states no field in this range.
+- `268..274` (6 B): The specification states no field in this range.
+- `323..333` (10 B): The specification states no field in this range.
+- `409..416` (7 B): The specification states no field in this range.
+- `465..467` (2 B): The specification states no field in this range.
+- `519..534` (15 B): The specification states no field in this range.
+- `583..585` (2 B): The specification states no field in this range.
+- `654..658` (4 B): The specification states no field in this range.
+- `707..711` (4 B): The specification states no field in this range.
+
+## `derived_base_feature_scope_707`
+
+Spec §3.1 · layout: byte offsets · size: 707 B
+
+Offsets are relative to the primary indexed header of a `DerivedBaseFeature` scope with one result body.
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 19 | 1 | `body_marker` | `u8` | little | spec | The u32 at offset 20 of a derived base frame with result bodies is twice the body count · value `1` |
+| 20 | 4 | `body_count_twice` | `u32` | little | spec | The u32 at offset 20 of a derived base frame with result bodies is twice the body count · value `2` |
+| 24 | 1 | `body_first_marker` | `u8` | little | spec | A typed-reference element of a derived base frame is `u8 1`, a u64 Design record index, u32 36, and a 36-byte uppercase ASCII role GUID · value `1` |
+| 25 | 8 | `body_first_record` | `u64` | little | spec | In the 711-byte form the second body element stores the Design body entity suffix |
+| 33 | 4 | `body_first_role_length` | `u32` | little | spec | A typed-reference element of a derived base frame is `u8 1`, a u64 Design record index, u32 36, and a 36-byte uppercase ASCII role GUID · value `36` |
+| 37 | 36 | `body_first_role` | `bytes[36]` | little | spec | Equal roles have equal GUIDs in different documents · value `"D3937028-C20C-4E65-B010-94AD418A5C20"` |
+| 79 | 1 | `body_entity_marker` | `u8` | little | spec | A typed-reference element of a derived base frame is `u8 1`, a u64 Design record index, u32 36, and a 36-byte uppercase ASCII role GUID · value `1` |
+| 80 | 8 | `body_entity_record` | `u64` | little | spec | In the 711-byte form the second body element stores the Design body entity suffix |
+| 88 | 4 | `body_entity_role_length` | `u32` | little | spec | A typed-reference element of a derived base frame is `u8 1`, a u64 Design record index, u32 36, and a 36-byte uppercase ASCII role GUID · value `36` |
+| 92 | 36 | `body_entity_role` | `bytes[36]` | little | spec | Equal roles have equal GUIDs in different documents · value `"D3937028-C20C-4E65-B010-94AD418A5C20"` |
+| 167 | 1 | `body_first_repeat_marker` | `u8` | little | spec | A typed-reference element of a derived base frame is `u8 1`, a u64 Design record index, u32 36, and a 36-byte uppercase ASCII role GUID · value `1` |
+| 168 | 8 | `body_first_repeat_record` | `u64` | little | spec | In the 711-byte form the second body element stores the Design body entity suffix |
+| 176 | 4 | `body_first_repeat_role_length` | `u32` | little | spec | A typed-reference element of a derived base frame is `u8 1`, a u64 Design record index, u32 36, and a 36-byte uppercase ASCII role GUID · value `36` |
+| 180 | 36 | `body_first_repeat_role` | `bytes[36]` | little | spec | Equal roles have equal GUIDs in different documents · value `"D3937028-C20C-4E65-B010-94AD418A5C20"` |
+| 219 | 1 | `scope_ref_marker` | `u8` | little | spec | A typed-reference element of a derived base frame is `u8 1`, a u64 Design record index, u32 36, and a 36-byte uppercase ASCII role GUID · value `1` |
+| 220 | 8 | `scope_ref_record` | `u64` | little | spec | The scope reference elements store the primary record index plus 4 |
+| 228 | 4 | `scope_ref_role_length` | `u32` | little | spec | A typed-reference element of a derived base frame is `u8 1`, a u64 Design record index, u32 36, and a 36-byte uppercase ASCII role GUID · value `36` |
+| 232 | 36 | `scope_ref_role` | `bytes[36]` | little | spec | Equal roles have equal GUIDs in different documents · value `"493A89BA-E146-498D-9033-2783FE727AF4"` |
+| 274 | 1 | `other_ref_marker` | `u8` | little | spec | A typed-reference element of a derived base frame is `u8 1`, a u64 Design record index, u32 36, and a 36-byte uppercase ASCII role GUID · value `1` |
+| 275 | 8 | `other_ref_record` | `u64` | little | spec | A typed-reference element of a derived base frame is `u8 1`, a u64 Design record index, u32 36, and a 36-byte uppercase ASCII role GUID |
+| 283 | 4 | `other_ref_role_length` | `u32` | little | spec | A typed-reference element of a derived base frame is `u8 1`, a u64 Design record index, u32 36, and a 36-byte uppercase ASCII role GUID · value `36` |
+| 287 | 36 | `other_ref_role` | `bytes[36]` | little | spec | Equal roles have equal GUIDs in different documents · value `"D26351F0-5940-4D23-AA20-2C35475A6D9E"` |
+| 333 | 4 | `zero_role_length` | `u32` | little | spec | A 36-code-unit LP-UTF16 GUID of zeros precedes the second scope reference element · value `36` |
+| 337 | 72 | `zero_role` | `bytes[72]` | little | spec | A 36-code-unit LP-UTF16 GUID of zeros precedes the second scope reference element |
+| 416 | 1 | `scope_ref_repeat_marker` | `u8` | little | spec | A typed-reference element of a derived base frame is `u8 1`, a u64 Design record index, u32 36, and a 36-byte uppercase ASCII role GUID · value `1` |
+| 417 | 8 | `scope_ref_repeat_record` | `u64` | little | spec | The scope reference elements store the primary record index plus 4 |
+| 425 | 4 | `scope_ref_repeat_role_length` | `u32` | little | spec | A typed-reference element of a derived base frame is `u8 1`, a u64 Design record index, u32 36, and a 36-byte uppercase ASCII role GUID · value `36` |
+| 429 | 36 | `scope_ref_repeat_role` | `bytes[36]` | little | spec | Equal roles have equal GUIDs in different documents · value `"493A89BA-E146-498D-9033-2783FE727AF4"` |
+| 467 | 4 | `current_history_state_id` | `u32` | little | spec | The trailing member of the second scope reference element is the current history-state identity |
+| 471 | 4 | `kind_length` | `u32` | little | spec | The kind is length-prefixed UTF-16, followed by the feature ordinal · value `18` |
+| 475 | 36 | `kind` | `bytes[36]` | little | spec | The kind is length-prefixed UTF-16, followed by the feature ordinal |
+| 511 | 4 | `feature_ordinal` | `u32` | little | spec | The kind is length-prefixed UTF-16, followed by the feature ordinal |
+| 530 | 1 | `param_3_marker` | `u8` | little | spec | A typed-reference element of a derived base frame is `u8 1`, a u64 Design record index, u32 36, and a 36-byte uppercase ASCII role GUID · value `1` |
+| 531 | 8 | `param_3_record` | `u64` | little | spec | The three trailing parameter elements store the primary record index plus 3, 2, and 1 |
+| 539 | 4 | `param_3_role_length` | `u32` | little | spec | A typed-reference element of a derived base frame is `u8 1`, a u64 Design record index, u32 36, and a 36-byte uppercase ASCII role GUID · value `36` |
+| 543 | 36 | `param_3_role` | `bytes[36]` | little | spec | Equal roles have equal GUIDs in different documents · value `"B7F34D7B-DAC4-41A5-B67D-D672537C3BFA"` |
+| 581 | 4 | `previous_history_state_id` | `u32` | little | spec | The trailing member of the first trailing parameter element is the previous history-state identity |
+| 585 | 4 | `scalar_head` | `u32` | little | spec | An f64 between two equal u32 values follows the previous history-state identity · value `69` |
+| 589 | 8 | `scalar` | `f64` | little | spec | An f64 between two equal u32 values follows the previous history-state identity |
+| 597 | 4 | `scalar_tail` | `u32` | little | spec | An f64 between two equal u32 values follows the previous history-state identity · value `69` |
+| 601 | 1 | `param_2_marker` | `u8` | little | spec | A typed-reference element of a derived base frame is `u8 1`, a u64 Design record index, u32 36, and a 36-byte uppercase ASCII role GUID · value `1` |
+| 602 | 8 | `param_2_record` | `u64` | little | spec | The three trailing parameter elements store the primary record index plus 3, 2, and 1 |
+| 610 | 4 | `param_2_role_length` | `u32` | little | spec | A typed-reference element of a derived base frame is `u8 1`, a u64 Design record index, u32 36, and a 36-byte uppercase ASCII role GUID · value `36` |
+| 614 | 36 | `param_2_role` | `bytes[36]` | little | spec | Equal roles have equal GUIDs in different documents · value `"5FBE538E-139B-46D4-BCAF-CC796D1E1F78"` |
+| 654 | 1 | `param_1_marker` | `u8` | little | spec | A typed-reference element of a derived base frame is `u8 1`, a u64 Design record index, u32 36, and a 36-byte uppercase ASCII role GUID · value `1` |
+| 655 | 8 | `param_1_record` | `u64` | little | spec | The three trailing parameter elements store the primary record index plus 3, 2, and 1 |
+| 663 | 4 | `param_1_role_length` | `u32` | little | spec | A typed-reference element of a derived base frame is `u8 1`, a u64 Design record index, u32 36, and a 36-byte uppercase ASCII role GUID · value `36` |
+| 667 | 36 | `param_1_role` | `bytes[36]` | little | spec | Equal roles have equal GUIDs in different documents · value `"6CCF41D5-40BE-48ED-A834-18F3EAED6C57"` |
+
+Unstated regions:
+
+- `0..19` (19 B): The specification states no field in this range.
+- `73..79` (6 B): The specification states no field in this range.
+- `128..167` (39 B): The specification states no field in this range.
+- `216..219` (3 B): The specification states no field in this range.
+- `268..274` (6 B): The specification states no field in this range.
+- `323..333` (10 B): The specification states no field in this range.
+- `409..416` (7 B): The specification states no field in this range.
+- `465..467` (2 B): The specification states no field in this range.
+- `515..530` (15 B): The specification states no field in this range.
+- `579..581` (2 B): The specification states no field in this range.
+- `650..654` (4 B): The specification states no field in this range.
+- `703..707` (4 B): The specification states no field in this range.
+
+## `derived_base_feature_scope_491`
+
+Spec §3.1 · layout: byte offsets · size: 491 B
+
+Offsets are relative to the primary indexed header of a `DerivedBaseFeature` zero-body scope.
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 20 | 1 | `zero_body_marker` | `u8` | little | spec | A zero-body derived base frame stores `u8 1` at offset 20 · value `1` |
+| 54 | 1 | `scope_ref_marker` | `u8` | little | spec | A typed-reference element of a derived base frame is `u8 1`, a u64 Design record index, u32 36, and a 36-byte uppercase ASCII role GUID · value `1` |
+| 55 | 8 | `scope_ref_record` | `u64` | little | spec | The scope reference elements store the primary record index plus 4 |
+| 63 | 4 | `scope_ref_role_length` | `u32` | little | spec | A typed-reference element of a derived base frame is `u8 1`, a u64 Design record index, u32 36, and a 36-byte uppercase ASCII role GUID · value `36` |
+| 67 | 36 | `scope_ref_role` | `bytes[36]` | little | spec | Equal roles have equal GUIDs in different documents · value `"493A89BA-E146-498D-9033-2783FE727AF4"` |
+| 117 | 4 | `zero_role_length` | `u32` | little | spec | A 36-code-unit LP-UTF16 GUID of zeros precedes the second scope reference element · value `36` |
+| 121 | 72 | `zero_role` | `bytes[72]` | little | spec | A 36-code-unit LP-UTF16 GUID of zeros precedes the second scope reference element |
+| 200 | 1 | `scope_ref_repeat_marker` | `u8` | little | spec | A typed-reference element of a derived base frame is `u8 1`, a u64 Design record index, u32 36, and a 36-byte uppercase ASCII role GUID · value `1` |
+| 201 | 8 | `scope_ref_repeat_record` | `u64` | little | spec | The scope reference elements store the primary record index plus 4 |
+| 209 | 4 | `scope_ref_repeat_role_length` | `u32` | little | spec | A typed-reference element of a derived base frame is `u8 1`, a u64 Design record index, u32 36, and a 36-byte uppercase ASCII role GUID · value `36` |
+| 213 | 36 | `scope_ref_repeat_role` | `bytes[36]` | little | spec | Equal roles have equal GUIDs in different documents · value `"493A89BA-E146-498D-9033-2783FE727AF4"` |
+| 251 | 4 | `current_history_state_id` | `u32` | little | spec | The trailing member of the second scope reference element is the current history-state identity |
+| 255 | 4 | `kind_length` | `u32` | little | spec | The kind is length-prefixed UTF-16, followed by the feature ordinal · value `18` |
+| 259 | 36 | `kind` | `bytes[36]` | little | spec | The kind is length-prefixed UTF-16, followed by the feature ordinal |
+| 295 | 4 | `feature_ordinal` | `u32` | little | spec | The kind is length-prefixed UTF-16, followed by the feature ordinal |
+| 314 | 1 | `param_3_marker` | `u8` | little | spec | A typed-reference element of a derived base frame is `u8 1`, a u64 Design record index, u32 36, and a 36-byte uppercase ASCII role GUID · value `1` |
+| 315 | 8 | `param_3_record` | `u64` | little | spec | The three trailing parameter elements store the primary record index plus 3, 2, and 1 |
+| 323 | 4 | `param_3_role_length` | `u32` | little | spec | A typed-reference element of a derived base frame is `u8 1`, a u64 Design record index, u32 36, and a 36-byte uppercase ASCII role GUID · value `36` |
+| 327 | 36 | `param_3_role` | `bytes[36]` | little | spec | Equal roles have equal GUIDs in different documents · value `"B7F34D7B-DAC4-41A5-B67D-D672537C3BFA"` |
+| 365 | 4 | `previous_history_state_id` | `u32` | little | spec | The trailing member of the first trailing parameter element is the previous history-state identity |
+| 369 | 4 | `scalar_head` | `u32` | little | spec | An f64 between two equal u32 values follows the previous history-state identity · value `69` |
+| 373 | 8 | `scalar` | `f64` | little | spec | An f64 between two equal u32 values follows the previous history-state identity |
+| 381 | 4 | `scalar_tail` | `u32` | little | spec | An f64 between two equal u32 values follows the previous history-state identity · value `69` |
+| 385 | 1 | `param_2_marker` | `u8` | little | spec | A typed-reference element of a derived base frame is `u8 1`, a u64 Design record index, u32 36, and a 36-byte uppercase ASCII role GUID · value `1` |
+| 386 | 8 | `param_2_record` | `u64` | little | spec | The three trailing parameter elements store the primary record index plus 3, 2, and 1 |
+| 394 | 4 | `param_2_role_length` | `u32` | little | spec | A typed-reference element of a derived base frame is `u8 1`, a u64 Design record index, u32 36, and a 36-byte uppercase ASCII role GUID · value `36` |
+| 398 | 36 | `param_2_role` | `bytes[36]` | little | spec | Equal roles have equal GUIDs in different documents · value `"5FBE538E-139B-46D4-BCAF-CC796D1E1F78"` |
+| 438 | 1 | `param_1_marker` | `u8` | little | spec | A typed-reference element of a derived base frame is `u8 1`, a u64 Design record index, u32 36, and a 36-byte uppercase ASCII role GUID · value `1` |
+| 439 | 8 | `param_1_record` | `u64` | little | spec | The three trailing parameter elements store the primary record index plus 3, 2, and 1 |
+| 447 | 4 | `param_1_role_length` | `u32` | little | spec | A typed-reference element of a derived base frame is `u8 1`, a u64 Design record index, u32 36, and a 36-byte uppercase ASCII role GUID · value `36` |
+| 451 | 36 | `param_1_role` | `bytes[36]` | little | spec | Equal roles have equal GUIDs in different documents · value `"6CCF41D5-40BE-48ED-A834-18F3EAED6C57"` |
+
+Unstated regions:
+
+- `0..20` (20 B): The specification states no field in this range.
+- `21..54` (33 B): The specification states no field in this range.
+- `103..117` (14 B): The specification states no field in this range.
+- `193..200` (7 B): The specification states no field in this range.
+- `249..251` (2 B): The specification states no field in this range.
+- `299..314` (15 B): The specification states no field in this range.
+- `363..365` (2 B): The specification states no field in this range.
+- `434..438` (4 B): The specification states no field in this range.
+- `487..491` (4 B): The specification states no field in this range.
+
+## `entity_tracking_carrier_prefix`
+
+Spec §3.1 · layout: byte offsets · size: 73 B
+
+Offsets are relative to the carrier indexed header; the optional related identities follow at offset 73.
+
+Parsed by:
+- `crates/cadmpeg-codec-f3d/src/design/decode/operands.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 11 | 10 | `zero_run_10` | `bytes[10]` | little | spec | The carrier header is followed by ten zero bytes, u32 values `1, 0, 1`, a u32 lane with value `2` or `3` |
+| 21 | 12 | `lead_words` | `bytes[12]` | little | spec | The carrier header is followed by ten zero bytes, u32 values `1, 0, 1`, a u32 lane with value `2` or `3` |
+| 33 | 4 | `lane` | `u32` | little | spec | The carrier header is followed by ten zero bytes, u32 values `1, 0, 1`, a u32 lane with value `2` or `3` |
+| 37 | 8 | `primary_identity` | `u64` | little | spec | The carrier header is followed by ten zero bytes, u32 values `1, 0, 1`, a u32 lane with value `2` or `3` |
+| 45 | 8 | `zero_run_8_first` | `u64` | little | spec | The carrier header is followed by ten zero bytes, u32 values `1, 0, 1`, a u32 lane with value `2` or `3` |
+| 53 | 4 | `one` | `u32` | little | spec | The carrier header is followed by ten zero bytes, u32 values `1, 0, 1`, a u32 lane with value `2` or `3` |
+| 57 | 4 | `selector` | `i32` | little | spec | The carrier header is followed by ten zero bytes, u32 values `1, 0, 1`, a u32 lane with value `2` or `3` |
+| 61 | 4 | `kind` | `u32` | little | spec | The carrier header is followed by ten zero bytes, u32 values `1, 0, 1`, a u32 lane with value `2` or `3` |
+| 65 | 8 | `zero_run_8_second` | `u64` | little | spec | The carrier header is followed by ten zero bytes, u32 values `1, 0, 1`, a u32 lane with value `2` or `3` |
+
+Unstated regions:
+
+- `0..11` (11 B): The indexed header precedes this field run.
+
+## `local_component_occurrence_empty_attributes_prefix`
+
+Spec §3.1 · layout: byte offsets · size: 213 B
+
+Offsets are relative to the indexed header. The identity or matrix tail follows at offset 213.
+
+Parsed by:
+- `crates/cadmpeg-codec-f3d/src/design/decode/components.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 11 | 8 | `empty_instance_name` | `bytes[8]` | little | spec | An empty-attribute local component occurrence stores an empty attribute list after its path. |
+| 19 | 1 | `path_marker` | `u8` | little | spec | An empty-attribute local component occurrence stores an empty attribute list after its path. · value `1` |
+| 20 | 4 | `path_count` | `u32` | little | spec | An empty-attribute local component occurrence stores an empty attribute list after its path. · value `1` |
+| 24 | 9 | `component_reference` | `bytes[9]` | little | spec | An empty-attribute local component occurrence stores an empty attribute list after its path. |
+| 35 | 4 | `path_discriminator` | `u32` | little | spec | An empty-attribute local component occurrence stores an empty attribute list after its path. |
+| 39 | 1 | `attributes_marker` | `u8` | little | spec | An empty-attribute local component occurrence stores an empty attribute list after its path. · value `1` |
+| 40 | 4 | `attribute_count` | `u32` | little | spec | An empty-attribute local component occurrence stores an empty attribute list after its path. · value `0` |
+| 44 | 4 | `occurrence_ordinal` | `u32` | little | spec | An empty-attribute local component occurrence stores an empty attribute list after its path. |
+| 48 | 76 | `carrier_guid` | `bytes[76]` | little | spec | An empty-attribute local component occurrence stores an empty attribute list after its path. |
+| 124 | 76 | `occurrence_guid` | `bytes[76]` | little | spec | An empty-attribute local component occurrence stores an empty attribute list after its path. |
+| 201 | 9 | `component_reference_repeat` | `bytes[9]` | little | spec | An empty-attribute local component occurrence stores an empty attribute list after its path. |
+| 212 | 1 | `identity_flag` | `u8` | little | spec | An empty-attribute local component occurrence stores an empty attribute list after its path. |
+
+Unstated regions:
+
+- `0..11` (11 B): Indexed header.
+- `33..35` (2 B): Two zero trailing bytes of the local component reference.
+- `200..201` (1 B): Zero separator.
+- `210..212` (2 B): Zero trailing field of the repeated component-record reference.
 
 ## Not tabulated
 

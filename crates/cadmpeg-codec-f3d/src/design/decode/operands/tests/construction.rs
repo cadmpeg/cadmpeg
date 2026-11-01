@@ -1405,6 +1405,8 @@ fn construction_operand_groups_have_exact_counted_and_direct_frames() {
         ));
     }
 
+    // Class tags vary between files and do not select the legacy frame, so a
+    // pair that no file pairs this way still decodes.
     delete_scope.class_tag =
         crate::records::references::DesignClassTag::try_from("264".to_owned()).unwrap();
     delete_scope.paired_class_tag =
@@ -1426,10 +1428,7 @@ fn construction_operand_groups_have_exact_counted_and_direct_frames() {
         });
     assert!(matches!(
         features[0].evaluation.definition(),
-        FeatureDefinition::Operation(FeatureOperation::Native {
-            kind: cadmpeg_ir::features::NativeFeatureKind::DeleteFace,
-            ..
-        })
+        FeatureDefinition::Operation(FeatureOperation::DeleteFace { heal: true, .. })
     ));
 
     let mut remove_scope = scope.clone();

@@ -73,6 +73,7 @@ its result.
 | CATIA V5 `.CATPart`                               | L3    |
 | Creo Parametric `.prt`                            | L1    |
 | Creo View `.pvz`                                  | L3    |
+| OpenUSD layers                                    | L2    |
 | STEP Part 21                                      | L8    |
 
 <!-- /generated: ladder-table -->
@@ -658,6 +659,64 @@ These gaps remain:
 
 - **Native write: None.**
 - **Round trip: None.**
+
+## OpenUSD layers
+
+**Model:** USDA text layer of prim, property, and metadata statements; USDC binary layers are identified by their bootstrap header
+
+<!-- generated: dialects usd -->
+
+**Ladder: L2.**
+
+| Dialect           | Read                   | Write    |
+| ----------------- | ---------------------- | -------- |
+| `usd:usda-1.0`    | L2                     | verified |
+| `usd:usda-1.1`    | detected               | emitted  |
+| `usd:usda-1.2`    | detected               | emitted  |
+| `usd:usda-1.3`    | detected               | emitted  |
+| `usd:sdf-1.4.32`  | detected               | none     |
+| `usd:usdc-0.0.1`  | L2                     | none     |
+| `usd:usdc-0.1.0`  | L2                     | none     |
+| `usd:usdc-0.2.0`  | L2                     | none     |
+| `usd:usdc-0.4.0`  | L2                     | none     |
+| `usd:usdc-0.5.0`  | L2                     | none     |
+| `usd:usdc-0.6.0`  | L2                     | none     |
+| `usd:usdc-0.7.0`  | L2                     | none     |
+| `usd:usdc-0.8.0`  | L2                     | emitted  |
+| `usd:usdc-0.9.0`  | L2                     | none     |
+| `usd:usdc-0.10.0` | L2                     | none     |
+| `usd:usdc-0.11.0` | L2                     | none     |
+| `usd:usdc-0.12.0` | L2                     | none     |
+| `usd:usdc-0.13.0` | L2                     | none     |
+| `usd:usdc-0.14.0` | L2                     | none     |
+| `usd:usdc-0.15.0` | L2                     | none     |
+| `usd:usdz`        | L2                     | emitted  |
+| `usd:unknown`     | unclassified-recovered | none     |
+
+<!-- /generated: dialects usd -->
+
+The codec detects USDA layers, USDC layers, and USDZ packages, classifies the layer from its header version, reads the whole USDA grammar and every USDC version from 0.0.1 to 0.15.0 into one layer model, and composes the root layer stack with the layers it names, opened from the package or beside the input: sublayers, references and payloads to other layers, selected variants, internal references and payloads, inherits, specializes, `over`, `class`, `active`, and instancing. Each scene prim becomes a product definition and an occurrence with its transform-op stack as an affine placement. Meshes become placed tessellations with their normals, texture-coordinate sets, and face subsets; basis curves and NURBS curves become wire bodies on exact NURBS carriers; NURBS patches become sheet-body faces on NURBS surfaces; intrinsic primitives become exact B-rep solids, and a `Plane` an exact sheet; `UsdPhysics` scenes, rigid bodies, articulation roots, mass properties, colliders, physics materials, joints, joint drives, and PhysX gear and rack-and-pinion joints become physical records and assembly joints in kilograms, millimetres, and radians, and the PhysX scene, rigid-body, articulation, collision, material, joint, limit, mimic-joint, tendon, and joint-state schemas become `physx` solver settings with dimensioned values; constant display colors become body colors; and `UsdPreviewSurface`, `MaterialX` OpenPBR and Standard Surface, and MDL materials become appearances bound to the tessellations and to the triangle groups of their `materialBind` subsets, with the inputs of every render context and the image textures that drive them; an MDL material keeps its module and subidentifier, and one with the OmniPBR parameters, such as an Omniverse material library preset, is read as OmniPBR; an image in the package becomes an embedded asset, and another image an external asset at the location the decode's companion source gives (`usd/appearance.texture-unlocated` when it gives none). Lengths are scaled from scene units to millimetres. Arcs to layers that do not open become external prototypes. Every construct with no neutral form is named by a `usd/*` loss. Placed meshes and NURBS geometry with units set L2.
+
+These gaps remain:
+
+- USDC splines, array edits, and unregistered list operations are not read (`usd/crate.value-not-read`).
+- Sublayers and arcs to layers that do not open become external prototypes (`usd/composition.layer-unavailable`, `usd/composition.sublayers-not-composed`, `usd/composition.external-arc`).
+- A `Capsule_1` with unequal radii is placed without geometry (`usd/prim.intrinsic-not-transferred`).
+- Subdivision meshes transfer as their control cages (`usd/mesh.subdivision-not-applied`).
+- Trim curves and narrowed ranges of NURBS patches do not transfer (`usd/nurbs.trim-not-transferred`, USD-01).
+- Primvars other than normals, texture coordinates, and display color; texture networks other than the image nodes of §15.6, such as packed `ORM_texture` inputs and procedural nodes; and materials other than UsdPreviewSurface, `MaterialX` OpenPBR and Standard Surface, and OmniPBR do not transfer.
+- Time samples and splines transfer as their default value or first sample (`usd/attribute.animation-not-transferred`).
+
+### Read profile
+
+- **Container and versions: Partial.** USDA 1.0 to 1.3 and the legacy `#sdf 1.4.32` cookie are admitted; another text version is read on the residual path and reports `usd/source.dialect-unverified`. USDC 0.0.1 to 0.15.0 layers are read. A USDZ package is read through its first member, and its other members are the layers that the package's arcs name.
+- **Structure: Partial.** Composition of the root layer stack and the layers it names gives the stage prims; scene prims become definitions and occurrences, and instances of one prototype share definitions. References and payloads to layers that do not open become external prototypes. Physics scenes, collision groups, lights, cameras, render settings, skeletons, and other prim types with no neutral form are reported by type. Applied API schemas with no neutral form, such as the PhysX schemas, are reported by name.
+- **Geometry and tessellation: Partial.** Meshes, basis curves, NURBS curves, NURBS patches, and intrinsic primitives transfer in millimetres in their prims' local coordinates. Faces below three vertices or indexing no point, unmapped normals, overlapping subsets, and invalid curve and patch counts report losses.
+
+### Write and round trip
+
+- **Native write: Partial.** The writer emits a USDA layer in metres (`metersPerUnit = 1`) with one root prim per root occurrence; the same layer as a USDC 0.8.0 binary layer (`usd:usdc-0.8.0`, selected by `--to usd:usdc` or a `.usdc` output path), with literal LZ4 structural sections and uncompressed arrays; or a USDZ package that holds the USDA layer (`usd:usdz`, selected by `--to usd:usdz` or a `.usdz` output path). Occurrences become `Xform` prims with `matrix4d` placements; a definition placed more than once is written once under the abstract `Prototypes` prim and referenced, with leaf placements marked instanceable. Tessellations become `Mesh` prims with normals and triangle groups as `GeomSubset` prims; a body with faces and no tessellation becomes a `NurbsPatch` prim for each untrimmed face on a NURBS surface and one `Mesh` prim of its other faces, meshed by `cadmpeg-tessellate`, and reports `usd/export.topology-tessellated`; line and NURBS wire edges and free curves become `NurbsCurves` prims; free points become a `Points` prim; appearances become materials with a `UsdPreviewSurface` shader and a `MaterialX` shader (the source's `MaterialX` node, or OpenPBR), and the source's MDL shader, by its module and subidentifier, for an MDL source; parameters the shaders share are translated between them, and textures become a `UsdUVTexture` network, `MaterialX` image nodes, and OmniPBR texture inputs. A USDZ package holds the embedded images as members; a texture image that the output names by a path reports `usd/export.texture-external`. Texture-coordinate sets become `texCoord2f[]` primvars, and a triangle group with its own appearance a `materialBind` subset that binds it. A part occurrence states `kind = "component"`, or `"assembly"` above other parts, and its ancestors `kind = "group"`. `usdchecker` resolves the `MaterialX` shader ids only in an OpenUSD build with `MaterialX` support. Rigid bodies, articulation roots, mass properties, and colliders become `UsdPhysics` API schemas on their prims, physics scenes, physical materials, and assembly joints become prims of a `Physics` scope, `physx` solver settings become PhysX API schemas on the prims of their records, and the joints are fixed, revolute, prismatic, spherical, distance, and generic joints with their limits and drives, and PhysX gear and rack-and-pinion joints that couple other joints, in a layer of kilograms and metres. An occurrence that a joint connects applies `PhysicsRigidBodyAPI`. Joint families with no `UsdPhysics` type report `usd/export.joint-not-written`. Sketches and design parameters are not written. Faces that do not mesh and binary32 rounding report `usd/export.*` losses. The output passes `usdchecker`.
+- **Round trip: Partial.** A decoded layer written and decoded again keeps its tessellations, NURBS patches, curves, occurrences, appearances, physical records, and joints, within one binary32 rounding of each coordinate; intrinsic primitives come back as meshes. `scripts/check-usd-simulation.py` simulates the scenes in `crates/cadmpeg-codec-usd/tests/simulation` in PhysX and Newton on the CPU, before and after a round trip: gear, rack-and-pinion, and mimic couplings, initial velocities, and gravity hold their stated relations and the two runs agree. Instanced subtrees whose shared definitions hold child occurrences are written in full under each instance, so the second decode gives each of them its own definitions.
 
 ## STEP Part 21
 

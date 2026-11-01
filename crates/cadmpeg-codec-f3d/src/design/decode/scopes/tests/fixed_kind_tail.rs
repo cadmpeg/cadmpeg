@@ -455,6 +455,7 @@ fn fixed_kind_frames() -> (Vec<u8>, DesignParameterScope, [[f64; 4]; 4]) {
     direct[4..7].copy_from_slice(b"293");
     direct[7..11].copy_from_slice(&56u32.to_le_bytes());
     direct[55] = 1;
+    direct[62..64].copy_from_slice(&0x4091u16.to_le_bytes());
     for (ordinal, value) in transform.into_iter().flatten().enumerate() {
         let at = 66 + ordinal * 8;
         direct[at..at + 8].copy_from_slice(&value.to_le_bytes());
@@ -489,6 +490,7 @@ fn fixed_kind_frames() -> (Vec<u8>, DesignParameterScope, [[f64; 4]; 4]) {
     extended_direct[4..7].copy_from_slice(b"289");
     extended_direct[7..11].copy_from_slice(&61u32.to_le_bytes());
     extended_direct[55] = 1;
+    extended_direct[62..64].copy_from_slice(&0x309cu16.to_le_bytes());
     for (ordinal, value) in transform.into_iter().flatten().enumerate() {
         let at = 66 + ordinal * 8;
         extended_direct[at..at + 8].copy_from_slice(&value.to_le_bytes());
@@ -526,6 +528,7 @@ fn fixed_kind_frames() -> (Vec<u8>, DesignParameterScope, [[f64; 4]; 4]) {
     large_direct[4..7].copy_from_slice(b"267");
     large_direct[7..11].copy_from_slice(&62u32.to_le_bytes());
     large_direct[55] = 1;
+    large_direct[62..64].copy_from_slice(&0x904du16.to_le_bytes());
     for (ordinal, value) in transform.into_iter().flatten().enumerate() {
         let at = 66 + ordinal * 8;
         large_direct[at..at + 8].copy_from_slice(&value.to_le_bytes());
@@ -556,6 +559,68 @@ fn fixed_kind_frames() -> (Vec<u8>, DesignParameterScope, [[f64; 4]; 4]) {
         u64_from_index(large_direct_at + 66)
     );
     assert_eq!(decoded.reference, None);
+
+    for (frame_offset, test_scope) in [
+        (direct_at, &direct_scope),
+        (extended_direct_at, &extended_direct_scope),
+        (large_direct_at, &large_direct_scope),
+    ] {
+        for corrupt_offset in [
+            frame_offset + 56,
+            frame_offset + 61,
+            frame_offset + 64,
+            frame_offset + 65,
+        ] {
+            let mut corrupted = bytes.clone();
+            corrupted[corrupt_offset] = 1;
+            assert_eq!(
+                exact_work_plane_frame(
+                    &corrupted,
+                    &crate::design::test_support::indexed_record_offsets_for_test(&corrupted),
+                    test_scope,
+                ),
+                None,
+                "corrupt byte at offset {corrupt_offset} should refuse direct WorkPlane frame"
+            );
+        }
+
+        let mut non_finite = bytes.clone();
+        non_finite[frame_offset + 66..frame_offset + 74].copy_from_slice(&f64::NAN.to_le_bytes());
+        assert_eq!(
+            exact_work_plane_frame(
+                &non_finite,
+                &crate::design::test_support::indexed_record_offsets_for_test(&non_finite),
+                test_scope,
+            ),
+            None,
+            "non-finite matrix at offset {frame_offset} should refuse WorkPlane frame"
+        );
+    }
+
+    let mut alt_class = bytes.clone();
+    alt_class[direct_at + 4..direct_at + 7].copy_from_slice(b"316");
+    alt_class[direct_at + 352 + 4..direct_at + 352 + 7].copy_from_slice(b"260");
+    let decoded_alt = exact_work_plane_frame(
+        &alt_class,
+        &crate::design::test_support::indexed_record_offsets_for_test(&alt_class),
+        &direct_scope,
+    )
+    .expect("class-316/260 direct WorkPlane frame");
+    assert_eq!(decoded_alt.transform, transform.try_into().unwrap());
+    assert_eq!(decoded_alt.transform_offset, u64_from_index(direct_at + 66));
+    assert_eq!(decoded_alt.reference, None);
+
+    let mut corrupt_class = bytes.clone();
+    corrupt_class[direct_at + 4..direct_at + 7].copy_from_slice(b"999");
+    assert_eq!(
+        exact_work_plane_frame(
+            &corrupt_class,
+            &crate::design::test_support::indexed_record_offsets_for_test(&corrupt_class),
+            &direct_scope,
+        ),
+        None,
+        "unadmitted class tag should refuse direct WorkPlane frame"
+    );
 
     let mut axis_bytes = vec![0; 232];
     axis_bytes[0..4].copy_from_slice(&3u32.to_le_bytes());

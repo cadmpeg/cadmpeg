@@ -184,7 +184,7 @@ fn periodic_edge_range_keeps_a_finite_sweep_across_a_wide_seam() {
     let start = FiniteReal::new(max * 0.5).expect("finite start");
     let end = FiniteReal::new(-max).expect("finite end");
     assert_eq!(
-        edge_parameter_range(&SolvedCurveGeometry::Nurbs(curve), start, end),
+        edge_parameter_range(&SolvedCurveGeometry::Nurbs(curve), start, end, false),
         Some([max * 0.5, max])
     );
 }
@@ -219,17 +219,45 @@ fn edge_parameter_range_rejects_reversed_nonperiodic_interval() {
     ));
     let [two, five] = [2.0, 5.0].map(|value| FiniteReal::new(value).expect("finite parameter"));
     assert_eq!(
-        edge_parameter_range(line.solved().expect("solved carrier"), two, five),
+        edge_parameter_range(line.solved().expect("solved carrier"), two, five, false),
         Some([2.0, 5.0])
     );
     assert_eq!(
-        edge_parameter_range(line.solved().expect("solved carrier"), five, two),
+        edge_parameter_range(line.solved().expect("solved carrier"), five, two, false),
         None
     );
     assert_eq!(
-        edge_parameter_range(line.solved().expect("solved carrier"), two, two),
+        edge_parameter_range(line.solved().expect("solved carrier"), two, two, false),
         None
     );
+}
+
+#[test]
+fn a_closed_edge_spans_one_period_of_a_periodic_carrier() {
+    let circle = SolvedCurveGeometry::Circle(
+        cadmpeg_ir::geometry::analytic::CircleCurve::try_new(
+            Point3::new(0.0, 0.0, 0.0),
+            Vector3::new(0.0, 0.0, 1.0),
+            Vector3::new(1.0, 0.0, 0.0),
+            1.0,
+        )
+        .expect("finite circle"),
+    );
+    let tau = std::f64::consts::TAU;
+    let at = |value: f64| FiniteReal::new(value).expect("finite parameter");
+    let range = edge_parameter_range(&circle, at(1.0), at(1.0), true).expect("one period");
+    assert!((range[0] - 1.0).abs() < 1.0e-12 && (range[1] - (1.0 + tau)).abs() < 1.0e-12);
+    assert_eq!(edge_parameter_range(&circle, at(1.0), at(1.0), false), None);
+    let arc = edge_parameter_range(&circle, at(1.0), at(2.0), true).expect("an arc");
+    assert!((arc[0] - 1.0).abs() < 1.0e-12 && (arc[1] - 2.0).abs() < 1.0e-12);
+    let line = SolvedCurveGeometry::Line(
+        cadmpeg_ir::geometry::analytic::LineCurve::try_new(
+            Point3::new(0.0, 0.0, 0.0),
+            Vector3::new(1.0, 0.0, 0.0),
+        )
+        .expect("finite line"),
+    );
+    assert_eq!(edge_parameter_range(&line, at(2.0), at(2.0), true), None);
 }
 
 #[test]
@@ -248,7 +276,7 @@ fn edge_parameter_range_normalizes_periodic_interval_in_constant_time() {
         0.5 - 20_000.0 * std::f64::consts::TAU,
     ]
     .map(|value| FiniteReal::new(value).expect("finite parameter"));
-    let range = edge_parameter_range(circle.solved().expect("solved carrier"), start, end)
+    let range = edge_parameter_range(circle.solved().expect("solved carrier"), start, end, false)
         .expect("periodic interval");
     assert!((range[0] - 1.5).abs() < 1.0e-10);
     assert!((range[1] - (0.5 + std::f64::consts::TAU)).abs() < 1.0e-10);
@@ -267,7 +295,7 @@ fn periodic_edge_range_reduces_finite_endpoints_separately_when_difference_overf
     );
     let start = FiniteReal::new(-f64::MAX).expect("finite start");
     let end = FiniteReal::new(f64::MAX).expect("finite end");
-    let range = edge_parameter_range(&circle, start, end).expect("finite cyclic sweep");
+    let range = edge_parameter_range(&circle, start, end, false).expect("finite cyclic sweep");
     assert!(range[0].is_finite() && range[1].is_finite());
     assert!(range[1] > range[0]);
     assert!(range[1] - range[0] < std::f64::consts::TAU);
@@ -1075,9 +1103,13 @@ fn numerical_followup_periodic_edge_preserves_small_domain_phase() {
         .unwrap();
         let [start, end] =
             [0.8 * d, 0.9 * d].map(|value| FiniteReal::new(value).expect("finite parameter"));
-        let range =
-            super::super::edge_parameter_range(&SolvedCurveGeometry::Nurbs(curve), start, end)
-                .unwrap();
+        let range = super::super::edge_parameter_range(
+            &SolvedCurveGeometry::Nurbs(curve),
+            start,
+            end,
+            false,
+        )
+        .unwrap();
         assert!((range[0] / d - 0.8).abs() < 16. * f64::EPSILON);
         assert!((range[1] / d - 0.9).abs() < 16. * f64::EPSILON);
     }

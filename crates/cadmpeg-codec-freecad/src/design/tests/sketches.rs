@@ -1303,7 +1303,13 @@ pub(crate) fn neutralizes_symmetric_locus_distance_and_point_on_object_constrain
             ..
         }
     ));
-    assert!(result.report().losses.is_empty());
+    assert_eq!(result.report().losses.len(), 1);
+    assert_eq!(
+        result.report().losses[0].code,
+        crate::loss::FreecadLossCode::SketchConstraintNameAmbiguous
+            .note("")
+            .code
+    );
 }
 
 #[test]

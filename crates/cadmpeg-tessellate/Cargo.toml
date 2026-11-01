@@ -1,0 +1,23 @@
+# SPDX-License-Identifier: Apache-2.0
+[package]
+name = "cadmpeg-tessellate"
+description = "Display tessellation and parameter-space boundaries of cadmpeg B-rep faces."
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+homepage.workspace = true
+rust-version.workspace = true
+readme = "README.md"
+keywords = ["cad", "brep", "tessellation", "mesh", "geometry"]
+categories = ["graphics", "mathematics"]
+
+[dependencies]
+cadmpeg-core.workspace = true
+cadmpeg-ir.workspace = true
+
+[dev-dependencies]
+cadmpeg-ir = { workspace = true, features = ["examples"] }
+
+[lints]
+workspace = true

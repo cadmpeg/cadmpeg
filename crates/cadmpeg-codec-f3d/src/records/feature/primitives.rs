@@ -61,6 +61,21 @@ pub(crate) struct DesignBoxPrimitive {
     /// Byte offset of the evaluated y offset of a located scope.
     #[serde(skip)]
     pub(crate) offset_y_offset: Option<u64>,
+    /// Local-to-model frame stored by the typed-reference form, in source
+    /// centimetres. The named form stores no frame.
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_transform"
+    )]
+    pub(crate) transform: Option<SketchPlacementMatrix>,
+    /// Byte offset of the typed-reference form frame.
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_transform_offset"
+    )]
+    pub(crate) transform_offset: Option<u64>,
     /// Result Boolean operation.
     pub(crate) operation: DesignExtrudeOperation,
     /// Byte offset of the operation enum of a located scope.

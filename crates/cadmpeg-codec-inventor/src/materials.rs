@@ -72,7 +72,7 @@ pub(crate) fn project_catalog(
                     })?;
                 continue;
             }
-            TextureAssetResult::Usable(texture) => texture,
+            TextureAssetResult::Usable(texture) => *texture,
         };
         textures.insert(texture.asset_guid.clone(), texture);
     }

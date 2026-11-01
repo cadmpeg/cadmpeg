@@ -206,9 +206,13 @@ fn scale_feature_operation(
 ) -> Result<(), cadmpeg_core::CodecError> {
     match definition {
         FeatureOperation::CosmeticThread {
-            diameter, extent, ..
+            diameter,
+            pitch,
+            extent,
+            ..
         } => {
             scale_optional_positive_length(diameter, scale)?;
+            scale_optional_positive_length(pitch, scale)?;
             if let Some(cadmpeg_ir::features::CosmeticThreadExtent::Blind { length }) = extent {
                 scale_positive_length(length, scale)?;
             }

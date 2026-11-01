@@ -250,8 +250,6 @@ jobs:
     env:
       CI_PACKAGES: ${{ needs.changes.outputs.packages }}
       CI_FULL: ${{ needs.changes.outputs.full }}
-      # The bounded IGES gate builds a release binary; LTO only adds link time.
-      CARGO_PROFILE_RELEASE_LTO: "false"
     runs-on: ubuntu-latest
     timeout-minutes: 45
     steps:
@@ -305,23 +303,24 @@ jobs:
         if: needs.changes.outputs.iges == 'true'
         # Give every synthesized IGES fixture independent decode, validation,
         # conversion, generated-file decode, and generated-file validation
-        # deadlines under the unattended resource profile. Use an optimized
-        # build so the deadline measures codec behavior rather than an
-        # unoptimized debug binary.
+        # deadlines under the unattended resource profile. Use the debug CLI
+        # that the Rust gate above built: a release build of this tree costs
+        # minutes of compilation, and the slowest fixture command finishes far
+        # inside the deadline on the debug build.
         run: |
           set -euo pipefail
           mkdir -p "$HOME/side2/tmp/iges-l9"
-          cargo build -q --release -p cadmpeg --no-default-features --features iges
+          test -x target/debug/cadmpeg
           python3 scripts/verify-iges-bounded.py \
             crates/cadmpeg-codec-iges/tests/golden/fixtures \
-            --cadmpeg target/release/cadmpeg \
+            --cadmpeg target/debug/cadmpeg \
             --limits service \
             --timeout 30 \
             --roundtrip \
             --report "$HOME/side2/tmp/iges-l9/iges-bounded-report.json"
 
       - name: Documentation tests
-        # Reuses the library rlibs the step above built; on its own job this
+        # Reuses the library builds the Rust gate made; on its own job this
         # would pay for the whole workspace again.
         run: python3 scripts/ci_cargo.py test --doc
 

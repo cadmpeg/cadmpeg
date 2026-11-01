@@ -10,21 +10,26 @@ use cadmpeg_ir::report::check::{Check, Finding};
 
 pub(super) fn validate(ctx: &Ctx<'_, '_>, findings: &mut Vec<Finding>) {
     for scope in &ctx.native.design_parameter_scopes {
-        let operands = scope.emboss_construction().is_none_or(|construction| {
-            construction.sketch_profile.is_some()
-                && ctx.native.design_face_operands.iter().any(|operand| {
-                    design_stream(&operand.id) == design_stream(&scope.id)
-                        && operand.scope_record_index == scope.record_index
-                        && operand.scope_reference_ordinal == 2
-                        && operand.group_record_index() == Some(construction.face_group.value)
-                        && operand.group_member_ordinal() == Some(0)
-                        && Some(&operand.record_index())
-                            == scope.reference_members().values().nth(3)
-                        && operand.recipe_kind
-                            == crate::records::recipes::ConstructionRecipeKind::BoundedFace
-                })
-        });
-        if !operands
+        let operands = scope
+            .emboss_operand_construction()
+            .is_none_or(|construction| {
+                construction.sketch_profile.is_some()
+                    && ctx.native.design_face_operands.iter().any(|operand| {
+                        design_stream(&operand.id) == design_stream(&scope.id)
+                            && operand.scope_record_index == scope.record_index
+                            && operand.scope_reference_ordinal == 2
+                            && operand.group_record_index() == Some(construction.face_group.value)
+                            && operand.group_member_ordinal() == Some(0)
+                            && Some(&operand.record_index())
+                                == scope.reference_members().values().nth(3)
+                            && operand.recipe_kind
+                                == crate::records::recipes::ConstructionRecipeKind::BoundedFace
+                    })
+            });
+        if scope
+            .emboss_construction()
+            .is_some_and(|construction| !construction.links_match(scope))
+            || !operands
             || !auxiliary_links_hold(scope, &ctx.native.design_extrude_selection_groups)
             || !links_hold(
                 scope,
@@ -47,7 +52,7 @@ fn auxiliary_links_hold(
     scope: &DesignParameterScope,
     groups: &[DesignExtrudeSelectionGroup],
 ) -> bool {
-    let Some(construction) = scope.emboss_construction() else {
+    let Some(construction) = scope.emboss_operand_construction() else {
         return true;
     };
     let mut matching = groups.iter().filter(|group| {
@@ -67,7 +72,7 @@ fn links_hold(
     owners: &[DesignParameterOwner],
     groups: &[DesignConstructionOperandGroup],
 ) -> bool {
-    let Some(construction) = scope.emboss_construction() else {
+    let Some(construction) = scope.emboss_operand_construction() else {
         return true;
     };
     let stream = design_stream(&scope.id);

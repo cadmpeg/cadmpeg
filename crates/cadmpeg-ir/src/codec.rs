@@ -98,8 +98,8 @@ pub struct DecodeOptions {
 
 /// A decoded document plus its loss report.
 ///
-/// The sealed [`Codec`] wrapper constructs this value after it stamps the source
-/// classification onto the report and finalizes the IR and source fidelity.
+/// The [`Codec`] wrapper and archive sessions construct this value after stamping the source
+/// classification onto the report and finalizing the IR and source fidelity.
 /// `#[non_exhaustive]` blocks external struct literals so callers cannot skip
 /// finalization. Read through [`Self::ir`], [`Self::report`], and [`Self::source_fidelity`].
 /// Consume with [`Self::into_parts`] to edit the document or fidelity.
@@ -113,7 +113,7 @@ pub struct DecodeResult {
 
 /// A strict-policy refusal bound to the loss in its completed decode report.
 ///
-/// Only the sealed decode wrapper constructs this value. The refusing loss is
+/// The shared decode finalizer constructs this value. The refusing loss is
 /// therefore always an element of [`Self::report`].
 #[derive(Debug)]
 pub struct StrictDecodeRejection {
@@ -214,6 +214,44 @@ impl DecodeBody {
 }
 
 impl DecodeResult {
+    /// Finalizes backend output with classification, depth, model validation,
+    /// and the context's strict-loss policy.
+    /// The caller must close the context with `finish_session`, including on error.
+    pub fn from_decoded(
+        ctx: &DecodeContext<'_>,
+        decoded: Decoded,
+        format: FormatId,
+    ) -> Result<Self, DecodeFailure> {
+        let result = DecodeResult::new(decoded, format, ctx.depth())?;
+        if result.report().format() != format.as_str() {
+            return Err(CodecError::WrongFormat(format!(
+                "codec {:?} decoded a {:?} document",
+                format.as_str(),
+                result.report().format()
+            ))
+            .into());
+        }
+        crate::validate::evaluation_cycles::admit_evaluation_cycles(ctx, result.ir())?;
+        let strict_loss_index = if ctx.policy().mode == DecodeMode::Strict && !ctx.container_only()
+        {
+            result
+                .report()
+                .losses
+                .iter()
+                .position(|loss| loss.strict_consequence() == StrictConsequence::Reject)
+                .map(RejectingLossIndex)
+        } else {
+            None
+        };
+        if let Some(loss_index) = strict_loss_index {
+            let (_, report, _) = result.into_parts();
+
+            let rejection = StrictDecodeRejection::new(report, loss_index);
+            return Err(DecodeFailure::StrictRejected { rejection });
+        }
+        Ok(result)
+    }
+
     /// Builds a result by stamping the document's source classification onto
     /// the report body, then canonicalizing the IR and source fidelity.
     ///
@@ -487,34 +525,7 @@ impl<C: CodecBackend + ?Sized> Codec for C {
         root: View<'_>,
     ) -> Result<DecodeResult, DecodeFailure> {
         let decoded = self.decode_impl(ctx, root)?;
-        let result = DecodeResult::new(decoded, C::FORMAT, ctx.depth())?;
-        if result.report().format() != C::FORMAT.as_str() {
-            return Err(CodecError::WrongFormat(format!(
-                "codec {:?} decoded a {:?} document",
-                C::FORMAT.as_str(),
-                result.report().format()
-            ))
-            .into());
-        }
-        crate::validate::evaluation_cycles::admit_evaluation_cycles(ctx, result.ir())?;
-        let strict_loss_index = if ctx.policy().mode == DecodeMode::Strict && !ctx.container_only()
-        {
-            result
-                .report()
-                .losses
-                .iter()
-                .position(|loss| loss.strict_consequence() == StrictConsequence::Reject)
-                .map(RejectingLossIndex)
-        } else {
-            None
-        };
-        if let Some(loss_index) = strict_loss_index {
-            let (_, report, _) = result.into_parts();
-
-            let rejection = StrictDecodeRejection::new(report, loss_index);
-            return Err(DecodeFailure::StrictRejected { rejection });
-        }
-        Ok(result)
+        DecodeResult::from_decoded(ctx, decoded, C::FORMAT)
     }
 }
 

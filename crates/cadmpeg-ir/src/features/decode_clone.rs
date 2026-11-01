@@ -190,7 +190,7 @@ rewrite_enum!(FeatureOperation, []; {
     InsertComponent { occurrence },
     AssemblyJoint { joint },
     Form { cages },
-    CosmeticThread { face, diameter, extent },
+    CosmeticThread { face, standard, designation, diameter, pitch, modeled, extent },
     ReferenceImage { asset, visible, mirror_u, mirror_v, frame, bounds, opacity },
     Decal { asset, faces, mapping, opacity },
     DatumPrincipalPlane { plane },

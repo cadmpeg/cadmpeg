@@ -48,6 +48,7 @@ fn appearance_asset_and_binding_round_trip() {
                 real_world_offset_y: length(25.4),
                 real_world_scale_x: length(304.8),
                 real_world_scale_y: length(609.6),
+                coordinates: None,
             },
             bump: Some(BumpMap {
                 normal_map: true,
@@ -103,4 +104,97 @@ fn appearance_asset_and_binding_round_trip() {
         decoded.model.appearance_bindings,
         ir.model.appearance_bindings
     );
+}
+
+#[test]
+fn a_triangle_group_binding_names_a_group_of_its_tessellation() {
+    use crate::appearance::{Appearance, AppearanceBinding, AppearanceTarget};
+    use crate::ids::AppearanceId;
+    use crate::math::Point3;
+    use crate::report::check::Check;
+    use crate::tessellation::{Tessellation, TessellationMesh, TessellationTriangleGroup};
+    use crate::validate::validate_neutral;
+
+    let mut ir = unit_cube().expect("valid unit cube fixture");
+    let mesh = Tessellation::new(
+        "synthetic:test:tessellation#0"
+            .try_into()
+            .expect("valid identity"),
+        TessellationMesh::List {
+            vertices: vec![
+                Point3::new(0.0, 0.0, 0.0),
+                Point3::new(1.0, 0.0, 0.0),
+                Point3::new(1.0, 1.0, 0.0),
+                Point3::new(0.0, 1.0, 0.0),
+            ],
+            triangles: vec![[0, 1, 2], [0, 2, 3]],
+        },
+        Vec::new(),
+    )
+    .unwrap()
+    .with_triangle_groups(vec![
+        TessellationTriangleGroup {
+            source_id: Some("/Mesh/Front".into()),
+            triangles: vec![0],
+        },
+        TessellationTriangleGroup {
+            source_id: None,
+            triangles: vec![1],
+        },
+    ])
+    .unwrap();
+    let tessellation = mesh.id.to_string();
+    ir.model.tessellations.push(mesh);
+    let appearance = AppearanceId::mint("synthetic:test:appearance#paint").expect("valid identity");
+    ir.model.appearances.push(Appearance {
+        id: appearance.clone(),
+        native_ref: None,
+        name: Some("Paint".into()),
+        asset_guid: None,
+        library_id: None,
+        visual_guid: None,
+        physical_token: None,
+        schema: None,
+        category: None,
+        base_color: None,
+        properties: std::collections::BTreeMap::new(),
+        textures: Vec::new(),
+    });
+    let binding = |group: &str| AppearanceBinding {
+        id: "synthetic:test:appearance-binding#group"
+            .try_into()
+            .expect("valid identity"),
+        native_ref: None,
+        target: AppearanceTarget::TriangleGroup {
+            tessellation: tessellation.clone(),
+            group: group.to_owned(),
+        },
+        appearance: appearance.clone(),
+        source_entity_id: None,
+        object_type: None,
+        visible: None,
+        channels: std::collections::BTreeMap::new(),
+    };
+    ir.model.appearance_bindings.push(binding("/Mesh/Front"));
+    let json = ir.to_canonical_json().unwrap();
+    let decoded = CadIr::from_json(&json).unwrap();
+    assert_eq!(
+        decoded.model.appearance_bindings,
+        ir.model.appearance_bindings
+    );
+    let report = validate_neutral(&ir, Vec::new()).expect("validate");
+    assert!(
+        !report
+            .findings
+            .iter()
+            .any(|finding| finding.check == Check::ReferentialIntegrity),
+        "{:?}",
+        report.findings
+    );
+    ir.model.appearance_bindings[0] = binding("/Mesh/Back");
+    let report = validate_neutral(&ir, Vec::new()).expect("validate");
+    assert!(report
+        .findings
+        .iter()
+        .any(|finding| finding.check == Check::ReferentialIntegrity));
 }

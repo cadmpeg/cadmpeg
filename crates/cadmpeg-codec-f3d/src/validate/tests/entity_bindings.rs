@@ -431,3 +431,34 @@ fn sketch_visibility_requires_decoded_ordinal_collection() {
             == "Fusion Design sketch placement has an invalid frame or scope link"));
     });
 }
+
+#[test]
+fn typed_profile_compact_placement_validator_and_wire_admission_agree() {
+    use crate::records::sketch_placement::{
+        DesignSketchFrame, DesignSketchFrameForm, DesignSketchPlacement,
+    };
+    let mut placement = validation_placement(None, None, true);
+    placement.frame = DesignSketchFrame::new(
+        10,
+        DesignSketchFrameForm::MemberTypedCompact {
+            paired_byte_offset: 20,
+        },
+    )
+    .unwrap();
+    let mut wire = serde_json::to_value(&placement).unwrap();
+    assert_eq!(wire["frame_length"], 74);
+    assert!(serde_json::from_value::<DesignSketchPlacement>(wire.clone()).is_ok());
+    wire["transform"][0][3] = 1.0.into();
+    assert!(serde_json::from_value::<DesignSketchPlacement>(wire.clone()).is_err());
+    wire["transform"][0][3] = 0.0.into();
+    wire["frame_length"] = 73.into();
+    assert!(serde_json::from_value::<DesignSketchPlacement>(wire).is_err());
+    crate::test_support::with_decode_context(|ctx| {
+        let ir = cadmpeg_ir::document::CadIr::empty();
+        let native = placement_native(placement);
+        let ctx = super::super::Ctx::new(&ir, &native, ctx);
+        let mut findings = Vec::new();
+        super::super::validate_sketch_placements(&ctx, &mut findings);
+        assert!(findings.is_empty());
+    });
+}

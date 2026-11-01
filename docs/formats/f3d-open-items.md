@@ -250,6 +250,16 @@ the native feature when a fixed lane carries a symmetric distance.
 
 **Need.** The value can count mesh bodies removed from the feature. A design in which mesh bodies are inserted and removed one at a time, saved after each step, fixes the value and shows whether a flagged collection keeps bodies.
 
+### DR-115. Mesh container decode-failure taxonomy
+
+**Question.** Which malformed or unsupported container states does `mesh.container-undecoded` cover, and does the retained error identify the failing stage?
+
+**Known.** `f3d.md` §1.1.2 "When a document's mesh-body metadata" defines the omission: a mesh body whose metadata or referenced `.paramesh` container fails the container grammar transfers no tessellation and reports `mesh.container-undecoded` with the entry name and the decode error. B-rep evaluation then proceeds. The specification gives the container layout; the per-stage failure taxonomy awaits definition.
+
+**Need.** Containers that fail at each stage (magic, version, reserved run, protobuf framing, name-table order, descriptor grammar, stream encoding, declared counts) must show which failures this loss covers and whether the retained error text identifies the failing stage, before a reader can distinguish malformed input from an unsupported container generation.
+
+**Note.** A resource-limit failure returns an error through the error path.
+
 ### DR-86. Linked component-binding entity
 
 **Question.** What is the entity that a linked component context binding names between the component reference and the context UUID?
@@ -387,6 +397,18 @@ the native feature when a fixed lane carries a symmetric distance.
 **Need.** A join between the ACT references and the Design root component must distinguish an absent root link from a root link selected by another reference. The join must establish whether the tracked-entity record value is a root selector or only a target identity.
 
 **Conflict.** No complete root-selection rule is defined.
+
+### DR-145. Extrude selection member scope tail
+
+**Question.** What do the f64, the u32 with value `0x104`, and the two chain references in the 50-byte scope tail of an Extrude selection member mean?
+
+**Known.** The tail follows the 190-byte member frame when the optional slot is absent. The u32 has value `0x104`. The two chain references name indexed records of the same segment that follow the member. The closing marked reference names the owning Extrude scope.
+
+**Need.** Files that vary the Extrude options and the selected profile, to find which option writes the tail and what the chain records carry.
+
+**Conflict.** None.
+
+**Note.** None.
 
 ## 2. External references
 
@@ -535,6 +557,36 @@ the native feature when a fixed lane carries a symmetric distance.
 
 **Note.** The body identities and terminal list are defined; their component-definition join is unresolved.
 
+### DR-116. Joint-placed identity occurrences of inserted designs
+
+**Question.** Which native relation binds a joint to each inserted-design occurrence that stores the identity, and in which frame does that joint define the solved pose?
+
+**Known.** `f3d.md` §1.4 "The matrix is a proper rigid motion." defines stored identity placement and the component-path world-pose carriers. A joint names an occurrence directly through an occurrence container, or names an inserted design through an external operand container, leaving the neutral tie unresolved; each distinct external document then accounts for at most one unnamed identity occurrence. The decoder counts these occurrences, reports `assembly.joint-placed-occurrence-unsolved`, and places them at the identity with the joint unsolved.
+
+**Need.** An inserted design whose occurrence stores the identity and whose joint solution is known must name the binding relation (direct occurrence reference or external-document container) and the frame of the solved pose, before the decoder can place these occurrences from their joints.
+
+**Note.** DR-113 covers solved placement without a bound assembly operand generally; this joint-to-occurrence binding is a separate question.
+
+### DR-119. Entity-cluster component-ownership fallback
+
+**Question.** When no admitted Body-container membership names a solved body, which entity cluster selects its component owner, and when does that selection disagree with the authored ownership?
+
+**Known.** `f3d.md` §3.1 "The paired untyped Body-container membership" defines the admitted membership join. A solved body binding without that membership takes entity-cluster component ownership, and the decoder reports `assembly.component-body-owner-fallback`. Owner-graph cycles and expansion-limit drops leave occurrences unplaced under `assembly.local-occurrence-owner-cycle` and `assembly.local-occurrence-expansion-limit`.
+
+**Need.** Controlled saves that delete or omit Body-container memberships while holding entity clusters fixed must show which cluster the fallback selects and whether the selected owner matches the authored component, before neutral ownership can rely on the fallback.
+
+**Note.** DR-75 defines the local occurrence carrier GUID; the validity of this fallback is a separate question.
+
+### XR-05. F3Z member cycle, absence, and decode-failure paths
+
+**Question.** Do the cycle, absence, and decode-failure losses exhaust the unresolvable member states of a multi-document merge?
+
+**Known.** `f3d.md` §1.5 "Reference resolution is member-local and recursive." defines member-local recursive resolution. A member path that recurs in the active chain reports `xref.cycle` and stays unresolved. A member absent from the archive reports `xref.member-missing`. A present member that is not an F3D document member, that cannot be scanned, or that fails to decode reports `xref.member-undecoded`. Unscannable members are marked unreadable at scan time and skipped at merge time with that scan-time mark as their record. Resource-limit failures return an error.
+
+**Need.** A merge that must continue past each unresolvable member needs each such state mapped to its loss, so the mapping covers every unresolvable state and every skipped resolvable member.
+
+**Note.** The occurrence keeps its placement while its member stays unresolved; the merge continues with the remaining members.
+
 ## 3. Material assets
 
 ### MA-04. Texture map-channel values
@@ -620,3 +672,145 @@ the native feature when a fixed lane carries a symmetric distance.
 **Conflict.** None.
 
 **Note.** The face operand record is validated as a frame. The Split operation keeps its existing projection rules.
+
+### TS-07. T-spline cage decode-failure taxonomy
+
+**Question.** Which cage program failures does `tspline.cage-undecoded` cover?
+
+**Known.** `f3d.md` §1.1.1 "A `TSplines.BlobParts/*.tsm` entry is a UTF-8" defines the cage program. A cage entry that fails to parse transfers no surface and reports `tspline.cage-undecoded` with the entry name and the error. Untyped records and unresolved radial pairs have their own losses and remain outside this item.
+
+**Need.** Cage entries that fail at each program stage must show which failures this loss covers, before a reader can distinguish malformed cages from unsupported program generations.
+
+**Note.** This item is minor: the B-rep stream retains the committed face geometry of an undecoded cage.
+
+### DR-121. Emboss controls and extended selections
+
+**Question.** What do the Emboss control words and native pairs mean, and which values select material effect, direction, placement, and contour membership?
+
+**Known.** The prefix has one or two control words, a counted run of native pairs, four scalar-owner links, two selection-group links, an auxiliary-group link, and the common ordered reference table. The table indices are in increasing order; prefix references bind by record identity. A sketch entity link identifies a Sketch but does not identify its selected contours.
+
+**Need.** Independent files that change one effect, direction, placement, or contour selection at a time; complete operand frames for the extended reference table.
+
+**Conflict.** None.
+
+**Note.** Keep controls and extended selections native. A neutral Wrap requires a proven effect, selected profile, target face, and placement. The existing Wrap operation has no independent horizontal, vertical, or rotation controls.
+
+### DR-120. Align operand roles and motion
+
+**Question.** Which referenced constructions identify the moved objects, the source and target frames, and the direction of the resulting motion? What do the prefix codes and the constructor codes and marked words control? What do the matrix block and separate scalar represent, and which units apply?
+
+**Known.** The Align prefix contains two references, an unsigned code, and a zero GUID. The references join to the ordered scope table. The compact and extended forms differ by one u32 word of value 1. The role of this word is not defined. The constructor contains eight marked words, five codes, sixteen matrix scalars, and one separate scalar. Its two scope back-references identify its owner, but do not assign a moved body or a motion relation.
+
+**Need.** Controlled Align exports that change object selection, source and target frames, reversal, and angle independently. F22b supplies a body-alignment recipe.
+
+**Conflict.** A referenced solved frame alone does not establish the motion applied to a selected body.
+
+**Note.** Keep the operation native until each operand role and motion direction has a byte-defined rule.
+
+### DR-126. Move transform envelopes with leading references
+
+**Question.** In the Move envelope with leading references, is the matrix an absolute transform or a transform relative to a referenced frame?
+
+**Known.** A Move scope can reference a matrix-bearing record with references before its form word. This envelope does not satisfy the zero prefix of the fixed rigid-matrix frames.
+
+**Need.** Independent files that vary the referenced frame and the transform separately, and files that vary the form word.
+
+**Conflict.** None.
+
+**Note.** Keep this envelope native. Emit `feature.move-unprojected` when no admitted transform defines the Move feature.
+
+### DR-124. Trim operands in typed profile curve entries
+
+**Question.** How do the three u32 operands of a typed profile curve entry select a partial curve when one source loop repeats a curve identity?
+
+**Known.** The identity record stores two region lists. Each region has counted boundary loops with exterior flags. Each curve entry stores a primary identity, a secondary identity, and three u32 operands. A complete neutral loop match or a unique atomic arrangement boundary program resolves without a partial-curve interpretation.
+
+**Need.** Controlled selections of adjacent regions with one shared curve, and of intersecting curves with distinct selected regions, to bind each operand to curve orientation and trim bounds.
+
+**Conflict.** None.
+
+**Note.** A repeated identity within one source loop does not prove a complete neutral loop. A program without one unique atomic arrangement match retains its native identity and loss.
+
+### DR-125. Counted face-target recipe without a unique historical face
+
+**Question.** Which counted bounded-face recipe clauses select a termination face when persistent references retain several preceding support faces?
+
+**Known.** A termination group identifies the face operand. The operand retains its counted recipe nodes, ordered prefix references, and state-local support contexts. A unique preceding face or convergent support context supplies a historical selection.
+
+**Need.** Controlled face-target selections that vary the selected planar face while the body topology and other prefix references remain fixed.
+
+**Conflict.** None.
+
+**Note.** Candidate membership, planar support, and absence of changed faces do not by themselves identify a selected face.
+
+### DR-122. Derived Base Feature source and frame
+
+**Question.** Which field of a `Derived Base Feature` scope identifies the derived source body, and which field stores its local frame or mirror plane?
+
+**Known.** The 711-byte frame stores nine typed-reference elements, a zero GUID, the kind, the ordinal, and an f64 of unknown meaning. The second body element of the 711-byte frame stores the Design body entity suffix of the result body. Every reference in the scope is a Design record of the same stream. The frame stores no matrix. The `DerivedBaseFeature` forms (707 and 491 bytes) store the same elements and roles, a part with a mirror label places its occurrence with an identity rotation, and no field in either form stores a plane or a matrix. The 761-byte frame has one additional typed-reference element with a role GUID that no 711-byte frame stores. Its record index is lower than the scope record index.
+
+**Need.** A scope whose source document or source body changes with the result body fixed. The meaning of the f64 and of the additional 761-byte element.
+
+**Conflict.** None.
+
+**Note.** A scope without proven result bodies remains native with `feature.derived-base-unresolved`. A scope with proven result bodies is kept as a stored snapshot with the same code until source and frame have a complete binding.
+
+### DR-123. Typed-reference BoxPrimitive offsets and other forms
+
+**Question.** How does a nonzero `OffsetDistanceX` or `OffsetDistanceY` owner combine with the stored frame in a `BoxPrimitive` scope with eight typed reference members, and which other frame lengths does the form have?
+
+**Known.** The 1295-byte form stores the result operation, a rigid local frame, and the five box parameter owners; the frame is the box placement when both offset owners are zero. The support-face selection and placement construction references are table members, and the form stores one further typed reference at offset 517 that is not a table member.
+
+**Need.** A scope in this form with a nonzero offset owner and a changed placement, and a scope in any other frame length.
+
+**Conflict.** None.
+
+**Note.** A scope outside the 1295-byte form, or with a nonzero offset owner, remains native with `feature.box-primitive-unresolved`.
+
+### DR-147. Region extent of a tracking-path Extrude selection
+
+**Question.** Which Sketch region does an Extrude selection select when its member follows a tracking path?
+
+**Known.** The path stores the primary curve, a one-based fragment ordinal, the fragment count, and the two curves bounding the fragment. The carrier lane is `2` or `3`. The selected fragment can border two bounded Sketch faces.
+
+**Need.** Controlled selections of one region, of two adjacent regions, and of a region with an enclosed island, each in a Sketch whose curves cross, to bind the path to the selected side and to the filled island. CAD Fixture Recipes F29a-F29d select each region of two crossing circles and the union of two of them.
+
+**Conflict.** None.
+
+**Note.** A path selection retains its native selection and loss. The selected region can be the union of several atomic arrangement faces, which no single face proves.
+
+### DR-146. Later ordinal in a fixed identity occurrence
+
+**Question.** What placement does a fixed untyped occurrence with identity flag `1` and ordinal greater than one select?
+
+**Known.** Two standard 229-byte frames store ordinal `2` and identity flag `1`. Attributed identity frames retain later ordinals.
+
+**Need.** Independent files that vary the occurrence ordinal and placement separately.
+
+**Conflict.** None.
+
+**Note.** Emit `assembly.local-occurrence-identity-ordinal-unresolved` and keep the occurrence out of neutral product structure.
+
+### DR-142. Thread construction option bytes
+
+**Question.** What do the first and second bytes of the Thread construction marker, the pitch marker, and the zero bytes before the trailer `01` select?
+
+**Known.** The construction marker first byte is `0` or `1` and its second byte is `1` or `2`. The pitch marker is `0` or `1`. The admitted forms fix each combination they accept. In the standard-prefix compact-marker form, the run before the trailer `01` is two or three zero bytes. Every byte in that run is zero in each Thread scope that carries it.
+
+**Need.** Thread scopes saved with one dialog option changed at a time, and Thread scopes whose marker combinations no admitted form accepts.
+
+**Conflict.** None.
+
+**Note.** A scope whose marker combination no admitted form accepts stays an unresolved Thread operation.
+
+### DR-143. Thread modeled state
+
+**Question.** Which stored field, or which result-topology change, marks a Thread as modeled geometry instead of an annotation?
+
+**Known.** The scope stores the designation, nominal-size text, profile name, and four physical scalars. No stored byte is proven to select the modeled state. In every Thread scope with a resolved result transition, the transition updates faces and inserts none.
+
+**Need.** One Thread saved with modeled geometry and the same Thread with it off, with the Design stream and the ASM history of both.
+
+**Conflict.** None.
+
+**Note.** The neutral thread leaves `modeled` absent.

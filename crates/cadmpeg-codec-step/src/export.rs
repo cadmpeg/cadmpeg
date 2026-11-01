@@ -248,6 +248,9 @@ enum WrittenAnalyticSurface<'a> {
 struct WrittenSurface {
     reference: Ref,
     reversed_chart: bool,
+    /// The written record's natural normal is opposite the carrier's
+    /// oriented normal.
+    reversed_normal: bool,
 }
 
 mod pcurves;
@@ -785,6 +788,7 @@ impl<'a> Builder<'a> {
                 | AppearanceTarget::Vertex(_)
                 | AppearanceTarget::Tessellation(_)
                 | AppearanceTarget::Record { .. }
+                | AppearanceTarget::TriangleGroup { .. }
                 | AppearanceTarget::Source { .. } => {}
             }
         }
@@ -1019,7 +1023,9 @@ impl<'a> Builder<'a> {
                     StyleKind::Surface,
                 ),
                 AppearanceTarget::Record { .. } => (None, StyleKind::Surface),
-                AppearanceTarget::Body(_) | AppearanceTarget::Source { .. } => continue,
+                AppearanceTarget::Body(_)
+                | AppearanceTarget::TriangleGroup { .. }
+                | AppearanceTarget::Source { .. } => continue,
             };
             let Some(target) = target else {
                 let target_id = match &binding.target {
@@ -1032,7 +1038,9 @@ impl<'a> Builder<'a> {
                     AppearanceTarget::Tessellation(id) => id.clone(),
                     AppearanceTarget::Occurrence(id) => id.as_str().to_owned(),
                     AppearanceTarget::Record { id, .. } => id.clone(),
-                    AppearanceTarget::Body(_) | AppearanceTarget::Source { .. } => continue,
+                    AppearanceTarget::Body(_)
+                    | AppearanceTarget::TriangleGroup { .. }
+                    | AppearanceTarget::Source { .. } => continue,
                 };
                 direct_unstyled.insert(target_id);
                 continue;
@@ -3112,7 +3120,11 @@ impl<'a> Builder<'a> {
             );
             return None;
         }
-        let flag = if same_sense { ".T." } else { ".F." };
+        let flag = if same_sense == self.surface_normal_reversed(surface_id) {
+            ".F."
+        } else {
+            ".T."
+        };
         let advanced_face = self.emitter.emit(
             "ADVANCED_FACE",
             &format!(
@@ -4034,9 +4046,9 @@ impl<'a> Builder<'a> {
                 };
                 Some((id, reference, reversed))
             });
-            let (r, reversed) = if let Some((id, reference, reversed)) = emitted {
+            let (r, reversed, reversed_normal) = if let Some((id, reference, reversed)) = emitted {
                 self.written_procedural_surfaces.insert(id);
-                (reference, reversed)
+                (reference, reversed, false)
             } else if let Some((id, helix)) = self.unsolved_helix_surface(surface_id) {
                 if self.failed_helix_fits.contains_key(id) {
                     return None;
@@ -4052,7 +4064,7 @@ impl<'a> Builder<'a> {
                 let reference =
                     geometry::surface(&mut self.emitter, &SolvedSurfaceGeometry::Nurbs(fitted))?;
                 self.fitted_helix_surfaces.insert(id.to_owned());
-                (reference, false)
+                (reference, false, false)
             } else if let Some(solved) = solved
                 .filter(|solved| geometry::surface_is_supported(solved) && !unwritable_cone(solved))
             {
@@ -4063,29 +4075,38 @@ impl<'a> Builder<'a> {
                 self.written_analytic_surfaces
                     .push(WrittenAnalyticSurface::Carrier(basis));
                 let reversed = matches!(basis, SolvedSurfaceGeometry::Cone(cone) if cone.half_angle().get() < 0.0);
-                (reference, reversed)
+                let reversed_normal =
+                    matches!(basis, SolvedSurfaceGeometry::Nurbs(nurbs) if nurbs.normal_reversed());
+                (reference, reversed, reversed_normal)
             } else {
                 let procedural = self.procedural_surfaces.get(surface_id)?.id.to_string();
                 let surface = self.approximations.surface(surface_id)?;
                 let reference = geometry::surface(&mut self.emitter, &surface)?;
                 self.sampled_surfaces.insert(procedural);
-                (reference, false)
+                (reference, false, false)
             };
-            Some((r, reversed))
+            Some((r, reversed, reversed_normal))
         })();
         self.active_surfaces.remove(surface_id);
         self.geometry_emission_depth -= 1;
-        if let Some((r, reversed)) = result {
+        if let Some((r, reversed, reversed_normal)) = result {
             self.surface_refs.insert(
                 surface_id.to_string(),
                 WrittenSurface {
                     reference: r,
                     reversed_chart: reversed,
+                    reversed_normal,
                 },
             );
             return Some(r);
         }
         None
+    }
+
+    fn surface_normal_reversed(&self, surface_id: &str) -> bool {
+        self.surface_refs
+            .get(surface_id)
+            .is_some_and(|surface| surface.reversed_normal)
     }
 
     fn surface_chart_reversed(&self, surface_id: &str) -> bool {
