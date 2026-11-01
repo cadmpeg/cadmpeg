@@ -134,10 +134,19 @@ pub(crate) fn write_semantic_with_records(
         &mut native,
         feature_parameter_changes_authorized,
     )?;
+    // The configuration states are projected again with the profile bodies
+    // the decode bound, read from the retained source image.
     crate::history::write::configurations::prepare_configurations_for_write(
         ir,
         &mut native,
         annotations,
+        |lanes| {
+            source_image(retained_records)
+                .map(|image| {
+                    crate::resolved_features::assembly::source_image_profiles(image, lanes)
+                })
+                .transpose()
+        },
     )?;
     let validation = cadmpeg_ir::validate::validate_neutral(ir, Vec::new())?;
     if !validation.is_ok() {

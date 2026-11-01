@@ -1499,6 +1499,7 @@ fn declared_entity_handle_circular_carrier_replaces_nested_support_geometry() {
         &[parameter],
         &[history],
         &[lane],
+        &crate::resolved_features::profiles::ExactProfiles::default(),
     );
 
     assert!(sketches.is_empty());

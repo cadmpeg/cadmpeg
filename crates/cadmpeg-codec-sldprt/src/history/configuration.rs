@@ -7,6 +7,9 @@ mod admission_tests;
 #[cfg(test)]
 mod lane_tests;
 
+#[cfg(test)]
+mod profile_body_tests;
+
 use crate::records::FeatureHistory;
 use cadmpeg_ir::math::{Point3, Vector3};
 use cadmpeg_ir::{
@@ -611,6 +614,7 @@ pub(crate) fn project_configuration_sketch_states(
     ir: &mut cadmpeg_ir::CadIr,
     histories: &[FeatureHistory],
     lanes: &[crate::records::FeatureInputLane],
+    exact: &crate::resolved_features::profiles::ExactProfiles,
     annotations: &mut cadmpeg_ir::Annotations,
 ) -> Result<Vec<cadmpeg_ir::report::loss::LossNote>, cadmpeg_core::CodecError> {
     let mut losses = Vec::new();
@@ -705,6 +709,7 @@ pub(crate) fn project_configuration_sketch_states(
                 &parameters,
                 histories,
                 scoped_lanes,
+                exact,
             );
             crate::resolved_features::profiles::project_compact_sketch_profiles(
                 ctx,

@@ -344,7 +344,22 @@ fn a_restored_snapshot_rolls_back_the_map_counter_and_records() {
     let snapshot = reader.snapshot();
     assert!(reader.ptr(None).expect("inline declaration").is_obj());
     assert_ne!(reader.counter, 0);
+    assert!(
+        reader.ends.is_empty(),
+        "only a profile-family object records its end"
+    );
+    reader
+        .open
+        .push((std::sync::Arc::from("moProfileFeature_c"), 0));
+    reader.ends.insert(0, reader.p);
+    reader.profile_bodies.push(super::reader::ProfileBody {
+        stream: 4,
+        owner: 0,
+    });
     reader.restore(snapshot);
+    assert!(reader.open.is_empty());
+    assert!(reader.ends.is_empty());
+    assert!(reader.profile_bodies.is_empty());
     assert_eq!(reader.counter, 0);
     assert_eq!(reader.p, 0);
     assert_eq!(reader.known.len(), 0);
@@ -647,4 +662,100 @@ fn text_after_characters() -> Vec<u8> {
     put_f64s(&mut bytes, &[1.0]);
     put_u32(&mut bytes, 0);
     bytes
+}
+
+/// A compressed body (spec §2.3) that inflates to `payload`.
+fn compressed_body(payload: &[u8]) -> Vec<u8> {
+    use std::io::Write;
+    let mut encoder = flate2::write::ZlibEncoder::new(Vec::new(), flate2::Compression::default());
+    encoder.write_all(payload).expect("encode");
+    let compressed = encoder.finish().expect("finish");
+    let b = 24 + compressed.len() + 8;
+    let mut bytes = vec![0];
+    bytes.extend_from_slice(&u32::try_from(b + 5).expect("a fits u32").to_le_bytes());
+    bytes.push(0);
+    bytes.extend_from_slice(&u32::try_from(b).expect("b fits u32").to_le_bytes());
+    bytes.extend_from_slice(&[
+        0x23, 0x1d, 0xd5, 0x71, 0xda, 0x81, 0x48, 0xa2, 0xa8, 0x58, 0x98, 0xb2, 0x1b, 0x89, 0xef,
+        0x99,
+    ]);
+    bytes.extend_from_slice(
+        &u32::try_from(payload.len())
+            .expect("ul fits u32")
+            .to_le_bytes(),
+    );
+    bytes.extend_from_slice(
+        &u32::try_from(compressed.len())
+            .expect("cl fits u32")
+            .to_le_bytes(),
+    );
+    bytes.extend_from_slice(&compressed);
+    bytes.extend_from_slice(&[0; 8]);
+    bytes
+}
+
+/// An `sgSketch` tail: u32 `3`, a compressed body, then the fields after it
+/// with no references, groups or plane.
+fn sketch_tail() -> (Vec<u8>, usize) {
+    let mut bytes = 3_u32.to_le_bytes().to_vec();
+    let stream = bytes.len() + 6;
+    bytes.extend(compressed_body(b"profile"));
+    bytes.extend_from_slice(&[0; 4]);
+    bytes.extend_from_slice(&0_u16.to_le_bytes());
+    bytes.extend_from_slice(&[0; 4]);
+    bytes.extend_from_slice(&100_000_u32.to_le_bytes());
+    bytes.extend_from_slice(&[0; 6]);
+    (bytes, stream)
+}
+
+#[test]
+fn a_sketch_tail_body_is_the_profile_body_of_the_innermost_profile_feature() {
+    let (bytes, stream) = sketch_tail();
+    let arena = DecodeArena::new();
+    let (ctx, _root) =
+        DecodeContext::from_root_bytes(&bytes, &arena, &DecodePolicy::desktop()).expect("context");
+    let mut reader = Reader::new(&ctx, &bytes, 0, HashMap::new(), 0, None);
+    reader
+        .open
+        .push((std::sync::Arc::from("moProfileFeature_c"), 1));
+    reader.open.push((std::sync::Arc::from("moExtrusion_c"), 3));
+    reader
+        .open
+        .push((std::sync::Arc::from("moProfileFeature_c"), 7));
+    reader.open.push((std::sync::Arc::from("sgSketch"), 9));
+    super::rules::sketch::sktail(&mut reader).expect("sketch tail");
+    assert_eq!(reader.p, bytes.len());
+    assert_eq!(
+        reader.profile_bodies,
+        [super::reader::ProfileBody { stream, owner: 7 }]
+    );
+
+    let mut reader = Reader::new(&ctx, &bytes, 0, HashMap::new(), 0, None);
+    reader.open.push((std::sync::Arc::from("sgSketch"), 9));
+    super::rules::sketch::sktail(&mut reader).expect("sketch tail");
+    assert!(reader.profile_bodies.is_empty());
+}
+
+#[test]
+fn a_profile_body_takes_the_extent_of_its_holding_object() {
+    use super::reader::ProfileBody;
+    let bodies = [
+        ProfileBody {
+            stream: 40,
+            owner: 10,
+        },
+        ProfileBody {
+            stream: 90,
+            owner: 80,
+        },
+    ];
+    let ends = HashMap::from([(10, 60)]);
+    assert_eq!(
+        super::sketch_profiles(&bodies, &ends),
+        [super::SketchProfile {
+            stream: 40,
+            owner_start: 10,
+            owner_end: 60,
+        }]
+    );
 }

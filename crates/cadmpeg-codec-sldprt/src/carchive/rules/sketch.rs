@@ -1012,7 +1012,8 @@ pub(crate) fn sktail(reader: &mut Reader<'_>) -> Res<V> {
     } else {
         let mk = reader.u32()?;
         if reader.byte(reader.p)? == 0 {
-            blob(reader)?;
+            let (stream, _) = located_blob(reader)?;
+            reader.note_profile_body(stream);
         } else {
             reader.skip(1);
         }
@@ -1262,9 +1263,16 @@ fn chains(r: &mut Reader<'_>) -> Res<u32> {
 
 /// `blob`: a compressed body; returns its decompressed bytes.
 pub(crate) fn blob(r: &mut Reader<'_>) -> Res<V> {
+    located_blob(r).map(|(_, data)| data)
+}
+
+/// A compressed body: where its u32 `B` starts, which is where its nested
+/// stream starts, and its decompressed bytes.
+fn located_blob(r: &mut Reader<'_>) -> Res<(usize, V)> {
     r.expect_bytes(&[0], "blob u8 0")?;
     let a = r.u32()?;
     r.expect_bytes(&[0], "blob u8 0 b")?;
+    let stream = r.p;
     let b = r.u32()?;
     if i64::from(b) != i64::from(a) - 5 {
         return Err(bad("blob lengths"));
@@ -1278,7 +1286,7 @@ pub(crate) fn blob(r: &mut Reader<'_>) -> Res<V> {
     );
     let data = r.zlib_exact(compressed, ul)?;
     r.p = q + usize::try_from(b).map_err(|_| bad("blob length exceeds address space"))?;
-    Ok(V::Bytes(data))
+    Ok((stream, V::Bytes(data)))
 }
 
 /// `iscomp`: a context or unit component at `q`.

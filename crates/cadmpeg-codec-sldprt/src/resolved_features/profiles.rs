@@ -105,6 +105,83 @@ impl FeaturePositions {
     }
 }
 
+/// The sketch profile bodies of each lane whose archive walk read the whole
+/// stream (§2.3), by lane id.
+#[derive(Debug, Clone, Default)]
+pub(crate) struct ExactProfiles(HashMap<String, Vec<crate::carchive::SketchProfile>>);
+
+impl ExactProfiles {
+    /// Keep the profile bodies of the lane `lane`.
+    pub(crate) fn insert(&mut self, lane: &str, profiles: Vec<crate::carchive::SketchProfile>) {
+        self.0.insert(lane.to_owned(), profiles);
+    }
+
+    /// Keep the lanes for which `keep` holds.
+    pub(crate) fn retain(&mut self, mut keep: impl FnMut(&str) -> bool) {
+        self.0.retain(|lane, _| keep(lane));
+    }
+
+    fn of(&self, lane: &str) -> Option<&[crate::carchive::SketchProfile]> {
+        self.0.get(lane).map(Vec::as_slice)
+    }
+}
+
+/// A profile-family object of a whole walk, and the lane sketch of the
+/// profile body it holds when that body is one.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct Holder {
+    start: u64,
+    end: u64,
+    sketch: Option<usize>,
+}
+
+/// The holders of `profiles`, with the lane sketches of `offsets` their
+/// bodies are.
+fn holders(offsets: &[(u64, usize)], profiles: &[crate::carchive::SketchProfile]) -> Vec<Holder> {
+    let sketches = offsets.iter().copied().collect::<HashMap<_, _>>();
+    profiles
+        .iter()
+        .filter_map(|profile| {
+            let stream = u64::try_from(profile.stream).ok()?;
+            Some(Holder {
+                start: u64::try_from(profile.owner_start).ok()?,
+                end: u64::try_from(profile.owner_end).ok()?,
+                sketch: sketches.get(&stream).copied(),
+            })
+        })
+        .collect()
+}
+
+/// The position in `offsets` bound to the name at `start`: the profile body of
+/// the innermost holder that holds the name. A holder that holds two bodies,
+/// or whose body is no lane sketch, binds none. Without a whole walk, or when
+/// no holder holds the name, the only position strictly inside the span.
+fn profile_position(
+    offsets: &[(u64, usize)],
+    holders: Option<&[Holder]>,
+    start: u64,
+    end: Option<u64>,
+) -> Option<usize> {
+    if let Some(holders) = holders {
+        let holding = |holder: &&Holder| holder.start <= start && start < holder.end;
+        if let Some(innermost) = holders
+            .iter()
+            .filter(holding)
+            .max_by_key(|holder| holder.start)
+        {
+            let bodies = holders
+                .iter()
+                .filter(|holder| (holder.start, holder.end) == (innermost.start, innermost.end))
+                .count();
+            if bodies > 1 {
+                return None;
+            }
+            return innermost.sketch;
+        }
+    }
+    only_enclosed(offsets, start, end)
+}
+
 /// The only position of `offsets`, sorted by offset, strictly inside the span.
 fn only_enclosed(offsets: &[(u64, usize)], start: u64, end: Option<u64>) -> Option<usize> {
     let first = offsets.partition_point(|&(offset, _)| offset <= start);
@@ -191,6 +268,7 @@ pub(crate) fn bind_sketch_profiles(
     parameters: &[cadmpeg_ir::features::DesignParameter],
     histories: &[crate::records::FeatureHistory],
     lanes: &[FeatureInputLane],
+    exact: &ExactProfiles,
 ) {
     let SketchArenas {
         sketches,
@@ -216,6 +294,9 @@ pub(crate) fn bind_sketch_profiles(
             }
         }
         lane_sketches.sort_unstable();
+        let lane_holders = exact
+            .of(lane.id.as_str())
+            .map(|profiles| holders(&lane_sketches, profiles));
         let mut starts = Vec::<(u64, usize, &crate::records::Feature)>::new();
         for feature in native_features.iter() {
             if metadata_ids.contains(feature.id.as_str()) {
@@ -236,8 +317,9 @@ pub(crate) fn bind_sketch_profiles(
                 continue;
             };
             let end = starts.get(index + 1).map(|next| next.0);
-            let Some(sketch) = only_enclosed(&lane_sketches, start, end)
-                .and_then(|position| sketches.get_mut(position))
+            let Some(sketch) =
+                profile_position(&lane_sketches, lane_holders.as_deref(), start, end)
+                    .and_then(|position| sketches.get_mut(position))
             else {
                 continue;
             };
@@ -3459,6 +3541,7 @@ mod detached_legacy_sketch_tests {
             &[],
             std::slice::from_ref(&history),
             std::slice::from_ref(&lane),
+            &super::ExactProfiles::default(),
         );
         assert!(matches!(admitted[0].evaluation.definition(),
             FeatureDefinition::Operation(FeatureOperation::Sketch {
@@ -3546,6 +3629,7 @@ mod detached_legacy_sketch_tests {
                 &[],
                 std::slice::from_ref(&history),
                 std::slice::from_ref(&lane),
+                &super::ExactProfiles::default(),
             );
             assert!(matches!(
                 admitted[0].evaluation.definition(),
@@ -4714,6 +4798,9 @@ mod detached_legacy_sketch_tests {
 
 #[cfg(test)]
 mod compact_cycle_tests;
+
+#[cfg(test)]
+mod exact_tests;
 
 #[cfg(test)]
 mod index_tests;
