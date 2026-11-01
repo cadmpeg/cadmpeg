@@ -97,11 +97,6 @@ pub enum AttributeTarget {
         /// Identity of a record in that arena.
         id: String,
     },
-    /// Attribute is owned by a retained typed native object with no neutral entity.
-    Source {
-        /// Identity of an existing typed native record or source-object association.
-        source_id: String,
-    },
 }
 
 impl AttributeTarget {

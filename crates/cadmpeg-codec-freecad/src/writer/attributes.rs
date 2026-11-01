@@ -17,7 +17,6 @@ fn target<'a>(
         AttributeTarget::Record { arena, id } if ir.model.contains_record(*arena, id) => {
             names.get(id)
         }
-        AttributeTarget::Source { source_id } => names.get(source_id),
         AttributeTarget::Feature(id) => names.get(id.as_str()),
         AttributeTarget::Sketch(id) => names.get(id.as_str()),
         AttributeTarget::Parameter(id) => names.get(id.as_str()),
