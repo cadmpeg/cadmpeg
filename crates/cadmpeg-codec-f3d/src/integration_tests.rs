@@ -16,6 +16,7 @@ mod measured_geometry;
 mod optional_payloads;
 mod placement_history;
 mod procedural_support;
+mod product_owners;
 mod root_product;
 mod work_planes;
 

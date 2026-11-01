@@ -44,6 +44,7 @@ fn sketch_document() -> (CadIr, SketchId, SketchEntityId) {
 }
 fn feature(operation: FeatureOperation) -> Feature {
     Feature {
+        product_definition: None,
         id: FeatureId::mint("test:model:feature#resolved").unwrap(),
         ordinal: 0,
         name: None,

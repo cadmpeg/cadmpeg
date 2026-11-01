@@ -15,6 +15,7 @@ pub(super) fn parent_draft() -> ModelDraft {
     for (key, ordinal) in [("0-parent", 0), ("1-child", 1)] {
         draft
             .insert(Feature {
+                product_definition: None,
                 needs_recompute: false,
                 id: format!("test:parents:feature#{key}").try_into().unwrap(),
                 ordinal,

@@ -2115,6 +2115,7 @@ pub(crate) fn project(
                 }),
             ),
             native_ref: Some(native_ref),
+            product_definition: None,
         });
     }
     let native = records

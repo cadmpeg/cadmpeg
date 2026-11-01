@@ -149,6 +149,7 @@ mod tests {
         let mut ir = CadIr::empty();
         let feature = FeatureId::mint("creo:test:feature#1").expect("fixture value is valid");
         ir.model.features.push(Feature {
+            product_definition: None,
             id: feature.clone(),
             ordinal: 0,
             name: None,
@@ -164,6 +165,7 @@ mod tests {
         });
         let value = ParameterValue::Length(Length::new(3.0).expect("fixture value is valid"));
         ir.model.parameters.push(DesignParameter {
+            product_definition: None,
             id: ParameterId::mint("creo:test:parameter#1").expect("fixture value is valid"),
             owner: Some(feature),
             ordinal: 0,

@@ -3202,6 +3202,11 @@ impl<'a> F3dDecodeSession<'a> {
                         &mut self.ir.model,
                         &mut self.report.losses,
                     )?;
+                    crate::design::owners::attach(
+                        &self.native,
+                        &mut self.ir.model,
+                        &mut self.report.losses,
+                    )?;
                     report_design_projection_gaps(&mut self.report, ctx, &self.ir, &self.native)?;
                 }
                 index
@@ -3221,6 +3226,11 @@ impl<'a> F3dDecodeSession<'a> {
                         crate::design::decode::sketch_owners::attach(
                             ctx,
                             scan,
+                            &self.native,
+                            &mut self.ir.model,
+                            &mut self.report.losses,
+                        )?;
+                        crate::design::owners::attach(
                             &self.native,
                             &mut self.ir.model,
                             &mut self.report.losses,
@@ -3394,6 +3404,7 @@ pub(crate) fn decode<'a>(ctx: &DecodeContext<'a>, root: View<'a>) -> Result<Deco
                 &std::collections::BTreeSet::new(),
                 &mut decoded.body.losses,
             )?;
+            crate::design::owners::release_unbound(&mut decoded.ir.model);
             decoded.ir.finalize();
             let hash = cadmpeg_ir::hash::document_local_sha256(
                 ctx,

@@ -26,6 +26,12 @@ use cadmpeg_ir::report::{
 pub(crate) enum F3dLossCode {
     /// A direct operation-table pose is applied uniformly to its definition.
     OperationPoseApplied,
+    /// A scope namespace has no unique neutral product definition.
+    ScopeOwnerUnresolved,
+    /// A history output body belongs to another product definition.
+    ScopeOutputOwnerMismatch,
+    /// A bound sketch collection belongs to another product definition.
+    ScopeSketchOwnerMismatch,
     /// Component-path constraints prevent a uniform operation-table pose.
     OperationPoseDisagrees,
     /// An operation table has no unique admitted neutral placement.
@@ -422,6 +428,9 @@ impl F3dLossCode {
     #[cfg(test)]
     pub(crate) const ALL: &[F3dLossCode] = &[
         Self::OperationPoseApplied,
+        Self::ScopeOwnerUnresolved,
+        Self::ScopeOutputOwnerMismatch,
+        Self::ScopeSketchOwnerMismatch,
         Self::OperationPoseDisagrees,
         Self::OperationPoseNative,
         Self::DimensionCompanionUntyped,
@@ -610,6 +619,9 @@ impl F3dLossCode {
     #[must_use]
     const fn code(self) -> &'static str {
         match self {
+            Self::ScopeOwnerUnresolved => "scope.owner-unresolved",
+            Self::ScopeOutputOwnerMismatch => "scope.output-owner-mismatch",
+            Self::ScopeSketchOwnerMismatch => "scope.sketch-owner-mismatch",
             Self::OperationPoseApplied => "assembly.operation-table-pose",
             Self::OperationPoseDisagrees => "assembly.operation-table-pose-disagrees",
             Self::OperationPoseNative => "assembly.operation-table-pose-native",
@@ -817,6 +829,7 @@ impl F3dLossCode {
     #[must_use]
     const fn severity(self) -> Severity {
         match self {
+            Self::ScopeOutputOwnerMismatch | Self::ScopeSketchOwnerMismatch => Severity::Warning,
             Self::WriterNativeRecordsOmitted => Severity::Warning,
             Self::ImageAssetUntransferred => Severity::Warning,
             Self::WriterDesignRecordsOmitted => Severity::Error,
@@ -831,9 +844,9 @@ impl F3dLossCode {
             Self::WriterPmiOmitted => Severity::Warning,
             Self::WriterProductOmitted => Severity::Warning,
             Self::WriterSourceAssociationOmitted => Severity::Warning,
-
             Self::WriterAppearancePropertiesOmitted => Severity::Warning,
-            Self::OperationPoseApplied
+            Self::ScopeOwnerUnresolved
+            | Self::OperationPoseApplied
             | Self::OperationPoseNative
             | Self::BodylessDesignCarrier
             | Self::XrefPlacementMetadataNative
@@ -1007,6 +1020,9 @@ impl F3dLossCode {
     /// The shared cross-codec category this loss reports under.
     const fn shared_taxonomy(self) -> LossTaxonomy {
         match self {
+            Self::ScopeOutputOwnerMismatch | Self::ScopeSketchOwnerMismatch => {
+                LossTaxonomy::FeatureHistoryRetained
+            }
             Self::WriterNativeRecordsOmitted => LossTaxonomy::PassthroughRecordOmitted,
             Self::WriterDesignRecordsOmitted => LossTaxonomy::ParametricRecordOmitted,
             Self::WriterGeometryOmitted => LossTaxonomy::GeometryNotTransferred,
@@ -1020,7 +1036,6 @@ impl F3dLossCode {
             Self::WriterPmiOmitted => LossTaxonomy::PmiOmitted,
             Self::WriterProductOmitted => LossTaxonomy::AssemblyComponentsExternal,
             Self::WriterSourceAssociationOmitted => LossTaxonomy::SourceAssociationOmitted,
-
             Self::WriterAppearancePropertiesOmitted => LossTaxonomy::AppearanceReduced,
             Self::DimensionCompanionUntyped
             | Self::BodyReferenceTailUntyped
@@ -1032,7 +1047,8 @@ impl F3dLossCode {
             | Self::SolvedRecordUntyped
             | Self::KernelCarrierUnparseable
             | Self::TsplineRecordUntyped => LossTaxonomy::RecordNotTyped,
-            Self::OperationPoseApplied
+            Self::ScopeOwnerUnresolved
+            | Self::OperationPoseApplied
             | Self::OperationPoseDisagrees
             | Self::OperationPoseNative
             | Self::ConfigurationMemberUnassigned
@@ -1247,6 +1263,9 @@ mod tests {
             codes,
             [
                 "assembly.operation-table-pose",
+                "scope.owner-unresolved",
+                "scope.output-owner-mismatch",
+                "scope.sketch-owner-mismatch",
                 "assembly.operation-table-pose-disagrees",
                 "assembly.operation-table-pose-native",
                 "dimension.companion-untyped",

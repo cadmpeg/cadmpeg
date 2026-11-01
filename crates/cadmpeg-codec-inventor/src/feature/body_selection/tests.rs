@@ -537,6 +537,7 @@ fn combine_target_and_producing_feature_outputs_share_the_result_wrapper_join() 
             "tool".into(),
         ))),
         native_ref: None,
+        product_definition: None,
     });
     model
         .feature_result_topologies

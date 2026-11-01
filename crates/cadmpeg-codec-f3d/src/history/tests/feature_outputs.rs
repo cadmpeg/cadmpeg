@@ -16,6 +16,7 @@ fn base_feature() -> cadmpeg_ir::features::Feature {
     };
     use cadmpeg_ir::ids::BodyId;
     Feature {
+        product_definition: None,
         needs_recompute: false,
         id: FeatureId::mint("test:model:feature#feature").unwrap(),
         ordinal: 0,
@@ -899,6 +900,7 @@ fn historical_partial_and_native_edge_selections_test() {
             DistinctMembers::try_from(vec![]).unwrap(),
         ),
         native_ref: Some("native:scope".into()),
+        product_definition: None,
     };
 
     let scope = scope_between(1, 0);
@@ -1173,6 +1175,7 @@ fn stored_false_shell_retained_on_bbox_growth() {
             DistinctMembers::try_from(vec![]).unwrap(),
         ),
         native_ref: Some(scope.id.clone()),
+        product_definition: None,
     };
 
     // State 0 bbox width = 10.0; State 1 bbox width = 20.0 (grew > 1.0e-3)
@@ -1245,6 +1248,7 @@ fn combine_join_to_cut_deleting_vs_non_deleting() {
             DistinctMembers::try_from(vec![]).unwrap(),
         ),
         native_ref: Some("native:scope".into()),
+        product_definition: None,
     };
 
     let scope = scope_between(1, 0);
@@ -1371,6 +1375,7 @@ fn split_plane_only_emitted_for_split_body() {
             DistinctMembers::try_from(vec![]).unwrap(),
         ),
         native_ref: Some(scope.id.clone()),
+        product_definition: None,
     };
 
     super::super::bind_feature_outputs(
@@ -1423,6 +1428,7 @@ fn split_plane_only_emitted_for_split_body() {
             DistinctMembers::try_from(vec![]).unwrap(),
         ),
         native_ref: Some(scope.id.clone()),
+        product_definition: None,
     };
 
     super::super::bind_feature_outputs(

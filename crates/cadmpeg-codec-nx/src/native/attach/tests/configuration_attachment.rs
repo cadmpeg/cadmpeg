@@ -9,6 +9,7 @@ fn configuration_attachment_preserves_active_relation() {
     let ir = {
         let mut ir = cadmpeg_ir::examples::unit_cube().unwrap();
         ir.model.parameters.push(DesignParameter {
+            product_definition: None,
             id: ParameterId::mint("test:model:parameter#global").unwrap(),
             owner: None,
             ordinal: 0,

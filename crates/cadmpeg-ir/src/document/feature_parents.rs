@@ -150,6 +150,7 @@ mod tests {
     fn model() -> Model {
         let mut model = Model::default();
         model.features.push(crate::features::Feature {
+            product_definition: None,
             id: "test:parents:feature#one".try_into().unwrap(),
             ordinal: 0,
             name: None,

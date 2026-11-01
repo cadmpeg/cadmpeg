@@ -16,6 +16,7 @@ fn feature(value: Value) -> Feature {
     let operation: FeatureOperation =
         serde_json::from_value(value).expect("admitted neutral operation");
     Feature {
+        product_definition: None,
         id: FeatureId::mint("test:feature:operation#0").expect("identity"),
         ordinal: 0,
         name: Some("Operation".into()),

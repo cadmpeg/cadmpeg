@@ -4,6 +4,7 @@ use cadmpeg_ir::features::{DesignParameter, Expression, ExpressionToken, Paramet
 
 fn parameter(name: &str, ordinal: u32, value: i64) -> DesignParameter {
     DesignParameter {
+        product_definition: None,
         id: cadmpeg_ir::features::ParameterId::mint(format!("test:writer:parameter#{name}"))
             .unwrap(),
         owner: Some(cadmpeg_ir::features::FeatureId::mint("test:writer:feature#owner").unwrap()),

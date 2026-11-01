@@ -10,6 +10,7 @@ use std::collections::BTreeMap;
 
 fn parameter(expression: Expression, value: ParameterValue) -> DesignParameter {
     DesignParameter {
+        product_definition: None,
         id: ParameterId::mint("test:model:parameter#cache").unwrap(),
         owner: None,
         ordinal: 0,

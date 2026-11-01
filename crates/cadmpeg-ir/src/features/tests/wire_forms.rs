@@ -10,6 +10,7 @@ fn a_standalone_feature_wire_declares_no_regeneration_parent() {
     use crate::features::{Feature, FeatureDefinition, FeatureId, FeatureOperation};
 
     let feature = Feature {
+        product_definition: None,
         id: FeatureId::mint("test:model:feature#child").expect("identity grammar"),
         ordinal: 0,
         name: None,
@@ -455,6 +456,7 @@ fn generated_sweep_sections_round_trip_and_validate() {
     let validate_definition = |definition| {
         let mut ir = unit_cube().expect("valid unit cube fixture");
         ir.model.features.push(Feature {
+            product_definition: None,
             id: FeatureId::mint("synthetic:test:feature#generated-sweep")
                 .expect("identity grammar"),
             ordinal: 0,
@@ -529,6 +531,7 @@ fn full_round_fillet_keeps_automatic_side_semantics() {
         definition
     );
     ir.model.features.push(Feature {
+        product_definition: None,
         id: FeatureId::mint("synthetic:test:feature#full-round").expect("identity grammar"),
         ordinal: 0,
         name: None,

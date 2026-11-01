@@ -35,6 +35,7 @@ fn model() -> cadmpeg_ir::CadIr {
         definition: Box::new(definition.clone()),
     };
     ir.model.features.push(Feature {
+        product_definition: None,
         id: id.clone(),
         ordinal: 0,
         name: Some("Retained feature name".into()),

@@ -9,6 +9,7 @@ use crate::CadIr;
 
 fn parameter(id: &str, ordinal: u32) -> DesignParameter {
     DesignParameter {
+        product_definition: None,
         id: ParameterId::mint(id).unwrap(),
         owner: None,
         ordinal,
@@ -24,6 +25,7 @@ fn parameter(id: &str, ordinal: u32) -> DesignParameter {
 }
 fn feature() -> Feature {
     Feature {
+        product_definition: None,
         id: FeatureId::mint("test:model:feature#owner").unwrap(),
         ordinal: 0,
         name: None,

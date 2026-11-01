@@ -502,6 +502,7 @@ pub(crate) fn apply_to_parameters(
                 );
                 let index = parameters.len();
                 parameters.push(DesignParameter {
+                    product_definition: None,
                     id: ParameterId::compose(
                         &cadmpeg_ir::identity_namespace!("sldprt", "model", "parameter"),
                         cadmpeg_ir::ids::IdentityKey::try_new(format!("pmi:{}", record.guid))
