@@ -35,7 +35,7 @@ fn two_sided_revolve_construction(
     ) {
         return None;
     }
-    let start = usize::try_from(scope.byte_offset()).ok()?;
+    let start = usize::try_from(scope.byte_offset()?).ok()?;
     let symmetric = match (
         bytes.get(start + two_sided_revolve::SYMMETRIC)?,
         bytes.get(start + two_sided_revolve::TWO_SIDES)?,

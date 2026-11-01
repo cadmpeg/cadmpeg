@@ -432,8 +432,8 @@ fn extrude_selection_group_and_members_have_exact_counted_frames() {
             owner_reference: None,
             class_tag: crate::records::references::DesignClassTag::try_from("256".to_owned())
                 .unwrap(),
-            byte_offset: 5000,
-            coordinate_offset: 141,
+            byte_offset: Some(5000),
+            coordinate_offset: Some(141),
             companion: crate::records::sketch_geometry::SketchPointCompanion {
                 incident_curves: Vec::new(),
             },
@@ -472,8 +472,8 @@ fn extrude_selection_group_and_members_have_exact_counted_frames() {
                 owner_reference: Some(172),
                 class_tag: crate::records::references::DesignClassTag::try_from("256".to_owned())
                     .unwrap(),
-                byte_offset: 5100,
-                coordinate_offset: 141,
+                byte_offset: Some(5100),
+                coordinate_offset: Some(141),
                 companion: crate::records::sketch_geometry::SketchPointCompanion {
                     incident_curves: Vec::new(),
                 },

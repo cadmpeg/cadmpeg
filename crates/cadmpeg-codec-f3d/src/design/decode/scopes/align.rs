@@ -18,9 +18,9 @@ pub(crate) fn align_envelope_links_hold(
         DesignAlignForm::Compact => 0,
         DesignAlignForm::Extended => extended::LEN - compact::LEN,
     };
-    let offset = |at| scope.byte_offset().checked_add(u64_from_index(at + shift));
+    let offset = |at| scope.byte_offset()?.checked_add(u64_from_index(at + shift));
     scope.kind() == DesignFeatureKind::Align
-        && Some(scope.reference_count_offset()) == offset(compact::LEN)
+        && scope.reference_count_offset() == offset(compact::LEN)
         && Some(envelope.first_reference.offset) == offset(compact::FIRST_REFERENCE)
         && Some(envelope.second_reference.offset) == offset(compact::SECOND_REFERENCE)
         && Some(envelope.source_code.offset) == offset(compact::SOURCE_CODE)
@@ -35,11 +35,11 @@ pub(crate) fn decode_align_envelope(
     bytes: &[u8],
     scope: &DesignParameterScope,
 ) -> Option<DesignAlignEnvelope> {
-    let start = usize::try_from(scope.byte_offset()).ok()?;
+    let start = usize::try_from(scope.byte_offset()?).ok()?;
     let length = usize::try_from(
         scope
-            .reference_count_offset()
-            .checked_sub(scope.byte_offset())?,
+            .reference_count_offset()?
+            .checked_sub(scope.byte_offset()?)?,
     )
     .ok()?;
     let (form, shift) = if length == compact::LEN {

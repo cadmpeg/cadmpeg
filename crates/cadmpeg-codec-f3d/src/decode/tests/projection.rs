@@ -1449,7 +1449,7 @@ fn emboss_native_and_refused_prefixes_have_exact_scope_losses() {
     let ir = cadmpeg_ir::examples::unit_cube().unwrap();
     native.design_parameter_scopes.push(scope.clone());
     let mut report =
-        cadmpeg_ir::codec::DecodeBody::new(cadmpeg_ir::report::decode::DecodeTransfer::full(true));
+        cadmpeg_ir::codec::DecodeBody::new(cadmpeg_ir::report::decode::DecodeTransfer { scope: cadmpeg_ir::document::ContentScope::full(), geometry_transferred: true });
     report_design_projection_gaps(
         &mut report,
         &cadmpeg_test_support::service_decode_context(),
@@ -1476,23 +1476,26 @@ fn emboss_native_and_refused_prefixes_have_exact_scope_losses() {
             draft.layout_fixture_references();
             draft.layout_fixture_tail();
             draft.payload = crate::records::feature::scope::DesignScopePayload::Emboss(Some(
-                serde_json::from_value(serde_json::json!({
-                    "control_words": [7, 9], "native_pair": [17, 23],
-                    "depth_owner": {"value": 60, "offset": 29},
-                    "auxiliary_group": {"value": 72, "offset": 40},
-                    "horizontal_owner": {"value": 63, "offset": 51},
-                    "rotation_owner": {"value": 69, "offset": 82},
-                    "face_group": {"value": 48, "offset": 93},
-                    "vertical_owner": {"value": 66, "offset": 104},
-                    "profile_group": {"value": 41, "offset": 119}
-                }))
-                .unwrap(),
+                crate::records::feature::emboss::DesignEmbossConstruction {
+                    control_words:
+                        crate::records::feature::emboss::DesignEmbossControlWords::Two([7, 9]),
+                    native_pair: Some([17, 23]),
+                    additional_native_pairs: None,
+                    depth_owner: crate::records::identity::Sourced::at(60, 29),
+                    auxiliary_group: crate::records::identity::Sourced::at(72, 40),
+                    horizontal_owner: crate::records::identity::Sourced::at(63, 51),
+                    rotation_owner: crate::records::identity::Sourced::at(69, 82),
+                    face_group: crate::records::identity::Sourced::at(48, 93),
+                    vertical_owner: crate::records::identity::Sourced::at(66, 104),
+                    profile_group: crate::records::identity::Sourced::at(41, 119),
+                    sketch_profile: None,
+                },
             ));
         })
         .unwrap();
     native.design_parameter_scopes = vec![scope];
     let mut report =
-        cadmpeg_ir::codec::DecodeBody::new(cadmpeg_ir::report::decode::DecodeTransfer::full(true));
+        cadmpeg_ir::codec::DecodeBody::new(cadmpeg_ir::report::decode::DecodeTransfer { scope: cadmpeg_ir::document::ContentScope::full(), geometry_transferred: true });
     report_design_projection_gaps(
         &mut report,
         &cadmpeg_test_support::service_decode_context(),
@@ -1564,18 +1567,20 @@ fn move_transform_refusal_reports_exact_loss_for_transform_or_selection() {
                 } else {
                     crate::records::sketch_placement::SketchPlacementMatrix::IDENTITY
                 },
-                transform_offset: 448,
+                transform_offset: Some(448),
                 transform_record_index: 71,
                 form: DesignMoveForm::Form1,
-                form_offset: 443,
+                form_offset: Some(443),
             });
         }
         let mut report = cadmpeg_ir::codec::DecodeBody {
-            transfer: cadmpeg_ir::report::decode::DecodeTransfer::full(true),
+            transfer: cadmpeg_ir::report::decode::DecodeTransfer {
+                scope: cadmpeg_ir::document::ContentScope::full(),
+                geometry_transferred: true,
+            },
             coverage: Default::default(),
             losses: Vec::new(),
             notes: Vec::new(),
-            transfer_ledger: Default::default(),
         };
         report_design_projection_gaps(
             &mut report,
@@ -1608,7 +1613,7 @@ fn typed_profile_ambiguous_selection_retains_profile_loss() {
         "profile": {"kind": "native", "value": "synthetic:profile"},
         "direction": {"kind": "profile_normal"},
         "start": {"kind": "profile_plane"},
-        "extent": {"kind": "one_sided", "side": {"termination": {"kind": "blind", "length": 7.0}}},
+        "extent": {"kind": "one_sided", "side": {"termination": {"kind": "blind", "length": {"kind": "literal", "value": 7.0}}}},
         "op": "new_body", "solid": true
     }))
     .unwrap();
@@ -1617,6 +1622,7 @@ fn typed_profile_ambiguous_selection_retains_profile_loss() {
         ordinal: 0,
         name: None,
         suppressed: None,
+        needs_recompute: false,
         dependencies: Default::default(),
         source_properties: Default::default(),
         source_tag: Some("Extrude".into()),
@@ -1626,11 +1632,13 @@ fn typed_profile_ambiguous_selection_retains_profile_loss() {
         native_ref: None,
     });
     let mut report = cadmpeg_ir::codec::DecodeBody {
-        transfer: cadmpeg_ir::report::decode::DecodeTransfer::full(true),
+        transfer: cadmpeg_ir::report::decode::DecodeTransfer {
+            scope: cadmpeg_ir::document::ContentScope::full(),
+            geometry_transferred: true,
+        },
         coverage: Default::default(),
         losses: Vec::new(),
         notes: Vec::new(),
-        transfer_ledger: Default::default(),
     };
     report_design_projection_gaps(
         &mut report,
@@ -1673,6 +1681,7 @@ fn stored_body_scope_keeps_opaque_payload_loss_after_history_projection() {
         ordinal: 0,
         name: None,
         suppressed: None,
+        needs_recompute: false,
         dependencies: Default::default(),
         source_properties: Default::default(),
         source_tag: Some("Base Feature".into()),
@@ -1709,11 +1718,13 @@ fn stored_body_scope_keeps_opaque_payload_loss_after_history_projection() {
     native.design_parameter_scopes.push(scope);
     native.design_parameter_scopes.push(box_scope);
     let mut report = cadmpeg_ir::codec::DecodeBody {
-        transfer: cadmpeg_ir::report::decode::DecodeTransfer::full(true),
+        transfer: cadmpeg_ir::report::decode::DecodeTransfer {
+            scope: cadmpeg_ir::document::ContentScope::full(),
+            geometry_transferred: true,
+        },
         coverage: Default::default(),
         losses: Vec::new(),
         notes: Vec::new(),
-        transfer_ledger: Default::default(),
     };
     report_design_projection_gaps(
         &mut report,

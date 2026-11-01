@@ -86,7 +86,11 @@ fn compose(
         .source
         .take()
         .ok_or_else(|| CodecError::malformed("F3Z root has no source metadata"))?;
-    fidelity.remove_retained_record(crate::ids::FILE_SOURCE_IMAGE_ID);
+    if let Some(root_image) = fidelity.remove_retained_record(crate::ids::FILE_SOURCE_IMAGE_ID) {
+        let id = cadmpeg_ir::ids::UnknownId::mint("f3d:file:source-image#root")
+            .map_err(CodecError::malformed)?;
+        fidelity.insert_retained_record(id, root_image)?;
+    }
     fidelity.retain_unknown_records("f3d", [crate::decode::preserve_source_image(scan)])?;
     if session.archive.members.values().any(|member| {
         matches!(member, archive::ClassifiedMember::Unreadable(_))
@@ -118,26 +122,18 @@ fn compose(
     ));
     if ctx.container_only() {
         let mut untyped = cadmpeg_ir::document::ArenaClasses::default();
-        for member in session.archive.members.values() {
-            match member {
-                archive::ClassifiedMember::Scanned(member) => {
-                    if crate::container::design_breps(member).next().is_some()
-                        || crate::container::text_brep_names(member).next().is_some()
-                    {
-                        untyped.insert(cadmpeg_ir::document::ArenaClass::Model);
-                    }
-                    if member.entries.iter().any(|entry| {
-                        member.is_design_stream(
-                            entry,
-                            cadmpeg_core::container::ContainerRole::Bulkstream,
-                        )
-                    }) {
-                        untyped.insert(cadmpeg_ir::document::ArenaClass::Design);
-                    }
-                }
-                archive::ClassifiedMember::Unreadable(_) => {
+        for member in session.members() {
+            match member.kind() {
+                session::F3zMemberKind::Design
+                | session::F3zMemberKind::Skipped(_) => {
                     untyped.insert(cadmpeg_ir::document::ArenaClass::Model);
                     untyped.insert(cadmpeg_ir::document::ArenaClass::Design);
+                }
+                session::F3zMemberKind::PlacementOnly => {
+                    untyped.insert(cadmpeg_ir::document::ArenaClass::Design);
+                }
+                session::F3zMemberKind::Drawing => {
+                    untyped.insert(cadmpeg_ir::document::ArenaClass::Model);
                 }
             }
         }

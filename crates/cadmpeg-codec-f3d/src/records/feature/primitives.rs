@@ -9,6 +9,7 @@ use cadmpeg_ir::scalar::{FiniteReal, PositiveReal};
 use serde::{Deserialize, Serialize};
 
 cadmpeg_core::named_optional_field!(deserialize_transform, SketchPlacementMatrix, "transform");
+cadmpeg_core::named_optional_field!(deserialize_transform_offset, u64, "transform_offset");
 /// Exact construction data of a solid primitive scope.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case", tag = "primitive")]

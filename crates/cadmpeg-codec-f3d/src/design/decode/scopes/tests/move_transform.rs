@@ -66,8 +66,8 @@ fn move_transform_added_classes_decode_exact_matrix() {
             ]
         );
         assert_eq!(u32::from(decoded.form), if class == "452" { 5 } else { 1 });
-        assert_eq!(decoded.form_offset, 43);
-        assert_eq!(decoded.transform_offset, 48);
+        assert_eq!(decoded.form_offset, Some(43));
+        assert_eq!(decoded.transform_offset, Some(48));
         assert_eq!(decoded.transform_record_index, 71);
     }
 }

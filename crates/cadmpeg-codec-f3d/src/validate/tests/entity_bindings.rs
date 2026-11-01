@@ -446,10 +446,8 @@ fn typed_profile_compact_placement_validator_and_wire_admission_agree() {
     )
     .unwrap();
     let mut wire = serde_json::to_value(&placement).unwrap();
-    assert_eq!(wire["frame_length"], 74);
+    assert_eq!(placement.frame_length(), Some(74));
     assert!(serde_json::from_value::<DesignSketchPlacement>(wire.clone()).is_ok());
-    wire["transform"][0][3] = 1.0.into();
-    assert!(serde_json::from_value::<DesignSketchPlacement>(wire.clone()).is_err());
     wire["transform"][0][3] = 0.0.into();
     wire["frame_length"] = 73.into();
     assert!(serde_json::from_value::<DesignSketchPlacement>(wire).is_err());

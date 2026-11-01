@@ -1216,6 +1216,7 @@ mod tests {
         let meta = crate::metastream::MetaStream {
             types: vec![
                 design_type(
+                    256,
                     BODY_PRESENTATION_TYPE_GUID,
                     Some(BODY_PRESENTATION_BASE_TYPE_GUID),
                     BODY_PRESENTATION_TYPE_VERSION,
@@ -1223,6 +1224,7 @@ mod tests {
                     vec![entity],
                 ),
                 design_type(
+                    256,
                     BREP_CONTAINER_TYPE_GUID,
                     None,
                     BREP_CONTAINER_TYPE_VERSION,
@@ -1230,6 +1232,7 @@ mod tests {
                     vec![7],
                 ),
                 design_type(
+                    256,
                     BODY_SCENE_NODE_TYPE_GUID,
                     None,
                     BODY_SCENE_NODE_TYPE_VERSION,
@@ -1283,6 +1286,7 @@ mod tests {
 
         let meta = crate::metastream::MetaStream {
             types: vec![design_type(
+                256,
                 BODY_PRESENTATION_TYPE_GUID,
                 Some(BODY_PRESENTATION_BASE_TYPE_GUID),
                 BODY_PRESENTATION_TYPE_VERSION,
@@ -1336,6 +1340,7 @@ mod tests {
         let meta = crate::metastream::MetaStream {
             types: vec![
                 design_type(
+                    256,
                     BODY_PRESENTATION_TYPE_GUID,
                     Some(BODY_PRESENTATION_BASE_TYPE_GUID),
                     BODY_PRESENTATION_TYPE_VERSION,
@@ -1343,6 +1348,7 @@ mod tests {
                     vec![entity],
                 ),
                 design_type(
+                    256,
                     BREP_CONTAINER_TYPE_GUID,
                     None,
                     BREP_CONTAINER_TYPE_VERSION,
@@ -1350,6 +1356,7 @@ mod tests {
                     vec![7],
                 ),
                 design_type(
+                    256,
                     BODY_SCENE_NODE_TYPE_GUID,
                     None,
                     BODY_SCENE_NODE_TYPE_VERSION,
@@ -1396,6 +1403,7 @@ mod tests {
         let meta = crate::metastream::MetaStream {
             types: vec![
                 design_type(
+                    256,
                     BODY_PRESENTATION_TYPE_GUID,
                     Some(BODY_PRESENTATION_BASE_TYPE_GUID),
                     BODY_PRESENTATION_TYPE_VERSION,
@@ -1403,6 +1411,7 @@ mod tests {
                     vec![entity],
                 ),
                 design_type(
+                    256,
                     BREP_CONTAINER_TYPE_GUID,
                     None,
                     BREP_CONTAINER_TYPE_VERSION,
@@ -1410,6 +1419,7 @@ mod tests {
                     vec![7],
                 ),
                 design_type(
+                    256,
                     BODY_SCENE_NODE_TYPE_GUID,
                     None,
                     BODY_SCENE_NODE_TYPE_VERSION,
@@ -1459,6 +1469,7 @@ mod tests {
         let meta = crate::metastream::MetaStream {
             types: vec![
                 design_type(
+                    256,
                     BODY_PRESENTATION_TYPE_GUID,
                     Some(BODY_PRESENTATION_BASE_TYPE_GUID),
                     BODY_PRESENTATION_TYPE_VERSION,
@@ -1466,6 +1477,7 @@ mod tests {
                     vec![entity],
                 ),
                 design_type(
+                    256,
                     BREP_CONTAINER_TYPE_GUID,
                     None,
                     BREP_CONTAINER_TYPE_VERSION,
@@ -1473,6 +1485,7 @@ mod tests {
                     vec![7],
                 ),
                 design_type(
+                    256,
                     BODY_SCENE_NODE_TYPE_GUID,
                     None,
                     BODY_SCENE_NODE_TYPE_VERSION,

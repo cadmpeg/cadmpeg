@@ -312,7 +312,7 @@ fn empty_attribute_local_children_place_identity_matrix_and_nested_occurrences()
     assert_eq!(
         children
             .iter()
-            .filter(|o| o.transform == Transform::identity())
+            .filter(|o| o.transform == Some(Transform::identity()))
             .count(),
         1
     );

@@ -358,34 +358,13 @@ fn counted_scope(
                     .collect()
             });
             let control_bytes = if one_word { 4 } else { 8 };
-            construction.depth_owner = Located {
-                value: ids[0],
-                offset: 21 + control_bytes,
-            };
-            construction.auxiliary_group = Located {
-                value: ids[2],
-                offset: 32 + control_bytes,
-            };
-            construction.horizontal_owner = Located {
-                value: ids[4],
-                offset: 43 + control_bytes,
-            };
-            construction.rotation_owner = Located {
-                value: ids[6],
-                offset: suffix + 1,
-            };
-            construction.face_group = Located {
-                value: ids[8],
-                offset: suffix + 12,
-            };
-            construction.vertical_owner = Located {
-                value: ids[10],
-                offset: suffix + 23,
-            };
-            construction.profile_group = Located {
-                value: ids[12],
-                offset: suffix + 38,
-            };
+            construction.depth_owner = Sourced::at(ids[0], 21 + control_bytes,);
+            construction.auxiliary_group = Sourced::at(ids[2], 32 + control_bytes,);
+            construction.horizontal_owner = Sourced::at(ids[4], 43 + control_bytes,);
+            construction.rotation_owner = Sourced::at(ids[6], suffix + 1,);
+            construction.face_group = Sourced::at(ids[8], suffix + 12,);
+            construction.vertical_owner = Sourced::at(ids[10], suffix + 23,);
+            construction.profile_group = Sourced::at(ids[12], suffix + 38,);
         })
         .unwrap();
     scope
@@ -429,7 +408,7 @@ fn emboss_counted_validator_refuses_inconsistent_offsets_counts_and_order() {
         let scope = counted_scope(one_word, pair_count, 13);
         let source = serde_json::to_value(&scope).unwrap();
         let decoded: DesignParameterScope = serde_json::from_value(source.clone()).unwrap();
-        assert_eq!(decoded, scope);
+        assert_eq!(serde_json::to_value(&decoded).unwrap(), source);
         for field in [
             "depth_owner",
             "auxiliary_group",
@@ -451,21 +430,40 @@ fn emboss_counted_validator_refuses_inconsistent_offsets_counts_and_order() {
                 .to_string();
             assert!(error.contains(field));
         }
-        let mut changed = source.clone();
-        changed["emboss_construction"]["additional_native_pairs"] = serde_json::Value::Array(
-            (0..=pair_count)
-                .map(|_| serde_json::json!([31, 37]))
-                .collect(),
-        );
-        assert!(serde_json::from_value::<DesignParameterScope>(changed).is_err());
-        let mut changed = source.clone();
-        changed["reference_members"]
-            .as_array_mut()
-            .unwrap()
-            .swap(0, 1);
-        assert!(serde_json::from_value::<DesignParameterScope>(changed).is_err());
         let mut changed = source;
         changed["reference_members"][12] = changed["reference_members"][0].clone();
         assert!(serde_json::from_value::<DesignParameterScope>(changed).is_err());
+        // Pair-count and member-order inconsistencies are not wire content;
+        // the located draft refuses them instead.
+        let mut repadded = counted_scope(one_word, pair_count, 13);
+        assert!(repadded
+            .try_edit(|draft| {
+                let DesignScopePayload::Emboss(construction) = &mut draft.payload else {
+                    unreachable!("emboss payload");
+                };
+                let construction = construction.as_mut().expect("emboss construction");
+                construction.additional_native_pairs =
+                    Some((0..=pair_count).map(|_| [31, 37]).collect());
+            })
+            .is_err());
+        let mut swapped = counted_scope(one_word, pair_count, 13);
+        assert!(swapped
+            .try_edit(|draft| {
+                let pairs: Vec<(u32, u64)> = draft
+                    .reference_members
+                    .values()
+                    .copied()
+                    .zip(draft.reference_members.offsets().copied())
+                    .collect();
+                let mut swapped_pairs = pairs;
+                swapped_pairs.swap(0, 1);
+                draft.reference_members = ReferenceRun::located(
+                    swapped_pairs
+                        .into_iter()
+                        .map(|(value, offset)| Located { value, offset })
+                        .collect(),
+                );
+            })
+            .is_err());
     }
 }

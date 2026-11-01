@@ -177,10 +177,10 @@ fn move_transform_projects_signed_rotation_translation_and_unique_body_group() {
         ]
         .try_into()
         .unwrap(),
-        transform_offset: 448,
+        transform_offset: Some(448),
         transform_record_index: 71,
         form: DesignMoveForm::Form1,
-        form_offset: 443,
+        form_offset: Some(443),
     });
     let group = group(DesignOperandRole::BODIES_A);
     let Some(FeatureDefinition::Operation(FeatureOperation::MoveBody {
@@ -194,16 +194,26 @@ fn move_transform_projects_signed_rotation_translation_and_unique_body_group() {
     };
     assert_eq!(bodies, BodySelection::Native(group.id.clone()));
     assert_eq!(
-        translation.get(),
-        cadmpeg_ir::math::Vector3::new(70., 110., 130.)
+        translation.map(|component| component
+            .literal()
+            .expect("literal translation")
+            .get()),
+        [70., 110., 130.]
     );
     assert_eq!(
         rotation.origin.get(),
         cadmpeg_ir::math::Point3::new(0., 0., 0.)
     );
     assert_eq!(rotation.direction.z, -1.);
-    assert!((rotation.angle.get() - std::f64::consts::FRAC_PI_2).abs() <= f64::EPSILON);
-    assert_eq!(copies, 0);
+    assert!((rotation
+        .angle
+        .literal()
+        .expect("literal angle")
+        .get()
+        - std::f64::consts::FRAC_PI_2)
+        .abs()
+        <= f64::EPSILON);
+    assert_eq!(copies, cadmpeg_ir::Dimension::Literal(0));
     assert!(super::super::project_move(&scope, &[]).is_none());
     assert!(super::super::project_move(&scope, &[group.clone(), group.clone()]).is_none());
     let DesignScopePayloadMut::Move(Some(operation)) = scope.payload_mut() else {

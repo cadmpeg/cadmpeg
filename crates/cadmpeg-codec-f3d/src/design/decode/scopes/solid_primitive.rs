@@ -288,12 +288,12 @@ fn exact_typed_reference_box_prologue(
     let stride = crate::bytes::TYPED_LOCAL_REFERENCE_LEN;
     let at = |relative_offset: usize| start.checked_add(relative_offset);
     let absolute = |relative_offset: usize| u64::try_from(start.checked_add(relative_offset)?).ok();
-    if scope.frame_length() != u64::try_from(typed_box::LEN).ok()?
-        || scope.paired_byte_offset() != absolute(typed_box::LEN)?
+    if scope.frame_length() != Some(u64::try_from(typed_box::LEN).ok()?)
+        || scope.paired_byte_offset() != Some(absolute(typed_box::LEN)?)
         || scope.reference_members().len() != TABLE_LEN
-        || scope.reference_count_offset() != absolute(typed_box::REFERENCE_COUNT)?
-        || scope.kind_offset() != absolute(typed_box::KIND)?
-        || scope.feature_ordinal_offset() != absolute(typed_box::FEATURE_ORDINAL)?
+        || scope.reference_count_offset() != Some(absolute(typed_box::REFERENCE_COUNT)?)
+        || scope.kind_offset() != Some(absolute(typed_box::KIND)?)
+        || scope.feature_ordinal_offset() != Some(absolute(typed_box::FEATURE_ORDINAL)?)
         || scope.previous_history_state_id_offset()
             != Some(absolute(typed_box::PREVIOUS_HISTORY_STATE_ID)?)
         || bytes.get(at(typed_box::ZERO_RUN_10)?..at(typed_box::FORM_MARKER)?)? != [0; 10]

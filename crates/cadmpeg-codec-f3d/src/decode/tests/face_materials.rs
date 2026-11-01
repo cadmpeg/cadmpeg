@@ -235,6 +235,7 @@ fn make_body_binding(
             stream: stream.into(),
             pair_count: 1,
             pair_ordinal: 0,
+            map_ordinal: 0,
             asm_body_key: 7,
             asm_body_key_offset: asm_key_offset,
             entity_suffix,

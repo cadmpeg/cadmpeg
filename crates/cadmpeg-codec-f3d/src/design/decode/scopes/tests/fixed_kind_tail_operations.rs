@@ -913,7 +913,7 @@ pub(super) fn fixed_kind_tail_operations(
             outward: true,
             outward_offset,
             ..
-        })) if thickness.get() == 0.25 && outward_offset == u64_from_index(thickness_first_shell_at + 21)
+        })) if thickness.get() == 0.25 && outward_offset == Some(u64_from_index(thickness_first_shell_at + 21))
     ));
 
     // Negative rejection tests for the 268-byte thickness-first Shell scope:
@@ -1631,13 +1631,13 @@ pub(super) fn fixed_kind_tail_operations(
                 DesignFixedExtrudeScalar {
                     value: cadmpeg_ir::scalar::PositiveReal::new(0.25).unwrap(),
                     record_index: embedded_distance_record_index,
-                    value_offset: u64_from_index(embedded_distance_at + 51),
+                    value_offset: Some(u64_from_index(embedded_distance_at + 51)),
                 },
             )),
             taper_angle: Some(DesignFixedExtrudeScalar {
                 value: crate::test_support::real(0.1),
                 record_index: 274,
-                value_offset: u64_from_index(embedded_default_at + 115 + 40),
+                value_offset: Some(u64_from_index(embedded_default_at + 115 + 40)),
             }),
             against_distance: None,
             side_two_taper_angle: None,
@@ -1697,13 +1697,13 @@ pub(super) fn fixed_kind_tail_operations(
                 DesignFixedExtrudeScalar {
                     value: cadmpeg_ir::scalar::NonZeroReal::new(1.5).unwrap(),
                     record_index: 274,
-                    value_offset: u64_from_index(embedded_default_at + 115 + 40),
+                    value_offset: Some(u64_from_index(embedded_default_at + 115 + 40)),
                 },
             )),
             taper_angle: Some(DesignFixedExtrudeScalar {
                 value: crate::test_support::real(0.0),
                 record_index: 273,
-                value_offset: u64_from_index(embedded_default_at + 40),
+                value_offset: Some(u64_from_index(embedded_default_at + 40)),
             }),
             against_distance: None,
             side_two_taper_angle: None,
@@ -1735,13 +1735,13 @@ pub(super) fn fixed_kind_tail_operations(
                 DesignFixedExtrudeScalar {
                     value: cadmpeg_ir::scalar::NonZeroReal::new(1.5).unwrap(),
                     record_index: 274,
-                    value_offset: u64_from_index(embedded_default_at + 115 + 40),
+                    value_offset: Some(u64_from_index(embedded_default_at + 115 + 40)),
                 },
             )),
             taper_angle: Some(DesignFixedExtrudeScalar {
                 value: crate::test_support::real(0.0),
                 record_index: 273,
-                value_offset: u64_from_index(embedded_default_at + 40),
+                value_offset: Some(u64_from_index(embedded_default_at + 40)),
             }),
             against_distance: None,
             side_two_taper_angle: None,
@@ -1778,7 +1778,7 @@ pub(super) fn fixed_kind_tail_operations(
         decoded_offset_24,
         Some(DesignExtrudePrologue::ReferenceAware {
             operation: DesignExtrudeOperation::NewBody,
-            operation_offset: 24,
+            operation_offset: Some(24),
             extent: DesignExtrudeExtent::OneSidedDistance,
             ..
         })
@@ -1792,19 +1792,19 @@ pub(super) fn fixed_kind_tail_operations(
     let to_face_prologue = DesignExtrudePrologue::ReferenceAware {
         reference: None,
         operation: DesignExtrudeOperation::Join,
-        operation_offset: 28,
+        operation_offset: Some(28),
         direction_face_extend_values: [1, 2],
         side_extent_discriminators: [2, 0],
-        side_extent_discriminator_offsets: [77, 90],
+        side_extent_discriminator_offsets: Some([77, 90]),
         first_side_target_ordinal: None,
         extent: DesignExtrudeExtent::OneSidedToFace,
-        direction_face_extend_offsets: [32, 36],
+        direction_face_extend_offsets: Some([32, 36]),
         direction_reversed: false,
-        direction_reversed_offset: 40,
+        direction_reversed_offset: Some(40),
         solid_operation: true,
-        solid_operation_offset: 41,
+        solid_operation_offset: Some(41),
         start: DesignExtrudeStart::ProfilePlane,
-        start_offset: 42,
+        start_offset: Some(42),
     };
     for length in [477, 481] {
         scope_375

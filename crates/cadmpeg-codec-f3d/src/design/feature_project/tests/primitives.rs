@@ -72,7 +72,7 @@ fn stored_body_box_requires_dimensions_and_preserves_local_offsets() {
         DesignFeatureKind::BoxPrimitive,
         60,
     );
-    assert!(project_solid_primitive(&scope).is_none());
+    assert!(project_solid_primitive(&scope, &[]).is_none());
     if let DesignScopePayloadMut::BoxPrimitive(slot) = scope.payload_mut() {
         *slot = Some(
             serde_json::from_value(serde_json::json!({
@@ -90,12 +90,12 @@ fn stored_body_box_requires_dimensions_and_preserves_local_offsets() {
         dimensions: Some(dimensions),
         placement: Some(placement),
         op,
-    })) = project_solid_primitive(&scope)
+    })) = project_solid_primitive(&scope, &[])
     else {
         panic!("complete box");
     };
     assert_eq!(
-        dimensions.map(cadmpeg_ir::scalar::PositiveLength::get),
+        dimensions.map(|dimension| dimension.literal().expect("literal dimension").get()),
         [20.0, 30.0, 40.0]
     );
     assert_eq!(
@@ -149,11 +149,11 @@ fn typed_reference_box_projects_frame_and_agrees_with_corner_extents() {
         dimensions: Some(dimensions),
         placement: Some(placement),
         ..
-    })) = project_solid_primitive(&scope)
+    })) = project_solid_primitive(&scope, &[])
     else {
         panic!("typed-reference box");
     };
-    let lengths = dimensions.map(cadmpeg_ir::scalar::PositiveLength::get);
+    let lengths = dimensions.map(|dimension| dimension.literal().expect("literal dimension").get());
     let rows = placement.rows();
     let mut low = [f64::INFINITY; 3];
     let mut high = [f64::NEG_INFINITY; 3];
