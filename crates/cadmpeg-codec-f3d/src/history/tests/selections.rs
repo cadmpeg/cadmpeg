@@ -1810,6 +1810,13 @@ mod operand_list_combine {
                 DesignFeatureKind::BaseFeature,
                 200,
             );
+            scopes[1]
+                .try_edit(|draft| {
+                    draft.history_state_id = Some(2);
+                    draft.previous_history_state_id = Some(1);
+                    draft.layout_fixture_tail();
+                })
+                .unwrap();
             scopes
         };
         let ordinary = history(&[&[], &[1], &[1, 2], &[1, 2, 3], &[2]]);

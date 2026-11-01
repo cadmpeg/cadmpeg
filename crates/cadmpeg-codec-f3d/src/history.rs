@@ -2507,7 +2507,7 @@ fn bind_operand_list_combine_bodies(
     let mut tool_slots = Vec::new();
     for tool in operation.tools.iter() {
         let slot = body_slot(tool.body_node)?;
-        if slot == target_slot || tool_slots.contains(&slot) {
+        if slot == target_slot {
             return None;
         }
         tool_slots.push(slot);

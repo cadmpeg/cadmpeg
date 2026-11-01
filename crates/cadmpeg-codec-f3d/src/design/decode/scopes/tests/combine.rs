@@ -561,6 +561,7 @@ struct OperandListFixture {
     listed_target: Option<u32>,
     consumed: Option<Vec<u32>>,
     guid_units: u32,
+    guid_tail_zeros: usize,
     node_flag: u8,
     node_entries: usize,
     node_trailing_bytes: usize,
@@ -578,6 +579,7 @@ impl OperandListFixture {
             listed_target: None,
             consumed: None,
             guid_units: 36,
+            guid_tail_zeros: 3,
             node_flag: 1,
             node_entries: 1,
             node_trailing_bytes: 0,
@@ -645,7 +647,7 @@ impl OperandListFixture {
         {
             bytes.extend_from_slice(&[unit, 0]);
         }
-        bytes.extend_from_slice(&[0; 3]);
+        bytes.resize(bytes.len() + self.guid_tail_zeros, 0);
         let table = self.table();
         bytes.extend_from_slice(&(u32::try_from(table.len() * 2).unwrap()).to_le_bytes());
         for (operation, selection) in &table {
@@ -798,6 +800,10 @@ fn operand_list_prologue_requires_every_list_to_agree_with_the_table() {
     let mut short_guid = OperandListFixture::new(0, 0);
     short_guid.guid_units = 35;
     assert_eq!(short_guid.decode(), None);
+
+    let mut gap_before_table = OperandListFixture::new(0, 0);
+    gap_before_table.guid_tail_zeros = 4;
+    assert_eq!(gap_before_table.decode(), None);
 }
 
 #[test]
