@@ -278,6 +278,7 @@ mod intrinsics;
 mod layers;
 mod losses;
 mod mates;
+mod parameters;
 mod physics;
 mod sketches;
 mod subsets;

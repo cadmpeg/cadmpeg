@@ -298,7 +298,15 @@ impl super::Builder<'_, '_, '_, '_> {
         let entity = |path: &str| entities.get(path).cloned();
         let constrained = &constraint.constrained;
         let reference = &constraint.reference;
+        let linked = constraint
+            .parameter
+            .as_ref()
+            .and_then(|path| self.parameter_ids.get(path))
+            .cloned();
         let mut parameter = |value: ParameterValue| -> Option<ParameterId> {
+            if let Some(id) = &linked {
+                return Some(id.clone());
+            }
             let id = parameter_id(&constraint.path);
             self.ir.model.parameters.push(DesignParameter {
                 product_definition: None,

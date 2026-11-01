@@ -91,6 +91,8 @@ pub(crate) struct ConstraintData {
     pub(crate) reference: Vec<String>,
     pub(crate) value: Option<f64>,
     pub(crate) driving: bool,
+    /// The `CadParameter` prim that the dimension states.
+    pub(crate) parameter: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Default)]
@@ -347,6 +349,10 @@ pub(crate) fn read(stage: &Stage<'_>, prim: &Prim<'_>, issues: &mut Issues) -> S
                     reference: child.relationship_targets("sketch:constraint:reference"),
                     value: scalar(child, "sketch:constraint:value", issues),
                     driving: boolean(child, "sketch:constraint:driving", issues).unwrap_or(true),
+                    parameter: child
+                        .relationship_targets("sketch:constraint:parameter")
+                        .first()
+                        .cloned(),
                 });
             }
             _ => queue.extend(child.children.iter().copied()),

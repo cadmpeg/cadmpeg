@@ -18,6 +18,7 @@
 mod brep;
 mod brep_array;
 mod mates;
+mod parameters;
 mod physics;
 mod physx;
 mod records;
@@ -95,7 +96,7 @@ const COVERAGE: ArenaDispositions = {
         feature_input_topologies: Omitted,
         feature_result_topologies: Omitted,
         configurations: Omitted,
-        parameters: Omitted,
+        parameters: Written,
         sketches: Written,
         sketch_entities: Reported,
         sketch_constraints: Reported,
@@ -313,6 +314,8 @@ struct Writer<'ir> {
     brep_paths: BTreeMap<BodyId, String>,
     /// Connectors of the mates written so far, by prim name.
     connector_queue: Vec<(String, mates::ConnectorPlan)>,
+    /// The `CadParameter` prim path of each design parameter.
+    parameter_paths: BTreeMap<cadmpeg_ir::features::ParameterId, String>,
 }
 
 impl<'ir> Writer<'ir> {
@@ -404,6 +407,7 @@ impl<'ir> Writer<'ir> {
             package: None,
             exported: BTreeMap::new(),
             brep_paths: BTreeMap::new(),
+            parameter_paths: BTreeMap::new(),
             connector_queue: Vec::new(),
             assets: None,
         }
@@ -499,6 +503,7 @@ impl<'ir> Writer<'ir> {
                 }
                 self.free_geometry(&mut names);
                 self.joints(&mut names);
+                self.parameters(&mut names);
                 self.sketches(&mut names, None);
                 names.first().map(str::to_owned)
             }
@@ -708,6 +713,7 @@ impl<'ir> Writer<'ir> {
         }
         if root.is_some() {
             self.joints(&mut child_names);
+            self.parameters(&mut child_names);
             self.sketches(&mut child_names, Some(&occurrence.id));
         }
         self.out.close();
@@ -1578,36 +1584,15 @@ impl<'ir> Writer<'ir> {
                 unwritten.sketch_entities, unwritten.sketch_constraints
             )));
         }
-        let constrained = model
-            .sketch_constraints
-            .iter()
-            .filter_map(|constraint| match constraint.definition.kind() {
-                cadmpeg_ir::sketches::SketchConstraintDefinitionInput::Radius {
-                    parameter, ..
-                }
-                | cadmpeg_ir::sketches::SketchConstraintDefinitionInput::Diameter {
-                    parameter,
-                    ..
-                }
-                | cadmpeg_ir::sketches::SketchConstraintDefinitionInput::DistanceLoci {
-                    parameter,
-                    ..
-                }
-                | cadmpeg_ir::sketches::SketchConstraintDefinitionInput::Angle {
-                    parameter, ..
-                } => Some(parameter),
-                _ => None,
-            })
-            .collect::<BTreeSet<_>>();
-        let parameters = model
+        let owned = model
             .parameters
             .iter()
-            .filter(|parameter| !constrained.contains(&parameter.id))
+            .filter(|parameter| parameter.owner.is_some() || parameter.pmi.is_some())
             .count();
-        if parameters > 0 {
-            losses.push(UsdLossCode::ExportSketchElementNotWritten.note(format!(
-                "{parameters} design parameters that no written sketch dimension states were \
-                 not written"
+        if owned > 0 {
+            losses.push(UsdLossCode::ExportParameterPropertyNotWritten.note(format!(
+                "the owning feature or the PMI semantics of {owned} design parameters have no \
+                 CadParameter attribute and were not written"
             )));
         }
         if unwritten.solver_properties > 0 {

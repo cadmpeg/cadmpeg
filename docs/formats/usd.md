@@ -1357,7 +1357,7 @@ Each relationship of a curve has one target, a `CadSketchPoint`. Curves that sha
 
 #### Constraints
 
-A constraint type inherits `CadSketchConstraint` and names its geometry through `rel sketch:constraint:constrained` and `rel sketch:constraint:reference`. A dimensional constraint inherits `CadDimensionalConstraint` and adds `uniform double sketch:constraint:value` and `uniform bool sketch:constraint:driving` (unauthored value `true`); a driven constraint states a measurement.
+A constraint type inherits `CadSketchConstraint` and names its geometry through `rel sketch:constraint:constrained` and `rel sketch:constraint:reference`. A dimensional constraint inherits `CadDimensionalConstraint` and adds `uniform double sketch:constraint:value`, `uniform bool sketch:constraint:driving` (unauthored value `true`), and `rel sketch:constraint:parameter`, with one target, the `CadParameter` prim of its value (§18.6); a driven constraint states a measurement.
 
 | Type | `constrained` | `reference` | Relation |
 | --- | --- | --- | --- |
@@ -1507,3 +1507,26 @@ With `perp((x, y)) = (−y, x)`, an analytic pcurve is a `circle` with `params` 
 A type token `brep` selects the `BrepArray` carrier of the entity, with index `-1`. A pcurve type `none` selects no pcurve. An exact pcurve is in the parameters of the exact surface of its face, in the direction of the exact oriented edge.
 
 A loop with direction `reversed` runs against its exact loop: the exact loop has its edgeuses in the opposite order, each with the opposite orientation. A loop with direction `absent` bounds the surface domain of a face whose exact form has no loop; the exact face does not hold it, nor its edgeuses, nor the edges and vertices that only it reaches.
+
+### 18.6 CadParameter
+
+A `CadParameter` prim states one design parameter. A writer puts the parameters in a `Parameters` scope. A reader reads each `CadParameter` prim of the stage.
+
+| Property | Type | Meaning |
+| --- | --- | --- |
+| `cad:parameter:id` | uniform string | the CADIR identity of the parameter |
+| `cad:parameter:name` | uniform string | the source name; unauthored, the prim name |
+| `cad:parameter:expression` | uniform string | the literal or expression text of the source |
+| `cad:parameter:ordinal` | uniform uint | the position among the parameters of one owner |
+| `cad:parameter:length` | uniform double | a length value, in the length unit of the stage |
+| `cad:parameter:angle` | uniform double | an angle value, in degrees |
+| `cad:parameter:real` | uniform double | a dimensionless value |
+| `cad:parameter:integer` | uniform int64 | an integer value |
+| `cad:parameter:boolean` | uniform bool | a boolean value |
+| `cad:parameter:string` | uniform string | a text value |
+| `cad:parameter:display` | uniform token | `diameter` or `radius` |
+| `cad:parameter:dependencies` | rel | the `CadParameter` prims that the expression names, in expression order |
+| `cad:parameter:definition` | rel | one target, a prim of the product definition whose frame holds the parameter |
+| `cad:parameter:propertyNames`, `cad:parameter:propertyValues` | uniform `string[]` | source properties, as parallel arrays |
+
+A parameter has at most one value attribute; with none, the parameter has no evaluated value. A sketch dimension constraint names the parameter that it states with `rel sketch:constraint:parameter` (§18.2). Its `sketch:constraint:value` is the value of that parameter.

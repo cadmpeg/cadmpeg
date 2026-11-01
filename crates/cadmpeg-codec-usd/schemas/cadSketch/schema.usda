@@ -490,6 +490,10 @@ class "CadDimensionalConstraint" (
                  false = REFERENCE/DRIVEN (the value is measured FROM the geometry and
                  reported, not enforced; excluded from IP1). Cf. FreeCAD isDriving."""
     )
+    rel sketch:constraint:parameter (
+        doc = """One target, the CadParameter prim whose value this dimension states
+                 (docs/formats/usd.md §18.6)."""
+    )
 }
 
 # ---- Concrete logical constraints (v1) -------------------------------------

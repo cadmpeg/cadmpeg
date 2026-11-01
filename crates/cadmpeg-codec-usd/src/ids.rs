@@ -333,7 +333,8 @@ pub(crate) mod sketch {
         )
     }
 
-    /// The design parameter of the dimensional constraint prim at `path`.
+    /// The design parameter of the dimensional constraint or `CadParameter`
+    /// prim at `path`.
     pub(crate) fn parameter(path: &str) -> ParameterId {
         ParameterId::compose(
             &cadmpeg_ir::identity_namespace!("usd", "stage", "parameter"),

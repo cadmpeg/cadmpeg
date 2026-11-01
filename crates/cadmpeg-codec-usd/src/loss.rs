@@ -107,6 +107,9 @@ pub(crate) enum UsdLossCode {
     SketchElementRejected,
     /// Sketch properties with no neutral form were not transferred.
     SketchPropertyNotTransferred,
+    /// A `CadParameter` prim that does not satisfy its schema was not
+    /// transferred.
+    ParameterRejected,
     /// A joint whose bodies or frames do not resolve was not transferred.
     JointRejected,
     /// Joint properties with no neutral form were not transferred.
@@ -131,9 +134,12 @@ pub(crate) enum UsdLossCode {
     ExportTextureExternal,
     /// B-rep topology was written as the body's tessellation.
     ExportTopologyTessellated,
-    /// A sketch entity, constraint, or design parameter with no `CadSketch`
-    /// form was not written.
+    /// A sketch entity or constraint with no `CadSketch` form was not
+    /// written.
     ExportSketchElementNotWritten,
+    /// A design parameter property with no `CadParameter` form was not
+    /// written.
+    ExportParameterPropertyNotWritten,
     /// A body with faces has no `BrepArray` prim.
     ExportBrepNotWritten,
     /// A `BrepArray` prim has no trim curves.
@@ -187,6 +193,7 @@ impl UsdLossCode {
         Self::BrepSubsetNotTransferred,
         Self::SketchElementRejected,
         Self::SketchPropertyNotTransferred,
+        Self::ParameterRejected,
         Self::JointRejected,
         Self::JointPropertyNotTransferred,
         Self::SolverPropertyNotTransferred,
@@ -199,6 +206,7 @@ impl UsdLossCode {
         Self::ExportTextureExternal,
         Self::ExportTopologyTessellated,
         Self::ExportSketchElementNotWritten,
+        Self::ExportParameterPropertyNotWritten,
         Self::ExportBrepNotWritten,
         Self::ExportBrepUntrimmed,
         Self::ExportCarrierNotWritten,
@@ -354,6 +362,7 @@ impl UsdLossCode {
                 Warning,
                 T::ParametricRecordOmitted,
             ),
+            Self::ParameterRejected => ("parameter.rejected", Warning, T::ParametricRecordOmitted),
             Self::SketchPropertyNotTransferred => (
                 "sketch.property-not-transferred",
                 Info,
@@ -410,6 +419,11 @@ impl UsdLossCode {
             ),
             Self::ExportSketchElementNotWritten => (
                 "export.sketch-element-not-written",
+                Warning,
+                T::ParametricRecordOmitted,
+            ),
+            Self::ExportParameterPropertyNotWritten => (
+                "export.parameter-property-not-written",
                 Warning,
                 T::ParametricRecordOmitted,
             ),

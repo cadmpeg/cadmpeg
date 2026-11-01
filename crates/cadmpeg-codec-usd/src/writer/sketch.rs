@@ -629,6 +629,12 @@ impl Writer<'_> {
                     real(value)
                 ));
             }
+            if let Some(parameter) =
+                dimension_parameter(constraint).and_then(|id| self.parameter_path(id))
+            {
+                self.out
+                    .line(&format!("rel sketch:constraint:parameter = <{parameter}>"));
+            }
             if constraint.driving == Some(false) {
                 self.out.line("uniform bool sketch:constraint:driving = 0");
             }
@@ -659,5 +665,19 @@ impl Writer<'_> {
             self.sketch(sketch, &mut sketch_names, parent.as_ref());
         }
         self.out.close();
+    }
+}
+
+/// The design parameter that a dimension constraint states.
+fn dimension_parameter(
+    constraint: &SketchConstraint,
+) -> Option<&cadmpeg_ir::features::ParameterId> {
+    use SketchConstraintDefinitionInput as Input;
+    match constraint.definition.kind() {
+        Input::Radius { parameter, .. }
+        | Input::Diameter { parameter, .. }
+        | Input::DistanceLoci { parameter, .. }
+        | Input::Angle { parameter, .. } => Some(parameter),
+        _ => None,
     }
 }

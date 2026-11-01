@@ -16,7 +16,7 @@ This document uses ASD-STE100 Simplified Technical English. Schema, attribute, a
 | `faces`, `loops`, `coedges`, `edges`, `vertices`, `points` | `BrepArray` faces, loops, edgeuses, edges, vertices; `CadBrepIdentityAPI` identities and names; `CadBrepToleranceAPI` tolerances | face colors, wire edges, free vertices | face colors as `GeomSubset` display colors; read and write `wireEdge:*` and `BrepPointAPI:shellPoint` |
 | `surfaces`, `curves` | rational NURBS in `BrepSurfaceNurbAPI` and `BrepCurve3dNurbAPI`; exact carriers in `CadBrepAnalyticAPI` (`usd.md` §18.5) | a carrier that two faces or edges share | shared catalog indices in `CadBrepAnalyticAPI` |
 | `pcurves` | NURBS trim curves in `BrepCurveUvNurbAPI`; exact pcurves in `CadBrepAnalyticAPI` | pcurve kinds other than line, circle, ellipse, and NURBS | added `CadBrepAnalyticAPI` pcurve types |
-| `procedural_surfaces`, `procedural_curves` | none | extrusion, revolution, sum, sweep, offset, subset, ruled, blend; intersection, projection, offset, subset curves | `CadBrepProceduralAPI`: a construction for each carrier, beside its NURBS solved form |
+| `procedural_surfaces`, `procedural_curves` | extrusion and revolution surfaces in `CadBrepAnalyticAPI` | sum, sweep, offset, subset, ruled, blend; intersection, projection, offset, subset curves | `CadBrepProceduralAPI`: a construction for each carrier, beside its NURBS solved form; the writer needs a NURBS form of each kind |
 | `subds` | none | subdivision cages | `Mesh` with `subdivisionScheme = "catmullClark"`, creases, and corners (official) |
 | `tessellations` | `Mesh` with normals, texture coordinates, and `GeomSubset` triangle groups | channels and texture assignments other than coordinates | primvars by channel name (official) |
 | `appearances`, `appearance_bindings` | materials; bindings to bodies, tessellations, triangle groups, `BrepArray` faces and B-reps | bindings to edges, vertices, free curves, free points, and native carriers | `GeomSubset` of `BrepArray` with `elementType = "edge"` and `"vertex"` |
@@ -26,8 +26,8 @@ This document uses ASD-STE100 Simplified Technical English. Schema, attribute, a
 | `physical_materials`, `mass_properties`, `rigid_bodies`, `colliders`, `articulations`, `physics_scenes`, `solver_settings` | `UsdPhysics` and PhysX schemas | none | none |
 | `sketches`, `sketch_entities`, `sketch_constraints` | `CadSketch` types (`usd.md` §18.2) | entity and constraint kinds outside the `CadSketch` types | added `CadSketch` element and constraint types |
 | `spatial_sketches`, `spatial_sketch_entities`, `spatial_sketch_constraints` | none | spatial sketches | `CadSketch` types with a 3D placement and 3D points |
-| `parameters` | none | design parameters, units, expressions, owners | `CadParameter` prims, with `cad:parameter:expression` |
-| `configurations` | none | configurations and their feature evaluations | variant sets (official composition) over parameter values and feature suppression |
+| `parameters` | `CadParameter` prims (`usd.md` §18.6) | the owning feature; PMI semantics | `rel cad:parameter:owner` to a `CadFeature` prim; `CadPmi` |
+| `configurations` | none | configurations, their parameter values and overrides, bodies, and feature evaluations | `CadConfiguration` prims, written with `CadFeature` because each holds the evaluated definition of each feature; a variant set over parameter values and feature suppression for viewers |
 | `features`, `feature_input_topologies`, `feature_result_topologies` | none | the neutral feature history and its topology references | `CadFeature` types: one prim per feature, its definition, inputs, outputs, and ordinal |
 | `spreadsheets` | none | spreadsheet cells | `CadSpreadsheet` prim, or an asset |
 | `pmi`, `semantic_annotations` | none | product manufacturing information on topology | `CadPmi` types that target `BrepArray` faces and edges through `CadBrepIdentityAPI` identities |
@@ -55,7 +55,7 @@ These are applied API schemas on a `BrepArray` prim. A reader that does not know
 ### 2.3 Design
 
 - `CadSketch` and its entity and constraint types (`usd.md` §18.2), extended for spatial sketches.
-- `CadParameter`: name, value with unit, expression, owner.
+- `CadParameter` (`usd.md` §18.6): name, expression, typed value, display, dependencies, product definition, and properties.
 - `CadFeature`: one typed prim for each CADIR feature definition family, with relationships to its sketch, inputs, and outputs.
 
 ## 3. Changes outside the USD codec
@@ -68,5 +68,6 @@ These are applied API schemas on a `BrepArray` prim. A reader that does not know
 1. `CadBrepIdentityAPI`, so that the later schemas reference topology by identity.
 2. `CadConnector` and `CadMate` on `BrepArray` faces, and `CadSketch`, from `pr/usd`.
 3. `CadBrepAnalyticAPI` and `CadBrepToleranceAPI`.
-4. `CadParameter`, configurations as variant sets, and `CadBrepProceduralAPI`.
-5. `CadFeature` and `CadPmi`.
+4. `CadParameter`.
+5. `CadFeature`, `CadConfiguration`, and `CadPmi`.
+6. `CadBrepProceduralAPI`, after the NURBS forms of the procedural carriers.
