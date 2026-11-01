@@ -190,7 +190,7 @@ fn edge_midpoints_report_a_missing_input_carrier() {
     let scope = scope_between(3, 0);
     let mut history = midpoint_history("history:first", 1.0);
     crate::test_support::history::edit(&mut history, 2, |topology, _| {
-        topology.edge_samples.clear()
+        topology.edge_samples.clear();
     });
     let mut feature = midpoint_fillet(&scope);
     let owners = std::collections::HashMap::from([(scope.id.clone(), history.id.clone())]);
