@@ -70,11 +70,13 @@ def run(context):
     if not scope or not scope.get("rust"):
         return context.passed("the change reaches no Rust crate")
     packages = scope["packages"]
-    env = {"CI_PACKAGES": json.dumps(packages), "CI_FULL": "true" if scope["full"] else "false"}
+    env = {"CI_PACKAGES": json.dumps(packages), "CI_FULL": "true" if scope["full"] else "false",
+           "CI_CODEC_FEATURES": json.dumps(scope.get("codec_scope", []))}
     commands = [clippy.group(1)]
     if scope.get("schema"):
         commands += schema_commands(workflow)
-    shown = [f"CI_PACKAGES='{env['CI_PACKAGES']}' CI_FULL={env['CI_FULL']} {commands[0]}",
+    shown = [f"CI_PACKAGES='{env['CI_PACKAGES']}' CI_FULL={env['CI_FULL']} "
+             f"CI_CODEC_FEATURES='{env['CI_CODEC_FEATURES']}' {commands[0]}",
              *commands[1:]]
     reach = "the whole workspace" if scope["full"] else f"{len(packages)} crate(s)"
     if not context.options.full:

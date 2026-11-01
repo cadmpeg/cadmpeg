@@ -2376,10 +2376,12 @@ def run_scan_task(task: tuple[str, tuple[Path, ...]]) -> list[Finding]:
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--json", action="store_true", help="emit structured findings")
+    parser.add_argument("--authoring-paths-only", action="store_true",
+                        help="check authoring paths without running Rust scans")
     parser.add_argument("--crate", action="append", default=[], metavar="NAME",
                         help="report findings only for this crate (repeatable)")
     args = parser.parse_args(argv)
-    findings = check_source()
+    findings = scan_authoring_paths() if args.authoring_paths_only else check_source()
     if args.crate:
         for name in args.crate:
             if not re.fullmatch(r"[A-Za-z0-9_-]+", name) or not (ROOT / "crates" / name).is_dir():
