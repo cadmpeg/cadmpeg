@@ -15,7 +15,9 @@ use cadmpeg_ir::features::SketchProfileRegion;
 use cadmpeg_ir::math::Point2;
 use cadmpeg_ir::sketches::{Sketch, SketchEntityUse, SketchGeometryDefinition};
 
-use super::{containment, distance, polar, LoopCurve, ProfileIndex, EPS_PROFILE_WIRE_POINT_MM};
+use super::{
+    containment, distance, encloses, polar, LoopCurve, ProfileIndex, EPS_PROFILE_WIRE_POINT_MM,
+};
 
 /// Most profile-table loops that a face split compares pairwise.
 const SPLIT_LOOP_LIMIT: usize = 128;
@@ -31,14 +33,15 @@ impl ProfileIndex<'_> {
     /// result is `None` when no unselected loop lies in the material, so the
     /// selected rings state it completely. It is also `None` when the faces
     /// are not exact: the table holds a loop without loop geometry or more
-    /// loops than a split compares, the sketch has a curve outside its loops,
-    /// or loops meet. The selected rings still state the material then.
+    /// loops than a split compares, an unused curve affects the involved
+    /// loops, or loops meet.
     pub(super) fn material_faces(
         &self,
         sketch: &Sketch,
         table: &[Vec<SketchEntityUse>],
         selected: &[usize],
         nested: &[(usize, Vec<usize>)],
+        incomplete: &[Option<LoopCurve>],
     ) -> Option<Vec<SketchProfileRegion>> {
         let count = table.len();
         let selected_loops = selected.iter().copied().collect::<HashSet<_>>();
@@ -83,6 +86,7 @@ impl ProfileIndex<'_> {
             .flatten()
             .map(|use_| &use_.entity)
             .collect::<HashSet<_>>();
+        let affects = |curve| affects_loops(curve, &curves, &involved, selected, nested);
         let outside = self.by_id.values().any(|entity| {
             entity.sketch == sketch.id
                 && !entity.construction
@@ -90,8 +94,10 @@ impl ProfileIndex<'_> {
                     entity.geometry.definition(),
                     SketchGeometryDefinition::Point { .. }
                 )
+                && !self.non_curves.contains(entity.id().as_str())
                 && !used.contains(entity.id())
-        });
+                && affects(LoopCurve::new(entity, false))
+        }) || incomplete.iter().copied().any(affects);
         let meets = involved.iter().any(|loop_| {
             (0..count)
                 .filter(|other| other != loop_)
@@ -99,6 +105,24 @@ impl ProfileIndex<'_> {
         });
         (!outside && !meets).then_some(regions)
     }
+}
+
+fn affects_loops(
+    curve: Option<LoopCurve>,
+    loops: &[Vec<LoopCurve>],
+    involved: &HashSet<usize>,
+    selected: &[usize],
+    nested: &[(usize, Vec<usize>)],
+) -> bool {
+    let Some(curve) = curve else {
+        return true;
+    };
+    involved
+        .iter()
+        .any(|index| loops_meet(&[curve], &loops[*index]))
+        || nested
+            .iter()
+            .any(|(outer, _)| encloses(&loops[selected[*outer]], curve.middle()) != Some(false))
 }
 
 /// The faces of one material: the exterior, then each free loop. The members
