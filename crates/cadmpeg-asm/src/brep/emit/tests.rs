@@ -427,31 +427,83 @@ fn reversed_intcurve_context_uses_the_parsed_cache_domain() {
         offset: 0,
         len: 0,
     };
-    for reversed in [false, true] {
+    for (periodic, record_reversed, edge_reversed) in [
+        (false, false, false),
+        (false, true, false),
+        (false, false, true),
+        (false, true, true),
+        (true, false, false),
+        (true, true, false),
+        (true, false, true),
+        (true, true, true),
+    ] {
+        let knots: &[f64] = if periodic {
+            &[1.0, 2.0, 3.0, 4.0]
+        } else {
+            &[2.0, 5.0]
+        };
+        let range = [knots[0], knots[knots.len() - 1]];
+        let reversed_range = [-range[1], -range[0]];
+        let points: &[[f64; 3]] = if periodic {
+            &[
+                [0.0, 0.0, 0.0],
+                [1.0, 0.0, 0.0],
+                [0.0, 1.0, 0.0],
+                [0.0, 0.0, 0.0],
+            ]
+        } else {
+            &[[0.0, 0.0, 0.0], [1.0, 0.0, 0.0]]
+        };
+        let closure = if periodic { 2 } else { 0 };
+        let reversed = record_reversed != edge_reversed;
         let mut curve_tokens = vec![
             Token::Ref(-1),
             Token::Long(-1),
             Token::Ref(-1),
-            if reversed { Token::True } else { Token::False },
+            if record_reversed {
+                Token::True
+            } else {
+                Token::False
+            },
             Token::SubtypeOpen,
             Token::Ident("spring_int_cur".into()),
             Token::Long(23_100),
             Token::Enum(0),
             Token::Ident("nubs".into()),
             Token::Long(1),
-            Token::Enum(0),
-            Token::Long(2),
-            Token::Double(2.0),
-            Token::Long(1),
-            Token::Double(5.0),
-            Token::Long(1),
+            Token::Enum(closure),
+            Token::Long(i64::try_from(knots.len()).expect("knot count")),
         ];
-        curve_tokens.extend([0.0, 0.0, 0.0, 1.0, 0.0, 0.0].map(Token::Double));
+        for knot in knots {
+            curve_tokens.extend([Token::Double(*knot), Token::Long(1)]);
+        }
+        for point in points {
+            curve_tokens.extend(point.map(Token::Double));
+        }
         curve_tokens.extend([
             Token::Double(0.0004),
+            Token::Ident("plane".into()),
+            Token::Position([0.0, 0.0, 0.0]),
+            Token::Vector3([0.0, 0.0, 1.0]),
+            Token::Vector3([1.0, 0.0, 0.0]),
+            Token::False,
+            Token::False,
+            Token::False,
+            Token::False,
+            Token::False,
             Token::Ident("null_surface".into()),
-            Token::Ident("null_surface".into()),
-            Token::Ident("nullbs".into()),
+            Token::Ident("nubs".into()),
+            Token::Long(1),
+            Token::Enum(closure),
+            Token::Long(i64::try_from(knots.len()).expect("knot count")),
+        ]);
+        for knot in knots {
+            curve_tokens.extend([Token::Double(*knot), Token::Long(1)]);
+        }
+        for [u, v, _] in points {
+            curve_tokens.extend([Token::Double(*u), Token::Double(*v)]);
+        }
+        curve_tokens.extend([
             Token::Ident("nullbs".into()),
             Token::False,
             Token::False,
@@ -488,10 +540,7 @@ fn reversed_intcurve_context_uses_the_parsed_cache_domain() {
         .transpose()
         .expect("decode the procedural curve")
         .unwrap();
-        assert_eq!(
-            nurbs_curve_parameter_domain(&parsed.curve),
-            Some([2.0, 5.0])
-        );
+        assert_eq!(nurbs_curve_parameter_domain(&parsed.curve), Some(range));
         let mut out = AsmBrep::default();
         let mut carriers = Carriers::default();
         let mut reach = Reachable {
@@ -517,13 +566,22 @@ fn reversed_intcurve_context_uses_the_parsed_cache_domain() {
         };
         assert_eq!(
             nurbs_curve_parameter_domain(normalized),
-            Some(if reversed { [-5.0, -2.0] } else { [2.0, 5.0] })
+            Some(if record_reversed {
+                reversed_range
+            } else {
+                range
+            })
         );
+        let reversed_refs = if edge_reversed {
+            HashSet::from([4])
+        } else {
+            HashSet::new()
+        };
         emit_carrier_curve(
             &mut out,
             4,
             &mut carriers,
-            &HashSet::new(),
+            &reversed_refs,
             &HashSet::new(),
             crate::asm_format!("f3d"),
         )
@@ -536,8 +594,31 @@ fn reversed_intcurve_context_uses_the_parsed_cache_domain() {
         let (SpringLayout::CacheFirst { context, .. },) = (definition_payload.layout(),) else {
             panic!("cache-first spring")
         };
+        assert_eq!(definition_payload.direction(), &4);
 
-        assert_eq!(context.parameter_range().endpoints(), [2.0, 5.0]);
+        assert_eq!(
+            context.parameter_range().endpoints(),
+            if reversed { reversed_range } else { range }
+        );
+        let mut ir = cadmpeg_ir::CadIr::empty();
+        super::super::transfer::transfer_into_ir(&asm_decode_ctx, &mut ir, "f3d", out)
+            .expect("transfer the decoded curve and its support");
+        let ProceduralCurveDefinition::Spring(spring) = ir.model.procedural_curves[0].definition()
+        else {
+            panic!("spring")
+        };
+        let index = cadmpeg_ir::index::ModelIndex::new_model_only(&ir);
+        assert!(
+            cadmpeg_ir::validate::geometry_consistency::cache_support_endpoint_failures(
+                &asm_decode_ctx,
+                &index,
+                &ir.model.curves[0],
+                spring.support_context(),
+                None,
+            )
+            .expect("evaluate decoded support endpoints")
+            .is_empty()
+        );
     }
 }
 
