@@ -20,6 +20,7 @@ use crate::layout::bspline_array_header as arr_hdr;
 use crate::layout::bspline_compact_array_header as compact_arr;
 use crate::layout::bspline_curve_descriptor as curve_desc;
 use crate::layout::bspline_surface_descriptor as surf_desc;
+use crate::layout::parasolid_b_curve_short as b_curve;
 
 #[derive(Debug, Default)]
 struct Arrays {
@@ -411,9 +412,56 @@ fn curve_descriptor<'a>(
     attr_at: usize,
     descriptors: &'a HashMap<u16, CurveDescriptor>,
 ) -> Option<&'a CurveDescriptor> {
-    (attr_at + 2..(attr_at + 24).min(bytes.len().checked_sub(1).map_or(0, |end| end)))
-        .filter_map(|at| View::u16_be_at(bytes, at))
-        .find_map(|reference| descriptors.get(&reference))
+    curve_descriptor_link(bytes, attr_at, descriptors)
+        .and_then(|(reference, _)| descriptors.get(&reference))
+}
+
+/// The `B_CURVE` pointers between its node identifier and its sense byte.
+const B_CURVE_POINTERS: usize = 5;
+/// Bytes a tripled pointer cell adds to a short pointer (`sldprt.md` §4.3).
+const TRIPLED_CELL_EXTRA: usize = 1;
+/// The flag byte that ends a tripled pointer cell (`sldprt.md` §4.3).
+const TRIPLED_CELL_FLAG: u8 = 1;
+
+/// The `nurbs` pointer of the bare `B_CURVE` whose attribute is at `attr_at`
+/// and the end of that pointer, when the record frames: five short or wide
+/// pointers, then the sense byte. The pointer is `None` when it is wide, since
+/// a descriptor key is a u16. A record whose own attribute is wide is not
+/// framed here.
+fn bare_b_curve_nurbs(bytes: &[u8], attr_at: usize) -> Option<(Option<u16>, usize)> {
+    let mut at = attr_at.checked_add(b_curve::ATTRIBUTES)?;
+    for _ in 0..B_CURVE_POINTERS {
+        let (_, width) = crate::parasolid::control_vertices::xt_pointer(bytes, at)?;
+        at = at.checked_add(width)?;
+    }
+    if !matches!(bytes.get(at), Some(b'+' | b'-')) {
+        return None;
+    }
+    let nurbs_at = at.checked_add(b_curve::NURBS - b_curve::SENSE)?;
+    let (nurbs, width) = crate::parasolid::control_vertices::xt_pointer(bytes, nurbs_at)?;
+    let nurbs = u16::try_from(nurbs).ok().filter(|_| width == 2);
+    Some((nurbs, nurbs_at.checked_add(width)?))
+}
+
+/// The `nurbs` pointer of the tripled `B_CURVE` whose attribute is at
+/// `attr_at` and the end of that pointer, when the record frames: five
+/// `[hi][lo][01]` cells, then the sense byte and the `nurbs` cell.
+fn tripled_b_curve_nurbs(bytes: &[u8], attr_at: usize) -> Option<(Option<u16>, usize)> {
+    let first = attr_at.checked_add(b_curve::ATTRIBUTES)?;
+    let cell = 2 + TRIPLED_CELL_EXTRA;
+    for index in 0..B_CURVE_POINTERS {
+        let flag_at = first.checked_add(index * cell + 2)?;
+        if bytes.get(flag_at) != Some(&TRIPLED_CELL_FLAG) {
+            return None;
+        }
+    }
+    let sense_at = first.checked_add(B_CURVE_POINTERS * cell)?;
+    if !matches!(bytes.get(sense_at), Some(b'+' | b'-')) {
+        return None;
+    }
+    let nurbs_at = sense_at.checked_add(1)?;
+    let nurbs = View::u16_be_at(bytes, nurbs_at)?;
+    Some((Some(nurbs), nurbs_at.checked_add(2)?))
 }
 
 /// Expand a compressed knot vector by its per-value multiplicities, refusing
@@ -1513,17 +1561,28 @@ fn curve_descriptor_offsets(bytes: &[u8]) -> HashMap<u16, (usize, usize)> {
     out
 }
 
-/// The descriptor attribute the wrapper at `attr_at` links, with the end of
-/// the link the wrapper scan consumed. Mirrors the search in
-/// [`curve_descriptor`].
+/// The descriptor attribute the record at `attr_at` links, with the end of
+/// the link. A tripled or bare `B_CURVE` links the descriptor its `nurbs`
+/// pointer names, or none. A record that neither form frames links the first
+/// descriptor pointer between the node identifier and the end of the short
+/// record.
 fn curve_descriptor_link(
     bytes: &[u8],
     attr_at: usize,
     descriptors: &HashMap<u16, CurveDescriptor>,
 ) -> Option<(u16, usize)> {
-    let start = attr_at.checked_add(2)?;
+    // The tripled frame checks five cell flags, so it goes first: a tripled
+    // record can also read as a bare one.
+    if let Some((nurbs, end)) =
+        tripled_b_curve_nurbs(bytes, attr_at).or_else(|| bare_b_curve_nurbs(bytes, attr_at))
+    {
+        return nurbs
+            .filter(|reference| descriptors.contains_key(reference))
+            .map(|reference| (reference, end));
+    }
+    let start = attr_at.checked_add(b_curve::ATTRIBUTES)?;
     let limit = attr_at
-        .checked_add(24)?
+        .checked_add(b_curve::LEN - 1)?
         .min(bytes.len().checked_sub(1).map_or(0, |end| end));
     (start..limit)
         .filter_map(|at| View::u16_be_at(bytes, at).map(|reference| (at, reference)))
@@ -1830,11 +1889,95 @@ fn surface_knot_records(
 #[cfg(test)]
 mod tests {
     use super::{
-        expanded_knots, scan_arrays, scan_curve_carriers, scan_surface_carriers, unique_knots,
-        unique_surface_knot_span, Arrays,
+        curve_descriptor, curve_descriptor_link, expanded_knots, scan_arrays, scan_curve_carriers,
+        scan_curve_descriptors, scan_surface_carriers, unique_knots, unique_surface_knot_span,
+        Arrays, CurveDescriptor,
     };
     use cadmpeg_ir::features::FinitePoint3;
     use cadmpeg_ir::geometry::nurbs::NurbsPoles3;
+
+    /// A `00 86` record with attribute 10, node identifier 90 and `fields`
+    /// after it; then descriptors 40, 90 and 256 (each with its own carrier).
+    fn b_curve_with_descriptors(fields: &[u8]) -> Vec<u8> {
+        let mut bytes = vec![0x00, 0x86];
+        bytes.extend_from_slice(&10_u16.to_be_bytes());
+        bytes.extend_from_slice(&90_u32.to_be_bytes());
+        bytes.extend_from_slice(fields);
+        for (wrapper, descriptor) in [(100, 40), (120, 90), (140, 256)] {
+            bytes.extend(crate::test_support::parasolid::nurbs_curve_carrier(
+                wrapper, descriptor,
+            ));
+        }
+        bytes
+    }
+
+    fn be16s(values: &[u16]) -> Vec<u8> {
+        values
+            .iter()
+            .flat_map(|value| value.to_be_bytes())
+            .collect()
+    }
+
+    fn link(fields: &[u8]) -> Option<(u16, usize)> {
+        let bytes = b_curve_with_descriptors(fields);
+        let descriptors = scan_curve_descriptors(&bytes, CurveDescriptor::spatial);
+        curve_descriptor_link(&bytes, 2, &descriptors)
+    }
+
+    #[test]
+    fn a_b_curve_takes_its_descriptor_from_its_nurbs_pointer() {
+        // The node identifier's low half and the owner both name descriptor 90.
+        let mut fields = be16s(&[1, 90, 12, 13, 1]);
+        fields.push(b'+');
+        fields.extend(be16s(&[40, 1]));
+        assert_eq!(link(&fields), Some((40, 2 + 19)));
+        let bytes = b_curve_with_descriptors(&fields);
+        let descriptors = scan_curve_descriptors(&bytes, CurveDescriptor::spatial);
+        assert_eq!(
+            curve_descriptor(&bytes, 2, &descriptors).map(|descriptor| descriptor.control_attr),
+            Some(41)
+        );
+    }
+
+    #[test]
+    fn a_wide_pointer_shifts_the_sense_byte_and_the_nurbs_pointer() {
+        // The owner names descriptor 90, which the search would take.
+        let mut fields = be16s(&[1, 90, 0xfffe, 2, 12, 1]);
+        fields.push(b'-');
+        fields.extend(be16s(&[40, 1]));
+        assert_eq!(link(&fields), Some((40, 2 + 21)));
+    }
+
+    #[test]
+    fn a_tripled_b_curve_takes_its_nurbs_cell_after_its_sense_byte() {
+        // The fourth cell's low byte reads as a sense byte at +16, and the
+        // two bytes at +17 name descriptor 256.
+        let mut fields = Vec::new();
+        for pointer in [1_u16, 12, 13, 0x2b, 1] {
+            fields.extend(pointer.to_be_bytes());
+            fields.push(1);
+        }
+        fields.push(b'+');
+        fields.extend(be16s(&[40, 1]));
+        assert_eq!(link(&fields), Some((40, 2 + 24)));
+    }
+
+    #[test]
+    fn a_framed_b_curve_whose_nurbs_pointer_names_no_descriptor_links_none() {
+        // The pointers `00 01 00 12` hold `01 00`, descriptor 256, across two
+        // fields; the NURBS pointer 77 names no descriptor.
+        let mut fields = be16s(&[1, 18, 13, 14, 1]);
+        fields.push(b'+');
+        fields.extend(be16s(&[77, 1]));
+        assert_eq!(link(&fields), None);
+    }
+
+    #[test]
+    fn a_b_curve_without_a_sense_byte_never_reads_its_node_identifier() {
+        let mut fields = be16s(&[2, 40, 12, 13, 1]);
+        fields.extend(be16s(&[0, 1]));
+        assert_eq!(link(&fields).map(|(attr, _)| attr), Some(40));
+    }
 
     #[test]
     fn spline_arrays_materialize_each_identity_once() {

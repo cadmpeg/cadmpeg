@@ -2802,6 +2802,12 @@ pub(crate) mod display_lists_extended_metadata {
 pub(crate) mod parasolid_b_curve_short {
     /// Record length in bytes. Spec §2.
     pub(crate) const LEN: usize = 21;
+    /// Offset of `attributes` (`u16`, big-endian). Spec §2.
+    pub(crate) const ATTRIBUTES: usize = 6;
+    /// Offset of `sense` (`u8`). Spec §2.
+    pub(crate) const SENSE: usize = 16;
+    /// Offset of `nurbs` (`u16`, big-endian). Spec §2.
+    pub(crate) const NURBS: usize = 17;
 }
 
 /// Byte offsets for the `parasolid_nurbs_curve_short` record.
