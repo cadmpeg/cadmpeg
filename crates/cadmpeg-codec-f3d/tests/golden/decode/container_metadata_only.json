@@ -276,7 +276,7 @@
         }
       }
     },
-    "decode_digest": "b7b54ac9e8365879872eddfad5516efa6c7ab8e0a003d1ef881a16c084a7c3dc",
+    "decode_digest": "7a6c6aafd8dd0c489d4f97c14c52eea732fc75a6b80628b9b25f6fcab8b1b5b0",
     "retained_records": {
       "f3d:FusionAssetName[Active]/Breps.BlobParts/Body1.smbh:unknown#0": {
         "stream": "f3d:FusionAssetName[Active]/Breps.BlobParts/Body1.smbh",

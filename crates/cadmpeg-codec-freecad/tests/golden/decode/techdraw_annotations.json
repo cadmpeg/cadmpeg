@@ -3748,7 +3748,7 @@
   },
   "source_fidelity": {
     "annotations": {},
-    "decode_digest": "4008c1adf5c88ff32c2404a05a6a55d89cc81524859aad3f1580a847ba2f14fd",
+    "decode_digest": "6bc4c0e639b8055640c0bb02e2828a63184c787d42bda85d661707de3db84317",
     "retained_records": {
       "fcstd:native:entry#BoxCorners": {
         "bytes": {

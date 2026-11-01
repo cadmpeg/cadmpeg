@@ -1465,6 +1465,7 @@
         }
       }
     },
+    "decode_digest": "7da9717daa1a5977976537d42fc112561b087617ad02ec756a728b83c34ffeb1",
     "retained_records": {
       "catia:payload:unknown#freeform": {
         "bytes": {

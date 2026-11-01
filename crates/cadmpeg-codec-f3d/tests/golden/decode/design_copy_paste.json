@@ -2239,7 +2239,7 @@
         }
       }
     },
-    "decode_digest": "c282b9657533634dc40cec43fbcbe2c3ad04fb674890606082b740be88edccc0",
+    "decode_digest": "98a204d82f4b9d0f09cb7f3714ab02bb4e63b63c65131f2e60b1efbcd1dc158e",
     "retained_records": {
       "f3d:FusionAssetName[Active]/Design1/BulkStream.dat:sketch-relation#33": {
         "stream": "FusionAssetName[Active]/Design1/BulkStream.dat",

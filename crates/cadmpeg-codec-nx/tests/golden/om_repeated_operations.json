@@ -2059,6 +2059,7 @@
           }
         }
       },
+      "decode_digest": "6580f2088ada8b2dafa56a3286de97a3218f80cd28bfcfe3cb8ea4fb34a91d91",
       "retained_records": {
         "nx:source:image#whole": {
           "bytes": {

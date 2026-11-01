@@ -378,6 +378,7 @@
         }
       }
     },
+    "decode_digest": "a846d1f9bd277a79486d5c45f74fbccdd60f22c34f18084e2b1dcab64fec12c5",
     "retained_records": {
       "rhino:object:record#000000": {
         "bytes": {

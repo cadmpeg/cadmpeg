@@ -697,7 +697,7 @@
         }
       }
     },
-    "decode_digest": "fd1aaba03a4cf627de9ebd96815c6b40873a578a6d3713d3be35dc4353159616",
+    "decode_digest": "9c123d92577fe4a6792c525b515a7635ec5fe81cd62a286f02f02a32f0100389",
     "retained_records": {
       "f3d:FusionAssetName[Active]/Breps.BlobParts/Body1.smbh:asm-history-record#0000001903": {
         "stream": "FusionAssetName[Active]/Breps.BlobParts/Body1.smbh",

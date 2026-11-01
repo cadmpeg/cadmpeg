@@ -661,6 +661,7 @@
         }
       }
     },
+    "decode_digest": "c9fba683693f9d97b4474c4a67e95f209652e66c751df334e994f0fd9f96053b",
     "retained_records": {
       "creo:ActDatums:section#76": {
         "bytes": {

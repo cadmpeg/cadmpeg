@@ -585,7 +585,7 @@
         }
       }
     },
-    "decode_digest": "7eb297b0188cd3db09dda64e1341efdca64e1ec5bd10667daf413f2f77ec6909",
+    "decode_digest": "305b37b3e071f24bfea026d9ea2135b7b5edec61f31a9bd2c03290d7672c13a9",
     "retained_records": {
       "f3d:brep:mesh_surface#6": {
         "stream": "f3d:FusionAssetName[Active]/Breps.BlobParts/Body1.smbh",

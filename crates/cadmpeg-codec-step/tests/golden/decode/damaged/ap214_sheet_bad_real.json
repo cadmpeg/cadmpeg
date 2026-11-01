@@ -873,6 +873,7 @@
   },
   "source_fidelity": {
     "annotations": {},
+    "decode_digest": "eb37b9e86413664782c9024b8c0dcb2cf5aed382caff93dac93e175333abd71e",
     "retained_records": {
       "step:data:axis2_placement_3d#27": {
         "bytes": {

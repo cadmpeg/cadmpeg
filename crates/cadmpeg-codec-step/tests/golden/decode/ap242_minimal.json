@@ -160,6 +160,7 @@
   },
   "source_fidelity": {
     "annotations": {},
+    "decode_digest": "b26aab369d8429cd4cc605a9b7e74edf7da8547c574cb4de6c79ba9079a0dd33",
     "retained_records": {
       "step:data:example_record#1": {
         "bytes": {

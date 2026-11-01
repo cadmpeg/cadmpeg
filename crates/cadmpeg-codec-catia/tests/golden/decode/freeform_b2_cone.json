@@ -525,6 +525,7 @@
         }
       }
     },
+    "decode_digest": "ce5ddf212e0f76f33a72e5ee3ad48ab7c9b36e6758834d280a5d1eca33c47b67",
     "retained_records": {
       "catia:payload:unknown#brep-stream": {
         "bytes": {

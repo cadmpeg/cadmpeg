@@ -1010,7 +1010,7 @@
   },
   "source_fidelity": {
     "annotations": {},
-    "decode_digest": "437daa49cd59f2defffe390dfd429d6f68006d6925303e6311c979fb0bfc68a4",
+    "decode_digest": "e16cc607a946e9c79a59f9b6da0ec977b3e08235336fe5e54f02cf604675a276",
     "retained_records": {
       "iges:file:source-image#0": {
         "bytes": {

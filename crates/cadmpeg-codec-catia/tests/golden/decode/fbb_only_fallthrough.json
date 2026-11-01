@@ -696,6 +696,7 @@
         }
       }
     },
+    "decode_digest": "4cab3f9a412ca4c759f3977401502456366d2613ad12e43eade5d060b318f447",
     "retained_records": {
       "catia:payload:unknown#brep-stream": {
         "bytes": {
