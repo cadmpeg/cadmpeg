@@ -6,6 +6,7 @@ use std::collections::{BTreeMap, BTreeSet, HashSet};
 
 use cadmpeg_core::decode::{u64_from_index, DecodeContext};
 use cadmpeg_core::dialect::DialectMatch;
+use cadmpeg_core::text::NonBlankString;
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::codec::{DecodeBody, Decoded};
 use cadmpeg_ir::document::{CadIr, SourceMeta};
@@ -49,10 +50,7 @@ pub(crate) enum Packaging {
     /// A bare ISO 10303-21 exchange.
     Bare,
     /// A ZIP-packaged exchange and its selected root entry.
-    Zip {
-        entry_count: usize,
-        root_data_offset: u64,
-    },
+    Zip,
 }
 
 #[derive(Clone, Copy)]
@@ -62,20 +60,17 @@ enum DecodeMode {
 }
 
 impl Packaging {
-    fn add_fidelity_metadata(self, attributes: &mut BTreeMap<String, String>) {
-        let Self::Zip {
-            entry_count,
-            root_data_offset,
-        } = self
-        else {
+    fn add_source_attributes(self, attributes: &mut BTreeMap<NonBlankString, String>) {
+        let Self::Zip { .. } = self else {
             return;
         };
-        attributes.insert("container_kind".to_owned(), "iso-10303-21-zip".into());
-        attributes.insert("archive_root".to_owned(), crate::archive::ROOT_NAME.into());
-        attributes.insert("archive_entries".to_owned(), entry_count.to_string());
         attributes.insert(
-            "archive_root_data_offset".to_owned(),
-            root_data_offset.to_string(),
+            cadmpeg_core::nonblank_literal!("container_kind"),
+            "iso-10303-21-zip".into(),
+        );
+        attributes.insert(
+            cadmpeg_core::nonblank_literal!("archive_root"),
+            crate::archive::ROOT_NAME.into(),
         );
     }
 }
@@ -114,7 +109,7 @@ impl<T> std::ops::DerefMut for StageOutcome<T> {
 struct StepDecodeSession<'ctx, 'arena> {
     ir: CadIr,
     matched: DialectMatch,
-    source_metadata: BTreeMap<String, String>,
+    source_attributes: BTreeMap<NonBlankString, String>,
     body: DecodeBody,
     typed_records: ClaimSets,
     admitted_ir_entities: u64,
@@ -129,17 +124,12 @@ impl<'ctx, 'arena> StepDecodeSession<'ctx, 'arena> {
         mode: DecodeMode,
     ) -> StepDecodeSession<'ctx, 'arena> {
         let mut attributes = BTreeMap::new();
-        attributes.insert("schema".to_owned(), exchange.joined_schema_identifiers());
         attributes.insert(
-            "data_sections".to_owned(),
-            exchange.data().len().to_string(),
-        );
-        attributes.insert(
-            "entity_instances".to_owned(),
-            exchange.records().len().to_string(),
+            cadmpeg_core::nonblank_literal!("schema"),
+            exchange.joined_schema_identifiers(),
         );
         if let DecodeMode::Decode(packaging) = mode {
-            packaging.add_fidelity_metadata(&mut attributes);
+            packaging.add_source_attributes(&mut attributes);
         }
         let primary = StepDialect::classify(exchange);
         let dialect_loss = crate::dialect::dialect_loss(&primary);
@@ -235,7 +225,7 @@ impl<'ctx, 'arena> StepDecodeSession<'ctx, 'arena> {
         Self {
             ir,
             matched: primary,
-            source_metadata: attributes,
+            source_attributes: attributes,
             body,
             typed_records: ClaimSets::default(),
             admitted_ir_entities: 0,
@@ -266,14 +256,13 @@ impl<'ctx, 'arena> StepDecodeSession<'ctx, 'arena> {
 
     fn into_result(
         mut self,
-        mut source_fidelity: SourceFidelity,
+        source_fidelity: SourceFidelity,
         opaque_offsets: BTreeSet<usize>,
     ) -> AnalyzedExchange {
         self.ir.source = Some(SourceMeta::classified(
             cadmpeg_core::dialect::DialectLayers::of(self.matched.clone()),
-            BTreeMap::new(),
+            self.source_attributes,
         ));
-        source_fidelity.metadata.extend(self.source_metadata);
         self.body.transfer.scope = self.ir.scope;
         AnalyzedExchange {
             decoded: Decoded {
@@ -707,21 +696,6 @@ fn decode_exchange_mode(
             source_fidelity.mark_untyped(&id, [cadmpeg_ir::ArenaClass::Model])?;
         }
     }
-    session.source_metadata.insert(
-        "bytes_structural".to_owned(),
-        accounting.structural.to_string(),
-    );
-    session
-        .source_metadata
-        .insert("bytes_typed".to_owned(), accounting.typed.to_string());
-    session.source_metadata.insert(
-        "bytes_named_opaque".to_owned(),
-        accounting.opaque.to_string(),
-    );
-    session.source_metadata.insert(
-        "bytes_unclassified".to_owned(),
-        accounting.unclassified.to_string(),
-    );
     if accounting.unclassified > 0 {
         session
             .body
