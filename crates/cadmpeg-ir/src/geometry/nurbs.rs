@@ -1349,28 +1349,28 @@ impl NurbsSurface {
     }
 }
 
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct NurbsSurfaceWire {
+    #[serde(default, deserialize_with = "deserialize_cache_fit_tolerance")]
+    cache_fit_tolerance: Option<super::FitTolerance>,
+    u_degree: u32,
+    v_degree: u32,
+    u_knots: Vec<f64>,
+    v_knots: Vec<f64>,
+    poles: NurbsPoleGrid,
+    #[serde(default)]
+    normal_reversed: bool,
+    u_periodic: bool,
+    v_periodic: bool,
+}
+
 impl<'de> Deserialize<'de> for NurbsSurface {
     fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
     where
         D: serde::Deserializer<'de>,
     {
-        #[derive(Deserialize)]
-        #[serde(deny_unknown_fields)]
-        struct Wire {
-            #[serde(default, deserialize_with = "deserialize_cache_fit_tolerance")]
-            cache_fit_tolerance: Option<super::FitTolerance>,
-            u_degree: u32,
-            v_degree: u32,
-            u_knots: Vec<f64>,
-            v_knots: Vec<f64>,
-            poles: NurbsPoleGrid,
-            #[serde(default)]
-            normal_reversed: bool,
-            u_periodic: bool,
-            v_periodic: bool,
-        }
-
-        let wire = Wire::deserialize(deserializer)?;
+        let wire = NurbsSurfaceWire::deserialize(deserializer)?;
         let mut surface = NurbsSurface::new(
             NurbsSurfaceAxis::new(wire.u_degree, wire.u_knots, wire.u_periodic),
             NurbsSurfaceAxis::new(wire.v_degree, wire.v_knots, wire.v_periodic),
