@@ -117,6 +117,11 @@ pub(crate) enum UsdLossCode {
     /// Feature or configuration properties that name records the stage
     /// does not hold were not transferred.
     FeaturePropertyNotTransferred,
+    /// A `CadPmi` prim that does not satisfy its schema was not transferred.
+    PmiRejected,
+    /// Annotation targets that name records the stage does not hold were not
+    /// transferred.
+    PmiPropertyNotTransferred,
     /// A joint whose bodies or frames do not resolve was not transferred.
     JointRejected,
     /// Joint properties with no neutral form were not transferred.
@@ -147,8 +152,8 @@ pub(crate) enum UsdLossCode {
     /// A design parameter property with no `CadParameter` form was not
     /// written.
     ExportParameterPropertyNotWritten,
-    /// A feature or configuration with no `CadFeature` or
-    /// `CadConfiguration` form was not written.
+    /// A feature, configuration, or PMI annotation with no `CadFeature`,
+    /// `CadConfiguration`, or `CadPmi` form was not written.
     ExportFeatureNotWritten,
     /// A body with faces has no `BrepArray` prim.
     ExportBrepNotWritten,
@@ -206,6 +211,8 @@ impl UsdLossCode {
         Self::ParameterRejected,
         Self::FeatureRejected,
         Self::FeaturePropertyNotTransferred,
+        Self::PmiRejected,
+        Self::PmiPropertyNotTransferred,
         Self::JointRejected,
         Self::JointPropertyNotTransferred,
         Self::SolverPropertyNotTransferred,
@@ -379,6 +386,12 @@ impl UsdLossCode {
             Self::FeatureRejected => ("feature.rejected", Warning, T::ParametricRecordOmitted),
             Self::FeaturePropertyNotTransferred => (
                 "feature.property-not-transferred",
+                Warning,
+                T::ParametricRecordOmitted,
+            ),
+            Self::PmiRejected => ("pmi.rejected", Warning, T::ParametricRecordOmitted),
+            Self::PmiPropertyNotTransferred => (
+                "pmi.property-not-transferred",
                 Warning,
                 T::ParametricRecordOmitted,
             ),

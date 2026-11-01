@@ -281,6 +281,7 @@ mod losses;
 mod mates;
 mod parameters;
 mod physics;
+mod pmi;
 mod sketches;
 mod subsets;
 mod textures;

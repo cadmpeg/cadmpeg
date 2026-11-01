@@ -63,6 +63,7 @@ mod mates;
 mod parameters;
 mod physics;
 mod physx;
+mod pmi;
 mod sketch;
 
 /// Millimetres per metre.
@@ -203,6 +204,8 @@ struct Tallies {
     rejected_parameters: Vec<String>,
     rejected_features: Vec<String>,
     feature_properties: Vec<String>,
+    rejected_pmi: Vec<String>,
+    pmi_properties: Vec<String>,
     xform: Vec<String>,
     subdivision: usize,
     rejected_faces: usize,
@@ -372,6 +375,7 @@ pub(crate) fn build<'a>(
     builder.features()?;
     builder.parameters()?;
     builder.configurations()?;
+    builder.pmi()?;
     let mates = std::mem::take(&mut builder.pending_mates);
     builder.mates(mates)?;
     let pending = std::mem::take(&mut builder.pending_joints);
@@ -474,6 +478,7 @@ impl Builder<'_, '_, '_, '_> {
                         | parameters::PARAMETER_TYPE
                         | features::FEATURE_TYPE
                         | configurations::CONFIGURATION_TYPE
+                        | pmi::PMI_TYPE
                 )
             )
         {
@@ -1461,6 +1466,7 @@ fn holds_only_shading(stage: &Stage<'_>, prim: &Prim<'_>) -> bool {
                                 | parameters::PARAMETER_TYPE
                                 | features::FEATURE_TYPE
                                 | configurations::CONFIGURATION_TYPE
+                                | pmi::PMI_TYPE
                         )
                     )
                     || match role(child.type_name()) {
@@ -1765,6 +1771,25 @@ fn tally_losses(tallies: &Tallies, issues: &Issues, metrics: &Metrics) -> Vec<Lo
              hold and were not transferred: {}",
             tallies.feature_properties.len(),
             joined(tallies.feature_properties.iter().cloned())
+        ),
+    );
+    push(
+        UsdLossCode::PmiRejected,
+        !tallies.rejected_pmi.is_empty(),
+        format!(
+            "{} CadPmi prims do not satisfy their schema and were not transferred: {}",
+            tallies.rejected_pmi.len(),
+            joined(tallies.rejected_pmi.iter().cloned())
+        ),
+    );
+    push(
+        UsdLossCode::PmiPropertyNotTransferred,
+        !tallies.pmi_properties.is_empty(),
+        format!(
+            "targets of {} annotations name records the stage does not hold and were not \
+             transferred: {}",
+            tallies.pmi_properties.len(),
+            joined(tallies.pmi_properties.iter().cloned())
         ),
     );
     push(

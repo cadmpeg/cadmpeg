@@ -50,6 +50,8 @@ fn code_strings_are_pinned() {
             "parameter.rejected",
             "feature.rejected",
             "feature.property-not-transferred",
+            "pmi.rejected",
+            "pmi.property-not-transferred",
             "physics.joint-rejected",
             "physics.joint-property-not-transferred",
             "physics.solver-property-not-transferred",

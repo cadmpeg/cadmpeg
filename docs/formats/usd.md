@@ -1322,7 +1322,7 @@ A geometry prim that states `customData = { string brepArray = "N" }` is a fallb
 
 The `Cad*` schemas extend the registered schemas and `BrepArray` with CADIR data that they do not hold. OpenUSD does not register them. A reader that does not know a `Cad*` API schema reads the prim without it.
 
-A prim of a `Cad*` type that states one CADIR record has `uniform string cad:id`, the CADIR identity of that record, with the grammar `<format>:<scope>:<kind>#<key>`. Each identity occurs once in a stage. A reader gives a record with no valid or unique `cad:id` the identity of its prim path. `CadSketch`, its point, curve, and constraint prims, `CadParameter`, `CadFeature`, and `CadConfiguration` have `cad:id`.
+A prim of a `Cad*` type that states one CADIR record has `uniform string cad:id`, the CADIR identity of that record, with the grammar `<format>:<scope>:<kind>#<key>`. Each identity occurs once in a stage. A reader gives a record with no valid or unique `cad:id` the identity of its prim path. `CadSketch`, its point, curve, and constraint prims, `CadParameter`, `CadFeature`, `CadConfiguration`, and `CadPmi` have `cad:id`.
 
 ### 18.1 CadBrepIdentityAPI
 
@@ -1573,3 +1573,17 @@ A `CadConfiguration` prim states one design configuration. A writer puts the con
 | `cad:configuration:payload` | uniform string | a JSON object: the CADIR wire form of the configuration without the fields above |
 
 The payload holds the parameter overrides, the bodies present, the evaluated parameter values, and the evaluated state of each feature, when the source states them. A reader does not add a configuration whose payload does not deserialize, or that names a feature or parameter that it does not add. It drops a body that the stage does not hold from the bodies present.
+
+### 18.9 CadPmi
+
+A `CadPmi` prim states one product-manufacturing information annotation. A writer puts the annotations in a `Pmi` scope. A reader reads each `CadPmi` prim of the stage, in stage order.
+
+| Property | Type | Meaning |
+| --- | --- | --- |
+| `cad:id` | uniform string | the CADIR identity of the annotation |
+| `cad:pmi:name` | uniform string | the source name |
+| `cad:pmi:visible` | uniform bool | the source shows the annotation; unauthored, the source states no value |
+| `cad:pmi:kind` | uniform token | the kind tag of the CADIR PMI definition, for example `datum` or `geometric_tolerance` |
+| `cad:pmi:payload` | uniform string | a JSON object: the CADIR wire form of the annotation without the fields above |
+
+The payload holds the targets and the definition. A target names a body, face, edge, vertex, point, curve, product definition, or occurrence by its CADIR identity, or a shape aspect by its source identity. A reader drops a target whose record the stage does not hold.

@@ -5,26 +5,12 @@ use std::collections::BTreeSet;
 
 use cadmpeg_ir::features::{ConfigurationId, DesignConfiguration};
 
+use super::features::strings;
 use crate::schema::{boolean, integer, token, tokens};
 use crate::stage::Prim;
 
 /// The type of a `CadConfiguration` prim.
 pub(super) const CONFIGURATION_TYPE: &str = "CadConfiguration";
-
-/// The string leaves of `value`.
-fn strings<'v>(value: &'v serde_json::Value, out: &mut Vec<&'v str>) {
-    match value {
-        serde_json::Value::String(text) => out.push(text),
-        serde_json::Value::Array(items) => items.iter().for_each(|item| strings(item, out)),
-        serde_json::Value::Object(map) => {
-            for (key, item) in map {
-                out.push(key);
-                strings(item, out);
-            }
-        }
-        _ => {}
-    }
-}
 
 impl super::Builder<'_, '_, '_, '_> {
     /// Adds the configuration of each `CadConfiguration` prim, in stage

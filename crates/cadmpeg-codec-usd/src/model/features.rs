@@ -3,7 +3,10 @@
 
 use std::collections::BTreeSet;
 
-use cadmpeg_ir::features::{Feature, FeatureId, FeatureInputTopology, FeatureResultTopology};
+use cadmpeg_ir::features::{
+    Feature, FeatureDefinition, FeatureId, FeatureInputTopology, FeatureOperation,
+    FeatureResultTopology,
+};
 
 use crate::schema::{boolean, integer, token, tokens};
 use crate::stage::Prim;
@@ -21,12 +24,17 @@ struct Read {
     references: BTreeSet<String>,
 }
 
-/// The string leaves of `value`.
-fn strings<'v>(value: &'v serde_json::Value, out: &mut Vec<&'v str>) {
+/// The string leaves and object keys of `value`.
+pub(super) fn strings<'v>(value: &'v serde_json::Value, out: &mut Vec<&'v str>) {
     match value {
         serde_json::Value::String(text) => out.push(text),
         serde_json::Value::Array(items) => items.iter().for_each(|item| strings(item, out)),
-        serde_json::Value::Object(map) => map.values().for_each(|item| strings(item, out)),
+        serde_json::Value::Object(map) => {
+            for (key, item) in map {
+                out.push(key);
+                strings(item, out);
+            }
+        }
         _ => {}
     }
 }
@@ -217,6 +225,15 @@ impl super::Builder<'_, '_, '_, '_> {
         }
         let feature: Feature = serde_json::from_value(serde_json::Value::Object(wire))
             .map_err(|error| format!("the feature does not deserialize: {error}"))?;
+        let operation = match feature.evaluation.definition() {
+            FeatureDefinition::PostProcess { operation, .. }
+            | FeatureDefinition::Operation(operation) => operation,
+        };
+        if matches!(operation, FeatureOperation::HelixNativeAxis { .. }) {
+            return Err(
+                "the helix axis names a native record, which a stage does not hold".to_owned(),
+            );
+        }
         let topologies = |builder: &mut Self, name: &str| {
             token(prim, name, &mut builder.issues)
                 .map(|text| serde_json::from_str::<serde_json::Value>(&text))

@@ -111,3 +111,26 @@ class CadConfiguration "CadConfiguration" (
                  parameter values, and the evaluated state of each feature."""
     )
 }
+
+class CadPmi "CadPmi" (
+    inherits = </Typed>
+    doc = """One product-manufacturing information annotation (docs/formats/usd.md §18.9)."""
+)
+{
+    uniform string cad:id (
+        doc = """The CADIR identity of the annotation."""
+    )
+    uniform string cad:pmi:name (
+        doc = """The source name."""
+    )
+    uniform bool cad:pmi:visible (
+        doc = """The source shows the annotation. Unauthored, the source states no value."""
+    )
+    uniform token cad:pmi:kind (
+        doc = """The kind tag of the CADIR PMI definition, for example 'datum'."""
+    )
+    uniform string cad:pmi:payload (
+        doc = """A JSON object: the CADIR wire form of the annotation without the typed
+                 properties: its targets and definition."""
+    )
+}

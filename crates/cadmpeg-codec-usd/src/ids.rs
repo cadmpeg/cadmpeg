@@ -311,6 +311,14 @@ pub(crate) fn configuration(path: &str) -> cadmpeg_ir::features::ConfigurationId
     )
 }
 
+/// The annotation of the `CadPmi` prim at `path`.
+pub(crate) fn pmi(path: &str) -> cadmpeg_ir::ids::PmiId {
+    cadmpeg_ir::ids::PmiId::compose(
+        &cadmpeg_ir::identity_namespace!("usd", "stage", "pmi"),
+        key(path),
+    )
+}
+
 /// The feature of the `CadFeature` prim at `path`.
 pub(crate) fn feature(path: &str) -> cadmpeg_ir::features::FeatureId {
     cadmpeg_ir::features::FeatureId::compose(

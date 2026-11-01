@@ -23,6 +23,7 @@ mod mates;
 mod parameters;
 mod physics;
 mod physx;
+mod pmi;
 mod records;
 mod shading;
 mod sketch;
@@ -117,7 +118,7 @@ const COVERAGE: ArenaDispositions = {
         appearances: Reported,
         appearance_bindings: Reported,
         attributes: Omitted,
-        pmi: Omitted,
+        pmi: Written,
         presentation_layers: Omitted,
         physical_materials: Written,
         mass_properties: Written,
@@ -185,6 +186,8 @@ struct Unwritten {
     features: usize,
     /// Configurations whose wire form does not serialize.
     configurations: usize,
+    /// Annotations whose wire form does not serialize.
+    pmi: usize,
     /// Bodies with faces and no `BrepArray` prim, with the reason.
     breps: Vec<String>,
     /// Bodies whose `BrepArray` prim has no trim curves.
@@ -515,6 +518,7 @@ impl<'ir> Writer<'ir> {
                 self.features(&mut names);
                 self.parameters(&mut names);
                 self.configurations(&mut names);
+                self.pmi(&mut names);
                 self.sketches(&mut names, None);
                 names.first().map(str::to_owned)
             }
@@ -727,6 +731,7 @@ impl<'ir> Writer<'ir> {
             self.features(&mut child_names);
             self.parameters(&mut child_names);
             self.configurations(&mut child_names);
+            self.pmi(&mut child_names);
             self.sketches(&mut child_names, Some(&occurrence.id));
         }
         self.out.close();
@@ -1618,6 +1623,12 @@ impl<'ir> Writer<'ir> {
             losses.push(UsdLossCode::ExportFeatureNotWritten.note(format!(
                 "{} configurations have no wire form and were not written",
                 unwritten.configurations
+            )));
+        }
+        if unwritten.pmi > 0 {
+            losses.push(UsdLossCode::ExportFeatureNotWritten.note(format!(
+                "{} PMI annotations have no wire form and were not written",
+                unwritten.pmi
             )));
         }
         if unwritten.solver_properties > 0 {
