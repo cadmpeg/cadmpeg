@@ -549,6 +549,14 @@ fn visit_support_failures(
         };
         let meets = |mismatch: f64| mismatch.is_finite() && mismatch <= bound;
         if !meets(mismatch) {
+            // A symmetric interval holds both signs of a hull, so the range
+            // does not show whether the curve is reversed.
+            let negated = parameters.map(|parameter| -parameter);
+            if on_construction(context, negated)
+                && mismatch_at(constrained, negated)?.is_some_and(meets)
+            {
+                continue;
+            }
             if let Some((endpoints, construction)) = witness {
                 if mismatch_at(endpoints, construction)?.is_some_and(meets) {
                     continue;
@@ -600,22 +608,23 @@ fn support_contract_parameters(
     let Some(hull) = index.curve_use_hull(owner) else {
         return (construction, construction);
     };
-    let [start, end] = construction;
-    let (low, high) = (start.min(end), start.max(end));
-    let slack = EPS_USE_IN_CONSTRUCTION * (high - low).max(1.0);
-    let on_construction = |range: [f64; 2]| {
-        range
-            .iter()
-            .all(|t| (low - slack..=high + slack).contains(t))
-    };
-    if on_construction(hull) {
+    if on_construction(context, hull) {
         return (hull, hull);
     }
     let negated = hull.map(|parameter| -parameter);
-    if on_construction(negated) {
+    if on_construction(context, negated) {
         return (hull, negated);
     }
     (construction, construction)
+}
+
+fn on_construction(context: &crate::geometry::IntcurveSupportContext, range: [f64; 2]) -> bool {
+    let [start, end] = context.parameter_range().endpoints();
+    let (low, high) = (start.min(end), start.max(end));
+    let slack = EPS_USE_IN_CONSTRUCTION * (high - low).max(1.0);
+    range
+        .iter()
+        .all(|parameter| (low - slack..=high + slack).contains(parameter))
 }
 
 fn curve_owners(ir: &CadIr) -> BorrowedIdentities<'_, &crate::ids::CurveId> {

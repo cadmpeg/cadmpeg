@@ -168,6 +168,54 @@ fn reversed_curve_reports_a_miss_inside_its_hull() {
 }
 
 #[test]
+fn reversed_curve_on_a_symmetric_interval_meets_its_contract() {
+    let pcurve = PcurveGeometry::Nurbs {
+        nurbs: PcurveNurbs::new(
+            1,
+            vec![-1.0, -1.0, 1.0, 1.0],
+            PcurveNurbsPoles::Polynomial {
+                points: vec![Point2::new(1.0, 0.0), Point2::new(3.0, 0.0)],
+            },
+            false,
+        )
+        .unwrap(),
+    };
+    let mut ir = mapped_surface_curve_with_pcurve(pcurve.clone(), [0.0, 1.0]);
+    *ir.model.curves[0]
+        .geometry
+        .solved_cache_mut()
+        .expect("solved cache") = SolvedCurveGeometry::Line(
+        crate::geometry::analytic::LineCurve::try_new(
+            Point3::new(2.0, 0.0, 0.0),
+            Vector3::new(-1.0, 0.0, 0.0),
+        )
+        .unwrap(),
+    );
+    let context = IntcurveSupportContext::try_new(
+        [
+            IntcurveSupportSide {
+                surface: Some(ir.model.surfaces[0].id.clone()),
+                pcurve: Some(SupportPcurve::new(pcurve, None)),
+            },
+            IntcurveSupportSide {
+                surface: None,
+                pcurve: None,
+            },
+        ],
+        [-1.0, 1.0],
+        std::array::from_fn(|_| Vec::new()),
+    )
+    .unwrap();
+    ir.model.procedural_curves[0].replace_definition(ProceduralCurveDefinition::Intersection {
+        context,
+        discontinuity_flag: false,
+        cache: None,
+    });
+    using_edge(&mut ir, [-1.0, 1.0]);
+    assert_support_failure(&ir, false);
+}
+
+#[test]
 fn construction_ends_answer_an_interior_hull_miss() {
     let mut ir = support_curve_with_heights([0.0, 0.2], None);
     using_edge(&mut ir, [0.25, 0.75]);
