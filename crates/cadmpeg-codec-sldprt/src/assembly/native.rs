@@ -56,6 +56,18 @@ impl NativeAssembly {
 
     /// Map the native structure to the neutral product projection.
     pub(super) fn into_projection(self) -> AssemblyProjection {
+        let virtual_sites = self
+            .definitions
+            .iter()
+            .filter_map(|definition| {
+                let site = definition.bodies_site.clone()?;
+                let name = definition
+                    .source_name
+                    .clone()
+                    .unwrap_or_else(|| definition.native_ref.clone());
+                Some((definition.id.clone(), site, name))
+            })
+            .collect();
         AssemblyProjection {
             definitions: self
                 .definitions
@@ -69,6 +81,7 @@ impl NativeAssembly {
                 .collect(),
             losses: self.losses,
             carries_parasolid: false,
+            virtual_sites,
         }
     }
 
@@ -94,6 +107,9 @@ pub(super) struct NativeDefinition {
     id: ProductDefinitionId,
     source_name: Option<String>,
     native_ref: String,
+    /// The site key of the virtual component section whose bodies the
+    /// definition owns.
+    bodies_site: Option<String>,
 }
 
 impl NativeDefinition {
@@ -108,7 +124,14 @@ impl NativeDefinition {
             id,
             source_name,
             native_ref: native_model_ref(model),
+            bodies_site: None,
         })
+    }
+
+    /// The definition that owns the bodies decoded from the site `site`.
+    pub(super) fn with_bodies_from(mut self, site: String) -> Self {
+        self.bodies_site = Some(site);
+        self
     }
 
     pub(super) fn id(&self) -> &ProductDefinitionId {
@@ -151,7 +174,8 @@ pub(super) enum NativePrototype {
         document: String,
         object: Option<String>,
     },
-    /// A virtual component, stored in the assembly document.
+    /// A virtual component whose document this assembly document does not
+    /// hold.
     Unresolved,
 }
 

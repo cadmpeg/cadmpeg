@@ -469,6 +469,12 @@ pub(super) fn decode(inputs: &DesignInputs<'_>) -> Result<DesignOutputs, CodecEr
             &design.design_placement_constructions,
         ),
     );
+    losses.extend(
+        crate::design::decode::placement_construction::cylinders::bind(
+            &mut design.design_parameter_scopes,
+            &design.design_placement_constructions,
+        ),
+    );
     crate::design::decode::operands::bind_work_point_input_carriers(
         scan,
         &mut design.design_parameter_scopes,

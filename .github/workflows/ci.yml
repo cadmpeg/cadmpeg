@@ -51,11 +51,15 @@ jobs:
       full: ${{ steps.scope.outputs.full }}
       rust: ${{ steps.scope.outputs.rust }}
       fuzz: ${{ steps.scope.outputs.fuzz }}
+      codec_scope: ${{ steps.scope.outputs.codec_scope }}
       sldprt_cli: ${{ steps.scope.outputs.sldprt_cli }}
       step_cli: ${{ steps.scope.outputs.step_cli }}
       schema: ${{ steps.scope.outputs.schema }}
       iges: ${{ steps.scope.outputs.iges }}
+      inventor_cli: ${{ steps.scope.outputs.inventor_cli }}
+      layout: ${{ steps.scope.outputs.layout }}
       static: ${{ steps.scope.outputs.static }}
+      prose_only: ${{ steps.scope.outputs.prose_only }}
       audit: ${{ steps.scope.outputs.audit }}
     steps:
       - name: Checkout
@@ -125,7 +129,7 @@ jobs:
   # Python policy checks need no Rust build and run beside clippy.
   static:
     needs: changes
-    if: ${{ always() && needs.changes.result != 'cancelled' && (needs.changes.result != 'success' || needs.changes.outputs.static == 'true') }}
+    if: ${{ !cancelled() && needs.changes.result != 'cancelled' && (needs.changes.result != 'success' || needs.changes.outputs.static == 'true') }}
     name: static checks
     runs-on: ubuntu-latest
     timeout-minutes: 15
@@ -150,12 +154,17 @@ jobs:
         run: python3 -m unittest discover -q -s scripts -p 'test_*.py'
 
       - name: Source policy
+        if: needs.changes.outputs.prose_only != 'true'
         run: |
           set -euo pipefail
           python3 scripts/check-source-policy.py
           python3 scripts/check-resource-caps.py
           python3 scripts/check-deny-census.py
           python3 scripts/census-panic-calls.py --check
+
+      - name: Source policy for documentation
+        if: needs.changes.outputs.prose_only == 'true'
+        run: python3 scripts/check-source-policy.py --authoring-paths-only
 
       - name: Golden coverage floors
         # Mesh-size floors in docs/golden-coverage-floors.toml. Counts may only
@@ -202,11 +211,12 @@ jobs:
   # job instead of the sum of every step.
   lint:
     needs: changes
-    if: ${{ always() && needs.changes.result != 'cancelled' && (needs.changes.result != 'success' || needs.changes.outputs.rust == 'true') }}
+    if: ${{ !cancelled() && needs.changes.result != 'cancelled' && (needs.changes.result != 'success' || needs.changes.outputs.rust == 'true') }}
     name: fmt / clippy (stable)
     env:
       CI_PACKAGES: ${{ needs.changes.outputs.packages }}
       CI_FULL: ${{ needs.changes.outputs.full }}
+      CI_CODEC_FEATURES: ${{ needs.changes.outputs.codec_scope }}
     runs-on: ubuntu-latest
     timeout-minutes: 30
     steps:
@@ -249,7 +259,7 @@ jobs:
 
   test:
     needs: changes
-    if: ${{ always() && needs.changes.result != 'cancelled' && (needs.changes.result != 'success' || (needs.changes.outputs.rust == 'true' && github.event.pull_request.draft != true)) }}
+    if: ${{ !cancelled() && needs.changes.result != 'cancelled' && (needs.changes.result != 'success' || (needs.changes.outputs.rust == 'true' && github.event.pull_request.draft != true)) }}
     name: test (stable)
     env:
       CI_PACKAGES: ${{ needs.changes.outputs.packages }}
@@ -294,7 +304,7 @@ jobs:
         run: python3 scripts/ci_cargo.py nextest run --bins --tests --no-fail-fast
 
       - name: Inventor CLI evidence tests
-        if: contains(fromJSON(needs.changes.outputs.packages), 'cadmpeg')
+        if: needs.changes.outputs.inventor_cli == 'true'
         # These two tooling tests need the default CLI built by the Rust gate.
         # The static job runs the remaining Python tests without a CLI build.
         run: |
@@ -330,7 +340,7 @@ jobs:
 
   features:
     needs: changes
-    if: ${{ always() && needs.changes.result != 'cancelled' && (needs.changes.result != 'success' || ((needs.changes.outputs.schema == 'true' || needs.changes.outputs.sldprt_cli == 'true' || needs.changes.outputs.step_cli == 'true') && github.event.pull_request.draft != true)) }}
+    if: ${{ !cancelled() && needs.changes.result != 'cancelled' && (needs.changes.result != 'success' || ((needs.changes.outputs.schema == 'true' || needs.changes.outputs.sldprt_cli == 'true' || needs.changes.outputs.step_cli == 'true' || needs.changes.outputs.layout == 'true') && github.event.pull_request.draft != true)) }}
     name: schema / feature gates (stable)
     runs-on: ubuntu-latest
     timeout-minutes: 40
@@ -378,10 +388,18 @@ jobs:
         # This test target only exists when STEP is enabled without FCStd or F3D.
         run: cargo test -q -p cadmpeg --no-default-features --features step --test low_confidence_inspect
 
+      - name: Layout tables
+        if: needs.changes.outputs.layout == 'true'
+        # The test reads only documents and generated sources. It shares the
+        # STEP-only build above.
+        run: cargo test -q -p cadmpeg --no-default-features --features step --test layout_tables
+
   fuzz:
     needs: changes
-    if: ${{ always() && needs.changes.result != 'cancelled' && (needs.changes.result != 'success' || (needs.changes.outputs.fuzz == 'true' && github.event.pull_request.draft != true)) }}
+    if: ${{ !cancelled() && needs.changes.result != 'cancelled' && (needs.changes.result != 'success' || (needs.changes.outputs.fuzz == 'true' && github.event.pull_request.draft != true)) }}
     name: fuzz crate (stable)
+    env:
+      CI_FUZZ_CODECS: ${{ needs.changes.outputs.codec_scope }}
     runs-on: ubuntu-latest
     timeout-minutes: 30
     steps:
@@ -405,34 +423,29 @@ jobs:
           save-if: ${{ github.ref == 'refs/heads/main' }}
 
       - name: Fuzz targets compile
-        # The fuzz crate declares its own `[workspace]`, so every other job
-        # skips it; a refactor that moves a codec's internals silently rots the
-        # harnesses' imports. A stable `check` catches that drift without the
-        # nightly toolchain `cargo fuzz build` needs. `--all-targets` reaches
-        # every harness and seed binary, and `--keep-going` reports all of them
-        # rather than stopping at the first.
-        run: |
-          cargo check -q --manifest-path crates/cadmpeg-fuzz/Cargo.toml \
-            --all-targets --keep-going
+        run: python3 scripts/ci_fuzz.py
 
       - name: Fuzz crate tests
-        # Runs the library and seed-generator tests, including the seed
-        # decode tests that fail when a reader change stops a seed reaching
-        # its decoder. Every harness under `fuzz_targets/` declares
-        # `test = false`, so this builds and runs no harness.
+        # These tests cover the seed generators. The nightly run catches a
+        # reader change that stops a seed reaching its decoder.
+        if: github.event_name != 'pull_request'
         run: cargo test -q --manifest-path crates/cadmpeg-fuzz/Cargo.toml
 
   # Verifies the declared MSRV floor (Cargo.toml rust-version). RUSTUP_TOOLCHAIN
   # overrides the repo's rust-toolchain.toml pin so the floor is actually tested.
+  # Clippy's `incompatible_msrv` rejects newer standard library items in every
+  # Rust change. This job runs for manifest, lockfile, and toolchain changes,
+  # and the nightly full gate catches newer language syntax.
   msrv:
     needs: changes
-    if: ${{ always() && needs.changes.result != 'cancelled' && (needs.changes.result != 'success' || (needs.changes.outputs.rust == 'true' && github.event.pull_request.draft != true)) }}
+    if: ${{ !cancelled() && needs.changes.result != 'cancelled' && (needs.changes.result != 'success' || ((needs.changes.outputs.full == 'true' || needs.changes.outputs.audit == 'true') && github.event.pull_request.draft != true)) }}
     name: MSRV check (1.88)
     runs-on: ubuntu-latest
     timeout-minutes: 20
     env:
       CI_PACKAGES: ${{ needs.changes.outputs.packages }}
       CI_FULL: ${{ needs.changes.outputs.full }}
+      CI_CODEC_FEATURES: ${{ needs.changes.outputs.codec_scope }}
       RUSTUP_TOOLCHAIN: "1.88"
       # `[workspace.lints]` denies warnings on every toolchain, and 1.88's lint
       # set differs from the pinned one's. This job checks compilation, not
@@ -473,7 +486,7 @@ jobs:
   # Cargo.toml, so every release passes them.
   cross-platform:
     needs: changes
-    if: ${{ github.event_name != 'pull_request' && always() && needs.changes.result != 'cancelled' && (needs.changes.result != 'success' || needs.changes.outputs.full == 'true') }}
+    if: ${{ github.event_name != 'pull_request' && !cancelled() && needs.changes.result != 'cancelled' && (needs.changes.result != 'success' || needs.changes.outputs.full == 'true') }}
     name: build / test (${{ matrix.os }})
     env:
       CI_PACKAGES: ${{ needs.changes.outputs.packages }}
@@ -518,7 +531,7 @@ jobs:
   # RustSec advisory scan of a changed dependency tree; audit.yml scans daily.
   audit:
     needs: changes
-    if: ${{ always() && needs.changes.result != 'cancelled' && (needs.changes.result != 'success' || needs.changes.outputs.audit == 'true') }}
+    if: ${{ !cancelled() && needs.changes.result != 'cancelled' && (needs.changes.result != 'success' || needs.changes.outputs.audit == 'true') }}
     name: cargo audit
     runs-on: ubuntu-latest
     timeout-minutes: 10

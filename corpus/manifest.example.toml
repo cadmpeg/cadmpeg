@@ -35,7 +35,7 @@ source_url = "https://github.com/example/cadmpeg-corpus/pull/1"
 acquisition_date = "2026-07-14"
 
 # License. CC0-1.0 for author donations; LicenseRef-NIST-PD for the NIST
-# producer-evidence track (do not stamp NIST files CC0).
+# specimen track (do not stamp NIST files CC0).
 license = "CC0-1.0"
 
 # SHA-256 of the exact bytes committed. Compute with:

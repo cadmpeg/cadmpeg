@@ -178,6 +178,7 @@ impl DesignEntitySelectionOperand {
                 EntitySelectionFrame::Pair {
                     secondary: secondary.identity.value,
                     curve: secondary.curve_identity.map(|identity| identity.value),
+                    next_record_index: draft.next_record_index,
                 }
             }
             Some(secondary)
@@ -206,7 +207,11 @@ impl DesignEntitySelectionOperand {
         let frame = crate::records::frame_chain::RecordFrameChain::try_new(
             draft.record_index,
             draft.byte_offset,
-            if draft.secondary.is_some() { 4 } else { 3 },
+            if matches!(selection, EntitySelectionFrame::SketchCurve { .. }) {
+                4
+            } else {
+                3
+            },
             0,
         )?;
         let value = Self {
@@ -303,8 +308,11 @@ impl DesignEntitySelectionOperand {
     }
     pub(crate) fn next_record_index(&self) -> u32 {
         match self.selection {
-            EntitySelectionFrame::Primary { next_record_index } => next_record_index,
-            _ => self.frame.index(4),
+            EntitySelectionFrame::Primary { next_record_index }
+            | EntitySelectionFrame::Pair {
+                next_record_index, ..
+            } => next_record_index,
+            EntitySelectionFrame::SketchCurve { .. } => self.frame.index(4),
         }
     }
     pub(crate) fn next_byte_offset(&self) -> u64 {
@@ -855,9 +863,17 @@ pub(crate) struct DesignEntitySelectionEdgeCandidate {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum EntitySelectionFrame {
-    Primary { next_record_index: u32 },
-    Pair { secondary: u64, curve: Option<u64> },
-    SketchCurve { secondary: u64 },
+    Primary {
+        next_record_index: u32,
+    },
+    Pair {
+        secondary: u64,
+        curve: Option<u64>,
+        next_record_index: u32,
+    },
+    SketchCurve {
+        secondary: u64,
+    },
 }
 
 impl EntitySelectionFrame {
@@ -882,7 +898,9 @@ impl EntitySelectionFrame {
     fn secondary(self, offset: u64) -> Option<DesignSecondaryIdentity<Located<u64>>> {
         match self {
             Self::Primary { .. } => None,
-            Self::Pair { secondary, curve } => Some(DesignSecondaryIdentity {
+            Self::Pair {
+                secondary, curve, ..
+            } => Some(DesignSecondaryIdentity {
                 identity: Located {
                     value: secondary,
                     offset: offset + 37,

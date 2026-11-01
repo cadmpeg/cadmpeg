@@ -3186,6 +3186,7 @@ Spec §2 · layout: byte offsets · size: 21 B
 Offsets begin after the type and optional first-of-type schema marker. This layout uses short XMT/pointer fields; extended indices shift subsequent fields.
 
 Parsed by:
+- `crates/cadmpeg-codec-sldprt/src/brep/spline.rs`
 - `crates/cadmpeg-codec-sldprt/src/parasolid/control_vertices.rs`
 
 | Offset | Size | Field | Type | Endian | Src | Meaning |

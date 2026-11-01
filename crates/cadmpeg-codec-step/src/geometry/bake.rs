@@ -285,8 +285,3 @@ pub(super) fn placed_pcurve(
         _ => return None,
     })
 }
-
-/// The half-turn of the parameter plane, `(u, v)` to `(-u, -v)`.
-pub(super) fn half_turn() -> Option<Transform2> {
-    Transform2::affine([[-1.0, 0.0, 0.0], [0.0, -1.0, 0.0]])
-}

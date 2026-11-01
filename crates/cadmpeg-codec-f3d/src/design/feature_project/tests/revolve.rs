@@ -273,6 +273,22 @@ fn oriented_direction(
     end: [f64; 2],
     axis_direction: cadmpeg_ir::units::UnitVector3,
 ) -> Option<cadmpeg_ir::features::FeatureDirection3> {
+    oriented_direction_for_angle(
+        start,
+        end,
+        axis_direction,
+        cadmpeg_ir::scalar::PositiveAngle::QUARTER_TURN,
+        true,
+    )
+}
+
+fn oriented_direction_for_angle(
+    start: [f64; 2],
+    end: [f64; 2],
+    axis_direction: cadmpeg_ir::units::UnitVector3,
+    angle: cadmpeg_ir::scalar::PositiveAngle,
+    has_profile: bool,
+) -> Option<cadmpeg_ir::features::FeatureDirection3> {
     use cadmpeg_ir::features::{
         AngularTermination, BooleanOp, Feature, FeatureDefinition, FeatureDirection3, FeatureId,
         FeatureOperation, FinitePoint3, PlanarProfileRef, RevolutionAxis, RevolveConstruction,
@@ -305,10 +321,14 @@ fn oriented_direction(
             Vector3::new(1.0, 0.0, 0.0),
         )
         .unwrap(),
-        profiles: vec![vec![SketchEntityUse {
-            entity: entity.id().clone(),
-            reversed: false,
-        }]]
+        profiles: if has_profile {
+            vec![vec![SketchEntityUse {
+                entity: entity.id().clone(),
+                reversed: false,
+            }]]
+        } else {
+            Vec::new()
+        }
         .try_into()
         .unwrap(),
         native_ref: None,
@@ -333,9 +353,7 @@ fn oriented_direction(
                         reference: None,
                     },
                     extent: RevolveExtent::OneSided {
-                        termination: AngularTermination::Angle {
-                            angle: cadmpeg_ir::scalar::PositiveAngle::QUARTER_TURN,
-                        },
+                        termination: AngularTermination::Angle { angle },
                     },
                     solid: None,
                     face_maker: None,
@@ -355,6 +373,37 @@ fn oriented_direction(
         panic!("expected a revolve");
     };
     construction.axis().map(|axis| axis.direction)
+}
+
+#[test]
+fn full_turn_revolve_preserves_selected_axis_without_profile_loops() {
+    use cadmpeg_ir::features::FeatureDirection3;
+    use cadmpeg_ir::scalar::PositiveAngle;
+    use cadmpeg_ir::units::UnitVector3;
+
+    const PARTIAL_TURN_GAP: f64 = 1.0e-6;
+
+    for direction in [UnitVector3::Y_AXIS, UnitVector3::Y_AXIS.reversed()] {
+        assert_eq!(
+            oriented_direction_for_angle(
+                [-10.0, 0.0],
+                [10.0, 20.0],
+                direction,
+                PositiveAngle::FULL_TURN,
+                false,
+            ),
+            Some(FeatureDirection3::from(direction))
+        );
+        for angle in [
+            PositiveAngle::QUARTER_TURN,
+            PositiveAngle::new(std::f64::consts::TAU - PARTIAL_TURN_GAP).unwrap(),
+        ] {
+            assert_eq!(
+                oriented_direction_for_angle([-10.0, 0.0], [10.0, 20.0], direction, angle, false,),
+                None
+            );
+        }
+    }
 }
 
 #[test]

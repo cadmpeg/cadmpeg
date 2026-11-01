@@ -5,7 +5,7 @@ name: DCO
 # description must re-run the check — and re-running the original CI run does
 # not, since a re-run replays the stale event payload. Folding `edited` into
 # ci.yml would re-run the whole build/test matrix on every title or
-# description edit; here only this cheap checkout-plus-grep re-runs.
+# description edit; here only this cheap grep re-runs.
 on:
   pull_request:
     branches: [main]
@@ -28,14 +28,41 @@ jobs:
     name: DCO sign-off
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout
+      - name: Check the PR-level sign-off
+        id: pr
         if: github.event_name != 'merge_group'
+        # bash for here-string (`<<<`) support; see the SIGPIPE note below.
+        shell: bash
+        env:
+          # The PR description is contributor-authored free text. It only ever
+          # reaches the shell as an environment value, never interpolated into
+          # the script body.
+          PR_BODY: ${{ github.event.pull_request.body }}
+        run: |
+          set -euo pipefail
+
+          # A checked sign-off declaration or a literal Signed-off-by trailer
+          # satisfies DCO for the whole PR, letting a squash of unsigned WIP
+          # commits merge on one sign-off. The trailer lands verbatim in the
+          # squash commit; the checked declaration records the same
+          # certification in the PR that governs the squash. This step needs no
+          # checkout, so a signed PR skips the full-history clone.
+          if grep -q '^- \[[xX]\] Signed off' <<<"$PR_BODY"; then
+            echo "::notice::PR description carries a checked sign-off declaration; DCO satisfied at the PR level."
+            echo "signed=true" >> "$GITHUB_OUTPUT"
+          elif grep -q '^Signed-off-by: .\+ <.\+@.\+>' <<<"$PR_BODY"; then
+            echo "::notice::PR description carries a Signed-off-by trailer; DCO satisfied at the PR level."
+            echo "signed=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Checkout
+        if: github.event_name != 'merge_group' && steps.pr.outputs.signed != 'true'
         uses: actions/checkout@v7.0.1
         with:
           fetch-depth: 0
 
-      - name: Check Signed-off-by on the PR or its commits
-        if: github.event_name != 'merge_group'
+      - name: Check Signed-off-by on each commit
+        if: github.event_name != 'merge_group' && steps.pr.outputs.signed != 'true'
         # bash for here-string (`<<<`) support; see the SIGPIPE note below.
         shell: bash
         env:
@@ -44,29 +71,10 @@ jobs:
           # workflow context.
           BASE_SHA: ${{ github.event.pull_request.base.sha }}
           HEAD_SHA: ${{ github.event.pull_request.head.sha }}
-          # The PR description is contributor-authored free text. Like the SHAs,
-          # it only ever reaches the shell as an environment value, never
-          # interpolated into the script body.
-          PR_BODY: ${{ github.event.pull_request.body }}
         run: |
           set -euo pipefail
 
-          # PR-level sign-off. A checked sign-off declaration or a literal
-          # Signed-off-by trailer satisfies DCO for the whole PR, letting a squash
-          # of unsigned WIP commits merge on one sign-off. The trailer lands
-          # verbatim in the squash commit; the checked declaration records the
-          # same certification in the PR that governs the squash. (Here-strings,
-          # not pipes — see the SIGPIPE note below.)
-          if grep -q '^- \[[xX]\] Signed off' <<<"$PR_BODY"; then
-            echo "::notice::PR description carries a checked sign-off declaration; DCO satisfied at the PR level."
-            exit 0
-          fi
-          if grep -q '^Signed-off-by: .\+ <.\+@.\+>' <<<"$PR_BODY"; then
-            echo "::notice::PR description carries a Signed-off-by trailer; DCO satisfied at the PR level."
-            exit 0
-          fi
-
-          # No PR-level sign-off: fall back to requiring one on every authored
+          # No PR-level sign-off: require one on every authored
           # commit. A commit whose entire diff stays within these paths is
           # release or CI plumbing (version manifest, lockfile, dist config,
           # workflow and scanner configuration) and certifies nothing that a

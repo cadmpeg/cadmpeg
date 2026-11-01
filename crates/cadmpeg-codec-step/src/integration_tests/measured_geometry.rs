@@ -313,3 +313,227 @@ fn implicit_outer_patch_round_trip_keeps_the_face_domain() {
         }
     }
 }
+
+/// A wedge of a plate and a post joined by a concave fillet on a torus of
+/// major radius 6 and minor radius -2. The fillet is the quarter of the tube
+/// that faces the axis and the plate.
+fn fillet_wedge(angles: [f64; 2]) -> CadIr {
+    use crate::test_support::revolved_wedge::{revolved_wedge, Piece};
+    revolved_wedge(
+        [1.0, 0.0],
+        &[
+            Piece::Line { to: [12.0, 0.0] },
+            Piece::Line { to: [12.0, 2.0] },
+            Piece::Line { to: [6.0, 2.0] },
+            Piece::Arc {
+                to: [4.0, 4.0],
+                center: [6.0, 4.0],
+                material_inside: false,
+            },
+            Piece::Line { to: [4.0, 10.0] },
+            Piece::Line { to: [1.0, 10.0] },
+            Piece::Line { to: [1.0, 0.0] },
+        ],
+        angles,
+    )
+}
+
+/// Half-angle of the groove arc of [`groove_wedge`], which is centered on the
+/// outward radial direction.
+const GROOVE_HALF_ANGLE: f64 = std::f64::consts::FRAC_PI_3;
+
+/// A wedge of a ring wall with a round groove on a torus of major radius 6 and
+/// minor radius -2. Under the written minor radius of 2, the groove lies on
+/// both sides of the latitude seam.
+fn groove_wedge(angles: [f64; 2]) -> CadIr {
+    use crate::test_support::revolved_wedge::{revolved_wedge, Piece};
+    let wall = 6.0 + 2.0 * GROOVE_HALF_ANGLE.cos();
+    let reach = 2.0 * GROOVE_HALF_ANGLE.sin();
+    revolved_wedge(
+        [wall, 0.0],
+        &[
+            Piece::Line { to: [12.0, 0.0] },
+            Piece::Line { to: [12.0, 10.0] },
+            Piece::Line { to: [wall, 10.0] },
+            Piece::Line {
+                to: [wall, 5.0 + reach],
+            },
+            Piece::Arc {
+                to: [wall, 5.0 - reach],
+                center: [6.0, 5.0],
+                material_inside: false,
+            },
+            Piece::Line { to: [wall, 0.0] },
+        ],
+        angles,
+    )
+}
+
+/// A wedge of a plate with a spherical dish of radius -13 centered on the axis
+/// at `z = 15`, which meets the plate top at `rho = 12`.
+fn dish_wedge(angles: [f64; 2]) -> CadIr {
+    use crate::test_support::revolved_wedge::{revolved_wedge, Piece};
+    revolved_wedge(
+        [1.0, 0.0],
+        &[
+            Piece::Line { to: [14.0, 0.0] },
+            Piece::Line { to: [14.0, 10.0] },
+            Piece::Line { to: [12.0, 10.0] },
+            Piece::Arc {
+                to: [1.0, 15.0 - 168.0_f64.sqrt()],
+                center: [0.0, 15.0],
+                material_inside: false,
+            },
+            Piece::Line { to: [1.0, 0.0] },
+        ],
+        angles,
+    )
+}
+
+/// The angular windows of the wedges: one off the longitude seam, one across it.
+const WEDGE_WINDOWS: [[f64; 2]; 2] = [[0.3, 0.3 + std::f64::consts::FRAC_PI_2], [-0.7, 0.7]];
+
+fn written_and_decoded(ir: &CadIr) -> (String, CadIr) {
+    let mut output = Vec::new();
+    write_step(
+        ir,
+        &mut output,
+        StepSchema::Ap214,
+        &StepWriteOptions::default(),
+    )
+    .expect("write the wedge");
+    let text = String::from_utf8(output.clone()).expect("STEP output is UTF-8");
+    let decoded = StepCodec::default()
+        .decode(&mut Cursor::new(output), &DecodeOptions::default())
+        .expect("decode the written wedge")
+        .into_parts()
+        .0;
+    (text, decoded)
+}
+
+/// The `same_sense` of the one written face on the record named `entity`.
+fn same_sense_on(text: &str, entity: &str) -> bool {
+    let record = |line: &str| line.split(" = ").next().map(str::to_owned);
+    let surface = text
+        .lines()
+        .find(|line| line.contains(entity))
+        .and_then(record)
+        .expect("written carrier");
+    let face = text
+        .lines()
+        .find(|line| line.contains("ADVANCED_FACE") && line.contains(&format!(",{surface},")))
+        .expect("written face");
+    face.contains(".T.")
+}
+
+/// The volume of the one body of `ir`: its measured value, or else the value
+/// its face senses state.
+fn volume_by_face_sense(ir: &CadIr) -> (f64, f64) {
+    use cadmpeg_measure::value::Reading;
+    let report = measured("wedge", ir).expect("measure the wedge");
+    let [body] = report.bodies().as_slice() else {
+        panic!("one body row");
+    };
+    let volume = body.volume().as_ref().expect("a solid has a volume");
+    if let Some(value) = volume.measured() {
+        return (value.value().value.get(), value.numeric_error().get());
+    }
+    let candidate = volume
+        .unavailable()
+        .expect("volume is measured or unavailable")
+        .candidates()
+        .iter()
+        .find(|candidate| candidate.reading() == Reading::FaceSense)
+        .expect("a face-sense reading");
+    (
+        candidate.value().value.get(),
+        candidate.numeric_error().get(),
+    )
+}
+
+/// The report of `ir` with a row for every face.
+fn measured_faces(ir: &CadIr) -> MeasureReport {
+    let arena = DecodeArena::new();
+    let policy = DecodePolicy::service();
+    let ctx = DecodeContext::for_loaded_input(&arena, &policy, 0).expect("context");
+    let input = cadmpeg_measure::MeasureInput {
+        ir,
+        fidelity: None,
+        geometry_transferred: true,
+    };
+    let selection = cadmpeg_measure::Selection {
+        all_faces: true,
+        ..cadmpeg_measure::Selection::default()
+    };
+    let report = cadmpeg_measure::Measurer::new(input, MeasureOptions::default())
+        .measure(&ctx, &selection)
+        .expect("measure the faces");
+    ctx.finish_session().expect("session stays unrefused");
+    report
+}
+
+/// The integral of `rho` over the fillet profile by Pappus: two rectangles and
+/// the corner square, less the quarter disk of radius 2 about `rho = 6`.
+#[test]
+fn concave_fillet_on_a_negative_minor_torus_keeps_its_volume() {
+    let moment = 143.0 + 60.0 + 20.0 - (6.0 * std::f64::consts::PI - 8.0 / 3.0);
+    for angles in WEDGE_WINDOWS {
+        let ir = fillet_wedge(angles);
+        let (text, decoded) = written_and_decoded(&ir);
+        assert!(!same_sense_on(&text, "TOROIDAL_SURFACE"), "{text}");
+        for model in [&ir, &decoded] {
+            let (volume, numeric) = volume_by_face_sense(model);
+            assert_close(volume, moment * (angles[1] - angles[0]), numeric);
+        }
+    }
+}
+
+/// The wall's moment by Pappus less the groove's circular segment of minor
+/// radius 2. The complement reading adds the tube's whole volume, which is how
+/// a reader that takes the region off the other side of the loops reads it.
+#[test]
+fn groove_across_the_written_seams_keeps_its_volume_and_area() {
+    let radius = 2.0_f64;
+    let major = 6.0_f64;
+    let (sine, cosine) = GROOVE_HALF_ANGLE.sin_cos();
+    let wall = major + radius * cosine;
+    let wall_moment = 10.0 * (144.0 - wall * wall) / 2.0;
+    let segment_moment = major * radius * radius * (GROOVE_HALF_ANGLE - sine * cosine)
+        + 2.0 / 3.0 * radius.powi(3) * sine.powi(3);
+    for angles in WEDGE_WINDOWS {
+        let span = angles[1] - angles[0];
+        let ir = groove_wedge(angles);
+        let (text, decoded) = written_and_decoded(&ir);
+        assert!(!same_sense_on(&text, "TOROIDAL_SURFACE"), "{text}");
+        let (volume, numeric) = volume_by_face_sense(&decoded);
+        assert_close(volume, (wall_moment - segment_moment) * span, numeric);
+
+        let report = measured_faces(&decoded);
+        let face_area = report
+            .faces()
+            .iter()
+            .find(|face| face.name().as_deref() == Some("swept-4"))
+            .and_then(|face| face.measures().area().measured())
+            .expect("the groove face has a measured area");
+        assert_close(
+            face_area.value().value.get(),
+            span * radius * (major * 2.0 * GROOVE_HALF_ANGLE + radius * 2.0 * sine),
+            face_area.numeric_error().get(),
+        );
+    }
+}
+
+/// The plate's moment less the dish's, by integrating `rho * depth` from
+/// `rho = 1` to `rho = 12`, where the depth is `sqrt(169 - rho^2) - 5`.
+#[test]
+fn concave_dish_on_a_negative_radius_sphere_keeps_its_volume() {
+    let plate = 10.0 * (196.0 - 1.0) / 2.0;
+    let dish = (168.0_f64.powf(1.5) - 125.0) / 3.0 - 5.0 * (144.0 - 1.0) / 2.0;
+    for angles in WEDGE_WINDOWS {
+        let ir = dish_wedge(angles);
+        let (text, decoded) = written_and_decoded(&ir);
+        assert!(!same_sense_on(&text, "SPHERICAL_SURFACE"), "{text}");
+        let (volume, numeric) = volume_by_face_sense(&decoded);
+        assert_close(volume, (plate - dish) * (angles[1] - angles[0]), numeric);
+    }
+}
