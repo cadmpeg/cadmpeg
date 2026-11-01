@@ -187,6 +187,9 @@ impl<'ir> NurbsChart<'ir> {
             eval.work.slice(),
         )?;
         let Some(found) = found else {
+            if eval.work.exhausted() {
+                return Err(eval.work.exhaustion());
+            }
             return Ok(None);
         };
         let found = found.get();
@@ -760,6 +763,63 @@ mod tests {
         assert!((beyond[0] - 0.5).abs() < 1.0e-12, "{beyond:?}");
         assert_eq!(beyond[1], 1.0);
         assert!(beyond_work <= inside_work, "{beyond_work} {inside_work}");
+    }
+
+    #[test]
+    fn an_inversion_its_slice_stops_is_work_exhausted_and_a_miss_stays_a_miss() {
+        use cadmpeg_ir::geometry::{SolvedSurfaceGeometry, SurfaceGeometry};
+        use cadmpeg_ir::math::Point3;
+        use cadmpeg_ir::topology::{BodyKind, Sense};
+
+        use crate::budget::PassAllowance;
+        use crate::canonical::placement::Placement;
+        use crate::context::Eval;
+        use crate::failure::MeasureFailure;
+        use crate::reason::UnavailableReason;
+        use crate::test_support::builders::{service_context, Builder};
+
+        // The bilinear patch `(x, y) = (2u, 2v)` on `[0, 1]²` at `z = 0`.
+        let mut builder = Builder::new();
+        let patch = builder.nurbs(
+            (1, vec![0.0, 0.0, 1.0, 1.0]),
+            (1, vec![0.0, 0.0, 1.0, 1.0]),
+            &[
+                vec![([0.0, 0.0, 0.0], 1.0), ([0.0, 2.0, 0.0], 1.0)],
+                vec![([2.0, 0.0, 0.0], 1.0), ([2.0, 2.0, 0.0], 1.0)],
+            ],
+        );
+        builder.face(&patch, Sense::Forward, &[], false);
+        let ir = builder.finish(BodyKind::Sheet);
+        let SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(surface)) =
+            &ir.model.surfaces[0].geometry
+        else {
+            panic!("a NURBS surface");
+        };
+        let chart = Chart::Nurbs(super::NurbsChart::new(surface, Placement::identity()).unwrap());
+        let ctx = service_context();
+        let index = cadmpeg_ir::index::ModelIndex::new_model_only(&ir);
+        let invert = |allowance: usize, point: Point3| {
+            let pass = PassAllowance::new(allowance);
+            let slice = pass.face_slice();
+            let eval = Eval {
+                ctx: &ctx,
+                index: &index,
+                work: &slice,
+            };
+            chart.invert(&eval, point, None, 1.0e-5)
+        };
+
+        let stopped = invert(1, Point3::new(1.0, 1.0, 0.0));
+        assert!(matches!(
+            stopped,
+            Err(MeasureFailure::Unavailable {
+                reason: UnavailableReason::EvaluationWorkExhausted,
+                ..
+            })
+        ));
+
+        let missed = invert(1 << 26, Point3::new(1.0, 1.0, 5.0));
+        assert_eq!(missed, Ok(None));
     }
 
     #[test]

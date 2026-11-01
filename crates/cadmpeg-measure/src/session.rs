@@ -340,7 +340,7 @@ impl<'ir> Measurer<'ir> {
             .map(|id| (id, self.flux_origin(id, &edges, &placement_of(Some(id)))))
             .collect();
         let mut faces: HashMap<&'ir str, FaceResult<'ir>> = HashMap::new();
-        for face_id in &needed_faces {
+        for face_id in faces_by_inverted_boundary(&self.owners, &needed_faces) {
             let Some(face) = self.owners.face(face_id) else {
                 continue;
             };
@@ -812,6 +812,50 @@ fn total_volume(bodies: &[BodyMeasures]) -> Quantity<Scalar> {
     )
 }
 
+/// The curve poles of a face's coedges that have no pcurve and must invert
+/// onto its NURBS surface. Zero for a face on an analytic carrier.
+fn inverted_boundary_poles(owners: &Owners<'_>, face: &cadmpeg_ir::topology::Face) -> usize {
+    let on_nurbs = owners
+        .surface(face.surface.as_str())
+        .is_some_and(|surface| {
+            matches!(
+                surface.geometry.solved(),
+                Some(cadmpeg_ir::geometry::SolvedSurfaceGeometry::Nurbs(_))
+            )
+        });
+    if !on_nurbs {
+        return 0;
+    }
+    face.loops
+        .iter()
+        .filter_map(|id| owners.loop_(id.as_str()))
+        .flat_map(cadmpeg_ir::topology::Loop::coedges)
+        .filter_map(|id| owners.coedge(id.as_str()))
+        .filter(|coedge| coedge.pcurves.is_empty())
+        .filter_map(|coedge| owners.edge(coedge.edge.as_str()))
+        .filter_map(|edge| owners.curve(edge.curve()?.as_str()))
+        .map(|curve| match curve.geometry.solved() {
+            Some(cadmpeg_ir::geometry::SolvedCurveGeometry::Nurbs(nurbs)) => nurbs.pole_count(),
+            _ => 1,
+        })
+        .sum()
+}
+
+/// The order faces draw their slices: fewest inverted boundary poles first,
+/// so that the costliest boundaries cannot take the allowance of the others.
+fn faces_by_inverted_boundary<'ir>(
+    owners: &Owners<'ir>,
+    faces: &BTreeSet<&'ir str>,
+) -> Vec<&'ir str> {
+    let mut order: Vec<&'ir str> = faces.iter().copied().collect();
+    order.sort_by_cached_key(|id| {
+        owners
+            .face(id)
+            .map_or(0, |face| inverted_boundary_poles(owners, face))
+    });
+    order
+}
+
 /// The sum of one member quantity over the bodies that have it.
 fn total(
     bodies: &[BodyMeasures],
@@ -834,4 +878,70 @@ fn union_box(bodies: &[BodyMeasures]) -> Quantity<crate::value::BoxValue> {
         union.add(&body.body, &body.bbox);
     }
     union.finish(None, "the document has no bounded body")
+}
+
+#[cfg(test)]
+mod tests {
+    use std::collections::BTreeSet;
+
+    use cadmpeg_ir::ids::{EdgeId, VertexId};
+    use cadmpeg_ir::topology::{BodyKind, Sense};
+
+    use crate::owners::Owners;
+    use crate::test_support::builders::Builder;
+
+    /// A square ring of line edges around `[0, 2]²` at `z`.
+    fn ring(builder: &mut Builder, z: f64) -> Vec<(EdgeId, Sense)> {
+        let vertices: Vec<VertexId> = [[0.0, 0.0], [2.0, 0.0], [2.0, 2.0], [0.0, 2.0]]
+            .map(|[x, y]| builder.vertex([x, y, z]))
+            .to_vec();
+        (0..4)
+            .map(|index| {
+                (
+                    builder.line(&vertices[index], &vertices[(index + 1) % 4]),
+                    Sense::Forward,
+                )
+            })
+            .collect()
+    }
+
+    fn patch(builder: &mut Builder) -> cadmpeg_ir::ids::SurfaceId {
+        builder.nurbs(
+            (1, vec![0.0, 0.0, 1.0, 1.0]),
+            (1, vec![0.0, 0.0, 1.0, 1.0]),
+            &[
+                vec![([0.0, 0.0, 0.0], 1.0), ([0.0, 2.0, 0.0], 1.0)],
+                vec![([2.0, 0.0, 0.0], 1.0), ([2.0, 2.0, 0.0], 1.0)],
+            ],
+        )
+    }
+
+    #[test]
+    fn a_face_that_inverts_its_boundary_draws_after_those_that_do_not() {
+        let mut builder = Builder::new();
+
+        let inverted_surface = patch(&mut builder);
+        let inverted_ring = ring(&mut builder, 0.0);
+        let inverted = builder.face(&inverted_surface, Sense::Forward, &[inverted_ring], false);
+
+        let plane = builder.plane([0.0, 0.0, 1.0], [0.0, 0.0, 1.0], [1.0, 0.0, 0.0]);
+        let analytic_ring = ring(&mut builder, 1.0);
+        let analytic = builder.face(&plane, Sense::Forward, &[analytic_ring], false);
+
+        let whole_surface = patch(&mut builder);
+        let whole = builder.face(&whole_surface, Sense::Forward, &[], false);
+
+        let ir = builder.finish(BodyKind::Sheet);
+        let owners = Owners::new(&ir);
+        let ids = [&inverted, &analytic, &whole].map(cadmpeg_ir::ids::FaceId::as_str);
+
+        let order = super::faces_by_inverted_boundary(&owners, &BTreeSet::from(ids));
+
+        assert_eq!(order.last(), Some(&inverted.as_str()));
+        assert_eq!(order.len(), 3);
+        for id in [&analytic, &whole] {
+            let face = owners.face(id.as_str()).unwrap();
+            assert_eq!(super::inverted_boundary_poles(&owners, face), 0);
+        }
+    }
 }

@@ -809,6 +809,13 @@ it. A slice that runs out makes the item's remaining quantities
 `evaluation.work-exhausted`; the measurement continues. `document.work`
 states the allowance, the units used, and whether the pass ran out.
 
+Faces draw in ascending order of the curve poles of the coedges they invert
+onto a NURBS surface, and then in identity order. A coedge with a pcurve use
+and a face on an analytic carrier invert none. So a face whose boundary costs
+the most cannot take the allowance of a face whose boundary costs less. An
+inversion that its slice stops is `evaluation.work-exhausted`, not
+`boundary.inversion-failed`.
+
 ## Reader duties
 
 A reader ignores unknown members, handles an unknown `reason` or caveat
