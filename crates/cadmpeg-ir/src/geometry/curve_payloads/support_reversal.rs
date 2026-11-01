@@ -3,10 +3,23 @@
 
 use super::super::support_reversal::{reverse_cache_first_form, reversed_side};
 use super::{
-    SilhouetteCurveConstruction, SurfaceOffsetCurveConstruction,
+    SilhouetteCurveConstruction, SpringCurvePayload, SurfaceOffsetCurveConstruction,
     ThreeSurfaceIntersectionCurvePayload, TwoSidedOffsetCurveConstruction,
 };
-use crate::geometry::CacheContract;
+use crate::geometry::{CacheContract, SpringLayout};
+
+impl SpringCurvePayload {
+    pub(crate) fn reverse_cache_first_about_zero(&mut self) -> Option<()> {
+        let SpringLayout::CacheFirst { context, form } = &mut self.layout else {
+            return None;
+        };
+        let reversed = context.reversed_about_zero()?;
+        *context = reversed.clone();
+        self.context = reversed;
+        reverse_cache_first_form(form);
+        Some(())
+    }
+}
 
 impl ThreeSurfaceIntersectionCurvePayload {
     pub(crate) fn reverse_about_zero(&mut self) -> Option<()> {
