@@ -1347,7 +1347,7 @@ fn retained_scope_cylinder_only_state_retains_topology_and_memberships() {
     let state = AsmDeltaState {
         id: "state-0".into(),
         parent: "history".into(),
-        byte_offset: 0,
+        byte_offset: Some(0),
         state_id: 0,
         version_flag: 1,
         state_flag: 0,
@@ -1362,7 +1362,7 @@ fn retained_scope_cylinder_only_state_retains_topology_and_memberships() {
     };
     let mut history = AsmHistory {
         id: "history".into(),
-        byte_offset: 0,
+        byte_offset: Some(0),
         preamble: None,
         binding_budget_exceeded: false,
         states: vec![state],

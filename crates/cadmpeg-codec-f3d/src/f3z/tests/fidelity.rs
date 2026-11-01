@@ -2,6 +2,8 @@
 
 use cadmpeg_test_support::EditableDecodeResult;
 
+use cadmpeg_ir::Codec;
+use crate::F3dCodec;
 use crate::test_support::assembly_test::{f3d_without_brep, f3z_archive, XREF_ROLE};
 use crate::test_support::smbh_geometry_test::synthetic_mixed_smbh;
 use crate::test_support::zip_test::f3d_with_smbh;

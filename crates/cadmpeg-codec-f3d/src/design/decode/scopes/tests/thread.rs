@@ -215,7 +215,7 @@ fn standard_compact_thread_bytes(zero_run: usize, group: u32) -> Vec<u8> {
 fn thread_scope_decodes_standard_prefix_compact_marker_form() {
     let expected = |designation_offset: u64| DesignThreadConstruction {
         form: DesignThreadForm::StandardCompact,
-        designation_offset,
+        designation_offset: Some(designation_offset),
         designation: cadmpeg_core::text::NonBlankString::new("M5x0.8").unwrap(),
         nominal_size: crate::records::feature::thread::DesignThreadNominalSize::try_from(
             "5.0".to_owned(),

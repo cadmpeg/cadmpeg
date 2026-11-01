@@ -521,7 +521,7 @@ mod typed_reference_box {
             panic!("typed-reference box");
         };
         assert_eq!(primitive.operation, DesignExtrudeOperation::NewBody);
-        assert_eq!(primitive.operation_offset, 22);
+        assert_eq!(primitive.operation_offset, Some(22));
         assert_eq!(
             [
                 primitive.length.get(),

@@ -238,7 +238,9 @@ fn revolve_projects_design_geometry_origin_axis_selections() {
     // Fusion's symmetric angle applies to each side; the neutral extent
     // states the total. Two Sides keeps the revolution-direction angle first.
     let angle = |radians| cadmpeg_ir::features::AngularTermination::Angle {
-        angle: cadmpeg_ir::scalar::PositiveAngle::new(radians).unwrap(),
+        angle: cadmpeg_ir::Dimension::Literal(
+            cadmpeg_ir::scalar::PositiveAngle::new(radians).unwrap(),
+        ),
     };
     for (symmetric, opposite, extent) in [
         (
@@ -262,18 +264,18 @@ fn revolve_projects_design_geometry_origin_axis_selections() {
             .try_edit(|draft| {
                 draft.payload = DesignPathFeatureConstruction::Revolve(DesignRevolveConstruction {
                     operation: crate::records::feature::extrude::DesignExtrudeOperation::NewBody,
-                    operation_offset: 0,
+                    operation_offset: Some(0),
                     angle: cadmpeg_ir::scalar::PositiveAngle::new(std::f64::consts::FRAC_PI_2)
                         .unwrap(),
                     angle_record_index: 300,
-                    angle_offset: 0,
+                    angle_offset: Some(0),
                     opposite_angle: None,
                     second_side: Some(
                         crate::records::feature::path_features::DesignRevolveSecondSide {
                             symmetric,
                             angle: cadmpeg_ir::scalar::PositiveAngle::new(opposite).unwrap(),
                             angle_record_index: 301,
-                            angle_offset: 0,
+                            angle_offset: Some(0),
                         },
                     ),
                 })
@@ -353,6 +355,7 @@ fn revolve_axes_turn_the_profile_toward_the_sketch_normal() {
             ordinal: 0,
             name: None,
             suppressed: None,
+            needs_recompute: false,
             dependencies: Default::default(),
             source_properties: Default::default(),
             source_tag: None,
@@ -369,7 +372,9 @@ fn revolve_axes_turn_the_profile_toward_the_sketch_normal() {
                         },
                         extent: RevolveExtent::OneSided {
                             termination: AngularTermination::Angle {
-                                angle: cadmpeg_ir::scalar::PositiveAngle::QUARTER_TURN,
+                                angle: cadmpeg_ir::Dimension::Literal(
+                                    cadmpeg_ir::scalar::PositiveAngle::QUARTER_TURN,
+                                ),
                             },
                         },
                         solid: None,

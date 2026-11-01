@@ -6516,9 +6516,7 @@ fn parse_typed_profile_curve_selection_prefix(
     usize,
 )> {
     use crate::bytes::typed_local_reference_target as target;
-    use crate::records::topology::entity_selection::{
-        DesignProfileCurveEntry, DesignProfileCurveSelection,
-    };
+    use crate::records::topology::entity_selection::DesignProfileCurveSelection;
     let byte_offset = header.byte_offset?;
     let Ok(start) = usize::try_from(byte_offset) else {
         return None;

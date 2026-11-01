@@ -49,7 +49,7 @@ fn offset_24_prologue_decodes_operation_and_distance() {
         parsed,
         DesignExtrudePrologue::ReferenceAware {
             operation: crate::records::feature::extrude::DesignExtrudeOperation::NewBody,
-            operation_offset: 24,
+            operation_offset: Some(24),
             extent: DesignExtrudeExtent::OneSidedDistance,
             ..
         }

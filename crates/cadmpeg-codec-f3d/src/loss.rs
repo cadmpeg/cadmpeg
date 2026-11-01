@@ -420,7 +420,7 @@ pub(crate) enum F3dLossCode {
 impl F3dLossCode {
     /// Every code, in declaration order.
     #[cfg(test)]
-    const ALL: &'static [F3dLossCode] = &[
+    pub(crate) const ALL: &[F3dLossCode] = &[
         Self::OperationPoseApplied,
         Self::OperationPoseDisagrees,
         Self::OperationPoseNative,
@@ -588,7 +588,7 @@ impl F3dLossCode {
         Self::ArchiveEntryUnreadable,
         Self::UnindexedRecordsRetained,
         Self::DesignIntentUndecoded,
-            Self::ActRecordUntyped,
+        Self::ActRecordUntyped,
         Self::RecipePrefixUntyped,
         Self::ImageAssetUntransferred,
         Self::WriterNativeRecordsOmitted,
@@ -1233,12 +1233,13 @@ impl F3dLossCode {
 
 #[cfg(test)]
 mod tests {
+    use super::F3dLossCode;
     use std::collections::BTreeSet;
 
     /// Value-level golden: the stable string form of every code, pinned.
     #[test]
     fn code_strings_are_pinned() {
-        let codes: Vec<&str> = crate::test_support::loss_codes::ALL
+        let codes: Vec<&str> = F3dLossCode::ALL
             .iter()
             .map(|c| c.code())
             .collect();
@@ -1258,7 +1259,6 @@ mod tests {
                 "configuration.parameter-override-unbound",
                 "configuration.feature-suppression-unbound",
                 "assembly.act-component-link-unresolved",
-                "act.record-untyped",
                 "assembly.local-occurrence-unplaced",
                 "assembly.local-occurrence-owner-unbound",
                 "assembly.component-body-owner-unresolved",
@@ -1287,7 +1287,6 @@ mod tests {
                 "history.binding-budget-exceeded",
                 "history.binding-work-exceeded",
                 "feature.recipe-search-budget-exceeded",
-                "dimension.recipe-prefix-untyped",
                 "parameter.order-budget-exceeded",
                 "history.record-framing-failed",
                 "design.body-binding-unresolved",
@@ -1317,7 +1316,6 @@ mod tests {
                 "parameter.owner-unparsed",
                 "parameter.unit-untyped",
                 "material.distance-unit-untyped",
-                "appearance.image-asset-untransferred",
                 "material.face-appearance-ambiguous",
                 "parameter.expression-unbound",
                 "history.dependency-unprojected",
@@ -1413,6 +1411,11 @@ mod tests {
                 "brep.header-metadata-unresolved",
                 "source.manifest-metadata-unresolved",
                 "source.archive-entry-unreadable",
+                "source.unindexed-records-retained",
+                "design.intent-undecoded",
+                "act.record-untyped",
+                "dimension.recipe-prefix-untyped",
+                "appearance.image-asset-untransferred",
                 "writer.native-records-omitted",
                 "writer.design-records-omitted",
                 "writer.geometry-omitted",
@@ -1426,8 +1429,6 @@ mod tests {
                 "writer.pmi-omitted",
                 "writer.product-omitted",
                 "writer.source-association-omitted",
-                "source.unindexed-records-retained",
-                "design.intent-undecoded",
             ]
         );
     }
@@ -1436,7 +1437,7 @@ mod tests {
     #[test]
     fn codes_are_unique_and_well_formed() {
         let mut seen = BTreeSet::new();
-        for code in crate::test_support::loss_codes::ALL {
+        for code in F3dLossCode::ALL {
             let text = code.code();
             assert!(seen.insert(text), "duplicate code {text}");
             let (family, detail) = text.split_once('.').expect("family.detail shape");
@@ -1452,7 +1453,7 @@ mod tests {
     /// The note builder fixes severity from the codec-specific code.
     #[test]
     fn note_takes_severity_from_the_code() {
-        for code in crate::test_support::loss_codes::ALL {
+        for code in F3dLossCode::ALL {
             let note = code.note("x");
             assert_eq!(note.severity, code.severity());
             assert_eq!(note.message, "x");

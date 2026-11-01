@@ -25,14 +25,14 @@ fn fixture(class: &str) -> (DesignParameterScope, DesignRecordHeader) {
     };
     *slot = Some(DesignMoveOperation {
         transform: crate::records::sketch_placement::SketchPlacementMatrix::IDENTITY,
-        transform_offset: 448,
+        transform_offset: Some(448),
         transform_record_index: 71,
         form: if class == "452" {
             DesignMoveForm::Form5
         } else {
             DesignMoveForm::Form1
         },
-        form_offset: 443,
+        form_offset: Some(443),
     });
     (
         scope,
@@ -40,7 +40,7 @@ fn fixture(class: &str) -> (DesignParameterScope, DesignRecordHeader) {
             id: "f3d:Design/BulkStream.dat:design-record-header#400".into(),
             record_index: 71,
             class_tag: class.to_owned().try_into().unwrap(),
-            byte_offset: 400,
+            byte_offset: Some(400),
         },
     )
 }
@@ -57,7 +57,7 @@ fn move_transform_validator_checks_each_added_class_and_locations() {
         let DesignScopePayloadMut::Move(Some(operation)) = shifted.payload_mut() else {
             panic!("Move payload");
         };
-        operation.form_offset += 1;
+        operation.form_offset = operation.form_offset.map(|offset| offset + 1);
         assert!(!move_operation_links_hold(&shifted, Some(&header)));
         let mut unbound = scope.clone();
         let DesignScopePayloadMut::Move(Some(operation)) = unbound.payload_mut() else {
@@ -67,9 +67,9 @@ fn move_transform_validator_checks_each_added_class_and_locations() {
         let mut unbound_header = header.clone();
         unbound_header.record_index = 72;
         assert!(!move_operation_links_hold(&unbound, Some(&unbound_header)));
-        header.byte_offset += 1;
+        header.byte_offset = header.byte_offset.map(|offset| offset + 1);
         assert!(!move_operation_links_hold(&scope, Some(&header)));
-        header.byte_offset -= 1;
+        header.byte_offset = header.byte_offset.map(|offset| offset - 1);
         header.record_index += 1;
         assert!(!move_operation_links_hold(&scope, Some(&header)));
         header.record_index -= 1;
@@ -116,7 +116,7 @@ fn move_transform_validator_reports_shifted_matrix_location() {
             else {
                 panic!("Move payload");
             };
-            operation.transform_offset += 1;
+            operation.transform_offset = operation.transform_offset.map(|offset| offset + 1);
             assert!(validate(&native).iter().any(|finding| finding.message
                 == "Fusion Design parameter scope has an invalid paired frame"));
         }

@@ -9,6 +9,11 @@ use cadmpeg_ir::scalar::{FiniteReal, PositiveAngle};
 use serde::{Deserialize, Serialize};
 
 cadmpeg_core::named_optional_field!(
+    deserialize_opposite_angle_offset,
+    u64,
+    "opposite_angle_offset"
+);
+cadmpeg_core::named_optional_field!(
     deserialize_opposite_angle_record_index,
     u32,
     "opposite_angle_record_index"
@@ -69,7 +74,6 @@ pub(crate) struct DesignRevolveSecondSide {
     /// Referenced opposite-side angle owner record.
     pub(crate) angle_record_index: u32,
     /// Byte offset of the opposite-side angular travel of a located scope.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub(crate) angle_offset: Option<u64>,
 }
 

@@ -191,10 +191,10 @@ fn two_lane_sweep_projects_with_along_and_against_extents() {
             draft.payload = DesignScopePayload::Sweep(Some(DesignSweepScope {
                 construction: Some(DesignSweepConstruction {
                     operation: DesignExtrudeOperation::NewBody,
-                    operation_offset: 128,
+                    operation_offset: Some(128),
                     values: vec![FiniteReal::new(1.0).unwrap(), FiniteReal::new(0.0).unwrap()],
                     record_indexes: vec![97580, 97583],
-                    value_offsets: vec![1_152_647, 1_152_971],
+                    value_offsets: Some(vec![1_152_647, 1_152_971]),
                 }),
                 sweep_profile: None,
             }));
@@ -215,6 +215,15 @@ fn two_lane_sweep_projects_with_along_and_against_extents() {
                 against_fraction,
             }),
             ..
-        }) if along_fraction.get() == 1.0 && against_fraction.get() == 0.0
+        }) if along_fraction
+        .literal()
+        .expect("literal fraction")
+        .get()
+        == 1.0
+        && against_fraction
+            .literal()
+            .expect("literal fraction")
+            .get()
+            == 0.0
     ));
 }

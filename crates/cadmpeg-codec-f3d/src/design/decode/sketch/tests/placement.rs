@@ -1333,9 +1333,9 @@ fn typed_profile_compact_sketch_head_supplies_identity_placement() {
         crate::design::decode::sketch::parse_member_run_head_placement(bytes, 0, &entity, &records)
     };
     let placement = parse(&bytes).expect("typed compact head");
-    assert_eq!(placement.frame_length(), 74);
-    assert_eq!(placement.paired_byte_offset(), u64_from_index(paired));
-    assert_eq!(placement.byte_offset(), u64_from_index(head));
+    assert_eq!(placement.frame_length(), Some(74));
+    assert_eq!(placement.paired_byte_offset(), Some(u64_from_index(paired)));
+    assert_eq!(placement.byte_offset(), Some(u64_from_index(head)));
     assert!(placement.member_run_head());
     assert_eq!(placement.transform_offset(), None);
     assert_eq!(

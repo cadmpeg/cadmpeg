@@ -53,7 +53,6 @@ pub(super) fn count_decoded(bytes: &mut ByteCounter, decoded: &Decoded) -> Resul
                 &*body.coverage,
                 &body.losses,
                 &body.notes,
-                &body.transfer_ledger,
             ),
             &decoded.source_fidelity,
         ),

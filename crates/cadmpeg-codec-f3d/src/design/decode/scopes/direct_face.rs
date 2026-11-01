@@ -51,7 +51,7 @@ fn offset_faces_distance_marker(
     if !matches!(references, 3 | 4) {
         return None;
     }
-    let count_offset = usize::try_from(scope.reference_count_offset())
+    let count_offset = usize::try_from(scope.reference_count_offset()?)
         .ok()?
         .checked_sub(start)?;
     let distance_marker = match (bytes.get(start + 20)?, count_offset) {
@@ -375,12 +375,12 @@ pub(crate) fn move_operation_links_hold(
                 && header.record_index == operation.transform_record_index
                 && header
                     .byte_offset
-                    .checked_add(u64_from_index(move_frame::FORM))
-                    == Some(operation.form_offset)
+                    .and_then(|base| base.checked_add(u64_from_index(move_frame::FORM)))
+                    == operation.form_offset
                 && header
                     .byte_offset
-                    .checked_add(u64_from_index(move_frame::TRANSFORM))
-                    == Some(operation.transform_offset)
+                    .and_then(|base| base.checked_add(u64_from_index(move_frame::TRANSFORM)))
+                    == operation.transform_offset
         })
     })
 }

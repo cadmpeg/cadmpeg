@@ -499,7 +499,7 @@ pub(super) fn exact_fixed_fillet_parameters(
         let lane_kind = |lane: u32| -> Option<Option<&str>> {
             let mut matching_owners = parameter_owners.iter().filter(|owner| {
                 (scope_stream.is_none() || native_stream(owner.id()) == scope_stream)
-                    && owner.scope_record_index() == scope.record_index
+                    && owner.scope_record_index() == Some(scope.record_index)
                     && owner.record_index() == lane
             });
             let owner = matching_owners.next();

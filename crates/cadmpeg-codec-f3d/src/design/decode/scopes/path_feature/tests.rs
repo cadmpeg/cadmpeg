@@ -113,13 +113,13 @@ fn two_lane_sweep_scope_from_corpus_admits_exact_along_and_against_distances() {
         DesignPathFeatureConstruction::Sweep(
             crate::records::feature::path_features::DesignSweepConstruction {
                 operation: DesignExtrudeOperation::Join,
-                operation_offset: 1_148_765,
+                operation_offset: Some(1_148_765),
                 values: vec![
                     cadmpeg_ir::scalar::FiniteReal::new(1.0).unwrap(),
                     cadmpeg_ir::scalar::FiniteReal::new(0.0).unwrap(),
                 ],
                 record_indexes: vec![97580, 97583],
-                value_offsets: vec![1_152_647, 1_152_971],
+                value_offsets: Some(vec![1_152_647, 1_152_971]),
             }
         )
     );
@@ -191,13 +191,13 @@ fn compact_two_lane_sweep_pins_admission_rules_and_rejects_mutations() {
         DesignPathFeatureConstruction::Sweep(
             crate::records::feature::path_features::DesignSweepConstruction {
                 operation: DesignExtrudeOperation::Join,
-                operation_offset: u64_from_index(sweep_start + 21),
+                operation_offset: Some(u64_from_index(sweep_start + 21)),
                 values: vec![
                     cadmpeg_ir::scalar::FiniteReal::new(1.0).unwrap(),
                     cadmpeg_ir::scalar::FiniteReal::new(0.0).unwrap(),
                 ],
                 record_indexes: vec![91, 92],
-                value_offsets: value_offsets.clone(),
+                value_offsets: Some(value_offsets.clone()),
             }
         )
     );

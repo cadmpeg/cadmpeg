@@ -267,8 +267,6 @@ pub(crate) mod lost_edge_test;
 
 pub(crate) mod step_conversion;
 
-pub(crate) mod loss_codes;
-
 pub(crate) mod record_access;
 
 pub(crate) mod body_reference_tail_test;

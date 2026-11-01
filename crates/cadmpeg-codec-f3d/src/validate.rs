@@ -2830,7 +2830,7 @@ fn validate_parameter_scopes(ctx: &Ctx, findings: &mut Vec<Finding>) -> Result<(
                         records_by_index
                             .get(&(native_stream, construction.record_index))
                             .is_some_and(|header| {
-                                header.byte_offset == construction.byte_offset
+                                header.byte_offset == Some(construction.byte_offset)
                                     && header.class_tag == construction.class_tag
                             })
                     })

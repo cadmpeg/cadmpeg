@@ -52,7 +52,6 @@ fn archive_session_member_result_outlives_source_and_releases_archive_ownership(
             &*body.coverage,
             &body.losses,
             &body.notes,
-            &body.transfer_ledger,
         ),
         &decoded.source_fidelity,
     ))

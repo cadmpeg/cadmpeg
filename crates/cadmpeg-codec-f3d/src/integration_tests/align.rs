@@ -28,7 +28,7 @@ fn align_scopes_retain_typed_prefix_or_emit_exact_refusal_loss() {
                 }
                 let wire = serde_json::to_value(&result.scopes[0]).unwrap();
                 let back: DesignParameterScope = serde_json::from_value(wire.clone()).unwrap();
-                assert_eq!(back, result.scopes[0]);
+                assert_eq!(serde_json::to_value(&back).unwrap(), wire);
                 if !refused {
                     let mut wrong_kind = wire.clone();
                     wrong_kind["kind"] = "Move".into();

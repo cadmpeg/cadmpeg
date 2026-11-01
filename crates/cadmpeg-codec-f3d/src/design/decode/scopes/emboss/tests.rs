@@ -221,11 +221,15 @@ fn emboss_counted_prefix_preserves_all_pairs_and_both_control_lanes() {
             let suffix = if one_word { 61 } else { 65 } + 16 * u64::from(pairs);
             assert_eq!(
                 construction.rotation_owner.offset,
-                scope.byte_offset() + suffix + 1
+                scope
+                    .byte_offset()
+                    .and_then(|start| start.checked_add(suffix + 1))
             );
             assert_eq!(
                 construction.profile_group.offset,
-                scope.byte_offset() + suffix + 38
+                scope
+                    .byte_offset()
+                    .and_then(|start| start.checked_add(suffix + 38))
             );
             assert!(construction.links_match(&scope));
             assert!(!construction.has_fixed_operands(&scope));

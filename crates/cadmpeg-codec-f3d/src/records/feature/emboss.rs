@@ -151,10 +151,6 @@ impl DesignEmbossConstruction {
         if scope.kind() != DesignFeatureKind::Emboss
             || u32::try_from(pair_count).is_err()
             || u32::try_from(scope.reference_members().len()).is_err()
-            || scope
-                .byte_offset()
-                .checked_add(u64_from_index(suffix_start + suffix::REFERENCE_COUNT))
-                != Some(scope.reference_count_offset())
             || self.sketch_profile.as_ref().is_some_and(|profile| {
                 pair_count != 1
                     || !self.has_fixed_operands(scope)
@@ -165,6 +161,29 @@ impl DesignEmbossConstruction {
             return false;
         }
         let fields = self.references();
+        if !fields.iter().enumerate().all(|(ordinal, field)| {
+            field.value != 0
+                && !fields[..ordinal]
+                    .iter()
+                    .any(|prior| prior.value == field.value)
+                && scope
+                    .reference_members()
+                    .values()
+                    .any(|value| *value == field.value)
+        }) {
+            return false;
+        }
+        // An unlocated scope (the wire/test-serde path) carries no frame
+        // offsets, so the offset checks below are meaningless for it.
+        let (Some(start), Some(count)) =
+            (scope.byte_offset(), scope.reference_count_offset())
+        else {
+            return true;
+        };
+        if start.checked_add(u64_from_index(suffix_start + suffix::REFERENCE_COUNT)) != Some(count)
+        {
+            return false;
+        }
         let relative_offsets = [
             head_fields[0] + 1,
             head_fields[1] + 1,
@@ -177,18 +196,8 @@ impl DesignEmbossConstruction {
         if !fields
             .iter()
             .zip(relative_offsets)
-            .enumerate()
-            .all(|(ordinal, (field, relative))| {
-                field.value != 0
-                    && !fields[..ordinal]
-                        .iter()
-                        .any(|prior| prior.value == field.value)
-                    && scope.byte_offset().checked_add(u64_from_index(relative))
-                        == field.offset
-                    && scope
-                        .reference_members()
-                        .values()
-                        .any(|value| *value == field.value)
+            .all(|(field, relative)| {
+                start.checked_add(u64_from_index(relative)) == field.offset
             })
             || scope.reference_members().offsets().count() != scope.reference_members().len()
         {
@@ -202,10 +211,7 @@ impl DesignEmbossConstruction {
             .enumerate()
         {
             if prior.is_some_and(|previous| previous >= *value)
-                || scope
-                    .reference_count_offset()
-                    .checked_add(5 + 11 * u64_from_index(ordinal))
-                    != Some(*offset)
+                || count.checked_add(5 + 11 * u64_from_index(ordinal)) != Some(*offset)
             {
                 return false;
             }

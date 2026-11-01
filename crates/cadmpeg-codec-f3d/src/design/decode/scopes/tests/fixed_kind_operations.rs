@@ -925,10 +925,10 @@ fn fixed_kind_edge_and_revolve_operations(
         let expected = Some(DesignPathFeatureConstruction::Revolve(
             crate::records::feature::path_features::DesignRevolveConstruction {
                 operation: DesignExtrudeOperation::NewBody,
-                operation_offset: u64_from_index(referenced_start + referenced_layout::OPERATION),
+                operation_offset: Some(u64_from_index(referenced_start + referenced_layout::OPERATION)),
                 angle: cadmpeg_ir::scalar::PositiveAngle::new(std::f64::consts::TAU).unwrap(),
                 angle_record_index: indexed_angle_record_index,
-                angle_offset: u64_from_index(class403_start + 40),
+                angle_offset: Some(u64_from_index(class403_start + 40)),
                 second_side: None,
                 opposite_angle: None,
             },
@@ -1016,7 +1016,7 @@ fn fixed_kind_edge_and_revolve_operations(
         let along_offset = class403_angle.evaluated_value_offset();
         let owner = |record_index, local_ordinal, value: f64, shift: u64| {
             let mut wire =
-                crate::records::parameters::DesignParameterOwnerWire::from(class403_angle.clone());
+                crate::records::parameters::DesignParameterOwnerWire::try_from(class403_angle.clone()).unwrap();
             wire.record_index = record_index;
             wire.parameter_record_index = record_index + 1;
             wire.companion_record_index = record_index + 2;
