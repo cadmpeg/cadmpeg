@@ -817,7 +817,7 @@ impl CodecBackend for FcstdCodec {
                 .transpose()?
         };
         let mut admitted_entities = 0_u64;
-        let mut attributes = container::source_attributes(&scan)?;
+        let attributes = container::source_attributes(&scan)?;
         let summary_notes = container::summary_notes(&scan);
         let thumbnail = scan
             .data
@@ -828,20 +828,7 @@ impl CodecBackend for FcstdCodec {
                     .get("Thumbnail.png")
                     .map(|view| ("Thumbnail.png", *view))
             });
-        if let Some((_, thumbnail)) = thumbnail {
-            attributes.insert(
-                cadmpeg_core::nonblank_literal!("thumbnail_bytes"),
-                thumbnail.window().len().to_string(),
-            );
-        }
         let mut source_fidelity = cadmpeg_ir::SourceFidelity::default();
-        for key in ["object_count", "archive_entry_count", "thumbnail_bytes"] {
-            if let Some(value) = attributes.remove(key) {
-                source_fidelity
-                    .metadata
-                    .insert(format!("fcstd.{key}"), value);
-            }
-        }
         ctx.retain_bytes(
             cadmpeg_core::decode::u64_from_index(root.window().len()),
             "retain FCStd source image",
@@ -1282,9 +1269,9 @@ impl CodecBackend for FcstdCodec {
         )?);
         fidelity::mark_unreadable(&ir, &mut source_fidelity)?;
         let document_digest = writer::target::document_local_sha256(ctx, &ir)?;
-        source_fidelity.metadata.insert(
-            cadmpeg_ir::hash::DOCUMENT_FINGERPRINT_METADATA_KEY.into(),
-            document_digest,
+        source_fidelity.decode_digest = Some(
+            cadmpeg_ir::hash::digest::Sha256Digest::try_from(document_digest)
+                .map_err(CodecError::malformed)?,
         );
         ctx.admit_entities(
             cadmpeg_core::decode::u64_from_index(ir.model.entity_count()),

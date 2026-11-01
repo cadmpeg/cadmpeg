@@ -1972,9 +1972,7 @@
   },
   "source_fidelity": {
     "annotations": {},
-    "metadata": {
-      "document_local_sha256": "eb59f624b22b1755eb975949ae64a3d5f5c87cbbeb4092dca83dfd206f0e3d53"
-    },
+    "decode_digest": "eb59f624b22b1755eb975949ae64a3d5f5c87cbbeb4092dca83dfd206f0e3d53",
     "retained_records": {
       "iges:file:source-image#0": {
         "bytes": {

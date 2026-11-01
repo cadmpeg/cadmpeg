@@ -1264,12 +1264,7 @@ pub(super) fn try_decode_geometry(
         terminal_lineage,
     )?;
     let mut active_body_selection = if let Some((selected, _, source)) = &preselection {
-        let selected_hits = selected
-            .iter()
-            .filter_map(|body| body_node_ids.get(body))
-            .map(BTreeSet::len)
-            .sum::<usize>();
-        apply_preselected_active_body_selection(&mut ir, selected, source, Some(selected_hits))
+        apply_preselected_active_body_selection(&mut ir, selected, source)
     } else {
         select_active_body(&mut ir, &body_node_ids, rmfastload_ids)
     };
@@ -1694,7 +1689,6 @@ fn apply_preselected_active_body_selection(
     ir: &mut CadIr,
     selected: &BTreeSet<BodyId>,
     selector: &str,
-    selected_hits: Option<usize>,
 ) -> bool {
     if selected.is_empty() {
         return false;
@@ -1713,21 +1707,6 @@ fn apply_preselected_active_body_selection(
             cadmpeg_core::nonblank_literal!("active_body_selector"),
             selector,
         );
-        let (hit_attribute, count_attribute) = match selector {
-            "rmfastload_object_id_membership" => (
-                Some(cadmpeg_core::nonblank_literal!("rmfastload_hits")),
-                cadmpeg_core::nonblank_literal!("rmfastload_active_body_count"),
-            ),
-            "terminal_feature_body_lineage" => (
-                None,
-                cadmpeg_core::nonblank_literal!("feature_terminal_body_count"),
-            ),
-            _ => (None, cadmpeg_core::nonblank_literal!("active_body_count")),
-        };
-        if let (Some(attribute), Some(selected_hits)) = (hit_attribute, selected_hits) {
-            insert_body_selection_attribute(&mut source.attributes, attribute, selected_hits);
-        }
-        insert_body_selection_attribute(&mut source.attributes, count_attribute, selected.len());
     }
     true
 }
@@ -1752,17 +1731,7 @@ pub(super) fn select_active_body(
     if selected.is_empty() {
         return false;
     }
-    let selected_hits = selected
-        .iter()
-        .filter_map(|body| body_node_ids.get(body))
-        .map(BTreeSet::len)
-        .sum::<usize>();
-    apply_preselected_active_body_selection(
-        ir,
-        &selected,
-        "rmfastload_object_id_membership",
-        Some(selected_hits),
-    )
+    apply_preselected_active_body_selection(ir, &selected, "rmfastload_object_id_membership")
 }
 
 fn select_terminal_feature_bodies(
@@ -1786,7 +1755,7 @@ fn select_terminal_feature_bodies(
     ) else {
         return false;
     };
-    apply_preselected_active_body_selection(ir, &selected, "terminal_feature_body_lineage", None)
+    apply_preselected_active_body_selection(ir, &selected, "terminal_feature_body_lineage")
 }
 
 fn prune_inactive_topology(ir: &mut CadIr, selected: &BTreeSet<BodyId>) {

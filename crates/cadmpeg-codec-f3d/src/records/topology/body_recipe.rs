@@ -248,36 +248,6 @@ impl DesignBodyRecipeOperand {
         &self,
         fidelity: &mut cadmpeg_ir::SourceFidelity,
     ) -> Result<(), cadmpeg_core::CodecError> {
-        for (field, offset) in [
-            ("byte_offset", self.byte_offset()),
-            ("asset_id_offset", self.asset_id_offset()),
-            ("context_id_offset", self.context_id_offset()),
-            ("selector_tail_offset", self.selector_tail_offset),
-            (
-                "nested_record_index_offset",
-                self.nested_record_index_offset(),
-            ),
-            ("next_byte_offset", self.next_byte_offset()),
-        ] {
-            if let Some(offset) = offset {
-                fidelity
-                    .metadata
-                    .insert(format!("{}.{field}", self.id), offset.to_string());
-            }
-        }
-        for (index, reference) in self.references.iter().enumerate() {
-            for (field, offset) in [
-                ("design_reference_offset", reference.design_reference_offset),
-                ("form_offset", reference.form_offset),
-            ] {
-                if let Some(offset) = offset {
-                    fidelity.metadata.insert(
-                        format!("{}.references.{index}.{field}", self.id),
-                        offset.to_string(),
-                    );
-                }
-            }
-        }
         if let Some(tail) = &self.selector_tail {
             let stream = crate::ids::native_stream(&self.id)
                 .and_then(|stream| stream.strip_prefix(crate::ids::SCHEME_PREFIX))

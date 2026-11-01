@@ -338,7 +338,6 @@ fn configuration_manager_and_feature_metadata_keep_their_separate_owners() {
     records.push(crate::SourceRecord {
         id: record_id,
         data: Some(&payload),
-        metadata: &decoded.source_fidelity().metadata,
     });
     let mut sections =
         crate::writer::retained_swobjects_sections(&ir, &records, &annotations).unwrap();
@@ -376,7 +375,6 @@ fn duplicate_physical_metadata_owners_are_ambiguous_even_with_identical_bytes() 
     let duplicate = crate::SourceRecord {
         id: cadmpeg_ir::ids::UnknownId::mint("sldprt:file:block#999_999").unwrap(),
         data: record.data,
-        metadata: record.metadata,
     };
     crate::annotations::note(
         &mut annotations,

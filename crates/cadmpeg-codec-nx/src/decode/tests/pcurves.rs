@@ -82,13 +82,6 @@ fn active_body_selection_accepts_a_complete_singleton_membership() {
     assert!(select_active_body(&mut ir, &body_node_ids, &[7]));
     assert_eq!(ir.model.bodies.len(), 1);
     assert_eq!(ir.model.bodies[0].id, first);
-    assert_eq!(
-        ir.source
-            .as_ref()
-            .and_then(|source| source.attributes.get("rmfastload_hits"))
-            .map(String::as_str),
-        Some("1")
-    );
 }
 
 #[test]

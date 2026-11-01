@@ -77,6 +77,7 @@ fn native_spatial_sketch_constraints_are_reported_as_design_losses() {
         &cadmpeg_test_support::service_decode_context(),
         &ir,
         &mut report,
+        None,
     )
     .unwrap();
 
@@ -120,6 +121,7 @@ fn typed_native_operands_are_reported_as_design_losses() {
         &cadmpeg_test_support::service_decode_context(),
         &ir,
         &mut report,
+        None,
     )
     .unwrap();
 

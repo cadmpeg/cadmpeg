@@ -167,17 +167,13 @@
     "source": {
       "attributes": {
         "external_reference_0": "Support.CATPart",
-        "external_reference_count": "1",
-        "file_size": "375",
         "finjpl_segment_0_name": "CATSummaryInformation",
         "finjpl_segment_0_type": "0x01010003",
         "finjpl_segment_1_name": "CATPreview",
         "finjpl_segment_1_type": "0x01010002",
-        "finjpl_segment_count": "2",
         "preview_0_components": "1",
         "preview_0_height": "288",
-        "preview_0_width": "640",
-        "preview_count": "1"
+        "preview_0_width": "640"
       },
       "identity": {
         "classification": "classified",

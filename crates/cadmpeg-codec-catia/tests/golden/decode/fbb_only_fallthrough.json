@@ -172,18 +172,7 @@
       "model": true
     },
     "source": {
-      "attributes": {
-        "brep_stream_len": "324",
-        "brep_stream_sha256": "867e7b5fa60057a348df5093bcadcc75d8e7c8f8795b5f954091bbf7985295fe",
-        "external_reference_count": "0",
-        "fbb_face_rows": "2",
-        "fbb_runs": "1",
-        "file_size": "587",
-        "finjpl_segment_count": "0",
-        "preview_count": "0",
-        "stream_count": "2",
-        "vertex_records": "3"
-      },
+      "attributes": {},
       "identity": {
         "classification": "classified",
         "dialects": {

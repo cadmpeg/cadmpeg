@@ -179,6 +179,8 @@ Procedural curve definitions are intersection, projection, offset, blend spine, 
 
 `SourceFidelity.unrepresented` is a sorted array of arena classes whose source records have no typed neutral or native representation. It is not digested. Nonempty sets forbid patch and replay; synthesis consumes no retained bytes. Scope and unrepresented are independent: typed native content can survive without a neutral projection.
 
+`SourceFidelity.decode_digest` is the decode-time document digest baseline for byte reuse. It is absent when the decode declines to record one.
+
 `SourceFidelity.annotations.streams` interns source stream names. `SourceFidelity.annotations.provenance` maps a product or retained-record ID to a stream index, byte offset, and optional source tag. Stream indices must resolve.
 
 `SourceFidelity.annotations.exactness` maps an entity ID to entity exactness plus field overrides keyed by serialized field path. Exactness values are:

@@ -332,30 +332,6 @@ impl From<SegmentType> for SegmentTypeWire {
         }
     }
 }
-impl SegmentType {
-    pub(crate) fn retain_source(&self, fidelity: &mut cadmpeg_ir::SourceFidelity) {
-        for (name, offset) in [
-            ("byte_offset", self.byte_offset),
-            ("type_guid_offset", self.type_guid_offset),
-            ("base_type_guid_offset", self.base_type_guid.offset()),
-            ("version_offset", self.version_offset),
-        ] {
-            if let Some(offset) = offset {
-                fidelity
-                    .metadata
-                    .insert(format!("{}.{name}", self.id()), offset.to_string());
-            }
-        }
-        if let Some(rows) = self.entities.located_rows() {
-            for (index, row) in rows.iter().enumerate() {
-                fidelity.metadata.insert(
-                    format!("{}.entity_id_offsets.{index}", self.id()),
-                    row.offset.to_string(),
-                );
-            }
-        }
-    }
-}
 
 /// Source timeline frame with bounded, ordered reference locations.
 #[derive(Debug, Clone, PartialEq)]
@@ -647,34 +623,6 @@ impl From<DesignFeatureTimeline> for DesignFeatureTimelineWire {
         }
     }
 }
-impl DesignFeatureTimeline {
-    pub(crate) fn retain_source(&self, fidelity: &mut cadmpeg_ir::SourceFidelity) {
-        for (name, offset) in [
-            ("byte_offset", self.frame.byte_offset),
-            ("frame_length", self.frame.frame_length),
-            (
-                "context_record_index_offset",
-                self.frame.context_record_index_offset,
-            ),
-            ("item_count_offset", self.frame.item_count_offset),
-        ] {
-            if let Some(offset) = offset {
-                fidelity
-                    .metadata
-                    .insert(format!("{}.{name}", self.id()), offset.to_string());
-            }
-        }
-        for (index, item) in self.frame.items.iter().enumerate() {
-            if let Some(offset) = item.offset {
-                fidelity.metadata.insert(
-                    format!("{}.item_record_index_offsets.{index}", self.id()),
-                    offset.to_string(),
-                );
-            }
-        }
-    }
-}
-
 /// Self-validating entity-bound header in the Design `BulkStream`.
 #[derive(Debug, PartialEq, Deserialize)]
 #[cfg_attr(not(test), derive(Clone))]
@@ -1009,45 +957,6 @@ impl DesignEntityHeader {
                 }
                 _ => false,
             }
-    }
-    pub(crate) fn retain_source(&self, fidelity: &mut cadmpeg_ir::SourceFidelity) {
-        if let Some(offset) = self.byte_offset {
-            fidelity
-                .metadata
-                .insert(format!("{}.byte_offset", self.id), offset.to_string());
-        }
-        if let Some(flag) = self.optional_slot_present {
-            fidelity.metadata.insert(
-                format!("{}.optional_slot_present", self.id),
-                flag.to_string(),
-            );
-        }
-        if let Some(list) = self.sketch_references() {
-            if let Some(offset) = list.record_reference_offset {
-                fidelity.metadata.insert(
-                    format!("{}.record_reference_offset", self.id),
-                    offset.to_string(),
-                );
-            }
-            for (index, row) in list.references.iter().enumerate() {
-                if let Some(offset) = row.offset {
-                    fidelity.metadata.insert(
-                        format!("{}.reference_offsets.{index}", self.id),
-                        offset.to_string(),
-                    );
-                }
-            }
-        }
-        if let DesignEntityRegistrationKind::Sketch { members, .. } = &self.registration.0 {
-            if let Some(rows) = members.located_rows() {
-                for (index, row) in rows.iter().enumerate() {
-                    fidelity.metadata.insert(
-                        format!("{}.member_offsets.{index}", self.id),
-                        row.offset.to_string(),
-                    );
-                }
-            }
-        }
     }
 }
 cadmpeg_core::named_optional_field!(deserialize_reference_indices, Vec<u32>, "reference_indices");

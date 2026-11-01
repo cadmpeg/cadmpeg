@@ -463,39 +463,6 @@ impl From<DesignDimensionLocusPair> for DesignDimensionLocusPairWire {
         }
     }
 }
-impl DesignDimensionLocusPair {
-    pub(crate) fn retain_source(&self, fidelity: &mut cadmpeg_ir::SourceFidelity) {
-        for (name, offset) in [
-            ("byte_offset", self.byte_offset),
-            ("frame_length", self.frame_length),
-            ("paired_byte_offset", self.paired_byte_offset()),
-            (
-                "opaque_index_offset",
-                self.opaque_index().and_then(|field| field.offset),
-            ),
-        ] {
-            if let Some(offset) = offset {
-                fidelity
-                    .metadata
-                    .insert(format!("{}.{name}", self.id), offset.to_string());
-            }
-        }
-        for (index, locus) in self.loci().into_iter().enumerate() {
-            for (name, offset) in [
-                ("geometry_reference_offset", locus.geometry_reference_offset),
-                ("role_offset", locus.role_offset),
-            ] {
-                if let Some(offset) = offset {
-                    fidelity.metadata.insert(
-                        format!("{}.loci.{index}.{name}", self.id),
-                        offset.to_string(),
-                    );
-                }
-            }
-        }
-    }
-}
-
 /// One nullable typed operand in an annotated dimension frame.
 #[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -820,6 +787,7 @@ impl DesignDimensionAnnotationFrame {
             .checked_add(u64_from_index(self.operands.len()).checked_mul(15)?)?
             .checked_add(57)
     }
+    #[cfg(test)]
     fn governing_owner_reference_offset(&self) -> Option<u64> {
         self.annotation_byte_offset()?
             .checked_add(self.annotation_bytes.as_ref()?.byte_len())?
@@ -828,6 +796,7 @@ impl DesignDimensionAnnotationFrame {
     pub(crate) fn paired_byte_offset(&self) -> Option<u64> {
         self.byte_offset?.checked_add(self.frame_length?)
     }
+    #[cfg(test)]
     fn owner_reference_offset(&self) -> Option<u64> {
         self.paired_byte_offset()?.checked_add(20)
     }
@@ -1037,23 +1006,6 @@ impl DesignDimensionAnnotationFrame {
         &self,
         fidelity: &mut cadmpeg_ir::SourceFidelity,
     ) -> Result<(), cadmpeg_core::CodecError> {
-        for (name, offset) in [
-            ("byte_offset", self.byte_offset),
-            ("frame_length", self.frame_length),
-            ("annotation_byte_offset", self.annotation_byte_offset()),
-            (
-                "governing_owner_reference_offset",
-                self.governing_owner_reference_offset(),
-            ),
-            ("paired_byte_offset", self.paired_byte_offset()),
-            ("owner_reference_offset", self.owner_reference_offset()),
-        ] {
-            if let Some(offset) = offset {
-                fidelity
-                    .metadata
-                    .insert(format!("{}.{name}", self.id), offset.to_string());
-            }
-        }
         if let Some(frame) = &self.annotation_bytes {
             let stream = crate::ids::native_stream(&self.id)
                 .and_then(|stream| stream.strip_prefix(crate::ids::SCHEME_PREFIX))
@@ -1356,35 +1308,6 @@ impl DesignDimensionPresentationFrame {
         &self,
         fidelity: &mut cadmpeg_ir::SourceFidelity,
     ) -> Result<(), cadmpeg_core::CodecError> {
-        for (name, offset) in [
-            ("byte_offset", self.byte_offset),
-            ("frame_length", self.frame_length),
-            ("presentation_byte_offset", self.presentation_byte_offset),
-            ("paired_byte_offset", self.paired_byte_offset),
-            ("owner_reference_offset", self.owner_reference_offset),
-        ] {
-            if let Some(offset) = offset {
-                fidelity
-                    .metadata
-                    .insert(format!("{}.{name}", self.id), offset.to_string());
-            }
-        }
-        for (index, operand) in self.operands.iter().enumerate() {
-            for (name, offset) in [
-                (
-                    "geometry_reference_offset",
-                    operand.geometry_reference_offset,
-                ),
-                ("role_offset", operand.role_offset),
-            ] {
-                if let Some(offset) = offset {
-                    fidelity.metadata.insert(
-                        format!("{}.operands.{index}.{name}", self.id),
-                        offset.to_string(),
-                    );
-                }
-            }
-        }
         if let Some(frame) = &self.presentation_bytes {
             let stream = crate::ids::native_stream(&self.id)
                 .and_then(|stream| stream.strip_prefix(crate::ids::SCHEME_PREFIX))
@@ -1407,38 +1330,6 @@ impl DesignDimensionPresentationFrame {
             )?;
         }
         Ok(())
-    }
-}
-impl DesignDimensionLocusGroup {
-    pub(crate) fn retain_source(&self, fidelity: &mut cadmpeg_ir::SourceFidelity) {
-        for (name, offset) in [
-            ("byte_offset", self.byte_offset),
-            ("frame_length", self.frame_length),
-            ("owner_reference_offset", self.owner_reference_offset),
-            ("owner_role_offset", self.owner_role_offset),
-            ("state_offset", self.state_offset),
-            ("next_byte_offset", self.next_byte_offset),
-        ] {
-            if let Some(offset) = offset {
-                fidelity
-                    .metadata
-                    .insert(format!("{}.{name}", self.id), offset.to_string());
-            }
-        }
-        for (index, locus) in self.loci.iter().enumerate() {
-            for (name, offset) in [
-                ("geometry_reference_offset", locus.geometry_reference_offset),
-                ("role_offset", locus.role_offset),
-                ("return_member_offset", locus.returned.offset),
-            ] {
-                if let Some(offset) = offset {
-                    fidelity.metadata.insert(
-                        format!("{}.loci.{index}.{name}", self.id),
-                        offset.to_string(),
-                    );
-                }
-            }
-        }
     }
 }
 cadmpeg_core::named_optional_field!(

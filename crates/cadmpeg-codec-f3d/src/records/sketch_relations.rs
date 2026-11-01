@@ -1184,42 +1184,6 @@ impl SketchRelation {
         &self,
         fidelity: &mut cadmpeg_ir::SourceFidelity,
     ) -> Result<(), CodecError> {
-        for (name, value) in [
-            ("byte_offset", self.byte_offset),
-            ("state_offset", self.state_offset.map(u64::from)),
-            (
-                "owner_reference_offset",
-                self.owner_reference_offset.map(u64::from),
-            ),
-        ] {
-            if let Some(value) = value {
-                fidelity
-                    .metadata
-                    .insert(format!("{}.{name}", self.id), value.to_string());
-            }
-        }
-        for (index, offset) in self.auxiliary_references.offsets().enumerate() {
-            fidelity.metadata.insert(
-                format!("{}.auxiliary_reference_offsets.{index}", self.id),
-                offset.to_string(),
-            );
-        }
-        for (index, row) in self.members.iter().enumerate() {
-            if let Some(offset) = row.offset {
-                fidelity.metadata.insert(
-                    format!("{}.member_offsets.{index}", self.id),
-                    offset.to_string(),
-                );
-            }
-        }
-        for (index, row) in self.return_members.iter().enumerate() {
-            if let Some(offset) = row.offset {
-                fidelity.metadata.insert(
-                    format!("{}.return_member_offsets.{index}", self.id),
-                    offset.to_string(),
-                );
-            }
-        }
         if let Some(frame) = &self.raw_bytes {
             let stream = crate::ids::native_stream(&self.id)
                 .and_then(|stream| stream.strip_prefix(crate::ids::SCHEME_PREFIX))

@@ -127,7 +127,6 @@ fn body_recipe_document_keeps_semantic_chain_and_evidence_without_layout_or_byte
     assert_eq!(serde_json::to_value(&restored).unwrap(), wire);
     let mut fidelity = cadmpeg_ir::SourceFidelity::default();
     restored.retain_source(&mut fidelity).unwrap();
-    assert!(fidelity.metadata.is_empty());
     assert!(fidelity.retained_records().is_empty());
 }
 
@@ -136,14 +135,6 @@ fn body_recipe_untyped_selector_tail_is_retained_outside_the_document() {
     let record = source_record();
     let mut fidelity = cadmpeg_ir::SourceFidelity::default();
     record.retain_source(&mut fidelity).unwrap();
-    assert_eq!(
-        fidelity.metadata["f3d:Design:body-recipe#0.context_id_offset"],
-        "150"
-    );
-    assert_eq!(
-        fidelity.metadata["f3d:Design:body-recipe#0.references.0.form_offset"],
-        "33"
-    );
     let retained = fidelity
         .retained_record("f3d:Design:body-recipe#0:selector-tail")
         .unwrap();

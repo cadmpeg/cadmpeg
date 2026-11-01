@@ -1141,7 +1141,7 @@ fn rescope_fidelity(
     source: SourceFidelity,
     occurrence: &str,
 ) -> Result<SourceFidelity, CodecError> {
-    let (mut annotations, records, metadata) = source.into_parts();
+    let (mut annotations, records) = source.into_parts();
     annotations
         .map_ids(|id| match rescope(id, occurrence) {
             Some(id) => Ok(id),
@@ -1159,11 +1159,6 @@ fn rescope_fidelity(
         builder.note(&id, &stream, provenance.offset, provenance.tag.as_deref());
     }
     let mut rescoped = SourceFidelity::with_annotations(builder.build());
-    for (key, value) in metadata {
-        rescoped
-            .metadata
-            .insert(format!("{}{}", owner.as_str(), key), value);
-    }
     for (id, record) in records {
         let id_text = match rescope(id.as_str(), occurrence) {
             Some(id) => id,

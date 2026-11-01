@@ -246,6 +246,15 @@
             "source_index": 0
           }
         ],
+        "decode_baselines": [
+          {
+            "brep": "f8320405f6f104b172c9e1d3368b9d5969755b54b7b7bc680f48f6f4f19989cb",
+            "id": "sldprt:metadata:decode-baselines#0",
+            "swobjects": "586ffb909b0bba2aacc4d34937062d2b3c9cb6c81d2f794c686ad550b192d8dc",
+            "swobjects_material": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+            "swobjects_metadata_identity": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945"
+          }
+        ],
         "document_metadata": [],
         "feature_histories": [
           {
@@ -293,6 +302,7 @@
     },
     "source": {
       "attributes": {
+        "outer_version": "0x00000004",
         "parasolid_description": "partition body",
         "parasolid_schema": "SCH_SW_33103_11000",
         "sw_configuration_0_most_recent": "YES",
@@ -540,15 +550,7 @@
         }
       }
     },
-    "metadata": {
-      "active_parasolid_block": "Contents/Config-0-Partition",
-      "brep_local_sha256": "f8320405f6f104b172c9e1d3368b9d5969755b54b7b7bc680f48f6f4f19989cb",
-      "document_local_sha256": "be07dda557a34a6e2c040b99532c4be9415f21fb0154178ecf60ab6ec13df465",
-      "outer_version": "0x00000004",
-      "sldprt_swobjects_local_sha256": "586ffb909b0bba2aacc4d34937062d2b3c9cb6c81d2f794c686ad550b192d8dc",
-      "sldprt_swobjects_material_local_sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
-      "sldprt_swobjects_metadata_identity_local_sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945"
-    },
+    "decode_digest": "047931b001a2c7bdb91e8d258be7439da11696275d4dbec16e82fa7516e27c44",
     "retained_records": {
       "sldprt:file:block#12": {
         "bytes": {

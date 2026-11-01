@@ -1449,21 +1449,6 @@ fn decode_reports_display_list_geometry() {
             .decode(&mut cur, &DecodeOptions::default())
             .unwrap(),
     );
-    let source = result.ir().source.as_ref().expect("source metadata");
-    assert_eq!(
-        source
-            .attributes
-            .get("displaylist_vertices")
-            .map(String::as_str),
-        Some("3")
-    );
-    assert_eq!(
-        source
-            .attributes
-            .get("displaylist_triangles")
-            .map(String::as_str),
-        Some("1")
-    );
     assert_eq!(result.ir().model.tessellations.len(), 1);
     assert_eq!(result.ir().model.tessellations[0].vertices().len(), 3);
     assert_eq!(result.ir().model.tessellations[0].vertices()[1].x, 1000.0);

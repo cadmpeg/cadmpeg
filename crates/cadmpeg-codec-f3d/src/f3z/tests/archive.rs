@@ -441,12 +441,13 @@ fn f3z_container_only_stamps_the_outer_document_digest() {
     )
     .unwrap();
 
+    let expected = crate::decode::document_local_sha256(decoded.ir()).unwrap();
     assert_eq!(
-        decoded
-            .source_fidelity()
-            .metadata
-            .get("document_local_sha256"),
-        Some(&crate::decode::document_local_sha256(decoded.ir()).unwrap())
+        decoded.source_fidelity().decode_digest,
+        Some(
+            cadmpeg_ir::hash::digest::Sha256Digest::try_from(expected)
+                .expect("a document digest parses")
+        )
     );
 }
 

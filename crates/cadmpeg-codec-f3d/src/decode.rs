@@ -3303,6 +3303,7 @@ impl<'a> F3dDecodeSession<'a> {
                         annotations,
                         parameter_state_fidelity,
                         native_layout: Some(self.native),
+                        primary_model_brep_name: None,
                         untyped: self.untyped,
                         unknowns: self.unknowns,
                         source_image,
@@ -3343,6 +3344,7 @@ impl<'a> F3dDecodeSession<'a> {
                 annotations,
                 parameter_state_fidelity,
                 native_layout: Some(self.native),
+                primary_model_brep_name: Some(geometry.primary_model_brep_name.clone()),
                 untyped: self.untyped,
                 unknowns: self.unknowns,
                 source_image,
@@ -3411,9 +3413,9 @@ pub(crate) fn decode<'a>(ctx: &DecodeContext<'a>, root: View<'a>) -> Result<Deco
                 "f3d",
                 crate::ids::FILE_SOURCE_IMAGE_ID,
             )?;
-            decoded.source_fidelity.metadata.insert(
-                cadmpeg_ir::hash::DOCUMENT_FINGERPRINT_METADATA_KEY.into(),
-                hash,
+            decoded.source_fidelity.decode_digest = Some(
+                cadmpeg_ir::hash::digest::Sha256Digest::try_from(hash)
+                    .map_err(CodecError::malformed)?,
             );
             Ok(decoded.into_decoded())
         }
@@ -3513,6 +3515,8 @@ fn decode_scanned_document<'a>(
                 native_fidelity: cadmpeg_ir::SourceFidelity::default(),
                 parameter_state_fidelity: cadmpeg_ir::SourceFidelity::default(),
                 native_layout: None,
+                primary_model_brep_name: container::select_fallback_brep(scan)
+                    .map(|brep| brep.name.clone()),
                 untyped,
                 unknowns,
                 source_image,
@@ -4452,6 +4456,8 @@ impl std::fmt::Display for XrefPropertyNote<'_> {
 pub(crate) struct AuthoredDecoded {
     /// Transient parser locations, never serialized into the document.
     pub(crate) native_layout: Option<F3dNative>,
+    /// Primary model BREP entry name for the patch path, never serialized.
+    pub(crate) primary_model_brep_name: Option<String>,
     pub(crate) operation_poses:
         std::collections::BTreeMap<String, crate::xref::operation_pose::OperationPose>,
     pub(crate) ir: CadIr,
@@ -4473,6 +4479,7 @@ impl AuthoredDecoded {
 
 struct RetainedArtifacts {
     native_layout: Option<F3dNative>,
+    primary_model_brep_name: Option<String>,
     annotations: cadmpeg_ir::Annotations,
     native_fidelity: cadmpeg_ir::SourceFidelity,
     parameter_state_fidelity: cadmpeg_ir::SourceFidelity,
@@ -4504,7 +4511,7 @@ fn decode_result(
     source_fidelity.append(retained.parameter_state_fidelity)?;
     source_fidelity.attach_native_unknown_records(&mut ir, "f3d", retained.unknowns, ctx)?;
     source_fidelity.retain_unknown_records("f3d", [retained.source_image])?;
-    let mut source = crate::report::classify_document(
+    let source = crate::report::classify_document(
         scan,
         report_scope,
         retained.source_attributes,
@@ -4572,11 +4579,6 @@ fn decode_result(
         crate::ids::FILE_SOURCE_IMAGE_ID,
         untyped,
     )?;
-    for key in ["active_brep", "active_brep_sha256"] {
-        if let Some(value) = source.attributes.remove(key) {
-            source_fidelity.metadata.insert(key.to_owned(), value);
-        }
-    }
     // Stamped on the finalized, classified document, so the write path
     // compares against the exact document the sealed wrapper returns.
     ir.finalize();
@@ -4587,12 +4589,13 @@ fn decode_result(
         "f3d",
         crate::ids::FILE_SOURCE_IMAGE_ID,
     )?;
-    source_fidelity.metadata.insert(
-        cadmpeg_ir::hash::DOCUMENT_FINGERPRINT_METADATA_KEY.into(),
-        hash,
+    source_fidelity.decode_digest = Some(
+        cadmpeg_ir::hash::digest::Sha256Digest::try_from(hash)
+            .map_err(CodecError::malformed)?,
     );
     Ok(AuthoredDecoded {
         native_layout: retained.native_layout,
+        primary_model_brep_name: retained.primary_model_brep_name,
         operation_poses: std::collections::BTreeMap::new(),
         ir,
         source,
@@ -5090,28 +5093,11 @@ fn source_attributes_and_tolerances(
             attributes.insert("asset_folder".to_owned(), copy);
         }
     }
-    attributes.insert("zip_entry_count".to_owned(), scan.entries.len().to_string());
-    {
-        let copy = primary_model_brep.name.clone();
-        attributes.insert("active_brep".to_owned(), copy);
-    }
-    {
-        let copy = primary_model_brep.sha256.as_str().to_owned();
-        attributes.insert("active_brep_sha256".to_owned(), copy);
-    }
-    if let Some(off) = primary_model_brep
-        .kernel
-        .as_ref()
-        .and_then(crate::container::KernelFraming::solved_record_limit)
-    {
-        attributes.insert("solved_record_len".to_owned(), off.to_string());
-    }
     if let Some(unit) = crate::design::decode::units::decode_document_length_unit(scan) {
         attributes.insert("modeling_length_unit".to_owned(), unit);
     }
 
-    let mut tolerances = Tolerances::default();
-    if let Some(h) = primary_model_brep
+    let mut tolerances = Tolerances::default();    if let Some(h) = primary_model_brep
         .kernel
         .as_ref()
         .and_then(crate::container::KernelFraming::model_metadata)
@@ -5303,27 +5289,11 @@ fn build_metadata_ir(scan: &ContainerScan) -> Result<MetadataIr, CodecError> {
             attributes.insert("asset_folder".to_owned(), copy);
         }
     }
-    attributes.insert("zip_entry_count".to_owned(), scan.entries.len().to_string());
     if let Some(unit) = crate::design::decode::units::decode_document_length_unit(scan) {
         attributes.insert("modeling_length_unit".to_owned(), unit);
     }
 
     if let Some(brep) = container::select_fallback_brep(scan) {
-        {
-            let copy = brep.name.clone();
-            attributes.insert("active_brep".to_owned(), copy);
-        }
-        {
-            let copy = brep.sha256.as_str().to_owned();
-            attributes.insert("active_brep_sha256".to_owned(), copy);
-        }
-        if let Some(off) = brep
-            .kernel
-            .as_ref()
-            .and_then(crate::container::KernelFraming::solved_record_limit)
-        {
-            attributes.insert("solved_record_len".to_owned(), off.to_string());
-        }
         if let Some(h) = brep
             .kernel
             .as_ref()

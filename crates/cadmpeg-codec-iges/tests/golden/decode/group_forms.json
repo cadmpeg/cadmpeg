@@ -706,9 +706,7 @@
   },
   "source_fidelity": {
     "annotations": {},
-    "metadata": {
-      "document_local_sha256": "e21fb149e3286859085896203af95d70983968457715e97396e08981041e2360"
-    },
+    "decode_digest": "e21fb149e3286859085896203af95d70983968457715e97396e08981041e2360",
     "retained_records": {
       "iges:file:source-image#0": {
         "bytes": {

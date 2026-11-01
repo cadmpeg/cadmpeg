@@ -89,6 +89,7 @@ fn native_planar_and_spatial_sketch_geometry_is_reported() {
         &cadmpeg_test_support::service_decode_context(),
         &ir,
         &mut report,
+        None,
     )
     .unwrap();
 
@@ -484,6 +485,7 @@ fn authored_other_pmi_does_not_record_a_historical_decode_failure() {
         &cadmpeg_test_support::service_decode_context(),
         &ir,
         &mut report,
+        None,
     )
     .unwrap();
 

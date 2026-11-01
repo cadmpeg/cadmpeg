@@ -6,7 +6,6 @@ use cadmpeg_ir::codec::write::{
     target::{ResolvedTarget, ResolvedWrite},
     ArenaCoverage, Consumption, EncodeInput, ExportBody, WritePath,
 };
-use cadmpeg_ir::hash::DOCUMENT_FINGERPRINT_METADATA_KEY;
 use cadmpeg_ir::{CadIr, SourceFidelity};
 
 use crate::loss::IgesLossCode;
@@ -229,14 +228,11 @@ fn replay_bytes(ir: &CadIr, fidelity: Option<&SourceFidelity>) -> Result<Replay,
         )));
     }
     let record = fidelity.and_then(|value| value.retained_record(crate::SOURCE_IMAGE_ID));
-    let Some(expected) =
-        fidelity.and_then(|fidelity| fidelity.metadata.get(DOCUMENT_FINGERPRINT_METADATA_KEY))
-    else {
+    let Some(expected) = fidelity.and_then(|fidelity| fidelity.decode_digest.as_ref()) else {
         return Ok(Replay::declined_for_record(
             record,
-            format!(
-                "preserved IGES source carries no `{DOCUMENT_FINGERPRINT_METADATA_KEY}` baseline; byte replay skipped"
-            ),
+            "preserved IGES source carries no decode digest baseline; byte replay skipped"
+                .to_owned(),
         ));
     };
     // Replay may preserve layout and identities, but cannot preserve a native
@@ -258,7 +254,7 @@ fn replay_bytes(ir: &CadIr, fidelity: Option<&SourceFidelity>) -> Result<Replay,
             ));
         }
     }
-    if crate::document_digest(ir)? != *expected {
+    if crate::document_digest(ir)?.as_str() != expected.as_str() {
         return Ok(Replay::declined_for_record(
             record,
             "decoded model no longer matches the preserved IGES source digest; byte replay skipped",

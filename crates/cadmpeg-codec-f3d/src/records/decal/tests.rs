@@ -203,15 +203,4 @@ fn indexed_record_header_keeps_identity_and_class_without_source_position() {
     let mut obsolete_wire = wire;
     obsolete_wire["byte_offset"] = 987.into();
     assert!(serde_json::from_value::<super::DesignRecordHeader>(obsolete_wire).is_err());
-    let native = crate::native::F3dNative {
-        design_record_headers: vec![source],
-        ..Default::default()
-    };
-    let fidelity = native.retained_fidelity().unwrap();
-    assert_eq!(
-        fidelity.metadata["f3d:Design:record#0000000042.byte_offset"],
-        "987"
-    );
-    assert!(fidelity.unrepresented().is_empty());
-    assert!(fidelity.retained_records().is_empty());
 }

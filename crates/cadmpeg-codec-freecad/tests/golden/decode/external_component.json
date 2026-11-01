@@ -1232,11 +1232,7 @@
   },
   "source_fidelity": {
     "annotations": {},
-    "metadata": {
-      "document_local_sha256": "5f50b78565dc64585ffa0c280e4f1f1466bdd58565e87e0a6f22be53678237e6",
-      "fcstd.archive_entry_count": "2",
-      "fcstd.object_count": "2"
-    },
+    "decode_digest": "5f50b78565dc64585ffa0c280e4f1f1466bdd58565e87e0a6f22be53678237e6",
     "retained_records": {
       "fcstd:source:image#archive": {
         "bytes": {

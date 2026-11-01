@@ -39,13 +39,6 @@ use crate::history::write::xml::valid_xml_name;
 const MAGIC: [u8; 8] = [0xc2, 0xbc, 0x92, 0x8f, 0x99, 0x6e, 0x00, 0x00];
 const TYPED_BODY_LINEAR_RESOLUTION: f64 = 1.0e-8;
 
-pub(crate) const SWOBJECTS_LOCAL_DIGEST_ATTRIBUTE: &str = "sldprt_swobjects_local_sha256";
-pub(crate) const SWOBJECTS_MATERIAL_LOCAL_DIGEST_ATTRIBUTE: &str =
-    "sldprt_swobjects_material_local_sha256";
-pub(crate) const SWOBJECTS_METADATA_IDENTITY_LOCAL_DIGEST_ATTRIBUTE: &str =
-    "sldprt_swobjects_metadata_identity_local_sha256";
-pub(crate) const PMI_LOCAL_DIGEST_ATTRIBUTE: &str = "sldprt_pmi_local_sha256";
-
 /// Opaque solved carriers require a retained native partition.
 pub(crate) fn requires_native_partition(ir: &CadIr) -> bool {
     ir.model.curves.iter().any(|curve| {
@@ -169,7 +162,6 @@ pub(super) fn write_semantic_at(
         &normalized,
         source_scan.as_ref(),
         native.as_ref(),
-        retained_records,
     )?;
     let feature_input_renames = if prepared_design {
         // These lanes were authored from the current document in this plan.
@@ -255,15 +247,16 @@ pub(super) fn write_semantic_at(
     let replay_swobjects = if retained_swobjects.is_empty() {
         false
     } else {
-        let baseline = retained_metadata(retained_records, SWOBJECTS_LOCAL_DIGEST_ATTRIBUTE);
+        let baselines = native
+            .as_ref()
+            .and_then(|native| native.decode_baselines.first());
+        let baseline = baselines.and_then(|baselines| baselines.swobjects.as_ref());
         let current = swobjects_local_sha256(&digest_ctx, ir)?;
         if baseline != Some(&current) {
             let material_baseline =
-                retained_metadata(retained_records, SWOBJECTS_MATERIAL_LOCAL_DIGEST_ATTRIBUTE);
-            let identity_baseline = retained_metadata(
-                retained_records,
-                SWOBJECTS_METADATA_IDENTITY_LOCAL_DIGEST_ATTRIBUTE,
-            );
+                baselines.and_then(|baselines| baselines.swobjects_material.as_ref());
+            let identity_baseline =
+                baselines.and_then(|baselines| baselines.swobjects_metadata_identity.as_ref());
             if material_baseline != Some(&swobjects_material_local_sha256(&digest_ctx, ir)?)
                 || identity_baseline
                     != Some(&swobjects_metadata_identity_local_sha256(&digest_ctx, ir)?)
@@ -706,10 +699,6 @@ fn sort_arenas(ir: &mut CadIr) {
         .sort_by(|left, right| left.id.cmp(&right.id));
 }
 
-fn retained_metadata<'a>(records: &[SourceRecord<'a>], key: &str) -> Option<&'a String> {
-    records.first().and_then(|record| record.metadata.get(key))
-}
-
 fn source_image<'a>(records: &[SourceRecord<'a>]) -> Option<&'a [u8]> {
     records
         .iter()
@@ -799,21 +788,23 @@ fn retained_cache_cells(
 /// The retained Parasolid partition to replay, when the decoded B-rep is
 /// untouched since the decode that recorded its baseline.
 ///
-/// The comparison is bitwise against the `brep_local_sha256` baseline, which is
+/// The comparison is bitwise against the recorded B-rep baseline, which is
 /// what an edit-detection question needs and all it can be; see
 /// [`crate::decode::brep_local_sha256`]. A document without the baseline — one
-/// synthesized rather than decoded, or decoded by a binary that named the
-/// attribute differently — has no partition to replay and is written out in full.
+/// synthesized rather than decoded — has no partition to replay and is
+/// written out in full.
 fn retained_partition(
     ir: &CadIr,
     source_scan: Option<&crate::container::ContainerScan<'_>>,
     native: Option<&SldprtNative>,
-    retained_records: &[SourceRecord<'_>],
 ) -> Result<Option<(String, Vec<u8>)>, CodecError> {
-    let Some(expected) = retained_metadata(retained_records, "brep_local_sha256") else {
+    let Some(expected) = native
+        .and_then(|native| native.decode_baselines.first())
+        .map(|baselines| baselines.brep.as_str())
+    else {
         return Ok(None);
     };
-    if crate::decode::brep_local_sha256(ir)? != *expected {
+    if crate::decode::brep_local_sha256(ir)?.as_str() != expected {
         return Ok(None);
     }
     let Some(scan) = source_scan else {
@@ -995,12 +986,6 @@ fn check_semantic_support(ir: &CadIr, annotations: &Annotations) -> Result<(), C
         }
     }
     Ok(())
-}
-
-pub(crate) fn pmi_local_sha256(ir: &CadIr) -> Result<String, CodecError> {
-    let bytes = serde_json::to_vec(&ir.model.pmi)
-        .map_err(|error| CodecError::malformed(format_args!("cannot hash SLDPRT PMI: {error}")))?;
-    Ok(cadmpeg_ir::hash::sha256_hex(&bytes))
 }
 
 /// Generated geometry chooses its own node identities. Feature output scopes

@@ -106,15 +106,6 @@ fn edge_identity_prologue_is_layout_evidence_instead_of_document_content() {
         assert_eq!(restored.layout(), None);
         assert!(restored.clone().into_draft().is_err());
         assert_eq!(serde_json::to_value(&restored).unwrap(), wire);
-        let mut fidelity = cadmpeg_ir::SourceFidelity::default();
-        source.retain_source(&mut fidelity);
-        assert_eq!(
-            fidelity.metadata["f3d:Design:edge-identity#0.local_id_offset"],
-            (10 + layout.local_id_offset()).to_string()
-        );
-        let mut reloaded_fidelity = cadmpeg_ir::SourceFidelity::default();
-        restored.retain_source(&mut reloaded_fidelity);
-        assert!(reloaded_fidelity.metadata.is_empty());
         for field in [
             "byte_offset",
             "compact_layout",
