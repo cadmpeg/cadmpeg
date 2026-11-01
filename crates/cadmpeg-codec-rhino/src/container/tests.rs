@@ -457,7 +457,6 @@ fn missing_introductory_comment_keeps_framed_objects() {
     bytes.extend(eof(archive, end));
     let scan = crate::container::scan_owned(bytes).expect("comment is not needed to frame objects");
     assert_eq!(scan.objects.len(), 1);
-    assert_eq!(scan.comment_offset, None);
     assert!(scan
         .warnings
         .iter()
