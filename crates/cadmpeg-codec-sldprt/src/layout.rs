@@ -243,6 +243,8 @@ pub(crate) mod world_point {
 /// Complete short-index body; the type tag and optional first-of-type ff byte are outside the body. Tripled pointers are u16 BE followed by 01.
 /// ```
 pub(crate) mod face_bare {
+    /// Record length in bytes. Spec §4.
+    pub(crate) const LEN: usize = 37;
     /// Offset of `attributes_head` (`u16`, big-endian). Spec §4.
     pub(crate) const ATTRIBUTES_HEAD: usize = 6;
     /// Offset of `tolerance` (`bytes[8]`). Spec §4.
@@ -251,6 +253,8 @@ pub(crate) mod face_bare {
     pub(crate) const REFS: usize = 16;
     /// Offset of `sense` (`u8`). Spec §4.
     pub(crate) const SENSE: usize = 26;
+    /// Offset of `surface_front_refs` (`u16[5]`, big-endian). Spec §4.
+    pub(crate) const SURFACE_FRONT_REFS: usize = 27;
 }
 
 /// Byte offsets for the `face_tripled` record.
@@ -261,6 +265,8 @@ pub(crate) mod face_bare {
 /// Complete short-index body; the type tag and optional first-of-type ff byte are outside the body. Tripled pointers are u16 BE followed by 01.
 /// ```
 pub(crate) mod face_tripled {
+    /// Record length in bytes. Spec §4.
+    pub(crate) const LEN: usize = 48;
     /// Offset of `attributes_head` (`bytes[3]`). Spec §4.
     pub(crate) const ATTRIBUTES_HEAD: usize = 6;
     /// Offset of `tolerance` (`bytes[8]`). Spec §4.
@@ -269,6 +275,8 @@ pub(crate) mod face_tripled {
     pub(crate) const REFS: usize = 17;
     /// Offset of `sense` (`u8`). Spec §4.
     pub(crate) const SENSE: usize = 32;
+    /// Offset of `surface_front_refs` (`bytes[15]`). Spec §4.
+    pub(crate) const SURFACE_FRONT_REFS: usize = 33;
 }
 
 /// Byte offsets for the `edge_bare` record.
