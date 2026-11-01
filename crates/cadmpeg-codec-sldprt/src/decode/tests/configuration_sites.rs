@@ -295,7 +295,7 @@ fn decode_uses_the_active_configuration_source_site() {
         .iter()
         .all(|point| point.position().get().x >= 10_000.0));
     assert_eq!(
-        result.source_fidelity().metadata["active_parasolid_block"],
+        result.ir().source.as_ref().unwrap().attributes["active_parasolid_block"],
         "Contents/Config-1-Partition"
     );
     assert!(
@@ -348,7 +348,7 @@ fn decode_uses_the_namespaced_manifest_site_without_source_indices() {
         "Second"
     );
     assert_eq!(
-        result.source_fidelity().metadata["active_parasolid_block"],
+        result.ir().source.as_ref().unwrap().attributes["active_parasolid_block"],
         "Contents/Config-1-Partition"
     );
     assert!(!result.report().losses.iter().any(|loss| loss

@@ -213,6 +213,7 @@ fn synchronize_features(
         feature_input_lanes: Vec::new(),
         pmi_dimensions: Vec::new(),
         document_metadata: Vec::new(),
+        decode_baselines: Vec::new(),
     });
     if native.feature_histories.is_empty() {
         native.feature_histories.push(FeatureHistory {
