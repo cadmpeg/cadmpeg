@@ -54,6 +54,7 @@ fn configuration_partitions_require_explicit_source_identity() {
             (5, vec![first.clone()]),
             (5, vec![second.clone()]),
         ],
+        None,
     )
     .unwrap();
 
@@ -103,6 +104,7 @@ fn sparse_reordered_source_identities_join_their_own_partitions() {
     assign_configuration_bodies(
         &mut ir,
         vec![(5, vec![second.clone()]), (2, vec![first.clone()])],
+        None,
     )
     .unwrap();
 
@@ -136,7 +138,7 @@ fn native_configuration_without_a_decoded_partition_keeps_unresolved_membership(
     });
     let body = BodyId::mint("test:model:entity#body:other").expect("identity grammar");
 
-    assign_configuration_bodies(&mut ir, vec![(3, vec![body.clone()])]).unwrap();
+    assign_configuration_bodies(&mut ir, vec![(3, vec![body.clone()])], Some("Contents/Config-3-Partition")).unwrap();
 
     assert_eq!(ir.model.configurations[0].source_index, Some(4));
     assert!(ir.model.configurations[0].bodies.is_none());
@@ -157,10 +159,6 @@ fn active_name_match_adopts_the_active_partition_with_bodies() {
             cadmpeg_core::dialect_id!("sldprt:test"),
         )),
         BTreeMap::from([
-            (
-                cadmpeg_core::nonblank_literal!("active_parasolid_block"),
-                "Contents/Config-3-Partition".into(),
-            ),
             (
                 cadmpeg_core::nonblank_literal!("sw_configuration_name"),
                 "Default".into(),
@@ -183,8 +181,8 @@ fn active_name_match_adopts_the_active_partition_with_bodies() {
     });
     let body = BodyId::mint("test:model:entity#body:active").expect("identity grammar");
 
-    assign_configuration_bodies(&mut ir, vec![(3, vec![body.clone()])]).unwrap();
-    mark_active_configuration(&mut ir);
+    assign_configuration_bodies(&mut ir, vec![(3, vec![body.clone()])], Some("Contents/Config-3-Partition")).unwrap();
+    mark_active_configuration(&mut ir, Some("Contents/Config-3-Partition"));
 
     let configuration = &ir.model.configurations[0];
     assert_eq!(configuration.source_index, Some(3));
@@ -203,10 +201,6 @@ fn duplicate_active_names_do_not_adopt_a_partition() {
                 )),
             ),
             BTreeMap::from([
-                (
-                    cadmpeg_core::nonblank_literal!("active_parasolid_block"),
-                    "Contents/Config-3-Partition".into(),
-                ),
                 (
                     cadmpeg_core::nonblank_literal!("sw_configuration_name"),
                     "Default".into(),
@@ -231,7 +225,7 @@ fn duplicate_active_names_do_not_adopt_a_partition() {
             });
         }
         let body = BodyId::mint("test:model:entity#body:active").unwrap();
-        assign_configuration_bodies(&mut ir, vec![(3, vec![body])]).unwrap();
+        assign_configuration_bodies(&mut ir, vec![(3, vec![body])], Some("Contents/Config-3-Partition")).unwrap();
         assert_eq!(ir.model.configurations[0].source_index, None);
         assert_eq!(ir.model.configurations[1].source_index, second_index);
         assert!(ir.model.configurations[0].bodies.is_none());
@@ -262,7 +256,7 @@ fn duplicate_configuration_source_identity_does_not_select_a_partition() {
     }
     let body = BodyId::mint("test:model:entity#body:partition").expect("identity grammar");
 
-    assign_configuration_bodies(&mut ir, vec![(5, vec![body.clone()])]).unwrap();
+    assign_configuration_bodies(&mut ir, vec![(5, vec![body.clone()])], None).unwrap();
 
     assert!(ir.model.configurations[0].bodies.is_none());
     assert!(ir.model.configurations[1].bodies.is_none());
@@ -283,10 +277,6 @@ fn inferred_partition_does_not_fabricate_active_configuration_identity() {
         )),
         BTreeMap::from([
             (
-                cadmpeg_core::nonblank_literal!("active_parasolid_block"),
-                "Contents/Config-3-Partition".into(),
-            ),
-            (
                 cadmpeg_core::nonblank_literal!("sw_configuration_name"),
                 "Default".into(),
             ),
@@ -294,8 +284,8 @@ fn inferred_partition_does_not_fabricate_active_configuration_identity() {
     ));
     let body = BodyId::mint("test:model:entity#body:active").expect("identity grammar");
 
-    assign_configuration_bodies(&mut ir, vec![(3, vec![body.clone()])]).unwrap();
-    mark_active_configuration(&mut ir);
+    assign_configuration_bodies(&mut ir, vec![(3, vec![body.clone()])], Some("Contents/Config-3-Partition")).unwrap();
+    mark_active_configuration(&mut ir, Some("Contents/Config-3-Partition"));
 
     assert_eq!(ir.model.configurations.len(), 1);
     let configuration = &ir.model.configurations[0];
@@ -308,6 +298,7 @@ fn inferred_partition_does_not_fabricate_active_configuration_identity() {
         &cadmpeg_test_support::service_decode_context(),
         &ir,
         &mut report,
+        Some("Contents/Config-3-Partition"),
     )
     .unwrap();
     assert!(report.losses.iter().any(|loss| {
@@ -324,10 +315,6 @@ fn active_configuration_name_binds_partition_without_fabricating_body_membership
             cadmpeg_core::dialect_id!("sldprt:test"),
         )),
         BTreeMap::from([
-            (
-                cadmpeg_core::nonblank_literal!("active_parasolid_block"),
-                "Contents/Config-3-Partition".into(),
-            ),
             (
                 cadmpeg_core::nonblank_literal!("sw_configuration_name"),
                 "Default".into(),
@@ -349,8 +336,8 @@ fn active_configuration_name_binds_partition_without_fabricating_body_membership
         native_ref: Some("native:configuration".into()),
     });
 
-    assign_configuration_bodies(&mut ir, Vec::new()).unwrap();
-    mark_active_configuration(&mut ir);
+    assign_configuration_bodies(&mut ir, Vec::new(), Some("Contents/Config-3-Partition")).unwrap();
+    mark_active_configuration(&mut ir, Some("Contents/Config-3-Partition"));
 
     let configuration = &ir.model.configurations[0];
     assert_eq!(configuration.source_index, Some(3));
@@ -362,6 +349,7 @@ fn active_configuration_name_binds_partition_without_fabricating_body_membership
         &cadmpeg_test_support::service_decode_context(),
         &ir,
         &mut report,
+        Some("Contents/Config-3-Partition"),
     )
     .unwrap();
     assert!(!report.losses.iter().any(|loss| {
@@ -395,6 +383,7 @@ fn duplicate_configuration_partition_identities_are_reported() {
         &cadmpeg_test_support::service_decode_context(),
         &ir,
         &mut report,
+        None,
     )
     .unwrap();
 
@@ -432,6 +421,7 @@ fn incomplete_configuration_names_are_reported() {
         &cadmpeg_test_support::service_decode_context(),
         &ir,
         &mut report,
+        None,
     )
     .unwrap();
 
@@ -448,10 +438,7 @@ fn active_configuration_partition_disagreement_is_reported() {
         cadmpeg_core::dialect::DialectLayers::of(cadmpeg_core::dialect::DialectMatch::admitted(
             cadmpeg_core::dialect_id!("sldprt:test"),
         )),
-        BTreeMap::from([(
-            cadmpeg_core::nonblank_literal!("active_parasolid_block"),
-            "Contents/Config-3-Partition".into(),
-        )]),
+        BTreeMap::from([]),
     ));
     ir.model.configurations.push(DesignConfiguration {
         id: ConfigurationId::mint("synthetic:test:id#configuration").expect("identity grammar"),
@@ -473,6 +460,7 @@ fn active_configuration_partition_disagreement_is_reported() {
         &cadmpeg_test_support::service_decode_context(),
         &ir,
         &mut report,
+        Some("Contents/Config-3-Partition"),
     )
     .unwrap();
 
@@ -530,6 +518,7 @@ fn incoherent_configuration_bodies_are_reported() {
         &cadmpeg_test_support::service_decode_context(),
         &ir,
         &mut report,
+        None,
     )
     .unwrap();
 
@@ -579,6 +568,7 @@ fn configuration_values_complete_parameters_without_baseline_values() {
         &cadmpeg_test_support::service_decode_context(),
         &ir,
         &mut report,
+        None,
     )
     .unwrap();
 
@@ -634,6 +624,7 @@ fn configuration_suppression_and_override_references_are_coherent() {
         &cadmpeg_test_support::service_decode_context(),
         &ir,
         &mut report,
+        None,
     )
     .unwrap();
 

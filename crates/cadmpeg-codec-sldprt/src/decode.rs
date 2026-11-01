@@ -125,7 +125,8 @@ pub(crate) fn decode(ctx: &DecodeContext<'_>, root: View<'_>) -> Result<Decoded,
             geometry_transferred: false,
         };
         report.losses.append(&mut pmi_losses);
-        append_design_losses(ctx, &ir, &mut report)?;
+        let active_block = active_parasolid_block(&scan);
+        append_design_losses(ctx, &ir, &mut report, active_block.as_deref())?;
         append_thin_operation_losses(&retention.ambiguous_thin_features, &ir, &mut report);
         return decode_result(ctx, ir, report, annotations, unknowns, retention);
     }
@@ -151,7 +152,8 @@ pub(crate) fn decode(ctx: &DecodeContext<'_>, root: View<'_>) -> Result<Decoded,
             )?;
             report.losses.append(&mut pmi_losses);
             append_tessellation_losses(&ir, &mut report);
-            append_design_losses(ctx, &ir, &mut report)?;
+            let active_block = active_parasolid_block(&scan);
+            append_design_losses(ctx, &ir, &mut report, active_block.as_deref())?;
             append_thin_operation_losses(&retention.ambiguous_thin_features, &ir, &mut report);
             return decode_result(ctx, ir, report, annotations, unknowns, retention);
         }
@@ -177,7 +179,8 @@ pub(crate) fn decode(ctx: &DecodeContext<'_>, root: View<'_>) -> Result<Decoded,
     report.losses.append(&mut brep_fallback_losses);
     report.losses.append(&mut pmi_losses);
     append_tessellation_losses(&ir, &mut report);
-    append_design_losses(ctx, &ir, &mut report)?;
+    let active_block = active_parasolid_block(&scan);
+    append_design_losses(ctx, &ir, &mut report, active_block.as_deref())?;
     append_thin_operation_losses(&retention.ambiguous_thin_features, &ir, &mut report);
     decode_result(ctx, ir, report, annotations, unknowns, retention)
 }
@@ -534,6 +537,7 @@ fn append_design_losses(
     ctx: &DecodeContext<'_>,
     ir: &CadIr,
     report: &mut DecodeBody,
+    active_block: Option<&str>,
 ) -> Result<(), CodecError> {
     use cadmpeg_ir::features::edge_treatments::{ChamferGroup, FullRoundSideSelection};
     use cadmpeg_ir::features::{
@@ -570,11 +574,8 @@ fn append_design_losses(
                 ir.model.configurations.len()
             )));
     }
-    let active_partition = ir
-        .source
-        .as_ref()
-        .and_then(|source| source.attributes.get("active_parasolid_block"))
-        .and_then(|section| crate::container::configuration_index(section))
+    let active_partition = active_block
+        .and_then(crate::container::configuration_index)
         .and_then(|index| u32::try_from(index).ok());
     let active_partition_mismatch = active_partition.filter(|active_partition| {
         ir.model
@@ -3331,7 +3332,8 @@ fn build_geometry_ir(
         &all_lanes,
     )?;
     crate::history::bind::order_features_for_regeneration(ctx, &mut ir.model.features)?;
-    assign_configuration_bodies(&mut ir, configuration_bodies)?;
+    let active_block = active_parasolid_block(scan);
+    assign_configuration_bodies(&mut ir, configuration_bodies, active_block.as_deref())?;
     let configuration_losses = crate::history::configuration::project_configuration_sketch_states(
         ctx,
         &mut ir,
@@ -3346,7 +3348,8 @@ fn build_geometry_ir(
         &all_lanes,
         &face_identities,
     )?;
-    mark_active_configuration(&mut ir);
+    let active_block = active_parasolid_block(scan);
+    mark_active_configuration(&mut ir, active_block.as_deref());
     crate::resolved_features::projections::project_unbound_cosmetic_thread_faces(
         ctx,
         &mut ir.model.features,
@@ -3785,12 +3788,7 @@ fn source_meta(
         cadmpeg_core::nonblank_literal!("outer_version"),
         format!("0x{:08x}", scan.version),
     );
-    if let Some(site) = container::select_active_parasolid_site(scan) {
-        attributes.insert(
-            cadmpeg_core::nonblank_literal!("active_parasolid_block"),
-            site.source_stream().as_str().to_owned(),
-        );
-    } else {
+    if container::select_active_parasolid_site(scan).is_none() {
         attributes.insert(
             cadmpeg_core::nonblank_literal!("sldprt_active_partition_unresolved"),
             "true".into(),
@@ -4097,10 +4095,6 @@ fn build_metadata_ir(
             container::Section::Block(block) => u64_from_index(block.offset),
             container::Section::Compound(_) => 0,
         };
-        attributes.insert(
-            cadmpeg_core::nonblank_literal!("active_parasolid_block"),
-            site.source_stream().as_str().to_owned(),
-        );
         attributes.insert(
             cadmpeg_core::nonblank_literal!("parasolid_schema"),
             site.header.schema.value().to_owned(),
@@ -4490,8 +4484,9 @@ fn build_metadata_ir(
     )?;
     retain_lane_images(ctx, &native, &mut annotations, &mut unknowns)?;
     native.store(ctx, ir.native.namespace_mut("sldprt"))?;
-    bind_active_configuration_partition(&mut ir);
-    mark_active_configuration(&mut ir);
+    let active_block = active_parasolid_block(scan);
+    bind_active_configuration_partition(&mut ir, active_block.as_deref());
+    mark_active_configuration(&mut ir, active_block.as_deref());
     preserve_source_image(ctx, scan, &mut annotations, &mut unknowns)?;
     let metadata = crate::native::DocumentMetadata {
         id: cadmpeg_core::nonblank_literal!("sldprt:metadata:document#0"),
@@ -4628,17 +4623,19 @@ fn parameter_identity_lanes(
     selected
 }
 
-fn mark_active_configuration(ir: &mut CadIr) {
+fn active_parasolid_block(scan: &ContainerScan) -> Option<String> {
+    container::select_active_parasolid_site(scan)
+        .map(|site| site.source_stream().as_str().to_owned())
+}
+
+fn mark_active_configuration(ir: &mut CadIr, active_block: Option<&str>) {
     let active_name = ir
         .source
         .as_ref()
         .and_then(|source| source.attributes.get("sw_configuration_name"))
         .map(String::as_str);
-    let active_index = ir
-        .source
-        .as_ref()
-        .and_then(|source| source.attributes.get("active_parasolid_block"))
-        .and_then(|section| crate::container::configuration_index(section));
+    let active_index = active_block
+        .and_then(crate::container::configuration_index);
     let by_name = active_name.and_then(|name| {
         let mut matches = ir
             .model
@@ -4718,6 +4715,7 @@ fn mark_active_configuration(ir: &mut CadIr) {
 fn assign_configuration_bodies(
     ir: &mut CadIr,
     configuration_bodies: Vec<(usize, Vec<cadmpeg_ir::ids::BodyId>)>,
+    active_block: Option<&str>,
 ) -> Result<(), CodecError> {
     let mut partition_map = BTreeMap::<u32, Vec<cadmpeg_ir::ids::BodyId>>::new();
     for (index, bodies) in configuration_bodies {
@@ -4758,7 +4756,7 @@ fn assign_configuration_bodies(
             }
         }
     }
-    if let Some((active_index, position)) = bind_active_configuration_partition(ir) {
+    if let Some((active_index, position)) = bind_active_configuration_partition(ir, active_block) {
         if let Some(bodies) = partition_map.remove(&active_index) {
             ir.model.configurations[position].bodies =
                 Some(cadmpeg_ir::features::DistinctMembers::try_from(bodies)?);
@@ -4802,16 +4800,13 @@ fn assign_configuration_bodies(
 
 /// Bind the active configuration's partition identity from the two native
 /// selectors, without inferring body membership.
-fn bind_active_configuration_partition(ir: &mut CadIr) -> Option<(u32, usize)> {
+fn bind_active_configuration_partition(ir: &mut CadIr, active_block: Option<&str>) -> Option<(u32, usize)> {
     let active_name = ir
         .source
         .as_ref()
         .and_then(|source| source.attributes.get("sw_configuration_name"));
-    let active_index = ir
-        .source
-        .as_ref()
-        .and_then(|source| source.attributes.get("active_parasolid_block"))
-        .and_then(|section| crate::container::configuration_index(section))
+    let active_index = active_block
+        .and_then(crate::container::configuration_index)
         .and_then(|index| u32::try_from(index).ok());
     let (Some(active_name), Some(active_index)) = (active_name, active_index) else {
         return None;
