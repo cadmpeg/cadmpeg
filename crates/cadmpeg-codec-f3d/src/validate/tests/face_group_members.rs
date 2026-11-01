@@ -15,6 +15,7 @@ fn unresolved_count(
         face_operands,
         identity_members,
         &[],
+        &[],
     );
     findings.len()
 }
@@ -63,4 +64,36 @@ fn split_direct_face_admits_the_reference_zero_and_two_tool_faces() {
         3,
         ConstructionRecipeKind::Face
     ));
+}
+
+#[test]
+fn retained_sketch_profiles_resolve_members_in_their_own_scope() {
+    let (archive, mut scope, headers, entities) =
+        crate::test_support::multiple_profiles::fixture(2);
+    crate::test_support::zip_test::with_scan(&archive, |scan| {
+        let losses = crate::design::decode::operands::bind_sketch_profiles(
+            scan,
+            std::slice::from_mut(&mut scope),
+            &headers,
+            &entities,
+        )
+        .unwrap();
+        assert_eq!(losses.len(), 1);
+        let stream = crate::ids::native_stream(&scope.id).unwrap();
+        for owner in [scope.record_index, scope.record_index + 1] {
+            let mut findings = Vec::new();
+            super::super::validate_face_group_member_resolution(
+                &mut findings,
+                BTreeSet::from([(stream, owner, 100), (stream, owner, 200)]),
+                &HashSet::new(),
+                &HashSet::new(),
+                &[],
+                std::slice::from_ref(&scope),
+            );
+            assert_eq!(
+                findings.len(),
+                if owner == scope.record_index { 0 } else { 2 }
+            );
+        }
+    });
 }

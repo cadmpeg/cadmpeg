@@ -1582,8 +1582,9 @@ pub(crate) fn bind_sketch_profiles(
     scopes: &mut [DesignParameterScope],
     headers: &[DesignRecordHeader],
     entities: &[DesignEntityHeader],
-) -> Result<(), CodecError> {
+) -> Result<Vec<cadmpeg_ir::report::loss::LossNote>, CodecError> {
     let headers = indexed_operand_headers(headers);
+    let mut losses = Vec::new();
     for scope in scopes.iter_mut().filter(|scope| {
         design_feature_family(&scope.kind()) == Some(DesignFeatureFamily::Extrude)
             || design_feature_family(&scope.kind()) == Some(DesignFeatureFamily::Sweep)
@@ -1598,8 +1599,7 @@ pub(crate) fn bind_sketch_profiles(
             continue;
         };
         let bytes = scan.entry_bytes(&entry.name)?;
-        let mut unique = None;
-        let mut multiple = false;
+        let mut profiles = Vec::new();
         for (ordinal, record_index) in scope.reference_members().values().copied().enumerate() {
             if scope.emboss_operand_construction().is_some() && ordinal != 1 {
                 continue;
@@ -1613,13 +1613,23 @@ pub(crate) fn bind_sketch_profiles(
             else {
                 continue;
             };
-            if unique.is_some() {
-                multiple = true;
-            } else {
-                unique = Some(profile);
-            }
+            profiles.push(profile);
         }
-        let Some(profile) = unique.filter(|_| !multiple) else {
+        if profiles.len() > 1 {
+            if let crate::records::feature::scope::DesignScopePayloadMut::Extrude(slot)
+            | crate::records::feature::scope::DesignScopePayloadMut::Extrusion(slot)
+            | crate::records::feature::scope::DesignScopePayloadMut::Extrusao(slot) =
+                scope.payload_mut()
+            {
+                losses.push(crate::loss::F3dLossCode::FeatureExtrudeProfileGroupNative.note(
+                    format!("{} Sketch-profile operands remain native because their group composition is unresolved.", profiles.len()),
+                ));
+                slot.get_or_insert_with(Default::default)
+                    .extrude_native_profiles = Some(profiles);
+            }
+            continue;
+        }
+        let Some(profile) = profiles.pop() else {
             continue;
         };
         if scope.kind() == crate::records::feature::scope::DesignFeatureKind::BaseFlange {
@@ -1652,7 +1662,7 @@ pub(crate) fn bind_sketch_profiles(
             slot.get_or_insert_with(Default::default).extrude_profile = Some(profile);
         }
     }
-    Ok(())
+    Ok(losses)
 }
 
 /// Decode compact counted selections in Extrude and Emboss scopes.
