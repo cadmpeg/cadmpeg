@@ -232,6 +232,11 @@ fn refine_with(refiner: &Refiner<'_, '_>, chart: &CurveGeometry) -> Option<Refin
         };
         stored.push((parameter, point, tangent));
     }
+    // A closed chart stays closed: its two ends are one stored point.
+    if points.first() == points.last() {
+        let first = stored.first()?.1;
+        stored.last_mut()?.1 = first;
+    }
     let mut nodes = Vec::with_capacity(stored.len());
     for (index, &(parameter, point, tangent)) in stored.iter().enumerate() {
         let next = stored.get(index + 1);
@@ -565,7 +570,7 @@ fn support_foot(support: Support<'_, '_, '_>, point: Point3) -> Option<(Point3, 
 #[cfg(test)]
 mod tests {
     use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
-    use cadmpeg_ir::geometry::analytic::PlaneSurface;
+    use cadmpeg_ir::geometry::analytic::{CylinderSurface, PlaneSurface};
     use cadmpeg_ir::geometry::nurbs::{NurbsCurve, NurbsPoles3};
     use cadmpeg_ir::geometry::{
         CurveGeometry, SolvedCurveGeometry, SolvedSurfaceGeometry, SurfaceGeometry,
@@ -573,6 +578,54 @@ mod tests {
     use cadmpeg_ir::math::{Point3, Vector3};
 
     use super::Support;
+
+    #[test]
+    fn a_closed_chart_refines_to_a_curve_with_one_closure_point() {
+        let floor = SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
+            PlaneSurface::try_new(
+                Point3::new(0.0, 0.0, 0.0),
+                Vector3::new(0.0, 0.0, 1.0),
+                Vector3::new(1.0, 0.0, 0.0),
+            )
+            .unwrap(),
+        ));
+        let tube = SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(
+            CylinderSurface::try_new(
+                Point3::new(0.0, 0.0, 0.0),
+                Vector3::new(0.0, 0.0, 1.0),
+                Vector3::new(1.0, 0.0, 0.0),
+                10.0,
+            )
+            .unwrap(),
+        ));
+        let turn = std::f64::consts::TAU / 16.0;
+        let mut points = (0..16)
+            .map(|index| {
+                let angle = f64::from(index) * turn;
+                Point3::new(10.0 * angle.cos(), 10.0 * angle.sin(), 0.0)
+            })
+            .collect::<Vec<_>>();
+        points.push(points[0]);
+        let mut knots = vec![0.0];
+        knots.extend((0..=16).map(f64::from));
+        knots.push(16.0);
+        let chart = CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(
+            NurbsCurve::new(1, knots, NurbsPoles3::Polynomial { points }, false).unwrap(),
+        ));
+
+        let refined = super::refine(
+            &chart,
+            [Support::Analytic(&floor), Support::Analytic(&tube)],
+        )
+        .unwrap()
+        .unwrap();
+
+        assert!(refined.chord_error_mm <= super::REFINED_CHORD_TOLERANCE_MM);
+        let NurbsPoles3::Polynomial { points } = refined.curve.pole_rows() else {
+            panic!("a refined chart is polynomial");
+        };
+        assert_eq!(points.first(), points.last());
+    }
 
     #[test]
     fn a_chart_where_its_supports_touch_stays_on_both() {

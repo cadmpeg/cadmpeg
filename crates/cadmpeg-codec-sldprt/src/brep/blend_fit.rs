@@ -247,6 +247,17 @@ impl<'a> Wedge<'a> {
     }
 }
 
+/// Whether a NURBS curve ends where it starts, so that its seam has two
+/// parameters.
+fn closed_nurbs(nurbs: &cadmpeg_ir::geometry::nurbs::NurbsCurve) -> bool {
+    nurbs.periodic()
+        || matches!(
+            nurbs.pole_rows(),
+            cadmpeg_ir::geometry::nurbs::NurbsPoles3::Polynomial { points }
+                if points.first() == points.last()
+        )
+}
+
 /// The spine interval spanned by a blend face's `vertices`, or `None` when
 /// there are none or they do not invert onto the spine.
 fn face_interval(
@@ -513,10 +524,34 @@ impl<'a, 'ctx> BlendGeometry<'a, 'ctx> {
                 let [lower, upper] =
                     cadmpeg_ir::eval::nurbs_curve_parameter_domain(nurbs)?.endpoints();
                 let window = (upper - lower) * LOCAL_SEARCH_FRACTION;
-                self.golden(
+                let found = self.golden(
                     [(seed - window).max(lower), (seed + window).min(upper)],
                     point,
-                )?
+                )?;
+                // The seam of a closed spine has two parameters, so a window
+                // past either end continues from the other end.
+                let beyond = (seed + window - upper, lower + window - seed);
+                let wrapped = if !closed_nurbs(nurbs) {
+                    None
+                } else if beyond.0 > 0.0 {
+                    Some([lower, lower + beyond.0])
+                } else if beyond.1 > 0.0 {
+                    Some([upper - beyond.1, upper])
+                } else {
+                    None
+                };
+                let gap = |s: f64| Some(self.spine_point(s)?.distance(point));
+                match wrapped {
+                    Some(range) => {
+                        let across = self.golden(range, point)?;
+                        if gap(across)? < gap(found)? {
+                            across
+                        } else {
+                            found
+                        }
+                    }
+                    None => found,
+                }
             }
             _ => self.spine_parameter(point, seed)?,
         };
@@ -1396,6 +1431,47 @@ mod tests {
         SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
             PlaneSurface::try_new(origin, normal, reference).unwrap(),
         ))
+    }
+
+    /// The spine parameter nearest (2, 0, 0) from a seed just below the end of
+    /// a square path whose last pole is `last`.
+    fn parameter_past_the_seam(last: Point3) -> f64 {
+        let points = [
+            Point3::new(0.0, 0.0, 0.0),
+            Point3::new(10.0, 0.0, 0.0),
+            Point3::new(10.0, 10.0, 0.0),
+            Point3::new(0.0, 10.0, 0.0),
+            last,
+        ];
+        let spine = CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(
+            cadmpeg_ir::geometry::nurbs::NurbsCurve::from_lanes(
+                1,
+                vec![0.0, 0.0, 10.0, 20.0, 30.0, 40.0, 40.0],
+                points.to_vec(),
+                None,
+                false,
+            )
+            .unwrap(),
+        ));
+        let arena = DecodeArena::new();
+        let policy = DecodePolicy::service();
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+        let ball = super::BlendGeometry::with_sides(&ctx, &spine, [Vec::new(), Vec::new()], 1.0);
+        *ball.last_parameter.borrow_mut() = Some(39.9);
+        ball.nearest_spine_parameter(Point3::new(2.0, 0.0, 0.0))
+            .unwrap()
+    }
+
+    #[test]
+    fn a_spine_inversion_crosses_the_seam_of_a_closed_spine() {
+        let parameter = parameter_past_the_seam(Point3::new(0.0, 0.0, 0.0));
+        assert!((parameter - 2.0).abs() < 1.0e-6, "{parameter}");
+    }
+
+    #[test]
+    fn a_spine_inversion_stays_in_its_window_on_an_open_spine() {
+        let parameter = parameter_past_the_seam(Point3::new(0.0, 1.0, 0.0));
+        assert!(parameter > 35.0, "{parameter}");
     }
 
     /// A line spine through `origin` along `direction`.
