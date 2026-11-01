@@ -294,13 +294,11 @@ pub(crate) fn source_attributes(
     let mut attributes = BTreeMap::new();
     for (key, value) in [
         ("document_root", scan.document.root_name.clone()),
-        ("object_count", format!("{}", scan.document.object_count)),
         (
             "document_kind",
             scan.document.document_kind().as_str().to_owned(),
         ),
         ("application_domains", scan.document.domains.join(",")),
-        ("archive_entry_count", format!("{}", scan.entries.len())),
     ]
     .into_iter()
     .chain(

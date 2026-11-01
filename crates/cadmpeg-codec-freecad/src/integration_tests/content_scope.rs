@@ -45,12 +45,9 @@ fn geometry_projection_declares_scope_before_its_content_digest() {
     let (ir, _, fidelity) = decoded.into_parts();
     assert!(fidelity.unrepresented().is_empty());
     let ctx = cadmpeg_test_support::service_decode_context();
-    let recorded = fidelity
-        .metadata
-        .get(cadmpeg_ir::hash::DOCUMENT_FINGERPRINT_METADATA_KEY)
-        .unwrap();
+    let recorded = fidelity.decode_digest.clone().expect("decode digest");
     assert_eq!(
-        *recorded,
+        recorded.as_str(),
         crate::writer::target::document_local_sha256(&ctx, &ir).unwrap()
     );
     let mut full_scope = ir.clone();
