@@ -49,7 +49,11 @@ fn is_point(kind: &PmDcSketchEntityKind) -> bool {
 
 #[test]
 fn the_line_construction_bit_marks_a_line_as_construction_geometry() {
+    // Each construction bit marks the line on its own.
     for flags in [
+        0x8_0000,
+        0x8_0000 | 0x40,
+        0x8_0000 | 0x8000,
         0x20_0000,
         0x20_0000 | 0x40,
         0x20_0000 | 0x40 | 0x8_0000,
@@ -66,6 +70,11 @@ fn the_line_construction_bit_marks_a_line_as_construction_geometry() {
         // The three remaining sides do not close a loop.
         assert!(projected.sketches[0].profiles.is_empty());
     }
+    // The same line without a construction bit bounds the square profile.
+    let projected = project_with_flags(closed_square_inventory().0, is_line, 0x40);
+    assert!(projected.entities.iter().all(|entity| !entity.construction));
+    assert_eq!(projected.unresolved_construction, 0);
+    assert_eq!(projected.sketches[0].profiles.len(), 1);
 }
 
 #[test]
