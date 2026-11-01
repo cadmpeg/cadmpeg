@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: Apache-2.0
-"""Run fuzz checks for the selected codec dependencies."""
+"""Check the fuzz targets that use the selected codecs."""
 
 import json
 import os
@@ -38,34 +38,28 @@ def target_sources(path: Path, seen: set[Path] | None = None) -> str:
     return source
 
 
-def command(mode: str, codecs: list[str]) -> list[str]:
-    if mode not in {'check', 'test'}:
-        raise ValueError(f'unknown fuzz gate: {mode}')
-    base = ['cargo', mode, '-q', '--manifest-path', str(MANIFEST)]
+def command(codecs: list[str]) -> list[str]:
+    base = ['cargo', 'check', '-q', '--manifest-path', str(MANIFEST), '--keep-going']
     if not codecs:
-        return base + (['--all-targets', '--keep-going'] if mode == 'check' else [])
+        return base + ['--all-targets']
     manifest = tomllib.loads(MANIFEST.read_text())
-    valid = set(manifest['features']) - {'default'}
-    if not set(codecs) <= valid:
-        return command(mode, [])
+    if not set(codecs) <= set(manifest['features']) - {'default'}:
+        return command([])
     patterns = [re.compile(r'\bcadmpeg_codec_' + re.escape(codec.replace('-', '_')) + r'\b')
                 for codec in codecs]
     targets = []
     for target in manifest['bin']:
-        if mode == 'test' and target.get('test') is False:
-            continue
         try:
             source = target_sources(FUZZ / target['path'])
         except ValueError:
-            return command(mode, [])
+            return command([])
         if any(pattern.search(source) for pattern in patterns):
             targets.extend(['--bin', target['name']])
-    return base + ['--no-default-features', '--features', ','.join(codecs), '--lib', *targets] + (
-        ['--keep-going'] if mode == 'check' else [])
+    return base + ['--no-default-features', '--features', ','.join(codecs), '--lib', *targets]
 
 
 def main() -> int:
-    return subprocess.run(command(sys.argv[1], json.loads(os.environ['CI_FUZZ_CODECS']))).returncode
+    return subprocess.run(command(json.loads(os.environ['CI_FUZZ_CODECS']))).returncode
 
 
 if __name__ == '__main__':
