@@ -150,7 +150,21 @@ impl super::Builder<'_, '_, '_, '_> {
             } else {
                 definition
             };
-            crate::schema::feature::restore(family, prim, node, self.scale, &mut self.issues);
+            let ids = &self.feature_ids;
+            let feature = |path: &str| {
+                ids.get(path).map_or_else(
+                    || crate::ids::feature(path).to_string(),
+                    ToString::to_string,
+                )
+            };
+            crate::schema::feature::restore(
+                family,
+                prim,
+                node,
+                self.scale,
+                &mut self.issues,
+                &feature,
+            );
         }
         let feature_targets = |builder: &Self, name: &str| -> Result<Vec<FeatureId>, String> {
             prim.relationship_targets(name)

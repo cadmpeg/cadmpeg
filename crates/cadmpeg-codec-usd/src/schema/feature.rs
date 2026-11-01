@@ -26,6 +26,10 @@ pub(crate) enum Leaf {
     Point,
     /// A list of CADIR identities.
     Identities,
+    /// A feature, as a relationship to its `CadFeature` prim.
+    Feature,
+    /// A list of features, as a relationship to their `CadFeature` prims.
+    Features,
 }
 
 /// One typed leaf: its path in the definition, `*` for each element of an
@@ -121,6 +125,17 @@ const REVOLVE: &[Field] = &[
     field(&["construction", "allow_multi_profile_faces"], Leaf::Flag),
 ];
 
+const TREE_NODE: &[Field] = &[
+    field(&["role"], Leaf::Token),
+    field(&["children", "active_child"], Leaf::Feature),
+    field(&["children", "children"], Leaf::Features),
+];
+
+const SKETCH: &[Field] = &[
+    field(&["sketch", "sketch"], Leaf::Text),
+    field(&["sketch", "space"], Leaf::Token),
+];
+
 const FILLET: &[Field] = &[
     field(&["groups", "*", "radius", "kind"], Leaf::Token),
     field(&["groups", "*", "radius", "radius"], Leaf::Length),
@@ -137,6 +152,8 @@ const CHAMFER: &[Field] = &[
 ];
 
 const PATTERN: &[Field] = &[
+    field(&["seeds", "*", "kind"], Leaf::Token),
+    field(&["seeds", "*", "value"], Leaf::Text),
     field(&["pattern", "kind"], Leaf::Token),
     field(&["pattern", "count"], Leaf::Count),
     field(&["pattern", "spacing"], Leaf::Length),
@@ -238,6 +255,18 @@ const DATUM_FRAME: &[Field] = &[
 
 /// The `CadFeature` subtypes (spec §18.7).
 pub(crate) const FAMILIES: &[Family] = &[
+    Family {
+        tag: "tree_node",
+        prim_type: "CadTreeNodeFeature",
+        namespace: "cad:treeNode",
+        fields: TREE_NODE,
+    },
+    Family {
+        tag: "sketch",
+        prim_type: "CadSketchFeature",
+        namespace: "cad:sketchFeature",
+        fields: SKETCH,
+    },
     Family {
         tag: "extrude",
         prim_type: "CadExtrudeFeature",
@@ -367,13 +396,15 @@ pub(crate) fn in_array(field: &Field) -> bool {
 }
 
 /// Sets the leaves of `family` that `prim` states into `definition`, with
-/// lengths multiplied by `scale`.
+/// lengths multiplied by `scale`; `feature` gives the identity of the
+/// feature of a `CadFeature` prim path.
 pub(crate) fn restore(
     family: &Family,
     prim: &Prim<'_>,
     definition: &mut serde_json::Value,
     scale: f64,
     issues: &mut Issues,
+    feature: &dyn Fn(&str) -> String,
 ) {
     for field in family.fields {
         let name = attribute(family, field);
@@ -393,9 +424,13 @@ pub(crate) fn restore(
                             .flatten()
                     })
                     .collect(),
-                Leaf::Count | Leaf::Flag | Leaf::Vector | Leaf::Point | Leaf::Identities => {
-                    Vec::new()
-                }
+                Leaf::Count
+                | Leaf::Flag
+                | Leaf::Vector
+                | Leaf::Point
+                | Leaf::Identities
+                | Leaf::Feature
+                | Leaf::Features => Vec::new(),
             };
             for (index, value) in values.into_iter().enumerate() {
                 if let Some(value) = value {
@@ -407,6 +442,19 @@ pub(crate) fn restore(
         let value = match field.leaf {
             Leaf::Token | Leaf::Text => token(prim, &name, issues).map(Into::into),
             Leaf::Identities => tokens(prim, &name, issues).map(Into::into),
+            Leaf::Feature => match prim.relationship_targets(&name).as_slice() {
+                [target] => Some(feature(target).into()),
+                _ => None,
+            },
+            Leaf::Features => {
+                let targets = prim.relationship_targets(&name);
+                (!targets.is_empty()).then(|| {
+                    targets
+                        .iter()
+                        .map(|target| serde_json::Value::from(feature(target)))
+                        .collect()
+                })
+            }
             Leaf::Length | Leaf::Angle => vector(prim, &name, 1, issues)
                 .and_then(|values| values.first().copied())
                 .and_then(|value| number(convert_in(field.leaf, value, scale))),

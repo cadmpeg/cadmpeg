@@ -180,6 +180,27 @@ class CadDatumFrameFeature "CadDatumFrameFeature" (
 {
 }
 
+class CadTreeNodeFeature "CadTreeNodeFeature" (
+    inherits = </CadFeature>
+    doc = """A tree node; typed leaves under cad:treeNode, with its children as
+             relationships to CadFeature prims (docs/formats/usd.md §18.7)."""
+)
+{
+    rel cad:treeNode:children:activeChild (
+        doc = """One target, the active child feature."""
+    )
+    rel cad:treeNode:children:children (
+        doc = """The child features, in order."""
+    )
+}
+
+class CadSketchFeature "CadSketchFeature" (
+    inherits = </CadFeature>
+    doc = """A sketch feature; typed leaves under cad:sketchFeature."""
+)
+{
+}
+
 class CadConfiguration "CadConfiguration" (
     inherits = </Typed>
     doc = """One design configuration: a named variant of the parametric model

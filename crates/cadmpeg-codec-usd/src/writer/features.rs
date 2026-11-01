@@ -63,9 +63,17 @@ impl Writer<'_> {
             .and_then(serde_json::Value::as_str)
             .unwrap_or("unknown")
             .to_owned();
+        let paths = &self.feature_paths;
+        let resolve = |id: &str| {
+            cadmpeg_ir::features::FeatureId::mint(id.to_owned())
+                .ok()
+                .and_then(|id| paths.get(&id).cloned())
+        };
         let (prim_type, typed) = payload
             .get_mut("definition")
-            .map_or(("CadFeature", Vec::new()), typed_definition);
+            .map_or(("CadFeature", Vec::new()), |definition| {
+                typed_definition(definition, &resolve)
+            });
         let name = path.rsplit('/').next().unwrap_or(FEATURES).to_owned();
         self.prim_head(&format!("def {prim_type}"), &name, &[]);
         self.out.open();
@@ -202,7 +210,10 @@ fn json_array<T: serde::Serialize>(records: &[T]) -> Option<String> {
 /// The prim type of `definition` and the attributes of its typed leaves,
 /// which it removes from `definition` (spec §18.7). A post-processed
 /// operation types the leaves of its operation.
-fn typed_definition(definition: &mut serde_json::Value) -> (&'static str, Vec<String>) {
+fn typed_definition(
+    definition: &mut serde_json::Value,
+    resolve: &dyn Fn(&str) -> Option<String>,
+) -> (&'static str, Vec<String>) {
     let tag = |value: &serde_json::Value| {
         value
             .get("definition")
@@ -226,6 +237,10 @@ fn typed_definition(definition: &mut serde_json::Value) -> (&'static str, Vec<St
             if let Some(line) = typed_array(node, field, &name) {
                 lines.push(line);
             }
+        } else if matches!(field.leaf, Leaf::Feature | Leaf::Features) {
+            if let Some(targets) = take_features(node, field.path, resolve) {
+                lines.push(format!("rel {name} = {targets}"));
+            }
         } else if let Some(text) = take(node, field.path, field.leaf) {
             lines.push(format!("uniform {} {name} = {text}", usd_type(field.leaf)));
         }
@@ -243,7 +258,7 @@ const fn usd_type(leaf: Leaf) -> &'static str {
         Leaf::Flag => "bool",
         Leaf::Vector => "vector3d",
         Leaf::Point => "point3d",
-        Leaf::Identities => "string[]",
+        Leaf::Identities | Leaf::Feature | Leaf::Features => "string[]",
     }
 }
 
@@ -256,6 +271,7 @@ fn leaf_text(value: &serde_json::Value, leaf: Leaf) -> Option<String> {
         Leaf::Angle => value.as_f64().map(|value| real(value.to_degrees())),
         Leaf::Count => value.as_u64().map(|value| value.to_string()),
         Leaf::Flag => value.as_bool().map(|flag| u8::from(flag).to_string()),
+        Leaf::Feature | Leaf::Features => None,
         Leaf::Identities => {
             let items = value
                 .as_array()?
@@ -339,4 +355,51 @@ fn typed_array(node: &mut serde_json::Value, field: &Field, name: &str) -> Optio
         usd_type(field.leaf),
         items.join(", ")
     ))
+}
+
+/// Removes the feature leaf at `path` of `node` and gives its relationship
+/// targets, when each feature it names has a `CadFeature` prim.
+fn take_features(
+    node: &mut serde_json::Value,
+    path: &[&str],
+    resolve: &dyn Fn(&str) -> Option<String>,
+) -> Option<String> {
+    let mut value = &*node;
+    for segment in path {
+        value = value.get(*segment)?;
+    }
+    let targets = match value {
+        serde_json::Value::String(id) => format!("<{}>", resolve(id)?),
+        serde_json::Value::Array(ids) if !ids.is_empty() => {
+            let paths = ids
+                .iter()
+                .map(|id| resolve(id.as_str()?).map(|path| format!("<{path}>")))
+                .collect::<Option<Vec<_>>>()?;
+            format!("[{}]", paths.join(", "))
+        }
+        _ => return None,
+    };
+    remove(node, path);
+    Some(targets)
+}
+
+/// Removes the leaf at `path` of `node` and the objects that the removal
+/// empties.
+fn remove(node: &mut serde_json::Value, path: &[&str]) {
+    let Some((first, rest)) = path.split_first() else {
+        return;
+    };
+    let Some(map) = node.as_object_mut() else {
+        return;
+    };
+    if rest.is_empty() {
+        map.remove(*first);
+        return;
+    }
+    if let Some(child) = map.get_mut(*first) {
+        remove(child, rest);
+        if child.as_object().is_some_and(serde_json::Map::is_empty) {
+            map.remove(*first);
+        }
+    }
 }

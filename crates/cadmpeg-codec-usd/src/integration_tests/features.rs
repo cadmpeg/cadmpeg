@@ -123,7 +123,7 @@ fn model() -> cadmpeg_ir::CadIr {
 fn features_survive_a_write() {
     let ir = model();
     let (text, report) = encode(&ir);
-    assert!(text.contains("def CadFeature"), "{text}");
+    assert!(text.contains("def CadTreeNodeFeature"), "{text}");
     let unwritten = crate::loss::UsdLossCode::ExportFeatureNotWritten.kind();
     assert!(
         report.losses.iter().all(|loss| loss.code != unwritten),
