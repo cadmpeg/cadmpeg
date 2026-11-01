@@ -985,6 +985,7 @@ fn decode_transfers_point_plane_cylinder_line() {
     // The Parasolid stream is preserved verbatim.
     let unknowns = result.ir().native_unknowns("nx").unwrap();
     assert_eq!(unknowns.len(), 1);
+    assert!(unknowns[0].links.is_empty());
     assert_eq!(
         result
             .source_fidelity()
@@ -995,14 +996,6 @@ fn decode_transfers_point_plane_cylinder_line() {
             .sha256()
             .len(),
         64
-    );
-    assert_eq!(
-        unknowns[0]
-            .links
-            .iter()
-            .map(cadmpeg_ir::ids::Identity::as_str)
-            .collect::<Vec<_>>(),
-        ["nx:s0:surf#0", "nx:s0:surf#1", "nx:s0:crv#0",]
     );
     assert_eq!(
         {

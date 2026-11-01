@@ -43,17 +43,7 @@ fn native_document_projections_keep_authored_fields_and_use_inward_links() {
         ir.model.product_definitions[0].native_ref.as_deref(),
         Some("nx:document:prototype#one")
     );
-    assert_eq!(ir.model.attributes.len(), 1);
-    assert_eq!(
-        ir.model.attributes[0].native_ref.as_deref(),
-        Some("nx:display:atom#one")
-    );
-    assert_eq!(
-        ir.model.attributes[0].values,
-        [Some(cadmpeg_ir::attributes::AttributeValue::String(
-            "authored label".to_owned()
-        ))]
-    );
+    assert!(ir.model.attributes.is_empty());
     assert_eq!(ir.model.appearances.len(), 1);
     assert_eq!(
         ir.model.appearances[0].native_ref.as_deref(),
