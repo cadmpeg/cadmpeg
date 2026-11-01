@@ -185,7 +185,7 @@ const EPS_VERTEX_MM: f64 = 1.0e-9;
 /// and u along `+x`, so v runs along `-y`. Its vertices are at native plane
 /// coordinates `(0, 0)`, `(2, 0)`, and `(0, 1)`, and each coedge carries the
 /// pcurve of its edge in those coordinates.
-fn text_plane_triangle_stream(scale: f64) -> Vec<u8> {
+fn text_plane_triangle_stream(scale: f64, [du, dv]: [f64; 2]) -> Vec<u8> {
     use std::fmt::Write as _;
     let mut text = format!(
         "23200 0 2 2 \n16 Autodesk Neutron 21 ASM 232.4.0.65535 OSX 9 Synthetic \n\
@@ -209,11 +209,16 @@ fn text_plane_triangle_stream(scale: f64) -> Vec<u8> {
          vertex $-1 -1 $-1 $11 0 $23 #\n\
          vertex $-1 -1 $-1 $12 0 $24 #\n",
     );
-    for (end, poles) in [(2, "0 0 2 0"), (1, "2 0 0 1"), (1, "0 1 0 0")] {
+    for (end, [u0, v0, u1, v1]) in [
+        (2, [0.0, 0.0, 2.0, 0.0]),
+        (1, [2.0, 0.0, 0.0, 1.0]),
+        (1, [0.0, 1.0, 0.0, 0.0]),
+    ] {
+        let poles = format!("{} {} {} {}", u0 - du, v0 - dv, u1 - du, v1 - dv);
         writeln!(
             text,
             "pcurve $-1 -1 $-1 0 forward {{ exp_par_cur nubs 1 open 2 0 1 {end} 1 {poles} 0 \
-             spline forward {{ ref 99 }} I I I I }} 0 0 #"
+             spline forward {{ ref 99 }} I I I I }} {du} {dv} #"
         )
         .expect("writing to a String does not fail");
     }
@@ -232,8 +237,11 @@ fn text_plane_triangle_stream(scale: f64) -> Vec<u8> {
 #[test]
 fn text_plane_pcurves_reach_their_vertices_in_the_stream_unit() {
     let ctx = cadmpeg_test_support::service_decode_context();
-    for scale in [1.0, 25.4, 10.0] {
-        let result = decode_bytes(&text_plane_triangle_stream(scale));
+    for (scale, offset) in [1.0, 25.4, 10.0]
+        .into_iter()
+        .flat_map(|scale| [[0.0, 0.0], [3.0, -2.0]].map(|offset| (scale, offset)))
+    {
+        let result = decode_bytes(&text_plane_triangle_stream(scale, offset));
         let model = &result.ir().model;
         let plane = model.surfaces[0].geometry.solved().expect("plane carrier");
         let vertices: Vec<_> = model

@@ -13,7 +13,7 @@ use crate::query_support::write;
 use crate::support::cadmpeg;
 
 const REL_DOC: &str = r#"{
-  "ir_version": "9",
+  "ir_version": "10",
   "model": {
     "features": [
       {

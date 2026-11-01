@@ -31,7 +31,7 @@ pub(crate) fn synthetic_geometry_with_wrapped_ref_pcurve_smbh() -> Vec<u8> {
     t_ident(&mut reference, "ref");
     t_long(&mut reference, 0);
     reference.push(0x10);
-    bytes.splice(opener..=close, reference);
+    bytes.splice(opener..close + 5, reference);
 
     let delta = bytes
         .windows(b"delta_state".len())
@@ -371,5 +371,131 @@ pub(crate) fn with_ref_pcurve_companion_reversed(mut bytes: Vec<u8>) -> Vec<u8> 
         .map(|offset| companion.offset + offset)
         .expect("generated intcurve cache marker");
     bytes.splice(offset..offset, [0x0a]);
+    bytes
+}
+
+pub(crate) fn with_pcurve_uv_offset(mut bytes: Vec<u8>, offset: [f64; 2]) -> Vec<u8> {
+    let records = cadmpeg_asm::test_support::sab::frame(
+        &bytes,
+        asm_header::record_stream_start(&bytes).unwrap(),
+        asm_header::solved_record_limit(&bytes).unwrap(),
+        cadmpeg_asm::kernel_header::RefWidth::Eight,
+    )
+    .unwrap();
+    let pcurve = records
+        .iter()
+        .find(|record| record.head() == "pcurve")
+        .unwrap();
+    let doubles = cadmpeg_asm::test_support::sab::payload_token_offsets(
+        &bytes,
+        pcurve,
+        cadmpeg_asm::kernel_header::RefWidth::Eight,
+        0x06,
+    )
+    .unwrap();
+    for (at, value) in doubles.iter().rev().take(2).rev().zip(offset) {
+        bytes[at + 1..at + 9].copy_from_slice(&value.to_le_bytes());
+    }
+    bytes
+}
+
+pub(crate) fn synthetic_periodic_pcurve_with_uv_offset_smbh(offset: [f64; 2]) -> Vec<u8> {
+    use crate::test_support::tokens_test::{t_pos, t_vec};
+    let mut bytes = with_pcurve_uv_offset(synthetic_geometry_with_pcurve_smbh(), offset);
+    let records = cadmpeg_asm::test_support::sab::frame(
+        &bytes,
+        asm_header::record_stream_start(&bytes).unwrap(),
+        asm_header::solved_record_limit(&bytes).unwrap(),
+        cadmpeg_asm::kernel_header::RefWidth::Eight,
+    )
+    .unwrap();
+    let plane = records
+        .iter()
+        .find(|record| record.head() == "plane")
+        .unwrap();
+    let mut surface = Vec::new();
+    t_subident(&mut surface, "cone");
+    t_ident(&mut surface, "surface");
+    t_ref(&mut surface, -1);
+    t_long(&mut surface, -1);
+    t_ref(&mut surface, -1);
+    t_pos(&mut surface, [0.0, 0.0, 0.0]);
+    t_vec(&mut surface, [0.0, 0.0, 1.0]);
+    t_vec(&mut surface, [1.0, 0.0, 0.0]);
+    t_dbl(&mut surface, 1.0);
+    surface.extend_from_slice(&[0x0b, 0x0b]);
+    t_dbl(&mut surface, 0.0);
+    t_dbl(&mut surface, 1.0);
+    t_dbl(&mut surface, 1.0);
+    surface.extend_from_slice(&[0x0b; 5]);
+    t_end(&mut surface);
+    bytes.splice(plane.offset..plane.offset + plane.len, surface);
+    bytes
+}
+
+pub(crate) fn assert_pcurve_geometry_close(
+    actual: &cadmpeg_ir::geometry::pcurve::PcurveGeometry,
+    expected: &cadmpeg_ir::geometry::pcurve::PcurveGeometry,
+) {
+    use cadmpeg_ir::geometry::pcurve::PcurveGeometry;
+    const UV_COORDINATE_TOLERANCE: f64 = 1.0e-12;
+    let (PcurveGeometry::Nurbs { nurbs: actual }, PcurveGeometry::Nurbs { nurbs: expected }) =
+        (actual, expected)
+    else {
+        panic!("NURBS pcurves required")
+    };
+    assert_eq!(actual.degree(), expected.degree());
+    assert_eq!(actual.knots(), expected.knots());
+    assert_eq!(actual.periodic(), expected.periodic());
+    assert_eq!(actual.weights(), expected.weights());
+    assert_eq!(
+        actual.control_points().len(),
+        expected.control_points().len()
+    );
+    for (actual, expected) in actual
+        .pole_rows()
+        .raw_points()
+        .into_iter()
+        .zip(expected.pole_rows().raw_points())
+    {
+        assert!((actual.u - expected.u).abs() <= UV_COORDINATE_TOLERANCE);
+        assert!((actual.v - expected.v).abs() <= UV_COORDINATE_TOLERANCE);
+    }
+}
+
+pub(crate) fn assert_pcurve_close(
+    actual: &cadmpeg_ir::geometry::pcurve::Pcurve,
+    expected: &cadmpeg_ir::geometry::pcurve::Pcurve,
+) {
+    assert_eq!(actual.id, expected.id);
+    assert_eq!(actual.metadata, expected.metadata);
+    assert_pcurve_geometry_close(&actual.geometry, &expected.geometry);
+}
+
+pub(crate) fn with_plane_pcurve_offset_vertices(mut bytes: Vec<u8>, offset: [f64; 2]) -> Vec<u8> {
+    let records = cadmpeg_asm::test_support::sab::frame(
+        &bytes,
+        asm_header::record_stream_start(&bytes).unwrap(),
+        asm_header::solved_record_limit(&bytes).unwrap(),
+        cadmpeg_asm::kernel_header::RefWidth::Eight,
+    )
+    .unwrap();
+    for (index, position) in [
+        (16usize, [0.025 + offset[0], 0.05 + offset[1], 0.0]),
+        (17, [0.075 + offset[0], 0.15 + offset[1], 0.0]),
+    ] {
+        let record = &records[index];
+        let positions = cadmpeg_asm::test_support::sab::payload_token_offsets(
+            &bytes,
+            record,
+            cadmpeg_asm::kernel_header::RefWidth::Eight,
+            0x13,
+        )
+        .unwrap();
+        for (slot, value) in position.into_iter().enumerate() {
+            let at = positions[0] + 1 + slot * 8;
+            bytes[at..at + 8].copy_from_slice(&value.to_le_bytes());
+        }
+    }
     bytes
 }

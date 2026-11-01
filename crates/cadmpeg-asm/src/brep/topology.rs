@@ -397,14 +397,18 @@ pub(super) fn walk_reachable_topology(
                                 let edge =
                                     ce.ref_at(6).and_then(|edge| by_index.get(&edge)).copied();
                                 let decoded = decoded.map(|(mut decoded, native_chart)| -> Result<_, cadmpeg_core::CodecError> {
-                                    if native_chart {
-                                        if let Some(surface) = face
-                                            .ref_at(7)
-                                            .and_then(|surface| by_index.get(&surface))
-                                        {
-                                            let Some(()) = nurbs::support_chart::SupportChart::of_surface_record(surface.head(), &surface.tokens).and_then(|chart| chart.normalize(&mut decoded)) else { return Ok(None); };
+                                    let chart = match face.ref_at(7).and_then(|surface| by_index.get(&surface)) {
+                                        Some(surface) => {
+                                            let Some(chart) = nurbs::support_chart::SupportChart::of_surface_record(surface.head(), &surface.tokens) else { return Ok(None); };
+                                            chart
                                         }
+                                        None => nurbs::support_chart::SupportChart::Canonical,
+                                    };
+                                    let offset = super::geometry::pcurve_uv_offset(prec).unwrap_or([0.0, 0.0]);
+                                    if !offset.iter().all(|component| component.is_finite()) {
+                                        return Err(cadmpeg_core::CodecError::malformed(cadmpeg_ir::geometry::pcurve::PcurveMetadata::NON_FINITE_UV_OFFSET));
                                     }
+                                    let Some(()) = chart.normalize_with_offset(&mut decoded, offset, native_chart) else { return Ok(None); };
                                     Ok(pcurve_ranges_on_domain(&decoded, edge)
                                         .and_then(|ranges| ranges.into_iter().next())
                                         .map(|range| (decoded, range)))

@@ -5582,6 +5582,7 @@ impl<'a> Builder<'a> {
                 pcurve.wrapper_reversed().is_some()
                     || pcurve.native_tail_flags().is_some()
                     || pcurve.parameter_range().is_some()
+                    || pcurve.uv_offset().is_some()
                     || pcurve.fit_tolerance().is_some()
             })
             .count();

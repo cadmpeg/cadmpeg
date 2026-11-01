@@ -694,7 +694,7 @@ fn parser_rejects_unsupported_missing_and_non_string_versions() {
     for (version, found) in [
         (Some(serde_json::Value::String("7".into())), "Some(\"7\")"),
         (Some(serde_json::Value::String("8".into())), "Some(\"8\")"),
-        (Some(serde_json::Value::String("10".into())), "Some(\"10\")"),
+        (Some(serde_json::Value::String("9".into())), "Some(\"9\")"),
         (Some(serde_json::Value::String("11".into())), "Some(\"11\")"),
         (Some(serde_json::Value::String("37".into())), "Some(\"37\")"),
         (Some(serde_json::Value::String("36".into())), "Some(\"36\")"),
