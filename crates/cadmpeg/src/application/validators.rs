@@ -1,24 +1,10 @@
 // SPDX-License-Identifier: Apache-2.0
-//! Native validation and measurement findings over a decoded document.
-//!
-//! Codec-owned validators run over a decoded document's native namespaces,
-//! and measurement adds its ring-order and orientation warnings, an info
-//! finding when its allowance runs out before every item is checked, and
-//! the comparison of each declared measure with its measured quantity. Unlike
-//! the codec registry, this is an application concern: it belongs to
-//! `cadmpeg check`, not to the four questions an embedder asks of a file,
-//! and no decoder admission route reads it.
+//! Application resource session for composed document validation.
 
 use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
 use cadmpeg_core::CodecError;
-use cadmpeg_ir::validate::{
-    validate_neutral_for_decode, validate_neutral_with_source_fidelity_for_decode,
-};
-use cadmpeg_ir::{
-    report::check::{Finding, ValidationReport},
-    CadIr, SourceFidelity,
-};
-use cadmpeg_measure::{MeasureOptions, WorkProfile};
+use cadmpeg_ir::report::check::ValidationReport;
+use cadmpeg_measure::WorkProfile;
 use cadmpeg_registry::InputCatalog;
 
 use super::document::LoadedDocument;
@@ -38,56 +24,18 @@ pub(crate) fn validate_loaded(
         let losses = document
             .decode_report()
             .map_or_else(Vec::new, |report| report.losses.clone());
-        let mut report = match document.fidelity() {
-            Some(fidelity) => validate_neutral_with_source_fidelity_for_decode(
-                &ctx,
-                &document.ir,
-                fidelity,
-                losses,
-            ),
-            None => validate_neutral_for_decode(&ctx, &document.ir, losses),
-        }?;
-        report.findings.extend(validate_native(
+        let report = cadmpeg_registry::check_with_context(
             &ctx,
             inputs,
             &document.ir,
             document.fidelity(),
-        )?);
-        let options = MeasureOptions {
+            losses,
             work,
-            density: None,
-        };
-        report
-            .findings
-            .extend(cadmpeg_measure::findings(&ctx, &document.ir, options)?);
-        report.findings.extend(cadmpeg_measure::declared_findings(
-            &ctx,
-            &document.ir,
-            options,
-        )?);
+        )?;
         ctx.finish_session()?;
         Ok::<_, CodecError>(report)
     })();
     result.map_err(|error| ApplicationError::from(error).at_stage(RefusalStage::Check))
-}
-
-/// Runs every registered codec's native validator over the namespace it owns.
-fn validate_native(
-    ctx: &DecodeContext<'_>,
-    inputs: &InputCatalog,
-    ir: &CadIr,
-    source: Option<&SourceFidelity>,
-) -> Result<Vec<Finding>, CodecError> {
-    let mut findings = Vec::new();
-    for descriptor in inputs.descriptors() {
-        let Some(codec) = descriptor.codec() else {
-            continue;
-        };
-        if ir.native.namespace(codec.id().as_str()).is_some() {
-            findings.extend(codec.validate_native(ctx, ir, source)?);
-        }
-    }
-    Ok(findings)
 }
 
 #[cfg(test)]
@@ -95,9 +43,9 @@ mod tests {
     #[cfg(feature = "nx")]
     mod deltas_source;
 
-    use super::validate_native;
     use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
     use cadmpeg_ir::CadIr;
+    use cadmpeg_registry::validate_native;
     use cadmpeg_registry::InputCatalog;
 
     fn findings(inputs: &InputCatalog, ir: &CadIr) -> Vec<cadmpeg_ir::report::check::Finding> {

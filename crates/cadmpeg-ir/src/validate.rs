@@ -129,7 +129,12 @@ fn validate_model_with_index<'ir>(
     check_coedge_pairing(ir, &mut findings)?;
     check_shell_connectivity(ir, &mut findings);
     check_wire_topology(ir, &mut findings);
-    check_carrier_reachability(ctx, ids.native_view(), &mut findings)?;
+    if ir.fragment {
+        record_finding(&mut findings, Check::FragmentSkipped, Severity::Info, None,
+            format_args!("skipped carrier_reachability: document-wide ownership requires a complete document"));
+    } else {
+        check_carrier_reachability(ctx, ids.native_view(), &mut findings)?;
+    }
     check_native_links(ids.native_view(), ids, &mut findings);
     check_parameter_domains(ctx, ir, &mut findings)?;
     check_edge_endpoint_consistency(ctx, ir, &mut findings)?;

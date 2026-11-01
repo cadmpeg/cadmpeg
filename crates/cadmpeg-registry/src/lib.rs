@@ -1,27 +1,10 @@
 // SPDX-License-Identifier: Apache-2.0
 #![cfg_attr(test, allow(clippy::unwrap_used))]
-//! The cadmpeg codec registry and dialect registries, as a library.
+//! Format registration and composed document checks for library consumers.
 //!
-//! An application embedding cadmpeg as its file layer asks four questions.
-//! This crate carries the two that are answered statically or at inspection
-//! depth, and nothing above them: no conversion pipeline, no artifact store,
-//! no command layer.
-//!
-//! 1. **What is this file?** — [`resolve_and_inspect_with()`] applies the
-//!    loader's source selection, including forced input, and reconstructs the
-//!    selected container. Its summary carries the classified dialect.
-//! 2. **What can I save as?** — [`Format`] and [`build_encoder`] give the
-//!    synthesis catalogs (`Encoder::targets`), and [`dialect_table`] / [`support`]
-//!    serve the registries from tables compiled into the binary.
-//!
-//! The other two are answered elsewhere and stay there. "What will I lose?" is
-//! `Encoder::plan`, which reports against a live document; "what did I open or
-//! write?" is `SourceMeta::dialect` and the serialized export report's
-//! `identity.target` field on the artifacts a run produced. Preservation is per-input and never advertised
-//! statically, so no capability matrix appears here.
-//!
-//! The crate root is the facade: every public name is re-exported here, and
-//! the implementation modules stay private, so each item has one path.
+//! Detection and inspection use the input catalogue. Encoder targets and
+//! dialect support use the compiled registries. The reproduction API lives in
+//! [`repro`]. Composed validation also serves the CLI.
 
 mod catalog;
 mod descriptors;
@@ -51,3 +34,9 @@ pub use views::{
     dialect_provenance, dialect_table, format_rows, DialectProvenance, DialectTableError,
     FormatDialects, FormatRow, UnknownFormat,
 };
+
+/// Library entry points for reproducible fragments.
+pub mod repro;
+/// Composed document validation.
+mod validation;
+pub use validation::{check_with_context, validate_native};

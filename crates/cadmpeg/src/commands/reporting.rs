@@ -394,8 +394,8 @@ fn write_serialized_report(
     write_report_text(input, Some(output), &text)
 }
 
-/// Persist an already serialized envelope so stdout and the report file agree.
-pub(super) fn write_report_text(
+/// Persist an envelope and attach the input locator to check reports.
+pub(crate) fn write_report_text(
     input: &Path,
     output: Option<&FileDestination>,
     text: &str,
@@ -403,7 +403,15 @@ pub(super) fn write_report_text(
     let Some(output) = output else {
         return Ok(());
     };
-    let mut bytes = text.as_bytes().to_vec();
+    let mut value: serde_json::Value = serde_json::from_str(text)?;
+    let mut bytes = if value["command"].as_str() == Some("check")
+        && value["check_report"]["findings"].is_array()
+    {
+        value["input_path"] = serde_json::to_value(std::fs::canonicalize(input)?)?;
+        serde_json::to_vec_pretty(&value)?
+    } else {
+        text.as_bytes().to_vec()
+    };
     bytes.push(b'\n');
     output.write(input, &bytes)?;
     eprintln!("wrote report {}", output.path.display());
@@ -461,7 +469,7 @@ pub(crate) fn print_decode_report(
     Ok(())
 }
 
-pub(super) fn print_check_report(
+pub(crate) fn print_check_report(
     writer: &mut impl Write,
     report: &ValidationReport,
 ) -> io::Result<()> {

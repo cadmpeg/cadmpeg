@@ -551,6 +551,7 @@ dependencies = [
  "cadmpeg-container",
  "cadmpeg-core",
  "cadmpeg-ir",
+ "cadmpeg-measure",
  "cadmpeg-parasolid",
  "cadmpeg-test-support",
  "serde",

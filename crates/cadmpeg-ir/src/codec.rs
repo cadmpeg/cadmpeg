@@ -346,6 +346,13 @@ pub trait CodecBackend {
         Ok(Vec::new())
     }
 
+    /// Replace source text while retaining codec-owned lexical constraints.
+    fn repro_redactions(
+        _ir: &CadIr,
+    ) -> Result<std::collections::BTreeMap<String, String>, CodecError> {
+        Ok(std::collections::BTreeMap::new())
+    }
+
     /// Judge, from a leading byte prefix, whether this codec applies.
     fn detect_impl(
         &self,
@@ -448,6 +455,12 @@ pub trait Codec: sealed::Sealed {
         source: Option<&SourceFidelity>,
     ) -> Result<Vec<Finding>, CodecError>;
 
+    /// Codec-owned lexical replacements for private reproduction fragments.
+    fn repro_redactions(
+        &self,
+        ir: &CadIr,
+    ) -> Result<std::collections::BTreeMap<String, String>, CodecError>;
+
     /// Inspects the source under its input and resource limits.
     fn inspect(
         &self,
@@ -506,6 +519,13 @@ impl<C: CodecBackend + ?Sized> Codec for C {
         source: Option<&SourceFidelity>,
     ) -> Result<Vec<Finding>, CodecError> {
         C::validate_native(ctx, ir, source)
+    }
+
+    fn repro_redactions(
+        &self,
+        ir: &CadIr,
+    ) -> Result<std::collections::BTreeMap<String, String>, CodecError> {
+        C::repro_redactions(ir)
     }
 
     fn inspect(
