@@ -3,6 +3,7 @@
 
 use std::io::{self, Cursor, Read, Seek, SeekFrom};
 
+use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, View, WholeInput};
 use cadmpeg_ir::codec::{Codec, Confidence, DecodeOptions};
 
 use crate::test_support::test_cards::{card, CARD_COLUMNS, CARD_DATA_COLUMNS, CARD_LINE_BYTES};
@@ -48,6 +49,31 @@ fn fixed_ascii_detection_requires_two_consistent_cards() {
         cadmpeg_test_support::detection::confidence(&IgesCodec, &arbitrary),
         Confidence::No
     );
+}
+
+#[test]
+fn whole_input_detection_admits_one_start_card() {
+    let arena = DecodeArena::new();
+    let policy = DecodePolicy::service();
+    let confidence_of = |bytes: &[u8]| {
+        let (ctx, _) = DecodeContext::from_root_bytes(bytes, &arena, &policy).unwrap();
+        let input = WholeInput::of_source(View::over_retained(bytes), &mut Cursor::new(bytes))
+            .unwrap()
+            .unwrap();
+        IgesCodec.detect_whole(&ctx, input).unwrap()
+    };
+
+    let start = card(b"generated fixture", b'S', 1);
+    assert_eq!(confidence_of(&start), Confidence::Medium);
+    assert_eq!(confidence_of(&start[..CARD_COLUMNS]), Confidence::Medium);
+    assert_eq!(
+        confidence_of(&card(b"generated fixture", b'G', 1)),
+        Confidence::No
+    );
+
+    let mut two_cards = card(b"generated fixture", b'S', 1);
+    two_cards.extend(card(b"", b'G', 1));
+    assert_eq!(confidence_of(&two_cards), Confidence::High);
 }
 
 #[test]

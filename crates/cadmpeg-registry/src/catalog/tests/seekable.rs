@@ -157,3 +157,82 @@ fn directory_probe_reads_metadata_without_scanning_or_copying_a_large_payload() 
     .expect("namespace"));
     ctx.finish_session().expect("session");
 }
+
+fn iges_start_card() -> [u8; 80] {
+    let mut card = [b' '; 80];
+    card[..5].copy_from_slice(b"start");
+    card[72] = b'S';
+    card[73..].copy_from_slice(b"      1");
+    card
+}
+
+#[test]
+fn a_whole_source_of_one_start_card_gets_a_second_look() {
+    let mut bytes = iges_start_card().to_vec();
+    bytes.push(b'\n');
+    let arena = DecodeArena::new();
+    let policy = DecodePolicy::service();
+    let (ctx, root) =
+        DecodeContext::from_root_bytes(&bytes, &arena, &policy).expect("whole source");
+    let catalog = InputCatalog::with_builtins();
+    let mut source = Cursor::new(bytes.as_slice());
+    let found = catalog
+        .resolve_seekable_source(&ctx, root, &mut source, None)
+        .expect("second look");
+    let ResolvedSource::Native { codec, selection } = found else {
+        panic!("native codec");
+    };
+    assert_eq!(codec.id().as_str(), "iges");
+    assert_eq!(
+        selection,
+        crate::Selection::Detected {
+            confidence: cadmpeg_ir::Confidence::Medium
+        }
+    );
+    ctx.finish_session().expect("session");
+}
+
+#[test]
+fn a_prefix_shorter_than_the_source_gets_no_second_look() {
+    let mut bytes = iges_start_card().to_vec();
+    bytes.push(b'\n');
+    bytes.resize(bytes.len() + 200, b'x');
+    let prefix = &bytes[..81];
+    let arena = DecodeArena::new();
+    let policy = DecodePolicy::service();
+    let (ctx, root) = DecodeContext::from_root_bytes(prefix, &arena, &policy).expect("prefix");
+    let catalog = InputCatalog::with_builtins();
+    let mut source = Cursor::new(bytes.as_slice());
+    let before = source
+        .seek(SeekFrom::Start(cadmpeg_core::decode::u64_from_index(
+            prefix.len(),
+        )))
+        .expect("prefix position");
+    let found = catalog
+        .resolve_seekable_source(&ctx, root, &mut source, None)
+        .expect("resolve");
+    assert!(matches!(found, ResolvedSource::Unrecognized));
+    assert_eq!(source.position(), before);
+    ctx.finish_session().expect("session");
+}
+
+#[test]
+fn a_whole_source_nothing_recognizes_stays_unrecognized() {
+    let bytes = [b'x'; 40];
+    let arena = DecodeArena::new();
+    let policy = DecodePolicy::service();
+    let (ctx, root) = DecodeContext::from_root_bytes(&bytes, &arena, &policy).expect("prefix");
+    let catalog = InputCatalog::with_builtins();
+    let mut source = Cursor::new(bytes.as_slice());
+    let before = source
+        .seek(SeekFrom::Start(cadmpeg_core::decode::u64_from_index(
+            bytes.len(),
+        )))
+        .expect("source position");
+    let found = catalog
+        .resolve_seekable_source(&ctx, root, &mut source, None)
+        .expect("resolve");
+    assert!(matches!(found, ResolvedSource::Unrecognized));
+    assert_eq!(source.position(), before);
+    ctx.finish_session().expect("session");
+}
