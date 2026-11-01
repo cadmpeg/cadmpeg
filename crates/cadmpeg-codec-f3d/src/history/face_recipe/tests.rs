@@ -192,8 +192,10 @@ fn delete_face_selection_retains_native_group_until_every_member_has_boundary_pr
     );
     scope
         .try_edit(|draft| {
+            draft.feature_ordinal_offset = draft.paired_byte_offset - 76;
             draft.history_state_id = Some(2);
             draft.previous_history_state_id = Some(1);
+            draft.previous_history_state_id_offset = Some(draft.feature_ordinal_offset + 30);
         })
         .unwrap();
     let group: crate::records::topology::construction::DesignConstructionOperandGroup =

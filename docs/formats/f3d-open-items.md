@@ -951,16 +951,17 @@ the native feature when a fixed lane carries a symmetric distance.
 
 **Note.** A non-unique or incomplete reference proof retains its native operand identity and reports `history.edge-midpoints-unresolved` when the feature requires edge samples.
 
-### DR-170. Single-clause bounded-face nodes in DeleteFace selections
+### DR-170. Unresolved DeleteFace operand bindings
 
-**Question.** How does a bounded-face node with second prelude scalar `1` bind its incident face pair and endpoint topology to a selected historical face?
+**Question.** Which native rules bind DeleteFace operands with a single endpoint clause, an empty live prefix-face lane, repeated edge-incidence matches, or a prefix-fragment face fan that fails the live topology match?
 
-**Known.** Five DeleteFace bounded-face operands in one public local file each contain two opener-framed nodes. Every node stores second prelude scalar `1`. The two-clause structure parser retains these nodes as complete raw programs. Other DeleteFace operands carry second prelude scalar `2` and two endpoint face-fan clauses as defined in `f3d.md` §3.1.
+**Known.** Seven of sixteen DeleteFace groups in one public local file retain native selections. Two groups contain five operands with ten opener-framed nodes whose second prelude scalar is `1`; the two-clause structure parser retains their raw programs. Two groups contain three unresolved operands whose referenced prefix ordinal has an empty face lane in the preceding topology. Two groups contain five operands with multiple boundary-edge matches after incident-pair and cyclic endpoint-fan matching; repeated fan patterns leave two edge matches for a node. One group contains one operand whose prefix lanes repeat a face fragment while its boundary endpoint fans require another face. Two members of a partially resolved group have complete face proofs; its third member has the empty prefix lane. The complete-boundary admission rule is defined in `f3d.md` §3.1.
 
-**Need.** The complete single-clause grammar and its topology binding, including the relation between the clause and the endpoints of a closed boundary edge. Independent files with controlled closed-edge face selections must distinguish the clause count from an endpoint or vertex selector.
+**Need.** The complete single-clause grammar and its relation to closed-edge endpoints; the binding of an empty prefix lane to a preceding face; the directional or topology-entry rule that distinguishes repeated edge matches; and the ordinal and fragment rule for the mismatched prefix fan. Independent selections that vary these controls must distinguish the possible bindings.
 
-**Conflict.** The two-clause grammar requires second prelude scalar `2`; these nodes carry `1`.
+**Conflict.** The two-clause grammar requires second prelude scalar `2`; ten nodes carry `1`.
 
+**Note.** The seven groups retain their native identities and report `feature.face-selection-native`.
 **Note.** An unresolved DeleteFace group retains its native identity and reports `feature.face-selection-native`.
 
 ### DR-172. Paired-locus dimension owner binding
