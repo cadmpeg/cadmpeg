@@ -26,6 +26,7 @@ pub mod tree;
 mod unique;
 mod utf16;
 mod view;
+mod whole_input;
 mod xml_scan;
 pub mod zstd;
 
@@ -42,11 +43,12 @@ pub use policy::{DecodeMode, DecodePolicy, InspectOptions, ResourceLimits};
 pub use probe::{ParseError, ParseErrorKind};
 pub use scope::{ArenaClass, ArenaClasses, ContentScope};
 pub use space::{ByteRange, SpaceId};
-pub use transaction::{DecodeCheckpoint, DecodeTrace};
+pub use transaction::{DecodeCheckpoint, DecodeSpaceRebinding, DecodeTrace};
 pub use unique::unique_index;
 pub use view::{
     bounded_len, id_from_index, index_from_u32, index_from_u64, u64_from_index, BoundedCount, View,
 };
+pub use whole_input::WholeInput;
 pub use xml_scan::{
     XmlElement, XmlElementScan, XmlEncoding, XmlFramingFault, XmlFramingIssue, XmlTermination,
 };

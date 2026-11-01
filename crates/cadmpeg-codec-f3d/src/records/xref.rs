@@ -25,11 +25,13 @@ cadmpeg_core::named_optional_field!(
 );
 const EPS_XREF_PLACEMENT_RIGID_E8: f64 = 1.0e-8;
 
-fn valid_xref_placement_transform(transform: &[[f64; 4]; 4]) -> bool {
+/// The determinant of a finite affine matrix whose linear block is
+/// orthonormal, or `None` when the matrix is not one.
+pub(super) fn orthonormal_determinant(transform: &[[f64; 4]; 4]) -> Option<f64> {
     if !transform.iter().flatten().all(|value| value.is_finite())
         || transform[3] != [0.0, 0.0, 0.0, 1.0]
     {
-        return false;
+        return None;
     }
     let columns = [
         [transform[0][0], transform[1][0], transform[2][0]],
@@ -39,7 +41,7 @@ fn valid_xref_placement_transform(transform: &[[f64; 4]; 4]) -> bool {
     for (ordinal, column) in columns.iter().enumerate() {
         let norm = column.iter().map(|value| value * value).sum::<f64>();
         if (norm - 1.0).abs() > EPS_XREF_PLACEMENT_RIGID_E8 {
-            return false;
+            return None;
         }
         for other in &columns[..ordinal] {
             let dot = column
@@ -48,15 +50,22 @@ fn valid_xref_placement_transform(transform: &[[f64; 4]; 4]) -> bool {
                 .map(|(left, right)| left * right)
                 .sum::<f64>();
             if dot.abs() > EPS_XREF_PLACEMENT_RIGID_E8 {
-                return false;
+                return None;
             }
         }
     }
-    let determinant = transform[0][0]
-        * (transform[1][1] * transform[2][2] - transform[1][2] * transform[2][1])
-        - transform[0][1] * (transform[1][0] * transform[2][2] - transform[1][2] * transform[2][0])
-        + transform[0][2] * (transform[1][0] * transform[2][1] - transform[1][1] * transform[2][0]);
-    (determinant - 1.0).abs() <= EPS_XREF_PLACEMENT_RIGID_E8
+    Some(
+        transform[0][0] * (transform[1][1] * transform[2][2] - transform[1][2] * transform[2][1])
+            - transform[0][1]
+                * (transform[1][0] * transform[2][2] - transform[1][2] * transform[2][0])
+            + transform[0][2]
+                * (transform[1][0] * transform[2][1] - transform[1][1] * transform[2][0]),
+    )
+}
+
+fn valid_xref_placement_transform(transform: &[[f64; 4]; 4]) -> bool {
+    orthonormal_determinant(transform)
+        .is_some_and(|determinant| (determinant - 1.0).abs() <= EPS_XREF_PLACEMENT_RIGID_E8)
 }
 
 /// A finite proper rigid transform from an F3D XREF placement record.

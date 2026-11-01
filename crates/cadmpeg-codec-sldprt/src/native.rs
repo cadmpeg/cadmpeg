@@ -1252,10 +1252,25 @@ fn repeated_circle_display_shape_valid(
     record: &FeatureInputRelationInstance,
     ids: &RecordIds<'_>,
 ) -> bool {
+    // A run can end with the operandless driving scalar of its dimension.
+    let (run, parameter) = match record.parameter_scalar_ref() {
+        Some(parameter) => match record.scalar_refs().split_last() {
+            Some((last, run)) if last == parameter => match ids.scalars.get(parameter) {
+                Some((_, scalar))
+                    if scalar.operands.is_empty()
+                        && scalar.role == crate::records::FeatureInputScalarRole::Driving =>
+                {
+                    (run, Some(scalar))
+                }
+                _ => return false,
+            },
+            _ => return false,
+        },
+        None => (record.scalar_refs(), None),
+    };
     if record.family != crate::records::FeatureInputRelationFamily::CircleDiameter
-        || record.parameter_scalar_ref().is_some()
         || record.display_scalar_ref().is_some()
-        || record.scalar_refs().len() < 2
+        || run.len() < 2
         || record.operands.len() != 1
     {
         return false;
@@ -1265,17 +1280,20 @@ fn repeated_circle_display_shape_valid(
             .get(scalar.name.as_str())
             .map(|name| name.value.as_str())
     };
-    let Some((_, first)) = ids.scalars.get(record.scalar_refs()[0].as_str()) else {
+    let Some((_, first)) = ids.scalars.get(run[0].as_str()) else {
         return false;
     };
     let Some(first_name) = scalar_name_value(first) else {
         return false;
     };
+    if parameter.is_some_and(|parameter| scalar_name_value(parameter) != Some(first_name)) {
+        return false;
+    }
     let mut previous_ordinal = None;
     // Every accepted scalar has one operand, so distinct display entities are a
     // set of the accepted operand entity indices.
     let mut entity_indices = HashSet::new();
-    record.scalar_refs().iter().all(|scalar_id| {
+    run.iter().all(|scalar_id| {
         let Some((_, scalar)) = ids.scalars.get(scalar_id.as_str()) else {
             return false;
         };

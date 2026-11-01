@@ -12,6 +12,7 @@ pub(crate) mod bodies;
 pub(crate) mod body_ownership;
 pub(crate) mod body_reference_tail;
 pub(crate) mod canvas;
+pub(crate) mod component_path;
 pub(crate) mod configuration;
 pub(crate) mod decal;
 pub(crate) mod dimension_locus_arenas;

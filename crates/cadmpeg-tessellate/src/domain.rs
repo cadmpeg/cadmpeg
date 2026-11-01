@@ -8,6 +8,7 @@
 //! it and a pole or a domain end. A strip is cut open along a seam that no
 //! hole crosses.
 
+use cadmpeg_ir::compare::floats_agree;
 use cadmpeg_ir::math::Point3;
 
 use crate::face::Refusal;
@@ -478,6 +479,12 @@ fn strip(
             unrolled.push(last);
         }
         Upper::Bound((at, point)) => {
+            let seam_bound = lower[0].uv[1];
+            let at = if floats_agree(at, seam_bound) {
+                seam_bound
+            } else {
+                at
+            };
             for x in [x0 + period, x0] {
                 unrolled.push(Node {
                     uv: [x, at],

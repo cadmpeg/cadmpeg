@@ -224,6 +224,7 @@ fn edge_treatments_and_holes_project_typed_dimensions_and_native_selections() {
                     opaque_scalar: 0.5,
                     opaque_scalar_offset: 1_082 + u64::from(scope_reference_ordinal),
                     variant: false,
+                    closing_flag: false,
                 },
             )
             .unwrap(),

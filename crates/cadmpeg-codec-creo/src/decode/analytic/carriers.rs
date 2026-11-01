@@ -421,6 +421,18 @@ pub(in crate::decode) fn placed_carriers(
             }
         }
     }
+    for plane in &scan.planes.datum_boundary_planes {
+        if namespaces.active_plane(plane.row.id).is_none() {
+            continue;
+        }
+        if let Some(carrier) = model_surfaces
+            .named(namespaces.prefix(plane.row.id), plane.row.id)
+            .and_then(NamedSurfaces::unique)
+            .and_then(|surface| surface_carrier(source_carriers.surface_geometry(surface)))
+        {
+            carriers.insert(plane.row.id, carrier);
+        }
+    }
     for datum in &scan.planes.datum_cylinders {
         let Some(surface) = model_surfaces
             .named(namespaces.prefix(datum.id), datum.id)
@@ -506,7 +518,7 @@ fn positional_cylinder_carrier(
     })))
 }
 
-fn surface_carrier(geometry: &SurfaceGeometry) -> Option<CarrierEquation> {
+pub(in crate::decode) fn surface_carrier(geometry: &SurfaceGeometry) -> Option<CarrierEquation> {
     match geometry {
         SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(plane_surface)) => {
             let origin = plane_surface.origin().get();
@@ -861,6 +873,16 @@ pub(in crate::decode) fn native_face_orientations(
     }
     for datum in &scan.planes.datum_cylinders {
         orientations.insert(datum.id, datum.reversed);
+    }
+    for plane in &scan.planes.datum_boundary_planes {
+        if plane.admitted(
+            &scan.planes.datum_boundary_planes,
+            &scan.surfaces.rows,
+            &scan.surfaces.nonvisible_rows,
+            &scan.planes.datum_cylinders,
+        ) {
+            orientations.insert(plane.row.id, plane.row.reversed);
+        }
     }
     let mut round_feature_ids = BTreeSet::new();
     for row in scan

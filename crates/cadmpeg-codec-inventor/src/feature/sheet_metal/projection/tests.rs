@@ -10,7 +10,7 @@ use cadmpeg_ir::{
 fn attached(fixture: &Fixture) -> Feature {
     let values = operands::plate(
         &fixture.plate,
-        &fixture.style,
+        Some(&fixture.style),
         |r| fixture.property(r),
         Fixture::length,
         Fixture::direction,
@@ -301,10 +301,18 @@ fn a_generated_attachment_requires_a_preceding_projected_result() {
     let arena = DecodeArena::new();
     let (ctx, _) =
         DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service()).expect("context");
+    let mut refusals = Refusals::default();
     assert_eq!(
-        reject_unresolved_inputs(&ctx, &mut items, &inventory).expect("native fallback"),
+        reject_unresolved_inputs(&ctx, &mut items, &inventory, &mut refusals)
+            .expect("native fallback"),
         1
     );
+    // The producer fixture shares the plate's source record; the note is for the plate.
+    let notes = refusals.losses(&[items[1].feature.clone()]);
+    assert_eq!(notes.len(), 1);
+    let wire = serde_json::to_string(&notes).expect("notes");
+    assert!(wire.contains("feature.sheet-metal-plate-refused"));
+    assert!(wire.contains("input-producer"));
     assert!(!items[1].neutral);
     assert_eq!(items[1].feature.ordinal, 1);
     assert!(matches!(
@@ -355,17 +363,30 @@ fn plate_and_bend_projection_is_all_or_nothing_in_history_order() {
         DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service()).expect("context");
     let complete = || vec![item(plate.clone(), 100), item(bend.clone(), 200)];
     let mut items = complete();
+    let mut refusals = Refusals::default();
     assert_eq!(
-        reject_incomplete_pairs(&ctx, &mut items, &inventory).expect("pair"),
+        reject_incomplete_pairs(&ctx, &mut items, &inventory, &mut refusals).expect("pair"),
         0
     );
+    assert!(refusals
+        .losses(&items.iter().map(|i| i.feature.clone()).collect::<Vec<_>>())
+        .is_empty());
     for missing in [0, 1] {
         let mut items = complete();
         retain_native(&ctx, &mut items[missing], &inventory).expect("native");
+        let mut refusals = Refusals::default();
         assert_eq!(
-            reject_incomplete_pairs(&ctx, &mut items, &inventory).expect("pair"),
+            reject_incomplete_pairs(&ctx, &mut items, &inventory, &mut refusals).expect("pair"),
             1
         );
+        // Only a plate carries a refusal; a refused bend is counted by its own loss.
+        let notes = refusals.losses(&items.iter().map(|i| i.feature.clone()).collect::<Vec<_>>());
+        assert_eq!(notes.len(), missing);
+        if missing == 1 {
+            assert!(serde_json::to_string(&notes)
+                .expect("notes")
+                .contains("bend-pair"));
+        }
         assert!(items.iter().all(|item| !item.neutral
             && matches!(
                 item.feature.evaluation.definition(),
@@ -382,8 +403,342 @@ fn plate_and_bend_projection_is_all_or_nothing_in_history_order() {
     }
     let mut items = complete();
     items[1].feature.ordinal = 0;
+    let mut refusals = Refusals::default();
     assert_eq!(
-        reject_incomplete_pairs(&ctx, &mut items, &inventory).expect("order"),
+        reject_incomplete_pairs(&ctx, &mut items, &inventory, &mut refusals).expect("order"),
         2
+    );
+    assert_eq!(
+        refusals
+            .losses(&items.iter().map(|i| i.feature.clone()).collect::<Vec<_>>())
+            .len(),
+        1
+    );
+}
+
+#[test]
+fn the_first_refusal_of_a_plate_is_kept_and_other_operations_have_none() {
+    use cadmpeg_core::decode::{DecodeArena, DecodePolicy};
+    let fixture = Fixture::new();
+    let plate = attached(&fixture);
+    let mut refusals = Refusals::default();
+    refusals.record(&plate, PlateRefusal::InputProducer);
+    refusals.record(&plate, PlateRefusal::BendPair);
+    let mut other = plate.clone();
+    other.native_ref = Some("other".to_owned());
+    other.evaluation = FeatureEvaluation::from_definition(FeatureDefinition::Operation(
+        FeatureOperation::Native {
+            kind: cadmpeg_ir::features::NativeFeatureKind::Other("base".into()),
+            parameters: BTreeMap::default(),
+        },
+    ));
+    refusals.record(&other, PlateRefusal::Style);
+    let inventory = FeatureInventory {
+        features: vec![fixture.plate.clone()],
+        ..FeatureInventory::default()
+    };
+    let arena = DecodeArena::new();
+    let (ctx, _) =
+        DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service()).expect("context");
+    let mut item = HistoryItem {
+        record: 100,
+        kind: crate::feature::history::HistoryNodeKind::Feature,
+        flags: 0,
+        label: None,
+        feature: plate,
+        result: None,
+        neutral: true,
+    };
+    // A projected plate has no note; the same plate retained natively has one.
+    assert!(refusals.losses(&[item.feature.clone()]).is_empty());
+    retain_native(&ctx, &mut item, &inventory).expect("native");
+    let notes = refusals.losses(&[item.feature.clone(), other]);
+    assert_eq!(notes.len(), 1);
+    let wire = serde_json::to_string(&notes).expect("notes");
+    assert!(wire.contains("feature.sheet-metal-plate-refused"));
+    assert!(wire.contains("input-producer"));
+    assert!(!wire.contains("bend-pair"));
+    assert!(!wire.contains("style"));
+}
+
+#[test]
+fn the_result_slot_follows_the_plate_form() {
+    use cadmpeg_core::decode::{DecodeArena, DecodePolicy};
+    let arena = DecodeArena::new();
+    let (ctx, _) =
+        DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service()).expect("context");
+    let source = |fixture: &Fixture, ordinal: u32| {
+        fixture
+            .property(crate::test_support::sheet_metal::reference(ordinal))
+            .expect("property")
+            .id()
+    };
+    for (fixture, plate_result_property, bend_result_property) in
+        [(Fixture::body(), 46, 46), (Fixture::new(), 13, 13)]
+    {
+        let index = crate::feature::tests::test_projection_index(
+            &fixture.properties,
+            &[],
+            &[],
+            &[],
+            &[],
+            &[],
+            &[],
+            &[],
+        );
+        let form = operands::PlateForm::of(&fixture.plate).expect("form");
+        let (plate_id, plate) = form_result(&ctx, &fixture.plate, form, false, &index)
+            .expect("plate result")
+            .expect("charge");
+        assert_eq!(plate.output_of, plate_id);
+        assert_eq!(
+            plate.native_ref.as_deref(),
+            Some(source(&fixture, plate_result_property).as_str())
+        );
+        let (bend_id, bend) = form_result(&ctx, &fixture.bend, form, true, &index)
+            .expect("bend result")
+            .expect("charge");
+        assert_eq!(bend.output_of, bend_id);
+        assert_ne!(bend_id, plate_id);
+        assert_eq!(
+            bend.native_ref.as_deref(),
+            Some(source(&fixture, bend_result_property).as_str())
+        );
+    }
+    // A form reads only its own result slot.
+    let body = Fixture::body();
+    let index = crate::feature::tests::test_projection_index(
+        &body.properties,
+        &[],
+        &[],
+        &[],
+        &[],
+        &[],
+        &[],
+        &[],
+    );
+    assert!(form_result(
+        &ctx,
+        &body.plate,
+        operands::PlateForm::Collection,
+        false,
+        &index
+    )
+    .is_none());
+    let collection = Fixture::new();
+    let index = crate::feature::tests::test_projection_index(
+        &collection.properties,
+        &[],
+        &[],
+        &[],
+        &[],
+        &[],
+        &[],
+        &[],
+    );
+    assert!(form_result(
+        &ctx,
+        &collection.plate,
+        operands::PlateForm::Body,
+        false,
+        &index
+    )
+    .is_none());
+}
+
+fn selecting_fixture() -> Fixture {
+    use crate::feature::{PmDcFeaturePropertyKind as Kind, PmDcFeatureReferenceFamily as Family};
+    use crate::test_support::sheet_metal::{list, property, reference};
+    let mut fixture = Fixture::new();
+    fixture.properties.extend([
+        property(
+            11,
+            &Kind::References {
+                family: Family::SheetMetalAttachmentSelections,
+                items: list(&[51]),
+            },
+        ),
+        property(
+            51,
+            &Kind::SheetMetal {
+                definition: super::super::SheetMetalProperty::EdgeSelection {
+                    edges: reference(52),
+                },
+            },
+        ),
+        property(
+            52,
+            &Kind::References {
+                family: Family::EdgeCollection,
+                items: list(&[53]),
+            },
+        ),
+        property(
+            53,
+            &Kind::EdgeItem {
+                index_references: crate::pmdc::PmDcU32List::new(
+                    2,
+                    Some(crate::pmdc::PmDcListMetadata::U32([1, 0])),
+                    vec![61],
+                )
+                .expect("indexes"),
+                index_reference_value: -1,
+                value: 0,
+            },
+        ),
+    ]);
+    fixture
+}
+
+fn named_edge() -> cadmpeg_ir::features::GeneratedEdgeRef {
+    GeneratedEdgeRef {
+        feature: FeatureId::compose(
+            &cadmpeg_ir::identity_namespace!("test", "design", "feature"),
+            IdentityKey::try_new("base").expect("key"),
+        ),
+        local_id: cadmpeg_ir::features::SelectionReference::new("boundary".to_owned())
+            .expect("name"),
+    }
+}
+
+#[test]
+fn the_attachment_names_a_missing_list_before_a_missing_edge_name() {
+    // Property 11, the plate's slot-12 selection list, is absent.
+    let fixture = Fixture::new();
+    let index = crate::feature::tests::test_projection_index(
+        &fixture.properties,
+        &[],
+        &[],
+        &[],
+        &[],
+        &[],
+        &[],
+        &[],
+    );
+    assert_eq!(
+        attachment(&fixture.plate, &index),
+        Err(PlateRefusal::SelectionList)
+    );
+    // The list resolves, but the edge source has no generated name.
+    let fixture = selecting_fixture();
+    let mut index = crate::feature::tests::test_projection_index(
+        &fixture.properties,
+        &[],
+        &[],
+        &[],
+        &[],
+        &[],
+        &[],
+        &[],
+    );
+    assert_eq!(
+        attachment(&fixture.plate, &index),
+        Err(PlateRefusal::EdgeName)
+    );
+    // The source has an unnamed entry.
+    index.edge_names.insert(("fixture".to_owned(), 61), None);
+    assert_eq!(
+        attachment(&fixture.plate, &index),
+        Err(PlateRefusal::EdgeName)
+    );
+    index
+        .edge_names
+        .insert(("fixture".to_owned(), 61), Some(named_edge()));
+    let EdgeSelection::Generated { edges, .. } =
+        attachment(&fixture.plate, &index).expect("generated")
+    else {
+        panic!("generated selection");
+    };
+    assert_eq!(edges.as_slice(), [named_edge()]);
+}
+
+#[test]
+fn the_attachment_requires_wrappers_over_edge_collections() {
+    use crate::feature::{PmDcFeaturePropertyKind as Kind, PmDcFeatureReferenceFamily as Family};
+    use crate::test_support::sheet_metal::{list, property};
+    for (slot, replacement) in [
+        // The wrapper is not an edge selection.
+        (
+            51,
+            Kind::Boolean {
+                name: String::new(),
+                name_value: 0,
+                value: true,
+            },
+        ),
+        // The wrapper names a face collection.
+        (
+            52,
+            Kind::References {
+                family: Family::FaceCollection,
+                items: list(&[53]),
+            },
+        ),
+        // The list is another reference family.
+        (
+            11,
+            Kind::References {
+                family: Family::EdgeCollection,
+                items: list(&[51]),
+            },
+        ),
+    ] {
+        let mut fixture = selecting_fixture();
+        fixture
+            .properties
+            .retain(|p| p.identity.record_ordinal + 1 != slot);
+        fixture.properties.push(property(slot, &replacement));
+        let mut index = crate::feature::tests::test_projection_index(
+            &fixture.properties,
+            &[],
+            &[],
+            &[],
+            &[],
+            &[],
+            &[],
+            &[],
+        );
+        index
+            .edge_names
+            .insert(("fixture".to_owned(), 61), Some(named_edge()));
+        assert_eq!(
+            attachment(&fixture.plate, &index),
+            Err(PlateRefusal::SelectionList),
+            "property {slot}"
+        );
+    }
+}
+
+#[test]
+fn a_repeated_generated_edge_is_refused_as_an_edge_name() {
+    use crate::feature::{PmDcFeaturePropertyKind as Kind, PmDcFeatureReferenceFamily as Family};
+    use crate::test_support::sheet_metal::{list, property};
+    let mut fixture = selecting_fixture();
+    fixture
+        .properties
+        .retain(|p| p.identity.record_ordinal + 1 != 52);
+    fixture.properties.push(property(
+        52,
+        &Kind::References {
+            family: Family::EdgeCollection,
+            items: list(&[53, 53]),
+        },
+    ));
+    let mut index = crate::feature::tests::test_projection_index(
+        &fixture.properties,
+        &[],
+        &[],
+        &[],
+        &[],
+        &[],
+        &[],
+        &[],
+    );
+    index
+        .edge_names
+        .insert(("fixture".to_owned(), 61), Some(named_edge()));
+    assert_eq!(
+        attachment(&fixture.plate, &index),
+        Err(PlateRefusal::EdgeName)
     );
 }

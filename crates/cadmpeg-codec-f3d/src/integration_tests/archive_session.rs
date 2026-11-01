@@ -60,6 +60,18 @@ fn archive_session_parallel_decode_matches_traversal_and_arrival_orders() {
     let arena = DecodeArena::new();
     let (ctx, root) = DecodeContext::from_root_bytes(&bytes, &arena, &options.policy).unwrap();
     let session = F3dCodec.open_archive(&ctx, root).unwrap();
+    session.require_original_spaces_for_test(true);
+    assert_equal(
+        &baseline,
+        &session.compose(
+            session
+                .members()
+                .iter()
+                .map(|member| session.decode_member(member.id()).unwrap()),
+        ),
+    );
+    let before = session.composition_reexecutions();
+    session.require_original_spaces_for_test(false);
     let members = std::thread::scope(|scope| {
         let handles = session
             .members()
@@ -77,6 +89,29 @@ fn archive_session_parallel_decode_matches_traversal_and_arrival_orders() {
             .collect::<Vec<_>>()
     });
     assert_equal(&baseline, &session.compose(members));
+    assert_eq!(session.composition_reexecutions(), before);
+    for order in 0..3 {
+        let mut ids = session
+            .members()
+            .iter()
+            .map(crate::F3zMember::id)
+            .collect::<Vec<_>>();
+        if order == 1 {
+            ids.reverse();
+        } else if order == 2 {
+            ids.rotate_left(1);
+            for index in (1..ids.len()).step_by(2) {
+                ids.swap(index - 1, index);
+            }
+        }
+        let members = ids
+            .into_iter()
+            .map(|id| session.decode_member(id).unwrap())
+            .collect::<Vec<_>>();
+        assert_equal(&baseline, &session.compose(members));
+        assert_eq!(session.composition_reexecutions(), before);
+    }
+    println!("existing archive: original-space reexecutions={before}, relocated reexecutions=0");
 }
 
 #[test]
@@ -194,3 +229,5 @@ fn archive_session_depth_and_strict_policy_match_direct_traversal() {
 }
 
 mod memory;
+
+mod preparation;

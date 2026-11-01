@@ -50,6 +50,7 @@ use crate::test_support::test_surface_fixtures::{
 };
 
 mod measured_geometry;
+mod truncated_fixed_ascii;
 
 fn assert_valid(result: &EditableDecodeResult) {
     let validation = cadmpeg_ir::validate_neutral(result.ir(), result.report().losses.clone())

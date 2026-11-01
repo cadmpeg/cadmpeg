@@ -115,6 +115,7 @@ fn mirror_plane_binding_falls_back_when_identity_has_no_persistent_value() {
                 trailing_transforms: Vec::new(),
                 trailing_dual_transforms: Vec::new(),
                 trailing_flags: Vec::new(),
+                closing_flag: false,
             },
         )
         .unwrap(),

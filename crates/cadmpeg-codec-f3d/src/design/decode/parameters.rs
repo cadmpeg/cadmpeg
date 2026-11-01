@@ -29,6 +29,17 @@ use crate::records::{
 };
 use cadmpeg_core::decode::u64_from_index;
 use cadmpeg_core::decode::View;
+
+/// Read a counted UTF-16 field from a byte slice: its u32 count and code units.
+fn utf16_at(
+    bytes: &[u8],
+    at: usize,
+    bounds: std::ops::RangeInclusive<usize>,
+) -> Option<(String, usize)> {
+    let (text, end) = crate::bytes::lp_utf16_bounded(bytes, at, bounds)?;
+    bytes.get(at..end)?;
+    Some((text, end))
+}
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::scalar::FiniteReal;
 use std::borrow::Cow;
@@ -155,6 +166,7 @@ pub(crate) struct DecodedParameters {
     pub(crate) state_targets: BTreeMap<String, u64>,
 }
 
+#[cfg(test)]
 /// Result of one parameter frame parse.
 pub(crate) enum ParsedFrame {
     /// The frame is a parameter record.
@@ -169,6 +181,7 @@ pub(crate) enum ParsedFrame {
     Unmatched,
 }
 
+#[cfg(test)]
 /// What the stream already states about one candidate frame.
 #[derive(Clone, Copy)]
 pub(crate) struct Expected<'a> {
@@ -179,6 +192,7 @@ pub(crate) struct Expected<'a> {
     pub(crate) emitted: &'a HashSet<u32>,
 }
 
+#[cfg(test)]
 /// Parse one candidate frame as the parameter it would be.
 pub(crate) fn parse_frame(
     view: View<'_>,
@@ -186,7 +200,7 @@ pub(crate) fn parse_frame(
     offset: usize,
     expected: Expected<'_>,
 ) -> Result<ParsedFrame, CodecError> {
-    let Some(parsed) = parse_design_parameter(ParameterFrame::new(view))? else {
+    let Some(parsed) = parse_design_parameter(view.window())? else {
         return Ok(ParsedFrame::Unmatched);
     };
     if expected
@@ -220,83 +234,56 @@ pub(crate) fn decode_parameters(scan: &ContainerScan) -> Result<DecodedParameter
         .iter()
         .filter(|entry| scan.is_design_stream(entry, ContainerRole::Bulkstream))
     {
-        let source = scan.entry_view(&entry.name).ok_or_else(|| {
-            CodecError::malformed("Fusion Design parameter stream has no source View")
-        })?;
-        let bytes = source.window();
-        let primary = super::meta::metadata_for_bulk_stream(scan, &entry.name)?
-            .map(|meta| crate::metastream::primary_record_frames(&meta, bytes.len()))
-            .transpose()?;
+        let bytes = scan.entry_bytes(&entry.name)?;
+        let tail_targets = parameter_tail_targets(scan, &entry.name)?;
         let mut position = 0usize;
         let mut emitted_record_indices = HashSet::new();
         let mut unparsed_count = 0usize;
         while let Some(at) = next_indexed_record_offset(bytes, position) {
-            // An `f3d.bulk_record` ends at the next primary-index offset. The
-            // primary index covers every sibling record, so an
-            // indexed-record-shaped run at another offset is payload.
-            let (end, entity_id) = match &primary {
-                Some(frames) => match frames
-                    .binary_search_by_key(&at, |frame| frame.start)
-                    .ok()
-                    .and_then(|index| frames.get(index))
-                {
-                    Some(frame) => (frame.end, Some(frame.entity_id)),
-                    None => {
-                        position = at + 1;
-                        continue;
-                    }
-                },
-                None => (
-                    next_indexed_record_offset(bytes, at + 11).unwrap_or(bytes.len()),
-                    None,
-                ),
-            };
-            let view = source
-                .child(
-                    source.start().checked_add(at).ok_or_else(|| {
-                        CodecError::malformed("Fusion Design parameter frame start overflows")
-                    })?,
-                    source.start().checked_add(end).ok_or_else(|| {
-                        CodecError::malformed("Fusion Design parameter frame end overflows")
-                    })?,
-                )
-                .ok_or_else(|| {
-                    CodecError::malformed("Fusion Design parameter frame exceeds its stream")
-                })?;
-            match parse_frame(
-                view,
-                &entry.name,
-                at,
-                Expected {
-                    entity_id,
-                    emitted: &emitted_record_indices,
-                },
-            )? {
-                ParsedFrame::Parameter {
-                    parameter,
-                    state_target,
-                } => {
-                    // The Design primary index exposes one live header for each
-                    // logical record index. Keep the first serialized parameter
-                    // frame so stale copies cannot create duplicate owner
-                    // bindings or duplicate neutral parameter identities.
-                    emitted_record_indices.insert(parameter.record_index);
-                    if let Some(target) = state_target {
-                        state_targets.insert(parameter.id.clone(), target);
-                    }
-                    out.push(*parameter);
+            let end = next_indexed_record_offset(bytes, at + 11).unwrap_or(bytes.len());
+            let frame = &bytes[at..end];
+            let registered_tail = frame
+                .get(indexed_header::LEN..DESIGN_PARAMETER_DISCRIMINATOR_FRAME_OFFSET)
+                == Some(&[0; 11])
+                && plain_parameter_tail_target(frame)
+                    .is_some_and(|target| tail_targets.contains(&target));
+            // A fixed tail `00 01 xx` followed by nine zero bytes also reads as a
+            // plain reference to record `xx`. When that record is registered
+            // under the parameter-tail type the registered grammar applies
+            // first; a frame it refuses is read again with the fixed tail.
+            let mut parsed = parse_design_parameter_with_tail(frame, registered_tail)?;
+            if parsed.is_none() && registered_tail {
+                parsed = parse_design_parameter_with_tail(frame, false)?;
+            }
+            if let Some(parsed) = parsed {
+                // The Design primary index exposes one live header for each
+                // logical record index. Keep the first serialized parameter
+                // frame so stale copies cannot create duplicate owner
+                // bindings or duplicate neutral parameter identities.
+                if emitted_record_indices.contains(&parsed.record_index) {
                     position = end;
+                    continue;
                 }
-                ParsedFrame::Repeated => position = end,
-                ParsedFrame::Unmatched => {
-                    if is_typed_parameter_frame(ParameterFrame::new(view)) {
-                        unparsed_count = unparsed_count.checked_add(1).ok_or_else(|| {
-                            CodecError::malformed(
-                                "Fusion Design unparsed parameter count exceeds the platform range",
-                            )
-                        })?;
-                    }
-                    position = at + 1;
+
+                emitted_record_indices.insert(parsed.record_index);
+
+                let state_target = parsed.state_target();
+                let parameter = locate_design_parameter(parsed, &entry.name, at)?;
+                if let Some(target) = state_target {
+                    state_targets.insert(parameter.id.clone(), target);
+                }
+                out.push(parameter);
+                position = end;
+            } else {
+                if registered_tail
+                    || is_typed_parameter_frame(ParameterFrame::retained(frame))
+                    || is_untyped_parameter_frame(frame)
+                {
+                    unparsed_count = unparsed_count.checked_add(1).ok_or_else(|| {
+                        CodecError::malformed(
+                            "Fusion Design unparsed parameter count exceeds the platform range",
+                        )
+                    })?;
                 }
             }
         }
@@ -405,7 +392,7 @@ const WIDE_DISCRIMINATED_SHIFT: usize = 4;
 /// Parse one indexed parameter frame in a Design `BulkStream` test fixture.
 #[cfg(test)]
 pub(crate) fn parse_design_parameter_record(payload: &[u8]) -> Option<DesignParameter> {
-    parse_design_parameter(ParameterFrame::over_retained(payload))
+    parse_design_parameter(payload)
         .unwrap()?
         .into_record(TEST_PARAMETER_STREAM, 0)
 }
@@ -428,11 +415,20 @@ fn locate_design_parameter(
     })
 }
 
+#[cfg(test)]
 pub(in crate::design) fn parse_design_parameter(
-    payload: ParameterFrame<'_>,
+    payload: &[u8],
 ) -> Result<Option<ParsedDesignParameter>, CodecError> {
+    parse_design_parameter_with_tail(payload, false)
+}
+
+fn parse_design_parameter_with_tail(
+    payload: &[u8],
+    registered_tail: bool,
+) -> Result<Option<ParsedDesignParameter>, CodecError> {
+    let frame = ParameterFrame::retained(payload);
     let parsed = (|| {
-        if payload.u32_at(0) != Some(3) || payload.get(11..22) != Some(&[0; 11]) {
+        if View::u32_le_at(payload, 0) != Some(3) || payload.get(11..22) != Some(&[0; 11]) {
             return None;
         }
         let raw_tag = payload.get(4..7)?;
@@ -443,31 +439,31 @@ pub(in crate::design) fn parse_design_parameter(
             std::str::from_utf8(raw_tag).ok()?.to_owned(),
         )
         .ok()?;
-        let record_index = payload.u32_at(7)?;
-        if typed_parameter_tail_start(payload).is_some() {
-            return match parse_typed_compact_design_parameter(payload, class_tag, record_index) {
+        let record_index = View::u32_le_at(payload, 7)?;
+        if typed_parameter_tail_start(frame).is_some() {
+            return match parse_typed_compact_design_parameter(frame, class_tag, record_index) {
                 Ok(value) => value.map(Ok),
                 Err(error) => Some(Err(error)),
             };
         }
         if class_tag.as_str() == "287" {
-            return match parse_legacy_287_design_parameter(payload, class_tag, record_index) {
+            return match parse_legacy_287_design_parameter(frame, class_tag, record_index) {
                 Ok(value) => value.map(Ok),
                 Err(error) => Some(Err(error)),
             };
         }
         let compact_owned = payload.get(11..26) == Some(&[0; 15])
-            && payload.byte(30) == Some(1)
+            && payload.get(30).copied() == Some(1)
             && payload.get(35..41) == Some(&[0; 6]);
-        let discriminated = !compact_owned && payload.byte(30) == Some(0);
-        let shift = if discriminated && wide_discriminated_parameter(payload) {
+        let discriminated = !compact_owned && payload.get(30).copied() == Some(0);
+        let shift = if discriminated && wide_discriminated_parameter(frame) {
             WIDE_DISCRIMINATED_SHIFT
         } else {
             0
         };
         let discriminator_at = DESIGN_PARAMETER_DISCRIMINATOR_FRAME_OFFSET + shift;
         if !compact_owned && !discriminated {
-            return match parse_legacy_design_parameter(payload, class_tag, record_index) {
+            return match parse_legacy_design_parameter(frame, class_tag, record_index) {
                 Ok(value) => value.map(Ok),
                 Err(error) => Some(Err(error)),
             };
@@ -476,42 +472,36 @@ pub(in crate::design) fn parse_design_parameter(
             if discriminated {
                 let discriminator =
                     crate::records::parameters::DesignParameterDiscriminator::try_from(
-                        payload.u64_at(discriminator_at)?,
+                        View::u64_le_at(payload, discriminator_at)?,
                     )
                     .ok()?;
-                let owner = match payload.byte(35 + shift)? {
+                let owner = match payload.get(35 + shift).copied()? {
                     0 => (None, 36 + shift, 9),
                     1 if payload.get(40 + shift..46 + shift) == Some(&[0; 6]) => {
-                        (Some(payload.u32_at(36 + shift)?), 46 + shift, 9)
+                        (Some(View::u32_le_at(payload, 36 + shift)?), 46 + shift, 9)
                     }
                     _ => return None,
                 };
                 (
                     Some(discriminator),
-                    payload.u32_at(31 + shift)?,
+                    View::u32_le_at(payload, 31 + shift)?,
                     owner.0,
                     owner.1,
                     owner.2,
                 )
             } else if compact_owned {
-                (None, payload.u32_at(26)?, Some(payload.u32_at(31)?), 41, 5)
+                (None, View::u32_le_at(payload, 26)?, Some(View::u32_le_at(payload, 31)?), 41, 5)
             } else {
                 return None;
             };
-        let (expression, expression_end) = payload.utf16(expression_at, 1..=256)?;
+        let (expression, expression_end) = utf16_at(payload, expression_at, 1..=256)?;
         let expression_trailer = payload.get(expression_end..expression_end + trailer_len)?;
-        let document = discriminated && owner_record_index.is_none();
-        let long_document_trailer = document
+        let long_document_trailer = discriminated
+            && owner_record_index.is_none()
             && payload.get(expression_end..expression_end + 10)
                 == Some(&[0, 0, 0, 0, 0, 0, 0, 0, 0, 1]);
-        // The earlier discriminated family writes the document trailer as
-        // six zero bytes and `01 00 01`.
-        let earlier_family = family_discriminator
-            .is_some_and(|discriminator| matches!(discriminator.code(), 0 | 3 | 4));
-        let valid_expression_trailer = if document {
-            expression_trailer == [0, 0, 0, 0, 0, 0, 0, 0, 1]
-                || long_document_trailer
-                || (earlier_family && expression_trailer == [0, 0, 0, 0, 0, 0, 1, 0, 1])
+        let valid_expression_trailer = if discriminated {
+            long_document_trailer || is_flagged_expression_trailer(expression_trailer)
         } else {
             expression_trailer.iter().all(|byte| *byte == 0)
         };
@@ -523,7 +513,7 @@ pub(in crate::design) fn parse_design_parameter(
                 && owner_record_index.is_some()
                 && payload.get(expression_end..expression_end + 10) == Some(&[0; 10]))
         {
-            payload.utf16(expression_end + 10, 1..=256)
+            utf16_at(payload, expression_end + 10, 1..=256)
         } else {
             None
         };
@@ -532,7 +522,7 @@ pub(in crate::design) fn parse_design_parameter(
             && owner_record_index.is_some()
             && payload.get(expression_end..expression_end + 11) == Some(&[0; 11])
         {
-            payload.utf16(expression_end + 11, 1..=256)
+            utf16_at(payload, expression_end + 11, 1..=256)
         } else {
             None
         };
@@ -545,19 +535,26 @@ pub(in crate::design) fn parse_design_parameter(
         };
         let (source_kind, source_kind_end) = match prefixed_kind.or(extended_owned_kind) {
             Some(value) => value,
-            None => payload.utf16(source_kind_at, 1..=256)?,
+            None => utf16_at(payload, source_kind_at, 1..=256)?,
         };
-        let first_at = source_kind_end + usize::from(discriminated) * 4;
-        if discriminated && payload.u32_at(source_kind_end) != Some(0) {
+        if discriminated
+            && !long_document_trailer
+            && (expression_trailer[DOCUMENT_TRAILER_FLAG] == 1)
+                != (source_kind == TYPED_DOCUMENT_SOURCE_KIND)
+        {
             return None;
         }
-        let (unit, name, name_at, name_end) = if payload.u32_at(first_at) == Some(0) {
+        let first_at = source_kind_end + usize::from(discriminated) * 4;
+        if discriminated && View::u32_le_at(payload, source_kind_end) != Some(0) {
+            return None;
+        }
+        let (unit, name, name_at, name_end) = if View::u32_le_at(payload, first_at) == Some(0) {
             let name_at = first_at + 4;
-            let (name, name_end) = payload.utf16(name_at, 1..=256)?;
+            let (name, name_end) = utf16_at(payload, name_at, 1..=256)?;
             (None, name, name_at, name_end)
         } else {
-            let (first, first_end) = payload.utf16(first_at, 1..=256)?;
-            let second_field = payload.utf16(first_end, 1..=256);
+            let (first, first_end) = utf16_at(payload, first_at, 1..=256)?;
+            let second_field = utf16_at(payload, first_end, 1..=256);
             if let Some((second, second_end)) = second_field {
                 (
                     Some(ParsedParameterUnit {
@@ -572,13 +569,23 @@ pub(in crate::design) fn parse_design_parameter(
                 (None, first, first_at, first_end)
             }
         };
-        let evaluated_value = payload.f64_at(name_end)?;
-        let tail = payload.get(name_end + 8..payload.len())?;
-        if tail.len() != 12
+        let evaluated_value = View::f64_le_at(payload, name_end)?;
+        let tail = payload.get(name_end + 8..)?;
+        if tail.len() != legacy_287_tail::LEN
             || tail[0..2] != [0, 1]
-            || tail[3..].iter().any(|byte| *byte != 0)
-            || (source_kind_at == expression_end + 11 && tail[2] != 16)
-            || !valid_design_parameter_family(family_discriminator, &source_kind, tail[2])
+            || (!registered_tail && tail[3..].iter().any(|byte| *byte != 0))
+            // A registered plain tail stores the target record identity
+            // where the fixed tail stores its family marker; it selects the
+            // `00 01 13` family of the discriminated form only.
+            || (source_kind_at == expression_end + 11 && (registered_tail || tail[2] != 16))
+            || !(if registered_tail {
+                family_discriminator.is_some()
+                    && (valid_design_parameter_family(family_discriminator, &source_kind, 19)
+                        || (family_discriminator.is_some_and(|value| value.code() == 6)
+                            && source_kind != TYPED_DOCUMENT_SOURCE_KIND))
+            } else {
+                valid_design_parameter_family(family_discriminator, &source_kind, tail[2])
+            })
             || source_kind.is_empty()
         {
             return None;
@@ -603,6 +610,17 @@ pub(in crate::design) fn parse_design_parameter(
         }))
     })();
     parsed.transpose()
+}
+
+/// Index of the expression-trailer flag byte that marks a document parameter.
+const DOCUMENT_TRAILER_FLAG: usize = 8;
+
+/// Whether a discriminated expression trailer is four zero bytes followed by
+/// five flag bytes that are each zero or one.
+fn is_flagged_expression_trailer(trailer: &[u8]) -> bool {
+    trailer.len() == DOCUMENT_TRAILER_FLAG + 1
+        && trailer[..4] == [0; 4]
+        && trailer[4..].iter().all(|byte| *byte <= 1)
 }
 
 /// Whether a discriminated parameter frame stores four further zero bytes
@@ -705,11 +723,37 @@ fn parse_legacy_287_design_parameter(
 
 const CLASS_287_EXPRESSION_TRAILER_LEN: usize = 5;
 
-/// Target type GUID of the typed parameter tail reference.
-const TYPED_PARAMETER_TAIL_TYPE_GUID: &str = "B0556F58-EE09-46A7-B18F-E296F48E5B13";
+const PARAMETER_TAIL_TYPE_GUID: &str = "B0556F58-EE09-46A7-B18F-E296F48E5B13";
 
 /// Byte length of the typed parameter tail: `u8 0` plus a typed local reference.
 const TYPED_PARAMETER_TAIL_LEN: usize = 52;
+
+fn parameter_tail_targets(scan: &ContainerScan, stream: &str) -> Result<HashSet<u64>, CodecError> {
+    let mut targets = HashSet::new();
+    if let Some(meta) = super::meta::metadata_for_bulk_stream(scan, stream)? {
+        for ty in &meta.types {
+            if ty
+                .type_guid
+                .as_str()
+                .eq_ignore_ascii_case(PARAMETER_TAIL_TYPE_GUID)
+            {
+                targets.extend(ty.entities.values().copied());
+            }
+        }
+    }
+    Ok(targets)
+}
+
+fn plain_parameter_tail_target(payload: &[u8]) -> Option<u64> {
+    let start = payload.len().checked_sub(legacy_287_tail::LEN)?;
+    if payload.get(start) != Some(&0) {
+        return None;
+    }
+    let mut cursor = start + 1;
+    let reference = crate::bytes::take_reference(payload, &mut cursor)?;
+    let (target, guid) = reference.local()?;
+    (guid.is_none() && cursor == payload.len()).then_some(target)
+}
 
 /// Expression offset after an owner reference without an inline type GUID.
 const PLAIN_OWNER_EXPRESSION_LENGTH: usize = typed::OWNER_MARKER + 11;
@@ -741,7 +785,7 @@ fn typed_parameter_tail(payload: ParameterFrame<'_>) -> Option<(usize, u64)> {
     let mut cursor = start + 1;
     let reference = payload.reference(&mut cursor)?;
     let (target, guid) = reference.local()?;
-    (guid == Some(TYPED_PARAMETER_TAIL_TYPE_GUID) && cursor == payload.len())
+    (guid == Some(PARAMETER_TAIL_TYPE_GUID) && cursor == payload.len())
         .then_some((start, target))
 }
 
@@ -750,6 +794,25 @@ fn typed_parameter_tail(payload: ParameterFrame<'_>) -> Option<(usize, u64)> {
 pub(in crate::design) fn is_typed_parameter_frame(payload: ParameterFrame<'_>) -> bool {
     payload.get(typed::ZERO_RUN_15..typed::SOURCE_ORDINAL) == Some(&[0; 15])
         && typed_parameter_tail_start(payload).is_some()
+}
+
+/// Third byte of the twelve-byte parameter tail `00 01 xx` and nine zero
+/// bytes in the container generations without typed references.
+const UNTYPED_PARAMETER_TAIL_MARKERS: [u8; 4] = [0x10, 0x11, 0x12, 0x13];
+
+/// Whether `payload` is shaped as a parameter frame of a generation without
+/// typed references: at least eleven zero bytes after the indexed header and
+/// the twelve-byte parameter tail.
+fn is_untyped_parameter_frame(payload: &[u8]) -> bool {
+    let Some(tail_start) = payload.len().checked_sub(12) else {
+        return false;
+    };
+    payload.get(11..22) == Some(&[0; 11])
+        && payload.get(tail_start..tail_start + 2) == Some(&[0, 1])
+        && payload
+            .get(tail_start + 2)
+            .is_some_and(|marker| UNTYPED_PARAMETER_TAIL_MARKERS.contains(marker))
+        && payload.get(tail_start + 3..) == Some(&[0; 9])
 }
 
 /// Parse the typed compact parameter form.
@@ -935,16 +998,16 @@ fn valid_design_parameter_family(
     tail: u8,
 ) -> bool {
     use crate::records::parameters::DesignParameterDiscriminator::{
-        Code0, Code3, Code4, Code5, Code6,
+        Code0, Code1, Code2, Code3, Code4, Code5, Code6,
     };
     match tail {
-        16 => {
-            (discriminator == Some(Code5) && source_kind == "ScaleFactor")
-                || discriminator == Some(Code6)
-        }
-        17 => discriminator == Some(Code6),
-        18 | 19 => discriminator.is_none_or(|value| {
+        16 | 17 => matches!(discriminator, Some(Code5 | Code6)),
+        18 => discriminator.is_none_or(|value| {
             matches!(value, Code0 | Code3 | Code4)
+                || (value == Code6 && source_kind == "TangencyWeight")
+        }),
+        19 => discriminator.is_none_or(|value| {
+            matches!(value, Code0 | Code1 | Code2 | Code3 | Code4 | Code5)
                 || (value == Code6 && source_kind == "TangencyWeight")
         }),
         _ => false,

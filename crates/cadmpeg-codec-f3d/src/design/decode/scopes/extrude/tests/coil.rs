@@ -503,6 +503,66 @@ fn extrude_scope_discriminators_follow_optional_indexed_reference() {
             ..
         })
     ));
+    let shifted_marked_symmetric_tail_276 = scope(
+        "Extrude",
+        2,
+        (3, 2),
+        0,
+        1,
+        0,
+        None,
+        true,
+        None,
+        Some(((1, 0), true)),
+        Some(276),
+    );
+    assert!(matches!(
+        shifted_marked_symmetric_tail_276.extrude_prologue(),
+        Some(DesignExtrudePrologue::LegacyShifted {
+            operation_prefix_marker: Some(crate::records::identity::Sourced {
+                value: (),
+                offset: Some(27),
+            }),
+            operation: DesignExtrudeOperation::Cut,
+            side_extent_discriminators: [1, 0],
+            side_extent_discriminator_offsets: Some([117, 131]),
+            extent: Some(DesignExtrudeExtent::SymmetricDistance),
+            ..
+        })
+    ));
+    for refused_offset in [275, 277] {
+        let refused = scope(
+            "Extrude",
+            2,
+            (3, 2),
+            0,
+            1,
+            0,
+            None,
+            true,
+            None,
+            Some(((1, 0), true)),
+            Some(refused_offset),
+        );
+        assert_eq!(refused.extrude_prologue(), None);
+    }
+    let marked_symmetric_second_side_present = scope(
+        "Extrude",
+        2,
+        (3, 2),
+        0,
+        1,
+        0,
+        None,
+        true,
+        None,
+        Some(((1, 1), true)),
+        Some(276),
+    );
+    assert_eq!(
+        marked_symmetric_second_side_present.extrude_prologue(),
+        None
+    );
     let shifted_offset_profile = scope(
         "Extrude",
         2,

@@ -706,7 +706,8 @@ native_record! {
     record_index,
     /// Solved body carrying the key.
     body: cadmpeg_ir::ids::BodyId,
-    /// Zero-based body-record position within the BREP blob.
+    /// Zero-based position within the BREP blob among the body records that a
+    /// product-side selector can name.
     body_ordinal: u32,
     /// Basename of the BREP blob containing this body.
     source_brep: Option<String> [serde(default, skip_serializing_if = "Option::is_none")],

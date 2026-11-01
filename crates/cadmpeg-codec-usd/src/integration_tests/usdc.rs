@@ -142,43 +142,24 @@ fn a_written_crate_layer_reads_as_its_text_layer() {
 /// A value representation that sets an unused bit is refused.
 #[test]
 fn a_representation_with_an_unused_bit_is_refused() {
-    use cadmpeg_ir::codec::write::target::TargetRequest;
-    let source =
-        crate::test_support::decode("#usda 1.0\ndef Xform \"A\"\n{\n    double value = 1\n}\n");
-    let mut bytes = crate::test_support::encode_bytes(source.ir(), TargetRequest::Explicit("usdc"));
-    let toc = usize::try_from(u64::from_le_bytes(bytes[16..24].try_into().unwrap())).unwrap();
-    let sections =
-        usize::try_from(u64::from_le_bytes(bytes[toc..toc + 8].try_into().unwrap())).unwrap();
-    let fields = (0..sections)
-        .map(|index| toc + 8 + index * 32)
-        .find(|record| bytes[*record..*record + 6] == *b"FIELDS")
-        .map(|record| {
-            usize::try_from(u64::from_le_bytes(
-                bytes[record + 16..record + 24].try_into().unwrap(),
-            ))
-            .unwrap()
-        })
-        .expect("a FIELDS section");
-    // The section holds the field count, the compressed token indices, the
-    // size of the representation buffer, then that buffer: a chunk count of
-    // zero, an LZ4 token, its length bytes, and the representations as
-    // literals.
-    let count = usize::try_from(u64::from_le_bytes(
-        bytes[fields..fields + 8].try_into().unwrap(),
-    ))
-    .unwrap();
-    let tokens = usize::try_from(u64::from_le_bytes(
-        bytes[fields + 8..fields + 16].try_into().unwrap(),
-    ))
-    .unwrap();
-    let buffer = fields + 16 + tokens + 8;
-    let literals = 8 * count;
-    let header = 2 + if literals < 15 {
-        0
-    } else {
-        1 + (literals - 15) / 255
-    };
-    bytes[buffer + header + 7] |= 1;
+    let text = "#usda 1.0\ndef Xform \"A\"\n{\n    double value.timeSamples = {\n        0: 1.5,\n    }\n}\n";
+    let mut bytes = crate::test_support::with_context(text.as_bytes(), |ctx| {
+        let layer = crate::text::grammar::parse_layer(ctx, text.as_bytes()).expect("parse");
+        crate::usdc::write::write(&layer).expect("write")
+    });
+    // The sample is a `double` representation in the value bytes, which
+    // precede the compressed structural sections; its payload is the offset
+    // of the value.
+    let value = bytes
+        .windows(8)
+        .position(|value| value == 1.5_f64.to_le_bytes())
+        .expect("the sample value");
+    let payload = u64::try_from(value).unwrap().to_le_bytes();
+    let sample = bytes
+        .windows(8)
+        .position(|rep| rep[..6] == payload[..6] && rep[7] == 0)
+        .expect("the sample representation");
+    bytes[sample + 7] |= 1;
     let refused = UsdCodec.decode(&mut Cursor::new(&bytes), &DecodeOptions::default());
     let error = refused.expect_err("refused").to_string();
     assert!(error.contains("bits 56 to 59"), "{error}");

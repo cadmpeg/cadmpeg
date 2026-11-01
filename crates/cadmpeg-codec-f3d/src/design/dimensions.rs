@@ -5873,12 +5873,19 @@ pub(super) fn exact_offset_constraint(
     use cadmpeg_ir::scalar::Length;
     use cadmpeg_ir::sketches::{SketchConstraintDefinitionInput as Definition, SketchOffsetPair};
 
+    // The second reference run carries the bijection in order. A stored offset
+    // relation's sources can be another offset relation's results, so their
+    // secondary identities are not null and only the run order separates the
+    // two sides.
+    let ordered_pairs = crate::design::relation_kinds::sole_constraint_kind(relation)
+        == Some(SketchConstraintKind::Offset);
+    let minimum_return_members = if ordered_pairs { 2 } else { 4 };
     if crate::design::relation_kinds::unknown_constraint_bits(relation.definition.state()) != 0
         || !matches!(
             crate::design::relation_kinds::sole_constraint_kind(relation),
             Some(SketchConstraintKind::Perpendicular | SketchConstraintKind::Offset)
         )
-        || relation.return_members().len() < 4
+        || relation.return_members().len() < minimum_return_members
         || !relation.return_members().len().is_multiple_of(2)
         || relation.return_members().len() != relation.members().len()
         || relation
@@ -5888,12 +5895,6 @@ pub(super) fn exact_offset_constraint(
     {
         return None;
     }
-    // The second reference run carries the bijection in order. A stored offset
-    // relation's sources can be another offset relation's results, so their
-    // secondary identities are not null and only the run order separates the
-    // two sides.
-    let ordered_pairs = crate::design::relation_kinds::sole_constraint_kind(relation)
-        == Some(SketchConstraintKind::Offset);
     let mut pairs = Vec::new();
     let mut used_entities = HashSet::new();
     let mut canonical_distance: Option<f64> = None;
@@ -5936,7 +5937,11 @@ pub(super) fn exact_offset_constraint(
         }
         used_entities.insert(source.id());
         used_entities.insert(result.id());
-        let distance = parallel_line_offset(&source.geometry, &result.geometry)?;
+        let distance = if ordered_pairs {
+            sketch_curve_offset(&source.geometry, &result.geometry)?
+        } else {
+            parallel_line_offset(&source.geometry, &result.geometry)?
+        };
         if distance.abs() <= EPS_DIMENSIONS_EXACT_OFFSET_CONSTRAINT_E9 {
             return None;
         }

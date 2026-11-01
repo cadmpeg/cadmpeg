@@ -219,12 +219,13 @@ impl MergeSession<'_, '_> {
             &member_roots,
             &mut parent_report.losses,
         )?;
-        place_contained_poses_with_protected(
+        let mut left_identity = place_contained_poses_with_protected(
             self.ctx,
             parent_ir,
             table,
             &mut parent_report.losses,
             &mut self.operation_protected,
+            ContainedPass::Ordered,
         )?;
         crate::xref::operation_pose::project(
             self.ctx,
@@ -233,6 +234,15 @@ impl MergeSession<'_, '_> {
             &self.operation_protected,
             &mut parent_report.losses,
         )?;
+        left_identity += place_contained_poses_with_protected(
+            self.ctx,
+            parent_ir,
+            table,
+            &mut parent_report.losses,
+            &mut std::collections::BTreeSet::new(),
+            ContainedPass::Nested,
+        )?;
+        crate::design::assembly::release_joint_placed(&mut parent_report.losses, left_identity);
         parent_report
             .losses
             .retain(|loss| loss.code != F3dLossCode::SavedFreeEdgeBodyUnowned.kind());
@@ -588,14 +598,77 @@ fn place_contained_poses(
     ir: &mut cadmpeg_ir::CadIr,
     table: &XrefTable,
     losses: &mut Vec<cadmpeg_ir::report::loss::LossNote>,
-) -> Result<(), CodecError> {
-    place_contained_poses_with_protected(
+) -> Result<usize, CodecError> {
+    let ordered = place_contained_poses_with_protected(
         ctx,
         ir,
         table,
         losses,
         &mut std::collections::BTreeSet::new(),
-    )
+        ContainedPass::Ordered,
+    )?;
+    let nested = place_contained_poses_with_protected(
+        ctx,
+        ir,
+        table,
+        losses,
+        &mut std::collections::BTreeSet::new(),
+        ContainedPass::Nested,
+    )?;
+    Ok(ordered + nested)
+}
+
+/// The carrier forms that one placement pass reads. Carriers of a nested
+/// design state the nested occurrence's pose against its final placement below
+/// the external occurrence, so they place after the operation tables have
+/// posed the occurrences inside it; all other carriers place before.
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum ContainedPass {
+    Ordered,
+    Nested,
+}
+
+impl ContainedPass {
+    /// Whether this pass reads one contained carrier of a reference.
+    fn reads(
+        self,
+        reference: &XrefReference,
+        pose: &crate::records::xref::XrefContainedPose,
+    ) -> bool {
+        match self {
+            Self::Ordered => !xref::contained_pose_is_nested(pose),
+            Self::Nested => nested_contained_only(reference),
+        }
+    }
+
+    /// Whether this pass answers for one contained carrier of a reference,
+    /// which stays native when the pass does not bind it.
+    fn owns(self, reference: &XrefReference) -> bool {
+        (self == Self::Nested) == nested_contained_only(reference)
+    }
+
+    /// Whether this pass places the reference's instances.
+    fn places(self, reference: &XrefReference) -> bool {
+        match self {
+            Self::Ordered => {
+                !reference.owned_poses.is_empty()
+                    || reference
+                        .contained_poses
+                        .iter()
+                        .any(|pose| self.reads(reference, pose))
+            }
+            Self::Nested => nested_contained_only(reference) && reference.owned_poses.is_empty(),
+        }
+    }
+}
+
+/// Whether every contained carrier of the reference is of a nested design.
+fn nested_contained_only(reference: &XrefReference) -> bool {
+    !reference.contained_poses.is_empty()
+        && reference
+            .contained_poses
+            .iter()
+            .all(xref::contained_pose_is_nested)
 }
 
 fn place_contained_poses_with_protected(
@@ -604,21 +677,22 @@ fn place_contained_poses_with_protected(
     table: &XrefTable,
     losses: &mut Vec<cadmpeg_ir::report::loss::LossNote>,
     protected: &mut std::collections::BTreeSet<cadmpeg_ir::ids::OccurrenceId>,
-) -> Result<(), CodecError> {
+    pass: ContainedPass,
+) -> Result<usize, CodecError> {
     use crate::records::feature::assembly_features::DesignComponentOccurrence;
     use cadmpeg_ir::products::OccurrenceParent;
     use cadmpeg_ir::transform::Transform;
     use std::collections::{BTreeMap, BTreeSet};
 
-    if table
+    if !table
         .references
         .iter()
-        .all(|reference| reference.contained_poses.is_empty() && reference.owned_poses.is_empty())
+        .any(|reference| pass.places(reference))
     {
-        return Ok(());
+        return Ok(0);
     }
     let Some(namespace) = ir.native.namespace("f3d") else {
-        return Ok(());
+        return Ok(0);
     };
     // The record index of each local carrier, and of each placed external
     // reference, by native identity. Members' records are scoped below their
@@ -689,7 +763,7 @@ fn place_contained_poses_with_protected(
     for reference in table
         .references
         .iter()
-        .filter(|r| !r.contained_poses.is_empty() || !r.owned_poses.is_empty())
+        .filter(|reference| pass.places(reference))
     {
         let instances = ir
             .model
@@ -754,7 +828,7 @@ fn place_contained_poses_with_protected(
             for (ordinal, pose) in reference.contained_poses.iter().enumerate() {
                 // A carrier lists the instance's owners from the innermost out, as
                 // far as it goes.
-                if !owners.starts_with(&pose.owner_record_indices) {
+                if !pass.reads(reference, pose) || !owners.starts_with(&pose.owner_record_indices) {
                     continue;
                 }
                 let Some([(target, below)]) =
@@ -859,22 +933,33 @@ fn place_contained_poses_with_protected(
         .references
         .iter()
         .flat_map(|reference| {
-            (0..reference.contained_poses.len())
-                .map(move |ordinal| (reference.id.as_str(), ordinal))
+            reference
+                .contained_poses
+                .iter()
+                .enumerate()
+                .filter(move |_| pass.owns(reference))
+                .map(move |(ordinal, _)| (reference.id.as_str(), ordinal))
         })
         .filter(|key| !bound.contains(key))
         .count();
     let owned_unbound = table
         .references
         .iter()
+        .filter(|reference| pass == ContainedPass::Ordered && pass.places(reference))
         .flat_map(|reference| {
             (0..reference.owned_poses.len()).map(move |ordinal| (reference.id.as_str(), ordinal))
         })
         .filter(|key| !bound_owned.contains(key))
         .count();
     let count = placed.len() - owned_placed;
+    let mut left_identity = 0usize;
     for (position, local) in placed {
         if let Some(occurrence) = ir.model.occurrences.get_mut(position) {
+            if occurrence.transform.is_some_and(|transform| {
+                transform.rows() == Transform::identity().rows() && local.rows() != Transform::identity().rows()
+            }) {
+                left_identity += 1;
+            }
             occurrence.transform = Some(local);
         }
     }
@@ -908,7 +993,7 @@ fn place_contained_poses_with_protected(
             "{unbound} component-path carrier(s) of occurrences inside external occurrences name no merged instance with their owner chain; they stay native"
         )));
     }
-    Ok(())
+    Ok(left_identity)
 }
 
 impl MemberDefinition {
@@ -986,6 +1071,17 @@ fn define_member(
         .filter(|body| !owned.contains(&body.id))
         .map(|body| body.id.clone())
         .collect();
+    let owned_sketches = model
+        .product_definitions
+        .iter()
+        .flat_map(|definition| &definition.sketches)
+        .collect::<std::collections::BTreeSet<_>>();
+    let sketches = model
+        .sketches
+        .iter()
+        .filter(|sketch| !owned_sketches.contains(&sketch.id))
+        .map(|sketch| sketch.id.clone())
+        .collect();
     let id = crate::ids::archive_product_definition_id();
     if let Some(definition) = model
         .product_definitions
@@ -993,6 +1089,7 @@ fn define_member(
         .find(|row| row.id == id)
     {
         definition.bodies.extend(bodies);
+        definition.sketches.extend(sketches);
         definition.label = (!label.trim().is_empty()).then(|| label.to_owned());
         return Ok(id);
     }
@@ -1006,7 +1103,7 @@ fn define_member(
         part_number: None,
         bom_properties: std::collections::BTreeMap::new(),
         bodies,
-        sketches: Vec::new(),
+        sketches,
         native_ref: None,
     });
     Ok(id)
@@ -1518,6 +1615,7 @@ mod tests {
     mod fidelity;
     mod occurrence;
     mod parameter_state;
+    mod sketches;
 
     use super::define_member;
 

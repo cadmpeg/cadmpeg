@@ -114,10 +114,13 @@ impl F3zDecodedMember {
 /// failure again. Arrival order does not affect
 /// composition.
 ///
-/// Member traces are speculative until composition. If a trace would refuse,
-/// change an optional-enrichment decision, or require address-space rebinding,
-/// composition executes that member with its current counters through the same
-/// member decoder. This preserves the cumulative budget and exact refusal site.
+/// Member traces are accepted when their charges fit the cumulative counters
+/// and each observed optional-enrichment threshold has the same result.
+/// Composition rebinds member-local derived spaces to fresh IDs in traversal
+/// order. A member with a formatted address-space diagnostic is executed again
+/// when its spaces move. A refused trace or changed decision also executes the
+/// member decoder at its traversal position. This preserves the cumulative
+/// budget and exact refusal site.
 /// Unreachable and skipped entries add no member-decode charges.
 ///
 /// The input and expansion arena must outlive this session. The session is
@@ -130,6 +133,10 @@ pub struct F3zSession<'a> {
     checkpoint: DecodeCheckpoint,
     members: Vec<F3zMember>,
     origin: Arc<()>,
+    #[cfg(test)]
+    reexecutions: std::sync::atomic::AtomicUsize,
+    #[cfg(test)]
+    require_original_spaces: std::sync::atomic::AtomicBool,
 }
 
 impl crate::F3dCodec {
@@ -140,7 +147,7 @@ impl crate::F3dCodec {
         ctx: &DecodeContext<'a>,
         root: View<'a>,
     ) -> Result<F3zSession<'a>, CodecError> {
-        F3zSession::open_scanned(ctx, crate::container::scan(ctx, root)?)
+        F3zSession::open_scanned(ctx, super::observer::scan(ctx, root)?)
     }
 }
 
@@ -154,63 +161,50 @@ impl<'a> F3zSession<'a> {
                 "archive session requires F3Z".into(),
             ));
         }
-        let (model_root, omitted_drawing_root) = archive::model_root(ctx, &scan)?;
-        let archive = archive::classify_members(ctx, &scan)?;
-        archive.member_checkpoint(&model_root)?;
-        let checkpoint = ctx.checkpoint();
-        let mut members = Vec::new();
-        for (entry, &bytes) in scan.entries.iter().zip(&scan.archive_member_sizes) {
-            let mut references = Vec::new();
-            let mut reference_error = None;
-            let kind = match archive.members.get(&entry.name) {
-                Some(ClassifiedMember::Scanned { .. }) => {
-                    let metadata = archive.with_member_scan(&scan, &entry.name, |member_scan| {
-                        let arena = DecodeArena::new();
-                        let metadata_ctx = checkpoint.resume(&arena);
-                        metadata_ctx.take_trace();
-                        let mut placement_only = false;
-                        let table = crate::xref::decode(&metadata_ctx, member_scan)?;
-                        if let Some(table) = table {
-                            references.extend(
-                                table
-                                    .references
-                                    .iter()
-                                    .map(|reference| reference.relative_path.as_str().to_owned()),
-                            );
-                            let selection =
-                                crate::design::decode::body::design_model_selection(member_scan)?;
-                            placement_only = crate::xref::is_assembly(
-                                &metadata_ctx,
-                                member_scan,
-                                Some(&table),
-                                selection.explicitly_empty,
-                            )?;
+        let (model_root, omitted_drawing_root, archive) =
+            super::observer::phase(super::observer::F3zPhase::Classify, || {
+                let (model_root, omitted_drawing_root) = archive::model_root(ctx, &scan)?;
+                let archive = archive::classify_members(ctx, &scan, true)?;
+                Ok((model_root, omitted_drawing_root, archive))
+            })?;
+        let (checkpoint, mut members) =
+            super::observer::phase(super::observer::F3zPhase::SessionOpen, || {
+                archive.member_checkpoint(&model_root)?;
+                let checkpoint = ctx.checkpoint();
+                let mut members = Vec::new();
+                for (entry, &bytes) in scan.entries.iter().zip(&scan.archive_member_sizes) {
+                    let mut references = Vec::new();
+                    let mut reference_error = None;
+                    let kind = match archive.members.get(&entry.name) {
+                        Some(ClassifiedMember::Scanned { metadata, .. }) => {
+                            let mut kind = F3zMemberKind::Design;
+                            if let Some(metadata) = metadata {
+                                references.extend(metadata.references.iter().cloned());
+                                reference_error.clone_from(&metadata.error);
+                                if metadata.placement_only && metadata.error.is_none() {
+                                    kind = F3zMemberKind::PlacementOnly;
+                                }
+                            }
+                            kind
                         }
-                        Ok(placement_only)
+                        Some(ClassifiedMember::Unreadable(reason)) => {
+                            F3zMemberKind::Skipped(reason.clone())
+                        }
+                        None if entry.name.to_ascii_lowercase().ends_with(".f2d") => {
+                            F3zMemberKind::Drawing
+                        }
+                        None => F3zMemberKind::Skipped("not an F3D model document".into()),
+                    };
+                    members.push(F3zMember {
+                        id: entry.name.clone(),
+                        kind,
+                        bytes,
+                        references,
+                        reference_error,
                     });
-                    match metadata {
-                        Ok(true) => F3zMemberKind::PlacementOnly,
-                        Ok(false) => F3zMemberKind::Design,
-                        Err(error) => {
-                            reference_error = Some(error.to_string());
-                            F3zMemberKind::Design
-                        }
-                    }
                 }
-                Some(ClassifiedMember::Unreadable(reason)) => {
-                    F3zMemberKind::Skipped(reason.clone())
-                }
-                None if entry.name.to_ascii_lowercase().ends_with(".f2d") => F3zMemberKind::Drawing,
-                None => F3zMemberKind::Skipped("not an F3D model document".into()),
-            };
-            members.push(F3zMember {
-                id: entry.name.clone(),
-                kind,
-                bytes,
-                references,
-                reference_error,
-            });
-        }
+                Ok((checkpoint, members))
+            })?;
         members.sort_by(|a, b| (a.id != model_root, &a.id).cmp(&(b.id != model_root, &b.id)));
         Ok(Self {
             scan,
@@ -220,6 +214,10 @@ impl<'a> F3zSession<'a> {
             checkpoint,
             members,
             origin: Arc::new(()),
+            #[cfg(test)]
+            reexecutions: std::sync::atomic::AtomicUsize::new(0),
+            #[cfg(test)]
+            require_original_spaces: std::sync::atomic::AtomicBool::new(false),
         })
     }
 
@@ -325,12 +323,24 @@ impl<'a> F3zSession<'a> {
         results: &mut BTreeMap<String, F3zDecodedMember>,
     ) -> Result<(Decoded, OperationPoses), CodecError> {
         if let Some(result) = results.remove(id) {
-            if let Some(decoded) = result.decoded {
-                if ctx.accept_trace(&result.trace) {
+            if let Some(mut decoded) = result.decoded {
+                if ctx.accept_trace_rebinding(&result.trace, |spaces| {
+                    #[cfg(test)]
+                    if self
+                        .require_original_spaces
+                        .load(std::sync::atomic::Ordering::Relaxed)
+                    {
+                        return spaces.is_identity();
+                    }
+                    rebinding::rebind_member(&mut decoded, spaces)
+                }) {
                     return decoded.map(|decoded| (decoded, result.operation_poses));
                 }
             }
         }
+        #[cfg(test)]
+        self.reexecutions
+            .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
         self.decode_in_context(ctx, id)
     }
 
@@ -363,6 +373,16 @@ impl<'a> F3zSession<'a> {
 
 #[cfg(test)]
 impl F3zSession<'_> {
+    pub(crate) fn require_original_spaces_for_test(&self, required: bool) {
+        self.require_original_spaces
+            .store(required, std::sync::atomic::Ordering::Relaxed);
+    }
+
+    /// Total member decodes executed by composition calls on this archive.
+    pub(crate) fn composition_reexecutions(&self) -> usize {
+        self.reexecutions.load(std::sync::atomic::Ordering::Relaxed)
+    }
+
     pub(crate) fn compose_in_traversal_for_test(
         &self,
         ctx: &DecodeContext<'_>,
@@ -375,3 +395,5 @@ impl F3zSession<'_> {
 mod tests;
 
 mod memory;
+
+mod rebinding;

@@ -244,7 +244,7 @@ def _check_witness_path(label: str, kind: str, rel: str, root: Path, failures: l
         failures.append(f"{label}: {kind} witness names no path")
         return
     path = Path(rel)
-    if path.is_absolute() or ".." in path.parts:
+    if path.is_absolute() or rel.startswith("/") or ".." in path.parts:
         failures.append(f"{label}: {kind} witness must be a repo-relative path: {rel}")
         return
     if not (root / path).is_file():

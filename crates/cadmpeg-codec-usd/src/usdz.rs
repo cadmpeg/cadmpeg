@@ -16,6 +16,8 @@ const LAYER_EXTENSIONS: [&str; 3] = [".usda", ".usdc", ".usd"];
 const DATA_ALIGNMENT: usize = 64;
 /// The member name of the root layer this writer packages.
 pub(crate) const ROOT_MEMBER: &str = "root.usda";
+/// The most bytes of a written member: a package has no ZIP64 records.
+pub(crate) const MAX_MEMBER: u64 = 0xFFFF_FFFF;
 
 /// Whether `name` is the file name of a layer.
 pub(crate) fn is_layer_name(name: &str) -> bool {

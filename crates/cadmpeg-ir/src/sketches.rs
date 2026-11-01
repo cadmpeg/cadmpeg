@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Neutral planar sketches, solved entities, and geometric constraints.
 
+use crate::math::portable::Portable;
 use crate::math::{Point2, Point3, Vector3};
 use crate::transform::Transform;
 use crate::{
@@ -512,7 +513,7 @@ pub struct ReferenceLineDirection(FinitePoint2);
 impl ReferenceLineDirection {
     /// Admit the direction used by a reference line.
     pub fn new(direction: FinitePoint2) -> Option<Self> {
-        (direction.u.hypot(direction.v) > f64::EPSILON).then_some(Self(direction))
+        (direction.u.portable_hypot(direction.v) > f64::EPSILON).then_some(Self(direction))
     }
 
     /// Return the direction coordinates.
@@ -1996,8 +1997,8 @@ impl SpatialSketchGeometry {
         let start_point = start.get();
         let end_point = end.get();
         let distance = (end_point.x - start_point.x)
-            .hypot(end_point.y - start_point.y)
-            .hypot(end_point.z - start_point.z);
+            .portable_hypot(end_point.y - start_point.y)
+            .portable_hypot(end_point.z - start_point.z);
         if distance <= EPS_SPATIAL_LINE_LENGTH {
             return Err("spatial sketch line endpoints must be finite and separated");
         }
@@ -2044,8 +2045,8 @@ impl TryFrom<SpatialSketchGeometryDefinition> for SpatialSketchGeometry {
             },
             Definition::Line { start, end } => {
                 let distance = (end.x - start.x)
-                    .hypot(end.y - start.y)
-                    .hypot(end.z - start.z);
+                    .portable_hypot(end.y - start.y)
+                    .portable_hypot(end.z - start.z);
                 let (Some(start), Some(end)) = (FinitePoint3::new(start), FinitePoint3::new(end))
                 else {
                     return Err("spatial sketch line endpoints must be finite and separated");

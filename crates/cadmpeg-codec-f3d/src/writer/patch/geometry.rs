@@ -137,7 +137,7 @@ fn asm_pcurve_edit<'a>(
             periodic,
             wrapper_reversed,
             native_tail_flags,
-            parameter_range,
+            uv_offset,
             fit_tolerance,
             ..
         } => AsmPcurveEdit::Inline(InlinePcurveEdit::PcurveWrapper {
@@ -145,13 +145,11 @@ fn asm_pcurve_edit<'a>(
             periodic: *periodic,
             wrapper_reversed: *wrapper_reversed,
             native_tail_flags: *native_tail_flags,
-            parameter_range: *parameter_range,
+            uv_offset: *uv_offset,
             fit_tolerance: *fit_tolerance,
         }),
-        PcurveEdit::Ref {
-            parameter_range, ..
-        } => AsmPcurveEdit::Ref {
-            parameter_range: *parameter_range,
+        PcurveEdit::Ref { uv_offset, .. } => AsmPcurveEdit::Ref {
+            uv_offset: *uv_offset,
         },
     }
 }
@@ -245,10 +243,19 @@ fn patch_asm_geometry(
     let pcurve_geometry = pcurves
         .iter()
         .map(|(id, edit)| {
-            let geometry = match plane_charts.get(edit.support()) {
+            let mut geometry = match plane_charts.get(edit.support()) {
                 Some(chart) => retained_plane_pcurve(edit.native_geometry(), *chart)?,
                 None => edit.native_geometry().clone(),
             };
+            let offset = edit.stored_uv_offset();
+            geometry.try_map_control_points(|_, point| {
+                let point = point.get();
+                cadmpeg_ir::units::FinitePoint2::new(cadmpeg_ir::math::Point2::new(
+                    point.u - offset[0],
+                    point.v - offset[1],
+                ))
+                .ok_or_else(|| CodecError::malformed("pcurve UV offset subtraction overflows"))
+            })?;
             Ok((id.as_str(), geometry))
         })
         .collect::<Result<BTreeMap<_, _>, CodecError>>()?;

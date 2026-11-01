@@ -661,6 +661,42 @@ fn projects_the_positive_one_sided_angular_travel() {
     }
 }
 
+/// `inventor.md` states positive rotation about the work-axis span, so the
+/// sign of the span selects the side of the sketch plane that the travel reaches.
+#[test]
+fn a_quarter_turn_reaches_the_side_that_the_work_axis_span_selects() {
+    use cadmpeg_test_support::revolve::swept_box;
+
+    const EPS_SWEEP_MM: f64 = 1.0e-9;
+
+    for (span, low_z, high_z) in [(2.0, -20.0, 0.0), (-2.0, 0.0, 20.0)] {
+        let (feature, _) = generated_revolve_with(1, |_, properties, parameters, _| {
+            parameters[0].value = Some(ParameterValue::Angle(
+                Angle::new(std::f64::consts::FRAC_PI_2).expect("angle"),
+            ));
+            let mut json = serde_json::to_value(&properties[3]).expect("axis JSON");
+            json["kind"]["span"] = serde_json::json!([0.0, span, 0.0]);
+            properties[3] = serde_json::from_value(json).expect("axis");
+        })
+        .expect("candidate")
+        .expect("partial revolve");
+        let FeatureDefinition::Operation(FeatureOperation::Revolve {
+            construction: cadmpeg_ir::features::RevolveConstruction::Resolved { axis, extent, .. },
+            ..
+        }) = feature.evaluation.definition()
+        else {
+            panic!("partial revolve");
+        };
+        // A profile on the +X side of the axis, which passes through x = 5 mm.
+        let profile = [Point3::new(15.0, 0.0, 0.0), Point3::new(25.0, 3.0, 0.0)];
+        let (low, high) = swept_box(&profile, axis, extent);
+        assert!((low[2] - low_z).abs() <= EPS_SWEEP_MM, "{low:?}");
+        assert!((high[2] - high_z).abs() <= EPS_SWEEP_MM, "{high:?}");
+        assert!((low[0] - 5.0).abs() <= EPS_SWEEP_MM, "{low:?}");
+        assert!((high[0] - 25.0).abs() <= EPS_SWEEP_MM, "{high:?}");
+    }
+}
+
 #[test]
 fn a_fixed_angle_requires_positive_travel_and_a_proven_direction() {
     for value in [0.0, -1.0] {

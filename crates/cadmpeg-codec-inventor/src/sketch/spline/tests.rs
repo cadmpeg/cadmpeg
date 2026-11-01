@@ -214,6 +214,14 @@ fn spline_point_relation_retains_ordered_native_operands() {
         cadmpeg_ir::identity_key!("segment"),
         9,
     );
+    assert!(point_relation_loss(&[]).is_none());
+    let loss = point_relation_loss(std::slice::from_ref(&raw)).expect("spline point loss");
+    assert_eq!(loss.code.namespace(), "inventor");
+    assert_eq!(
+        loss.code.local_code(),
+        crate::loss::InventorLossCode::SketchSplinePointNative.code()
+    );
+    assert!(loss.message.contains("spline locus and parameter roles"));
     let sketch =
         SketchId::mint("inventor:design:sketch#segment-2").expect("synthetic spline fixture");
     let entity = |n| {
@@ -237,9 +245,15 @@ fn spline_point_relation_retains_ordered_native_operands() {
     );
     let entities = HashMap::from([(("segment", 7), &spline), (("segment", 3), &point)]);
     with_view(&[], |ctx, _| {
-        let projected = project_constraint(ctx, &raw, &entities, &HashMap::new())
-            .expect("resolved relation operands")
-            .expect("relation projection");
+        let projected = project_constraint(
+            ctx,
+            &raw,
+            &entities,
+            &HashMap::new(),
+            &std::collections::HashSet::new(),
+        )
+        .expect("resolved relation operands")
+        .expect("relation projection");
         let SketchConstraintDefinitionInput::Native {
             entities,
             operands,
@@ -253,6 +267,45 @@ fn spline_point_relation_retains_ordered_native_operands() {
         assert_eq!(entities, &vec![spline.id().clone(), point.id().clone()]);
         assert_eq!(operands.len(), 2);
         let missing = HashMap::from([(("segment", 7), &spline)]);
-        assert!(project_constraint(ctx, &raw, &missing, &HashMap::new()).is_none());
+        assert!(project_constraint(
+            ctx,
+            &raw,
+            &missing,
+            &HashMap::new(),
+            &std::collections::HashSet::new()
+        )
+        .is_none());
     });
 }
+
+#[test]
+fn refused_spline_controls_emit_a_native_curve_loss() {
+    let mut record = with_view(&fixture(29), |ctx, source| {
+        parse(ctx, source, 29).expect("synthetic spline")
+    });
+    let native = |payload| {
+        crate::record_identity::Located::new(
+            payload,
+            crate::record_identity::RecordTypeId::from_bytes(TYPE),
+            cadmpeg_ir::identity_key!("generated"),
+            0,
+        )
+    };
+    assert!(crate::sketch::curve::native_losses(&[native(record.clone())]).is_empty());
+    let PmDcSketchEntityKind::Spline { data } = &mut record.kind else {
+        panic!("spline");
+    };
+    data.curve_state = 6;
+    let losses = crate::sketch::curve::native_losses(&[native(record)]);
+    assert_eq!(losses.len(), 1);
+    assert_eq!(losses[0].code.namespace(), "inventor");
+    assert_eq!(
+        losses[0].code.local_code(),
+        crate::loss::InventorLossCode::SketchSplineCurveNative.code()
+    );
+    assert!(losses[0]
+        .message
+        .contains("spline envelope or construction flags"));
+}
+
+mod open;

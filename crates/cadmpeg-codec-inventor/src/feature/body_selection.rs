@@ -15,7 +15,7 @@ use super::{base, FeatureInventory, PmDcFeatureProperty, PmDcKernelEntityLink};
 use crate::design::DesignInventory;
 use crate::kernel::ActiveCarrierState;
 use crate::native::ActiveCarrierRecord;
-use crate::rse::{RseInventory, SegmentKind, SegmentMetaState};
+use crate::rse::{RseInventory, SegmentDescriptor, SegmentKind, SegmentMetaState};
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub(crate) struct WrapperLink {
@@ -25,24 +25,29 @@ pub(crate) struct WrapperLink {
     pub(crate) reference: crate::pmdc::PmDcReference,
 }
 
-pub(crate) fn links(
+/// The current-carrier segment and the document-scoped segments that hold
+/// resolvable external body references.
+pub(crate) struct Scoped<'a, 'b> {
+    pub(crate) target: &'b SegmentDescriptor<'a>,
+    pub(crate) sources: Vec<(&'b SegmentDescriptor<'a>, Vec<u32>)>,
+}
+
+pub(crate) fn scoped<'a, 'b>(
     ctx: &DecodeContext<'_>,
-    document: &RseInventory<'_>,
-    inventory: &FeatureInventory,
+    document: &'b RseInventory<'a>,
     design: &DesignInventory,
-) -> Result<Vec<WrapperLink>, CodecError> {
-    let mut joined = Vec::new();
+) -> Result<Option<Scoped<'a, 'b>>, CodecError> {
     let ActiveCarrierState::Selected(carrier) = &document.active_carrier else {
-        return Ok(joined);
+        return Ok(None);
     };
     let mut targets = document.segments.iter().filter(|segment| {
         segment.kind == SegmentKind::PmBRep && segment.pair.token.key() == &carrier.segment_token
     });
     let Some(target) = targets.next() else {
-        return Ok(joined);
+        return Ok(None);
     };
     let SegmentMetaState::Parsed(target_meta) = &target.meta else {
-        return Ok(joined);
+        return Ok(None);
     };
     if targets.next().is_some()
         || document
@@ -55,8 +60,9 @@ pub(crate) fn links(
             .count()
             != 1
     {
-        return Ok(joined);
+        return Ok(None);
     }
+    let mut sources = Vec::new();
     for source in &document.segments {
         let token = source.pair.token.key().as_str();
         let mut roots = design.model_roots.iter().filter(|root| {
@@ -76,6 +82,23 @@ pub(crate) fn links(
         else {
             continue;
         };
+        sources.push((source, counts));
+    }
+    Ok(Some(Scoped { target, sources }))
+}
+
+pub(crate) fn links(
+    ctx: &DecodeContext<'_>,
+    document: &RseInventory<'_>,
+    inventory: &FeatureInventory,
+    design: &DesignInventory,
+) -> Result<Vec<WrapperLink>, CodecError> {
+    let mut joined = Vec::new();
+    let Some(scope) = scoped(ctx, document, design)? else {
+        return Ok(joined);
+    };
+    for (source, counts) in &scope.sources {
+        let token = source.pair.token.key().as_str();
         for wrapper in inventory
             .properties
             .iter()
@@ -89,9 +112,9 @@ pub(crate) fn links(
             }
             if let Some(link) = base::external_link(
                 source,
-                target,
+                scope.target,
                 reference,
-                &counts,
+                counts,
                 &inventory.kernel_entity_links,
             )? {
                 joined.push(WrapperLink {
@@ -115,7 +138,7 @@ pub(crate) struct Scope<'a> {
 }
 
 impl Scope<'_> {
-    fn admits(&self, wrapper: &PmDcFeatureProperty, carrier_token: &str) -> bool {
+    pub(crate) fn admits(&self, wrapper: &PmDcFeatureProperty, carrier_token: &str) -> bool {
         let mut targets = self
             .metadata
             .iter()
@@ -415,4 +438,4 @@ pub(crate) fn native_losses(
 }
 
 #[cfg(test)]
-mod tests;
+pub(crate) mod tests;

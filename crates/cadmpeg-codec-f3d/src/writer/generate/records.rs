@@ -450,6 +450,7 @@ fn encode_sketch_point(
     })?;
     let SketchPointRecordForm::Version11 {
         padded_paired_reference,
+        derived_type: false,
         entity_genesis,
         depth,
         persistent_id,

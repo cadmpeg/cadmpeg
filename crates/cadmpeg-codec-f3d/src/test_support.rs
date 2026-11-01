@@ -226,6 +226,7 @@ pub(crate) mod smbh_header_test;
 
 pub(crate) mod smbh_blocks_test;
 
+pub(crate) mod sketch_region_test;
 pub(crate) mod smbh_geometry_test;
 
 pub(crate) mod smbh_pcurves_test;
@@ -278,3 +279,7 @@ pub(crate) mod pipe;
 pub(crate) mod work_plane;
 
 pub(crate) mod component_body_test;
+
+pub(crate) mod scan_counts;
+
+pub(crate) mod multiple_profiles;

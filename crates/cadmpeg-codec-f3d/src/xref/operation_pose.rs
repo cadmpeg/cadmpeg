@@ -287,7 +287,13 @@ pub(crate) fn collect(
         if let Some(source) = &r.placement_source {
             matched.insert((source.stream.clone(), source.carrier_record_index));
         }
-        if r.current_pose.is_some() || !r.contained_poses.is_empty() || !r.owned_poses.is_empty() {
+        // Carriers of a nested design place their instance after the operation
+        // tables, and yield to its table when they do not agree.
+        let contained = r
+            .contained_poses
+            .iter()
+            .any(|pose| !super::contained_pose_is_nested(pose));
+        if r.current_pose.is_some() || contained || !r.owned_poses.is_empty() {
             if r.placement_source.as_ref().is_some_and(|s| {
                 table
                     .poses

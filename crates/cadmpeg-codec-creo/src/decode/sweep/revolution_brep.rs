@@ -97,6 +97,9 @@ pub(in super::super) fn transfer_resolved_revolution_breps(
         let Some(feature_id) = transform.feature_id else {
             continue;
         };
+        if super::revolution_carriers::native_solid_contains_feature(scan, ir, feature_id) {
+            continue;
+        }
         if current_additive_feature_recipe(&scan.features.operations, feature_id)
             != Some(crate::feature::operations::FeatureRecipeKind::Revolve)
             || !feature_is_first_material_operation(scan, feature_id)

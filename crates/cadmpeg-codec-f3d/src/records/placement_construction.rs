@@ -13,6 +13,16 @@ use crate::records::sketch_placement::SketchPlacementMatrix;
 
 mod fields;
 
+cadmpeg_core::named_optional_field!(
+    deserialize_periodic_face_mode,
+    Located<u8>,
+    "periodic_face_mode"
+);
+
+pub(crate) fn supported_version(version: u32) -> bool {
+    matches!(version, 4 | 5 | 6 | 8 | 9 | 12 | 14 | 15 | 16)
+}
+
 const ALIGN_UP_SQUARED_NORM_TOLERANCE: f64 = 1e-10;
 
 pub(crate) fn valid_align_up_direction(value: &[FiniteReal; 3]) -> bool {
@@ -100,6 +110,12 @@ pub(crate) struct PlacementFields<Ref = PlacementReference, List = PlacementRefe
     pub(crate) linear_offset_on_periodic_face: Option<Located<u8>>,
     pub(crate) align_up_direction: Option<Located<[FiniteReal; 3]>>,
     pub(crate) arc_length_for_periodic_face: Option<Located<FiniteReal>>,
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_periodic_face_mode"
+    )]
+    pub(crate) periodic_face_mode: Option<Located<u8>>,
     pub(crate) axis_flipped: Option<Located<u8>>,
     pub(crate) use_u_direction: Option<Located<u8>>,
     pub(crate) definer_creator: Option<Ref>,
@@ -164,7 +180,7 @@ impl TryFrom<PlacementConstructionWire> for DesignPlacementConstruction {
             .ok_or("placement members precede their indexed header")?;
         if value.record_index == 0
             || u32::try_from(value.record_index).is_err()
-            || !matches!(value.type_version, 4 | 5 | 6 | 8 | 9 | 12 | 14)
+            || !supported_version(value.type_version)
             || prefix != u64_from_index(long::LEN)
         {
             return Err("placement registration or primary prefix is unsupported".into());

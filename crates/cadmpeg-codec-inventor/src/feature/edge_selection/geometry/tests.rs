@@ -164,12 +164,12 @@ fn matched_edge_revision_geometry_is_independent_of_the_active_edge() {
     }];
     let names = HashMap::from([(55, Some(name))]);
     assert_eq!(
-        selected(&records, &selectors, &names)[&55].end.as_raw(),
+        selected(&records, &selectors, &names, 44)[&55].end.as_raw(),
         &Point3::new(110.0, 0.0, 0.0)
     );
     records.push(record(20, "edge", vec![Token::Ref(-1)]));
     assert_eq!(
-        selected(&records, &selectors, &names)[&55].end.as_raw(),
+        selected(&records, &selectors, &names, 44)[&55].end.as_raw(),
         &Point3::new(110.0, 0.0, 0.0)
     );
     records.push(attribute(
@@ -179,5 +179,5 @@ fn matched_edge_revision_geometry_is_independent_of_the_active_edge() {
         &[1, 55, -1, 7, 0],
     ));
     records.push(attribute(22, 20, "INV_NMX_GEN_TAG", &[1, 44, -1, 3, 0, 10]));
-    assert!(selected(&records, &selectors, &names).is_empty());
+    assert!(selected(&records, &selectors, &names, 44).is_empty());
 }

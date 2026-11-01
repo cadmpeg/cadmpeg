@@ -4,7 +4,8 @@
 
 use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
 use cadmpeg_ir::geometry::analytic::{
-    CircleCurve, ConeSurface, CylinderSurface, LineCurve, PlaneSurface, SphereSurface, TorusSurface,
+    CircleCurve, ConeSurface, CylinderSurface, DegenerateCurve, LineCurve, PlaneSurface,
+    SphereSurface, TorusSurface,
 };
 use cadmpeg_ir::geometry::nurbs::{
     NurbsCurve, NurbsPoleGrid, NurbsPoles3, NurbsSurface, NurbsSurfaceAxis, WeightedPole3,
@@ -385,6 +386,33 @@ impl Builder {
     }
 
     /// An edge with no 3D curve.
+    /// A closed edge whose curve is the degenerate point at `vertex`.
+    pub(crate) fn degenerate_edge(&mut self, vertex: &VertexId) -> EdgeId {
+        let point = self.position(vertex);
+        let curve = self.curve(SolvedCurveGeometry::Degenerate(
+            DegenerateCurve::try_new(point).expect("point"),
+        ));
+        self.edge(
+            EdgeCarrier::unbounded(Some(curve)),
+            vertex.clone(),
+            vertex.clone(),
+        )
+    }
+
+    /// An edge between two vertices whose curve is the degenerate point at
+    /// `start`.
+    pub(crate) fn degenerate_open_edge(&mut self, start: &VertexId, end: &VertexId) -> EdgeId {
+        let point = self.position(start);
+        let curve = self.curve(SolvedCurveGeometry::Degenerate(
+            DegenerateCurve::try_new(point).expect("point"),
+        ));
+        self.edge(
+            EdgeCarrier::unbounded(Some(curve)),
+            start.clone(),
+            end.clone(),
+        )
+    }
+
     pub(crate) fn bare_edge(&mut self, start: &VertexId, end: &VertexId) -> EdgeId {
         self.edge(EdgeCarrier::unbounded(None), start.clone(), end.clone())
     }

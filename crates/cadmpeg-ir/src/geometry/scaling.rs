@@ -305,9 +305,17 @@ impl SolvedSurfaceGeometry {
             }
 
             Self::Nurbs(value) => {
+                let fit = value
+                    .cache_fit_tolerance()
+                    .map(|fit| {
+                        fit.scaled(scale)
+                            .ok_or(ScaleRefusal::Field("cache_fit_tolerance must be finite"))
+                    })
+                    .transpose()?;
                 value
                     .scale_points(scale)
                     .map_err(ScaleRefusal::ControlPoints)?;
+                value.set_cache_fit_tolerance(fit);
                 return Ok(());
             }
             Self::Polygonal(value) => {

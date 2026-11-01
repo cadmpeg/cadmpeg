@@ -340,6 +340,23 @@ pub(crate) struct EdgeTreatmentInputs<'a> {
     pub(crate) treatment_radius: Option<f64>,
 }
 
+/// The history state that the edge operands of a scope without its own
+/// state identity share. Edge-treatment selections of such a scope resolve
+/// in this state.
+pub(crate) fn edge_treatment_recipe_state_id(
+    scope: &crate::records::feature::scope::DesignParameterScope,
+    operands: &[DesignEdgeOperand],
+) -> Option<i64> {
+    let stream = native_stream(&scope.id);
+    let mut scope_operands = operands.iter().filter(|operand| {
+        native_stream(&operand.id) == stream && operand.scope_record_index == scope.record_index
+    });
+    let state = scope_operands.next()?.recipe_state_id?;
+    scope_operands
+        .all(|operand| operand.recipe_state_id == Some(state))
+        .then_some(state)
+}
+
 pub(super) fn resolved_edge_treatment_group_with_corners(
     group: &DesignConstructionOperandGroup,
     input: EdgeTreatmentInputs<'_>,
@@ -994,7 +1011,16 @@ fn resolved_edge_group_with_transition_chain(
             return lost_selection();
         }
         if has_standard_recipe_operands {
-            return Ok(native_edge_selection(group));
+            return Ok(partial_historical_edge_selection(
+                matched_operands
+                    .iter()
+                    .map(|operand| (operand.id.as_str(), resolved_edge_operand(operand))),
+                previous_state_id,
+                feature_id,
+                state,
+                &group.id,
+            )
+            .unwrap_or_else(|| native_edge_selection(group)));
         }
         let mut combined_edges = Vec::new();
         for (index, operand) in matched_operands.iter().enumerate() {

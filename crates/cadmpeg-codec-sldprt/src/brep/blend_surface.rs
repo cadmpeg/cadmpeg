@@ -109,14 +109,21 @@ pub(super) fn edge_samples(
     Ok(points)
 }
 
+/// A cache solved from the blend's own data.
+pub(super) struct SolvedBlend {
+    pub(super) cache: BlendCache,
+    /// Whether every face vertex lies on the cache within its fit tolerance
+    /// and the linear resolution.
+    pub(super) holds: bool,
+}
+
 /// Solve the cache of one blend over the stretch of spine its face covers.
 /// `None` when the blend's data does not define a section along that
-/// stretch, when no fit within `MAX_PATCHES` reaches the tolerance, or when
-/// a face vertex is off the cache.
+/// stretch, or when no fit within `MAX_PATCHES` reaches the tolerance.
 pub(super) fn solve(
     ctx: &DecodeContext<'_>,
     inputs: &BlendInputs<'_>,
-) -> Result<Option<BlendCache>, CodecError> {
+) -> Result<Option<SolvedBlend>, CodecError> {
     if !(inputs.radius.is_finite() && inputs.radius > 0.0) || inputs.boundary.is_empty() {
         return Ok(None);
     }
@@ -141,13 +148,41 @@ pub(super) fn solve(
     for stretch in [widened, extent] {
         if let Some(cache) = solve_over(ctx, inputs, &spine, stretch)? {
             let holds = passes_through(ctx, &cache, &spine, stretch, inputs.vertices)?;
-            return Ok(holds.then_some(cache));
+            return Ok(Some(SolvedBlend { cache, holds }));
         }
         if widened == extent {
             break;
         }
     }
     Ok(None)
+}
+
+/// The largest distance of a vertex from `cache` over the stretch of
+/// `spine` the vertices project to, or `None` when one does not project.
+///
+/// # Errors
+///
+/// Propagates an evaluator's resource refusal.
+pub(super) fn vertex_miss(
+    ctx: &DecodeContext<'_>,
+    cache: &BlendCache,
+    spine: &CurveGeometry,
+    vertices: &[Point3],
+) -> Result<Option<f64>, CodecError> {
+    let Some(spine) = Spine::new(ctx, spine)? else {
+        return Ok(None);
+    };
+    let mut parameters = Vec::with_capacity(vertices.len());
+    for vertex in vertices {
+        let Some(parameter) = spine.project(ctx, to3(*vertex))? else {
+            return Ok(None);
+        };
+        parameters.push(parameter);
+    }
+    let Some(extent) = spine.extent(&parameters) else {
+        return Ok(None);
+    };
+    largest_miss(ctx, cache, &spine, extent, vertices).map(Some)
 }
 
 /// Whether every vertex lies on the cache within its fit tolerance and the
@@ -161,7 +196,19 @@ fn passes_through(
     extent: [f64; 2],
     vertices: &[Point3],
 ) -> Result<bool, CodecError> {
-    let allowance = cache.fit_tolerance + VERTEX_ALLOWANCE;
+    let miss = largest_miss(ctx, cache, spine, extent, vertices)?;
+    Ok(miss <= cache.fit_tolerance + VERTEX_ALLOWANCE)
+}
+
+/// The largest distance of a vertex from `cache`.
+fn largest_miss(
+    ctx: &DecodeContext<'_>,
+    cache: &BlendCache,
+    spine: &Spine<'_>,
+    extent: [f64; 2],
+    vertices: &[Point3],
+) -> Result<f64, CodecError> {
+    let mut largest: f64 = 0.0;
     for vertex in vertices {
         let point = to3(*vertex);
         let along = spine
@@ -187,11 +234,9 @@ fn passes_through(
                 nearest = nearest.min(norm(sub(to3(foot.get()), point)));
             }
         }
-        if nearest > allowance {
-            return Ok(false);
-        }
+        largest = largest.max(nearest);
     }
-    Ok(true)
+    Ok(largest)
 }
 
 /// Fit the cache over one stretch of spine.

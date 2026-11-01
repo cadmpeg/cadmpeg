@@ -52,6 +52,7 @@ fn matched_source_and_key_select_an_archived_generated_edge() {
             generator: 115,
             key: 7,
         }],
+        44,
     );
     assert_eq!(
         names.get(&150),
@@ -83,7 +84,7 @@ fn matching_requires_both_source_and_key_and_the_declared_generator() {
             key: 7,
         },
     ] {
-        assert!(names(&records(), &[selector]).is_empty());
+        assert!(names(&records(), &[selector], 44).is_empty());
     }
 }
 
@@ -97,7 +98,8 @@ fn face_and_vertex_matches_do_not_select_edges() {
             source: 150,
             generator: 115,
             key: 7
-        }]
+        }],
+        44
     )
     .is_empty());
 }
@@ -117,7 +119,8 @@ fn conflicting_generated_names_keep_the_selection_native() {
             source: 150,
             generator: 115,
             key: 7
-        }]
+        }],
+        44
     )
     .is_empty());
 }
@@ -127,7 +130,7 @@ fn generic_generated_names_keep_distinct_edge_roles() {
     for role in [2, 10, 18] {
         let record = attribute(192, 140, "INV_NMX_GEN_TAG", &[1, 115, -1, 3, 0, role]);
         assert_eq!(
-            generated(&record).expect("known generated role").1.role,
+            generated(&record, 44).expect("known generated role").1.role,
             role
         );
     }
@@ -137,8 +140,8 @@ fn generic_generated_names_keep_distinct_edge_roles() {
 fn untyped_records_and_unknown_families_do_not_supply_a_join() {
     let mut record = attribute(192, 140, "INV_NMX_GEN_TAG", &[1, 115, -1, 3, 0, 2]);
     record.name = "untyped".into();
-    assert!(generated(&record).is_none());
-    assert!(generated(&attribute(192, 140, "other", &[1, 115, -1, 3, 0, 2])).is_none());
+    assert!(generated(&record, 44).is_none());
+    assert!(generated(&attribute(192, 140, "other", &[1, 115, -1, 3, 0, 2]), 44).is_none());
 }
 
 fn selector_bytes() -> Vec<u8> {
@@ -385,7 +388,8 @@ fn history_section_wrapper_retains_the_first_edge_revision_identity() {
             source: 150,
             generator: 115,
             key: 7
-        }]
+        }],
+        44
     )
     .get(&150)
     .is_some_and(Option::is_some));
@@ -509,4 +513,273 @@ fn duplicate_qualifiers_need_a_separate_generated_name_on_the_same_owner() {
     assert!(!sources.contains_key(&31));
     let (_, complete) = generated_sources(&[face, duplicate], 44);
     assert!(!complete);
+}
+
+fn legacy_attribute(index: usize, owner: i64, class: &str, schema: i64, suffix: &[i64]) -> Record {
+    let mut tokens = vec![
+        Token::Ref(-1),
+        Token::Long(-1),
+        Token::Ref(-1),
+        Token::Ref(-1),
+        Token::Ref(owner),
+        Token::Long(schema),
+    ];
+    tokens.extend(suffix.iter().copied().map(Token::Long));
+    Record {
+        index,
+        name: format!("{class}-NamingMatching-attrib"),
+        tokens: tokens.into(),
+        offset: 0,
+        len: 0,
+    }
+}
+
+fn legacy_records(schema: i64) -> Vec<Record> {
+    vec![
+        Record {
+            index: 140,
+            name: "edge".into(),
+            tokens: vec![Token::Ref(133)].into(),
+            offset: 0,
+            len: 0,
+        },
+        legacy_attribute(133, 140, "NMx_Matched_Entity", schema, &[1, 150, -1, 7, 0]),
+        legacy_attribute(
+            192,
+            140,
+            "NMx_Sweep_Generated_Brep_tag-NMx_Brep_Name_tag-NMx_Brep_tag",
+            schema,
+            &[1, 115, -1, 3, 0, 18, 0, 0, 0, 0, 0, 0, 0],
+        ),
+    ]
+}
+
+const LEGACY_SELECTOR: Selector = Selector {
+    source: 150,
+    generator: 115,
+    key: 7,
+};
+
+#[test]
+fn legacy_carriers_join_a_selector_to_the_same_name_as_a_schema_44_carrier() {
+    for schema in [38, 40, 42] {
+        assert!(legacy_schema(schema));
+        let names = names(
+            &legacy_records(i64::from(schema)),
+            &[LEGACY_SELECTOR],
+            schema,
+        );
+        assert_eq!(
+            names.get(&150),
+            Some(&Some(EdgeName {
+                generator: 115,
+                family: "NMx_Sweep_Generated_Brep_tag".into(),
+                associative_id: 3,
+                role: 18
+            }))
+        );
+    }
+    for schema in [43, 44, 45] {
+        assert!(!legacy_schema(schema));
+    }
+}
+
+#[test]
+fn legacy_generic_names_keep_distinct_edge_roles() {
+    for role in [2, 10, 18] {
+        let record = legacy_attribute(
+            192,
+            140,
+            "NMx_Generated_Brep_tag-NMx_Brep_Name_tag-NMx_Brep_tag",
+            38,
+            &[1, 115, -1, 3, 0, role],
+        );
+        let (owner, name) = generated(&record, 38).expect("generic role");
+        assert_eq!(
+            (owner, name.role, name.family.as_str()),
+            (140, role, "NMx_Generated_Brep_tag")
+        );
+    }
+    let bad_role = legacy_attribute(
+        192,
+        140,
+        "NMx_Generated_Brep_tag-NMx_Brep_Name_tag-NMx_Brep_tag",
+        38,
+        &[1, 115, -1, 3, 0, 3],
+    );
+    assert!(generated(&bad_role, 38).is_none());
+}
+
+#[test]
+fn legacy_names_with_several_sources_or_other_tails_do_not_name_one_generator() {
+    let sweep = "NMx_Sweep_Generated_Brep_tag-NMx_Brep_Name_tag-NMx_Brep_tag";
+    let generic = "NMx_Generated_Brep_tag-NMx_Brep_Name_tag-NMx_Brep_tag";
+    let cases: [(&str, &[i64]); 7] = [
+        // Two source pairs.
+        (generic, &[2, 508, 2, 115, -1, 3, 0, 2]),
+        // The only pair has another name value.
+        (generic, &[1, 115, 2, 3, 0, 2]),
+        // A negative associative identifier.
+        (generic, &[1, 115, -1, -3, 0, 2]),
+        // The zero word is not zero.
+        (generic, &[1, 115, -1, 3, 1, 2]),
+        // A sweep tail with one word short.
+        (sweep, &[1, 115, -1, 3, 0, 18, 0, 0, 0, 0, 0, 0]),
+        // A sweep tail with a nonzero word.
+        (sweep, &[1, 115, -1, 3, 0, 18, 0, 0, 0, 1, 0, 0, 0]),
+        // A sweep with the generic-only role.
+        (sweep, &[1, 115, -1, 3, 0, 2, 0, 0, 0, 0, 0, 0, 0]),
+    ];
+    for (class, suffix) in cases {
+        let record = legacy_attribute(192, 140, class, 38, suffix);
+        assert!(generated(&record, 38).is_none(), "{suffix:?}");
+    }
+    // The stored schema equals the carrier schema.
+    let record = legacy_attribute(192, 140, generic, 40, &[1, 115, -1, 3, 0, 2]);
+    assert!(generated(&record, 38).is_none());
+    assert!(generated(&record, 40).is_some());
+    // Other classes of the family carry no edge name.
+    let flange = legacy_attribute(
+        192,
+        140,
+        "NMx_flange_tag-NMx_Brep_Name_tag-NMx_Brep_tag",
+        38,
+        &[1, 115, -1, 3, 0, 2],
+    );
+    assert!(generated(&flange, 38).is_none());
+}
+
+#[test]
+fn legacy_matching_requires_the_pinned_fields_and_the_carrier_schema() {
+    let matched_with = |schema: i64, suffix: &[i64]| {
+        matched(
+            &legacy_attribute(133, 140, "NMx_Matched_Entity", schema, suffix),
+            38,
+        )
+    };
+    assert_eq!(matched_with(38, &[1, 150, -1, 7, 0]), Some((150, 7, 140)));
+    assert!(matched_with(40, &[1, 150, -1, 7, 0]).is_none());
+    assert!(matched_with(38, &[2, 150, -1, 7, 0]).is_none());
+    assert!(matched_with(38, &[1, 150, 0, 7, 0]).is_none());
+    assert!(matched_with(38, &[1, 150, -1, 7, 1]).is_none());
+    assert!(matched_with(38, &[1, 150, -1, 7]).is_none());
+    assert!(matched_with(38, &[1, -2, -1, 7, 0]).is_none());
+    let other_class = legacy_attribute(133, 140, "NMx_Dup_Attrib", 38, &[1, 150, -1, 7, 0]);
+    assert!(matched(&other_class, 38).is_none());
+    let negative_owner = legacy_attribute(133, -1, "NMx_Matched_Entity", 38, &[1, 150, -1, 7, 0]);
+    assert!(matched(&negative_owner, 38).is_none());
+    // Each form belongs to its own carrier schemas.
+    let custom_form = attribute(133, 140, "INV_NMX_MATCHED_ATTRIB", &[1, 150, -1, 7, 0]);
+    assert!(matched(&custom_form, 44).is_some());
+    assert!(matched(&custom_form, 38).is_none());
+    assert!(matched(
+        &legacy_attribute(133, 140, "NMx_Matched_Entity", 44, &[1, 150, -1, 7, 0]),
+        44
+    )
+    .is_none());
+}
+
+#[test]
+fn legacy_history_snapshots_join_like_active_records() {
+    let mut records = legacy_records(38);
+    for record in &mut records[1..] {
+        let family = record.name.split('-').next().expect("class").to_owned();
+        record.name = "End-of-ASM-History-Section".into();
+        let mut tokens = vec![Token::SubIdent(family)];
+        tokens.extend(record.tokens.iter().cloned());
+        record.tokens = tokens.into();
+    }
+    assert!(names(&records, &[LEGACY_SELECTOR], 38)
+        .get(&150)
+        .is_some_and(Option::is_some));
+}
+
+#[test]
+fn legacy_selectors_need_the_matching_key_generator_and_edge_owner() {
+    let records = legacy_records(38);
+    for selector in [
+        Selector {
+            source: 151,
+            ..LEGACY_SELECTOR
+        },
+        Selector {
+            key: 8,
+            ..LEGACY_SELECTOR
+        },
+        Selector {
+            generator: 116,
+            ..LEGACY_SELECTOR
+        },
+    ] {
+        assert!(names(&records, &[selector], 38).is_empty());
+    }
+    let mut face_owner = legacy_records(38);
+    face_owner[0].name = "face".into();
+    assert!(names(&face_owner, &[LEGACY_SELECTOR], 38).is_empty());
+    // A carrier schema 44 does not read the class-chain form.
+    assert!(names(&records, &[LEGACY_SELECTOR], 44).is_empty());
+    // A second generated name on the owner keeps the selection native.
+    let mut conflicting = legacy_records(38);
+    conflicting.push(legacy_attribute(
+        200,
+        140,
+        "NMx_Generated_Brep_tag-NMx_Brep_Name_tag-NMx_Brep_tag",
+        38,
+        &[1, 115, -1, 8, 0, 2],
+    ));
+    assert!(names(&conflicting, &[LEGACY_SELECTOR], 38).is_empty());
+}
+
+#[test]
+fn the_selector_join_runs_for_legacy_carriers_only_with_a_flange() {
+    assert!(names_joined(44, false));
+    assert!(names_joined(44, true));
+    for schema in [38, 40, 42] {
+        assert!(!names_joined(schema, false));
+        assert!(names_joined(schema, true));
+    }
+    for schema in [0, 37, 39, 41, 43, 45] {
+        assert!(!names_joined(schema, true));
+    }
+}
+
+/// The version-19 layout: no flags extension word and no qualifier word.
+fn selector_bytes_without_qualifier() -> Vec<u8> {
+    let with = selector_bytes();
+    // The topology word is followed by the qualifier word and the naming form.
+    let at = with
+        .windows(8)
+        .position(|window| window == [2, 0, 0, 0, 0, 0, 0, 0])
+        .expect("topology and qualifier");
+    let mut bytes = with[..14].to_vec();
+    bytes.extend_from_slice(&with[18..at + 4]);
+    bytes.extend_from_slice(&with[at + 8..]);
+    bytes
+}
+
+#[test]
+fn only_version_19_selectors_omit_the_qualifier_word() {
+    let expected = Selector {
+        source: 150,
+        generator: 115,
+        key: 7,
+    };
+    let without = selector_bytes_without_qualifier();
+    assert_eq!(without.len() + 8, selector_bytes().len());
+    assert!(!selector_has_qualifier(19));
+    assert_eq!(
+        selector(View::over_retained(&without), 19).expect("version 19"),
+        Some(expected.clone())
+    );
+    assert_eq!(
+        selector(View::over_retained(&selector_bytes()), 29).expect("version 29"),
+        Some(expected)
+    );
+    for version in [20, 23, 29, 31] {
+        assert!(selector_has_qualifier(version));
+    }
+    // The other version's layout does not parse as a selector.
+    assert!(selector(View::over_retained(&selector_bytes()), 19)
+        .map_or(true, |parsed| parsed.is_none()));
+    assert!(selector(View::over_retained(&without), 29).map_or(true, |parsed| parsed.is_none()));
 }

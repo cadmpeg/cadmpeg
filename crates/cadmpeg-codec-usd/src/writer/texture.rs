@@ -15,6 +15,7 @@ use super::text::{asset, identifier, quoted, real32, tuple32};
 use super::Writer;
 use crate::schema::shading::{TextureSlot, TEXTURE_SLOTS};
 use crate::schema::texture::SlotKind;
+use crate::usdz;
 
 /// The package directory of the images the writer embeds.
 const TEXTURE_DIRECTORY: &str = "textures";
@@ -109,7 +110,7 @@ impl<'ir> Writer<'ir> {
     }
 
     /// The asset path of the image of `texture`: a package member for an
-    /// embedded image in a package, and otherwise the image's location.
+    /// image that a package holds, and otherwise the image's location.
     fn texture_file(&mut self, texture: &TextureRef) -> Option<String> {
         let asset = self
             .ir
@@ -117,43 +118,67 @@ impl<'ir> Writer<'ir> {
             .assets
             .iter()
             .find(|asset| asset.id.as_str() == texture.asset_guid)?;
+        let named = asset
+            .name
+            .as_ref()
+            .map(cadmpeg_core::text::NonBlankString::as_str);
         match &asset.content {
             AssetContent::External { uri } => {
-                if self.package.is_some() {
-                    self.unwritten.external_textures.insert(uri.to_string());
+                if self.package.is_none() {
+                    return Some(uri.to_string());
                 }
-                Some(uri.to_string())
+                let opened = self.assets.map_or_else(
+                    || Err("no asset source was given".to_owned()),
+                    |assets| assets.open(None, uri.as_str(), usdz::MAX_MEMBER),
+                );
+                match opened {
+                    Ok(file) if !file.bytes.is_empty() => {
+                        self.member(named.unwrap_or(uri.as_str()), file.bytes)
+                    }
+                    Ok(_) => {
+                        self.unwritten
+                            .external_textures
+                            .insert(format!("{uri} (empty)"));
+                        Some(uri.to_string())
+                    }
+                    Err(reason) => {
+                        self.unwritten
+                            .external_textures
+                            .insert(format!("{uri} ({reason})"));
+                        Some(uri.to_string())
+                    }
+                }
             }
             AssetContent::Embedded { data } => {
-                let Some(members) = self.package.as_mut() else {
+                if self.package.is_none() {
                     let path = texture.paths.first()?.clone();
                     self.unwritten.external_textures.insert(path.clone());
                     return Some(path);
-                };
-                let base = asset
-                    .name
-                    .as_ref()
-                    .map_or("texture", |name| name.as_str())
-                    .rsplit(['/', '\\'])
-                    .next()
-                    .unwrap_or("texture")
-                    .to_owned();
-                if let Some((name, _)) = members
-                    .iter()
-                    .find(|(_, bytes)| bytes.as_slice() == data.as_bytes())
-                {
-                    return Some(name.clone());
                 }
-                let mut name = format!("{TEXTURE_DIRECTORY}/{base}");
-                let mut ordinal = 1;
-                while members.iter().any(|(known, _)| *known == name) {
-                    name = format!("{TEXTURE_DIRECTORY}/{ordinal}_{base}");
-                    ordinal += 1;
-                }
-                members.push((name.clone(), data.as_bytes().to_vec()));
-                Some(name)
+                self.member(named.unwrap_or("texture"), data.as_bytes().to_vec())
             }
         }
+    }
+
+    /// The package member that holds `bytes`, added under the base name of
+    /// `name` when no member holds them.
+    fn member(&mut self, name: &str, bytes: Vec<u8>) -> Option<String> {
+        let members = self.package.as_mut()?;
+        if let Some((known, _)) = members.iter().find(|(_, held)| *held == bytes) {
+            return Some(known.clone());
+        }
+        let base = name
+            .rsplit(['/', '\\'])
+            .find(|part| !part.is_empty())
+            .unwrap_or("texture");
+        let mut name = format!("{TEXTURE_DIRECTORY}/{base}");
+        let mut ordinal = 1;
+        while members.iter().any(|(known, _)| *known == name) {
+            name = format!("{TEXTURE_DIRECTORY}/{ordinal}_{base}");
+            ordinal += 1;
+        }
+        members.push((name.clone(), bytes));
+        Some(name)
     }
 
     /// Writes the coordinate readers and the `UsdUVTexture` shaders of

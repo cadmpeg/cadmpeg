@@ -25,6 +25,7 @@ use crate::source_fidelity::SourceFidelity;
 use crate::ContainerSummary;
 use cadmpeg_core::decode::{
     DecodeArena, DecodeContext, DecodeDepth, DecodeMode, DecodePolicy, InspectOptions, View,
+    WholeInput,
 };
 use cadmpeg_core::dialect::FormatIdentity;
 use cadmpeg_core::{CodecError, ReadSeek};
@@ -359,6 +360,16 @@ pub trait CodecBackend {
         prefix: View<'_>,
     ) -> Result<Confidence, CodecError>;
 
+    /// Judge the whole source, after the registry proved that the detection
+    /// prefix holds every byte of it. The default judges it as a prefix.
+    fn detect_whole_impl(
+        &self,
+        ctx: &DecodeContext<'_>,
+        input: WholeInput<'_>,
+    ) -> Result<Confidence, CodecError> {
+        self.detect_impl(ctx, input.view())
+    }
+
     /// Enumerate the acquired root view's streams/segments without decoding
     /// geometry.
     ///
@@ -428,6 +439,13 @@ pub trait Codec: sealed::Sealed {
     /// Judge, from a leading byte prefix, whether this codec applies.
     fn detect(&self, ctx: &DecodeContext<'_>, prefix: View<'_>) -> Result<Confidence, CodecError>;
 
+    /// Judge the whole source, [`CodecBackend::detect_whole_impl`].
+    fn detect_whole(
+        &self,
+        ctx: &DecodeContext<'_>,
+        input: WholeInput<'_>,
+    ) -> Result<Confidence, CodecError>;
+
     /// Findings this codec reports over its own native namespace,
     /// [`CodecBackend::validate_native`].
     fn validate_native(
@@ -478,6 +496,14 @@ impl<C: CodecBackend + ?Sized> Codec for C {
 
     fn detect(&self, ctx: &DecodeContext<'_>, prefix: View<'_>) -> Result<Confidence, CodecError> {
         self.detect_impl(ctx, prefix)
+    }
+
+    fn detect_whole(
+        &self,
+        ctx: &DecodeContext<'_>,
+        input: WholeInput<'_>,
+    ) -> Result<Confidence, CodecError> {
+        self.detect_whole_impl(ctx, input)
     }
 
     fn validate_native(

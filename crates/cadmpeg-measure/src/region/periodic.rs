@@ -19,7 +19,7 @@ use super::lifts::Lifts;
 use super::{
     classification, degenerate, invalid, ring_loops, winding_number, LoopRegion, LoopShape, Region,
 };
-use crate::boundary::ResolvedFace;
+use crate::boundary::{LoopKind, ResolvedFace};
 use crate::canonical::surface::Chart;
 use crate::failure::{Measure, MeasureFailure, Outcome};
 use crate::reason::UnavailableReason;
@@ -184,6 +184,17 @@ pub(super) fn classify(
         }
     }
     let apex = chart.apex();
+    if wrapping.len() != 1
+        && apex.is_some_and(|(_, apex)| {
+            resolved.loops.iter().any(|resolution| {
+                resolution.outcome.as_ref().is_ok_and(|resolved_loop| {
+                    matches!(resolved_loop.kind, LoopKind::Vertex(point) if point == apex)
+                })
+            })
+        })
+    {
+        return Err(invalid("a loop at the apex and no one loop reaching it"));
+    }
     let (base, outer, apex_member) = match wrapping.as_slice() {
         [] => {
             let outer = strip_outer(&contractible, period)?;

@@ -1194,24 +1194,27 @@ fn native_store_refuses_nesting_limit() {
             if limit.dimension == ResourceDimension::RecursionDepth));
 }
 
-#[test]
-fn repeated_circle_display_shape_requires_distinct_display_entities() {
-    use crate::records::{
-        FeatureInputName, FeatureInputOperand, FeatureInputOperandKind, FeatureInputRelationFamily,
-        FeatureInputRelationInstance, FeatureInputScalar, FeatureInputScalarRole,
-    };
-
-    let names = [FeatureInputName {
-        feature_ref: None,
-        id: "name".into(),
+fn circle_run_names() -> [crate::records::FeatureInputName; 2] {
+    let name = |id: &str, value: &str| crate::records::FeatureInputName {
+        id: id.into(),
         parent: "lane".into(),
+        feature_ref: None,
         ordinal: 0,
         sequence: 0,
         offset: 0,
         object_id: None,
-        value: "D1".into(),
-    }];
-    let scalar = |ordinal: u32, entity_index: u16| FeatureInputScalar {
+        value: value.into(),
+    };
+    [name("name", "D1"), name("other", "D2")]
+}
+
+fn circle_run_scalar(
+    ordinal: u32,
+    role: crate::records::FeatureInputScalarRole,
+    name: &str,
+    entity_index: Option<u16>,
+) -> crate::records::FeatureInputScalar {
+    crate::records::FeatureInputScalar {
         id: format!("scalar-{ordinal}"),
         parent: "lane".into(),
         feature_ref: Some("sketch".into()),
@@ -1219,46 +1222,149 @@ fn repeated_circle_display_shape_requires_distinct_display_entities() {
         sequence: ordinal,
         offset: 100 + u64::from(ordinal),
         object_id: 1,
-        name: "name".into(),
+        name: name.into(),
         value: cadmpeg_ir::scalar::FiniteReal::new(1.0).unwrap(),
-        role: FeatureInputScalarRole::Display,
-        operands: vec![FeatureInputOperand {
-            offset: 200 + u64::from(ordinal),
-            reference_ref: format!("reference-{ordinal}"),
-            kind: FeatureInputOperandKind::E1,
-            entity_index,
-            entity_ref: None,
-        }],
+        role,
+        operands: entity_index
+            .map(|entity_index| crate::records::FeatureInputOperand {
+                offset: 200 + u64::from(ordinal),
+                reference_ref: format!("reference-{ordinal}"),
+                kind: crate::records::FeatureInputOperandKind::E1,
+                entity_index,
+                entity_ref: None,
+            })
+            .into_iter()
+            .collect(),
         archive_class: None,
-    };
-    let record = |scalars: &[FeatureInputScalar]| FeatureInputRelationInstance {
+    }
+}
+
+fn circle_run_display(ordinal: u32, entity_index: u16) -> crate::records::FeatureInputScalar {
+    circle_run_scalar(
+        ordinal,
+        crate::records::FeatureInputScalarRole::Display,
+        "name",
+        Some(entity_index),
+    )
+}
+
+fn circle_run_relation(
+    refs: &[&crate::records::FeatureInputScalar],
+    parameter: Option<&crate::records::FeatureInputScalar>,
+) -> crate::records::FeatureInputRelationInstance {
+    crate::records::FeatureInputRelationInstance {
         id: "relation".into(),
         parent: "lane".into(),
         ordinal: 0,
         sequence: 0,
-        offset: 100,
-        family: FeatureInputRelationFamily::CircleDiameter,
+        offset: refs[0].offset,
+        family: crate::records::FeatureInputRelationFamily::CircleDiameter,
         class_ref: "class".into(),
         feature_ref: "sketch".into(),
         scalars: crate::records::relation_scalars::RelationScalars::from_refs(
-            scalars.iter().map(|scalar| scalar.id.clone()).collect(),
-            None,
+            refs.iter().map(|scalar| scalar.id.clone()).collect(),
+            parameter.map(|scalar| scalar.id.clone()),
             None,
         )
         .unwrap(),
-        operands: scalars[0].operands.clone(),
-    };
+        operands: refs[0].operands.clone(),
+    }
+}
 
-    let distinct = [scalar(0, 1), scalar(1, 2), scalar(2, 3), scalar(3, 4)];
+#[test]
+fn repeated_circle_display_shape_requires_distinct_display_entities() {
+    let names = circle_run_names();
+    let distinct = [
+        circle_run_display(0, 1),
+        circle_run_display(1, 2),
+        circle_run_display(2, 3),
+        circle_run_display(3, 4),
+    ];
+    let refs = distinct.iter().collect::<Vec<_>>();
     assert!(super::repeated_circle_display_shape_valid(
-        &record(&distinct),
+        &circle_run_relation(&refs, None),
         &super::RecordIds::new(&[], &distinct, &names)
     ));
-    let repeated = [scalar(0, 1), scalar(1, 2), scalar(2, 3), scalar(3, 1)];
+    let repeated = [
+        circle_run_display(0, 1),
+        circle_run_display(1, 2),
+        circle_run_display(2, 3),
+        circle_run_display(3, 1),
+    ];
+    let refs = repeated.iter().collect::<Vec<_>>();
     assert!(!super::repeated_circle_display_shape_valid(
-        &record(&repeated),
+        &circle_run_relation(&refs, None),
         &super::RecordIds::new(&[], &repeated, &names)
     ));
+}
+
+#[test]
+fn repeated_circle_display_shape_takes_trailing_driving_scalar() {
+    use crate::records::FeatureInputScalarRole::Driving;
+
+    let names = circle_run_names();
+    let classes = [crate::records::FeatureInputClass {
+        id: "class".into(),
+        parent: "lane".into(),
+        feature_ref: None,
+        ordinal: 0,
+        sequence: 0,
+        offset: 0,
+        name: "sgCircleDim".into(),
+    }];
+    let run = [
+        circle_run_display(0, 1),
+        circle_run_display(1, 2),
+        circle_run_display(2, 3),
+    ];
+    let shape = |lane: &[crate::records::FeatureInputScalar], driver: &str| {
+        let refs = run
+            .iter()
+            .chain(lane.iter().filter(|scalar| scalar.id == driver))
+            .collect::<Vec<_>>();
+        let parameter = lane.iter().find(|scalar| scalar.id == driver);
+        let record = circle_run_relation(&refs, parameter);
+        let ids = super::RecordIds::new(&classes, lane, &names);
+        (
+            super::repeated_circle_display_shape_valid(&record, &ids),
+            super::relation_instance_shape_valid(&record, &ids),
+        )
+    };
+
+    let driver = circle_run_scalar(3, Driving, "name", None);
+    let after = [
+        run[0].clone(),
+        run[1].clone(),
+        run[2].clone(),
+        driver.clone(),
+    ];
+    assert_eq!(shape(&after, &driver.id), (true, true));
+
+    let before = [
+        driver.clone(),
+        run[0].clone(),
+        run[1].clone(),
+        run[2].clone(),
+    ];
+    assert_eq!(shape(&before, &driver.id), (true, false));
+
+    let renamed = circle_run_scalar(3, Driving, "other", None);
+    let lane = [
+        run[0].clone(),
+        run[1].clone(),
+        run[2].clone(),
+        renamed.clone(),
+    ];
+    assert_eq!(shape(&lane, &renamed.id), (false, false));
+
+    let bound = circle_run_scalar(3, Driving, "name", Some(9));
+    let lane = [
+        run[0].clone(),
+        run[1].clone(),
+        run[2].clone(),
+        bound.clone(),
+    ];
+    assert_eq!(shape(&lane, &bound.id), (false, false));
 }
 
 #[test]
