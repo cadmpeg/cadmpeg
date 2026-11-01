@@ -155,7 +155,7 @@ An intersection-curve support side has an optional pcurve binding. A binding con
 
 ## Procedural carriers
 
-Procedural entities retain construction semantics either as a surface or curve carrier or beside a solved carrier. `SurfaceGeometry::Procedural.construction` and `CurveGeometry::Procedural.construction` identify the construction that exactly defines the carrier; the referenced construction identifies that carrier in return. This bidirectional relation is required. A procedural construction with an analytic or NURBS carrier retains both the construction and its solved representation. Model-aware evaluation resolves nested offset carriers recursively and rejects reference cycles; the support normal is the normalized cross product of exact analytic, rational NURBS, or affine-transformed parameter tangents. A regular parallel offset retains that oriented unit normal for a dependent offset. Other procedural families require a solved carrier or a family evaluator. `cache_fit_tolerance`, when present, is the maximum millimeter deviation between the procedural definition and solved carrier. A pcurve's `fit_tolerance` likewise bounds the model-space deviation after mapping the pcurve through its coedge's face surface.
+Procedural entities retain construction semantics either as a surface or curve carrier or beside a solved carrier. `SurfaceGeometry::Procedural.construction` and `CurveGeometry::Procedural.construction` identify the construction that exactly defines the carrier; the referenced construction identifies that carrier in return. This bidirectional relation is required. A procedural construction with an analytic or NURBS carrier retains both the construction and its solved representation. Model-aware evaluation resolves nested offset carriers recursively and rejects reference cycles; the support normal is the normalized cross product of exact analytic, rational NURBS, or affine-transformed parameter tangents. A regular parallel offset retains that oriented unit normal for a dependent offset. Other procedural families require a solved carrier or a family evaluator. `cache_fit_tolerance`, when present, is the maximum millimeter deviation between the procedural definition and solved carrier. A NURBS surface cache can retain this fit in its optional `cache_fit_tolerance` field. A pcurve's `fit_tolerance` likewise bounds the model-space deviation after mapping the pcurve through its coedge's face surface.
 
 Procedural surface definitions are:
 
@@ -384,7 +384,7 @@ Structural failures are errors. Same-sense two-member radial rings, unknown anno
 
 ## Version policy and JSON Schema
 
-Readers accept exactly `ir_version: "9"`. The `model.subds` arena is required, including when empty. Source annotations and retained records are excluded from the neutral product model. Recursive affine-transformed curve and surface carriers preserve exact source parameterization under occurrence placement. Maintainers select the IR version for each release. After a release, removing or renaming a product field, or changing its type, units, parameterization, or invariant, requires a new IR version. New product fields carry identity, units, ordering, reference, and validation contracts.
+Readers accept exactly `ir_version: "10"`. The `model.subds` arena is required, including when empty. Source annotations and retained records are excluded from the neutral product model. Recursive affine-transformed curve and surface carriers preserve exact source parameterization under occurrence placement. Maintainers select the IR version for each release. After a release, removing or renaming a product field, or changing its type, units, parameterization, or invariant, requires a new IR version. New product fields carry identity, units, ordering, reference, and validation contracts.
 
 `Sweep.section` is a required sum type and `Sweep.sections` is a same-typed list. A sweep section is unresolved, references a `ProfileRef`, or owns generated section geometry. A generated circular region stores its outer radius and optional inward wall thickness.
 
@@ -398,7 +398,7 @@ The generated document begins with this complete hierarchy and representative ra
 
 ```json
 {
-  "ir_version": "9",
+  "ir_version": "10",
   "decode_depth": "full",
   "units": { "length": "millimeter" },
   "tolerances": { "linear": 1e-6, "angular": 1e-10 },
