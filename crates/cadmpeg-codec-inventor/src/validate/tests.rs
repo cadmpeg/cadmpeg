@@ -3,6 +3,7 @@
 mod axis_distance;
 mod delete_face;
 mod revolve_axis;
+mod split_face;
 mod tagging;
 
 mod composite;
@@ -1022,3 +1023,5 @@ fn edge_treatment_validation_recomputes_all_admitted_dimension_forms() -> TestRe
 }
 
 mod sketch_curves;
+
+mod split_trim;

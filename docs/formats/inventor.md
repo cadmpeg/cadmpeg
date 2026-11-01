@@ -822,6 +822,7 @@ Slot | Record type
 --- | ---
 0 | `1990e1b8d311467bc000e39545df724f` enumeration
 1 | `284d8790d011f8d10008cabc0663dc09` Boolean
+2 | `f1b2bc24d01121dd0008d0bc0663dc09` face collection
 3 | `1790e1b8d311467bc000e39545df724f` enumeration
 4 | `91739422d11107cf000835bd0663dc09` boundary patch
 5 | `42df52ced011d0d20008ccbc0663dc09` work plane
@@ -833,6 +834,10 @@ Slot | Record type
 The slot-3 enumeration selects the tool reference. Value 2 selects the work plane in slot 5. Value 3 selects the surface-body wrapper in slot 8. The unused tool reference is null. The work-plane frame follows the grammar and units in section 13.
 
 The slot-0 enumeration has type value 3. Value 3 is a solid split: the slot-1 Boolean is false, slot 2 is null, the slot-4 boundary-patch list is empty, the slot-7 selection has one surface-body wrapper, and the slot-9 collection has two distinct surface-body wrappers. The slot-7 wrapper is the body that the tool partitions. The slot-9 wrappers are the result bodies, one for each side of the tool. A work-plane tool is a work-plane browser node (section 13.1), and the split extends its plane through the body. A surface tool is a surface-body wrapper distinct from the slot-7 wrapper, and the split extends its faces through the body.
+
+In segment major version 19, the selected-face split has a type-2 property list with ten slots and slot-0 type/value `(3, 2)`. Slot 1 is false. Slot 2 is a face collection with one face item. The face item has a type-2 index list with one nonzero u32 selector. Slot 3 has type/value `(4, 2)`. Slot 4 is an empty boundary-patch list. The slot-2, slot-4, and slot-7 reference lists have type 2. Slot 5 identifies the work plane. Slot 6 is false or true; both values retain every resulting face region. The Booleans in slots 1 and 6 have an empty name and a zero name-value word. Slot 7 is a body selection with one surface-body wrapper. Slots 8 and 9 are unqualified null references. Slots 0 through 7 and the face-collection and body-selection members are qualified references. The plane partitions the selected faces. The selected body keeps its wrapper identity, volume, and surface area. The slot-7 wrapper is also the result-body identity.
+
+In segment major version 19, the surface-tool body trim has a type-2 property list with ten slots and slot-0 type/value `(3, 1)`. Slot 1 is false. Slots 2, 5, and 9 are unqualified null references. Slot 3 has type/value `(4, 3)`. Slot 4 is an empty type-2 boundary-patch list. Slot 6 is false. Both Booleans have an empty name and a zero name-value word. Slot 7 is a type-2 body selection with one qualified surface-body member. Slot 8 is a distinct surface-body wrapper that supplies the trimming surface. Both wrappers have non-null unqualified body references. Slots 0, 1, 3, 4, 6, 7, and 8 are qualified references. The surface trims the selected body, and the slot-7 wrapper identifies the modified result body.
 
 ### 13.4 Stored-body base features
 
@@ -846,7 +851,7 @@ The zero-extension external form has `key_extension = 0` and selects the unique 
 
 This current-model join applies to every surface-body wrapper. A nonzero unqualified wrapper body reference addresses metadata section 10 in the wrapper's segment. Its zero-extension entry, revision entry, and segment-pair entry select the PmBRep kernel-entity link. The document model root names that PmBRep segment. The link has state 0 and a selection source equal to the wrapper's source index. Its qualified carrier reference equals the active carrier footer key. The carrier identity and entity identifier select one ASM body key and thus one current body. Null references, stored-carrier references, and body keys absent from the active carrier have no current-body identity.
 
-A feature result collection lists persistent surface-body wrapper identities in member order. Each wrapper with a current-body join identifies the produced or modified current body. Combine retains its target wrapper in its result. Move, MoveBody, and Rotate retain the selected wrapper identities. Split names its result wrappers separately from its target wrapper. A selection has a complete current-body join only when each selected wrapper names one current body and those body identities are distinct.
+A feature result collection lists persistent surface-body wrapper identities in member order. Each wrapper with a current-body join identifies the produced or modified current body. Combine retains its target wrapper in its result. Move, MoveBody, and Rotate retain the selected wrapper identities. A solid Split names its result wrappers separately from its target wrapper. A selected-face Split or surface-tool body trim retains its slot-7 body wrapper. A selection has a complete current-body join only when each selected wrapper names one current body and those body identities are distinct.
 
 The derived stored-body form has feature-label class `eecb298e2c45650820104eb55d062c80`. In segment major version 19 its three property slots select the stored source-body wrapper, the result-body wrapper, and a source property of type `3cc048210042420ba62103b20b7f4891`, respectively. All three references are non-null and qualified. The label participant list is empty. The source-body wrapper has a non-null qualified body reference. The two body wrappers have the stored-source and current-result identity rules above. The source property in segment major version 19 contains the content header followed by one qualified component reference, then ends.
 
