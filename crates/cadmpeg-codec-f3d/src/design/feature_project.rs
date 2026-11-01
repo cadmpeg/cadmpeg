@@ -1836,8 +1836,6 @@ fn project_solid_primitive(
                 angle: Angle::FULL_TURN,
             })
             .ok()?,
-            // The shifted form's frame places the zero-origin cylinder along
-            // its positive z axis; the named forms store no frame.
             placement: match transform {
                 Some(frame) => {
                     let rows = frame.value.rows();
@@ -5605,23 +5603,16 @@ fn revolve_face_axis_operand<'a>(
     .then_some(operand)
 }
 
-/// Orient every resolved Revolve axis so that the revolve turns right-handed
-/// about the axis direction.
-///
-/// Fusion revolves a positive angle from the profile toward the normal side of
-/// the profile's sketch plane. The stored direction of an origin axis or of a
-/// sketch line plays no part. The direction that turns the profile that way is
-/// the cross product of the in-plane direction from the axis to the profile and
-/// the sketch normal. A Revolve whose profile side is not established keeps its
-/// profile and extent but loses its axis, because a guessed direction can turn
-/// the profile the other way.
+/// Orient partial-turn axes using the source sweep convention.
 pub(crate) fn orient_revolve_axes(
     features: &mut [cadmpeg_ir::features::Feature],
     sketches: &[cadmpeg_ir::sketches::Sketch],
     sketch_entities: &[cadmpeg_ir::sketches::SketchEntity],
     (linear_tolerance, angular_tolerance): (f64, f64),
 ) {
-    use cadmpeg_ir::features::{FeatureDefinition, FeatureOperation, PlanarProfileRef};
+    use cadmpeg_ir::features::{
+        AngularTermination, FeatureDefinition, FeatureOperation, PlanarProfileRef, RevolveExtent,
+    };
 
     for feature in features {
         feature.evaluation.edit(|definition, _| {
@@ -5633,6 +5624,14 @@ pub(crate) fn orient_revolve_axes(
             let Some(axis) = construction.axis().cloned() else {
                 return;
             };
+            if matches!(
+                construction.extent(),
+                Some(RevolveExtent::OneSided {
+                    termination: AngularTermination::Angle { angle },
+                }) if *angle == cadmpeg_ir::scalar::PositiveAngle::FULL_TURN
+            ) {
+                return;
+            }
             let oriented = match construction.profile() {
                 Some(PlanarProfileRef::Sketch(sketch)) => sketches
                     .iter()

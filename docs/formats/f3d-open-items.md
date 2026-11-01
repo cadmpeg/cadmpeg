@@ -950,3 +950,15 @@ the native feature when a fixed lane carries a symmetric distance.
 **Conflict.** None.
 
 **Note.** A non-unique or incomplete reference proof retains its native operand identity and reports `history.edge-midpoints-unresolved` when the feature requires edge samples.
+
+### DR-172. Paired-locus dimension owner binding
+
+**Question.** How does a paired-locus frame assign its dimension when its explicit owner reference names a later dimension and its paired header is followed by a parameter record?
+
+**Known.** One public FHCS `d9` companion contains a three-locus frame with a null locus of role `6` and two point loci of roles `0` and `1`. Its return run repeats the two point references in reverse order. The explicit owner reference names the owner of `d10`, whose expression is `d9`. The paired header is followed by the `d10` parameter record and then its owner. The decoder retains the `d9` companion as a native dimension operand. The two `d10` distance constraints and the `d5` angular constraint have neutral operands.
+
+**Need.** Controlled linear dimensions with and without a dependent dimension must establish the relation between the containing companion, the explicit owner reference, and the following parameter and owner records.
+
+**Conflict.** None.
+
+**Note.** The public FHCS frame selects points with persistent identities `117` and `119`.

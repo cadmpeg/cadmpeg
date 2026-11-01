@@ -44,6 +44,8 @@ pub(crate) enum F3dLossCode {
     PlacementConstructionUntyped,
     /// A work plane has no unique checked solved placement.
     WorkPlaneFrameUnbound,
+    /// A cylinder primitive has no unique checked solved placement.
+    CylinderPlacementUnbound,
     /// A construction tracking path has no matching indexed type registration.
     ConstructionTrackingPathUntyped,
     /// Design configuration JSON members have no assigned neutral semantics.
@@ -426,6 +428,7 @@ impl F3dLossCode {
         Self::BodyReferenceTailUntyped,
         Self::PlacementConstructionUntyped,
         Self::WorkPlaneFrameUnbound,
+        Self::CylinderPlacementUnbound,
         Self::ConstructionTrackingPathUntyped,
         Self::ConfigurationMemberUnassigned,
         Self::ConfigurationRuleUnbound,
@@ -610,6 +613,7 @@ impl F3dLossCode {
             Self::BodyReferenceTailUntyped => "body-reference.tail-untyped",
             Self::PlacementConstructionUntyped => "placement.construction-untyped",
             Self::WorkPlaneFrameUnbound => "work-plane.frame-unbound",
+            Self::CylinderPlacementUnbound => "feature.cylinder-placement-unbound",
             Self::ConstructionTrackingPathUntyped => "feature.tracking-path-untyped",
             Self::ConfigurationMemberUnassigned => "configuration.member-unassigned",
             Self::ConfigurationRuleUnbound => "configuration.rule-unbound",
@@ -844,6 +848,7 @@ impl F3dLossCode {
             | Self::DimensionCompanionUntyped
             | Self::BodyReferenceTailUntyped
             | Self::WorkPlaneFrameUnbound
+            | Self::CylinderPlacementUnbound
             | Self::PlacementConstructionUntyped
             | Self::ConstructionTrackingPathUntyped
             | Self::ConfigurationMemberUnassigned
@@ -1053,6 +1058,7 @@ impl F3dLossCode {
             | Self::FeatureDefinitionIncomplete
             | Self::SheetThicknessUnruled
             | Self::WorkPlaneFrameUnbound
+            | Self::CylinderPlacementUnbound
             | Self::HoleExtentUnproven
             | Self::FeatureScopeUnprojected
             | Self::EmbossControlsNative
@@ -1230,6 +1236,7 @@ mod tests {
                 "body-reference.tail-untyped",
                 "placement.construction-untyped",
                 "work-plane.frame-unbound",
+                "feature.cylinder-placement-unbound",
                 "feature.tracking-path-untyped",
                 "configuration.member-unassigned",
                 "configuration.rule-unbound",

@@ -4087,7 +4087,6 @@ pub(super) fn parse_entity_selection_frame(
         )
     } else if bytes.get(identity_at + 11..identity_at + 21)? == [0; 10]
         && identity_at.checked_add(45)? == next_at
-        && next_record_index == record_index.checked_add(4)?
     {
         let curve_secondary_identity_offset = identity_at.checked_add(21)?;
         let primary_identity_offset = identity_at.checked_add(29)?;
