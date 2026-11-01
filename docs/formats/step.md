@@ -2174,8 +2174,8 @@ The item names are case-insensitive. One item named `nominal value` supplies
 an explicit nominal. One `lower limit` item and one `upper limit` item supply
 absolute lower and upper limits, in compatible measure units. The lower limit
 is at most the upper limit. Limit values are not signed deviations from a
-nominal. A limit dimension can omit its nominal. Multiple items with the same
-role are ambiguous. An incomplete pair does not define limits. An unnamed
+nominal. The bounds are independent of the nominal. Multiple items with the
+same role are ambiguous. An incomplete pair does not define limits. An unnamed
 measure supplies a nominal only when it is the sole measure outside the limit
 items. Aggregate order and entity identity do not assign measure roles.
 Complex measure records referenced by a characteristic representation are
