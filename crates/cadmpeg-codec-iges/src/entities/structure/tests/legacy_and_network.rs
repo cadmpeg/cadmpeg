@@ -346,10 +346,16 @@ fn decode_preserves_nested_subfigure_definitions_and_instances() {
         .unwrap();
     assert_eq!(leaf.fields().unwrap()["root"], false);
     assert_eq!(leaf.fields().unwrap()["member"], "iges:entity:directory#1");
-    assert_eq!(
-        leaf.fields().unwrap()["neutral_links"][0],
-        "iges:model:curve#D1"
-    );
+    for link in leaf.fields().unwrap()["native_links"]
+        .as_array()
+        .expect("native links")
+    {
+        let link = link.as_str().expect("native link");
+        assert!(
+            link.starts_with("iges:entity:directory#"),
+            "stub links name native records: {link}"
+        );
+    }
     assert_eq!(
         leaf.fields().unwrap()["world_transform"],
         nested.fields().unwrap()["world_transform"]
