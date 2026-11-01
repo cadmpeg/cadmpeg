@@ -962,7 +962,6 @@ the native feature when a fixed lane carries a symmetric distance.
 **Conflict.** The two-clause grammar requires second prelude scalar `2`; ten nodes carry `1`.
 
 **Note.** The seven groups retain their native identities and report `feature.face-selection-native`.
-**Note.** An unresolved DeleteFace group retains its native identity and reports `feature.face-selection-native`.
 
 ### DR-172. Paired-locus dimension owner binding
 
