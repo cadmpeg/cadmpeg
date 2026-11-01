@@ -127,6 +127,60 @@
           }
         }
       ],
+      "declared_measures": [
+        {
+          "id": "step:data:declared_measure#41-43",
+          "label": "triangle sheet",
+          "native_ref": "#43",
+          "quantity": {
+            "kind": "solid_area",
+            "value": 50.0
+          },
+          "target": {
+            "kind": "unresolved"
+          }
+        },
+        {
+          "id": "step:data:declared_measure#46-48",
+          "label": "triangle centroid",
+          "native_ref": "#48",
+          "quantity": {
+            "kind": "solid_centroid",
+            "value": {
+              "x": 3.333333333333333,
+              "y": 3.333333333333333,
+              "z": 0.0
+            }
+          },
+          "target": {
+            "kind": "unresolved"
+          }
+        },
+        {
+          "id": "step:data:declared_measure#50-52",
+          "label": "open sheet volume",
+          "native_ref": "#52",
+          "quantity": {
+            "kind": "volume",
+            "value": 0.0
+          },
+          "target": {
+            "kind": "unresolved"
+          }
+        },
+        {
+          "id": "step:data:declared_measure#57-59",
+          "label": "intentional mismatch",
+          "native_ref": "#59",
+          "quantity": {
+            "kind": "solid_area",
+            "value": 51.0
+          },
+          "target": {
+            "kind": "unresolved"
+          }
+        }
+      ],
       "drawings": [],
       "edges": [
         {
@@ -524,10 +578,6 @@
       }
     ],
     "notes": [
-      "geometric validation surface area triangle sheet: expected 50, tessellation approximation 50",
-      "geometric validation centroid triangle centroid: expected (3.333333333333333,3.333333333333333,0), tessellation approximation distance 0",
-      "geometric validation volume open sheet volume: expected 0, tessellation approximation 0",
-      "geometric validation surface area intentional mismatch: expected 51, tessellation approximation 50",
       "byte accounting: 329 structural, 3013 typed, 0 named opaque, 0 unclassified"
     ],
     "transfer": {

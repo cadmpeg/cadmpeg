@@ -9,6 +9,7 @@ mod cone_apex_rings;
 mod cones;
 mod cube;
 mod cylinders;
+mod declared;
 mod findings;
 mod mass;
 mod nurbs;

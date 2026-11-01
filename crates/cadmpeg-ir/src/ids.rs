@@ -1234,6 +1234,10 @@ id_type!(
     MassPropertiesId, compose
 );
 id_type!(
+    /// Identifies a [`crate::declared_measures::DeclaredMeasure`] record.
+    DeclaredMeasureId, compose
+);
+id_type!(
     /// Identifies a [`crate::physics::RigidBody`] record.
     RigidBodyId, compose
 );

@@ -769,7 +769,7 @@ crate takes that module through the `test-support` feature of its
 ## Check findings
 
 `cadmpeg check`, and the check that `convert` runs, add the defects that
-measurement finds as `warning` findings, and one `info` finding when the
+the orientation measurement finds as `warning` findings, and one `info` finding when the
 pass does not check every item. These findings do not change the exit
 status or refuse a write. No decoder or export admission route reads these
 checks ([admissibility-routes.md](admissibility-routes.md)).
@@ -801,6 +801,30 @@ most `MAX_FINDINGS_FACE_WORK` units and each edge a slice of at most
 checked, and neither is a body that owns it; the pass then adds the
 `measurement_incomplete` finding. A session resource refusal refuses the
 check at the `check` stage.
+
+### Declared geometry quantities
+
+`cadmpeg check` and the check in `convert` compare `model.declared_measures`
+with measurements of their named bodies. Each declaration supplies a quantity,
+a part-definition or body-set target, and an optional label and source record.
+STEP supplies these records from geometric validation properties. CADIR keeps
+them when the model is saved.
+
+A scalar agrees when its absolute difference is at most the measured numeric
+error plus model uncertainty. A centroid uses Euclidean distance with the same
+allowance. A part's solid quantities cover its visible solid bodies; sheet
+quantities cover its visible sheet bodies. Volumes and areas add. Centroids
+use volume or area weights. Geometry-level targets use their listed bodies,
+including hidden bodies. Each body identity is counted once. Target selection
+does not use numerical agreement with the stated value.
+
+A disagreement adds a `declared_measure` error and makes the check fail. An
+unresolved target, an empty geometry class, an assembly target, or an
+unavailable measurement adds a `declared_measure` warning with its reason.
+Wetted area on a body with void shells is unavailable because body area
+includes the void faces. No declared values are compared when the document
+has no declarations. This pass uses the regular measurement allowance and
+does not replace the orientation findings pass.
 
 ## Pass allowance
 

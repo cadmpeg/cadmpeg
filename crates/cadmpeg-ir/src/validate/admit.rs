@@ -368,6 +368,7 @@ mod tests {
                 Check::PcurveOrder,
                 Check::Orientation,
                 Check::MeasurementIncomplete,
+                Check::DeclaredMeasure,
             ] {
                 assert!(!allowed.contains(&check), "{check}");
             }

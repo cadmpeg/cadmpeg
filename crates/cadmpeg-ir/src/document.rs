@@ -123,6 +123,7 @@ macro_rules! classified_arena_registry {
             articulations: crate::physics::Articulation, model, "Articulation arena.", [serde(default, skip_serializing_if = "Vec::is_empty")];
             physics_scenes: crate::physics::PhysicsScene, model, "Physics scene arena.", [serde(default, skip_serializing_if = "Vec::is_empty")];
             solver_settings: crate::physics::solver::SolverSettings, model, "Solver settings arena.", [serde(default, skip_serializing_if = "Vec::is_empty")];
+            declared_measures: crate::declared_measures::DeclaredMeasure, model, "Declared measure arena.", [serde(default, skip_serializing_if = "Vec::is_empty")];
         }
     };
 }
