@@ -309,13 +309,13 @@ fn decode_keeps_document_objects_and_model_entities_additive() {
             &DecodeOptions::default(),
         )
         .expect("decode stored feature");
-    assert_eq!(decoded.ir().model.entity_count(), 1);
+    assert_eq!(decoded.ir().model.entity_count(), 0);
 
     let mut options = DecodeOptions::default();
-    options.policy.limits.max_entities = 1;
+    options.policy.limits.max_entities = 0;
     let error = FcstdCodec
         .decode(&mut Cursor::new(archive(document)), &options)
-        .expect_err("one document object plus one model entity require a limit of two");
+        .expect_err("one document object and no model entity require a limit of one");
     assert!(
         matches!(
             error,
@@ -326,7 +326,7 @@ fn decode_keeps_document_objects_and_model_entities_additive() {
         "{error:?}"
     );
 
-    options.policy.limits.max_entities = 2;
+    options.policy.limits.max_entities = 1;
     FcstdCodec
         .decode(&mut Cursor::new(archive(document)), &options)
         .expect("the exact additive entity limit must admit the fixture");

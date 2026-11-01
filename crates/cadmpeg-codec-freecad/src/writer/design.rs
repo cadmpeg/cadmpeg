@@ -75,7 +75,9 @@ fn spreadsheet_expression(
         if parameter.expression
             == cadmpeg_ir::features::Expression::literal(parameter.value.as_ref()?)
         {
-            return Some(value.clone());
+            // FreeCAD text cells carry a leading quote; without it the
+            // content re-decodes as a bare identifier with no value.
+            return Some(format!("'{value}"));
         }
     }
     super::parameters::render_expression(ir, parameter, names)
