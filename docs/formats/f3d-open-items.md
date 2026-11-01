@@ -927,7 +927,7 @@ the native feature when a fixed lane carries a symmetric distance.
 
 **Note.** None.
 
-### DR-163. Primary edge-recipe references with several face fragments
+### DR-164. Primary edge-recipe references with several face fragments
 
 **Question.** How does a standard edge recipe select among several persistent face fragments for one primary-side reference?
 
