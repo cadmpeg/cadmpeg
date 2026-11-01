@@ -39,14 +39,14 @@ fn occurrence_expansion_reports_a_missing_instance_directory_entry() {
             transform: Transform::identity(),
         },
     )]);
-    let neutral_links = BTreeMap::new();
+    let native_links = BTreeMap::new();
     let arena = DecodeArena::new();
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service()).unwrap();
     let expansion = OccurrenceExpansion {
         entries: &entries,
         records: &records,
         definitions: &definitions,
-        neutral_links: &neutral_links,
+        native_links: &native_links,
         length_factor: 1.0,
         precision: RealPrecision {
             single_significance: 7,

@@ -28,7 +28,7 @@ use cadmpeg_ir::Exactness;
 use std::collections::{HashMap, HashSet, VecDeque};
 
 use crate::assemble::{
-    annotate, insert_unresolved_carrier_loss, link_payload_carriers, neutral_model_is_admissible,
+    annotate, insert_unresolved_carrier_loss, neutral_model_is_admissible,
     preserve_raw_payload, quintic_jet_pcurve,
 };
 use crate::assemble::{cgm_source, cgm_source_key};
@@ -536,7 +536,7 @@ pub(super) fn try_decode_freeform_surfaces(
             UnknownId::mint(("catia:payload:unknown#freeform").to_owned())
                 .map_err(cadmpeg_core::CodecError::malformed)
         );
-        let payload_index = match preserve_raw_payload(
+        let _payload_index = match preserve_raw_payload(
             ctx,
             &mut unknowns,
             &mut annotations,
@@ -814,11 +814,6 @@ pub(super) fn try_decode_freeform_surfaces(
             }
         }
         insert_unresolved_carrier_loss(&ir, &mut losses);
-        if let Err(error) =
-            link_payload_carriers(&ir, &mut unknowns[payload_index], &mut annotations)
-        {
-            return Some(Err(error));
-        }
         let annotations = annotations.build();
         let mut coverage = cadmpeg_ir::report::decode::Coverage::default();
         coverage.record(

@@ -915,17 +915,12 @@ fn subd_decode_commits_association_link_exactness_status_and_report() {
             .map(cadmpeg_ir::ExactnessNote::entity),
         Some(cadmpeg_ir::Exactness::Derived)
     );
-    assert_eq!(
-        result
-            .ir()
-            .native_unknowns("rhino")
-            .expect("required invariant")[0]
-            .links
-            .iter()
-            .map(cadmpeg_ir::ids::Identity::as_str)
-            .collect::<Vec<_>>(),
-        vec![subd.id.to_string()]
-    );
+    assert!(result
+        .ir()
+        .native_unknowns("rhino")
+        .expect("required invariant")[0]
+        .links
+        .is_empty());
     assert!(result.report().geometry_transferred());
     assert!(result.report().losses.iter().any(|loss| loss.code
         == crate::loss::RhinoLossCode::ObjectRecordCensus.kind()

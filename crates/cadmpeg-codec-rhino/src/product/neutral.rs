@@ -232,23 +232,20 @@ fn external_document(link: &LinkSource) -> ExternalDocument {
 }
 
 fn object_bodies(ir: &CadIr, order: usize) -> Vec<BodyId> {
-    let id = format!("rhino:object:record#{order:06}");
-    ir.native
+    let Some(id) = ir
+        .native
         .namespace("rhino")
         .and_then(|namespace| namespace.arenas().get("unknowns"))
-        .and_then(|records| records.iter().find(|record| record.id() == id))
-        .and_then(|record| record.field("links"))
-        .and_then(|value| value.as_array().cloned())
-        .into_iter()
-        .flatten()
-        .filter_map(|value| value.as_str().map(str::to_owned))
-        .filter_map(|link| {
-            ir.model
-                .bodies
-                .iter()
-                .find(|body| body.id.as_str() == link)
-                .map(|body| body.id.clone())
-        })
+        .and_then(|records| records.get(order))
+        .map(|record| record.id().to_owned())
+    else {
+        return Vec::new();
+    };
+    ir.model
+        .bodies
+        .iter()
+        .filter(|body| body.native_ref.as_deref() == Some(id.as_str()))
+        .map(|body| body.id.clone())
         .collect()
 }
 

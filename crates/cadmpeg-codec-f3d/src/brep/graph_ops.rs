@@ -593,8 +593,35 @@ mod tests {
             identity::NativeRecordNamespace, FaceContainment, FaceNativeKey, FaceSidedness,
         };
         use cadmpeg_ir::topology::Sense;
+        // Identity qualification rewrites F3D-form neutral ids. The shared
+        // cube fixture carries synthetic ids, so the test re-ids its copy.
+        fn f3d_model() -> cadmpeg_ir::document::Model {
+            let model = cadmpeg_ir::examples::unit_cube().unwrap().model;
+            let mut value = serde_json::to_value(&model).unwrap();
+            fn remap(value: &mut serde_json::Value) {
+                match value {
+                    serde_json::Value::String(text) => {
+                        for kind in [
+                            "body", "region", "shell", "face", "loop", "coedge", "edge",
+                            "vertex", "point", "surface", "curve",
+                        ] {
+                            let prefix = format!("synthetic:cube:{kind}#");
+                            if let Some(key) = text.strip_prefix(&prefix) {
+                                *text = format!("f3d:brep:entity#{kind}-{key}");
+                                break;
+                            }
+                        }
+                    }
+                    serde_json::Value::Array(items) => items.iter_mut().for_each(remap),
+                    serde_json::Value::Object(fields) => fields.values_mut().for_each(remap),
+                    _ => {}
+                }
+            }
+            remap(&mut value);
+            serde_json::from_value(value).unwrap()
+        }
         for keyed in [false, true] {
-            let mut model = cadmpeg_ir::examples::unit_cube().unwrap().model;
+            let mut model = f3d_model();
             let side = |index| FaceSidedness {
                 source_namespace: NativeRecordNamespace::new(crate::ids::ID_FORMAT),
                 record_index: index,

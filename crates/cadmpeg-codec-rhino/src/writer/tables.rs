@@ -30,39 +30,22 @@ fn records<'a>(ir: &'a CadIr, arena: &str) -> &'a [cadmpeg_ir::NativeRecord] {
 }
 
 fn object_record(ir: &CadIr, identity: &str) -> Option<String> {
-    records(ir, "unknowns").iter().find_map(|record| {
-        record
-            .field("links")
-            .and_then(|value| {
-                value
-                    .as_array()
-                    .map(|links| links.iter().any(|link| link.as_str() == Some(identity)))
-            })
-            .unwrap_or(false)
-            .then(|| record.id().to_owned())
-    })
+    let mut native = None;
+    cadmpeg_ir::schema::native_links::visit_native_references(
+        &ir.model,
+        &mut |_, _, id, reference| {
+            if id == identity {
+                native = reference.map(str::to_owned);
+            }
+        },
+    );
+    native
 }
 
 fn source_record_resolves(ir: &CadIr, source: &str) -> bool {
-    let Some(record) = records(ir, "unknowns")
+    records(ir, "unknowns")
         .iter()
-        .find(|record| record.id() == source)
-    else {
-        return false;
-    };
-    let index = cadmpeg_ir::index::ModelIndex::build(ir);
-    record
-        .field("links")
-        .and_then(|value| {
-            value.as_array().map(|links| {
-                !links.is_empty()
-                    && links.iter().all(|link| {
-                        link.as_str()
-                            .is_some_and(|id| index.contains(id, cadmpeg_ir::index::StandardIndex))
-                    })
-            })
-        })
-        .unwrap_or(false)
+        .any(|record| record.id() == source)
 }
 
 pub(super) fn own_object(ir: &CadIr, identity: &str) -> Option<Map<String, Value>> {
