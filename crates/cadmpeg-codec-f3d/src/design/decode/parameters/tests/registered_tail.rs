@@ -69,9 +69,8 @@ fn parameter_registered_tail_resolves_full_record_identity_and_refuses_wrong_typ
     }
 }
 
-/// A registered target's low byte sits where the fixed tail stores its
-/// family marker; `0x10` or `0x11` there must not admit discriminator `6`
-/// for a document parameter.
+/// A tail target's low byte carries no family meaning: discriminator `6`
+/// reads with every source kind at every target.
 #[test]
 fn parameter_registered_tail_target_byte_is_not_a_family_marker() {
     for target in [0x110u64, 0x111] {
@@ -83,18 +82,15 @@ fn parameter_registered_tail_target_byte_is_not_a_family_marker() {
             target,
         );
         let decoded = with_scan(&archive, decode_parameters).unwrap();
-        assert!(decoded.parameters.is_empty(), "target {target:#x}");
-        assert_eq!(
-            decoded.unparsed.iter().map(|row| row.count).sum::<usize>(),
-            1
-        );
+        assert_eq!(decoded.parameters.len(), 1, "target {target:#x}");
+        assert!(decoded.unparsed.is_empty());
     }
 }
 
-/// The registered plain tail belongs to the discriminated form only; a
-/// compact-owned frame that ends with one is not a parameter.
+/// Every header form ends with the parameter tail, so a compact owned frame
+/// names a registered collection like a discriminated frame.
 #[test]
-fn parameter_registered_tail_refuses_compact_owned_frame() {
+fn parameter_registered_tail_admits_compact_owned_frame() {
     let target = 181u64;
     let mut frame = Vec::new();
     frame.extend_from_slice(&3u32.to_le_bytes());
@@ -116,19 +112,15 @@ fn parameter_registered_tail_refuses_compact_owned_frame() {
     frame.extend_from_slice(&[0, 0]);
     let archive = registered_tail_archive(frame, super::super::PARAMETER_TAIL_TYPE_GUID, target);
     let decoded = with_scan(&archive, decode_parameters).unwrap();
-    assert!(decoded.parameters.is_empty());
-    assert_eq!(
-        decoded.unparsed.iter().map(|row| row.count).sum::<usize>(),
-        1
-    );
+    assert_eq!(decoded.parameters.len(), 1);
+    assert_eq!(decoded.parameters[0].name(), "Width");
+    assert!(decoded.unparsed.is_empty());
 }
 
-/// A fixed tail whose family marker equals a registered record identity also
-/// reads as a plain reference to that record. A frame the registered grammar
-/// refuses is read with the fixed tail.
+/// When the stream registers a parameter collection, a parameter tail names it.
 #[test]
-fn parameter_fixed_tail_marker_that_equals_a_registered_target_reads_as_fixed() {
-    let mut frame = parameter_record(None, "3 mm", "User Parameter", Some("mm"), "Width", 0.3);
+fn parameter_tail_names_a_registered_collection() {
+    let mut frame = parameter_record(Some(40), "3 mm", "Radius", Some("mm"), "Width", 0.3);
     frame[22..30].copy_from_slice(&6u64.to_le_bytes());
     let tail = frame.len() - 12;
     frame[tail + 2] = 0x11;
@@ -139,23 +131,27 @@ fn parameter_fixed_tail_marker_that_equals_a_registered_target_reads_as_fixed() 
     assert_eq!(decoded.parameters[0].name(), "Width");
     assert!(decoded.unparsed.is_empty());
 
-    // A nonzero byte after the marker is no fixed tail and no plain
-    // reference to record 0x11 either.
+    // A nonzero byte after the low byte names another record.
     let mut corrupt = frame.clone();
     corrupt[tail + 5] = 1;
     let archive = registered_tail_archive(corrupt, super::super::PARAMETER_TAIL_TYPE_GUID, 0x11);
     let decoded = with_scan(&archive, decode_parameters).unwrap();
     assert!(decoded.parameters.is_empty());
 
-    // The same frame without a registered record reads as fixed as well.
+    // A frame that names a record outside the registered collections is
+    // reported.
     let archive = registered_tail_archive(frame, super::super::PARAMETER_TAIL_TYPE_GUID, 0x12);
     let decoded = with_scan(&archive, decode_parameters).unwrap();
-    assert_eq!(decoded.parameters.len(), 1);
+    assert!(decoded.parameters.is_empty());
+    assert_eq!(
+        decoded.unparsed.iter().map(|row| row.count).sum::<usize>(),
+        1
+    );
 }
 
 /// A feature input or dimension with discriminator `6` and a registered plain
-/// tail is a parameter; a document parameter, a stray flag byte after the
-/// target, and a truncated tail are not.
+/// tail is a parameter; a stray flag byte after the target and a truncated tail
+/// are not.
 #[test]
 fn parameter_registered_tail_admits_discriminator_six_feature_inputs() {
     let radius = |owner: Option<u32>, kind: &str, unit: Option<&str>| {
@@ -193,8 +189,4 @@ fn parameter_registered_tail_admits_discriminator_six_feature_inputs() {
     let mut other_discriminator = good.clone();
     other_discriminator[22..30].copy_from_slice(&7u64.to_le_bytes());
     refused(other_discriminator);
-    refused(with_registered_tail(
-        radius(None, "User Parameter", Some("mm")),
-        target,
-    ));
 }
