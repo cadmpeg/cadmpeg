@@ -4353,7 +4353,7 @@ pub(super) fn exact_atomic_constraint(
         }
         SketchConstraintKind::Parallel => match lines() {
             Some((first, second)) => Some(Definition::Parallel { first, second }),
-            None => midpoint_constraint(entities),
+            None => midpoint_constraint(entities, MidpointCarrier::Line),
         },
         SketchConstraintKind::Perpendicular => {
             lines().map(|(first, second)| Definition::Perpendicular { first, second })
@@ -4414,7 +4414,7 @@ pub(super) fn exact_atomic_constraint(
         SketchConstraintKind::Curvature => {
             curves().map(|(first, second)| Definition::Curvature { first, second })
         }
-        SketchConstraintKind::Midpoint => midpoint_constraint(entities),
+        SketchConstraintKind::Midpoint => midpoint_constraint(entities, MidpointCarrier::LineOrArc),
         SketchConstraintKind::Equal => {
             equal_size_entities().map(|(first, second)| Definition::Equal { first, second })
         }
@@ -4519,8 +4519,16 @@ pub(super) fn exact_coincident_loci(
     Ok(unique_solution.map(|loci| Definition::CoincidentLoci { loci }))
 }
 
+/// Bounded curves whose midpoint a relation bit can name.
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum MidpointCarrier {
+    Line,
+    LineOrArc,
+}
+
 fn midpoint_constraint(
     entities: &[&cadmpeg_ir::sketches::SketchEntity],
+    carrier: MidpointCarrier,
 ) -> Option<cadmpeg_ir::sketches::SketchConstraintDefinitionInput> {
     use cadmpeg_ir::sketches::{
         SketchConstraintDefinitionInput as Definition, SketchGeometryDefinition as Geometry,
@@ -4530,17 +4538,30 @@ fn midpoint_constraint(
     let [first, second] = entities else {
         return None;
     };
-    let (line, point, start, end, position) =
-        match (first.geometry.definition(), second.geometry.definition()) {
-            (Geometry::Line { start, end }, Geometry::Point { position }) => {
-                (*first, *second, start, end, position)
-            }
-            (Geometry::Point { position }, Geometry::Line { start, end }) => {
-                (*second, *first, start, end, position)
-            }
-            _ => return None,
-        };
-    let midpoint = Point2::new(start.u.midpoint(end.u), start.v.midpoint(end.v));
+    let (curve, point, position) = match (first.geometry.definition(), second.geometry.definition())
+    {
+        (_, Geometry::Point { position }) => (*first, *second, position),
+        (Geometry::Point { position }, _) => (*second, *first, position),
+        _ => return None,
+    };
+    let midpoint = match curve.geometry.definition() {
+        Geometry::Line { start, end } => {
+            Point2::new(start.u.midpoint(end.u), start.v.midpoint(end.v))
+        }
+        Geometry::Arc {
+            center,
+            radius,
+            start_angle,
+            end_angle,
+        } if carrier == MidpointCarrier::LineOrArc => {
+            let angle = start_angle.get().midpoint(end_angle.get());
+            Point2::new(
+                center.u + radius.get() * angle.cos(),
+                center.v + radius.get() * angle.sin(),
+            )
+        }
+        _ => return None,
+    };
     if (position.u - midpoint.u).abs() > EPS_DIMENSIONS_MIDPOINT_CONSTRAINT_E9
         || (position.v - midpoint.v).abs() > EPS_DIMENSIONS_MIDPOINT_CONSTRAINT_E9
     {
@@ -4548,7 +4569,7 @@ fn midpoint_constraint(
     }
     Some(Definition::Midpoint {
         point: SketchLocus::Entity(point.id().clone()),
-        entity: line.id().clone(),
+        entity: curve.id().clone(),
     })
 }
 

@@ -1041,6 +1041,17 @@ fn define_member(
         .filter(|body| !owned.contains(&body.id))
         .map(|body| body.id.clone())
         .collect();
+    let owned_sketches = model
+        .product_definitions
+        .iter()
+        .flat_map(|definition| &definition.sketches)
+        .collect::<std::collections::BTreeSet<_>>();
+    let sketches = model
+        .sketches
+        .iter()
+        .filter(|sketch| !owned_sketches.contains(&sketch.id))
+        .map(|sketch| sketch.id.clone())
+        .collect();
     let id = crate::ids::archive_product_definition_id();
     if let Some(definition) = model
         .product_definitions
@@ -1048,6 +1059,7 @@ fn define_member(
         .find(|row| row.id == id)
     {
         definition.bodies.extend(bodies);
+        definition.sketches.extend(sketches);
         definition.label = (!label.trim().is_empty()).then(|| label.to_owned());
         return Ok(id);
     }
@@ -1061,7 +1073,7 @@ fn define_member(
         part_number: None,
         bom_properties: std::collections::BTreeMap::new(),
         bodies,
-        sketches: Vec::new(),
+        sketches,
         native_ref: None,
     });
     Ok(id)
@@ -1559,6 +1571,7 @@ mod tests {
     mod contained;
     mod fidelity;
     mod occurrence;
+    mod sketches;
 
     use super::define_member;
 

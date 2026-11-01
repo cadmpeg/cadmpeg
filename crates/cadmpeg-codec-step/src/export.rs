@@ -259,7 +259,7 @@ enum WrittenAnalyticSurface<'a> {
 #[derive(Clone, Copy)]
 struct WrittenSurface {
     reference: Ref,
-    reversed_chart: bool,
+    chart: Option<geometry::WrittenChart>,
     /// The written record's natural normal is opposite the carrier's
     /// oriented normal.
     reversed_normal: bool,
@@ -2520,7 +2520,7 @@ impl<'a> Builder<'a> {
                         reference,
                         ranges,
                         [true, true],
-                        self.surface_chart_reversed(&surface_id),
+                        self.surface_chart(&surface_id),
                     ),
                     None => reference,
                 };
@@ -3660,11 +3660,11 @@ impl<'a> Builder<'a> {
                 pcurve_refs.push(pcurve);
             } else if self.surface_is_fitted_helix(surface_id) {
                 self.fitted_surface_pcurves.insert(pcurve_id.to_string());
-            } else if self.surface_chart_reversed(surface_id) {
+            } else if self.surface_chart(surface_id).is_some() {
                 self.loss(
                     StepLossCode::PcurveCarrierUnwritable,
                     format!(
-                        "face {face_id} pcurve {pcurve_id} was omitted because its geometry or surface reference could not be mapped to the reversed cone chart"
+                        "face {face_id} pcurve {pcurve_id} was omitted because its geometry or surface reference could not be mapped to the written chart of its normalized surface"
                     ),
                 );
             } else if self.pcurves.contains_key(pcurve_id) {
@@ -3733,11 +3733,9 @@ impl<'a> Builder<'a> {
             Some(moved) if shift != [0.0, 0.0] => std::borrow::Cow::Owned(moved),
             _ => aligned,
         };
-        let reversed_cone = self.surface_chart_reversed(surface_id);
-        let curve = if reversed_cone {
-            geometry::pcurve_on_reversed_cone(&mut self.emitter, &aligned)?
-        } else {
-            geometry::pcurve(&mut self.emitter, &aligned)?
+        let curve = match self.surface_chart(surface_id) {
+            Some(chart) => geometry::pcurve_in_chart(&mut self.emitter, chart, &aligned)?,
+            None => geometry::pcurve(&mut self.emitter, &aligned)?,
         };
         let context = self.pcurve_context();
         let representation = self.emitter.emit(
@@ -3960,23 +3958,26 @@ impl<'a> Builder<'a> {
             let solved = surf.geometry.solved();
             let emitted = procedural.and_then(|(id, definition)| {
                 let reference = self.emit_procedural_surface(solved, &definition)?;
-                let reversed = match &definition {
+                let chart = match &definition {
                     ProceduralSurfaceDefinition::ParallelOffset(payload) => {
-                        self.surface_chart_reversed(payload.support().as_str())
+                        self.surface_chart(payload.support().as_str())
                     }
                     // The emitted trim maps its support ranges; its own local
                     // chart remains unchanged.
-                    ProceduralSurfaceDefinition::Subset(_) => false,
+                    ProceduralSurfaceDefinition::Subset(_) => None,
                     ProceduralSurfaceDefinition::Replica { source, .. } => {
-                        self.surface_chart_reversed(source.as_str())
+                        self.surface_chart(source.as_str())
                     }
-                    _ => false,
+                    ProceduralSurfaceDefinition::DegenerateTorus { .. } => {
+                        solved.and_then(geometry::WrittenChart::of)
+                    }
+                    _ => None,
                 };
-                Some((id, reference, reversed))
+                Some((id, reference, chart))
             });
-            let (r, reversed, reversed_normal) = if let Some((id, reference, reversed)) = emitted {
+            let (r, chart, reversed_normal) = if let Some((id, reference, chart)) = emitted {
                 self.written_procedural_surfaces.insert(id);
-                (reference, reversed, false)
+                (reference, chart, false)
             } else if let Some((id, helix)) = self.unsolved_helix_surface(surface_id) {
                 if self.failed_helix_fits.contains_key(id) {
                     return None;
@@ -3992,7 +3993,7 @@ impl<'a> Builder<'a> {
                 let reference =
                     geometry::surface(&mut self.emitter, &SolvedSurfaceGeometry::Nurbs(fitted))?;
                 self.fitted_helix_surfaces.insert(id.to_owned());
-                (reference, false, false)
+                (reference, None, false)
             } else if let Some(solved) =
                 solved.filter(|solved| geometry::surface_is_supported(solved))
             {
@@ -4002,27 +4003,27 @@ impl<'a> Builder<'a> {
                 let reference = geometry::surface(&mut self.emitter, solved)?;
                 self.written_analytic_surfaces
                     .push(WrittenAnalyticSurface::Carrier(basis));
-                let reversed = matches!(basis, SolvedSurfaceGeometry::Cone(cone) if cone.half_angle().get() < 0.0);
-                let reversed_normal =
-                    matches!(basis, SolvedSurfaceGeometry::Nurbs(nurbs) if nurbs.normal_reversed());
-                (reference, reversed, reversed_normal)
+                let chart = geometry::WrittenChart::of(basis);
+                let reversed_normal = chart.is_some_and(geometry::WrittenChart::reverses_normal)
+                    || matches!(basis, SolvedSurfaceGeometry::Nurbs(nurbs) if nurbs.normal_reversed());
+                (reference, chart, reversed_normal)
             } else {
                 let procedural = self.procedural_surfaces.get(surface_id)?.id.to_string();
                 let surface = self.approximations.surface(surface_id)?;
                 let reference = geometry::surface(&mut self.emitter, &surface)?;
                 self.sampled_surfaces.insert(procedural);
-                (reference, false, false)
+                (reference, None, false)
             };
-            Some((r, reversed, reversed_normal))
+            Some((r, chart, reversed_normal))
         })();
         self.active_surfaces.remove(surface_id);
         self.geometry_emission_depth -= 1;
-        if let Some((r, reversed, reversed_normal)) = result {
+        if let Some((r, chart, reversed_normal)) = result {
             self.surface_refs.insert(
                 surface_id.to_string(),
                 WrittenSurface {
                     reference: r,
-                    reversed_chart: reversed,
+                    chart,
                     reversed_normal,
                 },
             );
@@ -4037,10 +4038,10 @@ impl<'a> Builder<'a> {
             .is_some_and(|surface| surface.reversed_normal)
     }
 
-    fn surface_chart_reversed(&self, surface_id: &str) -> bool {
+    fn surface_chart(&self, surface_id: &str) -> Option<geometry::WrittenChart> {
         self.surface_refs
             .get(surface_id)
-            .is_some_and(|surface| surface.reversed_chart)
+            .and_then(|surface| surface.chart)
     }
 
     fn emit_procedural_surface(
@@ -4107,12 +4108,12 @@ impl<'a> Builder<'a> {
                 let u_sense = payload.u_sense().as_ref()?;
                 let v_sense = payload.v_sense().as_ref()?;
                 let support = self.emit_surface(support.as_str())?;
-                let reverse_chart = self.surface_chart_reversed(payload.support().as_str());
+                let chart = self.surface_chart(payload.support().as_str());
                 Some(self.emit_rectangular_trim(
                     support,
                     parameter_ranges,
                     [*u_sense, *v_sense],
-                    reverse_chart,
+                    chart,
                 ))
             }
             ProceduralSurfaceDefinition::Replica { source, transform } => {
@@ -4155,12 +4156,12 @@ impl<'a> Builder<'a> {
         support: Ref,
         mut ranges: [[f64; 2]; 2],
         senses: [bool; 2],
-        reverse_chart: bool,
+        chart: Option<geometry::WrittenChart>,
     ) -> Ref {
-        if reverse_chart {
-            for range in &mut ranges {
-                range[0] = -range[0];
-                range[1] = -range[1];
+        let mut reversed = [false; 2];
+        if let Some(chart) = chart {
+            for axis in 0..2 {
+                (ranges[axis], reversed[axis]) = chart.range(axis, ranges[axis]);
             }
         }
         self.emitter.emit(
@@ -4171,12 +4172,12 @@ impl<'a> Builder<'a> {
                 self.emitter.real(ranges[0][1]),
                 self.emitter.real(ranges[1][0]),
                 self.emitter.real(ranges[1][1]),
-                if senses[0] == reverse_chart {
+                if senses[0] == reversed[0] {
                     ".F."
                 } else {
                     ".T."
                 },
-                if senses[1] == reverse_chart {
+                if senses[1] == reversed[1] {
                     ".F."
                 } else {
                     ".T."
@@ -5582,6 +5583,7 @@ impl<'a> Builder<'a> {
                 pcurve.wrapper_reversed().is_some()
                     || pcurve.native_tail_flags().is_some()
                     || pcurve.parameter_range().is_some()
+                    || pcurve.uv_offset().is_some()
                     || pcurve.fit_tolerance().is_some()
             })
             .count();

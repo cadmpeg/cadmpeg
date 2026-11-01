@@ -2,7 +2,7 @@
 
 # cadmpeg IR (`.cadir.json`) specification
 
-`CadIr` is the versioned JSON product representation shared by codecs, validation, diffing, and encoders. This specification defines the current required IR version `"9"`. The `cadmpeg-ir` Rust types define field-level JSON types, and `cadir_json_schema()` derives the matching JSON Schema.
+`CadIr` is the versioned JSON product representation shared by codecs, validation, diffing, and encoders. This specification defines the current required IR version `"10"`. The `cadmpeg-ir` Rust types define field-level JSON types, and `cadir_json_schema()` derives the matching JSON Schema.
 
 ## Document layering
 
@@ -132,7 +132,7 @@ Analytic surfaces carry the frame needed to interpret parameters: plane `u_axis`
 
 `Curve.parameter_range` optionally retains a finite source interval independently of topology edges. Its first endpoint is strictly below its second. The interval records the bounded carrier extent; it does not restrict use of the underlying mathematical curve outside that interval.
 
-`Edge.param_range` uses the canonical parameterization of its curve when a 3D carrier exists. An edge runs from its start vertex to its end vertex in the direction of increasing curve parameter: the first endpoint of its range evaluates to its start vertex and the second to its end vertex. An edge with no range on an open bounded curve, which has a `Curve.parameter_range` or is a clamped NURBS curve, runs in the same direction over that domain or a part of it, so its start vertex is not at the end of the domain while its end vertex is at the start. A carrier-less degenerate or tolerant edge has no canonical 3D domain; its optional range retains finite native endpoint doubles without imposing carrier-domain ordering. Full circles are anchored to `[0, 2π]`. A closed edge, whose start and end are one vertex, with no range traverses its carrier once: one revolution `[0, 2π]` of a circle or an ellipse, or the effective knot domain of a clamped or periodic NURBS curve; a placed curve takes the interval of its basis. The edge is closed over that interval only when both ends of the interval evaluate to its vertex. Periodic ranges may cross a seam by using an end value greater than the start value in the unwrapped domain. Pcurve coordinates use the corresponding surface conventions.
+`Edge.param_range` uses the canonical parameterization of its curve when a 3D carrier exists. An edge runs from its start vertex to its end vertex in the direction of increasing curve parameter: the first endpoint of its range evaluates to its start vertex and the second to its end vertex. An edge with no range on an open bounded curve, which has a `Curve.parameter_range` or is a clamped NURBS curve, runs in the same direction over that domain or a part of it, so its start vertex is not at the end of the domain while its end vertex is at the start. A carrier-less degenerate or tolerant edge has no canonical 3D domain; its optional range retains finite native endpoint doubles without imposing carrier-domain ordering. Full circles are anchored to `[0, 2π]`. A closed edge, whose start and end are one vertex, with no range traverses its carrier once: one revolution `[0, 2π]` of a circle or an ellipse, or the effective knot domain of a clamped or periodic NURBS curve; a placed curve takes the interval of its basis. The edge is closed over that interval only when both ends of the interval evaluate to its vertex. Periodic ranges may cross a seam by using an end value greater than the start value in the unwrapped domain. Pcurve coordinates use the corresponding surface conventions. ASM inline metadata stores `uv_offset`, a finite two-component translation in the support native chart. General metadata can also store this optional translation. Pcurve geometry includes the translation. `parameter_range` in General metadata retains its directed trim-interval meaning.
 
 Decoders convert kernel conventions at decode:
 
@@ -155,7 +155,7 @@ An intersection-curve support side has an optional pcurve binding. A binding con
 
 ## Procedural carriers
 
-Procedural entities retain construction semantics either as a surface or curve carrier or beside a solved carrier. `SurfaceGeometry::Procedural.construction` and `CurveGeometry::Procedural.construction` identify the construction that exactly defines the carrier; the referenced construction identifies that carrier in return. This bidirectional relation is required. A procedural construction with an analytic or NURBS carrier retains both the construction and its solved representation. Model-aware evaluation resolves nested offset carriers recursively and rejects reference cycles; the support normal is the normalized cross product of exact analytic, rational NURBS, or affine-transformed parameter tangents. A regular parallel offset retains that oriented unit normal for a dependent offset. Other procedural families require a solved carrier or a family evaluator. `cache_fit_tolerance`, when present, is the maximum millimeter deviation between the procedural definition and solved carrier. A pcurve's `fit_tolerance` likewise bounds the model-space deviation after mapping the pcurve through its coedge's face surface.
+Procedural entities retain construction semantics either as a surface or curve carrier or beside a solved carrier. `SurfaceGeometry::Procedural.construction` and `CurveGeometry::Procedural.construction` identify the construction that exactly defines the carrier; the referenced construction identifies that carrier in return. This bidirectional relation is required. A procedural construction with an analytic or NURBS carrier retains both the construction and its solved representation. Model-aware evaluation resolves nested offset carriers recursively and rejects reference cycles; the support normal is the normalized cross product of exact analytic, rational NURBS, or affine-transformed parameter tangents. A regular parallel offset retains that oriented unit normal for a dependent offset. Other procedural families require a solved carrier or a family evaluator. `cache_fit_tolerance`, when present, is the maximum millimeter deviation between the procedural definition and solved carrier. A NURBS surface cache can retain this fit in its optional `cache_fit_tolerance` field. A pcurve's `fit_tolerance` likewise bounds the model-space deviation after mapping the pcurve through its coedge's face surface.
 
 Procedural surface definitions are:
 
@@ -384,7 +384,7 @@ Structural failures are errors. Same-sense two-member radial rings, unknown anno
 
 ## Version policy and JSON Schema
 
-Readers accept exactly `ir_version: "9"`. The `model.subds` arena is required, including when empty. Source annotations and retained records are excluded from the neutral product model. Recursive affine-transformed curve and surface carriers preserve exact source parameterization under occurrence placement. Maintainers select the IR version for each release. After a release, removing or renaming a product field, or changing its type, units, parameterization, or invariant, requires a new IR version. New product fields carry identity, units, ordering, reference, and validation contracts.
+Readers accept exactly `ir_version: "10"`. The `model.subds` arena is required, including when empty. Source annotations and retained records are excluded from the neutral product model. Recursive affine-transformed curve and surface carriers preserve exact source parameterization under occurrence placement. Maintainers select the IR version for each release. After a release, removing or renaming a product field, or changing its type, units, parameterization, or invariant, requires a new IR version. New product fields carry identity, units, ordering, reference, and validation contracts.
 
 `Sweep.section` is a required sum type and `Sweep.sections` is a same-typed list. A sweep section is unresolved, references a `ProfileRef`, or owns generated section geometry. A generated circular region stores its outer radius and optional inward wall thickness.
 
@@ -398,7 +398,7 @@ The generated document begins with this complete hierarchy and representative ra
 
 ```json
 {
-  "ir_version": "9",
+  "ir_version": "10",
   "decode_depth": "full",
   "units": { "length": "millimeter" },
   "tolerances": { "linear": 1e-6, "angular": 1e-10 },

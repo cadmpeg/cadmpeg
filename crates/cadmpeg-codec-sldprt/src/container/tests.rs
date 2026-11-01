@@ -302,6 +302,16 @@ fn parasolid_partition_selection_withholds_ambiguous_sites() {
 }
 
 #[test]
+fn parasolid_partition_selection_passes_over_a_virtual_component_document() {
+    let payload = parasolid_with_body("partition body", "SCH_SW_33103_11000", &triangle_body());
+    let mut source = outer_header();
+    source.extend(make_block(0x42, "VirtualComp/Box-sldprt", &payload));
+    let scan = crate::test_support::container::scan(&source);
+
+    assert!(container::select_active_parasolid_site(&scan).is_none());
+}
+
+#[test]
 fn parasolid_partition_selection_retains_a_compound_stream_site() {
     let payload = parasolid_with_body("partition body", "SCH_SW_33103_11000", &triangle_body());
     let arena = DecodeArena::new();
@@ -654,4 +664,50 @@ fn present_unknown_native_version_preserves_declared_value() {
     let scan = crate::test_support::container::scan(&source);
     assert_eq!(scan.version, 0x1234_5678);
     assert!(scan.blocks.is_empty());
+}
+
+#[test]
+fn embedded_document_sections_are_the_imported_folder_and_document_extensions() {
+    use super::is_embedded_document;
+    assert!(is_embedded_document("ImportedComp/Pin"));
+    assert!(is_embedded_document("Box.SLDASM"));
+    assert!(is_embedded_document("folder/pin.sldprt"));
+    assert!(!is_embedded_document("Contents/Config-0"));
+    assert!(!is_embedded_document("prt"));
+    assert!(is_embedded_document("Box.SLDASM__ZLB"));
+    assert!(is_embedded_document("folder/pin.sldprt__zlb"));
+    assert!(!is_embedded_document("Contents/Config-0__ZLB"));
+}
+
+#[test]
+fn a_virtual_component_section_key_is_its_name_after_the_folder() {
+    use super::virtual_component_key;
+    assert_eq!(
+        virtual_component_key("VirtualComp/Part9-sldprt").as_deref(),
+        Some("part9-sldprt")
+    );
+    assert_eq!(
+        virtual_component_key("virtualcomp/Pivot Chain-SLDPRT__ZLB").as_deref(),
+        Some("pivot chain-sldprt")
+    );
+    assert_eq!(
+        virtual_component_key("VirtualComp\\Part9-sldprt").as_deref(),
+        Some("part9-sldprt")
+    );
+    assert_eq!(virtual_component_key("VirtualComp/-sldprt"), None);
+    assert_eq!(virtual_component_key("VirtualComp/Part9"), None);
+    assert_eq!(virtual_component_key("ImportedComp/Pin.sldprt"), None);
+}
+
+#[test]
+fn a_wrapped_section_name_is_its_name_without_the_suffix() {
+    use super::unwrapped_name;
+    assert_eq!(
+        unwrapped_name("swXmlContents/COMPINSTANCETREE__ZLB"),
+        "swXmlContents/COMPINSTANCETREE"
+    );
+    assert_eq!(unwrapped_name("Box.SLDASM__zlb"), "Box.SLDASM");
+    assert_eq!(unwrapped_name("Contents/Config-0"), "Contents/Config-0");
+    assert_eq!(unwrapped_name("__ZLB__ZLB"), "__ZLB");
+    assert_eq!(unwrapped_name("ZLB"), "ZLB");
 }

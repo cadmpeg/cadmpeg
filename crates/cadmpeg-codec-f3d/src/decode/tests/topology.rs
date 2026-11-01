@@ -1119,8 +1119,8 @@ fn analytic_carrier_decode_covers_each_shape() {
         Token::Double(-2.0), // signed minor radius, with |minor| > major
         Token::Vector3([1.0, 0.0, 0.0]),
     ]);
-    let (geo, inside_out) = decode_surface(&rec("torus", tor)).unwrap();
-    assert!(!inside_out);
+    let (geo, inward_normal) = decode_surface(&rec("torus", tor)).unwrap();
+    assert!(inward_normal);
     match geo {
         SolvedSurfaceGeometry::Torus(torus_surface) => {
             let ref_direction = torus_surface.frame().reference().as_raw();

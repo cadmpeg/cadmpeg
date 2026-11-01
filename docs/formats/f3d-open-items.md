@@ -426,6 +426,18 @@ the native feature when a fixed lane carries a symmetric distance.
 
 **Note.** None.
 
+### DR-165. Composition of multiple Sketch-profile operands
+
+**Question.** How does one Extrude profile group combine Sketch-profile operands from different Sketches when their nested selections use region and bounded-face forms?
+
+**Known.** Each member uses the Sketch-profile frame in `f3d.md` §3.1. Each frame stores an asset UUID and a decimal Sketch entity suffix. Its nested selection can carry counted profile regions or a bounded-face recipe. The construction group preserves member order.
+
+**Need.** A rule that combines the member selections and their Sketch frames into the complete extrusion profile.
+
+**Conflict.** None.
+
+**Note.** The decoder retains each profile operand in the native scope and emits `feature.extrude-profile-group-native` for each scope with multiple Sketch-profile operands.
+
 ## 2. External references
 
 ### DR-111. Component-path poses of nested occurrences
@@ -926,3 +938,15 @@ the native feature when a fixed lane carries a symmetric distance.
 **Conflict.** None.
 
 **Note.** None.
+
+### DR-164. Primary edge-recipe references with several face fragments
+
+**Question.** How does a standard edge recipe select among several persistent face fragments for one primary-side reference?
+
+**Known.** The first side carries one-based prefix-reference ordinals. A prefix reference can bind to several preceding faces through persistent token and Design-reference tags. Each face has an ordered loop and coedge boundary. The common-boundary rule admits references that each bind to one face and whose boundaries share exactly one live edge.
+
+**Need.** The selector rule that distinguishes face fragments and selects an edge when the referenced boundaries share several edges. Controlled recipe changes that preserve the prefix references and vary the selected fragment.
+
+**Conflict.** None.
+
+**Note.** A non-unique or incomplete reference proof retains its native operand identity and reports `history.edge-midpoints-unresolved` when the feature requires edge samples.

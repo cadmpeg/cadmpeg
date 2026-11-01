@@ -142,7 +142,7 @@ use super::attributes::{
 use super::geometry::{
     coedge_pcurve_ref, collect_carrier, double_at, is_asm_stream_delimiter, is_coedge_record,
     is_edge_record, is_known_record_head, is_vertex_record, norm3, pcurve_inline_tail_flags,
-    pcurve_parameter_range, record_reversed, reverse_curve_geometry, scale_point, sense_at,
+    pcurve_uv_offset, record_reversed, reverse_curve_geometry, scale_point, sense_at,
     tolerant_coedge_extension, vertex_point_ref,
 };
 use super::topology::{
@@ -4253,7 +4253,7 @@ pub(super) fn emit_pcurves(
                     _ => None,
                 };
                 let native_tail_flags = pcurve_inline_tail_flags(r);
-                let parameter_range = pcurve_parameter_range(r);
+                let uv_offset = pcurve_uv_offset(r);
                 let fit_tolerance = match (r.chunk(3), r.chunk(4)) {
                     (Some(Token::Long(0)), Some(Token::True | Token::False)) => {
                         nurbs::toks::payload_subtype_toks(r, 5, "exp_par_cur")
@@ -4261,10 +4261,10 @@ pub(super) fn emit_pcurves(
                     }
                     _ => None,
                 };
-                let parameter_range = parameter_range
-                    .map(|range| {
-                        cadmpeg_ir::units::FiniteVector::new(range)
-                            .ok_or(PcurveMetadata::NON_FINITE_PARAMETER_RANGE)
+                let uv_offset = uv_offset
+                    .map(|offset| {
+                        cadmpeg_ir::units::FiniteVector::new(offset)
+                            .ok_or(PcurveMetadata::NON_FINITE_UV_OFFSET)
                     })
                     .transpose()
                     .map_err(cadmpeg_core::CodecError::malformed)?;
@@ -4278,24 +4278,30 @@ pub(super) fn emit_pcurves(
                 let metadata = match (
                     wrapper_reversed,
                     native_tail_flags,
-                    parameter_range,
+                    uv_offset,
                     fit_tolerance,
                 ) {
                     (
                         Some(wrapper_reversed),
                         Some(native_tail_flags),
-                        Some(parameter_range),
+                        Some(uv_offset),
                         Some(fit_tolerance),
                     ) => PcurveMetadata::AsmInline {
                         form: PcurveInlineForm::new(
                             wrapper_reversed,
                             native_tail_flags,
-                            parameter_range,
+                            uv_offset,
                             fit_tolerance,
                         ),
                     },
-                    (wrapper_reversed, _, parameter_range, fit_tolerance) => {
-                        PcurveMetadata::general(wrapper_reversed, parameter_range, fit_tolerance)
+                    (wrapper_reversed, _, uv_offset, fit_tolerance) => {
+                        let mut form = cadmpeg_ir::geometry::pcurve::PcurveGeneralForm::new(
+                            wrapper_reversed,
+                            None,
+                            fit_tolerance,
+                        );
+                        form.uv_offset = uv_offset;
+                        PcurveMetadata::General { form }
                     }
                 };
                 out.pcurves.push(Pcurve {
@@ -4885,10 +4891,10 @@ pub(super) fn emit_faces(
             let loops = loop_chain(r, by_index, kept_loops, format);
             // The face record's sense is relative to its surface record's
             // orientation. A reversed spline record flips the cache normal,
-            // and a negative-cosine cone points its normal toward the axis;
-            // the IR stores the forward carrier in both cases, so the
-            // reversal folds into the face sense to keep the IR
-            // self-consistent.
+            // a negative-cosine cone points its normal toward the axis, and a
+            // negative-minor torus points its normal toward the tube center;
+            // the IR stores the forward carrier in each case, so the reversal
+            // folds into the face sense to keep the IR self-consistent.
             let native_sense = sense_at(r, 8);
             let mut sense = native_sense;
             let carrier_flipped = by_index

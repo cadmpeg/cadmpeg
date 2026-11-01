@@ -8166,6 +8166,9 @@ fn project_extrude(
         PrologueReversal,
     }
 
+    if scope.extrude_native_profiles().is_some() {
+        return Ok(None);
+    }
     let supported_parameter = |source_kind: &str| {
         matches!(
             source_kind,

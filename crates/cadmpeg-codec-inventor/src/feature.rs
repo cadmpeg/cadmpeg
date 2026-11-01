@@ -17,8 +17,8 @@ use cadmpeg_ir::{
         edge_treatments::{ChamferGroup, FilletGroup, RadiusSpec},
         holes::HoleKind,
         DesignParameter, DistinctMembers, EdgeSelection, ExtrudeDirection, ExtrudeSide,
-        ExtrusionDirectionSource, FaceSelection, Feature, FeatureContent, FeatureDefinition,
-        FeatureId, FeatureOperation, FeatureResultTopology, LinearTermination, ParameterValue,
+        ExtrusionDirectionSource, Feature, FeatureContent, FeatureDefinition, FeatureId,
+        FeatureOperation, FeatureResultTopology, LinearTermination, ParameterValue,
     },
     scalar::{Angle, Length},
 };
@@ -55,6 +55,7 @@ pub(crate) mod revolve;
 pub(crate) mod sheet_metal;
 pub(crate) mod split;
 pub(crate) mod tagging;
+pub(crate) mod thicken;
 pub(crate) mod work_plane;
 
 pub(crate) mod composite;
@@ -76,7 +77,7 @@ const ENTITY_STYLE_LINK_TYPE: [u8; 16] = inventor_id(0x9087_4d15);
 const PART_OPERATION_TYPE: [u8; 16] = [
     0x28, 0xbe, 0x9a, 0x72, 0xd1, 0x11, 0x44, 0x09, 0x00, 0x08, 0x4e, 0xba, 0x32, 0xa3, 0xdc, 0x09,
 ];
-const BOUNDARY_PATCH_TYPE: [u8; 16] = [
+pub(crate) const BOUNDARY_PATCH_TYPE: [u8; 16] = [
     0x91, 0x73, 0x94, 0x22, 0xd1, 0x11, 0x07, 0xcf, 0x00, 0x08, 0x35, 0xbd, 0x06, 0x63, 0xdc, 0x09,
 ];
 pub(crate) const SELECTION_LIST_TYPE: [u8; 16] = [
@@ -206,6 +207,7 @@ pub(crate) struct FeatureProjection {
     pub(crate) edge_treatment_losses: Vec<cadmpeg_ir::report::loss::LossNote>,
     pub(crate) loft_losses: Vec<cadmpeg_ir::report::loss::LossNote>,
     pub(crate) split_losses: Vec<cadmpeg_ir::report::loss::LossNote>,
+    pub(crate) thicken_losses: Vec<cadmpeg_ir::report::loss::LossNote>,
     pub(crate) plate_losses: Vec<cadmpeg_ir::report::loss::LossNote>,
     pub(crate) mirror_losses: Vec<cadmpeg_ir::report::loss::LossNote>,
     /// Closed loops that resolved extrusion profiles append to sketch
@@ -236,6 +238,10 @@ pub(crate) enum PmDcFeaturePropertyKind {
         family: PmDcFeatureEnumFamily,
         type_value: i16,
         value: u16,
+    },
+    ThickenSelection {
+        faces: crate::pmdc::PmDcReference,
+        parameter: crate::pmdc::PmDcReference,
     },
     WideEnumeration {
         type_value: u32,
@@ -355,6 +361,8 @@ pub(crate) enum PmDcFeatureEnumFamily {
     Auxiliary,
     PlateSide,
     Motion,
+    ThickenControl13,
+    ThickenControl14,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -1100,7 +1108,8 @@ fn feature_property_parser(type_id: [u8; 16]) -> Option<PropertyParser> {
         revolve::CONTROL_TYPE => Some(parse_auxiliary_enum),
         _ => sheet_metal::property_parser(type_id)
             .or_else(|| split::property_parser(type_id))
-            .or_else(|| motion::parser(type_id)),
+            .or_else(|| motion::parser(type_id))
+            .or_else(|| thicken::property_parser(type_id)),
     }
 }
 
@@ -1726,7 +1735,7 @@ const HOLE_CLASS_ID: ClassId = ClassId(NativeBytes::new([
 pub(crate) const THREAD_CLASS_ID: ClassId = ClassId(NativeBytes::new([
     0x06, 0x19, 0xaa, 0x28, 0xd4, 0x11, 0xc7, 0x7a, 0x60, 0x00, 0xc4, 0xa4, 0xca, 0xe1, 0xfb, 0xb0,
 ]));
-const THICKEN_CLASS_ID: ClassId = ClassId(NativeBytes::new([
+pub(crate) const THICKEN_CLASS_ID: ClassId = ClassId(NativeBytes::new([
     0xec, 0xf4, 0x81, 0x72, 0x9c, 0x4d, 0x5f, 0x92, 0x5f, 0x21, 0x92, 0xb4, 0xa8, 0x30, 0x96, 0xac,
 ]));
 const SHELL_CLASS_ID: ClassId = ClassId(NativeBytes::new([
@@ -2029,7 +2038,13 @@ impl FeatureFamily {
                 FeatureDefinition::Operation(FeatureOperation::Hole { .. })
             ) | (
                 Self::Thicken,
-                FeatureDefinition::Operation(FeatureOperation::Thicken { .. })
+                FeatureDefinition::Operation(
+                    FeatureOperation::Thicken { .. }
+                        | FeatureOperation::MoveFace {
+                            motion: cadmpeg_ir::features::FaceMotion::Offset { .. },
+                            ..
+                        }
+                )
             ) | (
                 Self::Shell,
                 FeatureDefinition::Operation(FeatureOperation::Shell { .. })
@@ -2052,7 +2067,11 @@ impl FeatureFamily {
                 FeatureDefinition::Operation(FeatureOperation::Combine { .. })
             ) | (
                 Self::Split,
-                FeatureDefinition::Operation(FeatureOperation::SplitBody { .. })
+                FeatureDefinition::Operation(
+                    FeatureOperation::SplitBody { .. }
+                        | FeatureOperation::SplitFace { .. }
+                        | FeatureOperation::TrimBodies { .. }
+                )
             )
         )
     }
@@ -2082,7 +2101,11 @@ impl FeatureFamily {
                 FeatureOperation::MoveBody { .. } | FeatureOperation::MoveFace { .. },
             ) => Some(Self::Motion),
             FeatureDefinition::Operation(FeatureOperation::Combine { .. }) => Some(Self::Combine),
-            FeatureDefinition::Operation(FeatureOperation::SplitBody { .. }) => Some(Self::Split),
+            FeatureDefinition::Operation(
+                FeatureOperation::SplitBody { .. }
+                | FeatureOperation::SplitFace { .. }
+                | FeatureOperation::TrimBodies { .. },
+            ) => Some(Self::Split),
             _ => None,
         }
     }
@@ -2161,6 +2184,7 @@ pub(crate) fn project(
             edge_treatment_losses: Vec::new(),
             loft_losses: Vec::new(),
             split_losses: Vec::new(),
+            thicken_losses: Vec::new(),
             plate_losses: Vec::new(),
             mirror_losses: mirror::native_losses(&inventory.pattern_features, &[]),
             added_profiles: HashMap::new(),
@@ -2353,6 +2377,7 @@ pub(crate) fn project(
     let mut edge_treatment_losses = Vec::new();
     let mut loft_losses = Vec::new();
     let mut split_losses = Vec::new();
+    let mut thicken_losses = Vec::new();
     let mut plate_refusals = sheet_metal::projection::Refusals::default();
     let mut neutral = 0_usize;
     for feature in &inventory.features {
@@ -2447,6 +2472,12 @@ pub(crate) fn project(
                             .unwrap_or(revolve::NativeReason::ProfileOrResult)
                             .note(),
                     );
+                }
+                if label.is_some_and(|label| label.class_id() == THICKEN_CLASS_ID) {
+                    let reason = indexed_thicken_operation(feature, &index, inventory)
+                        .err()
+                        .unwrap_or(thicken::NativeReason::Result);
+                    thicken_losses.push(reason.note());
                 }
                 if let Some(label) = label {
                     let property = |reference: crate::pmdc::PmDcReference| {
@@ -2689,6 +2720,7 @@ pub(crate) fn project(
         edge_treatment_losses,
         loft_losses,
         split_losses,
+        thicken_losses,
         plate_losses: plate_refusals.losses(&features),
         mirror_losses: mirror::native_losses(&inventory.pattern_features, &features),
         features,
@@ -4067,107 +4099,46 @@ fn project_hole(
     )))
 }
 
-/// Admit the join form with Boolean values `1, 0, 0, 0, 0, 1, 0` in slots
-/// 2, 3, 4, 7, 10, 16, and 17, and a positive thickness in slot 6.
-pub(crate) fn thicken_operation<'a>(
-    source: &PmDcFeature,
-    property_at: impl Fn(usize) -> Option<&'a PmDcFeatureProperty>,
-    parameter_at: impl Fn(usize) -> Option<(&'a crate::design::PmDcParameter, &'a ParameterValue)>,
-    record_type_at: impl Fn(u32) -> Option<&'a str>,
-) -> Option<FeatureOperation> {
-    if source.properties.references().len() != 18
-        || [5, 8, 11]
-            .into_iter()
-            .any(|slot| source.properties.references()[slot].index() != 0)
-        || !matches!(
-            property_at(1)?.kind,
-            PmDcFeaturePropertyKind::Enumeration {
-                family: PmDcFeatureEnumFamily::PartOperation,
-                type_value: 5,
-                value: 3,
-            }
-        )
-    {
-        return None;
-    }
-    for (slot, expected) in [
-        (2, true),
-        (3, false),
-        (4, false),
-        (7, false),
-        (10, false),
-        (16, true),
-        (17, false),
-    ] {
-        if !matches!(
-            property_at(slot)?.kind,
-            PmDcFeaturePropertyKind::Boolean { value, .. } if value == expected
-        ) {
-            return None;
-        }
-    }
-    if !matches!(
-        property_at(9)?.kind,
-        PmDcFeaturePropertyKind::References {
-            family: PmDcFeatureReferenceFamily::FeatureDimensions,
-            ..
-        }
-    ) {
-        return None;
-    }
-    for (slot, expected) in [
-        (13, "4c40b0a3ac4b9504e719b28a70e0e818"),
-        (14, "c11c7b63ea4d840b68b76e8c67bcbc48"),
-    ] {
-        if record_type_at(source.properties.references()[slot].record_ordinal()?)? != expected {
-            return None;
-        }
-    }
-    let (raw_thickness, value) = parameter_at(6)?;
-    let ParameterValue::Length(thickness) = value else {
-        return None;
-    };
-    if Length::new(raw_thickness.model_value.get() * 10.0)? != *thickness {
-        return None;
-    }
-    let (raw_control, control) = parameter_at(12)?;
-    if !matches!(control, ParameterValue::Real(value) if *value == raw_control.model_value) {
-        return None;
-    }
-    let selections = property_at(0)?;
-    let PmDcFeaturePropertyKind::References {
-        family: PmDcFeatureReferenceFamily::SelectionList,
-        items,
-    } = &selections.kind
-    else {
-        return None;
-    };
-    let mut distinct = HashSet::new();
-    if items.references().is_empty()
-        || items.references().iter().any(|reference| {
-            reference
-                .record_ordinal()
-                .and_then(&record_type_at)
-                .is_none()
-                || !distinct.insert(reference.index())
+pub(crate) fn thicken_source_ids(inventory: &FeatureInventory) -> HashSet<String> {
+    let owners: HashSet<_> = inventory
+        .labels
+        .iter()
+        .filter(|label| label.class_id() == THICKEN_CLASS_ID)
+        .filter_map(|label| {
+            Some((
+                label.identity.segment_token.as_str(),
+                label.header.owner.record_ordinal()?,
+            ))
         })
-    {
-        return None;
-    }
-    Some(FeatureOperation::Thicken {
-        faces: FaceSelection::Native(selections.id()),
-        thickness: Some(cadmpeg_ir::scalar::PositiveLength::try_from(*thickness).ok()?),
-        side: None,
-    })
+        .collect();
+    inventory
+        .features
+        .iter()
+        .filter(|feature| {
+            owners.contains(&(
+                feature.identity.segment_token.as_str(),
+                feature.identity.record_ordinal,
+            ))
+        })
+        .map(Located::id)
+        .collect()
 }
 
 pub(crate) fn thicken_operand_losses<'a>(
     features: impl IntoIterator<Item = &'a Feature>,
+    thicken_sources: &HashSet<String>,
 ) -> Vec<cadmpeg_ir::report::loss::LossNote> {
     let count = features
         .into_iter()
         .filter(|feature| match feature.evaluation.definition() {
             FeatureDefinition::Operation(FeatureOperation::Thicken { .. }) => true,
+            FeatureDefinition::Operation(FeatureOperation::MoveFace {
+                motion: cadmpeg_ir::features::FaceMotion::Offset { .. },
+                ..
+            }) => feature
+                .native_ref
+                .as_ref()
+                .is_some_and(|id| thicken_sources.contains(id.as_str())),
             FeatureDefinition::Operation(FeatureOperation::Native { kind, .. }) => {
                 kind.as_str() == "Thicken"
             }
@@ -4178,22 +4149,29 @@ pub(crate) fn thicken_operand_losses<'a>(
         return Vec::new();
     }
     vec![crate::loss::InventorLossCode::FeatureThickenOperandsNative.note(format!(
-        "{count} Inventor thicken operation(s) retain native selections or unresolved construction controls and thickness side."
+        "{count} Inventor Thicken operation(s) retain native face selections or construction operands."
     ))]
 }
 
-fn project_thicken(
-    ctx: &DecodeContext<'_>,
+fn indexed_thicken_operation(
     source: &PmDcFeature,
-    label: &PmDcFeatureLabel,
     index: &ProjectionIndex<'_>,
     inventory: &FeatureInventory,
-) -> Option<Result<(Feature, FeatureResultTopology), CodecError>> {
-    let operation = thicken_operation(
+) -> Result<FeatureOperation, thicken::NativeReason> {
+    thicken::operation(
         source,
-        |slot| slot_property(source, slot, index),
-        |slot| {
-            let ordinal = source.properties.references().get(slot)?.record_ordinal()?;
+        |reference| {
+            index
+                .properties
+                .get(&(
+                    source.identity.segment_token.as_str(),
+                    reference.record_ordinal()?,
+                ))?
+                .as_ref()
+                .copied()
+        },
+        |reference| {
+            let ordinal = reference.record_ordinal()?;
             let parameter = index
                 .parameters
                 .get(&(source.identity.segment_token.as_str(), ordinal))?
@@ -4206,6 +4184,16 @@ fn project_thicken(
                 .as_ref()?;
             Some((*parameter, value))
         },
+        |reference| {
+            index
+                .dimensions
+                .get(&(
+                    source.identity.segment_token.as_str(),
+                    reference.record_ordinal()?,
+                ))?
+                .as_ref()
+                .copied()
+        },
         |ordinal| {
             inventory
                 .record_types
@@ -4213,7 +4201,17 @@ fn project_thicken(
                 .get(&ordinal)?
                 .as_deref()
         },
-    )?;
+    )
+}
+
+fn project_thicken(
+    ctx: &DecodeContext<'_>,
+    source: &PmDcFeature,
+    label: &PmDcFeatureLabel,
+    index: &ProjectionIndex<'_>,
+    inventory: &FeatureInventory,
+) -> Option<Result<(Feature, FeatureResultTopology), CodecError>> {
+    let operation = indexed_thicken_operation(source, index, inventory).ok()?;
     let (feature_id, result) = match feature_result(ctx, source, 15, index)? {
         Ok(value) => value,
         Err(error) => return Some(Err(error)),
@@ -4374,7 +4372,9 @@ fn enum16(
         | PmDcFeatureEnumFamily::Chamfer
         | PmDcFeatureEnumFamily::PlateSide
         | PmDcFeatureEnumFamily::Motion => 2,
-        PmDcFeatureEnumFamily::Auxiliary => return None,
+        PmDcFeatureEnumFamily::Auxiliary
+        | PmDcFeatureEnumFamily::ThickenControl13
+        | PmDcFeatureEnumFamily::ThickenControl14 => return None,
     };
     match property.kind {
         PmDcFeaturePropertyKind::Enumeration {

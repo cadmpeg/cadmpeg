@@ -108,6 +108,12 @@ pub(super) fn is_analytic_curve(head: &str) -> bool {
 /// radii remain in the IR because they are part of the ASM carrier semantics.
 /// A negative torus major radius decodes as its magnitude, the same tube
 /// circle; its pcurves change chart through `SupportChart::torus`.
+///
+/// The second value states that the native normal opposes the normal `Su × Sv`
+/// of the decoded carrier, so the face sense folds that reversal in. `Su × Sv`
+/// of a torus points away from the tube center for either minor-radius sign,
+/// and a negative minor radius points the native normal toward that center.
+/// `Su × Sv` of a negative-radius sphere already points toward its center.
 pub fn decode_surface(rec: &Record) -> Option<(SolvedSurfaceGeometry, bool)> {
     decode_surface_carrier(rec, &collect_carrier(rec))
 }
@@ -193,7 +199,7 @@ fn decode_surface_carrier(rec: &Record, c: &Carrier) -> Option<(SolvedSurfaceGeo
                     PositiveLength::new(major.abs() * LEN_TO_MM)?,
                     NonZeroLength::new(minor * LEN_TO_MM)?,
                 )),
-                false,
+                minor < 0.0,
             ))
         }
         _ => None,
@@ -564,12 +570,12 @@ pub(super) fn double_at(rec: &Record, i: usize) -> Option<f64> {
     }
 }
 
-pub(super) fn pcurve_parameter_range(rec: &Record) -> Option<[f64; 2]> {
+pub(super) fn pcurve_uv_offset(rec: &Record) -> Option<[f64; 2]> {
     // The final two value tokens; a record may end with payload identifiers
     // (e.g. `null_curve` placeholders), which are not fields.
     let mut values = rec.chunks().rev();
     match (values.next(), values.next()) {
-        (Some(Token::Double(end)), Some(Token::Double(start))) => Some([*start, *end]),
+        (Some(Token::Double(dv)), Some(Token::Double(du))) => Some([*du, *dv]),
         _ => None,
     }
 }

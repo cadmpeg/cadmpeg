@@ -1024,7 +1024,7 @@ state requires regeneration. `swConfigurationNeedsUpdate="NO"` states that
 its cached state is current. `swConfigurationFlags` and
 `swConfigurationAlternateName` are configuration-manifest metadata.
 
-Keywords `Feature` elements use the `Type` attribute as their operation-family token. All feature instances with the same exact `Type` token use the same feature-input class. A directly object-ID-bound class instance therefore supplies the class of the other instances carrying that token. `Helix/Spiral`, `Surface-Sweep`, and `Thicken` denote helix, surface-sweep, and face-thickening operations independently of the localized display name in `Name`.
+Keywords `Feature` elements use the `Type` attribute as their operation-family token. Feature instances with the same exact `Type` token and the same class token use the same feature-input class. A directly object-ID-bound class instance therefore supplies the class of the other instances that carry that `Type` token and its class token. Instances with one `Type` token can carry different class tokens: a `Boss-Extrude` instance's name record can carry the repeated class token of `moICE_c`. `Helix/Spiral`, `Surface-Sweep`, and `Thicken` denote helix, surface-sweep, and face-thickening operations independently of the localized display name in `Name`.
 
 Sketch relations use named scalar records with reference cells at fixed scalar-record slots. Point references use `d6 80`, `b2 81`, `cc 80`, `52 81`, `7b 83`, `7c bc`, or `dd 81`; line references use `e1 80`, `86 83`, `87 bc`, or `e7 81`. Point-point, line-line, and point-line distance relations follow from the operand pair. Two `b2 81` cells carry a point-point distance; their u16 addresses are zero-based ordinals over the coordinate-bearing point and constrained-point markers in the owning feature, in marker order. Two `dd 81` cells carry a point-point distance over the same coordinate-point roster. Two `e7 81` cells carry a line-line distance over the solver-line roster defined below. A `dd 81` cell followed by an `e7 81` cell carries a point-line distance. Two `52 81` or two `cb 8d` cells carry horizontal or vertical point-point distance according to the relation declaration. Two `da 8d` cells carry an angular relation. An `sgCircleDim` declaration followed by one `cc 80`, `fe 83`, `b6 8a`, `9d 92`, or `69 bd` cell carries a diameter dimension. A relation declaration owns the first following scalar within 128 bytes in the same feature interval when its operand signature matches. A scalar claimed by zero or multiple declarations remains native. Adjacent scalar records can continue an anchored relation only within the same feature interval, with the same operands, and without an intervening relation declaration; after a complete relation, an adjacent driving scalar starts a new instance with the anchored family. A display-role scalar names an existing dimension owned by the same sketch when no driving relation or earlier display-only relation claims that dimension. The relation family supplies the dimension unit independently of the display scalar value. Scalar records with the same owning sketch, relation family, and ordered operand sequence belong to one relation instance. Display-role and driving-role scalars are distinct. A unique driving scalar stores the target parameter. An operandless driving scalar separated from its display records by another complete relation belongs to the unique unresolved relation with the same owning sketch and dimension name, unless the dimension's display states the other unit than the relation's family: a display with an angular unit is an angle, and another dimension display is a length.
 
@@ -1482,7 +1482,7 @@ A body field that refers to an object already written stores that object's map i
 
 Unicode strings inside a body are `ff fe ff`, a length byte, and that many UTF-16LE code units; a length byte of `ff` is followed by a u16 length.
 
-Classes and objects share one map counter. A new-class declaration takes the next index for the class and the one after it for the object it opens; a class tag takes the next index for the object it opens. One map spans `Contents/Config-N` and `Contents/Config-N-ResolvedFeatures`: the `ResolvedFeatures` stream begins with a u32, the map count at which `Config-N` ended, and a u16, and its first declaration takes that count as its index. In a compound-file part, the `ResolvedFeatures` stream instead opens with a u16 and then a class declaration, and carries no map count. The u16 after the map count is the number of top-level objects in the stream minus two. A stream can end with four zero bytes after its last object, and an in-context part can write two zero bytes after a top-level `moProfileFeature_c` whose sketch plane is written in place; neither has an established owner (open item EV-24). `Config-N` starts its map after entries the stream does not write, so indices are not fixed. The `moNodeName_c` index is not fixed: an object name opens `04 80 ff fe ff`, `05 80 ff fe ff` and so on for the index the map holds. A map that places `moNodeName_c` at `0x46` also declares `moHeader_c`, `su_CStringArray`, `moLogs_c` and `moStamp_c` after `moPart_c` and before the part's own objects. A class declared in `Config-N` and instantiated in `ResolvedFeatures` is written there by its `Config-N` index.
+Classes and objects share one map counter. A new-class declaration takes the next index for the class and the one after it for the object it opens; a class tag takes the next index for the object it opens. One map spans `Contents/Config-N` and `Contents/Config-N-ResolvedFeatures`: the `ResolvedFeatures` stream begins with a u32, the map count at which `Config-N` ended, and a u16, and its first declaration takes that count as its index. In a compound-file part, the `ResolvedFeatures` stream instead opens with a u16 and then a class declaration, and carries no map count. The u16 after the map count is the number of top-level objects in the stream minus two. A stream can end with four zero bytes after its last object, and an in-context part can write two zero bytes after a top-level `moProfileFeature_c` whose sketch plane is written in place; neither has an established owner (open item EV-24). `Config-N` starts its map after entries the stream does not write, so indices are not fixed. The `moNodeName_c` index is not fixed: an object name opens `04 80 ff fe ff`, `05 80 ff fe ff` and so on for the index the map holds. Before the `moNodeName_c` declaration, `Config-N` writes only class declarations. A map that places `moNodeName_c` at `0x46` also declares `moHeader_c`, `su_CStringArray`, `moLogs_c` and `moStamp_c` after `moPart_c` and before the part's own objects. A class declared in `Config-N` and instantiated in `ResolvedFeatures` is written there by its `Config-N` index.
 
 ---
 
@@ -1792,6 +1792,8 @@ An `sgSketch` object writes, in order:
 | an object pointer to a second `suObList`, holding the sketch's `moSketchRegion_c` regions |
 | 38 zero bytes when the second list is empty; when the sketch holds slots, eighteen zero bytes and then its slot map (and after the map, or after the zero bytes alone in a sketch without slots, a little-endian u32, a little-endian u32 count and that many objects: `moSketchChain_c` objects or handles): an MFC `CMap` written as a little-endian u32 next free key, a little-endian u32 count and that many pairs of a little-endian u32 key and an `sgSlot_c` object, followed by zero bytes; an empty map writes the next free key and a count of `0`, and the tail follows at once. An `sgSlot_c` writes a little-endian u32, a little-endian u32 identifier (its key plus one), a 72-byte record head (above; a little-endian u32 at +17, `0` to `3`, not tied to the slot's kind) and six handle objects. The six-handle form holds from `swVersion` 11000; a file of 10000 differs |
 | little-endian u32 `3` (or `7`; a sketch with a block list has the form below); a flag byte, `0` when a compressed body (below) follows in place of it; little-endian u32 `0`; a little-endian u16 count *c* and *c* face or edge references; when *c* is non-zero, little-endian u32 `4`, u32 `16`, u32 `1`, a u32 count and that many u32 identifiers; little-endian u32 `0` (absent after a reference list when the leading u32 is `7`); u32 `100000`, u16 `0`, — or u32 `100000` + *G* (the u32 `0` before it is also absent after a reference list whose leading u32 is `3`), a little-endian u16 group count *G* and *G* groups, each a `moOneContour_c` object, a little-endian u16 count and that many `moBBoxCenterData_c` objects (here u32 `1`, four f64, u32 `1`, a u16 identifier, a u16 and eighteen bytes), a u16 and a u32 identifier, the identifiers being `100000` to `100000` + *G* − 1 in some order — an object pointer (null, or a handle), and an object pointer to the `moCompRefPlane_c` object that names the sketch plane |
+
+The compressed body after the u32 `3` (or `7`) and zero flag byte of an `sgSketch` object's last row is the sketch's profile body. The compressed bodies after an in-context group's support reference are snapshots of that support. The profile body of a profile feature is the one in the `sgSketch` object that the feature writes, or in the sketch tail it writes after an `sgSketch` reference.
 
 A relation writes eight zero bytes, little-endian i32 `-1`, sixteen zero bytes (seventeen in files of `swVersion` 18000 and above), a little-endian u32 relation type, a little-endian u32, a little-endian u16 (`0`, or `2` in some) and a little-endian u32 (`0xfffe`, or a small index `0`, `1`, `2`, … in type `47`), then its operand handles, written in place. A relation with two operands then writes six zero bytes, a little-endian u16 (`0`, or `3` in some), two `ff ff ff ff` and 24 zero bytes.
 
@@ -2282,7 +2284,7 @@ keep their widths, and each wide pointer moves the fields after it by two
 bytes. A LocalBodies stream can hold a loop head that begins `00 0f f2 7e 00 01`
 (attr 62078), FACE records whose own attr is in the 4-byte form, and
 narrow-attr FACE records carrying a pointer past `0x7ffe`. The deltas forms of
-§4.3 keep their fixed `[hi][lo][01]` cells.
+§4.3 keep their fixed three-byte cells.
 
 A record key is the u16 `attr`, so a pointer past `0xffff` has no key:
 a compact record that holds one does not frame, and a typed node whose own
@@ -2404,6 +2406,7 @@ Deltas streams re-encode records in prefixed/tripled forms (each ref stored as a
 | `00 12`                | prefixed    | body +21 | refs-before-magic slot 4 = point attr                                             |
 | `00 1d`                | prefixed    | none     | xyz after `[hi][lo][01]*` run                                                     |
 | `00 1e/1f/20/32/33/35` | prefixed    | none     | f64 block after `2b`/`2d` marker                                                  |
+| `00 86`                | tripled     | none     | five ref triples at body +6, sense byte at body +21, NURBS cell `[hi][lo][00]` at body +22, data cell at body +25 |
 
 Post-magic `00 10` reference cells appear as `[01][hi][lo]` or `[hi][lo][01]` triples. Partition and deltas streams in the same outer block share a site namespace. Prefixed and tripled references encode the same u16 attribute values as bare references.
 
@@ -2484,11 +2487,14 @@ The header fields have these meanings:
 
 A stream declares named attribute families through KEY and ATTRIB_DEF nodes.
 A `00 4f` KEY node carries a big-endian u32 byte length, a u16 transmit index,
-and that many printable ASCII bytes. The ATTRIB_DEF `identifier` pointer
-selects that KEY in the same stream. Adjacency does not bind a name to a
-definition. The instance's `disc` resolves to the definition by transmit
-index. Low-index system definitions can have no KEY name. Conflicting KEY
-names or definition identities do not supply a named family.
+and that many printable ASCII bytes. A `00 54` CHAR_VALUES node carries the
+same u32 byte length and u16 transmit index, followed by that many bytes. No
+record starts inside the length, index or text of either node. The
+ATTRIB_DEF `identifier` pointer selects that KEY in the same stream.
+Adjacency does not bind a name to a definition. The instance's `disc`
+resolves to the definition by transmit index. Low-index system definitions
+can have no KEY name. Conflicting KEY names or definition identities do not
+supply a named family.
 
 A definition is named by its `identifier`; one whose `identifier` names no
 framed KEY takes the KEY immediately before it. The KEY need not follow its
@@ -2754,7 +2760,7 @@ The compact form has a nonzero count. The descriptor reference role selects its 
 
 For rational arrays (`dimension == 4`) `00 2d` and compact control arrays store `[x*w, y*w, z*w, w]` per pole. Surface control grids use native index `u*n_v + v`. A trailing zero-multiplicity array entry is not part of the knot vector; its paired f64 slot is physically present but ignored.
 
-Curve carriers: an edge's `00 10.refs[3]` can point to a `00 86` B-spline/list curve carrier, whose body references a `00 88` **curve descriptor** (attr, degree, control_count, dimension, knot_count, subtype, flags, then control/multiplicity/knot array attrs). Among the flags, body +15 is the `periodic` logical and body +17 the `rational` logical. Adjacent `00 87`/`00 b8`/`00 a3` are 3D prolog/wrapper records, not 2D UV pcurves.
+Curve carriers: an edge's `00 10.refs[3]` can point to a `00 86` B-spline/list curve carrier, whose body references a `00 88` **curve descriptor** (attr, degree, control_count, dimension, knot_count, subtype, flags, then control/multiplicity/knot array attrs). Among the flags, body +15 is the `periodic` logical and body +17 the `rational` logical. A `00 86` carrier has the [`parasolid_b_curve_short`](../layouts/sldprt.md#parasolid_b_curve_short) layout (§2): its NURBS pointer, after the sense byte, names the descriptor. A wide pointer shifts the later fields (§4), and a tripled carrier stores its pointers in cells (§4.3). Adjacent `00 87`/`00 b8`/`00 a3` are 3D prolog/wrapper records, not 2D UV pcurves.
 
 An edge's support curve can instead point to a `00 85` **bounded-curve wrapper**. After the compact header and orientation marker, the wrapper stores the source curve attr, start xyz, end xyz, and the source parameter interval as eight f64 BE values. The optional `ff` byte after the tag shifts the compact header by one byte. The stored endpoint coordinates are the referenced source curve at the two interval parameters to within the linear resolution, `1e-8` m, and a wrapper whose two ends each lie within that distance of the source retains the source curve's geometry and bounds its use. A wrapper whose source is a surface-intersection carrier follows the rule in §7.3 instead.
 
@@ -3047,14 +3053,14 @@ An `.sldasm` assembly document uses the container of §1. A document is an assem
 
 ### 11.1 Component instance tree
 
-`swXmlContents/COMPINSTANCETREE` is a UTF-8 `swSolidWorks` XML document in the namespace `http://www.solidworks.com/sw2003/schema`. A compound-file assembly (§1, dialect `sw-version-pre-12000`) has no `swXmlContents` sections.
+`swXmlContents/COMPINSTANCETREE` is a UTF-8 `swSolidWorks` XML document in the namespace `http://www.solidworks.com/sw2003/schema`. A compound-file envelope (§1) can store this section, a mate list (§11.3) or an embedded document (§11.4) as a wrapped stream whose name ends in `__ZLB`; the name without that suffix identifies the section.
 
 - `swHeader/swFile` lists documents. `id` is the file identity, `swDocType` is `ASSEMBLY` or `PART`, and `swPath` is the absolute path that the saving system used. The first `swFile` is the assembly document itself.
-- `swModelList/swModel` is one model of one document in one configuration. `swFileRef` is the `swFile` identity and `swConfigurationName` is the configuration name. The `swName` of a sub-assembly model is the name of the top assembly, not of the sub-assembly; the document name comes from the `swFile` path.
-- The `swReference` children of an assembly model are its placed component instances. `swModelRef` is the model of the component. `swName` and `swReferenceNumber` make the instance name `<swName>-<swReferenceNumber>`. `swSuppressed`, `swHidden`, `swFlexible`, `swExcludeFromBOM`, and `swIsVirtualComponent` are `YES` or `NO`.
+- `swModelList/swModel` is one model of one document in one configuration. `id` is the model identity, `swFileRef` is the `swFile` identity and `swConfigurationName` is the configuration name. The `swName` of a sub-assembly model is the name of the top assembly, not of the sub-assembly; the document name comes from the `swFile` path.
+- The `swReference` children of an assembly model are its placed component instances. `id` is the instance identity and `swModelRef` is the model of the component. A component whose model's `swFile` has `swDocType` `ASSEMBLY` is a sub-assembly. A model with `swReference` children is an assembly model. `swName` and `swReferenceNumber` make the instance name `<swName>-<swReferenceNumber>`. `swSuppressed`, `swHidden`, `swFlexible`, `swExcludeFromBOM`, and `swIsVirtualComponent` are `YES` or `NO`.
 - `swConfigurationList/swConfiguration` lists the configurations of the assembly document. Exactly one has `swMostRecentConfiguration="YES"`; its `swModelRef` is the root model of the active configuration. Other configurations can have other root models, for example the generated `<name>-_flexible<n>` configuration of a flexible sub-assembly.
 
-Models form a directed acyclic graph: one sub-assembly model can have more than one `swReference`. The placed-instance tree has one occurrence for each path from the root model.
+The `id` values of `swModel` and `swReference` elements are decimal numbers, distinct within the document. Models form a directed acyclic graph: one sub-assembly model can have more than one `swReference`. The placed-instance tree has one occurrence for each path from the root model.
 
 ### 11.2 Instance placement
 
@@ -3069,3 +3075,7 @@ The placement is relative to the assembly model that contains the `swReference`.
 ### 11.4 Embedded components
 
 `ImportedComp/<name>` sections, and sections whose names end in `.sldprt` or `.sldasm` (ASCII case-insensitive), are complete embedded documents of the container of §1. An embedded document can be an assembly. The Parasolid streams of an embedded document belong to that document, not to the assembly document.
+
+### 11.5 Virtual components
+
+A virtual component (`swIsVirtualComponent="YES"`) has its document stored in the assembly document that places it. The document of a virtual component model has a file stem `<name>^<assembly>`, where `<assembly>` is the stem of the assembly document that holds the section. Its section is `VirtualComp/<name>-sldprt`, where `<name>` matches without ASCII case. The section holds a complete part document of the container of §1, with the partition of each of that document's configurations. The Parasolid streams of the section belong only to the virtual component's document. A virtual component of a sub-assembly is stored in the sub-assembly's document.

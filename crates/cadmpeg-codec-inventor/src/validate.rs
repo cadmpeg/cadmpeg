@@ -841,6 +841,18 @@ fn validate_sketches(data: &NativeData, ir: &CadIr, findings: &mut Vec<Finding>)
                 Some(entity.id().as_str().to_owned()),
             ));
         }
+        if entity.native_ref.as_deref().is_some_and(|reference| {
+            native_entities.get(reference).is_some_and(|source| {
+                crate::sketch::marks_construction(source) != entity.construction
+            })
+        }) {
+            findings.push(finding(
+                Check::NativeLinks,
+                "Inventor neutral sketch entity construction state does not match its entity flags"
+                    .into(),
+                Some(entity.id().as_str().to_owned()),
+            ));
+        }
         if matches!(
             entity.geometry.definition(),
             cadmpeg_ir::sketches::SketchGeometryDefinition::Ellipse { .. }
@@ -1214,6 +1226,9 @@ fn validate_features(
                     references.push(body.index());
                 }
             }
+            PmDcFeaturePropertyKind::ThickenSelection { faces, parameter } => {
+                references.extend([faces.index(), parameter.index()]);
+            }
             PmDcFeaturePropertyKind::ProfileSelection { entity_link, .. } => {
                 references.push(entity_link.index());
             }
@@ -1285,6 +1300,10 @@ fn validate_features(
             property.identity.segment_token.as_str(),
             property.identity.record_ordinal,
         )) != Some(&property.identity.type_id.as_str())
+            || !crate::feature::thicken::property_kind_matches_class(
+                property.identity.type_id.as_str(),
+                &property.kind,
+            )
             || !crate::feature::motion::property_is_valid(property, |reference| {
                 raw.get(&(
                     property.identity.segment_token.as_str(),
@@ -1943,30 +1962,30 @@ fn validate_features(
             continue;
         }
         let definition = feature.evaluation.definition();
-        if crate::feature::FeatureFamily::from_definition(definition).is_none() {
-            continue;
-        }
-        if let cadmpeg_ir::features::FeatureDefinition::Operation(
-            actual @ cadmpeg_ir::features::FeatureOperation::Thicken { .. },
-        ) = feature.evaluation.definition()
-        {
+        if let (cadmpeg_ir::features::FeatureDefinition::Operation(actual), true) = (
+            feature.evaluation.definition(),
+            labels
+                .get(&(
+                    raw_feature.identity.segment_token.as_str(),
+                    raw_feature.identity.record_ordinal,
+                ))
+                .is_some_and(|label| label.class_id() == crate::feature::THICKEN_CLASS_ID)
+                && !matches!(
+                    definition,
+                    cadmpeg_ir::features::FeatureDefinition::Operation(
+                        cadmpeg_ir::features::FeatureOperation::Native { .. }
+                    )
+                ),
+        ) {
             let token = raw_feature.identity.segment_token.as_str();
-            let expected = crate::feature::thicken_operation(
+            let expected = crate::feature::thicken::operation(
                 raw_feature,
-                |slot| {
-                    let ordinal = raw_feature
-                        .properties
-                        .references()
-                        .get(slot)?
-                        .record_ordinal()?;
+                |reference| {
+                    let ordinal = reference.record_ordinal()?;
                     feature_properties.get(&(token, ordinal))?.as_ref().copied()
                 },
-                |slot| {
-                    let ordinal = raw_feature
-                        .properties
-                        .references()
-                        .get(slot)?
-                        .record_ordinal()?;
+                |reference| {
+                    let ordinal = reference.record_ordinal()?;
                     let parameter = feature_parameters.get(&(token, ordinal))?.as_ref()?;
                     let native = parameter.id();
                     let value = parameter_values
@@ -1976,6 +1995,12 @@ fn validate_features(
                         .as_ref()?;
                     Some((*parameter, value))
                 },
+                |reference| {
+                    revolve_dimensions
+                        .get(&(token, reference.record_ordinal()?))?
+                        .as_ref()
+                        .copied()
+                },
                 |ordinal| {
                     thicken_record_types
                         .get(&(token, ordinal))?
@@ -1983,13 +2008,16 @@ fn validate_features(
                         .copied()
                 },
             );
-            if expected.as_ref() != Some(actual) {
+            if expected.as_ref().ok() != Some(actual) {
                 findings.push(finding(
                     Check::NativeLinks,
                     "Inventor neutral thicken operands do not match their PmDc slots".into(),
                     Some(feature.id.as_str().to_owned()),
                 ));
             }
+        }
+        if crate::feature::FeatureFamily::from_definition(definition).is_none() {
+            continue;
         }
         if let cadmpeg_ir::features::FeatureDefinition::Operation(
             operation @ (cadmpeg_ir::features::FeatureOperation::Fillet { .. }
@@ -2310,7 +2338,11 @@ fn validate_features(
                 ));
             }
         }
-        let output_slot = family.output_slot(raw_feature);
+        let output_slot = if matches!(family, crate::feature::FeatureFamily::Split) {
+            crate::feature::split::output_slot(definition)
+        } else {
+            family.output_slot(raw_feature)
+        };
         let expected_collection = raw_feature
             .properties
             .references()

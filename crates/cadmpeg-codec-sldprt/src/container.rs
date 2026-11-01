@@ -1000,7 +1000,8 @@ pub(crate) fn select_active_parasolid_site<'a>(
             && !contains_ascii_case_insensitive(name, "resolvedfeatures");
         let section_is_admissible = !contains_ascii_case_insensitive(name, "ghost")
             && !contains_ascii_case_insensitive(name, "deltas")
-            && !contains_ascii_case_insensitive(name, "resolvedfeatures");
+            && !contains_ascii_case_insensitive(name, "resolvedfeatures")
+            && virtual_component_key(name).is_none();
         let sole_body_stream = section
             .ps_streams()
             .iter()
@@ -1124,6 +1125,59 @@ pub(crate) fn active_configuration_name_ref<'a>(scan: &'a ContainerScan<'_>) -> 
                 })
                 .flatten()
         })
+}
+
+/// Section folder of embedded component documents.
+const EMBEDDED_PREFIX: &str = "ImportedComp/";
+/// Extensions that end the section name of an embedded document.
+const EMBEDDED_EXTENSIONS: [&str; 2] = [".sldprt", ".sldasm"];
+
+/// Whether a section is a complete embedded document (`sldprt.md` §11.4).
+/// The name suffix of a compound stream in the nested payload wrapper (spec §1).
+const WRAPPED_NAME_SUFFIX: &str = "__ZLB";
+
+/// A section name without one trailing wrapper suffix.
+pub(crate) fn unwrapped_name(name: &str) -> &str {
+    name.len()
+        .checked_sub(WRAPPED_NAME_SUFFIX.len())
+        .filter(|&at| {
+            name.get(at..)
+                .is_some_and(|tail| tail.eq_ignore_ascii_case(WRAPPED_NAME_SUFFIX))
+        })
+        .and_then(|at| name.get(..at))
+        .unwrap_or(name)
+}
+
+pub(crate) fn is_embedded_document(name: &str) -> bool {
+    let name = unwrapped_name(name);
+    let ends_with = |suffix: &str| {
+        name.len()
+            .checked_sub(suffix.len())
+            .and_then(|start| name.get(start..))
+            .is_some_and(|tail| tail.eq_ignore_ascii_case(suffix))
+    };
+    name.starts_with(EMBEDDED_PREFIX)
+        || EMBEDDED_EXTENSIONS
+            .iter()
+            .any(|extension| ends_with(extension))
+}
+
+/// Folder of the sections that hold virtual component documents (`sldprt.md`
+/// §11.5).
+const VIRTUAL_PREFIX: &str = "VirtualComp/";
+/// Suffix that ends the section name of a virtual component document.
+const VIRTUAL_SUFFIX: &str = "-sldprt";
+
+/// The key of a virtual component section, its name after `VirtualComp/` in
+/// ASCII lower case, or `None` for another section (`sldprt.md` §11.5).
+pub(crate) fn virtual_component_key(name: &str) -> Option<String> {
+    let name = unwrapped_name(name).replace('\\', "/");
+    let prefix = name.get(..VIRTUAL_PREFIX.len())?;
+    if !prefix.eq_ignore_ascii_case(VIRTUAL_PREFIX) {
+        return None;
+    }
+    let key = name.get(VIRTUAL_PREFIX.len()..)?.to_ascii_lowercase();
+    (key.len() > VIRTUAL_SUFFIX.len() && key.ends_with(VIRTUAL_SUFFIX)).then_some(key)
 }
 
 pub(crate) fn xml_text(bytes: &[u8]) -> Option<String> {

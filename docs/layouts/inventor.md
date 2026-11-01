@@ -1578,3 +1578,17 @@ Offsets start after the versioned content header and stamps.
 | Offset | Size | Field | Type | Endian | Src | Meaning |
 | -----: | ---: | ----- | ---- | ------ | --- | ------- |
 | 0 | 4 | `value` | `u32` | little | spec | value u32 = 0 · value `0` |
+
+## `pm_dc_thicken_selection_tail`
+
+Spec §13 · layout: byte offsets · size: 8 B
+
+Offsets start after the versioned content header and stamps.
+
+Parsed by:
+- `crates/cadmpeg-codec-inventor/src/feature/thicken.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 4 | `faces` | `u32` | little | spec | a face-collection reference |
+| 4 | 4 | `parameter` | `u32` | little | spec | a parameter reference, then ends |
