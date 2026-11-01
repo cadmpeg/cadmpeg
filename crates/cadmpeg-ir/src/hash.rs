@@ -789,7 +789,8 @@ mod tests {
         let policy = cadmpeg_core::decode::DecodePolicy::service();
         let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
             .expect("test context");
-        let mut source_fidelity = crate::SourceFidelity::default();
+        let mut source_fidelity =
+            crate::SourceFidelity::for_decode(&ctx, crate::Annotations::default());
         source_fidelity
             .attach_native_unknown_records(
                 &mut ir,
@@ -870,9 +871,8 @@ mod tests {
         .unwrap();
 
         let (recorded, mut fidelity) = local_digest_fixture();
-        fidelity.decode_digest = Some(
-            super::digest::Sha256Digest::try_from(hash.clone()).expect("a digest parses"),
-        );
+        fidelity.decode_digest =
+            super::digest::Sha256Digest::try_from(hash.clone()).expect("a digest parses");
         assert_eq!(
             document_local_sha256(
                 &cadmpeg_test_support::service_decode_context(),

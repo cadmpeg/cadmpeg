@@ -86,7 +86,7 @@ fn a_given_up_parent_discards_admitted_child_geometry_and_keeps_the_valid_peer()
         .commit_model(point_draft(existing))
         .expect("prefix admission")
         .expect("valid prefix");
-    let mut parts = PartOutput::new(CodecFormat::Fcstd);
+    let mut parts = PartOutput::new(CodecFormat::Fcstd, &ctx);
     let first = root.child(0, 2).expect("first parent");
     let first_child = first.child(0, 1).expect("first child");
     let result = session
@@ -406,7 +406,7 @@ fn an_independent_child_give_up_rolls_back_only_its_suffix_inside_a_successful_p
     let (ctx, root) = DecodeContext::from_root_bytes(b"AB", &arena, &DecodePolicy::service())
         .expect("registered source");
     let mut session = CommitSession::new(CadIr::empty(), &ctx, None).expect("commit session");
-    let mut parts = PartOutput::new(CodecFormat::Fcstd);
+    let mut parts = PartOutput::new(CodecFormat::Fcstd, &ctx);
     let rejected = "test:model:point#failed-child";
     let surviving = "test:model:point#valid-peer";
     let first = root.child(0, 1).expect("failed child extent");
