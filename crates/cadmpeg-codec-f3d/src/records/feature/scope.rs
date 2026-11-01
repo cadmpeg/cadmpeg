@@ -148,6 +148,11 @@ cadmpeg_core::named_optional_field!(
     "extrude_profile"
 );
 cadmpeg_core::named_optional_field!(
+    deserialize_extrude_native_profiles,
+    Vec<DesignSketchProfileOperand>,
+    "extrude_native_profiles"
+);
+cadmpeg_core::named_optional_field!(
     deserialize_extrude_prologue,
     DesignExtrudePrologue,
     "extrude_prologue"
@@ -1296,6 +1301,7 @@ fn extrude_scope_is_absent(extrude: Option<&DesignExtrudeScope>) -> bool {
             extrude.extrude_prologue.is_none()
                 && extrude.fixed_extrude_parameters.is_none()
                 && extrude.extrude_profile.is_none()
+                && extrude.extrude_native_profiles.is_none()
         }
     }
 }
@@ -1352,6 +1358,13 @@ pub(crate) struct DesignExtrudeScope {
         deserialize_with = "deserialize_extrude_profile"
     )]
     pub(crate) extrude_profile: Option<DesignSketchProfileOperand>,
+    /// Multiple Sketch-profile operands retained with their independent selections.
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_extrude_native_profiles"
+    )]
+    pub(crate) extrude_native_profiles: Option<Vec<DesignSketchProfileOperand>>,
 }
 
 /// Sweep construction and its independently decoded profile operand.
@@ -3003,6 +3016,11 @@ impl DesignParameterScope {
     pub(crate) fn extrude_profile(&self) -> Option<&DesignSketchProfileOperand> {
         self.extrude()
             .and_then(|extrude| extrude.extrude_profile.as_ref())
+    }
+
+    pub(crate) fn extrude_native_profiles(&self) -> Option<&[DesignSketchProfileOperand]> {
+        self.extrude()
+            .and_then(|extrude| extrude.extrude_native_profiles.as_deref())
     }
 
     #[cfg(test)]
